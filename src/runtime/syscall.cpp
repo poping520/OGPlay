@@ -1,9 +1,11 @@
 #include "ogplay/runtime/syscall.h"
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -272,6 +274,145 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
             } catch (const memory::MemoryFault&) {
                 return -kEfault;
             }
+        });
+}
+
+void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
+                               memory::AddressSpace& address_space) {
+    constexpr std::int32_t kEperm = 1;
+    constexpr std::int32_t kEnomem = 12;
+    constexpr std::int32_t kEinval = 22;
+    constexpr std::uint32_t kMapPrivate = 0x02;
+    constexpr std::uint32_t kMapFixed = 0x10;
+    constexpr std::uint32_t kMapAnonymous = 0x20;
+    struct State final {
+        std::uint32_t next_mapping{0x60000000};
+        std::uint32_t current_break{0x50000000};
+    };
+    const auto state = std::make_shared<State>();
+    const auto page_size = address_space.PageSize();
+    const auto aligned_size = [page_size](const std::uint32_t size) {
+        if (size == 0) throw std::invalid_argument("zero mapping size");
+        const auto result = (static_cast<std::uint64_t>(size) + page_size - 1U) &
+                            ~(page_size - 1U);
+        if (result > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::overflow_error("mapping size overflows");
+        }
+        return static_cast<std::uint32_t>(result);
+    };
+    const auto protection = [](const std::uint32_t linux_protection) {
+        if ((linux_protection & ~7U) != 0 || linux_protection == 0) {
+            throw std::invalid_argument("unsupported Linux page protection");
+        }
+        auto result = memory::PageProtection::none;
+        if ((linux_protection & 1U) != 0) {
+            result = result | memory::PageProtection::read;
+        }
+        if ((linux_protection & 2U) != 0) {
+            result = result | memory::PageProtection::read |
+                     memory::PageProtection::write;
+        }
+        if ((linux_protection & 4U) != 0) {
+            result = result | memory::PageProtection::execute;
+        }
+        if ((linux_protection & 2U) != 0 && (linux_protection & 4U) != 0) {
+            throw std::domain_error("writable executable mapping");
+        }
+        return result;
+    };
+
+    dispatcher.Implement(
+        192, [&address_space, state, page_size, aligned_size,
+              protection](const A32SyscallFrame& frame) {
+            try {
+                const auto size = aligned_size(frame.arguments[1]);
+                const auto flags = frame.arguments[3];
+                if ((flags & kMapAnonymous) == 0 ||
+                    (flags & kMapPrivate) == 0 || frame.arguments[4] != UINT32_MAX ||
+                    frame.arguments[5] != 0) {
+                    return -kEinval;
+                }
+                std::uint32_t address{};
+                if ((flags & kMapFixed) != 0) {
+                    address = frame.arguments[0];
+                    if (address % page_size != 0) return -kEinval;
+                } else {
+                    address = state->next_mapping;
+                    const auto end = static_cast<std::uint64_t>(address) + size;
+                    if (end > UINT32_MAX) return -kEnomem;
+                    state->next_mapping = static_cast<std::uint32_t>(end);
+                }
+                address_space.Map({memory::GuestAddress{address}, size},
+                                  protection(frame.arguments[2]));
+                return std::bit_cast<std::int32_t>(address);
+            } catch (const std::domain_error&) {
+                return -kEperm;
+            } catch (const std::invalid_argument&) {
+                return -kEinval;
+            } catch (const std::overflow_error&) {
+                return -kEinval;
+            } catch (const std::exception&) {
+                return -kEnomem;
+            }
+        });
+    dispatcher.Implement(
+        91, [&address_space, page_size,
+             aligned_size](const A32SyscallFrame& frame) {
+            try {
+                if (frame.arguments[0] % page_size != 0) return -kEinval;
+                address_space.Unmap(
+                    {memory::GuestAddress{frame.arguments[0]},
+                     aligned_size(frame.arguments[1])});
+                return 0;
+            } catch (const std::exception&) {
+                return -kEinval;
+            }
+        });
+    dispatcher.Implement(
+        125, [&address_space, page_size, aligned_size,
+              protection](const A32SyscallFrame& frame) {
+            try {
+                if (frame.arguments[0] % page_size != 0) return -kEinval;
+                address_space.Protect(
+                    {memory::GuestAddress{frame.arguments[0]},
+                     aligned_size(frame.arguments[1])},
+                    protection(frame.arguments[2]));
+                return 0;
+            } catch (const std::domain_error&) {
+                return -kEperm;
+            } catch (const std::exception&) {
+                return -kEinval;
+            }
+        });
+    dispatcher.Implement(
+        45, [&address_space, state, page_size](const A32SyscallFrame& frame) {
+            const auto requested = frame.arguments[0];
+            if (requested == 0) {
+                return std::bit_cast<std::int32_t>(state->current_break);
+            }
+            if (requested < 0x50000000 || requested >= 0x58000000) {
+                return std::bit_cast<std::int32_t>(state->current_break);
+            }
+            const auto old_page = (static_cast<std::uint64_t>(state->current_break) +
+                                   page_size - 1U) & ~(page_size - 1U);
+            const auto new_page = (static_cast<std::uint64_t>(requested) +
+                                   page_size - 1U) & ~(page_size - 1U);
+            try {
+                if (new_page > old_page) {
+                    address_space.Map(
+                        {memory::GuestAddress{static_cast<std::uint32_t>(old_page)},
+                         new_page - old_page},
+                        memory::PageProtection::read |
+                            memory::PageProtection::write);
+                } else if (new_page < old_page) {
+                    address_space.Unmap(
+                        {memory::GuestAddress{static_cast<std::uint32_t>(new_page)},
+                         old_page - new_page});
+                }
+                state->current_break = requested;
+            } catch (const std::exception&) {
+            }
+            return std::bit_cast<std::int32_t>(state->current_break);
         });
 }
 

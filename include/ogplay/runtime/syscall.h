@@ -83,5 +83,7 @@ private:
 void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
                              hal::Clock& clock,
                              memory::AddressSpace& address_space);
+void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
+                               memory::AddressSpace& address_space);
 
 }  // namespace ogplay::runtime

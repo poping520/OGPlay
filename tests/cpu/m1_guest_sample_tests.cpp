@@ -27,8 +27,7 @@ public:
     M1GuestFixture() : bus(memory, &observer), cpu(bus) {
         memory.Map({CodeAddress(), memory.PageSize()},
                    ogplay::memory::PageProtection::read |
-                       ogplay::memory::PageProtection::write |
-                       ogplay::memory::PageProtection::execute);
+                       ogplay::memory::PageProtection::write);
         memory.Map({MailboxAddress(), memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);

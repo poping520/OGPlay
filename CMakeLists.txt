@@ -108,6 +108,7 @@ ogplay_set_project_warnings(ogplay_loader)
 add_library(ogplay_runtime
     src/runtime/bionic_profile.cpp
     src/runtime/syscall.cpp
+    src/runtime/vfs.cpp
 )
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC OGPlay::Core OGPlay::Cpu OGPlay::Memory)
@@ -167,6 +168,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/snapshot_tests.cpp
         tests/runtime/syscall_tests.cpp
         tests/runtime/bionic_profile_tests.cpp
+        tests/runtime/vfs_tests.cpp
         tests/loader/elf_tests.cpp
         tests/loader/link_namespace_tests.cpp
         tests/loader/relocation_tests.cpp

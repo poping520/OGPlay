@@ -135,6 +135,11 @@ status = "partial"
 test = "tests/runtime/bionic_profile_tests.cpp"
 note = "M2 已冻结 API 19/22/23 guest Bionic 库集、HLE 边界与选择性 str/mem/pthread 路由；AOSP 产物装载自检待完成"
 
+[runtime.vfs]
+status = "partial"
+test = "tests/runtime/vfs_tests.cpp"
+note = "M2 已完成大小写不敏感 Android 路径索引、内存文件与隔离 fd 的 open/read/write/seek/close；APK/OBB/外置目录 provider 待接入"
+
 [runtime.jni]
 status = "unimplemented"
 test = ""

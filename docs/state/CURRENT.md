@@ -66,6 +66,7 @@
   增量构建与 CTest 78/78，通过后远端验证耗时降至秒级。
 - [WU-0044/0045] 完成 file-backed 动态字符串表、`DT_NEEDED`、`DT_SONAME` 解析及
   跨编译器字段解码修复；三平台 warnings-as-errors CTest 80/80。
+- [WU-0046] 完成 `PT_LOAD` 页计划、临时 RW 装载、BSS 清零、最终 W^X 保护和失败回滚。
 
 ## 下一步（按优先级）
 

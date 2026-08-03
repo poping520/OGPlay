@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -207,4 +209,86 @@ TEST_CASE("ELF32 dynamic strings reject ambiguous or unbacked metadata") {
             static_cast<void>(ogplay::loader::ReadElf32DynamicInfo(bytes, image)),
             ogplay::loader::ElfError);
     }
+}
+
+TEST_CASE("ELF32 load maps bytes zeros BSS and applies final W xor X") {
+    const auto bytes = ValidElf();
+    const auto image = ogplay::loader::ParseElf32Arm(bytes);
+    ogplay::memory::AddressSpace address_space;
+    const auto plan = ogplay::loader::LoadElf32Arm(
+        bytes, image, ogplay::memory::GuestAddress{0x20000}, address_space);
+
+    REQUIRE(plan.regions.size() == 1);
+    CHECK(plan.regions[0].range.Start() ==
+          ogplay::memory::GuestAddress{0x30000});
+    CHECK(plan.regions[0].final_protection ==
+          (ogplay::memory::PageProtection::read |
+           ogplay::memory::PageProtection::execute));
+    REQUIRE(plan.entry.has_value());
+    CHECK(*plan.entry == ogplay::memory::GuestAddress{0x30100});
+
+    std::vector<std::byte> loaded(bytes.size());
+    address_space.Read(ogplay::memory::GuestAddress{0x30000}, loaded);
+    CHECK(loaded == bytes);
+    std::vector<std::byte> bss(0x80, std::byte{0xff});
+    address_space.Read(ogplay::memory::GuestAddress{0x30180}, bss);
+    CHECK(std::all_of(bss.begin(), bss.end(),
+                      [](const auto value) { return value == std::byte{}; }));
+    CHECK_THROWS_AS(address_space.Write(ogplay::memory::GuestAddress{0x30000},
+                                       std::vector<std::byte>{std::byte{1}}),
+                    ogplay::memory::MemoryFault);
+    std::array<std::byte, 4> instruction{};
+    CHECK_NOTHROW(address_space.Fetch(ogplay::memory::GuestAddress{0x30100},
+                                     instruction));
+}
+
+TEST_CASE("ELF32 load plan rejects unsafe bias entry and permissions") {
+    SUBCASE("unaligned bias") {
+        const auto image = ogplay::loader::ParseElf32Arm(ValidElf());
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::BuildElf32LoadPlan(
+                            image, ogplay::memory::GuestAddress{0x20001}, 0x1000)),
+                        ogplay::loader::ElfError);
+    }
+    SUBCASE("biased segment wraps") {
+        const auto image = ogplay::loader::ParseElf32Arm(ValidElf());
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::BuildElf32LoadPlan(
+                            image, ogplay::memory::GuestAddress{0xffff0000}, 0x1000)),
+                        ogplay::loader::ElfError);
+    }
+    SUBCASE("page requires write and execute") {
+        auto bytes = ValidElf();
+        Put32(bytes, 76, 7);
+        const auto image = ogplay::loader::ParseElf32Arm(bytes);
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::BuildElf32LoadPlan(
+                            image, ogplay::memory::GuestAddress{0x20000}, 0x1000)),
+                        ogplay::loader::ElfError);
+    }
+    SUBCASE("entry is outside executable load") {
+        auto bytes = ValidElf();
+        Put32(bytes, 24, 0x20000);
+        const auto image = ogplay::loader::ParseElf32Arm(bytes);
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::BuildElf32LoadPlan(
+                            image, ogplay::memory::GuestAddress{0x20000}, 0x1000)),
+                        ogplay::loader::ElfError);
+    }
+}
+
+TEST_CASE("ELF32 load leaves an existing address space unchanged on collision") {
+    const auto bytes = ValidElf();
+    const auto image = ogplay::loader::ParseElf32Arm(bytes);
+    ogplay::memory::AddressSpace address_space;
+    const auto page_size = address_space.PageSize();
+    const ogplay::memory::GuestAddress occupied{0x30000};
+    address_space.Map({occupied, page_size},
+                      ogplay::memory::PageProtection::read |
+                          ogplay::memory::PageProtection::write);
+    const std::array marker{std::byte{0x5a}};
+    address_space.Write(occupied, marker);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::LoadElf32Arm(
+                        bytes, image, ogplay::memory::GuestAddress{0x20000},
+                        address_space)),
+                    std::logic_error);
+    std::array<std::byte, 1> actual{};
+    address_space.Read(occupied, actual);
+    CHECK(actual == marker);
 }

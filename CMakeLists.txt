@@ -94,6 +94,7 @@ ogplay_set_project_warnings(ogplay_cpu)
 
 add_library(ogplay_loader
     src/loader/elf.cpp
+    src/loader/link_namespace.cpp
     src/loader/relocation.cpp
 )
 add_library(OGPlay::Loader ALIAS ogplay_loader)
@@ -153,6 +154,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/bus_tests.cpp
         tests/memory/snapshot_tests.cpp
         tests/loader/elf_tests.cpp
+        tests/loader/link_namespace_tests.cpp
         tests/loader/relocation_tests.cpp
         tests/cpu/state_tests.cpp
         tests/cpu/futex_tests.cpp

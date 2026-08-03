@@ -123,7 +123,7 @@ note = "M1 裸 A32/Thumb mailbox 样本在三平台通过解释器/JIT 对拍、
 [loader.elf32_arm]
 status = "partial"
 test = "tests/loader/elf_tests.cpp"
-note = "M2 已完成 ELF32/ARM 事实、动态依赖、SysV/GNU dynsym、REL/PLT 事实、常用 ARM REL 原子应用与 W^X PT_LOAD 装载；多模块链接待后续 Work Unit"
+note = "M2 已完成 ELF32/ARM 事实、动态依赖、dynsym、REL/PLT、常用 ARM REL 原子应用、W^X 装载与多模块 ELF 可见性解析；TLS/版本/init/dlopen 待后续 Work Unit"
 
 [runtime.syscall]
 status = "unimplemented"

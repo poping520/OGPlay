@@ -13,12 +13,13 @@ namespace {
 template <typename UInt>
 [[nodiscard]] UInt DecodeLittleEndian(const std::array<std::byte, sizeof(UInt)>& bytes) {
     static_assert(std::is_unsigned_v<UInt>);
-    UInt value{};
+    std::uint64_t value{};
     for (std::size_t index = 0; index < bytes.size(); ++index) {
-        value |= static_cast<UInt>(std::to_integer<std::uint8_t>(bytes[index]))
+        value |= static_cast<std::uint64_t>(
+                     std::to_integer<std::uint8_t>(bytes[index]))
                  << static_cast<unsigned>(index * 8U);
     }
-    return value;
+    return static_cast<UInt>(value);
 }
 
 template <typename UInt>

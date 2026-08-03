@@ -1,10 +1,11 @@
 # 当前状态
 
-更新：2026-08-03 · M0 完成会话
+更新：2026-08-03 · M1 启动会话
 
 ## 进行中
 
-- M0 本地实现与验收完成；等待首次远端 hosted CI 确认三平台 job 后进入 M1 功能开发。
+- M1 已启动：HAL Clock 和平台边界完成；SDL3 窗口/输入接口是下一行为 Work Unit。
+- 首次远端 hosted CI 仍待仓库建立远端后确认，不阻塞本地 M1 开发。
 
 ## 最近完成
 
@@ -25,16 +26,24 @@
 - [WU-0011] 完成能力账本相对 Git 基线的单调性门禁。
 - [WU-0012/0013] 完成 null-call 账本及 `sym`/`hle` 主动查询。
 - Windows/MSVC Release（`/WX`）CTest 27/27；Cygwin GCC Release（`-Werror`）CTest 27/27。
+- [WU-0015] doctest 2.4.11、SDL 3.4.10、Dynarmic 验证提交以递归 Git submodule 固定。
+- [WU-0016] CMake 移除 FetchContent，默认离线使用 submodule；CI 递归 checkout。
+- [WU-0017] 完成实时/固定步长、精确倍率、暂停统一 Clock，Session 同步暂停时间源。
+- [WU-0018] 建立 Windows/Linux/macOS HAL 目录契约及平台代码泄漏自动门禁。
+- Windows/MSVC warnings-as-errors 与 Cygwin GCC 14.4 `-Werror` CTest 31/31。
 
 ## 下一步（按优先级）
 
-1. 建立远端后确认 Windows/Ubuntu/macOS hosted CI 全绿；失败则重新打开 M0。
-2. 为 M1 拆分首个 Work Unit：HAL Clock 实时后端与平台目录骨架。
-3. 按 M1 顺序实现 memory → CPU → 真线程，不得提前进入 Bionic/syscall。
+1. [WU-0019] 定义 SDL3 Window/Input HAL，先完成 dummy/offscreen 生命周期与事件契约测试。
+2. 拆分 4 GiB guest 地址空间预留与强类型 GuestAddress 的 memory Work Unit。
+3. 按 memory → CPU（解释器后 Dynarmic）→ 真线程顺序推进，不得提前进入 Bionic/syscall。
+4. 建立远端后确认 Windows/Ubuntu/macOS hosted CI 全绿；失败则修复对应平台门禁。
 
 ## 已知问题
 
-- ANGLE/SDL3/Qt/Dynarmic 尚未引入；它们分别属于后续 M1/M4/M6。
+- SDL3 与 Dynarmic 源码已引入；SDL3 尚未接入生产 HAL，Dynarmic 默认关闭等待 CPU 接口。
+- 本机 Cygwin 缺少 X11/Wayland 开发包，GCC 代码验收使用 `OGPLAY_ENABLE_SDL3=OFF`；
+  Windows/MSVC 默认 SDL3 配置成功，正式 Linux CI 必须安装 SDL3 桌面构建依赖。
 - 黄金帧使用无 GPU SoftwareSurface，不包含 ANGLE/SwiftShader；后者属于 M4。
 - Agent Control 已有 stdio JSON-RPC；TCP/UDS/MCP adapter 后续按需要补齐。
 - 当前只有本地 Git 仓库，三平台 hosted CI 尚无可执行远端，因此不能宣称远端 job 已绿。

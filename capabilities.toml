@@ -88,7 +88,7 @@ note = "M1 已覆盖 A32/T32 条件执行、立即数算术、分支/BX、SVC/BK
 [fixtures.minimal_ndk]
 status = "complete"
 test = "samples/minimal_ndk/tools/build.py"
-note = "M1 API 19 armeabi-v7a NativeActivity 出口样例，离线构建并验证 GLES2 画面、触摸和按键载荷 APK"
+note = "M4 API 19 armeabi-v7a NativeActivity 累积集成载荷，离线构建并验证 GLES2 画面、触摸和按键 APK；不作为 M1 出口"
 
 [runtime.syscall]
 status = "unimplemented"

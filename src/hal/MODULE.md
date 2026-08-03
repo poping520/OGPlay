@@ -15,7 +15,8 @@
 - `hal::CreateSdlWindowInput`：SDL3 实现工厂；关闭 SDL 的构建会明确失败。
 - `hal::VirtualMemoryReservation`：页对齐的宿主预留、提交、权限和释放接口。
 - `hal::ReserveVirtualMemory`：按目标平台选择 VirtualAlloc 或 mmap 后端。
-- audio、gfx、fs、video、thread 接口在后续 M1 Work Unit 定义。
+- `hal::HostThread` / `StartHostThread`：真实宿主线程启动、标识与显式 join 边界。
+- audio、gfx、fs、video 接口在后续 M1 Work Unit 定义。
 
 ## 不变量
 

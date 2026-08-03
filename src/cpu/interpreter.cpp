@@ -205,6 +205,50 @@ std::optional<RunResult> InterpreterCpu::ExecuteA32(
                            AddSigned(pc.Value() + 8U, displacement));
         return std::nullopt;
     }
+    if ((instruction & 0x0c000000U) == 0x04000000U) {
+        const bool register_offset = (instruction & (1U << 25U)) != 0;
+        const bool pre_index = (instruction & (1U << 24U)) != 0;
+        const bool add_offset = (instruction & (1U << 23U)) != 0;
+        const bool byte = (instruction & (1U << 22U)) != 0;
+        const bool write_back = (instruction & (1U << 21U)) != 0;
+        const bool load = (instruction & (1U << 20U)) != 0;
+        const auto rn = static_cast<std::uint8_t>((instruction >> 16U) & 0xfU);
+        const auto rd = static_cast<std::uint8_t>((instruction >> 12U) & 0xfU);
+        if (register_offset || !pre_index ||
+            (write_back && (rn == static_cast<std::uint8_t>(CoreRegister::pc) ||
+                            (load && rn == rd))) ||
+            (!load && rd == static_cast<std::uint8_t>(CoreRegister::pc))) {
+            return Undefined(pc, instruction);
+        }
+        const auto base = ReadOperandRegister(state_, rn, pc.Value(), 8);
+        const auto offset = static_cast<std::int64_t>(instruction & 0xfffU) *
+                            (add_offset ? 1 : -1);
+        const auto address_value = AddSigned(base, offset);
+        const memory::GuestAddress address{address_value};
+        if (load) {
+            const auto value = byte ? memory_bus_.Read8(address, state_.ThreadId())
+                                    : memory_bus_.Read32(address, state_.ThreadId());
+            if (rd == static_cast<std::uint8_t>(CoreRegister::pc)) {
+                state_.SetRegister(CoreRegister::pc, value & ~3U);
+            } else {
+                state_.SetRegister(static_cast<CoreRegister>(rd), value);
+                state_.SetRegister(CoreRegister::pc, next);
+            }
+        } else {
+            const auto value = state_.Register(static_cast<CoreRegister>(rd));
+            if (byte) {
+                memory_bus_.Write8(address, static_cast<std::uint8_t>(value),
+                                   state_.ThreadId());
+            } else {
+                memory_bus_.Write32(address, value, state_.ThreadId());
+            }
+            state_.SetRegister(CoreRegister::pc, next);
+        }
+        if (write_back) {
+            state_.SetRegister(static_cast<CoreRegister>(rn), address_value);
+        }
+        return std::nullopt;
+    }
     if ((instruction & 0x0c000000U) != 0) return Undefined(pc, instruction);
 
     const bool immediate = (instruction & (1U << 25U)) != 0;
@@ -295,7 +339,35 @@ std::optional<RunResult> InterpreterCpu::ExecuteThumb(
     const auto operation = instruction & 0xf800U;
     const auto rd = static_cast<std::uint8_t>((instruction >> 8U) & 0x7U);
     const auto immediate = static_cast<std::uint32_t>(instruction & 0xffU);
-    if (operation == 0x2000U) {
+    if (operation == 0x6000U || operation == 0x6800U ||
+        operation == 0x7000U || operation == 0x7800U) {
+        const bool load = (operation & 0x0800U) != 0;
+        const bool byte = (operation & 0x1000U) != 0;
+        const auto register_index = static_cast<std::uint8_t>(instruction & 0x7U);
+        const auto base_index = static_cast<std::uint8_t>((instruction >> 3U) & 0x7U);
+        const auto offset_value = static_cast<std::uint32_t>((instruction >> 6U) & 0x1fU);
+        const auto offset = byte ? offset_value : offset_value * 4U;
+        const memory::GuestAddress address{
+            state_.Register(static_cast<CoreRegister>(base_index)) + offset};
+        if (load) {
+            const auto value = byte ? memory_bus_.Read8(address, state_.ThreadId())
+                                    : memory_bus_.Read32(address, state_.ThreadId());
+            state_.SetRegister(static_cast<CoreRegister>(register_index), value);
+        } else {
+            const auto value = state_.Register(static_cast<CoreRegister>(register_index));
+            if (byte) {
+                memory_bus_.Write8(address, static_cast<std::uint8_t>(value),
+                                   state_.ThreadId());
+            } else {
+                memory_bus_.Write32(address, value, state_.ThreadId());
+            }
+        }
+    } else if (operation == 0x4800U) {
+        const auto address_value = ((pc.Value() + 4U) & ~3U) + immediate * 4U;
+        const auto value = memory_bus_.Read32(memory::GuestAddress{address_value},
+                                              state_.ThreadId());
+        state_.SetRegister(static_cast<CoreRegister>(rd), value);
+    } else if (operation == 0x2000U) {
         state_.SetRegister(static_cast<CoreRegister>(rd), immediate);
         SetMoveFlags(state_, immediate, std::nullopt);
     } else if (operation == 0x2800U) {

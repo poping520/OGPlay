@@ -9,6 +9,7 @@
 | SDL | 3.4.10 | https://github.com/libsdl-org/SDL | zlib | 窗口、输入与宿主多媒体 HAL |
 | Dynarmic | `05b7ba50588d1004e23ef91f1bda8be234be68f4` | https://git.eden-emu.dev/eden-emu/dynarmic | ISC | ARM 动态翻译后端 |
 | ext-boost | 1.71（`553948fc928a84190a4502698c45e75b97739095`） | https://github.com/suyu-emu/ext-boost | Boost Software License 1.0 | Dynarmic 所需的裁剪 Boost 头文件 |
+| Boost.Pool | 1.71（`8edafbec99cefa00b84b1c95e5b3cbbf9a6a5498`） | https://github.com/boostorg/pool | Boost Software License 1.0 | 补充 Dynarmic 使用的 pool allocator 头文件 |
 
 Dynarmic 的递归 submodule 版本由其固定提交的 `.gitmodules` 与 gitlink 决定，各组件
 许可证位于对应源码目录。规划中但尚未引入发行物：ANGLE、Qt 6、FFmpeg、zlib、zstd

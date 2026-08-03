@@ -27,6 +27,12 @@ if(OGPLAY_ENABLE_DYNARMIC)
             "ext-boost submodule is missing. "
             "Run: git submodule update --init --recursive")
     endif()
+    if(NOT EXISTS
+       "${PROJECT_SOURCE_DIR}/third_party/boost-pool/include/boost/pool/pool_alloc.hpp")
+        message(FATAL_ERROR
+            "Boost.Pool submodule is missing. "
+            "Run: git submodule update --init --recursive")
+    endif()
     set(Boost_INCLUDE_DIR
         "${PROJECT_SOURCE_DIR}/third_party/ext-boost"
         CACHE PATH "Bundled ext-boost include directory" FORCE)
@@ -38,4 +44,6 @@ if(OGPLAY_ENABLE_DYNARMIC)
     set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
     add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/dynarmic"
         "${CMAKE_BINARY_DIR}/_deps/dynarmic-build" EXCLUDE_FROM_ALL)
+    target_include_directories(dynarmic SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/boost-pool/include")
 endif()

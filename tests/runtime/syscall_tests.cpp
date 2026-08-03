@@ -202,3 +202,66 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     mismatch.arguments[3] = 0x10020;
     CHECK(dispatcher.Dispatch(mismatch) == -95);
 }
+
+TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::array initial{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+    vfs.PutFile("/data/sample.txt", initial, true);
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestRange page{
+        ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
+    memory.Map(page, ogplay::memory::PageProtection::read |
+                         ogplay::memory::PageProtection::write);
+    const auto write_string = [&memory](const std::uint32_t address,
+                                        const char* value) {
+        std::vector<std::byte> bytes;
+        do {
+            bytes.push_back(static_cast<std::byte>(*value));
+        } while (*value++ != '\0');
+        memory.Write(ogplay::memory::GuestAddress{address}, bytes);
+    };
+    write_string(0x10000, "/DATA/SAMPLE.TXT");
+    ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 5;
+    frame.arguments[0] = 0x10000;
+    frame.arguments[1] = 2;
+    const auto descriptor = dispatcher.Dispatch(frame);
+    REQUIRE(descriptor >= 3);
+    frame.number = 3;
+    frame.arguments[0] = static_cast<std::uint32_t>(descriptor);
+    frame.arguments[1] = 0x10100;
+    frame.arguments[2] = 3;
+    CHECK(dispatcher.Dispatch(frame) == 3);
+    std::array<std::byte, 3> output{};
+    memory.Read(ogplay::memory::GuestAddress{0x10100}, output);
+    CHECK(output == initial);
+
+    frame.number = 19;
+    frame.arguments[1] = 0;
+    frame.arguments[2] = 0;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    const std::array replacement{std::byte{'x'}, std::byte{'y'}};
+    memory.Write(ogplay::memory::GuestAddress{0x10110}, replacement);
+    frame.number = 4;
+    frame.arguments[1] = 0x10110;
+    frame.arguments[2] = 2;
+    CHECK(dispatcher.Dispatch(frame) == 2);
+    frame.number = 6;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+
+    const auto verify = vfs.Open("/data/sample.txt", {.read = true});
+    std::array<std::byte, 3> actual{};
+    CHECK(vfs.Read(verify, actual) == 3);
+    CHECK(actual[0] == std::byte{'x'});
+    CHECK(actual[1] == std::byte{'y'});
+    vfs.Close(verify);
+
+    frame.number = 5;
+    frame.arguments[0] = 0;
+    CHECK(dispatcher.Dispatch(frame) == -14);
+}

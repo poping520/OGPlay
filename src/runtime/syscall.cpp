@@ -463,4 +463,146 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
     });
 }
 
+void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
+                             VirtualFileSystem& vfs,
+                             memory::AddressSpace& address_space) {
+    constexpr std::int32_t kEfault = 14;
+    constexpr std::int32_t kEinval = 22;
+    constexpr std::int32_t kEnametoolong = 36;
+    constexpr std::int32_t kEoverflow = 75;
+    constexpr std::int32_t kEnotsup = 95;
+    constexpr std::uint32_t kMaxIoSize = 16U * 1024U * 1024U;
+    const auto read_path = [&address_space](const std::uint32_t raw_address) {
+        std::string path;
+        path.reserve(128);
+        auto address = memory::GuestAddress{raw_address};
+        for (std::size_t index = 0; index < 4096; ++index) {
+            std::array<std::byte, 1> byte{};
+            address_space.Read(address, byte);
+            const auto value = std::to_integer<std::uint8_t>(byte[0]);
+            if (value == 0) return path;
+            path.push_back(static_cast<char>(value));
+            address = address.Add(1);
+        }
+        throw VfsError(kEnametoolong, "guest path is not null-terminated");
+    };
+    const auto options = [](const std::uint32_t flags) {
+        constexpr std::uint32_t kCreate = 0x40;
+        constexpr std::uint32_t kTruncate = 0x200;
+        constexpr std::uint32_t kLargeFile = 0x20000;
+        constexpr std::uint32_t kCloseOnExec = 0x80000;
+        constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate |
+                                         kLargeFile | kCloseOnExec;
+        if ((flags & ~kKnown) != 0 || (flags & 3U) == 3U) {
+            throw VfsError(kEinval, "unsupported Android open flags");
+        }
+        const auto access = flags & 3U;
+        return VfsOpenOptions{access == 0 || access == 2,
+                              access == 1 || access == 2,
+                              (flags & kCreate) != 0,
+                              (flags & kTruncate) != 0};
+    };
+    const auto open = [&vfs, read_path, options](const std::uint32_t path,
+                                                 const std::uint32_t flags) {
+        try {
+            const auto guest_path = read_path(path);
+            const auto open_options = options(flags);
+            return vfs.Open(guest_path, open_options);
+        } catch (const memory::MemoryFault&) {
+            return -kEfault;
+        } catch (const std::overflow_error&) {
+            return -kEfault;
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        }
+    };
+    dispatcher.Implement(5, [open](const A32SyscallFrame& frame) {
+        return open(frame.arguments[0], frame.arguments[1]);
+    });
+    dispatcher.Implement(
+        322, [open, read_path](const A32SyscallFrame& frame) {
+            try {
+                const auto path = read_path(frame.arguments[1]);
+                const auto absolute = !path.empty() && path.front() == '/';
+                if (!absolute && frame.arguments[0] !=
+                                     std::bit_cast<std::uint32_t>(-100)) {
+                    return -kEnotsup;
+                }
+                if (!absolute) return -kEnotsup;
+            } catch (const memory::MemoryFault&) {
+                return -kEfault;
+            } catch (const std::overflow_error&) {
+                return -kEfault;
+            } catch (const VfsError& error) {
+                return -error.ErrorNumber();
+            }
+            return open(frame.arguments[1], frame.arguments[2]);
+        });
+    dispatcher.Implement(
+        3, [&vfs, &address_space](const A32SyscallFrame& frame) {
+            const auto count = frame.arguments[2];
+            if (count > kMaxIoSize) return -kEinval;
+            try {
+                if (count == 0) return 0;
+                const memory::GuestAddress destination{frame.arguments[1]};
+                address_space.Validate({destination, count},
+                                       memory::AccessType::write,
+                                       frame.thread_id);
+                std::vector<std::byte> bytes(count);
+                const auto actual =
+                    vfs.Read(std::bit_cast<std::int32_t>(frame.arguments[0]), bytes);
+                address_space.Write(destination,
+                                    std::span<const std::byte>(bytes).first(actual),
+                                    frame.thread_id);
+                return static_cast<std::int32_t>(actual);
+            } catch (const memory::MemoryFault&) {
+                return -kEfault;
+            } catch (const VfsError& error) {
+                return -error.ErrorNumber();
+            }
+        });
+    dispatcher.Implement(
+        4, [&vfs, &address_space](const A32SyscallFrame& frame) {
+            const auto count = frame.arguments[2];
+            if (count > kMaxIoSize) return -kEinval;
+            try {
+                if (count == 0) return 0;
+                const memory::GuestAddress source{frame.arguments[1]};
+                std::vector<std::byte> bytes(count);
+                address_space.Read(source, bytes, frame.thread_id);
+                const auto actual = vfs.Write(
+                    std::bit_cast<std::int32_t>(frame.arguments[0]), bytes);
+                return static_cast<std::int32_t>(actual);
+            } catch (const memory::MemoryFault&) {
+                return -kEfault;
+            } catch (const VfsError& error) {
+                return -error.ErrorNumber();
+            }
+        });
+    dispatcher.Implement(6, [&vfs](const A32SyscallFrame& frame) {
+        try {
+            vfs.Close(std::bit_cast<std::int32_t>(frame.arguments[0]));
+            return 0;
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        }
+    });
+    dispatcher.Implement(19, [&vfs](const A32SyscallFrame& frame) {
+        try {
+            if (frame.arguments[2] > 2) return -kEinval;
+            const auto result = vfs.Seek(
+                std::bit_cast<std::int32_t>(frame.arguments[0]),
+                std::bit_cast<std::int32_t>(frame.arguments[1]),
+                static_cast<VfsSeekWhence>(frame.arguments[2]));
+            if (result > static_cast<std::uint64_t>(
+                             std::numeric_limits<std::int32_t>::max())) {
+                return -kEoverflow;
+            }
+            return static_cast<std::int32_t>(result);
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        }
+    });
+}
+
 }  // namespace ogplay::runtime

@@ -13,6 +13,7 @@
 #include "ogplay/cpu/futex.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/memory/address_space.h"
+#include "ogplay/runtime/vfs.h"
 
 namespace ogplay::runtime {
 
@@ -89,5 +90,8 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                                cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus);
+void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
+                             VirtualFileSystem& vfs,
+                             memory::AddressSpace& address_space);
 
 }  // namespace ogplay::runtime

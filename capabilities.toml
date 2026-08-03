@@ -128,7 +128,7 @@ note = "M2 已完成 ELF32/ARM 事实、动态依赖、dynsym、REL/PLT、常用
 [runtime.syscall]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "M2 已建立 Android ARM EABI 分组目录、100% ENOSYS 可观测基线、身份、统一取时、基础内存及无超时 futex WAIT/WAKE；文件与线程生命周期继续补齐"
+note = "M2 已建立 Android ARM EABI 分组目录、可观测基线、身份/时间/内存/futex，以及 VFS open/read/write/lseek/close/openat；线程生命周期与扩展文件调用继续补齐"
 
 [runtime.bionic]
 status = "partial"

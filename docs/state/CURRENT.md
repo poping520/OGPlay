@@ -88,10 +88,12 @@
   值不匹配、坏地址和未支持超时模式均返回明确结果。
 - [WU-0056] 完成大小写不敏感 Android VFS 索引与隔离文件描述符核心；路径逃逸、
   read/write/seek/close、只读和 create/truncate 错误均携带 Linux errno。
+- [WU-0057] 将 `open/openat/read/write/lseek/close` 绑定 VFS；guest 路径和 buffer 有界
+  复制，坏指针、未支持相对 openat 及 VFS 错误均返回明确 errno。
 
 ## 下一步（按优先级）
 
-1. 将 VFS 文件描述符绑定到基础文件 syscall。
+1. 解析 ELF init/fini 数组与 ARM exidx 生命周期事实。
 2. 将 Bionic profile 接入 ELF 链接命名空间和 HLE 边界符号 provider。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 

@@ -18,6 +18,8 @@
   库、宿主 HLE 边界库及少而明确的 str/mem/pthread 拦截表。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供
   隔离文件描述符的 open/read/write/seek/close；路径逃逸和权限错误携带 Linux errno。
+- `BindAndroidFileSyscalls`：将 `open/openat/read/write/lseek/close` 绑定到 VFS；路径和
+  buffer 均从受检 guest 内存复制，坏指针及 VFS 错误转换为 Linux errno。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量

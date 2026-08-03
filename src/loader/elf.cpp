@@ -103,6 +103,60 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
     throw ElfError("PT_DYNAMIC is not terminated by DT_NULL");
 }
 
+[[nodiscard]] std::optional<std::uint32_t> UniqueDynamicValue(
+    const Elf32Image& image, const std::int32_t tag) {
+    std::optional<std::uint32_t> result;
+    for (const auto& entry : image.dynamic_entries) {
+        if (entry.tag != tag) continue;
+        Require(!result.has_value(), "dynamic tag appears more than once");
+        result = entry.value;
+    }
+    return result;
+}
+
+[[nodiscard]] std::size_t VirtualFileOffset(
+    const Elf32Image& image, const memory::GuestAddress address,
+    const std::uint32_t size, const std::size_t file_size) {
+    const auto start = static_cast<std::uint64_t>(address.Value());
+    const auto end = start + size;
+    Require(end <= (UINT64_C(1) << 32U),
+            "dynamic virtual range wraps the address space");
+    for (const auto& segment : image.program_headers) {
+        if (segment.type != kElfProgramLoad) continue;
+        const auto segment_start =
+            static_cast<std::uint64_t>(segment.virtual_address.Value());
+        const auto segment_file_end = segment_start + segment.file_size;
+        if (start < segment_start || end > segment_file_end) continue;
+        const auto delta = start - segment_start;
+        const auto offset = static_cast<std::uint64_t>(segment.file_offset) + delta;
+        Require(offset <= std::numeric_limits<std::size_t>::max(),
+                "dynamic file offset is not representable");
+        RequireRange(static_cast<std::size_t>(offset), size, file_size,
+                     "dynamic virtual range is outside the image");
+        return static_cast<std::size_t>(offset);
+    }
+    throw ElfError("dynamic virtual range is not file-backed by PT_LOAD");
+}
+
+[[nodiscard]] std::string ReadDynamicString(
+    const std::span<const std::byte> bytes, const std::size_t table_offset,
+    const std::uint32_t table_size, const std::uint32_t string_offset) {
+    Require(string_offset < table_size,
+            "dynamic string offset is outside DT_STRTAB");
+    const auto begin = table_offset + string_offset;
+    const auto end = table_offset + table_size;
+    auto cursor = begin;
+    while (cursor < end && bytes[cursor] != std::byte{}) ++cursor;
+    Require(cursor < end, "dynamic string is not null-terminated");
+    std::string result;
+    result.reserve(cursor - begin);
+    for (auto offset = begin; offset < cursor; ++offset) {
+        result.push_back(
+            static_cast<char>(std::to_integer<std::uint8_t>(bytes[offset])));
+    }
+    return result;
+}
+
 }  // namespace
 
 Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
@@ -157,10 +211,41 @@ Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
         image.program_headers.push_back(header);
     }
     if (dynamic_index.has_value()) {
+        image.has_dynamic_segment = true;
         image.dynamic_entries =
             ParseDynamic(bytes, image.program_headers[*dynamic_index]);
     }
     return image;
+}
+
+Elf32DynamicInfo ReadElf32DynamicInfo(
+    const std::span<const std::byte> bytes, const Elf32Image& image) {
+    Require(image.has_dynamic_segment, "ELF has no PT_DYNAMIC segment");
+    const auto string_table = UniqueDynamicValue(image, kElfDynamicStringTable);
+    const auto string_table_size =
+        UniqueDynamicValue(image, kElfDynamicStringTableSize);
+    Require(string_table.has_value() && string_table_size.has_value(),
+            "dynamic string table metadata is incomplete");
+    Require(*string_table_size != 0, "dynamic string table is empty");
+    const memory::GuestAddress table_address{*string_table};
+    const auto table_offset = VirtualFileOffset(
+        image, table_address, *string_table_size, bytes.size());
+
+    Elf32DynamicInfo info;
+    info.string_table = table_address;
+    info.string_table_size = *string_table_size;
+    for (const auto& entry : image.dynamic_entries) {
+        if (entry.tag == kElfDynamicNeeded) {
+            info.needed.push_back(ReadDynamicString(
+                bytes, table_offset, *string_table_size, entry.value));
+        }
+    }
+    const auto soname = UniqueDynamicValue(image, kElfDynamicSoname);
+    if (soname.has_value()) {
+        info.soname = ReadDynamicString(
+            bytes, table_offset, *string_table_size, *soname);
+    }
+    return info;
 }
 
 }  // namespace ogplay::loader

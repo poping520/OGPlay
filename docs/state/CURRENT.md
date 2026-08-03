@@ -4,7 +4,7 @@
 
 ## 进行中
 
-- M1 已启动：HAL Clock 和平台边界完成；SDL3 窗口/输入接口是下一行为 Work Unit。
+- M1 HAL Clock、平台边界与 SDL3 Window/Input 已完成；下一 Work Unit 进入 memory。
 - 首次远端 hosted CI 仍待仓库建立远端后确认，不阻塞本地 M1 开发。
 
 ## 最近完成
@@ -31,19 +31,22 @@
 - [WU-0017] 完成实时/固定步长、精确倍率、暂停统一 Clock，Session 同步暂停时间源。
 - [WU-0018] 建立 Windows/Linux/macOS HAL 目录契约及平台代码泄漏自动门禁。
 - Windows/MSVC warnings-as-errors 与 Cygwin GCC 14.4 `-Werror` CTest 31/31。
+- [WU-0019] 完成 SDL3 窗口生命周期和键盘、鼠标、手柄、退出事件 HAL 映射；
+  SDL 类型不泄漏，关闭 SDL 的构建会明确失败。
+- 目标平台矩阵 warnings-as-errors 构建与 CTest 34/34。
 
 ## 下一步（按优先级）
 
-1. [WU-0019] 定义 SDL3 Window/Input HAL，先完成 dummy/offscreen 生命周期与事件契约测试。
-2. 拆分 4 GiB guest 地址空间预留与强类型 GuestAddress 的 memory Work Unit。
-3. 按 memory → CPU（解释器后 Dynarmic）→ 真线程顺序推进，不得提前进入 Bionic/syscall。
-4. 建立远端后确认 Windows/Ubuntu/macOS hosted CI 全绿；失败则修复对应平台门禁。
+1. [WU-0020] 定义强类型 `GuestAddress`、地址区间与溢出/边界契约。
+2. [WU-0021] 实现 4 GiB guest 地址空间预留、提交/释放和宿主权限转换。
+3. memory 契约稳定后实现解释器 CPU，再启用 Dynarmic，随后进入真线程。
+4. 建立远端后确认 hosted CI 全绿；失败则修复对应平台门禁。
 
 ## 已知问题
 
-- SDL3 与 Dynarmic 源码已引入；SDL3 尚未接入生产 HAL，Dynarmic 默认关闭等待 CPU 接口。
-- 本机 Cygwin 缺少 X11/Wayland 开发包，GCC 代码验收使用 `OGPLAY_ENABLE_SDL3=OFF`；
-  Windows/MSVC 默认 SDL3 配置成功，正式 Linux CI 必须安装 SDL3 桌面构建依赖。
+- SDL3 已接入生产 HAL；Dynarmic 默认关闭等待 CPU 接口。
+- Linux 可用 SDL Unix-console 配置执行无显示服务契约；可见桌面窗口构建仍需 X11 或
+  Wayland 开发依赖。
 - 黄金帧使用无 GPU SoftwareSurface，不包含 ANGLE/SwiftShader；后者属于 M4。
 - Agent Control 已有 stdio JSON-RPC；TCP/UDS/MCP adapter 后续按需要补齐。
 - 当前只有本地 Git 仓库，三平台 hosted CI 尚无可执行远端，因此不能宣称远端 job 已绿。

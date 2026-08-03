@@ -68,11 +68,12 @@
   跨编译器字段解码修复；三平台 warnings-as-errors CTest 80/80。
 - [WU-0046] 完成 `PT_LOAD` 页计划、临时 RW 装载、BSS 清零、最终 W^X 保护和失败回滚；
   三平台 warnings-as-errors CTest 83/83。
-- [WU-0047] 完成 SysV/GNU hash 边界校验、dynsym 数量推导及符号可见性事实解析。
+- [WU-0047] 完成 SysV/GNU hash 边界校验、dynsym 数量推导及符号可见性事实解析；
+  三平台 warnings-as-errors CTest 86/86。
 
 ## 下一步（按优先级）
 
-1. 解析 `DT_SYMTAB`/`DT_SYMENT`、SysV/GNU hash 与符号可见性，建立可边界校验的查找事实。
+1. 解析 `DT_REL`/`DT_RELSZ`/`DT_JMPREL`，冻结 ARM relocation 类型、符号索引和目标地址事实。
 2. 冻结 Bionic API 19/22/23 profile、符号拦截与 syscall 分层契约。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 

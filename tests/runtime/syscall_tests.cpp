@@ -107,3 +107,45 @@ TEST_CASE("Android time syscalls use the unified clock and checked guest memory"
     frame.arguments[1] = 0x20000;
     CHECK(dispatcher.Dispatch(frame) == -14);
 }
+
+TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 192;
+    frame.arguments[1] = 5000;
+    frame.arguments[2] = 3;
+    frame.arguments[3] = 0x22;
+    frame.arguments[4] = UINT32_MAX;
+    CHECK(dispatcher.Dispatch(frame) == 0x60000000);
+    const std::array marker{std::byte{0x5a}};
+    CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker));
+
+    frame.number = 125;
+    frame.arguments[0] = 0x60000000;
+    frame.arguments[1] = 5000;
+    frame.arguments[2] = 5;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker),
+                    ogplay::memory::MemoryFault);
+    frame.arguments[2] = 6;
+    CHECK(dispatcher.Dispatch(frame) == -1);
+
+    frame.number = 91;
+    frame.arguments[0] = 0x60000000;
+    frame.arguments[1] = 5000;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    std::array<std::byte, 1> output{};
+    CHECK_THROWS_AS(memory.Read(ogplay::memory::GuestAddress{0x60000000}, output),
+                    ogplay::memory::MemoryFault);
+
+    frame.number = 45;
+    frame.arguments[0] = 0;
+    CHECK(dispatcher.Dispatch(frame) == 0x50000000);
+    frame.arguments[0] = 0x50001010;
+    CHECK(dispatcher.Dispatch(frame) == 0x50001010);
+    CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x50000000}, marker));
+}

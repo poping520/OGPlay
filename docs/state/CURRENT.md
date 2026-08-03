@@ -74,11 +74,13 @@
   均保真，RELA、表重叠与越界输入明确失败；Windows/MSVC CTest 88/88。
 - [WU-0049] 完成常用 ARM32 REL 原子应用；预解析符号注入、load bias、回滚和重定位期
   RW/最终 W^X 权限恢复均纳入契约测试。
+- [WU-0050] 完成多层 `DT_NEEDED` 闭包、依赖优先装载、根模块广度查找作用域，以及
+  local/weak/hidden/protected/absolute 符号地址解析。
 
 ## 下一步（按优先级）
 
-1. 构造多模块链接命名空间，按依赖和 ELF 可见性预解析强/弱符号。
-2. 冻结 Bionic API 19/22/23 profile、符号拦截与 syscall 分层契约。
+1. 冻结 Bionic API 19/22/23 profile、HLE 边界/选择性符号拦截与 syscall 分层契约。
+2. 建立 syscall 分派和未实现调用 100% 可观测基线，优先内存、线程、时间、文件组。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 
 ## 已知问题

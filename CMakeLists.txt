@@ -10,7 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(OGPLAY_BUILD_TESTS "Build OGPlay unit and contract tests" ON)
 option(OGPLAY_WARNINGS_AS_ERRORS "Treat OGPlay warnings as errors" OFF)
 option(OGPLAY_ENABLE_SDL3 "Configure the bundled SDL3 platform dependency" ON)
-option(OGPLAY_ENABLE_DYNARMIC "Configure the bundled Dynarmic CPU dependency" OFF)
+option(OGPLAY_ENABLE_DYNARMIC "Configure the bundled Dynarmic CPU dependency" ON)
 
 include(GNUInstallDirs)
 include(cmake/CompilerWarnings.cmake)
@@ -79,6 +79,13 @@ target_include_directories(ogplay_cpu PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+if(OGPLAY_ENABLE_DYNARMIC)
+    target_sources(ogplay_cpu PRIVATE src/cpu/dynarmic.cpp)
+    target_compile_definitions(ogplay_cpu PUBLIC OGPLAY_HAS_DYNARMIC=1)
+    target_link_libraries(ogplay_cpu PRIVATE dynarmic)
+else()
+    target_compile_definitions(ogplay_cpu PUBLIC OGPLAY_HAS_DYNARMIC=0)
+endif()
 ogplay_set_project_warnings(ogplay_cpu)
 
 add_library(ogplay_session src/session/session.cpp)
@@ -131,6 +138,9 @@ if(OGPLAY_BUILD_TESTS)
         tests/cpu/m1_guest_sample_tests.cpp
         tests/session/session_tests.cpp
     )
+    if(OGPLAY_ENABLE_DYNARMIC)
+        list(APPEND OGPLAY_TEST_SOURCES tests/cpu/dynarmic_tests.cpp)
+    endif()
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
     target_link_libraries(ogplay_tests PRIVATE OGPlay::Agent OGPlay::Cpu doctest::doctest)
     target_include_directories(ogplay_tests PRIVATE

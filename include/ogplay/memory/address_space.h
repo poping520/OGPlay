@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <vector>
 
 #include "ogplay/memory/address.h"
 
@@ -25,6 +26,20 @@ enum class PageProtection : std::uint8_t {
 
 enum class AccessType : std::uint8_t { read, write, execute };
 enum class FaultReason : std::uint8_t { unmapped, permission_denied };
+
+inline constexpr std::uint32_t kMemorySnapshotVersion = 1;
+
+struct MemorySnapshotMapping final {
+    GuestRange range;
+    PageProtection protection;
+    std::vector<std::byte> data;
+};
+
+struct MemorySnapshot final {
+    std::uint32_t version{kMemorySnapshotVersion};
+    std::uint64_t page_size{};
+    std::vector<MemorySnapshotMapping> mappings;
+};
 
 class MemoryFault final : public std::runtime_error {
 public:
@@ -63,6 +78,8 @@ public:
               std::uint64_t thread_id = 0) const;
     void Write(GuestAddress address, std::span<const std::byte> source,
                std::uint64_t thread_id = 0);
+    [[nodiscard]] MemorySnapshot CaptureSnapshot() const;
+    void RestoreSnapshot(const MemorySnapshot& snapshot);
 
 private:
     class Impl;

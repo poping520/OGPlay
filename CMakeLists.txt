@@ -113,6 +113,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/address_tests.cpp
         tests/memory/address_space_tests.cpp
         tests/memory/bus_tests.cpp
+        tests/memory/snapshot_tests.cpp
         tests/session/session_tests.cpp
     )
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})

@@ -13,7 +13,9 @@
 - `MemoryFault`：携带 guest 地址、访问类型、失败原因和 guest 线程 ID。
 - `MemoryBus`：CPU 只依赖的 8/16/32/64 位小端访存接口。
 - `CheckedMemoryBus`：完整权限验证和观察器钩子的 soft-MMU 调试后端。
-- M1 后续增加直接 JIT 访问适配与 Snapshot。
+- `MemorySnapshot`：带版本、宿主页尺寸、映射权限与内容的最小内存快照。
+- `CaptureSnapshot/RestoreSnapshot`：合并连续映射并以事务式替换恢复内存状态。
+- M1 后续增加直接 JIT 访问适配，并由 CPU/线程模块组合完整 guest 快照。
 
 ## 不变量
 
@@ -21,6 +23,7 @@
 - 越界和权限错误必须产生带地址、访问类型和线程信息的 fault。
 - 映射状态可序列化。
 - 所有映射操作按宿主页对齐；权限账本与宿主权限必须同步更新。
+- 不完整或不兼容的快照不得改变当前地址空间。
 
 ## 禁止
 

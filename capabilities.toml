@@ -70,6 +70,11 @@ status = "partial"
 test = "tests/memory/bus_tests.cpp"
 note = "M1 CheckedMemoryBus 提供小端类型访问、全区间验证与 watchpoint/trace 观察器；断点策略待 CPU"
 
+[memory.snapshot]
+status = "partial"
+test = "tests/memory/snapshot_tests.cpp"
+note = "M1 内存快照支持版本、连续映射合并、权限和内容的事务式恢复；完整 guest 状态待 CPU/线程组合"
+
 [runtime.syscall]
 status = "unimplemented"
 test = ""

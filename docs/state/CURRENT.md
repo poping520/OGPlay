@@ -76,11 +76,13 @@
   RW/最终 W^X 权限恢复均纳入契约测试。
 - [WU-0050] 完成多层 `DT_NEEDED` 闭包、依赖优先装载、根模块广度查找作用域，以及
   local/weak/hidden/protected/absolute 符号地址解析。
+- [WU-0051] 建立 Android ARM EABI syscall 分组目录与分派基线；未知及未实现调用均记账
+  并返回 `-ENOSYS`，身份类调用使用一致可注入 guest 身份。
 
 ## 下一步（按优先级）
 
-1. 冻结 Bionic API 19/22/23 profile、HLE 边界/选择性符号拦截与 syscall 分层契约。
-2. 建立 syscall 分派和未实现调用 100% 可观测基线，优先内存、线程、时间、文件组。
+1. 冻结 Bionic API 19/22/23 profile、HLE 边界/选择性符号拦截契约。
+2. 按优先级实现 syscall 内存、线程、时间、文件组。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 
 ## 已知问题

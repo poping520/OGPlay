@@ -6,7 +6,9 @@
 
 ## 公共 API
 
-M2/M3 定义。子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
+- `A32SyscallDispatcher`：按 ARM EABI 号分派 syscall；声明与实现分离，未知或未实现调用
+  统一记入能力账本并返回 `-ENOSYS`，覆盖率可按组查询。
+- 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
 
@@ -22,4 +24,3 @@ M2/M3 定义。子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止�
 ## 测试
 
 `tests/runtime/` 契约基准来自 AOSP/真机行为。
-

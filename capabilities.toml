@@ -45,6 +45,11 @@ status = "complete"
 test = "tests/hal/clock_tests.cpp"
 note = "M1 统一实时时钟与固定步长时钟，支持精确倍率、暂停及可注入单调时间源"
 
+[hal.window_input]
+status = "complete"
+test = "tests/hal/window_input_tests.cpp"
+note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映射；SDL 类型不泄漏"
+
 [runtime.syscall]
 status = "unimplemented"
 test = ""

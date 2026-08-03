@@ -1,12 +1,15 @@
 #include "ogplay/loader/elf.h"
 
+#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace ogplay::loader {
 namespace {
@@ -16,6 +19,9 @@ inline constexpr std::size_t kElf32ProgramHeaderSize = 32;
 inline constexpr std::size_t kElf32DynamicEntrySize = 8;
 inline constexpr std::uint16_t kElfMachineArm = 40;
 inline constexpr std::uint32_t kElfVersionCurrent = 1;
+inline constexpr std::uint32_t kElfFlagExecute = 1;
+inline constexpr std::uint32_t kElfFlagWrite = 2;
+inline constexpr std::uint32_t kElfFlagRead = 4;
 
 void Require(const bool condition, const std::string_view message) {
     if (!condition) throw ElfError(std::string(message));
@@ -159,6 +165,70 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
     return result;
 }
 
+[[nodiscard]] bool HasProtection(const memory::PageProtection value,
+                                 const memory::PageProtection flag) {
+    return (static_cast<std::uint8_t>(value) &
+            static_cast<std::uint8_t>(flag)) != 0;
+}
+
+[[nodiscard]] memory::PageProtection SegmentProtection(
+    const std::uint32_t flags) {
+    auto protection = memory::PageProtection::none;
+    if ((flags & kElfFlagRead) != 0) {
+        protection = protection | memory::PageProtection::read;
+    }
+    if ((flags & kElfFlagWrite) != 0) {
+        protection = protection | memory::PageProtection::write;
+    }
+    if ((flags & kElfFlagExecute) != 0) {
+        protection = protection | memory::PageProtection::execute;
+    }
+    return protection;
+}
+
+[[nodiscard]] std::uint64_t BiasedAddress(
+    const memory::GuestAddress address, const memory::GuestAddress load_bias,
+    const std::uint64_t size, const std::string_view message) {
+    const auto result = static_cast<std::uint64_t>(address.Value()) +
+                        load_bias.Value();
+    Require(result + size <= (UINT64_C(1) << 32U), message);
+    return result;
+}
+
+[[nodiscard]] std::optional<memory::GuestAddress> ResolveEntry(
+    const Elf32Image& image, const memory::GuestAddress load_bias) {
+    if (image.entry.Value() == 0) return std::nullopt;
+    const auto entry = BiasedAddress(image.entry, load_bias, 1,
+                                     "ELF entry wraps the address space");
+    for (const auto& segment : image.program_headers) {
+        if (segment.type != kElfProgramLoad ||
+            (segment.flags & kElfFlagExecute) == 0) {
+            continue;
+        }
+        const auto start = BiasedAddress(segment.virtual_address, load_bias, 0,
+                                         "PT_LOAD start wraps the address space");
+        const auto end = start + segment.memory_size;
+        if (entry >= start && entry < end) {
+            return memory::GuestAddress{static_cast<std::uint32_t>(entry)};
+        }
+    }
+    throw ElfError("ELF entry is not inside an executable PT_LOAD");
+}
+
+void WriteZeros(memory::AddressSpace& address_space,
+                memory::GuestAddress address, std::uint64_t size,
+                const std::uint64_t page_size) {
+    const std::vector<std::byte> zeros(static_cast<std::size_t>(page_size),
+                                       std::byte{});
+    while (size != 0) {
+        const auto count = static_cast<std::size_t>(
+            std::min<std::uint64_t>(size, zeros.size()));
+        address_space.Write(address, std::span<const std::byte>(zeros).first(count));
+        address = address.Add(count);
+        size -= count;
+    }
+}
+
 }  // namespace
 
 Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
@@ -248,6 +318,119 @@ Elf32DynamicInfo ReadElf32DynamicInfo(
             bytes, table_offset, *string_table_size, *soname);
     }
     return info;
+}
+
+Elf32LoadPlan BuildElf32LoadPlan(const Elf32Image& image,
+                                 const memory::GuestAddress load_bias,
+                                 const std::uint64_t page_size) {
+    Require(page_size != 0 && std::has_single_bit(page_size) &&
+                page_size <= std::numeric_limits<std::uint32_t>::max(),
+            "host page size is invalid");
+    Require(load_bias.Value() % page_size == 0,
+            "ELF load bias is not page aligned");
+    if (image.type == Elf32ImageType::executable) {
+        Require(load_bias.Value() == 0, "ET_EXEC cannot use a load bias");
+    }
+
+    std::map<std::uint32_t, memory::PageProtection> pages;
+    for (const auto& segment : image.program_headers) {
+        if (segment.type != kElfProgramLoad || segment.memory_size == 0) continue;
+        const auto protection = SegmentProtection(segment.flags);
+        Require(protection != memory::PageProtection::none,
+                "PT_LOAD has no usable permissions");
+        Require(HasProtection(protection, memory::PageProtection::read),
+                "PT_LOAD must be readable");
+        const auto start = BiasedAddress(segment.virtual_address, load_bias,
+                                         segment.memory_size,
+                                         "PT_LOAD bias wraps the address space");
+        const auto end = start + segment.memory_size;
+        const auto page_start = start & ~(page_size - 1U);
+        const auto page_end = (end + page_size - 1U) & ~(page_size - 1U);
+        Require(page_start >= memory::LowAddressGuard().EndExclusive(),
+                "PT_LOAD overlaps the low address guard");
+        for (auto page = page_start; page < page_end; page += page_size) {
+            const auto key = static_cast<std::uint32_t>(page);
+            pages[key] = pages[key] | protection;
+            Require(!(HasProtection(pages[key], memory::PageProtection::write) &&
+                      HasProtection(pages[key], memory::PageProtection::execute)),
+                    "PT_LOAD page would require write and execute permission");
+        }
+    }
+    Require(!pages.empty(), "ELF has no non-empty PT_LOAD segments");
+
+    Elf32LoadPlan plan;
+    plan.load_bias = load_bias;
+    plan.entry = ResolveEntry(image, load_bias);
+    auto iterator = pages.begin();
+    auto region_start = static_cast<std::uint64_t>(iterator->first);
+    auto region_end = region_start + page_size;
+    auto protection = iterator->second;
+    ++iterator;
+    for (; iterator != pages.end(); ++iterator) {
+        if (iterator->first == region_end && iterator->second == protection) {
+            region_end += page_size;
+            continue;
+        }
+        plan.regions.push_back({
+            memory::GuestRange(memory::GuestAddress{
+                                   static_cast<std::uint32_t>(region_start)},
+                               region_end - region_start),
+            protection});
+        region_start = iterator->first;
+        region_end = region_start + page_size;
+        protection = iterator->second;
+    }
+    plan.regions.push_back({
+        memory::GuestRange(
+            memory::GuestAddress{static_cast<std::uint32_t>(region_start)},
+            region_end - region_start),
+        protection});
+    return plan;
+}
+
+Elf32LoadPlan LoadElf32Arm(const std::span<const std::byte> bytes,
+                           const Elf32Image& image,
+                           const memory::GuestAddress load_bias,
+                           memory::AddressSpace& address_space) {
+    const auto page_size = address_space.PageSize();
+    auto plan = BuildElf32LoadPlan(image, load_bias, page_size);
+    std::vector<memory::GuestRange> mapped;
+    try {
+        for (const auto& region : plan.regions) {
+            address_space.Map(region.range, memory::PageProtection::read |
+                                               memory::PageProtection::write);
+            mapped.push_back(region.range);
+        }
+        for (const auto& segment : image.program_headers) {
+            if (segment.type != kElfProgramLoad || segment.memory_size == 0) continue;
+            const auto destination_value = BiasedAddress(
+                segment.virtual_address, load_bias, segment.memory_size,
+                "PT_LOAD bias wraps the address space");
+            auto destination = memory::GuestAddress{
+                static_cast<std::uint32_t>(destination_value)};
+            if (segment.file_size != 0) {
+                RequireRange(segment.file_offset, segment.file_size, bytes.size(),
+                             "PT_LOAD file range is outside the image");
+                address_space.Write(
+                    destination,
+                    bytes.subspan(segment.file_offset, segment.file_size));
+            }
+            const auto zero_size = segment.memory_size - segment.file_size;
+            if (zero_size != 0) {
+                WriteZeros(address_space, destination.Add(segment.file_size),
+                           zero_size, page_size);
+            }
+        }
+        for (const auto& region : plan.regions) {
+            address_space.Protect(region.range, region.final_protection);
+        }
+    } catch (...) {
+        for (auto iterator = mapped.rbegin(); iterator != mapped.rend(); ++iterator) {
+            address_space.Unmap(*iterator);
+        }
+        throw;
+    }
+    return plan;
 }
 
 }  // namespace ogplay::loader

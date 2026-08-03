@@ -95,7 +95,7 @@ public:
         void InterpreterFallback(const Dynarmic::A32::VAddr pc,
                                  std::size_t) override {
             RecordStop({RunStopReason::undefined_instruction,
-                        memory::GuestAddress{pc}});
+                        memory::GuestAddress{pc}, 0, 0, std::nullopt});
         }
 
         void CallSVC(const std::uint32_t immediate) override {
@@ -106,7 +106,7 @@ public:
                                            : 0xef000000U | (immediate & 0x00ffffffU);
             RecordStop({RunStopReason::supervisor_call,
                         memory::GuestAddress{next_pc - instruction_size},
-                        instruction, immediate});
+                        instruction, immediate, std::nullopt});
         }
 
         void ExceptionRaised(const Dynarmic::A32::VAddr pc,
@@ -114,7 +114,8 @@ public:
             const auto reason = exception == Dynarmic::A32::Exception::Breakpoint
                                     ? RunStopReason::breakpoint
                                     : RunStopReason::undefined_instruction;
-            RecordStop({reason, memory::GuestAddress{pc}});
+            RecordStop(
+                {reason, memory::GuestAddress{pc}, 0, 0, std::nullopt});
         }
 
         void AddTicks(const std::uint64_t ticks) override {
@@ -211,9 +212,11 @@ RunResult DynarmicCpu::Run(const std::uint64_t tick_budget) {
     const auto pc = memory::GuestAddress{impl_->jit.Regs()[15]};
     if (halt_requested_.exchange(false)) {
         impl_->jit.ClearHalt(kExternalHalt);
-        return {0, RunStopReason::halt_requested, pc};
+        return {0, RunStopReason::halt_requested, pc, 0, 0, std::nullopt};
     }
-    if (tick_budget == 0) return {0, RunStopReason::budget_exhausted, pc};
+    if (tick_budget == 0) {
+        return {0, RunStopReason::budget_exhausted, pc, 0, 0, std::nullopt};
+    }
 
     impl_->callbacks.Begin(tick_budget, impl_->thread_id);
     impl_->jit.ClearHalt(kCallbackHalt | kExternalHalt);
@@ -229,10 +232,12 @@ RunResult DynarmicCpu::Run(const std::uint64_t tick_budget) {
     if (Dynarmic::Has(halt_reason, kExternalHalt) ||
         halt_requested_.exchange(false)) {
         return {ticks, RunStopReason::halt_requested,
-                memory::GuestAddress{impl_->jit.Regs()[15]}};
+                memory::GuestAddress{impl_->jit.Regs()[15]}, 0, 0,
+                std::nullopt};
     }
     return {ticks, RunStopReason::budget_exhausted,
-            memory::GuestAddress{impl_->jit.Regs()[15]}};
+            memory::GuestAddress{impl_->jit.Regs()[15]}, 0, 0,
+            std::nullopt};
 }
 
 A32State DynarmicCpu::GetState() const {

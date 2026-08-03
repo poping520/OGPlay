@@ -123,7 +123,8 @@ RunResult InterpreterCpu::Run(const std::uint64_t tick_budget) {
         const auto pc_value = state_.Register(CoreRegister::pc);
         const memory::GuestAddress pc{pc_value};
         if (halt_requested_.exchange(false)) {
-            return {consumed, RunStopReason::halt_requested, pc};
+            return {consumed, RunStopReason::halt_requested, pc, 0, 0,
+                    std::nullopt};
         }
 
         std::uint32_t instruction = 0;
@@ -161,8 +162,12 @@ RunResult InterpreterCpu::Run(const std::uint64_t tick_budget) {
                              fault.ThreadId()}};
         }
     }
-    return {consumed, RunStopReason::budget_exhausted,
-            memory::GuestAddress{state_.Register(CoreRegister::pc)}};
+    return {consumed,
+            RunStopReason::budget_exhausted,
+            memory::GuestAddress{state_.Register(CoreRegister::pc)},
+            0,
+            0,
+            std::nullopt};
 }
 
 A32State InterpreterCpu::GetState() const { return state_; }

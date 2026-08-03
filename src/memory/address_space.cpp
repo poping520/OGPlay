@@ -121,6 +121,16 @@ public:
                     destination.size());
     }
 
+    void Fetch(const GuestAddress address, const std::span<std::byte> destination,
+               const std::uint64_t thread_id) const {
+        if (destination.empty()) return;
+        const GuestRange range(address, destination.size());
+        std::scoped_lock lock(mutex_);
+        ValidateLocked(range, AccessType::execute, thread_id);
+        std::memcpy(destination.data(), reservation_->Base() + address.Value(),
+                    destination.size());
+    }
+
     void Write(const GuestAddress address, const std::span<const std::byte> source,
                const std::uint64_t thread_id) {
         if (source.empty()) return;
@@ -296,6 +306,11 @@ void AddressSpace::Read(const GuestAddress address,
                         const std::span<std::byte> destination,
                         const std::uint64_t thread_id) const {
     impl_->Read(address, destination, thread_id);
+}
+void AddressSpace::Fetch(const GuestAddress address,
+                         const std::span<std::byte> destination,
+                         const std::uint64_t thread_id) const {
+    impl_->Fetch(address, destination, thread_id);
 }
 void AddressSpace::Write(const GuestAddress address,
                          const std::span<const std::byte> source,

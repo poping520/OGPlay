@@ -6,7 +6,7 @@
 
 namespace ogplay::memory {
 
-enum class BusAccessType : std::uint8_t { read, write };
+enum class BusAccessType : std::uint8_t { read, write, execute };
 
 struct BusAccess {
     GuestAddress address;
@@ -32,6 +32,10 @@ public:
                                                std::uint64_t thread_id = 0) = 0;
     [[nodiscard]] virtual std::uint64_t Read64(GuestAddress address,
                                                std::uint64_t thread_id = 0) = 0;
+    [[nodiscard]] virtual std::uint16_t Fetch16(GuestAddress address,
+                                                std::uint64_t thread_id = 0) = 0;
+    [[nodiscard]] virtual std::uint32_t Fetch32(GuestAddress address,
+                                                std::uint64_t thread_id = 0) = 0;
     virtual void Write8(GuestAddress address, std::uint8_t value,
                         std::uint64_t thread_id = 0) = 0;
     virtual void Write16(GuestAddress address, std::uint16_t value,
@@ -57,6 +61,10 @@ public:
                                        std::uint64_t thread_id = 0) override;
     [[nodiscard]] std::uint64_t Read64(GuestAddress address,
                                        std::uint64_t thread_id = 0) override;
+    [[nodiscard]] std::uint16_t Fetch16(GuestAddress address,
+                                        std::uint64_t thread_id = 0) override;
+    [[nodiscard]] std::uint32_t Fetch32(GuestAddress address,
+                                        std::uint64_t thread_id = 0) override;
     void Write8(GuestAddress address, std::uint8_t value,
                 std::uint64_t thread_id = 0) override;
     void Write16(GuestAddress address, std::uint16_t value,

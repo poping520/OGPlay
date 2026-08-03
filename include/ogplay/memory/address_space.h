@@ -76,6 +76,8 @@ public:
                   std::uint64_t thread_id = 0) const;
     void Read(GuestAddress address, std::span<std::byte> destination,
               std::uint64_t thread_id = 0) const;
+    void Fetch(GuestAddress address, std::span<std::byte> destination,
+               std::uint64_t thread_id = 0) const;
     void Write(GuestAddress address, std::span<const std::byte> source,
                std::uint64_t thread_id = 0);
     [[nodiscard]] MemorySnapshot CaptureSnapshot() const;

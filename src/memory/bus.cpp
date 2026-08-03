@@ -45,6 +45,20 @@ template <typename UInt>
 }
 
 template <typename UInt>
+[[nodiscard]] UInt FetchValue(AddressSpace& address_space,
+                              MemoryAccessObserver* observer,
+                              const GuestAddress address,
+                              const std::uint64_t thread_id) {
+    std::array<std::byte, sizeof(UInt)> bytes{};
+    address_space.Fetch(address, bytes, thread_id);
+    if (observer != nullptr) {
+        observer->OnMemoryAccess({address, static_cast<std::uint32_t>(sizeof(UInt)),
+                                  BusAccessType::execute, thread_id});
+    }
+    return DecodeLittleEndian<UInt>(bytes);
+}
+
+template <typename UInt>
 void WriteValue(AddressSpace& address_space, MemoryAccessObserver* observer,
                 const GuestAddress address, const UInt value,
                 const std::uint64_t thread_id) {
@@ -77,6 +91,14 @@ std::uint32_t CheckedMemoryBus::Read32(const GuestAddress address,
 std::uint64_t CheckedMemoryBus::Read64(const GuestAddress address,
                                        const std::uint64_t thread_id) {
     return ReadValue<std::uint64_t>(address_space_, observer_, address, thread_id);
+}
+std::uint16_t CheckedMemoryBus::Fetch16(const GuestAddress address,
+                                        const std::uint64_t thread_id) {
+    return FetchValue<std::uint16_t>(address_space_, observer_, address, thread_id);
+}
+std::uint32_t CheckedMemoryBus::Fetch32(const GuestAddress address,
+                                        const std::uint64_t thread_id) {
+    return FetchValue<std::uint32_t>(address_space_, observer_, address, thread_id);
 }
 void CheckedMemoryBus::Write8(const GuestAddress address, const std::uint8_t value,
                               const std::uint64_t thread_id) {

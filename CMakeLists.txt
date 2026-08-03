@@ -21,6 +21,7 @@ add_library(ogplay_core
     src/core/frame_compare.cpp
     src/core/logger.cpp
     src/core/software_surface.cpp
+    src/hal/clock.cpp
 )
 add_library(OGPlay::Core ALIAS ogplay_core)
 target_include_directories(ogplay_core
@@ -69,6 +70,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp
         tests/golden/golden_frame_tests.cpp
+        tests/hal/clock_tests.cpp
         tests/session/session_tests.cpp
     )
     target_link_libraries(ogplay_tests PRIVATE OGPlay::Agent doctest::doctest)

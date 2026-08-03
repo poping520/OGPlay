@@ -35,6 +35,15 @@ add_library(ogplay_hal
     src/hal/clock.cpp
     src/hal/sdl_window_input.cpp
 )
+if(WIN32)
+    target_sources(ogplay_hal PRIVATE src/hal/windows/virtual_memory.cpp)
+elseif(APPLE)
+    target_sources(ogplay_hal PRIVATE src/hal/macos/virtual_memory.cpp)
+elseif(UNIX)
+    target_sources(ogplay_hal PRIVATE src/hal/linux/virtual_memory.cpp)
+else()
+    message(FATAL_ERROR "OGPlay has no virtual memory HAL for this host platform")
+endif()
 add_library(OGPlay::Hal ALIAS ogplay_hal)
 target_include_directories(ogplay_hal PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -88,6 +97,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/golden/golden_frame_tests.cpp
         tests/hal/clock_tests.cpp
         tests/hal/window_input_tests.cpp
+        tests/hal/virtual_memory_tests.cpp
         tests/memory/address_tests.cpp
         tests/session/session_tests.cpp
     )

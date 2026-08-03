@@ -14,6 +14,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
@@ -36,8 +38,11 @@ jobs:
       - name: Test (Windows)
         if: runner.os == 'Windows'
         run: ctest --test-dir build/ci -C RelWithDebInfo --output-on-failure
+        env:
+          OGPLAY_CAPABILITY_BASE: HEAD^
 
       - name: Test (Linux/macOS)
         if: runner.os != 'Windows'
         run: ctest --preset ci
-
+        env:
+          OGPLAY_CAPABILITY_BASE: HEAD^

@@ -80,6 +80,7 @@ CapabilityLedger::CapabilityLedger(CapabilityLedger&& other) noexcept {
     std::scoped_lock lock(other.mutex_);
     capabilities_ = std::move(other.capabilities_);
     hits_ = std::move(other.hits_);
+    null_calls_ = std::move(other.null_calls_);
 }
 
 CapabilityLedger& CapabilityLedger::operator=(CapabilityLedger&& other) noexcept {
@@ -87,6 +88,7 @@ CapabilityLedger& CapabilityLedger::operator=(CapabilityLedger&& other) noexcept
         std::scoped_lock lock(mutex_, other.mutex_);
         capabilities_ = std::move(other.capabilities_);
         hits_ = std::move(other.hits_);
+        null_calls_ = std::move(other.null_calls_);
     }
     return *this;
 }
@@ -144,6 +146,30 @@ std::vector<UnimplementedHit> CapabilityLedger::Unimplemented() const {
     return result;
 }
 
+void CapabilityLedger::RecordNullCall(const std::uint64_t link_register,
+                                      const std::string_view symbol) {
+    std::scoped_lock lock(mutex_);
+    const auto key = std::make_pair(link_register, std::string(symbol));
+    auto [item, inserted] = null_calls_.try_emplace(key);
+    auto& hit = item->second;
+    if (inserted) {
+        hit.link_register = link_register;
+        hit.symbol = symbol;
+    }
+    ++hit.count;
+}
+
+std::vector<NullCallHit> CapabilityLedger::NullCalls() const {
+    std::scoped_lock lock(mutex_);
+    std::vector<NullCallHit> result;
+    result.reserve(null_calls_.size());
+    for (const auto& [key, hit] : null_calls_) {
+        static_cast<void>(key);
+        result.push_back(hit);
+    }
+    return result;
+}
+
 std::string_view ToString(const CapabilityStatus status) noexcept {
     switch (status) {
     case CapabilityStatus::unimplemented: return "unimplemented";
@@ -163,4 +189,3 @@ CapabilityStatus ParseCapabilityStatus(const std::string_view value) {
 }
 
 }  // namespace ogplay::core
-

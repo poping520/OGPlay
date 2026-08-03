@@ -1,10 +1,10 @@
 # 当前状态
 
-更新：2026-08-03 · M0 初始化会话
+更新：2026-08-03 · M0 完成会话
 
 ## 进行中
 
-- M0 工程地基尚未全部完成；本次要求的“可编译项目框架”已经完成并通过验证。
+- M0 本地实现与验收完成；等待首次远端 hosted CI 确认三平台 job 后进入 M1 功能开发。
 
 ## 最近完成
 
@@ -18,18 +18,25 @@
 - Windows/MSVC Debug 与 Release（warnings-as-errors）编译成功；CTest 13/13 通过。
 - 架构门禁通过：`src/` 无裸输出、无游戏特判、无超过 800 行的源文件。
 - [WU-0008] 文档迁移路径已同步，本地 Git 仓库初始化并排除 `docs/demo/`。
+- [WU-0006] 完成日志 sink、限流、帧标记、符号化 provider 与诊断包。
+- [WU-0007] 完成 FixedStep Clock 与确定性空会话。
+- [WU-0009] 完成 stdio JSON-RPC 2.0 Agent 闭环。
+- [WU-0010] 完成无 GPU SoftwareSurface 黄金帧后端。
+- [WU-0011] 完成能力账本相对 Git 基线的单调性门禁。
+- [WU-0012/0013] 完成 null-call 账本及 `sym`/`hle` 主动查询。
+- Windows/MSVC Release（`/WX`）CTest 27/27；Cygwin GCC Release（`-Werror`）CTest 27/27。
 
 ## 下一步（按优先级）
 
-1. [WU-0006] 完成日志 sink、限流、地址符号化抽象与崩溃转储基础设施。
-2. [WU-0007] 定义 Session/Clock，并完成 stdio JSON-RPC 确定性空会话闭环。
-3. 增加能力账本“状态只能前进”的 CI 比较门禁。
-4. 完成 M0 全部出口条件后才进入 M1；不得提前实现游戏运行功能。
+1. 建立远端后确认 Windows/Ubuntu/macOS hosted CI 全绿；失败则重新打开 M0。
+2. 为 M1 拆分首个 Work Unit：HAL Clock 实时后端与平台目录骨架。
+3. 按 M1 顺序实现 memory → CPU → 真线程，不得提前进入 Bionic/syscall。
 
 ## 已知问题
 
 - ANGLE/SDL3/Qt/Dynarmic 尚未引入；它们分别属于后续 M1/M4/M6。
-- 黄金帧目前只验证无 GPU 的确定性图像比较管线，不包含 ANGLE 软件后端。
-- Agent Control 只提供 M0 的进程内结构化请求入口；JSON-RPC/TCP/UDS/MCP 传输后续补齐。
+- 黄金帧使用无 GPU SoftwareSurface，不包含 ANGLE/SwiftShader；后者属于 M4。
+- Agent Control 已有 stdio JSON-RPC；TCP/UDS/MCP adapter 后续按需要补齐。
+- 当前只有本地 Git 仓库，三平台 hosted CI 尚无可执行远端，因此不能宣称远端 job 已绿。
 - doctest 2.4.11 在 CMake 4.x 配置期会发出上游旧 policy 的 deprecation warning，
   不影响 warnings-as-errors 编译和测试。

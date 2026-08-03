@@ -97,6 +97,9 @@
 - [WU-0060] 完成 ELF32 `PT_TLS` 模板事实；初始化字节、BSS 大小、对齐、唯一性、
   `PT_LOAD` 覆盖和地址回绕均进入受检契约。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 110/110 通过。
+- [WU-0061] 完成 ELF32 GNU 符号版本事实；dynsym 的 local/global/definition/requirement、
+  hidden bit、版本名、依赖库及所有链表边界均可校验。
+- macOS AppleClang `dev` 预设构建成功，全量 CTest 112/112 通过。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 108/108 通过。
 
 ## 下一步（按优先级）

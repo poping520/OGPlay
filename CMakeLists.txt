@@ -97,6 +97,7 @@ add_library(ogplay_loader
     src/loader/lifecycle.cpp
     src/loader/link_namespace.cpp
     src/loader/relocation.cpp
+    src/loader/symbol_version.cpp
     src/loader/tls.cpp
 )
 add_library(OGPlay::Loader ALIAS ogplay_loader)
@@ -177,6 +178,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/loader/lifecycle_tests.cpp
         tests/loader/link_namespace_tests.cpp
         tests/loader/relocation_tests.cpp
+        tests/loader/symbol_version_tests.cpp
         tests/loader/tls_tests.cpp
         tests/cpu/state_tests.cpp
         tests/cpu/futex_tests.cpp

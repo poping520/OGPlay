@@ -10,7 +10,8 @@
 - `Cpu::Run(ticks) -> RunResult`：以统一预算运行，返回停止原因和已消费 tick。
 - `CpuSnapshot`：带显式版本的可复制 CPU 状态。
 - `CpuFault`：将 memory fault 的地址、访问类型、原因和线程号保留到 CPU 边界。
-- M1 后续实现解释器与 Dynarmic 两个后端。
+- `InterpreterCpu`：确定性逐指令后端；当前覆盖 A32/T32 标量算术、条件与控制流基础集。
+- M1 后续扩展解释器完整指令族并接入 Dynarmic 后端。
 
 ## 不变量
 
@@ -18,6 +19,8 @@
 - 内存失败产生 Fault，不得返回零；CPU 不直接调用 HLE。
 - CPU 后端只通过 `MemoryBus` 访存；寄存器状态不得包含宿主指针。
 - `Run` 的 tick 预算和消费量必须确定且可测试。
+- 未识别指令停在原 PC 并返回 `undefined_instruction`，禁止当作 NOP。
+- SVC/BKPT 返回陷阱 PC，同时 CPU 状态 PC 指向下一条指令。
 
 ## 禁止
 

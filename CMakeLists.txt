@@ -69,7 +69,10 @@ target_include_directories(ogplay_memory PUBLIC
 )
 ogplay_set_project_warnings(ogplay_memory)
 
-add_library(ogplay_cpu src/cpu/state.cpp)
+add_library(ogplay_cpu
+    src/cpu/interpreter.cpp
+    src/cpu/state.cpp
+)
 add_library(OGPlay::Cpu ALIAS ogplay_cpu)
 target_link_libraries(ogplay_cpu PUBLIC OGPlay::Memory)
 target_include_directories(ogplay_cpu PUBLIC
@@ -124,6 +127,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/bus_tests.cpp
         tests/memory/snapshot_tests.cpp
         tests/cpu/state_tests.cpp
+        tests/cpu/interpreter_tests.cpp
         tests/session/session_tests.cpp
     )
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})

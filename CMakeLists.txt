@@ -92,6 +92,15 @@ else()
 endif()
 ogplay_set_project_warnings(ogplay_cpu)
 
+add_library(ogplay_loader src/loader/elf.cpp)
+add_library(OGPlay::Loader ALIAS ogplay_loader)
+target_link_libraries(ogplay_loader PUBLIC OGPlay::Memory)
+target_include_directories(ogplay_loader PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+ogplay_set_project_warnings(ogplay_loader)
+
 add_library(ogplay_session src/session/session.cpp)
 add_library(OGPlay::Session ALIAS ogplay_session)
 target_link_libraries(ogplay_session PUBLIC OGPlay::Core OGPlay::Hal OGPlay::Memory)
@@ -112,7 +121,7 @@ target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
 target_compile_definitions(ogplay PRIVATE OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 ogplay_set_project_warnings(ogplay)
 
-install(TARGETS ogplay ogplay_core ogplay_hal ogplay_memory ogplay_cpu ogplay_agent ogplay_session
+install(TARGETS ogplay ogplay_core ogplay_hal ogplay_memory ogplay_cpu ogplay_loader ogplay_agent ogplay_session
     EXPORT OGPlayTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -140,6 +149,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/address_space_tests.cpp
         tests/memory/bus_tests.cpp
         tests/memory/snapshot_tests.cpp
+        tests/loader/elf_tests.cpp
         tests/cpu/state_tests.cpp
         tests/cpu/futex_tests.cpp
         tests/cpu/interpreter_tests.cpp
@@ -151,7 +161,9 @@ if(OGPLAY_BUILD_TESTS)
         list(APPEND OGPLAY_TEST_SOURCES tests/cpu/dynarmic_tests.cpp)
     endif()
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
-    target_link_libraries(ogplay_tests PRIVATE OGPlay::Agent OGPlay::Cpu doctest::doctest)
+    target_link_libraries(ogplay_tests PRIVATE
+        OGPlay::Agent OGPlay::Cpu OGPlay::Loader doctest::doctest
+    )
     target_include_directories(ogplay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include
     )

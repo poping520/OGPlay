@@ -1,0 +1,166 @@
+#include "ogplay/loader/elf.h"
+
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <string>
+#include <string_view>
+
+namespace ogplay::loader {
+namespace {
+
+inline constexpr std::size_t kElf32HeaderSize = 52;
+inline constexpr std::size_t kElf32ProgramHeaderSize = 32;
+inline constexpr std::size_t kElf32DynamicEntrySize = 8;
+inline constexpr std::uint16_t kElfMachineArm = 40;
+inline constexpr std::uint32_t kElfVersionCurrent = 1;
+
+void Require(const bool condition, const std::string_view message) {
+    if (!condition) throw ElfError(std::string(message));
+}
+
+void RequireRange(const std::size_t offset, const std::uint64_t size,
+                  const std::size_t total, const std::string_view message) {
+    Require(size <= total && offset <= total - static_cast<std::size_t>(size),
+            message);
+}
+
+[[nodiscard]] std::uint16_t Read16(const std::span<const std::byte> bytes,
+                                   const std::size_t offset) {
+    RequireRange(offset, 2, bytes.size(), "truncated ELF field");
+    return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
+           static_cast<std::uint16_t>(
+               std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8U;
+}
+
+[[nodiscard]] std::uint32_t Read32(const std::span<const std::byte> bytes,
+                                   const std::size_t offset) {
+    RequireRange(offset, 4, bytes.size(), "truncated ELF field");
+    std::uint32_t result{};
+    for (std::size_t index = 0; index < 4; ++index) {
+        result |= static_cast<std::uint32_t>(
+                      std::to_integer<std::uint8_t>(bytes[offset + index]))
+                  << static_cast<unsigned>(index * 8U);
+    }
+    return result;
+}
+
+[[nodiscard]] Elf32ProgramHeader ParseProgramHeader(
+    const std::span<const std::byte> bytes, const std::size_t offset) {
+    const auto type = Read32(bytes, offset);
+    const auto file_offset = Read32(bytes, offset + 4);
+    const auto virtual_address = Read32(bytes, offset + 8);
+    const auto file_size = Read32(bytes, offset + 16);
+    const auto memory_size = Read32(bytes, offset + 20);
+    const auto flags = Read32(bytes, offset + 24);
+    const auto alignment = Read32(bytes, offset + 28);
+
+    if (type == kElfProgramLoad) {
+        Require(file_size <= memory_size,
+                "PT_LOAD file size exceeds memory size");
+        RequireRange(file_offset, file_size, bytes.size(),
+                     "PT_LOAD file range is outside the image");
+        const auto guest_end = static_cast<std::uint64_t>(virtual_address) +
+                               static_cast<std::uint64_t>(memory_size);
+        Require(guest_end <= (UINT64_C(1) << 32U),
+                "PT_LOAD guest range wraps the address space");
+        Require(alignment == 0 || alignment == 1 || std::has_single_bit(alignment),
+                "PT_LOAD alignment is not a power of two");
+        if (alignment > 1) {
+            Require((file_offset % alignment) == (virtual_address % alignment),
+                    "PT_LOAD file and virtual addresses are incongruent");
+        }
+    }
+    return {type,
+            file_offset,
+            memory::GuestAddress{virtual_address},
+            file_size,
+            memory_size,
+            flags,
+            alignment};
+}
+
+[[nodiscard]] std::vector<Elf32DynamicEntry> ParseDynamic(
+    const std::span<const std::byte> bytes,
+    const Elf32ProgramHeader& dynamic) {
+    RequireRange(dynamic.file_offset, dynamic.file_size, bytes.size(),
+                 "PT_DYNAMIC file range is outside the image");
+    Require(dynamic.file_size >= kElf32DynamicEntrySize &&
+                dynamic.file_size % kElf32DynamicEntrySize == 0,
+            "PT_DYNAMIC has an invalid size");
+    std::vector<Elf32DynamicEntry> result;
+    const auto end = static_cast<std::size_t>(dynamic.file_offset) +
+                     dynamic.file_size;
+    for (auto offset = static_cast<std::size_t>(dynamic.file_offset);
+         offset < end; offset += kElf32DynamicEntrySize) {
+        const auto raw_tag = Read32(bytes, offset);
+        const auto tag = std::bit_cast<std::int32_t>(raw_tag);
+        if (tag == kElfDynamicNull) return result;
+        result.push_back({tag, Read32(bytes, offset + 4)});
+    }
+    throw ElfError("PT_DYNAMIC is not terminated by DT_NULL");
+}
+
+}  // namespace
+
+Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
+    RequireRange(0, kElf32HeaderSize, bytes.size(), "ELF header is truncated");
+    Require(std::to_integer<std::uint8_t>(bytes[0]) == 0x7f &&
+                std::to_integer<std::uint8_t>(bytes[1]) == 'E' &&
+                std::to_integer<std::uint8_t>(bytes[2]) == 'L' &&
+                std::to_integer<std::uint8_t>(bytes[3]) == 'F',
+            "ELF magic is invalid");
+    Require(std::to_integer<std::uint8_t>(bytes[4]) == 1,
+            "ELF is not 32-bit");
+    Require(std::to_integer<std::uint8_t>(bytes[5]) == 1,
+            "ELF is not little-endian");
+    Require(std::to_integer<std::uint8_t>(bytes[6]) == kElfVersionCurrent,
+            "ELF identification version is invalid");
+
+    const auto raw_type = Read16(bytes, 16);
+    Require(raw_type == static_cast<std::uint16_t>(Elf32ImageType::executable) ||
+                raw_type == static_cast<std::uint16_t>(Elf32ImageType::shared_object),
+            "ELF image type is unsupported");
+    Require(Read16(bytes, 18) == kElfMachineArm, "ELF machine is not ARM");
+    Require(Read32(bytes, 20) == kElfVersionCurrent,
+            "ELF header version is invalid");
+    Require(Read16(bytes, 40) == kElf32HeaderSize,
+            "ELF header size is invalid");
+
+    const auto program_offset = Read32(bytes, 28);
+    const auto program_entry_size = Read16(bytes, 42);
+    const auto program_count = Read16(bytes, 44);
+    Require(program_count == 0 || program_entry_size == kElf32ProgramHeaderSize,
+            "ELF program header size is invalid");
+    const auto table_size = static_cast<std::uint64_t>(program_entry_size) *
+                            program_count;
+    RequireRange(program_offset, table_size, bytes.size(),
+                 "ELF program header table is outside the image");
+
+    Elf32Image image;
+    image.type = static_cast<Elf32ImageType>(raw_type);
+    image.entry = memory::GuestAddress{Read32(bytes, 24)};
+    image.arm_flags = Read32(bytes, 36);
+    image.program_headers.reserve(program_count);
+    std::optional<std::size_t> dynamic_index;
+    for (std::size_t index = 0; index < program_count; ++index) {
+        const auto offset = static_cast<std::size_t>(program_offset) +
+                            index * kElf32ProgramHeaderSize;
+        auto header = ParseProgramHeader(bytes, offset);
+        if (header.type == kElfProgramDynamic) {
+            Require(!dynamic_index.has_value(),
+                    "ELF contains multiple PT_DYNAMIC segments");
+            dynamic_index = index;
+        }
+        image.program_headers.push_back(header);
+    }
+    if (dynamic_index.has_value()) {
+        image.dynamic_entries =
+            ParseDynamic(bytes, image.program_headers[*dynamic_index]);
+    }
+    return image;
+}
+
+}  // namespace ogplay::loader

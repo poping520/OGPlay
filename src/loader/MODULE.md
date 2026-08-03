@@ -6,11 +6,15 @@
 
 ## 公共 API
 
-M2/M3 定义包识别、ELF 映射与链接命名空间接口。
+- `ParseElf32Arm(bytes)`：从不可信字节解析 little-endian ELF32/ARM ET_EXEC/ET_DYN，
+  返回入口、ARM flags、程序头和未知 tag 不丢失的动态项事实模型。
+- 后续 Work Unit 在该事实模型上增加映射、符号、重定位和链接命名空间，不重复解析字节。
 
 ## 不变量
 
 - 输入不可信；所有偏移、长度和整数运算必须校验。
+- `PT_LOAD` 必须满足 file size ≤ memory size、guest 地址不回绕、文件范围有效且对齐同余。
+- `PT_DYNAMIC` 最多一个、文件范围完整、条目尺寸正确并由 `DT_NULL` 终止。
 - `DT_NEEDED`、TLS、exidx、符号版本、init/fini 使用同一链接模型。
 - 输出只描述事实，不猜测具体游戏身份。
 
@@ -22,4 +26,3 @@ M2/M3 定义包识别、ELF 映射与链接命名空间接口。
 ## 测试
 
 `tests/loader/` 的单元与畸形输入契约测试。
-

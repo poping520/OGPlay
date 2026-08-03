@@ -120,6 +120,11 @@ status = "complete"
 test = "tests/cpu/m1_guest_sample_tests.cpp"
 note = "M1 裸 A32/Thumb mailbox 样本在三平台通过解释器/JIT 对拍、标准化输入、确定性写回及 CPU+内存快照复跑"
 
+[loader.elf32_arm]
+status = "partial"
+test = "tests/loader/elf_tests.cpp"
+note = "M2 已完成不可信 little-endian ELF32/ARM 头、程序段和动态项事实解析；映射、符号与重定位待后续 Work Unit"
+
 [runtime.syscall]
 status = "unimplemented"
 test = ""

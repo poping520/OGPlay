@@ -16,6 +16,8 @@
   binding、type、visibility 和 section index；`IsExported` 只接受已定义且外部可见的全局/弱符号。
 - `ReadElf32Relocations`：同时解析普通与 PLT ELF32 ARM REL 表，保留目标、符号索引、
   原始类型与表类别；RELA、元数据残缺、表重叠及不安全目标均明确失败。
+- `ApplyElf32ArmRelocations`：原子应用 `NONE/ABS32/REL32/GLOB_DAT/JUMP_SLOT/RELATIVE`，
+  写入期间将装载区域切为 RW，成功或失败后均恢复最终 W^X 权限。
 - 后续 Work Unit 在该事实模型上增加映射、符号、重定位和链接命名空间，不重复解析字节。
 
 ## 不变量

@@ -72,10 +72,12 @@
   三平台 warnings-as-errors CTest 86/86。
 - [WU-0048] 完成普通与 PLT ELF32 ARM REL 表解析；目标、符号索引、原始类型及表类别
   均保真，RELA、表重叠与越界输入明确失败；Windows/MSVC CTest 88/88。
+- [WU-0049] 完成常用 ARM32 REL 原子应用；预解析符号注入、load bias、回滚和重定位期
+  RW/最终 W^X 权限恢复均纳入契约测试。
 
 ## 下一步（按优先级）
 
-1. 构造多模块链接命名空间并应用 ARM `RELATIVE`/`ABS32`/`GLOB_DAT`/`JUMP_SLOT` 重定位。
+1. 构造多模块链接命名空间，按依赖和 ELF 可见性预解析强/弱符号。
 2. 冻结 Bionic API 19/22/23 profile、符号拦截与 syscall 分层契约。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 

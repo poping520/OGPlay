@@ -2,8 +2,8 @@
 
 ## 职责
 
-提供不含游戏逻辑的 M1 出口 APK，用最小 NativeActivity 闭环验证 guest CPU、生命周期、
-EGL/GLES 2.0 present 和输入。
+提供不含游戏逻辑的 M4 累积集成出口 APK，用最小 NativeActivity 闭环验证 ELF/Bionic、
+guest CPU、生命周期、EGL/GLES 2.0 present 和输入。
 
 ## 公共边界
 

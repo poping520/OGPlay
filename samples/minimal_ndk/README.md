@@ -1,6 +1,8 @@
 # OGPlay 最小 NDK 样例
 
-这是 M1 出口测试使用的通用 `NativeActivity` APK，不依赖 Java/Kotlin 代码或第三方库。
+这是 M4 累积集成出口测试使用的通用 `NativeActivity` APK，不依赖 Java/Kotlin 代码或
+第三方库。它不是 M1 出口：运行它需要 M2 的 ELF/Bionic、M3 的生命周期边界和 M4 的
+EGL/GLES 能力。
 它以 GLES 2.0 绘制纯色画面；触摸位置改变红/绿分量，任意按键改变整组颜色，因而可以同时验证：
 
 - `armeabi-v7a` ELF 装载与 A32/Thumb 执行；

@@ -7,6 +7,7 @@
 #include <latch>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <unordered_set>
@@ -19,7 +20,7 @@ class RecordingCpu final : public ogplay::cpu::Cpu {
 public:
     ogplay::cpu::RunResult Run(std::uint64_t) override {
         return {0, ogplay::cpu::RunStopReason::budget_exhausted,
-                ogplay::memory::GuestAddress{0}};
+                ogplay::memory::GuestAddress{0}, 0, 0, std::nullopt};
     }
     ogplay::cpu::A32State GetState() const override { return state_; }
     void SetState(const ogplay::cpu::A32State& state) override { state_ = state; }

@@ -26,6 +26,7 @@
 - 内存失败产生 Fault，不得返回零；CPU 不直接调用 HLE。
 - CPU 后端只通过 `MemoryBus` 访存；寄存器状态不得包含宿主指针。
 - `Run` 的 tick 预算和消费量必须确定且可测试。
+- 所有停止结果必须显式初始化指令、立即数和 fault 字段，跨编译器不得依赖聚合尾字段补零。
 - 未识别指令停在原 PC 并返回 `undefined_instruction`，禁止当作 NOP。
 - SVC/BKPT 返回陷阱 PC，同时 CPU 状态 PC 指向下一条指令。
 

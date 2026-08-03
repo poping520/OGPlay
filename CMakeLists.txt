@@ -105,7 +105,10 @@ target_include_directories(ogplay_loader PUBLIC
 )
 ogplay_set_project_warnings(ogplay_loader)
 
-add_library(ogplay_runtime src/runtime/syscall.cpp)
+add_library(ogplay_runtime
+    src/runtime/bionic_profile.cpp
+    src/runtime/syscall.cpp
+)
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC OGPlay::Core OGPlay::Memory)
 target_include_directories(ogplay_runtime PUBLIC
@@ -163,6 +166,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/bus_tests.cpp
         tests/memory/snapshot_tests.cpp
         tests/runtime/syscall_tests.cpp
+        tests/runtime/bionic_profile_tests.cpp
         tests/loader/elf_tests.cpp
         tests/loader/link_namespace_tests.cpp
         tests/loader/relocation_tests.cpp

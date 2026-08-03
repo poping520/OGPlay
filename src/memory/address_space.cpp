@@ -196,8 +196,13 @@ public:
             const auto first = static_cast<std::size_t>(offset / page_size_);
             const auto last = static_cast<std::size_t>(mapping.range.EndExclusive() /
                                                        page_size_);
-            std::fill(replacement_pages.begin() + first,
-                      replacement_pages.begin() + last, mapping.protection);
+            using PageDifference =
+                std::vector<PageProtection>::difference_type;
+            std::fill(replacement_pages.begin() +
+                          static_cast<PageDifference>(first),
+                      replacement_pages.begin() +
+                          static_cast<PageDifference>(last),
+                      mapping.protection);
         }
 
         std::scoped_lock lock(mutex_);

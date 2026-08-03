@@ -78,11 +78,13 @@
   local/weak/hidden/protected/absolute 符号地址解析。
 - [WU-0051] 建立 Android ARM EABI syscall 分组目录与分派基线；未知及未实现调用均记账
   并返回 `-ENOSYS`，身份类调用使用一致可注入 guest 身份。
+- [WU-0052] 冻结 API 19/22/23 Bionic profile，以及真实 guest 执行、选择性拦截、HLE
+  边界三路符号路由；其他 API 和空符号均明确失败。
 
 ## 下一步（按优先级）
 
-1. 冻结 Bionic API 19/22/23 profile、HLE 边界/选择性符号拦截契约。
-2. 按优先级实现 syscall 内存、线程、时间、文件组。
+1. 按优先级实现 syscall 内存、线程、时间、文件组。
+2. 将 Bionic profile 接入 ELF 链接命名空间和 HLE 边界符号 provider。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 
 ## 已知问题

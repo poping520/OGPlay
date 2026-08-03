@@ -58,10 +58,14 @@
 - [WU-0037/0038/0039] 修复 GCC/Clang 严格类型、聚合初始化和 macOS W^X 差异。
 - [WU-0040] M1 出口通过：Windows、Linux、macOS 均 warnings-as-errors 构建成功，
   全量 CTest 73/73；A32/Thumb 裸样本在解释器与 Dynarmic 结果一致。
+- [WU-0041] M2 Bionic 支持矩阵改为 API 19/22/23；开发期 ROM 库已导入 Git 忽略的
+  本地 oracle，并通过文件集、ELF 类型、体积和 SHA-256 校验。
+- [WU-0042] Linux/macOS 远端流程改为持久源码、子模块和构建目录的增量构建工具；
+  连接信息只在调用时注入，不写入仓库。
 
 ## 下一步（按优先级）
 
-1. 拆分 M2 首个 Work Unit：ELF32 ARM 装载与动态段解析，只建立 loader 边界。
+1. 实现 ELF32 ARM 可信解析与 `PT_LOAD`/动态段事实模型，不执行 guest 指令。
 2. 冻结 Bionic API 19/22/23 profile、符号拦截与 syscall 分层契约。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 

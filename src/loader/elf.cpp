@@ -17,6 +17,7 @@ namespace {
 inline constexpr std::size_t kElf32HeaderSize = 52;
 inline constexpr std::size_t kElf32ProgramHeaderSize = 32;
 inline constexpr std::size_t kElf32DynamicEntrySize = 8;
+inline constexpr std::size_t kElf32SymbolSize = 16;
 inline constexpr std::uint16_t kElfMachineArm = 40;
 inline constexpr std::uint32_t kElfVersionCurrent = 1;
 inline constexpr std::uint32_t kElfFlagExecute = 1;
@@ -129,21 +130,133 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
     const auto end = start + size;
     Require(end <= (UINT64_C(1) << 32U),
             "dynamic virtual range wraps the address space");
+    std::optional<std::size_t> result;
     for (const auto& segment : image.program_headers) {
         if (segment.type != kElfProgramLoad) continue;
         const auto segment_start =
             static_cast<std::uint64_t>(segment.virtual_address.Value());
         const auto segment_file_end = segment_start + segment.file_size;
         if (start < segment_start || end > segment_file_end) continue;
+        Require(!result.has_value(),
+                "dynamic virtual range has ambiguous PT_LOAD mappings");
         const auto delta = start - segment_start;
         const auto offset = static_cast<std::uint64_t>(segment.file_offset) + delta;
         Require(offset <= std::numeric_limits<std::size_t>::max(),
                 "dynamic file offset is not representable");
         RequireRange(static_cast<std::size_t>(offset), size, file_size,
                      "dynamic virtual range is outside the image");
-        return static_cast<std::size_t>(offset);
+        result = static_cast<std::size_t>(offset);
     }
-    throw ElfError("dynamic virtual range is not file-backed by PT_LOAD");
+    Require(result.has_value(),
+            "dynamic virtual range is not file-backed by PT_LOAD");
+    return *result;
+}
+
+struct FileBackedLocation final {
+    std::size_t offset{};
+    std::uint64_t available{};
+};
+
+[[nodiscard]] FileBackedLocation LocateFileBacked(
+    const Elf32Image& image, const memory::GuestAddress address,
+    const std::size_t file_size) {
+    const auto value = static_cast<std::uint64_t>(address.Value());
+    std::optional<FileBackedLocation> result;
+    for (const auto& segment : image.program_headers) {
+        if (segment.type != kElfProgramLoad) continue;
+        const auto start =
+            static_cast<std::uint64_t>(segment.virtual_address.Value());
+        const auto end = start + segment.file_size;
+        if (value < start || value >= end) continue;
+        Require(!result.has_value(),
+                "dynamic virtual address has ambiguous PT_LOAD mappings");
+        const auto delta = value - start;
+        const auto offset = static_cast<std::uint64_t>(segment.file_offset) + delta;
+        Require(offset <= std::numeric_limits<std::size_t>::max(),
+                "dynamic file offset is not representable");
+        RequireRange(static_cast<std::size_t>(offset), end - value, file_size,
+                     "file-backed PT_LOAD range is outside the image");
+        result = FileBackedLocation{static_cast<std::size_t>(offset), end - value};
+    }
+    Require(result.has_value(),
+            "dynamic virtual address is not file-backed by PT_LOAD");
+    return *result;
+}
+
+[[nodiscard]] memory::GuestAddress AddGuestAddress(
+    const memory::GuestAddress address, const std::uint64_t offset,
+    const std::string_view message) {
+    const auto value = static_cast<std::uint64_t>(address.Value()) + offset;
+    Require(value <= std::numeric_limits<std::uint32_t>::max(), message);
+    return memory::GuestAddress{static_cast<std::uint32_t>(value)};
+}
+
+[[nodiscard]] Elf32SysvHashInfo ReadSysvHash(
+    const std::span<const std::byte> bytes, const Elf32Image& image,
+    const memory::GuestAddress address) {
+    const auto header = VirtualFileOffset(image, address, 8, bytes.size());
+    const auto bucket_count = Read32(bytes, header);
+    const auto chain_count = Read32(bytes, header + 4);
+    Require(bucket_count != 0 && chain_count != 0,
+            "DT_HASH has an empty bucket or chain table");
+    const auto words = UINT64_C(2) + bucket_count + chain_count;
+    Require(words <= std::numeric_limits<std::uint32_t>::max() / 4U,
+            "DT_HASH size overflows");
+    static_cast<void>(VirtualFileOffset(
+        image, address, static_cast<std::uint32_t>(words * 4U), bytes.size()));
+    return {bucket_count, chain_count};
+}
+
+[[nodiscard]] Elf32GnuHashInfo ReadGnuHash(
+    const std::span<const std::byte> bytes, const Elf32Image& image,
+    const memory::GuestAddress address) {
+    const auto header = VirtualFileOffset(image, address, 16, bytes.size());
+    const auto bucket_count = Read32(bytes, header);
+    const auto symbol_offset = Read32(bytes, header + 4);
+    const auto bloom_size = Read32(bytes, header + 8);
+    const auto bloom_shift = Read32(bytes, header + 12);
+    Require(bucket_count != 0 && bloom_size != 0,
+            "DT_GNU_HASH has an empty bucket or bloom table");
+    const auto prefix_size = UINT64_C(16) +
+                             static_cast<std::uint64_t>(bloom_size) * 4U +
+                             static_cast<std::uint64_t>(bucket_count) * 4U;
+    Require(prefix_size <= std::numeric_limits<std::uint32_t>::max(),
+            "DT_GNU_HASH prefix size overflows");
+    const auto table = VirtualFileOffset(
+        image, address, static_cast<std::uint32_t>(prefix_size), bytes.size());
+    const auto buckets = table + 16 + static_cast<std::size_t>(bloom_size) * 4U;
+    std::uint32_t maximum_bucket{};
+    for (std::uint32_t index = 0; index < bucket_count; ++index) {
+        const auto bucket = Read32(bytes, buckets + static_cast<std::size_t>(index) * 4U);
+        if (bucket == 0) continue;
+        Require(bucket >= symbol_offset,
+                "DT_GNU_HASH bucket precedes its symbol offset");
+        maximum_bucket = std::max(maximum_bucket, bucket);
+    }
+
+    auto symbol_count = symbol_offset;
+    if (maximum_bucket != 0) {
+        const auto chains_address = AddGuestAddress(
+            address, prefix_size, "DT_GNU_HASH chain address wraps");
+        const auto chains = LocateFileBacked(image, chains_address, bytes.size());
+        const auto first = static_cast<std::uint64_t>(maximum_bucket) - symbol_offset;
+        Require(first < chains.available / 4U,
+                "DT_GNU_HASH bucket is outside its chain table");
+        auto index = maximum_bucket;
+        for (auto chain = first; chain < chains.available / 4U; ++chain, ++index) {
+            const auto value = Read32(
+                bytes, chains.offset + static_cast<std::size_t>(chain) * 4U);
+            if ((value & 1U) != 0) {
+                Require(index != std::numeric_limits<std::uint32_t>::max(),
+                        "DT_GNU_HASH symbol count overflows");
+                symbol_count = index + 1U;
+                break;
+            }
+        }
+        Require(symbol_count > maximum_bucket,
+                "DT_GNU_HASH chain is not terminated");
+    }
+    return {bucket_count, symbol_offset, bloom_size, bloom_shift, symbol_count};
 }
 
 [[nodiscard]] std::string ReadDynamicString(
@@ -230,6 +343,12 @@ void WriteZeros(memory::AddressSpace& address_space,
 }
 
 }  // namespace
+
+bool Elf32Symbol::IsExported() const noexcept {
+    const bool externally_bound = binding == 1 || binding == 2;
+    const bool externally_visible = visibility == 0 || visibility == 3;
+    return section_index != 0 && externally_bound && externally_visible;
+}
 
 Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
     RequireRange(0, kElf32HeaderSize, bytes.size(), "ELF header is truncated");
@@ -318,6 +437,76 @@ Elf32DynamicInfo ReadElf32DynamicInfo(
             bytes, table_offset, *string_table_size, *soname);
     }
     return info;
+}
+
+Elf32SymbolTable ReadElf32SymbolTable(
+    const std::span<const std::byte> bytes, const Elf32Image& image) {
+    const auto dynamic = ReadElf32DynamicInfo(bytes, image);
+    const auto symbol_table = UniqueDynamicValue(image, kElfDynamicSymbolTable);
+    const auto symbol_size = UniqueDynamicValue(image, kElfDynamicSymbolEntrySize);
+    Require(symbol_table.has_value() && symbol_size.has_value(),
+            "dynamic symbol table metadata is incomplete");
+    Require(*symbol_size == kElf32SymbolSize,
+            "DT_SYMENT is not the ELF32 symbol size");
+
+    Elf32SymbolTable result;
+    const auto sysv_hash = UniqueDynamicValue(image, kElfDynamicHash);
+    if (sysv_hash.has_value()) {
+        result.sysv_hash = ReadSysvHash(
+            bytes, image, memory::GuestAddress{*sysv_hash});
+    }
+    const auto gnu_hash = UniqueDynamicValue(image, kElfDynamicGnuHash);
+    if (gnu_hash.has_value()) {
+        result.gnu_hash = ReadGnuHash(
+            bytes, image, memory::GuestAddress{*gnu_hash});
+    }
+    Require(result.sysv_hash.has_value() || result.gnu_hash.has_value(),
+            "dynamic symbol table has no supported hash table");
+    std::uint32_t symbol_count = result.sysv_hash.has_value()
+                                     ? result.sysv_hash->chain_count
+                                     : result.gnu_hash->symbol_count;
+    if (result.sysv_hash.has_value() && result.gnu_hash.has_value()) {
+        Require(result.sysv_hash->chain_count == result.gnu_hash->symbol_count,
+                "SysV and GNU hash symbol counts disagree");
+    }
+    Require(symbol_count != 0, "dynamic symbol table is empty");
+    const auto table_size = static_cast<std::uint64_t>(symbol_count) *
+                            kElf32SymbolSize;
+    Require(table_size <= std::numeric_limits<std::uint32_t>::max(),
+            "dynamic symbol table size overflows");
+    const auto symbols_offset = VirtualFileOffset(
+        image, memory::GuestAddress{*symbol_table},
+        static_cast<std::uint32_t>(table_size), bytes.size());
+    const auto strings_offset = VirtualFileOffset(
+        image, dynamic.string_table, dynamic.string_table_size, bytes.size());
+
+    result.symbols.reserve(symbol_count);
+    for (std::uint32_t index = 0; index < symbol_count; ++index) {
+        const auto offset = symbols_offset +
+                            static_cast<std::size_t>(index) * kElf32SymbolSize;
+        const auto name_offset = Read32(bytes, offset);
+        const auto value = Read32(bytes, offset + 4);
+        const auto size = Read32(bytes, offset + 8);
+        const auto info = std::to_integer<std::uint8_t>(bytes[offset + 12]);
+        const auto other = std::to_integer<std::uint8_t>(bytes[offset + 13]);
+        const auto section = Read16(bytes, offset + 14);
+        result.symbols.push_back({
+            ReadDynamicString(bytes, strings_offset,
+                              dynamic.string_table_size, name_offset),
+            memory::GuestAddress{value},
+            size,
+            static_cast<std::uint8_t>(info >> 4U),
+            static_cast<std::uint8_t>(info & 0x0fU),
+            static_cast<std::uint8_t>(other & 0x03U),
+            section});
+    }
+    const auto& null_symbol = result.symbols.front();
+    Require(null_symbol.name.empty() && null_symbol.value.Value() == 0 &&
+                null_symbol.size == 0 && null_symbol.binding == 0 &&
+                null_symbol.type == 0 && null_symbol.visibility == 0 &&
+                null_symbol.section_index == 0,
+            "dynamic symbol zero is not the null symbol");
+    return result;
 }
 
 Elf32LoadPlan BuildElf32LoadPlan(const Elf32Image& image,

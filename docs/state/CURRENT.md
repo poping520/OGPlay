@@ -84,10 +84,12 @@
   时间溢出和坏指针返回明确 Linux errno。
 - [WU-0054] 完成匿名私有 `mmap2`、`munmap`、`mprotect` 与 `brk` 基线，确定性地址分配、
   页取整、Linux errno 和 W^X 拒绝均有契约测试。
+- [WU-0055] 将 futex WAIT/WAKE 装配到 M1 真线程同步核心；PRIVATE flag、精确唤醒、
+  值不匹配、坏地址和未支持超时模式均返回明确结果。
 
 ## 下一步（按优先级）
 
-1. 实现 syscall 线程/futex 装配与 VFS 文件描述符组。
+1. 实现 VFS 文件描述符组并绑定基础文件 syscall。
 2. 将 Bionic profile 接入 ELF 链接命名空间和 HLE 边界符号 provider。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 

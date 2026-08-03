@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace ogplay::runtime {
@@ -414,6 +415,52 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
             }
             return std::bit_cast<std::int32_t>(state->current_break);
         });
+}
+
+void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
+                               cpu::FutexTable& futex_table,
+                               memory::MemoryBus& memory_bus) {
+    constexpr std::int32_t kEagain = 11;
+    constexpr std::int32_t kEfault = 14;
+    constexpr std::int32_t kEinval = 22;
+    constexpr std::int32_t kEnotsup = 95;
+    constexpr std::uint32_t kFutexWait = 0;
+    constexpr std::uint32_t kFutexWake = 1;
+    constexpr std::uint32_t kFutexPrivateFlag = 128;
+    constexpr std::uint32_t kFutexClockRealtime = 256;
+    dispatcher.Implement(
+        240, [&futex_table, &memory_bus](const A32SyscallFrame& frame) {
+            const memory::GuestAddress address{frame.arguments[0]};
+            if (!address.IsAligned(4)) return -kEinval;
+            const auto operation = frame.arguments[1];
+            if ((operation & kFutexClockRealtime) != 0) return -kEnotsup;
+            const auto command = operation & ~kFutexPrivateFlag;
+            try {
+                if (command == kFutexWait) {
+                    if (frame.arguments[3] != 0) return -kEnotsup;
+                    const auto result = futex_table.Wait(
+                        memory_bus, address, frame.arguments[2], frame.thread_id);
+                    return result == cpu::FutexWaitResult::awoken ? 0 : -kEagain;
+                }
+                if (command == kFutexWake) {
+                    const auto count = futex_table.Wake(address, frame.arguments[2]);
+                    if (count > static_cast<std::size_t>(
+                                    std::numeric_limits<std::int32_t>::max())) {
+                        return std::numeric_limits<std::int32_t>::max();
+                    }
+                    return static_cast<std::int32_t>(count);
+                }
+                return -kLinuxEnosys;
+            } catch (const memory::MemoryFault&) {
+                return -kEfault;
+            } catch (const std::invalid_argument&) {
+                return -kEinval;
+            }
+        });
+    dispatcher.Implement(158, [](const A32SyscallFrame&) {
+        std::this_thread::yield();
+        return 0;
+    });
 }
 
 }  // namespace ogplay::runtime

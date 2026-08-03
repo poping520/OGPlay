@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/cpu/futex.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/memory/address_space.h"
 
@@ -85,5 +86,8 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
                              memory::AddressSpace& address_space);
 void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                                memory::AddressSpace& address_space);
+void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
+                               cpu::FutexTable& futex_table,
+                               memory::MemoryBus& memory_bus);
 
 }  // namespace ogplay::runtime

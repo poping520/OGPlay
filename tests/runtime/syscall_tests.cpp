@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <array>
 #include <cstddef>
+#include <atomic>
+#include <thread>
 
 #include "ogplay/runtime/syscall.h"
 
@@ -148,4 +150,55 @@ TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {
     frame.arguments[0] = 0x50001010;
     CHECK(dispatcher.Dispatch(frame) == 0x50001010);
     CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x50000000}, marker));
+}
+
+TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestRange page{
+        ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
+    memory.Map(page, ogplay::memory::PageProtection::read |
+                         ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus{memory};
+    bus.Write32(ogplay::memory::GuestAddress{0x10000}, 7);
+    ogplay::cpu::FutexTable futex;
+    ogplay::runtime::BindAndroidThreadSyscalls(dispatcher, futex, bus);
+
+    ogplay::runtime::A32SyscallFrame mismatch;
+    mismatch.number = 240;
+    mismatch.arguments[0] = 0x10000;
+    mismatch.arguments[1] = 0;
+    mismatch.arguments[2] = 8;
+    CHECK(dispatcher.Dispatch(mismatch) == -11);
+
+    std::atomic<std::int32_t> wait_result{-999};
+    std::thread waiter{[&] {
+        auto wait = mismatch;
+        wait.arguments[2] = 7;
+        wait.thread_id = 42;
+        wait_result = dispatcher.Dispatch(wait);
+    }};
+    for (std::size_t attempt = 0;
+         attempt < 100000 &&
+         futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 0;
+         ++attempt) {
+        std::this_thread::yield();
+    }
+    REQUIRE(futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 1);
+    auto wake = mismatch;
+    wake.arguments[1] = 1 | 128;
+    wake.arguments[2] = 1;
+    CHECK(dispatcher.Dispatch(wake) == 1);
+    waiter.join();
+    CHECK(wait_result == 0);
+
+    mismatch.arguments[0] = 0x10001;
+    CHECK(dispatcher.Dispatch(mismatch) == -22);
+    mismatch.arguments[0] = 0x20000;
+    CHECK(dispatcher.Dispatch(mismatch) == -14);
+    mismatch.arguments[0] = 0x10000;
+    mismatch.arguments[3] = 0x10020;
+    CHECK(dispatcher.Dispatch(mismatch) == -95);
 }

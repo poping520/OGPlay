@@ -12,7 +12,9 @@
 - `CpuFault`：将 memory fault 的地址、访问类型、原因和线程号保留到 CPU 边界。
 - `InterpreterCpu`：确定性逐指令后端；当前覆盖 A32/T32 标量算术、条件、控制流及
   word/byte 单次 load/store 基础集。
-- M1 后续扩展解释器完整指令族并接入 Dynarmic 后端。
+- `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调访存，不暴露
+  宿主指针，并与解释器共享状态、tick、停止及 fault 契约。
+- 解释器保留为确定性参考/单步后端，后续按诊断需求扩展指令覆盖。
 
 ## 不变量
 

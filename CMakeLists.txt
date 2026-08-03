@@ -123,6 +123,7 @@ install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(OGPLAY_BUILD_TESTS)
     include(CTest)
     include(cmake/TestDependencies.cmake)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
     set(OGPLAY_TEST_SOURCES
         tests/test_main.cpp
@@ -199,4 +200,12 @@ if(OGPLAY_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckPlatformBoundaries.cmake
     )
     set_tests_properties(architecture.platform_boundaries PROPERTIES LABELS architecture)
+
+    add_test(
+        NAME tools.remote_incremental_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/remote_incremental.py
+            --self-test
+    )
+    set_tests_properties(tools.remote_incremental_self_test PROPERTIES LABELS tools)
 endif()

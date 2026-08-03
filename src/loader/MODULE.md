@@ -20,6 +20,8 @@
   写入期间将装载区域切为 RW，成功或失败后均恢复最终 W^X 权限。
 - `BuildElf32LinkNamespace` / `ResolveElf32Symbols`：构造递归依赖闭包、依赖优先装载顺序
   与根模块优先的广度查找作用域，按 ELF local/weak/hidden/protected 规则预解析地址。
+- `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，
+  对重复、元数据残缺、非对齐及非 file-backed 范围明确失败。
 - 后续 Work Unit 在该事实模型上增加映射、符号、重定位和链接命名空间，不重复解析字节。
 
 ## 不变量

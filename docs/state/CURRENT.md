@@ -90,12 +90,14 @@
   read/write/seek/close、只读和 create/truncate 错误均携带 Linux errno。
 - [WU-0057] 将 `open/openat/read/write/lseek/close` 绑定 VFS；guest 路径和 buffer 有界
   复制，坏指针、未支持相对 openat 及 VFS 错误均返回明确 errno。
+- [WU-0058] 完成 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX` 事实解析；重复、
+  残缺、非对齐、歧义和非 file-backed 输入均明确失败。
 
 ## 下一步（按优先级）
 
-1. 解析 ELF init/fini 数组与 ARM exidx 生命周期事实。
-2. 将 Bionic profile 接入 ELF 链接命名空间和 HLE 边界符号 provider。
-3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
+1. 将 Bionic profile 接入 ELF 链接命名空间和 HLE 边界符号 provider。
+2. 补齐 ELF TLS、符号版本与 `dlopen/dlsym` 统一命名空间。
+3. 以无界面 NDK `.so` 累计样本闭合 pthread、文件 IO 与 malloc。
 
 ## 已知问题
 

@@ -66,11 +66,12 @@
   增量构建与 CTest 78/78，通过后远端验证耗时降至秒级。
 - [WU-0044/0045] 完成 file-backed 动态字符串表、`DT_NEEDED`、`DT_SONAME` 解析及
   跨编译器字段解码修复；三平台 warnings-as-errors CTest 80/80。
-- [WU-0046] 完成 `PT_LOAD` 页计划、临时 RW 装载、BSS 清零、最终 W^X 保护和失败回滚。
+- [WU-0046] 完成 `PT_LOAD` 页计划、临时 RW 装载、BSS 清零、最终 W^X 保护和失败回滚；
+  三平台 warnings-as-errors CTest 83/83。
 
 ## 下一步（按优先级）
 
-1. 将 `PT_LOAD` 合并为页级映射计划，先 RW 装载、清零 BSS，再按最终 W^X 权限保护。
+1. 解析 `DT_SYMTAB`/`DT_SYMENT`、SysV/GNU hash 与符号可见性，建立可边界校验的查找事实。
 2. 冻结 Bionic API 19/22/23 profile、符号拦截与 syscall 分层契约。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 

@@ -22,12 +22,21 @@ inline constexpr std::uint32_t kElfProgramLoad = 1;
 inline constexpr std::uint32_t kElfProgramDynamic = 2;
 inline constexpr std::int32_t kElfDynamicNull = 0;
 inline constexpr std::int32_t kElfDynamicNeeded = 1;
+inline constexpr std::int32_t kElfDynamicPltRelSize = 2;
 inline constexpr std::int32_t kElfDynamicHash = 4;
 inline constexpr std::int32_t kElfDynamicStringTable = 5;
 inline constexpr std::int32_t kElfDynamicSymbolTable = 6;
 inline constexpr std::int32_t kElfDynamicStringTableSize = 10;
 inline constexpr std::int32_t kElfDynamicSymbolEntrySize = 11;
 inline constexpr std::int32_t kElfDynamicSoname = 14;
+inline constexpr std::int32_t kElfDynamicRel = 17;
+inline constexpr std::int32_t kElfDynamicRelSize = 18;
+inline constexpr std::int32_t kElfDynamicRelEntrySize = 19;
+inline constexpr std::int32_t kElfDynamicPltRel = 20;
+inline constexpr std::int32_t kElfDynamicJmpRel = 23;
+inline constexpr std::int32_t kElfDynamicRela = 7;
+inline constexpr std::int32_t kElfDynamicRelaSize = 8;
+inline constexpr std::int32_t kElfDynamicRelaEntrySize = 9;
 inline constexpr std::int32_t kElfDynamicGnuHash = 0x6ffffef5;
 
 struct Elf32ProgramHeader final {
@@ -92,6 +101,22 @@ struct Elf32SymbolTable final {
     std::vector<Elf32Symbol> symbols;
 };
 
+enum class Elf32RelocationTableKind : std::uint8_t {
+    dynamic,
+    procedure_linkage,
+};
+
+struct Elf32Relocation final {
+    memory::GuestAddress target;
+    std::uint32_t symbol_index{};
+    std::uint8_t type{};
+    Elf32RelocationTableKind table{Elf32RelocationTableKind::dynamic};
+};
+
+struct Elf32RelocationTable final {
+    std::vector<Elf32Relocation> relocations;
+};
+
 struct Elf32LoadRegion final {
     memory::GuestRange range;
     memory::PageProtection final_protection{memory::PageProtection::none};
@@ -113,6 +138,9 @@ public:
     std::span<const std::byte> bytes, const Elf32Image& image);
 [[nodiscard]] Elf32SymbolTable ReadElf32SymbolTable(
     std::span<const std::byte> bytes, const Elf32Image& image);
+[[nodiscard]] Elf32RelocationTable ReadElf32Relocations(
+    std::span<const std::byte> bytes, const Elf32Image& image,
+    const Elf32SymbolTable& symbols);
 [[nodiscard]] Elf32LoadPlan BuildElf32LoadPlan(
     const Elf32Image& image, memory::GuestAddress load_bias,
     std::uint64_t page_size);

@@ -81,9 +81,9 @@ test = "tests/cpu/state_tests.cpp"
 note = "M1 固定 A32/T32 核心与扩展寄存器、线程号、运行结果、结构化 fault 及版本化快照契约"
 
 [cpu.interpreter]
-status = "unimplemented"
-test = ""
-note = "M1 下一 Work Unit"
+status = "partial"
+test = "tests/cpu/interpreter_tests.cpp"
+note = "M1 已覆盖 A32/T32 条件执行、立即数算术、分支/BX、SVC/BKPT、预算停止与结构化取指 fault；其余指令族继续补齐"
 
 [runtime.syscall]
 status = "unimplemented"

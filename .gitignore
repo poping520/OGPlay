@@ -1,0 +1,26 @@
+/build/
+/cmake-build-*/
+/out/
+/.cache/
+/.idea/
+/.vs/
+/.vscode/
+CMakeUserPresets.json
+compile_commands.json
+*.user
+*.swp
+*.log
+.DS_Store
+crash-*/
+
+# 游戏、资源和用户数据永不进入仓库
+*.apk
+*.apks
+*.apkm
+*.xapk
+*.obb
+/games/
+/user-data/
+
+# DEMO 仅作本地知识参照，不进入正式版仓库
+/docs/demo/

@@ -128,10 +128,14 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/snapshot_tests.cpp
         tests/cpu/state_tests.cpp
         tests/cpu/interpreter_tests.cpp
+        tests/cpu/m1_guest_sample_tests.cpp
         tests/session/session_tests.cpp
     )
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
     target_link_libraries(ogplay_tests PRIVATE OGPlay::Agent OGPlay::Cpu doctest::doctest)
+    target_include_directories(ogplay_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include
+    )
     if(OGPLAY_ENABLE_SDL3)
         target_compile_definitions(ogplay_tests PRIVATE OGPLAY_TEST_HAS_SDL3=1)
         target_link_libraries(ogplay_tests PRIVATE SDL3::SDL3)

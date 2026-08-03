@@ -11,7 +11,9 @@
 - `LowAddressGuard()`：`0x00000000–0x0000ffff` 默认保留区间。
 - `AddressSpace`：4 GiB reservation 上的 Map/Unmap/Protect/Read/Write/Validate。
 - `MemoryFault`：携带 guest 地址、访问类型、失败原因和 guest 线程 ID。
-- M1 后续增加 soft-MMU 调试后端与 Snapshot。
+- `MemoryBus`：CPU 只依赖的 8/16/32/64 位小端访存接口。
+- `CheckedMemoryBus`：完整权限验证和观察器钩子的 soft-MMU 调试后端。
+- M1 后续增加直接 JIT 访问适配与 Snapshot。
 
 ## 不变量
 

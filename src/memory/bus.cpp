@@ -22,12 +22,14 @@ template <typename UInt>
 }
 
 template <typename UInt>
-[[nodiscard]] std::array<std::byte, sizeof(UInt)> EncodeLittleEndian(UInt value) {
+[[nodiscard]] std::array<std::byte, sizeof(UInt)> EncodeLittleEndian(
+    const UInt value) {
     static_assert(std::is_unsigned_v<UInt>);
     std::array<std::byte, sizeof(UInt)> bytes{};
+    const auto wide_value = static_cast<std::uint64_t>(value);
     for (std::size_t index = 0; index < bytes.size(); ++index) {
-        bytes[index] = static_cast<std::byte>(value & static_cast<UInt>(0xffU));
-        value >>= 8U;
+        bytes[index] = static_cast<std::byte>(
+            (wide_value >> static_cast<unsigned>(index * 8U)) & 0xffU);
     }
     return bytes;
 }

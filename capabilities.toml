@@ -56,9 +56,19 @@ test = "tests/memory/address_tests.cpp"
 note = "M1 强类型 32 位地址和 64 位半开区间，覆盖完整 4 GiB、低地址保护、对齐与溢出"
 
 [hal.virtual_memory]
-status = "partial"
+status = "complete"
 test = "tests/hal/virtual_memory_tests.cpp"
-note = "M1 三平台实现已落地且 Windows 验证完成；Linux/macOS 留到 M1 总体验收后晋级"
+note = "M1 三平台完成 4 GiB 预留、提交、保护和释放，并通过严格构建与契约测试"
+
+[hal.thread]
+status = "complete"
+test = "tests/hal/thread_tests.cpp"
+note = "M1 提供真实宿主线程启动、并发与显式 join 边界"
+
+[hal.gfx_audio_fs_contracts]
+status = "complete"
+test = "tests/hal/service_contract_tests.cpp"
+note = "M1 固定无后端类型泄漏的 gfx/audio 契约，并提供明确失败的标准宿主文件系统"
 
 [memory.direct_address_space]
 status = "complete"
@@ -66,14 +76,14 @@ test = "tests/memory/address_space_tests.cpp"
 note = "M1 预留 4 GiB，支持页映射、权限、释放、验证、读写及结构化 MemoryFault"
 
 [memory.soft_mmu]
-status = "partial"
+status = "complete"
 test = "tests/memory/bus_tests.cpp"
-note = "M1 CheckedMemoryBus 提供小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器；断点策略待 CPU"
+note = "M1 CheckedMemoryBus 完成小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器"
 
 [memory.snapshot]
-status = "partial"
+status = "complete"
 test = "tests/memory/snapshot_tests.cpp"
-note = "M1 内存快照支持版本、连续映射合并、权限和内容的事务式恢复；完整 guest 状态待 CPU/线程组合"
+note = "M1 内存快照支持版本、连续映射合并、权限和内容的事务式恢复，并与 CPU 状态完成最小 guest 复跑"
 
 [cpu.contract]
 status = "complete"
@@ -83,7 +93,22 @@ note = "M1 固定 A32/T32 核心与扩展寄存器、线程号、运行结果、
 [cpu.interpreter]
 status = "partial"
 test = "tests/cpu/interpreter_tests.cpp"
-note = "M1 已覆盖 A32/T32 条件执行、立即数算术、分支/BX、SVC/BKPT、word/byte 单次 load/store、预算停止及结构化 fault；其余指令族继续补齐"
+note = "M1 参考后端覆盖裸样本与基础诊断指令族；完整 ISA 不属于 M1 出口，缺失指令明确停止"
+
+[cpu.dynarmic]
+status = "complete"
+test = "tests/cpu/dynarmic_tests.cpp"
+note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约，并与解释器对拍"
+
+[cpu.thread_model]
+status = "complete"
+test = "tests/cpu/thread_group_tests.cpp"
+note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上下文与 TLS 生命周期明确"
+
+[cpu.futex]
+status = "complete"
+test = "tests/cpu/futex_tests.cpp"
+note = "M1 完成 guest 地址键控的比较等待与精确 WAKE N 核心，超时由 M2 syscall 接统一 Clock"
 
 [fixtures.minimal_ndk]
 status = "complete"
@@ -93,7 +118,7 @@ note = "M4 API 19 armeabi-v7a NativeActivity 累积集成载荷，离线构建�
 [fixtures.m1_guest]
 status = "complete"
 test = "tests/cpu/m1_guest_sample_tests.cpp"
-note = "M1 裸 A32/Thumb mailbox 样本已在解释器验证标准化输入、确定性状态写回、线程标识和 CPU+内存快照复跑；JIT 与三平台验收待 M1 收尾"
+note = "M1 裸 A32/Thumb mailbox 样本在三平台通过解释器/JIT 对拍、标准化输入、确定性写回及 CPU+内存快照复跑"
 
 [runtime.syscall]
 status = "unimplemented"

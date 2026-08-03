@@ -105,4 +105,12 @@ if(OGPLAY_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckCapabilitiesMonotonic.cmake
     )
     set_tests_properties(architecture.capabilities_monotonic PROPERTIES LABELS architecture)
+
+    add_test(
+        NAME architecture.platform_boundaries
+        COMMAND ${CMAKE_COMMAND}
+            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckPlatformBoundaries.cmake
+    )
+    set_tests_properties(architecture.platform_boundaries PROPERTIES LABELS architecture)
 endif()

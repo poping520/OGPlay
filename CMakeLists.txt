@@ -92,7 +92,10 @@ else()
 endif()
 ogplay_set_project_warnings(ogplay_cpu)
 
-add_library(ogplay_loader src/loader/elf.cpp)
+add_library(ogplay_loader
+    src/loader/elf.cpp
+    src/loader/relocation.cpp
+)
 add_library(OGPlay::Loader ALIAS ogplay_loader)
 target_link_libraries(ogplay_loader PUBLIC OGPlay::Memory)
 target_include_directories(ogplay_loader PUBLIC
@@ -150,6 +153,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/bus_tests.cpp
         tests/memory/snapshot_tests.cpp
         tests/loader/elf_tests.cpp
+        tests/loader/relocation_tests.cpp
         tests/cpu/state_tests.cpp
         tests/cpu/futex_tests.cpp
         tests/cpu/interpreter_tests.cpp

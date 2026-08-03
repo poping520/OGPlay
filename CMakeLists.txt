@@ -88,6 +88,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/golden/golden_frame_tests.cpp
         tests/hal/clock_tests.cpp
         tests/hal/window_input_tests.cpp
+        tests/memory/address_tests.cpp
         tests/session/session_tests.cpp
     )
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})

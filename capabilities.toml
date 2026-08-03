@@ -50,6 +50,11 @@ status = "complete"
 test = "tests/hal/window_input_tests.cpp"
 note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映射；SDL 类型不泄漏"
 
+[memory.address_types]
+status = "complete"
+test = "tests/memory/address_tests.cpp"
+note = "M1 强类型 32 位地址和 64 位半开区间，覆盖完整 4 GiB、低地址保护、对齐与溢出"
+
 [runtime.syscall]
 status = "unimplemented"
 test = ""

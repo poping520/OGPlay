@@ -1,0 +1,221 @@
+#include "ogplay/hal/window_input.h"
+
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <utility>
+
+#if OGPLAY_HAS_SDL3
+#include <SDL3/SDL.h>
+#endif
+
+namespace ogplay::hal {
+
+#if OGPLAY_HAS_SDL3
+namespace {
+
+constexpr SDL_InitFlags kSdlSubsystems = SDL_INIT_VIDEO | SDL_INIT_GAMEPAD;
+
+std::string RequestedBackendName(const VideoBackend backend) {
+    switch (backend) {
+    case VideoBackend::automatic: return {};
+    case VideoBackend::dummy: return "dummy";
+    case VideoBackend::offscreen: return "offscreen";
+    }
+    throw std::invalid_argument("unknown video backend");
+}
+
+std::runtime_error SdlError(const std::string_view operation) {
+    return std::runtime_error(std::string(operation) + " failed: " + SDL_GetError());
+}
+
+class SdlWindowInput final : public WindowInput {
+public:
+    explicit SdlWindowInput(const VideoBackend backend) {
+        const auto requested = RequestedBackendName(backend);
+        const auto already_initialized = (SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) != 0;
+        if (already_initialized && !requested.empty()) {
+            const auto* current = SDL_GetCurrentVideoDriver();
+            if (current == nullptr || requested != current) {
+                throw std::logic_error("SDL video subsystem already uses another backend");
+            }
+        }
+        if (!already_initialized && !requested.empty() &&
+            !SDL_SetHint(SDL_HINT_VIDEO_DRIVER, requested.c_str())) {
+            throw SdlError("SDL_SetHint(SDL_HINT_VIDEO_DRIVER)");
+        }
+        if (!SDL_InitSubSystem(kSdlSubsystems)) {
+            SDL_QuitSubSystem(kSdlSubsystems);
+            throw SdlError("SDL_InitSubSystem");
+        }
+        initialized_ = true;
+    }
+
+    ~SdlWindowInput() override {
+        Close();
+        if (initialized_) SDL_QuitSubSystem(kSdlSubsystems);
+    }
+
+    void Open(const WindowOptions& options) override {
+        if (window_ != nullptr) throw std::logic_error("window is already open");
+        if (options.width == 0 || options.height == 0 ||
+            options.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+            options.height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+            throw std::invalid_argument("window dimensions are out of range");
+        }
+
+        SDL_WindowFlags flags = 0;
+        if (options.hidden) flags |= SDL_WINDOW_HIDDEN;
+        if (options.resizable) flags |= SDL_WINDOW_RESIZABLE;
+        window_ = SDL_CreateWindow(options.title.c_str(), static_cast<int>(options.width),
+                                   static_cast<int>(options.height), flags);
+        if (window_ == nullptr) throw SdlError("SDL_CreateWindow");
+    }
+
+    void Close() noexcept override {
+        if (window_ == nullptr) return;
+        SDL_DestroyWindow(window_);
+        window_ = nullptr;
+    }
+
+    WindowState State() const override {
+        if (window_ == nullptr) return {};
+        int width{};
+        int height{};
+        if (!SDL_GetWindowSize(window_, &width, &height)) {
+            throw SdlError("SDL_GetWindowSize");
+        }
+        return {
+            .open = true,
+            .id = SDL_GetWindowID(window_),
+            .width = static_cast<std::uint32_t>(width),
+            .height = static_cast<std::uint32_t>(height),
+        };
+    }
+
+    std::string_view BackendName() const noexcept override {
+        const auto* name = SDL_GetCurrentVideoDriver();
+        return name == nullptr ? std::string_view{} : std::string_view{name};
+    }
+
+    std::vector<InputEvent> PollEvents() override {
+        if (window_ == nullptr) throw std::logic_error("event polling requires an open window");
+        std::vector<InputEvent> result;
+        SDL_Event event{};
+        while (SDL_PollEvent(&event)) {
+            AppendEvent(event, result);
+        }
+        return result;
+    }
+
+private:
+    [[nodiscard]] bool IsOwnedWindow(const SDL_WindowID id) const noexcept {
+        return id == 0 || id == SDL_GetWindowID(window_);
+    }
+
+    void AppendEvent(const SDL_Event& event, std::vector<InputEvent>& result) const {
+        switch (event.type) {
+        case SDL_EVENT_QUIT:
+            result.push_back({.type = InputEventType::quit,
+                              .timestamp_ns = event.quit.timestamp});
+            break;
+        case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+            if (IsOwnedWindow(event.window.windowID)) {
+                result.push_back({.type = InputEventType::quit,
+                                  .timestamp_ns = event.window.timestamp,
+                                  .window_id = event.window.windowID});
+            }
+            break;
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+            if (IsOwnedWindow(event.key.windowID)) {
+                result.push_back({
+                    .type = InputEventType::key,
+                    .timestamp_ns = event.key.timestamp,
+                    .window_id = event.key.windowID,
+                    .device_id = event.key.which,
+                    .code = static_cast<std::int32_t>(event.key.scancode),
+                    .pressed = event.key.down,
+                    .repeat = event.key.repeat,
+                });
+            }
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+            if (IsOwnedWindow(event.motion.windowID)) {
+                result.push_back({
+                    .type = InputEventType::pointer_motion,
+                    .timestamp_ns = event.motion.timestamp,
+                    .window_id = event.motion.windowID,
+                    .device_id = event.motion.which,
+                    .x = event.motion.x,
+                    .y = event.motion.y,
+                    .delta_x = event.motion.xrel,
+                    .delta_y = event.motion.yrel,
+                });
+            }
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (IsOwnedWindow(event.button.windowID)) {
+                result.push_back({
+                    .type = InputEventType::pointer_button,
+                    .timestamp_ns = event.button.timestamp,
+                    .window_id = event.button.windowID,
+                    .device_id = event.button.which,
+                    .code = event.button.button,
+                    .x = event.button.x,
+                    .y = event.button.y,
+                    .pressed = event.button.down,
+                });
+            }
+            break;
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+            result.push_back({
+                .type = InputEventType::gamepad_axis,
+                .timestamp_ns = event.gaxis.timestamp,
+                .device_id = event.gaxis.which,
+                .code = event.gaxis.axis,
+                .value = event.gaxis.value,
+            });
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        case SDL_EVENT_GAMEPAD_BUTTON_UP:
+            result.push_back({
+                .type = InputEventType::gamepad_button,
+                .timestamp_ns = event.gbutton.timestamp,
+                .device_id = event.gbutton.which,
+                .code = event.gbutton.button,
+                .pressed = event.gbutton.down,
+            });
+            break;
+        case SDL_EVENT_GAMEPAD_ADDED:
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            result.push_back({
+                .type = event.type == SDL_EVENT_GAMEPAD_ADDED
+                            ? InputEventType::gamepad_added
+                            : InputEventType::gamepad_removed,
+                .timestamp_ns = event.gdevice.timestamp,
+                .device_id = event.gdevice.which,
+            });
+            break;
+        default: break;
+        }
+    }
+
+    SDL_Window* window_{};
+    bool initialized_{};
+};
+
+}  // namespace
+#endif
+
+std::unique_ptr<WindowInput> CreateSdlWindowInput(const VideoBackend backend) {
+#if OGPLAY_HAS_SDL3
+    return std::make_unique<SdlWindowInput>(backend);
+#else
+    static_cast<void>(backend);
+    throw std::runtime_error("SDL3 support is disabled in this build");
+#endif
+}
+
+}  // namespace ogplay::hal

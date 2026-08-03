@@ -21,7 +21,6 @@ add_library(ogplay_core
     src/core/frame_compare.cpp
     src/core/logger.cpp
     src/core/software_surface.cpp
-    src/hal/clock.cpp
 )
 add_library(OGPlay::Core ALIAS ogplay_core)
 target_include_directories(ogplay_core
@@ -32,9 +31,26 @@ target_include_directories(ogplay_core
 target_compile_features(ogplay_core PUBLIC cxx_std_20)
 ogplay_set_project_warnings(ogplay_core)
 
+add_library(ogplay_hal
+    src/hal/clock.cpp
+    src/hal/sdl_window_input.cpp
+)
+add_library(OGPlay::Hal ALIAS ogplay_hal)
+target_include_directories(ogplay_hal PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+if(OGPLAY_ENABLE_SDL3)
+    target_compile_definitions(ogplay_hal PRIVATE OGPLAY_HAS_SDL3=1)
+    target_link_libraries(ogplay_hal PRIVATE SDL3::SDL3)
+else()
+    target_compile_definitions(ogplay_hal PRIVATE OGPLAY_HAS_SDL3=0)
+endif()
+ogplay_set_project_warnings(ogplay_hal)
+
 add_library(ogplay_session src/session/session.cpp)
 add_library(OGPlay::Session ALIAS ogplay_session)
-target_link_libraries(ogplay_session PUBLIC OGPlay::Core)
+target_link_libraries(ogplay_session PUBLIC OGPlay::Core OGPlay::Hal)
 target_include_directories(ogplay_session PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -52,7 +68,7 @@ target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
 target_compile_definitions(ogplay PRIVATE OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 ogplay_set_project_warnings(ogplay)
 
-install(TARGETS ogplay ogplay_core ogplay_agent ogplay_session
+install(TARGETS ogplay ogplay_core ogplay_hal ogplay_agent ogplay_session
     EXPORT OGPlayTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -64,16 +80,24 @@ if(OGPLAY_BUILD_TESTS)
     include(CTest)
     include(cmake/TestDependencies.cmake)
 
-    add_executable(ogplay_tests
+    set(OGPLAY_TEST_SOURCES
         tests/test_main.cpp
         tests/core/capability_ledger_tests.cpp
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/hal/clock_tests.cpp
+        tests/hal/window_input_tests.cpp
         tests/session/session_tests.cpp
     )
+    add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
     target_link_libraries(ogplay_tests PRIVATE OGPlay::Agent doctest::doctest)
+    if(OGPLAY_ENABLE_SDL3)
+        target_compile_definitions(ogplay_tests PRIVATE OGPLAY_TEST_HAS_SDL3=1)
+        target_link_libraries(ogplay_tests PRIVATE SDL3::SDL3)
+    else()
+        target_compile_definitions(ogplay_tests PRIVATE OGPLAY_TEST_HAS_SDL3=0)
+    endif()
     target_compile_definitions(ogplay_tests PRIVATE
         OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )

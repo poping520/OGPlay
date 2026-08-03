@@ -11,13 +11,16 @@
 - `hal::ClockRate`：正整数分子/分母表示的精确倍率。
 - `hal::FixedStepClock`：无 sleep、按帧推进且保留倍率余数的确定性后端。
 - `hal::RealtimeClock`：基于单调宿主时间的实时后端，支持暂停与倍速。
-- 其余 HAL 接口在 M1 定义；上层不得包含平台头文件。
+- `hal::WindowInput`：不暴露 SDL 类型的窗口生命周期与输入事件接口。
+- `hal::CreateSdlWindowInput`：SDL3 实现工厂；关闭 SDL 的构建会明确失败。
+- audio、gfx、fs、video、thread 接口在后续 M1 Work Unit 定义。
 
 ## 不变量
 
 - 平台差异不泄漏到 runtime/session。
 - 时间由统一 Clock 提供；线程接口必须映射真实宿主线程。
 - 暂停期间 ticks 不增长；不支持的推进方式必须明确失败。
+- SDL video 生命周期由创建它的宿主主线程拥有；输入只保留宿主事实，不翻译 guest 语义。
 
 ## 禁止
 

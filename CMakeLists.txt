@@ -57,9 +57,18 @@ else()
 endif()
 ogplay_set_project_warnings(ogplay_hal)
 
+add_library(ogplay_memory src/memory/address_space.cpp)
+add_library(OGPlay::Memory ALIAS ogplay_memory)
+target_link_libraries(ogplay_memory PRIVATE OGPlay::Hal)
+target_include_directories(ogplay_memory PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+ogplay_set_project_warnings(ogplay_memory)
+
 add_library(ogplay_session src/session/session.cpp)
 add_library(OGPlay::Session ALIAS ogplay_session)
-target_link_libraries(ogplay_session PUBLIC OGPlay::Core OGPlay::Hal)
+target_link_libraries(ogplay_session PUBLIC OGPlay::Core OGPlay::Hal OGPlay::Memory)
 target_include_directories(ogplay_session PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -77,7 +86,7 @@ target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
 target_compile_definitions(ogplay PRIVATE OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 ogplay_set_project_warnings(ogplay)
 
-install(TARGETS ogplay ogplay_core ogplay_hal ogplay_agent ogplay_session
+install(TARGETS ogplay ogplay_core ogplay_hal ogplay_memory ogplay_agent ogplay_session
     EXPORT OGPlayTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -99,6 +108,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/hal/window_input_tests.cpp
         tests/hal/virtual_memory_tests.cpp
         tests/memory/address_tests.cpp
+        tests/memory/address_space_tests.cpp
         tests/session/session_tests.cpp
     )
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})

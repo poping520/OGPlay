@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-03 · M1 CPU 解释器会话
+更新：2026-08-03 · M1 最小 NDK 样例会话
 
 ## 进行中
 
@@ -46,12 +46,14 @@
 - [WU-0026] 分离 execute 取指与 data read 权限，补齐 `Fetch16/Fetch32`。
 - [WU-0027] 完成 A32/T32 条件执行、立即数算术、分支/BX 和同步陷阱解释器基础。
 - [WU-0028] 完成 A32/T32 word/byte 单次 load/store、writeback 和数据 fault 原子失败。
+- [WU-0029] 完成 API 19 `armeabi-v7a` NativeActivity 出口样例；离线构建器已验证
+  ELF32/ARM、`android_main`、APK 内容、zipalign、debug 签名和 API/ABI 元数据。
 - Windows/MSVC warnings-as-errors 全量 CTest 61/61 通过；架构门禁全绿。
 
 ## 下一步（按优先级）
 
-1. [WU-0029] 扩展 A32 barrel shifter、逻辑/寄存器算术、乘法及对应 Thumb-16 数据处理。
-2. [WU-0030] 实现 A32/Thumb 多寄存器传输、栈操作和首批 Thumb-2 控制流。
+1. [WU-0030] 扩展 A32 barrel shifter、逻辑/寄存器算术、乘法及对应 Thumb-16 数据处理。
+2. [WU-0031] 实现 A32/Thumb 多寄存器传输、栈操作和首批 Thumb-2 控制流。
 3. 指令覆盖表稳定后启用 Dynarmic adapter，建立解释器/JIT 指令级对拍。
 4. 随后实现真线程模型、thread HAL 与 futex，再装配最小 guest Session。
 5. M1 功能闭合后执行 Windows/Linux/macOS 总体验收和最小 NDK 样例出口测试。
@@ -60,6 +62,8 @@
 
 - SDL3 已接入生产 HAL；Dynarmic 默认关闭，等待解释器覆盖和对拍框架稳定。
 - `cpu.interpreter` 仍为 partial：尚缺完整 A32/Thumb-2、VFP/NEON、原子访问和异常模型。
+- 最小 NDK APK 已可构建和签名，但 OGPlay 尚未具备完整 loader/Bionic/GLES 链路，
+  因此只能作为后续出口载荷，当前不能宣称已在 OGPlay 中运行。
 - Linux/macOS 虚拟内存实现已落地但尚未在本轮执行，能力保持 partial 到 M1 总体验收。
 - Linux 可用 SDL Unix-console 配置执行无显示服务契约；可见桌面窗口构建仍需 X11 或
   Wayland 开发依赖。

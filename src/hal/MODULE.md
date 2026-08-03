@@ -13,6 +13,8 @@
 - `hal::RealtimeClock`：基于单调宿主时间的实时后端，支持暂停与倍速。
 - `hal::WindowInput`：不暴露 SDL 类型的窗口生命周期与输入事件接口。
 - `hal::CreateSdlWindowInput`：SDL3 实现工厂；关闭 SDL 的构建会明确失败。
+- `hal::VirtualMemoryReservation`：页对齐的宿主预留、提交、权限和释放接口。
+- `hal::ReserveVirtualMemory`：按目标平台选择 VirtualAlloc 或 mmap 后端。
 - audio、gfx、fs、video、thread 接口在后续 M1 Work Unit 定义。
 
 ## 不变量
@@ -21,6 +23,7 @@
 - 时间由统一 Clock 提供；线程接口必须映射真实宿主线程。
 - 暂停期间 ticks 不增长；不支持的推进方式必须明确失败。
 - SDL video 生命周期由创建它的宿主主线程拥有；输入只保留宿主事实，不翻译 guest 语义。
+- 虚拟内存写权限必须同时具备读权限；范围必须页对齐且位于自身 reservation 内。
 
 ## 禁止
 

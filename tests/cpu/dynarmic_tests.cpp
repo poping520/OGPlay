@@ -45,8 +45,7 @@ template <typename CpuType, typename Instruction, std::size_t Size>
     ogplay::memory::CheckedMemoryBus bus(memory, &observer);
     memory.Map({code, memory.PageSize()},
                ogplay::memory::PageProtection::read |
-                   ogplay::memory::PageProtection::write |
-                   ogplay::memory::PageProtection::execute);
+                   ogplay::memory::PageProtection::write);
     memory.Map({mailbox, memory.PageSize()},
                ogplay::memory::PageProtection::read |
                    ogplay::memory::PageProtection::write);

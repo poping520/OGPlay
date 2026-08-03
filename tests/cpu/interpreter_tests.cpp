@@ -14,8 +14,7 @@ public:
     CpuFixture() : bus(memory), cpu(bus) {
         memory.Map({code, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
-                       ogplay::memory::PageProtection::write |
-                       ogplay::memory::PageProtection::execute);
+                       ogplay::memory::PageProtection::write);
     }
 
     void WriteA32(const std::initializer_list<std::uint32_t> instructions) {
@@ -35,6 +34,9 @@ public:
     }
 
     void Start(const ogplay::cpu::ExecutionState execution_state) {
+        memory.Protect({code, memory.PageSize()},
+                       ogplay::memory::PageProtection::read |
+                           ogplay::memory::PageProtection::execute);
         ogplay::cpu::A32State state;
         state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
         state.SetThreadId(33);
@@ -262,9 +264,9 @@ TEST_CASE("interpreter reports budgets halt undefined instructions and fetch fau
     SUBCASE("execute permission fault") {
         CpuFixture fixture;
         fixture.WriteA32({0xe1a00000});
+        fixture.Start(ogplay::cpu::ExecutionState::a32);
         fixture.memory.Protect({fixture.code, fixture.memory.PageSize()},
                                ogplay::memory::PageProtection::read);
-        fixture.Start(ogplay::cpu::ExecutionState::a32);
         const auto result = fixture.cpu.Run(10);
         CHECK(result.reason == ogplay::cpu::RunStopReason::memory_fault);
         CHECK(result.ticks_consumed == 0);

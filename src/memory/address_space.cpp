@@ -130,12 +130,102 @@ public:
         std::memcpy(reservation_->Base() + address.Value(), source.data(), source.size());
     }
 
+    [[nodiscard]] MemorySnapshot CaptureSnapshot() const {
+        std::scoped_lock lock(mutex_);
+        MemorySnapshot snapshot;
+        snapshot.page_size = page_size_;
+
+        std::size_t first = 0;
+        while (first < pages_.size()) {
+            const auto protection = pages_[first];
+            if (protection == PageProtection::none) {
+                ++first;
+                continue;
+            }
+            if (!HasProtection(protection, PageProtection::read)) {
+                throw std::logic_error("execute-only guest memory cannot be captured");
+            }
+            auto last = first + 1;
+            while (last < pages_.size() && pages_[last] == protection) ++last;
+
+            const auto offset = static_cast<std::uint64_t>(first) * page_size_;
+            const auto size = static_cast<std::uint64_t>(last - first) * page_size_;
+            MemorySnapshotMapping mapping{
+                GuestRange(GuestAddress(static_cast<std::uint32_t>(offset)), size),
+                protection,
+                std::vector<std::byte>(static_cast<std::size_t>(size)),
+            };
+            std::memcpy(mapping.data.data(), reservation_->Base() + offset,
+                        mapping.data.size());
+            snapshot.mappings.push_back(std::move(mapping));
+            first = last;
+        }
+        return snapshot;
+    }
+
+    void RestoreSnapshot(const MemorySnapshot& snapshot) {
+        ValidateSnapshot(snapshot);
+        auto replacement = hal::ReserveVirtualMemory(kGuestAddressSpaceSize);
+        if (replacement->PageSize() != page_size_) {
+            throw std::runtime_error("replacement virtual memory page size changed");
+        }
+        std::vector<PageProtection> replacement_pages(pages_.size(),
+                                                      PageProtection::none);
+
+        const auto writable = PageProtection::read | PageProtection::write;
+        for (const auto& mapping : snapshot.mappings) {
+            const auto offset = mapping.range.Start().Value();
+            replacement->Commit(offset, mapping.range.Size(),
+                                ToHostProtection(writable));
+            std::memcpy(replacement->Base() + offset, mapping.data.data(),
+                        mapping.data.size());
+            if (mapping.protection != writable) {
+                replacement->Protect(offset, mapping.range.Size(),
+                                     ToHostProtection(mapping.protection));
+            }
+            const auto first = static_cast<std::size_t>(offset / page_size_);
+            const auto last = static_cast<std::size_t>(mapping.range.EndExclusive() /
+                                                       page_size_);
+            std::fill(replacement_pages.begin() + first,
+                      replacement_pages.begin() + last, mapping.protection);
+        }
+
+        std::scoped_lock lock(mutex_);
+        reservation_.swap(replacement);
+        pages_.swap(replacement_pages);
+    }
+
 private:
     using PageIterator = std::vector<PageProtection>::difference_type;
 
     void ValidatePageRange(const GuestRange& range) const {
         if (!range.IsAligned(page_size_)) {
             throw std::invalid_argument("guest mapping range must be page aligned");
+        }
+    }
+
+    void ValidateSnapshot(const MemorySnapshot& snapshot) const {
+        if (snapshot.version != kMemorySnapshotVersion) {
+            throw std::invalid_argument("unsupported memory snapshot version");
+        }
+        if (snapshot.page_size != page_size_) {
+            throw std::invalid_argument("memory snapshot page size does not match host");
+        }
+        std::uint64_t previous_end = LowAddressGuard().EndExclusive();
+        for (const auto& mapping : snapshot.mappings) {
+            ValidateProtection(mapping.protection);
+            ValidatePageRange(mapping.range);
+            if (!HasProtection(mapping.protection, PageProtection::read)) {
+                throw std::invalid_argument("memory snapshot contains execute-only mapping");
+            }
+            if (mapping.range.Start().Value() < previous_end) {
+                throw std::invalid_argument(
+                    "memory snapshot mappings overlap, are unordered, or enter low guard");
+            }
+            if (mapping.range.Size() != mapping.data.size()) {
+                throw std::invalid_argument("memory snapshot mapping size is inconsistent");
+            }
+            previous_end = mapping.range.EndExclusive();
         }
     }
 
@@ -211,6 +301,10 @@ void AddressSpace::Write(const GuestAddress address,
                          const std::span<const std::byte> source,
                          const std::uint64_t thread_id) {
     impl_->Write(address, source, thread_id);
+}
+MemorySnapshot AddressSpace::CaptureSnapshot() const { return impl_->CaptureSnapshot(); }
+void AddressSpace::RestoreSnapshot(const MemorySnapshot& snapshot) {
+    impl_->RestoreSnapshot(snapshot);
 }
 
 }  // namespace ogplay::memory

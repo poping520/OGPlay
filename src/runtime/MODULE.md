@@ -16,6 +16,8 @@
   PRIVATE flag、精确 WAKE N、值不匹配和受检地址错误；`sched_yield` 让出宿主线程。
 - `SelectBionicProfile` / `RouteBionicSymbol`：只接受 API 19/22/23，固定真实 guest Bionic
   库、宿主 HLE 边界库及少而明确的 str/mem/pthread 拦截表。
+- `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的
+  边界符号，将 libc 选择性拦截、虚拟边界库和真实 guest ELF 装入统一链接命名空间。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供
   隔离文件描述符的 open/read/write/seek/close；路径逃逸和权限错误携带 Linux errno。
 - `BindAndroidFileSyscalls`：将 `open/openat/read/write/lseek/close` 绑定到 VFS；路径和
@@ -26,6 +28,7 @@
 
 - 未实现调用记入能力账本并明确失败；syscall 返回 ENOSYS。
 - 普通 libc/libm/libdl 符号默认执行真实 guest Bionic；只有声明表命中才进入宿主拦截。
+- HLE 符号必须由 provider 显式注册且位于固定 thunk 区；边界库不得作为真实 guest ELF 装载。
 - JNIEnv 全表完成前，缺槽位必须 trap，不得静默返回零。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 

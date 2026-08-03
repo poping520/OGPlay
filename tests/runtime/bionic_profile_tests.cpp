@@ -1,8 +1,38 @@
-#include <ostream>
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <doctest/doctest.h>
 
 #include "ogplay/runtime/bionic_profile.h"
+
+namespace {
+
+[[nodiscard]] ogplay::loader::Elf32Symbol Symbol(
+    std::string name, const std::uint32_t value, const std::uint8_t binding,
+    const std::uint16_t section) {
+    return {std::move(name), ogplay::memory::GuestAddress{value}, 4, binding,
+            2, 0, section};
+}
+
+[[nodiscard]] ogplay::loader::Elf32LinkModule Module(
+    std::string name, const std::uint32_t bias,
+    std::vector<std::string> needed,
+    std::vector<ogplay::loader::Elf32Symbol> symbols) {
+    ogplay::loader::Elf32LinkModule module;
+    module.name = std::move(name);
+    module.load_bias = ogplay::memory::GuestAddress{bias};
+    module.dynamic.needed = std::move(needed);
+    module.dynamic.soname = module.name;
+    module.symbols.symbols.push_back(Symbol("", 0, 0, 0));
+    for (auto& symbol : symbols) {
+        module.symbols.symbols.push_back(std::move(symbol));
+    }
+    return module;
+}
+
+}  // namespace
 
 TEST_CASE("Bionic profiles select only API 19 22 and 23") {
     const auto& api19 = ogplay::runtime::SelectBionicProfile(19);
@@ -38,4 +68,81 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::RouteBionicSymbol(
                         profile, "libc.so", "")),
                     ogplay::runtime::BionicProfileError);
+}
+
+TEST_CASE("Bionic link namespace combines guest libraries and observable HLE thunks") {
+    const auto& profile = ogplay::runtime::SelectBionicProfile(19);
+    const std::vector hle_bindings{
+        ogplay::runtime::BionicHleSymbol{
+            "libc.so", "memcpy", ogplay::memory::GuestAddress{0x70000101}},
+        ogplay::runtime::BionicHleSymbol{
+            "liblog.so", "__android_log_write",
+            ogplay::memory::GuestAddress{0x70000200}},
+    };
+    const ogplay::runtime::BionicHleSymbolProvider hle(hle_bindings);
+    const std::vector modules{
+        Module("app.so", 0x10000000, {"libc.so", "liblog.so"},
+               {Symbol("memcpy", 0, 1, 0), Symbol("snprintf", 0, 1, 0),
+                Symbol("__android_log_write", 0, 1, 0)}),
+        Module("libc.so", 0x18000000, {},
+               {Symbol("memcpy", 0x100, 1, 1),
+                Symbol("snprintf", 0x200, 1, 1)}),
+    };
+
+    const auto link_namespace = ogplay::runtime::BuildBionicLinkNamespace(
+        profile, "app.so", modules, hle);
+    CHECK(link_namespace.load_order ==
+          std::vector<std::size_t>{1, 2, 0});
+    CHECK(link_namespace.lookup_scope ==
+          std::vector<std::size_t>{0, 1, 2});
+
+    const auto resolved =
+        ogplay::loader::ResolveElf32Symbols(link_namespace, 0);
+    REQUIRE(resolved.values[1].has_value());
+    CHECK(*resolved.values[1] == ogplay::memory::GuestAddress{0x70000101});
+    REQUIRE(resolved.values[2].has_value());
+    CHECK(*resolved.values[2] == ogplay::memory::GuestAddress{0x18000200});
+    REQUIRE(resolved.values[3].has_value());
+    CHECK(*resolved.values[3] == ogplay::memory::GuestAddress{0x70000200});
+
+    const auto symbolized = hle.Resolve(0x70000200);
+    REQUIRE(symbolized.has_value());
+    CHECK(symbolized->module == "liblog.so");
+    CHECK(symbolized->symbol == "__android_log_write");
+    CHECK(symbolized->source_hint == "hle");
+}
+
+TEST_CASE("Bionic namespace rejects invalid thunks and unresolved boundaries") {
+    const auto& profile = ogplay::runtime::SelectBionicProfile(23);
+    SUBCASE("thunk address outside reserved range") {
+        const std::vector symbols{ogplay::runtime::BionicHleSymbol{
+            "liblog.so", "__android_log_write",
+            ogplay::memory::GuestAddress{0x60000000}}};
+        CHECK_THROWS_AS(
+            static_cast<void>(ogplay::runtime::BionicHleSymbolProvider(symbols)),
+            ogplay::runtime::BionicProfileError);
+    }
+    SUBCASE("guest supplies a host boundary library") {
+        const ogplay::runtime::BionicHleSymbolProvider hle(
+            std::span<const ogplay::runtime::BionicHleSymbol>{});
+        const std::vector modules{
+            Module("app.so", 0x10000000, {"liblog.so"}, {}),
+            Module("liblog.so", 0x18000000, {}, {})};
+        CHECK_THROWS_AS(static_cast<void>(
+                            ogplay::runtime::BuildBionicLinkNamespace(
+                                profile, "app.so", modules, hle)),
+                        ogplay::runtime::BionicProfileError);
+    }
+    SUBCASE("unregistered boundary symbol remains unresolved") {
+        const ogplay::runtime::BionicHleSymbolProvider hle(
+            std::span<const ogplay::runtime::BionicHleSymbol>{});
+        const std::vector modules{Module(
+            "app.so", 0x10000000, {"liblog.so"},
+            {Symbol("__android_log_write", 0, 1, 0)})};
+        const auto link_namespace = ogplay::runtime::BuildBionicLinkNamespace(
+            profile, "app.so", modules, hle);
+        CHECK_THROWS_AS(static_cast<void>(
+                            ogplay::loader::ResolveElf32Symbols(link_namespace, 0)),
+                        ogplay::loader::LinkError);
+    }
 }

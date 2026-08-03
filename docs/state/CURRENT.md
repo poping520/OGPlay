@@ -92,12 +92,15 @@
   复制，坏指针、未支持相对 openat 及 VFS 错误均返回明确 errno。
 - [WU-0058] 完成 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX` 事实解析；重复、
   残缺、非对齐、歧义和非 file-backed 输入均明确失败。
+- [WU-0059] 将 API 19/22/23 Bionic profile 接入统一 ELF 命名空间；libc 热点拦截与
+  虚拟 HLE 边界库使用固定 thunk provider，地址可反查且缺失符号明确失败。
+- macOS AppleClang `dev` 预设构建成功，全量 CTest 108/108 通过。
 
 ## 下一步（按优先级）
 
-1. 将 Bionic profile 接入 ELF 链接命名空间和 HLE 边界符号 provider。
-2. 补齐 ELF TLS、符号版本与 `dlopen/dlsym` 统一命名空间。
-3. 以无界面 NDK `.so` 累计样本闭合 pthread、文件 IO 与 malloc。
+1. 补齐 ELF TLS、符号版本与 `dlopen/dlsym` 统一命名空间。
+2. 以无界面 NDK `.so` 累计样本闭合 pthread、文件 IO 与 malloc。
+3. 完成 API 19/22/23 AOSP Bionic 产物装载自检与来源清单。
 
 ## 已知问题
 

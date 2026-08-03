@@ -33,6 +33,7 @@ ogplay_set_project_warnings(ogplay_core)
 
 add_library(ogplay_hal
     src/hal/clock.cpp
+    src/hal/fs.cpp
     src/hal/sdl_window_input.cpp
     src/hal/thread.cpp
 )
@@ -130,6 +131,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/agent/control_service_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/hal/clock_tests.cpp
+        tests/hal/service_contract_tests.cpp
         tests/hal/thread_tests.cpp
         tests/hal/window_input_tests.cpp
         tests/hal/virtual_memory_tests.cpp

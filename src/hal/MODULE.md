@@ -16,7 +16,10 @@
 - `hal::VirtualMemoryReservation`：页对齐的宿主预留、提交、权限和释放接口。
 - `hal::ReserveVirtualMemory`：按目标平台选择 VirtualAlloc 或 mmap 后端。
 - `hal::HostThread` / `StartHostThread`：真实宿主线程启动、标识与显式 join 边界。
-- audio、gfx、fs、video 接口在后续 M1 Work Unit 定义。
+- `hal::GraphicsPresenter`：不暴露 SDL/EGL/平台句柄的 drawable 与 present 契约。
+- `hal::AudioOutput`：格式、启动停止、帧队列与交错样本提交契约；设备后端属于后续阶段。
+- `hal::HostFileSystem` / `CreateStandardHostFileSystem`：宿主文件状态、建目录及二进制读写。
+- video 接口按媒体能力需求在后续里程碑定义。
 
 ## 不变量
 

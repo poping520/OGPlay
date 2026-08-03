@@ -57,7 +57,10 @@ else()
 endif()
 ogplay_set_project_warnings(ogplay_hal)
 
-add_library(ogplay_memory src/memory/address_space.cpp)
+add_library(ogplay_memory
+    src/memory/address_space.cpp
+    src/memory/bus.cpp
+)
 add_library(OGPlay::Memory ALIAS ogplay_memory)
 target_link_libraries(ogplay_memory PRIVATE OGPlay::Hal)
 target_include_directories(ogplay_memory PUBLIC
@@ -109,6 +112,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/hal/virtual_memory_tests.cpp
         tests/memory/address_tests.cpp
         tests/memory/address_space_tests.cpp
+        tests/memory/bus_tests.cpp
         tests/session/session_tests.cpp
     )
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})

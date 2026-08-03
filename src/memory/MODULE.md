@@ -6,7 +6,10 @@
 
 ## 公共 API
 
-M1 定义 Map/Unmap/Protect/Read/Write/ValidateRange/Snapshot。guest 地址使用强类型包装。
+- `GuestAddress`：严格 32 位 guest 地址；算术、对齐越界明确失败。
+- `GuestRange`：64 位长度的半开区间，可表达完整 4 GiB 地址空间。
+- `LowAddressGuard()`：`0x00000000–0x0000ffff` 默认保留区间。
+- M1 后续定义 Map/Unmap/Protect/Read/Write/ValidateRange/Snapshot。
 
 ## 不变量
 
@@ -22,4 +25,3 @@ M1 定义 Map/Unmap/Protect/Read/Write/ValidateRange/Snapshot。guest 地址使�
 ## 测试
 
 `tests/memory/` 的边界、权限、并发与快照测试。
-

@@ -1,39 +1,44 @@
 # 状态只能按 unimplemented -> stub -> partial -> complete 前进。
 
 [core.structured_logger]
-status = "partial"
+status = "complete"
 test = "tests/core/logger_tests.cpp"
-note = "M0 已有线程安全环形缓冲；sink、限流、JSONL 与符号化待后续 WU"
+note = "M0 完成环形缓冲、sink、限流、JSONL、符号 provider、帧标记与诊断包"
 
 [core.capability_ledger]
-status = "partial"
+status = "complete"
 test = "tests/core/capability_ledger_tests.cpp"
-note = "M0 支持账本读取和未实现命中计数；CI 单调性门禁待补"
+note = "M0 支持账本读取、未实现命中聚合及相对 Git 基线的单调性 CI 门禁"
 
 [agent.control_service]
-status = "partial"
+status = "complete"
 test = "tests/agent/control_service_tests.cpp"
-note = "M0 提供进程内结构化分派；JSON-RPC 传输和参数模型待补"
+note = "M0 完成传输无关分派、JSON-RPC 参数与标准错误模型"
 
 [agent.session]
-status = "stub"
+status = "complete"
 test = "tests/agent/control_service_tests.cpp"
-note = "只返回 idle 状态"
+note = "M0 空会话支持 open/close/state；M1 装配 guest"
 
 [agent.run]
-status = "stub"
+status = "complete"
 test = "tests/agent/control_service_tests.cpp"
-note = "无会话时明确失败，M1 接入统一 Clock"
+note = "M0 支持固定时钟 step/until/pause/resume"
 
 [agent.sym]
-status = "stub"
+status = "complete"
 test = "tests/agent/control_service_tests.cpp"
-note = "无 guest 映像时明确失败，M2 接入 ELF 符号表"
+note = "M0 完成 provider 接口与结构化查询；M2 由 ELF loader 提供数据"
+
+[agent.hle]
+status = "complete"
+test = "tests/agent/control_service_tests.cpp"
+note = "M0 可查 capabilities、unimplemented 与 null_calls"
 
 [golden.software_frame]
-status = "partial"
+status = "complete"
 test = "tests/golden/golden_frame_tests.cpp"
-note = "M0 验证无 GPU 图像差异算法；ANGLE 软件后端属于 M4"
+note = "M0 提供确定性 SoftwareSurface、像素差与感知哈希；ANGLE 软件后端属于 M4"
 
 [runtime.syscall]
 status = "unimplemented"
@@ -49,4 +54,3 @@ note = "M3"
 status = "unimplemented"
 test = ""
 note = "M4"
-

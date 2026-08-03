@@ -6,7 +6,8 @@
 
 ## 公共 API
 
-M1/M5 定义 Open/Close/State/Step/Pause/Resume/Snapshot。
+- `Session::OpenEmpty/Close/State/Step/UntilFrame/Pause/Resume`：M0 确定性空会话。
+- M1 将相同状态机装配 guest，M5 增加 Profile 生命周期模板。
 
 ## 不变量
 
@@ -22,4 +23,3 @@ M1/M5 定义 Open/Close/State/Step/Pause/Resume/Snapshot。
 ## 测试
 
 `tests/session/` 的状态机、确定性与题库检查点测试。
-

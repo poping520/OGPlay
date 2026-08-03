@@ -12,6 +12,8 @@
   内存；错误 clock ID、溢出和坏指针分别返回 Linux errno。
 - `BindAndroidMemorySyscalls`：实现匿名私有 `mmap2`、`munmap`、`mprotect` 与 `brk`；
   页对齐、地址范围和 W^X 失败均转换为明确 Linux errno。
+- `BindAndroidThreadSyscalls`：把 `futex WAIT/WAKE` 装配到 M1 真线程 FutexTable，支持
+  PRIVATE flag、精确 WAKE N、值不匹配和受检地址错误；`sched_yield` 让出宿主线程。
 - `SelectBionicProfile` / `RouteBionicSymbol`：只接受 API 19/22/23，固定真实 guest Bionic
   库、宿主 HLE 边界库及少而明确的 str/mem/pthread 拦截表。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。

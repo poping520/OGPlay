@@ -94,6 +94,9 @@
   残缺、非对齐、歧义和非 file-backed 输入均明确失败。
 - [WU-0059] 将 API 19/22/23 Bionic profile 接入统一 ELF 命名空间；libc 热点拦截与
   虚拟 HLE 边界库使用固定 thunk provider，地址可反查且缺失符号明确失败。
+- [WU-0060] 完成 ELF32 `PT_TLS` 模板事实；初始化字节、BSS 大小、对齐、唯一性、
+  `PT_LOAD` 覆盖和地址回绕均进入受检契约。
+- macOS AppleClang `dev` 预设构建成功，全量 CTest 110/110 通过。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 108/108 通过。
 
 ## 下一步（按优先级）

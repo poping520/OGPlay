@@ -18,6 +18,7 @@ inline constexpr std::size_t kElf32HeaderSize = 52;
 inline constexpr std::size_t kElf32ProgramHeaderSize = 32;
 inline constexpr std::size_t kElf32DynamicEntrySize = 8;
 inline constexpr std::size_t kElf32SymbolSize = 16;
+inline constexpr std::size_t kElf32RelocationSize = 8;
 inline constexpr std::uint16_t kElfMachineArm = 40;
 inline constexpr std::uint32_t kElfVersionCurrent = 1;
 inline constexpr std::uint32_t kElfFlagExecute = 1;
@@ -150,6 +151,26 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
     Require(result.has_value(),
             "dynamic virtual range is not file-backed by PT_LOAD");
     return *result;
+}
+
+void RequireLoadMemoryRange(const Elf32Image& image,
+                            const memory::GuestAddress address,
+                            const std::uint32_t size) {
+    const auto start = static_cast<std::uint64_t>(address.Value());
+    const auto end = start + size;
+    Require(end <= (UINT64_C(1) << 32U),
+            "relocation target wraps the address space");
+    bool found = false;
+    for (const auto& segment : image.program_headers) {
+        if (segment.type != kElfProgramLoad) continue;
+        const auto segment_start =
+            static_cast<std::uint64_t>(segment.virtual_address.Value());
+        const auto segment_end = segment_start + segment.memory_size;
+        if (start < segment_start || end > segment_end) continue;
+        Require(!found, "relocation target has ambiguous PT_LOAD mappings");
+        found = true;
+    }
+    Require(found, "relocation target is outside PT_LOAD memory");
 }
 
 struct FileBackedLocation final {
@@ -506,6 +527,89 @@ Elf32SymbolTable ReadElf32SymbolTable(
                 null_symbol.type == 0 && null_symbol.visibility == 0 &&
                 null_symbol.section_index == 0,
             "dynamic symbol zero is not the null symbol");
+    return result;
+}
+
+Elf32RelocationTable ReadElf32Relocations(
+    const std::span<const std::byte> bytes, const Elf32Image& image,
+    const Elf32SymbolTable& symbols) {
+    Require(image.has_dynamic_segment, "ELF has no PT_DYNAMIC segment");
+    Require(!symbols.symbols.empty(), "relocations require a symbol table");
+    const auto rela = UniqueDynamicValue(image, kElfDynamicRela);
+    const auto rela_size = UniqueDynamicValue(image, kElfDynamicRelaSize);
+    const auto rela_entry = UniqueDynamicValue(image, kElfDynamicRelaEntrySize);
+    Require(!rela.has_value() && !rela_size.has_value() && !rela_entry.has_value(),
+            "ELF32 ARM RELA relocations are unsupported");
+
+    const auto rel = UniqueDynamicValue(image, kElfDynamicRel);
+    const auto rel_size = UniqueDynamicValue(image, kElfDynamicRelSize);
+    const auto rel_entry = UniqueDynamicValue(image, kElfDynamicRelEntrySize);
+    const auto jmprel = UniqueDynamicValue(image, kElfDynamicJmpRel);
+    const auto plt_size = UniqueDynamicValue(image, kElfDynamicPltRelSize);
+    const auto plt_rel = UniqueDynamicValue(image, kElfDynamicPltRel);
+
+    Require(rel.has_value() == rel_size.has_value() &&
+                rel.has_value() == rel_entry.has_value(),
+            "DT_REL metadata is incomplete");
+    Require(jmprel.has_value() == plt_size.has_value() &&
+                jmprel.has_value() == plt_rel.has_value(),
+            "DT_JMPREL metadata is incomplete");
+    if (rel_entry.has_value()) {
+        Require(*rel_entry == kElf32RelocationSize,
+                "DT_RELENT is not the ELF32 REL size");
+    }
+    if (plt_rel.has_value()) {
+        Require(*plt_rel == static_cast<std::uint32_t>(kElfDynamicRel),
+                "DT_PLTREL does not select ELF32 REL");
+    }
+
+    struct Table final {
+        std::uint32_t address{};
+        std::uint32_t size{};
+        Elf32RelocationTableKind kind{};
+    };
+    std::vector<Table> tables;
+    if (rel.has_value()) tables.push_back({*rel, *rel_size,
+                                           Elf32RelocationTableKind::dynamic});
+    if (jmprel.has_value()) {
+        tables.push_back({*jmprel, *plt_size,
+                          Elf32RelocationTableKind::procedure_linkage});
+    }
+
+    Elf32RelocationTable result;
+    for (std::size_t table_index = 0; table_index < tables.size(); ++table_index) {
+        const auto& table = tables[table_index];
+        Require(table.size % kElf32RelocationSize == 0,
+                "ELF32 REL table size is not entry aligned");
+        const auto begin = static_cast<std::uint64_t>(table.address);
+        const auto end = begin + table.size;
+        Require(end <= (UINT64_C(1) << 32U),
+                "ELF32 REL table range wraps the address space");
+        for (std::size_t other = 0; other < table_index; ++other) {
+            const auto other_begin =
+                static_cast<std::uint64_t>(tables[other].address);
+            const auto other_end = other_begin + tables[other].size;
+            Require(end <= other_begin || begin >= other_end,
+                    "ELF32 REL tables overlap");
+        }
+        const auto offset = VirtualFileOffset(
+            image, memory::GuestAddress{table.address}, table.size, bytes.size());
+        const auto count = table.size / kElf32RelocationSize;
+        for (std::uint32_t index = 0; index < count; ++index) {
+            const auto entry = offset +
+                               static_cast<std::size_t>(index) *
+                                   kElf32RelocationSize;
+            const memory::GuestAddress target{Read32(bytes, entry)};
+            const auto info = Read32(bytes, entry + 4);
+            const auto symbol_index = info >> 8U;
+            Require(symbol_index < symbols.symbols.size(),
+                    "ELF32 REL symbol index is outside dynsym");
+            RequireLoadMemoryRange(image, target, 4);
+            result.relocations.push_back(
+                {target, symbol_index, static_cast<std::uint8_t>(info & 0xffU),
+                 table.kind});
+        }
+    }
     return result;
 }
 

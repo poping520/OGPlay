@@ -14,6 +14,8 @@
   顺序清零 BSS，最后切换为合并后的 W^X 权限；失败时回滚本次新增映射。
 - `ReadElf32SymbolTable`：通过边界校验后的 SysV/GNU hash 推导 dynsym 数量，解析名称、
   binding、type、visibility 和 section index；`IsExported` 只接受已定义且外部可见的全局/弱符号。
+- `ReadElf32Relocations`：同时解析普通与 PLT ELF32 ARM REL 表，保留目标、符号索引、
+  原始类型与表类别；RELA、元数据残缺、表重叠及不安全目标均明确失败。
 - 后续 Work Unit 在该事实模型上增加映射、符号、重定位和链接命名空间，不重复解析字节。
 
 ## 不变量
@@ -26,6 +28,7 @@
 - load bias 必须按宿主页对齐；ET_EXEC 不允许 bias；非零入口必须落在 executable `PT_LOAD`。
 - 任一宿主页需要同时 W+X 时拒绝装载，不以兼容为由放宽权限。
 - dynsym 必须由有效 SysV 或 GNU hash 限定数量；GNU chain 必须在 file-backed 范围内终止。
+- REL 表必须 file-backed 且互不重叠；目标可在 BSS，但 4 字节范围必须唯一属于 `PT_LOAD` memory。
 - `DT_NEEDED`、TLS、exidx、符号版本、init/fini 使用同一链接模型。
 - 输出只描述事实，不猜测具体游戏身份。
 

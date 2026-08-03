@@ -114,6 +114,61 @@ void Put32(std::vector<std::byte>& bytes, const std::size_t offset,
     return bytes;
 }
 
+[[nodiscard]] std::vector<std::byte> RelocationElf() {
+    auto bytes = ValidElf();
+    Put32(bytes, 0x10c, 0x10180);
+    Put32(bytes, 0x124, 0x101b0);
+    Put32(bytes, 0x12c, 0x101d0);
+    Put32(bytes, 0x138, ogplay::loader::kElfDynamicRel);
+    Put32(bytes, 0x13c, 0x10210);
+    Put32(bytes, 0x140, ogplay::loader::kElfDynamicRelSize);
+    Put32(bytes, 0x144, 16);
+    Put32(bytes, 0x148, ogplay::loader::kElfDynamicRelEntrySize);
+    Put32(bytes, 0x14c, 8);
+    Put32(bytes, 0x150, ogplay::loader::kElfDynamicJmpRel);
+    Put32(bytes, 0x154, 0x10220);
+    Put32(bytes, 0x158, ogplay::loader::kElfDynamicPltRelSize);
+    Put32(bytes, 0x15c, 8);
+    Put32(bytes, 0x160, ogplay::loader::kElfDynamicPltRel);
+    Put32(bytes, 0x164,
+          static_cast<std::uint32_t>(ogplay::loader::kElfDynamicRel));
+    Put32(bytes, 0x168, 0);
+    Put32(bytes, 0x16c, 0);
+    Put32(bytes, 100, 112);
+    Put32(bytes, 104, 112);
+
+    const char strings[] = "\0libc.so\0sample.so\0foo\0hidden";
+    for (std::size_t index = 0; index < sizeof(strings); ++index) {
+        bytes[0x180 + index] = static_cast<std::byte>(strings[index]);
+    }
+    Put32(bytes, 0x1b0, 1);
+    Put32(bytes, 0x1b4, 3);
+    Put32(bytes, 0x1b8, 1);
+    Put32(bytes, 0x1bc, 0);
+    Put32(bytes, 0x1c0, 2);
+    Put32(bytes, 0x1c4, 0);
+    std::fill(bytes.begin() + 0x1d0, bytes.begin() + 0x200, std::byte{});
+    Put32(bytes, 0x1e0, 19);
+    Put32(bytes, 0x1e4, 0x10280);
+    Put32(bytes, 0x1e8, 4);
+    bytes[0x1ec] = std::byte{0x12};
+    Put16(bytes, 0x1ee, 1);
+    Put32(bytes, 0x1f0, 23);
+    Put32(bytes, 0x1f4, 0x10284);
+    Put32(bytes, 0x1f8, 4);
+    bytes[0x1fc] = std::byte{0x11};
+    bytes[0x1fd] = std::byte{2};
+    Put16(bytes, 0x1fe, 1);
+
+    Put32(bytes, 0x210, 0x10280);
+    Put32(bytes, 0x214, (1U << 8U) | 2U);
+    Put32(bytes, 0x218, 0x10300);
+    Put32(bytes, 0x21c, 23);
+    Put32(bytes, 0x220, 0x10284);
+    Put32(bytes, 0x224, (2U << 8U) | 22U);
+    return bytes;
+}
+
 void ParseAndDiscard(const std::vector<std::byte>& bytes) {
     static_cast<void>(ogplay::loader::ParseElf32Arm(bytes));
 }
@@ -283,6 +338,86 @@ TEST_CASE("ELF32 symbols derive count from a bounded GNU hash chain") {
     CHECK(table.gnu_hash->symbol_count == 3);
     REQUIRE(table.symbols.size() == 3);
     CHECK(table.symbols[1].name == "foo");
+}
+
+TEST_CASE("ELF32 ARM REL metadata preserves targets symbols types and tables") {
+    const auto bytes = RelocationElf();
+    const auto image = ogplay::loader::ParseElf32Arm(bytes);
+    const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+    const auto relocations =
+        ogplay::loader::ReadElf32Relocations(bytes, image, symbols);
+    REQUIRE(relocations.relocations.size() == 3);
+    CHECK(relocations.relocations[0].target ==
+          ogplay::memory::GuestAddress{0x10280});
+    CHECK(relocations.relocations[0].symbol_index == 1);
+    CHECK(relocations.relocations[0].type == 2);
+    CHECK(relocations.relocations[0].table ==
+          ogplay::loader::Elf32RelocationTableKind::dynamic);
+    CHECK(relocations.relocations[1].target ==
+          ogplay::memory::GuestAddress{0x10300});
+    CHECK(relocations.relocations[1].symbol_index == 0);
+    CHECK(relocations.relocations[1].type == 23);
+    CHECK(relocations.relocations[2].symbol_index == 2);
+    CHECK(relocations.relocations[2].type == 22);
+    CHECK(relocations.relocations[2].table ==
+          ogplay::loader::Elf32RelocationTableKind::procedure_linkage);
+}
+
+TEST_CASE("ELF32 ARM REL metadata rejects malformed or unsafe facts") {
+    SUBCASE("incomplete dynamic REL metadata") {
+        auto bytes = RelocationElf();
+        Put32(bytes, 0x140, 0x60000001);
+        const auto image = ogplay::loader::ParseElf32Arm(bytes);
+        const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(
+                            bytes, image, symbols)),
+                        ogplay::loader::ElfError);
+    }
+    SUBCASE("wrong REL entry size") {
+        auto bytes = RelocationElf();
+        Put32(bytes, 0x14c, 12);
+        const auto image = ogplay::loader::ParseElf32Arm(bytes);
+        const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(
+                            bytes, image, symbols)),
+                        ogplay::loader::ElfError);
+    }
+    SUBCASE("PLT selects RELA") {
+        auto bytes = RelocationElf();
+        Put32(bytes, 0x164, ogplay::loader::kElfDynamicRela);
+        const auto image = ogplay::loader::ParseElf32Arm(bytes);
+        const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(
+                            bytes, image, symbols)),
+                        ogplay::loader::ElfError);
+    }
+    SUBCASE("symbol index exceeds dynsym") {
+        auto bytes = RelocationElf();
+        Put32(bytes, 0x214, (3U << 8U) | 2U);
+        const auto image = ogplay::loader::ParseElf32Arm(bytes);
+        const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(
+                            bytes, image, symbols)),
+                        ogplay::loader::ElfError);
+    }
+    SUBCASE("target is outside loaded memory") {
+        auto bytes = RelocationElf();
+        Put32(bytes, 0x210, 0x20000);
+        const auto image = ogplay::loader::ParseElf32Arm(bytes);
+        const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(
+                            bytes, image, symbols)),
+                        ogplay::loader::ElfError);
+    }
+    SUBCASE("RELA metadata is explicit failure") {
+        auto bytes = RelocationElf();
+        Put32(bytes, 0x138, ogplay::loader::kElfDynamicRela);
+        const auto image = ogplay::loader::ParseElf32Arm(bytes);
+        const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(
+                            bytes, image, symbols)),
+                        ogplay::loader::ElfError);
+    }
 }
 
 TEST_CASE("ELF32 symbol metadata rejects malformed hash and table bounds") {

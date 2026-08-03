@@ -70,10 +70,12 @@
   三平台 warnings-as-errors CTest 83/83。
 - [WU-0047] 完成 SysV/GNU hash 边界校验、dynsym 数量推导及符号可见性事实解析；
   三平台 warnings-as-errors CTest 86/86。
+- [WU-0048] 完成普通与 PLT ELF32 ARM REL 表解析；目标、符号索引、原始类型及表类别
+  均保真，RELA、表重叠与越界输入明确失败；Windows/MSVC CTest 88/88。
 
 ## 下一步（按优先级）
 
-1. 解析 `DT_REL`/`DT_RELSZ`/`DT_JMPREL`，冻结 ARM relocation 类型、符号索引和目标地址事实。
+1. 构造多模块链接命名空间并应用 ARM `RELATIVE`/`ABS32`/`GLOB_DAT`/`JUMP_SLOT` 重定位。
 2. 冻结 Bionic API 19/22/23 profile、符号拦截与 syscall 分层契约。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 

@@ -2,6 +2,7 @@
 /cmake-build-*/
 /out/
 /.cache/
+/.local/
 /.idea/
 /.vs/
 /.vscode/

@@ -1,10 +1,10 @@
 # 当前状态
 
-更新：2026-08-03 · M1 完成
+更新：2026-08-03 · M2 Bionic 基线
 
 ## 进行中
 
-- M1 出口已闭合，下一里程碑为 M2 Bionic、ELF loader、syscall 与 VFS。
+- M1 出口已闭合；M2 已开始，首批工作为 Bionic API 基线、ELF loader、syscall 与 VFS。
 - 本机开发只使用 Windows/MSVC 预设；跨平台总体验收在里程碑出口执行。
 - 首次 hosted CI 仍待仓库建立远端后确认，不阻塞 M2 开发。
 
@@ -62,7 +62,7 @@
 ## 下一步（按优先级）
 
 1. 拆分 M2 首个 Work Unit：ELF32 ARM 装载与动态段解析，只建立 loader 边界。
-2. 冻结 Bionic API 19/22/25 profile、符号拦截与 syscall 分层契约。
+2. 冻结 Bionic API 19/22/23 profile、符号拦截与 syscall 分层契约。
 3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 
 ## 已知问题

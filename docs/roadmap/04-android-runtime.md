@@ -101,7 +101,7 @@ libc 的 locale、stdio 缓冲、`snprintf` 边界、`qsort` 稳定性这类细�
 | --- | --- | --- | --- |
 | Android 4.4 | 19 | KitKat | 2011–2014 的绝大多数老游戏 |
 | Android 5.1 | 22 | Lollipop | ART 时代早期、64 位起点 |
-| Android 7.1 | 25 | Nougat | 较新的老游戏；命名空间隔离开始收紧 |
+| Android 6.0 | 23 | Marshmallow | 覆盖 5.x 之后的 ABI 与运行库变化 |
 
 每个版本内置：`libc.so` `libm.so` `libdl.so` `libstdc++.so` `libz.so`。
 均来自 AOSP（Apache-2.0，可再分发；**发布前需完成许可证与来源标注**）。

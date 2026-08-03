@@ -59,6 +59,7 @@ UntilResult Session::UntilFrame(const std::uint64_t target_frame,
 SessionState Session::Pause() {
     std::scoped_lock lock(mutex_);
     Require(Phase::running, "run.pause");
+    clock_.Pause();
     phase_ = Phase::paused;
     return StateLocked();
 }
@@ -66,6 +67,7 @@ SessionState Session::Pause() {
 SessionState Session::Resume() {
     std::scoped_lock lock(mutex_);
     Require(Phase::paused, "run.resume");
+    clock_.Resume();
     phase_ = Phase::running;
     return StateLocked();
 }

@@ -9,11 +9,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(OGPLAY_BUILD_TESTS "Build OGPlay unit and contract tests" ON)
 option(OGPLAY_WARNINGS_AS_ERRORS "Treat OGPlay warnings as errors" OFF)
-option(OGPLAY_FETCH_TEST_DEPENDENCIES "Fetch doctest when it is not installed" ON)
-set(OGPLAY_DOCTEST_SOURCE_DIR "" CACHE PATH "Path to an existing doctest source tree")
+option(OGPLAY_ENABLE_SDL3 "Configure the bundled SDL3 platform dependency" ON)
+option(OGPLAY_ENABLE_DYNARMIC "Configure the bundled Dynarmic CPU dependency" OFF)
 
 include(GNUInstallDirs)
 include(cmake/CompilerWarnings.cmake)
+include(cmake/ThirdParty.cmake)
 
 add_library(ogplay_core
     src/core/capability_ledger.cpp

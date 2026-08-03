@@ -1,14 +1,12 @@
 # 当前状态
 
-更新：2026-08-03 · M1 裸 guest 样本会话
+更新：2026-08-03 · M1 完成
 
 ## 进行中
 
-- M1 的 Clock、SDL3 Window/Input、4 GiB memory/soft-MMU/快照骨架已落地；
-  CPU 解释器正在按指令族递增实现。
-- 开发期间本机只执行 Windows/MSVC 验证；Linux/macOS 构建、窗口输入和虚拟内存
-  总体验收统一放到 M1 出口阶段。
-- 首次远端 hosted CI 仍待仓库建立远端后确认，不阻塞本地 M1 开发。
+- M1 出口已闭合，下一里程碑为 M2 Bionic、ELF loader、syscall 与 VFS。
+- 本机开发只使用 Windows/MSVC 预设；跨平台总体验收在里程碑出口执行。
+- 首次 hosted CI 仍待仓库建立远端后确认，不阻塞 M2 开发。
 
 ## 最近完成
 
@@ -52,22 +50,26 @@
 - [WU-0030] 完成 M1 裸 A32/Thumb mailbox 样本；解释器已验证标准化输入、确定性写回、
   guest 线程号传播及 CPU+内存快照复跑。
 - Windows/MSVC warnings-as-errors 全量 CTest 63/63 通过；架构门禁全绿。
+- [WU-0031/0032] 以轻量 `ext-boost` 与单模块 Boost.Pool submodule 接入 Dynarmic，
+  完成遵守公共内存/CPU 契约的 A32/T32 JIT 和解释器对拍。
+- [WU-0033/0034/0035] 完成真实宿主线程 HAL、guest 一对一线程组及 futex WAIT/WAKE N，
+  八线程与十六线程压力测试通过。
+- [WU-0036] 完成 gfx/audio 纯契约和标准宿主文件系统边界，不提前实现 M4 图形音频栈。
+- [WU-0037/0038/0039] 修复 GCC/Clang 严格类型、聚合初始化和 macOS W^X 差异。
+- [WU-0040] M1 出口通过：Windows、Linux、macOS 均 warnings-as-errors 构建成功，
+  全量 CTest 73/73；A32/Thumb 裸样本在解释器与 Dynarmic 结果一致。
 
 ## 下一步（按优先级）
 
-1. [WU-0031] 扩展 A32 barrel shifter、逻辑/寄存器算术、乘法及对应 Thumb-16 数据处理。
-2. [WU-0032] 实现 A32/Thumb 多寄存器传输、栈操作和首批 Thumb-2 控制流。
-3. 指令覆盖表稳定后启用 Dynarmic adapter，建立解释器/JIT 指令级对拍。
-4. 随后实现真线程模型、thread HAL 与 futex，再装配最小 guest Session。
-5. M1 功能闭合后让裸 guest 样本通过解释器/JIT 对拍，并执行 Windows/Linux/macOS 总体验收。
+1. 拆分 M2 首个 Work Unit：ELF32 ARM 装载与动态段解析，只建立 loader 边界。
+2. 冻结 Bionic API 19/22/25 profile、符号拦截与 syscall 分层契约。
+3. 以无界面 NDK `.so` 为累计样本，按依赖顺序补 pthread、文件 IO 与 malloc 闭环。
 
 ## 已知问题
 
-- SDL3 已接入生产 HAL；Dynarmic 默认关闭，等待解释器覆盖和对拍框架稳定。
-- `cpu.interpreter` 仍为 partial：尚缺完整 A32/Thumb-2、VFP/NEON、原子访问和异常模型。
-- M1 裸 guest 样本当前只在 Windows/MSVC 解释器验证；JIT 与 Linux/macOS 留到 M1 收尾。
+- `cpu.interpreter` 仍为 partial：它是确定性参考/诊断后端，未覆盖完整 A32/Thumb-2、
+  VFP/NEON、原子访问和异常模型；M1 主执行后端为 Dynarmic，缺失指令不会伪装成功。
 - 最小 NDK APK 已可构建和签名，但被明确归类为 M4 载荷；当前不能宣称已在 OGPlay 中运行。
-- Linux/macOS 虚拟内存实现已落地但尚未在本轮执行，能力保持 partial 到 M1 总体验收。
 - Linux 可用 SDL Unix-console 配置执行无显示服务契约；可见桌面窗口构建仍需 X11 或
   Wayland 开发依赖。
 - 黄金帧使用无 GPU SoftwareSurface，不包含 ANGLE/SwiftShader；后者属于 M4。

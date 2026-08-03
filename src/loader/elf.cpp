@@ -30,9 +30,11 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
 [[nodiscard]] std::uint16_t Read16(const std::span<const std::byte> bytes,
                                    const std::size_t offset) {
     RequireRange(offset, 2, bytes.size(), "truncated ELF field");
-    return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
-           static_cast<std::uint16_t>(
-               std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8U;
+    const auto low = static_cast<std::uint32_t>(
+        std::to_integer<std::uint8_t>(bytes[offset]));
+    const auto high = static_cast<std::uint32_t>(
+        std::to_integer<std::uint8_t>(bytes[offset + 1]));
+    return static_cast<std::uint16_t>(low | (high << 8U));
 }
 
 [[nodiscard]] std::uint32_t Read32(const std::span<const std::byte> bytes,

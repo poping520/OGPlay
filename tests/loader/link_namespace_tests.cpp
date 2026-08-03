@@ -31,6 +31,14 @@ namespace {
     return module;
 }
 
+[[nodiscard]] ogplay::loader::Elf32SymbolVersion Version(
+    const std::uint16_t index,
+    const ogplay::loader::Elf32SymbolVersionKind kind,
+    std::string name = {}, std::string dependency = {},
+    const bool hidden = false) {
+    return {index, hidden, kind, std::move(name), std::move(dependency)};
+}
+
 }  // namespace
 
 TEST_CASE("ELF link namespace builds dependency and breadth first lookup orders") {
@@ -92,6 +100,104 @@ TEST_CASE("ELF link namespace rejects missing ambiguous and unresolved inputs") 
             ogplay::loader::BuildElf32LinkNamespace("app.so", modules);
         CHECK_THROWS_AS(static_cast<void>(
                             ogplay::loader::ResolveElf32Symbols(link_namespace, 0)),
+                        ogplay::loader::LinkError);
+    }
+}
+
+TEST_CASE("ELF link namespace extends transactionally with a per-root scope") {
+    const std::vector base_modules{
+        Module("app.so", 0x10000, {"liba.so"}, {}),
+        Module("liba.so", 0x20000, {},
+               {Symbol("base", 0x100, 1, 0, 1)}),
+    };
+    const auto base =
+        ogplay::loader::BuildElf32LinkNamespace("app.so", base_modules);
+    const std::vector new_modules{
+        Module("plugin.so", 0x30000, {"liba.so", "libnew.so"},
+               {Symbol("base", 0, 1, 0, 0),
+                Symbol("added", 0, 1, 0, 0)}),
+        Module("libnew.so", 0x40000, {},
+               {Symbol("added", 0x200, 1, 0, 1)}),
+    };
+    const auto extension = ogplay::loader::ExtendElf32LinkNamespace(
+        base, "plugin.so", new_modules);
+
+    CHECK(base.modules.size() == 2);
+    CHECK(extension.link_namespace.modules.size() == 4);
+    CHECK(extension.link_namespace.lookup_scope ==
+          std::vector<std::size_t>{0, 1});
+    CHECK(extension.scope.lookup_scope ==
+          std::vector<std::size_t>{2, 1, 3});
+    CHECK(extension.scope.load_order ==
+          std::vector<std::size_t>{1, 3, 2});
+    CHECK(extension.newly_loaded == std::vector<std::size_t>{3, 2});
+
+    const auto resolved = ogplay::loader::ResolveElf32Symbols(
+        extension.link_namespace, extension.scope, 2);
+    CHECK(*resolved.values[1] == ogplay::memory::GuestAddress{0x20100});
+    CHECK(*resolved.values[2] == ogplay::memory::GuestAddress{0x40200});
+}
+
+TEST_CASE("ELF link namespace matches required and default symbol versions") {
+    auto app = Module("app.so", 0x10000, {"liba.so"},
+                      {Symbol("foo", 0, 1, 0, 0)});
+    app.versions = ogplay::loader::Elf32SymbolVersionTable{{
+        Version(0, ogplay::loader::Elf32SymbolVersionKind::local),
+        Version(2, ogplay::loader::Elf32SymbolVersionKind::requirement,
+                "LIB_1.0", "liba.so"),
+    }};
+    auto library = Module(
+        "liba.so", 0x20000, {},
+        {Symbol("foo", 0x100, 1, 0, 1), Symbol("foo", 0x200, 1, 0, 1)});
+    library.versions = ogplay::loader::Elf32SymbolVersionTable{{
+        Version(0, ogplay::loader::Elf32SymbolVersionKind::local),
+        Version(2, ogplay::loader::Elf32SymbolVersionKind::definition,
+                "LIB_1.0", {}, true),
+        Version(3, ogplay::loader::Elf32SymbolVersionKind::definition,
+                "LIB_2.0"),
+    }};
+    const std::vector modules{app, library};
+    const auto link_namespace =
+        ogplay::loader::BuildElf32LinkNamespace("app.so", modules);
+    const auto resolved =
+        ogplay::loader::ResolveElf32Symbols(link_namespace, 0);
+    CHECK(*resolved.values[1] == ogplay::memory::GuestAddress{0x20100});
+
+    const auto default_symbol =
+        ogplay::loader::LookupElf32Symbol(link_namespace, "foo");
+    CHECK(default_symbol.symbol_index == 2);
+    CHECK(default_symbol.address == ogplay::memory::GuestAddress{0x20200});
+}
+
+TEST_CASE("ELF namespace extension rejects collisions and unreachable inputs") {
+    const std::vector modules{Module("app.so", 0x10000, {}, {})};
+    const auto link_namespace =
+        ogplay::loader::BuildElf32LinkNamespace("app.so", modules);
+    SUBCASE("alias collides with a loaded module") {
+        auto duplicate = Module("other.so", 0x20000, {}, {});
+        duplicate.dynamic.soname = "app.so";
+        const std::vector additions{duplicate};
+        CHECK_THROWS_AS(static_cast<void>(
+                            ogplay::loader::ExtendElf32LinkNamespace(
+                                link_namespace, "other.so", additions)),
+                        ogplay::loader::LinkError);
+    }
+    SUBCASE("new module is unreachable from the dynamic root") {
+        const std::vector additions{
+            Module("plugin.so", 0x20000, {}, {}),
+            Module("orphan.so", 0x30000, {}, {})};
+        CHECK_THROWS_AS(static_cast<void>(
+                            ogplay::loader::ExtendElf32LinkNamespace(
+                                link_namespace, "plugin.so", additions)),
+                        ogplay::loader::LinkError);
+    }
+    SUBCASE("version table size must equal dynsym") {
+        auto invalid = Module("invalid.so", 0x20000, {}, {});
+        invalid.versions = ogplay::loader::Elf32SymbolVersionTable{};
+        const std::vector additions{invalid};
+        CHECK_THROWS_AS(static_cast<void>(
+                            ogplay::loader::ExtendElf32LinkNamespace(
+                                link_namespace, "invalid.so", additions)),
                         ogplay::loader::LinkError);
     }
 }

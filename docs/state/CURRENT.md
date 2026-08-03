@@ -100,6 +100,9 @@
 - [WU-0061] 完成 ELF32 GNU 符号版本事实；dynsym 的 local/global/definition/requirement、
   hidden bit、版本名、依赖库及所有链表边界均可校验。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 112/112 通过。
+- [WU-0062] 完成 ELF 命名空间事务式动态扩展；既有索引/主作用域保持稳定，新根拥有
+  独立作用域，版本化导入按依赖库与版本名精确匹配。
+- macOS AppleClang `dev` 预设构建成功，全量 CTest 115/115 通过。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 108/108 通过。
 
 ## 下一步（按优先级）

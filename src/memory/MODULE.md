@@ -9,13 +9,16 @@
 - `GuestAddress`：严格 32 位 guest 地址；算术、对齐越界明确失败。
 - `GuestRange`：64 位长度的半开区间，可表达完整 4 GiB 地址空间。
 - `LowAddressGuard()`：`0x00000000–0x0000ffff` 默认保留区间。
-- M1 后续定义 Map/Unmap/Protect/Read/Write/ValidateRange/Snapshot。
+- `AddressSpace`：4 GiB reservation 上的 Map/Unmap/Protect/Read/Write/Validate。
+- `MemoryFault`：携带 guest 地址、访问类型、失败原因和 guest 线程 ID。
+- M1 后续增加 soft-MMU 调试后端与 Snapshot。
 
 ## 不变量
 
 - `0x00000000–0x0000ffff` 默认未映射。
 - 越界和权限错误必须产生带地址、访问类型和线程信息的 fault。
 - 映射状态可序列化。
+- 所有映射操作按宿主页对齐；权限账本与宿主权限必须同步更新。
 
 ## 禁止
 

@@ -55,6 +55,16 @@ status = "complete"
 test = "tests/memory/address_tests.cpp"
 note = "M1 强类型 32 位地址和 64 位半开区间，覆盖完整 4 GiB、低地址保护、对齐与溢出"
 
+[hal.virtual_memory]
+status = "partial"
+test = "tests/hal/virtual_memory_tests.cpp"
+note = "M1 三平台实现已落地且 Windows 验证完成；Linux/macOS 留到 M1 总体验收后晋级"
+
+[memory.direct_address_space]
+status = "complete"
+test = "tests/memory/address_space_tests.cpp"
+note = "M1 预留 4 GiB，支持页映射、权限、释放、验证、读写及结构化 MemoryFault"
+
 [runtime.syscall]
 status = "unimplemented"
 test = ""

@@ -1,0 +1,21 @@
+schema = 1
+
+[[option]]
+id = "log.level"
+description = "全局最低日志级别；分类前缀覆盖由 Logger schema 后续扩展"
+type = "enum"
+values = ["trace", "debug", "info", "warn", "error", "fatal"]
+default = "info"
+lifecycle = "stable"
+
+[[option]]
+id = "agent.transport"
+description = "Agent Control 传输；M0 默认关闭监听"
+type = "enum"
+values = ["disabled", "stdio", "tcp", "unix"]
+default = "disabled"
+lifecycle = "experimental"
+
+# 规则：experimental -> stable -> deprecated -> removed。
+# 临时排查开关走 Agent Control，不新增 OGPLAY_TRACE_* 环境变量。
+

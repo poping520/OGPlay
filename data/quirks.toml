@@ -1,0 +1,12 @@
+schema = 1
+
+# M0 尚未注册 quirk。新增项必须同时包含 summary、reason、risk、test、owner，且 test 必须
+# 证明关闭该 quirk 会导致可复现失败。任何吞掉错误的 quirk 还必须提供计数与 Agent 查询。
+#
+# [example_id]
+# summary = "一句话说明行为"
+# reason = "为什么正确的通用行为无法满足目标二进制"
+# risk = "可能掩盖或改变什么"
+# test = "tests/titles/example_tests.cpp:test_name"
+# owner = "runtime/memory"
+

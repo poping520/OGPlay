@@ -132,6 +132,90 @@ TEST_CASE("Thumb BX switches execution state before the next fetch") {
     CHECK(fixture.cpu.GetState().State() == ogplay::cpu::ExecutionState::a32);
 }
 
+TEST_CASE("A32 interpreter loads stores bytes words and applies writeback") {
+    CpuFixture fixture;
+    const ogplay::memory::GuestAddress data{0x20000};
+    fixture.memory.Map({data, fixture.memory.PageSize()},
+                       ogplay::memory::PageProtection::read |
+                           ogplay::memory::PageProtection::write);
+    fixture.WriteA32({
+        0xe5a01004,  // str r1, [r0, #4]!
+        0xe5902000,  // ldr r2, [r0]
+        0xe5c01005,  // strb r1, [r0, #5]
+        0xe5d03005,  // ldrb r3, [r0, #5]
+        0xef000001,  // svc #1
+    });
+    fixture.Start(ogplay::cpu::ExecutionState::a32);
+    auto state = fixture.cpu.GetState();
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, data.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::r1, 0x1234562a);
+    fixture.cpu.SetState(state);
+
+    const auto result = fixture.cpu.Run(8);
+    CHECK(result.reason == ogplay::cpu::RunStopReason::supervisor_call);
+    CHECK(result.ticks_consumed == 5);
+    state = fixture.cpu.GetState();
+    CHECK(state.Register(ogplay::cpu::CoreRegister::r0) == data.Value() + 4);
+    CHECK(state.Register(ogplay::cpu::CoreRegister::r2) == 0x1234562a);
+    CHECK(state.Register(ogplay::cpu::CoreRegister::r3) == 0x2a);
+    CHECK(fixture.bus.Read32(data.Add(4)) == 0x1234562a);
+    CHECK(fixture.bus.Read8(data.Add(9)) == 0x2a);
+}
+
+TEST_CASE("Thumb interpreter loads and stores immediate byte and word operands") {
+    CpuFixture fixture;
+    const ogplay::memory::GuestAddress data{0x20000};
+    fixture.memory.Map({data, fixture.memory.PageSize()},
+                       ogplay::memory::PageProtection::read |
+                           ogplay::memory::PageProtection::write);
+    fixture.WriteThumb({
+        0x6041,  // str r1, [r0, #4]
+        0x6842,  // ldr r2, [r0, #4]
+        0x7041,  // strb r1, [r0, #1]
+        0x7843,  // ldrb r3, [r0, #1]
+        0x4c00,  // ldr r4, [pc, #0]
+        0xdf02,  // svc #2
+    });
+    fixture.bus.Write32(fixture.code.Add(12), 0x76543210);
+    fixture.Start(ogplay::cpu::ExecutionState::thumb);
+    auto state = fixture.cpu.GetState();
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, data.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::r1, 0xabcdef2a);
+    fixture.cpu.SetState(state);
+
+    const auto result = fixture.cpu.Run(8);
+    CHECK(result.reason == ogplay::cpu::RunStopReason::supervisor_call);
+    CHECK(result.ticks_consumed == 6);
+    state = fixture.cpu.GetState();
+    CHECK(state.Register(ogplay::cpu::CoreRegister::r2) == 0xabcdef2a);
+    CHECK(state.Register(ogplay::cpu::CoreRegister::r3) == 0x2a);
+    CHECK(state.Register(ogplay::cpu::CoreRegister::r4) == 0x76543210);
+}
+
+TEST_CASE("interpreter data fault leaves instruction state and destination unchanged") {
+    CpuFixture fixture;
+    const ogplay::memory::GuestAddress data{0x20000};
+    fixture.memory.Map({data, fixture.memory.PageSize()},
+                       ogplay::memory::PageProtection::read);
+    fixture.WriteA32({0xe5801000});  // str r1, [r0]
+    fixture.Start(ogplay::cpu::ExecutionState::a32);
+    auto state = fixture.cpu.GetState();
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, data.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::r1, 0xfeedface);
+    fixture.cpu.SetState(state);
+
+    const auto result = fixture.cpu.Run(4);
+    CHECK(result.reason == ogplay::cpu::RunStopReason::memory_fault);
+    CHECK(result.ticks_consumed == 0);
+    REQUIRE(result.fault.has_value());
+    CHECK(result.fault->address == data);
+    CHECK(result.fault->access == ogplay::memory::AccessType::write);
+    state = fixture.cpu.GetState();
+    CHECK(state.Register(ogplay::cpu::CoreRegister::pc) == fixture.code.Value());
+    CHECK(state.Register(ogplay::cpu::CoreRegister::r0) == data.Value());
+    CHECK(fixture.bus.Read32(data) == 0);
+}
+
 TEST_CASE("interpreter reports budgets halt undefined instructions and fetch faults") {
     SUBCASE("budget and halt") {
         CpuFixture fixture;

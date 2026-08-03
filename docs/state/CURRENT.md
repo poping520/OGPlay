@@ -1,10 +1,13 @@
 # 当前状态
 
-更新：2026-08-03 · M1 启动会话
+更新：2026-08-03 · M1 CPU 解释器会话
 
 ## 进行中
 
-- M1 HAL Clock、平台边界与 SDL3 Window/Input 已完成；下一 Work Unit 进入 memory。
+- M1 的 Clock、SDL3 Window/Input、4 GiB memory/soft-MMU/快照骨架已落地；
+  CPU 解释器正在按指令族递增实现。
+- 开发期间本机只执行 Windows/MSVC 验证；Linux/macOS 构建、窗口输入和虚拟内存
+  总体验收统一放到 M1 出口阶段。
 - 首次远端 hosted CI 仍待仓库建立远端后确认，不阻塞本地 M1 开发。
 
 ## 最近完成
@@ -34,17 +37,30 @@
 - [WU-0019] 完成 SDL3 窗口生命周期和键盘、鼠标、手柄、退出事件 HAL 映射；
   SDL 类型不泄漏，关闭 SDL 的构建会明确失败。
 - 目标平台矩阵 warnings-as-errors 构建与 CTest 34/34。
+- [WU-0020] 完成强类型 `GuestAddress`、完整 4 GiB 半开区间、低地址保护与溢出契约。
+- [WU-0021] 完成 Windows/Linux/macOS 虚拟内存 HAL；Windows 已验证，另外两平台待 M1 出口验收。
+- [WU-0022] 完成 4 GiB guest 地址空间、页权限、映射生命周期和结构化 `MemoryFault`。
+- [WU-0023] 完成确定性小端 `CheckedMemoryBus`、跨页原子验证及访问观察器。
+- [WU-0024] 完成带版本和权限的事务式内存快照骨架。
+- [WU-0025] 冻结 A32/T32 核心/扩展寄存器、运行结果、fault 和 CPU 快照契约。
+- [WU-0026] 分离 execute 取指与 data read 权限，补齐 `Fetch16/Fetch32`。
+- [WU-0027] 完成 A32/T32 条件执行、立即数算术、分支/BX 和同步陷阱解释器基础。
+- [WU-0028] 完成 A32/T32 word/byte 单次 load/store、writeback 和数据 fault 原子失败。
+- Windows/MSVC warnings-as-errors 全量 CTest 61/61 通过；架构门禁全绿。
 
 ## 下一步（按优先级）
 
-1. [WU-0020] 定义强类型 `GuestAddress`、地址区间与溢出/边界契约。
-2. [WU-0021] 实现 4 GiB guest 地址空间预留、提交/释放和宿主权限转换。
-3. memory 契约稳定后实现解释器 CPU，再启用 Dynarmic，随后进入真线程。
-4. 建立远端后确认 hosted CI 全绿；失败则修复对应平台门禁。
+1. [WU-0029] 扩展 A32 barrel shifter、逻辑/寄存器算术、乘法及对应 Thumb-16 数据处理。
+2. [WU-0030] 实现 A32/Thumb 多寄存器传输、栈操作和首批 Thumb-2 控制流。
+3. 指令覆盖表稳定后启用 Dynarmic adapter，建立解释器/JIT 指令级对拍。
+4. 随后实现真线程模型、thread HAL 与 futex，再装配最小 guest Session。
+5. M1 功能闭合后执行 Windows/Linux/macOS 总体验收和最小 NDK 样例出口测试。
 
 ## 已知问题
 
-- SDL3 已接入生产 HAL；Dynarmic 默认关闭等待 CPU 接口。
+- SDL3 已接入生产 HAL；Dynarmic 默认关闭，等待解释器覆盖和对拍框架稳定。
+- `cpu.interpreter` 仍为 partial：尚缺完整 A32/Thumb-2、VFP/NEON、原子访问和异常模型。
+- Linux/macOS 虚拟内存实现已落地但尚未在本轮执行，能力保持 partial 到 M1 总体验收。
 - Linux 可用 SDL Unix-console 配置执行无显示服务契约；可见桌面窗口构建仍需 X11 或
   Wayland 开发依赖。
 - 黄金帧使用无 GPU SoftwareSurface，不包含 ANGLE/SwiftShader；后者属于 M4。
@@ -52,3 +68,4 @@
 - 当前只有本地 Git 仓库，三平台 hosted CI 尚无可执行远端，因此不能宣称远端 job 已绿。
 - doctest 2.4.11 在 CMake 4.x 配置期会发出上游旧 policy 的 deprecation warning，
   不影响 warnings-as-errors 编译和测试。
+- 后续本地开发验证不再使用 Cygwin，只使用 Windows/MSVC 预设。

@@ -103,11 +103,14 @@
 - [WU-0062] 完成 ELF 命名空间事务式动态扩展；既有索引/主作用域保持稳定，新根拥有
   独立作用域，版本化导入按依赖库与版本名精确匹配。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 115/115 通过。
+- [WU-0063] 完成 `dlopen/dlsym/dlclose` 链接器状态机；稳定 handle、重复引用、共享依赖、
+  handle 作用域及依赖优先 init/根优先 fini 顺序均已冻结。
+- macOS AppleClang `dev` 预设构建成功，全量 CTest 117/117 通过。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 108/108 通过。
 
 ## 下一步（按优先级）
 
-1. 补齐 ELF TLS、符号版本与 `dlopen/dlsym` 统一命名空间。
+1. 装配 guest TLS block/TPIDRURO，并按链接器顺序执行 init/fini 生命周期。
 2. 以无界面 NDK `.so` 累计样本闭合 pthread、文件 IO 与 malloc。
 3. 完成 API 19/22/23 AOSP Bionic 产物装载自检与来源清单。
 

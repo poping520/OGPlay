@@ -22,6 +22,8 @@
   与根模块优先的广度查找作用域，按 ELF local/weak/hidden/protected 规则预解析地址。
 - `ExtendElf32LinkNamespace`：事务式追加 `dlopen` 模块，保留既有索引与主作用域，
   为动态根构造独立依赖/查找作用域；版本化导入按依赖库与版本名精确匹配。
+- `Elf32DynamicLinker`：管理稳定 `dlopen` handle、重复打开引用、handle 内 `dlsym` 和
+  共享依赖引用，返回需执行的依赖优先初始化与根优先反初始化模块顺序。
 - `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，
   对重复、元数据残缺、非对齐及非 file-backed 范围明确失败。
 - `ReadElf32TlsInfo`：解析唯一 `PT_TLS` 模板，保留初始化字节、BSS 大小与对齐，

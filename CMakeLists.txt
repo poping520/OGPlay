@@ -112,7 +112,9 @@ add_library(ogplay_runtime
     src/runtime/vfs.cpp
 )
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)
-target_link_libraries(ogplay_runtime PUBLIC OGPlay::Core OGPlay::Cpu OGPlay::Memory)
+target_link_libraries(ogplay_runtime PUBLIC
+    OGPlay::Core OGPlay::Cpu OGPlay::Loader OGPlay::Memory
+)
 target_include_directories(ogplay_runtime PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>

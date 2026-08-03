@@ -71,6 +71,7 @@ target_include_directories(ogplay_memory PUBLIC
 ogplay_set_project_warnings(ogplay_memory)
 
 add_library(ogplay_cpu
+    src/cpu/futex.cpp
     src/cpu/interpreter.cpp
     src/cpu/state.cpp
     src/cpu/thread_group.cpp
@@ -137,6 +138,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/bus_tests.cpp
         tests/memory/snapshot_tests.cpp
         tests/cpu/state_tests.cpp
+        tests/cpu/futex_tests.cpp
         tests/cpu/interpreter_tests.cpp
         tests/cpu/m1_guest_sample_tests.cpp
         tests/cpu/thread_group_tests.cpp

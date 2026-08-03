@@ -12,6 +12,8 @@
   `DT_NEEDED` 与 `DT_SONAME`，重复、缺失、越界和未终止字符串均明确失败。
 - `BuildElf32LoadPlan` / `LoadElf32Arm`：按宿主页合并 `PT_LOAD`，以临时 RW 装载文件、
   顺序清零 BSS，最后切换为合并后的 W^X 权限；失败时回滚本次新增映射。
+- `ReadElf32SymbolTable`：通过边界校验后的 SysV/GNU hash 推导 dynsym 数量，解析名称、
+  binding、type、visibility 和 section index；`IsExported` 只接受已定义且外部可见的全局/弱符号。
 - 后续 Work Unit 在该事实模型上增加映射、符号、重定位和链接命名空间，不重复解析字节。
 
 ## 不变量
@@ -23,6 +25,7 @@
 - 动态虚拟地址必须能完整翻译到单个 file-backed `PT_LOAD`，不得读取 BSS 或猜测文件偏移。
 - load bias 必须按宿主页对齐；ET_EXEC 不允许 bias；非零入口必须落在 executable `PT_LOAD`。
 - 任一宿主页需要同时 W+X 时拒绝装载，不以兼容为由放宽权限。
+- dynsym 必须由有效 SysV 或 GNU hash 限定数量；GNU chain 必须在 file-backed 范围内终止。
 - `DT_NEEDED`、TLS、exidx、符号版本、init/fini 使用同一链接模型。
 - 输出只描述事实，不猜测具体游戏身份。
 

@@ -22,9 +22,13 @@ inline constexpr std::uint32_t kElfProgramLoad = 1;
 inline constexpr std::uint32_t kElfProgramDynamic = 2;
 inline constexpr std::int32_t kElfDynamicNull = 0;
 inline constexpr std::int32_t kElfDynamicNeeded = 1;
+inline constexpr std::int32_t kElfDynamicHash = 4;
 inline constexpr std::int32_t kElfDynamicStringTable = 5;
+inline constexpr std::int32_t kElfDynamicSymbolTable = 6;
 inline constexpr std::int32_t kElfDynamicStringTableSize = 10;
+inline constexpr std::int32_t kElfDynamicSymbolEntrySize = 11;
 inline constexpr std::int32_t kElfDynamicSoname = 14;
+inline constexpr std::int32_t kElfDynamicGnuHash = 0x6ffffef5;
 
 struct Elf32ProgramHeader final {
     std::uint32_t type{};
@@ -57,6 +61,37 @@ struct Elf32DynamicInfo final {
     std::optional<std::string> soname;
 };
 
+struct Elf32SysvHashInfo final {
+    std::uint32_t bucket_count{};
+    std::uint32_t chain_count{};
+};
+
+struct Elf32GnuHashInfo final {
+    std::uint32_t bucket_count{};
+    std::uint32_t symbol_offset{};
+    std::uint32_t bloom_size{};
+    std::uint32_t bloom_shift{};
+    std::uint32_t symbol_count{};
+};
+
+struct Elf32Symbol final {
+    std::string name;
+    memory::GuestAddress value;
+    std::uint32_t size{};
+    std::uint8_t binding{};
+    std::uint8_t type{};
+    std::uint8_t visibility{};
+    std::uint16_t section_index{};
+
+    [[nodiscard]] bool IsExported() const noexcept;
+};
+
+struct Elf32SymbolTable final {
+    std::optional<Elf32SysvHashInfo> sysv_hash;
+    std::optional<Elf32GnuHashInfo> gnu_hash;
+    std::vector<Elf32Symbol> symbols;
+};
+
 struct Elf32LoadRegion final {
     memory::GuestRange range;
     memory::PageProtection final_protection{memory::PageProtection::none};
@@ -75,6 +110,8 @@ public:
 
 [[nodiscard]] Elf32Image ParseElf32Arm(std::span<const std::byte> bytes);
 [[nodiscard]] Elf32DynamicInfo ReadElf32DynamicInfo(
+    std::span<const std::byte> bytes, const Elf32Image& image);
+[[nodiscard]] Elf32SymbolTable ReadElf32SymbolTable(
     std::span<const std::byte> bytes, const Elf32Image& image);
 [[nodiscard]] Elf32LoadPlan BuildElf32LoadPlan(
     const Elf32Image& image, memory::GuestAddress load_bias,

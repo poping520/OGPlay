@@ -68,6 +68,7 @@
   跨编译器字段解码修复；三平台 warnings-as-errors CTest 80/80。
 - [WU-0046] 完成 `PT_LOAD` 页计划、临时 RW 装载、BSS 清零、最终 W^X 保护和失败回滚；
   三平台 warnings-as-errors CTest 83/83。
+- [WU-0047] 完成 SysV/GNU hash 边界校验、dynsym 数量推导及符号可见性事实解析。
 
 ## 下一步（按优先级）
 

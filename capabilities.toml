@@ -68,7 +68,7 @@ note = "M1 预留 4 GiB，支持页映射、权限、释放、验证、读写及
 [memory.soft_mmu]
 status = "partial"
 test = "tests/memory/bus_tests.cpp"
-note = "M1 CheckedMemoryBus 提供小端类型访问、全区间验证与 watchpoint/trace 观察器；断点策略待 CPU"
+note = "M1 CheckedMemoryBus 提供小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器；断点策略待 CPU"
 
 [memory.snapshot]
 status = "partial"

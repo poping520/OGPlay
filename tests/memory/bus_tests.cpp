@@ -68,3 +68,35 @@ TEST_CASE("checked memory bus reports successful accesses to an explicit observe
     CHECK(observer.accesses[0].thread_id == 55);
     CHECK(observer.accesses[1].type == ogplay::memory::BusAccessType::read);
 }
+
+TEST_CASE("instruction fetch uses execute permission independently from data reads") {
+    RecordingObserver observer;
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress start{0x10000};
+    memory.Map(ogplay::memory::GuestRange(start, memory.PageSize()),
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory, &observer);
+    bus.Write32(start, 0xe3a0002a, 18);
+    memory.Protect(ogplay::memory::GuestRange(start, memory.PageSize()),
+                   ogplay::memory::PageProtection::execute);
+
+    CHECK(bus.Fetch16(start, 18) == 0x002a);
+    CHECK(bus.Fetch32(start, 18) == 0xe3a0002a);
+    CHECK_THROWS_AS(static_cast<void>(bus.Read8(start, 18)),
+                    ogplay::memory::MemoryFault);
+    REQUIRE(observer.accesses.size() == 3);
+    CHECK(observer.accesses[1].type == ogplay::memory::BusAccessType::execute);
+    CHECK(observer.accesses[2].type == ogplay::memory::BusAccessType::execute);
+
+    memory.Protect(ogplay::memory::GuestRange(start, memory.PageSize()),
+                   ogplay::memory::PageProtection::read);
+    try {
+        static_cast<void>(bus.Fetch32(start, 91));
+        FAIL("fetch from a non-executable page did not fault");
+    } catch (const ogplay::memory::MemoryFault& fault) {
+        CHECK(fault.Access() == ogplay::memory::AccessType::execute);
+        CHECK(fault.Reason() == ogplay::memory::FaultReason::permission_denied);
+        CHECK(fault.ThreadId() == 91);
+    }
+}

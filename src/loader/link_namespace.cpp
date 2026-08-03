@@ -1,5 +1,6 @@
 #include "ogplay/loader/link_namespace.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -14,6 +15,8 @@
 
 namespace ogplay::loader {
 namespace {
+
+using ModuleNames = std::map<std::string, std::size_t, std::less<>>;
 
 [[nodiscard]] std::string_view CanonicalName(const Elf32LinkModule& module) {
     if (module.dynamic.soname.has_value()) return *module.dynamic.soname;
@@ -32,48 +35,11 @@ namespace {
     return memory::GuestAddress{static_cast<std::uint32_t>(value)};
 }
 
-[[nodiscard]] std::size_t FindModule(
-    const std::map<std::string, std::size_t, std::less<>>& names,
-    const std::string_view name) {
-    const auto found = names.find(name);
-    if (found == names.end()) {
-        throw LinkError("required ELF module is unavailable: " +
-                        std::string(name));
-    }
-    return found->second;
-}
-
-[[nodiscard]] std::optional<Elf32SymbolLocation> TryLookup(
-    const Elf32LinkNamespace& link_namespace, const std::string_view name) {
-    if (name.empty()) return std::nullopt;
-    for (const auto module_index : link_namespace.lookup_scope) {
-        const auto& module = link_namespace.modules[module_index];
-        for (std::size_t symbol_index = 1;
-             symbol_index < module.symbols.symbols.size(); ++symbol_index) {
-            const auto& symbol = module.symbols.symbols[symbol_index];
-            if (symbol.name == name && symbol.IsExported()) {
-                return Elf32SymbolLocation{
-                    module_index, symbol_index,
-                    RuntimeSymbolAddress(module, symbol)};
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-}  // namespace
-
-Elf32LinkNamespace BuildElf32LinkNamespace(
-    const std::string_view root_name,
+[[nodiscard]] ModuleNames IndexModuleNames(
     const std::span<const Elf32LinkModule> modules) {
-    if (root_name.empty()) throw LinkError("ELF root module name is empty");
-    if (modules.empty()) throw LinkError("ELF link namespace has no modules");
-
-    Elf32LinkNamespace result;
-    result.modules.assign(modules.begin(), modules.end());
-    std::map<std::string, std::size_t, std::less<>> names;
-    for (std::size_t index = 0; index < result.modules.size(); ++index) {
-        const auto& module = result.modules[index];
+    ModuleNames names;
+    for (std::size_t index = 0; index < modules.size(); ++index) {
+        const auto& module = modules[index];
         if (module.name.empty()) throw LinkError("ELF module name is empty");
         const auto add_name = [&](const std::string_view name) {
             const auto [iterator, inserted] =
@@ -85,20 +51,43 @@ Elf32LinkNamespace BuildElf32LinkNamespace(
         };
         add_name(module.name);
         add_name(CanonicalName(module));
+        if (module.versions.has_value() &&
+            module.versions->symbols.size() != module.symbols.symbols.size()) {
+            throw LinkError("ELF symbol version table size disagrees with dynsym");
+        }
     }
+    return names;
+}
+
+[[nodiscard]] std::size_t FindModule(const ModuleNames& names,
+                                     const std::string_view name) {
+    const auto found = names.find(name);
+    if (found == names.end()) {
+        throw LinkError("required ELF module is unavailable: " +
+                        std::string(name));
+    }
+    return found->second;
+}
+
+[[nodiscard]] Elf32LinkScope BuildScope(
+    const std::span<const Elf32LinkModule> modules, const ModuleNames& names,
+    const std::string_view root_name) {
+    if (root_name.empty()) throw LinkError("ELF root module name is empty");
     const auto root = FindModule(names, root_name);
+    Elf32LinkScope scope;
+    scope.root_module = root;
 
     enum class Visit : std::uint8_t { unseen, active, complete };
-    std::vector<Visit> visits(result.modules.size(), Visit::unseen);
+    std::vector<Visit> visits(modules.size(), Visit::unseen);
     std::function<void(std::size_t)> visit = [&](const std::size_t index) {
         if (visits[index] == Visit::complete) return;
         if (visits[index] == Visit::active) return;
         visits[index] = Visit::active;
-        for (const auto& needed : result.modules[index].dynamic.needed) {
+        for (const auto& needed : modules[index].dynamic.needed) {
             visit(FindModule(names, needed));
         }
         visits[index] = Visit::complete;
-        result.load_order.push_back(index);
+        scope.load_order.push_back(index);
     };
     visit(root);
 
@@ -109,26 +98,61 @@ Elf32LinkNamespace BuildElf32LinkNamespace(
     while (!pending.empty()) {
         const auto index = pending.front();
         pending.pop();
-        result.lookup_scope.push_back(index);
-        for (const auto& needed : result.modules[index].dynamic.needed) {
+        scope.lookup_scope.push_back(index);
+        for (const auto& needed : modules[index].dynamic.needed) {
             const auto dependency = FindModule(names, needed);
             if (queued.insert(dependency).second) pending.push(dependency);
         }
     }
-    return result;
+    return scope;
 }
 
-Elf32SymbolLocation LookupElf32Symbol(
-    const Elf32LinkNamespace& link_namespace, const std::string_view name) {
-    const auto result = TryLookup(link_namespace, name);
-    if (!result.has_value()) {
-        throw LinkError("ELF symbol is unresolved: " + std::string(name));
+[[nodiscard]] bool MatchesVersion(
+    const Elf32LinkModule& module, const std::size_t symbol_index,
+    const std::optional<std::string_view> version) {
+    if (!module.versions.has_value()) return !version.has_value();
+    const auto& candidate = module.versions->symbols[symbol_index];
+    if (version.has_value()) {
+        return candidate.kind == Elf32SymbolVersionKind::definition &&
+               candidate.name == *version;
     }
-    return *result;
+    return candidate.kind == Elf32SymbolVersionKind::global ||
+           (candidate.kind == Elf32SymbolVersionKind::definition &&
+            !candidate.hidden);
 }
 
-Elf32ResolvedSymbols ResolveElf32Symbols(
+[[nodiscard]] std::optional<Elf32SymbolLocation> TryLookup(
     const Elf32LinkNamespace& link_namespace,
+    const std::span<const std::size_t> lookup_scope,
+    const std::string_view name,
+    const std::optional<std::string_view> version = std::nullopt,
+    const std::optional<std::string_view> dependency = std::nullopt) {
+    if (name.empty()) return std::nullopt;
+    for (const auto module_index : lookup_scope) {
+        if (module_index >= link_namespace.modules.size()) {
+            throw LinkError("ELF lookup scope contains an invalid module index");
+        }
+        const auto& module = link_namespace.modules[module_index];
+        if (dependency.has_value() && CanonicalName(module) != *dependency) {
+            continue;
+        }
+        for (std::size_t symbol_index = 1;
+             symbol_index < module.symbols.symbols.size(); ++symbol_index) {
+            const auto& symbol = module.symbols.symbols[symbol_index];
+            if (symbol.name == name && symbol.IsExported() &&
+                MatchesVersion(module, symbol_index, version)) {
+                return Elf32SymbolLocation{
+                    module_index, symbol_index,
+                    RuntimeSymbolAddress(module, symbol)};
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] Elf32ResolvedSymbols ResolveInScope(
+    const Elf32LinkNamespace& link_namespace,
+    const std::span<const std::size_t> lookup_scope,
     const std::size_t module_index) {
     if (module_index >= link_namespace.modules.size()) {
         throw LinkError("ELF module index is outside the link namespace");
@@ -147,7 +171,20 @@ Elf32ResolvedSymbols ResolveElf32Symbols(
             result.values[index] = RuntimeSymbolAddress(module, symbol);
             continue;
         }
-        const auto resolved = TryLookup(link_namespace, symbol.name);
+
+        std::optional<std::string_view> version;
+        std::optional<std::string_view> dependency;
+        if (module.versions.has_value() && symbol.section_index == 0) {
+            const auto& required = module.versions->symbols[index];
+            if (required.kind == Elf32SymbolVersionKind::requirement) {
+                version = required.name;
+                dependency = required.dependency;
+            } else if (required.kind != Elf32SymbolVersionKind::global) {
+                throw LinkError("undefined ELF symbol has an invalid version kind");
+            }
+        }
+        const auto resolved = TryLookup(link_namespace, lookup_scope,
+                                        symbol.name, version, dependency);
         if (resolved.has_value()) {
             result.values[index] = resolved->address;
         } else if (symbol.section_index != 0) {
@@ -159,6 +196,87 @@ Elf32ResolvedSymbols ResolveElf32Symbols(
         }
     }
     return result;
+}
+
+}  // namespace
+
+Elf32LinkNamespace BuildElf32LinkNamespace(
+    const std::string_view root_name,
+    const std::span<const Elf32LinkModule> modules) {
+    if (modules.empty()) throw LinkError("ELF link namespace has no modules");
+    Elf32LinkNamespace result;
+    result.modules.assign(modules.begin(), modules.end());
+    const auto names = IndexModuleNames(result.modules);
+    const auto scope = BuildScope(result.modules, names, root_name);
+    if (scope.lookup_scope.size() != result.modules.size()) {
+        throw LinkError("ELF link namespace contains unreachable modules");
+    }
+    result.load_order = scope.load_order;
+    result.lookup_scope = scope.lookup_scope;
+    return result;
+}
+
+Elf32LinkNamespaceExtension ExtendElf32LinkNamespace(
+    const Elf32LinkNamespace& link_namespace, const std::string_view root_name,
+    const std::span<const Elf32LinkModule> new_modules) {
+    if (link_namespace.modules.empty()) {
+        throw LinkError("cannot extend an empty ELF link namespace");
+    }
+    Elf32LinkNamespaceExtension result;
+    result.link_namespace = link_namespace;
+    const auto old_size = result.link_namespace.modules.size();
+    result.link_namespace.modules.insert(result.link_namespace.modules.end(),
+                                         new_modules.begin(), new_modules.end());
+    const auto names = IndexModuleNames(result.link_namespace.modules);
+    result.scope = BuildScope(result.link_namespace.modules, names, root_name);
+    for (std::size_t index = old_size;
+         index < result.link_namespace.modules.size(); ++index) {
+        if (std::find(result.scope.lookup_scope.begin(),
+                      result.scope.lookup_scope.end(), index) ==
+            result.scope.lookup_scope.end()) {
+            throw LinkError("dynamic ELF extension contains an unreachable module");
+        }
+    }
+    for (const auto index : result.scope.load_order) {
+        if (index >= old_size) result.newly_loaded.push_back(index);
+    }
+    return result;
+}
+
+Elf32SymbolLocation LookupElf32Symbol(
+    const Elf32LinkNamespace& link_namespace, const std::string_view name) {
+    const auto result = TryLookup(link_namespace, link_namespace.lookup_scope,
+                                  name);
+    if (!result.has_value()) {
+        throw LinkError("ELF symbol is unresolved: " + std::string(name));
+    }
+    return *result;
+}
+
+Elf32SymbolLocation LookupElf32Symbol(
+    const Elf32LinkNamespace& link_namespace, const Elf32LinkScope& scope,
+    const std::string_view name,
+    const std::optional<std::string_view> version,
+    const std::optional<std::string_view> dependency) {
+    const auto result = TryLookup(link_namespace, scope.lookup_scope, name,
+                                  version, dependency);
+    if (!result.has_value()) {
+        throw LinkError("ELF symbol is unresolved: " + std::string(name));
+    }
+    return *result;
+}
+
+Elf32ResolvedSymbols ResolveElf32Symbols(
+    const Elf32LinkNamespace& link_namespace,
+    const std::size_t module_index) {
+    return ResolveInScope(link_namespace, link_namespace.lookup_scope,
+                          module_index);
+}
+
+Elf32ResolvedSymbols ResolveElf32Symbols(
+    const Elf32LinkNamespace& link_namespace, const Elf32LinkScope& scope,
+    const std::size_t module_index) {
+    return ResolveInScope(link_namespace, scope.lookup_scope, module_index);
 }
 
 }  // namespace ogplay::loader

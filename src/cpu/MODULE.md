@@ -14,6 +14,8 @@
   word/byte 单次 load/store 基础集。
 - `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调访存，不暴露
   宿主指针，并与解释器共享状态、tick、停止及 fault 契约。
+- `GuestThreadGroup`：每个 guest thread ID 启动一个宿主线程和独立 CPU 实例，保存
+  TLS 基址与退出 CPU 状态，并提供真实 join 生命周期。
 - 解释器保留为确定性参考/单步后端，后续按诊断需求扩展指令覆盖。
 
 ## 不变量

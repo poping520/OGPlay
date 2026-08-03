@@ -73,6 +73,7 @@ ogplay_set_project_warnings(ogplay_memory)
 add_library(ogplay_cpu
     src/cpu/interpreter.cpp
     src/cpu/state.cpp
+    src/cpu/thread_group.cpp
 )
 add_library(OGPlay::Cpu ALIAS ogplay_cpu)
 target_link_libraries(ogplay_cpu PUBLIC OGPlay::Memory)
@@ -138,6 +139,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/cpu/state_tests.cpp
         tests/cpu/interpreter_tests.cpp
         tests/cpu/m1_guest_sample_tests.cpp
+        tests/cpu/thread_group_tests.cpp
         tests/session/session_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)

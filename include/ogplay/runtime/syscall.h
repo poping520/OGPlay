@@ -10,6 +10,8 @@
 #include <string_view>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/hal/clock.h"
+#include "ogplay/memory/address_space.h"
 
 namespace ogplay::runtime {
 
@@ -61,6 +63,7 @@ public:
     void Declare(std::uint32_t number, std::string name, SyscallGroup group);
     void Register(std::uint32_t number, std::string name, SyscallGroup group,
                   Handler handler);
+    void Implement(std::uint32_t number, Handler handler);
     [[nodiscard]] std::int32_t Dispatch(const A32SyscallFrame& frame);
     [[nodiscard]] SyscallCoverage Coverage() const;
 
@@ -77,5 +80,8 @@ private:
 
 [[nodiscard]] A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(
     core::CapabilityLedger& ledger, AndroidProcessIdentity identity = {});
+void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
+                             hal::Clock& clock,
+                             memory::AddressSpace& address_space);
 
 }  // namespace ogplay::runtime

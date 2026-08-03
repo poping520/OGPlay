@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <array>
+#include <cstddef>
 
 #include "ogplay/runtime/syscall.h"
 
@@ -55,4 +57,53 @@ TEST_CASE("syscall declarations reject duplicate numbers and empty handlers") {
         dispatcher.Register(2, "empty", ogplay::runtime::SyscallGroup::process,
                             {}),
         ogplay::runtime::SyscallError);
+}
+
+TEST_CASE("Android time syscalls use the unified clock and checked guest memory") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::hal::FixedStepClock clock{100, 1000};
+    clock.AdvanceFrames(12);
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestRange page{
+        ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
+    memory.Map(page, ogplay::memory::PageProtection::read |
+                         ogplay::memory::PageProtection::write);
+    ogplay::runtime::BindAndroidTimeSyscalls(dispatcher, clock, memory);
+
+    const auto read32 = [&memory](const std::uint32_t address) {
+        std::array<std::byte, 4> bytes{};
+        memory.Read(ogplay::memory::GuestAddress{address}, bytes);
+        std::uint32_t value{};
+        for (std::size_t index = 0; index < bytes.size(); ++index) {
+            value |= static_cast<std::uint32_t>(
+                         std::to_integer<std::uint8_t>(bytes[index]))
+                     << static_cast<unsigned>(index * 8U);
+        }
+        return value;
+    };
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 263;
+    frame.arguments[0] = 1;
+    frame.arguments[1] = 0x10000;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    CHECK(read32(0x10000) == 1);
+    CHECK(read32(0x10004) == 200000000);
+
+    frame.number = 78;
+    frame.arguments[0] = 0x10010;
+    frame.arguments[1] = 0x10020;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    CHECK(read32(0x10010) == 1);
+    CHECK(read32(0x10014) == 200000);
+    CHECK(read32(0x10020) == 0);
+
+    frame.number = 263;
+    frame.arguments[0] = 99;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments[0] = 1;
+    frame.arguments[1] = 0x20000;
+    CHECK(dispatcher.Dispatch(frame) == -14);
 }

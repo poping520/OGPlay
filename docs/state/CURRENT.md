@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0123` 已完成 DEX header 与 map_list 解析；下一个开发任务编号为 `WU-0124`。
+- `WU-0124` 已完成 DEX 字符串、类型与 prototype 解析；下一个开发任务编号为 `WU-0125`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -66,11 +66,13 @@
   验证 VM、字段、字符串、primitive/object 数组、引用和异常资源。
 - [WU-0123] 建立 DEX 035..040 只读事实模型，交叉验证 header、固定表范围和唯一有序
   map_list；畸形标识、端序、对齐、范围与映射均明确失败。
+- [WU-0124] 严格解码 DEX Modified UTF-8/ULEB128，并解析类型 descriptor、prototype
+  type_list 与 shorty；UTF-16 长度、所有索引和签名一致性均受检。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0124`，解析 DEX 字符串、类型和 prototype。
-2. 继续到类/方法元数据与 Java 厚度报告，不引入字节码执行器。
+1. 创建 `WU-0125`，解析 DEX 字段、方法、class_data 和 code 元数据。
+2. 随后生成引擎指纹与 Java 厚度报告，不引入字节码执行器。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

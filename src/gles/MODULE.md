@@ -15,8 +15,9 @@
   `ANGLE::EGL`/`ANGLE::GLESv2`。
 - `OGPLAY_ANGLE_SDK_ROOT` / `OGPLAY_ANGLE_SDK_CONFIGURATION`：指定平台化 SDK 根目录和
   release/debug 包；CMake 自动匹配宿主平台/CPU并验证所有声明文件。
-- `tools/build_angle.py`：校验顶层 gitlink，驱动官方 gclient/GN/Ninja 流程并记录可复现
-  的 commit、平台、GN 参数和产物清单；Windows 固定使用 MSVC。
+- `tools/build_angle.py`：校验维护者本地 checkout 与脚本固定 commit，驱动官方
+  gclient/GN/Ninja 流程并记录可复现的 commit、平台、GN 参数和产物清单；Windows 固定
+  使用 MSVC。
 - `tools/package_angle_sdk.py`：从上述产物生成按平台/CPU/配置分层、逐文件 SHA-256 且附带
   许可证的可重定位 SDK；Release ANGLE 是普通 Debug/Release 消费的默认包。
 - `third_party/angle-prebuilt`：独立公开仓库的浅 submodule；普通构建和 Windows CI 从其
@@ -29,8 +30,9 @@
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - 平台探测事实由下层注入；gles 模块不使用平台宏，也不直接依赖平台 SDK 类型。
 - SwiftShader 只能作为 ANGLE Vulkan 软件设备使用；hardware-only 不得静默回退软件。
-- ANGLE 源码由维护者浅 git submodule 固定；普通消费端使用独立预编译浅 submodule，
-  清单、平台或哈希不匹配时明确失败，不静默降级为源码或系统 EGL/GLES。
+- ANGLE 源码只存在于维护者本地 `angle-prebuilt-repo` 工作区，由构建脚本固定 commit；
+  普通消费端使用独立预编译浅 submodule，清单、平台或哈希不匹配时明确失败，不静默降级
+  为源码或系统 EGL/GLES。
 - ANGLE GN 参数关闭测试、Null、OpenGL 和 WebGPU 后端；保留各平台既定硬件后端，
   Linux/macOS 同时构建 SwiftShader，Windows/MSVC 的 SwiftShader 留给独立 Clang 产物。
 - Windows 禁用 Chromium 自带 libc++，由 MSVC 使用其原生标准库，避免混用编译器 ABI。

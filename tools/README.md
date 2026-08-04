@@ -23,10 +23,11 @@ macOS 或非标准安装可通过 `--cmake`、`--ctest` 指定可执行文件。
 
 ## ANGLE 构建
 
-`build_angle.py` 校验 `third_party/angle` 与顶层 gitlink 一致，按宿主生成固定 GN 参数，
-并只构建、验证 `libEGL` 与 `libGLESv2`。depot_tools 是本地构建工具，不进入仓库；其路径
-通过 `--depot-tools` 传入。Windows 配置固定使用 MSVC 及其原生标准库，Linux/macOS
-使用 Clang。
+`build_angle.py` 校验维护者 ANGLE checkout 与脚本内固定 commit 一致，按宿主生成固定
+GN 参数，并只构建、验证 `libEGL` 与 `libGLESv2`。默认源码工作区是本地
+`.local/angle-prebuilt-repo/angle`；也可用 `--source` 指定绝对路径。depot_tools 是本地
+构建工具，不进入仓库；其路径通过 `--depot-tools` 传入。Windows 配置固定使用 MSVC 及其
+原生标准库，Linux/macOS 使用 Clang。
 
 首次同步并构建：
 
@@ -35,8 +36,9 @@ python tools/build_angle.py all --depot-tools <absolute-depot-tools-path>
 ```
 
 依赖已同步后的增量构建可分别执行 `configure`、`build`、`verify`；`print-config` 输出当前
-平台的完整 GN 参数。默认产物目录是 `third_party/angle/out/ogplay`，成功验证后写入带
-ANGLE commit、目标平台、GN 参数和产物清单的 `ogplay-angle-manifest.json`。
+平台的完整 GN 参数。默认产物目录是
+`.local/angle-prebuilt-repo/angle/out/ogplay`，成功验证后写入带 ANGLE commit、目标平台、
+GN 参数和产物清单的 `ogplay-angle-manifest.json`。
 `--jobs` 同时限制 gclient 和 Ninja 并发；匿名同步触发上游限流时可降低该值后增量重试。
 
 ## ANGLE SDK 打包

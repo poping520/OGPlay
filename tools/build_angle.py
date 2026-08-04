@@ -16,9 +16,10 @@ from typing import Iterable, Sequence
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = REPOSITORY_ROOT / "third_party" / "angle"
+DEFAULT_SOURCE = REPOSITORY_ROOT / ".local" / "angle-prebuilt-repo" / "angle"
 DEFAULT_OUTPUT = DEFAULT_SOURCE / "out" / "ogplay"
 TARGETS = ("libEGL", "libGLESv2")
+PINNED_ANGLE_COMMIT = "2bd94af5d530ce936cd7e3f7beba13fd9e831c03"
 
 
 def detect_platform() -> str:
@@ -121,16 +122,8 @@ def git_output(arguments: Sequence[str], cwd: Path) -> str:
     return result.stdout.strip()
 
 
-def pinned_angle_commit(repository_root: Path) -> str:
-    entry = git_output(["ls-files", "--stage", "third_party/angle"], repository_root)
-    fields = entry.split()
-    if len(fields) < 4 or fields[0] != "160000" or fields[2] != "0":
-        raise RuntimeError("the index does not contain the third_party/angle gitlink")
-    return fields[1]
-
-
-def verify_checkout(source: Path, repository_root: Path) -> str:
-    expected = pinned_angle_commit(repository_root)
+def verify_checkout(source: Path) -> str:
+    expected = PINNED_ANGLE_COMMIT
     actual = git_output(["rev-parse", "HEAD"], source)
     if actual != expected:
         raise RuntimeError(
@@ -218,6 +211,7 @@ def self_test() -> int:
     assert gclient_sync_command("gclient", 4) == [
         "gclient", "sync", "--no-history", "--jobs=4"
     ]
+    assert len(PINNED_ANGLE_COMMIT) == 40
     print("ANGLE build driver self-test passed")
     return 0
 
@@ -258,7 +252,7 @@ def main() -> int:
 
     if not (source / "scripts" / "bootstrap.py").is_file():
         raise RuntimeError(f"ANGLE source is missing or incomplete: {source}")
-    commit = verify_checkout(source, REPOSITORY_ROOT)
+    commit = verify_checkout(source)
 
     if args.action == "print-config":
         print("\n".join(gn_args))
@@ -277,7 +271,7 @@ def main() -> int:
                 args.dry_run)
         run(gclient_sync_command(gclient, args.jobs), source, env, args.dry_run)
         if not args.dry_run:
-            commit = verify_checkout(source, REPOSITORY_ROOT)
+            commit = verify_checkout(source)
 
     if args.action in {"all", "configure"}:
         gn = resolve_tool("gn", depot_tools)

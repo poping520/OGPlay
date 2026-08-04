@@ -177,20 +177,30 @@ void A32SyscallDispatcher::Implement(const std::uint32_t number,
     found->second.handler = std::move(handler);
 }
 
+void A32SyscallDispatcher::SetObserver(Observer observer) {
+    observer_ = std::move(observer);
+}
+
 std::int32_t A32SyscallDispatcher::Dispatch(const A32SyscallFrame& frame) {
     const auto found = entries_.find(frame.number);
+    std::int32_t result{};
     if (found == entries_.end()) {
         ledger_.RecordUnimplemented("syscall.arm." +
                                         std::to_string(frame.number),
                                     frame.link_register);
-        return -kLinuxEnosys;
-    }
-    if (!found->second.handler) {
+        result = -kLinuxEnosys;
+    } else if (!found->second.handler) {
         ledger_.RecordUnimplemented("syscall." + found->second.name,
                                     frame.link_register);
-        return -kLinuxEnosys;
+        result = -kLinuxEnosys;
+    } else {
+        result = found->second.handler(frame);
     }
-    return found->second.handler(frame);
+    if (observer_) {
+        std::scoped_lock lock(*observer_mutex_);
+        observer_(frame, result);
+    }
+    return result;
 }
 
 SyscallCoverage A32SyscallDispatcher::Coverage() const {
@@ -343,7 +353,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
         return static_cast<std::uint32_t>(result);
     };
     const auto protection = [](const std::uint32_t linux_protection) {
-        if ((linux_protection & ~7U) != 0 || linux_protection == 0) {
+        if ((linux_protection & ~7U) != 0) {
             throw std::invalid_argument("unsupported Linux page protection");
         }
         auto result = memory::PageProtection::none;
@@ -370,8 +380,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                 const auto size = aligned_size(frame.arguments[1]);
                 const auto flags = frame.arguments[3];
                 if ((flags & kMapAnonymous) == 0 ||
-                    (flags & kMapPrivate) == 0 || frame.arguments[4] != UINT32_MAX ||
-                    frame.arguments[5] != 0) {
+                    (flags & kMapPrivate) == 0 || frame.arguments[5] != 0) {
                     return -kEinval;
                 }
                 std::uint32_t address{};
@@ -422,6 +431,45 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                 return 0;
             } catch (const std::domain_error&) {
                 return -kEperm;
+            } catch (const std::exception&) {
+                return -kEinval;
+            }
+        });
+    dispatcher.Implement(
+        220, [&address_space, page_size,
+              aligned_size](const A32SyscallFrame& frame) {
+            constexpr std::uint32_t kMadvDontneed = 4;
+            const auto supported_advice = [](const std::uint32_t advice) {
+                return advice <= kMadvDontneed ||
+                       (advice >= 12U && advice <= 15U);
+            };
+            if (frame.arguments[0] % page_size != 0 ||
+                !supported_advice(frame.arguments[2])) {
+                return -kEinval;
+            }
+            try {
+                const auto size = aligned_size(frame.arguments[1]);
+                const memory::GuestRange range{
+                    memory::GuestAddress{frame.arguments[0]}, size};
+                const auto access = frame.arguments[2] == kMadvDontneed
+                                        ? memory::AccessType::write
+                                        : memory::AccessType::read;
+                address_space.Validate(range, access, frame.thread_id);
+                if (frame.arguments[2] != kMadvDontneed) return 0;
+
+                const std::array<std::byte, 4096> zeroes{};
+                std::uint64_t offset{};
+                while (offset < size) {
+                    const auto count = static_cast<std::size_t>(
+                        std::min<std::uint64_t>(zeroes.size(), size - offset));
+                    address_space.Write(range.Start().Add(offset),
+                                        std::span{zeroes}.first(count),
+                                        frame.thread_id);
+                    offset += count;
+                }
+                return 0;
+            } catch (const memory::MemoryFault&) {
+                return -kEnomem;
             } catch (const std::exception&) {
                 return -kEinval;
             }
@@ -530,10 +578,11 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     const auto options = [](const std::uint32_t flags) {
         constexpr std::uint32_t kCreate = 0x40;
         constexpr std::uint32_t kTruncate = 0x200;
+        constexpr std::uint32_t kNoFollow = 0x8000;
         constexpr std::uint32_t kLargeFile = 0x20000;
         constexpr std::uint32_t kCloseOnExec = 0x80000;
         constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate |
-                                         kLargeFile | kCloseOnExec;
+                                         kNoFollow | kLargeFile | kCloseOnExec;
         if ((flags & ~kKnown) != 0 || (flags & 3U) == 3U) {
             throw VfsError(kEinval, "unsupported Android open flags");
         }

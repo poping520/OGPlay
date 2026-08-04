@@ -45,6 +45,7 @@ TEST_CASE("ARM clone starts a real host thread at the child return path") {
     ogplay::cpu::InterpreterCpu parent(bus);
     ogplay::cpu::A32State state;
     state.SetThreadId(41);
+    state.SetThreadPointer(ogplay::memory::GuestAddress{0x70000000U});
     state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
     state.SetRegister(ogplay::cpu::CoreRegister::r7, 120);
     state.SetRegister(
@@ -54,7 +55,6 @@ TEST_CASE("ARM clone starts a real host thread at the child return path") {
             ogplay::runtime::kLinuxCloneSighand |
             ogplay::runtime::kLinuxCloneThread |
             ogplay::runtime::kLinuxCloneSysvsem |
-            ogplay::runtime::kLinuxCloneSettls |
             ogplay::runtime::kLinuxCloneParentSettid |
             ogplay::runtime::kLinuxCloneChildCleartid);
     state.SetRegister(ogplay::cpu::CoreRegister::r1, 0x12000U);
@@ -75,6 +75,6 @@ TEST_CASE("ARM clone starts a real host thread at the child return path") {
     CHECK(child.run.exit->state.exit_code == 7);
     CHECK(child.thread.cpu_state.ThreadId() == 100);
     CHECK(child.thread.cpu_state.ThreadPointer() ==
-          ogplay::memory::GuestAddress{0x72000000U});
+          ogplay::memory::GuestAddress{0x70000000U});
     CHECK(bus.Read32(tid) == 0);
 }

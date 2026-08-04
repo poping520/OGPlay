@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/cpu/cpu.h"
@@ -83,6 +84,14 @@ struct GuestThreadCloneRequest final {
 using GuestThreadCloneSpawner =
     std::function<std::int32_t(const GuestThreadCloneRequest&)>;
 
+struct GuestVmaAnnotation final {
+    memory::GuestRange range;
+    std::string name;
+};
+
+using GuestVmaAnnotationSink =
+    std::function<void(const GuestVmaAnnotation&)>;
+
 class GuestThreadCloneCommitter final {
 public:
     GuestThreadCloneCommitter(GuestThreadLifecycle& lifecycle,
@@ -104,12 +113,15 @@ public:
 class A32SyscallDispatcher final {
 public:
     using Handler = std::function<std::int32_t(const A32SyscallFrame&)>;
+    using Observer =
+        std::function<void(const A32SyscallFrame&, std::int32_t)>;
 
     explicit A32SyscallDispatcher(core::CapabilityLedger& ledger);
     void Declare(std::uint32_t number, std::string name, SyscallGroup group);
     void Register(std::uint32_t number, std::string name, SyscallGroup group,
                   Handler handler);
     void Implement(std::uint32_t number, Handler handler);
+    void SetObserver(Observer observer);
     [[nodiscard]] std::int32_t Dispatch(const A32SyscallFrame& frame);
     [[nodiscard]] SyscallCoverage Coverage() const;
 
@@ -122,6 +134,9 @@ private:
 
     core::CapabilityLedger& ledger_;
     std::map<std::uint32_t, Entry> entries_;
+    Observer observer_;
+    std::shared_ptr<std::mutex> observer_mutex_{
+        std::make_shared<std::mutex>()};
 };
 
 [[nodiscard]] A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(
@@ -134,6 +149,11 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                                cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus);
+void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher,
+                               memory::AddressSpace& address_space);
+void BindAndroidProcessSyscalls(A32SyscallDispatcher& dispatcher,
+                                memory::AddressSpace& address_space,
+                                GuestVmaAnnotationSink vma_annotation_sink);
 void BindAndroidArmPrivateSyscalls(
     A32SyscallDispatcher& dispatcher,
     GuestThreadPointerSetter thread_pointer_setter);

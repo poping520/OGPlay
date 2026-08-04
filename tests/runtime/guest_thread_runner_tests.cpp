@@ -82,3 +82,29 @@ TEST_CASE("guest thread runner preserves unhandled traps and budgets") {
         CHECK(outcome.ticks_consumed == 5);
     }
 }
+
+TEST_CASE("guest thread runner commits set_tls to the active CPU") {
+    RunnerFixture fixture;
+    fixture.bus.Write32(fixture.code, 0xef000000U);         // svc #0: set_tls
+    fixture.bus.Write32(fixture.code.Add(4), 0xef000001U);  // svc #1: stop
+    fixture.Start(83);
+    auto state = fixture.cpu.GetState();
+    state.SetRegister(ogplay::cpu::CoreRegister::r7, 0x0f0005U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, 0x72000000U);
+    fixture.cpu.SetState(state);
+    ogplay::runtime::BindAndroidArmPrivateSyscalls(
+        fixture.dispatcher,
+        [&fixture](const std::uint64_t thread_id,
+                   const ogplay::memory::GuestAddress pointer) {
+            fixture.lifecycle.SetThreadPointer(thread_id, pointer);
+            return true;
+        });
+
+    const auto outcome = ogplay::runtime::RunAndroidArmGuestThread(
+        fixture.cpu, fixture.dispatcher, fixture.lifecycle, fixture.bus,
+        fixture.futex, 8);
+    CHECK(outcome.reason ==
+          ogplay::runtime::GuestThreadRunStop::unhandled_supervisor_call);
+    CHECK(fixture.cpu.GetState().ThreadPointer() ==
+          ogplay::memory::GuestAddress{0x72000000U});
+}

@@ -95,7 +95,7 @@ void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher,
                 return -kEnotsup;
             }
             const auto child_stack = frame.arguments[1];
-            if (child_stack == 0 || child_stack % 16U != 0) return -kEinval;
+            if (child_stack == 0 || child_stack % 8U != 0) return -kEinval;
             const auto optional_pointer = [](const bool present,
                                              const std::uint32_t value) {
                 if (!present) {
@@ -224,7 +224,8 @@ std::int32_t GuestThreadCloneCommitter::Commit(
     try {
         lifecycle_.RegisterChild(
             request.parent_thread_id, child_thread_id,
-            request.thread_pointer.value_or(memory::GuestAddress{0}),
+            request.thread_pointer.value_or(
+                request.parent_cpu_state.ThreadPointer()),
             has(kLinuxCloneChildCleartid)
                 ? *request.child_tid
                 : memory::GuestAddress{0});

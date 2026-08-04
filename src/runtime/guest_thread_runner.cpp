@@ -43,6 +43,9 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
                     last, std::nullopt};
         }
         const auto state = lifecycle.State(initial.ThreadId());
+        auto updated = cpu.GetState();
+        updated.SetThreadPointer(state.thread_pointer);
+        cpu.SetState(updated);
         if (state.status == GuestThreadStatus::exit_requested) {
             auto exit = lifecycle.CompleteExit(
                 initial.ThreadId(), memory_bus, futex_table);

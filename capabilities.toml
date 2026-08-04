@@ -153,7 +153,7 @@ note = "M3 已将 208 个常用 JNIEnv 槽与 4 个 JavaVM 线程槽映射到稳
 [runtime.framework_hle]
 status = "partial"
 test = "tests/runtime/framework_lifecycle_tests.cpp"
-note = "M3 已声明式安装 Activity、AssetManager/InputStream、SharedPreferences/Editor 与可注入 Locale；文件、偏好和区域对象均经过 JNI 线程/作用域门禁，Locale 不读取宿主设置以保持确定性"
+note = "M3 已声明式安装 Activity、AssetManager/InputStream、SharedPreferences/Editor 与可注入 Locale，并冻结 Context.getPackageName/getPackageManager 契约；所有 HLE 对象均经过 JNI 线程/作用域门禁"
 
 [fixtures.m3_jni]
 status = "partial"

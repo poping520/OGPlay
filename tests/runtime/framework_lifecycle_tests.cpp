@@ -58,6 +58,22 @@ TEST_CASE("framework HLE installs a declaration-only Activity class set") {
             ogplay::runtime::JniArgumentSource::value_array)),
         "JNI method implementation has no registered handler",
         ogplay::runtime::JniInvocationError);
+    for (const auto& [name, descriptor] : std::array{
+             std::pair{"getPackageName", "()Ljava/lang/String;"},
+             std::pair{"getPackageManager",
+                       "()Landroid/content/pm/PackageManager;"}}) {
+        const auto method =
+            classes.GetMethodId(installed.activity_class, name, descriptor,
+                                false);
+        REQUIRE(method.has_value());
+        CHECK_THROWS_WITH_AS(
+            static_cast<void>(invocations.InvokeVirtual(
+                1, ogplay::runtime::JniReference{1},
+                installed.activity_class, *method, {},
+                ogplay::runtime::JniArgumentSource::value_array)),
+            "JNI method implementation has no registered handler",
+            ogplay::runtime::JniInvocationError);
+    }
     CHECK_THROWS_AS(static_cast<void>(lifecycle.Install()),
                     ogplay::runtime::FrameworkLifecycleError);
 }

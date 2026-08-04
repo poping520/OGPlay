@@ -102,8 +102,8 @@
 - `FrameworkLifecycleHle`：声明式安装 Object、Context、ContextWrapper、Bundle、Activity
   类与生命周期方法；Activity 通过 ContextWrapper 继承 Context，资源服务可在独立 HLE
   安装后接管 `Context.getAssets`，偏好服务可接管 `Context.getSharedPreferences`；服务未
-  安装时明确报告 missing handler；通过统一 invocation handler 执行严格状态迁移并输出
-  确定性事件序列。
+  安装时明确报告 missing handler；包信息服务可接管 getPackageName/getPackageManager；
+  通过统一 invocation handler 执行严格状态迁移并输出确定性事件序列。
 - `FrameworkAssetHle`：声明式安装 AssetManager/InputStream，将相对 UTF-16 asset 名严格
   转为 `/apk/assets/` VFS 路径，并闭合 getAssets/open、单字节及两种 byte[] read、skip、
   available/close；范围读取先完整验证目标再推进流，skip 按剩余长度截断；流只读取 APK

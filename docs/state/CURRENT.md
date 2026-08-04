@@ -133,6 +133,9 @@
 - [WU-0072] CPU `SVC #0` 已按 r7 + r0-r6 桥接 Android ARM EABI dispatcher；PC、LR、
   thread ID、TPIDRURO 与有符号 r0 返回值均有端到端解释器契约测试。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0073] 建立预算化 Android ARM guest 线程执行循环；连续 Linux SVC、exit completion、
+  累计 tick、未处理 SVC 与普通 CPU stop 均有端到端解释器测试。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 
 ## 下一步（按优先级）
 

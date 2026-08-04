@@ -30,6 +30,8 @@
   把统一链接器的模块顺序展开为加 load bias 的 DT_INIT/array/DT_FINI guest 调用并执行。
 - `GuestThreadLifecycle`：线程安全保存 running/exit-requested/exited、thread pointer、
   clear-child-tid 与退出码，提供单线程/进程组退出、写零 + futex 唤醒和显式 reap 状态机。
+- `RunAndroidArmGuestThread`：按 tick 预算运行 CPU，循环消费 Linux SVC，并在 exit 请求
+  后完成 clear-child-tid/futex 清理；其他 trap 和未处理 SVC 原样返回。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供
   隔离文件描述符的 open/read/write/seek/close；路径逃逸和权限错误携带 Linux errno。
 - `BindAndroidFileSyscalls`：将 `open/openat/read/write/lseek/close` 绑定到 VFS；路径和

@@ -5,8 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0129` 已完成 Context/ContextWrapper/Activity 继承链；下一个开发任务编号为
-  `WU-0130`。
+- `WU-0130` 已完成 HLE 专用受检引用解析边界；下一个开发任务编号为 `WU-0131`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -39,11 +38,13 @@
   JNIEnv 行为槽；反射、direct buffer 等低频槽继续可观测 trap。
 - [WU-0129] 建立 Object→Context→ContextWrapper→Activity 声明链；资源服务未安装时
   `Context.getAssets` 通过调用引擎明确报告 missing handler。
+- [WU-0130] 增加 HLE 专用引用解析边界，验证线程附着、local 作用域与 pending
+  exception gate，只返回强类型对象身份，不泄露宿主指针。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0130`，增加只供框架 HLE 使用的受检 JNI 引用解析边界。
-2. 随后实现最小 AssetManager/InputStream HLE，不引入字节码执行器。
+1. 创建 `WU-0131`，实现最小 AssetManager/InputStream HLE，不引入字节码执行器。
+2. 用真实 VFS assets 挂载闭合 getAssets/open/read/available/close 契约。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

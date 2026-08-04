@@ -61,3 +61,30 @@ TEST_CASE("JNI environment rolls back a failed thread attachment") {
                     ogplay::runtime::JniExceptionError);
     environment.DetachThread(9);
 }
+
+TEST_CASE("JNI HLE object resolution is checked and preserves identity") {
+    ogplay::runtime::JniEnvironment environment({8, 4, 4});
+    environment.AttachThread(31, 4);
+    environment.AttachThread(32, 4);
+    const ogplay::runtime::JniObjectIdentity object{
+        ogplay::runtime::JniObjectDomain::dex_vm, 0x1234};
+    const auto reference = environment.PublishLocalObject(31, object);
+
+    CHECK(environment.ResolveObjectForHle(31, reference) == object);
+    CHECK_FALSE(environment
+                    .ResolveObjectForHle(31, ogplay::runtime::JniReference{})
+                    .has_value());
+    CHECK_THROWS_AS(
+        static_cast<void>(environment.ResolveObjectForHle(32, reference)),
+        ogplay::runtime::JniReferenceError);
+
+    const auto throwable = environment.PublishLocalObject(
+        31, {ogplay::runtime::JniObjectDomain::host, 0x55});
+    environment.Throw(31, throwable);
+    CHECK_THROWS_AS(
+        static_cast<void>(environment.ResolveObjectForHle(31, reference)),
+        ogplay::runtime::JniExceptionError);
+    environment.ExceptionClear(31);
+    environment.DetachThread(32);
+    environment.DetachThread(31);
+}

@@ -56,6 +56,10 @@ public:
     void Register(std::uint64_t thread_id,
                   memory::GuestAddress thread_pointer =
                       memory::GuestAddress{0});
+    void RegisterChild(std::uint64_t parent_thread_id,
+                       std::uint64_t child_thread_id,
+                       memory::GuestAddress thread_pointer,
+                       memory::GuestAddress clear_child_tid);
     void SetThreadPointer(std::uint64_t thread_id,
                           memory::GuestAddress thread_pointer);
     void SetClearChildTid(std::uint64_t thread_id,

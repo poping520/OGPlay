@@ -63,6 +63,38 @@ TEST_CASE("guest thread lifecycle rejects invalid transitions") {
                     ogplay::runtime::GuestThreadLifecycleError);
 }
 
+TEST_CASE("guest child registration validates parent and commits one state") {
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(41);
+    lifecycle.RegisterChild(41, 42,
+                            ogplay::memory::GuestAddress{0x72000000U},
+                            ogplay::memory::GuestAddress{0x10020U});
+    const auto child = lifecycle.State(42);
+    CHECK(child.status == ogplay::runtime::GuestThreadStatus::running);
+    CHECK(child.thread_pointer ==
+          ogplay::memory::GuestAddress{0x72000000U});
+    CHECK(child.clear_child_tid ==
+          ogplay::memory::GuestAddress{0x10020U});
+
+    CHECK_THROWS_AS(
+        lifecycle.RegisterChild(99, 43,
+                                ogplay::memory::GuestAddress{0},
+                                ogplay::memory::GuestAddress{0}),
+        ogplay::runtime::GuestThreadLifecycleError);
+    lifecycle.RequestExit(41, 0);
+    CHECK_THROWS_AS(
+        lifecycle.RegisterChild(41, 44,
+                                ogplay::memory::GuestAddress{0},
+                                ogplay::memory::GuestAddress{0}),
+        ogplay::runtime::GuestThreadLifecycleError);
+    CHECK_THROWS_AS(
+        lifecycle.RegisterChild(42, 42,
+                                ogplay::memory::GuestAddress{0},
+                                ogplay::memory::GuestAddress{0}),
+        ogplay::runtime::GuestThreadLifecycleError);
+    CHECK(lifecycle.States().size() == 2);
+}
+
 TEST_CASE("guest exit clears child tid and wakes one futex waiter") {
     ogplay::memory::AddressSpace memory;
     const ogplay::memory::GuestAddress address{0x10000U};

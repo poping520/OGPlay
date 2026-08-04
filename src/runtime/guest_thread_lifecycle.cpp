@@ -54,6 +54,31 @@ void GuestThreadLifecycle::Register(
     }
 }
 
+void GuestThreadLifecycle::RegisterChild(
+    const std::uint64_t parent_thread_id,
+    const std::uint64_t child_thread_id,
+    const memory::GuestAddress thread_pointer,
+    const memory::GuestAddress clear_child_tid) {
+    if (child_thread_id == 0) {
+        throw GuestThreadLifecycleError("guest child thread id must be non-zero");
+    }
+    std::scoped_lock lock(impl_->mutex);
+    const auto& parent = impl_->Require(parent_thread_id);
+    if (parent.status != GuestThreadStatus::running) {
+        throw GuestThreadLifecycleError(
+            "guest child requires a running parent thread");
+    }
+    const auto [position, inserted] = impl_->states.emplace(
+        child_thread_id,
+        GuestThreadRuntimeState{child_thread_id, thread_pointer,
+                                clear_child_tid});
+    static_cast<void>(position);
+    if (!inserted) {
+        throw GuestThreadLifecycleError(
+            "guest child thread is already registered");
+    }
+}
+
 void GuestThreadLifecycle::SetThreadPointer(
     const std::uint64_t thread_id,
     const memory::GuestAddress thread_pointer) {

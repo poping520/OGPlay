@@ -139,6 +139,9 @@
 - [WU-0074] 完成 Linux ARM `clone` 的 pthread 形态约束及五参数 ABI 解码；parent/child
   TID、TLS 指针仅按 flags 暴露，实际创建由显式 spawner 决定且零结果不会伪装成功。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0075] guest 生命周期可在同一临界区校验 running parent、child TID 唯一性，并以
+  初始 TLS 与 clear-child-tid 原子注册 child；失败不会留下部分 child 状态。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 
 ## 下一步（按优先级）
 

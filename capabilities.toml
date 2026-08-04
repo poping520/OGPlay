@@ -133,7 +133,7 @@ note = "M2 已建立 Android ARM EABI 分组目录、可观测基线、身份/�
 [runtime.bionic]
 status = "partial"
 test = "tests/runtime/bionic_profile_tests.cpp"
-note = "M2 已将 API 19/22/23 guest Bionic、选择性拦截和可观测 HLE thunk 接入统一 ELF 命名空间；AOSP 产物装载自检待完成"
+note = "M2 已将 API 19/22/23 guest Bionic、HLE thunk 与 64-slot ARM TLS block 接入统一契约；AOSP 产物装载自检待完成"
 
 [runtime.vfs]
 status = "partial"

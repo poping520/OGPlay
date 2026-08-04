@@ -87,6 +87,8 @@
   elements/critical 副本及 copy-back、commit、abort 释放模式。
 - `JniNativeRegistry`：按类身份、方法名和严格描述符事务注册 guest native 地址，
   支持重载精确查询、幂等重注册、冲突拒绝与按类 UnregisterNatives。
+- `JniClassRegistry`：事务装载声明式类、方法和字段，提供稳定强类型 ID、父类查找、
+  可赋值判断及遵循继承/静态/构造器规则的成员查找。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
@@ -120,6 +122,7 @@
 - primitive array region 与 release 数据必须保持元素类型和长度；commit 保留租约，
   abort 不回写，普通 release 回写并关闭租约。
 - RegisterNatives 必须先验证整批声明再提交；同键不同地址不得覆盖，重载必须按描述符区分。
+- 类必须按父类优先注册；成员键由名称和严格描述符组成，构造器不得从父类继承。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 
 ## 禁止

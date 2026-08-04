@@ -31,7 +31,7 @@ Elf32LoadedNamespace LoadElf32ModuleNamespace(
             input.bytes, image, dynamic, symbols);
         link_modules.push_back({input.name, input.load_bias,
                                 std::move(dynamic), std::move(symbols),
-                                std::move(versions)});
+                                std::move(versions), {}});
         result.modules.push_back({std::move(image),
                                   {memory::GuestAddress{0}, std::nullopt, {}},
                                   std::move(relocations),

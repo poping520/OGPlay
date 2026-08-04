@@ -101,8 +101,11 @@
   native 注册与 JavaVM 行为映射到稳定 thunk 并封口函数表；未覆盖槽继续记账并 trap。
 - `FrameworkLifecycleHle`：声明式安装 Object、Context、ContextWrapper、Bundle、Activity
   类与生命周期方法；Activity 通过 ContextWrapper 继承 Context，资源服务可在独立 HLE
-  安装后接管 `Context.getAssets`，未安装时明确报告 missing handler，
-  通过统一 invocation handler 执行严格状态迁移并输出确定性事件序列。
+  安装后接管 `Context.getAssets`，未安装时明确报告 missing handler；通过统一 invocation
+  handler 执行严格状态迁移并输出确定性事件序列。
+- `FrameworkAssetHle`：声明式安装 AssetManager/InputStream，将相对 UTF-16 asset 名严格
+  转为 `/apk/assets/` VFS 路径，并闭合 getAssets/open/read/available/close；流只读取 APK
+  来源，关闭幂等，非法路径、未知/已关闭流与 I/O 失败均明确分类。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量

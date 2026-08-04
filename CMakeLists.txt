@@ -118,6 +118,7 @@ add_library(ogplay_runtime
     src/runtime/bionic_profile.cpp
     src/runtime/bionic_selfcheck.cpp
     src/runtime/bionic_tls.cpp
+    src/runtime/framework_asset.cpp
     src/runtime/framework_lifecycle.cpp
     src/runtime/guest_lifecycle.cpp
     src/runtime/headless_bionic_runner.cpp
@@ -211,6 +212,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/bionic_profile_tests.cpp
         tests/runtime/bionic_selfcheck_tests.cpp
         tests/runtime/bionic_tls_tests.cpp
+        tests/runtime/framework_asset_tests.cpp
         tests/runtime/framework_lifecycle_tests.cpp
         tests/runtime/guest_lifecycle_tests.cpp
         tests/runtime/headless_bionic_runner_tests.cpp

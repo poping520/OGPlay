@@ -28,6 +28,8 @@ public:
                                            JniReference source);
     [[nodiscard]] JniReference PublishLocalObject(
         std::uint64_t thread_id, JniObjectIdentity object);
+    [[nodiscard]] JniReference PublishGlobalObjectForHle(
+        std::uint64_t thread_id, JniObjectIdentity object);
     void DeleteLocalRef(std::uint64_t thread_id, JniReference reference);
     [[nodiscard]] JniReference NewGlobalRef(std::uint64_t thread_id,
                                             JniReference source);

@@ -82,12 +82,38 @@ struct DexPrototype final {
     std::vector<std::uint32_t> parameter_type_indices;
 };
 
+struct DexFieldId final {
+    std::uint32_t class_type_index{};
+    std::uint32_t type_index{};
+    std::uint32_t name_string_index{};
+};
+
+struct DexMethodId final {
+    std::uint32_t class_type_index{};
+    std::uint32_t prototype_index{};
+    std::uint32_t name_string_index{};
+};
+
+struct DexClassDef final {
+    std::uint32_t class_type_index{};
+    std::uint32_t access_flags{};
+    std::optional<std::uint32_t> superclass_type_index;
+    std::vector<std::uint32_t> interface_type_indices;
+    std::optional<std::uint32_t> source_file_string_index;
+    std::uint32_t annotations_offset{};
+    std::uint32_t class_data_offset{};
+    std::uint32_t static_values_offset{};
+};
+
 struct DexImage final {
     DexHeader header;
     std::vector<DexMapItem> map_items;
     std::vector<DexString> strings;
     std::vector<DexType> types;
     std::vector<DexPrototype> prototypes;
+    std::vector<DexFieldId> fields;
+    std::vector<DexMethodId> methods;
+    std::vector<DexClassDef> classes;
 
     [[nodiscard]] std::optional<DexMapItem> FindMapItem(
         DexMapItemType type) const noexcept;
@@ -106,6 +132,8 @@ enum class DexErrorReason : std::uint8_t {
     invalid_index,
     invalid_descriptor,
     invalid_prototype,
+    invalid_member,
+    invalid_class_def,
 };
 
 class DexError final : public std::runtime_error {

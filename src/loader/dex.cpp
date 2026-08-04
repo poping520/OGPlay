@@ -483,6 +483,130 @@ void ReadStringsTypesAndPrototypes(const Reader& reader, DexImage& image) {
     }
 }
 
+[[nodiscard]] bool IsClassType(const DexImage& image,
+                               const std::uint32_t index) {
+    return index < image.types.size() &&
+           image.types[index].descriptor.front() == 'L';
+}
+
+void RequireDataOffset(const DexHeader& header, const std::uint32_t offset,
+                       const char* name) {
+    if (offset != 0 &&
+        (offset < header.data_offset || offset >= header.file_size)) {
+        Fail(DexErrorReason::invalid_range, offset,
+             std::string("DEX ") + name + " is outside data section");
+    }
+}
+
+[[nodiscard]] std::vector<std::uint32_t> ReadTypeList(
+    const Reader& reader, const DexImage& image, const std::uint32_t offset) {
+    if (offset == 0) return {};
+    if ((offset & 3U) != 0 || offset < image.header.data_offset) {
+        Fail(DexErrorReason::invalid_range, offset,
+             "DEX class interface type_list offset is invalid");
+    }
+    const auto count = reader.U32(offset);
+    reader.Require(static_cast<std::size_t>(offset) + 4U,
+                   static_cast<std::size_t>(count) * 2U);
+    std::vector<std::uint32_t> result;
+    result.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const auto type = reader.U16(static_cast<std::size_t>(offset) + 4U +
+                                     static_cast<std::size_t>(index) * 2U);
+        if (!IsClassType(image, type) ||
+            std::find(result.begin(), result.end(), type) != result.end()) {
+            Fail(DexErrorReason::invalid_class_def, offset,
+                 "DEX class interface is invalid or duplicated");
+        }
+        result.push_back(type);
+    }
+    return result;
+}
+
+void ReadMembersAndClasses(const Reader& reader, DexImage& image) {
+    image.fields.reserve(image.header.field_ids_size);
+    for (std::uint32_t index = 0; index < image.header.field_ids_size;
+         ++index) {
+        const auto at = static_cast<std::size_t>(image.header.field_ids_offset) +
+                        static_cast<std::size_t>(index) * 8U;
+        const auto declaring_type = reader.U16(at);
+        const auto field_type = reader.U16(at + 2);
+        const auto name = reader.U32(at + 4);
+        if (!IsClassType(image, declaring_type) ||
+            field_type >= image.types.size() || name >= image.strings.size()) {
+            Fail(DexErrorReason::invalid_member, at,
+                 "DEX field_id contains an invalid index");
+        }
+        image.fields.push_back({declaring_type, field_type, name});
+    }
+
+    image.methods.reserve(image.header.method_ids_size);
+    for (std::uint32_t index = 0; index < image.header.method_ids_size;
+         ++index) {
+        const auto at =
+            static_cast<std::size_t>(image.header.method_ids_offset) +
+            static_cast<std::size_t>(index) * 8U;
+        const auto declaring_type = reader.U16(at);
+        const auto prototype = reader.U16(at + 2);
+        const auto name = reader.U32(at + 4);
+        if (!IsClassType(image, declaring_type) ||
+            prototype >= image.prototypes.size() ||
+            name >= image.strings.size()) {
+            Fail(DexErrorReason::invalid_member, at,
+                 "DEX method_id contains an invalid index");
+        }
+        image.methods.push_back({declaring_type, prototype, name});
+    }
+
+    image.classes.reserve(image.header.class_defs_size);
+    std::vector<std::uint32_t> declared_types;
+    for (std::uint32_t index = 0; index < image.header.class_defs_size;
+         ++index) {
+        const auto at =
+            static_cast<std::size_t>(image.header.class_defs_offset) +
+            static_cast<std::size_t>(index) * 32U;
+        const auto class_type = reader.U32(at);
+        const auto access_flags = reader.U32(at + 4);
+        const auto superclass = reader.U32(at + 8);
+        const auto interfaces_offset = reader.U32(at + 12);
+        const auto source_file = reader.U32(at + 16);
+        const auto annotations_offset = reader.U32(at + 20);
+        const auto class_data_offset = reader.U32(at + 24);
+        const auto static_values_offset = reader.U32(at + 28);
+        if (!IsClassType(image, class_type) ||
+            std::find(declared_types.begin(), declared_types.end(),
+                      class_type) != declared_types.end()) {
+            Fail(DexErrorReason::invalid_class_def, at,
+                 "DEX class_def type is invalid or duplicated");
+        }
+        if (superclass != 0xffffffffU && !IsClassType(image, superclass)) {
+            Fail(DexErrorReason::invalid_class_def, at + 8,
+                 "DEX class_def superclass is invalid");
+        }
+        if (source_file != 0xffffffffU && source_file >= image.strings.size()) {
+            Fail(DexErrorReason::invalid_class_def, at + 16,
+                 "DEX class_def source file index is invalid");
+        }
+        RequireDataOffset(image.header, annotations_offset, "annotations");
+        RequireDataOffset(image.header, class_data_offset, "class_data");
+        RequireDataOffset(image.header, static_values_offset, "static_values");
+        image.classes.push_back(
+            {class_type,
+             access_flags,
+             superclass == 0xffffffffU
+                 ? std::nullopt
+                 : std::optional<std::uint32_t>{superclass},
+             ReadTypeList(reader, image, interfaces_offset),
+             source_file == 0xffffffffU
+                 ? std::nullopt
+                 : std::optional<std::uint32_t>{source_file},
+             annotations_offset,
+             class_data_offset,
+             static_values_offset});
+        declared_types.push_back(class_type);
+    }
+}
+
 }  // namespace
 
 DexError::DexError(const DexErrorReason reason, const std::size_t offset,
@@ -509,6 +633,7 @@ DexImage ParseDex(const std::span<const std::uint8_t> bytes) {
     image.map_items = ReadMap(reader, image.header, bytes.size());
     ValidateMap(image);
     ReadStringsTypesAndPrototypes(reader, image);
+    ReadMembersAndClasses(reader, image);
     return image;
 }
 

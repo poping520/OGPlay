@@ -4,6 +4,19 @@
 
 装载真实 Bionic，并实现 syscall、完整 JNI/JavaVM、可选 DEX 解释器和 Android 框架 HLE。
 
+## 子模块
+
+- [jni](jni/MODULE.md)：JNI/JavaVM ABI 与对象模型。
+- [framework](framework/MODULE.md)：声明式 Android/Java 框架 HLE。
+- [bionic](bionic/MODULE.md)：真实 guest Bionic profile、自检与 TLS。
+- [syscall](syscall/MODULE.md)：ARM syscall、kernel helper 与线程退出状态。
+- [execution](execution/MODULE.md)：guest 生命周期、线程 runner 与 clone 执行。
+- [vfs](vfs/MODULE.md)：Android 路径、挂载和 descriptor 核心。
+- [integration](integration/MODULE.md)：无界面累计装配和出口报告。
+
+依赖方向由 [ADR-0013](../../docs/adr/0013-runtime-submodule-boundaries.md) 冻结；根契约只保留
+跨子模块总览，具体所有权和不变量以各子模块契约为准。
+
 ## 公共 API
 
 - `A32SyscallDispatcher`：按 ARM EABI 号分派 syscall；声明与实现分离，未知或未实现调用
@@ -120,7 +133,7 @@
 - `FrameworkPackageHle`：从显式会话配置提供 Context.getPackageName/getPackageManager 与
   当前包 getPackageInfo；只接受 flags=0，只声明 PackageInfo.versionName/versionCode，
   String 字段使用 HLE Global reference 跨线程稳定，不实现完整 PackageManager 服务。
-- 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
+- 子域按 `jni/framework/bionic/syscall/execution/vfs/integration` 分目录，禁止巨型 dispatcher。
 
 ## 不变量
 

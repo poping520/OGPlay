@@ -12,8 +12,11 @@ option(OGPLAY_WARNINGS_AS_ERRORS "Treat OGPlay warnings as errors" OFF)
 option(OGPLAY_ENABLE_SDL3 "Configure the bundled SDL3 platform dependency" ON)
 option(OGPLAY_ENABLE_DYNARMIC "Configure the bundled Dynarmic CPU dependency" ON)
 option(OGPLAY_ENABLE_ANGLE "Link an externally GN-built ANGLE SDK" OFF)
-set(OGPLAY_ANGLE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle/out/ogplay"
-    CACHE PATH "ANGLE GN output containing EGL and GLESv2 libraries")
+set(OGPLAY_ANGLE_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt"
+    CACHE PATH "Root of the platform-partitioned ANGLE prebuilt SDK")
+set(OGPLAY_ANGLE_SDK_CONFIGURATION "release" CACHE STRING
+    "ANGLE SDK configuration to consume (release or debug)")
+set_property(CACHE OGPLAY_ANGLE_SDK_CONFIGURATION PROPERTY STRINGS release debug)
 
 include(GNUInstallDirs)
 include(cmake/CompilerWarnings.cmake)

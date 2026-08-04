@@ -13,6 +13,8 @@
 - `AngleBackendName`：输出可用于配置、日志与 Agent 查询的稳定 renderer/device 名称。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。
+- `OGPLAY_ANGLE_SDK_ROOT` / `OGPLAY_ANGLE_SDK_CONFIGURATION`：指定平台化 SDK 根目录和
+  release/debug 包；CMake 自动匹配宿主平台/CPU并验证所有声明文件。
 - `tools/build_angle.py`：校验顶层 gitlink，驱动官方 gclient/GN/Ninja 流程并记录可复现
   的 commit、平台、GN 参数和产物清单；Windows 固定使用 MSVC。
 - `tools/package_angle_sdk.py`：从上述产物生成按平台/CPU/配置分层、逐文件 SHA-256 且附带

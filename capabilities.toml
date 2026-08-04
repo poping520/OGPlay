@@ -128,7 +128,7 @@ note = "M2 已完成 ELF32/ARM 装载、TLS/版本、动态命名空间、dlopen
 [runtime.syscall]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "M2 已覆盖身份/时间/内存/futex/VFS/set_tls/线程退出与 ARM pthread clone 解码；生命周期可原子校验 parent 并注册 child，clone 内存提交与扩展调用继续补齐"
+note = "M2 已覆盖身份/时间/内存/futex/VFS/set_tls/线程退出与 ARM pthread clone；parent/child TID 写回、TLS/clear-child-tid 注册已有串行提交边界，真线程启动与扩展调用继续补齐"
 
 [runtime.bionic]
 status = "partial"

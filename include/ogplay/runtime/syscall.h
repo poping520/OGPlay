@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -78,6 +79,19 @@ struct GuestThreadCloneRequest final {
 
 using GuestThreadCloneSpawner =
     std::function<std::int32_t(const GuestThreadCloneRequest&)>;
+
+class GuestThreadCloneCommitter final {
+public:
+    GuestThreadCloneCommitter(GuestThreadLifecycle& lifecycle,
+                              memory::AddressSpace& address_space);
+    [[nodiscard]] std::int32_t Commit(const GuestThreadCloneRequest& request,
+                                      std::uint64_t child_thread_id);
+
+private:
+    GuestThreadLifecycle& lifecycle_;
+    memory::AddressSpace& address_space_;
+    std::mutex mutex_;
+};
 
 class SyscallError final : public std::runtime_error {
 public:

@@ -116,6 +116,12 @@ bool JniEnvironment::IsSameObject(const std::uint64_t thread_id,
     return references_.IsSameObject(thread_id, left, right);
 }
 
+std::optional<JniObjectIdentity> JniEnvironment::ResolveObjectForHle(
+    const std::uint64_t thread_id, const JniReference reference) const {
+    RequireAllowed(thread_id, "GetObjectClass");
+    return references_.Resolve(thread_id, reference);
+}
+
 void JniEnvironment::Throw(const std::uint64_t thread_id,
                            const JniReference throwable) {
     RequireAllowed(thread_id, "Throw");

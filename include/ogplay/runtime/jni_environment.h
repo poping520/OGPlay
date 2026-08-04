@@ -39,6 +39,8 @@ public:
     [[nodiscard]] bool IsSameObject(std::uint64_t thread_id,
                                     JniReference left,
                                     JniReference right) const;
+    [[nodiscard]] std::optional<JniObjectIdentity> ResolveObjectForHle(
+        std::uint64_t thread_id, JniReference reference) const;
 
     void Throw(std::uint64_t thread_id, JniReference throwable);
     [[nodiscard]] JniReference ExceptionOccurred(std::uint64_t thread_id);

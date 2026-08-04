@@ -5,7 +5,7 @@
 
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/memory/bus.h"
-#include "ogplay/runtime/arm_kernel_helpers.h"
+#include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 
 namespace {
 

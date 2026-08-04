@@ -5,7 +5,7 @@
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/memory/bus.h"
-#include "ogplay/runtime/guest_thread_runner.h"
+#include "ogplay/runtime/execution/guest_thread_runner.h"
 
 namespace {
 

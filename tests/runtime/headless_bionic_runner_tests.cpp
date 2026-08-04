@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "ogplay/runtime/headless_bionic_runner.h"
+#include "ogplay/runtime/integration/headless_bionic_runner.h"
 
 namespace {
 

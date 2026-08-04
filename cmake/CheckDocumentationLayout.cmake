@@ -33,6 +33,15 @@ foreach(runtime_submodule IN ITEMS
     endif()
 endforeach()
 
+file(GLOB runtime_root_headers
+    "${ROOT}/include/ogplay/runtime/*.h")
+file(GLOB runtime_root_sources
+    "${ROOT}/src/runtime/*.cpp")
+if(runtime_root_headers OR runtime_root_sources)
+    message(FATAL_ERROR
+        "runtime production files must live in declared submodules")
+endif()
+
 file(GLOB root_work_units "${ROOT}/docs/tasks/WU-*.md")
 if(root_work_units)
     message(FATAL_ERROR "Work Units must live below docs/tasks/m<number>")

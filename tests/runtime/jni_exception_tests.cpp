@@ -2,7 +2,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_exception.h"
+#include "ogplay/runtime/jni/jni_exception.h"
 
 TEST_CASE("JNI pending exceptions are isolated per attached guest thread") {
     ogplay::runtime::JniExceptionState exceptions;

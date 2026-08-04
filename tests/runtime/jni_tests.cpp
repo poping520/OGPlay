@@ -7,7 +7,7 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/core/capability_ledger.h"
-#include "ogplay/runtime/jni.h"
+#include "ogplay/runtime/jni/jni.h"
 
 TEST_CASE("legacy Android JNI ABI uses fixed guest widths and 233 slots") {
     static_assert(sizeof(ogplay::runtime::JniBoolean) == 1);

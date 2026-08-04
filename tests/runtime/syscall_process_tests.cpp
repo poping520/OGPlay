@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "ogplay/runtime/syscall.h"
+#include "ogplay/runtime/syscall/syscall.h"
 
 TEST_CASE("ARM PR_SET_VMA validates and publishes anonymous map names") {
     ogplay::core::CapabilityLedger ledger;

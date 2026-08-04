@@ -5,7 +5,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_utf.h"
+#include "ogplay/runtime/jni/jni_utf.h"
 
 namespace {
 

@@ -3,7 +3,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/headless_jni_contract.h"
+#include "ogplay/runtime/integration/headless_jni_contract.h"
 
 TEST_CASE("headless JNI contract closes both call directions") {
     std::size_t calls{};

@@ -3,7 +3,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_java_vm.h"
 
 TEST_CASE("JavaVM ABI has eight exact invoke slots") {
     const auto slots = ogplay::runtime::JniInvokeInterfaceSlots();

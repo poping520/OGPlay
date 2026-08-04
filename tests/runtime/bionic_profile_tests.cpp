@@ -8,7 +8,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/bionic_profile.h"
+#include "ogplay/runtime/bionic/bionic_profile.h"
 
 namespace {
 

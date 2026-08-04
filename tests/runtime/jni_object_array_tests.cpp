@@ -2,9 +2,9 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_environment.h"
-#include "ogplay/runtime/jni_object.h"
-#include "ogplay/runtime/jni_object_array.h"
+#include "ogplay/runtime/jni/jni_environment.h"
+#include "ogplay/runtime/jni/jni_object.h"
+#include "ogplay/runtime/jni/jni_object_array.h"
 
 namespace {
 

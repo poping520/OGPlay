@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_class_registry.h"
+#include "ogplay/runtime/jni/jni_class_registry.h"
 
 TEST_CASE("JNI class registry resolves hierarchy and assignability") {
     ogplay::runtime::JniClassRegistry classes;

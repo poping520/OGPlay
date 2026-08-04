@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "ogplay/cpu/cpu.h"
-#include "ogplay/runtime/syscall.h"
+#include "ogplay/runtime/syscall/syscall.h"
 
 TEST_CASE("Android ARM syscall baseline exposes identity and coverage") {
     ogplay::core::CapabilityLedger ledger;

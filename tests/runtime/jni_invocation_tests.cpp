@@ -3,7 +3,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_invocation.h"
+#include "ogplay/runtime/jni/jni_invocation.h"
 
 namespace {
 

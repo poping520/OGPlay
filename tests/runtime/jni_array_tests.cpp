@@ -4,8 +4,8 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_array.h"
-#include "ogplay/runtime/jni_environment.h"
+#include "ogplay/runtime/jni/jni_array.h"
+#include "ogplay/runtime/jni/jni_environment.h"
 
 TEST_CASE("JNI primitive arrays cover all eight zero-initialized kinds") {
     ogplay::runtime::JniPrimitiveArrayStore arrays;

@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "ogplay/runtime/bionic_selfcheck.h"
+#include "ogplay/runtime/bionic/bionic_selfcheck.h"
 
 namespace {
 

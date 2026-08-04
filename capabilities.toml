@@ -148,7 +148,7 @@ note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、
 [runtime.jni]
 status = "partial"
 test = "tests/runtime/jni_tests.cpp"
-note = "M3 已冻结 233 槽 JNINativeInterface、32 位强类型 handle 和未绑定槽记账+trap；按常用函数优先推进，不以低频槽全实现作为当前出口"
+note = "M3 已冻结 233 槽 ABI 与缺槽 trap，并完成线程/frame 独占 Local、共享 Global、可清除 WeakGlobal 引用表和 host/DEX VM 双来源对象身份"
 
 [gles.angle]
 status = "unimplemented"

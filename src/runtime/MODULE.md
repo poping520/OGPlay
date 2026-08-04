@@ -69,6 +69,8 @@
   包含 4 个保留槽和 229 个函数槽，可按名称双向查询。
 - `JniFunctionTable`：初始化期显式绑定函数 thunk 后封口；未绑定函数调用记录稳定
   capability ID 与 LR 并抛出 `JniUnimplementedCall`，不得返回伪造值。
+- `JniReferenceTable`：以单一 32 位 handle 空间管理线程/frame 独占 Local、进程共享
+  Global 与可清除 WeakGlobal；对象身份显式区分 host 与未来 DEX VM 来源。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
@@ -88,6 +90,8 @@
   不得静默返回零或从表中删除。
 - JNI 表只能在 guest 启动前绑定并封口；四个保留槽始终为空且不可调用。
 - JNI reference、method ID 与 field ID 必须保持不同强类型，公共 API 不暴露宿主指针。
+- Local 引用不得跨 guest 线程使用，detach/pop 必须销毁所属引用；Global/WeakGlobal
+  跨线程共享但删除类别必须匹配，容量与失效访问都明确失败。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 
 ## 禁止

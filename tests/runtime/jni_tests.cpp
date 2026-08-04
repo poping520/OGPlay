@@ -98,3 +98,81 @@ TEST_CASE("JNI function table seals bindings and traps every missing slot") {
     CHECK(hits[0].first_lr == 0x1234U);
     CHECK(hits[0].last_lr == 0x5678U);
 }
+
+TEST_CASE("JNI local references are thread and frame scoped with hard capacity") {
+    ogplay::runtime::JniReferenceTable references({4, 2, 2});
+    references.AttachThread(11, 2);
+    references.AttachThread(22, 1);
+    CHECK(references.IsThreadAttached(11));
+    CHECK_THROWS_AS(references.AttachThread(11),
+                    ogplay::runtime::JniReferenceError);
+    CHECK_THROWS_AS(references.AttachThread(0),
+                    ogplay::runtime::JniReferenceError);
+
+    const ogplay::runtime::JniObjectIdentity host{
+        ogplay::runtime::JniObjectDomain::host, 101};
+    const ogplay::runtime::JniObjectIdentity vm{
+        ogplay::runtime::JniObjectDomain::dex_vm, 202};
+    const auto first = references.NewLocal(11, host);
+    const auto second = references.NewLocal(11, vm);
+    CHECK(references.LocalCount(11) == 2);
+    CHECK_THROWS_AS(static_cast<void>(references.NewLocal(11, host)),
+                    ogplay::runtime::JniReferenceError);
+    references.EnsureLocalCapacity(11, 1);
+    const auto third = references.NewLocal(11, host);
+    CHECK(references.LocalCount(11) == 3);
+    CHECK_THROWS_AS(references.EnsureLocalCapacity(11, 2),
+                    ogplay::runtime::JniReferenceError);
+    CHECK(references.Resolve(11, first) == host);
+    CHECK(references.IsSameObject(11, first, third));
+    CHECK_FALSE(references.IsSameObject(11, first, second));
+    CHECK_THROWS_AS(static_cast<void>(references.Resolve(22, first)),
+                    ogplay::runtime::JniReferenceError);
+
+    references.DeleteLocal(11, third);
+    references.PushLocalFrame(11, 1);
+    const auto nested = references.NewLocal(11, vm);
+    const auto promoted = references.PopLocalFrame(11, nested);
+    CHECK(promoted != nested);
+    CHECK(references.Resolve(11, promoted) == vm);
+    CHECK_THROWS_AS(static_cast<void>(references.Resolve(11, nested)),
+                    ogplay::runtime::JniReferenceError);
+    CHECK_THROWS_AS(static_cast<void>(references.PopLocalFrame(11)),
+                    ogplay::runtime::JniReferenceError);
+
+    references.DetachThread(11);
+    CHECK_FALSE(references.IsThreadAttached(11));
+    CHECK_THROWS_AS(static_cast<void>(references.Resolve(11, first)),
+                    ogplay::runtime::JniReferenceError);
+    references.DetachThread(22);
+}
+
+TEST_CASE("JNI global and weak references share identity without hiding errors") {
+    ogplay::runtime::JniReferenceTable references({4, 1, 1});
+    references.AttachThread(7, 4);
+    const ogplay::runtime::JniObjectIdentity object{
+        ogplay::runtime::JniObjectDomain::host, 55};
+    const auto global = references.NewGlobal(object);
+    const auto weak = references.NewWeakGlobal(object);
+    CHECK(references.GlobalCount() == 1);
+    CHECK(references.WeakGlobalCount() == 1);
+    CHECK(references.Resolve(7, global) == object);
+    CHECK(references.IsSameObject(7, global, weak));
+    CHECK_THROWS_AS(static_cast<void>(references.NewGlobal(object)),
+                    ogplay::runtime::JniReferenceError);
+    CHECK_THROWS_AS(references.DeleteWeakGlobal(global),
+                    ogplay::runtime::JniReferenceError);
+
+    references.ClearWeakReferencesTo(object);
+    CHECK_FALSE(references.Resolve(7, weak).has_value());
+    CHECK(references.IsSameObject(7, weak, ogplay::runtime::JniReference{}));
+    references.DeleteWeakGlobal(weak);
+    references.DeleteGlobal(global);
+    references.DeleteGlobal(ogplay::runtime::JniReference{});
+    references.DeleteWeakGlobal(ogplay::runtime::JniReference{});
+    CHECK(references.GlobalCount() == 0);
+    CHECK(references.WeakGlobalCount() == 0);
+    CHECK_THROWS_AS(static_cast<void>(references.NewLocal(
+                        7, {ogplay::runtime::JniObjectDomain::host, 0})),
+                    ogplay::runtime::JniReferenceError);
+}

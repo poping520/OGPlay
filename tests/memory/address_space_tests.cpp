@@ -43,7 +43,28 @@ TEST_CASE("guest mappings support copy protect fault and zeroed remap") {
         CHECK(fault.ThreadId() == 77);
     }
 
+    memory.Protect(range, ogplay::memory::PageProtection::none);
+    CHECK_NOTHROW(memory.ValidateMapped(range, 78));
+    try {
+        memory.Read(start, output, 78);
+        FAIL("read from PROT_NONE guest memory did not fault");
+    } catch (const ogplay::memory::MemoryFault& fault) {
+        CHECK(fault.Reason() ==
+              ogplay::memory::FaultReason::permission_denied);
+        CHECK(fault.ThreadId() == 78);
+    }
+    CHECK_THROWS_AS(memory.Map(range, ogplay::memory::PageProtection::read),
+                    std::logic_error);
+    const auto protected_snapshot = memory.CaptureSnapshot();
+    memory.Protect(range, ogplay::memory::PageProtection::read);
+    memory.RestoreSnapshot(protected_snapshot);
+    CHECK_THROWS_AS(memory.Read(start, output),
+                    ogplay::memory::MemoryFault);
+    memory.Protect(range, ogplay::memory::PageProtection::read);
+
     memory.Unmap(range);
+    CHECK_THROWS_AS(memory.ValidateMapped(range),
+                    ogplay::memory::MemoryFault);
     CHECK_THROWS_AS(memory.Read(start, output), ogplay::memory::MemoryFault);
     memory.Map(range, ogplay::memory::PageProtection::read |
                           ogplay::memory::PageProtection::write);

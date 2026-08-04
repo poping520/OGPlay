@@ -20,7 +20,7 @@
 - `data/gles/*.json`：GLES 边界的声明式单一事实源；每个指针显式声明方向、可空性和
   长度表达式，函数名唯一且稳定排序。
 - `tools/generate_gles_api.py`：严格验证 IDL，并确定性生成 `ParameterSpec` / `FunctionSpec`
-  C++ 目录；构建与测试均检查生成物没有漂移。
+  C++ 目录；构建与测试均检查生成物没有漂移，并与固定 ANGLE `gl2.h` 核对入口集合。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。
 - `OGPLAY_ANGLE_SDK_ROOT` / `OGPLAY_ANGLE_SDK_CONFIGURATION`：指定平台化 SDK 根目录和
@@ -37,6 +37,8 @@
 - GLES 语义与能力来自 ANGLE，边界函数由 IDL 生成。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
+- GLES2 core 目录必须与固定 ANGLE 头文件的 142 个入口完全一致；二级指针保留
+  indirection，宿主指针返回使用专门返回类型，禁止按 32 位标量误传。
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - 平台探测事实由下层注入；gles 模块不使用平台宏，也不直接依赖平台 SDK 类型。
 - EGL 创建严格遵循 display→initialize→config→bind API→context→surface→make-current；

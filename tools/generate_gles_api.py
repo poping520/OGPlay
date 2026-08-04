@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 from typing import Any, Sequence
@@ -13,9 +14,10 @@ from typing import Any, Sequence
 
 SCALAR_TYPES = {
     "GLbitfield", "GLboolean", "GLbyte", "GLclampf", "GLenum", "GLfloat",
-    "GLint", "GLintptr", "GLshort", "GLsizei", "GLsizeiptr", "GLubyte",
+    "GLchar", "GLint", "GLintptr", "GLshort", "GLsizei", "GLsizeiptr", "GLubyte",
     "GLuint", "GLushort", "void",
 }
+RETURN_TYPES = SCALAR_TYPES | {"const GLubyte*"}
 DIRECTIONS = {"in", "out", "inout"}
 
 
@@ -50,7 +52,7 @@ def validate_idl(document: Any) -> dict[str, Any]:
             raise IdlError(f"{prefix}.name must start with gl")
         names.append(name)
         return_type = _require_string(function.get("return"), f"{prefix}.return")
-        if return_type not in SCALAR_TYPES:
+        if return_type not in RETURN_TYPES:
             raise IdlError(f"{prefix}.return has unknown type {return_type}")
         parameters = function.get("parameters")
         if not isinstance(parameters, list):
@@ -72,6 +74,9 @@ def validate_idl(document: Any) -> dict[str, Any]:
                 raise IdlError(f"{item}.pointer must be boolean")
             transfer_fields = {"direction", "nullable", "count"}
             if pointer:
+                indirection = parameter.get("indirection", 1)
+                if not isinstance(indirection, int) or indirection not in {1, 2}:
+                    raise IdlError(f"{item}.indirection must be 1 or 2")
                 if parameter.get("direction") not in DIRECTIONS:
                     raise IdlError(f"{item}.direction is required for pointers")
                 if not isinstance(parameter.get("nullable"), bool):
@@ -79,6 +84,8 @@ def validate_idl(document: Any) -> dict[str, Any]:
                 _require_string(parameter.get("count"), f"{item}.count")
             elif transfer_fields.intersection(parameter):
                 raise IdlError(f"{item} scalar must not declare transfer metadata")
+            elif "indirection" in parameter:
+                raise IdlError(f"{item} scalar must not declare indirection")
     if names != sorted(names) or len(names) != len(set(names)):
         raise IdlError("function names must be unique and sorted")
     return document
@@ -120,7 +127,7 @@ def generate_header(document: dict[str, Any]) -> str:
                 _cpp_string(parameter["type"]),
                 _cpp_string(parameter.get("direction", "value")),
                 _cpp_string(parameter.get("count", "")),
-                "true" if pointer else "false",
+                str(parameter.get("indirection", 1)) + "U" if pointer else "0U",
                 "true" if parameter.get("nullable", False) else "false",
             )) + "},"
         )
@@ -131,7 +138,7 @@ def generate_header(document: dict[str, Any]) -> str:
         "struct ParameterSpec final {",
         "    std::string_view name;", "    std::string_view type;",
         "    std::string_view direction;", "    std::string_view count;",
-        "    bool pointer{};", "    bool nullable{};", "};", "",
+        "    std::size_t indirection{};", "    bool nullable{};", "};", "",
         "struct FunctionSpec final {", "    std::string_view name;",
         "    std::string_view return_type;", "    std::size_t parameter_offset{};",
         "    std::size_t parameter_count{};", "};", "",
@@ -145,8 +152,28 @@ def generate_header(document: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def write_or_check(idl_path: Path, output: Path, check: bool) -> int:
-    expected = generate_header(load_idl(idl_path))
+def verify_header(document: dict[str, Any], header_path: Path) -> None:
+    try:
+        header = header_path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise IdlError(f"cannot read GLES header {header_path}: {error}") from error
+    declared = set(re.findall(
+        r"GL_APICALL\s+.+?\s*GL_APIENTRY\s+(gl[A-Za-z0-9_]+)\s*\(", header
+    ))
+    catalog = {function["name"] for function in document["functions"]}
+    missing, extra = sorted(declared - catalog), sorted(catalog - declared)
+    if missing or extra:
+        raise IdlError(
+            f"IDL/header function mismatch: missing={missing}, extra={extra}"
+        )
+
+
+def write_or_check(idl_path: Path, output: Path, check: bool,
+                   header_path: Path | None = None) -> int:
+    document = load_idl(idl_path)
+    if header_path is not None:
+        verify_header(document, header_path)
+    expected = generate_header(document)
     if check:
         if not output.is_file() or output.read_text(encoding="utf-8") != expected:
             raise IdlError(f"generated output is stale: {output}")
@@ -186,6 +213,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--idl", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--verify-header", type=Path)
     args = parser.parse_args(argv)
     if not args.self_test and (args.idl is None or args.output is None):
         parser.error("--idl and --output are required")
@@ -196,7 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
         return self_test() if args.self_test else write_or_check(
-            args.idl, args.output, args.check)
+            args.idl, args.output, args.check, args.verify_header)
     except IdlError as error:
         print(f"GLES IDL error: {error}", file=sys.stderr)
         return 2

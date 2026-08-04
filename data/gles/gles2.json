@@ -4,68 +4,2736 @@
   "library": "libGLESv2.so",
   "functions": [
     {
+      "name": "glActiveTexture",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "texture",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glAttachShader",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "shader",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBindAttribLocation",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "name",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "cstring"
+        }
+      ]
+    },
+    {
+      "name": "glBindBuffer",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "buffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBindFramebuffer",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "framebuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBindRenderbuffer",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "renderbuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBindTexture",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "texture",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBlendColor",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "red",
+          "type": "GLfloat"
+        },
+        {
+          "name": "green",
+          "type": "GLfloat"
+        },
+        {
+          "name": "blue",
+          "type": "GLfloat"
+        },
+        {
+          "name": "alpha",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glBlendEquation",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glBlendEquationSeparate",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "modeRGB",
+          "type": "GLenum"
+        },
+        {
+          "name": "modeAlpha",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glBlendFunc",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "sfactor",
+          "type": "GLenum"
+        },
+        {
+          "name": "dfactor",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glBlendFuncSeparate",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "sfactorRGB",
+          "type": "GLenum"
+        },
+        {
+          "name": "dfactorRGB",
+          "type": "GLenum"
+        },
+        {
+          "name": "sfactorAlpha",
+          "type": "GLenum"
+        },
+        {
+          "name": "dfactorAlpha",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
       "name": "glBufferData",
       "return": "void",
       "parameters": [
-        {"name": "target", "type": "GLenum"},
-        {"name": "size", "type": "GLsizeiptr"},
-        {"name": "data", "type": "void", "pointer": true, "direction": "in", "nullable": true, "count": "size"},
-        {"name": "usage", "type": "GLenum"}
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "size",
+          "type": "GLsizeiptr"
+        },
+        {
+          "name": "data",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": true,
+          "count": "size"
+        },
+        {
+          "name": "usage",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glBufferSubData",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "offset",
+          "type": "GLintptr"
+        },
+        {
+          "name": "size",
+          "type": "GLsizeiptr"
+        },
+        {
+          "name": "data",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "size"
+        }
+      ]
+    },
+    {
+      "name": "glCheckFramebufferStatus",
+      "return": "GLenum",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        }
       ]
     },
     {
       "name": "glClear",
       "return": "void",
-      "parameters": [{"name": "mask", "type": "GLbitfield"}]
+      "parameters": [
+        {
+          "name": "mask",
+          "type": "GLbitfield"
+        }
+      ]
     },
     {
       "name": "glClearColor",
       "return": "void",
       "parameters": [
-        {"name": "red", "type": "GLclampf"},
-        {"name": "green", "type": "GLclampf"},
-        {"name": "blue", "type": "GLclampf"},
-        {"name": "alpha", "type": "GLclampf"}
+        {
+          "name": "red",
+          "type": "GLfloat"
+        },
+        {
+          "name": "green",
+          "type": "GLfloat"
+        },
+        {
+          "name": "blue",
+          "type": "GLfloat"
+        },
+        {
+          "name": "alpha",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glClearDepthf",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "d",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glClearStencil",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "s",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glColorMask",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "red",
+          "type": "GLboolean"
+        },
+        {
+          "name": "green",
+          "type": "GLboolean"
+        },
+        {
+          "name": "blue",
+          "type": "GLboolean"
+        },
+        {
+          "name": "alpha",
+          "type": "GLboolean"
+        }
+      ]
+    },
+    {
+      "name": "glCompileShader",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shader",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glCompressedTexImage2D",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLenum"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "border",
+          "type": "GLint"
+        },
+        {
+          "name": "imageSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "data",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "imageSize"
+        }
+      ]
+    },
+    {
+      "name": "glCompressedTexSubImage2D",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "xoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "yoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "imageSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "data",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "imageSize"
+        }
+      ]
+    },
+    {
+      "name": "glCopyTexImage2D",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLenum"
+        },
+        {
+          "name": "x",
+          "type": "GLint"
+        },
+        {
+          "name": "y",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "border",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glCopyTexSubImage2D",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "xoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "yoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "x",
+          "type": "GLint"
+        },
+        {
+          "name": "y",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glCreateProgram",
+      "return": "GLuint",
+      "parameters": []
+    },
+    {
+      "name": "glCreateShader",
+      "return": "GLuint",
+      "parameters": [
+        {
+          "name": "type",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glCullFace",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteBuffers",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "buffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "n"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteFramebuffers",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "framebuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "n"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteProgram",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteRenderbuffers",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "renderbuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "n"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteShader",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shader",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteTextures",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "textures",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "n"
+        }
+      ]
+    },
+    {
+      "name": "glDepthFunc",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "func",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glDepthMask",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "flag",
+          "type": "GLboolean"
+        }
+      ]
+    },
+    {
+      "name": "glDepthRangef",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLfloat"
+        },
+        {
+          "name": "f",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glDetachShader",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "shader",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glDisable",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "cap",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glDisableVertexAttribArray",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glDrawArrays",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        },
+        {
+          "name": "first",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glDrawElements",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "indices",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": true,
+          "count": "index_bytes(count,type)"
+        }
+      ]
+    },
+    {
+      "name": "glEnable",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "cap",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glEnableVertexAttribArray",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glFinish",
+      "return": "void",
+      "parameters": []
+    },
+    {
+      "name": "glFlush",
+      "return": "void",
+      "parameters": []
+    },
+    {
+      "name": "glFramebufferRenderbuffer",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "renderbuffertarget",
+          "type": "GLenum"
+        },
+        {
+          "name": "renderbuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glFramebufferTexture2D",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "textarget",
+          "type": "GLenum"
+        },
+        {
+          "name": "texture",
+          "type": "GLuint"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glFrontFace",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glGenBuffers",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "buffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "n"
+        }
+      ]
+    },
+    {
+      "name": "glGenFramebuffers",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "framebuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "n"
+        }
+      ]
+    },
+    {
+      "name": "glGenRenderbuffers",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "renderbuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "n"
+        }
       ]
     },
     {
       "name": "glGenTextures",
       "return": "void",
       "parameters": [
-        {"name": "n", "type": "GLsizei"},
-        {"name": "textures", "type": "GLuint", "pointer": true, "direction": "out", "nullable": false, "count": "n"}
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "textures",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "n"
+        }
       ]
     },
-    {"name": "glGetError", "return": "GLenum", "parameters": []},
+    {
+      "name": "glGenerateMipmap",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glGetActiveAttrib",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": true,
+          "count": "1"
+        },
+        {
+          "name": "size",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        },
+        {
+          "name": "type",
+          "type": "GLenum",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        },
+        {
+          "name": "name",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "bufSize"
+        }
+      ]
+    },
+    {
+      "name": "glGetActiveUniform",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": true,
+          "count": "1"
+        },
+        {
+          "name": "size",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        },
+        {
+          "name": "type",
+          "type": "GLenum",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        },
+        {
+          "name": "name",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "bufSize"
+        }
+      ]
+    },
+    {
+      "name": "glGetAttachedShaders",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "maxCount",
+          "type": "GLsizei"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": true,
+          "count": "1"
+        },
+        {
+          "name": "shaders",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "maxCount"
+        }
+      ]
+    },
+    {
+      "name": "glGetAttribLocation",
+      "return": "GLint",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "name",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "cstring"
+        }
+      ]
+    },
+    {
+      "name": "glGetBooleanv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "data",
+          "type": "GLboolean",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "state_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetBufferParameteriv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glGetError",
+      "return": "GLenum",
+      "parameters": []
+    },
+    {
+      "name": "glGetFloatv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "data",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "state_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetFramebufferAttachmentParameteriv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
     {
       "name": "glGetIntegerv",
       "return": "void",
       "parameters": [
-        {"name": "pname", "type": "GLenum"},
-        {"name": "data", "type": "GLint", "pointer": true, "direction": "out", "nullable": false, "count": "state_count(pname)"}
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "data",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "state_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetProgramInfoLog",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": true,
+          "count": "1"
+        },
+        {
+          "name": "infoLog",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "bufSize"
+        }
+      ]
+    },
+    {
+      "name": "glGetProgramiv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glGetRenderbufferParameteriv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glGetShaderInfoLog",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shader",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": true,
+          "count": "1"
+        },
+        {
+          "name": "infoLog",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "bufSize"
+        }
+      ]
+    },
+    {
+      "name": "glGetShaderPrecisionFormat",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shadertype",
+          "type": "GLenum"
+        },
+        {
+          "name": "precisiontype",
+          "type": "GLenum"
+        },
+        {
+          "name": "range",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "2"
+        },
+        {
+          "name": "precision",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glGetShaderSource",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shader",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": true,
+          "count": "1"
+        },
+        {
+          "name": "source",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "bufSize"
+        }
+      ]
+    },
+    {
+      "name": "glGetShaderiv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shader",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glGetString",
+      "return": "const GLubyte*",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glGetTexParameterfv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "tex_parameter_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetTexParameteriv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "tex_parameter_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetUniformLocation",
+      "return": "GLint",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "name",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "cstring"
+        }
+      ]
+    },
+    {
+      "name": "glGetUniformfv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "params",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "uniform_value_count(program,location)"
+        }
+      ]
+    },
+    {
+      "name": "glGetUniformiv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "uniform_value_count(program,location)"
+        }
+      ]
+    },
+    {
+      "name": "glGetVertexAttribPointerv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "pointer",
+          "type": "void",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1",
+          "indirection": 2
+        }
+      ]
+    },
+    {
+      "name": "glGetVertexAttribfv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "vertex_attrib_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetVertexAttribiv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "vertex_attrib_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glHint",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "mode",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glIsBuffer",
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "buffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsEnabled",
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "cap",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glIsFramebuffer",
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "framebuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsProgram",
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsRenderbuffer",
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "renderbuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsShader",
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "shader",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsTexture",
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "texture",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glLineWidth",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "width",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glLinkProgram",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glPixelStorei",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glPolygonOffset",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "factor",
+          "type": "GLfloat"
+        },
+        {
+          "name": "units",
+          "type": "GLfloat"
+        }
       ]
     },
     {
       "name": "glReadPixels",
       "return": "void",
       "parameters": [
-        {"name": "x", "type": "GLint"},
-        {"name": "y", "type": "GLint"},
-        {"name": "width", "type": "GLsizei"},
-        {"name": "height", "type": "GLsizei"},
-        {"name": "format", "type": "GLenum"},
-        {"name": "type", "type": "GLenum"},
-        {"name": "pixels", "type": "void", "pointer": true, "direction": "out", "nullable": false, "count": "pixel_bytes(width,height,format,type)"}
+        {
+          "name": "x",
+          "type": "GLint"
+        },
+        {
+          "name": "y",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "pixels",
+          "type": "void",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "pixel_bytes(width,height,format,type)"
+        }
+      ]
+    },
+    {
+      "name": "glReleaseShaderCompiler",
+      "return": "void",
+      "parameters": []
+    },
+    {
+      "name": "glRenderbufferStorage",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLenum"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glSampleCoverage",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "value",
+          "type": "GLfloat"
+        },
+        {
+          "name": "invert",
+          "type": "GLboolean"
+        }
+      ]
+    },
+    {
+      "name": "glScissor",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLint"
+        },
+        {
+          "name": "y",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glShaderBinary",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "shaders",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count"
+        },
+        {
+          "name": "binaryFormat",
+          "type": "GLenum"
+        },
+        {
+          "name": "binary",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "length"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glShaderSource",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shader",
+          "type": "GLuint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "string",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count",
+          "indirection": 2
+        },
+        {
+          "name": "length",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": true,
+          "count": "count"
+        }
+      ]
+    },
+    {
+      "name": "glStencilFunc",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "func",
+          "type": "GLenum"
+        },
+        {
+          "name": "ref",
+          "type": "GLint"
+        },
+        {
+          "name": "mask",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glStencilFuncSeparate",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "face",
+          "type": "GLenum"
+        },
+        {
+          "name": "func",
+          "type": "GLenum"
+        },
+        {
+          "name": "ref",
+          "type": "GLint"
+        },
+        {
+          "name": "mask",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glStencilMask",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mask",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glStencilMaskSeparate",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "face",
+          "type": "GLenum"
+        },
+        {
+          "name": "mask",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glStencilOp",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "fail",
+          "type": "GLenum"
+        },
+        {
+          "name": "zfail",
+          "type": "GLenum"
+        },
+        {
+          "name": "zpass",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glStencilOpSeparate",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "face",
+          "type": "GLenum"
+        },
+        {
+          "name": "sfail",
+          "type": "GLenum"
+        },
+        {
+          "name": "dpfail",
+          "type": "GLenum"
+        },
+        {
+          "name": "dppass",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glTexImage2D",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "border",
+          "type": "GLint"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "pixels",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": true,
+          "count": "pixel_bytes(width,height,format,type)"
+        }
+      ]
+    },
+    {
+      "name": "glTexParameterf",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glTexParameterfv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "tex_parameter_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glTexParameteri",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glTexParameteriv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "tex_parameter_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glTexSubImage2D",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "xoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "yoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "pixels",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "pixel_bytes(width,height,format,type)"
+        }
+      ]
+    },
+    {
+      "name": "glUniform1f",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "v0",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glUniform1fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "value",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*1"
+        }
+      ]
+    },
+    {
+      "name": "glUniform1i",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "v0",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glUniform1iv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "value",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*1"
+        }
+      ]
+    },
+    {
+      "name": "glUniform2f",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "v0",
+          "type": "GLfloat"
+        },
+        {
+          "name": "v1",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glUniform2fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "value",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*2"
+        }
+      ]
+    },
+    {
+      "name": "glUniform2i",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "v0",
+          "type": "GLint"
+        },
+        {
+          "name": "v1",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glUniform2iv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "value",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*2"
+        }
+      ]
+    },
+    {
+      "name": "glUniform3f",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "v0",
+          "type": "GLfloat"
+        },
+        {
+          "name": "v1",
+          "type": "GLfloat"
+        },
+        {
+          "name": "v2",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glUniform3fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "value",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*3"
+        }
+      ]
+    },
+    {
+      "name": "glUniform3i",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "v0",
+          "type": "GLint"
+        },
+        {
+          "name": "v1",
+          "type": "GLint"
+        },
+        {
+          "name": "v2",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glUniform3iv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "value",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*3"
+        }
+      ]
+    },
+    {
+      "name": "glUniform4f",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "v0",
+          "type": "GLfloat"
+        },
+        {
+          "name": "v1",
+          "type": "GLfloat"
+        },
+        {
+          "name": "v2",
+          "type": "GLfloat"
+        },
+        {
+          "name": "v3",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glUniform4fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "value",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*4"
+        }
+      ]
+    },
+    {
+      "name": "glUniform4i",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "v0",
+          "type": "GLint"
+        },
+        {
+          "name": "v1",
+          "type": "GLint"
+        },
+        {
+          "name": "v2",
+          "type": "GLint"
+        },
+        {
+          "name": "v3",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glUniform4iv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "value",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*4"
+        }
+      ]
+    },
+    {
+      "name": "glUniformMatrix2fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "transpose",
+          "type": "GLboolean"
+        },
+        {
+          "name": "value",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*4"
+        }
+      ]
+    },
+    {
+      "name": "glUniformMatrix3fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "transpose",
+          "type": "GLboolean"
+        },
+        {
+          "name": "value",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*9"
+        }
+      ]
+    },
+    {
+      "name": "glUniformMatrix4fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "location",
+          "type": "GLint"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei"
+        },
+        {
+          "name": "transpose",
+          "type": "GLboolean"
+        },
+        {
+          "name": "value",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "count*16"
+        }
+      ]
+    },
+    {
+      "name": "glUseProgram",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glValidateProgram",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttrib1f",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "x",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttrib1fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "v",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttrib2f",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "x",
+          "type": "GLfloat"
+        },
+        {
+          "name": "y",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttrib2fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "v",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "2"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttrib3f",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "x",
+          "type": "GLfloat"
+        },
+        {
+          "name": "y",
+          "type": "GLfloat"
+        },
+        {
+          "name": "z",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttrib3fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "v",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "3"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttrib4f",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "x",
+          "type": "GLfloat"
+        },
+        {
+          "name": "y",
+          "type": "GLfloat"
+        },
+        {
+          "name": "z",
+          "type": "GLfloat"
+        },
+        {
+          "name": "w",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttrib4fv",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "v",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "4"
+        }
+      ]
+    },
+    {
+      "name": "glVertexAttribPointer",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "GLuint"
+        },
+        {
+          "name": "size",
+          "type": "GLint"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "normalized",
+          "type": "GLboolean"
+        },
+        {
+          "name": "stride",
+          "type": "GLsizei"
+        },
+        {
+          "name": "pointer",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": true,
+          "count": "client_array(index,size,type,stride)"
+        }
       ]
     },
     {
       "name": "glViewport",
       "return": "void",
       "parameters": [
-        {"name": "x", "type": "GLint"},
-        {"name": "y", "type": "GLint"},
-        {"name": "width", "type": "GLsizei"},
-        {"name": "height", "type": "GLsizei"}
+        {
+          "name": "x",
+          "type": "GLint"
+        },
+        {
+          "name": "y",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        }
       ]
     }
   ]

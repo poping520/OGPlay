@@ -133,6 +133,8 @@ void ReadDefinitions(const std::span<const std::byte> bytes,
         const auto address = AddAddress(base, relative);
         const auto offset = VirtualFileOffset(image, address, 20, bytes.size());
         Require(Read16(bytes, offset) == 1, "unsupported ELF verdef revision");
+        constexpr std::uint16_t kVersionDefinitionBase = 1;
+        const auto flags = Read16(bytes, offset + 2);
         const auto index = static_cast<std::uint16_t>(
             Read16(bytes, offset + 4) & UINT16_C(0x7fff));
         const auto auxiliary_count = Read16(bytes, offset + 6);
@@ -154,9 +156,16 @@ void ReadDefinitions(const std::span<const std::byte> bytes,
                     "ELF verdaux chain length is inconsistent");
             Advance(auxiliary, next, "ELF verdaux chain offset wraps");
         }
-        AddVersion(versions, index,
-                   {Elf32SymbolVersionKind::definition,
-                    std::move(name), {}});
+        if (index == 1) {
+            Require((flags & kVersionDefinitionBase) != 0,
+                    "ELF version index one must be the base definition");
+        } else {
+            Require((flags & kVersionDefinitionBase) == 0,
+                    "ELF base definition must use version index one");
+            AddVersion(versions, index,
+                       {Elf32SymbolVersionKind::definition,
+                        std::move(name), {}});
+        }
         const auto next = Read32(bytes, offset + 16);
         Require((entry + 1U == count) == (next == 0),
                 "ELF verdef chain length disagrees with DT_VERDEFNUM");

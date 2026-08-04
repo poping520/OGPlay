@@ -31,7 +31,9 @@
 - `ReadElf32TlsInfo`：解析唯一 `PT_TLS` 模板，保留初始化字节、BSS 大小与对齐，
   并要求模板由唯一 `PT_LOAD` 覆盖且不回绕。
 - `ReadElf32SymbolVersions`：解析 `DT_VERSYM/VERDEF/VERNEED`，将每个 dynsym 映射为
-  local/global/definition/requirement 及版本名和依赖库，链表或索引不一致时明确失败。
+  local/global/definition/requirement 及版本名和依赖库；GNU base definition 的索引 1
+  保持 global，旧版 Android 的 local undefined 按无版本导入解析；链表、flags 或索引
+  不一致时明确失败。
 - 后续 Work Unit 在该事实模型上增加映射、符号、重定位和链接命名空间，不重复解析字节。
 
 ## 不变量

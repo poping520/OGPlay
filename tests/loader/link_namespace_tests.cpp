@@ -71,6 +71,7 @@ TEST_CASE("ELF link namespace builds dependency and breadth first lookup orders"
     REQUIRE(resolved.values.size() == 5);
     REQUIRE(resolved.values[1].has_value());
     CHECK(*resolved.values[1] == ogplay::memory::GuestAddress{0x20100});
+
     REQUIRE(resolved.values[2].has_value());
     CHECK(resolved.values[2]->IsNull());
     CHECK(*resolved.values[3] == ogplay::memory::GuestAddress{0x10180});
@@ -162,6 +163,17 @@ TEST_CASE("ELF link namespace matches required and default symbol versions") {
     const auto resolved =
         ogplay::loader::ResolveElf32Symbols(link_namespace, 0);
     CHECK(*resolved.values[1] == ogplay::memory::GuestAddress{0x20100});
+
+    auto local_app = app;
+    local_app.versions->symbols[1] =
+        Version(0, ogplay::loader::Elf32SymbolVersionKind::local);
+    const std::vector local_modules{local_app, library};
+    const auto local_namespace =
+        ogplay::loader::BuildElf32LinkNamespace("app.so", local_modules);
+    const auto local_resolved =
+        ogplay::loader::ResolveElf32Symbols(local_namespace, 0);
+    CHECK(*local_resolved.values[1] ==
+          ogplay::memory::GuestAddress{0x20200});
 
     const auto default_symbol =
         ogplay::loader::LookupElf32Symbol(link_namespace, "foo");

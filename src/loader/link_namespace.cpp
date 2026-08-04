@@ -179,8 +179,13 @@ using ModuleNames = std::map<std::string, std::size_t, std::less<>>;
             if (required.kind == Elf32SymbolVersionKind::requirement) {
                 version = required.name;
                 dependency = required.dependency;
-            } else if (required.kind != Elf32SymbolVersionKind::global) {
-                throw LinkError("undefined ELF symbol has an invalid version kind");
+            } else if (required.kind != Elf32SymbolVersionKind::global &&
+                       required.kind != Elf32SymbolVersionKind::local) {
+                throw LinkError(
+                    "undefined ELF symbol has an invalid version kind: " +
+                    symbol.name + " (" +
+                    std::to_string(static_cast<std::uint8_t>(required.kind)) +
+                    ")");
             }
         }
         const auto resolved = TryLookup(link_namespace, lookup_scope,

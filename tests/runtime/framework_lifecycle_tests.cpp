@@ -45,6 +45,19 @@ TEST_CASE("framework HLE installs a declaration-only Activity class set") {
             *get_assets, {}, ogplay::runtime::JniArgumentSource::value_array)),
         "JNI method implementation has no registered handler",
         ogplay::runtime::JniInvocationError);
+    const auto get_preferences = classes.GetMethodId(
+        installed.activity_class, "getSharedPreferences",
+        "(Ljava/lang/String;I)Landroid/content/SharedPreferences;", false);
+    REQUIRE(get_preferences.has_value());
+    const std::array<ogplay::runtime::JniValue, 2> preference_arguments{
+        ogplay::runtime::JniReference{2}, ogplay::runtime::JniInt{0}};
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(invocations.InvokeVirtual(
+            1, ogplay::runtime::JniReference{1}, installed.activity_class,
+            *get_preferences, preference_arguments,
+            ogplay::runtime::JniArgumentSource::value_array)),
+        "JNI method implementation has no registered handler",
+        ogplay::runtime::JniInvocationError);
     CHECK_THROWS_AS(static_cast<void>(lifecycle.Install()),
                     ogplay::runtime::FrameworkLifecycleError);
 }

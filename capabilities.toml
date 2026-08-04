@@ -158,7 +158,7 @@ note = "M3 已声明式安装 Activity、资源、偏好、Locale 与仅服务�
 [fixtures.m3_jni]
 status = "partial"
 test = "tests/runtime/headless_jni_contract_tests.cpp"
-note = "M3 Windows/MSVC 无图形累计契约已闭合 HLE↔guest native、VM、字段、字符串、数组、引用和异常；里程碑出口再执行三平台验收"
+note = "M3 Windows/MSVC 无图形累计契约已在同一环境闭合 HLE↔guest native、VM、字段、字符串、数组、引用、异常、Asset、偏好、Locale 与当前包信息；里程碑出口再执行三平台验收"
 
 [loader.dex_l1]
 status = "complete"

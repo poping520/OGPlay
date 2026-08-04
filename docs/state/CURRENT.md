@@ -136,6 +136,9 @@
 - [WU-0073] 建立预算化 Android ARM guest 线程执行循环；连续 Linux SVC、exit completion、
   累计 tick、未处理 SVC 与普通 CPU stop 均有端到端解释器测试。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0074] 完成 Linux ARM `clone` 的 pthread 形态约束及五参数 ABI 解码；parent/child
+  TID、TLS 指针仅按 flags 暴露，实际创建由显式 spawner 决定且零结果不会伪装成功。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 
 ## 下一步（按优先级）
 

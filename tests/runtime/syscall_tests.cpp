@@ -335,3 +335,76 @@ TEST_CASE("thread lifecycle syscalls request exit and retain clear child tid") {
     frame.thread_id = 99;
     CHECK(dispatcher.Dispatch(frame) == -3);
 }
+
+TEST_CASE("ARM clone decodes pthread arguments at an explicit spawn boundary") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    std::optional<ogplay::runtime::GuestThreadCloneRequest> captured;
+    ogplay::runtime::BindAndroidCloneSyscall(
+        dispatcher,
+        [&captured](const ogplay::runtime::GuestThreadCloneRequest& request) {
+            captured = request;
+            return 52;
+        });
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 120;
+    frame.thread_id = 41;
+    frame.arguments[0] =
+        ogplay::runtime::kLinuxCloneVm | ogplay::runtime::kLinuxCloneFs |
+        ogplay::runtime::kLinuxCloneFiles |
+        ogplay::runtime::kLinuxCloneSighand |
+        ogplay::runtime::kLinuxCloneThread |
+        ogplay::runtime::kLinuxCloneSysvsem |
+        ogplay::runtime::kLinuxCloneSettls |
+        ogplay::runtime::kLinuxCloneParentSettid |
+        ogplay::runtime::kLinuxCloneChildCleartid;
+    frame.arguments[1] = 0x71001000U;
+    frame.arguments[2] = 0x10020U;
+    frame.arguments[3] = 0x72000000U;
+    frame.arguments[4] = 0x10024U;
+    CHECK(dispatcher.Dispatch(frame) == 52);
+    REQUIRE(captured.has_value());
+    CHECK(captured->parent_thread_id == 41);
+    CHECK(captured->child_stack ==
+          ogplay::memory::GuestAddress{0x71001000U});
+    CHECK(captured->parent_tid ==
+          ogplay::memory::GuestAddress{0x10020U});
+    CHECK(captured->thread_pointer ==
+          ogplay::memory::GuestAddress{0x72000000U});
+    CHECK(captured->child_tid ==
+          ogplay::memory::GuestAddress{0x10024U});
+}
+
+TEST_CASE("ARM clone rejects unsupported shapes before spawning") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    std::size_t calls{};
+    ogplay::runtime::BindAndroidCloneSyscall(
+        dispatcher,
+        [&calls](const ogplay::runtime::GuestThreadCloneRequest&) {
+            ++calls;
+            return 0;
+        });
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 120;
+    frame.thread_id = 41;
+    frame.arguments[0] =
+        ogplay::runtime::kLinuxCloneVm | ogplay::runtime::kLinuxCloneFs |
+        ogplay::runtime::kLinuxCloneFiles |
+        ogplay::runtime::kLinuxCloneSighand;
+    frame.arguments[1] = 0x71001000U;
+    CHECK(dispatcher.Dispatch(frame) == -95);
+    frame.arguments[0] |= ogplay::runtime::kLinuxCloneThread;
+    frame.arguments[1] = 0x71001004U;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments[1] = 0x71001000U;
+    frame.arguments[0] |= ogplay::runtime::kLinuxCloneParentSettid;
+    frame.arguments[2] = 0x10001U;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    CHECK(calls == 0);
+    CHECK_THROWS_AS(ogplay::runtime::BindAndroidCloneSyscall(dispatcher, {}),
+                    ogplay::runtime::SyscallError);
+}

@@ -21,6 +21,71 @@ constexpr std::array<std::string_view, kJniInvokeInterfaceSlotCount>
            version == kJniVersion1_4 || version == kJniVersion1_6;
 }
 
+template <typename Range>
+[[nodiscard]] bool IsOneOf(const std::string_view name, const Range& names) {
+    return std::find(names.begin(), names.end(), name) != names.end();
+}
+
+[[nodiscard]] bool IsCallSlot(const std::string_view name) {
+    return name.starts_with("Call") && name.find("Method") != name.npos;
+}
+
+[[nodiscard]] bool IsPrimitiveArraySlot(const std::string_view name) {
+    constexpr std::array types{"Boolean", "Byte", "Char", "Short", "Int",
+                               "Long", "Float", "Double"};
+    for (const auto type : types) {
+        const std::string marker{type};
+        if (name == "New" + marker + "Array" ||
+            name == "Get" + marker + "ArrayElements" ||
+            name == "Release" + marker + "ArrayElements" ||
+            name == "Get" + marker + "ArrayRegion" ||
+            name == "Set" + marker + "ArrayRegion") {
+            return true;
+        }
+    }
+    return name == "GetArrayLength" ||
+           name == "GetPrimitiveArrayCritical" ||
+           name == "ReleasePrimitiveArrayCritical";
+}
+
+[[nodiscard]] std::optional<JniSlotHandlerKind> CommonHandler(
+    const std::string_view name) {
+    constexpr std::array environment{
+        "GetVersion",          "Throw",          "ExceptionOccurred",
+        "ExceptionClear",      "PushLocalFrame", "PopLocalFrame",
+        "NewGlobalRef",        "DeleteGlobalRef", "DeleteLocalRef",
+        "IsSameObject",        "NewLocalRef",     "EnsureLocalCapacity",
+        "NewWeakGlobalRef",    "DeleteWeakGlobalRef",
+        "ExceptionCheck"};
+    constexpr std::array classes{
+        "FindClass",       "GetSuperclass", "IsAssignableFrom",
+        "GetMethodID",     "GetFieldID",     "GetStaticMethodID",
+        "GetStaticFieldID"};
+    constexpr std::array strings{
+        "NewString",          "GetStringLength",    "GetStringChars",
+        "ReleaseStringChars", "NewStringUTF",       "GetStringUTFLength",
+        "GetStringUTFChars",  "ReleaseStringUTFChars", "GetStringRegion",
+        "GetStringUTFRegion", "GetStringCritical",  "ReleaseStringCritical"};
+    constexpr std::array natives{"RegisterNatives", "UnregisterNatives"};
+    if (IsOneOf(name, environment)) return JniSlotHandlerKind::environment;
+    if (IsOneOf(name, classes)) return JniSlotHandlerKind::class_registry;
+    if (IsCallSlot(name)) return JniSlotHandlerKind::invocation;
+    if (IsOneOf(name, strings)) return JniSlotHandlerKind::string_store;
+    if (IsPrimitiveArraySlot(name)) {
+        return JniSlotHandlerKind::primitive_array_store;
+    }
+    if (IsOneOf(name, natives)) return JniSlotHandlerKind::native_registry;
+    return std::nullopt;
+}
+
+[[nodiscard]] std::size_t InvokeSlotIndex(const JniInvokeSlot slot) {
+    const auto index = static_cast<std::size_t>(slot.Value());
+    if (index >= kInvokeSlots.size()) {
+        throw std::invalid_argument("JNI invoke slot is outside JavaVM ABI");
+    }
+    return index;
+}
+
 }  // namespace
 
 std::span<const std::string_view> JniInvokeInterfaceSlots() noexcept {
@@ -154,5 +219,110 @@ bool JniJavaVm::IsDaemon(const std::uint64_t thread_id) const {
 }
 
 std::size_t JniJavaVm::AttachedThreadCount() const { return impl_->Count(); }
+
+JniInvokeUnimplementedCall::JniInvokeUnimplementedCall(
+    const JniInvokeSlot slot, const std::uint64_t link_register)
+    : std::runtime_error("unimplemented JavaVM slot: " +
+                         std::string(JniInvokeSlotName(slot))),
+      slot_(slot),
+      link_register_(link_register) {}
+
+JniInvokeFunctionTable::JniInvokeFunctionTable(
+    core::CapabilityLedger& ledger) noexcept
+    : ledger_(&ledger) {}
+
+void JniInvokeFunctionTable::Bind(const JniInvokeSlot slot,
+                                  const memory::GuestAddress target) {
+    if (sealed_) throw std::logic_error("JavaVM function table is sealed");
+    const auto index = InvokeSlotIndex(slot);
+    if (index < 3) {
+        throw std::invalid_argument("reserved JavaVM slots cannot be bound");
+    }
+    if (target.IsNull()) {
+        throw std::invalid_argument("JavaVM function target cannot be null");
+    }
+    if (targets_[index].has_value()) {
+        throw std::logic_error("JavaVM function slot is already bound");
+    }
+    targets_[index] = target;
+}
+
+void JniInvokeFunctionTable::Seal() {
+    if (sealed_) throw std::logic_error("JavaVM function table is already sealed");
+    sealed_ = true;
+}
+
+bool JniInvokeFunctionTable::IsBound(const JniInvokeSlot slot) const {
+    return targets_[InvokeSlotIndex(slot)].has_value();
+}
+
+memory::GuestAddress JniInvokeFunctionTable::Resolve(
+    const JniInvokeSlot slot, const std::uint64_t link_register) const {
+    if (!sealed_) throw std::logic_error("JavaVM function table is not sealed");
+    const auto index = InvokeSlotIndex(slot);
+    if (index < 3) {
+        throw std::invalid_argument("reserved JavaVM slots are not callable");
+    }
+    if (!targets_[index].has_value()) {
+        ledger_->RecordUnimplemented(
+            "runtime.jni.invoke." + std::string(JniInvokeSlotName(slot)),
+            link_register);
+        throw JniInvokeUnimplementedCall(slot, link_register);
+    }
+    return *targets_[index];
+}
+
+JniCommonSlotDirectory::JniCommonSlotDirectory() {
+    const auto slots = JniNativeInterfaceSlots();
+    for (std::size_t index = kJniReservedSlotCount; index < slots.size();
+         ++index) {
+        const auto handler = CommonHandler(slots[index]);
+        if (!handler.has_value()) continue;
+        bindings_.push_back(
+            {memory::GuestAddress{kJniThunkBegin +
+                                  static_cast<std::uint32_t>(index * 4)},
+             slots[index], *handler, static_cast<std::uint16_t>(index), false});
+    }
+    for (std::size_t index = 4; index < kInvokeSlots.size(); ++index) {
+        bindings_.push_back(
+            {memory::GuestAddress{kJniInvokeThunkBegin +
+                                  static_cast<std::uint32_t>(index * 4)},
+             kInvokeSlots[index], JniSlotHandlerKind::java_vm,
+             static_cast<std::uint16_t>(index), true});
+    }
+}
+
+void JniCommonSlotDirectory::Install(
+    JniFunctionTable& environment_table,
+    JniInvokeFunctionTable& invoke_table) const {
+    for (const auto& binding : bindings_) {
+        if (binding.java_vm) {
+            invoke_table.Bind(
+                JniInvokeSlot{static_cast<std::uint8_t>(binding.slot)},
+                binding.thunk);
+        } else {
+            environment_table.Bind(JniSlot{binding.slot}, binding.thunk);
+        }
+    }
+    environment_table.Seal();
+    invoke_table.Seal();
+}
+
+std::span<const JniThunkBinding> JniCommonSlotDirectory::Bindings() const
+    noexcept {
+    return bindings_;
+}
+
+std::optional<JniThunkBinding> JniCommonSlotDirectory::FindByThunk(
+    const memory::GuestAddress thunk) const noexcept {
+    const auto found = std::find_if(
+        bindings_.begin(), bindings_.end(),
+        [thunk](const JniThunkBinding& binding) {
+            return binding.thunk == thunk;
+        });
+    return found == bindings_.end()
+               ? std::nullopt
+               : std::optional<JniThunkBinding>{*found};
+}
 
 }  // namespace ogplay::runtime

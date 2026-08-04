@@ -76,4 +76,5 @@
 
 ## 测试
 
-`tests/loader/` 的单元与畸形输入契约测试。
+`tests/loader/` 的单元与畸形输入契约测试；三平台 warnings-as-errors 构建同时约束
+小端字段与 Modified UTF-8 位拼接不依赖实现相关的隐式整型转换。

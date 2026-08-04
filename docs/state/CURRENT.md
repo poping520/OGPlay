@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-04 · M4 ANGLE 预编译 SDK 消费闭环
+更新：2026-08-04 · M4 ANGLE 预编译仓库接入完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0155` 已让 CMake 从宿主匹配且完整性校验通过的预编译 SDK 导入 ANGLE；
-  下一个任务编号为 `WU-0156`。
+- `WU-0156` 已发布 Windows x64 Release SDK 并用独立浅 submodule 接入普通构建和 CI；
+  下一个任务编号为 `WU-0157`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -45,11 +45,13 @@
   Release 优先策略、许可证及完整性清单，并从 Windows 真实产物完成打包复验。
 - [WU-0155] CMake 按宿主平台/CPU选择 SDK，校验 schema、配置和全部声明文件后导入
   EGL/GLESv2；Windows/MSVC 启用 ANGLE 的全量回归通过。
+- [WU-0156] 独立公开仓库发布约 13.4 MiB Windows x64 Release SDK；主仓库固定浅
+  gitlink，Windows CI 和远端增量只获取预编译包，不初始化 ANGLE 源码工作区。
 
 ## 下一步（按优先级）
 
-1. `WU-0156` 创建独立二进制远端并以浅 submodule 接入 Windows Release SDK。
-2. 随后实现 EGL display/config/context/surface 生命周期与明确错误路径。
+1. `WU-0157` 实现 EGL display/config/context/surface 生命周期与明确错误路径。
+2. 随后接入由 IDL 生成的 GLES 边界和 guest 内存搬运。
 
 ## 阻塞
 

@@ -74,7 +74,7 @@ def make_remote_script(
             f">{quote(root + '/submodules.log')} 2>&1 || {{ "
             f"tail -n 100 {quote(root + '/submodules.log')}; exit 10; }}",
             f"git -C {quote(source)} submodule update --init --depth 1 -- "
-            f"third_party/angle >>{quote(root + '/submodules.log')} 2>&1 || {{ "
+            f"third_party/angle-prebuilt >>{quote(root + '/submodules.log')} 2>&1 || {{ "
             f"tail -n 100 {quote(root + '/submodules.log')}; exit 10; }}",
             f"{configure} >{quote(root + '/configure.log')} 2>&1 || {{ "
             f"tail -n 140 {quote(root + '/configure.log')}; exit 11; }}",
@@ -192,7 +192,8 @@ def self_test() -> int:
         ["-DSDL_UNIX_CONSOLE_BUILD=ON"]
     )
     assert "submodule update --init --recursive -- third_party/doctest" in script
-    assert "submodule update --init --depth 1 -- third_party/angle" in script
+    assert "submodule update --init --depth 1 -- third_party/angle-prebuilt" in script
+    assert "third_party/angle >>" not in script
     assert "submodule update --init --recursive >" not in script
     assert "cmake --build /tmp/ogplay-cache/build --parallel 3" in script
     assert "ctest --test-dir /tmp/ogplay-cache/build --output-on-failure" in script

@@ -19,6 +19,8 @@
   的 commit、平台、GN 参数和产物清单；Windows 固定使用 MSVC。
 - `tools/package_angle_sdk.py`：从上述产物生成按平台/CPU/配置分层、逐文件 SHA-256 且附带
   许可证的可重定位 SDK；Release ANGLE 是普通 Debug/Release 消费的默认包。
+- `third_party/angle-prebuilt`：独立公开仓库的浅 submodule；普通构建和 Windows CI 从其
+  固定 gitlink 获取 SDK，不初始化 ANGLE 源码。
 - 后续 M4 Work Unit 在此策略上定义 EGL 上下文、资源搬运、present、trace 和快照接口。
 
 ## 不变量

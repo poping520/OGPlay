@@ -148,7 +148,7 @@ note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、
 [runtime.jni]
 status = "partial"
 test = "tests/runtime/jni_tests.cpp"
-note = "M3 已完成 JNI ABI/缺槽 trap、三类引用、pending exception 门禁和严格字段/方法描述符解析（对象/数组/void/255 槽边界）；常用函数适配继续推进"
+note = "M3 已完成 JNI ABI/缺槽 trap、三类引用、pending exception 门禁、严格描述符解析和 Modified UTF-8 编解码；常用函数适配继续推进"
 
 [gles.angle]
 status = "unimplemented"

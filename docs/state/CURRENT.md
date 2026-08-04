@@ -106,6 +106,9 @@
 - [WU-0063] 完成 `dlopen/dlsym/dlclose` 链接器状态机；稳定 handle、重复引用、共享依赖、
   handle 作用域及依赖优先 init/根优先 fini 顺序均已冻结。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 117/117 通过。
+- [WU-0064] guest TLS 基址已成为 CPU 状态中可快照的强类型 thread pointer；线程启动、
+  一致性校验和 join 退出状态使用同一份值。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 108/108 通过。
 
 ## 下一步（按优先级）

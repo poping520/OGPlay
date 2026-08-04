@@ -6,7 +6,8 @@
 
 ## 公共 API
 
-- `A32State`：A32/T32 核心寄存器、CPSR、VFP/NEON 扩展寄存器及线程号。
+- `A32State`：A32/T32 核心寄存器、CPSR、VFP/NEON 扩展寄存器、线程号及
+  可快照的 guest thread pointer。
 - `Cpu::Run(ticks) -> RunResult`：以统一预算运行，返回停止原因和已消费 tick。
 - `CpuSnapshot`：带显式版本的可复制 CPU 状态。
 - `CpuFault`：将 memory fault 的地址、访问类型、原因和线程号保留到 CPU 边界。
@@ -14,8 +15,8 @@
   word/byte 单次 load/store 基础集。
 - `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调访存，不暴露
   宿主指针，并与解释器共享状态、tick、停止及 fault 契约。
-- `GuestThreadGroup`：每个 guest thread ID 启动一个宿主线程和独立 CPU 实例，保存
-  TLS 基址与退出 CPU 状态，并提供真实 join 生命周期。
+- `GuestThreadGroup`：每个 guest thread ID 启动一个宿主线程和独立 CPU 实例，将
+  TLS 基址装入 CPU thread pointer，保存退出状态并提供真实 join 生命周期。
 - `FutexTable`：以 32 位对齐 guest 地址为键，提供比较等待与精确 WAKE N；M2 syscall
   层负责把统一 Clock 超时语义装配到该无超时核心。
 - 解释器保留为确定性参考/单步后端，后续按诊断需求扩展指令覆盖。

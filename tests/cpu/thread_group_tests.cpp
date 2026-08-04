@@ -59,6 +59,10 @@ TEST_CASE("each guest thread owns one CPU on one real host thread") {
                         if (local.ThreadId() != thread_id) {
                             thread_ids_match.store(false);
                         }
+                        if (local.ThreadPointer() !=
+                            ogplay::memory::GuestAddress{0x30000U}) {
+                            thread_ids_match.store(false);
+                        }
                         local.SetRegister(ogplay::cpu::CoreRegister::r0,
                                           static_cast<std::uint32_t>(index + 100));
                         cpu.SetState(local);
@@ -78,6 +82,7 @@ TEST_CASE("each guest thread owns one CPU on one real host thread") {
         const auto result = group.Join(index + 1);
         CHECK(result.thread_id == index + 1);
         CHECK(result.tls_base == ogplay::memory::GuestAddress{0x30000U});
+        CHECK(result.cpu_state.ThreadPointer() == result.tls_base);
         CHECK(result.cpu_state.Register(ogplay::cpu::CoreRegister::r0) ==
               index + 100);
     }
@@ -89,6 +94,12 @@ TEST_CASE("guest thread lifecycle rejects invalid use and propagates failure") {
         [] { return std::make_unique<RecordingCpu>(); });
     CHECK_THROWS_AS(group.Spawn({}, [](ogplay::cpu::Cpu&) {}),
                     std::invalid_argument);
+    ogplay::cpu::A32State wrong_tls;
+    wrong_tls.SetThreadPointer(ogplay::memory::GuestAddress{0x40000U});
+    CHECK_THROWS_AS(
+        group.Spawn({8, ogplay::memory::GuestAddress{0x30000U}, wrong_tls},
+                    [](ogplay::cpu::Cpu&) {}),
+        std::invalid_argument);
     group.Spawn({7, ogplay::memory::GuestAddress{0}, {}}, [](ogplay::cpu::Cpu&) {
         throw std::runtime_error("thread failure");
     });

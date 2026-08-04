@@ -50,6 +50,12 @@ std::uint32_t A32State::Fpexc() const noexcept { return fpexc_; }
 void A32State::SetFpexc(const std::uint32_t value) noexcept { fpexc_ = value; }
 std::uint64_t A32State::ThreadId() const noexcept { return thread_id_; }
 void A32State::SetThreadId(const std::uint64_t value) noexcept { thread_id_ = value; }
+memory::GuestAddress A32State::ThreadPointer() const noexcept {
+    return thread_pointer_;
+}
+void A32State::SetThreadPointer(const memory::GuestAddress value) noexcept {
+    thread_pointer_ = value;
+}
 
 ExecutionState A32State::State() const noexcept {
     return (cpsr_ & kThumbBit) == 0 ? ExecutionState::a32 : ExecutionState::thumb;

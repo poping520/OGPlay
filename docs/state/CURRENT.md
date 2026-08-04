@@ -115,13 +115,15 @@
 - [WU-0066] 完成 API 19/22/23 旧版 Bionic 的 64-slot ARM TLS block；self、thread info、
   可选 preinit、零初始化、映射冲突与销毁均有 guest 内存契约测试。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
-- macOS AppleClang `dev` 预设构建成功，全量 CTest 108/108 通过。
+- [WU-0067] 链接器模块顺序已展开为受检 guest 生命周期调用；DT_INIT、正序 init array、
+  逆序 fini array、DT_FINI、load bias、Thumb 位和 0/-1 哨兵规则均已冻结。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 
 ## 下一步（按优先级）
 
-1. 装配 guest TLS block/TPIDRURO，并按链接器顺序执行 init/fini 生命周期。
+1. 将 ARM `set_tls`、`clone/exit/join` syscall 与真线程、TLS block 装配成完整线程生命周期。
 2. 以无界面 NDK `.so` 累计样本闭合 pthread、文件 IO 与 malloc。
-3. 完成 API 19/22/23 AOSP Bionic 产物装载自检与来源清单。
+3. 完成 API 19/22/23 AOSP Bionic 产物装载自检与可再分发来源清单。
 
 ## 已知问题
 

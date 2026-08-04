@@ -408,3 +408,67 @@ TEST_CASE("ARM clone rejects unsupported shapes before spawning") {
     CHECK_THROWS_AS(ogplay::runtime::BindAndroidCloneSyscall(dispatcher, {}),
                     ogplay::runtime::SyscallError);
 }
+
+TEST_CASE("clone commit publishes Bionic TID TLS and lifecycle state") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress tid{0x10020U};
+    memory.Map({ogplay::memory::GuestAddress{0x10000U}, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(41);
+    ogplay::runtime::GuestThreadCloneCommitter committer{lifecycle, memory};
+    ogplay::runtime::GuestThreadCloneRequest request;
+    request.parent_thread_id = 41;
+    request.flags = ogplay::runtime::kLinuxCloneParentSettid |
+                    ogplay::runtime::kLinuxCloneSettls |
+                    ogplay::runtime::kLinuxCloneChildCleartid;
+    request.child_stack = ogplay::memory::GuestAddress{0x71001000U};
+    request.parent_tid = tid;
+    request.thread_pointer = ogplay::memory::GuestAddress{0x72000000U};
+    request.child_tid = tid;
+    CHECK(committer.Commit(request, 52) == 52);
+    std::array<std::byte, 4> stored{};
+    memory.Read(tid, stored);
+    const std::array expected{std::byte{52}, std::byte{0},
+                              std::byte{0}, std::byte{0}};
+    CHECK(stored == expected);
+    const auto child = lifecycle.State(52);
+    CHECK(child.thread_pointer ==
+          ogplay::memory::GuestAddress{0x72000000U});
+    CHECK(child.clear_child_tid == tid);
+}
+
+TEST_CASE("clone commit preflights all TID writes and rejects partial state") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress parent_tid{0x10020U};
+    memory.Map({ogplay::memory::GuestAddress{0x10000U}, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    const std::array original{std::byte{0x63}, std::byte{0},
+                              std::byte{0}, std::byte{0}};
+    memory.Write(parent_tid, original);
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(61);
+    ogplay::runtime::GuestThreadCloneCommitter committer{lifecycle, memory};
+    ogplay::runtime::GuestThreadCloneRequest request;
+    request.parent_thread_id = 61;
+    request.flags = ogplay::runtime::kLinuxCloneParentSettid |
+                    ogplay::runtime::kLinuxCloneChildSettid;
+    request.parent_tid = parent_tid;
+    request.child_tid = ogplay::memory::GuestAddress{0x20000U};
+    CHECK(committer.Commit(request, 62) == -14);
+    std::array<std::byte, 4> stored{};
+    memory.Read(parent_tid, stored);
+    CHECK(stored == original);
+    CHECK_THROWS_AS(static_cast<void>(lifecycle.State(62)),
+                    ogplay::runtime::GuestThreadLifecycleError);
+
+    request.flags = ogplay::runtime::kLinuxCloneSettls;
+    request.parent_tid.reset();
+    request.child_tid.reset();
+    CHECK(committer.Commit(request, 62) == -22);
+    lifecycle.RequestExit(61, 0);
+    request.thread_pointer = ogplay::memory::GuestAddress{0x72000000U};
+    CHECK(committer.Commit(request, 62) == -3);
+}

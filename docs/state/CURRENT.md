@@ -142,6 +142,9 @@
 - [WU-0075] guest 生命周期可在同一临界区校验 running parent、child TID 唯一性，并以
   初始 TLS 与 clear-child-tid 原子注册 child；失败不会留下部分 child 状态。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0076] clone committer 已串行预检 guest parent/child TID 地址，按 flags 写回 TID，
+  再以 TLS/clear-child-tid 发布 child；坏地址、重复 TID 与失效 parent 不发布 child。
+- Windows/MSVC warnings-as-errors 全量 CTest 138/138 通过；架构与远程增量工具门禁全绿。
 
 ## 下一步（按优先级）
 

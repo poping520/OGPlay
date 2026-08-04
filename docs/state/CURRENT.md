@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0137` 已完成确定性 Locale HLE；下一个开发任务编号为 `WU-0138`。
+- `WU-0138` 已冻结 Context 包信息服务契约；下一个开发任务编号为 `WU-0139`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -54,11 +54,13 @@
   跨线程、已失效 Context reference 在读取参数或修改状态前失败。
 - [WU-0137] 从显式 language/country 配置安装 Locale.getDefault/getLanguage/getCountry/
   toString，严格校验代码且不读取宿主区域设置。
+- [WU-0138] 在 Context 声明 getPackageName/getPackageManager，Activity 可继承查找；
+  包信息 HLE 未安装时由调用引擎明确报告 missing handler。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0138`，冻结 Context 包名与最小 PackageManager 服务契约。
-2. 只实现 versionName/versionCode，不引入完整 Android services。
+1. 创建 `WU-0139`，实现只服务当前包的 PackageManager/PackageInfo HLE。
+2. 仅暴露 versionName/versionCode，不引入完整 Android services。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

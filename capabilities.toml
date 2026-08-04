@@ -120,6 +120,11 @@ status = "complete"
 test = "tests/cpu/m1_guest_sample_tests.cpp"
 note = "M1 裸 A32/Thumb mailbox 样本在三平台通过解释器/JIT 对拍、标准化输入、确定性写回及 CPU+内存快照复跑"
 
+[fixtures.m2_ndk]
+status = "partial"
+test = "samples/m2_ndk/tools/build.py"
+note = "M2 API 19 armeabi-v7a 无界面普通 C 入口已冻结 pthread+文件 IO+malloc 契约并通过离线 ELF 构建校验；OGPlay 内执行待闭合"
+
 [loader.elf32_arm]
 status = "partial"
 test = "tests/loader/elf_tests.cpp"

@@ -1,0 +1,22 @@
+#pragma once
+
+#include <cstdint>
+#include <optional>
+
+#include "ogplay/cpu/cpu.h"
+#include "ogplay/runtime/syscall.h"
+
+namespace ogplay::runtime {
+
+struct A32SyscallDispatchResult final {
+    std::uint32_t number{};
+    std::int32_t return_value{};
+    cpu::A32State cpu_state;
+};
+
+[[nodiscard]] std::optional<A32SyscallDispatchResult>
+DispatchAndroidArmSupervisorCall(cpu::Cpu& cpu,
+                                 const cpu::RunResult& stop,
+                                 A32SyscallDispatcher& dispatcher);
+
+}  // namespace ogplay::runtime

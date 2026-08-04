@@ -48,7 +48,8 @@ std::int32_t GuestCloneThreadRuntime::Spawn(
         auto child_state = request.parent_cpu_state;
         child_state.SetThreadId(child_thread_id);
         child_state.SetThreadPointer(
-            request.thread_pointer.value_or(memory::GuestAddress{0}));
+            request.thread_pointer.value_or(
+                request.parent_cpu_state.ThreadPointer()));
         child_state.SetRegister(cpu::CoreRegister::sp,
                                 request.child_stack.Value());
         child_state.SetRegister(cpu::CoreRegister::r0, 0);

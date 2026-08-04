@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <atomic>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "ogplay/cpu/cpu.h"
 #include "ogplay/runtime/syscall.h"
@@ -78,6 +80,26 @@ TEST_CASE("syscall declarations reject duplicate numbers and empty handlers") {
         dispatcher.Register(2, "empty", ogplay::runtime::SyscallGroup::process,
                             {}),
         ogplay::runtime::SyscallError);
+}
+
+TEST_CASE("syscall observer sees implemented and unimplemented results") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    std::vector<std::pair<std::uint32_t, std::int32_t>> observed;
+    dispatcher.SetObserver(
+        [&observed](const ogplay::runtime::A32SyscallFrame& frame,
+                    const std::int32_t result) {
+            observed.emplace_back(frame.number, result);
+        });
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 20;
+    CHECK(dispatcher.Dispatch(frame) == 1000);
+    frame.number = 999;
+    CHECK(dispatcher.Dispatch(frame) == -ogplay::runtime::kLinuxEnosys);
+    CHECK(observed ==
+          std::vector<std::pair<std::uint32_t, std::int32_t>>{
+              {20, 1000}, {999, -ogplay::runtime::kLinuxEnosys}});
 }
 
 TEST_CASE("Android time syscalls use the unified clock and checked guest memory") {
@@ -169,6 +191,52 @@ TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {
     frame.arguments[0] = 0x50001010;
     CHECK(dispatcher.Dispatch(frame) == 0x50001010);
     CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x50000000}, marker));
+}
+
+TEST_CASE("Android madvise validates hints and discards writable pages") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress page{0x12000U};
+    memory.Map({page, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    const std::array marker{std::byte{0x5a}, std::byte{0x6b}};
+    memory.Write(page.Add(32), marker);
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 220;
+    frame.thread_id = 71;
+    frame.arguments[0] = page.Value();
+    frame.arguments[1] = static_cast<std::uint32_t>(memory.PageSize());
+    frame.arguments[2] = 12;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    frame.arguments[2] = 4;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    std::array<std::byte, 2> discarded{};
+    memory.Read(page.Add(32), discarded);
+    CHECK(discarded == std::array<std::byte, 2>{});
+
+    frame.arguments[0] = page.Value() + 1U;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments[0] = 0x22000U;
+    CHECK(dispatcher.Dispatch(frame) == -12);
+    frame.arguments[0] = page.Value();
+    frame.arguments[1] = 0;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.arguments[1] = 1;
+    frame.arguments[2] = 16;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+
+    frame.number = 125;
+    frame.arguments[0] = page.Value();
+    frame.arguments[1] = static_cast<std::uint32_t>(memory.PageSize());
+    frame.arguments[2] = 0;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    CHECK_THROWS_AS(memory.Read(page, discarded),
+                    ogplay::memory::MemoryFault);
 }
 
 TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {

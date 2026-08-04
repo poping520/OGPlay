@@ -111,16 +111,20 @@ target_include_directories(ogplay_loader PUBLIC
 ogplay_set_project_warnings(ogplay_loader)
 
 add_library(ogplay_runtime
+    src/runtime/arm_kernel_helpers.cpp
     src/runtime/bionic_profile.cpp
     src/runtime/bionic_selfcheck.cpp
     src/runtime/bionic_tls.cpp
     src/runtime/guest_lifecycle.cpp
+    src/runtime/headless_bionic_runner.cpp
     src/runtime/guest_thread_lifecycle.cpp
     src/runtime/guest_clone_thread_runtime.cpp
     src/runtime/guest_thread_runner.cpp
     src/runtime/syscall.cpp
     src/runtime/syscall_arm.cpp
     src/runtime/syscall_bridge.cpp
+    src/runtime/syscall_process.cpp
+    src/runtime/syscall_signal.cpp
     src/runtime/syscall_thread_lifecycle.cpp
     src/runtime/vfs.cpp
 )
@@ -184,10 +188,13 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/snapshot_tests.cpp
         tests/runtime/syscall_tests.cpp
         tests/runtime/syscall_bridge_tests.cpp
+        tests/runtime/syscall_process_tests.cpp
+        tests/runtime/syscall_signal_tests.cpp
         tests/runtime/bionic_profile_tests.cpp
         tests/runtime/bionic_selfcheck_tests.cpp
         tests/runtime/bionic_tls_tests.cpp
         tests/runtime/guest_lifecycle_tests.cpp
+        tests/runtime/headless_bionic_runner_tests.cpp
         tests/runtime/guest_thread_lifecycle_tests.cpp
         tests/runtime/guest_clone_thread_runtime_tests.cpp
         tests/runtime/guest_thread_runner_tests.cpp
@@ -208,7 +215,10 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/session_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)
-        list(APPEND OGPLAY_TEST_SOURCES tests/cpu/dynarmic_tests.cpp)
+        list(APPEND OGPLAY_TEST_SOURCES
+            tests/cpu/dynarmic_tests.cpp
+            tests/runtime/arm_kernel_helpers_tests.cpp
+        )
     endif()
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
     target_link_libraries(ogplay_tests PRIVATE

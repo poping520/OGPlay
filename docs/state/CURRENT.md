@@ -147,6 +147,8 @@
 - Windows/MSVC warnings-as-errors 全量 CTest 138/138 通过；架构与远程增量工具门禁全绿。
 - [WU-0077] SVC syscall frame 与 clone 请求已保留调用时完整 A32 状态；child 创建无需猜测
   Thumb/CPSR、返回 PC 或被调用方保存寄存器，缺失/跨线程上下文明确返回 EINVAL。
+- [WU-0078] ARM clone 已从 parent 状态派生 child 的 r0=0、SP、TLS 与 TID，通过真实宿主
+  线程进入统一 SVC 循环；端到端样例完成 parent 返回、child exit 与 clear-child-tid。
 
 ## 下一步（按优先级）
 

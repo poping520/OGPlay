@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0118` 已完成常用 JNI/JavaVM 槽绑定；下一个开发任务编号为 `WU-0119`。
+- `WU-0119` 已完成最小框架生命周期 HLE；下一个开发任务编号为 `WU-0120`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -56,11 +56,13 @@
   参数/返回类型、receiver、方法类别和实现缺失均明确失败。
 - [WU-0118] 将 169 个已有行为支撑的常用 JNIEnv 槽与 4 个 JavaVM 线程槽映射到
   稳定 thunk 并封口；字段访问、对象数组、反射、direct buffer 等低频槽继续 trap。
+- [WU-0119] 声明式安装 Object、Bundle、Activity 类和生命周期方法，严格执行
+  construct→create→start→resume→pause→stop→destroy 并记录确定性事件。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0119`，实现最小声明式框架 HLE 类集。
-2. 随后构建无界面 JNI 双向调用契约样本。
+1. 创建 `WU-0120`，实现带类约束的 JNI 对象数组。
+2. 随后实现字段存储并构建无界面 JNI 双向调用契约样本。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

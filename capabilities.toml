@@ -150,6 +150,11 @@ status = "partial"
 test = "tests/runtime/jni_tests.cpp"
 note = "M3 已将 169 个常用 JNIEnv 槽与 4 个 JavaVM 线程槽映射到稳定行为 thunk 并封口；其余低频槽继续可观测 trap"
 
+[runtime.framework_hle]
+status = "partial"
+test = "tests/runtime/framework_lifecycle_tests.cpp"
+note = "M3 已声明式安装 Object/Bundle/Activity，并实现严格可观测的 Activity 生命周期；其他框架类继续按样本补齐"
+
 [gles.angle]
 status = "unimplemented"
 test = ""

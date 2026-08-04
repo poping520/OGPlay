@@ -136,9 +136,9 @@ test = "tests/runtime/bionic_profile_tests.cpp"
 note = "M2 已将 API 19/22/23 guest Bionic、HLE thunk 与 64-slot ARM TLS block 接入统一契约；三版本 libc/libdl 可执行真实映射、版本化解析、重定位与出口自检"
 
 [runtime.vfs]
-status = "partial"
+status = "complete"
 test = "tests/runtime/vfs_tests.cpp"
-note = "M2 已完成大小写不敏感 Android 路径索引、内存文件与隔离 fd 的 open/read/write/seek/close；APK/OBB/外置目录 provider 待接入"
+note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close"
 
 [runtime.jni]
 status = "unimplemented"

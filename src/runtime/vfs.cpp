@@ -64,6 +64,7 @@ constexpr std::int32_t kEfbig = 27;
 struct File final {
     std::vector<std::byte> contents;
     bool writable{};
+    VfsSource source{VfsSource::runtime};
 };
 
 struct OpenFile final {
@@ -91,7 +92,54 @@ public:
         files_.emplace(normalized,
                        std::make_shared<File>(
                            File{std::vector(contents.begin(), contents.end()),
-                                writable}));
+                                writable, VfsSource::runtime}));
+    }
+
+    void Mount(const VfsSource source, const std::string_view root,
+               const std::span<const VfsMountEntry> entries) {
+        if (source == VfsSource::runtime || entries.empty()) {
+            throw VfsError(kEinval,
+                           "VFS mount requires a source and entries");
+        }
+        if (root.empty() || root.front() != '/') {
+            throw VfsError(kEnotdir, "VFS mount root must be absolute");
+        }
+        std::vector<std::pair<std::string, std::shared_ptr<File>>> pending;
+        pending.reserve(entries.size());
+        for (const auto& entry : entries) {
+            if (entry.path.empty() || entry.path.front() == '/' ||
+                entry.path.front() == '\\') {
+                throw VfsError(kEinval,
+                               "VFS mount entry must be relative");
+            }
+            auto combined = std::string(root);
+            combined.push_back('/');
+            combined.append(entry.path);
+            const auto normalized = NormalizePath(combined);
+            const auto duplicate = std::find_if(
+                pending.begin(), pending.end(),
+                [&normalized](const auto& candidate) {
+                    return candidate.first == normalized;
+                });
+            if (duplicate != pending.end()) {
+                throw VfsError(kEexist,
+                               "VFS mount contains a duplicate path");
+            }
+            pending.emplace_back(
+                normalized,
+                std::make_shared<File>(File{
+                    entry.contents, source == VfsSource::external, source}));
+        }
+        std::scoped_lock lock(mutex_);
+        for (const auto& [path, file] : pending) {
+            static_cast<void>(file);
+            if (files_.contains(path)) {
+                throw VfsError(kEexist, "VFS mount path already exists");
+            }
+        }
+        for (auto& [path, file] : pending) {
+            files_.emplace(std::move(path), std::move(file));
+        }
     }
 
     [[nodiscard]] VfsFileInfo Stat(const std::string_view path) const {
@@ -99,7 +147,8 @@ public:
         std::scoped_lock lock(mutex_);
         const auto found = files_.find(normalized);
         if (found == files_.end()) throw VfsError(kEnoent, "VFS file not found");
-        return {found->second->contents.size(), found->second->writable};
+        return {found->second->contents.size(), found->second->writable,
+                found->second->source};
     }
 
     [[nodiscard]] std::int32_t Open(const std::string_view path,
@@ -112,8 +161,10 @@ public:
         auto found = files_.find(normalized);
         if (found == files_.end()) {
             if (!options.create) throw VfsError(kEnoent, "VFS file not found");
-            found = files_.emplace(normalized, std::make_shared<File>(
-                                                   File{{}, true})).first;
+            found = files_.emplace(
+                normalized,
+                std::make_shared<File>(
+                    File{{}, true, VfsSource::runtime})).first;
         }
         if (options.write && !found->second->writable) {
             throw VfsError(kEacces, "VFS file is read-only");
@@ -231,6 +282,11 @@ void VirtualFileSystem::PutFile(const std::string_view path,
                                 const std::span<const std::byte> contents,
                                 const bool writable) {
     impl_->PutFile(path, contents, writable);
+}
+void VirtualFileSystem::Mount(
+    const VfsSource source, const std::string_view root,
+    const std::span<const VfsMountEntry> entries) {
+    impl_->Mount(source, root, entries);
 }
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);

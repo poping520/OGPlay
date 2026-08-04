@@ -44,7 +44,8 @@
 - `RunAndroidArmGuestThread`：按 tick 预算运行 CPU，循环消费 Linux SVC，并在 exit 请求
   后完成 clear-child-tid/futex 清理；其他 trap 和未处理 SVC 原样返回。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供
-  隔离文件描述符的 open/read/write/seek/close；路径逃逸和权限错误携带 Linux errno。
+  APK/OBB/外置统一事务挂载、来源事实与隔离文件描述符 open/read/write/seek/close；
+  路径逃逸和权限错误携带 Linux errno，只有外置挂载默认可写。
 - `BindAndroidFileSyscalls`：将 `open/openat/read/write/lseek/close` 绑定到 VFS；路径和
   buffer 均从受检 guest 内存复制，坏指针及 VFS 错误转换为 Linux errno。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。

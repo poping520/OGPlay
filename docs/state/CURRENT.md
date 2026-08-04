@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0114` 已完成 RegisterNatives 注册表；下一个开发任务编号为 `WU-0115`。
+- `WU-0115` 已完成 JavaVM 线程槽；下一个开发任务编号为 `WU-0116`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -48,11 +48,13 @@
   租约与 copy-back/commit/abort 释放语义。
 - [WU-0114] 完成 RegisterNatives 整批事务预检、重载精确查询、幂等重注册、冲突拒绝
   与按类 UnregisterNatives，host/DEX VM 类身份可共存。
+- [WU-0115] 冻结 JavaVM 8 槽 ABI，完成 GetEnv、普通/daemon Attach 与 Detach，
+  重复 attach 保持稳定 env，版本、未附着和失败回滚语义明确。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0115`，实现 JavaVM GetEnv/Attach/Detach 线程接口。
-2. 随后推进声明式类、方法与字段查找及常用调用变体。
+1. 创建 `WU-0116`，实现声明式类、方法与字段查找。
+2. 随后闭合常用调用变体并生成可执行槽绑定目录。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

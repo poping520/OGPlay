@@ -24,6 +24,8 @@
   为动态根构造独立依赖/查找作用域；版本化导入按依赖库与版本名精确匹配。
 - `Elf32DynamicLinker`：管理稳定 `dlopen` handle、重复打开引用、handle 内 `dlsym` 和
   共享依赖引用，返回需执行的依赖优先初始化与根优先反初始化模块顺序。
+- `LoadElf32ModuleNamespace`：一次完成多模块事实解析、依赖排序、映射、版本化符号解析与
+  ARM REL 应用；任一阶段失败都恢复调用前完整 guest 地址空间。
 - `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，
   对重复、元数据残缺、非对齐及非 file-backed 范围明确失败。
 - `ReadElf32TlsInfo`：解析唯一 `PT_TLS` 模板，保留初始化字节、BSS 大小与对齐，

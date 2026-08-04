@@ -149,6 +149,8 @@
   Thumb/CPSR、返回 PC 或被调用方保存寄存器，缺失/跨线程上下文明确返回 EINVAL。
 - [WU-0078] ARM clone 已从 parent 状态派生 child 的 r0=0、SP、TLS 与 TID，通过真实宿主
   线程进入统一 SVC 循环；端到端样例完成 parent 返回、child exit 与 clear-child-tid。
+- [WU-0079] 新增 ELF32 多模块总装载器，一次完成事实解析、依赖排序、映射、版本化解析
+  与 ARM REL 应用；任一失败通过内存快照恢复整个调用前地址空间。
 
 ## 下一步（按优先级）
 

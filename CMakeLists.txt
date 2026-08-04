@@ -97,6 +97,7 @@ add_library(ogplay_loader
     src/loader/elf.cpp
     src/loader/lifecycle.cpp
     src/loader/link_namespace.cpp
+    src/loader/module_loader.cpp
     src/loader/relocation.cpp
     src/loader/symbol_version.cpp
     src/loader/tls.cpp
@@ -193,6 +194,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/loader/dynamic_linker_tests.cpp
         tests/loader/lifecycle_tests.cpp
         tests/loader/link_namespace_tests.cpp
+        tests/loader/module_loader_tests.cpp
         tests/loader/relocation_tests.cpp
         tests/loader/symbol_version_tests.cpp
         tests/loader/tls_tests.cpp

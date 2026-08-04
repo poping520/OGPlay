@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-03 · M2 Bionic 基线
+更新：2026-08-04 · M2 Bionic 基线
 
 ## 进行中
 
@@ -127,10 +127,13 @@
 - [WU-0070] `set_tid_address/exit/exit_group` 已接入 guest 线程状态机；退出 syscall 只
   产生明确停止请求，不伪造宿主线程已经退出。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0071] guest 线程退出完成阶段已实现 clear-child-tid 写零和精确唤醒一个 futex
+  waiter；未对齐/坏地址明确报告且不回退 exited 状态。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 
 ## 下一步（按优先级）
 
-1. 将 ARM `set_tls`、`clone/exit/join` syscall 与真线程、TLS block 装配成完整线程生命周期。
+1. 实现 ARM `clone` 请求、parent/child TID 写回，并接入真线程与 SVC 执行循环。
 2. 以无界面 NDK `.so` 累计样本闭合 pthread、文件 IO 与 malloc。
 3. 完成 API 19/22/23 AOSP Bionic 产物装载自检与可再分发来源清单。
 

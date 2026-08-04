@@ -128,7 +128,7 @@ note = "M2 已完成 ELF32/ARM 装载、TLS/版本、动态命名空间、dlopen
 [runtime.syscall]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "M2 已覆盖身份/时间/内存/futex/VFS/set_tls，并将 set_tid_address/exit/exit_group 接入只前进的线程状态机；clone 与扩展调用继续补齐"
+note = "M2 已覆盖身份/时间/内存/futex/VFS/set_tls，线程退出含 clear-child-tid 写零与精确 futex 唤醒；clone 与扩展调用继续补齐"
 
 [runtime.bionic]
 status = "partial"

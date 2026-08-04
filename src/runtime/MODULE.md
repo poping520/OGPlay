@@ -27,7 +27,7 @@
 - `BuildGuestInitializationPlan` / `BuildGuestFinalizationPlan` / `ExecuteGuestLifecycle`：
   把统一链接器的模块顺序展开为加 load bias 的 DT_INIT/array/DT_FINI guest 调用并执行。
 - `GuestThreadLifecycle`：线程安全保存 running/exit-requested/exited、thread pointer、
-  clear-child-tid 与退出码，提供单线程/进程组退出和显式 reap 状态机。
+  clear-child-tid 与退出码，提供单线程/进程组退出、写零 + futex 唤醒和显式 reap 状态机。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供
   隔离文件描述符的 open/read/write/seek/close；路径逃逸和权限错误携带 Linux errno。
 - `BindAndroidFileSyscalls`：将 `open/openat/read/write/lseek/close` 绑定到 VFS；路径和
@@ -45,6 +45,8 @@
   回绕明确失败。
 - guest 线程状态只能按 running → exit-requested → exited → reap 前进；ID 在 reap 前
   不得复用。
+- clear-child-tid 清理失败不得回退 exited 状态；坏地址和未对齐地址通过 completion
+  状态显式报告，成功时最多唤醒一个 waiter。
 - JNIEnv 全表完成前，缺槽位必须 trap，不得静默返回零。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 

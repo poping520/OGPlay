@@ -36,7 +36,10 @@
   TID 与 TLS；未请求 `CLONE_SETTLS` 时继承 parent TPIDRURO，通过 GuestThreadGroup 启动
   真实宿主线程并进入统一 SVC/exit 执行循环。
 - `SelectBionicProfile` / `RouteBionicSymbol`：只接受 API 19/22/23，固定真实 guest Bionic
-  库、宿主 HLE 边界库及少而明确的 str/mem/pthread 拦截表。
+  库、宿主 HLE 边界库及少而明确且确有 handler 的 mem 拦截表；pthread 保持真实 Bionic
+  ABI，并在 clone/futex/TLS syscall 边界映射到宿主真线程。
+- `ExecuteBionicMemoryIntercept`：受检执行 memcpy/memmove/memset/memcmp/strlen；完整范围
+  预检、重叠方向、字符串上限、A32 返回值和吞吐基准均有契约。
 - `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的
   边界符号，将 libc 选择性拦截、虚拟边界库和真实 guest ELF 装入统一链接命名空间。
 - `SelfCheckBionicProfile`：对 API 19/22/23 的真实 libc/libdl 执行完整多模块映射、版本化

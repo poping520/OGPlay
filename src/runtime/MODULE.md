@@ -85,6 +85,8 @@
   region、chars/UTF/critical 租约及配对 release，供常用字符串槽共享。
 - `JniPrimitiveArrayStore`：统一管理八种零初始化 primitive array，提供类型化 region、
   elements/critical 副本及 copy-back、commit、abort 释放模式。
+- `JniObjectArrayStore`：保存对象身份及其声明类，按 Java 父类关系约束初值和逐元素写入，
+  null、越界、未知数组和不兼容赋值均有独立语义。
 - `JniNativeRegistry`：按类身份、方法名和严格描述符事务注册 guest native 地址，
   支持重载精确查询、幂等重注册、冲突拒绝与按类 UnregisterNatives。
 - `JniClassRegistry`：事务装载声明式类、方法和字段，提供稳定强类型 ID、父类查找、
@@ -127,6 +129,7 @@
 - chars/critical 访问必须用对象、访问类别和 token 精确配对；存在活动访问时不得销毁对象。
 - primitive array region 与 release 数据必须保持元素类型和长度；commit 保留租约，
   abort 不回写，普通 release 回写并关闭租约。
+- object array 的非 null 元素必须携带已注册声明类，且可赋值到数组创建时冻结的元素类。
 - RegisterNatives 必须先验证整批声明再提交；同键不同地址不得覆盖，重载必须按描述符区分。
 - 类必须按父类优先注册；成员键由名称和严格描述符组成，构造器不得从父类继承。
 - 三种调用变体必须进入同一参数校验路径；虚调用按 receiver class 选 override，

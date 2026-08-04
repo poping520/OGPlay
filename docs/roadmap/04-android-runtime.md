@@ -214,16 +214,18 @@ Register("pthread_cond_broadcast", [](Registers& r) { r[0] = 0; });  // 同上
 
 ## 5. JNI：完整实现
 
-`JNIEnv` 有 **231 个**函数槽。老游戏用得很散，缺一个就是一次崩溃或一次静默失败。
+Android API 19/22/23 的 NDK `JNINativeInterface` 使用索引 0..232，共 **233 个槽**：
+4 个保留槽和 229 个函数指针。老游戏用得很散，缺一个就是一次崩溃或一次静默失败。
+DEMO 自建的 231 槽数组不是正式 ABI，不能迁移为正式版契约。
 
 ### 5.0 现状（实测）：这是当前最大的静默失败源
 
 | 指标 | 实测值 |
 | --- | --- |
-| `JNIEnv` 槽位总数 | 231 |
+| DEMO `JNIEnv` 数组槽位 | 231（少于正式 ABI 的 233） |
 | **有真实逻辑的** | **50（22%）** |
 | **被自动填成"返回 0"的** | **181（78%）** |
-| `JavaVM` 有逻辑的槽位 | 2（`AttachCurrentThread`、`GetEnv`），其余 229 个同样返回 0 |
+| DEMO `JavaVM` 数组 | 错误复用 231 槽；只有 `AttachCurrentThread`、`GetEnv` 具备逻辑 |
 
 初始化时有一个兜底循环，把所有未显式实现的槽位统一填成
 `jni::reserved_slot_N`，行为是 `registers[0] = 0`。

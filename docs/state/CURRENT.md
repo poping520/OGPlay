@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-04 · M4 GLES2 生成式分派完成
+更新：2026-08-04 · M4 GLES 调用搬运准备完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0163` 已把生成目录接入 142 个稳定 thunk ID、调用形状校验和显式 handler 分派；
-  未绑定调用可观测失败；下一个任务编号为 `WU-0164`。
+- `WU-0164` 已完成受限长度表达式、类型/二级指针字节换算、有界字符串扫描及
+  `GuestBuffer` 调用准备；下一个任务编号为 `WU-0165`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -63,10 +63,13 @@
 - [WU-0163] 生成目录提供 142 个稳定 GLES2 thunk ID 和二分查找；分派验证参数槽且仅执行
   唯一显式 handler，未绑定调用记录函数、命中数与 first/last guest thread 后抛错；
   启用 ANGLE 的 Windows/MSVC 全量 CTest 253/253 通过。
+- [WU-0164] 调用准备层安全求值字面量/标量/常量乘法和有界 C 字符串，按 GL 类型及
+  32 位二级 guest 指针换算字节；状态相关长度和 deferred offset 必须显式解析；
+  启用 ANGLE 的 Windows/MSVC 全量 CTest 258/258 通过。
 
 ## 下一步（按优先级）
 
-1. `WU-0164` 实现 IDL 长度表达式求值并把 `GuestBuffer` 接入生成式调用准备阶段。
+1. `WU-0165` 实现像素、索引及常用查询长度 resolver，并覆盖 pack/unpack 与 buffer 状态。
 2. 随后生成常用 ANGLE 调用体，再增加 GLES1、窗口 surface 与 present。
 
 ## 阻塞

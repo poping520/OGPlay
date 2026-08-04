@@ -116,6 +116,7 @@ add_library(ogplay_runtime
     src/runtime/guest_thread_lifecycle.cpp
     src/runtime/syscall.cpp
     src/runtime/syscall_arm.cpp
+    src/runtime/syscall_thread_lifecycle.cpp
     src/runtime/vfs.cpp
 )
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)

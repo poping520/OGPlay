@@ -124,6 +124,9 @@
 - [WU-0069] 建立线程安全的 guest 生命周期状态机；thread pointer、clear-child-tid、
   单线程/组退出、complete、reap 与非法状态迁移均已冻结。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0070] `set_tid_address/exit/exit_group` 已接入 guest 线程状态机；退出 syscall 只
+  产生明确停止请求，不伪造宿主线程已经退出。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 
 ## 下一步（按优先级）
 

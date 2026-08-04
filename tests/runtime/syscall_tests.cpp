@@ -302,3 +302,36 @@ TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
         ogplay::runtime::BindAndroidArmPrivateSyscalls(dispatcher, {}),
         ogplay::runtime::SyscallError);
 }
+
+TEST_CASE("thread lifecycle syscalls request exit and retain clear child tid") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(41);
+    lifecycle.Register(42);
+    ogplay::runtime::BindAndroidThreadLifecycleSyscalls(dispatcher, lifecycle);
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 256;
+    frame.thread_id = 42;
+    frame.arguments[0] = 0x10020U;
+    CHECK(dispatcher.Dispatch(frame) == 42);
+    CHECK(lifecycle.State(42).clear_child_tid ==
+          ogplay::memory::GuestAddress{0x10020U});
+    frame.number = 1;
+    frame.arguments[0] = 3;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    CHECK(lifecycle.State(42).status ==
+          ogplay::runtime::GuestThreadStatus::exit_requested);
+    CHECK(lifecycle.State(42).exit_code == 3);
+
+    frame.number = 248;
+    frame.thread_id = 41;
+    frame.arguments[0] = 9;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    CHECK(lifecycle.State(41).exit_code == 9);
+    CHECK(lifecycle.State(42).exit_code == 9);
+    frame.thread_id = 99;
+    CHECK(dispatcher.Dispatch(frame) == -3);
+}

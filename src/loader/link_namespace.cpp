@@ -110,7 +110,10 @@ using ModuleNames = std::map<std::string, std::size_t, std::less<>>;
 [[nodiscard]] bool MatchesVersion(
     const Elf32LinkModule& module, const std::size_t symbol_index,
     const std::optional<std::string_view> version) {
-    if (!module.versions.has_value()) return !version.has_value();
+    // Android API 19/22 providers predate symbol version definitions, while
+    // newer NDKs can still attach LIBC requirements to binaries targeting
+    // those releases. The platform linker resolves such imports by name.
+    if (!module.versions.has_value()) return true;
     const auto& candidate = module.versions->symbols[symbol_index];
     if (version.has_value()) {
         return candidate.kind == Elf32SymbolVersionKind::definition &&

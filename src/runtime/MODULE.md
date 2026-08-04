@@ -73,6 +73,8 @@
   Global 与可清除 WeakGlobal；对象身份显式区分 host 与未来 DEX VM 来源。
 - `JniExceptionState`：按 guest 线程保存 pending throwable 对象身份；提供
   Throw/Occurred/Check/Clear 底座，并在 pending 时只放行检查、清理和资源 release 白名单。
+- `ParseJniFieldDescriptor/ParseJniMethodDescriptor`：解析 primitive、对象、255 维以内数组
+  与 void 返回，输出参数槽数，拒绝非法类名、尾随内容和超过 255 参数槽的方法。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
@@ -96,6 +98,7 @@
   跨线程共享但删除类别必须匹配，容量与失效访问都明确失败。
 - pending exception 不得被第二个 Throw 静默覆盖；普通 JNI 调用必须在执行前经过线程
   异常门禁，detach 后不得残留 pending 状态。
+- GetFieldID/GetMethodID 与所有调用变体必须共用严格描述符解析结果，不得各自猜测参数布局。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 
 ## 禁止

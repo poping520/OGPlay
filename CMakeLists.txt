@@ -359,7 +359,7 @@ if(OGPLAY_BUILD_TESTS)
     add_test(
         NAME tools.angle_build_driver_self_test
         COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/build_angle.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/tools/build_angle.py
             --self-test
     )
     set_tests_properties(tools.angle_build_driver_self_test PROPERTIES LABELS tools)
@@ -367,7 +367,7 @@ if(OGPLAY_BUILD_TESTS)
     add_test(
         NAME tools.angle_sdk_packager_self_test
         COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/package_angle_sdk.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/tools/package_angle_sdk.py
             --self-test
     )
     set_tests_properties(tools.angle_sdk_packager_self_test PROPERTIES LABELS tools)

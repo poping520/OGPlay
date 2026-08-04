@@ -21,42 +21,12 @@ python tools/remote_incremental.py --host <host> --user <user> \
 macOS 或非标准安装可通过 `--cmake`、`--ctest` 指定可执行文件。密码默认从
 `OGPLAY_REMOTE_PASSWORD` 读取；也可使用 SSH agent 或密钥认证。
 
-## ANGLE 构建
+## ANGLE SDK
 
-`build_angle.py` 校验维护者 ANGLE checkout 与脚本内固定 commit 一致，按宿主生成固定
-GN 参数，并只构建、验证 `libEGL` 与 `libGLESv2`。默认源码工作区是本地
-`.local/angle-prebuilt-repo/angle`；也可用 `--source` 指定绝对路径。depot_tools 是本地
-构建工具，不进入仓库；其路径通过 `--depot-tools` 传入。Windows 配置固定使用 MSVC 及其
-原生标准库，Linux/macOS 使用 Clang。
-
-首次同步并构建：
-
-```text
-python tools/build_angle.py all --depot-tools <absolute-depot-tools-path>
-```
-
-依赖已同步后的增量构建可分别执行 `configure`、`build`、`verify`；`print-config` 输出当前
-平台的完整 GN 参数。默认产物目录是
-`.local/angle-prebuilt-repo/angle/out/ogplay`，成功验证后写入带 ANGLE commit、目标平台、
-GN 参数和产物清单的 `ogplay-angle-manifest.json`。
-`--jobs` 同时限制 gclient 和 Ninja 并发；匿名同步触发上游限流时可降低该值后增量重试。
-
-## ANGLE SDK 打包
-
-`package_angle_sdk.py` 把验证后的 GN 产物转换为
-`<platform>-<cpu>/<release|debug>` SDK。包内只保留公共头、链接/运行时文件、许可证及逐文件
-SHA-256 清单；默认不携带 PDB，可用 `--include-symbols` 生成专用调试包。
-
-```text
-python tools/package_angle_sdk.py package \
-  --windows-sdk-license <absolute-sdk-license.rtf>
-python tools/package_angle_sdk.py verify \
-  --sdk .local/angle-sdk/windows-x64/release
-```
-
-目标目录必须不存在，避免旧文件混入新包。普通项目配置只消费独立的
-[`third_party/angle-prebuilt`](https://github.com/poping520/OGPlay-angle-prebuilt) 浅
-submodule；源码树仅作为本脚本的维护者输入。
+ANGLE 源码构建、打包、许可证归档和发布自测全部由独立的
+[`OGPlay-angle-prebuilt`](https://github.com/poping520/OGPlay-angle-prebuilt/tree/main/tools)
+仓库负责；OGPlay 不再保存这些生产工具。普通项目只消费
+`third_party/angle-prebuilt` 浅 submodule。
 
 启用消费时设置 `OGPLAY_ENABLE_ANGLE=ON`。默认 SDK 根目录为
 `third_party/angle-prebuilt`，也可用绝对 `OGPLAY_ANGLE_SDK_ROOT` 指向待发布包的根目录；

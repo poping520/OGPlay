@@ -13,7 +13,7 @@ from typing import Iterable
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = REPOSITORY_ROOT / "third_party" / "angle"
+DEFAULT_SOURCE = REPOSITORY_ROOT / ".local" / "angle-prebuilt-repo" / "angle"
 DEFAULT_BUILD = DEFAULT_SOURCE / "out" / "ogplay"
 DEFAULT_DESTINATION = REPOSITORY_ROOT / ".local" / "angle-sdk"
 BUILD_MANIFEST = "ogplay-angle-manifest.json"

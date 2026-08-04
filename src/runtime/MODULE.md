@@ -8,6 +8,8 @@
 
 - `A32SyscallDispatcher`：按 ARM EABI 号分派 syscall；声明与实现分离，未知或未实现调用
   统一记入能力账本并返回 `-ENOSYS`，覆盖率可按组查询。
+- `DispatchAndroidArmSupervisorCall`：只将 `SVC #0` 按 r7 + r0-r6 ARM EABI 转为
+  syscall frame，写回有符号返回值到 r0；其他 SVC 留给显式 HLE 边界。
 - `BindAndroidTimeSyscalls`：将 `clock_gettime/gettimeofday` 绑定到统一 Clock 和受检 guest
   内存；错误 clock ID、溢出和坏指针分别返回 Linux errno。
 - `BindAndroidMemorySyscalls`：实现匿名私有 `mmap2`、`munmap`、`mprotect` 与 `brk`；

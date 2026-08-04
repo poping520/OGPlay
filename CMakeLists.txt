@@ -116,6 +116,7 @@ add_library(ogplay_runtime
     src/runtime/guest_thread_lifecycle.cpp
     src/runtime/syscall.cpp
     src/runtime/syscall_arm.cpp
+    src/runtime/syscall_bridge.cpp
     src/runtime/syscall_thread_lifecycle.cpp
     src/runtime/vfs.cpp
 )
@@ -178,6 +179,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/bus_tests.cpp
         tests/memory/snapshot_tests.cpp
         tests/runtime/syscall_tests.cpp
+        tests/runtime/syscall_bridge_tests.cpp
         tests/runtime/bionic_profile_tests.cpp
         tests/runtime/bionic_tls_tests.cpp
         tests/runtime/guest_lifecycle_tests.cpp

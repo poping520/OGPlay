@@ -130,6 +130,9 @@
 - [WU-0071] guest 线程退出完成阶段已实现 clear-child-tid 写零和精确唤醒一个 futex
   waiter；未对齐/坏地址明确报告且不回退 exited 状态。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0072] CPU `SVC #0` 已按 r7 + r0-r6 桥接 Android ARM EABI dispatcher；PC、LR、
+  thread ID、TPIDRURO 与有符号 r0 返回值均有端到端解释器契约测试。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 
 ## 下一步（按优先级）
 

@@ -93,6 +93,8 @@
   与返回值，并分别执行虚调用、指定类非虚调用和静态调用。
 - `JniCommonSlotDirectory`：把已有环境、类、调用、字符串、primitive array、native 注册
   与 JavaVM 行为映射到稳定 thunk 并封口函数表；未覆盖槽继续记账并 trap。
+- `FrameworkLifecycleHle`：声明式安装 Object、Bundle、Activity 类与生命周期方法，
+  通过统一 invocation handler 执行严格状态迁移并输出确定性事件序列。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
@@ -132,6 +134,8 @@
 - 只有存在真实下游行为的槽才允许进入 thunk 目录；Install 后两张表同时封口，
   任何未绑定 JNI/JavaVM 槽必须保留原有可观测失败路径。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
+- Activity 生命周期必须按 construct→create→start→resume→pause→stop→destroy 前进；
+  跳步、重复构造和未知对象调用不得静默接受。
 
 ## 禁止
 

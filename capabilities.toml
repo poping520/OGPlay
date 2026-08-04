@@ -122,23 +122,23 @@ note = "M1 裸 A32/Thumb mailbox 样本在三平台通过解释器/JIT 对拍、
 
 [fixtures.m2_ndk]
 status = "partial"
-test = "samples/m2_ndk/tools/build.py"
-note = "M2 API 19 armeabi-v7a 无界面普通 C 入口已冻结 pthread+文件 IO+malloc 契约并通过离线 ELF 构建校验；OGPlay 内执行待闭合"
+test = "tests/runtime/headless_bionic_runner_tests.cpp"
+note = "M2 无界面普通 C 累计载荷已在 API 19/22/23 真实 Bionic 上完成 pthread+文件 IO+malloc；三平台出口待验收"
 
 [loader.elf32_arm]
 status = "partial"
 test = "tests/loader/elf_tests.cpp"
-note = "M2 已完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、动态命名空间、dlopen handle/引用，以及按链接器顺序执行 guest init/fini；目标 Bionic 实际 ARM REL 类型已覆盖"
+note = "M2 已完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、dlopen/dlsym/dladdr、生命周期与目标 ARM REL；三平台出口待验收"
 
 [runtime.syscall]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "M2 建立 120 项 Android ARM 分组目录，未实现项全部 ENOSYS+记账；已覆盖身份/时间/内存/futex/VFS/set_tls/线程退出与真实宿主线程 pthread clone"
+note = "M2 建立 120 项 Android ARM 分组目录，未实现项全部 ENOSYS+记账；三版本样本所需内存/文件/线程/信号/进程调用已闭合，三平台出口待验收"
 
 [runtime.bionic]
 status = "partial"
 test = "tests/runtime/bionic_profile_tests.cpp"
-note = "M2 已将 API 19/22/23 guest Bionic、HLE thunk 与 64-slot ARM TLS block 接入统一契约；三版本 libc/libdl 可执行真实映射、版本化解析、重定位与出口自检"
+note = "M2 API 19/22/23 真实 Bionic 已完成装载自检和累计样本执行；mem 热点拦截有生产 handler 与吞吐基准，三平台出口待验收"
 
 [runtime.vfs]
 status = "complete"

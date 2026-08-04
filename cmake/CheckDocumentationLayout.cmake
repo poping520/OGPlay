@@ -1,3 +1,7 @@
+if(POLICY CMP0057)
+    cmake_policy(SET CMP0057 NEW)
+endif()
+
 if(NOT DEFINED ROOT)
     message(FATAL_ERROR "ROOT is required")
 endif()

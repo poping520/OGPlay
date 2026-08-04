@@ -155,6 +155,11 @@ status = "partial"
 test = "tests/runtime/framework_lifecycle_tests.cpp"
 note = "M3 已声明式安装 Object/Bundle/Activity，并实现严格可观测的 Activity 生命周期；其他框架类继续按样本补齐"
 
+[fixtures.m3_jni]
+status = "partial"
+test = "tests/runtime/headless_jni_contract_tests.cpp"
+note = "M3 Windows/MSVC 无图形累计契约已闭合 HLE↔guest native、VM、字段、字符串、数组、引用和异常；里程碑出口再执行三平台验收"
+
 [gles.angle]
 status = "unimplemented"
 test = ""

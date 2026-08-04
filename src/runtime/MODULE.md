@@ -63,6 +63,12 @@
   路径逃逸和权限错误携带 Linux errno，只有外置挂载默认可写。
 - `BindAndroidFileSyscalls`：将 `open/openat/read/write/lseek/close` 绑定到 VFS；路径和
   buffer 均从受检 guest 内存复制，坏指针及 VFS 错误转换为 Linux errno。
+- `JniReference/JniMethodId/JniFieldId`：固定为 32 位 guest opaque handle，不继承
+  64 位宿主指针宽度；JNI primitive 使用 Android ABI 的精确宽度。
+- `JniNativeInterfaceSlots`：以 Android NDK `jni.h` 冻结索引 0..232 的 233 槽目录，
+  包含 4 个保留槽和 229 个函数槽，可按名称双向查询。
+- `JniFunctionTable`：初始化期显式绑定函数 thunk 后封口；未绑定函数调用记录稳定
+  capability ID 与 LR 并抛出 `JniUnimplementedCall`，不得返回伪造值。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
@@ -79,6 +85,8 @@
 - clear-child-tid 清理失败不得回退 exited 状态；坏地址和未对齐地址通过 completion
   状态显式报告，成功时最多唤醒一个 waiter。
 - JNIEnv 全表完成前，缺槽位必须 trap，不得静默返回零。
+- JNI 表只能在 guest 启动前绑定并封口；四个保留槽始终为空且不可调用。
+- JNI reference、method ID 与 field ID 必须保持不同强类型，公共 API 不暴露宿主指针。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 
 ## 禁止

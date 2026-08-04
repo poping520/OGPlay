@@ -146,9 +146,9 @@ test = "tests/runtime/vfs_tests.cpp"
 note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close"
 
 [runtime.jni]
-status = "unimplemented"
-test = ""
-note = "M3"
+status = "partial"
+test = "tests/runtime/jni_tests.cpp"
+note = "M3 已冻结 Android API 19/22/23 的 233 槽 JNINativeInterface、32 位强类型 handle 和未绑定槽记账+trap；具体 JNI 行为待后续 WU"
 
 [gles.angle]
 status = "unimplemented"

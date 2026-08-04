@@ -133,7 +133,7 @@ note = "M2 已覆盖身份/时间/内存/futex/VFS/set_tls/线程退出与 ARM p
 [runtime.bionic]
 status = "partial"
 test = "tests/runtime/bionic_profile_tests.cpp"
-note = "M2 已将 API 19/22/23 guest Bionic、HLE thunk 与 64-slot ARM TLS block 接入统一契约；AOSP 产物装载自检待完成"
+note = "M2 已将 API 19/22/23 guest Bionic、HLE thunk 与 64-slot ARM TLS block 接入统一契约；三版本 libc/libdl 可执行真实映射、版本化解析、重定位与出口自检"
 
 [runtime.vfs]
 status = "partial"

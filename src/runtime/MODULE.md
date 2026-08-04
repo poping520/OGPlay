@@ -32,6 +32,8 @@
   库、宿主 HLE 边界库及少而明确的 str/mem/pthread 拦截表。
 - `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的
   边界符号，将 libc 选择性拦截、虚拟边界库和真实 guest ELF 装入统一链接命名空间。
+- `SelfCheckBionicProfile`：对 API 19/22/23 的真实 libc/libdl 执行完整多模块映射、版本化
+  解析与重定位，并核验 malloc、pthread、文件 IO 出口及 exidx 等运行事实。
 - `CreateBionicTlsBlock` / `DestroyBionicTlsBlock`：按 API 19/22/23 的 64 个 ARM Bionic
   TLS slot 契约建立线程独立 guest block，初始化 self/thread/preinit 并提供 TPIDRURO 基址。
 - `BuildGuestInitializationPlan` / `BuildGuestFinalizationPlan` / `ExecuteGuestLifecycle`：

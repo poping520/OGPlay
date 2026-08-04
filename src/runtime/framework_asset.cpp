@@ -135,6 +135,7 @@ public:
             {"java/io/InputStream",
              "java/lang/Object",
              {{"read", "([B)I", "framework.input_stream.read", false},
+              {"read", "([BII)I", "framework.input_stream.read_range", false},
               {"available", "()I", "framework.input_stream.available", false},
               {"close", "()V", "framework.input_stream.close", false}},
              {}});
@@ -158,6 +159,11 @@ public:
         invocations_->RegisterHandler(
             "framework.input_stream.read",
             [this](const JniInvocation& invocation) { return Read(invocation); });
+        invocations_->RegisterHandler(
+            "framework.input_stream.read_range",
+            [this](const JniInvocation& invocation) {
+                return ReadRange(invocation);
+            });
         invocations_->RegisterHandler(
             "framework.input_stream.available",
             [this](const JniInvocation& invocation) {
@@ -248,17 +254,24 @@ private:
         return found->second;
     }
 
-    [[nodiscard]] JniValue Read(const JniInvocation& invocation) {
+    [[nodiscard]] JniValue ReadInto(const std::uint64_t thread_id,
+                                    const JniReference stream_reference,
+                                    const JniReference array_reference,
+                                    const JniInt offset,
+                                    const JniInt length) {
         const auto stream_identity =
-            Resolve(invocation.thread_id, invocation.receiver);
-        const auto array = Resolve(
-            invocation.thread_id,
-            std::get<JniReference>(invocation.arguments.front()));
+            Resolve(thread_id, stream_reference);
+        const auto array = Resolve(thread_id, array_reference);
         if (arrays_->Kind(array) != JniPrimitiveKind::byte) {
             Fail(FrameworkAssetErrorReason::invalid_argument,
                  "InputStream.read requires a byte array");
         }
-        const auto length = arrays_->Length(array);
+        const auto array_length = arrays_->Length(array);
+        if (offset < 0 || length < 0 || offset > array_length ||
+            length > array_length - offset) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "InputStream.read byte array range is invalid");
+        }
         if (length == 0) return JniValue{JniInt{0}};
         std::vector<std::byte> bytes(static_cast<std::size_t>(length));
         std::size_t count{};
@@ -280,8 +293,25 @@ private:
             output.push_back(static_cast<JniByte>(
                 std::to_integer<std::uint8_t>(bytes[index])));
         }
-        arrays_->SetRegion(array, 0, JniPrimitiveArrayData{std::move(output)});
+        arrays_->SetRegion(array, offset,
+                           JniPrimitiveArrayData{std::move(output)});
         return JniValue{static_cast<JniInt>(count)};
+    }
+
+    [[nodiscard]] JniValue Read(const JniInvocation& invocation) {
+        const auto array_reference =
+            std::get<JniReference>(invocation.arguments.front());
+        const auto array = Resolve(invocation.thread_id, array_reference);
+        return ReadInto(invocation.thread_id, invocation.receiver,
+                        array_reference, 0, arrays_->Length(array));
+    }
+
+    [[nodiscard]] JniValue ReadRange(const JniInvocation& invocation) {
+        return ReadInto(
+            invocation.thread_id, invocation.receiver,
+            std::get<JniReference>(invocation.arguments[0]),
+            std::get<JniInt>(invocation.arguments[1]),
+            std::get<JniInt>(invocation.arguments[2]));
     }
 
     [[nodiscard]] JniValue Available(const JniInvocation& invocation) {

@@ -105,8 +105,9 @@
   安装时明确报告 missing handler；通过统一 invocation handler 执行严格状态迁移并输出
   确定性事件序列。
 - `FrameworkAssetHle`：声明式安装 AssetManager/InputStream，将相对 UTF-16 asset 名严格
-  转为 `/apk/assets/` VFS 路径，并闭合 getAssets/open/read/available/close；流只读取 APK
-  来源，关闭幂等，非法路径、未知/已关闭流与 I/O 失败均明确分类。
+  转为 `/apk/assets/` VFS 路径，并闭合 getAssets/open、两种 byte[] read、available/close；
+  带 offset/length 的读取先完整验证目标范围再推进流；流只读取 APK 来源，关闭幂等，
+  非法路径、未知/已关闭流与 I/O 失败均明确分类。
 - `FrameworkPreferencesHle`：按名称隔离进程内 SharedPreferences，以 Editor 暂存并原子
   应用 int/long/boolean/string、remove 与 clear；MODE_PRIVATE、默认值、类型错误、commit
   和 apply 均有明确契约，不模拟 Android services 或 XML 文件系统。

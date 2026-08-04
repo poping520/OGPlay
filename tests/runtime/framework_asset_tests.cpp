@@ -72,29 +72,44 @@ TEST_CASE("framework AssetManager streams APK assets through JNI arrays") {
                                   "available", "()I");
     const auto read = Method(classes, asset_classes.input_stream_class, "read",
                              "([B)I");
+    const auto read_range = Method(classes, asset_classes.input_stream_class,
+                                   "read", "([BII)I");
     const auto close = Method(classes, asset_classes.input_stream_class,
                               "close", "()V");
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
               thread, stream, asset_classes.input_stream_class, available, {},
               ogplay::runtime::JniArgumentSource::value_array)) == 5);
     const std::array<ogplay::runtime::JniValue, 1> read_arguments{bytes};
+    const std::array<ogplay::runtime::JniValue, 3> range_arguments{
+        bytes, ogplay::runtime::JniInt{1}, ogplay::runtime::JniInt{2}};
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
-              thread, stream, asset_classes.input_stream_class, read,
-              read_arguments,
-              ogplay::runtime::JniArgumentSource::value_array)) == 4);
-    const std::vector<ogplay::runtime::JniByte> first{1, 2, 3, 4};
+              thread, stream, asset_classes.input_stream_class, read_range,
+              range_arguments,
+              ogplay::runtime::JniArgumentSource::value_array)) == 2);
+    const std::vector<ogplay::runtime::JniByte> first{0, 1, 2, 0};
     CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(
               arrays.Region(bytes_object, 0, 4)) == first);
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
               thread, stream, asset_classes.input_stream_class, available, {},
-              ogplay::runtime::JniArgumentSource::value_array)) == 1);
+              ogplay::runtime::JniArgumentSource::value_array)) == 3);
+    const std::array<ogplay::runtime::JniValue, 3> invalid_range{
+        bytes, ogplay::runtime::JniInt{3}, ogplay::runtime::JniInt{2}};
+    CHECK_THROWS_AS(
+        static_cast<void>(invocations.InvokeVirtual(
+            thread, stream, asset_classes.input_stream_class, read_range,
+            invalid_range,
+            ogplay::runtime::JniArgumentSource::value_array)),
+        ogplay::runtime::FrameworkAssetError);
+    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
+              thread, stream, asset_classes.input_stream_class, available, {},
+              ogplay::runtime::JniArgumentSource::value_array)) == 3);
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
               thread, stream, asset_classes.input_stream_class, read,
               read_arguments,
-              ogplay::runtime::JniArgumentSource::value_array)) == 1);
+              ogplay::runtime::JniArgumentSource::value_array)) == 3);
     CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(
-              arrays.Region(bytes_object, 0, 1)) ==
-          std::vector<ogplay::runtime::JniByte>{5});
+              arrays.Region(bytes_object, 0, 3)) ==
+          std::vector<ogplay::runtime::JniByte>{3, 4, 5});
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeVirtual(
               thread, stream, asset_classes.input_stream_class, read,
               read_arguments,

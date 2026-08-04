@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0105` 已冻结 JNI ABI 与显式失败底座；下一个开发任务编号为 `WU-0106`。
+- `WU-0106` 已把 M3 调整为常用 JNI 函数优先；下一个开发任务编号为 `WU-0107`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -30,10 +30,12 @@
   完整历史由验收文档、任务单与 Git 保存；文档布局门禁及 MSVC CTest 160/160 通过。
 - [WU-0105] 以 Android NDK `jni.h` 冻结 233 槽 JNINativeInterface、精确 primitive
   宽度和 32 位强类型 handle；缺失函数统一记账并 trap，不再允许静默返回零。
+- [WU-0106] 保留完整 JNI ABI 目录，但不要求一次性实现全部低频函数；M3 优先闭合
+  引用、异常、查找/调用、字符串、数组、RegisterNatives 与 JavaVM 线程接口。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0106`，实现线程独立的 Local/Global/Weak reference 表与容量错误。
+1. 创建 `WU-0107`，实现线程独立的 Local/Global/Weak reference 表与容量错误。
 2. 随后实现异常状态机、签名解析和三种方法调用变体。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 

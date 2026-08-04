@@ -148,7 +148,7 @@ note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、
 [runtime.jni]
 status = "partial"
 test = "tests/runtime/jni_tests.cpp"
-note = "M3 已冻结 Android API 19/22/23 的 233 槽 JNINativeInterface、32 位强类型 handle 和未绑定槽记账+trap；具体 JNI 行为待后续 WU"
+note = "M3 已冻结 233 槽 JNINativeInterface、32 位强类型 handle 和未绑定槽记账+trap；按常用函数优先推进，不以低频槽全实现作为当前出口"
 
 [gles.angle]
 status = "unimplemented"

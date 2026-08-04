@@ -21,6 +21,8 @@
   长度表达式，函数名唯一且稳定排序。
 - `tools/generate_gles_api.py`：严格验证 IDL，并确定性生成 `ParameterSpec` / `FunctionSpec`
   C++ 目录；构建与测试均检查生成物没有漂移，并与固定 ANGLE `gl2.h` 核对入口集合。
+- `GuestBuffer::Prepare`：依据 input/output/inout 对完整 guest 区间预检权限，并建立有大小
+  上限的宿主暂存；输出只能显式 `Commit`，对象不可复制。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。
 - `OGPLAY_ANGLE_SDK_ROOT` / `OGPLAY_ANGLE_SDK_CONFIGURATION`：指定平台化 SDK 根目录和
@@ -40,6 +42,8 @@
 - GLES2 core 目录必须与固定 ANGLE 头文件的 142 个入口完全一致；二级指针保留
   indirection，宿主指针返回使用专门返回类型，禁止按 32 位标量误传。
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
+- input 只读 guest，output 不得为初始化暂存而读取 guest，inout 必须同时预检读写；任何
+  native 调用前必须完成全区间验证，输出回写不得依赖析构副作用。
 - 平台探测事实由下层注入；gles 模块不使用平台宏，也不直接依赖平台 SDK 类型。
 - EGL 创建严格遵循 display→initialize→config→bind API→context→surface→make-current；
   失败按已完成阶段逆序回滚，成功析构按 unbind→surface→context→terminate 清理。

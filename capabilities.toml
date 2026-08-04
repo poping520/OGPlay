@@ -194,3 +194,8 @@ note = "M4 建立严格 JSON schema、指针搬运元数据校验和确定性 C+
 status = "complete"
 test = "tools/generate_gles_api.py --idl data/gles/gles2.json --output <generated> --check --verify-header third_party/angle-prebuilt/windows-x64/release/include/GLES2/gl2.h"
 note = "M4 GLES2 core 142 个入口和 397 个参数全部进入有序 IDL；输入输出、可空、长度表达式及一/二级指针形状显式可查"
+
+[gles.guest_transfer]
+status = "complete"
+test = "tests/gles/guest_transfer_tests.cpp"
+note = "M4 完成强类型 guest 指针的 input/output/inout 全区间权限预检、限额暂存和显式回写；null、溢出、方向及重复提交明确失败"

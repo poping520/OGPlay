@@ -163,7 +163,7 @@ note = "M3 Windows/MSVC 无图形累计契约已闭合 HLE↔guest native、VM�
 [loader.dex_l1]
 status = "partial"
 test = "tests/loader/dex_tests.cpp"
-note = "M3 已解析 DEX header/map、字符串、类型、prototype、field/method ID 与 class_def 固定事实；class_data 和厚度报告继续分批闭合"
+note = "M3 已解析 DEX header/map、字符串、类型、成员/class_def、class_data delta 与 code_item 静态规模；厚度报告继续闭合"
 
 [gles.angle]
 status = "unimplemented"

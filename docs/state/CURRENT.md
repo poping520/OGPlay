@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0125` 已完成 DEX member ID 与 class_def 解析；下一个开发任务编号为 `WU-0126`。
+- `WU-0126` 已完成 DEX class_data 与 code 元数据解析；下一个开发任务编号为 `WU-0127`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -70,11 +70,13 @@
   type_list 与 shorty；UTF-16 长度、所有索引和签名一致性均受检。
 - [WU-0125] 解析 field/method ID、class_def 与接口列表，严格校验声明类、成员索引、
   唯一类定义、父类/接口/源码索引及 data section 偏移。
+- [WU-0126] 解码 class_data 的 delta 成员与 access flags，提取 code_item 寄存器、参数、
+  try 和指令 code-unit 规模；归属、顺序、类别、对齐与范围均明确校验。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0126`，解析 DEX class_data 和 code_item 元数据。
-2. 随后生成引擎指纹与 Java 厚度报告，不引入字节码执行器。
+1. 创建 `WU-0127`，生成引擎指纹与 Java 厚度报告。
+2. 根据报告数据继续补最小框架 HLE，不引入字节码执行器。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

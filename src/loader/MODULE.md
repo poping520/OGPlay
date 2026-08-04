@@ -9,6 +9,8 @@
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度，不执行任何字节码。
+- `ReadDexClassData(bytes, image)`：解码 class_data 的 delta member 索引与 access flags，
+  对 code_item 只提取寄存器、参数、try 数和指令 code-unit 数，不解释指令。
 - `ParseElf32Arm(bytes)`：从不可信字节解析 little-endian ELF32/ARM ET_EXEC/ET_DYN，
   返回入口、ARM flags、程序头和未知 tag 不丢失的动态项事实模型。
 - `ReadElf32DynamicInfo(bytes, image)`：只在 file-backed `PT_LOAD` 范围内解析动态字符串表、
@@ -50,6 +52,8 @@
   参数列表和 shorty 必须互相一致。
 - field/method 的声明类必须是 class descriptor；class_def 类型唯一，父类、接口、源码与
   data offset 全部受检，只保留 annotation/class_data/static value 偏移事实。
+- class_data 成员必须归属当前类、严格递增且 static/direct 类别与 access flags 一致；
+  native/abstract 不得有 code，其他方法必须有对齐且完整的 code_item。
 - 小端字段先在足够宽的无符号类型中组合，最终结果只做一次显式收窄。
 - `PT_LOAD` 必须满足 file size ≤ memory size、guest 地址不回绕、文件范围有效且对齐同余。
 - `PT_DYNAMIC` 最多一个、文件范围完整、条目尺寸正确并由 `DT_NULL` 终止。

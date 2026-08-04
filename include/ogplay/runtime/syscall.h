@@ -18,7 +18,7 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/guest_thread_lifecycle.h"
-#include "ogplay/runtime/vfs.h"
+#include "ogplay/runtime/vfs/vfs.h"
 
 namespace ogplay::runtime {
 

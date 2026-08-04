@@ -23,7 +23,7 @@
 #include "ogplay/runtime/guest_clone_thread_runtime.h"
 #include "ogplay/runtime/guest_lifecycle.h"
 #include "ogplay/runtime/syscall_bridge.h"
-#include "ogplay/runtime/vfs.h"
+#include "ogplay/runtime/vfs/vfs.h"
 
 namespace ogplay::runtime {
 namespace {

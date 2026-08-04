@@ -1,5 +1,7 @@
 #pragma once
 
+// Android-path virtual filesystem core shared by syscall and framework HLE.
+
 #include <cstddef>
 #include <cstdint>
 #include <map>

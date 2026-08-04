@@ -76,6 +76,33 @@ TEST_CASE("A32 interpreter executes conditional scalar control flow") {
     CHECK(state.Register(ogplay::cpu::CoreRegister::pc) == fixture.code.Value() + 28);
 }
 
+TEST_CASE("interpreter reads TPIDRURO in A32 and Thumb states") {
+    SUBCASE("A32 MRC") {
+        CpuFixture fixture;
+        fixture.WriteA32({0xee1d2f70, 0xef000001});
+        fixture.Start(ogplay::cpu::ExecutionState::a32);
+        auto state = fixture.cpu.GetState();
+        state.SetThreadPointer(ogplay::memory::GuestAddress{0x34567000U});
+        fixture.cpu.SetState(state);
+        CHECK(fixture.cpu.Run(4).reason ==
+              ogplay::cpu::RunStopReason::supervisor_call);
+        CHECK(fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r2) ==
+              0x34567000U);
+    }
+    SUBCASE("Thumb-2 MRC") {
+        CpuFixture fixture;
+        fixture.WriteThumb({0xee1d, 0x3f70, 0xdf01});
+        fixture.Start(ogplay::cpu::ExecutionState::thumb);
+        auto state = fixture.cpu.GetState();
+        state.SetThreadPointer(ogplay::memory::GuestAddress{0x45678000U});
+        fixture.cpu.SetState(state);
+        CHECK(fixture.cpu.Run(4).reason ==
+              ogplay::cpu::RunStopReason::supervisor_call);
+        CHECK(fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r3) ==
+              0x45678000U);
+    }
+}
+
 TEST_CASE("A32 BL and BX preserve the architectural return address") {
     CpuFixture fixture;
     fixture.WriteA32({

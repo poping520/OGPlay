@@ -109,6 +109,9 @@
 - [WU-0064] guest TLS 基址已成为 CPU 状态中可快照的强类型 thread pointer；线程启动、
   一致性校验和 join 退出状态使用同一份值。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0065] 解释器与 Dynarmic 已从线程独立 CPU 状态实现 A32 TPIDRURO 读取；解释器
+  同时覆盖 Thumb-2 编码，未知 CP15 操作不被放宽。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 - macOS AppleClang `dev` 预设构建成功，全量 CTest 108/108 通过。
 
 ## 下一步（按优先级）

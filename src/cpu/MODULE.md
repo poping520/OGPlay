@@ -14,7 +14,7 @@
 - `InterpreterCpu`：确定性逐指令后端；当前覆盖 A32/T32 标量算术、条件、控制流及
   word/byte 单次 load/store 基础集。
 - `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调访存，不暴露
-  宿主指针，并与解释器共享状态、tick、停止及 fault 契约。
+  宿主指针，并与解释器共享状态、tick、停止、fault 及 TPIDRURO 契约。
 - `GuestThreadGroup`：每个 guest thread ID 启动一个宿主线程和独立 CPU 实例，将
   TLS 基址装入 CPU thread pointer，保存退出状态并提供真实 join 生命周期。
 - `FutexTable`：以 32 位对齐 guest 地址为键，提供比较等待与精确 WAKE N；M2 syscall
@@ -30,6 +30,8 @@
 - 所有停止结果必须显式初始化指令、立即数和 fault 字段，跨编译器不得依赖聚合尾字段补零。
 - 未识别指令停在原 PC 并返回 `undefined_instruction`，禁止当作 NOP。
 - SVC/BKPT 返回陷阱 PC，同时 CPU 状态 PC 指向下一条指令。
+- A32/Thumb-2 `MRC p15,0,*,c13,c0,3` 只读取当前线程 TPIDRURO；其他 CP15 访问
+  仍明确触发未定义指令。
 
 ## 禁止
 

@@ -98,7 +98,7 @@ note = "M1 参考后端覆盖裸样本与基础诊断指令族；完整 ISA 不�
 [cpu.dynarmic]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp"
-note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约，并与解释器对拍"
+note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO"
 
 [cpu.thread_model]
 status = "complete"

@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <utility>
 
 #include <dynarmic/interface/A32/a32.h>
+#include <dynarmic/interface/A32/coprocessor.h>
 
 namespace ogplay::cpu {
 namespace {
@@ -23,6 +25,53 @@ struct PendingStop final {
     std::uint32_t instruction{};
     std::uint32_t immediate{};
     std::optional<CpuFault> fault;
+};
+
+class ThreadPointerCoprocessor final : public Dynarmic::A32::Coprocessor {
+public:
+    explicit ThreadPointerCoprocessor(std::uint32_t& value) noexcept
+        : value_(value) {}
+
+    std::optional<Callback> CompileInternalOperation(
+        bool, unsigned, Dynarmic::A32::CoprocReg, Dynarmic::A32::CoprocReg,
+        Dynarmic::A32::CoprocReg, unsigned) override {
+        return std::nullopt;
+    }
+    CallbackOrAccessOneWord CompileSendOneWord(
+        bool, unsigned, Dynarmic::A32::CoprocReg, Dynarmic::A32::CoprocReg,
+        unsigned) override {
+        return std::monostate{};
+    }
+    CallbackOrAccessTwoWords CompileSendTwoWords(
+        bool, unsigned, Dynarmic::A32::CoprocReg) override {
+        return std::monostate{};
+    }
+    CallbackOrAccessOneWord CompileGetOneWord(
+        const bool two, const unsigned opc1, const Dynarmic::A32::CoprocReg crn,
+        const Dynarmic::A32::CoprocReg crm, const unsigned opc2) override {
+        if (!two && opc1 == 0 && crn == Dynarmic::A32::CoprocReg::C13 &&
+            crm == Dynarmic::A32::CoprocReg::C0 && opc2 == 3) {
+            return &value_;
+        }
+        return std::monostate{};
+    }
+    CallbackOrAccessTwoWords CompileGetTwoWords(
+        bool, unsigned, Dynarmic::A32::CoprocReg) override {
+        return std::monostate{};
+    }
+    std::optional<Callback> CompileLoadWords(
+        bool, bool, Dynarmic::A32::CoprocReg,
+        std::optional<std::uint8_t>) override {
+        return std::nullopt;
+    }
+    std::optional<Callback> CompileStoreWords(
+        bool, bool, Dynarmic::A32::CoprocReg,
+        std::optional<std::uint8_t>) override {
+        return std::nullopt;
+    }
+
+private:
+    std::uint32_t& value_;
 };
 
 }  // namespace
@@ -183,21 +232,25 @@ public:
     };
 
     explicit Impl(memory::MemoryBus& memory_bus)
-        : callbacks(memory_bus), jit(MakeConfig(callbacks)) {
+        : callbacks(memory_bus), jit(MakeConfig(callbacks, thread_pointer)) {
         callbacks.Attach(jit);
     }
 
-    static Dynarmic::A32::UserConfig MakeConfig(Callbacks& callbacks) {
+    static Dynarmic::A32::UserConfig MakeConfig(
+        Callbacks& callbacks, std::uint32_t& thread_pointer) {
         Dynarmic::A32::UserConfig config{&callbacks};
         config.arch_version = Dynarmic::A32::ArchVersion::v7;
         config.always_little_endian = true;
         config.check_halt_on_memory_access = true;
         config.enable_cycle_counting = true;
         config.code_cache_size = 16U * 1024U * 1024U;
+        config.coprocessors[15] =
+            std::make_shared<ThreadPointerCoprocessor>(thread_pointer);
         return config;
     }
 
     Callbacks callbacks;
+    std::uint32_t thread_pointer{};
     Dynarmic::A32::Jit jit;
     std::uint64_t thread_id{};
     std::uint32_t fpexc{};
@@ -254,6 +307,7 @@ A32State DynarmicCpu::GetState() const {
     state.SetFpscr(impl_->jit.Fpscr());
     state.SetFpexc(impl_->fpexc);
     state.SetThreadId(impl_->thread_id);
+    state.SetThreadPointer(memory::GuestAddress{impl_->thread_pointer});
     return state;
 }
 
@@ -264,6 +318,7 @@ void DynarmicCpu::SetState(const A32State& state) {
     impl_->jit.SetFpscr(state.Fpscr());
     impl_->fpexc = state.Fpexc();
     impl_->thread_id = state.ThreadId();
+    impl_->thread_pointer = state.ThreadPointer().Value();
 }
 
 void DynarmicCpu::RequestHalt() noexcept {

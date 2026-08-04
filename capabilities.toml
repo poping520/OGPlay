@@ -146,14 +146,14 @@ test = "tests/runtime/vfs_tests.cpp"
 note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close"
 
 [runtime.jni]
-status = "partial"
-test = "tests/runtime/jni_tests.cpp"
-note = "M3 已映射 208 个常用 JNIEnv 与 4 个 JavaVM 行为槽，并在累计样本验证两个真实 native 工作线程并发 daemon attach、HLE 回调与 detach；其余低频槽继续可观测 trap"
+status = "complete"
+test = "tests/runtime/headless_jni_contract_tests.cpp"
+note = "M3 范围完成：233 槽 ABI 全冻结，208 个常用 JNIEnv 与 4 个 JavaVM 槽有真实行为，低频槽继续可观测 trap；累计样本覆盖双向调用、引用、异常及 native 工作线程 attach/HLE callback/detach"
 
 [runtime.framework_hle]
-status = "partial"
-test = "tests/runtime/framework_lifecycle_tests.cpp"
-note = "M3 已声明式安装 Activity、资源、偏好、Locale 与仅服务当前包的 PackageManager/PackageInfo；包名/versionName/versionCode 由会话注入，String 字段使用跨线程 Global 引用，不实现完整 Android services"
+status = "complete"
+test = "tests/runtime/headless_jni_contract_tests.cpp"
+note = "M3 范围完成：声明式 Activity 生命周期、APK Asset/InputStream、MODE_PRIVATE 偏好、确定性 Locale 与仅服务当前包的 PackageInfo 已在同一累计环境闭合；不实现完整 Android services"
 
 [fixtures.m3_jni]
 status = "partial"

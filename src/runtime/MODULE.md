@@ -110,7 +110,8 @@
   来源，关闭幂等，非法路径、未知/已关闭流与 I/O 失败均明确分类。
 - `FrameworkPreferencesHle`：按名称隔离进程内 SharedPreferences，以 Editor 暂存并原子
   应用 int/long/boolean/string、remove 与 clear；MODE_PRIVATE、默认值、类型错误、commit
-  和 apply 均有明确契约，不模拟 Android services 或 XML 文件系统。
+  和 apply 均有明确契约；Context、preferences、Editor、key/value 引用全部经过 HLE 受检
+  解析，不模拟 Android services 或 XML 文件系统。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量

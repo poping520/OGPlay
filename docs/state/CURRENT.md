@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0113` 已完成 JNI 基本类型数组；下一个开发任务编号为 `WU-0114`。
+- `WU-0114` 已完成 RegisterNatives 注册表；下一个开发任务编号为 `WU-0115`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -46,11 +46,13 @@
   chars/UTF/critical 配对访问租约，并可发布到 JNIEnv 引用表。
 - [WU-0113] 完成八种 primitive array 的零初始化、类型化 region、elements/critical
   租约与 copy-back/commit/abort 释放语义。
+- [WU-0114] 完成 RegisterNatives 整批事务预检、重载精确查询、幂等重注册、冲突拒绝
+  与按类 UnregisterNatives，host/DEX VM 类身份可共存。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0114`，实现 RegisterNatives 声明、冲突校验与查询主路径。
-2. 随后接入 JavaVM 线程接口和方法/字段查找。
+1. 创建 `WU-0115`，实现 JavaVM GetEnv/Attach/Detach 线程接口。
+2. 随后推进声明式类、方法与字段查找及常用调用变体。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

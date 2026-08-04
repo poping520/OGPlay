@@ -17,9 +17,6 @@ namespace {
 }
 
 void ValidateProtection(const PageProtection protection) {
-    if (protection == PageProtection::none) {
-        throw std::invalid_argument("mapped pages require at least one permission");
-    }
     if (HasProtection(protection, PageProtection::write) &&
         !HasProtection(protection, PageProtection::read)) {
         throw std::invalid_argument("writable guest pages must also be readable");
@@ -63,6 +60,7 @@ public:
         page_size_ = reservation_->PageSize();
         pages_.resize(static_cast<std::size_t>(kGuestAddressSpaceSize / page_size_),
                       PageProtection::none);
+        mapped_.resize(pages_.size(), false);
     }
 
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept { return reservation_->Size(); }
@@ -76,13 +74,14 @@ public:
         }
         std::scoped_lock lock(mutex_);
         const auto [first, last] = PageIndexes(range);
-        if (std::any_of(pages_.begin() + first, pages_.begin() + last,
-                        [](const auto page) { return page != PageProtection::none; })) {
+        if (std::any_of(mapped_.begin() + first, mapped_.begin() + last,
+                        [](const bool mapped) { return mapped; })) {
             throw std::logic_error("guest memory range overlaps an existing mapping");
         }
         reservation_->Commit(range.Start().Value(), range.Size(),
                              ToHostProtection(protection));
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
+        std::fill(mapped_.begin() + first, mapped_.begin() + last, true);
     }
 
     void Protect(const GuestRange& range, const PageProtection protection) {
@@ -103,12 +102,29 @@ public:
         RequireMapped(range, first, last, AccessType::read, 0);
         reservation_->Decommit(range.Start().Value(), range.Size());
         std::fill(pages_.begin() + first, pages_.begin() + last, PageProtection::none);
+        std::fill(mapped_.begin() + first, mapped_.begin() + last, false);
     }
 
     void Validate(const GuestRange& range, const AccessType access,
                   const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
         ValidateLocked(range, access, thread_id);
+    }
+
+    void ValidateMapped(const GuestRange& range,
+                        const std::uint64_t thread_id) const {
+        std::scoped_lock lock(mutex_);
+        const auto first = range.Start().Value() / page_size_;
+        const auto last = (range.EndExclusive() - 1U) / page_size_;
+        for (auto page = first; page <= last; ++page) {
+            if (mapped_[static_cast<std::size_t>(page)]) continue;
+            const auto fault_address = std::max<std::uint64_t>(
+                range.Start().Value(),
+                static_cast<std::uint64_t>(page) * page_size_);
+            throw MemoryFault(
+                GuestAddress{static_cast<std::uint32_t>(fault_address)},
+                AccessType::read, FaultReason::unmapped, thread_id);
+        }
     }
 
     void Read(const GuestAddress address, const std::span<std::byte> destination,
@@ -147,16 +163,16 @@ public:
 
         std::size_t first = 0;
         while (first < pages_.size()) {
-            const auto protection = pages_[first];
-            if (protection == PageProtection::none) {
+            if (!mapped_[first]) {
                 ++first;
                 continue;
             }
-            if (!HasProtection(protection, PageProtection::read)) {
-                throw std::logic_error("execute-only guest memory cannot be captured");
-            }
+            const auto protection = pages_[first];
             auto last = first + 1;
-            while (last < pages_.size() && pages_[last] == protection) ++last;
+            while (last < pages_.size() && mapped_[last] &&
+                   pages_[last] == protection) {
+                ++last;
+            }
 
             const auto offset = static_cast<std::uint64_t>(first) * page_size_;
             const auto size = static_cast<std::uint64_t>(last - first) * page_size_;
@@ -165,8 +181,18 @@ public:
                 protection,
                 std::vector<std::byte>(static_cast<std::size_t>(size)),
             };
+            const auto readable = HasProtection(protection,
+                                                PageProtection::read);
+            if (!readable) {
+                reservation_->Protect(offset, size,
+                                      hal::MemoryProtection::read);
+            }
             std::memcpy(mapping.data.data(), reservation_->Base() + offset,
                         mapping.data.size());
+            if (!readable) {
+                reservation_->Protect(offset, size,
+                                      ToHostProtection(protection));
+            }
             snapshot.mappings.push_back(std::move(mapping));
             first = last;
         }
@@ -181,6 +207,7 @@ public:
         }
         std::vector<PageProtection> replacement_pages(pages_.size(),
                                                       PageProtection::none);
+        std::vector<bool> replacement_mapped(pages_.size(), false);
 
         const auto writable = PageProtection::read | PageProtection::write;
         for (const auto& mapping : snapshot.mappings) {
@@ -203,11 +230,17 @@ public:
                       replacement_pages.begin() +
                           static_cast<PageDifference>(last),
                       mapping.protection);
+            std::fill(replacement_mapped.begin() +
+                          static_cast<std::vector<bool>::difference_type>(first),
+                      replacement_mapped.begin() +
+                          static_cast<std::vector<bool>::difference_type>(last),
+                      true);
         }
 
         std::scoped_lock lock(mutex_);
         reservation_.swap(replacement);
         pages_.swap(replacement_pages);
+        mapped_.swap(replacement_mapped);
     }
 
 private:
@@ -230,9 +263,6 @@ private:
         for (const auto& mapping : snapshot.mappings) {
             ValidateProtection(mapping.protection);
             ValidatePageRange(mapping.range);
-            if (!HasProtection(mapping.protection, PageProtection::read)) {
-                throw std::invalid_argument("memory snapshot contains execute-only mapping");
-            }
             if (mapping.range.Start().Value() < previous_end) {
                 throw std::invalid_argument(
                     "memory snapshot mappings overlap, are unordered, or enter low guard");
@@ -254,10 +284,11 @@ private:
     void RequireMapped(const GuestRange& range, const PageIterator first,
                        const PageIterator last, const AccessType access,
                        const std::uint64_t thread_id) const {
-        const auto missing = std::find(pages_.begin() + first, pages_.begin() + last,
-                                       PageProtection::none);
-        if (missing == pages_.begin() + last) return;
-        const auto page_index = static_cast<std::uint64_t>(missing - pages_.begin());
+        const auto missing = std::find(mapped_.begin() + first,
+                                       mapped_.begin() + last, false);
+        if (missing == mapped_.begin() + last) return;
+        const auto page_index = static_cast<std::uint64_t>(
+            missing - mapped_.begin());
         const auto fault = std::max<std::uint64_t>(range.Start().Value(),
                                                    page_index * page_size_);
         throw MemoryFault(GuestAddress(static_cast<std::uint32_t>(fault)), access,
@@ -272,7 +303,7 @@ private:
             const auto protection = pages_[static_cast<std::size_t>(page)];
             const auto fault_address = std::max<std::uint64_t>(
                 range.Start().Value(), static_cast<std::uint64_t>(page) * page_size_);
-            if (protection == PageProtection::none) {
+            if (!mapped_[static_cast<std::size_t>(page)]) {
                 throw MemoryFault(GuestAddress(static_cast<std::uint32_t>(fault_address)),
                                   access, FaultReason::unmapped, thread_id);
             }
@@ -286,6 +317,7 @@ private:
     std::unique_ptr<hal::VirtualMemoryReservation> reservation_;
     std::uint64_t page_size_{};
     std::vector<PageProtection> pages_;
+    std::vector<bool> mapped_;
     mutable std::mutex mutex_;
 };
 
@@ -303,6 +335,10 @@ void AddressSpace::Protect(const GuestRange& range, const PageProtection protect
     impl_->Protect(range, protection);
 }
 void AddressSpace::Unmap(const GuestRange& range) { impl_->Unmap(range); }
+void AddressSpace::ValidateMapped(const GuestRange& range,
+                                  const std::uint64_t thread_id) const {
+    impl_->ValidateMapped(range, thread_id);
+}
 void AddressSpace::Validate(const GuestRange& range, const AccessType access,
                             const std::uint64_t thread_id) const {
     impl_->Validate(range, access, thread_id);

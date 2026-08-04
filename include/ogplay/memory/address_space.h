@@ -72,6 +72,8 @@ public:
     void Map(const GuestRange& range, PageProtection protection);
     void Protect(const GuestRange& range, PageProtection protection);
     void Unmap(const GuestRange& range);
+    void ValidateMapped(const GuestRange& range,
+                        std::uint64_t thread_id = 0) const;
     void Validate(const GuestRange& range, AccessType access,
                   std::uint64_t thread_id = 0) const;
     void Read(GuestAddress address, std::span<std::byte> destination,

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <memory>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -110,6 +111,89 @@ private:
     std::array<std::optional<memory::GuestAddress>,
                kJniNativeInterfaceSlotCount> targets_{};
     bool sealed_{};
+};
+
+enum class JniObjectDomain : std::uint8_t { host, dex_vm };
+
+struct JniObjectIdentity final {
+    JniObjectDomain domain{JniObjectDomain::host};
+    std::uint64_t value{};
+
+    bool operator==(const JniObjectIdentity&) const = default;
+};
+
+enum class JniReferenceKind : std::uint8_t { local, global, weak_global };
+
+enum class JniReferenceErrorReason : std::uint8_t {
+    invalid_thread,
+    invalid_object,
+    invalid_reference,
+    wrong_reference_kind,
+    capacity_exceeded,
+    frame_underflow,
+    duplicate_thread,
+};
+
+class JniReferenceError final : public std::runtime_error {
+public:
+    JniReferenceError(JniReferenceErrorReason reason, std::string message);
+
+    [[nodiscard]] JniReferenceErrorReason Reason() const noexcept {
+        return reason_;
+    }
+
+private:
+    JniReferenceErrorReason reason_;
+};
+
+struct JniReferenceLimits final {
+    std::size_t local_per_thread{512};
+    std::size_t global{4096};
+    std::size_t weak_global{4096};
+};
+
+class JniReferenceTable final {
+public:
+    explicit JniReferenceTable(JniReferenceLimits limits = {});
+    ~JniReferenceTable();
+    JniReferenceTable(const JniReferenceTable&) = delete;
+    JniReferenceTable& operator=(const JniReferenceTable&) = delete;
+    JniReferenceTable(JniReferenceTable&&) noexcept;
+    JniReferenceTable& operator=(JniReferenceTable&&) noexcept;
+
+    void AttachThread(std::uint64_t thread_id,
+                      std::size_t initial_local_capacity = 16);
+    void DetachThread(std::uint64_t thread_id);
+    [[nodiscard]] bool IsThreadAttached(std::uint64_t thread_id) const;
+
+    void EnsureLocalCapacity(std::uint64_t thread_id,
+                             std::size_t additional_capacity);
+    void PushLocalFrame(std::uint64_t thread_id, std::size_t capacity);
+    [[nodiscard]] JniReference PopLocalFrame(
+        std::uint64_t thread_id, JniReference result = JniReference{});
+
+    [[nodiscard]] JniReference NewLocal(std::uint64_t thread_id,
+                                        JniObjectIdentity object);
+    [[nodiscard]] JniReference NewGlobal(JniObjectIdentity object);
+    [[nodiscard]] JniReference NewWeakGlobal(JniObjectIdentity object);
+    void DeleteLocal(std::uint64_t thread_id, JniReference reference);
+    void DeleteGlobal(JniReference reference);
+    void DeleteWeakGlobal(JniReference reference);
+
+    [[nodiscard]] std::optional<JniObjectIdentity> Resolve(
+        std::uint64_t thread_id, JniReference reference) const;
+    [[nodiscard]] bool IsSameObject(std::uint64_t thread_id,
+                                    JniReference left,
+                                    JniReference right) const;
+    void ClearWeakReferencesTo(JniObjectIdentity object);
+
+    [[nodiscard]] std::size_t LocalCount(std::uint64_t thread_id) const;
+    [[nodiscard]] std::size_t GlobalCount() const;
+    [[nodiscard]] std::size_t WeakGlobalCount() const;
+
+private:
+    class Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace ogplay::runtime

@@ -4,7 +4,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <map>
+#include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace ogplay::runtime {
 namespace {
@@ -274,6 +279,411 @@ memory::GuestAddress JniFunctionTable::Resolve(
         throw JniUnimplementedCall(slot, link_register);
     }
     return *targets_[index];
+}
+
+JniReferenceError::JniReferenceError(const JniReferenceErrorReason reason,
+                                     std::string message)
+    : std::runtime_error(std::move(message)), reason_(reason) {}
+
+class JniReferenceTable::Impl final {
+public:
+    explicit Impl(const JniReferenceLimits limits) : limits_(limits) {
+        if (limits_.local_per_thread == 0) {
+            throw std::invalid_argument("JNI local reference limit must be positive");
+        }
+    }
+
+    void AttachThread(const std::uint64_t thread_id,
+                      const std::size_t initial_capacity) {
+        if (thread_id == 0) Throw(JniReferenceErrorReason::invalid_thread,
+                                  "JNI thread id cannot be zero");
+        if (initial_capacity > limits_.local_per_thread) {
+            Throw(JniReferenceErrorReason::capacity_exceeded,
+                  "initial JNI local capacity exceeds the thread limit");
+        }
+        std::scoped_lock lock(mutex_);
+        if (threads_.contains(thread_id)) {
+            Throw(JniReferenceErrorReason::duplicate_thread,
+                  "JNI thread is already attached");
+        }
+        threads_.emplace(thread_id,
+                         ThreadState{{LocalFrame{initial_capacity, {}}}});
+    }
+
+    void DetachThread(const std::uint64_t thread_id) {
+        std::scoped_lock lock(mutex_);
+        const auto found = threads_.find(thread_id);
+        if (found == threads_.end()) InvalidThread();
+        for (const auto& frame : found->second.frames) {
+            for (const auto handle : frame.handles) entries_.erase(handle);
+        }
+        threads_.erase(found);
+    }
+
+    [[nodiscard]] bool IsThreadAttached(const std::uint64_t thread_id) const {
+        std::scoped_lock lock(mutex_);
+        return threads_.contains(thread_id);
+    }
+
+    void EnsureLocalCapacity(const std::uint64_t thread_id,
+                             const std::size_t additional) {
+        std::scoped_lock lock(mutex_);
+        auto& frame = CurrentFrame(thread_id);
+        if (additional > limits_.local_per_thread - frame.handles.size()) {
+            Capacity("JNI local reference capacity exceeded");
+        }
+        const auto required = frame.handles.size() + additional;
+        if (required > frame.capacity) frame.capacity = required;
+    }
+
+    void PushLocalFrame(const std::uint64_t thread_id,
+                        const std::size_t capacity) {
+        if (capacity > limits_.local_per_thread) {
+            Capacity("JNI local frame capacity exceeds the thread limit");
+        }
+        std::scoped_lock lock(mutex_);
+        auto& thread = Thread(thread_id);
+        thread.frames.push_back({capacity, {}});
+    }
+
+    [[nodiscard]] JniReference PopLocalFrame(const std::uint64_t thread_id,
+                                             const JniReference result) {
+        std::scoped_lock lock(mutex_);
+        auto& thread = Thread(thread_id);
+        if (thread.frames.size() == 1) {
+            Throw(JniReferenceErrorReason::frame_underflow,
+                  "base JNI local frame cannot be popped");
+        }
+        const auto object = ResolveLocked(thread_id, result);
+        auto& parent = thread.frames[thread.frames.size() - 2];
+        if (object.has_value() &&
+            parent.handles.size() >= limits_.local_per_thread) {
+            Capacity("JNI parent local frame cannot preserve the result");
+        }
+
+        for (const auto handle : thread.frames.back().handles) {
+            entries_.erase(handle);
+        }
+        thread.frames.pop_back();
+        if (!object.has_value()) return JniReference{};
+        if (parent.handles.size() == parent.capacity) ++parent.capacity;
+        return AddLocalLocked(thread_id, *object);
+    }
+
+    [[nodiscard]] JniReference NewLocal(const std::uint64_t thread_id,
+                                        const JniObjectIdentity object) {
+        ValidateObject(object);
+        std::scoped_lock lock(mutex_);
+        return AddLocalLocked(thread_id, object);
+    }
+
+    [[nodiscard]] JniReference NewGlobal(const JniObjectIdentity object) {
+        ValidateObject(object);
+        std::scoped_lock lock(mutex_);
+        if (global_count_ >= limits_.global) {
+            Capacity("JNI global reference capacity exceeded");
+        }
+        const auto reference = AddEntry(JniReferenceKind::global, object, 0);
+        ++global_count_;
+        return reference;
+    }
+
+    [[nodiscard]] JniReference NewWeakGlobal(const JniObjectIdentity object) {
+        ValidateObject(object);
+        std::scoped_lock lock(mutex_);
+        if (weak_count_ >= limits_.weak_global) {
+            Capacity("JNI weak global reference capacity exceeded");
+        }
+        const auto reference = AddEntry(JniReferenceKind::weak_global, object, 0);
+        ++weak_count_;
+        return reference;
+    }
+
+    void DeleteLocal(const std::uint64_t thread_id,
+                     const JniReference reference) {
+        if (reference.IsNull()) return;
+        std::scoped_lock lock(mutex_);
+        auto& thread = Thread(thread_id);
+        auto found = RequireEntry(reference);
+        if (found->second.kind != JniReferenceKind::local) WrongKind();
+        if (found->second.owner_thread != thread_id) InvalidReference();
+        auto frame = std::find_if(
+            thread.frames.begin(), thread.frames.end(),
+            [&](const LocalFrame& candidate) {
+                return std::find(candidate.handles.begin(), candidate.handles.end(),
+                                 reference.Value()) != candidate.handles.end();
+            });
+        if (frame == thread.frames.end()) InvalidReference();
+        frame->handles.erase(std::find(frame->handles.begin(), frame->handles.end(),
+                                       reference.Value()));
+        entries_.erase(found);
+    }
+
+    void DeleteGlobal(const JniReference reference) {
+        DeleteShared(reference, JniReferenceKind::global, global_count_);
+    }
+
+    void DeleteWeakGlobal(const JniReference reference) {
+        DeleteShared(reference, JniReferenceKind::weak_global, weak_count_);
+    }
+
+    [[nodiscard]] std::optional<JniObjectIdentity> Resolve(
+        const std::uint64_t thread_id, const JniReference reference) const {
+        std::scoped_lock lock(mutex_);
+        return ResolveLocked(thread_id, reference);
+    }
+
+    [[nodiscard]] bool IsSameObject(const std::uint64_t thread_id,
+                                    const JniReference left,
+                                    const JniReference right) const {
+        std::scoped_lock lock(mutex_);
+        return ResolveLocked(thread_id, left) == ResolveLocked(thread_id, right);
+    }
+
+    void ClearWeakReferencesTo(const JniObjectIdentity object) {
+        ValidateObject(object);
+        std::scoped_lock lock(mutex_);
+        for (auto& [handle, entry] : entries_) {
+            static_cast<void>(handle);
+            if (entry.kind == JniReferenceKind::weak_global &&
+                entry.object == object) {
+                entry.object.reset();
+            }
+        }
+    }
+
+    [[nodiscard]] std::size_t LocalCount(const std::uint64_t thread_id) const {
+        std::scoped_lock lock(mutex_);
+        const auto& thread = Thread(thread_id);
+        std::size_t count = 0;
+        for (const auto& frame : thread.frames) count += frame.handles.size();
+        return count;
+    }
+
+    [[nodiscard]] std::size_t GlobalCount() const {
+        std::scoped_lock lock(mutex_);
+        return global_count_;
+    }
+
+    [[nodiscard]] std::size_t WeakGlobalCount() const {
+        std::scoped_lock lock(mutex_);
+        return weak_count_;
+    }
+
+private:
+    struct Entry final {
+        JniReferenceKind kind{JniReferenceKind::local};
+        std::optional<JniObjectIdentity> object;
+        std::uint64_t owner_thread{};
+    };
+
+    struct LocalFrame final {
+        std::size_t capacity{};
+        std::vector<std::uint32_t> handles;
+    };
+
+    struct ThreadState final {
+        std::vector<LocalFrame> frames;
+    };
+
+    using EntryIterator = std::map<std::uint32_t, Entry>::iterator;
+
+    [[noreturn]] static void Throw(const JniReferenceErrorReason reason,
+                                   const char* message) {
+        throw JniReferenceError(reason, message);
+    }
+
+    [[noreturn]] static void InvalidThread() {
+        Throw(JniReferenceErrorReason::invalid_thread,
+              "JNI thread is not attached");
+    }
+
+    [[noreturn]] static void InvalidReference() {
+        Throw(JniReferenceErrorReason::invalid_reference,
+              "JNI reference is invalid for this thread");
+    }
+
+    [[noreturn]] static void WrongKind() {
+        Throw(JniReferenceErrorReason::wrong_reference_kind,
+              "JNI reference kind does not match the operation");
+    }
+
+    [[noreturn]] static void Capacity(const char* message) {
+        Throw(JniReferenceErrorReason::capacity_exceeded, message);
+    }
+
+    static void ValidateObject(const JniObjectIdentity object) {
+        if (object.value == 0) {
+            Throw(JniReferenceErrorReason::invalid_object,
+                  "JNI object identity cannot be zero");
+        }
+    }
+
+    [[nodiscard]] ThreadState& Thread(const std::uint64_t thread_id) {
+        const auto found = threads_.find(thread_id);
+        if (found == threads_.end()) InvalidThread();
+        return found->second;
+    }
+
+    [[nodiscard]] const ThreadState& Thread(
+        const std::uint64_t thread_id) const {
+        const auto found = threads_.find(thread_id);
+        if (found == threads_.end()) InvalidThread();
+        return found->second;
+    }
+
+    [[nodiscard]] LocalFrame& CurrentFrame(const std::uint64_t thread_id) {
+        return Thread(thread_id).frames.back();
+    }
+
+    [[nodiscard]] EntryIterator RequireEntry(const JniReference reference) {
+        const auto found = entries_.find(reference.Value());
+        if (found == entries_.end()) InvalidReference();
+        return found;
+    }
+
+    [[nodiscard]] JniReference AllocateHandle() {
+        if (next_handle_ > std::numeric_limits<std::uint32_t>::max()) {
+            Capacity("JNI reference handle space exhausted");
+        }
+        return JniReference{static_cast<std::uint32_t>(next_handle_++)};
+    }
+
+    [[nodiscard]] JniReference AddEntry(const JniReferenceKind kind,
+                                        const JniObjectIdentity object,
+                                        const std::uint64_t owner_thread) {
+        const auto reference = AllocateHandle();
+        entries_.emplace(reference.Value(), Entry{kind, object, owner_thread});
+        return reference;
+    }
+
+    [[nodiscard]] JniReference AddLocalLocked(
+        const std::uint64_t thread_id, const JniObjectIdentity object) {
+        auto& frame = CurrentFrame(thread_id);
+        if (frame.handles.size() >= frame.capacity) {
+            Capacity("JNI local frame capacity exceeded");
+        }
+        const auto reference = AddEntry(JniReferenceKind::local, object, thread_id);
+        frame.handles.push_back(reference.Value());
+        return reference;
+    }
+
+    [[nodiscard]] std::optional<JniObjectIdentity> ResolveLocked(
+        const std::uint64_t thread_id, const JniReference reference) const {
+        static_cast<void>(Thread(thread_id));
+        if (reference.IsNull()) return std::nullopt;
+        const auto found = entries_.find(reference.Value());
+        if (found == entries_.end()) InvalidReference();
+        if (found->second.kind == JniReferenceKind::local &&
+            found->second.owner_thread != thread_id) {
+            InvalidReference();
+        }
+        return found->second.object;
+    }
+
+    void DeleteShared(const JniReference reference, const JniReferenceKind kind,
+                      std::size_t& count) {
+        if (reference.IsNull()) return;
+        std::scoped_lock lock(mutex_);
+        const auto found = RequireEntry(reference);
+        if (found->second.kind != kind) WrongKind();
+        entries_.erase(found);
+        --count;
+    }
+
+    JniReferenceLimits limits_;
+    mutable std::mutex mutex_;
+    std::map<std::uint32_t, Entry> entries_;
+    std::map<std::uint64_t, ThreadState> threads_;
+    std::uint64_t next_handle_{1};
+    std::size_t global_count_{};
+    std::size_t weak_count_{};
+};
+
+JniReferenceTable::JniReferenceTable(const JniReferenceLimits limits)
+    : impl_(std::make_unique<Impl>(limits)) {}
+
+JniReferenceTable::~JniReferenceTable() = default;
+JniReferenceTable::JniReferenceTable(JniReferenceTable&&) noexcept = default;
+JniReferenceTable& JniReferenceTable::operator=(JniReferenceTable&&) noexcept = default;
+
+void JniReferenceTable::AttachThread(const std::uint64_t thread_id,
+                                     const std::size_t initial_local_capacity) {
+    impl_->AttachThread(thread_id, initial_local_capacity);
+}
+
+void JniReferenceTable::DetachThread(const std::uint64_t thread_id) {
+    impl_->DetachThread(thread_id);
+}
+
+bool JniReferenceTable::IsThreadAttached(const std::uint64_t thread_id) const {
+    return impl_->IsThreadAttached(thread_id);
+}
+
+void JniReferenceTable::EnsureLocalCapacity(
+    const std::uint64_t thread_id, const std::size_t additional_capacity) {
+    impl_->EnsureLocalCapacity(thread_id, additional_capacity);
+}
+
+void JniReferenceTable::PushLocalFrame(const std::uint64_t thread_id,
+                                       const std::size_t capacity) {
+    impl_->PushLocalFrame(thread_id, capacity);
+}
+
+JniReference JniReferenceTable::PopLocalFrame(
+    const std::uint64_t thread_id, const JniReference result) {
+    return impl_->PopLocalFrame(thread_id, result);
+}
+
+JniReference JniReferenceTable::NewLocal(const std::uint64_t thread_id,
+                                         const JniObjectIdentity object) {
+    return impl_->NewLocal(thread_id, object);
+}
+
+JniReference JniReferenceTable::NewGlobal(const JniObjectIdentity object) {
+    return impl_->NewGlobal(object);
+}
+
+JniReference JniReferenceTable::NewWeakGlobal(const JniObjectIdentity object) {
+    return impl_->NewWeakGlobal(object);
+}
+
+void JniReferenceTable::DeleteLocal(const std::uint64_t thread_id,
+                                    const JniReference reference) {
+    impl_->DeleteLocal(thread_id, reference);
+}
+
+void JniReferenceTable::DeleteGlobal(const JniReference reference) {
+    impl_->DeleteGlobal(reference);
+}
+
+void JniReferenceTable::DeleteWeakGlobal(const JniReference reference) {
+    impl_->DeleteWeakGlobal(reference);
+}
+
+std::optional<JniObjectIdentity> JniReferenceTable::Resolve(
+    const std::uint64_t thread_id, const JniReference reference) const {
+    return impl_->Resolve(thread_id, reference);
+}
+
+bool JniReferenceTable::IsSameObject(const std::uint64_t thread_id,
+                                     const JniReference left,
+                                     const JniReference right) const {
+    return impl_->IsSameObject(thread_id, left, right);
+}
+
+void JniReferenceTable::ClearWeakReferencesTo(const JniObjectIdentity object) {
+    impl_->ClearWeakReferencesTo(object);
+}
+
+std::size_t JniReferenceTable::LocalCount(const std::uint64_t thread_id) const {
+    return impl_->LocalCount(thread_id);
+}
+
+std::size_t JniReferenceTable::GlobalCount() const { return impl_->GlobalCount(); }
+
+std::size_t JniReferenceTable::WeakGlobalCount() const {
+    return impl_->WeakGlobalCount();
 }
 
 }  // namespace ogplay::runtime

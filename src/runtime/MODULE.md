@@ -115,6 +115,9 @@
 - `FrameworkLocaleHle`：从显式配置安装 java.util.Locale.getDefault/getLanguage/getCountry/
   toString；语言、国家代码在安装前严格验证，返回值为受线程作用域保护的 JNI 对象，
   不读取宿主区域设置，保证回放与三平台结果一致。
+- `FrameworkPackageHle`：从显式会话配置提供 Context.getPackageName/getPackageManager 与
+  当前包 getPackageInfo；只接受 flags=0，只声明 PackageInfo.versionName/versionCode，
+  String 字段使用 HLE Global reference 跨线程稳定，不实现完整 PackageManager 服务。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量

@@ -153,7 +153,7 @@ note = "M3 已映射 208 个常用 JNIEnv 与 4 个 JavaVM 行为槽，并提供
 [runtime.framework_hle]
 status = "partial"
 test = "tests/runtime/framework_lifecycle_tests.cpp"
-note = "M3 已声明式安装 Activity、AssetManager/InputStream、SharedPreferences/Editor 与可注入 Locale，并冻结 Context.getPackageName/getPackageManager 契约；所有 HLE 对象均经过 JNI 线程/作用域门禁"
+note = "M3 已声明式安装 Activity、资源、偏好、Locale 与仅服务当前包的 PackageManager/PackageInfo；包名/versionName/versionCode 由会话注入，String 字段使用跨线程 Global 引用，不实现完整 Android services"
 
 [fixtures.m3_jni]
 status = "partial"

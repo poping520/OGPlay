@@ -121,6 +121,7 @@ add_library(ogplay_runtime
     src/runtime/framework_asset.cpp
     src/runtime/framework_lifecycle.cpp
     src/runtime/framework_locale.cpp
+    src/runtime/framework_package.cpp
     src/runtime/framework_preferences.cpp
     src/runtime/guest_lifecycle.cpp
     src/runtime/headless_bionic_runner.cpp
@@ -217,6 +218,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/framework_asset_tests.cpp
         tests/runtime/framework_lifecycle_tests.cpp
         tests/runtime/framework_locale_tests.cpp
+        tests/runtime/framework_package_tests.cpp
         tests/runtime/framework_preferences_tests.cpp
         tests/runtime/guest_lifecycle_tests.cpp
         tests/runtime/headless_bionic_runner_tests.cpp

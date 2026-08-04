@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "api": "gles2",
+  "library": "libGLESv2.so",
+  "functions": [
+    {
+      "name": "glBufferData",
+      "return": "void",
+      "parameters": [
+        {"name": "target", "type": "GLenum"},
+        {"name": "size", "type": "GLsizeiptr"},
+        {"name": "data", "type": "void", "pointer": true, "direction": "in", "nullable": true, "count": "size"},
+        {"name": "usage", "type": "GLenum"}
+      ]
+    },
+    {
+      "name": "glClear",
+      "return": "void",
+      "parameters": [{"name": "mask", "type": "GLbitfield"}]
+    },
+    {
+      "name": "glClearColor",
+      "return": "void",
+      "parameters": [
+        {"name": "red", "type": "GLclampf"},
+        {"name": "green", "type": "GLclampf"},
+        {"name": "blue", "type": "GLclampf"},
+        {"name": "alpha", "type": "GLclampf"}
+      ]
+    },
+    {
+      "name": "glGenTextures",
+      "return": "void",
+      "parameters": [
+        {"name": "n", "type": "GLsizei"},
+        {"name": "textures", "type": "GLuint", "pointer": true, "direction": "out", "nullable": false, "count": "n"}
+      ]
+    },
+    {"name": "glGetError", "return": "GLenum", "parameters": []},
+    {
+      "name": "glGetIntegerv",
+      "return": "void",
+      "parameters": [
+        {"name": "pname", "type": "GLenum"},
+        {"name": "data", "type": "GLint", "pointer": true, "direction": "out", "nullable": false, "count": "state_count(pname)"}
+      ]
+    },
+    {
+      "name": "glReadPixels",
+      "return": "void",
+      "parameters": [
+        {"name": "x", "type": "GLint"},
+        {"name": "y", "type": "GLint"},
+        {"name": "width", "type": "GLsizei"},
+        {"name": "height", "type": "GLsizei"},
+        {"name": "format", "type": "GLenum"},
+        {"name": "type", "type": "GLenum"},
+        {"name": "pixels", "type": "void", "pointer": true, "direction": "out", "nullable": false, "count": "pixel_bytes(width,height,format,type)"}
+      ]
+    },
+    {
+      "name": "glViewport",
+      "return": "void",
+      "parameters": [
+        {"name": "x", "type": "GLint"},
+        {"name": "y", "type": "GLint"},
+        {"name": "width", "type": "GLsizei"},
+        {"name": "height", "type": "GLsizei"}
+      ]
+    }
+  ]
+}

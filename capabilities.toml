@@ -184,3 +184,8 @@ note = "M4 已在 Windows/MSVC 真实 ANGLE D3D11 上完成 display/config/GLES2
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp"
 note = "M4 完成不泄漏原生类型的可注入生命周期、精确 EGL 错误和逆序回滚，并验证 Windows D3D11 pbuffer；窗口 surface 与三平台出口后转 complete"
+
+[gles.idl_codegen]
+status = "partial"
+test = "tools/generate_gles_api.py --self-test"
+note = "M4 建立严格 JSON schema、指针搬运元数据校验和确定性 C++ 目录生成；首批 GLES2 形状已覆盖，完整 1.1/2.0 目录仍在推进"

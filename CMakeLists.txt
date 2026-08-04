@@ -11,6 +11,9 @@ option(OGPLAY_BUILD_TESTS "Build OGPlay unit and contract tests" ON)
 option(OGPLAY_WARNINGS_AS_ERRORS "Treat OGPlay warnings as errors" OFF)
 option(OGPLAY_ENABLE_SDL3 "Configure the bundled SDL3 platform dependency" ON)
 option(OGPLAY_ENABLE_DYNARMIC "Configure the bundled Dynarmic CPU dependency" ON)
+option(OGPLAY_ENABLE_ANGLE "Link an externally GN-built ANGLE SDK" OFF)
+set(OGPLAY_ANGLE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle/out/ogplay"
+    CACHE PATH "ANGLE GN output containing EGL and GLESv2 libraries")
 
 include(GNUInstallDirs)
 include(cmake/CompilerWarnings.cmake)
@@ -122,6 +125,12 @@ target_include_directories(ogplay_gles PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 ogplay_set_project_warnings(ogplay_gles)
+if(OGPLAY_ENABLE_ANGLE)
+    target_compile_definitions(ogplay_gles PRIVATE OGPLAY_HAS_ANGLE=1)
+    target_link_libraries(ogplay_gles PRIVATE ANGLE::EGL ANGLE::GLESv2)
+else()
+    target_compile_definitions(ogplay_gles PRIVATE OGPLAY_HAS_ANGLE=0)
+endif()
 
 add_library(ogplay_runtime
     src/runtime/syscall/arm_kernel_helpers.cpp

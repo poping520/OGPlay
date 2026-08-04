@@ -170,7 +170,12 @@ status = "complete"
 test = "tests/gles/angle_backend_tests.cpp"
 note = "M4 冻结三平台 ANGLE renderer/device 候选顺序、显式可用性探测和硬件/SwiftShader 偏好；尚未链接 ANGLE 或创建 EGL 上下文"
 
+[gles.angle_dependency]
+status = "partial"
+test = "tools/remote_incremental.py"
+note = "M4 已以浅 git submodule 固定官方 ANGLE，并建立默认关闭、缺失 GN 产物即明确失败的 CMake imported-target 边界；实际 GN 依赖同步和三平台产物尚待完成"
+
 [gles.angle]
 status = "unimplemented"
 test = ""
-note = "M4；WU-0150 仅完成后端选择契约，ANGLE 依赖与 EGL/GLES 行为从 WU-0151 继续"
+note = "M4；WU-0150..0151 完成选择与依赖边界，尚未创建 EGL 上下文或执行 GLES 调用"

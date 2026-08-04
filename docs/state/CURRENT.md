@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0111` 已完成 JNIEnv 核心操作；下一个开发任务编号为 `WU-0112`。
+- `WU-0112` 已完成 JNI 字符串对象；下一个开发任务编号为 `WU-0113`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -42,11 +42,13 @@
   过长编码、截断输入和标准 UTF-8 四字节序列拒绝。
 - [WU-0111] 以 JniEnvironment 原子装配引用与异常线程状态，闭合 GetVersion、local
   frame、三类引用和异常检查/清理等首批常用操作。
+- [WU-0112] 完成 UTF-16 字符串对象、Modified UTF-8 创建、长度/region 以及
+  chars/UTF/critical 配对访问租约，并可发布到 JNIEnv 引用表。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0112`，实现 JNI 字符串对象与 chars 访问生命周期。
-2. 随后实现基本类型数组和 RegisterNatives 主路径。
+1. 创建 `WU-0113`，实现 JNI 基本类型数组与 region/elements 语义。
+2. 随后实现 RegisterNatives 主路径。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

@@ -73,7 +73,7 @@ note = "M1 固定无后端类型泄漏的 gfx/audio 契约，并提供明确失�
 [memory.direct_address_space]
 status = "complete"
 test = "tests/memory/address_space_tests.cpp"
-note = "M1 预留 4 GiB，支持页映射、权限、释放、验证、读写及结构化 MemoryFault"
+note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿主页上保持独立映射、权限与释放"
 
 [memory.soft_mmu]
 status = "complete"
@@ -121,24 +121,24 @@ test = "tests/cpu/m1_guest_sample_tests.cpp"
 note = "M1 裸 A32/Thumb mailbox 样本在三平台通过解释器/JIT 对拍、标准化输入、确定性写回及 CPU+内存快照复跑"
 
 [fixtures.m2_ndk]
-status = "partial"
+status = "complete"
 test = "tests/runtime/headless_bionic_runner_tests.cpp"
-note = "M2 无界面普通 C 累计载荷已在 API 19/22/23 真实 Bionic 上完成 pthread+文件 IO+malloc；三平台出口待验收"
+note = "M2 无界面普通 C 累计载荷在三平台 API 19/22/23 真实 Bionic 上完成 pthread+文件 IO+malloc，且不依赖 Activity/JNI/GLES"
 
 [loader.elf32_arm]
-status = "partial"
+status = "complete"
 test = "tests/loader/elf_tests.cpp"
-note = "M2 已完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、dlopen/dlsym/dladdr、生命周期与目标 ARM REL；三平台出口待验收"
+note = "M2 三平台完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、dlopen/dlsym/dladdr、生命周期与目标 ARM REL"
 
 [runtime.syscall]
-status = "partial"
+status = "complete"
 test = "tests/runtime/syscall_tests.cpp"
-note = "M2 建立 120 项 Android ARM 分组目录，未实现项全部 ENOSYS+记账；三版本样本所需内存/文件/线程/信号/进程调用已闭合，三平台出口待验收"
+note = "M2 三平台完成 120 项 Android ARM 分组目录和样本所需调用；未实现项全部 ENOSYS+记账，绝不静默成功"
 
 [runtime.bionic]
-status = "partial"
+status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp"
-note = "M2 API 19/22/23 真实 Bionic 已完成装载自检和累计样本执行；mem 热点拦截有生产 handler 与吞吐基准，三平台出口待验收"
+note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样本执行；mem 热点拦截具备生产 handler 与吞吐基准"
 
 [runtime.vfs]
 status = "complete"

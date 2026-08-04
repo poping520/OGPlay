@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-04 · M2 Bionic 基线
+更新：2026-08-04 · M2 出口完成
 
 ## 进行中
 
-- M1 出口已闭合；M2 已开始，首批工作为 Bionic API 基线、ELF loader、syscall 与 VFS。
+- M2 出口已闭合；当前交接到 M3 JNI 与最小框架阶段。
 - 本机开发只使用 Windows/MSVC 预设；跨平台总体验收在里程碑出口执行。
-- 首次 hosted CI 仍待仓库建立远端后确认，不阻塞 M2 开发。
+- 首次 hosted CI 仍待仓库建立远端后确认，不阻塞后续开发。
 
 ## 最近完成
 
@@ -168,11 +168,18 @@
   保留真实 Bionic ABI，在 clone/futex/TLS syscall 边界映射宿主线程，决定写入 ADR-0010。
 - Windows/MSVC warnings-as-errors 全量 CTest 158/158；API 19/22/23 累计样本均返回 0、
   创建一个真实 child、读回 32 字节 VFS 输出且未实现 syscall 命中为零。
+- [WU-0100/0101/0102] 修复 GCC/Clang 严格告警发现的 ELF 聚合初始化、VFS 迭代器偏移
+  与无头请求完整初始化，行为契约保持不变。
+- [ADR-0011/WU-0103] Android guest 页固定为 4 KiB，宿主后备按实际 4/16 KiB 粒度提交；
+  Apple Silicon 上共享宿主页的相邻 guest 页仍能独立映射、保护和释放。
+- [WU-0099] M2 出口通过：Windows/MSVC、Linux/GCC、macOS/AppleClang 均在
+  warnings-as-errors 下完成构建并通过 CTest 159/159；API 19/22/23 真实 Bionic 自检与
+  无界面 NDK 累计载荷在三平台全部通过。
 
 ## 下一步（按优先级）
 
-1. 使用持久远端目录执行 Linux/macOS 增量构建、全量 CTest 与 M2 三版本累计样本。
-2. 三平台通过后提交 WU-0099，提升 M2 能力状态并交接 M3。
+1. 按 M3 任务单建立最小 JNI 类型、引用、异常与线程附着契约，不提前引入完整 VM。
+2. 继续复用持久远端增量流程，在 M3 出口执行三平台总体验收。
 
 ## 已知问题
 

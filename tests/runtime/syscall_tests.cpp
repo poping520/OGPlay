@@ -6,6 +6,7 @@
 #include <atomic>
 #include <thread>
 
+#include "ogplay/cpu/cpu.h"
 #include "ogplay/runtime/syscall.h"
 
 TEST_CASE("Android ARM syscall baseline exposes identity and coverage") {
@@ -264,4 +265,40 @@ TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
     frame.number = 5;
     frame.arguments[0] = 0;
     CHECK(dispatcher.Dispatch(frame) == -14);
+}
+
+TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::cpu::A32State state;
+    state.SetThreadId(42);
+    ogplay::runtime::BindAndroidArmPrivateSyscalls(
+        dispatcher, [&state](const std::uint64_t thread_id,
+                             const ogplay::memory::GuestAddress value) {
+            if (thread_id != state.ThreadId()) return false;
+            if (value.Value() == UINT32_MAX) {
+                throw std::invalid_argument("reserved test pointer");
+            }
+            state.SetThreadPointer(value);
+            return true;
+        });
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 0x0f0005U;
+    frame.thread_id = 42;
+    frame.arguments[0] = 0x72000000U;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    CHECK(state.ThreadPointer() ==
+          ogplay::memory::GuestAddress{0x72000000U});
+    frame.thread_id = 43;
+    CHECK(dispatcher.Dispatch(frame) == -3);
+    frame.thread_id = 0;
+    CHECK(dispatcher.Dispatch(frame) == -3);
+    frame.thread_id = 42;
+    frame.arguments[0] = UINT32_MAX;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    CHECK_THROWS_AS(
+        ogplay::runtime::BindAndroidArmPrivateSyscalls(dispatcher, {}),
+        ogplay::runtime::SyscallError);
 }

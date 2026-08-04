@@ -128,7 +128,7 @@ note = "M2 已完成 ELF32/ARM 装载、TLS/版本、动态命名空间、dlopen
 [runtime.syscall]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "M2 已建立 Android ARM EABI 分组目录、可观测基线、身份/时间/内存/futex，以及 VFS open/read/write/lseek/close/openat；线程生命周期与扩展文件调用继续补齐"
+note = "M2 已建立 Android ARM EABI 分派及身份/时间/内存/futex/VFS；ARM set_tls 已绑定线程独立 TPIDRURO，线程退出与扩展文件调用继续补齐"
 
 [runtime.bionic]
 status = "partial"

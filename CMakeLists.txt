@@ -123,6 +123,7 @@ ogplay_set_project_warnings(ogplay_loader)
 add_library(ogplay_gles
     src/gles/angle_backend.cpp
     src/gles/egl_lifecycle.cpp
+    src/gles/guest_transfer.cpp
 )
 set(OGPLAY_GLES_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(OGPLAY_GLES2_CATALOG
@@ -147,6 +148,7 @@ target_include_directories(ogplay_gles PUBLIC
     PRIVATE "${OGPLAY_GLES_GENERATED_DIR}"
 )
 ogplay_set_project_warnings(ogplay_gles)
+target_link_libraries(ogplay_gles PRIVATE OGPlay::Memory)
 if(OGPLAY_ENABLE_ANGLE)
     target_compile_definitions(ogplay_gles PRIVATE OGPLAY_HAS_ANGLE=1)
     target_link_libraries(ogplay_gles PRIVATE ANGLE::EGL ANGLE::GLESv2)
@@ -241,6 +243,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
         tests/gles/egl_lifecycle_tests.cpp
+        tests/gles/guest_transfer_tests.cpp
         tests/hal/clock_tests.cpp
         tests/hal/service_contract_tests.cpp
         tests/hal/thread_tests.cpp

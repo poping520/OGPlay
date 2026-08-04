@@ -60,7 +60,7 @@ M7 兼容性冲刺 ◄── M6 用户体验 ◄── M5 去硬编码 ◄──
 | --- | --- |
 | 完整 ELF linker（含 `dlopen`/符号版本/TLS/exidx） | 多层依赖的 `.so` 能正确加载 |
 | 装载真实 AOSP Bionic（API 19/22/23） | 三版本各自通过 libc 自检 |
-| 选择性拦截表（str/mem 族、pthread、mmap、log） | 性能基准达标 |
+| 选择性拦截（mem 函数热点；pthread/mmap syscall；log 边界） | 行为与性能基准达标 |
 | Syscall 层（约 120 个，按组） | 未实现 syscall 100% 可观测，绝不静默成功 |
 | VFS：APK/OBB/外置统一，大小写不敏感索引 | 跨平台路径测试通过 |
 

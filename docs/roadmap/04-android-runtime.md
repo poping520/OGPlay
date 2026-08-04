@@ -78,8 +78,9 @@ DEMO 阶段走的是 A，并且已经暴露出问题：libc 行为的细节偏�
                         ▼                       ▼
               宿主原生实现              真实 Bionic（CPU 翻译执行）
            memcpy/memset/strlen…                 │
-           pthread_* → 宿主线程                   ▼
-           mmap/open → VFS                   syscall 层（HLE）
+                                                  ▼
+                                      syscall 层（clone/futex/TLS/
+                                      mmap/open → VFS）→ 宿主真线程
 ```
 
 拦截清单（初版）：
@@ -87,7 +88,7 @@ DEMO 阶段走的是 A，并且已经暴露出问题：libc 行为的细节偏�
 | 类别 | 拦截理由 |
 | --- | --- |
 | `memcpy/memset/memmove/strlen/strcmp` 等 | 纯性能。宿主 SIMD 比翻译后的 ARM 快一个量级 |
-| `pthread_*` | 必须映射到宿主线程才能真并行（见第 4.3 节） |
+| `pthread_*` | 保持真实 Bionic 内部 ABI；在 clone/futex/TLS syscall 边界映射宿主真线程 |
 | `malloc` 族 | 可选。真实 Bionic 的 dlmalloc/jemalloc 能跑，但拦截后更好观测 |
 | `open/read/...` | 实际拦在 syscall 层而非 libc 层，统一走 VFS |
 | `__android_log_*` | 直接进宿主结构化日志 |
@@ -353,8 +354,8 @@ L2 需要的组件：DEX 解析器、字节码解释器（约 220 条指令）�
 
 ## 8. 本篇产出的验收标准
 
-- [ ] 三个 API 版本的 Bionic 均能完成 `libc` 自检并跑通无界面 NDK `.so` 契约样本
-- [ ] syscall 覆盖率账本建立，未实现 syscall 100% 可被 `hle.unimplemented()` 观测
+- [x] 三个 API 版本的 Bionic 均能完成 `libc` 自检并跑通无界面 NDK `.so` 契约样本
+- [x] syscall 覆盖率账本建立，未实现 syscall 100% 可被 `hle.unimplemented()` 观测
 - [ ] JNIEnv 全表实现，签名解析器通过完整描述符测试集
 - [ ] 多线程：Unity/Mono 类样例能创建线程并正常运行（对标 Bogodroid 的失败点）
 - [ ] DEX L1 解析器可对题库输出引擎指纹与 Java 厚度报告

@@ -56,6 +56,8 @@
   提交给当前 CPU，其他 trap 和未处理 SVC 原样返回。
 - `RunHeadlessBionicEntry`：事务装载无界面 NDK 依赖闭包，建立 root TLS/stack、运行 guest
   init/普通 C 入口/fini，并把真实 pthread child、syscall 账本及 VFS 输出汇总为出口报告。
+- `RunHeadlessJniContract`：运行无图形累计契约样本，以注入的 guest native executor 闭合
+  HLE→native 与 native→Activity HLE，并核验 VM、字段、字符串、数组、引用和异常资源。
 - `MapArmKernelHelpers`：映射 Linux ARM 最后一页兼容 ABI，提供 memory barrier、32 位
   cmpxchg、TPIDRURO 与版本字；其他 helper 地址预填显式 trap，不执行零指令。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供
@@ -143,6 +145,7 @@
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 - Activity 生命周期必须按 construct→create→start→resume→pause→stop→destroy 前进；
   跳步、重复构造和未知对象调用不得静默接受。
+- 无界面 JNI 契约只有在双向调用、数据、引用、异常和 VM detach 全部闭合时才允许成功。
 
 ## 禁止
 

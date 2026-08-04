@@ -88,3 +88,27 @@ TEST_CASE("JNI HLE object resolution is checked and preserves identity") {
     environment.DetachThread(32);
     environment.DetachThread(31);
 }
+
+TEST_CASE("JNI HLE global object publication crosses attached threads") {
+    ogplay::runtime::JniEnvironment environment({8, 4, 4});
+    environment.AttachThread(41, 4);
+    environment.AttachThread(42, 4);
+    const ogplay::runtime::JniObjectIdentity object{
+        ogplay::runtime::JniObjectDomain::host, 0x7788};
+    const auto global = environment.PublishGlobalObjectForHle(41, object);
+    CHECK(environment.ResolveObjectForHle(42, global) == object);
+    environment.DeleteGlobalRef(42, global);
+    CHECK_THROWS_AS(
+        static_cast<void>(environment.ResolveObjectForHle(41, global)),
+        ogplay::runtime::JniReferenceError);
+
+    const auto throwable = environment.PublishLocalObject(
+        41, {ogplay::runtime::JniObjectDomain::host, 0x99});
+    environment.Throw(41, throwable);
+    CHECK_THROWS_AS(
+        static_cast<void>(environment.PublishGlobalObjectForHle(41, object)),
+        ogplay::runtime::JniExceptionError);
+    environment.ExceptionClear(41);
+    environment.DetachThread(42);
+    environment.DetachThread(41);
+}

@@ -136,6 +136,9 @@
 - JNI reference、method ID 与 field ID 必须保持不同强类型，公共 API 不暴露宿主指针。
 - 框架 HLE 只能通过 `JniEnvironment::ResolveObjectForHle` 将引用解析为不透明对象身份；
   解析必须验证附着线程、引用作用域和 pending exception gate，禁止把 guest handle 当指针。
+- 框架 HLE 需要把宿主对象保存进 Java 对象字段时，只能通过
+  `PublishGlobalObjectForHle` 创建跨线程稳定引用；入口同样经过附着线程、容量和 pending
+  exception gate，禁止把 local reference 长期保存到字段。
 - Local 引用不得跨 guest 线程使用，detach/pop 必须销毁所属引用；Global/WeakGlobal
   跨线程共享但删除类别必须匹配，容量与失效访问都明确失败。
 - pending exception 不得被第二个 Throw 静默覆盖；普通 JNI 调用必须在执行前经过线程

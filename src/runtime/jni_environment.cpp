@@ -76,6 +76,12 @@ JniReference JniEnvironment::PublishLocalObject(
     return references_.NewLocal(thread_id, object);
 }
 
+JniReference JniEnvironment::PublishGlobalObjectForHle(
+    const std::uint64_t thread_id, const JniObjectIdentity object) {
+    RequireAllowed(thread_id, "NewGlobalRef");
+    return references_.NewGlobal(object);
+}
+
 void JniEnvironment::DeleteLocalRef(const std::uint64_t thread_id,
                                     const JniReference reference) {
     RequireAllowed(thread_id, "DeleteLocalRef");

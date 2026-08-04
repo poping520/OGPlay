@@ -10,10 +10,44 @@
 TEST_CASE("guest address space reserves 4 GiB and enforces the low guard") {
     ogplay::memory::AddressSpace memory;
     CHECK(memory.ReservedSize() == ogplay::memory::kGuestAddressSpaceSize);
-    CHECK((memory.PageSize() & (memory.PageSize() - 1U)) == 0);
+    CHECK(memory.PageSize() == 4096);
     CHECK_THROWS_AS(memory.Map(ogplay::memory::LowAddressGuard(),
                                ogplay::memory::PageProtection::read),
                     std::invalid_argument);
+}
+
+TEST_CASE("adjacent guest pages remain independent within host backing") {
+    ogplay::memory::AddressSpace memory;
+    const auto page = memory.PageSize();
+    const ogplay::memory::GuestAddress first{0x10000};
+    const auto second = first.Add(page);
+    const ogplay::memory::GuestRange first_range{first, page};
+    const ogplay::memory::GuestRange second_range{second, page};
+    const auto writable = ogplay::memory::PageProtection::read |
+                          ogplay::memory::PageProtection::write;
+
+    memory.Map(first_range, writable);
+    memory.Map(second_range, writable);
+    const std::array first_marker{std::byte{0x11}};
+    const std::array second_marker{std::byte{0x22}};
+    memory.Write(first, first_marker);
+    memory.Write(second, second_marker);
+    memory.Protect(second_range, ogplay::memory::PageProtection::read |
+                                     ogplay::memory::PageProtection::execute);
+
+    memory.Unmap(first_range);
+    std::array<std::byte, 1> output{};
+    memory.Fetch(second, output);
+    CHECK(output == second_marker);
+    CHECK_THROWS_AS(memory.Write(second, first_marker),
+                    ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(memory.Read(first, output), ogplay::memory::MemoryFault);
+
+    memory.Map(first_range, writable);
+    memory.Read(first, output);
+    CHECK(output == std::array<std::byte, 1>{});
+    memory.Read(second, output);
+    CHECK(output == second_marker);
 }
 
 TEST_CASE("guest mappings support copy protect fault and zeroed remap") {

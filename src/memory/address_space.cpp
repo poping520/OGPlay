@@ -11,6 +11,8 @@
 namespace ogplay::memory {
 namespace {
 
+inline constexpr std::uint64_t kGuestPageSize = 4096;
+
 [[nodiscard]] bool HasProtection(const PageProtection value,
                                  const PageProtection flag) noexcept {
     return (static_cast<std::uint8_t>(value) & static_cast<std::uint8_t>(flag)) != 0;
@@ -21,20 +23,6 @@ void ValidateProtection(const PageProtection protection) {
         !HasProtection(protection, PageProtection::read)) {
         throw std::invalid_argument("writable guest pages must also be readable");
     }
-}
-
-[[nodiscard]] hal::MemoryProtection ToHostProtection(const PageProtection protection) {
-    auto result = hal::MemoryProtection::none;
-    if (HasProtection(protection, PageProtection::read)) {
-        result = result | hal::MemoryProtection::read;
-    }
-    if (HasProtection(protection, PageProtection::write)) {
-        result = result | hal::MemoryProtection::write;
-    }
-    if (HasProtection(protection, PageProtection::execute)) {
-        result = result | hal::MemoryProtection::execute;
-    }
-    return result;
 }
 
 [[nodiscard]] bool Allows(const PageProtection protection, const AccessType access) {
@@ -57,10 +45,18 @@ MemoryFault::MemoryFault(const GuestAddress address, const AccessType access,
 class AddressSpace::Impl final {
 public:
     Impl() : reservation_(hal::ReserveVirtualMemory(kGuestAddressSpaceSize)) {
-        page_size_ = reservation_->PageSize();
+        host_page_size_ = reservation_->PageSize();
+        if (host_page_size_ < kGuestPageSize ||
+            host_page_size_ % kGuestPageSize != 0) {
+            throw std::runtime_error(
+                "host page size cannot back 4096-byte guest pages");
+        }
+        page_size_ = kGuestPageSize;
         pages_.resize(static_cast<std::size_t>(kGuestAddressSpaceSize / page_size_),
                       PageProtection::none);
         mapped_.resize(pages_.size(), false);
+        host_committed_.resize(static_cast<std::size_t>(
+            kGuestAddressSpaceSize / host_page_size_), false);
     }
 
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept { return reservation_->Size(); }
@@ -78,8 +74,9 @@ public:
                         [](const bool mapped) { return mapped; })) {
             throw std::logic_error("guest memory range overlaps an existing mapping");
         }
-        reservation_->Commit(range.Start().Value(), range.Size(),
-                             ToHostProtection(protection));
+        EnsureHostBacking(range);
+        std::memset(reservation_->Base() + range.Start().Value(), 0,
+                    static_cast<std::size_t>(range.Size()));
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
         std::fill(mapped_.begin() + first, mapped_.begin() + last, true);
     }
@@ -90,8 +87,6 @@ public:
         std::scoped_lock lock(mutex_);
         const auto [first, last] = PageIndexes(range);
         RequireMapped(range, first, last, AccessType::read, 0);
-        reservation_->Protect(range.Start().Value(), range.Size(),
-                              ToHostProtection(protection));
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
     }
 
@@ -100,9 +95,11 @@ public:
         std::scoped_lock lock(mutex_);
         const auto [first, last] = PageIndexes(range);
         RequireMapped(range, first, last, AccessType::read, 0);
-        reservation_->Decommit(range.Start().Value(), range.Size());
+        std::memset(reservation_->Base() + range.Start().Value(), 0,
+                    static_cast<std::size_t>(range.Size()));
         std::fill(pages_.begin() + first, pages_.begin() + last, PageProtection::none);
         std::fill(mapped_.begin() + first, mapped_.begin() + last, false);
+        ReleaseUnusedHostBacking(range);
     }
 
     void Validate(const GuestRange& range, const AccessType access,
@@ -181,18 +178,8 @@ public:
                 protection,
                 std::vector<std::byte>(static_cast<std::size_t>(size)),
             };
-            const auto readable = HasProtection(protection,
-                                                PageProtection::read);
-            if (!readable) {
-                reservation_->Protect(offset, size,
-                                      hal::MemoryProtection::read);
-            }
             std::memcpy(mapping.data.data(), reservation_->Base() + offset,
                         mapping.data.size());
-            if (!readable) {
-                reservation_->Protect(offset, size,
-                                      ToHostProtection(protection));
-            }
             snapshot.mappings.push_back(std::move(mapping));
             first = last;
         }
@@ -202,24 +189,31 @@ public:
     void RestoreSnapshot(const MemorySnapshot& snapshot) {
         ValidateSnapshot(snapshot);
         auto replacement = hal::ReserveVirtualMemory(kGuestAddressSpaceSize);
-        if (replacement->PageSize() != page_size_) {
+        if (replacement->PageSize() != host_page_size_) {
             throw std::runtime_error("replacement virtual memory page size changed");
         }
         std::vector<PageProtection> replacement_pages(pages_.size(),
                                                       PageProtection::none);
         std::vector<bool> replacement_mapped(pages_.size(), false);
+        std::vector<bool> replacement_host_committed(host_committed_.size(),
+                                                     false);
 
-        const auto writable = PageProtection::read | PageProtection::write;
         for (const auto& mapping : snapshot.mappings) {
             const auto offset = mapping.range.Start().Value();
-            replacement->Commit(offset, mapping.range.Size(),
-                                ToHostProtection(writable));
+            const auto first_host = static_cast<std::size_t>(
+                offset / host_page_size_);
+            const auto last_host = static_cast<std::size_t>(
+                (mapping.range.EndExclusive() + host_page_size_ - 1U) /
+                host_page_size_);
+            for (auto host = first_host; host < last_host; ++host) {
+                if (replacement_host_committed[host]) continue;
+                replacement->Commit(host * host_page_size_, host_page_size_,
+                                    hal::MemoryProtection::read |
+                                        hal::MemoryProtection::write);
+                replacement_host_committed[host] = true;
+            }
             std::memcpy(replacement->Base() + offset, mapping.data.data(),
                         mapping.data.size());
-            if (mapping.protection != writable) {
-                replacement->Protect(offset, mapping.range.Size(),
-                                     ToHostProtection(mapping.protection));
-            }
             const auto first = static_cast<std::size_t>(offset / page_size_);
             const auto last = static_cast<std::size_t>(mapping.range.EndExclusive() /
                                                        page_size_);
@@ -241,6 +235,7 @@ public:
         reservation_.swap(replacement);
         pages_.swap(replacement_pages);
         mapped_.swap(replacement_mapped);
+        host_committed_.swap(replacement_host_committed);
     }
 
 private:
@@ -257,7 +252,7 @@ private:
             throw std::invalid_argument("unsupported memory snapshot version");
         }
         if (snapshot.page_size != page_size_) {
-            throw std::invalid_argument("memory snapshot page size does not match host");
+            throw std::invalid_argument("memory snapshot page size does not match guest");
         }
         std::uint64_t previous_end = LowAddressGuard().EndExclusive();
         for (const auto& mapping : snapshot.mappings) {
@@ -279,6 +274,61 @@ private:
         const auto first = static_cast<PageIterator>(range.Start().Value() / page_size_);
         const auto last = static_cast<PageIterator>(range.EndExclusive() / page_size_);
         return {first, last};
+    }
+
+    [[nodiscard]] std::pair<std::size_t, std::size_t> HostPageIndexes(
+        const GuestRange& range) const {
+        const auto first = static_cast<std::size_t>(
+            range.Start().Value() / host_page_size_);
+        const auto last = static_cast<std::size_t>(
+            (range.EndExclusive() + host_page_size_ - 1U) /
+            host_page_size_);
+        return {first, last};
+    }
+
+    void EnsureHostBacking(const GuestRange& range) {
+        const auto [first, last] = HostPageIndexes(range);
+        std::vector<std::size_t> added;
+        try {
+            for (auto host = first; host < last; ++host) {
+                if (host_committed_[host]) continue;
+                reservation_->Commit(host * host_page_size_, host_page_size_,
+                                     hal::MemoryProtection::read |
+                                         hal::MemoryProtection::write);
+                host_committed_[host] = true;
+                added.push_back(host);
+            }
+        } catch (...) {
+            for (const auto host : added) {
+                reservation_->Decommit(host * host_page_size_,
+                                       host_page_size_);
+                host_committed_[host] = false;
+            }
+            throw;
+        }
+    }
+
+    void ReleaseUnusedHostBacking(const GuestRange& range) {
+        const auto [first, last] = HostPageIndexes(range);
+        const auto guest_pages_per_host = host_page_size_ / page_size_;
+        for (auto host = first; host < last; ++host) {
+            const auto first_guest = static_cast<std::size_t>(
+                host * guest_pages_per_host);
+            const auto last_guest = first_guest +
+                                    static_cast<std::size_t>(
+                                        guest_pages_per_host);
+            const auto begin = mapped_.begin() +
+                static_cast<std::vector<bool>::difference_type>(first_guest);
+            const auto end = mapped_.begin() +
+                static_cast<std::vector<bool>::difference_type>(last_guest);
+            if (std::any_of(begin, end,
+                            [](const bool mapped) { return mapped; })) {
+                continue;
+            }
+            if (!host_committed_[host]) continue;
+            reservation_->Decommit(host * host_page_size_, host_page_size_);
+            host_committed_[host] = false;
+        }
     }
 
     void RequireMapped(const GuestRange& range, const PageIterator first,
@@ -316,8 +366,10 @@ private:
 
     std::unique_ptr<hal::VirtualMemoryReservation> reservation_;
     std::uint64_t page_size_{};
+    std::uint64_t host_page_size_{};
     std::vector<PageProtection> pages_;
     std::vector<bool> mapped_;
+    std::vector<bool> host_committed_;
     mutable std::mutex mutex_;
 };
 

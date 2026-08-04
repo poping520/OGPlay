@@ -145,6 +145,8 @@
 - [WU-0076] clone committer 已串行预检 guest parent/child TID 地址，按 flags 写回 TID，
   再以 TLS/clear-child-tid 发布 child；坏地址、重复 TID 与失效 parent 不发布 child。
 - Windows/MSVC warnings-as-errors 全量 CTest 138/138 通过；架构与远程增量工具门禁全绿。
+- [WU-0077] SVC syscall frame 与 clone 请求已保留调用时完整 A32 状态；child 创建无需猜测
+  Thumb/CPSR、返回 PC 或被调用方保存寄存器，缺失/跨线程上下文明确返回 EINVAL。
 
 ## 下一步（按优先级）
 

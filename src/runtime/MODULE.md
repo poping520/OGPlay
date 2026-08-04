@@ -9,7 +9,8 @@
 - `A32SyscallDispatcher`：按 ARM EABI 号分派 syscall；声明与实现分离，未知或未实现调用
   统一记入能力账本并返回 `-ENOSYS`，覆盖率可按组查询。
 - `DispatchAndroidArmSupervisorCall`：只将 `SVC #0` 按 r7 + r0-r6 ARM EABI 转为
-  syscall frame，写回有符号返回值到 r0；其他 SVC 留给显式 HLE 边界。
+  syscall frame，并保留调用时完整 A32 状态，写回有符号返回值到 r0；其他 SVC 留给
+  显式 HLE 边界。
 - `BindAndroidTimeSyscalls`：将 `clock_gettime/gettimeofday` 绑定到统一 Clock 和受检 guest
   内存；错误 clock ID、溢出和坏指针分别返回 Linux errno。
 - `BindAndroidMemorySyscalls`：实现匿名私有 `mmap2`、`munmap`、`mprotect` 与 `brk`；
@@ -21,7 +22,8 @@
 - `BindAndroidThreadLifecycleSyscalls`：将 `set_tid_address/exit/exit_group` 绑定统一
   guest 线程状态机；exit 只发出停止请求，由执行循环完成宿主线程退出。
 - `BindAndroidCloneSyscall`：只接受 pthread 所需的共享地址空间 ARM `clone` 形态，按
-  flags 条件解码 parent/child TID 与 TLS 指针，并交给显式 spawner 提交线程创建。
+  flags 条件解码 parent/child TID 与 TLS 指针，保留完整 parent CPU 上下文，并交给显式
+  spawner 提交线程创建。
 - `GuestThreadCloneCommitter`：串行预检 parent/child TID guest 写入，按 Linux flags 写回
   TID，并以 TLS/clear-child-tid 原子注册 child；失败返回 errno 且不发布 child 状态。
 - `SelectBionicProfile` / `RouteBionicSymbol`：只接受 API 19/22/23，固定真实 guest Bionic

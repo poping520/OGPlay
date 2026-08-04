@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/cpu/cpu.h"
 #include "ogplay/cpu/futex.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/memory/address_space.h"
@@ -50,6 +51,7 @@ struct A32SyscallFrame final {
     std::uint32_t program_counter{};
     std::uint32_t link_register{};
     std::uint64_t thread_id{};
+    std::optional<cpu::A32State> cpu_state;
 };
 
 struct SyscallCoverage final {
@@ -75,6 +77,7 @@ struct GuestThreadCloneRequest final {
     std::optional<memory::GuestAddress> parent_tid;
     std::optional<memory::GuestAddress> thread_pointer;
     std::optional<memory::GuestAddress> child_tid;
+    cpu::A32State parent_cpu_state;
 };
 
 using GuestThreadCloneSpawner =

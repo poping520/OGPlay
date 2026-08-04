@@ -10,6 +10,10 @@ CMake build 目录。调用者通过参数传入主机、账号、平台及工�
 submodule，然后由 CMake 增量编译并执行 CTest。远端目录必须专用于本工具；工具不会递归
 删除它，也不会同步本地未提交改动。
 
+核心依赖会递归初始化；ANGLE 只初始化顶层浅 submodule，避免普通增量验证无条件拉取其
+完整 GN/gclient 依赖图。启用 `OGPLAY_ENABLE_ANGLE` 的任务应在同一持久目录中单独准备
+ANGLE 依赖和 GN 产物，并通过 `OGPLAY_ANGLE_BUILD_DIR` 交给 CMake。
+
 ```text
 python tools/remote_incremental.py --host <host> --user <user> \
   --remote-root <absolute-project-cache> --platform linux

@@ -11,6 +11,8 @@
 - `SelectAngleBackend`：依据显式探测结果与 automatic/hardware-only/software-only 偏好
   选择候选；没有可用候选时返回空值，不伪造成功。
 - `AngleBackendName`：输出可用于配置、日志与 Agent 查询的稳定 renderer/device 名称。
+- `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受固定 submodule 经官方 GN 流程生成的
+  `libEGL`/`libGLESv2` 链接与运行时产物，并导入 `ANGLE::EGL`/`ANGLE::GLESv2`。
 - 后续 M4 Work Unit 在此策略上定义 EGL 上下文、资源搬运、present、trace 和快照接口。
 
 ## 不变量
@@ -19,6 +21,8 @@
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - 平台探测事实由下层注入；gles 模块不使用平台宏，也不直接依赖平台 SDK 类型。
 - SwiftShader 只能作为 ANGLE Vulkan 软件设备使用；hardware-only 不得静默回退软件。
+- ANGLE 源码由顶层浅 git submodule 固定；其内部依赖遵循官方 depot_tools/gclient/GN
+  流程，不把缺失产物静默降级为系统 EGL/GLES。
 
 ## 禁止
 

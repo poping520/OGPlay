@@ -25,6 +25,7 @@ std::optional<A32SyscallDispatchResult> DispatchAndroidArmSupervisorCall(
     frame.program_counter = stop.pc.Value();
     frame.link_register = state.Register(cpu::CoreRegister::lr);
     frame.thread_id = state.ThreadId();
+    frame.cpu_state = state;
     const auto value = dispatcher.Dispatch(frame);
     state.SetRegister(cpu::CoreRegister::r0,
                       std::bit_cast<std::uint32_t>(value));

@@ -85,6 +85,10 @@ void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher,
     dispatcher.Implement(
         120, [spawner = std::move(spawner)](const A32SyscallFrame& frame) {
             if (frame.thread_id == 0) return -kEsrch;
+            if (!frame.cpu_state.has_value() ||
+                frame.cpu_state->ThreadId() != frame.thread_id) {
+                return -kEinval;
+            }
             const auto flags = frame.arguments[0];
             if ((flags & kRequiredFlags) != kRequiredFlags ||
                 (flags & ~kAllowedFlags) != 0) {
@@ -115,7 +119,8 @@ void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher,
                     optional_pointer(
                         (flags & (kLinuxCloneChildSettid |
                                   kLinuxCloneChildCleartid)) != 0,
-                        frame.arguments[4])};
+                        frame.arguments[4]),
+                    *frame.cpu_state};
                 const auto result = spawner(request);
                 return result == 0 ? -kEagain : result;
             } catch (const std::exception&) {

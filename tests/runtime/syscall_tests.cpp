@@ -351,6 +351,11 @@ TEST_CASE("ARM clone decodes pthread arguments at an explicit spawn boundary") {
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 120;
     frame.thread_id = 41;
+    ogplay::cpu::A32State parent_state;
+    parent_state.SetThreadId(41);
+    parent_state.SetRegister(ogplay::cpu::CoreRegister::pc, 0x20004U);
+    parent_state.SetCpsr(0x20U);
+    frame.cpu_state = parent_state;
     frame.arguments[0] =
         ogplay::runtime::kLinuxCloneVm | ogplay::runtime::kLinuxCloneFs |
         ogplay::runtime::kLinuxCloneFiles |
@@ -375,6 +380,10 @@ TEST_CASE("ARM clone decodes pthread arguments at an explicit spawn boundary") {
           ogplay::memory::GuestAddress{0x72000000U});
     CHECK(captured->child_tid ==
           ogplay::memory::GuestAddress{0x10024U});
+    CHECK(captured->parent_cpu_state.Register(
+              ogplay::cpu::CoreRegister::pc) == 0x20004U);
+    CHECK(captured->parent_cpu_state.State() ==
+          ogplay::cpu::ExecutionState::thumb);
 }
 
 TEST_CASE("ARM clone rejects unsupported shapes before spawning") {
@@ -391,6 +400,9 @@ TEST_CASE("ARM clone rejects unsupported shapes before spawning") {
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 120;
     frame.thread_id = 41;
+    ogplay::cpu::A32State parent_state;
+    parent_state.SetThreadId(41);
+    frame.cpu_state = parent_state;
     frame.arguments[0] =
         ogplay::runtime::kLinuxCloneVm | ogplay::runtime::kLinuxCloneFs |
         ogplay::runtime::kLinuxCloneFiles |
@@ -405,6 +417,10 @@ TEST_CASE("ARM clone rejects unsupported shapes before spawning") {
     frame.arguments[2] = 0x10001U;
     CHECK(dispatcher.Dispatch(frame) == -22);
     CHECK(calls == 0);
+    frame.arguments[0] &= ~ogplay::runtime::kLinuxCloneParentSettid;
+    frame.arguments[1] = 0x71001000U;
+    frame.cpu_state.reset();
+    CHECK(dispatcher.Dispatch(frame) == -22);
     CHECK_THROWS_AS(ogplay::runtime::BindAndroidCloneSyscall(dispatcher, {}),
                     ogplay::runtime::SyscallError);
 }

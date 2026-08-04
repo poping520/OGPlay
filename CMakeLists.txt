@@ -114,6 +114,7 @@ add_library(ogplay_runtime
     src/runtime/bionic_tls.cpp
     src/runtime/guest_lifecycle.cpp
     src/runtime/guest_thread_lifecycle.cpp
+    src/runtime/guest_clone_thread_runtime.cpp
     src/runtime/guest_thread_runner.cpp
     src/runtime/syscall.cpp
     src/runtime/syscall_arm.cpp
@@ -185,6 +186,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/bionic_tls_tests.cpp
         tests/runtime/guest_lifecycle_tests.cpp
         tests/runtime/guest_thread_lifecycle_tests.cpp
+        tests/runtime/guest_clone_thread_runtime_tests.cpp
         tests/runtime/guest_thread_runner_tests.cpp
         tests/runtime/vfs_tests.cpp
         tests/loader/elf_tests.cpp

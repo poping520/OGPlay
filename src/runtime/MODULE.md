@@ -26,6 +26,8 @@
   spawner 提交线程创建。
 - `GuestThreadCloneCommitter`：串行预检 parent/child TID guest 写入，按 Linux flags 写回
   TID，并以 TLS/clear-child-tid 原子注册 child；失败返回 errno 且不发布 child 状态。
+- `GuestCloneThreadRuntime`：从 clone 保存的 A32 状态派生 child 的 r0=0、SP、TLS 与 TID，
+  通过 GuestThreadGroup 启动真实宿主线程并进入统一 SVC/exit 执行循环。
 - `SelectBionicProfile` / `RouteBionicSymbol`：只接受 API 19/22/23，固定真实 guest Bionic
   库、宿主 HLE 边界库及少而明确的 str/mem/pthread 拦截表。
 - `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的

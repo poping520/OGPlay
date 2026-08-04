@@ -1,11 +1,11 @@
 # 当前状态
 
-更新：2026-08-04 · M3 出口验收完成
+更新：2026-08-04 · M4 ANGLE 后端选择契约
 
 ## 当前阶段
 
-- M0、M1、M2、M3 均已完成；当前准备进入 M4 图形栈。
-- `WU-0149` 已完成 M3 三平台出口验收；下一个任务编号为 `WU-0150`。
+- M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
+- `WU-0150` 已冻结 ANGLE 三平台后端选择契约；下一个任务编号为 `WU-0151`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -32,11 +32,13 @@
 - [WU-0148] 修复旧版 CMake 文档门禁策略和 AppleClang DEX 隐式转换问题。
 - [WU-0149] 同一源码基线在 Windows/MSVC、Linux/GCC、macOS/AppleClang 完成严格构建，
   三端全量 CTest 均通过 232/232，M3 正式验收。
+- [WU-0150] 建立独立 gles 目标，冻结 D3D11/Vulkan/Metal 与 Vulkan/SwiftShader 的
+  三平台候选顺序、可用性探测和硬件/软件偏好契约。
 
 ## 下一步（按优先级）
 
-1. `WU-0150` 开始 M4，先冻结 ANGLE/EGL 后端接入边界与三平台选择契约。
-2. 随后接入 ANGLE，并保持 EGL/GLES、显示适配和 Agent GPU 接口按小 WU 推进。
+1. `WU-0151` 以 git submodule 引入 ANGLE 依赖并建立可关闭、可诊断的构建边界。
+2. 随后实现 EGL display/config/context/surface 生命周期，再接 IDL 生成的 GLES 边界。
 
 ## 阻塞
 

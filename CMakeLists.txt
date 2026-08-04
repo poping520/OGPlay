@@ -113,6 +113,16 @@ target_include_directories(ogplay_loader PUBLIC
 )
 ogplay_set_project_warnings(ogplay_loader)
 
+add_library(ogplay_gles
+    src/gles/angle_backend.cpp
+)
+add_library(OGPlay::Gles ALIAS ogplay_gles)
+target_include_directories(ogplay_gles PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+ogplay_set_project_warnings(ogplay_gles)
+
 add_library(ogplay_runtime
     src/runtime/syscall/arm_kernel_helpers.cpp
     src/runtime/bionic/bionic_profile.cpp
@@ -180,7 +190,7 @@ target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
 target_compile_definitions(ogplay PRIVATE OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 ogplay_set_project_warnings(ogplay)
 
-install(TARGETS ogplay ogplay_core ogplay_hal ogplay_memory ogplay_cpu ogplay_loader ogplay_runtime ogplay_agent ogplay_session
+install(TARGETS ogplay ogplay_core ogplay_hal ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_session
     EXPORT OGPlayTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -199,6 +209,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp
         tests/golden/golden_frame_tests.cpp
+        tests/gles/angle_backend_tests.cpp
         tests/hal/clock_tests.cpp
         tests/hal/service_contract_tests.cpp
         tests/hal/thread_tests.cpp
@@ -266,7 +277,7 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
     target_link_libraries(ogplay_tests PRIVATE
-        OGPlay::Agent OGPlay::Cpu OGPlay::Loader OGPlay::Runtime doctest::doctest
+        OGPlay::Agent OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime doctest::doctest
     )
     target_include_directories(ogplay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include

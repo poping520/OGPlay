@@ -5,8 +5,8 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0141` 已将框架服务纳入 M3 累计无界面契约；下一个开发任务编号为
-  `WU-0142`。
+- `WU-0142` 已补齐 native 工作线程 VM 附着与 HLE 回调；下一个开发任务编号为
+  `WU-0143`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -63,10 +63,12 @@
   只接受 flags=0，并通过真实 PackageInfo 字段暴露 versionName/versionCode。
 - [WU-0141] 在同一次累计 JNI 运行中装配资源、偏好、Locale 与当前包信息，验证 handler
   共存、引用容量、确定性结果和资源闭环。
+- [WU-0142] 两个真实宿主工作线程分别 daemon attach、回调 Locale HLE 并 detach，覆盖
+  Unity/Mono 类 native 线程进入 Java 的累计路径。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0142`，闭合 M3 开发状态并只保留三平台出口验收。
+1. 创建 `WU-0143`，闭合 M3 开发状态并只保留三平台出口验收。
 2. 下一会话执行 M3 三平台 warnings-as-errors 与累计契约出口验收。
 
 ## 阻塞

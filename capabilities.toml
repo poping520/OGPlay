@@ -148,7 +148,7 @@ note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、
 [runtime.jni]
 status = "partial"
 test = "tests/runtime/jni_tests.cpp"
-note = "M3 已映射 208 个常用 JNIEnv 与 4 个 JavaVM 行为槽，并提供 HLE 受检对象解析及跨线程稳定 Global object 发布边界；两者均受线程、容量和异常门禁保护，其余低频槽继续可观测 trap"
+note = "M3 已映射 208 个常用 JNIEnv 与 4 个 JavaVM 行为槽，并在累计样本验证两个真实 native 工作线程并发 daemon attach、HLE 回调与 detach；其余低频槽继续可观测 trap"
 
 [runtime.framework_hle]
 status = "partial"
@@ -158,7 +158,7 @@ note = "M3 已声明式安装 Activity、资源、偏好、Locale 与仅服务�
 [fixtures.m3_jni]
 status = "partial"
 test = "tests/runtime/headless_jni_contract_tests.cpp"
-note = "M3 Windows/MSVC 无图形累计契约已在同一环境闭合 HLE↔guest native、VM、字段、字符串、数组、引用、异常、Asset、偏好、Locale 与当前包信息；里程碑出口再执行三平台验收"
+note = "M3 Windows/MSVC 无图形累计契约已闭合双向调用、常用框架服务及两个真实 native 工作线程的 VM attach/HLE callback/detach；里程碑出口再执行三平台验收"
 
 [loader.dex_l1]
 status = "complete"

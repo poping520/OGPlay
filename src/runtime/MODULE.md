@@ -58,7 +58,8 @@
   init/普通 C 入口/fini，并把真实 pthread child、syscall 账本及 VFS 输出汇总为出口报告。
 - `RunHeadlessJniContract`：运行无图形累计契约样本，以注入的 guest native executor 闭合
   HLE→native 与 native→Activity HLE，并在同一环境核验 VM、字段、字符串、数组、引用、
-  异常以及 Asset、SharedPreferences、Locale、PackageInfo 的装配和资源闭环。
+  异常以及 Asset、SharedPreferences、Locale、PackageInfo 的装配和资源闭环；两个真实宿主
+  工作线程分别执行 daemon attach、Locale HLE 回调和 detach，覆盖 Unity/Mono 类线程路径。
 - `MapArmKernelHelpers`：映射 Linux ARM 最后一页兼容 ABI，提供 memory barrier、32 位
   cmpxchg、TPIDRURO 与版本字；其他 helper 地址预填显式 trap，不执行零指令。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供

@@ -5,8 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0136` 已闭合偏好服务 Context receiver 的受检解析；下一个开发任务编号为
-  `WU-0137`。
+- `WU-0137` 已完成确定性 Locale HLE；下一个开发任务编号为 `WU-0138`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -53,11 +52,13 @@
   两者与 available、byte[] read 共用同一 VFS descriptor 状态。
 - [WU-0136] getSharedPreferences 入口与其余偏好方法一样强制经过 HLE 引用解析，伪造、
   跨线程、已失效 Context reference 在读取参数或修改状态前失败。
+- [WU-0137] 从显式 language/country 配置安装 Locale.getDefault/getLanguage/getCountry/
+  toString，严格校验代码且不读取宿主区域设置。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0137`，补齐样本常用 Locale/配置查询的声明式 HLE。
-2. 继续按样本调用面补框架 HLE，不引入完整 Android services。
+1. 创建 `WU-0138`，冻结 Context 包名与最小 PackageManager 服务契约。
+2. 只实现 versionName/versionCode，不引入完整 Android services。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

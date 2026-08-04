@@ -1,3 +1,6 @@
+#include <array>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -59,7 +62,7 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
           ogplay::runtime::BionicSymbolRoute::host_intercept);
     CHECK(ogplay::runtime::RouteBionicSymbol(profile, "libc.so",
                                              "pthread_create") ==
-          ogplay::runtime::BionicSymbolRoute::host_intercept);
+          ogplay::runtime::BionicSymbolRoute::guest_execution);
     CHECK(ogplay::runtime::RouteBionicSymbol(profile, "libEGL.so", "eglSwapBuffers") ==
           ogplay::runtime::BionicSymbolRoute::host_boundary);
     CHECK(ogplay::runtime::RouteBionicSymbol(profile, "liblog.so",
@@ -68,6 +71,65 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::RouteBionicSymbol(
                         profile, "libc.so", "")),
                     ogplay::runtime::BionicProfileError);
+}
+
+TEST_CASE("Bionic memory intercepts preserve libc behavior") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress page{0x10000U};
+    memory.Map({page, memory.PageSize() * 2U},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    const std::array source{std::byte{'a'}, std::byte{'b'}, std::byte{'c'},
+                            std::byte{}};
+    memory.Write(page, source);
+    CHECK(ogplay::runtime::ExecuteBionicMemoryIntercept(
+              memory, {"memcpy", {page.Add(32).Value(), page.Value(), 4, 0},
+                       41}) == page.Add(32).Value());
+    CHECK(ogplay::runtime::ExecuteBionicMemoryIntercept(
+              memory, {"strlen", {page.Add(32).Value(), 0, 0, 0}, 41}) == 3);
+    CHECK(ogplay::runtime::ExecuteBionicMemoryIntercept(
+              memory, {"memcmp", {page.Value(), page.Add(32).Value(), 4, 0},
+                       41}) == 0);
+    CHECK(ogplay::runtime::ExecuteBionicMemoryIntercept(
+              memory, {"memset", {page.Add(33).Value(), 'x', 2, 0}, 41}) ==
+          page.Add(33).Value());
+    CHECK(ogplay::runtime::ExecuteBionicMemoryIntercept(
+              memory, {"memmove", {page.Add(1).Value(), page.Value(), 3, 0},
+                       41}) == page.Add(1).Value());
+    std::array<std::byte, 4> moved{};
+    memory.Read(page, moved);
+    CHECK(moved == std::array{std::byte{'a'}, std::byte{'a'},
+                              std::byte{'b'}, std::byte{'c'}});
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::runtime::ExecuteBionicMemoryIntercept(
+            memory, {"strcmp", {page.Value(), page.Value(), 0, 0}, 41})),
+        ogplay::runtime::BionicProfileError);
+}
+
+TEST_CASE("Bionic memcpy intercept meets the M2 throughput floor") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress source{0x10000U};
+    constexpr std::uint32_t kBytes = 1024U * 1024U;
+    const ogplay::memory::GuestAddress destination{0x200000U};
+    memory.Map({source, kBytes}, ogplay::memory::PageProtection::read |
+                                     ogplay::memory::PageProtection::write);
+    memory.Map({destination, kBytes},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    const auto start = std::chrono::steady_clock::now();
+    constexpr std::uint32_t kIterations = 8;
+    for (std::uint32_t index = 0; index < kIterations; ++index) {
+        CHECK(ogplay::runtime::ExecuteBionicMemoryIntercept(
+                  memory, {"memcpy", {destination.Value(), source.Value(),
+                                       kBytes, 0}, 51}) ==
+              destination.Value());
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    const auto seconds = std::chrono::duration<double>(elapsed).count();
+    const auto mebibytes_per_second =
+        static_cast<double>(kIterations) / seconds;
+    INFO("Bionic memcpy intercept MiB/s: " << mebibytes_per_second);
+    CHECK(mebibytes_per_second >= 4.0);
 }
 
 TEST_CASE("Bionic link namespace combines guest libraries and observable HLE thunks") {

@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <set>
 #include <string>
 #include <string_view>
@@ -18,12 +21,8 @@ constexpr std::array<std::string_view, 9> kBoundaryLibraries{
     "libEGL.so",       "libGLESv1_CM.so", "libGLESv2.so",
     "libGLESv3.so",   "libOpenSLES.so",  "libandroid.so",
     "libjnigraphics.so", "liblog.so",     "libmediandk.so"};
-constexpr std::array<std::string_view, 24> kInterceptedLibcSymbols{
-    "memcmp",  "memcpy",  "memmove", "memset",  "strcat", "strchr",
-    "strcmp",  "strcpy",  "strcspn", "strlen",  "strncat", "strncmp",
-    "strncpy", "strnlen", "strpbrk", "strrchr", "strspn", "strstr",
-    "pthread_create", "pthread_exit", "pthread_join", "pthread_self",
-    "pthread_mutex_lock", "pthread_mutex_unlock"};
+constexpr std::array<std::string_view, 5> kInterceptedLibcSymbols{
+    "memcmp", "memcpy", "memmove", "memset", "strlen"};
 
 constexpr BionicProfile kApi19{AndroidApi::api19, "4.4", "bionic/19",
                                kGuestLibraries, kBoundaryLibraries};
@@ -166,6 +165,115 @@ BionicSymbolRoute RouteBionicSymbol(const BionicProfile& profile,
         return BionicSymbolRoute::host_intercept;
     }
     return BionicSymbolRoute::guest_execution;
+}
+
+std::uint32_t ExecuteBionicMemoryIntercept(
+    memory::AddressSpace& address_space,
+    const BionicMemoryInterceptCall& call) {
+    if (call.thread_id == 0 || call.symbol.empty()) {
+        throw BionicProfileError(
+            "Bionic memory intercept requires a symbol and thread");
+    }
+    const auto destination = memory::GuestAddress{call.arguments[0]};
+    const auto source = memory::GuestAddress{call.arguments[1]};
+    const auto count = call.arguments[2];
+    constexpr std::size_t kChunkSize = 4096;
+
+    if (call.symbol == "strlen") {
+        if (call.maximum_string_bytes == 0) {
+            throw BionicProfileError("strlen intercept has a zero bound");
+        }
+        for (std::size_t index = 0; index < call.maximum_string_bytes;
+             ++index) {
+            std::byte value{};
+            address_space.Read(destination.Add(index), std::span{&value, 1},
+                               call.thread_id);
+            if (value == std::byte{}) {
+                if (index > std::numeric_limits<std::uint32_t>::max()) {
+                    throw BionicProfileError("strlen result overflows A32");
+                }
+                return static_cast<std::uint32_t>(index);
+            }
+        }
+        throw BionicProfileError("strlen intercept exceeded its bound");
+    }
+
+    if (std::find(kInterceptedLibcSymbols.begin(),
+                  kInterceptedLibcSymbols.end(), call.symbol) ==
+        kInterceptedLibcSymbols.end()) {
+        throw BionicProfileError("Bionic memory intercept is not implemented: " +
+                                 std::string(call.symbol));
+    }
+    if (count == 0) {
+        return call.symbol == "memcmp" ? 0U : destination.Value();
+    }
+    if (call.symbol == "memset") {
+        address_space.Validate({destination, count}, memory::AccessType::write,
+                               call.thread_id);
+        const std::vector<std::byte> bytes(
+            std::min<std::size_t>(count, kChunkSize),
+            static_cast<std::byte>(call.arguments[1] & 0xffU));
+        std::uint64_t offset{};
+        while (offset < count) {
+            const auto size = static_cast<std::size_t>(
+                std::min<std::uint64_t>(bytes.size(), count - offset));
+            address_space.Write(destination.Add(offset),
+                                std::span{bytes}.first(size), call.thread_id);
+            offset += size;
+        }
+        return destination.Value();
+    }
+
+    address_space.Validate({source, count}, memory::AccessType::read,
+                           call.thread_id);
+    if (call.symbol != "memcmp") {
+        address_space.Validate({destination, count}, memory::AccessType::write,
+                               call.thread_id);
+    } else {
+        address_space.Validate({destination, count}, memory::AccessType::read,
+                               call.thread_id);
+    }
+    std::vector<std::byte> left(kChunkSize);
+    std::vector<std::byte> right(kChunkSize);
+    if (call.symbol == "memcmp") {
+        std::uint64_t offset{};
+        while (offset < count) {
+            const auto size = static_cast<std::size_t>(
+                std::min<std::uint64_t>(kChunkSize, count - offset));
+            address_space.Read(destination.Add(offset),
+                               std::span{left}.first(size), call.thread_id);
+            address_space.Read(source.Add(offset),
+                               std::span{right}.first(size), call.thread_id);
+            for (std::size_t index = 0; index < size; ++index) {
+                const auto lhs = std::to_integer<std::uint8_t>(left[index]);
+                const auto rhs = std::to_integer<std::uint8_t>(right[index]);
+                if (lhs != rhs) {
+                    return std::bit_cast<std::uint32_t>(
+                        static_cast<std::int32_t>(lhs) - rhs);
+                }
+            }
+            offset += size;
+        }
+        return 0;
+    }
+
+    const auto overlap_backwards =
+        call.symbol == "memmove" && destination > source &&
+        static_cast<std::uint64_t>(destination.Value()) <
+            static_cast<std::uint64_t>(source.Value()) + count;
+    std::uint64_t remaining = count;
+    while (remaining != 0) {
+        const auto size = static_cast<std::size_t>(
+            std::min<std::uint64_t>(kChunkSize, remaining));
+        const auto offset = overlap_backwards ? remaining - size
+                                              : count - remaining;
+        address_space.Read(source.Add(offset), std::span{left}.first(size),
+                           call.thread_id);
+        address_space.Write(destination.Add(offset),
+                            std::span{left}.first(size), call.thread_id);
+        remaining -= size;
+    }
+    return destination.Value();
 }
 
 loader::Elf32LinkNamespace BuildBionicLinkNamespace(

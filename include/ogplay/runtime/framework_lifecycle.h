@@ -32,6 +32,8 @@ struct FrameworkLifecycleEvent final {
 
 struct FrameworkClassSet final {
     JniObjectIdentity object_class;
+    JniObjectIdentity context_class;
+    JniObjectIdentity context_wrapper_class;
     JniObjectIdentity bundle_class;
     JniObjectIdentity activity_class;
 };

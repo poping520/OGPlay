@@ -36,11 +36,20 @@ public:
         }
         const auto object =
             classes_->RegisterClass({"java/lang/Object", {}, {}, {}});
+        const auto context = classes_->RegisterClass(
+            {"android/content/Context",
+             "java/lang/Object",
+             {{"getAssets", "()Landroid/content/res/AssetManager;",
+               "framework.context.get_assets", false}},
+             {}});
+        const auto context_wrapper = classes_->RegisterClass(
+            {"android/content/ContextWrapper", "android/content/Context", {},
+             {}});
         const auto bundle = classes_->RegisterClass(
             {"android/os/Bundle", "java/lang/Object", {}, {}});
         const auto activity = classes_->RegisterClass(
             {"android/app/Activity",
-             "java/lang/Object",
+             "android/content/ContextWrapper",
              {{"<init>", "()V", "framework.activity.construct", false},
               {"onCreate", "(Landroid/os/Bundle;)V",
                "framework.activity.create", false},
@@ -76,7 +85,7 @@ public:
                        FrameworkActivityState::stopped,
                        FrameworkActivityState::destroyed);
         installed_ = true;
-        classes_set_ = {object, bundle, activity};
+        classes_set_ = {object, context, context_wrapper, bundle, activity};
         return classes_set_;
     }
 

@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-04 · M4 guest 内存搬运层完成
+更新：2026-08-04 · M4 GLES2 生成式分派完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0162` 已完成强类型 guest 指针的 input/output/inout 全区间权限预检、限额暂存与
-  显式回写；下一个任务编号为 `WU-0163`。
+- `WU-0163` 已把生成目录接入 142 个稳定 thunk ID、调用形状校验和显式 handler 分派；
+  未绑定调用可观测失败；下一个任务编号为 `WU-0164`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -60,11 +60,14 @@
   长度表达式和一/二级指针形状，固定 ANGLE 头文件成为覆盖门禁。
 - [WU-0162] `GuestBuffer` 在 native 调用前完整预检 guest read/write 权限；input 精确复制，
   output 零初始化且显式回写，null、溢出、限额和重复提交均明确失败。
+- [WU-0163] 生成目录提供 142 个稳定 GLES2 thunk ID 和二分查找；分派验证参数槽且仅执行
+  唯一显式 handler，未绑定调用记录函数、命中数与 first/last guest thread 后抛错；
+  启用 ANGLE 的 Windows/MSVC 全量 CTest 253/253 通过。
 
 ## 下一步（按优先级）
 
-1. `WU-0163` 把生成目录接入稳定 thunk 编号、调用查找和显式未实现分派。
-2. 随后增加 GLES1、窗口 surface 与 present。
+1. `WU-0164` 实现 IDL 长度表达式求值并把 `GuestBuffer` 接入生成式调用准备阶段。
+2. 随后生成常用 ANGLE 调用体，再增加 GLES1、窗口 surface 与 present。
 
 ## 阻塞
 

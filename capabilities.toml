@@ -199,3 +199,8 @@ note = "M4 GLES2 core 142 个入口和 397 个参数全部进入有序 IDL；输
 status = "complete"
 test = "tests/gles/guest_transfer_tests.cpp"
 note = "M4 完成强类型 guest 指针的 input/output/inout 全区间权限预检、限额暂存和显式回写；null、溢出、方向及重复提交明确失败"
+
+[gles.gles2_dispatch]
+status = "partial"
+test = "tests/gles/gles_dispatch_tests.cpp"
+note = "M4 已把 142 个生成入口接入稳定 thunk ID、形状校验和显式 handler 分派；未绑定调用携带函数/线程事实失败并可累计查询，ANGLE 调用体尚待生成绑定"

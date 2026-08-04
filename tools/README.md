@@ -54,3 +54,8 @@ python tools/package_angle_sdk.py verify \
 
 目标目录必须不存在，避免旧文件混入新包。普通项目配置最终只消费独立的
 `third_party/angle-prebuilt` 浅 submodule；源码树仅作为本脚本的维护者输入。
+
+启用消费时设置 `OGPLAY_ENABLE_ANGLE=ON`。默认 SDK 根目录为
+`third_party/angle-prebuilt`，也可用绝对 `OGPLAY_ANGLE_SDK_ROOT` 指向待发布包的根目录；
+CMake 会按宿主选择平台/CPU，并逐文件验证清单。普通 Debug 构建仍使用默认
+`OGPLAY_ANGLE_SDK_CONFIGURATION=release`。

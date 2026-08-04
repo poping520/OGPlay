@@ -112,6 +112,9 @@
   应用 int/long/boolean/string、remove 与 clear；MODE_PRIVATE、默认值、类型错误、commit
   和 apply 均有明确契约；Context、preferences、Editor、key/value 引用全部经过 HLE 受检
   解析，不模拟 Android services 或 XML 文件系统。
+- `FrameworkLocaleHle`：从显式配置安装 java.util.Locale.getDefault/getLanguage/getCountry/
+  toString；语言、国家代码在安装前严格验证，返回值为受线程作用域保护的 JNI 对象，
+  不读取宿主区域设置，保证回放与三平台结果一致。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量

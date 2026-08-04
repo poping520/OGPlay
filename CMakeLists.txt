@@ -112,6 +112,7 @@ ogplay_set_project_warnings(ogplay_loader)
 
 add_library(ogplay_runtime
     src/runtime/bionic_profile.cpp
+    src/runtime/bionic_selfcheck.cpp
     src/runtime/bionic_tls.cpp
     src/runtime/guest_lifecycle.cpp
     src/runtime/guest_thread_lifecycle.cpp
@@ -184,6 +185,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/syscall_tests.cpp
         tests/runtime/syscall_bridge_tests.cpp
         tests/runtime/bionic_profile_tests.cpp
+        tests/runtime/bionic_selfcheck_tests.cpp
         tests/runtime/bionic_tls_tests.cpp
         tests/runtime/guest_lifecycle_tests.cpp
         tests/runtime/guest_thread_lifecycle_tests.cpp

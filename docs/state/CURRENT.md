@@ -151,6 +151,8 @@
   线程进入统一 SVC 循环；端到端样例完成 parent 返回、child exit 与 clear-child-tid。
 - [WU-0079] 新增 ELF32 多模块总装载器，一次完成事实解析、依赖排序、映射、版本化解析
   与 ARM REL 应用；任一失败通过内存快照恢复整个调用前地址空间。
+- [WU-0080] 建立 API 19/22/23 真实 Bionic 自检：libc/libdl 必须完成多模块装载与重定位，
+  并导出 malloc/free、pthread、文件 IO 契约符号，保留版本、生命周期及 exidx 事实。
 
 ## 下一步（按优先级）
 

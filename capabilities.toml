@@ -148,7 +148,7 @@ note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、
 [runtime.jni]
 status = "partial"
 test = "tests/runtime/jni_tests.cpp"
-note = "M3 已完成 JNIEnv/JavaVM ABI、对象/成员事实和常用运行时底座；方法 .../V/A 已统一到类型校验后的虚/非虚/静态调用引擎"
+note = "M3 已将 169 个常用 JNIEnv 槽与 4 个 JavaVM 线程槽映射到稳定行为 thunk 并封口；其余低频槽继续可观测 trap"
 
 [gles.angle]
 status = "unimplemented"

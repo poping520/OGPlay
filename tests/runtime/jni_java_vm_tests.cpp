@@ -62,3 +62,53 @@ TEST_CASE("JavaVM daemon and version failures do not create partial state") {
     CHECK(vm.IsDaemon(9));
     CHECK(vm.DetachCurrentThread(9) == ogplay::runtime::JniStatus::ok);
 }
+
+TEST_CASE("common JNI slot directory binds only behavior-backed thunks") {
+    ogplay::core::CapabilityLedger ledger;
+    ogplay::runtime::JniFunctionTable environment_table(ledger);
+    ogplay::runtime::JniInvokeFunctionTable invoke_table(ledger);
+    const ogplay::runtime::JniCommonSlotDirectory directory;
+    directory.Install(environment_table, invoke_table);
+    CHECK(environment_table.IsSealed());
+    CHECK(invoke_table.IsSealed());
+    CHECK(directory.Bindings().size() == 173);
+
+    const auto call = ogplay::runtime::FindJniSlot("CallDoubleMethodA").value();
+    const auto string = ogplay::runtime::FindJniSlot("NewStringUTF").value();
+    const auto array = ogplay::runtime::FindJniSlot("SetLongArrayRegion").value();
+    const auto field = ogplay::runtime::FindJniSlot("GetIntField").value();
+    CHECK(environment_table.IsBound(call));
+    CHECK(environment_table.IsBound(string));
+    CHECK(environment_table.IsBound(array));
+    CHECK_FALSE(environment_table.IsBound(field));
+    const auto thunk = environment_table.Resolve(call, 0x1000);
+    const auto binding = directory.FindByThunk(thunk);
+    REQUIRE(binding.has_value());
+    CHECK(binding->name == "CallDoubleMethodA");
+    CHECK(binding->handler == ogplay::runtime::JniSlotHandlerKind::invocation);
+}
+
+TEST_CASE("unbound JNI and JavaVM slots remain observable traps") {
+    ogplay::core::CapabilityLedger ledger;
+    ogplay::runtime::JniFunctionTable environment_table(ledger);
+    ogplay::runtime::JniInvokeFunctionTable invoke_table(ledger);
+    const ogplay::runtime::JniCommonSlotDirectory directory;
+    directory.Install(environment_table, invoke_table);
+
+    const auto direct =
+        ogplay::runtime::FindJniSlot("NewDirectByteBuffer").value();
+    CHECK_THROWS_AS(
+        static_cast<void>(environment_table.Resolve(direct, 0x1111)),
+        ogplay::runtime::JniUnimplementedCall);
+    const auto destroy =
+        ogplay::runtime::FindJniInvokeSlot("DestroyJavaVM").value();
+    CHECK_FALSE(invoke_table.IsBound(destroy));
+    CHECK_THROWS_AS(
+        static_cast<void>(invoke_table.Resolve(destroy, 0x2222)),
+        ogplay::runtime::JniInvokeUnimplementedCall);
+
+    const auto hits = ledger.Unimplemented();
+    REQUIRE(hits.size() == 2);
+    CHECK(hits[0].count == 1);
+    CHECK(hits[1].count == 1);
+}

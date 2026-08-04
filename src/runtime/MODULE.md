@@ -91,6 +91,8 @@
   可赋值判断及遵循继承/静态/构造器规则的成员查找。
 - `JniInvocationEngine`：把 `...`/`V`/`A` 参数源归一化为类型化值，按描述符校验参数
   与返回值，并分别执行虚调用、指定类非虚调用和静态调用。
+- `JniCommonSlotDirectory`：把已有环境、类、调用、字符串、primitive array、native 注册
+  与 JavaVM 行为映射到稳定 thunk 并封口函数表；未覆盖槽继续记账并 trap。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
@@ -127,6 +129,8 @@
 - 类必须按父类优先注册；成员键由名称和严格描述符组成，构造器不得从父类继承。
 - 三种调用变体必须进入同一参数校验路径；虚调用按 receiver class 选 override，
   非虚调用固定 method ID 声明实现，静态/实例类别不得混用。
+- 只有存在真实下游行为的槽才允许进入 thunk 目录；Install 后两张表同时封口，
+  任何未绑定 JNI/JavaVM 槽必须保留原有可观测失败路径。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 
 ## 禁止

@@ -24,6 +24,8 @@
   TLS slot 契约建立线程独立 guest block，初始化 self/thread/preinit 并提供 TPIDRURO 基址。
 - `BuildGuestInitializationPlan` / `BuildGuestFinalizationPlan` / `ExecuteGuestLifecycle`：
   把统一链接器的模块顺序展开为加 load bias 的 DT_INIT/array/DT_FINI guest 调用并执行。
+- `GuestThreadLifecycle`：线程安全保存 running/exit-requested/exited、thread pointer、
+  clear-child-tid 与退出码，提供单线程/进程组退出和显式 reap 状态机。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供
   隔离文件描述符的 open/read/write/seek/close；路径逃逸和权限错误携带 Linux errno。
 - `BindAndroidFileSyscalls`：将 `open/openat/read/write/lseek/close` 绑定到 VFS；路径和
@@ -39,6 +41,8 @@
   除可选启动 preinit 外均零初始化。
 - lifecycle 在调用前完整校验；init array 正序、fini array 逆序，0/-1 哨兵跳过且地址
   回绕明确失败。
+- guest 线程状态只能按 running → exit-requested → exited → reap 前进；ID 在 reap 前
+  不得复用。
 - JNIEnv 全表完成前，缺槽位必须 trap，不得静默返回零。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 

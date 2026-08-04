@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ogplay/memory/address.h"
+#include "ogplay/cpu/futex.h"
 
 namespace ogplay::runtime {
 
@@ -23,6 +24,19 @@ struct GuestThreadRuntimeState final {
     GuestThreadStatus status{GuestThreadStatus::running};
 
     bool operator==(const GuestThreadRuntimeState&) const = default;
+};
+
+enum class GuestThreadCleanupStatus : std::uint8_t {
+    not_requested,
+    cleared,
+    invalid_address,
+    memory_fault,
+};
+
+struct GuestThreadExitCompletion final {
+    GuestThreadRuntimeState state;
+    GuestThreadCleanupStatus cleanup{GuestThreadCleanupStatus::not_requested};
+    std::size_t futex_wake_count{};
 };
 
 class GuestThreadLifecycleError final : public std::runtime_error {
@@ -51,6 +65,9 @@ public:
                           std::int32_t exit_code);
     [[nodiscard]] GuestThreadRuntimeState CompleteExit(
         std::uint64_t thread_id);
+    [[nodiscard]] GuestThreadExitCompletion CompleteExit(
+        std::uint64_t thread_id, memory::MemoryBus& memory_bus,
+        cpu::FutexTable& futex_table);
     [[nodiscard]] GuestThreadRuntimeState Reap(std::uint64_t thread_id);
     [[nodiscard]] GuestThreadRuntimeState State(std::uint64_t thread_id) const;
     [[nodiscard]] std::vector<GuestThreadRuntimeState> States() const;

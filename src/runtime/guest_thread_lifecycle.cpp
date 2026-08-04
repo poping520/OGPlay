@@ -4,6 +4,8 @@
 #include <mutex>
 #include <utility>
 
+#include "ogplay/memory/address_space.h"
+
 namespace ogplay::runtime {
 
 class GuestThreadLifecycle::Impl final {
@@ -112,6 +114,25 @@ GuestThreadRuntimeState GuestThreadLifecycle::CompleteExit(
     }
     state.status = GuestThreadStatus::exited;
     return state;
+}
+
+GuestThreadExitCompletion GuestThreadLifecycle::CompleteExit(
+    const std::uint64_t thread_id, memory::MemoryBus& memory_bus,
+    cpu::FutexTable& futex_table) {
+    const auto state = CompleteExit(thread_id);
+    if (state.clear_child_tid.Value() == 0) {
+        return {state, GuestThreadCleanupStatus::not_requested, 0};
+    }
+    if (!state.clear_child_tid.IsAligned(4)) {
+        return {state, GuestThreadCleanupStatus::invalid_address, 0};
+    }
+    try {
+        memory_bus.Write32(state.clear_child_tid, 0, state.thread_id);
+        const auto woken = futex_table.Wake(state.clear_child_tid, 1);
+        return {state, GuestThreadCleanupStatus::cleared, woken};
+    } catch (const memory::MemoryFault&) {
+        return {state, GuestThreadCleanupStatus::memory_fault, 0};
+    }
 }
 
 GuestThreadRuntimeState GuestThreadLifecycle::Reap(

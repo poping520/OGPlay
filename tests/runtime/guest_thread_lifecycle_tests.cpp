@@ -1,7 +1,11 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <atomic>
+#include <thread>
 
+#include "ogplay/memory/address_space.h"
+#include "ogplay/memory/bus.h"
 #include "ogplay/runtime/guest_thread_lifecycle.h"
 
 TEST_CASE("guest thread lifecycle advances explicit per-thread states") {
@@ -57,4 +61,57 @@ TEST_CASE("guest thread lifecycle rejects invalid transitions") {
                     ogplay::runtime::GuestThreadLifecycleError);
     CHECK_THROWS_AS(lifecycle.RequestExit(99, 0),
                     ogplay::runtime::GuestThreadLifecycleError);
+}
+
+TEST_CASE("guest exit clears child tid and wakes one futex waiter") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress address{0x10000U};
+    memory.Map({address, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write32(address, 52);
+    ogplay::cpu::FutexTable futex;
+    std::atomic_bool awoken{false};
+    std::thread waiter([&] {
+        awoken = futex.Wait(bus, address, 52, 99) ==
+                 ogplay::cpu::FutexWaitResult::awoken;
+    });
+    while (futex.WaiterCount(address) == 0) std::this_thread::yield();
+
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(52);
+    lifecycle.SetClearChildTid(52, address);
+    lifecycle.RequestExit(52, 7);
+    const auto completed = lifecycle.CompleteExit(52, bus, futex);
+    waiter.join();
+    CHECK(completed.cleanup ==
+          ogplay::runtime::GuestThreadCleanupStatus::cleared);
+    CHECK(completed.futex_wake_count == 1);
+    CHECK(bus.Read32(address) == 0);
+    CHECK(awoken.load());
+    CHECK(completed.state.status ==
+          ogplay::runtime::GuestThreadStatus::exited);
+}
+
+TEST_CASE("guest exit reports cleanup faults without reverting exit state") {
+    ogplay::memory::AddressSpace memory;
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    ogplay::cpu::FutexTable futex;
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(61);
+    lifecycle.SetClearChildTid(61,
+                               ogplay::memory::GuestAddress{0x20000U});
+    lifecycle.RequestExit(61, 0);
+    CHECK(lifecycle.CompleteExit(61, bus, futex).cleanup ==
+          ogplay::runtime::GuestThreadCleanupStatus::memory_fault);
+    CHECK(lifecycle.State(61).status ==
+          ogplay::runtime::GuestThreadStatus::exited);
+
+    lifecycle.Register(62);
+    lifecycle.SetClearChildTid(62,
+                               ogplay::memory::GuestAddress{0x20001U});
+    lifecycle.RequestExit(62, 0);
+    CHECK(lifecycle.CompleteExit(62, bus, futex).cleanup ==
+          ogplay::runtime::GuestThreadCleanupStatus::invalid_address);
 }

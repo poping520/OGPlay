@@ -188,4 +188,9 @@ note = "M4 完成不泄漏原生类型的可注入生命周期、精确 EGL 错�
 [gles.idl_codegen]
 status = "partial"
 test = "tools/generate_gles_api.py --self-test"
-note = "M4 建立严格 JSON schema、指针搬运元数据校验和确定性 C++ 目录生成；首批 GLES2 形状已覆盖，完整 1.1/2.0 目录仍在推进"
+note = "M4 建立严格 JSON schema、指针搬运元数据校验和确定性 C++ 目录生成；GLES2 core 142 个入口已与固定 ANGLE gl2.h 完整核对，GLES1.1 仍待补齐"
+
+[gles.gles2_catalog]
+status = "complete"
+test = "tools/generate_gles_api.py --idl data/gles/gles2.json --output <generated> --check --verify-header third_party/angle-prebuilt/windows-x64/release/include/GLES2/gl2.h"
+note = "M4 GLES2 core 142 个入口和 397 个参数全部进入有序 IDL；输入输出、可空、长度表达式及一/二级指针形状显式可查"

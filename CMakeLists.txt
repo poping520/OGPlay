@@ -389,6 +389,8 @@ if(OGPLAY_BUILD_TESTS)
             --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2.json
             --output ${OGPLAY_GLES2_CATALOG}
             --check
+            --verify-header
+                ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/windows-x64/release/include/GLES2/gl2.h
     )
     set_tests_properties(tools.gles2_catalog_current PROPERTIES LABELS tools)
 

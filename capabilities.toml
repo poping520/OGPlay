@@ -176,6 +176,11 @@ test = "third_party/angle-prebuilt/tools/package_angle_sdk.py verify --sdk third
 note = "M4 固定了兼容工具链的 ANGLE commit；源码构建与 SDK 打包工具由独立仓库拥有，Windows x64 Release SDK 通过浅 submodule 交付，CMake 校验全部声明文件后导入 EGL/GLESv2；Linux/macOS 产物留到 M4 出口统一验证"
 
 [gles.angle]
-status = "unimplemented"
-test = ""
-note = "M4；WU-0150..0151 完成选择与依赖边界，尚未创建 EGL 上下文或执行 GLES 调用"
+status = "partial"
+test = "tests/gles/egl_lifecycle_tests.cpp"
+note = "M4 已在 Windows/MSVC 真实 ANGLE D3D11 上完成 display/config/GLES2 context/pbuffer 生命周期与失败回滚；窗口 surface、present、guest 边界及 Linux/macOS 仍待实现"
+
+[gles.egl_lifecycle]
+status = "partial"
+test = "tests/gles/egl_lifecycle_tests.cpp"
+note = "M4 完成不泄漏原生类型的可注入生命周期、精确 EGL 错误和逆序回滚，并验证 Windows D3D11 pbuffer；窗口 surface 与三平台出口后转 complete"

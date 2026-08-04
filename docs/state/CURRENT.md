@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-04 · M4 ANGLE 生产工具剥离完成
+更新：2026-08-04 · M4 EGL pbuffer 生命周期完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0158` 已把 ANGLE 构建驱动、SDK 打包器、维护说明和自测 CI 迁入独立生产仓库；
-  OGPlay 只保留预编译 SDK 消费边界，下一个任务编号为 `WU-0159`。
+- `WU-0159` 已在预编译 ANGLE 上建立 display/config/GLES2 context/pbuffer surface 生命周期，
+  具备精确错误与失败回滚；下一个任务编号为 `WU-0160`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -51,11 +51,14 @@
   未跟踪的本地二进制仓库工作区，构建脚本继续固定并校验源码 commit。
 - [WU-0158] ANGLE 源码构建、SDK 打包和发布自测归入 `angle-prebuilt-repo`；OGPlay 删除
   生产脚本，仅从固定 submodule commit 验证并消费 SDK。
+- [WU-0159] EGL 生命周期通过可注入 API 覆盖全阶段错误和逆序回滚；Windows/MSVC 真实
+  ANGLE D3D11 已完成 EGL 1.x、GLES2 context 与 pbuffer 的创建、make-current 和销毁，
+  启用 ANGLE 的全量 CTest 243/243 通过。
 
 ## 下一步（按优先级）
 
-1. `WU-0159` 实现 EGL display/config/context/surface 生命周期与明确错误路径。
-2. 随后接入由 IDL 生成的 GLES 边界和 guest 内存搬运。
+1. `WU-0160` 定义 GLES 1.1/2.0 边界 IDL schema、校验器与首批生成物。
+2. 随后接入 guest 内存搬运，并在现有 EGL 内核上增加窗口 surface 与 present。
 
 ## 阻塞
 

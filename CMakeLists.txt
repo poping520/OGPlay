@@ -121,6 +121,7 @@ ogplay_set_project_warnings(ogplay_loader)
 
 add_library(ogplay_gles
     src/gles/angle_backend.cpp
+    src/gles/egl_lifecycle.cpp
 )
 add_library(OGPlay::Gles ALIAS ogplay_gles)
 target_include_directories(ogplay_gles PUBLIC
@@ -222,6 +223,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/agent/control_service_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
+        tests/gles/egl_lifecycle_tests.cpp
         tests/hal/clock_tests.cpp
         tests/hal/service_contract_tests.cpp
         tests/hal/thread_tests.cpp
@@ -310,6 +312,13 @@ if(OGPLAY_BUILD_TESTS)
         target_compile_definitions(ogplay_tests PRIVATE DOCTEST_CONFIG_NO_POSIX_SIGNALS)
     endif()
     ogplay_set_project_warnings(ogplay_tests)
+
+    if(OGPLAY_ENABLE_ANGLE AND WIN32)
+        add_custom_command(TARGET ogplay_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${_angle_sdk}/bin" $<TARGET_FILE_DIR:ogplay_tests>
+        )
+    endif()
 
     include(${OGPLAY_DOCTEST_CMAKE_MODULE})
     doctest_discover_tests(ogplay_tests

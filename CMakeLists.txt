@@ -119,6 +119,7 @@ add_library(ogplay_runtime
     src/runtime/headless_bionic_runner.cpp
     src/runtime/jni.cpp
     src/runtime/jni_exception.cpp
+    src/runtime/jni_environment.cpp
     src/runtime/jni_signature.cpp
     src/runtime/jni_utf.cpp
     src/runtime/guest_thread_lifecycle.cpp
@@ -201,6 +202,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/headless_bionic_runner_tests.cpp
         tests/runtime/jni_tests.cpp
         tests/runtime/jni_exception_tests.cpp
+        tests/runtime/jni_environment_tests.cpp
         tests/runtime/jni_signature_tests.cpp
         tests/runtime/jni_utf_tests.cpp
         tests/runtime/guest_thread_lifecycle_tests.cpp

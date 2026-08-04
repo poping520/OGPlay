@@ -23,6 +23,16 @@ foreach(required IN ITEMS
     endif()
 endforeach()
 
+foreach(runtime_submodule IN ITEMS
+        jni framework bionic syscall execution vfs integration)
+    set(module_contract
+        "${ROOT}/src/runtime/${runtime_submodule}/MODULE.md")
+    if(NOT EXISTS "${module_contract}")
+        message(FATAL_ERROR
+            "runtime submodule ${runtime_submodule} is missing MODULE.md")
+    endif()
+endforeach()
+
 file(GLOB root_work_units "${ROOT}/docs/tasks/WU-*.md")
 if(root_work_units)
     message(FATAL_ERROR "Work Units must live below docs/tasks/m<number>")

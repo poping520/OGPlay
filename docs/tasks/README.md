@@ -8,7 +8,7 @@ Work Unit 按所属里程碑存放，创建后不因完成状态移动。文件�
 | M0 | WU-0001..0014 | 完成 | [`m0/`](m0/) | [`M0-ACCEPTANCE.md`](../state/M0-ACCEPTANCE.md) |
 | M1 | WU-0015..0040 | 完成 | [`m1/`](m1/) | [`M1-ACCEPTANCE.md`](../state/M1-ACCEPTANCE.md) |
 | M2 | WU-0041..0103 | 完成 | [`m2/`](m2/) | [`M2-ACCEPTANCE.md`](../state/M2-ACCEPTANCE.md) |
-| M3 | WU-0104..0143 | 开发完成，待出口 | [`m3/`](m3/) | [`M3-ACCEPTANCE.md`](../state/M3-ACCEPTANCE.md) |
+| M3 | WU-0104 起 | 开发完成，出口前结构整理中 | [`m3/`](m3/) | [`M3-ACCEPTANCE.md`](../state/M3-ACCEPTANCE.md) |
 
 ## 规则
 

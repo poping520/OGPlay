@@ -46,6 +46,8 @@ public:
     void SetFpexc(std::uint32_t value) noexcept;
     [[nodiscard]] std::uint64_t ThreadId() const noexcept;
     void SetThreadId(std::uint64_t value) noexcept;
+    [[nodiscard]] memory::GuestAddress ThreadPointer() const noexcept;
+    void SetThreadPointer(memory::GuestAddress value) noexcept;
     [[nodiscard]] ExecutionState State() const noexcept;
     void SetState(ExecutionState state) noexcept;
 
@@ -58,9 +60,10 @@ private:
     std::uint32_t fpscr_{};
     std::uint32_t fpexc_{};
     std::uint64_t thread_id_{};
+    memory::GuestAddress thread_pointer_{};
 };
 
-inline constexpr std::uint32_t kCpuSnapshotVersion = 1;
+inline constexpr std::uint32_t kCpuSnapshotVersion = 2;
 
 struct CpuSnapshot final {
     std::uint32_t version{kCpuSnapshotVersion};

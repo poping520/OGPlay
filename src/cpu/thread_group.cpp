@@ -41,7 +41,13 @@ public:
             start.cpu_state.ThreadId() != start.thread_id) {
             throw std::invalid_argument("CPU state thread id does not match start record");
         }
+        if (start.cpu_state.ThreadPointer().Value() != 0 &&
+            start.cpu_state.ThreadPointer() != start.tls_base) {
+            throw std::invalid_argument(
+                "CPU state thread pointer does not match TLS base");
+        }
         start.cpu_state.SetThreadId(start.thread_id);
+        start.cpu_state.SetThreadPointer(start.tls_base);
         auto record = std::make_shared<Record>();
         record->start = std::move(start);
 

@@ -24,10 +24,28 @@ TEST_CASE("Android ARM syscall baseline exposes identity and coverage") {
     frame.thread_id = 77;
     CHECK(dispatcher.Dispatch(frame) == 77);
     const auto coverage = dispatcher.Coverage();
-    CHECK(coverage.declared >= 75);
+    CHECK(coverage.declared >= 120);
     CHECK(coverage.implemented == 6);
     CHECK(coverage.declared_by_group.at(
               ogplay::runtime::SyscallGroup::file) > 20);
+}
+
+TEST_CASE("extended Android ARM syscall directory remains explicitly observable") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 220;
+    frame.link_register = 0x2200U;
+    CHECK(dispatcher.Dispatch(frame) == -ogplay::runtime::kLinuxEnosys);
+    const auto hits = ledger.Unimplemented();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].id == "syscall.madvise");
+    CHECK(hits[0].first_lr == 0x2200U);
+    const auto coverage = dispatcher.Coverage();
+    CHECK(coverage.declared >= 120);
+    CHECK(coverage.declared_by_group.at(
+              ogplay::runtime::SyscallGroup::signal) >= 8);
 }
 
 TEST_CASE("declared and unknown syscalls return ENOSYS and are observable") {

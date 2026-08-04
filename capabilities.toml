@@ -128,7 +128,7 @@ note = "M2 已完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、动态
 [runtime.syscall]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "M2 已覆盖身份/时间/内存/futex/VFS/set_tls/线程退出与 ARM pthread clone；child 从完整 A32 状态派生并在真实宿主线程进入统一 SVC/exit 循环，扩展调用继续补齐"
+note = "M2 建立 120 项 Android ARM 分组目录，未实现项全部 ENOSYS+记账；已覆盖身份/时间/内存/futex/VFS/set_tls/线程退出与真实宿主线程 pthread clone"
 
 [runtime.bionic]
 status = "partial"

@@ -3,7 +3,8 @@
 ## 开始工作前
 
 1. 使用 UTF-8 读取代码和文本。
-2. 阅读 `docs/state/CURRENT.md`、相关任务单、相关模块的 `MODULE.md` 以及相邻模块契约。
+2. 阅读 `docs/state/CURRENT.md`、`docs/tasks/<里程碑>/` 下的相关任务单、相关模块的
+   `MODULE.md` 以及相邻模块契约；已完成阶段只在需要追溯时读取验收文档。
 3. 在 `capabilities.toml` 中确认能力现状，不凭猜测补实现。
 
 ## 范围边界
@@ -30,4 +31,5 @@ OGPlay 是安卓老游戏兼容层，不是 Android 模拟器。只实现游戏�
 - 修改模块时同步更新 `MODULE.md`；架构决定写入只追加的 ADR。
 - 提交前运行 `cmake --preset dev`、`cmake --build --preset dev`、`ctest --preset dev`；
   Windows Visual Studio 2026 环境使用对应的 `windows-msvc` 预设。
-- 结束工作前更新 `docs/state/CURRENT.md` 和 `capabilities.toml`，状态只能前进不能后退。
+- 结束工作前把 `docs/state/CURRENT.md` 更新为滚动快照，并核对 `capabilities.toml`；
+  能力有变化时同步更新，状态只能前进不能后退。

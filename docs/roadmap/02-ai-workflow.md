@@ -63,9 +63,9 @@ docs/
   adr/          架构决策记录（只追加，不修改）
   modules/      各模块契约的汇总索引
   playbook/     排查经验（按症状索引，持续追加）
-  state/        当前进度与交接（每个会话更新）
-  tasks/        任务单
-  INDEX.md      自动生成的全局索引，供 AI 按关键词检索
+  state/        滚动交接、已知问题与里程碑验收
+  tasks/        按里程碑分区的任务单
+  INDEX.md      全局入口索引，供 AI 按关键词检索
 ```
 
 ---
@@ -107,14 +107,17 @@ docs/
 
 ## 4. 会话交接协议
 
-`docs/state/CURRENT.md` 是**每个会话的起点和终点**。
+`docs/state/CURRENT.md` 是**每个会话的起点和终点**，但它是滚动快照而不是历史日志。
+只保留当前阶段、正在进行、最近完成、下一步和阻塞，UTF-8 文件不得超过 6 KiB。
+完整历史由 `docs/state/M*-ACCEPTANCE.md`、`docs/tasks/m*/` 和 Git 保存；长期限制进入
+`docs/state/KNOWN-ISSUES.md`。
 
 ```markdown
 # 当前状态
 
-更新：2026-08-02 · 会话 #147
+更新：2026-08-02 · M3 JNI
 
-## 进行中
+## 当前阶段
 - [WU-0231] JNI 反射调用族（GetMethodID/CallXxxMethod）
   - 已完成：GetMethodID、CallVoidMethodV
   - 未完成：CallXxxMethodA 变体、异常传播
@@ -127,8 +130,8 @@ docs/
 1. WU-0232 JNI 异常传播
 2. WU-0233 局部/全局引用表
 
-## 已知问题
-- Asphalt 6 在窗口模式下第 2 次 resume 会丢一帧（未定位，非阻塞）
+## 阻塞
+- 无；长期限制见 KNOWN-ISSUES.md
 ```
 
 用 Cursor Hook 在会话结束时强制检查该文件是否被更新。
@@ -150,7 +153,8 @@ docs/
 - 独立提交，可单独回滚
 - 依赖显式声明
 
-`docs/tasks/WU-0231.md`：
+任务从创建起放入所属里程碑目录且完成后不移动；编号全局递增。目录与范围由
+`docs/tasks/README.md` 索引。例如 `docs/tasks/m3/WU-0231.md`：
 
 ```markdown
 # WU-0231 · JNI 反射调用族

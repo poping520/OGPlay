@@ -21,6 +21,7 @@ set_property(CACHE OGPLAY_ANGLE_SDK_CONFIGURATION PROPERTY STRINGS release debug
 include(GNUInstallDirs)
 include(cmake/CompilerWarnings.cmake)
 include(cmake/ThirdParty.cmake)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 add_library(ogplay_core
     src/core/capability_ledger.cpp
@@ -123,10 +124,27 @@ add_library(ogplay_gles
     src/gles/angle_backend.cpp
     src/gles/egl_lifecycle.cpp
 )
+set(OGPLAY_GLES_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(OGPLAY_GLES2_CATALOG
+    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles2_catalog.h")
+add_custom_command(
+    OUTPUT "${OGPLAY_GLES2_CATALOG}"
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
+        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2.json"
+        --output "${OGPLAY_GLES2_CATALOG}"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2.json"
+    VERBATIM
+)
+add_custom_target(ogplay_gles_codegen DEPENDS "${OGPLAY_GLES2_CATALOG}")
+add_dependencies(ogplay_gles ogplay_gles_codegen)
 add_library(OGPlay::Gles ALIAS ogplay_gles)
 target_include_directories(ogplay_gles PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE "${OGPLAY_GLES_GENERATED_DIR}"
 )
 ogplay_set_project_warnings(ogplay_gles)
 if(OGPLAY_ENABLE_ANGLE)
@@ -214,7 +232,6 @@ install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(OGPLAY_BUILD_TESTS)
     include(CTest)
     include(cmake/TestDependencies.cmake)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
     set(OGPLAY_TEST_SOURCES
         tests/test_main.cpp
@@ -356,6 +373,24 @@ if(OGPLAY_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckDocumentationLayout.cmake
     )
     set_tests_properties(architecture.documentation_layout PROPERTIES LABELS architecture)
+
+    add_test(
+        NAME tools.gles_idl_generator_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
+            --self-test
+    )
+    set_tests_properties(tools.gles_idl_generator_self_test PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.gles2_catalog_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
+            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2.json
+            --output ${OGPLAY_GLES2_CATALOG}
+            --check
+    )
+    set_tests_properties(tools.gles2_catalog_current PROPERTIES LABELS tools)
 
     add_test(
         NAME tools.remote_incremental_self_test

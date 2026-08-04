@@ -93,6 +93,7 @@ endif()
 ogplay_set_project_warnings(ogplay_cpu)
 
 add_library(ogplay_loader
+    src/loader/dex.cpp
     src/loader/dynamic_linker.cpp
     src/loader/elf.cpp
     src/loader/lifecycle.cpp
@@ -230,6 +231,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/guest_thread_runner_tests.cpp
         tests/runtime/vfs_tests.cpp
         tests/loader/elf_tests.cpp
+        tests/loader/dex_tests.cpp
         tests/loader/dynamic_linker_tests.cpp
         tests/loader/lifecycle_tests.cpp
         tests/loader/link_namespace_tests.cpp

@@ -20,6 +20,8 @@
   pointer setter；未知线程与 setter 失败返回明确 errno。
 - `BindAndroidThreadLifecycleSyscalls`：将 `set_tid_address/exit/exit_group` 绑定统一
   guest 线程状态机；exit 只发出停止请求，由执行循环完成宿主线程退出。
+- `BindAndroidCloneSyscall`：只接受 pthread 所需的共享地址空间 ARM `clone` 形态，按
+  flags 条件解码 parent/child TID 与 TLS 指针，并交给显式 spawner 提交线程创建。
 - `SelectBionicProfile` / `RouteBionicSymbol`：只接受 API 19/22/23，固定真实 guest Bionic
   库、宿主 HLE 边界库及少而明确的 str/mem/pthread 拦截表。
 - `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -19,6 +20,16 @@
 namespace ogplay::runtime {
 
 inline constexpr std::int32_t kLinuxEnosys = 38;
+inline constexpr std::uint32_t kLinuxCloneVm = 0x00000100U;
+inline constexpr std::uint32_t kLinuxCloneFs = 0x00000200U;
+inline constexpr std::uint32_t kLinuxCloneFiles = 0x00000400U;
+inline constexpr std::uint32_t kLinuxCloneSighand = 0x00000800U;
+inline constexpr std::uint32_t kLinuxCloneThread = 0x00010000U;
+inline constexpr std::uint32_t kLinuxCloneSysvsem = 0x00040000U;
+inline constexpr std::uint32_t kLinuxCloneSettls = 0x00080000U;
+inline constexpr std::uint32_t kLinuxCloneParentSettid = 0x00100000U;
+inline constexpr std::uint32_t kLinuxCloneChildCleartid = 0x00200000U;
+inline constexpr std::uint32_t kLinuxCloneChildSettid = 0x01000000U;
 
 enum class SyscallGroup : std::uint8_t {
     memory,
@@ -55,6 +66,18 @@ struct AndroidProcessIdentity final {
 
 using GuestThreadPointerSetter =
     std::function<bool(std::uint64_t, memory::GuestAddress)>;
+
+struct GuestThreadCloneRequest final {
+    std::uint64_t parent_thread_id{};
+    std::uint32_t flags{};
+    memory::GuestAddress child_stack;
+    std::optional<memory::GuestAddress> parent_tid;
+    std::optional<memory::GuestAddress> thread_pointer;
+    std::optional<memory::GuestAddress> child_tid;
+};
+
+using GuestThreadCloneSpawner =
+    std::function<std::int32_t(const GuestThreadCloneRequest&)>;
 
 class SyscallError final : public std::runtime_error {
 public:
@@ -100,6 +123,8 @@ void BindAndroidArmPrivateSyscalls(
 void BindAndroidThreadLifecycleSyscalls(
     A32SyscallDispatcher& dispatcher,
     GuestThreadLifecycle& thread_lifecycle);
+void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher,
+                             GuestThreadCloneSpawner spawner);
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                              VirtualFileSystem& vfs,
                              memory::AddressSpace& address_space);

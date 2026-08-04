@@ -41,6 +41,7 @@ constexpr std::array kAndroidArmBaseline{
     Declaration{94, "fchmod", SyscallGroup::file},
     Declaration{95, "fchown", SyscallGroup::file},
     Declaration{108, "fstat", SyscallGroup::file},
+    Declaration{120, "clone", SyscallGroup::thread},
     Declaration{122, "uname", SyscallGroup::process},
     Declaration{125, "mprotect", SyscallGroup::memory},
     Declaration{132, "getpgid", SyscallGroup::process},

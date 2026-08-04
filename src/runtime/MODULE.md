@@ -84,7 +84,8 @@
   不得复用。
 - clear-child-tid 清理失败不得回退 exited 状态；坏地址和未对齐地址通过 completion
   状态显式报告，成功时最多唤醒一个 waiter。
-- JNIEnv 全表完成前，缺槽位必须 trap，不得静默返回零。
+- JNIEnv 保持完整 233 槽 ABI；M3 按常用度分批实现，任何未实现槽都必须记账并 trap，
+  不得静默返回零或从表中删除。
 - JNI 表只能在 guest 启动前绑定并封口；四个保留槽始终为空且不可调用。
 - JNI reference、method ID 与 field ID 必须保持不同强类型，公共 API 不暴露宿主指针。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。

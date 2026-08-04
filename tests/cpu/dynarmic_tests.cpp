@@ -129,3 +129,28 @@ TEST_CASE("Dynarmic exposes deterministic budget and halt stops") {
     CHECK(halt.reason == ogplay::cpu::RunStopReason::halt_requested);
     CHECK(halt.ticks_consumed == 0);
 }
+
+TEST_CASE("Dynarmic exposes the guest thread pointer through TPIDRURO") {
+    const std::array<std::uint32_t, 2> program{0xee1d2f70, 0xef000001};
+    const ogplay::memory::GuestAddress code{sample::kCodeAddress};
+    ogplay::memory::AddressSpace memory;
+    memory.Map({code, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write32(code, program[0]);
+    bus.Write32(code.Add(4), program[1]);
+    memory.Protect({code, memory.PageSize()},
+                   ogplay::memory::PageProtection::read |
+                       ogplay::memory::PageProtection::execute);
+    ogplay::cpu::DynarmicCpu cpu(bus);
+    ogplay::cpu::A32State state;
+    state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
+    state.SetThreadPointer(ogplay::memory::GuestAddress{0x56789000U});
+    cpu.SetState(state);
+    CHECK(cpu.Run(4).reason == ogplay::cpu::RunStopReason::supervisor_call);
+    const auto result = cpu.GetState();
+    CHECK(result.Register(ogplay::cpu::CoreRegister::r2) == 0x56789000U);
+    CHECK(result.ThreadPointer() ==
+          ogplay::memory::GuestAddress{0x56789000U});
+}

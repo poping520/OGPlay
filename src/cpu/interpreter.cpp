@@ -142,7 +142,15 @@ RunResult InterpreterCpu::Run(const std::uint64_t tick_budget) {
                     const auto second = memory_bus_.Fetch16(
                         memory::GuestAddress{pc_value + 2U}, state_.ThreadId());
                     instruction |= static_cast<std::uint32_t>(second) << 16U;
-                    stop = Undefined(pc, instruction);
+                    if (first == 0xee1dU && (second & 0x0fffU) == 0x0f70U &&
+                        (second >> 12U) != 0x0fU) {
+                        state_.SetRegister(
+                            static_cast<CoreRegister>(second >> 12U),
+                            state_.ThreadPointer().Value());
+                        state_.SetRegister(CoreRegister::pc, pc_value + 4U);
+                    } else {
+                        stop = Undefined(pc, instruction);
+                    }
                 } else {
                     stop = ExecuteThumb(pc, first);
                 }
@@ -198,6 +206,17 @@ std::optional<RunResult> InterpreterCpu::ExecuteA32(
         state_.SetRegister(CoreRegister::pc,
                            target_state == ExecutionState::a32 ? target & ~3U
                                                                : target & ~1U);
+        return std::nullopt;
+    }
+    if ((instruction & 0x0fff0fffU) == 0x0e1d0f70U) {
+        const auto destination =
+            static_cast<std::uint8_t>((instruction >> 12U) & 0xfU);
+        if (destination == static_cast<std::uint8_t>(CoreRegister::pc)) {
+            return Undefined(pc, instruction);
+        }
+        state_.SetRegister(static_cast<CoreRegister>(destination),
+                           state_.ThreadPointer().Value());
+        state_.SetRegister(CoreRegister::pc, next);
         return std::nullopt;
     }
     if ((instruction & 0x0e000000U) == 0x0a000000U) {

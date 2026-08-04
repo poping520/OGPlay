@@ -24,6 +24,14 @@ struct Elf32DynamicCloseResult final {
     std::vector<std::size_t> finalization_order;
 };
 
+struct Elf32DynamicAddressInfo final {
+    std::size_t module_index{};
+    std::string module_name;
+    memory::GuestAddress module_base;
+    std::string symbol_name;
+    memory::GuestAddress symbol_address;
+};
+
 class Elf32DynamicLinker final {
 public:
     explicit Elf32DynamicLinker(Elf32LinkNamespace link_namespace);
@@ -33,6 +41,8 @@ public:
         std::span<const Elf32LinkModule> new_modules = {});
     [[nodiscard]] Elf32SymbolLocation Symbol(
         Elf32DynamicHandle handle, std::string_view name) const;
+    [[nodiscard]] Elf32DynamicAddressInfo Address(
+        memory::GuestAddress address) const;
     [[nodiscard]] Elf32DynamicCloseResult Close(Elf32DynamicHandle handle);
 
     [[nodiscard]] const Elf32LinkNamespace& LinkNamespace() const noexcept;

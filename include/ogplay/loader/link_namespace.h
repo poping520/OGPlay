@@ -19,6 +19,7 @@ struct Elf32LinkModule final {
     Elf32DynamicInfo dynamic;
     Elf32SymbolTable symbols;
     std::optional<Elf32SymbolVersionTable> versions;
+    std::vector<memory::GuestRange> load_ranges;
 };
 
 struct Elf32LinkNamespace final {

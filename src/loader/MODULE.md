@@ -24,7 +24,8 @@
   为动态根构造独立依赖/查找作用域；有版本定义的 provider 按依赖库与版本名精确匹配，
   API 19/22 无版本定义 provider 按 Android 旧 linker 语义回退到名称匹配。
 - `Elf32DynamicLinker`：管理稳定 `dlopen` handle、重复打开引用、handle 内 `dlsym` 和
-  共享依赖引用，返回需执行的依赖优先初始化与根优先反初始化模块顺序。
+  共享依赖引用，返回需执行的依赖优先初始化与根优先反初始化模块顺序；`Address` 与
+  同一活跃命名空间实现 `dladdr` 的模块、load base 和最近 dynsym 反查。
 - `LoadElf32ModuleNamespace`：一次完成多模块事实解析、依赖排序、映射、版本化符号解析与
   ARM REL 应用；任一阶段失败都恢复调用前完整 guest 地址空间。
 - `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，

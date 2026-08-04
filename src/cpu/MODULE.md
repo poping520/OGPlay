@@ -15,6 +15,9 @@
   word/byte 单次 load/store 基础集。
 - `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调访存，不暴露
   宿主指针，并与解释器共享状态、tick、停止、fault 及 TPIDRURO 契约。
+- `DynarmicExecutionContext`：为同一 guest 进程的 JIT CPU 分配唯一 processor ID 并共享
+  exclusive monitor；普通写与 exclusive compare/write 也共享提交锁，使 LDREX/STREX
+  在真实宿主线程间保持原子语义。
 - `GuestThreadGroup`：每个 guest thread ID 启动一个宿主线程和独立 CPU 实例，将
   TLS 基址装入 CPU thread pointer，保存退出状态并提供真实 join 生命周期。
 - `FutexTable`：以 32 位对齐 guest 地址为键，提供比较等待与精确 WAKE N；M2 syscall

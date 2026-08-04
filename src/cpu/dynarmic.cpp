@@ -4,11 +4,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include <dynarmic/interface/A32/a32.h>
 #include <dynarmic/interface/A32/coprocessor.h>
+#include <dynarmic/interface/exclusive_monitor.h>
 
 namespace ogplay::cpu {
 namespace {
@@ -76,12 +80,55 @@ private:
 
 }  // namespace
 
+class DynarmicExecutionContext::Impl final {
+public:
+    explicit Impl(const std::size_t maximum_processors)
+        : monitor(maximum_processors), processors(maximum_processors) {
+        if (maximum_processors == 0) {
+            throw std::invalid_argument(
+                "Dynarmic execution context requires a processor");
+        }
+    }
+
+    Dynarmic::ExclusiveMonitor monitor;
+    std::mutex mutex;
+    std::mutex memory_mutex;
+    std::vector<bool> processors;
+};
+
+DynarmicExecutionContext::DynarmicExecutionContext(
+    const std::size_t maximum_processors)
+    : impl_(std::make_unique<Impl>(maximum_processors)) {}
+
+DynarmicExecutionContext::~DynarmicExecutionContext() = default;
+
+std::size_t DynarmicExecutionContext::AcquireProcessor() {
+    std::scoped_lock lock(impl_->mutex);
+    for (std::size_t index = 0; index < impl_->processors.size(); ++index) {
+        if (!impl_->processors[index]) {
+            impl_->processors[index] = true;
+            return index;
+        }
+    }
+    throw std::runtime_error("Dynarmic execution context is full");
+}
+
+void DynarmicExecutionContext::ReleaseProcessor(
+    const std::size_t processor_id) noexcept {
+    std::scoped_lock lock(impl_->mutex);
+    if (processor_id < impl_->processors.size()) {
+        impl_->processors[processor_id] = false;
+        impl_->monitor.ClearProcessor(processor_id);
+    }
+}
+
 class DynarmicCpu::Impl final {
 public:
     class Callbacks final : public Dynarmic::A32::UserCallbacks {
     public:
-        explicit Callbacks(memory::MemoryBus& memory_bus) noexcept
-            : memory_bus_(memory_bus) {}
+        Callbacks(memory::MemoryBus& memory_bus,
+                  std::mutex& memory_mutex) noexcept
+            : memory_bus_(memory_bus), memory_mutex_(memory_mutex) {}
 
         void Attach(Dynarmic::A32::Jit& jit) noexcept { jit_ = &jit; }
 
@@ -139,6 +186,35 @@ public:
         void MemoryWrite64(const Dynarmic::A32::VAddr address,
                            const std::uint64_t value) override {
             Write(address, value, &memory::MemoryBus::Write64);
+        }
+
+        bool MemoryWriteExclusive8(const Dynarmic::A32::VAddr address,
+                                   const std::uint8_t value,
+                                   const std::uint8_t expected) override {
+            return WriteExclusive(address, value, expected,
+                                  &memory::MemoryBus::Read8,
+                                  &memory::MemoryBus::Write8);
+        }
+        bool MemoryWriteExclusive16(const Dynarmic::A32::VAddr address,
+                                    const std::uint16_t value,
+                                    const std::uint16_t expected) override {
+            return WriteExclusive(address, value, expected,
+                                  &memory::MemoryBus::Read16,
+                                  &memory::MemoryBus::Write16);
+        }
+        bool MemoryWriteExclusive32(const Dynarmic::A32::VAddr address,
+                                    const std::uint32_t value,
+                                    const std::uint32_t expected) override {
+            return WriteExclusive(address, value, expected,
+                                  &memory::MemoryBus::Read32,
+                                  &memory::MemoryBus::Write32);
+        }
+        bool MemoryWriteExclusive64(const Dynarmic::A32::VAddr address,
+                                    const std::uint64_t value,
+                                    const std::uint64_t expected) override {
+            return WriteExclusive(address, value, expected,
+                                  &memory::MemoryBus::Read64,
+                                  &memory::MemoryBus::Write64);
         }
 
         void InterpreterFallback(const Dynarmic::A32::VAddr pc,
@@ -199,9 +275,29 @@ public:
         void Write(const Dynarmic::A32::VAddr address, const UInt value,
                    const WriteFunction<UInt> function) {
             try {
+                std::scoped_lock lock(memory_mutex_);
                 (memory_bus_.*function)(memory::GuestAddress{address}, value, thread_id_);
             } catch (const memory::MemoryFault& fault) {
                 RecordFault(fault);
+            }
+        }
+
+        template <typename UInt>
+        [[nodiscard]] bool WriteExclusive(
+            const Dynarmic::A32::VAddr address, const UInt value,
+            const UInt expected, const ReadFunction<UInt> read,
+            const WriteFunction<UInt> write) {
+            try {
+                std::scoped_lock lock(memory_mutex_);
+                const auto guest_address = memory::GuestAddress{address};
+                if ((memory_bus_.*read)(guest_address, thread_id_) != expected) {
+                    return false;
+                }
+                (memory_bus_.*write)(guest_address, value, thread_id_);
+                return true;
+            } catch (const memory::MemoryFault& fault) {
+                RecordFault(fault);
+                return false;
             }
         }
 
@@ -224,6 +320,7 @@ public:
         }
 
         memory::MemoryBus& memory_bus_;
+        std::mutex& memory_mutex_;
         Dynarmic::A32::Jit* jit_{};
         std::uint64_t thread_id_{};
         std::uint64_t ticks_remaining_{};
@@ -231,14 +328,23 @@ public:
         std::optional<PendingStop> pending_;
     };
 
-    explicit Impl(memory::MemoryBus& memory_bus)
-        : callbacks(memory_bus), jit(MakeConfig(callbacks, thread_pointer)) {
+    Impl(memory::MemoryBus& memory_bus,
+         std::shared_ptr<DynarmicExecutionContext> execution_context)
+        : context(std::move(execution_context)),
+          processor_id(context->AcquireProcessor()),
+          callbacks(memory_bus, context->impl_->memory_mutex),
+          jit(MakeConfig(callbacks, thread_pointer, *context, processor_id)) {
         callbacks.Attach(jit);
     }
 
+    ~Impl() { context->ReleaseProcessor(processor_id); }
+
     static Dynarmic::A32::UserConfig MakeConfig(
-        Callbacks& callbacks, std::uint32_t& thread_pointer) {
+        Callbacks& callbacks, std::uint32_t& thread_pointer,
+        DynarmicExecutionContext& context, const std::size_t processor_id) {
         Dynarmic::A32::UserConfig config{&callbacks};
+        config.processor_id = processor_id;
+        config.global_monitor = &context.impl_->monitor;
         config.arch_version = Dynarmic::A32::ArchVersion::v7;
         config.always_little_endian = true;
         config.check_halt_on_memory_access = true;
@@ -249,6 +355,8 @@ public:
         return config;
     }
 
+    std::shared_ptr<DynarmicExecutionContext> context;
+    std::size_t processor_id{};
     Callbacks callbacks;
     std::uint32_t thread_pointer{};
     Dynarmic::A32::Jit jit;
@@ -257,7 +365,18 @@ public:
 };
 
 DynarmicCpu::DynarmicCpu(memory::MemoryBus& memory_bus)
-    : impl_(std::make_unique<Impl>(memory_bus)) {}
+    : DynarmicCpu(memory_bus,
+                  std::make_shared<DynarmicExecutionContext>(1)) {}
+
+DynarmicCpu::DynarmicCpu(
+    memory::MemoryBus& memory_bus,
+    std::shared_ptr<DynarmicExecutionContext> context)
+    : impl_(nullptr) {
+    if (!context) {
+        throw std::invalid_argument("Dynarmic execution context is null");
+    }
+    impl_ = std::make_unique<Impl>(memory_bus, std::move(context));
+}
 
 DynarmicCpu::~DynarmicCpu() = default;
 

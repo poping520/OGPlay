@@ -75,6 +75,8 @@
   Throw/Occurred/Check/Clear 底座，并在 pending 时只放行检查、清理和资源 release 白名单。
 - `JniEnvironment`：原子装配线程的引用表与异常状态，闭合 GetVersion、local frame、
   Local/Global/WeakGlobal 引用和异常检查/清理等首批常用 JNIEnv 操作。
+- `JniJavaVm`：冻结 8 槽 JNIInvokeInterface，闭合 GetEnv、AttachCurrentThread、
+  AttachCurrentThreadAsDaemon 与 DetachCurrentThread 的稳定 env 和 daemon 语义。
 - `ParseJniFieldDescriptor/ParseJniMethodDescriptor`：解析 primitive、对象、255 维以内数组
   与 void 返回，输出参数槽数，拒绝非法类名、尾随内容和超过 255 参数槽的方法。
 - `EncodeJniModifiedUtf8/DecodeJniModifiedUtf8`：按 UTF-16 code unit 严格编解码 JNI
@@ -109,6 +111,8 @@
 - pending exception 不得被第二个 Throw 静默覆盖；普通 JNI 调用必须在执行前经过线程
   异常门禁，detach 后不得残留 pending 状态。
 - JniEnvironment 附着任一子状态失败时必须回滚，引用与异常线程状态不得分裂。
+- JavaVM 不支持的 JNI 版本必须返回 JNI_EVERSION，未附着线程返回 JNI_EDETACHED；
+  重复 attach 返回原 env，且不得改变首次附着的 daemon 属性。
 - GetFieldID/GetMethodID 与所有调用变体必须共用严格描述符解析结果，不得各自猜测参数布局。
 - NewStringUTF/GetStringUTF* 必须共用 Modified UTF-8 编解码器；不得把标准 UTF-8
   四字节序列或原始 NUL 当作 JNI Modified UTF-8 payload 接受。

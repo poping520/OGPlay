@@ -120,6 +120,7 @@ add_library(ogplay_runtime
     src/runtime/bionic_tls.cpp
     src/runtime/framework_asset.cpp
     src/runtime/framework_lifecycle.cpp
+    src/runtime/framework_preferences.cpp
     src/runtime/guest_lifecycle.cpp
     src/runtime/headless_bionic_runner.cpp
     src/runtime/headless_jni_contract.cpp
@@ -214,6 +215,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/bionic_tls_tests.cpp
         tests/runtime/framework_asset_tests.cpp
         tests/runtime/framework_lifecycle_tests.cpp
+        tests/runtime/framework_preferences_tests.cpp
         tests/runtime/guest_lifecycle_tests.cpp
         tests/runtime/headless_bionic_runner_tests.cpp
         tests/runtime/headless_jni_contract_tests.cpp

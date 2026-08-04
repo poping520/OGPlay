@@ -57,7 +57,8 @@
 - `RunHeadlessBionicEntry`：事务装载无界面 NDK 依赖闭包，建立 root TLS/stack、运行 guest
   init/普通 C 入口/fini，并把真实 pthread child、syscall 账本及 VFS 输出汇总为出口报告。
 - `RunHeadlessJniContract`：运行无图形累计契约样本，以注入的 guest native executor 闭合
-  HLE→native 与 native→Activity HLE，并核验 VM、字段、字符串、数组、引用和异常资源。
+  HLE→native 与 native→Activity HLE，并在同一环境核验 VM、字段、字符串、数组、引用、
+  异常以及 Asset、SharedPreferences、Locale、PackageInfo 的装配和资源闭环。
 - `MapArmKernelHelpers`：映射 Linux ARM 最后一页兼容 ABI，提供 memory barrier、32 位
   cmpxchg、TPIDRURO 与版本字；其他 helper 地址预填显式 trap，不执行零指令。
 - `VirtualFileSystem`：以规范化 Android 绝对路径建立 ASCII 大小写不敏感索引，提供

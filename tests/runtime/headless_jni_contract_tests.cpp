@@ -22,6 +22,10 @@ TEST_CASE("headless JNI contract closes both call directions") {
     CHECK(report.data_round_trip);
     CHECK(report.reference_closed);
     CHECK(report.exception_closed);
+    CHECK(report.asset_round_trip);
+    CHECK(report.preferences_round_trip);
+    CHECK(report.locale_round_trip);
+    CHECK(report.package_round_trip);
     CHECK(report.native_result == 42);
     CHECK(report.lifecycle_event_count == 7);
 }
@@ -34,9 +38,12 @@ TEST_CASE("headless JNI contract produces a deterministic cumulative trace") {
     const auto first = ogplay::runtime::RunHeadlessJniContract(execute);
     const auto second = ogplay::runtime::RunHeadlessJniContract(execute);
     const std::vector<std::string> expected{
-        "vm.attach",          "hle.construct", "hle.create",
-        "java.nativeStep",    "native.lifecycle.enter",
-        "jni.data",           "jni.reference", "jni.exception",
+        "vm.attach",             "hle.construct",
+        "hle.create",            "framework.asset",
+        "framework.preferences", "framework.locale",
+        "framework.package",     "java.nativeStep",
+        "native.lifecycle.enter", "jni.data",
+        "jni.reference",         "jni.exception",
         "native.lifecycle.exit", "vm.detach"};
     CHECK(first.trace == expected);
     CHECK(second.trace == expected);

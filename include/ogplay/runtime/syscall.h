@@ -52,6 +52,9 @@ struct AndroidProcessIdentity final {
     std::uint32_t group_id{10000};
 };
 
+using GuestThreadPointerSetter =
+    std::function<bool(std::uint64_t, memory::GuestAddress)>;
+
 class SyscallError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -90,6 +93,9 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                                cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus);
+void BindAndroidArmPrivateSyscalls(
+    A32SyscallDispatcher& dispatcher,
+    GuestThreadPointerSetter thread_pointer_setter);
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                              VirtualFileSystem& vfs,
                              memory::AddressSpace& address_space);

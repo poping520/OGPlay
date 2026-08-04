@@ -118,6 +118,9 @@
 - [WU-0067] 链接器模块顺序已展开为受检 guest 生命周期调用；DT_INIT、正序 init array、
   逆序 fini array、DT_FINI、load bias、Thumb 位和 0/-1 哨兵规则均已冻结。
 - Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
+- [WU-0068] `__ARM_NR_set_tls` 已绑定当前 guest 线程的强类型 pointer setter；跨线程、
+  零线程、setter 异常与空绑定均明确失败。
+- Windows/MSVC warnings-as-errors 增量构建与相关契约测试通过。
 
 ## 下一步（按优先级）
 

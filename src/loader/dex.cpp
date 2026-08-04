@@ -23,8 +23,9 @@ public:
 
     [[nodiscard]] std::uint16_t U16(const std::size_t offset) const {
         Require(offset, 2);
-        return static_cast<std::uint16_t>(bytes_[offset]) |
-               static_cast<std::uint16_t>(bytes_[offset + 1]) << 8U;
+        const auto value = static_cast<std::uint32_t>(bytes_[offset]) |
+                           static_cast<std::uint32_t>(bytes_[offset + 1]) << 8U;
+        return static_cast<std::uint16_t>(value);
     }
 
     [[nodiscard]] std::uint8_t U8(const std::size_t offset) const {
@@ -299,9 +300,10 @@ void ValidateMap(const DexImage& image) {
                 Fail(DexErrorReason::invalid_string, cursor - 1,
                      "DEX Modified UTF-8 continuation is invalid");
             }
-            const auto unit = static_cast<std::uint16_t>(
-                (static_cast<std::uint16_t>(first & 0x1fU) << 6U) |
-                (second & 0x3fU));
+            const auto unit_value =
+                ((static_cast<std::uint32_t>(first) & 0x1fU) << 6U) |
+                (static_cast<std::uint32_t>(second) & 0x3fU);
+            const auto unit = static_cast<std::uint16_t>(unit_value);
             if (unit != 0 && unit < 0x80U) {
                 Fail(DexErrorReason::invalid_string, cursor - 2,
                      "DEX Modified UTF-8 has an overlong sequence");
@@ -316,10 +318,11 @@ void ValidateMap(const DexImage& image) {
                 Fail(DexErrorReason::invalid_string, cursor - 2,
                      "DEX Modified UTF-8 continuation is invalid");
             }
-            const auto unit = static_cast<std::uint16_t>(
-                (static_cast<std::uint16_t>(first & 0x0fU) << 12U) |
-                (static_cast<std::uint16_t>(second & 0x3fU) << 6U) |
-                (third & 0x3fU));
+            const auto unit_value =
+                ((static_cast<std::uint32_t>(first) & 0x0fU) << 12U) |
+                ((static_cast<std::uint32_t>(second) & 0x3fU) << 6U) |
+                (static_cast<std::uint32_t>(third) & 0x3fU);
+            const auto unit = static_cast<std::uint16_t>(unit_value);
             if (unit < 0x800U) {
                 Fail(DexErrorReason::invalid_string, cursor - 3,
                      "DEX Modified UTF-8 has an overlong sequence");

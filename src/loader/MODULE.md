@@ -6,6 +6,8 @@
 
 ## 公共 API
 
+- `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
+  `map_list`，交叉验证 header/map 事实并保留未知 map type，不执行任何字节码。
 - `ParseElf32Arm(bytes)`：从不可信字节解析 little-endian ELF32/ARM ET_EXEC/ET_DYN，
   返回入口、ARM flags、程序头和未知 tag 不丢失的动态项事实模型。
 - `ReadElf32DynamicInfo(bytes, image)`：只在 file-backed `PT_LOAD` 范围内解析动态字符串表、
@@ -41,6 +43,8 @@
 ## 不变量
 
 - 输入不可信；所有偏移、长度和整数运算必须校验。
+- DEX header 固定为 0x70 字节且只接受 little-endian 035..040；固定表必须 4 字节对齐，
+  header 与唯一、有序、非重叠的 map 声明必须一致。
 - 小端字段先在足够宽的无符号类型中组合，最终结果只做一次显式收窄。
 - `PT_LOAD` 必须满足 file size ≤ memory size、guest 地址不回绕、文件范围有效且对齐同余。
 - `PT_DYNAMIC` 最多一个、文件范围完整、条目尺寸正确并由 `DT_NULL` 终止。

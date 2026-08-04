@@ -204,3 +204,8 @@ note = "M4 完成强类型 guest 指针的 input/output/inout 全区间权限预
 status = "partial"
 test = "tests/gles/gles_dispatch_tests.cpp"
 note = "M4 已把 142 个生成入口接入稳定 thunk ID、形状校验和显式 handler 分派；未绑定调用携带函数/线程事实失败并可累计查询，ANGLE 调用体尚待生成绑定"
+
+[gles.call_preparation]
+status = "complete"
+test = "tests/gles/gles_call_preparation_tests.cpp"
+note = "M4 完成受限长度表达式、类型/二级 guest 指针字节换算、有界字符串及 GuestBuffer 准备；状态相关长度和 deferred offset 必须由 resolver 显式提供"

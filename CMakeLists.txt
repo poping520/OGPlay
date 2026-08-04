@@ -123,6 +123,7 @@ ogplay_set_project_warnings(ogplay_loader)
 add_library(ogplay_gles
     src/gles/angle_backend.cpp
     src/gles/egl_lifecycle.cpp
+    src/gles/gles_call_preparation.cpp
     src/gles/gles_dispatch.cpp
     src/gles/guest_transfer.cpp
 )
@@ -244,6 +245,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
         tests/gles/egl_lifecycle_tests.cpp
+        tests/gles/gles_call_preparation_tests.cpp
         tests/gles/gles_dispatch_tests.cpp
         tests/gles/guest_transfer_tests.cpp
         tests/hal/clock_tests.cpp

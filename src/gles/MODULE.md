@@ -25,6 +25,8 @@
   上限的宿主暂存；输出只能显式 `Commit`，对象不可复制。
 - `GlesDispatchTable`：从生成目录提供 142 个稳定 GLES2 thunk ID、精确名称/形状查询和
   显式 handler 绑定；未绑定调用抛错并累计可查询线程命中。
+- `PrepareGles2Call`：按生成参数目录求值字面量、标量、常量乘法和有界 C 字符串，换算
+  元素字节并创建 `GuestBuffer`；复杂表达式经 `GlesLengthResolver` 显式注入。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。
 - `OGPLAY_ANGLE_SDK_ROOT` / `OGPLAY_ANGLE_SDK_CONFIGURATION`：指定平台化 SDK 根目录和
@@ -45,6 +47,10 @@
   indirection，宿主指针返回使用专门返回类型，禁止按 32 位标量误传。
 - thunk ID 只由有序生成目录决定；分派前必须验证参数槽数量，handler 不得在分派锁内执行。
 - 未绑定 GLES 调用必须记录函数、thunk、命中数与 first/last guest thread 后明确失败。
+- 长度求值器不是通用脚本引擎；负数、未知标量、乘法溢出和缺失 resolver 必须在任何
+  handler 前失败。二级指针的顶层数组元素固定为 32 位 guest 指针。
+- VBO/element buffer 等由 GL 状态决定的地址只能由 resolver 显式标记 deferred，禁止把
+  buffer offset 当 guest 地址读取；nullable null 不触发宿主分配或大小限额。
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - input 只读 guest，output 不得为初始化暂存而读取 guest，inout 必须同时预检读写；任何
   native 调用前必须完成全区间验证，输出回写不得依赖析构副作用。

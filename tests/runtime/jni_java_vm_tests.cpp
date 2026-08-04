@@ -71,16 +71,29 @@ TEST_CASE("common JNI slot directory binds only behavior-backed thunks") {
     directory.Install(environment_table, invoke_table);
     CHECK(environment_table.IsSealed());
     CHECK(invoke_table.IsSealed());
-    CHECK(directory.Bindings().size() == 173);
+    CHECK(directory.Bindings().size() == 212);
 
     const auto call = ogplay::runtime::FindJniSlot("CallDoubleMethodA").value();
     const auto string = ogplay::runtime::FindJniSlot("NewStringUTF").value();
     const auto array = ogplay::runtime::FindJniSlot("SetLongArrayRegion").value();
     const auto field = ogplay::runtime::FindJniSlot("GetIntField").value();
+    const auto object_array =
+        ogplay::runtime::FindJniSlot("SetObjectArrayElement").value();
     CHECK(environment_table.IsBound(call));
     CHECK(environment_table.IsBound(string));
     CHECK(environment_table.IsBound(array));
-    CHECK_FALSE(environment_table.IsBound(field));
+    CHECK(environment_table.IsBound(field));
+    CHECK(environment_table.IsBound(object_array));
+    const auto field_binding = directory.FindByThunk(
+        environment_table.Resolve(field, 0x1000));
+    REQUIRE(field_binding.has_value());
+    CHECK(field_binding->handler ==
+          ogplay::runtime::JniSlotHandlerKind::field_store);
+    const auto array_binding = directory.FindByThunk(
+        environment_table.Resolve(object_array, 0x1000));
+    REQUIRE(array_binding.has_value());
+    CHECK(array_binding->handler ==
+          ogplay::runtime::JniSlotHandlerKind::object_array_store);
     const auto thunk = environment_table.Resolve(call, 0x1000);
     const auto binding = directory.FindByThunk(thunk);
     REQUIRE(binding.has_value());

@@ -48,6 +48,27 @@ template <typename Range>
            name == "ReleasePrimitiveArrayCritical";
 }
 
+[[nodiscard]] bool IsObjectArraySlot(const std::string_view name) {
+    constexpr std::array slots{"NewObjectArray", "GetObjectArrayElement",
+                               "SetObjectArrayElement"};
+    return IsOneOf(name, slots);
+}
+
+[[nodiscard]] bool IsFieldSlot(const std::string_view name) {
+    constexpr std::array types{"Object", "Boolean", "Byte", "Char", "Short",
+                               "Int", "Long", "Float", "Double"};
+    for (const auto type : types) {
+        const std::string marker{type};
+        if (name == "Get" + marker + "Field" ||
+            name == "Set" + marker + "Field" ||
+            name == "GetStatic" + marker + "Field" ||
+            name == "SetStatic" + marker + "Field") {
+            return true;
+        }
+    }
+    return false;
+}
+
 [[nodiscard]] std::optional<JniSlotHandlerKind> CommonHandler(
     const std::string_view name) {
     constexpr std::array environment{
@@ -74,6 +95,10 @@ template <typename Range>
     if (IsPrimitiveArraySlot(name)) {
         return JniSlotHandlerKind::primitive_array_store;
     }
+    if (IsObjectArraySlot(name)) {
+        return JniSlotHandlerKind::object_array_store;
+    }
+    if (IsFieldSlot(name)) return JniSlotHandlerKind::field_store;
     if (IsOneOf(name, natives)) return JniSlotHandlerKind::native_registry;
     return std::nullopt;
 }

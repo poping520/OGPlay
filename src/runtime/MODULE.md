@@ -97,8 +97,8 @@
   访问统一检查字段类别、对象类兼容性和精确值类型。
 - `JniInvocationEngine`：把 `...`/`V`/`A` 参数源归一化为类型化值，按描述符校验参数
   与返回值，并分别执行虚调用、指定类非虚调用和静态调用。
-- `JniCommonSlotDirectory`：把已有环境、类、调用、字符串、primitive array、native 注册
-  与 JavaVM 行为映射到稳定 thunk 并封口函数表；未覆盖槽继续记账并 trap。
+- `JniCommonSlotDirectory`：把已有环境、类、调用、字符串、primitive/object array、字段、
+  native 注册与 JavaVM 行为映射到稳定 thunk 并封口函数表；未覆盖槽继续记账并 trap。
 - `FrameworkLifecycleHle`：声明式安装 Object、Bundle、Activity 类与生命周期方法，
   通过统一 invocation handler 执行严格状态迁移并输出确定性事件序列。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。

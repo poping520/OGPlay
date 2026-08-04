@@ -93,6 +93,18 @@ TEST_CASE("ELF32 symbol versions map definitions and dependency requirements") {
     CHECK(versions->symbols[3].hidden);
 }
 
+TEST_CASE("ELF32 base version definition keeps index one global") {
+    auto fixture = VersionFixture();
+    Put16(fixture.bytes, 0x62, 1);
+    Put16(fixture.bytes, 0x64, 1);
+    Put16(fixture.bytes, 0x44, 1);
+    const auto versions = ogplay::loader::ReadElf32SymbolVersions(
+        fixture.bytes, fixture.image, fixture.dynamic, fixture.symbols);
+    REQUIRE(versions.has_value());
+    CHECK(versions->symbols[2].kind ==
+          ogplay::loader::Elf32SymbolVersionKind::global);
+}
+
 TEST_CASE("ELF32 symbol versions reject incomplete and inconsistent metadata") {
     SUBCASE("no version metadata is an explicit empty fact") {
         auto fixture = VersionFixture();

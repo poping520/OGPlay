@@ -28,8 +28,9 @@ public:
     }
     [[nodiscard]] std::uint16_t U16(const std::size_t offset) const {
         Require(offset, 2);
-        return static_cast<std::uint16_t>(bytes_[offset]) |
-               static_cast<std::uint16_t>(bytes_[offset + 1]) << 8U;
+        const auto value = static_cast<std::uint32_t>(bytes_[offset]) |
+                           static_cast<std::uint32_t>(bytes_[offset + 1]) << 8U;
+        return static_cast<std::uint16_t>(value);
     }
     [[nodiscard]] std::uint32_t U32(const std::size_t offset) const {
         Require(offset, 4);

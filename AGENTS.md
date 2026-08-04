@@ -26,7 +26,7 @@ OGPlay 是安卓老游戏兼容层，不是 Android 模拟器。只实现游戏�
 
 ## 工作单与验证
 
-- 一个 Work Unit 应能在单次会话完成，目标一句话可说明，触及文件不超过 8 个，依赖显式。
+- 一个 Work Unit 应能在单次会话完成，目标一句话可说明，触及文件不超过 10 个，依赖显式。
 - 每个行为变更必须有机器可判定的测试；quirk 必须有“关闭即失败”的测试。
 - 修改模块时同步更新 `MODULE.md`；架构决定写入只追加的 ADR。
 - 提交前运行 `cmake --preset dev`、`cmake --build --preset dev`、`ctest --preset dev`；

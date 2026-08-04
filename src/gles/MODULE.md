@@ -13,6 +13,8 @@
 - `AngleBackendName`：输出可用于配置、日志与 Agent 查询的稳定 renderer/device 名称。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受固定 submodule 经官方 GN 流程生成的
   `libEGL`/`libGLESv2` 链接与运行时产物，并导入 `ANGLE::EGL`/`ANGLE::GLESv2`。
+- `tools/build_angle.py`：校验顶层 gitlink，驱动官方 gclient/GN/Ninja 流程并记录可复现
+  的 commit、平台、GN 参数和产物清单；Windows 固定使用 MSVC。
 - 后续 M4 Work Unit 在此策略上定义 EGL 上下文、资源搬运、present、trace 和快照接口。
 
 ## 不变量
@@ -23,6 +25,11 @@
 - SwiftShader 只能作为 ANGLE Vulkan 软件设备使用；hardware-only 不得静默回退软件。
 - ANGLE 源码由顶层浅 git submodule 固定；其内部依赖遵循官方 depot_tools/gclient/GN
   流程，不把缺失产物静默降级为系统 EGL/GLES。
+- ANGLE GN 参数关闭测试、Null、OpenGL 和 WebGPU 后端；保留各平台既定硬件后端，
+  Linux/macOS 同时构建 SwiftShader，Windows/MSVC 的 SwiftShader 留给独立 Clang 产物。
+- Windows 禁用 Chromium 自带 libc++，由 MSVC 使用其原生标准库，避免混用编译器 ABI。
+- ANGLE 版本必须同时满足项目后端需求与三平台既有工具链；升级 commit 前先验证其固定
+  Chromium build 依赖要求，不以静默安装系统 SDK 的方式追随上游。
 
 ## 禁止
 

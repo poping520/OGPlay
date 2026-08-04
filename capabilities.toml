@@ -172,8 +172,8 @@ note = "M4 冻结三平台 ANGLE renderer/device 候选顺序、显式可用性�
 
 [gles.angle_dependency]
 status = "partial"
-test = "tools/remote_incremental.py"
-note = "M4 已以浅 git submodule 固定官方 ANGLE，并建立默认关闭、缺失 GN 产物即明确失败的 CMake imported-target 边界；实际 GN 依赖同步和三平台产物尚待完成"
+test = "tools/build_angle.py --self-test"
+note = "M4 固定了兼容 VS 2026/SDK 10.0.26100 的官方 ANGLE commit，Windows/MSVC 已真实生成并由 OGPlay 启用 EGL/GLESv2；Linux/macOS 产物留到 M4 出口统一验证"
 
 [gles.angle]
 status = "unimplemented"

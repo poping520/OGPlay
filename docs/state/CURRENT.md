@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-04 · M4 ANGLE 依赖边界
+更新：2026-08-04 · M4 ANGLE 本机构建完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0151..0152` 已固定 ANGLE submodule、外部 GN 产物边界与远端增量隔离；
-  下一个任务编号为 `WU-0153`。
+- `WU-0153` 已固定兼容工具链的 ANGLE commit，完成 Windows/MSVC 真实依赖同步、
+  EGL/GLESv2 编译与 OGPlay 启用构建；下一个任务编号为 `WU-0154`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -39,11 +39,13 @@
   EGL/GLESv2 targets。
 - [WU-0152] 核心依赖保持递归更新，ANGLE 顶层改为独立浅更新；普通远端验证不再
   无条件拉取 ANGLE 完整依赖图。
+- [WU-0153] 构建驱动校验 ANGLE gitlink，固定三平台 GN 参数并只生成、验证
+  `libEGL`/`libGLESv2`；Windows 使用 MSVC。
 
 ## 下一步（按优先级）
 
-1. `WU-0153` 建立可复现的 ANGLE gclient/GN 参数与构建驱动，先产出本机 EGL/GLESv2。
-2. 随后实现 EGL display/config/context/surface 生命周期，再接 IDL 生成的 GLES 边界。
+1. `WU-0154` 实现 EGL display/config/context/surface 生命周期与明确错误路径。
+2. 随后接入由 IDL 生成的 GLES 边界和 guest 内存搬运。
 
 ## 阻塞
 

@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 功能开发已完成，三平台出口前按用户要求整理 runtime 结构。
-- `WU-0145` 已同步七个 runtime 子模块索引与文档门禁；下一个任务编号为 `WU-0146`。
+- `WU-0146` 已迁移 VFS 公共头、实现和所有直接引用；下一个任务编号为 `WU-0147`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -30,8 +30,8 @@
 
 ## 下一步（按优先级）
 
-1. `WU-0146` 迁移低耦合 VFS，验证公共头与实现目录镜像方案。
-2. 后续按 bionic → jni → framework → syscall → execution → integration 渐进迁移。
+1. `WU-0147` 起按 profile/selfcheck/TLS 切片迁移 bionic。
+2. 后续按 jni → framework → syscall → execution → integration 渐进迁移。
 3. 拆分完成后执行 M3 三平台出口并开始 M4。
 
 ## 阻塞

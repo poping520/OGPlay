@@ -3,7 +3,7 @@
 #include <array>
 #include <cstddef>
 
-#include "ogplay/runtime/vfs.h"
+#include "ogplay/runtime/vfs/vfs.h"
 
 TEST_CASE("VFS indexes Android paths case insensitively and isolates offsets") {
     ogplay::runtime::VirtualFileSystem vfs;

@@ -7,7 +7,7 @@
 ## 公共 API
 
 - `A32SyscallDispatcher`：按 ARM EABI 号分派 syscall；声明与实现分离，未知或未实现调用
-  统一记入能力账本并返回 `-ENOSYS`，覆盖率可按组查询。
+  统一记入能力账本并返回 `-ENOSYS`；M2 目录覆盖 120 个常见调用并可按组查询覆盖率。
 - `DispatchAndroidArmSupervisorCall`：只将 `SVC #0` 按 r7 + r0-r6 ARM EABI 转为
   syscall frame，并保留调用时完整 A32 状态，写回有符号返回值到 r0；其他 SVC 留给
   显式 HLE 边界。

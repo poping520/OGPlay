@@ -4,5 +4,5 @@ M3 任务从文档准备工作 `WU-0104` 开始，运行时开发从 `WU-0105` �
 最小框架对象和 DEX L1 决策所需的契约。不得提前引入完整 ART/Dalvik 或 M4 图形栈。
 
 `WU-0104..0143` 完成功能开发，`WU-0144..0147` 完成 runtime 七个子模块的契约、门禁与
-物理迁移。下一任务 `WU-0148` 执行 Windows、Linux、macOS warnings-as-errors 与累计无界面
-契约出口验收；在三平台证据齐全前，M3 不标记为已验收。
+物理迁移，`WU-0148` 完成出口可移植性加固，`WU-0149` 以同一源码基线完成 Windows、
+Linux、macOS warnings-as-errors 构建和全量 CTest 232/232。M3 已通过出口验收。

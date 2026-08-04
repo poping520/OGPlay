@@ -156,9 +156,9 @@ test = "tests/runtime/headless_jni_contract_tests.cpp"
 note = "M3 范围完成：声明式 Activity 生命周期、APK Asset/InputStream、MODE_PRIVATE 偏好、确定性 Locale 与仅服务当前包的 PackageInfo 已在同一累计环境闭合；不实现完整 Android services"
 
 [fixtures.m3_jni]
-status = "partial"
+status = "complete"
 test = "tests/runtime/headless_jni_contract_tests.cpp"
-note = "M3 Windows/MSVC 无图形累计契约已闭合双向调用、常用框架服务及两个真实 native 工作线程的 VM attach/HLE callback/detach；里程碑出口再执行三平台验收"
+note = "M3 三平台出口通过：无图形累计契约闭合双向调用、常用框架服务及两个真实 native 工作线程的 VM attach/HLE callback/detach；确定性 trace 与全量 CTest 232/232 一致通过"
 
 [loader.dex_l1]
 status = "complete"

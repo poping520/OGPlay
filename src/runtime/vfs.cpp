@@ -193,8 +193,10 @@ public:
                                          static_cast<std::size_t>(open.offset);
         const auto count = std::min(destination.size(), available);
         if (count != 0) {
+            using Difference =
+                std::vector<std::byte>::difference_type;
             std::copy_n(open.file->contents.begin() +
-                            static_cast<std::size_t>(open.offset),
+                            static_cast<Difference>(open.offset),
                         count, destination.begin());
         }
         open.offset += count;
@@ -214,9 +216,10 @@ public:
         if (end > open.file->contents.size()) {
             open.file->contents.resize(static_cast<std::size_t>(end));
         }
+        using Difference = std::vector<std::byte>::difference_type;
         std::copy(source.begin(), source.end(),
                   open.file->contents.begin() +
-                      static_cast<std::size_t>(open.offset));
+                      static_cast<Difference>(open.offset));
         open.offset = end;
         return source.size();
     }

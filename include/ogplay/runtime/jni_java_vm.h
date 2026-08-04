@@ -121,6 +121,8 @@ enum class JniSlotHandlerKind : std::uint8_t {
     invocation,
     string_store,
     primitive_array_store,
+    object_array_store,
+    field_store,
     native_registry,
     java_vm,
 };

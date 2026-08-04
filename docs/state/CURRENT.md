@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0127` 已完成 DEX L1 分析报告；下一个开发任务编号为 `WU-0128`。
+- `WU-0128` 已完成对象数组与字段 JNI thunk 绑定；下一个开发任务编号为 `WU-0129`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -28,57 +28,19 @@
   相邻 guest 页仍可独立映射、保护和释放。
 - [ADR-0012/WU-0104] 文档状态改为滚动快照；103 个既有 WU 按里程碑完成一次性迁移，
   完整历史由验收文档、任务单与 Git 保存；文档布局门禁及 MSVC CTest 160/160 通过。
-- [WU-0105] 以 Android NDK `jni.h` 冻结 233 槽 JNINativeInterface、精确 primitive
-  宽度和 32 位强类型 handle；缺失函数统一记账并 trap，不再允许静默返回零。
-- [WU-0106] 保留完整 JNI ABI 目录，但不要求一次性实现全部低频函数；M3 优先闭合
-  引用、异常、查找/调用、字符串、数组、RegisterNatives 与 JavaVM 线程接口。
-- [WU-0107] 完成 Local/Global/WeakGlobal 引用表、线程与 local frame 隔离、容量上限、
-  weak 清除，以及可同时承载 host/未来 DEX VM 对象的身份契约。
-- [WU-0108] 完成 guest 线程独立 pending exception、Throw/Occurred/Check/Clear 底座，
-  pending 状态下只开放检查、清理、引用删除和资源 release 白名单。
-- [WU-0109] 完成字段/方法描述符解析，覆盖 primitive、对象、数组、void 返回、255 维
-  与 255 参数槽边界，为 GetMethodID 和三种调用变体提供统一布局。
-- [WU-0110] 完成 JNI Modified UTF-8 严格编解码，覆盖嵌入 NUL、非 ASCII、代理项、
-  过长编码、截断输入和标准 UTF-8 四字节序列拒绝。
-- [WU-0111] 以 JniEnvironment 原子装配引用与异常线程状态，闭合 GetVersion、local
-  frame、三类引用和异常检查/清理等首批常用操作。
-- [WU-0112] 完成 UTF-16 字符串对象、Modified UTF-8 创建、长度/region 以及
-  chars/UTF/critical 配对访问租约，并可发布到 JNIEnv 引用表。
-- [WU-0113] 完成八种 primitive array 的零初始化、类型化 region、elements/critical
-  租约与 copy-back/commit/abort 释放语义。
-- [WU-0114] 完成 RegisterNatives 整批事务预检、重载精确查询、幂等重注册、冲突拒绝
-  与按类 UnregisterNatives，host/DEX VM 类身份可共存。
-- [WU-0115] 冻结 JavaVM 8 槽 ABI，完成 GetEnv、普通/daemon Attach 与 Detach，
-  重复 attach 保持稳定 env，版本、未附着和失败回滚语义明确。
-- [WU-0116] 完成声明式类注册、父类/可赋值查询、稳定 method/field ID，以及重载、
-  静态、继承与构造器不继承的严格查找规则。
-- [WU-0117] 将 `...`/`V`/`A` 统一为类型化参数，完成虚、指定类非虚与静态分派，
-  参数/返回类型、receiver、方法类别和实现缺失均明确失败。
-- [WU-0118] 将 169 个已有行为支撑的常用 JNIEnv 槽与 4 个 JavaVM 线程槽映射到
-  稳定 thunk 并封口；字段访问、对象数组、反射、direct buffer 等低频槽继续 trap。
-- [WU-0119] 声明式安装 Object、Bundle、Activity 类和生命周期方法，严格执行
-  construct→create→start→resume→pause→stop→destroy 并记录确定性事件。
-- [WU-0120] 完成 null 初始化对象数组、元素类冻结、继承可赋值校验及明确的长度、越界、
-  未知对象和不兼容赋值失败。
-- [WU-0121] 完成 descriptor 驱动的字段默认值、实例隔离与静态共享存储，并统一校验
-  字段类别、继承兼容性和精确值类型。
-- [WU-0122] 无图形累计契约闭合 HLE→guest native 与 native→Activity HLE，并在同一运行中
-  验证 VM、字段、字符串、primitive/object 数组、引用和异常资源。
-- [WU-0123] 建立 DEX 035..040 只读事实模型，交叉验证 header、固定表范围和唯一有序
-  map_list；畸形标识、端序、对齐、范围与映射均明确失败。
-- [WU-0124] 严格解码 DEX Modified UTF-8/ULEB128，并解析类型 descriptor、prototype
-  type_list 与 shorty；UTF-16 长度、所有索引和签名一致性均受检。
-- [WU-0125] 解析 field/method ID、class_def 与接口列表，严格校验声明类、成员索引、
-  唯一类定义、父类/接口/源码索引及 data section 偏移。
-- [WU-0126] 解码 class_data 的 delta 成员与 access flags，提取 code_item 寄存器、参数、
-  try 和指令 code-unit 规模；归属、顺序、类别、对齐与范围均明确校验。
-- [WU-0127] DEX L1 输出应用类/方法/native、指令与渲染回调规模及 Java 厚度；引擎
-  指纹由 library basename + 导出符号声明式注入，生产代码无厂商硬编码。
+- [WU-0105..0110] 冻结完整 JNI ABI，完成引用/异常底座、签名解析和 Modified UTF-8。
+- [WU-0111..0118] 完成环境、字符串、primitive array、native 注册、JavaVM、类/调用引擎，
+  并将首批 169 个 JNIEnv 与 4 个 JavaVM 行为映射到稳定 thunk。
+- [WU-0119..0122] 完成 Activity 生命周期、对象数组、字段存储与无图形双向 JNI 契约。
+- [WU-0123..0127] 完成 DEX L1 受检解析及类/方法/native/指令/渲染规模、Java 厚度与
+  声明式引擎指纹报告；不执行字节码。
+- [WU-0128] 将对象数组和全部实例/静态字段访问槽接入公共目录，累计映射 208 个
+  JNIEnv 行为槽；反射、direct buffer 等低频槽继续可观测 trap。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0128`，把对象数组与字段存储接入公共 JNI thunk 目录。
-2. 根据累计样本命中继续补最小框架 HLE，不引入字节码执行器。
+1. 创建 `WU-0129`，补齐 Activity 所需的 Context/ContextWrapper 类层级。
+2. 随后实现最小 AssetManager HLE，不引入字节码执行器。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

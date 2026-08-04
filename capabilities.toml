@@ -148,7 +148,7 @@ note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、
 [runtime.jni]
 status = "partial"
 test = "tests/runtime/jni_tests.cpp"
-note = "M3 已完成 ABI/trap、引用异常、描述符/UTF，并闭合首批 JNIEnv 操作与字符串对象/region/chars 租约；数组与 native 注册继续推进"
+note = "M3 已完成 ABI/trap、引用异常、描述符/UTF、首批 JNIEnv、字符串对象及八种 primitive array 的 region/elements/critical 语义；native 注册继续推进"
 
 [gles.angle]
 status = "unimplemented"

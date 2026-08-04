@@ -81,6 +81,8 @@
   Modified UTF-8；NUL 使用 `C0 80`，代理项保持六字节形式，拒绝四字节 UTF-8 与过长编码。
 - `JniStringStore`：以统一 host 对象身份保存 UTF-16 字符串，提供 UTF/UTF-16 长度、
   region、chars/UTF/critical 租约及配对 release，供常用字符串槽共享。
+- `JniPrimitiveArrayStore`：统一管理八种零初始化 primitive array，提供类型化 region、
+  elements/critical 副本及 copy-back、commit、abort 释放模式。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
@@ -109,6 +111,8 @@
 - NewStringUTF/GetStringUTF* 必须共用 Modified UTF-8 编解码器；不得把标准 UTF-8
   四字节序列或原始 NUL 当作 JNI Modified UTF-8 payload 接受。
 - chars/critical 访问必须用对象、访问类别和 token 精确配对；存在活动访问时不得销毁对象。
+- primitive array region 与 release 数据必须保持元素类型和长度；commit 保留租约，
+  abort 不回写，普通 release 回写并关闭租约。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 
 ## 禁止

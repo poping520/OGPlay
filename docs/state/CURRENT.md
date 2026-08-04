@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-04 · M4 ANGLE 源码工作区外移完成
+更新：2026-08-04 · M4 ANGLE 生产工具剥离完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0157` 已从 OGPlay 删除 ANGLE 源码 submodule，把 checkout 和归档迁入本地
-  `angle-prebuilt-repo` 维护工作区；下一个任务编号为 `WU-0158`。
+- `WU-0158` 已把 ANGLE 构建驱动、SDK 打包器、维护说明和自测 CI 迁入独立生产仓库；
+  OGPlay 只保留预编译 SDK 消费边界，下一个任务编号为 `WU-0159`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -49,10 +49,12 @@
   gitlink，Windows CI 和远端增量只获取预编译包，不初始化 ANGLE 源码工作区。
 - [ADR-0015/WU-0157] OGPlay 删除 ANGLE 源码 gitlink；维护 checkout 和原始归档归入
   未跟踪的本地二进制仓库工作区，构建脚本继续固定并校验源码 commit。
+- [WU-0158] ANGLE 源码构建、SDK 打包和发布自测归入 `angle-prebuilt-repo`；OGPlay 删除
+  生产脚本，仅从固定 submodule commit 验证并消费 SDK。
 
 ## 下一步（按优先级）
 
-1. `WU-0158` 实现 EGL display/config/context/surface 生命周期与明确错误路径。
+1. `WU-0159` 实现 EGL display/config/context/surface 生命周期与明确错误路径。
 2. 随后接入由 IDL 生成的 GLES 边界和 guest 内存搬运。
 
 ## 阻塞

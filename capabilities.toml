@@ -172,8 +172,8 @@ note = "M4 冻结三平台 ANGLE renderer/device 候选顺序、显式可用性�
 
 [gles.angle_dependency]
 status = "partial"
-test = "tools/build_angle.py --self-test"
-note = "M4 固定了兼容工具链的 ANGLE commit；Windows x64 Release SDK 已发布到独立浅 submodule，CMake 按宿主平台/CPU/配置校验全部声明文件后导入 EGL/GLESv2；Linux/macOS 产物留到 M4 出口统一验证"
+test = "third_party/angle-prebuilt/tools/package_angle_sdk.py verify --sdk third_party/angle-prebuilt/windows-x64/release"
+note = "M4 固定了兼容工具链的 ANGLE commit；源码构建与 SDK 打包工具由独立仓库拥有，Windows x64 Release SDK 通过浅 submodule 交付，CMake 校验全部声明文件后导入 EGL/GLESv2；Linux/macOS 产物留到 M4 出口统一验证"
 
 [gles.angle]
 status = "unimplemented"

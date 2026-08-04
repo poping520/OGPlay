@@ -179,6 +179,17 @@ TEST_CASE("ELF link namespace matches required and default symbol versions") {
         ogplay::loader::LookupElf32Symbol(link_namespace, "foo");
     CHECK(default_symbol.symbol_index == 2);
     CHECK(default_symbol.address == ogplay::memory::GuestAddress{0x20200});
+
+    SUBCASE("legacy Android provider resolves a versioned NDK import by name") {
+        library.versions.reset();
+        const std::vector legacy_modules{app, library};
+        const auto legacy_namespace =
+            ogplay::loader::BuildElf32LinkNamespace("app.so", legacy_modules);
+        const auto legacy =
+            ogplay::loader::ResolveElf32Symbols(legacy_namespace, 0);
+        CHECK(*legacy.values[1] ==
+              ogplay::memory::GuestAddress{0x20100});
+    }
 }
 
 TEST_CASE("ELF namespace extension rejects collisions and unreachable inputs") {

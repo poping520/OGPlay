@@ -21,7 +21,8 @@
 - `BuildElf32LinkNamespace` / `ResolveElf32Symbols`：构造递归依赖闭包、依赖优先装载顺序
   与根模块优先的广度查找作用域，按 ELF local/weak/hidden/protected 规则预解析地址。
 - `ExtendElf32LinkNamespace`：事务式追加 `dlopen` 模块，保留既有索引与主作用域，
-  为动态根构造独立依赖/查找作用域；版本化导入按依赖库与版本名精确匹配。
+  为动态根构造独立依赖/查找作用域；有版本定义的 provider 按依赖库与版本名精确匹配，
+  API 19/22 无版本定义 provider 按 Android 旧 linker 语义回退到名称匹配。
 - `Elf32DynamicLinker`：管理稳定 `dlopen` handle、重复打开引用、handle 内 `dlsym` 和
   共享依赖引用，返回需执行的依赖优先初始化与根优先反初始化模块顺序。
 - `LoadElf32ModuleNamespace`：一次完成多模块事实解析、依赖排序、映射、版本化符号解析与

@@ -71,6 +71,8 @@
   capability ID 与 LR 并抛出 `JniUnimplementedCall`，不得返回伪造值。
 - `JniReferenceTable`：以单一 32 位 handle 空间管理线程/frame 独占 Local、进程共享
   Global 与可清除 WeakGlobal；对象身份显式区分 host 与未来 DEX VM 来源。
+- `JniExceptionState`：按 guest 线程保存 pending throwable 对象身份；提供
+  Throw/Occurred/Check/Clear 底座，并在 pending 时只放行检查、清理和资源 release 白名单。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 
 ## 不变量
@@ -92,6 +94,8 @@
 - JNI reference、method ID 与 field ID 必须保持不同强类型，公共 API 不暴露宿主指针。
 - Local 引用不得跨 guest 线程使用，detach/pop 必须销毁所属引用；Global/WeakGlobal
   跨线程共享但删除类别必须匹配，容量与失效访问都明确失败。
+- pending exception 不得被第二个 Throw 静默覆盖；普通 JNI 调用必须在执行前经过线程
+  异常门禁，detach 后不得残留 pending 状态。
 - 框架类绑定声明式；对象模型允许宿主对象与未来 VM 对象共存。
 
 ## 禁止

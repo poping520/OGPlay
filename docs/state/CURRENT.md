@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0107` 已完成 JNI 引用表；下一个开发任务编号为 `WU-0108`。
+- `WU-0108` 已完成 JNI 异常状态机；下一个开发任务编号为 `WU-0109`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -34,11 +34,13 @@
   引用、异常、查找/调用、字符串、数组、RegisterNatives 与 JavaVM 线程接口。
 - [WU-0107] 完成 Local/Global/WeakGlobal 引用表、线程与 local frame 隔离、容量上限、
   weak 清除，以及可同时承载 host/未来 DEX VM 对象的身份契约。
+- [WU-0108] 完成 guest 线程独立 pending exception、Throw/Occurred/Check/Clear 底座，
+  pending 状态下只开放检查、清理、引用删除和资源 release 白名单。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0108`，实现线程独立的 pending exception 状态机与调用门禁。
-2. 随后实现签名解析、Modified UTF-8 和常用方法调用变体。
+1. 创建 `WU-0109`，实现完整 JNI 字段与方法描述符解析。
+2. 随后实现 Modified UTF-8 和常用方法调用变体。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

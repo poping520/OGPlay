@@ -10,9 +10,8 @@ CMake build 目录。调用者通过参数传入主机、账号、平台及工�
 submodule，然后由 CMake 增量编译并执行 CTest。远端目录必须专用于本工具；工具不会递归
 删除它，也不会同步本地未提交改动。
 
-核心依赖会递归初始化；ANGLE 只初始化顶层浅 submodule，避免普通增量验证无条件拉取其
-完整 GN/gclient 依赖图。启用 `OGPLAY_ENABLE_ANGLE` 的任务应在同一持久目录中单独准备
-ANGLE 依赖和 GN 产物，并通过 `OGPLAY_ANGLE_BUILD_DIR` 交给 CMake。
+核心依赖会递归初始化。ANGLE 源码及完整 GN 工作区只用于维护者升级；普通增量验证使用
+预编译 SDK，不同步其 gclient 依赖图。
 
 ```text
 python tools/remote_incremental.py --host <host> --user <user> \
@@ -39,3 +38,19 @@ python tools/build_angle.py all --depot-tools <absolute-depot-tools-path>
 平台的完整 GN 参数。默认产物目录是 `third_party/angle/out/ogplay`，成功验证后写入带
 ANGLE commit、目标平台、GN 参数和产物清单的 `ogplay-angle-manifest.json`。
 `--jobs` 同时限制 gclient 和 Ninja 并发；匿名同步触发上游限流时可降低该值后增量重试。
+
+## ANGLE SDK 打包
+
+`package_angle_sdk.py` 把验证后的 GN 产物转换为
+`<platform>-<cpu>/<release|debug>` SDK。包内只保留公共头、链接/运行时文件、许可证及逐文件
+SHA-256 清单；默认不携带 PDB，可用 `--include-symbols` 生成专用调试包。
+
+```text
+python tools/package_angle_sdk.py package \
+  --windows-sdk-license <absolute-sdk-license.rtf>
+python tools/package_angle_sdk.py verify \
+  --sdk .local/angle-sdk/windows-x64/release
+```
+
+目标目录必须不存在，避免旧文件混入新包。普通项目配置最终只消费独立的
+`third_party/angle-prebuilt` 浅 submodule；源码树仅作为本脚本的维护者输入。

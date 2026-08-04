@@ -11,10 +11,12 @@
 - `SelectAngleBackend`：依据显式探测结果与 automatic/hardware-only/software-only 偏好
   选择候选；没有可用候选时返回空值，不伪造成功。
 - `AngleBackendName`：输出可用于配置、日志与 Agent 查询的稳定 renderer/device 名称。
-- `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受固定 submodule 经官方 GN 流程生成的
-  `libEGL`/`libGLESv2` 链接与运行时产物，并导入 `ANGLE::EGL`/`ANGLE::GLESv2`。
+- `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
+  `ANGLE::EGL`/`ANGLE::GLESv2`。
 - `tools/build_angle.py`：校验顶层 gitlink，驱动官方 gclient/GN/Ninja 流程并记录可复现
   的 commit、平台、GN 参数和产物清单；Windows 固定使用 MSVC。
+- `tools/package_angle_sdk.py`：从上述产物生成按平台/CPU/配置分层、逐文件 SHA-256 且附带
+  许可证的可重定位 SDK；Release ANGLE 是普通 Debug/Release 消费的默认包。
 - 后续 M4 Work Unit 在此策略上定义 EGL 上下文、资源搬运、present、trace 和快照接口。
 
 ## 不变量
@@ -23,8 +25,8 @@
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - 平台探测事实由下层注入；gles 模块不使用平台宏，也不直接依赖平台 SDK 类型。
 - SwiftShader 只能作为 ANGLE Vulkan 软件设备使用；hardware-only 不得静默回退软件。
-- ANGLE 源码由顶层浅 git submodule 固定；其内部依赖遵循官方 depot_tools/gclient/GN
-  流程，不把缺失产物静默降级为系统 EGL/GLES。
+- ANGLE 源码由维护者浅 git submodule 固定；普通消费端使用独立预编译浅 submodule，
+  清单、平台或哈希不匹配时明确失败，不静默降级为源码或系统 EGL/GLES。
 - ANGLE GN 参数关闭测试、Null、OpenGL 和 WebGPU 后端；保留各平台既定硬件后端，
   Linux/macOS 同时构建 SwiftShader，Windows/MSVC 的 SwiftShader 留给独立 Clang 产物。
 - Windows 禁用 Chromium 自带 libc++，由 MSVC 使用其原生标准库，避免混用编译器 ABI。

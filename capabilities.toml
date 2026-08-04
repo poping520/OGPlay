@@ -161,9 +161,9 @@ test = "tests/runtime/headless_jni_contract_tests.cpp"
 note = "M3 Windows/MSVC 无图形累计契约已闭合 HLE↔guest native、VM、字段、字符串、数组、引用和异常；里程碑出口再执行三平台验收"
 
 [loader.dex_l1]
-status = "partial"
-test = "tests/loader/dex_tests.cpp"
-note = "M3 已解析 DEX header/map、字符串、类型、成员/class_def、class_data delta 与 code_item 静态规模；厚度报告继续闭合"
+status = "complete"
+test = "tests/loader/dex_analysis_tests.cpp"
+note = "M3 DEX L1 已完成受检只读解析，并输出应用类/方法/native/指令/渲染规模、Java 厚度及声明式引擎指纹；不执行字节码"
 
 [gles.angle]
 status = "unimplemented"

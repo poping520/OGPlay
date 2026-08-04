@@ -30,6 +30,8 @@ namespace {
     for (auto& symbol : symbols) {
         module.symbols.symbols.push_back(std::move(symbol));
     }
+    module.load_ranges.push_back(
+        {ogplay::memory::GuestAddress{bias}, 0x1000});
     return module;
 }
 
@@ -111,4 +113,44 @@ TEST_CASE("ELF dynamic linker retains shared dependencies until the last close")
           std::vector<std::size_t>{3, 2});
     CHECK_THROWS_AS(static_cast<void>(linker.Close(first.handle)),
                     ogplay::loader::LinkError);
+}
+
+TEST_CASE("ELF dladdr resolves active module and nearest dynamic symbol") {
+    auto linker = BaseLinker();
+    const auto base = linker.Address(ogplay::memory::GuestAddress{0x20104U});
+    CHECK(base.module_name == "libbase.so");
+    CHECK(base.module_base == ogplay::memory::GuestAddress{0x20000U});
+    CHECK(base.symbol_name == "base");
+    CHECK(base.symbol_address == ogplay::memory::GuestAddress{0x20100U});
+    const auto before = linker.Address(
+        ogplay::memory::GuestAddress{0x20080U});
+    CHECK(before.symbol_name.empty());
+    CHECK(before.symbol_address == ogplay::memory::GuestAddress{0});
+
+    const std::vector additions{
+        Module("plugin.so", 0x30000, {},
+               {Symbol("plugin", 0x100, 1)}),
+    };
+    const auto opened = linker.Open("plugin.so", additions);
+    CHECK(linker.Address(ogplay::memory::GuestAddress{0x30108U}).symbol_name ==
+          "plugin");
+    static_cast<void>(linker.Close(opened.handle));
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            linker.Address(ogplay::memory::GuestAddress{0x30108U})),
+        ogplay::loader::LinkError);
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            linker.Address(ogplay::memory::GuestAddress{0x90000U})),
+        ogplay::loader::LinkError);
+
+    auto overlapping = BaseLinker();
+    const std::vector overlap_additions{
+        Module("overlap.so", 0x20000, {}, {}),
+    };
+    static_cast<void>(overlapping.Open("overlap.so", overlap_additions));
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            overlapping.Address(ogplay::memory::GuestAddress{0x20100U})),
+        ogplay::loader::LinkError);
 }

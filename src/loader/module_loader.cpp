@@ -45,6 +45,12 @@ Elf32LoadedNamespace LoadElf32ModuleNamespace(
             result.modules[index].load_plan = LoadElf32Arm(
                 inputs[index].bytes, result.modules[index].image,
                 inputs[index].load_bias, address_space);
+            auto& ranges = result.link_namespace.modules[index].load_ranges;
+            ranges.reserve(result.modules[index].load_plan.regions.size());
+            for (const auto& region :
+                 result.modules[index].load_plan.regions) {
+                ranges.push_back(region.range);
+            }
         }
         for (const auto index : result.link_namespace.load_order) {
             const auto resolved = ResolveElf32Symbols(

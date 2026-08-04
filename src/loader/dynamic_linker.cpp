@@ -118,6 +118,66 @@ Elf32SymbolLocation Elf32DynamicLinker::Symbol(
     return LookupElf32Symbol(link_namespace_, state.scope, name);
 }
 
+Elf32DynamicAddressInfo Elf32DynamicLinker::Address(
+    const memory::GuestAddress address) const {
+    std::optional<std::size_t> module_index;
+    for (std::size_t index = 0; index < link_namespace_.modules.size(); ++index) {
+        const auto active = index < base_module_count_ ||
+                            (index < module_references_.size() &&
+                             module_references_[index] != 0);
+        if (!active) continue;
+        const auto& module = link_namespace_.modules[index];
+        const auto contains = std::any_of(
+            module.load_ranges.begin(), module.load_ranges.end(),
+            [address](const memory::GuestRange& range) {
+                return range.Contains(address);
+            });
+        if (!contains) continue;
+        if (module_index.has_value()) {
+            throw LinkError("dladdr address belongs to multiple ELF modules");
+        }
+        module_index = index;
+    }
+    if (!module_index.has_value()) {
+        throw LinkError("dladdr address is outside loaded ELF modules");
+    }
+
+    const auto& module = link_namespace_.modules[*module_index];
+    std::optional<std::pair<std::string, memory::GuestAddress>> nearest;
+    for (const auto& symbol : module.symbols.symbols) {
+        if (symbol.name.empty() || symbol.section_index == 0) continue;
+        constexpr std::uint16_t kSectionAbsolute = 0xfff1;
+        const auto value = symbol.section_index == kSectionAbsolute
+                               ? symbol.value.Value()
+                               : static_cast<std::uint64_t>(
+                                     module.load_bias.Value()) +
+                                     symbol.value.Value();
+        if (value > std::numeric_limits<std::uint32_t>::max()) {
+            throw LinkError("dladdr symbol wraps the guest address space");
+        }
+        const memory::GuestAddress runtime{
+            static_cast<std::uint32_t>(value)};
+        if (!std::any_of(module.load_ranges.begin(),
+                         module.load_ranges.end(),
+                         [runtime](const memory::GuestRange& range) {
+                             return range.Contains(runtime);
+                         })) {
+            continue;
+        }
+        if (runtime > address ||
+            (nearest.has_value() && runtime < nearest->second)) {
+            continue;
+        }
+        nearest = std::pair{symbol.name, runtime};
+    }
+    return {*module_index,
+            module.name,
+            module.load_bias,
+            nearest.has_value() ? nearest->first : std::string{},
+            nearest.has_value() ? nearest->second
+                                : memory::GuestAddress{0}};
+}
+
 Elf32DynamicCloseResult Elf32DynamicLinker::Close(
     const Elf32DynamicHandle handle) {
     auto& state = RequireHandle(handle);

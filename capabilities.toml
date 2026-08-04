@@ -148,7 +148,7 @@ note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、
 [runtime.jni]
 status = "partial"
 test = "tests/runtime/jni_tests.cpp"
-note = "M3 已完成 JNIEnv/JavaVM ABI、引用异常、字符串/数组/native 注册，并加入声明式类层级及方法/字段稳定 ID 查找"
+note = "M3 已完成 JNIEnv/JavaVM ABI、对象/成员事实和常用运行时底座；方法 .../V/A 已统一到类型校验后的虚/非虚/静态调用引擎"
 
 [gles.angle]
 status = "unimplemented"

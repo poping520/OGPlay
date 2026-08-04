@@ -156,6 +156,7 @@ TEST_CASE("framework SharedPreferences applies remove clear and type checks") {
     environment.AttachThread(thread, 24);
     const auto activity = environment.PublishLocalObject(
         thread, AllocateJniHostObjectIdentity());
+    const auto activity_global = environment.NewGlobalRef(thread, activity);
     const auto name = Text(strings, environment, thread, {'s', 't', 'a', 't', 'e'});
     const auto key = Text(strings, environment, thread, {'k', 'e', 'y'});
     const std::array<JniValue, 2> bad_mode{name.reference, JniInt{1}};
@@ -164,12 +165,17 @@ TEST_CASE("framework SharedPreferences applies remove clear and type checks") {
         "(Ljava/lang/String;I)Landroid/content/SharedPreferences;");
     CHECK_THROWS_AS(
         static_cast<void>(invocations.InvokeVirtual(
+            thread, JniReference{999}, framework.activity_class,
+            get_preferences, bad_mode, JniArgumentSource::value_array)),
+        JniReferenceError);
+    CHECK_THROWS_AS(
+        static_cast<void>(invocations.InvokeVirtual(
             thread, activity, framework.activity_class, get_preferences,
             bad_mode, JniArgumentSource::value_array)),
         FrameworkPreferencesError);
     const std::array<JniValue, 2> private_mode{name.reference, JniInt{0}};
     const auto preferences = ReferenceResult(invocations.InvokeVirtual(
-        thread, activity, framework.activity_class, get_preferences,
+        thread, activity_global, framework.activity_class, get_preferences,
         private_mode, JniArgumentSource::value_array));
     const auto editor = ReferenceResult(invocations.InvokeVirtual(
         thread, preferences, preference_classes.shared_preferences_class,
@@ -218,6 +224,7 @@ TEST_CASE("framework SharedPreferences applies remove clear and type checks") {
                      "contains", "(Ljava/lang/String;)Z"),
               key_argument, JniArgumentSource::value_array)) == 0);
 
+    environment.DeleteGlobalRef(thread, activity_global);
     environment.DetachThread(thread);
     strings.Delete(name.identity);
     strings.Delete(key.identity);

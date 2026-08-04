@@ -163,6 +163,8 @@ private:
     }
 
     [[nodiscard]] JniValue GetPreferences(const JniInvocation& invocation) {
+        static_cast<void>(
+            Resolve(invocation.thread_id, invocation.receiver));
         const auto name = ReadText(
             invocation.thread_id,
             std::get<JniReference>(invocation.arguments[0]));

@@ -66,7 +66,7 @@ TEST_CASE("API 19 22 and 23 Bionic run the headless M2 NDK payload") {
             {"libc.so", libc, ogplay::memory::GuestAddress{0x40000000U}}};
         ogplay::runtime::HeadlessBionicRunRequest request{
             api, "libogplay_m2_ndk.so", "ogplay_m2_entry", modules,
-            "/data/ogplay/m2-output.bin"};
+            "/data/ogplay/m2-output.bin", UINT64_C(200000000), {}};
         const auto report = ogplay::runtime::RunHeadlessBionicEntry(request);
         std::string unimplemented;
         for (const auto& hit : report.unimplemented) {

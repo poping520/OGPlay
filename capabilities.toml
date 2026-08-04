@@ -173,7 +173,7 @@ note = "M4 冻结三平台 ANGLE renderer/device 候选顺序、显式可用性�
 [gles.angle_dependency]
 status = "partial"
 test = "tools/build_angle.py --self-test"
-note = "M4 固定了兼容 VS 2026/SDK 10.0.26100 的官方 ANGLE commit，Windows/MSVC 已真实生成并由 OGPlay 启用 EGL/GLESv2；Linux/macOS 产物留到 M4 出口统一验证"
+note = "M4 固定了兼容工具链的 ANGLE commit；Windows/MSVC 真实产物已生成可重定位 Release SDK，包内头文件、运行时、许可证及逐文件 SHA-256 由打包器复验；Linux/macOS 产物留到 M4 出口统一验证"
 
 [gles.angle]
 status = "unimplemented"

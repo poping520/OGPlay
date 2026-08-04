@@ -175,6 +175,7 @@ def write_manifest(
     output: Path,
     platform_name: str,
     target_cpu: str,
+    configuration: str,
     commit: str,
     gn_args: Iterable[str],
     artifacts: Iterable[str],
@@ -184,6 +185,7 @@ def write_manifest(
         "angle_commit": commit,
         "platform": platform_name,
         "target_cpu": target_cpu,
+        "configuration": configuration,
         "gn_args": list(gn_args),
         "targets": list(TARGETS),
         "artifacts": list(artifacts),
@@ -292,7 +294,10 @@ def main() -> int:
 
     if args.action in {"all", "verify"} and not args.dry_run:
         artifacts = verify_artifacts(output, platform_name)
-        write_manifest(output, platform_name, target_cpu, commit, gn_args, artifacts)
+        configuration = "debug" if args.debug else "release"
+        write_manifest(
+            output, platform_name, target_cpu, configuration, commit, gn_args, artifacts
+        )
     return 0
 
 

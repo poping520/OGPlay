@@ -274,6 +274,14 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(architecture.platform_boundaries PROPERTIES LABELS architecture)
 
     add_test(
+        NAME architecture.documentation_layout
+        COMMAND ${CMAKE_COMMAND}
+            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckDocumentationLayout.cmake
+    )
+    set_tests_properties(architecture.documentation_layout PROPERTIES LABELS architecture)
+
+    add_test(
         NAME tools.remote_incremental_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/remote_incremental.py

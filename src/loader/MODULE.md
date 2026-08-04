@@ -11,6 +11,8 @@
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度，不执行任何字节码。
 - `ReadDexClassData(bytes, image)`：解码 class_data 的 delta member 索引与 access flags，
   对 code_item 只提取寄存器、参数、try 数和指令 code-unit 数，不解释指令。
+- `AnalyzeDexL1(image, class_data, libraries, signatures)`：输出应用类/方法/native 数量、
+  总指令与渲染回调规模、Java 厚度和 DEX 执行候选；引擎规则由声明式 catalog 注入。
 - `ParseElf32Arm(bytes)`：从不可信字节解析 little-endian ELF32/ARM ET_EXEC/ET_DYN，
   返回入口、ARM flags、程序头和未知 tag 不丢失的动态项事实模型。
 - `ReadElf32DynamicInfo(bytes, image)`：只在 file-backed `PT_LOAD` 范围内解析动态字符串表、
@@ -54,6 +56,8 @@
   data offset 全部受检，只保留 annotation/class_data/static value 偏移事实。
 - class_data 成员必须归属当前类、严格递增且 static/direct 类别与 access flags 一致；
   native/abstract 不得有 code，其他方法必须有对齐且完整的 code_item。
+- Java 厚度只由版本化阈值和可查询计数推导；引擎指纹不得在生产代码硬编码，必须由
+  library basename 与所需导出符号组成的声明式签名提供。
 - 小端字段先在足够宽的无符号类型中组合，最终结果只做一次显式收窄。
 - `PT_LOAD` 必须满足 file size ≤ memory size、guest 地址不回绕、文件范围有效且对齐同余。
 - `PT_DYNAMIC` 最多一个、文件范围完整、条目尺寸正确并由 `DT_NULL` 终止。

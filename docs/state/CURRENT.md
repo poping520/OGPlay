@@ -5,7 +5,8 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0139` 已完成 HLE Global object 发布边界；下一个开发任务编号为 `WU-0140`。
+- `WU-0140` 已完成最小 PackageManager/PackageInfo HLE；下一个开发任务编号为
+  `WU-0141`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -58,11 +59,13 @@
   包信息 HLE 未安装时由调用引擎明确报告 missing handler。
 - [WU-0139] 增加 HLE 专用 Global object 发布入口，验证附着线程、容量与 pending
   exception，使 Java 对象字段可保存跨线程稳定宿主对象引用。
+- [WU-0140] 从会话配置提供当前包 getPackageName/getPackageManager/getPackageInfo，
+  只接受 flags=0，并通过真实 PackageInfo 字段暴露 versionName/versionCode。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0140`，实现只服务当前包的 PackageManager/PackageInfo HLE。
-2. 仅暴露 versionName/versionCode，不引入完整 Android services。
+1. 创建 `WU-0141`，将资源、偏好、Locale 与包信息纳入 M3 无界面累计契约。
+2. 继续保持所有新增框架服务无图形、可机器判定。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

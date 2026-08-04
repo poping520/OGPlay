@@ -159,12 +159,20 @@
   大小写不敏感索引、只读包资源、可写外置数据和整批失败回滚均有契约测试。
 - [WU-0084] 新增 API 19 armeabi-v7a 无界面 NDK 累计载荷；普通 C 入口实际使用
   pthread create/join、主/子线程 malloc/free 与文件写入读回，且不依赖 JNI/Activity/GLES。
+- [WU-0085/0086/0087] 三版本累计载荷已接入真实 Bionic/Dynarmic 总装；旧 provider
+  版本回退与跨线程 exclusive monitor 闭合，入口返回 guest 结果、真线程及 syscall 事实。
+- [WU-0088..0095] 根据 API 19/22/23 真实执行轨迹补齐 madvise/PROT_NONE、8 字节 clone、
+  child TLS、线程信号状态、ARM kuser helper、映射存在性与 PR_SET_VMA 元数据。
+- [WU-0096] `dladdr` 已接入与 dlopen/dlsym 相同的活跃链接命名空间和模块生命周期。
+- [WU-0097/0098] memcpy/memmove/memset/memcmp/strlen 生产拦截及吞吐基准完成；pthread
+  保留真实 Bionic ABI，在 clone/futex/TLS syscall 边界映射宿主线程，决定写入 ADR-0010。
+- Windows/MSVC warnings-as-errors 全量 CTest 158/158；API 19/22/23 累计样本均返回 0、
+  创建一个真实 child、读回 32 字节 VFS 输出且未实现 syscall 命中为零。
 
 ## 下一步（按优先级）
 
-1. 实现 ARM `clone` 请求、parent/child TID 写回，并接入真线程与 SVC 执行循环。
-2. 以无界面 NDK `.so` 累计样本闭合 pthread、文件 IO 与 malloc。
-3. 完成 API 19/22/23 AOSP Bionic 产物装载自检与可再分发来源清单。
+1. 使用持久远端目录执行 Linux/macOS 增量构建、全量 CTest 与 M2 三版本累计样本。
+2. 三平台通过后提交 WU-0099，提升 M2 能力状态并交接 M3。
 
 ## 已知问题
 

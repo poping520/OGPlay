@@ -66,9 +66,28 @@ struct DexMapItem final {
     std::uint32_t offset{};
 };
 
+struct DexString final {
+    std::uint32_t data_offset{};
+    std::u16string value;
+};
+
+struct DexType final {
+    std::uint32_t descriptor_string_index{};
+    std::string descriptor;
+};
+
+struct DexPrototype final {
+    std::uint32_t shorty_string_index{};
+    std::uint32_t return_type_index{};
+    std::vector<std::uint32_t> parameter_type_indices;
+};
+
 struct DexImage final {
     DexHeader header;
     std::vector<DexMapItem> map_items;
+    std::vector<DexString> strings;
+    std::vector<DexType> types;
+    std::vector<DexPrototype> prototypes;
 
     [[nodiscard]] std::optional<DexMapItem> FindMapItem(
         DexMapItemType type) const noexcept;
@@ -82,6 +101,11 @@ enum class DexErrorReason : std::uint8_t {
     invalid_endian,
     invalid_range,
     invalid_map,
+    invalid_uleb128,
+    invalid_string,
+    invalid_index,
+    invalid_descriptor,
+    invalid_prototype,
 };
 
 class DexError final : public std::runtime_error {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <string_view>
 #include <utility>
 
 namespace ogplay::loader {
@@ -26,6 +27,11 @@ public:
                static_cast<std::uint16_t>(bytes_[offset + 1]) << 8U;
     }
 
+    [[nodiscard]] std::uint8_t U8(const std::size_t offset) const {
+        Require(offset, 1);
+        return bytes_[offset];
+    }
+
     [[nodiscard]] std::uint32_t U32(const std::size_t offset) const {
         Require(offset, 4);
         return static_cast<std::uint32_t>(bytes_[offset]) |
@@ -38,6 +44,28 @@ public:
         if (offset > bytes_.size() || size > bytes_.size() - offset) {
             Fail(DexErrorReason::truncated, offset, "DEX input is truncated");
         }
+    }
+
+    [[nodiscard]] std::uint32_t Uleb128(std::size_t& offset) const {
+        std::uint32_t value{};
+        for (std::uint32_t index = 0; index < 5; ++index) {
+            const auto byte = U8(offset++);
+            if (index == 4 && (byte & 0xf0U) != 0) {
+                Fail(DexErrorReason::invalid_uleb128, offset - 1,
+                     "DEX ULEB128 exceeds 32 bits");
+            }
+            value |= static_cast<std::uint32_t>(byte & 0x7fU)
+                     << (index * 7U);
+            if ((byte & 0x80U) == 0) {
+                if (index != 0 && byte == 0) {
+                    Fail(DexErrorReason::invalid_uleb128, offset - 1,
+                         "DEX ULEB128 is not minimally encoded");
+                }
+                return value;
+            }
+        }
+        Fail(DexErrorReason::invalid_uleb128, offset,
+             "DEX ULEB128 is unterminated");
     }
 
 private:
@@ -247,6 +275,214 @@ void ValidateMap(const DexImage& image) {
                     image.header.map_offset);
 }
 
+[[nodiscard]] DexString ReadString(const Reader& reader,
+                                   const DexHeader& header,
+                                   const std::uint32_t data_offset) {
+    if (data_offset < header.data_offset || data_offset >= header.file_size) {
+        Fail(DexErrorReason::invalid_range, data_offset,
+             "DEX string_data offset is outside data section");
+    }
+    std::size_t cursor = data_offset;
+    const auto expected_units = reader.Uleb128(cursor);
+    std::u16string value;
+    value.reserve(expected_units);
+    while (true) {
+        const auto first = reader.U8(cursor++);
+        if (first == 0) break;
+        if (first <= 0x7fU) {
+            value.push_back(static_cast<char16_t>(first));
+            continue;
+        }
+        if ((first & 0xe0U) == 0xc0U) {
+            const auto second = reader.U8(cursor++);
+            if ((second & 0xc0U) != 0x80U) {
+                Fail(DexErrorReason::invalid_string, cursor - 1,
+                     "DEX Modified UTF-8 continuation is invalid");
+            }
+            const auto unit = static_cast<std::uint16_t>(
+                (static_cast<std::uint16_t>(first & 0x1fU) << 6U) |
+                (second & 0x3fU));
+            if (unit != 0 && unit < 0x80U) {
+                Fail(DexErrorReason::invalid_string, cursor - 2,
+                     "DEX Modified UTF-8 has an overlong sequence");
+            }
+            value.push_back(static_cast<char16_t>(unit));
+            continue;
+        }
+        if ((first & 0xf0U) == 0xe0U) {
+            const auto second = reader.U8(cursor++);
+            const auto third = reader.U8(cursor++);
+            if ((second & 0xc0U) != 0x80U || (third & 0xc0U) != 0x80U) {
+                Fail(DexErrorReason::invalid_string, cursor - 2,
+                     "DEX Modified UTF-8 continuation is invalid");
+            }
+            const auto unit = static_cast<std::uint16_t>(
+                (static_cast<std::uint16_t>(first & 0x0fU) << 12U) |
+                (static_cast<std::uint16_t>(second & 0x3fU) << 6U) |
+                (third & 0x3fU));
+            if (unit < 0x800U) {
+                Fail(DexErrorReason::invalid_string, cursor - 3,
+                     "DEX Modified UTF-8 has an overlong sequence");
+            }
+            value.push_back(static_cast<char16_t>(unit));
+            continue;
+        }
+        Fail(DexErrorReason::invalid_string, cursor - 1,
+             "DEX Modified UTF-8 lead byte is invalid");
+    }
+    if (value.size() != expected_units) {
+        Fail(DexErrorReason::invalid_string, data_offset,
+             "DEX string utf16_size does not match decoded data");
+    }
+    return {data_offset, std::move(value)};
+}
+
+[[nodiscard]] std::string RequireAscii(const DexString& string,
+                                       const char* purpose) {
+    std::string result;
+    result.reserve(string.value.size());
+    for (const auto unit : string.value) {
+        if (unit == 0 || unit > 0x7f) {
+            Fail(DexErrorReason::invalid_descriptor, string.data_offset,
+                 std::string("DEX ") + purpose + " must be ASCII");
+        }
+        result.push_back(static_cast<char>(unit));
+    }
+    return result;
+}
+
+void ValidateTypeDescriptor(const std::string& descriptor,
+                            const std::size_t offset) {
+    if (descriptor.empty()) {
+        Fail(DexErrorReason::invalid_descriptor, offset,
+             "DEX type descriptor is empty");
+    }
+    std::size_t cursor{};
+    while (cursor < descriptor.size() && descriptor[cursor] == '[') {
+        ++cursor;
+        if (cursor > 255) {
+            Fail(DexErrorReason::invalid_descriptor, offset,
+                 "DEX array descriptor exceeds 255 dimensions");
+        }
+    }
+    if (cursor == descriptor.size()) {
+        Fail(DexErrorReason::invalid_descriptor, offset,
+             "DEX array descriptor has no component type");
+    }
+    const auto kind = descriptor[cursor];
+    if (kind == 'L') {
+        if (descriptor.back() != ';' || cursor + 2 >= descriptor.size()) {
+            Fail(DexErrorReason::invalid_descriptor, offset,
+                 "DEX object descriptor is malformed");
+        }
+        for (std::size_t index = cursor + 1; index + 1 < descriptor.size();
+             ++index) {
+            const auto character = descriptor[index];
+            if (character == '.' || character == '[' || character == ';' ||
+                character == '\0') {
+                Fail(DexErrorReason::invalid_descriptor, offset,
+                     "DEX object descriptor contains an invalid character");
+            }
+        }
+        return;
+    }
+    constexpr std::string_view primitives = "VZBSCIJFD";
+    if (cursor + 1 != descriptor.size() ||
+        primitives.find(kind) == std::string_view::npos ||
+        (cursor != 0 && kind == 'V')) {
+        Fail(DexErrorReason::invalid_descriptor, offset,
+             "DEX primitive descriptor is malformed");
+    }
+}
+
+[[nodiscard]] char ShortyKind(const std::string& descriptor) {
+    return descriptor.front() == '[' || descriptor.front() == 'L'
+               ? 'L'
+               : descriptor.front();
+}
+
+void ReadStringsTypesAndPrototypes(const Reader& reader, DexImage& image) {
+    image.strings.reserve(image.header.string_ids_size);
+    for (std::uint32_t index = 0; index < image.header.string_ids_size;
+         ++index) {
+        const auto at = static_cast<std::size_t>(
+                            image.header.string_ids_offset) +
+                        static_cast<std::size_t>(index) * 4U;
+        image.strings.push_back(ReadString(
+            reader, image.header, reader.U32(at)));
+    }
+
+    image.types.reserve(image.header.type_ids_size);
+    for (std::uint32_t index = 0; index < image.header.type_ids_size; ++index) {
+        const auto at = static_cast<std::size_t>(image.header.type_ids_offset) +
+                        static_cast<std::size_t>(index) * 4U;
+        const auto string_index = reader.U32(at);
+        if (string_index >= image.strings.size()) {
+            Fail(DexErrorReason::invalid_index, at,
+                 "DEX type descriptor string index is invalid");
+        }
+        auto descriptor = RequireAscii(image.strings[string_index],
+                                       "type descriptor");
+        ValidateTypeDescriptor(descriptor, at);
+        image.types.push_back({string_index, std::move(descriptor)});
+    }
+
+    image.prototypes.reserve(image.header.proto_ids_size);
+    for (std::uint32_t index = 0; index < image.header.proto_ids_size;
+         ++index) {
+        const auto at = static_cast<std::size_t>(image.header.proto_ids_offset) +
+                        static_cast<std::size_t>(index) * 12U;
+        const auto shorty_index = reader.U32(at);
+        const auto return_index = reader.U32(at + 4);
+        const auto parameters_offset = reader.U32(at + 8);
+        if (shorty_index >= image.strings.size() ||
+            return_index >= image.types.size()) {
+            Fail(DexErrorReason::invalid_index, at,
+                 "DEX prototype string or return type index is invalid");
+        }
+        DexPrototype prototype{shorty_index, return_index, {}};
+        if (parameters_offset != 0) {
+            if ((parameters_offset & 3U) != 0 ||
+                parameters_offset < image.header.data_offset) {
+                Fail(DexErrorReason::invalid_range, parameters_offset,
+                     "DEX prototype type_list offset is invalid");
+            }
+            const auto count = reader.U32(parameters_offset);
+            reader.Require(static_cast<std::size_t>(parameters_offset) + 4U,
+                           static_cast<std::size_t>(count) * 2U);
+            prototype.parameter_type_indices.reserve(count);
+            for (std::uint32_t parameter = 0; parameter < count; ++parameter) {
+                const auto type_index = reader.U16(
+                    static_cast<std::size_t>(parameters_offset) + 4U +
+                    static_cast<std::size_t>(parameter) * 2U);
+                if (type_index >= image.types.size()) {
+                    Fail(DexErrorReason::invalid_index, parameters_offset,
+                         "DEX prototype parameter type index is invalid");
+                }
+                prototype.parameter_type_indices.push_back(type_index);
+            }
+        }
+        const auto shorty = RequireAscii(image.strings[shorty_index],
+                                         "prototype shorty");
+        if (shorty.size() != prototype.parameter_type_indices.size() + 1U ||
+            shorty.front() != ShortyKind(image.types[return_index].descriptor)) {
+            Fail(DexErrorReason::invalid_prototype, at,
+                 "DEX prototype shorty does not match result or arity");
+        }
+        for (std::size_t parameter = 0;
+             parameter < prototype.parameter_type_indices.size(); ++parameter) {
+            const auto& descriptor = image.types[
+                prototype.parameter_type_indices[parameter]].descriptor;
+            if (descriptor == "V" || shorty[parameter + 1] !=
+                                         ShortyKind(descriptor)) {
+                Fail(DexErrorReason::invalid_prototype, at,
+                     "DEX prototype shorty does not match parameter types");
+            }
+        }
+        image.prototypes.push_back(std::move(prototype));
+    }
+}
+
 }  // namespace
 
 DexError::DexError(const DexErrorReason reason, const std::size_t offset,
@@ -272,6 +508,7 @@ DexImage ParseDex(const std::span<const std::uint8_t> bytes) {
     ValidateHeader(image.header, bytes.size());
     image.map_items = ReadMap(reader, image.header, bytes.size());
     ValidateMap(image);
+    ReadStringsTypesAndPrototypes(reader, image);
     return image;
 }
 

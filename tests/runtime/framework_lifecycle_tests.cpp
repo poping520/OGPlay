@@ -22,11 +22,29 @@ TEST_CASE("framework HLE installs a declaration-only Activity class set") {
     ogplay::runtime::FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto installed = lifecycle.Install();
     CHECK(classes.FindClass("java/lang/Object") == installed.object_class);
+    CHECK(classes.FindClass("android/content/Context") ==
+          installed.context_class);
+    CHECK(classes.FindClass("android/content/ContextWrapper") ==
+          installed.context_wrapper_class);
     CHECK(classes.FindClass("android/os/Bundle") == installed.bundle_class);
     CHECK(classes.FindClass("android/app/Activity") ==
           installed.activity_class);
     CHECK(classes.GetSuperclass(installed.activity_class) ==
+          installed.context_wrapper_class);
+    CHECK(classes.GetSuperclass(installed.context_wrapper_class) ==
+          installed.context_class);
+    CHECK(classes.GetSuperclass(installed.context_class) ==
           installed.object_class);
+    const auto get_assets = classes.GetMethodId(
+        installed.activity_class, "getAssets",
+        "()Landroid/content/res/AssetManager;", false);
+    REQUIRE(get_assets.has_value());
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(invocations.InvokeVirtual(
+            1, ogplay::runtime::JniReference{1}, installed.activity_class,
+            *get_assets, {}, ogplay::runtime::JniArgumentSource::value_array)),
+        "JNI method implementation has no registered handler",
+        ogplay::runtime::JniInvocationError);
     CHECK_THROWS_AS(static_cast<void>(lifecycle.Install()),
                     ogplay::runtime::FrameworkLifecycleError);
 }

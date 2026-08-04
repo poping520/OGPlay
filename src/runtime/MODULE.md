@@ -99,7 +99,9 @@
   与返回值，并分别执行虚调用、指定类非虚调用和静态调用。
 - `JniCommonSlotDirectory`：把已有环境、类、调用、字符串、primitive/object array、字段、
   native 注册与 JavaVM 行为映射到稳定 thunk 并封口函数表；未覆盖槽继续记账并 trap。
-- `FrameworkLifecycleHle`：声明式安装 Object、Bundle、Activity 类与生命周期方法，
+- `FrameworkLifecycleHle`：声明式安装 Object、Context、ContextWrapper、Bundle、Activity
+  类与生命周期方法；Activity 通过 ContextWrapper 继承 Context，资源服务可在独立 HLE
+  安装后接管 `Context.getAssets`，未安装时明确报告 missing handler，
   通过统一 invocation handler 执行严格状态迁移并输出确定性事件序列。
 - 子域按 `bionic/syscall/jni/dex/framework` 分文件，禁止巨型 dispatcher。
 

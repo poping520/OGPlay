@@ -153,7 +153,7 @@ note = "M3 已将 208 个常用 JNIEnv 槽与 4 个 JavaVM 线程槽映射到稳
 [runtime.framework_hle]
 status = "partial"
 test = "tests/runtime/framework_lifecycle_tests.cpp"
-note = "M3 已声明式安装 Object/Bundle/Activity，并实现严格可观测的 Activity 生命周期；其他框架类继续按样本补齐"
+note = "M3 已声明式安装 Object/Context/ContextWrapper/Bundle/Activity，建立真实 Activity 上下文继承链并实现严格可观测生命周期；资源等服务继续按样本补齐"
 
 [fixtures.m3_jni]
 status = "partial"

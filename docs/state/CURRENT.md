@@ -5,7 +5,8 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0128` 已完成对象数组与字段 JNI thunk 绑定；下一个开发任务编号为 `WU-0129`。
+- `WU-0129` 已完成 Context/ContextWrapper/Activity 继承链；下一个开发任务编号为
+  `WU-0130`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -36,11 +37,13 @@
   声明式引擎指纹报告；不执行字节码。
 - [WU-0128] 将对象数组和全部实例/静态字段访问槽接入公共目录，累计映射 208 个
   JNIEnv 行为槽；反射、direct buffer 等低频槽继续可观测 trap。
+- [WU-0129] 建立 Object→Context→ContextWrapper→Activity 声明链；资源服务未安装时
+  `Context.getAssets` 通过调用引擎明确报告 missing handler。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0129`，补齐 Activity 所需的 Context/ContextWrapper 类层级。
-2. 随后实现最小 AssetManager HLE，不引入字节码执行器。
+1. 创建 `WU-0130`，增加只供框架 HLE 使用的受检 JNI 引用解析边界。
+2. 随后实现最小 AssetManager/InputStream HLE，不引入字节码执行器。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

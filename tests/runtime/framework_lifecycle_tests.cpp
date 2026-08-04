@@ -3,7 +3,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/framework_lifecycle.h"
+#include "ogplay/runtime/framework/framework_lifecycle.h"
 
 namespace {
 

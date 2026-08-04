@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-#include "ogplay/runtime/bionic_tls.h"
+#include "ogplay/runtime/bionic/bionic_tls.h"
 
 namespace {
 

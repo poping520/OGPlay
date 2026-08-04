@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "ogplay/runtime/syscall.h"
+#include "ogplay/runtime/syscall/syscall.h"
 
 namespace {
 

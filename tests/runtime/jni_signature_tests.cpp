@@ -2,7 +2,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_signature.h"
+#include "ogplay/runtime/jni/jni_signature.h"
 
 TEST_CASE("JNI field descriptors preserve primitive object and array facts") {
     using ogplay::runtime::JniTypeKind;

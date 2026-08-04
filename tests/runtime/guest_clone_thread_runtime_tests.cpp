@@ -6,7 +6,7 @@
 #include <memory>
 
 #include "ogplay/cpu/interpreter.h"
-#include "ogplay/runtime/guest_clone_thread_runtime.h"
+#include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
 
 TEST_CASE("ARM clone starts a real host thread at the child return path") {
     ogplay::memory::AddressSpace memory;

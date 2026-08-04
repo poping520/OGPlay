@@ -3,8 +3,8 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_native_registry.h"
-#include "ogplay/runtime/jni_object.h"
+#include "ogplay/runtime/jni/jni_native_registry.h"
+#include "ogplay/runtime/jni/jni_object.h"
 
 TEST_CASE("RegisterNatives resolves overloads by class name and descriptor") {
     ogplay::runtime::JniNativeRegistry registry;

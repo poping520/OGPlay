@@ -114,40 +114,40 @@ target_include_directories(ogplay_loader PUBLIC
 ogplay_set_project_warnings(ogplay_loader)
 
 add_library(ogplay_runtime
-    src/runtime/arm_kernel_helpers.cpp
-    src/runtime/bionic_profile.cpp
-    src/runtime/bionic_selfcheck.cpp
-    src/runtime/bionic_tls.cpp
-    src/runtime/framework_asset.cpp
-    src/runtime/framework_lifecycle.cpp
-    src/runtime/framework_locale.cpp
-    src/runtime/framework_package.cpp
-    src/runtime/framework_preferences.cpp
-    src/runtime/guest_lifecycle.cpp
-    src/runtime/headless_bionic_runner.cpp
-    src/runtime/headless_jni_contract.cpp
-    src/runtime/jni.cpp
-    src/runtime/jni_exception.cpp
-    src/runtime/jni_field_store.cpp
-    src/runtime/jni_environment.cpp
-    src/runtime/jni_java_vm.cpp
-    src/runtime/jni_array.cpp
-    src/runtime/jni_class_registry.cpp
-    src/runtime/jni_invocation.cpp
-    src/runtime/jni_native_registry.cpp
-    src/runtime/jni_object.cpp
-    src/runtime/jni_object_array.cpp
-    src/runtime/jni_signature.cpp
-    src/runtime/jni_utf.cpp
-    src/runtime/guest_thread_lifecycle.cpp
-    src/runtime/guest_clone_thread_runtime.cpp
-    src/runtime/guest_thread_runner.cpp
-    src/runtime/syscall.cpp
-    src/runtime/syscall_arm.cpp
-    src/runtime/syscall_bridge.cpp
-    src/runtime/syscall_process.cpp
-    src/runtime/syscall_signal.cpp
-    src/runtime/syscall_thread_lifecycle.cpp
+    src/runtime/syscall/arm_kernel_helpers.cpp
+    src/runtime/bionic/bionic_profile.cpp
+    src/runtime/bionic/bionic_selfcheck.cpp
+    src/runtime/bionic/bionic_tls.cpp
+    src/runtime/framework/framework_asset.cpp
+    src/runtime/framework/framework_lifecycle.cpp
+    src/runtime/framework/framework_locale.cpp
+    src/runtime/framework/framework_package.cpp
+    src/runtime/framework/framework_preferences.cpp
+    src/runtime/execution/guest_lifecycle.cpp
+    src/runtime/integration/headless_bionic_runner.cpp
+    src/runtime/integration/headless_jni_contract.cpp
+    src/runtime/jni/jni.cpp
+    src/runtime/jni/jni_exception.cpp
+    src/runtime/jni/jni_field_store.cpp
+    src/runtime/jni/jni_environment.cpp
+    src/runtime/jni/jni_java_vm.cpp
+    src/runtime/jni/jni_array.cpp
+    src/runtime/jni/jni_class_registry.cpp
+    src/runtime/jni/jni_invocation.cpp
+    src/runtime/jni/jni_native_registry.cpp
+    src/runtime/jni/jni_object.cpp
+    src/runtime/jni/jni_object_array.cpp
+    src/runtime/jni/jni_signature.cpp
+    src/runtime/jni/jni_utf.cpp
+    src/runtime/syscall/guest_thread_lifecycle.cpp
+    src/runtime/execution/guest_clone_thread_runtime.cpp
+    src/runtime/execution/guest_thread_runner.cpp
+    src/runtime/syscall/syscall.cpp
+    src/runtime/syscall/syscall_arm.cpp
+    src/runtime/syscall/syscall_bridge.cpp
+    src/runtime/syscall/syscall_process.cpp
+    src/runtime/syscall/syscall_signal.cpp
+    src/runtime/syscall/syscall_thread_lifecycle.cpp
     src/runtime/vfs/vfs.cpp
 )
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)

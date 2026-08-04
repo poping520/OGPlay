@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "ogplay/runtime/guest_lifecycle.h"
+#include "ogplay/runtime/execution/guest_lifecycle.h"
 
 namespace {
 

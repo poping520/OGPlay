@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 功能开发已完成，三平台出口前按用户要求整理 runtime 结构。
-- `WU-0146` 已迁移 VFS 公共头、实现和所有直接引用；下一个任务编号为 `WU-0147`。
+- `WU-0147` 已完成全部 runtime 纯机械迁移；下一个任务编号为 `WU-0148`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -27,12 +27,13 @@
 - [WU-0143] M3 功能开发闭合，累计出口 fixture 保持 partial。
 - [ADR-0013/WU-0144] runtime 冻结 jni/framework/bionic/syscall/execution/vfs/integration
   七个子模块、无环依赖方向及渐进迁移规则。
+- [WU-0145..0146] 建立子模块索引/文档门禁，并完成 VFS 镜像目录迁移。
+- [WU-0147] 按特殊授权一次性移动剩余头文件与实现并更新全部路径，不修改代码逻辑。
 
 ## 下一步（按优先级）
 
-1. `WU-0147` 起按 profile/selfcheck/TLS 切片迁移 bionic。
-2. 后续按 jni → framework → syscall → execution → integration 渐进迁移。
-3. 拆分完成后执行 M3 三平台出口并开始 M4。
+1. `WU-0148` 执行 M3 三平台出口验收并完成 `M3-ACCEPTANCE.md`。
+2. 出口通过后开始 M4。
 
 ## 阻塞
 

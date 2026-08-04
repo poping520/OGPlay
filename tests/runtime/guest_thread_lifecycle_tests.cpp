@@ -6,7 +6,7 @@
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/memory/bus.h"
-#include "ogplay/runtime/guest_thread_lifecycle.h"
+#include "ogplay/runtime/syscall/guest_thread_lifecycle.h"
 
 TEST_CASE("guest thread lifecycle advances explicit per-thread states") {
     ogplay::runtime::GuestThreadLifecycle lifecycle;

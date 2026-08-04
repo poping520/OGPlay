@@ -2,7 +2,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/jni_environment.h"
+#include "ogplay/runtime/jni/jni_environment.h"
 
 TEST_CASE("JNI environment closes common reference operations") {
     ogplay::runtime::JniEnvironment environment({8, 4, 4});

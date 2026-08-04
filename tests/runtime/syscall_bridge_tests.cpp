@@ -5,7 +5,7 @@
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/memory/bus.h"
-#include "ogplay/runtime/syscall_bridge.h"
+#include "ogplay/runtime/syscall/syscall_bridge.h"
 
 TEST_CASE("A32 SVC zero dispatches Linux register ABI and writes r0") {
     ogplay::memory::AddressSpace memory;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -9,9 +10,28 @@
 
 namespace ogplay::cpu {
 
+class DynarmicExecutionContext final {
+public:
+    explicit DynarmicExecutionContext(std::size_t maximum_processors);
+    ~DynarmicExecutionContext();
+
+    DynarmicExecutionContext(const DynarmicExecutionContext&) = delete;
+    DynarmicExecutionContext& operator=(const DynarmicExecutionContext&) = delete;
+
+private:
+    friend class DynarmicCpu;
+    [[nodiscard]] std::size_t AcquireProcessor();
+    void ReleaseProcessor(std::size_t processor_id) noexcept;
+
+    class Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
 class DynarmicCpu final : public Cpu {
 public:
     explicit DynarmicCpu(memory::MemoryBus& memory_bus);
+    DynarmicCpu(memory::MemoryBus& memory_bus,
+                std::shared_ptr<DynarmicExecutionContext> context);
     ~DynarmicCpu() override;
 
     DynarmicCpu(const DynarmicCpu&) = delete;

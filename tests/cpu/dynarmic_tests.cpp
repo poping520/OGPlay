@@ -154,3 +154,42 @@ TEST_CASE("Dynarmic exposes the guest thread pointer through TPIDRURO") {
     CHECK(result.ThreadPointer() ==
           ogplay::memory::GuestAddress{0x56789000U});
 }
+
+TEST_CASE("Dynarmic executes ARM exclusive memory operations") {
+    const ogplay::memory::GuestAddress code{sample::kCodeAddress};
+    const ogplay::memory::GuestAddress counter{sample::kMailboxAddress};
+    ogplay::memory::AddressSpace memory;
+    memory.Map({code, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    memory.Map({counter, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write32(code, 0xe1901f9fU);         // ldrex r1, [r0]
+    bus.Write32(code.Add(4), 0xe2811001U);  // add r1, r1, #1
+    bus.Write32(code.Add(8), 0xe1802f91U);  // strex r2, r1, [r0]
+    bus.Write32(code.Add(12), 0xef000001U); // svc #1
+    bus.Write32(counter, 9);
+    memory.Protect({code, memory.PageSize()},
+                   ogplay::memory::PageProtection::read |
+                       ogplay::memory::PageProtection::execute);
+
+    auto context =
+        std::make_shared<ogplay::cpu::DynarmicExecutionContext>(2);
+    ogplay::cpu::DynarmicCpu cpu(bus, context);
+    ogplay::cpu::A32State state;
+    state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, counter.Value());
+    cpu.SetState(state);
+    CHECK(cpu.Run(8).reason == ogplay::cpu::RunStopReason::supervisor_call);
+    CHECK(cpu.GetState().Register(ogplay::cpu::CoreRegister::r2) == 0);
+    CHECK(bus.Read32(counter) == 10);
+    CHECK_THROWS_AS(
+        ogplay::cpu::DynarmicCpu(
+            bus, std::shared_ptr<ogplay::cpu::DynarmicExecutionContext>{}),
+        std::invalid_argument);
+    ogplay::cpu::DynarmicCpu second_cpu(bus, context);
+    CHECK_THROWS_AS(ogplay::cpu::DynarmicCpu(bus, context),
+                    std::runtime_error);
+}

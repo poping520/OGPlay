@@ -13,6 +13,7 @@
 #include "ogplay/cpu/futex.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/memory/address_space.h"
+#include "ogplay/runtime/guest_thread_lifecycle.h"
 #include "ogplay/runtime/vfs.h"
 
 namespace ogplay::runtime {
@@ -96,6 +97,9 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
 void BindAndroidArmPrivateSyscalls(
     A32SyscallDispatcher& dispatcher,
     GuestThreadPointerSetter thread_pointer_setter);
+void BindAndroidThreadLifecycleSyscalls(
+    A32SyscallDispatcher& dispatcher,
+    GuestThreadLifecycle& thread_lifecycle);
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                              VirtualFileSystem& vfs,
                              memory::AddressSpace& address_space);

@@ -16,6 +16,8 @@
   PRIVATE flag、精确 WAKE N、值不匹配和受检地址错误；`sched_yield` 让出宿主线程。
 - `BindAndroidArmPrivateSyscalls`：将 `__ARM_NR_set_tls` 绑定显式的当前 guest 线程
   pointer setter；未知线程与 setter 失败返回明确 errno。
+- `BindAndroidThreadLifecycleSyscalls`：将 `set_tid_address/exit/exit_group` 绑定统一
+  guest 线程状态机；exit 只发出停止请求，由执行循环完成宿主线程退出。
 - `SelectBionicProfile` / `RouteBionicSymbol`：只接受 API 19/22/23，固定真实 guest Bionic
   库、宿主 HLE 边界库及少而明确的 str/mem/pthread 拦截表。
 - `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的

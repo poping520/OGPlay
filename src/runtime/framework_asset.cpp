@@ -1,6 +1,7 @@
 #include "ogplay/runtime/framework_asset.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <map>
@@ -134,8 +135,10 @@ public:
         const auto input_stream = classes_->RegisterClass(
             {"java/io/InputStream",
              "java/lang/Object",
-             {{"read", "([B)I", "framework.input_stream.read", false},
+             {{"read", "()I", "framework.input_stream.read_one", false},
+              {"read", "([B)I", "framework.input_stream.read", false},
               {"read", "([BII)I", "framework.input_stream.read_range", false},
+              {"skip", "(J)J", "framework.input_stream.skip", false},
               {"available", "()I", "framework.input_stream.available", false},
               {"close", "()V", "framework.input_stream.close", false}},
              {}});
@@ -157,6 +160,11 @@ public:
             "framework.asset_manager.open",
             [this](const JniInvocation& invocation) { return Open(invocation); });
         invocations_->RegisterHandler(
+            "framework.input_stream.read_one",
+            [this](const JniInvocation& invocation) {
+                return ReadOne(invocation);
+            });
+        invocations_->RegisterHandler(
             "framework.input_stream.read",
             [this](const JniInvocation& invocation) { return Read(invocation); });
         invocations_->RegisterHandler(
@@ -164,6 +172,9 @@ public:
             [this](const JniInvocation& invocation) {
                 return ReadRange(invocation);
             });
+        invocations_->RegisterHandler(
+            "framework.input_stream.skip",
+            [this](const JniInvocation& invocation) { return Skip(invocation); });
         invocations_->RegisterHandler(
             "framework.input_stream.available",
             [this](const JniInvocation& invocation) {
@@ -312,6 +323,46 @@ private:
             std::get<JniReference>(invocation.arguments[0]),
             std::get<JniInt>(invocation.arguments[1]),
             std::get<JniInt>(invocation.arguments[2]));
+    }
+
+    [[nodiscard]] JniValue ReadOne(const JniInvocation& invocation) {
+        const auto identity = Resolve(invocation.thread_id, invocation.receiver);
+        std::array<std::byte, 1> byte{};
+        std::scoped_lock lock(mutex_);
+        auto& stream = RequireStream(identity);
+        if (stream.offset == stream.size) return JniValue{JniInt{-1}};
+        try {
+            if (vfs_->Read(stream.descriptor, byte) != 1) {
+                Fail(FrameworkAssetErrorReason::io_failure,
+                     "APK asset ended before its declared size");
+            }
+        } catch (const VfsError& error) {
+            Fail(FrameworkAssetErrorReason::io_failure,
+                 std::string("cannot read APK asset: ") + error.what());
+        }
+        ++stream.offset;
+        return JniValue{static_cast<JniInt>(
+            std::to_integer<std::uint8_t>(byte.front()))};
+    }
+
+    [[nodiscard]] JniValue Skip(const JniInvocation& invocation) {
+        const auto identity = Resolve(invocation.thread_id, invocation.receiver);
+        const auto requested = std::get<JniLong>(invocation.arguments.front());
+        if (requested <= 0) return JniValue{JniLong{0}};
+        std::scoped_lock lock(mutex_);
+        auto& stream = RequireStream(identity);
+        const auto remaining = stream.size - stream.offset;
+        const auto skipped = std::min(
+            static_cast<std::uint64_t>(requested), remaining);
+        try {
+            stream.offset = vfs_->Seek(
+                stream.descriptor, static_cast<std::int64_t>(skipped),
+                VfsSeekWhence::current);
+        } catch (const VfsError& error) {
+            Fail(FrameworkAssetErrorReason::io_failure,
+                 std::string("cannot skip APK asset: ") + error.what());
+        }
+        return JniValue{static_cast<JniLong>(skipped)};
     }
 
     [[nodiscard]] JniValue Available(const JniInvocation& invocation) {

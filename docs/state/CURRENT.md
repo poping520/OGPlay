@@ -5,7 +5,7 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0134` 已完成 InputStream offset/length 读取；下一个开发任务编号为 `WU-0135`。
+- `WU-0135` 已完成 InputStream 单字节读取与 skip；下一个开发任务编号为 `WU-0136`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -48,10 +48,12 @@
   默认值、contains、put/remove/clear、commit/apply 及类型错误。
 - [WU-0134] 实现 InputStream.read(byte[],offset,length)，目标范围在读取前受检，非法
   范围不推进 VFS descriptor，部分读与 EOF 保持 Java 语义。
+- [WU-0135] 实现 InputStream.read() 的 0..255/EOF 语义及 skip(long) 的非负、有界推进，
+  两者与 available、byte[] read 共用同一 VFS descriptor 状态。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0135`，实现 InputStream 单字节 read 与 skip。
+1. 创建 `WU-0136`，补齐样本常用 Locale/配置查询的声明式 HLE。
 2. 继续按样本调用面补框架 HLE，不引入完整 Android services。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 

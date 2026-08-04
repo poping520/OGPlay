@@ -10,8 +10,8 @@ CMake build 目录。调用者通过参数传入主机、账号、平台及工�
 submodule，然后由 CMake 增量编译并执行 CTest。远端目录必须专用于本工具；工具不会递归
 删除它，也不会同步本地未提交改动。
 
-核心依赖会递归初始化。ANGLE 源码及完整 GN 工作区只用于维护者升级；普通增量验证使用
-预编译 SDK，不同步其 gclient 依赖图。
+核心依赖会递归初始化；`angle-prebuilt` 单独浅更新。ANGLE 源码及完整 GN 工作区只用于
+维护者升级，普通增量验证不初始化源码 submodule，也不同步其 gclient 依赖图。
 
 ```text
 python tools/remote_incremental.py --host <host> --user <user> \
@@ -52,8 +52,9 @@ python tools/package_angle_sdk.py verify \
   --sdk .local/angle-sdk/windows-x64/release
 ```
 
-目标目录必须不存在，避免旧文件混入新包。普通项目配置最终只消费独立的
-`third_party/angle-prebuilt` 浅 submodule；源码树仅作为本脚本的维护者输入。
+目标目录必须不存在，避免旧文件混入新包。普通项目配置只消费独立的
+[`third_party/angle-prebuilt`](https://github.com/poping520/OGPlay-angle-prebuilt) 浅
+submodule；源码树仅作为本脚本的维护者输入。
 
 启用消费时设置 `OGPLAY_ENABLE_ANGLE=ON`。默认 SDK 根目录为
 `third_party/angle-prebuilt`，也可用绝对 `OGPLAY_ANGLE_SDK_ROOT` 指向待发布包的根目录；

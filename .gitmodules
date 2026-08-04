@@ -18,3 +18,7 @@
 	url = https://chromium.googlesource.com/angle/angle.git
 	branch = main
 	shallow = true
+[submodule "third_party/angle-prebuilt"]
+	path = third_party/angle-prebuilt
+	url = https://github.com/poping520/OGPlay-angle-prebuilt.git
+	shallow = true

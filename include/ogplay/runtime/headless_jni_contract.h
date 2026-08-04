@@ -27,6 +27,7 @@ struct HeadlessJniContractReport final {
     bool preferences_round_trip{};
     bool locale_round_trip{};
     bool package_round_trip{};
+    bool native_threads_closed{};
     JniInt native_result{};
     std::size_t lifecycle_event_count{};
     std::vector<std::string> trace;

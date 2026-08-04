@@ -2,10 +2,12 @@
 
 #include <array>
 #include <cstddef>
+#include <exception>
 #include <optional>
 #include <utility>
 #include <vector>
 
+#include "ogplay/hal/thread.h"
 #include "ogplay/runtime/framework_asset.h"
 #include "ogplay/runtime/framework_lifecycle.h"
 #include "ogplay/runtime/framework_locale.h"
@@ -295,6 +297,62 @@ HeadlessJniContractReport RunHeadlessJniContract(
             version_code)) == 3;
     report.trace.emplace_back("framework.package");
 
+    constexpr std::array<std::uint64_t, 2> worker_ids{2, 3};
+    std::array<bool, worker_ids.size()> worker_results{};
+    std::array<std::exception_ptr, worker_ids.size()> worker_errors{};
+    std::array<std::unique_ptr<hal::HostThread>, worker_ids.size()>
+        worker_threads;
+    for (std::size_t index = 0; index < worker_ids.size(); ++index) {
+        worker_threads[index] = hal::StartHostThread([&, index] {
+            try {
+                const auto thread_id = worker_ids[index];
+                const auto worker = vm.AttachCurrentThreadAsDaemon(
+                    thread_id, kJniVersion1_6, 8);
+                if (worker.status != JniStatus::ok ||
+                    worker.environment.IsNull() ||
+                    vm.GetEnv(thread_id, kJniVersion1_6).environment !=
+                        worker.environment) {
+                    Fail(HeadlessJniContractErrorReason::invariant_failed,
+                         "native worker could not attach to JavaVM");
+                }
+                const auto worker_locale =
+                    ReferenceResult(invocations.InvokeStatic(
+                        thread_id, locale_class,
+                        Method(classes, locale_class, "getDefault",
+                               "()Ljava/util/Locale;", true),
+                        {}, JniArgumentSource::value_array));
+                const auto language =
+                    ReferenceResult(invocations.InvokeVirtual(
+                        thread_id, worker_locale, locale_class,
+                        Method(classes, locale_class, "getLanguage",
+                               "()Ljava/lang/String;"),
+                        {}, JniArgumentSource::value_array));
+                const auto language_identity =
+                    environment.ResolveObjectForHle(thread_id, language);
+                worker_results[index] =
+                    language_identity.has_value() &&
+                    strings.Region(*language_identity, 0,
+                                   strings.Length(*language_identity)) ==
+                        std::vector<JniChar>{'z', 'h'} &&
+                    vm.IsDaemon(thread_id);
+                if (vm.DetachCurrentThread(thread_id) != JniStatus::ok) {
+                    Fail(HeadlessJniContractErrorReason::invariant_failed,
+                         "native worker could not detach from JavaVM");
+                }
+            } catch (...) {
+                worker_errors[index] = std::current_exception();
+            }
+        });
+    }
+    for (auto& thread : worker_threads) thread->Join();
+    for (const auto& error : worker_errors) {
+        if (error) std::rethrow_exception(error);
+    }
+    report.native_threads_closed =
+        worker_results[0] && worker_results[1] &&
+        vm.AttachedThreadCount() == 1;
+    report.trace.emplace_back("jni.native_threads");
+
     JniNativeRegistry natives;
     const std::array native_methods{
         JniNativeMethod{"nativeStep", "(I)I", kNativeStep}};
@@ -396,7 +454,7 @@ HeadlessJniContractReport RunHeadlessJniContract(
         !report.data_round_trip || !report.reference_closed ||
         !report.exception_closed || !report.asset_round_trip ||
         !report.preferences_round_trip || !report.locale_round_trip ||
-        !report.package_round_trip) {
+        !report.package_round_trip || !report.native_threads_closed) {
         Fail(HeadlessJniContractErrorReason::invariant_failed,
              "headless JNI contract did not close every resource");
     }

@@ -26,6 +26,7 @@ TEST_CASE("headless JNI contract closes both call directions") {
     CHECK(report.preferences_round_trip);
     CHECK(report.locale_round_trip);
     CHECK(report.package_round_trip);
+    CHECK(report.native_threads_closed);
     CHECK(report.native_result == 42);
     CHECK(report.lifecycle_event_count == 7);
 }
@@ -41,7 +42,8 @@ TEST_CASE("headless JNI contract produces a deterministic cumulative trace") {
         "vm.attach",             "hle.construct",
         "hle.create",            "framework.asset",
         "framework.preferences", "framework.locale",
-        "framework.package",     "java.nativeStep",
+        "framework.package",     "jni.native_threads",
+        "java.nativeStep",
         "native.lifecycle.enter", "jni.data",
         "jni.reference",         "jni.exception",
         "native.lifecycle.exit", "vm.detach"};

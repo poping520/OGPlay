@@ -360,6 +360,6 @@ L2 需要的组件：DEX 解析器、字节码解释器（约 220 条指令）�
 
 - [x] 三个 API 版本的 Bionic 均能完成 `libc` 自检并跑通无界面 NDK `.so` 契约样本
 - [x] syscall 覆盖率账本建立，未实现 syscall 100% 可被 `hle.unimplemented()` 观测
-- [ ] 常用 JNIEnv/JavaVM 调用闭合，签名解析器通过完整描述符测试集；其余槽 100% 可观测并 trap
-- [ ] 多线程：Unity/Mono 类样例能创建线程并正常运行（对标 Bogodroid 的失败点）
-- [ ] DEX L1 解析器可对题库输出引擎指纹与 Java 厚度报告
+- [x] 常用 JNIEnv/JavaVM 调用闭合，签名解析器通过完整描述符测试集；其余槽 100% 可观测并 trap
+- [x] 多线程：Unity/Mono 类样例能创建线程并正常运行（对标 Bogodroid 的失败点）
+- [x] DEX L1 解析器可对题库输出引擎指纹与 Java 厚度报告

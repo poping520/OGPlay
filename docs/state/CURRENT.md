@@ -1,12 +1,11 @@
 # 当前状态
 
-更新：2026-08-04 · M3 JNI 基线
+更新：2026-08-04 · M3 开发闭合
 
 ## 当前阶段
 
-- M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0142` 已补齐 native 工作线程 VM 附着与 HLE 回调；下一个开发任务编号为
-  `WU-0143`。
+- M0、M1、M2 均已完成；M3 的开发任务已完成，但尚未执行三平台出口验收。
+- `WU-0143` 已闭合 M3 开发状态；下一个任务编号为 `WU-0144`，仅用于 M3 出口验收。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -17,6 +16,7 @@
 | M0 工程地基 | 完成 | [M0-ACCEPTANCE.md](M0-ACCEPTANCE.md) | `docs/tasks/m0/` |
 | M1 内核与跨平台 | 完成 | [M1-ACCEPTANCE.md](M1-ACCEPTANCE.md) | `docs/tasks/m1/` |
 | M2 Bionic 与 Syscall | 完成 | [M2-ACCEPTANCE.md](M2-ACCEPTANCE.md) | `docs/tasks/m2/` |
+| M3 JNI 与 Java 框架 | 开发完成，待出口 | [M3-ACCEPTANCE.md](M3-ACCEPTANCE.md) | `docs/tasks/m3/` |
 
 能力的机器可读现状以仓库根目录 `capabilities.toml` 为准；本文件不重复维护完整能力历史。
 
@@ -65,11 +65,14 @@
   共存、引用容量、确定性结果和资源闭环。
 - [WU-0142] 两个真实宿主工作线程分别 daemon attach、回调 Locale HLE 并 detach，覆盖
   Unity/Mono 类 native 线程进入 Java 的累计路径。
+- [WU-0143] M3 路线图开发项、能力账本与任务索引已闭合；累计出口 fixture 继续保持
+  partial，等待下一会话三平台证据。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0143`，闭合 M3 开发状态并只保留三平台出口验收。
-2. 下一会话执行 M3 三平台 warnings-as-errors 与累计契约出口验收。
+1. 下一会话创建 `WU-0144`，执行 M3 三平台 warnings-as-errors 构建与全量 CTest。
+2. 三平台均运行累计无界面 JNI 契约，完成 `M3-ACCEPTANCE.md` 并将 fixture 标为 complete。
+3. 出口通过后开始 M4；本轮不再新增 M3 开发能力。
 
 ## 阻塞
 

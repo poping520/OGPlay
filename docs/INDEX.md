@@ -9,7 +9,7 @@
 - 当前交接：[state/CURRENT.md](state/CURRENT.md)
 - 长期已知问题：[state/KNOWN-ISSUES.md](state/KNOWN-ISSUES.md)
 - 里程碑验收：[M0](state/M0-ACCEPTANCE.md)、[M1](state/M1-ACCEPTANCE.md)、
-  [M2](state/M2-ACCEPTANCE.md)
+  [M2](state/M2-ACCEPTANCE.md)、[M3（待出口）](state/M3-ACCEPTANCE.md)
 - 工作单索引：[tasks/README.md](tasks/README.md)（任务按 [M0](tasks/m0/)、
   [M1](tasks/m1/)、[M2](tasks/m2/)、[M3](tasks/m3/) 分区）
 

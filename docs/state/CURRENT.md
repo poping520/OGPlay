@@ -5,7 +5,8 @@
 ## 当前阶段
 
 - M0、M1、M2 均已完成；M3 已开始，当前尚无进行中的 Work Unit。
-- `WU-0131` 已完成最小 AssetManager/InputStream HLE；下一个开发任务编号为 `WU-0132`。
+- `WU-0132` 已冻结 Context.getSharedPreferences 声明式契约；下一个开发任务编号为
+  `WU-0133`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -42,11 +43,13 @@
   exception gate，只返回强类型对象身份，不泄露宿主指针。
 - [WU-0131] 声明式安装 AssetManager/InputStream，经受检 JNI string/byte[] 将 APK
   `assets/` 接入 VFS，闭合 getAssets/open/read/available/close 与失败路径。
+- [WU-0132] 在 Context 层声明 getSharedPreferences，Activity 可继承查找；偏好 HLE
+  未安装时继续由调用引擎明确报告 missing handler。
 
 ## 下一步（按优先级）
 
-1. 创建 `WU-0132`，补充样本实际触达的 SharedPreferences 最小声明式 HLE。
-2. 继续保持框架类按样本调用面增量实现，不引入完整 Android services。
+1. 创建 `WU-0133`，实现样本实际触达的 SharedPreferences/Editor 最小 HLE。
+2. 随后补齐 InputStream 常用读取重载，不引入完整 Android services。
 3. M3 出口继续使用三平台 warnings-as-errors 构建与累计契约样本验收。
 
 ## 阻塞

@@ -40,7 +40,10 @@ public:
             {"android/content/Context",
              "java/lang/Object",
              {{"getAssets", "()Landroid/content/res/AssetManager;",
-               "framework.context.get_assets", false}},
+               "framework.context.get_assets", false},
+              {"getSharedPreferences",
+               "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+               "framework.context.get_shared_preferences", false}},
              {}});
         const auto context_wrapper = classes_->RegisterClass(
             {"android/content/ContextWrapper", "android/content/Context", {},

@@ -60,9 +60,9 @@ if(OGPLAY_ENABLE_ANGLE)
         message(FATAL_ERROR "OGPLAY_ANGLE_BUILD_DIR must be an absolute path")
     endif()
 
-    find_library(_angle_egl_library NAMES libEGL EGL
+    find_library(_angle_egl_library NAMES libEGL.dll libEGL EGL
         PATHS "${OGPLAY_ANGLE_BUILD_DIR}" NO_DEFAULT_PATH NO_CACHE)
-    find_library(_angle_glesv2_library NAMES libGLESv2 GLESv2
+    find_library(_angle_glesv2_library NAMES libGLESv2.dll libGLESv2 GLESv2
         PATHS "${OGPLAY_ANGLE_BUILD_DIR}" NO_DEFAULT_PATH NO_CACHE)
     if(WIN32)
         find_file(_angle_egl_runtime NAMES libEGL.dll EGL.dll

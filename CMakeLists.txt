@@ -352,4 +352,12 @@ if(OGPLAY_BUILD_TESTS)
             --self-test
     )
     set_tests_properties(tools.remote_incremental_self_test PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.angle_build_driver_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/build_angle.py
+            --self-test
+    )
+    set_tests_properties(tools.angle_build_driver_self_test PROPERTIES LABELS tools)
 endif()

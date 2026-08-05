@@ -78,6 +78,9 @@
 - 平台探测事实由下层注入；gles 模块不使用平台宏，也不直接依赖平台 SDK 类型。
 - EGL 创建严格遵循 display→initialize→config→bind API→context→surface→make-current；
   失败按已完成阶段逆序回滚，成功析构按 unbind→surface→context→terminate 清理。
+- ANGLE backend 选择经 `EGL_EXT_platform_base` 的 `eglGetPlatformDisplayEXT` 与 `EGLint`
+  属性表进入，使用空 `void*` 表达默认 native display；不依赖部分平台包未实现的 EGL 1.5
+  core 同名入口，也不把平台相关的 `EGLNativeDisplayType` 泄漏给扩展入口。
 - EGL 错误保留失败操作和原生错误码；无 ANGLE 的构建必须明确不可用。
 - ANGLE 原生 `glReadPixels` 的底部首行必须在边界内翻转为 `ImageView`/SDL 的顶部首行，
   禁止把坐标系差异泄漏到每个消费者。

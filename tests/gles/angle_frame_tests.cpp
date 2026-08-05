@@ -5,17 +5,32 @@
 
 #include "ogplay/gles/angle_frame.h"
 
+namespace {
+
+#if defined(_WIN32)
+constexpr ogplay::gles::AngleRenderer kNativeRenderer =
+    ogplay::gles::AngleRenderer::d3d11;
+#elif defined(__APPLE__)
+constexpr ogplay::gles::AngleRenderer kNativeRenderer =
+    ogplay::gles::AngleRenderer::metal;
+#else
+constexpr ogplay::gles::AngleRenderer kNativeRenderer =
+    ogplay::gles::AngleRenderer::vulkan;
+#endif
+
+}  // namespace
+
 TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) {
         CHECK_THROWS_AS(ogplay::gles::AngleFrame::CreatePbuffer(
-                            {ogplay::gles::AngleRenderer::d3d11,
+                            {kNativeRenderer,
                              ogplay::gles::AngleDevice::hardware}, 4, 3),
                         ogplay::gles::EglLifecycleError);
         return;
     }
 
     auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
-        {ogplay::gles::AngleRenderer::d3d11,
+        {kNativeRenderer,
          ogplay::gles::AngleDevice::hardware}, 4, 3);
     frame.Viewport(0, 0, 4, 3);
     frame.ClearColor(0.25F, 0.5F, 0.75F, 1.0F);

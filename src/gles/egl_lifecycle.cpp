@@ -7,6 +7,7 @@
 #include <utility>
 
 #if OGPLAY_HAS_ANGLE
+#define EGL_EGLEXT_PROTOTYPES 1
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <EGL/eglext_angle.h>
@@ -85,12 +86,12 @@ template <typename Target, typename Source>
 class NativeAngleEglApi final : public EglApi {
 public:
     EglHandle GetPlatformDisplay(const AngleBackend backend) override {
-        const EGLAttrib attributes[]{
+        const EGLint attributes[]{
             EGL_PLATFORM_ANGLE_TYPE_ANGLE, RendererAttribute(backend.renderer),
             EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE,
             DeviceAttribute(backend.device), EGL_NONE};
-        return ReinterpretHandle<EglHandle>(eglGetPlatformDisplay(
-            EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, attributes));
+        return ReinterpretHandle<EglHandle>(eglGetPlatformDisplayEXT(
+            EGL_PLATFORM_ANGLE_ANGLE, nullptr, attributes));
     }
 
     bool Initialize(const EglHandle display, int& major, int& minor) override {

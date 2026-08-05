@@ -141,7 +141,8 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     CHECK_FALSE(targets[0].created_by_guest);
 
     const auto capabilities = gpu.Capabilities();
-    CHECK(capabilities.host_backend == "d3d11/hardware");
+    CHECK(capabilities.host_backend ==
+          ogplay::gles::AngleBackendName(NativeHardwareBackend()));
     CHECK(capabilities.reported_extensions.empty());
     CHECK(capabilities.reported_limits.empty());
 

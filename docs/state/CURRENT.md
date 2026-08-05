@@ -1,14 +1,14 @@
 # 当前状态
 
-更新：2026-08-05 · M4 出口候选就绪
+更新：2026-08-05 · M4 Windows/macOS 出口已通过
 
 ## 当前阶段
 
-- M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0195` 已完成 Windows/MSVC 严格出口预演并冻结三平台本机测试入口；下一编号为
-  `WU-0196`，在 Linux/macOS 对应机器执行出口测试并汇总 M4 验收。
-- 当前开发机只使用 Windows/MSVC 预设；M4 的 Linux/macOS 验证在对应平台机器本地
-  增量构建并执行，不从当前 Windows 主机通过 SSH 代跑。
+- M0、M1、M2、M3 均已完成；M4 已通过 Windows/MSVC 与 macOS/arm64 本机严格出口。
+- `WU-0196` 已闭合 macOS/arm64 Metal 与 SwiftShader 跨平台问题，严格全量
+  CTest 297/297 通过；`WU-0197` 已统一原生 ANGLE 测试的宿主硬件后端映射。
+- 当前开发机使用 macOS/arm64 `dev` 预设；M4 仍需在 Linux/x64 对应机器本地
+  增量构建并执行同一严格出口，通过后才能编写 `M4-ACCEPTANCE.md`。
 
 ## 已验收基线
 
@@ -61,11 +61,16 @@
   Windows 严格全量 CTest 297/297 通过。
 - [WU-0195] Windows/MSVC 出口入口以真实 Bionic 与两个 APK 完成严格预演，综合样例输入
   连续 5 次稳定，全量 CTest 297/297；候选已可交给 Linux/macOS 对应机器本地验收。
+- [WU-0196] macOS/arm64 出口使用完整 ANGLE SDK 通过 Metal/hardware 与
+  Vulkan/SwiftShader 黄金帧、API 19/22/23 Bionic 以及两个真实 APK；严格全量
+  CTest 297/297 通过，10 项关键图形与 APK 测试各连续 5 次稳定。
+- [WU-0197] ANGLE frame、Android boundary 与 NativeActivity APK 测试统一为 Windows
+  D3D11、Linux Vulkan、macOS Metal 硬件映射，不回退 SwiftShader。
 
 ## 下一步（按优先级）
 
-1. 在 Linux 与 macOS 对应机器拉取同一出口候选，准备相同的 API 19 Bionic 与两个 APK，
-   运行 `tools/m4_exit.py`；两端通过后补 `M4-ACCEPTANCE.md` 并更新里程碑任务索引。
+1. 创建 `WU-0198` 并在 Linux/x64 对应机器拉取同一出口候选，准备 API 19/22/23
+   Bionic 与两个 APK，运行 `tools/m4_exit.py`；通过后补 `M4-ACCEPTANCE.md`。
 
 ## 阻塞
 

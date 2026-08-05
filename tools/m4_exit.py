@@ -73,8 +73,12 @@ def validate_apk(path: Path, expected_entry: str, label: str) -> Path:
 
 def validate_bionic(root: Path) -> Path:
     resolved = root.expanduser().resolve()
-    for name in ("libc.so", "libm.so", "libdl.so"):
-        require_file(resolved / "api19" / "lib" / name, f"API 19 Bionic {name}")
+    for api in (19, 22, 23):
+        for name in ("libc.so", "libm.so", "libdl.so"):
+            require_file(
+                resolved / f"api{api}" / "lib" / name,
+                f"API {api} Bionic {name}",
+            )
     return resolved
 
 
@@ -118,6 +122,19 @@ def validate_angle_sdk(source: Path, host: HostSpec) -> Path:
         raise ExitPreflightError(
             f"{host.platform} M4 exit requires ANGLE SwiftShader"
         )
+    if swiftshader:
+        suffix = "dylib" if host.platform == "macos" else "so"
+        expected_runtime = {
+            f"bin/libvk_swiftshader.{suffix}",
+            "bin/vk_swiftshader_icd.json",
+        }
+        runtime = manifest.get("runtime_artifacts")
+        if not isinstance(runtime, list) or not expected_runtime.issubset(runtime):
+            raise ExitPreflightError(
+                "ANGLE SwiftShader declaration has no complete runtime artifact list"
+            )
+        for relative in sorted(expected_runtime):
+            require_file(package / relative, f"ANGLE SwiftShader runtime {relative}")
     return package
 
 
@@ -218,13 +235,23 @@ def self_test() -> int:
             "target_cpu": "x64",
             "configuration": "release",
             "gn_args": ["angle_enable_swiftshader=true"],
+            "runtime_artifacts": [
+                "bin/libvk_swiftshader.so", "bin/vk_swiftshader_icd.json"
+            ],
         }), encoding="utf-8")
+        (package / "bin").mkdir()
+        (package / "bin" / "libvk_swiftshader.so").write_bytes(b"runtime")
+        (package / "bin" / "vk_swiftshader_icd.json").write_text(
+            "{}", encoding="utf-8"
+        )
         assert validate_angle_sdk(root, linux) == package
 
         bionic = root / "oracle"
-        (bionic / "api19" / "lib").mkdir(parents=True)
-        for name in ("libc.so", "libm.so", "libdl.so"):
-            (bionic / "api19" / "lib" / name).write_bytes(b"ELF-test")
+        for api in (19, 22, 23):
+            directory = bionic / f"api{api}" / "lib"
+            directory.mkdir(parents=True)
+            for name in ("libc.so", "libm.so", "libdl.so"):
+                (directory / name).write_bytes(b"ELF-test")
         assert validate_bionic(bionic) == bionic.resolve()
 
         apk = root / "fixture.apk"

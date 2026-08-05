@@ -18,11 +18,22 @@
 
 namespace {
 
+#if defined(_WIN32)
+constexpr ogplay::gles::AngleRenderer kNativeRenderer =
+    ogplay::gles::AngleRenderer::d3d11;
+#elif defined(__APPLE__)
+constexpr ogplay::gles::AngleRenderer kNativeRenderer =
+    ogplay::gles::AngleRenderer::metal;
+#else
+constexpr ogplay::gles::AngleRenderer kNativeRenderer =
+    ogplay::gles::AngleRenderer::vulkan;
+#endif
+
 class BoundaryFixture final {
 public:
     explicit BoundaryFixture(const std::uint32_t supersample_factor = 1)
         : bus(memory), cpu(bus), boundary(memory,
-              {ogplay::gles::AngleRenderer::d3d11,
+              {kNativeRenderer,
                ogplay::gles::AngleDevice::hardware}, 4, 3,
               supersample_factor) {
         memory.Map({stack, memory.PageSize()},

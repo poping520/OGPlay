@@ -14,7 +14,8 @@ JNI、framework 或 integration。
 
 - init array 正序、fini array 逆序，调用前完整验证。
 - child 从 parent CPU 状态派生，r0、SP、TLS、TID 和退出清理必须精确。
-- 执行循环只消费已声明的 Linux SVC，其他 trap 原样上报。
+- 执行循环消费已声明的 Linux SVC；其他 trap 只有显式 HLE handler 返回已处理才继续，
+  否则原样上报。clone child 必须继承同一 handler。
 
 ## 测试
 

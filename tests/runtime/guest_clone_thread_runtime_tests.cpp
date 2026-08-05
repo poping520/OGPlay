@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -21,11 +22,12 @@ TEST_CASE("ARM clone starts a real host thread at the child return path") {
                    ogplay::memory::PageProtection::write);
     bus.Write32(code, 0xef000000U);          // svc #0: clone
     bus.Write32(code.Add(4), 0xe3500000U);   // cmp r0, #0
-    bus.Write32(code.Add(8), 0x1a000002U);   // bne parent_stop
-    bus.Write32(code.Add(12), 0xe3a07001U);  // mov r7, #1
-    bus.Write32(code.Add(16), 0xe3a00007U);  // mov r0, #7
-    bus.Write32(code.Add(20), 0xef000000U);  // svc #0: exit
-    bus.Write32(code.Add(24), 0xef000001U);  // parent_stop: svc #1
+    bus.Write32(code.Add(8), 0x1a000003U);   // bne parent_stop
+    bus.Write32(code.Add(12), 0xef000002U);  // svc #2: child HLE
+    bus.Write32(code.Add(16), 0xe3a07001U);  // mov r7, #1
+    bus.Write32(code.Add(20), 0xe3a00007U);  // mov r0, #7
+    bus.Write32(code.Add(24), 0xef000000U);  // svc #0: exit
+    bus.Write32(code.Add(28), 0xef000001U);  // parent_stop: svc #1
     memory.Protect({code, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::execute);
@@ -39,8 +41,15 @@ TEST_CASE("ARM clone starts a real host thread at the child return path") {
     ogplay::cpu::GuestThreadGroup threads{
         [&bus] { return std::make_unique<ogplay::cpu::InterpreterCpu>(bus); }};
     ogplay::runtime::BindAndroidThreadLifecycleSyscalls(dispatcher, lifecycle);
+    std::atomic_uint32_t hle_calls{};
     ogplay::runtime::GuestCloneThreadRuntime clone_runtime{
-        threads, dispatcher, lifecycle, memory, bus, futex, 100, 16};
+        threads, dispatcher, lifecycle, memory, bus, futex, 100, 16,
+        [&hle_calls](ogplay::cpu::Cpu&,
+                     const ogplay::cpu::RunResult& stopped) {
+            if (stopped.immediate != 2) return false;
+            ++hle_calls;
+            return true;
+        }};
 
     ogplay::cpu::InterpreterCpu parent(bus);
     ogplay::cpu::A32State state;
@@ -77,4 +86,5 @@ TEST_CASE("ARM clone starts a real host thread at the child return path") {
     CHECK(child.thread.cpu_state.ThreadPointer() ==
           ogplay::memory::GuestAddress{0x70000000U});
     CHECK(bus.Read32(tid) == 0);
+    CHECK(hle_calls.load() == 1);
 }

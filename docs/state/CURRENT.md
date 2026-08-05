@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 ELF HLE 边界装载完成
+更新：2026-08-05 · M4 guest HLE trap 执行完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0167` 已让统一 ELF 装载事务接受只参与符号查找的绝对 HLE 边界模块；本轮继续
-  minimal NativeActivity APK 的 trap、窗口呈现和启动测试，下一编号为 `WU-0168`。
+- `WU-0168` 已让统一执行循环显式消费 HLE supervisor trap，并把 handler 传播到真实
+  clone child；本轮继续 minimal NativeActivity APK 启动测试，下一编号为 `WU-0169`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -74,11 +74,14 @@
 - [WU-0167] ELF loader 可注入 Bionic HLE 命名空间，追加绝对边界模块参与符号解析但
   不被映射/重定位；builder 删除、替换或重排 guest 模块会明确失败；全量 CTest
   266/266 通过。
+- [WU-0168] Linux syscall 之外的 supervisor trap 只有显式 handler 确认后才继续；同一
+  handler 传播至真实 clone child，拒绝和缺失路径继续保留可观测停止；全量 CTest
+  267/267 通过。
 
 ## 下一步（按优先级）
 
-1. `WU-0168` 让 root/clone 统一执行循环消费显式 guest HLE supervisor trap。
-2. 随后补 pipe、SDL 帧呈现和 NativeActivity APK 启动测试。
+1. `WU-0169` 为 NativeActivity glue 补齐 VFS pipe 与 syscall 边界。
+2. 随后补 SDL 帧呈现和 NativeActivity APK 启动测试。
 
 ## 阻塞
 

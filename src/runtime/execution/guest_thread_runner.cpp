@@ -6,10 +6,22 @@
 
 namespace ogplay::runtime {
 
+bool ConsumeAndroidArmSupervisorCall(
+    cpu::Cpu& cpu, const cpu::RunResult& stopped,
+    A32SyscallDispatcher& dispatcher,
+    const GuestSupervisorCallHandler& hle_handler) {
+    if (stopped.reason != cpu::RunStopReason::supervisor_call) return false;
+    if (DispatchAndroidArmSupervisorCall(cpu, stopped, dispatcher).has_value()) {
+        return true;
+    }
+    return hle_handler && hle_handler(cpu, stopped);
+}
+
 GuestThreadRunOutcome RunAndroidArmGuestThread(
     cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher,
     GuestThreadLifecycle& lifecycle, memory::MemoryBus& memory_bus,
-    cpu::FutexTable& futex_table, const std::uint64_t tick_budget) {
+    cpu::FutexTable& futex_table, const std::uint64_t tick_budget,
+    const GuestSupervisorCallHandler& hle_handler) {
     const auto initial = cpu.GetState();
     if (initial.ThreadId() == 0) {
         throw GuestThreadLifecycleError(
@@ -36,9 +48,8 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
             return {consumed, GuestThreadRunStop::cpu_stop, last,
                     std::nullopt};
         }
-        const auto dispatched = DispatchAndroidArmSupervisorCall(
-            cpu, last, dispatcher);
-        if (!dispatched.has_value()) {
+        if (!ConsumeAndroidArmSupervisorCall(
+                cpu, last, dispatcher, hle_handler)) {
             return {consumed, GuestThreadRunStop::unhandled_supervisor_call,
                     last, std::nullopt};
         }

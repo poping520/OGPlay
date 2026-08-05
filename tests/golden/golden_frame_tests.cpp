@@ -5,6 +5,7 @@
 
 #include "ogplay/core/frame_compare.h"
 #include "ogplay/core/software_surface.h"
+#include "ogplay/gles/angle_frame.h"
 
 TEST_CASE("software frame comparison is deterministic without a GPU") {
     std::array<std::uint8_t, 8U * 8U * 4U> baseline{};
@@ -54,4 +55,34 @@ TEST_CASE("software surface produces a repeatable headless golden frame") {
     actual.FillRect(7, 7, 8, 8, {.red = 255});
     const auto changed = ogplay::core::CompareFrames(actual.View(), expected.View());
     CHECK(changed.pixel_difference_ratio == doctest::Approx(1.0 / 64.0));
+}
+
+TEST_CASE("ANGLE readback matches a top-left software golden frame") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+
+    constexpr std::uint32_t width = 8;
+    constexpr std::uint32_t height = 8;
+    auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+        {ogplay::gles::AngleRenderer::d3d11,
+         ogplay::gles::AngleDevice::hardware}, width, height);
+    CHECK_THROWS_AS(frame.Scissor(0, 0, -1, 1), std::invalid_argument);
+    frame.Viewport(0, 0, width, height);
+    frame.ClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+    frame.Clear(0x00004000U);
+    frame.SetScissorEnabled(true);
+    frame.Scissor(1, 1, 3, 2);
+    frame.ClearColor(1.0F, 0.0F, 0.0F, 1.0F);
+    frame.Clear(0x00004000U);
+    frame.SetScissorEnabled(false);
+    const auto actual_pixels = frame.ReadRgba8();
+
+    ogplay::core::SoftwareSurface expected(width, height);
+    expected.Clear({.alpha = 255});
+    expected.FillRect(1, 5, 3, 2, {.red = 255, .alpha = 255});
+    const ogplay::core::ImageView actual{actual_pixels, width, height};
+    const auto difference = ogplay::core::CompareFrames(actual, expected.View());
+    CHECK(difference.pixel_difference_ratio == 0.0);
+    CHECK(difference.perceptual_hash_distance == 0);
+    CHECK(frame.Info().clear_count == 2);
+    CHECK(frame.Info().readback_count == 1);
 }

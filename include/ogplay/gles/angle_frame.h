@@ -29,6 +29,9 @@ public:
 
     void Viewport(std::int32_t x, std::int32_t y,
                   std::int32_t width, std::int32_t height);
+    void Scissor(std::int32_t x, std::int32_t y,
+                 std::int32_t width, std::int32_t height);
+    void SetScissorEnabled(bool enabled);
     void ClearColor(float red, float green, float blue, float alpha);
     void Clear(std::uint32_t mask);
     [[nodiscard]] std::vector<std::uint8_t> ReadRgba8();

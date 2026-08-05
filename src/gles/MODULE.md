@@ -16,7 +16,8 @@
 - `EglLifecycle::CreatePbuffer`：创建 ANGLE display、EGL config、GLES2 context 和 pbuffer
   surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
 - `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/clear，并以受检 RGBA8
-  readback 输出确定帧；每个原生 GLES 调用都检查错误，供 guest 边界与窗口呈现复用。
+  readback 输出左上原点的确定帧；scissor 可生成非对称黄金图案，每个原生 GLES 调用都
+  检查错误，供 guest 边界与窗口呈现复用。
 - `CreateNativeAngleEglApi`：ANGLE 启用时创建真实 API；关闭时明确抛出 unavailable，绝不
   回退系统 EGL。
 - `data/gles/*.json`：GLES 边界的声明式单一事实源；每个指针显式声明方向、可空性和
@@ -66,6 +67,8 @@
 - EGL 创建严格遵循 display→initialize→config→bind API→context→surface→make-current；
   失败按已完成阶段逆序回滚，成功析构按 unbind→surface→context→terminate 清理。
 - EGL 错误保留失败操作和原生错误码；无 ANGLE 的构建必须明确不可用。
+- ANGLE 原生 `glReadPixels` 的底部首行必须在边界内翻转为 `ImageView`/SDL 的顶部首行，
+  禁止把坐标系差异泄漏到每个消费者。
 - SwiftShader 只能作为 ANGLE Vulkan 软件设备使用；hardware-only 不得静默回退软件。
 - ANGLE 源码只存在于维护者本地 `angle-prebuilt-repo` 工作区，由该仓库构建脚本固定 commit；
   普通消费端使用独立预编译浅 submodule，清单、平台或哈希不匹配时明确失败，不静默降级

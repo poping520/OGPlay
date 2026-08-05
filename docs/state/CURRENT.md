@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 GLES 状态化搬运解析完成
+更新：2026-08-05 · M4 ANGLE 最小帧执行完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0165` 已完成像素、索引和常用查询长度解析，显式维护 pack/unpack、buffer 绑定与
-  动态输出形状；下一个任务编号为 `WU-0166`。
+- `WU-0166` 已在真实 ANGLE pbuffer 上闭合 viewport/clear/RGBA8 readback；本轮继续完成
+  minimal NativeActivity APK 的 guest 边界、窗口呈现和启动测试，下一编号为 `WU-0167`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -69,11 +69,13 @@
 - [WU-0165] 上下文状态解析 pack/unpack 像素行跨度、guest index 数组、buffer offset、
   常用固定查询及显式登记的动态/uniform 形状；未知形状和无效状态更新明确失败；
   启用 ANGLE 的 Windows/MSVC 全量 CTest 263/263 通过。
+- [WU-0166] 真实 ANGLE D3D11 pbuffer 执行 GLES2 viewport/clear，逐像素 readback 验证
+  确定颜色帧；无 ANGLE、负尺寸和原生 GLES 错误均明确失败；全量 CTest 264/264 通过。
 
 ## 下一步（按优先级）
 
-1. `WU-0166` 生成并绑定首批常用 ANGLE 调用体，同步实际 pixel-store/buffer/object 状态。
-2. 随后扩展累计 GLES2 调用面，再增加 GLES1、窗口 surface 与 present。
+1. `WU-0167` 让统一 ELF loader 接受 Bionic HLE 边界命名空间并保留事务装载。
+2. 随后接入 guest HLE trap、SDL 帧呈现和 NativeActivity APK 启动测试。
 
 ## 阻塞
 

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ogplay/cpu/cpu.h"
+#include "ogplay/core/gpu_state.h"
 #include "ogplay/gles/angle_backend.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 
@@ -32,7 +33,7 @@ struct AndroidBoundaryFrame final {
     std::vector<std::uint8_t> rgba8;
 };
 
-class AndroidBoundaryHle final {
+class AndroidBoundaryHle final : public core::GpuStateProvider {
 public:
     AndroidBoundaryHle(memory::AddressSpace& address_space,
                        gles::AngleBackend backend,
@@ -47,6 +48,11 @@ public:
     void NotifyFileWrite();
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
+    [[nodiscard]] core::GpuStats Stats() const override;
+    [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
+    [[nodiscard]] core::GpuCapabilities Capabilities() const override;
+    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
+        std::string_view filter, std::size_t limit) const override;
 
 private:
     class Impl;

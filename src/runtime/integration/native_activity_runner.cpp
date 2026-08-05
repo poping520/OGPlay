@@ -250,6 +250,18 @@ public:
 
     bool Running() const noexcept { return running_; }
 
+    [[nodiscard]] core::GpuStats Stats() const { return boundary_.Stats(); }
+    [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const {
+        return boundary_.RenderTargets();
+    }
+    [[nodiscard]] core::GpuCapabilities Capabilities() const {
+        return boundary_.Capabilities();
+    }
+    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
+        const std::string_view filter, const std::size_t limit) const {
+        return boundary_.Trace(filter, limit);
+    }
+
 private:
     void Progress(const std::string_view stage) const {
         if (progress_) progress_(stage);
@@ -391,5 +403,16 @@ std::optional<AndroidBoundaryFrame> NativeActivitySession::TakeLatestFrame() {
 }
 void NativeActivitySession::Stop() { impl_->Stop(); }
 bool NativeActivitySession::Running() const noexcept { return impl_->Running(); }
+core::GpuStats NativeActivitySession::Stats() const { return impl_->Stats(); }
+std::vector<core::GpuRenderTarget> NativeActivitySession::RenderTargets() const {
+    return impl_->RenderTargets();
+}
+core::GpuCapabilities NativeActivitySession::Capabilities() const {
+    return impl_->Capabilities();
+}
+std::vector<core::GpuTraceEntry> NativeActivitySession::Trace(
+    const std::string_view filter, const std::size_t limit) const {
+    return impl_->Trace(filter, limit);
+}
 
 }  // namespace ogplay::runtime

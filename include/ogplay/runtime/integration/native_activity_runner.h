@@ -30,7 +30,7 @@ public:
     using std::runtime_error::runtime_error;
 };
 
-class NativeActivitySession final {
+class NativeActivitySession final : public core::GpuStateProvider {
 public:
     [[nodiscard]] static std::unique_ptr<NativeActivitySession> Start(
         const NativeActivityRunRequest& request);
@@ -42,6 +42,11 @@ public:
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
+    [[nodiscard]] core::GpuStats Stats() const override;
+    [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
+    [[nodiscard]] core::GpuCapabilities Capabilities() const override;
+    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
+        std::string_view filter, std::size_t limit) const override;
 
 private:
     class Impl;

@@ -1,5 +1,6 @@
 #include "ogplay/runtime/integration/android_boundary_hle.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <chrono>
@@ -131,6 +132,7 @@ public:
         } else {
             result = Dispatch(symbol, arguments, state);
         }
+        RecordGpuCall(symbol, arguments);
         state.SetRegister(cpu::CoreRegister::r0, result);
         cpu.SetState(state);
         return true;
@@ -161,6 +163,36 @@ public:
 
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept {
         return provider_;
+    }
+
+    [[nodiscard]] core::GpuStats Stats() const {
+        std::scoped_lock lock(mutex_);
+        return gpu_stats_;
+    }
+
+    [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const {
+        std::scoped_lock lock(mutex_);
+        if (!gpu_render_target_ready_) return {};
+        return {{0, width_, height_, "RGBA8", {"color0"}, false}};
+    }
+
+    [[nodiscard]] core::GpuCapabilities Capabilities() const {
+        return {{}, {}, std::string(gles::AngleBackendName(backend_))};
+    }
+
+    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
+        const std::string_view filter, const std::size_t limit) const {
+        std::scoped_lock lock(mutex_);
+        std::vector<core::GpuTraceEntry> result;
+        result.reserve(std::min(limit, gpu_trace_.size()));
+        for (auto entry = gpu_trace_.rbegin();
+             entry != gpu_trace_.rend() && result.size() < limit; ++entry) {
+            if (filter.empty() || entry->call.find(filter) != std::string::npos) {
+                result.push_back(*entry);
+            }
+        }
+        std::reverse(result.begin(), result.end());
+        return result;
     }
 
 private:
@@ -302,6 +334,8 @@ private:
         if (symbol == "eglMakeCurrent") {
             if (args[3] != 0 && !angle_frame_.has_value()) {
                 angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(backend_, width_, height_));
+                std::scoped_lock lock(mutex_);
+                gpu_render_target_ready_ = true;
             }
             return 1;
         }
@@ -319,7 +353,12 @@ private:
             return 1;
         }
         if (symbol == "eglDestroyContext" || symbol == "eglDestroySurface") return 1;
-        if (symbol == "eglTerminate") { angle_frame_.reset(); return 1; }
+        if (symbol == "eglTerminate") {
+            angle_frame_.reset();
+            std::scoped_lock lock(mutex_);
+            gpu_render_target_ready_ = false;
+            return 1;
+        }
         if (symbol == "glViewport") {
             RequireFrame(symbol).Viewport(std::bit_cast<std::int32_t>(args[0]),
                                           std::bit_cast<std::int32_t>(args[1]),
@@ -334,7 +373,12 @@ private:
                                             std::bit_cast<float>(args[3]));
             return 0;
         }
-        if (symbol == "glClear") { RequireFrame(symbol).Clear(args[0]); return 0; }
+        if (symbol == "glClear") {
+            RequireFrame(symbol).Clear(args[0]);
+            std::scoped_lock lock(mutex_);
+            ++gpu_stats_.clears;
+            return 0;
+        }
         if (symbol == "__android_log_print" || symbol == "__android_log_write") return 0;
         throw std::runtime_error("Android boundary HLE is not implemented: " + std::string(symbol));
     }
@@ -346,6 +390,21 @@ private:
         return *angle_frame_;
     }
 
+    void RecordGpuCall(const std::string_view symbol,
+                       const std::array<std::uint32_t, 4>& args) {
+        if (!symbol.starts_with("egl") && !symbol.starts_with("gl")) return;
+        core::GpuTraceEntry entry;
+        entry.call = symbol;
+        for (std::size_t index = 0; index < args.size(); ++index) {
+            entry.arguments.emplace("r" + std::to_string(index),
+                                    std::to_string(args[index]));
+        }
+        std::scoped_lock lock(mutex_);
+        gpu_trace_.push_back(std::move(entry));
+        constexpr std::size_t kMaximumGpuTraceEntries = 2048;
+        if (gpu_trace_.size() > kMaximumGpuTraceEntries) gpu_trace_.pop_front();
+    }
+
     memory::AddressSpace& address_space_;
     gles::AngleBackend backend_;
     std::uint32_t width_{};
@@ -355,7 +414,7 @@ private:
     bool mapped_{};
     std::optional<gles::AngleFrame> angle_frame_;
     std::uint64_t frame_sequence_{};
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable ready_;
     std::uint64_t pending_command_writes_{};
     std::uint32_t command_ident_{};
@@ -365,6 +424,9 @@ private:
     std::deque<AndroidBoundaryInput> inputs_;
     std::optional<AndroidBoundaryInput> active_input_;
     std::optional<AndroidBoundaryFrame> latest_frame_;
+    core::GpuStats gpu_stats_{0, 0, 0, 0, 0, {{0, 0, "color0"}}};
+    std::deque<core::GpuTraceEntry> gpu_trace_;
+    bool gpu_render_target_ready_{};
 };
 
 AndroidBoundaryHle::AndroidBoundaryHle(memory::AddressSpace& address_space,
@@ -384,6 +446,17 @@ void AndroidBoundaryHle::NotifyFileWrite() { impl_->NotifyFileWrite(); }
 void AndroidBoundaryHle::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
 std::optional<AndroidBoundaryFrame> AndroidBoundaryHle::TakeLatestFrame() {
     return impl_->TakeLatestFrame();
+}
+core::GpuStats AndroidBoundaryHle::Stats() const { return impl_->Stats(); }
+std::vector<core::GpuRenderTarget> AndroidBoundaryHle::RenderTargets() const {
+    return impl_->RenderTargets();
+}
+core::GpuCapabilities AndroidBoundaryHle::Capabilities() const {
+    return impl_->Capabilities();
+}
+std::vector<core::GpuTraceEntry> AndroidBoundaryHle::Trace(
+    const std::string_view filter, const std::size_t limit) const {
+    return impl_->Trace(filter, limit);
 }
 
 }  // namespace ogplay::runtime

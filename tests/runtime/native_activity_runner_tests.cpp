@@ -91,6 +91,39 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     }
     REQUIRE(changed.has_value());
     CHECK(changed->rgba8 != initial->rgba8);
+
+    const ogplay::core::GpuStateProvider& gpu = *session;
+    const auto stats = gpu.Stats();
+    CHECK(stats.draws == 0);
+    CHECK(stats.clears >= 2);
+    CHECK(stats.shader_compiles == 0);
+    CHECK(stats.program_links == 0);
+    CHECK(stats.gl_errors == 0);
+    REQUIRE(stats.draw_targets.size() == 1);
+    CHECK(stats.draw_targets[0].fbo == 0);
+    CHECK(stats.draw_targets[0].attachment == "color0");
+
+    const auto targets = gpu.RenderTargets();
+    REQUIRE(targets.size() == 1);
+    CHECK(targets[0].fbo == 0);
+    CHECK(targets[0].width == 64);
+    CHECK(targets[0].height == 36);
+    CHECK(targets[0].format == "RGBA8");
+    CHECK_FALSE(targets[0].created_by_guest);
+
+    const auto capabilities = gpu.Capabilities();
+    CHECK(capabilities.host_backend == "d3d11/hardware");
+    CHECK(capabilities.reported_extensions.empty());
+    CHECK(capabilities.reported_limits.empty());
+
+    const auto clear_trace = gpu.Trace("glClear", 4);
+    REQUIRE_FALSE(clear_trace.empty());
+    CHECK(clear_trace.size() <= 4);
+    CHECK(clear_trace.back().call == "glClear");
+    CHECK(clear_trace.back().arguments.contains("r0"));
+    const auto bounded_trace = gpu.Trace("", 3);
+    CHECK(bounded_trace.size() == 3);
     session->Stop();
     CHECK_FALSE(session->Running());
+    CHECK(session->RenderTargets().empty());
 }

@@ -28,7 +28,12 @@ note = "M0 支持固定时钟 step/until/pause/resume"
 [agent.gpu_queries]
 status = "partial"
 test = "tests/agent/control_service_tests.cpp"
-note = "M4 已固定 gpu.stats/render_targets/capabilities/trace 强类型查询、过滤、限额和 unavailable 失败契约；真实 GLES/NativeActivity provider 尚待接入"
+note = "M4 已固定 gpu.stats/render_targets/capabilities/trace 契约并接入最小 NativeActivity 的真实 clear、默认 FBO、ANGLE 后端与有界 EGL/GLES trace；guest FBO、shader 与扩展查询尚待实现"
+
+[runtime.native_activity_gpu_metrics]
+status = "partial"
+test = "tests/runtime/native_activity_runner_tests.cpp"
+note = "M4 最小 APK 会报告真实 clear 计数、默认 RGBA8 FBO、ANGLE 后端及最近 2048 条成功 EGL/GLES 调用；draw/shader/guest FBO 与失败调用错误码仍待接入"
 
 [agent.sym]
 status = "complete"

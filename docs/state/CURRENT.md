@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 GPU Agent 查询契约完成
+更新：2026-08-05 · M4 NativeActivity GPU 指标接入
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0175` 已固定四类 `gpu.*` 强类型查询和显式 unavailable/限额失败；下一编号为
-  `WU-0176`，接入真实 NativeActivity GPU 指标 provider。
+- `WU-0176` 已让真实 NativeActivity session 提供 clear、默认 FBO、ANGLE 后端和有界
+  EGL/GLES trace；下一编号为 `WU-0177`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -59,11 +59,15 @@
   `gpu.stats/render_targets/capabilities/trace`，trace 过滤与 1..1000 限额显式传递，
   provider 缺失或越界返回可判定错误；Windows/MSVC + ANGLE、真实 API 19 APK/Bionic
   环境全量 CTest 280/280 通过。
+- [WU-0176] `NativeActivitySession` 实现真实 GPU provider：样例 clear 计数、默认 RGBA8
+  FBO、ANGLE renderer/device 与最近 2048 条成功 EGL/GLES 调用可查询；扩展、限制、
+  guest FBO 和 shader 事实未发现时保持空，EGL 销毁后当前目标恢复为空；Windows/MSVC
+  + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 280/280 通过。
 
 ## 下一步（按优先级）
 
-1. 将 NativeActivity/ANGLE 的真实 clear、readback、默认渲染目标、后端与调用 trace
-   接入 GPU provider，再推进显示适配及 GLES2 一致性/黄金帧出口工作。
+1. 推进显示适配及 GLES2 一致性/黄金帧出口工作；随后扩展真实 draw、guest FBO、shader
+   与失败调用错误码指标。
 
 ## 阻塞
 

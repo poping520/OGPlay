@@ -17,6 +17,8 @@
   跨线程传递必须受锁保护，未知地址或 SVC 不得吞掉。
 - `NativeActivitySession` 只接受 API 19 ARMv7 当前入口，执行真实 Bionic 初始化、
   `ANativeActivity_onCreate`、glue child 与完整销毁回调；阶段可由可选 observer 查询。
+- `NativeActivitySession` 实现 core GPU provider，快照只报告真实发生的 clear、默认 FBO、
+  ANGLE 后端和最近 2048 条 EGL/GLES 调用；未查询到的扩展、限制和 guest FBO 不伪造。
 - executor、时钟、VFS 和 profile 必须显式注入或由确定性 fixture 建立。
 - 不包含平台 UI、真实 present 或游戏专属逻辑。
 

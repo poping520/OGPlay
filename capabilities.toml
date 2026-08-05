@@ -148,7 +148,7 @@ note = "M4 综合 API 19 ARMv7 样例冻结并真实执行 12 个 EGL 与源码�
 [validation.m4_exit_local]
 status = "partial"
 test = "tools/m4_exit.py --self-test"
-note = "M4 三平台本机增量出口入口已就绪：预检 API 19 Bionic、两个 APK、ANGLE 平台/commit/SwiftShader 清单并启动严格全量 CTest；Windows 预演和 Linux/macOS 本机出口尚待执行"
+note = "M4 三平台本机增量出口入口已就绪；Windows/MSVC 严格模式以真实 Bionic 和两个 APK 通过 297/297，Linux/macOS 硬件与 SwiftShader 本机出口尚待执行"
 
 [fixtures.m1_guest]
 status = "complete"

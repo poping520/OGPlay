@@ -230,6 +230,11 @@ status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
 note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；完整 NDK 与 GLES2 槽仍不在本能力范围"
 
+[runtime.native_activity_session]
+status = "partial"
+test = "tests/runtime/native_activity_runner_tests.cpp"
+note = "M4 已在真实 API 19 Bionic 上启动最小 APK 的 ANativeActivity_onCreate 与 glue child，完成帧输出、输入变色和完整销毁；API 22/23 启动尚未验证"
+
 [loader.hle_boundary_namespace]
 status = "complete"
 test = "tests/loader/module_loader_tests.cpp"

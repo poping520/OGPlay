@@ -49,11 +49,13 @@
 - [WU-0172] 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入进入唯一 Thumb
   HLE trap；ANGLE clear 发布 RGBA8 帧，command/input 唤醒保持显式；全量 CTest
   276/276 通过。
+- [WU-0173] 真实 API 19 Bionic 启动 APK `ANativeActivity_onCreate` 与 glue child；生命周期
+  command、首帧、键盘输入变色、销毁 join/finalizer 均由真实样例集成测试闭合；全量
+  CTest 277/277 通过。
 
 ## 下一步（按优先级）
 
-1. 启动 `ANativeActivity_onCreate`、glue 工作线程与生命周期回调。
-2. CLI 接入 APK、SDL 输入与帧显示并执行样例验收。
+1. CLI 接入 APK、SDL 输入与帧显示并执行样例验收。
 
 ## 阻塞
 

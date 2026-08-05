@@ -25,6 +25,11 @@ status = "complete"
 test = "tests/agent/control_service_tests.cpp"
 note = "M0 支持固定时钟 step/until/pause/resume"
 
+[agent.gpu_queries]
+status = "partial"
+test = "tests/agent/control_service_tests.cpp"
+note = "M4 已固定 gpu.stats/render_targets/capabilities/trace 强类型查询、过滤、限额和 unavailable 失败契约；真实 GLES/NativeActivity provider 尚待接入"
+
 [agent.sym]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

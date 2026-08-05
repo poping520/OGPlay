@@ -49,6 +49,95 @@ std::string StateJson(const session::SessionState& state) {
     return json.str();
 }
 
+std::string GpuStatsJson(const core::GpuStats& stats) {
+    std::ostringstream json;
+    json << "{\"draws\":" << stats.draws
+         << ",\"clears\":" << stats.clears
+         << ",\"shader_compiles\":" << stats.shader_compiles
+         << ",\"program_links\":" << stats.program_links
+         << ",\"gl_errors\":" << stats.gl_errors
+         << ",\"draw_targets\":[";
+    bool first = true;
+    for (const auto& target : stats.draw_targets) {
+        if (!first) json << ',';
+        first = false;
+        json << "{\"fbo\":" << target.fbo
+             << ",\"draws\":" << target.draws
+             << ",\"attachment\":" << JsonString(target.attachment) << '}';
+    }
+    json << "]}";
+    return json.str();
+}
+
+std::string GpuRenderTargetsJson(const std::vector<core::GpuRenderTarget>& targets) {
+    std::ostringstream json;
+    json << '[';
+    bool first_target = true;
+    for (const auto& target : targets) {
+        if (!first_target) json << ',';
+        first_target = false;
+        json << "{\"fbo\":" << target.fbo
+             << ",\"size\":{\"width\":" << target.width
+             << ",\"height\":" << target.height << "}"
+             << ",\"format\":" << JsonString(target.format)
+             << ",\"attachments\":[";
+        bool first_attachment = true;
+        for (const auto& attachment : target.attachments) {
+            if (!first_attachment) json << ',';
+            first_attachment = false;
+            json << JsonString(attachment);
+        }
+        json << "]"
+             << ",\"created_by_guest\":"
+             << (target.created_by_guest ? "true" : "false") << '}';
+    }
+    json << ']';
+    return json.str();
+}
+
+std::string GpuCapabilitiesJson(const core::GpuCapabilities& capabilities) {
+    std::ostringstream json;
+    json << "{\"reported_extensions\":[";
+    bool first = true;
+    for (const auto& extension : capabilities.reported_extensions) {
+        if (!first) json << ',';
+        first = false;
+        json << JsonString(extension);
+    }
+    json << "],\"reported_limits\":{";
+    first = true;
+    for (const auto& [name, value] : capabilities.reported_limits) {
+        if (!first) json << ',';
+        first = false;
+        json << JsonString(name) << ':' << value;
+    }
+    json << "},\"host_backend\":" << JsonString(capabilities.host_backend) << '}';
+    return json.str();
+}
+
+std::string GpuTraceJson(const std::vector<core::GpuTraceEntry>& entries) {
+    std::ostringstream json;
+    json << '[';
+    bool first_entry = true;
+    for (const auto& entry : entries) {
+        if (!first_entry) json << ',';
+        first_entry = false;
+        json << "{\"call\":" << JsonString(entry.call) << ",\"args\":{";
+        bool first_argument = true;
+        for (const auto& [name, value] : entry.arguments) {
+            if (!first_argument) json << ',';
+            first_argument = false;
+            json << JsonString(name) << ':' << JsonString(value);
+        }
+        json << "},\"error\":";
+        if (entry.error.has_value()) json << *entry.error;
+        else json << "null";
+        json << '}';
+    }
+    json << ']';
+    return json.str();
+}
+
 std::optional<std::size_t> MemberValueStart(const std::string_view json,
                                             const std::string_view key) {
     const auto key_position = json.find('"' + std::string(key) + '"');
@@ -138,8 +227,9 @@ std::string RpcError(const std::string_view id,
 
 ControlService::ControlService(core::CapabilityLedger& ledger,
                                core::Logger& logger,
-                               session::Session& session)
-    : ledger_(ledger), logger_(logger), session_(session) {}
+                               session::Session& session,
+                               const core::GpuStateProvider* const gpu)
+    : ledger_(ledger), logger_(logger), session_(session), gpu_(gpu) {}
 
 ControlResponse ControlService::Request(const std::string_view method,
                                         const ControlParams& params) {
@@ -185,6 +275,38 @@ ControlResponse ControlService::Request(const std::string_view method,
                  << ",\"offset\":" << symbol->offset
                  << ",\"source_hint\":" << JsonString(symbol->source_hint) << "}}";
             return {true, json.str()};
+        }
+        if (method == "gpu.stats") {
+            if (gpu_ == nullptr) {
+                return Error(-32004, "gpu_unavailable", "GPU state provider is not attached");
+            }
+            return {true, "{\"result\":" + GpuStatsJson(gpu_->Stats()) + "}"};
+        }
+        if (method == "gpu.render_targets") {
+            if (gpu_ == nullptr) {
+                return Error(-32004, "gpu_unavailable", "GPU state provider is not attached");
+            }
+            return {true, "{\"result\":" + GpuRenderTargetsJson(gpu_->RenderTargets()) + "}"};
+        }
+        if (method == "gpu.capabilities") {
+            if (gpu_ == nullptr) {
+                return Error(-32004, "gpu_unavailable", "GPU state provider is not attached");
+            }
+            return {true, "{\"result\":" + GpuCapabilitiesJson(gpu_->Capabilities()) + "}"};
+        }
+        if (method == "gpu.trace") {
+            if (gpu_ == nullptr) {
+                return Error(-32004, "gpu_unavailable", "GPU state provider is not attached");
+            }
+            if (params.limit == 0 || params.limit > 1000) {
+                return Error(-32602, "invalid_params", "gpu.trace limit must be in 1..1000");
+            }
+            const auto entries = gpu_->Trace(params.filter.value_or(""),
+                                             static_cast<std::size_t>(params.limit));
+            if (entries.size() > params.limit) {
+                throw std::logic_error("GPU state provider exceeded the trace limit");
+            }
+            return {true, "{\"result\":" + GpuTraceJson(entries) + "}"};
         }
         if (method == "hle.capabilities") {
             std::ostringstream json;
@@ -271,6 +393,8 @@ std::string JsonRpcAdapter::Handle(const std::string_view request) {
         if (const auto target = UnsignedMember(request, "target_frame")) params.target_frame = *target;
         if (const auto maximum = UnsignedMember(request, "max_frames")) params.max_frames = *maximum;
         params.address = UnsignedMember(request, "address");
+        params.filter = StringMember(request, "filter");
+        if (const auto limit = UnsignedMember(request, "limit")) params.limit = *limit;
         if (*method == "run.until" && params.max_frames == 0) {
             return RpcError(id, -32602, "run.until requires positive max_frames");
         }

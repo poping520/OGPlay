@@ -131,7 +131,7 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     CHECK(session->RenderTargets().empty());
 }
 
-TEST_CASE("M4 exit APK executes every declared GLES call and renders a healthy frame") {
+TEST_CASE("M4 exit APK renders and responds to key and pointer input") {
     const auto oracle = EnvironmentPath("OGPLAY_BIONIC_ORACLE_ROOT");
     const auto apk_path = EnvironmentPath("OGPLAY_M4_EXIT_APK");
     if (!oracle.has_value() || !apk_path.has_value()) return;
@@ -168,9 +168,36 @@ TEST_CASE("M4 exit APK executes every declared GLES call and renders a healthy f
     CHECK(frame->rgba8[healthy + 2U] == doctest::Approx(77).epsilon(0.08));
     CHECK(frame->rgba8[healthy + 3U] == 255);
 
+    const auto palette_pixel = (18U * 64U + 7U) * 4U;
+    CHECK(frame->rgba8[palette_pixel] == doctest::Approx(235).epsilon(0.04));
+    CHECK(frame->rgba8[palette_pixel + 1U] == doctest::Approx(51).epsilon(0.04));
+    CHECK(frame->rgba8[palette_pixel + 2U] == doctest::Approx(61).epsilon(0.04));
+    CHECK(frame->rgba8[palette_pixel + 3U] == 255);
+
+    session->PushInput({ogplay::runtime::AndroidBoundaryInputType::key,
+                        29, 0, 0, true});
+    const auto keyed = WaitFrame(*session, frame->sequence);
+    REQUIRE(keyed.has_value());
+    CHECK(keyed->rgba8 != frame->rgba8);
+    CHECK(keyed->rgba8[palette_pixel] == doctest::Approx(240).epsilon(0.04));
+    CHECK(keyed->rgba8[palette_pixel + 1U] == doctest::Approx(158).epsilon(0.04));
+    CHECK(keyed->rgba8[palette_pixel + 2U] == doctest::Approx(31).epsilon(0.04));
+    CHECK(keyed->rgba8[palette_pixel + 3U] == 255);
+
+    session->PushInput({ogplay::runtime::AndroidBoundaryInputType::pointer_button,
+                        0, 48.0F, 9.0F, true});
+    const auto pointed = WaitFrame(*session, keyed->sequence);
+    REQUIRE(pointed.has_value());
+    CHECK(pointed->rgba8 != keyed->rgba8);
+    const auto marker_pixel = (9U * 64U + 48U) * 4U;
+    CHECK(pointed->rgba8[marker_pixel] == 255);
+    CHECK(pointed->rgba8[marker_pixel + 1U] == 255);
+    CHECK(pointed->rgba8[marker_pixel + 2U] == 255);
+    CHECK(pointed->rgba8[marker_pixel + 3U] == 255);
+
     const auto stats = session->Stats();
-    CHECK(stats.draws >= 7);
-    CHECK(stats.clears >= 2);
+    CHECK(stats.draws >= 21);
+    CHECK(stats.clears >= 6);
     CHECK(stats.shader_compiles == 2);
     CHECK(stats.program_links == 1);
     CHECK(stats.gl_errors == 0);

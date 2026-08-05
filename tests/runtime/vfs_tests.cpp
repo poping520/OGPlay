@@ -98,3 +98,23 @@ TEST_CASE("VFS mount validation is transactional") {
     CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/apk/valid.bin")),
                     ogplay::runtime::VfsError);
 }
+
+TEST_CASE("VFS pipe connects isolated read and write descriptors") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    const auto pipe = vfs.CreatePipe();
+    CHECK(pipe.read_descriptor >= 3);
+    CHECK(pipe.write_descriptor > pipe.read_descriptor);
+    const std::array message{std::byte{0x41}, std::byte{0x42}};
+    CHECK(vfs.Write(pipe.write_descriptor, message) == message.size());
+    std::array<std::byte, 2> received{};
+    CHECK(vfs.Read(pipe.read_descriptor, received) == received.size());
+    CHECK(received == message);
+    CHECK_THROWS_AS(static_cast<void>(
+                        vfs.Read(pipe.write_descriptor, received)),
+                    ogplay::runtime::VfsError);
+    CHECK_THROWS_AS(static_cast<void>(
+                        vfs.Write(pipe.read_descriptor, message)),
+                    ogplay::runtime::VfsError);
+    vfs.Close(pipe.read_descriptor);
+    vfs.Close(pipe.write_descriptor);
+}

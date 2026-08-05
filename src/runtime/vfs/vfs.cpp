@@ -182,6 +182,19 @@ public:
         return descriptor;
     }
 
+    [[nodiscard]] VfsPipeDescriptors CreatePipe() {
+        std::scoped_lock lock(mutex_);
+        auto pipe = std::make_shared<File>(
+            File{{}, true, VfsSource::runtime});
+        const auto read_descriptor = AllocateDescriptor();
+        descriptors_.emplace(
+            read_descriptor, OpenFile{pipe, 0, true, false});
+        const auto write_descriptor = AllocateDescriptor();
+        descriptors_.emplace(
+            write_descriptor, OpenFile{std::move(pipe), 0, false, true});
+        return {read_descriptor, write_descriptor};
+    }
+
     [[nodiscard]] std::size_t Read(const std::int32_t descriptor,
                                    const std::span<std::byte> destination) {
         std::scoped_lock lock(mutex_);
@@ -297,6 +310,9 @@ VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
 std::int32_t VirtualFileSystem::Open(const std::string_view path,
                                      const VfsOpenOptions options) {
     return impl_->Open(path, options);
+}
+VfsPipeDescriptors VirtualFileSystem::CreatePipe() {
+    return impl_->CreatePipe();
 }
 std::size_t VirtualFileSystem::Read(const std::int32_t descriptor,
                                     const std::span<std::byte> destination) {

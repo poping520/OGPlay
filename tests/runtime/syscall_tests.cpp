@@ -353,6 +353,51 @@ TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
     CHECK(dispatcher.Dispatch(frame) == -14);
 }
 
+TEST_CASE("Android pipe syscall publishes a working descriptor pair") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::runtime::VirtualFileSystem vfs;
+    ogplay::memory::AddressSpace memory;
+    memory.Map({ogplay::memory::GuestAddress{0x10000}, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 42;
+    frame.thread_id = 7;
+    frame.arguments[0] = 0x10000;
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    std::array<std::byte, 8> descriptor_bytes{};
+    memory.Read(ogplay::memory::GuestAddress{0x10000}, descriptor_bytes);
+    const auto read_descriptor =
+        std::to_integer<std::uint8_t>(descriptor_bytes[0]);
+    const auto write_descriptor =
+        std::to_integer<std::uint8_t>(descriptor_bytes[4]);
+    REQUIRE(read_descriptor >= 3);
+    REQUIRE(write_descriptor > read_descriptor);
+
+    const std::array payload{std::byte{0x55}};
+    memory.Write(ogplay::memory::GuestAddress{0x10100}, payload);
+    frame.number = 4;
+    frame.arguments[0] = write_descriptor;
+    frame.arguments[1] = 0x10100;
+    frame.arguments[2] = 1;
+    CHECK(dispatcher.Dispatch(frame) == 1);
+    frame.number = 3;
+    frame.arguments[0] = read_descriptor;
+    frame.arguments[1] = 0x10200;
+    CHECK(dispatcher.Dispatch(frame) == 1);
+    std::array<std::byte, 1> output{};
+    memory.Read(ogplay::memory::GuestAddress{0x10200}, output);
+    CHECK(output == payload);
+
+    frame.number = 42;
+    frame.arguments[0] = 0x20000;
+    CHECK(dispatcher.Dispatch(frame) == -14);
+}
+
 TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
     ogplay::core::CapabilityLedger ledger;
     auto dispatcher =

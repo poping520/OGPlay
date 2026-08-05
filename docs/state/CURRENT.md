@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 三平台 NativeActivity 测试后端
+更新：2026-08-05 · M4 严格出口环境
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0192` 已解除真实 APK 测试的 D3D11 硬编码并按宿主选择硬件后端；下一编号为
-  `WU-0193`，增加禁止环境缺失静默通过的严格出口模式。
+- `WU-0193` 已禁止严格出口测试在缺少 fixture 或 ANGLE 时静默通过；下一编号为
+  `WU-0194`，提供三平台本机增量出口入口与参数预检。
 - 当前开发机只使用 Windows/MSVC 预设；M4 的 Linux/macOS 验证在对应平台机器本地
   增量构建并执行，不从当前 Windows 主机通过 SSH 代跑。
 
@@ -54,11 +54,13 @@
   draw/clear 指标随帧推进且 shader/program 不重复初始化，全量 CTest 295/295 通过。
 - [WU-0192] 两个真实 NativeActivity APK 测试按 Windows D3D11、Linux Vulkan、macOS
   Metal 选择宿主硬件后端，不再把 D3D11 带入其他平台；Windows 全量 CTest 295/295 通过。
+- [WU-0193] `OGPLAY_REQUIRE_M4_EXIT=1` 把 Bionic、两个 APK 与原生 ANGLE 变为强制条件；
+  CTest 清空继承环境验证缺 fixture 必然失败，Windows 全量 CTest 296/296 通过。
 
 ## 下一步（按优先级）
 
-1. 增加严格出口模式和本地增量验收入口，缺少 APK/Bionic/ANGLE 或应有的软件后端时
-   必须失败；Linux/macOS 在对应平台机器本地执行。
+1. 增加三平台本机增量出口入口，预检 APK、Bionic 与 ANGLE 清单并启动严格全量 CTest；
+   Linux/macOS 在对应平台机器本地执行。
 
 ## 阻塞
 

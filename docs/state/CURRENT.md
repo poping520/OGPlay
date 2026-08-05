@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 NativeActivity GPU 指标接入
+更新：2026-08-05 · M4 SDL 等比黑边显示适配
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0176` 已让真实 NativeActivity session 提供 clear、默认 FBO、ANGLE 后端和有界
-  EGL/GLES trace；下一编号为 `WU-0177`。
+- `WU-0177` 已用纯整数布局让 SDL 等比居中呈现并清理黑边；下一编号为 `WU-0178`，
+  复用同一布局映射输入坐标。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -63,11 +63,14 @@
   FBO、ANGLE renderer/device 与最近 2048 条成功 EGL/GLES 调用可查询；扩展、限制、
   guest FBO 和 shader 事实未发现时保持空，EGL 销毁后当前目标恢复为空；Windows/MSVC
   + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 280/280 通过。
+- [WU-0177] `FitDisplayRect` 以溢出安全的整数运算计算等比内容区；SDL present 每帧先
+  清黑色 surface，再以 nearest 模式居中缩放，4:3、竖屏与同宽高布局均有确定性测试；
+  Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 281/281 通过。
 
 ## 下一步（按优先级）
 
-1. 推进显示适配及 GLES2 一致性/黄金帧出口工作；随后扩展真实 draw、guest FBO、shader
-   与失败调用错误码指标。
+1. 将 SDL 指针坐标按同一内容矩形映射回 guest，明确处理黑边区域；随后推进超采样及
+   GLES2 一致性/黄金帧出口工作。
 
 ## 阻塞
 

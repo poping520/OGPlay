@@ -38,6 +38,19 @@ struct WindowState {
     std::uint64_t present_count{};
 };
 
+struct DisplayRect final {
+    std::uint32_t x{};
+    std::uint32_t y{};
+    std::uint32_t width{};
+    std::uint32_t height{};
+
+    bool operator==(const DisplayRect&) const = default;
+};
+
+[[nodiscard]] DisplayRect FitDisplayRect(
+    std::uint32_t source_width, std::uint32_t source_height,
+    std::uint32_t target_width, std::uint32_t target_height);
+
 struct InputEvent {
     InputEventType type{InputEventType::quit};
     std::uint64_t timestamp_ns{};

@@ -10,6 +10,20 @@
 
 #include "ogplay/hal/window_input.h"
 
+TEST_CASE("display layout preserves aspect ratio and centers black bars") {
+    using ogplay::hal::FitDisplayRect;
+    CHECK((FitDisplayRect(1280, 720, 1920, 1080) ==
+           ogplay::hal::DisplayRect{0, 0, 1920, 1080}));
+    CHECK((FitDisplayRect(640, 480, 1280, 720) ==
+           ogplay::hal::DisplayRect{160, 0, 960, 720}));
+    CHECK((FitDisplayRect(1080, 1920, 1280, 720) ==
+           ogplay::hal::DisplayRect{437, 0, 405, 720}));
+    CHECK((FitDisplayRect(2, 2, 320, 180) ==
+           ogplay::hal::DisplayRect{70, 0, 180, 180}));
+    CHECK_THROWS_AS(static_cast<void>(FitDisplayRect(0, 1, 1, 1)),
+                    std::invalid_argument);
+}
+
 #if OGPLAY_TEST_HAS_SDL3
 namespace {
 
@@ -54,6 +68,18 @@ TEST_CASE("SDL window presents exact RGBA8 frames") {
                     std::invalid_argument);
     host->PresentRgba8(pixels, 2, 2);
     CHECK(host->State().present_count == 1);
+
+    auto* window = SDL_GetWindowFromID(host->State().id);
+    REQUIRE(window != nullptr);
+    auto* surface = SDL_GetWindowSurface(window);
+    REQUIRE(surface != nullptr);
+    Uint8 red{}, green{}, blue{}, alpha{};
+    REQUIRE(SDL_ReadSurfacePixel(surface, 0, 0, &red, &green, &blue, &alpha));
+    CHECK(red == 0); CHECK(green == 0); CHECK(blue == 0); CHECK(alpha == 255);
+    REQUIRE(SDL_ReadSurfacePixel(surface, 70, 0, &red, &green, &blue, &alpha));
+    CHECK(red == 255); CHECK(green == 0); CHECK(blue == 0); CHECK(alpha == 255);
+    REQUIRE(SDL_ReadSurfacePixel(surface, 250, 0, &red, &green, &blue, &alpha));
+    CHECK(red == 0); CHECK(green == 0); CHECK(blue == 0); CHECK(alpha == 255);
 }
 
 TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {

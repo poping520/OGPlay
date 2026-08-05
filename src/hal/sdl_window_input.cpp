@@ -11,6 +11,33 @@
 
 namespace ogplay::hal {
 
+DisplayRect FitDisplayRect(const std::uint32_t source_width,
+                           const std::uint32_t source_height,
+                           const std::uint32_t target_width,
+                           const std::uint32_t target_height) {
+    if (source_width == 0 || source_height == 0 ||
+        target_width == 0 || target_height == 0) {
+        throw std::invalid_argument("display layout dimensions must be non-zero");
+    }
+    const auto width_limited = static_cast<std::uint64_t>(target_width) * source_height <=
+                               static_cast<std::uint64_t>(target_height) * source_width;
+    std::uint32_t width{};
+    std::uint32_t height{};
+    if (width_limited) {
+        width = target_width;
+        height = static_cast<std::uint32_t>(
+            static_cast<std::uint64_t>(target_width) * source_height / source_width);
+        if (height == 0) height = 1;
+    } else {
+        height = target_height;
+        width = static_cast<std::uint32_t>(
+            static_cast<std::uint64_t>(target_height) * source_width / source_height);
+        if (width == 0) width = 1;
+    }
+    return {(target_width - width) / 2U, (target_height - height) / 2U,
+            width, height};
+}
+
 #if OGPLAY_HAS_SDL3
 namespace {
 
@@ -126,13 +153,25 @@ public:
 
         auto* target = SDL_GetWindowSurface(window_);
         if (target == nullptr) throw SdlError("SDL_GetWindowSurface");
+        if (target->w <= 0 || target->h <= 0) {
+            throw std::runtime_error("SDL window surface dimensions are invalid");
+        }
         auto* source = SDL_CreateSurfaceFrom(
             static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_RGBA32,
             const_cast<std::uint8_t*>(pixels.data()), static_cast<int>(row_bytes));
         if (source == nullptr) throw SdlError("SDL_CreateSurfaceFrom");
-        const auto blitted = SDL_BlitSurfaceScaled(source, nullptr, target, nullptr,
+        const auto layout = FitDisplayRect(
+            width, height, static_cast<std::uint32_t>(target->w),
+            static_cast<std::uint32_t>(target->h));
+        const SDL_Rect destination{
+            static_cast<int>(layout.x), static_cast<int>(layout.y),
+            static_cast<int>(layout.width), static_cast<int>(layout.height)};
+        const auto cleared = SDL_FillSurfaceRect(
+            target, nullptr, SDL_MapSurfaceRGBA(target, 0, 0, 0, 255));
+        const auto blitted = cleared && SDL_BlitSurfaceScaled(source, nullptr, target, &destination,
                                                    SDL_SCALEMODE_NEAREST);
         SDL_DestroySurface(source);
+        if (!cleared) throw SdlError("SDL_FillSurfaceRect");
         if (!blitted) throw SdlError("SDL_BlitSurfaceScaled");
         if (!SDL_UpdateWindowSurface(window_)) throw SdlError("SDL_UpdateWindowSurface");
         ++present_count_;

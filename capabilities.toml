@@ -214,3 +214,8 @@ note = "M4 完成受限长度表达式、类型/二级 guest 指针字节换算�
 status = "complete"
 test = "tests/gles/gles_transfer_state_tests.cpp"
 note = "M4 完成上下文级 pack/unpack、array/element buffer 与动态输出形状解析；像素、索引和常用查询可安全换算搬运长度，buffer offset 和 client array 显式 deferred，真实 ANGLE handler 状态同步留给后续 WU"
+
+[gles.angle_frame]
+status = "complete"
+test = "tests/gles/angle_frame_tests.cpp"
+note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合 viewport、clear 与受检 RGBA8 readback；guest EGL handle 和窗口 present 尚待集成"

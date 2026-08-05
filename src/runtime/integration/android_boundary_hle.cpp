@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/supersample.h"
 
 namespace ogplay::runtime {
@@ -69,11 +70,25 @@ std::vector<BionicHleSymbol> BuildSymbols() {
         {"liblog.so", "__android_log_write"},
     }};
     std::vector<BionicHleSymbol> result;
-    result.reserve(names.size());
+    result.reserve(names.size() + gles::GlesDispatchTable::FunctionCount());
     for (std::size_t index = 0; index < names.size(); ++index) {
         result.push_back({std::string(names[index].first), std::string(names[index].second),
                           memory::GuestAddress{kBionicHleThunkBegin +
                                                static_cast<std::uint32_t>(index) *
+                                                   kThunkStride + 1U}});
+    }
+    for (std::size_t index = 0; index < gles::GlesDispatchTable::FunctionCount(); ++index) {
+        const auto function = gles::GlesDispatchTable::Describe(
+            static_cast<gles::GlesThunkId>(index));
+        const auto already_registered = std::ranges::any_of(
+            result, [&function](const BionicHleSymbol& candidate) {
+                return candidate.library == "libGLESv2.so" &&
+                       candidate.symbol == function.name;
+            });
+        if (already_registered) continue;
+        result.push_back({"libGLESv2.so", std::string(function.name),
+                          memory::GuestAddress{kBionicHleThunkBegin +
+                                               static_cast<std::uint32_t>(result.size()) *
                                                    kThunkStride + 1U}});
     }
     return result;
@@ -108,6 +123,9 @@ public:
     void MapThunks() {
         if (mapped_) throw std::logic_error("Android boundary thunks are already mapped");
         const auto page_size = address_space_.PageSize();
+        if (symbols_.size() > page_size / kThunkStride) {
+            throw std::length_error("Android boundary thunk catalog exceeds its guest page");
+        }
         address_space_.Map({memory::GuestAddress{kBionicHleThunkBegin}, page_size},
                            memory::PageProtection::read | memory::PageProtection::write);
         std::vector<std::byte> code(page_size, std::byte{});

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -12,6 +13,15 @@ import shutil
 import subprocess
 import sys
 import zipfile
+
+
+GRAPHICS_SYMBOL = re.compile(r"(?:egl|gl)[A-Z][A-Za-z0-9_]*")
+EXPECTED_EGL_IMPORTS = frozenset({
+    "eglChooseConfig", "eglCreateContext", "eglCreateWindowSurface",
+    "eglDestroyContext", "eglDestroySurface", "eglGetConfigAttrib",
+    "eglGetDisplay", "eglInitialize", "eglMakeCurrent", "eglQuerySurface",
+    "eglSwapBuffers", "eglTerminate",
+})
 
 
 def version_key(path: Path) -> tuple[int, ...]:
@@ -45,6 +55,38 @@ def run(arguments: list[os.PathLike[str] | str], *, echo: bool = True) -> str:
     return completed.stdout
 
 
+def verify_source_contract(sample_root: Path, repository_root: Path) -> set[str]:
+    source = (sample_root / "src" / "main" / "cpp" / "main.cpp").read_text(
+        encoding="utf-8")
+    graphics_calls = set(GRAPHICS_SYMBOL.findall(source))
+    egl_calls = {name for name in graphics_calls if name.startswith("egl")}
+    if egl_calls != EXPECTED_EGL_IMPORTS:
+        raise RuntimeError(
+            "M4 exit EGL contract changed: "
+            f"missing={sorted(EXPECTED_EGL_IMPORTS - egl_calls)}, "
+            f"unexpected={sorted(egl_calls - EXPECTED_EGL_IMPORTS)}")
+
+    catalog = json.loads((repository_root / "data" / "gles" / "gles2.json").read_text(
+        encoding="utf-8"))
+    catalog_names = {function["name"] for function in catalog["functions"]}
+    gles_calls = {name for name in graphics_calls if name.startswith("gl")}
+    missing = gles_calls - catalog_names
+    if missing:
+        raise RuntimeError(f"M4 exit GLES2 calls are absent from the IDL: {sorted(missing)}")
+    if len(gles_calls) != 42:
+        raise RuntimeError(f"M4 exit GLES2 contract expected 42 calls, found {len(gles_calls)}")
+    return graphics_calls
+
+
+def undefined_symbols(readelf_output: str) -> set[str]:
+    result: set[str] = set()
+    for line in readelf_output.splitlines():
+        fields = line.split()
+        if "UND" in fields and fields:
+            result.add(fields[-1].split("@", 1)[0])
+    return result
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sdk", type=Path, default=os.environ.get("ANDROID_SDK_ROOT"))
@@ -53,16 +95,21 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--api", type=int, default=19)
     parser.add_argument("--build-tools", dest="build_tools_version")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--contract-only", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = parse_arguments()
+    sample_root = Path(__file__).resolve().parents[1]
+    repository_root = sample_root.parents[1]
+    graphics_calls = verify_source_contract(sample_root, repository_root)
+    if arguments.contract_only:
+        print("M4 exit contract: 12 EGL and 42 GLES2 calls match the repository IDL")
+        return 0
     if arguments.sdk is None or arguments.ndk is None:
         raise RuntimeError("provide --sdk and --ndk or set Android SDK/NDK environment variables")
 
-    sample_root = Path(__file__).resolve().parents[1]
-    repository_root = sample_root.parents[1]
     sdk = require(arguments.sdk.resolve(), "Android SDK")
     ndk = require(arguments.ndk.resolve(), "Android NDK")
     output = (arguments.output or repository_root / "out" / "m4-exit").resolve()
@@ -113,17 +160,15 @@ def main() -> int:
     for dependency in ("libandroid.so", "libEGL.so", "libGLESv2.so", "liblog.so"):
         if dependency not in dynamic:
             raise RuntimeError(f"M4 exit sample lacks dependency {dependency}")
-    required_imports = (
-        "eglCreateContext", "eglCreateWindowSurface", "eglQuerySurface", "eglSwapBuffers",
-        "glAttachShader", "glBindBuffer", "glBindTexture", "glBlendFunc", "glBufferData",
-        "glCompileShader", "glCreateProgram", "glCreateShader", "glDrawElements",
-        "glEnableVertexAttribArray", "glGetIntegerv", "glGetProgramiv", "glGetShaderiv",
-        "glGetString", "glLinkProgram", "glReadPixels", "glScissor", "glShaderSource",
-        "glTexImage2D", "glUniformMatrix3fv", "glVertexAttribPointer", "glViewport",
-    )
-    for symbol in required_imports:
-        if symbol not in symbols:
-            raise RuntimeError(f"M4 exit sample does not import {symbol}")
+    graphics_imports = {
+        symbol for symbol in undefined_symbols(symbols)
+        if GRAPHICS_SYMBOL.fullmatch(symbol)
+    }
+    if graphics_imports != graphics_calls:
+        raise RuntimeError(
+            "M4 exit ELF graphics imports do not match its source contract: "
+            f"missing={sorted(graphics_calls - graphics_imports)}, "
+            f"unexpected={sorted(graphics_imports - graphics_calls)}")
 
     unsigned_apk = package / "unsigned.apk"
     packed_apk = package / "packed.apk"

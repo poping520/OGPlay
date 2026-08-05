@@ -437,6 +437,14 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(tools.gles2_catalog_current PROPERTIES LABELS tools)
 
     add_test(
+        NAME tools.m4_exit_sample_contract
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/m4_exit/tools/build.py
+            --contract-only
+    )
+    set_tests_properties(tools.m4_exit_sample_contract PROPERTIES LABELS "tools;fixtures")
+
+    add_test(
         NAME tools.remote_incremental_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/remote_incremental.py

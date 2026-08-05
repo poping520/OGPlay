@@ -75,10 +75,13 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     auto session = ogplay::runtime::NativeActivitySession::Start({
         19, "libogplay_minimal_ndk.so", modules,
         {ogplay::gles::AngleRenderer::d3d11, ogplay::gles::AngleDevice::hardware},
-        64, 36, UINT64_C(200000000), {}});
+        64, 36, UINT64_C(200000000), {}, 2});
     REQUIRE(session->Running());
     const auto initial = WaitFrame(*session);
     REQUIRE(initial.has_value());
+    CHECK(initial->width == 64);
+    CHECK(initial->height == 36);
+    CHECK(initial->rgba8.size() == 64U * 36U * 4U);
     session->PushInput({ogplay::runtime::AndroidBoundaryInputType::key,
                         29, 0, 0, true});
     std::optional<ogplay::runtime::AndroidBoundaryFrame> changed;
@@ -106,8 +109,8 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     const auto targets = gpu.RenderTargets();
     REQUIRE(targets.size() == 1);
     CHECK(targets[0].fbo == 0);
-    CHECK(targets[0].width == 64);
-    CHECK(targets[0].height == 36);
+    CHECK(targets[0].width == 128);
+    CHECK(targets[0].height == 72);
     CHECK(targets[0].format == "RGBA8");
     CHECK_FALSE(targets[0].created_by_guest);
 

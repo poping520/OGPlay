@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/gles/supersample.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -82,17 +83,26 @@ std::uint32_t SignedResult(const std::int32_t value) noexcept {
     return std::bit_cast<std::uint32_t>(value);
 }
 
+std::int32_t ScaleViewportComponent(const std::int32_t value,
+                                    const std::uint32_t factor) {
+    const auto scaled = static_cast<std::int64_t>(value) * factor;
+    if (scaled < std::numeric_limits<std::int32_t>::min() ||
+        scaled > std::numeric_limits<std::int32_t>::max()) {
+        throw std::overflow_error("supersampled viewport component overflows");
+    }
+    return static_cast<std::int32_t>(scaled);
+}
+
 }  // namespace
 
 class AndroidBoundaryHle::Impl final {
 public:
     Impl(memory::AddressSpace& address_space, const gles::AngleBackend backend,
-         const std::uint32_t width, const std::uint32_t height)
-        : address_space_(address_space), backend_(backend), width_(width), height_(height),
+         const std::uint32_t width, const std::uint32_t height,
+         const std::uint32_t supersample_factor)
+        : address_space_(address_space), backend_(backend),
+          layout_(gles::MakeSupersampleLayout(width, height, supersample_factor)),
           symbols_(BuildSymbols()), provider_(symbols_) {
-        if (width == 0 || height == 0) {
-            throw std::invalid_argument("Android boundary frame dimensions must be non-zero");
-        }
     }
 
     void MapThunks() {
@@ -173,7 +183,8 @@ public:
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const {
         std::scoped_lock lock(mutex_);
         if (!gpu_render_target_ready_) return {};
-        return {{0, width_, height_, "RGBA8", {"color0"}, false}};
+        return {{0, layout_.render_width, layout_.render_height,
+                 "RGBA8", {"color0"}, false}};
     }
 
     [[nodiscard]] core::GpuCapabilities Capabilities() const {
@@ -333,21 +344,23 @@ private:
         if (symbol == "eglCreateContext") return kFakeContext;
         if (symbol == "eglMakeCurrent") {
             if (args[3] != 0 && !angle_frame_.has_value()) {
-                angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(backend_, width_, height_));
+                angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
+                    backend_, layout_.render_width, layout_.render_height));
                 std::scoped_lock lock(mutex_);
                 gpu_render_target_ready_ = true;
             }
             return 1;
         }
         if (symbol == "eglQuerySurface") {
-            Write32(args[3], args[2] == kEglWidth ? width_ :
-                             args[2] == kEglHeight ? height_ : 0, tid);
+            Write32(args[3], args[2] == kEglWidth ? layout_.logical_width :
+                             args[2] == kEglHeight ? layout_.logical_height : 0, tid);
             return 1;
         }
         if (symbol == "eglSwapBuffers") {
             if (!angle_frame_.has_value()) throw std::runtime_error("eglSwapBuffers has no current ANGLE frame");
-            AndroidBoundaryFrame frame{width_, height_, ++frame_sequence_,
-                                       angle_frame_->ReadRgba8()};
+            AndroidBoundaryFrame frame{
+                layout_.logical_width, layout_.logical_height, ++frame_sequence_,
+                gles::ResolveSupersampledRgba8(angle_frame_->ReadRgba8(), layout_)};
             { std::scoped_lock lock(mutex_); latest_frame_ = std::move(frame); }
             ready_.notify_all();
             return 1;
@@ -360,10 +373,15 @@ private:
             return 1;
         }
         if (symbol == "glViewport") {
-            RequireFrame(symbol).Viewport(std::bit_cast<std::int32_t>(args[0]),
-                                          std::bit_cast<std::int32_t>(args[1]),
-                                          std::bit_cast<std::int32_t>(args[2]),
-                                          std::bit_cast<std::int32_t>(args[3]));
+            RequireFrame(symbol).Viewport(
+                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[0]),
+                                       layout_.factor),
+                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[1]),
+                                       layout_.factor),
+                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[2]),
+                                       layout_.factor),
+                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[3]),
+                                       layout_.factor));
             return 0;
         }
         if (symbol == "glClearColor") {
@@ -407,8 +425,7 @@ private:
 
     memory::AddressSpace& address_space_;
     gles::AngleBackend backend_;
-    std::uint32_t width_{};
-    std::uint32_t height_{};
+    gles::SupersampleLayout layout_;
     std::vector<BionicHleSymbol> symbols_;
     BionicHleSymbolProvider provider_;
     bool mapped_{};
@@ -432,8 +449,10 @@ private:
 AndroidBoundaryHle::AndroidBoundaryHle(memory::AddressSpace& address_space,
                                        const gles::AngleBackend backend,
                                        const std::uint32_t width,
-                                       const std::uint32_t height)
-    : impl_(std::make_unique<Impl>(address_space, backend, width, height)) {}
+                                       const std::uint32_t height,
+                                       const std::uint32_t supersample_factor)
+    : impl_(std::make_unique<Impl>(address_space, backend, width, height,
+                                   supersample_factor)) {}
 AndroidBoundaryHle::~AndroidBoundaryHle() = default;
 void AndroidBoundaryHle::MapThunks() { impl_->MapThunks(); }
 const BionicHleSymbolProvider& AndroidBoundaryHle::Symbols() const noexcept {

@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 超采样 resolve 内核
+更新：2026-08-05 · M4 NativeActivity 超采样接入
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0180` 已完成受检 1..4× 布局和确定性 RGBA8 box resolve；下一编号为 `WU-0181`，
-  接入 NativeActivity ANGLE pbuffer 与 CLI 配置。
+- `WU-0181` 已把受检 1..4× 超采样接入 NativeActivity 的 ANGLE pbuffer、viewport 和
+  swap resolve；下一编号为 `WU-0182`，接入 CLI 配置。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -28,20 +28,8 @@
 - [WU-0150..0159] 冻结 ANGLE backend、预编译 SDK 与独立源码维护流程，并在 Windows
   D3D11 上闭合真实 EGL pbuffer 生命周期。
 - [WU-0160..0164] 建立 GLES2 142-entry IDL/catalog、guest 搬运、显式分派和受限调用准备。
-- [WU-0165] 上下文状态解析 pack/unpack 像素行跨度、guest index 数组、buffer offset、
-  常用固定查询及显式登记的动态/uniform 形状；未知形状和无效状态更新明确失败；
-  启用 ANGLE 的 Windows/MSVC 全量 CTest 263/263 通过。
-- [WU-0166] 真实 ANGLE D3D11 pbuffer 执行 GLES2 viewport/clear，逐像素 readback 验证
-  确定颜色帧；无 ANGLE、负尺寸和原生 GLES 错误均明确失败；全量 CTest 264/264 通过。
-- [WU-0167] ELF loader 可注入 Bionic HLE 命名空间，追加绝对边界模块参与符号解析但
-  不被映射/重定位；builder 删除、替换或重排 guest 模块会明确失败；全量 CTest
-  266/266 通过。
-- [WU-0168] Linux syscall 之外的 supervisor trap 只有显式 handler 确认后才继续；同一
-  handler 传播至真实 clone child，拒绝和缺失路径继续保留可观测停止；全量 CTest
-  267/267 通过。
-- [WU-0169] VFS pipe 提供隔离的只读/只写端；syscall 42 先验证完整 guest descriptor
-  数组再原子发布，写回失败回收两端，真实 write/read 字节闭环通过；全量 CTest
-  269/269 通过。
+- [WU-0165..0169] 完成 GLES 状态搬运、真实 ANGLE clear/readback、可注入 HLE 命名空间、
+  supervisor trap 传播及 VFS pipe/syscall 42 原子发布；完整验收保留在各 WU 任务单。
 - [WU-0170] SDL 窗口严格校验 RGBA8 帧并缩放更新 software surface；只有成功提交才累计
   present，dummy backend 覆盖真实 surface 更新；全量 CTest 270/270 通过。
 - [WU-0171] APK ZIP32 central directory、路径和 local/central 元数据严格受检；未压缩
@@ -77,11 +65,15 @@
 - [WU-0180] 超采样内核验证 1..4× 渲染尺寸、乘法溢出、布局一致性和 RGBA8 字节数；
   box resolve 使用整数累加与固定四舍五入，2× 四色方向及非整除平均值均有确定性测试；
   Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 286/286 通过。
+- [WU-0181] NativeActivity 以逻辑尺寸和 1..4× 倍率创建真实 ANGLE pbuffer，缩放 guest
+  viewport 并在 swap 时 resolve 回逻辑 RGBA8；guest EGL 查询与输入坐标保持逻辑尺寸，
+  GPU target 报告真实放大尺寸；Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境
+  全量 CTest 287/287 通过。
 
 ## 下一步（按优先级）
 
-1. 把超采样倍率接入 NativeActivity ANGLE pbuffer、viewport 缩放、逻辑尺寸 resolve 与
-   CLI 配置；随后补 SwiftShader 与三平台 GLES2 黄金帧出口验证。
+1. 为 `ogplay run-apk` 增加受检超采样倍率参数并保持默认 1×；随后补 SwiftShader 与
+   三平台 GLES2 黄金帧出口验证。
 
 ## 阻塞
 

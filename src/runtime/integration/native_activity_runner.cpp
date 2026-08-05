@@ -122,7 +122,8 @@ std::vector<GuestLifecycleModule> MakeLifecycleModules(
 class NativeActivitySession::Impl final {
 public:
     explicit Impl(const NativeActivityRunRequest& request)
-        : boundary_(address_space_, request.backend, request.width, request.height),
+        : boundary_(address_space_, request.backend, request.width, request.height,
+                    request.supersample_factor),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           threads_([this] {
               return std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);

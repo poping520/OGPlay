@@ -3,6 +3,7 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <stdexcept>
 #include <string_view>
 
 #include "ogplay/cpu/interpreter.h"
@@ -14,10 +15,11 @@ namespace {
 
 class BoundaryFixture final {
 public:
-    BoundaryFixture()
+    explicit BoundaryFixture(const std::uint32_t supersample_factor = 1)
         : bus(memory), cpu(bus), boundary(memory,
               {ogplay::gles::AngleRenderer::d3d11,
-               ogplay::gles::AngleDevice::hardware}, 4, 3) {
+               ogplay::gles::AngleDevice::hardware}, 4, 3,
+              supersample_factor) {
         memory.Map({stack, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
@@ -43,7 +45,9 @@ public:
         const ogplay::cpu::RunResult stopped{
             1, ogplay::cpu::RunStopReason::supervisor_call,
             ogplay::memory::GuestAddress{address->Value() & ~1U}, 0xdf02U, 2, std::nullopt};
-        REQUIRE(boundary.Handle(cpu, stopped));
+        if (!boundary.Handle(cpu, stopped)) {
+            throw std::runtime_error("Android boundary fixture call was not handled");
+        }
         return cpu.GetState().Register(ogplay::cpu::CoreRegister::r0);
     }
 
@@ -120,5 +124,46 @@ TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
     CHECK(frame->rgba8[0] == doctest::Approx(64).epsilon(0.02));
     CHECK(frame->rgba8[1] == doctest::Approx(128).epsilon(0.02));
     CHECK(frame->rgba8[2] == doctest::Approx(191).epsilon(0.02));
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1}) == 1);
+}
+
+TEST_CASE("Android boundary supersamples without changing guest surface size") {
+    CHECK_THROWS_AS(BoundaryFixture(0), std::invalid_argument);
+    CHECK_THROWS_AS(BoundaryFixture(5), std::invalid_argument);
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+
+    BoundaryFixture fixture(2);
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
+    CHECK(fixture.Call("libEGL.so", "eglQuerySurface",
+                       {1, 3, 0x3057U, fixture.output.Value()}) == 1);
+    CHECK(fixture.bus.Read32(fixture.output) == 4);
+    CHECK(fixture.Call("libEGL.so", "eglQuerySurface",
+                       {1, 3, 0x3056U, fixture.output.Value()}) == 1);
+    CHECK(fixture.bus.Read32(fixture.output) == 3);
+
+    const auto targets = fixture.boundary.RenderTargets();
+    REQUIRE(targets.size() == 1);
+    CHECK(targets[0].width == 8);
+    CHECK(targets[0].height == 6);
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glViewport", {0, 0, 4, 3}));
+    CHECK_THROWS_AS(
+        fixture.Call("libGLESv2.so", "glViewport", {0x40000000U, 0, 4, 3}),
+        std::overflow_error);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glClearColor",
+                 {std::bit_cast<std::uint32_t>(0.125F),
+                  std::bit_cast<std::uint32_t>(0.25F),
+                  std::bit_cast<std::uint32_t>(0.5F),
+                  std::bit_cast<std::uint32_t>(1.0F)}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glClear", {0x00004000U}));
+    CHECK(fixture.Call("libEGL.so", "eglSwapBuffers", {1, 3}) == 1);
+    const auto frame = fixture.boundary.TakeLatestFrame();
+    REQUIRE(frame.has_value());
+    CHECK(frame->width == 4);
+    CHECK(frame->height == 3);
+    CHECK(frame->rgba8.size() == 4U * 3U * 4U);
+    CHECK(frame->rgba8[0] == doctest::Approx(32).epsilon(0.02));
+    CHECK(frame->rgba8[1] == doctest::Approx(64).epsilon(0.02));
+    CHECK(frame->rgba8[2] == doctest::Approx(128).epsilon(0.02));
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1}) == 1);
 }

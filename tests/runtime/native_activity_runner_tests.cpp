@@ -51,6 +51,19 @@ std::optional<ogplay::runtime::AndroidBoundaryFrame> WaitFrame(
     return std::nullopt;
 }
 
+constexpr ogplay::gles::AngleBackend NativeHardwareBackend() {
+#if defined(_WIN32)
+    return {ogplay::gles::AngleRenderer::d3d11,
+            ogplay::gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+    return {ogplay::gles::AngleRenderer::metal,
+            ogplay::gles::AngleDevice::hardware};
+#else
+    return {ogplay::gles::AngleRenderer::vulkan,
+            ogplay::gles::AngleDevice::hardware};
+#endif
+}
+
 }  // namespace
 
 TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
@@ -74,7 +87,7 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     };
     auto session = ogplay::runtime::NativeActivitySession::Start({
         19, "libogplay_minimal_ndk.so", modules,
-        {ogplay::gles::AngleRenderer::d3d11, ogplay::gles::AngleDevice::hardware},
+        NativeHardwareBackend(),
         64, 36, UINT64_C(200000000), {}, 2});
     REQUIRE(session->Running());
     const auto initial = WaitFrame(*session);
@@ -152,8 +165,7 @@ TEST_CASE("M4 exit APK renders and responds to key and pointer input") {
     };
     auto session = ogplay::runtime::NativeActivitySession::Start({
         19, "libogplay_m4_exit.so", modules,
-        {ogplay::gles::AngleRenderer::d3d11,
-         ogplay::gles::AngleDevice::hardware},
+        NativeHardwareBackend(),
         64, 36, UINT64_C(200000000), {}, 1});
     REQUIRE(session->Running());
     const auto frame = WaitFrame(*session);

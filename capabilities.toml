@@ -235,6 +235,11 @@ status = "partial"
 test = "tests/runtime/native_activity_runner_tests.cpp"
 note = "M4 已在真实 API 19 Bionic 上启动最小 APK 的 ANativeActivity_onCreate 与 glue child，完成帧输出、输入变色和完整销毁；API 22/23 启动尚未验证"
 
+[frontend.minimal_apk_run]
+status = "partial"
+test = "ogplay run-apk <apk> --system-dir <api19-lib-dir> --exit-after-frames 2"
+note = "M4 CLI 可运行唯一 armeabi-v7a NativeActivity 库，SDL 显示 ANGLE readback 并转发键鼠；通用多库入口和 profile import 留待 M6"
+
 [loader.hle_boundary_namespace]
 status = "complete"
 test = "tests/loader/module_loader_tests.cpp"

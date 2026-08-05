@@ -6,12 +6,15 @@
 
 ## 公共 API
 
-M0 CLI 支持版本、能力账本和结构化 Agent 请求；M6 增加 run/import 与 GUI。
+CLI 支持版本、能力账本、结构化 Agent 请求，以及 M4 最小 API 19 NativeActivity APK
+的交互窗口运行；通用 import/profile 与 GUI 留在 M6。
 
 ## 不变量
 
 - CLI 和 GUI 共用相同 session/config/profile。
 - 用户可见输出可以写 stdout/stderr，但生产库不得裸输出。
+- `run-apk` 要求显式 API 19 Bionic 目录；APK 必须恰有一个未压缩 armeabi-v7a native 库，
+  不猜测多库入口。
 
 ## 禁止
 
@@ -21,4 +24,3 @@ M0 CLI 支持版本、能力账本和结构化 Agent 请求；M6 增加 run/impo
 ## 测试
 
 CLI smoke 由 CTest 驱动；GUI 行为测试在 M6 增加。
-

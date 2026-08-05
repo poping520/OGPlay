@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,8 +31,12 @@ struct Elf32LoadedNamespace final {
     std::vector<Elf32LoadedModule> modules;
 };
 
+using Elf32LinkNamespaceBuilder = std::function<Elf32LinkNamespace(
+    std::string_view, std::span<const Elf32LinkModule>)>;
+
 [[nodiscard]] Elf32LoadedNamespace LoadElf32ModuleNamespace(
     std::string_view root_name, std::span<const Elf32ModuleInput> inputs,
-    memory::AddressSpace& address_space);
+    memory::AddressSpace& address_space,
+    const Elf32LinkNamespaceBuilder& namespace_builder = {});
 
 }  // namespace ogplay::loader

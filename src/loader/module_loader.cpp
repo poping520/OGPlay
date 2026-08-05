@@ -1,6 +1,8 @@
 #include "ogplay/loader/module_loader.h"
 
 #include <cstddef>
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -11,7 +13,8 @@ namespace ogplay::loader {
 Elf32LoadedNamespace LoadElf32ModuleNamespace(
     const std::string_view root_name,
     const std::span<const Elf32ModuleInput> inputs,
-    memory::AddressSpace& address_space) {
+    memory::AddressSpace& address_space,
+    const Elf32LinkNamespaceBuilder& namespace_builder) {
     if (inputs.empty()) throw LinkError("ELF module input set is empty");
     std::vector<Elf32LinkModule> link_modules;
     link_modules.reserve(inputs.size());
@@ -37,11 +40,25 @@ Elf32LoadedNamespace LoadElf32ModuleNamespace(
                                   std::move(relocations),
                                   std::move(lifecycle), std::move(tls)});
     }
-    result.link_namespace = BuildElf32LinkNamespace(root_name, link_modules);
+    result.link_namespace = namespace_builder
+                                ? namespace_builder(root_name, link_modules)
+                                : BuildElf32LinkNamespace(root_name, link_modules);
+    if (result.link_namespace.modules.size() < inputs.size()) {
+        throw LinkError("ELF namespace builder removed guest modules");
+    }
+    for (std::size_t index = 0; index < inputs.size(); ++index) {
+        const auto& module = result.link_namespace.modules[index];
+        if (module.name != inputs[index].name ||
+            module.load_bias != inputs[index].load_bias) {
+            throw LinkError(
+                "ELF namespace builder reordered or replaced a guest module");
+        }
+    }
 
     const auto snapshot = address_space.CaptureSnapshot();
     try {
         for (const auto index : result.link_namespace.load_order) {
+            if (index >= inputs.size()) continue;
             result.modules[index].load_plan = LoadElf32Arm(
                 inputs[index].bytes, result.modules[index].image,
                 inputs[index].load_bias, address_space);
@@ -53,6 +70,7 @@ Elf32LoadedNamespace LoadElf32ModuleNamespace(
             }
         }
         for (const auto index : result.link_namespace.load_order) {
+            if (index >= inputs.size()) continue;
             const auto resolved = ResolveElf32Symbols(
                 result.link_namespace, index);
             ApplyElf32ArmRelocations(

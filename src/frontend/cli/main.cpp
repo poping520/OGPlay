@@ -23,7 +23,7 @@ void Write(FILE* stream, const std::string_view text) {
 int Usage() {
     Write(stderr, "usage: ogplay --version | capabilities [path] | agent <method> | agent-stdio\n"
                   "       ogplay run-apk <apk> --system-dir <api19-lib-dir> "
-                  "[--exit-after-frames <count>]\n");
+                  "[--supersample <1..4>] [--exit-after-frames <count>]\n");
     return 2;
 }
 

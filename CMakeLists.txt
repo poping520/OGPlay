@@ -407,6 +407,15 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(architecture.documentation_layout PROPERTIES LABELS architecture)
 
     add_test(
+        NAME frontend.run_apk_options
+        COMMAND ${CMAKE_COMMAND}
+            -DOGPLAY_CLI=$<TARGET_FILE:ogplay>
+            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckRunApkOptions.cmake
+    )
+    set_tests_properties(frontend.run_apk_options PROPERTIES LABELS "unit;frontend")
+
+    add_test(
         NAME tools.gles_idl_generator_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py

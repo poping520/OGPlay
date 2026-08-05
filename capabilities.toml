@@ -71,9 +71,9 @@ test = "tests/hal/window_input_tests.cpp"
 note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，清黑边后等比居中缩放，提交成功后提供单调 present 计数"
 
 [hal.display_adaptation]
-status = "partial"
+status = "complete"
 test = "tests/hal/window_input_tests.cpp"
-note = "M4 已实现等比 FitDisplayRect、SDL 黑边呈现及同布局 pointer 坐标映射；NativeActivity 支持受检 1..4x 内部超采样并保持逻辑输入/输出尺寸，CLI 配置尚待接入"
+note = "M4 完成等比黑边呈现、同布局 pointer 映射及受检 1..4x NativeActivity 内部超采样；CLI 默认 1x 并允许显式选择，逻辑输入/输出尺寸保持不变"
 
 [memory.address_types]
 status = "complete"
@@ -248,7 +248,7 @@ note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合 viewport/scissor/clear 与左
 [gles.supersample_resolve]
 status = "complete"
 test = "tests/gles/supersample_tests.cpp"
-note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢出、布局、字节数、方向与舍入；已接入 NativeActivity pbuffer/viewport/swap，CLI 配置属于后续能力"
+note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢出、布局、字节数、方向与舍入；已接入 NativeActivity pbuffer/viewport/swap 及 CLI 配置"
 
 [runtime.android_boundary_hle]
 status = "partial"
@@ -262,8 +262,8 @@ note = "M4 已在真实 API 19 Bionic 上启动最小 APK 的 ANativeActivity_on
 
 [frontend.minimal_apk_run]
 status = "partial"
-test = "ogplay run-apk <apk> --system-dir <api19-lib-dir> --exit-after-frames 2"
-note = "M4 CLI 可运行唯一 armeabi-v7a NativeActivity 库，SDL 显示 ANGLE readback 并转发键鼠；通用多库入口和 profile import 留待 M6"
+test = "cmake/CheckRunApkOptions.cmake"
+note = "M4 CLI 可运行唯一 armeabi-v7a NativeActivity 库，SDL 显示 ANGLE readback 并转发键鼠；--supersample 受检为 1..4 且默认 1x，真实 2x APK smoke 通过；通用多库入口和 profile import 留待 M6"
 
 [loader.hle_boundary_namespace]
 status = "complete"

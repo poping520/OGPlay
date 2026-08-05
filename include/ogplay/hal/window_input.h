@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -34,6 +35,7 @@ struct WindowState {
     std::uint32_t id{};
     std::uint32_t width{};
     std::uint32_t height{};
+    std::uint64_t present_count{};
 };
 
 struct InputEvent {
@@ -59,6 +61,8 @@ public:
     [[nodiscard]] virtual WindowState State() const = 0;
     [[nodiscard]] virtual std::string_view BackendName() const noexcept = 0;
     [[nodiscard]] virtual std::vector<InputEvent> PollEvents() = 0;
+    virtual void PresentRgba8(std::span<const std::uint8_t> pixels,
+                              std::uint32_t width, std::uint32_t height) = 0;
 };
 
 [[nodiscard]] std::unique_ptr<WindowInput> CreateSdlWindowInput(

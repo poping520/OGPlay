@@ -50,6 +50,11 @@ status = "complete"
 test = "tests/hal/window_input_tests.cpp"
 note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映射；SDL 类型不泄漏"
 
+[hal.rgba_present]
+status = "complete"
+test = "tests/hal/window_input_tests.cpp"
+note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，缩放提交成功后提供单调 present 计数"
+
 [memory.address_types]
 status = "complete"
 test = "tests/memory/address_tests.cpp"

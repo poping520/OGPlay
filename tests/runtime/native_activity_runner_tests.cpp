@@ -157,6 +157,6 @@ TEST_CASE("M4 exit guest failure reaches the host frame loop without a hang") {
              ogplay::gles::AngleDevice::hardware},
             64, 36, UINT64_C(200000000), {}, 1})),
         "NativeActivity guest child failed: Android boundary HLE is not implemented: "
-        "glEnableVertexAttribArray",
+        "glGetIntegerv",
         ogplay::runtime::NativeActivityRunError);
 }

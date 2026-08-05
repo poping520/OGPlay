@@ -75,6 +75,15 @@ public:
                         std::int32_t height, std::int32_t border,
                         std::uint32_t format, std::uint32_t type,
                         std::optional<std::span<const std::byte>> pixels);
+    void SetVertexAttributeEnabled(std::uint32_t index, bool enabled);
+    void VertexAttributePointer(std::uint32_t index, std::int32_t size,
+                                std::uint32_t type, bool normalized,
+                                std::int32_t stride, std::uint32_t offset);
+    void Uniform1f(std::int32_t location, float value);
+    void Uniform1i(std::int32_t location, std::int32_t value);
+    void Uniform4f(std::int32_t location, float x, float y, float z, float w);
+    void UniformMatrix3(std::int32_t location, std::int32_t count,
+                        bool transpose, std::span<const float> values);
     [[nodiscard]] std::vector<std::uint8_t> ReadRgba8();
     [[nodiscard]] AngleFrameInfo Info() const noexcept;
 

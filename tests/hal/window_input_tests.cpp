@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <ostream>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -22,6 +23,30 @@ TEST_CASE("display layout preserves aspect ratio and centers black bars") {
            ogplay::hal::DisplayRect{70, 0, 180, 180}));
     CHECK_THROWS_AS(static_cast<void>(FitDisplayRect(0, 1, 1, 1)),
                     std::invalid_argument);
+}
+
+TEST_CASE("display points map through content geometry and identify black bars") {
+    using ogplay::hal::MapDisplayPoint;
+    const auto origin = MapDisplayPoint(160, 0, 640, 480, 1280, 720);
+    CHECK(origin.inside);
+    CHECK(origin.x == doctest::Approx(0));
+    CHECK(origin.y == doctest::Approx(0));
+
+    const auto center = MapDisplayPoint(640, 360, 640, 480, 1280, 720);
+    CHECK(center.inside);
+    CHECK(center.x == doctest::Approx(320));
+    CHECK(center.y == doctest::Approx(240));
+
+    const auto left_bar = MapDisplayPoint(100, 360, 640, 480, 1280, 720);
+    CHECK_FALSE(left_bar.inside);
+    CHECK(left_bar.x == doctest::Approx(0));
+    const auto right_bar = MapDisplayPoint(1200, 360, 640, 480, 1280, 720);
+    CHECK_FALSE(right_bar.inside);
+    CHECK(right_bar.x == doctest::Approx(640));
+    CHECK_THROWS_AS(
+        static_cast<void>(MapDisplayPoint(
+            std::numeric_limits<float>::infinity(), 0, 1, 1, 1, 1)),
+        std::invalid_argument);
 }
 
 #if OGPLAY_TEST_HAS_SDL3

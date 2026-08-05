@@ -68,7 +68,7 @@ note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，清黑边后等�
 [hal.display_adaptation]
 status = "partial"
 test = "tests/hal/window_input_tests.cpp"
-note = "M4 已实现溢出安全的等比 FitDisplayRect 与 SDL 黑边呈现；内容区输入坐标映射和超采样策略尚待实现"
+note = "M4 已实现等比 FitDisplayRect、SDL 黑边呈现及同布局 pointer 坐标映射；黑边按下/移动被拒绝、释放夹紧转发，超采样策略尚待实现"
 
 [memory.address_types]
 status = "complete"

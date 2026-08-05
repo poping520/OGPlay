@@ -37,6 +37,11 @@ struct VfsFileInfo final {
     VfsSource source{VfsSource::runtime};
 };
 
+struct VfsPipeDescriptors final {
+    std::int32_t read_descriptor{};
+    std::int32_t write_descriptor{};
+};
+
 class VfsError final : public std::runtime_error {
 public:
     VfsError(std::int32_t error_number, std::string message);
@@ -62,6 +67,7 @@ public:
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);
+    [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,
                                    std::span<std::byte> destination);
     [[nodiscard]] std::size_t Write(std::int32_t descriptor,

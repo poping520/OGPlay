@@ -15,6 +15,8 @@ syscall 与 framework Asset 只能单向调用本模块。
 - 路径索引按 ASCII 大小写不敏感，拒绝逃逸和歧义。
 - 挂载事务化；来源与可写性事实不可丢失。
 - descriptor offset 隔离，错误携带稳定 Linux errno。
+- pipe 返回隔离的只读/只写 descriptor，共享同一有序字节流；创建和 guest descriptor
+  数组发布必须是事务性的。
 
 ## 测试
 

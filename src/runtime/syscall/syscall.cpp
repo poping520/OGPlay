@@ -669,6 +669,38 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                 return -error.ErrorNumber();
             }
         });
+    dispatcher.Implement(
+        42, [&vfs, &address_space](const A32SyscallFrame& frame) {
+            const memory::GuestAddress output{frame.arguments[0]};
+            try {
+                address_space.Validate({output, 8}, memory::AccessType::write,
+                                       frame.thread_id);
+                const auto descriptors = vfs.CreatePipe();
+                std::array<std::byte, 8> bytes{};
+                const std::array values{
+                    static_cast<std::uint32_t>(descriptors.read_descriptor),
+                    static_cast<std::uint32_t>(descriptors.write_descriptor)};
+                for (std::size_t word = 0; word < values.size(); ++word) {
+                    for (std::size_t byte = 0; byte < 4; ++byte) {
+                        bytes[word * 4U + byte] = static_cast<std::byte>(
+                            (values[word] >> static_cast<unsigned>(byte * 8U)) &
+                            0xffU);
+                    }
+                }
+                try {
+                    address_space.Write(output, bytes, frame.thread_id);
+                } catch (...) {
+                    vfs.Close(descriptors.read_descriptor);
+                    vfs.Close(descriptors.write_descriptor);
+                    throw;
+                }
+                return 0;
+            } catch (const memory::MemoryFault&) {
+                return -kEfault;
+            } catch (const VfsError& error) {
+                return -error.ErrorNumber();
+            }
+        });
     dispatcher.Implement(6, [&vfs](const A32SyscallFrame& frame) {
         try {
             vfs.Close(std::bit_cast<std::int32_t>(frame.arguments[0]));

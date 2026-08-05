@@ -13,6 +13,8 @@
 ## 不变量
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
+- `AndroidBoundaryGles` 独占 buffer/texture/vertex/uniform 的调用准备与 transfer state；主
+  HLE 只传入当前 `AngleFrame`，组件不得拥有 EGL 生命周期、GPU 指标或窗口状态。
 - `AndroidBoundaryHle` 从生成目录暴露完整 142 项 GLES2 Thumb trap 命名空间；只有显式
   handler 可以执行，未实现调用必须携带函数名失败。Looper/input 数据与 ANGLE readback
   跨线程传递必须受锁保护，未知地址或 SVC 不得吞掉。
@@ -39,4 +41,4 @@
 ## 测试
 
 对应 `headless_bionic_runner_tests.cpp`、`headless_jni_contract_tests.cpp` 与
-`android_boundary_hle_tests.cpp`。
+`android_boundary_hle_tests.cpp`；后者通过主 HLE 覆盖独立 GLES 分派组件。

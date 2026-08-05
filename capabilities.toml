@@ -273,7 +273,7 @@ note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢�
 [runtime.android_boundary_hle]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；支持 1..4x 放大 ANGLE pbuffer、viewport 缩放和逻辑帧 resolve，完整 NDK 与 GLES2 槽仍不在本能力范围"
+note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；资源与顶点搬运由独立 AndroidBoundaryGles 持有 transfer state，主 HLE 管理 EGL、指标、超采样与 resolve；完整 NDK 与 GLES2 槽仍不在本能力范围"
 
 [runtime.native_activity_session]
 status = "partial"

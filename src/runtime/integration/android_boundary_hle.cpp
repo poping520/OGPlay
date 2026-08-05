@@ -18,10 +18,9 @@
 #include <utility>
 
 #include "ogplay/gles/angle_frame.h"
-#include "ogplay/gles/gles_call_preparation.h"
 #include "ogplay/gles/gles_dispatch.h"
-#include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/gles/supersample.h"
+#include "ogplay/runtime/integration/android_boundary_gles.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -122,7 +121,8 @@ public:
          const std::uint32_t supersample_factor)
         : address_space_(address_space), backend_(backend),
           layout_(gles::MakeSupersampleLayout(width, height, supersample_factor)),
-          symbols_(BuildSymbols()), provider_(symbols_) {
+          symbols_(BuildSymbols()), provider_(symbols_),
+          gles_dispatch_(address_space) {
     }
 
     void MapThunks() {
@@ -504,7 +504,7 @@ private:
         if (symbol == "eglDestroyContext" || symbol == "eglDestroySurface") return 1;
         if (symbol == "eglTerminate") {
             angle_frame_.reset();
-            transfer_state_ = {};
+            gles_dispatch_.Reset();
             std::scoped_lock lock(mutex_);
             gpu_render_target_ready_ = false;
             return 1;
@@ -513,7 +513,9 @@ private:
             shader_program.has_value()) {
             return *shader_program;
         }
-        if (const auto resources = DispatchResources(symbol, args, state);
+        if (const auto resources = gles_dispatch_.Dispatch(
+                symbol, args, state,
+                angle_frame_.has_value() ? &*angle_frame_ : nullptr);
             resources.has_value()) return *resources;
         if (symbol == "glViewport") {
             RequireFrame(symbol).Viewport(
@@ -585,140 +587,6 @@ private:
         return std::nullopt;
     }
 
-    gles::PreparedGlesCall PrepareCall(const std::string_view symbol,
-                                       const std::span<const std::uint32_t> args,
-                                       const std::uint64_t tid) {
-        const auto id = gles::GlesDispatchTable::Find(symbol);
-        if (!id.has_value()) throw std::logic_error("GLES resource handler is not cataloged");
-        return gles::PrepareGles2Call(address_space_, *id, args, tid, &transfer_state_);
-    }
-    static gles::GuestBuffer& Pointer(gles::PreparedGlesCall& call) {
-        if (call.pointers.size() != 1 || !call.pointers.front().transfer.has_value()) {
-            throw std::logic_error("GLES resource handler expected one transferred pointer");
-        }
-        return *call.pointers.front().transfer;
-    }
-    static std::vector<std::uint32_t> ReadWords(const gles::GuestBuffer& transfer) {
-        const auto bytes = transfer.Bytes();
-        if (bytes.size() % 4U != 0) throw std::logic_error("GLES name array is misaligned");
-        std::vector<std::uint32_t> words(bytes.size() / 4U);
-        for (std::size_t word = 0; word < words.size(); ++word) {
-            for (std::size_t byte = 0; byte < 4; ++byte) {
-                words[word] |= static_cast<std::uint32_t>(
-                    std::to_integer<std::uint8_t>(bytes[word * 4U + byte])) << (byte * 8U);
-            }
-        }
-        return words;
-    }
-    static std::vector<float> ReadFloats(const gles::GuestBuffer& transfer) {
-        const auto words = ReadWords(transfer);
-        std::vector<float> values; values.reserve(words.size());
-        for (const auto word : words) values.push_back(std::bit_cast<float>(word));
-        return values;
-    }
-    static void WriteWords(gles::GuestBuffer& transfer,
-                           const std::span<const std::uint32_t> words) {
-        auto bytes = transfer.WritableBytes();
-        if (bytes.size() != words.size() * 4U) throw std::logic_error("GLES name output size differs");
-        for (std::size_t word = 0; word < words.size(); ++word) {
-            for (std::size_t byte = 0; byte < 4; ++byte) {
-                bytes[word * 4U + byte] = static_cast<std::byte>(words[word] >> (byte * 8U));
-            }
-        }
-        transfer.Commit();
-    }
-    static std::optional<std::span<const std::byte>> OptionalBytes(
-        const gles::GuestBuffer& transfer) {
-        if (transfer.IsNull()) return std::nullopt;
-        return transfer.Bytes();
-    }
-    std::optional<std::uint32_t> DispatchResources(
-        const std::string_view symbol, const std::array<std::uint32_t, 4>& args,
-        const cpu::A32State& state) {
-        const auto tid = state.ThreadId();
-        if (symbol == "glGenBuffers" || symbol == "glGenTextures") {
-            auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
-            auto names = symbol == "glGenBuffers"
-                ? RequireFrame(symbol).GenerateBuffers(args[0])
-                : RequireFrame(symbol).GenerateTextures(args[0]);
-            WriteWords(Pointer(call), names); return 0;
-        }
-        if (symbol == "glDeleteBuffers" || symbol == "glDeleteTextures") {
-            auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
-            const auto names = ReadWords(Pointer(call));
-            if (symbol == "glDeleteBuffers") {
-                RequireFrame(symbol).DeleteBuffers(names);
-                const auto bound = transfer_state_.Snapshot();
-                if (std::ranges::find(names, bound.array_buffer) != names.end())
-                    transfer_state_.BindBuffer(0x8892U, 0);
-                if (std::ranges::find(names, bound.element_array_buffer) != names.end())
-                    transfer_state_.BindBuffer(0x8893U, 0);
-            } else RequireFrame(symbol).DeleteTextures(names);
-            return 0;
-        }
-        if (symbol == "glBindBuffer") {
-            auto next = transfer_state_; next.BindBuffer(args[0], args[1]);
-            RequireFrame(symbol).BindBuffer(args[0], args[1]); transfer_state_ = std::move(next); return 0;
-        }
-        if (symbol == "glBufferData") {
-            auto call = PrepareCall(symbol, args, tid); const auto& data = Pointer(call);
-            RequireFrame(symbol).BufferData(args[0], args[1], OptionalBytes(data), args[3]); return 0;
-        }
-        if (symbol == "glActiveTexture") { RequireFrame(symbol).ActiveTexture(args[0]); return 0; }
-        if (symbol == "glBindTexture") { RequireFrame(symbol).BindTexture(args[0], args[1]); return 0; }
-        if (symbol == "glPixelStorei") {
-            auto next = transfer_state_; next.PixelStore(args[0], std::bit_cast<std::int32_t>(args[1]));
-            RequireFrame(symbol).PixelStore(args[0], std::bit_cast<std::int32_t>(args[1]));
-            transfer_state_ = std::move(next); return 0;
-        }
-        if (symbol == "glTexParameteri") {
-            RequireFrame(symbol).TextureParameter(args[0], args[1],
-                                                   std::bit_cast<std::int32_t>(args[2])); return 0;
-        }
-        if (symbol == "glTexImage2D") {
-            std::array<std::uint32_t, 9> all{args[0], args[1], args[2], args[3]};
-            for (std::size_t index = 4; index < all.size(); ++index) {
-                all[index] = StackWord(state, static_cast<std::uint32_t>((index - 4U) * 4U));
-            }
-            auto call = PrepareCall(symbol, all, tid); const auto& pixels = Pointer(call);
-            RequireFrame(symbol).TextureImage2D(
-                all[0], std::bit_cast<std::int32_t>(all[1]), std::bit_cast<std::int32_t>(all[2]),
-                std::bit_cast<std::int32_t>(all[3]), std::bit_cast<std::int32_t>(all[4]),
-                std::bit_cast<std::int32_t>(all[5]), all[6], all[7],
-                OptionalBytes(pixels)); return 0;
-        }
-        if (symbol == "glEnableVertexAttribArray" || symbol == "glDisableVertexAttribArray") {
-            RequireFrame(symbol).SetVertexAttributeEnabled(
-                args[0], symbol == "glEnableVertexAttribArray"); return 0;
-        }
-        if (symbol == "glVertexAttribPointer") {
-            if (transfer_state_.Snapshot().array_buffer == 0)
-                throw std::runtime_error("glVertexAttribPointer client arrays are not implemented");
-            std::array<std::uint32_t, 6> all{args[0], args[1], args[2], args[3],
-                                             StackWord(state, 0), StackWord(state, 4)};
-            auto call = PrepareCall(symbol, all, tid);
-            if (call.pointers.size() != 1 || !call.pointers.front().deferred)
-                throw std::logic_error("glVertexAttribPointer expected a deferred VBO offset");
-            RequireFrame(symbol).VertexAttributePointer(
-                all[0], std::bit_cast<std::int32_t>(all[1]), all[2], all[3] != 0,
-                std::bit_cast<std::int32_t>(all[4]), all[5]); return 0;
-        }
-        if (symbol == "glUniform1f") { RequireFrame(symbol).Uniform1f(
-            std::bit_cast<std::int32_t>(args[0]), std::bit_cast<float>(args[1])); return 0; }
-        if (symbol == "glUniform1i") { RequireFrame(symbol).Uniform1i(
-            std::bit_cast<std::int32_t>(args[0]), std::bit_cast<std::int32_t>(args[1])); return 0; }
-        if (symbol == "glUniform4f") { RequireFrame(symbol).Uniform4f(
-            std::bit_cast<std::int32_t>(args[0]), std::bit_cast<float>(args[1]),
-            std::bit_cast<float>(args[2]), std::bit_cast<float>(args[3]),
-            std::bit_cast<float>(StackWord(state, 0))); return 0; }
-        if (symbol == "glUniformMatrix3fv") {
-            auto call = PrepareCall(symbol, args, tid); const auto values = ReadFloats(Pointer(call));
-            RequireFrame(symbol).UniformMatrix3(
-                std::bit_cast<std::int32_t>(args[0]), std::bit_cast<std::int32_t>(args[1]),
-                args[2] != 0, values); return 0;
-        }
-        return std::nullopt;
-    }
     gles::AngleFrame& RequireFrame(const std::string_view operation) {
         if (!angle_frame_.has_value()) {
             throw std::runtime_error(std::string(operation) + " has no current ANGLE frame");
@@ -746,9 +614,9 @@ private:
     gles::SupersampleLayout layout_;
     std::vector<BionicHleSymbol> symbols_;
     BionicHleSymbolProvider provider_;
+    AndroidBoundaryGles gles_dispatch_;
     bool mapped_{};
     std::optional<gles::AngleFrame> angle_frame_;
-    gles::GlesTransferState transfer_state_;
     std::uint64_t frame_sequence_{};
     mutable std::mutex mutex_;
     std::condition_variable ready_;

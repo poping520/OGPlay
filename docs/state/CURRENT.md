@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 GLES2 vertex/uniform handler
+更新：2026-08-05 · M4 Android boundary GLES 分派拆分
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0188` 已让综合样例以真实 ANGLE 完成 vertex attribute 与 uniform 初始化；下一
-  编号为 `WU-0189`，实现综合样例所需 query/state handler 组。
+- `WU-0189` 已把资源与顶点 GLES 分派从达到 800 行的主 HLE 提取；下一编号为
+  `WU-0190`，实现综合样例所需 query/state handler 组。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -34,20 +34,8 @@
   `run-apk`；真实 API 19 最小 APK 可显示、响应输入并完整销毁，详见各 WU 任务单。
 - [WU-0175..0178] 闭合 GPU Agent 查询、NativeActivity 真实指标、等比黑边呈现和同布局
   输入映射；失败、限额与黑边手势均有机器测试，完整记录见各 WU 任务单。
-- [WU-0179] `AngleFrame` 增加受检 scissor 状态，readback 在边界内把 OpenGL 底部首行
-  翻转为 SDL/ImageView 顶部首行；8×8 非对称图案与 SoftwareSurface 逐像素一致；
-  Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 283/283 通过，真实
-  APK 2 帧窗口冒烟正常退出。
-- [WU-0180] 超采样内核验证 1..4× 渲染尺寸、乘法溢出、布局一致性和 RGBA8 字节数；
-  box resolve 使用整数累加与固定四舍五入，2× 四色方向及非整除平均值均有确定性测试；
-  Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 286/286 通过。
-- [WU-0181] NativeActivity 以逻辑尺寸和 1..4× 倍率创建真实 ANGLE pbuffer，缩放 guest
-  viewport 并在 swap 时 resolve 回逻辑 RGBA8；guest EGL 查询与输入坐标保持逻辑尺寸，
-  GPU target 报告真实放大尺寸；Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境
-  全量 CTest 287/287 通过。
-- [WU-0182] `ogplay run-apk --supersample <1..4>` 在任何 APK I/O 前严格校验倍率，省略时
-  保持 1×；真实 API 19 APK 以 2× 呈现 2 帧并正常退出，Windows/MSVC + ANGLE、真实
-  APK/Bionic 环境全量 CTest 288/288 通过。
+- [WU-0179..0182] 闭合 scissor、左上原点 readback、1..4× 确定性超采样 resolve 及 CLI
+  配置；逻辑 surface/输入尺寸不泄漏内部放大尺寸，真实 API 19 APK 以 2× 呈现并正常退出。
 - [WU-0183] ANGLE 预编译子模块升级为同 commit 的共享头、Windows/Linux x64 与 macOS
   x64/arm64 包；逐文件字节在 Git checkout 后仍匹配清单，CMake 同时校验平台、GN 参数、
   共享头和哈希。黄金帧按宿主硬件 backend 运行；当前 Windows 包未编入 SwiftShader，
@@ -72,6 +60,9 @@
   按 `count*9` 受检搬运，client array 与坏地址在 ANGLE 前明确失败，综合 APK 下一缺口
   推进到 `glGetIntegerv`；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与 API 19 Bionic
   环境全量 CTest 295/295 通过，未宣称已经出帧。
+- [WU-0189] 18 项资源/顶点 handler 与 transfer state 迁入独立 `AndroidBoundaryGles`；主
+  HLE 回落到 668 行并只保留 EGL、shader/program、帧与指标协调，综合 APK 下一缺口保持
+  `glGetIntegerv`；迁移未新增能力或改变 guest 行为，全量 CTest 295/295 通过。
 
 ## 下一步（按优先级）
 

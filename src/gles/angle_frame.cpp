@@ -265,6 +265,141 @@ void AngleFrame::DeleteProgram(const std::uint32_t program) {
 #endif
 }
 
+std::vector<std::uint32_t> AngleFrame::GenerateBuffers(const std::size_t count) {
+    if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
+        throw std::length_error("ANGLE buffer count overflows GLsizei");
+    }
+#if OGPLAY_HAS_ANGLE
+    std::vector<std::uint32_t> buffers(count);
+    glGenBuffers(static_cast<GLsizei>(count), buffers.data());
+    RequireNoError("glGenBuffers");
+    return buffers;
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::DeleteBuffers(const std::span<const std::uint32_t> buffers) {
+    if (buffers.size() > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
+        throw std::length_error("ANGLE buffer count overflows GLsizei");
+    }
+#if OGPLAY_HAS_ANGLE
+    glDeleteBuffers(static_cast<GLsizei>(buffers.size()), buffers.data());
+    RequireNoError("glDeleteBuffers");
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::BindBuffer(const std::uint32_t target, const std::uint32_t buffer) {
+#if OGPLAY_HAS_ANGLE
+    glBindBuffer(target, buffer);
+    RequireNoError("glBindBuffer");
+#else
+    static_cast<void>(target); static_cast<void>(buffer);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::BufferData(
+    const std::uint32_t target, const std::uint32_t byte_size,
+    const std::optional<std::span<const std::byte>> data,
+    const std::uint32_t usage) {
+    if (data.has_value() && data->size() != byte_size) {
+        throw std::invalid_argument("ANGLE buffer data size does not match its payload");
+    }
+#if OGPLAY_HAS_ANGLE
+    glBufferData(target, static_cast<GLsizeiptr>(byte_size),
+                 data.has_value() ? data->data() : nullptr, usage);
+    RequireNoError("glBufferData");
+#else
+    static_cast<void>(target); static_cast<void>(usage);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::vector<std::uint32_t> AngleFrame::GenerateTextures(const std::size_t count) {
+    if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
+        throw std::length_error("ANGLE texture count overflows GLsizei");
+    }
+#if OGPLAY_HAS_ANGLE
+    std::vector<std::uint32_t> textures(count);
+    glGenTextures(static_cast<GLsizei>(count), textures.data());
+    RequireNoError("glGenTextures");
+    return textures;
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::DeleteTextures(const std::span<const std::uint32_t> textures) {
+    if (textures.size() > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
+        throw std::length_error("ANGLE texture count overflows GLsizei");
+    }
+#if OGPLAY_HAS_ANGLE
+    glDeleteTextures(static_cast<GLsizei>(textures.size()), textures.data());
+    RequireNoError("glDeleteTextures");
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::ActiveTexture(const std::uint32_t texture) {
+#if OGPLAY_HAS_ANGLE
+    glActiveTexture(texture); RequireNoError("glActiveTexture");
+#else
+    static_cast<void>(texture); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::BindTexture(const std::uint32_t target, const std::uint32_t texture) {
+#if OGPLAY_HAS_ANGLE
+    glBindTexture(target, texture); RequireNoError("glBindTexture");
+#else
+    static_cast<void>(target); static_cast<void>(texture);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::PixelStore(const std::uint32_t parameter, const std::int32_t value) {
+#if OGPLAY_HAS_ANGLE
+    glPixelStorei(parameter, value); RequireNoError("glPixelStorei");
+#else
+    static_cast<void>(parameter); static_cast<void>(value);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::TextureParameter(const std::uint32_t target,
+                                  const std::uint32_t parameter,
+                                  const std::int32_t value) {
+#if OGPLAY_HAS_ANGLE
+    glTexParameteri(target, parameter, value); RequireNoError("glTexParameteri");
+#else
+    static_cast<void>(target); static_cast<void>(parameter); static_cast<void>(value);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::TextureImage2D(
+    const std::uint32_t target, const std::int32_t level,
+    const std::int32_t internal_format, const std::int32_t width,
+    const std::int32_t height, const std::int32_t border,
+    const std::uint32_t format, const std::uint32_t type,
+    const std::optional<std::span<const std::byte>> pixels) {
+#if OGPLAY_HAS_ANGLE
+    glTexImage2D(target, level, internal_format, width, height, border, format, type,
+                 pixels.has_value() ? pixels->data() : nullptr);
+    RequireNoError("glTexImage2D");
+#else
+    static_cast<void>(target); static_cast<void>(level); static_cast<void>(internal_format);
+    static_cast<void>(width); static_cast<void>(height); static_cast<void>(border);
+    static_cast<void>(format); static_cast<void>(type);
+    static_cast<void>(pixels);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::uint8_t> AngleFrame::ReadRgba8() {
     constexpr std::uint64_t kChannels = 4;
     const auto pixels = static_cast<std::uint64_t>(width_) * height_;

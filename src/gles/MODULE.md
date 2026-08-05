@@ -32,6 +32,8 @@
   元素字节并创建 `GuestBuffer`；复杂表达式经 `GlesLengthResolver` 显式注入。
 - `GlesTransferState`：保存上下文级 pack/unpack 对齐、array/element buffer 绑定及动态查询
   形状；解析像素、索引和常用查询长度，并把缓冲对象偏移与 client array 标为 deferred。
+- `MakeSupersampleLayout` / `ResolveSupersampledRgba8`：验证 1..4× 渲染尺寸并用确定性
+  RGBA8 box filter 还原逻辑帧；NativeActivity 接入在后续 Work Unit 完成。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。
 - `OGPLAY_ANGLE_SDK_ROOT` / `OGPLAY_ANGLE_SDK_CONFIGURATION`：指定平台化 SDK 根目录和
@@ -69,6 +71,8 @@
 - EGL 错误保留失败操作和原生错误码；无 ANGLE 的构建必须明确不可用。
 - ANGLE 原生 `glReadPixels` 的底部首行必须在边界内翻转为 `ImageView`/SDL 的顶部首行，
   禁止把坐标系差异泄漏到每个消费者。
+- 超采样尺寸、输入字节数和布局必须完整匹配；resolve 使用整数求和与固定四舍五入，
+  禁止因宿主浮点或图形驱动产生黄金帧漂移。
 - SwiftShader 只能作为 ANGLE Vulkan 软件设备使用；hardware-only 不得静默回退软件。
 - ANGLE 源码只存在于维护者本地 `angle-prebuilt-repo` 工作区，由该仓库构建脚本固定 commit；
   普通消费端使用独立预编译浅 submodule，清单、平台或哈希不匹配时明确失败，不静默降级

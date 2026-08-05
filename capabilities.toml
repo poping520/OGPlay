@@ -245,6 +245,11 @@ status = "complete"
 test = "tests/gles/angle_frame_tests.cpp"
 note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合 viewport/scissor/clear 与左上原点 RGBA8 readback，并已接入 guest EGL 与 SDL present"
 
+[gles.supersample_resolve]
+status = "complete"
+test = "tests/gles/supersample_tests.cpp"
+note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢出、布局、字节数、方向与舍入；NativeActivity/CLI 倍率接入属于后续能力"
+
 [runtime.android_boundary_hle]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp"

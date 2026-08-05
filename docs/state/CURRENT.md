@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 ANGLE 非对称黄金帧
+更新：2026-08-05 · M4 超采样 resolve 内核
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0179` 已把 ANGLE readback 规范化为左上原点，并用非对称 scissor 图案逐像素
-  对照 SoftwareSurface；下一编号为 `WU-0180`。
+- `WU-0180` 已完成受检 1..4× 布局和确定性 RGBA8 box resolve；下一编号为 `WU-0181`，
+  接入 NativeActivity ANGLE pbuffer 与 CLI 配置。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -74,10 +74,14 @@
   翻转为 SDL/ImageView 顶部首行；8×8 非对称图案与 SoftwareSurface 逐像素一致；
   Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 283/283 通过，真实
   APK 2 帧窗口冒烟正常退出。
+- [WU-0180] 超采样内核验证 1..4× 渲染尺寸、乘法溢出、布局一致性和 RGBA8 字节数；
+  box resolve 使用整数累加与固定四舍五入，2× 四色方向及非整除平均值均有确定性测试；
+  Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 286/286 通过。
 
 ## 下一步（按优先级）
 
-1. 推进可配置超采样策略；随后补 SwiftShader 与三平台 GLES2 黄金帧出口验证。
+1. 把超采样倍率接入 NativeActivity ANGLE pbuffer、viewport 缩放、逻辑尺寸 resolve 与
+   CLI 配置；随后补 SwiftShader 与三平台 GLES2 黄金帧出口验证。
 
 ## 阻塞
 

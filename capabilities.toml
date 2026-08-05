@@ -53,7 +53,7 @@ note = "M0 提供确定性 SoftwareSurface、像素差与感知哈希；ANGLE �
 [golden.angle_frame]
 status = "partial"
 test = "tests/golden/golden_frame_tests.cpp"
-note = "M4 黄金帧按宿主硬件 backend 逐像素匹配 SoftwareSurface；SwiftShader 测试由受检平台清单启用，Windows 包明确不可用且不得回退，Linux/macOS 实际软件帧留待 M4 出口"
+note = "M4 黄金帧按宿主硬件 backend 逐像素匹配 SoftwareSurface；macOS/arm64 Metal 与 Vulkan/SwiftShader 已通过严格出口及连续 5 次复验，Windows 包明确不可用软件后端且不得回退，Linux 实际帧留待出口"
 
 [hal.clock]
 status = "complete"
@@ -148,7 +148,7 @@ note = "M4 综合 API 19 ARMv7 样例冻结并真实执行 12 个 EGL 与源码�
 [validation.m4_exit_local]
 status = "partial"
 test = "tools/m4_exit.py --self-test"
-note = "M4 三平台本机增量出口入口已就绪；Windows/MSVC 严格模式以真实 Bionic 和两个 APK 通过 297/297，Linux/macOS 硬件与 SwiftShader 本机出口尚待执行"
+note = "M4 三平台本机增量出口入口已就绪；Windows/MSVC 与 macOS/arm64 严格模式均以真实 Bionic 和两个 APK 通过 297/297，Linux/x64 硬件与 SwiftShader 本机出口尚待执行"
 
 [fixtures.m1_guest]
 status = "complete"
@@ -208,17 +208,17 @@ note = "M4 冻结三平台 ANGLE renderer/device 候选顺序、显式可用性�
 [gles.angle_dependency]
 status = "partial"
 test = "third_party/angle-prebuilt/tools/package_angle_sdk.py verify --sdk third_party/angle-prebuilt/windows-x64/release"
-note = "M4 浅 submodule 交付同 commit 的共享头、Windows/Linux x64 与 macOS x64/arm64 Release SDK；CMake 校验平台/CPU/GN 参数及逐文件哈希后导入 EGL/GLESv2，三平台运行留待 M4 出口"
+note = "M4 浅 submodule 交付同 commit 的共享头、Windows/Linux x64 与 macOS x64/arm64 Release SDK；CMake 校验平台/CPU/GN 参数、运行时列表及逐文件哈希后导入 EGL/GLESv2，macOS/arm64 已验证 Metal 与 SwiftShader 运行时，Linux 运行留待 M4 出口"
 
 [gles.angle]
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp"
-note = "M4 已在 Windows/MSVC 真实 ANGLE D3D11 上完成 pbuffer 生命周期、guest 边界、SDL present 与黄金帧；Linux/macOS 和 SwiftShader 软件帧留待出口验证"
+note = "M4 已在 Windows/MSVC D3D11 与 macOS/arm64 Metal 上完成真实 pbuffer 生命周期、guest 边界、SDL present 与黄金帧；macOS Vulkan/SwiftShader 软件帧亦通过，Linux 留待出口验证"
 
 [gles.egl_lifecycle]
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp"
-note = "M4 完成不泄漏原生类型的可注入生命周期、精确 EGL 错误和逆序回滚，并验证 Windows D3D11 pbuffer；窗口 surface 与三平台出口后转 complete"
+note = "M4 完成不泄漏原生类型的可注入生命周期、精确 EGL 错误和逆序回滚，Windows D3D11 与 macOS Metal/SwiftShader pbuffer 已验证；窗口 surface 与 Linux 出口后转 complete"
 
 [gles.idl_codegen]
 status = "partial"

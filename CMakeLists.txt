@@ -365,7 +365,7 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     ogplay_set_project_warnings(ogplay_tests)
 
-    if(OGPLAY_ENABLE_ANGLE AND WIN32)
+    if(OGPLAY_ENABLE_ANGLE AND EXISTS "${_angle_sdk}/bin")
         add_custom_command(TARGET ogplay_tests POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${_angle_sdk}/bin" $<TARGET_FILE_DIR:ogplay_tests>

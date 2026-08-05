@@ -46,10 +46,14 @@
   present，dummy backend 覆盖真实 surface 更新；全量 CTest 270/270 通过。
 - [WU-0171] APK ZIP32 central directory、路径和 local/central 元数据严格受检；未压缩
   native ELF 只有 CRC32 一致才会返回；全量 CTest 273/273 通过。
+- [WU-0172] 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入进入唯一 Thumb
+  HLE trap；ANGLE clear 发布 RGBA8 帧，command/input 唤醒保持显式；全量 CTest
+  276/276 通过。
 
 ## 下一步（按优先级）
 
-1. 接通 NativeActivity 启动、ANGLE guest 边界和 SDL 输入/显示。
+1. 启动 `ANativeActivity_onCreate`、glue 工作线程与生命周期回调。
+2. CLI 接入 APK、SDL 输入与帧显示并执行样例验收。
 
 ## 阻塞
 

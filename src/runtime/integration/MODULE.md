@@ -2,8 +2,8 @@
 
 ## 职责
 
-装配无界面 Bionic 与 JNI 累计契约，生成里程碑出口报告；本模块只协调已有能力，不实现新的
-syscall、JNI、框架或文件系统语义。
+装配 Bionic、JNI 与 Android native 边界，生成里程碑出口报告；本模块只协调已有能力，
+不实现新的 syscall、JNI、框架或文件系统语义。
 
 ## 依赖
 
@@ -13,9 +13,12 @@ syscall、JNI、框架或文件系统语义。
 ## 不变量
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
+- `AndroidBoundaryHle` 只暴露已登记的 Thumb trap；Looper/input 数据与 ANGLE readback
+  跨线程传递必须受锁保护，未知地址或 SVC 不得吞掉。
 - executor、时钟、VFS 和 profile 必须显式注入或由确定性 fixture 建立。
 - 不包含平台 UI、真实 present 或游戏专属逻辑。
 
 ## 测试
 
-对应 `headless_bionic_runner_tests.cpp` 与 `headless_jni_contract_tests.cpp`。
+对应 `headless_bionic_runner_tests.cpp`、`headless_jni_contract_tests.cpp` 与
+`android_boundary_hle_tests.cpp`。

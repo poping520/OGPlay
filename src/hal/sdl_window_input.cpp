@@ -70,6 +70,7 @@ public:
         window_ = SDL_CreateWindow(options.title.c_str(), static_cast<int>(options.width),
                                    static_cast<int>(options.height), flags);
         if (window_ == nullptr) throw SdlError("SDL_CreateWindow");
+        present_count_ = 0;
     }
 
     void Close() noexcept override {
@@ -90,6 +91,7 @@ public:
             .id = SDL_GetWindowID(window_),
             .width = static_cast<std::uint32_t>(width),
             .height = static_cast<std::uint32_t>(height),
+            .present_count = present_count_,
         };
     }
 
@@ -106,6 +108,34 @@ public:
             AppendEvent(event, result);
         }
         return result;
+    }
+
+    void PresentRgba8(const std::span<const std::uint8_t> pixels,
+                      const std::uint32_t width, const std::uint32_t height) override {
+        if (window_ == nullptr) throw std::logic_error("frame presentation requires an open window");
+        if (width == 0 || height == 0 ||
+            width > static_cast<std::uint32_t>(std::numeric_limits<int>::max() / 4) ||
+            height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+            throw std::invalid_argument("RGBA8 frame dimensions are out of range");
+        }
+        const auto row_bytes = static_cast<std::size_t>(width) * 4;
+        if (height > std::numeric_limits<std::size_t>::max() / row_bytes ||
+            pixels.size() != row_bytes * height) {
+            throw std::invalid_argument("RGBA8 frame byte count does not match dimensions");
+        }
+
+        auto* target = SDL_GetWindowSurface(window_);
+        if (target == nullptr) throw SdlError("SDL_GetWindowSurface");
+        auto* source = SDL_CreateSurfaceFrom(
+            static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_RGBA32,
+            const_cast<std::uint8_t*>(pixels.data()), static_cast<int>(row_bytes));
+        if (source == nullptr) throw SdlError("SDL_CreateSurfaceFrom");
+        const auto blitted = SDL_BlitSurfaceScaled(source, nullptr, target, nullptr,
+                                                   SDL_SCALEMODE_NEAREST);
+        SDL_DestroySurface(source);
+        if (!blitted) throw SdlError("SDL_BlitSurfaceScaled");
+        if (!SDL_UpdateWindowSurface(window_)) throw SdlError("SDL_UpdateWindowSurface");
+        ++present_count_;
     }
 
 private:
@@ -204,6 +234,7 @@ private:
 
     SDL_Window* window_{};
     bool initialized_{};
+    std::uint64_t present_count_{};
 };
 
 }  // namespace

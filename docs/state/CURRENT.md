@@ -42,11 +42,13 @@
 - [WU-0169] VFS pipe 提供隔离的只读/只写端；syscall 42 先验证完整 guest descriptor
   数组再原子发布，写回失败回收两端，真实 write/read 字节闭环通过；全量 CTest
   269/269 通过。
+- [WU-0170] SDL 窗口严格校验 RGBA8 帧并缩放更新 software surface；只有成功提交才累计
+  present，dummy backend 覆盖真实 surface 更新；全量 CTest 270/270 通过。
 
 ## 下一步（按优先级）
 
-1. `WU-0170` 让 SDL 窗口接收 RGBA8 frame 并显式 present。
-2. 随后实现 APK stored-entry 读取和 NativeActivity 启动测试。
+1. 实现 APK stored-entry 读取。
+2. 接通 NativeActivity 启动、ANGLE guest 边界和 SDL 输入/显示。
 
 ## 阻塞
 

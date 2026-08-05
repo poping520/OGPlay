@@ -2,6 +2,7 @@
 
 #include <ostream>
 #include <stdexcept>
+#include <vector>
 
 #if OGPLAY_TEST_HAS_SDL3
 #include <SDL3/SDL.h>
@@ -39,6 +40,20 @@ TEST_CASE("SDL dummy window has an explicit lifecycle") {
     host->Close();
     CHECK_FALSE(host->State().open);
     host->Close();
+}
+
+TEST_CASE("SDL window presents exact RGBA8 frames") {
+    auto host = OpenDummyWindow();
+    const std::vector<std::uint8_t> pixels{
+        255, 0, 0, 255, 0, 255, 0, 255,
+        0, 0, 255, 255, 255, 255, 255, 255,
+    };
+
+    CHECK_THROWS_AS(host->PresentRgba8({}, 0, 2), std::invalid_argument);
+    CHECK_THROWS_AS(host->PresentRgba8(std::span{pixels}.first(15), 2, 2),
+                    std::invalid_argument);
+    host->PresentRgba8(pixels, 2, 2);
+    CHECK(host->State().present_count == 1);
 }
 
 TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {

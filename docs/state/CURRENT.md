@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 多平台 ANGLE SDK 能力门禁
+更新：2026-08-05 · M4 综合 GLES2 样例命名空间
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0183` 已接入多平台 ANGLE SDK、共享头清单和 SwiftShader 构建能力门禁；下一编号为
-  `WU-0184`，审阅并纳入 M4 GLES2 一致性出口样例。
+- `WU-0184` 已冻结综合出口样例导入契约并发布完整 GLES2 HLE 符号命名空间；下一编号为
+  `WU-0185`，实现样例所需 shader/program handler 组。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -30,19 +30,8 @@
 - [WU-0160..0164] 建立 GLES2 142-entry IDL/catalog、guest 搬运、显式分派和受限调用准备。
 - [WU-0165..0169] 完成 GLES 状态搬运、真实 ANGLE clear/readback、可注入 HLE 命名空间、
   supervisor trap 传播及 VFS pipe/syscall 42 原子发布；完整验收保留在各 WU 任务单。
-- [WU-0170] SDL 窗口严格校验 RGBA8 帧并缩放更新 software surface；只有成功提交才累计
-  present，dummy backend 覆盖真实 surface 更新；全量 CTest 270/270 通过。
-- [WU-0171] APK ZIP32 central directory、路径和 local/central 元数据严格受检；未压缩
-  native ELF 只有 CRC32 一致才会返回；全量 CTest 273/273 通过。
-- [WU-0172] 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入进入唯一 Thumb
-  HLE trap；ANGLE clear 发布 RGBA8 帧，command/input 唤醒保持显式；全量 CTest
-  276/276 通过。
-- [WU-0173] 真实 API 19 Bionic 启动 APK `ANativeActivity_onCreate` 与 glue child；生命周期
-  command、首帧、键盘输入变色、销毁 join/finalizer 均由真实样例集成测试闭合；全量
-  CTest 277/277 通过。
-- [WU-0174] `ogplay run-apk` 选择唯一 ARMv7 native ELF，SDL 主线程显示 guest 帧并转发
-  键鼠，关闭窗口同步销毁；真实 APK 有界 smoke 呈现 2 帧并以 0 退出，带真实 API 19
-  Bionic/APK 环境的全量 CTest 277/277 通过。
+- [WU-0170..0174] 闭合 SDL RGBA8 present、APK ZIP32 读取、NativeActivity HLE/session 与
+  `run-apk`；真实 API 19 最小 APK 可显示、响应输入并完整销毁，详见各 WU 任务单。
 - [WU-0175] core 提供不依赖 GLES/Agent 的 GPU 状态 provider；Agent 结构化暴露
   `gpu.stats/render_targets/capabilities/trace`，trace 过滤与 1..1000 限额显式传递，
   provider 缺失或越界返回可判定错误；Windows/MSVC + ANGLE、真实 API 19 APK/Bionic
@@ -76,11 +65,15 @@
   x64/arm64 包；逐文件字节在 Git checkout 后仍匹配清单，CMake 同时校验平台、GN 参数、
   共享头和哈希。黄金帧按宿主硬件 backend 运行；当前 Windows 包未编入 SwiftShader，
   测试确认明确失败且不回退硬件；Windows/MSVC + ANGLE 全量 CTest 289/289 通过。
+- [WU-0184] 综合 API 19 ARMv7 样例以 NDK r21e 完成离线构建，12 个 EGL 与 42 个 GLES2
+  调用和实际 ELF 导入均受检；Android HLE 从生成目录发布全部 142 项 GLES2 符号，样例
+  越过装载期缺符号，未绑定调用仍明确失败；Windows/MSVC + ANGLE、真实 API 19
+  APK/Bionic 环境全量 CTest 291/291 通过，未宣称综合样例已经出帧。
 
 ## 下一步（按优先级）
 
-1. 审阅并纳入 M4 GLES2 一致性出口样例，先闭合 Windows；Linux/macOS 及其 SwiftShader
-   软件黄金帧留到 M4 出口统一增量构建和三平台验收。
+1. 分组实现综合样例所需 GLES2 handler，先闭合 shader/program，再推进 buffer/texture、
+   draw/readback；Linux/macOS 与 SwiftShader 留到 M4 出口统一验收。
 
 ## 阻塞
 

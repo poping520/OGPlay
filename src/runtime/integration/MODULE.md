@@ -13,7 +13,8 @@
 ## 不变量
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
-- `AndroidBoundaryHle` 只暴露已登记的 Thumb trap；Looper/input 数据与 ANGLE readback
+- `AndroidBoundaryHle` 从生成目录暴露完整 142 项 GLES2 Thumb trap 命名空间；只有显式
+  handler 可以执行，未实现调用必须携带函数名失败。Looper/input 数据与 ANGLE readback
   跨线程传递必须受锁保护，未知地址或 SVC 不得吞掉。
 - 超采样倍率必须在创建任何 ANGLE 资源前完整验证；viewport 缩放溢出明确失败，guest
   `eglQuerySurface` 不得泄漏内部渲染尺寸，GPU 查询不得把逻辑尺寸伪装成真实 target。

@@ -8,6 +8,7 @@
 
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/gles/egl_lifecycle.h"
+#include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/android_boundary_hle.h"
 
@@ -79,6 +80,27 @@ TEST_CASE("Android boundary maps explicit Thumb HLE thunks") {
         1, ogplay::cpu::RunStopReason::supervisor_call,
         ogplay::memory::GuestAddress{0x70000f00U}, 0xdf02U, 2, std::nullopt};
     CHECK_FALSE(fixture.boundary.Handle(fixture.cpu, unknown));
+}
+
+TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
+    BoundaryFixture fixture;
+    CHECK(ogplay::gles::GlesDispatchTable::FunctionCount() == 142);
+    const auto legacy_viewport =
+        fixture.boundary.Symbols().Lookup("libGLESv2.so", "glViewport");
+    REQUIRE(legacy_viewport.has_value());
+    CHECK(legacy_viewport->Value() == 0x70000095U);
+    for (std::size_t index = 0;
+         index < ogplay::gles::GlesDispatchTable::FunctionCount(); ++index) {
+        const auto function = ogplay::gles::GlesDispatchTable::Describe(
+            static_cast<ogplay::gles::GlesThunkId>(index));
+        CAPTURE(function.name);
+        CHECK(fixture.boundary.Symbols().Lookup("libGLESv2.so", function.name).has_value());
+    }
+
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv2.so", "glActiveTexture", {0x84c0U}),
+        "Android boundary HLE is not implemented: glActiveTexture",
+        std::runtime_error);
 }
 
 TEST_CASE("Android looper publishes command and input poll sources") {

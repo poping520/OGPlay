@@ -21,5 +21,7 @@ EGL 生命周期、常用 GLES2 对象/状态/绘制/读回路径以及触摸、
 
 ## 验证
 
-`tools/build.py` 必须完成 NDK 编译、导入集合检查、APK 打包、对齐、签名验证和内容检查。
+`tools/build.py` 必须完成 NDK 编译、精确 EGL/GLES2 导入集合检查、APK 打包、对齐、签名
+验证和内容检查；`--contract-only` 必须在不依赖 SDK/NDK 时核对 42 个 GLES2 调用均存在于
+仓库 IDL。
 在 OGPlay 完成所需 GLES2 handler 前，本模块只保证 APK 可构建，不将运行失败伪装成通过。

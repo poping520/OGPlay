@@ -50,6 +50,11 @@ status = "complete"
 test = "tests/golden/golden_frame_tests.cpp"
 note = "M0 提供确定性 SoftwareSurface、像素差与感知哈希；ANGLE 软件后端属于 M4"
 
+[golden.angle_frame]
+status = "partial"
+test = "tests/golden/golden_frame_tests.cpp"
+note = "M4 Windows D3D11 ANGLE 用非对称 scissor 图案逐像素匹配 SoftwareSurface，并固定 readback 为左上原点；SwiftShader 和三平台稳定性留待 M4 出口"
+
 [hal.clock]
 status = "complete"
 test = "tests/hal/clock_tests.cpp"
@@ -238,7 +243,7 @@ note = "M4 完成上下文级 pack/unpack、array/element buffer 与动态输出
 [gles.angle_frame]
 status = "complete"
 test = "tests/gles/angle_frame_tests.cpp"
-note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合 viewport、clear 与受检 RGBA8 readback；guest EGL handle 和窗口 present 尚待集成"
+note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合 viewport/scissor/clear 与左上原点 RGBA8 readback，并已接入 guest EGL 与 SDL present"
 
 [runtime.android_boundary_hle]
 status = "partial"

@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 等比内容区输入映射
+更新：2026-08-05 · M4 ANGLE 非对称黄金帧
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0178` 已复用显示布局把 pointer 坐标映射回 guest 并区分黑边；下一编号为
-  `WU-0179`。
+- `WU-0179` 已把 ANGLE readback 规范化为左上原点，并用非对称 scissor 图案逐像素
+  对照 SoftwareSurface；下一编号为 `WU-0180`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -70,10 +70,14 @@
   映射 pointer，忽略黑边按下/移动，并以夹紧坐标转发黑边释放以避免手势卡住；
   Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 282/282 通过，真实
   APK 2 帧窗口冒烟正常退出。
+- [WU-0179] `AngleFrame` 增加受检 scissor 状态，readback 在边界内把 OpenGL 底部首行
+  翻转为 SDL/ImageView 顶部首行；8×8 非对称图案与 SoftwareSurface 逐像素一致；
+  Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 283/283 通过，真实
+  APK 2 帧窗口冒烟正常退出。
 
 ## 下一步（按优先级）
 
-1. 推进超采样策略及 ANGLE/软件后端 GLES2 一致性与黄金帧出口工作。
+1. 推进可配置超采样策略；随后补 SwiftShader 与三平台 GLES2 黄金帧出口验证。
 
 ## 阻塞
 

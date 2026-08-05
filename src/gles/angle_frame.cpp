@@ -1,5 +1,6 @@
 #include "ogplay/gles/angle_frame.h"
 
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -45,6 +46,34 @@ void AngleFrame::Viewport(const std::int32_t x, const std::int32_t y,
 #endif
 }
 
+void AngleFrame::Scissor(const std::int32_t x, const std::int32_t y,
+                         const std::int32_t width,
+                         const std::int32_t height) {
+    if (width < 0 || height < 0) {
+        throw std::invalid_argument("ANGLE scissor dimensions must not be negative");
+    }
+#if OGPLAY_HAS_ANGLE
+    glScissor(x, y, width, height);
+    RequireNoError("glScissor");
+#else
+    static_cast<void>(x);
+    static_cast<void>(y);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::SetScissorEnabled(const bool enabled) {
+#if OGPLAY_HAS_ANGLE
+    if (enabled) glEnable(GL_SCISSOR_TEST);
+    else glDisable(GL_SCISSOR_TEST);
+    RequireNoError(enabled ? "glEnable(GL_SCISSOR_TEST)"
+                           : "glDisable(GL_SCISSOR_TEST)");
+#else
+    static_cast<void>(enabled);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::ClearColor(const float red, const float green,
                             const float blue, const float alpha) {
 #if OGPLAY_HAS_ANGLE
@@ -85,6 +114,15 @@ std::vector<std::uint8_t> AngleFrame::ReadRgba8() {
                  static_cast<GLsizei>(height_), GL_RGBA, GL_UNSIGNED_BYTE,
                  result.data());
     RequireNoError("glReadPixels");
+    const auto row_bytes = static_cast<std::size_t>(width_) * kChannels;
+    for (std::size_t top = 0, bottom = height_ - 1U; top < bottom;
+         ++top, --bottom) {
+        const auto top_begin = result.begin() + static_cast<std::ptrdiff_t>(top * row_bytes);
+        const auto bottom_begin = result.begin() + static_cast<std::ptrdiff_t>(bottom * row_bytes);
+        std::swap_ranges(top_begin,
+                         top_begin + static_cast<std::ptrdiff_t>(row_bytes),
+                         bottom_begin);
+    }
     ++readback_count_;
     return result;
 #else

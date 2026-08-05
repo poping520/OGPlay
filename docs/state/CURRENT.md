@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 NativeActivity command pipe 完成
+更新：2026-08-05 · M4 最小 NativeActivity APK 已可交互运行
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0169` 已用 VFS descriptor 和受检 guest 数组闭合 Android ARM `pipe`；本轮继续
-  minimal NativeActivity APK 的窗口呈现和启动测试，下一编号为 `WU-0170`。
+- `WU-0174` 已提供 `ogplay run-apk`，真实 API 19 最小 APK 可在 SDL 窗口呈现 ANGLE
+  帧并接收键鼠输入；下一编号为 `WU-0175`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -52,10 +52,14 @@
 - [WU-0173] 真实 API 19 Bionic 启动 APK `ANativeActivity_onCreate` 与 glue child；生命周期
   command、首帧、键盘输入变色、销毁 join/finalizer 均由真实样例集成测试闭合；全量
   CTest 277/277 通过。
+- [WU-0174] `ogplay run-apk` 选择唯一 ARMv7 native ELF，SDL 主线程显示 guest 帧并转发
+  键鼠，关闭窗口同步销毁；真实 APK 有界 smoke 呈现 2 帧并以 0 退出，带真实 API 19
+  Bionic/APK 环境的全量 CTest 277/277 通过。
 
 ## 下一步（按优先级）
 
-1. CLI 接入 APK、SDL 输入与帧显示并执行样例验收。
+1. 由用户对最小 APK 执行人工键鼠验收；随后推进 `gpu.*` 可观测接口、显示适配与
+   GLES2 一致性/黄金帧出口工作。
 
 ## 阻塞
 

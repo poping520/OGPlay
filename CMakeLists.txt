@@ -225,10 +225,22 @@ add_library(OGPlay::Agent ALIAS ogplay_agent)
 target_link_libraries(ogplay_agent PUBLIC OGPlay::Core OGPlay::Session)
 ogplay_set_project_warnings(ogplay_agent)
 
-add_executable(ogplay src/frontend/cli/main.cpp)
-target_link_libraries(ogplay PRIVATE OGPlay::Agent)
+add_executable(ogplay src/frontend/cli/main.cpp src/frontend/cli/run_apk.cpp)
+target_link_libraries(ogplay PRIVATE OGPlay::Agent OGPlay::Hal OGPlay::Loader OGPlay::Runtime)
 target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
 target_compile_definitions(ogplay PRIVATE OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+if(WIN32)
+    set(OGPLAY_NATIVE_ANGLE_RENDERER d3d11)
+elseif(APPLE)
+    set(OGPLAY_NATIVE_ANGLE_RENDERER metal)
+elseif(UNIX)
+    set(OGPLAY_NATIVE_ANGLE_RENDERER vulkan)
+else()
+    message(FATAL_ERROR "OGPlay has no ANGLE renderer default for this host platform")
+endif()
+target_compile_definitions(ogplay PRIVATE
+    OGPLAY_NATIVE_ANGLE_RENDERER="${OGPLAY_NATIVE_ANGLE_RENDERER}"
+)
 ogplay_set_project_warnings(ogplay)
 
 install(TARGETS ogplay ogplay_core ogplay_hal ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_session

@@ -12,6 +12,8 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/session/session.h"
 
+#include "run_apk.h"
+
 namespace {
 
 void Write(FILE* stream, const std::string_view text) {
@@ -19,7 +21,9 @@ void Write(FILE* stream, const std::string_view text) {
 }
 
 int Usage() {
-    Write(stderr, "usage: ogplay --version | capabilities [path] | agent <method> | agent-stdio\n");
+    Write(stderr, "usage: ogplay --version | capabilities [path] | agent <method> | agent-stdio\n"
+                  "       ogplay run-apk <apk> --system-dir <api19-lib-dir> "
+                  "[--exit-after-frames <count>]\n");
     return 2;
 }
 
@@ -33,6 +37,9 @@ int main(const int argc, const char* const argv[]) {
     if (argc < 2) return Usage();
 
     try {
+        if (std::string_view(argv[1]) == "run-apk") {
+            return ogplay::frontend::RunApkCommand(argc, argv);
+        }
         const auto ledger_path = argc >= 3 && std::string_view(argv[1]) == "capabilities"
                                      ? std::filesystem::path(argv[2])
                                      : std::filesystem::path(OGPLAY_SOURCE_DIR) / "capabilities.toml";

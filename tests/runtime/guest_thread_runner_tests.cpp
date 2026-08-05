@@ -108,3 +108,30 @@ TEST_CASE("guest thread runner commits set_tls to the active CPU") {
     CHECK(fixture.cpu.GetState().ThreadPointer() ==
           ogplay::memory::GuestAddress{0x72000000U});
 }
+
+TEST_CASE("guest thread runner consumes only explicitly handled HLE traps") {
+    RunnerFixture fixture;
+    fixture.bus.Write32(fixture.code, 0xef000002U);         // svc #2: HLE
+    fixture.bus.Write32(fixture.code.Add(4), 0xe3a07001U);  // mov r7, #1
+    fixture.bus.Write32(fixture.code.Add(8), 0xef000000U);  // svc #0: exit
+    fixture.Start(84);
+    ogplay::runtime::BindAndroidThreadLifecycleSyscalls(
+        fixture.dispatcher, fixture.lifecycle);
+    std::uint32_t calls{};
+    const auto outcome = ogplay::runtime::RunAndroidArmGuestThread(
+        fixture.cpu, fixture.dispatcher, fixture.lifecycle, fixture.bus,
+        fixture.futex, 16,
+        [&calls](ogplay::cpu::Cpu& cpu,
+                 const ogplay::cpu::RunResult& stopped) {
+            if (stopped.immediate != 2) return false;
+            ++calls;
+            auto state = cpu.GetState();
+            state.SetRegister(ogplay::cpu::CoreRegister::r0, 9);
+            cpu.SetState(state);
+            return true;
+        });
+    CHECK(calls == 1);
+    CHECK(outcome.reason == ogplay::runtime::GuestThreadRunStop::guest_exit);
+    REQUIRE(outcome.exit.has_value());
+    CHECK(outcome.exit->state.exit_code == 9);
+}

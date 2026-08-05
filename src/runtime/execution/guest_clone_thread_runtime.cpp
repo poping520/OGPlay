@@ -12,7 +12,8 @@ GuestCloneThreadRuntime::GuestCloneThreadRuntime(
     GuestThreadLifecycle& lifecycle, memory::AddressSpace& address_space,
     memory::MemoryBus& memory_bus, cpu::FutexTable& futex_table,
     const std::uint64_t first_child_thread_id,
-    const std::uint64_t tick_slice)
+    const std::uint64_t tick_slice,
+    GuestSupervisorCallHandler hle_handler)
     : threads_(threads),
       dispatcher_(dispatcher),
       lifecycle_(lifecycle),
@@ -20,7 +21,8 @@ GuestCloneThreadRuntime::GuestCloneThreadRuntime(
       futex_table_(futex_table),
       committer_(lifecycle, address_space),
       next_thread_id_(first_child_thread_id),
-      tick_slice_(tick_slice) {
+      tick_slice_(tick_slice),
+      hle_handler_(std::move(hle_handler)) {
     if (first_child_thread_id == 0 || tick_slice == 0) {
         throw std::invalid_argument(
             "clone runtime requires non-zero thread id and tick slice");
@@ -75,7 +77,7 @@ void GuestCloneThreadRuntime::RunChild(const std::uint64_t thread_id,
     for (;;) {
         outcome = RunAndroidArmGuestThread(
             cpu, dispatcher_, lifecycle_, memory_bus_, futex_table_,
-            tick_slice_);
+            tick_slice_, hle_handler_);
         if (outcome.reason != GuestThreadRunStop::budget_exhausted) break;
     }
     if (outcome.reason != GuestThreadRunStop::guest_exit) {

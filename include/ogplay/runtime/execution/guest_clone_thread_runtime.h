@@ -24,7 +24,8 @@ public:
                             memory::MemoryBus& memory_bus,
                             cpu::FutexTable& futex_table,
                             std::uint64_t first_child_thread_id = 2,
-                            std::uint64_t tick_slice = 100000);
+                            std::uint64_t tick_slice = 100000,
+                            GuestSupervisorCallHandler hle_handler = {});
 
     [[nodiscard]] GuestCloneThreadJoin Join(std::uint64_t thread_id);
 
@@ -40,6 +41,7 @@ private:
     GuestThreadCloneCommitter committer_;
     std::atomic_uint64_t next_thread_id_;
     std::uint64_t tick_slice_{};
+    GuestSupervisorCallHandler hle_handler_;
     std::mutex outcomes_mutex_;
     std::map<std::uint64_t, GuestThreadRunOutcome> outcomes_;
 };

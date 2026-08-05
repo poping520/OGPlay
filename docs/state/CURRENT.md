@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 三平台本机出口入口
+更新：2026-08-05 · M4 出口候选就绪
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0194` 已提供不依赖 SSH 的三平台本机增量出口入口；下一编号为 `WU-0195`，在
-  Windows/MSVC 执行严格出口预演并冻结待测提交与命令。
+- `WU-0195` 已完成 Windows/MSVC 严格出口预演并冻结三平台本机测试入口；下一编号为
+  `WU-0196`，在 Linux/macOS 对应机器执行出口测试并汇总 M4 验收。
 - 当前开发机只使用 Windows/MSVC 预设；M4 的 Linux/macOS 验证在对应平台机器本地
   增量构建并执行，不从当前 Windows 主机通过 SSH 代跑。
 
@@ -59,11 +59,13 @@
 - [WU-0194] `tools/m4_exit.py` 预检 Bionic、两个 ARMv7 APK、ANGLE 平台/commit/软件后端
   清单，并按宿主 preset 增量运行严格全量 CTest；输入回归按内容变化过滤重复启动帧，
   Windows 严格全量 CTest 297/297 通过。
+- [WU-0195] Windows/MSVC 出口入口以真实 Bionic 与两个 APK 完成严格预演，综合样例输入
+  连续 5 次稳定，全量 CTest 297/297；候选已可交给 Linux/macOS 对应机器本地验收。
 
 ## 下一步（按优先级）
 
-1. 使用本机出口入口完成 Windows/MSVC 严格预演，确认命令与输出后冻结同一提交供
-   Linux/macOS 对应机器本地执行。
+1. 在 Linux 与 macOS 对应机器拉取同一出口候选，准备相同的 API 19 Bionic 与两个 APK，
+   运行 `tools/m4_exit.py`；两端通过后补 `M4-ACCEPTANCE.md` 并更新里程碑任务索引。
 
 ## 阻塞
 

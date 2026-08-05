@@ -63,7 +63,12 @@ note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映�
 [hal.rgba_present]
 status = "complete"
 test = "tests/hal/window_input_tests.cpp"
-note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，缩放提交成功后提供单调 present 计数"
+note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，清黑边后等比居中缩放，提交成功后提供单调 present 计数"
+
+[hal.display_adaptation]
+status = "partial"
+test = "tests/hal/window_input_tests.cpp"
+note = "M4 已实现溢出安全的等比 FitDisplayRect 与 SDL 黑边呈现；内容区输入坐标映射和超采样策略尚待实现"
 
 [memory.address_types]
 status = "complete"

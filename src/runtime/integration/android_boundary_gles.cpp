@@ -20,6 +20,22 @@
 #include "ogplay/memory/address_space.h"
 
 namespace ogplay::runtime {
+namespace {
+
+constexpr memory::GuestAddress kQueryStringPage{0x70001000U};
+constexpr std::uint32_t kQueryStringSlotBytes = 1024;
+
+std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
+    switch (parameter) {
+    case 0x1f00U: return 0;                              // GL_VENDOR
+    case 0x1f01U: return kQueryStringSlotBytes;          // GL_RENDERER
+    case 0x1f02U: return kQueryStringSlotBytes * 2U;     // GL_VERSION
+    case 0x8b8cU: return kQueryStringSlotBytes * 3U;     // GL_SHADING_LANGUAGE_VERSION
+    default: throw std::invalid_argument("unsupported GLES string query");
+    }
+}
+
+}  // namespace
 
 class AndroidBoundaryGles::Impl final {
 public:
@@ -160,6 +176,59 @@ public:
                 std::bit_cast<std::int32_t>(args[1]), args[2] != 0, values);
             return 0;
         }
+        if (symbol == "glGetIntegerv") {
+            auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
+            auto& output = Pointer(call);
+            const auto values = RequireFrame(frame, symbol).GetIntegers(
+                args[0], output.WritableBytes().size() / 4U);
+            std::vector<std::uint32_t> words;
+            words.reserve(values.size());
+            for (const auto value : values) {
+                words.push_back(std::bit_cast<std::uint32_t>(value));
+            }
+            WriteWords(output, words);
+            return 0;
+        }
+        if (symbol == "glGetString") {
+            return WriteQueryString(args[0],
+                                    RequireFrame(frame, symbol).GetString(args[0]), tid);
+        }
+        if (symbol == "glGetError") return RequireFrame(frame, symbol).GetError();
+        if (symbol == "glEnable" || symbol == "glDisable") {
+            RequireFrame(frame, symbol).SetCapability(args[0], symbol == "glEnable");
+            return 0;
+        }
+        if (symbol == "glBlendFunc") {
+            RequireFrame(frame, symbol).BlendFunction(args[0], args[1]);
+            return 0;
+        }
+        if (symbol == "glDrawElements") {
+            if (transfer_state_.Snapshot().element_array_buffer == 0) {
+                throw std::runtime_error("glDrawElements client indices are not implemented");
+            }
+            auto call = PrepareCall(symbol, args, tid);
+            if (call.pointers.size() != 1 || !call.pointers.front().deferred) {
+                throw std::logic_error("glDrawElements expected a deferred index offset");
+            }
+            RequireFrame(frame, symbol).DrawElements(
+                args[0], std::bit_cast<std::int32_t>(args[1]), args[2], args[3]);
+            return 0;
+        }
+        if (symbol == "glReadPixels") {
+            std::array<std::uint32_t, 7> all{
+                args[0], args[1], args[2], args[3],
+                StackWord(state, 0), StackWord(state, 4), StackWord(state, 8)};
+            auto call = PrepareCall(symbol, all, tid);
+            auto& output = Pointer(call);
+            RequireFrame(frame, symbol).ReadPixels(
+                std::bit_cast<std::int32_t>(all[0]),
+                std::bit_cast<std::int32_t>(all[1]),
+                std::bit_cast<std::int32_t>(all[2]),
+                std::bit_cast<std::int32_t>(all[3]), all[4], all[5],
+                output.WritableBytes());
+            output.Commit();
+            return 0;
+        }
         return std::nullopt;
     }
 
@@ -257,8 +326,51 @@ private:
         return *frame;
     }
 
+    void EnsureQueryStringPage() {
+        if (query_string_page_mapped_) return;
+        if (address_space_.PageSize() < kQueryStringSlotBytes * 4U) {
+            throw std::length_error("guest page is too small for GLES query strings");
+        }
+        address_space_.Map({kQueryStringPage, address_space_.PageSize()},
+                           memory::PageProtection::read |
+                               memory::PageProtection::write);
+        address_space_.Protect({kQueryStringPage, address_space_.PageSize()},
+                               memory::PageProtection::read);
+        query_string_page_mapped_ = true;
+    }
+
+    std::uint32_t WriteQueryString(const std::uint32_t parameter,
+                                   const std::string_view value,
+                                   const std::uint64_t tid) {
+        const auto offset = QueryStringOffset(parameter);
+        if (value.size() >= kQueryStringSlotBytes) {
+            throw std::length_error("ANGLE query string exceeds its guest slot");
+        }
+        EnsureQueryStringPage();
+        std::vector<std::byte> bytes;
+        bytes.reserve(value.size() + 1U);
+        for (const auto character : value) {
+            bytes.push_back(static_cast<std::byte>(
+                static_cast<unsigned char>(character)));
+        }
+        bytes.push_back(std::byte{});
+        const auto page = memory::GuestRange{kQueryStringPage,
+                                              address_space_.PageSize()};
+        address_space_.Protect(page, memory::PageProtection::read |
+                                         memory::PageProtection::write);
+        try {
+            address_space_.Write(kQueryStringPage.Add(offset), bytes, tid);
+        } catch (...) {
+            address_space_.Protect(page, memory::PageProtection::read);
+            throw;
+        }
+        address_space_.Protect(page, memory::PageProtection::read);
+        return kQueryStringPage.Add(offset).Value();
+    }
+
     memory::AddressSpace& address_space_;
     gles::GlesTransferState transfer_state_;
+    bool query_string_page_mapped_{};
 };
 
 AndroidBoundaryGles::AndroidBoundaryGles(memory::AddressSpace& address_space)

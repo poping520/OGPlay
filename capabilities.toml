@@ -28,12 +28,12 @@ note = "M0 支持固定时钟 step/until/pause/resume"
 [agent.gpu_queries]
 status = "partial"
 test = "tests/agent/control_service_tests.cpp"
-note = "M4 已固定 gpu.stats/render_targets/capabilities/trace 契约并接入真实 clear、shader compile、program link、默认 FBO、ANGLE 后端与有界 trace；guest shader 清单、FBO 与扩展查询尚待实现"
+note = "M4 已固定 gpu.stats/render_targets/capabilities/trace 契约并接入真实 draw、clear、shader compile、program link、默认 FBO、ANGLE 后端与有界 trace；guest shader 清单、FBO 与扩展查询尚待实现"
 
 [runtime.native_activity_gpu_metrics]
 status = "partial"
 test = "tests/runtime/native_activity_runner_tests.cpp"
-note = "M4 NativeActivity 会报告真实 clear、shader compile、program link、默认 RGBA8 FBO、ANGLE 后端及最近 2048 条成功调用；draw、guest FBO 与失败调用错误码仍待接入"
+note = "M4 NativeActivity 会报告真实 draw、clear、shader compile、program link、默认 RGBA8 FBO、ANGLE 后端及最近 2048 条成功调用；guest FBO 与失败调用错误码仍待接入"
 
 [agent.sym]
 status = "complete"
@@ -141,9 +141,9 @@ test = "samples/minimal_ndk/tools/build.py"
 note = "M4 API 19 armeabi-v7a NativeActivity 累积集成载荷，离线构建并验证 GLES2 画面、触摸和按键 APK；不作为 M1 出口"
 
 [fixtures.m4_exit]
-status = "partial"
-test = "samples/m4_exit/tools/build.py --contract-only"
-note = "M4 综合 API 19 ARMv7 样例冻结 12 个 EGL 与 42 个 GLES2 调用；真实 shader/program、buffer/texture 与 vertex/uniform 组已通过 ANGLE，样例推进到 glGetIntegerv；query/draw/readback 与出口运行仍待完成"
+status = "complete"
+test = "tests/runtime/native_activity_runner_tests.cpp"
+note = "M4 综合 API 19 ARMv7 样例冻结并真实执行 12 个 EGL 与源码使用的全部 42 个 GLES2 调用；ANGLE 首帧健康标记、draw/compile/link 指标与完整 Stop 均通过"
 
 [fixtures.m1_guest]
 status = "complete"
@@ -233,7 +233,7 @@ note = "M4 完成强类型 guest 指针的 input/output/inout 全区间权限预
 [gles.gles2_dispatch]
 status = "partial"
 test = "tests/gles/gles_dispatch_tests.cpp"
-note = "M4 已把 142 个生成入口接入稳定 thunk、显式分派和 Android HLE 命名空间；shader/program、buffer/texture、vertex/uniform 共 31 项真实绑定完成，未绑定调用继续明确失败"
+note = "M4 已把 142 个生成入口接入稳定 thunk、显式分派和 Android HLE 命名空间；综合样例使用的 42 项全部真实绑定，其他未绑定调用继续明确失败"
 
 [gles.call_preparation]
 status = "complete"
@@ -248,7 +248,7 @@ note = "M4 完成上下文级 pack/unpack、array/element buffer 与动态输出
 [gles.angle_frame]
 status = "complete"
 test = "tests/gles/angle_frame_tests.cpp"
-note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合 viewport/scissor/clear、shader/program、buffer/texture、vertex/uniform 与左上原点 RGBA8 readback，并接入 guest EGL 与 SDL present"
+note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合综合样例所需 state/query/draw/readback、资源、shader 与 uniform，并接入 guest EGL 与 SDL present"
 
 [gles.shader_program]
 status = "complete"
@@ -264,6 +264,11 @@ note = "M4 真实 ANGLE 闭合 11 项 buffer/texture handler，名称数组显�
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
 note = "M4 真实 ANGLE 闭合 7 项 vertex/uniform handler，VBO offset 与栈参数受检，client array 明确失败，标量位模式和 matrix3 guest 搬运保持精确"
+
+[gles.m4_exit_surface]
+status = "complete"
+test = "tests/runtime/native_activity_runner_tests.cpp"
+note = "M4 从样例源码核对 42 项 GLES2 调用并全部执行；真实 ANGLE query 字符串与输出搬运、状态、EBO draw、局部 readback、健康首帧和 draw 指标闭合"
 
 [gles.supersample_resolve]
 status = "complete"

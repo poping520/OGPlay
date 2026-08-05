@@ -84,6 +84,18 @@ public:
     void Uniform4f(std::int32_t location, float x, float y, float z, float w);
     void UniformMatrix3(std::int32_t location, std::int32_t count,
                         bool transpose, std::span<const float> values);
+    void SetCapability(std::uint32_t capability, bool enabled);
+    void BlendFunction(std::uint32_t source, std::uint32_t destination);
+    [[nodiscard]] std::vector<std::int32_t> GetIntegers(
+        std::uint32_t parameter, std::size_t count);
+    [[nodiscard]] std::string GetString(std::uint32_t parameter);
+    [[nodiscard]] std::uint32_t GetError() noexcept;
+    void DrawElements(std::uint32_t mode, std::int32_t count,
+                      std::uint32_t type, std::uint32_t offset);
+    void ReadPixels(std::int32_t x, std::int32_t y,
+                    std::int32_t width, std::int32_t height,
+                    std::uint32_t format, std::uint32_t type,
+                    std::span<std::byte> output);
     [[nodiscard]] std::vector<std::uint8_t> ReadRgba8();
     [[nodiscard]] AngleFrameInfo Info() const noexcept;
 

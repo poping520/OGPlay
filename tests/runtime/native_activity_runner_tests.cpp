@@ -131,7 +131,7 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     CHECK(session->RenderTargets().empty());
 }
 
-TEST_CASE("M4 exit guest failure reaches the host frame loop without a hang") {
+TEST_CASE("M4 exit APK executes every declared GLES call and renders a healthy frame") {
     const auto oracle = EnvironmentPath("OGPLAY_BIONIC_ORACLE_ROOT");
     const auto apk_path = EnvironmentPath("OGPLAY_M4_EXIT_APK");
     if (!oracle.has_value() || !apk_path.has_value()) return;
@@ -150,13 +150,32 @@ TEST_CASE("M4 exit guest failure reaches the host frame loop without a hang") {
         {"libdl.so", libdl, ogplay::memory::GuestAddress{0x30000000U}},
         {"libc.so", libc, ogplay::memory::GuestAddress{0x40000000U}},
     };
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(ogplay::runtime::NativeActivitySession::Start({
-            19, "libogplay_m4_exit.so", modules,
-            {ogplay::gles::AngleRenderer::d3d11,
-             ogplay::gles::AngleDevice::hardware},
-            64, 36, UINT64_C(200000000), {}, 1})),
-        "NativeActivity guest child failed: Android boundary HLE is not implemented: "
-        "glGetIntegerv",
-        ogplay::runtime::NativeActivityRunError);
+    auto session = ogplay::runtime::NativeActivitySession::Start({
+        19, "libogplay_m4_exit.so", modules,
+        {ogplay::gles::AngleRenderer::d3d11,
+         ogplay::gles::AngleDevice::hardware},
+        64, 36, UINT64_C(200000000), {}, 1});
+    REQUIRE(session->Running());
+    const auto frame = WaitFrame(*session);
+    REQUIRE(frame.has_value());
+    CHECK(frame->width == 64);
+    CHECK(frame->height == 36);
+    REQUIRE(frame->rgba8.size() == 64U * 36U * 4U);
+
+    const auto healthy = (3U * 64U + 59U) * 4U;
+    CHECK(frame->rgba8[healthy] == doctest::Approx(38).epsilon(0.08));
+    CHECK(frame->rgba8[healthy + 1U] == doctest::Approx(242).epsilon(0.08));
+    CHECK(frame->rgba8[healthy + 2U] == doctest::Approx(77).epsilon(0.08));
+    CHECK(frame->rgba8[healthy + 3U] == 255);
+
+    const auto stats = session->Stats();
+    CHECK(stats.draws >= 7);
+    CHECK(stats.clears >= 2);
+    CHECK(stats.shader_compiles == 2);
+    CHECK(stats.program_links == 1);
+    CHECK(stats.gl_errors == 0);
+    REQUIRE(stats.draw_targets.size() == 1);
+    CHECK(stats.draw_targets[0].draws == stats.draws);
+    session->Stop();
+    CHECK_FALSE(session->Running());
 }

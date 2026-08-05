@@ -516,9 +516,28 @@ private:
         if (const auto resources = gles_dispatch_.Dispatch(
                 symbol, args, state,
                 angle_frame_.has_value() ? &*angle_frame_ : nullptr);
-            resources.has_value()) return *resources;
+            resources.has_value()) {
+            if (symbol == "glDrawElements") {
+                std::scoped_lock lock(mutex_);
+                ++gpu_stats_.draws;
+                ++gpu_stats_.draw_targets.front().draws;
+            }
+            return *resources;
+        }
         if (symbol == "glViewport") {
             RequireFrame(symbol).Viewport(
+                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[0]),
+                                       layout_.factor),
+                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[1]),
+                                       layout_.factor),
+                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[2]),
+                                       layout_.factor),
+                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[3]),
+                                       layout_.factor));
+            return 0;
+        }
+        if (symbol == "glScissor") {
+            RequireFrame(symbol).Scissor(
                 ScaleViewportComponent(std::bit_cast<std::int32_t>(args[0]),
                                        layout_.factor),
                 ScaleViewportComponent(std::bit_cast<std::int32_t>(args[1]),

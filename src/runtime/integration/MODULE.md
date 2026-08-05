@@ -13,8 +13,9 @@
 ## 不变量
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
-- `AndroidBoundaryGles` 独占 buffer/texture/vertex/uniform 的调用准备与 transfer state；主
-  HLE 只传入当前 `AngleFrame`，组件不得拥有 EGL 生命周期、GPU 指标或窗口状态。
+- `AndroidBoundaryGles` 独占 buffer/texture/vertex/uniform/query/state/draw/readback 的调用
+  准备与 transfer state；主 HLE 只传入当前 `AngleFrame`，组件不得拥有 EGL 生命周期、
+  GPU 指标或窗口状态。
 - `AndroidBoundaryHle` 从生成目录暴露完整 142 项 GLES2 Thumb trap 命名空间；只有显式
   handler 可以执行，未实现调用必须携带函数名失败。Looper/input 数据与 ANGLE readback
   跨线程传递必须受锁保护，未知地址或 SVC 不得吞掉。
@@ -24,6 +25,8 @@
   像素格式及对齐；状态只在 ANGLE 成功后提交，删除已绑定 buffer 必须同步解除搬运状态。
 - vertex attribute handler 只接受已有 VBO 的受检 offset；uniform 标量保持位模式，矩阵数据
   必须先按 IDL 长度完整搬运，任何坏地址都不得触达 ANGLE。
+- `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽；integer query、
+  draw indices 与 readback 输出复用 transfer state，draw 成功后由主 HLE 更新指标。
 - 超采样倍率必须在创建任何 ANGLE 资源前完整验证；viewport 缩放溢出明确失败，guest
   `eglQuerySurface` 不得泄漏内部渲染尺寸，GPU 查询不得把逻辑尺寸伪装成真实 target。
 - `NativeActivitySession` 只接受 API 19 ARMv7 当前入口，执行真实 Bionic 初始化、

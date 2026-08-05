@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 Android boundary GLES 分派拆分
+更新：2026-08-05 · M4 综合样例完整 GLES2 调用面
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0189` 已把资源与顶点 GLES 分派从达到 800 行的主 HLE 提取；下一编号为
-  `WU-0190`，实现综合样例所需 query/state handler 组。
+- `WU-0190` 已真实执行综合样例源码使用的全部 42 个 GLES2 调用并健康出帧；下一编号为
+  `WU-0191`，补综合样例输入回归与 M4 软件后端黄金帧准备。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -44,30 +44,17 @@
   调用和实际 ELF 导入均受检；Android HLE 从生成目录发布全部 142 项 GLES2 符号，样例
   越过装载期缺符号，未绑定调用仍明确失败；Windows/MSVC + ANGLE、真实 API 19
   APK/Bionic 环境全量 CTest 291/291 通过，未宣称综合样例已经出帧。
-- [WU-0185] child HLE 异常会保存首次原因并唤醒 glue futex waiter；真实综合 APK 在
-  `glCreateShader` 未实现时快速返回 `NativeActivityRunError`，CLI 关闭窗口并以非零状态
-  输出精确错误，不再永久等待首帧；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与
-  API 19 Bionic 环境全量 CTest 293/293 通过。
-- [WU-0186] 13 项 shader/program handler 以受检 guest 二级源码、长度、查询输出和符号名
-  调用真实 ANGLE；两次 compile、一次 link 及定位/use/delete 均闭合，综合 APK 下一缺口
-  推进到 `glGenBuffers`；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与 API 19 Bionic
-  环境全量 CTest 294/294 通过，未宣称已经出帧。
-- [WU-0187] 11 项 buffer/texture handler 复用生成目录与 transfer state，名称数组、资源数据、
-  null 分配、unpack 对齐及九参数像素上传均调用真实 ANGLE；状态成功后提交并随绑定资源
-  删除清理，综合 APK 下一缺口推进到 `glEnableVertexAttribArray`；Windows/MSVC + ANGLE、
-  真实 minimal/M4 APK 与 API 19 Bionic 环境全量 CTest 295/295 通过，未宣称已经出帧。
-- [WU-0188] 7 项 vertex/uniform handler 闭合 VBO offset、ARM 栈参数和标量位模式；matrix3
-  按 `count*9` 受检搬运，client array 与坏地址在 ANGLE 前明确失败，综合 APK 下一缺口
-  推进到 `glGetIntegerv`；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与 API 19 Bionic
-  环境全量 CTest 295/295 通过，未宣称已经出帧。
-- [WU-0189] 18 项资源/顶点 handler 与 transfer state 迁入独立 `AndroidBoundaryGles`；主
-  HLE 回落到 668 行并只保留 EGL、shader/program、帧与指标协调，综合 APK 下一缺口保持
-  `glGetIntegerv`；迁移未新增能力或改变 guest 行为，全量 CTest 295/295 通过。
+- [WU-0185..0189] 闭合 child 失败传播、shader/program、buffer/texture、vertex/uniform 共
+  31 项真实 handler，并把 18 项资源/顶点分派迁入独立 `AndroidBoundaryGles`；全过程
+  未实现调用保持精确失败，Windows/MSVC + ANGLE 回归持续通过。
+- [WU-0190] 从综合样例源码核对并真实执行全部 42 项 GLES2 调用；补齐 query/state、
+  EBO draw 和局部 readback，ANGLE 查询字符串进入只读 guest 页；真实 API 19 APK 首帧
+  健康标记为绿色，draw/compile/link 指标与完整 Stop 闭合，全量 CTest 295/295 通过。
 
 ## 下一步（按优先级）
 
-1. 实现综合样例所需 query/state handler，再推进 draw 与 readback；Linux/macOS 与
-   SwiftShader 留到 M4 出口统一验收。
+1. 补综合样例输入回归并准备软件后端黄金帧；Linux/macOS 与 SwiftShader 留到 M4 出口
+   统一验收，样例未使用的 GLES2 槽仍按游戏需求逐步绑定。
 
 ## 阻塞
 

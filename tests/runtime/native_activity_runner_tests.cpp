@@ -130,3 +130,33 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     CHECK_FALSE(session->Running());
     CHECK(session->RenderTargets().empty());
 }
+
+TEST_CASE("M4 exit guest failure reaches the host frame loop without a hang") {
+    const auto oracle = EnvironmentPath("OGPLAY_BIONIC_ORACLE_ROOT");
+    const auto apk_path = EnvironmentPath("OGPLAY_M4_EXIT_APK");
+    if (!oracle.has_value() || !apk_path.has_value()) return;
+
+    const auto apk_bytes = ReadBytes(*apk_path);
+    const auto archive = ogplay::loader::ParseApkArchive(apk_bytes);
+    const auto payload = ogplay::loader::ReadStoredApkEntry(
+        apk_bytes, archive, "lib/armeabi-v7a/libogplay_m4_exit.so");
+    const auto directory = *oracle / "api19" / "lib";
+    const auto libm = ReadBytes(directory / "libm.so");
+    const auto libdl = ReadBytes(directory / "libdl.so");
+    const auto libc = ReadBytes(directory / "libc.so");
+    const ogplay::loader::Elf32ModuleInput modules[]{
+        {"libogplay_m4_exit.so", payload, ogplay::memory::GuestAddress{0x10000000U}},
+        {"libm.so", libm, ogplay::memory::GuestAddress{0x20000000U}},
+        {"libdl.so", libdl, ogplay::memory::GuestAddress{0x30000000U}},
+        {"libc.so", libc, ogplay::memory::GuestAddress{0x40000000U}},
+    };
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(ogplay::runtime::NativeActivitySession::Start({
+            19, "libogplay_m4_exit.so", modules,
+            {ogplay::gles::AngleRenderer::d3d11,
+             ogplay::gles::AngleDevice::hardware},
+            64, 36, UINT64_C(200000000), {}, 1})),
+        "NativeActivity guest child failed: Android boundary HLE is not implemented: "
+        "glCreateShader",
+        ogplay::runtime::NativeActivityRunError);
+}

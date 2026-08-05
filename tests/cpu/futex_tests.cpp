@@ -85,3 +85,47 @@ TEST_CASE("futex mismatch and invalid addresses fail without sleeping") {
     CHECK_THROWS_AS(wait(ogplay::memory::GuestAddress{0x30000}),
                     ogplay::memory::MemoryFault);
 }
+
+TEST_CASE("futex wake all releases current waiters without arming future waits") {
+    const ogplay::memory::GuestAddress address{0x20000};
+    ogplay::memory::AddressSpace memory;
+    memory.Map({address, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write32(address, 11);
+    ogplay::cpu::FutexTable futex;
+    std::atomic_bool first_finished{};
+    auto first = ogplay::hal::StartHostThread([&] {
+        first_finished = futex.Wait(bus, address, 11, 1) ==
+                         ogplay::cpu::FutexWaitResult::awoken;
+    });
+    for (std::size_t attempt = 0;
+         attempt < 100'000 && futex.WaiterCount(address) != 1; ++attempt) {
+        std::this_thread::yield();
+    }
+    const auto first_waiting = futex.WaiterCount(address) == 1;
+    if (!first_waiting) static_cast<void>(futex.WakeAll());
+    REQUIRE(first_waiting);
+    CHECK(futex.WakeAll() == 1);
+    first->Join();
+    CHECK(first_finished.load());
+    CHECK(futex.WakeAll() == 0);
+
+    std::atomic_bool future_finished{};
+    auto future = ogplay::hal::StartHostThread([&] {
+        future_finished = futex.Wait(bus, address, 11, 2) ==
+                          ogplay::cpu::FutexWaitResult::awoken;
+    });
+    for (std::size_t attempt = 0;
+         attempt < 100'000 && futex.WaiterCount(address) != 1; ++attempt) {
+        std::this_thread::yield();
+    }
+    const auto future_waiting = futex.WaiterCount(address) == 1;
+    if (!future_waiting) static_cast<void>(futex.WakeAll());
+    REQUIRE(future_waiting);
+    CHECK_FALSE(future_finished.load());
+    CHECK(futex.WakeAll() == 1);
+    future->Join();
+    CHECK(future_finished.load());
+}

@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 综合 GLES2 样例命名空间
+更新：2026-08-05 · M4 guest 渲染失败即时上报
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0184` 已冻结综合出口样例导入契约并发布完整 GLES2 HLE 符号命名空间；下一编号为
-  `WU-0185`，实现样例所需 shader/program handler 组。
+- `WU-0185` 已让 guest 渲染线程失败解除同步等待并返回 CLI；下一编号为 `WU-0186`，
+  实现综合样例所需 shader/program handler 组。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -69,11 +69,15 @@
   调用和实际 ELF 导入均受检；Android HLE 从生成目录发布全部 142 项 GLES2 符号，样例
   越过装载期缺符号，未绑定调用仍明确失败；Windows/MSVC + ANGLE、真实 API 19
   APK/Bionic 环境全量 CTest 291/291 通过，未宣称综合样例已经出帧。
+- [WU-0185] child HLE 异常会保存首次原因并唤醒 glue futex waiter；真实综合 APK 在
+  `glCreateShader` 未实现时快速返回 `NativeActivityRunError`，CLI 关闭窗口并以非零状态
+  输出精确错误，不再永久等待首帧；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与
+  API 19 Bionic 环境全量 CTest 293/293 通过。
 
 ## 下一步（按优先级）
 
-1. 分组实现综合样例所需 GLES2 handler，先闭合 shader/program，再推进 buffer/texture、
-   draw/readback；Linux/macOS 与 SwiftShader 留到 M4 出口统一验收。
+1. 实现综合样例所需 shader/program handler，再推进 buffer/texture、draw/readback；
+   Linux/macOS 与 SwiftShader 留到 M4 出口统一验收。
 
 ## 阻塞
 

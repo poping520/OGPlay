@@ -24,6 +24,7 @@ public:
                                        std::uint64_t thread_id);
     [[nodiscard]] std::size_t Wake(memory::GuestAddress address,
                                    std::size_t maximum_count);
+    [[nodiscard]] std::size_t WakeAll();
     [[nodiscard]] std::size_t WaiterCount(memory::GuestAddress address) const;
 
 private:

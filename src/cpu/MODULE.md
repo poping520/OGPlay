@@ -20,13 +20,14 @@
   在真实宿主线程间保持原子语义。
 - `GuestThreadGroup`：每个 guest thread ID 启动一个宿主线程和独立 CPU 实例，将
   TLS 基址装入 CPU thread pointer，保存退出状态并提供真实 join 生命周期。
-- `FutexTable`：以 32 位对齐 guest 地址为键，提供比较等待与精确 WAKE N；M2 syscall
-  层负责把统一 Clock 超时语义装配到该无超时核心。
+- `FutexTable`：以 32 位对齐 guest 地址为键，提供比较等待、精确 WAKE N 和失败清理所需
+  的全局 waiter 唤醒；M2 syscall 层负责把统一 Clock 超时语义装配到该无超时核心。
 - 解释器保留为确定性参考/单步后端，后续按诊断需求扩展指令覆盖。
 
 ## 不变量
 
 - 每个 guest 线程拥有独立执行上下文。
+- 全局 futex 唤醒只释放调用时已经等待的线程，不改变 guest 值，也不让后续等待伪成功。
 - 内存失败产生 Fault，不得返回零；CPU 不直接调用 HLE。
 - CPU 后端只通过 `MemoryBus` 访存；寄存器状态不得包含宿主指针。
 - `Run` 的 tick 预算和消费量必须确定且可测试。

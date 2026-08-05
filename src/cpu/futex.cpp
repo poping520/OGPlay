@@ -6,6 +6,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <unordered_map>
+#include <vector>
 
 namespace ogplay::cpu {
 namespace {
@@ -59,6 +60,24 @@ public:
         return count;
     }
 
+    std::size_t WakeAll() {
+        std::vector<std::shared_ptr<WaitQueue>> queues;
+        {
+            std::scoped_lock lock(queues_mutex_);
+            queues.reserve(queues_.size());
+            for (const auto& entry : queues_) queues.push_back(entry.second);
+        }
+        std::size_t total{};
+        for (const auto& queue : queues) {
+            std::scoped_lock lock(queue->mutex);
+            const auto count = queue->waiters - queue->wake_tokens;
+            queue->wake_tokens += count;
+            total += count;
+            queue->wake.notify_all();
+        }
+        return total;
+    }
+
     std::size_t WaiterCount(const memory::GuestAddress address) const {
         ValidateAddress(address);
         const auto queue = Find(address);
@@ -99,6 +118,8 @@ std::size_t FutexTable::Wake(const memory::GuestAddress address,
                              const std::size_t maximum_count) {
     return impl_->Wake(address, maximum_count);
 }
+
+std::size_t FutexTable::WakeAll() { return impl_->WakeAll(); }
 
 std::size_t FutexTable::WaiterCount(const memory::GuestAddress address) const {
     return impl_->WaiterCount(address);

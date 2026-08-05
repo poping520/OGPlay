@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -166,7 +167,7 @@ public:
         clone_runtime_ = std::make_unique<GuestCloneThreadRuntime>(
             threads_, dispatcher_, lifecycle_, address_space_, memory_bus_, futex_table_,
             2, 100000, [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
-                return boundary_.Handle(cpu, stopped);
+                return HandleBoundary(cpu, stopped);
             });
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
         cpu::A32State root_state;
@@ -216,11 +217,13 @@ public:
     }
 
     void PushInput(const AndroidBoundaryInput& input) {
+        ThrowIfChildFailed();
         if (!running_) throw NativeActivityRunError("NativeActivity session is stopped");
         boundary_.PushInput(input);
     }
 
     std::optional<AndroidBoundaryFrame> TakeLatestFrame() {
+        ThrowIfChildFailed();
         return boundary_.TakeLatestFrame();
     }
 
@@ -264,6 +267,39 @@ public:
     }
 
 private:
+    void ThrowIfChildFailed() const {
+        std::exception_ptr failure;
+        {
+            std::scoped_lock lock(child_failure_mutex_);
+            failure = child_failure_;
+        }
+        if (!failure) return;
+        try {
+            std::rethrow_exception(failure);
+        } catch (const std::exception& error) {
+            throw NativeActivityRunError(
+                "NativeActivity guest child failed: " + std::string(error.what()));
+        } catch (...) {
+            throw NativeActivityRunError(
+                "NativeActivity guest child failed with a non-standard exception");
+        }
+    }
+
+    bool HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
+        try {
+            return boundary_.Handle(cpu, stopped);
+        } catch (...) {
+            if (cpu.GetState().ThreadId() != kRootThreadId) {
+                {
+                    std::scoped_lock lock(child_failure_mutex_);
+                    if (!child_failure_) child_failure_ = std::current_exception();
+                }
+                static_cast<void>(futex_table_.WakeAll());
+            }
+            throw;
+        }
+    }
+
     void Progress(const std::string_view stage) const {
         if (progress_) progress_(stage);
     }
@@ -343,20 +379,23 @@ private:
 
         std::uint64_t consumed{};
         while (consumed < maximum_ticks_) {
+            ThrowIfChildFailed();
             const auto stopped = root_cpu_->Run(maximum_ticks_ - consumed);
             consumed += stopped.ticks_consumed;
             if (stopped.reason == cpu::RunStopReason::supervisor_call &&
                 stopped.immediate == 1 && stopped.pc == kReturnAddress) return;
+            ThrowIfChildFailed();
             if (!ConsumeAndroidArmSupervisorCall(
                     *root_cpu_, stopped, dispatcher_,
                     [this](cpu::Cpu& cpu, const cpu::RunResult& trap) {
-                        return boundary_.Handle(cpu, trap);
+                        return HandleBoundary(cpu, trap);
                     })) {
                 throw NativeActivityRunError(
                     "NativeActivity guest stopped outside a handled boundary: pc=" +
                     std::to_string(stopped.pc.Value()) + " reason=" +
                     std::to_string(static_cast<std::uint8_t>(stopped.reason)));
             }
+            ThrowIfChildFailed();
             auto updated = root_cpu_->GetState();
             updated.SetThreadPointer(lifecycle_.State(kRootThreadId).thread_pointer);
             root_cpu_->SetState(updated);
@@ -375,6 +414,8 @@ private:
     GuestThreadLifecycle lifecycle_;
     std::vector<GuestVmaAnnotation> vma_annotations_;
     std::mutex vma_mutex_;
+    mutable std::mutex child_failure_mutex_;
+    std::exception_ptr child_failure_;
     std::shared_ptr<cpu::DynarmicExecutionContext> execution_context_ =
         std::make_shared<cpu::DynarmicExecutionContext>(64);
     cpu::GuestThreadGroup threads_;

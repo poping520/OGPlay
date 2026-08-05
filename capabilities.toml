@@ -143,7 +143,12 @@ note = "M4 API 19 armeabi-v7a NativeActivity 累积集成载荷，离线构建�
 [fixtures.m4_exit]
 status = "complete"
 test = "tests/runtime/native_activity_runner_tests.cpp"
-note = "M4 综合 API 19 ARMv7 样例冻结并真实执行 12 个 EGL 与源码使用的全部 42 个 GLES2 调用；测试按宿主选择硬件后端并闭合首帧、输入、指标和 Stop，严格出口模式禁止缺失 Bionic/APK/ANGLE 时静默跳过"
+note = "M4 综合 API 19 ARMv7 样例冻结并真实执行 12 个 EGL 与源码使用的全部 42 个 GLES2 调用；测试按宿主选择硬件后端并按内容变化等待输入帧，严格出口模式禁止缺失 Bionic/APK/ANGLE 时静默跳过"
+
+[validation.m4_exit_local]
+status = "partial"
+test = "tools/m4_exit.py --self-test"
+note = "M4 三平台本机增量出口入口已就绪：预检 API 19 Bionic、两个 APK、ANGLE 平台/commit/SwiftShader 清单并启动严格全量 CTest；Windows 预演和 Linux/macOS 本机出口尚待执行"
 
 [fixtures.m1_guest]
 status = "complete"

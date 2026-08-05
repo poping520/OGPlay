@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 严格出口环境
+更新：2026-08-05 · M4 三平台本机出口入口
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0193` 已禁止严格出口测试在缺少 fixture 或 ANGLE 时静默通过；下一编号为
-  `WU-0194`，提供三平台本机增量出口入口与参数预检。
+- `WU-0194` 已提供不依赖 SSH 的三平台本机增量出口入口；下一编号为 `WU-0195`，在
+  Windows/MSVC 执行严格出口预演并冻结待测提交与命令。
 - 当前开发机只使用 Windows/MSVC 预设；M4 的 Linux/macOS 验证在对应平台机器本地
   增量构建并执行，不从当前 Windows 主机通过 SSH 代跑。
 
@@ -56,11 +56,14 @@
   Metal 选择宿主硬件后端，不再把 D3D11 带入其他平台；Windows 全量 CTest 295/295 通过。
 - [WU-0193] `OGPLAY_REQUIRE_M4_EXIT=1` 把 Bionic、两个 APK 与原生 ANGLE 变为强制条件；
   CTest 清空继承环境验证缺 fixture 必然失败，Windows 全量 CTest 296/296 通过。
+- [WU-0194] `tools/m4_exit.py` 预检 Bionic、两个 ARMv7 APK、ANGLE 平台/commit/软件后端
+  清单，并按宿主 preset 增量运行严格全量 CTest；输入回归按内容变化过滤重复启动帧，
+  Windows 严格全量 CTest 297/297 通过。
 
 ## 下一步（按优先级）
 
-1. 增加三平台本机增量出口入口，预检 APK、Bionic 与 ANGLE 清单并启动严格全量 CTest；
-   Linux/macOS 在对应平台机器本地执行。
+1. 使用本机出口入口完成 Windows/MSVC 严格预演，确认命令与输出后冻结同一提交供
+   Linux/macOS 对应机器本地执行。
 
 ## 阻塞
 

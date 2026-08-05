@@ -33,15 +33,16 @@
 - `GlesTransferState`：保存上下文级 pack/unpack 对齐、array/element buffer 绑定及动态查询
   形状；解析像素、索引和常用查询长度，并把缓冲对象偏移与 client array 标为 deferred。
 - `MakeSupersampleLayout` / `ResolveSupersampledRgba8`：验证 1..4× 渲染尺寸并用确定性
-  RGBA8 box filter 还原逻辑帧；NativeActivity 接入在后续 Work Unit 完成。
+  RGBA8 box filter 还原逻辑帧；NativeActivity pbuffer、viewport、swap 与 CLI 已接入。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。
 - `OGPLAY_ANGLE_SDK_ROOT` / `OGPLAY_ANGLE_SDK_CONFIGURATION`：指定平台化 SDK 根目录和
   release/debug 包；CMake 自动匹配宿主平台/CPU并验证所有声明文件。
 - `third_party/angle-prebuilt/tools/`：由独立仓库拥有源码构建、SDK 打包和发布自测；OGPlay
   只通过固定 submodule commit 获取工具自测和已发布产物，不拥有生产脚本。
-- `third_party/angle-prebuilt`：独立公开仓库的浅 submodule；普通构建和 Windows CI 从其
-  固定 gitlink 获取 SDK，不初始化 ANGLE 源码。
+- `third_party/angle-prebuilt`：独立公开仓库的浅 submodule；提供逐字节清单校验的共享头、
+  Windows/Linux x64 与 macOS x64/arm64 SDK，不初始化 ANGLE 源码。平台清单中的 GN 参数
+  是 SwiftShader 是否可执行黄金帧的唯一构建事实。
 - 后续 M4 Work Unit 在当前 pbuffer 生命周期上增加窗口 surface、资源搬运、present、trace
   和快照接口。
 
@@ -77,6 +78,8 @@
 - ANGLE 源码只存在于维护者本地 `angle-prebuilt-repo` 工作区，由该仓库构建脚本固定 commit；
   普通消费端使用独立预编译浅 submodule，清单、平台或哈希不匹配时明确失败，不静默降级
   为源码或系统 EGL/GLES。
+- 平台包与共享头清单必须使用同一 ANGLE commit；Git checkout 不得转换任何清单覆盖文件
+  的行尾，避免内容逻辑相同但 SHA-256 不同。
 - ANGLE GN 参数关闭测试、Null、OpenGL 和 WebGPU 后端；保留各平台既定硬件后端，
   Linux/macOS 同时构建 SwiftShader，Windows/MSVC 的 SwiftShader 留给独立 Clang 产物。
 - Windows 禁用 Chromium 自带 libc++，由 MSVC 使用其原生标准库，避免混用编译器 ABI。

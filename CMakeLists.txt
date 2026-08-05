@@ -353,6 +353,7 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     target_compile_definitions(ogplay_tests PRIVATE
         OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+        OGPLAY_ANGLE_HAS_SWIFTSHADER=$<BOOL:${_angle_has_swiftshader}>
     )
     if(MSVC)
         target_compile_options(ogplay_tests PRIVATE /wd5285)
@@ -431,7 +432,7 @@ if(OGPLAY_BUILD_TESTS)
             --output ${OGPLAY_GLES2_CATALOG}
             --check
             --verify-header
-                ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/windows-x64/release/include/GLES2/gl2.h
+                ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2.h
     )
     set_tests_properties(tools.gles2_catalog_current PROPERTIES LABELS tools)
 

@@ -53,7 +53,7 @@ note = "M0 提供确定性 SoftwareSurface、像素差与感知哈希；ANGLE �
 [golden.angle_frame]
 status = "partial"
 test = "tests/golden/golden_frame_tests.cpp"
-note = "M4 Windows D3D11 ANGLE 用非对称 scissor 图案逐像素匹配 SoftwareSurface，并固定 readback 为左上原点；SwiftShader 和三平台稳定性留待 M4 出口"
+note = "M4 黄金帧按宿主硬件 backend 逐像素匹配 SoftwareSurface；SwiftShader 测试由受检平台清单启用，Windows 包明确不可用且不得回退，Linux/macOS 实际软件帧留待 M4 出口"
 
 [hal.clock]
 status = "complete"
@@ -193,17 +193,17 @@ note = "M3 DEX L1 已完成受检只读解析，并输出应用类/方法/native
 [gles.backend_selection]
 status = "complete"
 test = "tests/gles/angle_backend_tests.cpp"
-note = "M4 冻结三平台 ANGLE renderer/device 候选顺序、显式可用性探测和硬件/SwiftShader 偏好；尚未链接 ANGLE 或创建 EGL 上下文"
+note = "M4 冻结三平台 ANGLE renderer/device 候选顺序、显式可用性探测和硬件/SwiftShader 偏好；真实 EGL 创建严格使用所选 renderer/device，不跨硬件与软件回退"
 
 [gles.angle_dependency]
 status = "partial"
 test = "third_party/angle-prebuilt/tools/package_angle_sdk.py verify --sdk third_party/angle-prebuilt/windows-x64/release"
-note = "M4 固定了兼容工具链的 ANGLE commit；源码构建与 SDK 打包工具由独立仓库拥有，Windows x64 Release SDK 通过浅 submodule 交付，CMake 校验全部声明文件后导入 EGL/GLESv2；Linux/macOS 产物留到 M4 出口统一验证"
+note = "M4 浅 submodule 交付同 commit 的共享头、Windows/Linux x64 与 macOS x64/arm64 Release SDK；CMake 校验平台/CPU/GN 参数及逐文件哈希后导入 EGL/GLESv2，三平台运行留待 M4 出口"
 
 [gles.angle]
 status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp"
-note = "M4 已在 Windows/MSVC 真实 ANGLE D3D11 上完成 display/config/GLES2 context/pbuffer 生命周期与失败回滚；窗口 surface、present、guest 边界及 Linux/macOS 仍待实现"
+note = "M4 已在 Windows/MSVC 真实 ANGLE D3D11 上完成 pbuffer 生命周期、guest 边界、SDL present 与黄金帧；Linux/macOS 和 SwiftShader 软件帧留待出口验证"
 
 [gles.egl_lifecycle]
 status = "partial"
@@ -217,7 +217,7 @@ note = "M4 建立严格 JSON schema、指针搬运元数据校验和确定性 C+
 
 [gles.gles2_catalog]
 status = "complete"
-test = "tools/generate_gles_api.py --idl data/gles/gles2.json --output <generated> --check --verify-header third_party/angle-prebuilt/windows-x64/release/include/GLES2/gl2.h"
+test = "tools/generate_gles_api.py --idl data/gles/gles2.json --output <generated> --check --verify-header third_party/angle-prebuilt/include/GLES2/gl2.h"
 note = "M4 GLES2 core 142 个入口和 397 个参数全部进入有序 IDL；输入输出、可空、长度表达式及一/二级指针形状显式可查"
 
 [gles.guest_transfer]

@@ -6,6 +6,35 @@ function(ogplay_require_submodule relative_path display_name)
     endif()
 endfunction()
 
+function(ogplay_verify_manifest_files manifest root label)
+    string(JSON _file_count ERROR_VARIABLE _json_error
+        LENGTH "${manifest}" files)
+    if(_json_error OR _file_count LESS 1)
+        message(FATAL_ERROR "${label} manifest has no valid file list")
+    endif()
+    math(EXPR _last_file "${_file_count} - 1")
+    foreach(_index RANGE 0 ${_last_file})
+        string(JSON _relative GET "${manifest}" files ${_index} path)
+        string(JSON _expected_size GET "${manifest}" files ${_index} size)
+        string(JSON _expected_hash GET "${manifest}" files ${_index} sha256)
+        if(_relative MATCHES "^[A-Za-z]:" OR
+           _relative MATCHES "^/" OR
+           _relative MATCHES "(^|/)\\.\\.(/|$)")
+            message(FATAL_ERROR "${label} manifest contains unsafe path: ${_relative}")
+        endif()
+        set(_file "${root}/${_relative}")
+        if(NOT EXISTS "${_file}")
+            message(FATAL_ERROR "${label} file is missing: ${_relative}")
+        endif()
+        file(SIZE "${_file}" _actual_size)
+        file(SHA256 "${_file}" _actual_hash)
+        if(NOT _actual_size EQUAL _expected_size OR
+           NOT _actual_hash STREQUAL _expected_hash)
+            message(FATAL_ERROR "${label} file failed integrity check: ${_relative}")
+        endif()
+    endforeach()
+endfunction()
+
 ogplay_require_submodule("third_party/SDL" "SDL3")
 ogplay_require_submodule("third_party/dynarmic" "Dynarmic")
 
@@ -85,7 +114,7 @@ if(OGPLAY_ENABLE_ANGLE)
             "Initialize third_party/angle-prebuilt or set OGPLAY_ANGLE_SDK_ROOT.")
     endif()
     file(READ "${_angle_manifest_path}" _angle_manifest)
-    foreach(_angle_field schema_version platform target_cpu configuration)
+    foreach(_angle_field schema_version angle_commit platform target_cpu configuration)
         string(JSON _angle_value ERROR_VARIABLE _angle_json_error
             GET "${_angle_manifest}" "${_angle_field}")
         if(_angle_json_error)
@@ -103,36 +132,68 @@ if(OGPLAY_ENABLE_ANGLE)
             "${_angle_platform}-${_angle_cpu}/${OGPLAY_ANGLE_SDK_CONFIGURATION}")
     endif()
 
-    string(JSON _angle_file_count ERROR_VARIABLE _angle_json_error
-        LENGTH "${_angle_manifest}" files)
-    if(_angle_json_error OR _angle_file_count LESS 1)
-        message(FATAL_ERROR "ANGLE SDK manifest has no valid file list")
-    endif()
-    math(EXPR _angle_last_file "${_angle_file_count} - 1")
-    foreach(_angle_index RANGE 0 ${_angle_last_file})
-        string(JSON _angle_relative GET "${_angle_manifest}" files ${_angle_index} path)
-        string(JSON _angle_expected_size GET "${_angle_manifest}" files ${_angle_index} size)
-        string(JSON _angle_expected_hash GET "${_angle_manifest}" files ${_angle_index} sha256)
-        if(_angle_relative MATCHES "^[A-Za-z]:" OR
-           _angle_relative MATCHES "^/" OR
-           _angle_relative MATCHES "(^|/)\\.\\.(/|$)")
-            message(FATAL_ERROR "ANGLE SDK manifest contains unsafe path: ${_angle_relative}")
-        endif()
-        set(_angle_file "${_angle_sdk}/${_angle_relative}")
-        if(NOT EXISTS "${_angle_file}")
-            message(FATAL_ERROR "ANGLE SDK file is missing: ${_angle_relative}")
-        endif()
-        file(SIZE "${_angle_file}" _angle_actual_size)
-        file(SHA256 "${_angle_file}" _angle_actual_hash)
-        if(NOT _angle_actual_size EQUAL _angle_expected_size OR
-           NOT _angle_actual_hash STREQUAL _angle_expected_hash)
+    ogplay_verify_manifest_files("${_angle_manifest}" "${_angle_sdk}" "ANGLE SDK")
+
+    set(_angle_include_dir "${_angle_sdk}/include")
+    string(JSON _angle_shared_headers ERROR_VARIABLE _angle_shared_error
+        GET "${_angle_manifest}" shared_headers)
+    if(NOT _angle_shared_error)
+        if(_angle_shared_headers MATCHES "^[A-Za-z]:" OR
+           _angle_shared_headers MATCHES "^/" OR
+           _angle_shared_headers MATCHES "(^|/)\\.\\.(/|$)")
             message(FATAL_ERROR
-                "ANGLE SDK file failed integrity check: ${_angle_relative}")
+                "ANGLE SDK manifest contains unsafe shared_headers: ${_angle_shared_headers}")
+        endif()
+        set(_angle_include_dir "${OGPLAY_ANGLE_SDK_ROOT}/${_angle_shared_headers}")
+        set(_angle_header_manifest_path "${_angle_include_dir}/manifest.json")
+        if(NOT EXISTS "${_angle_header_manifest_path}")
+            message(FATAL_ERROR "ANGLE shared header manifest is missing")
+        endif()
+        file(READ "${_angle_header_manifest_path}" _angle_header_manifest)
+        foreach(_angle_header_field schema_version kind angle_commit)
+            string(JSON _angle_header_value ERROR_VARIABLE _angle_json_error
+                GET "${_angle_header_manifest}" "${_angle_header_field}")
+            if(_angle_json_error)
+                message(FATAL_ERROR
+                    "ANGLE shared header manifest has no valid ${_angle_header_field}")
+            endif()
+            set("_angle_header_${_angle_header_field}" "${_angle_header_value}")
+        endforeach()
+        if(NOT _angle_header_schema_version EQUAL 1 OR
+           NOT _angle_header_kind STREQUAL "headers" OR
+           NOT _angle_header_angle_commit STREQUAL _angle_manifest_angle_commit)
+            message(FATAL_ERROR
+                "ANGLE shared headers do not match the platform SDK commit")
+        endif()
+        ogplay_verify_manifest_files(
+            "${_angle_header_manifest}" "${_angle_include_dir}" "ANGLE headers")
+    endif()
+
+    if(NOT EXISTS "${_angle_include_dir}/EGL/egl.h")
+        message(FATAL_ERROR "ANGLE SDK does not contain EGL headers")
+    endif()
+
+    set(_angle_has_swiftshader FALSE)
+    set(_angle_has_swiftshader_declaration FALSE)
+    string(JSON _angle_gn_arg_count ERROR_VARIABLE _angle_json_error
+        LENGTH "${_angle_manifest}" gn_args)
+    if(_angle_json_error OR _angle_gn_arg_count LESS 1)
+        message(FATAL_ERROR "ANGLE SDK manifest has no valid GN arguments")
+    endif()
+    math(EXPR _angle_last_gn_arg "${_angle_gn_arg_count} - 1")
+    foreach(_angle_index RANGE 0 ${_angle_last_gn_arg})
+        string(JSON _angle_gn_arg GET "${_angle_manifest}" gn_args ${_angle_index})
+        if(_angle_gn_arg STREQUAL "angle_enable_swiftshader=true")
+            set(_angle_has_swiftshader TRUE)
+            set(_angle_has_swiftshader_declaration TRUE)
+        elseif(_angle_gn_arg STREQUAL "angle_enable_swiftshader=false")
+            set(_angle_has_swiftshader FALSE)
+            set(_angle_has_swiftshader_declaration TRUE)
         endif()
     endforeach()
-
-    if(NOT EXISTS "${_angle_sdk}/include/EGL/egl.h")
-        message(FATAL_ERROR "ANGLE SDK does not contain EGL headers")
+    if(NOT _angle_has_swiftshader_declaration)
+        message(FATAL_ERROR
+            "ANGLE SDK manifest does not declare angle_enable_swiftshader")
     endif()
     if(WIN32)
         find_file(_angle_egl_library NAMES libEGL.dll.lib libEGL.lib
@@ -177,5 +238,5 @@ if(OGPLAY_ENABLE_ANGLE)
             IMPORTED_LOCATION "${_angle_glesv2_library}")
     endif()
     set_target_properties(ANGLE::EGL ANGLE::GLESv2 PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${_angle_sdk}/include")
+        INTERFACE_INCLUDE_DIRECTORIES "${_angle_include_dir}")
 endif()

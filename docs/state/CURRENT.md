@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 GLES2 shader/program handler
+更新：2026-08-05 · M4 GLES2 buffer/texture handler
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0186` 已让综合样例以真实 ANGLE 完成 shader 编译和 program 链接；下一编号为
-  `WU-0187`，实现 buffer/texture handler 组。
+- `WU-0187` 已让综合样例以真实 ANGLE 完成 buffer/texture 资源初始化；下一编号为
+  `WU-0188`，实现 vertex attribute 与 uniform value handler 组。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -64,10 +64,14 @@
   调用真实 ANGLE；两次 compile、一次 link 及定位/use/delete 均闭合，综合 APK 下一缺口
   推进到 `glGenBuffers`；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与 API 19 Bionic
   环境全量 CTest 294/294 通过，未宣称已经出帧。
+- [WU-0187] 11 项 buffer/texture handler 复用生成目录与 transfer state，名称数组、资源数据、
+  null 分配、unpack 对齐及九参数像素上传均调用真实 ANGLE；状态成功后提交并随绑定资源
+  删除清理，综合 APK 下一缺口推进到 `glEnableVertexAttribArray`；Windows/MSVC + ANGLE、
+  真实 minimal/M4 APK 与 API 19 Bionic 环境全量 CTest 295/295 通过，未宣称已经出帧。
 
 ## 下一步（按优先级）
 
-1. 实现综合样例所需 buffer/texture handler，再推进 vertex attribute、uniform、draw 与
+1. 实现综合样例所需 vertex attribute 与 uniform value handler，再推进 query、draw 与
    readback；Linux/macOS 与 SwiftShader 留到 M4 出口统一验收。
 
 ## 阻塞

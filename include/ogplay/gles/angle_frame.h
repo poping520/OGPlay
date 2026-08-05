@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -55,6 +57,24 @@ public:
                                                    const std::string& name);
     void UseProgram(std::uint32_t program);
     void DeleteProgram(std::uint32_t program);
+    [[nodiscard]] std::vector<std::uint32_t> GenerateBuffers(std::size_t count);
+    void DeleteBuffers(std::span<const std::uint32_t> buffers);
+    void BindBuffer(std::uint32_t target, std::uint32_t buffer);
+    void BufferData(std::uint32_t target, std::uint32_t byte_size,
+                    std::optional<std::span<const std::byte>> data,
+                    std::uint32_t usage);
+    [[nodiscard]] std::vector<std::uint32_t> GenerateTextures(std::size_t count);
+    void DeleteTextures(std::span<const std::uint32_t> textures);
+    void ActiveTexture(std::uint32_t texture);
+    void BindTexture(std::uint32_t target, std::uint32_t texture);
+    void PixelStore(std::uint32_t parameter, std::int32_t value);
+    void TextureParameter(std::uint32_t target, std::uint32_t parameter,
+                          std::int32_t value);
+    void TextureImage2D(std::uint32_t target, std::int32_t level,
+                        std::int32_t internal_format, std::int32_t width,
+                        std::int32_t height, std::int32_t border,
+                        std::uint32_t format, std::uint32_t type,
+                        std::optional<std::span<const std::byte>> pixels);
     [[nodiscard]] std::vector<std::uint8_t> ReadRgba8();
     [[nodiscard]] AngleFrameInfo Info() const noexcept;
 

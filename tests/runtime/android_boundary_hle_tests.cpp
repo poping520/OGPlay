@@ -3,6 +3,7 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -11,6 +12,7 @@
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/gles/egl_lifecycle.h"
 #include "ogplay/gles/gles_dispatch.h"
+#include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/android_boundary_hle.h"
 
@@ -113,8 +115,8 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
     }
 
     CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv2.so", "glActiveTexture", {0x84c0U}),
-        "Android boundary HLE is not implemented: glActiveTexture",
+        fixture.Call("libGLESv2.so", "glBlendColor"),
+        "Android boundary HLE is not implemented: glBlendColor",
         std::runtime_error);
 }
 
@@ -242,6 +244,72 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     const auto stats = fixture.boundary.Stats();
     CHECK(stats.shader_compiles == 2);
     CHECK(stats.program_links == 1);
+}
+
+TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
+    const auto names = fixture.output;
+    const auto buffer_data = fixture.output.Add(0x100);
+    const auto texture_data = fixture.output.Add(0x200);
+    constexpr std::array<std::byte, 12> vertices{
+        std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4},
+        std::byte{5}, std::byte{6}, std::byte{7}, std::byte{8},
+        std::byte{9}, std::byte{10}, std::byte{11}, std::byte{12}};
+    constexpr std::array<std::byte, 16> pixels{
+        std::byte{255}, std::byte{0}, std::byte{0}, std::byte{255},
+        std::byte{0}, std::byte{255}, std::byte{0}, std::byte{255},
+        std::byte{0}, std::byte{0}, std::byte{255}, std::byte{255},
+        std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255}};
+    fixture.memory.Write(buffer_data, vertices, 1);
+    fixture.memory.Write(texture_data, pixels, 1);
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenBuffers",
+                                   {2, names.Value()}));
+    const auto vertex_buffer = fixture.bus.Read32(names, 1);
+    const auto index_buffer = fixture.bus.Read32(names.Add(4), 1);
+    CHECK(vertex_buffer != 0); CHECK(index_buffer != 0);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindBuffer",
+                                   {0x8892U, vertex_buffer}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBufferData",
+                                   {0x8892U, 12, buffer_data.Value(), 0x88e4U}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBufferData",
+                                   {0x8892U, 16, 0, 0x88e8U}));
+    CHECK_THROWS_AS(
+        fixture.Call("libGLESv2.so", "glBufferData",
+                     {0x8892U, 12, 0x1000U, 0x88e4U}),
+        ogplay::memory::MemoryFault);
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenTextures",
+                                   {1, names.Value()}));
+    const auto texture = fixture.bus.Read32(names, 1);
+    REQUIRE(texture != 0);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glActiveTexture", {0x84c0U}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindTexture",
+                                   {0x0de1U, texture}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glPixelStorei", {0x0cf5U, 1}));
+    CHECK_THROWS_AS(fixture.Call("libGLESv2.so", "glPixelStorei", {0x0cf5U, 3}),
+                    ogplay::gles::GlesTransferStateError);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glTexParameteri",
+                                   {0x0de1U, 0x2801U, 0x2600U}));
+    fixture.bus.Write32(fixture.stack, 2, 1);
+    fixture.bus.Write32(fixture.stack.Add(4), 0, 1);
+    fixture.bus.Write32(fixture.stack.Add(8), 0x1908U, 1);
+    fixture.bus.Write32(fixture.stack.Add(12), 0x1401U, 1);
+    fixture.bus.Write32(fixture.stack.Add(16), texture_data.Value(), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glTexImage2D",
+                                   {0x0de1U, 0, 0x1908U, 2}));
+    CHECK_THROWS_AS(fixture.Call("libGLESv2.so", "glGenBuffers", {1, 0}),
+                    ogplay::gles::GuestTransferError);
+
+    fixture.bus.Write32(names, texture, 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteTextures",
+                                   {1, names.Value()}));
+    fixture.bus.Write32(names, vertex_buffer, 1);
+    fixture.bus.Write32(names.Add(4), index_buffer, 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteBuffers",
+                                   {2, names.Value()}));
 }
 
 TEST_CASE("Android boundary supersamples without changing guest surface size") {

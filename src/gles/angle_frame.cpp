@@ -474,6 +474,96 @@ void AngleFrame::UniformMatrix3(const std::int32_t location,
 #endif
 }
 
+void AngleFrame::SetCapability(const std::uint32_t capability,
+                               const bool enabled) {
+#if OGPLAY_HAS_ANGLE
+    if (enabled) glEnable(capability);
+    else glDisable(capability);
+    RequireNoError(enabled ? "glEnable" : "glDisable");
+#else
+    static_cast<void>(capability); static_cast<void>(enabled);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::BlendFunction(const std::uint32_t source,
+                               const std::uint32_t destination) {
+#if OGPLAY_HAS_ANGLE
+    glBlendFunc(source, destination);
+    RequireNoError("glBlendFunc");
+#else
+    static_cast<void>(source); static_cast<void>(destination);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::vector<std::int32_t> AngleFrame::GetIntegers(
+    const std::uint32_t parameter, const std::size_t count) {
+    if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
+        throw std::length_error("ANGLE integer query count overflows GLsizei");
+    }
+#if OGPLAY_HAS_ANGLE
+    std::vector<std::int32_t> values(count);
+    glGetIntegerv(parameter, values.data());
+    RequireNoError("glGetIntegerv");
+    return values;
+#else
+    static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::string AngleFrame::GetString(const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    const auto* value = glGetString(parameter);
+    RequireNoError("glGetString");
+    if (value == nullptr) throw std::runtime_error("glGetString returned null");
+    return reinterpret_cast<const char*>(value);
+#else
+    static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::uint32_t AngleFrame::GetError() noexcept {
+#if OGPLAY_HAS_ANGLE
+    return glGetError();
+#else
+    return 0;
+#endif
+}
+
+void AngleFrame::DrawElements(const std::uint32_t mode,
+                              const std::int32_t count,
+                              const std::uint32_t type,
+                              const std::uint32_t offset) {
+#if OGPLAY_HAS_ANGLE
+    glDrawElements(mode, count, type, reinterpret_cast<const void*>(
+                                         static_cast<std::uintptr_t>(offset)));
+    RequireNoError("glDrawElements");
+#else
+    static_cast<void>(mode); static_cast<void>(count);
+    static_cast<void>(type); static_cast<void>(offset);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::ReadPixels(
+    const std::int32_t x, const std::int32_t y,
+    const std::int32_t width, const std::int32_t height,
+    const std::uint32_t format, const std::uint32_t type,
+    const std::span<std::byte> output) {
+#if OGPLAY_HAS_ANGLE
+    glReadPixels(x, y, width, height, format, type, output.data());
+    RequireNoError("glReadPixels");
+#else
+    static_cast<void>(x); static_cast<void>(y); static_cast<void>(width);
+    static_cast<void>(height); static_cast<void>(format); static_cast<void>(type);
+    static_cast<void>(output);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::uint8_t> AngleFrame::ReadRgba8() {
     constexpr std::uint64_t kChannels = 4;
     const auto pixels = static_cast<std::uint64_t>(width_) * height_;

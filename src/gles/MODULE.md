@@ -27,6 +27,8 @@
   显式 handler 绑定；未绑定调用抛错并累计可查询线程命中。
 - `PrepareGles2Call`：按生成参数目录求值字面量、标量、常量乘法和有界 C 字符串，换算
   元素字节并创建 `GuestBuffer`；复杂表达式经 `GlesLengthResolver` 显式注入。
+- `GlesTransferState`：保存上下文级 pack/unpack 对齐、array/element buffer 绑定及动态查询
+  形状；解析像素、索引和常用查询长度，并把缓冲对象偏移与 client array 标为 deferred。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。
 - `OGPLAY_ANGLE_SDK_ROOT` / `OGPLAY_ANGLE_SDK_CONFIGURATION`：指定平台化 SDK 根目录和
@@ -51,6 +53,10 @@
   handler 前失败。二级指针的顶层数组元素固定为 32 位 guest 指针。
 - VBO/element buffer 等由 GL 状态决定的地址只能由 resolver 显式标记 deferred，禁止把
   buffer offset 当 guest 地址读取；nullable null 不触发宿主分配或大小限额。
+- 像素搬运按调用的真实参数位置读取 width/height/format/type；二维行对齐只作用于相邻
+  行之间。未知格式、类型、查询形状、负数或长度溢出必须在 native 调用前失败。
+- 动态查询和 uniform 输出长度必须由对象发现路径登记；状态更新先完整验证再提交，失败
+  不得污染已有 pack/unpack、buffer 或形状事实。
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - input 只读 guest，output 不得为初始化暂存而读取 guest，inout 必须同时预检读写；任何
   native 调用前必须完成全区间验证，输出回写不得依赖析构副作用。

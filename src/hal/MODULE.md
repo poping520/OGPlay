@@ -14,6 +14,8 @@
 - `hal::WindowInput`：不暴露 SDL 类型的窗口生命周期与输入事件接口。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。
 - `hal::FitDisplayRect`：用无浮点整数运算把源画面等比居中适配到目标 surface。
+- `hal::MapDisplayPoint`：复用内容矩形把有限窗口坐标映射到 source，返回黑边内外事实并
+  将越界坐标夹紧到 guest 尺寸。
 - `hal::CreateSdlWindowInput`：SDL3 实现工厂；关闭 SDL 的构建会明确失败。
 - `hal::VirtualMemoryReservation`：页对齐的宿主预留、提交、权限和释放接口。
 - `hal::ReserveVirtualMemory`：按目标平台选择 VirtualAlloc 或 mmap 后端。
@@ -31,6 +33,7 @@
 - SDL video 生命周期由创建它的宿主主线程拥有；输入只保留宿主事实，不翻译 guest 语义。
 - 帧尺寸与字节数必须精确匹配；只有 SDL surface 更新成功才累计 present。
 - present 每帧先清理黑边，再只向等比内容矩形缩放；窗口比例不得拉伸 guest 画面。
+- 坐标映射与 present 必须共用 `FitDisplayRect`，禁止各自维护舍入规则。
 - 虚拟内存写权限必须同时具备读权限；范围必须页对齐且位于自身 reservation 内。
 
 ## 禁止

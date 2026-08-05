@@ -59,7 +59,9 @@ gles::AngleBackend NativeBackend() {
     throw std::logic_error("unknown configured ANGLE renderer");
 }
 
-void ForwardInput(runtime::NativeActivitySession& guest, const hal::InputEvent& event) {
+void ForwardInput(runtime::NativeActivitySession& guest, const hal::InputEvent& event,
+                  const hal::WindowState& window, const std::uint32_t guest_width,
+                  const std::uint32_t guest_height) {
     std::optional<runtime::AndroidBoundaryInputType> type;
     if (event.type == hal::InputEventType::key) type = runtime::AndroidBoundaryInputType::key;
     if (event.type == hal::InputEventType::pointer_motion) {
@@ -69,7 +71,20 @@ void ForwardInput(runtime::NativeActivitySession& guest, const hal::InputEvent& 
         type = runtime::AndroidBoundaryInputType::pointer_button;
     }
     if (type.has_value()) {
-        guest.PushInput({*type, event.code, event.x, event.y, event.pressed});
+        auto x = event.x;
+        auto y = event.y;
+        if (*type != runtime::AndroidBoundaryInputType::key) {
+            const auto mapped = hal::MapDisplayPoint(
+                event.x, event.y, guest_width, guest_height,
+                window.width, window.height);
+            if (!mapped.inside &&
+                (*type == runtime::AndroidBoundaryInputType::pointer_motion || event.pressed)) {
+                return;
+            }
+            x = mapped.x;
+            y = mapped.y;
+        }
+        guest.PushInput({*type, event.code, x, y, event.pressed});
     }
 }
 
@@ -131,13 +146,18 @@ int RunApkCommand(const int argc, const char* const argv[]) {
 
     bool quit{};
     std::uint64_t presented{};
+    std::uint32_t guest_width = 640;
+    std::uint32_t guest_height = 360;
     while (!quit) {
+        const auto window_state = window->State();
         for (const auto& event : window->PollEvents()) {
             if (event.type == hal::InputEventType::quit) quit = true;
-            else ForwardInput(*guest, event);
+            else ForwardInput(*guest, event, window_state, guest_width, guest_height);
         }
         if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
             window->PresentRgba8(frame->rgba8, frame->width, frame->height);
+            guest_width = frame->width;
+            guest_height = frame->height;
             ++presented;
             if (exit_after_frames.has_value() && presented >= *exit_after_frames) quit = true;
         }

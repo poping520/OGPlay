@@ -51,6 +51,17 @@ struct DisplayRect final {
     std::uint32_t source_width, std::uint32_t source_height,
     std::uint32_t target_width, std::uint32_t target_height);
 
+struct MappedDisplayPoint final {
+    float x{};
+    float y{};
+    bool inside{};
+};
+
+[[nodiscard]] MappedDisplayPoint MapDisplayPoint(
+    float target_x, float target_y,
+    std::uint32_t source_width, std::uint32_t source_height,
+    std::uint32_t target_width, std::uint32_t target_height);
+
 struct InputEvent {
     InputEventType type{InputEventType::quit};
     std::uint64_t timestamp_ns{};

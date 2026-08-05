@@ -1,5 +1,7 @@
 #include "ogplay/hal/window_input.h"
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -36,6 +38,29 @@ DisplayRect FitDisplayRect(const std::uint32_t source_width,
     }
     return {(target_width - width) / 2U, (target_height - height) / 2U,
             width, height};
+}
+
+MappedDisplayPoint MapDisplayPoint(
+    const float target_x, const float target_y,
+    const std::uint32_t source_width, const std::uint32_t source_height,
+    const std::uint32_t target_width, const std::uint32_t target_height) {
+    if (!std::isfinite(target_x) || !std::isfinite(target_y)) {
+        throw std::invalid_argument("display point coordinates must be finite");
+    }
+    const auto layout = FitDisplayRect(
+        source_width, source_height, target_width, target_height);
+    const auto left = static_cast<float>(layout.x);
+    const auto top = static_cast<float>(layout.y);
+    const auto right = left + static_cast<float>(layout.width);
+    const auto bottom = top + static_cast<float>(layout.height);
+    const auto inside = target_x >= left && target_x < right &&
+                        target_y >= top && target_y < bottom;
+    const auto normalized_x = std::clamp(
+        (target_x - left) / static_cast<float>(layout.width), 0.0F, 1.0F);
+    const auto normalized_y = std::clamp(
+        (target_y - top) / static_cast<float>(layout.height), 0.0F, 1.0F);
+    return {normalized_x * static_cast<float>(source_width),
+            normalized_y * static_cast<float>(source_height), inside};
 }
 
 #if OGPLAY_HAS_SDL3

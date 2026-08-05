@@ -129,6 +129,7 @@ add_library(ogplay_gles
     src/gles/gles_dispatch.cpp
     src/gles/gles_transfer_state.cpp
     src/gles/guest_transfer.cpp
+    src/gles/supersample.cpp
 )
 set(OGPLAY_GLES_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(OGPLAY_GLES2_CATALOG
@@ -268,6 +269,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/gles/gles_dispatch_tests.cpp
         tests/gles/gles_transfer_state_tests.cpp
         tests/gles/guest_transfer_tests.cpp
+        tests/gles/supersample_tests.cpp
         tests/hal/clock_tests.cpp
         tests/hal/service_contract_tests.cpp
         tests/hal/thread_tests.cpp

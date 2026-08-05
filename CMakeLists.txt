@@ -173,6 +173,7 @@ add_library(ogplay_runtime
     src/runtime/framework/framework_preferences.cpp
     src/runtime/execution/guest_lifecycle.cpp
     src/runtime/integration/headless_bionic_runner.cpp
+    src/runtime/integration/android_boundary_hle.cpp
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/jni/jni.cpp
     src/runtime/jni/jni_exception.cpp
@@ -202,6 +203,7 @@ add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC
     OGPlay::Core OGPlay::Cpu OGPlay::Loader OGPlay::Memory
 )
+target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles)
 target_include_directories(ogplay_runtime PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -293,6 +295,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/guest_thread_lifecycle_tests.cpp
         tests/runtime/guest_clone_thread_runtime_tests.cpp
         tests/runtime/guest_thread_runner_tests.cpp
+        tests/runtime/android_boundary_hle_tests.cpp
         tests/runtime/vfs_tests.cpp
         tests/loader/apk_tests.cpp
         tests/loader/elf_tests.cpp

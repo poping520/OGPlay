@@ -225,6 +225,11 @@ status = "complete"
 test = "tests/gles/angle_frame_tests.cpp"
 note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合 viewport、clear 与受检 RGBA8 readback；guest EGL handle 和窗口 present 尚待集成"
 
+[runtime.android_boundary_hle]
+status = "partial"
+test = "tests/runtime/android_boundary_hle_tests.cpp"
+note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；完整 NDK 与 GLES2 槽仍不在本能力范围"
+
 [loader.hle_boundary_namespace]
 status = "complete"
 test = "tests/loader/module_loader_tests.cpp"

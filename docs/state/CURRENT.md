@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 NativeActivity 超采样接入
+更新：2026-08-05 · M4 CLI 超采样配置
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0181` 已把受检 1..4× 超采样接入 NativeActivity 的 ANGLE pbuffer、viewport 和
-  swap resolve；下一编号为 `WU-0182`，接入 CLI 配置。
+- `WU-0182` 已为 `ogplay run-apk` 接入默认 1×、受检 1..4× 超采样配置；下一编号为
+  `WU-0183`，推进 ANGLE SwiftShader 软件路径与黄金帧验证。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -69,11 +69,14 @@
   viewport 并在 swap 时 resolve 回逻辑 RGBA8；guest EGL 查询与输入坐标保持逻辑尺寸，
   GPU target 报告真实放大尺寸；Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境
   全量 CTest 287/287 通过。
+- [WU-0182] `ogplay run-apk --supersample <1..4>` 在任何 APK I/O 前严格校验倍率，省略时
+  保持 1×；真实 API 19 APK 以 2× 呈现 2 帧并正常退出，Windows/MSVC + ANGLE、真实
+  APK/Bionic 环境全量 CTest 288/288 通过。
 
 ## 下一步（按优先级）
 
-1. 为 `ogplay run-apk` 增加受检超采样倍率参数并保持默认 1×；随后补 SwiftShader 与
-   三平台 GLES2 黄金帧出口验证。
+1. 补齐 ANGLE Vulkan/SwiftShader 软件路径与黄金帧；Linux/macOS 留到 M4 出口统一进行
+   增量构建和三平台 GLES2 验收。
 
 ## 阻塞
 

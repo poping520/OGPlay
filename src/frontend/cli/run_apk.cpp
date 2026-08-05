@@ -45,6 +45,16 @@ std::uint64_t ParsePositive(const std::string_view text, const std::string_view 
     return value;
 }
 
+std::uint32_t ParseSupersampleFactor(const std::string_view text) {
+    std::uint32_t value{};
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
+        value < 1 || value > 4) {
+        throw std::invalid_argument("--supersample requires an integer in 1..4");
+    }
+    return value;
+}
+
 gles::AngleBackend NativeBackend() {
     constexpr std::string_view renderer{OGPLAY_NATIVE_ANGLE_RENDERER};
     if (renderer == "d3d11") {
@@ -98,12 +108,15 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     const std::filesystem::path apk_path{argv[2]};
     std::optional<std::filesystem::path> system_directory;
     std::optional<std::uint64_t> exit_after_frames;
+    std::uint32_t supersample_factor{1};
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
         if (option == "--system-dir" && index + 1 < argc) {
             system_directory = std::filesystem::path{argv[++index]};
         } else if (option == "--exit-after-frames" && index + 1 < argc) {
             exit_after_frames = ParsePositive(argv[++index], option);
+        } else if (option == "--supersample" && index + 1 < argc) {
+            supersample_factor = ParseSupersampleFactor(argv[++index]);
         } else {
             throw std::invalid_argument("unknown or incomplete run-apk option: " +
                                         std::string(option));
@@ -141,7 +154,8 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     window->Open({.title = "OGPlay · " + apk_path.filename().string(),
                   .width = 640, .height = 360, .hidden = false, .resizable = true});
     auto guest = runtime::NativeActivitySession::Start(
-        {19, root_name, modules, NativeBackend(), 640, 360, UINT64_C(200000000), {}});
+        {19, root_name, modules, NativeBackend(), 640, 360, UINT64_C(200000000), {},
+         supersample_factor});
     Write("OGPlay: NativeActivity started; close the window to stop.\n");
 
     bool quit{};

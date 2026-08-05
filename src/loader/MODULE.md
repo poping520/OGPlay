@@ -6,6 +6,8 @@
 
 ## 公共 API
 
+- `ParseApkArchive` / `ReadStoredApkEntry`：严格解析单盘 ZIP32 central directory，并按名称、
+  local/central 元数据和 CRC32 提取未压缩条目；用于直接装载 APK 中对齐存储的 native 库。
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度，不执行任何字节码。
@@ -49,6 +51,7 @@
 ## 不变量
 
 - 输入不可信；所有偏移、长度和整数运算必须校验。
+- APK entry 禁止绝对路径、`.`/`..` segment、重复名称、加密和多磁盘；不支持的压缩读取明确失败。
 - DEX header 固定为 0x70 字节且只接受 little-endian 035..040；固定表必须 4 字节对齐，
   header 与唯一、有序、非重叠的 map 声明必须一致。
 - DEX Modified UTF-8 和 ULEB128 必须最小且完整编码；type/proto 的每个索引、descriptor、

@@ -4,7 +4,9 @@
 #include <bit>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/gles/egl_lifecycle.h"
@@ -59,6 +61,19 @@ public:
     const ogplay::memory::GuestAddress stack{0x6e100000U};
     const ogplay::memory::GuestAddress output{0x6e101000U};
 };
+
+void WriteGuestString(BoundaryFixture& fixture,
+                      const ogplay::memory::GuestAddress address,
+                      const std::string_view value,
+                      const bool terminated = true) {
+    std::vector<std::byte> bytes;
+    bytes.reserve(value.size() + (terminated ? 1U : 0U));
+    for (const auto character : value) {
+        bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
+    }
+    if (terminated) bytes.push_back(std::byte{});
+    fixture.memory.Write(address, bytes, 1);
+}
 
 }  // namespace
 
@@ -147,6 +162,86 @@ TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
     CHECK(frame->rgba8[1] == doctest::Approx(128).epsilon(0.02));
     CHECK(frame->rgba8[2] == doctest::Approx(191).epsilon(0.02));
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1}) == 1);
+}
+
+TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
+
+    constexpr std::string_view vertex_source =
+        "attribute vec2 aPosition;"
+        "void main(){gl_Position=vec4(aPosition,0.0,1.0);}";
+    constexpr std::string_view fragment_source =
+        "precision mediump float;uniform vec4 uTint;"
+        "void main(){gl_FragColor=uTint;}";
+    const auto pointer_array = fixture.output;
+    const auto length_array = fixture.output.Add(0x20);
+    const auto query_output = fixture.output.Add(0x40);
+    const auto vertex_address = fixture.output.Add(0x100);
+    const auto fragment_address = fixture.output.Add(0x300);
+    const auto attribute_name = fixture.output.Add(0x500);
+    const auto uniform_name = fixture.output.Add(0x520);
+
+    const auto vertex = fixture.Call("libGLESv2.so", "glCreateShader", {0x8b31U});
+    REQUIRE(vertex != 0);
+    WriteGuestString(fixture, vertex_address, vertex_source, false);
+    fixture.bus.Write32(pointer_array, vertex_address.Value(), 1);
+    fixture.bus.Write32(length_array, static_cast<std::uint32_t>(vertex_source.size()), 1);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glShaderSource",
+        {vertex, 1, pointer_array.Value(), length_array.Value()}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glCompileShader", {vertex}));
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetShaderiv",
+        {vertex, 0x8b81U, query_output.Value()}));
+    CHECK(fixture.bus.Read32(query_output, 1) == 1);
+
+    const auto fragment = fixture.Call("libGLESv2.so", "glCreateShader", {0x8b30U});
+    REQUIRE(fragment != 0);
+    WriteGuestString(fixture, fragment_address, fragment_source);
+    fixture.bus.Write32(pointer_array, fragment_address.Value(), 1);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glShaderSource",
+        {fragment, 1, pointer_array.Value(), 0}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glCompileShader", {fragment}));
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetShaderiv",
+        {fragment, 0x8b81U, query_output.Value()}));
+    CHECK(fixture.bus.Read32(query_output, 1) == 1);
+
+    const auto program = fixture.Call("libGLESv2.so", "glCreateProgram");
+    REQUIRE(program != 0);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glAttachShader", {program, vertex}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glAttachShader", {program, fragment}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glLinkProgram", {program}));
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetProgramiv",
+        {program, 0x8b82U, query_output.Value()}));
+    CHECK(fixture.bus.Read32(query_output, 1) == 1);
+
+    WriteGuestString(fixture, attribute_name, "aPosition");
+    WriteGuestString(fixture, uniform_name, "uTint");
+    CHECK(fixture.Call("libGLESv2.so", "glGetAttribLocation",
+                       {program, attribute_name.Value()}) != UINT32_MAX);
+    CHECK(fixture.Call("libGLESv2.so", "glGetUniformLocation",
+                       {program, uniform_name.Value()}) != UINT32_MAX);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glUseProgram", {program}));
+
+    CHECK_THROWS_AS(
+        fixture.Call("libGLESv2.so", "glGetShaderiv", {vertex, 0x8b81U, 0}),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        fixture.Call("libGLESv2.so", "glShaderSource", {vertex, 1, 0x1000U, 0}),
+        ogplay::memory::MemoryFault);
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glUseProgram", {0}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteProgram", {program}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteShader", {vertex}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteShader", {fragment}));
+    const auto stats = fixture.boundary.Stats();
+    CHECK(stats.shader_compiles == 2);
+    CHECK(stats.program_links == 1);
 }
 
 TEST_CASE("Android boundary supersamples without changing guest surface size") {

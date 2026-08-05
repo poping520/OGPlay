@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -99,6 +100,171 @@ void AngleFrame::Clear(const std::uint32_t mask) {
 #endif
 }
 
+std::uint32_t AngleFrame::CreateShader(const std::uint32_t type) {
+#if OGPLAY_HAS_ANGLE
+    const auto shader = glCreateShader(type);
+    RequireNoError("glCreateShader");
+    return shader;
+#else
+    static_cast<void>(type);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::ShaderSource(const std::uint32_t shader,
+                              const std::span<const std::string> sources) {
+    if (sources.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())) {
+        throw std::length_error("ANGLE shader source count overflows GLsizei");
+    }
+#if OGPLAY_HAS_ANGLE
+    std::vector<const char*> pointers;
+    std::vector<GLint> lengths;
+    pointers.reserve(sources.size());
+    lengths.reserve(sources.size());
+    for (const auto& source : sources) {
+        if (source.size() > static_cast<std::size_t>(std::numeric_limits<GLint>::max())) {
+            throw std::length_error("ANGLE shader source length overflows GLint");
+        }
+        pointers.push_back(source.data());
+        lengths.push_back(static_cast<GLint>(source.size()));
+    }
+    glShaderSource(shader, static_cast<GLsizei>(sources.size()),
+                   pointers.data(), lengths.data());
+    RequireNoError("glShaderSource");
+#else
+    static_cast<void>(shader);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::CompileShader(const std::uint32_t shader) {
+#if OGPLAY_HAS_ANGLE
+    glCompileShader(shader);
+    RequireNoError("glCompileShader");
+    ++shader_compile_count_;
+#else
+    static_cast<void>(shader);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::int32_t AngleFrame::GetShaderParameter(const std::uint32_t shader,
+                                             const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    GLint value{};
+    glGetShaderiv(shader, parameter, &value);
+    RequireNoError("glGetShaderiv");
+    return value;
+#else
+    static_cast<void>(shader);
+    static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::DeleteShader(const std::uint32_t shader) {
+#if OGPLAY_HAS_ANGLE
+    glDeleteShader(shader);
+    RequireNoError("glDeleteShader");
+#else
+    static_cast<void>(shader);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::uint32_t AngleFrame::CreateProgram() {
+#if OGPLAY_HAS_ANGLE
+    const auto program = glCreateProgram();
+    RequireNoError("glCreateProgram");
+    return program;
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::AttachShader(const std::uint32_t program,
+                              const std::uint32_t shader) {
+#if OGPLAY_HAS_ANGLE
+    glAttachShader(program, shader);
+    RequireNoError("glAttachShader");
+#else
+    static_cast<void>(program);
+    static_cast<void>(shader);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::LinkProgram(const std::uint32_t program) {
+#if OGPLAY_HAS_ANGLE
+    glLinkProgram(program);
+    RequireNoError("glLinkProgram");
+    ++program_link_count_;
+#else
+    static_cast<void>(program);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::int32_t AngleFrame::GetProgramParameter(const std::uint32_t program,
+                                              const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    GLint value{};
+    glGetProgramiv(program, parameter, &value);
+    RequireNoError("glGetProgramiv");
+    return value;
+#else
+    static_cast<void>(program);
+    static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::int32_t AngleFrame::GetAttribLocation(const std::uint32_t program,
+                                            const std::string& name) {
+#if OGPLAY_HAS_ANGLE
+    const auto location = glGetAttribLocation(program, name.c_str());
+    RequireNoError("glGetAttribLocation");
+    return location;
+#else
+    static_cast<void>(program);
+    static_cast<void>(name);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::int32_t AngleFrame::GetUniformLocation(const std::uint32_t program,
+                                             const std::string& name) {
+#if OGPLAY_HAS_ANGLE
+    const auto location = glGetUniformLocation(program, name.c_str());
+    RequireNoError("glGetUniformLocation");
+    return location;
+#else
+    static_cast<void>(program);
+    static_cast<void>(name);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::UseProgram(const std::uint32_t program) {
+#if OGPLAY_HAS_ANGLE
+    glUseProgram(program);
+    RequireNoError("glUseProgram");
+#else
+    static_cast<void>(program);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::DeleteProgram(const std::uint32_t program) {
+#if OGPLAY_HAS_ANGLE
+    glDeleteProgram(program);
+    RequireNoError("glDeleteProgram");
+#else
+    static_cast<void>(program);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::uint8_t> AngleFrame::ReadRgba8() {
     constexpr std::uint64_t kChannels = 4;
     const auto pixels = static_cast<std::uint64_t>(width_) * height_;
@@ -131,7 +297,8 @@ std::vector<std::uint8_t> AngleFrame::ReadRgba8() {
 }
 
 AngleFrameInfo AngleFrame::Info() const noexcept {
-    return {width_, height_, clear_count_, readback_count_};
+    return {width_, height_, clear_count_, readback_count_,
+            shader_compile_count_, program_link_count_};
 }
 
 void AngleFrame::RequireNoError(const char* const operation) const {

@@ -23,6 +23,7 @@ struct NativeActivityRunRequest final {
     std::uint32_t height{360};
     std::uint64_t maximum_ticks_per_call{UINT64_C(200000000)};
     std::function<void(std::string_view)> progress;
+    std::uint32_t supersample_factor{1};
 };
 
 class NativeActivityRunError final : public std::runtime_error {

@@ -37,7 +37,8 @@ class AndroidBoundaryHle final : public core::GpuStateProvider {
 public:
     AndroidBoundaryHle(memory::AddressSpace& address_space,
                        gles::AngleBackend backend,
-                       std::uint32_t width, std::uint32_t height);
+                       std::uint32_t width, std::uint32_t height,
+                       std::uint32_t supersample_factor = 1);
     ~AndroidBoundaryHle();
     AndroidBoundaryHle(const AndroidBoundaryHle&) = delete;
     AndroidBoundaryHle& operator=(const AndroidBoundaryHle&) = delete;

@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 最小 NativeActivity APK 已可交互运行
+更新：2026-08-05 · M4 GPU Agent 查询契约完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0174` 已提供 `ogplay run-apk`，真实 API 19 最小 APK 可在 SDL 窗口呈现 ANGLE
-  帧并接收键鼠输入；下一编号为 `WU-0175`。
+- `WU-0175` 已固定四类 `gpu.*` 强类型查询和显式 unavailable/限额失败；下一编号为
+  `WU-0176`，接入真实 NativeActivity GPU 指标 provider。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -55,11 +55,15 @@
 - [WU-0174] `ogplay run-apk` 选择唯一 ARMv7 native ELF，SDL 主线程显示 guest 帧并转发
   键鼠，关闭窗口同步销毁；真实 APK 有界 smoke 呈现 2 帧并以 0 退出，带真实 API 19
   Bionic/APK 环境的全量 CTest 277/277 通过。
+- [WU-0175] core 提供不依赖 GLES/Agent 的 GPU 状态 provider；Agent 结构化暴露
+  `gpu.stats/render_targets/capabilities/trace`，trace 过滤与 1..1000 限额显式传递，
+  provider 缺失或越界返回可判定错误；Windows/MSVC + ANGLE、真实 API 19 APK/Bionic
+  环境全量 CTest 280/280 通过。
 
 ## 下一步（按优先级）
 
-1. 由用户对最小 APK 执行人工键鼠验收；随后推进 `gpu.*` 可观测接口、显示适配与
-   GLES2 一致性/黄金帧出口工作。
+1. 将 NativeActivity/ANGLE 的真实 clear、readback、默认渲染目标、后端与调用 trace
+   接入 GPU provider，再推进显示适配及 GLES2 一致性/黄金帧出口工作。
 
 ## 阻塞
 

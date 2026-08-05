@@ -174,6 +174,7 @@ add_library(ogplay_runtime
     src/runtime/execution/guest_lifecycle.cpp
     src/runtime/integration/headless_bionic_runner.cpp
     src/runtime/integration/android_boundary_hle.cpp
+    src/runtime/integration/native_activity_runner.cpp
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/jni/jni.cpp
     src/runtime/jni/jni_exception.cpp
@@ -296,6 +297,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/guest_clone_thread_runtime_tests.cpp
         tests/runtime/guest_thread_runner_tests.cpp
         tests/runtime/android_boundary_hle_tests.cpp
+        tests/runtime/native_activity_runner_tests.cpp
         tests/runtime/vfs_tests.cpp
         tests/loader/apk_tests.cpp
         tests/loader/elf_tests.cpp

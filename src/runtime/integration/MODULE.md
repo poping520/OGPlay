@@ -15,6 +15,8 @@
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
 - `AndroidBoundaryHle` 只暴露已登记的 Thumb trap；Looper/input 数据与 ANGLE readback
   跨线程传递必须受锁保护，未知地址或 SVC 不得吞掉。
+- `NativeActivitySession` 只接受 API 19 ARMv7 当前入口，执行真实 Bionic 初始化、
+  `ANativeActivity_onCreate`、glue child 与完整销毁回调；阶段可由可选 observer 查询。
 - executor、时钟、VFS 和 profile 必须显式注入或由确定性 fixture 建立。
 - 不包含平台 UI、真实 present 或游戏专属逻辑。
 

@@ -6,6 +6,7 @@
 #include "ogplay/core/frame_compare.h"
 #include "ogplay/core/software_surface.h"
 #include "ogplay/gles/angle_frame.h"
+#include "m4_exit_environment.h"
 
 namespace {
 
@@ -102,12 +103,20 @@ TEST_CASE("software surface produces a repeatable headless golden frame") {
 }
 
 TEST_CASE("ANGLE readback matches a top-left software golden frame") {
-    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) {
+        CHECK_FALSE_MESSAGE(ogplay::tests::M4ExitVerificationRequired(),
+                            "strict M4 exit requires native ANGLE EGL");
+        return;
+    }
     CheckAngleGoldenFrame(kNativeHardwareBackend);
 }
 
 TEST_CASE("ANGLE SwiftShader golden follows the verified SDK capability") {
-    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) {
+        CHECK_FALSE_MESSAGE(ogplay::tests::M4ExitVerificationRequired(),
+                            "strict M4 exit requires native ANGLE EGL");
+        return;
+    }
     const ogplay::gles::AngleBackend backend{
         ogplay::gles::AngleRenderer::vulkan,
         ogplay::gles::AngleDevice::swiftshader};

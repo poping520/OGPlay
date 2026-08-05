@@ -11,6 +11,7 @@
 
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/integration/native_activity_runner.h"
+#include "m4_exit_environment.h"
 
 namespace {
 
@@ -69,7 +70,11 @@ constexpr ogplay::gles::AngleBackend NativeHardwareBackend() {
 TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     const auto oracle = EnvironmentPath("OGPLAY_BIONIC_ORACLE_ROOT");
     const auto apk_path = EnvironmentPath("OGPLAY_MINIMAL_NDK_APK");
-    if (!oracle.has_value() || !apk_path.has_value()) return;
+    if (!oracle.has_value() || !apk_path.has_value()) {
+        CHECK_FALSE_MESSAGE(ogplay::tests::M4ExitVerificationRequired(),
+                            "strict M4 exit requires Bionic oracle and minimal APK");
+        return;
+    }
 
     const auto apk_bytes = ReadBytes(*apk_path);
     const auto archive = ogplay::loader::ParseApkArchive(apk_bytes);
@@ -147,7 +152,11 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
 TEST_CASE("M4 exit APK renders and responds to key and pointer input") {
     const auto oracle = EnvironmentPath("OGPLAY_BIONIC_ORACLE_ROOT");
     const auto apk_path = EnvironmentPath("OGPLAY_M4_EXIT_APK");
-    if (!oracle.has_value() || !apk_path.has_value()) return;
+    if (!oracle.has_value() || !apk_path.has_value()) {
+        CHECK_FALSE_MESSAGE(ogplay::tests::M4ExitVerificationRequired(),
+                            "strict M4 exit requires Bionic oracle and M4 exit APK");
+        return;
+    }
 
     const auto apk_bytes = ReadBytes(*apk_path);
     const auto archive = ogplay::loader::ParseApkArchive(apk_bytes);

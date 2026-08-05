@@ -345,6 +345,7 @@ if(OGPLAY_BUILD_TESTS)
     )
     target_include_directories(ogplay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
     if(OGPLAY_ENABLE_SDL3)
         target_compile_definitions(ogplay_tests PRIVATE OGPLAY_TEST_HAS_SDL3=1)
@@ -416,6 +417,15 @@ if(OGPLAY_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckRunApkOptions.cmake
     )
     set_tests_properties(frontend.run_apk_options PROPERTIES LABELS "unit;frontend")
+
+    add_test(
+        NAME integration.m4_exit_strict_environment
+        COMMAND ${CMAKE_COMMAND}
+            -DOGPLAY_TESTS=$<TARGET_FILE:ogplay_tests>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckM4ExitStrict.cmake
+    )
+    set_tests_properties(integration.m4_exit_strict_environment
+        PROPERTIES LABELS "integration;fixtures")
 
     add_test(
         NAME tools.gles_idl_generator_self_test

@@ -229,3 +229,8 @@ note = "M4 在真实 ANGLE D3D11 pbuffer 上闭合 viewport、clear 与受检 RG
 status = "complete"
 test = "tests/loader/module_loader_tests.cpp"
 note = "M4 允许统一 ELF 装载事务追加绝对 HLE 边界模块；边界参与符号解析但不映射为 guest ELF，guest 顺序、名称和 load bias 保持受检"
+
+[loader.apk_stored_entry]
+status = "complete"
+test = "tests/loader/apk_tests.cpp"
+note = "M4 严格解析 APK ZIP32 central directory，并以 local/central 一致性和 CRC32 提取未压缩 native ELF"

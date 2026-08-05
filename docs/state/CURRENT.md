@@ -44,11 +44,12 @@
   269/269 通过。
 - [WU-0170] SDL 窗口严格校验 RGBA8 帧并缩放更新 software surface；只有成功提交才累计
   present，dummy backend 覆盖真实 surface 更新；全量 CTest 270/270 通过。
+- [WU-0171] APK ZIP32 central directory、路径和 local/central 元数据严格受检；未压缩
+  native ELF 只有 CRC32 一致才会返回；全量 CTest 273/273 通过。
 
 ## 下一步（按优先级）
 
-1. 实现 APK stored-entry 读取。
-2. 接通 NativeActivity 启动、ANGLE guest 边界和 SDL 输入/显示。
+1. 接通 NativeActivity 启动、ANGLE guest 边界和 SDL 输入/显示。
 
 ## 阻塞
 

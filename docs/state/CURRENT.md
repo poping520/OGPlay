@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 guest 渲染失败即时上报
+更新：2026-08-05 · M4 GLES2 shader/program handler
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0185` 已让 guest 渲染线程失败解除同步等待并返回 CLI；下一编号为 `WU-0186`，
-  实现综合样例所需 shader/program handler 组。
+- `WU-0186` 已让综合样例以真实 ANGLE 完成 shader 编译和 program 链接；下一编号为
+  `WU-0187`，实现 buffer/texture handler 组。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -32,21 +32,8 @@
   supervisor trap 传播及 VFS pipe/syscall 42 原子发布；完整验收保留在各 WU 任务单。
 - [WU-0170..0174] 闭合 SDL RGBA8 present、APK ZIP32 读取、NativeActivity HLE/session 与
   `run-apk`；真实 API 19 最小 APK 可显示、响应输入并完整销毁，详见各 WU 任务单。
-- [WU-0175] core 提供不依赖 GLES/Agent 的 GPU 状态 provider；Agent 结构化暴露
-  `gpu.stats/render_targets/capabilities/trace`，trace 过滤与 1..1000 限额显式传递，
-  provider 缺失或越界返回可判定错误；Windows/MSVC + ANGLE、真实 API 19 APK/Bionic
-  环境全量 CTest 280/280 通过。
-- [WU-0176] `NativeActivitySession` 实现真实 GPU provider：样例 clear 计数、默认 RGBA8
-  FBO、ANGLE renderer/device 与最近 2048 条成功 EGL/GLES 调用可查询；扩展、限制、
-  guest FBO 和 shader 事实未发现时保持空，EGL 销毁后当前目标恢复为空；Windows/MSVC
-  + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 280/280 通过。
-- [WU-0177] `FitDisplayRect` 以溢出安全的整数运算计算等比内容区；SDL present 每帧先
-  清黑色 surface，再以 nearest 模式居中缩放，4:3、竖屏与同宽高布局均有确定性测试；
-  Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 281/281 通过。
-- [WU-0178] `MapDisplayPoint` 与 present 共用同一内容矩形和舍入；CLI 按最近 guest 帧
-  映射 pointer，忽略黑边按下/移动，并以夹紧坐标转发黑边释放以避免手势卡住；
-  Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 282/282 通过，真实
-  APK 2 帧窗口冒烟正常退出。
+- [WU-0175..0178] 闭合 GPU Agent 查询、NativeActivity 真实指标、等比黑边呈现和同布局
+  输入映射；失败、限额与黑边手势均有机器测试，完整记录见各 WU 任务单。
 - [WU-0179] `AngleFrame` 增加受检 scissor 状态，readback 在边界内把 OpenGL 底部首行
   翻转为 SDL/ImageView 顶部首行；8×8 非对称图案与 SoftwareSurface 逐像素一致；
   Windows/MSVC + ANGLE、真实 API 19 APK/Bionic 环境全量 CTest 283/283 通过，真实
@@ -73,11 +60,15 @@
   `glCreateShader` 未实现时快速返回 `NativeActivityRunError`，CLI 关闭窗口并以非零状态
   输出精确错误，不再永久等待首帧；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与
   API 19 Bionic 环境全量 CTest 293/293 通过。
+- [WU-0186] 13 项 shader/program handler 以受检 guest 二级源码、长度、查询输出和符号名
+  调用真实 ANGLE；两次 compile、一次 link 及定位/use/delete 均闭合，综合 APK 下一缺口
+  推进到 `glGenBuffers`；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与 API 19 Bionic
+  环境全量 CTest 294/294 通过，未宣称已经出帧。
 
 ## 下一步（按优先级）
 
-1. 实现综合样例所需 shader/program handler，再推进 buffer/texture、draw/readback；
-   Linux/macOS 与 SwiftShader 留到 M4 出口统一验收。
+1. 实现综合样例所需 buffer/texture handler，再推进 vertex attribute、uniform、draw 与
+   readback；Linux/macOS 与 SwiftShader 留到 M4 出口统一验收。
 
 ## 阻塞
 

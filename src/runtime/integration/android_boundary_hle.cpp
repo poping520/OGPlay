@@ -34,6 +34,9 @@ constexpr std::uint32_t kFakeSurface = 3;
 constexpr std::uint32_t kFakeContext = 4;
 constexpr std::uint32_t kEglWidth = 0x3057;
 constexpr std::uint32_t kEglHeight = 0x3056;
+constexpr std::size_t kMaximumShaderSourceCount = 1024;
+constexpr std::size_t kMaximumShaderSourceBytes = 4U * 1024U * 1024U;
+constexpr std::size_t kMaximumGlesNameBytes = 4096;
 
 std::vector<BionicHleSymbol> BuildSymbols() {
     static constexpr std::array<std::pair<std::string_view, std::string_view>, 42> names{{
@@ -235,6 +238,119 @@ private:
         address_space_.Write(memory::GuestAddress{address}, bytes, thread_id);
     }
 
+    void WriteRequired32(const std::uint32_t address, const std::uint32_t value,
+                         const std::uint64_t thread_id,
+                         const std::string_view operation) {
+        if (address == 0) {
+            throw std::invalid_argument(std::string(operation) +
+                                        " requires a guest output pointer");
+        }
+        Write32(address, value, thread_id);
+    }
+
+    std::uint32_t Read32(const std::uint32_t address,
+                         const std::uint64_t thread_id,
+                         const std::string_view operation) const {
+        if (address == 0) {
+            throw std::invalid_argument(std::string(operation) +
+                                        " requires a guest input pointer");
+        }
+        std::array<std::byte, 4> bytes{};
+        address_space_.Read(memory::GuestAddress{address}, bytes, thread_id);
+        std::uint32_t value{};
+        for (std::size_t index = 0; index < bytes.size(); ++index) {
+            value |= static_cast<std::uint32_t>(
+                         std::to_integer<std::uint8_t>(bytes[index]))
+                     << (index * 8U);
+        }
+        return value;
+    }
+
+    std::string ReadString(const std::uint32_t address,
+                           const std::size_t byte_count,
+                           const std::uint64_t thread_id,
+                           const std::string_view operation) const {
+        if (address == 0) {
+            throw std::invalid_argument(std::string(operation) +
+                                        " requires a guest string pointer");
+        }
+        std::vector<std::byte> bytes(byte_count);
+        if (!bytes.empty()) {
+            address_space_.Read(memory::GuestAddress{address}, bytes, thread_id);
+        }
+        std::string result;
+        result.reserve(bytes.size());
+        for (const auto value : bytes) {
+            result.push_back(static_cast<char>(std::to_integer<unsigned char>(value)));
+        }
+        return result;
+    }
+
+    std::string ReadCString(const std::uint32_t address,
+                            const std::size_t maximum_bytes,
+                            const std::uint64_t thread_id,
+                            const std::string_view operation) const {
+        if (address == 0) {
+            throw std::invalid_argument(std::string(operation) +
+                                        " requires a guest string pointer");
+        }
+        std::string result;
+        result.reserve(std::min<std::size_t>(maximum_bytes, 256));
+        for (std::size_t offset = 0; offset < maximum_bytes; ++offset) {
+            std::array<std::byte, 1> bytes{};
+            address_space_.Read(memory::GuestAddress{address}.Add(offset),
+                                bytes, thread_id);
+            const auto value = static_cast<char>(
+                std::to_integer<unsigned char>(bytes[0]));
+            if (value == '\0') return result;
+            result.push_back(value);
+        }
+        throw std::length_error(std::string(operation) +
+                                " guest string exceeds its byte limit");
+    }
+
+    std::vector<std::string> ReadShaderSources(
+        const std::array<std::uint32_t, 4>& args,
+        const std::uint64_t thread_id) const {
+        const auto signed_count = std::bit_cast<std::int32_t>(args[1]);
+        if (signed_count < 0 ||
+            static_cast<std::size_t>(signed_count) > kMaximumShaderSourceCount) {
+            throw std::invalid_argument("glShaderSource count is outside the supported range");
+        }
+        const auto count = static_cast<std::size_t>(signed_count);
+        if (count == 0) return {};
+        if (args[2] == 0) {
+            throw std::invalid_argument("glShaderSource requires a guest string array");
+        }
+        std::vector<std::string> result;
+        result.reserve(count);
+        std::size_t total_bytes{};
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto source_address = Read32(
+                memory::GuestAddress{args[2]}.Add(index * 4U).Value(),
+                thread_id, "glShaderSource");
+            const auto length = args[3] == 0 ? -1 : std::bit_cast<std::int32_t>(Read32(
+                memory::GuestAddress{args[3]}.Add(index * 4U).Value(),
+                thread_id, "glShaderSource"));
+            const auto remaining = kMaximumShaderSourceBytes - total_bytes;
+            if (length >= 0 && static_cast<std::size_t>(length) > remaining) {
+                throw std::length_error("glShaderSource exceeds its total byte limit");
+            }
+            auto source = length < 0
+                              ? ReadCString(source_address, remaining, thread_id,
+                                            "glShaderSource")
+                              : ReadString(source_address,
+                                           static_cast<std::size_t>(length),
+                                           thread_id, "glShaderSource");
+            if (source.size() > remaining) {
+                throw std::length_error("glShaderSource exceeds its total byte limit");
+            }
+            total_bytes += source.size();
+            result.push_back(std::move(source));
+        }
+        return result;
+    }
+
     std::uint32_t StackWord(const cpu::A32State& state, const std::uint32_t offset) {
         std::array<std::byte, 4> bytes{};
         address_space_.Read(memory::GuestAddress{
@@ -390,6 +506,10 @@ private:
             gpu_render_target_ready_ = false;
             return 1;
         }
+        if (const auto shader_program = DispatchShaderProgram(symbol, args, state);
+            shader_program.has_value()) {
+            return *shader_program;
+        }
         if (symbol == "glViewport") {
             RequireFrame(symbol).Viewport(
                 ScaleViewportComponent(std::bit_cast<std::int32_t>(args[0]),
@@ -417,6 +537,70 @@ private:
         }
         if (symbol == "__android_log_print" || symbol == "__android_log_write") return 0;
         throw std::runtime_error("Android boundary HLE is not implemented: " + std::string(symbol));
+    }
+
+    std::optional<std::uint32_t> DispatchShaderProgram(
+        const std::string_view symbol,
+        const std::array<std::uint32_t, 4>& args,
+        const cpu::A32State& state) {
+        const auto tid = state.ThreadId();
+        if (symbol == "glCreateShader") {
+            return RequireFrame(symbol).CreateShader(args[0]);
+        }
+        if (symbol == "glShaderSource") {
+            RequireFrame(symbol).ShaderSource(args[0], ReadShaderSources(args, tid));
+            return 0;
+        }
+        if (symbol == "glCompileShader") {
+            RequireFrame(symbol).CompileShader(args[0]);
+            std::scoped_lock lock(mutex_);
+            ++gpu_stats_.shader_compiles;
+            return 0;
+        }
+        if (symbol == "glGetShaderiv") {
+            const auto value = RequireFrame(symbol).GetShaderParameter(args[0], args[1]);
+            WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol);
+            return 0;
+        }
+        if (symbol == "glDeleteShader") {
+            RequireFrame(symbol).DeleteShader(args[0]);
+            return 0;
+        }
+        if (symbol == "glCreateProgram") {
+            return RequireFrame(symbol).CreateProgram();
+        }
+        if (symbol == "glAttachShader") {
+            RequireFrame(symbol).AttachShader(args[0], args[1]);
+            return 0;
+        }
+        if (symbol == "glLinkProgram") {
+            RequireFrame(symbol).LinkProgram(args[0]);
+            std::scoped_lock lock(mutex_);
+            ++gpu_stats_.program_links;
+            return 0;
+        }
+        if (symbol == "glGetProgramiv") {
+            const auto value = RequireFrame(symbol).GetProgramParameter(args[0], args[1]);
+            WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol);
+            return 0;
+        }
+        if (symbol == "glGetAttribLocation") {
+            return SignedResult(RequireFrame(symbol).GetAttribLocation(
+                args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
+        }
+        if (symbol == "glGetUniformLocation") {
+            return SignedResult(RequireFrame(symbol).GetUniformLocation(
+                args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
+        }
+        if (symbol == "glUseProgram") {
+            RequireFrame(symbol).UseProgram(args[0]);
+            return 0;
+        }
+        if (symbol == "glDeleteProgram") {
+            RequireFrame(symbol).DeleteProgram(args[0]);
+            return 0;
+        }
+        return std::nullopt;
     }
 
     gles::AngleFrame& RequireFrame(const std::string_view operation) {

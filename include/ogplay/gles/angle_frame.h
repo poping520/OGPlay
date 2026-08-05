@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
+#include <string>
 #include <vector>
 
 #include "ogplay/gles/egl_lifecycle.h"
@@ -13,6 +15,8 @@ struct AngleFrameInfo final {
     std::uint32_t height{};
     std::uint64_t clear_count{};
     std::uint64_t readback_count{};
+    std::uint64_t shader_compile_count{};
+    std::uint64_t program_link_count{};
 };
 
 class AngleFrame final {
@@ -34,6 +38,23 @@ public:
     void SetScissorEnabled(bool enabled);
     void ClearColor(float red, float green, float blue, float alpha);
     void Clear(std::uint32_t mask);
+    [[nodiscard]] std::uint32_t CreateShader(std::uint32_t type);
+    void ShaderSource(std::uint32_t shader, std::span<const std::string> sources);
+    void CompileShader(std::uint32_t shader);
+    [[nodiscard]] std::int32_t GetShaderParameter(std::uint32_t shader,
+                                                   std::uint32_t parameter);
+    void DeleteShader(std::uint32_t shader);
+    [[nodiscard]] std::uint32_t CreateProgram();
+    void AttachShader(std::uint32_t program, std::uint32_t shader);
+    void LinkProgram(std::uint32_t program);
+    [[nodiscard]] std::int32_t GetProgramParameter(std::uint32_t program,
+                                                    std::uint32_t parameter);
+    [[nodiscard]] std::int32_t GetAttribLocation(std::uint32_t program,
+                                                  const std::string& name);
+    [[nodiscard]] std::int32_t GetUniformLocation(std::uint32_t program,
+                                                   const std::string& name);
+    void UseProgram(std::uint32_t program);
+    void DeleteProgram(std::uint32_t program);
     [[nodiscard]] std::vector<std::uint8_t> ReadRgba8();
     [[nodiscard]] AngleFrameInfo Info() const noexcept;
 
@@ -48,6 +69,8 @@ private:
     std::uint32_t height_{};
     std::uint64_t clear_count_{};
     std::uint64_t readback_count_{};
+    std::uint64_t shader_compile_count_{};
+    std::uint64_t program_link_count_{};
 };
 
 }  // namespace ogplay::gles

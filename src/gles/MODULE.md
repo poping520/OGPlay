@@ -15,9 +15,9 @@
   失败。调用方必须保证 API 对象比使用它的 `EglLifecycle` 存活更久。
 - `EglLifecycle::CreatePbuffer`：创建 ANGLE display、EGL config、GLES2 context 和 pbuffer
   surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
-- `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/clear，并以受检 RGBA8
-  readback 输出左上原点的确定帧；scissor 可生成非对称黄金图案，每个原生 GLES 调用都
-  检查错误，供 guest 边界与窗口呈现复用。
+- `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/clear、shader/program
+  编译链接，并以受检 RGBA8 readback 输出左上原点的确定帧；每个原生 GLES 调用都检查
+  错误，供 guest 边界与窗口呈现复用。
 - `CreateNativeAngleEglApi`：ANGLE 启用时创建真实 API；关闭时明确抛出 unavailable，绝不
   回退系统 EGL。
 - `data/gles/*.json`：GLES 边界的声明式单一事实源；每个指针显式声明方向、可空性和
@@ -63,6 +63,8 @@
   行之间。未知格式、类型、查询形状、负数或长度溢出必须在 native 调用前失败。
 - 动态查询和 uniform 输出长度必须由对象发现路径登记；状态更新先完整验证再提交，失败
   不得污染已有 pack/unpack、buffer 或形状事实。
+- shader 源码段数、单段/总字节和符号名必须在宿主分配或 ANGLE 调用前有界；显式长度
+  保留内嵌 NUL，负长度按 GLES 规则读取有界 C 字符串。
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - input 只读 guest，output 不得为初始化暂存而读取 guest，inout 必须同时预检读写；任何
   native 调用前必须完成全区间验证，输出回写不得依赖析构副作用。

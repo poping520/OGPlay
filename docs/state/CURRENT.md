@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-04 · M4 GLES 调用搬运准备完成
+更新：2026-08-05 · M4 GLES 状态化搬运解析完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0164` 已完成受限长度表达式、类型/二级指针字节换算、有界字符串扫描及
-  `GuestBuffer` 调用准备；下一个任务编号为 `WU-0165`。
+- `WU-0165` 已完成像素、索引和常用查询长度解析，显式维护 pack/unpack、buffer 绑定与
+  动态输出形状；下一个任务编号为 `WU-0166`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -66,11 +66,14 @@
 - [WU-0164] 调用准备层安全求值字面量/标量/常量乘法和有界 C 字符串，按 GL 类型及
   32 位二级 guest 指针换算字节；状态相关长度和 deferred offset 必须显式解析；
   启用 ANGLE 的 Windows/MSVC 全量 CTest 258/258 通过。
+- [WU-0165] 上下文状态解析 pack/unpack 像素行跨度、guest index 数组、buffer offset、
+  常用固定查询及显式登记的动态/uniform 形状；未知形状和无效状态更新明确失败；
+  启用 ANGLE 的 Windows/MSVC 全量 CTest 263/263 通过。
 
 ## 下一步（按优先级）
 
-1. `WU-0165` 实现像素、索引及常用查询长度 resolver，并覆盖 pack/unpack 与 buffer 状态。
-2. 随后生成常用 ANGLE 调用体，再增加 GLES1、窗口 surface 与 present。
+1. `WU-0166` 生成并绑定首批常用 ANGLE 调用体，同步实际 pixel-store/buffer/object 状态。
+2. 随后扩展累计 GLES2 调用面，再增加 GLES1、窗口 surface 与 present。
 
 ## 阻塞
 

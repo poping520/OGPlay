@@ -16,8 +16,8 @@
 - `EglLifecycle::CreatePbuffer`：创建 ANGLE display、EGL config、GLES2 context 和 pbuffer
   surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
 - `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/clear、shader/program、
-  buffer/texture 资源调用，并以受检 RGBA8 readback 输出左上原点的确定帧；每个原生
-  GLES 调用都检查错误，供 guest 边界与窗口呈现复用。
+  buffer/texture、vertex attribute 与 uniform 调用，并以受检 RGBA8 readback 输出左上
+  原点的确定帧；每个原生 GLES 调用都检查错误，供 guest 边界与窗口呈现复用。
 - `CreateNativeAngleEglApi`：ANGLE 启用时创建真实 API；关闭时明确抛出 unavailable，绝不
   回退系统 EGL。
 - `data/gles/*.json`：GLES 边界的声明式单一事实源；每个指针显式声明方向、可空性和
@@ -67,6 +67,8 @@
   保留内嵌 NUL，负长度按 GLES 规则读取有界 C 字符串。
 - buffer/texture 名称数组和资源数据必须通过声明式调用准备器搬运；null 数据只表达
   ANGLE 侧分配，像素字节数由当前 unpack alignment 与真实格式/类型共同解析。
+- vertex pointer 只有绑定 array buffer 后才能把 32 位 guest 值解释为 VBO offset；client
+  array 继续明确失败。uniform 数组按 IDL 形状完整搬运后再转换为宿主标量。
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - input 只读 guest，output 不得为初始化暂存而读取 guest，inout 必须同时预检读写；任何
   native 调用前必须完成全区间验证，输出回写不得依赖析构副作用。

@@ -400,6 +400,80 @@ void AngleFrame::TextureImage2D(
 #endif
 }
 
+void AngleFrame::SetVertexAttributeEnabled(const std::uint32_t index,
+                                            const bool enabled) {
+#if OGPLAY_HAS_ANGLE
+    if (enabled) glEnableVertexAttribArray(index);
+    else glDisableVertexAttribArray(index);
+    RequireNoError(enabled ? "glEnableVertexAttribArray" : "glDisableVertexAttribArray");
+#else
+    static_cast<void>(index); static_cast<void>(enabled);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::VertexAttributePointer(
+    const std::uint32_t index, const std::int32_t size,
+    const std::uint32_t type, const bool normalized,
+    const std::int32_t stride, const std::uint32_t offset) {
+#if OGPLAY_HAS_ANGLE
+    glVertexAttribPointer(index, size, type, normalized ? GL_TRUE : GL_FALSE,
+                          stride, reinterpret_cast<const void*>(
+                                      static_cast<std::uintptr_t>(offset)));
+    RequireNoError("glVertexAttribPointer");
+#else
+    static_cast<void>(index); static_cast<void>(size); static_cast<void>(type);
+    static_cast<void>(normalized); static_cast<void>(stride); static_cast<void>(offset);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::Uniform1f(const std::int32_t location, const float value) {
+#if OGPLAY_HAS_ANGLE
+    glUniform1f(location, value); RequireNoError("glUniform1f");
+#else
+    static_cast<void>(location); static_cast<void>(value);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::Uniform1i(const std::int32_t location, const std::int32_t value) {
+#if OGPLAY_HAS_ANGLE
+    glUniform1i(location, value); RequireNoError("glUniform1i");
+#else
+    static_cast<void>(location); static_cast<void>(value);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::Uniform4f(const std::int32_t location, const float x,
+                           const float y, const float z, const float w) {
+#if OGPLAY_HAS_ANGLE
+    glUniform4f(location, x, y, z, w); RequireNoError("glUniform4f");
+#else
+    static_cast<void>(location); static_cast<void>(x); static_cast<void>(y);
+    static_cast<void>(z); static_cast<void>(w);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::UniformMatrix3(const std::int32_t location,
+                                const std::int32_t count,
+                                const bool transpose,
+                                const std::span<const float> values) {
+    if (count < 0 || static_cast<std::size_t>(count) > values.size() / 9U ||
+        static_cast<std::size_t>(count) * 9U != values.size()) {
+        throw std::invalid_argument("ANGLE matrix count does not match its payload");
+    }
+#if OGPLAY_HAS_ANGLE
+    glUniformMatrix3fv(location, count, transpose ? GL_TRUE : GL_FALSE, values.data());
+    RequireNoError("glUniformMatrix3fv");
+#else
+    static_cast<void>(location); static_cast<void>(transpose);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::uint8_t> AngleFrame::ReadRgba8() {
     constexpr std::uint64_t kChannels = 4;
     const auto pixels = static_cast<std::uint64_t>(width_) * height_;

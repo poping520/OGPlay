@@ -549,45 +549,28 @@ private:
         const std::array<std::uint32_t, 4>& args,
         const cpu::A32State& state) {
         const auto tid = state.ThreadId();
-        if (symbol == "glCreateShader") {
-            return RequireFrame(symbol).CreateShader(args[0]);
-        }
+        if (symbol == "glCreateShader") return RequireFrame(symbol).CreateShader(args[0]);
         if (symbol == "glShaderSource") {
-            RequireFrame(symbol).ShaderSource(args[0], ReadShaderSources(args, tid));
-            return 0;
+            RequireFrame(symbol).ShaderSource(args[0], ReadShaderSources(args, tid)); return 0;
         }
         if (symbol == "glCompileShader") {
-            RequireFrame(symbol).CompileShader(args[0]);
-            std::scoped_lock lock(mutex_);
-            ++gpu_stats_.shader_compiles;
-            return 0;
+            RequireFrame(symbol).CompileShader(args[0]); std::scoped_lock lock(mutex_);
+            ++gpu_stats_.shader_compiles; return 0;
         }
         if (symbol == "glGetShaderiv") {
             const auto value = RequireFrame(symbol).GetShaderParameter(args[0], args[1]);
-            WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol);
-            return 0;
+            WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol); return 0;
         }
-        if (symbol == "glDeleteShader") {
-            RequireFrame(symbol).DeleteShader(args[0]);
-            return 0;
-        }
-        if (symbol == "glCreateProgram") {
-            return RequireFrame(symbol).CreateProgram();
-        }
-        if (symbol == "glAttachShader") {
-            RequireFrame(symbol).AttachShader(args[0], args[1]);
-            return 0;
-        }
+        if (symbol == "glDeleteShader") { RequireFrame(symbol).DeleteShader(args[0]); return 0; }
+        if (symbol == "glCreateProgram") return RequireFrame(symbol).CreateProgram();
+        if (symbol == "glAttachShader") { RequireFrame(symbol).AttachShader(args[0], args[1]); return 0; }
         if (symbol == "glLinkProgram") {
-            RequireFrame(symbol).LinkProgram(args[0]);
-            std::scoped_lock lock(mutex_);
-            ++gpu_stats_.program_links;
-            return 0;
+            RequireFrame(symbol).LinkProgram(args[0]); std::scoped_lock lock(mutex_);
+            ++gpu_stats_.program_links; return 0;
         }
         if (symbol == "glGetProgramiv") {
             const auto value = RequireFrame(symbol).GetProgramParameter(args[0], args[1]);
-            WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol);
-            return 0;
+            WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol); return 0;
         }
         if (symbol == "glGetAttribLocation") {
             return SignedResult(RequireFrame(symbol).GetAttribLocation(
@@ -597,14 +580,8 @@ private:
             return SignedResult(RequireFrame(symbol).GetUniformLocation(
                 args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
         }
-        if (symbol == "glUseProgram") {
-            RequireFrame(symbol).UseProgram(args[0]);
-            return 0;
-        }
-        if (symbol == "glDeleteProgram") {
-            RequireFrame(symbol).DeleteProgram(args[0]);
-            return 0;
-        }
+        if (symbol == "glUseProgram") { RequireFrame(symbol).UseProgram(args[0]); return 0; }
+        if (symbol == "glDeleteProgram") { RequireFrame(symbol).DeleteProgram(args[0]); return 0; }
         return std::nullopt;
     }
 
@@ -615,14 +592,12 @@ private:
         if (!id.has_value()) throw std::logic_error("GLES resource handler is not cataloged");
         return gles::PrepareGles2Call(address_space_, *id, args, tid, &transfer_state_);
     }
-
     static gles::GuestBuffer& Pointer(gles::PreparedGlesCall& call) {
         if (call.pointers.size() != 1 || !call.pointers.front().transfer.has_value()) {
             throw std::logic_error("GLES resource handler expected one transferred pointer");
         }
         return *call.pointers.front().transfer;
     }
-
     static std::vector<std::uint32_t> ReadWords(const gles::GuestBuffer& transfer) {
         const auto bytes = transfer.Bytes();
         if (bytes.size() % 4U != 0) throw std::logic_error("GLES name array is misaligned");
@@ -635,7 +610,12 @@ private:
         }
         return words;
     }
-
+    static std::vector<float> ReadFloats(const gles::GuestBuffer& transfer) {
+        const auto words = ReadWords(transfer);
+        std::vector<float> values; values.reserve(words.size());
+        for (const auto word : words) values.push_back(std::bit_cast<float>(word));
+        return values;
+    }
     static void WriteWords(gles::GuestBuffer& transfer,
                            const std::span<const std::uint32_t> words) {
         auto bytes = transfer.WritableBytes();
@@ -647,13 +627,11 @@ private:
         }
         transfer.Commit();
     }
-
     static std::optional<std::span<const std::byte>> OptionalBytes(
         const gles::GuestBuffer& transfer) {
         if (transfer.IsNull()) return std::nullopt;
         return transfer.Bytes();
     }
-
     std::optional<std::uint32_t> DispatchResources(
         const std::string_view symbol, const std::array<std::uint32_t, 4>& args,
         const cpu::A32State& state) {
@@ -709,9 +687,38 @@ private:
                 std::bit_cast<std::int32_t>(all[5]), all[6], all[7],
                 OptionalBytes(pixels)); return 0;
         }
+        if (symbol == "glEnableVertexAttribArray" || symbol == "glDisableVertexAttribArray") {
+            RequireFrame(symbol).SetVertexAttributeEnabled(
+                args[0], symbol == "glEnableVertexAttribArray"); return 0;
+        }
+        if (symbol == "glVertexAttribPointer") {
+            if (transfer_state_.Snapshot().array_buffer == 0)
+                throw std::runtime_error("glVertexAttribPointer client arrays are not implemented");
+            std::array<std::uint32_t, 6> all{args[0], args[1], args[2], args[3],
+                                             StackWord(state, 0), StackWord(state, 4)};
+            auto call = PrepareCall(symbol, all, tid);
+            if (call.pointers.size() != 1 || !call.pointers.front().deferred)
+                throw std::logic_error("glVertexAttribPointer expected a deferred VBO offset");
+            RequireFrame(symbol).VertexAttributePointer(
+                all[0], std::bit_cast<std::int32_t>(all[1]), all[2], all[3] != 0,
+                std::bit_cast<std::int32_t>(all[4]), all[5]); return 0;
+        }
+        if (symbol == "glUniform1f") { RequireFrame(symbol).Uniform1f(
+            std::bit_cast<std::int32_t>(args[0]), std::bit_cast<float>(args[1])); return 0; }
+        if (symbol == "glUniform1i") { RequireFrame(symbol).Uniform1i(
+            std::bit_cast<std::int32_t>(args[0]), std::bit_cast<std::int32_t>(args[1])); return 0; }
+        if (symbol == "glUniform4f") { RequireFrame(symbol).Uniform4f(
+            std::bit_cast<std::int32_t>(args[0]), std::bit_cast<float>(args[1]),
+            std::bit_cast<float>(args[2]), std::bit_cast<float>(args[3]),
+            std::bit_cast<float>(StackWord(state, 0))); return 0; }
+        if (symbol == "glUniformMatrix3fv") {
+            auto call = PrepareCall(symbol, args, tid); const auto values = ReadFloats(Pointer(call));
+            RequireFrame(symbol).UniformMatrix3(
+                std::bit_cast<std::int32_t>(args[0]), std::bit_cast<std::int32_t>(args[1]),
+                args[2] != 0, values); return 0;
+        }
         return std::nullopt;
     }
-
     gles::AngleFrame& RequireFrame(const std::string_view operation) {
         if (!angle_frame_.has_value()) {
             throw std::runtime_error(std::string(operation) + " has no current ANGLE frame");

@@ -20,6 +20,8 @@
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、
   像素格式及对齐；状态只在 ANGLE 成功后提交，删除已绑定 buffer 必须同步解除搬运状态。
+- vertex attribute handler 只接受已有 VBO 的受检 offset；uniform 标量保持位模式，矩阵数据
+  必须先按 IDL 长度完整搬运，任何坏地址都不得触达 ANGLE。
 - 超采样倍率必须在创建任何 ANGLE 资源前完整验证；viewport 缩放溢出明确失败，guest
   `eglQuerySurface` 不得泄漏内部渲染尺寸，GPU 查询不得把逻辑尺寸伪装成真实 target。
 - `NativeActivitySession` 只接受 API 19 ARMv7 当前入口，执行真实 Bionic 初始化、

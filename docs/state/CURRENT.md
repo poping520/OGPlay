@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 GLES2 buffer/texture handler
+更新：2026-08-05 · M4 GLES2 vertex/uniform handler
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0187` 已让综合样例以真实 ANGLE 完成 buffer/texture 资源初始化；下一编号为
-  `WU-0188`，实现 vertex attribute 与 uniform value handler 组。
+- `WU-0188` 已让综合样例以真实 ANGLE 完成 vertex attribute 与 uniform 初始化；下一
+  编号为 `WU-0189`，实现综合样例所需 query/state handler 组。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -68,11 +68,15 @@
   null 分配、unpack 对齐及九参数像素上传均调用真实 ANGLE；状态成功后提交并随绑定资源
   删除清理，综合 APK 下一缺口推进到 `glEnableVertexAttribArray`；Windows/MSVC + ANGLE、
   真实 minimal/M4 APK 与 API 19 Bionic 环境全量 CTest 295/295 通过，未宣称已经出帧。
+- [WU-0188] 7 项 vertex/uniform handler 闭合 VBO offset、ARM 栈参数和标量位模式；matrix3
+  按 `count*9` 受检搬运，client array 与坏地址在 ANGLE 前明确失败，综合 APK 下一缺口
+  推进到 `glGetIntegerv`；Windows/MSVC + ANGLE、真实 minimal/M4 APK 与 API 19 Bionic
+  环境全量 CTest 295/295 通过，未宣称已经出帧。
 
 ## 下一步（按优先级）
 
-1. 实现综合样例所需 vertex attribute 与 uniform value handler，再推进 query、draw 与
-   readback；Linux/macOS 与 SwiftShader 留到 M4 出口统一验收。
+1. 实现综合样例所需 query/state handler，再推进 draw 与 readback；Linux/macOS 与
+   SwiftShader 留到 M4 出口统一验收。
 
 ## 阻塞
 

@@ -1,5 +1,22 @@
 # 开发工具
 
+## M4 本机出口测试
+
+`m4_exit.py` 在当前 Windows、Linux 或 macOS 机器内直接执行严格出口验证，不建立 SSH
+连接。脚本预检 API 19 Bionic、两个 APK 的未压缩 ARMv7 native 库、宿主 ANGLE SDK
+清单及软件后端声明，然后使用持久 CMake preset 增量配置、构建并运行全量 CTest。
+
+```text
+python tools/m4_exit.py \
+  --bionic-root <包含 api19/lib 的本地目录> \
+  --minimal-apk <ogplay-minimal-ndk-armeabi-v7a.apk> \
+  --m4-apk <ogplay-m4-exit-armeabi-v7a.apk>
+```
+
+Windows 固定使用 `windows-msvc`，Linux/macOS 使用 `dev`；Linux 额外启用 console build。
+Linux/macOS 的 ANGLE 清单必须启用 SwiftShader，实际软件黄金帧失败即出口失败。首次运行
+完成全量构建，后续运行复用各自 preset 的 build 目录。`--dry-run` 只执行输入与清单预检。
+
 ## 远端增量构建
 
 `remote_incremental.py` 使用一个明确指定的远端绝对目录持久保存源码、递归 submodule 和
@@ -20,6 +37,8 @@ python tools/remote_incremental.py --host <host> --user <user> \
 
 macOS 或非标准安装可通过 `--cmake`、`--ctest` 指定可执行文件。密码默认从
 `OGPLAY_REMOTE_PASSWORD` 读取；也可使用 SSH agent 或密钥认证。
+
+该远端工具不用于 M4 出口验收；M4 必须使用上面的本机入口在对应平台直接执行。
 
 ## ANGLE SDK
 

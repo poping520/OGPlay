@@ -464,6 +464,15 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(tools.remote_incremental_self_test PROPERTIES LABELS tools)
 
     add_test(
+        NAME tools.m4_local_exit_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/m4_exit.py
+            --self-test
+    )
+    set_tests_properties(tools.m4_local_exit_self_test
+        PROPERTIES LABELS "tools;fixtures")
+
+    add_test(
         NAME tools.angle_build_driver_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/tools/build_angle.py

@@ -52,6 +52,21 @@ std::optional<ogplay::runtime::AndroidBoundaryFrame> WaitFrame(
     return std::nullopt;
 }
 
+std::optional<ogplay::runtime::AndroidBoundaryFrame> WaitChangedFrame(
+    ogplay::runtime::NativeActivitySession& session,
+    const ogplay::runtime::AndroidBoundaryFrame& baseline) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto candidate = session.TakeLatestFrame();
+        if (candidate.has_value() && candidate->sequence > baseline.sequence &&
+            candidate->rgba8 != baseline.rgba8) {
+            return candidate;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return std::nullopt;
+}
+
 constexpr ogplay::gles::AngleBackend NativeHardwareBackend() {
 #if defined(_WIN32)
     return {ogplay::gles::AngleRenderer::d3d11,
@@ -102,14 +117,7 @@ TEST_CASE("minimal APK NativeActivity renders and responds to guest input") {
     CHECK(initial->rgba8.size() == 64U * 36U * 4U);
     session->PushInput({ogplay::runtime::AndroidBoundaryInputType::key,
                         29, 0, 0, true});
-    std::optional<ogplay::runtime::AndroidBoundaryFrame> changed;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (std::chrono::steady_clock::now() < deadline && !changed.has_value()) {
-        auto candidate = WaitFrame(*session, initial->sequence);
-        if (candidate.has_value() && candidate->rgba8 != initial->rgba8) {
-            changed = std::move(candidate);
-        }
-    }
+    const auto changed = WaitChangedFrame(*session, *initial);
     REQUIRE(changed.has_value());
     CHECK(changed->rgba8 != initial->rgba8);
 
@@ -197,7 +205,7 @@ TEST_CASE("M4 exit APK renders and responds to key and pointer input") {
 
     session->PushInput({ogplay::runtime::AndroidBoundaryInputType::key,
                         29, 0, 0, true});
-    const auto keyed = WaitFrame(*session, frame->sequence);
+    const auto keyed = WaitChangedFrame(*session, *frame);
     REQUIRE(keyed.has_value());
     CHECK(keyed->rgba8 != frame->rgba8);
     CHECK(keyed->rgba8[palette_pixel] == doctest::Approx(240).epsilon(0.04));
@@ -207,7 +215,7 @@ TEST_CASE("M4 exit APK renders and responds to key and pointer input") {
 
     session->PushInput({ogplay::runtime::AndroidBoundaryInputType::pointer_button,
                         0, 48.0F, 9.0F, true});
-    const auto pointed = WaitFrame(*session, keyed->sequence);
+    const auto pointed = WaitChangedFrame(*session, *keyed);
     REQUIRE(pointed.has_value());
     CHECK(pointed->rgba8 != keyed->rgba8);
     const auto marker_pixel = (9U * 64U + 48U) * 4U;

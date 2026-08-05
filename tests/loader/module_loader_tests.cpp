@@ -128,3 +128,51 @@ TEST_CASE("ELF module loader restores the prior address space on failure") {
                         ogplay::memory::AccessType::read),
                     ogplay::memory::MemoryFault);
 }
+
+TEST_CASE("ELF module loader accepts appended absolute HLE boundary modules") {
+    const auto bytes = ModuleElf();
+    const ogplay::loader::Elf32ModuleInput input{
+        "sample.so", bytes, ogplay::memory::GuestAddress{0x20000U}};
+    ogplay::memory::AddressSpace memory;
+    const auto loaded = ogplay::loader::LoadElf32ModuleNamespace(
+        "sample.so", std::span{&input, 1}, memory,
+        [](const std::string_view,
+           const std::span<const ogplay::loader::Elf32LinkModule> guest) {
+            auto root = guest.front();
+            ogplay::loader::Elf32LinkModule boundary;
+            boundary.name = "libhost.so";
+            boundary.dynamic.soname = boundary.name;
+            boundary.symbols.symbols.push_back(
+                {"", ogplay::memory::GuestAddress{0}, 0, 0, 0, 0, 0});
+            boundary.symbols.symbols.push_back(
+                {"host_call", ogplay::memory::GuestAddress{0x70001001U},
+                 2, 1, 2, 0, 0xfff1});
+            return ogplay::loader::Elf32LinkNamespace{
+                {std::move(root), std::move(boundary)}, {1, 0}, {0, 1}};
+        });
+    CHECK(loaded.modules.size() == 1);
+    CHECK(loaded.link_namespace.modules.size() == 2);
+    CHECK(ogplay::loader::LookupElf32Symbol(
+              loaded.link_namespace, "host_call").address ==
+          ogplay::memory::GuestAddress{0x70001001U});
+    std::vector<std::byte> instruction(4);
+    memory.Fetch(ogplay::memory::GuestAddress{0x30200U}, instruction);
+    CHECK(instruction[0] == std::byte{0x1e});
+}
+
+TEST_CASE("ELF module loader rejects builders that replace guest identity") {
+    const auto bytes = ModuleElf();
+    const ogplay::loader::Elf32ModuleInput input{
+        "sample.so", bytes, ogplay::memory::GuestAddress{0x20000U}};
+    ogplay::memory::AddressSpace memory;
+    CHECK_THROWS_AS(static_cast<void>(
+        ogplay::loader::LoadElf32ModuleNamespace(
+            "sample.so", std::span{&input, 1}, memory,
+            [](const std::string_view,
+               const std::span<const ogplay::loader::Elf32LinkModule> guest) {
+                auto changed = guest.front();
+                changed.name = "replacement.so";
+                return ogplay::loader::Elf32LinkNamespace{
+                    {std::move(changed)}, {0}, {0}};
+            })), ogplay::loader::LinkError);
+}

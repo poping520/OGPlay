@@ -1,12 +1,12 @@
 # 当前状态
 
-更新：2026-08-05 · M4 ANGLE 最小帧执行完成
+更新：2026-08-05 · M4 ELF HLE 边界装载完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3 均已完成；M4 图形栈正在开发。
-- `WU-0166` 已在真实 ANGLE pbuffer 上闭合 viewport/clear/RGBA8 readback；本轮继续完成
-  minimal NativeActivity APK 的 guest 边界、窗口呈现和启动测试，下一编号为 `WU-0167`。
+- `WU-0167` 已让统一 ELF 装载事务接受只参与符号查找的绝对 HLE 边界模块；本轮继续
+  minimal NativeActivity APK 的 trap、窗口呈现和启动测试，下一编号为 `WU-0168`。
 - 本机开发只使用 Windows/MSVC 预设；Linux/macOS 使用持久目录增量验证，并在里程碑
   出口执行三平台总体验收。
 
@@ -71,11 +71,14 @@
   启用 ANGLE 的 Windows/MSVC 全量 CTest 263/263 通过。
 - [WU-0166] 真实 ANGLE D3D11 pbuffer 执行 GLES2 viewport/clear，逐像素 readback 验证
   确定颜色帧；无 ANGLE、负尺寸和原生 GLES 错误均明确失败；全量 CTest 264/264 通过。
+- [WU-0167] ELF loader 可注入 Bionic HLE 命名空间，追加绝对边界模块参与符号解析但
+  不被映射/重定位；builder 删除、替换或重排 guest 模块会明确失败；全量 CTest
+  266/266 通过。
 
 ## 下一步（按优先级）
 
-1. `WU-0167` 让统一 ELF loader 接受 Bionic HLE 边界命名空间并保留事务装载。
-2. 随后接入 guest HLE trap、SDL 帧呈现和 NativeActivity APK 启动测试。
+1. `WU-0168` 让 root/clone 统一执行循环消费显式 guest HLE supervisor trap。
+2. 随后补 pipe、SDL 帧呈现和 NativeActivity APK 启动测试。
 
 ## 阻塞
 

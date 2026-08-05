@@ -34,7 +34,8 @@
   共享依赖引用，返回需执行的依赖优先初始化与根优先反初始化模块顺序；`Address` 与
   同一活跃命名空间实现 `dladdr` 的模块、load base 和最近 dynsym 反查。
 - `LoadElf32ModuleNamespace`：一次完成多模块事实解析、依赖排序、映射、版本化符号解析与
-  ARM REL 应用；任一阶段失败都恢复调用前完整 guest 地址空间。
+  ARM REL 应用；可注入 builder 追加只参与查找的绝对 HLE 边界模块，且不得删除、替换
+  或重排 guest 身份；任一阶段失败都恢复调用前完整 guest 地址空间。
 - `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，
   对重复、元数据残缺、非对齐及非 file-backed 范围明确失败。
 - `ReadElf32TlsInfo`：解析唯一 `PT_TLS` 模板，保留初始化字节、BSS 大小与对齐，

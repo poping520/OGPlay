@@ -1,11 +1,14 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <optional>
 #include <stdexcept>
+#include <string>
 
 #include "ogplay/core/frame_compare.h"
 #include "ogplay/core/software_surface.h"
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/hal/host_environment.h"
 #include "m4_exit_environment.h"
 
 namespace {
@@ -125,6 +128,82 @@ TEST_CASE("ANGLE SwiftShader golden follows the verified SDK capability") {
 #else
     CHECK_THROWS_AS(
         ogplay::gles::AngleFrame::CreatePbuffer(backend, 8, 8),
+        ogplay::gles::EglLifecycleError);
+#endif
+}
+
+TEST_CASE("ANGLE SwiftShader initialization preserves backend isolation") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) {
+        CHECK_FALSE_MESSAGE(ogplay::tests::M4ExitVerificationRequired(),
+                            "strict M4 exit requires native ANGLE EGL");
+        return;
+    }
+#if OGPLAY_ANGLE_HAS_SWIFTSHADER
+    const auto initial_driver_files =
+        ogplay::hal::HostEnvironmentValue("VK_DRIVER_FILES");
+    const auto initial_icd_filenames =
+        ogplay::hal::HostEnvironmentValue("VK_ICD_FILENAMES");
+    const std::array conflicting_environment{
+        ogplay::hal::HostEnvironmentOverride{
+            "VK_DRIVER_FILES",
+            std::string("ogplay-invalid-driver-files.json")},
+        ogplay::hal::HostEnvironmentOverride{
+            "VK_ICD_FILENAMES",
+            std::string("ogplay-invalid-icd-filenames.json")},
+    };
+    {
+        ogplay::hal::ScopedHostEnvironment conflicting_scope(
+            conflicting_environment);
+        {
+            auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+                {ogplay::gles::AngleRenderer::vulkan,
+                 ogplay::gles::AngleDevice::swiftshader},
+                4, 4);
+            CHECK(frame.GetString(0x1F01U).find("SwiftShader") !=
+                  std::string::npos);
+        }
+        CHECK(ogplay::hal::HostEnvironmentValue("VK_DRIVER_FILES") ==
+              "ogplay-invalid-driver-files.json");
+        CHECK(ogplay::hal::HostEnvironmentValue("VK_ICD_FILENAMES") ==
+              "ogplay-invalid-icd-filenames.json");
+    }
+    const std::array clean_environment{
+        ogplay::hal::HostEnvironmentOverride{"VK_DRIVER_FILES", std::nullopt},
+        ogplay::hal::HostEnvironmentOverride{"VK_ICD_FILENAMES", std::nullopt},
+    };
+    {
+        ogplay::hal::ScopedHostEnvironment clean_scope(clean_environment);
+        {
+            auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+                {ogplay::gles::AngleRenderer::vulkan,
+                 ogplay::gles::AngleDevice::swiftshader},
+                4, 4);
+            CHECK(frame.GetString(0x1F01U).find("SwiftShader") !=
+                  std::string::npos);
+            CHECK_FALSE(
+                ogplay::hal::HostEnvironmentValue("VK_DRIVER_FILES")
+                    .has_value());
+            CHECK_FALSE(
+                ogplay::hal::HostEnvironmentValue("VK_ICD_FILENAMES")
+                    .has_value());
+        }
+        {
+            auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+                kNativeHardwareBackend, 4, 4);
+            CHECK(frame.GetString(0x1F01U).find("SwiftShader") ==
+                  std::string::npos);
+        }
+    }
+    CHECK(ogplay::hal::HostEnvironmentValue("VK_DRIVER_FILES") ==
+          initial_driver_files);
+    CHECK(ogplay::hal::HostEnvironmentValue("VK_ICD_FILENAMES") ==
+          initial_icd_filenames);
+#else
+    CHECK_THROWS_AS(
+        ogplay::gles::AngleFrame::CreatePbuffer(
+            {ogplay::gles::AngleRenderer::vulkan,
+             ogplay::gles::AngleDevice::swiftshader},
+            4, 4),
         ogplay::gles::EglLifecycleError);
 #endif
 }

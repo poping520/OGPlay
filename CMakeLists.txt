@@ -23,6 +23,15 @@ include(cmake/CompilerWarnings.cmake)
 include(cmake/ThirdParty.cmake)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+function(ogplay_stage_angle_runtime target)
+    if(OGPLAY_ENABLE_ANGLE AND EXISTS "${_angle_sdk}/bin")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${_angle_sdk}/bin" $<TARGET_FILE_DIR:${target}>
+        )
+    endif()
+endfunction()
+
 add_library(ogplay_core
     src/core/capability_ledger.cpp
     src/core/frame_compare.cpp
@@ -45,11 +54,17 @@ add_library(ogplay_hal
     src/hal/thread.cpp
 )
 if(WIN32)
-    target_sources(ogplay_hal PRIVATE src/hal/windows/virtual_memory.cpp)
+    target_sources(ogplay_hal PRIVATE
+        src/hal/windows/host_environment.cpp
+        src/hal/windows/virtual_memory.cpp)
 elseif(APPLE)
-    target_sources(ogplay_hal PRIVATE src/hal/macos/virtual_memory.cpp)
+    target_sources(ogplay_hal PRIVATE
+        src/hal/macos/host_environment.cpp
+        src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
-    target_sources(ogplay_hal PRIVATE src/hal/linux/virtual_memory.cpp)
+    target_sources(ogplay_hal PRIVATE
+        src/hal/linux/host_environment.cpp
+        src/hal/linux/virtual_memory.cpp)
 else()
     message(FATAL_ERROR "OGPlay has no virtual memory HAL for this host platform")
 endif()
@@ -154,12 +169,16 @@ target_include_directories(ogplay_gles PUBLIC
     PRIVATE "${OGPLAY_GLES_GENERATED_DIR}"
 )
 ogplay_set_project_warnings(ogplay_gles)
-target_link_libraries(ogplay_gles PRIVATE OGPlay::Memory)
+target_link_libraries(ogplay_gles PRIVATE OGPlay::Hal OGPlay::Memory)
 if(OGPLAY_ENABLE_ANGLE)
-    target_compile_definitions(ogplay_gles PRIVATE OGPLAY_HAS_ANGLE=1)
+    target_compile_definitions(ogplay_gles PRIVATE
+        OGPLAY_HAS_ANGLE=1
+        OGPLAY_ANGLE_HAS_SWIFTSHADER=$<BOOL:${_angle_has_swiftshader}>)
     target_link_libraries(ogplay_gles PRIVATE ANGLE::EGL ANGLE::GLESv2)
 else()
-    target_compile_definitions(ogplay_gles PRIVATE OGPLAY_HAS_ANGLE=0)
+    target_compile_definitions(ogplay_gles PRIVATE
+        OGPLAY_HAS_ANGLE=0
+        OGPLAY_ANGLE_HAS_SWIFTSHADER=0)
 endif()
 
 add_library(ogplay_runtime
@@ -244,6 +263,7 @@ target_compile_definitions(ogplay PRIVATE
     OGPLAY_NATIVE_ANGLE_RENDERER="${OGPLAY_NATIVE_ANGLE_RENDERER}"
 )
 ogplay_set_project_warnings(ogplay)
+ogplay_stage_angle_runtime(ogplay)
 
 install(TARGETS ogplay ogplay_core ogplay_hal ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_session
     EXPORT OGPlayTargets
@@ -272,6 +292,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/gles/guest_transfer_tests.cpp
         tests/gles/supersample_tests.cpp
         tests/hal/clock_tests.cpp
+        tests/hal/host_environment_tests.cpp
         tests/hal/service_contract_tests.cpp
         tests/hal/thread_tests.cpp
         tests/hal/window_input_tests.cpp
@@ -365,12 +386,7 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     ogplay_set_project_warnings(ogplay_tests)
 
-    if(OGPLAY_ENABLE_ANGLE AND EXISTS "${_angle_sdk}/bin")
-        add_custom_command(TARGET ogplay_tests POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${_angle_sdk}/bin" $<TARGET_FILE_DIR:ogplay_tests>
-        )
-    endif()
+    ogplay_stage_angle_runtime(ogplay_tests)
 
     include(${OGPLAY_DOCTEST_CMAKE_MODULE})
     doctest_discover_tests(ogplay_tests

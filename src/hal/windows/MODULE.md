@@ -9,6 +9,8 @@
 - 可依赖公开 HAL 接口、SDL3 及 Windows SDK。
 - 不得被除 HAL 装配点之外的上层模块直接包含。
 - 回调上层必须经过显式 HAL 接口，不包含 guest、游戏或 Android 语义。
+- `HostExecutableDirectory` 与宿主环境覆盖使用 Win32 模块路径及进程环境 API，
+  不把 Windows SDK 类型泄漏到公共 HAL。
 
 ## 测试
 

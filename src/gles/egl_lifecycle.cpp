@@ -1,10 +1,15 @@
 #include "ogplay/gles/egl_lifecycle.h"
 
+#include <array>
+#include <filesystem>
 #include <iomanip>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <utility>
+
+#include "ogplay/hal/host_environment.h"
 
 #if OGPLAY_HAS_ANGLE
 #define EGL_EGLEXT_PROTOTYPES 1
@@ -86,12 +91,65 @@ template <typename Target, typename Source>
 class NativeAngleEglApi final : public EglApi {
 public:
     EglHandle GetPlatformDisplay(const AngleBackend backend) override {
+        if (driver_environment_.has_value()) {
+            throw std::logic_error(
+                "previous ANGLE display initialization is incomplete");
+        }
+#if OGPLAY_ANGLE_HAS_SWIFTSHADER
+        if (backend.device == AngleDevice::swiftshader) {
+            const auto icd = hal::HostExecutableDirectory() /
+                             "vk_swiftshader_icd.json";
+            if (!std::filesystem::is_regular_file(icd)) {
+                throw std::runtime_error(
+                    "ANGLE SwiftShader ICD is missing beside the executable");
+            }
+            const auto path = std::filesystem::absolute(icd).string();
+            const std::array overrides{
+                hal::HostEnvironmentOverride{
+                    "VK_DRIVER_FILES", std::optional<std::string>(path)},
+                hal::HostEnvironmentOverride{
+                    "VK_ICD_FILENAMES", std::optional<std::string>(path)},
+            };
+            driver_environment_.emplace(overrides);
+        }
+#endif
+        auto device = backend.device;
+#if OGPLAY_ANGLE_HAS_SWIFTSHADER
+        if (backend.device == AngleDevice::swiftshader) {
+            device = AngleDevice::hardware;
+        }
+#endif
+        // Vulkan pbuffers never need a window system surface. Request ANGLE's
+        // headless Vulkan display mode so initialization does not depend on
+        // xcb/wayland WSI being selected for the host.
+        if (backend.renderer == AngleRenderer::vulkan) {
+            const EGLint attributes[]{
+                EGL_PLATFORM_ANGLE_TYPE_ANGLE,
+                RendererAttribute(backend.renderer),
+                EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE,
+                DeviceAttribute(device),
+                EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE,
+                EGL_PLATFORM_VULKAN_DISPLAY_MODE_HEADLESS_ANGLE, EGL_NONE};
+            const auto display = ReinterpretHandle<EglHandle>(
+                eglGetPlatformDisplayEXT(
+                    EGL_PLATFORM_ANGLE_ANGLE, nullptr, attributes));
+            if (display == 0) {
+                driver_environment_.reset();
+            }
+            return display;
+        }
         const EGLint attributes[]{
             EGL_PLATFORM_ANGLE_TYPE_ANGLE, RendererAttribute(backend.renderer),
             EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE,
-            DeviceAttribute(backend.device), EGL_NONE};
-        return ReinterpretHandle<EglHandle>(eglGetPlatformDisplayEXT(
-            EGL_PLATFORM_ANGLE_ANGLE, nullptr, attributes));
+            DeviceAttribute(device),
+            EGL_NONE};
+        const auto display = ReinterpretHandle<EglHandle>(
+            eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, nullptr,
+                                     attributes));
+        if (display == 0) {
+            driver_environment_.reset();
+        }
+        return display;
     }
 
     bool Initialize(const EglHandle display, int& major, int& minor) override {
@@ -99,6 +157,7 @@ public:
         EGLint native_minor{};
         const auto result = eglInitialize(ReinterpretHandle<EGLDisplay>(display),
                                           &native_major, &native_minor);
+        driver_environment_.reset();
         major = native_major;
         minor = native_minor;
         return result == EGL_TRUE;
@@ -171,6 +230,9 @@ public:
     std::uint32_t GetError() override {
         return static_cast<std::uint32_t>(eglGetError());
     }
+
+private:
+    std::optional<hal::ScopedHostEnvironment> driver_environment_;
 };
 
 #endif
@@ -197,6 +259,7 @@ EglLifecycle EglLifecycle::CreatePbuffer(EglApi& api,
                                          const AngleBackend backend,
                                          const std::uint32_t width,
                                          const std::uint32_t height) {
+    static_cast<void>(AngleBackendName(backend));
     constexpr auto kMaxDimension =
         static_cast<std::uint32_t>((std::numeric_limits<int>::max)());
     if (width == 0 || height == 0 || width > kMaxDimension ||

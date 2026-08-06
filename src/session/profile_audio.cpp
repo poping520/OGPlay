@@ -25,13 +25,12 @@ struct ResourceKey final {
 
 }  // namespace
 
-bool ApplyProfileAudio(
+std::optional<ProfileAudioPlan> ResolveProfileAudio(
     const TitleProfile& profile,
-    const std::span<const ProfileAudioResource> resources,
-    audio::MusicPlayer& player) {
+    const std::span<const ProfileAudioResource> resources) {
     if (!profile.audio.has_value() ||
         !profile.audio->cover_music.has_value()) {
-        return false;
+        return std::nullopt;
     }
 
     std::map<ResourceKey, const ProfileAudioResource*> indexed;
@@ -58,7 +57,16 @@ bool ApplyProfileAudio(
         throw ProfileAudioError("Profile cover music resource is missing: " +
                                 ResourceName(music.source, music.path));
     }
-    player.Play({found->second->contents, music.loop});
+    return ProfileAudioPlan{found->second->contents, music.loop};
+}
+
+bool ApplyProfileAudio(
+    const TitleProfile& profile,
+    const std::span<const ProfileAudioResource> resources,
+    audio::MusicPlayer& player) {
+    const auto plan = ResolveProfileAudio(profile, resources);
+    if (!plan.has_value()) return false;
+    player.Play({plan->encoded, plan->loop});
     return true;
 }
 

@@ -65,6 +65,11 @@ status = "complete"
 test = "tests/session/profile_audio_tests.cpp"
 note = "M5 WU-0210 以 source + path 精确解析 Profile 封面音乐编码资源并保留 loop 事实；缺失、重复、空资源和播放器失败均明确暴露，不声明真实解码或设备播放能力"
 
+[session.profile_plan]
+status = "complete"
+test = "tests/session/profile_session_plan_tests.cpp"
+note = "M5 WU-0211 事务式汇总 lifecycle、VFS、Java、input、audio 五条装配，返回唯一拥有运行期状态和预解析资源的 ProfileSessionPlan；任一子装配失败均不发布部分计划"
+
 [agent.run]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

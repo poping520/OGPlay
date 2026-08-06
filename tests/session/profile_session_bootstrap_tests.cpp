@@ -17,7 +17,7 @@ constexpr std::string_view kHashB =
     profile.schema = 1;
     profile.identity = {
         "org.example.exact", "exact", {7}, {std::string(kHashA)},
-        "armeabi-v7a"};
+        ogplay::session::ProfileAbi::armeabi_v7a};
     profile.runtime.lifecycle =
         ogplay::session::ProfileLifecycle::custom_jni;
     profile.input = ogplay::session::ProfileInput{"exact_input"};

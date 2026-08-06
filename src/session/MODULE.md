@@ -42,6 +42,8 @@
 - 生命周期只使用 native_activity、gl_surface_view、custom_jni 通用模板。
 - 游戏身份信息只有 Title Profile 一个来源；无 profile 也使用通用默认值。
 - Profile 文件为 UTF-8 纯数据且不超过 200 行；未知字段、路径逃逸、非法或歧义身份失败。
+- identity ABI 只接受强类型 `armeabi` 与 `armeabi-v7a`；不得把非 ARM ABI 或任意字符串
+  带入目录匹配和后续启动选择。
 - data/audio/java/quirks/input 只保存声明，不直接调用相邻模块或执行脚本。
 - VFS 输入不得靠顺序或来源猜测；guest 根与 source 必须同时命中声明，额外输入明确失败。
 - Java implementation id 必须命中真实 handler；类、签名或 handler 无效时不得发布

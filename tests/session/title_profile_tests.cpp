@@ -18,7 +18,8 @@ constexpr std::string_view kHashB =
 
 [[nodiscard]] std::string BaseProfile(
     const std::string_view package = "org.example.legacy",
-    const std::string_view hash = kHashA) {
+    const std::string_view hash = kHashA,
+    const std::string_view abi = "armeabi-v7a") {
     return "schema = 1\n"
            "\n"
            "[identity]\n"
@@ -32,7 +33,9 @@ constexpr std::string_view kHashB =
            std::string(hash) +
            "\", # exact native library identity\n"
            "]\n"
-           "abi = \"armeabi-v7a\"\n"
+           "abi = \"" +
+           std::string(abi) +
+           "\"\n"
            "\n"
            "[runtime]\n"
            "api_level = 19\n"
@@ -115,7 +118,13 @@ TEST_CASE("Title Profile C++ loader decodes strict identity and runtime") {
     CHECK(profile.identity.name == "Generic 旧版 Fixture");
     CHECK(profile.identity.version_codes == std::vector<std::uint32_t>{1, 2});
     CHECK(profile.identity.so_sha256 == std::vector<std::string>{std::string(kHashA)});
-    CHECK(profile.identity.abi == "armeabi-v7a");
+    CHECK(profile.identity.abi == ogplay::session::ProfileAbi::armeabi_v7a);
+    CHECK(ogplay::session::ToString(profile.identity.abi) == "armeabi-v7a");
+    const auto legacy = ogplay::session::LoadTitleProfileText(
+        BaseProfile("org.example.legacy", kHashA, "armeabi"),
+        "org.example.legacy");
+    CHECK(legacy.identity.abi == ogplay::session::ProfileAbi::armeabi);
+    CHECK(ogplay::session::ToString(legacy.identity.abi) == "armeabi");
     CHECK(profile.runtime.api_level == 19);
     CHECK(profile.runtime.lifecycle == ogplay::session::ProfileLifecycle::gl_surface_view);
     CHECK(profile.runtime.surface.width == 1280);
@@ -148,6 +157,11 @@ TEST_CASE("Title Profile C++ loader rejects schema and TOML violations") {
     CHECK_THROWS_AS(static_cast<void>(ogplay::session::LoadTitleProfileText(
                         bad_hash, "org.example.legacy")),
                     ogplay::session::TitleProfileError);
+
+    auto bad_abi = BaseProfile("org.example.legacy", kHashA, "x86");
+    CHECK_THROWS_WITH(static_cast<void>(ogplay::session::LoadTitleProfileText(
+                          bad_abi, "org.example.legacy")),
+                      "identity.abi must be armeabi or armeabi-v7a");
 
     auto bad_api = BaseProfile();
     bad_api.replace(bad_api.find("api_level = 19"),
@@ -317,6 +331,11 @@ TEST_CASE("Title Profile catalog matches only the complete exact fingerprint") {
     CHECK_THROWS_AS(
         static_cast<void>(
             ogplay::session::TitleProfileCatalog({first, first})),
+        ogplay::session::TitleProfileError);
+    auto invalid_abi = first;
+    invalid_abi.identity.abi = static_cast<ogplay::session::ProfileAbi>(0xffU);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::session::TitleProfileCatalog({invalid_abi})),
         ogplay::session::TitleProfileError);
     first.identity.version_codes.clear();
     CHECK_THROWS_AS(

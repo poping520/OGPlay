@@ -27,6 +27,7 @@ IMPL_PATTERN = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\Z")
 ID_PATTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
 SOURCES = {"apk", "obb", "external"}
 LIFECYCLES = {"native_activity", "gl_surface_view", "custom_jni"}
+ABIS = {"armeabi", "armeabi-v7a"}
 
 
 class ProfileError(ValueError):
@@ -125,8 +126,9 @@ def _validate_identity(value: Any, expected_package: str) -> None:
                 f"identity.so_sha256[{index}] must be 64 lowercase hex characters"
             )
     _unique(hashes, "identity.so_sha256")
-    if table["abi"] != "armeabi-v7a":
-        raise ProfileError("identity.abi must be armeabi-v7a")
+    abi = _string(table["abi"], "identity.abi")
+    if abi not in ABIS:
+        raise ProfileError("identity.abi must be armeabi or armeabi-v7a")
 
 
 def _validate_runtime(value: Any) -> None:
@@ -301,6 +303,10 @@ def validate_schema(path: Path) -> dict[str, Any]:
         raise ProfileError("profile schema required fields do not match the validator")
     if schema["properties"]["schema"].get("const") != 1:
         raise ProfileError("profile schema version must be 1")
+    schema_abis = schema.get("$defs", {}).get("identity", {}).get(
+        "properties", {}).get("abi", {}).get("enum", [])
+    if set(schema_abis) != ABIS:
+        raise ProfileError("profile schema ABI values do not match the validator")
     return schema
 
 
@@ -381,6 +387,10 @@ def self_test(schema_path: Path) -> int:
         valid.write_text(_valid_profile(), encoding="utf-8", newline="\n")
         document = load_profile(valid)
         assert document["runtime"]["surface"]["width"] == 1280
+        valid.write_text(_valid_profile().replace(
+            'abi = "armeabi-v7a"', 'abi = "armeabi"'
+        ), encoding="utf-8", newline="\n")
+        assert load_profile(valid)["identity"]["abi"] == "armeabi"
 
         cases = {
             "filename mismatch": _valid_profile("org.example.other"),
@@ -389,6 +399,9 @@ def self_test(schema_path: Path) -> int:
             ),
             "bad lifecycle": _valid_profile().replace(
                 'lifecycle = "gl_surface_view"', 'lifecycle = "per_game_loop"'
+            ),
+            "unsupported ABI": _valid_profile().replace(
+                'abi = "armeabi-v7a"', 'abi = "x86"'
             ),
             "duplicate hash": _valid_profile().replace(
                 f'"{"1" * 64}"', f'"{"0" * 64}"'

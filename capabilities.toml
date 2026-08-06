@@ -414,3 +414,8 @@ note = "M5 WU-0222 从根 ELF 的 DT_NEEDED 递归拥有 profile 声明的真实
 status = "complete"
 test = "tests/session/profile_apk_tests.cpp"
 note = "M5 WU-0223 串联 APK 精确 Profile 与对应 API 的 Bionic guest 闭包；CLI 由 Profile 获取根库、API、生命周期和 surface，并可在执行前输出受检 preflight"
+
+[profiles.first_exact_legacy_title]
+status = "complete"
+test = "tools/validate_title_profiles.py --schema data/profiles/title-profile-v1.schema.json --profiles data/profiles"
+note = "M5 WU-0224 以 15 行纯数据提交首个精确 legacy title Profile：APK 身份/hash/armeabi 与通用 API 19、gl_surface_view、800x480 声明均经真实目标预检"

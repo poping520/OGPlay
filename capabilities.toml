@@ -404,3 +404,8 @@ note = "M5 WU-0220 的 Title Profile v1、Python 校验器与 C++ loader 以同�
 status = "complete"
 test = "tests/session/profile_apk_tests.cpp"
 note = "M5 WU-0221 组合 binary Manifest 与全部 ARM native library 的 package/version/hash/ABI 事实，只发布唯一精确 Profile 候选且不猜 main library"
+
+[runtime.bionic_guest_dependency_closure]
+status = "complete"
+test = "tests/runtime/bionic_module_set_tests.cpp"
+note = "M5 WU-0222 从根 ELF 的 DT_NEEDED 递归拥有 profile 声明的真实 guest 库，排除 HLE boundary 与未使用来源，并受检分配不碰 thunk 区的 load bias"

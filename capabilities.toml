@@ -70,6 +70,11 @@ status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp"
 note = "M5 WU-0211 事务式汇总 lifecycle、VFS、Java、input、audio 五条装配，返回唯一拥有运行期状态和预解析资源的 ProfileSessionPlan；任一子装配失败均不发布部分计划"
 
+[session.profile_bootstrap]
+status = "complete"
+test = "tests/session/profile_session_bootstrap_tests.cpp"
+note = "M5 WU-0212 以单一 bootstrap 串联三重身份精确匹配与 ProfileSessionPlan；零匹配使用显式 generic default，非法身份或已选择路径装配失败绝不静默回退"
+
 [agent.run]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

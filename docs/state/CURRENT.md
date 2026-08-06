@@ -5,8 +5,8 @@
 ## 当前阶段
 
 - M0、M1、M2、M3、M4 已完成并验收。
-- M5 去硬编码正在推进；Title Profile 加载/匹配及 lifecycle、VFS、Java、input、audio
-  通用装配已闭合，并已汇总为单一 ProfileSessionPlan；当前仍不提交具体游戏 profile。
+- M5 去硬编码正在推进；Title Profile 加载/精确匹配、五类通用装配、单一
+  ProfileSessionPlan 及 exact/default bootstrap 均已闭合；当前仍不提交具体游戏 profile。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
@@ -25,6 +25,9 @@
 
 ## 最近完成
 
+- [WU-0212] 单一 bootstrap 先执行三重身份精确匹配，再把 exact 或显式 generic default
+  送入同一 ProfileSessionPlan；非法身份和已选路径装配失败绝不回退。macOS/arm64
+  warnings-as-errors 构建及全量 CTest 341/341 通过。
 - [WU-0211] ProfileSessionPlan 事务式汇总 lifecycle、VFS、Java、input、audio，唯一拥有
   VFS/JNI 状态、输入目录和预解析音频；任一子装配失败均不发布部分计划。macOS/arm64
   warnings-as-errors 构建及全量 CTest 337/337 通过。
@@ -67,9 +70,8 @@
 
 ## 下一步（按优先级）
 
-1. 把精确 Profile 匹配与 ProfileSessionPlan 装配接入单一 session bootstrap；无匹配时
-   保留显式通用默认路径。
-2. 盘点 M5 出口所需的首批 profile 与通用 handler，禁止向 `src/` 增加游戏特判。
+1. 建立首批 profile 迁移清单，把遗留项逐条归类为通用缺陷、纯数据、真 quirk 或删除。
+2. 按清单补齐通用 handler 与题库，再提交具体 profile；禁止向 `src/` 增加游戏特判。
 3. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
    能力账本为准。
 

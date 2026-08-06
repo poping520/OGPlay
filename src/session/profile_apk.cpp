@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace ogplay::session {
 namespace {
@@ -53,6 +54,31 @@ std::optional<ApkProfileMatch> MatchApkTitleProfile(
     const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
     const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
     return MatchApkTitleProfile(manifest, libraries, profiles);
+}
+
+std::optional<ApkProfileLaunch> PrepareApkProfileLaunch(
+    const loader::AndroidManifestFacts& manifest,
+    const std::span<const loader::ApkNativeLibrary> libraries,
+    const TitleProfileCatalog& profiles,
+    const std::span<const runtime::BionicModuleSource> system_libraries) {
+    auto match = MatchApkTitleProfile(manifest, libraries, profiles);
+    if (!match.has_value()) return std::nullopt;
+    if (match->profile == nullptr) {
+        throw TitleProfileError("matched APK Profile has no profile");
+    }
+    auto modules = runtime::BuildBionicModuleSet(
+        runtime::SelectBionicProfile(match->profile->runtime.api_level),
+        match->library.basename, match->library.image, system_libraries);
+    return ApkProfileLaunch{std::move(*match), std::move(modules)};
+}
+
+std::optional<ApkProfileLaunch> PrepareApkProfileLaunch(
+    const std::span<const std::byte> apk_bytes,
+    const loader::ApkArchive& archive, const TitleProfileCatalog& profiles,
+    const std::span<const runtime::BionicModuleSource> system_libraries) {
+    const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
+    const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
+    return PrepareApkProfileLaunch(manifest, libraries, profiles, system_libraries);
 }
 
 }  // namespace ogplay::session

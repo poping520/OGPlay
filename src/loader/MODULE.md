@@ -13,6 +13,8 @@
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package、versionCode/versionName、
   minSdk/targetSdk 事实，不执行资源解析或猜测身份。
+- `ReadApkArmNativeLibraries`：稳定枚举 `lib/armeabi[-v7a]/*.so`，通过统一条目入口拥有
+  解压后原始字节并计算小写 SHA-256；只返回目录事实，不按 ABI、大小或导出符号选入口。
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度，不执行任何字节码。
@@ -61,6 +63,8 @@
   方法明确失败。
 - binary Manifest 必须是单一完整 XML chunk，根元素、元素嵌套、字符串索引、UTF 编码和
   typed attribute 全部受检；package 与正 versionCode 缺失或非法时不得发布身份事实。
+- native library catalog 只接受 ABI 与 basename 之间恰有一级的 `.so` 路径，空字节失败；
+  catalog 以完整 entry path 稳定排序且不隐含 main library 选择。
 - DEX header 固定为 0x70 字节且只接受 little-endian 035..040；固定表必须 4 字节对齐，
   header 与唯一、有序、非重叠的 map 声明必须一致。
 - DEX Modified UTF-8 和 ULEB128 必须最小且完整编码；type/proto 的每个索引、descriptor、

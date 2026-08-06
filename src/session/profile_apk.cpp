@@ -4,6 +4,8 @@
 #include <string>
 #include <utility>
 
+#include "ogplay/loader/elf.h"
+
 namespace ogplay::session {
 namespace {
 
@@ -69,7 +71,16 @@ std::optional<ApkProfileLaunch> PrepareApkProfileLaunch(
     auto modules = runtime::BuildBionicModuleSet(
         runtime::SelectBionicProfile(match->profile->runtime.api_level),
         match->library.basename, match->library.image, system_libraries);
-    return ApkProfileLaunch{std::move(*match), std::move(modules)};
+    std::vector<ProfileNativeCallTarget> native_calls;
+    if (!match->profile->runtime.native_calls.empty()) {
+        const auto& root = modules.Modules().front();
+        const auto image = loader::ParseElf32Arm(root.image);
+        const auto symbols = loader::ReadElf32SymbolTable(root.image, image);
+        native_calls = ResolveProfileNativeCalls(
+            match->profile->runtime.native_calls, symbols, root.load_bias);
+    }
+    return ApkProfileLaunch{std::move(*match), std::move(modules),
+                            std::move(native_calls)};
 }
 
 std::optional<ApkProfileLaunch> PrepareApkProfileLaunch(

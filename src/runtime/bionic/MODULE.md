@@ -2,8 +2,8 @@
 
 ## 职责
 
-选择 API 19/22/23 Bionic profile，装载和自检真实 guest libc/libdl，建立 Bionic TLS，并只为
-确有生产 handler 的 libc 热点提供宿主边界。
+选择 API 19/22/23 Bionic profile，规划并装载真实 guest 系统库闭包，自检 libc/libdl，建立
+Bionic TLS，并只为确有生产 handler 的 libc 热点提供宿主边界。
 
 ## 依赖
 
@@ -15,6 +15,10 @@ integration。线程和 syscall 只通过上层装配接入。
 - 普通符号默认执行真实 guest Bionic，选择性拦截必须有显式声明和真实 handler。
 - TLS slot、自指针、thread info 与 API profile 必须精确。
 - profile 只接受 Android API 19、22、23。
+- `BuildBionicModuleSet` 只从 ELF `DT_NEEDED` 递归选择 profile 声明的真实 guest 库；HLE
+  边界不作为 ELF 输入，未知、缺失、重复来源及 SONAME 矛盾明确失败。
+- module set 拥有全部字节，并以 64 KiB 间隔自动分配页对齐 load bias；任何映射不得进入
+  固定 HLE thunk 地址区。
 
 ## 测试
 

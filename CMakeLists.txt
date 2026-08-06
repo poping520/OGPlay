@@ -224,6 +224,7 @@ endif()
 
 add_library(ogplay_runtime
     src/runtime/syscall/arm_kernel_helpers.cpp
+    src/runtime/bionic/bionic_module_set.cpp
     src/runtime/bionic/bionic_profile.cpp
     src/runtime/bionic/bionic_selfcheck.cpp
     src/runtime/bionic/bionic_tls.cpp
@@ -364,6 +365,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/syscall_bridge_tests.cpp
         tests/runtime/syscall_process_tests.cpp
         tests/runtime/syscall_signal_tests.cpp
+        tests/runtime/bionic_module_set_tests.cpp
         tests/runtime/bionic_profile_tests.cpp
         tests/runtime/bionic_selfcheck_tests.cpp
         tests/runtime/bionic_tls_tests.cpp

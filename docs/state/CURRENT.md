@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0222] Bionic module set 从根 ELF 的 `DT_NEEDED` 递归拥有真实 guest 系统库闭包，
+  排除 HLE boundary 与未使用来源；未知、缺失及 SONAME 矛盾明确失败，load bias 稳定分配
+  且不碰 thunk 区。macOS/arm64 warnings-as-errors 构建及全量 CTest 357/357 通过。
 - [WU-0221] APK Profile 入口组合 Manifest package/version 与全部 ARM library hash/ABI，
   只发布唯一四项精确候选；无匹配返回空，ABI 矛盾与多库命中明确失败。目标 APK 已由内存
   Profile 精确选中唯一 `armeabi` library。macOS/arm64 warnings-as-errors 构建及全量

@@ -75,6 +75,11 @@ status = "complete"
 test = "tests/session/profile_session_bootstrap_tests.cpp"
 note = "M5 WU-0212 以单一 bootstrap 串联三重身份精确匹配与 ProfileSessionPlan；零匹配使用显式 generic default，非法身份或已选择路径装配失败绝不静默回退"
 
+[session.profile_runtime_catalog]
+status = "complete"
+test = "tests/session/profile_runtime_catalog_tests.cpp"
+note = "M5 WU-0213 以不可变有所有权目录汇总通用 Java handler 与 input mapper；Java implementation id 规范唯一、handler 非空且只支持精确查询"
+
 [agent.run]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

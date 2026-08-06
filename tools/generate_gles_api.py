@@ -36,8 +36,10 @@ def validate_idl(document: Any) -> dict[str, Any]:
         raise IdlError("IDL root must be an object")
     if document.get("schema_version") != 1:
         raise IdlError("schema_version must be 1")
-    if document.get("api") not in {"gles1", "gles2"}:
-        raise IdlError("api must be gles1 or gles2")
+    if document.get("api") not in {"gles1", "gles1_extensions", "gles2"}:
+        raise IdlError("api must be gles1, gles1_extensions or gles2")
+    if document.get("header_scope", "complete") not in {"complete", "subset"}:
+        raise IdlError("header_scope must be complete or subset")
     _require_string(document.get("library"), "library")
     functions = document.get("functions")
     if not isinstance(functions, list) or not functions:
@@ -154,17 +156,21 @@ def generate_header(document: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def verify_header(document: dict[str, Any], header_path: Path) -> None:
-    try:
-        header = header_path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise IdlError(f"cannot read GLES header {header_path}: {error}") from error
+def verify_header(document: dict[str, Any], header_paths: Sequence[Path]) -> None:
+    header = ""
+    for header_path in header_paths:
+        try:
+            header += header_path.read_text(encoding="utf-8")
+        except OSError as error:
+            raise IdlError(f"cannot read GLES header {header_path}: {error}") from error
     declared = set(re.findall(
         r"(?:GL_APICALL|GL_API)\s+.+?\s*GL_APIENTRY\s+"
         r"(gl[A-Za-z0-9_]+)\s*\(", header
     ))
     catalog = {function["name"] for function in document["functions"]}
-    missing, extra = sorted(declared - catalog), sorted(catalog - declared)
+    missing = ([] if document.get("header_scope", "complete") == "subset"
+               else sorted(declared - catalog))
+    extra = sorted(catalog - declared)
     if missing or extra:
         raise IdlError(
             f"IDL/header function mismatch: missing={missing}, extra={extra}"
@@ -172,10 +178,10 @@ def verify_header(document: dict[str, Any], header_path: Path) -> None:
 
 
 def write_or_check(idl_path: Path, output: Path, check: bool,
-                   header_path: Path | None = None) -> int:
+                   header_paths: Sequence[Path] | None = None) -> int:
     document = load_idl(idl_path)
-    if header_path is not None:
-        verify_header(document, header_path)
+    if header_paths:
+        verify_header(document, header_paths)
     expected = generate_header(document)
     if check:
         if not output.is_file() or output.read_text(encoding="utf-8") != expected:
@@ -206,6 +212,14 @@ def self_test() -> int:
         source.write_text(json.dumps(valid), encoding="utf-8")
         write_or_check(source, output, False)
         write_or_check(source, output, True)
+        header_path = root / "gl.h"
+        header_path.write_text(
+            "GL_APICALL void GL_APIENTRY glClear(GLbitfield mask);\n"
+            "GL_APICALL void GL_APIENTRY glExtra(void);\n", encoding="utf-8")
+        subset = json.loads(json.dumps(valid))
+        subset["header_scope"] = "subset"
+        source.write_text(json.dumps(subset), encoding="utf-8")
+        write_or_check(source, output, False, [header_path])
     print("GLES IDL generator self-test passed")
     return 0
 
@@ -216,7 +230,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--idl", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--verify-header", type=Path)
+    parser.add_argument("--verify-header", type=Path, action="append")
     args = parser.parse_args(argv)
     if not args.self_test and (args.idl is None or args.output is None):
         parser.error("--idl and --output are required")

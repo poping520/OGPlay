@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "api": "gles1_extensions",
+  "library": "libGLESv1_CM.so",
+  "header_scope": "subset",
+  "functions": [
+    {
+      "name": "glCurrentPaletteMatrixOES",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "matrixpaletteindex",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glMatrixIndexPointerOES",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "size",
+          "type": "GLint"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "stride",
+          "type": "GLsizei"
+        },
+        {
+          "name": "pointer",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": true,
+          "count": "client_array(size,type,stride)"
+        }
+      ]
+    },
+    {
+      "name": "glWeightPointerOES",
+      "return": "void",
+      "parameters": [
+        {
+          "name": "size",
+          "type": "GLint"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "stride",
+          "type": "GLsizei"
+        },
+        {
+          "name": "pointer",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": true,
+          "count": "client_array(size,type,stride)"
+        }
+      ]
+    }
+  ]
+}

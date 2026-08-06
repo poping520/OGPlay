@@ -32,4 +32,13 @@ ProfileSessionBootstrapResult BootstrapProfileSession(
         audio_resources);
 }
 
+ProfileSessionBootstrapResult BootstrapProfileSession(
+    const TitleProfileCatalog& profiles, const TitleIdentity& identity,
+    const TitleProfile& generic_default, const ProfileAssetBundle& assets,
+    const ProfileRuntimeCatalog& runtime_catalog) {
+    return BootstrapProfileSession(
+        profiles, identity, generic_default, assets.VfsMounts(),
+        runtime_catalog, assets.AudioResources());
+}
+
 }  // namespace ogplay::session

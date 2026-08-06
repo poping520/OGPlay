@@ -53,8 +53,9 @@ constexpr std::string_view kHashB =
 TEST_CASE("session bootstrap assembles only the exact matched Profile") {
     const ogplay::session::TitleProfileCatalog profiles{{ExactProfile()}};
     const auto runtime = RuntimeCatalog();
+    const ogplay::session::ProfileAssetBundle assets{{}, {}};
     auto result = ogplay::session::BootstrapProfileSession(
-        profiles, ExactIdentity(), GenericDefault(), {}, runtime, {});
+        profiles, ExactIdentity(), GenericDefault(), assets, runtime);
 
     CHECK(result.selection ==
           ogplay::session::ProfileSessionSelection::exact_profile);
@@ -67,10 +68,11 @@ TEST_CASE("session bootstrap assembles only the exact matched Profile") {
 TEST_CASE("session bootstrap uses the explicit generic default on no match") {
     const ogplay::session::TitleProfileCatalog profiles{{ExactProfile()}};
     const auto runtime = RuntimeCatalog();
+    const ogplay::session::ProfileAssetBundle assets{{}, {}};
     const ogplay::session::TitleIdentity unknown{
         "org.example.unknown", 7, std::string(kHashB)};
     auto result = ogplay::session::BootstrapProfileSession(
-        profiles, unknown, GenericDefault(), {}, runtime, {});
+        profiles, unknown, GenericDefault(), assets, runtime);
 
     CHECK(result.selection ==
           ogplay::session::ProfileSessionSelection::generic_default);
@@ -82,13 +84,14 @@ TEST_CASE("session bootstrap uses the explicit generic default on no match") {
 
 TEST_CASE("session bootstrap rejects invalid identity before defaulting") {
     const ogplay::session::TitleProfileCatalog profiles{{ExactProfile()}};
-    const auto inputs = InputTemplates();
+    const auto runtime = RuntimeCatalog();
+    const ogplay::session::ProfileAssetBundle assets{{}, {}};
     auto invalid = ExactIdentity();
     invalid.so_sha256 = "short";
 
     CHECK_THROWS_WITH_AS(
         static_cast<void>(ogplay::session::BootstrapProfileSession(
-            profiles, invalid, GenericDefault(), {}, {}, inputs, {})),
+            profiles, invalid, GenericDefault(), assets, runtime)),
         "Title Profile match requires package, positive versionCode and SHA-256",
         ogplay::session::TitleProfileError);
 }
@@ -98,10 +101,11 @@ TEST_CASE("session bootstrap never falls back after selected assembly fails") {
     exact.java_classes = {
         {"fixture/RequiredBridge", {{"start", "()V", "required.start"}}}};
     const ogplay::session::TitleProfileCatalog profiles{{exact}};
-    const auto inputs = InputTemplates();
+    const auto runtime = RuntimeCatalog();
+    const ogplay::session::ProfileAssetBundle assets{{}, {}};
     CHECK_THROWS_WITH_AS(
         static_cast<void>(ogplay::session::BootstrapProfileSession(
-            profiles, ExactIdentity(), GenericDefault(), {}, {}, inputs, {})),
+            profiles, ExactIdentity(), GenericDefault(), assets, runtime)),
         "Profile Java method has no registered implementation: required.start",
         ogplay::session::ProfileJavaError);
 
@@ -113,7 +117,7 @@ TEST_CASE("session bootstrap never falls back after selected assembly fails") {
         "org.example.unknown", 7, std::string(kHashB)};
     CHECK_THROWS_WITH_AS(
         static_cast<void>(ogplay::session::BootstrapProfileSession(
-            profiles, unknown, generic, {}, {}, inputs, {})),
+            profiles, unknown, generic, assets, runtime)),
         "required profile VFS mount is missing: /required",
         ogplay::session::ProfileVfsError);
 }

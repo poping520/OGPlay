@@ -33,6 +33,8 @@
   重复 mount/entry/audio 和空资产。
 - plan/bootstrap 的高层重载直接消费一个 `ProfileRuntimeCatalog`，底层 span API 仅保留为
   组合原语，避免调用方错配 Java 与 input 目录。
+- 最高层 plan/bootstrap 重载同时消费 `ProfileAssetBundle` 与 `ProfileRuntimeCatalog`，
+  调用方不再分别拼接 VFS/audio/Java/input 容器。
 - M1 将相同状态机装配 guest；M5 后续 WU 把 Profile 声明接入通用运行机制。
 
 ## 不变量

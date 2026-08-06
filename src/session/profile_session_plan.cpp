@@ -95,4 +95,12 @@ ProfileSessionPlan AssembleProfileSessionPlan(
         runtime_catalog.InputTemplates(), audio_resources);
 }
 
+ProfileSessionPlan AssembleProfileSessionPlan(
+    const TitleProfile& profile, const ProfileAssetBundle& assets,
+    const ProfileRuntimeCatalog& runtime_catalog) {
+    return AssembleProfileSessionPlan(profile, assets.VfsMounts(),
+                                      runtime_catalog,
+                                      assets.AudioResources());
+}
+
 }  // namespace ogplay::session

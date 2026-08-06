@@ -151,6 +151,25 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         ogplay::gles::GlesDispatchError);
 }
 
+TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
+    BoundaryFixture fixture;
+    CHECK(ogplay::gles::GlesFunctionCount(
+              ogplay::gles::GlesApi::gles1_extensions) == 3);
+    for (const auto name : {"glCurrentPaletteMatrixOES",
+                            "glMatrixIndexPointerOES",
+                            "glWeightPointerOES"}) {
+        CAPTURE(name);
+        CHECK(fixture.boundary.Symbols()
+                  .Lookup("libGLESv1_CM.so", name)
+                  .has_value());
+    }
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glCurrentPaletteMatrixOES", {0}),
+        "unimplemented GLES1 call glCurrentPaletteMatrixOES "
+        "(thunk 0, guest thread 1)",
+        ogplay::gles::GlesDispatchError);
+}
+
 TEST_CASE("Android looper publishes command and input poll sources") {
     BoundaryFixture fixture;
     fixture.bus.Write32(fixture.stack.Add(4), 0x12345678U);

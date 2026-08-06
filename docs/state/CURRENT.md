@@ -5,8 +5,9 @@
 ## 当前阶段
 
 - M0、M1、M2、M3、M4 已完成并验收。
-- M5 去硬编码正在推进；Title Profile v1 schema、C++ 强类型加载和三重身份匹配已闭合，
-  当前仍不提交具体游戏 profile。
+- M5 去硬编码正在推进；Title Profile v1 schema、C++ 强类型加载、三重身份匹配，以及
+  lifecycle、VFS、Java、input 的 Profile 通用装配均已闭合，当前仍不提交具体游戏
+  profile。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
@@ -25,6 +26,21 @@
 
 ## 最近完成
 
+- [WU-0209] 新增不可变的 code-defined input mapper catalog；Profile input id 精确选择
+  通用 mapper，无声明时使用 catalog 显式默认项，未知、重复、非法或空 mapper 均明确
+  失败。macOS/arm64 warnings-as-errors 构建及全量 CTest 330/330 通过。
+- [WU-0208] Profile Java 类与实例方法装配到全新的 JNI registry/engine，仅注册 Profile
+  实际引用的通用 handler；缺失、重复、空 handler 及非法 JNI 声明均明确失败，且失败
+  不发布半成品。macOS/arm64 warnings-as-errors 构建及全量 CTest 330/330 通过。
+- [WU-0207] Profile data mount 与已导入文件以 guest 根 + source 精确配对，在全新通用
+  VFS 中保留 APK/OBB/external 来源和可写性；required mount/manifest、working directory、
+  额外重复输入和来源错配均明确失败，失败不发布半成品。macOS/arm64 warnings-as-errors
+  构建及全量 CTest 324/324 通过。
+- [WU-0206] native_activity、gl_surface_view、custom_jni 映射为强类型通用回调路由，
+  三者共用输入→生命周期→渲染→present→音频→调度→统一 Clock 计时的唯一帧实现；
+  回调失败锁定状态但保留显式清理路径。macOS/arm64 warnings-as-errors 构建及全量
+  CTest 321/321 通过；同时移除当前 SDK 不可用的浮点 `from_chars`，以 classic locale
+  严格解析 Profile 浮点纯数据并补正反回归。
 - [WU-0200] C++ 受限 TOML 加载器把 identity/runtime 转为强类型只读模型，严格检查
   UTF-8、200 行、文件名/package、API/ABI、生命周期、表面范围与未知字段。
 - [WU-0201] data/audio 声明式加载覆盖 APK/OBB/external 挂载、资源清单、工作目录与
@@ -58,8 +74,8 @@
 
 ## 下一步（按优先级）
 
-1. 实现三种通用生命周期描述与单一帧步骤序列，不复制每游戏循环。
-2. 把 profile 的 VFS/Java/input 声明接到现有通用机制，仍不提交具体游戏 profile。
+1. 把 Profile audio 声明接到通用音频机制，仍不提交具体游戏 profile。
+2. 把已闭合的 lifecycle、VFS、Java、input 装配汇总为单一 Profile session plan。
 3. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
    能力账本为准。
 

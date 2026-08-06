@@ -3,7 +3,9 @@
 #include <charconv>
 #include <cctype>
 #include <cstddef>
+#include <locale>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -329,9 +331,10 @@ private:
         if (token.empty()) throw TitleProfileError("missing TOML scalar");
         if (token.find_first_of(".eE") != std::string_view::npos) {
             double value = 0;
-            const auto [end, error] =
-                std::from_chars(token.data(), token.data() + token.size(), value);
-            if (error == std::errc{} && end == token.data() + token.size()) {
+            std::istringstream input{std::string(token)};
+            input.imbue(std::locale::classic());
+            input >> std::noskipws >> value;
+            if (input && input.peek() == std::char_traits<char>::eof()) {
                 return TomlValue{value};
             }
         } else {

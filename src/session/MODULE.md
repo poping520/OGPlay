@@ -13,7 +13,15 @@
   versionCode 与 `.so` SHA-256 三项全部命中时返回 profile。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与
   测试引用；含 quirk 的 Profile 目录必须显式通过注册表验证。
-- M1 将相同状态机装配 guest，后续 M5 WU 增加 Profile 生命周期模板。
+- `DescribeLifecycle` / `LifecycleFrameRunner`：把三种 Profile 生命周期映射为稳定的通用
+  回调路由，并以唯一实现执行输入、生命周期、渲染、呈现、音频、调度与 Clock 计时。
+- `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
+  校验 required mount、manifest 和 working directory，失败时不发布半成品文件系统。
+- `AssembleProfileJava`：把 Profile Java 类/方法装入全新的 JNI registry 与 invocation
+  engine，并只绑定显式提供且实际引用的通用 implementation handler。
+- `ApplyProfileInput`：有 Profile 时精确选择其通用 input template，无声明时使用 catalog
+  显式默认项；两条路径均进入相同 code-defined mapper。
+- M1 将相同状态机装配 guest；M5 后续 WU 把 Profile 声明接入通用运行机制。
 
 ## 不变量
 
@@ -21,8 +29,13 @@
 - 游戏身份信息只有 Title Profile 一个来源；无 profile 也使用通用默认值。
 - Profile 文件为 UTF-8 纯数据且不超过 200 行；未知字段、路径逃逸、非法或歧义身份失败。
 - data/audio/java/quirks/input 只保存声明，不直接调用相邻模块或执行脚本。
+- VFS 输入不得靠顺序或来源猜测；guest 根与 source 必须同时命中声明，额外输入明确失败。
+- Java implementation id 必须命中真实 handler；类、签名或 handler 无效时不得发布
+  部分 JNI registry。
+- input template 未注册时明确失败；无 Profile 声明只能使用 catalog 的显式默认项。
 - 每个 enabled quirk 必须有注册定义和可定位测试；未注入注册表时不得进入匹配目录。
 - 状态推进可由固定帧步进驱动，不依赖 sleep。
+- 帧步骤顺序对三种生命周期完全相同；回调失败后进入可清理但不可继续步进的失败状态。
 
 ## 禁止
 

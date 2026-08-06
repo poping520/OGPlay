@@ -40,6 +40,26 @@ status = "complete"
 test = "tools/validate_quirks.py --self-test; tests/session/quirk_registry_tests.cpp"
 note = "M5 WU-0204/0205 强制 summary/reason/risk/test/owner、真实测试引用与 profile 交叉引用；C++ 目录对含 quirk 的 profile 强制注入 UTF-8 注册表，未注册或无注册表明确失败"
 
+[session.lifecycle_templates]
+status = "complete"
+test = "tests/session/lifecycle_tests.cpp"
+note = "M5 WU-0206 将 native_activity、gl_surface_view、custom_jni 映射到强类型通用回调路由，并以唯一状态机执行输入、生命周期、渲染、present、音频、调度与统一 Clock 计时"
+
+[session.profile_vfs]
+status = "complete"
+test = "tests/session/profile_vfs_tests.cpp"
+note = "M5 WU-0207 以 guest 根 + source 精确配对已导入文件并装配全新通用 VFS，required mount/manifest、working directory、额外重复输入与来源错配均受检"
+
+[session.profile_java]
+status = "complete"
+test = "tests/session/profile_java_tests.cpp"
+note = "M5 WU-0208 将 Profile Java 类/实例方法事务装入全新 JNI registry/engine，只绑定实际引用的通用 implementation handler；缺失重复 handler 与非法 JNI 声明明确失败"
+
+[input.template_catalog]
+status = "complete"
+test = "tests/input/template_catalog_tests.cpp"
+note = "M5 WU-0209 提供不可变 code-defined 通用 mapper 目录；Profile input id 精确选择模板，无声明时使用显式默认，未知/重复/非法模板明确失败"
+
 [agent.run]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

@@ -26,6 +26,10 @@
 
 ## 最近完成
 
+- [WU-0224] 首个 legacy title 的纯数据 Profile 已按目标 APK 的精确身份/hash/`armeabi`
+  与通用 API 19、`gl_surface_view`、800×480 声明提交；schema、目录与真实 APK preflight
+  通过，闭包含 5 个 guest 模块。macOS/arm64 warnings-as-errors 构建及 CTest
+  358/358 通过。
 - [WU-0223] APK launch preflight 串联唯一 Profile 候选与对应 API 的 Bionic 闭包；CLI
   不再限定 stored v7a 单库或手写依赖，根库、API、生命周期与 surface 均来自 Profile，
   可在不创建窗口/执行 guest 时输出受检事实。macOS/arm64 warnings-as-errors 构建及全量

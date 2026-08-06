@@ -1,0 +1,16 @@
+schema = 1
+
+[identity]
+package = "com.gameloft.android.GAND.GloftAsphalt5.asphalt5"
+name = "Asphalt 5"
+version_code = [1]
+so_sha256 = ["9c7eea1374b76200f47557415f4518535cce065a0d2c50c7bab75209f7b87b48"]
+abi = "armeabi"
+
+[runtime]
+api_level = 19
+lifecycle = "gl_surface_view"
+
+[runtime.surface]
+width = 800
+height = 480

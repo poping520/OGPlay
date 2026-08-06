@@ -14,3 +14,145 @@ lifecycle = "gl_surface_view"
 [runtime.surface]
 width = 800
 height = 480
+
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
+method = "nativeGetJNIEnv"
+signature = "()V"
+dispatch = "instance"
+arguments = []
+
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLResLoader"
+method = "nativeInit"
+signature = "(I)V"
+dispatch = "static"
+arguments = [{ source = "constant", value = 0 }]
+
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLMediaPlayer"
+method = "nativeInit"
+signature = "(I)V"
+dispatch = "static"
+arguments = [{ source = "constant", value = 0 }]
+
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeInit"
+signature = "()V"
+dispatch = "static"
+arguments = []
+
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
+method = "nativeInit"
+signature = "(IIIII)V"
+dispatch = "instance"
+arguments = [
+  { source = "constant", value = 0 },
+  { source = "constant", value = 1 },
+  { source = "surface_width" },
+  { source = "surface_height" },
+  { source = "constant", value = 0 },
+]
+
+[[runtime.native_call]]
+phase = "resume"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeIsRunning"
+signature = "(Z)V"
+dispatch = "static"
+arguments = [{ source = "constant", value = 1 }]
+
+[[runtime.native_call]]
+phase = "resume"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeCheckwifi"
+signature = "(Z)V"
+dispatch = "static"
+arguments = [{ source = "constant", value = 0 }]
+
+[[runtime.native_call]]
+phase = "resume"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeCheckSilent"
+signature = "(Z)V"
+dispatch = "static"
+arguments = [{ source = "constant", value = 0 }]
+
+[[runtime.native_call]]
+phase = "resume"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5GLSurfaceView"
+method = "nativeResume"
+signature = "()V"
+dispatch = "instance"
+arguments = []
+
+[[runtime.native_call]]
+phase = "frame"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
+method = "nativeRender"
+signature = "()V"
+dispatch = "static"
+arguments = []
+
+[[runtime.native_call]]
+phase = "pause"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5GLSurfaceView"
+method = "nativePause"
+signature = "()V"
+dispatch = "instance"
+arguments = []
+
+[[runtime.native_call]]
+phase = "shutdown"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
+method = "nativeDestroy"
+signature = "()V"
+dispatch = "instance"
+arguments = []
+
+[[runtime.native_call]]
+phase = "pointer_down"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeTouchPressed"
+signature = "(III)V"
+dispatch = "static"
+arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }]
+
+[[runtime.native_call]]
+phase = "pointer_move"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeTouchMoved"
+signature = "(III)V"
+dispatch = "static"
+arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }]
+
+[[runtime.native_call]]
+phase = "pointer_up"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeTouchReleased"
+signature = "(III)V"
+dispatch = "static"
+arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }]
+
+[[runtime.native_call]]
+phase = "key_down"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeSetOnKeyDown"
+signature = "(I)V"
+dispatch = "static"
+arguments = [{ source = "input_key" }]
+
+[[runtime.native_call]]
+phase = "key_up"
+class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = "nativeSetOnKeyUp"
+signature = "(I)V"
+dispatch = "static"
+arguments = [{ source = "input_key" }]

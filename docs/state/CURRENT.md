@@ -26,6 +26,8 @@
 
 ## 最近完成
 
+- [WU-0226] 首个 legacy APK 的 startup/resume/frame/pause/shutdown 及 pointer/key
+  native 调用序列已作为强类型纯数据进入标题 Profile；生产代码无游戏名或标题特判。
 - [WU-0225] Title Profile v1 以强类型纯数据描述 native JNI phase、类/方法/signature、
   dispatch 与受限参数来源；脚本、地址及参数形状矛盾明确失败。macOS/arm64
   warnings-as-errors 构建及全量 CTest 359/359 通过。
@@ -51,9 +53,6 @@
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
   及全量 CTest 353/353 通过。
-- [WU-0218] APK 二进制 Manifest 以受检 UTF-8/UTF-16 string pool、namespace 与 typed
-  attribute 产出身份/SDK 事实；目标 APK 的 package、versionCode/name 与 minSdk 已同
-  独立工具对拍。macOS/arm64 warnings-as-errors 构建及全量 CTest 351/351 通过。
 - [WU-0216] plan/bootstrap 最高层入口统一消费 ProfileAssetBundle 与
   ProfileRuntimeCatalog；返回 plan 不依赖两个输入容器的生命周期，exact/default、失败
   与底层组合语义保持不变。macOS/arm64 warnings-as-errors 构建及全量 CTest 346/346

@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0227] 受检 Java class/method/descriptor 现可通用生成 JNI short/long native
+  导出名，含 Unicode UTF-16 code unit 转义；生产代码不含标题事实。macOS/arm64
+  warnings-as-errors 构建及全量 CTest 362/362 通过。
 - [WU-0226] 首个 legacy APK 的 startup/resume/frame/pause/shutdown 及 pointer/key
   native 调用序列已作为强类型纯数据进入标题 Profile；生产代码无游戏名或标题特判。
 - [WU-0225] Title Profile v1 以强类型纯数据描述 native JNI phase、类/方法/signature、
@@ -53,10 +56,6 @@
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
   及全量 CTest 353/353 通过。
-- [WU-0216] plan/bootstrap 最高层入口统一消费 ProfileAssetBundle 与
-  ProfileRuntimeCatalog；返回 plan 不依赖两个输入容器的生命周期，exact/default、失败
-  与底层组合语义保持不变。macOS/arm64 warnings-as-errors 构建及全量 CTest 346/346
-  通过。
 - [WU-0215] ProfileAssetBundle 以不可变所有权汇总 VFS/audio 字节，在装配前拒绝路径
   歧义、重复 mount/entry/audio 与空资产。macOS/arm64 warnings-as-errors 构建及全量
   CTest 346/346 通过。

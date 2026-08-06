@@ -5,8 +5,8 @@
 ## 当前阶段
 
 - M0、M1、M2、M3、M4 已完成并验收。
-- M5 去硬编码正在推进；Title Profile 加载/精确匹配、五类通用装配、单一
-  ProfileSessionPlan 及 exact/default bootstrap 均已闭合；当前仍不提交具体游戏 profile。
+- M5 去硬编码正在推进；Profile 精确 bootstrap、单一 plan、runtime catalog 与已导入
+  asset bundle 均已闭合；当前仍不提交具体游戏 profile。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
@@ -25,6 +25,9 @@
 
 ## 最近完成
 
+- [WU-0215] ProfileAssetBundle 以不可变所有权汇总 VFS/audio 字节，在装配前拒绝路径
+  歧义、重复 mount/entry/audio 与空资产。macOS/arm64 warnings-as-errors 构建及全量
+  CTest 346/346 通过。
 - [WU-0214] plan/bootstrap 高层入口直接消费单一 ProfileRuntimeCatalog，Java handler 与
   input mapper 不再由调用方分离拼接；底层组合 API 与 exact/default 语义保持不变。
   macOS/arm64 warnings-as-errors 构建及全量 CTest 343/343 通过。
@@ -58,7 +61,7 @@
 
 ## 下一步（按优先级）
 
-1. 为已导入 VFS/audio 数据建立有所有权的统一资产 bundle，再接入 plan/bootstrap。
+1. 把 ProfileAssetBundle 接入 plan/bootstrap，消除分离 VFS/audio span 的错配风险。
 2. 建立首批 profile 迁移清单并补齐通用 handler/题库，禁止向 `src/` 增加游戏特判。
 3. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
    能力账本为准。

@@ -85,6 +85,11 @@ status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp; tests/session/profile_session_bootstrap_tests.cpp"
 note = "M5 WU-0214 让 plan/bootstrap 从同一 ProfileRuntimeCatalog 获取 Java handler 与 input mapper，保留底层组合 API 且不复制装配逻辑"
 
+[session.profile_asset_bundle]
+status = "complete"
+test = "tests/session/profile_asset_bundle_tests.cpp"
+note = "M5 WU-0215 以不可变所有权 bundle 汇总已导入 VFS/audio 字节，在 Profile 装配前拒绝非规范路径、大小写歧义、重复输入和空资产"
+
 [agent.run]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

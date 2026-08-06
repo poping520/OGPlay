@@ -85,4 +85,14 @@ ProfileSessionPlan AssembleProfileSessionPlan(
                               std::move(cover_music)};
 }
 
+ProfileSessionPlan AssembleProfileSessionPlan(
+    const TitleProfile& profile,
+    const std::span<const ProfileVfsMountInput> vfs_inputs,
+    const ProfileRuntimeCatalog& runtime_catalog,
+    const std::span<const ProfileAudioResource> audio_resources) {
+    return AssembleProfileSessionPlan(
+        profile, vfs_inputs, runtime_catalog.JavaImplementations(),
+        runtime_catalog.InputTemplates(), audio_resources);
+}
+
 }  // namespace ogplay::session

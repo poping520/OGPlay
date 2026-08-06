@@ -80,6 +80,11 @@ status = "complete"
 test = "tests/session/profile_runtime_catalog_tests.cpp"
 note = "M5 WU-0213 以不可变有所有权目录汇总通用 Java handler 与 input mapper；Java implementation id 规范唯一、handler 非空且只支持精确查询"
 
+[session.profile_runtime_integration]
+status = "complete"
+test = "tests/session/profile_session_plan_tests.cpp; tests/session/profile_session_bootstrap_tests.cpp"
+note = "M5 WU-0214 让 plan/bootstrap 从同一 ProfileRuntimeCatalog 获取 Java handler 与 input mapper，保留底层组合 API 且不复制装配逻辑"
+
 [agent.run]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

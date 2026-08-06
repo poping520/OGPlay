@@ -20,4 +20,16 @@ ProfileSessionBootstrapResult BootstrapProfileSession(
                                        audio_resources)};
 }
 
+ProfileSessionBootstrapResult BootstrapProfileSession(
+    const TitleProfileCatalog& profiles, const TitleIdentity& identity,
+    const TitleProfile& generic_default,
+    const std::span<const ProfileVfsMountInput> vfs_inputs,
+    const ProfileRuntimeCatalog& runtime_catalog,
+    const std::span<const ProfileAudioResource> audio_resources) {
+    return BootstrapProfileSession(
+        profiles, identity, generic_default, vfs_inputs,
+        runtime_catalog.JavaImplementations(), runtime_catalog.InputTemplates(),
+        audio_resources);
+}
+
 }  // namespace ogplay::session

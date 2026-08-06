@@ -192,6 +192,8 @@ set(OGPLAY_GLES2_CATALOG
     "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles2_catalog.h")
 set(OGPLAY_GLES1_CATALOG
     "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles1_catalog.h")
+set(OGPLAY_GLES1_EXTENSIONS_CATALOG
+    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles1_extensions_catalog.h")
 add_custom_command(
     OUTPUT "${OGPLAY_GLES2_CATALOG}"
     COMMAND ${Python3_EXECUTABLE}
@@ -217,6 +219,20 @@ add_custom_command(
 )
 add_custom_target(ogplay_gles1_codegen DEPENDS "${OGPLAY_GLES1_CATALOG}")
 add_dependencies(ogplay_gles_codegen ogplay_gles1_codegen)
+add_custom_command(
+    OUTPUT "${OGPLAY_GLES1_EXTENSIONS_CATALOG}"
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
+        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1_extensions.json"
+        --output "${OGPLAY_GLES1_EXTENSIONS_CATALOG}"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1_extensions.json"
+    VERBATIM
+)
+add_custom_target(ogplay_gles1_extensions_codegen
+    DEPENDS "${OGPLAY_GLES1_EXTENSIONS_CATALOG}")
+add_dependencies(ogplay_gles_codegen ogplay_gles1_extensions_codegen)
 add_dependencies(ogplay_gles ogplay_gles_codegen)
 add_library(OGPlay::Gles ALIAS ogplay_gles)
 target_include_directories(ogplay_gles PUBLIC
@@ -567,6 +583,18 @@ if(OGPLAY_BUILD_TESTS)
                 ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/gl.h
     )
     set_tests_properties(tools.gles1_catalog_current PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.gles1_extensions_catalog_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
+            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1_extensions.json
+            --output ${OGPLAY_GLES1_EXTENSIONS_CATALOG}
+            --check
+            --verify-header
+                ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/glext.h
+    )
+    set_tests_properties(tools.gles1_extensions_catalog_current PROPERTIES LABELS tools)
 
     add_test(
         NAME tools.title_profile_validator_self_test

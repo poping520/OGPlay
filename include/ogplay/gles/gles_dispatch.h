@@ -18,7 +18,7 @@ using GlesGuestValue = std::uint32_t;
 using GlesHandler = std::function<GlesGuestValue(
     std::span<const GlesGuestValue> arguments, std::uint64_t thread_id)>;
 
-enum class GlesApi : std::uint8_t { gles1, gles2 };
+enum class GlesApi : std::uint8_t { gles1, gles1_extensions, gles2 };
 
 struct GlesFunctionInfo final {
     GlesThunkId id{};

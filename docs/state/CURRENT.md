@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0231] 固定 ANGLE extension header 的受检子集目录已覆盖目标 ELF 所需 3 个
+  `GL_OES_matrix_palette` 入口，并与 145 个 GLES1 core ID 隔离。macOS/arm64
+  warnings-as-errors 构建及全量 CTest 367/367 通过。
 - [WU-0230] Android boundary 已在 `libGLESv1_CM.so` 发布隔离的 145 项 core Thumb
   trap；同名 GLES1/GLES2 不混淆，未绑定调用记账并明确失败。macOS/arm64
   warnings-as-errors 构建及全量 CTest 366/366 通过。
@@ -65,9 +68,6 @@
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
   及全量 CTest 353/353 通过。
-- [WU-0212] 单一 bootstrap 先执行三重身份精确匹配，再把 exact 或显式 generic default
-  送入同一 ProfileSessionPlan；非法身份和已选路径装配失败绝不回退。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 341/341 通过。
 - [WU-0211] ProfileSessionPlan 事务式汇总 lifecycle、VFS、Java、input、audio，唯一拥有
   VFS/JNI 状态、输入目录和预解析音频；任一子装配失败均不发布部分计划。macOS/arm64
   warnings-as-errors 构建及全量 CTest 337/337 通过。

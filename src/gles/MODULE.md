@@ -25,6 +25,8 @@
 - `tools/generate_gles_api.py`：严格验证 IDL，并确定性生成 `ParameterSpec` / `FunctionSpec`
   C++ 目录；构建与测试均检查生成物没有漂移，并与固定 ANGLE `GLES/gl.h` / `gl2.h`
   分别核对 GLES1.1 core 145 项与 GLES2 core 142 项入口集合。
+- header subset 模式只允许目录声明固定 header 中真实存在的入口，用于隔离的标准扩展
+  catalog；首个 GLES1 扩展目录覆盖 `GL_OES_matrix_palette` 的 3 个目标所需入口。
 - `GuestBuffer::Prepare`：依据 input/output/inout 对完整 guest 区间预检权限，并建立有大小
   上限的宿主暂存；输出只能显式 `Commit`，对象不可复制。
 - `GlesDispatchTable`：从生成目录提供 142 个稳定 GLES2 thunk ID、精确名称/形状查询和
@@ -56,7 +58,8 @@
 - GLES 语义与能力来自 ANGLE，边界函数由 IDL 生成。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
-- GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；
+- GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；扩展
+  子集目录中的每个函数也必须存在于固定 ANGLE extension header；
   API-specific namespace 不得混淆函数 ID；二级指针保留
   indirection，宿主指针返回使用专门返回类型，禁止按 32 位标量误传。
 - thunk ID 只在所选 API 的有序生成目录内有效；分派前必须验证参数槽数量，handler 不得

@@ -7,6 +7,7 @@
 
 #include "ogplay/gles/generated/gles2_catalog.h"
 #include "ogplay/gles/generated/gles1_catalog.h"
+#include "ogplay/gles/generated/gles1_extensions_catalog.h"
 
 namespace ogplay::gles {
 namespace {
@@ -55,7 +56,7 @@ GlesFunctionInfo DescribeInCatalog(const Functions& functions,
                                                const std::string_view name,
                                                const std::uint64_t thread_id) {
     std::ostringstream stream;
-    stream << "unimplemented " << (api == GlesApi::gles1 ? "GLES1" : "GLES2")
+    stream << "unimplemented " << (api == GlesApi::gles2 ? "GLES2" : "GLES1")
            << " call " << name << " (thunk " << id
            << ", guest thread " << thread_id << ')';
     return stream.str();
@@ -211,24 +212,43 @@ GlesDispatchTable::UnimplementedCalls() const {
 }
 
 std::size_t GlesFunctionCount(const GlesApi api) noexcept {
-    return api == GlesApi::gles1 ? generated::gles1::kFunctions.size()
-                                 : generated::gles2::kFunctions.size();
+    switch (api) {
+    case GlesApi::gles1: return generated::gles1::kFunctions.size();
+    case GlesApi::gles1_extensions:
+        return generated::gles1_extensions::kFunctions.size();
+    case GlesApi::gles2: return generated::gles2::kFunctions.size();
+    }
+    return 0;
 }
 
 std::optional<GlesThunkId> FindGlesFunction(
     const GlesApi api, const std::string_view name) noexcept {
-    return api == GlesApi::gles1
-               ? FindInCatalog(generated::gles1::kFunctions, name)
-               : FindInCatalog(generated::gles2::kFunctions, name);
+    switch (api) {
+    case GlesApi::gles1:
+        return FindInCatalog(generated::gles1::kFunctions, name);
+    case GlesApi::gles1_extensions:
+        return FindInCatalog(generated::gles1_extensions::kFunctions, name);
+    case GlesApi::gles2:
+        return FindInCatalog(generated::gles2::kFunctions, name);
+    }
+    return std::nullopt;
 }
 
 GlesFunctionInfo DescribeGlesFunction(const GlesApi api,
                                       const GlesThunkId id) {
-    return api == GlesApi::gles1
-               ? DescribeInCatalog(generated::gles1::kFunctions,
-                                   generated::gles1::kParameters, id, "GLES1")
-               : DescribeInCatalog(generated::gles2::kFunctions,
-                                   generated::gles2::kParameters, id, "GLES2");
+    switch (api) {
+    case GlesApi::gles1:
+        return DescribeInCatalog(generated::gles1::kFunctions,
+                                 generated::gles1::kParameters, id, "GLES1");
+    case GlesApi::gles1_extensions:
+        return DescribeInCatalog(generated::gles1_extensions::kFunctions,
+                                 generated::gles1_extensions::kParameters, id,
+                                 "GLES1 extensions");
+    case GlesApi::gles2:
+        return DescribeInCatalog(generated::gles2::kFunctions,
+                                 generated::gles2::kParameters, id, "GLES2");
+    }
+    throw GlesDispatchError("unknown GLES API catalog");
 }
 
 }  // namespace ogplay::gles

@@ -383,4 +383,4 @@ note = "M4 允许统一 ELF 装载事务追加绝对 HLE 边界模块；边界�
 [loader.apk_stored_entry]
 status = "complete"
 test = "tests/loader/apk_tests.cpp"
-note = "M4 严格解析 APK ZIP32 central directory，并以 local/central 一致性和 CRC32 提取未压缩 native ELF"
+note = "M5 WU-0217 在严格 ZIP32 local/central 与 CRC32 校验上支持 stored、fixed/dynamic Huffman Deflate 条目，旧 APK 的压缩 native ELF 与 Manifest 可由统一入口读取"

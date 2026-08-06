@@ -11,6 +11,7 @@ namespace ogplay::loader {
 
 struct ApkEntry {
     std::string name;
+    std::uint16_t general_purpose_flags{};
     std::uint16_t compression_method{};
     std::uint32_t crc32{};
     std::uint32_t compressed_size{};
@@ -23,6 +24,8 @@ struct ApkArchive {
 };
 
 [[nodiscard]] ApkArchive ParseApkArchive(std::span<const std::byte> bytes);
+[[nodiscard]] std::vector<std::byte> ReadApkEntry(
+    std::span<const std::byte> bytes, const ApkArchive& archive, std::string_view name);
 [[nodiscard]] std::vector<std::byte> ReadStoredApkEntry(
     std::span<const std::byte> bytes, const ApkArchive& archive, std::string_view name);
 

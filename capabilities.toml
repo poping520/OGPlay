@@ -399,3 +399,8 @@ note = "M5 WU-0219 稳定枚举 armeabi/armeabi-v7a native library，拥有解�
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
 note = "M5 WU-0220 的 Title Profile v1、Python 校验器与 C++ loader 以同一强类型集合接受 armeabi/armeabi-v7a，并拒绝其他 ABI"
+
+[profiles.apk_exact_identity_match]
+status = "complete"
+test = "tests/session/profile_apk_tests.cpp"
+note = "M5 WU-0221 组合 binary Manifest 与全部 ARM native library 的 package/version/hash/ABI 事实，只发布唯一精确 Profile 候选且不猜 main library"

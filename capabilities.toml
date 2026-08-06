@@ -409,3 +409,8 @@ note = "M5 WU-0221 组合 binary Manifest 与全部 ARM native library 的 packa
 status = "complete"
 test = "tests/runtime/bionic_module_set_tests.cpp"
 note = "M5 WU-0222 从根 ELF 的 DT_NEEDED 递归拥有 profile 声明的真实 guest 库，排除 HLE boundary 与未使用来源，并受检分配不碰 thunk 区的 load bias"
+
+[profiles.apk_launch_preflight]
+status = "complete"
+test = "tests/session/profile_apk_tests.cpp"
+note = "M5 WU-0223 串联 APK 精确 Profile 与对应 API 的 Bionic guest 闭包；CLI 由 Profile 获取根库、API、生命周期和 surface，并可在执行前输出受检 preflight"

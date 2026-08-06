@@ -16,7 +16,10 @@
 
 #include "ogplay/hal/window_input.h"
 #include "ogplay/loader/apk.h"
+#include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/native_activity_runner.h"
+#include "ogplay/session/profile_apk.h"
+#include "ogplay/session/title_profile.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -33,6 +36,31 @@ std::vector<std::byte> ReadBytes(const std::filesystem::path& path) {
     std::vector<std::byte> result(static_cast<std::size_t>(size));
     input.seekg(0); input.read(reinterpret_cast<char*>(result.data()), size);
     if (!input) throw std::runtime_error("input file was truncated: " + path.string());
+    return result;
+}
+
+struct OwnedSystemLibrary final {
+    std::string name;
+    std::vector<std::byte> image;
+};
+
+std::vector<OwnedSystemLibrary> ReadSystemLibraries(
+    const std::filesystem::path& directory,
+    const runtime::BionicProfile& profile) {
+    std::error_code error;
+    if (!std::filesystem::is_directory(directory, error) || error) {
+        throw std::runtime_error("Bionic system library directory is unavailable: " +
+                                 directory.string());
+    }
+    std::vector<OwnedSystemLibrary> result;
+    for (const auto name : profile.guest_libraries) {
+        const auto path = directory / name;
+        if (std::filesystem::is_regular_file(path, error) && !error) {
+            result.push_back({std::string(name), ReadBytes(path)});
+        } else {
+            error.clear();
+        }
+    }
     return result;
 }
 
@@ -107,16 +135,23 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     }
     const std::filesystem::path apk_path{argv[2]};
     std::optional<std::filesystem::path> system_directory;
+    auto profiles_directory =
+        std::filesystem::path(OGPLAY_SOURCE_DIR) / "data" / "profiles";
     std::optional<std::uint64_t> exit_after_frames;
     std::uint32_t supersample_factor{1};
+    bool preflight{};
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
         if (option == "--system-dir" && index + 1 < argc) {
             system_directory = std::filesystem::path{argv[++index]};
+        } else if (option == "--profiles-dir" && index + 1 < argc) {
+            profiles_directory = std::filesystem::path{argv[++index]};
         } else if (option == "--exit-after-frames" && index + 1 < argc) {
             exit_after_frames = ParsePositive(argv[++index], option);
         } else if (option == "--supersample" && index + 1 < argc) {
             supersample_factor = ParseSupersampleFactor(argv[++index]);
+        } else if (option == "--preflight") {
+            preflight = true;
         } else {
             throw std::invalid_argument("unknown or incomplete run-apk option: " +
                                         std::string(option));
@@ -128,40 +163,62 @@ int RunApkCommand(const int argc, const char* const argv[]) {
 
     const auto apk_bytes = ReadBytes(apk_path);
     const auto archive = loader::ParseApkArchive(apk_bytes);
-    const loader::ApkEntry* native_entry{};
-    for (const auto& entry : archive.entries) {
-        if (!entry.name.starts_with("lib/armeabi-v7a/") || !entry.name.ends_with(".so")) continue;
-        if (native_entry != nullptr) {
-            throw std::runtime_error(
-                "APK has multiple armeabi-v7a libraries; explicit selection is not implemented");
-        }
-        native_entry = &entry;
+    const auto profiles = session::TitleProfileCatalog::LoadDirectory(
+        profiles_directory);
+    const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
+    const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
+    const auto match = session::MatchApkTitleProfile(manifest, libraries, profiles);
+    if (!match.has_value() || match->profile == nullptr) {
+        throw std::runtime_error("APK has no exact Title Profile: " +
+                                 manifest.package);
     }
-    if (native_entry == nullptr) throw std::runtime_error("APK has no armeabi-v7a native library");
-    const auto payload = loader::ReadStoredApkEntry(apk_bytes, archive, native_entry->name);
-    const auto libm = ReadBytes(*system_directory / "libm.so");
-    const auto libdl = ReadBytes(*system_directory / "libdl.so");
-    const auto libc = ReadBytes(*system_directory / "libc.so");
-    const auto root_name = std::filesystem::path(native_entry->name).filename().string();
-    const loader::Elf32ModuleInput modules[]{
-        {root_name, payload, memory::GuestAddress{0x10000000U}},
-        {"libm.so", libm, memory::GuestAddress{0x20000000U}},
-        {"libdl.so", libdl, memory::GuestAddress{0x30000000U}},
-        {"libc.so", libc, memory::GuestAddress{0x40000000U}},
-    };
+    const auto& profile = *match->profile;
+    const auto& bionic = runtime::SelectBionicProfile(profile.runtime.api_level);
+    const auto owned_system = ReadSystemLibraries(*system_directory, bionic);
+    std::vector<runtime::BionicModuleSource> system_sources;
+    system_sources.reserve(owned_system.size());
+    for (const auto& source : owned_system) {
+        system_sources.push_back({source.name, source.image});
+    }
+    auto launch = session::PrepareApkProfileLaunch(
+        manifest, libraries, profiles, system_sources);
+    if (!launch.has_value()) {
+        throw std::logic_error("exact APK Profile disappeared during launch planning");
+    }
+    const auto module_inputs = launch->modules.Inputs();
+    const auto root_name = std::string(launch->modules.RootName());
+    if (preflight) {
+        Write("OGPlay: preflight ready: package=" + manifest.package +
+              " root=" + root_name + " abi=" +
+              std::string(loader::ToString(launch->match.library.abi)) +
+              " api=" + std::to_string(profile.runtime.api_level) +
+              " lifecycle=" + std::string(session::ToString(profile.runtime.lifecycle)) +
+              " modules=" + std::to_string(module_inputs.size()) + " surface=" +
+              std::to_string(profile.runtime.surface.width) + "x" +
+              std::to_string(profile.runtime.surface.height) + "\n");
+        return 0;
+    }
+    if (profile.runtime.lifecycle != session::ProfileLifecycle::native_activity) {
+        throw std::runtime_error(
+            "profile lifecycle runner is not implemented by run-apk: " +
+            std::string(session::ToString(profile.runtime.lifecycle)));
+    }
 
     auto window = hal::CreateSdlWindowInput();
     window->Open({.title = "OGPlay · " + apk_path.filename().string(),
-                  .width = 640, .height = 360, .hidden = false, .resizable = true});
+                  .width = profile.runtime.surface.width,
+                  .height = profile.runtime.surface.height,
+                  .hidden = false, .resizable = true});
     auto guest = runtime::NativeActivitySession::Start(
-        {19, root_name, modules, NativeBackend(), 640, 360, UINT64_C(200000000), {},
-         supersample_factor});
+        {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
+         profile.runtime.surface.width, profile.runtime.surface.height,
+         UINT64_C(200000000), {}, supersample_factor});
     Write("OGPlay: NativeActivity started; close the window to stop.\n");
 
     bool quit{};
     std::uint64_t presented{};
-    std::uint32_t guest_width = 640;
-    std::uint32_t guest_height = 360;
+    std::uint32_t guest_width = profile.runtime.surface.width;
+    std::uint32_t guest_height = profile.runtime.surface.height;
     while (!quit) {
         const auto window_state = window->State();
         for (const auto& event : window->PollEvents()) {

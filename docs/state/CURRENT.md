@@ -26,6 +26,10 @@
 
 ## 最近完成
 
+- [WU-0223] APK launch preflight 串联唯一 Profile 候选与对应 API 的 Bionic 闭包；CLI
+  不再限定 stored v7a 单库或手写依赖，根库、API、生命周期与 surface 均来自 Profile，
+  可在不创建窗口/执行 guest 时输出受检事实。macOS/arm64 warnings-as-errors 构建及全量
+  CTest 358/358 通过。
 - [WU-0222] Bionic module set 从根 ELF 的 `DT_NEEDED` 递归拥有真实 guest 系统库闭包，
   排除 HLE boundary 与未使用来源；未知、缺失及 SONAME 矛盾明确失败，load bias 稳定分配
   且不碰 thunk 区。macOS/arm64 warnings-as-errors 构建及全量 CTest 357/357 通过。

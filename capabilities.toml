@@ -60,6 +60,11 @@ status = "complete"
 test = "tests/input/template_catalog_tests.cpp"
 note = "M5 WU-0209 提供不可变 code-defined 通用 mapper 目录；Profile input id 精确选择模板，无声明时使用显式默认，未知/重复/非法模板明确失败"
 
+[session.profile_audio]
+status = "complete"
+test = "tests/session/profile_audio_tests.cpp"
+note = "M5 WU-0210 以 source + path 精确解析 Profile 封面音乐编码资源并保留 loop 事实；缺失、重复、空资源和播放器失败均明确暴露，不声明真实解码或设备播放能力"
+
 [agent.run]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

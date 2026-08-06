@@ -5,9 +5,8 @@
 ## 当前阶段
 
 - M0、M1、M2、M3、M4 已完成并验收。
-- M5 去硬编码正在推进；Title Profile v1 schema、C++ 强类型加载、三重身份匹配，以及
-  lifecycle、VFS、Java、input、audio 的 Profile 通用装配均已闭合，当前仍不提交具体
-  游戏 profile。
+- M5 去硬编码正在推进；Title Profile 加载/匹配及 lifecycle、VFS、Java、input、audio
+  通用装配已闭合，并已汇总为单一 ProfileSessionPlan；当前仍不提交具体游戏 profile。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
@@ -26,6 +25,9 @@
 
 ## 最近完成
 
+- [WU-0211] ProfileSessionPlan 事务式汇总 lifecycle、VFS、Java、input、audio，唯一拥有
+  VFS/JNI 状态、输入目录和预解析音频；任一子装配失败均不发布部分计划。macOS/arm64
+  warnings-as-errors 构建及全量 CTest 337/337 通过。
 - [WU-0210] Profile cover music 以 source + path 精确解析编码资源并保留 loop，经通用
   MusicPlayer 提交；资源和播放器失败均明确暴露，不声明解码、混音或设备播放能力。
   macOS/arm64 warnings-as-errors 构建及全量 CTest 334/334 通过。
@@ -62,24 +64,13 @@
   API/ABI/生命周期、声明式 data/audio/java/quirks/input、文件名一致性及 200 行上限
   均有机器正反例，仓库 profile 目录进入 CTest；Windows/MSVC warnings-as-errors 构建与
   全量 CTest 304/304 通过，尚未提交具体游戏 profile。
-- [WU-0195] Windows/MSVC 出口预演：真实 Bionic 与两个 APK，严格全量 CTest 297/297。
-- [WU-0196] macOS/arm64 Metal 与 SwiftShader 出口；严格全量 CTest 297/297，关键测试
-  连续 5 次稳定。
-- [WU-0197] 原生 ANGLE 测试统一为 Windows D3D11、Linux Vulkan、macOS Metal 硬件映射。
-- [WU-0198] Linux/x64 严格出口通过：修复 GCC missing-field-initializers /
-  range-loop-construct，并以清单 ICD + Vulkan loader 闭合 SwiftShader 黄金帧；审查后
-  增加作用域 driver 环境、可重定位 ICD、真实 renderer 与 software→hardware 隔离回归，
-  修复后严格全量 CTest 302/302；编写 `M4-ACCEPTANCE.md`。
-- macOS/arm64 审查修复复验：POST_BUILD 暂存 `libEGL`/`libGLESv2` dylib 后严格全量
-  CTest 302/302；Metal/SwiftShader/隔离与两个真实 APK 各连续 5 次稳定。
-- Windows/MSVC 审查修复复验：同 commit `f1b59bb` 严格全量 CTest 302/302；D3D11 黄金帧、
-  SwiftShader 明确失败、backend 隔离与两个真实 APK 各连续 5 次稳定；冻结 M4 验收基线。
 
 ## 下一步（按优先级）
 
-1. 把已闭合的 lifecycle、VFS、Java、input、audio 装配汇总为单一 Profile session
-   plan。
-2. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
+1. 把精确 Profile 匹配与 ProfileSessionPlan 装配接入单一 session bootstrap；无匹配时
+   保留显式通用默认路径。
+2. 盘点 M5 出口所需的首批 profile 与通用 handler，禁止向 `src/` 增加游戏特判。
+3. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
    能力账本为准。
 
 ## 阻塞

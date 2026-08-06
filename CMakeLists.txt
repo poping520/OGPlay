@@ -275,6 +275,7 @@ add_library(ogplay_session
     src/session/lifecycle.cpp
     src/session/profile_audio.cpp
     src/session/profile_java.cpp
+    src/session/profile_session_plan.cpp
     src/session/profile_vfs.cpp
     src/session/quirk_registry.cpp
     src/session/session.cpp
@@ -408,6 +409,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/lifecycle_tests.cpp
         tests/session/profile_audio_tests.cpp
         tests/session/profile_java_tests.cpp
+        tests/session/profile_session_plan_tests.cpp
         tests/session/profile_vfs_tests.cpp
         tests/session/session_tests.cpp
         tests/session/title_profile_tests.cpp

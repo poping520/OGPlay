@@ -429,3 +429,8 @@ note = "M5 WU-0225 允许 Profile 以强类型 phase/class/method/JNI signature/
 status = "complete"
 test = "tools/validate_title_profiles.py --schema data/profiles/title-profile-v1.schema.json --profiles data/profiles"
 note = "M5 WU-0226 以标题 Profile 纯数据声明首个 legacy APK 的 startup/resume/frame/pause/shutdown 与 pointer/key native 调用序列"
+
+[runtime.jni_native_export_names]
+status = "complete"
+test = "tests/runtime/jni_native_export_tests.cpp"
+note = "M5 WU-0227 从受检 class/method/descriptor 生成 JNI short/long 导出名，包含 Unicode UTF-16 code unit 转义"

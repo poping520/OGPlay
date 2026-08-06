@@ -248,6 +248,7 @@ add_library(ogplay_runtime
     src/runtime/jni/jni_class_registry.cpp
     src/runtime/jni/jni_invocation.cpp
     src/runtime/jni/jni_native_registry.cpp
+    src/runtime/jni/jni_native_export.cpp
     src/runtime/jni/jni_object.cpp
     src/runtime/jni/jni_object_array.cpp
     src/runtime/jni/jni_signature.cpp
@@ -386,6 +387,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/jni_class_registry_tests.cpp
         tests/runtime/jni_invocation_tests.cpp
         tests/runtime/jni_native_registry_tests.cpp
+        tests/runtime/jni_native_export_tests.cpp
         tests/runtime/jni_object_tests.cpp
         tests/runtime/jni_object_array_tests.cpp
         tests/runtime/jni_signature_tests.cpp

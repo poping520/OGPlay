@@ -104,6 +104,15 @@ else()
 endif()
 ogplay_set_project_warnings(ogplay_hal)
 
+add_library(ogplay_input src/input/template_catalog.cpp)
+add_library(OGPlay::Input ALIAS ogplay_input)
+target_link_libraries(ogplay_input PUBLIC OGPlay::Hal)
+target_include_directories(ogplay_input PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+ogplay_set_project_warnings(ogplay_input)
+
 add_library(ogplay_memory
     src/memory/address_space.cpp
     src/memory/bus.cpp
@@ -256,13 +265,18 @@ target_include_directories(ogplay_runtime PUBLIC
 ogplay_set_project_warnings(ogplay_runtime)
 
 add_library(ogplay_session
+    src/session/lifecycle.cpp
+    src/session/profile_java.cpp
+    src/session/profile_vfs.cpp
     src/session/quirk_registry.cpp
     src/session/session.cpp
     src/session/title_profile.cpp
     src/session/title_profile_toml.cpp
 )
 add_library(OGPlay::Session ALIAS ogplay_session)
-target_link_libraries(ogplay_session PUBLIC OGPlay::Core OGPlay::Hal OGPlay::Memory)
+target_link_libraries(ogplay_session PUBLIC
+    OGPlay::Core OGPlay::Hal OGPlay::Input OGPlay::Memory OGPlay::Runtime
+)
 target_include_directories(ogplay_session PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -293,7 +307,7 @@ target_compile_definitions(ogplay PRIVATE
 ogplay_set_project_warnings(ogplay)
 ogplay_stage_angle_runtime(ogplay)
 
-install(TARGETS ogplay ogplay_core ogplay_hal ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_session
+install(TARGETS ogplay ogplay_core ogplay_hal ogplay_input ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_session
     EXPORT OGPlayTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -325,6 +339,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/hal/thread_tests.cpp
         tests/hal/window_input_tests.cpp
         tests/hal/virtual_memory_tests.cpp
+        tests/input/template_catalog_tests.cpp
         tests/memory/address_tests.cpp
         tests/memory/address_space_tests.cpp
         tests/memory/bus_tests.cpp
@@ -381,6 +396,9 @@ if(OGPLAY_BUILD_TESTS)
         tests/cpu/m1_guest_sample_tests.cpp
         tests/cpu/thread_group_tests.cpp
         tests/session/quirk_registry_tests.cpp
+        tests/session/lifecycle_tests.cpp
+        tests/session/profile_java_tests.cpp
+        tests/session/profile_vfs_tests.cpp
         tests/session/session_tests.cpp
         tests/session/title_profile_tests.cpp
     )

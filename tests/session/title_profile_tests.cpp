@@ -67,6 +67,7 @@ constexpr std::string_view kHashB =
            "\n"
            "[quirks.legacy_reads]\n"
            "range = [\"0x1000\", \"0x2000\"]\n"
+           "ratio = 1.5\n"
            "strict = true\n"
            "\n"
            "[input]\n"
@@ -244,6 +245,7 @@ TEST_CASE("Title Profile Java quirks and input decode without executable content
     const auto& range =
         std::get<ogplay::session::ProfileValue::Array>(parameters.at("range").value);
     CHECK(std::get<std::string>(range[0].value) == "0x1000");
+    CHECK(std::get<double>(parameters.at("ratio").value) == doctest::Approx(1.5));
     REQUIRE(profile.input.has_value());
     CHECK(profile.input->profile == "generic_touch");
 
@@ -282,6 +284,14 @@ TEST_CASE("Title Profile Java quirks and input decode without executable content
                           std::string("generic_touch").size(), "GameSpecific");
     CHECK_THROWS_AS(static_cast<void>(ogplay::session::LoadTitleProfileText(
                         invalid_input, "org.example.legacy")),
+                    ogplay::session::TitleProfileError);
+
+    auto invalid_float = CompleteProfile();
+    invalid_float.replace(invalid_float.find("ratio = 1.5"),
+                          std::string("ratio = 1.5").size(),
+                          "ratio = 1.5suffix");
+    CHECK_THROWS_AS(static_cast<void>(ogplay::session::LoadTitleProfileText(
+                        invalid_float, "org.example.legacy")),
                     ogplay::session::TitleProfileError);
 }
 

@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0228] APK launch planning 已把 Profile native calls 按 JNI short/long 顺序预解析
+  为 root ELF 强类型 guest 地址；真实目标 17 项全部命中。macOS/arm64 warnings-as-errors
+  构建及全量 CTest 364/364 通过。
 - [WU-0227] 受检 Java class/method/descriptor 现可通用生成 JNI short/long native
   导出名，含 Unicode UTF-16 code unit 转义；生产代码不含标题事实。macOS/arm64
   warnings-as-errors 构建及全量 CTest 362/362 通过。
@@ -56,9 +59,6 @@
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
   及全量 CTest 353/353 通过。
-- [WU-0215] ProfileAssetBundle 以不可变所有权汇总 VFS/audio 字节，在装配前拒绝路径
-  歧义、重复 mount/entry/audio 与空资产。macOS/arm64 warnings-as-errors 构建及全量
-  CTest 346/346 通过。
 - [WU-0214] plan/bootstrap 高层入口直接消费单一 ProfileRuntimeCatalog，Java handler 与
   input mapper 不再由调用方分离拼接；底层组合 API 与 exact/default 语义保持不变。
   macOS/arm64 warnings-as-errors 构建及全量 CTest 343/343 通过。

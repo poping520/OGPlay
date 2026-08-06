@@ -434,3 +434,8 @@ note = "M5 WU-0226 以标题 Profile 纯数据声明首个 legacy APK 的 startu
 status = "complete"
 test = "tests/runtime/jni_native_export_tests.cpp"
 note = "M5 WU-0227 从受检 class/method/descriptor 生成 JNI short/long 导出名，包含 Unicode UTF-16 code unit 转义"
+
+[profiles.native_call_targets]
+status = "complete"
+test = "tests/session/profile_native_calls_tests.cpp"
+note = "M5 WU-0228 把 Profile native calls 按 JNI short/long 顺序解析为 root ELF 强类型 guest 地址；真实目标 17 项全部命中"

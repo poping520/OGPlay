@@ -14,7 +14,10 @@
 - `MatchApkTitleProfile`：把 binary Manifest 与所有 APK ARM native library 目录事实送入
   Profile 精确匹配；只有 package/version/hash/ABI 一致的唯一 library 才能成为入口候选。
 - `PrepareApkProfileLaunch`：精确匹配后按 Profile API 把根库和系统库交给统一 Bionic
-  依赖闭包规划；无匹配返回空，闭包错误不发布部分启动计划。
+  依赖闭包规划，并预解析 Profile 声明的 root-library JNI native 导出地址；无匹配返回空，
+  闭包或导出错误不发布部分启动计划。
+- `ResolveProfileNativeCalls`：按 JNI 标准优先 short、回退 long 导出名，并保持 Profile
+  调用顺序；缺失、重复或地址溢出明确失败。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与
   测试引用；含 quirk 的 Profile 目录必须显式通过注册表验证。
 - `DescribeLifecycle` / `LifecycleFrameRunner`：把三种 Profile 生命周期映射为稳定的通用

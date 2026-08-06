@@ -23,7 +23,8 @@
 - `data/gles/*.json`：GLES 边界的声明式单一事实源；每个指针显式声明方向、可空性和
   长度表达式，函数名唯一且稳定排序。
 - `tools/generate_gles_api.py`：严格验证 IDL，并确定性生成 `ParameterSpec` / `FunctionSpec`
-  C++ 目录；构建与测试均检查生成物没有漂移，并与固定 ANGLE `gl2.h` 核对入口集合。
+  C++ 目录；构建与测试均检查生成物没有漂移，并与固定 ANGLE `GLES/gl.h` / `gl2.h`
+  分别核对 GLES1.1 core 145 项与 GLES2 core 142 项入口集合。
 - `GuestBuffer::Prepare`：依据 input/output/inout 对完整 guest 区间预检权限，并建立有大小
   上限的宿主暂存；输出只能显式 `Commit`，对象不可复制。
 - `GlesDispatchTable`：从生成目录提供 142 个稳定 GLES2 thunk ID、精确名称/形状查询和
@@ -53,7 +54,8 @@
 - GLES 语义与能力来自 ANGLE，边界函数由 IDL 生成。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
-- GLES2 core 目录必须与固定 ANGLE 头文件的 142 个入口完全一致；二级指针保留
+- GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；
+  API-specific namespace 不得混淆函数 ID；二级指针保留
   indirection，宿主指针返回使用专门返回类型，禁止按 32 位标量误传。
 - thunk ID 只由有序生成目录决定；分派前必须验证参数槽数量，handler 不得在分派锁内执行。
 - 未绑定 GLES 调用必须记录函数、thunk、命中数与 first/last guest thread 后明确失败。

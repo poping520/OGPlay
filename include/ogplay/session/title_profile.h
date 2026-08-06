@@ -1,0 +1,147 @@
+#pragma once
+
+#include <cstdint>
+#include <filesystem>
+#include <map>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <variant>
+#include <vector>
+
+namespace ogplay::session {
+
+class QuirkRegistry;
+
+enum class ProfileLifecycle : std::uint8_t {
+    native_activity,
+    gl_surface_view,
+    custom_jni,
+};
+
+enum class ProfileSource : std::uint8_t { apk, obb, external };
+
+struct ProfileIdentity final {
+    std::string package;
+    std::string name;
+    std::vector<std::uint32_t> version_codes;
+    std::vector<std::string> so_sha256;
+    std::string abi;
+};
+
+struct ProfileSurface final {
+    std::uint32_t width{};
+    std::uint32_t height{};
+};
+
+struct ProfileRuntime final {
+    std::uint32_t api_level{};
+    ProfileLifecycle lifecycle{ProfileLifecycle::native_activity};
+    ProfileSurface surface;
+};
+
+struct ProfileMount final {
+    std::string guest;
+    ProfileSource source{ProfileSource::external};
+    bool required{};
+};
+
+struct ProfileManifestEntry final {
+    std::string path;
+    bool required{};
+};
+
+struct ProfileData final {
+    std::vector<ProfileMount> mounts;
+    std::optional<std::string> working_directory;
+    std::vector<ProfileManifestEntry> manifest;
+};
+
+struct ProfileCoverMusic final {
+    ProfileSource source{ProfileSource::apk};
+    std::string path;
+    bool loop{};
+};
+
+struct ProfileAudio final {
+    std::optional<ProfileCoverMusic> cover_music;
+};
+
+struct ProfileJavaMethod final {
+    std::string name;
+    std::string signature;
+    std::string implementation;
+};
+
+struct ProfileJavaClass final {
+    std::string name;
+    std::vector<ProfileJavaMethod> methods;
+};
+
+struct ProfileValue final {
+    using Array = std::vector<ProfileValue>;
+    using Table = std::map<std::string, ProfileValue, std::less<>>;
+    using Storage = std::variant<bool, std::int64_t, double, std::string, Array, Table>;
+
+    Storage value;
+};
+
+struct ProfileQuirks final {
+    std::vector<std::string> enabled;
+    std::map<std::string, ProfileValue::Table, std::less<>> parameters;
+};
+
+struct ProfileInput final {
+    std::string profile;
+};
+
+struct TitleProfile final {
+    std::uint32_t schema{};
+    ProfileIdentity identity;
+    ProfileRuntime runtime;
+    std::optional<ProfileData> data;
+    std::optional<ProfileAudio> audio;
+    std::vector<ProfileJavaClass> java_classes;
+    std::optional<ProfileQuirks> quirks;
+    std::optional<ProfileInput> input;
+};
+
+struct TitleIdentity final {
+    std::string package;
+    std::uint32_t version_code{};
+    std::string so_sha256;
+};
+
+class TitleProfileError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+[[nodiscard]] TitleProfile LoadTitleProfileText(std::string_view text,
+                                                std::string_view expected_package);
+[[nodiscard]] TitleProfile LoadTitleProfile(const std::filesystem::path& path);
+
+class TitleProfileCatalog final {
+public:
+    explicit TitleProfileCatalog(std::vector<TitleProfile> profiles);
+    TitleProfileCatalog(std::vector<TitleProfile> profiles,
+                        const QuirkRegistry& registry);
+
+    [[nodiscard]] static TitleProfileCatalog LoadDirectory(
+        const std::filesystem::path& directory);
+    [[nodiscard]] static TitleProfileCatalog LoadDirectory(
+        const std::filesystem::path& directory, const QuirkRegistry& registry);
+    [[nodiscard]] const TitleProfile* Match(const TitleIdentity& identity) const;
+    [[nodiscard]] const std::vector<TitleProfile>& Profiles() const noexcept;
+
+private:
+    void Validate(const QuirkRegistry* registry) const;
+
+    std::vector<TitleProfile> profiles_;
+};
+
+[[nodiscard]] std::string_view ToString(ProfileLifecycle lifecycle) noexcept;
+[[nodiscard]] std::string_view ToString(ProfileSource source) noexcept;
+
+}  // namespace ogplay::session

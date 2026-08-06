@@ -8,3 +8,12 @@ package、versionCode 和 `.so` SHA-256；匹配失败时由通用 profile/引�
 
 M5 迁移 DEMO 前不提交具体游戏 profile；游戏名、厂商名、包名只能在本目录出现。
 
+v1 的机器契约见 `title-profile-v1.schema.json`。提交 profile 前运行：
+
+```text
+python tools/validate_title_profiles.py --schema data/profiles/title-profile-v1.schema.json --profiles data/profiles
+```
+
+校验器拒绝未知字段、非声明式 TOML 值、非规范 guest 路径、重复身份指纹、文件名与 package
+不一致以及不受支持的 API、ABI 和生命周期模板。具体 quirk 还必须在 `data/quirks.toml`
+注册并提供“关闭即失败”的测试；该跨文件约束由后续 M5 Work Unit 接入。

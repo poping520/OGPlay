@@ -4,10 +4,11 @@
 
 ## 验收结论
 
-M4 功能出口已闭合。Windows/MSVC 与 macOS/AppleClang 候选曾在 `fcb52ef` 上通过严格
-全量 CTest 297/297；Linux/GCC 审查修复候选已更新到 ANGLE SDK `b47ed8c`，以 ANGLE 开启
-和 warnings-as-errors 通过严格全量 CTest 302/302。最终源码基线不得继续写作修复前的
-`fcb52ef`；必须在本轮改动提交并由 Windows/macOS 重跑后回填同一个主仓库 commit。
+M4 功能出口已闭合。Windows/MSVC 候选曾在 `fcb52ef` 上通过严格全量 CTest 297/297；
+Linux/GCC 与 macOS/AppleClang arm64 审查修复候选已更新到 ANGLE SDK `b47ed8c`，以
+ANGLE 开启和 warnings-as-errors 通过严格全量 CTest 302/302。最终源码基线不得继续写作
+修复前的 `fcb52ef`；必须在本轮改动（含 macOS dylib 暂存）提交并由 Windows 重跑后回填
+同一个主仓库 commit。
 
 ## 已完成开发范围
 
@@ -26,7 +27,7 @@ M4 功能出口已闭合。Windows/MSVC 与 macOS/AppleClang 候选曾在 `fcb52
 | 平台与工具链 | 硬件 backend | SwiftShader | 严格全量 CTest | 出口入口 |
 | --- | --- | --- | --- | --- |
 | Windows / MSVC | D3D11 | 包未编入，明确失败且不回退 | 修复前候选 297/297；待复验 | `WU-0195` |
-| macOS / AppleClang arm64 | Metal | Vulkan/SwiftShader 通过 | 修复前候选 297/297；待复验 | `WU-0196` |
+| macOS / AppleClang arm64 | Metal | Vulkan/SwiftShader 与隔离回归通过 | 修复后候选 302/302 | `WU-0196` 复验 |
 | Linux / GCC x64 | Vulkan | Vulkan/SwiftShader 与隔离回归通过 | 修复后候选 302/302 | `WU-0198` |
 
 Linux 出口额外闭合 GCC warnings-as-errors 下的 designated-initializer /
@@ -36,6 +37,12 @@ range-for 诊断，以及 SwiftShader 经清单 ICD + Vulkan loader 的初始化
 software→hardware 连续会话不会静默回退；关键图形与两个 APK 测试各连续 5 次稳定。
 审查修复后 hardware/SwiftShader 黄金帧、backend 隔离与两个真实 APK 又各连续执行
 5 次，全部通过。
+
+macOS 复验额外闭合：审查修复引入的 `ogplay_stage_angle_runtime` 原先只拷贝 SDK
+`bin/`（SwiftShader ICD），而 macOS `libEGL`/`libGLESv2` 位于 `lib/` 且 install name 为
+`./…`，导致干净构建下 doctest 发现阶段无法加载 dylib。POST_BUILD 现同时暂存这两个
+dylib；修复后严格全量 CTest 302/302，Metal/SwiftShader 黄金帧、backend 隔离、boundary
+与两个真实 APK 各连续 5 次稳定。
 
 ## Work Unit 范围
 

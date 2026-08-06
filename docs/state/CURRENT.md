@@ -1,13 +1,13 @@
 # 当前状态
 
-更新：2026-08-06 · M4 Linux 审查修复出口已通过
+更新：2026-08-06 · M4 macOS 审查修复复验已通过
 
 ## 当前阶段
 
 - M0、M1、M2、M3 已完成并验收；M4 功能出口闭合，审查修复后的三平台同提交复验中。
-- `WU-0198` 已用可追踪 ANGLE SDK `b47ed8c` 闭合 Linux/x64 Vulkan/hardware、
-  SwiftShader 与 backend 隔离，严格全量 CTest 302/302；Windows/macOS 需对修复候选
-  重跑后才能冻结最终主仓库验收 commit。记录见 [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
+- Linux/x64 与 macOS/arm64 均已对审查修复候选通过严格全量 CTest 302/302；macOS 额外
+  闭合 ANGLE `lib/` dylib 暂存（install name `./libEGL.dylib`）。Windows/MSVC 仍需复验
+  后才能冻结最终主仓库验收 commit。记录见 [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
 
 ## 已验收基线
 
@@ -31,16 +31,18 @@
   range-loop-construct，并以清单 ICD + Vulkan loader 闭合 SwiftShader 黄金帧；审查后
   增加作用域 driver 环境、可重定位 ICD、真实 renderer 与 software→hardware 隔离回归，
   修复后严格全量 CTest 302/302；编写 `M4-ACCEPTANCE.md`。
+- macOS/arm64 审查修复复验：POST_BUILD 暂存 `libEGL`/`libGLESv2` dylib 后严格全量
+  CTest 302/302；Metal/SwiftShader/隔离与两个真实 APK 各连续 5 次稳定。
 
 ## 下一步（按优先级）
 
-1. 在 Windows/MSVC 与 macOS/AppleClang 对本轮审查修复提交重跑严格出口，回填
+1. 在 Windows/MSVC 对本轮审查修复（含 macOS dylib 暂存）重跑严格出口，回填
    `M4-ACCEPTANCE.md` 的最终主仓库 commit；随后按路线图打开 M5。
 2. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
    能力账本为准。
 
 ## 阻塞
 
-- M4 最终验收基线等待 Windows/macOS 对审查修复候选复验；Linux 本地无阻塞。
+- M4 最终验收基线等待 Windows 对审查修复候选复验；Linux/macOS 本地无阻塞。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

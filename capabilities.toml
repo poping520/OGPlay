@@ -63,7 +63,7 @@ note = "M1 统一实时时钟与固定步长时钟，支持精确倍率、暂停
 [hal.scoped_environment]
 status = "partial"
 test = "tests/hal/host_environment_tests.cpp"
-note = "M4 为运行时资源提供可执行目录定位及串行、嵌套、异常安全的宿主环境作用域；Linux 严格出口已验证，Windows/macOS 审查修复候选待复验"
+note = "M4 为运行时资源提供可执行目录定位及串行、嵌套、异常安全的宿主环境作用域；Linux/macOS 严格出口已验证，Windows 审查修复候选待复验"
 
 [hal.window_input]
 status = "complete"
@@ -153,7 +153,7 @@ note = "M4 综合 API 19 ARMv7 样例冻结并真实执行 12 个 EGL 与源码�
 [validation.m4_exit_local]
 status = "complete"
 test = "tools/m4_exit.py --self-test"
-note = "M4 三平台本机增量出口入口已闭合；Windows/MSVC 与 macOS/arm64 修复前候选通过 297/297，Linux/x64 审查修复候选以真实 Bionic 和两个 APK 通过 302/302"
+note = "M4 三平台本机增量出口入口已闭合；Linux/x64 与 macOS/arm64 审查修复候选以真实 Bionic 和两个 APK 通过 302/302，Windows/MSVC 修复前候选 297/297 待复验"
 
 [fixtures.m1_guest]
 status = "complete"
@@ -218,7 +218,7 @@ note = "M4 浅 submodule 交付同 commit 的共享头、Windows/Linux x64 与 m
 [gles.angle]
 status = "complete"
 test = "tests/gles/egl_lifecycle_tests.cpp"
-note = "M4 已在 Windows/MSVC D3D11、Linux/x64 Vulkan 与 macOS/arm64 Metal 上完成真实 pbuffer 生命周期、guest 边界、SDL present 与黄金帧；Linux 修复候选另验证 SwiftShader 真实 renderer、外部 driver 环境恢复及连续 hardware 隔离"
+note = "M4 已在 Windows/MSVC D3D11、Linux/x64 Vulkan 与 macOS/arm64 Metal 上完成真实 pbuffer 生命周期、guest 边界、SDL present 与黄金帧；Linux/macOS 修复候选另验证 SwiftShader、backend 隔离，且 macOS POST_BUILD 暂存 libEGL/libGLESv2 dylib"
 
 [gles.egl_lifecycle]
 status = "partial"

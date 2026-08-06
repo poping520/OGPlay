@@ -24,10 +24,33 @@ include(cmake/ThirdParty.cmake)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 function(ogplay_stage_angle_runtime target)
-    if(OGPLAY_ENABLE_ANGLE AND EXISTS "${_angle_sdk}/bin")
-        add_custom_command(TARGET ${target} POST_BUILD
+    if(NOT OGPLAY_ENABLE_ANGLE)
+        return()
+    endif()
+    # Windows keeps EGL/GLESv2 DLLs under bin/; Unix keeps shared libraries under
+    # lib/ with install names like ./libEGL.dylib that resolve against the process
+    # working directory (ctest uses the build dir beside the executable).
+    set(_ogplay_angle_stage_commands)
+    if(EXISTS "${_angle_sdk}/bin")
+        list(APPEND _ogplay_angle_stage_commands
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${_angle_sdk}/bin" $<TARGET_FILE_DIR:${target}>
+        )
+    endif()
+    if(APPLE)
+        foreach(_ogplay_angle_dylib IN ITEMS libEGL.dylib libGLESv2.dylib)
+            if(EXISTS "${_angle_sdk}/lib/${_ogplay_angle_dylib}")
+                list(APPEND _ogplay_angle_stage_commands
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${_angle_sdk}/lib/${_ogplay_angle_dylib}"
+                        "$<TARGET_FILE_DIR:${target}>/${_ogplay_angle_dylib}"
+                )
+            endif()
+        endforeach()
+    endif()
+    if(_ogplay_angle_stage_commands)
+        add_custom_command(TARGET ${target} POST_BUILD
+            ${_ogplay_angle_stage_commands}
         )
     endif()
 endfunction()

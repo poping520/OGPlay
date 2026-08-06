@@ -25,6 +25,9 @@
 
 ## 最近完成
 
+- [WU-0214] plan/bootstrap 高层入口直接消费单一 ProfileRuntimeCatalog，Java handler 与
+  input mapper 不再由调用方分离拼接；底层组合 API 与 exact/default 语义保持不变。
+  macOS/arm64 warnings-as-errors 构建及全量 CTest 343/343 通过。
 - [WU-0213] ProfileRuntimeCatalog 以不可变所有权汇总通用 Java handler 与 input mapper；
   implementation id 规范唯一、handler 非空并仅支持精确查询。macOS/arm64
   warnings-as-errors 构建及全量 CTest 343/343 通过。
@@ -52,29 +55,11 @@
   回调失败锁定状态但保留显式清理路径。macOS/arm64 warnings-as-errors 构建及全量
   CTest 321/321 通过；同时移除当前 SDK 不可用的浮点 `from_chars`，以 classic locale
   严格解析 Profile 浮点纯数据并补正反回归。
-- [WU-0200] C++ 受限 TOML 加载器把 identity/runtime 转为强类型只读模型，严格检查
-  UTF-8、200 行、文件名/package、API/ABI、生命周期、表面范围与未知字段。
-- [WU-0201] data/audio 声明式加载覆盖 APK/OBB/external 挂载、资源清单、工作目录与
-  封面音乐，guest/资源路径均拒绝逃逸和非规范形式。
-- [WU-0202] Java 类/方法绑定、quirk 参数和输入模板进入纯数据模型；重复绑定、禁用参数、
-  缺失参数表和非法 id 明确失败，不执行脚本。
-- [WU-0203] profile 目录稳定排序加载，只以 package + versionCode + `.so` SHA-256
-  三项精确匹配；非法和交叠身份失败，无匹配保留通用路径。四个 WU 在 Windows/MSVC
-  warnings-as-errors 构建及全量 CTest 311/311 中通过。
-- [WU-0204] `data/quirks.toml` 进入 CI 门禁：五个说明字段、规范 owner、真实
-  `tests/*.cpp:<case-name>` 引用及所有 profile enabled 项均受检。
-- [WU-0205] C++ `QuirkRegistry` 加载 UTF-8 注册表与多行 reason；含 quirk 的 Profile
-  目录必须显式注入注册表，未注册或未注入均明确失败；Windows/MSVC warnings-as-errors
-  构建与全量 CTest 318/318 通过，当前仍未添加真实游戏 quirk。
-- [WU-0199] 冻结 Title Profile v1 JSON Schema 与纯标准库 TOML 校验器；身份三重指纹、
-  API/ABI/生命周期、声明式 data/audio/java/quirks/input、文件名一致性及 200 行上限
-  均有机器正反例，仓库 profile 目录进入 CTest；Windows/MSVC warnings-as-errors 构建与
-  全量 CTest 304/304 通过，尚未提交具体游戏 profile。
 
 ## 下一步（按优先级）
 
-1. 把 ProfileRuntimeCatalog 接入 plan/bootstrap，消除分离 Java/input 参数的错配风险。
-2. 为已导入 VFS/audio 数据建立有所有权的统一资产 bundle，再接入 bootstrap。
+1. 为已导入 VFS/audio 数据建立有所有权的统一资产 bundle，再接入 plan/bootstrap。
+2. 建立首批 profile 迁移清单并补齐通用 handler/题库，禁止向 `src/` 增加游戏特判。
 3. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
    能力账本为准。
 

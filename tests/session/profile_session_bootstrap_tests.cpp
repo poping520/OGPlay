@@ -44,13 +44,17 @@ constexpr std::string_view kHashB =
     return {"org.example.exact", 7, std::string(kHashA)};
 }
 
+[[nodiscard]] ogplay::session::ProfileRuntimeCatalog RuntimeCatalog() {
+    return {{}, InputTemplates()};
+}
+
 }  // namespace
 
 TEST_CASE("session bootstrap assembles only the exact matched Profile") {
     const ogplay::session::TitleProfileCatalog profiles{{ExactProfile()}};
-    const auto inputs = InputTemplates();
+    const auto runtime = RuntimeCatalog();
     auto result = ogplay::session::BootstrapProfileSession(
-        profiles, ExactIdentity(), GenericDefault(), {}, {}, inputs, {});
+        profiles, ExactIdentity(), GenericDefault(), {}, runtime, {});
 
     CHECK(result.selection ==
           ogplay::session::ProfileSessionSelection::exact_profile);
@@ -62,11 +66,11 @@ TEST_CASE("session bootstrap assembles only the exact matched Profile") {
 
 TEST_CASE("session bootstrap uses the explicit generic default on no match") {
     const ogplay::session::TitleProfileCatalog profiles{{ExactProfile()}};
-    const auto inputs = InputTemplates();
+    const auto runtime = RuntimeCatalog();
     const ogplay::session::TitleIdentity unknown{
         "org.example.unknown", 7, std::string(kHashB)};
     auto result = ogplay::session::BootstrapProfileSession(
-        profiles, unknown, GenericDefault(), {}, {}, inputs, {});
+        profiles, unknown, GenericDefault(), {}, runtime, {});
 
     CHECK(result.selection ==
           ogplay::session::ProfileSessionSelection::generic_default);

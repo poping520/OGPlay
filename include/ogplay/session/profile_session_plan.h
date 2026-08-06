@@ -11,6 +11,7 @@
 #include "ogplay/session/lifecycle.h"
 #include "ogplay/session/profile_audio.h"
 #include "ogplay/session/profile_java.h"
+#include "ogplay/session/profile_runtime_catalog.h"
 #include "ogplay/session/profile_vfs.h"
 
 namespace ogplay::session {
@@ -68,6 +69,12 @@ private:
     std::span<const ProfileVfsMountInput> vfs_inputs,
     std::span<const ProfileJavaImplementation> java_implementations,
     const input::InputTemplateCatalog& input_templates,
+    std::span<const ProfileAudioResource> audio_resources);
+
+[[nodiscard]] ProfileSessionPlan AssembleProfileSessionPlan(
+    const TitleProfile& profile,
+    std::span<const ProfileVfsMountInput> vfs_inputs,
+    const ProfileRuntimeCatalog& runtime_catalog,
     std::span<const ProfileAudioResource> audio_resources);
 
 }  // namespace ogplay::session

@@ -88,10 +88,11 @@ TEST_CASE("Profile session plan owns every generic assembly") {
     const auto vfs_inputs = VfsInputs();
     const auto java = JavaImplementations();
     const auto inputs = InputTemplates();
+    const ogplay::session::ProfileRuntimeCatalog runtime{java, inputs};
     auto audio = AudioResources();
     const auto expected_music = audio.front().contents;
     auto plan = ogplay::session::AssembleProfileSessionPlan(
-        profile, vfs_inputs, java, inputs, audio);
+        profile, vfs_inputs, runtime, audio);
     audio.front().contents.clear();
 
     CHECK(plan.Profile().identity.package == "fixture.session");

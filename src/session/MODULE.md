@@ -29,6 +29,8 @@
   再把命中 Profile 或显式 generic default 送入同一 plan 装配入口。
 - `ProfileRuntimeCatalog`：拥有不可变的通用 Java implementation handler 与 input mapper
   目录，拒绝非法、空或重复 handler。
+- plan/bootstrap 的高层重载直接消费一个 `ProfileRuntimeCatalog`，底层 span API 仅保留为
+  组合原语，避免调用方错配 Java 与 input 目录。
 - M1 将相同状态机装配 guest；M5 后续 WU 把 Profile 声明接入通用运行机制。
 
 ## 不变量

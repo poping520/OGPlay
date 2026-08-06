@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0233] APK preflight 已复用生产 Bionic/Android boundary 完成映射与重定位；真实
+  目标报告 5 guest + 2 boundary、6503 relocations、17 native calls。macOS/arm64
+  warnings-as-errors 构建及全量 CTest 369/369 通过。
 - [WU-0232] `libGLESv1_CM.so` 已追加发布 3 项 matrix-palette extension trap，core
   地址不漂移且独立记账；目标 ELF 的 62 个 GL imports 均有生成目录 provider。
   macOS/arm64 warnings-as-errors 构建及全量 CTest 368/368 通过。
@@ -71,9 +74,6 @@
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
   及全量 CTest 353/353 通过。
-- [WU-0210] Profile cover music 以 source + path 精确解析编码资源并保留 loop，经通用
-  MusicPlayer 提交；资源和播放器失败均明确暴露，不声明解码、混音或设备播放能力。
-  macOS/arm64 warnings-as-errors 构建及全量 CTest 334/334 通过。
 ## 下一步（按优先级）
 
 1. 装配通用 `gl_surface_view` guest process 与最小 JNIEnv/JavaVM guest ABI。

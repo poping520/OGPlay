@@ -18,6 +18,8 @@ using GlesGuestValue = std::uint32_t;
 using GlesHandler = std::function<GlesGuestValue(
     std::span<const GlesGuestValue> arguments, std::uint64_t thread_id)>;
 
+enum class GlesApi : std::uint8_t { gles1, gles2 };
+
 struct GlesFunctionInfo final {
     GlesThunkId id{};
     std::string_view name;
@@ -56,7 +58,7 @@ private:
 
 class GlesDispatchTable final {
 public:
-    GlesDispatchTable();
+    explicit GlesDispatchTable(GlesApi api = GlesApi::gles2);
 
     [[nodiscard]] static std::size_t FunctionCount() noexcept;
     [[nodiscard]] static std::optional<GlesThunkId> Find(
@@ -77,9 +79,16 @@ private:
         std::uint64_t last_thread{};
     };
 
+    GlesApi api_{GlesApi::gles2};
     mutable std::mutex mutex_;
     std::vector<GlesHandler> handlers_;
     std::vector<UnimplementedState> unimplemented_;
 };
+
+[[nodiscard]] std::size_t GlesFunctionCount(GlesApi api) noexcept;
+[[nodiscard]] std::optional<GlesThunkId> FindGlesFunction(
+    GlesApi api, std::string_view name) noexcept;
+[[nodiscard]] GlesFunctionInfo DescribeGlesFunction(GlesApi api,
+                                                    GlesThunkId id);
 
 }  // namespace ogplay::gles

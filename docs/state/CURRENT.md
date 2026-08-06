@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0230] Android boundary 已在 `libGLESv1_CM.so` 发布隔离的 145 项 core Thumb
+  trap；同名 GLES1/GLES2 不混淆，未绑定调用记账并明确失败。macOS/arm64
+  warnings-as-errors 构建及全量 CTest 366/366 通过。
 - [WU-0229] GLES1.1 core 145 项声明式目录已与固定 ANGLE `GLES/gl.h` 双向核对，
   57 个指针参数均有搬运元数据；GLES1/GLES2 生成物隔离 namespace。macOS/arm64
   warnings-as-errors 构建及全量 CTest 365/365 通过。
@@ -62,9 +65,6 @@
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
   及全量 CTest 353/353 通过。
-- [WU-0213] ProfileRuntimeCatalog 以不可变所有权汇总通用 Java handler 与 input mapper；
-  implementation id 规范唯一、handler 非空并仅支持精确查询。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 343/343 通过。
 - [WU-0212] 单一 bootstrap 先执行三重身份精确匹配，再把 exact 或显式 generic default
   送入同一 ProfileSessionPlan；非法身份和已选路径装配失败绝不回退。macOS/arm64
   warnings-as-errors 构建及全量 CTest 341/341 通过。

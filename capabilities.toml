@@ -444,3 +444,8 @@ note = "M5 WU-0228 把 Profile native calls 按 JNI short/long 顺序解析为 r
 status = "complete"
 test = "tools.gles1_catalog_current"
 note = "M5 WU-0229 建立与固定 ANGLE GLES/gl.h 完全一致的 GLES1.1 core 145 项声明式目录；57 个指针参数均有搬运元数据"
+
+[runtime.gles1_core_boundary]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp"
+note = "M5 WU-0230 在 libGLESv1_CM.so 发布隔离的 145 项 core Thumb trap；未绑定调用记账并明确失败，不误入同名 GLES2 handler"

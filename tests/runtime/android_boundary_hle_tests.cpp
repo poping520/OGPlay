@@ -131,6 +131,26 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
         std::runtime_error);
 }
 
+TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
+    BoundaryFixture fixture;
+    CHECK(ogplay::gles::GlesFunctionCount(ogplay::gles::GlesApi::gles1) == 145);
+    for (std::size_t index = 0;
+         index < ogplay::gles::GlesFunctionCount(ogplay::gles::GlesApi::gles1);
+         ++index) {
+        const auto function = ogplay::gles::DescribeGlesFunction(
+            ogplay::gles::GlesApi::gles1,
+            static_cast<ogplay::gles::GlesThunkId>(index));
+        CAPTURE(function.name);
+        CHECK(fixture.boundary.Symbols()
+                  .Lookup("libGLESv1_CM.so", function.name)
+                  .has_value());
+    }
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glAlphaFunc", {0x0201U, 0}),
+        "unimplemented GLES1 call glAlphaFunc (thunk 1, guest thread 1)",
+        ogplay::gles::GlesDispatchError);
+}
+
 TEST_CASE("Android looper publishes command and input poll sources") {
     BoundaryFixture fixture;
     fixture.bus.Write32(fixture.stack.Add(4), 0x12345678U);

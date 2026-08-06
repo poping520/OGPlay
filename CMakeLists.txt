@@ -155,6 +155,7 @@ ogplay_set_project_warnings(ogplay_cpu)
 
 add_library(ogplay_loader
     src/loader/apk.cpp
+    src/loader/apk_manifest.cpp
     src/loader/dex.cpp
     src/loader/dex_analysis.cpp
     src/loader/dex_class_data.cpp
@@ -392,6 +393,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/native_activity_runner_tests.cpp
         tests/runtime/vfs_tests.cpp
         tests/loader/apk_tests.cpp
+        tests/loader/apk_manifest_tests.cpp
         tests/loader/elf_tests.cpp
         tests/loader/dex_tests.cpp
         tests/loader/dex_analysis_tests.cpp

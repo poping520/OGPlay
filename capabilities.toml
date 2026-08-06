@@ -384,3 +384,8 @@ note = "M4 允许统一 ELF 装载事务追加绝对 HLE 边界模块；边界�
 status = "complete"
 test = "tests/loader/apk_tests.cpp"
 note = "M5 WU-0217 在严格 ZIP32 local/central 与 CRC32 校验上支持 stored、fixed/dynamic Huffman Deflate 条目，旧 APK 的压缩 native ELF 与 Manifest 可由统一入口读取"
+
+[loader.apk_manifest_identity]
+status = "complete"
+test = "tests/loader/apk_manifest_tests.cpp"
+note = "M5 WU-0218 严格解析二进制 Manifest 的 UTF-8/UTF-16 string pool 与 typed attributes，产出 package/versionCode/versionName/minSdk/targetSdk 事实"

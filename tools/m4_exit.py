@@ -135,6 +135,11 @@ def validate_angle_sdk(source: Path, host: HostSpec) -> Path:
             )
         for relative in sorted(expected_runtime):
             require_file(package / relative, f"ANGLE SwiftShader runtime {relative}")
+    if host.platform == "linux" and "angle_enable_vulkan=true" in gn_args:
+        require_file(
+            package / "lib" / "libvulkan.so.1",
+            "ANGLE Linux Vulkan loader",
+        )
     return package
 
 
@@ -234,7 +239,10 @@ def self_test() -> int:
             "platform": "linux",
             "target_cpu": "x64",
             "configuration": "release",
-            "gn_args": ["angle_enable_swiftshader=true"],
+            "gn_args": [
+                "angle_enable_swiftshader=true",
+                "angle_enable_vulkan=true",
+            ],
             "runtime_artifacts": [
                 "bin/libvk_swiftshader.so", "bin/vk_swiftshader_icd.json"
             ],
@@ -244,7 +252,18 @@ def self_test() -> int:
         (package / "bin" / "vk_swiftshader_icd.json").write_text(
             "{}", encoding="utf-8"
         )
+        (package / "lib").mkdir()
+        loader = package / "lib" / "libvulkan.so.1"
+        loader.write_bytes(b"loader")
         assert validate_angle_sdk(root, linux) == package
+        loader.unlink()
+        try:
+            validate_angle_sdk(root, linux)
+        except ExitPreflightError as error:
+            assert "Vulkan loader" in str(error)
+        else:
+            raise AssertionError("Linux ANGLE SDK without its Vulkan loader was accepted")
+        loader.write_bytes(b"loader")
 
         bionic = root / "oracle"
         for api in (19, 22, 23):

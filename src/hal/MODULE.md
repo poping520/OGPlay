@@ -20,6 +20,10 @@
 - `hal::VirtualMemoryReservation`：页对齐的宿主预留、提交、权限和释放接口。
 - `hal::ReserveVirtualMemory`：按目标平台选择 VirtualAlloc 或 mmap 后端。
 - `hal::HostThread` / `StartHostThread`：真实宿主线程启动、标识与显式 join 边界。
+- `hal::ScopedHostEnvironment`：串行覆盖一组宿主进程环境变量并在嵌套、异常和析构路径恢复
+  原值；`HostEnvironmentValue` 提供同锁只读查询。
+- `hal::HostExecutableDirectory`：通过平台实现返回当前宿主可执行文件所在的绝对目录，
+  供上层定位随程序交付且可重定位的运行时资源。
 - `hal::GraphicsPresenter`：不暴露 SDL/EGL/平台句柄的 drawable 与 present 契约。
 - `hal::AudioOutput`：格式、启动停止、帧队列与交错样本提交契约；设备后端属于后续阶段。
 - `hal::HostFileSystem` / `CreateStandardHostFileSystem`：宿主文件状态、建目录及二进制读写。
@@ -35,6 +39,8 @@
 - present 每帧先清理黑边，再只向等比内容矩形缩放；窗口比例不得拉伸 guest 画面。
 - 坐标映射与 present 必须共用 `FitDisplayRect`，禁止各自维护舍入规则。
 - 虚拟内存写权限必须同时具备读权限；范围必须页对齐且位于自身 reservation 内。
+- 进程环境覆盖必须先完整验证名称集合，重复或非法名称不得产生部分修改；覆盖期间持有
+  进程级递归锁，恢复按逆序执行。
 
 ## 禁止
 

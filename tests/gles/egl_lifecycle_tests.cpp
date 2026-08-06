@@ -171,6 +171,17 @@ TEST_CASE("EGL lifecycle rejects invalid dimensions before native calls") {
     CHECK(api.calls.empty());
 }
 
+TEST_CASE("EGL lifecycle rejects non-Vulkan SwiftShader before native calls") {
+    FakeEglApi api;
+    const ogplay::gles::AngleBackend invalid{
+        ogplay::gles::AngleRenderer::metal,
+        ogplay::gles::AngleDevice::swiftshader};
+    CHECK_THROWS_AS(ogplay::gles::EglLifecycle::CreatePbuffer(
+                        api, invalid, 32, 32),
+                    std::invalid_argument);
+    CHECK(api.calls.empty());
+}
+
 TEST_CASE("EGL lifecycle reports native failure and unwinds partial state") {
     using FailAt = FakeEglApi::FailAt;
     using Operation = ogplay::gles::EglOperation;
@@ -184,7 +195,7 @@ TEST_CASE("EGL lifecycle reports native failure and unwinds partial state") {
         {FailAt::current, Operation::make_current},
     };
 
-    for (const auto [fail_at, operation] : failures) {
+    for (const auto& [fail_at, operation] : failures) {
         FakeEglApi api(fail_at);
         try {
             static_cast<void>(ogplay::gles::EglLifecycle::CreatePbuffer(

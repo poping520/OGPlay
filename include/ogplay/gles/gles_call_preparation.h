@@ -46,16 +46,16 @@ public:
 
 struct PreparedGlesPointer final {
     std::size_t parameter_index{};
-    memory::GuestAddress guest_address;
+    memory::GuestAddress guest_address{};
     std::uint64_t byte_size{};
     GuestTransferDirection direction{GuestTransferDirection::input};
     bool deferred{};
-    std::optional<GuestBuffer> transfer;
+    std::optional<GuestBuffer> transfer{};
 };
 
 struct PreparedGlesCall final {
     GlesThunkId id{};
-    std::vector<PreparedGlesPointer> pointers;
+    std::vector<PreparedGlesPointer> pointers{};
 };
 
 [[nodiscard]] PreparedGlesCall PrepareGles2Call(

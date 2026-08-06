@@ -11,6 +11,8 @@
   identity/runtime/data/audio/java/quirks/input 强类型模型。
 - `TitleProfileCatalog::LoadDirectory/Match`：稳定加载 profile 目录，并且只在 package、
   versionCode 与 `.so` SHA-256 三项全部命中时返回 profile。
+- `MatchApkTitleProfile`：把 binary Manifest 与所有 APK ARM native library 目录事实送入
+  Profile 精确匹配；只有 package/version/hash/ABI 一致的唯一 library 才能成为入口候选。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与
   测试引用；含 quirk 的 Profile 目录必须显式通过注册表验证。
 - `DescribeLifecycle` / `LifecycleFrameRunner`：把三种 Profile 生命周期映射为稳定的通用
@@ -52,6 +54,8 @@
 - audio 资源缺失、重复或为空时明确失败；错误 source 不得仅凭同名路径匹配。
 - session plan 只在全部子装配成功后发布；运行期不再次猜测 input/audio 选择。
 - bootstrap 只在零匹配时使用 generic default；非法身份或已选择路径装配失败不得回退。
+- APK Profile 匹配不得猜 main library；无匹配返回空，ABI 自相矛盾或多个 library 同时
+  精确命中必须明确失败。
 - runtime catalog 的 implementation id 必须规范且唯一，查询只接受精确 id。
 - imported assets 构造后只读；VFS 键遵循统一大小写规则，audio 继续按 source + path 精确。
 - 每个 enabled quirk 必须有注册定义和可定位测试；未注入注册表时不得进入匹配目录。

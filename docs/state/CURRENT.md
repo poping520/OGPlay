@@ -26,6 +26,10 @@
 
 ## 最近完成
 
+- [WU-0221] APK Profile 入口组合 Manifest package/version 与全部 ARM library hash/ABI，
+  只发布唯一四项精确候选；无匹配返回空，ABI 矛盾与多库命中明确失败。目标 APK 已由内存
+  Profile 精确选中唯一 `armeabi` library。macOS/arm64 warnings-as-errors 构建及全量
+  CTest 355/355 通过。
 - [WU-0220] Title Profile v1 的 JSON schema、Python 校验器、C++ loader/catalog 现以同一
   强类型集合接受 `armeabi` 与 `armeabi-v7a`，非 ARM 或非法枚举明确失败；既有三重指纹
   匹配语义未扩大。macOS/arm64 warnings-as-errors 构建及全量 CTest 353/353 通过。
@@ -61,22 +65,6 @@
 - [WU-0210] Profile cover music 以 source + path 精确解析编码资源并保留 loop，经通用
   MusicPlayer 提交；资源和播放器失败均明确暴露，不声明解码、混音或设备播放能力。
   macOS/arm64 warnings-as-errors 构建及全量 CTest 334/334 通过。
-- [WU-0209] 新增不可变的 code-defined input mapper catalog；Profile input id 精确选择
-  通用 mapper，无声明时使用 catalog 显式默认项，未知、重复、非法或空 mapper 均明确
-  失败。macOS/arm64 warnings-as-errors 构建及全量 CTest 330/330 通过。
-- [WU-0208] Profile Java 类与实例方法装配到全新的 JNI registry/engine，仅注册 Profile
-  实际引用的通用 handler；缺失、重复、空 handler 及非法 JNI 声明均明确失败，且失败
-  不发布半成品。macOS/arm64 warnings-as-errors 构建及全量 CTest 330/330 通过。
-- [WU-0207] Profile data mount 与已导入文件以 guest 根 + source 精确配对，在全新通用
-  VFS 中保留 APK/OBB/external 来源和可写性；required mount/manifest、working directory、
-  额外重复输入和来源错配均明确失败，失败不发布半成品。macOS/arm64 warnings-as-errors
-  构建及全量 CTest 324/324 通过。
-- [WU-0206] native_activity、gl_surface_view、custom_jni 映射为强类型通用回调路由，
-  三者共用输入→生命周期→渲染→present→音频→调度→统一 Clock 计时的唯一帧实现；
-  回调失败锁定状态但保留显式清理路径。macOS/arm64 warnings-as-errors 构建及全量
-  CTest 321/321 通过；同时移除当前 SDK 不可用的浮点 `from_chars`，以 classic locale
-  严格解析 Profile 浮点纯数据并补正反回归。
-
 ## 下一步（按优先级）
 
 1. 建立首批 profile 迁移清单，把遗留项逐条归类为通用缺陷、纯数据、真 quirk 或删除。

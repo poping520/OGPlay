@@ -276,6 +276,7 @@ ogplay_set_project_warnings(ogplay_runtime)
 add_library(ogplay_session
     src/session/lifecycle.cpp
     src/session/profile_asset_bundle.cpp
+    src/session/profile_apk.cpp
     src/session/profile_audio.cpp
     src/session/profile_java.cpp
     src/session/profile_runtime_catalog.cpp
@@ -415,6 +416,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/quirk_registry_tests.cpp
         tests/session/lifecycle_tests.cpp
         tests/session/profile_asset_bundle_tests.cpp
+        tests/session/profile_apk_tests.cpp
         tests/session/profile_audio_tests.cpp
         tests/session/profile_java_tests.cpp
         tests/session/profile_runtime_catalog_tests.cpp

@@ -22,12 +22,14 @@ enum class ProfileLifecycle : std::uint8_t {
 
 enum class ProfileSource : std::uint8_t { apk, obb, external };
 
+enum class ProfileAbi : std::uint8_t { armeabi, armeabi_v7a };
+
 struct ProfileIdentity final {
     std::string package;
     std::string name;
     std::vector<std::uint32_t> version_codes;
     std::vector<std::string> so_sha256;
-    std::string abi;
+    ProfileAbi abi{ProfileAbi::armeabi_v7a};
 };
 
 struct ProfileSurface final {
@@ -143,5 +145,6 @@ private:
 
 [[nodiscard]] std::string_view ToString(ProfileLifecycle lifecycle) noexcept;
 [[nodiscard]] std::string_view ToString(ProfileSource source) noexcept;
+[[nodiscard]] std::string_view ToString(ProfileAbi abi) noexcept;
 
 }  // namespace ogplay::session

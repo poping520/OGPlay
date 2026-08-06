@@ -394,3 +394,8 @@ note = "M5 WU-0218 严格解析二进制 Manifest 的 UTF-8/UTF-16 string pool �
 status = "complete"
 test = "tests/loader/apk_native_tests.cpp"
 note = "M5 WU-0219 稳定枚举 armeabi/armeabi-v7a native library，拥有解压字节并产出精确小写 SHA-256；不猜 main library"
+
+[profiles.legacy_arm_abi_identity]
+status = "complete"
+test = "tests/session/title_profile_tests.cpp"
+note = "M5 WU-0220 的 Title Profile v1、Python 校验器与 C++ loader 以同一强类型集合接受 armeabi/armeabi-v7a，并拒绝其他 ABI"

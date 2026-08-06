@@ -279,6 +279,16 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     throw TitleProfileError(std::string(field) + " is unsupported");
 }
 
+[[nodiscard]] ProfileAbi DecodeAbi(const std::string_view value) {
+    if (value == "armeabi") return ProfileAbi::armeabi;
+    if (value == "armeabi-v7a") return ProfileAbi::armeabi_v7a;
+    throw TitleProfileError("identity.abi must be armeabi or armeabi-v7a");
+}
+
+[[nodiscard]] bool ValidAbi(const ProfileAbi abi) noexcept {
+    return abi == ProfileAbi::armeabi || abi == ProfileAbi::armeabi_v7a;
+}
+
 [[nodiscard]] ProfileIdentity DecodeIdentity(const Table& root,
                                              const std::string_view expected_package) {
     const auto& table = AsTable(Require(root, "identity", "identity"), "identity");
@@ -318,10 +328,8 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
         result.so_sha256.push_back(std::move(digest));
     }
     RequireUnique(result.so_sha256, "identity.so_sha256");
-    result.abi = AsString(Require(table, "abi", "identity.abi"), "identity.abi");
-    if (result.abi != "armeabi-v7a") {
-        throw TitleProfileError("identity.abi must be armeabi-v7a");
-    }
+    result.abi = DecodeAbi(
+        AsString(Require(table, "abi", "identity.abi"), "identity.abi"));
     return result;
 }
 
@@ -660,7 +668,7 @@ void TitleProfileCatalog::Validate(const QuirkRegistry* registry) const {
         const auto& identity = profile.identity;
         if (profile.schema != 1 || !ValidPackage(identity.package) ||
             identity.version_codes.empty() || identity.so_sha256.empty() ||
-            identity.abi != "armeabi-v7a" ||
+            !ValidAbi(identity.abi) ||
             std::any_of(identity.version_codes.begin(), identity.version_codes.end(),
                         [](const std::uint32_t version) { return version == 0; }) ||
             std::any_of(identity.so_sha256.begin(), identity.so_sha256.end(),
@@ -743,6 +751,14 @@ std::string_view ToString(const ProfileSource source) noexcept {
     case ProfileSource::apk: return "apk";
     case ProfileSource::obb: return "obb";
     case ProfileSource::external: return "external";
+    }
+    return "unknown";
+}
+
+std::string_view ToString(const ProfileAbi abi) noexcept {
+    switch (abi) {
+    case ProfileAbi::armeabi: return "armeabi";
+    case ProfileAbi::armeabi_v7a: return "armeabi-v7a";
     }
     return "unknown";
 }

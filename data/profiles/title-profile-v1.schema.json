@@ -65,7 +65,7 @@
           }
         },
         "abi": {
-          "const": "armeabi-v7a"
+          "enum": ["armeabi", "armeabi-v7a"]
         }
       }
     },

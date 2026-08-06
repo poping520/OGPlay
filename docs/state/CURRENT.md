@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0220] Title Profile v1 的 JSON schema、Python 校验器、C++ loader/catalog 现以同一
+  强类型集合接受 `armeabi` 与 `armeabi-v7a`，非 ARM 或非法枚举明确失败；既有三重指纹
+  匹配语义未扩大。macOS/arm64 warnings-as-errors 构建及全量 CTest 353/353 通过。
 - [WU-0219] APK 32 位 ARM native library 目录只接受规范 `armeabi`/`armeabi-v7a`
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建

@@ -32,4 +32,9 @@ struct ProfileSessionBootstrapResult final {
     const ProfileRuntimeCatalog& runtime_catalog,
     std::span<const ProfileAudioResource> audio_resources);
 
+[[nodiscard]] ProfileSessionBootstrapResult BootstrapProfileSession(
+    const TitleProfileCatalog& profiles, const TitleIdentity& identity,
+    const TitleProfile& generic_default, const ProfileAssetBundle& assets,
+    const ProfileRuntimeCatalog& runtime_catalog);
+
 }  // namespace ogplay::session

@@ -74,7 +74,8 @@ std::vector<BionicHleSymbol> BuildSymbols() {
         {"liblog.so", "__android_log_write"},
     }};
     std::vector<BionicHleSymbol> result;
-    result.reserve(names.size() + gles::GlesDispatchTable::FunctionCount());
+    result.reserve(names.size() + gles::GlesDispatchTable::FunctionCount() +
+                   gles::GlesFunctionCount(gles::GlesApi::gles1));
     for (std::size_t index = 0; index < names.size(); ++index) {
         result.push_back({std::string(names[index].first), std::string(names[index].second),
                           memory::GuestAddress{kBionicHleThunkBegin +
@@ -91,6 +92,15 @@ std::vector<BionicHleSymbol> BuildSymbols() {
             });
         if (already_registered) continue;
         result.push_back({"libGLESv2.so", std::string(function.name),
+                          memory::GuestAddress{kBionicHleThunkBegin +
+                                               static_cast<std::uint32_t>(result.size()) *
+                                                   kThunkStride + 1U}});
+    }
+    for (std::size_t index = 0;
+         index < gles::GlesFunctionCount(gles::GlesApi::gles1); ++index) {
+        const auto function = gles::DescribeGlesFunction(
+            gles::GlesApi::gles1, static_cast<gles::GlesThunkId>(index));
+        result.push_back({"libGLESv1_CM.so", std::string(function.name),
                           memory::GuestAddress{kBionicHleThunkBegin +
                                                static_cast<std::uint32_t>(result.size()) *
                                                    kThunkStride + 1U}});
@@ -163,7 +173,7 @@ public:
             result = ExecuteBionicMemoryIntercept(
                 address_space_, {symbol, arguments, state.ThreadId()});
         } else {
-            result = Dispatch(symbol, arguments, state);
+            result = Dispatch(resolved->module, symbol, arguments, state);
         }
         RecordGpuCall(symbol, arguments);
         state.SetRegister(cpu::CoreRegister::r0, result);
@@ -396,10 +406,27 @@ private:
         return ident;
     }
 
-    std::uint32_t Dispatch(const std::string_view symbol,
+    std::uint32_t Dispatch(const std::string_view module,
+                           const std::string_view symbol,
                            const std::array<std::uint32_t, 4>& args,
                            const cpu::A32State& state) {
         const auto tid = state.ThreadId();
+        if (module == "libGLESv1_CM.so") {
+            const auto id = gles::FindGlesFunction(gles::GlesApi::gles1, symbol);
+            if (!id.has_value()) {
+                throw std::logic_error("GLES1 boundary symbol is outside its catalog");
+            }
+            const auto info = gles::DescribeGlesFunction(gles::GlesApi::gles1, *id);
+            std::vector<std::uint32_t> all;
+            all.reserve(info.parameter_count);
+            for (std::size_t index = 0; index < info.parameter_count; ++index) {
+                all.push_back(index < args.size()
+                                  ? args[index]
+                                  : StackWord(state, static_cast<std::uint32_t>(
+                                                         (index - args.size()) * 4U)));
+            }
+            return gles1_dispatch_.Invoke(*id, all, tid);
+        }
         if (symbol == "AConfiguration_new") return kFakeConfiguration;
         if (symbol == "AConfiguration_delete" ||
             symbol == "AConfiguration_fromAssetManager") return 0;
@@ -634,6 +661,7 @@ private:
     std::vector<BionicHleSymbol> symbols_;
     BionicHleSymbolProvider provider_;
     AndroidBoundaryGles gles_dispatch_;
+    gles::GlesDispatchTable gles1_dispatch_{gles::GlesApi::gles1};
     bool mapped_{};
     std::optional<gles::AngleFrame> angle_frame_;
     std::uint64_t frame_sequence_{};

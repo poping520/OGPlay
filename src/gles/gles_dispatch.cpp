@@ -6,17 +6,57 @@
 #include <utility>
 
 #include "ogplay/gles/generated/gles2_catalog.h"
+#include "ogplay/gles/generated/gles1_catalog.h"
 
 namespace ogplay::gles {
 namespace {
 
 namespace catalog = generated::gles2;
 
-[[nodiscard]] std::string UnimplementedMessage(const GlesThunkId id,
+template <typename Functions>
+std::optional<GlesThunkId> FindInCatalog(
+    const Functions& functions, const std::string_view name) noexcept {
+    const auto found = std::lower_bound(
+        functions.begin(), functions.end(), name,
+        [](const auto& candidate, const std::string_view requested) {
+            return candidate.name < requested;
+        });
+    if (found == functions.end() || found->name != name) return std::nullopt;
+    return static_cast<GlesThunkId>(std::distance(functions.begin(), found));
+}
+
+template <typename Functions, typename Parameters>
+GlesFunctionInfo DescribeInCatalog(const Functions& functions,
+                                   const Parameters& parameters,
+                                   const GlesThunkId id,
+                                   const std::string_view api_name) {
+    const auto index = static_cast<std::size_t>(id);
+    if (index >= functions.size()) {
+        throw GlesDispatchError(std::string(api_name) +
+                                " thunk id is outside the generated catalog");
+    }
+    const auto& function = functions[index];
+    std::size_t pointer_count{};
+    for (std::size_t parameter = 0; parameter < function.parameter_count;
+         ++parameter) {
+        if (parameters[function.parameter_offset + parameter].indirection != 0) {
+            ++pointer_count;
+        }
+    }
+    return {.id = id,
+            .name = function.name,
+            .return_type = function.return_type,
+            .parameter_count = function.parameter_count,
+            .pointer_parameter_count = pointer_count};
+}
+
+[[nodiscard]] std::string UnimplementedMessage(const GlesApi api,
+                                               const GlesThunkId id,
                                                const std::string_view name,
                                                const std::uint64_t thread_id) {
     std::ostringstream stream;
-    stream << "unimplemented GLES2 call " << name << " (thunk " << id
+    stream << "unimplemented " << (api == GlesApi::gles1 ? "GLES1" : "GLES2")
+           << " call " << name << " (thunk " << id
            << ", guest thread " << thread_id << ')';
     return stream.str();
 }
@@ -34,7 +74,7 @@ namespace catalog = generated::gles2;
 GlesUnimplementedError::GlesUnimplementedError(const GlesThunkId id,
                                                const std::string_view name,
                                                const std::uint64_t thread_id)
-    : GlesDispatchError(UnimplementedMessage(id, name, thread_id)), id_(id),
+    : GlesDispatchError(UnimplementedMessage(GlesApi::gles2, id, name, thread_id)), id_(id),
       name_(name), thread_id_(thread_id) {}
 
 GlesThunkId GlesUnimplementedError::Id() const noexcept {
@@ -49,14 +89,14 @@ std::uint64_t GlesUnimplementedError::ThreadId() const noexcept {
     return thread_id_;
 }
 
-GlesDispatchTable::GlesDispatchTable()
-    : handlers_(catalog::kFunctions.size()),
-      unimplemented_(catalog::kFunctions.size()) {
+GlesDispatchTable::GlesDispatchTable(const GlesApi api)
+    : api_(api), handlers_(GlesFunctionCount(api)),
+      unimplemented_(GlesFunctionCount(api)) {
     constexpr auto kThunkCapacity =
         static_cast<std::size_t>((std::numeric_limits<GlesThunkId>::max)()) +
         1U;
-    if (catalog::kFunctions.size() > kThunkCapacity) {
-        throw GlesDispatchError("generated GLES2 catalog exceeds thunk id range");
+    if (GlesFunctionCount(api) > kThunkCapacity) {
+        throw GlesDispatchError("generated GLES catalog exceeds thunk id range");
     }
 }
 
@@ -98,7 +138,7 @@ GlesFunctionInfo GlesDispatchTable::Describe(const GlesThunkId id) {
 }
 
 void GlesDispatchTable::Bind(const std::string_view name, GlesHandler handler) {
-    const auto id = Find(name);
+    const auto id = FindGlesFunction(api_, name);
     if (!id) {
         throw GlesDispatchError("cannot bind a name outside the GLES2 catalog");
     }
@@ -114,7 +154,8 @@ void GlesDispatchTable::Bind(const std::string_view name, GlesHandler handler) {
 }
 
 bool GlesDispatchTable::IsBound(const GlesThunkId id) const {
-    const auto index = CheckedIndex(id);
+    const auto index = static_cast<std::size_t>(id);
+    static_cast<void>(DescribeGlesFunction(api_, id));
     std::scoped_lock lock(mutex_);
     return static_cast<bool>(handlers_[index]);
 }
@@ -122,7 +163,7 @@ bool GlesDispatchTable::IsBound(const GlesThunkId id) const {
 GlesGuestValue GlesDispatchTable::Invoke(
     const GlesThunkId id, const std::span<const GlesGuestValue> arguments,
     const std::uint64_t thread_id) {
-    const auto info = Describe(id);
+    const auto info = DescribeGlesFunction(api_, id);
     if (arguments.size() != info.parameter_count) {
         throw GlesDispatchError("GLES2 call has the wrong guest argument count");
     }
@@ -141,7 +182,10 @@ GlesGuestValue GlesDispatchTable::Invoke(
         }
     }
     if (!handler) {
-        throw GlesUnimplementedError(id, info.name, thread_id);
+        if (api_ == GlesApi::gles2) {
+            throw GlesUnimplementedError(id, info.name, thread_id);
+        }
+        throw GlesDispatchError(UnimplementedMessage(api_, id, info.name, thread_id));
     }
     return handler(arguments, thread_id);
 }
@@ -157,12 +201,34 @@ GlesDispatchTable::UnimplementedCalls() const {
         }
         result.push_back(
             {.id = static_cast<GlesThunkId>(index),
-             .name = catalog::kFunctions[index].name,
+             .name = DescribeGlesFunction(
+                         api_, static_cast<GlesThunkId>(index)).name,
              .hits = state.hits,
              .first_thread = state.first_thread,
              .last_thread = state.last_thread});
     }
     return result;
+}
+
+std::size_t GlesFunctionCount(const GlesApi api) noexcept {
+    return api == GlesApi::gles1 ? generated::gles1::kFunctions.size()
+                                 : generated::gles2::kFunctions.size();
+}
+
+std::optional<GlesThunkId> FindGlesFunction(
+    const GlesApi api, const std::string_view name) noexcept {
+    return api == GlesApi::gles1
+               ? FindInCatalog(generated::gles1::kFunctions, name)
+               : FindInCatalog(generated::gles2::kFunctions, name);
+}
+
+GlesFunctionInfo DescribeGlesFunction(const GlesApi api,
+                                      const GlesThunkId id) {
+    return api == GlesApi::gles1
+               ? DescribeInCatalog(generated::gles1::kFunctions,
+                                   generated::gles1::kParameters, id, "GLES1")
+               : DescribeInCatalog(generated::gles2::kFunctions,
+                                   generated::gles2::kParameters, id, "GLES2");
 }
 
 }  // namespace ogplay::gles

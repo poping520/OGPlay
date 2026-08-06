@@ -10,6 +10,8 @@
 namespace ogplay::gles {
 namespace {
 
+namespace catalog = generated::gles2;
+
 [[nodiscard]] std::string UnimplementedMessage(const GlesThunkId id,
                                                const std::string_view name,
                                                const std::uint64_t thread_id) {
@@ -21,7 +23,7 @@ namespace {
 
 [[nodiscard]] std::size_t CheckedIndex(const GlesThunkId id) {
     const auto index = static_cast<std::size_t>(id);
-    if (index >= generated::kFunctions.size()) {
+    if (index >= catalog::kFunctions.size()) {
         throw GlesDispatchError("GLES2 thunk id is outside the generated catalog");
     }
     return index;
@@ -48,42 +50,42 @@ std::uint64_t GlesUnimplementedError::ThreadId() const noexcept {
 }
 
 GlesDispatchTable::GlesDispatchTable()
-    : handlers_(generated::kFunctions.size()),
-      unimplemented_(generated::kFunctions.size()) {
+    : handlers_(catalog::kFunctions.size()),
+      unimplemented_(catalog::kFunctions.size()) {
     constexpr auto kThunkCapacity =
         static_cast<std::size_t>((std::numeric_limits<GlesThunkId>::max)()) +
         1U;
-    if (generated::kFunctions.size() > kThunkCapacity) {
+    if (catalog::kFunctions.size() > kThunkCapacity) {
         throw GlesDispatchError("generated GLES2 catalog exceeds thunk id range");
     }
 }
 
 std::size_t GlesDispatchTable::FunctionCount() noexcept {
-    return generated::kFunctions.size();
+    return catalog::kFunctions.size();
 }
 
 std::optional<GlesThunkId> GlesDispatchTable::Find(
     const std::string_view name) noexcept {
     const auto found = std::lower_bound(
-        generated::kFunctions.begin(), generated::kFunctions.end(), name,
-        [](const generated::FunctionSpec& candidate,
+        catalog::kFunctions.begin(), catalog::kFunctions.end(), name,
+        [](const catalog::FunctionSpec& candidate,
            const std::string_view requested) {
             return candidate.name < requested;
         });
-    if (found == generated::kFunctions.end() || found->name != name) {
+    if (found == catalog::kFunctions.end() || found->name != name) {
         return std::nullopt;
     }
     return static_cast<GlesThunkId>(
-        std::distance(generated::kFunctions.begin(), found));
+        std::distance(catalog::kFunctions.begin(), found));
 }
 
 GlesFunctionInfo GlesDispatchTable::Describe(const GlesThunkId id) {
     const auto index = CheckedIndex(id);
-    const auto& function = generated::kFunctions[index];
+    const auto& function = catalog::kFunctions[index];
     std::size_t pointer_count{};
     for (std::size_t parameter = 0; parameter < function.parameter_count;
          ++parameter) {
-        if (generated::kParameters[function.parameter_offset + parameter]
+        if (catalog::kParameters[function.parameter_offset + parameter]
                 .indirection != 0) {
             ++pointer_count;
         }
@@ -155,7 +157,7 @@ GlesDispatchTable::UnimplementedCalls() const {
         }
         result.push_back(
             {.id = static_cast<GlesThunkId>(index),
-             .name = generated::kFunctions[index].name,
+             .name = catalog::kFunctions[index].name,
              .hits = state.hits,
              .first_thread = state.first_thread,
              .last_thread = state.last_thread});

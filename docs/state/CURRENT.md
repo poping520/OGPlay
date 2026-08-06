@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0229] GLES1.1 core 145 项声明式目录已与固定 ANGLE `GLES/gl.h` 双向核对，
+  57 个指针参数均有搬运元数据；GLES1/GLES2 生成物隔离 namespace。macOS/arm64
+  warnings-as-errors 构建及全量 CTest 365/365 通过。
 - [WU-0228] APK launch planning 已把 Profile native calls 按 JNI short/long 顺序预解析
   为 root ELF 强类型 guest 地址；真实目标 17 项全部命中。macOS/arm64 warnings-as-errors
   构建及全量 CTest 364/364 通过。
@@ -59,9 +62,6 @@
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
   及全量 CTest 353/353 通过。
-- [WU-0214] plan/bootstrap 高层入口直接消费单一 ProfileRuntimeCatalog，Java handler 与
-  input mapper 不再由调用方分离拼接；底层组合 API 与 exact/default 语义保持不变。
-  macOS/arm64 warnings-as-errors 构建及全量 CTest 343/343 通过。
 - [WU-0213] ProfileRuntimeCatalog 以不可变所有权汇总通用 Java handler 与 input mapper；
   implementation id 规范唯一、handler 非空并仅支持精确查询。macOS/arm64
   warnings-as-errors 构建及全量 CTest 343/343 通过。

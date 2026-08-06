@@ -12,6 +12,8 @@
 namespace ogplay::gles {
 namespace {
 
+namespace catalog = generated::gles2;
+
 [[nodiscard]] std::uint64_t CheckedMultiply(const std::uint64_t left,
                                             const std::uint64_t right) {
     if (left != 0 && right > (std::numeric_limits<std::uint64_t>::max)() / left) {
@@ -26,12 +28,12 @@ namespace {
 }
 
 [[nodiscard]] std::uint64_t ScalarValue(
-    const generated::FunctionSpec& function,
+    const catalog::FunctionSpec& function,
     const std::span<const GlesGuestValue> arguments,
     const std::string_view name) {
     for (std::size_t index = 0; index < function.parameter_count; ++index) {
         const auto& parameter =
-            generated::kParameters[function.parameter_offset + index];
+            catalog::kParameters[function.parameter_offset + index];
         if (parameter.name != name) {
             continue;
         }
@@ -78,8 +80,8 @@ namespace {
 }
 
 [[nodiscard]] GlesLengthResolution EvaluateLength(
-    const generated::FunctionSpec& function,
-    const generated::ParameterSpec& parameter,
+    const catalog::FunctionSpec& function,
+    const catalog::ParameterSpec& parameter,
     const std::span<const GlesGuestValue> arguments,
     const GlesLengthResolver* resolver) {
     if (const auto literal = ParseUnsigned(parameter.count)) {
@@ -113,7 +115,7 @@ namespace {
 }
 
 [[nodiscard]] std::uint64_t ElementSize(
-    const generated::ParameterSpec& parameter) {
+    const catalog::ParameterSpec& parameter) {
     if (parameter.indirection >= 2) {
         return sizeof(GlesGuestValue);
     }
@@ -178,12 +180,12 @@ PreparedGlesCall PrepareGles2Call(
         throw GlesCallPreparationError(
             "GLES call preparation received the wrong argument count");
     }
-    const auto& function = generated::kFunctions[static_cast<std::size_t>(id)];
+    const auto& function = catalog::kFunctions[static_cast<std::size_t>(id)];
     PreparedGlesCall prepared{.id = id};
     prepared.pointers.reserve(info.pointer_parameter_count);
     for (std::size_t index = 0; index < function.parameter_count; ++index) {
         const auto& parameter =
-            generated::kParameters[function.parameter_offset + index];
+            catalog::kParameters[function.parameter_offset + index];
         if (parameter.indirection == 0) {
             continue;
         }

@@ -439,3 +439,8 @@ note = "M5 WU-0227 从受检 class/method/descriptor 生成 JNI short/long 导�
 status = "complete"
 test = "tests/session/profile_native_calls_tests.cpp"
 note = "M5 WU-0228 把 Profile native calls 按 JNI short/long 顺序解析为 root ELF 强类型 guest 地址；真实目标 17 项全部命中"
+
+[gles.gles1_core_catalog]
+status = "complete"
+test = "tools.gles1_catalog_current"
+note = "M5 WU-0229 建立与固定 ANGLE GLES/gl.h 完全一致的 GLES1.1 core 145 项声明式目录；57 个指针参数均有搬运元数据"

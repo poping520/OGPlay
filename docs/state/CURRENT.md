@@ -6,8 +6,8 @@
 
 - M0、M1、M2、M3、M4 已完成并验收。
 - M5 去硬编码正在推进；Title Profile v1 schema、C++ 强类型加载、三重身份匹配，以及
-  lifecycle、VFS、Java、input 的 Profile 通用装配均已闭合，当前仍不提交具体游戏
-  profile。
+  lifecycle、VFS、Java、input、audio 的 Profile 通用装配均已闭合，当前仍不提交具体
+  游戏 profile。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0210] Profile cover music 以 source + path 精确解析编码资源并保留 loop，经通用
+  MusicPlayer 提交；资源和播放器失败均明确暴露，不声明解码、混音或设备播放能力。
+  macOS/arm64 warnings-as-errors 构建及全量 CTest 334/334 通过。
 - [WU-0209] 新增不可变的 code-defined input mapper catalog；Profile input id 精确选择
   通用 mapper，无声明时使用 catalog 显式默认项，未知、重复、非法或空 mapper 均明确
   失败。macOS/arm64 warnings-as-errors 构建及全量 CTest 330/330 通过。
@@ -74,9 +77,9 @@
 
 ## 下一步（按优先级）
 
-1. 把 Profile audio 声明接到通用音频机制，仍不提交具体游戏 profile。
-2. 把已闭合的 lifecycle、VFS、Java、input 装配汇总为单一 Profile session plan。
-3. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
+1. 把已闭合的 lifecycle、VFS、Java、input、audio 装配汇总为单一 Profile session
+   plan。
+2. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
    能力账本为准。
 
 ## 阻塞

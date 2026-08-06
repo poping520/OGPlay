@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -24,6 +25,45 @@ enum class ProfileSource : std::uint8_t { apk, obb, external };
 
 enum class ProfileAbi : std::uint8_t { armeabi, armeabi_v7a };
 
+enum class ProfileNativeCallPhase : std::uint8_t {
+    startup,
+    resume,
+    frame,
+    pause,
+    shutdown,
+    pointer_down,
+    pointer_move,
+    pointer_up,
+    key_down,
+    key_up,
+};
+
+enum class ProfileNativeDispatch : std::uint8_t { instance, static_method };
+
+enum class ProfileNativeArgumentSource : std::uint8_t {
+    constant,
+    surface_width,
+    surface_height,
+    input_x,
+    input_y,
+    input_pointer,
+    input_key,
+};
+
+struct ProfileNativeArgument final {
+    ProfileNativeArgumentSource source{ProfileNativeArgumentSource::constant};
+    std::uint32_t value{};
+};
+
+struct ProfileNativeCall final {
+    ProfileNativeCallPhase phase{ProfileNativeCallPhase::startup};
+    std::string class_name;
+    std::string method;
+    std::string signature;
+    ProfileNativeDispatch dispatch{ProfileNativeDispatch::instance};
+    std::vector<ProfileNativeArgument> arguments;
+};
+
 struct ProfileIdentity final {
     std::string package;
     std::string name;
@@ -38,9 +78,17 @@ struct ProfileSurface final {
 };
 
 struct ProfileRuntime final {
+    ProfileRuntime() = default;
+    ProfileRuntime(std::uint32_t api, ProfileLifecycle lifecycle_value,
+                   ProfileSurface surface_value,
+                   std::vector<ProfileNativeCall> calls = {})
+        : api_level(api), lifecycle(lifecycle_value), surface(surface_value),
+          native_calls(std::move(calls)) {}
+
     std::uint32_t api_level{};
     ProfileLifecycle lifecycle{ProfileLifecycle::native_activity};
     ProfileSurface surface;
+    std::vector<ProfileNativeCall> native_calls;
 };
 
 struct ProfileMount final {
@@ -146,5 +194,8 @@ private:
 [[nodiscard]] std::string_view ToString(ProfileLifecycle lifecycle) noexcept;
 [[nodiscard]] std::string_view ToString(ProfileSource source) noexcept;
 [[nodiscard]] std::string_view ToString(ProfileAbi abi) noexcept;
+[[nodiscard]] std::string_view ToString(ProfileNativeCallPhase phase) noexcept;
+[[nodiscard]] std::string_view ToString(ProfileNativeDispatch dispatch) noexcept;
+[[nodiscard]] std::string_view ToString(ProfileNativeArgumentSource source) noexcept;
 
 }  // namespace ogplay::session

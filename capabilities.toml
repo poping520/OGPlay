@@ -418,4 +418,9 @@ note = "M5 WU-0223 串联 APK 精确 Profile 与对应 API 的 Bionic guest 闭�
 [profiles.first_exact_legacy_title]
 status = "complete"
 test = "tools/validate_title_profiles.py --schema data/profiles/title-profile-v1.schema.json --profiles data/profiles"
-note = "M5 WU-0224 以 15 行纯数据提交首个精确 legacy title Profile：APK 身份/hash/armeabi 与通用 API 19、gl_surface_view、800x480 声明均经真实目标预检"
+note = "M5 WU-0224 提交首个精确 legacy title Profile：APK 身份/hash/armeabi 与通用 API 19、gl_surface_view、800x480 声明均经真实目标预检"
+
+[profiles.declarative_native_calls]
+status = "complete"
+test = "tests/session/title_profile_tests.cpp"
+note = "M5 WU-0225 允许 Profile 以强类型 phase/class/method/JNI signature/dispatch 与受限参数来源描述 native 调用；Python/C++ 同步拒绝脚本、地址与形状矛盾"

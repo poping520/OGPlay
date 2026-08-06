@@ -454,3 +454,8 @@ note = "M5 WU-0230 在 libGLESv1_CM.so 发布隔离的 145 项 core Thumb trap�
 status = "complete"
 test = "tools.gles1_extensions_catalog_current"
 note = "M5 WU-0231 以固定 ANGLE extension header 受检子集建立目标所需 GL_OES_matrix_palette 三项入口目录，且不改变 core ID"
+
+[runtime.gles1_extension_boundary]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp"
+note = "M5 WU-0232 在 libGLESv1_CM.so 追加发布三项 matrix-palette extension trap；目标 ELF 62 个 GL import 均有生成目录 provider"

@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0232] `libGLESv1_CM.so` 已追加发布 3 项 matrix-palette extension trap，core
+  地址不漂移且独立记账；目标 ELF 的 62 个 GL imports 均有生成目录 provider。
+  macOS/arm64 warnings-as-errors 构建及全量 CTest 368/368 通过。
 - [WU-0231] 固定 ANGLE extension header 的受检子集目录已覆盖目标 ELF 所需 3 个
   `GL_OES_matrix_palette` 入口，并与 145 个 GLES1 core ID 隔离。macOS/arm64
   warnings-as-errors 构建及全量 CTest 367/367 通过。
@@ -68,18 +71,14 @@
   路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
   已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
   及全量 CTest 353/353 通过。
-- [WU-0211] ProfileSessionPlan 事务式汇总 lifecycle、VFS、Java、input、audio，唯一拥有
-  VFS/JNI 状态、输入目录和预解析音频；任一子装配失败均不发布部分计划。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 337/337 通过。
 - [WU-0210] Profile cover music 以 source + path 精确解析编码资源并保留 loop，经通用
   MusicPlayer 提交；资源和播放器失败均明确暴露，不声明解码、混音或设备播放能力。
   macOS/arm64 warnings-as-errors 构建及全量 CTest 334/334 通过。
 ## 下一步（按优先级）
 
-1. 建立首批 profile 迁移清单，把遗留项逐条归类为通用缺陷、纯数据、真 quirk 或删除。
-2. 按清单补齐通用 handler 与题库，再提交具体 profile；禁止向 `src/` 增加游戏特判。
-3. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
-   能力账本为准。
+1. 装配通用 `gl_surface_view` guest process 与最小 JNIEnv/JavaVM guest ABI。
+2. 逐个绑定目标执行实际触达的 GLES1 fixed-pipeline handler，未触达项继续明确失败。
+3. 用真实 APK 进行受帧数约束的启动/渲染 smoke test，并把首个可测试命令写入验收文档。
 
 ## 阻塞
 

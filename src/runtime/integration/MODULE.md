@@ -20,7 +20,8 @@
   handler 可以执行，未实现调用必须携带函数名失败。Looper/input 数据与 ANGLE readback
   跨线程传递必须受锁保护，未知地址或 SVC 不得吞掉。
 - `AndroidBoundaryHle` 同时从隔离目录发布完整 145 项 `libGLESv1_CM.so` core Thumb
-  trap；未绑定固定管线调用进入独立 GLES1 记账并明确失败，不得误用同名 GLES2 handler。
+  trap 及固定 header 受检的 3 项 matrix-palette extension trap；core/extension 独立记账，
+  未绑定固定管线调用明确失败，不得误用同名 GLES2 handler。
 - shader/program handler 必须把 guest 二级源码数组、可选长度、查询输出和符号名完整
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、

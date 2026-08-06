@@ -17,6 +17,7 @@
 #include "ogplay/hal/window_input.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/integration/android_link_preflight.h"
 #include "ogplay/runtime/integration/native_activity_runner.h"
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/session/title_profile.h"
@@ -188,6 +189,10 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     const auto module_inputs = launch->modules.Inputs();
     const auto root_name = std::string(launch->modules.RootName());
     if (preflight) {
+        const auto linked = runtime::PreflightAndroidGuestLink(
+            {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
+             profile.runtime.surface.width, profile.runtime.surface.height,
+             supersample_factor});
         Write("OGPlay: preflight ready: package=" + manifest.package +
               " root=" + root_name + " abi=" +
               std::string(loader::ToString(launch->match.library.abi)) +
@@ -195,7 +200,11 @@ int RunApkCommand(const int argc, const char* const argv[]) {
               " lifecycle=" + std::string(session::ToString(profile.runtime.lifecycle)) +
               " modules=" + std::to_string(module_inputs.size()) + " surface=" +
               std::to_string(profile.runtime.surface.width) + "x" +
-              std::to_string(profile.runtime.surface.height) + "\n");
+              std::to_string(profile.runtime.surface.height) + " linked=" +
+              std::to_string(linked.guest_modules) + "+" +
+              std::to_string(linked.boundary_modules) + " relocations=" +
+              std::to_string(linked.relocations) + " native_calls=" +
+              std::to_string(launch->native_calls.size()) + "\n");
         return 0;
     }
     if (profile.runtime.lifecycle != session::ProfileLifecycle::native_activity) {

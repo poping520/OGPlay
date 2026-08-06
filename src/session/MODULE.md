@@ -27,6 +27,8 @@
   唯一拥有运行期 VFS/JNI 状态和预解析资源的只读计划。
 - `BootstrapProfileSession`：先执行 package + versionCode + `.so` SHA-256 精确匹配，
   再把命中 Profile 或显式 generic default 送入同一 plan 装配入口。
+- `ProfileRuntimeCatalog`：拥有不可变的通用 Java implementation handler 与 input mapper
+  目录，拒绝非法、空或重复 handler。
 - M1 将相同状态机装配 guest；M5 后续 WU 把 Profile 声明接入通用运行机制。
 
 ## 不变量
@@ -42,6 +44,7 @@
 - audio 资源缺失、重复或为空时明确失败；错误 source 不得仅凭同名路径匹配。
 - session plan 只在全部子装配成功后发布；运行期不再次猜测 input/audio 选择。
 - bootstrap 只在零匹配时使用 generic default；非法身份或已选择路径装配失败不得回退。
+- runtime catalog 的 implementation id 必须规范且唯一，查询只接受精确 id。
 - 每个 enabled quirk 必须有注册定义和可定位测试；未注入注册表时不得进入匹配目录。
 - 状态推进可由固定帧步进驱动，不依赖 sleep。
 - 帧步骤顺序对三种生命周期完全相同；回调失败后进入可清理但不可继续步进的失败状态。

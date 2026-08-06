@@ -25,6 +25,9 @@
 
 ## 最近完成
 
+- [WU-0213] ProfileRuntimeCatalog 以不可变所有权汇总通用 Java handler 与 input mapper；
+  implementation id 规范唯一、handler 非空并仅支持精确查询。macOS/arm64
+  warnings-as-errors 构建及全量 CTest 343/343 通过。
 - [WU-0212] 单一 bootstrap 先执行三重身份精确匹配，再把 exact 或显式 generic default
   送入同一 ProfileSessionPlan；非法身份和已选路径装配失败绝不回退。macOS/arm64
   warnings-as-errors 构建及全量 CTest 341/341 通过。
@@ -70,8 +73,8 @@
 
 ## 下一步（按优先级）
 
-1. 建立首批 profile 迁移清单，把遗留项逐条归类为通用缺陷、纯数据、真 quirk 或删除。
-2. 按清单补齐通用 handler 与题库，再提交具体 profile；禁止向 `src/` 增加游戏特判。
+1. 把 ProfileRuntimeCatalog 接入 plan/bootstrap，消除分离 Java/input 参数的错配风险。
+2. 为已导入 VFS/audio 数据建立有所有权的统一资产 bundle，再接入 bootstrap。
 3. M4 范围外项目（窗口 surface、未绑定 GLES2、通用多库入口等）不得伪造成功，继续以
    能力账本为准。
 

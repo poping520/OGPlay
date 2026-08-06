@@ -8,7 +8,7 @@
 
 - `Session::OpenEmpty/Close/State/Step/UntilFrame/Pause/Resume`：M0 确定性空会话。
 - `LoadTitleProfileText` / `LoadTitleProfile`：M5 将 v1 纯数据 TOML 严格转换为
-  identity/runtime/data/audio/java/quirks/input 强类型模型。
+  identity/runtime/native-call/data/audio/java/quirks/input 强类型模型。
 - `TitleProfileCatalog::LoadDirectory/Match`：稳定加载 profile 目录，并且只在 package、
   versionCode 与 `.so` SHA-256 三项全部命中时返回 profile。
 - `MatchApkTitleProfile`：把 binary Manifest 与所有 APK ARM native library 目录事实送入
@@ -49,6 +49,8 @@
 - identity ABI 只接受强类型 `armeabi` 与 `armeabi-v7a`；不得把非 ARM ABI 或任意字符串
   带入目录匹配和后续启动选择。
 - data/audio/java/quirks/input 只保存声明，不直接调用相邻模块或执行脚本。
+- native-call 只允许固定 phase、Java class/method/signature、instance/static dispatch 与
+  受限参数来源；参数数量/整数类型、常量值和 input phase 必须在装载时一致。
 - VFS 输入不得靠顺序或来源猜测；guest 根与 source 必须同时命中声明，额外输入明确失败。
 - Java implementation id 必须命中真实 handler；类、签名或 handler 无效时不得发布
   部分 JNI registry。

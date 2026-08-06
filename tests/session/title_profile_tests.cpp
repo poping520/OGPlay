@@ -77,6 +77,28 @@ constexpr std::string_view kHashB =
            "profile = \"generic_touch\"\n";
 }
 
+[[nodiscard]] std::string NativeCallProfile() {
+    return BaseProfile() +
+           "\n"
+           "[[runtime.native_call]]\n"
+           "phase = \"startup\"\n"
+           "class = \"org/example/Renderer\"\n"
+           "method = \"nativeInit\"\n"
+           "signature = \"(II)V\"\n"
+           "dispatch = \"instance\"\n"
+           "arguments = [{ source = \"surface_width\" }, "
+           "{ source = \"constant\", value = 7 }]\n"
+           "\n"
+           "[[runtime.native_call]]\n"
+           "phase = \"pointer_down\"\n"
+           "class = \"org/example/Input\"\n"
+           "method = \"nativeTouch\"\n"
+           "signature = \"(III)V\"\n"
+           "dispatch = \"static\"\n"
+           "arguments = [{ source = \"input_x\" }, { source = \"input_y\" }, "
+           "{ source = \"input_pointer\" }]\n";
+}
+
 class TempDirectory final {
 public:
     TempDirectory() {
@@ -181,6 +203,47 @@ TEST_CASE("Title Profile C++ loader rejects schema and TOML violations") {
     invalid_utf8.push_back(static_cast<char>(0xFF));
     CHECK_THROWS_AS(static_cast<void>(ogplay::session::LoadTitleProfileText(
                         invalid_utf8, "org.example.legacy")),
+                    ogplay::session::TitleProfileError);
+}
+
+TEST_CASE("Title Profile native calls remain typed declarative lifecycle data") {
+    const auto profile = ogplay::session::LoadTitleProfileText(
+        NativeCallProfile(), "org.example.legacy");
+    REQUIRE(profile.runtime.native_calls.size() == 2);
+    const auto& startup = profile.runtime.native_calls[0];
+    CHECK(startup.phase == ogplay::session::ProfileNativeCallPhase::startup);
+    CHECK(startup.class_name == "org/example/Renderer");
+    CHECK(startup.method == "nativeInit");
+    CHECK(startup.signature == "(II)V");
+    CHECK(startup.dispatch == ogplay::session::ProfileNativeDispatch::instance);
+    REQUIRE(startup.arguments.size() == 2);
+    CHECK(startup.arguments[0].source ==
+          ogplay::session::ProfileNativeArgumentSource::surface_width);
+    CHECK(startup.arguments[1].value == 7);
+    CHECK(ogplay::session::ToString(profile.runtime.native_calls[1].phase) ==
+          "pointer_down");
+    CHECK(ogplay::session::ToString(profile.runtime.native_calls[1].dispatch) ==
+          "static");
+    CHECK(ogplay::session::ToString(
+              profile.runtime.native_calls[1].arguments[2].source) ==
+          "input_pointer");
+
+    auto wrong_count = NativeCallProfile();
+    const auto signature = wrong_count.find("signature = \"(II)V\"");
+    REQUIRE(signature != std::string::npos);
+    wrong_count.replace(signature, std::string("signature = \"(II)V\"").size(),
+                        "signature = \"(I)V\"");
+    CHECK_THROWS_AS(static_cast<void>(ogplay::session::LoadTitleProfileText(
+                        wrong_count, "org.example.legacy")),
+                    ogplay::session::TitleProfileError);
+
+    auto wrong_phase = NativeCallProfile();
+    const auto pointer = wrong_phase.find("phase = \"pointer_down\"");
+    REQUIRE(pointer != std::string::npos);
+    wrong_phase.replace(pointer, std::string("phase = \"pointer_down\"").size(),
+                        "phase = \"frame\"");
+    CHECK_THROWS_AS(static_cast<void>(ogplay::session::LoadTitleProfileText(
+                        wrong_phase, "org.example.legacy")),
                     ogplay::session::TitleProfileError);
 }
 

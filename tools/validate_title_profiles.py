@@ -28,6 +28,10 @@ ID_PATTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
 SOURCES = {"apk", "obb", "external"}
 LIFECYCLES = {"native_activity", "gl_surface_view", "custom_jni"}
 ABIS = {"armeabi", "armeabi-v7a"}
+NATIVE_PHASES = {"startup", "resume", "frame", "pause", "shutdown",
+                 "pointer_down", "pointer_move", "pointer_up", "key_down", "key_up"}
+NATIVE_ARGUMENT_SOURCES = {"constant", "surface_width", "surface_height",
+                           "input_x", "input_y", "input_pointer", "input_key"}
 
 
 class ProfileError(ValueError):
@@ -131,9 +135,49 @@ def _validate_identity(value: Any, expected_package: str) -> None:
         raise ProfileError("identity.abi must be armeabi or armeabi-v7a")
 
 
+def _jni_parameter_kinds(signature: str) -> list[str]:
+    if not signature.startswith("("):
+        raise ProfileError("runtime.native_call[].signature is invalid")
+
+    def parse_type(offset: int, allow_void: bool) -> tuple[str, int]:
+        dimensions = 0
+        while offset < len(signature) and signature[offset] == "[":
+            dimensions += 1
+            offset += 1
+        if offset >= len(signature):
+            raise ProfileError("runtime.native_call[].signature is invalid")
+        marker = signature[offset]
+        if marker == "L":
+            terminator = signature.find(";", offset + 1)
+            if terminator == -1 or terminator == offset + 1:
+                raise ProfileError("runtime.native_call[].signature is invalid")
+            offset = terminator + 1
+            kind = "L"
+        elif marker in "ZBCSIJFDV":
+            offset += 1
+            kind = marker
+        else:
+            raise ProfileError("runtime.native_call[].signature is invalid")
+        if kind == "V" and (not allow_void or dimensions):
+            raise ProfileError("runtime.native_call[].signature is invalid")
+        return ("[" if dimensions else kind), offset
+
+    offset = 1
+    parameters: list[str] = []
+    while offset < len(signature) and signature[offset] != ")":
+        kind, offset = parse_type(offset, False)
+        parameters.append(kind)
+    if offset >= len(signature) or signature[offset] != ")":
+        raise ProfileError("runtime.native_call[].signature is invalid")
+    _, offset = parse_type(offset + 1, True)
+    if offset != len(signature):
+        raise ProfileError("runtime.native_call[].signature is invalid")
+    return parameters
+
+
 def _validate_runtime(value: Any) -> None:
     table = _table(value, "runtime")
-    _keys(table, "runtime", {"api_level", "lifecycle", "surface"},
+    _keys(table, "runtime", {"api_level", "lifecycle", "surface", "native_call"},
           {"api_level", "lifecycle", "surface"})
     api = _integer(table["api_level"], "runtime.api_level", 1, 0xFFFFFFFF)
     if api not in {19, 22, 23}:
@@ -147,6 +191,50 @@ def _validate_runtime(value: Any) -> None:
     _keys(surface, "runtime.surface", {"width", "height"}, {"width", "height"})
     _integer(surface["width"], "runtime.surface.width", 1, 16384)
     _integer(surface["height"], "runtime.surface.height", 1, 16384)
+    calls = _array(table.get("native_call", []), "runtime.native_call")
+    if "native_call" in table and not calls:
+        raise ProfileError("runtime.native_call must not be empty")
+    for index, value in enumerate(calls):
+        field = f"runtime.native_call[{index}]"
+        call = _table(value, field)
+        required = {"phase", "class", "method", "signature", "dispatch", "arguments"}
+        _keys(call, field, required, required)
+        phase = _string(call["phase"], f"{field}.phase")
+        if phase not in NATIVE_PHASES:
+            raise ProfileError(f"{field}.phase is unsupported")
+        if JAVA_CLASS_PATTERN.fullmatch(_string(call["class"], f"{field}.class")) is None:
+            raise ProfileError(f"{field}.class is invalid")
+        if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*",
+                        _string(call["method"], f"{field}.method")) is None:
+            raise ProfileError(f"{field}.method is invalid")
+        parameters = _jni_parameter_kinds(
+            _string(call["signature"], f"{field}.signature"))
+        if call["dispatch"] not in {"instance", "static"}:
+            raise ProfileError(f"{field}.dispatch must be instance or static")
+        arguments = _array(call["arguments"], f"{field}.arguments")
+        if len(arguments) != len(parameters):
+            raise ProfileError(f"{field} argument count does not match signature")
+        for argument_index, argument_value in enumerate(arguments):
+            argument_field = f"{field}.arguments[{argument_index}]"
+            argument = _table(argument_value, argument_field)
+            _keys(argument, argument_field, {"source", "value"}, {"source"})
+            source = _string(argument["source"], f"{argument_field}.source")
+            if source not in NATIVE_ARGUMENT_SOURCES:
+                raise ProfileError(f"{argument_field}.source is unsupported")
+            if source == "constant":
+                if "value" not in argument:
+                    raise ProfileError(f"{argument_field} constant requires value")
+                _integer(argument["value"], f"{argument_field}.value", 0, 0xFFFFFFFF)
+            elif "value" in argument:
+                raise ProfileError(f"{argument_field} non-constant must not have value")
+            if parameters[argument_index] not in set("ZBCSI"):
+                raise ProfileError(f"{argument_field} requires an integer JNI parameter")
+            pointer_source = source in {"input_x", "input_y", "input_pointer"}
+            pointer_phase = phase in {"pointer_down", "pointer_move", "pointer_up"}
+            key_source = source == "input_key"
+            key_phase = phase in {"key_down", "key_up"}
+            if pointer_source and not pointer_phase or key_source and not key_phase:
+                raise ProfileError(f"{argument_field}.source does not match call phase")
 
 
 def _validate_data(value: Any) -> None:

@@ -14,6 +14,9 @@
 #include "title_profile_toml.h"
 
 namespace ogplay::session {
+namespace detail {
+[[nodiscard]] ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root);
+}
 namespace {
 
 using Table = detail::TomlValue::Table;
@@ -264,13 +267,6 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     }
 }
 
-[[nodiscard]] ProfileLifecycle DecodeLifecycle(const std::string_view value) {
-    if (value == "native_activity") return ProfileLifecycle::native_activity;
-    if (value == "gl_surface_view") return ProfileLifecycle::gl_surface_view;
-    if (value == "custom_jni") return ProfileLifecycle::custom_jni;
-    throw TitleProfileError("runtime.lifecycle is unsupported");
-}
-
 [[nodiscard]] ProfileSource DecodeSource(const std::string_view value,
                                          const std::string_view field) {
     if (value == "apk") return ProfileSource::apk;
@@ -330,32 +326,6 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     RequireUnique(result.so_sha256, "identity.so_sha256");
     result.abi = DecodeAbi(
         AsString(Require(table, "abi", "identity.abi"), "identity.abi"));
-    return result;
-}
-
-[[nodiscard]] ProfileRuntime DecodeRuntime(const Table& root) {
-    const auto& table = AsTable(Require(root, "runtime", "runtime"), "runtime");
-    ExactKeys(table, "runtime", {"api_level", "lifecycle", "surface"},
-              {"api_level", "lifecycle", "surface"});
-    ProfileRuntime result;
-    result.api_level = static_cast<std::uint32_t>(
-        AsInteger(Require(table, "api_level", "runtime.api_level"),
-                  "runtime.api_level", 1, std::numeric_limits<std::uint32_t>::max()));
-    if (result.api_level != 19 && result.api_level != 22 && result.api_level != 23) {
-        throw TitleProfileError("runtime.api_level must be 19, 22 or 23");
-    }
-    result.lifecycle = DecodeLifecycle(
-        AsString(Require(table, "lifecycle", "runtime.lifecycle"),
-                 "runtime.lifecycle"));
-    const auto& surface =
-        AsTable(Require(table, "surface", "runtime.surface"), "runtime.surface");
-    ExactKeys(surface, "runtime.surface", {"width", "height"}, {"width", "height"});
-    result.surface.width = static_cast<std::uint32_t>(
-        AsInteger(Require(surface, "width", "runtime.surface.width"),
-                  "runtime.surface.width", 1, 16384));
-    result.surface.height = static_cast<std::uint32_t>(
-        AsInteger(Require(surface, "height", "runtime.surface.height"),
-                  "runtime.surface.height", 1, 16384));
     return result;
 }
 
@@ -605,7 +575,7 @@ TitleProfile LoadTitleProfileText(const std::string_view text,
     result.schema = static_cast<std::uint32_t>(
         AsInteger(Require(root, "schema", "schema"), "schema", 1, 1));
     result.identity = DecodeIdentity(root, expected_package);
-    result.runtime = DecodeRuntime(root);
+    result.runtime = detail::DecodeProfileRuntime(root);
     if (const auto* data = Optional(root, "data")) result.data = DecodeData(*data);
     if (const auto* audio = Optional(root, "audio")) result.audio = DecodeAudio(*audio);
     if (const auto* java = Optional(root, "java")) {
@@ -759,6 +729,43 @@ std::string_view ToString(const ProfileAbi abi) noexcept {
     switch (abi) {
     case ProfileAbi::armeabi: return "armeabi";
     case ProfileAbi::armeabi_v7a: return "armeabi-v7a";
+    }
+    return "unknown";
+}
+
+std::string_view ToString(const ProfileNativeCallPhase phase) noexcept {
+    switch (phase) {
+    case ProfileNativeCallPhase::startup: return "startup";
+    case ProfileNativeCallPhase::resume: return "resume";
+    case ProfileNativeCallPhase::frame: return "frame";
+    case ProfileNativeCallPhase::pause: return "pause";
+    case ProfileNativeCallPhase::shutdown: return "shutdown";
+    case ProfileNativeCallPhase::pointer_down: return "pointer_down";
+    case ProfileNativeCallPhase::pointer_move: return "pointer_move";
+    case ProfileNativeCallPhase::pointer_up: return "pointer_up";
+    case ProfileNativeCallPhase::key_down: return "key_down";
+    case ProfileNativeCallPhase::key_up: return "key_up";
+    }
+    return "unknown";
+}
+
+std::string_view ToString(const ProfileNativeDispatch dispatch) noexcept {
+    switch (dispatch) {
+    case ProfileNativeDispatch::instance: return "instance";
+    case ProfileNativeDispatch::static_method: return "static";
+    }
+    return "unknown";
+}
+
+std::string_view ToString(const ProfileNativeArgumentSource source) noexcept {
+    switch (source) {
+    case ProfileNativeArgumentSource::constant: return "constant";
+    case ProfileNativeArgumentSource::surface_width: return "surface_width";
+    case ProfileNativeArgumentSource::surface_height: return "surface_height";
+    case ProfileNativeArgumentSource::input_x: return "input_x";
+    case ProfileNativeArgumentSource::input_y: return "input_y";
+    case ProfileNativeArgumentSource::input_pointer: return "input_pointer";
+    case ProfileNativeArgumentSource::input_key: return "input_key";
     }
     return "unknown";
 }

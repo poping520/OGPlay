@@ -10,6 +10,9 @@
   local/central 元数据和 CRC32 提取 stored 或 Deflate 条目；`ReadStoredApkEntry` 保留为要求
   调用方显式保证未压缩的窄接口；使用 bit 3 的 ZIP32 data descriptor 同样与 central
   metadata 精确交叉验证。
+- `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
+  UTF-16 string pool、元素与 typed attribute，产出 package、versionCode/versionName、
+  minSdk/targetSdk 事实，不执行资源解析或猜测身份。
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度，不执行任何字节码。
@@ -56,6 +59,8 @@
 - APK entry 禁止绝对路径、`.`/`..` segment、重复名称、加密和多磁盘；Deflate 的 stored、
   fixed 与 dynamic Huffman block 均受输出长度、回溯距离、尾部和 CRC 约束，不支持的压缩
   方法明确失败。
+- binary Manifest 必须是单一完整 XML chunk，根元素、元素嵌套、字符串索引、UTF 编码和
+  typed attribute 全部受检；package 与正 versionCode 缺失或非法时不得发布身份事实。
 - DEX header 固定为 0x70 字节且只接受 little-endian 035..040；固定表必须 4 字节对齐，
   header 与唯一、有序、非重叠的 map 声明必须一致。
 - DEX Modified UTF-8 和 ULEB128 必须最小且完整编码；type/proto 的每个索引、descriptor、

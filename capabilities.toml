@@ -20,6 +20,26 @@ status = "complete"
 test = "tests/agent/control_service_tests.cpp"
 note = "M0 空会话支持 open/close/state；M1 装配 guest"
 
+[session.title_profile_schema]
+status = "complete"
+test = "tools/validate_title_profiles.py --self-test; tests/session/title_profile_tests.cpp"
+note = "M5 冻结 Title Profile v1 schema，并由 Python 目录门禁及 C++ 强类型加载共同覆盖 identity/runtime/data/audio/java/quirks/input、UTF-8 和 200 行上限"
+
+[session.title_profile_loader]
+status = "complete"
+test = "tests/session/title_profile_tests.cpp"
+note = "M5 WU-0200..0202 完成受限纯数据 TOML、强类型 identity/runtime、规范 VFS/audio 声明、Java 绑定、quirk 参数与输入模板加载；未知或非法内容明确失败"
+
+[session.title_profile_catalog]
+status = "complete"
+test = "tests/session/title_profile_tests.cpp"
+note = "M5 WU-0203 稳定加载 *.profile.toml，并只按 package + versionCode + 小写 SHA-256 精确匹配；非法和交叠身份失败，无匹配不猜测"
+
+[session.quirk_registry]
+status = "complete"
+test = "tools/validate_quirks.py --self-test; tests/session/quirk_registry_tests.cpp"
+note = "M5 WU-0204/0205 强制 summary/reason/risk/test/owner、真实测试引用与 profile 交叉引用；C++ 目录对含 quirk 的 profile 强制注入 UTF-8 注册表，未注册或无注册表明确失败"
+
 [agent.run]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

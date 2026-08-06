@@ -255,7 +255,12 @@ target_include_directories(ogplay_runtime PUBLIC
 )
 ogplay_set_project_warnings(ogplay_runtime)
 
-add_library(ogplay_session src/session/session.cpp)
+add_library(ogplay_session
+    src/session/quirk_registry.cpp
+    src/session/session.cpp
+    src/session/title_profile.cpp
+    src/session/title_profile_toml.cpp
+)
 add_library(OGPlay::Session ALIAS ogplay_session)
 target_link_libraries(ogplay_session PUBLIC OGPlay::Core OGPlay::Hal OGPlay::Memory)
 target_include_directories(ogplay_session PUBLIC
@@ -375,7 +380,9 @@ if(OGPLAY_BUILD_TESTS)
         tests/cpu/interpreter_tests.cpp
         tests/cpu/m1_guest_sample_tests.cpp
         tests/cpu/thread_group_tests.cpp
+        tests/session/quirk_registry_tests.cpp
         tests/session/session_tests.cpp
+        tests/session/title_profile_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)
         list(APPEND OGPLAY_TEST_SOURCES
@@ -485,6 +492,47 @@ if(OGPLAY_BUILD_TESTS)
                 ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2.h
     )
     set_tests_properties(tools.gles2_catalog_current PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.title_profile_validator_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
+            --schema
+                ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v1.schema.json
+            --self-test
+    )
+    set_tests_properties(tools.title_profile_validator_self_test
+        PROPERTIES LABELS "tools;profiles")
+
+    add_test(
+        NAME tools.title_profiles_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
+            --schema
+                ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v1.schema.json
+            --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
+    )
+    set_tests_properties(tools.title_profiles_current PROPERTIES LABELS "tools;profiles")
+
+    add_test(
+        NAME tools.quirk_registry_validator_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_quirks.py
+            --self-test
+    )
+    set_tests_properties(tools.quirk_registry_validator_self_test
+        PROPERTIES LABELS "tools;profiles;quirks")
+
+    add_test(
+        NAME tools.quirk_registry_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_quirks.py
+            --registry ${CMAKE_CURRENT_SOURCE_DIR}/data/quirks.toml
+            --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
+            --root ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(tools.quirk_registry_current
+        PROPERTIES LABELS "tools;profiles;quirks")
 
     add_test(
         NAME tools.m4_exit_sample_contract

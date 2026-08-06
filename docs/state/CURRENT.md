@@ -26,6 +26,10 @@
 
 ## 最近完成
 
+- [WU-0219] APK 32 位 ARM native library 目录只接受规范 `armeabi`/`armeabi-v7a`
+  路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
+  已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
+  及全量 CTest 353/353 通过。
 - [WU-0218] APK 二进制 Manifest 以受检 UTF-8/UTF-16 string pool、namespace 与 typed
   attribute 产出身份/SDK 事实；目标 APK 的 package、versionCode/name 与 minSdk 已同
   独立工具对拍。macOS/arm64 warnings-as-errors 构建及全量 CTest 351/351 通过。

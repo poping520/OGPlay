@@ -89,6 +89,16 @@ void AngleFrame::ClearColor(const float red, const float green,
 #endif
 }
 
+void AngleFrame::ClearDepth(const float depth) {
+#if OGPLAY_HAS_ANGLE
+    glClearDepthf(depth);
+    RequireNoError("glClearDepthf");
+#else
+    static_cast<void>(depth);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::Clear(const std::uint32_t mask) {
 #if OGPLAY_HAS_ANGLE
     glClear(mask);

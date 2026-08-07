@@ -576,9 +576,14 @@ test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk 
 note = "M5 WU-0258 让 GLES1 glShadeModel 以显式 fixed-pipeline context state 保存受检 GL_FLAT/GL_SMOOTH"
 
 [runtime.gles1_clear_color_boundary]
-status = "partial"
+status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0259 绑定 GLES1 glClearColor 到当前 ANGLE frame；macOS exact-APK smoke 已越过并停于 glClearDepthf，等待 Windows/MSVC CTest"
+note = "M5 WU-0259 绑定 GLES1 glClearColor 到当前 ANGLE frame；macOS/arm64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
+
+[runtime.gles1_clear_depth_boundary]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0260 绑定 GLES1 glClearDepthf 到当前 ANGLE frame；macOS/arm64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
 
 [gles.gles1_extension_catalog]
 status = "complete"

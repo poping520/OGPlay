@@ -10,15 +10,7 @@ namespace ogplay::session {
 namespace {
 
 void ValidateInvocations(
-    const std::span<const ProfileNativeInvocation> invocations,
-    const memory::GuestAddress stack_top,
-    const memory::GuestAddress return_trap,
-    const std::uint64_t tick_budget_per_call) {
-    if (stack_top.IsNull() || !stack_top.IsAligned(8) ||
-        return_trap.IsNull() || tick_budget_per_call == 0) {
-        throw ProfileNativeExecutionError(
-            "profile native execution requires aligned process memory and a tick budget");
-    }
+    const std::span<const ProfileNativeInvocation> invocations) {
     std::size_t previous_index{};
     bool first = true;
     for (const auto& invocation : invocations) {
@@ -40,15 +32,12 @@ void ValidateInvocations(
 
 std::vector<ProfileNativeExecutionResult> ExecuteProfileNativeInvocations(
     const std::span<const ProfileNativeInvocation> invocations,
-    cpu::Cpu& cpu, runtime::A32SyscallDispatcher& dispatcher,
-    runtime::GuestThreadLifecycle& lifecycle,
-    memory::AddressSpace& address_space,
-    const memory::GuestAddress stack_top,
-    const memory::GuestAddress return_trap,
-    const std::uint64_t tick_budget_per_call,
-    const runtime::GuestSupervisorCallHandler& hle_handler) {
-    ValidateInvocations(invocations, stack_top, return_trap,
-                        tick_budget_per_call);
+    const ProfileNativeFrameExecutor& executor) {
+    ValidateInvocations(invocations);
+    if (!executor) {
+        throw ProfileNativeExecutionError(
+            "profile native execution requires a frame executor");
+    }
     std::vector<ProfileNativeExecutionResult> result;
     result.reserve(invocations.size());
     for (const auto& invocation : invocations) {
@@ -58,10 +47,7 @@ std::vector<ProfileNativeExecutionResult> ExecuteProfileNativeInvocations(
                 invocation.stack_words};
             result.push_back(
                 {invocation.call_index, invocation.export_name,
-                 runtime::InvokeA32GuestCall(
-                     cpu, dispatcher, lifecycle, address_space, frame,
-                     stack_top, return_trap, tick_budget_per_call,
-                     hle_handler)});
+                 executor(frame)});
         } catch (const std::exception& error) {
             throw ProfileNativeExecutionError(
                 "profile native call " +
@@ -70,6 +56,32 @@ std::vector<ProfileNativeExecutionResult> ExecuteProfileNativeInvocations(
         }
     }
     return result;
+}
+
+std::vector<ProfileNativeExecutionResult> ExecuteProfileNativeInvocations(
+    const std::span<const ProfileNativeInvocation> invocations,
+    cpu::Cpu& cpu, runtime::A32SyscallDispatcher& dispatcher,
+    runtime::GuestThreadLifecycle& lifecycle,
+    memory::AddressSpace& address_space,
+    const memory::GuestAddress stack_top,
+    const memory::GuestAddress return_trap,
+    const std::uint64_t tick_budget_per_call,
+    const runtime::GuestSupervisorCallHandler& hle_handler) {
+    if (stack_top.IsNull() || !stack_top.IsAligned(8) ||
+        return_trap.IsNull() || tick_budget_per_call == 0) {
+        throw ProfileNativeExecutionError(
+            "profile native execution requires aligned process memory and a tick budget");
+    }
+    return ExecuteProfileNativeInvocations(
+        invocations,
+        [&cpu, &dispatcher, &lifecycle, &address_space, stack_top,
+         return_trap, tick_budget_per_call,
+         &hle_handler](const runtime::A32GuestCallFrame& frame) {
+            return runtime::InvokeA32GuestCall(
+                cpu, dispatcher, lifecycle, address_space, frame,
+                stack_top, return_trap, tick_budget_per_call,
+                hle_handler);
+        });
 }
 
 }  // namespace ogplay::session

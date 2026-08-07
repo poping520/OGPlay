@@ -485,6 +485,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
 note = "M5 WU-0242 为 Java/GLSurfaceView lifecycle 显式 open/present/close ANGLE pbuffer，复用统一 resolve；guest EGL 不得替换或终止 host-owned surface"
 
+[session.profile_guest_lifecycle]
+status = "complete"
+test = "tests/session/profile_native_execution_tests.cpp"
+note = "M5 WU-0243 把 gl_surface_view Profile 的 startup/resume/input/frame/pause/shutdown 与 managed surface 编排为单一失败粘滞生命周期"
+
 [gles.gles1_core_catalog]
 status = "complete"
 test = "tools.gles1_catalog_current"

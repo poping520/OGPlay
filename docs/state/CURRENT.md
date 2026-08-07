@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0238] Guest JNI 首批 16 个 JNIEnv 引用/异常基础 slot 与 4 个 JavaVM slot
+  已绑定真实 M3 状态；guest 输出指针受检，VM 只发布统一 guest ABI 地址，非空 attach
+  arguments 明确失败。Windows/MSVC warnings-as-errors 构建及全量 CTest 385/385 通过。
 - [WU-0237] Guest JNI `SVC #3` 已按 trap PC 精确解码并校验 interface receiver，
   发布寄存器/栈调用帧；slot 必须执行前绑定封口，未绑定项按名称和 LR 记账后失败。
   Windows/MSVC warnings-as-errors 构建及全量 CTest 382/382 通过。
@@ -69,10 +72,7 @@
   与通用 API 19、`gl_surface_view`、800×480 声明提交；schema、目录与真实 APK preflight
   通过，闭包含 5 个 guest 模块。macOS/arm64 warnings-as-errors 构建及 CTest
   358/358 通过。
-- [WU-0223] APK launch preflight 串联唯一 Profile 候选与对应 API 的 Bionic 闭包；CLI
-  不再限定 stored v7a 单库或手写依赖，根库、API、生命周期与 surface 均来自 Profile，
-  可在不创建窗口/执行 guest 时输出受检事实。macOS/arm64 warnings-as-errors 构建及全量
-  CTest 358/358 通过。
+
 ## 下一步（按优先级）
 
 1. 让通用 `gl_surface_view` guest invoker 执行已装配调用帧并处理 JNI SVC trap。

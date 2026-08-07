@@ -86,6 +86,16 @@ void JniGuestCallDispatcher::BindJavaVm(
     java_vm_[index] = std::move(handler);
 }
 
+bool JniGuestCallDispatcher::IsEnvironmentBound(
+    const JniSlot slot) const {
+    return environment_[EnvironmentIndex(slot)].has_value();
+}
+
+bool JniGuestCallDispatcher::IsJavaVmBound(
+    const JniInvokeSlot slot) const {
+    return java_vm_[JavaVmIndex(slot)].has_value();
+}
+
 void JniGuestCallDispatcher::Seal() {
     if (sealed_) {
         throw std::logic_error("JNI guest dispatcher is already sealed");

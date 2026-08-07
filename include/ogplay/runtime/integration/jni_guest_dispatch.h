@@ -48,6 +48,8 @@ public:
 
     void BindEnvironment(JniSlot slot, JniGuestCallHandler handler);
     void BindJavaVm(JniInvokeSlot slot, JniGuestCallHandler handler);
+    [[nodiscard]] bool IsEnvironmentBound(JniSlot slot) const;
+    [[nodiscard]] bool IsJavaVmBound(JniInvokeSlot slot) const;
     void Seal();
     [[nodiscard]] bool IsSealed() const noexcept { return sealed_; }
 

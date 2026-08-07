@@ -460,6 +460,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_abi_tests.cpp"
 note = "M5 WU-0237 精确解码 Guest JNI ABI 的 SVC #3，校验 interface receiver 并发布寄存器/栈调用帧；slot 执行前绑定封口，未绑定项按名称和 LR 记账后失败"
 
+[runtime.jni_guest_core_bindings]
+status = "complete"
+test = "tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M5 WU-0238 将 16 个 JNIEnv 引用/异常基础 slot 与 4 个 JavaVM slot 绑定到真实 M3 状态；guest 输出指针受检，统一发布 guest JNIEnv/JavaVM 地址"
+
 [gles.gles1_core_catalog]
 status = "complete"
 test = "tools.gles1_catalog_current"

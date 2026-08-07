@@ -280,6 +280,11 @@ status = "complete"
 test = "tests/runtime/framework_asset_tests.cpp"
 note = "M5 WU-0254 允许调用方用通用 implementation id 从受检 APK VFS 直接读取 full/range/length，并返回统一 JNI byte array"
 
+[runtime.guest_direct_asset]
+status = "complete"
+test = "bounded exact-APK run-apk smoke"
+note = "M5 WU-0255 将 Profile 引用的通用 direct-asset handler 与 APK assets 接入 Android guest call session"
+
 [fixtures.m3_jni]
 status = "complete"
 test = "tests/runtime/headless_jni_contract_tests.cpp"

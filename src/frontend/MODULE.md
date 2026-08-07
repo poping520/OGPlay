@@ -24,7 +24,9 @@ CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title
 - pointer 事件按最近 guest 帧与当前窗口的等比内容区映射；黑边按下/移动不注入，黑边
   释放仍夹紧转发以闭合已开始的手势。
 - `gl_surface_view` 只能组合通用 Android guest call session、Profile lifecycle 与
-  managed ANGLE surface；phase、class、export 和参数全部来自已匹配 Profile。
+  managed ANGLE surface；phase、class、export 和参数全部来自已匹配 Profile。Profile
+  引用完整 direct-asset implementation set 时，CLI 必须把 APK `assets/` 条目受检导入
+  `/apk` VFS，并只把该组通用 ID 交给 guest session。
 
 ## 禁止
 

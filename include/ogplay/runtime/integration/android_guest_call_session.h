@@ -11,6 +11,7 @@
 
 #include "ogplay/loader/module_loader.h"
 #include "ogplay/runtime/execution/guest_thread_runner.h"
+#include "ogplay/runtime/framework/framework_asset.h"
 #include "ogplay/runtime/integration/android_boundary_hle.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
@@ -29,6 +30,7 @@ struct AndroidGuestCallSessionRequest final {
     std::uint32_t supersample_factor{1};
     VirtualFileSystem* filesystem{};
     std::function<void(std::string_view)> progress;
+    std::optional<FrameworkDirectAssetImplementations> direct_assets;
 };
 
 class AndroidGuestCallSessionError final : public std::runtime_error {

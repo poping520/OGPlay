@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0239] API 19 root guest 的 TLS/thread-info/preinit、4 MiB 栈、返回 trap 与空
+  property area 已抽成事务式通用进程内存契约；固定布局冲突和非法身份失败时逆序回滚，
+  libc 导出槽不被污染。Windows/MSVC warnings-as-errors 构建及全量 CTest 388/388 通过。
 - [WU-0238] Guest JNI 首批 16 个 JNIEnv 引用/异常基础 slot 与 4 个 JavaVM slot
   已绑定真实 M3 状态；guest 输出指针受检，VM 只发布统一 guest ABI 地址，非空 attach
   arguments 明确失败。Windows/MSVC warnings-as-errors 构建及全量 CTest 385/385 通过。

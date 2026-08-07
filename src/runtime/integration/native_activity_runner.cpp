@@ -16,9 +16,9 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/loader/lifecycle.h"
 #include "ogplay/memory/bus.h"
-#include "ogplay/runtime/bionic/bionic_tls.h"
 #include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
 #include "ogplay/runtime/execution/guest_lifecycle.h"
+#include "ogplay/runtime/integration/api19_guest_process.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 #include "ogplay/runtime/syscall/syscall_bridge.h"
 #include "ogplay/runtime/vfs/vfs.h"
@@ -27,18 +27,11 @@ namespace ogplay::runtime {
 namespace {
 
 constexpr std::uint64_t kRootThreadId = 1;
-constexpr memory::GuestAddress kTlsAddress{0x6a000000U};
-constexpr memory::GuestAddress kThreadInfoAddress{0x6a001000U};
-constexpr memory::GuestAddress kPreinitAddress{0x6a002000U};
-constexpr memory::GuestAddress kStackAddress{0x6b000000U};
-constexpr std::uint64_t kStackSize = UINT64_C(4) * 1024U * 1024U;
 constexpr memory::GuestAddress kActivityAddress{0x6f000000U};
 constexpr memory::GuestAddress kCallbacksAddress{0x6f000100U};
 constexpr memory::GuestAddress kInternalPathAddress{0x6f000200U};
 constexpr memory::GuestAddress kExternalPathAddress{0x6f000240U};
 constexpr memory::GuestAddress kObbPathAddress{0x6f000280U};
-constexpr memory::GuestAddress kReturnAddress{0x6f001000U};
-constexpr memory::GuestAddress kPropertyAreaAddress{0x6f002000U};
 constexpr std::uint32_t kFakeNativeWindow = 0x6e010000U;
 constexpr std::uint32_t kFakeInputQueue = 0x6e020000U;
 
@@ -63,48 +56,6 @@ void WriteString(memory::AddressSpace& address_space,
     }
     bytes.push_back(std::byte{});
     address_space.Write(address, bytes, kRootThreadId);
-}
-
-void InitializeApi19Startup(memory::AddressSpace& address_space,
-                            memory::MemoryBus& bus) {
-    const auto page_size = static_cast<std::uint32_t>(address_space.PageSize());
-    const auto read_write = memory::PageProtection::read | memory::PageProtection::write;
-    address_space.Map({kThreadInfoAddress, page_size}, read_write);
-    address_space.Map({kPreinitAddress, page_size}, read_write);
-    Write32(bus, kThreadInfoAddress.Add(12), kStackAddress.Value());
-    Write32(bus, kThreadInfoAddress.Add(16), static_cast<std::uint32_t>(kStackSize));
-    Write32(bus, kThreadInfoAddress.Add(20), page_size);
-    Write32(bus, kThreadInfoAddress.Add(32), static_cast<std::uint32_t>(kRootThreadId));
-    Write32(bus, kThreadInfoAddress.Add(60), kTlsAddress.Value());
-
-    const auto argv = kPreinitAddress.Add(0x40);
-    const auto envp = kPreinitAddress.Add(0x50);
-    const auto auxv = kPreinitAddress.Add(0x60);
-    const auto abort_message = kPreinitAddress.Add(0x80);
-    const auto program_name = kPreinitAddress.Add(0xa0);
-    const auto random_bytes = kPreinitAddress.Add(0xc0);
-    Write32(bus, kPreinitAddress, 1); Write32(bus, kPreinitAddress.Add(4), argv.Value());
-    Write32(bus, kPreinitAddress.Add(8), envp.Value()); Write32(bus, kPreinitAddress.Add(12), auxv.Value());
-    Write32(bus, kPreinitAddress.Add(16), abort_message.Value());
-    Write32(bus, argv, program_name.Value()); Write32(bus, argv.Add(4), 0); Write32(bus, envp, 0);
-    Write32(bus, auxv, 25); Write32(bus, auxv.Add(4), random_bytes.Value());
-    Write32(bus, auxv.Add(8), 6); Write32(bus, auxv.Add(12), page_size);
-    Write32(bus, auxv.Add(16), 0); Write32(bus, auxv.Add(20), 0); Write32(bus, abort_message, 0);
-    WriteString(address_space, program_name, "ogplay-native-activity");
-    Write32(bus, random_bytes, 0x4f47504cU); Write32(bus, random_bytes.Add(4), 0x41594d34U);
-    Write32(bus, random_bytes.Add(8), 0x10293847U); Write32(bus, random_bytes.Add(12), 0x56473829U);
-}
-
-void InitializePropertyArea(memory::AddressSpace& address_space,
-                            memory::MemoryBus& bus,
-                            const loader::Elf32LinkNamespace& link_namespace) {
-    address_space.Map({kPropertyAreaAddress, address_space.PageSize()},
-                      memory::PageProtection::read | memory::PageProtection::write);
-    Write32(bus, kPropertyAreaAddress, 20); Write32(bus, kPropertyAreaAddress.Add(4), 0);
-    Write32(bus, kPropertyAreaAddress.Add(8), 0x504f5250U);
-    Write32(bus, kPropertyAreaAddress.Add(12), 0xfc6ed0abU);
-    const auto exported = loader::LookupElf32Symbol(link_namespace, "__system_property_area__");
-    Write32(bus, exported.address, kPropertyAreaAddress.Value());
 }
 
 std::vector<GuestLifecycleModule> MakeLifecycleModules(
@@ -149,20 +100,13 @@ public:
             });
         Progress("modules-loaded");
 
-        const auto read_write = memory::PageProtection::read | memory::PageProtection::write;
-        InitializeApi19Startup(address_space_, memory_bus_);
-        const auto tls = CreateBionicTlsBlock(address_space_, kTlsAddress,
-                                              kThreadInfoAddress, kPreinitAddress);
-        address_space_.Map({kStackAddress, kStackSize}, read_write);
-        address_space_.Map({kReturnAddress, address_space_.PageSize()}, read_write);
-        memory_bus_.Write32(kReturnAddress, 0xef000001U, kRootThreadId);
-        address_space_.Protect({kReturnAddress, address_space_.PageSize()},
-                               memory::PageProtection::read | memory::PageProtection::execute);
-        InitializePropertyArea(address_space_, memory_bus_, loaded_.link_namespace);
+        process_memory_ = InitializeApi19GuestProcess(
+            address_space_, memory_bus_, loaded_.link_namespace,
+            {kRootThreadId, "ogplay-native-activity"});
         InitializeActivityMemory(request.api);
         Progress("process-memory-ready");
 
-        lifecycle_.Register(kRootThreadId, tls.thread_pointer);
+        lifecycle_.Register(kRootThreadId, process_memory_.thread_pointer);
         BindSyscalls();
         clone_runtime_ = std::make_unique<GuestCloneThreadRuntime>(
             threads_, dispatcher_, lifecycle_, address_space_, memory_bus_, futex_table_,
@@ -171,7 +115,8 @@ public:
             });
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
         cpu::A32State root_state;
-        root_state.SetThreadId(kRootThreadId); root_state.SetThreadPointer(tls.thread_pointer);
+        root_state.SetThreadId(kRootThreadId);
+        root_state.SetThreadPointer(process_memory_.thread_pointer);
         root_cpu_->SetState(root_state);
 
         lifecycle_modules_ = MakeLifecycleModules(loaded_, request.modules);
@@ -365,8 +310,10 @@ private:
         state.SetState((function.Value() & 1U) != 0 ? cpu::ExecutionState::thumb
                                                     : cpu::ExecutionState::a32);
         state.SetRegister(cpu::CoreRegister::pc, function.Value() & ~1U);
-        state.SetRegister(cpu::CoreRegister::lr, kReturnAddress.Value());
-        state.SetRegister(cpu::CoreRegister::sp, kStackAddress.Add(kStackSize - 64U).Value());
+        state.SetRegister(cpu::CoreRegister::lr,
+                          process_memory_.return_trap.Value());
+        state.SetRegister(cpu::CoreRegister::sp,
+                          process_memory_.stack_top.Value());
         for (std::size_t index = 0; index < 4; ++index) {
             state.SetRegister(static_cast<cpu::CoreRegister>(index), 0);
         }
@@ -383,7 +330,10 @@ private:
             const auto stopped = root_cpu_->Run(maximum_ticks_ - consumed);
             consumed += stopped.ticks_consumed;
             if (stopped.reason == cpu::RunStopReason::supervisor_call &&
-                stopped.immediate == 1 && stopped.pc == kReturnAddress) return;
+                stopped.immediate == 1 &&
+                stopped.pc == process_memory_.return_trap) {
+                return;
+            }
             ThrowIfChildFailed();
             if (!ConsumeAndroidArmSupervisorCall(
                     *root_cpu_, stopped, dispatcher_,
@@ -422,6 +372,7 @@ private:
     std::unique_ptr<GuestCloneThreadRuntime> clone_runtime_;
     std::unique_ptr<cpu::DynarmicCpu> root_cpu_;
     loader::Elf32LoadedNamespace loaded_;
+    Api19GuestProcessMemory process_memory_;
     std::vector<GuestLifecycleModule> lifecycle_modules_;
     std::vector<std::size_t> guest_load_order_;
     std::array<std::uint32_t, 16> callbacks_{};

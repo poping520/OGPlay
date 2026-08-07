@@ -13,6 +13,7 @@
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
+#include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
 
@@ -80,6 +81,89 @@ namespace {
     return static_cast<std::size_t>(signed_value);
 }
 
+[[nodiscard]] std::uint32_t Read32(
+    memory::AddressSpace& address_space,
+    const memory::GuestAddress address,
+    const std::uint64_t thread_id) {
+    std::array<std::byte, 4> bytes{};
+    address_space.Read(address, bytes, thread_id);
+    std::uint32_t value{};
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+        value |= std::to_integer<std::uint32_t>(bytes[index])
+                 << static_cast<unsigned>(index * 8U);
+    }
+    return value;
+}
+
+[[nodiscard]] std::vector<JniValue> ReadVariadicArguments(
+    memory::AddressSpace& address_space,
+    const JniGuestCallFrame& frame,
+    const JniMethodDescriptor& descriptor) {
+    std::size_t register_index = 3;
+    std::uint32_t stack_offset{};
+    const auto word = [&]() {
+        if (register_index < frame.registers.size()) {
+            return frame.registers[register_index++];
+        }
+        const auto result = Read32(
+            address_space, frame.stack_pointer.Add(stack_offset),
+            frame.thread_id);
+        stack_offset += sizeof(std::uint32_t);
+        return result;
+    };
+    const auto double_word = [&]() {
+        if (register_index < frame.registers.size()) {
+            register_index = (register_index + 1U) & ~std::size_t{1};
+        } else {
+            stack_offset = (stack_offset + 7U) & ~std::uint32_t{7U};
+        }
+        const auto low = word();
+        const auto high = word();
+        return static_cast<std::uint64_t>(low) |
+               (static_cast<std::uint64_t>(high) << 32U);
+    };
+
+    std::vector<JniValue> arguments;
+    arguments.reserve(descriptor.parameters.size());
+    for (const auto& parameter : descriptor.parameters) {
+        switch (parameter.kind) {
+        case JniTypeKind::boolean:
+            arguments.emplace_back(static_cast<JniBoolean>(word() != 0U));
+            break;
+        case JniTypeKind::byte:
+            arguments.emplace_back(static_cast<JniByte>(word()));
+            break;
+        case JniTypeKind::character:
+            arguments.emplace_back(static_cast<JniChar>(word()));
+            break;
+        case JniTypeKind::short_integer:
+            arguments.emplace_back(static_cast<JniShort>(word()));
+            break;
+        case JniTypeKind::integer:
+            arguments.emplace_back(std::bit_cast<JniInt>(word()));
+            break;
+        case JniTypeKind::long_integer:
+            arguments.emplace_back(std::bit_cast<JniLong>(double_word()));
+            break;
+        case JniTypeKind::float_value:
+            arguments.emplace_back(static_cast<JniFloat>(
+                std::bit_cast<JniDouble>(double_word())));
+            break;
+        case JniTypeKind::double_value:
+            arguments.emplace_back(std::bit_cast<JniDouble>(double_word()));
+            break;
+        case JniTypeKind::object:
+        case JniTypeKind::array:
+            arguments.emplace_back(JniReference{word()});
+            break;
+        case JniTypeKind::void_value:
+            throw JniGuestBindingError(
+                "JNI variadic parameter cannot have void type");
+        }
+    }
+    return arguments;
+}
+
 void ValidateOutput(memory::AddressSpace& address_space,
                     const memory::GuestAddress address,
                     const std::uint64_t thread_id) {
@@ -127,6 +211,7 @@ void RequireNullAttachArguments(const JniGuestCallFrame& frame) {
 void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniEnvironment& environment,
                            JniClassRegistry& classes,
+                           JniInvocationEngine& invocations,
                            JniStringStore& strings,
                            JniJavaVm& java_vm,
                            memory::AddressSpace& address_space) {
@@ -271,6 +356,30 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                     name + descriptor);
             }
             return Word(method->Value());
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("CallStaticObjectMethod"),
+        [&environment, &classes, &invocations,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto dispatch_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!dispatch_class.has_value()) {
+                throw JniGuestBindingError(
+                    "CallStaticObjectMethod requires a valid class reference");
+            }
+            const auto method =
+                classes.ResolveMethod(JniMethodId{frame.registers[2]});
+            if (method.layout.result.kind != JniTypeKind::object &&
+                method.layout.result.kind != JniTypeKind::array) {
+                throw JniGuestBindingError(
+                    "CallStaticObjectMethod requires an object return descriptor");
+            }
+            const auto arguments =
+                ReadVariadicArguments(address_space, frame, method.layout);
+            const auto result = invocations.InvokeStatic(
+                frame.thread_id, *dispatch_class, method.id, arguments,
+                JniArgumentSource::variadic);
+            return Reference(std::get<JniReference>(result));
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("NewStringUTF"),

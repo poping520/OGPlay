@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0253] guest `CallStaticObjectMethod` 现按 descriptor 解码 A32 variadic 参数并
+  进入统一 invocation engine；真实目标已越过未绑定槽，首个新阻塞为 Profile Java
+  method 尚无注册 handler。全量 CTest 397/397 通过。
 - [WU-0252] guest `NewStringUTF` 现通过受检 guest C string、M3 Modified UTF-8 解码
   与统一 string store 发布 local reference；真实目标已越过该调用，首个新阻塞为未绑定
   JNI `CallStaticObjectMethod`。全量 CTest 396/396 通过。
@@ -74,7 +77,7 @@
   Windows/MSVC warnings-as-errors 构建及全量 CTest 382/382 通过。
 ## 下一步（按优先级）
 
-1. 绑定目标实际触达的 guest JNI `CallStaticObjectMethod`，复用统一 invocation engine。
+1. 为 Profile 声明的资源加载 Java method 注册通用 handler，并返回受管 byte array。
 2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

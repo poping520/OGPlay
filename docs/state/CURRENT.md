@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0249] activity native init 经 JADX 与 ELF 共同确认的 5 个 static Java method
+  已进入纯 Profile 数据；真实目标已推进至 startup call 4，首个新阻塞为未实现 GLES1
+  `glViewport`。全量 CTest 395/395 通过。
 - [WU-0248] GLMediaPlayer native init 经 JADX 与 ELF 共同确认的 25 个 static Java
   method 已进入纯 Profile 数据；真实目标已推进至 startup call 3，首个新阻塞为未声明
   `sendAppToBackground()V`。全量 CTest 395/395 通过。
@@ -70,13 +73,10 @@
 - [WU-0234] 完整 233 槽 JNIEnv 与 8 槽 JavaVM 已物化为 32 位 guest 函数表、对象和
   独立 Thumb SVC trap；reserved 保持 null，数据页只读、代码页 RX，冲突完整回滚。
   Windows/MSVC 18.8 warnings-as-errors 构建及全量 CTest 372/372 通过。
-- [WU-0233] APK preflight 已复用生产 Bionic/Android boundary 完成映射与重定位；真实
-  目标报告 5 guest + 2 boundary、6503 relocations、17 native calls。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 369/369 通过。
 ## 下一步（按优先级）
 
-1. 声明 Asphalt5 startup 实际查询的 Java method，并继续绑定后续 JNI guest slot。
-2. 逐个绑定目标执行实际触达的 GLES1 fixed-pipeline handler，未触达项继续明确失败。
+1. 绑定目标实际触达的 GLES1 `glViewport` handler，继续保持未触达项明确失败。
+2. 按真实调用顺序逐个闭合后续 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

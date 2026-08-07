@@ -1,20 +1,16 @@
 schema = 1
-
 [identity]
 package = "com.gameloft.android.GAND.GloftAsphalt5.asphalt5"
 name = "Asphalt 5"
 version_code = [1]
 so_sha256 = ["9c7eea1374b76200f47557415f4518535cce065a0d2c50c7bab75209f7b87b48"]
 abi = "armeabi"
-
 [runtime]
 api_level = 19
 lifecycle = "gl_surface_view"
-
 [runtime.surface]
 width = 800
 height = 480
-
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
@@ -22,7 +18,6 @@ method = "nativeGetJNIEnv"
 signature = "()V"
 dispatch = "instance"
 arguments = []
-
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLResLoader"
@@ -30,7 +25,6 @@ method = "nativeInit"
 signature = "(I)V"
 dispatch = "static"
 arguments = [{ source = "constant", value = 0 }]
-
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLMediaPlayer"
@@ -38,7 +32,6 @@ method = "nativeInit"
 signature = "(I)V"
 dispatch = "static"
 arguments = [{ source = "constant", value = 0 }]
-
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
@@ -46,7 +39,6 @@ method = "nativeInit"
 signature = "()V"
 dispatch = "static"
 arguments = []
-
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
@@ -60,7 +52,6 @@ arguments = [
   { source = "surface_height" },
   { source = "constant", value = 0 },
 ]
-
 [[runtime.native_call]]
 phase = "resume"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
@@ -185,6 +176,16 @@ method = [
   { name = "initSoundPoolArray", sig = "()V", impl = "audio.init_sound_pool_array", static = true },
   { name = "loadMovie", sig = "(Ljava/lang/String;)V", impl = "audio.load_movie", static = true },
   { name = "isMediaPlaying", sig = "(I)Z", impl = "audio.is_media_playing", static = true },
+]
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
+method = [
+  { name = "sendAppToBackground", sig = "()V", impl = "activity.send_to_background", static = true },
+  { name = "Exit", sig = "()V", impl = "process.exit", static = true },
+  { name = "sendUnlockMessage", sig = "()V", impl = "telephony.send_unlock_message", static = true },
+  { name = "saveRMS", sig = "(Ljava/lang/String;)V", impl = "storage.save_rms", static = true },
+  { name = "ChangeDisplaymode", sig = "(I)V", impl = "display.change_mode", static = true },
 ]
 
 [[runtime.native_call]]

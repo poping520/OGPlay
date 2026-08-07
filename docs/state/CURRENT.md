@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0241] 通用 Android guest call session 已组合真实 Bionic namespace、API 19
+  process、syscall/clone、guest JNI core、Android HLE 与 ELF init/fini，并只接受
+  通用 A32 frame。Windows/MSVC warnings-as-errors 构建及全量 CTest 392/392 通过。
 - [WU-0240] Profile native invocation 批次现先完整预检身份、地址、严格顺序、栈形状、
   进程内存与预算，再按声明顺序进入统一 A32 executor；结果/失败保留精确调用身份。
   Windows/MSVC warnings-as-errors 构建及全量 CTest 391/391 通过。
@@ -71,9 +74,6 @@
   warnings-as-errors 构建及全量 CTest 362/362 通过。
 - [WU-0226] 首个 legacy APK 的 startup/resume/frame/pause/shutdown 及 pointer/key
   native 调用序列已作为强类型纯数据进入标题 Profile；生产代码无游戏名或标题特判。
-- [WU-0225] Title Profile v1 以强类型纯数据描述 native JNI phase、类/方法/signature、
-  dispatch 与受限参数来源；脚本、地址及参数形状矛盾明确失败。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 359/359 通过。
 ## 下一步（按优先级）
 
 1. 让通用 `gl_surface_view` guest invoker 执行已装配调用帧并处理 JNI SVC trap。

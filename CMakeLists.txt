@@ -266,6 +266,7 @@ add_library(ogplay_runtime
     src/runtime/framework/framework_preferences.cpp
     src/runtime/execution/guest_lifecycle.cpp
     src/runtime/integration/api19_guest_process.cpp
+    src/runtime/integration/android_guest_call_session.cpp
     src/runtime/integration/headless_bionic_runner.cpp
     src/runtime/integration/android_boundary_gles.cpp
     src/runtime/integration/android_boundary_hle.cpp
@@ -436,6 +437,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/guest_clone_thread_runtime_tests.cpp
         tests/runtime/guest_thread_runner_tests.cpp
         tests/runtime/api19_guest_process_tests.cpp
+        tests/runtime/android_guest_call_session_tests.cpp
         tests/runtime/android_boundary_hle_tests.cpp
         tests/runtime/android_link_preflight_tests.cpp
         tests/runtime/native_activity_runner_tests.cpp

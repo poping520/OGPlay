@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0237] Guest JNI `SVC #3` 已按 trap PC 精确解码并校验 interface receiver，
+  发布寄存器/栈调用帧；slot 必须执行前绑定封口，未绑定项按名称和 LR 记账后失败。
+  Windows/MSVC warnings-as-errors 构建及全量 CTest 382/382 通过。
 - [WU-0236] 通用 A32 guest call executor 已按目标地址选择 A32/Thumb，装入 r0-r3 与
   8 字节对齐栈参数，复用 Linux SVC/显式 HLE 分派并只在受检返回 trap 结束；未处理
   trap、提前线程退出和预算耗尽明确失败。Windows/MSVC warnings-as-errors 构建及
@@ -70,10 +73,6 @@
   不再限定 stored v7a 单库或手写依赖，根库、API、生命周期与 surface 均来自 Profile，
   可在不创建窗口/执行 guest 时输出受检事实。macOS/arm64 warnings-as-errors 构建及全量
   CTest 358/358 通过。
-- [WU-0222] Bionic module set 从根 ELF 的 `DT_NEEDED` 递归拥有真实 guest 系统库闭包，
-  排除 HLE boundary 与未使用来源；未知、缺失及 SONAME 矛盾明确失败，load bias 稳定分配
-  且不碰 thunk 区。macOS/arm64 warnings-as-errors 构建及全量 CTest 357/357 通过。
-
 ## 下一步（按优先级）
 
 1. 让通用 `gl_surface_view` guest invoker 执行已装配调用帧并处理 JNI SVC trap。

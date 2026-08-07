@@ -41,6 +41,9 @@
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和
   Thumb SVC trap；reserved 槽保持 null，其余槽均有可识别地址。表与对象只读、trap 页
   RX，映射冲突完整回滚，析构后不得残留 guest 映射。
+- `JniGuestCallDispatcher` 只消费精确落入上述目录的 `SVC #3`，校验 JNIEnv/JavaVM
+  receiver 与非零线程后发布寄存器/栈调用帧；slot 必须在执行前显式绑定并封口，未绑定
+  项按名称记账并失败，未知 trap 地址不得吞掉。
 - `NativeActivityRunRequest::supersample_factor` 选择受检 1..4× 内部渲染倍率；guest 的
   EGL surface 和输出帧保持逻辑尺寸，ANGLE pbuffer、viewport 与 GPU render target 使用
   放大尺寸，swap 时通过 gles 确定性 resolve 还原。

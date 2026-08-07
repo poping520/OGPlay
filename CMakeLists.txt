@@ -270,6 +270,7 @@ add_library(ogplay_runtime
     src/runtime/integration/android_boundary_hle.cpp
     src/runtime/integration/android_link_preflight.cpp
     src/runtime/integration/jni_guest_abi.cpp
+    src/runtime/integration/jni_guest_dispatch.cpp
     src/runtime/integration/native_activity_runner.cpp
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/jni/jni.cpp

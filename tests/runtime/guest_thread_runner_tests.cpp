@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <cstdint>
 
 #include "ogplay/cpu/interpreter.h"
@@ -12,6 +13,9 @@ namespace {
 struct RunnerFixture final {
     RunnerFixture() : bus(memory), cpu(bus) {
         memory.Map({code, memory.PageSize()},
+                   ogplay::memory::PageProtection::read |
+                       ogplay::memory::PageProtection::write);
+        memory.Map({stack, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
     }
@@ -36,6 +40,7 @@ struct RunnerFixture final {
         ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger)};
     ogplay::runtime::GuestThreadLifecycle lifecycle;
     const ogplay::memory::GuestAddress code{0x10000U};
+    const ogplay::memory::GuestAddress stack{0x20000U};
 };
 
 }  // namespace
@@ -134,4 +139,131 @@ TEST_CASE("guest thread runner consumes only explicitly handled HLE traps") {
     CHECK(outcome.reason == ogplay::runtime::GuestThreadRunStop::guest_exit);
     REQUIRE(outcome.exit.has_value());
     CHECK(outcome.exit->state.exit_code == 9);
+}
+
+TEST_CASE("A32 guest call executes registers and aligned stack words") {
+    RunnerFixture fixture;
+    fixture.bus.Write32(fixture.code, 0xe0800001U);         // add r0, r0, r1
+    fixture.bus.Write32(fixture.code.Add(4), 0xe0800002U);  // add r0, r0, r2
+    fixture.bus.Write32(fixture.code.Add(8), 0xe0800003U);  // add r0, r0, r3
+    fixture.bus.Write32(fixture.code.Add(12), 0xe59d4000U); // ldr r4, [sp]
+    fixture.bus.Write32(fixture.code.Add(16), 0xe0800004U); // add r0, r0, r4
+    fixture.bus.Write32(fixture.code.Add(20), 0xe12fff1eU); // bx lr
+    const auto return_trap = fixture.code.Add(64);
+    fixture.bus.Write32(return_trap, 0xef000001U);          // svc #1
+    fixture.Start(85);
+
+    const std::array<std::uint32_t, 2> stack{5U, 0U};
+    const ogplay::runtime::A32GuestCallFrame frame{
+        fixture.code, {1U, 2U, 3U, 4U}, stack};
+    const auto result = ogplay::runtime::InvokeA32GuestCall(
+        fixture.cpu, fixture.dispatcher, fixture.lifecycle, fixture.memory,
+        frame, fixture.stack.Add(fixture.memory.PageSize()), return_trap, 32);
+
+    CHECK(result.return_value == 15U);
+    CHECK(result.ticks_consumed == 7U);
+    const auto state = fixture.cpu.GetState();
+    CHECK(state.Register(ogplay::cpu::CoreRegister::sp) ==
+          fixture.stack.Add(fixture.memory.PageSize() - 8U).Value());
+    CHECK(fixture.bus.Read32(
+              ogplay::memory::GuestAddress{
+                  state.Register(ogplay::cpu::CoreRegister::sp)},
+              85) == 5U);
+}
+
+TEST_CASE("A32 guest call consumes only explicit HLE traps") {
+    RunnerFixture fixture;
+    fixture.bus.Write32(fixture.code, 0xef000002U);         // svc #2
+    fixture.bus.Write32(fixture.code.Add(4), 0xe12fff1eU);  // bx lr
+    const auto return_trap = fixture.code.Add(64);
+    fixture.bus.Write32(return_trap, 0xef000001U);          // svc #1
+    fixture.Start(86);
+
+    std::uint32_t calls{};
+    const ogplay::runtime::A32GuestCallFrame frame{
+        fixture.code, {0U, 0U, 0U, 0U}, {}};
+    const auto result = ogplay::runtime::InvokeA32GuestCall(
+        fixture.cpu, fixture.dispatcher, fixture.lifecycle, fixture.memory,
+        frame, fixture.stack.Add(fixture.memory.PageSize()), return_trap, 16,
+        [&calls](ogplay::cpu::Cpu& cpu,
+                 const ogplay::cpu::RunResult& stopped) {
+            if (stopped.immediate != 2U) return false;
+            ++calls;
+            auto state = cpu.GetState();
+            state.SetRegister(ogplay::cpu::CoreRegister::r0, 42U);
+            cpu.SetState(state);
+            return true;
+        });
+
+    CHECK(calls == 1U);
+    CHECK(result.return_value == 42U);
+}
+
+TEST_CASE("A32 guest call selects Thumb state from the target address") {
+    RunnerFixture fixture;
+    fixture.bus.Write16(fixture.code, 0x3001U);         // adds r0, #1
+    fixture.bus.Write16(fixture.code.Add(2), 0x4770U);  // bx lr
+    const auto return_trap = fixture.code.Add(64);
+    fixture.bus.Write32(return_trap, 0xef000001U);      // svc #1
+    fixture.Start(90);
+
+    const ogplay::runtime::A32GuestCallFrame frame{
+        fixture.code.Add(1), {6U, 0U, 0U, 0U}, {}};
+    const auto result = ogplay::runtime::InvokeA32GuestCall(
+        fixture.cpu, fixture.dispatcher, fixture.lifecycle, fixture.memory,
+        frame, fixture.stack.Add(fixture.memory.PageSize()), return_trap, 16);
+
+    CHECK(result.return_value == 7U);
+    CHECK(fixture.cpu.GetState().State() ==
+          ogplay::cpu::ExecutionState::a32);
+}
+
+TEST_CASE("A32 guest call rejects invalid frames and unhandled stops") {
+    SUBCASE("unaligned stack shape") {
+        RunnerFixture fixture;
+        fixture.bus.Write32(fixture.code, 0xe12fff1eU);
+        fixture.Start(87);
+        const std::array<std::uint32_t, 1> stack{1U};
+        const ogplay::runtime::A32GuestCallFrame frame{
+            fixture.code, {}, stack};
+        CHECK_THROWS_WITH_AS(
+            static_cast<void>(ogplay::runtime::InvokeA32GuestCall(
+                fixture.cpu, fixture.dispatcher, fixture.lifecycle,
+                fixture.memory, frame,
+                fixture.stack.Add(fixture.memory.PageSize()),
+                fixture.code.Add(64), 8)),
+            "A32 guest call stack words must preserve 8-byte alignment",
+            ogplay::runtime::A32GuestCallError);
+    }
+    SUBCASE("unhandled trap") {
+        RunnerFixture fixture;
+        fixture.bus.Write32(fixture.code, 0xef000004U);
+        fixture.Start(88);
+        const ogplay::runtime::A32GuestCallFrame frame{
+            fixture.code, {}, {}};
+        CHECK_THROWS_WITH_AS(
+            static_cast<void>(ogplay::runtime::InvokeA32GuestCall(
+                fixture.cpu, fixture.dispatcher, fixture.lifecycle,
+                fixture.memory, frame,
+                fixture.stack.Add(fixture.memory.PageSize()),
+                fixture.code.Add(64), 8)),
+            doctest::Contains(
+                "A32 guest call stopped outside a handled boundary"),
+            ogplay::runtime::A32GuestCallError);
+    }
+    SUBCASE("budget") {
+        RunnerFixture fixture;
+        fixture.bus.Write32(fixture.code, 0xeafffffeU);  // b .
+        fixture.Start(89);
+        const ogplay::runtime::A32GuestCallFrame frame{
+            fixture.code, {}, {}};
+        CHECK_THROWS_WITH_AS(
+            static_cast<void>(ogplay::runtime::InvokeA32GuestCall(
+                fixture.cpu, fixture.dispatcher, fixture.lifecycle,
+                fixture.memory, frame,
+                fixture.stack.Add(fixture.memory.PageSize()),
+                fixture.code.Add(64), 2)),
+            "A32 guest call exhausted its tick budget",
+            ogplay::runtime::A32GuestCallError);
+    }
 }

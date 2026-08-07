@@ -26,6 +26,10 @@
 
 ## 最近完成
 
+- [WU-0236] 通用 A32 guest call executor 已按目标地址选择 A32/Thumb，装入 r0-r3 与
+  8 字节对齐栈参数，复用 Linux SVC/显式 HLE 分派并只在受检返回 trap 结束；未处理
+  trap、提前线程退出和预算耗尽明确失败。Windows/MSVC warnings-as-errors 构建及
+  全量 CTest 379/379 通过。
 - [WU-0235] Profile native calls 已按 phase 装配为 A32 JNI 调用帧：r0/r1 固定携带
   JNIEnv 与实例/jclass，显式参数进入 r2/r3 和 8 字节对齐栈；target、class reference、
   input 或 receiver 不完整时不发布部分帧。Windows/MSVC 构建及全量 CTest 375/375 通过。
@@ -69,10 +73,7 @@
 - [WU-0222] Bionic module set 从根 ELF 的 `DT_NEEDED` 递归拥有真实 guest 系统库闭包，
   排除 HLE boundary 与未使用来源；未知、缺失及 SONAME 矛盾明确失败，load bias 稳定分配
   且不碰 thunk 区。macOS/arm64 warnings-as-errors 构建及全量 CTest 357/357 通过。
-- [WU-0221] APK Profile 入口组合 Manifest package/version 与全部 ARM library hash/ABI，
-  只发布唯一四项精确候选；无匹配返回空，ABI 矛盾与多库命中明确失败。目标 APK 已由内存
-  Profile 精确选中唯一 `armeabi` library。macOS/arm64 warnings-as-errors 构建及全量
-  CTest 355/355 通过。
+
 ## 下一步（按优先级）
 
 1. 让通用 `gl_surface_view` guest invoker 执行已装配调用帧并处理 JNI SVC trap。

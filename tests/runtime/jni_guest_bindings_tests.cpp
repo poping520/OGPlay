@@ -15,6 +15,7 @@
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
+#include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
 
@@ -26,12 +27,14 @@ struct GuestBindingsFixture final {
           cpu(bus),
           abi(memory),
           dispatcher(ledger),
+          invocations(classes),
           java_vm(environment) {
         memory.Map({output, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
         ogplay::runtime::BindJniGuestCoreSlots(
-            dispatcher, environment, classes, strings, java_vm, memory);
+            dispatcher, environment, classes, invocations, strings, java_vm,
+            memory);
     }
 
     [[nodiscard]] std::uint32_t CallEnvironment(
@@ -77,6 +80,7 @@ struct GuestBindingsFixture final {
     ogplay::runtime::JniGuestCallDispatcher dispatcher;
     ogplay::runtime::JniEnvironment environment;
     ogplay::runtime::JniClassRegistry classes;
+    ogplay::runtime::JniInvocationEngine invocations;
     ogplay::runtime::JniStringStore strings;
     ogplay::runtime::JniJavaVm java_vm;
     const ogplay::memory::GuestAddress output{0x72000000U};
@@ -126,7 +130,7 @@ private:
 
 TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
     GuestBindingsFixture fixture;
-    constexpr std::array<std::string_view, 18> environment_names{
+    constexpr std::array<std::string_view, 19> environment_names{
         "GetVersion",          "Throw",
         "ExceptionOccurred",   "ExceptionClear",
         "PushLocalFrame",      "PopLocalFrame",
@@ -135,7 +139,8 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
         "NewLocalRef",         "EnsureLocalCapacity",
         "GetJavaVM",           "NewWeakGlobalRef",
         "DeleteWeakGlobalRef", "ExceptionCheck",
-        "GetStaticMethodID",   "NewStringUTF"};
+        "GetStaticMethodID",   "CallStaticObjectMethod",
+        "NewStringUTF"};
     for (const auto name : environment_names) {
         CAPTURE(name);
         CHECK(fixture.dispatcher.IsEnvironmentBound(
@@ -179,6 +184,44 @@ TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {
             fixture.CallEnvironment("NewStringUTF", 402U, 0U)),
         "JNI guest modified UTF-8 pointer is null",
         ogplay::runtime::JniGuestBindingError);
+}
+
+TEST_CASE("guest JNI static object call decodes descriptor-backed variadics") {
+    GuestBindingsFixture fixture;
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        403U, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+    const auto identity = fixture.classes.RegisterClass(
+        {"fixture/Resources",
+         {},
+         {{"load", "(Ljava/lang/String;)[B", "resource.load", true}},
+         {}});
+    const auto method = fixture.classes.GetMethodId(
+        identity, "load", "(Ljava/lang/String;)[B", true);
+    REQUIRE(method.has_value());
+    const auto java_class =
+        fixture.environment.PublishLocalObject(403U, identity);
+    const auto argument = fixture.environment.PublishLocalObject(
+        403U, ogplay::runtime::AllocateJniHostObjectIdentity());
+    const auto expected = fixture.environment.PublishLocalObject(
+        403U, ogplay::runtime::AllocateJniHostObjectIdentity());
+    fixture.invocations.RegisterHandler(
+        "resource.load",
+        [argument, expected](const ogplay::runtime::JniInvocation& invocation) {
+            CHECK(invocation.kind ==
+                  ogplay::runtime::JniInvocationKind::static_method);
+            CHECK(invocation.argument_source ==
+                  ogplay::runtime::JniArgumentSource::variadic);
+            REQUIRE(invocation.arguments.size() == 1);
+            CHECK(std::get<ogplay::runtime::JniReference>(
+                      invocation.arguments[0]) == argument);
+            return ogplay::runtime::JniValue{expected};
+        });
+    fixture.Seal();
+
+    CHECK(fixture.CallEnvironment(
+              "CallStaticObjectMethod", 403U, java_class.Value(),
+              method->Value(), argument.Value()) == expected.Value());
 }
 
 TEST_CASE("guest JNI static method lookup uses declared class identity") {

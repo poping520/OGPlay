@@ -10,6 +10,7 @@ namespace ogplay::runtime {
 
 class JniEnvironment;
 class JniClassRegistry;
+class JniInvocationEngine;
 class JniJavaVm;
 class JniStringStore;
 
@@ -21,6 +22,7 @@ public:
 void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniEnvironment& environment,
                            JniClassRegistry& classes,
+                           JniInvocationEngine& invocations,
                            JniStringStore& strings,
                            JniJavaVm& java_vm,
                            memory::AddressSpace& address_space);

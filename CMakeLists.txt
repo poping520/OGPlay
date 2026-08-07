@@ -269,6 +269,7 @@ add_library(ogplay_runtime
     src/runtime/integration/android_boundary_gles.cpp
     src/runtime/integration/android_boundary_hle.cpp
     src/runtime/integration/android_link_preflight.cpp
+    src/runtime/integration/jni_guest_abi.cpp
     src/runtime/integration/native_activity_runner.cpp
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/jni/jni.cpp
@@ -415,6 +416,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/jni_exception_tests.cpp
         tests/runtime/jni_field_store_tests.cpp
         tests/runtime/jni_environment_tests.cpp
+        tests/runtime/jni_guest_abi_tests.cpp
         tests/runtime/jni_java_vm_tests.cpp
         tests/runtime/jni_array_tests.cpp
         tests/runtime/jni_class_registry_tests.cpp

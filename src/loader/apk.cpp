@@ -165,12 +165,16 @@ class DeflateHuffman final {
 
 std::pair<DeflateHuffman, DeflateHuffman> FixedDeflateTables() {
     std::array<std::uint8_t, 288> literal_lengths{};
-    std::fill(literal_lengths.begin(), literal_lengths.begin() + 144, 8);
-    std::fill(literal_lengths.begin() + 144, literal_lengths.begin() + 256, 9);
-    std::fill(literal_lengths.begin() + 256, literal_lengths.begin() + 280, 7);
-    std::fill(literal_lengths.begin() + 280, literal_lengths.end(), 8);
+    std::fill(literal_lengths.begin(), literal_lengths.begin() + 144,
+              std::uint8_t{8});
+    std::fill(literal_lengths.begin() + 144, literal_lengths.begin() + 256,
+              std::uint8_t{9});
+    std::fill(literal_lengths.begin() + 256, literal_lengths.begin() + 280,
+              std::uint8_t{7});
+    std::fill(literal_lengths.begin() + 280, literal_lengths.end(),
+              std::uint8_t{8});
     std::array<std::uint8_t, 32> distance_lengths{};
-    distance_lengths.fill(5);
+    distance_lengths.fill(std::uint8_t{5});
     return {DeflateHuffman{literal_lengths}, DeflateHuffman{distance_lengths}};
 }
 

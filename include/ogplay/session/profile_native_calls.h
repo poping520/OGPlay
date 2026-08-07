@@ -46,7 +46,7 @@ struct ProfileNativeInvocation final {
     std::string export_name;
     memory::GuestAddress address;
     std::array<std::uint32_t, 4> registers{};
-    std::vector<std::uint32_t> stack_words;
+    std::vector<std::uint32_t> stack_words{};
 };
 
 class ProfileNativeCallError final : public std::runtime_error {

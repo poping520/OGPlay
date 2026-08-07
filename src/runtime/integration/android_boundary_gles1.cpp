@@ -80,6 +80,17 @@ void BindAndroidBoundaryGles1Core(
             return 0U;
         });
     dispatch.Bind(
+        "glClearColor",
+        [require_frame](
+            const std::span<const std::uint32_t> arguments, const std::uint64_t) {
+            require_frame("glClearColor")
+                .ClearColor(std::bit_cast<float>(arguments[0]),
+                            std::bit_cast<float>(arguments[1]),
+                            std::bit_cast<float>(arguments[2]),
+                            std::bit_cast<float>(arguments[3]));
+            return 0U;
+        });
+    dispatch.Bind(
         "glShadeModel",
         [&state, require_frame = std::move(require_frame)](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {

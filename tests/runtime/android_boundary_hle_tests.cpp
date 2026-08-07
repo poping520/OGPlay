@@ -173,6 +173,9 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         fixture.Call("libGLESv1_CM.so", "glShadeModel",
                      {ogplay::runtime::detail::kGles1SmoothShadeModel}),
         "glShadeModel has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glClearColor"),
+        "glClearColor has no current ANGLE frame", std::runtime_error);
     if (ogplay::gles::IsNativeAngleEglAvailable()) {
         fixture.boundary.OpenManagedSurface();
         CHECK(fixture.Call("libGLESv1_CM.so", "glViewport", {0, 0, 4, 3}) == 0);
@@ -187,8 +190,26 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             fixture.Call("libGLESv1_CM.so", "glShadeModel", {0U}),
             "glShadeModel mode must be GL_FLAT or GL_SMOOTH",
             std::invalid_argument);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glClearColor",
+                  {std::bit_cast<std::uint32_t>(0.125F),
+                   std::bit_cast<std::uint32_t>(0.25F),
+                   std::bit_cast<std::uint32_t>(0.5F),
+                   std::bit_cast<std::uint32_t>(1.0F)}) == 0);
+        static_cast<void>(
+            fixture.Call("libGLESv2.so", "glClear", {0x00004000U}));
+        fixture.boundary.PresentManagedSurface();
+        const auto frame = fixture.boundary.TakeLatestFrame();
+        REQUIRE(frame.has_value());
+        CHECK(frame->rgba8[0] == doctest::Approx(32).epsilon(0.04));
+        CHECK(frame->rgba8[1] == doctest::Approx(64).epsilon(0.04));
+        CHECK(frame->rgba8[2] == doctest::Approx(128).epsilon(0.04));
         fixture.boundary.CloseManagedSurface();
     }
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glClear", {0x00004000U}),
+        "unimplemented GLES1 call glClear (thunk 8, guest thread 1)",
+        ogplay::gles::GlesDispatchError);
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glAlphaFunc", {0x0201U, 0}),
         "unimplemented GLES1 call glAlphaFunc (thunk 1, guest thread 1)",

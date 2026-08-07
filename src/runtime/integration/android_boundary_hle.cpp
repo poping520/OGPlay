@@ -21,6 +21,7 @@
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/supersample.h"
 #include "ogplay/runtime/integration/android_boundary_gles.h"
+#include "android_boundary_gles1.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -124,16 +125,6 @@ std::uint32_t SignedResult(const std::int32_t value) noexcept {
     return std::bit_cast<std::uint32_t>(value);
 }
 
-std::int32_t ScaleViewportComponent(const std::int32_t value,
-                                    const std::uint32_t factor) {
-    const auto scaled = static_cast<std::int64_t>(value) * factor;
-    if (scaled < std::numeric_limits<std::int32_t>::min() ||
-        scaled > std::numeric_limits<std::int32_t>::max()) {
-        throw std::overflow_error("supersampled viewport component overflows");
-    }
-    return static_cast<std::int32_t>(scaled);
-}
-
 }  // namespace
 
 class AndroidBoundaryHle::Impl final {
@@ -145,6 +136,11 @@ public:
           layout_(gles::MakeSupersampleLayout(width, height, supersample_factor)),
           symbols_(BuildSymbols()), provider_(symbols_),
           gles_dispatch_(address_space) {
+        detail::BindAndroidBoundaryGles1Core(
+            gles1_dispatch_, layout_.factor,
+            [this](const std::string_view operation) -> gles::AngleFrame& {
+                return RequireFrame(operation);
+            });
     }
 
     void MapThunks() {
@@ -608,26 +604,26 @@ private:
         }
         if (symbol == "glViewport") {
             RequireFrame(symbol).Viewport(
-                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[0]),
-                                       layout_.factor),
-                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[1]),
-                                       layout_.factor),
-                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[2]),
-                                       layout_.factor),
-                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[3]),
-                                       layout_.factor));
+                detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[0]), layout_.factor),
+                detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[1]), layout_.factor),
+                detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[2]), layout_.factor),
+                detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[3]), layout_.factor));
             return 0;
         }
         if (symbol == "glScissor") {
             RequireFrame(symbol).Scissor(
-                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[0]),
-                                       layout_.factor),
-                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[1]),
-                                       layout_.factor),
-                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[2]),
-                                       layout_.factor),
-                ScaleViewportComponent(std::bit_cast<std::int32_t>(args[3]),
-                                       layout_.factor));
+                detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[0]), layout_.factor),
+                detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[1]), layout_.factor),
+                detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[2]), layout_.factor),
+                detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[3]), layout_.factor));
             return 0;
         }
         if (symbol == "glClearColor") {

@@ -465,6 +465,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"
 note = "M5 WU-0238 将 16 个 JNIEnv 引用/异常基础 slot 与 4 个 JavaVM slot 绑定到真实 M3 状态；guest 输出指针受检，统一发布 guest JNIEnv/JavaVM 地址"
 
+[runtime.api19_guest_process]
+status = "complete"
+test = "tests/runtime/api19_guest_process_tests.cpp; tests/runtime/native_activity_runner_tests.cpp"
+note = "M5 WU-0239 事务映射通用 API 19 root TLS/thread-info/preinit、栈、SVC 返回 trap 与 property area；失败回滚并保留 libc 导出槽"
+
 [gles.gles1_core_catalog]
 status = "complete"
 test = "tools.gles1_catalog_current"

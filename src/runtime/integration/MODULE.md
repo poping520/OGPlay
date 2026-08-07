@@ -38,6 +38,9 @@
   原始原因的 `NativeActivityRunError`；禁止 SDL 主线程无限等待已死亡渲染线程的首帧。
 - `PreflightAndroidGuestLink` 复用生产 Bionic namespace 与 Android boundary 完成映射和
   重定位但不执行 guest；报告 guest/boundary 模块及 relocation 数，任一缺失导入明确失败。
+- `InitializeApi19GuestProcess` 事务映射统一 root TLS/thread-info/preinit、4 MiB 栈、
+  `SVC #1` 返回 trap 与空 property area，并只向受检 libc 导出槽发布地址；固定布局冲突、
+  非法线程/进程名或写入失败必须回滚新增映射和导出槽。
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和
   Thumb SVC trap；reserved 槽保持 null，其余槽均有可识别地址。表与对象只读、trap 页
   RX，映射冲突完整回滚，析构后不得残留 guest 映射。

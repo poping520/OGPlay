@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -7,6 +8,7 @@
 #include <system_error>
 #include <variant>
 
+#include "ogplay/session/profile_java.h"
 #include "ogplay/session/title_profile.h"
 
 namespace {
@@ -64,6 +66,7 @@ constexpr std::string_view kHashB =
            "name = \"load\"\n"
            "sig = \"(I)[B\"\n"
            "impl = \"resource.load\"\n"
+           "static = false\n"
            "\n"
            "[quirks]\n"
            "enabled = [\"legacy_reads\"]\n"
@@ -315,6 +318,28 @@ TEST_CASE("Title Profile Java quirks and input decode without executable content
     REQUIRE(profile.java_classes[0].methods.size() == 1);
     CHECK(profile.java_classes[0].methods[0].signature == "(I)[B");
     CHECK(profile.java_classes[0].methods[0].implementation == "resource.load");
+    CHECK_FALSE(profile.java_classes[0].methods[0].is_static);
+    auto static_text = CompleteProfile();
+    static_text.replace(static_text.find("static = false"),
+                        std::string("static = false").size(),
+                        "static = true");
+    const auto static_profile = ogplay::session::LoadTitleProfileText(
+        static_text, "org.example.legacy");
+    const std::array implementations{
+        ogplay::session::ProfileJavaImplementation{
+            "resource.load",
+            [](const ogplay::runtime::JniInvocation&) {
+                return ogplay::runtime::JniValue{
+                    ogplay::runtime::JniReference{1}};
+            }}};
+    const auto assembly = ogplay::session::AssembleProfileJava(
+        static_profile, implementations);
+    REQUIRE(assembly.bindings.size() == 1);
+    CHECK(assembly.classes->GetMethodId(
+              assembly.bindings[0].class_identity, "load", "(I)[B", true)
+              .has_value());
+    CHECK_FALSE(assembly.classes->GetMethodId(
+        assembly.bindings[0].class_identity, "load", "(I)[B", false));
     REQUIRE(profile.quirks.has_value());
     CHECK(profile.quirks->enabled == std::vector<std::string>{"legacy_reads"});
     const auto& parameters = profile.quirks->parameters.at("legacy_reads");

@@ -427,8 +427,9 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
         std::set<std::pair<std::string, std::string>> method_keys;
         for (const auto& method_value : methods) {
             const auto& method = AsTable(method_value, "java.class[].method[]");
-            ExactKeys(method, "java.class[].method[]", {"name", "sig", "impl"},
-                      {"name", "sig", "impl"});
+            ExactKeys(method, "java.class[].method[]",
+                      {"name", "sig", "impl", "static"},
+                      {"name", "sig", "impl", "static"});
             ProfileJavaMethod decoded_method;
             decoded_method.name =
                 AsString(Require(method, "name", "java.class[].method[].name"),
@@ -445,6 +446,10 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
             decoded_method.implementation =
                 AsString(Require(method, "impl", "java.class[].method[].impl"),
                          "java.class[].method[].impl");
+            decoded_method.is_static =
+                AsBoolean(Require(method, "static",
+                                  "java.class[].method[].static"),
+                          "java.class[].method[].static");
             if (!ValidImplementationId(decoded_method.implementation) ||
                 !method_keys.emplace(decoded_method.name, decoded_method.signature).second) {
                 throw TitleProfileError(

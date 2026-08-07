@@ -45,13 +45,14 @@ ProfileJavaAssembly AssembleProfileJava(
             methods.reserve(java_class.methods.size());
             for (const auto& method : java_class.methods) {
                 methods.push_back({method.name, method.signature,
-                                   method.implementation, false});
+                                   method.implementation, method.is_static});
             }
             const auto identity = classes->RegisterClass(
                 {java_class.name, {}, std::move(methods), {}});
             for (const auto& method : java_class.methods) {
                 const auto id = classes->GetMethodId(
-                    identity, method.name, method.signature, false);
+                    identity, method.name, method.signature,
+                    method.is_static);
                 if (!id.has_value()) {
                     throw ProfileJavaError(
                         "Profile Java method was not registered: " +

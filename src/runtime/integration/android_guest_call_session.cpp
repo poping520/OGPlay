@@ -88,7 +88,8 @@ public:
         lifecycle_.Register(kRootThreadId, process_memory_.thread_pointer);
         BindSyscalls();
         BindJniGuestCoreSlots(
-            jni_dispatcher_, environment_, java_vm_, address_space_);
+            jni_dispatcher_, environment_, classes_, java_vm_,
+            address_space_);
         jni_dispatcher_.Seal();
         const auto attached = java_vm_.AttachCurrentThread(
             kRootThreadId, kJniVersion1_6);
@@ -225,6 +226,7 @@ public:
         return guest_jni_.JavaVm();
     }
     JniEnvironment& Environment() noexcept { return environment_; }
+    JniClassRegistry& Classes() noexcept { return classes_; }
     void OpenManagedSurface() { boundary_.OpenManagedSurface(); }
     void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
@@ -260,6 +262,7 @@ private:
     A32SyscallDispatcher dispatcher_;
     JniGuestCallDispatcher jni_dispatcher_;
     JniEnvironment environment_;
+    JniClassRegistry classes_;
     JniJavaVm java_vm_;
     hal::RealtimeClock clock_;
     cpu::FutexTable futex_table_;
@@ -318,6 +321,9 @@ memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept {
 }
 JniEnvironment& AndroidGuestCallSession::Environment() noexcept {
     return impl_->Environment();
+}
+JniClassRegistry& AndroidGuestCallSession::Classes() noexcept {
+    return impl_->Classes();
 }
 void AndroidGuestCallSession::OpenManagedSurface() {
     impl_->OpenManagedSurface();

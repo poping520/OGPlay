@@ -26,6 +26,8 @@
 
 ## 最近完成
 
+- [WU-0246] guest `GetStaticMethodID` 现按真实 class reference、受检 name/descriptor
+  与统一 registry 的 static kind 精确查询；未声明不返回伪造 ID。全量 CTest 395/395 通过。
 - [WU-0245] Profile Java method 现显式声明 instance/static kind，C++/Python/schema
   同步验证并按种类注册统一 JNI class registry。全量 CTest 394/394 通过。
 - [WU-0244] `run-apk` 现可对 `gl_surface_view` 精确 Profile 组合 Android guest
@@ -71,9 +73,6 @@
 - [WU-0231] 固定 ANGLE extension header 的受检子集目录已覆盖目标 ELF 所需 3 个
   `GL_OES_matrix_palette` 入口，并与 145 个 GLES1 core ID 隔离。macOS/arm64
   warnings-as-errors 构建及全量 CTest 367/367 通过。
-- [WU-0230] Android boundary 已在 `libGLESv1_CM.so` 发布隔离的 145 项 core Thumb
-  trap；同名 GLES1/GLES2 不混淆，未绑定调用记账并明确失败。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 366/366 通过。
 ## 下一步（按优先级）
 
 1. 绑定目标 startup 实际触达的 `GetStaticMethodID` 及后续 JNI guest slot。

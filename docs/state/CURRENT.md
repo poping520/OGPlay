@@ -29,10 +29,13 @@
 
 ## 进行中
 
-- 无。下一精确边界为未实现 GLES1 `glClear`（thunk 8）。
+- 无。下一精确边界为未实现 GLES1 `glEnable`（thunk 37）。
 
 ## 最近完成
 
+- [WU-0261] GLES1 `glClear` 现将 guest `GLbitfield` mask 原样转发当前
+  `AngleFrame::Clear`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK smoke
+  已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1 `glEnable`（thunk 37）。
 - [WU-0260] GLES1 `glClearDepthf` 现逐位解码 guest `GLfloat` 并转发当前
   `AngleFrame::ClearDepth`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK
   smoke 已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1 `glClear`
@@ -75,7 +78,7 @@
 
 ## 下一步（按优先级）
 
-1. 按 smoke 暴露的下一边界绑定 GLES1 `glClear`。
+1. 按 smoke 暴露的下一边界绑定 GLES1 `glEnable`。
 2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

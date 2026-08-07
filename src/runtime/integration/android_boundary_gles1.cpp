@@ -80,6 +80,13 @@ void BindAndroidBoundaryGles1Core(
             return 0U;
         });
     dispatch.Bind(
+        "glClear",
+        [require_frame](const std::span<const std::uint32_t> arguments,
+                        const std::uint64_t) {
+            require_frame("glClear").Clear(arguments[0]);
+            return 0U;
+        });
+    dispatch.Bind(
         "glClearColor",
         [require_frame](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {

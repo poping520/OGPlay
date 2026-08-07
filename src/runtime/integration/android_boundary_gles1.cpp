@@ -26,7 +26,7 @@ void BindAndroidBoundaryGles1Core(
     }
     dispatch.Bind(
         "glViewport",
-        [supersample_factor, require_frame = std::move(require_frame)](
+        [supersample_factor, require_frame](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {
             require_frame("glViewport")
                 .Viewport(ScaleAndroidBoundaryViewportComponent(
@@ -41,6 +41,25 @@ void BindAndroidBoundaryGles1Core(
                           ScaleAndroidBoundaryViewportComponent(
                               std::bit_cast<std::int32_t>(arguments[3]),
                               supersample_factor));
+            return 0U;
+        });
+    dispatch.Bind(
+        "glScissor",
+        [supersample_factor, require_frame = std::move(require_frame)](
+            const std::span<const std::uint32_t> arguments, const std::uint64_t) {
+            require_frame("glScissor")
+                .Scissor(ScaleAndroidBoundaryViewportComponent(
+                             std::bit_cast<std::int32_t>(arguments[0]),
+                             supersample_factor),
+                         ScaleAndroidBoundaryViewportComponent(
+                             std::bit_cast<std::int32_t>(arguments[1]),
+                             supersample_factor),
+                         ScaleAndroidBoundaryViewportComponent(
+                             std::bit_cast<std::int32_t>(arguments[2]),
+                             supersample_factor),
+                         ScaleAndroidBoundaryViewportComponent(
+                             std::bit_cast<std::int32_t>(arguments[3]),
+                             supersample_factor));
             return 0U;
         });
 }

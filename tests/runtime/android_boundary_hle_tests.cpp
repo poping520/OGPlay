@@ -148,9 +148,13 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glViewport", {0, 0, 4, 3}),
         "glViewport has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glScissor", {0, 0, 4, 3}),
+        "glScissor has no current ANGLE frame", std::runtime_error);
     if (ogplay::gles::IsNativeAngleEglAvailable()) {
         fixture.boundary.OpenManagedSurface();
         CHECK(fixture.Call("libGLESv1_CM.so", "glViewport", {0, 0, 4, 3}) == 0);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glScissor", {0, 0, 4, 3}) == 0);
         fixture.boundary.CloseManagedSurface();
     }
     CHECK_THROWS_WITH_AS(

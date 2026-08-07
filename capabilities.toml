@@ -535,6 +535,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0250 让 GLES1 glViewport 通过隔离 dispatch 转发当前 ANGLE frame，并复用受检超采样换算"
 
+[runtime.gles1_scissor_boundary]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0251 让 GLES1 glScissor 通过隔离 dispatch 转发当前 ANGLE frame，并复用受检超采样换算"
+
 [gles.gles1_extension_catalog]
 status = "complete"
 test = "tools.gles1_extensions_catalog_current"

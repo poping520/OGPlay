@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0258] GLES1 `glShadeModel` 现以显式 fixed-pipeline context state 保存受检
+  `GL_FLAT` / `GL_SMOOTH`；真实目标已越过该调用，首个新阻塞为未实现 GLES1
+  `glClearColor`。全量 CTest 402/402 通过。
 - [WU-0257] guest `GetByteArrayRegion` 现从统一 primitive array store 受检复制 byte
   区间到 guest 内存，并解码 A32 第 5 栈参数；真实目标已越过该槽，首个新阻塞为未实现
   GLES1 `glShadeModel`。全量 CTest 401/401 通过。
@@ -55,15 +58,10 @@
 - [WU-0248] GLMediaPlayer native init 经 JADX 与 ELF 共同确认的 25 个 static Java
   method 已进入纯 Profile 数据；真实目标已推进至 startup call 3，首个新阻塞为未声明
   `sendAppToBackground()V`。全量 CTest 395/395 通过。
-- [WU-0247] Profile lifecycle 现把 Java declarations 与 native-call receiver 装入
-  Android guest 的同一 JNI class registry；真实目标已推进至 startup call 2，首个新阻塞
-  为未声明 `isSoundLoaded(II)I`。全量 CTest 395/395 通过。
-- [WU-0246] guest `GetStaticMethodID` 现按真实 class reference、受检 name/descriptor
-  与统一 registry 的 static kind 精确查询；未声明不返回伪造 ID。全量 CTest 395/395 通过。
 
 ## 下一步（按优先级）
 
-1. 绑定目标实际触达的 GLES1 `glShadeModel`。
+1. 绑定目标实际触达的 GLES1 `glClearColor`。
 2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

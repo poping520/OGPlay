@@ -15,6 +15,7 @@
 #include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/android_boundary_hle.h"
+#include "../../src/runtime/integration/android_boundary_gles1.h"
 
 namespace {
 
@@ -131,6 +132,23 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
         std::runtime_error);
 }
 
+TEST_CASE("GLES1 shade model state validates and resets") {
+    ogplay::runtime::detail::AndroidBoundaryGles1State state;
+    CHECK(state.ShadeModel() ==
+          ogplay::runtime::detail::kGles1SmoothShadeModel);
+    state.SetShadeModel(ogplay::runtime::detail::kGles1FlatShadeModel);
+    CHECK(state.ShadeModel() ==
+          ogplay::runtime::detail::kGles1FlatShadeModel);
+    state.SetShadeModel(ogplay::runtime::detail::kGles1SmoothShadeModel);
+    CHECK_THROWS_WITH_AS(
+        state.SetShadeModel(0U),
+        "glShadeModel mode must be GL_FLAT or GL_SMOOTH",
+        std::invalid_argument);
+    state.Reset();
+    CHECK(state.ShadeModel() ==
+          ogplay::runtime::detail::kGles1SmoothShadeModel);
+}
+
 TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     BoundaryFixture fixture;
     CHECK(ogplay::gles::GlesFunctionCount(ogplay::gles::GlesApi::gles1) == 145);
@@ -151,10 +169,24 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glScissor", {0, 0, 4, 3}),
         "glScissor has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glShadeModel",
+                     {ogplay::runtime::detail::kGles1SmoothShadeModel}),
+        "glShadeModel has no current ANGLE frame", std::runtime_error);
     if (ogplay::gles::IsNativeAngleEglAvailable()) {
         fixture.boundary.OpenManagedSurface();
         CHECK(fixture.Call("libGLESv1_CM.so", "glViewport", {0, 0, 4, 3}) == 0);
         CHECK(fixture.Call("libGLESv1_CM.so", "glScissor", {0, 0, 4, 3}) == 0);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glShadeModel",
+                  {ogplay::runtime::detail::kGles1SmoothShadeModel}) == 0);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glShadeModel",
+                  {ogplay::runtime::detail::kGles1FlatShadeModel}) == 0);
+        CHECK_THROWS_WITH_AS(
+            fixture.Call("libGLESv1_CM.so", "glShadeModel", {0U}),
+            "glShadeModel mode must be GL_FLAT or GL_SMOOTH",
+            std::invalid_argument);
         fixture.boundary.CloseManagedSurface();
     }
     CHECK_THROWS_WITH_AS(

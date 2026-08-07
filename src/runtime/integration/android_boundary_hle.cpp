@@ -137,7 +137,7 @@ public:
           symbols_(BuildSymbols()), provider_(symbols_),
           gles_dispatch_(address_space) {
         detail::BindAndroidBoundaryGles1Core(
-            gles1_dispatch_, layout_.factor,
+            gles1_dispatch_, gles1_state_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });
@@ -194,6 +194,7 @@ public:
         angle_frame_.reset();
         managed_surface_ = false;
         gles_dispatch_.Reset();
+        gles1_state_.Reset();
         std::scoped_lock lock(mutex_);
         gpu_render_target_ready_ = false;
     }
@@ -583,6 +584,7 @@ private:
             }
             angle_frame_.reset();
             gles_dispatch_.Reset();
+            gles1_state_.Reset();
             std::scoped_lock lock(mutex_);
             gpu_render_target_ready_ = false;
             return 1;
@@ -725,6 +727,7 @@ private:
     std::vector<BionicHleSymbol> symbols_;
     BionicHleSymbolProvider provider_;
     AndroidBoundaryGles gles_dispatch_;
+    detail::AndroidBoundaryGles1State gles1_state_;
     gles::GlesDispatchTable gles1_dispatch_{gles::GlesApi::gles1};
     gles::GlesDispatchTable gles1_extensions_dispatch_{
         gles::GlesApi::gles1_extensions};

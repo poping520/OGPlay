@@ -22,9 +22,12 @@
 - `AndroidBoundaryHle` 同时从隔离目录发布完整 145 项 `libGLESv1_CM.so` core Thumb
   trap 及固定 header 受检的 3 项 matrix-palette extension trap；core/extension 独立记账，
   未绑定固定管线调用明确失败，不得误用同名 GLES2 handler。
-- GLES1 `glViewport` / `glScissor` 作为首批实际触达的固定管线 handler 直接转发当前
-  `AngleFrame`，与 GLES2 共用受检超采样坐标换算；没有当前 frame、换算溢出或 ANGLE
-  错误明确失败。
+- GLES1 `glViewport` / `glScissor` 直接转发当前 `AngleFrame`，与 GLES2 共用受检
+  超采样坐标换算；没有当前 frame、换算溢出或 ANGLE 错误明确失败。
+- GLES1 `glShadeModel` 只接受标准 `GL_FLAT` / `GL_SMOOTH`，写入独立、显式的
+  fixed-pipeline context state；没有当前 frame 或非法枚举明确失败，managed/guest EGL
+  context 终止时恢复 `GL_SMOOTH` 默认值。该状态供后续 fixed-pipeline draw 转换消费，
+  不得以静默 no-op 代替。
 - shader/program handler 必须把 guest 二级源码数组、可选长度、查询输出和符号名完整
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、

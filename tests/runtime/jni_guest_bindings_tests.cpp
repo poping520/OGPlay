@@ -41,9 +41,10 @@ struct GuestBindingsFixture final {
     [[nodiscard]] std::uint32_t CallEnvironment(
         const std::string_view name, const std::uint64_t thread_id,
         const std::uint32_t r1 = 0U, const std::uint32_t r2 = 0U,
-        const std::uint32_t r3 = 0U) {
+        const std::uint32_t r3 = 0U,
+        const std::uint32_t stack_word = 0U) {
         return Call(false, ogplay::runtime::FindJniSlot(name)->Value(),
-                    thread_id, r1, r2, r3);
+                    thread_id, r1, r2, r3, stack_word);
     }
 
     [[nodiscard]] std::uint32_t CallJavaVm(
@@ -91,7 +92,8 @@ private:
     [[nodiscard]] std::uint32_t Call(
         const bool java_vm_call, const std::uint16_t slot,
         const std::uint64_t thread_id, const std::uint32_t r1,
-        const std::uint32_t r2, const std::uint32_t r3) {
+        const std::uint32_t r2, const std::uint32_t r3,
+        const std::uint32_t stack_word = 0U) {
         const auto table =
             java_vm_call ? ogplay::runtime::kJniGuestInvokeTable
                          : ogplay::runtime::kJniGuestEnvironmentTable;
@@ -109,8 +111,10 @@ private:
         state.SetRegister(ogplay::cpu::CoreRegister::r1, r1);
         state.SetRegister(ogplay::cpu::CoreRegister::r2, r2);
         state.SetRegister(ogplay::cpu::CoreRegister::r3, r3);
+        const auto stack_pointer = output.Add(0x800U);
+        bus.Write32(stack_pointer, stack_word, thread_id);
         state.SetRegister(ogplay::cpu::CoreRegister::sp,
-                          output.Add(memory.PageSize()).Value());
+                          stack_pointer.Value());
         state.SetRegister(ogplay::cpu::CoreRegister::lr,
                           0x12345679U);
         cpu.SetState(state);
@@ -132,7 +136,7 @@ private:
 
 TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
     GuestBindingsFixture fixture;
-    constexpr std::array<std::string_view, 20> environment_names{
+    constexpr std::array<std::string_view, 21> environment_names{
         "GetVersion",          "Throw",
         "ExceptionOccurred",   "ExceptionClear",
         "PushLocalFrame",      "PopLocalFrame",
@@ -142,7 +146,8 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
         "GetJavaVM",           "NewWeakGlobalRef",
         "DeleteWeakGlobalRef", "ExceptionCheck",
         "GetStaticMethodID",   "CallStaticObjectMethod",
-        "GetArrayLength",      "NewStringUTF"};
+        "GetArrayLength",      "GetByteArrayRegion",
+        "NewStringUTF"};
     for (const auto name : environment_names) {
         CAPTURE(name);
         CHECK(fixture.dispatcher.IsEnvironmentBound(
@@ -205,6 +210,64 @@ TEST_CASE("guest JNI array length resolves the unified primitive array") {
         static_cast<void>(
             fixture.CallEnvironment("GetArrayLength", 404U, 0U)),
         ogplay::runtime::JniGuestBindingError);
+}
+
+TEST_CASE("guest JNI byte array region copies checked bytes to guest memory") {
+    GuestBindingsFixture fixture;
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        405U, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+
+    const auto array_identity = fixture.arrays.New(
+        ogplay::runtime::JniPrimitiveKind::byte, 4);
+    fixture.arrays.SetRegion(
+        array_identity, 0,
+        ogplay::runtime::JniPrimitiveArrayData{
+            std::vector<ogplay::runtime::JniByte>{0x11, -2, 0x7f, -128}});
+    const auto array =
+        fixture.environment.PublishLocalObject(405U, array_identity);
+
+    const auto integer_identity = fixture.arrays.New(
+        ogplay::runtime::JniPrimitiveKind::integer, 1);
+    const auto integer_array =
+        fixture.environment.PublishLocalObject(405U, integer_identity);
+    const auto destination = fixture.output.Add(0x300U);
+    fixture.Seal();
+
+    static_cast<void>(fixture.CallEnvironment(
+        "GetByteArrayRegion", 405U, array.Value(), 1U, 2U,
+        destination.Value()));
+    CHECK(fixture.bus.Read8(destination) == 0xfeU);
+    CHECK(fixture.bus.Read8(destination.Add(1U)) == 0x7fU);
+
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "GetByteArrayRegion", 405U, 0U, 0U, 1U,
+            destination.Value())),
+        "GetByteArrayRegion requires a valid array reference",
+        ogplay::runtime::JniGuestBindingError);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "GetByteArrayRegion", 405U, integer_array.Value(), 0U, 1U,
+            destination.Value())),
+        "GetByteArrayRegion requires a byte array reference",
+        ogplay::runtime::JniGuestBindingError);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "GetByteArrayRegion", 405U, array.Value(),
+            std::bit_cast<std::uint32_t>(ogplay::runtime::JniInt{-1}), 1U,
+            destination.Value())),
+        ogplay::runtime::JniArrayError);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "GetByteArrayRegion", 405U, array.Value(), 0U, 1U, 0U)),
+        "GetByteArrayRegion requires a non-null output buffer",
+        ogplay::runtime::JniGuestBindingError);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "GetByteArrayRegion", 405U, array.Value(), 0U, 1U,
+            ogplay::runtime::kJniGuestEnvironmentTable.Value())),
+        ogplay::memory::MemoryFault);
 }
 
 TEST_CASE("guest JNI static object call decodes descriptor-backed variadics") {

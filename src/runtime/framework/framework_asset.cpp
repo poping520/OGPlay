@@ -6,6 +6,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -43,8 +44,22 @@ void AppendUtf8(std::string& output, const std::uint32_t code_point) {
         Fail(FrameworkAssetErrorReason::invalid_asset_path,
              "asset path cannot be empty");
     }
+    std::size_t begin{};
+    if (value.size() >= 3 && value[0] == '.' && value[1] == '/' &&
+        value[2] == '/') {
+        begin = 3;
+    } else if (value.size() >= 2 && value[0] == '.' && value[1] == '/') {
+        begin = 2;
+    }
+    auto end = value.size();
+    while (begin < end && value[begin] <= 0x20U) ++begin;
+    while (end > begin && value[end - 1] <= 0x20U) --end;
+    if (begin == end) {
+        Fail(FrameworkAssetErrorReason::invalid_asset_path,
+             "asset path cannot be empty");
+    }
     std::string relative;
-    for (std::size_t index = 0; index < value.size(); ++index) {
+    for (std::size_t index = begin; index < end; ++index) {
         std::uint32_t code_point = value[index];
         if (code_point == 0 || code_point == '\\') {
             Fail(FrameworkAssetErrorReason::invalid_asset_path,
@@ -70,17 +85,63 @@ void AppendUtf8(std::string& output, const std::uint32_t code_point) {
     }
     std::size_t cursor = 0;
     while (cursor <= relative.size()) {
-        const auto end = relative.find('/', cursor);
+        const auto component_end = relative.find('/', cursor);
         const auto component = relative.substr(
-            cursor, (end == std::string::npos ? relative.size() : end) - cursor);
+            cursor,
+            (component_end == std::string::npos
+                 ? relative.size()
+                 : component_end) -
+                cursor);
         if (component.empty() || component == "." || component == "..") {
             Fail(FrameworkAssetErrorReason::invalid_asset_path,
                  "asset path contains an unsafe component");
         }
-        if (end == std::string::npos) break;
-        cursor = end + 1;
+        if (component_end == std::string::npos) break;
+        cursor = component_end + 1;
     }
     return "/apk/assets/" + relative;
+}
+
+[[nodiscard]] std::vector<std::byte> ReadAsset(
+    VirtualFileSystem& vfs, const std::string_view path) {
+    VfsFileInfo info;
+    std::int32_t descriptor{};
+    try {
+        info = vfs.Stat(path);
+        if (info.source != VfsSource::apk ||
+            info.size >
+                static_cast<std::uint64_t>(
+                    std::numeric_limits<JniSize>::max())) {
+            Fail(FrameworkAssetErrorReason::io_failure,
+                 "direct asset path is not a bounded APK file");
+        }
+        descriptor = vfs.Open(path, {.read = true});
+    } catch (const VfsError& error) {
+        Fail(FrameworkAssetErrorReason::io_failure,
+             std::string("cannot open direct APK asset: ") + error.what());
+    }
+    std::vector<std::byte> contents(static_cast<std::size_t>(info.size));
+    std::size_t offset{};
+    try {
+        while (offset < contents.size()) {
+            const auto count = vfs.Read(
+                descriptor,
+                std::span<std::byte>{contents}.subspan(offset));
+            if (count == 0) {
+                Fail(FrameworkAssetErrorReason::io_failure,
+                     "direct APK asset ended before its declared size");
+            }
+            offset += count;
+        }
+        vfs.Close(descriptor);
+    } catch (...) {
+        try {
+            vfs.Close(descriptor);
+        } catch (...) {
+        }
+        throw;
+    }
+    return contents;
 }
 
 [[nodiscard]] JniValue VoidResult() { return JniValue{std::monostate{}}; }
@@ -424,6 +485,164 @@ FrameworkAssetHle& FrameworkAssetHle::operator=(
     FrameworkAssetHle&&) noexcept = default;
 FrameworkAssetClassSet FrameworkAssetHle::Install() {
     return impl_->Install();
+}
+
+class FrameworkDirectAssetHle::Impl final {
+public:
+    Impl(JniInvocationEngine& invocations, JniEnvironment& environment,
+         JniStringStore& strings, JniPrimitiveArrayStore& arrays,
+         VirtualFileSystem& vfs)
+        : invocations_(&invocations),
+          environment_(&environment),
+          strings_(&strings),
+          arrays_(&arrays),
+          vfs_(&vfs) {}
+
+    void Install(FrameworkDirectAssetImplementations implementations) {
+        if (installed_) {
+            Fail(FrameworkAssetErrorReason::duplicate_install,
+                 "direct asset HLE is already installed");
+        }
+        const std::set<std::string, std::less<>> ids{
+            implementations.load_full,
+            implementations.load_range,
+            implementations.length,
+        };
+        if (ids.size() != 3 || ids.contains("")) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct asset implementation IDs must be non-empty and unique");
+        }
+        invocations_->RegisterHandler(
+            std::move(implementations.load_full),
+            [this](const JniInvocation& invocation) {
+                return LoadFull(invocation);
+            });
+        invocations_->RegisterHandler(
+            std::move(implementations.load_range),
+            [this](const JniInvocation& invocation) {
+                return LoadRange(invocation);
+            });
+        invocations_->RegisterHandler(
+            std::move(implementations.length),
+            [this](const JniInvocation& invocation) {
+                return Length(invocation);
+            });
+        installed_ = true;
+    }
+
+private:
+    [[nodiscard]] std::vector<std::byte> Contents(
+        const JniInvocation& invocation) const {
+        if (invocation.arguments.empty()) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct asset call requires a string argument");
+        }
+        const auto reference =
+            std::get_if<JniReference>(&invocation.arguments.front());
+        if (reference == nullptr) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct asset path argument is not a reference");
+        }
+        const auto identity =
+            environment_->ResolveObjectForHle(invocation.thread_id, *reference);
+        if (!identity.has_value()) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct asset path reference cannot be null");
+        }
+        return ReadAsset(
+            *vfs_, AssetPath(
+                       strings_->Region(
+                           *identity, 0, strings_->Length(*identity))));
+    }
+
+    [[nodiscard]] JniValue Publish(
+        const std::uint64_t thread_id,
+        const std::span<const std::byte> contents) {
+        const auto identity = arrays_->New(
+            JniPrimitiveKind::byte,
+            static_cast<JniSize>(contents.size()));
+        try {
+            std::vector<JniByte> bytes;
+            bytes.reserve(contents.size());
+            for (const auto byte : contents) {
+                bytes.push_back(static_cast<JniByte>(
+                    std::to_integer<std::uint8_t>(byte)));
+            }
+            arrays_->SetRegion(
+                identity, 0, JniPrimitiveArrayData{std::move(bytes)});
+            return JniValue{
+                environment_->PublishLocalObject(thread_id, identity)};
+        } catch (...) {
+            arrays_->Delete(identity);
+            throw;
+        }
+    }
+
+    [[nodiscard]] JniValue LoadFull(const JniInvocation& invocation) {
+        if (invocation.arguments.size() != 1) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct full asset call requires one argument");
+        }
+        const auto contents = Contents(invocation);
+        return Publish(invocation.thread_id, contents);
+    }
+
+    [[nodiscard]] JniValue LoadRange(const JniInvocation& invocation) {
+        if (invocation.arguments.size() != 3) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct ranged asset call requires three arguments");
+        }
+        const auto offset = std::get_if<JniInt>(&invocation.arguments[1]);
+        const auto length = std::get_if<JniInt>(&invocation.arguments[2]);
+        if (offset == nullptr || length == nullptr ||
+            *offset < 0 || *length < 0) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct asset range is invalid");
+        }
+        const auto contents = Contents(invocation);
+        const auto start = static_cast<std::size_t>(*offset);
+        const auto count = static_cast<std::size_t>(*length);
+        if (start > contents.size() ||
+            count > contents.size() - start) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct asset range exceeds the file");
+        }
+        return Publish(
+            invocation.thread_id,
+            std::span<const std::byte>{contents}.subspan(start, count));
+    }
+
+    [[nodiscard]] JniValue Length(const JniInvocation& invocation) const {
+        if (invocation.arguments.size() != 1) {
+            Fail(FrameworkAssetErrorReason::invalid_argument,
+                 "direct asset length call requires one argument");
+        }
+        return JniValue{
+            static_cast<JniInt>(Contents(invocation).size())};
+    }
+
+    JniInvocationEngine* invocations_{};
+    JniEnvironment* environment_{};
+    JniStringStore* strings_{};
+    JniPrimitiveArrayStore* arrays_{};
+    VirtualFileSystem* vfs_{};
+    bool installed_{};
+};
+
+FrameworkDirectAssetHle::FrameworkDirectAssetHle(
+    JniInvocationEngine& invocations, JniEnvironment& environment,
+    JniStringStore& strings, JniPrimitiveArrayStore& arrays,
+    VirtualFileSystem& vfs)
+    : impl_(std::make_unique<Impl>(
+          invocations, environment, strings, arrays, vfs)) {}
+FrameworkDirectAssetHle::~FrameworkDirectAssetHle() = default;
+FrameworkDirectAssetHle::FrameworkDirectAssetHle(
+    FrameworkDirectAssetHle&&) noexcept = default;
+FrameworkDirectAssetHle& FrameworkDirectAssetHle::operator=(
+    FrameworkDirectAssetHle&&) noexcept = default;
+void FrameworkDirectAssetHle::Install(
+    FrameworkDirectAssetImplementations implementations) {
+    impl_->Install(std::move(implementations));
 }
 
 }  // namespace ogplay::runtime

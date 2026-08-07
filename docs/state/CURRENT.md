@@ -26,6 +26,8 @@
 
 ## 最近完成
 
+- [WU-0254] 通用直接资源 HLE 现按调用方 implementation id 从受检 APK VFS 提供
+  full/range/length，并把结果发布为统一 JNI byte array。全量 CTest 399/399 通过。
 - [WU-0253] guest `CallStaticObjectMethod` 现按 descriptor 解码 A32 variadic 参数并
   进入统一 invocation engine；真实目标已越过未绑定槽，首个新阻塞为 Profile Java
   method 尚无注册 handler。全量 CTest 397/397 通过。
@@ -72,12 +74,9 @@
 - [WU-0238] Guest JNI 首批 16 个 JNIEnv 引用/异常基础 slot 与 4 个 JavaVM slot
   已绑定真实 M3 状态；guest 输出指针受检，VM 只发布统一 guest ABI 地址，非空 attach
   arguments 明确失败。Windows/MSVC warnings-as-errors 构建及全量 CTest 385/385 通过。
-- [WU-0237] Guest JNI `SVC #3` 已按 trap PC 精确解码并校验 interface receiver，
-  发布寄存器/栈调用帧；slot 必须执行前绑定封口，未绑定项按名称和 LR 记账后失败。
-  Windows/MSVC warnings-as-errors 构建及全量 CTest 382/382 通过。
 ## 下一步（按优先级）
 
-1. 为 Profile 声明的资源加载 Java method 注册通用 handler，并返回受管 byte array。
+1. 把 APK `assets/` 受检导入 guest VFS，并按 Profile implementation id 安装直接资源 HLE。
 2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

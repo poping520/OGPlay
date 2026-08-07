@@ -219,3 +219,113 @@ TEST_CASE("framework AssetManager rejects unsafe paths and missing setup") {
     strings.Delete(runtime_name_object);
     strings.Delete(name_object);
 }
+
+TEST_CASE("framework direct asset implementations return bounded JNI bytes") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::vector<ogplay::runtime::VfsMountEntry> apk{{
+        "assets/data.bin",
+        {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}},
+    }};
+    vfs.Mount(ogplay::runtime::VfsSource::apk, "/apk", apk);
+    ogplay::runtime::JniClassRegistry classes;
+    const auto loader = classes.RegisterClass(
+        {"fixture/Loader",
+         {},
+         {{"full", "(Ljava/lang/String;)[B", "fixture.asset.full", true},
+          {"range", "(Ljava/lang/String;II)[B", "fixture.asset.range", true},
+          {"length", "(Ljava/lang/String;)I", "fixture.asset.length", true}},
+         {}});
+    ogplay::runtime::JniInvocationEngine invocations(classes);
+    ogplay::runtime::JniEnvironment environment;
+    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::FrameworkDirectAssetHle direct(
+        invocations, environment, strings, arrays, vfs);
+    direct.Install(
+        {"fixture.asset.full", "fixture.asset.range", "fixture.asset.length"});
+
+    constexpr std::uint64_t thread = 43;
+    environment.AttachThread(thread, 8);
+    const std::vector<ogplay::runtime::JniChar> path_value{
+        '.', '/', '/', 'd', 'a', 't', 'a', '.', 'b', 'i', 'n', ' '};
+    const auto path_identity = strings.Create(path_value);
+    const auto path = environment.PublishLocalObject(thread, path_identity);
+    const std::array<ogplay::runtime::JniValue, 1> full_arguments{path};
+    const auto full = ReferenceResult(invocations.InvokeStatic(
+        thread, loader,
+        *classes.GetMethodId(
+            loader, "full", "(Ljava/lang/String;)[B", true),
+        full_arguments, ogplay::runtime::JniArgumentSource::value_array));
+    const auto full_identity =
+        environment.ResolveObjectForHle(thread, full);
+    REQUIRE(full_identity.has_value());
+    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(
+              arrays.Region(*full_identity, 0, 4)) ==
+          std::vector<ogplay::runtime::JniByte>{1, 2, 3, 4});
+    CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
+              thread, loader,
+              *classes.GetMethodId(
+                  loader, "length", "(Ljava/lang/String;)I", true),
+              full_arguments,
+              ogplay::runtime::JniArgumentSource::value_array)) == 4);
+
+    const std::array<ogplay::runtime::JniValue, 3> range_arguments{
+        path, ogplay::runtime::JniInt{1}, ogplay::runtime::JniInt{2}};
+    const auto range = ReferenceResult(invocations.InvokeStatic(
+        thread, loader,
+        *classes.GetMethodId(
+            loader, "range", "(Ljava/lang/String;II)[B", true),
+        range_arguments, ogplay::runtime::JniArgumentSource::value_array));
+    const auto range_identity =
+        environment.ResolveObjectForHle(thread, range);
+    REQUIRE(range_identity.has_value());
+    CHECK(std::get<std::vector<ogplay::runtime::JniByte>>(
+              arrays.Region(*range_identity, 0, 2)) ==
+          std::vector<ogplay::runtime::JniByte>{2, 3});
+    environment.DetachThread(thread);
+}
+
+TEST_CASE("framework direct assets reject unsafe ranges and duplicate install") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::vector<ogplay::runtime::VfsMountEntry> apk{{
+        "assets/data.bin", {std::byte{1}},
+    }};
+    vfs.Mount(ogplay::runtime::VfsSource::apk, "/apk", apk);
+    ogplay::runtime::JniClassRegistry classes;
+    const auto loader = classes.RegisterClass(
+        {"fixture/Loader",
+         {},
+         {{"range", "(Ljava/lang/String;II)[B", "fixture.range", true}},
+         {}});
+    ogplay::runtime::JniInvocationEngine invocations(classes);
+    ogplay::runtime::JniEnvironment environment;
+    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::FrameworkDirectAssetHle direct(
+        invocations, environment, strings, arrays, vfs);
+    CHECK_THROWS_AS(
+        direct.Install({"same", "same", "other"}),
+        ogplay::runtime::FrameworkAssetError);
+    direct.Install({"fixture.full", "fixture.range", "fixture.length"});
+    CHECK_THROWS_AS(
+        direct.Install({"again.full", "again.range", "again.length"}),
+        ogplay::runtime::FrameworkAssetError);
+
+    constexpr std::uint64_t thread = 44;
+    environment.AttachThread(thread, 4);
+    const std::vector<ogplay::runtime::JniChar> path_value{
+        'd', 'a', 't', 'a', '.', 'b', 'i', 'n'};
+    const auto path_identity = strings.Create(path_value);
+    const auto path = environment.PublishLocalObject(thread, path_identity);
+    const std::array<ogplay::runtime::JniValue, 3> invalid_range{
+        path, ogplay::runtime::JniInt{1}, ogplay::runtime::JniInt{1}};
+    CHECK_THROWS_AS(
+        static_cast<void>(invocations.InvokeStatic(
+            thread, loader,
+            *classes.GetMethodId(
+                loader, "range", "(Ljava/lang/String;II)[B", true),
+            invalid_range,
+            ogplay::runtime::JniArgumentSource::value_array)),
+        ogplay::runtime::FrameworkAssetError);
+    environment.DetachThread(thread);
+}

@@ -585,6 +585,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0260 绑定 GLES1 glClearDepthf 到当前 ANGLE frame；macOS/arm64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
 
+[runtime.gles1_clear_boundary]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0261 绑定 GLES1 glClear 到当前 ANGLE frame；macOS/arm64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
+
 [gles.gles1_extension_catalog]
 status = "complete"
 test = "tools.gles1_extensions_catalog_current"

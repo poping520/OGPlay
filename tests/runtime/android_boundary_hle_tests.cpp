@@ -174,6 +174,9 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                      {ogplay::runtime::detail::kGles1SmoothShadeModel}),
         "glShadeModel has no current ANGLE frame", std::runtime_error);
     CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glClear", {0x00004000U}),
+        "glClear has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glClearColor"),
         "glClearColor has no current ANGLE frame", std::runtime_error);
     CHECK_THROWS_WITH_AS(
@@ -203,8 +206,8 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                    std::bit_cast<std::uint32_t>(1.0F)}) == 0);
         CHECK(fixture.Call("libGLESv1_CM.so", "glClearDepthf",
                            {std::bit_cast<std::uint32_t>(0.25F)}) == 0);
-        static_cast<void>(
-            fixture.Call("libGLESv2.so", "glClear", {0x00004000U}));
+        CHECK(fixture.Call("libGLESv1_CM.so", "glClear",
+                           {0x00004000U}) == 0);
         fixture.boundary.PresentManagedSurface();
         const auto frame = fixture.boundary.TakeLatestFrame();
         REQUIRE(frame.has_value());
@@ -218,8 +221,8 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         "unimplemented GLES1 call glClearDepthx (thunk 12, guest thread 1)",
         ogplay::gles::GlesDispatchError);
     CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv1_CM.so", "glClear", {0x00004000U}),
-        "unimplemented GLES1 call glClear (thunk 8, guest thread 1)",
+        fixture.Call("libGLESv1_CM.so", "glClearStencil", {0U}),
+        "unimplemented GLES1 call glClearStencil (thunk 13, guest thread 1)",
         ogplay::gles::GlesDispatchError);
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glAlphaFunc", {0x0201U, 0}),

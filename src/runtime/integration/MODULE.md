@@ -34,6 +34,9 @@
 - GLES1 `glClearDepthf` 逐位解码 guest `GLfloat` 并通过 `AngleFrame::ClearDepth`
   更新真实 ANGLE depth-clear state；无当前 frame 或 ANGLE 错误必须明确失败，不得
   以宿主缓存、固定默认值或 silent no-op 替代。
+- GLES1 `glClear` 将 guest `GLbitfield` mask 原样转发 `AngleFrame::Clear`，由同一
+  ANGLE context 应用当前 color/depth/stencil clear state；无当前 frame 或非法 mask
+  产生的 ANGLE 错误必须明确失败，不得静默过滤未知 bit。
 - shader/program handler 必须把 guest 二级源码数组、可选长度、查询输出和符号名完整
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、

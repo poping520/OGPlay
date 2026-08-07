@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0251] GLES1 `glScissor` 现通过隔离 fixed-pipeline dispatch 转发当前 ANGLE
+  frame，并复用受检超采样换算；真实目标已越过该调用，首个新阻塞为未绑定 JNI
+  `NewStringUTF`。全量 CTest 395/395 通过。
 - [WU-0250] GLES1 `glViewport` 现通过隔离 fixed-pipeline dispatch 转发当前 ANGLE
   frame，并复用受检超采样换算；真实目标已越过该调用，首个新阻塞为未实现
   `glScissor`。全量 CTest 395/395 通过。
@@ -70,13 +73,10 @@
   8 字节对齐栈参数，复用 Linux SVC/显式 HLE 分派并只在受检返回 trap 结束；未处理
   trap、提前线程退出和预算耗尽明确失败。Windows/MSVC warnings-as-errors 构建及
   全量 CTest 379/379 通过。
-- [WU-0235] Profile native calls 已按 phase 装配为 A32 JNI 调用帧：r0/r1 固定携带
-  JNIEnv 与实例/jclass，显式参数进入 r2/r3 和 8 字节对齐栈；target、class reference、
-  input 或 receiver 不完整时不发布部分帧。Windows/MSVC 构建及全量 CTest 375/375 通过。
 ## 下一步（按优先级）
 
-1. 绑定目标实际触达的 GLES1 `glScissor` handler，继续保持未触达项明确失败。
-2. 按真实调用顺序逐个闭合后续 GLES1 fixed-pipeline handler。
+1. 绑定目标实际触达的 guest JNI `NewStringUTF` slot，复用统一 M3 string store。
+2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

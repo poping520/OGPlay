@@ -39,6 +39,7 @@ public:
                  std::int32_t width, std::int32_t height);
     void SetScissorEnabled(bool enabled);
     void ClearColor(float red, float green, float blue, float alpha);
+    void ClearDepth(float depth);
     void Clear(std::uint32_t mask);
     [[nodiscard]] std::uint32_t CreateShader(std::uint32_t type);
     void ShaderSource(std::uint32_t shader, std::span<const std::string> sources);

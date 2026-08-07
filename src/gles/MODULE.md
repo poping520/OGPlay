@@ -15,8 +15,9 @@
   失败。调用方必须保证 API 对象比使用它的 `EglLifecycle` 存活更久。
 - `EglLifecycle::CreatePbuffer`：创建 ANGLE display、EGL config、GLES2 context 和 pbuffer
   surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
-- `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/clear、shader/program、
-  buffer/texture、vertex/uniform、query/state、draw 与局部 readback 调用，并以受检 RGBA8
+- `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/clear-color/depth-clear/clear、
+  shader/program、buffer/texture、vertex/uniform、query/state、draw 与局部 readback 调用，并以
+  受检 RGBA8
   全帧 readback 输出左上原点的确定帧；每个原生 GLES 调用都检查错误。
 - `CreateNativeAngleEglApi`：ANGLE 启用时创建真实 API；关闭时明确抛出 unavailable，绝不
   回退系统 EGL。

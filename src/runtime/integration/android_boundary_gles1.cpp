@@ -91,6 +91,14 @@ void BindAndroidBoundaryGles1Core(
             return 0U;
         });
     dispatch.Bind(
+        "glClearDepthf",
+        [require_frame](
+            const std::span<const std::uint32_t> arguments, const std::uint64_t) {
+            require_frame("glClearDepthf").ClearDepth(
+                std::bit_cast<float>(arguments[0]));
+            return 0U;
+        });
+    dispatch.Bind(
         "glShadeModel",
         [&state, require_frame = std::move(require_frame)](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {

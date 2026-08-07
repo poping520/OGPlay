@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-07 · M5 已打开
+更新：2026-08-08 · M5 已打开
 
 ## 当前阶段
 
@@ -11,6 +11,9 @@
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
+- 当前 M5 增量 WU 的开发与验收目标为 macOS/arm64 + ANGLE：warnings-as-errors、全量
+  CTest 与 exact-APK bounded smoke；其他平台留到显式跨平台检查点，不再阻塞每个
+  增量 WU。
 
 ## 已验收基线
 
@@ -26,13 +29,17 @@
 
 ## 进行中
 
-- [WU-0259] GLES1 `glClearColor` 已绑定为逐位解码四个 guest `GLfloat` 并转发当前
-  `AngleFrame`；相邻 `glClear` 仍未绑定。macOS/arm64 ANGLE 全量 CTest 402/402 与
-  exact-APK smoke 已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1
-  `glClearDepthf`（thunk 11）。Windows/MSVC warnings-as-errors 全量 CTest 尚待执行。
+- 无。下一精确边界为未实现 GLES1 `glClear`（thunk 8）。
 
 ## 最近完成
 
+- [WU-0260] GLES1 `glClearDepthf` 现逐位解码 guest `GLfloat` 并转发当前
+  `AngleFrame::ClearDepth`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK
+  smoke 已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1 `glClear`
+  （thunk 8）。
+- [WU-0259] GLES1 `glClearColor` 已逐位解码四个 guest `GLfloat` 并转发当前
+  `AngleFrame`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK smoke 已通过，
+  真实目标越过该调用后首个新阻塞为未实现 GLES1 `glClearDepthf`（thunk 11）。
 - [WU-0258] GLES1 `glShadeModel` 现以显式 fixed-pipeline context state 保存受检
   `GL_FLAT` / `GL_SMOOTH`；真实目标已越过该调用，首个新阻塞为未实现 GLES1
   `glClearColor`。全量 CTest 402/402 通过。
@@ -68,8 +75,8 @@
 
 ## 下一步（按优先级）
 
-1. 完成 WU-0259 的 Windows/MSVC warnings-as-errors 与全量 CTest，闭合本 WU。
-2. 按 smoke 暴露的下一边界绑定 GLES1 `glClearDepthf`。
+1. 按 smoke 暴露的下一边界绑定 GLES1 `glClear`。
+2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

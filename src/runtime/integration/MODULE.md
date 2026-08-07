@@ -46,6 +46,7 @@
   非法线程/进程名或写入失败必须回滚新增映射和导出槽。
 - `AndroidGuestCallSession` 组合真实 Bionic namespace、API 19 process、syscall/clone、
   guest JNI ABI/core bindings 与 Android HLE，执行 guest init/fini 并只接受通用 A32 frame；
+  可选直接资源 implementation set 只安装通用 framework HLE 并拥有统一 JNI array store；
   Profile phase、窗口和标题事实不得进入该会话。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。

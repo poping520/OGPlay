@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -131,6 +132,52 @@ gles::AngleBackend NativeBackend() {
     return std::nullopt;
 }
 
+[[nodiscard]] std::optional<runtime::FrameworkDirectAssetImplementations>
+DirectAssetImplementations(const session::TitleProfile& profile) {
+    runtime::FrameworkDirectAssetImplementations result;
+    for (const auto& java_class : profile.java_classes) {
+        for (const auto& method : java_class.methods) {
+            if (method.implementation == "resource.load_full") {
+                result.load_full = method.implementation;
+            } else if (method.implementation == "resource.load_range") {
+                result.load_range = method.implementation;
+            } else if (method.implementation == "resource.length") {
+                result.length = method.implementation;
+            }
+        }
+    }
+    const auto count = static_cast<unsigned>(!result.load_full.empty()) +
+                       static_cast<unsigned>(!result.load_range.empty()) +
+                       static_cast<unsigned>(!result.length.empty());
+    if (count == 0) return std::nullopt;
+    if (count != 3) {
+        throw std::runtime_error(
+            "Profile direct asset implementation set is incomplete");
+    }
+    return result;
+}
+
+[[nodiscard]] std::vector<runtime::VfsMountEntry> ReadApkAssets(
+    const std::span<const std::byte> apk_bytes,
+    const loader::ApkArchive& archive) {
+    std::vector<runtime::VfsMountEntry> result;
+    for (const auto& entry : archive.entries) {
+        if (!entry.name.starts_with("assets/") ||
+            entry.name.size() == std::string_view{"assets/"}.size() ||
+            entry.name.ends_with('/')) {
+            continue;
+        }
+        result.push_back(
+            {entry.name,
+             loader::ReadApkEntry(apk_bytes, archive, entry.name)});
+    }
+    if (result.empty()) {
+        throw std::runtime_error(
+            "Profile direct asset HLE requires APK assets");
+    }
+    return result;
+}
+
 }  // namespace
 
 int RunApkCommand(const int argc, const char* const argv[]) {
@@ -227,6 +274,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     std::uint64_t presented{};
     std::uint32_t guest_width = profile.runtime.surface.width;
     std::uint32_t guest_height = profile.runtime.surface.height;
+    const auto direct_assets = DirectAssetImplementations(profile);
     if (profile.runtime.lifecycle == session::ProfileLifecycle::native_activity) {
         auto guest = runtime::NativeActivitySession::Start(
             {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
@@ -259,11 +307,15 @@ int RunApkCommand(const int argc, const char* const argv[]) {
         guest->Stop();
     } else {
         runtime::VirtualFileSystem filesystem;
+        if (direct_assets.has_value()) {
+            const auto assets = ReadApkAssets(apk_bytes, archive);
+            filesystem.Mount(runtime::VfsSource::apk, "/apk", assets);
+        }
         auto guest = runtime::AndroidGuestCallSession::Start(
             {profile.runtime.api_level, root_name, module_inputs,
              NativeBackend(), profile.runtime.surface.width,
              profile.runtime.surface.height, UINT64_C(200000000),
-             supersample_factor, &filesystem, {}});
+             supersample_factor, &filesystem, {}, direct_assets});
         auto lifecycle = session::ProfileGuestLifecycle::Create(
             profile, launch->native_calls,
             {

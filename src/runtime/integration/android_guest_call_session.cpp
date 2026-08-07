@@ -71,6 +71,11 @@ public:
             throw AndroidGuestCallSessionError(
                 "Android guest call session request is incomplete");
         }
+        if (request.direct_assets.has_value()) {
+            direct_assets_ = std::make_unique<FrameworkDirectAssetHle>(
+                invocations_, environment_, strings_, arrays_, *filesystem_);
+            direct_assets_->Install(*request.direct_assets);
+        }
         const auto& profile = SelectBionicProfile(request.api);
         Progress("mapping-boundaries");
         MapArmKernelHelpers(address_space_);
@@ -268,6 +273,7 @@ private:
     JniClassRegistry classes_;
     JniInvocationEngine invocations_;
     JniStringStore strings_;
+    JniPrimitiveArrayStore arrays_;
     JniJavaVm java_vm_;
     hal::RealtimeClock clock_;
     cpu::FutexTable futex_table_;
@@ -278,6 +284,7 @@ private:
         std::make_shared<cpu::DynarmicExecutionContext>(64);
     cpu::GuestThreadGroup threads_;
     VirtualFileSystem* filesystem_{};
+    std::unique_ptr<FrameworkDirectAssetHle> direct_assets_;
     std::unique_ptr<GuestCloneThreadRuntime> clone_runtime_;
     std::unique_ptr<cpu::DynarmicCpu> root_cpu_;
     loader::Elf32LoadedNamespace loaded_;

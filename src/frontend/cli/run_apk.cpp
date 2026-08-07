@@ -17,9 +17,11 @@
 #include "ogplay/hal/window_input.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/integration/android_link_preflight.h"
 #include "ogplay/runtime/integration/native_activity_runner.h"
 #include "ogplay/session/profile_apk.h"
+#include "ogplay/session/profile_guest_lifecycle.h"
 #include "ogplay/session/title_profile.h"
 
 namespace ogplay::frontend {
@@ -98,9 +100,9 @@ gles::AngleBackend NativeBackend() {
     throw std::logic_error("unknown configured ANGLE renderer");
 }
 
-void ForwardInput(runtime::NativeActivitySession& guest, const hal::InputEvent& event,
-                  const hal::WindowState& window, const std::uint32_t guest_width,
-                  const std::uint32_t guest_height) {
+[[nodiscard]] std::optional<runtime::AndroidBoundaryInput> MapInput(
+    const hal::InputEvent& event, const hal::WindowState& window,
+    const std::uint32_t guest_width, const std::uint32_t guest_height) {
     std::optional<runtime::AndroidBoundaryInputType> type;
     if (event.type == hal::InputEventType::key) type = runtime::AndroidBoundaryInputType::key;
     if (event.type == hal::InputEventType::pointer_motion) {
@@ -118,13 +120,15 @@ void ForwardInput(runtime::NativeActivitySession& guest, const hal::InputEvent& 
                 window.width, window.height);
             if (!mapped.inside &&
                 (*type == runtime::AndroidBoundaryInputType::pointer_motion || event.pressed)) {
-                return;
+                return std::nullopt;
             }
             x = mapped.x;
             y = mapped.y;
         }
-        guest.PushInput({*type, event.code, x, y, event.pressed});
+        return runtime::AndroidBoundaryInput{
+            *type, event.code, x, y, event.pressed};
     }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -207,7 +211,8 @@ int RunApkCommand(const int argc, const char* const argv[]) {
               std::to_string(launch->native_calls.size()) + "\n");
         return 0;
     }
-    if (profile.runtime.lifecycle != session::ProfileLifecycle::native_activity) {
+    if (profile.runtime.lifecycle != session::ProfileLifecycle::native_activity &&
+        profile.runtime.lifecycle != session::ProfileLifecycle::gl_surface_view) {
         throw std::runtime_error(
             "profile lifecycle runner is not implemented by run-apk: " +
             std::string(session::ToString(profile.runtime.lifecycle)));
@@ -218,32 +223,92 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                   .width = profile.runtime.surface.width,
                   .height = profile.runtime.surface.height,
                   .hidden = false, .resizable = true});
-    auto guest = runtime::NativeActivitySession::Start(
-        {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
-         profile.runtime.surface.width, profile.runtime.surface.height,
-         UINT64_C(200000000), {}, supersample_factor});
-    Write("OGPlay: NativeActivity started; close the window to stop.\n");
-
     bool quit{};
     std::uint64_t presented{};
     std::uint32_t guest_width = profile.runtime.surface.width;
     std::uint32_t guest_height = profile.runtime.surface.height;
-    while (!quit) {
-        const auto window_state = window->State();
-        for (const auto& event : window->PollEvents()) {
-            if (event.type == hal::InputEventType::quit) quit = true;
-            else ForwardInput(*guest, event, window_state, guest_width, guest_height);
+    if (profile.runtime.lifecycle == session::ProfileLifecycle::native_activity) {
+        auto guest = runtime::NativeActivitySession::Start(
+            {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
+             profile.runtime.surface.width, profile.runtime.surface.height,
+             UINT64_C(200000000), {}, supersample_factor});
+        Write("OGPlay: NativeActivity started; close the window to stop.\n");
+        while (!quit) {
+            const auto window_state = window->State();
+            for (const auto& event : window->PollEvents()) {
+                if (event.type == hal::InputEventType::quit) {
+                    quit = true;
+                } else if (const auto input = MapInput(
+                               event, window_state, guest_width, guest_height);
+                           input.has_value()) {
+                    guest->PushInput(*input);
+                }
+            }
+            if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
+                window->PresentRgba8(frame->rgba8, frame->width, frame->height);
+                guest_width = frame->width;
+                guest_height = frame->height;
+                ++presented;
+                if (exit_after_frames.has_value() &&
+                    presented >= *exit_after_frames) {
+                    quit = true;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
-            window->PresentRgba8(frame->rgba8, frame->width, frame->height);
-            guest_width = frame->width;
-            guest_height = frame->height;
-            ++presented;
-            if (exit_after_frames.has_value() && presented >= *exit_after_frames) quit = true;
+        guest->Stop();
+    } else {
+        runtime::VirtualFileSystem filesystem;
+        auto guest = runtime::AndroidGuestCallSession::Start(
+            {profile.runtime.api_level, root_name, module_inputs,
+             NativeBackend(), profile.runtime.surface.width,
+             profile.runtime.surface.height, UINT64_C(200000000),
+             supersample_factor, &filesystem, {}});
+        auto lifecycle = session::ProfileGuestLifecycle::Create(
+            profile, launch->native_calls,
+            {
+                guest->GuestEnvironment(),
+                &guest->Environment(),
+                [&guest](const runtime::A32GuestCallFrame& frame) {
+                    return guest->Invoke(frame);
+                },
+                [&guest] { guest->OpenManagedSurface(); },
+                [&guest] { guest->PresentManagedSurface(); },
+                [&guest] { guest->CloseManagedSurface(); },
+                [&guest](const runtime::AndroidBoundaryInput& input) {
+                    guest->PushInput(input);
+                },
+            });
+        static_cast<void>(lifecycle->Start());
+        Write("OGPlay: Profile GLSurfaceView started; close the window to stop.\n");
+        while (!quit) {
+            const auto window_state = window->State();
+            for (const auto& event : window->PollEvents()) {
+                if (event.type == hal::InputEventType::quit) {
+                    quit = true;
+                } else if (const auto input = MapInput(
+                               event, window_state, guest_width, guest_height);
+                           input.has_value()) {
+                    lifecycle->QueueInput(*input);
+                }
+            }
+            static_cast<void>(lifecycle->StepFrame());
+            if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
+                window->PresentRgba8(frame->rgba8, frame->width, frame->height);
+                guest_width = frame->width;
+                guest_height = frame->height;
+                ++presented;
+                if (exit_after_frames.has_value() &&
+                    presented >= *exit_after_frames) {
+                    quit = true;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        static_cast<void>(lifecycle->Stop());
+        guest->Stop();
     }
-    guest->Stop(); window->Close();
+    window->Close();
     Write("OGPlay: stopped after " + std::to_string(presented) + " presented frames.\n");
     return 0;
 }

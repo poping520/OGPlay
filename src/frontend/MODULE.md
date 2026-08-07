@@ -7,8 +7,8 @@
 ## 公共 API
 
 CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title Profile 驱动的 APK
-预检与 M4 NativeActivity 交互窗口运行；`run-apk --supersample <1..4>` 可显式选择内部
-渲染倍率，省略时为 1×；GUI 留在 M6。
+预检、M4 NativeActivity 与声明式 GLSurfaceView 交互窗口运行；
+`run-apk --supersample <1..4>` 可显式选择内部渲染倍率，省略时为 1×；GUI 留在 M6。
 
 ## 不变量
 
@@ -23,6 +23,8 @@ CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title
   零、越界或尾随字符；默认值保持 1×。
 - pointer 事件按最近 guest 帧与当前窗口的等比内容区映射；黑边按下/移动不注入，黑边
   释放仍夹紧转发以闭合已开始的手势。
+- `gl_surface_view` 只能组合通用 Android guest call session、Profile lifecycle 与
+  managed ANGLE surface；phase、class、export 和参数全部来自已匹配 Profile。
 
 ## 禁止
 

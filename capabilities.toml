@@ -490,6 +490,11 @@ status = "complete"
 test = "tests/session/profile_native_execution_tests.cpp"
 note = "M5 WU-0243 把 gl_surface_view Profile 的 startup/resume/input/frame/pause/shutdown 与 managed surface 编排为单一失败粘滞生命周期"
 
+[frontend.profile_gl_surface_run]
+status = "complete"
+test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"
+note = "M5 WU-0244 让 run-apk 对 gl_surface_view 精确 Profile 组合 Android guest call session、声明式 lifecycle、SDL input 与 managed ANGLE frame"
+
 [gles.gles1_core_catalog]
 status = "complete"
 test = "tools.gles1_catalog_current"

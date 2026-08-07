@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0244] `run-apk` 现可对 `gl_surface_view` 精确 Profile 组合 Android guest
+  call session、声明式 phases、SDL input 与 managed ANGLE frame；真实目标已进入
+  startup call 1，首个阻塞为未绑定 `GetStaticMethodID`。全量 CTest 394/394 通过。
 - [WU-0243] `gl_surface_view` Profile 的 startup/resume/input/frame/pause/shutdown
   调用批次现与 managed surface 组成单一失败粘滞生命周期，且只依赖通用 frame executor。
   Windows/MSVC warnings-as-errors 构建及全量 CTest 394/394 通过。
@@ -69,14 +72,11 @@
 - [WU-0230] Android boundary 已在 `libGLESv1_CM.so` 发布隔离的 145 项 core Thumb
   trap；同名 GLES1/GLES2 不混淆，未绑定调用记账并明确失败。macOS/arm64
   warnings-as-errors 构建及全量 CTest 366/366 通过。
-- [WU-0229] GLES1.1 core 145 项声明式目录已与固定 ANGLE `GLES/gl.h` 双向核对，
-  57 个指针参数均有搬运元数据；GLES1/GLES2 生成物隔离 namespace。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 365/365 通过。
 ## 下一步（按优先级）
 
-1. 让通用 `gl_surface_view` guest invoker 执行已装配调用帧并处理 JNI SVC trap。
+1. 绑定目标 startup 实际触达的 `GetStaticMethodID` 及后续 JNI guest slot。
 2. 逐个绑定目标执行实际触达的 GLES1 fixed-pipeline handler，未触达项继续明确失败。
-3. 用真实 APK 进行受帧数约束的启动/渲染 smoke test，并把首个可测试命令写入验收文档。
+3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞
 

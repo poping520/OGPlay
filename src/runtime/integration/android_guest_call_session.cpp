@@ -97,7 +97,7 @@ public:
         BindSyscalls();
         BindJniGuestCoreSlots(
             jni_dispatcher_, environment_, classes_, invocations_, strings_,
-            java_vm_, address_space_);
+            arrays_, java_vm_, address_space_);
         jni_dispatcher_.Seal();
         const auto attached = java_vm_.AttachCurrentThread(
             kRootThreadId, kJniVersion1_6);

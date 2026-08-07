@@ -13,6 +13,7 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
+#include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
@@ -33,8 +34,8 @@ struct GuestBindingsFixture final {
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
         ogplay::runtime::BindJniGuestCoreSlots(
-            dispatcher, environment, classes, invocations, strings, java_vm,
-            memory);
+            dispatcher, environment, classes, invocations, strings, arrays,
+            java_vm, memory);
     }
 
     [[nodiscard]] std::uint32_t CallEnvironment(
@@ -82,6 +83,7 @@ struct GuestBindingsFixture final {
     ogplay::runtime::JniClassRegistry classes;
     ogplay::runtime::JniInvocationEngine invocations;
     ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::JniPrimitiveArrayStore arrays;
     ogplay::runtime::JniJavaVm java_vm;
     const ogplay::memory::GuestAddress output{0x72000000U};
 
@@ -130,7 +132,7 @@ private:
 
 TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
     GuestBindingsFixture fixture;
-    constexpr std::array<std::string_view, 19> environment_names{
+    constexpr std::array<std::string_view, 20> environment_names{
         "GetVersion",          "Throw",
         "ExceptionOccurred",   "ExceptionClear",
         "PushLocalFrame",      "PopLocalFrame",
@@ -140,7 +142,7 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
         "GetJavaVM",           "NewWeakGlobalRef",
         "DeleteWeakGlobalRef", "ExceptionCheck",
         "GetStaticMethodID",   "CallStaticObjectMethod",
-        "NewStringUTF"};
+        "GetArrayLength",      "NewStringUTF"};
     for (const auto name : environment_names) {
         CAPTURE(name);
         CHECK(fixture.dispatcher.IsEnvironmentBound(
@@ -183,6 +185,25 @@ TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {
         static_cast<void>(
             fixture.CallEnvironment("NewStringUTF", 402U, 0U)),
         "JNI guest modified UTF-8 pointer is null",
+        ogplay::runtime::JniGuestBindingError);
+}
+
+TEST_CASE("guest JNI array length resolves the unified primitive array") {
+    GuestBindingsFixture fixture;
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        404U, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+    const auto array_identity = fixture.arrays.New(
+        ogplay::runtime::JniPrimitiveKind::byte, 7);
+    const auto array =
+        fixture.environment.PublishLocalObject(404U, array_identity);
+    fixture.Seal();
+
+    CHECK(fixture.CallEnvironment(
+              "GetArrayLength", 404U, array.Value()) == 7U);
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            fixture.CallEnvironment("GetArrayLength", 404U, 0U)),
         ogplay::runtime::JniGuestBindingError);
 }
 

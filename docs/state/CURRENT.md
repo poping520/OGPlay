@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0256] guest `GetArrayLength` 现从 session 持有的统一 primitive array store
+  返回真实长度；真实目标已越过该槽，首个新阻塞为未绑定 JNI `GetByteArrayRegion`。
+  全量 CTest 400/400 通过。
 - [WU-0255] Profile 引用的通用 direct-asset handler 与 APK `assets/` 已接入
   Android guest call session；真实目标已越过 `resource.load_full`，首个新阻塞为未绑定
   JNI `GetArrayLength`。全量 CTest 399/399 通过。
@@ -71,12 +74,9 @@
 - [WU-0240] Profile native invocation 批次现先完整预检身份、地址、严格顺序、栈形状、
   进程内存与预算，再按声明顺序进入统一 A32 executor；结果/失败保留精确调用身份。
   Windows/MSVC warnings-as-errors 构建及全量 CTest 391/391 通过。
-- [WU-0239] API 19 root guest 的 TLS/thread-info/preinit、4 MiB 栈、返回 trap 与空
-  property area 已抽成事务式通用进程内存契约；固定布局冲突和非法身份失败时逆序回滚，
-  libc 导出槽不被污染。Windows/MSVC warnings-as-errors 构建及全量 CTest 388/388 通过。
 ## 下一步（按优先级）
 
-1. 绑定目标实际触达的 guest JNI `GetArrayLength`，复用统一 primitive array store。
+1. 绑定目标实际触达的 guest JNI `GetByteArrayRegion`，受检复制到 guest 内存。
 2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

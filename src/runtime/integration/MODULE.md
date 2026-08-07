@@ -55,9 +55,10 @@
 - `JniGuestCallDispatcher` 只消费精确落入上述目录的 `SVC #3`，校验 JNIEnv/JavaVM
   receiver 与非零线程后发布寄存器/栈调用帧；slot 必须在执行前显式绑定并封口，未绑定
   项按名称记账并失败，未知 trap 地址不得吞掉。
-- `BindJniGuestCoreSlots` 只绑定已有真实 M3 语义的 17 个 JNIEnv 基础 slot 与 4 个
+- `BindJniGuestCoreSlots` 只绑定已有真实 M3 语义的 18 个 JNIEnv 基础 slot 与 4 个
   JavaVM slot；引用、异常和线程状态复用同一环境，guest 输出指针在 VM 状态变更前预检，
-  `GetStaticMethodID` 只精确查询统一 class registry，
+  `GetStaticMethodID` 只精确查询统一 class registry，`NewStringUTF` 使用受检 guest C
+  string、M3 Modified UTF-8 解码与 string store 后发布 local reference，
   成功查询只发布统一 Guest JNI ABI 地址。非空 attach arguments 在实现其结构前明确失败。
 - `NativeActivityRunRequest::supersample_factor` 选择受检 1..4× 内部渲染倍率；guest 的
   EGL surface 和输出帧保持逻辑尺寸，ANGLE pbuffer、viewport 与 GPU render target 使用

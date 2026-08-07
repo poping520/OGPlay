@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0252] guest `NewStringUTF` 现通过受检 guest C string、M3 Modified UTF-8 解码
+  与统一 string store 发布 local reference；真实目标已越过该调用，首个新阻塞为未绑定
+  JNI `CallStaticObjectMethod`。全量 CTest 396/396 通过。
 - [WU-0251] GLES1 `glScissor` 现通过隔离 fixed-pipeline dispatch 转发当前 ANGLE
   frame，并复用受检超采样换算；真实目标已越过该调用，首个新阻塞为未绑定 JNI
   `NewStringUTF`。全量 CTest 395/395 通过。
@@ -69,13 +72,9 @@
 - [WU-0237] Guest JNI `SVC #3` 已按 trap PC 精确解码并校验 interface receiver，
   发布寄存器/栈调用帧；slot 必须执行前绑定封口，未绑定项按名称和 LR 记账后失败。
   Windows/MSVC warnings-as-errors 构建及全量 CTest 382/382 通过。
-- [WU-0236] 通用 A32 guest call executor 已按目标地址选择 A32/Thumb，装入 r0-r3 与
-  8 字节对齐栈参数，复用 Linux SVC/显式 HLE 分派并只在受检返回 trap 结束；未处理
-  trap、提前线程退出和预算耗尽明确失败。Windows/MSVC warnings-as-errors 构建及
-  全量 CTest 379/379 通过。
 ## 下一步（按优先级）
 
-1. 绑定目标实际触达的 guest JNI `NewStringUTF` slot，复用统一 M3 string store。
+1. 绑定目标实际触达的 guest JNI `CallStaticObjectMethod`，复用统一 invocation engine。
 2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

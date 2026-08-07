@@ -11,6 +11,7 @@ namespace ogplay::runtime {
 class JniEnvironment;
 class JniClassRegistry;
 class JniJavaVm;
+class JniStringStore;
 
 class JniGuestBindingError final : public std::runtime_error {
 public:
@@ -20,6 +21,7 @@ public:
 void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniEnvironment& environment,
                            JniClassRegistry& classes,
+                           JniStringStore& strings,
                            JniJavaVm& java_vm,
                            memory::AddressSpace& address_space);
 

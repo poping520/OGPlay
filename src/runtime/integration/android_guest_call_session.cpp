@@ -20,6 +20,7 @@
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
 #include "ogplay/runtime/integration/jni_guest_dispatch.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 
 namespace ogplay::runtime {
@@ -88,7 +89,7 @@ public:
         lifecycle_.Register(kRootThreadId, process_memory_.thread_pointer);
         BindSyscalls();
         BindJniGuestCoreSlots(
-            jni_dispatcher_, environment_, classes_, java_vm_,
+            jni_dispatcher_, environment_, classes_, strings_, java_vm_,
             address_space_);
         jni_dispatcher_.Seal();
         const auto attached = java_vm_.AttachCurrentThread(
@@ -263,6 +264,7 @@ private:
     JniGuestCallDispatcher jni_dispatcher_;
     JniEnvironment environment_;
     JniClassRegistry classes_;
+    JniStringStore strings_;
     JniJavaVm java_vm_;
     hal::RealtimeClock clock_;
     cpu::FutexTable futex_table_;

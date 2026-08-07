@@ -455,6 +455,11 @@ status = "complete"
 test = "tests/runtime/guest_thread_runner_tests.cpp"
 note = "M5 WU-0236 以通用 AAPCS 执行器装入目标状态、r0-r3 与 8 字节对齐栈参数，复用 Linux SVC/显式 HLE 分派并只在受检返回 trap 结束"
 
+[runtime.jni_guest_trap_dispatch]
+status = "complete"
+test = "tests/runtime/jni_guest_abi_tests.cpp"
+note = "M5 WU-0237 精确解码 Guest JNI ABI 的 SVC #3，校验 interface receiver 并发布寄存器/栈调用帧；slot 执行前绑定封口，未绑定项按名称和 LR 记账后失败"
+
 [gles.gles1_core_catalog]
 status = "complete"
 test = "tools.gles1_catalog_current"

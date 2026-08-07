@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0240] Profile native invocation 批次现先完整预检身份、地址、严格顺序、栈形状、
+  进程内存与预算，再按声明顺序进入统一 A32 executor；结果/失败保留精确调用身份。
+  Windows/MSVC warnings-as-errors 构建及全量 CTest 391/391 通过。
 - [WU-0239] API 19 root guest 的 TLS/thread-info/preinit、4 MiB 栈、返回 trap 与空
   property area 已抽成事务式通用进程内存契约；固定布局冲突和非法身份失败时逆序回滚，
   libc 导出槽不被污染。Windows/MSVC warnings-as-errors 构建及全量 CTest 388/388 通过。
@@ -71,11 +74,6 @@
 - [WU-0225] Title Profile v1 以强类型纯数据描述 native JNI phase、类/方法/signature、
   dispatch 与受限参数来源；脚本、地址及参数形状矛盾明确失败。macOS/arm64
   warnings-as-errors 构建及全量 CTest 359/359 通过。
-- [WU-0224] 首个 legacy title 的纯数据 Profile 已按目标 APK 的精确身份/hash/`armeabi`
-  与通用 API 19、`gl_surface_view`、800×480 声明提交；schema、目录与真实 APK preflight
-  通过，闭包含 5 个 guest 模块。macOS/arm64 warnings-as-errors 构建及 CTest
-  358/358 通过。
-
 ## 下一步（按优先级）
 
 1. 让通用 `gl_surface_view` guest invoker 执行已装配调用帧并处理 JNI SVC trap。

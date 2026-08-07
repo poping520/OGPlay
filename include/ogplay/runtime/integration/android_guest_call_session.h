@@ -47,6 +47,9 @@ public:
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;
+    void OpenManagedSurface();
+    void PresentManagedSurface();
+    void CloseManagedSurface();
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void Stop();

@@ -216,6 +216,45 @@ TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1}) == 1);
 }
 
+TEST_CASE("Android boundary owns a managed GLSurface frame lifecycle") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    CHECK_THROWS_WITH_AS(
+        fixture.boundary.OpenManagedSurface(),
+        "Android boundary already has a current ANGLE frame",
+        std::logic_error);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glClearColor",
+        {std::bit_cast<std::uint32_t>(0.125F),
+         std::bit_cast<std::uint32_t>(0.25F),
+         std::bit_cast<std::uint32_t>(0.5F),
+         std::bit_cast<std::uint32_t>(1.0F)}));
+    static_cast<void>(
+        fixture.Call("libGLESv2.so", "glClear", {0x00004000U}));
+    fixture.boundary.PresentManagedSurface();
+    const auto frame = fixture.boundary.TakeLatestFrame();
+    REQUIRE(frame.has_value());
+    CHECK(frame->sequence == 1);
+    CHECK(frame->rgba8[0] == doctest::Approx(32).epsilon(0.04));
+    CHECK(frame->rgba8[1] == doctest::Approx(64).epsilon(0.04));
+    CHECK(frame->rgba8[2] == doctest::Approx(128).epsilon(0.04));
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}),
+        "guest EGL cannot replace a host-managed ANGLE surface",
+        std::runtime_error);
+    fixture.boundary.CloseManagedSurface();
+    CHECK(fixture.boundary.RenderTargets().empty());
+    CHECK_THROWS_WITH_AS(
+        fixture.boundary.PresentManagedSurface(),
+        "Android boundary managed surface is not open",
+        std::logic_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.boundary.CloseManagedSurface(),
+        "Android boundary managed surface is not open",
+        std::logic_error);
+}
+
 TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;

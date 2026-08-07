@@ -170,6 +170,38 @@ public:
         mapped_ = true;
     }
 
+    void OpenManagedSurface() {
+        if (angle_frame_.has_value()) {
+            throw std::logic_error(
+                "Android boundary already has a current ANGLE frame");
+        }
+        angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
+            backend_, layout_.render_width, layout_.render_height));
+        managed_surface_ = true;
+        std::scoped_lock lock(mutex_);
+        gpu_render_target_ready_ = true;
+    }
+
+    void PresentManagedSurface() {
+        if (!managed_surface_ || !angle_frame_.has_value()) {
+            throw std::logic_error(
+                "Android boundary managed surface is not open");
+        }
+        PublishFrame();
+    }
+
+    void CloseManagedSurface() {
+        if (!managed_surface_ || !angle_frame_.has_value()) {
+            throw std::logic_error(
+                "Android boundary managed surface is not open");
+        }
+        angle_frame_.reset();
+        managed_surface_ = false;
+        gles_dispatch_.Reset();
+        std::scoped_lock lock(mutex_);
+        gpu_render_target_ready_ = false;
+    }
+
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
         if (!mapped_ || stopped.reason != cpu::RunStopReason::supervisor_call ||
             stopped.immediate != 2) return false;
@@ -525,6 +557,10 @@ private:
         if (symbol == "eglCreateWindowSurface") return kFakeSurface;
         if (symbol == "eglCreateContext") return kFakeContext;
         if (symbol == "eglMakeCurrent") {
+            if (managed_surface_) {
+                throw std::runtime_error(
+                    "guest EGL cannot replace a host-managed ANGLE surface");
+            }
             if (args[3] != 0 && !angle_frame_.has_value()) {
                 angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
                     backend_, layout_.render_width, layout_.render_height));
@@ -540,15 +576,15 @@ private:
         }
         if (symbol == "eglSwapBuffers") {
             if (!angle_frame_.has_value()) throw std::runtime_error("eglSwapBuffers has no current ANGLE frame");
-            AndroidBoundaryFrame frame{
-                layout_.logical_width, layout_.logical_height, ++frame_sequence_,
-                gles::ResolveSupersampledRgba8(angle_frame_->ReadRgba8(), layout_)};
-            { std::scoped_lock lock(mutex_); latest_frame_ = std::move(frame); }
-            ready_.notify_all();
+            PublishFrame();
             return 1;
         }
         if (symbol == "eglDestroyContext" || symbol == "eglDestroySurface") return 1;
         if (symbol == "eglTerminate") {
+            if (managed_surface_) {
+                throw std::runtime_error(
+                    "guest EGL cannot terminate a host-managed ANGLE surface");
+            }
             angle_frame_.reset();
             gles_dispatch_.Reset();
             std::scoped_lock lock(mutex_);
@@ -659,6 +695,19 @@ private:
         return *angle_frame_;
     }
 
+    void PublishFrame() {
+        AndroidBoundaryFrame frame{
+            layout_.logical_width, layout_.logical_height,
+            ++frame_sequence_,
+            gles::ResolveSupersampledRgba8(
+                RequireFrame("present").ReadRgba8(), layout_)};
+        {
+            std::scoped_lock lock(mutex_);
+            latest_frame_ = std::move(frame);
+        }
+        ready_.notify_all();
+    }
+
     void RecordGpuCall(const std::string_view symbol,
                        const std::array<std::uint32_t, 4>& args) {
         if (!symbol.starts_with("egl") && !symbol.starts_with("gl")) return;
@@ -685,6 +734,7 @@ private:
         gles::GlesApi::gles1_extensions};
     bool mapped_{};
     std::optional<gles::AngleFrame> angle_frame_;
+    bool managed_surface_{};
     std::uint64_t frame_sequence_{};
     mutable std::mutex mutex_;
     std::condition_variable ready_;
@@ -710,6 +760,15 @@ AndroidBoundaryHle::AndroidBoundaryHle(memory::AddressSpace& address_space,
                                    supersample_factor)) {}
 AndroidBoundaryHle::~AndroidBoundaryHle() = default;
 void AndroidBoundaryHle::MapThunks() { impl_->MapThunks(); }
+void AndroidBoundaryHle::OpenManagedSurface() {
+    impl_->OpenManagedSurface();
+}
+void AndroidBoundaryHle::PresentManagedSurface() {
+    impl_->PresentManagedSurface();
+}
+void AndroidBoundaryHle::CloseManagedSurface() {
+    impl_->CloseManagedSurface();
+}
 const BionicHleSymbolProvider& AndroidBoundaryHle::Symbols() const noexcept {
     return impl_->Symbols();
 }

@@ -44,6 +44,9 @@ public:
     AndroidBoundaryHle& operator=(const AndroidBoundaryHle&) = delete;
 
     void MapThunks();
+    void OpenManagedSurface();
+    void PresentManagedSurface();
+    void CloseManagedSurface();
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept;
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped);
     void NotifyFileWrite();

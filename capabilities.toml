@@ -275,6 +275,11 @@ status = "complete"
 test = "tests/runtime/headless_jni_contract_tests.cpp"
 note = "M3 范围完成：声明式 Activity 生命周期、APK Asset/InputStream、MODE_PRIVATE 偏好、确定性 Locale 与仅服务当前包的 PackageInfo 已在同一累计环境闭合；不实现完整 Android services"
 
+[runtime.framework_direct_asset]
+status = "complete"
+test = "tests/runtime/framework_asset_tests.cpp"
+note = "M5 WU-0254 允许调用方用通用 implementation id 从受检 APK VFS 直接读取 full/range/length，并返回统一 JNI byte array"
+
 [fixtures.m3_jni]
 status = "complete"
 test = "tests/runtime/headless_jni_contract_tests.cpp"

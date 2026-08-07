@@ -4,6 +4,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
@@ -53,6 +54,32 @@ public:
     FrameworkAssetHle& operator=(FrameworkAssetHle&&) noexcept;
 
     [[nodiscard]] FrameworkAssetClassSet Install();
+
+private:
+    class Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+struct FrameworkDirectAssetImplementations final {
+    std::string load_full;
+    std::string load_range;
+    std::string length;
+};
+
+class FrameworkDirectAssetHle final {
+public:
+    FrameworkDirectAssetHle(JniInvocationEngine& invocations,
+                            JniEnvironment& environment,
+                            JniStringStore& strings,
+                            JniPrimitiveArrayStore& arrays,
+                            VirtualFileSystem& vfs);
+    ~FrameworkDirectAssetHle();
+    FrameworkDirectAssetHle(const FrameworkDirectAssetHle&) = delete;
+    FrameworkDirectAssetHle& operator=(const FrameworkDirectAssetHle&) = delete;
+    FrameworkDirectAssetHle(FrameworkDirectAssetHle&&) noexcept;
+    FrameworkDirectAssetHle& operator=(FrameworkDirectAssetHle&&) noexcept;
+
+    void Install(FrameworkDirectAssetImplementations implementations);
 
 private:
     class Impl;

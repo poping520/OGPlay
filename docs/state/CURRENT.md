@@ -1,13 +1,13 @@
 # 当前状态
 
-更新：2026-08-06 · M5 已打开
+更新：2026-08-07 · M5 已打开
 
 ## 当前阶段
 
 - M0、M1、M2、M3、M4 已完成并验收。
-- M5 去硬编码正在推进；Profile 精确 bootstrap 的最高层入口已统一消费 runtime catalog
-  与已导入 asset bundle，调用方不再分离拼接运行时和资产容器；当前仍不提交具体游戏
-  profile。
+- M5 去硬编码正在推进；首个精确 legacy title Profile 已闭合 APK 身份、Bionic 依赖、
+  native-call 目标/A32 调用帧与 Android link preflight，完整 JNIEnv/JavaVM guest ABI
+  也已映射；当前尚未执行 `gl_surface_view` guest process。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
@@ -26,6 +26,12 @@
 
 ## 最近完成
 
+- [WU-0235] Profile native calls 已按 phase 装配为 A32 JNI 调用帧：r0/r1 固定携带
+  JNIEnv 与实例/jclass，显式参数进入 r2/r3 和 8 字节对齐栈；target、class reference、
+  input 或 receiver 不完整时不发布部分帧。Windows/MSVC 构建及全量 CTest 375/375 通过。
+- [WU-0234] 完整 233 槽 JNIEnv 与 8 槽 JavaVM 已物化为 32 位 guest 函数表、对象和
+  独立 Thumb SVC trap；reserved 保持 null，数据页只读、代码页 RX，冲突完整回滚。
+  Windows/MSVC 18.8 warnings-as-errors 构建及全量 CTest 372/372 通过。
 - [WU-0233] APK preflight 已复用生产 Bionic/Android boundary 完成映射与重定位；真实
   目标报告 5 guest + 2 boundary、6503 relocations、17 native calls。macOS/arm64
   warnings-as-errors 构建及全量 CTest 369/369 通过。
@@ -67,16 +73,9 @@
   只发布唯一四项精确候选；无匹配返回空，ABI 矛盾与多库命中明确失败。目标 APK 已由内存
   Profile 精确选中唯一 `armeabi` library。macOS/arm64 warnings-as-errors 构建及全量
   CTest 355/355 通过。
-- [WU-0220] Title Profile v1 的 JSON schema、Python 校验器、C++ loader/catalog 现以同一
-  强类型集合接受 `armeabi` 与 `armeabi-v7a`，非 ARM 或非法枚举明确失败；既有三重指纹
-  匹配语义未扩大。macOS/arm64 warnings-as-errors 构建及全量 CTest 353/353 通过。
-- [WU-0219] APK 32 位 ARM native library 目录只接受规范 `armeabi`/`armeabi-v7a`
-  路径，拥有解压字节、稳定排序并产出 SHA-256，但不猜 main library；目标 APK 唯一条目
-  已核对为 `armeabi`、1,919,371 字节与预期哈希。macOS/arm64 warnings-as-errors 构建
-  及全量 CTest 353/353 通过。
 ## 下一步（按优先级）
 
-1. 装配通用 `gl_surface_view` guest process 与最小 JNIEnv/JavaVM guest ABI。
+1. 让通用 `gl_surface_view` guest invoker 执行已装配调用帧并处理 JNI SVC trap。
 2. 逐个绑定目标执行实际触达的 GLES1 fixed-pipeline handler，未触达项继续明确失败。
 3. 用真实 APK 进行受帧数约束的启动/渲染 smoke test，并把首个可测试命令写入验收文档。
 

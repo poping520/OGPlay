@@ -18,6 +18,9 @@
   闭包或导出错误不发布部分启动计划。
 - `ResolveProfileNativeCalls`：按 JNI 标准优先 short、回退 long 导出名，并保持 Profile
   调用顺序；缺失、重复或地址溢出明确失败。
+- `BuildProfileNativeInvocations`：按 phase 把已解析 native target、JNIEnv、实例/jclass、
+  surface 与当前 input 事实转换为 A32 JNI 参数；前四个 word 进入 r0-r3，其余以偶数
+  word 的 8 字节栈帧布局输出。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与
   测试引用；含 quirk 的 Profile 目录必须显式通过注册表验证。
 - `DescribeLifecycle` / `LifecycleFrameRunner`：把三种 Profile 生命周期映射为稳定的通用
@@ -54,6 +57,9 @@
 - data/audio/java/quirks/input 只保存声明，不直接调用相邻模块或执行脚本。
 - native-call 只允许固定 phase、Java class/method/signature、instance/static dispatch 与
   受限参数来源；参数数量/整数类型、常量值和 input phase 必须在装载时一致。
+- native invocation 必须覆盖每个 call 的同序 target 与唯一 class reference；r0 固定为
+  非空 guest JNIEnv，r1 按 dispatch 选择实例或 jclass。缺失 input、null receiver、
+  非整数参数或部分运行期状态不得发布调用帧。
 - VFS 输入不得靠顺序或来源猜测；guest 根与 source 必须同时命中声明，额外输入明确失败。
 - Java implementation id 必须命中真实 handler；类、签名或 handler 无效时不得发布
   部分 JNI registry。

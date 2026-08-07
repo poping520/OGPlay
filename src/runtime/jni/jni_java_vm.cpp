@@ -305,13 +305,13 @@ JniCommonSlotDirectory::JniCommonSlotDirectory() {
         if (!handler.has_value()) continue;
         bindings_.push_back(
             {memory::GuestAddress{kJniThunkBegin +
-                                  static_cast<std::uint32_t>(index * 4)},
+                                  static_cast<std::uint32_t>(index * 4) + 1U},
              slots[index], *handler, static_cast<std::uint16_t>(index), false});
     }
     for (std::size_t index = 4; index < kInvokeSlots.size(); ++index) {
         bindings_.push_back(
             {memory::GuestAddress{kJniInvokeThunkBegin +
-                                  static_cast<std::uint32_t>(index * 4)},
+                                  static_cast<std::uint32_t>(index * 4) + 1U},
              kInvokeSlots[index], JniSlotHandlerKind::java_vm,
              static_cast<std::uint16_t>(index), true});
     }

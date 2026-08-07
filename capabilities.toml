@@ -265,6 +265,11 @@ status = "complete"
 test = "tests/runtime/headless_jni_contract_tests.cpp"
 note = "M3 范围完成：233 槽 ABI 全冻结，208 个常用 JNIEnv 与 4 个 JavaVM 槽有真实行为，低频槽继续可观测 trap；累计样本覆盖双向调用、引用、异常及 native 工作线程 attach/HLE callback/detach"
 
+[runtime.jni_guest_abi]
+status = "complete"
+test = "tests/runtime/jni_guest_abi_tests.cpp"
+note = "M5 WU-0234 将完整 JNIEnv/JavaVM 表、guest 对象与 Thumb SVC trap 事务映射到 32 位只读/RX guest 内存；reserved 保持 null，未实现槽不伪造成功"
+
 [runtime.framework_hle]
 status = "complete"
 test = "tests/runtime/headless_jni_contract_tests.cpp"
@@ -439,6 +444,11 @@ note = "M5 WU-0227 从受检 class/method/descriptor 生成 JNI short/long 导�
 status = "complete"
 test = "tests/session/profile_native_calls_tests.cpp"
 note = "M5 WU-0228 把 Profile native calls 按 JNI short/long 顺序解析为 root ELF 强类型 guest 地址；真实目标 17 项全部命中"
+
+[profiles.native_call_invocations]
+status = "complete"
+test = "tests/session/profile_native_calls_tests.cpp"
+note = "M5 WU-0235 按 phase 将已解析 target、JNIEnv、实例/jclass、surface/input 事实装配为 A32 r0-r3 与 8 字节对齐栈参数；部分运行期状态明确失败"
 
 [gles.gles1_core_catalog]
 status = "complete"

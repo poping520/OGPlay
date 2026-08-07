@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0243] `gl_surface_view` Profile 的 startup/resume/input/frame/pause/shutdown
+  调用批次现与 managed surface 组成单一失败粘滞生命周期，且只依赖通用 frame executor。
+  Windows/MSVC warnings-as-errors 构建及全量 CTest 394/394 通过。
 - [WU-0242] Java/GLSurfaceView lifecycle 现可显式拥有 ANGLE pbuffer，并通过严格
   open/present/close 复用统一超采样 resolve 与 GPU 证据；guest EGL 不得替换或终止。
   Windows/MSVC warnings-as-errors 构建及全量 CTest 393/393 通过。
@@ -69,12 +72,6 @@
 - [WU-0229] GLES1.1 core 145 项声明式目录已与固定 ANGLE `GLES/gl.h` 双向核对，
   57 个指针参数均有搬运元数据；GLES1/GLES2 生成物隔离 namespace。macOS/arm64
   warnings-as-errors 构建及全量 CTest 365/365 通过。
-- [WU-0228] APK launch planning 已把 Profile native calls 按 JNI short/long 顺序预解析
-  为 root ELF 强类型 guest 地址；真实目标 17 项全部命中。macOS/arm64 warnings-as-errors
-  构建及全量 CTest 364/364 通过。
-- [WU-0227] 受检 Java class/method/descriptor 现可通用生成 JNI short/long native
-  导出名，含 Unicode UTF-16 code unit 转义；生产代码不含标题事实。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 362/362 通过。
 ## 下一步（按优先级）
 
 1. 让通用 `gl_surface_view` guest invoker 执行已装配调用帧并处理 JNI SVC trap。

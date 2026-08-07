@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -22,6 +23,15 @@ class ProfileNativeExecutionError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
+
+using ProfileNativeFrameExecutor =
+    std::function<runtime::A32GuestCallResult(
+        const runtime::A32GuestCallFrame&)>;
+
+[[nodiscard]] std::vector<ProfileNativeExecutionResult>
+ExecuteProfileNativeInvocations(
+    std::span<const ProfileNativeInvocation> invocations,
+    const ProfileNativeFrameExecutor& executor);
 
 [[nodiscard]] std::vector<ProfileNativeExecutionResult>
 ExecuteProfileNativeInvocations(

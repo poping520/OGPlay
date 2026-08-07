@@ -314,6 +314,7 @@ ogplay_set_project_warnings(ogplay_runtime)
 
 add_library(ogplay_session
     src/session/lifecycle.cpp
+    src/session/profile_guest_lifecycle.cpp
     src/session/profile_asset_bundle.cpp
     src/session/profile_apk.cpp
     src/session/profile_native_calls.cpp

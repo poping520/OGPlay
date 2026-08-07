@@ -41,6 +41,9 @@
 - `InitializeApi19GuestProcess` 事务映射统一 root TLS/thread-info/preinit、4 MiB 栈、
   `SVC #1` 返回 trap 与空 property area，并只向受检 libc 导出槽发布地址；固定布局冲突、
   非法线程/进程名或写入失败必须回滚新增映射和导出槽。
+- `AndroidGuestCallSession` 组合真实 Bionic namespace、API 19 process、syscall/clone、
+  guest JNI ABI/core bindings 与 Android HLE，执行 guest init/fini 并只接受通用 A32 frame；
+  Profile phase、窗口和标题事实不得进入该会话。
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和
   Thumb SVC trap；reserved 槽保持 null，其余槽均有可识别地址。表与对象只读、trap 页
   RX，映射冲突完整回滚，析构后不得残留 guest 映射。

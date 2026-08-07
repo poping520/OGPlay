@@ -470,6 +470,11 @@ status = "complete"
 test = "tests/runtime/api19_guest_process_tests.cpp; tests/runtime/native_activity_runner_tests.cpp"
 note = "M5 WU-0239 事务映射通用 API 19 root TLS/thread-info/preinit、栈、SVC 返回 trap 与 property area；失败回滚并保留 libc 导出槽"
 
+[session.profile_native_execution]
+status = "complete"
+test = "tests/session/profile_native_execution_tests.cpp"
+note = "M5 WU-0240 在执行前完整预检 Profile invocation 批次，再按声明顺序交给统一 A32 executor；结果和失败均保留 call index 与 export name"
+
 [gles.gles1_core_catalog]
 status = "complete"
 test = "tools.gles1_catalog_current"

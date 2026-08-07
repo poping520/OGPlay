@@ -395,6 +395,34 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             return Int(arrays.Length(*array));
         });
     dispatcher.BindEnvironment(
+        EnvironmentSlot("GetByteArrayRegion"),
+        [&environment, &arrays,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto array = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!array.has_value()) {
+                throw JniGuestBindingError(
+                    "GetByteArrayRegion requires a valid array reference");
+            }
+            if (arrays.Kind(*array) != JniPrimitiveKind::byte) {
+                throw JniGuestBindingError(
+                    "GetByteArrayRegion requires a byte array reference");
+            }
+            const auto start = std::bit_cast<JniSize>(frame.registers[2]);
+            const auto length = std::bit_cast<JniSize>(frame.registers[3]);
+            const auto data = std::get<std::vector<JniByte>>(
+                arrays.Region(*array, start, length));
+            const auto destination = memory::GuestAddress{
+                Read32(address_space, frame.stack_pointer, frame.thread_id)};
+            if (destination.IsNull() && !data.empty()) {
+                throw JniGuestBindingError(
+                    "GetByteArrayRegion requires a non-null output buffer");
+            }
+            address_space.Write(
+                destination, std::as_bytes(std::span{data}), frame.thread_id);
+            return JniGuestCallResult{};
+        });
+    dispatcher.BindEnvironment(
         EnvironmentSlot("NewStringUTF"),
         [&environment, &strings,
          &address_space](const JniGuestCallFrame& frame) {

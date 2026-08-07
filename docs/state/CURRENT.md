@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0257] guest `GetByteArrayRegion` 现从统一 primitive array store 受检复制 byte
+  区间到 guest 内存，并解码 A32 第 5 栈参数；真实目标已越过该槽，首个新阻塞为未实现
+  GLES1 `glShadeModel`。全量 CTest 401/401 通过。
 - [WU-0256] guest `GetArrayLength` 现从 session 持有的统一 primitive array store
   返回真实长度；真实目标已越过该槽，首个新阻塞为未绑定 JNI `GetByteArrayRegion`。
   全量 CTest 400/400 通过。
@@ -57,26 +60,10 @@
   为未声明 `isSoundLoaded(II)I`。全量 CTest 395/395 通过。
 - [WU-0246] guest `GetStaticMethodID` 现按真实 class reference、受检 name/descriptor
   与统一 registry 的 static kind 精确查询；未声明不返回伪造 ID。全量 CTest 395/395 通过。
-- [WU-0245] Profile Java method 现显式声明 instance/static kind，C++/Python/schema
-  同步验证并按种类注册统一 JNI class registry。全量 CTest 394/394 通过。
-- [WU-0244] `run-apk` 现可对 `gl_surface_view` 精确 Profile 组合 Android guest
-  call session、声明式 phases、SDL input 与 managed ANGLE frame；真实目标已进入
-  startup call 1，首个阻塞为未绑定 `GetStaticMethodID`。全量 CTest 394/394 通过。
-- [WU-0243] `gl_surface_view` Profile 的 startup/resume/input/frame/pause/shutdown
-  调用批次现与 managed surface 组成单一失败粘滞生命周期，且只依赖通用 frame executor。
-  Windows/MSVC warnings-as-errors 构建及全量 CTest 394/394 通过。
-- [WU-0242] Java/GLSurfaceView lifecycle 现可显式拥有 ANGLE pbuffer，并通过严格
-  open/present/close 复用统一超采样 resolve 与 GPU 证据；guest EGL 不得替换或终止。
-  Windows/MSVC warnings-as-errors 构建及全量 CTest 393/393 通过。
-- [WU-0241] 通用 Android guest call session 已组合真实 Bionic namespace、API 19
-  process、syscall/clone、guest JNI core、Android HLE 与 ELF init/fini，并只接受
-  通用 A32 frame。Windows/MSVC warnings-as-errors 构建及全量 CTest 392/392 通过。
-- [WU-0240] Profile native invocation 批次现先完整预检身份、地址、严格顺序、栈形状、
-  进程内存与预算，再按声明顺序进入统一 A32 executor；结果/失败保留精确调用身份。
-  Windows/MSVC warnings-as-errors 构建及全量 CTest 391/391 通过。
+
 ## 下一步（按优先级）
 
-1. 绑定目标实际触达的 guest JNI `GetByteArrayRegion`，受检复制到 guest 内存。
+1. 绑定目标实际触达的 GLES1 `glShadeModel`。
 2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

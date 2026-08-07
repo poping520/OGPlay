@@ -495,6 +495,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0256 让 guest GetArrayLength 从统一 primitive array store 返回真实长度"
 
+[runtime.jni_guest_byte_array_region]
+status = "complete"
+test = "tests/runtime/jni_guest_bindings_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0257 让 guest GetByteArrayRegion 从统一 primitive array store 受检复制 byte 区间到 guest 内存"
+
 [runtime.api19_guest_process]
 status = "complete"
 test = "tests/runtime/api19_guest_process_tests.cpp; tests/runtime/native_activity_runner_tests.cpp"

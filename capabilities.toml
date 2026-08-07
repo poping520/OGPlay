@@ -470,6 +470,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"
 note = "M5 WU-0246 让 guest GetStaticMethodID 以真实 class reference 与受检 C string 精确查询统一 class registry；未声明或 kind 不符明确失败"
 
+[runtime.jni_guest_new_string_utf]
+status = "complete"
+test = "tests/runtime/jni_guest_bindings_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0252 让 guest NewStringUTF 通过受检 guest C string、M3 Modified UTF-8 解码与统一 string store 发布 local reference"
+
 [runtime.api19_guest_process]
 status = "complete"
 test = "tests/runtime/api19_guest_process_tests.cpp; tests/runtime/native_activity_runner_tests.cpp"

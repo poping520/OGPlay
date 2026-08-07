@@ -7,12 +7,14 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_object.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -125,6 +127,7 @@ void RequireNullAttachArguments(const JniGuestCallFrame& frame) {
 void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniEnvironment& environment,
                            JniClassRegistry& classes,
+                           JniStringStore& strings,
                            JniJavaVm& java_vm,
                            memory::AddressSpace& address_space) {
     dispatcher.BindEnvironment(
@@ -268,6 +271,23 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                     name + descriptor);
             }
             return Word(method->Value());
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("NewStringUTF"),
+        [&environment, &strings,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto text = ReadCString(
+                address_space, memory::GuestAddress{frame.registers[1]},
+                frame.thread_id, "modified UTF-8");
+            const std::vector<std::uint8_t> encoded(text.begin(), text.end());
+            const auto identity = strings.CreateModifiedUtf8(encoded);
+            try {
+                return Reference(environment.PublishLocalObject(
+                    frame.thread_id, identity));
+            } catch (...) {
+                strings.Delete(identity);
+                throw;
+            }
         });
 
     dispatcher.BindJavaVm(

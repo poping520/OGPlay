@@ -505,6 +505,11 @@ status = "complete"
 test = "tests/session/profile_native_execution_tests.cpp; tools.title_profiles_current"
 note = "M5 WU-0247 将 Profile Java declarations 与 native-call class receiver 装配进 Android guest session 的同一 JNI class registry"
 
+[profiles.legacy_audio_java_declarations]
+status = "complete"
+test = "tools.title_profiles_current; bounded exact-APK run-apk smoke"
+note = "M5 WU-0248 以纯 Profile 数据声明首个目标 audio native init 经 JADX 与 ELF 共同确认的 25 个 static Java lookup"
+
 [frontend.profile_gl_surface_run]
 status = "complete"
 test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"

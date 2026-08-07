@@ -510,6 +510,11 @@ status = "complete"
 test = "tools.title_profiles_current; bounded exact-APK run-apk smoke"
 note = "M5 WU-0248 以纯 Profile 数据声明首个目标 audio native init 经 JADX 与 ELF 共同确认的 25 个 static Java lookup"
 
+[profiles.legacy_activity_java_declarations]
+status = "complete"
+test = "tools.title_profiles_current; bounded exact-APK run-apk smoke"
+note = "M5 WU-0249 以纯 Profile 数据声明首个目标 activity native init 经 JADX 与 ELF 共同确认的 5 个 static Java lookup"
+
 [frontend.profile_gl_surface_run]
 status = "complete"
 test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"

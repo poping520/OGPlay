@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0247] Profile lifecycle 现把 Java declarations 与 native-call receiver 装入
+  Android guest 的同一 JNI class registry；真实目标已推进至 startup call 2，首个新阻塞
+  为未声明 `isSoundLoaded(II)I`。全量 CTest 395/395 通过。
 - [WU-0246] guest `GetStaticMethodID` 现按真实 class reference、受检 name/descriptor
   与统一 registry 的 static kind 精确查询；未声明不返回伪造 ID。全量 CTest 395/395 通过。
 - [WU-0245] Profile Java method 现显式声明 instance/static kind，C++/Python/schema
@@ -70,12 +73,9 @@
 - [WU-0232] `libGLESv1_CM.so` 已追加发布 3 项 matrix-palette extension trap，core
   地址不漂移且独立记账；目标 ELF 的 62 个 GL imports 均有生成目录 provider。
   macOS/arm64 warnings-as-errors 构建及全量 CTest 368/368 通过。
-- [WU-0231] 固定 ANGLE extension header 的受检子集目录已覆盖目标 ELF 所需 3 个
-  `GL_OES_matrix_palette` 入口，并与 145 个 GLES1 core ID 隔离。macOS/arm64
-  warnings-as-errors 构建及全量 CTest 367/367 通过。
 ## 下一步（按优先级）
 
-1. 绑定目标 startup 实际触达的 `GetStaticMethodID` 及后续 JNI guest slot。
+1. 声明 GLMediaPlayer startup 实际查询的方法，并继续绑定后续 JNI guest slot。
 2. 逐个绑定目标执行实际触达的 GLES1 fixed-pipeline handler，未触达项继续明确失败。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

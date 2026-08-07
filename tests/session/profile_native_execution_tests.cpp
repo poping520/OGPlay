@@ -153,6 +153,10 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
             {session::ProfileNativeCallPhase::shutdown, "sample/Renderer",
              "stop", "()V", session::ProfileNativeDispatch::instance, {}},
         }};
+    profile.java_classes = {
+        {"sample/Renderer",
+         {{"resource", "()I", "resource.value", true}}},
+    };
     std::vector<session::ProfileNativeCallTarget> targets;
     for (std::size_t index = 0; index < profile.runtime.native_calls.size();
          ++index) {
@@ -163,6 +167,7 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
     }
     runtime::JniEnvironment environment;
     environment.AttachThread(1);
+    runtime::JniClassRegistry classes;
     std::vector<std::string> events;
     std::vector<std::array<std::uint32_t, 4>> registers;
     std::vector<std::vector<std::uint32_t>> stack_words;
@@ -172,6 +177,7 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
         {
             memory::GuestAddress{0x7000U},
             &environment,
+            &classes,
             [&events, &registers,
              &stack_words](const runtime::A32GuestCallFrame& frame) {
                 events.push_back("call:" +
@@ -192,6 +198,11 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
             },
         });
 
+    const auto renderer_class = classes.FindClass("sample/Renderer");
+    REQUIRE(renderer_class.has_value());
+    CHECK(classes.GetMethodId(
+              *renderer_class, "resource", "()I", true)
+              .has_value());
     CHECK_THROWS_AS(
         lifecycle->QueueInput(
             {runtime::AndroidBoundaryInputType::key,

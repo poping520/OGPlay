@@ -500,6 +500,11 @@ status = "complete"
 test = "tests/session/title_profile_tests.cpp; tools.title_profiles_current"
 note = "M5 WU-0245 要求 Profile Java method 显式声明 instance/static kind，并按该种类注册到统一 JNI class registry"
 
+[session.profile_guest_class_registry]
+status = "complete"
+test = "tests/session/profile_native_execution_tests.cpp; tools.title_profiles_current"
+note = "M5 WU-0247 将 Profile Java declarations 与 native-call class receiver 装配进 Android guest session 的同一 JNI class registry"
+
 [frontend.profile_gl_surface_run]
 status = "complete"
 test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"

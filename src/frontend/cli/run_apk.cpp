@@ -269,6 +269,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             {
                 guest->GuestEnvironment(),
                 &guest->Environment(),
+                &guest->Classes(),
                 [&guest](const runtime::A32GuestCallFrame& frame) {
                     return guest->Invoke(frame);
                 },

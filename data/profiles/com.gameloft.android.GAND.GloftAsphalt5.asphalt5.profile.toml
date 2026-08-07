@@ -149,6 +149,27 @@ signature = "(I)V"
 dispatch = "static"
 arguments = [{ source = "input_key" }]
 
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLResLoader"
+
+[[java.class.method]]
+name = "getResourceFull"
+sig = "(Ljava/lang/String;)[B"
+impl = "resource.load_full"
+static = true
+
+[[java.class.method]]
+name = "getResourceBytes"
+sig = "(Ljava/lang/String;II)[B"
+impl = "resource.load_range"
+static = true
+
+[[java.class.method]]
+name = "getResourceLength"
+sig = "(Ljava/lang/String;)I"
+impl = "resource.length"
+static = true
+
 [[runtime.native_call]]
 phase = "key_up"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"

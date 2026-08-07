@@ -28,6 +28,9 @@
   fixed-pipeline context state；没有当前 frame 或非法枚举明确失败，managed/guest EGL
   context 终止时恢复 `GL_SMOOTH` 默认值。该状态供后续 fixed-pipeline draw 转换消费，
   不得以静默 no-op 代替。
+- GLES1 `glClearColor` 逐位解码四个 guest `GLfloat` 参数并转发当前 `AngleFrame` 的
+  clear-color state；它与 GLES2 共享真实 ANGLE context 语义，无当前 frame 或 ANGLE
+  错误必须明确失败，不能仅在宿主侧缓存或吞掉调用。
 - shader/program handler 必须把 guest 二级源码数组、可选长度、查询输出和符号名完整
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、

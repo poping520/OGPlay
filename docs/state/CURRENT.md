@@ -24,6 +24,13 @@
 
 能力的机器可读现状以仓库根目录 `capabilities.toml` 为准；本文件不重复维护完整能力历史。
 
+## 进行中
+
+- [WU-0259] GLES1 `glClearColor` 已绑定为逐位解码四个 guest `GLfloat` 并转发当前
+  `AngleFrame`；相邻 `glClear` 仍未绑定。macOS/arm64 ANGLE 全量 CTest 402/402 与
+  exact-APK smoke 已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1
+  `glClearDepthf`（thunk 11）。Windows/MSVC warnings-as-errors 全量 CTest 尚待执行。
+
 ## 最近完成
 
 - [WU-0258] GLES1 `glShadeModel` 现以显式 fixed-pipeline context state 保存受检
@@ -61,8 +68,8 @@
 
 ## 下一步（按优先级）
 
-1. 绑定目标实际触达的 GLES1 `glClearColor`。
-2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
+1. 完成 WU-0259 的 Windows/MSVC warnings-as-errors 与全量 CTest，闭合本 WU。
+2. 按 smoke 暴露的下一边界绑定 GLES1 `glClearDepthf`。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

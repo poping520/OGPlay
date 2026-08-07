@@ -30,7 +30,7 @@ struct AndroidGuestCallSessionRequest final {
     std::uint32_t supersample_factor{1};
     VirtualFileSystem* filesystem{};
     std::function<void(std::string_view)> progress;
-    std::optional<FrameworkDirectAssetImplementations> direct_assets;
+    std::optional<FrameworkDirectAssetImplementations> direct_assets{};
 };
 
 class AndroidGuestCallSessionError final : public std::runtime_error {

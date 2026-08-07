@@ -8,6 +8,22 @@
 
 namespace ogplay::runtime::detail {
 
+void AndroidBoundaryGles1State::Reset() noexcept {
+    shade_model_ = kGles1SmoothShadeModel;
+}
+
+void AndroidBoundaryGles1State::SetShadeModel(const std::uint32_t mode) {
+    if (mode != kGles1FlatShadeModel && mode != kGles1SmoothShadeModel) {
+        throw std::invalid_argument(
+            "glShadeModel mode must be GL_FLAT or GL_SMOOTH");
+    }
+    shade_model_ = mode;
+}
+
+std::uint32_t AndroidBoundaryGles1State::ShadeModel() const noexcept {
+    return shade_model_;
+}
+
 std::int32_t ScaleAndroidBoundaryViewportComponent(
     const std::int32_t value, const std::uint32_t factor) {
     const auto scaled = static_cast<std::int64_t>(value) * factor;
@@ -19,7 +35,8 @@ std::int32_t ScaleAndroidBoundaryViewportComponent(
 }
 
 void BindAndroidBoundaryGles1Core(
-    gles::GlesDispatchTable& dispatch, const std::uint32_t supersample_factor,
+    gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1State& state,
+    const std::uint32_t supersample_factor,
     AndroidBoundaryFrameResolver require_frame) {
     if (supersample_factor == 0 || !require_frame) {
         throw std::invalid_argument("GLES1 boundary binding is incomplete");
@@ -45,7 +62,7 @@ void BindAndroidBoundaryGles1Core(
         });
     dispatch.Bind(
         "glScissor",
-        [supersample_factor, require_frame = std::move(require_frame)](
+        [supersample_factor, require_frame](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {
             require_frame("glScissor")
                 .Scissor(ScaleAndroidBoundaryViewportComponent(
@@ -60,6 +77,14 @@ void BindAndroidBoundaryGles1Core(
                          ScaleAndroidBoundaryViewportComponent(
                              std::bit_cast<std::int32_t>(arguments[3]),
                              supersample_factor));
+            return 0U;
+        });
+    dispatch.Bind(
+        "glShadeModel",
+        [&state, require_frame = std::move(require_frame)](
+            const std::span<const std::uint32_t> arguments, const std::uint64_t) {
+            static_cast<void>(require_frame("glShadeModel"));
+            state.SetShadeModel(arguments[0]);
             return 0U;
         });
 }

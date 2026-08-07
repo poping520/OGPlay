@@ -44,6 +44,8 @@
 - `AndroidGuestCallSession` 组合真实 Bionic namespace、API 19 process、syscall/clone、
   guest JNI ABI/core bindings 与 Android HLE，执行 guest init/fini 并只接受通用 A32 frame；
   Profile phase、窗口和标题事实不得进入该会话。
+- host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
+  open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和
   Thumb SVC trap；reserved 槽保持 null，其余槽均有可识别地址。表与对象只读、trap 页
   RX，映射冲突完整回滚，析构后不得残留 guest 映射。

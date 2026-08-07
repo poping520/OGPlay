@@ -480,6 +480,11 @@ status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp"
 note = "M5 WU-0241 组合真实 Bionic namespace、API 19 process、syscall/clone、guest JNI core 与 Android HLE，执行 ELF init/fini 并接受通用 A32 frame"
 
+[runtime.host_managed_gl_surface]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp"
+note = "M5 WU-0242 为 Java/GLSurfaceView lifecycle 显式 open/present/close ANGLE pbuffer，复用统一 resolve；guest EGL 不得替换或终止 host-owned surface"
+
 [gles.gles1_core_catalog]
 status = "complete"
 test = "tools.gles1_catalog_current"

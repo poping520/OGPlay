@@ -225,6 +225,9 @@ public:
         return guest_jni_.JavaVm();
     }
     JniEnvironment& Environment() noexcept { return environment_; }
+    void OpenManagedSurface() { boundary_.OpenManagedSurface(); }
+    void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
+    void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
     void PushInput(const AndroidBoundaryInput& input) {
         if (!running_) {
             throw AndroidGuestCallSessionError(
@@ -315,6 +318,15 @@ memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept {
 }
 JniEnvironment& AndroidGuestCallSession::Environment() noexcept {
     return impl_->Environment();
+}
+void AndroidGuestCallSession::OpenManagedSurface() {
+    impl_->OpenManagedSurface();
+}
+void AndroidGuestCallSession::PresentManagedSurface() {
+    impl_->PresentManagedSurface();
+}
+void AndroidGuestCallSession::CloseManagedSurface() {
+    impl_->CloseManagedSurface();
 }
 void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) {
     impl_->PushInput(input);

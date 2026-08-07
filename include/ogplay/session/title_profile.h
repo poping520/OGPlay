@@ -122,6 +122,7 @@ struct ProfileJavaMethod final {
     std::string name;
     std::string signature;
     std::string implementation;
+    bool is_static{};
 };
 
 struct ProfileJavaClass final {

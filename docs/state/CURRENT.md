@@ -26,6 +26,8 @@
 
 ## 最近完成
 
+- [WU-0245] Profile Java method 现显式声明 instance/static kind，C++/Python/schema
+  同步验证并按种类注册统一 JNI class registry。全量 CTest 394/394 通过。
 - [WU-0244] `run-apk` 现可对 `gl_surface_view` 精确 Profile 组合 Android guest
   call session、声明式 phases、SDL input 与 managed ANGLE frame；真实目标已进入
   startup call 1，首个阻塞为未绑定 `GetStaticMethodID`。全量 CTest 394/394 通过。

@@ -245,7 +245,7 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["name", "sig", "impl"],
+                  "required": ["name", "sig", "impl", "static"],
                   "properties": {
                     "name": {
                       "type": "string",
@@ -258,6 +258,9 @@
                     "impl": {
                       "type": "string",
                       "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+                    },
+                    "static": {
+                      "type": "boolean"
                     }
                   }
                 }

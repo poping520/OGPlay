@@ -291,8 +291,8 @@ def _validate_java(value: Any) -> None:
         for method_index, method_value in enumerate(methods):
             method_field = f"{field}.method[{method_index}]"
             method = _table(method_value, method_field)
-            _keys(method, method_field, {"name", "sig", "impl"},
-                  {"name", "sig", "impl"})
+            _keys(method, method_field, {"name", "sig", "impl", "static"},
+                  {"name", "sig", "impl", "static"})
             method_name = _string(method["name"], f"{method_field}.name")
             signature = _string(method["sig"], f"{method_field}.sig")
             if not signature.startswith("(") or ")" not in signature[1:]:
@@ -300,6 +300,7 @@ def _validate_java(value: Any) -> None:
             impl = _string(method["impl"], f"{method_field}.impl")
             if IMPL_PATTERN.fullmatch(impl) is None:
                 raise ProfileError(f"{method_field}.impl must be a namespaced binding id")
+            _boolean(method["static"], f"{method_field}.static")
             method_keys.append((method_name, signature))
         _unique(method_keys, f"{field}.method name/signature pairs")
     _unique(class_names, "java.class names")
@@ -455,6 +456,7 @@ name = "org/example/Legacy"
 name = "load"
 sig = "(I)[B"
 impl = "resource.load"
+static = false
 
 [quirks]
 enabled = ["legacy_reads"]

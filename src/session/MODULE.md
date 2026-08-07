@@ -70,6 +70,8 @@
 - VFS 输入不得靠顺序或来源猜测；guest 根与 source 必须同时命中声明，额外输入明确失败。
 - Java implementation id 必须命中真实 handler；类、签名或 handler 无效时不得发布
   部分 JNI registry。
+- Java method 的 instance/static kind 必须由 Profile 显式声明，lookup 与 invocation
+  不得用同名或默认 kind 猜测。
 - input template 未注册时明确失败；无 Profile 声明只能使用 catalog 的显式默认项。
 - audio 资源缺失、重复或为空时明确失败；错误 source 不得仅凭同名路径匹配。
 - session plan 只在全部子装配成功后发布；运行期不再次猜测 input/audio 选择。

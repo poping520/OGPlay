@@ -10,6 +10,7 @@
 
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/integration/android_boundary_hle.h"
+#include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/session/lifecycle.h"
 #include "ogplay/session/profile_native_execution.h"
@@ -19,6 +20,7 @@ namespace ogplay::session {
 struct ProfileGuestLifecycleBindings final {
     memory::GuestAddress environment;
     runtime::JniEnvironment* jni_environment{};
+    runtime::JniClassRegistry* classes{};
     ProfileNativeFrameExecutor execute;
     std::function<void()> open_surface;
     std::function<void()> present_surface;

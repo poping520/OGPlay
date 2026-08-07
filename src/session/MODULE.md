@@ -25,7 +25,8 @@
   顺序交给统一 A32 executor；逐项保留 index/export/ticks/return，失败附带精确调用身份。
 - `ProfileGuestLifecycle`：为 `gl_surface_view` 把 Profile 声明的
   startup/resume/input/frame/pause/shutdown 批次与 host-managed surface 严格编排为
-  单一有状态流程；调用帧仍只进入注入的通用 executor。
+  单一有状态流程；Java declarations 与 native-call receiver 进入调用方提供的统一
+  class registry，调用帧仍只进入注入的通用 executor。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与
   测试引用；含 quirk 的 Profile 目录必须显式通过注册表验证。
 - `DescribeLifecycle` / `LifecycleFrameRunner`：把三种 Profile 生命周期映射为稳定的通用

@@ -1,19 +1,18 @@
 #include "ogplay/session/profile_guest_lifecycle.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <exception>
 #include <limits>
+#include <map>
 #include <optional>
-#include <set>
 #include <string>
 #include <utility>
 
 namespace ogplay::session {
 namespace {
 
-constexpr std::uint64_t kProfileObjectIdentityBase =
-    UINT64_C(0x50524f4600000000);
 constexpr std::uint64_t kRootThreadId = 1;
 
 [[nodiscard]] ProfileNativeCallPhase InputPhase(
@@ -83,24 +82,51 @@ ProfileGuestLifecycle::ProfileGuestLifecycle(
     if (profile.runtime.lifecycle != ProfileLifecycle::gl_surface_view ||
         profile.runtime.native_calls.empty() ||
         bindings_.environment.IsNull() ||
-        bindings_.jni_environment == nullptr || !bindings_.execute ||
+        bindings_.jni_environment == nullptr || bindings_.classes == nullptr ||
+        !bindings_.execute ||
         !bindings_.open_surface || !bindings_.present_surface ||
         !bindings_.close_surface || !bindings_.push_boundary_input) {
         throw ProfileGuestLifecycleError(
             "profile guest lifecycle request is incomplete or unsupported");
     }
-    std::set<std::string, std::less<>> classes;
-    std::uint64_t identity = kProfileObjectIdentityBase;
+    std::map<std::string, runtime::JniObjectIdentity, std::less<>>
+        class_identities;
+    for (const auto& java_class : profile.java_classes) {
+        std::vector<runtime::JniMethodDeclaration> methods;
+        methods.reserve(java_class.methods.size());
+        for (const auto& method : java_class.methods) {
+            methods.push_back(
+                {method.name, method.signature, method.implementation,
+                 method.is_static});
+        }
+        class_identities.emplace(
+            java_class.name,
+            bindings_.classes->RegisterClass(
+                {java_class.name, {}, std::move(methods), {}}));
+    }
     for (const auto& call : profile.runtime.native_calls) {
-        if (!classes.insert(call.class_name).second) continue;
+        auto found = class_identities.find(call.class_name);
+        if (found == class_identities.end()) {
+            found = class_identities
+                        .emplace(
+                            call.class_name,
+                            bindings_.classes->RegisterClass(
+                                {call.class_name, {}, {}, {}}))
+                        .first;
+        }
+        if (std::any_of(
+                class_references_.begin(), class_references_.end(),
+                [&call](const ProfileNativeClassReference& reference) {
+                    return reference.class_name == call.class_name;
+                })) {
+            continue;
+        }
         class_references_.push_back({
             call.class_name,
             bindings_.jni_environment->PublishGlobalObjectForHle(
-                kRootThreadId,
-                {runtime::JniObjectDomain::host, identity++}),
+                kRootThreadId, found->second),
             bindings_.jni_environment->PublishGlobalObjectForHle(
-                kRootThreadId,
-                {runtime::JniObjectDomain::host, identity++}),
+                kRootThreadId, found->second),
         });
     }
     const ProfileNativeInvocationContext context{

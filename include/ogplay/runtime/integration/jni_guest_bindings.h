@@ -12,6 +12,7 @@ class JniEnvironment;
 class JniClassRegistry;
 class JniInvocationEngine;
 class JniJavaVm;
+class JniPrimitiveArrayStore;
 class JniStringStore;
 
 class JniGuestBindingError final : public std::runtime_error {
@@ -24,6 +25,7 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniClassRegistry& classes,
                            JniInvocationEngine& invocations,
                            JniStringStore& strings,
+                           JniPrimitiveArrayStore& arrays,
                            JniJavaVm& java_vm,
                            memory::AddressSpace& address_space);
 

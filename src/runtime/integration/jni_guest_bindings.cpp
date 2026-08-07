@@ -11,6 +11,7 @@
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
+#include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
@@ -213,6 +214,7 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniClassRegistry& classes,
                            JniInvocationEngine& invocations,
                            JniStringStore& strings,
+                           JniPrimitiveArrayStore& arrays,
                            JniJavaVm& java_vm,
                            memory::AddressSpace& address_space) {
     dispatcher.BindEnvironment(
@@ -380,6 +382,17 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                 frame.thread_id, *dispatch_class, method.id, arguments,
                 JniArgumentSource::variadic);
             return Reference(std::get<JniReference>(result));
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("GetArrayLength"),
+        [&environment, &arrays](const JniGuestCallFrame& frame) {
+            const auto array = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!array.has_value()) {
+                throw JniGuestBindingError(
+                    "GetArrayLength requires a valid array reference");
+            }
+            return Int(arrays.Length(*array));
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("NewStringUTF"),

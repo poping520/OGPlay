@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 #include <doctest/doctest.h>
 
@@ -11,6 +12,7 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
+#include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 
@@ -27,7 +29,7 @@ struct GuestBindingsFixture final {
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
         ogplay::runtime::BindJniGuestCoreSlots(
-            dispatcher, environment, java_vm, memory);
+            dispatcher, environment, classes, java_vm, memory);
     }
 
     [[nodiscard]] std::uint32_t CallEnvironment(
@@ -51,6 +53,18 @@ struct GuestBindingsFixture final {
         return bus.Read32(output);
     }
 
+    void WriteString(const std::uint32_t offset,
+                     const std::string_view value) {
+        std::vector<std::byte> bytes;
+        bytes.reserve(value.size() + 1);
+        for (const auto character : value) {
+            bytes.push_back(static_cast<std::byte>(
+                static_cast<unsigned char>(character)));
+        }
+        bytes.push_back(std::byte{});
+        memory.Write(output.Add(offset), bytes);
+    }
+
     void Seal() { dispatcher.Seal(); }
 
     ogplay::memory::AddressSpace memory;
@@ -60,6 +74,7 @@ struct GuestBindingsFixture final {
     ogplay::core::CapabilityLedger ledger;
     ogplay::runtime::JniGuestCallDispatcher dispatcher;
     ogplay::runtime::JniEnvironment environment;
+    ogplay::runtime::JniClassRegistry classes;
     ogplay::runtime::JniJavaVm java_vm;
     const ogplay::memory::GuestAddress output{0x72000000U};
 
@@ -108,7 +123,7 @@ private:
 
 TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
     GuestBindingsFixture fixture;
-    constexpr std::array<std::string_view, 16> environment_names{
+    constexpr std::array<std::string_view, 17> environment_names{
         "GetVersion",          "Throw",
         "ExceptionOccurred",   "ExceptionClear",
         "PushLocalFrame",      "PopLocalFrame",
@@ -116,7 +131,8 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
         "DeleteLocalRef",      "IsSameObject",
         "NewLocalRef",         "EnsureLocalCapacity",
         "GetJavaVM",           "NewWeakGlobalRef",
-        "DeleteWeakGlobalRef", "ExceptionCheck"};
+        "DeleteWeakGlobalRef", "ExceptionCheck",
+        "GetStaticMethodID"};
     for (const auto name : environment_names) {
         CAPTURE(name);
         CHECK(fixture.dispatcher.IsEnvironmentBound(
@@ -133,6 +149,41 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
     CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(
         *ogplay::runtime::FindJniSlot("FindClass")));
     fixture.Seal();
+}
+
+TEST_CASE("guest JNI static method lookup uses declared class identity") {
+    GuestBindingsFixture fixture;
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        401U, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+    const auto identity = fixture.classes.RegisterClass(
+        {"fixture/Resource",
+         {},
+         {{"load", "(I)[B", "resource.load", true},
+          {"reset", "()V", "resource.reset", false}},
+         {}});
+    const auto java_class =
+        fixture.environment.PublishLocalObject(401U, identity);
+    fixture.WriteString(0x100U, "load");
+    fixture.WriteString(0x120U, "(I)[B");
+    fixture.WriteString(0x140U, "reset");
+    fixture.WriteString(0x160U, "()V");
+    fixture.Seal();
+
+    const auto method = fixture.CallEnvironment(
+        "GetStaticMethodID", 401U, java_class.Value(),
+        fixture.output.Add(0x100U).Value(),
+        fixture.output.Add(0x120U).Value());
+    CHECK(method == fixture.classes.GetMethodId(
+                        identity, "load", "(I)[B", true)
+                        ->Value());
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "GetStaticMethodID", 401U, java_class.Value(),
+            fixture.output.Add(0x140U).Value(),
+            fixture.output.Add(0x160U).Value())),
+        "JNI guest static method is not declared: reset()V",
+        ogplay::runtime::JniGuestBindingError);
 }
 
 TEST_CASE("guest JNI core bindings execute references exceptions and VM export") {

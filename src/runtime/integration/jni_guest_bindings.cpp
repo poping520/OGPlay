@@ -4,11 +4,13 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
+#include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 
@@ -41,6 +43,29 @@ namespace {
 
 [[nodiscard]] JniGuestCallResult Reference(const JniReference value) {
     return Word(value.Value());
+}
+
+[[nodiscard]] std::string ReadCString(
+    memory::AddressSpace& address_space,
+    const memory::GuestAddress address,
+    const std::uint64_t thread_id,
+    const std::string_view field) {
+    constexpr std::size_t kMaximumBytes = 1024;
+    if (address.IsNull()) {
+        throw JniGuestBindingError(
+            "JNI guest " + std::string(field) + " pointer is null");
+    }
+    std::string result;
+    result.reserve(32);
+    for (std::size_t index = 0; index < kMaximumBytes; ++index) {
+        std::byte byte{};
+        address_space.Read(address.Add(index), std::span{&byte, 1}, thread_id);
+        const auto value = std::to_integer<unsigned char>(byte);
+        if (value == 0) return result;
+        result.push_back(static_cast<char>(value));
+    }
+    throw JniGuestBindingError(
+        "JNI guest " + std::string(field) + " is not null-terminated");
 }
 
 [[nodiscard]] std::size_t Capacity(const std::uint32_t value,
@@ -99,6 +124,7 @@ void RequireNullAttachArguments(const JniGuestCallFrame& frame) {
 
 void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniEnvironment& environment,
+                           JniClassRegistry& classes,
                            JniJavaVm& java_vm,
                            memory::AddressSpace& address_space) {
     dispatcher.BindEnvironment(
@@ -217,6 +243,31 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             return Word(environment.ExceptionCheck(frame.thread_id)
                             ? 1U
                             : 0U);
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("GetStaticMethodID"),
+        [&environment, &classes,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto identity = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!identity.has_value()) {
+                throw JniGuestBindingError(
+                    "GetStaticMethodID requires a valid class reference");
+            }
+            const auto name = ReadCString(
+                address_space, memory::GuestAddress{frame.registers[2]},
+                frame.thread_id, "method name");
+            const auto descriptor = ReadCString(
+                address_space, memory::GuestAddress{frame.registers[3]},
+                frame.thread_id, "method descriptor");
+            const auto method =
+                classes.GetMethodId(*identity, name, descriptor, true);
+            if (!method.has_value()) {
+                throw JniGuestBindingError(
+                    "JNI guest static method is not declared: " +
+                    name + descriptor);
+            }
+            return Word(method->Value());
         });
 
     dispatcher.BindJavaVm(

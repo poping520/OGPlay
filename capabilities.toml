@@ -465,6 +465,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"
 note = "M5 WU-0238 将 16 个 JNIEnv 引用/异常基础 slot 与 4 个 JavaVM slot 绑定到真实 M3 状态；guest 输出指针受检，统一发布 guest JNIEnv/JavaVM 地址"
 
+[runtime.jni_guest_static_method_lookup]
+status = "complete"
+test = "tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M5 WU-0246 让 guest GetStaticMethodID 以真实 class reference 与受检 C string 精确查询统一 class registry；未声明或 kind 不符明确失败"
+
 [runtime.api19_guest_process]
 status = "complete"
 test = "tests/runtime/api19_guest_process_tests.cpp; tests/runtime/native_activity_runner_tests.cpp"

@@ -26,6 +26,9 @@
 
 ## 最近完成
 
+- [WU-0248] GLMediaPlayer native init 经 JADX 与 ELF 共同确认的 25 个 static Java
+  method 已进入纯 Profile 数据；真实目标已推进至 startup call 3，首个新阻塞为未声明
+  `sendAppToBackground()V`。全量 CTest 395/395 通过。
 - [WU-0247] Profile lifecycle 现把 Java declarations 与 native-call receiver 装入
   Android guest 的同一 JNI class registry；真实目标已推进至 startup call 2，首个新阻塞
   为未声明 `isSoundLoaded(II)I`。全量 CTest 395/395 通过。
@@ -70,12 +73,9 @@
 - [WU-0233] APK preflight 已复用生产 Bionic/Android boundary 完成映射与重定位；真实
   目标报告 5 guest + 2 boundary、6503 relocations、17 native calls。macOS/arm64
   warnings-as-errors 构建及全量 CTest 369/369 通过。
-- [WU-0232] `libGLESv1_CM.so` 已追加发布 3 项 matrix-palette extension trap，core
-  地址不漂移且独立记账；目标 ELF 的 62 个 GL imports 均有生成目录 provider。
-  macOS/arm64 warnings-as-errors 构建及全量 CTest 368/368 通过。
 ## 下一步（按优先级）
 
-1. 声明 GLMediaPlayer startup 实际查询的方法，并继续绑定后续 JNI guest slot。
+1. 声明 Asphalt5 startup 实际查询的 Java method，并继续绑定后续 JNI guest slot。
 2. 逐个绑定目标执行实际触达的 GLES1 fixed-pipeline handler，未触达项继续明确失败。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

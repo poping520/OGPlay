@@ -18,6 +18,7 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/android_boundary_hle.h"
 #include "../../src/runtime/integration/android_boundary_gles1.h"
+#include "../../src/runtime/integration/android_boundary_gles1_draw.h"
 #include "../../src/runtime/integration/android_boundary_gles1_query.h"
 
 namespace {
@@ -259,6 +260,33 @@ TEST_CASE("GLES1 legacy fixed state validates isolates and resets") {
               0x84C0U,
               ogplay::runtime::detail::kGles1TextureEnvironmentMode)[0] ==
           8448.0F);
+}
+
+TEST_CASE("GLES1 client array state validates texture units and resets") {
+    ogplay::runtime::detail::AndroidBoundaryGles1DrawState state;
+    state.SetPointer(ogplay::runtime::detail::kGles1VertexArray, 0x84C0U,
+                     3, 0x1406U, 0, 0x1000U, 0U);
+    state.SetEnabled(ogplay::runtime::detail::kGles1VertexArray, 0x84C0U,
+                     true);
+    CHECK(state.Array(ogplay::runtime::detail::kGles1VertexArray,
+                      0x84C0U).enabled);
+    CHECK(state.Array(ogplay::runtime::detail::kGles1VertexArray,
+                      0x84C0U).pointer == 0x1000U);
+    state.SetPointer(ogplay::runtime::detail::kGles1TextureCoordArray,
+                     0x84C1U, 2, 0x1406U, 8, 0x2000U, 7U);
+    CHECK(state.Array(ogplay::runtime::detail::kGles1TextureCoordArray,
+                      0x84C1U).buffer == 7U);
+    CHECK_THROWS_AS(
+        state.SetPointer(ogplay::runtime::detail::kGles1ColorArray,
+                         0x84C0U, 3, 0x1406U, 0, 0U, 0U),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        state.SetPointer(ogplay::runtime::detail::kGles1VertexArray,
+                         0x84C0U, 3, 0U, 0, 0U, 0U),
+        std::invalid_argument);
+    state.Reset();
+    CHECK_FALSE(state.Array(ogplay::runtime::detail::kGles1VertexArray,
+                            0x84C0U).enabled);
 }
 
 TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
@@ -567,6 +595,65 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             fixture.Call("libGLESv1_CM.so", "glCompressedTexImage2D",
                          {0x0DE1U, 0U, 0x8D64U, 4U}),
             std::invalid_argument);
+        const auto vertices = fixture.output.Add(0x400U);
+        const std::array vertex_values{
+            -0.75F, -0.75F, 0.0F, 0.75F, -0.75F, 0.0F,
+            0.0F, 0.75F, 0.0F};
+        for (std::size_t index = 0; index < vertex_values.size(); ++index) {
+            fixture.bus.Write32(
+                vertices.Add(index * sizeof(std::uint32_t)),
+                std::bit_cast<std::uint32_t>(vertex_values[index]), 1U);
+        }
+        const auto colors = fixture.output.Add(0x440U);
+        const std::array<std::byte, 12> color_values{
+            std::byte{0xff}, std::byte{}, std::byte{}, std::byte{0xff},
+            std::byte{}, std::byte{0xff}, std::byte{}, std::byte{0xff},
+            std::byte{}, std::byte{}, std::byte{0xff}, std::byte{0xff}};
+        fixture.memory.Write(colors, color_values, 1U);
+        const auto normals = fixture.output.Add(0x480U);
+        const auto texcoords = fixture.output.Add(0x4C0U);
+        for (std::size_t vertex = 0; vertex < 3U; ++vertex) {
+            for (std::size_t component = 0; component < 3U; ++component) {
+                fixture.bus.Write32(
+                    normals.Add((vertex * 3U + component) * 4U),
+                    std::bit_cast<std::uint32_t>(component == 2U ? 1.0F : 0.0F), 1U);
+            }
+            fixture.bus.Write32(texcoords.Add(vertex * 8U), 0U, 1U);
+            fixture.bus.Write32(texcoords.Add(vertex * 8U + 4U), 0U, 1U);
+        }
+        CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
+                           {3U, 0x1406U, 0U, vertices.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glColorPointer",
+                           {4U, 0x1401U, 0U, colors.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glNormalPointer",
+                           {0x1406U, 0U, normals.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTexCoordPointer",
+                           {2U, 0x1406U, 0U, texcoords.Value()}) == 0U);
+        for (const auto array : {
+                 ogplay::runtime::detail::kGles1VertexArray,
+                 ogplay::runtime::detail::kGles1ColorArray,
+                 ogplay::runtime::detail::kGles1NormalArray,
+                 ogplay::runtime::detail::kGles1TextureCoordArray}) {
+            CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                               {array}) == 0U);
+        }
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                           {0x0004U, 0U, 3U}) == 0U);
+        const auto indices = fixture.output.Add(0x500U);
+        const std::array index_values{std::byte{}, std::byte{1}, std::byte{2}};
+        fixture.memory.Write(indices, index_values, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDrawElements",
+                           {0x0004U, 3U, 0x1401U, indices.Value()}) == 0U);
+        CHECK_THROWS_AS(
+            fixture.Call("libGLESv1_CM.so", "glDrawElements",
+                         {0x0004U, 3U, 0x1401U, 0U}),
+            ogplay::gles::GuestTransferError);
+        CHECK_THROWS_AS(
+            fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                         {0x0004U, 0U, 0xFFFFFFFFU}),
+            std::invalid_argument);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDisableClientState",
+                           {ogplay::runtime::detail::kGles1NormalArray}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glViewport", {0, 0, 4, 3}) == 0);
         CHECK(fixture.Call("libGLESv1_CM.so", "glScissor", {0, 0, 2, 3}) == 0);

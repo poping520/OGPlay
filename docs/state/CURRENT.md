@@ -7,7 +7,7 @@
 - M0、M1、M2、M3、M4 已完成并验收。
 - M5 去硬编码正在推进；首个精确 legacy title Profile 已闭合 APK 身份、Bionic 依赖、
   native-call 目标/A32 调用帧与 Android link preflight，完整 JNIEnv/JavaVM guest ABI
-  也已映射；当前尚未执行 `gl_surface_view` guest process。
+  也已映射；指定 `gl_surface_view` guest process 已执行并提交首个 managed ANGLE frame。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
@@ -29,11 +29,14 @@
 
 ## 进行中
 
-- 无。exact-APK 已越过剩余 4 个 texture image/copy 入口，下一精确工作是
-  `glEnableClientState`（thunk 38）。
+- 无。exact-APK 已越过全部 8 个 client-array/draw 入口并在一帧边界正常停止；剩余
+  3 个目标 GL import 均为 matrix-palette extension。
 
 ## 最近完成
 
+- [WU-0274] 批量闭合 4 种 client pointer、enable/disable client state 与两种 draw；guest
+  array/index 按真实 draw 范围预检上传，内部 GLES2 fixed shader 消费矩阵、颜色、light0、
+  texture、fog 与 alpha state。exact-APK 首次成功提交 1 个 managed ANGLE frame。
 - [WU-0273] 一次批量闭合 `glCompressedTexImage2D`、`glCopyTexImage2D`、
   `glTexImage2D` 与 `glTexSubImage2D`，guest 像素受检搬运并在 level 0 消费 automatic
   mipmap 状态。exact-APK 推进到 `glEnableClientState`。
@@ -73,20 +76,17 @@
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
-GLES1 handler 对照得出；当前已实现 51 个，尚余 11 个。它只表示该目标实际导入且尚未
+GLES1 handler 对照得出；当前已实现 59 个，尚余 3 个。它只表示该目标实际导入且尚未
 实现的入口，不代表完整 GLES1 命名空间。
 
-- Client array/draw（8）：`glColorPointer`、`glDisableClientState`、`glDrawArrays`、
-  `glDrawElements`、`glEnableClientState`、`glNormalPointer`、`glTexCoordPointer`、
-  `glVertexPointer`。
 - Matrix-palette 扩展（3）：`glCurrentPaletteMatrixOES`、
   `glMatrixIndexPointerOES`、`glWeightPointerOES`。
 
 ## 下一步（按优先级）
 
-1. 批量实现 8 个 GLES1 client array/draw 入口，优先越过 `glEnableClientState`。
-2. 随后闭合 3 个 matrix-palette extension，并让 fixed-pipeline draw 消费已保存状态。
-3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
+1. 批量闭合 3 个 matrix-palette extension，并接入同一 client-array draw 状态。
+2. 扩展 fixed-pipeline renderer 的多纹理、完整 texture environment 与多光源语义。
+3. 增加多帧 exact-APK smoke 与黄金帧证据。
 
 ## 阻塞
 

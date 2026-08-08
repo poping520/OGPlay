@@ -41,9 +41,9 @@ test = "tools/validate_quirks.py --self-test; tests/session/quirk_registry_tests
 note = "M5 WU-0204/0205 强制 summary/reason/risk/test/owner、真实测试引用与 profile 交叉引用；C++ 目录对含 quirk 的 profile 强制注入 UTF-8 注册表，未注册或无注册表明确失败"
 
 [profiles.gles1_material_front_face_quirk]
-status = "partial"
+status = "complete"
 test = "tools.quirk_registry_current; tests/runtime/android_boundary_gles1_fixed_tests.cpp"
-note = "M5 WU-0265 已登记 GL_FRONT material 归一 quirk、由精确 Profile 启用并让 run-apk 强制注册表验证；运行时映射留给 WU-0266"
+note = "M5 WU-0265..0267 登记并注入精确 Profile quirk；默认严格拒绝单面 material，启用后独立保存 GL_FRONT/GL_BACK，reset 恢复状态但保留策略"
 
 [session.lifecycle_templates]
 status = "complete"
@@ -494,6 +494,11 @@ note = "M5 WU-0252 让 guest NewStringUTF 通过受检 guest C string、M3 Modif
 status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0253 让 guest CallStaticObjectMethod 按 method descriptor 解码 A32 variadic 参数并进入统一 invocation engine"
+
+[runtime.jni_guest_static_int_invocation]
+status = "complete"
+test = "tests/runtime/jni_guest_bindings_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0268 让 guest CallStaticIntMethod 复用 descriptor-backed A32 variadic 解码并保留有符号 JniInt 返回位型"
 
 [runtime.jni_guest_array_length]
 status = "complete"

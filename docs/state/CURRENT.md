@@ -29,13 +29,20 @@
 
 ## 进行中
 
-- 无。`gles1_material_front_face` 已登记并由精确 Profile 启用；下一精确工作是把声明映射
-  为 guest-session 边界选项，标准路径继续 fail closed。
+- 无。exact-APK 已越过 single-face material quirk 与 `CallStaticIntMethod`，下一精确工作
+  是 GLES1 `glGenTextures`（thunk 49）。
 
 ## 最近完成
 
+- [WU-0268] guest `CallStaticIntMethod` 已复用 descriptor-backed A32 variadic 解码并进入
+  统一 invocation engine；exact-APK 命中既有 `resource.length` handler 后推进到
+  `glGenTextures`。
+- [WU-0267] `gles1_material_front_face` quirk 已依据真实调用序列扩展为独立保存
+  `GL_FRONT`/`GL_BACK`，关闭时两者均明确失败，reset 保留策略。
+- [WU-0266] 已把已验证 Profile quirk 映射为通用 guest-session 边界选项，默认路径保持
+  fail closed；exact-APK 由 `GL_FRONT` 推进并暴露后续 `GL_BACK` 证据。
 - [WU-0265] Profile quirk 声明与 CLI 注册表加载已闭合，关闭 quirk 的状态测试继续拒绝
-  `GL_FRONT`；运行时行为尚未启用，能力保持 partial。
+  `GL_FRONT`；该 WU 完成时运行时行为尚未启用，随后已由 WU-0266/0267 闭合。
 - [WU-0264] 目标导入的 7 个 GLES1 lighting/material/fog 入口已进入独立、可重置的
   fixed-pipeline 状态，pointer 参数完整受检搬运，枚举与范围错误明确失败。macOS-arm64 +
   ANGLE 行为测试通过；exact-APK 已进入 `glMaterialfv` handler 并暴露 `GL_FRONT`
@@ -69,8 +76,8 @@ GLES1 handler 对照得出；当前已实现 37 个，尚余 25 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 登记并接入只对精确 Profile 生效的 material `GL_FRONT` 归一 quirk。
-2. 随后批量闭合其余 fixed-pipeline 状态、client array/draw 与 matrix-palette extension。
+1. 实现 exact-APK 当前阻塞的 GLES1 `glGenTextures` 资源入口。
+2. 随后按真实边界闭合其余纹理、fixed-pipeline、client array/draw 与 matrix-palette extension。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

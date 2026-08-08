@@ -384,6 +384,29 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             return Reference(std::get<JniReference>(result));
         });
     dispatcher.BindEnvironment(
+        EnvironmentSlot("CallStaticIntMethod"),
+        [&environment, &classes, &invocations,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto dispatch_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!dispatch_class.has_value()) {
+                throw JniGuestBindingError(
+                    "CallStaticIntMethod requires a valid class reference");
+            }
+            const auto method =
+                classes.ResolveMethod(JniMethodId{frame.registers[2]});
+            if (method.layout.result.kind != JniTypeKind::integer) {
+                throw JniGuestBindingError(
+                    "CallStaticIntMethod requires an int return descriptor");
+            }
+            const auto arguments =
+                ReadVariadicArguments(address_space, frame, method.layout);
+            const auto result = invocations.InvokeStatic(
+                frame.thread_id, *dispatch_class, method.id, arguments,
+                JniArgumentSource::variadic);
+            return Int(std::get<JniInt>(result));
+        });
+    dispatcher.BindEnvironment(
         EnvironmentSlot("GetArrayLength"),
         [&environment, &arrays](const JniGuestCallFrame& frame) {
             const auto array = environment.ResolveObjectForHle(

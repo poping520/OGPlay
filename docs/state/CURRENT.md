@@ -34,6 +34,10 @@
 
 ## 最近完成
 
+- [WU-0276] `CallStaticObject/Boolean/Byte/Char/Short/Int/Long/Float/Double/VoidMethod`
+  的普通、`V`、`A` 共 30 个 guest 槽已批量闭合；三种 A32 参数布局与所有返回位型均由
+  descriptor 驱动并进入统一 invocation engine。用户报告的 `CallStaticVoidMethod`
+  unbound 边界已消除，exact-APK 一帧 smoke 以状态 0 完成。
 - [WU-0275] 最后 3 个 `GL_OES_matrix_palette` import 已进入受检、可重置的 palette index
   与 client pointer 状态；未完成的 skinning draw 明确失败。目标 62/62 GL import 均有
   行为 handler，exact-APK 一帧 smoke 继续以状态 0 完成。
@@ -49,32 +53,6 @@
 - [WU-0271] GLES1 `GL_GENERATE_MIPMAP` 已按 active unit 与 texture object 隔离保存，
   delete/reset 同步且不再错误转发 GLES2；exact-APK 推进到 `glGetFloatv`。自动生成消费
   留待 texture upload，能力保持 partial。
-- [WU-0270] GLES1 `glGetString` 已把真实 ANGLE vendor/renderer/version/extensions 发布到
-  专属分槽只读 guest 区域；exact-APK 推进到 `glTexParameterf` 参数兼容边界。
-- [WU-0269] GLES1 `glGenTextures`/`glDeleteTextures` 已通过受检 little-endian guest
-  数组接入真实 ANGLE texture name 生命周期；exact-APK 推进到 `glGetString`。
-- [WU-0268] guest `CallStaticIntMethod` 已复用 descriptor-backed A32 variadic 解码并进入
-  统一 invocation engine；exact-APK 命中既有 `resource.length` handler 后推进到
-  `glGenTextures`。
-- [WU-0267] `gles1_material_front_face` quirk 已依据真实调用序列扩展为独立保存
-  `GL_FRONT`/`GL_BACK`，关闭时两者均明确失败，reset 保留策略。
-- [WU-0266] 已把已验证 Profile quirk 映射为通用 guest-session 边界选项，默认路径保持
-  fail closed；exact-APK 由 `GL_FRONT` 推进并暴露后续 `GL_BACK` 证据。
-- [WU-0265] Profile quirk 声明与 CLI 注册表加载已闭合，关闭 quirk 的状态测试继续拒绝
-  `GL_FRONT`；该 WU 完成时运行时行为尚未启用，随后已由 WU-0266/0267 闭合。
-- [WU-0264] 目标导入的 7 个 GLES1 lighting/material/fog 入口已进入独立、可重置的
-  fixed-pipeline 状态，pointer 参数完整受检搬运，枚举与范围错误明确失败。macOS-arm64 +
-  ANGLE 行为测试通过；exact-APK 已进入 `glMaterialfv` handler 并暴露 `GL_FRONT`
-  规范兼容边界。
-- [WU-0263] GLES1 modelview/projection/texture 三套矩阵栈及 7 个浮点 matrix handler 已
-  批量闭合；guest matrix 经受检地址完整搬运，栈与非法值 fail closed。Windows-x64 +
-  ANGLE 全量 CTest 403/403 与 exact-APK smoke 已通过，下一边界为 `glMaterialfv`。
-- [WU-0262] 目标导入的 17 个 GLES1 无指针标量状态入口已批量闭合；共有状态进入
-  ANGLE，GLES1-only hint/capability 与 transfer state 显式保存。Windows-x64 + ANGLE
-  全量 CTest 402/402 与 exact-APK smoke 已通过，下一边界为 `glMatrixMode`。
-- [WU-0261] GLES1 `glClear` 现将 guest `GLbitfield` mask 原样转发当前
-  `AngleFrame::Clear`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK smoke
-  已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1 `glEnable`（thunk 37）。
 
 ## 目标 ELF 尚未实现的 GL 入口
 
@@ -86,9 +64,9 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 增加 exact-APK 多帧 smoke 与稳定黄金帧证据。
-2. 按实际调用证据扩展 fixed renderer 的多纹理、完整 texture environment 与多光源语义。
-3. 如目标启用 matrix palette，再实现 palette matrix stack 与 skinning shader。
+1. 按 exact-APK 后续真实调用证据，批量闭合类/实例调用 JNI 槽。
+2. 批量闭合目标所需静态字段、数组、字符串与 native 注册 JNI 槽。
+3. 增加 exact-APK 多帧 smoke 与稳定黄金帧证据。
 
 ## 阻塞
 

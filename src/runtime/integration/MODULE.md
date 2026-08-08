@@ -116,12 +116,14 @@
 - `JniGuestCallDispatcher` 只消费精确落入上述目录的 `SVC #3`，校验 JNIEnv/JavaVM
   receiver 与非零线程后发布寄存器/栈调用帧；slot 必须在执行前显式绑定并封口，未绑定
   项按名称记账并失败，未知 trap 地址不得吞掉。
-- `BindJniGuestCoreSlots` 只绑定已有真实 M3 语义的 22 个 JNIEnv 基础 slot 与 4 个
+- `BindJniGuestCoreSlots` 只绑定已有真实 M3 语义的 50 个 JNIEnv slot 与 4 个
   JavaVM slot；引用、异常和线程状态复用同一环境，guest 输出指针在 VM 状态变更前预检，
   `GetStaticMethodID` 只精确查询统一 class registry，`NewStringUTF` 使用受检 guest C
   string、M3 Modified UTF-8 解码与 string store 后发布 local reference；
-  `CallStaticObjectMethod` 与 `CallStaticIntMethod` 按 method descriptor 解码 A32 variadic
-  参数并进入统一 invocation engine，且分别严格要求 object/array 与 int 返回；
+  10 种 `CallStatic*Method` 返回类型的普通、`V`、`A` 共 30 个槽按 method descriptor
+  分别解码 A32 variadic、对齐 `va_list` 与 8 字节步长 `jvalue[]`，再进入统一 invocation
+  engine；小整数符号/零扩展、float/double/long 双字返回及 void 均遵循 A32 guest ABI，
+  调用名与 descriptor 返回类型不符时明确失败；
   `GetArrayLength` 只解析统一环境中的 primitive array identity；
   `GetByteArrayRegion` 只接受统一 store 中的 byte array，按有符号 `jsize` 校验区间，
   从 A32 guest 栈读取第 5 个参数并一次性写入受检 guest 内存；错误 return kind、class、

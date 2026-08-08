@@ -278,6 +278,7 @@ add_library(ogplay_runtime
     src/runtime/integration/jni_guest_abi.cpp
     src/runtime/integration/jni_guest_bindings.cpp
     src/runtime/integration/jni_guest_dispatch.cpp
+    src/runtime/integration/jni_guest_static_calls.cpp
     src/runtime/integration/native_activity_runner.cpp
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/jni/jni.cpp

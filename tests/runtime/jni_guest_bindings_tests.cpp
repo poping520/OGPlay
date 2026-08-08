@@ -60,6 +60,10 @@ struct GuestBindingsFixture final {
         return bus.Read32(output);
     }
 
+    [[nodiscard]] std::uint32_t ReturnHighWord() const {
+        return cpu.GetState().Register(ogplay::cpu::CoreRegister::r1);
+    }
+
     void WriteString(const std::uint32_t offset,
                      const std::string_view value) {
         std::vector<std::byte> bytes;
@@ -136,7 +140,7 @@ private:
 
 TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
     GuestBindingsFixture fixture;
-    constexpr std::array<std::string_view, 21> environment_names{
+    constexpr std::string_view environment_names[]{
         "GetVersion",          "Throw",
         "ExceptionOccurred",   "ExceptionClear",
         "PushLocalFrame",      "PopLocalFrame",
@@ -146,6 +150,21 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
         "GetJavaVM",           "NewWeakGlobalRef",
         "DeleteWeakGlobalRef", "ExceptionCheck",
         "GetStaticMethodID",   "CallStaticObjectMethod",
+        "CallStaticObjectMethodV", "CallStaticObjectMethodA",
+        "CallStaticBooleanMethod", "CallStaticBooleanMethodV",
+        "CallStaticBooleanMethodA", "CallStaticByteMethod",
+        "CallStaticByteMethodV", "CallStaticByteMethodA",
+        "CallStaticCharMethod", "CallStaticCharMethodV",
+        "CallStaticCharMethodA", "CallStaticShortMethod",
+        "CallStaticShortMethodV", "CallStaticShortMethodA",
+        "CallStaticIntMethod", "CallStaticIntMethodV",
+        "CallStaticIntMethodA", "CallStaticLongMethod",
+        "CallStaticLongMethodV", "CallStaticLongMethodA",
+        "CallStaticFloatMethod", "CallStaticFloatMethodV",
+        "CallStaticFloatMethodA", "CallStaticDoubleMethod",
+        "CallStaticDoubleMethodV", "CallStaticDoubleMethodA",
+        "CallStaticVoidMethod", "CallStaticVoidMethodV",
+        "CallStaticVoidMethodA",
         "GetArrayLength",      "GetByteArrayRegion",
         "NewStringUTF"};
     for (const auto name : environment_names) {
@@ -351,7 +370,205 @@ TEST_CASE("guest JNI static int call preserves signed variadic result") {
         static_cast<void>(fixture.CallEnvironment(
             "CallStaticIntMethod", 407U, java_class.Value(),
             object_method->Value())),
-        "CallStaticIntMethod requires an int return descriptor",
+        "CallStaticIntMethod return type does not match method descriptor",
+        ogplay::runtime::JniGuestBindingError);
+}
+
+TEST_CASE("guest JNI static call family encodes every return ABI") {
+    GuestBindingsFixture fixture;
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        408U, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+    const auto identity = fixture.classes.RegisterClass(
+        {"fixture/StaticReturns",
+         {},
+         {{"object", "()Ljava/lang/Object;", "return.object", true},
+          {"boolean", "()Z", "return.boolean", true},
+          {"byte", "()B", "return.byte", true},
+          {"character", "()C", "return.character", true},
+          {"short", "()S", "return.short", true},
+          {"integer", "()I", "return.integer", true},
+          {"long", "()J", "return.long", true},
+          {"float", "()F", "return.float", true},
+          {"double", "()D", "return.double", true},
+          {"void", "()V", "return.void", true}},
+         {}});
+    const auto java_class =
+        fixture.environment.PublishLocalObject(408U, identity);
+    const auto object = fixture.environment.PublishLocalObject(
+        408U, ogplay::runtime::AllocateJniHostObjectIdentity());
+    fixture.invocations.RegisterHandler(
+        "return.object", [object](const auto&) {
+            return ogplay::runtime::JniValue{object};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.boolean", [](const auto&) {
+            return ogplay::runtime::JniValue{ogplay::runtime::JniBoolean{1}};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.byte", [](const auto&) {
+            return ogplay::runtime::JniValue{ogplay::runtime::JniByte{-2}};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.character", [](const auto&) {
+            return ogplay::runtime::JniValue{ogplay::runtime::JniChar{0xff01}};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.short", [](const auto&) {
+            return ogplay::runtime::JniValue{ogplay::runtime::JniShort{-300}};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.integer", [](const auto&) {
+            return ogplay::runtime::JniValue{ogplay::runtime::JniInt{-17}};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.long", [](const auto&) {
+            return ogplay::runtime::JniValue{
+                ogplay::runtime::JniLong{0x1122334455667788LL}};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.float", [](const auto&) {
+            return ogplay::runtime::JniValue{ogplay::runtime::JniFloat{1.5F}};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.double", [](const auto&) {
+            return ogplay::runtime::JniValue{ogplay::runtime::JniDouble{-2.25}};
+        });
+    fixture.invocations.RegisterHandler(
+        "return.void", [](const auto&) {
+            return ogplay::runtime::JniValue{std::monostate{}};
+        });
+    fixture.Seal();
+
+    struct Expected final {
+        std::string_view suffix;
+        std::string_view method;
+        std::string_view descriptor;
+        std::uint32_t low;
+        std::uint32_t high;
+    };
+    constexpr std::array expected{
+        Expected{"Object", "object", "()Ljava/lang/Object;", 0U, 0U},
+        Expected{"Boolean", "boolean", "()Z", 1U, 0U},
+        Expected{"Byte", "byte", "()B", 0xfffffffeU, 0U},
+        Expected{"Char", "character", "()C", 0xff01U, 0U},
+        Expected{"Short", "short", "()S", 0xfffffed4U, 0U},
+        Expected{"Int", "integer", "()I", 0xffffffefU, 0U},
+        Expected{"Long", "long", "()J", 0x55667788U, 0x11223344U},
+        Expected{"Float", "float", "()F", 0x3fc00000U, 0U},
+        Expected{"Double", "double", "()D", 0U, 0xc0020000U},
+        Expected{"Void", "void", "()V",
+                 ogplay::runtime::kJniGuestEnvironment.Value(), 0U},
+    };
+    for (const auto& item : expected) {
+        const auto method = fixture.classes.GetMethodId(
+            identity, std::string{item.method}, std::string{item.descriptor},
+            true);
+        REQUIRE(method.has_value());
+        for (const auto variant : {std::string_view{""},
+                                   std::string_view{"V"},
+                                   std::string_view{"A"}}) {
+            const auto name = std::string{"CallStatic"} +
+                              std::string{item.suffix} + "Method" +
+                              std::string{variant};
+            CAPTURE(name);
+            const auto low = fixture.CallEnvironment(
+                name, 408U, java_class.Value(), method->Value());
+            CHECK(low == (item.suffix == "Object" ? object.Value()
+                                                   : item.low));
+            if (item.suffix == "Long" || item.suffix == "Double") {
+                CHECK(fixture.ReturnHighWord() == item.high);
+            }
+        }
+    }
+}
+
+TEST_CASE("guest JNI static V and A calls decode their distinct A32 layouts") {
+    GuestBindingsFixture fixture;
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        409U, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+    const auto identity = fixture.classes.RegisterClass(
+        {"fixture/StaticArguments",
+         {},
+         {{"mix", "(IJFDLjava/lang/Object;)D", "arguments.mix", true}},
+         {}});
+    const auto method = fixture.classes.GetMethodId(
+        identity, "mix", "(IJFDLjava/lang/Object;)D", true);
+    REQUIRE(method.has_value());
+    const auto java_class =
+        fixture.environment.PublishLocalObject(409U, identity);
+    const auto object = fixture.environment.PublishLocalObject(
+        409U, ogplay::runtime::AllocateJniHostObjectIdentity());
+    fixture.invocations.RegisterHandler(
+        "arguments.mix", [object](const ogplay::runtime::JniInvocation& call) {
+            REQUIRE(call.arguments.size() == 5U);
+            CHECK(std::get<ogplay::runtime::JniInt>(call.arguments[0]) == -7);
+            CHECK(std::get<ogplay::runtime::JniLong>(call.arguments[1]) ==
+                  0x1122334455667788LL);
+            CHECK(std::get<ogplay::runtime::JniFloat>(call.arguments[2]) ==
+                  doctest::Approx(1.25F));
+            CHECK(std::get<ogplay::runtime::JniDouble>(call.arguments[3]) ==
+                  doctest::Approx(-9.5));
+            CHECK(std::get<ogplay::runtime::JniReference>(call.arguments[4]) ==
+                  object);
+            return ogplay::runtime::JniValue{
+                call.argument_source == ogplay::runtime::JniArgumentSource::va_list
+                    ? ogplay::runtime::JniDouble{12.5}
+                    : ogplay::runtime::JniDouble{-3.5}};
+        });
+    const auto write64 = [&fixture](const ogplay::memory::GuestAddress address,
+                                    const std::uint64_t value) {
+        fixture.bus.Write32(address, static_cast<std::uint32_t>(value));
+        fixture.bus.Write32(address.Add(4U),
+                            static_cast<std::uint32_t>(value >> 32U));
+    };
+    const auto va_list = fixture.output.Add(0x400U);
+    fixture.bus.Write32(va_list,
+                        std::bit_cast<std::uint32_t>(
+                            ogplay::runtime::JniInt{-7}));
+    write64(va_list.Add(8U), 0x1122334455667788ULL);
+    write64(va_list.Add(16U),
+            std::bit_cast<std::uint64_t>(
+                ogplay::runtime::JniDouble{1.25}));
+    write64(va_list.Add(24U),
+            std::bit_cast<std::uint64_t>(
+                ogplay::runtime::JniDouble{-9.5}));
+    fixture.bus.Write32(va_list.Add(32U), object.Value());
+
+    const auto values = fixture.output.Add(0x500U);
+    fixture.bus.Write32(values,
+                        std::bit_cast<std::uint32_t>(
+                            ogplay::runtime::JniInt{-7}));
+    write64(values.Add(8U), 0x1122334455667788ULL);
+    fixture.bus.Write32(values.Add(16U),
+                        std::bit_cast<std::uint32_t>(
+                            ogplay::runtime::JniFloat{1.25F}));
+    write64(values.Add(24U),
+            std::bit_cast<std::uint64_t>(
+                ogplay::runtime::JniDouble{-9.5}));
+    fixture.bus.Write32(values.Add(32U), object.Value());
+    fixture.Seal();
+
+    CHECK(fixture.CallEnvironment(
+              "CallStaticDoubleMethodV", 409U, java_class.Value(),
+              method->Value(), va_list.Value()) == 0U);
+    CHECK(fixture.ReturnHighWord() == 0x40290000U);
+    CHECK(fixture.CallEnvironment(
+              "CallStaticDoubleMethodA", 409U, java_class.Value(),
+              method->Value(), values.Value()) == 0U);
+    CHECK(fixture.ReturnHighWord() == 0xc00c0000U);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "CallStaticDoubleMethodV", 409U, java_class.Value(),
+            method->Value(), 0U)),
+        "JNI guest va_list pointer is null",
+        ogplay::runtime::JniGuestBindingError);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "CallStaticDoubleMethodA", 409U, java_class.Value(),
+            method->Value(), 0U)),
+        "JNI guest jvalue array pointer is null",
         ogplay::runtime::JniGuestBindingError);
 }
 

@@ -45,6 +45,8 @@
   共有 capability 转发原生 context，GLES1-only capability 进入显式 fixed-pipeline state，
   `GL_TEXTURE_2D` 按 active texture unit 隔离。ANGLE 失败时不提交；无 current frame 或
   非法枚举明确失败。
+- GLES1 `glGenTextures`/`glDeleteTextures` 复用 ANGLE texture name 生命周期；`GLsizei`
+  必须非负，guest 名称数组在 ANGLE 状态变化前按线程完整预检，生成结果仅在成功后一次提交。
 - GLES1 matrix state 批次把 modelview/projection/texture 三套列主序矩阵栈隔离保存，
   `load/push/pop/rotate/translate` 按 OpenGL 后乘语义更新。`glLoadMatrixf` 必须先通过
   `AddressSpace` 完整读取 16 个 little-endian `GLfloat` 并验证有限值；坏 guest 地址、

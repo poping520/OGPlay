@@ -342,10 +342,27 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glLoadMatrixf",
                            {fixture.output.Value()}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glPopMatrix") == 0U);
-        CHECK(fixture.Call("libGLESv2.so", "glGenTextures",
-                           {1U, fixture.output.Value()}) == 0U);
+        CHECK_THROWS_AS(
+            fixture.Call("libGLESv1_CM.so", "glGenTextures", {1U, 0U}),
+            ogplay::gles::GuestTransferError);
+        CHECK_THROWS_WITH_AS(
+            fixture.Call("libGLESv1_CM.so", "glGenTextures",
+                         {std::bit_cast<std::uint32_t>(-1),
+                          fixture.output.Value()}),
+            "glGenTextures count cannot be negative", std::invalid_argument);
+        CHECK_THROWS_AS(
+            fixture.Call(
+                "libGLESv1_CM.so", "glGenTextures",
+                {2U, fixture.output.Add(fixture.memory.PageSize() - 4U).Value()}),
+            ogplay::memory::MemoryFault);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGenTextures",
+                           {2U, fixture.output.Value()}) == 0U);
         const auto texture = fixture.bus.Read32(fixture.output, 1U);
         REQUIRE(texture != 0U);
+        const auto second_texture =
+            fixture.bus.Read32(fixture.output.Add(4U), 1U);
+        REQUIRE(second_texture != 0U);
+        CHECK(second_texture != texture);
         CHECK(fixture.Call("libGLESv1_CM.so", "glActiveTexture",
                            {0x84C0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glEnable",
@@ -415,8 +432,8 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glDisable",
                            {0x0C11U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glFinish") == 0U);
-        CHECK(fixture.Call("libGLESv2.so", "glDeleteTextures",
-                           {1U, fixture.output.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDeleteTextures",
+                           {2U, fixture.output.Value()}) == 0U);
         fixture.boundary.CloseManagedSurface();
     }
     CHECK_THROWS_WITH_AS(

@@ -158,6 +158,13 @@ DirectAssetImplementations(const session::TitleProfile& profile) {
     return result;
 }
 
+[[nodiscard]] bool ProfileEnablesQuirk(
+    const session::TitleProfile& profile, const std::string_view id) {
+    return profile.quirks.has_value() &&
+           std::ranges::find(profile.quirks->enabled, id) !=
+               profile.quirks->enabled.end();
+}
+
 [[nodiscard]] std::vector<runtime::VfsMountEntry> ReadApkAssets(
     const std::span<const std::byte> apk_bytes,
     const loader::ApkArchive& archive) {
@@ -319,7 +326,9 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             {profile.runtime.api_level, root_name, module_inputs,
              NativeBackend(), profile.runtime.surface.width,
              profile.runtime.surface.height, UINT64_C(200000000),
-             supersample_factor, &filesystem, {}, direct_assets});
+             supersample_factor, &filesystem, {}, direct_assets,
+             {.normalize_gles1_material_front_face = ProfileEnablesQuirk(
+                  profile, "gles1_material_front_face")}});
         auto lifecycle = session::ProfileGuestLifecycle::Create(
             profile, launch->native_calls,
             {

@@ -22,6 +22,7 @@
 #include "ogplay/gles/supersample.h"
 #include "ogplay/runtime/integration/android_boundary_gles.h"
 #include "android_boundary_gles1.h"
+#include "android_boundary_gles1_fixed.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -131,7 +132,8 @@ class AndroidBoundaryHle::Impl final {
 public:
     Impl(memory::AddressSpace& address_space, const gles::AngleBackend backend,
          const std::uint32_t width, const std::uint32_t height,
-         const std::uint32_t supersample_factor)
+         const std::uint32_t supersample_factor,
+         const AndroidBoundaryOptions options)
         : address_space_(address_space), backend_(backend),
           layout_(gles::MakeSupersampleLayout(width, height, supersample_factor)),
           symbols_(BuildSymbols()), provider_(symbols_),
@@ -141,6 +143,8 @@ public:
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });
+        gles1_state_.Fixed().SetMaterialFrontFaceQuirk(
+            options.normalize_gles1_material_front_face);
     }
 
     void MapThunks() {
@@ -754,9 +758,10 @@ AndroidBoundaryHle::AndroidBoundaryHle(memory::AddressSpace& address_space,
                                        const gles::AngleBackend backend,
                                        const std::uint32_t width,
                                        const std::uint32_t height,
-                                       const std::uint32_t supersample_factor)
+                                       const std::uint32_t supersample_factor,
+                                       const AndroidBoundaryOptions options)
     : impl_(std::make_unique<Impl>(address_space, backend, width, height,
-                                   supersample_factor)) {}
+                                   supersample_factor, options)) {}
 AndroidBoundaryHle::~AndroidBoundaryHle() = default;
 void AndroidBoundaryHle::MapThunks() { impl_->MapThunks(); }
 void AndroidBoundaryHle::OpenManagedSurface() {

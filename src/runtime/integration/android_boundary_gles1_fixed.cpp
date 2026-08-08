@@ -122,6 +122,10 @@ void RequireCount(const std::span<const float> values, const std::size_t expecte
 
 AndroidBoundaryGles1FixedState::AndroidBoundaryGles1FixedState() { Reset(); }
 
+void AndroidBoundaryGles1FixedState::SetMaterialFrontFaceQuirk(const bool enabled) noexcept {
+    normalize_material_front_face_ = enabled;
+}
+
 void AndroidBoundaryGles1FixedState::Reset() {
     fog_ = {{kGles1FogMode, {static_cast<float>(kFogExp)}},
             {kGles1FogDensity, {1.0F}},
@@ -195,7 +199,10 @@ void AndroidBoundaryGles1FixedState::SetLight(const std::uint32_t light, const s
 void AndroidBoundaryGles1FixedState::SetMaterial(const std::uint32_t face,
                                                  const std::uint32_t pname,
                                                  const std::span<const float> values) {
-    if (face != kGles1FrontAndBack) {
+    const auto accepted_face = normalize_material_front_face_ && face == 0x0404U
+                                   ? kGles1FrontAndBack
+                                   : face;
+    if (accepted_face != kGles1FrontAndBack) {
         throw std::invalid_argument("GLES1 material face must be GL_FRONT_AND_BACK: " +
                                     std::to_string(face));
     }

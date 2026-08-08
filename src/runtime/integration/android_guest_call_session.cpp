@@ -47,7 +47,8 @@ class AndroidGuestCallSession::Impl final {
 public:
     explicit Impl(const AndroidGuestCallSessionRequest& request)
         : boundary_(address_space_, request.backend, request.width,
-                    request.height, request.supersample_factor),
+                    request.height, request.supersample_factor,
+                    request.boundary_options),
           guest_jni_(address_space_),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           jni_dispatcher_(ledger_), invocations_(classes_),

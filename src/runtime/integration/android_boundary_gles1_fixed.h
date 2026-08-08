@@ -26,6 +26,7 @@ class AndroidBoundaryGles1FixedState final {
   public:
     AndroidBoundaryGles1FixedState();
 
+    void SetMaterialFrontFaceQuirk(bool enabled) noexcept;
     void Reset();
     void SetFog(std::uint32_t pname, std::span<const float> values);
     void SetLightModel(std::uint32_t pname, std::span<const float> values);
@@ -42,6 +43,7 @@ class AndroidBoundaryGles1FixedState final {
     std::map<std::uint32_t, std::vector<float>> light_model_;
     std::map<std::uint64_t, std::vector<float>> lights_;
     std::map<std::uint32_t, std::vector<float>> material_;
+    bool normalize_material_front_face_{};
 };
 
 void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,

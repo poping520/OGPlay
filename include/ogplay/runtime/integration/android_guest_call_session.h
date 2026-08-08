@@ -31,6 +31,7 @@ struct AndroidGuestCallSessionRequest final {
     VirtualFileSystem* filesystem{};
     std::function<void(std::string_view)> progress;
     std::optional<FrameworkDirectAssetImplementations> direct_assets{};
+    AndroidBoundaryOptions boundary_options{};
 };
 
 class AndroidGuestCallSessionError final : public std::runtime_error {

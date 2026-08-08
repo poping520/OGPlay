@@ -33,12 +33,17 @@ struct AndroidBoundaryFrame final {
     std::vector<std::uint8_t> rgba8;
 };
 
+struct AndroidBoundaryOptions final {
+    bool normalize_gles1_material_front_face{};
+};
+
 class AndroidBoundaryHle final : public core::GpuStateProvider {
 public:
     AndroidBoundaryHle(memory::AddressSpace& address_space,
                        gles::AngleBackend backend,
                        std::uint32_t width, std::uint32_t height,
-                       std::uint32_t supersample_factor = 1);
+                       std::uint32_t supersample_factor = 1,
+                       AndroidBoundaryOptions options = {});
     ~AndroidBoundaryHle();
     AndroidBoundaryHle(const AndroidBoundaryHle&) = delete;
     AndroidBoundaryHle& operator=(const AndroidBoundaryHle&) = delete;

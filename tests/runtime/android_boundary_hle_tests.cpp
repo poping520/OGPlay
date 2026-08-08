@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "ogplay/cpu/interpreter.h"
@@ -144,9 +145,32 @@ TEST_CASE("GLES1 shade model state validates and resets") {
         state.SetShadeModel(0U),
         "glShadeModel mode must be GL_FLAT or GL_SMOOTH",
         std::invalid_argument);
+    auto transfer = state.TransferState();
+    transfer.BindBuffer(0x8892U, 7U);
+    state.SetTransferState(std::move(transfer));
+    CHECK(state.TransferState().Snapshot().array_buffer == 7U);
+    state.SetHint(0x0C50U, 0x1102U);
+    CHECK(state.Hint(0x0C50U) == 0x1102U);
+    CHECK_THROWS_WITH_AS(
+        state.SetHint(0U, 0x1100U),
+        "glHint target is invalid for GLES1", std::invalid_argument);
+    state.SetCapability(0x0DE1U, true);
+    CHECK(state.Capability(0x0DE1U));
+    state.SetActiveTexture(0x84C1U);
+    CHECK_FALSE(state.Capability(0x0DE1U));
+    state.SetCapability(0x0DE1U, true);
+    CHECK(state.Capability(0x0DE1U));
+    CHECK_THROWS_WITH_AS(
+        state.SetCapability(0U, true), "GLES1 capability is invalid",
+        std::invalid_argument);
     state.Reset();
     CHECK(state.ShadeModel() ==
           ogplay::runtime::detail::kGles1SmoothShadeModel);
+    CHECK(state.TransferState().Snapshot().array_buffer == 0U);
+    CHECK(state.Hint(0x0C50U) ==
+          ogplay::runtime::detail::kGles1DontCare);
+    CHECK(state.ActiveTexture() == 0x84C0U);
+    CHECK_FALSE(state.Capability(0x0DE1U));
 }
 
 TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
@@ -184,10 +208,94 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                      {std::bit_cast<std::uint32_t>(1.0F)}),
         "glClearDepthf has no current ANGLE frame",
         std::runtime_error);
+    const std::array scalar_calls{
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glActiveTexture", {0x84C0U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glBindBuffer", {0x8892U, 0U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glBindTexture", {0x0DE1U, 0U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glBlendFunc", {1U, 0U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glColorMask", {1U, 1U, 1U, 1U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glCullFace", {0x0405U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glDepthFunc", {0x0201U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glDepthMask", {1U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glDisable", {0x0C11U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glEnable", {0x0C11U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glFinish", {}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glFrontFace", {0x0901U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glGetError", {}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glHint", {0x8192U, 0x1100U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glPixelStorei", {0x0CF5U, 4U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glTexParameterf",
+            {0x0DE1U, 0x2801U, std::bit_cast<std::uint32_t>(9729.0F)}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glTexParameteri", {0x0DE1U, 0x2800U, 0x2601U}},
+    };
+    for (const auto& [symbol, arguments] : scalar_calls) {
+        CAPTURE(symbol);
+        const auto expected =
+            std::string(symbol) + " has no current ANGLE frame";
+        CHECK_THROWS_WITH_AS(
+            fixture.Call("libGLESv1_CM.so", symbol, arguments),
+            expected.c_str(), std::runtime_error);
+    }
     if (ogplay::gles::IsNativeAngleEglAvailable()) {
         fixture.boundary.OpenManagedSurface();
+        CHECK(fixture.Call("libGLESv2.so", "glGenTextures",
+                           {1U, fixture.output.Value()}) == 0U);
+        const auto texture = fixture.bus.Read32(fixture.output, 1U);
+        REQUIRE(texture != 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glActiveTexture",
+                           {0x84C0U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glEnable",
+                           {0x0DE1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDisable",
+                           {0x0DE1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glBindBuffer",
+                           {0x8892U, 0U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
+                           {0x0DE1U, texture}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glBlendFunc",
+                           {1U, 0U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glColorMask",
+                           {1U, 1U, 1U, 1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glCullFace",
+                           {0x0405U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDepthFunc",
+                           {0x0201U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDepthMask", {1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glFrontFace",
+                           {0x0901U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glHint",
+                           {0x8192U, 0x1100U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glHint",
+                           {0x0C50U, 0x1102U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glPixelStorei",
+                           {0x0CF5U, 4U}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexParameterf",
+                  {0x0DE1U, 0x2801U,
+                   std::bit_cast<std::uint32_t>(9729.0F)}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteri",
+                           {0x0DE1U, 0x2800U, 0x2601U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glViewport", {0, 0, 4, 3}) == 0);
-        CHECK(fixture.Call("libGLESv1_CM.so", "glScissor", {0, 0, 4, 3}) == 0);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glScissor", {0, 0, 2, 3}) == 0);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x0C11U}) == 0);
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glShadeModel",
                   {ogplay::runtime::detail::kGles1SmoothShadeModel}) == 0);
@@ -214,6 +322,14 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(frame->rgba8[0] == doctest::Approx(32).epsilon(0.04));
         CHECK(frame->rgba8[1] == doctest::Approx(64).epsilon(0.04));
         CHECK(frame->rgba8[2] == doctest::Approx(128).epsilon(0.04));
+        CHECK(frame->rgba8[12] == 0U);
+        CHECK(frame->rgba8[13] == 0U);
+        CHECK(frame->rgba8[14] == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDisable",
+                           {0x0C11U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glFinish") == 0U);
+        CHECK(fixture.Call("libGLESv2.so", "glDeleteTextures",
+                           {1U, fixture.output.Value()}) == 0U);
         fixture.boundary.CloseManagedSurface();
     }
     CHECK_THROWS_WITH_AS(

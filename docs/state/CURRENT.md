@@ -29,11 +29,14 @@
 
 ## 进行中
 
-- 无。exact-APK 已越过剩余 7 个 fixed-pipeline 状态/查询入口，下一精确工作是
-  `glCompressedTexImage2D`（thunk 22）。
+- 无。exact-APK 已越过剩余 4 个 texture image/copy 入口，下一精确工作是
+  `glEnableClientState`（thunk 38）。
 
 ## 最近完成
 
+- [WU-0273] 一次批量闭合 `glCompressedTexImage2D`、`glCopyTexImage2D`、
+  `glTexImage2D` 与 `glTexSubImage2D`，guest 像素受检搬运并在 level 0 消费 automatic
+  mipmap 状态。exact-APK 推进到 `glEnableClientState`。
 - [WU-0272] 一次批量闭合 `glAlphaFunc`、`glClientActiveTexture`、`glColor4f/ub`、
   `glGetFloatv`、`glTexEnvfv/i`；最大 anisotropy 来自真实 ANGLE，其他 legacy 状态按
   context/texture unit 保存。exact-APK 推进到 `glCompressedTexImage2D`。
@@ -70,11 +73,9 @@
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
-GLES1 handler 对照得出；当前已实现 47 个，尚余 15 个。它只表示该目标实际导入且尚未
+GLES1 handler 对照得出；当前已实现 51 个，尚余 11 个。它只表示该目标实际导入且尚未
 实现的入口，不代表完整 GLES1 命名空间。
 
-- 纹理资源/查询（4）：`glCompressedTexImage2D`、`glCopyTexImage2D`、`glTexImage2D`、
-  `glTexSubImage2D`。
 - Client array/draw（8）：`glColorPointer`、`glDisableClientState`、`glDrawArrays`、
   `glDrawElements`、`glEnableClientState`、`glNormalPointer`、`glTexCoordPointer`、
   `glVertexPointer`。
@@ -83,8 +84,8 @@ GLES1 handler 对照得出；当前已实现 47 个，尚余 15 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 批量实现剩余 4 个 GLES1 texture upload/copy 入口，并消费 automatic mipmap 状态。
-2. 随后按真实边界闭合其余纹理、fixed-pipeline、client array/draw 与 matrix-palette extension。
+1. 批量实现 8 个 GLES1 client array/draw 入口，优先越过 `glEnableClientState`。
+2. 随后闭合 3 个 matrix-palette extension，并让 fixed-pipeline draw 消费已保存状态。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

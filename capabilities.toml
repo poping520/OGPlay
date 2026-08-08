@@ -511,9 +511,14 @@ test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk 
 note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 GLES1 专属分槽只读 guest 区域，并与 GLES2 查询槽隔离"
 
 [runtime.gles1_generate_mipmap_state]
-status = "partial"
+status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0271 按 active unit 与 texture object 保存 GL_GENERATE_MIPMAP，delete/reset 同步；纹理上传消费与实际 mipmap 生成尚未实现"
+note = "M5 WU-0271 保存 GL_GENERATE_MIPMAP 状态；WU-0273 在四个 level-0 texture image/copy 路径成功后通过 ANGLE 实际生成 mipmap"
+
+[runtime.gles1_texture_images]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0273 批量接入 compressed/copy/image/sub-image 四个 GLES1 texture 入口，guest 像素传输受检并服从 unpack alignment"
 
 [runtime.gles1_legacy_fixed_state]
 status = "partial"

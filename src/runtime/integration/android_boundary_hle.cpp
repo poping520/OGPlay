@@ -144,6 +144,11 @@ public:
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });
+        detail::BindAndroidBoundaryGles1Textures(
+            gles1_dispatch_, gles1_state_, address_space_,
+            [this](const std::string_view operation) -> gles::AngleFrame& {
+                return RequireFrame(operation);
+            });
         detail::BindAndroidBoundaryGles1Queries(
             gles1_dispatch_, gles1_query_strings_,
             [this](const std::uint32_t parameter) {
@@ -302,7 +307,6 @@ private:
         }
         Write32(address, value, thread_id);
     }
-
     std::uint32_t Read32(const std::uint32_t address,
                          const std::uint64_t thread_id,
                          const std::string_view operation) const {
@@ -320,7 +324,6 @@ private:
         }
         return value;
     }
-
     std::string ReadString(const std::uint32_t address,
                            const std::size_t byte_count,
                            const std::uint64_t thread_id,
@@ -340,7 +343,6 @@ private:
         }
         return result;
     }
-
     std::string ReadCString(const std::uint32_t address,
                             const std::size_t maximum_bytes,
                             const std::uint64_t thread_id,
@@ -363,7 +365,6 @@ private:
         throw std::length_error(std::string(operation) +
                                 " guest string exceeds its byte limit");
     }
-
     std::vector<std::string> ReadShaderSources(
         const std::array<std::uint32_t, 4>& args,
         const std::uint64_t thread_id) const {
@@ -405,7 +406,6 @@ private:
         }
         return result;
     }
-
     std::uint32_t StackWord(const cpu::A32State& state, const std::uint32_t offset) {
         std::array<std::byte, 4> bytes{};
         address_space_.Read(memory::GuestAddress{
@@ -418,7 +418,6 @@ private:
         }
         return value;
     }
-
     std::uint32_t PollAll(const std::array<std::uint32_t, 4>& args,
                           const std::uint64_t thread_id) {
         const auto timeout = std::bit_cast<std::int32_t>(args[0]);

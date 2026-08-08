@@ -78,6 +78,21 @@ public:
                         std::int32_t height, std::int32_t border,
                         std::uint32_t format, std::uint32_t type,
                         std::optional<std::span<const std::byte>> pixels);
+    void CompressedTextureImage2D(std::uint32_t target, std::int32_t level,
+                                  std::uint32_t internal_format,
+                                  std::int32_t width, std::int32_t height,
+                                  std::int32_t border,
+                                  std::span<const std::byte> data);
+    void CopyTextureImage2D(std::uint32_t target, std::int32_t level,
+                            std::uint32_t internal_format, std::int32_t x,
+                            std::int32_t y, std::int32_t width,
+                            std::int32_t height, std::int32_t border);
+    void TextureSubImage2D(std::uint32_t target, std::int32_t level,
+                           std::int32_t x_offset, std::int32_t y_offset,
+                           std::int32_t width, std::int32_t height,
+                           std::uint32_t format, std::uint32_t type,
+                           std::span<const std::byte> pixels);
+    void GenerateMipmap(std::uint32_t target);
     void SetVertexAttributeEnabled(std::uint32_t index, bool enabled);
     void VertexAttributePointer(std::uint32_t index, std::int32_t size,
                                 std::uint32_t type, bool normalized,

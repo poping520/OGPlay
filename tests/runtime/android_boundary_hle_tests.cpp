@@ -157,10 +157,23 @@ TEST_CASE("GLES1 shade model state validates and resets") {
         "glHint target is invalid for GLES1", std::invalid_argument);
     state.SetCapability(0x0DE1U, true);
     CHECK(state.Capability(0x0DE1U));
+    state.BindTexture(0x0DE1U, 7U);
+    CHECK_FALSE(state.GenerateMipmapEnabled(0x0DE1U));
+    state.SetGenerateMipmap(0x0DE1U, true);
+    CHECK(state.GenerateMipmapEnabled(0x0DE1U));
     state.SetActiveTexture(0x84C1U);
     CHECK_FALSE(state.Capability(0x0DE1U));
+    state.BindTexture(0x0DE1U, 8U);
+    CHECK_FALSE(state.GenerateMipmapEnabled(0x0DE1U));
     state.SetCapability(0x0DE1U, true);
     CHECK(state.Capability(0x0DE1U));
+    const std::array deleted_textures{7U};
+    state.DeleteTextures(deleted_textures);
+    state.SetActiveTexture(0x84C0U);
+    CHECK_FALSE(state.GenerateMipmapEnabled(0x0DE1U));
+    CHECK_THROWS_WITH_AS(
+        state.SetGenerateMipmap(0U, true),
+        "GLES1 texture target must be GL_TEXTURE_2D", std::invalid_argument);
     CHECK_THROWS_WITH_AS(
         state.SetCapability(0U, true), "GLES1 capability is invalid",
         std::invalid_argument);
@@ -172,6 +185,7 @@ TEST_CASE("GLES1 shade model state validates and resets") {
           ogplay::runtime::detail::kGles1DontCare);
     CHECK(state.ActiveTexture() == 0x84C0U);
     CHECK_FALSE(state.Capability(0x0DE1U));
+    CHECK_FALSE(state.GenerateMipmapEnabled(0x0DE1U));
 }
 
 TEST_CASE("GLES1 matrix state composes and bounds stacks") {
@@ -405,6 +419,17 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                   "libGLESv1_CM.so", "glTexParameterf",
                   {0x0DE1U, 0x2801U,
                    std::bit_cast<std::uint32_t>(9729.0F)}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexParameterf",
+                  {0x0DE1U, ogplay::runtime::detail::kGles1GenerateMipmap,
+                   std::bit_cast<std::uint32_t>(0.0F)}) == 0U);
+        CHECK_THROWS_WITH_AS(
+            fixture.Call(
+                "libGLESv1_CM.so", "glTexParameterf",
+                {0x0DE1U, ogplay::runtime::detail::kGles1GenerateMipmap,
+                 std::bit_cast<std::uint32_t>(2.0F)}),
+            "GLES1 GL_GENERATE_MIPMAP must be GL_FALSE or GL_TRUE",
+            std::invalid_argument);
         CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteri",
                            {0x0DE1U, 0x2800U, 0x2601U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);

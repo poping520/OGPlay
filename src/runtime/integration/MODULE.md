@@ -47,6 +47,9 @@
   非法枚举明确失败。
 - GLES1 `glGenTextures`/`glDeleteTextures` 复用 ANGLE texture name 生命周期；`GLsizei`
   必须非负，guest 名称数组在 ANGLE 状态变化前按线程完整预检，生成结果仅在成功后一次提交。
+- GLES1 `GL_GENERATE_MIPMAP` 是按 texture object 保存的 fixed 状态，不得转发 GLES2；
+  active unit/binding/delete/reset 必须同步。值只接受 `GL_FALSE`/`GL_TRUE`，后续纹理上传
+  负责消费 true 状态并执行实际 mipmap 生成。
 - GLES1 `glGetString` 只接受 vendor/renderer/version/extensions，查询真实 ANGLE context
   后写入 GLES1 专属、分槽且只读的 guest 页；不得与 GLES2 shading-language 槽复用地址。
 - GLES1 matrix state 批次把 modelview/projection/texture 三套列主序矩阵栈隔离保存，

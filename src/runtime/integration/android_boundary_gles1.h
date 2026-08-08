@@ -25,6 +25,7 @@ inline constexpr std::uint32_t kGles1FlatShadeModel = 0x1D00U;
 inline constexpr std::uint32_t kGles1SmoothShadeModel = 0x1D01U;
 inline constexpr std::uint32_t kGles1DontCare = 0x1100U;
 inline constexpr std::uint32_t kGles1GenerateMipmapHint = 0x8192U;
+inline constexpr std::uint32_t kGles1GenerateMipmap = 0x8191U;
 inline constexpr std::uint32_t kGles1Modelview = 0x1700U;
 inline constexpr std::uint32_t kGles1Projection = 0x1701U;
 inline constexpr std::uint32_t kGles1Texture = 0x1702U;
@@ -71,6 +72,10 @@ public:
     [[nodiscard]] std::uint32_t Hint(std::uint32_t target) const;
     void SetActiveTexture(std::uint32_t texture) noexcept;
     [[nodiscard]] std::uint32_t ActiveTexture() const noexcept;
+    void BindTexture(std::uint32_t target, std::uint32_t texture);
+    void DeleteTextures(std::span<const std::uint32_t> textures) noexcept;
+    void SetGenerateMipmap(std::uint32_t target, bool enabled);
+    [[nodiscard]] bool GenerateMipmapEnabled(std::uint32_t target) const;
     void SetCapability(std::uint32_t capability, bool enabled);
     [[nodiscard]] bool Capability(std::uint32_t capability) const;
     [[nodiscard]] AndroidBoundaryGles1MatrixState& Matrices() noexcept;
@@ -84,6 +89,8 @@ private:
                                        kGles1DontCare, kGles1DontCare,
                                        kGles1DontCare};
     std::uint32_t active_texture_{0x84C0U};
+    std::map<std::uint32_t, std::uint32_t> bound_textures_;
+    std::map<std::uint32_t, bool> generate_mipmap_;
     std::map<std::uint64_t, bool> capabilities_;
     gles::GlesTransferState transfer_state_;
     AndroidBoundaryGles1MatrixState matrices_;

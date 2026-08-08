@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "ogplay/memory/address_space.h"
+#include "android_boundary_gles1_fixed.h"
 
 namespace ogplay::runtime::detail {
 namespace {
@@ -243,6 +244,13 @@ const std::vector<Gles1Matrix>& AndroidBoundaryGles1MatrixState::Stack(
     throw std::invalid_argument("glMatrixMode mode is invalid for GLES1");
 }
 
+AndroidBoundaryGles1State::AndroidBoundaryGles1State()
+    : fixed_(std::make_unique<AndroidBoundaryGles1FixedState>()) {
+    Reset();
+}
+
+AndroidBoundaryGles1State::~AndroidBoundaryGles1State() = default;
+
 void AndroidBoundaryGles1State::Reset() {
     shade_model_ = kGles1SmoothShadeModel;
     hints_.fill(kGles1DontCare);
@@ -250,6 +258,7 @@ void AndroidBoundaryGles1State::Reset() {
     capabilities_.clear();
     transfer_state_ = {};
     matrices_.Reset();
+    fixed_->Reset();
 }
 
 void AndroidBoundaryGles1State::SetShadeModel(const std::uint32_t mode) {
@@ -318,6 +327,15 @@ AndroidBoundaryGles1State::Matrices() const noexcept {
     return matrices_;
 }
 
+AndroidBoundaryGles1FixedState& AndroidBoundaryGles1State::Fixed() noexcept {
+    return *fixed_;
+}
+
+const AndroidBoundaryGles1FixedState&
+AndroidBoundaryGles1State::Fixed() const noexcept {
+    return *fixed_;
+}
+
 std::int32_t ScaleAndroidBoundaryViewportComponent(
     const std::int32_t value, const std::uint32_t factor) {
     const auto scaled = static_cast<std::int64_t>(value) * factor;
@@ -335,6 +353,8 @@ void BindAndroidBoundaryGles1Core(
     if (supersample_factor == 0 || !require_frame) {
         throw std::invalid_argument("GLES1 boundary binding is incomplete");
     }
+    BindAndroidBoundaryGles1FixedState(
+        dispatch, state.Fixed(), address_space, require_frame);
     dispatch.Bind(
         "glMatrixMode",
         [&state, require_frame](

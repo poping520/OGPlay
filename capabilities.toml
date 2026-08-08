@@ -600,6 +600,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0263 批量绑定目标初始化路径的 7 个 GLES1 浮点矩阵入口；Windows-x64 ANGLE CTest 403/403 与 exact-APK smoke 已验收"
 
+[runtime.gles1_lighting_material_fog_state]
+status = "complete"
+test = "tests/runtime/android_boundary_gles1_fixed_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0264 按 GLES1 规范绑定 7 个 lighting/material/fog 入口并保存可重置受检状态；macOS-arm64 ANGLE CTest 405 项中行为测试全过，exact-APK 暴露 GL_FRONT material face 兼容边界"
+
 [gles.gles1_extension_catalog]
 status = "complete"
 test = "tools.gles1_extensions_catalog_current"

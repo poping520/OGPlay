@@ -327,7 +327,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
              NativeBackend(), profile.runtime.surface.width,
              profile.runtime.surface.height, UINT64_C(200000000),
              supersample_factor, &filesystem, {}, direct_assets,
-             {.normalize_gles1_material_front_face = ProfileEnablesQuirk(
+             {.allow_gles1_material_single_face = ProfileEnablesQuirk(
                   profile, "gles1_material_front_face")}});
         auto lifecycle = session::ProfileGuestLifecycle::Create(
             profile, launch->native_calls,

@@ -18,7 +18,7 @@ constexpr std::uint32_t kConstantAttenuation = 0x1207U;
 
 } // namespace
 
-TEST_CASE("GLES1 material front face quirk is required when disabled") {
+TEST_CASE("GLES1 single-face material quirk is required when disabled") {
     ogplay::runtime::detail::AndroidBoundaryGles1FixedState state;
     CHECK(state.Fog(ogplay::runtime::detail::kGles1FogDensity)[0] == 1.0F);
     CHECK(state.LightModel(ogplay::runtime::detail::kGles1LightModelAmbient)[0] == 0.2F);
@@ -56,6 +56,19 @@ TEST_CASE("GLES1 material front face quirk is required when disabled") {
     CHECK_THROWS_WITH_AS(
         state.SetMaterial(0x0404U, ogplay::runtime::detail::kGles1MaterialShininess, shininess),
         "GLES1 material face must be GL_FRONT_AND_BACK: 1028", std::invalid_argument);
+    CHECK_THROWS_WITH_AS(
+        state.SetMaterial(0x0405U, ogplay::runtime::detail::kGles1MaterialShininess, shininess),
+        "GLES1 material face must be GL_FRONT_AND_BACK: 1029", std::invalid_argument);
+    state.SetMaterialSingleFaceQuirk(true);
+    state.SetMaterial(ogplay::runtime::detail::kGles1Front,
+                      ogplay::runtime::detail::kGles1MaterialShininess, shininess);
+    const std::array back_shininess{32.0F};
+    state.SetMaterial(ogplay::runtime::detail::kGles1Back,
+                      ogplay::runtime::detail::kGles1MaterialShininess, back_shininess);
+    CHECK(state.Material(ogplay::runtime::detail::kGles1Front,
+                         ogplay::runtime::detail::kGles1MaterialShininess)[0] == 64.0F);
+    CHECK(state.Material(ogplay::runtime::detail::kGles1Back,
+                         ogplay::runtime::detail::kGles1MaterialShininess)[0] == 32.0F);
     const std::array not_finite{std::numeric_limits<float>::infinity()};
     CHECK_THROWS_WITH_AS(state.SetFog(ogplay::runtime::detail::kGles1FogDensity, not_finite),
                          "GLES1 fog value must be finite", std::invalid_argument);
@@ -64,6 +77,10 @@ TEST_CASE("GLES1 material front face quirk is required when disabled") {
     CHECK(state.Fog(ogplay::runtime::detail::kGles1FogColor)[2] == 0.0F);
     CHECK(state.Light(kLight0, ogplay::runtime::detail::kGles1LightPosition)[2] == 1.0F);
     CHECK(state.Material(ogplay::runtime::detail::kGles1MaterialShininess)[0] == 0.0F);
+    state.SetMaterial(ogplay::runtime::detail::kGles1Back,
+                      ogplay::runtime::detail::kGles1MaterialShininess, back_shininess);
+    CHECK(state.Material(ogplay::runtime::detail::kGles1Back,
+                         ogplay::runtime::detail::kGles1MaterialShininess)[0] == 32.0F);
 }
 
 TEST_CASE("GLES1 lighting material and fog handlers are explicit") {

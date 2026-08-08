@@ -34,7 +34,7 @@ struct AndroidBoundaryFrame final {
 };
 
 struct AndroidBoundaryOptions final {
-    bool normalize_gles1_material_front_face{};
+    bool allow_gles1_material_single_face{};
 };
 
 class AndroidBoundaryHle final : public core::GpuStateProvider {

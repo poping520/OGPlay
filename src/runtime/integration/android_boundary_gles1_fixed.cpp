@@ -122,8 +122,8 @@ void RequireCount(const std::span<const float> values, const std::size_t expecte
 
 AndroidBoundaryGles1FixedState::AndroidBoundaryGles1FixedState() { Reset(); }
 
-void AndroidBoundaryGles1FixedState::SetMaterialFrontFaceQuirk(const bool enabled) noexcept {
-    normalize_material_front_face_ = enabled;
+void AndroidBoundaryGles1FixedState::SetMaterialSingleFaceQuirk(const bool enabled) noexcept {
+    allow_material_single_face_ = enabled;
 }
 
 void AndroidBoundaryGles1FixedState::Reset() {
@@ -148,11 +148,12 @@ void AndroidBoundaryGles1FixedState::Reset() {
         lights_[LightKey(light, kLinearAttenuation)] = {0.0F};
         lights_[LightKey(light, kQuadraticAttenuation)] = {0.0F};
     }
-    material_ = {{kGles1LightAmbient, {0.2F, 0.2F, 0.2F, 1.0F}},
-                 {kLightDiffuse, {0.8F, 0.8F, 0.8F, 1.0F}},
-                 {kLightSpecular, {0.0F, 0.0F, 0.0F, 1.0F}},
-                 {kMaterialEmission, {0.0F, 0.0F, 0.0F, 1.0F}},
-                 {kGles1MaterialShininess, {0.0F}}};
+    material_front_ = {{kGles1LightAmbient, {0.2F, 0.2F, 0.2F, 1.0F}},
+                       {kLightDiffuse, {0.8F, 0.8F, 0.8F, 1.0F}},
+                       {kLightSpecular, {0.0F, 0.0F, 0.0F, 1.0F}},
+                       {kMaterialEmission, {0.0F, 0.0F, 0.0F, 1.0F}},
+                       {kGles1MaterialShininess, {0.0F}}};
+    material_back_ = material_front_;
 }
 
 void AndroidBoundaryGles1FixedState::SetFog(const std::uint32_t pname,
@@ -199,10 +200,9 @@ void AndroidBoundaryGles1FixedState::SetLight(const std::uint32_t light, const s
 void AndroidBoundaryGles1FixedState::SetMaterial(const std::uint32_t face,
                                                  const std::uint32_t pname,
                                                  const std::span<const float> values) {
-    const auto accepted_face = normalize_material_front_face_ && face == 0x0404U
-                                   ? kGles1FrontAndBack
-                                   : face;
-    if (accepted_face != kGles1FrontAndBack) {
+    const auto single_face = face == kGles1Front || face == kGles1Back;
+    if (face != kGles1FrontAndBack &&
+        !(allow_material_single_face_ && single_face)) {
         throw std::invalid_argument("GLES1 material face must be GL_FRONT_AND_BACK: " +
                                     std::to_string(face));
     }
@@ -210,12 +210,16 @@ void AndroidBoundaryGles1FixedState::SetMaterial(const std::uint32_t face,
     if (pname == kGles1MaterialShininess && (values.front() < 0.0F || values.front() > 128.0F)) {
         throw std::invalid_argument("GLES1 material shininess is outside 0..128");
     }
-    if (pname == kMaterialAmbientAndDiffuse) {
-        material_[kGles1LightAmbient].assign(values.begin(), values.end());
-        material_[kLightDiffuse].assign(values.begin(), values.end());
-        return;
-    }
-    material_[pname].assign(values.begin(), values.end());
+    const auto apply = [pname, values](auto& material) {
+        if (pname == kMaterialAmbientAndDiffuse) {
+            material[kGles1LightAmbient].assign(values.begin(), values.end());
+            material[kLightDiffuse].assign(values.begin(), values.end());
+        } else {
+            material[pname].assign(values.begin(), values.end());
+        }
+    };
+    if (face != kGles1Back) apply(material_front_);
+    if (face != kGles1Front) apply(material_back_);
 }
 
 const std::vector<float>& AndroidBoundaryGles1FixedState::Fog(const std::uint32_t pname) const {
@@ -234,7 +238,14 @@ const std::vector<float>& AndroidBoundaryGles1FixedState::Light(const std::uint3
 
 const std::vector<float>&
 AndroidBoundaryGles1FixedState::Material(const std::uint32_t pname) const {
-    return material_.at(pname);
+    return Material(kGles1Front, pname);
+}
+
+const std::vector<float>& AndroidBoundaryGles1FixedState::Material(
+    const std::uint32_t face, const std::uint32_t pname) const {
+    if (face == kGles1Front) return material_front_.at(pname);
+    if (face == kGles1Back) return material_back_.at(pname);
+    throw std::invalid_argument("GLES1 material query face is invalid");
 }
 
 void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,

@@ -82,6 +82,25 @@
   method 已进入纯 Profile 数据；真实目标已推进至 startup call 3，首个新阻塞为未声明
   `sendAppToBackground()V`。全量 CTest 395/395 通过。
 
+## 目标 ELF 尚未实现的 GL 入口
+
+以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0263 后的显式
+GLES1 handler 对照得出；当前已实现 30 个，尚余 32 个。它只表示该目标实际导入且尚未
+实现的入口，不代表完整 GLES1 命名空间。exact-APK 当前最先命中的是 `glMaterialfv`
+（thunk 89）。
+
+- 固定管线状态/查询（14）：`glAlphaFunc`、`glClientActiveTexture`、`glColor4f`、
+  `glColor4ub`、`glFogf`、`glFogfv`、`glGetFloatv`、`glLightModelfv`、`glLightf`、
+  `glLightfv`、`glMaterialf`、`glMaterialfv`、`glTexEnvfv`、`glTexEnvi`。
+- 纹理资源/查询（7）：`glCompressedTexImage2D`、`glCopyTexImage2D`、
+  `glDeleteTextures`、`glGenTextures`、`glGetString`、`glTexImage2D`、
+  `glTexSubImage2D`。
+- Client array/draw（8）：`glColorPointer`、`glDisableClientState`、`glDrawArrays`、
+  `glDrawElements`、`glEnableClientState`、`glNormalPointer`、`glTexCoordPointer`、
+  `glVertexPointer`。
+- Matrix-palette 扩展（3）：`glCurrentPaletteMatrixOES`、
+  `glMatrixIndexPointerOES`、`glWeightPointerOES`。
+
 ## 下一步（按优先级）
 
 1. 批量闭合 lighting/material/fog fixed-pipeline 状态，当前首个入口为 `glMaterialfv`。

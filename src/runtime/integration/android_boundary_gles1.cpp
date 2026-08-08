@@ -8,8 +8,10 @@
 #include <numbers>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
+#include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
 #include "android_boundary_gles1_fixed.h"
 
@@ -124,6 +126,51 @@ void RequireFiniteMatrixValues(const std::span<const float> values) {
                capability;
     }
     return capability;
+}
+
+[[nodiscard]] gles::GuestBuffer PrepareTextureNames(
+    memory::AddressSpace& address_space, const std::uint32_t count_word,
+    const std::uint32_t address, const gles::GuestTransferDirection direction,
+    const std::uint64_t thread_id, const std::string_view operation) {
+    const auto count = std::bit_cast<std::int32_t>(count_word);
+    if (count < 0) {
+        throw std::invalid_argument(std::string(operation) +
+                                    " count cannot be negative");
+    }
+    return gles::GuestBuffer::Prepare(
+        address_space, memory::GuestAddress{address},
+        static_cast<std::uint64_t>(count) * sizeof(std::uint32_t), direction,
+        false, thread_id);
+}
+
+[[nodiscard]] std::vector<std::uint32_t> ReadTextureNames(
+    const gles::GuestBuffer& transfer) {
+    const auto bytes = transfer.Bytes();
+    std::vector<std::uint32_t> names(bytes.size() / sizeof(std::uint32_t));
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
+            names[index] |= static_cast<std::uint32_t>(
+                                std::to_integer<std::uint8_t>(
+                                    bytes[index * sizeof(std::uint32_t) + byte]))
+                            << (byte * 8U);
+        }
+    }
+    return names;
+}
+
+void WriteTextureNames(gles::GuestBuffer& transfer,
+                       const std::span<const std::uint32_t> names) {
+    auto bytes = transfer.WritableBytes();
+    if (bytes.size() != names.size() * sizeof(std::uint32_t)) {
+        throw std::logic_error("GLES1 texture name output size differs");
+    }
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
+            bytes[index * sizeof(std::uint32_t) + byte] =
+                static_cast<std::byte>(names[index] >> (byte * 8U));
+        }
+    }
+    transfer.Commit();
 }
 
 }  // namespace
@@ -355,6 +402,33 @@ void BindAndroidBoundaryGles1Core(
     }
     BindAndroidBoundaryGles1FixedState(
         dispatch, state.Fixed(), address_space, require_frame);
+    dispatch.Bind(
+        "glGenTextures",
+        [&address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            auto output = PrepareTextureNames(
+                address_space, arguments[0], arguments[1],
+                gles::GuestTransferDirection::output, thread_id,
+                "glGenTextures");
+            const auto names = require_frame("glGenTextures")
+                                   .GenerateTextures(arguments[0]);
+            WriteTextureNames(output, names);
+            return 0U;
+        });
+    dispatch.Bind(
+        "glDeleteTextures",
+        [&address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            const auto input = PrepareTextureNames(
+                address_space, arguments[0], arguments[1],
+                gles::GuestTransferDirection::input, thread_id,
+                "glDeleteTextures");
+            require_frame("glDeleteTextures")
+                .DeleteTextures(ReadTextureNames(input));
+            return 0U;
+        });
     dispatch.Bind(
         "glMatrixMode",
         [&state, require_frame](

@@ -113,10 +113,13 @@ void AndroidBoundaryGles1DrawState::Reset() noexcept {
     arrays_[ArrayKey(kGles1VertexArray, kTexture0)] = {};
     arrays_[ArrayKey(kGles1NormalArray, kTexture0)] = {};
     arrays_[ArrayKey(kGles1ColorArray, kTexture0)] = {};
+    arrays_[ArrayKey(kGles1MatrixIndexArray, kTexture0)] = {};
+    arrays_[ArrayKey(kGles1WeightArray, kTexture0)] = {};
     for (auto texture = kTexture0; texture <= 0x84DFU; ++texture) {
         arrays_[ArrayKey(kGles1TextureCoordArray, texture)] = {};
     }
     program_ = {};
+    current_palette_matrix_ = 0U;
 }
 
 AndroidBoundaryGles1DrawState::AndroidBoundaryGles1DrawState() { Reset(); }
@@ -125,7 +128,8 @@ void AndroidBoundaryGles1DrawState::SetEnabled(
     const std::uint32_t array, const std::uint32_t client_texture,
     const bool enabled) {
     if (array != kGles1VertexArray && array != kGles1NormalArray &&
-        array != kGles1ColorArray && array != kGles1TextureCoordArray) {
+        array != kGles1ColorArray && array != kGles1TextureCoordArray &&
+        array != kGles1MatrixIndexArray && array != kGles1WeightArray) {
         throw std::invalid_argument("GLES1 client state array is unsupported");
     }
     arrays_.at(ArrayKey(array, client_texture)).enabled = enabled;
@@ -150,6 +154,16 @@ void AndroidBoundaryGles1DrawState::SetPointer(
     if (array == kGles1NormalArray && size != 3) {
         throw std::invalid_argument("GLES1 normal array size must be three");
     }
+    if ((array == kGles1MatrixIndexArray || array == kGles1WeightArray) &&
+        (size < 1 || size > 4)) {
+        throw std::invalid_argument("GLES1 matrix palette array size is outside 1..4");
+    }
+    if (array == kGles1MatrixIndexArray && type != kUnsignedByte) {
+        throw std::invalid_argument("GLES1 matrix index array requires GL_UNSIGNED_BYTE");
+    }
+    if (array == kGles1WeightArray && type != kFloat && type != kFixed) {
+        throw std::invalid_argument("GLES1 weight array requires GL_FLOAT or GL_FIXED");
+    }
     auto& stored = arrays_.at(ArrayKey(array, client_texture));
     const auto enabled = stored.enabled;
     stored = {.size = size, .type = type, .stride = stride,
@@ -159,6 +173,19 @@ void AndroidBoundaryGles1DrawState::SetPointer(
 const Gles1ClientArray& AndroidBoundaryGles1DrawState::Array(
     const std::uint32_t array, const std::uint32_t client_texture) const {
     return arrays_.at(ArrayKey(array, client_texture));
+}
+
+void AndroidBoundaryGles1DrawState::SetCurrentPaletteMatrix(
+    const std::uint32_t index) {
+    constexpr std::uint32_t kMaximumPaletteMatrices = 32U;
+    if (index >= kMaximumPaletteMatrices) {
+        throw std::invalid_argument("GLES1 palette matrix index is outside 0..31");
+    }
+    current_palette_matrix_ = index;
+}
+
+std::uint32_t AndroidBoundaryGles1DrawState::CurrentPaletteMatrix() const noexcept {
+    return current_palette_matrix_;
 }
 
 void AndroidBoundaryGles1DrawState::EnsureProgram(gles::AngleFrame& frame) {
@@ -303,6 +330,11 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
     const AndroidBoundaryGles1LegacyState& legacy,
     memory::AddressSpace& address_space, const std::uint32_t maximum_index,
     const std::uint64_t thread_id) {
+    if (Array(kGles1MatrixIndexArray, kTexture0).enabled ||
+        Array(kGles1WeightArray, kTexture0).enabled) {
+        throw std::runtime_error(
+            "GLES1 matrix-palette skinning draw conversion is not implemented");
+    }
     const std::array kinds{kGles1VertexArray, kGles1NormalArray,
                            kGles1ColorArray, kGles1TextureCoordArray};
     for (std::size_t index = 0; index < kinds.size(); ++index) {
@@ -501,7 +533,8 @@ void AndroidBoundaryGles1DrawState::DrawElements(
 }
 
 void BindAndroidBoundaryGles1Draw(
-    gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1DrawState& draw,
+    gles::GlesDispatchTable& dispatch, gles::GlesDispatchTable& extensions,
+    AndroidBoundaryGles1DrawState& draw,
     AndroidBoundaryGles1State& core, AndroidBoundaryGles1LegacyState& legacy,
     memory::AddressSpace& address_space,
     AndroidBoundaryFrameResolver require_frame) {
@@ -564,6 +597,36 @@ void BindAndroidBoundaryGles1Draw(
                           arguments[0], Signed(arguments[1]), arguments[2], arguments[3],
                           thread_id);
         return 0U;
+    });
+    extensions.Bind("glCurrentPaletteMatrixOES",
+                    [&draw, require_frame](const auto arguments, const auto) {
+        auto next = draw;
+        next.SetCurrentPaletteMatrix(arguments[0]);
+        static_cast<void>(require_frame("glCurrentPaletteMatrixOES"));
+        draw = std::move(next);
+        return 0U;
+    });
+    const auto set_palette_pointer =
+        [&draw, &core, require_frame](const std::uint32_t array,
+                                     const auto arguments,
+                                     const std::string_view operation) {
+            auto next = draw;
+            next.SetPointer(array, kTexture0, Signed(arguments[0]), arguments[1],
+                            Signed(arguments[2]), arguments[3],
+                            core.TransferState().Snapshot().array_buffer);
+            static_cast<void>(require_frame(operation));
+            draw = std::move(next);
+            return 0U;
+        };
+    extensions.Bind("glMatrixIndexPointerOES",
+                    [set_palette_pointer](const auto arguments, const auto) {
+        return set_palette_pointer(kGles1MatrixIndexArray, arguments,
+                                   "glMatrixIndexPointerOES");
+    });
+    extensions.Bind("glWeightPointerOES",
+                    [set_palette_pointer](const auto arguments, const auto) {
+        return set_palette_pointer(kGles1WeightArray, arguments,
+                                   "glWeightPointerOES");
     });
 }
 

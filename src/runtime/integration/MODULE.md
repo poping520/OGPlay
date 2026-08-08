@@ -66,6 +66,10 @@
   `glDrawArrays` 以受检 `GLushort` 顺序索引等价执行，超过 65535 明确失败。当前 renderer
   只支持单个 active texture、`GL_MODULATE`、light0 与 modelview 上三阶 normal matrix；
   其他 texture environment 或 opaque EBO 配合 guest client array 必须明确失败。
+- 三个 `GL_OES_matrix_palette` 入口绑定在独立 extension dispatch：current palette index
+  限定 0..31，matrix-index/weight pointer 延迟保存调用时 array-buffer binding，类型、size
+  与 stride 受检且随 context reset。两类数组可由标准 client-state 入口启用；完整 skinning
+  shader 尚未实现时 draw 必须明确失败，禁止忽略权重或伪装成功。
 - GLES1 matrix state 批次把 modelview/projection/texture 三套列主序矩阵栈隔离保存，
   `load/push/pop/rotate/translate` 按 OpenGL 后乘语义更新。`glLoadMatrixf` 必须先通过
   `AddressSpace` 完整读取 16 个 little-endian `GLfloat` 并验证有限值；坏 guest 地址、

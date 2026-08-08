@@ -655,6 +655,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
 note = "M5 WU-0232 在 libGLESv1_CM.so 追加发布三项 matrix-palette extension trap；目标 ELF 62 个 GL import 均有生成目录 provider"
 
+[runtime.gles1_matrix_palette_state]
+status = "partial"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
+note = "M5 WU-0275 为三个 GL_OES_matrix_palette 入口实现受检可重置状态并接入 client-state；完整 palette matrix stack 与 skinning draw 转换尚未实现且启用时明确失败"
+
 [runtime.android_link_preflight]
 status = "complete"
 test = "tests/runtime/android_link_preflight_tests.cpp"

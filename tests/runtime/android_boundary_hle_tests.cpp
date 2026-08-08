@@ -18,6 +18,7 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/android_boundary_hle.h"
 #include "../../src/runtime/integration/android_boundary_gles1.h"
+#include "../../src/runtime/integration/android_boundary_gles1_query.h"
 
 namespace {
 
@@ -226,6 +227,40 @@ TEST_CASE("GLES1 matrix state composes and bounds stacks") {
                          std::overflow_error);
 }
 
+TEST_CASE("GLES1 legacy fixed state validates isolates and resets") {
+    ogplay::runtime::detail::AndroidBoundaryGles1LegacyState state;
+    CHECK(state.AlphaFunction() == 0x0207U);
+    CHECK(state.AlphaReference() == 0.0F);
+    CHECK(state.ClientActiveTexture() == 0x84C0U);
+    CHECK(state.Color()[0] == 1.0F);
+    state.SetAlphaFunction(0x0201U, 2.0F);
+    CHECK(state.AlphaFunction() == 0x0201U);
+    CHECK(state.AlphaReference() == 1.0F);
+    state.SetClientActiveTexture(0x84C1U);
+    CHECK(state.ClientActiveTexture() == 0x84C1U);
+    const std::array color{-1.0F, 0.25F, 0.5F, 2.0F};
+    state.SetColor(color);
+    CHECK(state.Color()[0] == 0.0F);
+    CHECK(state.Color()[3] == 1.0F);
+    const std::array environment_color{0.1F, 0.2F, 0.3F, 0.4F};
+    state.SetTextureEnvironment(
+        0x84C1U, ogplay::runtime::detail::kGles1TextureEnvironment,
+        ogplay::runtime::detail::kGles1TextureEnvironmentColor,
+        environment_color);
+    CHECK(state.TextureEnvironment(
+              0x84C1U,
+              ogplay::runtime::detail::kGles1TextureEnvironmentColor)[2] ==
+          doctest::Approx(0.3F));
+    CHECK_THROWS_AS(state.SetClientActiveTexture(0U), std::invalid_argument);
+    CHECK_THROWS_AS(state.SetAlphaFunction(0U, 0.0F), std::invalid_argument);
+    state.Reset();
+    CHECK(state.ClientActiveTexture() == 0x84C0U);
+    CHECK(state.TextureEnvironment(
+              0x84C0U,
+              ogplay::runtime::detail::kGles1TextureEnvironmentMode)[0] ==
+          8448.0F);
+}
+
 TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     BoundaryFixture fixture;
     CHECK(ogplay::gles::GlesFunctionCount(ogplay::gles::GlesApi::gles1) == 145);
@@ -398,6 +433,52 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                            {0x8892U, 0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
                            {0x0DE1U, texture}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glAlphaFunc",
+                  {0x0201U, std::bit_cast<std::uint32_t>(0.5F)}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glClientActiveTexture",
+                           {0x84C1U}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glColor4f",
+                  {std::bit_cast<std::uint32_t>(0.25F),
+                   std::bit_cast<std::uint32_t>(0.5F),
+                   std::bit_cast<std::uint32_t>(0.75F),
+                   std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glColor4ub",
+                           {16U, 32U, 64U, 255U}) == 0U);
+        const auto environment = fixture.output.Add(0x100U);
+        for (std::size_t index = 0; index < 4U; ++index) {
+            fixture.bus.Write32(
+                environment.Add(index * sizeof(std::uint32_t)),
+                std::bit_cast<std::uint32_t>(0.25F), 1U);
+        }
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexEnvfv",
+                  {ogplay::runtime::detail::kGles1TextureEnvironment,
+                   ogplay::runtime::detail::kGles1TextureEnvironmentColor,
+                   environment.Value()}) == 0U);
+        CHECK_THROWS_AS(
+            fixture.Call(
+                "libGLESv1_CM.so", "glTexEnvfv",
+                {ogplay::runtime::detail::kGles1TextureEnvironment,
+                 ogplay::runtime::detail::kGles1TextureEnvironmentColor, 0U}),
+            ogplay::memory::MemoryFault);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexEnvi",
+                  {ogplay::runtime::detail::kGles1TextureEnvironment,
+                   ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+                   0x2100U}) == 0U);
+        const auto float_query = fixture.output.Add(0x200U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glGetFloatv",
+                  {ogplay::runtime::detail::kGles1MaxTextureAnisotropy,
+                   float_query.Value()}) == 0U);
+        CHECK(std::bit_cast<float>(fixture.bus.Read32(float_query, 1U)) >= 1.0F);
+        CHECK_THROWS_AS(
+            fixture.Call(
+                "libGLESv1_CM.so", "glGetFloatv",
+                {ogplay::runtime::detail::kGles1MaxTextureAnisotropy, 0U}),
+            ogplay::gles::GuestTransferError);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBlendFunc",
                            {1U, 0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glColorMask",
@@ -479,10 +560,6 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glClearStencil", {0U}),
         "unimplemented GLES1 call glClearStencil (thunk 13, guest thread 1)",
-        ogplay::gles::GlesDispatchError);
-    CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv1_CM.so", "glAlphaFunc", {0x0201U, 0}),
-        "unimplemented GLES1 call glAlphaFunc (thunk 1, guest thread 1)",
         ogplay::gles::GlesDispatchError);
 }
 

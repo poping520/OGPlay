@@ -185,9 +185,12 @@ TEST_CASE("Title Profile catalogs reject unregistered quirk ids") {
 
 }
 
-TEST_CASE("repository quirk registry is loadable without registered game quirks") {
+TEST_CASE("repository quirk registry loads the registered material quirk") {
     const auto root = std::filesystem::path(OGPLAY_SOURCE_DIR);
     const auto registry =
         ogplay::session::QuirkRegistry::Load(root / "data" / "quirks.toml", root);
-    CHECK(registry.Definitions().empty());
+    const auto* definition = registry.Find("gles1_material_front_face");
+    REQUIRE(definition != nullptr);
+    CHECK(definition->owner == "runtime/integration");
+    CHECK(definition->test.find("required when disabled") != std::string::npos);
 }

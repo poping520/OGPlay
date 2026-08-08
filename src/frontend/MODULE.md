@@ -16,6 +16,8 @@ CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title
 - 用户可见输出可以写 stdout/stderr，但生产库不得裸输出。
 - `run-apk` 要求显式 Bionic 目录；APK 入口只能由 Manifest + native hash + ABI 精确 Profile
   决定，支持压缩的 `armeabi`/`armeabi-v7a`，依赖闭包不得由 CLI 手写。
+- `run-apk` 加载任何含 quirk 的 Profile 前必须注入仓库根 `data/quirks.toml` 并完成注册表
+  交叉验证；未注册、缺参数或测试引用失效的 quirk 必须在 APK 执行前失败。
 - `--profiles-dir` 可覆盖默认仓库目录；`--preflight` 在身份、ELF 闭包、API、生命周期与
   surface 受检后，复用生产 Android boundary 完成映射/重定位并报告模块、relocation 与
   native-call 计数，不创建窗口或执行 guest。

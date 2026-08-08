@@ -1,6 +1,6 @@
 schema = 1
 
-# 当前尚未注册 quirk。新增项必须同时包含 summary、reason、risk、test、owner，且 test 必须
+# 新增项必须同时包含 summary、reason、risk、test、owner，且 test 必须
 # 证明关闭该 quirk 会导致可复现失败。任何吞掉错误的 quirk 还必须提供计数与 Agent 查询。
 # 提交前运行：
 # python tools/validate_quirks.py --registry data/quirks.toml --profiles data/profiles --root .
@@ -11,3 +11,10 @@ schema = 1
 # risk = "可能掩盖或改变什么"
 # test = "tests/titles/example_tests.cpp:test_name"
 # owner = "runtime/memory"
+
+[gles1_material_front_face]
+summary = "将 Profile 指定目标的 GL_FRONT material 更新归一为 GL_FRONT_AND_BACK"
+reason = "目标二进制向 GLES1 glMaterialfv 传入桌面 GL 的 GL_FRONT，但 GLES1 只接受 GL_FRONT_AND_BACK"
+risk = "放宽后背面材质会与正面一同更新，因此只能对精确身份 Profile 启用"
+test = "tests/runtime/android_boundary_gles1_fixed_tests.cpp:GLES1 material front face quirk is required when disabled"
+owner = "runtime/integration"

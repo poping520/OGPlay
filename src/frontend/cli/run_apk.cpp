@@ -23,6 +23,7 @@
 #include "ogplay/runtime/integration/native_activity_runner.h"
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/session/profile_guest_lifecycle.h"
+#include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
 
 namespace ogplay::frontend {
@@ -215,8 +216,11 @@ int RunApkCommand(const int argc, const char* const argv[]) {
 
     const auto apk_bytes = ReadBytes(apk_path);
     const auto archive = loader::ParseApkArchive(apk_bytes);
+    const auto source_root = std::filesystem::path(OGPLAY_SOURCE_DIR);
+    const auto quirks = session::QuirkRegistry::Load(
+        source_root / "data" / "quirks.toml", source_root);
     const auto profiles = session::TitleProfileCatalog::LoadDirectory(
-        profiles_directory);
+        profiles_directory, quirks);
     const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
     const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
     const auto match = session::MatchApkTitleProfile(manifest, libraries, profiles);

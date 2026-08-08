@@ -4,11 +4,17 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <span>
 #include <string_view>
+#include <vector>
 
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
+
+namespace ogplay::memory {
+class AddressSpace;
+}
 
 namespace ogplay::runtime::detail {
 
@@ -16,10 +22,42 @@ inline constexpr std::uint32_t kGles1FlatShadeModel = 0x1D00U;
 inline constexpr std::uint32_t kGles1SmoothShadeModel = 0x1D01U;
 inline constexpr std::uint32_t kGles1DontCare = 0x1100U;
 inline constexpr std::uint32_t kGles1GenerateMipmapHint = 0x8192U;
+inline constexpr std::uint32_t kGles1Modelview = 0x1700U;
+inline constexpr std::uint32_t kGles1Projection = 0x1701U;
+inline constexpr std::uint32_t kGles1Texture = 0x1702U;
+
+using Gles1Matrix = std::array<float, 16>;
+
+class AndroidBoundaryGles1MatrixState final {
+public:
+    AndroidBoundaryGles1MatrixState();
+
+    void Reset();
+    void SetMode(std::uint32_t mode);
+    [[nodiscard]] std::uint32_t Mode() const noexcept;
+    void LoadIdentity();
+    void Load(std::span<const float, 16> matrix);
+    void Push();
+    void Pop();
+    void Rotate(float angle_degrees, float x, float y, float z);
+    void Translate(float x, float y, float z);
+    [[nodiscard]] const Gles1Matrix& Current() const noexcept;
+    [[nodiscard]] std::size_t StackDepth(std::uint32_t mode) const;
+
+private:
+    [[nodiscard]] std::vector<Gles1Matrix>& CurrentStack() noexcept;
+    [[nodiscard]] const std::vector<Gles1Matrix>& Stack(
+        std::uint32_t mode) const;
+
+    std::uint32_t mode_{kGles1Modelview};
+    std::vector<Gles1Matrix> modelview_;
+    std::vector<Gles1Matrix> projection_;
+    std::vector<Gles1Matrix> texture_;
+};
 
 class AndroidBoundaryGles1State final {
 public:
-    void Reset() noexcept;
+    void Reset();
     void SetShadeModel(std::uint32_t mode);
     [[nodiscard]] std::uint32_t ShadeModel() const noexcept;
     [[nodiscard]] const gles::GlesTransferState& TransferState() const noexcept;
@@ -30,6 +68,8 @@ public:
     [[nodiscard]] std::uint32_t ActiveTexture() const noexcept;
     void SetCapability(std::uint32_t capability, bool enabled);
     [[nodiscard]] bool Capability(std::uint32_t capability) const;
+    [[nodiscard]] AndroidBoundaryGles1MatrixState& Matrices() noexcept;
+    [[nodiscard]] const AndroidBoundaryGles1MatrixState& Matrices() const noexcept;
 
 private:
     std::uint32_t shade_model_{kGles1SmoothShadeModel};
@@ -39,6 +79,7 @@ private:
     std::uint32_t active_texture_{0x84C0U};
     std::map<std::uint64_t, bool> capabilities_;
     gles::GlesTransferState transfer_state_;
+    AndroidBoundaryGles1MatrixState matrices_;
 };
 
 using AndroidBoundaryFrameResolver =
@@ -49,7 +90,7 @@ using AndroidBoundaryFrameResolver =
 
 void BindAndroidBoundaryGles1Core(
     gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1State& state,
-    std::uint32_t supersample_factor,
+    memory::AddressSpace& address_space, std::uint32_t supersample_factor,
     AndroidBoundaryFrameResolver require_frame);
 
 }  // namespace ogplay::runtime::detail

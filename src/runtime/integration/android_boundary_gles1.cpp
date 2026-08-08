@@ -1,14 +1,69 @@
 #include "android_boundary_gles1.h"
 
+#include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstddef>
 #include <limits>
+#include <numbers>
 #include <span>
 #include <stdexcept>
 #include <utility>
 
+#include "ogplay/memory/address_space.h"
+
 namespace ogplay::runtime::detail {
 namespace {
+
+constexpr std::size_t kMaximumMatrixStackDepth = 32;
+
+[[nodiscard]] Gles1Matrix IdentityMatrix() noexcept {
+    return {1.0F, 0.0F, 0.0F, 0.0F,
+            0.0F, 1.0F, 0.0F, 0.0F,
+            0.0F, 0.0F, 1.0F, 0.0F,
+            0.0F, 0.0F, 0.0F, 1.0F};
+}
+
+[[nodiscard]] Gles1Matrix MultiplyMatrices(
+    const Gles1Matrix& left, const Gles1Matrix& right) noexcept {
+    Gles1Matrix result{};
+    for (std::size_t column = 0; column < 4; ++column) {
+        for (std::size_t row = 0; row < 4; ++row) {
+            for (std::size_t index = 0; index < 4; ++index) {
+                result[column * 4 + row] +=
+                    left[index * 4 + row] * right[column * 4 + index];
+            }
+        }
+    }
+    return result;
+}
+
+void RequireFiniteMatrixValues(const std::span<const float> values) {
+    if (!std::ranges::all_of(values, [](const float value) {
+            return std::isfinite(value);
+        })) {
+        throw std::invalid_argument("GLES1 matrix value must be finite");
+    }
+}
+
+[[nodiscard]] Gles1Matrix ReadGuestMatrix(
+    const memory::AddressSpace& address_space, const std::uint32_t address,
+    const std::uint64_t thread_id) {
+    std::array<std::byte, sizeof(Gles1Matrix)> bytes{};
+    address_space.Read(memory::GuestAddress{address}, bytes, thread_id);
+    Gles1Matrix matrix{};
+    for (std::size_t element = 0; element < matrix.size(); ++element) {
+        std::uint32_t word{};
+        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
+            word |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
+                        bytes[element * sizeof(word) + byte]))
+                    << (byte * 8U);
+        }
+        matrix[element] = std::bit_cast<float>(word);
+    }
+    RequireFiniteMatrixValues(matrix);
+    return matrix;
+}
 
 [[nodiscard]] std::size_t HintIndex(const std::uint32_t target) {
     switch (target) {
@@ -72,12 +127,129 @@ namespace {
 
 }  // namespace
 
-void AndroidBoundaryGles1State::Reset() noexcept {
+AndroidBoundaryGles1MatrixState::AndroidBoundaryGles1MatrixState() {
+    Reset();
+}
+
+void AndroidBoundaryGles1MatrixState::Reset() {
+    mode_ = kGles1Modelview;
+    modelview_.assign(1, IdentityMatrix());
+    projection_.assign(1, IdentityMatrix());
+    texture_.assign(1, IdentityMatrix());
+}
+
+void AndroidBoundaryGles1MatrixState::SetMode(const std::uint32_t mode) {
+    static_cast<void>(Stack(mode));
+    mode_ = mode;
+}
+
+std::uint32_t AndroidBoundaryGles1MatrixState::Mode() const noexcept {
+    return mode_;
+}
+
+void AndroidBoundaryGles1MatrixState::LoadIdentity() {
+    CurrentStack().back() = IdentityMatrix();
+}
+
+void AndroidBoundaryGles1MatrixState::Load(
+    const std::span<const float, 16> matrix) {
+    RequireFiniteMatrixValues(matrix);
+    std::ranges::copy(matrix, CurrentStack().back().begin());
+}
+
+void AndroidBoundaryGles1MatrixState::Push() {
+    auto& stack = CurrentStack();
+    if (stack.size() >= kMaximumMatrixStackDepth) {
+        throw std::overflow_error("GLES1 matrix stack overflow");
+    }
+    stack.push_back(stack.back());
+}
+
+void AndroidBoundaryGles1MatrixState::Pop() {
+    auto& stack = CurrentStack();
+    if (stack.size() == 1) {
+        throw std::underflow_error("GLES1 matrix stack underflow");
+    }
+    stack.pop_back();
+}
+
+void AndroidBoundaryGles1MatrixState::Rotate(
+    const float angle_degrees, const float x, const float y, const float z) {
+    const std::array values{angle_degrees, x, y, z};
+    RequireFiniteMatrixValues(values);
+    const auto length = std::sqrt(x * x + y * y + z * z);
+    if (length == 0.0F || !std::isfinite(length)) {
+        throw std::invalid_argument("GLES1 rotation axis is invalid");
+    }
+    const auto nx = x / length;
+    const auto ny = y / length;
+    const auto nz = z / length;
+    const auto radians = angle_degrees * std::numbers::pi_v<float> / 180.0F;
+    const auto cosine = std::cos(radians);
+    const auto sine = std::sin(radians);
+    const auto one_minus_cosine = 1.0F - cosine;
+    const Gles1Matrix rotation{
+        nx * nx * one_minus_cosine + cosine,
+        ny * nx * one_minus_cosine + nz * sine,
+        nx * nz * one_minus_cosine - ny * sine, 0.0F,
+        nx * ny * one_minus_cosine - nz * sine,
+        ny * ny * one_minus_cosine + cosine,
+        ny * nz * one_minus_cosine + nx * sine, 0.0F,
+        nx * nz * one_minus_cosine + ny * sine,
+        ny * nz * one_minus_cosine - nx * sine,
+        nz * nz * one_minus_cosine + cosine, 0.0F,
+        0.0F, 0.0F, 0.0F, 1.0F};
+    auto& current = CurrentStack().back();
+    const auto next = MultiplyMatrices(current, rotation);
+    RequireFiniteMatrixValues(next);
+    current = next;
+}
+
+void AndroidBoundaryGles1MatrixState::Translate(
+    const float x, const float y, const float z) {
+    const std::array values{x, y, z};
+    RequireFiniteMatrixValues(values);
+    auto translation = IdentityMatrix();
+    translation[12] = x;
+    translation[13] = y;
+    translation[14] = z;
+    auto& current = CurrentStack().back();
+    const auto next = MultiplyMatrices(current, translation);
+    RequireFiniteMatrixValues(next);
+    current = next;
+}
+
+const Gles1Matrix& AndroidBoundaryGles1MatrixState::Current() const noexcept {
+    return Stack(mode_).back();
+}
+
+std::size_t AndroidBoundaryGles1MatrixState::StackDepth(
+    const std::uint32_t mode) const {
+    return Stack(mode).size();
+}
+
+std::vector<Gles1Matrix>&
+AndroidBoundaryGles1MatrixState::CurrentStack() noexcept {
+    if (mode_ == kGles1Projection) return projection_;
+    if (mode_ == kGles1Texture) return texture_;
+    return modelview_;
+}
+
+const std::vector<Gles1Matrix>& AndroidBoundaryGles1MatrixState::Stack(
+    const std::uint32_t mode) const {
+    if (mode == kGles1Modelview) return modelview_;
+    if (mode == kGles1Projection) return projection_;
+    if (mode == kGles1Texture) return texture_;
+    throw std::invalid_argument("glMatrixMode mode is invalid for GLES1");
+}
+
+void AndroidBoundaryGles1State::Reset() {
     shade_model_ = kGles1SmoothShadeModel;
     hints_.fill(kGles1DontCare);
     active_texture_ = 0x84C0U;
     capabilities_.clear();
     transfer_state_ = {};
+    matrices_.Reset();
 }
 
 void AndroidBoundaryGles1State::SetShadeModel(const std::uint32_t mode) {
@@ -136,6 +308,16 @@ bool AndroidBoundaryGles1State::Capability(
     return found != capabilities_.end() && found->second;
 }
 
+AndroidBoundaryGles1MatrixState&
+AndroidBoundaryGles1State::Matrices() noexcept {
+    return matrices_;
+}
+
+const AndroidBoundaryGles1MatrixState&
+AndroidBoundaryGles1State::Matrices() const noexcept {
+    return matrices_;
+}
+
 std::int32_t ScaleAndroidBoundaryViewportComponent(
     const std::int32_t value, const std::uint32_t factor) {
     const auto scaled = static_cast<std::int64_t>(value) * factor;
@@ -148,11 +330,80 @@ std::int32_t ScaleAndroidBoundaryViewportComponent(
 
 void BindAndroidBoundaryGles1Core(
     gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1State& state,
-    const std::uint32_t supersample_factor,
+    memory::AddressSpace& address_space, const std::uint32_t supersample_factor,
     AndroidBoundaryFrameResolver require_frame) {
     if (supersample_factor == 0 || !require_frame) {
         throw std::invalid_argument("GLES1 boundary binding is incomplete");
     }
+    dispatch.Bind(
+        "glMatrixMode",
+        [&state, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t) {
+            static_cast<void>(require_frame("glMatrixMode"));
+            state.Matrices().SetMode(arguments[0]);
+            return 0U;
+        });
+    dispatch.Bind(
+        "glLoadIdentity",
+        [&state, require_frame](const std::span<const std::uint32_t>,
+                                const std::uint64_t) {
+            static_cast<void>(require_frame("glLoadIdentity"));
+            state.Matrices().LoadIdentity();
+            return 0U;
+        });
+    dispatch.Bind(
+        "glLoadMatrixf",
+        [&state, &address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            const auto matrix = ReadGuestMatrix(
+                address_space, arguments[0], thread_id);
+            static_cast<void>(require_frame("glLoadMatrixf"));
+            state.Matrices().Load(matrix);
+            return 0U;
+        });
+    dispatch.Bind(
+        "glPushMatrix",
+        [&state, require_frame](const std::span<const std::uint32_t>,
+                                const std::uint64_t) {
+            static_cast<void>(require_frame("glPushMatrix"));
+            state.Matrices().Push();
+            return 0U;
+        });
+    dispatch.Bind(
+        "glPopMatrix",
+        [&state, require_frame](const std::span<const std::uint32_t>,
+                                const std::uint64_t) {
+            static_cast<void>(require_frame("glPopMatrix"));
+            state.Matrices().Pop();
+            return 0U;
+        });
+    dispatch.Bind(
+        "glRotatef",
+        [&state, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t) {
+            static_cast<void>(require_frame("glRotatef"));
+            state.Matrices().Rotate(
+                std::bit_cast<float>(arguments[0]),
+                std::bit_cast<float>(arguments[1]),
+                std::bit_cast<float>(arguments[2]),
+                std::bit_cast<float>(arguments[3]));
+            return 0U;
+        });
+    dispatch.Bind(
+        "glTranslatef",
+        [&state, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t) {
+            static_cast<void>(require_frame("glTranslatef"));
+            state.Matrices().Translate(
+                std::bit_cast<float>(arguments[0]),
+                std::bit_cast<float>(arguments[1]),
+                std::bit_cast<float>(arguments[2]));
+            return 0U;
+        });
     dispatch.Bind(
         "glActiveTexture",
         [&state, require_frame](

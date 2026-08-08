@@ -5,6 +5,7 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -75,6 +76,42 @@ void WriteGuestFloats(gles::GuestBuffer& output,
         }
     }
     output.Commit();
+}
+
+[[nodiscard]] std::int32_t SignedTextureValue(
+    const std::uint32_t value) noexcept {
+    return std::bit_cast<std::int32_t>(value);
+}
+
+[[nodiscard]] gles::GuestBuffer PrepareTexturePixels(
+    memory::AddressSpace& address_space,
+    const AndroidBoundaryGles1State& state,
+    const std::string_view function_name,
+    const std::span<const std::uint32_t> arguments,
+    const std::size_t pointer_index, const bool nullable,
+    const std::uint64_t thread_id) {
+    const auto resolution = state.TransferState().Resolve(
+        {.function_name = function_name,
+         .parameter_name = "pixels",
+         .expression = "pixel_bytes(width,height,format,type)",
+         .arguments = arguments});
+    if (!resolution.has_value() ||
+        resolution->disposition != gles::GlesLengthDisposition::transfer) {
+        throw std::logic_error("GLES1 pixel transfer did not resolve to guest bytes");
+    }
+    return gles::GuestBuffer::Prepare(
+        address_space, memory::GuestAddress{arguments[pointer_index]},
+        resolution->element_count, gles::GuestTransferDirection::input,
+        nullable, thread_id);
+}
+
+void GenerateAutomaticMipmap(AndroidBoundaryGles1State& state,
+                             gles::AngleFrame& frame,
+                             const std::uint32_t target,
+                             const std::int32_t level) {
+    if (level == 0 && state.GenerateMipmapEnabled(target)) {
+        frame.GenerateMipmap(target);
+    }
 }
 
 [[nodiscard]] std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
@@ -414,6 +451,91 @@ void BindAndroidBoundaryGles1Legacy(
                 }
             }
             WriteGuestFloats(output, values);
+            return 0U;
+        });
+}
+
+void BindAndroidBoundaryGles1Textures(
+    gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1State& state,
+    memory::AddressSpace& address_space,
+    AndroidBoundaryFrameResolver require_frame) {
+    if (!require_frame) {
+        throw std::invalid_argument("GLES1 texture frame resolver is missing");
+    }
+    dispatch.Bind(
+        "glCompressedTexImage2D",
+        [&state, &address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            const auto image_size = SignedTextureValue(arguments[6]);
+            if (image_size < 0) {
+                throw std::invalid_argument("GLES1 compressed image size is negative");
+            }
+            auto data = gles::GuestBuffer::Prepare(
+                address_space, memory::GuestAddress{arguments[7]},
+                static_cast<std::uint32_t>(image_size),
+                gles::GuestTransferDirection::input, false, thread_id);
+            auto& frame = require_frame("glCompressedTexImage2D");
+            frame.CompressedTextureImage2D(
+                arguments[0], SignedTextureValue(arguments[1]), arguments[2],
+                SignedTextureValue(arguments[3]), SignedTextureValue(arguments[4]),
+                SignedTextureValue(arguments[5]), data.Bytes());
+            GenerateAutomaticMipmap(state, frame, arguments[0],
+                                    SignedTextureValue(arguments[1]));
+            return 0U;
+        });
+    dispatch.Bind(
+        "glCopyTexImage2D",
+        [&state, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t) {
+            auto& frame = require_frame("glCopyTexImage2D");
+            frame.CopyTextureImage2D(
+                arguments[0], SignedTextureValue(arguments[1]), arguments[2],
+                SignedTextureValue(arguments[3]), SignedTextureValue(arguments[4]),
+                SignedTextureValue(arguments[5]), SignedTextureValue(arguments[6]),
+                SignedTextureValue(arguments[7]));
+            GenerateAutomaticMipmap(state, frame, arguments[0],
+                                    SignedTextureValue(arguments[1]));
+            return 0U;
+        });
+    dispatch.Bind(
+        "glTexImage2D",
+        [&state, &address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            auto pixels = PrepareTexturePixels(
+                address_space, state, "glTexImage2D", arguments, 8U, true,
+                thread_id);
+            auto& frame = require_frame("glTexImage2D");
+            frame.TextureImage2D(
+                arguments[0], SignedTextureValue(arguments[1]),
+                SignedTextureValue(arguments[2]), SignedTextureValue(arguments[3]),
+                SignedTextureValue(arguments[4]), SignedTextureValue(arguments[5]),
+                arguments[6], arguments[7],
+                pixels.IsNull()
+                    ? std::nullopt
+                    : std::optional<std::span<const std::byte>>(pixels.Bytes()));
+            GenerateAutomaticMipmap(state, frame, arguments[0],
+                                    SignedTextureValue(arguments[1]));
+            return 0U;
+        });
+    dispatch.Bind(
+        "glTexSubImage2D",
+        [&state, &address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            auto pixels = PrepareTexturePixels(
+                address_space, state, "glTexSubImage2D", arguments, 8U, false,
+                thread_id);
+            auto& frame = require_frame("glTexSubImage2D");
+            frame.TextureSubImage2D(
+                arguments[0], SignedTextureValue(arguments[1]),
+                SignedTextureValue(arguments[2]), SignedTextureValue(arguments[3]),
+                SignedTextureValue(arguments[4]), SignedTextureValue(arguments[5]),
+                arguments[6], arguments[7], pixels.Bytes());
+            GenerateAutomaticMipmap(state, frame, arguments[0],
+                                    SignedTextureValue(arguments[1]));
             return 0U;
         });
 }

@@ -424,6 +424,64 @@ void AngleFrame::TextureImage2D(
 #endif
 }
 
+void AngleFrame::CompressedTextureImage2D(
+    const std::uint32_t target, const std::int32_t level,
+    const std::uint32_t internal_format, const std::int32_t width,
+    const std::int32_t height, const std::int32_t border,
+    const std::span<const std::byte> data) {
+#if OGPLAY_HAS_ANGLE
+    glCompressedTexImage2D(target, level, internal_format, width, height, border,
+                           static_cast<GLsizei>(data.size()), data.data());
+    RequireNoError("glCompressedTexImage2D");
+#else
+    static_cast<void>(target); static_cast<void>(level); static_cast<void>(internal_format);
+    static_cast<void>(width); static_cast<void>(height); static_cast<void>(border);
+    static_cast<void>(data); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::CopyTextureImage2D(
+    const std::uint32_t target, const std::int32_t level,
+    const std::uint32_t internal_format, const std::int32_t x,
+    const std::int32_t y, const std::int32_t width,
+    const std::int32_t height, const std::int32_t border) {
+#if OGPLAY_HAS_ANGLE
+    glCopyTexImage2D(target, level, internal_format, x, y, width, height, border);
+    RequireNoError("glCopyTexImage2D");
+#else
+    static_cast<void>(target); static_cast<void>(level); static_cast<void>(internal_format);
+    static_cast<void>(x); static_cast<void>(y); static_cast<void>(width);
+    static_cast<void>(height); static_cast<void>(border);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::TextureSubImage2D(
+    const std::uint32_t target, const std::int32_t level,
+    const std::int32_t x_offset, const std::int32_t y_offset,
+    const std::int32_t width, const std::int32_t height,
+    const std::uint32_t format, const std::uint32_t type,
+    const std::span<const std::byte> pixels) {
+#if OGPLAY_HAS_ANGLE
+    glTexSubImage2D(target, level, x_offset, y_offset, width, height, format, type,
+                    pixels.data());
+    RequireNoError("glTexSubImage2D");
+#else
+    static_cast<void>(target); static_cast<void>(level); static_cast<void>(x_offset);
+    static_cast<void>(y_offset); static_cast<void>(width); static_cast<void>(height);
+    static_cast<void>(format); static_cast<void>(type); static_cast<void>(pixels);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::GenerateMipmap(const std::uint32_t target) {
+#if OGPLAY_HAS_ANGLE
+    glGenerateMipmap(target); RequireNoError("glGenerateMipmap");
+#else
+    static_cast<void>(target); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::SetVertexAttributeEnabled(const std::uint32_t index,
                                             const bool enabled) {
 #if OGPLAY_HAS_ANGLE

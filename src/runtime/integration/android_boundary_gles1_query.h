@@ -78,4 +78,9 @@ void BindAndroidBoundaryGles1Legacy(
     memory::AddressSpace& address_space,
     AndroidBoundaryFrameResolver require_frame);
 
+void BindAndroidBoundaryGles1Textures(
+    gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1State& state,
+    memory::AddressSpace& address_space,
+    AndroidBoundaryFrameResolver require_frame);
+
 }  // namespace ogplay::runtime::detail

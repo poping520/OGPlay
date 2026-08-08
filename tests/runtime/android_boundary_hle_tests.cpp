@@ -513,6 +513,60 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             std::invalid_argument);
         CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteri",
                            {0x0DE1U, 0x2800U, 0x2601U}) == 0U);
+        const auto texture_pixels = fixture.output.Add(0x300U);
+        const std::array<std::byte, 16> rgba_pixels{
+            std::byte{0xff}, std::byte{}, std::byte{}, std::byte{0xff},
+            std::byte{}, std::byte{0xff}, std::byte{}, std::byte{0xff},
+            std::byte{}, std::byte{}, std::byte{0xff}, std::byte{0xff},
+            std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}};
+        fixture.memory.Write(texture_pixels, rgba_pixels, 1U);
+        fixture.bus.Write32(fixture.stack, 2U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(4U), 0U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(8U), 0x1908U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(12U), 0x1401U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(16U), texture_pixels.Value(), 1U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexParameteri",
+                  {0x0DE1U, ogplay::runtime::detail::kGles1GenerateMipmap,
+                   1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTexImage2D",
+                           {0x0DE1U, 0U, 0x1908U, 2U}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexParameteri",
+                  {0x0DE1U, ogplay::runtime::detail::kGles1GenerateMipmap,
+                   0U}) == 0U);
+        fixture.bus.Write32(fixture.stack.Add(16U), 0U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTexImage2D",
+                           {0x0DE1U, 0U, 0x1908U, 2U}) == 0U);
+        fixture.bus.Write32(fixture.stack, 1U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(4U), 1U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(8U), 0x1908U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(12U), 0x1401U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(16U), texture_pixels.Value(), 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTexSubImage2D",
+                           {0x0DE1U, 0U, 0U, 0U}) == 0U);
+        fixture.bus.Write32(fixture.stack.Add(16U), 0U, 1U);
+        CHECK_THROWS_AS(
+            fixture.Call("libGLESv1_CM.so", "glTexSubImage2D",
+                         {0x0DE1U, 0U, 0U, 0U}),
+            ogplay::gles::GuestTransferError);
+        fixture.bus.Write32(fixture.stack, 0U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(4U), 1U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(8U), 1U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(12U), 0U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glCopyTexImage2D",
+                           {0x0DE1U, 0U, 0x1908U, 0U}) == 0U);
+        fixture.bus.Write32(fixture.stack, 4U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(4U), 0U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(8U), 8U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(12U), texture_pixels.Value(), 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glCompressedTexImage2D",
+                           {0x0DE1U, 0U, 0x8D64U, 4U}) == 0U);
+        fixture.bus.Write32(fixture.stack.Add(8U), 0xFFFFFFFFU, 1U);
+        CHECK_THROWS_AS(
+            fixture.Call("libGLESv1_CM.so", "glCompressedTexImage2D",
+                         {0x0DE1U, 0U, 0x8D64U, 4U}),
+            std::invalid_argument);
         CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glViewport", {0, 0, 4, 3}) == 0);
         CHECK(fixture.Call("libGLESv1_CM.so", "glScissor", {0, 0, 2, 3}) == 0);

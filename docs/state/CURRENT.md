@@ -29,10 +29,13 @@
 
 ## 进行中
 
-- 无。下一精确边界为未实现 GLES1 `glMatrixMode`（thunk 92）。
+- 无。下一精确边界为未实现 GLES1 `glMaterialfv`（thunk 89）。
 
 ## 最近完成
 
+- [WU-0263] GLES1 modelview/projection/texture 三套矩阵栈及 7 个浮点 matrix handler 已
+  批量闭合；guest matrix 经受检地址完整搬运，栈与非法值 fail closed。Windows-x64 +
+  ANGLE 全量 CTest 403/403 与 exact-APK smoke 已通过，下一边界为 `glMaterialfv`。
 - [WU-0262] 目标导入的 17 个 GLES1 无指针标量状态入口已批量闭合；共有状态进入
   ANGLE，GLES1-only hint/capability 与 transfer state 显式保存。Windows-x64 + ANGLE
   全量 CTest 402/402 与 exact-APK smoke 已通过，下一边界为 `glMatrixMode`。
@@ -81,8 +84,8 @@
 
 ## 下一步（按优先级）
 
-1. 批量闭合 matrix-mode/load/push/pop/rotate/translate 等 fixed-pipeline 矩阵状态。
-2. 随后按批次闭合 lighting/material/fog、client array/draw 与 matrix-palette extension。
+1. 批量闭合 lighting/material/fog fixed-pipeline 状态，当前首个入口为 `glMaterialfv`。
+2. 随后按批次闭合 client array/draw 与 matrix-palette extension。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

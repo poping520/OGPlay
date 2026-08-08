@@ -3,6 +3,7 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -173,6 +174,44 @@ TEST_CASE("GLES1 shade model state validates and resets") {
     CHECK_FALSE(state.Capability(0x0DE1U));
 }
 
+TEST_CASE("GLES1 matrix state composes and bounds stacks") {
+    ogplay::runtime::detail::AndroidBoundaryGles1MatrixState matrices;
+    CHECK(matrices.Mode() == ogplay::runtime::detail::kGles1Modelview);
+    CHECK(matrices.StackDepth(ogplay::runtime::detail::kGles1Modelview) == 1U);
+    CHECK(matrices.Current()[0] == 1.0F);
+    CHECK(matrices.Current()[15] == 1.0F);
+
+    matrices.SetMode(ogplay::runtime::detail::kGles1Projection);
+    matrices.Translate(1.0F, 2.0F, 3.0F);
+    CHECK(matrices.Current()[12] == 1.0F);
+    CHECK(matrices.Current()[13] == 2.0F);
+    CHECK(matrices.Current()[14] == 3.0F);
+    matrices.Push();
+    matrices.Rotate(90.0F, 0.0F, 0.0F, 1.0F);
+    CHECK(matrices.Current()[0] == doctest::Approx(0.0F).epsilon(0.0001));
+    CHECK(matrices.Current()[1] == doctest::Approx(1.0F).epsilon(0.0001));
+    CHECK(matrices.Current()[4] == doctest::Approx(-1.0F).epsilon(0.0001));
+    matrices.Pop();
+    CHECK(matrices.Current()[12] == 1.0F);
+    CHECK_THROWS_WITH_AS(matrices.Pop(), "GLES1 matrix stack underflow",
+                         std::underflow_error);
+    CHECK_THROWS_WITH_AS(
+        matrices.SetMode(0U), "glMatrixMode mode is invalid for GLES1",
+        std::invalid_argument);
+    CHECK_THROWS_WITH_AS(
+        matrices.Rotate(1.0F, 0.0F, 0.0F, 0.0F),
+        "GLES1 rotation axis is invalid", std::invalid_argument);
+    const ogplay::runtime::detail::Gles1Matrix invalid{
+        std::numeric_limits<float>::quiet_NaN()};
+    CHECK_THROWS_WITH_AS(
+        matrices.Load(invalid), "GLES1 matrix value must be finite",
+        std::invalid_argument);
+    matrices.Reset();
+    for (std::size_t depth = 1; depth < 32; ++depth) matrices.Push();
+    CHECK_THROWS_WITH_AS(matrices.Push(), "GLES1 matrix stack overflow",
+                         std::overflow_error);
+}
+
 TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     BoundaryFixture fixture;
     CHECK(ogplay::gles::GlesFunctionCount(ogplay::gles::GlesApi::gles1) == 145);
@@ -253,8 +292,56 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             fixture.Call("libGLESv1_CM.so", symbol, arguments),
             expected.c_str(), std::runtime_error);
     }
+    const std::array matrix_calls{
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glMatrixMode", {ogplay::runtime::detail::kGles1Modelview}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glLoadIdentity", {}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glLoadMatrixf", {fixture.output.Value()}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glPushMatrix", {}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glPopMatrix", {}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glRotatef", {std::bit_cast<std::uint32_t>(45.0F), 0U, 0U,
+                           std::bit_cast<std::uint32_t>(1.0F)}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glTranslatef", {std::bit_cast<std::uint32_t>(1.0F), 0U, 0U}},
+    };
+    for (const auto& [symbol, arguments] : matrix_calls) {
+        CAPTURE(symbol);
+        const auto expected = std::string(symbol) +
+                              " has no current ANGLE frame";
+        CHECK_THROWS_WITH_AS(
+            fixture.Call("libGLESv1_CM.so", symbol, arguments),
+            expected.c_str(), std::runtime_error);
+    }
     if (ogplay::gles::IsNativeAngleEglAvailable()) {
         fixture.boundary.OpenManagedSurface();
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glMatrixMode",
+                  {ogplay::runtime::detail::kGles1Projection}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glLoadIdentity") == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glPushMatrix") == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTranslatef",
+                  {std::bit_cast<std::uint32_t>(1.0F),
+                   std::bit_cast<std::uint32_t>(2.0F),
+                   std::bit_cast<std::uint32_t>(3.0F)}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glRotatef",
+                  {std::bit_cast<std::uint32_t>(45.0F), 0U, 0U,
+                   std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+        for (std::size_t element = 0; element < 16; ++element) {
+            const auto value = element % 5 == 0 ? 1.0F : 0.0F;
+            fixture.bus.Write32(
+                fixture.output.Add(element * sizeof(std::uint32_t)),
+                std::bit_cast<std::uint32_t>(value), 1U);
+        }
+        CHECK(fixture.Call("libGLESv1_CM.so", "glLoadMatrixf",
+                           {fixture.output.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glPopMatrix") == 0U);
         CHECK(fixture.Call("libGLESv2.so", "glGenTextures",
                            {1U, fixture.output.Value()}) == 0U);
         const auto texture = fixture.bus.Read32(fixture.output, 1U);

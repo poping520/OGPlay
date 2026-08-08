@@ -22,12 +22,12 @@
 #include "ogplay/gles/supersample.h"
 #include "ogplay/runtime/integration/android_boundary_gles.h"
 #include "android_boundary_gles1.h"
+#include "android_boundary_gles1_draw.h"
 #include "android_boundary_gles1_fixed.h"
 #include "android_boundary_gles1_query.h"
 
 namespace ogplay::runtime {
 namespace {
-
 constexpr std::uint32_t kThunkStride = 4;
 constexpr std::uint32_t kFakeConfiguration = 0x6e003000U;
 constexpr std::uint32_t kFakeLooper = 0x6e003100U;
@@ -149,6 +149,12 @@ public:
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });
+        detail::BindAndroidBoundaryGles1Draw(
+            gles1_dispatch_, gles1_draw_state_, gles1_state_,
+            gles1_legacy_state_, address_space_,
+            [this](const std::string_view operation) -> gles::AngleFrame& {
+                return RequireFrame(operation);
+            });
         detail::BindAndroidBoundaryGles1Queries(
             gles1_dispatch_, gles1_query_strings_,
             [this](const std::uint32_t parameter) {
@@ -162,7 +168,6 @@ public:
         gles1_state_.Fixed().SetMaterialSingleFaceQuirk(
             options.allow_gles1_material_single_face);
     }
-
     void MapThunks() {
         if (mapped_) throw std::logic_error("Android boundary thunks are already mapped");
         const auto page_size = address_space_.PageSize();
@@ -213,6 +218,7 @@ public:
         gles_dispatch_.Reset();
         gles1_state_.Reset();
         gles1_legacy_state_.Reset();
+        gles1_draw_state_.Reset();
         std::scoped_lock lock(mutex_);
         gpu_render_target_ready_ = false;
     }
@@ -447,7 +453,6 @@ private:
         Write32(args[3], data, thread_id);
         return ident;
     }
-
     std::uint32_t Dispatch(const std::string_view module,
                            const std::string_view symbol,
                            const std::array<std::uint32_t, 4>& args,
@@ -587,6 +592,7 @@ private:
             gles_dispatch_.Reset();
             gles1_state_.Reset();
             gles1_legacy_state_.Reset();
+            gles1_draw_state_.Reset();
             std::scoped_lock lock(mutex_);
             gpu_render_target_ready_ = false;
             return 1;
@@ -646,7 +652,6 @@ private:
         if (symbol == "__android_log_print" || symbol == "__android_log_write") return 0;
         throw std::runtime_error("Android boundary HLE is not implemented: " + std::string(symbol));
     }
-
     std::optional<std::uint32_t> DispatchShaderProgram(
         const std::string_view symbol,
         const std::array<std::uint32_t, 4>& args,
@@ -687,14 +692,12 @@ private:
         if (symbol == "glDeleteProgram") { RequireFrame(symbol).DeleteProgram(args[0]); return 0; }
         return std::nullopt;
     }
-
     gles::AngleFrame& RequireFrame(const std::string_view operation) {
         if (!angle_frame_.has_value()) {
             throw std::runtime_error(std::string(operation) + " has no current ANGLE frame");
         }
         return *angle_frame_;
     }
-
     void PublishFrame() {
         AndroidBoundaryFrame frame{
             layout_.logical_width, layout_.logical_height,
@@ -707,7 +710,6 @@ private:
         }
         ready_.notify_all();
     }
-
     void RecordGpuCall(const std::string_view symbol,
                        const std::array<std::uint32_t, 4>& args) {
         if (!symbol.starts_with("egl") && !symbol.starts_with("gl")) return;
@@ -722,7 +724,6 @@ private:
         constexpr std::size_t kMaximumGpuTraceEntries = 2048;
         if (gpu_trace_.size() > kMaximumGpuTraceEntries) gpu_trace_.pop_front();
     }
-
     memory::AddressSpace& address_space_;
     gles::AngleBackend backend_;
     gles::SupersampleLayout layout_;
@@ -730,6 +731,7 @@ private:
     BionicHleSymbolProvider provider_;
     AndroidBoundaryGles gles_dispatch_;
     detail::AndroidBoundaryGles1State gles1_state_;
+    detail::AndroidBoundaryGles1DrawState gles1_draw_state_;
     detail::AndroidBoundaryGles1QueryStrings gles1_query_strings_{address_space_};
     detail::AndroidBoundaryGles1LegacyState gles1_legacy_state_;
     gles::GlesDispatchTable gles1_dispatch_{gles::GlesApi::gles1};
@@ -753,7 +755,6 @@ private:
     std::deque<core::GpuTraceEntry> gpu_trace_;
     bool gpu_render_target_ready_{};
 };
-
 AndroidBoundaryHle::AndroidBoundaryHle(memory::AddressSpace& address_space,
                                        const gles::AngleBackend backend,
                                        const std::uint32_t width,

@@ -523,7 +523,12 @@ note = "M5 WU-0273 批量接入 compressed/copy/image/sub-image 四个 GLES1 tex
 [runtime.gles1_legacy_fixed_state]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0272 批量闭合 alpha/client texture/current color/texture environment 与 glGetFloatv；状态和真实 anisotropy 查询已完成，shader/draw 消费尚未实现"
+note = "M5 WU-0272 闭合 alpha/client texture/current color/texture environment 与 glGetFloatv；WU-0274 draw 已消费目标所需子集，完整 texture environment 仍未实现"
+
+[runtime.gles1_client_array_draw]
+status = "partial"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
+note = "M5 WU-0274 批量闭合目标 8 个 client-array/draw 入口并获得首帧；guest pointer/index 受检上传，内部 GLES2 fixed shader 当前限单 active texture、GL_MODULATE、light0 与近似 normal matrix"
 
 [runtime.jni_guest_array_length]
 status = "complete"

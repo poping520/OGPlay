@@ -270,6 +270,7 @@ add_library(ogplay_runtime
     src/runtime/integration/headless_bionic_runner.cpp
     src/runtime/integration/android_boundary_gles.cpp
     src/runtime/integration/android_boundary_gles1.cpp
+    src/runtime/integration/android_boundary_gles1_draw.cpp
     src/runtime/integration/android_boundary_gles1_fixed.cpp
     src/runtime/integration/android_boundary_gles1_query.cpp
     src/runtime/integration/android_boundary_hle.cpp

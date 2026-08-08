@@ -52,6 +52,10 @@
   负责消费 true 状态并执行实际 mipmap 生成。
 - GLES1 `glGetString` 只接受 vendor/renderer/version/extensions，查询真实 ANGLE context
   后写入 GLES1 专属、分槽且只读的 guest 页；不得与 GLES2 shading-language 槽复用地址。
+- GLES1 legacy fixed-state 批次显式绑定 alpha function、client active texture、current color
+  与 texture environment；状态按 context/texture unit 隔离、验证、clamp 并随 reset 恢复默认。
+  `glGetFloatv` 从对应状态返回矩阵、颜色、alpha 与 client texture，最大 anisotropy 必须
+  查询真实 ANGLE 值；guest 输出及 `glTexEnvfv` 输入在任何状态变化前完整预检。
 - GLES1 matrix state 批次把 modelview/projection/texture 三套列主序矩阵栈隔离保存，
   `load/push/pop/rotate/translate` 按 OpenGL 后乘语义更新。`glLoadMatrixf` 必须先通过
   `AddressSpace` 完整读取 16 个 little-endian `GLfloat` 并验证有限值；坏 guest 地址、

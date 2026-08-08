@@ -149,6 +149,11 @@ public:
             [this](const std::uint32_t parameter) {
                 return RequireFrame("glGetString").GetString(parameter);
             });
+        detail::BindAndroidBoundaryGles1Legacy(
+            gles1_dispatch_, gles1_legacy_state_, gles1_state_, address_space_,
+            [this](const std::string_view operation) -> gles::AngleFrame& {
+                return RequireFrame(operation);
+            });
         gles1_state_.Fixed().SetMaterialSingleFaceQuirk(
             options.allow_gles1_material_single_face);
     }
@@ -175,7 +180,6 @@ public:
                                    memory::PageProtection::execute);
         mapped_ = true;
     }
-
     void OpenManagedSurface() {
         if (angle_frame_.has_value()) {
             throw std::logic_error(
@@ -187,7 +191,6 @@ public:
         std::scoped_lock lock(mutex_);
         gpu_render_target_ready_ = true;
     }
-
     void PresentManagedSurface() {
         if (!managed_surface_ || !angle_frame_.has_value()) {
             throw std::logic_error(
@@ -195,7 +198,6 @@ public:
         }
         PublishFrame();
     }
-
     void CloseManagedSurface() {
         if (!managed_surface_ || !angle_frame_.has_value()) {
             throw std::logic_error(
@@ -205,10 +207,10 @@ public:
         managed_surface_ = false;
         gles_dispatch_.Reset();
         gles1_state_.Reset();
+        gles1_legacy_state_.Reset();
         std::scoped_lock lock(mutex_);
         gpu_render_target_ready_ = false;
     }
-
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
         if (!mapped_ || stopped.reason != cpu::RunStopReason::supervisor_call ||
             stopped.immediate != 2) return false;
@@ -231,7 +233,6 @@ public:
         cpu.SetState(state);
         return true;
     }
-
     void NotifyFileWrite() {
         {
             std::scoped_lock lock(mutex_);
@@ -239,7 +240,6 @@ public:
         }
         ready_.notify_all();
     }
-
     void PushInput(const AndroidBoundaryInput& input) {
         {
             std::scoped_lock lock(mutex_);
@@ -247,34 +247,28 @@ public:
         }
         ready_.notify_all();
     }
-
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame() {
         std::scoped_lock lock(mutex_);
         auto result = std::move(latest_frame_);
         latest_frame_.reset();
         return result;
     }
-
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept {
         return provider_;
     }
-
     [[nodiscard]] core::GpuStats Stats() const {
         std::scoped_lock lock(mutex_);
         return gpu_stats_;
     }
-
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const {
         std::scoped_lock lock(mutex_);
         if (!gpu_render_target_ready_) return {};
         return {{0, layout_.render_width, layout_.render_height,
                  "RGBA8", {"color0"}, false}};
     }
-
     [[nodiscard]] core::GpuCapabilities Capabilities() const {
         return {{}, {}, std::string(gles::AngleBackendName(backend_))};
     }
-
     [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
         const std::string_view filter, const std::size_t limit) const {
         std::scoped_lock lock(mutex_);
@@ -289,7 +283,6 @@ public:
         std::reverse(result.begin(), result.end());
         return result;
     }
-
 private:
     void Write32(const std::uint32_t address, const std::uint32_t value,
                  const std::uint64_t thread_id) {
@@ -300,7 +293,6 @@ private:
         }
         address_space_.Write(memory::GuestAddress{address}, bytes, thread_id);
     }
-
     void WriteRequired32(const std::uint32_t address, const std::uint32_t value,
                          const std::uint64_t thread_id,
                          const std::string_view operation) {
@@ -595,6 +587,7 @@ private:
             angle_frame_.reset();
             gles_dispatch_.Reset();
             gles1_state_.Reset();
+            gles1_legacy_state_.Reset();
             std::scoped_lock lock(mutex_);
             gpu_render_target_ready_ = false;
             return 1;
@@ -739,6 +732,7 @@ private:
     AndroidBoundaryGles gles_dispatch_;
     detail::AndroidBoundaryGles1State gles1_state_;
     detail::AndroidBoundaryGles1QueryStrings gles1_query_strings_{address_space_};
+    detail::AndroidBoundaryGles1LegacyState gles1_legacy_state_;
     gles::GlesDispatchTable gles1_dispatch_{gles::GlesApi::gles1};
     gles::GlesDispatchTable gles1_extensions_dispatch_{
         gles::GlesApi::gles1_extensions};

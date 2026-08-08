@@ -29,11 +29,13 @@
 
 ## 进行中
 
-- 无。exact-APK 已越过 GLES1 texture name 生成，下一精确工作是 `glGetString`
-  （thunk 63）。
+- 无。exact-APK 已越过 GLES1 `glGetString`，下一精确工作是取证并处理
+  `glTexParameterf` 的 GLES `GL_INVALID_ENUM`（1280）。
 
 ## 最近完成
 
+- [WU-0270] GLES1 `glGetString` 已把真实 ANGLE vendor/renderer/version/extensions 发布到
+  专属分槽只读 guest 区域；exact-APK 推进到 `glTexParameterf` 参数兼容边界。
 - [WU-0269] GLES1 `glGenTextures`/`glDeleteTextures` 已通过受检 little-endian guest
   数组接入真实 ANGLE texture name 生命周期；exact-APK 推进到 `glGetString`。
 - [WU-0268] guest `CallStaticIntMethod` 已复用 descriptor-backed A32 variadic 解码并进入
@@ -62,13 +64,13 @@
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
-GLES1 handler 对照得出；当前已实现 39 个，尚余 23 个。它只表示该目标实际导入且尚未
+GLES1 handler 对照得出；当前已实现 40 个，尚余 22 个。它只表示该目标实际导入且尚未
 实现的入口，不代表完整 GLES1 命名空间。
 
 - 固定管线状态/查询（7）：`glAlphaFunc`、`glClientActiveTexture`、`glColor4f`、
   `glColor4ub`、`glGetFloatv`、`glTexEnvfv`、`glTexEnvi`。
-- 纹理资源/查询（5）：`glCompressedTexImage2D`、`glCopyTexImage2D`、`glGetString`、
-  `glTexImage2D`、`glTexSubImage2D`。
+- 纹理资源/查询（4）：`glCompressedTexImage2D`、`glCopyTexImage2D`、`glTexImage2D`、
+  `glTexSubImage2D`。
 - Client array/draw（8）：`glColorPointer`、`glDisableClientState`、`glDrawArrays`、
   `glDrawElements`、`glEnableClientState`、`glNormalPointer`、`glTexCoordPointer`、
   `glVertexPointer`。
@@ -77,7 +79,7 @@ GLES1 handler 对照得出；当前已实现 39 个，尚余 23 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 实现 exact-APK 当前阻塞的 GLES1 `glGetString` 查询入口。
+1. 取证并处理 exact-APK 当前 `glTexParameterf` 的 GLES1/GLES2 参数语义差异。
 2. 随后按真实边界闭合其余纹理、fixed-pipeline、client array/draw 与 matrix-palette extension。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

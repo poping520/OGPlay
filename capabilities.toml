@@ -505,6 +505,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0269 以受检 little-endian guest 数组把 GLES1 glGenTextures/glDeleteTextures 接入真实 ANGLE texture name 生命周期"
 
+[runtime.gles1_query_strings]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 GLES1 专属分槽只读 guest 区域，并与 GLES2 查询槽隔离"
+
 [runtime.jni_guest_array_length]
 status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp; bounded exact-APK run-apk smoke"

@@ -319,6 +319,17 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     }
     if (ogplay::gles::IsNativeAngleEglAvailable()) {
         fixture.boundary.OpenManagedSurface();
+        const auto vendor = fixture.Call(
+            "libGLESv1_CM.so", "glGetString", {0x1F00U});
+        REQUIRE(vendor != 0U);
+        CHECK(fixture.bus.Read8(ogplay::memory::GuestAddress{vendor}, 1U) != 0U);
+        CHECK_THROWS_AS(
+            fixture.memory.Write(ogplay::memory::GuestAddress{vendor},
+                                 std::array{std::byte{'X'}}, 1U),
+            ogplay::memory::MemoryFault);
+        CHECK_THROWS_WITH_AS(
+            fixture.Call("libGLESv1_CM.so", "glGetString", {0x8B8CU}),
+            "GLES1 string query is unsupported", std::invalid_argument);
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glMatrixMode",
                   {ogplay::runtime::detail::kGles1Projection}) == 0U);

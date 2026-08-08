@@ -23,6 +23,7 @@
 #include "ogplay/runtime/integration/android_boundary_gles.h"
 #include "android_boundary_gles1.h"
 #include "android_boundary_gles1_fixed.h"
+#include "android_boundary_gles1_query.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -142,6 +143,11 @@ public:
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
+            });
+        detail::BindAndroidBoundaryGles1Queries(
+            gles1_dispatch_, gles1_query_strings_,
+            [this](const std::uint32_t parameter) {
+                return RequireFrame("glGetString").GetString(parameter);
             });
         gles1_state_.Fixed().SetMaterialSingleFaceQuirk(
             options.allow_gles1_material_single_face);
@@ -732,6 +738,7 @@ private:
     BionicHleSymbolProvider provider_;
     AndroidBoundaryGles gles_dispatch_;
     detail::AndroidBoundaryGles1State gles1_state_;
+    detail::AndroidBoundaryGles1QueryStrings gles1_query_strings_{address_space_};
     gles::GlesDispatchTable gles1_dispatch_{gles::GlesApi::gles1};
     gles::GlesDispatchTable gles1_extensions_dispatch_{
         gles::GlesApi::gles1_extensions};

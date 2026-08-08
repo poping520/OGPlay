@@ -11,7 +11,7 @@
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
-- 当前 M5 增量 WU 的开发与验收目标为 macOS/arm64 + ANGLE：warnings-as-errors、全量
+- 当前 M5 增量 WU 的开发与验收目标为 Windows-x64 + ANGLE：warnings-as-errors、全量
   CTest 与 exact-APK bounded smoke；其他平台留到显式跨平台检查点，不再阻塞每个
   增量 WU。
 
@@ -29,10 +29,13 @@
 
 ## 进行中
 
-- 无。下一精确边界为未实现 GLES1 `glEnable`（thunk 37）。
+- 无。下一精确边界为未实现 GLES1 `glMatrixMode`（thunk 92）。
 
 ## 最近完成
 
+- [WU-0262] 目标导入的 17 个 GLES1 无指针标量状态入口已批量闭合；共有状态进入
+  ANGLE，GLES1-only hint/capability 与 transfer state 显式保存。Windows-x64 + ANGLE
+  全量 CTest 402/402 与 exact-APK smoke 已通过，下一边界为 `glMatrixMode`。
 - [WU-0261] GLES1 `glClear` 现将 guest `GLbitfield` mask 原样转发当前
   `AngleFrame::Clear`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK smoke
   已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1 `glEnable`（thunk 37）。
@@ -78,8 +81,8 @@
 
 ## 下一步（按优先级）
 
-1. 按 smoke 暴露的下一边界绑定 GLES1 `glEnable`。
-2. 按真实调用顺序继续闭合 JNI 与 GLES1 fixed-pipeline handler。
+1. 批量闭合 matrix-mode/load/push/pop/rotate/translate 等 fixed-pipeline 矩阵状态。
+2. 随后按批次闭合 lighting/material/fog、client array/draw 与 matrix-palette extension。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

@@ -37,6 +37,14 @@
 - GLES1 `glClear` 将 guest `GLbitfield` mask 原样转发 `AngleFrame::Clear`，由同一
   ANGLE context 应用当前 color/depth/stencil clear state；无当前 frame 或非法 mask
   产生的 ANGLE 错误必须明确失败，不得静默过滤未知 bit。
+- GLES1 scalar state 批次把 active texture、buffer/texture binding、blend/color/cull/depth、
+  enable/disable、finish/front-face/error/hint/pixel-store 与 texture parameter 共 17 个入口
+  直接交给当前 `AngleFrame`；GLboolean、GLint 与 GLfloat 分别按非零、位模式有符号值和
+  浮点位型解码。buffer/pixel-store 同时事务更新独立 GLES1 transfer state；GLES1-only
+  perspective/point/line/fog hint 进入受检可重置状态，mipmap hint 才转发 ANGLE。ANGLE
+  共有 capability 转发原生 context，GLES1-only capability 进入显式 fixed-pipeline state，
+  `GL_TEXTURE_2D` 按 active texture unit 隔离。ANGLE 失败时不提交；无 current frame 或
+  非法枚举明确失败。
 - shader/program handler 必须把 guest 二级源码数组、可选长度、查询输出和符号名完整
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、

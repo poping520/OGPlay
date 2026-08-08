@@ -391,6 +391,20 @@ void AngleFrame::TextureParameter(const std::uint32_t target,
 #endif
 }
 
+void AngleFrame::TextureParameterFloat(const std::uint32_t target,
+                                       const std::uint32_t parameter,
+                                       const float value) {
+#if OGPLAY_HAS_ANGLE
+    glTexParameterf(target, parameter, value);
+    RequireNoError("glTexParameterf");
+#else
+    static_cast<void>(target);
+    static_cast<void>(parameter);
+    static_cast<void>(value);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::TextureImage2D(
     const std::uint32_t target, const std::int32_t level,
     const std::int32_t internal_format, const std::int32_t width,
@@ -503,6 +517,81 @@ void AngleFrame::BlendFunction(const std::uint32_t source,
     RequireNoError("glBlendFunc");
 #else
     static_cast<void>(source); static_cast<void>(destination);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::ColorMask(const bool red, const bool green, const bool blue,
+                           const bool alpha) {
+#if OGPLAY_HAS_ANGLE
+    glColorMask(red ? GL_TRUE : GL_FALSE, green ? GL_TRUE : GL_FALSE,
+                blue ? GL_TRUE : GL_FALSE, alpha ? GL_TRUE : GL_FALSE);
+    RequireNoError("glColorMask");
+#else
+    static_cast<void>(red);
+    static_cast<void>(green);
+    static_cast<void>(blue);
+    static_cast<void>(alpha);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::CullFace(const std::uint32_t mode) {
+#if OGPLAY_HAS_ANGLE
+    glCullFace(mode);
+    RequireNoError("glCullFace");
+#else
+    static_cast<void>(mode);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::DepthFunction(const std::uint32_t function) {
+#if OGPLAY_HAS_ANGLE
+    glDepthFunc(function);
+    RequireNoError("glDepthFunc");
+#else
+    static_cast<void>(function);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::DepthMask(const bool enabled) {
+#if OGPLAY_HAS_ANGLE
+    glDepthMask(enabled ? GL_TRUE : GL_FALSE);
+    RequireNoError("glDepthMask");
+#else
+    static_cast<void>(enabled);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::Finish() {
+#if OGPLAY_HAS_ANGLE
+    glFinish();
+    RequireNoError("glFinish");
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::FrontFace(const std::uint32_t mode) {
+#if OGPLAY_HAS_ANGLE
+    glFrontFace(mode);
+    RequireNoError("glFrontFace");
+#else
+    static_cast<void>(mode);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::Hint(const std::uint32_t target, const std::uint32_t mode) {
+#if OGPLAY_HAS_ANGLE
+    glHint(target, mode);
+    RequireNoError("glHint");
+#else
+    static_cast<void>(target);
+    static_cast<void>(mode);
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }

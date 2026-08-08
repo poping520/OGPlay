@@ -71,6 +71,8 @@ public:
     void PixelStore(std::uint32_t parameter, std::int32_t value);
     void TextureParameter(std::uint32_t target, std::uint32_t parameter,
                           std::int32_t value);
+    void TextureParameterFloat(std::uint32_t target,
+                               std::uint32_t parameter, float value);
     void TextureImage2D(std::uint32_t target, std::int32_t level,
                         std::int32_t internal_format, std::int32_t width,
                         std::int32_t height, std::int32_t border,
@@ -87,6 +89,13 @@ public:
                         bool transpose, std::span<const float> values);
     void SetCapability(std::uint32_t capability, bool enabled);
     void BlendFunction(std::uint32_t source, std::uint32_t destination);
+    void ColorMask(bool red, bool green, bool blue, bool alpha);
+    void CullFace(std::uint32_t mode);
+    void DepthFunction(std::uint32_t function);
+    void DepthMask(bool enabled);
+    void Finish();
+    void FrontFace(std::uint32_t mode);
+    void Hint(std::uint32_t target, std::uint32_t mode);
     [[nodiscard]] std::vector<std::int32_t> GetIntegers(
         std::uint32_t parameter, std::size_t count);
     [[nodiscard]] std::string GetString(std::uint32_t parameter);

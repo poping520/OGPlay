@@ -150,7 +150,7 @@ public:
                 return RequireFrame(operation);
             });
         detail::BindAndroidBoundaryGles1Draw(
-            gles1_dispatch_, gles1_draw_state_, gles1_state_,
+            gles1_dispatch_, gles1_extensions_dispatch_, gles1_draw_state_, gles1_state_,
             gles1_legacy_state_, address_space_,
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);

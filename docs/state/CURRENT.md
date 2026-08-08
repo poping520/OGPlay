@@ -29,11 +29,14 @@
 
 ## 进行中
 
-- 无。exact-APK 已越过全部 8 个 client-array/draw 入口并在一帧边界正常停止；剩余
-  3 个目标 GL import 均为 matrix-palette extension。
+- 无。目标 ELF 的 62 个 GL import 已全部具有显式行为 handler；exact-APK 在一帧边界
+  正常停止。matrix-palette skinning 与 fixed renderer 完整语义仍按能力账本保持 partial。
 
 ## 最近完成
 
+- [WU-0275] 最后 3 个 `GL_OES_matrix_palette` import 已进入受检、可重置的 palette index
+  与 client pointer 状态；未完成的 skinning draw 明确失败。目标 62/62 GL import 均有
+  行为 handler，exact-APK 一帧 smoke 继续以状态 0 完成。
 - [WU-0274] 批量闭合 4 种 client pointer、enable/disable client state 与两种 draw；guest
   array/index 按真实 draw 范围预检上传，内部 GLES2 fixed shader 消费矩阵、颜色、light0、
   texture、fog 与 alpha state。exact-APK 首次成功提交 1 个 managed ANGLE frame。
@@ -76,17 +79,16 @@
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
-GLES1 handler 对照得出；当前已实现 59 个，尚余 3 个。它只表示该目标实际导入且尚未
+GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表示该目标实际导入且尚未
 实现的入口，不代表完整 GLES1 命名空间。
 
-- Matrix-palette 扩展（3）：`glCurrentPaletteMatrixOES`、
-  `glMatrixIndexPointerOES`、`glWeightPointerOES`。
+- 无。
 
 ## 下一步（按优先级）
 
-1. 批量闭合 3 个 matrix-palette extension，并接入同一 client-array draw 状态。
-2. 扩展 fixed-pipeline renderer 的多纹理、完整 texture environment 与多光源语义。
-3. 增加多帧 exact-APK smoke 与黄金帧证据。
+1. 增加 exact-APK 多帧 smoke 与稳定黄金帧证据。
+2. 按实际调用证据扩展 fixed renderer 的多纹理、完整 texture environment 与多光源语义。
+3. 如目标启用 matrix palette，再实现 palette matrix stack 与 skinning shader。
 
 ## 阻塞
 

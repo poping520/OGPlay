@@ -284,7 +284,16 @@ TEST_CASE("GLES1 client array state validates texture units and resets") {
         state.SetPointer(ogplay::runtime::detail::kGles1VertexArray,
                          0x84C0U, 3, 0U, 0, 0U, 0U),
         std::invalid_argument);
+    state.SetCurrentPaletteMatrix(7U);
+    CHECK(state.CurrentPaletteMatrix() == 7U);
+    state.SetPointer(ogplay::runtime::detail::kGles1MatrixIndexArray,
+                     0x84C0U, 4, 0x1401U, 0, 0x3000U, 0U);
+    state.SetPointer(ogplay::runtime::detail::kGles1WeightArray,
+                     0x84C0U, 4, 0x1406U, 0, 0x4000U, 0U);
+    CHECK_THROWS_AS(state.SetCurrentPaletteMatrix(32U),
+                    std::invalid_argument);
     state.Reset();
+    CHECK(state.CurrentPaletteMatrix() == 0U);
     CHECK_FALSE(state.Array(ogplay::runtime::detail::kGles1VertexArray,
                             0x84C0U).enabled);
 }
@@ -718,9 +727,35 @@ TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
     }
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glCurrentPaletteMatrixOES", {0}),
-        "unimplemented GLES1 call glCurrentPaletteMatrixOES "
-        "(thunk 0, guest thread 1)",
-        ogplay::gles::GlesDispatchError);
+        "glCurrentPaletteMatrixOES has no current ANGLE frame",
+        std::runtime_error);
+    fixture.boundary.OpenManagedSurface();
+    CHECK(fixture.Call("libGLESv1_CM.so", "glCurrentPaletteMatrixOES",
+                       {3U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glMatrixIndexPointerOES",
+                       {4U, 0x1401U, 0U, fixture.output.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glWeightPointerOES",
+                       {4U, 0x1406U, 0U, fixture.output.Add(32U).Value()}) == 0U);
+    CHECK_THROWS_AS(
+        fixture.Call("libGLESv1_CM.so", "glCurrentPaletteMatrixOES",
+                     {32U}),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        fixture.Call("libGLESv1_CM.so", "glMatrixIndexPointerOES",
+                     {4U, 0x1406U, 0U, fixture.output.Value()}),
+        std::invalid_argument);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
+                       {3U, 0x1406U, 0U, fixture.output.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                       {ogplay::runtime::detail::kGles1VertexArray}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                       {ogplay::runtime::detail::kGles1MatrixIndexArray}) == 0U);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                     {0x0000U, 0U, 1U}),
+        "GLES1 matrix-palette skinning draw conversion is not implemented",
+        std::runtime_error);
+    fixture.boundary.CloseManagedSurface();
 }
 
 TEST_CASE("Android looper publishes command and input poll sources") {

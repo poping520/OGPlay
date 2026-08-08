@@ -13,6 +13,8 @@ inline constexpr std::uint32_t kGles1VertexArray = 0x8074U;
 inline constexpr std::uint32_t kGles1NormalArray = 0x8075U;
 inline constexpr std::uint32_t kGles1ColorArray = 0x8076U;
 inline constexpr std::uint32_t kGles1TextureCoordArray = 0x8078U;
+inline constexpr std::uint32_t kGles1MatrixIndexArray = 0x8844U;
+inline constexpr std::uint32_t kGles1WeightArray = 0x86ADU;
 
 struct Gles1ClientArray final {
     std::int32_t size{};
@@ -35,6 +37,8 @@ public:
                     std::uint32_t buffer);
     [[nodiscard]] const Gles1ClientArray& Array(
         std::uint32_t array, std::uint32_t client_texture) const;
+    void SetCurrentPaletteMatrix(std::uint32_t index);
+    [[nodiscard]] std::uint32_t CurrentPaletteMatrix() const noexcept;
 
     void DrawArrays(gles::AngleFrame& frame,
                     const AndroidBoundaryGles1State& core,
@@ -71,10 +75,13 @@ private:
 
     std::map<std::uint64_t, Gles1ClientArray> arrays_;
     Program program_;
+    std::uint32_t current_palette_matrix_{};
 };
 
 void BindAndroidBoundaryGles1Draw(
-    gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1DrawState& draw,
+    gles::GlesDispatchTable& dispatch,
+    gles::GlesDispatchTable& extensions,
+    AndroidBoundaryGles1DrawState& draw,
     AndroidBoundaryGles1State& core,
     AndroidBoundaryGles1LegacyState& legacy,
     memory::AddressSpace& address_space,

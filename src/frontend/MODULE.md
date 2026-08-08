@@ -29,7 +29,7 @@ CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title
   managed ANGLE surface；phase、class、export 和参数全部来自已匹配 Profile。Profile
   引用完整 direct-asset implementation set 时，CLI 必须把 APK `assets/` 条目受检导入
   `/apk` VFS，并只把该组通用 ID 交给 guest session。
-- 前端只可把已验证的 `gles1_material_front_face` id 映射为通用
+- 前端只可把已验证的 `gles1_material_front_face` id 映射为通用 single-face material
   `AndroidBoundaryOptions` 布尔项；不得在运行时接口中传递游戏名、包名或 Profile 对象。
 
 ## 禁止

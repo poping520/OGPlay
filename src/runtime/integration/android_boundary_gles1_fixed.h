@@ -13,6 +13,8 @@
 namespace ogplay::runtime::detail {
 
 inline constexpr std::uint32_t kGles1FrontAndBack = 0x0408U;
+inline constexpr std::uint32_t kGles1Front = 0x0404U;
+inline constexpr std::uint32_t kGles1Back = 0x0405U;
 inline constexpr std::uint32_t kGles1FogMode = 0x0B65U;
 inline constexpr std::uint32_t kGles1FogDensity = 0x0B62U;
 inline constexpr std::uint32_t kGles1FogColor = 0x0B66U;
@@ -26,7 +28,7 @@ class AndroidBoundaryGles1FixedState final {
   public:
     AndroidBoundaryGles1FixedState();
 
-    void SetMaterialFrontFaceQuirk(bool enabled) noexcept;
+    void SetMaterialSingleFaceQuirk(bool enabled) noexcept;
     void Reset();
     void SetFog(std::uint32_t pname, std::span<const float> values);
     void SetLightModel(std::uint32_t pname, std::span<const float> values);
@@ -37,13 +39,16 @@ class AndroidBoundaryGles1FixedState final {
     [[nodiscard]] const std::vector<float>& LightModel(std::uint32_t pname) const;
     [[nodiscard]] const std::vector<float>& Light(std::uint32_t light, std::uint32_t pname) const;
     [[nodiscard]] const std::vector<float>& Material(std::uint32_t pname) const;
+    [[nodiscard]] const std::vector<float>& Material(
+        std::uint32_t face, std::uint32_t pname) const;
 
   private:
     std::map<std::uint32_t, std::vector<float>> fog_;
     std::map<std::uint32_t, std::vector<float>> light_model_;
     std::map<std::uint64_t, std::vector<float>> lights_;
-    std::map<std::uint32_t, std::vector<float>> material_;
-    bool normalize_material_front_face_{};
+    std::map<std::uint32_t, std::vector<float>> material_front_;
+    std::map<std::uint32_t, std::vector<float>> material_back_;
+    bool allow_material_single_face_{};
 };
 
 void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,

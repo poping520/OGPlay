@@ -56,9 +56,10 @@
   状态保存规范默认值并随 context reset；`glMaterial*` 默认严格要求
   `GL_FRONT_AND_BACK`，Profile 未显式启用兼容策略时不得接受 `GL_FRONT`。这些状态只供
   后续 fixed-pipeline shader/draw 转换消费，不代表已执行原生 GLES2 绘制。
-- `AndroidBoundaryOptions::normalize_gles1_material_front_face` 默认关闭；仅已验证 Profile
-  quirk 可经 guest-session request 启用。启用时只把 `glMaterial*` 的 `GL_FRONT` 归一为
-  GLES1 `GL_FRONT_AND_BACK`，其他非法 face 仍失败；context reset 不得丢失配置策略。
+- `AndroidBoundaryOptions::allow_gles1_material_single_face` 默认关闭；仅已验证 Profile
+  quirk 可经 guest-session request 启用。启用时 `glMaterial*` 可独立保存 `GL_FRONT` 与
+  `GL_BACK`，标准 `GL_FRONT_AND_BACK` 仍事务更新两面，其他非法 face 失败；context reset
+  恢复两面默认值但不得丢失配置策略。
 - shader/program handler 必须把 guest 二级源码数组、可选长度、查询输出和符号名完整
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、

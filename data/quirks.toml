@@ -13,8 +13,8 @@ schema = 1
 # owner = "runtime/memory"
 
 [gles1_material_front_face]
-summary = "将 Profile 指定目标的 GL_FRONT material 更新归一为 GL_FRONT_AND_BACK"
-reason = "目标二进制向 GLES1 glMaterialfv 传入桌面 GL 的 GL_FRONT，但 GLES1 只接受 GL_FRONT_AND_BACK"
-risk = "放宽后背面材质会与正面一同更新，因此只能对精确身份 Profile 启用"
-test = "tests/runtime/android_boundary_gles1_fixed_tests.cpp:GLES1 material front face quirk is required when disabled"
+summary = "允许 Profile 指定目标保存桌面 GL 风格的前后单面 material"
+reason = "目标二进制向 GLES1 glMaterialfv 依次传入 GL_FRONT 与 GL_BACK，但 GLES1 只接受 GL_FRONT_AND_BACK"
+risk = "启用后前后材质可分离，偏离 GLES1 双面同值语义，因此只能对精确身份 Profile 启用"
+test = "tests/runtime/android_boundary_gles1_fixed_tests.cpp:GLES1 single-face material quirk is required when disabled"
 owner = "runtime/integration"

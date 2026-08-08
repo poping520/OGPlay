@@ -11,7 +11,7 @@
 - Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
   开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
   [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
-- 当前 M5 增量 WU 的开发与验收目标为 Windows-x64 + ANGLE：warnings-as-errors、全量
+- 当前 M5 增量 WU 的开发与验收目标为 macOS-arm64 + ANGLE：warnings-as-errors、全量
   CTest 与 exact-APK bounded smoke；其他平台留到显式跨平台检查点，不再阻塞每个
   增量 WU。
 
@@ -29,10 +29,15 @@
 
 ## 进行中
 
-- 无。下一精确边界为未实现 GLES1 `glMaterialfv`（thunk 89）。
+- 无。下一精确边界为目标向 `glMaterialfv` 传入规范不接受的 `GL_FRONT`；需以 Profile
+  quirk 精确归一为 `GL_FRONT_AND_BACK`，标准路径继续 fail closed。
 
 ## 最近完成
 
+- [WU-0264] 目标导入的 7 个 GLES1 lighting/material/fog 入口已进入独立、可重置的
+  fixed-pipeline 状态，pointer 参数完整受检搬运，枚举与范围错误明确失败。macOS-arm64 +
+  ANGLE 行为测试通过；exact-APK 已进入 `glMaterialfv` handler 并暴露 `GL_FRONT`
+  规范兼容边界。
 - [WU-0263] GLES1 modelview/projection/texture 三套矩阵栈及 7 个浮点 matrix handler 已
   批量闭合；guest matrix 经受检地址完整搬运，栈与非法值 fail closed。Windows-x64 +
   ANGLE 全量 CTest 403/403 与 exact-APK smoke 已通过，下一边界为 `glMaterialfv`。
@@ -42,56 +47,15 @@
 - [WU-0261] GLES1 `glClear` 现将 guest `GLbitfield` mask 原样转发当前
   `AngleFrame::Clear`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK smoke
   已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1 `glEnable`（thunk 37）。
-- [WU-0260] GLES1 `glClearDepthf` 现逐位解码 guest `GLfloat` 并转发当前
-  `AngleFrame::ClearDepth`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK
-  smoke 已通过，真实目标越过该调用后首个新阻塞为未实现 GLES1 `glClear`
-  （thunk 8）。
-- [WU-0259] GLES1 `glClearColor` 已逐位解码四个 guest `GLfloat` 并转发当前
-  `AngleFrame`；macOS/arm64 ANGLE 全量 CTest 402/402 与 exact-APK smoke 已通过，
-  真实目标越过该调用后首个新阻塞为未实现 GLES1 `glClearDepthf`（thunk 11）。
-- [WU-0258] GLES1 `glShadeModel` 现以显式 fixed-pipeline context state 保存受检
-  `GL_FLAT` / `GL_SMOOTH`；真实目标已越过该调用，首个新阻塞为未实现 GLES1
-  `glClearColor`。全量 CTest 402/402 通过。
-- [WU-0257] guest `GetByteArrayRegion` 现从统一 primitive array store 受检复制 byte
-  区间到 guest 内存，并解码 A32 第 5 栈参数；真实目标已越过该槽，首个新阻塞为未实现
-  GLES1 `glShadeModel`。全量 CTest 401/401 通过。
-- [WU-0256] guest `GetArrayLength` 现从 session 持有的统一 primitive array store
-  返回真实长度；真实目标已越过该槽，首个新阻塞为未绑定 JNI `GetByteArrayRegion`。
-  全量 CTest 400/400 通过。
-- [WU-0255] Profile 引用的通用 direct-asset handler 与 APK `assets/` 已接入
-  Android guest call session；真实目标已越过 `resource.load_full`，首个新阻塞为未绑定
-  JNI `GetArrayLength`。全量 CTest 399/399 通过。
-- [WU-0254] 通用直接资源 HLE 现按调用方 implementation id 从受检 APK VFS 提供
-  full/range/length，并把结果发布为统一 JNI byte array。全量 CTest 399/399 通过。
-- [WU-0253] guest `CallStaticObjectMethod` 现按 descriptor 解码 A32 variadic 参数并
-  进入统一 invocation engine；真实目标已越过未绑定槽，首个新阻塞为 Profile Java
-  method 尚无注册 handler。全量 CTest 397/397 通过。
-- [WU-0252] guest `NewStringUTF` 现通过受检 guest C string、M3 Modified UTF-8 解码
-  与统一 string store 发布 local reference；真实目标已越过该调用，首个新阻塞为未绑定
-  JNI `CallStaticObjectMethod`。全量 CTest 396/396 通过。
-- [WU-0251] GLES1 `glScissor` 现通过隔离 fixed-pipeline dispatch 转发当前 ANGLE
-  frame，并复用受检超采样换算；真实目标已越过该调用，首个新阻塞为未绑定 JNI
-  `NewStringUTF`。全量 CTest 395/395 通过。
-- [WU-0250] GLES1 `glViewport` 现通过隔离 fixed-pipeline dispatch 转发当前 ANGLE
-  frame，并复用受检超采样换算；真实目标已越过该调用，首个新阻塞为未实现
-  `glScissor`。全量 CTest 395/395 通过。
-- [WU-0249] activity native init 经 JADX 与 ELF 共同确认的 5 个 static Java method
-  已进入纯 Profile 数据；真实目标已推进至 startup call 4，首个新阻塞为未实现 GLES1
-  `glViewport`。全量 CTest 395/395 通过。
-- [WU-0248] GLMediaPlayer native init 经 JADX 与 ELF 共同确认的 25 个 static Java
-  method 已进入纯 Profile 数据；真实目标已推进至 startup call 3，首个新阻塞为未声明
-  `sendAppToBackground()V`。全量 CTest 395/395 通过。
 
 ## 目标 ELF 尚未实现的 GL 入口
 
-以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0263 后的显式
-GLES1 handler 对照得出；当前已实现 30 个，尚余 32 个。它只表示该目标实际导入且尚未
-实现的入口，不代表完整 GLES1 命名空间。exact-APK 当前最先命中的是 `glMaterialfv`
-（thunk 89）。
+以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
+GLES1 handler 对照得出；当前已实现 37 个，尚余 25 个。它只表示该目标实际导入且尚未
+实现的入口，不代表完整 GLES1 命名空间。
 
-- 固定管线状态/查询（14）：`glAlphaFunc`、`glClientActiveTexture`、`glColor4f`、
-  `glColor4ub`、`glFogf`、`glFogfv`、`glGetFloatv`、`glLightModelfv`、`glLightf`、
-  `glLightfv`、`glMaterialf`、`glMaterialfv`、`glTexEnvfv`、`glTexEnvi`。
+- 固定管线状态/查询（7）：`glAlphaFunc`、`glClientActiveTexture`、`glColor4f`、
+  `glColor4ub`、`glGetFloatv`、`glTexEnvfv`、`glTexEnvi`。
 - 纹理资源/查询（7）：`glCompressedTexImage2D`、`glCopyTexImage2D`、
   `glDeleteTextures`、`glGenTextures`、`glGetString`、`glTexImage2D`、
   `glTexSubImage2D`。
@@ -103,8 +67,8 @@ GLES1 handler 对照得出；当前已实现 30 个，尚余 32 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 批量闭合 lighting/material/fog fixed-pipeline 状态，当前首个入口为 `glMaterialfv`。
-2. 随后按批次闭合 client array/draw 与 matrix-palette extension。
+1. 登记并接入只对精确 Profile 生效的 material `GL_FRONT` 归一 quirk。
+2. 随后批量闭合其余 fixed-pipeline 状态、client array/draw 与 matrix-palette extension。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 
 ## 阻塞

@@ -51,6 +51,11 @@
   非法 mode、栈上溢/下溢、非法旋转轴或无 current frame 均明确失败且不部分提交。
   context 终止时恢复默认 modelview mode 与三套 identity 栈；状态留给后续 fixed-pipeline
   draw 转换消费，不得将仅缓存矩阵解释为已完成渲染。
+- GLES1 lighting/material/fog 状态批次显式绑定 7 个目标导入入口；所有浮点向量先从
+  强类型 guest 地址完整搬运，再按 GLES1 pname、元素数、有限值及参数范围校验后事务提交。
+  状态保存规范默认值并随 context reset；`glMaterial*` 默认严格要求
+  `GL_FRONT_AND_BACK`，Profile 未显式启用兼容策略时不得接受 `GL_FRONT`。这些状态只供
+  后续 fixed-pipeline shader/draw 转换消费，不代表已执行原生 GLES2 绘制。
 - shader/program handler 必须把 guest 二级源码数组、可选长度、查询输出和符号名完整
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、

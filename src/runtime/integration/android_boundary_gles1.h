@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -17,6 +18,8 @@ class AddressSpace;
 }
 
 namespace ogplay::runtime::detail {
+
+class AndroidBoundaryGles1FixedState;
 
 inline constexpr std::uint32_t kGles1FlatShadeModel = 0x1D00U;
 inline constexpr std::uint32_t kGles1SmoothShadeModel = 0x1D01U;
@@ -57,6 +60,8 @@ private:
 
 class AndroidBoundaryGles1State final {
 public:
+    AndroidBoundaryGles1State();
+    ~AndroidBoundaryGles1State();
     void Reset();
     void SetShadeModel(std::uint32_t mode);
     [[nodiscard]] std::uint32_t ShadeModel() const noexcept;
@@ -70,6 +75,8 @@ public:
     [[nodiscard]] bool Capability(std::uint32_t capability) const;
     [[nodiscard]] AndroidBoundaryGles1MatrixState& Matrices() noexcept;
     [[nodiscard]] const AndroidBoundaryGles1MatrixState& Matrices() const noexcept;
+    [[nodiscard]] AndroidBoundaryGles1FixedState& Fixed() noexcept;
+    [[nodiscard]] const AndroidBoundaryGles1FixedState& Fixed() const noexcept;
 
 private:
     std::uint32_t shade_model_{kGles1SmoothShadeModel};
@@ -80,6 +87,7 @@ private:
     std::map<std::uint64_t, bool> capabilities_;
     gles::GlesTransferState transfer_state_;
     AndroidBoundaryGles1MatrixState matrices_;
+    std::unique_ptr<AndroidBoundaryGles1FixedState> fixed_;
 };
 
 using AndroidBoundaryFrameResolver =

@@ -18,7 +18,7 @@ constexpr std::uint32_t kConstantAttenuation = 0x1207U;
 
 } // namespace
 
-TEST_CASE("GLES1 lighting material and fog state validates and resets") {
+TEST_CASE("GLES1 material front face quirk is required when disabled") {
     ogplay::runtime::detail::AndroidBoundaryGles1FixedState state;
     CHECK(state.Fog(ogplay::runtime::detail::kGles1FogDensity)[0] == 1.0F);
     CHECK(state.LightModel(ogplay::runtime::detail::kGles1LightModelAmbient)[0] == 0.2F);
@@ -54,8 +54,8 @@ TEST_CASE("GLES1 lighting material and fog state validates and resets") {
                                            invalid_shininess),
                          "GLES1 material shininess is outside 0..128", std::invalid_argument);
     CHECK_THROWS_WITH_AS(
-        state.SetMaterial(0U, ogplay::runtime::detail::kGles1MaterialShininess, shininess),
-        "GLES1 material face must be GL_FRONT_AND_BACK: 0", std::invalid_argument);
+        state.SetMaterial(0x0404U, ogplay::runtime::detail::kGles1MaterialShininess, shininess),
+        "GLES1 material face must be GL_FRONT_AND_BACK: 1028", std::invalid_argument);
     const std::array not_finite{std::numeric_limits<float>::infinity()};
     CHECK_THROWS_WITH_AS(state.SetFog(ogplay::runtime::detail::kGles1FogDensity, not_finite),
                          "GLES1 fog value must be finite", std::invalid_argument);

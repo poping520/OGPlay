@@ -11,6 +11,9 @@ lifecycle = "gl_surface_view"
 [runtime.surface]
 width = 800
 height = 480
+[quirks]
+enabled = ["gles1_material_front_face"]
+[quirks.gles1_material_front_face]
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"

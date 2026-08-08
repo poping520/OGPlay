@@ -29,11 +29,13 @@
 
 ## 进行中
 
-- 无。下一精确边界为目标向 `glMaterialfv` 传入规范不接受的 `GL_FRONT`；需以 Profile
-  quirk 精确归一为 `GL_FRONT_AND_BACK`，标准路径继续 fail closed。
+- 无。`gles1_material_front_face` 已登记并由精确 Profile 启用；下一精确工作是把声明映射
+  为 guest-session 边界选项，标准路径继续 fail closed。
 
 ## 最近完成
 
+- [WU-0265] Profile quirk 声明与 CLI 注册表加载已闭合，关闭 quirk 的状态测试继续拒绝
+  `GL_FRONT`；运行时行为尚未启用，能力保持 partial。
 - [WU-0264] 目标导入的 7 个 GLES1 lighting/material/fog 入口已进入独立、可重置的
   fixed-pipeline 状态，pointer 参数完整受检搬运，枚举与范围错误明确失败。macOS-arm64 +
   ANGLE 行为测试通过；exact-APK 已进入 `glMaterialfv` handler 并暴露 `GL_FRONT`

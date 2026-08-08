@@ -40,6 +40,11 @@ status = "complete"
 test = "tools/validate_quirks.py --self-test; tests/session/quirk_registry_tests.cpp"
 note = "M5 WU-0204/0205 强制 summary/reason/risk/test/owner、真实测试引用与 profile 交叉引用；C++ 目录对含 quirk 的 profile 强制注入 UTF-8 注册表，未注册或无注册表明确失败"
 
+[profiles.gles1_material_front_face_quirk]
+status = "partial"
+test = "tools.quirk_registry_current; tests/runtime/android_boundary_gles1_fixed_tests.cpp"
+note = "M5 WU-0265 已登记 GL_FRONT material 归一 quirk、由精确 Profile 启用并让 run-apk 强制注册表验证；运行时映射留给 WU-0266"
+
 [session.lifecycle_templates]
 status = "complete"
 test = "tests/session/lifecycle_tests.cpp"

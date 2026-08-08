@@ -302,6 +302,8 @@ void AndroidBoundaryGles1State::Reset() {
     shade_model_ = kGles1SmoothShadeModel;
     hints_.fill(kGles1DontCare);
     active_texture_ = 0x84C0U;
+    bound_textures_.clear();
+    generate_mipmap_.clear();
     capabilities_.clear();
     transfer_state_ = {};
     matrices_.Reset();
@@ -350,6 +352,44 @@ void AndroidBoundaryGles1State::SetActiveTexture(
 
 std::uint32_t AndroidBoundaryGles1State::ActiveTexture() const noexcept {
     return active_texture_;
+}
+
+void AndroidBoundaryGles1State::BindTexture(
+    const std::uint32_t target, const std::uint32_t texture) {
+    if (target != 0x0DE1U) {
+        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+    }
+    bound_textures_[active_texture_] = texture;
+}
+
+void AndroidBoundaryGles1State::DeleteTextures(
+    const std::span<const std::uint32_t> textures) noexcept {
+    for (const auto texture : textures) {
+        generate_mipmap_.erase(texture);
+        for (auto& [unit, bound] : bound_textures_) {
+            static_cast<void>(unit);
+            if (bound == texture) bound = 0U;
+        }
+    }
+}
+
+void AndroidBoundaryGles1State::SetGenerateMipmap(
+    const std::uint32_t target, const bool enabled) {
+    if (target != 0x0DE1U) {
+        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+    }
+    generate_mipmap_[bound_textures_[active_texture_]] = enabled;
+}
+
+bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
+    const std::uint32_t target) const {
+    if (target != 0x0DE1U) {
+        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+    }
+    const auto bound = bound_textures_.find(active_texture_);
+    const auto texture = bound == bound_textures_.end() ? 0U : bound->second;
+    const auto found = generate_mipmap_.find(texture);
+    return found != generate_mipmap_.end() && found->second;
 }
 
 void AndroidBoundaryGles1State::SetCapability(
@@ -418,15 +458,16 @@ void BindAndroidBoundaryGles1Core(
         });
     dispatch.Bind(
         "glDeleteTextures",
-        [&address_space, require_frame](
+        [&state, &address_space, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t thread_id) {
             const auto input = PrepareTextureNames(
                 address_space, arguments[0], arguments[1],
                 gles::GuestTransferDirection::input, thread_id,
                 "glDeleteTextures");
-            require_frame("glDeleteTextures")
-                .DeleteTextures(ReadTextureNames(input));
+            const auto names = ReadTextureNames(input);
+            require_frame("glDeleteTextures").DeleteTextures(names);
+            state.DeleteTextures(names);
             return 0U;
         });
     dispatch.Bind(
@@ -521,10 +562,11 @@ void BindAndroidBoundaryGles1Core(
         });
     dispatch.Bind(
         "glBindTexture",
-        [require_frame](const std::span<const std::uint32_t> arguments,
-                        const std::uint64_t) {
+        [&state, require_frame](const std::span<const std::uint32_t> arguments,
+                               const std::uint64_t) {
             require_frame("glBindTexture")
                 .BindTexture(arguments[0], arguments[1]);
+            state.BindTexture(arguments[0], arguments[1]);
             return 0U;
         });
     dispatch.Bind(
@@ -623,8 +665,18 @@ void BindAndroidBoundaryGles1Core(
         });
     dispatch.Bind(
         "glTexParameterf",
-        [require_frame](const std::span<const std::uint32_t> arguments,
-                        const std::uint64_t) {
+        [&state, require_frame](const std::span<const std::uint32_t> arguments,
+                               const std::uint64_t) {
+            if (arguments[1] == kGles1GenerateMipmap) {
+                const auto value = std::bit_cast<float>(arguments[2]);
+                if (value != 0.0F && value != 1.0F) {
+                    throw std::invalid_argument(
+                        "GLES1 GL_GENERATE_MIPMAP must be GL_FALSE or GL_TRUE");
+                }
+                static_cast<void>(require_frame("glTexParameterf"));
+                state.SetGenerateMipmap(arguments[0], value != 0.0F);
+                return 0U;
+            }
             require_frame("glTexParameterf")
                 .TextureParameterFloat(
                     arguments[0], arguments[1],
@@ -633,8 +685,18 @@ void BindAndroidBoundaryGles1Core(
         });
     dispatch.Bind(
         "glTexParameteri",
-        [require_frame](const std::span<const std::uint32_t> arguments,
-                        const std::uint64_t) {
+        [&state, require_frame](const std::span<const std::uint32_t> arguments,
+                               const std::uint64_t) {
+            if (arguments[1] == kGles1GenerateMipmap) {
+                const auto value = std::bit_cast<std::int32_t>(arguments[2]);
+                if (value != 0 && value != 1) {
+                    throw std::invalid_argument(
+                        "GLES1 GL_GENERATE_MIPMAP must be GL_FALSE or GL_TRUE");
+                }
+                static_cast<void>(require_frame("glTexParameteri"));
+                state.SetGenerateMipmap(arguments[0], value != 0);
+                return 0U;
+            }
             require_frame("glTexParameteri")
                 .TextureParameter(
                     arguments[0], arguments[1],

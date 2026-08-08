@@ -29,11 +29,14 @@
 
 ## 进行中
 
-- 无。exact-APK 已越过 GLES1 `glGetString`，下一精确工作是取证并处理
-  `glTexParameterf` 的 GLES `GL_INVALID_ENUM`（1280）。
+- 无。exact-APK 已越过 GLES1 `GL_GENERATE_MIPMAP` texture state，下一精确工作是
+  `glGetFloatv`（thunk 56）。
 
 ## 最近完成
 
+- [WU-0271] GLES1 `GL_GENERATE_MIPMAP` 已按 active unit 与 texture object 隔离保存，
+  delete/reset 同步且不再错误转发 GLES2；exact-APK 推进到 `glGetFloatv`。自动生成消费
+  留待 texture upload，能力保持 partial。
 - [WU-0270] GLES1 `glGetString` 已把真实 ANGLE vendor/renderer/version/extensions 发布到
   专属分槽只读 guest 区域；exact-APK 推进到 `glTexParameterf` 参数兼容边界。
 - [WU-0269] GLES1 `glGenTextures`/`glDeleteTextures` 已通过受检 little-endian guest
@@ -79,7 +82,7 @@ GLES1 handler 对照得出；当前已实现 40 个，尚余 22 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 取证并处理 exact-APK 当前 `glTexParameterf` 的 GLES1/GLES2 参数语义差异。
+1. 实现 exact-APK 当前阻塞的 GLES1 `glGetFloatv` 状态查询。
 2. 随后按真实边界闭合其余纹理、fixed-pipeline、client array/draw 与 matrix-palette extension。
 3. 重跑真实 APK 的受帧数约束 smoke，直到获得首个 managed ANGLE frame。
 

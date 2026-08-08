@@ -308,6 +308,53 @@ TEST_CASE("guest JNI static object call decodes descriptor-backed variadics") {
               method->Value(), argument.Value()) == expected.Value());
 }
 
+TEST_CASE("guest JNI static int call preserves signed variadic result") {
+    GuestBindingsFixture fixture;
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        407U, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+    const auto identity = fixture.classes.RegisterClass(
+        {"fixture/Resources",
+         {},
+         {{"length", "(Ljava/lang/String;)I", "resource.length", true},
+          {"load", "()[B", "resource.load", true}},
+         {}});
+    const auto method = fixture.classes.GetMethodId(
+        identity, "length", "(Ljava/lang/String;)I", true);
+    const auto object_method = fixture.classes.GetMethodId(
+        identity, "load", "()[B", true);
+    REQUIRE(method.has_value());
+    REQUIRE(object_method.has_value());
+    const auto java_class =
+        fixture.environment.PublishLocalObject(407U, identity);
+    const auto argument = fixture.environment.PublishLocalObject(
+        407U, ogplay::runtime::AllocateJniHostObjectIdentity());
+    fixture.invocations.RegisterHandler(
+        "resource.length",
+        [argument](const ogplay::runtime::JniInvocation& invocation) {
+            CHECK(invocation.kind ==
+                  ogplay::runtime::JniInvocationKind::static_method);
+            CHECK(invocation.argument_source ==
+                  ogplay::runtime::JniArgumentSource::variadic);
+            REQUIRE(invocation.arguments.size() == 1);
+            CHECK(std::get<ogplay::runtime::JniReference>(
+                      invocation.arguments[0]) == argument);
+            return ogplay::runtime::JniValue{ogplay::runtime::JniInt{-17}};
+        });
+    fixture.Seal();
+
+    CHECK(fixture.CallEnvironment(
+              "CallStaticIntMethod", 407U, java_class.Value(),
+              method->Value(), argument.Value()) ==
+          std::bit_cast<std::uint32_t>(ogplay::runtime::JniInt{-17}));
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "CallStaticIntMethod", 407U, java_class.Value(),
+            object_method->Value())),
+        "CallStaticIntMethod requires an int return descriptor",
+        ogplay::runtime::JniGuestBindingError);
+}
+
 TEST_CASE("guest JNI static method lookup uses declared class identity") {
     GuestBindingsFixture fixture;
     const auto attached = fixture.java_vm.AttachCurrentThread(

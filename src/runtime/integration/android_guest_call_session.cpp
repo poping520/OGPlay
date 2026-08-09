@@ -59,6 +59,27 @@ void BindAndroidGuestJavaAudioHandlers(
             sound_pool.Initialize();
             return JniValue{std::monostate{}};
         });
+    invocations.RegisterHandler(
+        "audio.stop_all_sounds",
+        [&sound_pool](const JniInvocation&) {
+            static_cast<void>(sound_pool.StopAllSounds());
+            return JniValue{std::monostate{}};
+        });
+    const auto stop_kind = [&invocations, &sound_pool](
+                               const char* implementation,
+                               const audio::JavaSoundPoolKind kind) {
+        invocations.RegisterHandler(
+            implementation,
+            [&sound_pool, kind](const JniInvocation& invocation) {
+                const auto except_resource =
+                    std::get<JniInt>(invocation.arguments[0]);
+                static_cast<void>(sound_pool.StopAll(
+                    kind, except_resource));
+                return JniValue{std::monostate{}};
+            });
+    };
+    stop_kind("audio.stop_all_pool", audio::JavaSoundPoolKind::pool);
+    stop_kind("audio.stop_all_big", audio::JavaSoundPoolKind::big);
 }
 
 class AndroidGuestCallSession::Impl final {

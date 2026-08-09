@@ -107,8 +107,9 @@
 - `AndroidGuestCallSession` 组合真实 Bionic namespace、API 19 process、syscall/clone、
   guest JNI ABI/core bindings 与 Android HLE，执行 guest init/fini 并只接受通用 A32 frame；
   可选直接资源 implementation set 只安装通用 framework HLE 并拥有统一 JNI array store；
-  通用 `audio.destroy_sound_pool` / `audio.init_sound_pool_array` handler 驱动同一会话拥有的
-  `JavaSoundPoolState`，只闭合池生命周期，不伪造 loaded/playing 或音频输出；
+  通用 SoundPool handler 驱动同一会话拥有的 `JavaSoundPoolState`：除 destroy/init
+  生命周期外，`stop_all_sounds` 清空全部 voice，`stop_all_pool` / `stop_all_big` 按类别
+  清理并保留指定 resource；这些状态不伪造 loaded/playing 或音频输出；
   Profile phase、窗口和标题事实不得进入该会话。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。

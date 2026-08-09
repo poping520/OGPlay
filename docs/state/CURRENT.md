@@ -34,6 +34,9 @@
 
 ## 最近完成
 
+- [WU-0278] Java SoundPool 状态已扩展为线程安全、按普通 pool / big 分类的通用 voice
+  目录；`stop_all_sounds`、`stop_all_pool`、`stop_all_big` 三个 handler 批量闭合，分类
+  stop 支持保留指定 resource。exact-APK 120 帧及 shutdown 均以状态 0 完成。
 - [WU-0277] exact-APK frame call 9 首个缺失 implementation 已确认为
   `audio.destroy_sound_pool`，并与紧随其后的 `audio.init_sound_pool_array` 一并接入会话
   拥有的幂等 SoundPool 生命周期。2 帧 smoke 状态 0；120 帧可运行至 shutdown，下一精确
@@ -68,9 +71,9 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 闭合 shutdown 已验证调用的 `audio.stop_all_sounds`，并按后续证据扩展 Java 音频状态。
-2. 按 exact-APK 后续真实调用证据，批量闭合类/实例调用 JNI 槽。
-3. 批量闭合目标所需静态字段、数组、字符串与 native 注册 JNI 槽。
+1. 增加 exact-APK 更长时限和输入驱动 smoke，采集下一真实行为边界与稳定黄金帧。
+2. 按实际调用证据扩展 SoundPool load/play/control，接入资源与音频输出前保持明确 partial。
+3. 按 exact-APK 后续真实调用证据，批量闭合类/实例及字段/数组/字符串 JNI 槽。
 
 ## 阻塞
 

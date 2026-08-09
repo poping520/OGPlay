@@ -37,6 +37,11 @@ TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
     frame.Clear(0x00004000U);
     const auto depth_bits = frame.GetIntegers(0x0D56U, 1U);
     const auto stencil_bits = frame.GetIntegers(0x0D57U, 1U);
+    constexpr std::uint32_t kExtensions = 0x1F03U;
+    constexpr std::uint32_t kPackReverseRowOrderAngle = 0x93A4U;
+    const auto has_reverse_pack = frame.GetString(kExtensions).find(
+        "GL_ANGLE_pack_reverse_row_order") != std::string::npos;
+    if (has_reverse_pack) frame.PixelStore(kPackReverseRowOrderAngle, 0);
     const auto pixels = frame.ReadRgba8();
 
     REQUIRE(depth_bits.size() == 1U);
@@ -52,4 +57,9 @@ TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
     }
     CHECK(frame.Info().clear_count == 1);
     CHECK(frame.Info().readback_count == 1);
+    if (has_reverse_pack) {
+        const auto reverse_pack = frame.GetIntegers(kPackReverseRowOrderAngle, 1U);
+        REQUIRE(reverse_pack.size() == 1U);
+        CHECK(reverse_pack.front() == 0);
+    }
 }

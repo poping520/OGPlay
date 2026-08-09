@@ -274,6 +274,7 @@ add_library(ogplay_runtime
     src/runtime/integration/android_boundary_gles1_fixed.cpp
     src/runtime/integration/android_boundary_gles1_query.cpp
     src/runtime/integration/android_boundary_hle.cpp
+    src/runtime/integration/android_boundary_symbols.cpp
     src/runtime/integration/android_link_preflight.cpp
     src/runtime/integration/jni_guest_abi.cpp
     src/runtime/integration/jni_guest_bindings.cpp

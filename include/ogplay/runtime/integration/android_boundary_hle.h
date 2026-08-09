@@ -57,6 +57,7 @@ public:
     void NotifyFileWrite();
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
+    void RecycleFrame(AndroidBoundaryFrame&& frame);
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;

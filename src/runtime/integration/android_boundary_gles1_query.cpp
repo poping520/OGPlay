@@ -240,39 +240,54 @@ void AndroidBoundaryGles1LegacyState::Reset() {
     }
 }
 
-void AndroidBoundaryGles1LegacyState::SetAlphaFunction(
-    const std::uint32_t function, const float reference) {
+void AndroidBoundaryGles1LegacyState::ValidateAlphaFunction(
+    const std::uint32_t function, const float reference) const {
     if (function < 0x0200U || function > 0x0207U) {
         throw std::invalid_argument("GLES1 alpha function is invalid");
     }
     if (!std::isfinite(reference)) {
         throw std::invalid_argument("GLES1 alpha reference must be finite");
     }
+}
+
+void AndroidBoundaryGles1LegacyState::SetAlphaFunction(
+    const std::uint32_t function, const float reference) {
+    ValidateAlphaFunction(function, reference);
     alpha_function_ = function;
     alpha_reference_ = std::clamp(reference, 0.0F, 1.0F);
 }
 
+void AndroidBoundaryGles1LegacyState::ValidateClientActiveTexture(
+    const std::uint32_t texture) const {
+    RequireTextureUnit(texture);
+}
+
 void AndroidBoundaryGles1LegacyState::SetClientActiveTexture(
     const std::uint32_t texture) {
-    RequireTextureUnit(texture);
+    ValidateClientActiveTexture(texture);
     client_active_texture_ = texture;
 }
 
-void AndroidBoundaryGles1LegacyState::SetColor(
-    const std::span<const float, 4> color) {
+void AndroidBoundaryGles1LegacyState::ValidateColor(
+    const std::span<const float, 4> color) const {
     if (!std::ranges::all_of(color, [](const float value) {
             return std::isfinite(value);
         })) {
         throw std::invalid_argument("GLES1 current color must be finite");
     }
+}
+
+void AndroidBoundaryGles1LegacyState::SetColor(
+    const std::span<const float, 4> color) {
+    ValidateColor(color);
     std::ranges::transform(color, color_.begin(), [](const float value) {
         return std::clamp(value, 0.0F, 1.0F);
     });
 }
 
-void AndroidBoundaryGles1LegacyState::SetTextureEnvironment(
+void AndroidBoundaryGles1LegacyState::ValidateTextureEnvironment(
     const std::uint32_t texture, const std::uint32_t target,
-    const std::uint32_t pname, const std::span<const float> values) {
+    const std::uint32_t pname, const std::span<const float> values) const {
     RequireTextureUnit(texture);
     if (target != kGles1TextureEnvironment) {
         throw std::invalid_argument("GLES1 texture environment target is invalid");
@@ -329,6 +344,12 @@ void AndroidBoundaryGles1LegacyState::SetTextureEnvironment(
             "GLES1 texture environment pname is unsupported: " +
             std::to_string(pname));
     }
+}
+
+void AndroidBoundaryGles1LegacyState::SetTextureEnvironment(
+    const std::uint32_t texture, const std::uint32_t target,
+    const std::uint32_t pname, const std::span<const float> values) {
+    ValidateTextureEnvironment(texture, target, pname, values);
     auto stored = std::vector<float>(values.begin(), values.end());
     if (pname == kGles1TextureEnvironmentColor) {
         std::ranges::transform(stored, stored.begin(), [](const float value) {
@@ -393,11 +414,10 @@ void BindAndroidBoundaryGles1Legacy(
         [&legacy, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t) {
-            auto next = legacy;
-            next.SetAlphaFunction(arguments[0],
-                                  std::bit_cast<float>(arguments[1]));
+            const auto reference = std::bit_cast<float>(arguments[1]);
+            legacy.ValidateAlphaFunction(arguments[0], reference);
             static_cast<void>(require_frame("glAlphaFunc"));
-            legacy = std::move(next);
+            legacy.SetAlphaFunction(arguments[0], reference);
             return 0U;
         });
     dispatch.Bind(
@@ -405,10 +425,9 @@ void BindAndroidBoundaryGles1Legacy(
         [&legacy, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t) {
-            auto next = legacy;
-            next.SetClientActiveTexture(arguments[0]);
+            legacy.ValidateClientActiveTexture(arguments[0]);
             static_cast<void>(require_frame("glClientActiveTexture"));
-            legacy = std::move(next);
+            legacy.SetClientActiveTexture(arguments[0]);
             return 0U;
         });
     dispatch.Bind(
@@ -421,10 +440,9 @@ void BindAndroidBoundaryGles1Legacy(
                 std::bit_cast<float>(arguments[1]),
                 std::bit_cast<float>(arguments[2]),
                 std::bit_cast<float>(arguments[3])};
-            auto next = legacy;
-            next.SetColor(color);
+            legacy.ValidateColor(color);
             static_cast<void>(require_frame("glColor4f"));
-            legacy = std::move(next);
+            legacy.SetColor(color);
             return 0U;
         });
     dispatch.Bind(
@@ -438,10 +456,9 @@ void BindAndroidBoundaryGles1Legacy(
                 static_cast<float>(arguments[1] & 0xFFU) / kMaximum,
                 static_cast<float>(arguments[2] & 0xFFU) / kMaximum,
                 static_cast<float>(arguments[3] & 0xFFU) / kMaximum};
-            auto next = legacy;
-            next.SetColor(color);
+            legacy.ValidateColor(color);
             static_cast<void>(require_frame("glColor4ub"));
-            legacy = std::move(next);
+            legacy.SetColor(color);
             return 0U;
         });
     dispatch.Bind(
@@ -460,11 +477,12 @@ void BindAndroidBoundaryGles1Legacy(
             }
             const auto values = ReadGuestFloats(
                 address_space, arguments[2], count, thread_id);
-            auto next = legacy;
-            next.SetTextureEnvironment(core.ActiveTexture(), arguments[0],
-                                       arguments[1], values);
+            const auto texture = core.ActiveTexture();
+            legacy.ValidateTextureEnvironment(texture, arguments[0],
+                                              arguments[1], values);
             static_cast<void>(require_frame("glTexEnvfv"));
-            legacy = std::move(next);
+            legacy.SetTextureEnvironment(texture, arguments[0], arguments[1],
+                                         values);
             return 0U;
         });
     dispatch.Bind(
@@ -474,11 +492,12 @@ void BindAndroidBoundaryGles1Legacy(
             const std::uint64_t) {
             const std::array values{
                 static_cast<float>(std::bit_cast<std::int32_t>(arguments[2]))};
-            auto next = legacy;
-            next.SetTextureEnvironment(core.ActiveTexture(), arguments[0],
-                                       arguments[1], values);
+            const auto texture = core.ActiveTexture();
+            legacy.ValidateTextureEnvironment(texture, arguments[0],
+                                              arguments[1], values);
             static_cast<void>(require_frame("glTexEnvi"));
-            legacy = std::move(next);
+            legacy.SetTextureEnvironment(texture, arguments[0], arguments[1],
+                                         values);
             return 0U;
         });
     dispatch.Bind(

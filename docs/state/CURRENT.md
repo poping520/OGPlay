@@ -33,6 +33,10 @@
 
 ## 最近完成
 
+- [WU-0292] Debug 帧路径已移除冗余 `glFinish`、ANGLE readback 宿主行翻转、帧 RGBA8
+  重复分配、Bionic 小块内存 HLE 临时堆分配及 GLES1 legacy 整状态复制；用户以同一
+  exact-APK 主菜单确认最高 22.2 FPS，达到游戏自身封锁帧率，上一基线约 13.7 FPS；
+  macOS-arm64 + ANGLE warnings-as-errors 构建及全量 CTest 420/420 通过。
 - [WU-0291] GLES1 高频 client pointer 已改为验证候选/原子提交，draw input、guest index
   与顺序索引复用宿主暂存高水位容量但每次重新读取 guest；用户确认 Debug exact-APK
   主菜单约 13.7 FPS，较本轮 7 FPS 基线接近翻倍。

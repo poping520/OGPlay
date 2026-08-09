@@ -335,6 +335,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 guest_height = frame->height;
                 ++presented;
                 update_frame_rate();
+                guest->RecycleFrame(std::move(*frame));
                 if (exit_after_frames.has_value() &&
                     presented >= *exit_after_frames) {
                     quit = true;
@@ -392,6 +393,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 guest_height = frame->height;
                 ++presented;
                 update_frame_rate();
+                guest->RecycleFrame(std::move(*frame));
                 if (exit_after_frames.has_value() &&
                     presented >= *exit_after_frames) {
                     quit = true;

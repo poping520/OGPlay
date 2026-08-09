@@ -5,6 +5,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <set>
 #include <string>
@@ -210,13 +211,14 @@ std::uint32_t ExecuteBionicMemoryIntercept(
     if (call.symbol == "memset") {
         address_space.Validate({destination, count}, memory::AccessType::write,
                                call.thread_id);
-        const std::vector<std::byte> bytes(
-            std::min<std::size_t>(count, kChunkSize),
-            static_cast<std::byte>(call.arguments[1] & 0xffU));
+        std::array<std::byte, kChunkSize> bytes;
+        const auto buffered = std::min<std::size_t>(count, bytes.size());
+        std::memset(bytes.data(), static_cast<int>(call.arguments[1] & 0xffU),
+                    buffered);
         std::uint64_t offset{};
         while (offset < count) {
             const auto size = static_cast<std::size_t>(
-                std::min<std::uint64_t>(bytes.size(), count - offset));
+                std::min<std::uint64_t>(buffered, count - offset));
             address_space.Write(destination.Add(offset),
                                 std::span{bytes}.first(size), call.thread_id);
             offset += size;
@@ -233,8 +235,8 @@ std::uint32_t ExecuteBionicMemoryIntercept(
         address_space.Validate({destination, count}, memory::AccessType::read,
                                call.thread_id);
     }
-    std::vector<std::byte> left(kChunkSize);
-    std::vector<std::byte> right(kChunkSize);
+    std::array<std::byte, kChunkSize> left;
+    std::array<std::byte, kChunkSize> right;
     if (call.symbol == "memcmp") {
         std::uint64_t offset{};
         while (offset < count) {

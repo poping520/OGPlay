@@ -55,8 +55,20 @@ inline constexpr std::uint32_t kGles1Operand2Alpha = 0x859AU;
 class AndroidBoundaryGles1LegacyState final {
 public:
     AndroidBoundaryGles1LegacyState();
+    AndroidBoundaryGles1LegacyState(
+        const AndroidBoundaryGles1LegacyState&) = delete;
+    AndroidBoundaryGles1LegacyState& operator=(
+        const AndroidBoundaryGles1LegacyState&) = delete;
 
     void Reset();
+    void ValidateAlphaFunction(std::uint32_t function,
+                               float reference) const;
+    void ValidateClientActiveTexture(std::uint32_t texture) const;
+    void ValidateColor(std::span<const float, 4> color) const;
+    void ValidateTextureEnvironment(std::uint32_t texture,
+                                    std::uint32_t target,
+                                    std::uint32_t pname,
+                                    std::span<const float> values) const;
     void SetAlphaFunction(std::uint32_t function, float reference);
     void SetClientActiveTexture(std::uint32_t texture);
     void SetColor(std::span<const float, 4> color);

@@ -121,6 +121,7 @@ public:
                     std::int32_t width, std::int32_t height,
                     std::uint32_t format, std::uint32_t type,
                     std::span<std::byte> output);
+    void ReadRgba8(std::vector<std::uint8_t>& output);
     [[nodiscard]] std::vector<std::uint8_t> ReadRgba8();
     [[nodiscard]] AngleFrameInfo Info() const noexcept;
 

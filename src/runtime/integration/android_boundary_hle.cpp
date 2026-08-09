@@ -25,6 +25,7 @@
 #include "android_boundary_gles1_draw.h"
 #include "android_boundary_gles1_fixed.h"
 #include "android_boundary_gles1_query.h"
+#include "android_boundary_symbols.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -42,87 +43,6 @@ constexpr std::size_t kMaximumShaderSourceCount = 1024;
 constexpr std::size_t kMaximumShaderSourceBytes = 4U * 1024U * 1024U;
 constexpr std::size_t kMaximumGlesNameBytes = 4096;
 
-std::vector<BionicHleSymbol> BuildSymbols() {
-    static constexpr std::array<std::pair<std::string_view, std::string_view>, 42> names{{
-        {"libc.so", "memcpy"}, {"libc.so", "memmove"}, {"libc.so", "memset"},
-        {"libc.so", "memcmp"}, {"libc.so", "strlen"},
-        {"libandroid.so", "AConfiguration_new"},
-        {"libandroid.so", "AConfiguration_delete"},
-        {"libandroid.so", "AConfiguration_fromAssetManager"},
-        {"libandroid.so", "AConfiguration_getLanguage"},
-        {"libandroid.so", "AConfiguration_getCountry"},
-        {"libandroid.so", "ALooper_prepare"},
-        {"libandroid.so", "ALooper_addFd"},
-        {"libandroid.so", "ALooper_pollAll"},
-        {"libandroid.so", "AInputQueue_attachLooper"},
-        {"libandroid.so", "AInputQueue_detachLooper"},
-        {"libandroid.so", "AInputQueue_getEvent"},
-        {"libandroid.so", "AInputQueue_preDispatchEvent"},
-        {"libandroid.so", "AInputQueue_finishEvent"},
-        {"libandroid.so", "AInputEvent_getType"},
-        {"libandroid.so", "AKeyEvent_getAction"},
-        {"libandroid.so", "AKeyEvent_getKeyCode"},
-        {"libandroid.so", "AMotionEvent_getAction"},
-        {"libandroid.so", "AMotionEvent_getX"},
-        {"libandroid.so", "AMotionEvent_getY"},
-        {"libandroid.so", "ANativeWindow_setBuffersGeometry"},
-        {"libEGL.so", "eglGetDisplay"}, {"libEGL.so", "eglInitialize"},
-        {"libEGL.so", "eglChooseConfig"}, {"libEGL.so", "eglGetConfigAttrib"},
-        {"libEGL.so", "eglCreateWindowSurface"}, {"libEGL.so", "eglCreateContext"},
-        {"libEGL.so", "eglMakeCurrent"}, {"libEGL.so", "eglQuerySurface"},
-        {"libEGL.so", "eglSwapBuffers"}, {"libEGL.so", "eglDestroyContext"},
-        {"libEGL.so", "eglDestroySurface"}, {"libEGL.so", "eglTerminate"},
-        {"libGLESv2.so", "glViewport"}, {"libGLESv2.so", "glClearColor"},
-        {"libGLESv2.so", "glClear"}, {"liblog.so", "__android_log_print"},
-        {"liblog.so", "__android_log_write"},
-    }};
-    std::vector<BionicHleSymbol> result;
-    result.reserve(names.size() + gles::GlesDispatchTable::FunctionCount() +
-                   gles::GlesFunctionCount(gles::GlesApi::gles1) +
-                   gles::GlesFunctionCount(gles::GlesApi::gles1_extensions));
-    for (std::size_t index = 0; index < names.size(); ++index) {
-        result.push_back({std::string(names[index].first), std::string(names[index].second),
-                          memory::GuestAddress{kBionicHleThunkBegin +
-                                               static_cast<std::uint32_t>(index) *
-                                                   kThunkStride + 1U}});
-    }
-    for (std::size_t index = 0; index < gles::GlesDispatchTable::FunctionCount(); ++index) {
-        const auto function = gles::GlesDispatchTable::Describe(
-            static_cast<gles::GlesThunkId>(index));
-        const auto already_registered = std::ranges::any_of(
-            result, [&function](const BionicHleSymbol& candidate) {
-                return candidate.library == "libGLESv2.so" &&
-                       candidate.symbol == function.name;
-            });
-        if (already_registered) continue;
-        result.push_back({"libGLESv2.so", std::string(function.name),
-                          memory::GuestAddress{kBionicHleThunkBegin +
-                                               static_cast<std::uint32_t>(result.size()) *
-                                                   kThunkStride + 1U}});
-    }
-    for (std::size_t index = 0;
-         index < gles::GlesFunctionCount(gles::GlesApi::gles1); ++index) {
-        const auto function = gles::DescribeGlesFunction(
-            gles::GlesApi::gles1, static_cast<gles::GlesThunkId>(index));
-        result.push_back({"libGLESv1_CM.so", std::string(function.name),
-                          memory::GuestAddress{kBionicHleThunkBegin +
-                                               static_cast<std::uint32_t>(result.size()) *
-                                                   kThunkStride + 1U}});
-    }
-    for (std::size_t index = 0;
-         index < gles::GlesFunctionCount(gles::GlesApi::gles1_extensions);
-         ++index) {
-        const auto function = gles::DescribeGlesFunction(
-            gles::GlesApi::gles1_extensions,
-            static_cast<gles::GlesThunkId>(index));
-        result.push_back({"libGLESv1_CM.so", std::string(function.name),
-                          memory::GuestAddress{kBionicHleThunkBegin +
-                                               static_cast<std::uint32_t>(result.size()) *
-                                                   kThunkStride + 1U}});
-    }
-    return result;
-}
-
 std::uint32_t SignedResult(const std::int32_t value) noexcept {
     return std::bit_cast<std::uint32_t>(value);
 }
@@ -137,7 +57,7 @@ public:
          const AndroidBoundaryOptions options)
         : address_space_(address_space), backend_(backend),
           layout_(gles::MakeSupersampleLayout(width, height, supersample_factor)),
-          symbols_(BuildSymbols()), provider_(symbols_),
+          symbols_(detail::BuildAndroidBoundarySymbols()), provider_(symbols_),
           gles_dispatch_(address_space) {
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
@@ -263,6 +183,21 @@ public:
         auto result = std::move(latest_frame_);
         latest_frame_.reset();
         return result;
+    }
+    void RecycleFrame(AndroidBoundaryFrame&& frame) {
+        const auto expected_size = static_cast<std::size_t>(
+            layout_.logical_width) * layout_.logical_height * 4U;
+        if (frame.width != layout_.logical_width ||
+            frame.height != layout_.logical_height ||
+            frame.rgba8.size() != expected_size) {
+            throw std::invalid_argument(
+                "recycled Android boundary frame layout does not match");
+        }
+        if (layout_.factor != 1U) return;
+        std::scoped_lock lock(mutex_);
+        if (frame.rgba8.capacity() >= recycled_rgba8_.capacity()) {
+            recycled_rgba8_ = std::move(frame.rgba8);
+        }
     }
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept {
         return provider_;
@@ -699,13 +634,23 @@ private:
         return *angle_frame_;
     }
     void PublishFrame() {
+        std::vector<std::uint8_t> readback;
+        if (layout_.factor == 1U) {
+            std::scoped_lock lock(mutex_);
+            readback = std::move(recycled_rgba8_);
+        }
+        RequireFrame("present").ReadRgba8(readback);
         AndroidBoundaryFrame frame{
             layout_.logical_width, layout_.logical_height,
             ++frame_sequence_,
-            gles::ResolveSupersampledRgba8(
-                RequireFrame("present").ReadRgba8(), layout_)};
+            gles::ResolveSupersampledRgba8(std::move(readback), layout_)};
         {
             std::scoped_lock lock(mutex_);
+            if (layout_.factor == 1U && latest_frame_.has_value() &&
+                latest_frame_->rgba8.capacity() >=
+                    recycled_rgba8_.capacity()) {
+                recycled_rgba8_ = std::move(latest_frame_->rgba8);
+            }
             latest_frame_ = std::move(frame);
         }
         ready_.notify_all();
@@ -751,6 +696,7 @@ private:
     std::deque<AndroidBoundaryInput> inputs_;
     std::optional<AndroidBoundaryInput> active_input_;
     std::optional<AndroidBoundaryFrame> latest_frame_;
+    std::vector<std::uint8_t> recycled_rgba8_;
     core::GpuStats gpu_stats_{0, 0, 0, 0, 0, {{0, 0, "color0"}}};
     std::deque<core::GpuTraceEntry> gpu_trace_;
     bool gpu_render_target_ready_{};
@@ -784,6 +730,9 @@ void AndroidBoundaryHle::NotifyFileWrite() { impl_->NotifyFileWrite(); }
 void AndroidBoundaryHle::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
 std::optional<AndroidBoundaryFrame> AndroidBoundaryHle::TakeLatestFrame() {
     return impl_->TakeLatestFrame();
+}
+void AndroidBoundaryHle::RecycleFrame(AndroidBoundaryFrame&& frame) {
+    impl_->RecycleFrame(std::move(frame));
 }
 core::GpuStats AndroidBoundaryHle::Stats() const { return impl_->Stats(); }
 std::vector<core::GpuRenderTarget> AndroidBoundaryHle::RenderTargets() const {

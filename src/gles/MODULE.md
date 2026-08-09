@@ -106,8 +106,10 @@
   `EglContextInfo` 都必须保持 SwiftShader 事实。非法的 renderer/device 组合必须在任何
   原生调用前明确失败。
 - EGL 错误保留失败操作和原生错误码；无 ANGLE 的构建必须明确不可用。
-- ANGLE 原生 `glReadPixels` 的底部首行必须在边界内翻转为 `ImageView`/SDL 的顶部首行，
-  禁止把坐标系差异泄漏到每个消费者。
+- ANGLE 原生 `glReadPixels` 必须在边界内输出 `ImageView`/SDL 所需的顶部首行；支持
+  `GL_ANGLE_pack_reverse_row_order` 时由驱动直接反向打包并恢复既有 pack 状态，否则
+  在宿主内翻转，禁止把坐标系差异泄漏到每个消费者。`glReadPixels` 自身的同步语义已足够，
+  全帧 readback 前不得额外强制 `glFinish`。
 - 超采样尺寸、输入字节数和布局必须完整匹配；resolve 使用整数求和与固定四舍五入，
   禁止因宿主浮点或图形驱动产生黄金帧漂移；拥有型 1× resolve 必须保留输入存储。
 - SwiftShader 只能作为 ANGLE Vulkan 软件设备使用；hardware-only 不得静默回退软件。

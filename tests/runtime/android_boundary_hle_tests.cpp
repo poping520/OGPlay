@@ -1003,12 +1003,23 @@ TEST_CASE("Android boundary owns a managed GLSurface frame lifecycle") {
     static_cast<void>(
         fixture.Call("libGLESv2.so", "glClear", {0x00004000U}));
     fixture.boundary.PresentManagedSurface();
-    const auto frame = fixture.boundary.TakeLatestFrame();
+    auto frame = fixture.boundary.TakeLatestFrame();
     REQUIRE(frame.has_value());
     CHECK(frame->sequence == 1);
     CHECK(frame->rgba8[0] == doctest::Approx(32).epsilon(0.04));
     CHECK(frame->rgba8[1] == doctest::Approx(64).epsilon(0.04));
     CHECK(frame->rgba8[2] == doctest::Approx(128).epsilon(0.04));
+    CHECK_THROWS_WITH_AS(
+        fixture.boundary.RecycleFrame({4U, 3U, 0U, {std::uint8_t{0}}}),
+        "recycled Android boundary frame layout does not match",
+        std::invalid_argument);
+    const auto* const first_storage = frame->rgba8.data();
+    fixture.boundary.RecycleFrame(std::move(*frame));
+    fixture.boundary.PresentManagedSurface();
+    const auto recycled = fixture.boundary.TakeLatestFrame();
+    REQUIRE(recycled.has_value());
+    CHECK(recycled->sequence == 2);
+    CHECK(recycled->rgba8.data() == first_storage);
     CHECK_THROWS_WITH_AS(
         fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}),
         "guest EGL cannot replace a host-managed ANGLE surface",

@@ -41,6 +41,7 @@ public:
 
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
+    void RecycleFrame(AndroidBoundaryFrame&& frame);
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] core::GpuStats Stats() const override;

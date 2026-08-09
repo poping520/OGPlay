@@ -449,6 +449,9 @@ public:
     std::optional<AndroidBoundaryFrame> TakeLatestFrame() {
         return boundary_.TakeLatestFrame();
     }
+    void RecycleFrame(AndroidBoundaryFrame&& frame) {
+        boundary_.RecycleFrame(std::move(frame));
+    }
     bool Running() const noexcept { return running_; }
     core::GpuStats Stats() const { return boundary_.Stats(); }
     std::vector<core::GpuRenderTarget> RenderTargets() const {
@@ -555,6 +558,9 @@ void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) {
 std::optional<AndroidBoundaryFrame>
 AndroidGuestCallSession::TakeLatestFrame() {
     return impl_->TakeLatestFrame();
+}
+void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) {
+    impl_->RecycleFrame(std::move(frame));
 }
 void AndroidGuestCallSession::Stop() { impl_->Stop(); }
 bool AndroidGuestCallSession::Running() const noexcept {

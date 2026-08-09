@@ -52,7 +52,8 @@
   库、宿主 HLE 边界库及少而明确且确有 handler 的 mem 拦截表；pthread 保持真实 Bionic
   ABI，并在 clone/futex/TLS syscall 边界映射到宿主真线程。
 - `ExecuteBionicMemoryIntercept`：受检执行 memcpy/memmove/memset/memcmp/strlen；完整范围
-  预检、重叠方向、字符串上限、A32 返回值和吞吐基准均有契约。
+  预检、重叠方向、字符串上限、A32 返回值和吞吐基准均有契约。固定大小的调用期栈暂存
+  避免在高频 libc 边界反复分配宿主堆内存。
 - `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的
   边界符号，将 libc 选择性拦截、虚拟边界库和真实 guest ELF 装入统一链接命名空间。
 - `SelfCheckBionicProfile`：对 API 19/22/23 的真实 libc/libdl 执行完整多模块映射、版本化

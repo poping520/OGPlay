@@ -9,9 +9,31 @@
 
 #if OGPLAY_HAS_ANGLE
 #include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 #endif
 
 namespace ogplay::gles {
+namespace {
+
+[[nodiscard]] bool HasExtension(const char* const extensions,
+                                const std::string_view expected) noexcept {
+    if (extensions == nullptr || expected.empty() || expected.find(' ') != expected.npos) {
+        return false;
+    }
+    const std::string_view list{extensions};
+    std::size_t offset{};
+    while (offset < list.size()) {
+        const auto begin = list.find_first_not_of(' ', offset);
+        if (begin == list.npos) return false;
+        const auto end = list.find(' ', begin);
+        if (list.substr(begin, end - begin) == expected) return true;
+        if (end == list.npos) return false;
+        offset = end + 1U;
+    }
+    return false;
+}
+
+}  // namespace
 
 AngleFrame AngleFrame::CreatePbuffer(const AngleBackend backend,
                                      const std::uint32_t width,
@@ -721,35 +743,64 @@ void AngleFrame::ReadPixels(
 #endif
 }
 
-std::vector<std::uint8_t> AngleFrame::ReadRgba8() {
+void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
     constexpr std::uint64_t kChannels = 4;
     const auto pixels = static_cast<std::uint64_t>(width_) * height_;
     if (pixels > std::numeric_limits<std::size_t>::max() / kChannels) {
         throw std::overflow_error("ANGLE frame readback size overflows");
     }
-    std::vector<std::uint8_t> result(
-        static_cast<std::size_t>(pixels * kChannels));
+    result.resize(static_cast<std::size_t>(pixels * kChannels));
 #if OGPLAY_HAS_ANGLE
-    glFinish();
-    RequireNoError("glFinish");
-    glReadPixels(0, 0, static_cast<GLsizei>(width_),
-                 static_cast<GLsizei>(height_), GL_RGBA, GL_UNSIGNED_BYTE,
-                 result.data());
-    RequireNoError("glReadPixels");
-    const auto row_bytes = static_cast<std::size_t>(width_) * kChannels;
-    for (std::size_t top = 0, bottom = height_ - 1U; top < bottom;
-         ++top, --bottom) {
-        const auto top_begin = result.begin() + static_cast<std::ptrdiff_t>(top * row_bytes);
-        const auto bottom_begin = result.begin() + static_cast<std::ptrdiff_t>(bottom * row_bytes);
-        std::swap_ranges(top_begin,
-                         top_begin + static_cast<std::ptrdiff_t>(row_bytes),
-                         bottom_begin);
+    const auto* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+    const auto reverse_rows = HasExtension(
+        extensions, "GL_ANGLE_pack_reverse_row_order");
+    GLint previous_reverse_rows{};
+    if (reverse_rows) {
+        glGetIntegerv(GL_PACK_REVERSE_ROW_ORDER_ANGLE, &previous_reverse_rows);
+        RequireNoError("glGetIntegerv(GL_PACK_REVERSE_ROW_ORDER_ANGLE)");
+        glPixelStorei(GL_PACK_REVERSE_ROW_ORDER_ANGLE, GL_TRUE);
+        RequireNoError("glPixelStorei(GL_PACK_REVERSE_ROW_ORDER_ANGLE)");
+    }
+    try {
+        glReadPixels(0, 0, static_cast<GLsizei>(width_),
+                     static_cast<GLsizei>(height_), GL_RGBA, GL_UNSIGNED_BYTE,
+                     result.data());
+        RequireNoError("glReadPixels");
+    } catch (...) {
+        if (reverse_rows) {
+            glPixelStorei(GL_PACK_REVERSE_ROW_ORDER_ANGLE,
+                          previous_reverse_rows);
+            static_cast<void>(glGetError());
+        }
+        throw;
+    }
+    if (reverse_rows) {
+        glPixelStorei(GL_PACK_REVERSE_ROW_ORDER_ANGLE, previous_reverse_rows);
+        RequireNoError("restore GL_PACK_REVERSE_ROW_ORDER_ANGLE");
+    } else {
+        const auto row_bytes = static_cast<std::size_t>(width_) * kChannels;
+        for (std::size_t top = 0, bottom = height_ - 1U; top < bottom;
+             ++top, --bottom) {
+            const auto top_begin = result.begin() +
+                static_cast<std::ptrdiff_t>(top * row_bytes);
+            const auto bottom_begin = result.begin() +
+                static_cast<std::ptrdiff_t>(bottom * row_bytes);
+            std::swap_ranges(
+                top_begin,
+                top_begin + static_cast<std::ptrdiff_t>(row_bytes),
+                bottom_begin);
+        }
     }
     ++readback_count_;
-    return result;
 #else
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
+}
+
+std::vector<std::uint8_t> AngleFrame::ReadRgba8() {
+    std::vector<std::uint8_t> result;
+    ReadRgba8(result);
+    return result;
 }
 
 AngleFrameInfo AngleFrame::Info() const noexcept {

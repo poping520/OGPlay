@@ -58,7 +58,9 @@
 - GLES1 legacy fixed-state 批次显式绑定 alpha function、client active texture、current color
   与 texture environment；状态按 context/texture unit 隔离、验证、clamp 并随 reset 恢复默认。
   `glGetFloatv` 从对应状态返回矩阵、颜色、alpha 与 client texture，最大 anisotropy 必须
-  查询真实 ANGLE 值；guest 输出及 `glTexEnvfv` 输入在任何状态变化前完整预检。
+  查询真实 ANGLE 值；guest 输出及 `glTexEnvfv` 输入在任何状态变化前完整预检。legacy
+  状态不可复制，高频 setter 必须依次完成参数验证、current-frame 验证和窄范围提交，禁止
+  为事务语义复制全部 texture-environment 容器。
 - GLES1 client-array/draw 批次延迟保存 vertex/normal/color/texture-coordinate pointer；draw
   才按实际 first/count 或 guest index 最大值完整预检 client 内存并上传内部 VBO/EBO。
   高频 client input、guest index 与顺序索引只复用宿主暂存高水位容量，每次 draw 仍重新
@@ -132,6 +134,9 @@
   改变平台窗口策略。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。
+  宿主成功 present 后可归还布局完全匹配的拥有型帧；1x surface 复用其 RGBA8 高水位存储，
+  被新帧覆盖但未消费的同布局存储也可回收，帧内容和序号本身不得缓存或复用。超采样帧仍
+  通过 resolve 独立产生逻辑尺寸输出。
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和
   Thumb SVC trap；reserved 槽保持 null，其余槽均有可识别地址。表与对象只读、trap 页
   RX，映射冲突完整回滚，析构后不得残留 guest 映射。

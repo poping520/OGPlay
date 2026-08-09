@@ -171,6 +171,10 @@ public:
         ThrowIfChildFailed();
         return boundary_.TakeLatestFrame();
     }
+    void RecycleFrame(AndroidBoundaryFrame&& frame) {
+        ThrowIfChildFailed();
+        boundary_.RecycleFrame(std::move(frame));
+    }
 
     void Stop() {
         if (!running_) return;
@@ -393,6 +397,9 @@ NativeActivitySession::~NativeActivitySession() = default;
 void NativeActivitySession::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
 std::optional<AndroidBoundaryFrame> NativeActivitySession::TakeLatestFrame() {
     return impl_->TakeLatestFrame();
+}
+void NativeActivitySession::RecycleFrame(AndroidBoundaryFrame&& frame) {
+    impl_->RecycleFrame(std::move(frame));
 }
 void NativeActivitySession::Stop() { impl_->Stop(); }
 bool NativeActivitySession::Running() const noexcept { return impl_->Running(); }

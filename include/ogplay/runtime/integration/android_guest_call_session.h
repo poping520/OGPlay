@@ -72,6 +72,7 @@ public:
     void CloseManagedSurface();
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
+    void RecycleFrame(AndroidBoundaryFrame&& frame);
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
 

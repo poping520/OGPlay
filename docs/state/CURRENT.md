@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0303] 第二个 exact Profile 已以 package/version/SO/ABI、1024x600 surface、15 个静态
+  JNI lifecycle call 和 required external payload 闭合；真实 API 19 link preflight 完成
+  5+2 模块与 50,746 个 relocation，全量 CTest 436/436 通过。
 - [WU-0302] `run-apk --external-dir` 现将一个显式宿主目录精确挂到匹配 Profile 声明的
   external guest 根；声明数量、required 输入及 manifest 在窗口前受检，CTest 436/436
   通过，现有 Asphalt Profile 预检无回归。
@@ -71,9 +74,6 @@
   重复分配、Bionic 小块内存 HLE 临时堆分配及 GLES1 legacy 整状态复制；用户以同一
   exact-APK 主菜单确认最高 22.2 FPS，达到游戏自身封锁帧率，上一基线约 13.7 FPS；
   macOS-arm64 + ANGLE warnings-as-errors 构建及全量 CTest 420/420 通过。
-- [WU-0291] GLES1 高频 client pointer 已改为验证候选/原子提交，draw input、guest index
-  与顺序索引复用宿主暂存高水位容量但每次重新读取 guest；用户确认 Debug exact-APK
-  主菜单约 13.7 FPS，较本轮 7 FPS 基线接近翻倍。
 
 ## 目标 ELF 尚未实现的 GL 入口
 

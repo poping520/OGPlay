@@ -45,6 +45,11 @@ status = "complete"
 test = "tools.quirk_registry_current; tests/runtime/android_boundary_gles1_fixed_tests.cpp"
 note = "M5 WU-0265..0267 登记并注入精确 Profile quirk；默认严格拒绝单面 material，启用后独立保存 GL_FRONT/GL_BACK，reset 恢复状态但保留策略"
 
+[profiles.dungeon_hunter_p1000]
+status = "partial"
+test = "tools.title_profiles_current; exact APK run-apk preflight"
+note = "M5 WU-0303 以纯数据 Profile 闭合 package/version/SO/ABI、1024x600 GLSurfaceView 静态 JNI 生命周期和 required external payload；guest 执行能力按后续明确缺口继续推进"
+
 [session.lifecycle_templates]
 status = "complete"
 test = "tests/session/lifecycle_tests.cpp"

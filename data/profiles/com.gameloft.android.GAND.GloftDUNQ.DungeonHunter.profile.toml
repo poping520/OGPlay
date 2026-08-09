@@ -1,0 +1,139 @@
+schema = 1
+[identity]
+package = "com.gameloft.android.GAND.GloftDUNQ.DungeonHunter"
+name = "Dungeon Hunter"
+version_code = [355]
+so_sha256 = ["0befcb71acc320c964a08a590dd7b1903a91421c7c52c01ede2f19a1771b247a"]
+abi = "armeabi"
+[runtime]
+api_level = 19
+lifecycle = "gl_surface_view"
+[runtime.surface]
+width = 1024
+height = 600
+[data]
+mounts = [
+  { guest = "/sdcard/gameloft/games/DungeonHunter", source = "external", required = true },
+]
+manifest = [
+  { path = "data/PyData/common_pyarray.bin", required = true },
+  { path = "data/sounds/raw_001.ogg", required = true },
+]
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"
+method = "nativeInit"
+signature = "(III)V"
+dispatch = "static"
+arguments = [
+  { source = "surface_width" },
+  { source = "surface_height" },
+  { source = "constant", value = 1 },
+]
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter"
+method = "nativeInit"
+signature = "(I)V"
+dispatch = "static"
+arguments = [{ source = "constant", value = 0 }]
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer"
+method = "nativeInit"
+signature = "(I)V"
+dispatch = "static"
+arguments = [{ source = "constant", value = 0 }]
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer"
+method = "nativeGetTotalSounds"
+signature = "()I"
+dispatch = "static"
+arguments = []
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer"
+method = "nativeGetTotalSoundsOfSameInstance"
+signature = "()I"
+dispatch = "static"
+arguments = []
+[[runtime.native_call]]
+phase = "startup"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"
+method = "nativeResize"
+signature = "(II)V"
+dispatch = "static"
+arguments = [{ source = "surface_width" }, { source = "surface_height" }]
+[[runtime.native_call]]
+phase = "resume"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
+method = "nativeResume"
+signature = "()V"
+dispatch = "static"
+arguments = []
+[[runtime.native_call]]
+phase = "frame"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"
+method = "nativeRender"
+signature = "()V"
+dispatch = "static"
+arguments = []
+[[runtime.native_call]]
+phase = "pause"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
+method = "nativePause"
+signature = "()V"
+dispatch = "static"
+arguments = []
+[[runtime.native_call]]
+phase = "shutdown"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"
+method = "nativeDone"
+signature = "()V"
+dispatch = "static"
+arguments = []
+[[runtime.native_call]]
+phase = "pointer_down"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
+method = "nativeOnTouch"
+signature = "(IIII)V"
+dispatch = "static"
+arguments = [
+  { source = "constant", value = 1 }, { source = "input_x" },
+  { source = "input_y" }, { source = "input_pointer" },
+]
+[[runtime.native_call]]
+phase = "pointer_move"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
+method = "nativeOnTouch"
+signature = "(IIII)V"
+dispatch = "static"
+arguments = [
+  { source = "constant", value = 2 }, { source = "input_x" },
+  { source = "input_y" }, { source = "input_pointer" },
+]
+[[runtime.native_call]]
+phase = "pointer_up"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
+method = "nativeOnTouch"
+signature = "(IIII)V"
+dispatch = "static"
+arguments = [
+  { source = "constant", value = 0 }, { source = "input_x" },
+  { source = "input_y" }, { source = "input_pointer" },
+]
+[[runtime.native_call]]
+phase = "key_down"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter"
+method = "nativeOnKeyDown"
+signature = "(I)V"
+dispatch = "static"
+arguments = [{ source = "input_key" }]
+[[runtime.native_call]]
+phase = "key_up"
+class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter"
+method = "nativeOnKeyUp"
+signature = "(I)V"
+dispatch = "static"
+arguments = [{ source = "input_key" }]

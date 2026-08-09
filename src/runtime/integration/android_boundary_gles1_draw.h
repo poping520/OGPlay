@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -94,6 +95,13 @@ private:
     std::vector<std::uint16_t> draw_array_indices_;
     std::uint32_t current_palette_matrix_{};
 };
+
+[[nodiscard]] std::optional<bool> Gles1ClientStateEnabled(
+    std::uint32_t capability, const AndroidBoundaryGles1DrawState& draw,
+    const AndroidBoundaryGles1LegacyState& legacy);
+[[nodiscard]] std::optional<std::int32_t> Gles1ClientArrayInteger(
+    std::uint32_t pname, const AndroidBoundaryGles1DrawState& draw,
+    const AndroidBoundaryGles1LegacyState& legacy);
 
 void BindAndroidBoundaryGles1Draw(
     gles::GlesDispatchTable& dispatch,

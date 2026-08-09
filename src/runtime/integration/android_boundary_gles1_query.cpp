@@ -13,6 +13,7 @@
 
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
+#include "android_boundary_gles1_draw.h"
 
 namespace ogplay::runtime::detail {
 namespace {
@@ -37,16 +38,15 @@ void RequireTextureUnit(const std::uint32_t texture) {
 void RequireTextureEnvironmentMode(const float value) {
     constexpr std::array modes{0x0104U, 0x0BE2U, 0x1E01U,
                                0x2100U, 0x2101U, 0x8570U};
-    if (!std::isfinite(value) || value < 0.0F ||
-        value != std::floor(value) ||
+    if (!std::isfinite(value) || value < 0.0F || value != std::floor(value) ||
         std::ranges::find(modes, static_cast<std::uint32_t>(value)) ==
             modes.end()) {
         throw std::invalid_argument("GLES1 texture environment mode is invalid");
     }
 }
 
-[[nodiscard]] bool IsOneOf(const std::uint32_t value,
-                           const std::span<const std::uint32_t> values) {
+[[nodiscard]] bool IsOneOf(
+    const std::uint32_t value, const std::span<const std::uint32_t> values) {
     return std::ranges::find(values, value) != values.end();
 }
 
@@ -88,8 +88,8 @@ void RequireIntegralTextureValue(const float value,
     return values;
 }
 
-void WriteGuestFloats(gles::GuestBuffer& output,
-                      const std::span<const float> values) {
+void WriteGuestFloats(
+    gles::GuestBuffer& output, const std::span<const float> values) {
     auto bytes = output.WritableBytes();
     if (bytes.size() != values.size() * sizeof(std::uint32_t)) {
         throw std::logic_error("GLES1 float query output size differs");
@@ -104,8 +104,8 @@ void WriteGuestFloats(gles::GuestBuffer& output,
     output.Commit();
 }
 
-void WriteGuestIntegers(gles::GuestBuffer& output,
-                        const std::span<const std::int32_t> values) {
+void WriteGuestIntegers(
+    gles::GuestBuffer& output, const std::span<const std::int32_t> values) {
     auto bytes = output.WritableBytes();
     if (bytes.size() != values.size() * sizeof(std::uint32_t)) {
         throw std::logic_error("GLES1 integer query output size differs");
@@ -116,6 +116,18 @@ void WriteGuestIntegers(gles::GuestBuffer& output,
             bytes[index * sizeof(word) + byte] =
                 static_cast<std::byte>(word >> (byte * 8U));
         }
+    }
+    output.Commit();
+}
+
+void WriteGuestBooleans(
+    gles::GuestBuffer& output, const std::span<const std::int32_t> values) {
+    auto bytes = output.WritableBytes();
+    if (bytes.size() != values.size()) {
+        throw std::logic_error("GLES1 boolean query output size differs");
+    }
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        bytes[index] = values[index] == 0 ? std::byte{} : std::byte{1};
     }
     output.Commit();
 }
@@ -156,12 +168,17 @@ void WriteGuestIntegers(gles::GuestBuffer& output,
     }
 }
 
-[[nodiscard]] std::size_t NativeIntegerQueryCount(
-    const std::uint32_t pname) {
+[[nodiscard]] std::size_t NativeIntegerQueryCount(const std::uint32_t pname) {
     switch (pname) {
     case 0x0D3AU:  // GL_MAX_VIEWPORT_DIMS
     case 0x846DU:  // GL_ALIASED_POINT_SIZE_RANGE
     case 0x846EU: return 2U;  // GL_ALIASED_LINE_WIDTH_RANGE
+    // GL_VIEWPORT, GL_SCISSOR_BOX, GL_COLOR_CLEAR_VALUE/WRITEMASK.
+    case 0x0BA2U: case 0x0C10U: case 0x0C22U: case 0x0C23U: return 4U;
+    // Shared scalar raster/depth/stencil/blend state.
+    case 0x0B45U: case 0x0B46U: case 0x0B74U: case 0x0B92U:
+    case 0x0B93U: case 0x0B94U: case 0x0B95U: case 0x0B96U:
+    case 0x0B97U: case 0x0B98U: case 0x0BE0U: case 0x0BE1U:
     case 0x0D33U:  // GL_MAX_TEXTURE_SIZE
     case 0x0D50U:  // GL_SUBPIXEL_BITS
     case 0x0D52U:  // GL_RED_BITS
@@ -170,26 +187,23 @@ void WriteGuestIntegers(gles::GuestBuffer& output,
     case 0x0D55U:  // GL_ALPHA_BITS
     case 0x0D56U:  // GL_DEPTH_BITS
     case 0x0D57U:  // GL_STENCIL_BITS
+    case 0x0B72U:  // GL_DEPTH_WRITEMASK
     case 0x80A8U:  // GL_SAMPLE_BUFFERS
     case 0x80A9U:  // GL_SAMPLES
+    case 0x80ABU:  // GL_SAMPLE_COVERAGE_INVERT
     case 0x84E8U:  // GL_MAX_RENDERBUFFER_SIZE
     case 0x851CU:  // GL_MAX_CUBE_MAP_TEXTURE_SIZE
     case 0x86A2U:  // GL_NUM_COMPRESSED_TEXTURE_FORMATS
     case 0x8B9AU:  // GL_IMPLEMENTATION_COLOR_READ_TYPE
     case 0x8B9BU: return 1U;  // GL_IMPLEMENTATION_COLOR_READ_FORMAT
     default:
-        throw std::invalid_argument("GLES1 integer query is unsupported");
+        throw std::invalid_argument("GLES1 integer query is unsupported: " + std::to_string(pname));
     }
 }
 
-[[nodiscard]] std::int32_t SignedTextureValue(
-    const std::uint32_t value) noexcept {
-    return std::bit_cast<std::int32_t>(value);
-}
-
+[[nodiscard]] std::int32_t SignedTextureValue(const std::uint32_t value) noexcept { return std::bit_cast<std::int32_t>(value); }
 [[nodiscard]] gles::GuestBuffer PrepareTexturePixels(
-    memory::AddressSpace& address_space,
-    const AndroidBoundaryGles1State& state,
+    memory::AddressSpace& address_space, const AndroidBoundaryGles1State& state,
     const std::string_view function_name,
     const std::span<const std::uint32_t> arguments,
     const std::size_t pointer_index, const bool nullable,
@@ -208,7 +222,6 @@ void WriteGuestIntegers(gles::GuestBuffer& output,
         resolution->element_count, gles::GuestTransferDirection::input,
         nullable, thread_id);
 }
-
 void GenerateAutomaticMipmap(AndroidBoundaryGles1State& state,
                              gles::AngleFrame& frame,
                              const std::uint32_t target,
@@ -217,7 +230,6 @@ void GenerateAutomaticMipmap(AndroidBoundaryGles1State& state,
         frame.GenerateMipmap(target);
     }
 }
-
 [[nodiscard]] std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
     switch (parameter) {
     case 0x1F00U: return 0U;                              // GL_VENDOR
@@ -229,13 +241,10 @@ void GenerateAutomaticMipmap(AndroidBoundaryGles1State& state,
 }
 
 }  // namespace
-
-AndroidBoundaryGles1QueryStrings::AndroidBoundaryGles1QueryStrings(
-    memory::AddressSpace& address_space)
+AndroidBoundaryGles1QueryStrings::AndroidBoundaryGles1QueryStrings(memory::AddressSpace& address_space)
     : address_space_(&address_space) {}
 
-void AndroidBoundaryGles1QueryStrings::Validate(
-    const std::uint32_t parameter) const {
+void AndroidBoundaryGles1QueryStrings::Validate(const std::uint32_t parameter) const {
     static_cast<void>(QueryStringOffset(parameter));
 }
 
@@ -258,8 +267,7 @@ std::uint32_t AndroidBoundaryGles1QueryStrings::Publish(
     std::vector<std::byte> bytes;
     bytes.reserve(value.size() + 1U);
     for (const auto character : value) {
-        bytes.push_back(static_cast<std::byte>(
-            static_cast<unsigned char>(character)));
+        bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
     }
     bytes.push_back(std::byte{});
     const memory::GuestRange region{kGles1QueryStringRegion,
@@ -335,19 +343,16 @@ void AndroidBoundaryGles1LegacyState::SetAlphaFunction(
     alpha_reference_ = std::clamp(reference, 0.0F, 1.0F);
 }
 
-void AndroidBoundaryGles1LegacyState::ValidateClientActiveTexture(
-    const std::uint32_t texture) const {
+void AndroidBoundaryGles1LegacyState::ValidateClientActiveTexture(const std::uint32_t texture) const {
     RequireTextureUnit(texture);
 }
 
-void AndroidBoundaryGles1LegacyState::SetClientActiveTexture(
-    const std::uint32_t texture) {
+void AndroidBoundaryGles1LegacyState::SetClientActiveTexture(const std::uint32_t texture) {
     ValidateClientActiveTexture(texture);
     client_active_texture_ = texture;
 }
 
-void AndroidBoundaryGles1LegacyState::ValidateColor(
-    const std::span<const float, 4> color) const {
+void AndroidBoundaryGles1LegacyState::ValidateColor(const std::span<const float, 4> color) const {
     if (!std::ranges::all_of(color, [](const float value) {
             return std::isfinite(value);
         })) {
@@ -355,8 +360,7 @@ void AndroidBoundaryGles1LegacyState::ValidateColor(
     }
 }
 
-void AndroidBoundaryGles1LegacyState::SetColor(
-    const std::span<const float, 4> color) {
+void AndroidBoundaryGles1LegacyState::SetColor(const std::span<const float, 4> color) {
     ValidateColor(color);
     std::ranges::transform(color, color_.begin(), [](const float value) {
         return std::clamp(value, 0.0F, 1.0F);
@@ -438,21 +442,13 @@ void AndroidBoundaryGles1LegacyState::SetTextureEnvironment(
         std::move(stored);
 }
 
-std::uint32_t AndroidBoundaryGles1LegacyState::AlphaFunction() const noexcept {
-    return alpha_function_;
-}
+std::uint32_t AndroidBoundaryGles1LegacyState::AlphaFunction() const noexcept { return alpha_function_; }
 
-float AndroidBoundaryGles1LegacyState::AlphaReference() const noexcept {
-    return alpha_reference_;
-}
+float AndroidBoundaryGles1LegacyState::AlphaReference() const noexcept { return alpha_reference_; }
 
-std::uint32_t AndroidBoundaryGles1LegacyState::ClientActiveTexture() const noexcept {
-    return client_active_texture_;
-}
+std::uint32_t AndroidBoundaryGles1LegacyState::ClientActiveTexture() const noexcept { return client_active_texture_; }
 
-const std::array<float, 4>& AndroidBoundaryGles1LegacyState::Color() const noexcept {
-    return color_;
-}
+const std::array<float, 4>& AndroidBoundaryGles1LegacyState::Color() const noexcept { return color_; }
 
 const std::vector<float>& AndroidBoundaryGles1LegacyState::TextureEnvironment(
     const std::uint32_t texture, const std::uint32_t pname) const {
@@ -482,6 +478,7 @@ void BindAndroidBoundaryGles1Legacy(
     gles::GlesDispatchTable& dispatch,
     AndroidBoundaryGles1LegacyState& legacy,
     AndroidBoundaryGles1State& core,
+    AndroidBoundaryGles1DrawState& draw,
     memory::AddressSpace& address_space,
     AndroidBoundaryFrameResolver require_frame) {
     if (!require_frame) {
@@ -540,6 +537,20 @@ void BindAndroidBoundaryGles1Legacy(
             return 0U;
         });
     dispatch.Bind(
+        "glTexEnvf",
+        [&legacy, &core, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t) {
+            const std::array values{std::bit_cast<float>(arguments[2])};
+            const auto texture = core.ActiveTexture();
+            legacy.ValidateTextureEnvironment(texture, arguments[0],
+                                              arguments[1], values);
+            static_cast<void>(require_frame("glTexEnvf"));
+            legacy.SetTextureEnvironment(texture, arguments[0], arguments[1],
+                                         values);
+            return 0U;
+        });
+    dispatch.Bind(
         "glTexEnvfv",
         [&legacy, &core, &address_space, require_frame](
             const std::span<const std::uint32_t> arguments,
@@ -576,6 +587,35 @@ void BindAndroidBoundaryGles1Legacy(
             static_cast<void>(require_frame("glTexEnvi"));
             legacy.SetTextureEnvironment(texture, arguments[0], arguments[1],
                                          values);
+            return 0U;
+        });
+    dispatch.Bind(
+        "glGetBooleanv",
+        [&legacy, &core, &draw, &address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            std::optional<std::int32_t> owned;
+            if (const auto client =
+                    Gles1ClientStateEnabled(arguments[0], draw, legacy)) {
+                owned = *client ? 1 : 0;
+            } else {
+                try {
+                    owned = core.Capability(arguments[0]) ? 1 : 0;
+                } catch (const std::invalid_argument&) {
+                    owned = Gles1OwnedInteger(arguments[0], core, legacy);
+                }
+            }
+            const auto count = owned.has_value()
+                                   ? 1U
+                                   : NativeIntegerQueryCount(arguments[0]);
+            auto output = gles::GuestBuffer::Prepare(
+                address_space, memory::GuestAddress{arguments[1]}, count,
+                gles::GuestTransferDirection::output, false, thread_id);
+            auto& frame = require_frame("glGetBooleanv");
+            const auto values = owned.has_value()
+                                    ? std::vector<std::int32_t>{*owned}
+                                    : frame.GetIntegers(arguments[0], count);
+            WriteGuestBooleans(output, values);
             return 0U;
         });
     dispatch.Bind(
@@ -639,10 +679,11 @@ void BindAndroidBoundaryGles1Legacy(
         });
     dispatch.Bind(
         "glGetIntegerv",
-        [&legacy, &core, &address_space, require_frame](
+        [&legacy, &core, &draw, &address_space, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t thread_id) {
-            const auto owned = Gles1OwnedInteger(arguments[0], core, legacy);
+            auto owned = Gles1ClientArrayInteger(arguments[0], draw, legacy);
+            if (!owned) owned = Gles1OwnedInteger(arguments[0], core, legacy);
             const auto count = owned.has_value()
                                    ? 1U
                                    : NativeIntegerQueryCount(arguments[0]);
@@ -651,14 +692,15 @@ void BindAndroidBoundaryGles1Legacy(
                 count * sizeof(std::uint32_t),
                 gles::GuestTransferDirection::output, false, thread_id);
             auto& frame = require_frame("glGetIntegerv");
+            const auto native_pname = arguments[0] == 0x0BE0U ? 0x80C9U :
+                                      arguments[0] == 0x0BE1U ? 0x80C8U : arguments[0];
             const auto values = owned.has_value()
                                     ? std::vector<std::int32_t>{*owned}
-                                    : frame.GetIntegers(arguments[0], count);
+                                    : frame.GetIntegers(native_pname, count);
             WriteGuestIntegers(output, values);
             return 0U;
         });
 }
-
 void BindAndroidBoundaryGles1Textures(
     gles::GlesDispatchTable& dispatch, AndroidBoundaryGles1State& state,
     memory::AddressSpace& address_space,

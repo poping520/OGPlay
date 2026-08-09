@@ -81,7 +81,8 @@ public:
                 return RequireFrame("glGetString").GetString(parameter);
             });
         detail::BindAndroidBoundaryGles1Legacy(
-            gles1_dispatch_, gles1_legacy_state_, gles1_state_, address_space_,
+            gles1_dispatch_, gles1_legacy_state_, gles1_state_,
+            gles1_draw_state_, address_space_,
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });

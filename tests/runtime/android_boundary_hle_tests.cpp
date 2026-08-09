@@ -378,6 +378,13 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
                      {0x84E2U, fixture.output.Value()}),
         "glGetIntegerv has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glGetBooleanv",
+                     {0x0DE1U, fixture.output.Value()}),
+        "glGetBooleanv has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glIsEnabled", {0x0DE1U}),
+        "glIsEnabled has no current ANGLE frame", std::runtime_error);
     const std::array scalar_calls{
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glActiveTexture", {0x84C0U}},
@@ -528,7 +535,15 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                            {0x84C0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glEnable",
                            {0x0DE1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled",
+                           {0x0DE1U}) == 1U);
+        const auto boolean_query = fixture.output.Add(0x210U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetBooleanv",
+                           {0x0DE1U, boolean_query.Value()}) == 0U);
+        CHECK(fixture.bus.Read8(boolean_query, 1U) == 1U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDisable",
+                           {0x0DE1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled",
                            {0x0DE1U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBindBuffer",
                            {0x8892U, 0U}) == 0U);
@@ -564,6 +579,11 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                 {ogplay::runtime::detail::kGles1TextureEnvironment,
                  ogplay::runtime::detail::kGles1TextureEnvironmentColor, 0U}),
             ogplay::memory::MemoryFault);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexEnvf",
+                  {ogplay::runtime::detail::kGles1TextureEnvironment,
+                   ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+                   std::bit_cast<std::uint32_t>(8448.0F)}) == 0U);
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glTexEnvi",
                   {ogplay::runtime::detail::kGles1TextureEnvironment,
@@ -606,9 +626,16 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK_THROWS_WITH_AS(
             fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
                          {0xDEADBEEFU, integer_query.Value()}),
-            "GLES1 integer query is unsupported", std::invalid_argument);
+            "GLES1 integer query is unsupported: 3735928559",
+            std::invalid_argument);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBlendFunc",
                            {1U, 0U}) == 0U);
+        for (const auto [pname, expected] :
+             {std::pair{0x0BE0U, 1U}, std::pair{0x0BE1U, 0U}}) {
+            CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                               {pname, integer_query.Value()}) == 0U);
+            CHECK(fixture.bus.Read32(integer_query, 1U) == expected);
+        }
         CHECK(fixture.Call("libGLESv1_CM.so", "glColorMask",
                            {1U, 1U, 1U, 1U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glCullFace",
@@ -995,8 +1022,20 @@ TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
         fixture.Call("libGLESv1_CM.so", "glMatrixIndexPointerOES",
                      {4U, 0x1406U, 0U, fixture.output.Value()}),
         std::invalid_argument);
-    CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
-                       {3U, 0x1406U, 0U, fixture.output.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
+                           {3U, 0x1406U, 0U, fixture.output.Value()}) == 0U);
+        const auto pointer_query = fixture.output.Add(0x240U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetPointerv",
+                           {0x808EU, pointer_query.Value()}) == 0U);
+        CHECK(fixture.bus.Read32(pointer_query, 1U) == fixture.output.Value());
+        const auto pointer_integer_query = fixture.output.Add(0x244U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                           {0x807AU, pointer_integer_query.Value()}) == 0U);
+        CHECK(fixture.bus.Read32(pointer_integer_query, 1U) == 3U);
+        CHECK_THROWS_AS(
+            fixture.Call("libGLESv1_CM.so", "glGetPointerv",
+                         {0x808EU, 0U}),
+            ogplay::gles::GuestTransferError);
     CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
                        {ogplay::runtime::detail::kGles1VertexArray}) == 0U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",

@@ -17,6 +17,8 @@ class AddressSpace;
 
 namespace ogplay::runtime::detail {
 
+class AndroidBoundaryGles1DrawState;
+
 class AndroidBoundaryGles1QueryStrings final {
 public:
     explicit AndroidBoundaryGles1QueryStrings(memory::AddressSpace& address_space);
@@ -103,6 +105,7 @@ void BindAndroidBoundaryGles1Legacy(
     gles::GlesDispatchTable& dispatch,
     AndroidBoundaryGles1LegacyState& legacy,
     AndroidBoundaryGles1State& core,
+    AndroidBoundaryGles1DrawState& draw,
     memory::AddressSpace& address_space,
     AndroidBoundaryFrameResolver require_frame);
 

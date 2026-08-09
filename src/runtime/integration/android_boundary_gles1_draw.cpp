@@ -612,6 +612,50 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     frame.BindBuffer(kElementArrayBuffer, guest_element_buffer);
 }
 
+std::optional<bool> Gles1ClientStateEnabled(
+    const std::uint32_t capability, const AndroidBoundaryGles1DrawState& draw,
+    const AndroidBoundaryGles1LegacyState& legacy) {
+    switch (capability) {
+    case kGles1VertexArray:
+    case kGles1NormalArray:
+    case kGles1ColorArray:
+    case kGles1MatrixIndexArray:
+    case kGles1WeightArray:
+        return draw.Array(capability, kTexture0).enabled;
+    case kGles1TextureCoordArray:
+        return draw.Array(capability, legacy.ClientActiveTexture()).enabled;
+    default: return std::nullopt;
+    }
+}
+
+std::optional<std::int32_t> Gles1ClientArrayInteger(
+    const std::uint32_t pname, const AndroidBoundaryGles1DrawState& draw,
+    const AndroidBoundaryGles1LegacyState& legacy) {
+    std::uint32_t array{};
+    enum class Field { size, type, stride } field{};
+    switch (pname) {
+    case 0x807AU: array = kGles1VertexArray; field = Field::size; break;
+    case 0x807BU: array = kGles1VertexArray; field = Field::type; break;
+    case 0x807CU: array = kGles1VertexArray; field = Field::stride; break;
+    case 0x807EU: array = kGles1NormalArray; field = Field::type; break;
+    case 0x807FU: array = kGles1NormalArray; field = Field::stride; break;
+    case 0x8081U: array = kGles1ColorArray; field = Field::size; break;
+    case 0x8082U: array = kGles1ColorArray; field = Field::type; break;
+    case 0x8083U: array = kGles1ColorArray; field = Field::stride; break;
+    case 0x8088U: array = kGles1TextureCoordArray; field = Field::size; break;
+    case 0x8089U: array = kGles1TextureCoordArray; field = Field::type; break;
+    case 0x808AU: array = kGles1TextureCoordArray; field = Field::stride; break;
+    default: return std::nullopt;
+    }
+    const auto texture = array == kGles1TextureCoordArray
+                             ? legacy.ClientActiveTexture()
+                             : kTexture0;
+    const auto& state = draw.Array(array, texture);
+    if (field == Field::size) return state.size;
+    if (field == Field::stride) return state.stride;
+    return static_cast<std::int32_t>(state.type);
+}
+
 void BindAndroidBoundaryGles1Draw(
     gles::GlesDispatchTable& dispatch, gles::GlesDispatchTable& extensions,
     AndroidBoundaryGles1DrawState& draw,
@@ -631,6 +675,15 @@ void BindAndroidBoundaryGles1Draw(
     });
     dispatch.Bind("glDisableClientState", [set_enabled](const auto arguments, const auto) {
         return set_enabled(arguments, false, "glDisableClientState");
+    });
+    dispatch.Bind("glIsEnabled", [&draw, &core, &legacy, require_frame](
+                                     const auto arguments, const auto) {
+        const auto client = Gles1ClientStateEnabled(arguments[0], draw, legacy);
+        const auto enabled = client.has_value()
+                                 ? *client
+                                 : core.Capability(arguments[0]);
+        static_cast<void>(require_frame("glIsEnabled"));
+        return enabled ? 1U : 0U;
     });
     const auto set_pointer = [&draw, &core, &legacy, require_frame](
                                  const std::uint32_t array,
@@ -664,6 +717,34 @@ void BindAndroidBoundaryGles1Draw(
     dispatch.Bind("glVertexPointer", [set_pointer](const auto arguments, const auto) {
         return set_pointer(kGles1VertexArray, arguments, Signed(arguments[0]), 1, 2, 3,
                            "glVertexPointer");
+    });
+    dispatch.Bind("glGetPointerv", [&draw, &legacy, &address_space, require_frame](
+                                        const auto arguments,
+                                        const std::uint64_t thread_id) {
+        std::uint32_t array{};
+        switch (arguments[0]) {
+        case 0x808EU: array = kGles1VertexArray; break;
+        case 0x808FU: array = kGles1NormalArray; break;
+        case 0x8090U: array = kGles1ColorArray; break;
+        case 0x8092U: array = kGles1TextureCoordArray; break;
+        default:
+            throw std::invalid_argument("GLES1 pointer query is unsupported");
+        }
+        auto output = gles::GuestBuffer::Prepare(
+            address_space, memory::GuestAddress{arguments[1]},
+            sizeof(std::uint32_t), gles::GuestTransferDirection::output,
+            false, thread_id);
+        static_cast<void>(require_frame("glGetPointerv"));
+        const auto texture = array == kGles1TextureCoordArray
+                                 ? legacy.ClientActiveTexture()
+                                 : kTexture0;
+        const auto pointer = draw.Array(array, texture).pointer;
+        auto bytes = output.WritableBytes();
+        for (std::size_t index = 0; index < sizeof(pointer); ++index) {
+            bytes[index] = static_cast<std::byte>(pointer >> (index * 8U));
+        }
+        output.Commit();
+        return 0U;
     });
     dispatch.Bind("glDrawArrays", [&draw, &core, &legacy, &address_space, require_frame](
                                       const auto arguments, const std::uint64_t thread_id) {

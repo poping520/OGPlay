@@ -34,6 +34,13 @@ TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
          ogplay::gles::AngleDevice::hardware}, 4, 3);
     frame.Viewport(0, 0, 4, 3);
     frame.ClearColor(0.25F, 0.5F, 0.75F, 1.0F);
+    frame.ClearStencil(3);
+    frame.DepthRange(0.25F, 0.75F);
+    frame.LineWidth(1.0F);
+    frame.PolygonOffset(1.0F, 2.0F);
+    frame.StencilFunction(0x0202U, 2, 0x7FU);
+    frame.StencilMask(0x3FU);
+    frame.StencilOperation(0x1E00U, 0x1E01U, 0x1E02U);
     frame.Clear(0x00004000U);
     const auto depth_bits = frame.GetIntegers(0x0D56U, 1U);
     const auto stencil_bits = frame.GetIntegers(0x0D57U, 1U);
@@ -48,6 +55,13 @@ TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
     REQUIRE(stencil_bits.size() == 1U);
     CHECK(depth_bits.front() >= 24);
     CHECK(stencil_bits.front() >= 8);
+    CHECK(frame.GetIntegers(0x0B91U, 1U).front() == 3);
+    CHECK(frame.GetIntegers(0x0B92U, 1U).front() == 0x0202);
+    CHECK(frame.GetIntegers(0x0B93U, 1U).front() == 0x7F);
+    CHECK(frame.GetIntegers(0x0B98U, 1U).front() == 0x3F);
+    CHECK(frame.GetIntegers(0x0B94U, 1U).front() == 0x1E00);
+    CHECK(frame.GetIntegers(0x0B95U, 1U).front() == 0x1E01);
+    CHECK(frame.GetIntegers(0x0B96U, 1U).front() == 0x1E02);
     REQUIRE(pixels.size() == 4U * 3U * 4U);
     for (std::size_t offset = 0; offset < pixels.size(); offset += 4U) {
         CHECK(pixels[offset] == doctest::Approx(64).epsilon(0.02));

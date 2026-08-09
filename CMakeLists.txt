@@ -197,6 +197,7 @@ ogplay_set_project_warnings(ogplay_loader)
 add_library(ogplay_gles
     src/gles/angle_backend.cpp
     src/gles/angle_frame.cpp
+    src/gles/angle_frame_state.cpp
     src/gles/egl_lifecycle.cpp
     src/gles/gles_call_preparation.cpp
     src/gles/gles_dispatch.cpp

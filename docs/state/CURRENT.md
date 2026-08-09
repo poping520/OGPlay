@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0305] `AngleFrame` 已补齐 depth range、line width、polygon offset、stencil clear/
+  function/mask/operation 的真实 ANGLE 调用面，并将 scalar/query 实现拆分为独立源文件；
+  原生状态查询与全量 CTest 436/436 通过。
 - [WU-0304] GLES1 `glGetIntegerv` 现从转换器返回矩阵栈、纹理/buffer binding、对齐及固定
   管线上限，并将兼容设备查询转发真实 ANGLE；guest 输出受检后原子提交，第二个 exact APK
   已越过该入口并明确停在下一独立缺口 `glPointSize`，全量 CTest 436/436 通过。
@@ -69,10 +72,6 @@
   最大 128 MiB 的拥有型 mono/stereo PCM16；空、损坏、超限、不支持格式与溢出均明确
   失败，真实小型 OGG fixture 覆盖成功路径；macOS-arm64 + ANGLE warnings-as-errors
   配置、构建及全量 CTest 423/423 通过。
-- [WU-0293] M5 出口新增游戏声音/音效真实输出要求；Title Profile 可用唯一受检
-  `{resource}` / `{resource:0N}` 占位符声明 SoundPool source 与规范资源路径，首个目标的
-  raw-resource 命名差异仅存在 Profile 数据中；macOS-arm64 + ANGLE warnings-as-errors
-  配置、构建及全量 CTest 421/421 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

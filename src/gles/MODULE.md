@@ -15,8 +15,8 @@
   失败。调用方必须保证 API 对象比使用它的 `EglLifecycle` 存活更久。
 - `EglLifecycle::CreatePbuffer`：创建 ANGLE display、RGBA8+D24S8 EGL config、GLES2 context
   和 pbuffer surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
-- `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/clear-color/depth-clear/clear、
-  scalar render state、shader/program、buffer/texture、vertex/uniform、query/state、draw 与
+- `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/color/depth/stencil clear、
+  depth-range、line/polygon/stencil scalar state、shader/program、buffer/texture、vertex/uniform、query/state、draw 与
   局部 readback 调用，并以
   受检 RGBA8
   全帧 readback 输出左上原点的确定帧；每个原生 GLES 调用都检查错误。
@@ -90,6 +90,8 @@
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。
 - GLES1/GLES2 共用的无指针标量状态必须直接进入同一个 ANGLE context；boolean、signed
   integer 与 float 各自保持 JNI/A32 位型，原生 GLES 错误不得被宿主缓存掩盖。
+- depth range、line width、polygon offset 与 stencil function/mask/operation 由 `AngleFrame`
+  直接调用 GLES2-compatible ANGLE 入口；所有调用必须立即检查原生错误。
 - input 只读 guest，output 不得为初始化暂存而读取 guest，inout 必须同时预检读写；任何
   native 调用前必须完成全区间验证，输出回写不得依赖析构副作用。
 - 平台探测事实由下层注入；gles 模块不使用平台宏，也不直接依赖平台 SDK 类型。

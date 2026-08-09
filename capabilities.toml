@@ -400,6 +400,11 @@ status = "complete"
 test = "tests/gles/angle_frame_tests.cpp"
 note = "M4 在真实 ANGLE pbuffer 上闭合综合样例所需 state/query/draw/readback、资源、shader 与 uniform；M5 WU-0292 优先使用 ANGLE reverse-row pack 直接输出 top-left RGBA8、无冗余 glFinish，并允许调用方复用 readback 存储"
 
+[gles.angle_scalar_state]
+status = "complete"
+test = "tests/gles/angle_frame_tests.cpp"
+note = "M5 WU-0305 提供 GLES1/2 共用的 depth-range、line/polygon 与 stencil 原生 ANGLE 状态调用面"
+
 [gles.shader_program]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"

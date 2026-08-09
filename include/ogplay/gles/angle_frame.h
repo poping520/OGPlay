@@ -105,12 +105,22 @@ public:
     void SetCapability(std::uint32_t capability, bool enabled);
     void BlendFunction(std::uint32_t source, std::uint32_t destination);
     void ColorMask(bool red, bool green, bool blue, bool alpha);
+    void ClearStencil(std::int32_t value);
     void CullFace(std::uint32_t mode);
     void DepthFunction(std::uint32_t function);
     void DepthMask(bool enabled);
+    void DepthRange(float near_value, float far_value);
     void Finish();
     void FrontFace(std::uint32_t mode);
     void Hint(std::uint32_t target, std::uint32_t mode);
+    void LineWidth(float width);
+    void PolygonOffset(float factor, float units);
+    void StencilFunction(std::uint32_t function, std::int32_t reference,
+                         std::uint32_t mask);
+    void StencilMask(std::uint32_t mask);
+    void StencilOperation(std::uint32_t stencil_fail,
+                          std::uint32_t depth_fail,
+                          std::uint32_t depth_pass);
     [[nodiscard]] std::vector<std::int32_t> GetIntegers(
         std::uint32_t parameter, std::size_t count);
     [[nodiscard]] std::string GetString(std::uint32_t parameter);

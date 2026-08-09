@@ -112,7 +112,8 @@
   清理并保留指定 resource；`is_sound_loaded*` 与 `unload_sound*` 使用同一分类 resource
   目录，查询按 legacy Java 契约返回 `0` / `-1`，卸载只删除精确键；`load_sound*` 记录
   pending request，`play_sound*` 执行 lazy request 且仅对真实 loaded resource 创建
-  voice；这些状态不伪造解码、playback 或音频输出；
+  voice；pause/resume/stop、volume、pitch 与 reset handler 均驱动同一 voice 状态，目标
+  不存在或参数无效时不伪造迁移；这些状态不伪造解码、playback 或音频输出；
   Profile phase、窗口和标题事实不得进入该会话。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。

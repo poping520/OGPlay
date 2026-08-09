@@ -34,6 +34,9 @@
 
 ## 最近完成
 
+- [WU-0282] SoundPool voice control 家族已批量闭合：普通/big pause、resume、stop、volume，
+  普通 pool pitch 与 big reset 共 10 个 handler 驱动同一受检状态。exact-APK 无界运行约
+  90 秒、1323 帧后正常停止且状态 0；帧存活不替代语言界面视觉验收。
 - [WU-0281] SoundPool 普通/big load 与 play 共享通用 pending/loaded 状态机；loaded 查询
   修正为 legacy Java 的 `0` / `-1` 契约，play 执行 lazy request，只有真实 loaded resource
   才创建 voice。exact-APK 600 帧及 shutdown 均以状态 0 完成；解码和输出保持 partial。
@@ -80,7 +83,7 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 增加 exact-APK 更长时限和输入驱动 smoke，采集下一真实行为边界与稳定黄金帧。
+1. 建立可自动判定的 exact-APK 启动画面/readback 检查，验证语言界面而非仅统计帧数。
 2. 为 SoundPool pending request 接入声明式 APK raw-resource 解析，再推进解码与 HAL 输出。
 3. 按 exact-APK 后续真实调用证据，批量闭合类/实例及字段/数组/字符串 JNI 槽。
 

@@ -46,7 +46,17 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
           {"playSound", "(IIF)V", "audio.play_sound", true},
           {"playSoundBig", "(IF)V", "audio.play_sound_big", true},
           {"loadSound", "(II)V", "audio.load_sound", true},
-          {"loadSoundBig", "(I)V", "audio.load_sound_big", true}},
+          {"loadSoundBig", "(I)V", "audio.load_sound_big", true},
+          {"pauseSound", "(II)V", "audio.pause_sound", true},
+          {"pauseSoundBig", "(I)V", "audio.pause_sound_big", true},
+          {"resumeSound", "(II)V", "audio.resume_sound", true},
+          {"resumeSoundBig", "(I)V", "audio.resume_sound_big", true},
+          {"stopSound", "(II)V", "audio.stop_sound", true},
+          {"stopSoundBig", "(I)V", "audio.stop_sound_big", true},
+          {"setVolume", "(IIF)V", "audio.set_volume", true},
+          {"setVolumeBig", "(IF)V", "audio.set_volume_big", true},
+          {"setPitch", "(IIF)V", "audio.set_pitch", true},
+          {"resetSound", "(I)V", "audio.reset_sound", true}},
          {}});
     const auto method = classes.GetMethodId(
         java_class, "destroySoundPool", "()V", true);
@@ -76,6 +86,26 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
         java_class, "loadSound", "(II)V", true);
     const auto load_big = classes.GetMethodId(
         java_class, "loadSoundBig", "(I)V", true);
+    const auto pause = classes.GetMethodId(
+        java_class, "pauseSound", "(II)V", true);
+    const auto pause_big = classes.GetMethodId(
+        java_class, "pauseSoundBig", "(I)V", true);
+    const auto resume = classes.GetMethodId(
+        java_class, "resumeSound", "(II)V", true);
+    const auto resume_big = classes.GetMethodId(
+        java_class, "resumeSoundBig", "(I)V", true);
+    const auto stop = classes.GetMethodId(
+        java_class, "stopSound", "(II)V", true);
+    const auto stop_big_voice = classes.GetMethodId(
+        java_class, "stopSoundBig", "(I)V", true);
+    const auto set_volume = classes.GetMethodId(
+        java_class, "setVolume", "(IIF)V", true);
+    const auto set_volume_big = classes.GetMethodId(
+        java_class, "setVolumeBig", "(IF)V", true);
+    const auto set_pitch = classes.GetMethodId(
+        java_class, "setPitch", "(IIF)V", true);
+    const auto reset = classes.GetMethodId(
+        java_class, "resetSound", "(I)V", true);
     REQUIRE(stop_all.has_value());
     REQUIRE(stop_pool.has_value());
     REQUIRE(stop_big.has_value());
@@ -87,6 +117,16 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
     REQUIRE(play_big.has_value());
     REQUIRE(load.has_value());
     REQUIRE(load_big.has_value());
+    REQUIRE(pause.has_value());
+    REQUIRE(pause_big.has_value());
+    REQUIRE(resume.has_value());
+    REQUIRE(resume_big.has_value());
+    REQUIRE(stop.has_value());
+    REQUIRE(stop_big_voice.has_value());
+    REQUIRE(set_volume.has_value());
+    REQUIRE(set_volume_big.has_value());
+    REQUIRE(set_pitch.has_value());
+    REQUIRE(reset.has_value());
     ogplay::runtime::JniInvocationEngine invocations{classes};
     CHECK_THROWS_WITH_AS(
         static_cast<void>(invocations.InvokeStatic(
@@ -175,6 +215,70 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
         1U, java_class, *play_big, big_play,
         ogplay::runtime::JniArgumentSource::value_array));
     CHECK(sound_pool.ActiveVoiceCount() == 2U);
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *pause, pool_resource,
+        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *pause_big, big_resource,
+        ogplay::runtime::JniArgumentSource::va_list));
+    const auto paused_pool = sound_pool.Snapshot(
+        ogplay::audio::JavaSoundPoolKind::pool, 2, 7);
+    const auto paused_big = sound_pool.Snapshot(
+        ogplay::audio::JavaSoundPoolKind::big, 7, 0);
+    REQUIRE(paused_pool.has_value());
+    REQUIRE(paused_big.has_value());
+    CHECK(paused_pool->status ==
+          ogplay::audio::JavaSoundPoolVoiceStatus::paused);
+    CHECK(paused_big->status ==
+          ogplay::audio::JavaSoundPoolVoiceStatus::paused);
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *resume, pool_resource,
+        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *resume_big, big_resource,
+        ogplay::runtime::JniArgumentSource::variadic));
+    const std::array<ogplay::runtime::JniValue, 3> pool_properties{
+        ogplay::runtime::JniInt{2}, ogplay::runtime::JniInt{7},
+        ogplay::runtime::JniFloat{1.5F}};
+    const std::array<ogplay::runtime::JniValue, 2> big_volume{
+        ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{0.5F}};
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *set_volume, pool_play,
+        ogplay::runtime::JniArgumentSource::va_list));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *set_volume_big, big_volume,
+        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *set_pitch, pool_properties,
+        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *reset, big_resource,
+        ogplay::runtime::JniArgumentSource::va_list));
+    const auto pool_snapshot = sound_pool.Snapshot(
+        ogplay::audio::JavaSoundPoolKind::pool, 2, 7);
+    const auto big_snapshot = sound_pool.Snapshot(
+        ogplay::audio::JavaSoundPoolKind::big, 7, 0);
+    REQUIRE(pool_snapshot.has_value());
+    REQUIRE(big_snapshot.has_value());
+    CHECK(pool_snapshot->status ==
+          ogplay::audio::JavaSoundPoolVoiceStatus::playing);
+    CHECK(pool_snapshot->volume == 0.5F);
+    CHECK(pool_snapshot->pitch == 1.5F);
+    CHECK(big_snapshot->status ==
+          ogplay::audio::JavaSoundPoolVoiceStatus::playing);
+    CHECK(big_snapshot->volume == 0.5F);
+    CHECK(big_snapshot->reset_count == 1U);
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *stop, pool_resource,
+        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *stop_big_voice, big_resource,
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(sound_pool.ActiveVoiceCount() == 0U);
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *play_big, big_play,
+        ogplay::runtime::JniArgumentSource::value_array));
+    CHECK(sound_pool.ActiveVoiceCount() == 1U);
     CHECK(sound_pool.LoadedResourceCount() == 2U);
     static_cast<void>(invocations.InvokeStatic(
         1U, java_class, *unload, pool_resource,

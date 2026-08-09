@@ -530,6 +530,11 @@ status = "partial"
 test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0281 为 load/play 普通与 big 调用实现 pending request、loaded gate、voice identity 与音量校验；尚未接入资源解析、解码和 HAL 输出，600 帧 exact-APK shutdown 状态 0"
 
+[runtime.java_sound_pool_voice_controls]
+status = "complete"
+test = "tests/runtime/android_guest_call_session_tests.cpp; exact-APK unbounded startup smoke"
+note = "M5 WU-0282 批量闭合普通/big pause/resume/stop/volume 及 pool pitch、big reset；90 秒 1323 帧 exact-APK 运行后正常停止，UI 画面仍需单独视觉验收"
+
 [runtime.gles1_texture_name_lifecycle]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

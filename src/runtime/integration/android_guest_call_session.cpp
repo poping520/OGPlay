@@ -147,6 +147,85 @@ void BindAndroidGuestJavaAudioHandlers(
                 audio::JavaSoundPoolKind::big, resource));
             return JniValue{std::monostate{}};
         });
+    const auto bind_voice_pair = [&invocations, &sound_pool](
+                                     const char* pool_implementation,
+                                     const char* big_implementation,
+                                     const auto operation) {
+        invocations.RegisterHandler(
+            pool_implementation,
+            [&sound_pool, operation](const JniInvocation& invocation) {
+                const auto resource =
+                    std::get<JniInt>(invocation.arguments[0]);
+                const auto instance =
+                    std::get<JniInt>(invocation.arguments[1]);
+                static_cast<void>((sound_pool.*operation)(
+                    audio::JavaSoundPoolKind::pool, resource, instance));
+                return JniValue{std::monostate{}};
+            });
+        invocations.RegisterHandler(
+            big_implementation,
+            [&sound_pool, operation](const JniInvocation& invocation) {
+                const auto resource =
+                    std::get<JniInt>(invocation.arguments[0]);
+                static_cast<void>((sound_pool.*operation)(
+                    audio::JavaSoundPoolKind::big, resource, 0));
+                return JniValue{std::monostate{}};
+            });
+    };
+    bind_voice_pair("audio.pause_sound", "audio.pause_sound_big",
+                    &audio::JavaSoundPoolState::Pause);
+    bind_voice_pair("audio.resume_sound", "audio.resume_sound_big",
+                    &audio::JavaSoundPoolState::Resume);
+    bind_voice_pair("audio.stop_sound", "audio.stop_sound_big",
+                    &audio::JavaSoundPoolState::Stop);
+    const auto bind_volume_pair = [&invocations, &sound_pool](
+                                      const char* pool_implementation,
+                                      const char* big_implementation) {
+        invocations.RegisterHandler(
+            pool_implementation,
+            [&sound_pool](const JniInvocation& invocation) {
+                const auto resource =
+                    std::get<JniInt>(invocation.arguments[0]);
+                const auto instance =
+                    std::get<JniInt>(invocation.arguments[1]);
+                const auto volume =
+                    std::get<JniFloat>(invocation.arguments[2]);
+                static_cast<void>(sound_pool.SetVolume(
+                    audio::JavaSoundPoolKind::pool, resource, instance,
+                    volume));
+                return JniValue{std::monostate{}};
+            });
+        invocations.RegisterHandler(
+            big_implementation,
+            [&sound_pool](const JniInvocation& invocation) {
+                const auto resource =
+                    std::get<JniInt>(invocation.arguments[0]);
+                const auto volume =
+                    std::get<JniFloat>(invocation.arguments[1]);
+                static_cast<void>(sound_pool.SetVolume(
+                    audio::JavaSoundPoolKind::big, resource, 0, volume));
+                return JniValue{std::monostate{}};
+            });
+    };
+    bind_volume_pair("audio.set_volume", "audio.set_volume_big");
+    invocations.RegisterHandler(
+        "audio.set_pitch",
+        [&sound_pool](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            const auto instance = std::get<JniInt>(invocation.arguments[1]);
+            const auto pitch = std::get<JniFloat>(invocation.arguments[2]);
+            static_cast<void>(sound_pool.SetPitch(
+                audio::JavaSoundPoolKind::pool, resource, instance, pitch));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.reset_sound",
+        [&sound_pool](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            static_cast<void>(sound_pool.Reset(
+                audio::JavaSoundPoolKind::big, resource, 0));
+            return JniValue{std::monostate{}};
+        });
 }
 
 class AndroidGuestCallSession::Impl final {

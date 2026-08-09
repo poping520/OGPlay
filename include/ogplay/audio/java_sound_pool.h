@@ -11,6 +11,14 @@
 namespace ogplay::audio {
 
 enum class JavaSoundPoolKind : std::uint8_t { pool, big };
+enum class JavaSoundPoolVoiceStatus : std::uint8_t { playing, paused };
+
+struct JavaSoundPoolVoiceSnapshot final {
+    JavaSoundPoolVoiceStatus status{JavaSoundPoolVoiceStatus::playing};
+    float volume{1.0F};
+    float pitch{1.0F};
+    std::uint64_t reset_count{};
+};
 
 class JavaSoundPoolState final {
 public:
@@ -91,11 +99,121 @@ public:
                        voice.instance == instance;
             });
         if (found == voices_.end()) {
-            voices_.push_back({resource, instance, kind, volume});
+            voices_.push_back({resource, instance, kind, volume, 1.0F,
+                               JavaSoundPoolVoiceStatus::playing, 0});
         } else {
             found->volume = volume;
+            found->pitch = 1.0F;
+            found->status = JavaSoundPoolVoiceStatus::playing;
+            found->reset_count = 0;
         }
         return true;
+    }
+
+    [[nodiscard]] bool Pause(const JavaSoundPoolKind kind,
+                             const std::int32_t resource,
+                             const std::int32_t instance) {
+        std::scoped_lock lock(mutex_);
+        const auto found = std::ranges::find_if(
+            voices_, [kind, resource, instance](const Voice& voice) {
+                return voice.kind == kind && voice.resource == resource &&
+                       voice.instance == instance;
+            });
+        if (found == voices_.end()) return false;
+        found->status = JavaSoundPoolVoiceStatus::paused;
+        return true;
+    }
+
+    [[nodiscard]] bool Resume(const JavaSoundPoolKind kind,
+                              const std::int32_t resource,
+                              const std::int32_t instance) {
+        std::scoped_lock lock(mutex_);
+        const auto found = std::ranges::find_if(
+            voices_, [kind, resource, instance](const Voice& voice) {
+                return voice.kind == kind && voice.resource == resource &&
+                       voice.instance == instance;
+            });
+        if (found == voices_.end()) return false;
+        found->status = JavaSoundPoolVoiceStatus::playing;
+        return true;
+    }
+
+    [[nodiscard]] bool Stop(const JavaSoundPoolKind kind,
+                            const std::int32_t resource,
+                            const std::int32_t instance) {
+        std::scoped_lock lock(mutex_);
+        const auto found = std::ranges::find_if(
+            voices_, [kind, resource, instance](const Voice& voice) {
+                return voice.kind == kind && voice.resource == resource &&
+                       voice.instance == instance;
+            });
+        if (found == voices_.end()) return false;
+        voices_.erase(found);
+        return true;
+    }
+
+    [[nodiscard]] bool SetVolume(const JavaSoundPoolKind kind,
+                                 const std::int32_t resource,
+                                 const std::int32_t instance,
+                                 const float volume) {
+        std::scoped_lock lock(mutex_);
+        if (!std::isfinite(volume) || volume < 0.0F || volume > 1.0F) {
+            return false;
+        }
+        const auto found = std::ranges::find_if(
+            voices_, [kind, resource, instance](const Voice& voice) {
+                return voice.kind == kind && voice.resource == resource &&
+                       voice.instance == instance;
+            });
+        if (found == voices_.end()) return false;
+        found->volume = volume;
+        return true;
+    }
+
+    [[nodiscard]] bool SetPitch(const JavaSoundPoolKind kind,
+                                const std::int32_t resource,
+                                const std::int32_t instance,
+                                const float pitch) {
+        std::scoped_lock lock(mutex_);
+        if (!std::isfinite(pitch) || pitch < 0.5F || pitch > 2.0F) {
+            return false;
+        }
+        const auto found = std::ranges::find_if(
+            voices_, [kind, resource, instance](const Voice& voice) {
+                return voice.kind == kind && voice.resource == resource &&
+                       voice.instance == instance;
+            });
+        if (found == voices_.end()) return false;
+        found->pitch = pitch;
+        return true;
+    }
+
+    [[nodiscard]] bool Reset(const JavaSoundPoolKind kind,
+                             const std::int32_t resource,
+                             const std::int32_t instance) {
+        std::scoped_lock lock(mutex_);
+        const auto found = std::ranges::find_if(
+            voices_, [kind, resource, instance](const Voice& voice) {
+                return voice.kind == kind && voice.resource == resource &&
+                       voice.instance == instance;
+            });
+        if (found == voices_.end()) return false;
+        ++found->reset_count;
+        return true;
+    }
+
+    [[nodiscard]] std::optional<JavaSoundPoolVoiceSnapshot> Snapshot(
+        const JavaSoundPoolKind kind, const std::int32_t resource,
+        const std::int32_t instance) const {
+        std::scoped_lock lock(mutex_);
+        const auto found = std::ranges::find_if(
+            voices_, [kind, resource, instance](const Voice& voice) {
+                return voice.kind == kind && voice.resource == resource &&
+                       voice.instance == instance;
+            });
+        if (found == voices_.end()) return std::nullopt;
+        return JavaSoundPoolVoiceSnapshot{found->status, found->volume,
+                                          found->pitch, found->reset_count};
     }
 
     [[nodiscard]] std::size_t StopAll(
@@ -157,6 +275,9 @@ private:
         std::int32_t instance{};
         JavaSoundPoolKind kind{JavaSoundPoolKind::pool};
         float volume{1.0F};
+        float pitch{1.0F};
+        JavaSoundPoolVoiceStatus status{JavaSoundPoolVoiceStatus::playing};
+        std::uint64_t reset_count{};
 
         bool operator==(const Voice&) const = default;
     };

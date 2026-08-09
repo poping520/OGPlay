@@ -241,6 +241,8 @@ public:
             static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_RGBA32,
             const_cast<std::uint8_t*>(pixels.data()), static_cast<int>(row_bytes));
         if (source == nullptr) throw SdlError("SDL_CreateSurfaceFrom");
+        const auto blend_disabled = SDL_SetSurfaceBlendMode(
+            source, SDL_BLENDMODE_NONE);
         const auto layout = FitDisplayRect(
             width, height, static_cast<std::uint32_t>(target->w),
             static_cast<std::uint32_t>(target->h));
@@ -249,9 +251,10 @@ public:
             static_cast<int>(layout.width), static_cast<int>(layout.height)};
         const auto cleared = SDL_FillSurfaceRect(
             target, nullptr, SDL_MapSurfaceRGBA(target, 0, 0, 0, 255));
-        const auto blitted = cleared && SDL_BlitSurfaceScaled(source, nullptr, target, &destination,
-                                                   SDL_SCALEMODE_NEAREST);
+        const auto blitted = blend_disabled && cleared && SDL_BlitSurfaceScaled(
+            source, nullptr, target, &destination, SDL_SCALEMODE_NEAREST);
         SDL_DestroySurface(source);
+        if (!blend_disabled) throw SdlError("SDL_SetSurfaceBlendMode");
         if (!cleared) throw SdlError("SDL_FillSurfaceRect");
         if (!blitted) throw SdlError("SDL_BlitSurfaceScaled");
         if (!SDL_UpdateWindowSurface(window_)) throw SdlError("SDL_UpdateWindowSurface");

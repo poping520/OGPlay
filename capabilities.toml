@@ -168,7 +168,7 @@ note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映�
 [hal.rgba_present]
 status = "complete"
 test = "tests/hal/window_input_tests.cpp"
-note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，清黑边后等比居中缩放并累计成功 present；M5 WU-0287 以该计数每 0.5 秒更新窗口实时 FPS"
+note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，清黑边后等比居中缩放并累计成功 present；M5 WU-0287 以该计数每 0.5 秒更新窗口实时 FPS；WU-0299 以无混合复制呈现 opaque 窗口，guest framebuffer alpha 不再错误混入黑底"
 
 [hal.display_adaptation]
 status = "complete"

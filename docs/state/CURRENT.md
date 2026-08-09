@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0299] SDL 窗口现以无混合复制呈现 opaque guest framebuffer，alpha=0 不再把有效
+  RGB 混入黑底；透明红像素契约与 CTest 432/432 通过，用户确认 Debug exact APK 闪屏
+  恢复完整白底、主界面无回归，424 帧后正常关闭。
 - [WU-0298] 鼠标主键以 input mapper 生成固定 id 0 的成对单点触摸；悬停、非主键、
   黑边起始及跨设备事件均不注入，窗口外 release 夹紧闭合；CTest 432/432 通过，用户以
   Debug exact APK 确认拖拽可旋转车辆，3407 帧后正常关闭。
@@ -69,12 +72,6 @@
   box resolve；布局、字节数和存储地址测试已闭合。
 - [WU-0288] Dynarmic 状态快照已批量导入 16 个核心和 64 个扩展寄存器，消除逐槽 setter
   调用并保持 CPSR/VFP/线程元数据不变。
-- [WU-0287] `run-apk` 窗口标题已增加实时 FPS：首个采样周期显示 `FPS --`，之后按成功
-  present 数和统一 `RealtimeClock` 每 0.5 秒更新一位小数；确定性 sampler、SDL 标题契约、
-  414 项全量测试及 exact-APK 界面均已验收。
-- [WU-0286] ANGLE pbuffer config 已明确请求 RGBA8+D24S8，真实查询验证默认 framebuffer
-  具备至少 24-bit depth 与 8-bit stencil；exact-APK 逐批 draw 隔离证明黑块来自缺失 depth
-  attachment 后，正式修复版由用户确认两个黑块消失。
 
 ## 目标 ELF 尚未实现的 GL 入口
 

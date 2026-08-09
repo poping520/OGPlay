@@ -107,7 +107,7 @@ TEST_CASE("SDL dummy window has an explicit lifecycle") {
 TEST_CASE("SDL window presents exact RGBA8 frames") {
     auto host = OpenDummyWindow();
     const std::vector<std::uint8_t> pixels{
-        255, 0, 0, 255, 0, 255, 0, 255,
+        255, 0, 0, 0, 0, 255, 0, 255,
         0, 0, 255, 255, 255, 255, 255, 255,
     };
 

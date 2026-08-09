@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0302] `run-apk --external-dir` 现将一个显式宿主目录精确挂到匹配 Profile 声明的
+  external guest 根；声明数量、required 输入及 manifest 在窗口前受检，CTest 436/436
+  通过，现有 Asphalt Profile 预检无回归。
 - [WU-0301] 独立宿主数据目录现可事务索引为通用 external VFS mount，文件首次读取或
   非截断写入时才物化且修改只存在于会话内；不安全/空/歧义目录树明确失败，全量
   CTest 436/436 通过。
@@ -71,11 +74,6 @@
 - [WU-0291] GLES1 高频 client pointer 已改为验证候选/原子提交，draw input、guest index
   与顺序索引复用宿主暂存高水位容量但每次重新读取 guest；用户确认 Debug exact-APK
   主菜单约 13.7 FPS，较本轮 7 FPS 基线接近翻倍。
-- [WU-0290] Dynarmic 已通过受保护 4 KiB 数据页表直达无 observer 的 RW 非执行页；
-  observer、权限、execute、跨页与 fault 继续回退受检 callback。Debug exact-APK 从约
-  4 FPS 提升到约 7 FPS，ADR-0016 记录其权限边界。
-- [WU-0289] 默认拥有型 1× ANGLE readback 直接转移原存储，2..4× 继续使用确定性整数
-  box resolve；布局、字节数和存储地址测试已闭合。
 
 ## 目标 ELF 尚未实现的 GL 入口
 

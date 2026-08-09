@@ -110,6 +110,11 @@ status = "complete"
 test = "tests/session/profile_asset_bundle_tests.cpp"
 note = "M5 WU-0215 以不可变所有权 bundle 汇总已导入 VFS/audio 字节，在 Profile 装配前拒绝非规范路径、大小写歧义、重复输入和空资产"
 
+[frontend.run_apk_external]
+status = "complete"
+test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"
+note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹配 Profile 声明的唯一 external guest 根，并在窗口创建前校验 required 输入与 manifest"
+
 [session.profile_bootstrap_inputs]
 status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp; tests/session/profile_session_bootstrap_tests.cpp"

@@ -9,6 +9,8 @@
 CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title Profile 驱动的 APK
 预检、M4 NativeActivity 与声明式 GLSurfaceView 交互窗口运行；
 `run-apk --supersample <1..4>` 可显式选择内部渲染倍率，省略时为 1×；GUI 留在 M6。
+`run-apk --external-dir <host-dir>` 可把一个独立数据目录按精确 Profile 声明的 external
+guest 根进行 lazy mount；guest 路径不由用户参数或宿主目录名决定。
 交互窗口标题始终显示 FPS 状态：首个采样周期前为 `FPS --`，之后每 0.5 秒按成功
 present 数更新一位小数的实时值。
 声明 `audio.sound_pool` 的 GLSurfaceView Profile 会按 source/path_pattern 从 APK 读取编码
@@ -27,6 +29,9 @@ present 数更新一位小数的实时值。
   native-call 计数，不创建窗口或执行 guest。
 - `--supersample` 只接受完整十进制整数 1..4，必须在 APK I/O 和窗口创建前拒绝缺值、
   零、越界或尾随字符；默认值保持 1×。
+- `--external-dir` 最多出现一次；匹配 Profile 必须声明且只声明一个 external mount，
+  required 输入与 manifest 缺失须在创建窗口前失败。宿主目录经 runtime/vfs 通用入口
+  索引，不在前端复制文件内容或实现路径语义。
 - pointer 事件经 input 模块按最近 guest 帧与当前窗口的等比内容区映射；鼠标主键模拟固定
   id 的单点触摸，悬停不注入；黑边按下/移动不注入，黑边释放仍夹紧转发以闭合已开始的
   手势。

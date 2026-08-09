@@ -34,3 +34,9 @@ expect_failure(valid_one "cannot open" ${_base} --supersample 1)
 expect_failure(valid_two "cannot open" ${_base} --supersample 2)
 expect_failure(valid_four "cannot open" ${_base} --supersample 4)
 expect_failure(default_one "cannot open" ${_base})
+expect_failure(external_missing "unknown or incomplete run-apk option: --external-dir"
+    ${_base} --external-dir)
+expect_failure(external_once "run-apk accepts --external-dir only once"
+    ${_base} --external-dir first --external-dir second)
+expect_failure(external_valid "cannot open"
+    ${_base} --external-dir host-data)

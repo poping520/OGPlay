@@ -168,6 +168,63 @@ DirectAssetImplementations(const session::TitleProfile& profile) {
                profile.quirks->enabled.end();
 }
 
+[[nodiscard]] const session::ProfileMount* ExternalMount(
+    const session::TitleProfile& profile) {
+    if (!profile.data.has_value()) return nullptr;
+    const session::ProfileMount* result{};
+    for (const auto& mount : profile.data->mounts) {
+        if (mount.source != session::ProfileSource::external) continue;
+        if (result != nullptr) {
+            throw std::runtime_error(
+                "run-apk supports one external Profile mount per session");
+        }
+        result = &mount;
+    }
+    return result;
+}
+
+[[nodiscard]] std::string JoinGuestPath(const std::string_view root,
+                                        const std::string_view relative) {
+    auto result = std::string(root);
+    if (result != "/") result.push_back('/');
+    result.append(relative);
+    return result;
+}
+
+void MountExternalDirectory(
+    const session::TitleProfile& profile,
+    const std::optional<std::filesystem::path>& directory,
+    runtime::VirtualFileSystem& filesystem) {
+    const auto* mount = ExternalMount(profile);
+    if (mount == nullptr) {
+        if (directory.has_value()) {
+            throw std::runtime_error(
+                "--external-dir was supplied but Profile declares no external mount");
+        }
+        return;
+    }
+    if (!directory.has_value()) {
+        if (mount->required) {
+            throw std::runtime_error(
+                "Profile requires --external-dir for guest mount " +
+                mount->guest);
+        }
+        return;
+    }
+    filesystem.MountHostDirectory(mount->guest, *directory);
+    for (const auto& entry : profile.data->manifest) {
+        if (!entry.required) continue;
+        try {
+            static_cast<void>(filesystem.Stat(
+                JoinGuestPath(mount->guest, entry.path)));
+        } catch (const runtime::VfsError& error) {
+            if (error.ErrorNumber() != 2) throw;
+            throw std::runtime_error(
+                "required Profile manifest file is missing: " + entry.path);
+        }
+    }
+}
+
 [[nodiscard]] std::vector<runtime::VfsLazyMountEntry> IndexApkAssets(
     const std::span<const std::byte> apk_bytes,
     const loader::ApkArchive& archive) {
@@ -240,6 +297,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     }
     const std::filesystem::path apk_path{argv[2]};
     std::optional<std::filesystem::path> system_directory;
+    std::optional<std::filesystem::path> external_directory;
     auto profiles_directory =
         std::filesystem::path(OGPLAY_SOURCE_DIR) / "data" / "profiles";
     std::optional<std::uint64_t> exit_after_frames;
@@ -251,6 +309,16 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             system_directory = std::filesystem::path{argv[++index]};
         } else if (option == "--profiles-dir" && index + 1 < argc) {
             profiles_directory = std::filesystem::path{argv[++index]};
+        } else if (option == "--external-dir" && index + 1 < argc) {
+            if (external_directory.has_value()) {
+                throw std::invalid_argument(
+                    "run-apk accepts --external-dir only once");
+            }
+            external_directory = std::filesystem::path{argv[++index]};
+            if (external_directory->empty()) {
+                throw std::invalid_argument(
+                    "--external-dir requires a non-empty host directory");
+            }
         } else if (option == "--exit-after-frames" && index + 1 < argc) {
             exit_after_frames = ParsePositive(argv[++index], option);
         } else if (option == "--supersample" && index + 1 < argc) {
@@ -281,6 +349,8 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                                  manifest.package);
     }
     const auto& profile = *match->profile;
+    runtime::VirtualFileSystem filesystem;
+    MountExternalDirectory(profile, external_directory, filesystem);
     const auto& bionic = runtime::SelectBionicProfile(profile.runtime.api_level);
     const auto owned_system = ReadSystemLibraries(*system_directory, bionic);
     std::vector<runtime::BionicModuleSource> system_sources;
@@ -379,7 +449,6 @@ int RunApkCommand(const int argc, const char* const argv[]) {
         }
         guest->Stop();
     } else {
-        runtime::VirtualFileSystem filesystem;
         if (direct_assets.has_value()) {
             const auto assets = IndexApkAssets(apk_bytes, archive);
             filesystem.MountLazyReadOnly(

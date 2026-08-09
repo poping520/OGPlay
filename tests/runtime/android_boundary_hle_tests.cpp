@@ -374,6 +374,10 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                      {std::bit_cast<std::uint32_t>(1.0F)}),
         "glClearDepthf has no current ANGLE frame",
         std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                     {0x84E2U, fixture.output.Value()}),
+        "glGetIntegerv has no current ANGLE frame", std::runtime_error);
     const std::array scalar_calls{
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glActiveTexture", {0x84C0U}},
@@ -557,6 +561,33 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                 "libGLESv1_CM.so", "glGetFloatv",
                 {ogplay::runtime::detail::kGles1MaxTextureAnisotropy, 0U}),
             ogplay::gles::GuestTransferError);
+        const auto integer_query = fixture.output.Add(0x220U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                           {0x84E2U, integer_query.Value()}) == 0U);
+        CHECK(fixture.bus.Read32(integer_query, 1U) == 2U);
+        const std::array owned_integer_queries{
+            std::pair{0x0BA0U, ogplay::runtime::detail::kGles1Projection},
+            std::pair{0x0BA4U, 1U}, std::pair{0x0B54U, 0x1D01U},
+            std::pair{0x0CF5U, 4U}, std::pair{0x8069U, texture},
+            std::pair{0x84E0U, 0x84C0U}, std::pair{0x84E1U, 0x84C1U},
+            std::pair{0x8894U, 0U}};
+        for (const auto& [pname, expected] : owned_integer_queries) {
+            CAPTURE(pname);
+            CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                               {pname, integer_query.Value()}) == 0U);
+            CHECK(fixture.bus.Read32(integer_query, 1U) == expected);
+        }
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                           {0x0D56U, integer_query.Value()}) == 0U);
+        CHECK(fixture.bus.Read32(integer_query, 1U) > 0U);
+        CHECK_THROWS_AS(
+            fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                         {0x84E2U, 0U}),
+            ogplay::gles::GuestTransferError);
+        CHECK_THROWS_WITH_AS(
+            fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                         {0xDEADBEEFU, integer_query.Value()}),
+            "GLES1 integer query is unsupported", std::invalid_argument);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBlendFunc",
                            {1U, 0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glColorMask",

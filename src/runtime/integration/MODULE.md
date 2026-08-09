@@ -55,6 +55,10 @@
   规则、负 image size、guest 范围与传输上限必须在任何 ANGLE 调用前明确验证。
 - GLES1 `glGetString` 只接受 vendor/renderer/version/extensions，查询真实 ANGLE context
   后写入 GLES1 专属、分槽且只读的 guest 页；不得与 GLES2 shading-language 槽复用地址。
+- GLES1 `glGetIntegerv` 对矩阵栈、shade model、active/client texture、texture/buffer binding、
+  pixel alignment 与固定管线真实上限返回转换器拥有的 context 状态；颜色位数、深度位数及
+  设备尺寸等兼容查询转发真实 ANGLE context。查询形状必须显式受检，guest 输出先完整预检
+  再一次提交；未知 pname、无 current frame 或 ANGLE 错误不得伪造结果。
 - GLES1 legacy fixed-state 批次显式绑定 alpha function、client active texture、current color
   与 texture environment；状态按 context/texture unit 隔离、验证、clamp 并随 reset 恢复默认。
   `glGetFloatv` 从对应状态返回矩阵、颜色、alpha 与 client texture，最大 anisotropy 必须

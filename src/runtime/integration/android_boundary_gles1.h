@@ -78,6 +78,7 @@ public:
     void SetActiveTexture(std::uint32_t texture);
     [[nodiscard]] std::uint32_t ActiveTexture() const noexcept;
     void BindTexture(std::uint32_t target, std::uint32_t texture);
+    [[nodiscard]] std::uint32_t BoundTexture(std::uint32_t target) const;
     void DeleteTextures(std::span<const std::uint32_t> textures) noexcept;
     void SetTextureBaseFormat(std::uint32_t target, std::uint32_t format);
     [[nodiscard]] std::optional<std::uint32_t> TextureBaseFormat(

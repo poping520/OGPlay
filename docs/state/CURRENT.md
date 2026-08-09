@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0304] GLES1 `glGetIntegerv` 现从转换器返回矩阵栈、纹理/buffer binding、对齐及固定
+  管线上限，并将兼容设备查询转发真实 ANGLE；guest 输出受检后原子提交，第二个 exact APK
+  已越过该入口并明确停在下一独立缺口 `glPointSize`，全量 CTest 436/436 通过。
 - [WU-0303] 第二个 exact Profile 已以 package/version/SO/ABI、1024x600 surface、15 个静态
   JNI lifecycle call 和 required external payload 闭合；真实 API 19 link preflight 完成
   5+2 模块与 50,746 个 relocation，全量 CTest 436/436 通过。
@@ -70,11 +73,6 @@
   `{resource}` / `{resource:0N}` 占位符声明 SoundPool source 与规范资源路径，首个目标的
   raw-resource 命名差异仅存在 Profile 数据中；macOS-arm64 + ANGLE warnings-as-errors
   配置、构建及全量 CTest 421/421 通过。
-- [WU-0292] Debug 帧路径已移除冗余 `glFinish`、ANGLE readback 宿主行翻转、帧 RGBA8
-  重复分配、Bionic 小块内存 HLE 临时堆分配及 GLES1 legacy 整状态复制；用户以同一
-  exact-APK 主菜单确认最高 22.2 FPS，达到游戏自身封锁帧率，上一基线约 13.7 FPS；
-  macOS-arm64 + ANGLE warnings-as-errors 构建及全量 CTest 420/420 通过。
-
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

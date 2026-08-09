@@ -104,6 +104,84 @@ void WriteGuestFloats(gles::GuestBuffer& output,
     output.Commit();
 }
 
+void WriteGuestIntegers(gles::GuestBuffer& output,
+                        const std::span<const std::int32_t> values) {
+    auto bytes = output.WritableBytes();
+    if (bytes.size() != values.size() * sizeof(std::uint32_t)) {
+        throw std::logic_error("GLES1 integer query output size differs");
+    }
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        const auto word = std::bit_cast<std::uint32_t>(values[index]);
+        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
+            bytes[index * sizeof(word) + byte] =
+                static_cast<std::byte>(word >> (byte * 8U));
+        }
+    }
+    output.Commit();
+}
+
+[[nodiscard]] std::optional<std::int32_t> Gles1OwnedInteger(
+    const std::uint32_t pname, const AndroidBoundaryGles1State& core,
+    const AndroidBoundaryGles1LegacyState& legacy) {
+    const auto transfer = core.TransferState().Snapshot();
+    switch (pname) {
+    case 0x0BA0U: return static_cast<std::int32_t>(core.Matrices().Mode());
+    case 0x0BA3U:
+        return static_cast<std::int32_t>(
+            core.Matrices().StackDepth(kGles1Modelview));
+    case 0x0BA4U:
+        return static_cast<std::int32_t>(
+            core.Matrices().StackDepth(kGles1Projection));
+    case 0x0BA5U:
+        return static_cast<std::int32_t>(
+            core.Matrices().StackDepth(kGles1Texture));
+    case 0x0B54U: return static_cast<std::int32_t>(core.ShadeModel());
+    case 0x0D36U:  // GL_MAX_MODELVIEW_STACK_DEPTH
+    case 0x0D38U:  // GL_MAX_PROJECTION_STACK_DEPTH
+    case 0x0D39U: return 32;  // GL_MAX_TEXTURE_STACK_DEPTH
+    case 0x0D31U: return 1;   // GL_MAX_LIGHTS; renderer consumes light zero
+    case 0x0D32U: return 0;   // GL_MAX_CLIP_PLANES; not implemented
+    case 0x0CF5U: return static_cast<std::int32_t>(transfer.unpack_alignment);
+    case 0x0D05U: return static_cast<std::int32_t>(transfer.pack_alignment);
+    case 0x8069U:
+        return static_cast<std::int32_t>(core.BoundTexture(0x0DE1U));
+    case 0x84E0U: return static_cast<std::int32_t>(core.ActiveTexture());
+    case 0x84E1U:
+        return static_cast<std::int32_t>(legacy.ClientActiveTexture());
+    case 0x84E2U: return 2;  // GL_MAX_TEXTURE_UNITS; fixed renderer limit
+    case 0x8894U: return static_cast<std::int32_t>(transfer.array_buffer);
+    case 0x8895U:
+        return static_cast<std::int32_t>(transfer.element_array_buffer);
+    default: return std::nullopt;
+    }
+}
+
+[[nodiscard]] std::size_t NativeIntegerQueryCount(
+    const std::uint32_t pname) {
+    switch (pname) {
+    case 0x0D3AU:  // GL_MAX_VIEWPORT_DIMS
+    case 0x846DU:  // GL_ALIASED_POINT_SIZE_RANGE
+    case 0x846EU: return 2U;  // GL_ALIASED_LINE_WIDTH_RANGE
+    case 0x0D33U:  // GL_MAX_TEXTURE_SIZE
+    case 0x0D50U:  // GL_SUBPIXEL_BITS
+    case 0x0D52U:  // GL_RED_BITS
+    case 0x0D53U:  // GL_GREEN_BITS
+    case 0x0D54U:  // GL_BLUE_BITS
+    case 0x0D55U:  // GL_ALPHA_BITS
+    case 0x0D56U:  // GL_DEPTH_BITS
+    case 0x0D57U:  // GL_STENCIL_BITS
+    case 0x80A8U:  // GL_SAMPLE_BUFFERS
+    case 0x80A9U:  // GL_SAMPLES
+    case 0x84E8U:  // GL_MAX_RENDERBUFFER_SIZE
+    case 0x851CU:  // GL_MAX_CUBE_MAP_TEXTURE_SIZE
+    case 0x86A2U:  // GL_NUM_COMPRESSED_TEXTURE_FORMATS
+    case 0x8B9AU:  // GL_IMPLEMENTATION_COLOR_READ_TYPE
+    case 0x8B9BU: return 1U;  // GL_IMPLEMENTATION_COLOR_READ_FORMAT
+    default:
+        throw std::invalid_argument("GLES1 integer query is unsupported");
+    }
+}
+
 [[nodiscard]] std::int32_t SignedTextureValue(
     const std::uint32_t value) noexcept {
     return std::bit_cast<std::int32_t>(value);
@@ -557,6 +635,26 @@ void BindAndroidBoundaryGles1Legacy(
                 }
             }
             WriteGuestFloats(output, values);
+            return 0U;
+        });
+    dispatch.Bind(
+        "glGetIntegerv",
+        [&legacy, &core, &address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            const auto owned = Gles1OwnedInteger(arguments[0], core, legacy);
+            const auto count = owned.has_value()
+                                   ? 1U
+                                   : NativeIntegerQueryCount(arguments[0]);
+            auto output = gles::GuestBuffer::Prepare(
+                address_space, memory::GuestAddress{arguments[1]},
+                count * sizeof(std::uint32_t),
+                gles::GuestTransferDirection::output, false, thread_id);
+            auto& frame = require_frame("glGetIntegerv");
+            const auto values = owned.has_value()
+                                    ? std::vector<std::int32_t>{*owned}
+                                    : frame.GetIntegers(arguments[0], count);
+            WriteGuestIntegers(output, values);
             return 0U;
         });
 }

@@ -710,6 +710,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0262 批量绑定目标导入的 17 个 GLES1 无指针标量状态入口；Windows-x64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
 
+[runtime.gles1_integer_query_boundary]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0304 以转换器状态或真实 ANGLE 结果实现受检 GLES1 glGetIntegerv；第二个 exact APK 已越过查询并停在下一独立入口 glPointSize"
+
 [runtime.gles1_matrix_state_boundary]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

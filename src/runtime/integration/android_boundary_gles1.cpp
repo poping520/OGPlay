@@ -326,6 +326,15 @@ void AndroidBoundaryGles1State::BindTexture(
     bound_textures_[active_texture_] = texture;
 }
 
+std::uint32_t AndroidBoundaryGles1State::BoundTexture(
+    const std::uint32_t target) const {
+    if (target != 0x0DE1U) {
+        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+    }
+    const auto found = bound_textures_.find(active_texture_);
+    return found == bound_textures_.end() ? 0U : found->second;
+}
+
 void AndroidBoundaryGles1State::DeleteTextures(
     const std::span<const std::uint32_t> textures) noexcept {
     for (const auto texture : textures) {

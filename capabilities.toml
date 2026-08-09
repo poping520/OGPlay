@@ -723,7 +723,7 @@ note = "M5 WU-0306 绑定 9 个 raster/depth/stencil/point 入口；point size �
 [runtime.gles1_integer_query_boundary]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0304/0307 以转换器状态或真实 ANGLE 结果实现受检 GLES1 glGetIntegerv，覆盖 client-array descriptor 与 legacy blend alias"
+note = "M5 WU-0304/0307/0310 以转换器状态或真实 ANGLE 结果实现受检 GLES1 glGetIntegerv，client-array descriptor 按规范默认值支持保存/恢复闭环"
 
 [runtime.gles1_boolean_pointer_query_boundary]
 status = "complete"

@@ -317,6 +317,29 @@ TEST_CASE("GLES1 legacy fixed state validates isolates and resets") {
 
 TEST_CASE("GLES1 client array state validates texture units and resets") {
     ogplay::runtime::detail::AndroidBoundaryGles1DrawState state;
+    const auto check_defaults = [&state] {
+        const auto& vertex = state.Array(
+            ogplay::runtime::detail::kGles1VertexArray, 0x84C0U);
+        CHECK(vertex.size == 4);
+        CHECK(vertex.type == 0x1406U);
+        CHECK(vertex.stride == 0);
+        CHECK(vertex.pointer == 0U);
+        CHECK(vertex.buffer == 0U);
+        CHECK_FALSE(vertex.enabled);
+        const auto& normal = state.Array(
+            ogplay::runtime::detail::kGles1NormalArray, 0x84C0U);
+        CHECK(normal.size == 3);
+        CHECK(normal.type == 0x1406U);
+        const auto& matrix_index = state.Array(
+            ogplay::runtime::detail::kGles1MatrixIndexArray, 0x84C0U);
+        CHECK(matrix_index.size == 4);
+        CHECK(matrix_index.type == 0x1401U);
+        const auto& texture = state.Array(
+            ogplay::runtime::detail::kGles1TextureCoordArray, 0x84DFU);
+        CHECK(texture.size == 4);
+        CHECK(texture.type == 0x1406U);
+    };
+    check_defaults();
     state.SetPointer(ogplay::runtime::detail::kGles1VertexArray, 0x84C0U,
                      3, 0x1406U, 0, 0x1000U, 0U);
     state.SetEnabled(ogplay::runtime::detail::kGles1VertexArray, 0x84C0U,
@@ -359,8 +382,7 @@ TEST_CASE("GLES1 client array state validates texture units and resets") {
                     std::invalid_argument);
     state.Reset();
     CHECK(state.CurrentPaletteMatrix() == 0U);
-    CHECK_FALSE(state.Array(ogplay::runtime::detail::kGles1VertexArray,
-                            0x84C0U).enabled);
+    check_defaults();
 }
 
 TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
@@ -530,6 +552,15 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     }
     if (ogplay::gles::IsNativeAngleEglAvailable()) {
         fixture.boundary.OpenManagedSurface();
+        const auto query_output = fixture.output.Add(0x200U);
+        for (const auto [pname, expected] :
+             std::array<std::pair<std::uint32_t, std::uint32_t>, 6>{
+                 {{0x807AU, 4U}, {0x807BU, 0x1406U}, {0x807CU, 0U},
+                  {0x8088U, 4U}, {0x8089U, 0x1406U}, {0x808AU, 0U}}}) {
+            CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                               {pname, query_output.Value()}) == 0U);
+            CHECK(fixture.bus.Read32(query_output, 1U) == expected);
+        }
         const auto vendor = fixture.Call(
             "libGLESv1_CM.so", "glGetString", {0x1F00U});
         REQUIRE(vendor != 0U);

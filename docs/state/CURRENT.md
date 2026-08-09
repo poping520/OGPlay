@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0310] GLES1 client-array descriptor 现于创建/reset 后恢复规范 size/type/stride/
+  pointer/buffer/enable 默认值；Dungeon Hunter 已越过状态保存/临时绘制/恢复与全部 GL 初始化，
+  明确推进至独立 JNI 缺口 `sendAppToBackground()V`，全量 CTest 通过。
 - [WU-0309] GLES1 已补齐 current-matrix 右乘、current normal 与六项 eye-space clip plane，
   fixed shader 对启用平面执行真实裁剪；Dungeon Hunter 目标 ELF 的 74 个 GL import 已达到
   74/74 显式 handler、缺口 0，实跑保持在独立 client-array type 边界，全量 CTest 437/437。

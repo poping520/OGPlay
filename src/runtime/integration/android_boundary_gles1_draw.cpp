@@ -145,13 +145,15 @@ std::uint64_t AndroidBoundaryGles1DrawState::ArrayKey(
 
 void AndroidBoundaryGles1DrawState::Reset() noexcept {
     arrays_.clear();
-    arrays_[ArrayKey(kGles1VertexArray, kTexture0)] = {};
-    arrays_[ArrayKey(kGles1NormalArray, kTexture0)] = {};
-    arrays_[ArrayKey(kGles1ColorArray, kTexture0)] = {};
-    arrays_[ArrayKey(kGles1MatrixIndexArray, kTexture0)] = {};
-    arrays_[ArrayKey(kGles1WeightArray, kTexture0)] = {};
+    arrays_[ArrayKey(kGles1VertexArray, kTexture0)] = {.size = 4, .type = kFloat};
+    arrays_[ArrayKey(kGles1NormalArray, kTexture0)] = {.size = 3, .type = kFloat};
+    arrays_[ArrayKey(kGles1ColorArray, kTexture0)] = {.size = 4, .type = kFloat};
+    arrays_[ArrayKey(kGles1MatrixIndexArray, kTexture0)] =
+        {.size = 4, .type = kUnsignedByte};
+    arrays_[ArrayKey(kGles1WeightArray, kTexture0)] = {.size = 4, .type = kFloat};
     for (auto texture = kTexture0; texture <= 0x84DFU; ++texture) {
-        arrays_[ArrayKey(kGles1TextureCoordArray, texture)] = {};
+        arrays_[ArrayKey(kGles1TextureCoordArray, texture)] =
+            {.size = 4, .type = kFloat};
     }
     program_ = {};
     current_palette_matrix_ = 0U;

@@ -80,8 +80,9 @@
   clipping；不得只保存方程或伪造 `GL_MAX_CLIP_PLANES`。
 - GLES1 client-array/draw 批次延迟保存 vertex/normal/color/texture-coordinate pointer；
   `glGetPointerv` 返回对应已保存 guest pointer，`glIsEnabled` 同时查询 server capability 与
-  当前 client texture unit 的 array enable；draw 才按实际 first/count 或 guest index 最大值
-  完整预检 client 内存并上传内部 VBO/EBO。
+  当前 client texture unit 的 array enable；context reset 必须恢复 GLES1 规定的 array
+  size/type/stride/pointer/buffer/enable 默认值，供 descriptor 查询与保存/恢复闭环使用；draw
+  才按实际 first/count 或 guest index 最大值完整预检 client 内存并上传内部 VBO/EBO。
   高频 client input、guest index 与顺序索引只复用宿主暂存高水位容量，每次 draw 仍重新
   预检并读取 guest 内容；pointer 更新先生成已验证候选，再在 current frame 成功后提交，
   禁止为事务语义复制整个 draw state。固定管线通过内部 GLES2 shader 消费

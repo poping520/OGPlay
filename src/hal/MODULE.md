@@ -12,6 +12,8 @@
 - `hal::FixedStepClock`：无 sleep、按帧推进且保留倍率余数的确定性后端。
 - `hal::RealtimeClock`：基于单调宿主时间的实时后端，支持暂停与倍速。
 - `hal::WindowInput`：不暴露 SDL 类型的窗口生命周期与输入事件接口。
+- `hal::PointerButton`：把宿主鼠标按钮规范为 primary/middle/secondary/auxiliary 语义；
+  未知按钮显式标记为 unknown，不向上层泄漏 SDL 数值。
 - `hal::WindowInput::SetTitle`：只在窗口打开期间更新宿主标题，拒绝内嵌 NUL，SDL
   失败必须明确传播。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。
@@ -40,7 +42,8 @@
 - 平台差异不泄漏到 runtime/session。
 - 时间由统一 Clock 提供；线程接口必须映射真实宿主线程。
 - 暂停期间 ticks 不增长；不支持的推进方式必须明确失败。
-- SDL video 生命周期由创建它的宿主主线程拥有；输入只保留宿主事实，不翻译 guest 语义。
+- SDL video 生命周期由创建它的宿主主线程拥有；输入只保留规范化宿主事实，不翻译 guest
+  语义。
 - 帧尺寸与字节数必须精确匹配；只有 SDL surface 更新成功才累计 present。
 - FPS 只能基于成功 present 计数，并从统一 Clock 获取时间；不得在窗口后端直接创建另一
   套时间源。

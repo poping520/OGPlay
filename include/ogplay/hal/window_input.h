@@ -23,6 +23,15 @@ enum class InputEventType : std::uint8_t {
     gamepad_removed,
 };
 
+enum class PointerButton : std::int32_t {
+    unknown = -1,
+    primary = 0,
+    middle = 1,
+    secondary = 2,
+    auxiliary_1 = 3,
+    auxiliary_2 = 4,
+};
+
 struct WindowOptions {
     std::string title{"OGPlay"};
     std::uint32_t width{1280};

@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0297] HAL 鼠标按钮已规范为 backend-independent 的 primary/middle/secondary/
+  auxiliary 语义，未知按钮显式标记且 SDL 数值不再泄漏；macOS-arm64 + ANGLE
+  warnings-as-errors 配置、构建及全量 CTest 429/429 通过。
 - [WU-0296] SDL3 `AudioOutput` 已实现受检格式、幂等启停、完整 frame 提交与队列计量；
   `run-apk` 按 Profile source/path 从 APK 读取 SoundPool 资源，并以每帧至多四个 chunk 的
   4096-frame 水位泵送 PCM。Debug exact APK 运行 11264 帧后正常退出，用户验收后要求提交；
@@ -72,9 +75,6 @@
 - [WU-0285] fixed renderer 已支持两个启用纹理单元顺序级联并隔离 sampler、坐标、base
   format、texture environment 与 texture matrix；lighting alpha 遵循 diffuse material
   alpha。真实 ANGLE 双纹理/透明光照 readback 与 exact-APK 主界面纹理均已验收。
-- [WU-0284] fixed renderer 已按 texture object 的 level-0 base format 消费
-  MODULATE/REPLACE/ADD 与单纹理完整 COMBINE 状态；exact-APK 越过三个真实边界并由用户
-  确认进入游戏主界面，517 帧后正常停止且状态 0。
 
 ## 目标 ELF 尚未实现的 GL 入口
 

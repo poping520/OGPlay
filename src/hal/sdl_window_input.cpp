@@ -113,6 +113,17 @@ std::runtime_error SdlError(const std::string_view operation) {
     return std::runtime_error(std::string(operation) + " failed: " + SDL_GetError());
 }
 
+[[nodiscard]] PointerButton MapPointerButton(const Uint8 button) noexcept {
+    switch (button) {
+    case SDL_BUTTON_LEFT: return PointerButton::primary;
+    case SDL_BUTTON_MIDDLE: return PointerButton::middle;
+    case SDL_BUTTON_RIGHT: return PointerButton::secondary;
+    case SDL_BUTTON_X1: return PointerButton::auxiliary_1;
+    case SDL_BUTTON_X2: return PointerButton::auxiliary_2;
+    default: return PointerButton::unknown;
+    }
+}
+
 class SdlWindowInput final : public WindowInput {
 public:
     explicit SdlWindowInput(const VideoBackend backend) {
@@ -301,7 +312,8 @@ private:
                     .timestamp_ns = event.button.timestamp,
                     .window_id = event.button.windowID,
                     .device_id = event.button.which,
-                    .code = event.button.button,
+                    .code = static_cast<std::int32_t>(
+                        MapPointerButton(event.button.button)),
                     .x = event.button.x,
                     .y = event.button.y,
                     .pressed = event.button.down,

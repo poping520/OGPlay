@@ -158,7 +158,7 @@ note = "M4 为运行时资源提供可执行目录定位及串行、嵌套、异
 [hal.window_input]
 status = "complete"
 test = "tests/hal/window_input_tests.cpp"
-note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映射；M5 WU-0287 增加受检标题更新与显式 ticks 驱动的 FPS sampler；SDL 类型不泄漏"
+note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映射；M5 WU-0287 增加受检标题更新与显式 ticks 驱动的 FPS sampler；WU-0297 将鼠标按钮规范为 backend-independent 语义；SDL 类型和值不泄漏"
 
 [hal.rgba_present]
 status = "complete"

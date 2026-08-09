@@ -155,8 +155,19 @@ TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {
     motion.motion.yrel = -2.0F;
     REQUIRE(SDL_PushEvent(&motion));
 
+    SDL_Event button{};
+    button.button.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    button.button.timestamp = 103;
+    button.button.windowID = window_id;
+    button.button.which = 8;
+    button.button.button = SDL_BUTTON_LEFT;
+    button.button.down = true;
+    button.button.x = 12.5F;
+    button.button.y = 24.5F;
+    REQUIRE(SDL_PushEvent(&button));
+
     const auto events = host->PollEvents();
-    REQUIRE(events.size() == 2);
+    REQUIRE(events.size() == 3);
     CHECK(events[0].type == ogplay::hal::InputEventType::key);
     CHECK(events[0].timestamp_ns == 101);
     CHECK(events[0].code == SDL_SCANCODE_A);
@@ -165,6 +176,10 @@ TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {
     CHECK(events[1].type == ogplay::hal::InputEventType::pointer_motion);
     CHECK(events[1].x == doctest::Approx(12.5F));
     CHECK(events[1].delta_y == doctest::Approx(-2.0F));
+    CHECK(events[2].type == ogplay::hal::InputEventType::pointer_button);
+    CHECK(events[2].code == static_cast<std::int32_t>(
+                                ogplay::hal::PointerButton::primary));
+    CHECK(events[2].pressed);
 }
 
 TEST_CASE("SDL events map gamepad state and quit requests") {

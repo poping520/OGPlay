@@ -308,7 +308,7 @@ add_library(ogplay_runtime
 )
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC
-    OGPlay::Core OGPlay::Cpu OGPlay::Loader OGPlay::Memory
+    OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Loader OGPlay::Memory
 )
 target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles)
 target_include_directories(ogplay_runtime PUBLIC

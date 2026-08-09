@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "ogplay/audio/java_sound_pool.h"
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
@@ -43,6 +44,23 @@ constexpr std::uint64_t kRootThreadId = 1;
 
 }  // namespace
 
+void BindAndroidGuestJavaAudioHandlers(
+    JniInvocationEngine& invocations,
+    audio::JavaSoundPoolState& sound_pool) {
+    invocations.RegisterHandler(
+        "audio.destroy_sound_pool",
+        [&sound_pool](const JniInvocation&) {
+            sound_pool.Destroy();
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.init_sound_pool_array",
+        [&sound_pool](const JniInvocation&) {
+            sound_pool.Initialize();
+            return JniValue{std::monostate{}};
+        });
+}
+
 class AndroidGuestCallSession::Impl final {
 public:
     explicit Impl(const AndroidGuestCallSessionRequest& request)
@@ -72,6 +90,7 @@ public:
             throw AndroidGuestCallSessionError(
                 "Android guest call session request is incomplete");
         }
+        BindAndroidGuestJavaAudioHandlers(invocations_, sound_pool_);
         if (request.direct_assets.has_value()) {
             direct_assets_ = std::make_unique<FrameworkDirectAssetHle>(
                 invocations_, environment_, strings_, arrays_, *filesystem_);
@@ -273,6 +292,7 @@ private:
     JniEnvironment environment_;
     JniClassRegistry classes_;
     JniInvocationEngine invocations_;
+    audio::JavaSoundPoolState sound_pool_;
     JniStringStore strings_;
     JniPrimitiveArrayStore arrays_;
     JniJavaVm java_vm_;

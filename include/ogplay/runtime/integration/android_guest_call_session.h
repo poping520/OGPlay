@@ -17,7 +17,17 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
+namespace ogplay::audio {
+class JavaSoundPoolState;
+}
+
 namespace ogplay::runtime {
+
+class JniInvocationEngine;
+
+void BindAndroidGuestJavaAudioHandlers(
+    JniInvocationEngine& invocations,
+    audio::JavaSoundPoolState& sound_pool);
 
 struct AndroidGuestCallSessionRequest final {
     std::uint32_t api{19};

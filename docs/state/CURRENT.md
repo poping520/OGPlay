@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-08 · M5 已打开
+更新：2026-08-09 · M5 已打开
 
 ## 当前阶段
 
@@ -34,6 +34,10 @@
 
 ## 最近完成
 
+- [WU-0277] exact-APK frame call 9 首个缺失 implementation 已确认为
+  `audio.destroy_sound_pool`，并与紧随其后的 `audio.init_sound_pool_array` 一并接入会话
+  拥有的幂等 SoundPool 生命周期。2 帧 smoke 状态 0；120 帧可运行至 shutdown，下一精确
+  边界为 `nativeDestroy` 中的 `audio.stop_all_sounds`。
 - [WU-0276] `CallStaticObject/Boolean/Byte/Char/Short/Int/Long/Float/Double/VoidMethod`
   的普通、`V`、`A` 共 30 个 guest 槽已批量闭合；三种 A32 参数布局与所有返回位型均由
   descriptor 驱动并进入统一 invocation engine。用户报告的 `CallStaticVoidMethod`
@@ -64,9 +68,9 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 按 exact-APK 后续真实调用证据，批量闭合类/实例调用 JNI 槽。
-2. 批量闭合目标所需静态字段、数组、字符串与 native 注册 JNI 槽。
-3. 增加 exact-APK 多帧 smoke 与稳定黄金帧证据。
+1. 闭合 shutdown 已验证调用的 `audio.stop_all_sounds`，并按后续证据扩展 Java 音频状态。
+2. 按 exact-APK 后续真实调用证据，批量闭合类/实例调用 JNI 槽。
+3. 批量闭合目标所需静态字段、数组、字符串与 native 注册 JNI 槽。
 
 ## 阻塞
 

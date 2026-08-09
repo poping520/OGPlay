@@ -505,6 +505,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0276 批量闭合 10 种返回类型的 CallStatic*Method/V/A 共 30 个槽；descriptor 驱动 A32 variadic、va_list、jvalue[] 解码及 word/double-word 返回"
 
+[runtime.java_sound_pool_lifecycle]
+status = "complete"
+test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0277 以会话拥有的幂等状态闭合 audio.destroy_sound_pool 与 audio.init_sound_pool_array；不宣称声音加载、播放或宿主输出"
+
 [runtime.gles1_texture_name_lifecycle]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

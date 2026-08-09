@@ -168,19 +168,23 @@ DirectAssetImplementations(const session::TitleProfile& profile) {
                profile.quirks->enabled.end();
 }
 
-[[nodiscard]] std::vector<runtime::VfsMountEntry> ReadApkAssets(
+[[nodiscard]] std::vector<runtime::VfsLazyMountEntry> IndexApkAssets(
     const std::span<const std::byte> apk_bytes,
     const loader::ApkArchive& archive) {
-    std::vector<runtime::VfsMountEntry> result;
+    std::vector<runtime::VfsLazyMountEntry> result;
     for (const auto& entry : archive.entries) {
         if (!entry.name.starts_with("assets/") ||
             entry.name.size() == std::string_view{"assets/"}.size() ||
             entry.name.ends_with('/')) {
             continue;
         }
-        result.push_back(
-            {entry.name,
-             loader::ReadApkEntry(apk_bytes, archive, entry.name)});
+        result.push_back({
+            entry.name,
+            entry.uncompressed_size,
+            [apk_bytes, &archive, name = entry.name] {
+                return loader::ReadApkEntry(apk_bytes, archive, name);
+            },
+        });
     }
     if (result.empty()) {
         throw std::runtime_error(
@@ -377,8 +381,9 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     } else {
         runtime::VirtualFileSystem filesystem;
         if (direct_assets.has_value()) {
-            const auto assets = ReadApkAssets(apk_bytes, archive);
-            filesystem.Mount(runtime::VfsSource::apk, "/apk", assets);
+            const auto assets = IndexApkAssets(apk_bytes, archive);
+            filesystem.MountLazyReadOnly(
+                runtime::VfsSource::apk, "/apk", assets);
         }
         auto sound_loader = SoundResourceLoader(profile, apk_bytes, archive);
         std::unique_ptr<hal::AudioOutput> audio_output;

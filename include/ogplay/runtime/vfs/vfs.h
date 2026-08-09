@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -27,6 +28,14 @@ enum class VfsSource : std::uint8_t { runtime, apk, obb, external };
 struct VfsMountEntry final {
     std::string path;
     std::vector<std::byte> contents;
+};
+
+using VfsReadOnlyLoader = std::function<std::vector<std::byte>()>;
+
+struct VfsLazyMountEntry final {
+    std::string path;
+    std::uint64_t size{};
+    VfsReadOnlyLoader read_all;
 };
 
 enum class VfsSeekWhence : std::uint8_t { begin, current, end };
@@ -64,6 +73,8 @@ public:
                  bool writable);
     void Mount(VfsSource source, std::string_view root,
                std::span<const VfsMountEntry> entries);
+    void MountLazyReadOnly(VfsSource source, std::string_view root,
+                           std::span<const VfsLazyMountEntry> entries);
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);

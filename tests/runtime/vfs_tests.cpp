@@ -99,6 +99,77 @@ TEST_CASE("VFS mount validation is transactional") {
                     ogplay::runtime::VfsError);
 }
 
+TEST_CASE("VFS lazy read-only mounts materialize once on first read") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    std::size_t loads{};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> apk{{
+        "assets/data.bin",
+        3,
+        [&loads] {
+            ++loads;
+            return std::vector<std::byte>{
+                std::byte{1}, std::byte{2}, std::byte{3}};
+        },
+    }};
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", apk);
+    std::size_t obb_loads{};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> obb{{
+        "levels/one.bin",
+        1,
+        [&obb_loads] {
+            ++obb_loads;
+            return std::vector<std::byte>{std::byte{4}};
+        },
+    }};
+    vfs.MountLazyReadOnly(
+        ogplay::runtime::VfsSource::obb, "/obb/main", obb);
+    CHECK(vfs.Stat("/apk/assets/data.bin").size == 3);
+    CHECK(vfs.Stat("/obb/main/levels/one.bin").source ==
+          ogplay::runtime::VfsSource::obb);
+    CHECK(obb_loads == 0);
+    CHECK_THROWS_AS(
+        vfs.MountLazyReadOnly(
+            ogplay::runtime::VfsSource::external, "/sdcard/game", obb),
+        ogplay::runtime::VfsError);
+    const auto first = vfs.Open("/apk/assets/data.bin", {.read = true});
+    CHECK(vfs.Seek(first, 0, ogplay::runtime::VfsSeekWhence::end) == 3);
+    CHECK(loads == 0);
+    CHECK(vfs.Seek(first, 0, ogplay::runtime::VfsSeekWhence::begin) == 0);
+    std::array<std::byte, 3> output{};
+    CHECK(vfs.Read(first, output) == output.size());
+    CHECK(loads == 1);
+    CHECK(output == std::array{std::byte{1}, std::byte{2}, std::byte{3}});
+    vfs.Close(first);
+
+    const auto second = vfs.Open("/apk/assets/data.bin", {.read = true});
+    CHECK(vfs.Read(second, output) == output.size());
+    CHECK(loads == 1);
+    vfs.Close(second);
+}
+
+TEST_CASE("VFS lazy mount retries explicit backing failures") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    std::size_t loads{};
+    const std::vector<ogplay::runtime::VfsLazyMountEntry> apk{{
+        "assets/wrong.bin",
+        2,
+        [&loads] {
+            ++loads;
+            return std::vector<std::byte>{std::byte{1}};
+        },
+    }};
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::apk, "/apk", apk);
+    const auto descriptor = vfs.Open(
+        "/apk/assets/wrong.bin", {.read = true});
+    std::array<std::byte, 2> output{};
+    CHECK_THROWS_AS(static_cast<void>(vfs.Read(descriptor, output)),
+                    ogplay::runtime::VfsError);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Read(descriptor, output)),
+                    ogplay::runtime::VfsError);
+    CHECK(loads == 2);
+    vfs.Close(descriptor);
+}
+
 TEST_CASE("VFS pipe connects isolated read and write descriptors") {
     ogplay::runtime::VirtualFileSystem vfs;
     const auto pipe = vfs.CreatePipe();

@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0300] APK/OBB 只读 VFS backing 现仅挂载路径与尺寸，首次读取才物化、核对并缓存；
+  Debug exact APK 单帧由约 12.75 秒稳定降至 3.78–3.81 秒，120 帧正常退出，全量
+  CTest 434/434 通过。
 - [WU-0299] SDL 窗口现以无混合复制呈现 opaque guest framebuffer，alpha=0 不再把有效
   RGB 混入黑底；透明红像素契约与 CTest 432/432 通过，用户确认 Debug exact APK 闪屏
   恢复完整白底、主界面无回归，424 帧后正常关闭。
@@ -70,8 +73,6 @@
   4 FPS 提升到约 7 FPS，ADR-0016 记录其权限边界。
 - [WU-0289] 默认拥有型 1× ANGLE readback 直接转移原存储，2..4× 继续使用确定性整数
   box resolve；布局、字节数和存储地址测试已闭合。
-- [WU-0288] Dynarmic 状态快照已批量导入 16 个核心和 64 个扩展寄存器，消除逐槽 setter
-  调用并保持 CPSR/VFP/线程元数据不变。
 
 ## 目标 ELF 尚未实现的 GL 入口
 

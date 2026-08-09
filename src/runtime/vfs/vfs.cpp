@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -16,6 +17,7 @@ namespace ogplay::runtime {
 namespace {
 
 constexpr std::int32_t kEnoent = 2;
+constexpr std::int32_t kEio = 5;
 constexpr std::int32_t kEbadf = 9;
 constexpr std::int32_t kEacces = 13;
 constexpr std::int32_t kEexist = 17;
@@ -63,6 +65,8 @@ constexpr std::int32_t kEfbig = 27;
 
 struct File final {
     std::vector<std::byte> contents;
+    std::uint64_t size{};
+    VfsReadOnlyLoader read_all;
     bool writable{};
     VfsSource source{VfsSource::runtime};
 };
@@ -92,7 +96,8 @@ public:
         files_.emplace(normalized,
                        std::make_shared<File>(
                            File{std::vector(contents.begin(), contents.end()),
-                                writable, VfsSource::runtime}));
+                                contents.size(), {}, writable,
+                                VfsSource::runtime}));
     }
 
     void Mount(const VfsSource source, const std::string_view root,
@@ -128,7 +133,57 @@ public:
             pending.emplace_back(
                 normalized,
                 std::make_shared<File>(File{
-                    entry.contents, source == VfsSource::external, source}));
+                    entry.contents, entry.contents.size(), {},
+                    source == VfsSource::external, source}));
+        }
+        std::scoped_lock lock(mutex_);
+        for (const auto& [path, file] : pending) {
+            static_cast<void>(file);
+            if (files_.contains(path)) {
+                throw VfsError(kEexist, "VFS mount path already exists");
+            }
+        }
+        for (auto& [path, file] : pending) {
+            files_.emplace(std::move(path), std::move(file));
+        }
+    }
+
+    void MountLazyReadOnly(
+        const VfsSource source, const std::string_view root,
+        const std::span<const VfsLazyMountEntry> entries) {
+        if ((source != VfsSource::apk && source != VfsSource::obb) ||
+            entries.empty()) {
+            throw VfsError(kEinval,
+                           "lazy VFS mount requires a read-only source and entries");
+        }
+        if (root.empty() || root.front() != '/') {
+            throw VfsError(kEnotdir, "VFS mount root must be absolute");
+        }
+        std::vector<std::pair<std::string, std::shared_ptr<File>>> pending;
+        pending.reserve(entries.size());
+        for (const auto& entry : entries) {
+            if (entry.path.empty() || entry.path.front() == '/' ||
+                entry.path.front() == '\\' || !entry.read_all ||
+                entry.size > std::numeric_limits<std::size_t>::max()) {
+                throw VfsError(kEinval, "lazy VFS mount entry is invalid");
+            }
+            auto combined = std::string(root);
+            combined.push_back('/');
+            combined.append(entry.path);
+            const auto normalized = NormalizePath(combined);
+            const auto duplicate = std::find_if(
+                pending.begin(), pending.end(),
+                [&normalized](const auto& candidate) {
+                    return candidate.first == normalized;
+                });
+            if (duplicate != pending.end()) {
+                throw VfsError(kEexist,
+                               "VFS mount contains a duplicate path");
+            }
+            pending.emplace_back(
+                normalized,
+                std::make_shared<File>(File{
+                    {}, entry.size, entry.read_all, false, source}));
         }
         std::scoped_lock lock(mutex_);
         for (const auto& [path, file] : pending) {
@@ -147,7 +202,7 @@ public:
         std::scoped_lock lock(mutex_);
         const auto found = files_.find(normalized);
         if (found == files_.end()) throw VfsError(kEnoent, "VFS file not found");
-        return {found->second->contents.size(), found->second->writable,
+        return {found->second->size, found->second->writable,
                 found->second->source};
     }
 
@@ -163,8 +218,8 @@ public:
             if (!options.create) throw VfsError(kEnoent, "VFS file not found");
             found = files_.emplace(
                 normalized,
-                std::make_shared<File>(
-                    File{{}, true, VfsSource::runtime})).first;
+                    std::make_shared<File>(
+                    File{{}, 0, {}, true, VfsSource::runtime})).first;
         }
         if (options.write && !found->second->writable) {
             throw VfsError(kEacces, "VFS file is read-only");
@@ -174,6 +229,7 @@ public:
                 throw VfsError(kEinval, "VFS truncate requires write access");
             }
             found->second->contents.clear();
+            found->second->size = 0;
         }
         const auto descriptor = AllocateDescriptor();
         descriptors_.emplace(
@@ -185,7 +241,7 @@ public:
     [[nodiscard]] VfsPipeDescriptors CreatePipe() {
         std::scoped_lock lock(mutex_);
         auto pipe = std::make_shared<File>(
-            File{{}, true, VfsSource::runtime});
+            File{{}, 0, {}, true, VfsSource::runtime});
         const auto read_descriptor = AllocateDescriptor();
         descriptors_.emplace(
             read_descriptor, OpenFile{pipe, 0, true, false});
@@ -200,11 +256,11 @@ public:
         std::scoped_lock lock(mutex_);
         auto& open = FindDescriptor(descriptor);
         if (!open.readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
-        const auto available = open.offset >= open.file->contents.size()
+        Materialize(*open.file);
+        const auto available = open.offset >= open.file->size
                                    ? 0
-                                   : open.file->contents.size() -
-                                         static_cast<std::size_t>(open.offset);
-        const auto count = std::min(destination.size(), available);
+                                   : open.file->size - open.offset;
+        const auto count = std::min<std::uint64_t>(destination.size(), available);
         if (count != 0) {
             using Difference =
                 std::vector<std::byte>::difference_type;
@@ -234,6 +290,7 @@ public:
                   open.file->contents.begin() +
                       static_cast<Difference>(open.offset));
         open.offset = end;
+        open.file->size = open.file->contents.size();
         return source.size();
     }
 
@@ -244,7 +301,7 @@ public:
         auto& open = FindDescriptor(descriptor);
         std::uint64_t base{};
         if (whence == VfsSeekWhence::current) base = open.offset;
-        if (whence == VfsSeekWhence::end) base = open.file->contents.size();
+        if (whence == VfsSeekWhence::end) base = open.file->size;
         std::uint64_t result{};
         if (offset < 0) {
             const auto magnitude = static_cast<std::uint64_t>(-(offset + 1)) + 1U;
@@ -269,6 +326,25 @@ public:
     }
 
 private:
+    static void Materialize(File& file) {
+        if (!file.read_all) return;
+        std::vector<std::byte> contents;
+        try {
+            contents = file.read_all();
+        } catch (const std::exception& error) {
+            throw VfsError(kEio,
+                           std::string("VFS backing read failed: ") + error.what());
+        } catch (...) {
+            throw VfsError(kEio, "VFS backing read failed");
+        }
+        if (contents.size() != file.size) {
+            throw VfsError(kEio,
+                           "VFS backing size differs from mounted metadata");
+        }
+        file.contents = std::move(contents);
+        file.read_all = {};
+    }
+
     [[nodiscard]] std::int32_t AllocateDescriptor() const {
         for (std::int32_t descriptor = 3;
              descriptor < std::numeric_limits<std::int32_t>::max();
@@ -303,6 +379,11 @@ void VirtualFileSystem::Mount(
     const VfsSource source, const std::string_view root,
     const std::span<const VfsMountEntry> entries) {
     impl_->Mount(source, root, entries);
+}
+void VirtualFileSystem::MountLazyReadOnly(
+    const VfsSource source, const std::string_view root,
+    const std::span<const VfsLazyMountEntry> entries) {
+    impl_->MountLazyReadOnly(source, root, entries);
 }
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);

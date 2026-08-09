@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -8,7 +9,9 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/loader/module_loader.h"
 #include "ogplay/runtime/execution/guest_thread_runner.h"
 #include "ogplay/runtime/framework/framework_asset.h"
@@ -17,10 +20,6 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
-namespace ogplay::audio {
-class JavaSoundPoolState;
-}
-
 namespace ogplay::runtime {
 
 class JniInvocationEngine;
@@ -28,7 +27,8 @@ class FrameworkScreenPolicyState;
 
 void BindAndroidGuestJavaAudioHandlers(
     JniInvocationEngine& invocations,
-    audio::JavaSoundPoolState& sound_pool);
+    audio::JavaSoundPoolState& sound_pool,
+    audio::JavaSoundPoolMixer* mixer = nullptr);
 
 void BindAndroidGuestJavaDisplayHandlers(
     JniInvocationEngine& invocations,
@@ -47,6 +47,7 @@ struct AndroidGuestCallSessionRequest final {
     std::function<void(std::string_view)> progress;
     std::optional<FrameworkDirectAssetImplementations> direct_assets{};
     AndroidBoundaryOptions boundary_options{};
+    audio::JavaSoundPoolMixer::EncodedResourceLoader sound_resource_loader{};
 };
 
 class AndroidGuestCallSessionError final : public std::runtime_error {
@@ -73,6 +74,8 @@ public:
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
     void RecycleFrame(AndroidBoundaryFrame&& frame);
+    [[nodiscard]] std::size_t RenderStereoAudio(
+        std::span<std::int16_t> output, std::uint32_t sample_rate);
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
 

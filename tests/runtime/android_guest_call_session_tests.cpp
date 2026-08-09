@@ -1,6 +1,10 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -10,6 +14,25 @@
 #include "ogplay/runtime/framework/framework_lifecycle.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+
+namespace {
+
+[[nodiscard]] std::vector<std::byte> ReadAudioFixture() {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                      "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error("cannot open audio fixture");
+    const std::vector<char> bytes{std::istreambuf_iterator<char>{input}, {}};
+    std::vector<std::byte> result;
+    result.reserve(bytes.size());
+    for (const auto value : bytes) {
+        result.push_back(static_cast<std::byte>(
+            static_cast<unsigned char>(value)));
+    }
+    return result;
+}
+
+}  // namespace
 
 TEST_CASE("Android guest call session validates its complete launch request") {
     ogplay::runtime::VirtualFileSystem filesystem;
@@ -373,4 +396,94 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
     CHECK(std::get<ogplay::runtime::JniInt>(invocations.InvokeStatic(
               1U, java_class, *is_loaded_big, big_resource,
               ogplay::runtime::JniArgumentSource::variadic)) == -1);
+}
+
+TEST_CASE("Android guest SoundPool handlers commit decoded mixer voices") {
+    ogplay::runtime::JniClassRegistry classes;
+    const auto java_class = classes.RegisterClass(
+        {"fixture/DecodedAudio", {},
+         {{"loadSound", "(II)V", "audio.load_sound", true},
+          {"playSound", "(IIF)V", "audio.play_sound", true},
+          {"pauseSound", "(II)V", "audio.pause_sound", true},
+          {"resumeSound", "(II)V", "audio.resume_sound", true},
+          {"stopSound", "(II)V", "audio.stop_sound", true},
+          {"unloadSound", "(II)V", "audio.unload_sound", true}},
+         {}});
+    const auto load = classes.GetMethodId(
+        java_class, "loadSound", "(II)V", true);
+    const auto play = classes.GetMethodId(
+        java_class, "playSound", "(IIF)V", true);
+    const auto pause = classes.GetMethodId(
+        java_class, "pauseSound", "(II)V", true);
+    const auto resume = classes.GetMethodId(
+        java_class, "resumeSound", "(II)V", true);
+    const auto stop = classes.GetMethodId(
+        java_class, "stopSound", "(II)V", true);
+    const auto unload = classes.GetMethodId(
+        java_class, "unloadSound", "(II)V", true);
+    REQUIRE(load.has_value());
+    REQUIRE(play.has_value());
+    REQUIRE(pause.has_value());
+    REQUIRE(resume.has_value());
+    REQUIRE(stop.has_value());
+    REQUIRE(unload.has_value());
+
+    const auto encoded = ReadAudioFixture();
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&encoded](const std::int32_t resource) {
+            return resource == 7 ? encoded : std::vector<std::byte>{};
+        }};
+    ogplay::audio::JavaSoundPoolState state;
+    ogplay::runtime::JniInvocationEngine invocations{classes};
+    ogplay::runtime::BindAndroidGuestJavaAudioHandlers(
+        invocations, state, &mixer);
+    const std::array<ogplay::runtime::JniValue, 2> voice{
+        ogplay::runtime::JniInt{7}, ogplay::runtime::JniInt{2}};
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *load, voice,
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(state.IsLoaded(ogplay::audio::JavaSoundPoolKind::pool, 7));
+    CHECK(mixer.LoadedResourceCount() == 1U);
+
+    const std::array<ogplay::runtime::JniValue, 3> play_voice{
+        ogplay::runtime::JniInt{7}, ogplay::runtime::JniInt{2},
+        ogplay::runtime::JniFloat{0.5F}};
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *play, play_voice,
+        ogplay::runtime::JniArgumentSource::value_array));
+    CHECK(state.ActiveVoiceCount() == 1U);
+    CHECK(mixer.ActiveVoiceCount() == 1U);
+    std::vector<std::int16_t> output(1024U * 2U);
+    CHECK(mixer.RenderStereoPcm16(output, 48000U) == 1024U);
+    CHECK(std::ranges::any_of(output, [](const auto sample) {
+        return sample != 0;
+    }));
+
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *pause, voice,
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(mixer.RenderStereoPcm16(output, 48000U) == 1024U);
+    CHECK(std::ranges::all_of(output, [](const auto sample) {
+        return sample == 0;
+    }));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *resume, voice,
+        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *stop, voice,
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(state.ActiveVoiceCount() == 0U);
+    CHECK(mixer.ActiveVoiceCount() == 0U);
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *unload, voice,
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(state.LoadedResourceCount() == 0U);
+    CHECK(mixer.LoadedResourceCount() == 0U);
+    const std::array<ogplay::runtime::JniValue, 2> missing{
+        ogplay::runtime::JniInt{99}, ogplay::runtime::JniInt{0}};
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *load, missing,
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(state.PendingLoadCount() == 1U);
+    REQUIRE(mixer.LoadFailure(99).has_value());
 }

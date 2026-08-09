@@ -15,6 +15,9 @@
   与卸载共享。
 - `DecodeOggVorbis`：从有界内存输入解码 Ogg Vorbis，事务发布拥有型 mono/stereo PCM16、
   采样率与帧数；使用仓库固定的 stb_vorbis 1.22（MIT 或 public-domain 双许可）。
+- `JavaSoundPoolMixer`：用注入的编码资源 loader 按 resource 去重解码，以
+  kind + resource + instance 管理 voice，并输出确定性 stereo PCM16；loader 不存在时
+  保持显式 disabled，缺失/损坏资源保留可查询失败原因。
 - M3/M6 定义对象表、PCM 队列、回调与媒体状态机。
 
 ## 不变量
@@ -32,6 +35,8 @@
   voice，stop 删除 voice，pitch 只接受 `[0.5, 2]`，reset 记录可查询的重置事实。
 - SoundPool 状态必须可由不同 guest JNI 线程安全访问；destroy 同时清空所有 voice，
   与 loaded resource；initialize 不得恢复已销毁的状态。stop 只影响 voice，不得隐式卸载。
+- mixer 控制和 render 共用内部锁；mono 复制到双声道，mono/stereo 通过有界线性重采样
+  消费 position，多个 voice 以 64-bit scratch 累加并饱和为 PCM16，完成 voice 自动清理。
 
 ## 禁止
 

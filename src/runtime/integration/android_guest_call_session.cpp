@@ -43,39 +43,161 @@ constexpr std::uint64_t kRootThreadId = 1;
     return result;
 }
 
+class JavaSoundPoolControls final {
+public:
+    JavaSoundPoolControls(audio::JavaSoundPoolState& state,
+                          audio::JavaSoundPoolMixer* mixer)
+        : state_(state), mixer_(mixer) {}
+
+    void Destroy() {
+        std::scoped_lock lock(mutex_);
+        state_.Destroy();
+        if (mixer_ != nullptr) mixer_->Destroy();
+    }
+    void Initialize() {
+        std::scoped_lock lock(mutex_);
+        state_.Initialize();
+    }
+    void StopAllSounds() {
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(state_.StopAllSounds());
+        if (mixer_ != nullptr) mixer_->StopAllSounds();
+    }
+    void StopAll(const audio::JavaSoundPoolKind kind,
+                 const std::int32_t except_resource) {
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(state_.StopAll(kind, except_resource));
+        if (mixer_ != nullptr) mixer_->StopAll(kind, except_resource);
+    }
+    [[nodiscard]] bool IsLoaded(const audio::JavaSoundPoolKind kind,
+                                const std::int32_t resource) const {
+        std::scoped_lock lock(mutex_);
+        return state_.IsLoaded(kind, resource);
+    }
+    void Unload(const audio::JavaSoundPoolKind kind,
+                const std::int32_t resource) {
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(state_.Unload(kind, resource));
+        if (mixer_ != nullptr &&
+            !state_.IsLoaded(audio::JavaSoundPoolKind::pool, resource) &&
+            !state_.IsLoaded(audio::JavaSoundPoolKind::big, resource)) {
+            mixer_->Unload(resource);
+        }
+    }
+    void Load(const audio::JavaSoundPoolKind kind,
+              const std::int32_t resource) {
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(LoadLocked(kind, resource));
+    }
+    void Play(const audio::JavaSoundPoolKind kind,
+              const std::int32_t resource, const std::int32_t instance,
+              const float volume) {
+        std::scoped_lock lock(mutex_);
+        if (!state_.IsLoaded(kind, resource)) {
+            static_cast<void>(LoadLocked(kind, resource));
+        }
+        if (!state_.Play(kind, resource, instance, volume)) return;
+        if (mixer_ != nullptr &&
+            !mixer_->Play(kind, resource, instance, volume)) {
+            static_cast<void>(state_.Stop(kind, resource, instance));
+        }
+    }
+    void Pause(const audio::JavaSoundPoolKind kind,
+               const std::int32_t resource, const std::int32_t instance) {
+        std::scoped_lock lock(mutex_);
+        if (state_.Pause(kind, resource, instance) && mixer_ != nullptr) {
+            mixer_->Pause(kind, resource, instance);
+        }
+    }
+    void Resume(const audio::JavaSoundPoolKind kind,
+                const std::int32_t resource, const std::int32_t instance) {
+        std::scoped_lock lock(mutex_);
+        if (state_.Resume(kind, resource, instance) && mixer_ != nullptr) {
+            mixer_->Resume(kind, resource, instance);
+        }
+    }
+    void Stop(const audio::JavaSoundPoolKind kind,
+              const std::int32_t resource, const std::int32_t instance) {
+        std::scoped_lock lock(mutex_);
+        if (state_.Stop(kind, resource, instance) && mixer_ != nullptr) {
+            mixer_->Stop(kind, resource, instance);
+        }
+    }
+    void SetVolume(const audio::JavaSoundPoolKind kind,
+                   const std::int32_t resource, const std::int32_t instance,
+                   const float volume) {
+        std::scoped_lock lock(mutex_);
+        if (state_.SetVolume(kind, resource, instance, volume) &&
+            mixer_ != nullptr) {
+            mixer_->SetVolume(kind, resource, instance, volume);
+        }
+    }
+    void SetPitch(const audio::JavaSoundPoolKind kind,
+                  const std::int32_t resource, const std::int32_t instance,
+                  const float pitch) {
+        std::scoped_lock lock(mutex_);
+        if (state_.SetPitch(kind, resource, instance, pitch) &&
+            mixer_ != nullptr) {
+            mixer_->SetPitch(kind, resource, instance, pitch);
+        }
+    }
+    void Reset(const audio::JavaSoundPoolKind kind,
+               const std::int32_t resource, const std::int32_t instance) {
+        std::scoped_lock lock(mutex_);
+        if (state_.Reset(kind, resource, instance) && mixer_ != nullptr) {
+            mixer_->Reset(kind, resource, instance);
+        }
+    }
+
+private:
+    [[nodiscard]] bool LoadLocked(const audio::JavaSoundPoolKind kind,
+                                  const std::int32_t resource) {
+        if (!state_.RequestLoad(kind, resource)) return false;
+        if (state_.IsLoaded(kind, resource)) return true;
+        if (mixer_ == nullptr || !mixer_->Load(resource)) return false;
+        return state_.MarkLoaded(kind, resource);
+    }
+
+    audio::JavaSoundPoolState& state_;
+    audio::JavaSoundPoolMixer* mixer_{};
+    mutable std::mutex mutex_;
+};
+
 }  // namespace
 
 void BindAndroidGuestJavaAudioHandlers(
     JniInvocationEngine& invocations,
-    audio::JavaSoundPoolState& sound_pool) {
+    audio::JavaSoundPoolState& sound_pool,
+    audio::JavaSoundPoolMixer* mixer) {
+    const auto controls =
+        std::make_shared<JavaSoundPoolControls>(sound_pool, mixer);
     invocations.RegisterHandler(
         "audio.destroy_sound_pool",
-        [&sound_pool](const JniInvocation&) {
-            sound_pool.Destroy();
+        [controls](const JniInvocation&) {
+            controls->Destroy();
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
         "audio.init_sound_pool_array",
-        [&sound_pool](const JniInvocation&) {
-            sound_pool.Initialize();
+        [controls](const JniInvocation&) {
+            controls->Initialize();
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
         "audio.stop_all_sounds",
-        [&sound_pool](const JniInvocation&) {
-            static_cast<void>(sound_pool.StopAllSounds());
+        [controls](const JniInvocation&) {
+            controls->StopAllSounds();
             return JniValue{std::monostate{}};
         });
-    const auto stop_kind = [&invocations, &sound_pool](
+    const auto stop_kind = [&invocations, controls](
                                const char* implementation,
                                const audio::JavaSoundPoolKind kind) {
         invocations.RegisterHandler(
             implementation,
-            [&sound_pool, kind](const JniInvocation& invocation) {
+            [controls, kind](const JniInvocation& invocation) {
                 const auto except_resource =
                     std::get<JniInt>(invocation.arguments[0]);
-                static_cast<void>(sound_pool.StopAll(
-                    kind, except_resource));
+                controls->StopAll(kind, except_resource);
                 return JniValue{std::monostate{}};
             });
     };
@@ -83,148 +205,142 @@ void BindAndroidGuestJavaAudioHandlers(
     stop_kind("audio.stop_all_big", audio::JavaSoundPoolKind::big);
     invocations.RegisterHandler(
         "audio.is_sound_loaded",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            const auto loaded = sound_pool.IsLoaded(
+            const auto loaded = controls->IsLoaded(
                 audio::JavaSoundPoolKind::pool, resource);
             return JniValue{JniInt{loaded ? 0 : -1}};
         });
     invocations.RegisterHandler(
         "audio.is_sound_loaded_big",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            const auto loaded = sound_pool.IsLoaded(
+            const auto loaded = controls->IsLoaded(
                 audio::JavaSoundPoolKind::big, resource);
             return JniValue{JniInt{loaded ? 0 : -1}};
         });
     invocations.RegisterHandler(
         "audio.unload_sound",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            static_cast<void>(sound_pool.Unload(
-                audio::JavaSoundPoolKind::pool, resource));
+            controls->Unload(audio::JavaSoundPoolKind::pool, resource);
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
         "audio.unload_sound_big",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            static_cast<void>(sound_pool.Unload(
-                audio::JavaSoundPoolKind::big, resource));
+            controls->Unload(audio::JavaSoundPoolKind::big, resource);
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
         "audio.play_sound",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
             const auto instance = std::get<JniInt>(invocation.arguments[1]);
             const auto volume = std::get<JniFloat>(invocation.arguments[2]);
-            static_cast<void>(sound_pool.Play(
-                audio::JavaSoundPoolKind::pool, resource, instance, volume));
+            controls->Play(audio::JavaSoundPoolKind::pool, resource,
+                           instance, volume);
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
         "audio.play_sound_big",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
             const auto volume = std::get<JniFloat>(invocation.arguments[1]);
-            static_cast<void>(sound_pool.Play(
-                audio::JavaSoundPoolKind::big, resource, 0, volume));
+            controls->Play(audio::JavaSoundPoolKind::big, resource, 0,
+                           volume);
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
         "audio.load_sound",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            static_cast<void>(sound_pool.RequestLoad(
-                audio::JavaSoundPoolKind::pool, resource));
+            controls->Load(audio::JavaSoundPoolKind::pool, resource);
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
         "audio.load_sound_big",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            static_cast<void>(sound_pool.RequestLoad(
-                audio::JavaSoundPoolKind::big, resource));
+            controls->Load(audio::JavaSoundPoolKind::big, resource);
             return JniValue{std::monostate{}};
         });
-    const auto bind_voice_pair = [&invocations, &sound_pool](
+    const auto bind_voice_pair = [&invocations, controls](
                                      const char* pool_implementation,
                                      const char* big_implementation,
                                      const auto operation) {
         invocations.RegisterHandler(
             pool_implementation,
-            [&sound_pool, operation](const JniInvocation& invocation) {
+            [controls, operation](const JniInvocation& invocation) {
                 const auto resource =
                     std::get<JniInt>(invocation.arguments[0]);
                 const auto instance =
                     std::get<JniInt>(invocation.arguments[1]);
-                static_cast<void>((sound_pool.*operation)(
-                    audio::JavaSoundPoolKind::pool, resource, instance));
+                (controls.get()->*operation)(
+                    audio::JavaSoundPoolKind::pool, resource, instance);
                 return JniValue{std::monostate{}};
             });
         invocations.RegisterHandler(
             big_implementation,
-            [&sound_pool, operation](const JniInvocation& invocation) {
+            [controls, operation](const JniInvocation& invocation) {
                 const auto resource =
                     std::get<JniInt>(invocation.arguments[0]);
-                static_cast<void>((sound_pool.*operation)(
-                    audio::JavaSoundPoolKind::big, resource, 0));
+                (controls.get()->*operation)(
+                    audio::JavaSoundPoolKind::big, resource, 0);
                 return JniValue{std::monostate{}};
             });
     };
     bind_voice_pair("audio.pause_sound", "audio.pause_sound_big",
-                    &audio::JavaSoundPoolState::Pause);
+                    &JavaSoundPoolControls::Pause);
     bind_voice_pair("audio.resume_sound", "audio.resume_sound_big",
-                    &audio::JavaSoundPoolState::Resume);
+                    &JavaSoundPoolControls::Resume);
     bind_voice_pair("audio.stop_sound", "audio.stop_sound_big",
-                    &audio::JavaSoundPoolState::Stop);
-    const auto bind_volume_pair = [&invocations, &sound_pool](
+                    &JavaSoundPoolControls::Stop);
+    const auto bind_volume_pair = [&invocations, controls](
                                       const char* pool_implementation,
                                       const char* big_implementation) {
         invocations.RegisterHandler(
             pool_implementation,
-            [&sound_pool](const JniInvocation& invocation) {
+            [controls](const JniInvocation& invocation) {
                 const auto resource =
                     std::get<JniInt>(invocation.arguments[0]);
                 const auto instance =
                     std::get<JniInt>(invocation.arguments[1]);
                 const auto volume =
                     std::get<JniFloat>(invocation.arguments[2]);
-                static_cast<void>(sound_pool.SetVolume(
-                    audio::JavaSoundPoolKind::pool, resource, instance,
-                    volume));
+                controls->SetVolume(audio::JavaSoundPoolKind::pool, resource,
+                                    instance, volume);
                 return JniValue{std::monostate{}};
             });
         invocations.RegisterHandler(
             big_implementation,
-            [&sound_pool](const JniInvocation& invocation) {
+            [controls](const JniInvocation& invocation) {
                 const auto resource =
                     std::get<JniInt>(invocation.arguments[0]);
                 const auto volume =
                     std::get<JniFloat>(invocation.arguments[1]);
-                static_cast<void>(sound_pool.SetVolume(
-                    audio::JavaSoundPoolKind::big, resource, 0, volume));
+                controls->SetVolume(audio::JavaSoundPoolKind::big, resource,
+                                    0, volume);
                 return JniValue{std::monostate{}};
             });
     };
     bind_volume_pair("audio.set_volume", "audio.set_volume_big");
     invocations.RegisterHandler(
         "audio.set_pitch",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
             const auto instance = std::get<JniInt>(invocation.arguments[1]);
             const auto pitch = std::get<JniFloat>(invocation.arguments[2]);
-            static_cast<void>(sound_pool.SetPitch(
-                audio::JavaSoundPoolKind::pool, resource, instance, pitch));
+            controls->SetPitch(audio::JavaSoundPoolKind::pool, resource,
+                               instance, pitch);
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
         "audio.reset_sound",
-        [&sound_pool](const JniInvocation& invocation) {
+        [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            static_cast<void>(sound_pool.Reset(
-                audio::JavaSoundPoolKind::big, resource, 0));
+            controls->Reset(audio::JavaSoundPoolKind::big, resource, 0);
             return JniValue{std::monostate{}};
         });
 }
@@ -250,6 +366,7 @@ public:
           guest_jni_(address_space_),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           jni_dispatcher_(ledger_), invocations_(classes_),
+          sound_pool_mixer_(request.sound_resource_loader),
           java_vm_(environment_),
           threads_([this] {
               return std::make_unique<cpu::DynarmicCpu>(
@@ -270,7 +387,9 @@ public:
             throw AndroidGuestCallSessionError(
                 "Android guest call session request is incomplete");
         }
-        BindAndroidGuestJavaAudioHandlers(invocations_, sound_pool_);
+        BindAndroidGuestJavaAudioHandlers(
+            invocations_, sound_pool_,
+            sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
         BindAndroidGuestJavaDisplayHandlers(invocations_, screen_policy_);
         if (request.direct_assets.has_value()) {
             direct_assets_ = std::make_unique<FrameworkDirectAssetHle>(
@@ -452,6 +571,10 @@ public:
     void RecycleFrame(AndroidBoundaryFrame&& frame) {
         boundary_.RecycleFrame(std::move(frame));
     }
+    std::size_t RenderStereoAudio(const std::span<std::int16_t> output,
+                                  const std::uint32_t sample_rate) {
+        return sound_pool_mixer_.RenderStereoPcm16(output, sample_rate);
+    }
     bool Running() const noexcept { return running_; }
     core::GpuStats Stats() const { return boundary_.Stats(); }
     std::vector<core::GpuRenderTarget> RenderTargets() const {
@@ -477,6 +600,7 @@ private:
     JniClassRegistry classes_;
     JniInvocationEngine invocations_;
     audio::JavaSoundPoolState sound_pool_;
+    audio::JavaSoundPoolMixer sound_pool_mixer_;
     FrameworkScreenPolicyState screen_policy_;
     JniStringStore strings_;
     JniPrimitiveArrayStore arrays_;
@@ -561,6 +685,11 @@ AndroidGuestCallSession::TakeLatestFrame() {
 }
 void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) {
     impl_->RecycleFrame(std::move(frame));
+}
+std::size_t AndroidGuestCallSession::RenderStereoAudio(
+    const std::span<std::int16_t> output,
+    const std::uint32_t sample_rate) {
+    return impl_->RenderStereoAudio(output, sample_rate);
 }
 void AndroidGuestCallSession::Stop() { impl_->Stop(); }
 bool AndroidGuestCallSession::Running() const noexcept {

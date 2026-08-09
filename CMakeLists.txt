@@ -105,6 +105,7 @@ endif()
 ogplay_set_project_warnings(ogplay_hal)
 
 add_library(ogplay_audio
+    src/audio/java_sound_pool_mixer.cpp
     src/audio/ogg_vorbis.cpp
     third_party/stb/stb_vorbis.c
 )
@@ -482,6 +483,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/cpu/m1_guest_sample_tests.cpp
         tests/cpu/thread_group_tests.cpp
         tests/audio/ogg_vorbis_tests.cpp
+        tests/audio/java_sound_pool_mixer_tests.cpp
         tests/session/quirk_registry_tests.cpp
         tests/session/lifecycle_tests.cpp
         tests/session/profile_asset_bundle_tests.cpp

@@ -33,6 +33,10 @@
 
 ## 最近完成
 
+- [WU-0295] SoundPool load/lazy-play 现仅在注入资源读取与 Ogg 解码成功后提交 loaded，
+  失败保留 pending 和可查询原因；全部 voice 控制同步驱动线程安全离线 mixer，mono/stereo
+  经线性重采样、64-bit 累加与 PCM16 饱和输出；macOS-arm64 + ANGLE warnings-as-errors
+  配置、构建及全量 CTest 427/427 通过。
 - [WU-0294] 仓库固定的 stb_vorbis 1.22 已将最大 64 MiB Ogg Vorbis 内存输入事务解码为
   最大 128 MiB 的拥有型 mono/stereo PCM16；空、损坏、超限、不支持格式与溢出均明确
   失败，真实小型 OGG fixture 覆盖成功路径；macOS-arm64 + ANGLE warnings-as-errors
@@ -69,15 +73,6 @@
   确认进入游戏主界面，517 帧后正常停止且状态 0。
 - [WU-0283] `display.change_mode` 已映射为线程安全的通用允许休眠/保持唤醒请求状态；
   exact-APK 越过该 Java handler。宿主防休眠控制尚未接入，能力保持 partial。
-- [WU-0282] SoundPool voice control 家族已批量闭合：普通/big pause、resume、stop、volume，
-  普通 pool pitch 与 big reset 共 10 个 handler 驱动同一受检状态。exact-APK 无界运行约
-  90 秒、1323 帧后正常停止且状态 0；帧存活不替代语言界面视觉验收。
-- [WU-0281] SoundPool 普通/big load 与 play 共享通用 pending/loaded 状态机；loaded 查询
-  修正为 legacy Java 的 `0` / `-1` 契约，play 执行 lazy request，只有真实 loaded resource
-  才创建 voice。exact-APK 600 帧及 shutdown 均以状态 0 完成；解码和输出保持 partial。
-- [WU-0280] Java SoundPool 已加载资源以类别 + resource 的通用键线程安全建账；
-  `is_sound_loaded` / `is_sound_loaded_big` 查询目录事实，`unload_sound` /
-  `unload_sound_big` 精确删除同一键。exact-APK 120 帧及 shutdown 均以状态 0 完成。
 
 ## 目标 ELF 尚未实现的 GL 入口
 
@@ -89,9 +84,9 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 按 WU-0295 接入 SoundPool 已解码 voice、控制语义和无设备离线混音。
-2. 按 WU-0296 接入 SDL3 宿主音频输出并完成 exact-APK 听觉验收。
-3. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
+1. 按 WU-0296 接入 SDL3 宿主音频输出并完成 exact-APK 听觉验收。
+2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
+3. 按 exact-APK 后续调用证据继续闭合通用 Java/JNI 能力。
 
 ## 阻塞
 

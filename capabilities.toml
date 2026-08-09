@@ -75,6 +75,11 @@ status = "complete"
 test = "tests/audio/ogg_vorbis_tests.cpp"
 note = "M5 WU-0294 用仓库固定 stb_vorbis 1.22 将最大 64 MiB Ogg Vorbis 内存输入事务解码为最大 128 MiB 的拥有型 mono/stereo PCM16；空、损坏、超限和不支持格式明确失败"
 
+[audio.sound_pool_mixer]
+status = "complete"
+test = "tests/audio/java_sound_pool_mixer_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
+note = "M5 WU-0295 用注入的编码资源 loader 在真实 Ogg 解码成功后提交 loaded，SoundPool voice 控制同步驱动线程安全的 stereo PCM16 离线 mixer；线性重采样、64-bit 累加、饱和与完成清理均有机器测试"
+
 [session.profile_plan]
 status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp"
@@ -536,9 +541,9 @@ test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK ru
 note = "M5 WU-0280/WU-0281 以类别/resource 键实现真实 loaded 查询与精确卸载；查询遵循 0 loaded/-1 unavailable 契约，普通/big 隔离"
 
 [runtime.java_sound_pool_load_play_state]
-status = "partial"
-test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0281 为 load/play 普通与 big 调用实现 pending request、loaded gate、voice identity 与音量校验；尚未接入资源解析、解码和 HAL 输出，600 帧 exact-APK shutdown 状态 0"
+status = "complete"
+test = "tests/runtime/android_guest_call_session_tests.cpp"
+note = "M5 WU-0281 建立 pending/loaded gate、voice identity 与音量校验；WU-0295 让注入 loader 的 load/lazy-play 只有在资源读取及 Ogg 解码成功后提交 loaded，并同步创建真实 PCM mixer voice；宿主设备输出单独记账"
 
 [runtime.java_sound_pool_voice_controls]
 status = "complete"

@@ -5,6 +5,7 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 
@@ -154,6 +155,10 @@ void AndroidBoundaryGles1FixedState::Reset() {
                        {kMaterialEmission, {0.0F, 0.0F, 0.0F, 1.0F}},
                        {kGles1MaterialShininess, {0.0F}}};
     material_back_ = material_front_;
+    point_size_ = 1.0F;
+    point_parameters_ = {{0x8126U, 0.0F},
+                         {0x8127U, (std::numeric_limits<float>::max)()},
+                         {0x8128U, 1.0F}};
 }
 
 void AndroidBoundaryGles1FixedState::SetFog(const std::uint32_t pname,
@@ -248,6 +253,34 @@ const std::vector<float>& AndroidBoundaryGles1FixedState::Material(
     throw std::invalid_argument("GLES1 material query face is invalid");
 }
 
+void AndroidBoundaryGles1FixedState::SetPointSize(const float value) {
+    if (!std::isfinite(value) || value <= 0.0F) {
+        throw std::invalid_argument("GLES1 point size must be finite and positive");
+    }
+    point_size_ = value;
+}
+
+void AndroidBoundaryGles1FixedState::SetPointParameter(
+    const std::uint32_t pname, const float value) {
+    if (pname != 0x8126U && pname != 0x8127U && pname != 0x8128U) {
+        throw std::invalid_argument("GLES1 scalar point parameter is unsupported");
+    }
+    if (!std::isfinite(value) || value < 0.0F) {
+        throw std::invalid_argument(
+            "GLES1 point parameter must be finite and non-negative");
+    }
+    point_parameters_[pname] = value;
+}
+
+float AndroidBoundaryGles1FixedState::PointSize() const noexcept {
+    return point_size_;
+}
+
+float AndroidBoundaryGles1FixedState::PointParameter(
+    const std::uint32_t pname) const {
+    return point_parameters_.at(pname);
+}
+
 void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
                                         AndroidBoundaryGles1FixedState& state,
                                         memory::AddressSpace& address_space,
@@ -255,6 +288,53 @@ void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
     if (!require_frame) {
         throw std::invalid_argument("GLES1 fixed-state binding is incomplete");
     }
+    dispatch.Bind("glClearStencil", [require_frame](const auto arguments, const auto) {
+        require_frame("glClearStencil")
+            .ClearStencil(std::bit_cast<std::int32_t>(arguments[0]));
+        return 0U;
+    });
+    dispatch.Bind("glDepthRangef", [require_frame](const auto arguments, const auto) {
+        require_frame("glDepthRangef")
+            .DepthRange(std::bit_cast<float>(arguments[0]),
+                        std::bit_cast<float>(arguments[1]));
+        return 0U;
+    });
+    dispatch.Bind("glLineWidth", [require_frame](const auto arguments, const auto) {
+        require_frame("glLineWidth").LineWidth(std::bit_cast<float>(arguments[0]));
+        return 0U;
+    });
+    dispatch.Bind("glPointParameterf", [&state, require_frame](const auto arguments,
+                                                               const auto) {
+        static_cast<void>(require_frame("glPointParameterf"));
+        state.SetPointParameter(arguments[0], std::bit_cast<float>(arguments[1]));
+        return 0U;
+    });
+    dispatch.Bind("glPointSize", [&state, require_frame](const auto arguments, const auto) {
+        static_cast<void>(require_frame("glPointSize"));
+        state.SetPointSize(std::bit_cast<float>(arguments[0]));
+        return 0U;
+    });
+    dispatch.Bind("glPolygonOffset", [require_frame](const auto arguments, const auto) {
+        require_frame("glPolygonOffset")
+            .PolygonOffset(std::bit_cast<float>(arguments[0]),
+                           std::bit_cast<float>(arguments[1]));
+        return 0U;
+    });
+    dispatch.Bind("glStencilFunc", [require_frame](const auto arguments, const auto) {
+        require_frame("glStencilFunc")
+            .StencilFunction(arguments[0], std::bit_cast<std::int32_t>(arguments[1]),
+                             arguments[2]);
+        return 0U;
+    });
+    dispatch.Bind("glStencilMask", [require_frame](const auto arguments, const auto) {
+        require_frame("glStencilMask").StencilMask(arguments[0]);
+        return 0U;
+    });
+    dispatch.Bind("glStencilOp", [require_frame](const auto arguments, const auto) {
+        require_frame("glStencilOp")
+            .StencilOperation(arguments[0], arguments[1], arguments[2]);
+        return 0U;
+    });
     dispatch.Bind("glFogf", [&state, require_frame](const auto arguments, const std::uint64_t) {
         static_cast<void>(require_frame("glFogf"));
         const std::array value{std::bit_cast<float>(arguments[1])};

@@ -390,11 +390,15 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glColorMask", {1U, 1U, 1U, 1U}},
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glClearStencil", {3U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glCullFace", {0x0405U}},
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glDepthFunc", {0x0201U}},
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glDepthMask", {1U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glDepthRangef", {0U, std::bit_cast<std::uint32_t>(1.0F)}},
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glDisable", {0x0C11U}},
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
@@ -408,7 +412,22 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glHint", {0x8192U, 0x1100U}},
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glLineWidth", {std::bit_cast<std::uint32_t>(1.0F)}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glPixelStorei", {0x0CF5U, 4U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glPointParameterf",
+            {0x8126U, std::bit_cast<std::uint32_t>(1.0F)}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glPointSize", {std::bit_cast<std::uint32_t>(2.0F)}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glPolygonOffset", {0U, 0U}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glStencilFunc", {0x0207U, 0U, 0xFFU}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glStencilMask", {0xFFU}},
+        std::pair<std::string_view, std::array<std::uint32_t, 4>>{
+            "glStencilOp", {0x1E00U, 0x1E00U, 0x1E00U}},
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glTexParameterf",
             {0x0DE1U, 0x2801U, std::bit_cast<std::uint32_t>(9729.0F)}},
@@ -597,6 +616,10 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glDepthFunc",
                            {0x0201U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDepthMask", {1U}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glDepthRangef",
+                  {std::bit_cast<std::uint32_t>(0.25F),
+                   std::bit_cast<std::uint32_t>(0.75F)}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glFrontFace",
                            {0x0901U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glHint",
@@ -605,6 +628,25 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                            {0x0C50U, 0x1102U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glPixelStorei",
                            {0x0CF5U, 4U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glClearStencil", {3U}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glLineWidth",
+                  {std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glPointParameterf",
+                  {0x8126U, std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glPointSize",
+                  {std::bit_cast<std::uint32_t>(2.0F)}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glPolygonOffset",
+                  {std::bit_cast<std::uint32_t>(1.0F),
+                   std::bit_cast<std::uint32_t>(2.0F)}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glStencilFunc",
+                           {0x0202U, 2U, 0x7FU}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glStencilMask", {0x3FU}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glStencilOp",
+                           {0x1E00U, 0x1E01U, 0x1E02U}) == 0U);
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glTexParameterf",
                   {0x0DE1U, 0x2801U,
@@ -863,10 +905,6 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glClearDepthx", {0x00010000U}),
         "unimplemented GLES1 call glClearDepthx (thunk 12, guest thread 1)",
-        ogplay::gles::GlesDispatchError);
-    CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv1_CM.so", "glClearStencil", {0U}),
-        "unimplemented GLES1 call glClearStencil (thunk 13, guest thread 1)",
         ogplay::gles::GlesDispatchError);
 }
 

@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0306] GLES1 已发布 clear-stencil、depth-range、line-width、polygon-offset、三项
+  stencil 与两项 point handler；point size/min/max 由 fixed shader 消费，第二个 exact APK
+  已从 `glPointSize` 推进至 `glIsEnabled`，全量 CTest 436/436 通过。
 - [WU-0305] `AngleFrame` 已补齐 depth range、line width、polygon offset、stencil clear/
   function/mask/operation 的真实 ANGLE 调用面，并将 scalar/query 实现拆分为独立源文件；
   原生状态查询与全量 CTest 436/436 通过。
@@ -68,10 +71,6 @@
   失败保留 pending 和可查询原因；全部 voice 控制同步驱动线程安全离线 mixer，mono/stereo
   经线性重采样、64-bit 累加与 PCM16 饱和输出；macOS-arm64 + ANGLE warnings-as-errors
   配置、构建及全量 CTest 427/427 通过。
-- [WU-0294] 仓库固定的 stb_vorbis 1.22 已将最大 64 MiB Ogg Vorbis 内存输入事务解码为
-  最大 128 MiB 的拥有型 mono/stereo PCM16；空、损坏、超限、不支持格式与溢出均明确
-  失败，真实小型 OGG fixture 覆盖成功路径；macOS-arm64 + ANGLE warnings-as-errors
-  配置、构建及全量 CTest 423/423 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

@@ -715,6 +715,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0262 批量绑定目标导入的 17 个 GLES1 无指针标量状态入口；Windows-x64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
 
+[runtime.gles1_raster_depth_stencil_boundary]
+status = "complete"
+test = "tests/runtime/android_boundary_gles1_fixed_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0306 绑定 9 个 raster/depth/stencil/point 入口；point size 由 fixed shader 消费，第二个 exact APK 推进至 glIsEnabled"
+
 [runtime.gles1_integer_query_boundary]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

@@ -280,7 +280,8 @@ void AndroidBoundaryGles1DrawState::EnsureProgram(gles::AngleFrame& frame) {
         "u_normal_matrix", "u_current_color", "u_current_normal",
         "u_global_ambient", "u_light_ambient", "u_light_diffuse",
         "u_light_position", "u_material_ambient", "u_material_diffuse",
-        "u_has_color", "u_has_normal", "u_lighting", "u_fog_enabled",
+        "u_has_color", "u_has_normal", "u_lighting", "u_point_size",
+        "u_point_size_min", "u_point_size_max", "u_fog_enabled",
         "u_fog_mode", "u_fog_density", "u_fog_start", "u_fog_end",
         "u_fog_color", "u_alpha_enabled", "u_alpha_function",
         "u_alpha_reference"};
@@ -422,6 +423,11 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
                     Array(kGles1NormalArray, kTexture0).enabled ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_lighting"),
                     core.Capability(0x0B50U) ? 1.0F : 0.0F);
+    frame.Uniform1f(uniform("u_point_size"), fixed.PointSize());
+    frame.Uniform1f(uniform("u_point_size_min"),
+                    fixed.PointParameter(0x8126U));
+    frame.Uniform1f(uniform("u_point_size_max"),
+                    fixed.PointParameter(0x8127U));
     for (std::size_t stage = 0; stage < kGles1MaximumDrawTextureUnits; ++stage) {
         const auto suffix = std::to_string(stage);
         const auto indexed = [&suffix](const std::string_view name) {

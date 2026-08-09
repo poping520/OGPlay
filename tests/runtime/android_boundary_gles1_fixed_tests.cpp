@@ -25,6 +25,20 @@ TEST_CASE("GLES1 single-face material quirk is required when disabled") {
     CHECK(state.Light(kLight0, kDiffuse)[0] == 1.0F);
     CHECK(state.Light(kLight0 + 1U, kDiffuse)[0] == 0.0F);
     CHECK(state.Material(ogplay::runtime::detail::kGles1MaterialShininess)[0] == 0.0F);
+    CHECK(state.PointSize() == 1.0F);
+    CHECK(state.PointParameter(0x8126U) == 0.0F);
+
+    state.SetPointSize(4.0F);
+    state.SetPointParameter(0x8126U, 2.0F);
+    state.SetPointParameter(0x8127U, 8.0F);
+    CHECK(state.PointSize() == 4.0F);
+    CHECK(state.PointParameter(0x8127U) == 8.0F);
+    CHECK_THROWS_WITH_AS(state.SetPointSize(0.0F),
+                         "GLES1 point size must be finite and positive",
+                         std::invalid_argument);
+    CHECK_THROWS_WITH_AS(state.SetPointParameter(0U, 1.0F),
+                         "GLES1 scalar point parameter is unsupported",
+                         std::invalid_argument);
 
     const std::array fog_color{0.1F, 0.2F, 0.3F, 0.4F};
     state.SetFog(ogplay::runtime::detail::kGles1FogColor, fog_color);
@@ -77,6 +91,8 @@ TEST_CASE("GLES1 single-face material quirk is required when disabled") {
     CHECK(state.Fog(ogplay::runtime::detail::kGles1FogColor)[2] == 0.0F);
     CHECK(state.Light(kLight0, ogplay::runtime::detail::kGles1LightPosition)[2] == 1.0F);
     CHECK(state.Material(ogplay::runtime::detail::kGles1MaterialShininess)[0] == 0.0F);
+    CHECK(state.PointSize() == 1.0F);
+    CHECK(state.PointParameter(0x8126U) == 0.0F);
     state.SetMaterial(ogplay::runtime::detail::kGles1Back,
                       ogplay::runtime::detail::kGles1MaterialShininess, back_shininess);
     CHECK(state.Material(ogplay::runtime::detail::kGles1Back,
@@ -92,8 +108,11 @@ TEST_CASE("GLES1 lighting material and fog handlers are explicit") {
         [](const std::string_view operation) -> ogplay::gles::AngleFrame& {
             throw std::runtime_error(std::string(operation) + " has no current ANGLE frame");
         });
-    for (const auto symbol : {"glFogf", "glFogfv", "glLightModelfv", "glLightf", "glLightfv",
-                              "glMaterialf", "glMaterialfv"}) {
+    for (const auto symbol : {"glClearStencil", "glDepthRangef", "glFogf", "glFogfv",
+                              "glLightModelfv", "glLightf", "glLightfv", "glLineWidth",
+                              "glMaterialf", "glMaterialfv", "glPointParameterf",
+                              "glPointSize", "glPolygonOffset", "glStencilFunc",
+                              "glStencilMask", "glStencilOp"}) {
         const auto id = ogplay::gles::FindGlesFunction(ogplay::gles::GlesApi::gles1, symbol);
         REQUIRE(id.has_value());
         CHECK(dispatch.IsBound(*id));

@@ -45,6 +45,10 @@
   共有 capability 转发原生 context，GLES1-only capability 进入显式 fixed-pipeline state，
   `GL_TEXTURE_2D` 按 active texture unit 隔离。ANGLE 失败时不提交；无 current frame 或
   非法枚举明确失败。
+- GLES1 raster/depth/stencil 批次将 clear-stencil、depth-range、line-width、polygon-offset
+  与三项 stencil state 直接转发真实 ANGLE；point size/min/max/fade-threshold 保存为受检
+  fixed state，size/min/max 由顶点 shader 的 `gl_PointSize` 消费。非法浮点、枚举、无 current
+  frame 或原生错误必须明确失败，context reset 恢复规范默认值。
 - GLES1 `glGenTextures`/`glDeleteTextures` 复用 ANGLE texture name 生命周期；`GLsizei`
   必须非负，guest 名称数组在 ANGLE 状态变化前按线程完整预检，生成结果仅在成功后一次提交。
 - GLES1 `GL_GENERATE_MIPMAP` 按 texture object 保存，不得作为 texture parameter 转发；

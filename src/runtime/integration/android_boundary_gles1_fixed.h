@@ -34,6 +34,8 @@ class AndroidBoundaryGles1FixedState final {
     void SetLightModel(std::uint32_t pname, std::span<const float> values);
     void SetLight(std::uint32_t light, std::uint32_t pname, std::span<const float> values);
     void SetMaterial(std::uint32_t face, std::uint32_t pname, std::span<const float> values);
+    void SetPointSize(float value);
+    void SetPointParameter(std::uint32_t pname, float value);
 
     [[nodiscard]] const std::vector<float>& Fog(std::uint32_t pname) const;
     [[nodiscard]] const std::vector<float>& LightModel(std::uint32_t pname) const;
@@ -41,6 +43,8 @@ class AndroidBoundaryGles1FixedState final {
     [[nodiscard]] const std::vector<float>& Material(std::uint32_t pname) const;
     [[nodiscard]] const std::vector<float>& Material(
         std::uint32_t face, std::uint32_t pname) const;
+    [[nodiscard]] float PointSize() const noexcept;
+    [[nodiscard]] float PointParameter(std::uint32_t pname) const;
 
   private:
     std::map<std::uint32_t, std::vector<float>> fog_;
@@ -48,6 +52,8 @@ class AndroidBoundaryGles1FixedState final {
     std::map<std::uint64_t, std::vector<float>> lights_;
     std::map<std::uint32_t, std::vector<float>> material_front_;
     std::map<std::uint32_t, std::vector<float>> material_back_;
+    float point_size_{1.0F};
+    std::map<std::uint32_t, float> point_parameters_;
     bool allow_material_single_face_{};
 };
 

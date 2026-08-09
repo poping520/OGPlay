@@ -97,6 +97,9 @@ uniform vec4 u_material_diffuse;
 uniform float u_has_color;
 uniform float u_has_normal;
 uniform float u_lighting;
+uniform float u_point_size;
+uniform float u_point_size_min;
+uniform float u_point_size_max;
 varying vec4 v_color;
 varying vec2 v_texcoord0;
 varying vec2 v_texcoord1;
@@ -127,6 +130,7 @@ void main() {
   v_fog_distance = abs(eye.z);
   gl_Position = transform(u_projection0, u_projection1, u_projection2,
                           u_projection3, eye);
+  gl_PointSize = clamp(u_point_size, u_point_size_min, u_point_size_max);
 })";
 
 inline constexpr std::string_view kGles1FixedFragmentShader = R"(

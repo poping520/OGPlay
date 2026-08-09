@@ -34,6 +34,9 @@
 
 ## 最近完成
 
+- [WU-0280] Java SoundPool 已加载资源以类别 + group + resource 的通用键线程安全建账；
+  `is_sound_loaded` / `is_sound_loaded_big` 查询目录事实，`unload_sound` /
+  `unload_sound_big` 精确删除同一键。exact-APK 120 帧及 shutdown 均以状态 0 完成。
 - [WU-0279] 统一 JNI invocation engine 的 missing-handler 错误现携带已解析的规范
   implementation ID；exact-APK 下一边界由不透明错误精确定位为
   `audio.is_sound_loaded_big`。
@@ -74,8 +77,8 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 以真实分类资源状态闭合 `audio.is_sound_loaded_big` 及同族普通 pool 查询。
-2. 增加 exact-APK 更长时限和输入驱动 smoke，采集下一真实行为边界与稳定黄金帧。
+1. 增加 exact-APK 更长时限和输入驱动 smoke，采集下一真实行为边界与稳定黄金帧。
+2. 按实际调用证据接入 SoundPool 真实资源加载、解码与音频输出。
 3. 按 exact-APK 后续真实调用证据，批量闭合类/实例及字段/数组/字符串 JNI 槽。
 
 ## 阻塞

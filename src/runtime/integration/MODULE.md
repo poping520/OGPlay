@@ -109,7 +109,8 @@
   可选直接资源 implementation set 只安装通用 framework HLE 并拥有统一 JNI array store；
   通用 SoundPool handler 驱动同一会话拥有的 `JavaSoundPoolState`：除 destroy/init
   生命周期外，`stop_all_sounds` 清空全部 voice，`stop_all_pool` / `stop_all_big` 按类别
-  清理并保留指定 resource；这些状态不伪造 loaded/playing 或音频输出；
+  清理并保留指定 resource；`is_sound_loaded*` 与 `unload_sound*` 使用同一分类 resource
+  目录，查询返回真实目录事实，卸载只删除精确键；这些状态不伪造 load/play 或音频输出；
   Profile phase、窗口和标题事实不得进入该会话。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。

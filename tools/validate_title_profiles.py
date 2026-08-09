@@ -261,16 +261,26 @@ def _validate_data(value: Any) -> None:
 
 def _validate_audio(value: Any) -> None:
     table = _table(value, "audio")
-    _keys(table, "audio", {"cover_music"})
-    if "cover_music" not in table:
-        return
-    music = _table(table["cover_music"], "audio.cover_music")
-    _keys(music, "audio.cover_music", {"source", "path", "loop"},
-          {"source", "path", "loop"})
-    if music["source"] not in SOURCES:
-        raise ProfileError("audio.cover_music.source must be apk, obb or external")
-    _relative_path(music["path"], "audio.cover_music.path")
-    _boolean(music["loop"], "audio.cover_music.loop")
+    _keys(table, "audio", {"cover_music", "sound_pool"})
+    if "cover_music" in table:
+        music = _table(table["cover_music"], "audio.cover_music")
+        _keys(music, "audio.cover_music", {"source", "path", "loop"},
+              {"source", "path", "loop"})
+        if music["source"] not in SOURCES:
+            raise ProfileError("audio.cover_music.source must be apk, obb or external")
+        _relative_path(music["path"], "audio.cover_music.path")
+        _boolean(music["loop"], "audio.cover_music.loop")
+    if "sound_pool" in table:
+        pool = _table(table["sound_pool"], "audio.sound_pool")
+        _keys(pool, "audio.sound_pool", {"source", "path_pattern"},
+              {"source", "path_pattern"})
+        if pool["source"] not in SOURCES:
+            raise ProfileError("audio.sound_pool.source must be apk, obb or external")
+        _relative_path(pool["path_pattern"], "audio.sound_pool.path_pattern")
+        pattern = pool["path_pattern"]
+        matches = re.findall(r"\{resource(?::0[1-9])?\}", pattern)
+        if len(matches) != 1 or re.sub(r"\{resource(?::0[1-9])?\}", "", pattern).find("{") >= 0 or "}" in re.sub(r"\{resource(?::0[1-9])?\}", "", pattern):
+            raise ProfileError("audio.sound_pool.path_pattern must contain one valid resource placeholder")
 
 
 def _validate_java(value: Any) -> None:

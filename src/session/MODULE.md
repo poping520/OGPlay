@@ -39,6 +39,9 @@
   显式默认项；两条路径均进入相同 code-defined mapper。
 - `ApplyProfileAudio`：按 source + path 精确解析 Profile 封面音乐资源，并把编码字节与
   loop 事实提交给通用 `MusicPlayer`；无声明时明确返回未启动。
+- `ResolveProfileSoundPoolPath`：按纯数据 `audio.sound_pool` 的 source 与唯一 resource
+  占位符，把非负 legacy resource 编号确定性格式化为规范相对路径；文件存在、解码和
+  loaded 状态由下游分别验证，不在 Profile 层猜测。
 - `AssembleProfileSessionPlan`：事务式汇总 lifecycle、VFS、Java、input 与 audio，返回
   唯一拥有运行期 VFS/JNI 状态和预解析资源的只读计划。
 - `BootstrapProfileSession`：先执行 package + versionCode + `.so` SHA-256 精确匹配，
@@ -75,6 +78,8 @@
   不得用同名或默认 kind 猜测。
 - input template 未注册时明确失败；无 Profile 声明只能使用 catalog 的显式默认项。
 - audio 资源缺失、重复或为空时明确失败；错误 source 不得仅凭同名路径匹配。
+- SoundPool path pattern 只接受唯一 `{resource}` 或 `{resource:0N}`（N 为 1..9）；差异
+  必须留在 Profile 数据，不得在生产代码按游戏、厂商或资源编号分支。
 - session plan 只在全部子装配成功后发布；运行期不再次猜测 input/audio 选择。
 - bootstrap 只在零匹配时使用 generic default；非法身份或已选择路径装配失败不得回退。
 - APK Profile 匹配不得猜 main library；无匹配返回空，ABI 自相矛盾或多个 library 同时

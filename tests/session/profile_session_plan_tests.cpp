@@ -39,7 +39,8 @@ public:
     profile.input = ogplay::session::ProfileInput{"pointer_only"};
     profile.audio = ogplay::session::ProfileAudio{
         ogplay::session::ProfileCoverMusic{
-            ogplay::session::ProfileSource::apk, "res/raw/music.ogg", true}};
+            ogplay::session::ProfileSource::apk, "res/raw/music.ogg", true},
+        std::nullopt};
     return profile;
 }
 

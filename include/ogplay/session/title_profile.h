@@ -114,8 +114,14 @@ struct ProfileCoverMusic final {
     bool loop{};
 };
 
+struct ProfileSoundPool final {
+    ProfileSource source{ProfileSource::apk};
+    std::string path_pattern;
+};
+
 struct ProfileAudio final {
     std::optional<ProfileCoverMusic> cover_music;
+    std::optional<ProfileSoundPool> sound_pool;
 };
 
 struct ProfileJavaMethod final {

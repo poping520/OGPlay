@@ -259,6 +259,27 @@ void ValidateRelativePath(const std::string_view path, const std::string_view fi
     }
 }
 
+void ValidateSoundPoolPathPattern(const std::string_view pattern) {
+    const auto begin = pattern.find("{resource");
+    const auto end = begin == std::string_view::npos
+                         ? std::string_view::npos
+                         : pattern.find('}', begin);
+    if (begin == std::string_view::npos || end == std::string_view::npos ||
+        pattern.find('{', begin + 1U) != std::string_view::npos ||
+        pattern.find('}', end + 1U) != std::string_view::npos) {
+        throw TitleProfileError(
+            "audio.sound_pool.path_pattern must contain one resource placeholder");
+    }
+    const auto placeholder = pattern.substr(begin, end - begin + 1U);
+    if (placeholder == "{resource}") return;
+    if (placeholder.size() != 13U ||
+        !placeholder.starts_with("{resource:0") ||
+        placeholder[11] < '1' || placeholder[11] > '9') {
+        throw TitleProfileError(
+            "audio.sound_pool.path_pattern resource placeholder is invalid");
+    }
+}
+
 template <typename Value>
 void RequireUnique(const std::vector<Value>& values, const std::string_view field) {
     std::set<Value> unique(values.begin(), values.end());
@@ -380,7 +401,7 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
 
 [[nodiscard]] ProfileAudio DecodeAudio(const detail::TomlValue& value) {
     const auto& table = AsTable(value, "audio");
-    ExactKeys(table, "audio", {"cover_music"});
+    ExactKeys(table, "audio", {"cover_music", "sound_pool"});
     ProfileAudio result;
     if (const auto* music = Optional(table, "cover_music")) {
         const auto& cover = AsTable(*music, "audio.cover_music");
@@ -397,6 +418,23 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
         decoded.loop = AsBoolean(Require(cover, "loop", "audio.cover_music.loop"),
                                  "audio.cover_music.loop");
         result.cover_music = std::move(decoded);
+    }
+    if (const auto* sound_pool = Optional(table, "sound_pool")) {
+        const auto& bank = AsTable(*sound_pool, "audio.sound_pool");
+        ExactKeys(bank, "audio.sound_pool", {"source", "path_pattern"},
+                  {"source", "path_pattern"});
+        ProfileSoundPool decoded;
+        decoded.source = DecodeSource(
+            AsString(Require(bank, "source", "audio.sound_pool.source"),
+                     "audio.sound_pool.source"),
+            "audio.sound_pool.source");
+        decoded.path_pattern = AsString(
+            Require(bank, "path_pattern", "audio.sound_pool.path_pattern"),
+            "audio.sound_pool.path_pattern");
+        ValidateRelativePath(decoded.path_pattern,
+                             "audio.sound_pool.path_pattern");
+        ValidateSoundPoolPathPattern(decoded.path_pattern);
+        result.sound_pool = std::move(decoded);
     }
     return result;
 }

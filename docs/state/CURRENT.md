@@ -33,6 +33,10 @@
 
 ## 最近完成
 
+- [WU-0293] M5 出口新增游戏声音/音效真实输出要求；Title Profile 可用唯一受检
+  `{resource}` / `{resource:0N}` 占位符声明 SoundPool source 与规范资源路径，首个目标的
+  raw-resource 命名差异仅存在 Profile 数据中；macOS-arm64 + ANGLE warnings-as-errors
+  配置、构建及全量 CTest 421/421 通过。
 - [WU-0292] Debug 帧路径已移除冗余 `glFinish`、ANGLE readback 宿主行翻转、帧 RGBA8
   重复分配、Bionic 小块内存 HLE 临时堆分配及 GLES1 legacy 整状态复制；用户以同一
   exact-APK 主菜单确认最高 22.2 FPS，达到游戏自身封锁帧率，上一基线约 13.7 FPS；
@@ -81,9 +85,9 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 建立可自动判定的 exact-APK 主界面/readback 检查，替代本次人工视觉验收。
-2. 为 SoundPool pending request 接入声明式 APK raw-resource 解析，再推进解码与 HAL 输出。
-3. 按 exact-APK 后续真实调用证据，批量闭合类/实例及字段/数组/字符串 JNI 槽。
+1. 按 WU-0294 对 Profile 已解析的编码资源增加受限 Ogg Vorbis 解码。
+2. 按 WU-0295/0296 接入 SoundPool 混音、运行时控制与 SDL3 宿主输出。
+3. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 
 ## 阻塞
 

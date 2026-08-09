@@ -14,6 +14,8 @@ height = 480
 [quirks]
 enabled = ["gles1_material_front_face"]
 [quirks.gles1_material_front_face]
+[audio]
+sound_pool = { source = "apk", path_pattern = "res/raw/raw_{resource:03}.ogg" }
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
@@ -62,7 +64,6 @@ method = "nativeIsRunning"
 signature = "(Z)V"
 dispatch = "static"
 arguments = [{ source = "constant", value = 1 }]
-
 [[runtime.native_call]]
 phase = "resume"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
@@ -70,7 +71,6 @@ method = "nativeCheckwifi"
 signature = "(Z)V"
 dispatch = "static"
 arguments = [{ source = "constant", value = 0 }]
-
 [[runtime.native_call]]
 phase = "resume"
 class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"

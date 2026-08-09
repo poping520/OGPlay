@@ -23,7 +23,7 @@ note = "M0 空会话支持 open/close/state；M1 装配 guest"
 [session.title_profile_schema]
 status = "complete"
 test = "tools/validate_title_profiles.py --self-test; tests/session/title_profile_tests.cpp"
-note = "M5 冻结 Title Profile v1 schema，并由 Python 目录门禁及 C++ 强类型加载共同覆盖 identity/runtime/data/audio/java/quirks/input、UTF-8 和 200 行上限"
+note = "M5 冻结 Title Profile v1 schema，并由 Python 目录门禁及 C++ 强类型加载共同覆盖 identity/runtime/data/audio/java/quirks/input、UTF-8 和 200 行上限；WU-0293 增加受检纯数据 SoundPool source/path_pattern"
 
 [session.title_profile_loader]
 status = "complete"
@@ -68,7 +68,7 @@ note = "M5 WU-0209 提供不可变 code-defined 通用 mapper 目录；Profile i
 [session.profile_audio]
 status = "complete"
 test = "tests/session/profile_audio_tests.cpp"
-note = "M5 WU-0210 以 source + path 精确解析 Profile 封面音乐编码资源并保留 loop 事实；缺失、重复、空资源和播放器失败均明确暴露，不声明真实解码或设备播放能力"
+note = "M5 WU-0210 以 source + path 精确解析 Profile 封面音乐编码资源并保留 loop 事实；WU-0293 将非负 SoundPool resource 按唯一受检占位符确定性映射为 source + 规范路径；两者均不把资源路径解析伪装成解码或设备播放"
 
 [session.profile_plan]
 status = "complete"

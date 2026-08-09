@@ -29,7 +29,8 @@ public:
         ogplay::session::ProfileSource::apk) {
     ogplay::session::TitleProfile profile;
     profile.audio = ogplay::session::ProfileAudio{
-        ogplay::session::ProfileCoverMusic{source, "res/raw/music.ogg", true}};
+        ogplay::session::ProfileCoverMusic{source, "res/raw/music.ogg", true},
+        std::nullopt};
     return profile;
 }
 
@@ -107,4 +108,25 @@ TEST_CASE("Profile audio propagates player failures") {
             ogplay::session::ApplyProfileAudio(profile, resources, player)),
         "player rejected music");
     CHECK(player.calls == 1);
+}
+
+TEST_CASE("Profile SoundPool path formatting is declarative and bounded") {
+    ogplay::session::TitleProfile profile;
+    CHECK_FALSE(ogplay::session::ResolveProfileSoundPoolPath(profile, 7)
+                    .has_value());
+    profile.audio = ogplay::session::ProfileAudio{
+        std::nullopt,
+        ogplay::session::ProfileSoundPool{
+            ogplay::session::ProfileSource::apk,
+            "res/raw/fx_{resource:03}.ogg"}};
+    const auto path =
+        ogplay::session::ResolveProfileSoundPoolPath(profile, 7);
+    REQUIRE(path.has_value());
+    CHECK(path->source == ogplay::session::ProfileSource::apk);
+    CHECK(path->path == "res/raw/fx_007.ogg");
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(
+            ogplay::session::ResolveProfileSoundPoolPath(profile, -1)),
+        "SoundPool resource must be non-negative",
+        ogplay::session::ProfileAudioError);
 }

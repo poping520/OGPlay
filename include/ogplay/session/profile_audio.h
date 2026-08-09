@@ -23,6 +23,11 @@ struct ProfileAudioPlan final {
     bool loop{};
 };
 
+struct ProfileSoundPoolPath final {
+    ProfileSource source{ProfileSource::apk};
+    std::string path;
+};
+
 class ProfileAudioError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -36,5 +41,9 @@ public:
     const TitleProfile& profile,
     std::span<const ProfileAudioResource> resources,
     audio::MusicPlayer& player);
+
+[[nodiscard]] std::optional<ProfileSoundPoolPath>
+ResolveProfileSoundPoolPath(const TitleProfile& profile,
+                            std::int32_t resource);
 
 }  // namespace ogplay::session

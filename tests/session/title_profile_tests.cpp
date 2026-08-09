@@ -58,6 +58,7 @@ constexpr std::string_view kHashB =
            "\n"
            "[audio]\n"
            "cover_music = { source = \"apk\", path = \"res/raw/music.ogg\", loop = true }\n"
+           "sound_pool = { source = \"apk\", path_pattern = \"res/raw/fx_{resource:03}.ogg\" }\n"
            "\n"
            "[[java.class]]\n"
            "name = \"org/example/Legacy\"\n"
@@ -286,6 +287,11 @@ TEST_CASE("Title Profile data and audio stay declarative and normalized") {
     REQUIRE(profile.audio->cover_music.has_value());
     CHECK(profile.audio->cover_music->path == "res/raw/music.ogg");
     CHECK(profile.audio->cover_music->loop);
+    REQUIRE(profile.audio->sound_pool.has_value());
+    CHECK(profile.audio->sound_pool->source ==
+          ogplay::session::ProfileSource::apk);
+    CHECK(profile.audio->sound_pool->path_pattern ==
+          "res/raw/fx_{resource:03}.ogg");
 
     auto escaping = CompleteProfile();
     escaping.replace(escaping.find("/sdcard/game"), std::string("/sdcard/game").size(),
@@ -308,6 +314,16 @@ TEST_CASE("Title Profile data and audio stay declarative and normalized") {
     CHECK_THROWS_AS(static_cast<void>(ogplay::session::LoadTitleProfileText(
                         bad_type, "org.example.legacy")),
                     ogplay::session::TitleProfileError);
+
+    auto bad_pattern = CompleteProfile();
+    bad_pattern.replace(bad_pattern.find("{resource:03}"),
+                        std::string("{resource:03}").size(),
+                        "{resource:00}");
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(ogplay::session::LoadTitleProfileText(
+            bad_pattern, "org.example.legacy")),
+        "audio.sound_pool.path_pattern resource placeholder is invalid",
+        ogplay::session::TitleProfileError);
 }
 
 TEST_CASE("Title Profile Java quirks and input decode without executable content") {

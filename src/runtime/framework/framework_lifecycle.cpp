@@ -191,4 +191,20 @@ std::vector<FrameworkLifecycleEvent> FrameworkLifecycleHle::Events() const {
     return impl_->Events();
 }
 
+void FrameworkScreenPolicyState::SetSleepAllowed(const bool allowed) {
+    std::scoped_lock lock(mutex_);
+    sleep_allowed_ = allowed;
+    ++request_count_;
+}
+
+std::optional<bool> FrameworkScreenPolicyState::SleepAllowed() const {
+    std::scoped_lock lock(mutex_);
+    return sleep_allowed_;
+}
+
+std::uint64_t FrameworkScreenPolicyState::RequestCount() const {
+    std::scoped_lock lock(mutex_);
+    return request_count_;
+}
+
 }  // namespace ogplay::runtime

@@ -303,6 +303,7 @@ void AndroidBoundaryGles1State::Reset() {
     hints_.fill(kGles1DontCare);
     active_texture_ = 0x84C0U;
     bound_textures_.clear();
+    texture_base_formats_.clear();
     generate_mipmap_.clear();
     capabilities_.clear();
     transfer_state_ = {};
@@ -366,11 +367,32 @@ void AndroidBoundaryGles1State::DeleteTextures(
     const std::span<const std::uint32_t> textures) noexcept {
     for (const auto texture : textures) {
         generate_mipmap_.erase(texture);
+        texture_base_formats_.erase(texture);
         for (auto& [unit, bound] : bound_textures_) {
             static_cast<void>(unit);
             if (bound == texture) bound = 0U;
         }
     }
+}
+
+void AndroidBoundaryGles1State::SetTextureBaseFormat(
+    const std::uint32_t target, const std::uint32_t format) {
+    if (target != 0x0DE1U) {
+        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+    }
+    texture_base_formats_[bound_textures_[active_texture_]] = format;
+}
+
+std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
+    const std::uint32_t target) const {
+    if (target != 0x0DE1U) {
+        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+    }
+    const auto bound = bound_textures_.find(active_texture_);
+    const auto texture = bound == bound_textures_.end() ? 0U : bound->second;
+    const auto found = texture_base_formats_.find(texture);
+    if (found == texture_base_formats_.end()) return std::nullopt;
+    return found->second;
 }
 
 void AndroidBoundaryGles1State::SetGenerateMipmap(

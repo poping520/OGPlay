@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -74,6 +75,9 @@ public:
     [[nodiscard]] std::uint32_t ActiveTexture() const noexcept;
     void BindTexture(std::uint32_t target, std::uint32_t texture);
     void DeleteTextures(std::span<const std::uint32_t> textures) noexcept;
+    void SetTextureBaseFormat(std::uint32_t target, std::uint32_t format);
+    [[nodiscard]] std::optional<std::uint32_t> TextureBaseFormat(
+        std::uint32_t target) const;
     void SetGenerateMipmap(std::uint32_t target, bool enabled);
     [[nodiscard]] bool GenerateMipmapEnabled(std::uint32_t target) const;
     void SetCapability(std::uint32_t capability, bool enabled);
@@ -90,6 +94,7 @@ private:
                                        kGles1DontCare};
     std::uint32_t active_texture_{0x84C0U};
     std::map<std::uint32_t, std::uint32_t> bound_textures_;
+    std::map<std::uint32_t, std::uint32_t> texture_base_formats_;
     std::map<std::uint32_t, bool> generate_mipmap_;
     std::map<std::uint64_t, bool> capabilities_;
     gles::GlesTransferState transfer_state_;

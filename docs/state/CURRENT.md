@@ -29,11 +29,16 @@
 
 ## 进行中
 
-- 无。目标 ELF 的 62 个 GL import 已全部具有显式行为 handler；exact-APK 在一帧边界
-  正常停止。matrix-palette skinning 与 fixed renderer 完整语义仍按能力账本保持 partial。
+- 无。目标 ELF 的 62 个 GL import 已全部具有显式行为 handler；exact-APK 已进入游戏
+  主界面。matrix-palette skinning 与 fixed renderer 完整语义仍按能力账本保持 partial。
 
 ## 最近完成
 
+- [WU-0284] fixed renderer 已按 texture object 的 level-0 base format 消费
+  MODULATE/REPLACE/ADD 与单纹理完整 COMBINE 状态；exact-APK 越过三个真实边界并由用户
+  确认进入游戏主界面，517 帧后正常停止且状态 0。
+- [WU-0283] `display.change_mode` 已映射为线程安全的通用允许休眠/保持唤醒请求状态；
+  exact-APK 越过该 Java handler。宿主防休眠控制尚未接入，能力保持 partial。
 - [WU-0282] SoundPool voice control 家族已批量闭合：普通/big pause、resume、stop、volume，
   普通 pool pitch 与 big reset 共 10 个 handler 驱动同一受检状态。exact-APK 无界运行约
   90 秒、1323 帧后正常停止且状态 0；帧存活不替代语言界面视觉验收。
@@ -43,35 +48,6 @@
 - [WU-0280] Java SoundPool 已加载资源以类别 + resource 的通用键线程安全建账；
   `is_sound_loaded` / `is_sound_loaded_big` 查询目录事实，`unload_sound` /
   `unload_sound_big` 精确删除同一键。exact-APK 120 帧及 shutdown 均以状态 0 完成。
-- [WU-0279] 统一 JNI invocation engine 的 missing-handler 错误现携带已解析的规范
-  implementation ID；exact-APK 下一边界由不透明错误精确定位为
-  `audio.is_sound_loaded_big`。
-- [WU-0278] Java SoundPool 状态已扩展为线程安全、按普通 pool / big 分类的通用 voice
-  目录；`stop_all_sounds`、`stop_all_pool`、`stop_all_big` 三个 handler 批量闭合，分类
-  stop 支持保留指定 resource。exact-APK 120 帧及 shutdown 均以状态 0 完成。
-- [WU-0277] exact-APK frame call 9 首个缺失 implementation 已确认为
-  `audio.destroy_sound_pool`，并与紧随其后的 `audio.init_sound_pool_array` 一并接入会话
-  拥有的幂等 SoundPool 生命周期。2 帧 smoke 状态 0；120 帧可运行至 shutdown，下一精确
-  边界为 `nativeDestroy` 中的 `audio.stop_all_sounds`。
-- [WU-0276] `CallStaticObject/Boolean/Byte/Char/Short/Int/Long/Float/Double/VoidMethod`
-  的普通、`V`、`A` 共 30 个 guest 槽已批量闭合；三种 A32 参数布局与所有返回位型均由
-  descriptor 驱动并进入统一 invocation engine。用户报告的 `CallStaticVoidMethod`
-  unbound 边界已消除，exact-APK 一帧 smoke 以状态 0 完成。
-- [WU-0275] 最后 3 个 `GL_OES_matrix_palette` import 已进入受检、可重置的 palette index
-  与 client pointer 状态；未完成的 skinning draw 明确失败。目标 62/62 GL import 均有
-  行为 handler，exact-APK 一帧 smoke 继续以状态 0 完成。
-- [WU-0274] 批量闭合 4 种 client pointer、enable/disable client state 与两种 draw；guest
-  array/index 按真实 draw 范围预检上传，内部 GLES2 fixed shader 消费矩阵、颜色、light0、
-  texture、fog 与 alpha state。exact-APK 首次成功提交 1 个 managed ANGLE frame。
-- [WU-0273] 一次批量闭合 `glCompressedTexImage2D`、`glCopyTexImage2D`、
-  `glTexImage2D` 与 `glTexSubImage2D`，guest 像素受检搬运并在 level 0 消费 automatic
-  mipmap 状态。exact-APK 推进到 `glEnableClientState`。
-- [WU-0272] 一次批量闭合 `glAlphaFunc`、`glClientActiveTexture`、`glColor4f/ub`、
-  `glGetFloatv`、`glTexEnvfv/i`；最大 anisotropy 来自真实 ANGLE，其他 legacy 状态按
-  context/texture unit 保存。exact-APK 推进到 `glCompressedTexImage2D`。
-- [WU-0271] GLES1 `GL_GENERATE_MIPMAP` 已按 active unit 与 texture object 隔离保存，
-  delete/reset 同步且不再错误转发 GLES2；exact-APK 推进到 `glGetFloatv`。自动生成消费
-  留待 texture upload，能力保持 partial。
 
 ## 目标 ELF 尚未实现的 GL 入口
 
@@ -83,7 +59,7 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 建立可自动判定的 exact-APK 启动画面/readback 检查，验证语言界面而非仅统计帧数。
+1. 建立可自动判定的 exact-APK 主界面/readback 检查，替代本次人工视觉验收。
 2. 为 SoundPool pending request 接入声明式 APK raw-resource 解析，再推进解码与 HAL 输出。
 3. 按 exact-APK 后续真实调用证据，批量闭合类/实例及字段/数组/字符串 JNI 槽。
 

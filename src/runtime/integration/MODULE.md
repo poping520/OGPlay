@@ -64,8 +64,10 @@
   管线通过内部 GLES2 shader 消费 modelview/projection/texture matrix、current/array color、
   light0、texture、fog 与 alpha-test 状态；guest buffer binding 在内部上传后必须恢复。
   `glDrawArrays` 以受检 `GLushort` 顺序索引等价执行，超过 65535 明确失败。当前 renderer
-  只支持单个 active texture、`GL_MODULATE`、light0 与 modelview 上三阶 normal matrix；
-  其他 texture environment 或 opaque EBO 配合 guest client array 必须明确失败。
+  支持单个 active texture 的格式敏感 MODULATE/REPLACE/ADD 与完整单纹理 COMBINE 状态，
+  以及 light0 与 modelview 上三阶 normal matrix；DECAL/BLEND、其他 texture environment
+  或 opaque EBO 配合 guest client array 必须明确失败。level-0 base format 按 texture object
+  保存并随 delete/reset 清理，未知格式不得猜测组合语义。
 - 三个 `GL_OES_matrix_palette` 入口绑定在独立 extension dispatch：current palette index
   限定 0..31，matrix-index/weight pointer 延迟保存调用时 array-buffer binding，类型、size
   与 stride 受检且随 context reset。两类数组可由标准 client-state 入口启用；完整 skinning
@@ -115,6 +117,9 @@
   voice；pause/resume/stop、volume、pitch 与 reset handler 均驱动同一 voice 状态，目标
   不存在或参数无效时不伪造迁移；这些状态不伪造解码、playback 或音频输出；
   Profile phase、窗口和标题事实不得进入该会话。
+- `display.change_mode` 按 legacy Java 契约把 mode `1` 记录为允许屏幕休眠，其他值记录为
+  保持唤醒；请求进入线程安全的通用 framework 状态。宿主防休眠尚未接入时不得宣称已
+  改变平台窗口策略。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和

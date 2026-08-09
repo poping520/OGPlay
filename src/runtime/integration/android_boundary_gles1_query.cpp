@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -42,6 +43,31 @@ void RequireTextureEnvironmentMode(const float value) {
             modes.end()) {
         throw std::invalid_argument("GLES1 texture environment mode is invalid");
     }
+}
+
+[[nodiscard]] bool IsOneOf(const std::uint32_t value,
+                           const std::span<const std::uint32_t> values) {
+    return std::ranges::find(values, value) != values.end();
+}
+
+void RequireIntegralTextureValue(const float value,
+                                 const std::span<const std::uint32_t> allowed,
+                                 const char* message) {
+    if (!std::isfinite(value) || value < 0.0F || value != std::floor(value) ||
+        !IsOneOf(static_cast<std::uint32_t>(value), allowed)) {
+        throw std::invalid_argument(message);
+    }
+}
+
+[[nodiscard]] bool IsScalarTextureEnvironmentPname(
+    const std::uint32_t pname) noexcept {
+    return pname == kGles1TextureEnvironmentMode ||
+           pname == kGles1CombineRgb || pname == kGles1CombineAlpha ||
+           pname == kGles1RgbScale || pname == kGles1AlphaScale ||
+           (pname >= kGles1Source0Rgb && pname <= kGles1Source2Rgb) ||
+           (pname >= kGles1Source0Alpha && pname <= kGles1Source2Alpha) ||
+           (pname >= kGles1Operand0Rgb && pname <= kGles1Operand2Rgb) ||
+           (pname >= kGles1Operand0Alpha && pname <= kGles1Operand2Alpha);
 }
 
 [[nodiscard]] std::vector<float> ReadGuestFloats(
@@ -187,6 +213,30 @@ void AndroidBoundaryGles1LegacyState::Reset() {
         texture_environment_[TextureEnvironmentKey(
             texture, kGles1TextureEnvironmentColor)] =
             {0.0F, 0.0F, 0.0F, 0.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1CombineRgb)] =
+            {8448.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1CombineAlpha)] =
+            {8448.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1RgbScale)] = {1.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1AlphaScale)] = {1.0F};
+        for (const auto pname : {kGles1Source0Rgb, kGles1Source0Alpha}) {
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {5890.0F};
+        }
+        for (const auto pname : {kGles1Source1Rgb, kGles1Source1Alpha}) {
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {34168.0F};
+        }
+        for (const auto pname : {kGles1Source2Rgb, kGles1Source2Alpha}) {
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {34166.0F};
+        }
+        for (const auto pname : {kGles1Operand0Rgb, kGles1Operand1Rgb}) {
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {768.0F};
+        }
+        texture_environment_[TextureEnvironmentKey(texture, kGles1Operand2Rgb)] =
+            {770.0F};
+        for (const auto pname : {kGles1Operand0Alpha, kGles1Operand1Alpha,
+                                 kGles1Operand2Alpha}) {
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {770.0F};
+        }
     }
 }
 
@@ -239,8 +289,45 @@ void AndroidBoundaryGles1LegacyState::SetTextureEnvironment(
             })) {
             throw std::invalid_argument("GLES1 texture environment color is invalid");
         }
+    } else if (values.size() == 1U &&
+               (pname == kGles1CombineRgb || pname == kGles1CombineAlpha)) {
+        constexpr std::array combine_modes{
+            0x0104U, 0x1E01U, 0x2100U, 0x84E7U,
+            0x8574U, 0x8575U, 0x86AEU, 0x86AFU};
+        RequireIntegralTextureValue(values.front(), combine_modes,
+                                    "GLES1 texture combine function is invalid");
+        const auto mode = static_cast<std::uint32_t>(values.front());
+        if (pname == kGles1CombineAlpha &&
+            (mode == 0x86AEU || mode == 0x86AFU)) {
+            throw std::invalid_argument(
+                "GLES1 alpha combine function cannot use DOT3");
+        }
+    } else if (values.size() == 1U &&
+               (pname == kGles1RgbScale || pname == kGles1AlphaScale)) {
+        constexpr std::array scales{1U, 2U, 4U};
+        RequireIntegralTextureValue(values.front(), scales,
+                                    "GLES1 texture combine scale is invalid");
+    } else if (values.size() == 1U &&
+               ((pname >= kGles1Source0Rgb && pname <= kGles1Source2Rgb) ||
+                (pname >= kGles1Source0Alpha && pname <= kGles1Source2Alpha))) {
+        constexpr std::array sources{0x1702U, 0x8576U, 0x8577U, 0x8578U};
+        RequireIntegralTextureValue(values.front(), sources,
+                                    "GLES1 texture combine source is invalid");
+    } else if (values.size() == 1U &&
+               ((pname >= kGles1Operand0Rgb && pname <= kGles1Operand2Rgb) ||
+                (pname >= kGles1Operand0Alpha && pname <= kGles1Operand2Alpha))) {
+        constexpr std::array operands{0x0300U, 0x0301U, 0x0302U, 0x0303U};
+        RequireIntegralTextureValue(values.front(), operands,
+                                    "GLES1 texture combine operand is invalid");
+        if (pname >= kGles1Operand0Alpha &&
+            static_cast<std::uint32_t>(values.front()) < 0x0302U) {
+            throw std::invalid_argument(
+                "GLES1 alpha combine operand must select alpha");
+        }
     } else {
-        throw std::invalid_argument("GLES1 texture environment pname is unsupported");
+        throw std::invalid_argument(
+            "GLES1 texture environment pname is unsupported: " +
+            std::to_string(pname));
     }
     auto stored = std::vector<float>(values.begin(), values.end());
     if (pname == kGles1TextureEnvironmentColor) {
@@ -362,10 +449,10 @@ void BindAndroidBoundaryGles1Legacy(
         [&legacy, &core, &address_space, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t thread_id) {
-            const auto count = arguments[1] == kGles1TextureEnvironmentMode
-                                   ? 1U
-                                   : arguments[1] == kGles1TextureEnvironmentColor
-                                         ? 4U
+            const auto count = arguments[1] == kGles1TextureEnvironmentColor
+                                   ? 4U
+                                   : IsScalarTextureEnvironmentPname(arguments[1])
+                                         ? 1U
                                          : 0U;
             if (count == 0U) {
                 throw std::invalid_argument(
@@ -482,6 +569,9 @@ void BindAndroidBoundaryGles1Textures(
                 SignedTextureValue(arguments[5]), data.Bytes());
             GenerateAutomaticMipmap(state, frame, arguments[0],
                                     SignedTextureValue(arguments[1]));
+            if (SignedTextureValue(arguments[1]) == 0) {
+                state.SetTextureBaseFormat(arguments[0], arguments[2]);
+            }
             return 0U;
         });
     dispatch.Bind(
@@ -497,6 +587,9 @@ void BindAndroidBoundaryGles1Textures(
                 SignedTextureValue(arguments[7]));
             GenerateAutomaticMipmap(state, frame, arguments[0],
                                     SignedTextureValue(arguments[1]));
+            if (SignedTextureValue(arguments[1]) == 0) {
+                state.SetTextureBaseFormat(arguments[0], arguments[2]);
+            }
             return 0U;
         });
     dispatch.Bind(
@@ -518,6 +611,11 @@ void BindAndroidBoundaryGles1Textures(
                     : std::optional<std::span<const std::byte>>(pixels.Bytes()));
             GenerateAutomaticMipmap(state, frame, arguments[0],
                                     SignedTextureValue(arguments[1]));
+            if (SignedTextureValue(arguments[1]) == 0) {
+                state.SetTextureBaseFormat(
+                    arguments[0], static_cast<std::uint32_t>(
+                                      SignedTextureValue(arguments[2])));
+            }
             return 0U;
         });
     dispatch.Bind(

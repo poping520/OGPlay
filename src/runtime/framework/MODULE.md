@@ -3,7 +3,7 @@
 ## 职责
 
 提供所有游戏共用的声明式 Java 框架 HLE，目前覆盖 Activity 生命周期、Asset/InputStream、
-SharedPreferences、Locale 和当前包 PackageInfo。
+SharedPreferences、Locale、当前包 PackageInfo 和窗口屏幕策略状态。
 
 ## 依赖
 
@@ -16,6 +16,8 @@ execution、integration 或游戏 profile。
 - 直接资源 HLE 只接受调用方提供的三个唯一 implementation id；路径按 legacy Java
   前缀/trim 规则规范化后只能读取 `/apk/assets/` 下来源为 APK 的受检文件，结果必须进入
   统一 primitive array store。
+- `FrameworkScreenPolicyState` 线程安全保存最近一次允许宿主屏幕休眠/保持唤醒请求与请求
+  计数；状态未请求时必须保持未知，不能伪造默认窗口策略。
 - 服务未安装或能力未实现时明确失败，不模拟完整 Android services。
 - `src/` 不得出现游戏、厂商或包名特判。
 

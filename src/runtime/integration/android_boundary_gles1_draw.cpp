@@ -28,6 +28,44 @@ constexpr std::uint32_t kByte = 0x1400U;
 constexpr std::uint32_t kUnsignedByte = 0x1401U;
 constexpr std::uint32_t kShort = 0x1402U;
 constexpr std::uint32_t kUnsignedShort = 0x1403U;
+constexpr std::uint32_t kTexture2d = 0x0DE1U;
+constexpr std::uint32_t kModulate = 0x2100U;
+constexpr std::uint32_t kReplace = 0x1E01U;
+constexpr std::uint32_t kAdd = 0x0104U;
+constexpr std::uint32_t kCombine = 0x8570U;
+
+enum class TextureFormatClass : std::int32_t {
+    alpha,
+    color,
+    color_alpha,
+};
+
+[[nodiscard]] TextureFormatClass ClassifyTextureFormat(
+    const std::uint32_t format) {
+    switch (format) {
+    case 0x1906U: return TextureFormatClass::alpha;  // GL_ALPHA
+    case 0x1907U:                                  // GL_RGB
+    case 0x1909U:                                  // GL_LUMINANCE
+    case 0x8D64U:                                  // GL_ETC1_RGB8_OES
+    case 0x83F0U:                                  // DXT1 RGB
+    case 0x8C00U:                                  // PVRTC RGB 4bpp
+    case 0x8C01U:                                  // PVRTC RGB 2bpp
+    case 0x8C92U: return TextureFormatClass::color; // ATC RGB
+    case 0x1908U:                                  // GL_RGBA
+    case 0x190AU:                                  // GL_LUMINANCE_ALPHA
+    case 0x83F1U:                                  // DXT1 RGBA
+    case 0x83F2U:                                  // DXT3 RGBA
+    case 0x83F3U:                                  // DXT5 RGBA
+    case 0x8C02U:                                  // PVRTC RGBA 4bpp
+    case 0x8C03U:                                  // PVRTC RGBA 2bpp
+    case 0x8C93U:                                  // ATC explicit alpha
+    case 0x87EEU: return TextureFormatClass::color_alpha; // ATC interpolated alpha
+    default:
+        throw std::runtime_error(
+            "GLES1 fixed draw does not classify texture base format " +
+            std::to_string(format));
+    }
+}
 
 [[nodiscard]] std::size_t ScalarBytes(const std::uint32_t type) {
     switch (type) {
@@ -247,6 +285,25 @@ void main() {
 precision mediump float;
 uniform sampler2D u_texture;
 uniform float u_texture_enabled;
+uniform int u_texture_environment;
+uniform int u_texture_format;
+uniform vec4 u_environment_color;
+uniform int u_combine_rgb;
+uniform int u_combine_alpha;
+uniform int u_source_rgb0;
+uniform int u_source_rgb1;
+uniform int u_source_rgb2;
+uniform int u_source_alpha0;
+uniform int u_source_alpha1;
+uniform int u_source_alpha2;
+uniform int u_operand_rgb0;
+uniform int u_operand_rgb1;
+uniform int u_operand_rgb2;
+uniform int u_operand_alpha0;
+uniform int u_operand_alpha1;
+uniform int u_operand_alpha2;
+uniform float u_rgb_scale;
+uniform float u_alpha_scale;
 uniform float u_fog_enabled;
 uniform int u_fog_mode;
 uniform float u_fog_density;
@@ -259,9 +316,62 @@ uniform float u_alpha_reference;
 varying vec4 v_color;
 varying vec2 v_texcoord;
 varying float v_fog_distance;
+vec4 sourceValue(int source, vec4 texel, vec4 primary) {
+  if (source == 5890) return texel;
+  if (source == 34166) return u_environment_color;
+  return primary;
+}
+vec3 rgbOperand(int operand, vec4 value) {
+  if (operand == 768) return value.rgb;
+  if (operand == 769) return vec3(1.0) - value.rgb;
+  if (operand == 770) return vec3(value.a);
+  return vec3(1.0 - value.a);
+}
+float alphaOperand(int operand, vec4 value) {
+  return operand == 770 ? value.a : 1.0 - value.a;
+}
+vec3 combineRgb(vec3 a, vec3 b, vec3 c) {
+  if (u_combine_rgb == 7681) return a;
+  if (u_combine_rgb == 8448) return a * b;
+  if (u_combine_rgb == 260) return a + b;
+  if (u_combine_rgb == 34164) return a + b - vec3(0.5);
+  if (u_combine_rgb == 34165) return a * c + b * (vec3(1.0) - c);
+  if (u_combine_rgb == 34023) return a - b;
+  return vec3(4.0 * dot(a - vec3(0.5), b - vec3(0.5)));
+}
+float combineAlpha(float a, float b, float c) {
+  if (u_combine_alpha == 7681) return a;
+  if (u_combine_alpha == 8448) return a * b;
+  if (u_combine_alpha == 260) return a + b;
+  if (u_combine_alpha == 34164) return a + b - 0.5;
+  if (u_combine_alpha == 34165) return a * c + b * (1.0 - c);
+  return a - b;
+}
 void main() {
   vec4 color = v_color;
-  if (u_texture_enabled > 0.5) color *= texture2D(u_texture, v_texcoord);
+  if (u_texture_enabled > 0.5) {
+    vec4 texel = texture2D(u_texture, v_texcoord);
+    if (u_texture_environment == 34160) {
+      vec4 rs0 = sourceValue(u_source_rgb0, texel, v_color);
+      vec4 rs1 = sourceValue(u_source_rgb1, texel, v_color);
+      vec4 rs2 = sourceValue(u_source_rgb2, texel, v_color);
+      vec4 as0 = sourceValue(u_source_alpha0, texel, v_color);
+      vec4 as1 = sourceValue(u_source_alpha1, texel, v_color);
+      vec4 as2 = sourceValue(u_source_alpha2, texel, v_color);
+      color.rgb = clamp(combineRgb(rgbOperand(u_operand_rgb0, rs0), rgbOperand(u_operand_rgb1, rs1), rgbOperand(u_operand_rgb2, rs2)) * u_rgb_scale, 0.0, 1.0);
+      color.a = clamp(combineAlpha(alphaOperand(u_operand_alpha0, as0), alphaOperand(u_operand_alpha1, as1), alphaOperand(u_operand_alpha2, as2)) * u_alpha_scale, 0.0, 1.0);
+      if (u_combine_rgb == 34479) color.a = color.r;
+    } else if (u_texture_environment == 7681) {
+      if (u_texture_format != 0) color.rgb = texel.rgb;
+      if (u_texture_format != 1) color.a = texel.a;
+    } else if (u_texture_environment == 260) {
+      if (u_texture_format != 0) color.rgb = min(color.rgb + texel.rgb, vec3(1.0));
+      if (u_texture_format != 1) color.a *= texel.a;
+    } else {
+      if (u_texture_format != 0) color.rgb *= texel.rgb;
+      if (u_texture_format != 1) color.a *= texel.a;
+    }
+  }
   float fog = clamp((u_fog_end - v_fog_distance) /
                     max(u_fog_end - u_fog_start, 0.00001), 0.0, 1.0);
   if (u_fog_mode == 1) fog = clamp(exp(-u_fog_density * v_fog_distance), 0.0, 1.0);
@@ -315,6 +425,13 @@ void main() {
         "u_light_ambient", "u_light_diffuse", "u_light_position",
         "u_material_ambient", "u_material_diffuse", "u_has_color",
         "u_has_normal", "u_lighting", "u_texture", "u_texture_enabled",
+        "u_texture_environment", "u_texture_format",
+        "u_environment_color", "u_combine_rgb", "u_combine_alpha",
+        "u_source_rgb0", "u_source_rgb1", "u_source_rgb2",
+        "u_source_alpha0", "u_source_alpha1", "u_source_alpha2",
+        "u_operand_rgb0", "u_operand_rgb1", "u_operand_rgb2",
+        "u_operand_alpha0", "u_operand_alpha1", "u_operand_alpha2",
+        "u_rgb_scale", "u_alpha_scale",
         "u_fog_enabled", "u_fog_mode", "u_fog_density", "u_fog_start",
         "u_fog_end", "u_fog_color", "u_alpha_enabled", "u_alpha_function",
         "u_alpha_reference"};
@@ -420,10 +537,59 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
                     static_cast<std::int32_t>(core.ActiveTexture() - kTexture0));
     frame.Uniform1f(uniform("u_texture_enabled"),
                     core.Capability(0x0DE1U) ? 1.0F : 0.0F);
-    if (legacy.TextureEnvironment(core.ActiveTexture(),
-                                  kGles1TextureEnvironmentMode)[0] != 8448.0F) {
-        throw std::runtime_error("GLES1 draw only supports GL_MODULATE texture environment");
+    const auto texture_environment = static_cast<std::uint32_t>(
+        legacy.TextureEnvironment(core.ActiveTexture(),
+                                  kGles1TextureEnvironmentMode)[0]);
+    if (texture_environment != kModulate &&
+        texture_environment != kReplace && texture_environment != kAdd &&
+        texture_environment != kCombine) {
+        throw std::runtime_error(
+            "GLES1 draw does not implement texture environment mode " +
+            std::to_string(texture_environment));
     }
+    frame.Uniform1i(uniform("u_texture_environment"),
+                    static_cast<std::int32_t>(texture_environment));
+    auto texture_format = TextureFormatClass::color_alpha;
+    if (core.Capability(kTexture2d)) {
+        const auto base_format = core.TextureBaseFormat(kTexture2d);
+        if (!base_format.has_value()) {
+            throw std::runtime_error(
+                "GLES1 textured draw has no level-zero base format");
+        }
+        texture_format = ClassifyTextureFormat(*base_format);
+    }
+    frame.Uniform1i(uniform("u_texture_format"),
+                    static_cast<std::int32_t>(texture_format));
+    const auto environment_value = [&legacy, &core](const std::uint32_t pname) {
+        return legacy.TextureEnvironment(core.ActiveTexture(), pname)[0];
+    };
+    const auto& environment_color = legacy.TextureEnvironment(
+        core.ActiveTexture(), kGles1TextureEnvironmentColor);
+    frame.Uniform4f(uniform("u_environment_color"), environment_color[0],
+                    environment_color[1], environment_color[2],
+                    environment_color[3]);
+    frame.Uniform1i(uniform("u_combine_rgb"), static_cast<std::int32_t>(
+        environment_value(kGles1CombineRgb)));
+    frame.Uniform1i(uniform("u_combine_alpha"), static_cast<std::int32_t>(
+        environment_value(kGles1CombineAlpha)));
+    const auto set3 = [&frame, &uniform, &environment_value](const auto& names,
+                                                             const std::uint32_t first) {
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            frame.Uniform1i(uniform(names[index]), static_cast<std::int32_t>(
+                environment_value(first + static_cast<std::uint32_t>(index))));
+        }
+    };
+    set3(std::array{"u_source_rgb0", "u_source_rgb1", "u_source_rgb2"},
+         kGles1Source0Rgb);
+    set3(std::array{"u_source_alpha0", "u_source_alpha1", "u_source_alpha2"},
+         kGles1Source0Alpha);
+    set3(std::array{"u_operand_rgb0", "u_operand_rgb1", "u_operand_rgb2"},
+         kGles1Operand0Rgb);
+    set3(std::array{"u_operand_alpha0", "u_operand_alpha1", "u_operand_alpha2"},
+         kGles1Operand0Alpha);
+    frame.Uniform1f(uniform("u_rgb_scale"), environment_value(kGles1RgbScale));
+    frame.Uniform1f(uniform("u_alpha_scale"),
+                    environment_value(kGles1AlphaScale));
     frame.Uniform1f(uniform("u_fog_enabled"),
                     core.Capability(0x0B60U) ? 1.0F : 0.0F);
     const auto fog_mode = fixed.Fog(kGles1FogMode)[0];

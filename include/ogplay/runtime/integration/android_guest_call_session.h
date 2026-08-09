@@ -24,10 +24,15 @@ class JavaSoundPoolState;
 namespace ogplay::runtime {
 
 class JniInvocationEngine;
+class FrameworkScreenPolicyState;
 
 void BindAndroidGuestJavaAudioHandlers(
     JniInvocationEngine& invocations,
     audio::JavaSoundPoolState& sound_pool);
+
+void BindAndroidGuestJavaDisplayHandlers(
+    JniInvocationEngine& invocations,
+    FrameworkScreenPolicyState& screen_policy);
 
 struct AndroidGuestCallSessionRequest final {
     std::uint32_t api{19};

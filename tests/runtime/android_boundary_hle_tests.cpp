@@ -160,19 +160,26 @@ TEST_CASE("GLES1 shade model state validates and resets") {
     state.SetCapability(0x0DE1U, true);
     CHECK(state.Capability(0x0DE1U));
     state.BindTexture(0x0DE1U, 7U);
+    CHECK_FALSE(state.TextureBaseFormat(0x0DE1U).has_value());
+    state.SetTextureBaseFormat(0x0DE1U, 0x1908U);
+    REQUIRE(state.TextureBaseFormat(0x0DE1U).has_value());
+    CHECK(*state.TextureBaseFormat(0x0DE1U) == 0x1908U);
     CHECK_FALSE(state.GenerateMipmapEnabled(0x0DE1U));
     state.SetGenerateMipmap(0x0DE1U, true);
     CHECK(state.GenerateMipmapEnabled(0x0DE1U));
     state.SetActiveTexture(0x84C1U);
     CHECK_FALSE(state.Capability(0x0DE1U));
     state.BindTexture(0x0DE1U, 8U);
+    CHECK_FALSE(state.TextureBaseFormat(0x0DE1U).has_value());
     CHECK_FALSE(state.GenerateMipmapEnabled(0x0DE1U));
     state.SetCapability(0x0DE1U, true);
     CHECK(state.Capability(0x0DE1U));
     const std::array deleted_textures{7U};
     state.DeleteTextures(deleted_textures);
     state.SetActiveTexture(0x84C0U);
+    CHECK_FALSE(state.TextureBaseFormat(0x0DE1U).has_value());
     CHECK_FALSE(state.GenerateMipmapEnabled(0x0DE1U));
+    CHECK_FALSE(state.TextureBaseFormat(0x0DE1U).has_value());
     CHECK_THROWS_WITH_AS(
         state.SetGenerateMipmap(0U, true),
         "GLES1 texture target must be GL_TEXTURE_2D", std::invalid_argument);
@@ -646,6 +653,49 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
                                {array}) == 0U);
         }
+        fixture.bus.Write32(fixture.stack, 1U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(4U), 0U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(8U), 0x1908U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(12U), 0x1401U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(16U), texture_pixels.Value(), 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTexImage2D",
+                           {0x0DE1U, 0U, 0x1908U, 1U}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexEnvi",
+                  {ogplay::runtime::detail::kGles1TextureEnvironment,
+                   ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+                   0x1E01U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glEnable",
+                           {0x0DE1U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                           {0x0004U, 0U, 3U}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexEnvi",
+                  {ogplay::runtime::detail::kGles1TextureEnvironment,
+                   ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+                   0x0104U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                           {0x0004U, 0U, 3U}) == 0U);
+        using namespace ogplay::runtime::detail;
+        for (const auto [pname, value] : std::array{
+                 std::pair{kGles1TextureEnvironmentMode, 0x8570U},
+                 std::pair{kGles1CombineRgb, 0x2100U},
+                 std::pair{kGles1CombineAlpha, 0x2100U},
+                 std::pair{kGles1Source0Rgb, 0x1702U},
+                 std::pair{kGles1Source1Rgb, 0x8578U}}) {
+            CHECK(fixture.Call(
+                      "libGLESv1_CM.so", "glTexEnvi",
+                      {kGles1TextureEnvironment, pname, value}) == 0U);
+        }
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                           {0x0004U, 0U, 3U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDisable",
+                           {0x0DE1U}) == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexEnvi",
+                  {ogplay::runtime::detail::kGles1TextureEnvironment,
+                   ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+                   0x2100U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
                            {0x0004U, 0U, 3U}) == 0U);
         const auto indices = fixture.output.Add(0x500U);

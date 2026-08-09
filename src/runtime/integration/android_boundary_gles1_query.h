@@ -35,6 +35,22 @@ inline constexpr std::uint32_t kGles1MaxTextureAnisotropy = 0x84FFU;
 inline constexpr std::uint32_t kGles1TextureEnvironment = 0x2300U;
 inline constexpr std::uint32_t kGles1TextureEnvironmentMode = 0x2200U;
 inline constexpr std::uint32_t kGles1TextureEnvironmentColor = 0x2201U;
+inline constexpr std::uint32_t kGles1CombineRgb = 0x8571U;
+inline constexpr std::uint32_t kGles1CombineAlpha = 0x8572U;
+inline constexpr std::uint32_t kGles1RgbScale = 0x8573U;
+inline constexpr std::uint32_t kGles1AlphaScale = 0x0D1CU;
+inline constexpr std::uint32_t kGles1Source0Rgb = 0x8580U;
+inline constexpr std::uint32_t kGles1Source1Rgb = 0x8581U;
+inline constexpr std::uint32_t kGles1Source2Rgb = 0x8582U;
+inline constexpr std::uint32_t kGles1Source0Alpha = 0x8588U;
+inline constexpr std::uint32_t kGles1Source1Alpha = 0x8589U;
+inline constexpr std::uint32_t kGles1Source2Alpha = 0x858AU;
+inline constexpr std::uint32_t kGles1Operand0Rgb = 0x8590U;
+inline constexpr std::uint32_t kGles1Operand1Rgb = 0x8591U;
+inline constexpr std::uint32_t kGles1Operand2Rgb = 0x8592U;
+inline constexpr std::uint32_t kGles1Operand0Alpha = 0x8598U;
+inline constexpr std::uint32_t kGles1Operand1Alpha = 0x8599U;
+inline constexpr std::uint32_t kGles1Operand2Alpha = 0x859AU;
 
 class AndroidBoundaryGles1LegacyState final {
 public:

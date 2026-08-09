@@ -7,6 +7,7 @@
 
 #include "ogplay/audio/java_sound_pool.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
+#include "ogplay/runtime/framework/framework_lifecycle.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 
@@ -28,6 +29,37 @@ TEST_CASE("Android guest call session validates its complete launch request") {
              1000, 1, nullptr, {}})),
         "Android guest call session request is incomplete",
         ogplay::runtime::AndroidGuestCallSessionError);
+}
+
+TEST_CASE("Android guest Java display handler records screen sleep policy") {
+    ogplay::runtime::JniClassRegistry classes;
+    const auto java_class = classes.RegisterClass(
+        {"fixture/JavaDisplay", {},
+         {{"changeDisplayMode", "(I)V", "display.change_mode", true}}, {}});
+    const auto method = classes.GetMethodId(
+        java_class, "changeDisplayMode", "(I)V", true);
+    REQUIRE(method.has_value());
+    ogplay::runtime::JniInvocationEngine invocations{classes};
+    ogplay::runtime::FrameworkScreenPolicyState screen_policy;
+    ogplay::runtime::BindAndroidGuestJavaDisplayHandlers(
+        invocations, screen_policy);
+
+    const std::array<ogplay::runtime::JniValue, 1> allow_sleep{
+        ogplay::runtime::JniInt{1}};
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *method, allow_sleep,
+        ogplay::runtime::JniArgumentSource::variadic));
+    REQUIRE(screen_policy.SleepAllowed().has_value());
+    CHECK(*screen_policy.SleepAllowed());
+
+    const std::array<ogplay::runtime::JniValue, 1> keep_awake{
+        ogplay::runtime::JniInt{0}};
+    static_cast<void>(invocations.InvokeStatic(
+        2U, java_class, *method, keep_awake,
+        ogplay::runtime::JniArgumentSource::value_array));
+    REQUIRE(screen_policy.SleepAllowed().has_value());
+    CHECK_FALSE(*screen_policy.SleepAllowed());
+    CHECK(screen_policy.RequestCount() == 2U);
 }
 
 TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {

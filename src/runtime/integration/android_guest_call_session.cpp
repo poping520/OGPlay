@@ -20,6 +20,7 @@
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
 #include "ogplay/runtime/integration/jni_guest_dispatch.h"
+#include "ogplay/runtime/framework/framework_lifecycle.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
@@ -228,6 +229,18 @@ void BindAndroidGuestJavaAudioHandlers(
         });
 }
 
+void BindAndroidGuestJavaDisplayHandlers(
+    JniInvocationEngine& invocations,
+    FrameworkScreenPolicyState& screen_policy) {
+    invocations.RegisterHandler(
+        "display.change_mode",
+        [&screen_policy](const JniInvocation& invocation) {
+            const auto mode = std::get<JniInt>(invocation.arguments[0]);
+            screen_policy.SetSleepAllowed(mode == 1);
+            return JniValue{std::monostate{}};
+        });
+}
+
 class AndroidGuestCallSession::Impl final {
 public:
     explicit Impl(const AndroidGuestCallSessionRequest& request)
@@ -258,6 +271,7 @@ public:
                 "Android guest call session request is incomplete");
         }
         BindAndroidGuestJavaAudioHandlers(invocations_, sound_pool_);
+        BindAndroidGuestJavaDisplayHandlers(invocations_, screen_policy_);
         if (request.direct_assets.has_value()) {
             direct_assets_ = std::make_unique<FrameworkDirectAssetHle>(
                 invocations_, environment_, strings_, arrays_, *filesystem_);
@@ -460,6 +474,7 @@ private:
     JniClassRegistry classes_;
     JniInvocationEngine invocations_;
     audio::JavaSoundPoolState sound_pool_;
+    FrameworkScreenPolicyState screen_policy_;
     JniStringStore strings_;
     JniPrimitiveArrayStore arrays_;
     JniJavaVm java_vm_;

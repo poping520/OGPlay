@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -72,6 +74,18 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
+};
+
+class FrameworkScreenPolicyState final {
+public:
+    void SetSleepAllowed(bool allowed);
+    [[nodiscard]] std::optional<bool> SleepAllowed() const;
+    [[nodiscard]] std::uint64_t RequestCount() const;
+
+private:
+    mutable std::mutex mutex_;
+    std::optional<bool> sleep_allowed_;
+    std::uint64_t request_count_{};
 };
 
 }  // namespace ogplay::runtime

@@ -350,6 +350,19 @@ void AngleFrame::BufferData(
 #endif
 }
 
+void AngleFrame::BufferSubData(
+    const std::uint32_t target, const std::uint32_t offset,
+    const std::span<const std::byte> data) {
+#if OGPLAY_HAS_ANGLE
+    glBufferSubData(target, static_cast<GLintptr>(offset),
+                    static_cast<GLsizeiptr>(data.size()), data.data());
+    RequireNoError("glBufferSubData");
+#else
+    static_cast<void>(target); static_cast<void>(offset); static_cast<void>(data);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::uint32_t> AngleFrame::GenerateTextures(const std::size_t count) {
     if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
         throw std::length_error("ANGLE texture count overflows GLsizei");

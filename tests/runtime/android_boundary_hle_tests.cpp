@@ -385,6 +385,25 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glIsEnabled", {0x0DE1U}),
         "glIsEnabled has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glGenBuffers",
+                     {1U, fixture.output.Value()}),
+        "glGenBuffers has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glBufferData",
+                     {0x8892U, 16U, 0U, 0x88E4U}),
+        "glBufferData has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glBufferSubData",
+                     {0x8892U, 0U, 4U, fixture.output.Value()}),
+        "glBufferSubData has no current ANGLE frame", std::runtime_error);
+    fixture.bus.Write32(fixture.stack, 0x1908U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(4U), 0x1401U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(8U), fixture.output.Value(), 1U);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glReadPixels",
+                     {0U, 0U, 1U, 1U}),
+        "glReadPixels has no current ANGLE frame", std::runtime_error);
     const std::array scalar_calls{
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glActiveTexture", {0x84C0U}},
@@ -531,6 +550,26 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             fixture.bus.Read32(fixture.output.Add(4U), 1U);
         REQUIRE(second_texture != 0U);
         CHECK(second_texture != texture);
+        const auto buffer_names = fixture.output.Add(0x280U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGenBuffers",
+                           {1U, buffer_names.Value()}) == 0U);
+        const auto buffer = fixture.bus.Read32(buffer_names, 1U);
+        REQUIRE(buffer != 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glBindBuffer",
+                           {0x8892U, buffer}) == 0U);
+        const auto buffer_data = fixture.output.Add(0x300U);
+        fixture.bus.Write32(buffer_data, 0x11223344U, 1U);
+        fixture.bus.Write32(buffer_data.Add(4U), 0x55667788U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glBufferData",
+                           {0x8892U, 8U, buffer_data.Value(), 0x88E4U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glBufferSubData",
+                           {0x8892U, 4U, 4U, buffer_data.Value()}) == 0U);
+        CHECK_THROWS_WITH_AS(
+            fixture.Call("libGLESv1_CM.so", "glBufferData",
+                         {0x8892U, 0xFFFFFFFFU, 0U, 0x88E4U}),
+            "glBufferData count cannot be negative", std::invalid_argument);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDeleteBuffers",
+                           {1U, buffer_names.Value()}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glActiveTexture",
                            {0x84C0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glEnable",
@@ -549,6 +588,22 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                            {0x8892U, 0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
                            {0x0DE1U, texture}) == 0U);
+        const auto readback = fixture.output.Add(0x380U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glClearColor",
+                  {std::bit_cast<std::uint32_t>(1.0F), 0U, 0U,
+                   std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glClear",
+                           {0x00004000U}) == 0U);
+        fixture.bus.Write32(fixture.stack, 0x1908U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(4U), 0x1401U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(8U), readback.Value(), 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glReadPixels",
+                           {0U, 0U, 1U, 1U}) == 0U);
+        CHECK(fixture.bus.Read8(readback, 1U) == 255U);
+        CHECK(fixture.bus.Read8(readback.Add(1U), 1U) == 0U);
+        CHECK(fixture.bus.Read8(readback.Add(2U), 1U) == 0U);
+        CHECK(fixture.bus.Read8(readback.Add(3U), 1U) == 255U);
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glAlphaFunc",
                   {0x0201U, std::bit_cast<std::uint32_t>(0.5F)}) == 0U);

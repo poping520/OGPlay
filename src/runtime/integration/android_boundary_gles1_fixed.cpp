@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "ogplay/memory/address_space.h"
+#include "android_boundary_gles1_query.h"
 
 namespace ogplay::runtime::detail {
 namespace {
@@ -31,6 +32,22 @@ constexpr std::uint32_t kLinearAttenuation = 0x1208U;
 constexpr std::uint32_t kQuadraticAttenuation = 0x1209U;
 constexpr std::uint32_t kMaterialEmission = 0x1600U;
 constexpr std::uint32_t kMaterialAmbientAndDiffuse = 0x1602U;
+constexpr memory::GuestAddress kGles1QueryStringRegion{0x70010000U};
+constexpr std::uint32_t kQueryStringSlotBytes = 16U * 1024U;
+constexpr std::uint32_t kQueryStringRegionBytes = kQueryStringSlotBytes * 4U;
+constexpr std::uint32_t kTexture0 = 0x84C0U;
+constexpr std::uint32_t kTexture31 = 0x84DFU;
+
+[[nodiscard]] std::uint64_t TextureEnvironmentKey(
+    const std::uint32_t texture, const std::uint32_t pname) noexcept {
+    return (static_cast<std::uint64_t>(texture) << 32U) | pname;
+}
+
+void RequireTextureUnit(const std::uint32_t texture) {
+    if (texture < kTexture0 || texture > kTexture31) {
+        throw std::invalid_argument("GLES1 texture unit is outside GL_TEXTURE0..31");
+    }
+}
 
 [[nodiscard]] std::uint64_t LightKey(const std::uint32_t light, const std::uint32_t pname) {
     if (light < kLight0 || light > kLight7) {
@@ -100,6 +117,16 @@ void RequireCount(const std::span<const float> values, const std::size_t expecte
     }
 }
 
+[[nodiscard]] std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
+    switch (parameter) {
+    case 0x1F00U: return 0U;
+    case 0x1F01U: return kQueryStringSlotBytes;
+    case 0x1F02U: return kQueryStringSlotBytes * 2U;
+    case 0x1F03U: return kQueryStringSlotBytes * 3U;
+    default: throw std::invalid_argument("GLES1 string query is unsupported");
+    }
+}
+
 [[nodiscard]] std::vector<float> ReadGuestFloats(const memory::AddressSpace& address_space,
                                                  const std::uint32_t address,
                                                  const std::size_t count,
@@ -120,6 +147,126 @@ void RequireCount(const std::span<const float> values, const std::size_t expecte
 }
 
 } // namespace
+
+AndroidBoundaryGles1QueryStrings::AndroidBoundaryGles1QueryStrings(
+    memory::AddressSpace& address_space)
+    : address_space_(&address_space) {}
+
+void AndroidBoundaryGles1QueryStrings::Validate(
+    const std::uint32_t parameter) const {
+    static_cast<void>(QueryStringOffset(parameter));
+}
+
+std::uint32_t AndroidBoundaryGles1QueryStrings::Publish(
+    const std::uint32_t parameter, const std::string_view value,
+    const std::uint64_t thread_id) {
+    const auto offset = QueryStringOffset(parameter);
+    if (value.size() >= kQueryStringSlotBytes) {
+        throw std::length_error("ANGLE GLES1 query string exceeds its guest slot");
+    }
+    if (!region_mapped_) {
+        address_space_->Map({kGles1QueryStringRegion, kQueryStringRegionBytes},
+                            memory::PageProtection::read |
+                                memory::PageProtection::write);
+        address_space_->Protect(
+            {kGles1QueryStringRegion, kQueryStringRegionBytes},
+            memory::PageProtection::read);
+        region_mapped_ = true;
+    }
+    std::vector<std::byte> bytes;
+    bytes.reserve(value.size() + 1U);
+    for (const auto character : value) {
+        bytes.push_back(static_cast<std::byte>(
+            static_cast<unsigned char>(character)));
+    }
+    bytes.push_back(std::byte{});
+    const memory::GuestRange region{kGles1QueryStringRegion,
+                                    kQueryStringRegionBytes};
+    address_space_->Protect(region, memory::PageProtection::read |
+                                        memory::PageProtection::write);
+    try {
+        address_space_->Write(kGles1QueryStringRegion.Add(offset), bytes,
+                              thread_id);
+    } catch (...) {
+        address_space_->Protect(region, memory::PageProtection::read);
+        throw;
+    }
+    address_space_->Protect(region, memory::PageProtection::read);
+    return kGles1QueryStringRegion.Add(offset).Value();
+}
+
+AndroidBoundaryGles1LegacyState::AndroidBoundaryGles1LegacyState() { Reset(); }
+
+void AndroidBoundaryGles1LegacyState::Reset() {
+    alpha_function_ = 0x0207U;
+    alpha_reference_ = 0.0F;
+    client_active_texture_ = kTexture0;
+    color_ = {1.0F, 1.0F, 1.0F, 1.0F};
+    texture_environment_.clear();
+    for (auto texture = kTexture0; texture <= kTexture31; ++texture) {
+        texture_environment_[TextureEnvironmentKey(texture, kGles1TextureEnvironmentMode)] =
+            {8448.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1TextureEnvironmentColor)] =
+            {0.0F, 0.0F, 0.0F, 0.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1CombineRgb)] = {8448.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1CombineAlpha)] = {8448.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1RgbScale)] = {1.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1AlphaScale)] = {1.0F};
+        for (const auto pname : {kGles1Source0Rgb, kGles1Source0Alpha})
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {5890.0F};
+        for (const auto pname : {kGles1Source1Rgb, kGles1Source1Alpha})
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {34168.0F};
+        for (const auto pname : {kGles1Source2Rgb, kGles1Source2Alpha})
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {34166.0F};
+        for (const auto pname : {kGles1Operand0Rgb, kGles1Operand1Rgb})
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {768.0F};
+        texture_environment_[TextureEnvironmentKey(texture, kGles1Operand2Rgb)] = {770.0F};
+        for (const auto pname : {kGles1Operand0Alpha, kGles1Operand1Alpha,
+                                 kGles1Operand2Alpha})
+            texture_environment_[TextureEnvironmentKey(texture, pname)] = {770.0F};
+    }
+}
+
+std::uint32_t AndroidBoundaryGles1LegacyState::AlphaFunction() const noexcept {
+    return alpha_function_;
+}
+float AndroidBoundaryGles1LegacyState::AlphaReference() const noexcept {
+    return alpha_reference_;
+}
+std::uint32_t AndroidBoundaryGles1LegacyState::ClientActiveTexture() const noexcept {
+    return client_active_texture_;
+}
+const std::array<float, 4>& AndroidBoundaryGles1LegacyState::Color() const noexcept {
+    return color_;
+}
+
+void AndroidBoundaryGles1LegacyState::ValidateClientActiveTexture(
+    const std::uint32_t texture) const {
+    RequireTextureUnit(texture);
+}
+
+void AndroidBoundaryGles1LegacyState::SetClientActiveTexture(
+    const std::uint32_t texture) {
+    ValidateClientActiveTexture(texture);
+    client_active_texture_ = texture;
+}
+
+void AndroidBoundaryGles1LegacyState::ValidateColor(
+    const std::span<const float, 4> color) const {
+    if (!std::ranges::all_of(color, [](const float value) {
+            return std::isfinite(value);
+        })) {
+        throw std::invalid_argument("GLES1 current color must be finite");
+    }
+}
+
+void AndroidBoundaryGles1LegacyState::SetColor(
+    const std::span<const float, 4> color) {
+    ValidateColor(color);
+    std::ranges::transform(color, color_.begin(), [](const float value) {
+        return std::clamp(value, 0.0F, 1.0F);
+    });
+}
 
 AndroidBoundaryGles1FixedState::AndroidBoundaryGles1FixedState() { Reset(); }
 

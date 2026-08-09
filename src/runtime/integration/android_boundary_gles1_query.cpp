@@ -18,9 +18,6 @@
 namespace ogplay::runtime::detail {
 namespace {
 
-constexpr memory::GuestAddress kGles1QueryStringRegion{0x70010000U};
-constexpr std::uint32_t kQueryStringSlotBytes = 16U * 1024U;
-constexpr std::uint32_t kQueryStringRegionBytes = kQueryStringSlotBytes * 4U;
 constexpr std::uint32_t kTexture0 = 0x84C0U;
 constexpr std::uint32_t kTexture31 = 0x84DFU;
 
@@ -132,6 +129,43 @@ void WriteGuestBooleans(
     output.Commit();
 }
 
+[[nodiscard]] std::size_t Gles1ResourceCount(
+    const std::uint32_t word, const std::string_view operation) {
+    const auto count = std::bit_cast<std::int32_t>(word);
+    if (count < 0) {
+        throw std::invalid_argument(std::string(operation) +
+                                    " count cannot be negative");
+    }
+    return static_cast<std::size_t>(count);
+}
+
+[[nodiscard]] std::vector<std::uint32_t> ReadGuestNames(
+    const gles::GuestBuffer& input) {
+    const auto bytes = input.Bytes();
+    std::vector<std::uint32_t> names(bytes.size() / sizeof(std::uint32_t));
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
+            names[index] |= static_cast<std::uint32_t>(
+                                std::to_integer<std::uint8_t>(
+                                    bytes[index * sizeof(std::uint32_t) + byte]))
+                            << (byte * 8U);
+        }
+    }
+    return names;
+}
+
+void WriteGuestNames(gles::GuestBuffer& output,
+                     const std::span<const std::uint32_t> names) {
+    auto bytes = output.WritableBytes();
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
+            bytes[index * sizeof(std::uint32_t) + byte] =
+                static_cast<std::byte>(names[index] >> (byte * 8U));
+        }
+    }
+    output.Commit();
+}
+
 [[nodiscard]] std::optional<std::int32_t> Gles1OwnedInteger(
     const std::uint32_t pname, const AndroidBoundaryGles1State& core,
     const AndroidBoundaryGles1LegacyState& legacy) {
@@ -230,101 +264,7 @@ void GenerateAutomaticMipmap(AndroidBoundaryGles1State& state,
         frame.GenerateMipmap(target);
     }
 }
-[[nodiscard]] std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
-    switch (parameter) {
-    case 0x1F00U: return 0U;                              // GL_VENDOR
-    case 0x1F01U: return kQueryStringSlotBytes;           // GL_RENDERER
-    case 0x1F02U: return kQueryStringSlotBytes * 2U;      // GL_VERSION
-    case 0x1F03U: return kQueryStringSlotBytes * 3U;      // GL_EXTENSIONS
-    default: throw std::invalid_argument("GLES1 string query is unsupported");
-    }
-}
-
 }  // namespace
-AndroidBoundaryGles1QueryStrings::AndroidBoundaryGles1QueryStrings(memory::AddressSpace& address_space)
-    : address_space_(&address_space) {}
-
-void AndroidBoundaryGles1QueryStrings::Validate(const std::uint32_t parameter) const {
-    static_cast<void>(QueryStringOffset(parameter));
-}
-
-std::uint32_t AndroidBoundaryGles1QueryStrings::Publish(
-    const std::uint32_t parameter, const std::string_view value,
-    const std::uint64_t thread_id) {
-    const auto offset = QueryStringOffset(parameter);
-    if (value.size() >= kQueryStringSlotBytes) {
-        throw std::length_error("ANGLE GLES1 query string exceeds its guest slot");
-    }
-    if (!region_mapped_) {
-        address_space_->Map({kGles1QueryStringRegion, kQueryStringRegionBytes},
-                            memory::PageProtection::read |
-                                memory::PageProtection::write);
-        address_space_->Protect(
-            {kGles1QueryStringRegion, kQueryStringRegionBytes},
-            memory::PageProtection::read);
-        region_mapped_ = true;
-    }
-    std::vector<std::byte> bytes;
-    bytes.reserve(value.size() + 1U);
-    for (const auto character : value) {
-        bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
-    }
-    bytes.push_back(std::byte{});
-    const memory::GuestRange region{kGles1QueryStringRegion,
-                                    kQueryStringRegionBytes};
-    address_space_->Protect(region, memory::PageProtection::read |
-                                        memory::PageProtection::write);
-    try {
-        address_space_->Write(kGles1QueryStringRegion.Add(offset), bytes,
-                              thread_id);
-    } catch (...) {
-        address_space_->Protect(region, memory::PageProtection::read);
-        throw;
-    }
-    address_space_->Protect(region, memory::PageProtection::read);
-    return kGles1QueryStringRegion.Add(offset).Value();
-}
-
-AndroidBoundaryGles1LegacyState::AndroidBoundaryGles1LegacyState() { Reset(); }
-
-void AndroidBoundaryGles1LegacyState::Reset() {
-    alpha_function_ = 0x0207U;  // GL_ALWAYS
-    alpha_reference_ = 0.0F;
-    client_active_texture_ = kTexture0;
-    color_ = {1.0F, 1.0F, 1.0F, 1.0F};
-    texture_environment_.clear();
-    for (auto texture = kTexture0; texture <= kTexture31; ++texture) {
-        texture_environment_[TextureEnvironmentKey(
-            texture, kGles1TextureEnvironmentMode)] = {8448.0F};
-        texture_environment_[TextureEnvironmentKey(
-            texture, kGles1TextureEnvironmentColor)] =
-            {0.0F, 0.0F, 0.0F, 0.0F};
-        texture_environment_[TextureEnvironmentKey(texture, kGles1CombineRgb)] =
-            {8448.0F};
-        texture_environment_[TextureEnvironmentKey(texture, kGles1CombineAlpha)] =
-            {8448.0F};
-        texture_environment_[TextureEnvironmentKey(texture, kGles1RgbScale)] = {1.0F};
-        texture_environment_[TextureEnvironmentKey(texture, kGles1AlphaScale)] = {1.0F};
-        for (const auto pname : {kGles1Source0Rgb, kGles1Source0Alpha}) {
-            texture_environment_[TextureEnvironmentKey(texture, pname)] = {5890.0F};
-        }
-        for (const auto pname : {kGles1Source1Rgb, kGles1Source1Alpha}) {
-            texture_environment_[TextureEnvironmentKey(texture, pname)] = {34168.0F};
-        }
-        for (const auto pname : {kGles1Source2Rgb, kGles1Source2Alpha}) {
-            texture_environment_[TextureEnvironmentKey(texture, pname)] = {34166.0F};
-        }
-        for (const auto pname : {kGles1Operand0Rgb, kGles1Operand1Rgb}) {
-            texture_environment_[TextureEnvironmentKey(texture, pname)] = {768.0F};
-        }
-        texture_environment_[TextureEnvironmentKey(texture, kGles1Operand2Rgb)] =
-            {770.0F};
-        for (const auto pname : {kGles1Operand0Alpha, kGles1Operand1Alpha,
-                                 kGles1Operand2Alpha}) {
-            texture_environment_[TextureEnvironmentKey(texture, pname)] = {770.0F};
-        }
-    }
-}
 
 void AndroidBoundaryGles1LegacyState::ValidateAlphaFunction(
     const std::uint32_t function, const float reference) const {
@@ -341,30 +281,6 @@ void AndroidBoundaryGles1LegacyState::SetAlphaFunction(
     ValidateAlphaFunction(function, reference);
     alpha_function_ = function;
     alpha_reference_ = std::clamp(reference, 0.0F, 1.0F);
-}
-
-void AndroidBoundaryGles1LegacyState::ValidateClientActiveTexture(const std::uint32_t texture) const {
-    RequireTextureUnit(texture);
-}
-
-void AndroidBoundaryGles1LegacyState::SetClientActiveTexture(const std::uint32_t texture) {
-    ValidateClientActiveTexture(texture);
-    client_active_texture_ = texture;
-}
-
-void AndroidBoundaryGles1LegacyState::ValidateColor(const std::span<const float, 4> color) const {
-    if (!std::ranges::all_of(color, [](const float value) {
-            return std::isfinite(value);
-        })) {
-        throw std::invalid_argument("GLES1 current color must be finite");
-    }
-}
-
-void AndroidBoundaryGles1LegacyState::SetColor(const std::span<const float, 4> color) {
-    ValidateColor(color);
-    std::ranges::transform(color, color_.begin(), [](const float value) {
-        return std::clamp(value, 0.0F, 1.0F);
-    });
 }
 
 void AndroidBoundaryGles1LegacyState::ValidateTextureEnvironment(
@@ -441,14 +357,6 @@ void AndroidBoundaryGles1LegacyState::SetTextureEnvironment(
     texture_environment_[TextureEnvironmentKey(texture, pname)] =
         std::move(stored);
 }
-
-std::uint32_t AndroidBoundaryGles1LegacyState::AlphaFunction() const noexcept { return alpha_function_; }
-
-float AndroidBoundaryGles1LegacyState::AlphaReference() const noexcept { return alpha_reference_; }
-
-std::uint32_t AndroidBoundaryGles1LegacyState::ClientActiveTexture() const noexcept { return client_active_texture_; }
-
-const std::array<float, 4>& AndroidBoundaryGles1LegacyState::Color() const noexcept { return color_; }
 
 const std::vector<float>& AndroidBoundaryGles1LegacyState::TextureEnvironment(
     const std::uint32_t texture, const std::uint32_t pname) const {
@@ -708,6 +616,88 @@ void BindAndroidBoundaryGles1Textures(
     if (!require_frame) {
         throw std::invalid_argument("GLES1 texture frame resolver is missing");
     }
+    dispatch.Bind("glGenBuffers", [&address_space, require_frame](
+                                      const auto arguments,
+                                      const std::uint64_t thread_id) {
+        const auto count = Gles1ResourceCount(arguments[0], "glGenBuffers");
+        auto output = gles::GuestBuffer::Prepare(
+            address_space, memory::GuestAddress{arguments[1]},
+            count * sizeof(std::uint32_t), gles::GuestTransferDirection::output,
+            false, thread_id);
+        const auto names = require_frame("glGenBuffers").GenerateBuffers(count);
+        WriteGuestNames(output, names);
+        return 0U;
+    });
+    dispatch.Bind("glDeleteBuffers", [&state, &address_space, require_frame](
+                                         const auto arguments,
+                                         const std::uint64_t thread_id) {
+        const auto count = Gles1ResourceCount(arguments[0], "glDeleteBuffers");
+        const auto input = gles::GuestBuffer::Prepare(
+            address_space, memory::GuestAddress{arguments[1]},
+            count * sizeof(std::uint32_t), gles::GuestTransferDirection::input,
+            false, thread_id);
+        const auto names = ReadGuestNames(input);
+        require_frame("glDeleteBuffers").DeleteBuffers(names);
+        auto next = state.TransferState();
+        const auto bound = next.Snapshot();
+        if (std::ranges::find(names, bound.array_buffer) != names.end())
+            next.BindBuffer(0x8892U, 0U);
+        if (std::ranges::find(names, bound.element_array_buffer) != names.end())
+            next.BindBuffer(0x8893U, 0U);
+        state.SetTransferState(std::move(next));
+        return 0U;
+    });
+    dispatch.Bind("glBufferData", [&address_space, require_frame](
+                                      const auto arguments,
+                                      const std::uint64_t thread_id) {
+        const auto size = Gles1ResourceCount(arguments[1], "glBufferData");
+        const auto input = gles::GuestBuffer::Prepare(
+            address_space, memory::GuestAddress{arguments[2]}, size,
+            gles::GuestTransferDirection::input, true, thread_id);
+        require_frame("glBufferData")
+            .BufferData(arguments[0], static_cast<std::uint32_t>(size),
+                        input.IsNull() ? std::nullopt
+                                       : std::optional{input.Bytes()},
+                        arguments[3]);
+        return 0U;
+    });
+    dispatch.Bind("glBufferSubData", [&address_space, require_frame](
+                                         const auto arguments,
+                                         const std::uint64_t thread_id) {
+        const auto offset = Gles1ResourceCount(arguments[1], "glBufferSubData offset");
+        const auto size = Gles1ResourceCount(arguments[2], "glBufferSubData");
+        const auto input = gles::GuestBuffer::Prepare(
+            address_space, memory::GuestAddress{arguments[3]}, size,
+            gles::GuestTransferDirection::input, false, thread_id);
+        require_frame("glBufferSubData")
+            .BufferSubData(arguments[0], static_cast<std::uint32_t>(offset),
+                           input.Bytes());
+        return 0U;
+    });
+    dispatch.Bind("glReadPixels", [&state, &address_space, require_frame](
+                                      const auto arguments,
+                                      const std::uint64_t thread_id) {
+        const auto resolution = state.TransferState().Resolve(
+            {.function_name = "glReadPixels", .parameter_name = "pixels",
+             .expression = "pixel_bytes(width,height,format,type)",
+             .arguments = arguments});
+        if (!resolution ||
+            resolution->disposition != gles::GlesLengthDisposition::transfer) {
+            throw std::logic_error("GLES1 readback size did not resolve");
+        }
+        auto output = gles::GuestBuffer::Prepare(
+            address_space, memory::GuestAddress{arguments[6]},
+            resolution->element_count, gles::GuestTransferDirection::output,
+            false, thread_id);
+        require_frame("glReadPixels")
+            .ReadPixels(SignedTextureValue(arguments[0]),
+                        SignedTextureValue(arguments[1]),
+                        SignedTextureValue(arguments[2]),
+                        SignedTextureValue(arguments[3]), arguments[4],
+                        arguments[5], output.WritableBytes());
+        output.Commit();
+        return 0U;
+    });
     dispatch.Bind(
         "glCompressedTexImage2D",
         [&state, &address_space, require_frame](

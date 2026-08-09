@@ -16,7 +16,8 @@
 - `EglLifecycle::CreatePbuffer`：创建 ANGLE display、RGBA8+D24S8 EGL config、GLES2 context
   和 pbuffer surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
 - `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/color/depth/stencil clear、
-  depth-range、line/polygon/stencil scalar state、shader/program、buffer/texture、vertex/uniform、query/state、draw 与
+  depth-range、line/polygon/stencil scalar state、shader/program、buffer allocation/subrange、
+  texture、vertex/uniform、query/state、draw 与
   局部 readback 调用，并以
   受检 RGBA8
   全帧 readback 输出左上原点的确定帧；每个原生 GLES 调用都检查错误。
@@ -82,6 +83,8 @@
   保留内嵌 NUL，负长度按 GLES 规则读取有界 C 字符串。
 - buffer/texture 名称数组和资源数据必须通过声明式调用准备器搬运；null 数据只表达
   ANGLE 侧分配，像素字节数由当前 unpack alignment 与真实格式/类型共同解析。
+- buffer subrange 的 guest offset/size 必须非负，输入 payload 先完整预检再调用 ANGLE；
+  `AngleFrame::BufferSubData` 只接受拥有精确长度的受检 span，并立即检查原生错误。
 - vertex pointer 只有绑定 array buffer 后才能把 32 位 guest 值解释为 VBO offset；client
   array 继续明确失败。uniform 数组按 IDL 形状完整搬运后再转换为宿主标量。
 - integer query 与 readback 输出必须先按 IDL/transfer state 预检再调用 ANGLE；draw indices

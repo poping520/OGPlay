@@ -64,6 +64,8 @@ public:
     void BufferData(std::uint32_t target, std::uint32_t byte_size,
                     std::optional<std::span<const std::byte>> data,
                     std::uint32_t usage);
+    void BufferSubData(std::uint32_t target, std::uint32_t offset,
+                       std::span<const std::byte> data);
     [[nodiscard]] std::vector<std::uint32_t> GenerateTextures(std::size_t count);
     void DeleteTextures(std::span<const std::uint32_t> textures);
     void ActiveTexture(std::uint32_t texture);

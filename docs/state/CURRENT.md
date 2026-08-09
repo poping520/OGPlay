@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0308] GLES1 已补齐 buffer name 生命周期、`glBufferData`/`glBufferSubData` 与受检
+  `glReadPixels`，删除绑定对象同步 transfer state；第二个 exact APK 无倒退并保持在独立
+  client-array type 边界，全量 CTest 436/436 通过。
 - [WU-0307] GLES1 已补齐 `glGetBooleanv`、`glIsEnabled`、`glGetPointerv`、`glTexEnvf`，
   并扩展 `glGetIntegerv` 的 client-array descriptor 与 legacy blend alias；第二个 exact APK
   已越过相关查询，明确停在后续 client-array type 边界，全量 CTest 436/436 通过。
@@ -66,10 +69,6 @@
 - [WU-0297] HAL 鼠标按钮已规范为 backend-independent 的 primary/middle/secondary/
   auxiliary 语义，未知按钮显式标记且 SDL 数值不再泄漏；macOS-arm64 + ANGLE
   warnings-as-errors 配置、构建及全量 CTest 429/429 通过。
-- [WU-0296] SDL3 `AudioOutput` 已实现受检格式、幂等启停、完整 frame 提交与队列计量；
-  `run-apk` 按 Profile source/path 从 APK 读取 SoundPool 资源，并以每帧至多四个 chunk 的
-  4096-frame 水位泵送 PCM。Debug exact APK 运行 11264 帧后正常退出，用户验收后要求提交；
-  macOS-arm64 + ANGLE warnings-as-errors 配置、构建及全量 CTest 429/429 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

@@ -51,6 +51,9 @@
   frame 或原生错误必须明确失败，context reset 恢复规范默认值。
 - GLES1 `glGenTextures`/`glDeleteTextures` 复用 ANGLE texture name 生命周期；`GLsizei`
   必须非负，guest 名称数组在 ANGLE 状态变化前按线程完整预检，生成结果仅在成功后一次提交。
+- GLES1 buffer resource 批次复用 ANGLE name 生命周期并实现整块/局部数据上传；count、offset、
+  size 与 guest 输入在原生调用前完整受检，删除当前绑定对象后同步 array/element binding。
+  `glReadPixels` 按当前 pack alignment 解析精确输出范围，ANGLE 成功后才一次提交 guest 内存。
 - GLES1 `GL_GENERATE_MIPMAP` 按 texture object 保存，不得作为 texture parameter 转发；
   active unit/binding/delete/reset 必须同步。值只接受 `GL_FALSE`/`GL_TRUE`，四个 texture
   image/copy handler 在 level 0 成功后消费 true 状态并通过 ANGLE 实际生成 mipmap。

@@ -12,7 +12,11 @@
 - `hal::FixedStepClock`：无 sleep、按帧推进且保留倍率余数的确定性后端。
 - `hal::RealtimeClock`：基于单调宿主时间的实时后端，支持暂停与倍速。
 - `hal::WindowInput`：不暴露 SDL 类型的窗口生命周期与输入事件接口。
+- `hal::WindowInput::SetTitle`：只在窗口打开期间更新宿主标题，拒绝内嵌 NUL，SDL
+  失败必须明确传播。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。
+- `hal::FrameRateSampler`：以调用方提供的单调 ticks 和累计成功 present 数按固定窗口计算
+  FPS；输入倒退明确失败，未到采样周期不发布新值。
 - `hal::FitDisplayRect`：用无浮点整数运算把源画面等比居中适配到目标 surface。
 - `hal::MapDisplayPoint`：复用内容矩形把有限窗口坐标映射到 source，返回黑边内外事实并
   将越界坐标夹紧到 guest 尺寸。
@@ -36,6 +40,8 @@
 - 暂停期间 ticks 不增长；不支持的推进方式必须明确失败。
 - SDL video 生命周期由创建它的宿主主线程拥有；输入只保留宿主事实，不翻译 guest 语义。
 - 帧尺寸与字节数必须精确匹配；只有 SDL surface 更新成功才累计 present。
+- FPS 只能基于成功 present 计数，并从统一 Clock 获取时间；不得在窗口后端直接创建另一
+  套时间源。
 - present 每帧先清理黑边，再只向等比内容矩形缩放；窗口比例不得拉伸 guest 画面。
 - 坐标映射与 present 必须共用 `FitDisplayRect`，禁止各自维护舍入规则。
 - 虚拟内存写权限必须同时具备读权限；范围必须页对齐且位于自身 reservation 内。

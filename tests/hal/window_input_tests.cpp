@@ -49,6 +49,22 @@ TEST_CASE("display points map through content geometry and identify black bars")
         std::invalid_argument);
 }
 
+TEST_CASE("frame rate sampler reports deterministic presentation intervals") {
+    ogplay::hal::FrameRateSampler sampler{1'000U, 500U};
+    CHECK_FALSE(sampler.Observe(10U, 100U).has_value());
+    CHECK_FALSE(sampler.Observe(39U, 599U).has_value());
+    const auto first = sampler.Observe(40U, 600U);
+    REQUIRE(first.has_value());
+    CHECK(*first == doctest::Approx(60.0));
+    const auto second = sampler.Observe(55U, 1'100U);
+    REQUIRE(second.has_value());
+    CHECK(*second == doctest::Approx(30.0));
+    CHECK_THROWS_AS(static_cast<void>(sampler.Observe(54U, 1'200U)),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(ogplay::hal::FrameRateSampler(0U, 1U),
+                    std::invalid_argument);
+}
+
 #if OGPLAY_TEST_HAS_SDL3
 namespace {
 
@@ -67,6 +83,7 @@ TEST_CASE("SDL dummy window has an explicit lifecycle") {
     CHECK(host->BackendName() == "dummy");
     CHECK_FALSE(host->State().open);
     CHECK_THROWS_AS(host->Open({.width = 0, .height = 180}), std::invalid_argument);
+    CHECK_THROWS_AS(host->SetTitle("closed"), std::logic_error);
 
     host->Open({.title = "OGPlay HAL contract", .width = 320, .height = 180,
                 .hidden = true, .resizable = false});
@@ -75,6 +92,12 @@ TEST_CASE("SDL dummy window has an explicit lifecycle") {
     CHECK(state.id != 0);
     CHECK(state.width == 320);
     CHECK(state.height == 180);
+    host->SetTitle("OGPlay · FPS 60.0");
+    auto* window = SDL_GetWindowFromID(state.id);
+    REQUIRE(window != nullptr);
+    CHECK(std::string_view{SDL_GetWindowTitle(window)} == "OGPlay · FPS 60.0");
+    CHECK_THROWS_AS(host->SetTitle(std::string_view{"bad\0title", 9U}),
+                    std::invalid_argument);
     CHECK_THROWS_AS(host->Open({}), std::logic_error);
     host->Close();
     CHECK_FALSE(host->State().open);

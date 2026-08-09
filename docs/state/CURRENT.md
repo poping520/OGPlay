@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0287] `run-apk` 窗口标题已增加实时 FPS：首个采样周期显示 `FPS --`，之后按成功
+  present 数和统一 `RealtimeClock` 每 0.5 秒更新一位小数；确定性 sampler、SDL 标题契约、
+  414 项全量测试及 exact-APK 界面均已验收。
 - [WU-0286] ANGLE pbuffer config 已明确请求 RGBA8+D24S8，真实查询验证默认 framebuffer
   具备至少 24-bit depth 与 8-bit stencil；exact-APK 逐批 draw 隔离证明黑块来自缺失 depth
   attachment 后，正式修复版由用户确认两个黑块消失。

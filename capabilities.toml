@@ -148,12 +148,12 @@ note = "M4 为运行时资源提供可执行目录定位及串行、嵌套、异
 [hal.window_input]
 status = "complete"
 test = "tests/hal/window_input_tests.cpp"
-note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映射；SDL 类型不泄漏"
+note = "M1 SDL3 窗口生命周期及键盘、鼠标、手柄、退出事件映射；M5 WU-0287 增加受检标题更新与显式 ticks 驱动的 FPS sampler；SDL 类型不泄漏"
 
 [hal.rgba_present]
 status = "complete"
 test = "tests/hal/window_input_tests.cpp"
-note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，清黑边后等比居中缩放，提交成功后提供单调 present 计数"
+note = "M4 SDL 窗口严格校验 RGBA8 帧尺寸和字节数，清黑边后等比居中缩放并累计成功 present；M5 WU-0287 以该计数每 0.5 秒更新窗口实时 FPS"
 
 [hal.display_adaptation]
 status = "complete"

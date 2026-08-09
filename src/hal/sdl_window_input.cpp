@@ -63,6 +63,38 @@ MappedDisplayPoint MapDisplayPoint(
             normalized_y * static_cast<float>(source_height), inside};
 }
 
+FrameRateSampler::FrameRateSampler(
+    const std::uint64_t ticks_per_second,
+    const std::uint64_t update_interval_ticks)
+    : ticks_per_second_(ticks_per_second),
+      update_interval_ticks_(update_interval_ticks) {
+    if (ticks_per_second_ == 0U || update_interval_ticks_ == 0U) {
+        throw std::invalid_argument("frame-rate sampler periods must be non-zero");
+    }
+}
+
+std::optional<double> FrameRateSampler::Observe(
+    const std::uint64_t presented_frames, const std::uint64_t ticks) {
+    if (!initialized_) {
+        previous_frames_ = presented_frames;
+        previous_ticks_ = ticks;
+        initialized_ = true;
+        return std::nullopt;
+    }
+    if (presented_frames < previous_frames_ || ticks < previous_ticks_) {
+        throw std::invalid_argument("frame-rate sample must be monotonic");
+    }
+    const auto elapsed = ticks - previous_ticks_;
+    if (elapsed < update_interval_ticks_) return std::nullopt;
+    const auto frames = presented_frames - previous_frames_;
+    const auto rate = static_cast<long double>(frames) *
+                      static_cast<long double>(ticks_per_second_) /
+                      static_cast<long double>(elapsed);
+    previous_frames_ = presented_frames;
+    previous_ticks_ = ticks;
+    return static_cast<double>(rate);
+}
+
 #if OGPLAY_HAS_SDL3
 namespace {
 
@@ -129,6 +161,19 @@ public:
         if (window_ == nullptr) return;
         SDL_DestroyWindow(window_);
         window_ = nullptr;
+    }
+
+    void SetTitle(const std::string_view title) override {
+        if (window_ == nullptr) {
+            throw std::logic_error("window title requires an open window");
+        }
+        if (title.find('\0') != std::string_view::npos) {
+            throw std::invalid_argument("window title contains an embedded NUL");
+        }
+        const std::string owned{title};
+        if (!SDL_SetWindowTitle(window_, owned.c_str())) {
+            throw SdlError("SDL_SetWindowTitle");
+        }
     }
 
     WindowState State() const override {

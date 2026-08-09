@@ -1,5 +1,6 @@
 #include "run_apk.h"
 
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
@@ -15,6 +16,7 @@
 #include <thread>
 #include <vector>
 
+#include "ogplay/hal/clock.h"
 #include "ogplay/hal/window_input.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
@@ -86,6 +88,18 @@ std::uint32_t ParseSupersampleFactor(const std::string_view text) {
         throw std::invalid_argument("--supersample requires an integer in 1..4");
     }
     return value;
+}
+
+std::string FrameRateTitle(const std::string_view base, const double fps) {
+    std::array<char, 32> text{};
+    const auto result = std::to_chars(
+        text.data(), text.data() + text.size(), fps,
+        std::chars_format::fixed, 1);
+    if (result.ec != std::errc{}) {
+        throw std::runtime_error("cannot format window frame rate");
+    }
+    return std::string{base} + " · FPS " +
+           std::string{text.data(), result.ptr};
 }
 
 gles::AngleBackend NativeBackend() {
@@ -277,7 +291,8 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     }
 
     auto window = hal::CreateSdlWindowInput();
-    window->Open({.title = "OGPlay · " + apk_path.filename().string(),
+    const auto base_title = "OGPlay · " + apk_path.filename().string();
+    window->Open({.title = base_title + " · FPS --",
                   .width = profile.runtime.surface.width,
                   .height = profile.runtime.surface.height,
                   .hidden = false, .resizable = true});
@@ -285,6 +300,17 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     std::uint64_t presented{};
     std::uint32_t guest_width = profile.runtime.surface.width;
     std::uint32_t guest_height = profile.runtime.surface.height;
+    hal::RealtimeClock frame_rate_clock;
+    hal::FrameRateSampler frame_rate{
+        frame_rate_clock.TicksPerSecond(),
+        frame_rate_clock.TicksPerSecond() / 2U};
+    const auto update_frame_rate = [&] {
+        if (const auto fps = frame_rate.Observe(
+                presented, frame_rate_clock.Ticks());
+            fps.has_value()) {
+            window->SetTitle(FrameRateTitle(base_title, *fps));
+        }
+    };
     const auto direct_assets = DirectAssetImplementations(profile);
     if (profile.runtime.lifecycle == session::ProfileLifecycle::native_activity) {
         auto guest = runtime::NativeActivitySession::Start(
@@ -308,6 +334,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 guest_width = frame->width;
                 guest_height = frame->height;
                 ++presented;
+                update_frame_rate();
                 if (exit_after_frames.has_value() &&
                     presented >= *exit_after_frames) {
                     quit = true;
@@ -364,6 +391,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 guest_width = frame->width;
                 guest_height = frame->height;
                 ++presented;
+                update_frame_rate();
                 if (exit_after_frames.has_value() &&
                     presented >= *exit_after_frames) {
                     quit = true;

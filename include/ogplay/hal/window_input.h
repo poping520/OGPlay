@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -62,6 +63,21 @@ struct MappedDisplayPoint final {
     std::uint32_t source_width, std::uint32_t source_height,
     std::uint32_t target_width, std::uint32_t target_height);
 
+class FrameRateSampler final {
+public:
+    FrameRateSampler(std::uint64_t ticks_per_second,
+                     std::uint64_t update_interval_ticks);
+    [[nodiscard]] std::optional<double> Observe(
+        std::uint64_t presented_frames, std::uint64_t ticks);
+
+private:
+    std::uint64_t ticks_per_second_{};
+    std::uint64_t update_interval_ticks_{};
+    std::uint64_t previous_frames_{};
+    std::uint64_t previous_ticks_{};
+    bool initialized_{};
+};
+
 struct InputEvent {
     InputEventType type{InputEventType::quit};
     std::uint64_t timestamp_ns{};
@@ -82,6 +98,7 @@ public:
     virtual ~WindowInput() = default;
     virtual void Open(const WindowOptions& options) = 0;
     virtual void Close() noexcept = 0;
+    virtual void SetTitle(std::string_view title) = 0;
     [[nodiscard]] virtual WindowState State() const = 0;
     [[nodiscard]] virtual std::string_view BackendName() const noexcept = 0;
     [[nodiscard]] virtual std::vector<InputEvent> PollEvents() = 0;

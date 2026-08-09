@@ -65,6 +65,11 @@ status = "complete"
 test = "tests/input/template_catalog_tests.cpp"
 note = "M5 WU-0209 提供不可变 code-defined 通用 mapper 目录；Profile input id 精确选择模板，无声明时使用显式默认，未知/重复/非法模板明确失败"
 
+[input.mouse_touch_mapper]
+status = "complete"
+test = "tests/input/mouse_touch_mapper_tests.cpp"
+note = "M5 WU-0298 将 backend-independent 鼠标主键映射为捕获设备的固定 id 单点触摸；悬停、非主键、黑边起始与跨设备事件不注入，窗口外 release 夹紧闭合"
+
 [session.profile_audio]
 status = "complete"
 test = "tests/session/profile_audio_tests.cpp"

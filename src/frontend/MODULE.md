@@ -27,8 +27,9 @@ present 数更新一位小数的实时值。
   native-call 计数，不创建窗口或执行 guest。
 - `--supersample` 只接受完整十进制整数 1..4，必须在 APK I/O 和窗口创建前拒绝缺值、
   零、越界或尾随字符；默认值保持 1×。
-- pointer 事件按最近 guest 帧与当前窗口的等比内容区映射；黑边按下/移动不注入，黑边
-  释放仍夹紧转发以闭合已开始的手势。
+- pointer 事件经 input 模块按最近 guest 帧与当前窗口的等比内容区映射；鼠标主键模拟固定
+  id 的单点触摸，悬停不注入；黑边按下/移动不注入，黑边释放仍夹紧转发以闭合已开始的
+  手势。
 - 窗口 FPS 使用独立 `RealtimeClock` 的显式 ticks 驱动通用 sampler，只统计成功提交的
   guest 帧；标题刷新不得改变 guest Clock、生命周期或 present 节奏。
 - `gl_surface_view` 只能组合通用 Android guest call session、Profile lifecycle 与

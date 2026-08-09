@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0298] 鼠标主键以 input mapper 生成固定 id 0 的成对单点触摸；悬停、非主键、
+  黑边起始及跨设备事件均不注入，窗口外 release 夹紧闭合；CTest 432/432 通过，用户以
+  Debug exact APK 确认拖拽可旋转车辆，3407 帧后正常关闭。
 - [WU-0297] HAL 鼠标按钮已规范为 backend-independent 的 primary/middle/secondary/
   auxiliary 语义，未知按钮显式标记且 SDL 数值不再泄漏；macOS-arm64 + ANGLE
   warnings-as-errors 配置、构建及全量 CTest 429/429 通过。
@@ -72,9 +75,6 @@
 - [WU-0286] ANGLE pbuffer config 已明确请求 RGBA8+D24S8，真实查询验证默认 framebuffer
   具备至少 24-bit depth 与 8-bit stencil；exact-APK 逐批 draw 隔离证明黑块来自缺失 depth
   attachment 后，正式修复版由用户确认两个黑块消失。
-- [WU-0285] fixed renderer 已支持两个启用纹理单元顺序级联并隔离 sampler、坐标、base
-  format、texture environment 与 texture matrix；lighting alpha 遵循 diffuse material
-  alpha。真实 ANGLE 双纹理/透明光照 readback 与 exact-APK 主界面纹理均已验收。
 
 ## 目标 ELF 尚未实现的 GL 入口
 

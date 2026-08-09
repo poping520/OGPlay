@@ -19,6 +19,7 @@
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/hal/window_input.h"
+#include "ogplay/input/mouse_touch_mapper.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
@@ -119,8 +120,7 @@ gles::AngleBackend NativeBackend() {
 }
 
 [[nodiscard]] std::optional<runtime::AndroidBoundaryInput> MapInput(
-    const hal::InputEvent& event, const hal::WindowState& window,
-    const std::uint32_t guest_width, const std::uint32_t guest_height) {
+    const hal::InputEvent& event) {
     std::optional<runtime::AndroidBoundaryInputType> type;
     if (event.type == hal::InputEventType::key) type = runtime::AndroidBoundaryInputType::key;
     if (event.type == hal::InputEventType::pointer_motion) {
@@ -130,21 +130,8 @@ gles::AngleBackend NativeBackend() {
         type = runtime::AndroidBoundaryInputType::pointer_button;
     }
     if (type.has_value()) {
-        auto x = event.x;
-        auto y = event.y;
-        if (*type != runtime::AndroidBoundaryInputType::key) {
-            const auto mapped = hal::MapDisplayPoint(
-                event.x, event.y, guest_width, guest_height,
-                window.width, window.height);
-            if (!mapped.inside &&
-                (*type == runtime::AndroidBoundaryInputType::pointer_motion || event.pressed)) {
-                return std::nullopt;
-            }
-            x = mapped.x;
-            y = mapped.y;
-        }
         return runtime::AndroidBoundaryInput{
-            *type, event.code, x, y, event.pressed};
+            *type, event.code, event.x, event.y, event.pressed};
     }
     return std::nullopt;
 }
@@ -352,6 +339,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
         }
     };
     const auto direct_assets = DirectAssetImplementations(profile);
+    input::MouseTouchMapper mouse_touch;
     if (profile.runtime.lifecycle == session::ProfileLifecycle::native_activity) {
         auto guest = runtime::NativeActivitySession::Start(
             {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
@@ -363,10 +351,12 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             for (const auto& event : window->PollEvents()) {
                 if (event.type == hal::InputEventType::quit) {
                     quit = true;
-                } else if (const auto input = MapInput(
+                } else if (const auto mapped = mouse_touch.Map(
                                event, window_state, guest_width, guest_height);
-                           input.has_value()) {
-                    guest->PushInput(*input);
+                           mapped.has_value()) {
+                    if (const auto input = MapInput(*mapped); input.has_value()) {
+                        guest->PushInput(*input);
+                    }
                 }
             }
             if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
@@ -429,10 +419,12 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             for (const auto& event : window->PollEvents()) {
                 if (event.type == hal::InputEventType::quit) {
                     quit = true;
-                } else if (const auto input = MapInput(
+                } else if (const auto mapped = mouse_touch.Map(
                                event, window_state, guest_width, guest_height);
-                           input.has_value()) {
-                    lifecycle->QueueInput(*input);
+                           mapped.has_value()) {
+                    if (const auto input = MapInput(*mapped); input.has_value()) {
+                        lifecycle->QueueInput(*input);
+                    }
                 }
             }
             static_cast<void>(lifecycle->StepFrame());

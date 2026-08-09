@@ -125,7 +125,10 @@ else()
 endif()
 ogplay_set_project_warnings(ogplay_audio)
 
-add_library(ogplay_input src/input/template_catalog.cpp)
+add_library(ogplay_input
+    src/input/mouse_touch_mapper.cpp
+    src/input/template_catalog.cpp
+)
 add_library(OGPlay::Input ALIAS ogplay_input)
 target_link_libraries(ogplay_input PUBLIC OGPlay::Hal)
 target_include_directories(ogplay_input PUBLIC
@@ -419,6 +422,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/hal/window_input_tests.cpp
         tests/hal/virtual_memory_tests.cpp
         tests/input/template_catalog_tests.cpp
+        tests/input/mouse_touch_mapper_tests.cpp
         tests/memory/address_tests.cpp
         tests/memory/address_space_tests.cpp
         tests/memory/bus_tests.cpp

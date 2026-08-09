@@ -13,6 +13,8 @@
   resource + instance 标识，stop-all 可按类别清理且可保留一个 resource；已加载资源按
   类别 + resource 独立建账，pending load request 与 loaded 状态分离，供加载、查询、播放
   与卸载共享。
+- `DecodeOggVorbis`：从有界内存输入解码 Ogg Vorbis，事务发布拥有型 mono/stereo PCM16、
+  采样率与帧数；使用仓库固定的 stb_vorbis 1.22（MIT 或 public-domain 双许可）。
 - M3/M6 定义对象表、PCM 队列、回调与媒体状态机。
 
 ## 不变量
@@ -20,6 +22,8 @@
 - guest buffer 所有权和回调线程明确。
 - 音频时钟接入统一 Clock；对象状态可快照。
 - 编码资源的来源与路径解析发生在上层；播放器只接收一次调用期间有效的只读字节视图。
+- Ogg 输入最大 64 MiB、解码 PCM 最大 128 MiB，只接受 1/2 声道和正采样率；空、损坏、
+  超限或不支持流必须在发布 PCM 前明确失败。
 - SoundPool resource 只有在上游完成真实加载后才能 `MarkLoaded`；未接入加载、解码和
   输出前，load/play 只能留下可查询 pending request，查询必须返回目录事实，不得发布
   loaded/playing 成功；play 只有在 loaded 后才能以 resource + instance 创建 voice。

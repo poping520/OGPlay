@@ -104,12 +104,24 @@ else()
 endif()
 ogplay_set_project_warnings(ogplay_hal)
 
-add_library(ogplay_audio INTERFACE)
+add_library(ogplay_audio
+    src/audio/ogg_vorbis.cpp
+    third_party/stb/stb_vorbis.c
+)
 add_library(OGPlay::Audio ALIAS ogplay_audio)
-target_include_directories(ogplay_audio INTERFACE
+target_include_directories(ogplay_audio PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES LANGUAGE CXX)
+if(MSVC)
+    set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES
+        COMPILE_OPTIONS "/w")
+else()
+    set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES
+        COMPILE_OPTIONS "-w")
+endif()
+ogplay_set_project_warnings(ogplay_audio)
 
 add_library(ogplay_input src/input/template_catalog.cpp)
 add_library(OGPlay::Input ALIAS ogplay_input)
@@ -469,6 +481,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/cpu/interpreter_tests.cpp
         tests/cpu/m1_guest_sample_tests.cpp
         tests/cpu/thread_group_tests.cpp
+        tests/audio/ogg_vorbis_tests.cpp
         tests/session/quirk_registry_tests.cpp
         tests/session/lifecycle_tests.cpp
         tests/session/profile_asset_bundle_tests.cpp

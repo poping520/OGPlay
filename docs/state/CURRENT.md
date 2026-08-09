@@ -33,6 +33,10 @@
 
 ## 最近完成
 
+- [WU-0294] 仓库固定的 stb_vorbis 1.22 已将最大 64 MiB Ogg Vorbis 内存输入事务解码为
+  最大 128 MiB 的拥有型 mono/stereo PCM16；空、损坏、超限、不支持格式与溢出均明确
+  失败，真实小型 OGG fixture 覆盖成功路径；macOS-arm64 + ANGLE warnings-as-errors
+  配置、构建及全量 CTest 423/423 通过。
 - [WU-0293] M5 出口新增游戏声音/音效真实输出要求；Title Profile 可用唯一受检
   `{resource}` / `{resource:0N}` 占位符声明 SoundPool source 与规范资源路径，首个目标的
   raw-resource 命名差异仅存在 Profile 数据中；macOS-arm64 + ANGLE warnings-as-errors
@@ -85,8 +89,8 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 按 WU-0294 对 Profile 已解析的编码资源增加受限 Ogg Vorbis 解码。
-2. 按 WU-0295/0296 接入 SoundPool 混音、运行时控制与 SDL3 宿主输出。
+1. 按 WU-0295 接入 SoundPool 已解码 voice、控制语义和无设备离线混音。
+2. 按 WU-0296 接入 SDL3 宿主音频输出并完成 exact-APK 听觉验收。
 3. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 
 ## 阻塞

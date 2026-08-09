@@ -70,6 +70,11 @@ status = "complete"
 test = "tests/session/profile_audio_tests.cpp"
 note = "M5 WU-0210 以 source + path 精确解析 Profile 封面音乐编码资源并保留 loop 事实；WU-0293 将非负 SoundPool resource 按唯一受检占位符确定性映射为 source + 规范路径；两者均不把资源路径解析伪装成解码或设备播放"
 
+[audio.ogg_vorbis_decoder]
+status = "complete"
+test = "tests/audio/ogg_vorbis_tests.cpp"
+note = "M5 WU-0294 用仓库固定 stb_vorbis 1.22 将最大 64 MiB Ogg Vorbis 内存输入事务解码为最大 128 MiB 的拥有型 mono/stereo PCM16；空、损坏、超限和不支持格式明确失败"
+
 [session.profile_plan]
 status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp"

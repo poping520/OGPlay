@@ -83,27 +83,25 @@ void BindAndroidGuestJavaAudioHandlers(
     invocations.RegisterHandler(
         "audio.is_sound_loaded",
         [&sound_pool](const JniInvocation& invocation) {
-            const auto group = std::get<JniInt>(invocation.arguments[0]);
-            const auto resource = std::get<JniInt>(invocation.arguments[1]);
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
             const auto loaded = sound_pool.IsLoaded(
-                audio::JavaSoundPoolKind::pool, group, resource);
-            return JniValue{static_cast<JniInt>(loaded)};
+                audio::JavaSoundPoolKind::pool, resource);
+            return JniValue{JniInt{loaded ? 0 : -1}};
         });
     invocations.RegisterHandler(
         "audio.is_sound_loaded_big",
         [&sound_pool](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
             const auto loaded = sound_pool.IsLoaded(
-                audio::JavaSoundPoolKind::big, 0, resource);
-            return JniValue{static_cast<JniInt>(loaded)};
+                audio::JavaSoundPoolKind::big, resource);
+            return JniValue{JniInt{loaded ? 0 : -1}};
         });
     invocations.RegisterHandler(
         "audio.unload_sound",
         [&sound_pool](const JniInvocation& invocation) {
-            const auto group = std::get<JniInt>(invocation.arguments[0]);
-            const auto resource = std::get<JniInt>(invocation.arguments[1]);
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
             static_cast<void>(sound_pool.Unload(
-                audio::JavaSoundPoolKind::pool, group, resource));
+                audio::JavaSoundPoolKind::pool, resource));
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(
@@ -111,7 +109,42 @@ void BindAndroidGuestJavaAudioHandlers(
         [&sound_pool](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
             static_cast<void>(sound_pool.Unload(
-                audio::JavaSoundPoolKind::big, 0, resource));
+                audio::JavaSoundPoolKind::big, resource));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.play_sound",
+        [&sound_pool](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            const auto instance = std::get<JniInt>(invocation.arguments[1]);
+            const auto volume = std::get<JniFloat>(invocation.arguments[2]);
+            static_cast<void>(sound_pool.Play(
+                audio::JavaSoundPoolKind::pool, resource, instance, volume));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.play_sound_big",
+        [&sound_pool](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            const auto volume = std::get<JniFloat>(invocation.arguments[1]);
+            static_cast<void>(sound_pool.Play(
+                audio::JavaSoundPoolKind::big, resource, 0, volume));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.load_sound",
+        [&sound_pool](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            static_cast<void>(sound_pool.RequestLoad(
+                audio::JavaSoundPoolKind::pool, resource));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.load_sound_big",
+        [&sound_pool](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            static_cast<void>(sound_pool.RequestLoad(
+                audio::JavaSoundPoolKind::big, resource));
             return JniValue{std::monostate{}};
         });
 }

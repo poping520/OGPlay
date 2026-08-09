@@ -523,7 +523,12 @@ note = "M5 WU-0278 用线程安全的分类 voice 状态批量闭合 stop_all_so
 [runtime.java_sound_pool_resource_state]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0280 以类别/group/resource 键实现真实 loaded 查询与精确卸载；普通/big 隔离，未接入加载器时不伪报 loaded，120 帧 exact-APK shutdown 状态 0"
+note = "M5 WU-0280/WU-0281 以类别/resource 键实现真实 loaded 查询与精确卸载；查询遵循 0 loaded/-1 unavailable 契约，普通/big 隔离"
+
+[runtime.java_sound_pool_load_play_state]
+status = "partial"
+test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0281 为 load/play 普通与 big 调用实现 pending request、loaded gate、voice identity 与音量校验；尚未接入资源解析、解码和 HAL 输出，600 帧 exact-APK shutdown 状态 0"
 
 [runtime.gles1_texture_name_lifecycle]
 status = "complete"

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -26,48 +27,73 @@ public:
         active_ = false;
         voices_.clear();
         loaded_resources_.clear();
+        pending_resources_.clear();
         ++destruction_count_;
     }
 
+    [[nodiscard]] bool RequestLoad(const JavaSoundPoolKind kind,
+                                   const std::int32_t resource) {
+        std::scoped_lock lock(mutex_);
+        return RequestLoadLocked(kind, resource);
+    }
+
     [[nodiscard]] bool MarkLoaded(const JavaSoundPoolKind kind,
-                                  const std::int32_t group,
                                   const std::int32_t resource) {
         std::scoped_lock lock(mutex_);
         if (!active_) return false;
-        const Resource key{kind, group, resource};
+        const Resource key{kind, resource};
         if (std::ranges::find(loaded_resources_, key) ==
             loaded_resources_.end()) {
             loaded_resources_.push_back(key);
         }
+        static_cast<void>(std::erase(pending_resources_, key));
         return true;
     }
 
     [[nodiscard]] bool IsLoaded(const JavaSoundPoolKind kind,
-                                const std::int32_t group,
                                 const std::int32_t resource) const {
         std::scoped_lock lock(mutex_);
         return active_ &&
                std::ranges::find(loaded_resources_,
-                                 Resource{kind, group, resource}) !=
+                                 Resource{kind, resource}) !=
                    loaded_resources_.end();
     }
 
     [[nodiscard]] bool Unload(const JavaSoundPoolKind kind,
-                              const std::int32_t group,
                               const std::int32_t resource) {
         std::scoped_lock lock(mutex_);
-        return std::erase(loaded_resources_, Resource{kind, group, resource}) !=
-               0U;
+        const Resource key{kind, resource};
+        auto changed = std::erase(loaded_resources_, key) != 0U;
+        changed = std::erase(pending_resources_, key) != 0U || changed;
+        const auto voices_before = voices_.size();
+        std::erase_if(voices_, [kind, resource](const Voice& voice) {
+            return voice.kind == kind && voice.resource == resource;
+        });
+        return voices_.size() != voices_before || changed;
     }
 
-    [[nodiscard]] bool TrackVoice(const std::uint32_t resource,
-                                  const std::uint32_t instance,
-                                  const JavaSoundPoolKind kind) {
+    [[nodiscard]] bool Play(const JavaSoundPoolKind kind,
+                            const std::int32_t resource,
+                            const std::int32_t instance, const float volume) {
         std::scoped_lock lock(mutex_);
-        if (!active_) return false;
-        const Voice voice{resource, instance, kind};
-        if (std::ranges::find(voices_, voice) == voices_.end()) {
-            voices_.push_back(voice);
+        if (!active_ || !std::isfinite(volume) || volume < 0.0F ||
+            volume > 1.0F) {
+            return false;
+        }
+        if (std::ranges::find(loaded_resources_, Resource{kind, resource}) ==
+            loaded_resources_.end()) {
+            static_cast<void>(RequestLoadLocked(kind, resource));
+            return false;
+        }
+        const auto found = std::ranges::find_if(
+            voices_, [kind, resource, instance](const Voice& voice) {
+                return voice.kind == kind && voice.resource == resource &&
+                       voice.instance == instance;
+            });
+        if (found == voices_.end()) {
+            voices_.push_back({resource, instance, kind, volume});
+        } else {
+            found->volume = volume;
         }
         return true;
     }
@@ -105,6 +131,10 @@ public:
         std::scoped_lock lock(mutex_);
         return loaded_resources_.size();
     }
+    [[nodiscard]] std::size_t PendingLoadCount() const {
+        std::scoped_lock lock(mutex_);
+        return pending_resources_.size();
+    }
     [[nodiscard]] std::uint64_t DestructionCount() const {
         std::scoped_lock lock(mutex_);
         return destruction_count_;
@@ -117,25 +147,41 @@ public:
 private:
     struct Resource final {
         JavaSoundPoolKind kind{JavaSoundPoolKind::pool};
-        std::int32_t group{};
         std::int32_t resource{};
 
         bool operator==(const Resource&) const = default;
     };
 
     struct Voice final {
-        std::uint32_t resource{};
-        std::uint32_t instance{};
+        std::int32_t resource{};
+        std::int32_t instance{};
         JavaSoundPoolKind kind{JavaSoundPoolKind::pool};
+        float volume{1.0F};
 
         bool operator==(const Voice&) const = default;
     };
+
+    [[nodiscard]] bool RequestLoadLocked(const JavaSoundPoolKind kind,
+                                         const std::int32_t resource) {
+        if (!active_) return false;
+        const Resource key{kind, resource};
+        if (std::ranges::find(loaded_resources_, key) !=
+            loaded_resources_.end()) {
+            return true;
+        }
+        if (std::ranges::find(pending_resources_, key) ==
+            pending_resources_.end()) {
+            pending_resources_.push_back(key);
+        }
+        return true;
+    }
 
     mutable std::mutex mutex_;
     bool active_{true};
     std::uint64_t initialization_count_{};
     std::uint64_t destruction_count_{};
     std::vector<Resource> loaded_resources_;
+    std::vector<Resource> pending_resources_;
     std::vector<Voice> voices_;
 };
 

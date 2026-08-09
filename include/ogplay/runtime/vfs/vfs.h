@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -75,6 +76,8 @@ public:
                std::span<const VfsMountEntry> entries);
     void MountLazyReadOnly(VfsSource source, std::string_view root,
                            std::span<const VfsLazyMountEntry> entries);
+    void MountHostDirectory(std::string_view root,
+                            const std::filesystem::path& directory);
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);

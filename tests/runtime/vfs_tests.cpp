@@ -1,7 +1,10 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <chrono>
 #include <cstddef>
+#include <filesystem>
+#include <fstream>
 
 #include "ogplay/runtime/vfs/vfs.h"
 
@@ -168,6 +171,77 @@ TEST_CASE("VFS lazy mount retries explicit backing failures") {
                     ogplay::runtime::VfsError);
     CHECK(loads == 2);
     vfs.Close(descriptor);
+}
+
+TEST_CASE("VFS host directory mount lazily reads and preserves external writes") {
+    const auto unique = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto root = std::filesystem::temp_directory_path() /
+                      ("ogplay-vfs-" + unique);
+    const auto nested = root / "Data";
+    std::filesystem::create_directories(nested);
+    const auto backing = nested / "Game.bin";
+    {
+        std::ofstream output(backing, std::ios::binary);
+        output.write("abc", 3);
+    }
+
+    ogplay::runtime::VirtualFileSystem vfs;
+    vfs.MountHostDirectory("/sdcard/game", root);
+    CHECK(vfs.Stat("/SDCARD/GAME/data/game.bin").size == 3);
+    CHECK(vfs.Stat("/sdcard/game/data/game.bin").writable);
+
+    {
+        std::ofstream output(backing, std::ios::binary | std::ios::trunc);
+        output.write("xyz", 3);
+    }
+    const auto descriptor = vfs.Open(
+        "/sdcard/game/data/game.bin", {.read = true, .write = true});
+    const std::array replacement{std::byte{'Q'}};
+    CHECK(vfs.Write(descriptor, replacement) == 1);
+    CHECK(vfs.Seek(descriptor, 0,
+                   ogplay::runtime::VfsSeekWhence::begin) == 0);
+    std::array<std::byte, 3> contents{};
+    CHECK(vfs.Read(descriptor, contents) == contents.size());
+    CHECK(contents == std::array{std::byte{'Q'}, std::byte{'y'},
+                                 std::byte{'z'}});
+    vfs.Close(descriptor);
+
+    std::filesystem::remove_all(root);
+}
+
+TEST_CASE("VFS host directory mount rejects unsafe and ambiguous trees") {
+    const auto unique = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto root = std::filesystem::temp_directory_path() /
+                      ("ogplay-vfs-invalid-" + unique);
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream first(root / "good.bin", std::ios::binary);
+        first.put('1');
+        std::ofstream second(root / "bad\\name.bin", std::ios::binary);
+        second.put('2');
+    }
+    ogplay::runtime::VirtualFileSystem vfs;
+    CHECK_THROWS_AS(vfs.MountHostDirectory("/sdcard/game", root),
+                    ogplay::runtime::VfsError);
+    CHECK_THROWS_AS(static_cast<void>(
+                        vfs.Stat("/sdcard/game/good.bin")),
+                    ogplay::runtime::VfsError);
+    std::filesystem::remove_all(root);
+
+    std::filesystem::create_directories(root);
+    std::error_code error;
+    std::filesystem::create_symlink(root / "missing", root / "link", error);
+    if (!error) {
+        CHECK_THROWS_AS(vfs.MountHostDirectory("/sdcard/game", root),
+                        ogplay::runtime::VfsError);
+    }
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    CHECK_THROWS_AS(vfs.MountHostDirectory("/sdcard/game", root),
+                    ogplay::runtime::VfsError);
+    std::filesystem::remove_all(root);
 }
 
 TEST_CASE("VFS pipe connects isolated read and write descriptors") {

@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -25,6 +27,36 @@ constexpr std::int32_t kEnotdir = 20;
 constexpr std::int32_t kEisdir = 21;
 constexpr std::int32_t kEinval = 22;
 constexpr std::int32_t kEfbig = 27;
+
+[[nodiscard]] std::vector<std::byte> ReadHostFile(
+    const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
+    if (!input) {
+        throw std::runtime_error("cannot open host backing file: " +
+                                 path.string());
+    }
+    const auto end = input.tellg();
+    if (end < 0) {
+        throw std::runtime_error("cannot size host backing file: " +
+                                 path.string());
+    }
+    const auto size = static_cast<std::uint64_t>(end);
+    if (size > std::numeric_limits<std::size_t>::max()) {
+        throw std::runtime_error("host backing file is too large: " +
+                                 path.string());
+    }
+    std::vector<std::byte> result(static_cast<std::size_t>(size));
+    input.seekg(0);
+    if (!result.empty()) {
+        input.read(reinterpret_cast<char*>(result.data()),
+                   static_cast<std::streamsize>(result.size()));
+    }
+    if (!input) {
+        throw std::runtime_error("host backing file was truncated: " +
+                                 path.string());
+    }
+    return result;
+}
 
 [[nodiscard]] char FoldAscii(const char value) {
     if (value >= 'A' && value <= 'Z') {
@@ -148,13 +180,17 @@ public:
         }
     }
 
-    void MountLazyReadOnly(
+    void MountLazy(
         const VfsSource source, const std::string_view root,
-        const std::span<const VfsLazyMountEntry> entries) {
-        if ((source != VfsSource::apk && source != VfsSource::obb) ||
-            entries.empty()) {
+        const std::span<const VfsLazyMountEntry> entries,
+        const bool writable) {
+        const auto valid_source = source == VfsSource::apk ||
+                                  source == VfsSource::obb ||
+                                  source == VfsSource::external;
+        if (!valid_source || entries.empty() ||
+            (writable && source != VfsSource::external)) {
             throw VfsError(kEinval,
-                           "lazy VFS mount requires a read-only source and entries");
+                           "lazy VFS mount requires a compatible source and entries");
         }
         if (root.empty() || root.front() != '/') {
             throw VfsError(kEnotdir, "VFS mount root must be absolute");
@@ -183,7 +219,7 @@ public:
             pending.emplace_back(
                 normalized,
                 std::make_shared<File>(File{
-                    {}, entry.size, entry.read_all, false, source}));
+                    {}, entry.size, entry.read_all, writable, source}));
         }
         std::scoped_lock lock(mutex_);
         for (const auto& [path, file] : pending) {
@@ -195,6 +231,66 @@ public:
         for (auto& [path, file] : pending) {
             files_.emplace(std::move(path), std::move(file));
         }
+    }
+
+    void MountHostDirectory(const std::string_view root,
+                            const std::filesystem::path& directory) {
+        std::error_code error;
+        const auto root_status = std::filesystem::symlink_status(directory, error);
+        if (error || !std::filesystem::is_directory(root_status) ||
+            std::filesystem::is_symlink(root_status)) {
+            throw VfsError(kEnotdir,
+                           "external VFS backing must be a real directory");
+        }
+
+        std::vector<VfsLazyMountEntry> entries;
+        std::filesystem::recursive_directory_iterator iterator(directory, error);
+        const std::filesystem::recursive_directory_iterator end;
+        if (error) {
+            throw VfsError(kEio,
+                           "cannot enumerate external VFS backing directory");
+        }
+        while (iterator != end) {
+            const auto path = iterator->path();
+            const auto status = iterator->symlink_status(error);
+            if (error) {
+                throw VfsError(kEio,
+                               "cannot inspect external VFS backing entry");
+            }
+            if (std::filesystem::is_symlink(status)) {
+                throw VfsError(kEacces,
+                               "external VFS backing contains a symbolic link");
+            }
+            if (std::filesystem::is_regular_file(status)) {
+                const auto size = iterator->file_size(error);
+                if (error) {
+                    throw VfsError(kEio,
+                                   "cannot size external VFS backing file");
+                }
+                const auto relative = path.lexically_relative(directory);
+                if (relative.empty() || relative.is_absolute()) {
+                    throw VfsError(kEacces,
+                                   "external VFS backing entry escaped its root");
+                }
+                entries.push_back({
+                    relative.generic_string(), size,
+                    [path] { return ReadHostFile(path); },
+                });
+            } else if (!std::filesystem::is_directory(status)) {
+                throw VfsError(kEinval,
+                               "external VFS backing contains a special file");
+            }
+            iterator.increment(error);
+            if (error) {
+                throw VfsError(kEio,
+                               "cannot continue external VFS backing enumeration");
+            }
+        }
+        if (entries.empty()) {
+            throw VfsError(kEinval,
+                           "external VFS backing directory has no files");
+        }
+        MountLazy(VfsSource::external, root, entries, true);
     }
 
     [[nodiscard]] VfsFileInfo Stat(const std::string_view path) const {
@@ -230,6 +326,7 @@ public:
             }
             found->second->contents.clear();
             found->second->size = 0;
+            found->second->read_all = {};
         }
         const auto descriptor = AllocateDescriptor();
         descriptors_.emplace(
@@ -278,6 +375,7 @@ public:
         std::scoped_lock lock(mutex_);
         auto& open = FindDescriptor(descriptor);
         if (!open.writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
+        Materialize(*open.file);
         const auto end = open.offset + source.size();
         if (end > std::numeric_limits<std::size_t>::max()) {
             throw VfsError(kEfbig, "VFS file size is not representable");
@@ -383,7 +481,15 @@ void VirtualFileSystem::Mount(
 void VirtualFileSystem::MountLazyReadOnly(
     const VfsSource source, const std::string_view root,
     const std::span<const VfsLazyMountEntry> entries) {
-    impl_->MountLazyReadOnly(source, root, entries);
+    if (source != VfsSource::apk && source != VfsSource::obb) {
+        throw VfsError(kEinval,
+                       "lazy read-only VFS mount requires APK or OBB source");
+    }
+    impl_->MountLazy(source, root, entries, false);
+}
+void VirtualFileSystem::MountHostDirectory(
+    const std::string_view root, const std::filesystem::path& directory) {
+    impl_->MountHostDirectory(root, directory);
 }
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);

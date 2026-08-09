@@ -288,7 +288,7 @@ note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样�
 [runtime.vfs]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp"
-note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close；M5 WU-0300 增加 APK/OBB 只读 backing 的首次读取物化、尺寸校验与成功缓存"
+note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close；M5 WU-0300/0301 增加 APK/OBB 只读及宿主 external 目录 backing 的按需物化、尺寸校验、成功缓存与会话内写时物化"
 
 [runtime.jni]
 status = "complete"

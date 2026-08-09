@@ -148,6 +148,10 @@ public:
             return pending_;
         }
 
+        [[nodiscard]] memory::DirectMemoryPageTable* DirectPageTable() noexcept {
+            return memory_bus_.DirectPageTable();
+        }
+
         std::optional<std::uint32_t> MemoryReadCode(
             const Dynarmic::A32::VAddr address) override {
             try {
@@ -347,7 +351,14 @@ public:
         config.global_monitor = &context.impl_->monitor;
         config.arch_version = Dynarmic::A32::ArchVersion::v7;
         config.always_little_endian = true;
-        config.check_halt_on_memory_access = true;
+        config.page_table = callbacks.DirectPageTable();
+        config.detect_misaligned_access_via_page_table =
+            8U | 16U | 32U | 64U;
+        config.only_detect_misalignment_via_page_table_on_page_boundary = true;
+        // OGPlay uses callback-only memory access. Dynarmic's per-access abort
+        // checks apply to page-table/fastmem fallbacks, while enabling this flag
+        // still disables register get/set elimination on the Arm64 backend.
+        config.check_halt_on_memory_access = false;
         config.enable_cycle_counting = true;
         config.code_cache_size = 16U * 1024U * 1024U;
         config.coprocessors[15] =
@@ -414,14 +425,8 @@ RunResult DynarmicCpu::Run(const std::uint64_t tick_budget) {
 
 A32State DynarmicCpu::GetState() const {
     A32State state;
-    const auto& registers = impl_->jit.Regs();
-    for (std::size_t index = 0; index < registers.size(); ++index) {
-        state.SetRegister(static_cast<CoreRegister>(index), registers[index]);
-    }
-    const auto& extended = impl_->jit.ExtRegs();
-    for (std::size_t index = 0; index < extended.size(); ++index) {
-        state.SetExtendedRegister(static_cast<std::uint8_t>(index), extended[index]);
-    }
+    state.SetCoreRegisters(impl_->jit.Regs());
+    state.SetExtendedRegisters(impl_->jit.ExtRegs());
     state.SetCpsr(impl_->jit.Cpsr());
     state.SetFpscr(impl_->jit.Fpscr());
     state.SetFpexc(impl_->fpexc);

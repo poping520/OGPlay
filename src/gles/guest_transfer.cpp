@@ -20,6 +20,35 @@ namespace {
 
 }  // namespace
 
+std::span<const std::byte> PrepareGuestInput(
+    memory::AddressSpace& memory, const memory::GuestAddress address,
+    const std::uint64_t size, const bool nullable,
+    std::vector<std::byte>& storage, const std::uint64_t thread_id,
+    const std::uint64_t size_limit) {
+    if (address.IsNull()) {
+        if (!nullable) {
+            throw GuestTransferError("required guest pointer is null");
+        }
+        return std::span<const std::byte>{};
+    }
+    if (size > size_limit || size > std::numeric_limits<std::size_t>::max()) {
+        throw GuestTransferError("guest transfer exceeds configured size limit");
+    }
+    if (size == 0) {
+        return std::span<const std::byte>{};
+    }
+
+    const memory::GuestRange range(address, size);
+    memory.Validate(range, memory::AccessType::read, thread_id);
+    const auto host_size = static_cast<std::size_t>(size);
+    if (storage.size() < host_size) {
+        storage.resize(host_size);
+    }
+    const auto bytes = std::span(storage).first(host_size);
+    memory.Read(address, bytes, thread_id);
+    return bytes;
+}
+
 GuestBuffer GuestBuffer::Prepare(memory::AddressSpace& memory,
                                  const memory::GuestAddress address,
                                  const std::uint64_t size,

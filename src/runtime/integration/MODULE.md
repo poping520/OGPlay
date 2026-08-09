@@ -60,8 +60,11 @@
   `glGetFloatv` 从对应状态返回矩阵、颜色、alpha 与 client texture，最大 anisotropy 必须
   查询真实 ANGLE 值；guest 输出及 `glTexEnvfv` 输入在任何状态变化前完整预检。
 - GLES1 client-array/draw 批次延迟保存 vertex/normal/color/texture-coordinate pointer；draw
-  才按实际 first/count 或 guest index 最大值完整预检 client 内存并上传内部 VBO/EBO。固定
-  管线通过内部 GLES2 shader 消费 modelview/projection/texture matrix、current/array color、
+  才按实际 first/count 或 guest index 最大值完整预检 client 内存并上传内部 VBO/EBO。
+  高频 client input、guest index 与顺序索引只复用宿主暂存高水位容量，每次 draw 仍重新
+  预检并读取 guest 内容；pointer 更新先生成已验证候选，再在 current frame 成功后提交，
+  禁止为事务语义复制整个 draw state。固定管线通过内部 GLES2 shader 消费
+  modelview/projection/texture matrix、current/array color、
   light0、texture、fog 与 alpha-test 状态；guest buffer binding 在内部上传后必须恢复。
   `glDrawArrays` 以受检 `GLushort` 顺序索引等价执行，超过 65535 明确失败。当前 renderer
   从实际启用 `GL_TEXTURE_2D` 的单元选择 sampler、texture-coordinate array、texture

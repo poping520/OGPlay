@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "ogplay/gles/supersample.h"
@@ -59,6 +60,16 @@ TEST_CASE("RGBA8 supersample resolve preserves block colors and orientation") {
         0, 0, 255, 255, 255, 255, 255, 255,
     };
     CHECK(resolved == expected);
+}
+
+TEST_CASE("RGBA8 one-times resolve retains the owned readback storage") {
+    const auto layout = ogplay::gles::MakeSupersampleLayout(2, 2, 1);
+    std::vector<std::uint8_t> pixels(2U * 2U * 4U, 37U);
+    const auto* storage = pixels.data();
+    const auto resolved = ogplay::gles::ResolveSupersampledRgba8(
+        std::move(pixels), layout);
+    CHECK(resolved.data() == storage);
+    CHECK(resolved == std::vector<std::uint8_t>(2U * 2U * 4U, 37U));
 }
 
 TEST_CASE("RGBA8 supersample resolve rounds averages and rejects inconsistent input") {

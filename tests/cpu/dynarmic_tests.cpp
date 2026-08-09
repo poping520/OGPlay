@@ -193,3 +193,66 @@ TEST_CASE("Dynarmic executes ARM exclusive memory operations") {
     CHECK_THROWS_AS(ogplay::cpu::DynarmicCpu(bus, context),
                     std::runtime_error);
 }
+
+TEST_CASE("Dynarmic reports callback-only data memory faults") {
+    const ogplay::memory::GuestAddress code{sample::kCodeAddress};
+    const ogplay::memory::GuestAddress unmapped{0x30000U};
+    ogplay::memory::AddressSpace memory;
+    memory.Map({code, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write32(code, 0xe5901000U);         // ldr r1, [r0]
+    bus.Write32(code.Add(4), 0xef000001U);  // svc #1
+    memory.Protect({code, memory.PageSize()},
+                   ogplay::memory::PageProtection::read |
+                       ogplay::memory::PageProtection::execute);
+
+    ogplay::cpu::DynarmicCpu cpu(bus);
+    ogplay::cpu::A32State state;
+    state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, unmapped.Value());
+    state.SetThreadId(304);
+    cpu.SetState(state);
+
+    const auto result = cpu.Run(8);
+    CHECK(result.reason == ogplay::cpu::RunStopReason::memory_fault);
+    REQUIRE(result.fault.has_value());
+    CHECK(result.fault->address == unmapped);
+    CHECK(result.fault->access == ogplay::memory::AccessType::read);
+    CHECK(result.fault->thread_id == 304);
+}
+
+TEST_CASE("Dynarmic direct memory falls back for cross-page permission checks") {
+    const ogplay::memory::GuestAddress code{sample::kCodeAddress};
+    const ogplay::memory::GuestAddress data{sample::kMailboxAddress};
+    ogplay::memory::AddressSpace memory;
+    const auto read_write = ogplay::memory::PageProtection::read |
+                            ogplay::memory::PageProtection::write;
+    memory.Map({code, memory.PageSize()}, read_write);
+    memory.Map({data, memory.PageSize() * 2U}, read_write);
+    memory.Protect({data.Add(memory.PageSize()), memory.PageSize()},
+                   ogplay::memory::PageProtection::read);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write32(code, 0xe5801000U);         // str r1, [r0]
+    bus.Write32(code.Add(4), 0xef000001U);  // svc #1
+    memory.Protect({code, memory.PageSize()},
+                   ogplay::memory::PageProtection::read |
+                       ogplay::memory::PageProtection::execute);
+
+    ogplay::cpu::DynarmicCpu cpu(bus);
+    ogplay::cpu::A32State state;
+    const auto crossing = data.Add(memory.PageSize() - 2U);
+    state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, crossing.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::r1, 0xaabbccddU);
+    state.SetThreadId(305);
+    cpu.SetState(state);
+
+    const auto result = cpu.Run(8);
+    CHECK(result.reason == ogplay::cpu::RunStopReason::memory_fault);
+    REQUIRE(result.fault.has_value());
+    CHECK(result.fault->access == ogplay::memory::AccessType::write);
+    CHECK(result.fault->thread_id == 305);
+    CHECK(bus.Read16(crossing) == 0);
+}

@@ -22,5 +22,7 @@ struct SupersampleLayout final {
 
 [[nodiscard]] std::vector<std::uint8_t> ResolveSupersampledRgba8(
     std::span<const std::uint8_t> pixels, const SupersampleLayout& layout);
+[[nodiscard]] std::vector<std::uint8_t> ResolveSupersampledRgba8(
+    std::vector<std::uint8_t>&& pixels, const SupersampleLayout& layout);
 
 }  // namespace ogplay::gles

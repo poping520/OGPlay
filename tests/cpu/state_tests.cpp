@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <cstdint>
 #include <stdexcept>
 
@@ -41,6 +42,27 @@ TEST_CASE("A32 execution state only changes the CPSR Thumb bit") {
     CHECK(state.State() == ogplay::cpu::ExecutionState::thumb);
     state.SetState(ogplay::cpu::ExecutionState::a32);
     CHECK(state.Cpsr() == 0xf0000010);
+}
+
+TEST_CASE("A32 state imports complete register banks without changing metadata") {
+    ogplay::cpu::A32State state;
+    state.SetThreadId(91U);
+    state.SetThreadPointer(ogplay::memory::GuestAddress{0x71000000U});
+    std::array<std::uint32_t, 16> core{};
+    std::array<std::uint32_t, 64> extended{};
+    for (std::size_t index = 0; index < core.size(); ++index) {
+        core[index] = static_cast<std::uint32_t>(index + 10U);
+    }
+    for (std::size_t index = 0; index < extended.size(); ++index) {
+        extended[index] = static_cast<std::uint32_t>(index + 100U);
+    }
+    state.SetCoreRegisters(core);
+    state.SetExtendedRegisters(extended);
+    CHECK(state.CoreRegisters() == core);
+    CHECK(state.ExtendedRegisters() == extended);
+    CHECK(state.ThreadId() == 91U);
+    CHECK(state.ThreadPointer() ==
+          ogplay::memory::GuestAddress{0x71000000U});
 }
 
 TEST_CASE("CPU snapshot and memory fault result retain deterministic state") {

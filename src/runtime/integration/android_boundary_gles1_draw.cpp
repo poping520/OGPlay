@@ -4,7 +4,6 @@
 #include <bit>
 #include <cstddef>
 #include <limits>
-#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -176,6 +175,16 @@ void AndroidBoundaryGles1DrawState::SetPointer(
     const std::int32_t size, const std::uint32_t type,
     const std::int32_t stride, const std::uint32_t pointer,
     const std::uint32_t buffer) {
+    CommitPointer(array, client_texture,
+                  PreparePointer(array, client_texture, size, type, stride,
+                                 pointer, buffer));
+}
+
+Gles1ClientArray AndroidBoundaryGles1DrawState::PreparePointer(
+    const std::uint32_t array, const std::uint32_t client_texture,
+    const std::int32_t size, const std::uint32_t type,
+    const std::int32_t stride, const std::uint32_t pointer,
+    const std::uint32_t buffer) const {
     if (stride < 0) {
         throw std::invalid_argument("GLES1 client array stride is negative");
     }
@@ -200,10 +209,15 @@ void AndroidBoundaryGles1DrawState::SetPointer(
     if (array == kGles1WeightArray && type != kFloat && type != kFixed) {
         throw std::invalid_argument("GLES1 weight array requires GL_FLOAT or GL_FIXED");
     }
-    auto& stored = arrays_.at(ArrayKey(array, client_texture));
-    const auto enabled = stored.enabled;
-    stored = {.size = size, .type = type, .stride = stride,
-              .pointer = pointer, .buffer = buffer, .enabled = enabled};
+    const auto enabled = arrays_.at(ArrayKey(array, client_texture)).enabled;
+    return {.size = size, .type = type, .stride = stride,
+            .pointer = pointer, .buffer = buffer, .enabled = enabled};
+}
+
+void AndroidBoundaryGles1DrawState::CommitPointer(
+    const std::uint32_t array, const std::uint32_t client_texture,
+    Gles1ClientArray pointer) {
+    arrays_.at(ArrayKey(array, client_texture)) = pointer;
 }
 
 const Gles1ClientArray& AndroidBoundaryGles1DrawState::Array(
@@ -213,11 +227,16 @@ const Gles1ClientArray& AndroidBoundaryGles1DrawState::Array(
 
 void AndroidBoundaryGles1DrawState::SetCurrentPaletteMatrix(
     const std::uint32_t index) {
+    ValidateCurrentPaletteMatrix(index);
+    current_palette_matrix_ = index;
+}
+
+void AndroidBoundaryGles1DrawState::ValidateCurrentPaletteMatrix(
+    const std::uint32_t index) {
     constexpr std::uint32_t kMaximumPaletteMatrices = 32U;
     if (index >= kMaximumPaletteMatrices) {
         throw std::invalid_argument("GLES1 palette matrix index is outside 0..31");
     }
-    current_palette_matrix_ = index;
 }
 
 std::uint32_t AndroidBoundaryGles1DrawState::CurrentPaletteMatrix() const noexcept {
@@ -321,14 +340,14 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
         }
         std::uint32_t offset = array.pointer;
         if (array.buffer == 0U) {
-            auto transfer = gles::GuestBuffer::Prepare(
+            const auto transfer = gles::PrepareGuestInput(
                 address_space, memory::GuestAddress{array.pointer},
                 ArrayBytes(array, maximum_index),
-                gles::GuestTransferDirection::input, false, thread_id);
+                false, client_array_staging_[index], thread_id);
             frame.BindBuffer(kArrayBuffer, program_.buffers[index]);
             frame.BufferData(kArrayBuffer,
-                             static_cast<std::uint32_t>(transfer.Bytes().size()),
-                             transfer.Bytes(), kStaticDraw);
+                             static_cast<std::uint32_t>(transfer.size()),
+                             transfer, kStaticDraw);
             offset = 0U;
         } else {
             frame.BindBuffer(kArrayBuffer, array.buffer);
@@ -506,18 +525,23 @@ void AndroidBoundaryGles1DrawState::DrawArrays(
     PrepareArrays(frame, core, address_space, texture_units,
                   static_cast<std::uint32_t>(maximum), thread_id);
     ApplyUniforms(frame, core, legacy, texture_units);
-    std::vector<std::uint16_t> indices(static_cast<std::size_t>(count));
     if (maximum > (std::numeric_limits<std::uint16_t>::max)()) {
         throw std::length_error("GLES1 emulated draw-array index exceeds GLushort");
     }
+    const auto index_count = static_cast<std::size_t>(count);
+    if (draw_array_indices_.size() < index_count) {
+        draw_array_indices_.resize(index_count);
+    }
+    const auto draw_indices = std::span(draw_array_indices_).first(index_count);
     for (std::int32_t index = 0; index < count; ++index) {
-        indices[static_cast<std::size_t>(index)] =
+        draw_indices[static_cast<std::size_t>(index)] =
             static_cast<std::uint16_t>(first + index);
     }
     frame.BindBuffer(kElementArrayBuffer, program_.buffers.back());
     frame.BufferData(kElementArrayBuffer,
-                     static_cast<std::uint32_t>(indices.size() * sizeof(std::uint16_t)),
-                     std::as_bytes(std::span(indices)), kStaticDraw);
+                     static_cast<std::uint32_t>(draw_indices.size() *
+                                                sizeof(std::uint16_t)),
+                     std::as_bytes(draw_indices), kStaticDraw);
     frame.DrawElements(mode, count, kUnsignedShort, 0U);
     frame.BindBuffer(kElementArrayBuffer,
                      core.TransferState().Snapshot().element_array_buffer);
@@ -541,13 +565,13 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     const auto guest_element_buffer =
         core.TransferState().Snapshot().element_array_buffer;
     std::uint32_t maximum{};
-    std::optional<gles::GuestBuffer> transferred;
+    std::span<const std::byte> transferred;
     if (guest_element_buffer == 0U) {
-        transferred.emplace(gles::GuestBuffer::Prepare(
+        transferred = gles::PrepareGuestInput(
             address_space, memory::GuestAddress{indices},
             static_cast<std::uint64_t>(count) * ScalarBytes(type),
-            gles::GuestTransferDirection::input, false, thread_id));
-        maximum = MaximumIndex(transferred->Bytes(), type);
+            false, element_staging_, thread_id);
+        maximum = MaximumIndex(transferred, type);
     } else {
         for (const auto kind : {kGles1VertexArray, kGles1NormalArray,
                                 kGles1ColorArray}) {
@@ -569,11 +593,11 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     const auto texture_units = DrawTextureUnits(core);
     PrepareArrays(frame, core, address_space, texture_units, maximum, thread_id);
     ApplyUniforms(frame, core, legacy, texture_units);
-    if (transferred.has_value()) {
+    if (guest_element_buffer == 0U) {
         frame.BindBuffer(kElementArrayBuffer, program_.buffers.back());
         frame.BufferData(kElementArrayBuffer,
-                         static_cast<std::uint32_t>(transferred->Bytes().size()),
-                         transferred->Bytes(), kStaticDraw);
+                         static_cast<std::uint32_t>(transferred.size()),
+                         transferred, kStaticDraw);
         frame.DrawElements(mode, count, type, 0U);
     } else {
         frame.BindBuffer(kElementArrayBuffer, guest_element_buffer);
@@ -610,13 +634,13 @@ void BindAndroidBoundaryGles1Draw(
                                  const std::uint32_t stride_index,
                                  const std::uint32_t pointer_index,
                                  const std::string_view operation) {
-        auto next = draw;
-        next.SetPointer(array, legacy.ClientActiveTexture(), size,
-                        arguments[type_index], Signed(arguments[stride_index]),
-                        arguments[pointer_index],
-                        core.TransferState().Snapshot().array_buffer);
+        const auto client_texture = legacy.ClientActiveTexture();
+        auto next = draw.PreparePointer(
+            array, client_texture, size, arguments[type_index],
+            Signed(arguments[stride_index]), arguments[pointer_index],
+            core.TransferState().Snapshot().array_buffer);
         static_cast<void>(require_frame(operation));
-        draw = std::move(next);
+        draw.CommitPointer(array, client_texture, next);
         return 0U;
     };
     dispatch.Bind("glColorPointer", [set_pointer](const auto arguments, const auto) {
@@ -650,22 +674,21 @@ void BindAndroidBoundaryGles1Draw(
     });
     extensions.Bind("glCurrentPaletteMatrixOES",
                     [&draw, require_frame](const auto arguments, const auto) {
-        auto next = draw;
-        next.SetCurrentPaletteMatrix(arguments[0]);
+        AndroidBoundaryGles1DrawState::ValidateCurrentPaletteMatrix(arguments[0]);
         static_cast<void>(require_frame("glCurrentPaletteMatrixOES"));
-        draw = std::move(next);
+        draw.SetCurrentPaletteMatrix(arguments[0]);
         return 0U;
     });
     const auto set_palette_pointer =
         [&draw, &core, require_frame](const std::uint32_t array,
                                      const auto arguments,
                                      const std::string_view operation) {
-            auto next = draw;
-            next.SetPointer(array, kTexture0, Signed(arguments[0]), arguments[1],
-                            Signed(arguments[2]), arguments[3],
-                            core.TransferState().Snapshot().array_buffer);
+            auto next = draw.PreparePointer(
+                array, kTexture0, Signed(arguments[0]), arguments[1],
+                Signed(arguments[2]), arguments[3],
+                core.TransferState().Snapshot().array_buffer);
             static_cast<void>(require_frame(operation));
-            draw = std::move(next);
+            draw.CommitPointer(array, kTexture0, next);
             return 0U;
         };
     extensions.Bind("glMatrixIndexPointerOES",

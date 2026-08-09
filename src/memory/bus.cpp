@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <span>
 #include <type_traits>
 
 #include "ogplay/memory/address_space.h"
@@ -11,7 +10,8 @@ namespace ogplay::memory {
 namespace {
 
 template <typename UInt>
-[[nodiscard]] UInt DecodeLittleEndian(const std::array<std::byte, sizeof(UInt)>& bytes) {
+[[nodiscard]] UInt DecodeLittleEndian(
+    const std::array<std::byte, sizeof(UInt)>& bytes) {
     static_assert(std::is_unsigned_v<UInt>);
     std::uint64_t value{};
     for (std::size_t index = 0; index < bytes.size(); ++index) {
@@ -23,28 +23,24 @@ template <typename UInt>
 }
 
 template <typename UInt>
-[[nodiscard]] std::array<std::byte, sizeof(UInt)> EncodeLittleEndian(
-    const UInt value) {
-    static_assert(std::is_unsigned_v<UInt>);
-    std::array<std::byte, sizeof(UInt)> bytes{};
-    const auto wide_value = static_cast<std::uint64_t>(value);
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        bytes[index] = static_cast<std::byte>(
-            (wide_value >> static_cast<unsigned>(index * 8U)) & 0xffU);
-    }
-    return bytes;
-}
-
-template <typename UInt>
 [[nodiscard]] UInt ReadValue(AddressSpace& address_space, MemoryAccessObserver* observer,
                              const GuestAddress address, const std::uint64_t thread_id) {
-    std::array<std::byte, sizeof(UInt)> bytes{};
-    address_space.Read(address, bytes, thread_id);
+    const auto value = [&] {
+        if constexpr (sizeof(UInt) == 1) {
+            return address_space.Read8(address, thread_id);
+        } else if constexpr (sizeof(UInt) == 2) {
+            return address_space.Read16(address, thread_id);
+        } else if constexpr (sizeof(UInt) == 4) {
+            return address_space.Read32(address, thread_id);
+        } else {
+            return address_space.Read64(address, thread_id);
+        }
+    }();
     if (observer != nullptr) {
         observer->OnMemoryAccess({address, static_cast<std::uint32_t>(sizeof(UInt)),
                                   BusAccessType::read, thread_id});
     }
-    return DecodeLittleEndian<UInt>(bytes);
+    return value;
 }
 
 template <typename UInt>
@@ -65,8 +61,10 @@ template <typename UInt>
 void WriteValue(AddressSpace& address_space, MemoryAccessObserver* observer,
                 const GuestAddress address, const UInt value,
                 const std::uint64_t thread_id) {
-    const auto bytes = EncodeLittleEndian(value);
-    address_space.Write(address, bytes, thread_id);
+    if constexpr (sizeof(UInt) == 1) address_space.Write8(address, value, thread_id);
+    if constexpr (sizeof(UInt) == 2) address_space.Write16(address, value, thread_id);
+    if constexpr (sizeof(UInt) == 4) address_space.Write32(address, value, thread_id);
+    if constexpr (sizeof(UInt) == 8) address_space.Write64(address, value, thread_id);
     if (observer != nullptr) {
         observer->OnMemoryAccess({address, static_cast<std::uint32_t>(sizeof(UInt)),
                                   BusAccessType::write, thread_id});
@@ -118,6 +116,10 @@ void CheckedMemoryBus::Write32(const GuestAddress address, const std::uint32_t v
 void CheckedMemoryBus::Write64(const GuestAddress address, const std::uint64_t value,
                                const std::uint64_t thread_id) {
     WriteValue(address_space_, observer_, address, value, thread_id);
+}
+
+DirectMemoryPageTable* CheckedMemoryBus::DirectPageTable() noexcept {
+    return observer_ == nullptr ? address_space_.DirectPageTable() : nullptr;
 }
 
 }  // namespace ogplay::memory

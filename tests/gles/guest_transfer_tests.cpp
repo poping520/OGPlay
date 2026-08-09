@@ -34,6 +34,30 @@ TEST_CASE("guest input transfer validates and copies an exact range") {
     CHECK_THROWS_AS(buffer.Commit(), ogplay::gles::GuestTransferError);
 }
 
+TEST_CASE("guest input staging reuses capacity and refreshes contents") {
+    ogplay::memory::AddressSpace memory;
+    memory.Map({kStart, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    const std::array first{std::byte{1}, std::byte{2}, std::byte{3},
+                           std::byte{4}};
+    memory.Write(kStart, first);
+
+    std::vector<std::byte> storage;
+    const auto staged = ogplay::gles::PrepareGuestInput(
+        memory, kStart, first.size(), false, storage, 17);
+    REQUIRE(std::ranges::equal(staged, first));
+    const auto* allocation = storage.data();
+
+    const std::array second{std::byte{5}, std::byte{6}};
+    memory.Write(kStart, second);
+    const auto refreshed = ogplay::gles::PrepareGuestInput(
+        memory, kStart, second.size(), false, storage, 17);
+    CHECK(storage.data() == allocation);
+    CHECK(std::ranges::equal(refreshed, second));
+    CHECK(storage.size() == first.size());
+}
+
 TEST_CASE("guest output transfer does not read and commits explicitly") {
     ogplay::memory::AddressSpace memory;
     memory.Map({kStart, memory.PageSize()},

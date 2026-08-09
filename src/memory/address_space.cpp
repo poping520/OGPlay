@@ -1,8 +1,10 @@
 #include "ogplay/memory/address_space.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <mutex>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -11,7 +13,8 @@
 namespace ogplay::memory {
 namespace {
 
-inline constexpr std::uint64_t kGuestPageSize = 4096;
+inline constexpr std::uint64_t kGuestPageSize = std::uint64_t{1}
+                                                      << kGuestPageBits;
 
 [[nodiscard]] bool HasProtection(const PageProtection value,
                                  const PageProtection flag) noexcept {
@@ -57,6 +60,8 @@ public:
         mapped_.resize(pages_.size(), false);
         host_committed_.resize(static_cast<std::size_t>(
             kGuestAddressSpaceSize / host_page_size_), false);
+        direct_page_table_ = std::make_unique<DirectMemoryPageTable>();
+        direct_page_table_->fill(nullptr);
     }
 
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept { return reservation_->Size(); }
@@ -79,6 +84,7 @@ public:
                     static_cast<std::size_t>(range.Size()));
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
         std::fill(mapped_.begin() + first, mapped_.begin() + last, true);
+        UpdateDirectPages(first, last);
     }
 
     void Protect(const GuestRange& range, const PageProtection protection) {
@@ -88,6 +94,7 @@ public:
         const auto [first, last] = PageIndexes(range);
         RequireMapped(range, first, last, AccessType::read, 0);
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
+        UpdateDirectPages(first, last);
     }
 
     void Unmap(const GuestRange& range) {
@@ -99,6 +106,7 @@ public:
                     static_cast<std::size_t>(range.Size()));
         std::fill(pages_.begin() + first, pages_.begin() + last, PageProtection::none);
         std::fill(mapped_.begin() + first, mapped_.begin() + last, false);
+        UpdateDirectPages(first, last);
         ReleaseUnusedHostBacking(range);
     }
 
@@ -151,6 +159,48 @@ public:
         std::scoped_lock lock(mutex_);
         ValidateLocked(range, AccessType::write, thread_id);
         std::memcpy(reservation_->Base() + address.Value(), source.data(), source.size());
+    }
+
+    template <typename UInt>
+    [[nodiscard]] UInt ReadScalar(const GuestAddress address,
+                                  const std::uint64_t thread_id) const {
+        static_assert(std::is_unsigned_v<UInt>);
+        const GuestRange range(address, sizeof(UInt));
+        std::scoped_lock lock(mutex_);
+        ValidateLocked(range, AccessType::read, thread_id);
+        UInt value{};
+        std::memcpy(&value, reservation_->Base() + address.Value(), sizeof(value));
+        if constexpr (std::endian::native == std::endian::big) {
+            UInt reversed{};
+            for (std::size_t index = 0; index < sizeof(UInt); ++index) {
+                reversed |= ((value >> (index * 8U)) & static_cast<UInt>(0xffU))
+                            << ((sizeof(UInt) - index - 1U) * 8U);
+            }
+            return reversed;
+        }
+        return value;
+    }
+
+    template <typename UInt>
+    void WriteScalar(const GuestAddress address, UInt value,
+                     const std::uint64_t thread_id) {
+        static_assert(std::is_unsigned_v<UInt>);
+        const GuestRange range(address, sizeof(UInt));
+        std::scoped_lock lock(mutex_);
+        ValidateLocked(range, AccessType::write, thread_id);
+        if constexpr (std::endian::native == std::endian::big) {
+            UInt reversed{};
+            for (std::size_t index = 0; index < sizeof(UInt); ++index) {
+                reversed |= ((value >> (index * 8U)) & static_cast<UInt>(0xffU))
+                            << ((sizeof(UInt) - index - 1U) * 8U);
+            }
+            value = reversed;
+        }
+        std::memcpy(reservation_->Base() + address.Value(), &value, sizeof(value));
+    }
+
+    [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept {
+        return direct_page_table_.get();
     }
 
     [[nodiscard]] MemorySnapshot CaptureSnapshot() const {
@@ -236,6 +286,7 @@ public:
         pages_.swap(replacement_pages);
         mapped_.swap(replacement_mapped);
         host_committed_.swap(replacement_host_committed);
+        UpdateDirectPages(0, static_cast<PageIterator>(pages_.size()));
     }
 
 private:
@@ -364,12 +415,29 @@ private:
         }
     }
 
+    void UpdateDirectPages(const PageIterator first, const PageIterator last) {
+        const auto base = reservation_->Base();
+        for (auto page = first; page < last; ++page) {
+            const auto index = static_cast<std::size_t>(page);
+            const auto protection = pages_[index];
+            const auto direct = mapped_[index] &&
+                                Allows(protection, AccessType::read) &&
+                                Allows(protection, AccessType::write) &&
+                                !Allows(protection, AccessType::execute);
+            (*direct_page_table_)[index] =
+                direct ? reinterpret_cast<std::uint8_t*>(
+                             base + index * kGuestPageSize)
+                       : nullptr;
+        }
+    }
+
     std::unique_ptr<hal::VirtualMemoryReservation> reservation_;
     std::uint64_t page_size_{};
     std::uint64_t host_page_size_{};
     std::vector<PageProtection> pages_;
     std::vector<bool> mapped_;
     std::vector<bool> host_committed_;
+    std::unique_ptr<DirectMemoryPageTable> direct_page_table_;
     mutable std::mutex mutex_;
 };
 
@@ -409,6 +477,41 @@ void AddressSpace::Write(const GuestAddress address,
                          const std::span<const std::byte> source,
                          const std::uint64_t thread_id) {
     impl_->Write(address, source, thread_id);
+}
+std::uint8_t AddressSpace::Read8(const GuestAddress address,
+                                 const std::uint64_t thread_id) const {
+    return impl_->ReadScalar<std::uint8_t>(address, thread_id);
+}
+std::uint16_t AddressSpace::Read16(const GuestAddress address,
+                                   const std::uint64_t thread_id) const {
+    return impl_->ReadScalar<std::uint16_t>(address, thread_id);
+}
+std::uint32_t AddressSpace::Read32(const GuestAddress address,
+                                   const std::uint64_t thread_id) const {
+    return impl_->ReadScalar<std::uint32_t>(address, thread_id);
+}
+std::uint64_t AddressSpace::Read64(const GuestAddress address,
+                                   const std::uint64_t thread_id) const {
+    return impl_->ReadScalar<std::uint64_t>(address, thread_id);
+}
+void AddressSpace::Write8(const GuestAddress address, const std::uint8_t value,
+                          const std::uint64_t thread_id) {
+    impl_->WriteScalar(address, value, thread_id);
+}
+void AddressSpace::Write16(const GuestAddress address, const std::uint16_t value,
+                           const std::uint64_t thread_id) {
+    impl_->WriteScalar(address, value, thread_id);
+}
+void AddressSpace::Write32(const GuestAddress address, const std::uint32_t value,
+                           const std::uint64_t thread_id) {
+    impl_->WriteScalar(address, value, thread_id);
+}
+void AddressSpace::Write64(const GuestAddress address, const std::uint64_t value,
+                           const std::uint64_t thread_id) {
+    impl_->WriteScalar(address, value, thread_id);
+}
+DirectMemoryPageTable* AddressSpace::DirectPageTable() noexcept {
+    return impl_->DirectPageTable();
 }
 MemorySnapshot AddressSpace::CaptureSnapshot() const { return impl_->CaptureSnapshot(); }
 void AddressSpace::RestoreSnapshot(const MemorySnapshot& snapshot) {

@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "ogplay/memory/address.h"
+#include "ogplay/memory/address_space.h"
 
 namespace ogplay::memory {
 
@@ -44,9 +45,10 @@ public:
                          std::uint64_t thread_id = 0) = 0;
     virtual void Write64(GuestAddress address, std::uint64_t value,
                          std::uint64_t thread_id = 0) = 0;
+    [[nodiscard]] virtual DirectMemoryPageTable* DirectPageTable() noexcept {
+        return nullptr;
+    }
 };
-
-class AddressSpace;
 
 class CheckedMemoryBus final : public MemoryBus {
 public:
@@ -73,6 +75,7 @@ public:
                  std::uint64_t thread_id = 0) override;
     void Write64(GuestAddress address, std::uint64_t value,
                  std::uint64_t thread_id = 0) override;
+    [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept override;
 
 private:
     AddressSpace& address_space_;

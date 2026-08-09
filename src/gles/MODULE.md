@@ -31,6 +31,8 @@
   catalog；首个 GLES1 扩展目录覆盖 `GL_OES_matrix_palette` 的 3 个目标所需入口。
 - `GuestBuffer::Prepare`：依据 input/output/inout 对完整 guest 区间预检权限，并建立有大小
   上限的宿主暂存；输出只能显式 `Commit`，对象不可复制。
+- `PrepareGuestInput`：对重复 input 搬运复用调用方暂存高水位容量，返回精确长度 span；
+  每次调用仍完整预检并重新读取 guest 内容，禁止把暂存容量复用误作内容缓存。
 - `GlesDispatchTable`：从生成目录提供 142 个稳定 GLES2 thunk ID、精确名称/形状查询和
   显式 handler 绑定；未绑定调用抛错并累计可查询线程命中。
 - `GlesFunctionCount/FindGlesFunction/DescribeGlesFunction`：以显式 API 选择查询隔离的
@@ -40,7 +42,8 @@
 - `GlesTransferState`：保存上下文级 pack/unpack 对齐、array/element buffer 绑定及动态查询
   形状；解析像素、索引和常用查询长度，并把缓冲对象偏移与 client array 标为 deferred。
 - `MakeSupersampleLayout` / `ResolveSupersampledRgba8`：验证 1..4× 渲染尺寸并用确定性
-  RGBA8 box filter 还原逻辑帧；NativeActivity pbuffer、viewport、swap 与 CLI 已接入。
+  RGBA8 box filter 还原逻辑帧；拥有型 1× readback 原样转移存储，不重复逐像素 resolve；
+  NativeActivity pbuffer、viewport、swap 与 CLI 已接入。
 - `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。构建后把 SDK `bin/`（含 SwiftShader ICD）暂存到可执行
   文件旁；macOS 额外拷贝 `lib/libEGL.dylib` 与 `lib/libGLESv2.dylib`，因其 install name
@@ -106,7 +109,7 @@
 - ANGLE 原生 `glReadPixels` 的底部首行必须在边界内翻转为 `ImageView`/SDL 的顶部首行，
   禁止把坐标系差异泄漏到每个消费者。
 - 超采样尺寸、输入字节数和布局必须完整匹配；resolve 使用整数求和与固定四舍五入，
-  禁止因宿主浮点或图形驱动产生黄金帧漂移。
+  禁止因宿主浮点或图形驱动产生黄金帧漂移；拥有型 1× resolve 必须保留输入存储。
 - SwiftShader 只能作为 ANGLE Vulkan 软件设备使用；hardware-only 不得静默回退软件。
 - ANGLE 源码只存在于维护者本地 `angle-prebuilt-repo` 工作区，由该仓库构建脚本固定 commit；
   普通消费端使用独立预编译浅 submodule，清单、平台或哈希不匹配时明确失败，不静默降级

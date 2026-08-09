@@ -305,6 +305,18 @@ TEST_CASE("GLES1 client array state validates texture units and resets") {
                      0x84C1U, 2, 0x1406U, 8, 0x2000U, 7U);
     CHECK(state.Array(ogplay::runtime::detail::kGles1TextureCoordArray,
                       0x84C1U).buffer == 7U);
+    const auto prepared = state.PreparePointer(
+        ogplay::runtime::detail::kGles1VertexArray, 0x84C0U,
+        2, 0x1406U, 8, 0x3000U, 9U);
+    CHECK(state.Array(ogplay::runtime::detail::kGles1VertexArray,
+                      0x84C0U).pointer == 0x1000U);
+    CHECK(prepared.enabled);
+    state.CommitPointer(ogplay::runtime::detail::kGles1VertexArray,
+                        0x84C0U, prepared);
+    CHECK(state.Array(ogplay::runtime::detail::kGles1VertexArray,
+                      0x84C0U).pointer == 0x3000U);
+    CHECK(state.Array(ogplay::runtime::detail::kGles1VertexArray,
+                      0x84C0U).buffer == 9U);
     CHECK_THROWS_AS(
         state.SetPointer(ogplay::runtime::detail::kGles1ColorArray,
                          0x84C0U, 3, 0x1406U, 0, 0U, 0U),

@@ -30,6 +30,11 @@ const std::array<std::uint32_t, 16>& A32State::CoreRegisters() const noexcept {
     return core_;
 }
 
+void A32State::SetCoreRegisters(
+    const std::array<std::uint32_t, 16>& values) noexcept {
+    core_ = values;
+}
+
 const std::array<std::uint32_t, 64>& A32State::ExtendedRegisters() const noexcept {
     return extended_;
 }
@@ -40,6 +45,11 @@ void A32State::SetExtendedRegister(const std::uint8_t index,
         throw std::out_of_range("invalid A32 extended register");
     }
     extended_[index] = value;
+}
+
+void A32State::SetExtendedRegisters(
+    const std::array<std::uint32_t, 64>& values) noexcept {
+    extended_ = values;
 }
 
 std::uint32_t A32State::Cpsr() const noexcept { return cpsr_; }

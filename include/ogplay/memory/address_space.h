@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -28,6 +29,11 @@ enum class AccessType : std::uint8_t { read, write, execute };
 enum class FaultReason : std::uint8_t { unmapped, permission_denied };
 
 inline constexpr std::uint32_t kMemorySnapshotVersion = 1;
+inline constexpr std::size_t kGuestPageBits = 12;
+inline constexpr std::size_t kGuestPageCount =
+    std::size_t{1} << (32U - kGuestPageBits);
+using DirectMemoryPageTable =
+    std::array<std::uint8_t*, kGuestPageCount>;
 
 struct MemorySnapshotMapping final {
     GuestRange range;
@@ -82,6 +88,23 @@ public:
                std::uint64_t thread_id = 0) const;
     void Write(GuestAddress address, std::span<const std::byte> source,
                std::uint64_t thread_id = 0);
+    [[nodiscard]] std::uint8_t Read8(GuestAddress address,
+                                     std::uint64_t thread_id = 0) const;
+    [[nodiscard]] std::uint16_t Read16(GuestAddress address,
+                                       std::uint64_t thread_id = 0) const;
+    [[nodiscard]] std::uint32_t Read32(GuestAddress address,
+                                       std::uint64_t thread_id = 0) const;
+    [[nodiscard]] std::uint64_t Read64(GuestAddress address,
+                                       std::uint64_t thread_id = 0) const;
+    void Write8(GuestAddress address, std::uint8_t value,
+                std::uint64_t thread_id = 0);
+    void Write16(GuestAddress address, std::uint16_t value,
+                 std::uint64_t thread_id = 0);
+    void Write32(GuestAddress address, std::uint32_t value,
+                 std::uint64_t thread_id = 0);
+    void Write64(GuestAddress address, std::uint64_t value,
+                 std::uint64_t thread_id = 0);
+    [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept;
     [[nodiscard]] MemorySnapshot CaptureSnapshot() const;
     void RestoreSnapshot(const MemorySnapshot& snapshot);
 

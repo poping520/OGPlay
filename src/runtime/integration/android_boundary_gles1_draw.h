@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "android_boundary_gles1_query.h"
 
@@ -38,9 +39,16 @@ public:
                     std::int32_t size, std::uint32_t type,
                     std::int32_t stride, std::uint32_t pointer,
                     std::uint32_t buffer);
+    [[nodiscard]] Gles1ClientArray PreparePointer(
+        std::uint32_t array, std::uint32_t client_texture,
+        std::int32_t size, std::uint32_t type, std::int32_t stride,
+        std::uint32_t pointer, std::uint32_t buffer) const;
+    void CommitPointer(std::uint32_t array, std::uint32_t client_texture,
+                       Gles1ClientArray pointer);
     [[nodiscard]] const Gles1ClientArray& Array(
         std::uint32_t array, std::uint32_t client_texture) const;
     void SetCurrentPaletteMatrix(std::uint32_t index);
+    static void ValidateCurrentPaletteMatrix(std::uint32_t index);
     [[nodiscard]] std::uint32_t CurrentPaletteMatrix() const noexcept;
 
     void DrawArrays(gles::AngleFrame& frame,
@@ -79,6 +87,11 @@ private:
 
     std::map<std::uint64_t, Gles1ClientArray> arrays_;
     Program program_;
+    std::array<std::vector<std::byte>,
+               3U + kGles1MaximumDrawTextureUnits>
+        client_array_staging_;
+    std::vector<std::byte> element_staging_;
+    std::vector<std::uint16_t> draw_array_indices_;
     std::uint32_t current_palette_matrix_{};
 };
 

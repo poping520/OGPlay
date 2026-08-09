@@ -69,6 +69,37 @@ TEST_CASE("checked memory bus reports successful accesses to an explicit observe
     CHECK(observer.accesses[1].type == ogplay::memory::BusAccessType::read);
 }
 
+TEST_CASE("direct page table publishes only unobserved non-executable RW pages") {
+    ogplay::memory::AddressSpace space;
+    const ogplay::memory::GuestAddress start{0x10000};
+    const auto page_index = start.Value() >> ogplay::memory::kGuestPageBits;
+    ogplay::memory::CheckedMemoryBus bus(space);
+    auto* table = bus.DirectPageTable();
+    REQUIRE(table != nullptr);
+    CHECK((*table)[page_index] == nullptr);
+
+    const auto read_write = ogplay::memory::PageProtection::read |
+                            ogplay::memory::PageProtection::write;
+    space.Map({start, space.PageSize()}, read_write);
+    REQUIRE((*table)[page_index] != nullptr);
+    bus.Write32(start, 0x78563412U);
+    CHECK((*table)[page_index][0] == 0x12U);
+
+    space.Protect({start, space.PageSize()}, ogplay::memory::PageProtection::read);
+    CHECK((*table)[page_index] == nullptr);
+    space.Protect({start, space.PageSize()},
+                  read_write | ogplay::memory::PageProtection::execute);
+    CHECK((*table)[page_index] == nullptr);
+    space.Protect({start, space.PageSize()}, read_write);
+    CHECK((*table)[page_index] != nullptr);
+    space.Unmap({start, space.PageSize()});
+    CHECK((*table)[page_index] == nullptr);
+
+    RecordingObserver observer;
+    ogplay::memory::CheckedMemoryBus observed(space, &observer);
+    CHECK(observed.DirectPageTable() == nullptr);
+}
+
 TEST_CASE("instruction fetch uses execute permission independently from data reads") {
     RecordingObserver observer;
     ogplay::memory::AddressSpace memory;

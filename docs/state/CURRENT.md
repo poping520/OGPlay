@@ -33,6 +33,16 @@
 
 ## 最近完成
 
+- [WU-0291] GLES1 高频 client pointer 已改为验证候选/原子提交，draw input、guest index
+  与顺序索引复用宿主暂存高水位容量但每次重新读取 guest；用户确认 Debug exact-APK
+  主菜单约 13.7 FPS，较本轮 7 FPS 基线接近翻倍。
+- [WU-0290] Dynarmic 已通过受保护 4 KiB 数据页表直达无 observer 的 RW 非执行页；
+  observer、权限、execute、跨页与 fault 继续回退受检 callback。Debug exact-APK 从约
+  4 FPS 提升到约 7 FPS，ADR-0016 记录其权限边界。
+- [WU-0289] 默认拥有型 1× ANGLE readback 直接转移原存储，2..4× 继续使用确定性整数
+  box resolve；布局、字节数和存储地址测试已闭合。
+- [WU-0288] Dynarmic 状态快照已批量导入 16 个核心和 64 个扩展寄存器，消除逐槽 setter
+  调用并保持 CPSR/VFP/线程元数据不变。
 - [WU-0287] `run-apk` 窗口标题已增加实时 FPS：首个采样周期显示 `FPS --`，之后按成功
   present 数和统一 `RealtimeClock` 每 0.5 秒更新一位小数；确定性 sampler、SDL 标题契约、
   414 项全量测试及 exact-APK 界面均已验收。

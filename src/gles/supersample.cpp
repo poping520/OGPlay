@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace ogplay::gles {
 namespace {
@@ -75,6 +76,23 @@ std::vector<std::uint8_t> ResolveSupersampledRgba8(
         }
     }
     return result;
+}
+
+std::vector<std::uint8_t> ResolveSupersampledRgba8(
+    std::vector<std::uint8_t>&& pixels,
+    const SupersampleLayout& layout) {
+    if (MakeSupersampleLayout(layout.logical_width, layout.logical_height,
+                              layout.factor) != layout) {
+        throw std::invalid_argument("supersample layout is inconsistent");
+    }
+    if (pixels.size() !=
+        RgbaByteCount(layout.render_width, layout.render_height)) {
+        throw std::invalid_argument(
+            "supersample RGBA8 byte count does not match layout");
+    }
+    if (layout.factor == 1U) return std::move(pixels);
+    return ResolveSupersampledRgba8(
+        std::span<const std::uint8_t>{pixels}, layout);
 }
 
 }  // namespace ogplay::gles

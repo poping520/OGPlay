@@ -23,6 +23,12 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+[[nodiscard]] std::span<const std::byte> PrepareGuestInput(
+    memory::AddressSpace& memory, memory::GuestAddress address,
+    std::uint64_t size, bool nullable, std::vector<std::byte>& storage,
+    std::uint64_t thread_id = 0,
+    std::uint64_t size_limit = kDefaultGuestTransferLimit);
+
 class GuestBuffer final {
 public:
     GuestBuffer(const GuestBuffer&) = delete;

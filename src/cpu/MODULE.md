@@ -7,14 +7,15 @@
 ## 公共 API
 
 - `A32State`：A32/T32 核心寄存器、CPSR、VFP/NEON 扩展寄存器、线程号及
-  可快照的 guest thread pointer。
+  可快照的 guest thread pointer；完整核心/扩展寄存器组支持等尺寸批量导入，供 JIT
+  状态快照避免逐槽虚调用开销。
 - `Cpu::Run(ticks) -> RunResult`：以统一预算运行，返回停止原因和已消费 tick。
 - `CpuSnapshot`：带显式版本的可复制 CPU 状态。
 - `CpuFault`：将 memory fault 的地址、访问类型、原因和线程号保留到 CPU 边界。
 - `InterpreterCpu`：确定性逐指令后端；当前覆盖 A32/T32 标量算术、条件、控制流及
   word/byte 单次 load/store 基础集。
-- `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调访存，不暴露
-  宿主指针，并与解释器共享状态、tick、停止、fault 及 TPIDRURO 契约。
+- `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调及其受保护数据页表
+  访存，并与解释器共享状态、tick、停止、fault 及 TPIDRURO 契约。
 - `DynarmicExecutionContext`：为同一 guest 进程的 JIT CPU 分配唯一 processor ID 并共享
   exclusive monitor；普通写与 exclusive compare/write 也共享提交锁，使 LDREX/STREX
   在真实宿主线程间保持原子语义。
@@ -29,7 +30,8 @@
 - 每个 guest 线程拥有独立执行上下文。
 - 全局 futex 唤醒只释放调用时已经等待的线程，不改变 guest 值，也不让后续等待伪成功。
 - 内存失败产生 Fault，不得返回零；CPU 不直接调用 HLE。
-- CPU 后端只通过 `MemoryBus` 访存；寄存器状态不得包含宿主指针。
+- CPU 后端只通过 `MemoryBus` 及其显式页表能力访存；observer、执行页、非 RW 页和跨页
+  访问不得进入直接快路，寄存器状态不得包含宿主指针。
 - `Run` 的 tick 预算和消费量必须确定且可测试。
 - 所有停止结果必须显式初始化指令、立即数和 fault 字段，跨编译器不得依赖聚合尾字段补零。
 - 未识别指令停在原 PC 并返回 `undefined_instruction`，禁止当作 NOP。
@@ -40,7 +42,7 @@
 ## 禁止
 
 - 不得包含游戏分支或直接宿主 IO。
-- 不得绕过 memory 接口长期保存宿主裸指针。
+- 不得绕过 memory 页表生命周期或长期保存其外的宿主裸指针。
 
 ## 测试
 

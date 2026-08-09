@@ -36,8 +36,12 @@ public:
     [[nodiscard]] std::uint32_t Register(CoreRegister index) const;
     void SetRegister(CoreRegister index, std::uint32_t value);
     [[nodiscard]] const std::array<std::uint32_t, 16>& CoreRegisters() const noexcept;
+    void SetCoreRegisters(
+        const std::array<std::uint32_t, 16>& values) noexcept;
     [[nodiscard]] const std::array<std::uint32_t, 64>& ExtendedRegisters() const noexcept;
     void SetExtendedRegister(std::uint8_t index, std::uint32_t value);
+    void SetExtendedRegisters(
+        const std::array<std::uint32_t, 64>& values) noexcept;
     [[nodiscard]] std::uint32_t Cpsr() const noexcept;
     void SetCpsr(std::uint32_t value) noexcept;
     [[nodiscard]] std::uint32_t Fpscr() const noexcept;

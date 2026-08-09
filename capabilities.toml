@@ -183,12 +183,12 @@ note = "M1 固定无后端类型泄漏的 gfx/audio 契约，并提供明确失�
 [memory.direct_address_space]
 status = "complete"
 test = "tests/memory/address_space_tests.cpp"
-note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿主页上保持独立映射、权限与释放"
+note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿主页上保持独立映射、权限与释放；M5 WU-0290 为 RW 非执行页维护稳定 JIT 数据页表"
 
 [memory.soft_mmu]
 status = "complete"
 test = "tests/memory/bus_tests.cpp"
-note = "M1 CheckedMemoryBus 完成小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器"
+note = "M1 CheckedMemoryBus 完成小端数据访问、独立 execute 取指、全区间验证与 watchpoint/trace 观察器；M5 WU-0290 在 observer、非 RW、execute 与跨页场景强制回退 callback"
 
 [memory.snapshot]
 status = "complete"
@@ -198,7 +198,7 @@ note = "M1 内存快照支持版本、连续映射合并、权限和内容的事
 [cpu.contract]
 status = "complete"
 test = "tests/cpu/state_tests.cpp"
-note = "M1 固定 A32/T32 核心与扩展寄存器、线程号、运行结果和 fault；M2 将强类型 guest thread pointer 纳入版本化快照"
+note = "M1 固定 A32/T32 核心与扩展寄存器、线程号、运行结果和 fault；M2 将强类型 guest thread pointer 纳入版本化快照；M5 WU-0288 增加等尺寸寄存器组批量导入以消除 JIT 快照逐槽调用"
 
 [cpu.interpreter]
 status = "partial"
@@ -208,7 +208,7 @@ note = "M1 参考后端覆盖裸样本与基础诊断指令族；完整 ISA 不�
 [cpu.dynarmic]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp"
-note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO"
+note = "M1 Dynarmic A32/T32 后端遵守 MemoryBus、状态、tick、停止和 fault 契约；M2 与解释器一致支持 TPIDRURO；M5 WU-0290 接入受保护数据页表并保留跨页及 callback fault"
 
 [cpu.thread_model]
 status = "complete"
@@ -343,7 +343,7 @@ note = "M4 GLES2 core 142 个入口和 397 个参数全部进入有序 IDL；输
 [gles.guest_transfer]
 status = "complete"
 test = "tests/gles/guest_transfer_tests.cpp"
-note = "M4 完成强类型 guest 指针的 input/output/inout 全区间权限预检、限额暂存和显式回写；null、溢出、方向及重复提交明确失败"
+note = "M4 完成强类型 guest 指针的 input/output/inout 全区间权限预检、限额暂存和显式回写；M5 WU-0291 增加每次刷新内容的可复用 input 高水位暂存；null、溢出、方向及重复提交明确失败"
 
 [gles.gles2_dispatch]
 status = "partial"
@@ -388,7 +388,7 @@ note = "M4 从样例源码核对 42 项 GLES2 调用并全部执行；真实 ANG
 [gles.supersample_resolve]
 status = "complete"
 test = "tests/gles/supersample_tests.cpp"
-note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢出、布局、字节数、方向与舍入；已接入 NativeActivity pbuffer/viewport/swap 及 CLI 配置"
+note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢出、布局、字节数、方向与舍入；M5 WU-0289 为拥有型 1x readback 保留原存储，消除重复 resolve；已接入 NativeActivity pbuffer/viewport/swap 及 CLI 配置"
 
 [runtime.android_boundary_hle]
 status = "partial"
@@ -568,7 +568,7 @@ note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 texture env
 [runtime.gles1_client_array_draw]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
-note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；仍限两个 stage、light0 与近似 normal matrix"
+note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；仍限两个 stage、light0 与近似 normal matrix"
 
 [runtime.jni_guest_array_length]
 status = "complete"

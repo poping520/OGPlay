@@ -11,6 +11,8 @@ CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title
 `run-apk --supersample <1..4>` 可显式选择内部渲染倍率，省略时为 1×；GUI 留在 M6。
 交互窗口标题始终显示 FPS 状态：首个采样周期前为 `FPS --`，之后每 0.5 秒按成功
 present 数更新一位小数的实时值。
+声明 `audio.sound_pool` 的 GLSurfaceView Profile 会按 source/path_pattern 从 APK 读取编码
+资源，将会话离线 mixer 的 stereo PCM16 按队列水位提交到 SDL3 默认音频设备。
 
 ## 不变量
 
@@ -35,6 +37,9 @@ present 数更新一位小数的实时值。
   `/apk` VFS，并只把该组通用 ID 交给 guest session。
 - 前端只可把已验证的 `gles1_material_front_face` id 映射为通用 single-face material
   `AndroidBoundaryOptions` 布尔项；不得在运行时接口中传递游戏名、包名或 Profile 对象。
+- SoundPool loader 只消费 Profile 解析后的 source/path；当前 `run-apk` 仅挂载 APK source，
+  其他 source 必须明确失败。每次帧循环最多补四个 1024-frame chunk，队列目标为 4096 帧，
+  禁止为音频阻塞或无界填充 guest frame loop；退出时显式停止设备。
 
 ## 禁止
 

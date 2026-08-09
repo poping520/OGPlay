@@ -2,11 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 
 namespace ogplay::hal {
 
 enum class AudioSampleFormat : std::uint8_t { signed_16_le, float_32_le };
+enum class AudioBackend : std::uint8_t { automatic, dummy };
 
 struct AudioStreamConfig final {
     std::uint32_t sample_rate{};
@@ -26,5 +28,9 @@ public:
     virtual void Stop() = 0;
     virtual void Submit(std::span<const std::byte> interleaved_samples) = 0;
 };
+
+[[nodiscard]] std::unique_ptr<AudioOutput> CreateSdlAudioOutput(
+    AudioStreamConfig config,
+    AudioBackend backend = AudioBackend::automatic);
 
 }  // namespace ogplay::hal

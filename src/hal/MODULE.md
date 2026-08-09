@@ -29,7 +29,9 @@
 - `hal::HostExecutableDirectory`：通过平台实现返回当前宿主可执行文件所在的绝对目录，
   供上层定位随程序交付且可重定位的运行时资源。
 - `hal::GraphicsPresenter`：不暴露 SDL/EGL/平台句柄的 drawable 与 present 契约。
-- `hal::AudioOutput`：格式、启动停止、帧队列与交错样本提交契约；设备后端属于后续阶段。
+- `hal::AudioOutput`：格式、启动停止、帧队列与交错样本提交契约。
+- `hal::CreateSdlAudioOutput`：按受检 stream config 打开 SDL3 默认播放设备；支持显式 dummy
+  backend 契约测试，提交前后均以完整 frame 计量队列，不暴露 SDL 类型。
 - `hal::HostFileSystem` / `CreateStandardHostFileSystem`：宿主文件状态、建目录及二进制读写。
 - video 接口按媒体能力需求在后续里程碑定义。
 
@@ -44,6 +46,8 @@
   套时间源。
 - present 每帧先清理黑边，再只向等比内容矩形缩放；窗口比例不得拉伸 guest 画面。
 - 坐标映射与 present 必须共用 `FitDisplayRect`，禁止各自维护舍入规则。
+- 音频 stream 只接受正采样率、1..8 声道和已知样本格式；提交必须完整对齐 frame 且不超过
+  SDL 长度上限，start/stop 幂等，无设备、backend 冲突与 SDL 错误必须明确传播。
 - 虚拟内存写权限必须同时具备读权限；范围必须页对齐且位于自身 reservation 内。
 - 进程环境覆盖必须先完整验证名称集合，重复或非法名称不得产生部分修改；覆盖期间持有
   进程级递归锁，恢复按逆序执行。

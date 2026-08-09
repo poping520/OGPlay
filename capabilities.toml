@@ -190,6 +190,16 @@ status = "complete"
 test = "tests/hal/service_contract_tests.cpp"
 note = "M1 固定无后端类型泄漏的 gfx/audio 契约，并提供明确失败的标准宿主文件系统"
 
+[hal.sdl_audio_output]
+status = "complete"
+test = "tests/hal/audio_output_tests.cpp"
+note = "M5 WU-0296 以 SDL3 默认播放设备实现受检 AudioOutput config、幂等 start/stop、完整 frame 提交和 queued-frame 计量；dummy driver 无设备契约与 SDL-disabled 明确失败均有机器测试"
+
+[frontend.profile_sound_pool_output]
+status = "complete"
+test = "tests/hal/audio_output_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp; Debug exact-APK interactive sound acceptance"
+note = "M5 WU-0296 让声明 audio.sound_pool 的 GLSurfaceView Profile 按纯数据 source/path 从 APK 读取资源，并以每帧最多四个 1024-frame chunk、4096-frame 水位泵送 stereo PCM16 到 SDL3；Debug exact APK 11264 帧后正常退出并由用户验收后要求提交"
+
 [memory.direct_address_space]
 status = "complete"
 test = "tests/memory/address_space_tests.cpp"

@@ -33,6 +33,10 @@
 
 ## 最近完成
 
+- [WU-0296] SDL3 `AudioOutput` 已实现受检格式、幂等启停、完整 frame 提交与队列计量；
+  `run-apk` 按 Profile source/path 从 APK 读取 SoundPool 资源，并以每帧至多四个 chunk 的
+  4096-frame 水位泵送 PCM。Debug exact APK 运行 11264 帧后正常退出，用户验收后要求提交；
+  macOS-arm64 + ANGLE warnings-as-errors 配置、构建及全量 CTest 429/429 通过。
 - [WU-0295] SoundPool load/lazy-play 现仅在注入资源读取与 Ogg 解码成功后提交 loaded，
   失败保留 pending 和可查询原因；全部 voice 控制同步驱动线程安全离线 mixer，mono/stereo
   经线性重采样、64-bit 累加与 PCM16 饱和输出；macOS-arm64 + ANGLE warnings-as-errors
@@ -71,8 +75,6 @@
 - [WU-0284] fixed renderer 已按 texture object 的 level-0 base format 消费
   MODULATE/REPLACE/ADD 与单纹理完整 COMBINE 状态；exact-APK 越过三个真实边界并由用户
   确认进入游戏主界面，517 帧后正常停止且状态 0。
-- [WU-0283] `display.change_mode` 已映射为线程安全的通用允许休眠/保持唤醒请求状态；
-  exact-APK 越过该 Java handler。宿主防休眠控制尚未接入，能力保持 partial。
 
 ## 目标 ELF 尚未实现的 GL 入口
 
@@ -84,9 +86,9 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 按 WU-0296 接入 SDL3 宿主音频输出并完成 exact-APK 听觉验收。
-2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
-3. 按 exact-APK 后续调用证据继续闭合通用 Java/JNI 能力。
+1. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
+2. 按 exact-APK 后续调用证据继续闭合通用 Java/JNI 能力。
+3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
 
 ## 阻塞
 

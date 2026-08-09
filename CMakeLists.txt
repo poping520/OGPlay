@@ -73,6 +73,7 @@ ogplay_set_project_warnings(ogplay_core)
 add_library(ogplay_hal
     src/hal/clock.cpp
     src/hal/fs.cpp
+    src/hal/sdl_audio_output.cpp
     src/hal/sdl_window_input.cpp
     src/hal/thread.cpp
 )
@@ -411,6 +412,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/gles/guest_transfer_tests.cpp
         tests/gles/supersample_tests.cpp
         tests/hal/clock_tests.cpp
+        tests/hal/audio_output_tests.cpp
         tests/hal/host_environment_tests.cpp
         tests/hal/service_contract_tests.cpp
         tests/hal/thread_tests.cpp

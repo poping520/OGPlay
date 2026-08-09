@@ -16,6 +16,7 @@
 #include <thread>
 #include <vector>
 
+#include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/hal/window_input.h"
 #include "ogplay/loader/apk.h"
@@ -24,6 +25,7 @@
 #include "ogplay/runtime/integration/android_link_preflight.h"
 #include "ogplay/runtime/integration/native_activity_runner.h"
 #include "ogplay/session/profile_apk.h"
+#include "ogplay/session/profile_audio.h"
 #include "ogplay/session/profile_guest_lifecycle.h"
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
@@ -200,6 +202,44 @@ DirectAssetImplementations(const session::TitleProfile& profile) {
     return result;
 }
 
+[[nodiscard]] audio::JavaSoundPoolMixer::EncodedResourceLoader
+SoundResourceLoader(const session::TitleProfile& profile,
+                    const std::span<const std::byte> apk_bytes,
+                    const loader::ApkArchive& archive) {
+    if (!profile.audio.has_value() ||
+        !profile.audio->sound_pool.has_value()) {
+        return {};
+    }
+    return [&profile, apk_bytes, &archive](const std::int32_t resource) {
+        const auto resolved =
+            session::ResolveProfileSoundPoolPath(profile, resource);
+        if (!resolved.has_value()) return std::vector<std::byte>{};
+        if (resolved->source != session::ProfileSource::apk) {
+            throw std::runtime_error(
+                "run-apk has no mounted SoundPool source: " +
+                std::string(session::ToString(resolved->source)));
+        }
+        return loader::ReadApkEntry(apk_bytes, archive, resolved->path);
+    };
+}
+
+void PumpAudio(runtime::AndroidGuestCallSession& guest,
+               hal::AudioOutput& output,
+               std::vector<std::int16_t>& samples) {
+    constexpr std::uint32_t kSampleRate = 48000U;
+    constexpr std::uint64_t kTargetQueuedFrames = 4096U;
+    constexpr std::size_t kMaximumChunksPerPump = 4U;
+    for (std::size_t chunk = 0;
+         chunk < kMaximumChunksPerPump &&
+         output.QueuedFrames() < kTargetQueuedFrames;
+         ++chunk) {
+        const auto frames = guest.RenderStereoAudio(samples, kSampleRate);
+        const auto sample_count = frames * 2U;
+        output.Submit(std::as_bytes(
+            std::span{samples}.first(sample_count)));
+    }
+}
+
 }  // namespace
 
 int RunApkCommand(const int argc, const char* const argv[]) {
@@ -350,13 +390,22 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             const auto assets = ReadApkAssets(apk_bytes, archive);
             filesystem.Mount(runtime::VfsSource::apk, "/apk", assets);
         }
+        auto sound_loader = SoundResourceLoader(profile, apk_bytes, archive);
+        std::unique_ptr<hal::AudioOutput> audio_output;
+        std::vector<std::int16_t> audio_samples(1024U * 2U);
+        if (sound_loader) {
+            audio_output = hal::CreateSdlAudioOutput(
+                {48000U, 2U, hal::AudioSampleFormat::signed_16_le});
+            audio_output->Start();
+        }
         auto guest = runtime::AndroidGuestCallSession::Start(
             {profile.runtime.api_level, root_name, module_inputs,
              NativeBackend(), profile.runtime.surface.width,
              profile.runtime.surface.height, UINT64_C(200000000),
              supersample_factor, &filesystem, {}, direct_assets,
              {.allow_gles1_material_single_face = ProfileEnablesQuirk(
-                  profile, "gles1_material_front_face")}});
+                  profile, "gles1_material_front_face")},
+             std::move(sound_loader)});
         auto lifecycle = session::ProfileGuestLifecycle::Create(
             profile, launch->native_calls,
             {
@@ -387,6 +436,9 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 }
             }
             static_cast<void>(lifecycle->StepFrame());
+            if (audio_output) {
+                PumpAudio(*guest, *audio_output, audio_samples);
+            }
             if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
                 window->PresentRgba8(frame->rgba8, frame->width, frame->height);
                 guest_width = frame->width;
@@ -403,6 +455,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
         }
         static_cast<void>(lifecycle->Stop());
         guest->Stop();
+        if (audio_output) audio_output->Stop();
     }
     window->Close();
     Write("OGPlay: stopped after " + std::to_string(presented) + " presented frames.\n");

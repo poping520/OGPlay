@@ -288,6 +288,13 @@ void AndroidBoundaryGles1DrawState::EnsureProgram(gles::AngleFrame& frame) {
     for (const auto* name : common_uniforms) {
         program_.uniforms[name] = frame.GetUniformLocation(program_.name, name);
     }
+    for (std::size_t plane = 0; plane < 6U; ++plane) {
+        const auto suffix = "[" + std::to_string(plane) + "]";
+        for (const auto* base : {"u_clip_plane", "u_clip_enabled"}) {
+            const auto name = std::string{base} + suffix;
+            program_.uniforms[name] = frame.GetUniformLocation(program_.name, name);
+        }
+    }
     constexpr std::array stage_uniforms{
         "u_texture_enabled", "u_texture_environment", "u_texture_format",
         "u_environment_color", "u_combine_rgb", "u_combine_alpha",
@@ -405,7 +412,9 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
     const auto& color = legacy.Color();
     frame.Uniform4f(uniform("u_current_color"), color[0], color[1], color[2],
                     color[3]);
-    frame.Uniform4f(uniform("u_current_normal"), 0.0F, 0.0F, 1.0F, 0.0F);
+    const auto& current_normal = legacy.Normal();
+    frame.Uniform4f(uniform("u_current_normal"), current_normal[0],
+                    current_normal[1], current_normal[2], 0.0F);
     const auto& fixed = core.Fixed();
     const auto set4 = [&frame, &uniform](const std::string_view name,
                                          const std::vector<float>& value) {
@@ -428,6 +437,17 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
                     fixed.PointParameter(0x8126U));
     frame.Uniform1f(uniform("u_point_size_max"),
                     fixed.PointParameter(0x8127U));
+    for (std::size_t index = 0; index < 6U; ++index) {
+        const auto suffix = "[" + std::to_string(index) + "]";
+        const auto& plane = legacy.ClipPlane(0x3000U +
+                                             static_cast<std::uint32_t>(index));
+        frame.Uniform4f(uniform("u_clip_plane" + suffix), plane[0], plane[1],
+                        plane[2], plane[3]);
+        frame.Uniform1f(uniform("u_clip_enabled" + suffix),
+                        core.Capability(0x3000U +
+                                        static_cast<std::uint32_t>(index))
+                            ? 1.0F : 0.0F);
+    }
     for (std::size_t stage = 0; stage < kGles1MaximumDrawTextureUnits; ++stage) {
         const auto suffix = std::to_string(stage);
         const auto indexed = [&suffix](const std::string_view name) {
@@ -610,50 +630,6 @@ void AndroidBoundaryGles1DrawState::DrawElements(
         frame.DrawElements(mode, count, type, indices);
     }
     frame.BindBuffer(kElementArrayBuffer, guest_element_buffer);
-}
-
-std::optional<bool> Gles1ClientStateEnabled(
-    const std::uint32_t capability, const AndroidBoundaryGles1DrawState& draw,
-    const AndroidBoundaryGles1LegacyState& legacy) {
-    switch (capability) {
-    case kGles1VertexArray:
-    case kGles1NormalArray:
-    case kGles1ColorArray:
-    case kGles1MatrixIndexArray:
-    case kGles1WeightArray:
-        return draw.Array(capability, kTexture0).enabled;
-    case kGles1TextureCoordArray:
-        return draw.Array(capability, legacy.ClientActiveTexture()).enabled;
-    default: return std::nullopt;
-    }
-}
-
-std::optional<std::int32_t> Gles1ClientArrayInteger(
-    const std::uint32_t pname, const AndroidBoundaryGles1DrawState& draw,
-    const AndroidBoundaryGles1LegacyState& legacy) {
-    std::uint32_t array{};
-    enum class Field { size, type, stride } field{};
-    switch (pname) {
-    case 0x807AU: array = kGles1VertexArray; field = Field::size; break;
-    case 0x807BU: array = kGles1VertexArray; field = Field::type; break;
-    case 0x807CU: array = kGles1VertexArray; field = Field::stride; break;
-    case 0x807EU: array = kGles1NormalArray; field = Field::type; break;
-    case 0x807FU: array = kGles1NormalArray; field = Field::stride; break;
-    case 0x8081U: array = kGles1ColorArray; field = Field::size; break;
-    case 0x8082U: array = kGles1ColorArray; field = Field::type; break;
-    case 0x8083U: array = kGles1ColorArray; field = Field::stride; break;
-    case 0x8088U: array = kGles1TextureCoordArray; field = Field::size; break;
-    case 0x8089U: array = kGles1TextureCoordArray; field = Field::type; break;
-    case 0x808AU: array = kGles1TextureCoordArray; field = Field::stride; break;
-    default: return std::nullopt;
-    }
-    const auto texture = array == kGles1TextureCoordArray
-                             ? legacy.ClientActiveTexture()
-                             : kTexture0;
-    const auto& state = draw.Array(array, texture);
-    if (field == Field::size) return state.size;
-    if (field == Field::stride) return state.stride;
-    return static_cast<std::int32_t>(state.type);
 }
 
 void BindAndroidBoundaryGles1Draw(

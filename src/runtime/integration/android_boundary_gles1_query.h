@@ -67,6 +67,9 @@ public:
                                float reference) const;
     void ValidateClientActiveTexture(std::uint32_t texture) const;
     void ValidateColor(std::span<const float, 4> color) const;
+    void ValidateNormal(std::span<const float, 3> normal) const;
+    void ValidateClipPlane(std::uint32_t plane,
+                           std::span<const float, 4> equation) const;
     void ValidateTextureEnvironment(std::uint32_t texture,
                                     std::uint32_t target,
                                     std::uint32_t pname,
@@ -74,6 +77,9 @@ public:
     void SetAlphaFunction(std::uint32_t function, float reference);
     void SetClientActiveTexture(std::uint32_t texture);
     void SetColor(std::span<const float, 4> color);
+    void SetNormal(std::span<const float, 3> normal);
+    void SetClipPlane(std::uint32_t plane,
+                      std::span<const float, 4> equation);
     void SetTextureEnvironment(std::uint32_t texture, std::uint32_t target,
                                std::uint32_t pname,
                                std::span<const float> values);
@@ -82,6 +88,9 @@ public:
     [[nodiscard]] float AlphaReference() const noexcept;
     [[nodiscard]] std::uint32_t ClientActiveTexture() const noexcept;
     [[nodiscard]] const std::array<float, 4>& Color() const noexcept;
+    [[nodiscard]] const std::array<float, 3>& Normal() const noexcept;
+    [[nodiscard]] const std::array<float, 4>& ClipPlane(
+        std::uint32_t plane) const;
     [[nodiscard]] const std::vector<float>& TextureEnvironment(
         std::uint32_t texture, std::uint32_t pname) const;
 
@@ -90,6 +99,8 @@ private:
     float alpha_reference_{};
     std::uint32_t client_active_texture_{};
     std::array<float, 4> color_{};
+    std::array<float, 3> normal_{};
+    std::array<std::array<float, 4>, 6> clip_planes_{};
     std::map<std::uint64_t, std::vector<float>> texture_environment_;
 };
 

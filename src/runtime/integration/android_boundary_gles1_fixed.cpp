@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "ogplay/memory/address_space.h"
+#include "android_boundary_gles1_draw.h"
 #include "android_boundary_gles1_query.h"
 
 namespace ogplay::runtime::detail {
@@ -46,6 +47,26 @@ constexpr std::uint32_t kTexture31 = 0x84DFU;
 void RequireTextureUnit(const std::uint32_t texture) {
     if (texture < kTexture0 || texture > kTexture31) {
         throw std::invalid_argument("GLES1 texture unit is outside GL_TEXTURE0..31");
+    }
+}
+
+void RequireTextureEnvironmentMode(const float value) {
+    constexpr std::array modes{0x0104U, 0x0BE2U, 0x1E01U,
+                               0x2100U, 0x2101U, 0x8570U};
+    if (!std::isfinite(value) || value < 0.0F || value != std::floor(value) ||
+        std::ranges::find(modes, static_cast<std::uint32_t>(value)) ==
+            modes.end()) {
+        throw std::invalid_argument("GLES1 texture environment mode is invalid");
+    }
+}
+
+void RequireIntegralTextureValue(
+    const float value, const std::span<const std::uint32_t> allowed,
+    const char* message) {
+    if (!std::isfinite(value) || value < 0.0F || value != std::floor(value) ||
+        std::ranges::find(allowed, static_cast<std::uint32_t>(value)) ==
+            allowed.end()) {
+        throw std::invalid_argument(message);
     }
 }
 
@@ -202,6 +223,8 @@ void AndroidBoundaryGles1LegacyState::Reset() {
     alpha_reference_ = 0.0F;
     client_active_texture_ = kTexture0;
     color_ = {1.0F, 1.0F, 1.0F, 1.0F};
+    normal_ = {0.0F, 0.0F, 1.0F};
+    clip_planes_ = {};
     texture_environment_.clear();
     for (auto texture = kTexture0; texture <= kTexture31; ++texture) {
         texture_environment_[TextureEnvironmentKey(texture, kGles1TextureEnvironmentMode)] =
@@ -266,6 +289,197 @@ void AndroidBoundaryGles1LegacyState::SetColor(
     std::ranges::transform(color, color_.begin(), [](const float value) {
         return std::clamp(value, 0.0F, 1.0F);
     });
+}
+
+void AndroidBoundaryGles1LegacyState::ValidateNormal(
+    const std::span<const float, 3> normal) const {
+    if (!std::ranges::all_of(normal, [](const float value) {
+            return std::isfinite(value);
+        })) {
+        throw std::invalid_argument("GLES1 current normal must be finite");
+    }
+}
+
+void AndroidBoundaryGles1LegacyState::SetNormal(
+    const std::span<const float, 3> normal) {
+    ValidateNormal(normal);
+    std::ranges::copy(normal, normal_.begin());
+}
+
+void AndroidBoundaryGles1LegacyState::ValidateClipPlane(
+    const std::uint32_t plane,
+    const std::span<const float, 4> equation) const {
+    if (plane < 0x3000U || plane > 0x3005U) {
+        throw std::invalid_argument("GLES1 clip plane is outside GL_CLIP_PLANE0..5");
+    }
+    if (!std::ranges::all_of(equation, [](const float value) {
+            return std::isfinite(value);
+        })) {
+        throw std::invalid_argument("GLES1 clip-plane equation must be finite");
+    }
+}
+
+void AndroidBoundaryGles1LegacyState::SetClipPlane(
+    const std::uint32_t plane,
+    const std::span<const float, 4> equation) {
+    ValidateClipPlane(plane, equation);
+    std::ranges::copy(equation, clip_planes_[plane - 0x3000U].begin());
+}
+
+const std::array<float, 3>& AndroidBoundaryGles1LegacyState::Normal() const noexcept {
+    return normal_;
+}
+
+const std::array<float, 4>& AndroidBoundaryGles1LegacyState::ClipPlane(
+    const std::uint32_t plane) const {
+    if (plane < 0x3000U || plane > 0x3005U) {
+        throw std::invalid_argument("GLES1 clip plane is outside GL_CLIP_PLANE0..5");
+    }
+    return clip_planes_[plane - 0x3000U];
+}
+
+void AndroidBoundaryGles1LegacyState::ValidateAlphaFunction(
+    const std::uint32_t function, const float reference) const {
+    if (function < 0x0200U || function > 0x0207U) {
+        throw std::invalid_argument("GLES1 alpha function is invalid");
+    }
+    if (!std::isfinite(reference)) {
+        throw std::invalid_argument("GLES1 alpha reference must be finite");
+    }
+}
+
+void AndroidBoundaryGles1LegacyState::SetAlphaFunction(
+    const std::uint32_t function, const float reference) {
+    ValidateAlphaFunction(function, reference);
+    alpha_function_ = function;
+    alpha_reference_ = std::clamp(reference, 0.0F, 1.0F);
+}
+
+void AndroidBoundaryGles1LegacyState::ValidateTextureEnvironment(
+    const std::uint32_t texture, const std::uint32_t target,
+    const std::uint32_t pname, const std::span<const float> values) const {
+    RequireTextureUnit(texture);
+    if (target != kGles1TextureEnvironment) {
+        throw std::invalid_argument("GLES1 texture environment target is invalid");
+    }
+    if (pname == kGles1TextureEnvironmentMode) {
+        if (values.size() != 1U) {
+            throw std::invalid_argument(
+                "GLES1 texture environment mode requires one value");
+        }
+        RequireTextureEnvironmentMode(values.front());
+    } else if (pname == kGles1TextureEnvironmentColor) {
+        if (values.size() != 4U ||
+            !std::ranges::all_of(values, [](const float value) {
+                return std::isfinite(value);
+            })) {
+            throw std::invalid_argument(
+                "GLES1 texture environment color is invalid");
+        }
+    } else if (values.size() == 1U &&
+               (pname == kGles1CombineRgb || pname == kGles1CombineAlpha)) {
+        constexpr std::array combine_modes{
+            0x0104U, 0x1E01U, 0x2100U, 0x84E7U,
+            0x8574U, 0x8575U, 0x86AEU, 0x86AFU};
+        RequireIntegralTextureValue(values.front(), combine_modes,
+                                    "GLES1 texture combine function is invalid");
+        const auto mode = static_cast<std::uint32_t>(values.front());
+        if (pname == kGles1CombineAlpha &&
+            (mode == 0x86AEU || mode == 0x86AFU)) {
+            throw std::invalid_argument(
+                "GLES1 alpha combine function cannot use DOT3");
+        }
+    } else if (values.size() == 1U &&
+               (pname == kGles1RgbScale || pname == kGles1AlphaScale)) {
+        constexpr std::array scales{1U, 2U, 4U};
+        RequireIntegralTextureValue(values.front(), scales,
+                                    "GLES1 texture combine scale is invalid");
+    } else if (values.size() == 1U &&
+               ((pname >= kGles1Source0Rgb && pname <= kGles1Source2Rgb) ||
+                (pname >= kGles1Source0Alpha && pname <= kGles1Source2Alpha))) {
+        constexpr std::array sources{0x1702U, 0x8576U, 0x8577U, 0x8578U};
+        RequireIntegralTextureValue(values.front(), sources,
+                                    "GLES1 texture combine source is invalid");
+    } else if (values.size() == 1U &&
+               ((pname >= kGles1Operand0Rgb && pname <= kGles1Operand2Rgb) ||
+                (pname >= kGles1Operand0Alpha && pname <= kGles1Operand2Alpha))) {
+        constexpr std::array operands{0x0300U, 0x0301U, 0x0302U, 0x0303U};
+        RequireIntegralTextureValue(values.front(), operands,
+                                    "GLES1 texture combine operand is invalid");
+        if (pname >= kGles1Operand0Alpha &&
+            static_cast<std::uint32_t>(values.front()) < 0x0302U) {
+            throw std::invalid_argument(
+                "GLES1 alpha combine operand must select alpha");
+        }
+    } else {
+        throw std::invalid_argument(
+            "GLES1 texture environment pname is unsupported: " +
+            std::to_string(pname));
+    }
+}
+
+void AndroidBoundaryGles1LegacyState::SetTextureEnvironment(
+    const std::uint32_t texture, const std::uint32_t target,
+    const std::uint32_t pname, const std::span<const float> values) {
+    ValidateTextureEnvironment(texture, target, pname, values);
+    auto stored = std::vector<float>(values.begin(), values.end());
+    if (pname == kGles1TextureEnvironmentColor) {
+        std::ranges::transform(stored, stored.begin(), [](const float value) {
+            return std::clamp(value, 0.0F, 1.0F);
+        });
+    }
+    texture_environment_[TextureEnvironmentKey(texture, pname)] =
+        std::move(stored);
+}
+
+const std::vector<float>& AndroidBoundaryGles1LegacyState::TextureEnvironment(
+    const std::uint32_t texture, const std::uint32_t pname) const {
+    RequireTextureUnit(texture);
+    return texture_environment_.at(TextureEnvironmentKey(texture, pname));
+}
+
+std::optional<bool> Gles1ClientStateEnabled(
+    const std::uint32_t capability, const AndroidBoundaryGles1DrawState& draw,
+    const AndroidBoundaryGles1LegacyState& legacy) {
+    switch (capability) {
+    case kGles1VertexArray:
+    case kGles1NormalArray:
+    case kGles1ColorArray:
+    case kGles1MatrixIndexArray:
+    case kGles1WeightArray:
+        return draw.Array(capability, kTexture0).enabled;
+    case kGles1TextureCoordArray:
+        return draw.Array(capability, legacy.ClientActiveTexture()).enabled;
+    default: return std::nullopt;
+    }
+}
+
+std::optional<std::int32_t> Gles1ClientArrayInteger(
+    const std::uint32_t pname, const AndroidBoundaryGles1DrawState& draw,
+    const AndroidBoundaryGles1LegacyState& legacy) {
+    std::uint32_t array{};
+    enum class Field { size, type, stride } field{};
+    switch (pname) {
+    case 0x807AU: array = kGles1VertexArray; field = Field::size; break;
+    case 0x807BU: array = kGles1VertexArray; field = Field::type; break;
+    case 0x807CU: array = kGles1VertexArray; field = Field::stride; break;
+    case 0x807EU: array = kGles1NormalArray; field = Field::type; break;
+    case 0x807FU: array = kGles1NormalArray; field = Field::stride; break;
+    case 0x8081U: array = kGles1ColorArray; field = Field::size; break;
+    case 0x8082U: array = kGles1ColorArray; field = Field::type; break;
+    case 0x8083U: array = kGles1ColorArray; field = Field::stride; break;
+    case 0x8088U: array = kGles1TextureCoordArray; field = Field::size; break;
+    case 0x8089U: array = kGles1TextureCoordArray; field = Field::type; break;
+    case 0x808AU: array = kGles1TextureCoordArray; field = Field::stride; break;
+    default: return std::nullopt;
+    }
+    const auto texture = array == kGles1TextureCoordArray
+                             ? legacy.ClientActiveTexture()
+                             : kTexture0;
+    const auto& state = draw.Array(array, texture);
+    if (field == Field::size) return state.size;
+    if (field == Field::stride) return state.stride;
+    return static_cast<std::int32_t>(state.type);
 }
 
 AndroidBoundaryGles1FixedState::AndroidBoundaryGles1FixedState() { Reset(); }

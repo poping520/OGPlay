@@ -74,6 +74,10 @@
   查询真实 ANGLE 值；guest 输出及 `glTexEnvfv` 输入在任何状态变化前完整预检。legacy
   状态不可复制，高频 setter 必须依次完成参数验证、current-frame 验证和窄范围提交，禁止
   为事务语义复制全部 texture-environment 容器。
+- GLES1 current normal 与六个 eye-space clip plane 属于可重置 legacy context state；
+  `glMultMatrixf` 右乘当前 matrix，`glClipPlanef` 在提交时按 modelview 逆转置方程并拒绝奇异
+  matrix。fixed shader 必须消费 current normal，并以六项 capability 控制真实 fragment
+  clipping；不得只保存方程或伪造 `GL_MAX_CLIP_PLANES`。
 - GLES1 client-array/draw 批次延迟保存 vertex/normal/color/texture-coordinate pointer；
   `glGetPointerv` 返回对应已保存 guest pointer，`glIsEnabled` 同时查询 server capability 与
   当前 client texture unit 的 array enable；draw 才按实际 first/count 或 guest index 最大值

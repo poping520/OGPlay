@@ -735,6 +735,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0308 实现 buffer name 生命周期、整块/局部上传与受检 glReadPixels；第二个 exact APK 无倒退并保持在独立 client-array type 边界"
 
+[runtime.gles1_matrix_normal_clip_boundary]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke; target ELF import audit"
+note = "M5 WU-0309 实现 glMultMatrixf/glNormal3f/glClipPlanef 并由 fixed shader 执行六平面裁剪；Dungeon Hunter 74/74 GL imports 均有显式 handler"
+
 [runtime.gles1_matrix_state_boundary]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

@@ -14,47 +14,12 @@
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
 #include "android_boundary_gles1_draw.h"
+#include "android_boundary_gles1_support.h"
 
 namespace ogplay::runtime::detail {
 namespace {
 
 constexpr std::uint32_t kTexture0 = 0x84C0U;
-constexpr std::uint32_t kTexture31 = 0x84DFU;
-
-[[nodiscard]] std::uint64_t TextureEnvironmentKey(
-    const std::uint32_t texture, const std::uint32_t pname) noexcept {
-    return (static_cast<std::uint64_t>(texture) << 32U) | pname;
-}
-
-void RequireTextureUnit(const std::uint32_t texture) {
-    if (texture < kTexture0 || texture > kTexture31) {
-        throw std::invalid_argument("GLES1 texture unit is outside GL_TEXTURE0..31");
-    }
-}
-
-void RequireTextureEnvironmentMode(const float value) {
-    constexpr std::array modes{0x0104U, 0x0BE2U, 0x1E01U,
-                               0x2100U, 0x2101U, 0x8570U};
-    if (!std::isfinite(value) || value < 0.0F || value != std::floor(value) ||
-        std::ranges::find(modes, static_cast<std::uint32_t>(value)) ==
-            modes.end()) {
-        throw std::invalid_argument("GLES1 texture environment mode is invalid");
-    }
-}
-
-[[nodiscard]] bool IsOneOf(
-    const std::uint32_t value, const std::span<const std::uint32_t> values) {
-    return std::ranges::find(values, value) != values.end();
-}
-
-void RequireIntegralTextureValue(const float value,
-                                 const std::span<const std::uint32_t> allowed,
-                                 const char* message) {
-    if (!std::isfinite(value) || value < 0.0F || value != std::floor(value) ||
-        !IsOneOf(static_cast<std::uint32_t>(value), allowed)) {
-        throw std::invalid_argument(message);
-    }
-}
 
 [[nodiscard]] bool IsScalarTextureEnvironmentPname(
     const std::uint32_t pname) noexcept {
@@ -186,7 +151,7 @@ void WriteGuestNames(gles::GuestBuffer& output,
     case 0x0D38U:  // GL_MAX_PROJECTION_STACK_DEPTH
     case 0x0D39U: return 32;  // GL_MAX_TEXTURE_STACK_DEPTH
     case 0x0D31U: return 1;   // GL_MAX_LIGHTS; renderer consumes light zero
-    case 0x0D32U: return 0;   // GL_MAX_CLIP_PLANES; not implemented
+    case 0x0D32U: return 6;   // GL_MAX_CLIP_PLANES
     case 0x0CF5U: return static_cast<std::int32_t>(transfer.unpack_alignment);
     case 0x0D05U: return static_cast<std::int32_t>(transfer.pack_alignment);
     case 0x8069U:
@@ -266,104 +231,6 @@ void GenerateAutomaticMipmap(AndroidBoundaryGles1State& state,
 }
 }  // namespace
 
-void AndroidBoundaryGles1LegacyState::ValidateAlphaFunction(
-    const std::uint32_t function, const float reference) const {
-    if (function < 0x0200U || function > 0x0207U) {
-        throw std::invalid_argument("GLES1 alpha function is invalid");
-    }
-    if (!std::isfinite(reference)) {
-        throw std::invalid_argument("GLES1 alpha reference must be finite");
-    }
-}
-
-void AndroidBoundaryGles1LegacyState::SetAlphaFunction(
-    const std::uint32_t function, const float reference) {
-    ValidateAlphaFunction(function, reference);
-    alpha_function_ = function;
-    alpha_reference_ = std::clamp(reference, 0.0F, 1.0F);
-}
-
-void AndroidBoundaryGles1LegacyState::ValidateTextureEnvironment(
-    const std::uint32_t texture, const std::uint32_t target,
-    const std::uint32_t pname, const std::span<const float> values) const {
-    RequireTextureUnit(texture);
-    if (target != kGles1TextureEnvironment) {
-        throw std::invalid_argument("GLES1 texture environment target is invalid");
-    }
-    if (pname == kGles1TextureEnvironmentMode) {
-        if (values.size() != 1U) {
-            throw std::invalid_argument("GLES1 texture environment mode requires one value");
-        }
-        RequireTextureEnvironmentMode(values.front());
-    } else if (pname == kGles1TextureEnvironmentColor) {
-        if (values.size() != 4U ||
-            !std::ranges::all_of(values, [](const float value) {
-                return std::isfinite(value);
-            })) {
-            throw std::invalid_argument("GLES1 texture environment color is invalid");
-        }
-    } else if (values.size() == 1U &&
-               (pname == kGles1CombineRgb || pname == kGles1CombineAlpha)) {
-        constexpr std::array combine_modes{
-            0x0104U, 0x1E01U, 0x2100U, 0x84E7U,
-            0x8574U, 0x8575U, 0x86AEU, 0x86AFU};
-        RequireIntegralTextureValue(values.front(), combine_modes,
-                                    "GLES1 texture combine function is invalid");
-        const auto mode = static_cast<std::uint32_t>(values.front());
-        if (pname == kGles1CombineAlpha &&
-            (mode == 0x86AEU || mode == 0x86AFU)) {
-            throw std::invalid_argument(
-                "GLES1 alpha combine function cannot use DOT3");
-        }
-    } else if (values.size() == 1U &&
-               (pname == kGles1RgbScale || pname == kGles1AlphaScale)) {
-        constexpr std::array scales{1U, 2U, 4U};
-        RequireIntegralTextureValue(values.front(), scales,
-                                    "GLES1 texture combine scale is invalid");
-    } else if (values.size() == 1U &&
-               ((pname >= kGles1Source0Rgb && pname <= kGles1Source2Rgb) ||
-                (pname >= kGles1Source0Alpha && pname <= kGles1Source2Alpha))) {
-        constexpr std::array sources{0x1702U, 0x8576U, 0x8577U, 0x8578U};
-        RequireIntegralTextureValue(values.front(), sources,
-                                    "GLES1 texture combine source is invalid");
-    } else if (values.size() == 1U &&
-               ((pname >= kGles1Operand0Rgb && pname <= kGles1Operand2Rgb) ||
-                (pname >= kGles1Operand0Alpha && pname <= kGles1Operand2Alpha))) {
-        constexpr std::array operands{0x0300U, 0x0301U, 0x0302U, 0x0303U};
-        RequireIntegralTextureValue(values.front(), operands,
-                                    "GLES1 texture combine operand is invalid");
-        if (pname >= kGles1Operand0Alpha &&
-            static_cast<std::uint32_t>(values.front()) < 0x0302U) {
-            throw std::invalid_argument(
-                "GLES1 alpha combine operand must select alpha");
-        }
-    } else {
-        throw std::invalid_argument(
-            "GLES1 texture environment pname is unsupported: " +
-            std::to_string(pname));
-    }
-}
-
-void AndroidBoundaryGles1LegacyState::SetTextureEnvironment(
-    const std::uint32_t texture, const std::uint32_t target,
-    const std::uint32_t pname, const std::span<const float> values) {
-    ValidateTextureEnvironment(texture, target, pname, values);
-    auto stored = std::vector<float>(values.begin(), values.end());
-    if (pname == kGles1TextureEnvironmentColor) {
-        std::ranges::transform(stored, stored.begin(), [](const float value) {
-            return std::clamp(value, 0.0F, 1.0F);
-        });
-    }
-    texture_environment_[TextureEnvironmentKey(texture, pname)] =
-        std::move(stored);
-}
-
-const std::vector<float>& AndroidBoundaryGles1LegacyState::TextureEnvironment(
-    const std::uint32_t texture, const std::uint32_t pname) const {
-    RequireTextureUnit(texture);
-    return texture_environment_.at(TextureEnvironmentKey(texture, pname));
-}
-
 void BindAndroidBoundaryGles1Queries(
     gles::GlesDispatchTable& dispatch,
     AndroidBoundaryGles1QueryStrings& strings,
@@ -442,6 +309,49 @@ void BindAndroidBoundaryGles1Legacy(
             legacy.ValidateColor(color);
             static_cast<void>(require_frame("glColor4ub"));
             legacy.SetColor(color);
+            return 0U;
+        });
+    dispatch.Bind(
+        "glMultMatrixf",
+        [&core, &address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            const auto matrix = ReadGuestGles1Matrix(
+                address_space, arguments[0], thread_id);
+            const auto next = Gles1MultiplyMatrices(
+                core.Matrices().Current(), matrix);
+            RequireFiniteGles1MatrixValues(next);
+            static_cast<void>(require_frame("glMultMatrixf"));
+            core.Matrices().Load(next);
+            return 0U;
+        });
+    dispatch.Bind(
+        "glNormal3f",
+        [&legacy, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t) {
+            const std::array normal{std::bit_cast<float>(arguments[0]),
+                                    std::bit_cast<float>(arguments[1]),
+                                    std::bit_cast<float>(arguments[2])};
+            legacy.ValidateNormal(normal);
+            static_cast<void>(require_frame("glNormal3f"));
+            legacy.SetNormal(normal);
+            return 0U;
+        });
+    dispatch.Bind(
+        "glClipPlanef",
+        [&legacy, &core, &address_space, require_frame](
+            const std::span<const std::uint32_t> arguments,
+            const std::uint64_t thread_id) {
+            const auto values = ReadGuestFloats(
+                address_space, arguments[1], 4U, thread_id);
+            std::array<float, 4> equation{};
+            std::ranges::copy(values, equation.begin());
+            legacy.ValidateClipPlane(arguments[0], equation);
+            const auto transformed = Gles1TransformClipPlane(
+                core.Matrices().Current(kGles1Modelview, kTexture0), equation);
+            static_cast<void>(require_frame("glClipPlanef"));
+            legacy.SetClipPlane(arguments[0], transformed);
             return 0U;
         });
     dispatch.Bind(

@@ -20,6 +20,7 @@
 #include "../../src/runtime/integration/android_boundary_gles1.h"
 #include "../../src/runtime/integration/android_boundary_gles1_draw.h"
 #include "../../src/runtime/integration/android_boundary_gles1_query.h"
+#include "../../src/runtime/integration/android_boundary_gles1_support.h"
 
 namespace {
 
@@ -232,6 +233,17 @@ TEST_CASE("GLES1 matrix state composes and bounds stacks") {
     CHECK_THROWS_WITH_AS(
         matrices.Rotate(1.0F, 0.0F, 0.0F, 0.0F),
         "GLES1 rotation axis is invalid", std::invalid_argument);
+    const std::array plane{1.0F, 0.0F, 0.0F, 0.0F};
+    auto translated = ogplay::runtime::detail::Gles1IdentityMatrix();
+    translated[12] = 2.0F;
+    const auto eye_plane =
+        ogplay::runtime::detail::Gles1TransformClipPlane(translated, plane);
+    CHECK(eye_plane[0] == doctest::Approx(1.0F));
+    CHECK(eye_plane[3] == doctest::Approx(-2.0F));
+    const ogplay::runtime::detail::Gles1Matrix singular{};
+    CHECK_THROWS_WITH_AS(
+        ogplay::runtime::detail::Gles1TransformClipPlane(singular, plane),
+        "GLES1 clip-plane modelview matrix is singular", std::invalid_argument);
     matrices.SetMode(ogplay::runtime::detail::kGles1Texture);
     matrices.SetActiveTexture(0x84C0U);
     matrices.Translate(0.25F, 0.0F, 0.0F);
@@ -263,6 +275,8 @@ TEST_CASE("GLES1 legacy fixed state validates isolates and resets") {
     CHECK(state.AlphaReference() == 0.0F);
     CHECK(state.ClientActiveTexture() == 0x84C0U);
     CHECK(state.Color()[0] == 1.0F);
+    CHECK(state.Normal()[2] == 1.0F);
+    CHECK(state.ClipPlane(0x3000U)[0] == 0.0F);
     state.SetAlphaFunction(0x0201U, 2.0F);
     CHECK(state.AlphaFunction() == 0x0201U);
     CHECK(state.AlphaReference() == 1.0F);
@@ -272,6 +286,14 @@ TEST_CASE("GLES1 legacy fixed state validates isolates and resets") {
     state.SetColor(color);
     CHECK(state.Color()[0] == 0.0F);
     CHECK(state.Color()[3] == 1.0F);
+    const std::array normal{0.25F, 0.5F, 0.75F};
+    state.SetNormal(normal);
+    CHECK(state.Normal()[1] == 0.5F);
+    const std::array clip_plane{1.0F, 0.0F, 0.0F, -0.25F};
+    state.SetClipPlane(0x3005U, clip_plane);
+    CHECK(state.ClipPlane(0x3005U)[3] == -0.25F);
+    CHECK_THROWS_AS(state.SetClipPlane(0x3006U, clip_plane),
+                    std::invalid_argument);
     const std::array environment_color{0.1F, 0.2F, 0.3F, 0.4F};
     state.SetTextureEnvironment(
         0x84C1U, ogplay::runtime::detail::kGles1TextureEnvironment,
@@ -285,6 +307,8 @@ TEST_CASE("GLES1 legacy fixed state validates isolates and resets") {
     CHECK_THROWS_AS(state.SetAlphaFunction(0U, 0.0F), std::invalid_argument);
     state.Reset();
     CHECK(state.ClientActiveTexture() == 0x84C0U);
+    CHECK(state.Normal()[2] == 1.0F);
+    CHECK(state.ClipPlane(0x3005U)[3] == 0.0F);
     CHECK(state.TextureEnvironment(
               0x84C0U,
               ogplay::runtime::detail::kGles1TextureEnvironmentMode)[0] ==
@@ -404,6 +428,17 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         fixture.Call("libGLESv1_CM.so", "glReadPixels",
                      {0U, 0U, 1U, 1U}),
         "glReadPixels has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glMultMatrixf",
+                     {fixture.output.Value()}),
+        "glMultMatrixf has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glNormal3f", {0U, 0U, 0U}),
+        "glNormal3f has no current ANGLE frame", std::runtime_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv1_CM.so", "glClipPlanef",
+                     {0x3000U, fixture.output.Value()}),
+        "glClipPlanef has no current ANGLE frame", std::runtime_error);
     const std::array scalar_calls{
         std::pair<std::string_view, std::array<std::uint32_t, 4>>{
             "glActiveTexture", {0x84C0U}},
@@ -662,6 +697,7 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         const std::array owned_integer_queries{
             std::pair{0x0BA0U, ogplay::runtime::detail::kGles1Projection},
             std::pair{0x0BA4U, 1U}, std::pair{0x0B54U, 0x1D01U},
+            std::pair{0x0D32U, 6U},
             std::pair{0x0CF5U, 4U}, std::pair{0x8069U, texture},
             std::pair{0x84E0U, 0x84C0U}, std::pair{0x84E1U, 0x84C1U},
             std::pair{0x8894U, 0U}};
@@ -1042,6 +1078,83 @@ TEST_CASE("GLES1 lighting preserves diffuse material alpha for blending") {
         CHECK(frame->rgba8[pixel] == doctest::Approx(64).epsilon(0.04));
         CHECK(frame->rgba8[pixel + 1U] == doctest::Approx(128).epsilon(0.04));
         CHECK(frame->rgba8[pixel + 2U] == doctest::Approx(191).epsilon(0.04));
+    }
+    fixture.boundary.CloseManagedSurface();
+}
+
+TEST_CASE("GLES1 clip plane discards fixed pipeline fragments") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    CHECK(fixture.Call("libGLESv1_CM.so", "glViewport",
+                       {0U, 0U, 4U, 3U}) == 0U);
+    CHECK(fixture.Call(
+              "libGLESv1_CM.so", "glClearColor",
+              {0U, 0U, std::bit_cast<std::uint32_t>(1.0F),
+               std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+    const auto vertices = fixture.output.Add(0x600U);
+    constexpr std::array vertex_values{
+        -1.0F, -1.0F, 0.0F, 1.0F, -1.0F, 0.0F, 0.0F, 1.0F, 0.0F};
+    for (std::size_t index = 0; index < vertex_values.size(); ++index) {
+        fixture.bus.Write32(
+            vertices.Add(index * sizeof(std::uint32_t)),
+            std::bit_cast<std::uint32_t>(vertex_values[index]), 1U);
+    }
+    CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
+                       {3U, 0x1406U, 0U, vertices.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                       {ogplay::runtime::detail::kGles1VertexArray}) == 0U);
+    CHECK(fixture.Call(
+              "libGLESv1_CM.so", "glColor4f",
+              {std::bit_cast<std::uint32_t>(1.0F), 0U, 0U,
+               std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+    CHECK(fixture.Call(
+              "libGLESv1_CM.so", "glNormal3f",
+              {0U, 0U, std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+    const auto identity = fixture.output.Add(0x700U);
+    for (std::size_t index = 0; index < 16U; ++index) {
+        fixture.bus.Write32(
+            identity.Add(index * sizeof(std::uint32_t)),
+            std::bit_cast<std::uint32_t>(index % 5U == 0U ? 1.0F : 0.0F),
+            1U);
+    }
+    CHECK(fixture.Call("libGLESv1_CM.so", "glMultMatrixf",
+                       {identity.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClear",
+                       {0x00004000U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                       {0x0004U, 0U, 3U}) == 0U);
+    fixture.boundary.PresentManagedSurface();
+    const auto visible = fixture.boundary.TakeLatestFrame();
+    REQUIRE(visible.has_value());
+    bool saw_red{};
+    for (std::size_t pixel = 0; pixel < visible->rgba8.size(); pixel += 4U) {
+        saw_red = saw_red || (visible->rgba8[pixel] > 200U &&
+                              visible->rgba8[pixel + 2U] < 50U);
+    }
+    CHECK(saw_red);
+
+    const auto equation = fixture.output.Add(0x780U);
+    for (std::size_t index = 0; index < 4U; ++index) {
+        fixture.bus.Write32(
+            equation.Add(index * sizeof(std::uint32_t)),
+            std::bit_cast<std::uint32_t>(index == 3U ? -1.0F : 0.0F), 1U);
+    }
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClipPlanef",
+                       {0x3000U, equation.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x3000U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClear",
+                       {0x00004000U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                       {0x0004U, 0U, 3U}) == 0U);
+    fixture.boundary.PresentManagedSurface();
+    const auto clipped = fixture.boundary.TakeLatestFrame();
+    REQUIRE(clipped.has_value());
+    for (std::size_t pixel = 0; pixel < clipped->rgba8.size(); pixel += 4U) {
+        CHECK(clipped->rgba8[pixel] == 0U);
+        CHECK(clipped->rgba8[pixel + 1U] == 0U);
+        CHECK(clipped->rgba8[pixel + 2U] == 255U);
+        CHECK(clipped->rgba8[pixel + 3U] == 255U);
     }
     fixture.boundary.CloseManagedSurface();
 }

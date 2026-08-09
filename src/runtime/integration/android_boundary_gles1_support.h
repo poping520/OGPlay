@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <string_view>
@@ -33,6 +34,56 @@ inline Gles1Matrix Gles1MultiplyMatrices(
         }
     }
     return result;
+}
+
+inline std::array<float, 4> Gles1TransformClipPlane(
+    const Gles1Matrix& modelview,
+    const std::span<const float, 4> equation) {
+    std::array<std::array<double, 8>, 4> rows{};
+    for (std::size_t row = 0; row < 4U; ++row) {
+        for (std::size_t column = 0; column < 4U; ++column) {
+            rows[row][column] = modelview[column * 4U + row];
+        }
+        rows[row][4U + row] = 1.0;
+    }
+    for (std::size_t column = 0; column < 4U; ++column) {
+        auto pivot = column;
+        for (std::size_t row = column + 1U; row < 4U; ++row) {
+            if (std::abs(rows[row][column]) >
+                std::abs(rows[pivot][column])) {
+                pivot = row;
+            }
+        }
+        if (std::abs(rows[pivot][column]) <=
+            std::numeric_limits<double>::epsilon()) {
+            throw std::invalid_argument(
+                "GLES1 clip-plane modelview matrix is singular");
+        }
+        if (pivot != column) std::swap(rows[pivot], rows[column]);
+        const auto divisor = rows[column][column];
+        for (auto& value : rows[column]) value /= divisor;
+        for (std::size_t row = 0; row < 4U; ++row) {
+            if (row == column) continue;
+            const auto factor = rows[row][column];
+            for (std::size_t index = 0; index < 8U; ++index) {
+                rows[row][index] -= factor * rows[column][index];
+            }
+        }
+    }
+    std::array<float, 4> transformed{};
+    for (std::size_t row = 0; row < 4U; ++row) {
+        double value{};
+        for (std::size_t column = 0; column < 4U; ++column) {
+            value += rows[column][4U + row] * equation[column];
+        }
+        transformed[row] = static_cast<float>(value);
+    }
+    if (!std::ranges::all_of(transformed, [](const float value) {
+            return std::isfinite(value);
+        })) {
+        throw std::invalid_argument("GLES1 transformed clip plane is not finite");
+    }
+    return transformed;
 }
 
 inline void RequireFiniteGles1MatrixValues(
@@ -100,10 +151,13 @@ uniform float u_lighting;
 uniform float u_point_size;
 uniform float u_point_size_min;
 uniform float u_point_size_max;
+uniform vec4 u_clip_plane[6];
 varying vec4 v_color;
 varying vec2 v_texcoord0;
 varying vec2 v_texcoord1;
 varying float v_fog_distance;
+varying vec3 v_clip_distance0;
+varying vec3 v_clip_distance1;
 vec4 transform(vec4 c0, vec4 c1, vec4 c2, vec4 c3, vec4 value) {
   return c0 * value.x + c1 * value.y + c2 * value.z + c3 * value.w;
 }
@@ -128,6 +182,12 @@ void main() {
   v_texcoord1 = transform(u_texture1_matrix0, u_texture1_matrix1,
                           u_texture1_matrix2, u_texture1_matrix3, a_texcoord1).xy;
   v_fog_distance = abs(eye.z);
+  v_clip_distance0 = vec3(dot(eye, u_clip_plane[0]),
+                          dot(eye, u_clip_plane[1]),
+                          dot(eye, u_clip_plane[2]));
+  v_clip_distance1 = vec3(dot(eye, u_clip_plane[3]),
+                          dot(eye, u_clip_plane[4]),
+                          dot(eye, u_clip_plane[5]));
   gl_Position = transform(u_projection0, u_projection1, u_projection2,
                           u_projection3, eye);
   gl_PointSize = clamp(u_point_size, u_point_size_min, u_point_size_max);
@@ -166,10 +226,13 @@ uniform vec4 u_fog_color;
 uniform float u_alpha_enabled;
 uniform int u_alpha_function;
 uniform float u_alpha_reference;
+uniform float u_clip_enabled[6];
 varying vec4 v_color;
 varying vec2 v_texcoord0;
 varying vec2 v_texcoord1;
 varying float v_fog_distance;
+varying vec3 v_clip_distance0;
+varying vec3 v_clip_distance1;
 vec4 sourceValue(int source, vec4 texel, vec4 primary,
                  vec4 previous, vec4 constantColor) {
   if (source == 5890) return texel;
@@ -242,6 +305,12 @@ vec4 applyStage(vec4 previous, vec4 texel, int stage) {
   return color;
 }
 void main() {
+  if ((u_clip_enabled[0] > 0.5 && v_clip_distance0.x < 0.0) ||
+      (u_clip_enabled[1] > 0.5 && v_clip_distance0.y < 0.0) ||
+      (u_clip_enabled[2] > 0.5 && v_clip_distance0.z < 0.0) ||
+      (u_clip_enabled[3] > 0.5 && v_clip_distance1.x < 0.0) ||
+      (u_clip_enabled[4] > 0.5 && v_clip_distance1.y < 0.0) ||
+      (u_clip_enabled[5] > 0.5 && v_clip_distance1.z < 0.0)) discard;
   vec4 color = v_color;
   if (u_texture_enabled[0] > 0.5)
     color = applyStage(color, texture2D(u_texture0, v_texcoord0), 0);

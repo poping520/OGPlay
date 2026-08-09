@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0309] GLES1 已补齐 current-matrix 右乘、current normal 与六项 eye-space clip plane，
+  fixed shader 对启用平面执行真实裁剪；Dungeon Hunter 目标 ELF 的 74 个 GL import 已达到
+  74/74 显式 handler、缺口 0，实跑保持在独立 client-array type 边界，全量 CTest 437/437。
 - [WU-0308] GLES1 已补齐 buffer name 生命周期、`glBufferData`/`glBufferSubData` 与受检
   `glReadPixels`，删除绑定对象同步 transfer state；第二个 exact APK 无倒退并保持在独立
   client-array type 边界，全量 CTest 436/436 通过。
@@ -66,9 +69,6 @@
 - [WU-0298] 鼠标主键以 input mapper 生成固定 id 0 的成对单点触摸；悬停、非主键、
   黑边起始及跨设备事件均不注入，窗口外 release 夹紧闭合；CTest 432/432 通过，用户以
   Debug exact APK 确认拖拽可旋转车辆，3407 帧后正常关闭。
-- [WU-0297] HAL 鼠标按钮已规范为 backend-independent 的 primary/middle/secondary/
-  auxiliary 语义，未知按钮显式标记且 SDL 数值不再泄漏；macOS-arm64 + ANGLE
-  warnings-as-errors 配置、构建及全量 CTest 429/429 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

@@ -141,7 +141,8 @@ private:
                 invocation.method.declaration.implementation);
             if (found == handlers_.end()) {
                 Fail(JniInvocationErrorReason::missing_handler,
-                     "JNI method implementation has no registered handler");
+                     "JNI method implementation has no registered handler: " +
+                         invocation.method.declaration.implementation);
             }
             handler = found->second;
         }

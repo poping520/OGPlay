@@ -270,6 +270,11 @@ status = "complete"
 test = "tests/runtime/headless_jni_contract_tests.cpp"
 note = "M3 范围完成：233 槽 ABI 全冻结，208 个常用 JNIEnv 与 4 个 JavaVM 槽有真实行为，低频槽继续可观测 trap；累计样本覆盖双向调用、引用、异常及 native 工作线程 attach/HLE callback/detach"
 
+[runtime.jni_missing_handler_diagnostics]
+status = "complete"
+test = "tests/runtime/jni_invocation_tests.cpp; tests/runtime/framework_lifecycle_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
+note = "M5 WU-0279 让统一 invocation engine 的 missing-handler 错误携带已解析的规范 implementation ID"
+
 [runtime.jni_guest_abi]
 status = "complete"
 test = "tests/runtime/jni_guest_abi_tests.cpp"

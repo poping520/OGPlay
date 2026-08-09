@@ -14,6 +14,8 @@ Bionic、syscall、execution 或 integration。
 
 - 233 个 JNIEnv 槽与 8 个 JavaVM 槽的索引稳定。
 - 未绑定槽记账并 trap；引用类别、线程作用域和 pending exception gate 必须严格检查。
+- 已解析方法缺少 implementation handler 时，错误必须携带规范 implementation ID，禁止
+  丢失定位所需的注册表身份。
 - guest handle 保持固定宽度，不暴露宿主指针。
 - `BuildJniNativeExportNames` 严格验证 class/method/descriptor，并按 JNI 规范同时产出
   short 与含参数 descriptor 的 long 名；Unicode 必须先转为 UTF-16 code unit 再转义。

@@ -103,10 +103,11 @@ TEST_CASE("JNI invocation rejects missing and wrong return handlers") {
     const auto missing = *classes.GetMethodId(type, "missing", "()I", true);
     const auto wrong = *classes.GetMethodId(type, "wrong", "()I", true);
     ogplay::runtime::JniInvocationEngine engine(classes);
-    CHECK_THROWS_AS(
+    CHECK_THROWS_WITH_AS(
         static_cast<void>(engine.InvokeStatic(
             2, type, missing, {},
             ogplay::runtime::JniArgumentSource::value_array)),
+        "JNI method implementation has no registered handler: missing.impl",
         ogplay::runtime::JniInvocationError);
     engine.RegisterHandler("wrong.impl", [](const auto&) {
         return ogplay::runtime::JniValue{std::monostate{}};

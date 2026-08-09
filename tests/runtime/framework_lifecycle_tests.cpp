@@ -1,4 +1,7 @@
 #include <array>
+#include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -43,7 +46,8 @@ TEST_CASE("framework HLE installs a declaration-only Activity class set") {
         static_cast<void>(invocations.InvokeVirtual(
             1, ogplay::runtime::JniReference{1}, installed.activity_class,
             *get_assets, {}, ogplay::runtime::JniArgumentSource::value_array)),
-        "JNI method implementation has no registered handler",
+        "JNI method implementation has no registered handler: "
+        "framework.context.get_assets",
         ogplay::runtime::JniInvocationError);
     const auto get_preferences = classes.GetMethodId(
         installed.activity_class, "getSharedPreferences",
@@ -56,23 +60,30 @@ TEST_CASE("framework HLE installs a declaration-only Activity class set") {
             1, ogplay::runtime::JniReference{1}, installed.activity_class,
             *get_preferences, preference_arguments,
             ogplay::runtime::JniArgumentSource::value_array)),
-        "JNI method implementation has no registered handler",
+        "JNI method implementation has no registered handler: "
+        "framework.context.get_shared_preferences",
         ogplay::runtime::JniInvocationError);
-    for (const auto& [name, descriptor] : std::array{
-             std::pair{"getPackageName", "()Ljava/lang/String;"},
-             std::pair{"getPackageManager",
-                       "()Landroid/content/pm/PackageManager;"}}) {
+    for (const auto& [name, descriptor, implementation] : std::array{
+             std::tuple{"getPackageName", "()Ljava/lang/String;",
+                        "framework.context.get_package_name"},
+             std::tuple{"getPackageManager",
+                        "()Landroid/content/pm/PackageManager;",
+                        "framework.context.get_package_manager"}}) {
         const auto method =
             classes.GetMethodId(installed.activity_class, name, descriptor,
                                 false);
         REQUIRE(method.has_value());
-        CHECK_THROWS_WITH_AS(
+        try {
             static_cast<void>(invocations.InvokeVirtual(
-                1, ogplay::runtime::JniReference{1},
-                installed.activity_class, *method, {},
-                ogplay::runtime::JniArgumentSource::value_array)),
-            "JNI method implementation has no registered handler",
-            ogplay::runtime::JniInvocationError);
+                1, ogplay::runtime::JniReference{1}, installed.activity_class,
+                *method, {},
+                ogplay::runtime::JniArgumentSource::value_array));
+            FAIL_CHECK("missing framework context handler did not fail");
+        } catch (const ogplay::runtime::JniInvocationError& error) {
+            CHECK(std::string_view{error.what()} ==
+                  std::string{"JNI method implementation has no registered "
+                              "handler: "} + implementation);
+        }
     }
     CHECK_THROWS_AS(static_cast<void>(lifecycle.Install()),
                     ogplay::runtime::FrameworkLifecycleError);

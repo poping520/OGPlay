@@ -60,7 +60,8 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
         static_cast<void>(invocations.InvokeStatic(
             1U, java_class, *method, {},
             ogplay::runtime::JniArgumentSource::variadic)),
-        "JNI method implementation has no registered handler",
+        "JNI method implementation has no registered handler: "
+        "audio.destroy_sound_pool",
         ogplay::runtime::JniInvocationError);
 
     ogplay::audio::JavaSoundPoolState sound_pool;

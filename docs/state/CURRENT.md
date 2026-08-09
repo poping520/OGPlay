@@ -34,6 +34,9 @@
 
 ## 最近完成
 
+- [WU-0279] 统一 JNI invocation engine 的 missing-handler 错误现携带已解析的规范
+  implementation ID；exact-APK 下一边界由不透明错误精确定位为
+  `audio.is_sound_loaded_big`。
 - [WU-0278] Java SoundPool 状态已扩展为线程安全、按普通 pool / big 分类的通用 voice
   目录；`stop_all_sounds`、`stop_all_pool`、`stop_all_big` 三个 handler 批量闭合，分类
   stop 支持保留指定 resource。exact-APK 120 帧及 shutdown 均以状态 0 完成。
@@ -71,8 +74,8 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 增加 exact-APK 更长时限和输入驱动 smoke，采集下一真实行为边界与稳定黄金帧。
-2. 按实际调用证据扩展 SoundPool load/play/control，接入资源与音频输出前保持明确 partial。
+1. 以真实分类资源状态闭合 `audio.is_sound_loaded_big` 及同族普通 pool 查询。
+2. 增加 exact-APK 更长时限和输入驱动 smoke，采集下一真实行为边界与稳定黄金帧。
 3. 按 exact-APK 后续真实调用证据，批量闭合类/实例及字段/数组/字符串 JNI 槽。
 
 ## 阻塞

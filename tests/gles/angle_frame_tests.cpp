@@ -35,8 +35,14 @@ TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
     frame.Viewport(0, 0, 4, 3);
     frame.ClearColor(0.25F, 0.5F, 0.75F, 1.0F);
     frame.Clear(0x00004000U);
+    const auto depth_bits = frame.GetIntegers(0x0D56U, 1U);
+    const auto stencil_bits = frame.GetIntegers(0x0D57U, 1U);
     const auto pixels = frame.ReadRgba8();
 
+    REQUIRE(depth_bits.size() == 1U);
+    REQUIRE(stencil_bits.size() == 1U);
+    CHECK(depth_bits.front() >= 24);
+    CHECK(stencil_bits.front() >= 8);
     REQUIRE(pixels.size() == 4U * 3U * 4U);
     for (std::size_t offset = 0; offset < pixels.size(); offset += 4U) {
         CHECK(pixels[offset] == doctest::Approx(64).epsilon(0.02));

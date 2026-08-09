@@ -322,13 +322,13 @@ note = "M4 浅 submodule 交付同 commit 的共享头、Windows/Linux x64 与 m
 
 [gles.angle]
 status = "complete"
-test = "tests/gles/egl_lifecycle_tests.cpp"
-note = "M4 已在 Windows/MSVC D3D11、Linux/x64 Vulkan 与 macOS/arm64 Metal 上完成真实 pbuffer 生命周期、guest 边界、SDL present 与黄金帧；Linux/macOS 另验证 SwiftShader 与 backend 隔离，macOS POST_BUILD 暂存 libEGL/libGLESv2 dylib；三平台同 commit f1b59bb 严格出口 302/302"
+test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp"
+note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL present 与黄金帧；M5 WU-0286 让默认 framebuffer 明确选择 RGBA8+D24S8，并由真实 ANGLE 查询验证 depth/stencil attachment；窗口 surface 仍待后续里程碑"
 
 [gles.egl_lifecycle]
 status = "partial"
-test = "tests/gles/egl_lifecycle_tests.cpp"
-note = "M4 完成不泄漏原生类型的可注入生命周期、精确 EGL 错误和逆序回滚；Windows D3D11 与 Linux/macOS Vulkan headless pbuffer 及 macOS Metal 已验证；窗口 surface 仍待后续里程碑"
+test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp"
+note = "M4 完成可注入生命周期、精确 EGL 错误和逆序回滚；M5 WU-0286 为 pbuffer EGL config 请求并验证 RGBA8+D24S8；窗口 surface 仍待后续里程碑"
 
 [gles.idl_codegen]
 status = "partial"
@@ -563,12 +563,12 @@ note = "M5 WU-0273 批量接入 compressed/copy/image/sub-image 四个 GLES1 tex
 [runtime.gles1_legacy_fixed_state]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 MODULATE/REPLACE/ADD 与单纹理完整 COMBINE 状态，DECAL/BLEND 和多纹理仍未实现"
+note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 texture environment；WU-0285 支持两个启用单元按 GL_PREVIOUS 逐级组合并隔离每单元 texture matrix，DECAL/BLEND 和第三 stage 仍未实现"
 
 [runtime.gles1_client_array_draw]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
-note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0284 让内部 fixed shader 消费格式敏感 MODULATE/REPLACE/ADD 与单纹理 COMBINE，仍限单 active texture、light0 与近似 normal matrix"
+note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；仍限两个 stage、light0 与近似 normal matrix"
 
 [runtime.jni_guest_array_length]
 status = "complete"

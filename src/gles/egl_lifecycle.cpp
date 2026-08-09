@@ -168,7 +168,8 @@ public:
         constexpr EGLint attributes[]{
             EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE,
             EGL_OPENGL_ES2_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
-            EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_NONE};
+            EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_DEPTH_SIZE, 24,
+            EGL_STENCIL_SIZE, 8, EGL_NONE};
         EGLConfig native_config{};
         EGLint count{};
         const auto result = eglChooseConfig(ReinterpretHandle<EGLDisplay>(display),

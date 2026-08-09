@@ -29,11 +29,16 @@
 
 ## 进行中
 
-- 无。目标 ELF 的 62 个 GL import 已全部具有显式行为 handler；exact-APK 已进入游戏
-  主界面。matrix-palette skinning 与 fixed renderer 完整语义仍按能力账本保持 partial。
+- 无。
 
 ## 最近完成
 
+- [WU-0286] ANGLE pbuffer config 已明确请求 RGBA8+D24S8，真实查询验证默认 framebuffer
+  具备至少 24-bit depth 与 8-bit stencil；exact-APK 逐批 draw 隔离证明黑块来自缺失 depth
+  attachment 后，正式修复版由用户确认两个黑块消失。
+- [WU-0285] fixed renderer 已支持两个启用纹理单元顺序级联并隔离 sampler、坐标、base
+  format、texture environment 与 texture matrix；lighting alpha 遵循 diffuse material
+  alpha。真实 ANGLE 双纹理/透明光照 readback 与 exact-APK 主界面纹理均已验收。
 - [WU-0284] fixed renderer 已按 texture object 的 level-0 base format 消费
   MODULATE/REPLACE/ADD 与单纹理完整 COMBINE 状态；exact-APK 越过三个真实边界并由用户
   确认进入游戏主界面，517 帧后正常停止且状态 0。

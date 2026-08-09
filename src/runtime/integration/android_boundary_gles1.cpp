@@ -1,5 +1,4 @@
 #include "android_boundary_gles1.h"
-
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -10,64 +9,14 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
-
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
 #include "android_boundary_gles1_fixed.h"
+#include "android_boundary_gles1_support.h"
 
 namespace ogplay::runtime::detail {
 namespace {
-
 constexpr std::size_t kMaximumMatrixStackDepth = 32;
-
-[[nodiscard]] Gles1Matrix IdentityMatrix() noexcept {
-    return {1.0F, 0.0F, 0.0F, 0.0F,
-            0.0F, 1.0F, 0.0F, 0.0F,
-            0.0F, 0.0F, 1.0F, 0.0F,
-            0.0F, 0.0F, 0.0F, 1.0F};
-}
-
-[[nodiscard]] Gles1Matrix MultiplyMatrices(
-    const Gles1Matrix& left, const Gles1Matrix& right) noexcept {
-    Gles1Matrix result{};
-    for (std::size_t column = 0; column < 4; ++column) {
-        for (std::size_t row = 0; row < 4; ++row) {
-            for (std::size_t index = 0; index < 4; ++index) {
-                result[column * 4 + row] +=
-                    left[index * 4 + row] * right[column * 4 + index];
-            }
-        }
-    }
-    return result;
-}
-
-void RequireFiniteMatrixValues(const std::span<const float> values) {
-    if (!std::ranges::all_of(values, [](const float value) {
-            return std::isfinite(value);
-        })) {
-        throw std::invalid_argument("GLES1 matrix value must be finite");
-    }
-}
-
-[[nodiscard]] Gles1Matrix ReadGuestMatrix(
-    const memory::AddressSpace& address_space, const std::uint32_t address,
-    const std::uint64_t thread_id) {
-    std::array<std::byte, sizeof(Gles1Matrix)> bytes{};
-    address_space.Read(memory::GuestAddress{address}, bytes, thread_id);
-    Gles1Matrix matrix{};
-    for (std::size_t element = 0; element < matrix.size(); ++element) {
-        std::uint32_t word{};
-        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
-            word |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
-                        bytes[element * sizeof(word) + byte]))
-                    << (byte * 8U);
-        }
-        matrix[element] = std::bit_cast<float>(word);
-    }
-    RequireFiniteMatrixValues(matrix);
-    return matrix;
-}
-
 [[nodiscard]] std::size_t HintIndex(const std::uint32_t target) {
     switch (target) {
     case 0x0C50U: return 0;  // GL_PERSPECTIVE_CORRECTION_HINT
@@ -78,7 +27,6 @@ void RequireFiniteMatrixValues(const std::span<const float> values) {
     default: throw std::invalid_argument("glHint target is invalid for GLES1");
     }
 }
-
 [[nodiscard]] bool SharedCapability(const std::uint32_t capability) noexcept {
     switch (capability) {
     case 0x0BE2U:  // GL_BLEND
@@ -94,7 +42,6 @@ void RequireFiniteMatrixValues(const std::span<const float> values) {
     default: return false;
     }
 }
-
 [[nodiscard]] bool FixedCapability(const std::uint32_t capability) noexcept {
     switch (capability) {
     case 0x0BC0U:  // GL_ALPHA_TEST
@@ -115,7 +62,6 @@ void RequireFiniteMatrixValues(const std::span<const float> values) {
                (capability >= 0x4000U && capability <= 0x4007U);
     }
 }
-
 [[nodiscard]] std::uint64_t CapabilityKey(
     const std::uint32_t capability, const std::uint32_t active_texture) {
     if (!SharedCapability(capability) && !FixedCapability(capability)) {
@@ -127,7 +73,6 @@ void RequireFiniteMatrixValues(const std::span<const float> values) {
     }
     return capability;
 }
-
 [[nodiscard]] gles::GuestBuffer PrepareTextureNames(
     memory::AddressSpace& address_space, const std::uint32_t count_word,
     const std::uint32_t address, const gles::GuestTransferDirection direction,
@@ -181,13 +126,23 @@ AndroidBoundaryGles1MatrixState::AndroidBoundaryGles1MatrixState() {
 
 void AndroidBoundaryGles1MatrixState::Reset() {
     mode_ = kGles1Modelview;
-    modelview_.assign(1, IdentityMatrix());
-    projection_.assign(1, IdentityMatrix());
-    texture_.assign(1, IdentityMatrix());
+    active_texture_ = 0x84C0U;
+    modelview_.assign(1, Gles1IdentityMatrix());
+    projection_.assign(1, Gles1IdentityMatrix());
+    for (auto& texture : textures_) texture.assign(1, Gles1IdentityMatrix());
+}
+
+void AndroidBoundaryGles1MatrixState::SetActiveTexture(
+    const std::uint32_t texture) {
+    if (texture < 0x84C0U || texture > 0x84DFU) {
+        throw std::invalid_argument(
+            "GLES1 texture unit is outside GL_TEXTURE0..31");
+    }
+    active_texture_ = texture;
 }
 
 void AndroidBoundaryGles1MatrixState::SetMode(const std::uint32_t mode) {
-    static_cast<void>(Stack(mode));
+    static_cast<void>(Stack(mode, active_texture_));
     mode_ = mode;
 }
 
@@ -196,12 +151,12 @@ std::uint32_t AndroidBoundaryGles1MatrixState::Mode() const noexcept {
 }
 
 void AndroidBoundaryGles1MatrixState::LoadIdentity() {
-    CurrentStack().back() = IdentityMatrix();
+    CurrentStack().back() = Gles1IdentityMatrix();
 }
 
 void AndroidBoundaryGles1MatrixState::Load(
     const std::span<const float, 16> matrix) {
-    RequireFiniteMatrixValues(matrix);
+    RequireFiniteGles1MatrixValues(matrix);
     std::ranges::copy(matrix, CurrentStack().back().begin());
 }
 
@@ -224,7 +179,7 @@ void AndroidBoundaryGles1MatrixState::Pop() {
 void AndroidBoundaryGles1MatrixState::Rotate(
     const float angle_degrees, const float x, const float y, const float z) {
     const std::array values{angle_degrees, x, y, z};
-    RequireFiniteMatrixValues(values);
+    RequireFiniteGles1MatrixValues(values);
     const auto length = std::sqrt(x * x + y * y + z * z);
     if (length == 0.0F || !std::isfinite(length)) {
         throw std::invalid_argument("GLES1 rotation axis is invalid");
@@ -248,46 +203,53 @@ void AndroidBoundaryGles1MatrixState::Rotate(
         nz * nz * one_minus_cosine + cosine, 0.0F,
         0.0F, 0.0F, 0.0F, 1.0F};
     auto& current = CurrentStack().back();
-    const auto next = MultiplyMatrices(current, rotation);
-    RequireFiniteMatrixValues(next);
+    const auto next = Gles1MultiplyMatrices(current, rotation);
+    RequireFiniteGles1MatrixValues(next);
     current = next;
 }
 
 void AndroidBoundaryGles1MatrixState::Translate(
     const float x, const float y, const float z) {
     const std::array values{x, y, z};
-    RequireFiniteMatrixValues(values);
-    auto translation = IdentityMatrix();
+    RequireFiniteGles1MatrixValues(values);
+    auto translation = Gles1IdentityMatrix();
     translation[12] = x;
     translation[13] = y;
     translation[14] = z;
     auto& current = CurrentStack().back();
-    const auto next = MultiplyMatrices(current, translation);
-    RequireFiniteMatrixValues(next);
+    const auto next = Gles1MultiplyMatrices(current, translation);
+    RequireFiniteGles1MatrixValues(next);
     current = next;
 }
 
 const Gles1Matrix& AndroidBoundaryGles1MatrixState::Current() const noexcept {
-    return Stack(mode_).back();
+    return Stack(mode_, active_texture_).back();
+}
+
+const Gles1Matrix& AndroidBoundaryGles1MatrixState::Current(
+    const std::uint32_t mode, const std::uint32_t texture) const {
+    return Stack(mode, texture).back();
 }
 
 std::size_t AndroidBoundaryGles1MatrixState::StackDepth(
     const std::uint32_t mode) const {
-    return Stack(mode).size();
+    return Stack(mode, active_texture_).size();
 }
 
 std::vector<Gles1Matrix>&
 AndroidBoundaryGles1MatrixState::CurrentStack() noexcept {
     if (mode_ == kGles1Projection) return projection_;
-    if (mode_ == kGles1Texture) return texture_;
+    if (mode_ == kGles1Texture) {
+        return textures_.at(active_texture_ - 0x84C0U);
+    }
     return modelview_;
 }
 
 const std::vector<Gles1Matrix>& AndroidBoundaryGles1MatrixState::Stack(
-    const std::uint32_t mode) const {
+    const std::uint32_t mode, const std::uint32_t texture) const {
     if (mode == kGles1Modelview) return modelview_;
     if (mode == kGles1Projection) return projection_;
-    if (mode == kGles1Texture) return texture_;
+    if (mode == kGles1Texture) return textures_.at(texture - 0x84C0U);
     throw std::invalid_argument("glMatrixMode mode is invalid for GLES1");
 }
 
@@ -347,7 +309,8 @@ std::uint32_t AndroidBoundaryGles1State::Hint(
 }
 
 void AndroidBoundaryGles1State::SetActiveTexture(
-    const std::uint32_t texture) noexcept {
+    const std::uint32_t texture) {
+    matrices_.SetActiveTexture(texture);
     active_texture_ = texture;
 }
 
@@ -385,10 +348,19 @@ void AndroidBoundaryGles1State::SetTextureBaseFormat(
 
 std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
     const std::uint32_t target) const {
+    return TextureBaseFormat(active_texture_, target);
+}
+
+std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
+    const std::uint32_t texture_unit, const std::uint32_t target) const {
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    const auto bound = bound_textures_.find(active_texture_);
+    if (texture_unit < 0x84C0U || texture_unit > 0x84DFU) {
+        throw std::invalid_argument(
+            "GLES1 texture unit is outside GL_TEXTURE0..31");
+    }
+    const auto bound = bound_textures_.find(texture_unit);
     const auto texture = bound == bound_textures_.end() ? 0U : bound->second;
     const auto found = texture_base_formats_.find(texture);
     if (found == texture_base_formats_.end()) return std::nullopt;
@@ -421,9 +393,22 @@ void AndroidBoundaryGles1State::SetCapability(
 
 bool AndroidBoundaryGles1State::Capability(
     const std::uint32_t capability) const {
+    return Capability(active_texture_, capability);
+}
+
+bool AndroidBoundaryGles1State::Capability(
+    const std::uint32_t texture_unit, const std::uint32_t capability) const {
     const auto found = capabilities_.find(
-        CapabilityKey(capability, active_texture_));
+        CapabilityKey(capability, texture_unit));
     return found != capabilities_.end() && found->second;
+}
+
+std::vector<std::uint32_t> AndroidBoundaryGles1State::EnabledTextureUnits() const {
+    std::vector<std::uint32_t> result;
+    for (auto texture = 0x84C0U; texture <= 0x84DFU; ++texture) {
+        if (Capability(texture, 0x0DE1U)) result.push_back(texture);
+    }
+    return result;
 }
 
 AndroidBoundaryGles1MatrixState&
@@ -514,7 +499,7 @@ void BindAndroidBoundaryGles1Core(
         [&state, &address_space, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t thread_id) {
-            const auto matrix = ReadGuestMatrix(
+            const auto matrix = ReadGuestGles1Matrix(
                 address_space, arguments[0], thread_id);
             static_cast<void>(require_frame("glLoadMatrixf"));
             state.Matrices().Load(matrix);

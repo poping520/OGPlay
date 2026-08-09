@@ -13,8 +13,8 @@
 - `AngleBackendName`：输出可用于配置、日志与 Agent 查询的稳定 renderer/device 名称。
 - `EglApi`：不泄漏原生 EGL 类型的最小调用面；生产实现转调 ANGLE，测试可注入确定性
   失败。调用方必须保证 API 对象比使用它的 `EglLifecycle` 存活更久。
-- `EglLifecycle::CreatePbuffer`：创建 ANGLE display、EGL config、GLES2 context 和 pbuffer
-  surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
+- `EglLifecycle::CreatePbuffer`：创建 ANGLE display、RGBA8+D24S8 EGL config、GLES2 context
+  和 pbuffer surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
 - `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/clear-color/depth-clear/clear、
   scalar render state、shader/program、buffer/texture、vertex/uniform、query/state、draw 与
   局部 readback 调用，并以
@@ -92,6 +92,8 @@
 - 平台探测事实由下层注入；gles 模块不使用平台宏，也不直接依赖平台 SDK 类型。
 - EGL 创建严格遵循 display→initialize→config→bind API→context→surface→make-current；
   失败按已完成阶段逆序回滚，成功析构按 unbind→surface→context→terminate 清理。
+- host-managed pbuffer 的默认 framebuffer 必须明确请求 RGBA8、24-bit depth 与 8-bit
+  stencil；不得让已启用的 depth/stencil test 因缺失 attachment 静默失效。
 - ANGLE backend 选择经 `EGL_EXT_platform_base` 的 `eglGetPlatformDisplayEXT` 与 `EGLint`
   属性表进入，使用空 `void*` 表达默认 native display；不依赖部分平台包未实现的 EGL 1.5
   core 同名入口，也不把平台相关的 `EGLNativeDisplayType` 泄漏给扩展入口。Vulkan

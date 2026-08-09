@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <span>
+#include <string>
 #include <string_view>
 
 #include "android_boundary_gles1_query.h"
@@ -15,6 +17,7 @@ inline constexpr std::uint32_t kGles1ColorArray = 0x8076U;
 inline constexpr std::uint32_t kGles1TextureCoordArray = 0x8078U;
 inline constexpr std::uint32_t kGles1MatrixIndexArray = 0x8844U;
 inline constexpr std::uint32_t kGles1WeightArray = 0x86ADU;
+inline constexpr std::size_t kGles1MaximumDrawTextureUnits = 2U;
 
 struct Gles1ClientArray final {
     std::int32_t size{};
@@ -56,9 +59,9 @@ public:
 private:
     struct Program final {
         std::uint32_t name{};
-        std::array<std::int32_t, 4> attributes{};
-        std::map<std::string_view, std::int32_t> uniforms;
-        std::array<std::uint32_t, 5> buffers{};
+        std::array<std::int32_t, 3U + kGles1MaximumDrawTextureUnits> attributes{};
+        std::map<std::string, std::int32_t> uniforms;
+        std::array<std::uint32_t, 4U + kGles1MaximumDrawTextureUnits> buffers{};
     };
 
     [[nodiscard]] static std::uint64_t ArrayKey(
@@ -66,12 +69,13 @@ private:
     void EnsureProgram(gles::AngleFrame& frame);
     void PrepareArrays(gles::AngleFrame& frame,
                        const AndroidBoundaryGles1State& core,
-                       const AndroidBoundaryGles1LegacyState& legacy,
                        memory::AddressSpace& address_space,
+                       std::span<const std::uint32_t> texture_units,
                        std::uint32_t maximum_index, std::uint64_t thread_id);
     void ApplyUniforms(gles::AngleFrame& frame,
                        const AndroidBoundaryGles1State& core,
-                       const AndroidBoundaryGles1LegacyState& legacy);
+                       const AndroidBoundaryGles1LegacyState& legacy,
+                       std::span<const std::uint32_t> texture_units);
 
     std::map<std::uint64_t, Gles1ClientArray> arrays_;
     Program program_;

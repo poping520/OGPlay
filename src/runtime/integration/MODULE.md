@@ -64,19 +64,26 @@
   管线通过内部 GLES2 shader 消费 modelview/projection/texture matrix、current/array color、
   light0、texture、fog 与 alpha-test 状态；guest buffer binding 在内部上传后必须恢复。
   `glDrawArrays` 以受检 `GLushort` 顺序索引等价执行，超过 65535 明确失败。当前 renderer
-  支持单个 active texture 的格式敏感 MODULATE/REPLACE/ADD 与完整单纹理 COMBINE 状态，
-  以及 light0 与 modelview 上三阶 normal matrix；DECAL/BLEND、其他 texture environment
-  或 opaque EBO 配合 guest client array 必须明确失败。level-0 base format 按 texture object
-  保存并随 delete/reset 清理，未知格式不得猜测组合语义。
+  从实际启用 `GL_TEXTURE_2D` 的单元选择 sampler、texture-coordinate array、texture
+  environment 与 texture object base format；active/client active texture 只决定后续状态
+  写入位置，不得误作 draw 输入。当前 renderer 支持最多两个启用纹理单元，按单元编号以
+  各自 coordinate array、sampler、texture matrix、base format 和 environment 逐级应用
+  MODULATE/REPLACE/ADD/COMBINE；`GL_PREVIOUS` 必须读取上一 stage 输出。超过两个单元、
+  DECAL/BLEND、其他 texture environment 或 opaque EBO 配合 guest client array 必须明确
+  失败。lighting 的 ambient/diffuse 只计算 RGB，输出 alpha 必须取 diffuse material alpha，
+  不得累加 ambient/light alpha；light0 与 modelview 上三阶 normal matrix 保持现有
+  partial。level-0 base format 按 texture object 保存并随 delete/reset 清理，未知格式不得
+  猜测组合语义。
 - 三个 `GL_OES_matrix_palette` 入口绑定在独立 extension dispatch：current palette index
   限定 0..31，matrix-index/weight pointer 延迟保存调用时 array-buffer binding，类型、size
   与 stride 受检且随 context reset。两类数组可由标准 client-state 入口启用；完整 skinning
   shader 尚未实现时 draw 必须明确失败，禁止忽略权重或伪装成功。
-- GLES1 matrix state 批次把 modelview/projection/texture 三套列主序矩阵栈隔离保存，
+- GLES1 matrix state 批次把 modelview/projection 与按 active texture unit 隔离的 texture
+  列主序矩阵栈保存，
   `load/push/pop/rotate/translate` 按 OpenGL 后乘语义更新。`glLoadMatrixf` 必须先通过
   `AddressSpace` 完整读取 16 个 little-endian `GLfloat` 并验证有限值；坏 guest 地址、
   非法 mode、栈上溢/下溢、非法旋转轴或无 current frame 均明确失败且不部分提交。
-  context 终止时恢复默认 modelview mode 与三套 identity 栈；状态留给后续 fixed-pipeline
+  context 终止时恢复默认 modelview mode 与全部 identity 栈；状态留给 fixed-pipeline
   draw 转换消费，不得将仅缓存矩阵解释为已完成渲染。
 - GLES1 lighting/material/fog 状态批次显式绑定 7 个目标导入入口；所有浮点向量先从
   强类型 guest 地址完整搬运，再按 GLES1 pname、元素数、有限值及参数范围校验后事务提交。

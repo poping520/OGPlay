@@ -38,6 +38,7 @@ public:
     AndroidBoundaryGles1MatrixState();
 
     void Reset();
+    void SetActiveTexture(std::uint32_t texture);
     void SetMode(std::uint32_t mode);
     [[nodiscard]] std::uint32_t Mode() const noexcept;
     void LoadIdentity();
@@ -47,17 +48,20 @@ public:
     void Rotate(float angle_degrees, float x, float y, float z);
     void Translate(float x, float y, float z);
     [[nodiscard]] const Gles1Matrix& Current() const noexcept;
+    [[nodiscard]] const Gles1Matrix& Current(
+        std::uint32_t mode, std::uint32_t texture) const;
     [[nodiscard]] std::size_t StackDepth(std::uint32_t mode) const;
 
 private:
     [[nodiscard]] std::vector<Gles1Matrix>& CurrentStack() noexcept;
     [[nodiscard]] const std::vector<Gles1Matrix>& Stack(
-        std::uint32_t mode) const;
+        std::uint32_t mode, std::uint32_t texture) const;
 
     std::uint32_t mode_{kGles1Modelview};
+    std::uint32_t active_texture_{0x84C0U};
     std::vector<Gles1Matrix> modelview_;
     std::vector<Gles1Matrix> projection_;
-    std::vector<Gles1Matrix> texture_;
+    std::array<std::vector<Gles1Matrix>, 32> textures_;
 };
 
 class AndroidBoundaryGles1State final {
@@ -71,17 +75,22 @@ public:
     void SetTransferState(gles::GlesTransferState state) noexcept;
     void SetHint(std::uint32_t target, std::uint32_t mode);
     [[nodiscard]] std::uint32_t Hint(std::uint32_t target) const;
-    void SetActiveTexture(std::uint32_t texture) noexcept;
+    void SetActiveTexture(std::uint32_t texture);
     [[nodiscard]] std::uint32_t ActiveTexture() const noexcept;
     void BindTexture(std::uint32_t target, std::uint32_t texture);
     void DeleteTextures(std::span<const std::uint32_t> textures) noexcept;
     void SetTextureBaseFormat(std::uint32_t target, std::uint32_t format);
     [[nodiscard]] std::optional<std::uint32_t> TextureBaseFormat(
         std::uint32_t target) const;
+    [[nodiscard]] std::optional<std::uint32_t> TextureBaseFormat(
+        std::uint32_t texture_unit, std::uint32_t target) const;
     void SetGenerateMipmap(std::uint32_t target, bool enabled);
     [[nodiscard]] bool GenerateMipmapEnabled(std::uint32_t target) const;
     void SetCapability(std::uint32_t capability, bool enabled);
     [[nodiscard]] bool Capability(std::uint32_t capability) const;
+    [[nodiscard]] bool Capability(std::uint32_t texture_unit,
+                                  std::uint32_t capability) const;
+    [[nodiscard]] std::vector<std::uint32_t> EnabledTextureUnits() const;
     [[nodiscard]] AndroidBoundaryGles1MatrixState& Matrices() noexcept;
     [[nodiscard]] const AndroidBoundaryGles1MatrixState& Matrices() const noexcept;
     [[nodiscard]] AndroidBoundaryGles1FixedState& Fixed() noexcept;

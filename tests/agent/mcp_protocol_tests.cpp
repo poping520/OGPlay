@@ -71,6 +71,37 @@ TEST_CASE("MCP frame store validates and exchanges latest ownership") {
     CHECK_FALSE(frames.Take().has_value());
 }
 
+TEST_CASE("MCP click queue emits down and up on consecutive takes") {
+    ogplay::agent::McpInputQueue inputs;
+    const auto sequence = inputs.TryEnqueueClick(9U, 12U, 34U);
+    REQUIRE(sequence == std::optional<std::uint64_t>{1U});
+    CHECK(inputs.PendingClicks() == 1U);
+
+    const auto down = inputs.TakeNextPointerEvent();
+    REQUIRE(down.has_value());
+    CHECK(down->request_sequence == 1U);
+    CHECK(down->frame_sequence == 9U);
+    CHECK(down->x == 12U);
+    CHECK(down->y == 34U);
+    CHECK(down->pressed);
+    CHECK(inputs.PendingClicks() == 1U);
+
+    const auto up = inputs.TakeNextPointerEvent();
+    REQUIRE(up.has_value());
+    CHECK(up->request_sequence == down->request_sequence);
+    CHECK_FALSE(up->pressed);
+    CHECK(inputs.PendingClicks() == 0U);
+    CHECK_FALSE(inputs.TakeNextPointerEvent().has_value());
+
+    ogplay::agent::McpInputQueue full;
+    for (std::size_t index = 0;
+         index < ogplay::agent::McpInputQueue::kMaximumPendingClicks;
+         ++index) {
+        REQUIRE(full.TryEnqueueClick(1U, 0U, 0U).has_value());
+    }
+    CHECK_FALSE(full.TryEnqueueClick(1U, 0U, 0U).has_value());
+}
+
 TEST_CASE("MCP protocol negotiates lifecycle and lists screenshot tool") {
     ogplay::agent::FrameSnapshotStore frames;
     ogplay::agent::McpProtocolAdapter mcp{frames, "test"};
@@ -88,7 +119,11 @@ TEST_CASE("MCP protocol negotiates lifecycle and lists screenshot tool") {
         R"({"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{}})");
     REQUIRE(tools.has_value());
     CHECK(tools->find("\"name\":\"frame_capture\"") != std::string::npos);
+    CHECK(tools->find("\"name\":\"click\"") != std::string::npos);
+    CHECK(tools->find("\"minimum\":0") != std::string::npos);
     CHECK(tools->find("\"readOnlyHint\":true") != std::string::npos);
+    CHECK(tools->find("\"readOnlyHint\":false") != std::string::npos);
+    CHECK(tools->find("\"idempotentHint\":false") != std::string::npos);
 }
 
 TEST_CASE("MCP screenshot tool fails closed without a frame") {
@@ -131,6 +166,78 @@ TEST_CASE("MCP screenshot tool returns a PNG image and exact frame metadata") {
     CHECK(surface->h == 1);
     SDL_DestroySurface(surface);
 #endif
+}
+
+TEST_CASE("MCP click tool validates latest frame and queues an exact tap") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    ogplay::agent::McpProtocolAdapter mcp{frames, inputs};
+
+    const auto without_frame = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"click","arguments":{"x":0,"y":0}}})");
+    REQUIRE(without_frame.has_value());
+    CHECK(without_frame->find("\"isError\":true") != std::string::npos);
+    CHECK(without_frame->find("No presented guest frame") != std::string::npos);
+
+    static_cast<void>(frames.Publish(
+        {8U, 6U, 41U, std::vector<std::uint8_t>(8U * 6U * 4U)}));
+    const auto response = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"click","arguments":{"x":7,"y":5}}})");
+    REQUIRE(response.has_value());
+    CHECK(response->find("\"requestSequence\":1") != std::string::npos);
+    CHECK(response->find("\"frameSequence\":41") != std::string::npos);
+    CHECK(response->find("\"x\":7") != std::string::npos);
+    CHECK(response->find("\"y\":5") != std::string::npos);
+    CHECK(response->find("\"isError\":false") != std::string::npos);
+
+    const auto down = inputs.TakeNextPointerEvent();
+    const auto up = inputs.TakeNextPointerEvent();
+    REQUIRE(down.has_value());
+    REQUIRE(up.has_value());
+    CHECK(down->pressed);
+    CHECK_FALSE(up->pressed);
+    CHECK(down->x == 7U);
+    CHECK(down->y == 5U);
+}
+
+TEST_CASE("MCP click tool rejects unavailable malformed and out of bounds input") {
+    ogplay::agent::FrameSnapshotStore frames;
+    static_cast<void>(frames.Publish(
+        {8U, 6U, 2U, std::vector<std::uint8_t>(8U * 6U * 4U)}));
+    ogplay::agent::McpProtocolAdapter unavailable{frames};
+    const auto no_queue = unavailable.Handle(
+        R"({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"click","arguments":{"x":1,"y":1}}})");
+    REQUIRE(no_queue.has_value());
+    CHECK(no_queue->find("Click input is unavailable") != std::string::npos);
+
+    ogplay::agent::McpInputQueue inputs;
+    ogplay::agent::McpProtocolAdapter mcp{frames, inputs};
+    for (const std::string_view arguments : {
+             R"({"x":-1,"y":1})", R"({"x":1})",
+             R"({"x":8,"y":1})", R"({"x":1,"y":6})",
+             R"({"x":1,"y":1,"extra":true})"}) {
+        const auto request =
+            std::string{"{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\","
+                        "\"params\":{\"name\":\"click\",\"arguments\":"} +
+            std::string{arguments} + "}}";
+        const auto response = mcp.Handle(request);
+        REQUIRE(response.has_value());
+        CHECK(response->find("\"isError\":true") != std::string::npos);
+    }
+    CHECK(inputs.PendingClicks() == 0U);
+
+    ogplay::agent::McpInputQueue full;
+    for (std::size_t index = 0;
+         index < ogplay::agent::McpInputQueue::kMaximumPendingClicks;
+         ++index) {
+        REQUIRE(full.TryEnqueueClick(2U, 0U, 0U).has_value());
+    }
+    ogplay::agent::McpProtocolAdapter full_mcp{frames, full};
+    const auto queue_full = full_mcp.Handle(
+        R"({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"click","arguments":{"x":1,"y":1}}})");
+    REQUIRE(queue_full.has_value());
+    CHECK(queue_full->find("\"isError\":true") != std::string::npos);
+    CHECK(queue_full->find("click queue is full") != std::string::npos);
 }
 
 TEST_CASE("MCP protocol rejects unknown tools and malformed requests") {

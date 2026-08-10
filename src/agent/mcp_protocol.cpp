@@ -168,41 +168,93 @@ std::string Base64(const std::span<const std::uint8_t> input) {
 core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     const auto result = writer.Object();
     const auto tools = writer.Array();
-    const auto tool = writer.Object();
-    writer.AddString(tool, "name", "frame_capture");
-    writer.AddString(tool, "title", "Capture latest OGPlay frame");
-    writer.AddString(tool, "description",
+    const auto capture = writer.Object();
+    writer.AddString(capture, "name", "frame_capture");
+    writer.AddString(capture, "title", "Capture latest OGPlay frame");
+    writer.AddString(capture, "description",
                      "Returns the latest presented guest frame as PNG without advancing "
                      "guest execution or consuming input.");
-    const auto input_schema = writer.Object();
-    writer.AddString(input_schema, "type", "object");
-    writer.Add(input_schema, "properties", writer.Object());
-    writer.AddBool(input_schema, "additionalProperties", false);
-    writer.Add(tool, "inputSchema", input_schema);
+    const auto capture_input = writer.Object();
+    writer.AddString(capture_input, "type", "object");
+    writer.Add(capture_input, "properties", writer.Object());
+    writer.AddBool(capture_input, "additionalProperties", false);
+    writer.Add(capture, "inputSchema", capture_input);
 
-    const auto output_schema = writer.Object();
-    writer.AddString(output_schema, "type", "object");
-    const auto properties = writer.Object();
+    const auto capture_output = writer.Object();
+    writer.AddString(capture_output, "type", "object");
+    const auto capture_properties = writer.Object();
     for (const std::string_view name : {"sequence", "width", "height"}) {
         const auto property = writer.Object();
         writer.AddString(property, "type", "integer");
-        writer.Add(properties, name, property);
+        writer.Add(capture_properties, name, property);
     }
-    writer.Add(output_schema, "properties", properties);
-    const auto required = writer.Array();
-    writer.Append(required, writer.String("sequence"));
-    writer.Append(required, writer.String("width"));
-    writer.Append(required, writer.String("height"));
-    writer.Add(output_schema, "required", required);
-    writer.Add(tool, "outputSchema", output_schema);
+    writer.Add(capture_output, "properties", capture_properties);
+    const auto capture_required = writer.Array();
+    writer.Append(capture_required, writer.String("sequence"));
+    writer.Append(capture_required, writer.String("width"));
+    writer.Append(capture_required, writer.String("height"));
+    writer.Add(capture_output, "required", capture_required);
+    writer.AddBool(capture_output, "additionalProperties", false);
+    writer.Add(capture, "outputSchema", capture_output);
 
-    const auto annotations = writer.Object();
-    writer.AddBool(annotations, "readOnlyHint", true);
-    writer.AddBool(annotations, "destructiveHint", false);
-    writer.AddBool(annotations, "idempotentHint", true);
-    writer.AddBool(annotations, "openWorldHint", false);
-    writer.Add(tool, "annotations", annotations);
-    writer.Append(tools, tool);
+    const auto capture_annotations = writer.Object();
+    writer.AddBool(capture_annotations, "readOnlyHint", true);
+    writer.AddBool(capture_annotations, "destructiveHint", false);
+    writer.AddBool(capture_annotations, "idempotentHint", true);
+    writer.AddBool(capture_annotations, "openWorldHint", false);
+    writer.Add(capture, "annotations", capture_annotations);
+    writer.Append(tools, capture);
+
+    const auto click = writer.Object();
+    writer.AddString(click, "name", "click");
+    writer.AddString(click, "title", "Click OGPlay guest frame");
+    writer.AddString(
+        click, "description",
+        "Queues one primary-pointer click at integer pixel coordinates in the latest "
+        "presented guest frame. Down and up are dispatched on consecutive guest steps.");
+    const auto click_input = writer.Object();
+    writer.AddString(click_input, "type", "object");
+    const auto click_input_properties = writer.Object();
+    for (const std::string_view name : {"x", "y"}) {
+        const auto property = writer.Object();
+        writer.AddString(property, "type", "integer");
+        writer.AddInteger(property, "minimum", 0);
+        writer.Add(click_input_properties, name, property);
+    }
+    writer.Add(click_input, "properties", click_input_properties);
+    const auto click_input_required = writer.Array();
+    writer.Append(click_input_required, writer.String("x"));
+    writer.Append(click_input_required, writer.String("y"));
+    writer.Add(click_input, "required", click_input_required);
+    writer.AddBool(click_input, "additionalProperties", false);
+    writer.Add(click, "inputSchema", click_input);
+
+    const auto click_output = writer.Object();
+    writer.AddString(click_output, "type", "object");
+    const auto click_output_properties = writer.Object();
+    for (const std::string_view name :
+         {"requestSequence", "frameSequence", "x", "y"}) {
+        const auto property = writer.Object();
+        writer.AddString(property, "type", "integer");
+        writer.Add(click_output_properties, name, property);
+    }
+    writer.Add(click_output, "properties", click_output_properties);
+    const auto click_output_required = writer.Array();
+    for (const std::string_view name :
+         {"requestSequence", "frameSequence", "x", "y"}) {
+        writer.Append(click_output_required, writer.String(name));
+    }
+    writer.Add(click_output, "required", click_output_required);
+    writer.AddBool(click_output, "additionalProperties", false);
+    writer.Add(click, "outputSchema", click_output);
+
+    const auto click_annotations = writer.Object();
+    writer.AddBool(click_annotations, "readOnlyHint", false);
+    writer.AddBool(click_annotations, "destructiveHint", false);
+    writer.AddBool(click_annotations, "idempotentHint", false);
+    writer.AddBool(click_annotations, "openWorldHint", false);
+    writer.Add(click, "annotations", click_annotations);
+    writer.Append(tools, click);
     writer.Add(result, "tools", tools);
     return result;
 }
@@ -254,6 +306,65 @@ core::JsonWriter::Value CaptureResult(core::JsonWriter& writer, FrameSnapshotSto
     return result;
 }
 
+core::JsonWriter::Value ClickResult(
+    core::JsonWriter& writer, FrameSnapshotStore& frames,
+    McpInputQueue* inputs, const core::JsonValue arguments) {
+    if (inputs == nullptr) {
+        return ToolError(writer, "Click input is unavailable for this MCP session.");
+    }
+    if (!arguments.IsObject() || arguments.Size() != 2U) {
+        return ToolError(writer, "click requires exactly integer x and y arguments");
+    }
+    const auto x_value = arguments.Member("x");
+    const auto y_value = arguments.Member("y");
+    const auto x = x_value ? x_value->UnsignedInteger() : std::nullopt;
+    const auto y = y_value ? y_value->UnsignedInteger() : std::nullopt;
+    if (!x.has_value() || !y.has_value() ||
+        *x > (std::numeric_limits<std::uint32_t>::max)() ||
+        *y > (std::numeric_limits<std::uint32_t>::max)()) {
+        return ToolError(writer, "click x and y must be non-negative 32-bit integers");
+    }
+    const auto frame = frames.LatestMetadata();
+    if (!frame.has_value()) {
+        return ToolError(writer, "No presented guest frame is available for click.");
+    }
+    if (*x >= frame->width || *y >= frame->height) {
+        return ToolError(writer, "click coordinates are outside the latest guest frame");
+    }
+    const auto request_sequence = inputs->TryEnqueueClick(
+        frame->sequence, static_cast<std::uint32_t>(*x),
+        static_cast<std::uint32_t>(*y));
+    if (!request_sequence.has_value()) {
+        return ToolError(writer, "click queue is full");
+    }
+
+    const auto add_metadata = [&](const core::JsonWriter::Value object) {
+        writer.AddUnsignedInteger(object, "requestSequence", *request_sequence);
+        writer.AddUnsignedInteger(object, "frameSequence", frame->sequence);
+        writer.AddUnsignedInteger(object, "x", *x);
+        writer.AddUnsignedInteger(object, "y", *y);
+    };
+    core::JsonWriter text_writer;
+    const auto text_metadata = text_writer.Object();
+    text_writer.AddUnsignedInteger(text_metadata, "requestSequence", *request_sequence);
+    text_writer.AddUnsignedInteger(text_metadata, "frameSequence", frame->sequence);
+    text_writer.AddUnsignedInteger(text_metadata, "x", *x);
+    text_writer.AddUnsignedInteger(text_metadata, "y", *y);
+
+    const auto result = writer.Object();
+    const auto content = writer.Array();
+    const auto text = writer.Object();
+    writer.AddString(text, "type", "text");
+    writer.AddString(text, "text", text_writer.Serialize(text_metadata));
+    writer.Append(content, text);
+    writer.Add(result, "content", content);
+    const auto structured = writer.Object();
+    add_metadata(structured);
+    writer.Add(result, "structuredContent", structured);
+    writer.AddBool(result, "isError", false);
+    return result;
+}
+
 }  // namespace
 
 std::optional<FrameSnapshot> FrameSnapshotStore::Publish(FrameSnapshot frame) {
@@ -269,6 +380,13 @@ std::optional<FrameSnapshot> FrameSnapshotStore::Latest() const {
     return latest_;
 }
 
+std::optional<FrameSnapshotMetadata> FrameSnapshotStore::LatestMetadata() const {
+    std::scoped_lock lock(mutex_);
+    if (!latest_.has_value()) return std::nullopt;
+    return FrameSnapshotMetadata{
+        latest_->width, latest_->height, latest_->sequence};
+}
+
 std::optional<FrameSnapshot> FrameSnapshotStore::Take() {
     std::scoped_lock lock(mutex_);
     auto result = std::move(latest_);
@@ -276,10 +394,48 @@ std::optional<FrameSnapshot> FrameSnapshotStore::Take() {
     return result;
 }
 
+std::optional<std::uint64_t> McpInputQueue::TryEnqueueClick(
+    const std::uint64_t frame_sequence, const std::uint32_t x,
+    const std::uint32_t y) {
+    std::scoped_lock lock(mutex_);
+    if (clicks_.size() >= kMaximumPendingClicks) return std::nullopt;
+    if (next_request_sequence_ ==
+        (std::numeric_limits<std::uint64_t>::max)()) {
+        throw std::overflow_error("MCP click request sequence overflow");
+    }
+    const auto sequence = next_request_sequence_++;
+    clicks_.push_back({sequence, frame_sequence, x, y, false});
+    return sequence;
+}
+
+std::optional<McpPointerEvent> McpInputQueue::TakeNextPointerEvent() {
+    std::scoped_lock lock(mutex_);
+    if (clicks_.empty()) return std::nullopt;
+    auto& click = clicks_.front();
+    const McpPointerEvent result{
+        click.request_sequence, click.frame_sequence, click.x, click.y,
+        !click.down_dispatched};
+    if (click.down_dispatched) clicks_.pop_front();
+    else click.down_dispatched = true;
+    return result;
+}
+
+std::size_t McpInputQueue::PendingClicks() const {
+    std::scoped_lock lock(mutex_);
+    return clicks_.size();
+}
+
 McpProtocolAdapter::McpProtocolAdapter(FrameSnapshotStore& frames,
                                        std::string server_version)
     : frames_(frames), server_version_(std::move(server_version)) {
     if (server_version_.empty()) throw std::invalid_argument("MCP server version is empty");
+}
+
+McpProtocolAdapter::McpProtocolAdapter(
+    FrameSnapshotStore& frames, McpInputQueue& inputs,
+    std::string server_version)
+    : McpProtocolAdapter(frames, std::move(server_version)) {
+    inputs_ = &inputs;
 }
 
 std::optional<std::string> McpProtocolAdapter::Handle(
@@ -360,8 +516,8 @@ std::optional<std::string> McpProtocolAdapter::Handle(
                 writer.Add(result, "serverInfo", server_info);
                 writer.AddString(
                     result, "instructions",
-                    "OGPlay exposes read-only runtime inspection. frame_capture returns the "
-                    "latest presented guest frame and never advances execution or consumes input.");
+                    "frame_capture returns the latest presented guest frame without advancing "
+                    "execution. click queues a bounded primary-pointer tap in guest pixels.");
                 return result;
             });
         }
@@ -389,21 +545,31 @@ std::optional<std::string> McpProtocolAdapter::Handle(
             if (!name.has_value() || name->empty()) {
                 return RpcError(id, -32602, "tool name is required");
             }
-            if (*name != "frame_capture") {
-                return RpcError(id, -32602, "unknown MCP tool: " + std::string(*name));
-            }
             const auto arguments = params->Member("arguments");
             if (arguments.has_value() && !arguments->IsObject()) {
                 return RpcError(id, -32602, "tool arguments must be an object");
             }
-            if (arguments.has_value() && arguments->Size() != 0U) {
-                return RpcResult(*id, [](core::JsonWriter& writer) {
-                    return ToolError(writer, "frame_capture does not accept arguments");
+            if (*name == "frame_capture") {
+                if (arguments.has_value() && arguments->Size() != 0U) {
+                    return RpcResult(*id, [](core::JsonWriter& writer) {
+                        return ToolError(writer, "frame_capture does not accept arguments");
+                    });
+                }
+                return RpcResult(*id, [&](core::JsonWriter& writer) {
+                    return CaptureResult(writer, frames_);
                 });
             }
-            return RpcResult(*id, [&](core::JsonWriter& writer) {
-                return CaptureResult(writer, frames_);
-            });
+            if (*name == "click") {
+                if (!arguments.has_value()) {
+                    return RpcResult(*id, [](core::JsonWriter& writer) {
+                        return ToolError(writer, "click requires x and y arguments");
+                    });
+                }
+                return RpcResult(*id, [&](core::JsonWriter& writer) {
+                    return ClickResult(writer, frames_, inputs_, *arguments);
+                });
+            }
+            return RpcError(id, -32602, "unknown MCP tool: " + std::string(*name));
         }
         return RpcError(id, -32601, "method not found: " + std::string(*method));
     } catch (const std::exception& error) {

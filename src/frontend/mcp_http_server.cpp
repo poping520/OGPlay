@@ -1,6 +1,7 @@
 #include "ogplay/frontend/mcp_http_server.h"
 
 #include "ogplay/agent/mcp_protocol.h"
+#include "ogplay/agent/mcp_session_control.h"
 
 #include <boost/asio.hpp>
 
@@ -273,6 +274,18 @@ struct McpHttpServer::Impl final {
                   agent::FrameSnapshotStore& frames,
                   agent::McpInputQueue& inputs)
         : acceptor(io), protocol(frames, inputs) {
+        Open(requested_port);
+    }
+
+    Impl(const std::uint16_t requested_port,
+         agent::FrameSnapshotStore& frames,
+         agent::McpInputQueue& inputs,
+         agent::McpSessionControl& session_control)
+        : acceptor(io), protocol(frames, inputs, session_control) {
+        Open(requested_port);
+    }
+
+    void Open(const std::uint16_t requested_port) {
         boost::system::error_code error;
         const tcp::endpoint endpoint(boost::asio::ip::make_address_v4("127.0.0.1"), requested_port);
         acceptor.open(endpoint.protocol(), error);
@@ -324,6 +337,13 @@ std::unique_ptr<McpHttpServer> McpHttpServer::Start(
     agent::McpInputQueue& inputs) {
     return std::unique_ptr<McpHttpServer>(
         new McpHttpServer(std::make_unique<Impl>(port, frames, inputs)));
+}
+
+std::unique_ptr<McpHttpServer> McpHttpServer::Start(
+    const std::uint16_t port, agent::FrameSnapshotStore& frames,
+    agent::McpInputQueue& inputs, agent::McpSessionControl& session_control) {
+    return std::unique_ptr<McpHttpServer>(new McpHttpServer(
+        std::make_unique<Impl>(port, frames, inputs, session_control)));
 }
 
 McpHttpServer::McpHttpServer(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

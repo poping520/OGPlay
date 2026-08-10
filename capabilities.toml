@@ -30,6 +30,11 @@ status = "complete"
 test = "tests/agent/mcp_protocol_tests.cpp"
 note = "M6 WU-0356 发布 session_state/step/lifecycle/shutdown closed-schema MCP 工具；线程安全原子快照与 64 项命令 FIFO 让网络 worker 不直接调用 guest，step 严格限制 1..1000000 帧"
 
+[automation.profile_session]
+status = "complete"
+test = "MCP HTTP bridges session commands without entering guest code; frontend.run_apk_options"
+note = "M6 WU-0357 为 gl_surface_view run-apk 增加显式 MCP manual-step 模式；复用 exact Profile bootstrap/lifecycle/ANGLE/audio/teardown，guest 主线程消费命令并发布 frame/ticks/movie/exit/fault 原子状态"
+
 [agent.control_service]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

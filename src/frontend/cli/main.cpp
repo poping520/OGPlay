@@ -25,7 +25,8 @@ int Usage() {
                   "       ogplay run-apk <apk> --system-dir <api19-lib-dir> "
                   "[--profiles-dir <dir>] [--external-dir <host-dir>] "
                   "[--preflight] [--supersample <1..4>] "
-                  "[--exit-after-frames <count>] [--mcp | --mcp-port <1..65535>]\n");
+                  "[--exit-after-frames <count>] [--mcp | --mcp-port <1..65535>] "
+                  "[--mcp-manual-step]\n");
     return 2;
 }
 

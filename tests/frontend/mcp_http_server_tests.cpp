@@ -1,6 +1,7 @@
 #include "doctest/doctest.h"
 
 #include "ogplay/agent/mcp_protocol.h"
+#include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/frontend/mcp_http_server.h"
 
 #include <boost/asio.hpp>
@@ -146,4 +147,31 @@ TEST_CASE("MCP HTTP rejects non-loopback origins and unsupported routes") {
 
     const auto wrong_route = Request(server->Port(), "POST", "/other", "{}");
     CHECK(wrong_route.find("HTTP/1.1 404 Not Found") != std::string::npos);
+}
+
+TEST_CASE("MCP HTTP bridges session commands without entering guest code") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    ogplay::agent::McpSessionControl control;
+    control.Publish({
+        .lifecycle = ogplay::agent::McpLifecycleState::running,
+        .frame = 23U,
+        .guest_ticks = 23000U,
+    });
+    auto server = ogplay::frontend::McpHttpServer::Start(
+        0, frames, inputs, control);
+
+    const auto state = Request(
+        server->Port(), "POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"session_state","arguments":{}}})");
+    CHECK(state.find("HTTP/1.1 200 OK") != std::string::npos);
+    CHECK(state.find("\"frame\":23") != std::string::npos);
+    const auto step = Request(
+        server->Port(), "POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"step","arguments":{"frames":2}}})");
+    CHECK(step.find("\"targetFrame\":25") != std::string::npos);
+    const auto command = control.TakeNextCommand();
+    REQUIRE(command.has_value());
+    CHECK(command->type == ogplay::agent::McpSessionCommand::Type::step);
+    CHECK(command->frames == 2U);
 }

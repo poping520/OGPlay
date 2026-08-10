@@ -38,6 +38,7 @@ endfunction()
 
 set(_base run-apk "${_missing_apk}" --system-dir "${_missing_system}")
 expect_usage("[--mcp | --mcp-port <1..65535>]")
+expect_usage("[--mcp-manual-step]")
 expect_failure(zero "--supersample requires an integer in 1..4"
     ${_base} --supersample 0)
 expect_failure(too_large "--supersample requires an integer in 1..4"
@@ -78,3 +79,13 @@ expect_failure(mcp_default_custom_conflict "--mcp and --mcp-port cannot be combi
 expect_failure(mcp_custom_default_conflict "--mcp and --mcp-port cannot be combined"
     ${_base} --mcp-port 3000 --mcp)
 expect_failure(mcp_default_valid "cannot open" ${_base} --mcp)
+expect_failure(mcp_manual_requires_transport
+    "--mcp-manual-step requires --mcp or --mcp-port"
+    ${_base} --mcp-manual-step)
+expect_failure(mcp_manual_duplicate
+    "run-apk accepts --mcp-manual-step only once"
+    ${_base} --mcp --mcp-manual-step --mcp-manual-step)
+expect_failure(mcp_manual_default_valid "cannot open"
+    ${_base} --mcp --mcp-manual-step)
+expect_failure(mcp_manual_custom_valid "cannot open"
+    ${_base} --mcp-port 3000 --mcp-manual-step)

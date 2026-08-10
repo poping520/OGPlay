@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M6 确定性 MCP session 控制面已完成
+更新：2026-08-10 · M6 Profile-backed MCP 手动会话已接通
 
 ## 当前阶段
 
@@ -28,10 +28,14 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0357 将 MCP session 控制面接入 `run-apk` guest loop。
+- 无；下一项为 WU-0358 Scenario runner 与结果/证据闭环。
 
 ## 最近完成
 
+- [WU-0357] `run-apk --mcp-manual-step` 复用 GLSurfaceView exact Profile bootstrap、ANGLE、
+  lifecycle、audio 与 teardown；guest 主线程消费 step/suspend/resume/shutdown，启动、帧、
+  movie/exit/fault 状态原子发布，普通交互模式不变；Asphalt 5 exact 从 0/0 精确步进到
+  frame/ticks 1/1000 并正常 lifecycle/shutdown，focused 7/7、full CTest 483/483。
 - [WU-0356] MCP 增加 `session_state`、`step`、`lifecycle`、`shutdown` closed-schema 工具；
   `McpSessionControl` 以原子快照和 64 项 FIFO 隔离网络 worker 与 guest 主线程，step 严格限制
   1..1,000,000 帧并返回请求/frame 范围；focused 6/6、full CTest 482/482。
@@ -61,14 +65,13 @@
 
 已有 Scenario v1 身份/fixture/预算/checkpoint/action/assertion/result 契约、Control
 Service/JSON-RPC、固定步长 Clock、能力账本、结构化日志、GPU 查询和 Software/ANGLE
-黄金帧基础。MCP 已具备确定性 session 控制面，但 `run-apk` 尚未消费命令或发布 lifecycle/
-movie/fault/exit 快照；Scenario 也尚未在同一 Profile-backed exact guest 会话执行。
+黄金帧基础。MCP 已通过 `run-apk` 接入同一 Profile-backed exact guest 会话，但尚无读取
+Scenario、预算等待、结构化断言、证据写入和退出清理的 runner。
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0357，让 `run-apk` 复用现有 bootstrap/lifecycle/ANGLE 路径消费 MCP session
-   命令，并发布原子状态。
-2. 建立 Scenario runner，接入有界 step/until、输入和原子 checkpoint provider。
+1. 创建 WU-0358，建立 Scenario runner，接入有界 step/until、输入、断言、证据和清理。
+2. 提交 Asphalt 5 首个 exact 场景并执行连续三轮确定性 gate。
 3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 

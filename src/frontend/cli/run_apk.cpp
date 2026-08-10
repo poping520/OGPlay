@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <span>
@@ -18,6 +19,7 @@
 #include <vector>
 
 #include "ogplay/agent/mcp_protocol.h"
+#include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/frontend/mcp_http_server.h"
 #include "ogplay/frontend/mcp_input_dispatch.h"
 #include "ogplay/hal/audio.h"
@@ -304,6 +306,41 @@ void PumpAudio(runtime::AndroidGuestCallSession& guest,
     }
 }
 
+std::string Utf16ToUtf8(const std::span<const runtime::JniChar> text) {
+    std::string result;
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        std::uint32_t code_point = text[index];
+        if (code_point >= 0xd800U && code_point <= 0xdbffU) {
+            if (index + 1U < text.size() && text[index + 1U] >= 0xdc00U &&
+                text[index + 1U] <= 0xdfffU) {
+                ++index;
+                code_point = 0x10000U + ((code_point - 0xd800U) << 10U) +
+                             (text[index] - 0xdc00U);
+            } else {
+                code_point = 0xfffdU;
+            }
+        } else if (code_point >= 0xdc00U && code_point <= 0xdfffU) {
+            code_point = 0xfffdU;
+        }
+        if (code_point <= 0x7fU) {
+            result.push_back(static_cast<char>(code_point));
+        } else if (code_point <= 0x7ffU) {
+            result.push_back(static_cast<char>(0xc0U | code_point >> 6U));
+            result.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
+        } else if (code_point <= 0xffffU) {
+            result.push_back(static_cast<char>(0xe0U | code_point >> 12U));
+            result.push_back(static_cast<char>(0x80U | (code_point >> 6U & 0x3fU)));
+            result.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
+        } else {
+            result.push_back(static_cast<char>(0xf0U | code_point >> 18U));
+            result.push_back(static_cast<char>(0x80U | (code_point >> 12U & 0x3fU)));
+            result.push_back(static_cast<char>(0x80U | (code_point >> 6U & 0x3fU)));
+            result.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
+        }
+    }
+    return result;
+}
+
 template <typename Guest>
 void PublishPresentedFrame(agent::FrameSnapshotStore* frames,
                            runtime::AndroidBoundaryFrame frame,
@@ -346,6 +383,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     std::optional<std::uint16_t> mcp_port;
     std::uint32_t supersample_factor{1};
     bool default_mcp{};
+    bool mcp_manual_step{};
     bool preflight{};
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
@@ -377,6 +415,12 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 throw std::invalid_argument("run-apk accepts --mcp only once");
             }
             default_mcp = true;
+        } else if (option == "--mcp-manual-step") {
+            if (mcp_manual_step) {
+                throw std::invalid_argument(
+                    "run-apk accepts --mcp-manual-step only once");
+            }
+            mcp_manual_step = true;
         } else if (option == "--preflight") {
             preflight = true;
         } else {
@@ -395,6 +439,14 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     }
     if (preflight && mcp_port.has_value()) {
         throw std::invalid_argument("--mcp-port cannot be combined with --preflight");
+    }
+    if (mcp_manual_step && !default_mcp && !mcp_port.has_value()) {
+        throw std::invalid_argument(
+            "--mcp-manual-step requires --mcp or --mcp-port");
+    }
+    if (mcp_manual_step && preflight) {
+        throw std::invalid_argument(
+            "--mcp-manual-step cannot be combined with --preflight");
     }
     if (default_mcp) mcp_port = kDefaultMcpPort;
 
@@ -458,15 +510,27 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             "profile lifecycle runner is not implemented by run-apk: " +
             std::string(session::ToString(profile.runtime.lifecycle)));
     }
+    if (mcp_manual_step &&
+        profile.runtime.lifecycle != session::ProfileLifecycle::gl_surface_view) {
+        throw std::runtime_error(
+            "--mcp-manual-step requires a gl_surface_view Profile");
+    }
 
     std::unique_ptr<agent::FrameSnapshotStore> mcp_frames;
     std::unique_ptr<agent::McpInputQueue> mcp_inputs;
+    std::unique_ptr<agent::McpSessionControl> mcp_session;
     std::unique_ptr<McpHttpServer> mcp_server;
     if (mcp_port.has_value()) {
         mcp_frames = std::make_unique<agent::FrameSnapshotStore>();
         mcp_inputs = std::make_unique<agent::McpInputQueue>();
-        mcp_server = McpHttpServer::Start(
-            *mcp_port, *mcp_frames, *mcp_inputs);
+        if (mcp_manual_step) {
+            mcp_session = std::make_unique<agent::McpSessionControl>();
+            mcp_server = McpHttpServer::Start(
+                *mcp_port, *mcp_frames, *mcp_inputs, *mcp_session);
+        } else {
+            mcp_server = McpHttpServer::Start(
+                *mcp_port, *mcp_frames, *mcp_inputs);
+        }
         Write("OGPlay: MCP ready at " + mcp_server->Endpoint() + "\n");
     }
 
@@ -475,7 +539,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     window->Open({.title = base_title + " · FPS --",
                   .width = profile.runtime.surface.width,
                   .height = profile.runtime.surface.height,
-                  .hidden = false, .resizable = true});
+                  .hidden = mcp_manual_step, .resizable = true});
     bool quit{};
     std::uint64_t presented{};
     std::uint32_t guest_width = profile.runtime.surface.width;
@@ -580,13 +644,43 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 },
             });
         static_cast<void>(lifecycle->Start());
-        Write("OGPlay: Profile GLSurfaceView started; close the window to stop.\n");
+        agent::McpLifecycleState mcp_lifecycle{
+            agent::McpLifecycleState::running};
+        std::optional<std::string> guest_fault;
+        std::exception_ptr failure;
+        std::uint64_t permitted_steps{};
+        const auto publish_session = [&] {
+            if (!mcp_session) return;
+            const auto state = lifecycle->State();
+            agent::McpSessionSnapshot snapshot{
+                .lifecycle = mcp_lifecycle,
+                .frame = state.frame,
+                .guest_ticks = state.clock_ticks,
+                .process_exit = guest->ExitRequested(),
+                .guest_fault = guest_fault,
+            };
+            if (const auto frame = mcp_frames->LatestMetadata(); frame) {
+                snapshot.presented_frame = frame->sequence;
+            }
+            if (const auto movie = guest->LatestMovieRequest(); movie) {
+                snapshot.movie_request = agent::McpMovieRequestSnapshot{
+                    movie->sequence, Utf16ToUtf8(movie->name)};
+            }
+            mcp_session->Publish(std::move(snapshot));
+        };
+        publish_session();
+        Write(mcp_manual_step
+                  ? "OGPlay: Profile GLSurfaceView started in MCP manual-step mode.\n"
+                  : "OGPlay: Profile GLSurfaceView started; close the window to stop.\n");
         while (!quit && !guest->ExitRequested()) {
             const auto window_state = window->State();
             for (const auto& event : window->PollEvents()) {
                 if (event.type == hal::InputEventType::quit) {
                     quit = true;
                 } else if (mcp_pointer.SuppressWindowEvent(event.type)) {
+                    continue;
+                } else if (mcp_lifecycle == agent::McpLifecycleState::suspended ||
+                           failure) {
                     continue;
                 } else if (const auto mapped = mouse_touch.Map(
                                event, window_state, guest_width, guest_height);
@@ -596,31 +690,76 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                     }
                 }
             }
-            if (const auto input = mcp_pointer.TakeNext(
-                    mcp_inputs.get(), mouse_touch); input.has_value()) {
-                lifecycle->QueueInput(*input);
-            }
-            static_cast<void>(lifecycle->StepFrame());
-            if (audio_output) {
-                PumpAudio(*guest, *audio_output, audio_samples);
-            }
-            if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
-                window->PresentRgba8(frame->rgba8, frame->width, frame->height);
-                guest_width = frame->width;
-                guest_height = frame->height;
-                ++presented;
-                update_frame_rate();
-                PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
-                if (exit_after_frames.has_value() &&
-                    presented >= *exit_after_frames) {
-                    quit = true;
+            try {
+                if (mcp_session) {
+                    if (const auto command = mcp_session->TakeNextCommand(); command) {
+                        using Command = agent::McpSessionCommand;
+                        if (command->type == Command::Type::shutdown) {
+                            quit = true;
+                        } else if (!failure && command->type == Command::Type::step) {
+                            permitted_steps += command->frames;
+                        } else if (!failure && command->type == Command::Type::suspend) {
+                            static_cast<void>(lifecycle->Suspend());
+                            mcp_lifecycle = agent::McpLifecycleState::suspended;
+                            publish_session();
+                        } else if (!failure && command->type == Command::Type::resume) {
+                            static_cast<void>(lifecycle->Resume());
+                            mcp_lifecycle = agent::McpLifecycleState::running;
+                            publish_session();
+                        }
+                    }
                 }
+                const bool advance = !failure &&
+                    mcp_lifecycle == agent::McpLifecycleState::running &&
+                    (!mcp_manual_step || permitted_steps != 0U);
+                if (!advance || quit) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
+                if (const auto input = mcp_pointer.TakeNext(
+                        mcp_inputs.get(), mouse_touch); input.has_value()) {
+                    lifecycle->QueueInput(*input);
+                }
+                static_cast<void>(lifecycle->StepFrame());
+                if (mcp_manual_step) --permitted_steps;
+                if (audio_output) {
+                    PumpAudio(*guest, *audio_output, audio_samples);
+                }
+                if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
+                    window->PresentRgba8(frame->rgba8, frame->width, frame->height);
+                    guest_width = frame->width;
+                    guest_height = frame->height;
+                    ++presented;
+                    update_frame_rate();
+                    PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
+                    if (exit_after_frames.has_value() &&
+                        presented >= *exit_after_frames) {
+                        quit = true;
+                    }
+                }
+                publish_session();
+            } catch (const std::exception& error) {
+                if (!failure) failure = std::current_exception();
+                guest_fault = error.what();
+                mcp_lifecycle = agent::McpLifecycleState::failed;
+                permitted_steps = 0U;
+                publish_session();
+                if (!mcp_manual_step) quit = true;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
-        static_cast<void>(lifecycle->Stop());
+        try {
+            static_cast<void>(lifecycle->Stop());
+            if (!failure) mcp_lifecycle = agent::McpLifecycleState::stopped;
+        } catch (const std::exception& error) {
+            if (!failure) failure = std::current_exception();
+            if (!guest_fault) guest_fault = error.what();
+            mcp_lifecycle = agent::McpLifecycleState::failed;
+        }
         if (audio_output) audio_output->Stop();
+        publish_session();
+        if (failure) std::rethrow_exception(failure);
     }
     window->Close();
     Write("OGPlay: stopped after " + std::to_string(presented) + " presented frames.\n");

@@ -15,6 +15,8 @@ CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title
 guest 根进行 lazy mount；guest 路径不由用户参数或宿主目录名决定。
 `run-apk --mcp` 在固定 `http://127.0.0.1:15971/mcp` 启动仅限本机的 MCP 服务；
 `--mcp-port <1..65535>` 保留为自定义端口入口，二者均省略时不创建 listener。
+`--mcp-manual-step` 仅与上述 MCP transport 和 `gl_surface_view` Profile 组合；窗口隐藏，
+启动后不自行推进，guest 主线程逐一消费 step/suspend/resume/shutdown 命令并发布原子状态。
 `McpPointerDispatcher` 在 guest 主线程每步最多从 MCP queue 取得一个 pointer phase，将
 button/motion 保真映射为通用 boundary input，并与 `MouseTouchMapper` 的已捕获桌面手势互斥。
 交互窗口标题始终显示 FPS 状态：首个采样周期前为 `FPS --`，之后每 0.5 秒按成功
@@ -23,7 +25,7 @@ present 数更新一位小数的实时值。
 资源，将会话离线 mixer 的 stereo PCM16 按队列水位提交到 SDL3 默认音频设备。
 `McpHttpServer::Start` 只监听 IPv4 loopback，端口 0 仅供测试选择临时端口；endpoint 固定为
 `/mcp`，每个请求直接委托传输无关的 `McpProtocolAdapter`；server 同时持有调用方提供的
-有界 MCP input queue，不从 worker thread 直接进入 guest。
+有界 MCP input queue 和可选 session control，不从 worker thread 直接进入 guest。
 
 ## 不变量
 
@@ -32,6 +34,12 @@ present 数更新一位小数的实时值。
   POST、chunked/unbounded body；notification 返回 202 且不伪造 JSON-RPC response。
 - `--mcp` 和 `--mcp-port` 各自最多出现一次、不得组合，且均不得与不执行 guest 的
   `--preflight` 组合；自定义端口只接受完整十进制 1..65535，二者省略时默认禁用 MCP。
+- `--mcp-manual-step` 最多一次、必须显式启用一种 MCP transport，只支持
+  `gl_surface_view`；缺 transport、preflight 或其他 lifecycle 必须在执行 guest 前失败。
+- 手动模式没有 step 许可时不得推进 guest Clock、消费 MCP pointer phase、执行 frame callback
+  或 present；suspend/resume/shutdown 只能由同一 guest 主线程执行，网络 worker 只排队。
+- 手动会话必须从启动到 teardown 发布同一份 lifecycle/frame/ticks/presented-frame/movie/
+  exit/fault 状态；guest fault 不得伪装为停止或成功，并保持 MCP 可读直至 shutdown。
 - MCP 只发布成功 present 的最新 RGBA8 guest frame；每次发布以移动所有权替换快照并把
   旧 buffer 交还 guest，shutdown 必须在停止 guest 前交还最后一帧。截图不得推进 guest、
   泵输入或伪造无帧成功。

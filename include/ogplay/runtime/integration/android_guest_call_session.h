@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -81,6 +82,22 @@ private:
     std::uint64_t request_count_{};
 };
 
+class AndroidGuestLegacyMediaState final {
+public:
+    void Record(std::string_view method);
+    void SetMasterVolume(float volume);
+    void SetMusicVolume(std::int32_t resource, float volume);
+    [[nodiscard]] float MasterVolume() const;
+    [[nodiscard]] float MusicVolume(std::int32_t resource) const;
+    [[nodiscard]] std::uint64_t CallbackCount(std::string_view method) const;
+
+private:
+    mutable std::mutex mutex_;
+    std::map<std::string, std::uint64_t, std::less<>> callback_counts_;
+    std::map<std::int32_t, float> music_volumes_;
+    float master_volume_{1.0F};
+};
+
 class AndroidGuestProcessState final {
 public:
     void RequestExit() noexcept;
@@ -96,6 +113,13 @@ void BindAndroidGuestJavaAudioHandlers(
     JniInvocationEngine& invocations,
     audio::JavaSoundPoolState& sound_pool,
     audio::JavaSoundPoolMixer* mixer = nullptr);
+
+void BindAndroidGuestJavaMediaHandlers(
+    JniInvocationEngine& invocations, JniEnvironment& environment,
+    JniStringStore& strings, JniPrimitiveArrayStore& arrays,
+    AndroidGuestMovieState& movie_state,
+    AndroidGuestLegacyMediaState& media_state,
+    const audio::JavaSoundPoolMixer::EncodedResourceLoader& resource_loader);
 
 void BindAndroidGuestJavaMovieHandlers(
     JniInvocationEngine& invocations, JniEnvironment& environment,

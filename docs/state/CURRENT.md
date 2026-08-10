@@ -1,15 +1,16 @@
 # 当前状态
 
-更新：2026-08-10 · M6 首个 exact-title 自动测试三轮 gate 已完成
+更新：2026-08-10 · M8 Asphalt 6 资源与 Java 媒体回调批次已完成
 
 ## 当前阶段
 
 - M0、M1、M2、M3、M4 已完成并验收。
-- M5 的 `WU-0199..0327` 共 129 项，已冻结为 M5-A Profile/启动基础、M5-B 首个
-  exact-title guest/GLES bring-up、M5-C 音频/输入/第二 title/lifecycle 三个批次；历史任务
-  不移动、不重编号，正式 M5 验收尚未声明。
+- M5 的 `WU-0199..0327` 共 129 项已冻结为三个批次；历史任务不移动、不重编号，
+  正式 M5 验收尚未声明。
 - M6 AI 自动化测试已从 `WU-0328` 开始；目标是让 AI 与 CI 通过同一
   Profile-backed runner 执行 exact APK 的有界场景、输入、readback、断言和证据收集。
+- M8 兼容性冲刺从 `WU-0360` 开始；Asphalt 6 按静态盘点→JNI/Java→GLES2→
+  线程/VFS→媒体→主界面三轮 gate 批次推进，不为单个缺失函数切 WU。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 的 M4 基线均在 commit `f1b59bb` 以 ANGLE、
   warnings-as-errors 和严格全量 CTest 302/302 通过，见 [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
 
@@ -28,10 +29,26 @@
 
 ## 进行中
 
-- 无；单场景自动测试闭环已完成，后续可创建 WU-0360 多场景批处理与趋势汇总。
+- Asphalt 6 JNI string/working-directory 与 Android media framework 批次；新 exact
+  Scenario 已越过 Device、GLResLoader、GLMediaPlayer 三个完整 native init，在第 4 个
+  native call 停于未绑定 `GetStringUTFChars`，尚未声称 guest 首帧或主界面。
 
 ## 最近完成
 
+- [WU-0363] 一次声明 GLResLoader 5 与 GLMediaPlayer 41 个 exact descriptor；字符串资源
+  复用 `/apk/assets` direct-asset VFS，编号音频走真实 `raw_NNN.ogg` loader，Java 原版
+  固定/no-op 媒体语义保留逐方法计数和音量状态。exact Scenario 越过前三个 native init，
+  新类别首缺口为 `GetStringUTFChars`；focused 1/1、full CTest 487/487。
+- [WU-0362] 一次声明 Device 8、GLGame 18、GameRenderer 4 个 exact Java descriptor；
+  通用平台 handler 提供可注入设备/版本事实、确定性离线网络，以及可查询的 unique-code、
+  background、fully-loaded、键盘和 managed-swap 状态；浏览器/商店/付费/GLive/IGP/trophy
+  无宿主实现时明确失败。exact Scenario 已从第 1 个 native call 推进到第 2 个
+  `GLResLoader.nativeInit`，首个新类别缺口为资源读取；focused 1/1、full CTest 486/486。
+- [WU-0361] 提交 exact `asphalt6.bootstrap` 场景及 APK/external 逻辑 fixture；
+  有界采样在第 0 帧、第 1 个 native call 停于 `Device.a()[B`，Result 明确
+  记录进程退出 1 且非 clean shutdown。静态/动态交叉统计 5 个回调类、76 个
+  Java descriptor、96 个 GL 导入（当前处理 41、差集 55）、30 个 pthread 导入和
+  972 个 payload 文件，后续按类别批量闭合；focused 3/3、full CTest 485/485。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -51,24 +68,6 @@
 - [WU-0355] Scenario v1 增加 closed-enum step/click/swipe/lifecycle/shutdown action 和
   frame/movie/lifecycle/exit/fault assertion；强类型 Python 模型与稳定 Result v1 JSON schema
   由同一机器自检约束，focused 3/3、full CTest 479/479。
-- [WU-0354] 修复 GPU capability JSON、MCP Base64 测试和 sliced CPU result 在
-  macOS-arm64 Clang warnings-as-errors 下的有符号转换/缺字段初始化；focused 24/24、
-  full CTest 478/478。
-- [WU-0353] 冻结 Scenario v1 精确 Profile 身份、逻辑 fixture、startup/total 三重预算和
-  有界 checkpoint/provider/evidence 契约；严格校验器 self-test 与空的当前场景目录进入
-  CTest，能力账本登记 complete。
-- [WU-0352] MCP 测试文档增加 swipe 调用示例，明确 `steps` 是确定性 guest-loop motion
-  数量而非毫秒，并记录端点、步数和当前手势能力边界。
-- [WU-0351] MCP 发布严格 `swipe(startX,startY,endX,endY,steps)` 工具；两个端点以最近 guest
-  帧校验，1..120 个 motion 阶段和响应元数据均有 schema、协议与 loopback HTTP 测试；
-  Asphalt 5 exact 12 步 swipe 后 frame 500→518 且持续响应，full CTest 476/476。
-- [WU-0350] MCP 输入队列泛化为 64 项手势 FIFO；click 保持 down/up，swipe 按 guest loop
-  逐步输出 down、整数线性 motion 和 up，dispatcher 保真映射并与桌面鼠标互斥。
-- [WU-0349] MCP 测试文档增加坐标网格调用与“带网格定位、干净截图验证”流程，并明确
-  网格不改变尺寸或实时 guest 帧。
-- [WU-0348] `frame_capture` 增加可选 `overlay="coordinates"`：在截图副本上绘制每 100 px
-  主线、每 25 px 边缘刻度和顶部/左侧标签；默认干净截图、尺寸和 guest 帧均保持不变；
-  Asphalt 5 exact 800×480 JPEG 为 93,136 字节且网格可读，full CTest 472/472。
 
 ## M6 起点
 
@@ -81,8 +80,10 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 可创建 WU-0360，为多个 Scenario 增加有界批处理、稳定汇总和趋势输出。
-2. 按后续 title 需求逐项补 MCP audio/GPU/HLE/fs provider；不可用项继续明确失败。
+1. 批量闭合 JNI UTF string 槽、Android media framework，并补齐 `nativeGetSDFolder`
+   的声明式 working-directory 参数。
+2. 按 GLES2 state/resource/query/draw 子批次闭合，然后固化主界面
+   Scenario 与三轮 gate。
 
 ## 阻塞
 

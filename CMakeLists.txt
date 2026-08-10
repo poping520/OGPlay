@@ -529,6 +529,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/guest_thread_runner_tests.cpp
         tests/runtime/api19_guest_process_tests.cpp
         tests/runtime/android_guest_call_session_tests.cpp
+        tests/runtime/android_guest_java_media_tests.cpp
         tests/runtime/android_boundary_hle_tests.cpp
         tests/runtime/android_boundary_gles1_fixed_tests.cpp
         tests/runtime/android_link_preflight_tests.cpp

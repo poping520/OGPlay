@@ -162,6 +162,10 @@
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求；会话只发布最新请求与累计次数，不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。
+- legacy Java media 批次按声明式 method id 重现 APK Java 层的固定 true/false/zero/-1
+  与 no-op 语义，并按方法线程安全累计调用；master/per-music volume 是受检可查询状态。
+  编号 sound resource 必须通过注入 loader 读取真实非空字节并受 JNI size 上限约束，
+  不存在、负编号、空内容或无 loader 明确失败；不得把 Java no-op 解释成宿主播放成功。
 - `display.change_mode` 按 legacy Java 契约把 mode `1` 记录为允许屏幕休眠，其他值记录为
   保持唤醒；请求进入线程安全的通用 framework 状态。宿主防休眠尚未接入时不得宣称已
   改变平台窗口策略。

@@ -460,8 +460,9 @@ public:
         BindAndroidGuestJavaAudioHandlers(
             invocations_, sound_pool_,
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
-        BindAndroidGuestJavaMovieHandlers(
-            invocations_, environment_, strings_, movie_state_);
+        BindAndroidGuestJavaMediaHandlers(
+            invocations_, environment_, strings_, arrays_, movie_state_,
+            media_state_, request.sound_resource_loader);
         BindAndroidGuestJavaDisplayHandlers(invocations_, screen_policy_);
         BindAndroidGuestJavaProcessHandlers(invocations_, process_state_);
         BindAndroidGuestJavaLocaleHandlers(invocations_, {});
@@ -692,6 +693,7 @@ private:
     AndroidGuestPlatformState platform_state_;
     JniStringStore strings_;
     AndroidGuestMovieState movie_state_;
+    AndroidGuestLegacyMediaState media_state_;
     JniPrimitiveArrayStore arrays_;
     JniJavaVm java_vm_;
     hal::RealtimeClock clock_;

@@ -85,6 +85,27 @@ TEST_CASE("Android guest Java display handler records screen sleep policy") {
     CHECK(screen_policy.RequestCount() == 2U);
 }
 
+TEST_CASE("Android guest Java process exit requests session shutdown") {
+    ogplay::runtime::JniClassRegistry classes;
+    const auto java_class = classes.RegisterClass(
+        {"fixture/JavaProcess", {},
+         {{"Exit", "()V", "process.exit", true}}, {}});
+    const auto method = classes.GetMethodId(java_class, "Exit", "()V", true);
+    REQUIRE(method.has_value());
+    ogplay::runtime::JniInvocationEngine invocations{classes};
+    ogplay::runtime::AndroidGuestProcessState process_state;
+    ogplay::runtime::BindAndroidGuestJavaProcessHandlers(
+        invocations, process_state);
+
+    CHECK_FALSE(process_state.ExitRequested());
+    CHECK(process_state.ExitRequestCount() == 0U);
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *method, {},
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(process_state.ExitRequested());
+    CHECK(process_state.ExitRequestCount() == 1U);
+}
+
 TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
     ogplay::runtime::JniClassRegistry classes;
     const auto java_class = classes.RegisterClass(

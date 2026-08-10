@@ -357,6 +357,30 @@ void BindAndroidGuestJavaDisplayHandlers(
         });
 }
 
+void AndroidGuestProcessState::RequestExit() noexcept {
+    exit_request_count_.fetch_add(1U, std::memory_order_relaxed);
+    exit_requested_.store(true, std::memory_order_release);
+}
+
+bool AndroidGuestProcessState::ExitRequested() const noexcept {
+    return exit_requested_.load(std::memory_order_acquire);
+}
+
+std::uint64_t AndroidGuestProcessState::ExitRequestCount() const noexcept {
+    return exit_request_count_.load(std::memory_order_relaxed);
+}
+
+void BindAndroidGuestJavaProcessHandlers(
+    JniInvocationEngine& invocations,
+    AndroidGuestProcessState& process_state) {
+    invocations.RegisterHandler(
+        "process.exit",
+        [&process_state](const JniInvocation&) {
+            process_state.RequestExit();
+            return JniValue{std::monostate{}};
+        });
+}
+
 class AndroidGuestCallSession::Impl final {
 public:
     explicit Impl(const AndroidGuestCallSessionRequest& request)
@@ -391,6 +415,7 @@ public:
             invocations_, sound_pool_,
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
         BindAndroidGuestJavaDisplayHandlers(invocations_, screen_policy_);
+        BindAndroidGuestJavaProcessHandlers(invocations_, process_state_);
         if (request.direct_assets.has_value()) {
             direct_assets_ = std::make_unique<FrameworkDirectAssetHle>(
                 invocations_, environment_, strings_, arrays_, *filesystem_);
@@ -576,6 +601,9 @@ public:
         return sound_pool_mixer_.RenderStereoPcm16(output, sample_rate);
     }
     bool Running() const noexcept { return running_; }
+    bool ExitRequested() const noexcept {
+        return process_state_.ExitRequested();
+    }
     core::GpuStats Stats() const { return boundary_.Stats(); }
     std::vector<core::GpuRenderTarget> RenderTargets() const {
         return boundary_.RenderTargets();
@@ -602,6 +630,7 @@ private:
     audio::JavaSoundPoolState sound_pool_;
     audio::JavaSoundPoolMixer sound_pool_mixer_;
     FrameworkScreenPolicyState screen_policy_;
+    AndroidGuestProcessState process_state_;
     JniStringStore strings_;
     JniPrimitiveArrayStore arrays_;
     JniJavaVm java_vm_;
@@ -694,6 +723,9 @@ std::size_t AndroidGuestCallSession::RenderStereoAudio(
 void AndroidGuestCallSession::Stop() { impl_->Stop(); }
 bool AndroidGuestCallSession::Running() const noexcept {
     return impl_->Running();
+}
+bool AndroidGuestCallSession::ExitRequested() const noexcept {
+    return impl_->ExitRequested();
 }
 core::GpuStats AndroidGuestCallSession::Stats() const {
     return impl_->Stats();

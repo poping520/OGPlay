@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <cstddef>
 #include <functional>
@@ -25,6 +26,17 @@ namespace ogplay::runtime {
 class JniInvocationEngine;
 class FrameworkScreenPolicyState;
 
+class AndroidGuestProcessState final {
+public:
+    void RequestExit() noexcept;
+    [[nodiscard]] bool ExitRequested() const noexcept;
+    [[nodiscard]] std::uint64_t ExitRequestCount() const noexcept;
+
+private:
+    std::atomic<bool> exit_requested_{};
+    std::atomic<std::uint64_t> exit_request_count_{};
+};
+
 void BindAndroidGuestJavaAudioHandlers(
     JniInvocationEngine& invocations,
     audio::JavaSoundPoolState& sound_pool,
@@ -33,6 +45,10 @@ void BindAndroidGuestJavaAudioHandlers(
 void BindAndroidGuestJavaDisplayHandlers(
     JniInvocationEngine& invocations,
     FrameworkScreenPolicyState& screen_policy);
+
+void BindAndroidGuestJavaProcessHandlers(
+    JniInvocationEngine& invocations,
+    AndroidGuestProcessState& process_state);
 
 struct AndroidGuestCallSessionRequest final {
     std::uint32_t api{19};
@@ -78,6 +94,7 @@ public:
         std::span<std::int16_t> output, std::uint32_t sample_rate);
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
+    [[nodiscard]] bool ExitRequested() const noexcept;
 
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;

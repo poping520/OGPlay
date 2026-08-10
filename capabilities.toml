@@ -633,7 +633,7 @@ note = "M5 WU-0240 在执行前完整预检 Profile invocation 批次，再按�
 [runtime.android_guest_call_session]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp"
-note = "M5 WU-0241 组合真实 Bionic namespace、API 19 process、syscall/clone、guest JNI core 与 Android HLE，执行 ELF init/fini 并接受通用 A32 frame"
+note = "M5 WU-0241/0313 组合真实 Bionic namespace、API 19 process、syscall/clone、guest JNI core 与 Android HLE，执行 ELF init/fini、接受通用 A32 frame，并把 Java process.exit 转换为可查询的会话退出请求"
 
 [runtime.host_managed_gl_surface]
 status = "complete"

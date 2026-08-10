@@ -488,7 +488,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             });
         static_cast<void>(lifecycle->Start());
         Write("OGPlay: Profile GLSurfaceView started; close the window to stop.\n");
-        while (!quit) {
+        while (!quit && !guest->ExitRequested()) {
             const auto window_state = window->State();
             for (const auto& event : window->PollEvents()) {
                 if (event.type == hal::InputEventType::quit) {

@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0313] legacy Java `process.exit` 现发布线程安全、可查询的 guest 会话退出请求，
+  GLSurfaceView 前端观察请求后执行正常 lifecycle/session teardown；宿主进程不会被 handler
+  直接终止，第二个 exact APK 已完成单帧有界运行并干净退出，全量 CTest 通过。
 - [WU-0312] 第二个 exact Profile 已以纯数据声明 JADX/ELF 共同确认的 30 项 GLMediaPlayer
   static Java lookup，复用通用 audio implementation id 并保留新增语义的显式命名；真实 APK
   已越过 audio native init 并推进至下一独立边界，全量 CTest 通过。
@@ -69,9 +72,6 @@
 - [WU-0301] 独立宿主数据目录现可事务索引为通用 external VFS mount，文件首次读取或
   非截断写入时才物化且修改只存在于会话内；不安全/空/歧义目录树明确失败，全量
   CTest 436/436 通过。
-- [WU-0300] APK/OBB 只读 VFS backing 现仅挂载路径与尺寸，首次读取才物化、核对并缓存；
-  Debug exact APK 单帧由约 12.75 秒稳定降至 3.78–3.81 秒，120 帧正常退出，全量
-  CTest 434/434 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

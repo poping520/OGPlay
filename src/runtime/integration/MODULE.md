@@ -154,6 +154,8 @@
 - `display.change_mode` 按 legacy Java 契约把 mode `1` 记录为允许屏幕休眠，其他值记录为
   保持唤醒；请求进入线程安全的通用 framework 状态。宿主防休眠尚未接入时不得宣称已
   改变平台窗口策略。
+- `process.exit` 只向线程安全的会话状态发布可查询的退出请求；不得直接终止宿主进程，
+  也不得以 no-op 吞掉。前端观察请求后仍须执行 Profile lifecycle 与 guest session 清理。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。
   宿主成功 present 后可归还布局完全匹配的拥有型帧；1x surface 复用其 RGBA8 高水位存储，

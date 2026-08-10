@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M6 通用自动测试执行闭环已完成
+更新：2026-08-10 · M6 首个 exact-title 自动测试三轮 gate 已完成
 
 ## 当前阶段
 
@@ -28,10 +28,15 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0359 Asphalt 5 exact 场景与连续三轮 gate。
+- 无；单场景自动测试闭环已完成，后续可创建 WU-0360 多场景批处理与趋势汇总。
 
 ## 最近完成
 
+- [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
+  点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
+  `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
+  三轮全部 passed、无 guest fault、suspend/resume 不偷跑 frame、shutdown requested/clean，
+  focused 5/5、full CTest 484/484。
 - [WU-0358] Python runner 从强类型 Scenario 启动同一 Profile-backed MCP manual-step 会话，
   实时门禁 startup/checkpoint/total 三重预算，执行动作与逐帧断言，落盘相对 frame/state/log
   证据和 Result v1；成功/失败均正常 shutdown，超时清理明确记账；focused 6/6、full
@@ -70,21 +75,18 @@
 已有 Scenario v1 身份/fixture/预算/checkpoint/action/assertion/result 契约、Control
 Service/JSON-RPC、固定步长 Clock、能力账本、结构化日志、GPU 查询和 Software/ANGLE
 黄金帧基础。通用 runner 已闭合 Scenario→exact Profile session→action/step→assertion→
-evidence/Result→shutdown；尚待把 Asphalt 5 的标题页触摸/电影请求边界固化为仓库场景并做
-连续三轮确定性验收。OBB fixture 与 MCP GPU trace 仍明确未实现。
+evidence/Result→shutdown，Asphalt 5 exact 标题流已连续三轮通过。实测证明标题页触摸直接
+进入 Main Menu 且 `movieRequest=null`，已用真实 UI golden 更正旧推测。OBB fixture 与 MCP
+GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0359，提交 Asphalt 5 首个 exact 场景并执行连续三轮确定性 gate。
-2. 根据实测 Result 固化 movie request 名称、frame/tick 上界和可复现证据摘要。
-3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
-   suspend/resume、稳定检查点和正常 shutdown。
+1. 可创建 WU-0360，为多个 Scenario 增加有界批处理、稳定汇总和趋势输出。
+2. 按后续 title 需求逐项补 MCP audio/GPU/HLE/fs provider；不可用项继续明确失败。
 
 ## 阻塞
 
-- 触摸标题页后 guest 每帧重复请求同一 logo MP4；Activity suspend/resume 尚未接到已发布的
-  电影请求。M6 首个端到端场景应稳定复现并机器判定该边界。
-- WU-0343 的 Release exact MCP click 已排队并保持帧推进；静态 splash 无画面变化，因此
-  后续场景断言仍需等待电影请求 checkpoint 接入，不把帧推进伪作 UI 已响应。
+- 单场景自动测试闭环无阻塞。OBB fixture、MCP GPU trace 与多场景趋势属于已知后续范围，
+  当前请求会明确失败，不伪造成功。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

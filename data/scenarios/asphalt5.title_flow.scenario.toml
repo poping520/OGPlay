@@ -1,0 +1,136 @@
+schema = 1
+id = "asphalt5.title_flow"
+
+[profile]
+package = "com.gameloft.android.GAND.GloftAsphalt5.asphalt5"
+version_code = 1
+so_sha256 = "9c7eea1374b76200f47557415f4518535cce065a0d2c50c7bab75209f7b87b48"
+abi = "armeabi"
+
+[[fixture]]
+id = "asphalt5.apk"
+kind = "apk"
+required = true
+
+[limits]
+startup_frames = 1
+startup_ticks = 1000
+startup_wall_time_ms = 60000
+total_frames = 600
+total_ticks = 600000
+total_wall_time_ms = 600000
+
+[[checkpoint]]
+id = "title_frame"
+provider = "frame"
+max_frames = 430
+max_ticks = 430000
+wall_time_ms = 180000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "step"
+frames = 430
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 430
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "language_selected"
+provider = "frame"
+max_frames = 10
+max_ticks = 10000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "click"
+x = 200
+y = 100
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 434
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "post_language"
+provider = "frame"
+max_frames = 30
+max_ticks = 30000
+wall_time_ms = 60000
+evidence = ["frame", "state"]
+
+[checkpoint.action]
+type = "step"
+frames = 30
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 464
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "title_touch_main_menu"
+provider = "frame"
+max_frames = 4
+max_ticks = 4000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "click"
+x = 400
+y = 240
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 468
+sha256 = "9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8"
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "suspended"
+provider = "lifecycle"
+max_frames = 1
+max_ticks = 1000
+wall_time_ms = 30000
+evidence = ["state"]
+
+[checkpoint.action]
+type = "suspend"
+
+[[checkpoint.assertion]]
+type = "lifecycle"
+state = "suspended"
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "resumed"
+provider = "lifecycle"
+max_frames = 1
+max_ticks = 1000
+wall_time_ms = 30000
+evidence = ["state"]
+
+[checkpoint.action]
+type = "resume"
+
+[[checkpoint.assertion]]
+type = "lifecycle"
+state = "running"
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"

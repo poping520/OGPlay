@@ -9,13 +9,13 @@ M6 从 `WU-0328` 开始，目标是把 exact-APK 调试与兼容性验证变成 
 | 顺序 | 切片 | 机器出口 |
 | ---: | --- | --- |
 | 1 | 场景与 checkpoint 纯数据契约 | 精确 Profile 身份、逻辑 fixture 和三重预算严格自检；WU-0353 |
-| 2 | action/assertion/result 强类型模型 | closed enum、逐类型载荷、稳定 JSON schema 与负向测试 |
-| 3 | Profile-backed Agent session adapter | exact APK 与 `run-apk` 复用同一 bootstrap/lifecycle/ANGLE 路径 |
-| 4 | 有界 `step` / `until` 和输入执行 | 每项都有 frame/tick/wall-time 上限，不以 sleep 判成功 |
-| 5 | 原子 checkpoint provider | 同一 frame/tick 读取 lifecycle/movie/audio/GPU/HLE/fs/fault 状态 |
-| 6 | frame readback/golden 和结构化断言 | 原图、差分、阈值、实测值和首个失败均可机器判定 |
-| 7 | 正常 shutdown 与证据包 | 主错误和清理错误分离，guest/audio/surface/window 全部闭环 |
-| 8 | 首个 exact-title 场景与三次确定性门禁 | 启动→输入→检查点→断言→shutdown 三次结果可复现 |
+| 2 | action/assertion/result 强类型模型 | closed enum、逐类型载荷、稳定 JSON schema 与负向测试；WU-0355 |
+| 3 | Profile-backed Agent session adapter | exact APK 与 `run-apk` 复用同一 bootstrap/lifecycle/ANGLE 路径；WU-0356..0357 |
+| 4 | 有界 `step` / `until` 和输入执行 | 每项都有 frame/tick/wall-time 上限，不以 sleep 判成功；WU-0356..0358 |
+| 5 | 原子 checkpoint provider | 同一 frame/tick 读取 lifecycle/movie/frame/fault 状态；WU-0356..0358 |
+| 6 | frame readback/golden 和结构化断言 | 原图、SHA-256、实测值和首个失败均可机器判定；WU-0358 |
+| 7 | 正常 shutdown 与证据包 | 主错误和清理错误分离，guest/audio/surface/window 全部闭环；WU-0358 |
+| 8 | 首个 exact-title 场景与三次确定性门禁 | 启动→输入→检查点→断言→shutdown 三次结果可复现；WU-0359 |
 | 9 | 多场景批处理与趋势汇总 | 有界并行、稳定汇总和后续远端 CI 接口 |
 
 底层 MCP 工具继续服务交互调试，但 CI 出口以场景 runner 为准；不得让 AI 通过重复截图和
@@ -37,3 +37,8 @@ PNG；`WU-0346..0347` 增加固定 15971 端口的 `--mcp` 测试入口和简明
 fixture、三重总预算与有界 checkpoint schema；`WU-0354` 插入修复这些近期 M6 改动在
 macOS-arm64 Clang warnings-as-errors 下暴露的有符号转换。原计划的 action/assertion/result
 强类型模型顺延到下一 WU，上述闭环依赖顺序不变。
+
+`WU-0355..0358` 已完成强类型模型、MCP session 控制面、`run-apk` manual-step 接线和通用
+Scenario runner；`WU-0359` 以 Asphalt 5 exact 标题流在 macOS-arm64 连续三轮验证固定
+frame/ticks、Main Menu golden、suspend/resume、无 guest fault 与 clean shutdown。单场景
+自动测试闭环已完成；顺序 9 的多场景批处理与趋势汇总仍是后续增强，不阻塞本闭环。

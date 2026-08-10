@@ -40,6 +40,11 @@ status = "complete"
 test = "tools.scenario_runner_self_test"
 note = "M6 WU-0358 以同一 Profile-backed MCP manual-step 会话执行强类型 Scenario；三重预算、逐断言 expected/actual、相对 frame/state/log 证据、Result v1 与正常/超时清理形成 AI/CI 共用闭环；OBB 和 gpu_trace 仍明确失败"
 
+[automation.asphalt5_title_flow]
+status = "complete"
+test = "tools.scenarios_current; tools.scenario_runner_self_test; macOS-arm64 exact local gate 3/3"
+note = "M6 WU-0359 以逻辑 asphalt5.apk fixture 自动选择 English、进入稳定 title、点击到 Main Menu 并验证 suspend/resume；三轮固定 frame/ticks 468/468000、Main Menu PNG SHA-256 9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8、无 guest fault 且 clean shutdown"
+
 [agent.control_service]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

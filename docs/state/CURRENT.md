@@ -33,6 +33,8 @@
 
 ## 最近完成
 
+- [WU-0325] A32 observer slice 上限由 500 万调为 2000 万 tick，在保持窗口响应上界时将
+  Dynarmic 重入次数降至四分之一；exact 80 帧 122.645 秒且退出码 0，窗口保持响应。
 - [WU-0324] GLSurfaceView 已把 A32 slice observer 接到非消费式 SDL event pump；exact APK
   长帧多次采样均 `Responding=True` 且 CPU 前进，Windows 不再判定窗口挂起。
 - [WU-0323] HAL WindowInput 新增非消费式 event pump，可在主线程长任务期间处理宿主消息，
@@ -78,13 +80,13 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 测量并降低 500 万 tick 切片的 Dynarmic 重入开销，同时保持窗口响应上界。
+1. 以 Release 构建继续 exact APK 主界面验证，区分 Debug 编译开销与新功能阻塞。
 2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
 
 ## 阻塞
 
-- 第二个 exact APK 窗口已保持响应；Debug 的 500 万 tick 细切片使 80 帧总时长超过
-  240 秒，仍需降低重入开销后继续主界面验证。
+- 第二个 exact APK 窗口已保持响应；Debug 80 帧仍需 122.645 秒，需用 Release 继续
+  主界面与交互验证。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

@@ -31,7 +31,7 @@ using GuestSupervisorCallHandler =
     std::function<bool(cpu::Cpu&, const cpu::RunResult&)>;
 using A32GuestCallSliceObserver = std::function<void()>;
 
-inline constexpr std::uint64_t kA32GuestCallSliceTicks = UINT64_C(5000000);
+inline constexpr std::uint64_t kA32GuestCallSliceTicks = UINT64_C(20000000);
 
 struct A32GuestCallFrame final {
     memory::GuestAddress target;

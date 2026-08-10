@@ -3,6 +3,8 @@
 ## 职责
 
 提供 CLI 与未来 Qt GUI；二者只编排公共内核 API，不实现兼容行为。
+提供可由前端选择启动的 loopback MCP Streamable HTTP transport；协议与截图编码仍由
+agent 模块拥有，transport 只负责受限 HTTP framing。
 
 ## 公共 API
 
@@ -15,10 +17,14 @@ guest 根进行 lazy mount；guest 路径不由用户参数或宿主目录名决
 present 数更新一位小数的实时值。
 声明 `audio.sound_pool` 的 GLSurfaceView Profile 会按 source/path_pattern 从 APK 读取编码
 资源，将会话离线 mixer 的 stereo PCM16 按队列水位提交到 SDL3 默认音频设备。
+`McpHttpServer::Start` 只监听 IPv4 loopback，端口 0 仅供测试选择临时端口；endpoint 固定为
+`/mcp`，每个请求直接委托传输无关的 `McpProtocolAdapter`。
 
 ## 不变量
 
 - CLI 和 GUI 共用相同 session/config/profile。
+- MCP HTTP 必须只绑定 `127.0.0.1`，拒绝非 loopback `Origin`、非 `/mcp` 路由、非 JSON
+  POST、chunked/unbounded body；notification 返回 202 且不伪造 JSON-RPC response。
 - 用户可见输出可以写 stdout/stderr，但生产库不得裸输出。
 - `run-apk` 要求显式 Bionic 目录；APK 入口只能由 Manifest + native hash + ABI 精确 Profile
   决定，支持压缩的 `armeabi`/`armeabi-v7a`，依赖闭包不得由 CLI 手写。

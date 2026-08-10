@@ -155,6 +155,11 @@ status = "complete"
 test = "tests/agent/mcp_protocol_tests.cpp"
 note = "M6 WU-0328 完成 MCP lifecycle/tools 最小协议和最新已呈现 RGBA8 帧的 PNG image tool；HTTP transport 单独记账"
 
+[frontend.mcp_http_transport]
+status = "complete"
+test = "tests/frontend/mcp_http_server_tests.cpp"
+note = "M6 WU-0329 提供仅绑定 127.0.0.1 的有界 Streamable HTTP POST /mcp transport；Origin、route、media type 与 body 均 fail closed，CLI 启动参数另行接线"
+
 [golden.software_frame]
 status = "complete"
 test = "tests/golden/golden_frame_tests.cpp"

@@ -374,8 +374,21 @@ add_library(OGPlay::Agent ALIAS ogplay_agent)
 target_link_libraries(ogplay_agent PUBLIC OGPlay::Core OGPlay::Session)
 ogplay_set_project_warnings(ogplay_agent)
 
+add_library(ogplay_frontend
+    src/frontend/mcp_http_server.cpp
+)
+add_library(OGPlay::Frontend ALIAS ogplay_frontend)
+target_link_libraries(ogplay_frontend PUBLIC OGPlay::Agent)
+target_include_directories(ogplay_frontend SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost)
+if(WIN32)
+    target_link_libraries(ogplay_frontend PRIVATE ws2_32)
+endif()
+ogplay_set_project_warnings(ogplay_frontend)
+
 add_executable(ogplay src/frontend/cli/main.cpp src/frontend/cli/run_apk.cpp)
-target_link_libraries(ogplay PRIVATE OGPlay::Agent OGPlay::Hal OGPlay::Loader OGPlay::Runtime)
+target_link_libraries(ogplay PRIVATE
+    OGPlay::Frontend OGPlay::Hal OGPlay::Loader OGPlay::Runtime)
 target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
 target_compile_definitions(ogplay PRIVATE OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 if(WIN32)
@@ -393,7 +406,7 @@ target_compile_definitions(ogplay PRIVATE
 ogplay_set_project_warnings(ogplay)
 ogplay_stage_angle_runtime(ogplay)
 
-install(TARGETS ogplay ogplay_core ogplay_hal ogplay_audio ogplay_input ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_session
+install(TARGETS ogplay ogplay_core ogplay_hal ogplay_audio ogplay_input ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_frontend ogplay_session
     EXPORT OGPlayTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -411,6 +424,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp
         tests/agent/mcp_protocol_tests.cpp
+        tests/frontend/mcp_http_server_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
         tests/gles/angle_frame_tests.cpp
@@ -519,12 +533,14 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
     target_link_libraries(ogplay_tests PRIVATE
-        OGPlay::Agent OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime doctest::doctest
+        OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime doctest::doctest
     )
     target_include_directories(ogplay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include
         ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
+    target_include_directories(ogplay_tests SYSTEM PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost)
     if(OGPLAY_ENABLE_SDL3)
         target_compile_definitions(ogplay_tests PRIVATE OGPLAY_TEST_HAS_SDL3=1)
         target_link_libraries(ogplay_tests PRIVATE SDL3::SDL3)
@@ -537,6 +553,7 @@ if(OGPLAY_BUILD_TESTS)
     )
     if(MSVC)
         target_compile_options(ogplay_tests PRIVATE /wd5285)
+        target_link_libraries(ogplay_tests PRIVATE ws2_32)
     endif()
     if(CYGWIN)
         target_compile_definitions(ogplay_tests PRIVATE DOCTEST_CONFIG_NO_POSIX_SIGNALS)

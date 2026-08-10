@@ -21,4 +21,5 @@ M6 从 `WU-0328` 开始，目标是把 exact-APK 调试与兼容性验证变成 
 非跨平台夹具；`WU-0333..0335` 接入 yyjson 并迁移 core、Control Service、JSON-RPC、MCP、
 日志和诊断输出；`WU-0336..0338` 修复 exact-title 失败清理 futex 卡死并补充 tick 现场；
 `WU-0339..0340` 原样接入 PowerVR 官方 PVRTC decoder，并以 MCP exact frame 闭合 ANGLE
-fallback。原计划的场景 schema 顺延到 `WU-0341`，上述依赖顺序不变。
+fallback；`WU-0341..0343` 增加严格 MCP click、loopback transport 与主线程输入派发。
+原计划的场景 schema 顺延到 `WU-0344`，上述依赖顺序不变。

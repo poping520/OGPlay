@@ -175,6 +175,11 @@ status = "complete"
 test = "cmake/CheckRunApkOptions.cmake; tests/frontend/mcp_http_server_tests.cpp; exact APK MCP screenshot smoke"
 note = "M6 WU-0330 以可选 --mcp-port 启动 loopback MCP，并以移动所有权发布成功 present 的最新 guest 帧；默认关闭且 preflight 明确拒绝"
 
+[frontend.run_apk_mcp_click]
+status = "complete"
+test = "tests/frontend/mcp_http_server_tests.cpp; Asphalt 5 exact APK MCP click smoke"
+note = "M6 WU-0343 将 click queue 接入两种 guest loop；可测试 dispatcher 在主线程逐 step 派发 down/up，并与桌面鼠标手势互斥"
+
 [golden.software_frame]
 status = "complete"
 test = "tests/golden/golden_frame_tests.cpp"

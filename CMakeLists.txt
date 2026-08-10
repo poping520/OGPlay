@@ -402,9 +402,11 @@ ogplay_set_project_warnings(ogplay_agent)
 
 add_library(ogplay_frontend
     src/frontend/mcp_http_server.cpp
+    src/frontend/mcp_input_dispatch.cpp
 )
 add_library(OGPlay::Frontend ALIAS ogplay_frontend)
-target_link_libraries(ogplay_frontend PUBLIC OGPlay::Agent)
+target_link_libraries(ogplay_frontend PUBLIC
+    OGPlay::Agent OGPlay::Input OGPlay::Runtime)
 target_include_directories(ogplay_frontend SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost)
 if(WIN32)
@@ -452,6 +454,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/agent/control_service_tests.cpp
         tests/agent/mcp_protocol_tests.cpp
         tests/frontend/mcp_http_server_tests.cpp
+        tests/frontend/mcp_input_dispatch_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
         tests/gles/angle_frame_tests.cpp

@@ -28,10 +28,16 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0341 exact-APK 场景/checkpoint schema 与严格自检。
+- 无；下一项为 WU-0344 exact-APK 场景/checkpoint schema 与严格自检。
 
 ## 最近完成
 
+- [WU-0343] 可测试 dispatcher 在两个 guest loop 主线程逐 step 派发 MCP click down/up 并与
+  桌面鼠标互斥；Release exact request 1/frame 428 后推进到 frame 473，full CTest 469/469。
+- [WU-0342] loopback HTTP server 接受调用方 click queue；真实 POST 返回 request/frame
+  sequence 与坐标，down/up 从同一队列取出，focused 3/3。
+- [WU-0341] MCP 发布严格 `click{x,y}` schema 与 64 项线程安全队列；最近 guest frame
+  边界校验、无帧/越界/队列满失败及 down/up 连续 take 均有 focused 测试。
 - [WU-0340] ANGLE 缺少 PVRTC 时调用官方 decoder 转为 RGBA8 上传；MCP sequence 686 的
   800×480 帧纹理清晰，Release 300 帧 15.058 秒正常退出，
   Windows full CTest 464/464。
@@ -48,12 +54,6 @@
   yyjson 严格解析/构造；focused 31/31、Windows full CTest 460/460。
 - [WU-0334] MCP envelope/params/schema 迁移到严格 yyjson；语法、重复键、超限、非法 id、
   嵌套字段误取和工具参数均明确失败，真实 loopback transport 保持通过。
-- [WU-0333] 固定接入 yyjson 0.12.0，并发布不暴露第三方类型的 RAII `JsonDocument`/
-  `JsonWriter`；1 MiB、64 层、UTF-8、重复键与精确整数均有机器契约。
-- [WU-0332] VFS host mount 改用三平台可构造的已有 guest path 大小写折叠冲突夹具，
-  复核失败事务不部分发布；原生产实现无需改变。
-- [WU-0331] Windows ANGLE 不发布 ETC1 扩展时按 Khronos 规范解码为 RGBA8 上传；
-  individual/differential/selector/flip/partial block 均有测试，Asphalt 5 2 帧退出码 0。
 - [WU-0330] `run-apk --mcp-port` 默认关闭且只接受本机端口；指定 Asphalt 5 exact APK
   经真实 MCP 取得 sequence 2 的 800×480 Gameloft PNG，2 帧正常退出码 0，focused 9/9。
 - [WU-0329] loopback Streamable HTTP transport 已固定 `127.0.0.1` 和 `/mcp`，真实 TCP
@@ -78,7 +78,7 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0341，冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
+1. 完成 WU-0343 后创建 WU-0344，冻结 exact-APK 场景/checkpoint schema 与严格自检。
 2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
 3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
@@ -87,7 +87,7 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 - 触摸标题页后 guest 每帧重复请求同一 logo MP4；Activity suspend/resume 尚未接到已发布的
   电影请求。M6 首个端到端场景应稳定复现并机器判定该边界。
-- WU-0340 的 MCP sequence 686、800×480 原始帧已确认纹理清晰；Release exact APK 300 帧
-  与 Windows full CTest 464/464 均通过。
+- WU-0343 的 Release exact MCP click 已排队并保持帧推进；静态 splash 无画面变化，因此
+  后续场景断言仍需等待电影请求 checkpoint 接入，不把帧推进伪作 UI 已响应。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

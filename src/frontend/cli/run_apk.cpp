@@ -19,6 +19,7 @@
 
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/frontend/mcp_http_server.h"
+#include "ogplay/frontend/mcp_input_dispatch.h"
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/hal/window_input.h"
@@ -444,10 +445,13 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     }
 
     std::unique_ptr<agent::FrameSnapshotStore> mcp_frames;
+    std::unique_ptr<agent::McpInputQueue> mcp_inputs;
     std::unique_ptr<McpHttpServer> mcp_server;
     if (mcp_port.has_value()) {
         mcp_frames = std::make_unique<agent::FrameSnapshotStore>();
-        mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames);
+        mcp_inputs = std::make_unique<agent::McpInputQueue>();
+        mcp_server = McpHttpServer::Start(
+            *mcp_port, *mcp_frames, *mcp_inputs);
         Write("OGPlay: MCP ready at " + mcp_server->Endpoint() + "\n");
     }
 
@@ -474,6 +478,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     };
     const auto direct_assets = DirectAssetImplementations(profile);
     input::MouseTouchMapper mouse_touch;
+    McpPointerDispatcher mcp_pointer;
     if (profile.runtime.lifecycle == session::ProfileLifecycle::native_activity) {
         auto guest = runtime::NativeActivitySession::Start(
             {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
@@ -485,6 +490,8 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             for (const auto& event : window->PollEvents()) {
                 if (event.type == hal::InputEventType::quit) {
                     quit = true;
+                } else if (mcp_pointer.SuppressWindowEvent(event.type)) {
+                    continue;
                 } else if (const auto mapped = mouse_touch.Map(
                                event, window_state, guest_width, guest_height);
                            mapped.has_value()) {
@@ -492,6 +499,10 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                         guest->PushInput(*input);
                     }
                 }
+            }
+            if (const auto input = mcp_pointer.TakeNext(
+                    mcp_inputs.get(), mouse_touch); input.has_value()) {
+                guest->PushInput(*input);
             }
             if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
                 window->PresentRgba8(frame->rgba8, frame->width, frame->height);
@@ -560,6 +571,8 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             for (const auto& event : window->PollEvents()) {
                 if (event.type == hal::InputEventType::quit) {
                     quit = true;
+                } else if (mcp_pointer.SuppressWindowEvent(event.type)) {
+                    continue;
                 } else if (const auto mapped = mouse_touch.Map(
                                event, window_state, guest_width, guest_height);
                            mapped.has_value()) {
@@ -567,6 +580,10 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                         lifecycle->QueueInput(*input);
                     }
                 }
+            }
+            if (const auto input = mcp_pointer.TakeNext(
+                    mcp_inputs.get(), mouse_touch); input.has_value()) {
+                lifecycle->QueueInput(*input);
             }
             static_cast<void>(lifecycle->StepFrame());
             if (audio_output) {

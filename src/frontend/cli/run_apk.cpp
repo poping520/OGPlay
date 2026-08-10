@@ -486,6 +486,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 },
                 [&guest] { guest->OpenManagedSurface(); },
                 [&guest] { guest->PresentManagedSurface(); },
+                [&guest] { guest->Stop(); },
                 [&guest] { guest->CloseManagedSurface(); },
                 [&guest](const runtime::AndroidBoundaryInput& input) {
                     guest->PushInput(input);
@@ -525,7 +526,6 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         static_cast<void>(lifecycle->Stop());
-        guest->Stop();
         if (audio_output) audio_output->Stop();
     }
     window->Close();

@@ -24,6 +24,7 @@ struct ProfileGuestLifecycleBindings final {
     ProfileNativeFrameExecutor execute;
     std::function<void()> open_surface;
     std::function<void()> present_surface;
+    std::function<void()> finalize_guest;
     std::function<void()> close_surface;
     std::function<void(const runtime::AndroidBoundaryInput&)> push_boundary_input;
 };
@@ -73,6 +74,7 @@ private:
     std::uint64_t frame_{};
     bool surface_open_{};
     bool startup_completed_{};
+    bool guest_finalized_{};
 };
 
 }  // namespace ogplay::session

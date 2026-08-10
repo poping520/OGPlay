@@ -46,7 +46,8 @@ present 数更新一位小数的实时值。
 - 前端必须把 Profile 已验证的 `runtime.maximum_ticks_per_call` 原样交给通用 guest session；
   不得按标题、生命周期阶段或宿主性能改写预算。
 - `gl_surface_view` 帧循环必须观察 guest 的显式进程退出请求，并在请求后通过正常
-  lifecycle/session teardown 结束；不得从 Java handler 直接杀死整个 CLI 进程。
+  lifecycle/session teardown 结束；guest module finalizer 必须在 managed ANGLE surface
+  关闭前执行，不得从 Java handler 直接杀死整个 CLI 进程。
 - 前端只可把已验证的 `gles1_material_front_face` id 映射为通用 single-face material
   `AndroidBoundaryOptions` 布尔项；不得在运行时接口中传递游戏名、包名或 Profile 对象。
 - SoundPool loader 只消费 Profile 解析后的 source/path；当前 `run-apk` 仅挂载 APK source，

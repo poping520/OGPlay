@@ -192,6 +192,7 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
                 events.emplace_back("present");
                 if (fail_present) throw std::runtime_error("present failed");
             },
+            [&events] { events.emplace_back("finalize"); },
             [&events] { events.emplace_back("close"); },
             [&events](const runtime::AndroidBoundaryInput&) {
                 events.emplace_back("input");
@@ -235,7 +236,7 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
     const std::vector<std::string> expected{
         "open", "call:4096", "call:4112", "input", "call:4144",
         "input", "call:4160", "call:4128", "present", "call:4128",
-        "present", "call:4176", "call:4192", "close"};
+        "present", "call:4176", "call:4192", "finalize", "close"};
     CHECK(events == expected);
     REQUIRE(registers.size() == 8);
     CHECK(registers[2][2] == 10U);

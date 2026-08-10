@@ -85,6 +85,7 @@ ProfileGuestLifecycle::ProfileGuestLifecycle(
         bindings_.jni_environment == nullptr || bindings_.classes == nullptr ||
         !bindings_.execute ||
         !bindings_.open_surface || !bindings_.present_surface ||
+        !bindings_.finalize_guest ||
         !bindings_.close_surface || !bindings_.push_boundary_input) {
         throw ProfileGuestLifecycleError(
             "profile guest lifecycle request is incomplete or unsupported");
@@ -219,6 +220,14 @@ LifecycleFrameState ProfileGuestLifecycle::Stop() {
             ExecutePhase(ProfileNativeCallPhase::shutdown);
         } catch (...) {
             failure = std::current_exception();
+        }
+    }
+    if (!guest_finalized_) {
+        try {
+            bindings_.finalize_guest();
+            guest_finalized_ = true;
+        } catch (...) {
+            if (!failure) failure = std::current_exception();
         }
     }
     if (surface_open_) {

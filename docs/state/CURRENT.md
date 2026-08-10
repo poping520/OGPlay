@@ -33,13 +33,11 @@
 
 ## 最近完成
 
+- [WU-0321] GLSurfaceView 停止顺序现为 pause/shutdown、guest module finalizer、关闭
+  managed ANGLE surface；exact APK 跨纹理加载后 80 帧正常退出，不再无 frame 清理纹理。
 - [WU-0320] legacy big audio 批量 pause/resume 只迁移对应类别 voice，并在统一
   handler 下同步状态与真实 Ogg mixer；第二个 exact APK 已越过 `audio.resume_all_big`，
   推进至独立 `glDeleteTextures` 无 current ANGLE frame 边界。
-- [WU-0319] legacy `loadMovie(String)` 现从统一 JNI string store 发布线程安全、可查询且
-  带递增序号的电影请求；null、未知或超限名称明确失败，宿主视频播放仍明确未实现。
-  第二个 exact APK 已越过原 missing-handler，随后在同一 `nativeRender` 触发新的 10 亿
-  tick 边界。
 - [WU-0318] `run-apk` 现对两种 Profile 生命周期消费强类型单次调用预算；第二个 exact
   Profile 以纯数据声明 10 亿 tick 后，首次 `nativeRender` 在约 21 秒内返回并提交 1 frame，
   证明原 2 亿边界来自有限 PVRTC 加载工作量。120 帧 smoke 已推进至独立缺口
@@ -81,14 +79,13 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 定位 loading-page 淡出阶段 `glDeleteTextures` 丢失 current ANGLE frame 的生命周期
-   顺序，并保持无 frame 调用明确失败。
+1. 在 guest tick 切片边界泵 SDL 事件并支持受检退出，避免超长同步 frame 让窗口未响应。
 2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
 
 ## 阻塞
 
-- 第二个 exact APK 已进入 loading page 并越过批量音频恢复；当前有界 smoke 明确停在
-  `glDeleteTextures has no current ANGLE frame`，同时同步长帧会让 Windows 暂报未响应。
+- 第二个 exact APK 已进入 loading page；Debug 下第 76 帧实测 110.823 秒，同步执行期间
+  主线程不泵 SDL 事件，Windows 会暂报未响应。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

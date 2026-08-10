@@ -212,6 +212,11 @@
   从 A32 guest 栈读取第 5 个参数并一次性写入受检 guest 内存；错误 return kind、class、
   method、handler、array reference/type/region 或输出缓冲明确失败，
   成功查询只发布统一 Guest JNI ABI 地址。非空 attach arguments 在实现其结构前明确失败。
+- `BindJniGuestStaticFieldSlots` 批量绑定 `GetStaticFieldID` 与 Object/Boolean/Byte/Char/
+  Short/Int/Long/Float/Double 的 9 对 static field getter/setter；field ID 只精确查询统一
+  class registry，读写复用统一 field store，槽类型必须匹配 descriptor。word、符号扩展、
+  float bits 与 long/double 双字返回遵循 A32 soft-float ABI，setter 的 64 位第 4 参数从
+  对齐 guest 栈读取；错误 class/reference/field/kind/type/栈地址均明确失败。
 - `NativeActivityRunRequest::supersample_factor` 选择受检 1..4× 内部渲染倍率；guest 的
   EGL surface 和输出帧保持逻辑尺寸，ANGLE pbuffer、viewport 与 GPU render target 使用
   放大尺寸，swap 时通过 gles 确定性 resolve 还原。

@@ -1,5 +1,8 @@
+#include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,10 +14,12 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
+#include "ogplay/runtime/integration/jni_guest_static_fields.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
 
@@ -24,27 +29,27 @@ class InstanceFixture final {
 public:
     InstanceFixture()
         : bus(memory), cpu(bus), abi(memory), dispatcher(ledger),
-          invocations(classes), java_vm(environment) {
+          invocations(classes), fields(classes), java_vm(environment) {
         memory.Map({output, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
         ogplay::runtime::BindJniGuestCoreSlots(
             dispatcher, environment, classes, invocations, strings, arrays,
             java_vm, memory);
+        ogplay::runtime::BindJniGuestStaticFieldSlots(
+            dispatcher, environment, classes, fields, memory);
     }
 
-    void WriteString(const std::uint32_t offset,
-                     const std::string_view value) {
-        std::vector<std::byte> bytes;
-        for (const auto character : value) {
-            bytes.push_back(static_cast<std::byte>(
-                static_cast<unsigned char>(character)));
+    void Write64(const std::uint64_t value) {
+        std::array<std::byte, 8> bytes{};
+        for (std::size_t index = 0; index < bytes.size(); ++index) {
+            bytes[index] = static_cast<std::byte>(
+                (value >> static_cast<unsigned>(index * 8U)) & 0xffU);
         }
-        bytes.push_back(std::byte{});
-        memory.Write(output.Add(offset), bytes);
+        memory.Write(output.Add(0x800U), bytes);
     }
 
-    [[nodiscard]] std::uint32_t Call(
+    [[nodiscard]] std::array<std::uint32_t, 2> CallPair(
         const std::string_view name, const std::uint32_t r1 = 0,
         const std::uint32_t r2 = 0, const std::uint32_t r3 = 0) {
         const auto slot = ogplay::runtime::FindJniSlot(name);
@@ -66,8 +71,29 @@ public:
         state.SetRegister(ogplay::cpu::CoreRegister::lr, 0x12345679U);
         cpu.SetState(state);
         const auto stopped = cpu.Run(1);
-        REQUIRE(dispatcher.Handle(cpu, stopped));
-        return cpu.GetState().Register(ogplay::cpu::CoreRegister::r0);
+        if (!dispatcher.Handle(cpu, stopped)) {
+            throw std::runtime_error("guest JNI dispatcher rejected thunk");
+        }
+        const auto result = cpu.GetState();
+        return {result.Register(ogplay::cpu::CoreRegister::r0),
+                result.Register(ogplay::cpu::CoreRegister::r1)};
+    }
+
+    void WriteString(const std::uint32_t offset,
+                     const std::string_view value) {
+        std::vector<std::byte> bytes;
+        for (const auto character : value) {
+            bytes.push_back(static_cast<std::byte>(
+                static_cast<unsigned char>(character)));
+        }
+        bytes.push_back(std::byte{});
+        memory.Write(output.Add(offset), bytes);
+    }
+
+    [[nodiscard]] std::uint32_t Call(
+        const std::string_view name, const std::uint32_t r1 = 0,
+        const std::uint32_t r2 = 0, const std::uint32_t r3 = 0) {
+        return CallPair(name, r1, r2, r3)[0];
     }
 
     static constexpr std::uint64_t thread_id = 501U;
@@ -80,6 +106,7 @@ public:
     ogplay::runtime::JniEnvironment environment;
     ogplay::runtime::JniClassRegistry classes;
     ogplay::runtime::JniInvocationEngine invocations;
+    ogplay::runtime::JniFieldStore fields;
     ogplay::runtime::JniStringStore strings;
     ogplay::runtime::JniPrimitiveArrayStore arrays;
     ogplay::runtime::JniJavaVm java_vm;
@@ -135,4 +162,92 @@ TEST_CASE("guest JNI class object and instance call family dispatches exact meth
     CHECK(fixture.Call(
               "IsInstanceOf", object.Value(), class_reference.Value()) == 1U);
     CHECK(fixture.classes.FindClass("fixture/Counter") == java_class);
+}
+
+TEST_CASE("guest JNI static field family uses exact descriptors and A32 ABI") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    static_cast<void>(fixture.classes.RegisterClass(
+        {"fixture/Statics", {}, {},
+         {{"count", "I", "statics.count", true},
+          {"wide", "J", "statics.wide", true},
+          {"ratio", "D", "statics.ratio", true},
+          {"object", "Ljava/lang/Object;", "statics.object", true}}}));
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    fixture.WriteString(0x100U, "fixture/Statics");
+    fixture.WriteString(0x140U, "count");
+    fixture.WriteString(0x160U, "I");
+    fixture.WriteString(0x180U, "wide");
+    fixture.WriteString(0x1a0U, "J");
+    fixture.WriteString(0x1c0U, "ratio");
+    fixture.WriteString(0x1e0U, "D");
+    fixture.WriteString(0x200U, "object");
+    fixture.WriteString(0x220U, "Ljava/lang/Object;");
+    CHECK(fixture.dispatcher.IsEnvironmentBound(
+        *FindJniSlot("GetStaticFieldID")));
+    constexpr std::string_view field_types[]{
+        "Object", "Boolean", "Byte", "Char", "Short",
+        "Int", "Long", "Float", "Double"};
+    for (const auto type : field_types) {
+        CHECK(fixture.dispatcher.IsEnvironmentBound(
+            *FindJniSlot(std::string("GetStatic") + std::string(type) +
+                         "Field")));
+        CHECK(fixture.dispatcher.IsEnvironmentBound(
+            *FindJniSlot(std::string("SetStatic") + std::string(type) +
+                         "Field")));
+    }
+    fixture.dispatcher.Seal();
+
+    const auto java_class = fixture.Call(
+        "FindClass", fixture.output.Add(0x100U).Value());
+    const auto count = fixture.Call(
+        "GetStaticFieldID", java_class, fixture.output.Add(0x140U).Value(),
+        fixture.output.Add(0x160U).Value());
+    const auto wide = fixture.Call(
+        "GetStaticFieldID", java_class, fixture.output.Add(0x180U).Value(),
+        fixture.output.Add(0x1a0U).Value());
+    const auto ratio = fixture.Call(
+        "GetStaticFieldID", java_class, fixture.output.Add(0x1c0U).Value(),
+        fixture.output.Add(0x1e0U).Value());
+    const auto object = fixture.Call(
+        "GetStaticFieldID", java_class, fixture.output.Add(0x200U).Value(),
+        fixture.output.Add(0x220U).Value());
+
+    static_cast<void>(fixture.Call(
+        "SetStaticIntField", java_class, count, 0xfffffff9U));
+    CHECK(fixture.Call("GetStaticIntField", java_class, count) ==
+          0xfffffff9U);
+
+    constexpr JniLong wide_value = INT64_C(-0x102030405060708);
+    fixture.Write64(std::bit_cast<std::uint64_t>(wide_value));
+    static_cast<void>(fixture.Call(
+        "SetStaticLongField", java_class, wide));
+    const auto wide_result = fixture.CallPair(
+        "GetStaticLongField", java_class, wide);
+    CHECK((static_cast<std::uint64_t>(wide_result[1]) << 32U |
+           wide_result[0]) == std::bit_cast<std::uint64_t>(wide_value));
+
+    constexpr JniDouble ratio_value = -19.25;
+    fixture.Write64(std::bit_cast<std::uint64_t>(ratio_value));
+    static_cast<void>(fixture.Call(
+        "SetStaticDoubleField", java_class, ratio));
+    const auto ratio_result = fixture.CallPair(
+        "GetStaticDoubleField", java_class, ratio);
+    CHECK((static_cast<std::uint64_t>(ratio_result[1]) << 32U |
+           ratio_result[0]) == std::bit_cast<std::uint64_t>(ratio_value));
+
+    const auto object_identity = AllocateJniHostObjectIdentity();
+    const auto object_reference = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, object_identity);
+    static_cast<void>(fixture.Call(
+        "SetStaticObjectField", java_class, object,
+        object_reference.Value()));
+    CHECK(fixture.Call("GetStaticObjectField", java_class, object) ==
+          object_reference.Value());
+
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.Call(
+            "GetStaticFloatField", java_class, count)),
+        "GetStaticFloatField type does not match field descriptor",
+        JniGuestBindingError);
 }

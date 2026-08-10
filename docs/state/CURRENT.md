@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 Asphalt 6 JNI class/object/instance call 批次已完成
+更新：2026-08-10 · M8 Asphalt 6 JNI static field 批次已完成
 
 ## 当前阶段
 
@@ -35,6 +35,10 @@
 
 ## 最近完成
 
+- [WU-0366] 批量绑定 GetStaticFieldID 与 9 类 getter/setter 共 19 个 static field 槽；
+  descriptor/type/static-kind 严格校验，word、符号扩展、float 与 long/double 栈参数遵循
+  A32 soft-float ABI，为整组 Android 平台身份常量提供可复用 field store 通路；focused
+  1/1、full CTest 490/490，exact 复采样仍精确停于下一批 `android/os/Build` 类声明。
 - [WU-0365] 绑定 FindClass/GetMethodID/GetObjectClass/IsInstanceOf、三种 NewObject 和
   10 类返回值 × Call/CallV/CallA 共 30 个 instance call 槽；对象保留精确 class，
   构造失败事务回滚。exact 复采样稳定停于下一类 `android/os/Build`；focused 1/1、

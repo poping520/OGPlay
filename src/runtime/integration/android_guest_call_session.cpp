@@ -19,10 +19,12 @@
 #include "ogplay/runtime/integration/api19_guest_process.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
+#include "ogplay/runtime/integration/jni_guest_static_fields.h"
 #include "ogplay/runtime/integration/jni_guest_dispatch.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
 #include "ogplay/runtime/framework/framework_locale.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
@@ -434,7 +436,7 @@ public:
                     request.boundary_options),
           guest_jni_(address_space_),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
-          jni_dispatcher_(ledger_), invocations_(classes_),
+          jni_dispatcher_(ledger_), invocations_(classes_), fields_(classes_),
           sound_pool_mixer_(request.sound_resource_loader),
           java_vm_(environment_),
           threads_([this] {
@@ -496,6 +498,8 @@ public:
         BindJniGuestCoreSlots(
             jni_dispatcher_, environment_, classes_, invocations_, strings_,
             arrays_, java_vm_, address_space_);
+        BindJniGuestStaticFieldSlots(
+            jni_dispatcher_, environment_, classes_, fields_, address_space_);
         jni_dispatcher_.Seal();
         const auto attached = java_vm_.AttachCurrentThread(
             kRootThreadId, kJniVersion1_6);
@@ -686,6 +690,7 @@ private:
     JniEnvironment environment_;
     JniClassRegistry classes_;
     JniInvocationEngine invocations_;
+    JniFieldStore fields_;
     audio::JavaSoundPoolState sound_pool_;
     audio::JavaSoundPoolMixer sound_pool_mixer_;
     FrameworkScreenPolicyState screen_policy_;

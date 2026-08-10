@@ -28,10 +28,12 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0347 OGPlay MCP 测试使用文档。
+- 无；下一项为 WU-0348 exact-APK 场景/checkpoint schema 与严格自检。
 
 ## 最近完成
 
+- [WU-0347] 新增简明 OGPlay MCP 测试使用文档，覆盖启动、截图、点击、判定与当前边界，
+  并从全局索引、M6 任务索引和 AI 自动化 roadmap 双向关联。
 - [WU-0346] `run-apk --mcp` 固定监听 `127.0.0.1:15971/mcp`，与自定义 `--mcp-port`
   互斥；Asphalt 5 exact ping/capture sequence 425 成功，full CTest 470/470。
 - [WU-0345] `frame_capture` 缺省返回 quality 85 JPEG，并以 `format=png` 返回压缩 PNG；
@@ -65,10 +67,9 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0347，编写 OGPlay MCP 测试使用文档并关联 M6 roadmap。
-2. 创建 WU-0348，冻结 exact-APK 场景/checkpoint schema 与严格自检。
-3. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
-4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+1. 创建 WU-0348，冻结 exact-APK 场景/checkpoint schema 与严格自检。
+2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
+3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞

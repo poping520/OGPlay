@@ -1,7 +1,8 @@
 # M6 · AI 自动化测试
 
 M6 从 `WU-0328` 开始，目标是把 exact-APK 调试与兼容性验证变成 AI/CI 共用的结构化、
-确定性、有界执行层。详细范围和出口见 [`../../roadmap/10-ai-automation-testing.md`](../../roadmap/10-ai-automation-testing.md)。
+确定性、有界执行层。当前操作见 [`../../OGPLAY-MCP-TESTING.md`](../../OGPLAY-MCP-TESTING.md)，
+详细范围和出口见 [`../../roadmap/10-ai-automation-testing.md`](../../roadmap/10-ai-automation-testing.md)。
 
 建议按以下依赖顺序创建 bounded WU，但只在实际开始时分配下一个全局编号：
 
@@ -23,5 +24,5 @@ M6 从 `WU-0328` 开始，目标是把 exact-APK 调试与兼容性验证变成 
 `WU-0339..0340` 原样接入 PowerVR 官方 PVRTC decoder，并以 MCP exact frame 闭合 ANGLE
 fallback；`WU-0341..0343` 增加严格 MCP click、loopback transport 与主线程输入派发。
 `WU-0344..0345` 固定官方 stb 图像编码器，并让 MCP 截图缺省返回 JPEG、按参数返回压缩
-PNG；`WU-0346` 增加固定 15971 端口的 `--mcp` 测试入口。原计划的场景 schema 顺延到
-下一个 WU，上述依赖顺序不变。
+PNG；`WU-0346..0347` 增加固定 15971 端口的 `--mcp` 测试入口和简明使用文档。
+原计划的场景 schema 顺延到 `WU-0348`，上述依赖顺序不变。

@@ -3,6 +3,9 @@
 本篇冻结 M6 的方向：把当前 exact-APK smoke、人工点击、日志观察和截图目测收敛成
 AI 与 CI 共用的、确定性、有界、可机器判定的兼容性测试执行层。
 
+当前可直接使用的截图与点击步骤见 [OGPlay MCP 测试使用](../OGPLAY-MCP-TESTING.md)；
+该文档描述现状，本篇定义最终自动化出口。
+
 ---
 
 ## 1. 当前基础与缺口
@@ -13,11 +16,12 @@ AI 与 CI 共用的、确定性、有界、可机器判定的兼容性测试执�
 - 固定步长 Clock、能力账本、结构化日志、GPU 指标和 ANGLE readback 已存在。
 - Software/ANGLE 黄金帧比较已有像素差与感知哈希基础设施。
 - Profile 已能按 package、versionCode、`.so` SHA-256 精确选择真实 APK guest 路径。
+- `run-apk` 已能启动 loopback MCP，通过同一 guest loop 提供最新帧截图和有界点击。
 
 仍缺少的闭环：
 
 - `agent-stdio` 尚未拥有 `run-apk` 使用的 Profile-backed exact guest session。
-- 输入注入、frame capture、检查点和退出状态尚未在同一真实会话中组合。
+- `step/until`、结构化检查点、场景断言和退出状态尚未在同一真实会话中组合。
 - exact-APK smoke 仍依赖 CLI 参数、人工操作或自由文本观察，不能作为稳定 CI 断言。
 - 失败没有统一的结构化证据包，AI 仍需从长日志中重建首个阻塞。
 

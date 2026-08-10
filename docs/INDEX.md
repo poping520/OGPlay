@@ -7,6 +7,7 @@
 - 模块契约：[modules/INDEX.md](modules/INDEX.md)
 - 排查手册：[playbook/](playbook/)
 - 当前交接：[state/CURRENT.md](state/CURRENT.md)
+- MCP 测试使用：[OGPLAY-MCP-TESTING.md](OGPLAY-MCP-TESTING.md)
 - 长期已知问题：[state/KNOWN-ISSUES.md](state/KNOWN-ISSUES.md)
 - 里程碑验收：[M0](state/M0-ACCEPTANCE.md)、[M1](state/M1-ACCEPTANCE.md)、
   [M2](state/M2-ACCEPTANCE.md)、[M3](state/M3-ACCEPTANCE.md)、[M4](state/M4-ACCEPTANCE.md)

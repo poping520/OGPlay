@@ -28,10 +28,12 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0330 `run-apk --mcp-port` 与 guest frame 发布接线。
+- 无；下一项为 WU-0331 exact-APK 场景/checkpoint schema 与严格自检。
 
 ## 最近完成
 
+- [WU-0330] `run-apk --mcp-port` 默认关闭且只接受本机端口；指定 Asphalt 5 exact APK
+  经真实 MCP 取得 sequence 2 的 800×480 Gameloft PNG，2 帧正常退出码 0，focused 9/9。
 - [WU-0329] loopback Streamable HTTP transport 已固定 `127.0.0.1` 和 `/mcp`，真实 TCP
   回环请求可取得 PNG；非本机 Origin/错误 route/method/body 明确失败，focused CTest 4/4。
 - [WU-0328] 传输无关 MCP adapter 已闭合 initialize/ping/tools，`frame_capture` 将最近一次
@@ -56,17 +58,16 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0330：接入 `run-apk --mcp-port` 并以移动所有权发布已呈现帧，默认保持禁用。
-2. 冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
-3. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
-4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+1. 创建 WU-0331，冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
+2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
+3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞
 
 - 触摸标题页后 guest 每帧重复请求同一 logo MP4；Activity suspend/resume 尚未接到已发布的
   电影请求。M6 首个端到端场景应稳定复现并机器判定该边界。
-- 最新 WU-0329 记录的 Windows full CTest 为 449/451；既有 ETC1 参数和 VFS 大小写目录树
+- 最新 WU-0330 记录的 Windows full CTest 为 449/451；既有 ETC1 参数和 VFS 大小写目录树
   两项失败仍需在 M5 正式验收前复核，不能宣称全量测试全绿。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

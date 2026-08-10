@@ -13,6 +13,8 @@ CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title
 `run-apk --supersample <1..4>` 可显式选择内部渲染倍率，省略时为 1×；GUI 留在 M7。
 `run-apk --external-dir <host-dir>` 可把一个独立数据目录按精确 Profile 声明的 external
 guest 根进行 lazy mount；guest 路径不由用户参数或宿主目录名决定。
+`run-apk --mcp-port <1..65535>` 可选择启动仅限本机的 MCP 服务；省略时不创建 listener，
+endpoint 为 `http://127.0.0.1:<port>/mcp`。
 交互窗口标题始终显示 FPS 状态：首个采样周期前为 `FPS --`，之后每 0.5 秒按成功
 present 数更新一位小数的实时值。
 声明 `audio.sound_pool` 的 GLSurfaceView Profile 会按 source/path_pattern 从 APK 读取编码
@@ -25,6 +27,11 @@ present 数更新一位小数的实时值。
 - CLI 和 GUI 共用相同 session/config/profile。
 - MCP HTTP 必须只绑定 `127.0.0.1`，拒绝非 loopback `Origin`、非 `/mcp` 路由、非 JSON
   POST、chunked/unbounded body；notification 返回 202 且不伪造 JSON-RPC response。
+- `--mcp-port` 最多出现一次，只接受完整十进制 1..65535，且不得与不执行 guest 的
+  `--preflight` 组合；参数省略时默认禁用 MCP，不产生监听端口。
+- MCP 只发布成功 present 的最新 RGBA8 guest frame；每次发布以移动所有权替换快照并把
+  旧 buffer 交还 guest，shutdown 必须在停止 guest 前交还最后一帧。截图不得推进 guest、
+  泵输入或伪造无帧成功。
 - 用户可见输出可以写 stdout/stderr，但生产库不得裸输出。
 - `run-apk` 要求显式 Bionic 目录；APK 入口只能由 Manifest + native hash + ABI 精确 Profile
   决定，支持压缩的 `armeabi`/`armeabi-v7a`，依赖闭包不得由 CLI 手写。

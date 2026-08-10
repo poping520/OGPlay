@@ -40,3 +40,16 @@ expect_failure(external_once "run-apk accepts --external-dir only once"
     ${_base} --external-dir first --external-dir second)
 expect_failure(external_valid "cannot open"
     ${_base} --external-dir host-data)
+expect_failure(mcp_zero "--mcp-port requires an integer in 1..65535"
+    ${_base} --mcp-port 0)
+expect_failure(mcp_too_large "--mcp-port requires an integer in 1..65535"
+    ${_base} --mcp-port 65536)
+expect_failure(mcp_malformed "--mcp-port requires an integer in 1..65535"
+    ${_base} --mcp-port 3000x)
+expect_failure(mcp_missing "unknown or incomplete run-apk option: --mcp-port"
+    ${_base} --mcp-port)
+expect_failure(mcp_duplicate "run-apk accepts --mcp-port only once"
+    ${_base} --mcp-port 3000 --mcp-port 3001)
+expect_failure(mcp_preflight "--mcp-port cannot be combined with --preflight"
+    ${_base} --mcp-port 3000 --preflight)
+expect_failure(mcp_valid "cannot open" ${_base} --mcp-port 3000)

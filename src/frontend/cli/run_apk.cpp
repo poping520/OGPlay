@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -16,6 +17,8 @@
 #include <thread>
 #include <vector>
 
+#include "ogplay/agent/mcp_protocol.h"
+#include "ogplay/frontend/mcp_http_server.h"
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/hal/window_input.h"
@@ -91,6 +94,16 @@ std::uint32_t ParseSupersampleFactor(const std::string_view text) {
         throw std::invalid_argument("--supersample requires an integer in 1..4");
     }
     return value;
+}
+
+std::uint16_t ParseMcpPort(const std::string_view text) {
+    std::uint32_t value{};
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
+        value == 0 || value > 65535U) {
+        throw std::invalid_argument("--mcp-port requires an integer in 1..65535");
+    }
+    return static_cast<std::uint16_t>(value);
 }
 
 std::string FrameRateTitle(const std::string_view base, const double fps) {
@@ -288,6 +301,32 @@ void PumpAudio(runtime::AndroidGuestCallSession& guest,
     }
 }
 
+template <typename Guest>
+void PublishPresentedFrame(agent::FrameSnapshotStore* frames,
+                           runtime::AndroidBoundaryFrame frame,
+                           Guest& guest) {
+    if (frames == nullptr) {
+        guest.RecycleFrame(std::move(frame));
+        return;
+    }
+    auto previous = frames->Publish(
+        {frame.width, frame.height, frame.sequence, std::move(frame.rgba8)});
+    if (previous.has_value()) {
+        guest.RecycleFrame(
+            {previous->width, previous->height, previous->sequence,
+             std::move(previous->rgba8)});
+    }
+}
+
+template <typename Guest>
+void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
+    if (frames == nullptr) return;
+    if (auto frame = frames->Take(); frame.has_value()) {
+        guest.RecycleFrame(
+            {frame->width, frame->height, frame->sequence, std::move(frame->rgba8)});
+    }
+}
+
 }  // namespace
 
 int RunApkCommand(const int argc, const char* const argv[]) {
@@ -301,6 +340,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     auto profiles_directory =
         std::filesystem::path(OGPLAY_SOURCE_DIR) / "data" / "profiles";
     std::optional<std::uint64_t> exit_after_frames;
+    std::optional<std::uint16_t> mcp_port;
     std::uint32_t supersample_factor{1};
     bool preflight{};
     for (int index = 3; index < argc; ++index) {
@@ -323,6 +363,11 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             exit_after_frames = ParsePositive(argv[++index], option);
         } else if (option == "--supersample" && index + 1 < argc) {
             supersample_factor = ParseSupersampleFactor(argv[++index]);
+        } else if (option == "--mcp-port" && index + 1 < argc) {
+            if (mcp_port.has_value()) {
+                throw std::invalid_argument("run-apk accepts --mcp-port only once");
+            }
+            mcp_port = ParseMcpPort(argv[++index]);
         } else if (option == "--preflight") {
             preflight = true;
         } else {
@@ -332,6 +377,9 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     }
     if (!system_directory.has_value()) {
         throw std::invalid_argument("run-apk requires --system-dir with API 19 Bionic libraries");
+    }
+    if (preflight && mcp_port.has_value()) {
+        throw std::invalid_argument("--mcp-port cannot be combined with --preflight");
     }
 
     const auto apk_bytes = ReadBytes(apk_path);
@@ -395,6 +443,14 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             std::string(session::ToString(profile.runtime.lifecycle)));
     }
 
+    std::unique_ptr<agent::FrameSnapshotStore> mcp_frames;
+    std::unique_ptr<McpHttpServer> mcp_server;
+    if (mcp_port.has_value()) {
+        mcp_frames = std::make_unique<agent::FrameSnapshotStore>();
+        mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames);
+        Write("OGPlay: MCP ready at " + mcp_server->Endpoint() + "\n");
+    }
+
     auto window = hal::CreateSdlWindowInput();
     const auto base_title = "OGPlay · " + apk_path.filename().string();
     window->Open({.title = base_title + " · FPS --",
@@ -443,7 +499,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 guest_height = frame->height;
                 ++presented;
                 update_frame_rate();
-                guest->RecycleFrame(std::move(*frame));
+                PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
                 if (exit_after_frames.has_value() &&
                     presented >= *exit_after_frames) {
                     quit = true;
@@ -451,6 +507,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+        ReleaseCapturedFrame(mcp_frames.get(), *guest);
         guest->Stop();
     } else {
         if (direct_assets.has_value()) {
@@ -518,7 +575,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 guest_height = frame->height;
                 ++presented;
                 update_frame_rate();
-                guest->RecycleFrame(std::move(*frame));
+                PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
                 if (exit_after_frames.has_value() &&
                     presented >= *exit_after_frames) {
                     quit = true;
@@ -526,6 +583,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+        ReleaseCapturedFrame(mcp_frames.get(), *guest);
         static_cast<void>(lifecycle->Stop());
         if (audio_output) audio_output->Stop();
     }

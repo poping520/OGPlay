@@ -160,6 +160,11 @@ status = "complete"
 test = "tests/frontend/mcp_http_server_tests.cpp"
 note = "M6 WU-0329 提供仅绑定 127.0.0.1 的有界 Streamable HTTP POST /mcp transport；Origin、route、media type 与 body 均 fail closed，CLI 启动参数另行接线"
 
+[frontend.run_apk_mcp]
+status = "complete"
+test = "cmake/CheckRunApkOptions.cmake; tests/frontend/mcp_http_server_tests.cpp; exact APK MCP screenshot smoke"
+note = "M6 WU-0330 以可选 --mcp-port 启动 loopback MCP，并以移动所有权发布成功 present 的最新 guest 帧；默认关闭且 preflight 明确拒绝"
+
 [golden.software_frame]
 status = "complete"
 test = "tests/golden/golden_frame_tests.cpp"

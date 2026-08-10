@@ -510,6 +510,7 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                                cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus) {
     constexpr std::int32_t kEagain = 11;
+    constexpr std::int32_t kEintr = 4;
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
     constexpr std::int32_t kEnotsup = 95;
@@ -529,7 +530,10 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                     if (frame.arguments[3] != 0) return -kEnotsup;
                     const auto result = futex_table.Wait(
                         memory_bus, address, frame.arguments[2], frame.thread_id);
-                    return result == cpu::FutexWaitResult::awoken ? 0 : -kEagain;
+                    if (result == cpu::FutexWaitResult::awoken) return 0;
+                    return result == cpu::FutexWaitResult::interrupted
+                               ? -kEintr
+                               : -kEagain;
                 }
                 if (command == kFutexWake) {
                     const auto count = futex_table.Wake(address, frame.arguments[2]);

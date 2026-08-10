@@ -273,7 +273,7 @@ note = "M1 一个 guest 线程对应一个真实宿主线程和独立 CPU，上�
 [cpu.futex]
 status = "complete"
 test = "tests/cpu/futex_tests.cpp"
-note = "M1 完成 guest 地址键控的比较等待与精确 WAKE N 核心，超时由 M2 syscall 接统一 Clock"
+note = "M1 完成 guest 地址键控的比较等待与精确 WAKE N 核心，超时由 M2 syscall 接统一 Clock；WU-0336 增加失败清理 sticky interruption，当前及未来 wait 以 -EINTR 返回"
 
 [fixtures.minimal_ndk]
 status = "complete"

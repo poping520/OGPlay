@@ -281,6 +281,26 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     waiter.join();
     CHECK(wait_result == 0);
 
+    std::thread interrupted_waiter{[&] {
+        auto wait = mismatch;
+        wait.arguments[2] = 7;
+        wait.thread_id = 43;
+        wait_result = dispatcher.Dispatch(wait);
+    }};
+    for (std::size_t attempt = 0;
+         attempt < 100000 &&
+         futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 0;
+         ++attempt) {
+        std::this_thread::yield();
+    }
+    REQUIRE(futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 1);
+    CHECK(futex.InterruptAll() == 1);
+    interrupted_waiter.join();
+    CHECK(wait_result == -4);
+    CHECK(dispatcher.Dispatch(mismatch) == -11);
+    mismatch.arguments[2] = 7;
+    CHECK(dispatcher.Dispatch(mismatch) == -4);
+
     mismatch.arguments[0] = 0x10001;
     CHECK(dispatcher.Dispatch(mismatch) == -22);
     mismatch.arguments[0] = 0x20000;

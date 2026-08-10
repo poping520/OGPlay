@@ -1,6 +1,7 @@
 #include "ogplay/cpu/futex.h"
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -38,8 +39,15 @@ public:
         if (memory_bus.Read32(address, thread_id) != expected) {
             return FutexWaitResult::value_mismatch;
         }
+        if (interrupted_.load()) return FutexWaitResult::interrupted;
         ++queue->waiters;
-        queue->wake.wait(lock, [&queue] { return queue->wake_tokens != 0; });
+        queue->wake.wait(lock, [this, &queue] {
+            return interrupted_.load() || queue->wake_tokens != 0;
+        });
+        if (interrupted_.load()) {
+            --queue->waiters;
+            return FutexWaitResult::interrupted;
+        }
         --queue->wake_tokens;
         --queue->waiters;
         return FutexWaitResult::awoken;
@@ -51,6 +59,7 @@ public:
         const auto queue = Find(address);
         if (!queue || maximum_count == 0) return 0;
         std::scoped_lock lock(queue->mutex);
+        if (interrupted_.load()) return 0;
         const auto available = queue->waiters - queue->wake_tokens;
         const auto count = std::min(maximum_count, available);
         queue->wake_tokens += count;
@@ -61,6 +70,7 @@ public:
     }
 
     std::size_t WakeAll() {
+        if (interrupted_.load()) return 0;
         std::vector<std::shared_ptr<WaitQueue>> queues;
         {
             std::scoped_lock lock(queues_mutex_);
@@ -70,9 +80,27 @@ public:
         std::size_t total{};
         for (const auto& queue : queues) {
             std::scoped_lock lock(queue->mutex);
+            if (interrupted_.load()) continue;
             const auto count = queue->waiters - queue->wake_tokens;
             queue->wake_tokens += count;
             total += count;
+            queue->wake.notify_all();
+        }
+        return total;
+    }
+
+    std::size_t InterruptAll() {
+        interrupted_.store(true);
+        std::vector<std::shared_ptr<WaitQueue>> queues;
+        {
+            std::scoped_lock lock(queues_mutex_);
+            queues.reserve(queues_.size());
+            for (const auto& entry : queues_) queues.push_back(entry.second);
+        }
+        std::size_t total{};
+        for (const auto& queue : queues) {
+            std::scoped_lock lock(queue->mutex);
+            total += queue->waiters;
             queue->wake.notify_all();
         }
         return total;
@@ -102,6 +130,7 @@ private:
 
     mutable std::mutex queues_mutex_;
     std::unordered_map<std::uint32_t, std::shared_ptr<WaitQueue>> queues_;
+    std::atomic_bool interrupted_{};
 };
 
 FutexTable::FutexTable() : impl_(std::make_unique<Impl>()) {}
@@ -120,6 +149,8 @@ std::size_t FutexTable::Wake(const memory::GuestAddress address,
 }
 
 std::size_t FutexTable::WakeAll() { return impl_->WakeAll(); }
+
+std::size_t FutexTable::InterruptAll() { return impl_->InterruptAll(); }
 
 std::size_t FutexTable::WaiterCount(const memory::GuestAddress address) const {
     return impl_->WaiterCount(address);

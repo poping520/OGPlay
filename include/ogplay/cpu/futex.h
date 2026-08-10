@@ -8,7 +8,11 @@
 
 namespace ogplay::cpu {
 
-enum class FutexWaitResult : std::uint8_t { awoken, value_mismatch };
+enum class FutexWaitResult : std::uint8_t {
+    awoken,
+    value_mismatch,
+    interrupted,
+};
 
 class FutexTable final {
 public:
@@ -25,6 +29,7 @@ public:
     [[nodiscard]] std::size_t Wake(memory::GuestAddress address,
                                    std::size_t maximum_count);
     [[nodiscard]] std::size_t WakeAll();
+    [[nodiscard]] std::size_t InterruptAll();
     [[nodiscard]] std::size_t WaiterCount(memory::GuestAddress address) const;
 
 private:

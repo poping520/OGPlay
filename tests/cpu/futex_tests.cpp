@@ -129,3 +129,37 @@ TEST_CASE("futex wake all releases current waiters without arming future waits")
     future->Join();
     CHECK(future_finished.load());
 }
+
+TEST_CASE("futex interrupt releases current waiters and rejects future waits") {
+    const ogplay::memory::GuestAddress address{0x20000};
+    ogplay::memory::AddressSpace memory;
+    memory.Map({address, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write32(address, 13);
+    ogplay::cpu::FutexTable futex;
+    std::atomic<ogplay::cpu::FutexWaitResult> result{
+        ogplay::cpu::FutexWaitResult::awoken};
+    auto waiter = ogplay::hal::StartHostThread([&] {
+        result = futex.Wait(bus, address, 13, 1);
+    });
+    for (std::size_t attempt = 0;
+         attempt < 100'000 && futex.WaiterCount(address) != 1; ++attempt) {
+        std::this_thread::yield();
+    }
+    const auto waiting = futex.WaiterCount(address) == 1;
+    if (!waiting) static_cast<void>(futex.WakeAll());
+    REQUIRE(waiting);
+
+    CHECK(futex.InterruptAll() == 1);
+    waiter->Join();
+    CHECK(result.load() == ogplay::cpu::FutexWaitResult::interrupted);
+    CHECK(futex.WaiterCount(address) == 0);
+    CHECK(futex.Wake(address, 1) == 0);
+    CHECK(futex.WakeAll() == 0);
+    CHECK(futex.Wait(bus, address, 13, 2) ==
+          ogplay::cpu::FutexWaitResult::interrupted);
+    CHECK(futex.Wait(bus, address, 12, 2) ==
+          ogplay::cpu::FutexWaitResult::value_mismatch);
+}

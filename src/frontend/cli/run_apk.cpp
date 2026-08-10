@@ -38,6 +38,8 @@
 namespace ogplay::frontend {
 namespace {
 
+constexpr std::uint16_t kDefaultMcpPort = 15971U;
+
 void Write(const std::string_view text) {
     static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stdout));
 }
@@ -343,6 +345,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     std::optional<std::uint64_t> exit_after_frames;
     std::optional<std::uint16_t> mcp_port;
     std::uint32_t supersample_factor{1};
+    bool default_mcp{};
     bool preflight{};
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
@@ -369,6 +372,11 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 throw std::invalid_argument("run-apk accepts --mcp-port only once");
             }
             mcp_port = ParseMcpPort(argv[++index]);
+        } else if (option == "--mcp") {
+            if (default_mcp) {
+                throw std::invalid_argument("run-apk accepts --mcp only once");
+            }
+            default_mcp = true;
         } else if (option == "--preflight") {
             preflight = true;
         } else {
@@ -379,9 +387,16 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     if (!system_directory.has_value()) {
         throw std::invalid_argument("run-apk requires --system-dir with API 19 Bionic libraries");
     }
+    if (default_mcp && mcp_port.has_value()) {
+        throw std::invalid_argument("--mcp and --mcp-port cannot be combined");
+    }
+    if (preflight && default_mcp) {
+        throw std::invalid_argument("--mcp cannot be combined with --preflight");
+    }
     if (preflight && mcp_port.has_value()) {
         throw std::invalid_argument("--mcp-port cannot be combined with --preflight");
     }
+    if (default_mcp) mcp_port = kDefaultMcpPort;
 
     const auto apk_bytes = ReadBytes(apk_path);
     const auto archive = loader::ParseApkArchive(apk_bytes);

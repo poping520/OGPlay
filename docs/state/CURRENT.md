@@ -28,10 +28,12 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0346 exact-APK 场景/checkpoint schema 与严格自检。
+- 无；下一项为 WU-0347 OGPlay MCP 测试使用文档。
 
 ## 最近完成
 
+- [WU-0346] `run-apk --mcp` 固定监听 `127.0.0.1:15971/mcp`，与自定义 `--mcp-port`
+  互斥；Asphalt 5 exact ping/capture sequence 425 成功，full CTest 470/470。
 - [WU-0345] `frame_capture` 缺省返回 quality 85 JPEG，并以 `format=png` 返回压缩 PNG；
   Asphalt 5 800×480 exact frame 分别为 82,349 与 790,327 字节，full CTest 470/470。
 - [WU-0344] 固定官方 stb commit `2c980bb` 的 `stb_image_write` v1.16，保留 MIT/Public
@@ -52,19 +54,6 @@
   yyjson 严格解析/构造；focused 31/31、Windows full CTest 460/460。
 - [WU-0334] MCP envelope/params/schema 迁移到严格 yyjson；语法、重复键、超限、非法 id、
   嵌套字段误取和工具参数均明确失败，真实 loopback transport 保持通过。
-- [WU-0330] `run-apk --mcp-port` 默认关闭且只接受本机端口；指定 Asphalt 5 exact APK
-  经真实 MCP 取得 sequence 2 的 800×480 Gameloft PNG，2 帧正常退出码 0，focused 9/9。
-- [WU-0329] loopback Streamable HTTP transport 已固定 `127.0.0.1` 和 `/mcp`，真实 TCP
-  回环请求可取得 PNG；非本机 Origin/错误 route/method/body 明确失败，focused CTest 4/4。
-- [WU-0328] 传输无关 MCP adapter 已闭合 initialize/ping/tools，`frame_capture` 将最近一次
-  已呈现 RGBA8 guest frame 返回为 PNG ImageContent；无帧明确失败，focused CTest 5/5。
-- [WU-0327] Profile guest lifecycle 新增受检 suspend/resume；挂起期间拒绝 frame/input，
-  Stop 不重复 pause。电影策略与自动触发仍未声明。
-- [WU-0326] legacy big-audio looping play 将 JNI boolean 同步提交到 voice state 与真实
-  Ogg mixer；Release exact APK 300 帧 32.513 秒、退出码 0。
-- [WU-0325] A32 observer slice 调整为 2000 万 tick，降低 Dynarmic 重入开销并保持窗口响应。
-- [WU-0324] GLSurfaceView 把 A32 slice observer 接到非消费式 SDL event pump；长 guest call
-  期间窗口保持响应且不提前消费输入。
 - [WU-0309] Dungeon Hunter 目标 ELF 74/74 GL imports 获得显式 handler；Asphalt 5 的
   62/62 目标 GL imports 也已闭合。
 
@@ -76,9 +65,10 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0346，冻结 exact-APK 场景/checkpoint schema 与严格自检。
-2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
-3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+1. 创建 WU-0347，编写 OGPlay MCP 测试使用文档并关联 M6 roadmap。
+2. 创建 WU-0348，冻结 exact-APK 场景/checkpoint schema 与严格自检。
+3. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
+4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞

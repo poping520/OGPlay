@@ -13,8 +13,8 @@ CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title
 `run-apk --supersample <1..4>` 可显式选择内部渲染倍率，省略时为 1×；GUI 留在 M7。
 `run-apk --external-dir <host-dir>` 可把一个独立数据目录按精确 Profile 声明的 external
 guest 根进行 lazy mount；guest 路径不由用户参数或宿主目录名决定。
-`run-apk --mcp-port <1..65535>` 可选择启动仅限本机的 MCP 服务；省略时不创建 listener，
-endpoint 为 `http://127.0.0.1:<port>/mcp`。
+`run-apk --mcp` 在固定 `http://127.0.0.1:15971/mcp` 启动仅限本机的 MCP 服务；
+`--mcp-port <1..65535>` 保留为自定义端口入口，二者均省略时不创建 listener。
 `McpPointerDispatcher` 在 guest 主线程每步最多从 MCP queue 取得一个 pointer phase，生成
 通用 boundary input，并与 `MouseTouchMapper` 的已捕获桌面手势互斥。
 交互窗口标题始终显示 FPS 状态：首个采样周期前为 `FPS --`，之后每 0.5 秒按成功
@@ -30,8 +30,8 @@ present 数更新一位小数的实时值。
 - CLI 和 GUI 共用相同 session/config/profile。
 - MCP HTTP 必须只绑定 `127.0.0.1`，拒绝非 loopback `Origin`、非 `/mcp` 路由、非 JSON
   POST、chunked/unbounded body；notification 返回 202 且不伪造 JSON-RPC response。
-- `--mcp-port` 最多出现一次，只接受完整十进制 1..65535，且不得与不执行 guest 的
-  `--preflight` 组合；参数省略时默认禁用 MCP，不产生监听端口。
+- `--mcp` 和 `--mcp-port` 各自最多出现一次、不得组合，且均不得与不执行 guest 的
+  `--preflight` 组合；自定义端口只接受完整十进制 1..65535，二者省略时默认禁用 MCP。
 - MCP 只发布成功 present 的最新 RGBA8 guest frame；每次发布以移动所有权替换快照并把
   旧 buffer 交还 guest，shutdown 必须在停止 guest 前交还最后一帧。截图不得推进 guest、
   泵输入或伪造无帧成功。

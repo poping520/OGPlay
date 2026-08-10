@@ -173,7 +173,7 @@ note = "M6 WU-0329 提供仅绑定 127.0.0.1 的有界 Streamable HTTP POST /mcp
 [frontend.run_apk_mcp]
 status = "complete"
 test = "cmake/CheckRunApkOptions.cmake; tests/frontend/mcp_http_server_tests.cpp; exact APK MCP screenshot smoke"
-note = "M6 WU-0330 以可选 --mcp-port 启动 loopback MCP，并以移动所有权发布成功 present 的最新 guest 帧；默认关闭且 preflight 明确拒绝"
+note = "M6 WU-0330 以 --mcp-port 启动 loopback MCP 并发布最新帧；WU-0346 增加 --mcp 固定 15971 入口，保留自定义端口，二者互斥且 preflight 明确拒绝"
 
 [frontend.run_apk_mcp_click]
 status = "complete"

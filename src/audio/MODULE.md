@@ -33,6 +33,8 @@
 - SoundPool 音量必须是有限的 `[0, 1]` 值；同一 voice 的重复 play 更新状态而不复制身份。
 - SoundPool voice control 以类别 + resource + instance 精确寻址；pause/resume 只迁移已有
   voice，stop 删除 voice，pitch 只接受 `[0.5, 2]`，reset 记录可查询的重置事实。
+- 批量 pause/resume 只迁移指定类别的现有 voice，已处于目标状态的 voice 保持幂等；
+  state 与 mixer 必须在同一受检 handler 下同步提交。
 - SoundPool 状态必须可由不同 guest JNI 线程安全访问；destroy 同时清空所有 voice，
   与 loaded resource；initialize 不得恢复已销毁的状态。stop 只影响 voice，不得隐式卸载。
 - mixer 控制和 render 共用内部锁；mono 复制到双声道，mono/stereo 通过有界线性重采样

@@ -151,6 +151,20 @@ void JavaSoundPoolMixer::StopAll(
     });
 }
 
+void JavaSoundPoolMixer::PauseAll(const JavaSoundPoolKind kind) {
+    std::scoped_lock lock(mutex_);
+    for (auto& voice : voices_) {
+        if (voice.kind == kind) voice.paused = true;
+    }
+}
+
+void JavaSoundPoolMixer::ResumeAll(const JavaSoundPoolKind kind) {
+    std::scoped_lock lock(mutex_);
+    for (auto& voice : voices_) {
+        if (voice.kind == kind) voice.paused = false;
+    }
+}
+
 void JavaSoundPoolMixer::StopAllSounds() {
     std::scoped_lock lock(mutex_);
     voices_.clear();

@@ -588,7 +588,7 @@ note = "M5 WU-0281 建立 pending/loaded gate、voice identity 与音量校验�
 [runtime.java_sound_pool_voice_controls]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; exact-APK unbounded startup smoke"
-note = "M5 WU-0282 批量闭合普通/big pause/resume/stop/volume 及 pool pitch、big reset；90 秒 1323 帧 exact-APK 运行后正常停止，UI 画面仍需单独视觉验收"
+note = "M5 WU-0282/0320 闭合普通/big 单 voice 控制及 big 类别批量 pause/resume；state 与真实 Ogg mixer 同步迁移，普通 pool 隔离，exact APK 越过 resume_all_big"
 
 [runtime.gles1_texture_name_lifecycle]
 status = "complete"

@@ -147,7 +147,8 @@
   目录，查询按 legacy Java 契约返回 `0` / `-1`，卸载只删除精确键；`load_sound*` 记录
   pending request，`play_sound*` 执行 lazy request 且仅对真实 loaded resource 创建
   voice；pause/resume/stop、volume、pitch 与 reset handler 均驱动同一 voice 状态，目标
-  不存在或参数无效时不伪造迁移。注入编码资源 loader 后，load/lazy-play 只有在资源读取
+  不存在或参数无效时不伪造迁移；`pause_all_big`/`resume_all_big` 只批量迁移 big voice，
+  不影响普通 pool。注入编码资源 loader 后，load/lazy-play 只有在资源读取
   与 Ogg 解码成功后才原子提交 loaded，所有 voice 控制同步驱动离线 PCM mixer；失败继续
   保留 pending 与 mixer 错误事实。会话可向宿主拉取 stereo PCM16，但本层不打开设备；
   Profile phase、窗口和标题事实不得进入该会话。

@@ -41,6 +41,8 @@ public:
                std::int32_t instance);
     void StopAll(JavaSoundPoolKind kind,
                  std::optional<std::int32_t> except_resource = std::nullopt);
+    void PauseAll(JavaSoundPoolKind kind);
+    void ResumeAll(JavaSoundPoolKind kind);
     void StopAllSounds();
     void Destroy();
 

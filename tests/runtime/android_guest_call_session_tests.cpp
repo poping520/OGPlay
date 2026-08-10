@@ -221,8 +221,10 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
           {"loadSoundBig", "(I)V", "audio.load_sound_big", true},
           {"pauseSound", "(II)V", "audio.pause_sound", true},
           {"pauseSoundBig", "(I)V", "audio.pause_sound_big", true},
+          {"pauseAllSoundBig", "()V", "audio.pause_all_big", true},
           {"resumeSound", "(II)V", "audio.resume_sound", true},
           {"resumeSoundBig", "(I)V", "audio.resume_sound_big", true},
+          {"resumeAllSoundBig", "()V", "audio.resume_all_big", true},
           {"stopSound", "(II)V", "audio.stop_sound", true},
           {"stopSoundBig", "(I)V", "audio.stop_sound_big", true},
           {"setVolume", "(IIF)V", "audio.set_volume", true},
@@ -262,10 +264,14 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
         java_class, "pauseSound", "(II)V", true);
     const auto pause_big = classes.GetMethodId(
         java_class, "pauseSoundBig", "(I)V", true);
+    const auto pause_all_big = classes.GetMethodId(
+        java_class, "pauseAllSoundBig", "()V", true);
     const auto resume = classes.GetMethodId(
         java_class, "resumeSound", "(II)V", true);
     const auto resume_big = classes.GetMethodId(
         java_class, "resumeSoundBig", "(I)V", true);
+    const auto resume_all_big = classes.GetMethodId(
+        java_class, "resumeAllSoundBig", "()V", true);
     const auto stop = classes.GetMethodId(
         java_class, "stopSound", "(II)V", true);
     const auto stop_big_voice = classes.GetMethodId(
@@ -291,8 +297,10 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
     REQUIRE(load_big.has_value());
     REQUIRE(pause.has_value());
     REQUIRE(pause_big.has_value());
+    REQUIRE(pause_all_big.has_value());
     REQUIRE(resume.has_value());
     REQUIRE(resume_big.has_value());
+    REQUIRE(resume_all_big.has_value());
     REQUIRE(stop.has_value());
     REQUIRE(stop_big_voice.has_value());
     REQUIRE(set_volume.has_value());
@@ -402,6 +410,21 @@ TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {
     CHECK(paused_pool->status ==
           ogplay::audio::JavaSoundPoolVoiceStatus::paused);
     CHECK(paused_big->status ==
+          ogplay::audio::JavaSoundPoolVoiceStatus::paused);
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *resume_all_big, {},
+        ogplay::runtime::JniArgumentSource::value_array));
+    CHECK(sound_pool.Snapshot(
+              ogplay::audio::JavaSoundPoolKind::pool, 2, 7)->status ==
+          ogplay::audio::JavaSoundPoolVoiceStatus::paused);
+    CHECK(sound_pool.Snapshot(
+              ogplay::audio::JavaSoundPoolKind::big, 7, 0)->status ==
+          ogplay::audio::JavaSoundPoolVoiceStatus::playing);
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *pause_all_big, {},
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(sound_pool.Snapshot(
+              ogplay::audio::JavaSoundPoolKind::big, 7, 0)->status ==
           ogplay::audio::JavaSoundPoolVoiceStatus::paused);
     static_cast<void>(invocations.InvokeStatic(
         1U, java_class, *resume, pool_resource,
@@ -520,9 +543,13 @@ TEST_CASE("Android guest SoundPool handlers commit decoded mixer voices") {
     const auto java_class = classes.RegisterClass(
         {"fixture/DecodedAudio", {},
          {{"loadSound", "(II)V", "audio.load_sound", true},
+          {"loadSoundBig", "(I)V", "audio.load_sound_big", true},
           {"playSound", "(IIF)V", "audio.play_sound", true},
+          {"playSoundBig", "(IF)V", "audio.play_sound_big", true},
           {"pauseSound", "(II)V", "audio.pause_sound", true},
+          {"pauseAllSoundBig", "()V", "audio.pause_all_big", true},
           {"resumeSound", "(II)V", "audio.resume_sound", true},
+          {"resumeAllSoundBig", "()V", "audio.resume_all_big", true},
           {"stopSound", "(II)V", "audio.stop_sound", true},
           {"unloadSound", "(II)V", "audio.unload_sound", true}},
          {}});
@@ -530,6 +557,14 @@ TEST_CASE("Android guest SoundPool handlers commit decoded mixer voices") {
         java_class, "loadSound", "(II)V", true);
     const auto play = classes.GetMethodId(
         java_class, "playSound", "(IIF)V", true);
+    const auto load_big = classes.GetMethodId(
+        java_class, "loadSoundBig", "(I)V", true);
+    const auto play_big = classes.GetMethodId(
+        java_class, "playSoundBig", "(IF)V", true);
+    const auto pause_all_big = classes.GetMethodId(
+        java_class, "pauseAllSoundBig", "()V", true);
+    const auto resume_all_big = classes.GetMethodId(
+        java_class, "resumeAllSoundBig", "()V", true);
     const auto pause = classes.GetMethodId(
         java_class, "pauseSound", "(II)V", true);
     const auto resume = classes.GetMethodId(
@@ -540,6 +575,10 @@ TEST_CASE("Android guest SoundPool handlers commit decoded mixer voices") {
         java_class, "unloadSound", "(II)V", true);
     REQUIRE(load.has_value());
     REQUIRE(play.has_value());
+    REQUIRE(load_big.has_value());
+    REQUIRE(play_big.has_value());
+    REQUIRE(pause_all_big.has_value());
+    REQUIRE(resume_all_big.has_value());
     REQUIRE(pause.has_value());
     REQUIRE(resume.has_value());
     REQUIRE(stop.has_value());
@@ -596,6 +635,32 @@ TEST_CASE("Android guest SoundPool handlers commit decoded mixer voices") {
         ogplay::runtime::JniArgumentSource::variadic));
     CHECK(state.LoadedResourceCount() == 0U);
     CHECK(mixer.LoadedResourceCount() == 0U);
+
+    const std::array<ogplay::runtime::JniValue, 1> big_resource{
+        ogplay::runtime::JniInt{7}};
+    const std::array<ogplay::runtime::JniValue, 2> big_play{
+        ogplay::runtime::JniInt{7}, ogplay::runtime::JniFloat{0.5F}};
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *load_big, big_resource,
+        ogplay::runtime::JniArgumentSource::variadic));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *play_big, big_play,
+        ogplay::runtime::JniArgumentSource::value_array));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *pause_all_big, {},
+        ogplay::runtime::JniArgumentSource::variadic));
+    CHECK(mixer.RenderStereoPcm16(output, 48000U) == 1024U);
+    CHECK(std::ranges::all_of(output, [](const auto sample) {
+        return sample == 0;
+    }));
+    static_cast<void>(invocations.InvokeStatic(
+        1U, java_class, *resume_all_big, {},
+        ogplay::runtime::JniArgumentSource::value_array));
+    CHECK(mixer.RenderStereoPcm16(output, 48000U) == 1024U);
+    CHECK(std::ranges::any_of(output, [](const auto sample) {
+        return sample != 0;
+    }));
+
     const std::array<ogplay::runtime::JniValue, 2> missing{
         ogplay::runtime::JniInt{99}, ogplay::runtime::JniInt{0}};
     static_cast<void>(invocations.InvokeStatic(

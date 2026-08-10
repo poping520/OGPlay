@@ -70,6 +70,16 @@ public:
         static_cast<void>(state_.StopAll(kind, except_resource));
         if (mixer_ != nullptr) mixer_->StopAll(kind, except_resource);
     }
+    void PauseAll(const audio::JavaSoundPoolKind kind) {
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(state_.PauseAll(kind));
+        if (mixer_ != nullptr) mixer_->PauseAll(kind);
+    }
+    void ResumeAll(const audio::JavaSoundPoolKind kind) {
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(state_.ResumeAll(kind));
+        if (mixer_ != nullptr) mixer_->ResumeAll(kind);
+    }
     [[nodiscard]] bool IsLoaded(const audio::JavaSoundPoolKind kind,
                                 const std::int32_t resource) const {
         std::scoped_lock lock(mutex_);
@@ -204,6 +214,18 @@ void BindAndroidGuestJavaAudioHandlers(
     };
     stop_kind("audio.stop_all_pool", audio::JavaSoundPoolKind::pool);
     stop_kind("audio.stop_all_big", audio::JavaSoundPoolKind::big);
+    invocations.RegisterHandler(
+        "audio.pause_all_big",
+        [controls](const JniInvocation&) {
+            controls->PauseAll(audio::JavaSoundPoolKind::big);
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.resume_all_big",
+        [controls](const JniInvocation&) {
+            controls->ResumeAll(audio::JavaSoundPoolKind::big);
+            return JniValue{std::monostate{}};
+        });
     invocations.RegisterHandler(
         "audio.is_sound_loaded",
         [controls](const JniInvocation& invocation) {

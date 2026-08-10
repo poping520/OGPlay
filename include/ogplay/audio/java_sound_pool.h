@@ -230,6 +230,34 @@ public:
         return before - voices_.size();
     }
 
+    [[nodiscard]] std::size_t PauseAll(const JavaSoundPoolKind kind) {
+        std::scoped_lock lock(mutex_);
+        std::size_t changed{};
+        for (auto& voice : voices_) {
+            if (voice.kind != kind ||
+                voice.status == JavaSoundPoolVoiceStatus::paused) {
+                continue;
+            }
+            voice.status = JavaSoundPoolVoiceStatus::paused;
+            ++changed;
+        }
+        return changed;
+    }
+
+    [[nodiscard]] std::size_t ResumeAll(const JavaSoundPoolKind kind) {
+        std::scoped_lock lock(mutex_);
+        std::size_t changed{};
+        for (auto& voice : voices_) {
+            if (voice.kind != kind ||
+                voice.status == JavaSoundPoolVoiceStatus::playing) {
+                continue;
+            }
+            voice.status = JavaSoundPoolVoiceStatus::playing;
+            ++changed;
+        }
+        return changed;
+    }
+
     [[nodiscard]] std::size_t StopAllSounds() {
         std::scoped_lock lock(mutex_);
         const auto stopped = voices_.size();

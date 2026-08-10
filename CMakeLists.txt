@@ -199,6 +199,7 @@ add_library(ogplay_gles
     src/gles/angle_frame.cpp
     src/gles/angle_frame_state.cpp
     src/gles/egl_lifecycle.cpp
+    src/gles/etc1.cpp
     src/gles/gles_call_preparation.cpp
     src/gles/gles_dispatch.cpp
     src/gles/gles_transfer_state.cpp
@@ -429,6 +430,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/gles/angle_backend_tests.cpp
         tests/gles/angle_frame_tests.cpp
         tests/gles/egl_lifecycle_tests.cpp
+        tests/gles/etc1_tests.cpp
         tests/gles/gles_call_preparation_tests.cpp
         tests/gles/gles_dispatch_tests.cpp
         tests/gles/gles_transfer_state_tests.cpp

@@ -61,7 +61,9 @@
   image/copy handler 在 level 0 成功后消费 true 状态并通过 ANGLE 实际生成 mipmap。
 - GLES1 `glCompressedTexImage2D`、`glCopyTexImage2D`、`glTexImage2D` 与
   `glTexSubImage2D` 转发当前 ANGLE context；像素大小服从独立 unpack alignment，nullable
-  规则、负 image size、guest 范围与传输上限必须在任何 ANGLE 调用前明确验证。
+  规则、负 image size、guest 范围与传输上限必须在任何 ANGLE 调用前明确验证。ETC1 在
+  ANGLE 未发布原生或 lossy decode 扩展时通过 gles 模块的规范解码器上传 RGBA8，guest
+  texture base format 仍保持 RGB 事实。
 - GLES1 `glGetString` 只接受 vendor/renderer/version/extensions，查询真实 ANGLE context
   后写入 GLES1 专属、分槽且只读的 guest 页；不得与 GLES2 shading-language 槽复用地址。
 - GLES1 `glGetIntegerv` 对矩阵栈、shade model、active/client texture、texture/buffer binding、

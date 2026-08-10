@@ -1,5 +1,7 @@
 #include "ogplay/gles/angle_frame.h"
 
+#include "ogplay/gles/etc1.h"
+
 #include <algorithm>
 #include <limits>
 #include <span>
@@ -14,6 +16,9 @@
 
 namespace ogplay::gles {
 namespace {
+
+constexpr std::uint32_t kEtc1Rgb8Oes = 0x8D64U;
+constexpr std::uint32_t kEtc1Rgb8LossyDecodeAngle = 0x9690U;
 
 [[nodiscard]] bool HasExtension(const char* const extensions,
                                 const std::string_view expected) noexcept {
@@ -465,7 +470,30 @@ void AngleFrame::CompressedTextureImage2D(
     const std::int32_t height, const std::int32_t border,
     const std::span<const std::byte> data) {
 #if OGPLAY_HAS_ANGLE
-    glCompressedTexImage2D(target, level, internal_format, width, height, border,
+    auto host_format = internal_format;
+    if (internal_format == kEtc1Rgb8Oes) {
+        const auto* extensions = reinterpret_cast<const char*>(
+            glGetString(GL_EXTENSIONS));
+        RequireNoError("glGetString(GL_EXTENSIONS) for ETC1 upload");
+        if (!HasExtension(extensions,
+                          "GL_OES_compressed_ETC1_RGB8_texture")) {
+            if (!HasExtension(extensions, "GL_ANGLE_lossy_etc_decode")) {
+                if (width <= 0 || height <= 0) {
+                    throw std::invalid_argument(
+                        "ETC1 fallback dimensions must be positive");
+                }
+                const auto rgba = DecodeEtc1Rgba8(
+                    static_cast<std::uint32_t>(width),
+                    static_cast<std::uint32_t>(height), data);
+                glTexImage2D(target, level, GL_RGBA, width, height, border,
+                             GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+                RequireNoError("glTexImage2D decoded ETC1");
+                return;
+            }
+            host_format = kEtc1Rgb8LossyDecodeAngle;
+        }
+    }
+    glCompressedTexImage2D(target, level, host_format, width, height, border,
                            static_cast<GLsizei>(data.size()), data.data());
     RequireNoError("glCompressedTexImage2D");
 #else

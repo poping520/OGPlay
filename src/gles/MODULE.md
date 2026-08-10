@@ -21,6 +21,9 @@
   局部 readback 调用，并以
   受检 RGBA8
   全帧 readback 输出左上原点的确定帧；每个原生 GLES 调用都检查错误。
+- `DecodeEtc1Rgba8`：按 Khronos ETC1 64-bit block 规范解码 individual/differential、flip、
+  modifier selector 与边缘部分块，输出受检 RGBA8；尺寸、压缩长度和非法 differential
+  color 明确失败。
 - `CreateNativeAngleEglApi`：ANGLE 启用时创建真实 API；关闭时明确抛出 unavailable，绝不
   回退系统 EGL。
 - `data/gles/*.json`：GLES 边界的声明式单一事实源；每个指针显式声明方向、可空性和
@@ -62,6 +65,9 @@
 ## 不变量
 
 - GLES 语义与能力来自 ANGLE，边界函数由 IDL 生成。
+- ETC1 上传优先使用 ANGLE 原生 `GL_OES_compressed_ETC1_RGB8_texture`，其次使用其显式
+  lossy-decode 扩展；两者都不可用时才由通用 ETC1 解码器转为 RGBA8 后调用 ANGLE
+  `glTexImage2D`。其他压缩格式不得借此伪造支持。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
 - GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；扩展

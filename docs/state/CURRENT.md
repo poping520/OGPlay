@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M6 AI 自动化测试已打开
+更新：2026-08-10 · M6 Scenario v1 契约已冻结
 
 ## 当前阶段
 
@@ -28,10 +28,13 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0353 exact-APK 场景/checkpoint schema 与严格自检。
+- 无；下一项为 WU-0354 macOS-arm64 MCP 严格构建修复。
 
 ## 最近完成
 
+- [WU-0353] 冻结 Scenario v1 精确 Profile 身份、逻辑 fixture、startup/total 三重预算和
+  有界 checkpoint/provider/evidence 契约；严格校验器 self-test 与空的当前场景目录进入
+  CTest，能力账本登记 complete。
 - [WU-0352] MCP 测试文档增加 swipe 调用示例，明确 `steps` 是确定性 guest-loop motion
   数量而非毫秒，并记录端点、步数和当前手势能力边界。
 - [WU-0351] MCP 发布严格 `swipe(startX,startY,endX,endY,steps)` 工具；两个端点以最近 guest
@@ -44,41 +47,21 @@
 - [WU-0348] `frame_capture` 增加可选 `overlay="coordinates"`：在截图副本上绘制每 100 px
   主线、每 25 px 边缘刻度和顶部/左侧标签；默认干净截图、尺寸和 guest 帧均保持不变；
   Asphalt 5 exact 800×480 JPEG 为 93,136 字节且网格可读，full CTest 472/472。
-- [WU-0347] 新增简明 OGPlay MCP 测试使用文档，覆盖启动、截图、点击、判定与当前边界，
-  并从全局索引、M6 任务索引和 AI 自动化 roadmap 双向关联。
-- [WU-0346] `run-apk --mcp` 固定监听 `127.0.0.1:15971/mcp`，与自定义 `--mcp-port`
-  互斥；Asphalt 5 exact ping/capture sequence 425 成功，full CTest 470/470。
-- [WU-0345] `frame_capture` 缺省返回 quality 85 JPEG，并以 `format=png` 返回压缩 PNG；
-  Asphalt 5 800×480 exact frame 分别为 82,349 与 790,327 字节，full CTest 470/470。
-- [WU-0344] 固定官方 stb commit `2c980bb` 的 `stb_image_write` v1.16，保留 MIT/Public
-  Domain 文本并隔离第三方编译告警；Debug tests 与 Release `ogplay` 均已构建。
-- [WU-0343] 可测试 dispatcher 在两个 guest loop 主线程逐 step 派发 MCP click down/up 并与
-  桌面鼠标互斥；Release exact request 1/frame 428 后推进到 frame 473，full CTest 469/469。
-- [WU-0342] loopback HTTP server 接受调用方 click queue；真实 POST 返回 request/frame
-  sequence 与坐标，down/up 从同一队列取出，focused 3/3。
-- [WU-0341] MCP 发布严格 `click{x,y}` schema 与 64 项线程安全队列；最近 guest frame
-  边界校验、无帧/越界/队列满失败及 down/up 连续 take 均有 focused 测试。
-- [WU-0340] ANGLE 缺少 PVRTC 时调用官方 decoder 转为 RGBA8 上传；MCP sequence 686 的
-  800×480 帧纹理清晰，Release 300 帧 15.058 秒正常退出，
-  Windows full CTest 464/464。
-- [WU-0335] Control Service、JSON-RPC、Logger JSONL 与诊断包清除手写 JSON，统一经 core
-  yyjson 严格解析/构造；focused 31/31、Windows full CTest 460/460。
-- [WU-0334] MCP envelope/params/schema 迁移到严格 yyjson；语法、重复键、超限、非法 id、
-  嵌套字段误取和工具参数均明确失败，真实 loopback transport 保持通过。
-- [WU-0309] Dungeon Hunter 目标 ELF 74/74 GL imports 获得显式 handler；Asphalt 5 的
-  62/62 目标 GL imports 也已闭合。
 
 ## M6 起点
 
-已有 Control Service/JSON-RPC、固定步长 Clock、能力账本、结构化日志、GPU 查询和
-Software/ANGLE 黄金帧基础，但 `agent-stdio` 尚未拥有 `run-apk` 的 Profile-backed exact
-guest session；输入、frame capture、检查点和退出状态也未在同一自动化会话闭环。
+已有 Scenario v1 身份/fixture/预算/checkpoint 契约、Control Service/JSON-RPC、固定步长
+Clock、能力账本、结构化日志、GPU 查询和 Software/ANGLE 黄金帧基础，但 `agent-stdio`
+尚未拥有 `run-apk` 的 Profile-backed exact guest session；action/assertion/result、输入、
+frame capture、检查点和退出状态也未在同一自动化会话闭环。
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0353，冻结 exact-APK 场景/checkpoint schema 与严格自检。
-2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
-3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+1. 创建 WU-0354，修复 macOS-arm64 Clang warnings-as-errors 严格构建阻塞。
+2. 创建 WU-0355，建立结构化 action/assertion/result 强类型模型与稳定 JSON schema。
+3. 让 Profile-backed Agent session 复用 `run-apk` bootstrap/lifecycle/ANGLE 路径，并接入
+   有界 step/until、输入和原子 checkpoint provider。
+4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞

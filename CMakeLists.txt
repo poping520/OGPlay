@@ -727,6 +727,29 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(tools.title_profiles_current PROPERTIES LABELS "tools;profiles")
 
     add_test(
+        NAME tools.scenario_validator_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_scenarios.py
+            --schema
+                ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-v1.schema.json
+            --self-test
+    )
+    set_tests_properties(tools.scenario_validator_self_test
+        PROPERTIES LABELS "tools;automation;scenarios")
+
+    add_test(
+        NAME tools.scenarios_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_scenarios.py
+            --schema
+                ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-v1.schema.json
+            --scenarios ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios
+            --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
+    )
+    set_tests_properties(tools.scenarios_current
+        PROPERTIES LABELS "tools;automation;scenarios")
+
+    add_test(
         NAME tools.quirk_registry_validator_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_quirks.py

@@ -4,16 +4,22 @@ M6 从 `WU-0328` 开始，目标是把 exact-APK 调试与兼容性验证变成 
 确定性、有界执行层。当前操作见 [`../../OGPLAY-MCP-TESTING.md`](../../OGPLAY-MCP-TESTING.md)，
 详细范围和出口见 [`../../roadmap/10-ai-automation-testing.md`](../../roadmap/10-ai-automation-testing.md)。
 
-建议按以下依赖顺序创建 bounded WU，但只在实际开始时分配下一个全局编号：
+自动测试闭环按以下 bounded WU 切片推进；只在实际开始时分配下一个全局编号：
 
-1. 场景 schema 与严格校验器（依赖已完成的 yyjson 严格基础设施）。
-2. action/assertion/result 强类型模型和 JSON schema。
-3. Profile-backed Agent session adapter。
-4. 有界 step/until 与输入注入。
-5. frame capture/readback/golden 断言。
-6. GPU/HLE/fs/lifecycle/movie/audio 检查点。
-7. 首个 exact-title 端到端自动化场景。
-8. 三次确定性门禁、证据包和批处理汇总。
+| 顺序 | 切片 | 机器出口 |
+| ---: | --- | --- |
+| 1 | 场景与 checkpoint 纯数据契约 | 精确 Profile 身份、逻辑 fixture 和三重预算严格自检；WU-0353 |
+| 2 | action/assertion/result 强类型模型 | closed enum、逐类型载荷、稳定 JSON schema 与负向测试 |
+| 3 | Profile-backed Agent session adapter | exact APK 与 `run-apk` 复用同一 bootstrap/lifecycle/ANGLE 路径 |
+| 4 | 有界 `step` / `until` 和输入执行 | 每项都有 frame/tick/wall-time 上限，不以 sleep 判成功 |
+| 5 | 原子 checkpoint provider | 同一 frame/tick 读取 lifecycle/movie/audio/GPU/HLE/fs/fault 状态 |
+| 6 | frame readback/golden 和结构化断言 | 原图、差分、阈值、实测值和首个失败均可机器判定 |
+| 7 | 正常 shutdown 与证据包 | 主错误和清理错误分离，guest/audio/surface/window 全部闭环 |
+| 8 | 首个 exact-title 场景与三次确定性门禁 | 启动→输入→检查点→断言→shutdown 三次结果可复现 |
+| 9 | 多场景批处理与趋势汇总 | 有界并行、稳定汇总和后续远端 CI 接口 |
+
+底层 MCP 工具继续服务交互调试，但 CI 出口以场景 runner 为准；不得让 AI 通过重复截图和
+自由文本推断替代 checkpoint 或断言。
 
 每个 WU 仍需一句话目标、显式依赖、触及文件不超过 10 个和机器可判定验收。不得把 APK、
 外部数据、凭据或测试机绝对路径提交到仓库，也不得以人工截图确认替代断言。
@@ -27,5 +33,6 @@ fallback；`WU-0341..0343` 增加严格 MCP click、loopback transport 与主线
 PNG；`WU-0346..0347` 增加固定 15971 端口的 `--mcp` 测试入口和简明使用文档。
 `WU-0348..0349` 为 MCP 截图增加不污染 guest 帧的可选坐标网格，并记录“带网格定位、干净
 截图验证”的 AI 使用方式。`WU-0350..0352` 增加按 guest step 确定性派发的有界 MCP swipe
-手势队列、严格工具协议与简明使用文档。原计划的场景 schema 顺延到 `WU-0353`，上述依赖
-顺序不变。
+手势队列、严格工具协议与简明使用文档。`WU-0353` 冻结 Scenario v1 的精确身份、逻辑
+fixture、三重总预算与有界 checkpoint schema。原计划的 action/assertion/result 强类型
+模型顺延到下一 WU，上述闭环依赖顺序不变。

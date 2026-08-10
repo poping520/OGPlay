@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogplay.dev/schema/scenario-v1.schema.json",
+  "title": "OGPlay exact-APK automation scenario v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "profile", "fixture", "limits", "checkpoint"],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "profile": {
+      "$ref": "#/$defs/profile"
+    },
+    "fixture": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/fixture"
+      }
+    },
+    "limits": {
+      "$ref": "#/$defs/limits"
+    },
+    "checkpoint": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/checkpoint"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "version_code", "so_sha256", "abi"],
+      "properties": {
+        "package": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+        },
+        "version_code": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "so_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "abi": {
+          "enum": ["armeabi", "armeabi-v7a"]
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "required"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": ["apk", "obb", "external"]
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startup_frames",
+        "startup_ticks",
+        "startup_wall_time_ms",
+        "total_frames",
+        "total_ticks",
+        "total_wall_time_ms"
+      ],
+      "properties": {
+        "startup_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "startup_ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000000
+        },
+        "startup_wall_time_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000
+        },
+        "total_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "total_ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000000000
+        },
+        "total_wall_time_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000
+        }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "provider",
+        "max_frames",
+        "max_ticks",
+        "wall_time_ms",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "provider": {
+          "enum": [
+            "frame",
+            "lifecycle",
+            "movie_request",
+            "process_exit",
+            "gpu",
+            "hle",
+            "filesystem",
+            "audio",
+            "guest_fault"
+          ]
+        },
+        "max_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "max_ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000000
+        },
+        "wall_time_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["frame", "state", "logs", "gpu_trace"]
+          }
+        }
+      }
+    }
+  }
+}

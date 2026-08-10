@@ -15,6 +15,11 @@ status = "complete"
 test = "tests/core/capability_ledger_tests.cpp"
 note = "M0 支持账本读取、未实现命中聚合及相对 Git 基线的单调性 CI 门禁"
 
+[automation.scenario_schema]
+status = "complete"
+test = "tools.scenario_validator_self_test; tools.scenarios_current"
+note = "M6 WU-0353 冻结 Scenario v1 精确 Profile 身份、逻辑 fixture、全局预算和有界 checkpoint 纯数据契约；严格校验未知字段、身份匹配、重复 id、三重预算汇总、证据枚举与 400 行上限"
+
 [agent.control_service]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

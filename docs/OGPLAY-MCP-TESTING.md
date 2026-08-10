@@ -20,14 +20,17 @@ build\windows-msvc\Release\ogplay.exe run-apk <apk> `
 ## 测试流程
 
 1. 等待终端输出 `OGPlay: MCP ready at ...` 和窗口首帧。
-2. 调用 `frame_capture {}` 获取默认 JPEG；需要无损证据时调用
-   `frame_capture {"format":"png"}`。
-3. 根据截图的 guest 像素坐标调用 `click {"x":400,"y":240}`。
-4. 再次截图，对比 `sequence`、画面和相关结构化状态，记录首个未满足条件。
+2. 调用 `frame_capture {"overlay":"coordinates"}` 获取带坐标网格的默认 JPEG；需要 PNG 时
+   同时传入 `{"format":"png","overlay":"coordinates"}`。
+3. 参考顶部/左侧每 100 px 标签、主线和每 25 px 边缘刻度，估算目标中心的 guest 坐标，
+   再调用 `click {"x":400,"y":240}`。
+4. 调用 `frame_capture {}` 获取干净的默认 JPEG；需要无损证据时调用
+   `frame_capture {"format":"png"}`，对比 `sequence`、画面和结构化状态。
 5. 关闭窗口，确认 guest、音频、surface 和 MCP listener 正常清理。
 
 点击坐标基于 MCP 截图尺寸，不是宿主窗口尺寸；黑边、缩放和窗口位置不参与计算。
-截图失败、无首帧、坐标越界或点击队列满都会返回明确 tool error。
+坐标网格只绘制在返回的截图副本上，不改变尺寸或实时 guest 帧；省略 `overlay` 时截图不带
+网格。截图失败、无首帧、坐标越界或点击队列满都会返回明确 tool error。
 
 ## 当前边界
 

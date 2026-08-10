@@ -110,6 +110,7 @@ public:
     virtual void SetTitle(std::string_view title) = 0;
     [[nodiscard]] virtual WindowState State() const = 0;
     [[nodiscard]] virtual std::string_view BackendName() const noexcept = 0;
+    virtual void PumpEvents() = 0;
     [[nodiscard]] virtual std::vector<InputEvent> PollEvents() = 0;
     virtual void PresentRgba8(std::span<const std::uint8_t> pixels,
                               std::uint32_t width, std::uint32_t height) = 0;

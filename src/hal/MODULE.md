@@ -16,6 +16,8 @@
   未知按钮显式标记为 unknown，不向上层泄漏 SDL 数值。
 - `hal::WindowInput::SetTitle`：只在窗口打开期间更新宿主标题，拒绝内嵌 NUL，SDL
   失败必须明确传播。
+- `hal::WindowInput::PumpEvents`：处理宿主窗口消息但不移除规范化输入事件，供长任务
+  在主线程维持窗口响应；关闭窗口上调用明确失败。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。
 - `hal::FrameRateSampler`：以调用方提供的单调 ticks 和累计成功 present 数按固定窗口计算
   FPS；输入倒退明确失败，未到采样周期不发布新值。
@@ -43,7 +45,7 @@
 - 时间由统一 Clock 提供；线程接口必须映射真实宿主线程。
 - 暂停期间 ticks 不增长；不支持的推进方式必须明确失败。
 - SDL video 生命周期由创建它的宿主主线程拥有；输入只保留规范化宿主事实，不翻译 guest
-  语义。
+  语义；只泵消息不得消费或改写待轮询事件。
 - 帧尺寸与字节数必须精确匹配；只有 SDL surface 更新成功才累计 present。
 - RGBA8 guest framebuffer 作为不透明窗口内容复制，alpha 保留为像素事实但不得与预清理的
   黑色宿主 surface 混合；窗口透明合成不属于当前契约。

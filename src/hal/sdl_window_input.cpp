@@ -208,6 +208,11 @@ public:
         return name == nullptr ? std::string_view{} : std::string_view{name};
     }
 
+    void PumpEvents() override {
+        if (window_ == nullptr) throw std::logic_error("event pumping requires an open window");
+        SDL_PumpEvents();
+    }
+
     std::vector<InputEvent> PollEvents() override {
         if (window_ == nullptr) throw std::logic_error("event polling requires an open window");
         std::vector<InputEvent> result;

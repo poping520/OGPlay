@@ -33,6 +33,8 @@
 
 ## 最近完成
 
+- [WU-0323] HAL WindowInput 新增非消费式 event pump，可在主线程长任务期间处理宿主消息，
+  同时保留输入队列给正常帧循环；guest observer 接线留给下一 WU。
 - [WU-0322] A32 guest call 现按最多 500 万 tick 的 CPU slice 执行，长计算可在保持原总预算、
   return trap 与错误语义时发布显式 observer；SDL 接线留给下一 WU。
 - [WU-0321] GLSurfaceView 停止顺序现为 pause/shutdown、guest module finalizer、关闭

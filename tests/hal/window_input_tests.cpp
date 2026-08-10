@@ -84,6 +84,7 @@ TEST_CASE("SDL dummy window has an explicit lifecycle") {
     CHECK_FALSE(host->State().open);
     CHECK_THROWS_AS(host->Open({.width = 0, .height = 180}), std::invalid_argument);
     CHECK_THROWS_AS(host->SetTitle("closed"), std::logic_error);
+    CHECK_THROWS_AS(host->PumpEvents(), std::logic_error);
 
     host->Open({.title = "OGPlay HAL contract", .width = 320, .height = 180,
                 .hidden = true, .resizable = false});
@@ -99,6 +100,7 @@ TEST_CASE("SDL dummy window has an explicit lifecycle") {
     CHECK_THROWS_AS(host->SetTitle(std::string_view{"bad\0title", 9U}),
                     std::invalid_argument);
     CHECK_THROWS_AS(host->Open({}), std::logic_error);
+    host->PumpEvents();
     host->Close();
     CHECK_FALSE(host->State().open);
     host->Close();

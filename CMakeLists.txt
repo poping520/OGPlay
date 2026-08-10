@@ -325,6 +325,7 @@ add_library(ogplay_runtime
     src/runtime/integration/jni_guest_abi.cpp
     src/runtime/integration/jni_guest_bindings.cpp
     src/runtime/integration/jni_guest_dispatch.cpp
+    src/runtime/integration/jni_guest_library_lifecycle.cpp
     src/runtime/integration/jni_guest_static_calls.cpp
     src/runtime/integration/jni_guest_static_fields.cpp
     src/runtime/integration/jni_guest_string_bindings.cpp
@@ -517,6 +518,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/jni_guest_abi_tests.cpp
         tests/runtime/jni_guest_bindings_tests.cpp
         tests/runtime/jni_guest_instance_calls_tests.cpp
+        tests/runtime/jni_guest_library_lifecycle_tests.cpp
         tests/runtime/jni_java_vm_tests.cpp
         tests/runtime/jni_array_tests.cpp
         tests/runtime/jni_class_registry_tests.cpp

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 Asphalt 6 legacy platform identity 批次已完成
+更新：2026-08-10 · M8 guest JNI library load 规划批次已完成
 
 ## 当前阶段
 
@@ -29,12 +29,15 @@
 
 ## 进行中
 
-- Asphalt 6 下一批为 license/VFS 与 working-directory 调用链；exact Scenario 已越过
-  Android 平台身份 class/field/method 缺口，在第 4 个 native call 进入 license path 后
-  明确停于 `ALicenseCheck::CallJNIFuncChar` 的 guest memory fault，尚未声称首帧或主界面。
+- Asphalt 6 下一批为 Profile 声明预装与 JNI_OnLoad 执行顺序集成；反汇编确认此前 license
+  memory fault 是 root `JNI_OnLoad` 未执行导致 JavaVM 为 null，试运行则证明 OnLoad 必须在
+  `GLUtils/SUtils` 等 Profile class 装入 registry 后执行。尚未声称首帧或主界面。
 
 ## 最近完成
 
+- [WU-0369] 冻结 root-only JNI_OnLoad exported function 选择、JavaVM/null A32 调用帧与
+  JNI 1.1/1.2/1.4/1.6 返回校验；不误调用 ELF dependency 同名导出，执行顺序接线由
+  WU-0370 承接；focused 2/2、full CTest 494/494。
 - [WU-0368] 一次安装 Build/VERSION 12 个 APK 引用字段与 SystemProperties、Settings.Secure、
   Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot、UUID 服务对象链；补齐同批
   GLGame compact platform callbacks，offline tracking 有计数且不触网。exact 越过全部
@@ -50,10 +53,6 @@
   10 类返回值 × Call/CallV/CallA 共 30 个 instance call 槽；对象保留精确 class，
   构造失败事务回滚。exact 复采样稳定停于下一类 `android/os/Build`；focused 1/1、
   full CTest 489/489。
-- [WU-0364] 批量绑定 modified UTF-8 的 length/chars/release/region 四槽；64 KiB guest
-  lease arena 支持 NUL copy、isCopy、first-fit 与严格配对。首次 exact 清理暴露并修复
-  binder 晚于 string store 析构的宿主崩溃；复采样稳定停于下一类 `FindClass`；focused
-  2/2、full CTest 488/488。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -78,7 +77,8 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 批量闭合 license/VFS 与声明式 working-directory 调用，再实现 AudioTrack 完整媒体类。
+1. 预装 Profile Java class 并按 constructors→JNI_OnLoad→native callback 执行，再批量闭合
+   license/VFS 与声明式 working-directory 调用。
 2. 按 GLES2 state/resource/query/draw 子批次闭合，然后固化主界面
    Scenario 与三轮 gate。
 

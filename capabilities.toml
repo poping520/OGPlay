@@ -655,6 +655,11 @@ status = "complete"
 test = "tests/runtime/android_guest_framework_platform_tests.cpp; Asphalt 6 exact bootstrap sampling"
 note = "M8 WU-0368 批量安装 APK 引用的 Build/VERSION 12 个字段、SystemProperties、Settings.Secure、Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；身份事实确定性注入，service/UUID 对象走共享 registry，offline tracking 可查询"
 
+[runtime.jni_guest_library_load_plan]
+status = "complete"
+test = "tests/runtime/jni_guest_library_lifecycle_tests.cpp"
+note = "M8 WU-0369 冻结 root-only JNI_OnLoad exported function 选择、JavaVM/null A32 调用帧与 JNI 1.1/1.2/1.4/1.6 返回校验；Profile class 预装和执行顺序集成由 WU-0370 承接"
+
 [runtime.java_sound_pool_lifecycle]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"

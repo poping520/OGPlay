@@ -48,6 +48,8 @@ present 数更新一位小数的实时值。
 - `gl_surface_view` 帧循环必须观察 guest 的显式进程退出请求，并在请求后通过正常
   lifecycle/session teardown 结束；guest module finalizer 必须在 managed ANGLE surface
   关闭前执行，不得从 Java handler 直接杀死整个 CLI 进程。
+- `gl_surface_view` 的长 guest call 必须在通用 A32 slice observer 中只泵宿主窗口消息；
+  guest 输入仍由正常帧循环消费，observer 不推进 guest Clock 或提交半帧。
 - 前端只可把已验证的 `gles1_material_front_face` id 映射为通用 single-face material
   `AndroidBoundaryOptions` 布尔项；不得在运行时接口中传递游戏名、包名或 Profile 对象。
 - SoundPool loader 只消费 Profile 解析后的 source/path；当前 `run-apk` 仅挂载 APK source，

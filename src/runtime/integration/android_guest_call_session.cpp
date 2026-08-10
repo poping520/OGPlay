@@ -432,7 +432,8 @@ public:
           }),
           filesystem_(request.filesystem),
           maximum_ticks_(request.maximum_ticks_per_call),
-          progress_(request.progress) {
+          progress_(request.progress),
+          slice_observer_(request.guest_call_slice_observer) {
 #if !OGPLAY_HAS_DYNARMIC
         static_cast<void>(request);
         throw AndroidGuestCallSessionError(
@@ -539,7 +540,7 @@ public:
             maximum_ticks_,
             [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                 return HandleBoundary(cpu, stopped);
-            });
+            }, slice_observer_);
     }
 
     bool HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
@@ -693,6 +694,7 @@ private:
     std::vector<std::size_t> guest_load_order_;
     std::uint64_t maximum_ticks_{};
     std::function<void(std::string_view)> progress_;
+    A32GuestCallSliceObserver slice_observer_;
     bool running_{};
 };
 

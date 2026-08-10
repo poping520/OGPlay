@@ -33,6 +33,8 @@
 
 ## 最近完成
 
+- [WU-0324] GLSurfaceView 已把 A32 slice observer 接到非消费式 SDL event pump；exact APK
+  长帧多次采样均 `Responding=True` 且 CPU 前进，Windows 不再判定窗口挂起。
 - [WU-0323] HAL WindowInput 新增非消费式 event pump，可在主线程长任务期间处理宿主消息，
   同时保留输入队列给正常帧循环；guest observer 接线留给下一 WU。
 - [WU-0322] A32 guest call 现按最多 500 万 tick 的 CPU slice 执行，长计算可在保持原总预算、
@@ -42,9 +44,6 @@
 - [WU-0320] legacy big audio 批量 pause/resume 只迁移对应类别 voice，并在统一
   handler 下同步状态与真实 Ogg mixer；第二个 exact APK 已越过 `audio.resume_all_big`，
   推进至独立 `glDeleteTextures` 无 current ANGLE frame 边界。
-- [WU-0317] Title Profile v1 runtime 新增可选 `maximum_ticks_per_call`，默认维持 2 亿，
-  合法范围 1..10 亿；schema、Python 目录门禁和 C++ 强类型 loader 共同拒绝未知、越界
-  或错误类型输入。
 - [WU-0316] 第二个 exact APK 在真实 SWF 加载阶段稳定超过单次 2 亿 guest tick；耗尽 PC
   `0x102eb2b0` 已反汇编定位到正常 `InterpolateColours` 计算而非自旋。未验证的预算实验
   已撤销；WU-0317/0318 随后以受检 Profile 预算闭合该边界。
@@ -79,13 +78,13 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 把 guest slice observer 接入 SDL event pump，避免超长同步 frame 让窗口未响应。
+1. 测量并降低 500 万 tick 切片的 Dynarmic 重入开销，同时保持窗口响应上界。
 2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
 
 ## 阻塞
 
-- 第二个 exact APK 已进入 loading page；Debug 下第 76 帧实测 110.823 秒，同步执行期间
-  主线程不泵 SDL 事件，Windows 会暂报未响应。
+- 第二个 exact APK 窗口已保持响应；Debug 的 500 万 tick 细切片使 80 帧总时长超过
+  240 秒，仍需降低重入开销后继续主界面验证。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

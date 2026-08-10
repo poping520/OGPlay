@@ -13,6 +13,8 @@
 ## 不变量
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
+- Android guest call session 只在通用 A32 slice 边界调用显式 observer；observer 由上层
+  注入，不得让 integration 直接依赖窗口后端或消费输入。
 - `AndroidBoundaryGles` 独占 buffer/texture/vertex/uniform/query/state/draw/readback 的调用
   准备与 transfer state；主 HLE 只传入当前 `AngleFrame`，组件不得拥有 EGL 生命周期、
   GPU 指标或窗口状态。

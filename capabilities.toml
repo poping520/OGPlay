@@ -643,7 +643,7 @@ note = "M5 WU-0240 在执行前完整预检 Profile invocation 批次，再按�
 [runtime.android_guest_call_session]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp"
-note = "M5 WU-0241/0313 组合真实 Bionic namespace、API 19 process、syscall/clone、guest JNI core 与 Android HLE，执行 ELF init/fini、接受通用 A32 frame，并把 Java process.exit 转换为可查询的会话退出请求"
+note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call"
 
 [runtime.host_managed_gl_surface]
 status = "complete"
@@ -678,7 +678,7 @@ note = "M5 WU-0249/0311 以纯 Profile 数据声明两个目标 activity native 
 [frontend.profile_gl_surface_run]
 status = "complete"
 test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"
-note = "M5 WU-0244/0318 让 run-apk 对 gl_surface_view 精确 Profile 组合 Android guest call session、声明式 lifecycle、SDL input、managed ANGLE frame，并原样消费受检单次调用预算"
+note = "M5 WU-0244/0318/0324 让 run-apk 组合 gl_surface_view guest session、lifecycle、SDL input 与 ANGLE，并在长 A32 call 的 slice 边界泵非消费式窗口消息"
 
 [gles.gles1_core_catalog]
 status = "complete"

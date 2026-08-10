@@ -93,6 +93,7 @@ struct AndroidGuestCallSessionRequest final {
     std::optional<FrameworkDirectAssetImplementations> direct_assets{};
     AndroidBoundaryOptions boundary_options{};
     audio::JavaSoundPoolMixer::EncodedResourceLoader sound_resource_loader{};
+    A32GuestCallSliceObserver guest_call_slice_observer{};
 };
 
 class AndroidGuestCallSessionError final : public std::runtime_error {

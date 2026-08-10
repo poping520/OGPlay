@@ -474,7 +474,8 @@ int RunApkCommand(const int argc, const char* const argv[]) {
              supersample_factor, &filesystem, {}, direct_assets,
              {.allow_gles1_material_single_face = ProfileEnablesQuirk(
                   profile, "gles1_material_front_face")},
-             std::move(sound_loader)});
+             std::move(sound_loader),
+             [&window] { window->PumpEvents(); }});
         auto lifecycle = session::ProfileGuestLifecycle::Create(
             profile, launch->native_calls,
             {

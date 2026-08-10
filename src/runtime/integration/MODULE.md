@@ -169,6 +169,12 @@
   也不得以 no-op 吞掉。前端观察请求后仍须执行 Profile lifecycle 与 guest session 清理。
 - `locale.detect_phone_language` 必须从 framework 的受检确定性 Locale 配置计算 legacy
   语言索引；不得读取宿主区域设置或把游戏身份写入 handler。
+- 通用 platform Java handler 只发布请求显式注入的安装 id/版本和确定性
+  离线运营商、Wi-Fi、网络、音频与固件事实；字节数组和 Java String 必须通过
+  统一 store 发布为受检 local reference。unique code、background、fully-loaded、
+  keyboard 与 managed-swap 请求必须进入线程安全可查询状态；宿主未实现的浏览器、
+  商店、付费、在线服务与 trophy 回调必须带 method descriptor 明确失败，
+  禁止静默 no-op 或伪造成功。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。
   宿主成功 present 后可归还布局完全匹配的拥有型帧；1x surface 复用其 RGBA8 高水位存储，

@@ -13,7 +13,9 @@
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
 #include "ogplay/runtime/framework/framework_locale.h"
+#include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
+#include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_object.h"
 
@@ -54,6 +56,90 @@ TEST_CASE("Android guest call session validates its complete launch request") {
              1000, 1, nullptr, {}})),
         "Android guest call session request is incomplete",
         ogplay::runtime::AndroidGuestCallSessionError);
+}
+
+TEST_CASE("Android guest platform handlers publish facts state and explicit failures") {
+    using namespace ogplay::runtime;
+    JniClassRegistry classes;
+    const auto device = classes.RegisterClass(
+        {"fixture/Device", {},
+         {{"a", "()[B", "device.identifier_bytes", true},
+          {"d", "()[B", "application.version_bytes", true},
+          {"IsWifiEnable", "()Z", "network.wifi_enabled", true},
+          {"e", "(I)V", "device.set_unique_code", true}}, {}});
+    const auto game = classes.RegisterClass(
+        {"fixture/Game", {},
+         {{"sendAppToBackground", "()V", "activity.send_to_background", true},
+          {"setFullyLoaded", "()V", "activity.set_fully_loaded", true},
+          {"IsInternetAvaliable", "()I", "network.internet_available", true},
+          {"showIAPDialog", "(I)V", "platform.unavailable", true}}, {}});
+    const auto renderer = classes.RegisterClass(
+        {"fixture/Renderer", {},
+         {{"getKeyboardText", "()[B", "keyboard.text_bytes", true},
+          {"setKeyboard", "(ILjava/lang/String;I)V", "keyboard.set", true},
+          {"isKeyboardVisible", "()I", "keyboard.visible", true},
+          {"swapEGLBuffers", "()V", "display.swap_managed_surface", true}}, {}});
+    JniInvocationEngine invocations{classes};
+    JniEnvironment environment;
+    environment.AttachThread(7U);
+    JniStringStore strings;
+    JniPrimitiveArrayStore arrays;
+    AndroidGuestPlatformState state;
+    BindAndroidGuestJavaPlatformHandlers(
+        invocations, environment, strings, arrays, state,
+        {.installation_id = "fixture-id", .version_name = "1.2.3"});
+
+    const auto invoke = [&](const JniObjectIdentity java_class,
+                            const char* name, const char* signature,
+                            const std::span<const JniValue> arguments = {}) {
+        const auto method = classes.GetMethodId(
+            java_class, name, signature, true);
+        REQUIRE(method.has_value());
+        return invocations.InvokeStatic(
+            7U, java_class, *method, arguments,
+            JniArgumentSource::value_array);
+    };
+    const auto identifier = std::get<JniReference>(
+        invoke(device, "a", "()[B"));
+    const auto identifier_object = environment.ResolveObjectForHle(
+        7U, identifier);
+    REQUIRE(identifier_object.has_value());
+    CHECK(std::get<std::vector<JniByte>>(arrays.Region(
+              *identifier_object, 0, arrays.Length(*identifier_object))) ==
+          std::vector<JniByte>{'f', 'i', 'x', 't', 'u', 'r', 'e', '-', 'i', 'd'});
+    CHECK(std::get<JniBoolean>(
+              invoke(device, "IsWifiEnable", "()Z")) == 0U);
+    const std::array<JniValue, 1> unique{JniInt{53412}};
+    static_cast<void>(invoke(device, "e", "(I)V", unique));
+    REQUIRE(state.UniqueCode().has_value());
+    CHECK(*state.UniqueCode() == 53412);
+    CHECK(std::get<JniInt>(invoke(
+              game, "IsInternetAvaliable", "()I")) == 0);
+    static_cast<void>(invoke(game, "sendAppToBackground", "()V"));
+    static_cast<void>(invoke(game, "setFullyLoaded", "()V"));
+    CHECK(state.BackgroundRequested());
+    CHECK(state.FullyLoaded());
+
+    const std::array<std::uint8_t, 4> keyboard_utf8{'t', 'e', 's', 't'};
+    const auto keyboard_object = strings.CreateModifiedUtf8(keyboard_utf8);
+    const auto keyboard = environment.PublishLocalObject(7U, keyboard_object);
+    const std::array<JniValue, 3> set_keyboard{
+        JniInt{1}, keyboard, JniInt{32}};
+    static_cast<void>(invoke(
+        renderer, "setKeyboard", "(ILjava/lang/String;I)V", set_keyboard));
+    CHECK(std::get<JniInt>(invoke(
+              renderer, "isKeyboardVisible", "()I")) == 1);
+    CHECK(state.KeyboardText() == std::vector<JniChar>{'t', 'e', 's', 't'});
+    static_cast<void>(invoke(renderer, "swapEGLBuffers", "()V"));
+    CHECK(state.ManagedSwapRequests() == 1U);
+
+    const std::array<JniValue, 1> dialog{JniInt{1}};
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(invoke(
+            game, "showIAPDialog", "(I)V", dialog)),
+        "Android guest platform callback is unavailable: showIAPDialog(I)V",
+        AndroidGuestCallSessionError);
+    environment.DetachThread(7U);
 }
 
 TEST_CASE("Android guest Java display handler records screen sleep policy") {

@@ -622,7 +622,9 @@ int RunApkCommand(const int argc, const char* const argv[]) {
              {.allow_gles1_material_single_face = ProfileEnablesQuirk(
                   profile, "gles1_material_front_face")},
              std::move(sound_loader),
-             [&window] { window->PumpEvents(); }});
+             [&window] { window->PumpEvents(); },
+             {.installation_id = "ogplay-" + manifest.package,
+              .version_name = manifest.version_name.value_or("unknown")}});
         auto lifecycle = session::ProfileGuestLifecycle::Create(
             profile, launch->native_calls,
             {

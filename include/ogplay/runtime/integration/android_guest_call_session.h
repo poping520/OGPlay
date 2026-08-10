@@ -29,6 +29,40 @@ class JniStringStore;
 class FrameworkScreenPolicyState;
 struct FrameworkLocaleConfig;
 
+struct AndroidGuestPlatformConfig final {
+    std::string installation_id{"ogplay-installation"};
+    std::string version_name{"unknown"};
+    std::string operator_name{"offline"};
+    std::string line_number;
+    std::string host_name{"generic"};
+    std::string user_agent{"OGPlay"};
+    std::string mac_address{"00:00:00:00:00:00"};
+};
+
+class AndroidGuestPlatformState final {
+public:
+    void SetUniqueCode(std::int32_t value);
+    void RequestBackground();
+    void SetFullyLoaded();
+    void SetKeyboard(bool visible, std::span<const JniChar> text);
+    void RequestManagedSwap();
+    [[nodiscard]] std::optional<std::int32_t> UniqueCode() const;
+    [[nodiscard]] bool BackgroundRequested() const;
+    [[nodiscard]] bool FullyLoaded() const;
+    [[nodiscard]] bool KeyboardVisible() const;
+    [[nodiscard]] std::vector<JniChar> KeyboardText() const;
+    [[nodiscard]] std::uint64_t ManagedSwapRequests() const;
+
+private:
+    mutable std::mutex mutex_;
+    std::optional<std::int32_t> unique_code_;
+    std::vector<JniChar> keyboard_text_;
+    std::uint64_t managed_swap_requests_{};
+    bool background_requested_{};
+    bool fully_loaded_{};
+    bool keyboard_visible_{};
+};
+
 struct AndroidGuestMovieRequest final {
     std::uint64_t sequence{};
     std::uint64_t thread_id{};
@@ -79,6 +113,12 @@ void BindAndroidGuestJavaLocaleHandlers(
     JniInvocationEngine& invocations,
     const FrameworkLocaleConfig& locale);
 
+void BindAndroidGuestJavaPlatformHandlers(
+    JniInvocationEngine& invocations, JniEnvironment& environment,
+    JniStringStore& strings, JniPrimitiveArrayStore& arrays,
+    AndroidGuestPlatformState& state,
+    const AndroidGuestPlatformConfig& config);
+
 struct AndroidGuestCallSessionRequest final {
     std::uint32_t api{19};
     std::string root_module;
@@ -94,6 +134,7 @@ struct AndroidGuestCallSessionRequest final {
     AndroidBoundaryOptions boundary_options{};
     audio::JavaSoundPoolMixer::EncodedResourceLoader sound_resource_loader{};
     A32GuestCallSliceObserver guest_call_slice_observer{};
+    AndroidGuestPlatformConfig platform{};
 };
 
 class AndroidGuestCallSessionError final : public std::runtime_error {

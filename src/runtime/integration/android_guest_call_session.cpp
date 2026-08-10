@@ -465,6 +465,9 @@ public:
         BindAndroidGuestJavaDisplayHandlers(invocations_, screen_policy_);
         BindAndroidGuestJavaProcessHandlers(invocations_, process_state_);
         BindAndroidGuestJavaLocaleHandlers(invocations_, {});
+        BindAndroidGuestJavaPlatformHandlers(
+            invocations_, environment_, strings_, arrays_, platform_state_,
+            request.platform);
         if (request.direct_assets.has_value()) {
             direct_assets_ = std::make_unique<FrameworkDirectAssetHle>(
                 invocations_, environment_, strings_, arrays_, *filesystem_);
@@ -686,6 +689,7 @@ private:
     audio::JavaSoundPoolMixer sound_pool_mixer_;
     FrameworkScreenPolicyState screen_policy_;
     AndroidGuestProcessState process_state_;
+    AndroidGuestPlatformState platform_state_;
     JniStringStore strings_;
     AndroidGuestMovieState movie_state_;
     JniPrimitiveArrayStore arrays_;

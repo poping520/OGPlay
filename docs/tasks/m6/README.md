@@ -22,4 +22,5 @@ M6 从 `WU-0328` 开始，目标是把 exact-APK 调试与兼容性验证变成 
 日志和诊断输出；`WU-0336..0338` 修复 exact-title 失败清理 futex 卡死并补充 tick 现场；
 `WU-0339..0340` 原样接入 PowerVR 官方 PVRTC decoder，并以 MCP exact frame 闭合 ANGLE
 fallback；`WU-0341..0343` 增加严格 MCP click、loopback transport 与主线程输入派发。
-原计划的场景 schema 顺延到 `WU-0344`，上述依赖顺序不变。
+`WU-0344..0345` 固定官方 stb 图像编码器，并让 MCP 截图缺省返回 JPEG、按参数返回压缩
+PNG；原计划的场景 schema 顺延到 `WU-0346`，上述依赖顺序不变。

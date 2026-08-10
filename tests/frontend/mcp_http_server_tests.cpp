@@ -88,7 +88,8 @@ TEST_CASE("MCP HTTP returns the latest frame through a real loopback request") {
         server->Port(), "POST", "/mcp",
         R"({"jsonrpc":"2.0","id":"capture","method":"tools/call","params":{"name":"frame_capture","arguments":{}}})");
     CHECK(response.find("HTTP/1.1 200 OK") != std::string::npos);
-    CHECK(response.find("\"mimeType\":\"image/png\"") != std::string::npos);
+    CHECK(response.find("\"mimeType\":\"image/jpeg\"") != std::string::npos);
+    CHECK(response.find("\"format\":\"jpeg\"") != std::string::npos);
     CHECK(response.find("\"sequence\":73") != std::string::npos);
     CHECK(response.find("\"width\":2") != std::string::npos);
     CHECK(response.find("\"height\":1") != std::string::npos);

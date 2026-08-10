@@ -1,7 +1,10 @@
 #include "ogplay/agent/mcp_protocol.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <doctest/doctest.h>
 
@@ -48,6 +51,47 @@ std::string ImageData(const std::string& response) {
     const auto end = response.find('"', value_start);
     REQUIRE(end != std::string::npos);
     return response.substr(value_start, end - value_start);
+}
+
+std::optional<std::pair<std::uint32_t, std::uint32_t>> JpegDimensions(
+    const std::string_view bytes) {
+    if (bytes.size() < 4U || static_cast<unsigned char>(bytes[0]) != 0xffU ||
+        static_cast<unsigned char>(bytes[1]) != 0xd8U) {
+        return std::nullopt;
+    }
+    std::size_t offset = 2U;
+    while (offset + 4U <= bytes.size()) {
+        if (static_cast<unsigned char>(bytes[offset++]) != 0xffU) return std::nullopt;
+        while (offset < bytes.size() &&
+               static_cast<unsigned char>(bytes[offset]) == 0xffU) {
+            ++offset;
+        }
+        if (offset >= bytes.size()) return std::nullopt;
+        const auto marker = static_cast<unsigned char>(bytes[offset++]);
+        if (marker == 0xd9U || marker == 0xdaU) break;
+        if (offset + 2U > bytes.size()) return std::nullopt;
+        const auto segment_size = static_cast<std::size_t>(
+            static_cast<unsigned char>(bytes[offset]) << 8U |
+            static_cast<unsigned char>(bytes[offset + 1U]));
+        if (segment_size < 2U || offset + segment_size > bytes.size()) {
+            return std::nullopt;
+        }
+        const bool start_of_frame =
+            marker >= 0xc0U && marker <= 0xcfU && marker != 0xc4U &&
+            marker != 0xc8U && marker != 0xccU;
+        if (start_of_frame) {
+            if (segment_size < 7U) return std::nullopt;
+            const auto height = static_cast<std::uint32_t>(
+                static_cast<unsigned char>(bytes[offset + 3U]) << 8U |
+                static_cast<unsigned char>(bytes[offset + 4U]));
+            const auto width = static_cast<std::uint32_t>(
+                static_cast<unsigned char>(bytes[offset + 5U]) << 8U |
+                static_cast<unsigned char>(bytes[offset + 6U]));
+            return std::pair{width, height};
+        }
+        offset += segment_size;
+    }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -119,6 +163,8 @@ TEST_CASE("MCP protocol negotiates lifecycle and lists screenshot tool") {
         R"({"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{}})");
     REQUIRE(tools.has_value());
     CHECK(tools->find("\"name\":\"frame_capture\"") != std::string::npos);
+    CHECK(tools->find("\"enum\":[\"jpeg\",\"png\"]") != std::string::npos);
+    CHECK(tools->find("\"default\":\"jpeg\"") != std::string::npos);
     CHECK(tools->find("\"name\":\"click\"") != std::string::npos);
     CHECK(tools->find("\"minimum\":0") != std::string::npos);
     CHECK(tools->find("\"readOnlyHint\":true") != std::string::npos);
@@ -136,7 +182,7 @@ TEST_CASE("MCP screenshot tool fails closed without a frame") {
     CHECK(response->find("No presented guest frame") != std::string::npos);
 }
 
-TEST_CASE("MCP screenshot tool returns a PNG image and exact frame metadata") {
+TEST_CASE("MCP screenshot tool defaults to JPEG with exact frame metadata") {
     ogplay::agent::FrameSnapshotStore frames;
     static_cast<void>(frames.Publish(
         {2U, 1U, 7U, {255U, 0U, 0U, 255U, 0U, 255U, 0U, 255U}}));
@@ -144,17 +190,58 @@ TEST_CASE("MCP screenshot tool returns a PNG image and exact frame metadata") {
     const auto response = mcp.Handle(
         R"({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"frame_capture","arguments":{}}})");
     REQUIRE(response.has_value());
-    CHECK(response->find("\"mimeType\":\"image/png\"") != std::string::npos);
+    CHECK(response->find("\"mimeType\":\"image/jpeg\"") != std::string::npos);
+    CHECK(response->find("\"format\":\"jpeg\"") != std::string::npos);
     CHECK(response->find("\"sequence\":7") != std::string::npos);
     CHECK(response->find("\"width\":2") != std::string::npos);
     CHECK(response->find("\"height\":1") != std::string::npos);
     CHECK(response->find("\"isError\":false") != std::string::npos);
 
+    const auto jpeg = DecodeBase64(ImageData(*response));
+    REQUIRE(jpeg.size() > 4U);
+    CHECK(jpeg.substr(0U, 2U) == std::string("\xff\xd8", 2U));
+    CHECK(jpeg.substr(jpeg.size() - 2U) == std::string("\xff\xd9", 2U));
+    const auto dimensions = JpegDimensions(jpeg);
+    REQUIRE(dimensions.has_value());
+    CHECK(dimensions->first == 2U);
+    CHECK(dimensions->second == 1U);
+}
+
+TEST_CASE("MCP screenshot tool compresses full frames as JPEG and PNG") {
+    constexpr std::uint32_t width = 800U;
+    constexpr std::uint32_t height = 480U;
+    std::vector<std::uint8_t> rgba(width * height * 4U, 0U);
+    for (std::size_t offset = 0; offset < rgba.size(); offset += 4U) {
+        rgba[offset] = 24U;
+        rgba[offset + 1U] = 96U;
+        rgba[offset + 2U] = 192U;
+        rgba[offset + 3U] = 255U;
+    }
+    ogplay::agent::FrameSnapshotStore frames;
+    static_cast<void>(frames.Publish({width, height, 8U, std::move(rgba)}));
+    ogplay::agent::McpProtocolAdapter mcp{frames};
+    const auto jpeg_response = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":"jpeg","method":"tools/call","params":{"name":"frame_capture","arguments":{"format":"jpeg"}}})");
+    REQUIRE(jpeg_response.has_value());
+    const auto jpeg = DecodeBase64(ImageData(*jpeg_response));
+    CHECK(jpeg.size() < static_cast<std::size_t>(width) * height * 4U / 10U);
+    const auto jpeg_dimensions = JpegDimensions(jpeg);
+    REQUIRE(jpeg_dimensions.has_value());
+    CHECK(jpeg_dimensions->first == width);
+    CHECK(jpeg_dimensions->second == height);
+
+    const auto response = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"frame_capture","arguments":{"format":"png"}}})");
+    REQUIRE(response.has_value());
+    CHECK(response->find("\"mimeType\":\"image/png\"") != std::string::npos);
+    CHECK(response->find("\"format\":\"png\"") != std::string::npos);
+
     const auto png = DecodeBase64(ImageData(*response));
     REQUIRE(png.size() > 33U);
+    CHECK(png.size() < static_cast<std::size_t>(width) * height * 4U / 20U);
     CHECK(png.substr(0U, 8U) == std::string("\x89PNG\r\n\x1a\n", 8U));
-    CHECK(BigEndian(png, 16U) == 2U);
-    CHECK(BigEndian(png, 20U) == 1U);
+    CHECK(BigEndian(png, 16U) == width);
+    CHECK(BigEndian(png, 20U) == height);
     CHECK(static_cast<unsigned char>(png[24U]) == 8U);
     CHECK(static_cast<unsigned char>(png[25U]) == 6U);
 #if OGPLAY_TEST_HAS_SDL3
@@ -162,8 +249,8 @@ TEST_CASE("MCP screenshot tool returns a PNG image and exact frame metadata") {
     REQUIRE(io != nullptr);
     auto* const surface = SDL_LoadPNG_IO(io, true);
     REQUIRE(surface != nullptr);
-    CHECK(surface->w == 2);
-    CHECK(surface->h == 1);
+    CHECK(surface->w == static_cast<int>(width));
+    CHECK(surface->h == static_cast<int>(height));
     SDL_DestroySurface(surface);
 #endif
 }
@@ -282,5 +369,11 @@ TEST_CASE("MCP protocol strictly validates JSON-RPC envelopes and scoped params"
         R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"frame_capture","arguments":{"advance":true}}})");
     REQUIRE(invalid_arguments.has_value());
     CHECK(invalid_arguments->find("\"isError\":true") != std::string::npos);
-    CHECK(invalid_arguments->find("does not accept arguments") != std::string::npos);
+    CHECK(invalid_arguments->find("exactly 'jpeg' or 'png'") != std::string::npos);
+
+    const auto invalid_format = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"frame_capture","arguments":{"format":"jpg"}}})");
+    REQUIRE(invalid_format.has_value());
+    CHECK(invalid_format->find("\"isError\":true") != std::string::npos);
+    CHECK(invalid_format->find("exactly 'jpeg' or 'png'") != std::string::npos);
 }

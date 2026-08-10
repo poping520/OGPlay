@@ -28,10 +28,14 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0344 exact-APK 场景/checkpoint schema 与严格自检。
+- 无；下一项为 WU-0346 exact-APK 场景/checkpoint schema 与严格自检。
 
 ## 最近完成
 
+- [WU-0345] `frame_capture` 缺省返回 quality 85 JPEG，并以 `format=png` 返回压缩 PNG；
+  Asphalt 5 800×480 exact frame 分别为 82,349 与 790,327 字节，full CTest 470/470。
+- [WU-0344] 固定官方 stb commit `2c980bb` 的 `stb_image_write` v1.16，保留 MIT/Public
+  Domain 文本并隔离第三方编译告警；Debug tests 与 Release `ogplay` 均已构建。
 - [WU-0343] 可测试 dispatcher 在两个 guest loop 主线程逐 step 派发 MCP click down/up 并与
   桌面鼠标互斥；Release exact request 1/frame 428 后推进到 frame 473，full CTest 469/469。
 - [WU-0342] loopback HTTP server 接受调用方 click queue；真实 POST 返回 request/frame
@@ -44,12 +48,6 @@
 - [WU-0339] 原样 vendor PowerVR Native SDK 固定 commit 的 `PVRTDecompress.cpp/.h` 和 MIT
   license；OGPlay 薄 adapter 只做校验与调用，非均匀 twiddled word 黄金哈希在内 focused
   CTest 3/3 通过。
-- [WU-0338] A32 tick exhaustion 诊断新增 consumed、PC、LR，精确定位 Asphalt 5 PVRTC
-  guest 软件解压路径，不提高 Profile tick budget。
-- [WU-0337] Profile phase 失败先中断 guest wait 再清理，清理错误不覆盖原始 native call，
-  Asphalt 5 原“未响应”复现可观测退出。
-- [WU-0336] futex 新增失败清理 sticky interruption，当前及未来匹配 wait 明确返回
-  `-EINTR`，普通 value mismatch、WAKE N 与普通全局唤醒语义不变。
 - [WU-0335] Control Service、JSON-RPC、Logger JSONL 与诊断包清除手写 JSON，统一经 core
   yyjson 严格解析/构造；focused 31/31、Windows full CTest 460/460。
 - [WU-0334] MCP envelope/params/schema 迁移到严格 yyjson；语法、重复键、超限、非法 id、
@@ -78,7 +76,7 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 完成 WU-0343 后创建 WU-0344，冻结 exact-APK 场景/checkpoint schema 与严格自检。
+1. 创建 WU-0346，冻结 exact-APK 场景/checkpoint schema 与严格自检。
 2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
 3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。

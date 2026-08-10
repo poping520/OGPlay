@@ -2,7 +2,6 @@
 
 #include "ogplay/core/json.h"
 
-#include <array>
 #include <limits>
 #include <optional>
 #include <span>
@@ -11,11 +10,22 @@
 #include <string_view>
 #include <utility>
 
+#include <stb_image_write.h>
+
 namespace ogplay::agent {
 namespace {
 
 constexpr std::uint64_t kMaximumFrameBytes = 64ULL * 1024ULL * 1024ULL;
 constexpr std::string_view kProtocolVersion = "2025-11-25";
+constexpr int kJpegQuality = 85;
+
+enum class CaptureFormat { kJpeg, kPng };
+
+struct EncodedFrame final {
+    std::vector<std::uint8_t> bytes;
+    std::string_view format;
+    std::string_view mime_type;
+};
 
 void ValidateFrame(const FrameSnapshot& frame) {
     if (frame.width == 0 || frame.height == 0) {
@@ -56,93 +66,43 @@ std::string RpcResult(const core::JsonValue id, BuildResult&& build_result) {
     return writer.Serialize(envelope);
 }
 
-std::uint32_t Crc32(const std::span<const std::uint8_t> bytes) {
-    std::uint32_t crc = 0xffffffffU;
-    for (const auto byte : bytes) {
-        crc ^= byte;
-        for (unsigned bit = 0; bit < 8U; ++bit) {
-            crc = (crc >> 1U) ^ (0xedb88320U & (0U - (crc & 1U)));
-        }
+struct ImageWriteContext final {
+    std::vector<std::uint8_t> bytes;
+    bool failed{};
+};
+
+void AppendEncodedBytes(void* context, void* data, const int size) noexcept {
+    auto& output = *static_cast<ImageWriteContext*>(context);
+    if (output.failed || data == nullptr || size <= 0) return;
+    try {
+        const auto* begin = static_cast<const std::uint8_t*>(data);
+        output.bytes.insert(output.bytes.end(), begin, begin + size);
+    } catch (...) {
+        output.failed = true;
     }
-    return ~crc;
 }
 
-void AppendBigEndian(std::vector<std::uint8_t>& output, const std::uint32_t value) {
-    output.push_back(static_cast<std::uint8_t>(value >> 24U));
-    output.push_back(static_cast<std::uint8_t>(value >> 16U));
-    output.push_back(static_cast<std::uint8_t>(value >> 8U));
-    output.push_back(static_cast<std::uint8_t>(value));
-}
-
-void AppendChunk(std::vector<std::uint8_t>& output,
-                 const std::array<std::uint8_t, 4>& type,
-                 const std::span<const std::uint8_t> payload) {
-    if (payload.size() > std::numeric_limits<std::uint32_t>::max()) {
-        throw std::invalid_argument("PNG chunk is too large");
-    }
-    AppendBigEndian(output, static_cast<std::uint32_t>(payload.size()));
-    const auto crc_start = output.size();
-    output.insert(output.end(), type.begin(), type.end());
-    output.insert(output.end(), payload.begin(), payload.end());
-    AppendBigEndian(output, Crc32(std::span(output).subspan(crc_start)));
-}
-
-std::vector<std::uint8_t> DeflateStored(const std::span<const std::uint8_t> input) {
-    std::vector<std::uint8_t> output;
-    output.reserve(input.size() + input.size() / 65535U * 5U + 16U);
-    output.push_back(0x78U);
-    output.push_back(0x01U);
-    std::size_t offset = 0;
-    do {
-        const auto size = static_cast<std::uint16_t>(
-            std::min<std::size_t>(65535U, input.size() - offset));
-        const bool final = offset + size == input.size();
-        output.push_back(final ? 0x01U : 0x00U);
-        output.push_back(static_cast<std::uint8_t>(size));
-        output.push_back(static_cast<std::uint8_t>(size >> 8U));
-        const auto complement = static_cast<std::uint16_t>(~size);
-        output.push_back(static_cast<std::uint8_t>(complement));
-        output.push_back(static_cast<std::uint8_t>(complement >> 8U));
-        output.insert(output.end(), input.begin() + static_cast<std::ptrdiff_t>(offset),
-                      input.begin() + static_cast<std::ptrdiff_t>(offset + size));
-        offset += size;
-    } while (offset < input.size());
-
-    std::uint32_t first = 1U;
-    std::uint32_t second = 0U;
-    for (const auto byte : input) {
-        first = (first + byte) % 65521U;
-        second = (second + first) % 65521U;
-    }
-    AppendBigEndian(output, (second << 16U) | first);
-    return output;
-}
-
-std::vector<std::uint8_t> EncodePng(const FrameSnapshot& frame) {
+EncodedFrame EncodeFrame(const FrameSnapshot& frame, const CaptureFormat format) {
     ValidateFrame(frame);
-    const auto row_bytes = static_cast<std::size_t>(frame.width) * 4U;
-    std::vector<std::uint8_t> filtered;
-    filtered.reserve((row_bytes + 1U) * frame.height);
-    for (std::uint32_t row = 0; row < frame.height; ++row) {
-        filtered.push_back(0U);
-        const auto offset = static_cast<std::size_t>(row) * row_bytes;
-        filtered.insert(filtered.end(), frame.rgba8.begin() +
-                                           static_cast<std::ptrdiff_t>(offset),
-                        frame.rgba8.begin() +
-                            static_cast<std::ptrdiff_t>(offset + row_bytes));
+    ImageWriteContext output;
+    const auto width = static_cast<int>(frame.width);
+    const auto height = static_cast<int>(frame.height);
+    int encoded{};
+    if (format == CaptureFormat::kPng) {
+        const auto stride = static_cast<int>(frame.width * 4U);
+        encoded = stbi_write_png_to_func(AppendEncodedBytes, &output, width, height, 4,
+                                         frame.rgba8.data(), stride);
+    } else {
+        encoded = stbi_write_jpg_to_func(AppendEncodedBytes, &output, width, height, 4,
+                                         frame.rgba8.data(), kJpegQuality);
     }
-
-    std::vector<std::uint8_t> png{0x89U, 0x50U, 0x4eU, 0x47U,
-                                  0x0dU, 0x0aU, 0x1aU, 0x0aU};
-    std::vector<std::uint8_t> header;
-    AppendBigEndian(header, frame.width);
-    AppendBigEndian(header, frame.height);
-    header.insert(header.end(), {8U, 6U, 0U, 0U, 0U});
-    AppendChunk(png, {'I', 'H', 'D', 'R'}, header);
-    const auto compressed = DeflateStored(filtered);
-    AppendChunk(png, {'I', 'D', 'A', 'T'}, compressed);
-    AppendChunk(png, {'I', 'E', 'N', 'D'}, {});
-    return png;
+    if (encoded == 0 || output.failed || output.bytes.empty()) {
+        throw std::runtime_error("frame image encoding failed");
+    }
+    if (format == CaptureFormat::kPng) {
+        return {std::move(output.bytes), "png", "image/png"};
+    }
+    return {std::move(output.bytes), "jpeg", "image/jpeg"};
 }
 
 std::string Base64(const std::span<const std::uint8_t> input) {
@@ -172,11 +132,21 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     writer.AddString(capture, "name", "frame_capture");
     writer.AddString(capture, "title", "Capture latest OGPlay frame");
     writer.AddString(capture, "description",
-                     "Returns the latest presented guest frame as PNG without advancing "
-                     "guest execution or consuming input.");
+                     "Returns the latest presented guest frame as compressed JPEG or PNG "
+                     "without advancing guest execution or consuming input. Defaults to JPEG "
+                     "quality 85 when format is omitted.");
     const auto capture_input = writer.Object();
     writer.AddString(capture_input, "type", "object");
-    writer.Add(capture_input, "properties", writer.Object());
+    const auto capture_input_properties = writer.Object();
+    const auto capture_format = writer.Object();
+    writer.AddString(capture_format, "type", "string");
+    const auto capture_format_enum = writer.Array();
+    writer.Append(capture_format_enum, writer.String("jpeg"));
+    writer.Append(capture_format_enum, writer.String("png"));
+    writer.Add(capture_format, "enum", capture_format_enum);
+    writer.AddString(capture_format, "default", "jpeg");
+    writer.Add(capture_input_properties, "format", capture_format);
+    writer.Add(capture_input, "properties", capture_input_properties);
     writer.AddBool(capture_input, "additionalProperties", false);
     writer.Add(capture, "inputSchema", capture_input);
 
@@ -188,11 +158,19 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
         writer.AddString(property, "type", "integer");
         writer.Add(capture_properties, name, property);
     }
+    const auto output_format = writer.Object();
+    writer.AddString(output_format, "type", "string");
+    const auto output_format_enum = writer.Array();
+    writer.Append(output_format_enum, writer.String("jpeg"));
+    writer.Append(output_format_enum, writer.String("png"));
+    writer.Add(output_format, "enum", output_format_enum);
+    writer.Add(capture_properties, "format", output_format);
     writer.Add(capture_output, "properties", capture_properties);
     const auto capture_required = writer.Array();
     writer.Append(capture_required, writer.String("sequence"));
     writer.Append(capture_required, writer.String("width"));
     writer.Append(capture_required, writer.String("height"));
+    writer.Append(capture_required, writer.String("format"));
     writer.Add(capture_output, "required", capture_required);
     writer.AddBool(capture_output, "additionalProperties", false);
     writer.Add(capture, "outputSchema", capture_output);
@@ -259,12 +237,13 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     return result;
 }
 
-std::string FrameMetadataText(const FrameSnapshot& frame) {
+std::string FrameMetadataText(const FrameSnapshot& frame, const std::string_view format) {
     core::JsonWriter writer;
     const auto metadata = writer.Object();
     writer.AddUnsignedInteger(metadata, "sequence", frame.sequence);
     writer.AddUnsignedInteger(metadata, "width", frame.width);
     writer.AddUnsignedInteger(metadata, "height", frame.height);
+    writer.AddString(metadata, "format", format);
     return writer.Serialize(metadata);
 }
 
@@ -280,27 +259,29 @@ core::JsonWriter::Value ToolError(core::JsonWriter& writer, const std::string_vi
     return result;
 }
 
-core::JsonWriter::Value CaptureResult(core::JsonWriter& writer, FrameSnapshotStore& frames) {
+core::JsonWriter::Value CaptureResult(core::JsonWriter& writer, FrameSnapshotStore& frames,
+                                      const CaptureFormat format) {
     const auto frame = frames.Latest();
     if (!frame) return ToolError(writer, "No presented guest frame is available.");
 
-    const auto png = EncodePng(*frame);
+    const auto encoded = EncodeFrame(*frame, format);
     const auto result = writer.Object();
     const auto content = writer.Array();
     const auto image = writer.Object();
     writer.AddString(image, "type", "image");
-    writer.AddString(image, "data", Base64(png));
-    writer.AddString(image, "mimeType", "image/png");
+    writer.AddString(image, "data", Base64(encoded.bytes));
+    writer.AddString(image, "mimeType", encoded.mime_type);
     writer.Append(content, image);
     const auto text = writer.Object();
     writer.AddString(text, "type", "text");
-    writer.AddString(text, "text", FrameMetadataText(*frame));
+    writer.AddString(text, "text", FrameMetadataText(*frame, encoded.format));
     writer.Append(content, text);
     writer.Add(result, "content", content);
     const auto structured = writer.Object();
     writer.AddUnsignedInteger(structured, "sequence", frame->sequence);
     writer.AddUnsignedInteger(structured, "width", frame->width);
     writer.AddUnsignedInteger(structured, "height", frame->height);
+    writer.AddString(structured, "format", encoded.format);
     writer.Add(result, "structuredContent", structured);
     writer.AddBool(result, "isError", false);
     return result;
@@ -516,8 +497,9 @@ std::optional<std::string> McpProtocolAdapter::Handle(
                 writer.Add(result, "serverInfo", server_info);
                 writer.AddString(
                     result, "instructions",
-                    "frame_capture returns the latest presented guest frame without advancing "
-                    "execution. click queues a bounded primary-pointer tap in guest pixels.");
+                    "frame_capture returns the latest presented guest frame as JPEG by default "
+                    "or PNG when requested, without advancing execution. click queues a bounded "
+                    "primary-pointer tap in guest pixels.");
                 return result;
             });
         }
@@ -550,13 +532,23 @@ std::optional<std::string> McpProtocolAdapter::Handle(
                 return RpcError(id, -32602, "tool arguments must be an object");
             }
             if (*name == "frame_capture") {
+                CaptureFormat format = CaptureFormat::kJpeg;
                 if (arguments.has_value() && arguments->Size() != 0U) {
-                    return RpcResult(*id, [](core::JsonWriter& writer) {
-                        return ToolError(writer, "frame_capture does not accept arguments");
-                    });
+                    const auto format_value = arguments->Member("format");
+                    const auto requested_format =
+                        format_value ? format_value->String() : std::nullopt;
+                    if (arguments->Size() != 1U || !requested_format.has_value() ||
+                        (*requested_format != "jpeg" && *requested_format != "png")) {
+                        return RpcResult(*id, [](core::JsonWriter& writer) {
+                            return ToolError(
+                                writer,
+                                "frame_capture format must be exactly 'jpeg' or 'png'");
+                        });
+                    }
+                    if (*requested_format == "png") format = CaptureFormat::kPng;
                 }
                 return RpcResult(*id, [&](core::JsonWriter& writer) {
-                    return CaptureResult(writer, frames_);
+                    return CaptureResult(writer, frames_, format);
                 });
             }
             if (*name == "click") {

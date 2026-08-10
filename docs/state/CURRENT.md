@@ -33,12 +33,16 @@
 
 ## 最近完成
 
+- [WU-0318] `run-apk` 现对两种 Profile 生命周期消费强类型单次调用预算；第二个 exact
+  Profile 以纯数据声明 10 亿 tick 后，首次 `nativeRender` 在约 21 秒内返回并提交 1 frame，
+  证明原 2 亿边界来自有限 PVRTC 加载工作量。120 帧 smoke 已推进至独立缺口
+  `audio.load_movie`，未伪造成完整成功。
 - [WU-0317] Title Profile v1 runtime 新增可选 `maximum_ticks_per_call`，默认维持 2 亿，
   合法范围 1..10 亿；schema、Python 目录门禁和 C++ 强类型 loader 共同拒绝未知、越界
   或错误类型输入。
 - [WU-0316] 第二个 exact APK 在真实 SWF 加载阶段稳定超过单次 2 亿 guest tick；耗尽 PC
   `0x102eb2b0` 已反汇编定位到正常 `InterpolateColours` 计算而非自旋。未验证的预算实验
-  已撤销，现状记入 KI-0008。
+  已撤销；WU-0317/0318 随后以受检 Profile 预算闭合该边界。
 - [WU-0315] VFS 现可从显式、受检的 Profile 工作目录解析相对 guest 路径，并继续拒绝
   traversal；第二个 exact APK 的 `./data/...` 资源已命中 external 数据，原空对象 fault
   消失并推进至独立 tick-budget 边界，全量 CTest 通过。
@@ -66,9 +70,6 @@
 - [WU-0307] GLES1 已补齐 `glGetBooleanv`、`glIsEnabled`、`glGetPointerv`、`glTexEnvf`，
   并扩展 `glGetIntegerv` 的 client-array descriptor 与 legacy blend alias；第二个 exact APK
   已越过相关查询，明确停在后续 client-array type 边界，全量 CTest 436/436 通过。
-- [WU-0306] GLES1 已发布 clear-stencil、depth-range、line-width、polygon-offset、三项
-  stencil 与两项 point handler；point size/min/max 由 fixed shader 消费，第二个 exact APK
-  已从 `glPointSize` 推进至 `glIsEnabled`，全量 CTest 436/436 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
@@ -79,14 +80,14 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 为第二个 exact Profile 声明受检的单次调用预算，并用 bounded smoke 验证首次加载是否
-   能返回；不得按标题在生产代码中猜测预算。
+1. 按 exact-APK 调用证据为已声明的通用 `audio.load_movie` implementation id 注册受检
+   handler，并保持资源/解码失败明确可观测。
 2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
 
 ## 阻塞
 
-- KI-0008：第二个 exact APK 的首次 SWF 加载超过当前单次 guest call tick 上限；下一轮需
-  在保持有界失败的前提下通过 Profile 预算测量加载是否能够完成。
+- 第二个 exact APK 已越过首次加载预算边界；当前 120 帧 smoke 明确停在 Profile 已声明、
+  但 runtime implementation catalog 尚未注册的 `audio.load_movie` handler。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

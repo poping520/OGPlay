@@ -8,6 +8,7 @@ abi = "armeabi"
 [runtime]
 api_level = 19
 lifecycle = "gl_surface_view"
+maximum_ticks_per_call = 1000000000
 [runtime.surface]
 width = 1024
 height = 600

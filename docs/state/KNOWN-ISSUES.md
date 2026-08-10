@@ -11,7 +11,6 @@
 | KI-0005 | planned | 按需 | Agent Control 当前提供 stdio JSON-RPC；TCP、UDS 或 MCP adapter 仅在实际需要时增加。 |
 | KI-0006 | external | 建立远端仓库后 | 当前没有可执行的 hosted CI 远端，不能宣称托管 job 已通过；本地与测试机结果不替代 hosted CI 状态。 |
 | KI-0007 | upstream | 持续 | doctest 2.4.11 在 CMake 4.x 配置期产生上游旧 policy deprecation warning，不影响 warnings-as-errors 编译与测试。 |
-| KI-0008 | active | M5 | 第二个 exact APK 在工作目录修复后已进入真实 SWF 加载，但 Debug 的单次 `nativeRender` 超过当前 200,000,000 guest tick 上限；耗尽时 PC `0x102eb2b0` 位于正常 `InterpolateColours` 计算而非自旋。提高预算尚未完成效果验证，当前限制保持不变。 |
 
 ## 开发验证约束
 

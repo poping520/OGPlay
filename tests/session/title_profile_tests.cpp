@@ -176,6 +176,8 @@ TEST_CASE("Dungeon Hunter Profile declares its DEX Java callbacks") {
                       "data/profiles/com.gameloft.android.GAND.GloftDUNQ."
                       "DungeonHunter.profile.toml";
     const auto profile = ogplay::session::LoadTitleProfile(path);
+    CHECK(profile.runtime.maximum_ticks_per_call ==
+          ogplay::session::ProfileRuntime::kMaximumTicksPerCall);
     REQUIRE(profile.java_classes.size() == 2U);
     const auto activity = std::ranges::find(
         profile.java_classes,

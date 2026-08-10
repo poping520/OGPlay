@@ -48,7 +48,7 @@ note = "M5 WU-0265..0267 登记并注入精确 Profile quirk；默认严格拒�
 [profiles.dungeon_hunter_p1000]
 status = "partial"
 test = "tools.title_profiles_current; exact APK run-apk preflight"
-note = "M5 WU-0303 以纯数据 Profile 闭合 package/version/SO/ABI、1024x600 GLSurfaceView 静态 JNI 生命周期和 required external payload；guest 执行能力按后续明确缺口继续推进"
+note = "M5 WU-0303/0318 以纯数据 Profile 闭合身份、1024x600 GLSurfaceView 生命周期、required external payload 与 10 亿 tick 加载预算；exact APK 已提交 1 frame，后续明确停在 audio.load_movie handler"
 
 [session.lifecycle_templates]
 status = "complete"
@@ -673,7 +673,7 @@ note = "M5 WU-0249/0311 以纯 Profile 数据声明两个目标 activity native 
 [frontend.profile_gl_surface_run]
 status = "complete"
 test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"
-note = "M5 WU-0244 让 run-apk 对 gl_surface_view 精确 Profile 组合 Android guest call session、声明式 lifecycle、SDL input 与 managed ANGLE frame"
+note = "M5 WU-0244/0318 让 run-apk 对 gl_surface_view 精确 Profile 组合 Android guest call session、声明式 lifecycle、SDL input、managed ANGLE frame，并原样消费受检单次调用预算"
 
 [gles.gles1_core_catalog]
 status = "complete"

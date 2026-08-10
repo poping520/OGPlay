@@ -422,7 +422,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
         auto guest = runtime::NativeActivitySession::Start(
             {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
              profile.runtime.surface.width, profile.runtime.surface.height,
-             UINT64_C(200000000), {}, supersample_factor});
+             profile.runtime.maximum_ticks_per_call, {}, supersample_factor});
         Write("OGPlay: NativeActivity started; close the window to stop.\n");
         while (!quit) {
             const auto window_state = window->State();
@@ -469,7 +469,8 @@ int RunApkCommand(const int argc, const char* const argv[]) {
         auto guest = runtime::AndroidGuestCallSession::Start(
             {profile.runtime.api_level, root_name, module_inputs,
              NativeBackend(), profile.runtime.surface.width,
-             profile.runtime.surface.height, UINT64_C(200000000),
+             profile.runtime.surface.height,
+             profile.runtime.maximum_ticks_per_call,
              supersample_factor, &filesystem, {}, direct_assets,
              {.allow_gles1_material_single_face = ProfileEnablesQuirk(
                   profile, "gles1_material_front_face")},

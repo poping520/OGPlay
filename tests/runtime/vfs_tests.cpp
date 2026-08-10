@@ -233,7 +233,7 @@ TEST_CASE("VFS host directory mount lazily reads and preserves external writes")
     std::filesystem::remove_all(root);
 }
 
-TEST_CASE("VFS host directory mount rejects unsafe and ambiguous trees") {
+TEST_CASE("VFS host directory mount rejects unsafe and ambiguous trees transactionally") {
     const auto unique = std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());
     const auto root = std::filesystem::temp_directory_path() /
@@ -242,14 +242,16 @@ TEST_CASE("VFS host directory mount rejects unsafe and ambiguous trees") {
     {
         std::ofstream first(root / "good.bin", std::ios::binary);
         first.put('1');
-        std::ofstream second(root / "bad\\name.bin", std::ios::binary);
+        std::ofstream second(root / "other.bin", std::ios::binary);
         second.put('2');
     }
     ogplay::runtime::VirtualFileSystem vfs;
+    const std::array existing{std::byte{'x'}};
+    vfs.PutFile("/sdcard/game/GOOD.BIN", existing, false);
     CHECK_THROWS_AS(vfs.MountHostDirectory("/sdcard/game", root),
                     ogplay::runtime::VfsError);
-    CHECK_THROWS_AS(static_cast<void>(
-                        vfs.Stat("/sdcard/game/good.bin")),
+    CHECK(vfs.Stat("/sdcard/game/good.bin").size == 1U);
+    CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/sdcard/game/other.bin")),
                     ogplay::runtime::VfsError);
     std::filesystem::remove_all(root);
 
@@ -257,12 +259,14 @@ TEST_CASE("VFS host directory mount rejects unsafe and ambiguous trees") {
     std::error_code error;
     std::filesystem::create_symlink(root / "missing", root / "link", error);
     if (!error) {
-        CHECK_THROWS_AS(vfs.MountHostDirectory("/sdcard/game", root),
+        ogplay::runtime::VirtualFileSystem symlink_vfs;
+        CHECK_THROWS_AS(symlink_vfs.MountHostDirectory("/sdcard/game", root),
                         ogplay::runtime::VfsError);
     }
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root);
-    CHECK_THROWS_AS(vfs.MountHostDirectory("/sdcard/game", root),
+    ogplay::runtime::VirtualFileSystem empty_vfs;
+    CHECK_THROWS_AS(empty_vfs.MountHostDirectory("/sdcard/game", root),
                     ogplay::runtime::VfsError);
     std::filesystem::remove_all(root);
 }

@@ -29,4 +29,5 @@ syscall 与 framework Asset 只能单向调用本模块。
 
 ## 测试
 
-对应 `tests/runtime/vfs_tests.cpp`，并由 syscall 与 Asset 契约累计覆盖。
+对应 `tests/runtime/vfs_tests.cpp`，并由 syscall 与 Asset 契约累计覆盖。宿主目录事务测试
+使用预存 guest 路径的 ASCII 大小写折叠冲突，不依赖宿主文件系统能否创建反斜杠文件名。

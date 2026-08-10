@@ -313,7 +313,7 @@ note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样�
 [runtime.vfs]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp"
-note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close；M5 WU-0300/0301/0315 增加 lazy backing、显式工作目录与受检相对路径解析"
+note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close；M5 WU-0300/0301/0315 增加 lazy backing、显式工作目录与受检相对路径解析；WU-0332 以跨平台冲突夹具复核事务回滚"
 
 [runtime.jni]
 status = "complete"

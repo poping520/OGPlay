@@ -89,17 +89,43 @@ private:
 
 class AndroidGuestLegacyMediaState final {
 public:
+    struct AudioTrackSnapshot final {
+        std::int32_t sample_rate{};
+        std::int32_t channels{};
+        std::int32_t buffer_size{};
+        std::uint64_t bytes_written{};
+        bool playing{};
+        bool paused{};
+        bool released{};
+    };
+
     void Record(std::string_view method);
     void SetMasterVolume(float volume);
     void SetMusicVolume(std::int32_t resource, float volume);
     [[nodiscard]] float MasterVolume() const;
     [[nodiscard]] float MusicVolume(std::int32_t resource) const;
     [[nodiscard]] std::uint64_t CallbackCount(std::string_view method) const;
+    [[nodiscard]] static std::int32_t MinimumAudioTrackBuffer(
+        std::int32_t sample_rate, std::int32_t channel_config,
+        std::int32_t encoding);
+    void ConfigureAudioTrack(JniObjectIdentity track, std::int32_t sample_rate,
+                             std::int32_t channel_config,
+                             std::int32_t encoding, std::int32_t buffer_size,
+                             std::int32_t mode);
+    void PauseAudioTrack(JniObjectIdentity track);
+    void PlayAudioTrack(JniObjectIdentity track);
+    void StopAudioTrack(JniObjectIdentity track);
+    void ReleaseAudioTrack(JniObjectIdentity track);
+    void WriteAudioTrack(JniObjectIdentity track,
+                         std::span<const JniByte> bytes);
+    [[nodiscard]] AudioTrackSnapshot AudioTrack(
+        JniObjectIdentity track) const;
 
 private:
     mutable std::mutex mutex_;
     std::map<std::string, std::uint64_t, std::less<>> callback_counts_;
     std::map<std::int32_t, float> music_volumes_;
+    std::map<std::uint64_t, AudioTrackSnapshot> audio_tracks_;
     float master_volume_{1.0F};
 };
 

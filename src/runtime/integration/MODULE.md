@@ -191,6 +191,10 @@
   与 no-op 语义，并按方法线程安全累计调用；master/per-music volume 是受检可查询状态。
   编号 sound resource 必须通过注入 loader 读取真实非空字节并受 JNI size 上限约束，
   不存在、负编号、空内容或无 loader 明确失败；不得把 Java no-op 解释成宿主播放成功。
+- legacy AudioTrack framework 批次实现 PCM16 mono/stereo 的受检 minimum-buffer、stream
+  constructor、play/pause/stop/release 与 byte-array region write；每个 track 以 host object
+  identity 隔离并发布 playing/paused/released/bytes-written 状态。非法 format、mode、range、
+  重复构造或 release 后调用明确失败；PCM 输出混音尚未接线时能力保持 partial。
 - `display.change_mode` 按 legacy Java 契约把 mode `1` 记录为允许屏幕休眠，其他值记录为
   保持唤醒；请求进入线程安全的通用 framework 状态。宿主防休眠尚未接入时不得宣称已
   改变平台窗口策略。

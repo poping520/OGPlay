@@ -126,6 +126,110 @@ std::uint64_t AndroidGuestLegacyMediaState::CallbackCount(
     return found == callback_counts_.end() ? 0U : found->second;
 }
 
+std::int32_t AndroidGuestLegacyMediaState::MinimumAudioTrackBuffer(
+    const std::int32_t sample_rate, const std::int32_t channel_config,
+    const std::int32_t encoding) {
+    const auto channels = channel_config == 4 ? 1 : channel_config == 12 ? 2 : 0;
+    if (sample_rate < 4000 || sample_rate > 192000 || channels == 0 ||
+        encoding != 2) {
+        return -2;
+    }
+    const auto bytes = static_cast<std::int64_t>(sample_rate) * channels * 2 / 5;
+    return static_cast<std::int32_t>(std::max<std::int64_t>(4096, bytes));
+}
+
+void AndroidGuestLegacyMediaState::ConfigureAudioTrack(
+    const JniObjectIdentity track, const std::int32_t sample_rate,
+    const std::int32_t channel_config, const std::int32_t encoding,
+    const std::int32_t buffer_size, const std::int32_t mode) {
+    const auto minimum = MinimumAudioTrackBuffer(
+        sample_rate, channel_config, encoding);
+    if (track.value == 0 || minimum < 0 || buffer_size < minimum || mode != 1) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack configuration is invalid");
+    }
+    std::scoped_lock lock(mutex_);
+    if (audio_tracks_.contains(track.value)) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack is already configured");
+    }
+    audio_tracks_.emplace(track.value, AudioTrackSnapshot{
+        sample_rate, channel_config == 4 ? 1 : 2, buffer_size});
+}
+
+void AndroidGuestLegacyMediaState::PauseAudioTrack(
+    const JniObjectIdentity track) {
+    std::scoped_lock lock(mutex_);
+    const auto found = audio_tracks_.find(track.value);
+    if (found == audio_tracks_.end() || found->second.released) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack is unavailable");
+    }
+    found->second.playing = false;
+    found->second.paused = true;
+}
+
+void AndroidGuestLegacyMediaState::PlayAudioTrack(
+    const JniObjectIdentity track) {
+    std::scoped_lock lock(mutex_);
+    const auto found = audio_tracks_.find(track.value);
+    if (found == audio_tracks_.end() || found->second.released) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack is unavailable");
+    }
+    found->second.playing = true;
+    found->second.paused = false;
+}
+
+void AndroidGuestLegacyMediaState::StopAudioTrack(
+    const JniObjectIdentity track) {
+    std::scoped_lock lock(mutex_);
+    const auto found = audio_tracks_.find(track.value);
+    if (found == audio_tracks_.end() || found->second.released) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack is unavailable");
+    }
+    found->second.playing = false;
+    found->second.paused = false;
+}
+
+void AndroidGuestLegacyMediaState::ReleaseAudioTrack(
+    const JniObjectIdentity track) {
+    std::scoped_lock lock(mutex_);
+    const auto found = audio_tracks_.find(track.value);
+    if (found == audio_tracks_.end() || found->second.released) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack is unavailable");
+    }
+    found->second.playing = false;
+    found->second.released = true;
+}
+
+void AndroidGuestLegacyMediaState::WriteAudioTrack(
+    const JniObjectIdentity track, const std::span<const JniByte> bytes) {
+    std::scoped_lock lock(mutex_);
+    const auto found = audio_tracks_.find(track.value);
+    if (found == audio_tracks_.end() || found->second.released ||
+        bytes.size() > static_cast<std::size_t>(found->second.buffer_size) ||
+        found->second.bytes_written >
+            std::numeric_limits<std::uint64_t>::max() - bytes.size()) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack write is invalid");
+    }
+    found->second.bytes_written += bytes.size();
+}
+
+AndroidGuestLegacyMediaState::AudioTrackSnapshot
+AndroidGuestLegacyMediaState::AudioTrack(const JniObjectIdentity track) const {
+    std::scoped_lock lock(mutex_);
+    const auto found = audio_tracks_.find(track.value);
+    if (found == audio_tracks_.end()) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack is unavailable");
+    }
+    return found->second;
+}
+
 void BindAndroidGuestJavaMovieHandlers(
     JniInvocationEngine& invocations, JniEnvironment& environment,
     JniStringStore& strings, AndroidGuestMovieState& movie_state) {
@@ -154,6 +258,81 @@ void BindAndroidGuestJavaMediaHandlers(
     AndroidGuestMovieState& movie_state,
     AndroidGuestLegacyMediaState& media_state,
     const audio::JavaSoundPoolMixer::EncodedResourceLoader& resource_loader) {
+    const auto track_identity = [&environment](const JniInvocation& invocation) {
+        const auto identity = environment.ResolveObjectForHle(
+            invocation.thread_id, invocation.receiver);
+        if (!identity.has_value()) {
+            throw AndroidGuestCallSessionError(
+                "Android guest AudioTrack receiver is invalid");
+        }
+        return *identity;
+    };
+    invocations.RegisterHandler(
+        "audio.track.minimum_buffer",
+        [&media_state](const JniInvocation& invocation) {
+            return JniValue{JniInt{media_state.MinimumAudioTrackBuffer(
+                std::get<JniInt>(invocation.arguments[0]),
+                std::get<JniInt>(invocation.arguments[1]),
+                std::get<JniInt>(invocation.arguments[2]))}};
+        });
+    invocations.RegisterHandler(
+        "audio.track.construct",
+        [&media_state, track_identity](const JniInvocation& invocation) {
+            if (std::get<JniInt>(invocation.arguments[0]) != 3) {
+                throw AndroidGuestCallSessionError(
+                    "Android guest AudioTrack stream type is unsupported");
+            }
+            media_state.ConfigureAudioTrack(
+                track_identity(invocation),
+                std::get<JniInt>(invocation.arguments[1]),
+                std::get<JniInt>(invocation.arguments[2]),
+                std::get<JniInt>(invocation.arguments[3]),
+                std::get<JniInt>(invocation.arguments[4]),
+                std::get<JniInt>(invocation.arguments[5]));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.track.play",
+        [&media_state, track_identity](const JniInvocation& invocation) {
+            media_state.PlayAudioTrack(track_identity(invocation));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.track.pause",
+        [&media_state, track_identity](const JniInvocation& invocation) {
+            media_state.PauseAudioTrack(track_identity(invocation));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.track.stop",
+        [&media_state, track_identity](const JniInvocation& invocation) {
+            media_state.StopAudioTrack(track_identity(invocation));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.track.release",
+        [&media_state, track_identity](const JniInvocation& invocation) {
+            media_state.ReleaseAudioTrack(track_identity(invocation));
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.track.write",
+        [&environment, &arrays, &media_state, track_identity](
+            const JniInvocation& invocation) {
+            const auto array = environment.ResolveObjectForHle(
+                invocation.thread_id,
+                std::get<JniReference>(invocation.arguments[0]));
+            if (!array.has_value()) {
+                throw AndroidGuestCallSessionError(
+                    "Android guest AudioTrack byte array is null");
+            }
+            const auto offset = std::get<JniInt>(invocation.arguments[1]);
+            const auto count = std::get<JniInt>(invocation.arguments[2]);
+            const auto region = std::get<std::vector<JniByte>>(
+                arrays.Region(*array, offset, count));
+            media_state.WriteAudioTrack(track_identity(invocation), region);
+            return JniValue{JniInt{count}};
+        });
     invocations.RegisterHandler(
         "audio.load_movie",
         [&environment, &strings, &movie_state, &media_state](

@@ -765,6 +765,11 @@ status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp"
 note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布失败清理所需的 guest wait interruption"
 
+[runtime.legacy_audio_track]
+status = "partial"
+test = "tests/runtime/android_guest_java_media_tests.cpp; tests/session/title_profile_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
+note = "M8 WU-0374 以通用 state/HLE 闭合 PCM16 mono/stereo AudioTrack 七项 Java/JNI 调用并记录实际 write 字节；exact 越过音频 bootstrap，PCM 宿主混音尚未接线"
+
 [runtime.host_managed_gl_surface]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"

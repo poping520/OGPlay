@@ -30,6 +30,16 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
           {"setVolumeMusic", "(FI)V", "audio.music_volume.set", true},
           {"getVolumeMusic", "(I)F", "audio.music_volume.get", true}},
          {}});
+    const auto audio_track = classes.RegisterClass(
+        {"android/media/AudioTrack", {},
+         {{"<init>", "(IIIIII)V", "audio.track.construct", false},
+          {"getMinBufferSize", "(III)I", "audio.track.minimum_buffer", true},
+          {"play", "()V", "audio.track.play", false},
+          {"pause", "()V", "audio.track.pause", false},
+          {"stop", "()V", "audio.track.stop", false},
+          {"release", "()V", "audio.track.release", false},
+          {"write", "([BII)I", "audio.track.write", false}},
+         {}});
     JniInvocationEngine invocations{classes};
     JniEnvironment environment;
     environment.AttachThread(9U);
@@ -95,5 +105,69 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
     CHECK(std::get<JniFloat>(invoke(
               media, "getVolumeMusic", "(I)F", resource)) ==
           doctest::Approx(0.75F));
+
+    const std::array<JniValue, 3> format{
+        JniInt{44100}, JniInt{12}, JniInt{2}};
+    const auto minimum = std::get<JniInt>(invoke(
+        audio_track, "getMinBufferSize", "(III)I", format));
+    CHECK(minimum == 35280);
+    const auto track_identity = AllocateJniHostObjectIdentity();
+    const auto track_reference = environment.PublishLocalObject(9U, track_identity);
+    const auto constructor = classes.GetMethodId(
+        audio_track, "<init>", "(IIIIII)V", false);
+    REQUIRE(constructor.has_value());
+    const std::array<JniValue, 6> configuration{
+        JniInt{3}, JniInt{44100}, JniInt{12}, JniInt{2},
+        JniInt{minimum}, JniInt{1}};
+    static_cast<void>(invocations.InvokeNonvirtual(
+        9U, track_reference, audio_track, audio_track, *constructor,
+        configuration, JniArgumentSource::value_array));
+
+    const auto bytes_identity = arrays.New(JniPrimitiveKind::byte, 8);
+    arrays.SetRegion(bytes_identity, 0, JniPrimitiveArrayData{
+        std::vector<JniByte>{0, 1, 2, 3, 4, 5, 6, 7}});
+    const auto bytes_ref = environment.PublishLocalObject(9U, bytes_identity);
+    const auto write = classes.GetMethodId(
+        audio_track, "write", "([BII)I", false);
+    REQUIRE(write.has_value());
+    const std::array<JniValue, 3> write_arguments{
+        bytes_ref, JniInt{2}, JniInt{4}};
+    CHECK(std::get<JniInt>(invocations.InvokeVirtual(
+              9U, track_reference, audio_track, *write, write_arguments,
+              JniArgumentSource::value_array)) == 4);
+    CHECK(media_state.AudioTrack(track_identity).bytes_written == 4U);
+
+    const auto play_track = classes.GetMethodId(
+        audio_track, "play", "()V", false);
+    const auto pause = classes.GetMethodId(audio_track, "pause", "()V", false);
+    const auto stop = classes.GetMethodId(audio_track, "stop", "()V", false);
+    const auto release = classes.GetMethodId(
+        audio_track, "release", "()V", false);
+    REQUIRE(play_track.has_value());
+    REQUIRE(pause.has_value());
+    REQUIRE(stop.has_value());
+    REQUIRE(release.has_value());
+    static_cast<void>(invocations.InvokeVirtual(
+        9U, track_reference, audio_track, *play_track, {},
+        JniArgumentSource::value_array));
+    CHECK(media_state.AudioTrack(track_identity).playing);
+    static_cast<void>(invocations.InvokeVirtual(
+        9U, track_reference, audio_track, *pause, {},
+        JniArgumentSource::value_array));
+    CHECK(media_state.AudioTrack(track_identity).paused);
+    static_cast<void>(invocations.InvokeVirtual(
+        9U, track_reference, audio_track, *stop, {},
+        JniArgumentSource::value_array));
+    CHECK_FALSE(media_state.AudioTrack(track_identity).playing);
+    CHECK_FALSE(media_state.AudioTrack(track_identity).paused);
+    static_cast<void>(invocations.InvokeVirtual(
+        9U, track_reference, audio_track, *release, {},
+        JniArgumentSource::value_array));
+    CHECK(media_state.AudioTrack(track_identity).released);
+    CHECK_THROWS_AS(
+        static_cast<void>(invocations.InvokeVirtual(
+            9U, track_reference, audio_track, *write, write_arguments,
+            JniArgumentSource::value_array)),
+        AndroidGuestCallSessionError);
     environment.DetachThread(9U);
 }

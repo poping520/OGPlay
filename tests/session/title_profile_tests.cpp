@@ -235,6 +235,25 @@ TEST_CASE("Dungeon Hunter Profile declares its DEX Java callbacks") {
     }));
 }
 
+TEST_CASE("Asphalt 6 Profile declares the complete AudioTrack contract") {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                      "data/profiles/com.gameloft.android.GAND.GloftAPHP.profile.toml";
+    const auto profile = ogplay::session::LoadTitleProfile(path);
+    const auto track = std::ranges::find(
+        profile.java_classes, "android/media/AudioTrack",
+        &ogplay::session::ProfileJavaClass::name);
+    REQUIRE(track != profile.java_classes.end());
+    REQUIRE(track->methods.size() == 7U);
+    CHECK(track->methods[0].name == "<init>");
+    CHECK(track->methods[0].signature == "(IIIIII)V");
+    CHECK_FALSE(track->methods[0].is_static);
+    CHECK(track->methods[1].implementation == "audio.track.minimum_buffer");
+    CHECK(track->methods[1].is_static);
+    CHECK(track->methods[2].name == "play");
+    CHECK(track->methods[6].name == "write");
+    CHECK(track->methods[6].signature == "([BII)I");
+}
+
 TEST_CASE("Title Profile C++ loader rejects schema and TOML violations") {
     auto mismatched = BaseProfile();
     CHECK_THROWS_AS(

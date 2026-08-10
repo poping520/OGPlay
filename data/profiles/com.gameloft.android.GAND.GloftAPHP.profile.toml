@@ -45,6 +45,18 @@ manifest = [
 sound_pool = { source = "apk", path_pattern = "res/raw/raw_{resource:03}.ogg" }
 
 [[java.class]]
+name = "android/media/AudioTrack"
+method = [
+  { name = "<init>", sig = "(IIIIII)V", impl = "audio.track.construct", static = false },
+  { name = "getMinBufferSize", sig = "(III)I", impl = "audio.track.minimum_buffer", static = true },
+  { name = "play", sig = "()V", impl = "audio.track.play", static = false },
+  { name = "pause", sig = "()V", impl = "audio.track.pause", static = false },
+  { name = "stop", sig = "()V", impl = "audio.track.stop", static = false },
+  { name = "release", sig = "()V", impl = "audio.track.release", static = false },
+  { name = "write", sig = "([BII)I", impl = "audio.track.write", static = false },
+]
+
+[[java.class]]
 name = "com/gameloft/android/GAND/GloftAPHP/GLUtils/Device"
 method = [
   { name = "a", sig = "()[B", impl = "device.identifier_bytes", static = true },

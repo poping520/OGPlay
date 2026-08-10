@@ -173,6 +173,10 @@ LifecycleFrameState ProfileGuestLifecycle::StepFrame() {
         throw ProfileGuestLifecycleError(
             "profile guest lifecycle cannot step in its current state");
     }
+    if (suspended_) {
+        throw ProfileGuestLifecycleError(
+            "profile guest lifecycle cannot step while suspended");
+    }
     if (frame_ == std::numeric_limits<std::uint64_t>::max()) {
         throw ProfileGuestLifecycleError(
             "profile guest lifecycle frame counter overflow");
@@ -202,6 +206,10 @@ void ProfileGuestLifecycle::QueueInput(
         throw ProfileGuestLifecycleError(
             "profile guest lifecycle cannot queue input in its current state");
     }
+    if (suspended_) {
+        throw ProfileGuestLifecycleError(
+            "profile guest lifecycle cannot queue input while suspended");
+    }
     static_cast<void>(InputPhase(input));
     static_cast<void>(InputArguments(input, profile_->runtime.surface));
     pending_input_.push_back(input);
@@ -216,7 +224,7 @@ LifecycleFrameState ProfileGuestLifecycle::Stop() {
     std::exception_ptr failure;
     if (startup_completed_) {
         try {
-            ExecutePhase(ProfileNativeCallPhase::pause);
+            if (!suspended_) ExecutePhase(ProfileNativeCallPhase::pause);
             ExecutePhase(ProfileNativeCallPhase::shutdown);
         } catch (...) {
             failure = std::current_exception();
@@ -243,6 +251,36 @@ LifecycleFrameState ProfileGuestLifecycle::Stop() {
         std::rethrow_exception(failure);
     }
     state_ = LifecycleRunState::stopped;
+    return State();
+}
+
+LifecycleFrameState ProfileGuestLifecycle::Suspend() {
+    if (state_ != LifecycleRunState::running || suspended_) {
+        throw ProfileGuestLifecycleError(
+            "profile guest lifecycle cannot suspend in its current state");
+    }
+    try {
+        ExecutePhase(ProfileNativeCallPhase::pause);
+        suspended_ = true;
+    } catch (...) {
+        state_ = LifecycleRunState::failed;
+        throw;
+    }
+    return State();
+}
+
+LifecycleFrameState ProfileGuestLifecycle::Resume() {
+    if (state_ != LifecycleRunState::running || !suspended_) {
+        throw ProfileGuestLifecycleError(
+            "profile guest lifecycle cannot resume in its current state");
+    }
+    try {
+        ExecutePhase(ProfileNativeCallPhase::resume);
+        suspended_ = false;
+    } catch (...) {
+        state_ = LifecycleRunState::failed;
+        throw;
+    }
     return State();
 }
 

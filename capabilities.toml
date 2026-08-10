@@ -653,7 +653,7 @@ note = "M5 WU-0242 为 Java/GLSurfaceView lifecycle 显式 open/present/close AN
 [session.profile_guest_lifecycle]
 status = "complete"
 test = "tests/session/profile_native_execution_tests.cpp"
-note = "M5 WU-0243/0321 编排 gl_surface_view native phase；停止时 guest module finalizer 严格位于 shutdown 与 managed surface close 之间"
+note = "M5 WU-0243/0321/0327 编排 gl_surface_view native phase；支持受检 suspend/resume，挂起时拒绝 frame/input，finalizer 位于 shutdown 与 surface close 之间"
 
 [profiles.java_method_dispatch]
 status = "complete"

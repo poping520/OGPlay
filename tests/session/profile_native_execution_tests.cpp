@@ -225,6 +225,18 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
     const auto stepped = lifecycle->StepFrame();
     CHECK(stepped.frame == 1);
     CHECK(stepped.clock_ticks == 1'000);
+    CHECK(lifecycle->Suspend().state == session::LifecycleRunState::running);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(lifecycle->StepFrame()),
+        "profile guest lifecycle cannot step while suspended",
+        session::ProfileGuestLifecycleError);
+    CHECK_THROWS_WITH_AS(
+        lifecycle->QueueInput(
+            {runtime::AndroidBoundaryInputType::key,
+             7, 0.0F, 0.0F, true}),
+        "profile guest lifecycle cannot queue input while suspended",
+        session::ProfileGuestLifecycleError);
+    CHECK(lifecycle->Resume().state == session::LifecycleRunState::running);
     fail_present = true;
     CHECK_THROWS_WITH_AS(
         static_cast<void>(lifecycle->StepFrame()),
@@ -235,10 +247,11 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
 
     const std::vector<std::string> expected{
         "open", "call:4096", "call:4112", "input", "call:4144",
-        "input", "call:4160", "call:4128", "present", "call:4128",
-        "present", "call:4176", "call:4192", "finalize", "close"};
+        "input", "call:4160", "call:4128", "present", "call:4176",
+        "call:4112", "call:4128", "present", "call:4176", "call:4192",
+        "finalize", "close"};
     CHECK(events == expected);
-    REQUIRE(registers.size() == 8);
+    REQUIRE(registers.size() == 10);
     CHECK(registers[2][2] == 10U);
     CHECK(registers[2][3] == 20U);
     REQUIRE(stack_words[2].size() == 2);

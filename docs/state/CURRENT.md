@@ -33,6 +33,8 @@
 
 ## 最近完成
 
+- [WU-0327] Profile guest lifecycle 新增受检 suspend/resume，精确执行 pause/resume phase；
+  挂起期间拒绝 frame/input，Stop 不重复 pause。电影策略仍留给后续 WU。
 - [WU-0326] legacy `(IFZ)V` big-audio play 现把 boolean loop 同步提交到 voice state 与真实
   Ogg mixer，PCM 尾部受控回绕；Release exact APK 300 帧 32.513 秒、退出码 0。
 - [WU-0325] A32 observer slice 上限由 500 万调为 2000 万 tick，在保持窗口响应上界时将
@@ -48,9 +50,6 @@
 - [WU-0320] legacy big audio 批量 pause/resume 只迁移对应类别 voice，并在统一
   handler 下同步状态与真实 Ogg mixer；第二个 exact APK 已越过 `audio.resume_all_big`，
   推进至独立 `glDeleteTextures` 无 current ANGLE frame 边界。
-- [WU-0315] VFS 现可从显式、受检的 Profile 工作目录解析相对 guest 路径，并继续拒绝
-  traversal；第二个 exact APK 的 `./data/...` 资源已命中 external 数据，原空对象 fault
-  消失并推进至独立 tick-budget 边界，全量 CTest 通过。
 - [WU-0314] legacy phone-language 回调现从统一受检 Locale 配置派生确定性语言索引，
   支持 ISO-639 两/三字母代码且不读取宿主区域设置；第二个 exact APK 单帧干净退出，
   120 帧 smoke 推进至独立 A32 guest fault，全量 CTest 通过。
@@ -79,12 +78,13 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 延长 Release exact APK 并验证主界面/readback 与触摸输入，不以 300 帧 smoke 代替交互。
+1. 临时以电影请求触发 suspend/resume，验证是否越过每帧重复 logo 请求，再声明 Profile 策略。
 2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
 
 ## 阻塞
 
-- 第二个 exact APK Release 300 帧已干净退出；主界面与触摸交互仍待本机视觉验收。
+- 触摸标题页后 guest 每帧重复请求同一 logo MP4；真实 Activity pause/resume 尚未接到
+  已发布的电影请求。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

@@ -47,6 +47,8 @@ public:
     ProfileGuestLifecycle& operator=(const ProfileGuestLifecycle&) = delete;
 
     [[nodiscard]] LifecycleFrameState Start();
+    [[nodiscard]] LifecycleFrameState Suspend();
+    [[nodiscard]] LifecycleFrameState Resume();
     [[nodiscard]] LifecycleFrameState StepFrame();
     void QueueInput(const runtime::AndroidBoundaryInput& input);
     [[nodiscard]] LifecycleFrameState Stop();
@@ -75,6 +77,7 @@ private:
     bool surface_open_{};
     bool startup_completed_{};
     bool guest_finalized_{};
+    bool suspended_{};
 };
 
 }  // namespace ogplay::session

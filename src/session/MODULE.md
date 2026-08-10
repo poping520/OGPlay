@@ -26,6 +26,7 @@
 - `ProfileGuestLifecycle`：为 `gl_surface_view` 把 Profile 声明的
   startup/resume/input/frame/pause/shutdown 批次与 host-managed surface 严格编排为
   单一有状态流程；停止时 guest finalization 必须位于 shutdown 与 surface close 之间；
+  运行中 suspend/resume 精确执行 pause/resume phase，挂起期间拒绝 frame 与 input；
   Java declarations 与 native-call receiver 进入调用方提供的统一
   class registry，调用帧仍只进入注入的通用 executor。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与

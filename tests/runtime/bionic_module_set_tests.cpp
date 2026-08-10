@@ -156,3 +156,19 @@ TEST_CASE("Bionic module set rejects unresolved and contradictory sources") {
             ogplay::runtime::BionicProfileError);
     }
 }
+
+TEST_CASE("Bionic module set preserves an APK root name with a SONAME alias") {
+    const std::string_view needed[]{"libc.so"};
+    const auto root = DynamicElf("libjni.so", needed);
+    const auto libc = DynamicElf("libc.so");
+    const ogplay::runtime::BionicModuleSource sources[]{{"libc.so", libc}};
+
+    const auto set = ogplay::runtime::BuildBionicModuleSet(
+        ogplay::runtime::SelectBionicProfile(19), "libgame.so", root,
+        sources);
+
+    REQUIRE(set.Modules().size() == 2);
+    CHECK(set.RootName() == "libgame.so");
+    CHECK(set.Modules()[0].name == "libgame.so");
+    CHECK(set.Modules()[1].name == "libc.so");
+}

@@ -39,13 +39,14 @@ void RequireLibraryName(const std::string_view name) {
 }
 
 [[nodiscard]] loader::Elf32DynamicInfo InspectModule(
-    const BionicOwnedModule& module) {
+    const BionicOwnedModule& module, const bool require_soname_match) {
     const auto image = loader::ParseElf32Arm(module.image);
     if (image.type != loader::Elf32ImageType::shared_object) {
         throw BionicProfileError("Bionic module is not ET_DYN: " + module.name);
     }
     auto dynamic = loader::ReadElf32DynamicInfo(module.image, image);
-    if (dynamic.soname.has_value() && *dynamic.soname != module.name) {
+    if (require_soname_match && dynamic.soname.has_value() &&
+        *dynamic.soname != module.name) {
         throw BionicProfileError("Bionic module SONAME does not match source name: " +
                                  module.name);
     }
@@ -131,7 +132,10 @@ BionicModuleSet BuildBionicModuleSet(
                        memory::GuestAddress{0}});
     std::set<std::string, std::less<>> selected{std::string(root_name)};
     for (std::size_t index = 0; index < modules.size(); ++index) {
-        const auto dynamic = InspectModule(modules[index]);
+        // The APK catalog name identifies the selected root entry and may
+        // legitimately differ from its DT_SONAME. Dependencies, however,
+        // are selected by DT_NEEDED and must retain exact catalog identity.
+        const auto dynamic = InspectModule(modules[index], index != 0U);
         for (const auto& needed : dynamic.needed) {
             if (selected.contains(needed) ||
                 Contains(profile.boundary_libraries, needed)) {

@@ -1,0 +1,146 @@
+schema = 1
+[identity]
+package = "com.gameloft.android.GAND.GloftAPHP"
+name = "Asphalt 6: Adrenaline HD"
+version_code = [132]
+so_sha256 = ["567a0caf773f8edcc2f81e8fc8b6437b1664cbc22514c22e3019b6f8550377a7"]
+abi = "armeabi-v7a"
+[runtime]
+api_level = 19
+lifecycle = "gl_surface_view"
+maximum_ticks_per_call = 1000000000
+native_call = [
+  { phase = "startup", class = "com/gameloft/android/GAND/GloftAPHP/GLUtils/Device", method = "nativeInit", signature = "()V", dispatch = "static", arguments = [] },
+  { phase = "startup", class = "com/gameloft/android/GAND/GloftAPHP/GLResLoader", method = "nativeInit", signature = "()V", dispatch = "static", arguments = [] },
+  { phase = "startup", class = "com/gameloft/android/GAND/GloftAPHP/GLMediaPlayer", method = "nativeInit", signature = "()V", dispatch = "static", arguments = [] },
+  { phase = "startup", class = "com/gameloft/android/GAND/GloftAPHP/GLGame", method = "nativeInit", signature = "()V", dispatch = "static", arguments = [] },
+  { phase = "startup", class = "com/gameloft/android/GAND/GloftAPHP/GLGame", method = "nativeKeyboardEnabled", signature = "(ZZ)V", dispatch = "static", arguments = [{ source = "constant", value = 0 }, { source = "constant", value = 0 }] },
+  { phase = "startup", class = "com/gameloft/android/GAND/GloftAPHP/GameRenderer", method = "nativeInit", signature = "(III)V", dispatch = "static", arguments = [{ source = "surface_width" }, { source = "surface_height" }, { source = "constant", value = 0 }] },
+  { phase = "startup", class = "com/gameloft/android/GAND/GloftAPHP/GameRenderer", method = "nativeResize", signature = "(II)V", dispatch = "static", arguments = [{ source = "surface_width" }, { source = "surface_height" }] },
+  { phase = "resume", class = "com/gameloft/android/GAND/GloftAPHP/GameGLSurfaceView", method = "nativeResume", signature = "()V", dispatch = "static", arguments = [] },
+  { phase = "frame", class = "com/gameloft/android/GAND/GloftAPHP/GameRenderer", method = "nativeRender", signature = "()V", dispatch = "static", arguments = [] },
+  { phase = "pause", class = "com/gameloft/android/GAND/GloftAPHP/GameGLSurfaceView", method = "nativePause", signature = "()V", dispatch = "static", arguments = [] },
+  { phase = "shutdown", class = "com/gameloft/android/GAND/GloftAPHP/GameRenderer", method = "nativeDestroy", signature = "()V", dispatch = "instance", arguments = [] },
+  { phase = "pointer_down", class = "com/gameloft/android/GAND/GloftAPHP/GLGame", method = "nativeTouchPressed", signature = "(III)V", dispatch = "instance", arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }] },
+  { phase = "pointer_move", class = "com/gameloft/android/GAND/GloftAPHP/GLGame", method = "nativeTouchMoved", signature = "(III)V", dispatch = "instance", arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }] },
+  { phase = "pointer_up", class = "com/gameloft/android/GAND/GloftAPHP/GLGame", method = "nativeTouchReleased", signature = "(III)V", dispatch = "instance", arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }] },
+  { phase = "key_down", class = "com/gameloft/android/GAND/GloftAPHP/GLGame", method = "nativeSetOnKeyDown", signature = "(I)V", dispatch = "static", arguments = [{ source = "input_key" }] },
+  { phase = "key_up", class = "com/gameloft/android/GAND/GloftAPHP/GLGame", method = "nativeSetOnKeyUp", signature = "(I)V", dispatch = "static", arguments = [{ source = "input_key" }] },
+]
+[runtime.surface]
+width = 1280
+height = 720
+[data]
+working_directory = "/sdcard/gameloft/games/GloftAPHP"
+mounts = [
+  { guest = "/sdcard/gameloft/games/GloftAPHP", source = "external", required = true },
+]
+manifest = [
+  { path = "InsTime", required = true },
+  { path = "file000000.dat", required = true },
+  { path = "intro.mp4", required = false },
+]
+
+[audio]
+sound_pool = { source = "apk", path_pattern = "res/raw/raw_{resource:03}.ogg" }
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAPHP/GLUtils/Device"
+method = [
+  { name = "a", sig = "()[B", impl = "device.identifier_bytes", static = true },
+  { name = "b", sig = "()[B", impl = "network.operator_bytes", static = true },
+  { name = "c", sig = "()[B", impl = "telephony.line_number_bytes", static = true },
+  { name = "d", sig = "()[B", impl = "application.version_bytes", static = true },
+  { name = "IsWifiEnable", sig = "()Z", impl = "network.wifi_enabled", static = true },
+  { name = "getHostName", sig = "()[B", impl = "device.host_name_bytes", static = true },
+  { name = "e", sig = "(I)V", impl = "device.set_unique_code", static = true },
+  { name = "f", sig = "()[B", impl = "network.user_agent_bytes", static = true },
+]
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAPHP/GLGame"
+method = [
+  { name = "sendAppToBackground", sig = "()V", impl = "activity.send_to_background", static = true },
+  { name = "Exit", sig = "()V", impl = "process.exit", static = true },
+  { name = "setFullyLoaded", sig = "()V", impl = "activity.set_fully_loaded", static = true },
+  { name = "IsWifiEnabled", sig = "()I", impl = "network.wifi_enabled_int", static = true },
+  { name = "IsInternetAvaliable", sig = "()I", impl = "network.internet_available", static = true },
+  { name = "isExternalMusicActive", sig = "()I", impl = "audio.external_music_active", static = true },
+  { name = "IsFirmwareBefore22", sig = "()I", impl = "platform.firmware_before_22", static = true },
+  { name = "getMac", sig = "()Ljava/lang/String;", impl = "network.mac_address", static = true },
+  { name = "getIdentifier", sig = "()Ljava/lang/String;", impl = "device.identifier_string", static = true },
+  { name = "showIAPDialog", sig = "(I)V", impl = "platform.unavailable", static = true },
+  { name = "launchGetGames", sig = "()V", impl = "platform.unavailable", static = true },
+  { name = "OpenBrowser", sig = "(Ljava/lang/String;)V", impl = "platform.unavailable", static = true },
+  { name = "getVersion", sig = "()[B", impl = "application.version_bytes", static = true },
+  { name = "OpenGLive", sig = "(II)V", impl = "platform.unavailable", static = true },
+  { name = "NotifyTrophy", sig = "(I)V", impl = "platform.unavailable", static = true },
+  { name = "getWifiIP", sig = "()I", impl = "network.wifi_address", static = true },
+  { name = "OpenIGP", sig = "(I)V", impl = "platform.unavailable", static = true },
+  { name = "onLaunchGame1", sig = "()V", impl = "platform.unavailable", static = true },
+]
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAPHP/GameRenderer"
+method = [
+  { name = "getKeyboardText", sig = "()[B", impl = "keyboard.text_bytes", static = true },
+  { name = "setKeyboard", sig = "(ILjava/lang/String;I)V", impl = "keyboard.set", static = true },
+  { name = "isKeyboardVisible", sig = "()I", impl = "keyboard.visible", static = true },
+  { name = "swapEGLBuffers", sig = "()V", impl = "display.swap_managed_surface", static = true },
+]
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAPHP/GLResLoader"
+method = [
+  { name = "getResourceFull", sig = "(Ljava/lang/String;)[B", impl = "resource.load_full", static = true },
+  { name = "getResourceBytes", sig = "(Ljava/lang/String;II)[B", impl = "resource.load_range", static = true },
+  { name = "getResourceLength", sig = "(Ljava/lang/String;)I", impl = "resource.length", static = true },
+  { name = "getSoundRaw", sig = "(I)[B", impl = "resource.sound_full", static = true },
+  { name = "getResourceLengthSoundRaw", sig = "(I)I", impl = "resource.sound_length", static = true },
+]
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAPHP/GLMediaPlayer"
+method = [
+  { name = "isMusicLoaded", sig = "(I)I", impl = "audio.java_true", static = true },
+  { name = "unloadMusic", sig = "(I)V", impl = "audio.java_noop", static = true },
+  { name = "loadMusic", sig = "(I)V", impl = "audio.java_noop", static = true },
+  { name = "registerSoundFile", sig = "(ILjava/lang/String;I)V", impl = "audio.java_noop", static = true },
+  { name = "playMusic", sig = "(IFI)I", impl = "audio.java_unavailable", static = true },
+  { name = "playSound", sig = "(IFIF)I", impl = "audio.java_unavailable", static = true },
+  { name = "pauseMusic", sig = "(I)V", impl = "audio.java_noop", static = true },
+  { name = "pauseAllMusic", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "resumeMusic", sig = "(IF)V", impl = "audio.java_noop", static = true },
+  { name = "resumeAllMusic", sig = "(F)V", impl = "audio.java_noop", static = true },
+  { name = "stopMusic", sig = "(I)V", impl = "audio.java_noop", static = true },
+  { name = "setVolumeOneMusic", sig = "(IF)V", impl = "audio.music_volume.set_one", static = true },
+  { name = "setVolumeMusic", sig = "(FI)V", impl = "audio.music_volume.set", static = true },
+  { name = "getVolumeMusic", sig = "(I)F", impl = "audio.music_volume.get", static = true },
+  { name = "setMasterVolume", sig = "(F)V", impl = "audio.master_volume.set", static = true },
+  { name = "getMasterVolume", sig = "()F", impl = "audio.master_volume.get", static = true },
+  { name = "setPitch", sig = "(IIF)V", impl = "audio.java_noop", static = true },
+  { name = "stopAllSounds", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "stopAllMusic", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "onRecoverAudio", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "recoverAudio", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "reinit", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "isRecoveringAudio", sig = "()I", impl = "audio.java_zero", static = true },
+  { name = "loadMovie", sig = "(Ljava/lang/String;)V", impl = "audio.load_movie", static = true },
+  { name = "isMediaPlaying", sig = "(I)Z", impl = "audio.java_false", static = true },
+  { name = "isEmitterPlaying", sig = "(II)Z", impl = "audio.java_false", static = true },
+  { name = "setEmitterVolume", sig = "(IIF)V", impl = "audio.java_noop", static = true },
+  { name = "setEmitterPitch", sig = "(IIF)V", impl = "audio.java_noop", static = true },
+  { name = "setEmitterParams", sig = "(IIFF)V", impl = "audio.java_noop", static = true },
+  { name = "stopEmitter", sig = "(II)V", impl = "audio.java_noop", static = true },
+  { name = "pauseEmitter", sig = "(II)V", impl = "audio.java_noop", static = true },
+  { name = "resumeEmitter", sig = "(II)V", impl = "audio.java_noop", static = true },
+  { name = "getEmitter", sig = "(I)I", impl = "audio.java_zero", static = true },
+  { name = "update", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "loadBackground", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "isFinishBackground", sig = "()Z", impl = "audio.java_false", static = true },
+  { name = "loadSoundGroup", sig = "(IZ)V", impl = "audio.java_noop", static = true },
+  { name = "swapPool", sig = "(I)V", impl = "audio.java_noop", static = true },
+  { name = "swapAllPools", sig = "()V", impl = "audio.java_noop", static = true },
+  { name = "setSwapTimer", sig = "(Z)V", impl = "audio.java_noop", static = true },
+  { name = "setEnableSwapPool", sig = "(Z)V", impl = "audio.java_noop", static = true },
+]

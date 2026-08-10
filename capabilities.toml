@@ -85,6 +85,11 @@ status = "partial"
 test = "tools.title_profiles_current; exact APK run-apk preflight"
 note = "M5 WU-0303/0318 以纯数据 Profile 闭合身份、1024x600 GLSurfaceView 生命周期、required external payload 与 10 亿 tick 加载预算；exact APK 已提交 1 frame，后续明确停在 audio.load_movie handler"
 
+[profiles.asphalt6_glstore_v132]
+status = "partial"
+test = "tools.title_profiles_current; tests/runtime/bionic_module_set_tests.cpp; exact APK run-apk preflight"
+note = "M8 WU-0360..0361 冻结 exact 身份、1280x720 GLSurfaceView、external payload 与 10 亿 tick 预算；根 libasphalt6.so 以 libjni.so SONAME 别名完成 216814 项重定位。exact Scenario 首采样在第 0 帧明确停于 Device.a 字节数组方法未声明；已聚合 76 个 Java descriptor、96 个 GL 导入（当前处理 41、差集 55）、30 个 pthread 导入和 972 个 payload 文件，guest 首帧与主界面 gate 尚未完成"
+
 [session.lifecycle_templates]
 status = "complete"
 test = "tests/session/lifecycle_tests.cpp"

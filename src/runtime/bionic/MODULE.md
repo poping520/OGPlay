@@ -16,7 +16,9 @@ integration。线程和 syscall 只通过上层装配接入。
 - TLS slot、自指针、thread info 与 API profile 必须精确。
 - profile 只接受 Android API 19、22、23。
 - `BuildBionicModuleSet` 只从 ELF `DT_NEEDED` 递归选择 profile 声明的真实 guest 库；HLE
-  边界不作为 ELF 输入，未知、缺失、重复来源及 SONAME 矛盾明确失败。
+  边界不作为 ELF 输入，未知、缺失、重复来源及依赖库 SONAME 矛盾明确失败。
+  APK 精确匹配选中的根条目保留其 archive basename，允许 `DT_SONAME` 作为同一模块
+  的额外 linker 别名；别名与其他模块冲突仍由命名空间明确失败。
 - module set 拥有全部字节，并以 64 KiB 间隔自动分配页对齐 load bias；任何映射不得进入
   固定 HLE thunk 地址区。
 

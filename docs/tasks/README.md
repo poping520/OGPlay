@@ -12,6 +12,7 @@ Work Unit 按所属里程碑存放，创建后不因完成状态移动。文件�
 | M4 | WU-0150..0198 | 完成 | [`m4/`](m4/) | [`M4-ACCEPTANCE.md`](../state/M4-ACCEPTANCE.md) |
 | M5 | WU-0199..0327 | 能力范围已封板，待里程碑验收 | [`m5/`](m5/) | 三批拆分见 [`m5/README.md`](m5/README.md) |
 | M6 | 从 WU-0328 开始 | 下一阶段：AI 自动化测试 | [`m6/`](m6/) | 规划见 [`m6/README.md`](m6/README.md) |
+| M8 | 从 WU-0360 开始 | 兼容性冲刺 | [`m8/`](m8/) | 批次索引见 [`m8/README.md`](m8/README.md) |
 
 ## 规则
 

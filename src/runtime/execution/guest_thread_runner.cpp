@@ -1,5 +1,6 @@
 #include "ogplay/runtime/execution/guest_thread_runner.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -59,7 +60,8 @@ A32GuestCallResult InvokeA32GuestCall(
     const A32GuestCallFrame& frame, const memory::GuestAddress stack_top,
     const memory::GuestAddress return_trap,
     const std::uint64_t tick_budget,
-    const GuestSupervisorCallHandler& hle_handler) {
+    const GuestSupervisorCallHandler& hle_handler,
+    const A32GuestCallSliceObserver& slice_observer) {
     if (frame.target.IsNull()) {
         throw A32GuestCallError("A32 guest call target is null");
     }
@@ -123,8 +125,10 @@ A32GuestCallResult InvokeA32GuestCall(
 
     std::uint64_t consumed{};
     while (consumed < tick_budget) {
-        const auto stopped = cpu.Run(tick_budget - consumed);
-        if (stopped.ticks_consumed > tick_budget - consumed) {
+        const auto remaining = tick_budget - consumed;
+        const auto slice_ticks = std::min(remaining, kA32GuestCallSliceTicks);
+        const auto stopped = cpu.Run(slice_ticks);
+        if (stopped.ticks_consumed > slice_ticks) {
             throw A32GuestCallError(
                 "A32 guest call CPU exceeded its tick budget");
         }
@@ -140,6 +144,7 @@ A32GuestCallResult InvokeA32GuestCall(
                 throw A32GuestCallError(
                     "A32 guest call CPU made no progress");
             }
+            if (slice_observer) slice_observer();
             continue;
         }
         if (!ConsumeAndroidArmSupervisorCall(
@@ -154,6 +159,7 @@ A32GuestCallResult InvokeA32GuestCall(
         auto updated = cpu.GetState();
         updated.SetThreadPointer(current.thread_pointer);
         cpu.SetState(updated);
+        if (slice_observer) slice_observer();
     }
     throw A32GuestCallError("A32 guest call exhausted its tick budget");
 }

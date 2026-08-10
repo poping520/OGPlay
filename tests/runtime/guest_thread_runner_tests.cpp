@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/memory/address_space.h"
@@ -41,6 +42,34 @@ struct RunnerFixture final {
     ogplay::runtime::GuestThreadLifecycle lifecycle;
     const ogplay::memory::GuestAddress code{0x10000U};
     const ogplay::memory::GuestAddress stack{0x20000U};
+};
+
+class SlicedCallCpu final : public ogplay::cpu::Cpu {
+public:
+    explicit SlicedCallCpu(const ogplay::memory::GuestAddress return_trap)
+        : return_trap_(return_trap) {}
+
+    ogplay::cpu::RunResult Run(const std::uint64_t tick_budget) override {
+        budgets.push_back(tick_budget);
+        if (budgets.size() <= 2U) {
+            return {tick_budget, ogplay::cpu::RunStopReason::budget_exhausted,
+                    ogplay::memory::GuestAddress{0U}, 0U, 0U, std::nullopt};
+        }
+        state_.SetRegister(ogplay::cpu::CoreRegister::r0, 73U);
+        return {1U, ogplay::cpu::RunStopReason::supervisor_call,
+                return_trap_, 0U, 1U};
+    }
+    ogplay::cpu::A32State GetState() const override { return state_; }
+    void SetState(const ogplay::cpu::A32State& state) override {
+        state_ = state;
+    }
+    void RequestHalt() noexcept override {}
+
+    std::vector<std::uint64_t> budgets;
+
+private:
+    ogplay::memory::GuestAddress return_trap_;
+    ogplay::cpu::A32State state_;
 };
 
 }  // namespace
@@ -169,6 +198,39 @@ TEST_CASE("A32 guest call executes registers and aligned stack words") {
               ogplay::memory::GuestAddress{
                   state.Register(ogplay::cpu::CoreRegister::sp)},
               85) == 5U);
+}
+
+TEST_CASE("A32 guest call slices long execution and publishes progress") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress stack{0x20000U};
+    memory.Map({stack, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    const ogplay::memory::GuestAddress return_trap{0x30000U};
+    SlicedCallCpu cpu{return_trap};
+    ogplay::cpu::A32State state;
+    state.SetThreadId(91U);
+    cpu.SetState(state);
+    ogplay::runtime::GuestThreadLifecycle lifecycle;
+    lifecycle.Register(91U);
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    std::uint32_t observations{};
+
+    const auto result = ogplay::runtime::InvokeA32GuestCall(
+        cpu, dispatcher, lifecycle, memory,
+        {ogplay::memory::GuestAddress{0x10000U}, {}, {}},
+        stack.Add(memory.PageSize()), return_trap,
+        ogplay::runtime::kA32GuestCallSliceTicks * 2U + 2U, {},
+        [&observations] { ++observations; });
+
+    CHECK(result.return_value == 73U);
+    CHECK(result.ticks_consumed ==
+          ogplay::runtime::kA32GuestCallSliceTicks * 2U + 1U);
+    CHECK(cpu.budgets == std::vector<std::uint64_t>{
+                             ogplay::runtime::kA32GuestCallSliceTicks,
+                             ogplay::runtime::kA32GuestCallSliceTicks, 2U});
+    CHECK(observations == 2U);
 }
 
 TEST_CASE("A32 guest call consumes only explicit HLE traps") {

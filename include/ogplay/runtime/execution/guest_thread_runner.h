@@ -29,6 +29,9 @@ struct GuestThreadRunOutcome final {
 
 using GuestSupervisorCallHandler =
     std::function<bool(cpu::Cpu&, const cpu::RunResult&)>;
+using A32GuestCallSliceObserver = std::function<void()>;
+
+inline constexpr std::uint64_t kA32GuestCallSliceTicks = UINT64_C(5000000);
 
 struct A32GuestCallFrame final {
     memory::GuestAddress target;
@@ -56,7 +59,8 @@ public:
     GuestThreadLifecycle& lifecycle, memory::AddressSpace& address_space,
     const A32GuestCallFrame& frame, memory::GuestAddress stack_top,
     memory::GuestAddress return_trap, std::uint64_t tick_budget,
-    const GuestSupervisorCallHandler& hle_handler = {});
+    const GuestSupervisorCallHandler& hle_handler = {},
+    const A32GuestCallSliceObserver& slice_observer = {});
 
 [[nodiscard]] GuestThreadRunOutcome RunAndroidArmGuestThread(
     cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher,

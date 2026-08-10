@@ -172,6 +172,7 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
     std::vector<std::array<std::uint32_t, 4>> registers;
     std::vector<std::vector<std::uint32_t>> stack_words;
     bool fail_present{};
+    bool waits_interrupted{};
     const auto lifecycle = session::ProfileGuestLifecycle::Create(
         profile, targets,
         {
@@ -192,7 +193,16 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
                 events.emplace_back("present");
                 if (fail_present) throw std::runtime_error("present failed");
             },
-            [&events] { events.emplace_back("finalize"); },
+            [&events, &waits_interrupted] {
+                events.emplace_back("interrupt");
+                waits_interrupted = true;
+            },
+            [&events, &waits_interrupted] {
+                events.emplace_back("finalize");
+                if (!waits_interrupted) {
+                    throw std::runtime_error("finalize would block");
+                }
+            },
             [&events] { events.emplace_back("close"); },
             [&events](const runtime::AndroidBoundaryInput&) {
                 events.emplace_back("input");
@@ -248,8 +258,8 @@ TEST_CASE("Profile guest lifecycle executes declared phases and input in order")
     const std::vector<std::string> expected{
         "open", "call:4096", "call:4112", "input", "call:4144",
         "input", "call:4160", "call:4128", "present", "call:4176",
-        "call:4112", "call:4128", "present", "call:4176", "call:4192",
-        "finalize", "close"};
+        "call:4112", "call:4128", "present", "interrupt", "call:4176",
+        "call:4192", "finalize", "close"};
     CHECK(events == expected);
     REQUIRE(registers.size() == 10);
     CHECK(registers[2][2] == 10U);

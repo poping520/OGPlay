@@ -27,6 +27,8 @@
   startup/resume/input/frame/pause/shutdown 批次与 host-managed surface 严格编排为
   单一有状态流程；停止时 guest finalization 必须位于 shutdown 与 surface close 之间；
   运行中 suspend/resume 精确执行 pause/resume phase，挂起期间拒绝 frame 与 input；
+  任一 guest phase 失败时先发布 sticky wait interruption，再进入有界清理，且清理错误不得
+  覆盖原始 phase 异常；
   Java declarations 与 native-call receiver 进入调用方提供的统一
   class registry，调用帧仍只进入注入的通用 executor。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与
@@ -75,6 +77,8 @@
   非整数参数或部分运行期状态不得发布调用帧。
 - native execution 必须在首个 guest 指令前验证整批调用身份、严格递增顺序、非空地址、
   偶数 stack words、进程栈/return trap 和 tick budget；运行失败不得丢失调用身份。
+- Profile guest phase 失败必须先中断 guest 阻塞等待，再按既定逆序清理；中断和后续清理
+  自身失败不得替换调用方观察到的首个运行错误。
 - VFS 输入不得靠顺序或来源猜测；guest 根与 source 必须同时命中声明，额外输入明确失败。
 - Java implementation id 必须命中真实 handler；类、签名或 handler 无效时不得发布
   部分 JNI registry。

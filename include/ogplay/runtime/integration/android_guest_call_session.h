@@ -122,6 +122,7 @@ public:
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     [[nodiscard]] std::size_t RenderStereoAudio(
         std::span<std::int16_t> output, std::uint32_t sample_rate);
+    [[nodiscard]] std::size_t InterruptBlockingWaits();
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;

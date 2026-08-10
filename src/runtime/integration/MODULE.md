@@ -156,7 +156,9 @@
   注入编码资源 loader 后，load/lazy-play 只有在资源读取
   与 Ogg 解码成功后才原子提交 loaded，所有 voice 控制同步驱动离线 PCM mixer；失败继续
   保留 pending 与 mixer 错误事实。会话可向宿主拉取 stereo PCM16，但本层不打开设备；
-  Profile phase、窗口和标题事实不得进入该会话。
+  Profile phase、窗口和标题事实不得进入该会话。失败清理可显式调用
+  `InterruptBlockingWaits`，使当前及之后的 guest futex wait 以 `-EINTR` 返回，避免
+  finalizer 把宿主生命周期线程永久阻塞。
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求；会话只发布最新请求与累计次数，不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。

@@ -649,6 +649,9 @@ public:
                                   const std::uint32_t sample_rate) {
         return sound_pool_mixer_.RenderStereoPcm16(output, sample_rate);
     }
+    std::size_t InterruptBlockingWaits() {
+        return futex_table_.InterruptAll();
+    }
     bool Running() const noexcept { return running_; }
     bool ExitRequested() const noexcept {
         return process_state_.ExitRequested();
@@ -773,6 +776,9 @@ std::size_t AndroidGuestCallSession::RenderStereoAudio(
     const std::span<std::int16_t> output,
     const std::uint32_t sample_rate) {
     return impl_->RenderStereoAudio(output, sample_rate);
+}
+std::size_t AndroidGuestCallSession::InterruptBlockingWaits() {
+    return impl_->InterruptBlockingWaits();
 }
 void AndroidGuestCallSession::Stop() { impl_->Stop(); }
 bool AndroidGuestCallSession::Running() const noexcept {

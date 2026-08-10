@@ -24,6 +24,7 @@ struct ProfileGuestLifecycleBindings final {
     ProfileNativeFrameExecutor execute;
     std::function<void()> open_surface;
     std::function<void()> present_surface;
+    std::function<void()> interrupt_guest_waits;
     std::function<void()> finalize_guest;
     std::function<void()> close_surface;
     std::function<void(const runtime::AndroidBoundaryInput&)> push_boundary_input;
@@ -65,6 +66,7 @@ private:
     void ExecutePhase(
         ProfileNativeCallPhase phase,
         const std::optional<ProfileNativeInputArguments>& input = std::nullopt);
+    void MarkFailed() noexcept;
 
     const TitleProfile* profile_{};
     std::vector<ProfileNativeCallTarget> targets_;

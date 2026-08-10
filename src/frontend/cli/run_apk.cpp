@@ -544,6 +544,9 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 },
                 [&guest] { guest->OpenManagedSurface(); },
                 [&guest] { guest->PresentManagedSurface(); },
+                [&guest] {
+                    static_cast<void>(guest->InterruptBlockingWaits());
+                },
                 [&guest] { guest->Stop(); },
                 [&guest] { guest->CloseManagedSurface(); },
                 [&guest](const runtime::AndroidBoundaryInput& input) {

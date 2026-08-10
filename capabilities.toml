@@ -668,7 +668,7 @@ note = "M5 WU-0240 在执行前完整预检 Profile invocation 批次，再按�
 [runtime.android_guest_call_session]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp"
-note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call"
+note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布失败清理所需的 guest wait interruption"
 
 [runtime.host_managed_gl_surface]
 status = "complete"
@@ -678,7 +678,7 @@ note = "M5 WU-0242 为 Java/GLSurfaceView lifecycle 显式 open/present/close AN
 [session.profile_guest_lifecycle]
 status = "complete"
 test = "tests/session/profile_native_execution_tests.cpp"
-note = "M5 WU-0243/0321/0327 编排 gl_surface_view native phase；支持受检 suspend/resume，挂起时拒绝 frame/input，finalizer 位于 shutdown 与 surface close 之间"
+note = "M5 WU-0243/0321/0327 编排 gl_surface_view native phase；支持受检 suspend/resume，挂起时拒绝 frame/input，finalizer 位于 shutdown 与 surface close 之间；WU-0337 让 phase 失败先中断阻塞 wait 并保留首个错误"
 
 [profiles.java_method_dispatch]
 status = "complete"

@@ -85,6 +85,7 @@ ProfileGuestLifecycle::ProfileGuestLifecycle(
         bindings_.jni_environment == nullptr || bindings_.classes == nullptr ||
         !bindings_.execute ||
         !bindings_.open_surface || !bindings_.present_surface ||
+        !bindings_.interrupt_guest_waits ||
         !bindings_.finalize_guest ||
         !bindings_.close_surface || !bindings_.push_boundary_input) {
         throw ProfileGuestLifecycleError(
@@ -162,7 +163,7 @@ LifecycleFrameState ProfileGuestLifecycle::Start() {
         ExecutePhase(ProfileNativeCallPhase::resume);
         state_ = LifecycleRunState::running;
     } catch (...) {
-        state_ = LifecycleRunState::failed;
+        MarkFailed();
         throw;
     }
     return State();
@@ -194,7 +195,7 @@ LifecycleFrameState ProfileGuestLifecycle::StepFrame() {
         clock_.AdvanceFrames(1);
         ++frame_;
     } catch (...) {
-        state_ = LifecycleRunState::failed;
+        MarkFailed();
         throw;
     }
     return State();
@@ -228,6 +229,7 @@ LifecycleFrameState ProfileGuestLifecycle::Stop() {
             ExecutePhase(ProfileNativeCallPhase::shutdown);
         } catch (...) {
             failure = std::current_exception();
+            MarkFailed();
         }
     }
     if (!guest_finalized_) {
@@ -263,7 +265,7 @@ LifecycleFrameState ProfileGuestLifecycle::Suspend() {
         ExecutePhase(ProfileNativeCallPhase::pause);
         suspended_ = true;
     } catch (...) {
-        state_ = LifecycleRunState::failed;
+        MarkFailed();
         throw;
     }
     return State();
@@ -278,7 +280,7 @@ LifecycleFrameState ProfileGuestLifecycle::Resume() {
         ExecutePhase(ProfileNativeCallPhase::resume);
         suspended_ = false;
     } catch (...) {
-        state_ = LifecycleRunState::failed;
+        MarkFailed();
         throw;
     }
     return State();
@@ -297,6 +299,14 @@ void ProfileGuestLifecycle::ExecutePhase(
         {bindings_.environment, profile_->runtime.surface, input});
     static_cast<void>(
         ExecuteProfileNativeInvocations(invocations, bindings_.execute));
+}
+
+void ProfileGuestLifecycle::MarkFailed() noexcept {
+    state_ = LifecycleRunState::failed;
+    try {
+        bindings_.interrupt_guest_waits();
+    } catch (...) {
+    }
 }
 
 }  // namespace ogplay::session

@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0316] 第二个 exact APK 在真实 SWF 加载阶段稳定超过单次 2 亿 guest tick；耗尽 PC
+  `0x102eb2b0` 已反汇编定位到正常 `InterpolateColours` 计算而非自旋。未验证的预算实验
+  已撤销，现状记入 KI-0008。
 - [WU-0315] VFS 现可从显式、受检的 Profile 工作目录解析相对 guest 路径，并继续拒绝
   traversal；第二个 exact APK 的 `./data/...` 资源已命中 external 数据，原空对象 fault
   消失并推进至独立 tick-budget 边界，全量 CTest 通过。
@@ -66,12 +69,6 @@
 - [WU-0305] `AngleFrame` 已补齐 depth range、line width、polygon offset、stencil clear/
   function/mask/operation 的真实 ANGLE 调用面，并将 scalar/query 实现拆分为独立源文件；
   原生状态查询与全量 CTest 436/436 通过。
-- [WU-0304] GLES1 `glGetIntegerv` 现从转换器返回矩阵栈、纹理/buffer binding、对齐及固定
-  管线上限，并将兼容设备查询转发真实 ANGLE；guest 输出受检后原子提交，第二个 exact APK
-  已越过该入口并明确停在下一独立缺口 `glPointSize`，全量 CTest 436/436 通过。
-- [WU-0303] 第二个 exact Profile 已以 package/version/SO/ABI、1024x600 surface、15 个静态
-  JNI lifecycle call 和 required external payload 闭合；真实 API 19 link preflight 完成
-  5+2 模块与 50,746 个 relocation，全量 CTest 436/436 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
@@ -88,6 +85,7 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 阻塞
 
-- 无。
+- KI-0008：第二个 exact APK 的首次 SWF 加载超过当前单次 guest call tick 上限；下一轮需
+  在保持有界失败的前提下测量完成加载所需预算，再决定是否引入 Profile 声明的调用预算。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

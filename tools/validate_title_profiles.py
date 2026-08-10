@@ -177,7 +177,8 @@ def _jni_parameter_kinds(signature: str) -> list[str]:
 
 def _validate_runtime(value: Any) -> None:
     table = _table(value, "runtime")
-    _keys(table, "runtime", {"api_level", "lifecycle", "surface", "native_call"},
+    _keys(table, "runtime", {"api_level", "lifecycle", "maximum_ticks_per_call",
+                              "surface", "native_call"},
           {"api_level", "lifecycle", "surface"})
     api = _integer(table["api_level"], "runtime.api_level", 1, 0xFFFFFFFF)
     if api not in {19, 22, 23}:
@@ -187,6 +188,9 @@ def _validate_runtime(value: Any) -> None:
         raise ProfileError(
             "runtime.lifecycle must be native_activity, gl_surface_view or custom_jni"
         )
+    if "maximum_ticks_per_call" in table:
+        _integer(table["maximum_ticks_per_call"],
+                 "runtime.maximum_ticks_per_call", 1, 1_000_000_000)
     surface = _table(table["surface"], "runtime.surface")
     _keys(surface, "runtime.surface", {"width", "height"}, {"width", "height"})
     _integer(surface["width"], "runtime.surface.width", 1, 16384)
@@ -487,6 +491,12 @@ def self_test(schema_path: Path) -> int:
         valid.write_text(_valid_profile(), encoding="utf-8", newline="\n")
         document = load_profile(valid)
         assert document["runtime"]["surface"]["width"] == 1280
+        budgeted = _valid_profile().replace(
+            'lifecycle = "gl_surface_view"',
+            'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 1000000000'
+        )
+        valid.write_text(budgeted, encoding="utf-8", newline="\n")
+        assert load_profile(valid)["runtime"]["maximum_ticks_per_call"] == 1_000_000_000
         valid.write_text(_valid_profile().replace(
             'abi = "armeabi-v7a"', 'abi = "armeabi"'
         ), encoding="utf-8", newline="\n")
@@ -499,6 +509,18 @@ def self_test(schema_path: Path) -> int:
             ),
             "bad lifecycle": _valid_profile().replace(
                 'lifecycle = "gl_surface_view"', 'lifecycle = "per_game_loop"'
+            ),
+            "unbounded call budget": _valid_profile().replace(
+                'lifecycle = "gl_surface_view"',
+                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 1000000001'
+            ),
+            "zero call budget": _valid_profile().replace(
+                'lifecycle = "gl_surface_view"',
+                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 0'
+            ),
+            "text call budget": _valid_profile().replace(
+                'lifecycle = "gl_surface_view"',
+                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = "1000000000"'
             ),
             "unsupported ABI": _valid_profile().replace(
                 'abi = "armeabi-v7a"', 'abi = "x86"'

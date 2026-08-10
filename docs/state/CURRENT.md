@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-09 · M5 已打开
+更新：2026-08-10 · M5 已打开
 
 ## 当前阶段
 
@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0317] Title Profile v1 runtime 新增可选 `maximum_ticks_per_call`，默认维持 2 亿，
+  合法范围 1..10 亿；schema、Python 目录门禁和 C++ 强类型 loader 共同拒绝未知、越界
+  或错误类型输入。
 - [WU-0316] 第二个 exact APK 在真实 SWF 加载阶段稳定超过单次 2 亿 guest tick；耗尽 PC
   `0x102eb2b0` 已反汇编定位到正常 `InterpolateColours` 计算而非自旋。未验证的预算实验
   已撤销，现状记入 KI-0008。
@@ -66,9 +69,6 @@
 - [WU-0306] GLES1 已发布 clear-stencil、depth-range、line-width、polygon-offset、三项
   stencil 与两项 point handler；point size/min/max 由 fixed shader 消费，第二个 exact APK
   已从 `glPointSize` 推进至 `glIsEnabled`，全量 CTest 436/436 通过。
-- [WU-0305] `AngleFrame` 已补齐 depth range、line width、polygon offset、stencil clear/
-  function/mask/operation 的真实 ANGLE 调用面，并将 scalar/query 实现拆分为独立源文件；
-  原生状态查询与全量 CTest 436/436 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
@@ -79,13 +79,14 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
-2. 按 exact-APK 后续调用证据继续闭合通用 Java/JNI 能力。
+1. 为第二个 exact Profile 声明受检的单次调用预算，并用 bounded smoke 验证首次加载是否
+   能返回；不得按标题在生产代码中猜测预算。
+2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
 
 ## 阻塞
 
 - KI-0008：第二个 exact APK 的首次 SWF 加载超过当前单次 guest call tick 上限；下一轮需
-  在保持有界失败的前提下测量完成加载所需预算，再决定是否引入 Profile 声明的调用预算。
+  在保持有界失败的前提下通过 Profile 预算测量加载是否能够完成。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

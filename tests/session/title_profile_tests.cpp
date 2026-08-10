@@ -154,9 +154,21 @@ TEST_CASE("Title Profile C++ loader decodes strict identity and runtime") {
     CHECK(ogplay::session::ToString(legacy.identity.abi) == "armeabi");
     CHECK(profile.runtime.api_level == 19);
     CHECK(profile.runtime.lifecycle == ogplay::session::ProfileLifecycle::gl_surface_view);
+    CHECK(profile.runtime.maximum_ticks_per_call ==
+          ogplay::session::ProfileRuntime::kDefaultMaximumTicksPerCall);
     CHECK(profile.runtime.surface.width == 1280);
     CHECK(profile.runtime.surface.height == 720);
     CHECK(ogplay::session::ToString(profile.runtime.lifecycle) == "gl_surface_view");
+
+    auto budgeted = BaseProfile();
+    budgeted.replace(
+        budgeted.find("lifecycle = \"gl_surface_view\"") +
+            std::string("lifecycle = \"gl_surface_view\"").size(),
+        0, "\nmaximum_ticks_per_call = 1000000000");
+    CHECK(ogplay::session::LoadTitleProfileText(
+              budgeted, "org.example.legacy")
+              .runtime.maximum_ticks_per_call ==
+          ogplay::session::ProfileRuntime::kMaximumTicksPerCall);
 }
 
 TEST_CASE("Dungeon Hunter Profile declares its DEX Java callbacks") {
@@ -265,6 +277,36 @@ TEST_CASE("Title Profile C++ loader rejects schema and TOML violations") {
     CHECK_THROWS_AS(static_cast<void>(ogplay::session::LoadTitleProfileText(
                         bad_lifecycle, "org.example.legacy")),
                     ogplay::session::TitleProfileError);
+
+    auto bad_budget = BaseProfile();
+    bad_budget.replace(
+        bad_budget.find("lifecycle = \"gl_surface_view\"") +
+            std::string("lifecycle = \"gl_surface_view\"").size(),
+        0, "\nmaximum_ticks_per_call = 1000000001");
+    CHECK_THROWS_WITH(
+        static_cast<void>(ogplay::session::LoadTitleProfileText(
+            bad_budget, "org.example.legacy")),
+        "runtime.maximum_ticks_per_call is outside the supported range");
+
+    auto zero_budget = BaseProfile();
+    zero_budget.replace(
+        zero_budget.find("lifecycle = \"gl_surface_view\"") +
+            std::string("lifecycle = \"gl_surface_view\"").size(),
+        0, "\nmaximum_ticks_per_call = 0");
+    CHECK_THROWS_WITH(
+        static_cast<void>(ogplay::session::LoadTitleProfileText(
+            zero_budget, "org.example.legacy")),
+        "runtime.maximum_ticks_per_call is outside the supported range");
+
+    auto text_budget = BaseProfile();
+    text_budget.replace(
+        text_budget.find("lifecycle = \"gl_surface_view\"") +
+            std::string("lifecycle = \"gl_surface_view\"").size(),
+        0, "\nmaximum_ticks_per_call = \"1000000000\"");
+    CHECK_THROWS_WITH(
+        static_cast<void>(ogplay::session::LoadTitleProfileText(
+            text_budget, "org.example.legacy")),
+        "runtime.maximum_ticks_per_call has wrong type");
 
     auto invalid_utf8 = BaseProfile();
     invalid_utf8.push_back(static_cast<char>(0xFF));

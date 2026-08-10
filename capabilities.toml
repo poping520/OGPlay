@@ -23,12 +23,12 @@ note = "M0 空会话支持 open/close/state；M1 装配 guest"
 [session.title_profile_schema]
 status = "complete"
 test = "tools/validate_title_profiles.py --self-test; tests/session/title_profile_tests.cpp"
-note = "M5 冻结 Title Profile v1 schema，并由 Python 目录门禁及 C++ 强类型加载共同覆盖 identity/runtime/data/audio/java/quirks/input、UTF-8 和 200 行上限；WU-0293 增加受检纯数据 SoundPool source/path_pattern"
+note = "M5 冻结 Title Profile v1 schema，并由 Python 目录门禁及 C++ 强类型加载共同覆盖 identity/runtime/data/audio/java/quirks/input、UTF-8 和 200 行上限；WU-0317 增加默认 2 亿、受检范围 1..10 亿的单次调用预算"
 
 [session.title_profile_loader]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "M5 WU-0200..0202 完成受限纯数据 TOML、强类型 identity/runtime、规范 VFS/audio 声明、Java 绑定、quirk 参数与输入模板加载；未知或非法内容明确失败"
+note = "M5 WU-0200..0202/0317 完成受限纯数据 TOML、强类型 identity/runtime 与单次调用预算、规范 VFS/audio 声明、Java 绑定、quirk 参数及输入模板加载；未知或非法内容明确失败"
 
 [session.title_profile_catalog]
 status = "complete"

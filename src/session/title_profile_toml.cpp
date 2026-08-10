@@ -592,7 +592,9 @@ bool NativeIntegerKind(const runtime::JniTypeKind kind) {
 ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
     const auto& table = NativeAs<NativeTable>(NativeRequire(root, "runtime", "runtime"),
                                               "runtime");
-    NativeKeys(table, "runtime", {"api_level", "lifecycle", "surface", "native_call"},
+    NativeKeys(table, "runtime",
+               {"api_level", "lifecycle", "maximum_ticks_per_call", "surface",
+                "native_call"},
                {"api_level", "lifecycle", "surface"});
     ProfileRuntime result;
     result.api_level = static_cast<std::uint32_t>(NativeInteger(
@@ -607,6 +609,13 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
     else if (lifecycle == "gl_surface_view") result.lifecycle = ProfileLifecycle::gl_surface_view;
     else if (lifecycle == "custom_jni") result.lifecycle = ProfileLifecycle::custom_jni;
     else throw TitleProfileError("runtime.lifecycle is unsupported");
+    if (const auto* maximum_ticks =
+            NativeOptional(table, "maximum_ticks_per_call");
+        maximum_ticks != nullptr) {
+        result.maximum_ticks_per_call = static_cast<std::uint64_t>(NativeInteger(
+            *maximum_ticks, "runtime.maximum_ticks_per_call", 1,
+            ProfileRuntime::kMaximumTicksPerCall));
+    }
     const auto& surface = NativeAs<NativeTable>(
         NativeRequire(table, "surface", "runtime.surface"), "runtime.surface");
     NativeKeys(surface, "runtime.surface", {"width", "height"}, {"width", "height"});

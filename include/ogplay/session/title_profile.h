@@ -78,6 +78,11 @@ struct ProfileSurface final {
 };
 
 struct ProfileRuntime final {
+    static constexpr std::uint64_t kDefaultMaximumTicksPerCall =
+        UINT64_C(200000000);
+    static constexpr std::uint64_t kMaximumTicksPerCall =
+        UINT64_C(1000000000);
+
     ProfileRuntime() = default;
     ProfileRuntime(std::uint32_t api, ProfileLifecycle lifecycle_value,
                    ProfileSurface surface_value,
@@ -87,6 +92,7 @@ struct ProfileRuntime final {
 
     std::uint32_t api_level{};
     ProfileLifecycle lifecycle{ProfileLifecycle::native_activity};
+    std::uint64_t maximum_ticks_per_call{kDefaultMaximumTicksPerCall};
     ProfileSurface surface;
     std::vector<ProfileNativeCall> native_calls;
 };

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 Asphalt 6 framework object bridge 批次已完成
+更新：2026-08-10 · M8 Asphalt 6 legacy platform identity 批次已完成
 
 ## 当前阶段
 
@@ -29,12 +29,16 @@
 
 ## 进行中
 
-- Asphalt 6 Android 平台身份 framework 批次；新 exact Scenario 已越过完整 JNI
-  class/object/instance call family，在第 4 个 native call 明确停于未声明
-  `android/os/Build`，尚未声称 guest 首帧或主界面。
+- Asphalt 6 下一批为 license/VFS 与 working-directory 调用链；exact Scenario 已越过
+  Android 平台身份 class/field/method 缺口，在第 4 个 native call 进入 license path 后
+  明确停于 `ALicenseCheck::CallJNIFuncChar` 的 guest memory fault，尚未声称首帧或主界面。
 
 ## 最近完成
 
+- [WU-0368] 一次安装 Build/VERSION 12 个 APK 引用字段与 SystemProperties、Settings.Secure、
+  Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot、UUID 服务对象链；补齐同批
+  GLGame compact platform callbacks，offline tracking 有计数且不触网。exact 越过全部
+  platform JNI lookup，进入下一类 license/VFS memory fault；focused 1/1、full CTest 492/492。
 - [WU-0367] 将 NewObject 与 framework HLE host object 统一到会话级精确 class registry，
   GetObjectClass/IsInstanceOf/30 个 instance call 不再只识别 guest 构造对象；为 Context、
   service 与 UUID 对象链批量接入消除结构性缺口；focused 3/3、full CTest 491/491。
@@ -50,10 +54,6 @@
   lease arena 支持 NUL copy、isCopy、first-fit 与严格配对。首次 exact 清理暴露并修复
   binder 晚于 string store 析构的宿主崩溃；复采样稳定停于下一类 `FindClass`；focused
   2/2、full CTest 488/488。
-- [WU-0363] 一次声明 GLResLoader 5 与 GLMediaPlayer 41 个 exact descriptor；字符串资源
-  复用 `/apk/assets` direct-asset VFS，编号音频走真实 `raw_NNN.ogg` loader，Java 原版
-  固定/no-op 媒体语义保留逐方法计数和音量状态。exact Scenario 越过前三个 native init，
-  新类别首缺口为 `GetStringUTFChars`；focused 1/1、full CTest 487/487。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -78,8 +78,7 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 批量闭合 Build/SystemProperties/Settings/Context/Telephony Android 身份 framework，
-   再实现 AudioTrack 完整媒体类与声明式 working-directory 调用。
+1. 批量闭合 license/VFS 与声明式 working-directory 调用，再实现 AudioTrack 完整媒体类。
 2. 按 GLES2 state/resource/query/draw 子批次闭合，然后固化主界面
    Scenario 与三轮 gate。
 

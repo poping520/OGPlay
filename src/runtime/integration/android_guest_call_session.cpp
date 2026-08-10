@@ -509,6 +509,9 @@ public:
             throw AndroidGuestCallSessionError(
                 "Android guest root JNI thread attachment failed");
         }
+        static_cast<void>(InstallAndroidGuestFrameworkPlatform(
+            classes_, invocations_, environment_, strings_, fields_, objects_,
+            kRootThreadId, request.platform));
         Progress("process-memory-ready");
 
         clone_runtime_ = std::make_unique<GuestCloneThreadRuntime>(

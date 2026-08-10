@@ -650,6 +650,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp"
 note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享会话级精确 class registry；GetObjectClass、IsInstanceOf 与 30 个 instance call 槽统一查询且错误对象明确失败"
 
+[runtime.android_legacy_platform_identity]
+status = "complete"
+test = "tests/runtime/android_guest_framework_platform_tests.cpp; Asphalt 6 exact bootstrap sampling"
+note = "M8 WU-0368 批量安装 APK 引用的 Build/VERSION 12 个字段、SystemProperties、Settings.Secure、Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；身份事实确定性注入，service/UUID 对象走共享 registry，offline tracking 可查询"
+
 [runtime.java_sound_pool_lifecycle]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"

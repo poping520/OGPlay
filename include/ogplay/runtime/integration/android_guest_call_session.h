@@ -27,6 +27,8 @@ namespace ogplay::runtime {
 
 class JniInvocationEngine;
 class JniStringStore;
+class JniFieldStore;
+class JniGuestObjectRegistry;
 class FrameworkScreenPolicyState;
 struct FrameworkLocaleConfig;
 
@@ -47,18 +49,21 @@ public:
     void SetFullyLoaded();
     void SetKeyboard(bool visible, std::span<const JniChar> text);
     void RequestManagedSwap();
+    void RecordOfflineTracking();
     [[nodiscard]] std::optional<std::int32_t> UniqueCode() const;
     [[nodiscard]] bool BackgroundRequested() const;
     [[nodiscard]] bool FullyLoaded() const;
     [[nodiscard]] bool KeyboardVisible() const;
     [[nodiscard]] std::vector<JniChar> KeyboardText() const;
     [[nodiscard]] std::uint64_t ManagedSwapRequests() const;
+    [[nodiscard]] std::uint64_t OfflineTrackingCount() const;
 
 private:
     mutable std::mutex mutex_;
     std::optional<std::int32_t> unique_code_;
     std::vector<JniChar> keyboard_text_;
     std::uint64_t managed_swap_requests_{};
+    std::uint64_t offline_tracking_count_{};
     bool background_requested_{};
     bool fully_loaded_{};
     bool keyboard_visible_{};
@@ -142,6 +147,24 @@ void BindAndroidGuestJavaPlatformHandlers(
     JniStringStore& strings, JniPrimitiveArrayStore& arrays,
     AndroidGuestPlatformState& state,
     const AndroidGuestPlatformConfig& config);
+
+struct AndroidGuestFrameworkPlatformSet final {
+    JniObjectIdentity context_class;
+    JniObjectIdentity content_resolver_class;
+    JniObjectIdentity telephony_class;
+    JniObjectIdentity uuid_class;
+    JniObjectIdentity context;
+    JniObjectIdentity content_resolver;
+    JniObjectIdentity telephony;
+    JniObjectIdentity uuid;
+};
+
+[[nodiscard]] AndroidGuestFrameworkPlatformSet
+InstallAndroidGuestFrameworkPlatform(
+    JniClassRegistry& classes, JniInvocationEngine& invocations,
+    JniEnvironment& environment, JniStringStore& strings,
+    JniFieldStore& fields, JniGuestObjectRegistry& objects,
+    std::uint64_t thread_id, const AndroidGuestPlatformConfig& config);
 
 struct AndroidGuestCallSessionRequest final {
     std::uint32_t api{19};

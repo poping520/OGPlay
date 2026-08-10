@@ -186,7 +186,11 @@
 - 通用 platform Java handler 只发布请求显式注入的安装 id/版本和确定性
   离线运营商、Wi-Fi、网络、音频与固件事实；字节数组和 Java String 必须通过
   统一 store 发布为受检 local reference。unique code、background、fully-loaded、
-  keyboard 与 managed-swap 请求必须进入线程安全可查询状态；宿主未实现的浏览器、
+  keyboard、managed-swap 与离线 tracking sink 必须进入线程安全可查询状态。
+  legacy framework platform 以一个批次声明 Build/VERSION 全量 APK 引用字段、
+  SystemProperties、Settings.Secure、Context/ContentResolver/Telephony、Activity、Bundle、
+  ViewRoot 与 UUID；static field 走统一 field store，service/UUID 对象走统一 object registry，
+  未知 service/property/settings key 保留 Android 空值语义且不读取宿主隐私。宿主未实现的浏览器、
   商店、付费、在线服务与 trophy 回调必须带 method descriptor 明确失败，
   禁止静默 no-op 或伪造成功。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；

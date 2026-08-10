@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 legacy AudioTrack framework 批次已完成
+更新：2026-08-10 · M8 guest worker failure teardown 批次已完成
 
 ## 当前阶段
 
@@ -29,12 +29,15 @@
 
 ## 进行中
 
-- Asphalt 6 exact 已越过 JNI_OnLoad、GLES discovery/FBO/state 与完整 AudioTrack bootstrap，
-  首次启动资源 worker；当前暴露失败清理时 worker 与 lifecycle 析构竞态。96 个唯一 GL
-  导入已静态盘点；尚未声称首帧或主界面。
+- Asphalt 6 exact 已越过 JNI_OnLoad、GLES discovery/FBO/state 与 AudioTrack bootstrap；
+  资源 worker 失败现可全量退出/join，不再造成宿主崩溃。当前明确停在 shader reflection
+  `glGetActiveAttrib`；96 个唯一 GL 导入已静态盘点，尚未声称首帧或主界面。
 
 ## 最近完成
 
+- [WU-0375] child 在首次执行前或 slice 间均响应外部 exit；session stop 先退出/中断再全量
+  join，首错延迟上报，最后才允许析构。exact 从 SIGSEGV 恢复为明确 `glGetActiveAttrib`
+  失败；focused 2/2、full CTest 496/496。
 - [WU-0374] 以 Profile 声明 AudioTrack 七项精确调用，通用 HLE 受检实现 PCM16 配置、
   minimum-buffer、play/pause/stop/release 与 byte-array region write，可查询每 track 状态。
   exact 越过音频 bootstrap 并启动资源 worker；focused 3/3、full CTest 495/495。
@@ -48,10 +51,6 @@
   texture/uniform/varying capability 与 current-program/framebuffer/renderbuffer 三项状态；五个
   string 结果使用独立只读槽。exact 越过完整 discovery，稳定进入 `glBindFramebuffer`；
   focused 1/1、full CTest 494/494。
-- [WU-0370] session 增加一次性 root JNI library 初始化，GLSurfaceView 前端只在 Profile
-  class registry 装配后、startup callback 前调用；静态盘点并一次声明 SUtils、Device、
-  GameInstaller 的 OnLoad lookup。exact 越过 JNI_OnLoad 与前五个 startup callback，稳定
-  停在 GameRenderer nativeInit 的 GLES1 string query；full CTest 494/494。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -76,10 +75,9 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 批量闭合 guest worker 的注册、失败终止、join 与 session 析构顺序，消除 host crash
-   并保留首个 guest fault 诊断。
-2. 继续按 96 项 GL 导入的 shader/program、uniform/client-array/draw 子批次闭合，再处理
-   license/VFS 并固化主界面 Scenario 与三轮 gate。
+1. 按静态差集一次闭合 shader/program reflection、info-log 与 uniform vector/matrix 批次。
+2. 随后实现 client-side vertex/index staging 与 texture subimage 批次，再处理 license/VFS
+   并固化主界面 Scenario 与三轮 gate。
 
 ## 阻塞
 

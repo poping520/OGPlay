@@ -74,11 +74,27 @@ std::int32_t GuestCloneThreadRuntime::Spawn(
 void GuestCloneThreadRuntime::RunChild(const std::uint64_t thread_id,
                                        cpu::Cpu& cpu) {
     GuestThreadRunOutcome outcome;
+    if (lifecycle_.State(thread_id).status ==
+        GuestThreadStatus::exit_requested) {
+        outcome.reason = GuestThreadRunStop::guest_exit;
+        outcome.exit = lifecycle_.CompleteExit(
+            thread_id, memory_bus_, futex_table_);
+        std::scoped_lock lock(outcomes_mutex_);
+        outcomes_.emplace(thread_id, std::move(outcome));
+        return;
+    }
     for (;;) {
         outcome = RunAndroidArmGuestThread(
             cpu, dispatcher_, lifecycle_, memory_bus_, futex_table_,
             tick_slice_, hle_handler_);
         if (outcome.reason != GuestThreadRunStop::budget_exhausted) break;
+        const auto state = lifecycle_.State(thread_id);
+        if (state.status == GuestThreadStatus::exit_requested) {
+            outcome.reason = GuestThreadRunStop::guest_exit;
+            outcome.exit = lifecycle_.CompleteExit(
+                thread_id, memory_bus_, futex_table_);
+            break;
+        }
     }
     if (outcome.reason != GuestThreadRunStop::guest_exit) {
         lifecycle_.RequestExit(thread_id, -1);

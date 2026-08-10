@@ -570,13 +570,33 @@ public:
 
     void Stop() {
         if (!running_) return;
-        for (const auto& child : lifecycle_.States()) {
-            if (child.thread_id == kRootThreadId) continue;
-            const auto joined = clone_runtime_->Join(child.thread_id);
-            if (joined.run.reason != GuestThreadRunStop::guest_exit) {
-                throw AndroidGuestCallSessionError(
-                    "Android guest child did not exit cleanly");
+        auto children = lifecycle_.States();
+        std::erase_if(children, [](const GuestThreadRuntimeState& state) {
+            return state.thread_id == kRootThreadId;
+        });
+        for (const auto& child : children) {
+            if (child.status == GuestThreadStatus::running) {
+                lifecycle_.RequestExit(child.thread_id, 0);
             }
+        }
+        static_cast<void>(futex_table_.InterruptAll());
+        std::exception_ptr first_child_failure;
+        for (const auto& child : children) {
+            try {
+                const auto joined = clone_runtime_->Join(child.thread_id);
+                if (joined.run.reason != GuestThreadRunStop::guest_exit) {
+                    throw AndroidGuestCallSessionError(
+                        "Android guest child did not exit cleanly");
+                }
+            } catch (...) {
+                if (!first_child_failure) {
+                    first_child_failure = std::current_exception();
+                }
+            }
+        }
+        if (first_child_failure) {
+            running_ = false;
+            std::rethrow_exception(first_child_failure);
         }
         auto fini_order = guest_load_order_;
         std::reverse(fini_order.begin(), fini_order.end());

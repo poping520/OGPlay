@@ -178,6 +178,9 @@
   Profile phase、窗口和标题事实不得进入该会话。失败清理可显式调用
   `InterruptBlockingWaits`，使当前及之后的 guest futex wait 以 `-EINTR` 返回，避免
   finalizer 把宿主生命周期线程永久阻塞。
+- session stop 必须先快照全部 child、请求仍运行者退出并中断 futex，再逐个 join；单个
+  child 的异常只能作为首错延迟上报，禁止跳过其余 join。所有 child 完成后才可执行 guest
+  fini 或让 lifecycle/dispatcher/address-space 进入逆序析构。
 - guest JNI library lifecycle 只从显式 root module 自身选择唯一 exported/defined function
   `JNI_OnLoad`，不误调用 ELF 依赖的同名导出；调用帧固定为统一 guest JavaVM、null reserved，
   保留 ARM/Thumb symbol state，返回只接受 JNI 1.1/1.2/1.4/1.6。

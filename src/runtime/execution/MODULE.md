@@ -16,6 +16,8 @@ JNI、framework 或 integration。
 - child 从 parent CPU 状态派生，r0、SP、TLS、TID 和退出清理必须精确。
 - 执行循环消费已声明的 Linux SVC；其他 trap 只有显式 HLE handler 返回已处理才继续，
   否则原样上报。clone child 必须继承同一 handler。
+- 外部退出请求可发生在 child 首次执行前或任意 budget slice 之间；runner 必须在下一安全
+  边界完成 lifecycle exit 与 clear-child-tid/futex 清理，不能再次以 running 前置条件失败。
 - `InvokeA32GuestCall` 只接受非空目标、运行中线程、8 字节对齐栈和非零 tick 预算；
   r0-r3 与栈参数一次装配，Linux SVC 和显式 HLE trap 复用统一分派，且只允许在受检
   `SVC #1` 返回哨兵结束。长计算按 2000 万 tick 上限切片，并只在切片边界调用显式 observer；

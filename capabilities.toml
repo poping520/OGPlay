@@ -763,7 +763,7 @@ note = "M5 WU-0240 在执行前完整预检 Profile invocation 批次，再按�
 [runtime.android_guest_call_session]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp"
-note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布失败清理所需的 guest wait interruption"
+note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布 wait interruption；M8 WU-0375 让 child 在首 slice 前/间响应 exit，session 全量 join 后才析构"
 
 [runtime.legacy_audio_track]
 status = "partial"

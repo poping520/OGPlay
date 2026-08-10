@@ -645,6 +645,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp"
 note = "M8 WU-0366 批量闭合 GetStaticFieldID 与 9 对 getter/setter 共 19 个槽；统一 registry/field store 严格校验 descriptor、static kind 与 class，64 位 setter 第 4 参数遵循 A32 soft-float 栈 ABI"
 
+[runtime.jni_guest_framework_objects]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp"
+note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享会话级精确 class registry；GetObjectClass、IsInstanceOf 与 30 个 instance call 槽统一查询且错误对象明确失败"
+
 [runtime.java_sound_pool_lifecycle]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"

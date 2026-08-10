@@ -12,6 +12,7 @@ class JniEnvironment;
 class JniClassRegistry;
 class JniInvocationEngine;
 class JniJavaVm;
+class JniGuestObjectRegistry;
 class JniPrimitiveArrayStore;
 class JniStringStore;
 
@@ -27,6 +28,7 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniStringStore& strings,
                            JniPrimitiveArrayStore& arrays,
                            JniJavaVm& java_vm,
-                           memory::AddressSpace& address_space);
+                           memory::AddressSpace& address_space,
+                           JniGuestObjectRegistry* objects = nullptr);
 
 }  // namespace ogplay::runtime

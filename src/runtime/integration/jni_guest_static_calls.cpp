@@ -20,6 +20,99 @@
 #include "ogplay/runtime/jni/jni_object.h"
 
 namespace ogplay::runtime {
+
+class JniGuestObjectRegistry::Impl final {
+public:
+    explicit Impl(const JniClassRegistry& classes) : classes_(&classes) {}
+
+    [[nodiscard]] JniObjectIdentity Allocate(
+        const JniObjectIdentity java_class) {
+        const auto object = AllocateJniHostObjectIdentity();
+        Register(object, java_class);
+        return object;
+    }
+
+    void Register(const JniObjectIdentity object,
+                  const JniObjectIdentity java_class) {
+        Validate(object, java_class);
+        std::scoped_lock lock(mutex_);
+        if (!objects_.emplace(object.value, java_class).second) {
+            throw JniGuestBindingError(
+                "JNI guest object is already registered");
+        }
+    }
+
+    void Forget(const JniObjectIdentity object) {
+        if (object.domain != JniObjectDomain::host || object.value == 0U) {
+            throw JniGuestBindingError(
+                "JNI guest object identity is invalid");
+        }
+        std::scoped_lock lock(mutex_);
+        if (objects_.erase(object.value) == 0U) {
+            throw JniGuestBindingError(
+                "JNI guest object is not registered");
+        }
+    }
+
+    [[nodiscard]] JniObjectIdentity ClassOf(
+        const JniObjectIdentity object) const {
+        std::scoped_lock lock(mutex_);
+        const auto found = objects_.find(object.value);
+        if (object.domain != JniObjectDomain::host || found == objects_.end()) {
+            throw JniGuestBindingError(
+                "JNI guest receiver is not a registered instance");
+        }
+        return found->second;
+    }
+
+private:
+    void Validate(const JniObjectIdentity object,
+                  const JniObjectIdentity java_class) const {
+        if (object.domain != JniObjectDomain::host || object.value == 0U ||
+            java_class.value == 0U) {
+            throw JniGuestBindingError(
+                "JNI guest object registration is invalid");
+        }
+        try {
+            if (!classes_->IsAssignableFrom(java_class, java_class)) {
+                throw JniGuestBindingError(
+                    "JNI guest object class is not registered");
+            }
+        } catch (const JniClassRegistryError&) {
+            throw JniGuestBindingError(
+                "JNI guest object class is not registered");
+        }
+    }
+
+    const JniClassRegistry* classes_{};
+    mutable std::mutex mutex_;
+    std::map<std::uint64_t, JniObjectIdentity> objects_;
+};
+
+JniGuestObjectRegistry::JniGuestObjectRegistry(
+    const JniClassRegistry& classes)
+    : impl_(std::make_unique<Impl>(classes)) {}
+JniGuestObjectRegistry::~JniGuestObjectRegistry() = default;
+JniGuestObjectRegistry::JniGuestObjectRegistry(
+    JniGuestObjectRegistry&&) noexcept = default;
+JniGuestObjectRegistry& JniGuestObjectRegistry::operator=(
+    JniGuestObjectRegistry&&) noexcept = default;
+JniObjectIdentity JniGuestObjectRegistry::Allocate(
+    const JniObjectIdentity java_class) {
+    return impl_->Allocate(java_class);
+}
+void JniGuestObjectRegistry::Register(const JniObjectIdentity object,
+                                      const JniObjectIdentity java_class) {
+    impl_->Register(object, java_class);
+}
+void JniGuestObjectRegistry::Forget(const JniObjectIdentity object) {
+    impl_->Forget(object);
+}
+JniObjectIdentity JniGuestObjectRegistry::ClassOf(
+    const JniObjectIdentity object) const {
+    return impl_->ClassOf(object);
+}
+
 namespace {
 
 struct StaticCallType final {
@@ -359,37 +452,6 @@ void BindOne(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
         });
 }
 
-class InstanceObjects final {
-public:
-    [[nodiscard]] JniObjectIdentity Allocate(
-        const JniObjectIdentity java_class) {
-        const auto object = AllocateJniHostObjectIdentity();
-        std::scoped_lock lock(mutex_);
-        objects_.emplace(object.value, java_class);
-        return object;
-    }
-
-    void Forget(const JniObjectIdentity object) {
-        std::scoped_lock lock(mutex_);
-        objects_.erase(object.value);
-    }
-
-    [[nodiscard]] JniObjectIdentity ClassOf(
-        const JniObjectIdentity object) const {
-        std::scoped_lock lock(mutex_);
-        const auto found = objects_.find(object.value);
-        if (object.domain != JniObjectDomain::host || found == objects_.end()) {
-            throw JniGuestBindingError(
-                "JNI guest receiver is not a constructed instance");
-        }
-        return found->second;
-    }
-
-private:
-    mutable std::mutex mutex_;
-    std::map<std::uint64_t, JniObjectIdentity> objects_;
-};
-
 [[nodiscard]] std::vector<JniValue> ReadArguments(
     memory::AddressSpace& address_space, const JniGuestCallFrame& frame,
     const JniMethodDescriptor& descriptor, const JniArgumentSource source) {
@@ -408,7 +470,8 @@ void BindInstanceCall(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
     JniClassRegistry& classes, JniInvocationEngine& invocations,
     memory::AddressSpace& address_space,
-    const std::shared_ptr<InstanceObjects>& objects, const StaticCallType type,
+    const std::shared_ptr<JniGuestObjectRegistry>& objects,
+    const StaticCallType type,
     const std::string_view variant, const JniArgumentSource source) {
     const auto name = std::string("Call") + std::string(type.suffix) +
                       "Method" + std::string(variant);
@@ -444,7 +507,7 @@ void BindNewObject(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
     JniClassRegistry& classes, JniInvocationEngine& invocations,
     memory::AddressSpace& address_space,
-    const std::shared_ptr<InstanceObjects>& objects,
+    const std::shared_ptr<JniGuestObjectRegistry>& objects,
     const std::string_view variant, const JniArgumentSource source) {
     const auto name = std::string("NewObject") + std::string(variant);
     dispatcher.BindEnvironment(
@@ -506,8 +569,13 @@ void BindJniGuestStaticCallSlots(JniGuestCallDispatcher& dispatcher,
 void BindJniGuestClassAndInstanceSlots(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
     JniClassRegistry& classes, JniInvocationEngine& invocations,
-    memory::AddressSpace& address_space) {
-    const auto objects = std::make_shared<InstanceObjects>();
+    memory::AddressSpace& address_space, JniGuestObjectRegistry* objects) {
+    const auto object_registry = objects == nullptr
+                                     ? std::make_shared<JniGuestObjectRegistry>(
+                                           classes)
+                                     : std::shared_ptr<JniGuestObjectRegistry>(
+                                           objects,
+                                           [](JniGuestObjectRegistry*) {});
     dispatcher.BindEnvironment(
         EnvironmentSlot("FindClass"),
         [&environment, &classes,
@@ -554,7 +622,7 @@ void BindJniGuestClassAndInstanceSlots(
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetObjectClass"),
-        [&environment, objects](const JniGuestCallFrame& frame) {
+        [&environment, object_registry](const JniGuestCallFrame& frame) {
             const auto object = environment.ResolveObjectForHle(
                 frame.thread_id, JniReference{frame.registers[1]});
             if (!object.has_value()) {
@@ -563,13 +631,13 @@ void BindJniGuestClassAndInstanceSlots(
             }
             return EncodeResult(
                 JniValue{environment.PublishLocalObject(
-                    frame.thread_id, objects->ClassOf(*object))},
+                    frame.thread_id, object_registry->ClassOf(*object))},
                 JniTypeKind::object);
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("IsInstanceOf"),
         [&environment, &classes,
-         objects](const JniGuestCallFrame& frame) {
+         object_registry](const JniGuestCallFrame& frame) {
             const auto object = environment.ResolveObjectForHle(
                 frame.thread_id, JniReference{frame.registers[1]});
             const auto java_class = environment.ResolveObjectForHle(
@@ -579,26 +647,29 @@ void BindJniGuestClassAndInstanceSlots(
                     "IsInstanceOf requires a valid class reference");
             }
             const auto matches = !object.has_value() || classes.IsAssignableFrom(
-                *java_class, objects->ClassOf(*object));
+                *java_class, object_registry->ClassOf(*object));
             return EncodeResult(
                 JniValue{static_cast<JniBoolean>(matches)},
                 JniTypeKind::boolean);
         });
     BindNewObject(dispatcher, environment, classes, invocations,
-                  address_space, objects, "", JniArgumentSource::variadic);
+                  address_space, object_registry, "",
+                  JniArgumentSource::variadic);
     BindNewObject(dispatcher, environment, classes, invocations,
-                  address_space, objects, "V", JniArgumentSource::va_list);
+                  address_space, object_registry, "V",
+                  JniArgumentSource::va_list);
     BindNewObject(dispatcher, environment, classes, invocations,
-                  address_space, objects, "A", JniArgumentSource::value_array);
+                  address_space, object_registry, "A",
+                  JniArgumentSource::value_array);
     for (const auto type : kStaticCallTypes) {
         BindInstanceCall(dispatcher, environment, classes, invocations,
-                         address_space, objects, type, "",
+                         address_space, object_registry, type, "",
                          JniArgumentSource::variadic);
         BindInstanceCall(dispatcher, environment, classes, invocations,
-                         address_space, objects, type, "V",
+                         address_space, object_registry, type, "V",
                          JniArgumentSource::va_list);
         BindInstanceCall(dispatcher, environment, classes, invocations,
-                         address_space, objects, type, "A",
+                         address_space, object_registry, type, "A",
                          JniArgumentSource::value_array);
     }
 }

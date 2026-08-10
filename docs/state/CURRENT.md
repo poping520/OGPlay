@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 Asphalt 6 JNI static field 批次已完成
+更新：2026-08-10 · M8 Asphalt 6 framework object bridge 批次已完成
 
 ## 当前阶段
 
@@ -35,6 +35,9 @@
 
 ## 最近完成
 
+- [WU-0367] 将 NewObject 与 framework HLE host object 统一到会话级精确 class registry，
+  GetObjectClass/IsInstanceOf/30 个 instance call 不再只识别 guest 构造对象；为 Context、
+  service 与 UUID 对象链批量接入消除结构性缺口；focused 3/3、full CTest 491/491。
 - [WU-0366] 批量绑定 GetStaticFieldID 与 9 类 getter/setter 共 19 个 static field 槽；
   descriptor/type/static-kind 严格校验，word、符号扩展、float 与 long/double 栈参数遵循
   A32 soft-float ABI，为整组 Android 平台身份常量提供可复用 field store 通路；focused
@@ -64,13 +67,6 @@
   lifecycle、audio 与 teardown；guest 主线程消费 step/suspend/resume/shutdown，启动、帧、
   movie/exit/fault 状态原子发布，普通交互模式不变；Asphalt 5 exact 从 0/0 精确步进到
   frame/ticks 1/1000 并正常 lifecycle/shutdown，focused 7/7、full CTest 483/483。
-- [WU-0356] MCP 增加 `session_state`、`step`、`lifecycle`、`shutdown` closed-schema 工具；
-  `McpSessionControl` 以原子快照和 64 项 FIFO 隔离网络 worker 与 guest 主线程，step 严格限制
-  1..1,000,000 帧并返回请求/frame 范围；focused 6/6、full CTest 482/482。
-- [WU-0355] Scenario v1 增加 closed-enum step/click/swipe/lifecycle/shutdown action 和
-  frame/movie/lifecycle/exit/fault assertion；强类型 Python 模型与稳定 Result v1 JSON schema
-  由同一机器自检约束，focused 3/3、full CTest 479/479。
-
 ## M6 起点
 
 已有 Scenario v1 身份/fixture/预算/checkpoint/action/assertion/result 契约、Control

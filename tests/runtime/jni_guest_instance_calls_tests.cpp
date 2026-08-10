@@ -14,6 +14,7 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
+#include "ogplay/runtime/integration/jni_guest_static_calls.h"
 #include "ogplay/runtime/integration/jni_guest_static_fields.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
@@ -29,13 +30,14 @@ class InstanceFixture final {
 public:
     InstanceFixture()
         : bus(memory), cpu(bus), abi(memory), dispatcher(ledger),
-          invocations(classes), fields(classes), java_vm(environment) {
+          invocations(classes), fields(classes), objects(classes),
+          java_vm(environment) {
         memory.Map({output, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
         ogplay::runtime::BindJniGuestCoreSlots(
             dispatcher, environment, classes, invocations, strings, arrays,
-            java_vm, memory);
+            java_vm, memory, &objects);
         ogplay::runtime::BindJniGuestStaticFieldSlots(
             dispatcher, environment, classes, fields, memory);
     }
@@ -107,6 +109,7 @@ public:
     ogplay::runtime::JniClassRegistry classes;
     ogplay::runtime::JniInvocationEngine invocations;
     ogplay::runtime::JniFieldStore fields;
+    ogplay::runtime::JniGuestObjectRegistry objects;
     ogplay::runtime::JniStringStore strings;
     ogplay::runtime::JniPrimitiveArrayStore arrays;
     ogplay::runtime::JniJavaVm java_vm;
@@ -249,5 +252,47 @@ TEST_CASE("guest JNI static field family uses exact descriptors and A32 ABI") {
         static_cast<void>(fixture.Call(
             "GetStaticFloatField", java_class, count)),
         "GetStaticFloatField type does not match field descriptor",
+        JniGuestBindingError);
+}
+
+TEST_CASE("guest JNI instance calls accept framework registered host objects") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    const auto service_class = fixture.classes.RegisterClass(
+        {"fixture/Service", {},
+         {{"value", "()I", "service.value", false}}, {}});
+    fixture.invocations.RegisterHandler(
+        "service.value", [](const JniInvocation&) {
+            return JniValue{JniInt{73}};
+        });
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const auto service = AllocateJniHostObjectIdentity();
+    fixture.objects.Register(service, service_class);
+    const auto reference = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, service);
+    fixture.WriteString(0x100U, "fixture/Service");
+    fixture.WriteString(0x140U, "value");
+    fixture.WriteString(0x160U, "()I");
+    fixture.dispatcher.Seal();
+
+    const auto class_reference = fixture.Call(
+        "FindClass", fixture.output.Add(0x100U).Value());
+    const auto method = fixture.Call(
+        "GetMethodID", class_reference, fixture.output.Add(0x140U).Value(),
+        fixture.output.Add(0x160U).Value());
+    CHECK(fixture.Call("CallIntMethod", reference.Value(), method) == 73U);
+    CHECK(fixture.Call("GetObjectClass", reference.Value()) != 0U);
+    CHECK(fixture.Call(
+              "IsInstanceOf", reference.Value(), class_reference) == 1U);
+    CHECK_THROWS_WITH_AS(
+        fixture.objects.Register(service, service_class),
+        "JNI guest object is already registered", JniGuestBindingError);
+    CHECK_THROWS_WITH_AS(
+        fixture.objects.Register(AllocateJniHostObjectIdentity(), {}),
+        "JNI guest object registration is invalid", JniGuestBindingError);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.objects.ClassOf(
+            AllocateJniHostObjectIdentity())),
+        "JNI guest receiver is not a registered instance",
         JniGuestBindingError);
 }

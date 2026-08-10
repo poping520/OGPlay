@@ -149,7 +149,8 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniStringStore& strings,
                            JniPrimitiveArrayStore& arrays,
                            JniJavaVm& java_vm,
-                           memory::AddressSpace& address_space) {
+                           memory::AddressSpace& address_space,
+                           JniGuestObjectRegistry* objects) {
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetVersion"),
         [&environment](const JniGuestCallFrame& frame) {
@@ -295,7 +296,8 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
     BindJniGuestStaticCallSlots(dispatcher, environment, classes, invocations,
                                 address_space);
     BindJniGuestClassAndInstanceSlots(
-        dispatcher, environment, classes, invocations, address_space);
+        dispatcher, environment, classes, invocations, address_space,
+        objects);
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetArrayLength"),
         [&environment, &arrays](const JniGuestCallFrame& frame) {

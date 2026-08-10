@@ -19,6 +19,7 @@
 #include "ogplay/runtime/integration/api19_guest_process.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
+#include "ogplay/runtime/integration/jni_guest_static_calls.h"
 #include "ogplay/runtime/integration/jni_guest_static_fields.h"
 #include "ogplay/runtime/integration/jni_guest_dispatch.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
@@ -437,6 +438,7 @@ public:
           guest_jni_(address_space_),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           jni_dispatcher_(ledger_), invocations_(classes_), fields_(classes_),
+          objects_(classes_),
           sound_pool_mixer_(request.sound_resource_loader),
           java_vm_(environment_),
           threads_([this] {
@@ -497,7 +499,7 @@ public:
         BindSyscalls();
         BindJniGuestCoreSlots(
             jni_dispatcher_, environment_, classes_, invocations_, strings_,
-            arrays_, java_vm_, address_space_);
+            arrays_, java_vm_, address_space_, &objects_);
         BindJniGuestStaticFieldSlots(
             jni_dispatcher_, environment_, classes_, fields_, address_space_);
         jni_dispatcher_.Seal();
@@ -691,6 +693,7 @@ private:
     JniClassRegistry classes_;
     JniInvocationEngine invocations_;
     JniFieldStore fields_;
+    JniGuestObjectRegistry objects_;
     audio::JavaSoundPoolState sound_pool_;
     audio::JavaSoundPoolMixer sound_pool_mixer_;
     FrameworkScreenPolicyState screen_policy_;

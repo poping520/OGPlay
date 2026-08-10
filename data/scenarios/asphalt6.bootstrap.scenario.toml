@@ -1,0 +1,45 @@
+schema = 1
+id = "asphalt6.bootstrap"
+
+[profile]
+package = "com.gameloft.android.GAND.GloftAPHP"
+version_code = 132
+so_sha256 = "567a0caf773f8edcc2f81e8fc8b6437b1664cbc22514c22e3019b6f8550377a7"
+abi = "armeabi-v7a"
+
+[[fixture]]
+id = "asphalt6.apk"
+kind = "apk"
+required = true
+
+[[fixture]]
+id = "asphalt6.external"
+kind = "external"
+required = true
+
+[limits]
+startup_frames = 1
+startup_ticks = 1000000000
+startup_wall_time_ms = 300000
+total_frames = 2
+total_ticks = 1000001000
+total_wall_time_ms = 600000
+
+[[checkpoint]]
+id = "first_frame"
+provider = "frame"
+max_frames = 1
+max_ticks = 1000
+wall_time_ms = 240000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "step"
+frames = 1
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 1
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"

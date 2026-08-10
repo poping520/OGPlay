@@ -1,5 +1,6 @@
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/coordinate_overlay.h"
+#include "ogplay/agent/mcp_session_control.h"
 
 #include <array>
 #include <cstdint>
@@ -576,4 +577,136 @@ TEST_CASE("MCP protocol strictly validates JSON-RPC envelopes and scoped params"
     REQUIRE(invalid_overlay.has_value());
     CHECK(invalid_overlay->find("\"isError\":true") != std::string::npos);
     CHECK(invalid_overlay->find("exactly 'coordinates'") != std::string::npos);
+}
+
+TEST_CASE("MCP session control exchanges atomic snapshots and bounded FIFO commands") {
+    using Command = ogplay::agent::McpSessionCommand;
+    ogplay::agent::McpSessionControl control;
+    control.Publish({
+        .lifecycle = ogplay::agent::McpLifecycleState::running,
+        .frame = 12U,
+        .guest_ticks = 34U,
+        .presented_frame = 11U,
+        .movie_request = ogplay::agent::McpMovieRequestSnapshot{2U, "logo.mp4"},
+    });
+    const auto snapshot = control.Snapshot();
+    CHECK(snapshot.frame == 12U);
+    REQUIRE(snapshot.movie_request.has_value());
+    CHECK(snapshot.movie_request->name == "logo.mp4");
+
+    const auto step = control.TryEnqueue(Command::Type::step, 3U);
+    const auto suspend = control.TryEnqueue(Command::Type::suspend);
+    REQUIRE(step.has_value());
+    REQUIRE(suspend.has_value());
+    CHECK(step->request_sequence == 1U);
+    CHECK(step->starting_frame == 12U);
+    CHECK(step->frames == 3U);
+    CHECK(suspend->request_sequence == 2U);
+    CHECK(control.PendingCommands() == 2U);
+    CHECK(control.TakeNextCommand()->type == Command::Type::step);
+    CHECK(control.TakeNextCommand()->type == Command::Type::suspend);
+    CHECK_FALSE(control.TakeNextCommand().has_value());
+
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(control.TryEnqueue(Command::Type::step, 0U)),
+        "invalid MCP session command frame count", std::invalid_argument);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(control.TryEnqueue(Command::Type::resume, 1U)),
+        "invalid MCP session command frame count", std::invalid_argument);
+}
+
+TEST_CASE("MCP session tools expose state and queue deterministic commands") {
+    using State = ogplay::agent::McpLifecycleState;
+    using Command = ogplay::agent::McpSessionCommand;
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    ogplay::agent::McpSessionControl control;
+    control.Publish({
+        .lifecycle = State::running,
+        .frame = 7U,
+        .guest_ticks = 9000U,
+        .presented_frame = 7U,
+        .movie_request = ogplay::agent::McpMovieRequestSnapshot{4U, "intro.mp4"},
+        .guest_fault = std::nullopt,
+    });
+    ogplay::agent::McpProtocolAdapter mcp{frames, inputs, control, "test"};
+
+    const auto tools = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}})");
+    REQUIRE(tools.has_value());
+    for (const std::string_view name :
+         {"session_state", "step", "lifecycle", "shutdown"}) {
+        CHECK(tools->find("\"name\":\"" + std::string{name} + "\"") !=
+              std::string::npos);
+    }
+    CHECK(tools->find("\"maximum\":1000000") != std::string::npos);
+    CHECK(tools->find("\"enum\":[\"suspend\",\"resume\"]") != std::string::npos);
+    CHECK(tools->find("\"outputSchema\"") != std::string::npos);
+    CHECK(tools->find("\"guestTicks\"") != std::string::npos);
+
+    const auto state = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"session_state","arguments":{}}})");
+    REQUIRE(state.has_value());
+    CHECK(state->find("\"lifecycle\":\"running\"") != std::string::npos);
+    CHECK(state->find("\"frame\":7") != std::string::npos);
+    CHECK(state->find("\"guestTicks\":9000") != std::string::npos);
+    CHECK(state->find("\"name\":\"intro.mp4\"") != std::string::npos);
+    CHECK(state->find("\"guestFault\":null") != std::string::npos);
+
+    const auto step = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"step","arguments":{"frames":5}}})");
+    REQUIRE(step.has_value());
+    CHECK(step->find("\"requestSequence\":1") != std::string::npos);
+    CHECK(step->find("\"startingFrame\":7") != std::string::npos);
+    CHECK(step->find("\"targetFrame\":12") != std::string::npos);
+    CHECK(control.TakeNextCommand()->type == Command::Type::step);
+
+    const auto lifecycle = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"lifecycle","arguments":{"action":"suspend"}}})");
+    REQUIRE(lifecycle.has_value());
+    CHECK(lifecycle->find("\"action\":\"suspend\"") != std::string::npos);
+    CHECK(control.TakeNextCommand()->type == Command::Type::suspend);
+
+    const auto shutdown = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"shutdown","arguments":{}}})");
+    REQUIRE(shutdown.has_value());
+    CHECK(shutdown->find("\"action\":\"shutdown\"") != std::string::npos);
+    CHECK(control.Snapshot().shutdown_requested);
+    CHECK(control.TakeNextCommand()->type == Command::Type::shutdown);
+}
+
+TEST_CASE("MCP session tools fail closed when unavailable malformed or full") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpProtocolAdapter unavailable{frames};
+    const auto missing = unavailable.Handle(
+        R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"session_state","arguments":{}}})");
+    REQUIRE(missing.has_value());
+    CHECK(missing->find("Session control is unavailable") != std::string::npos);
+
+    ogplay::agent::McpInputQueue inputs;
+    ogplay::agent::McpSessionControl control;
+    ogplay::agent::McpProtocolAdapter mcp{frames, inputs, control};
+    for (const std::string_view request : {
+             R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"session_state","arguments":{"extra":1}}})",
+             R"({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"step","arguments":{"frames":0}}})",
+             R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"step","arguments":{"frames":1000001}}})",
+             R"({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"step","arguments":{"frames":1,"extra":2}}})",
+             R"({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"lifecycle","arguments":{"action":"stop"}}})",
+             R"({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"shutdown","arguments":{"force":true}}})"}) {
+        const auto response = mcp.Handle(request);
+        REQUIRE(response.has_value());
+        CHECK(response->find("\"isError\":true") != std::string::npos);
+    }
+    CHECK(control.PendingCommands() == 0U);
+
+    for (std::size_t index = 0;
+         index < ogplay::agent::McpSessionControl::kMaximumPendingCommands;
+         ++index) {
+        REQUIRE(control.TryEnqueue(
+            ogplay::agent::McpSessionCommand::Type::suspend).has_value());
+    }
+    const auto full = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"step","arguments":{"frames":1}}})");
+    REQUIRE(full.has_value());
+    CHECK(full->find("session command queue is full") != std::string::npos);
 }

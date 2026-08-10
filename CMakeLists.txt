@@ -397,6 +397,7 @@ add_library(ogplay_agent
     src/agent/coordinate_overlay.cpp
     src/agent/mcp_input.cpp
     src/agent/mcp_protocol.cpp
+    src/agent/mcp_session_control.cpp
     src/agent/stb_image_write.cpp
 )
 add_library(OGPlay::Agent ALIAS ogplay_agent)

@@ -1,6 +1,7 @@
 #include "ogplay/agent/mcp_protocol.h"
 
 #include "ogplay/agent/coordinate_overlay.h"
+#include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/core/json.h"
 
 #include <limits>
@@ -309,6 +310,7 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     writer.AddBool(swipe_annotations, "openWorldHint", false);
     writer.Add(swipe, "annotations", swipe_annotations);
     writer.Append(tools, swipe);
+    AppendMcpSessionTools(writer, tools);
     writer.Add(result, "tools", tools);
     return result;
 }
@@ -552,6 +554,13 @@ McpProtocolAdapter::McpProtocolAdapter(
     inputs_ = &inputs;
 }
 
+McpProtocolAdapter::McpProtocolAdapter(
+    FrameSnapshotStore& frames, McpInputQueue& inputs,
+    McpSessionControl& session_control, std::string server_version)
+    : McpProtocolAdapter(frames, inputs, std::move(server_version)) {
+    session_control_ = &session_control;
+}
+
 std::optional<std::string> McpProtocolAdapter::Handle(
     const std::string_view request) const {
     core::JsonParseError parse_error;
@@ -730,6 +739,12 @@ std::optional<std::string> McpProtocolAdapter::Handle(
                 }
                 return RpcResult(*id, [&](core::JsonWriter& writer) {
                     return SwipeResult(writer, frames_, inputs_, *arguments);
+                });
+            }
+            if (IsMcpSessionTool(*name)) {
+                return RpcResult(*id, [&](core::JsonWriter& writer) {
+                    return CallMcpSessionTool(
+                        writer, session_control_, *name, arguments);
                 });
             }
             return RpcError(id, -32602, "unknown MCP tool: " + std::string(*name));

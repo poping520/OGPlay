@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M6 Scenario 执行模型已冻结
+更新：2026-08-10 · M6 确定性 MCP session 控制面已完成
 
 ## 当前阶段
 
@@ -28,10 +28,13 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0356 确定性 MCP session 控制面。
+- 无；下一项为 WU-0357 将 MCP session 控制面接入 `run-apk` guest loop。
 
 ## 最近完成
 
+- [WU-0356] MCP 增加 `session_state`、`step`、`lifecycle`、`shutdown` closed-schema 工具；
+  `McpSessionControl` 以原子快照和 64 项 FIFO 隔离网络 worker 与 guest 主线程，step 严格限制
+  1..1,000,000 帧并返回请求/frame 范围；focused 6/6、full CTest 482/482。
 - [WU-0355] Scenario v1 增加 closed-enum step/click/swipe/lifecycle/shutdown action 和
   frame/movie/lifecycle/exit/fault assertion；强类型 Python 模型与稳定 Result v1 JSON schema
   由同一机器自检约束，focused 3/3、full CTest 479/479。
@@ -58,14 +61,14 @@
 
 已有 Scenario v1 身份/fixture/预算/checkpoint/action/assertion/result 契约、Control
 Service/JSON-RPC、固定步长 Clock、能力账本、结构化日志、GPU 查询和 Software/ANGLE
-黄金帧基础，但 MCP 尚无确定性 session 控制面；输入、frame capture、生命周期、电影请求、
-guest fault 和退出状态也未在同一 Profile-backed exact guest 会话闭环。
+黄金帧基础。MCP 已具备确定性 session 控制面，但 `run-apk` 尚未消费命令或发布 lifecycle/
+movie/fault/exit 快照；Scenario 也尚未在同一 Profile-backed exact guest 会话执行。
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0356，为 MCP 增加 session_state/step/lifecycle/shutdown 确定性控制面。
-2. 让 Profile-backed Agent session 复用 `run-apk` bootstrap/lifecycle/ANGLE 路径，并接入
-   有界 step/until、输入和原子 checkpoint provider。
+1. 创建 WU-0357，让 `run-apk` 复用现有 bootstrap/lifecycle/ANGLE 路径消费 MCP session
+   命令，并发布原子状态。
+2. 建立 Scenario runner，接入有界 step/until、输入和原子 checkpoint provider。
 3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 

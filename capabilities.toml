@@ -25,6 +25,11 @@ status = "complete"
 test = "tools.scenario_validator_self_test; tools.scenario_model_self_test"
 note = "M6 WU-0355 为 Scenario v1 增加 closed-enum step/click/swipe/lifecycle/shutdown action 和 frame/movie/lifecycle/exit/fault assertion；强类型 Python 模型输出稳定 Result v1 JSON"
 
+[automation.mcp_session_control]
+status = "complete"
+test = "tests/agent/mcp_protocol_tests.cpp"
+note = "M6 WU-0356 发布 session_state/step/lifecycle/shutdown closed-schema MCP 工具；线程安全原子快照与 64 项命令 FIFO 让网络 worker 不直接调用 guest，step 严格限制 1..1000000 帧"
+
 [agent.control_service]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

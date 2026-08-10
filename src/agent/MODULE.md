@@ -21,6 +21,11 @@
 - `McpInputQueue`：跨 MCP worker 与 guest 主线程传递最多 64 个 pointer gesture；click 在连续
   两次 take 中输出 down/up，swipe 按请求的 1..120 个确定性步数输出 down/move/up，整个手势
   保持同一请求与起始帧序号，网络线程不直接调用 guest。
+- `McpSessionControl`：跨 MCP worker 与 guest 主线程交换原子 lifecycle/frame/ticks/
+  presented-frame/movie/process-exit/guest-fault/shutdown 快照，并以最多 64 项 FIFO 传递
+  step/suspend/resume/shutdown 命令；`step` 只接受 1..1,000,000 帧。
+- MCP `session_state` 只读同一份原子状态；`step`、`lifecycle`、`shutdown` 只确认命令排队，
+  返回请求序号和起始 frame，不把排队伪作 guest 已执行。
 - 协议编解码只通过 core `JsonDocument`/`JsonWriter`；MCP initialize 与工具 schema 按
   JSON-RPC 对象作用域验证，不扫描嵌套文本。
 - `gpu.stats/render_targets/capabilities/trace`：从可选 `GpuStateProvider` 序列化强类型
@@ -41,6 +46,8 @@
   越界、未知字段和未接输入均返回显式 tool error。
 - MCP swipe 的起点和终点必须不同且都在最近帧边界内；五个参数完整、步数受限且队列可用时
   才确认排队，响应必须返回请求序号、起始帧序号、端点和步数。
+- MCP session 工具的 input/output schema 必须 closed；未连接控制面、命令队列满、额外字段、
+  非法 lifecycle 或越界 step 明确失败，网络线程禁止直接进入 guest lifecycle。
 - MCP 图像最大 64 MiB RGBA8，尺寸、字节数、JPEG/PNG/Base64 输出必须在发布前完整受检；
   两种编码均使用仓库固定 commit 的官方 `stb_image_write`，禁止退回 stored-block PNG。
 - 调试接口与 CI 断言读取同一份状态。

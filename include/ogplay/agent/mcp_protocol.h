@@ -11,6 +11,8 @@
 
 namespace ogplay::agent {
 
+class McpSessionControl;
+
 struct FrameSnapshot final {
     std::uint32_t width{};
     std::uint32_t height{};
@@ -84,6 +86,9 @@ public:
                                 std::string server_version = "0.1.0");
     McpProtocolAdapter(FrameSnapshotStore& frames, McpInputQueue& inputs,
                        std::string server_version = "0.1.0");
+    McpProtocolAdapter(FrameSnapshotStore& frames, McpInputQueue& inputs,
+                       McpSessionControl& session_control,
+                       std::string server_version = "0.1.0");
 
     // Notifications return nullopt. Requests always return one JSON-RPC response.
     [[nodiscard]] std::optional<std::string> Handle(std::string_view request) const;
@@ -91,6 +96,7 @@ public:
 private:
     FrameSnapshotStore& frames_;
     McpInputQueue* inputs_{};
+    McpSessionControl* session_control_{};
     std::string server_version_;
 };
 

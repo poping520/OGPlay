@@ -156,6 +156,8 @@
   改变平台窗口策略。
 - `process.exit` 只向线程安全的会话状态发布可查询的退出请求；不得直接终止宿主进程，
   也不得以 no-op 吞掉。前端观察请求后仍须执行 Profile lifecycle 与 guest session 清理。
+- `locale.detect_phone_language` 必须从 framework 的受检确定性 Locale 配置计算 legacy
+  语言索引；不得读取宿主区域设置或把游戏身份写入 handler。
 - host-managed surface 明确表示 GLSurfaceView 等 Java lifecycle 拥有的 ANGLE pbuffer；
   open/present/close 必须严格配对，guest EGL 不得替换或终止该 surface，帧仍走统一 resolve。
   宿主成功 present 后可归还布局完全匹配的拥有型帧；1x surface 复用其 RGBA8 高水位存储，

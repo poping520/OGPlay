@@ -30,6 +30,19 @@ namespace {
     return result;
 }
 
+void ValidateConfig(const FrameworkLocaleConfig& config) {
+    if ((config.language.size() != 2 && config.language.size() != 3) ||
+        !AllInRange(config.language, 'a', 'z')) {
+        Fail(FrameworkLocaleErrorReason::invalid_config,
+             "Locale language must be two or three lowercase ASCII letters");
+    }
+    if ((!config.country.empty() && config.country.size() != 2) ||
+        !AllInRange(config.country, 'A', 'Z')) {
+        Fail(FrameworkLocaleErrorReason::invalid_config,
+             "Locale country must be empty or two uppercase ASCII letters");
+    }
+}
+
 }  // namespace
 
 FrameworkLocaleError::FrameworkLocaleError(
@@ -38,6 +51,19 @@ FrameworkLocaleError::FrameworkLocaleError(
 
 FrameworkLocaleErrorReason FrameworkLocaleError::Reason() const noexcept {
     return reason_;
+}
+
+std::int32_t LegacyPhoneLanguageIndex(
+    const FrameworkLocaleConfig& config) {
+    ValidateConfig(config);
+    const auto& language = config.language;
+    if (language == "fr" || language == "fra") return 0;
+    if (language == "de" || language == "deu") return 1;
+    if (language == "it" || language == "ita") return 2;
+    if (language == "es" || language == "spa") return 3;
+    if (language == "ja" || language == "jpn") return 4;
+    if (language == "pt" || language == "por") return 6;
+    return 5;
 }
 
 class FrameworkLocaleHle::Impl final {
@@ -70,7 +96,7 @@ public:
             Fail(FrameworkLocaleErrorReason::missing_framework,
                  "framework lifecycle classes must be installed first");
         }
-        ValidateConfig();
+        ValidateConfig(config_);
         const auto locale_class = classes_->RegisterClass(
             {"java/util/Locale",
              "java/lang/Object",
@@ -104,19 +130,6 @@ public:
     }
 
 private:
-    void ValidateConfig() const {
-        if ((config_.language.size() != 2 && config_.language.size() != 3) ||
-            !AllInRange(config_.language, 'a', 'z')) {
-            Fail(FrameworkLocaleErrorReason::invalid_config,
-                 "Locale language must be two or three lowercase ASCII letters");
-        }
-        if ((!config_.country.empty() && config_.country.size() != 2) ||
-            !AllInRange(config_.country, 'A', 'Z')) {
-            Fail(FrameworkLocaleErrorReason::invalid_config,
-                 "Locale country must be empty or two uppercase ASCII letters");
-        }
-    }
-
     [[nodiscard]] JniObjectIdentity CreateText(const std::string& value) {
         const auto identity = strings_->Create(AsciiText(value));
         strings_owned_.push_back(identity);

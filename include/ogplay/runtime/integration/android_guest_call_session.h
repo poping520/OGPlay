@@ -25,6 +25,7 @@ namespace ogplay::runtime {
 
 class JniInvocationEngine;
 class FrameworkScreenPolicyState;
+struct FrameworkLocaleConfig;
 
 class AndroidGuestProcessState final {
 public:
@@ -49,6 +50,10 @@ void BindAndroidGuestJavaDisplayHandlers(
 void BindAndroidGuestJavaProcessHandlers(
     JniInvocationEngine& invocations,
     AndroidGuestProcessState& process_state);
+
+void BindAndroidGuestJavaLocaleHandlers(
+    JniInvocationEngine& invocations,
+    const FrameworkLocaleConfig& locale);
 
 struct AndroidGuestCallSessionRequest final {
     std::uint32_t api{19};

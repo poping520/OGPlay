@@ -21,6 +21,7 @@
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
 #include "ogplay/runtime/integration/jni_guest_dispatch.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
+#include "ogplay/runtime/framework/framework_locale.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
@@ -381,6 +382,17 @@ void BindAndroidGuestJavaProcessHandlers(
         });
 }
 
+void BindAndroidGuestJavaLocaleHandlers(
+    JniInvocationEngine& invocations,
+    const FrameworkLocaleConfig& locale) {
+    const auto language = LegacyPhoneLanguageIndex(locale);
+    invocations.RegisterHandler(
+        "locale.detect_phone_language",
+        [language](const JniInvocation&) {
+            return JniValue{JniInt{language}};
+        });
+}
+
 class AndroidGuestCallSession::Impl final {
 public:
     explicit Impl(const AndroidGuestCallSessionRequest& request)
@@ -416,6 +428,7 @@ public:
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
         BindAndroidGuestJavaDisplayHandlers(invocations_, screen_policy_);
         BindAndroidGuestJavaProcessHandlers(invocations_, process_state_);
+        BindAndroidGuestJavaLocaleHandlers(invocations_, {});
         if (request.direct_assets.has_value()) {
             direct_assets_ = std::make_unique<FrameworkDirectAssetHle>(
                 invocations_, environment_, strings_, arrays_, *filesystem_);

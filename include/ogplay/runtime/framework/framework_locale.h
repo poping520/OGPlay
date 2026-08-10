@@ -17,6 +17,9 @@ struct FrameworkLocaleConfig final {
     std::string country{"US"};
 };
 
+[[nodiscard]] std::int32_t LegacyPhoneLanguageIndex(
+    const FrameworkLocaleConfig& config);
+
 enum class FrameworkLocaleErrorReason : std::uint8_t {
     duplicate_install,
     missing_framework,

@@ -12,6 +12,7 @@
 #include "ogplay/audio/java_sound_pool.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
+#include "ogplay/runtime/framework/framework_locale.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 
@@ -104,6 +105,36 @@ TEST_CASE("Android guest Java process exit requests session shutdown") {
         ogplay::runtime::JniArgumentSource::variadic));
     CHECK(process_state.ExitRequested());
     CHECK(process_state.ExitRequestCount() == 1U);
+}
+
+TEST_CASE("Android guest Java locale handler returns legacy language index") {
+    ogplay::runtime::JniClassRegistry classes;
+    const auto java_class = classes.RegisterClass(
+        {"fixture/JavaLocale", {},
+         {{"detectPhoneLang", "()I", "locale.detect_phone_language", true}},
+         {}});
+    const auto method = classes.GetMethodId(
+        java_class, "detectPhoneLang", "()I", true);
+    REQUIRE(method.has_value());
+    ogplay::runtime::JniInvocationEngine invocations{classes};
+    ogplay::runtime::BindAndroidGuestJavaLocaleHandlers(
+        invocations, {"fra", "FR"});
+
+    const auto result = invocations.InvokeStatic(
+        1U, java_class, *method, {},
+        ogplay::runtime::JniArgumentSource::value_array);
+    CHECK(std::get<ogplay::runtime::JniInt>(result) == 0);
+    CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"de", "DE"}) == 1);
+    CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"ita", "IT"}) == 2);
+    CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"es", "ES"}) == 3);
+    CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"jpn", "JP"}) == 4);
+    CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"eng", "US"}) == 5);
+    CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"pt", "BR"}) == 6);
+    CHECK(ogplay::runtime::LegacyPhoneLanguageIndex({"zh", "CN"}) == 5);
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            ogplay::runtime::LegacyPhoneLanguageIndex({"EN", "US"})),
+        ogplay::runtime::FrameworkLocaleError);
 }
 
 TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {

@@ -250,6 +250,65 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     writer.AddBool(click_annotations, "openWorldHint", false);
     writer.Add(click, "annotations", click_annotations);
     writer.Append(tools, click);
+
+    const auto swipe = writer.Object();
+    writer.AddString(swipe, "name", "swipe");
+    writer.AddString(swipe, "title", "Swipe across OGPlay guest frame");
+    writer.AddString(
+        swipe, "description",
+        "Queues one primary-pointer swipe in latest-frame guest pixels. Dispatches down, "
+        "the requested 1..120 linear motion steps, then up on separate guest loop steps.");
+    const auto swipe_input = writer.Object();
+    writer.AddString(swipe_input, "type", "object");
+    const auto swipe_input_properties = writer.Object();
+    for (const std::string_view name : {"startX", "startY", "endX", "endY"}) {
+        const auto property = writer.Object();
+        writer.AddString(property, "type", "integer");
+        writer.AddInteger(property, "minimum", 0);
+        writer.Add(swipe_input_properties, name, property);
+    }
+    const auto steps_property = writer.Object();
+    writer.AddString(steps_property, "type", "integer");
+    writer.AddInteger(steps_property, "minimum", 1);
+    writer.AddUnsignedInteger(
+        steps_property, "maximum", McpInputQueue::kMaximumSwipeSteps);
+    writer.Add(swipe_input_properties, "steps", steps_property);
+    writer.Add(swipe_input, "properties", swipe_input_properties);
+    const auto swipe_input_required = writer.Array();
+    for (const std::string_view name :
+         {"startX", "startY", "endX", "endY", "steps"}) {
+        writer.Append(swipe_input_required, writer.String(name));
+    }
+    writer.Add(swipe_input, "required", swipe_input_required);
+    writer.AddBool(swipe_input, "additionalProperties", false);
+    writer.Add(swipe, "inputSchema", swipe_input);
+
+    const auto swipe_output = writer.Object();
+    writer.AddString(swipe_output, "type", "object");
+    const auto swipe_output_properties = writer.Object();
+    for (const std::string_view name : {"requestSequence", "frameSequence", "startX",
+                                        "startY", "endX", "endY", "steps"}) {
+        const auto property = writer.Object();
+        writer.AddString(property, "type", "integer");
+        writer.Add(swipe_output_properties, name, property);
+    }
+    writer.Add(swipe_output, "properties", swipe_output_properties);
+    const auto swipe_output_required = writer.Array();
+    for (const std::string_view name : {"requestSequence", "frameSequence", "startX",
+                                        "startY", "endX", "endY", "steps"}) {
+        writer.Append(swipe_output_required, writer.String(name));
+    }
+    writer.Add(swipe_output, "required", swipe_output_required);
+    writer.AddBool(swipe_output, "additionalProperties", false);
+    writer.Add(swipe, "outputSchema", swipe_output);
+
+    const auto swipe_annotations = writer.Object();
+    writer.AddBool(swipe_annotations, "readOnlyHint", false);
+    writer.AddBool(swipe_annotations, "destructiveHint", false);
+    writer.AddBool(swipe_annotations, "idempotentHint", false);
+    writer.AddBool(swipe_annotations, "openWorldHint", false);
+    writer.Add(swipe, "annotations", swipe_annotations);
+    writer.Append(tools, swipe);
     writer.Add(result, "tools", tools);
     return result;
 }
@@ -369,6 +428,83 @@ core::JsonWriter::Value ClickResult(
     writer.Add(result, "content", content);
     const auto structured = writer.Object();
     add_metadata(structured);
+    writer.Add(result, "structuredContent", structured);
+    writer.AddBool(result, "isError", false);
+    return result;
+}
+
+core::JsonWriter::Value SwipeResult(
+    core::JsonWriter& writer, FrameSnapshotStore& frames,
+    McpInputQueue* inputs, const core::JsonValue arguments) {
+    if (inputs == nullptr) {
+        return ToolError(writer, "Swipe input is unavailable for this MCP session.");
+    }
+    if (!arguments.IsObject() || arguments.Size() != 5U) {
+        return ToolError(
+            writer,
+            "swipe requires exactly integer startX, startY, endX, endY and steps arguments");
+    }
+    const auto unsigned_member = [&](const std::string_view name) {
+        const auto value = arguments.Member(name);
+        return value ? value->UnsignedInteger() : std::nullopt;
+    };
+    const auto start_x = unsigned_member("startX");
+    const auto start_y = unsigned_member("startY");
+    const auto end_x = unsigned_member("endX");
+    const auto end_y = unsigned_member("endY");
+    const auto steps = unsigned_member("steps");
+    const auto maximum_coordinate = (std::numeric_limits<std::uint32_t>::max)();
+    if (!start_x.has_value() || !start_y.has_value() || !end_x.has_value() ||
+        !end_y.has_value() || !steps.has_value() || *start_x > maximum_coordinate ||
+        *start_y > maximum_coordinate || *end_x > maximum_coordinate ||
+        *end_y > maximum_coordinate || *steps == 0U ||
+        *steps > McpInputQueue::kMaximumSwipeSteps) {
+        return ToolError(
+            writer,
+            "swipe coordinates must be non-negative 32-bit integers and steps must be 1..120");
+    }
+    if (*start_x == *end_x && *start_y == *end_y) {
+        return ToolError(writer, "swipe start and end coordinates must differ");
+    }
+    const auto frame = frames.LatestMetadata();
+    if (!frame.has_value()) {
+        return ToolError(writer, "No presented guest frame is available for swipe.");
+    }
+    if (*start_x >= frame->width || *end_x >= frame->width ||
+        *start_y >= frame->height || *end_y >= frame->height) {
+        return ToolError(writer, "swipe coordinates are outside the latest guest frame");
+    }
+    const auto request_sequence = inputs->TryEnqueueSwipe(
+        frame->sequence, static_cast<std::uint32_t>(*start_x),
+        static_cast<std::uint32_t>(*start_y), static_cast<std::uint32_t>(*end_x),
+        static_cast<std::uint32_t>(*end_y), static_cast<std::uint32_t>(*steps));
+    if (!request_sequence.has_value()) {
+        return ToolError(writer, "swipe queue is full");
+    }
+
+    const auto add_metadata = [&](core::JsonWriter& output,
+                                  const core::JsonWriter::Value object) {
+        output.AddUnsignedInteger(object, "requestSequence", *request_sequence);
+        output.AddUnsignedInteger(object, "frameSequence", frame->sequence);
+        output.AddUnsignedInteger(object, "startX", *start_x);
+        output.AddUnsignedInteger(object, "startY", *start_y);
+        output.AddUnsignedInteger(object, "endX", *end_x);
+        output.AddUnsignedInteger(object, "endY", *end_y);
+        output.AddUnsignedInteger(object, "steps", *steps);
+    };
+    core::JsonWriter text_writer;
+    const auto text_metadata = text_writer.Object();
+    add_metadata(text_writer, text_metadata);
+
+    const auto result = writer.Object();
+    const auto content = writer.Array();
+    const auto text = writer.Object();
+    writer.AddString(text, "type", "text");
+    writer.AddString(text, "text", text_writer.Serialize(text_metadata));
+    writer.Append(content, text);
+    writer.Add(result, "content", content);
+    const auto structured = writer.Object();
+    add_metadata(writer, structured);
     writer.Add(result, "structuredContent", structured);
     writer.AddBool(result, "isError", false);
     return result;
@@ -497,7 +633,7 @@ std::optional<std::string> McpProtocolAdapter::Handle(
                     "frame_capture returns the latest presented guest frame as JPEG by default "
                     "or PNG when requested, without advancing execution. Its optional coordinate "
                     "overlay marks guest pixels on the returned copy. click queues a bounded "
-                    "primary-pointer tap in guest pixels.");
+                    "tap; swipe queues deterministic down, motion and up phases in guest pixels.");
                 return result;
             });
         }
@@ -582,6 +718,18 @@ std::optional<std::string> McpProtocolAdapter::Handle(
                 }
                 return RpcResult(*id, [&](core::JsonWriter& writer) {
                     return ClickResult(writer, frames_, inputs_, *arguments);
+                });
+            }
+            if (*name == "swipe") {
+                if (!arguments.has_value()) {
+                    return RpcResult(*id, [](core::JsonWriter& writer) {
+                        return ToolError(
+                            writer,
+                            "swipe requires startX, startY, endX, endY and steps arguments");
+                    });
+                }
+                return RpcResult(*id, [&](core::JsonWriter& writer) {
+                    return SwipeResult(writer, frames_, inputs_, *arguments);
                 });
             }
             return RpcError(id, -32602, "unknown MCP tool: " + std::string(*name));

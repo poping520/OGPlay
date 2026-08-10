@@ -163,7 +163,12 @@ note = "M6 WU-0328 完成最新已呈现帧的 image tool，WU-0334 迁移严格
 [agent.mcp_click_queue]
 status = "complete"
 test = "tests/agent/mcp_protocol_tests.cpp"
-note = "M6 WU-0341 发布 click schema、最近 guest 帧整数坐标校验和 64 项有界线程安全队列；down/up 按连续 take 输出，前端接线由 WU-0342 记账"
+note = "M6 WU-0341 发布 click schema、最近 guest 帧整数坐标校验和 64 项有界线程安全队列；down/up 按连续 take 输出，前端接线由 WU-0342 记账；WU-0350 将底层泛化为手势 FIFO 且 click 契约不变"
+
+[agent.mcp_swipe_queue]
+status = "complete"
+test = "tests/agent/mcp_protocol_tests.cpp"
+note = "M6 WU-0350..0351 发布 swipe(startX,startY,endX,endY,steps)；严格验证最近帧端点与 1..120 motion 步数，逐 take 输出 down/线性 move/up 并返回稳定元数据"
 
 [frontend.mcp_http_transport]
 status = "complete"
@@ -179,6 +184,11 @@ note = "M6 WU-0330 以 --mcp-port 启动 loopback MCP 并发布最新帧；WU-03
 status = "complete"
 test = "tests/frontend/mcp_http_server_tests.cpp; Asphalt 5 exact APK MCP click smoke"
 note = "M6 WU-0343 将 click queue 接入两种 guest loop；可测试 dispatcher 在主线程逐 step 派发 down/up，并与桌面鼠标手势互斥"
+
+[frontend.run_apk_mcp_swipe]
+status = "complete"
+test = "tests/frontend/mcp_input_dispatch_tests.cpp; tests/frontend/mcp_http_server_tests.cpp; Asphalt 5 exact APK MCP swipe smoke"
+note = "M6 WU-0350..0351 让 dispatcher 在主线程逐 guest loop 保真派发 swipe button/motion 阶段，并与桌面手势互斥"
 
 [golden.software_frame]
 status = "complete"

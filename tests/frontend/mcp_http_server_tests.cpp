@@ -108,6 +108,26 @@ TEST_CASE("MCP HTTP returns the latest frame through a real loopback request") {
     CHECK_FALSE(up->pressed);
     CHECK(down->x == 1U);
     CHECK(down->y == 0U);
+
+    const auto swipe = Request(
+        server->Port(), "POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":"swipe","method":"tools/call","params":{"name":"swipe","arguments":{"startX":0,"startY":0,"endX":1,"endY":0,"steps":2}}})");
+    CHECK(swipe.find("HTTP/1.1 200 OK") != std::string::npos);
+    CHECK(swipe.find("\"requestSequence\":2") != std::string::npos);
+    CHECK(swipe.find("\"frameSequence\":73") != std::string::npos);
+    const auto swipe_down = inputs.TakeNextPointerEvent();
+    const auto first_motion = inputs.TakeNextPointerEvent();
+    const auto second_motion = inputs.TakeNextPointerEvent();
+    const auto swipe_up = inputs.TakeNextPointerEvent();
+    REQUIRE(swipe_down.has_value());
+    REQUIRE(first_motion.has_value());
+    REQUIRE(second_motion.has_value());
+    REQUIRE(swipe_up.has_value());
+    CHECK(swipe_down->type == ogplay::agent::McpPointerEvent::Type::button);
+    CHECK(first_motion->type == ogplay::agent::McpPointerEvent::Type::motion);
+    CHECK(second_motion->type == ogplay::agent::McpPointerEvent::Type::motion);
+    CHECK(swipe_up->type == ogplay::agent::McpPointerEvent::Type::button);
+    CHECK_FALSE(swipe_up->pressed);
 }
 
 TEST_CASE("MCP HTTP rejects non-loopback origins and unsupported routes") {

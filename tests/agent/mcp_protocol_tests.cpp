@@ -210,6 +210,8 @@ TEST_CASE("MCP protocol negotiates lifecycle and lists screenshot tool") {
     CHECK(tools->find("\"overlay\"") != std::string::npos);
     CHECK(tools->find("\"coordinates\"") != std::string::npos);
     CHECK(tools->find("\"name\":\"click\"") != std::string::npos);
+    CHECK(tools->find("\"name\":\"swipe\"") != std::string::npos);
+    CHECK(tools->find("\"maximum\":120") != std::string::npos);
     CHECK(tools->find("\"minimum\":0") != std::string::npos);
     CHECK(tools->find("\"readOnlyHint\":true") != std::string::npos);
     CHECK(tools->find("\"readOnlyHint\":false") != std::string::npos);
@@ -426,6 +428,91 @@ TEST_CASE("MCP click tool rejects unavailable malformed and out of bounds input"
     REQUIRE(queue_full.has_value());
     CHECK(queue_full->find("\"isError\":true") != std::string::npos);
     CHECK(queue_full->find("click queue is full") != std::string::npos);
+}
+
+TEST_CASE("MCP swipe tool queues exact endpoints and deterministic motion steps") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    static_cast<void>(frames.Publish(
+        {100U, 80U, 55U, std::vector<std::uint8_t>(100U * 80U * 4U)}));
+    ogplay::agent::McpProtocolAdapter mcp{frames, inputs};
+    const auto response = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":"swipe","method":"tools/call","params":{"name":"swipe","arguments":{"startX":10,"startY":20,"endX":70,"endY":50,"steps":3}}})");
+    REQUIRE(response.has_value());
+    CHECK(response->find("\"requestSequence\":1") != std::string::npos);
+    CHECK(response->find("\"frameSequence\":55") != std::string::npos);
+    CHECK(response->find("\"startX\":10") != std::string::npos);
+    CHECK(response->find("\"endY\":50") != std::string::npos);
+    CHECK(response->find("\"steps\":3") != std::string::npos);
+    CHECK(response->find("\"isError\":false") != std::string::npos);
+
+    const auto down = inputs.TakeNextPointerEvent();
+    REQUIRE(down.has_value());
+    CHECK(down->type == ogplay::agent::McpPointerEvent::Type::button);
+    CHECK(down->x == 10U);
+    CHECK(down->y == 20U);
+    for (const auto expected :
+         {std::pair{30U, 30U}, std::pair{50U, 40U}, std::pair{70U, 50U}}) {
+        const auto motion = inputs.TakeNextPointerEvent();
+        REQUIRE(motion.has_value());
+        CHECK(motion->type == ogplay::agent::McpPointerEvent::Type::motion);
+        CHECK(motion->x == expected.first);
+        CHECK(motion->y == expected.second);
+    }
+    const auto up = inputs.TakeNextPointerEvent();
+    REQUIRE(up.has_value());
+    CHECK(up->type == ogplay::agent::McpPointerEvent::Type::button);
+    CHECK(up->x == 70U);
+    CHECK(up->y == 50U);
+    CHECK_FALSE(up->pressed);
+}
+
+TEST_CASE("MCP swipe tool fails closed for unavailable malformed and bounded input") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    ogplay::agent::McpProtocolAdapter no_frame{frames, inputs};
+    const auto without_frame = no_frame.Handle(
+        R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swipe","arguments":{"startX":0,"startY":0,"endX":1,"endY":1,"steps":1}}})");
+    REQUIRE(without_frame.has_value());
+    CHECK(without_frame->find("No presented guest frame") != std::string::npos);
+
+    static_cast<void>(frames.Publish(
+        {8U, 6U, 2U, std::vector<std::uint8_t>(8U * 6U * 4U)}));
+    ogplay::agent::McpProtocolAdapter unavailable{frames};
+    const auto no_queue = unavailable.Handle(
+        R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"swipe","arguments":{"startX":0,"startY":0,"endX":1,"endY":1,"steps":1}}})");
+    REQUIRE(no_queue.has_value());
+    CHECK(no_queue->find("Swipe input is unavailable") != std::string::npos);
+
+    ogplay::agent::McpProtocolAdapter mcp{frames, inputs};
+    for (const std::string_view arguments : {
+             R"({"startX":0,"startY":0,"endX":1,"endY":1})",
+             R"({"startX":-1,"startY":0,"endX":1,"endY":1,"steps":1})",
+             R"({"startX":0,"startY":0,"endX":1,"endY":1,"steps":0})",
+             R"({"startX":0,"startY":0,"endX":1,"endY":1,"steps":121})",
+             R"({"startX":1,"startY":1,"endX":1,"endY":1,"steps":1})",
+             R"({"startX":0,"startY":0,"endX":8,"endY":1,"steps":1})",
+             R"({"startX":0,"startY":0,"endX":1,"endY":6,"steps":1})",
+             R"({"startX":0,"startY":0,"endX":1,"endY":1,"steps":1,"extra":true})"}) {
+        const auto request =
+            std::string{"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\","
+                        "\"params\":{\"name\":\"swipe\",\"arguments\":"} +
+            std::string{arguments} + "}}";
+        const auto response = mcp.Handle(request);
+        REQUIRE(response.has_value());
+        CHECK(response->find("\"isError\":true") != std::string::npos);
+    }
+    CHECK(inputs.PendingGestures() == 0U);
+
+    for (std::size_t index = 0;
+         index < ogplay::agent::McpInputQueue::kMaximumPendingGestures;
+         ++index) {
+        REQUIRE(inputs.TryEnqueueClick(2U, 0U, 0U).has_value());
+    }
+    const auto queue_full = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"swipe","arguments":{"startX":0,"startY":0,"endX":1,"endY":1,"steps":1}}})");
+    REQUIRE(queue_full.has_value());
+    CHECK(queue_full->find("swipe queue is full") != std::string::npos);
 }
 
 TEST_CASE("MCP protocol rejects unknown tools and malformed requests") {

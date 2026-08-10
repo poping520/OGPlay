@@ -28,10 +28,15 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0350 exact-APK 场景/checkpoint schema 与严格自检。
+- 无；下一项为 WU-0352 补充 MCP swipe 测试使用文档。
 
 ## 最近完成
 
+- [WU-0351] MCP 发布严格 `swipe(startX,startY,endX,endY,steps)` 工具；两个端点以最近 guest
+  帧校验，1..120 个 motion 阶段和响应元数据均有 schema、协议与 loopback HTTP 测试；
+  Asphalt 5 exact 12 步 swipe 后 frame 500→518 且持续响应，full CTest 476/476。
+- [WU-0350] MCP 输入队列泛化为 64 项手势 FIFO；click 保持 down/up，swipe 按 guest loop
+  逐步输出 down、整数线性 motion 和 up，dispatcher 保真映射并与桌面鼠标互斥。
 - [WU-0349] MCP 测试文档增加坐标网格调用与“带网格定位、干净截图验证”流程，并明确
   网格不改变尺寸或实时 guest 帧。
 - [WU-0348] `frame_capture` 增加可选 `overlay="coordinates"`：在截图副本上绘制每 100 px
@@ -54,9 +59,6 @@
 - [WU-0340] ANGLE 缺少 PVRTC 时调用官方 decoder 转为 RGBA8 上传；MCP sequence 686 的
   800×480 帧纹理清晰，Release 300 帧 15.058 秒正常退出，
   Windows full CTest 464/464。
-- [WU-0339] 原样 vendor PowerVR Native SDK 固定 commit 的 `PVRTDecompress.cpp/.h` 和 MIT
-  license；OGPlay 薄 adapter 只做校验与调用，非均匀 twiddled word 黄金哈希在内 focused
-  CTest 3/3 通过。
 - [WU-0335] Control Service、JSON-RPC、Logger JSONL 与诊断包清除手写 JSON，统一经 core
   yyjson 严格解析/构造；focused 31/31、Windows full CTest 460/460。
 - [WU-0334] MCP envelope/params/schema 迁移到严格 yyjson；语法、重复键、超限、非法 id、
@@ -72,9 +74,10 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0350，冻结 exact-APK 场景/checkpoint schema 与严格自检。
-2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
-3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+1. 创建 WU-0352，补充 MCP swipe 的简明测试使用文档。
+2. 创建 WU-0353，冻结 exact-APK 场景/checkpoint schema 与严格自检。
+3. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
+4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞

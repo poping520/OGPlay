@@ -14,7 +14,8 @@
 - `McpProtocolAdapter::Handle`：实现 MCP initialize/ping/tools/list/tools/call 最小协议面；
   `frame_capture` 只读工具缺省以 quality 85 编码为 MCP `image/jpeg`，也接受显式
   `format: "png"`；可选 `overlay: "coordinates"` 在截图副本上绘制 guest 像素网格，并返回
-  精确格式、网格状态、序号和尺寸；`click` 以最近帧的 guest 整数像素坐标排队一次主指针 tap。
+  精确格式、网格状态、序号和尺寸；`click` 排队一次 tap；`swipe` 以最近帧的 guest 整数
+  像素端点和 1..120 个 motion 步数排队一次确定性主指针滑动。
 - `DrawCoordinateOverlay`：在严格匹配尺寸的 RGBA8 缓冲上绘制每 100 px 主线、每 25 px
   边缘刻度和顶部/左侧坐标标签，供截图编码前的临时副本使用。
 - `McpInputQueue`：跨 MCP worker 与 guest 主线程传递最多 64 个 pointer gesture；click 在连续
@@ -37,6 +38,8 @@
   单个 swipe 不得超过 120 个 motion 阶段，待处理手势不得超过 64 个。
 - MCP click 必须在最近帧边界内、参数完整且队列可用时才确认排队；队列满、无帧、负数、
   越界、未知字段和未接输入均返回显式 tool error。
+- MCP swipe 的起点和终点必须不同且都在最近帧边界内；五个参数完整、步数受限且队列可用时
+  才确认排队，响应必须返回请求序号、起始帧序号、端点和步数。
 - MCP 图像最大 64 MiB RGBA8，尺寸、字节数、JPEG/PNG/Base64 输出必须在发布前完整受检；
   两种编码均使用仓库固定 commit 的官方 `stb_image_write`，禁止退回 stored-block PNG。
 - 调试接口与 CI 断言读取同一份状态。

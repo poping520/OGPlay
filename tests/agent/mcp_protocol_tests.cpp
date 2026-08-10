@@ -1,5 +1,7 @@
 #include "ogplay/agent/mcp_protocol.h"
+#include "ogplay/agent/coordinate_overlay.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -165,6 +167,8 @@ TEST_CASE("MCP protocol negotiates lifecycle and lists screenshot tool") {
     CHECK(tools->find("\"name\":\"frame_capture\"") != std::string::npos);
     CHECK(tools->find("\"enum\":[\"jpeg\",\"png\"]") != std::string::npos);
     CHECK(tools->find("\"default\":\"jpeg\"") != std::string::npos);
+    CHECK(tools->find("\"overlay\"") != std::string::npos);
+    CHECK(tools->find("\"coordinates\"") != std::string::npos);
     CHECK(tools->find("\"name\":\"click\"") != std::string::npos);
     CHECK(tools->find("\"minimum\":0") != std::string::npos);
     CHECK(tools->find("\"readOnlyHint\":true") != std::string::npos);
@@ -192,6 +196,7 @@ TEST_CASE("MCP screenshot tool defaults to JPEG with exact frame metadata") {
     REQUIRE(response.has_value());
     CHECK(response->find("\"mimeType\":\"image/jpeg\"") != std::string::npos);
     CHECK(response->find("\"format\":\"jpeg\"") != std::string::npos);
+    CHECK(response->find("\"overlay\":\"none\"") != std::string::npos);
     CHECK(response->find("\"sequence\":7") != std::string::npos);
     CHECK(response->find("\"width\":2") != std::string::npos);
     CHECK(response->find("\"height\":1") != std::string::npos);
@@ -253,6 +258,62 @@ TEST_CASE("MCP screenshot tool compresses full frames as JPEG and PNG") {
     CHECK(surface->h == static_cast<int>(height));
     SDL_DestroySurface(surface);
 #endif
+}
+
+TEST_CASE("MCP coordinate overlay draws guides on only the returned frame copy") {
+    constexpr std::uint32_t width = 200U;
+    constexpr std::uint32_t height = 120U;
+    std::vector<std::uint8_t> rgba(width * height * 4U, 0U);
+    for (std::size_t offset = 0; offset < rgba.size(); offset += 4U) {
+        rgba[offset] = 12U;
+        rgba[offset + 1U] = 34U;
+        rgba[offset + 2U] = 56U;
+        rgba[offset + 3U] = 255U;
+    }
+    ogplay::agent::FrameSnapshotStore frames;
+    static_cast<void>(frames.Publish({width, height, 9U, rgba}));
+    ogplay::agent::McpProtocolAdapter mcp{frames};
+
+    const auto clean_response = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":"clean","method":"tools/call","params":{"name":"frame_capture","arguments":{"format":"png"}}})");
+    const auto overlay_response = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":"overlay","method":"tools/call","params":{"name":"frame_capture","arguments":{"format":"png","overlay":"coordinates"}}})");
+    REQUIRE(clean_response.has_value());
+    REQUIRE(overlay_response.has_value());
+    CHECK(overlay_response->find("\"overlay\":\"coordinates\"") != std::string::npos);
+    CHECK(overlay_response->find("\"width\":200") != std::string::npos);
+    CHECK(overlay_response->find("\"height\":120") != std::string::npos);
+    CHECK(DecodeBase64(ImageData(*overlay_response)) !=
+          DecodeBase64(ImageData(*clean_response)));
+
+    const auto stored = frames.Latest();
+    REQUIRE(stored.has_value());
+    CHECK(stored->rgba8 == rgba);
+}
+
+TEST_CASE("coordinate overlay draws major guides and bounded minor ticks") {
+    constexpr std::uint32_t width = 200U;
+    constexpr std::uint32_t height = 120U;
+    std::vector<std::uint8_t> rgba(width * height * 4U, 32U);
+    for (std::size_t offset = 3U; offset < rgba.size(); offset += 4U) {
+        rgba[offset] = 255U;
+    }
+    const auto pixel = [&](const std::uint32_t x, const std::uint32_t y) {
+        const auto offset = (static_cast<std::size_t>(y) * width + x) * 4U;
+        return std::array{rgba[offset], rgba[offset + 1U], rgba[offset + 2U],
+                          rgba[offset + 3U]};
+    };
+    const auto untouched = pixel(25U, 50U);
+    ogplay::agent::DrawCoordinateOverlay(width, height, rgba);
+    CHECK(pixel(100U, 60U) != untouched);
+    CHECK(pixel(25U, 2U) != untouched);
+    CHECK(pixel(25U, 50U) == untouched);
+    CHECK(pixel(100U, 60U)[3] == 255U);
+
+    std::array<std::uint8_t, 15> invalid{};
+    CHECK_THROWS_WITH_AS(
+        ogplay::agent::DrawCoordinateOverlay(2U, 2U, invalid),
+        "coordinate overlay requires exact RGBA8 dimensions", std::invalid_argument);
 }
 
 TEST_CASE("MCP click tool validates latest frame and queues an exact tap") {
@@ -369,11 +430,17 @@ TEST_CASE("MCP protocol strictly validates JSON-RPC envelopes and scoped params"
         R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"frame_capture","arguments":{"advance":true}}})");
     REQUIRE(invalid_arguments.has_value());
     CHECK(invalid_arguments->find("\"isError\":true") != std::string::npos);
-    CHECK(invalid_arguments->find("exactly 'jpeg' or 'png'") != std::string::npos);
+    CHECK(invalid_arguments->find("only optional format and overlay") != std::string::npos);
 
     const auto invalid_format = mcp.Handle(
         R"({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"frame_capture","arguments":{"format":"jpg"}}})");
     REQUIRE(invalid_format.has_value());
     CHECK(invalid_format->find("\"isError\":true") != std::string::npos);
     CHECK(invalid_format->find("exactly 'jpeg' or 'png'") != std::string::npos);
+
+    const auto invalid_overlay = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"frame_capture","arguments":{"overlay":"grid"}}})");
+    REQUIRE(invalid_overlay.has_value());
+    CHECK(invalid_overlay->find("\"isError\":true") != std::string::npos);
+    CHECK(invalid_overlay->find("exactly 'coordinates'") != std::string::npos);
 }

@@ -28,10 +28,13 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0348 exact-APK 场景/checkpoint schema 与严格自检。
+- 无；下一项为 WU-0349 更新 MCP 测试文档中的坐标网格用法。
 
 ## 最近完成
 
+- [WU-0348] `frame_capture` 增加可选 `overlay="coordinates"`：在截图副本上绘制每 100 px
+  主线、每 25 px 边缘刻度和顶部/左侧标签；默认干净截图、尺寸和 guest 帧均保持不变；
+  Asphalt 5 exact 800×480 JPEG 为 93,136 字节且网格可读，full CTest 472/472。
 - [WU-0347] 新增简明 OGPlay MCP 测试使用文档，覆盖启动、截图、点击、判定与当前边界，
   并从全局索引、M6 任务索引和 AI 自动化 roadmap 双向关联。
 - [WU-0346] `run-apk --mcp` 固定监听 `127.0.0.1:15971/mcp`，与自定义 `--mcp-port`
@@ -67,9 +70,10 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0348，冻结 exact-APK 场景/checkpoint schema 与严格自检。
-2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
-3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+1. 创建 WU-0349，补充坐标网格的简明 MCP 测试用法。
+2. 创建 WU-0350，冻结 exact-APK 场景/checkpoint schema 与严格自检。
+3. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
+4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞

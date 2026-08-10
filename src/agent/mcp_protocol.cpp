@@ -1,5 +1,6 @@
 #include "ogplay/agent/mcp_protocol.h"
 
+#include "ogplay/agent/coordinate_overlay.h"
 #include "ogplay/core/json.h"
 
 #include <limits>
@@ -20,6 +21,7 @@ constexpr std::string_view kProtocolVersion = "2025-11-25";
 constexpr int kJpegQuality = 85;
 
 enum class CaptureFormat { kJpeg, kPng };
+enum class CaptureOverlay { kNone, kCoordinates };
 
 struct EncodedFrame final {
     std::vector<std::uint8_t> bytes;
@@ -134,7 +136,8 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     writer.AddString(capture, "description",
                      "Returns the latest presented guest frame as compressed JPEG or PNG "
                      "without advancing guest execution or consuming input. Defaults to JPEG "
-                     "quality 85 when format is omitted.");
+                     "quality 85 when format is omitted. Set overlay to coordinates for guest-"
+                     "pixel guides on the returned copy.");
     const auto capture_input = writer.Object();
     writer.AddString(capture_input, "type", "object");
     const auto capture_input_properties = writer.Object();
@@ -146,6 +149,12 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     writer.Add(capture_format, "enum", capture_format_enum);
     writer.AddString(capture_format, "default", "jpeg");
     writer.Add(capture_input_properties, "format", capture_format);
+    const auto capture_overlay = writer.Object();
+    writer.AddString(capture_overlay, "type", "string");
+    const auto capture_overlay_enum = writer.Array();
+    writer.Append(capture_overlay_enum, writer.String("coordinates"));
+    writer.Add(capture_overlay, "enum", capture_overlay_enum);
+    writer.Add(capture_input_properties, "overlay", capture_overlay);
     writer.Add(capture_input, "properties", capture_input_properties);
     writer.AddBool(capture_input, "additionalProperties", false);
     writer.Add(capture, "inputSchema", capture_input);
@@ -165,12 +174,20 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     writer.Append(output_format_enum, writer.String("png"));
     writer.Add(output_format, "enum", output_format_enum);
     writer.Add(capture_properties, "format", output_format);
+    const auto output_overlay = writer.Object();
+    writer.AddString(output_overlay, "type", "string");
+    const auto output_overlay_enum = writer.Array();
+    writer.Append(output_overlay_enum, writer.String("none"));
+    writer.Append(output_overlay_enum, writer.String("coordinates"));
+    writer.Add(output_overlay, "enum", output_overlay_enum);
+    writer.Add(capture_properties, "overlay", output_overlay);
     writer.Add(capture_output, "properties", capture_properties);
     const auto capture_required = writer.Array();
     writer.Append(capture_required, writer.String("sequence"));
     writer.Append(capture_required, writer.String("width"));
     writer.Append(capture_required, writer.String("height"));
     writer.Append(capture_required, writer.String("format"));
+    writer.Append(capture_required, writer.String("overlay"));
     writer.Add(capture_output, "required", capture_required);
     writer.AddBool(capture_output, "additionalProperties", false);
     writer.Add(capture, "outputSchema", capture_output);
@@ -237,13 +254,19 @@ core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
     return result;
 }
 
-std::string FrameMetadataText(const FrameSnapshot& frame, const std::string_view format) {
+std::string_view OverlayName(const CaptureOverlay overlay) {
+    return overlay == CaptureOverlay::kCoordinates ? "coordinates" : "none";
+}
+
+std::string FrameMetadataText(const FrameSnapshot& frame, const std::string_view format,
+                              const CaptureOverlay overlay) {
     core::JsonWriter writer;
     const auto metadata = writer.Object();
     writer.AddUnsignedInteger(metadata, "sequence", frame.sequence);
     writer.AddUnsignedInteger(metadata, "width", frame.width);
     writer.AddUnsignedInteger(metadata, "height", frame.height);
     writer.AddString(metadata, "format", format);
+    writer.AddString(metadata, "overlay", OverlayName(overlay));
     return writer.Serialize(metadata);
 }
 
@@ -260,10 +283,14 @@ core::JsonWriter::Value ToolError(core::JsonWriter& writer, const std::string_vi
 }
 
 core::JsonWriter::Value CaptureResult(core::JsonWriter& writer, FrameSnapshotStore& frames,
-                                      const CaptureFormat format) {
-    const auto frame = frames.Latest();
+                                      const CaptureFormat format,
+                                      const CaptureOverlay overlay) {
+    auto frame = frames.Latest();
     if (!frame) return ToolError(writer, "No presented guest frame is available.");
 
+    if (overlay == CaptureOverlay::kCoordinates) {
+        DrawCoordinateOverlay(frame->width, frame->height, frame->rgba8);
+    }
     const auto encoded = EncodeFrame(*frame, format);
     const auto result = writer.Object();
     const auto content = writer.Array();
@@ -274,7 +301,7 @@ core::JsonWriter::Value CaptureResult(core::JsonWriter& writer, FrameSnapshotSto
     writer.Append(content, image);
     const auto text = writer.Object();
     writer.AddString(text, "type", "text");
-    writer.AddString(text, "text", FrameMetadataText(*frame, encoded.format));
+    writer.AddString(text, "text", FrameMetadataText(*frame, encoded.format, overlay));
     writer.Append(content, text);
     writer.Add(result, "content", content);
     const auto structured = writer.Object();
@@ -282,6 +309,7 @@ core::JsonWriter::Value CaptureResult(core::JsonWriter& writer, FrameSnapshotSto
     writer.AddUnsignedInteger(structured, "width", frame->width);
     writer.AddUnsignedInteger(structured, "height", frame->height);
     writer.AddString(structured, "format", encoded.format);
+    writer.AddString(structured, "overlay", OverlayName(overlay));
     writer.Add(result, "structuredContent", structured);
     writer.AddBool(result, "isError", false);
     return result;
@@ -498,7 +526,8 @@ std::optional<std::string> McpProtocolAdapter::Handle(
                 writer.AddString(
                     result, "instructions",
                     "frame_capture returns the latest presented guest frame as JPEG by default "
-                    "or PNG when requested, without advancing execution. click queues a bounded "
+                    "or PNG when requested, without advancing execution. Its optional coordinate "
+                    "overlay marks guest pixels on the returned copy. click queues a bounded "
                     "primary-pointer tap in guest pixels.");
                 return result;
             });
@@ -533,22 +562,47 @@ std::optional<std::string> McpProtocolAdapter::Handle(
             }
             if (*name == "frame_capture") {
                 CaptureFormat format = CaptureFormat::kJpeg;
+                CaptureOverlay overlay = CaptureOverlay::kNone;
                 if (arguments.has_value() && arguments->Size() != 0U) {
                     const auto format_value = arguments->Member("format");
-                    const auto requested_format =
-                        format_value ? format_value->String() : std::nullopt;
-                    if (arguments->Size() != 1U || !requested_format.has_value() ||
-                        (*requested_format != "jpeg" && *requested_format != "png")) {
+                    const auto overlay_value = arguments->Member("overlay");
+                    const auto known_arguments = static_cast<std::size_t>(
+                        format_value.has_value()) + static_cast<std::size_t>(
+                        overlay_value.has_value());
+                    if (arguments->Size() != known_arguments) {
                         return RpcResult(*id, [](core::JsonWriter& writer) {
                             return ToolError(
                                 writer,
-                                "frame_capture format must be exactly 'jpeg' or 'png'");
+                                "frame_capture accepts only optional format and overlay arguments");
                         });
                     }
-                    if (*requested_format == "png") format = CaptureFormat::kPng;
+                    if (format_value.has_value()) {
+                        const auto requested_format = format_value->String();
+                        if (!requested_format.has_value() ||
+                            (*requested_format != "jpeg" && *requested_format != "png")) {
+                            return RpcResult(*id, [](core::JsonWriter& writer) {
+                                return ToolError(
+                                    writer,
+                                    "frame_capture format must be exactly 'jpeg' or 'png'");
+                            });
+                        }
+                        if (*requested_format == "png") format = CaptureFormat::kPng;
+                    }
+                    if (overlay_value.has_value()) {
+                        const auto requested_overlay = overlay_value->String();
+                        if (!requested_overlay.has_value() ||
+                            *requested_overlay != "coordinates") {
+                            return RpcResult(*id, [](core::JsonWriter& writer) {
+                                return ToolError(
+                                    writer,
+                                    "frame_capture overlay must be exactly 'coordinates'");
+                            });
+                        }
+                        overlay = CaptureOverlay::kCoordinates;
+                    }
                 }
                 return RpcResult(*id, [&](core::JsonWriter& writer) {
-                    return CaptureResult(writer, frames_, format);
+                    return CaptureResult(writer, frames_, format, overlay);
                 });
             }
             if (*name == "click") {

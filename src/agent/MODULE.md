@@ -13,8 +13,10 @@
   返回旧缓冲供前端回收，读取时只按请求复制，不在每帧编码或复制截图。
 - `McpProtocolAdapter::Handle`：实现 MCP initialize/ping/tools/list/tools/call 最小协议面；
   `frame_capture` 只读工具缺省以 quality 85 编码为 MCP `image/jpeg`，也接受显式
-  `format: "png"`，并返回精确格式、序号和尺寸；`click` 以最近帧的 guest 整数像素坐标
-  排队一次主指针 tap。
+  `format: "png"`；可选 `overlay: "coordinates"` 在截图副本上绘制 guest 像素网格，并返回
+  精确格式、网格状态、序号和尺寸；`click` 以最近帧的 guest 整数像素坐标排队一次主指针 tap。
+- `DrawCoordinateOverlay`：在严格匹配尺寸的 RGBA8 缓冲上绘制每 100 px 主线、每 25 px
+  边缘刻度和顶部/左侧坐标标签，供截图编码前的临时副本使用。
 - `McpInputQueue`：跨 MCP worker 与 guest 主线程传递最多 64 个 click；每个 click 以同一请求
   序号在连续两次 take 中输出 down/up，网络线程不直接调用 guest。
 - 协议编解码只通过 core `JsonDocument`/`JsonWriter`；MCP initialize 与工具 schema 按
@@ -28,6 +30,8 @@
 - 返回结构化结果，不返回供正则刮取的自由文本。
 - 查询与副作用操作分开；未知方法明确返回错误。
 - MCP 截图不得推进 guest、消费输入或伪造无帧成功；无最近帧时返回显式 tool error。
+- 坐标网格不得改变截图尺寸或写回 `FrameSnapshotStore`；省略 `overlay` 必须保持干净截图，
+  未知 overlay 和未知字段必须明确失败。
 - MCP click 必须在最近帧边界内、参数完整且队列可用时才确认排队；down/up 不得在同一次
   take 合并，队列满、无帧、负数、越界、未知字段和未接输入均返回显式 tool error。
 - MCP 图像最大 64 MiB RGBA8，尺寸、字节数、JPEG/PNG/Base64 输出必须在发布前完整受检；

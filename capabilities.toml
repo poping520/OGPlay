@@ -158,7 +158,7 @@ note = "M0 可查 capabilities、unimplemented 与 null_calls"
 [agent.mcp_frame_capture]
 status = "complete"
 test = "tests/agent/mcp_protocol_tests.cpp"
-note = "M6 WU-0328 完成最新已呈现帧的 image tool，WU-0334 迁移严格 yyjson；WU-0344..0345 固定官方 stb_image_write，缺省 JPEG quality 85，format=png 返回压缩 PNG"
+note = "M6 WU-0328 完成最新已呈现帧的 image tool，WU-0334 迁移严格 yyjson；WU-0344..0345 固定官方 stb_image_write，缺省 JPEG quality 85，format=png 返回压缩 PNG；WU-0348 增加只修改截图副本的 overlay=coordinates guest 像素网格"
 
 [agent.mcp_click_queue]
 status = "complete"

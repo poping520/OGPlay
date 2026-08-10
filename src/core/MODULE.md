@@ -12,6 +12,8 @@
 - `GpuStateProvider`：图形实现注入统计、渲染目标、能力与有界 trace 的强类型只读快照；
   core 不依赖 GLES 或 Agent。
 - `ogplay::core::CapabilityLedger`：加载账本并记录运行时命中。
+- `JsonDocument` / `JsonWriter`：基于 yyjson 的唯一 JSON 解析、只读访问、树复制与构造
+  边界；调用方不接触第三方类型。
 - `CapabilityLedger::RecordNullCall/NullCalls`：所有吞错 quirk 共用的空调用观测表。
 - `SoftwareSurface` + `CompareFrames`：M0 无 GPU 黄金帧生产、像素差与感知哈希基础设施。
 
@@ -23,6 +25,8 @@
 - CI 将当前能力状态与基线逐项比较；条目不得删除，状态不得后退。
 - core 不知道游戏、guest ABI、前端或平台实现。
 - GPU provider 的 trace 必须由调用方给出上限；结构中不得夹带预序列化 JSON。
+- JSON 输入默认不超过 1 MiB/64 层，必须是合法 UTF-8 且无重复对象键；输出对象也拒绝
+  重复键。所有失败均显式返回或抛出，不做宽松修复。
 
 ## 禁止
 

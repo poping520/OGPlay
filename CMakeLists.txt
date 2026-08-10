@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(OGPlay VERSION 0.1.0 LANGUAGES CXX)
+project(OGPlay VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -56,8 +56,10 @@ function(ogplay_stage_angle_runtime target)
 endfunction()
 
 add_library(ogplay_core
+    third_party/yyjson/src/yyjson.c
     src/core/capability_ledger.cpp
     src/core/frame_compare.cpp
+    src/core/json.cpp
     src/core/logger.cpp
     src/core/software_surface.cpp
 )
@@ -67,6 +69,15 @@ target_include_directories(ogplay_core
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+target_include_directories(ogplay_core SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/yyjson/src)
+if(MSVC)
+    set_source_files_properties(third_party/yyjson/src/yyjson.c PROPERTIES
+        COMPILE_OPTIONS "/w")
+else()
+    set_source_files_properties(third_party/yyjson/src/yyjson.c PROPERTIES
+        COMPILE_OPTIONS "-w")
+endif()
 target_compile_features(ogplay_core PUBLIC cxx_std_20)
 ogplay_set_project_warnings(ogplay_core)
 
@@ -422,6 +433,7 @@ if(OGPLAY_BUILD_TESTS)
     set(OGPLAY_TEST_SOURCES
         tests/test_main.cpp
         tests/core/capability_ledger_tests.cpp
+        tests/core/json_tests.cpp
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp
         tests/agent/mcp_protocol_tests.cpp

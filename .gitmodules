@@ -17,3 +17,6 @@
 	path = third_party/angle-prebuilt
 	url = https://github.com/poping520/OGPlay-angle-prebuilt.git
 	shallow = true
+[submodule "third_party/yyjson"]
+	path = third_party/yyjson
+	url = https://github.com/ibireme/yyjson.git

@@ -37,6 +37,7 @@ endfunction()
 
 ogplay_require_submodule("third_party/SDL" "SDL3")
 ogplay_require_submodule("third_party/dynarmic" "Dynarmic")
+ogplay_require_submodule("third_party/yyjson" "yyjson")
 
 if(OGPLAY_ENABLE_SDL3)
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)

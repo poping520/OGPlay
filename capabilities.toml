@@ -5,6 +5,11 @@ status = "complete"
 test = "tests/core/logger_tests.cpp"
 note = "M0 完成环形缓冲、sink、限流、JSONL、符号 provider、帧标记与诊断包"
 
+[core.json]
+status = "complete"
+test = "tests/core/json_tests.cpp"
+note = "M6 WU-0333 固定 yyjson 0.12.0，提供不暴露第三方类型的 RAII 严格解析与 writer；默认 1 MiB/64 层并拒绝重复键"
+
 [core.capability_ledger]
 status = "complete"
 test = "tests/core/capability_ledger_tests.cpp"

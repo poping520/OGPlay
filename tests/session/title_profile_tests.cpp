@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
@@ -156,6 +157,45 @@ TEST_CASE("Title Profile C++ loader decodes strict identity and runtime") {
     CHECK(profile.runtime.surface.width == 1280);
     CHECK(profile.runtime.surface.height == 720);
     CHECK(ogplay::session::ToString(profile.runtime.lifecycle) == "gl_surface_view");
+}
+
+TEST_CASE("Dungeon Hunter Profile declares its DEX activity callbacks") {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                      "data/profiles/com.gameloft.android.GAND.GloftDUNQ."
+                      "DungeonHunter.profile.toml";
+    const auto profile = ogplay::session::LoadTitleProfile(path);
+    REQUIRE(profile.java_classes.size() == 1U);
+    const auto& java_class = profile.java_classes.front();
+    CHECK(java_class.name ==
+          "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter");
+    REQUIRE(java_class.methods.size() == 15U);
+    CHECK(java_class.methods[0].name == "sendAppToBackground");
+    CHECK(java_class.methods[0].signature == "()V");
+    CHECK(java_class.methods[0].implementation ==
+          "activity.send_to_background");
+    CHECK(java_class.methods[0].is_static);
+    CHECK(java_class.methods[1].name == "Exit");
+    CHECK(java_class.methods[1].signature == "()V");
+    CHECK(java_class.methods[1].implementation == "process.exit");
+    CHECK(java_class.methods[1].is_static);
+    CHECK(java_class.methods[2].name == "unlockDemo");
+    CHECK(java_class.methods[2].signature == "()V");
+    CHECK(java_class.methods[3].name == "GetPlayMode");
+    CHECK(java_class.methods[3].signature == "()I");
+    CHECK(java_class.methods[4].name == "LaunchBilling");
+    CHECK(java_class.methods[6].name == "GetNumbOfLaunch");
+    CHECK(java_class.methods[7].name == "OpenGLive");
+    CHECK(java_class.methods[7].signature == "(I)V");
+    CHECK(java_class.methods[8].name == "NotifyTrophy");
+    CHECK(java_class.methods[8].signature == "(I)I");
+    CHECK(java_class.methods[11].name == "GetDoubleOptionText1");
+    CHECK(java_class.methods[11].signature == "()[B");
+    CHECK(java_class.methods[14].name == "TrackingRegisterFirstRun");
+    CHECK(java_class.methods[14].implementation ==
+          "analytics.track_first_run");
+    CHECK(std::ranges::all_of(java_class.methods, [](const auto& method) {
+        return method.is_static;
+    }));
 }
 
 TEST_CASE("Title Profile C++ loader rejects schema and TOML violations") {

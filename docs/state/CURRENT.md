@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0311] 第二个 exact Profile 已以纯数据声明 JADX/ELF 共同确认的 15 项 activity static
+  Java lookup，复用通用 implementation id 且生产代码无游戏分支；真实 APK 已越过 activity
+  native init，推进至下一独立边界，全量 CTest 通过。
 - [WU-0310] GLES1 client-array descriptor 现于创建/reset 后恢复规范 size/type/stride/
   pointer/buffer/enable 默认值；Dungeon Hunter 已越过状态保存/临时绘制/恢复与全部 GL 初始化，
   明确推进至独立 JNI 缺口 `sendAppToBackground()V`，全量 CTest 通过。
@@ -69,9 +72,6 @@
 - [WU-0299] SDL 窗口现以无混合复制呈现 opaque guest framebuffer，alpha=0 不再把有效
   RGB 混入黑底；透明红像素契约与 CTest 432/432 通过，用户确认 Debug exact APK 闪屏
   恢复完整白底、主界面无回归，424 帧后正常关闭。
-- [WU-0298] 鼠标主键以 input mapper 生成固定 id 0 的成对单点触摸；悬停、非主键、
-  黑边起始及跨设备事件均不注入，窗口外 release 夹紧闭合；CTest 432/432 通过，用户以
-  Debug exact APK 确认拖拽可旋转车辆，3407 帧后正常关闭。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

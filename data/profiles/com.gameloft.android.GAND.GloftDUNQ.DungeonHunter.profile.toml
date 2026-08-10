@@ -19,6 +19,27 @@ manifest = [
   { path = "data/PyData/common_pyarray.bin", required = true },
   { path = "data/sounds/raw_001.ogg", required = true },
 ]
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter"
+method = [
+  { name = "sendAppToBackground", sig = "()V", impl = "activity.send_to_background", static = true },
+  { name = "Exit", sig = "()V", impl = "process.exit", static = true },
+  { name = "unlockDemo", sig = "()V", impl = "license.unlock_demo", static = true },
+  { name = "GetPlayMode", sig = "()I", impl = "license.get_play_mode", static = true },
+  { name = "LaunchBilling", sig = "()V", impl = "billing.launch", static = true },
+  { name = "increaseNumOfLaunch", sig = "()V", impl = "analytics.increase_launch_count", static = true },
+  { name = "GetNumbOfLaunch", sig = "()I", impl = "analytics.get_launch_count", static = true },
+  { name = "OpenGLive", sig = "(I)V", impl = "online.open_live", static = true },
+  { name = "NotifyTrophy", sig = "(I)I", impl = "online.notify_trophy", static = true },
+  { name = "IsDemo", sig = "()I", impl = "license.is_demo", static = true },
+  { name = "IsDoubleOption", sig = "()I", impl = "license.is_double_option", static = true },
+  { name = "GetDoubleOptionText1", sig = "()[B", impl = "license.get_double_option_text_1", static = true },
+  { name = "GetDoubleOptionText2", sig = "()[B", impl = "license.get_double_option_text_2", static = true },
+  { name = "GetDoubleOptionText3", sig = "()[B", impl = "license.get_double_option_text_3", static = true },
+  { name = "TrackingRegisterFirstRun", sig = "()V", impl = "analytics.track_first_run", static = true },
+]
+
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"

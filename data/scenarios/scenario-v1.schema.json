@@ -132,7 +132,9 @@
         "max_frames",
         "max_ticks",
         "wall_time_ms",
-        "evidence"
+        "evidence",
+        "action",
+        "assertion"
       ],
       "properties": {
         "id": {
@@ -173,6 +175,102 @@
           "items": {
             "enum": ["frame", "state", "logs", "gpu_trace"]
           }
+        },
+        "action": {
+          "$ref": "#/$defs/action"
+        },
+        "assertion": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/assertion"
+          }
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["step", "click", "swipe", "suspend", "resume", "shutdown"]
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "start_x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "start_y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "end_x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "end_y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": [
+            "frame",
+            "movie_request",
+            "lifecycle",
+            "process_exit",
+            "no_guest_fault"
+          ]
+        },
+        "minimum_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "state": {
+          "enum": ["ready", "running", "suspended", "stopped", "failed"]
+        },
+        "expected": {
+          "type": "boolean"
         }
       }
     }

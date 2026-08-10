@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M6 Scenario v1 契约已冻结
+更新：2026-08-10 · M6 Scenario 执行模型已冻结
 
 ## 当前阶段
 
@@ -28,10 +28,13 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0355 action/assertion/result 强类型模型与稳定 JSON schema。
+- 无；下一项为 WU-0356 确定性 MCP session 控制面。
 
 ## 最近完成
 
+- [WU-0355] Scenario v1 增加 closed-enum step/click/swipe/lifecycle/shutdown action 和
+  frame/movie/lifecycle/exit/fault assertion；强类型 Python 模型与稳定 Result v1 JSON schema
+  由同一机器自检约束，focused 3/3、full CTest 479/479。
 - [WU-0354] 修复 GPU capability JSON、MCP Base64 测试和 sliced CPU result 在
   macOS-arm64 Clang warnings-as-errors 下的有符号转换/缺字段初始化；focused 24/24、
   full CTest 478/478。
@@ -53,14 +56,14 @@
 
 ## M6 起点
 
-已有 Scenario v1 身份/fixture/预算/checkpoint 契约、Control Service/JSON-RPC、固定步长
-Clock、能力账本、结构化日志、GPU 查询和 Software/ANGLE 黄金帧基础，但 `agent-stdio`
-尚未拥有 `run-apk` 的 Profile-backed exact guest session；action/assertion/result、输入、
-frame capture、检查点和退出状态也未在同一自动化会话闭环。
+已有 Scenario v1 身份/fixture/预算/checkpoint/action/assertion/result 契约、Control
+Service/JSON-RPC、固定步长 Clock、能力账本、结构化日志、GPU 查询和 Software/ANGLE
+黄金帧基础，但 MCP 尚无确定性 session 控制面；输入、frame capture、生命周期、电影请求、
+guest fault 和退出状态也未在同一 Profile-backed exact guest 会话闭环。
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0355，建立结构化 action/assertion/result 强类型模型与稳定 JSON schema。
+1. 创建 WU-0356，为 MCP 增加 session_state/step/lifecycle/shutdown 确定性控制面。
 2. 让 Profile-backed Agent session 复用 `run-apk` bootstrap/lifecycle/ANGLE 路径，并接入
    有界 step/until、输入和原子 checkpoint provider。
 3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、

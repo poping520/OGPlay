@@ -12,6 +12,8 @@ Scenario v1 只冻结运行身份与 checkpoint 外壳：
 - `limits` 同时限制 startup 与整个场景的 frame、guest tick 和 wall time。
 - 每个 `checkpoint` 都声明自己的三重上限、状态 provider 和证据类型；startup 与所有
   checkpoint 的最坏预算之和不得超过总预算。
+- 每个 checkpoint 包含一个 closed-enum action 和至少一个逐类型 assertion；结果使用
+  `scenario-result-v1.schema.json`，稳定报告首个失败、frame/tick/wall time、证据和清理状态。
 
 示意结构：
 
@@ -45,6 +47,14 @@ max_frames = 300
 max_ticks = 200000000
 wall_time_ms = 10000
 evidence = ["frame", "state"]
+
+[checkpoint.action]
+type = "step"
+frames = 1
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 1
 ```
 
 提交场景前运行：
@@ -54,5 +64,5 @@ python tools/validate_scenarios.py --schema data/scenarios/scenario-v1.schema.js
   --scenarios data/scenarios --profiles data/profiles
 ```
 
-Scenario v1 暂不定义 action、assertion 和 result 的运行时载荷；这些强类型模型在后续 M6
-Work Unit 中添加，并继续复用这里的身份、fixture、预算和 checkpoint 不变量。
+`tools/scenario_model.py` 是 AI/CI runner 共用的强类型 action/assertion/result 模型；工具
+不得绕过严格 validator 直接从未验证 TOML 构造执行计划。

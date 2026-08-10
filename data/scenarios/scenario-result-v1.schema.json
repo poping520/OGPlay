@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogplay.dev/schema/scenario-result-v1.schema.json",
+  "title": "OGPlay automation scenario result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "scenarioId",
+    "status",
+    "profile",
+    "checkpoints",
+    "firstFailure",
+    "shutdown"
+  ],
+  "properties": {
+    "schema": {"const": 1},
+    "scenarioId": {"type": "string", "minLength": 1},
+    "status": {"enum": ["passed", "failed"]},
+    "profile": {"type": "object"},
+    "checkpoints": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/checkpointResult"}
+    },
+    "firstFailure": {"type": ["string", "null"]},
+    "shutdown": {"$ref": "#/$defs/shutdownResult"}
+  },
+  "$defs": {
+    "assertionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "passed", "expected", "actual"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "passed": {"type": "boolean"},
+        "expected": {"type": "object"},
+        "actual": {"type": "object"}
+      }
+    },
+    "checkpointResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "status", "startFrame", "endFrame", "startTicks", "endTicks",
+        "wallTimeMs", "assertions", "evidence", "error"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["passed", "failed"]},
+        "startFrame": {"type": "integer", "minimum": 0},
+        "endFrame": {"type": "integer", "minimum": 0},
+        "startTicks": {"type": "integer", "minimum": 0},
+        "endTicks": {"type": "integer", "minimum": 0},
+        "wallTimeMs": {"type": "integer", "minimum": 0},
+        "assertions": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/assertionResult"}
+        },
+        "evidence": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "error": {"type": ["string", "null"]}
+      }
+    },
+    "shutdownResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "clean", "error"],
+      "properties": {
+        "requested": {"type": "boolean"},
+        "clean": {"type": "boolean"},
+        "error": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

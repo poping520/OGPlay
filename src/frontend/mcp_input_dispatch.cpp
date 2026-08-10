@@ -23,7 +23,10 @@ std::optional<runtime::AndroidBoundaryInput> McpPointerDispatcher::TakeNext(
     if (!event.has_value()) return std::nullopt;
     active_ = event->pressed;
     return runtime::AndroidBoundaryInput{
-        runtime::AndroidBoundaryInputType::pointer_button, 0,
+        event->type == agent::McpPointerEvent::Type::motion
+            ? runtime::AndroidBoundaryInputType::pointer_motion
+            : runtime::AndroidBoundaryInputType::pointer_button,
+        0,
         static_cast<float>(event->x), static_cast<float>(event->y),
         event->pressed};
 }

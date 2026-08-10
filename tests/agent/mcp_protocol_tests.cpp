@@ -117,11 +117,11 @@ TEST_CASE("MCP frame store validates and exchanges latest ownership") {
     CHECK_FALSE(frames.Take().has_value());
 }
 
-TEST_CASE("MCP click queue emits down and up on consecutive takes") {
+TEST_CASE("MCP gesture queue emits click down and up on consecutive takes") {
     ogplay::agent::McpInputQueue inputs;
     const auto sequence = inputs.TryEnqueueClick(9U, 12U, 34U);
     REQUIRE(sequence == std::optional<std::uint64_t>{1U});
-    CHECK(inputs.PendingClicks() == 1U);
+    CHECK(inputs.PendingGestures() == 1U);
 
     const auto down = inputs.TakeNextPointerEvent();
     REQUIRE(down.has_value());
@@ -130,22 +130,62 @@ TEST_CASE("MCP click queue emits down and up on consecutive takes") {
     CHECK(down->x == 12U);
     CHECK(down->y == 34U);
     CHECK(down->pressed);
-    CHECK(inputs.PendingClicks() == 1U);
+    CHECK(inputs.PendingGestures() == 1U);
 
     const auto up = inputs.TakeNextPointerEvent();
     REQUIRE(up.has_value());
     CHECK(up->request_sequence == down->request_sequence);
     CHECK_FALSE(up->pressed);
-    CHECK(inputs.PendingClicks() == 0U);
+    CHECK(inputs.PendingGestures() == 0U);
     CHECK_FALSE(inputs.TakeNextPointerEvent().has_value());
 
     ogplay::agent::McpInputQueue full;
     for (std::size_t index = 0;
-         index < ogplay::agent::McpInputQueue::kMaximumPendingClicks;
+         index < ogplay::agent::McpInputQueue::kMaximumPendingGestures;
          ++index) {
         REQUIRE(full.TryEnqueueClick(1U, 0U, 0U).has_value());
     }
     CHECK_FALSE(full.TryEnqueueClick(1U, 0U, 0U).has_value());
+}
+
+TEST_CASE("MCP gesture queue interpolates bounded swipe motion phases") {
+    ogplay::agent::McpInputQueue inputs;
+    const auto sequence = inputs.TryEnqueueSwipe(17U, 10U, 20U, 20U, 32U, 4U);
+    REQUIRE(sequence == std::optional<std::uint64_t>{1U});
+
+    const auto down = inputs.TakeNextPointerEvent();
+    REQUIRE(down.has_value());
+    CHECK(down->type == ogplay::agent::McpPointerEvent::Type::button);
+    CHECK(down->x == 10U);
+    CHECK(down->y == 20U);
+    CHECK(down->pressed);
+
+    constexpr std::array<std::uint32_t, 4> expected_x{13U, 15U, 18U, 20U};
+    constexpr std::array<std::uint32_t, 4> expected_y{23U, 26U, 29U, 32U};
+    for (std::size_t index = 0; index < expected_x.size(); ++index) {
+        const auto motion = inputs.TakeNextPointerEvent();
+        REQUIRE(motion.has_value());
+        CHECK(motion->request_sequence == 1U);
+        CHECK(motion->frame_sequence == 17U);
+        CHECK(motion->type == ogplay::agent::McpPointerEvent::Type::motion);
+        CHECK(motion->x == expected_x[index]);
+        CHECK(motion->y == expected_y[index]);
+        CHECK(motion->pressed);
+    }
+
+    const auto up = inputs.TakeNextPointerEvent();
+    REQUIRE(up.has_value());
+    CHECK(up->type == ogplay::agent::McpPointerEvent::Type::button);
+    CHECK(up->x == 20U);
+    CHECK(up->y == 32U);
+    CHECK_FALSE(up->pressed);
+    CHECK(inputs.PendingGestures() == 0U);
+    CHECK_FALSE(inputs.TakeNextPointerEvent().has_value());
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(inputs.TryEnqueueSwipe(
+            1U, 0U, 0U, 1U, 1U,
+            ogplay::agent::McpInputQueue::kMaximumSwipeSteps + 1U)),
+        "MCP swipe steps exceed the queue limit", std::invalid_argument);
 }
 
 TEST_CASE("MCP protocol negotiates lifecycle and lists screenshot tool") {
@@ -372,11 +412,11 @@ TEST_CASE("MCP click tool rejects unavailable malformed and out of bounds input"
         REQUIRE(response.has_value());
         CHECK(response->find("\"isError\":true") != std::string::npos);
     }
-    CHECK(inputs.PendingClicks() == 0U);
+    CHECK(inputs.PendingGestures() == 0U);
 
     ogplay::agent::McpInputQueue full;
     for (std::size_t index = 0;
-         index < ogplay::agent::McpInputQueue::kMaximumPendingClicks;
+         index < ogplay::agent::McpInputQueue::kMaximumPendingGestures;
          ++index) {
         REQUIRE(full.TryEnqueueClick(2U, 0U, 0U).has_value());
     }

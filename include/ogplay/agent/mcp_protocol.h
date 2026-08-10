@@ -37,33 +37,44 @@ private:
 };
 
 struct McpPointerEvent final {
+    enum class Type : std::uint8_t { button, motion };
+
     std::uint64_t request_sequence{};
     std::uint64_t frame_sequence{};
     std::uint32_t x{};
     std::uint32_t y{};
+    Type type{};
     bool pressed{};
 };
 
 class McpInputQueue final {
 public:
-    static constexpr std::size_t kMaximumPendingClicks = 64U;
+    static constexpr std::size_t kMaximumPendingGestures = 64U;
+    static constexpr std::uint32_t kMaximumSwipeSteps = 120U;
 
     [[nodiscard]] std::optional<std::uint64_t> TryEnqueueClick(
         std::uint64_t frame_sequence, std::uint32_t x, std::uint32_t y);
+    [[nodiscard]] std::optional<std::uint64_t> TryEnqueueSwipe(
+        std::uint64_t frame_sequence, std::uint32_t start_x,
+        std::uint32_t start_y, std::uint32_t end_x, std::uint32_t end_y,
+        std::uint32_t steps);
     [[nodiscard]] std::optional<McpPointerEvent> TakeNextPointerEvent();
-    [[nodiscard]] std::size_t PendingClicks() const;
+    [[nodiscard]] std::size_t PendingGestures() const;
 
 private:
-    struct ClickState final {
+    struct GestureState final {
         std::uint64_t request_sequence{};
         std::uint64_t frame_sequence{};
-        std::uint32_t x{};
-        std::uint32_t y{};
-        bool down_dispatched{};
+        std::uint32_t start_x{};
+        std::uint32_t start_y{};
+        std::uint32_t end_x{};
+        std::uint32_t end_y{};
+        std::uint32_t move_steps{};
+        std::uint32_t next_phase{};
     };
 
     mutable std::mutex mutex_;
-    std::deque<ClickState> clicks_;
+    std::deque<GestureState> gestures_;
     std::uint64_t next_request_sequence_{1U};
 };
 

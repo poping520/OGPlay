@@ -395,6 +395,7 @@ ogplay_set_project_warnings(ogplay_session)
 add_library(ogplay_agent
     src/agent/control_service.cpp
     src/agent/coordinate_overlay.cpp
+    src/agent/mcp_input.cpp
     src/agent/mcp_protocol.cpp
     src/agent/stb_image_write.cpp
 )

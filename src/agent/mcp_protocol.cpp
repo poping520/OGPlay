@@ -403,37 +403,6 @@ std::optional<FrameSnapshot> FrameSnapshotStore::Take() {
     return result;
 }
 
-std::optional<std::uint64_t> McpInputQueue::TryEnqueueClick(
-    const std::uint64_t frame_sequence, const std::uint32_t x,
-    const std::uint32_t y) {
-    std::scoped_lock lock(mutex_);
-    if (clicks_.size() >= kMaximumPendingClicks) return std::nullopt;
-    if (next_request_sequence_ ==
-        (std::numeric_limits<std::uint64_t>::max)()) {
-        throw std::overflow_error("MCP click request sequence overflow");
-    }
-    const auto sequence = next_request_sequence_++;
-    clicks_.push_back({sequence, frame_sequence, x, y, false});
-    return sequence;
-}
-
-std::optional<McpPointerEvent> McpInputQueue::TakeNextPointerEvent() {
-    std::scoped_lock lock(mutex_);
-    if (clicks_.empty()) return std::nullopt;
-    auto& click = clicks_.front();
-    const McpPointerEvent result{
-        click.request_sequence, click.frame_sequence, click.x, click.y,
-        !click.down_dispatched};
-    if (click.down_dispatched) clicks_.pop_front();
-    else click.down_dispatched = true;
-    return result;
-}
-
-std::size_t McpInputQueue::PendingClicks() const {
-    std::scoped_lock lock(mutex_);
-    return clicks_.size();
-}
-
 McpProtocolAdapter::McpProtocolAdapter(FrameSnapshotStore& frames,
                                        std::string server_version)
     : frames_(frames), server_version_(std::move(server_version)) {

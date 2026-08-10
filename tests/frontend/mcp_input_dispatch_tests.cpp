@@ -53,10 +53,47 @@ TEST_CASE("MCP pointer dispatcher waits for an active desktop gesture") {
         .pressed = true};
     REQUIRE(mouse.Map(mouse_down, window, 100U, 100U).has_value());
     CHECK_FALSE(dispatcher.TakeNext(&inputs, mouse).has_value());
-    CHECK(inputs.PendingClicks() == 1U);
+    CHECK(inputs.PendingGestures() == 1U);
 
     auto mouse_up = mouse_down;
     mouse_up.pressed = false;
     REQUIRE(mouse.Map(mouse_up, window, 100U, 100U).has_value());
     REQUIRE(dispatcher.TakeNext(&inputs, mouse).has_value());
+}
+
+TEST_CASE("MCP pointer dispatcher preserves swipe down motion and up phases") {
+    ogplay::agent::McpInputQueue inputs;
+    ogplay::input::MouseTouchMapper mouse;
+    ogplay::frontend::McpPointerDispatcher dispatcher;
+    REQUIRE(inputs.TryEnqueueSwipe(3U, 10U, 20U, 30U, 40U, 2U).has_value());
+
+    const auto down = dispatcher.TakeNext(&inputs, mouse);
+    REQUIRE(down.has_value());
+    CHECK(down->type ==
+          ogplay::runtime::AndroidBoundaryInputType::pointer_button);
+    CHECK(down->pressed);
+    CHECK(dispatcher.Active());
+
+    const auto first_motion = dispatcher.TakeNext(&inputs, mouse);
+    REQUIRE(first_motion.has_value());
+    CHECK(first_motion->type ==
+          ogplay::runtime::AndroidBoundaryInputType::pointer_motion);
+    CHECK(first_motion->x == 20.0F);
+    CHECK(first_motion->y == 30.0F);
+    CHECK(first_motion->pressed);
+    CHECK(dispatcher.Active());
+
+    const auto second_motion = dispatcher.TakeNext(&inputs, mouse);
+    REQUIRE(second_motion.has_value());
+    CHECK(second_motion->type ==
+          ogplay::runtime::AndroidBoundaryInputType::pointer_motion);
+    CHECK(second_motion->x == 30.0F);
+    CHECK(second_motion->y == 40.0F);
+
+    const auto up = dispatcher.TakeNext(&inputs, mouse);
+    REQUIRE(up.has_value());
+    CHECK(up->type ==
+          ogplay::runtime::AndroidBoundaryInputType::pointer_button);
+    CHECK_FALSE(up->pressed);
+    CHECK_FALSE(dispatcher.Active());
 }

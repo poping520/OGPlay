@@ -17,8 +17,9 @@
   精确格式、网格状态、序号和尺寸；`click` 以最近帧的 guest 整数像素坐标排队一次主指针 tap。
 - `DrawCoordinateOverlay`：在严格匹配尺寸的 RGBA8 缓冲上绘制每 100 px 主线、每 25 px
   边缘刻度和顶部/左侧坐标标签，供截图编码前的临时副本使用。
-- `McpInputQueue`：跨 MCP worker 与 guest 主线程传递最多 64 个 click；每个 click 以同一请求
-  序号在连续两次 take 中输出 down/up，网络线程不直接调用 guest。
+- `McpInputQueue`：跨 MCP worker 与 guest 主线程传递最多 64 个 pointer gesture；click 在连续
+  两次 take 中输出 down/up，swipe 按请求的 1..120 个确定性步数输出 down/move/up，整个手势
+  保持同一请求与起始帧序号，网络线程不直接调用 guest。
 - 协议编解码只通过 core `JsonDocument`/`JsonWriter`；MCP initialize 与工具 schema 按
   JSON-RPC 对象作用域验证，不扫描嵌套文本。
 - `gpu.stats/render_targets/capabilities/trace`：从可选 `GpuStateProvider` 序列化强类型
@@ -32,8 +33,10 @@
 - MCP 截图不得推进 guest、消费输入或伪造无帧成功；无最近帧时返回显式 tool error。
 - 坐标网格不得改变截图尺寸或写回 `FrameSnapshotStore`；省略 `overlay` 必须保持干净截图，
   未知 overlay 和未知字段必须明确失败。
-- MCP click 必须在最近帧边界内、参数完整且队列可用时才确认排队；down/up 不得在同一次
-  take 合并，队列满、无帧、负数、越界、未知字段和未接输入均返回显式 tool error。
+- MCP pointer gesture 的每个 down/move/up 阶段必须由独立 take 取得；整数插值包含精确终点，
+  单个 swipe 不得超过 120 个 motion 阶段，待处理手势不得超过 64 个。
+- MCP click 必须在最近帧边界内、参数完整且队列可用时才确认排队；队列满、无帧、负数、
+  越界、未知字段和未接输入均返回显式 tool error。
 - MCP 图像最大 64 MiB RGBA8，尺寸、字节数、JPEG/PNG/Base64 输出必须在发布前完整受检；
   两种编码均使用仓库固定 commit 的官方 `stb_image_write`，禁止退回 stored-block PNG。
 - 调试接口与 CI 断言读取同一份状态。

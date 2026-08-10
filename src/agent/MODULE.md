@@ -24,7 +24,8 @@
 - 协议编解码只通过 core `JsonDocument`/`JsonWriter`；MCP initialize 与工具 schema 按
   JSON-RPC 对象作用域验证，不扫描嵌套文本。
 - `gpu.stats/render_targets/capabilities/trace`：从可选 `GpuStateProvider` 序列化强类型
-  快照；未连接 provider 明确失败，trace 限额为 1..1000。
+  快照；capability limit 保留 provider 的有符号 64 位值，未连接 provider 明确失败，
+  trace 限额为 1..1000。
 - M6 增加 frame/fs/mem/cpu 分组。
 
 ## 不变量

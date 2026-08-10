@@ -98,7 +98,7 @@ JsonValue GpuCapabilitiesValue(core::JsonWriter& writer,
     writer.Add(result, "reported_extensions", extensions);
     const auto limits = writer.Object();
     for (const auto& [name, value] : capabilities.reported_limits) {
-        writer.AddUnsignedInteger(limits, name, value);
+        writer.AddInteger(limits, name, value);
     }
     writer.Add(result, "reported_limits", limits);
     writer.AddString(result, "host_backend", capabilities.host_backend);

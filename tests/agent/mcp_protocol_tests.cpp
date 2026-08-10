@@ -25,9 +25,15 @@ std::uint32_t BigEndian(const std::string& bytes, const std::size_t offset) {
 
 std::string DecodeBase64(const std::string_view input) {
     const auto value = [](const char character) -> std::uint32_t {
-        if (character >= 'A' && character <= 'Z') return character - 'A';
-        if (character >= 'a' && character <= 'z') return character - 'a' + 26U;
-        if (character >= '0' && character <= '9') return character - '0' + 52U;
+        if (character >= 'A' && character <= 'Z') {
+            return static_cast<std::uint32_t>(character - 'A');
+        }
+        if (character >= 'a' && character <= 'z') {
+            return static_cast<std::uint32_t>(character - 'a') + 26U;
+        }
+        if (character >= '0' && character <= '9') {
+            return static_cast<std::uint32_t>(character - '0') + 52U;
+        }
         if (character == '+') return 62U;
         if (character == '/') return 63U;
         return 0U;

@@ -34,5 +34,6 @@ PNG；`WU-0346..0347` 增加固定 15971 端口的 `--mcp` 测试入口和简明
 `WU-0348..0349` 为 MCP 截图增加不污染 guest 帧的可选坐标网格，并记录“带网格定位、干净
 截图验证”的 AI 使用方式。`WU-0350..0352` 增加按 guest step 确定性派发的有界 MCP swipe
 手势队列、严格工具协议与简明使用文档。`WU-0353` 冻结 Scenario v1 的精确身份、逻辑
-fixture、三重总预算与有界 checkpoint schema。原计划的 action/assertion/result 强类型
-模型顺延到下一 WU，上述闭环依赖顺序不变。
+fixture、三重总预算与有界 checkpoint schema；`WU-0354` 插入修复这些近期 M6 改动在
+macOS-arm64 Clang warnings-as-errors 下暴露的有符号转换。原计划的 action/assertion/result
+强类型模型顺延到下一 WU，上述闭环依赖顺序不变。

@@ -57,7 +57,7 @@ public:
         }
         state_.SetRegister(ogplay::cpu::CoreRegister::r0, 73U);
         return {1U, ogplay::cpu::RunStopReason::supervisor_call,
-                return_trap_, 0U, 1U};
+                return_trap_, 0U, 1U, std::nullopt};
     }
     ogplay::cpu::A32State GetState() const override { return state_; }
     void SetState(const ogplay::cpu::A32State& state) override {

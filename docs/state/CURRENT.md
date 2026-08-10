@@ -28,10 +28,13 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0354 macOS-arm64 MCP 严格构建修复。
+- 无；下一项为 WU-0355 action/assertion/result 强类型模型与稳定 JSON schema。
 
 ## 最近完成
 
+- [WU-0354] 修复 GPU capability JSON、MCP Base64 测试和 sliced CPU result 在
+  macOS-arm64 Clang warnings-as-errors 下的有符号转换/缺字段初始化；focused 24/24、
+  full CTest 478/478。
 - [WU-0353] 冻结 Scenario v1 精确 Profile 身份、逻辑 fixture、startup/total 三重预算和
   有界 checkpoint/provider/evidence 契约；严格校验器 self-test 与空的当前场景目录进入
   CTest，能力账本登记 complete。
@@ -57,11 +60,10 @@ frame capture、检查点和退出状态也未在同一自动化会话闭环。
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0354，修复 macOS-arm64 Clang warnings-as-errors 严格构建阻塞。
-2. 创建 WU-0355，建立结构化 action/assertion/result 强类型模型与稳定 JSON schema。
-3. 让 Profile-backed Agent session 复用 `run-apk` bootstrap/lifecycle/ANGLE 路径，并接入
+1. 创建 WU-0355，建立结构化 action/assertion/result 强类型模型与稳定 JSON schema。
+2. 让 Profile-backed Agent session 复用 `run-apk` bootstrap/lifecycle/ANGLE 路径，并接入
    有界 step/until、输入和原子 checkpoint provider。
-4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞

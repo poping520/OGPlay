@@ -650,6 +650,17 @@ void AngleFrame::UniformMatrix3(const std::int32_t location,
 #endif
 }
 
+void AngleFrame::DrawArrays(const std::uint32_t mode, const std::int32_t first,
+                            const std::int32_t count) {
+#if OGPLAY_HAS_ANGLE
+    glDrawArrays(mode, first, count);
+    RequireNoError("glDrawArrays");
+#else
+    static_cast<void>(mode); static_cast<void>(first); static_cast<void>(count);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::DrawElements(const std::uint32_t mode,
                               const std::int32_t count,
                               const std::uint32_t type,

@@ -508,7 +508,7 @@ note = "M8 WU-0372 一次闭合 GLES2 framebuffer/renderbuffer 10 项生命周�
 [gles.vertex_uniform]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 闭合 VBO offset、uniform scalar/matrix3；M8 WU-0376 批量补齐八项 float/int vector、matrix4 与 constant vertex attribute，IDL payload/A32 位型/栈参数受检；client array 仍明确失败"
+note = "M4 闭合 VBO offset、uniform scalar/matrix3；M8 WU-0376 批量补齐八项 float/int vector、matrix4 与 constant vertex attribute；WU-0377 闭合 client vertex/index staging、DrawArrays、TexSubImage2D，以及混合链接 GLES1 draw 转入 GLES2 staging；opaque EBO+client attribute 明确失败"
 
 [gles.m4_exit_surface]
 status = "complete"

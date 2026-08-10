@@ -1522,6 +1522,61 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
                      {UINT32_MAX, 1, 0, 0x1000U}),
         ogplay::memory::MemoryFault);
 
+    const auto client_vertices = fixture.output.Add(0x900);
+    constexpr std::array<float, 6> client_triangle{
+        -1.0F, -1.0F, 1.0F, -1.0F, 0.0F, 1.0F};
+    fixture.memory.Write(client_vertices,
+                         std::as_bytes(std::span(client_triangle)), 1);
+    fixture.bus.Write32(fixture.stack, std::bit_cast<std::uint32_t>(1.0F), 1);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glUniform4f",
+        {tint_location, std::bit_cast<std::uint32_t>(1.0F),
+         std::bit_cast<std::uint32_t>(0.0F),
+         std::bit_cast<std::uint32_t>(0.0F)}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindBuffer", {0x8892U, 0}));
+    fixture.bus.Write32(fixture.stack, 0, 1);
+    fixture.bus.Write32(fixture.stack.Add(4), client_vertices.Value(), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glVertexAttribPointer",
+                                   {0, 2, 0x1406U, 0}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glEnableVertexAttribArray",
+                                   {0}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDrawArrays",
+                                   {0x0004U, 0U, 3U}));
+    const auto client_indices = fixture.output.Add(0x980);
+    constexpr std::array<std::uint16_t, 3> index_values{0, 1, 2};
+    fixture.memory.Write(client_indices, std::as_bytes(std::span(index_values)),
+                         1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDrawElements",
+                                   {0x0004U, 3U, 0x1403U,
+                                    client_indices.Value()}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenBuffers",
+                                   {1, pointer_array.Value()}));
+    const auto element_buffer = fixture.bus.Read32(pointer_array, 1);
+    REQUIRE(element_buffer != 0);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindBuffer",
+                                   {0x8893U, element_buffer}));
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv2.so", "glDrawElements",
+                     {0x0004U, 3U, 0x1403U, 0U}),
+        "GLES2 cannot stage client arrays from an opaque element buffer",
+        std::runtime_error);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindBuffer",
+                                   {0x8893U, 0}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDisableVertexAttribArray",
+                                   {0}));
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glEnableVertexAttribArray",
+                                   {0}));
+    fixture.bus.Write32(fixture.stack, 0, 1);
+    fixture.bus.Write32(fixture.stack.Add(4), client_vertices.Value(), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glVertexAttribPointer",
+                                   {0, 2, 0x1406U, 0}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                                   {0x0004U, 0U, 3U}));
+    CHECK(fixture.boundary.Stats().draws == 3);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDisableVertexAttribArray",
+                                   {0}));
+
     CHECK_THROWS_AS(
         fixture.Call("libGLESv2.so", "glGetShaderiv", {vertex, 0x8b81U, 0}),
         std::invalid_argument);
@@ -1536,6 +1591,7 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     const auto stats = fixture.boundary.Stats();
     CHECK(stats.shader_compiles == 2);
     CHECK(stats.program_links == 1);
+    CHECK(stats.draws == 3);
 }
 
 TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
@@ -1601,9 +1657,10 @@ TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
                                    {0, 3, 0x1406U, 0}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glDisableVertexAttribArray", {0}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glBindBuffer", {0x8892U, 0}));
-    CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv2.so", "glVertexAttribPointer", {0, 3, 0x1406U, 0}),
-        "glVertexAttribPointer client arrays are not implemented", std::runtime_error);
+    fixture.bus.Write32(fixture.stack, 0, 1);
+    fixture.bus.Write32(fixture.stack.Add(4), buffer_data.Value(), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glVertexAttribPointer",
+                                   {0, 3, 0x1406U, 0}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glBindBuffer",
                                    {0x8892U, vertex_buffer}));
 
@@ -1626,6 +1683,13 @@ TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
     fixture.bus.Write32(fixture.stack.Add(16), texture_data.Value(), 1);
     static_cast<void>(fixture.Call("libGLESv2.so", "glTexImage2D",
                                    {0x0de1U, 0, 0x1908U, 2}));
+    fixture.bus.Write32(fixture.stack, 1, 1);
+    fixture.bus.Write32(fixture.stack.Add(4), 1, 1);
+    fixture.bus.Write32(fixture.stack.Add(8), 0x1908U, 1);
+    fixture.bus.Write32(fixture.stack.Add(12), 0x1401U, 1);
+    fixture.bus.Write32(fixture.stack.Add(16), texture_data.Value(), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glTexSubImage2D",
+                                   {0x0de1U, 0, 0, 0}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glGenerateMipmap",
                                    {0x0de1U}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glBindFramebuffer",

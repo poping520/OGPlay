@@ -5,6 +5,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -17,6 +18,7 @@
 #include "ogplay/gles/gles_call_preparation.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
+#include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
 
 namespace ogplay::runtime {
@@ -24,15 +26,70 @@ namespace {
 
 constexpr memory::GuestAddress kQueryStringPage{0x70001000U};
 constexpr std::uint32_t kQueryStringSlotBytes = 1024;
+constexpr std::uint32_t kArrayBuffer = 0x8892U;
+constexpr std::uint32_t kElementArrayBuffer = 0x8893U;
+constexpr std::uint32_t kStreamDraw = 0x88E0U;
+constexpr std::uint32_t kByte = 0x1400U;
+constexpr std::uint32_t kUnsignedByte = 0x1401U;
+constexpr std::uint32_t kShort = 0x1402U;
+constexpr std::uint32_t kUnsignedShort = 0x1403U;
+constexpr std::uint32_t kFloat = 0x1406U;
+constexpr std::uint32_t kFixed = 0x140CU;
+constexpr std::size_t kMaximumVertexAttributes = 16U;
 
 std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
     switch (parameter) {
-    case 0x1f00U: return 0;                              // GL_VENDOR
-    case 0x1f01U: return kQueryStringSlotBytes;          // GL_RENDERER
-    case 0x1f02U: return kQueryStringSlotBytes * 2U;     // GL_VERSION
-    case 0x8b8cU: return kQueryStringSlotBytes * 3U;     // GL_SHADING_LANGUAGE_VERSION
+    case 0x1f00U: return 0;
+    case 0x1f01U: return kQueryStringSlotBytes;
+    case 0x1f02U: return kQueryStringSlotBytes * 2U;
+    case 0x8b8cU: return kQueryStringSlotBytes * 3U;
     default: throw std::invalid_argument("unsupported GLES string query");
     }
+}
+[[nodiscard]] std::size_t VertexAttribScalarBytes(const std::uint32_t type) {
+    switch (type) {
+    case kByte: case kUnsignedByte: return 1U;
+    case kShort: case kUnsignedShort: return 2U;
+    case kFloat: case kFixed: return 4U;
+    default:
+        throw std::invalid_argument("GLES2 vertex attribute type is unsupported");
+    }
+}
+[[nodiscard]] std::uint64_t ClientArrayBytes(const std::int32_t size,
+                                             const std::uint32_t type,
+                                             const std::int32_t stride,
+                                             const std::uint32_t maximum_index) {
+    const auto packed =
+        static_cast<std::uint64_t>(size) * VertexAttribScalarBytes(type);
+    const auto step = stride == 0 ? packed : static_cast<std::uint64_t>(stride);
+    if (maximum_index != 0U &&
+        step > ((std::numeric_limits<std::uint64_t>::max)() - packed) /
+                   maximum_index) {
+        throw std::length_error("GLES2 client array byte range overflows");
+    }
+    return step * maximum_index + packed;
+}
+[[nodiscard]] std::uint32_t MaximumGuestIndex(const std::span<const std::byte> bytes,
+                                              const std::uint32_t type) {
+    std::uint32_t maximum{};
+    if (type == kUnsignedByte) {
+        for (const auto value : bytes) {
+            maximum = std::max(maximum, static_cast<std::uint32_t>(
+                                            std::to_integer<std::uint8_t>(value)));
+        }
+        return maximum;
+    }
+    if (type != kUnsignedShort || bytes.size() % 2U != 0U) {
+        throw std::invalid_argument("GLES2 draw index type is unsupported");
+    }
+    for (std::size_t offset = 0; offset < bytes.size(); offset += 2U) {
+        maximum = std::max(
+            maximum,
+            static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
+                (static_cast<std::uint32_t>(
+                     std::to_integer<std::uint8_t>(bytes[offset + 1U])) << 8U));
+    }
+    return maximum;
 }
 
 }  // namespace
@@ -169,28 +226,71 @@ public:
                 OptionalBytes(pixels));
             return 0;
         }
+        if (symbol == "glTexSubImage2D") {
+            std::array<std::uint32_t, 9> all{args[0], args[1], args[2], args[3]};
+            for (std::size_t index = 4; index < all.size(); ++index) {
+                all[index] = StackWord(state,
+                    static_cast<std::uint32_t>((index - 4U) * 4U));
+            }
+            auto call = PrepareCall(symbol, all, tid);
+            RequireFrame(frame, symbol).TextureSubImage2D(
+                all[0], std::bit_cast<std::int32_t>(all[1]),
+                std::bit_cast<std::int32_t>(all[2]),
+                std::bit_cast<std::int32_t>(all[3]),
+                std::bit_cast<std::int32_t>(all[4]),
+                std::bit_cast<std::int32_t>(all[5]), all[6], all[7],
+                Pointer(call).Bytes());
+            return 0;
+        }
         if (symbol == "glEnableVertexAttribArray" ||
             symbol == "glDisableVertexAttribArray") {
+            const auto index = args[0];
+            RequireAttributeIndex(index);
+            attributes_[index].enabled = symbol == "glEnableVertexAttribArray";
             RequireFrame(frame, symbol).SetVertexAttributeEnabled(
-                args[0], symbol == "glEnableVertexAttribArray");
+                index, attributes_[index].enabled);
             return 0;
         }
         if (symbol == "glVertexAttribPointer") {
-            if (transfer_state_.Snapshot().array_buffer == 0) {
-                throw std::runtime_error(
-                    "glVertexAttribPointer client arrays are not implemented");
+            const auto index = args[0];
+            RequireAttributeIndex(index);
+            const auto size = std::bit_cast<std::int32_t>(args[1]);
+            const auto type = args[2];
+            const auto normalized = args[3] != 0;
+            const auto stride = std::bit_cast<std::int32_t>(StackWord(state, 0));
+            const auto pointer = StackWord(state, 4);
+            if (size < 1 || size > 4) {
+                throw std::invalid_argument(
+                    "GLES2 vertex attribute size is outside 1..4");
             }
+            if (stride < 0) {
+                throw std::invalid_argument(
+                    "GLES2 vertex attribute stride is negative");
+            }
+            static_cast<void>(VertexAttribScalarBytes(type));
             std::array<std::uint32_t, 6> all{
                 args[0], args[1], args[2], args[3],
-                StackWord(state, 0), StackWord(state, 4)};
+                static_cast<std::uint32_t>(stride), pointer};
             auto call = PrepareCall(symbol, all, tid);
             if (call.pointers.size() != 1 || !call.pointers.front().deferred) {
                 throw std::logic_error(
-                    "glVertexAttribPointer expected a deferred VBO offset");
+                    "glVertexAttribPointer expected a deferred pointer");
             }
-            RequireFrame(frame, symbol).VertexAttributePointer(
-                all[0], std::bit_cast<std::int32_t>(all[1]), all[2],
-                all[3] != 0, std::bit_cast<std::int32_t>(all[4]), all[5]);
+            const auto buffer = transfer_state_.Snapshot().array_buffer;
+            attributes_[index] = {
+                .size = size,
+                .type = type,
+                .normalized = normalized,
+                .stride = stride,
+                .pointer = pointer,
+                .buffer = buffer,
+                .enabled = attributes_[index].enabled,
+                .defined = true,
+            };
+            if (buffer != 0U) {
+                RequireFrame(frame, symbol).VertexAttributePointer(
+                    index, size, type, normalized, stride, pointer);
+            }
             return 0;
         }
         if (symbol == "glUniform1f") {
@@ -328,16 +428,66 @@ public:
             RequireFrame(frame, symbol).Flush();
             return 0;
         }
+        if (symbol == "glDrawArrays") {
+            auto& current = RequireFrame(frame, symbol);
+            const auto first = std::bit_cast<std::int32_t>(args[1]);
+            const auto count = std::bit_cast<std::int32_t>(args[2]);
+            if (first < 0 || count < 0) {
+                throw std::invalid_argument("GLES2 draw array range is negative");
+            }
+            if (count == 0) return 0;
+            const auto maximum = static_cast<std::uint64_t>(first) +
+                                 static_cast<std::uint64_t>(count) - 1U;
+            if (maximum > (std::numeric_limits<std::uint32_t>::max)()) {
+                throw std::length_error("GLES2 draw array index overflows");
+            }
+            StageClientAttributes(current, static_cast<std::uint32_t>(maximum),
+                                  tid);
+            current.DrawArrays(args[0], first, count);
+            RestoreBufferBindings(current);
+            return 0;
+        }
         if (symbol == "glDrawElements") {
-            if (transfer_state_.Snapshot().element_array_buffer == 0) {
-                throw std::runtime_error("glDrawElements client indices are not implemented");
+            auto& current = RequireFrame(frame, symbol);
+            const auto count = std::bit_cast<std::int32_t>(args[1]);
+            const auto type = args[2];
+            if (count < 0) {
+                throw std::invalid_argument("GLES2 draw element count is negative");
             }
+            if (count == 0) return 0;
             auto call = PrepareCall(symbol, args, tid);
-            if (call.pointers.size() != 1 || !call.pointers.front().deferred) {
-                throw std::logic_error("glDrawElements expected a deferred index offset");
+            if (call.pointers.size() != 1) {
+                throw std::logic_error("glDrawElements expected one pointer");
             }
-            RequireFrame(frame, symbol).DrawElements(
-                args[0], std::bit_cast<std::int32_t>(args[1]), args[2], args[3]);
+            const auto element_buffer =
+                transfer_state_.Snapshot().element_array_buffer;
+            if (element_buffer != 0U) {
+                if (!call.pointers.front().deferred) {
+                    throw std::logic_error(
+                        "glDrawElements expected a deferred index offset");
+                }
+                if (HasEnabledClientAttribute()) {
+                    throw std::runtime_error(
+                        "GLES2 cannot stage client arrays from an opaque element buffer");
+                }
+                current.DrawElements(args[0], count, type, args[3]);
+                return 0;
+            }
+            if (call.pointers.front().deferred ||
+                !call.pointers.front().transfer.has_value()) {
+                throw std::logic_error(
+                    "glDrawElements expected transferred client indices");
+            }
+            const auto indices = call.pointers.front().transfer->Bytes();
+            const auto maximum = MaximumGuestIndex(indices, type);
+            StageClientAttributes(current, maximum, tid);
+            EnsureIndexStagingBuffer(current);
+            current.BindBuffer(kElementArrayBuffer, index_staging_buffer_);
+            current.BufferData(kElementArrayBuffer,
+                               static_cast<std::uint32_t>(indices.size()),
+                               indices, kStreamDraw);
+            current.DrawElements(args[0], count, type, 0U);
+            RestoreBufferBindings(current);
             return 0;
         }
         if (symbol == "glReadPixels") {
@@ -358,9 +508,90 @@ public:
         return std::nullopt;
     }
 
-    void Reset() noexcept { transfer_state_ = {}; }
+    [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept {
+        return std::ranges::any_of(attributes_, [](const Attribute& attribute) {
+            return attribute.enabled && attribute.defined;
+        });
+    }
+
+    void Reset() noexcept {
+        transfer_state_ = {};
+        attributes_ = {};
+        staging_buffers_.clear();
+        client_array_staging_.clear();
+        index_staging_buffer_ = 0;
+    }
 
 private:
+    struct Attribute final {
+        std::int32_t size{};
+        std::uint32_t type{};
+        bool normalized{};
+        std::int32_t stride{};
+        std::uint32_t pointer{};
+        std::uint32_t buffer{};
+        bool enabled{};
+        bool defined{};
+    };
+
+    static void RequireAttributeIndex(const std::uint32_t index) {
+        if (index >= kMaximumVertexAttributes) {
+            throw std::invalid_argument(
+                "GLES2 vertex attribute index is outside 0..15");
+        }
+    }
+
+    [[nodiscard]] bool HasEnabledClientAttribute() const noexcept {
+        return std::ranges::any_of(attributes_, [](const Attribute& attribute) {
+            return attribute.enabled && attribute.defined &&
+                   attribute.buffer == 0U;
+        });
+    }
+
+    void EnsureStagingBuffers(gles::AngleFrame& frame) {
+        if (!staging_buffers_.empty()) return;
+        staging_buffers_ = frame.GenerateBuffers(kMaximumVertexAttributes);
+        client_array_staging_.resize(kMaximumVertexAttributes);
+    }
+
+    void EnsureIndexStagingBuffer(gles::AngleFrame& frame) {
+        if (index_staging_buffer_ != 0U) return;
+        const auto buffers = frame.GenerateBuffers(1);
+        index_staging_buffer_ = buffers.front();
+    }
+
+    void StageClientAttributes(gles::AngleFrame& frame,
+                               const std::uint32_t maximum_index,
+                               const std::uint64_t thread_id) {
+        if (!HasEnabledClientAttribute()) return;
+        EnsureStagingBuffers(frame);
+        for (std::size_t index = 0; index < attributes_.size(); ++index) {
+            const auto& attribute = attributes_[index];
+            if (!attribute.enabled || !attribute.defined ||
+                attribute.buffer != 0U) {
+                continue;
+            }
+            const auto bytes = ClientArrayBytes(
+                attribute.size, attribute.type, attribute.stride, maximum_index);
+            const auto transfer = gles::PrepareGuestInput(
+                address_space_, memory::GuestAddress{attribute.pointer}, bytes,
+                false, client_array_staging_[index], thread_id);
+            frame.BindBuffer(kArrayBuffer, staging_buffers_[index]);
+            frame.BufferData(kArrayBuffer,
+                             static_cast<std::uint32_t>(transfer.size()),
+                             transfer, kStreamDraw);
+            frame.VertexAttributePointer(
+                static_cast<std::uint32_t>(index), attribute.size,
+                attribute.type, attribute.normalized, attribute.stride, 0U);
+        }
+    }
+
+    void RestoreBufferBindings(gles::AngleFrame& frame) {
+        const auto bound = transfer_state_.Snapshot();
+        frame.BindBuffer(kArrayBuffer, bound.array_buffer);
+        frame.BindBuffer(kElementArrayBuffer, bound.element_array_buffer);
+    }
+
     std::uint32_t StackWord(const cpu::A32State& state,
                             const std::uint32_t offset) const {
         std::array<std::byte, 4> bytes{};
@@ -541,6 +772,10 @@ private:
 
     memory::AddressSpace& address_space_;
     gles::GlesTransferState transfer_state_;
+    std::array<Attribute, kMaximumVertexAttributes> attributes_{};
+    std::vector<std::uint32_t> staging_buffers_;
+    std::vector<std::vector<std::byte>> client_array_staging_;
+    std::uint32_t index_staging_buffer_{};
     bool query_string_page_mapped_{};
 };
 
@@ -553,6 +788,10 @@ std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(
     const std::array<std::uint32_t, 4>& arguments,
     const cpu::A32State& state, gles::AngleFrame* const frame) {
     return impl_->Dispatch(symbol, arguments, state, frame);
+}
+
+bool AndroidBoundaryGles::HasEnabledVertexAttribute() const noexcept {
+    return impl_->HasEnabledVertexAttribute();
 }
 
 void AndroidBoundaryGles::Reset() noexcept { impl_->Reset(); }

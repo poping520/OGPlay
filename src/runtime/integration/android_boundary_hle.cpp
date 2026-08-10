@@ -395,6 +395,20 @@ private:
                            const cpu::A32State& state) {
         const auto tid = state.ThreadId();
         if (module == "libGLESv1_CM.so") {
+            if ((symbol == "glDrawArrays" || symbol == "glDrawElements") &&
+                !gles1_draw_state_.Array(detail::kGles1VertexArray, 0x84C0U)
+                     .enabled &&
+                gles_dispatch_.HasEnabledVertexAttribute()) {
+                if (const auto redirected = gles_dispatch_.Dispatch(
+                        symbol, args, state,
+                        angle_frame_.has_value() ? &*angle_frame_ : nullptr);
+                    redirected.has_value()) {
+                    std::scoped_lock lock(mutex_);
+                    ++gpu_stats_.draws;
+                    ++gpu_stats_.draw_targets.front().draws;
+                    return *redirected;
+                }
+            }
             auto api = gles::GlesApi::gles1;
             auto id = gles::FindGlesFunction(api, symbol);
             if (!id.has_value()) {
@@ -541,7 +555,7 @@ private:
                 symbol, args, state,
                 angle_frame_.has_value() ? &*angle_frame_ : nullptr);
             resources.has_value()) {
-            if (symbol == "glDrawElements") {
+            if (symbol == "glDrawElements" || symbol == "glDrawArrays") {
                 std::scoped_lock lock(mutex_);
                 ++gpu_stats_.draws;
                 ++gpu_stats_.draw_targets.front().draws;

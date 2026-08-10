@@ -173,6 +173,8 @@ public:
         std::uint32_t parameter, std::size_t count);
     [[nodiscard]] std::string GetString(std::uint32_t parameter);
     [[nodiscard]] std::uint32_t GetError() noexcept;
+    void DrawArrays(std::uint32_t mode, std::int32_t first,
+                    std::int32_t count);
     void DrawElements(std::uint32_t mode, std::int32_t count,
                       std::uint32_t type, std::uint32_t offset);
     void ReadPixels(std::int32_t x, std::int32_t y,

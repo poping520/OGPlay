@@ -137,11 +137,18 @@
 - GLES2 blend/raster 状态补齐 blend color/equation、sample coverage 与 flush 四项真实转发；
   混合链接 guest 的 core `glSampleCoverage` 也必须在 GLES1 dispatch 转入相同 ANGLE context。
   flush 不得触发 managed/guest surface present。
-- vertex attribute handler 只接受已有 VBO 的受检 offset；uniform 标量保持位模式，矩阵数据
-  必须先按 IDL 长度完整搬运，任何坏地址都不得触达 ANGLE；vector/matrix4 批量入口同样
-  复用 IDL 计数，constant attribute 的第五个 float 从 A32 guest 栈读取。
+- vertex attribute 延迟保存调用时 array-buffer binding；client array 在 draw 时按
+  first/count 或 guest 索引最大值完整预检并上传内部 VBO/EBO，随后恢复 guest buffer
+  binding。uniform 标量保持位模式，矩阵数据必须先按 IDL 长度完整搬运，任何坏地址都
+  不得触达 ANGLE；vector/matrix4 批量入口同样复用 IDL 计数，constant attribute 的第五个
+  float 从 A32 guest 栈读取。已绑定 element buffer 时不得为启用的 client attribute 猜测
+  索引范围。
+- 同时链接 GLES1/GLES2 的 guest 若把 `glDrawArrays`/`glDrawElements` 解析到 GLES1，但未
+  启用 `GL_VERTEX_ARRAY` 且已有启用的 GLES2 vertex attribute，必须转入同一 GLES2
+  staging/draw 路径；固定管线 `GL_VERTEX_ARRAY` 路径保持不变。
 - `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽；integer query、
   draw indices 与 readback 输出复用 transfer state，draw 成功后由主 HLE 更新指标。
+- `glTexSubImage2D` 与 `glTexImage2D` 一样按 unpack/format 完整预检像素后再调用 ANGLE。
 - 超采样倍率必须在创建任何 ANGLE 资源前完整验证；viewport 缩放溢出明确失败，guest
   `eglQuerySurface` 不得泄漏内部渲染尺寸，GPU 查询不得把逻辑尺寸伪装成真实 target。
 - `NativeActivitySession` 只接受 API 19 ARMv7 当前入口，执行真实 Bionic 初始化、

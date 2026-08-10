@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 GLES2 shader reflection/uniform 批次已完成
+更新：2026-08-10 · M8 GLES2 client vertex/index staging 批次已完成
 
 ## 当前阶段
 
@@ -29,59 +29,41 @@
 
 ## 进行中
 
-- Asphalt 6 exact 已越过 JNI_OnLoad、GLES discovery/FBO/state 与 AudioTrack bootstrap；
-  资源 worker 失败可全量退出/join。shader/program reflection、info-log 与 uniform vector/
-  matrix4 静态差集已整批闭合；当前明确停在 client-side `glVertexAttribPointer` staging；
-  96 个唯一 GL 导入已静态盘点，尚未声称首帧或主界面。
+- Asphalt 6 exact 已越过 JNI_OnLoad、GLES discovery/FBO/state、AudioTrack、shader/uniform
+  与 client vertex/index staging（含混合链接 GLES1 draw 转入）；当前停在
+  `required guest pointer is null`；尚未声称首帧或主界面。
 
 ## 最近完成
 
-- [WU-0376] 一次闭合 active attribute/uniform、program/shader info-log、八项 vector uniform、
-  matrix4 与 constant vertex attribute 共 14 项；多输出和数组均经 IDL transfer。exact 越过
-  整个 shader/uniform 批次，进入 client-side vertex array staging；focused 1/1、full CTest
-  496/496。
+- [WU-0377] 一次闭合 GLES2 client vertex/index staging、`glDrawArrays`、`glTexSubImage2D`
+  与混合链接 GLES1 draw 转入；opaque EBO+client attribute 明确失败。exact 越过 staging，
+  进入 `required guest pointer is null`；focused 2/2、full CTest 496/496。
+- [WU-0376] 一次闭合 active attribute/uniform、info-log、八项 vector uniform、matrix4 与
+  constant vertex attribute 共 14 项。exact 进入 client-array staging；focused 1/1、
+  full CTest 496/496。
 - [WU-0375] child 在首次执行前或 slice 间均响应外部 exit；session stop 先退出/中断再全量
-  join，首错延迟上报，最后才允许析构。exact 从 SIGSEGV 恢复为明确 `glGetActiveAttrib`
-  失败；focused 2/2、full CTest 496/496。
-- [WU-0374] 以 Profile 声明 AudioTrack 七项精确调用，通用 HLE 受检实现 PCM16 配置、
-  minimum-buffer、play/pause/stop/release 与 byte-array region write，可查询每 track 状态。
-  exact 越过音频 bootstrap 并启动资源 worker；focused 3/3、full CTest 495/495。
-- [WU-0373] 按导入差集一次补齐 blend color/equation、sample coverage 与 flush，并覆盖
-  mixed GLES1/GLES2 的共享 sample-coverage trap；flush 不触发 present。exact 越过图形
-  状态批次，稳定进入 AudioTrack class lookup；focused 2/2、full CTest 494/494。
-- [WU-0372] 一次接入 framebuffer/renderbuffer 生成、删除、绑定、storage、两类 attachment、
-  status 共 10 项及 mipmap；名称数组、A32 栈参数和 ANGLE 错误均受检。exact 越过完整 FBO
-  建立，稳定进入 `glBlendEquation`；focused 1/1、full CTest 494/494。
-- [WU-0371] 为同时链接 GLES1/GLES2 的 guest 批量转发 shading-language string、8 项 shader/
-  texture/uniform/varying capability 与 current-program/framebuffer/renderbuffer 三项状态；五个
-  string 结果使用独立只读槽。exact 越过完整 discovery，稳定进入 `glBindFramebuffer`；
+  join。exact 从 SIGSEGV 恢复为明确 `glGetActiveAttrib` 失败；focused 2/2、full CTest
+  496/496。
+- [WU-0374] Profile 声明 AudioTrack 七项精确调用，通用 HLE 受检实现 PCM16 配置与
+  write。exact 越过音频 bootstrap；focused 3/3、full CTest 495/495。
+- [WU-0373] 补齐 blend color/equation、sample coverage 与 flush，覆盖混合链接
+  sample-coverage。exact 进入 AudioTrack lookup；focused 2/2、full CTest 494/494。
+- [WU-0372] 接入 FBO/renderbuffer 10 项及 mipmap。exact 进入 `glBlendEquation`；
   focused 1/1、full CTest 494/494。
-- [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
-  点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
-  `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
-  三轮全部 passed、无 guest fault、suspend/resume 不偷跑 frame、shutdown requested/clean，
-  focused 5/5、full CTest 484/484。
-- [WU-0358] Python runner 从强类型 Scenario 启动同一 Profile-backed MCP manual-step 会话，
-  实时门禁 startup/checkpoint/total 三重预算，执行动作与逐帧断言，落盘相对 frame/state/log
-  证据和 Result v1；成功/失败均正常 shutdown，超时清理明确记账；focused 6/6、full
-  CTest 484/484。
-- [WU-0357] `run-apk --mcp-manual-step` 复用 GLSurfaceView exact Profile bootstrap、ANGLE、
-  lifecycle、audio 与 teardown；guest 主线程消费 step/suspend/resume/shutdown，启动、帧、
-  movie/exit/fault 状态原子发布，普通交互模式不变；Asphalt 5 exact 从 0/0 精确步进到
-  frame/ticks 1/1000 并正常 lifecycle/shutdown，focused 7/7、full CTest 483/483。
+- [WU-0371] 批量转发 shading-language 与 GLES2 capability/state 查询。exact 进入
+  `glBindFramebuffer`；focused 1/1、full CTest 494/494。
+- [WU-0359] Asphalt 5 exact `title_flow` 三轮 gate 通过；Main Menu golden SHA-256
+  `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`。
+
 ## M6 起点
 
-已有 Scenario v1 身份/fixture/预算/checkpoint/action/assertion/result 契约、Control
-Service/JSON-RPC、固定步长 Clock、能力账本、结构化日志、GPU 查询和 Software/ANGLE
-黄金帧基础。通用 runner 已闭合 Scenario→exact Profile session→action/step→assertion→
-evidence/Result→shutdown，Asphalt 5 exact 标题流已连续三轮通过。实测证明标题页触摸直接
-进入 Main Menu 且 `movieRequest=null`，已用真实 UI golden 更正旧推测。OBB fixture 与 MCP
-GPU trace 仍明确未实现。
+Scenario→exact Profile session→action/step→assertion→evidence/Result→shutdown 已闭合；
+Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 实现 client-side vertex/index staging 与 texture subimage 批次，再处理 license/VFS
-   并固化主界面 Scenario 与三轮 gate。
+1. 诊断 exact `required guest pointer is null`，再闭合 license/VFS/媒体并固化主界面
+   Scenario 与三轮 gate。
 
 ## 阻塞
 

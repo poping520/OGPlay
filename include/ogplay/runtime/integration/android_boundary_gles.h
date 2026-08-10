@@ -30,6 +30,7 @@ public:
     [[nodiscard]] std::optional<std::uint32_t> Dispatch(
         std::string_view symbol, const std::array<std::uint32_t, 4>& arguments,
         const cpu::A32State& state, gles::AngleFrame* frame);
+    [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept;
     void Reset() noexcept;
 
 private:

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -24,8 +25,27 @@
 namespace ogplay::runtime {
 
 class JniInvocationEngine;
+class JniStringStore;
 class FrameworkScreenPolicyState;
 struct FrameworkLocaleConfig;
+
+struct AndroidGuestMovieRequest final {
+    std::uint64_t sequence{};
+    std::uint64_t thread_id{};
+    std::vector<JniChar> name;
+};
+
+class AndroidGuestMovieState final {
+public:
+    void Request(std::uint64_t thread_id, std::span<const JniChar> name);
+    [[nodiscard]] std::optional<AndroidGuestMovieRequest> Latest() const;
+    [[nodiscard]] std::uint64_t RequestCount() const;
+
+private:
+    mutable std::mutex mutex_;
+    std::optional<AndroidGuestMovieRequest> latest_;
+    std::uint64_t request_count_{};
+};
 
 class AndroidGuestProcessState final {
 public:
@@ -42,6 +62,10 @@ void BindAndroidGuestJavaAudioHandlers(
     JniInvocationEngine& invocations,
     audio::JavaSoundPoolState& sound_pool,
     audio::JavaSoundPoolMixer* mixer = nullptr);
+
+void BindAndroidGuestJavaMovieHandlers(
+    JniInvocationEngine& invocations, JniEnvironment& environment,
+    JniStringStore& strings, AndroidGuestMovieState& movie_state);
 
 void BindAndroidGuestJavaDisplayHandlers(
     JniInvocationEngine& invocations,
@@ -100,6 +124,8 @@ public:
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;
+    [[nodiscard]] std::optional<AndroidGuestMovieRequest>
+    LatestMovieRequest() const;
 
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;

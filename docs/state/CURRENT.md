@@ -33,6 +33,10 @@
 
 ## 最近完成
 
+- [WU-0319] legacy `loadMovie(String)` 现从统一 JNI string store 发布线程安全、可查询且
+  带递增序号的电影请求；null、未知或超限名称明确失败，宿主视频播放仍明确未实现。
+  第二个 exact APK 已越过原 missing-handler，随后在同一 `nativeRender` 触发新的 10 亿
+  tick 边界。
 - [WU-0318] `run-apk` 现对两种 Profile 生命周期消费强类型单次调用预算；第二个 exact
   Profile 以纯数据声明 10 亿 tick 后，首次 `nativeRender` 在约 21 秒内返回并提交 1 frame，
   证明原 2 亿边界来自有限 PVRTC 加载工作量。120 帧 smoke 已推进至独立缺口
@@ -67,9 +71,6 @@
 - [WU-0308] GLES1 已补齐 buffer name 生命周期、`glBufferData`/`glBufferSubData` 与受检
   `glReadPixels`，删除绑定对象同步 transfer state；第二个 exact APK 无倒退并保持在独立
   client-array type 边界，全量 CTest 436/436 通过。
-- [WU-0307] GLES1 已补齐 `glGetBooleanv`、`glIsEnabled`、`glGetPointerv`、`glTexEnvf`，
-  并扩展 `glGetIntegerv` 的 client-array descriptor 与 legacy blend alias；第二个 exact APK
-  已越过相关查询，明确停在后续 client-array type 边界，全量 CTest 436/436 通过。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
@@ -80,14 +81,14 @@ GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表�
 
 ## 下一步（按优先级）
 
-1. 按 exact-APK 调用证据为已声明的通用 `audio.load_movie` implementation id 注册受检
-   handler，并保持资源/解码失败明确可观测。
+1. 取得电影请求发布后新 10 亿 tick 耗尽的精确 guest PC/符号，先区分有限加载、等待
+   或循环，再决定下一项 bounded 修复。
 2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
 3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
 
 ## 阻塞
 
-- 第二个 exact APK 已越过首次加载预算边界；当前 120 帧 smoke 明确停在 Profile 已声明、
-  但 runtime implementation catalog 尚未注册的 `audio.load_movie` handler。
+- 第二个 exact APK 已越过 `audio.load_movie` handler；当前 120 帧 smoke 在电影请求发布后
+  的同一 `nativeRender` 耗尽 10 亿 tick，尚缺精确 PC/符号归因。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

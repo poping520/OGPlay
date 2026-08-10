@@ -330,6 +330,11 @@ status = "partial"
 test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0283 以线程安全状态闭合 legacy Java display mode 的允许休眠/保持唤醒请求；宿主防休眠控制尚未接入"
 
+[runtime.java_movie_request]
+status = "partial"
+test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"
+note = "M5 WU-0319 将 audio.load_movie 的非空有界 Java String 发布为线程安全、可查询且带序号的电影请求；宿主视频播放尚未实现，不伪造播放成功"
+
 [runtime.framework_legacy_language_index]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"

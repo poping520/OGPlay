@@ -426,6 +426,8 @@ public:
         BindAndroidGuestJavaAudioHandlers(
             invocations_, sound_pool_,
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
+        BindAndroidGuestJavaMovieHandlers(
+            invocations_, environment_, strings_, movie_state_);
         BindAndroidGuestJavaDisplayHandlers(invocations_, screen_policy_);
         BindAndroidGuestJavaProcessHandlers(invocations_, process_state_);
         BindAndroidGuestJavaLocaleHandlers(invocations_, {});
@@ -617,6 +619,9 @@ public:
     bool ExitRequested() const noexcept {
         return process_state_.ExitRequested();
     }
+    std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const {
+        return movie_state_.Latest();
+    }
     core::GpuStats Stats() const { return boundary_.Stats(); }
     std::vector<core::GpuRenderTarget> RenderTargets() const {
         return boundary_.RenderTargets();
@@ -645,6 +650,7 @@ private:
     FrameworkScreenPolicyState screen_policy_;
     AndroidGuestProcessState process_state_;
     JniStringStore strings_;
+    AndroidGuestMovieState movie_state_;
     JniPrimitiveArrayStore arrays_;
     JniJavaVm java_vm_;
     hal::RealtimeClock clock_;
@@ -739,6 +745,10 @@ bool AndroidGuestCallSession::Running() const noexcept {
 }
 bool AndroidGuestCallSession::ExitRequested() const noexcept {
     return impl_->ExitRequested();
+}
+std::optional<AndroidGuestMovieRequest>
+AndroidGuestCallSession::LatestMovieRequest() const {
+    return impl_->LatestMovieRequest();
 }
 core::GpuStats AndroidGuestCallSession::Stats() const {
     return impl_->Stats();

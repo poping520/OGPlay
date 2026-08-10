@@ -15,6 +15,7 @@
 #include "ogplay/runtime/framework/framework_locale.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "ogplay/runtime/jni/jni_object.h"
 
 namespace {
 
@@ -135,6 +136,70 @@ TEST_CASE("Android guest Java locale handler returns legacy language index") {
         static_cast<void>(
             ogplay::runtime::LegacyPhoneLanguageIndex({"EN", "US"})),
         ogplay::runtime::FrameworkLocaleError);
+}
+
+TEST_CASE("Android guest Java movie handler publishes the exact request") {
+    ogplay::runtime::JniClassRegistry classes;
+    const auto java_class = classes.RegisterClass(
+        {"fixture/JavaMovie", {},
+         {{"loadMovie", "(Ljava/lang/String;)V", "audio.load_movie", true}},
+         {}});
+    const auto method = classes.GetMethodId(
+        java_class, "loadMovie", "(Ljava/lang/String;)V", true);
+    REQUIRE(method.has_value());
+
+    ogplay::runtime::JniEnvironment environment;
+    environment.AttachThread(7U);
+    ogplay::runtime::JniStringStore strings;
+    const std::array<ogplay::runtime::JniChar, 9> name{
+        'i', 'n', 't', 'r', 'o', '.', 'm', 'p', '4'};
+    const auto identity = strings.Create(name);
+    const auto reference = environment.PublishLocalObject(7U, identity);
+    ogplay::runtime::JniInvocationEngine invocations{classes};
+    ogplay::runtime::AndroidGuestMovieState movie_state;
+    ogplay::runtime::BindAndroidGuestJavaMovieHandlers(
+        invocations, environment, strings, movie_state);
+
+    const std::array<ogplay::runtime::JniValue, 1> arguments{reference};
+    static_cast<void>(invocations.InvokeStatic(
+        7U, java_class, *method, arguments,
+        ogplay::runtime::JniArgumentSource::variadic));
+    const auto latest = movie_state.Latest();
+    REQUIRE(latest.has_value());
+    CHECK(latest->sequence == 1U);
+    CHECK(latest->thread_id == 7U);
+    CHECK(latest->name == std::vector<ogplay::runtime::JniChar>{
+                              name.begin(), name.end()});
+    CHECK(movie_state.RequestCount() == 1U);
+
+    const std::array<ogplay::runtime::JniValue, 1> null_arguments{
+        ogplay::runtime::JniReference{}};
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(invocations.InvokeStatic(
+            7U, java_class, *method, null_arguments,
+            ogplay::runtime::JniArgumentSource::value_array)),
+        "Android guest movie name cannot be null",
+        ogplay::runtime::AndroidGuestCallSessionError);
+    CHECK(movie_state.RequestCount() == 1U);
+
+    const auto non_string = environment.PublishLocalObject(
+        7U, ogplay::runtime::AllocateJniHostObjectIdentity());
+    const std::array<ogplay::runtime::JniValue, 1> non_string_arguments{
+        non_string};
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(invocations.InvokeStatic(
+            7U, java_class, *method, non_string_arguments,
+            ogplay::runtime::JniArgumentSource::value_array)),
+        "JNI object is not a string in this store",
+        ogplay::runtime::JniStringError);
+    CHECK(movie_state.RequestCount() == 1U);
+
+    const std::vector<ogplay::runtime::JniChar> oversized(4097U, 'x');
+    CHECK_THROWS_WITH_AS(
+        movie_state.Request(7U, oversized),
+        "Android guest movie request is invalid",
+        ogplay::runtime::AndroidGuestCallSessionError);
+    CHECK(movie_state.RequestCount() == 1U);
 }
 
 TEST_CASE("Android guest Java audio handlers own SoundPool lifecycle") {

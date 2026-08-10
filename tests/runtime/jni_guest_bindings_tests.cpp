@@ -166,7 +166,9 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
         "CallStaticVoidMethod", "CallStaticVoidMethodV",
         "CallStaticVoidMethodA",
         "GetArrayLength",      "GetByteArrayRegion",
-        "NewStringUTF"};
+        "NewStringUTF",        "GetStringUTFLength",
+        "GetStringUTFChars",   "ReleaseStringUTFChars",
+        "GetStringUTFRegion"};
     for (const auto name : environment_names) {
         CAPTURE(name);
         CHECK(fixture.dispatcher.IsEnvironmentBound(
@@ -210,6 +212,58 @@ TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {
             fixture.CallEnvironment("NewStringUTF", 402U, 0U)),
         "JNI guest modified UTF-8 pointer is null",
         ogplay::runtime::JniGuestBindingError);
+}
+
+TEST_CASE("guest JNI modified UTF string family owns checked guest leases") {
+    GuestBindingsFixture fixture;
+    constexpr std::uint64_t thread_id = 403U;
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        thread_id, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+    const std::array<std::uint8_t, 4> encoded{'A', 0xc0U, 0x80U, 'B'};
+    const auto identity = fixture.strings.CreateModifiedUtf8(encoded);
+    const auto string = fixture.environment.PublishLocalObject(
+        thread_id, identity);
+    fixture.Seal();
+
+    CHECK(fixture.CallEnvironment(
+              "GetStringUTFLength", thread_id, string.Value()) == 4U);
+    const auto copy_flag = fixture.output.Add(0x200U);
+    const auto pointer = ogplay::memory::GuestAddress{
+        fixture.CallEnvironment(
+            "GetStringUTFChars", thread_id, string.Value(),
+            copy_flag.Value())};
+    REQUIRE_FALSE(pointer.IsNull());
+    std::array<std::byte, 5> leased{};
+    fixture.memory.Read(pointer, leased, thread_id);
+    CHECK(leased == std::array<std::byte, 5>{
+                        std::byte{'A'}, std::byte{0xc0}, std::byte{0x80},
+                        std::byte{'B'}, std::byte{0}});
+    std::byte copied{};
+    fixture.memory.Read(copy_flag, std::span{&copied, 1}, thread_id);
+    CHECK(copied == std::byte{1});
+
+    const auto region = fixture.output.Add(0x300U);
+    static_cast<void>(fixture.CallEnvironment(
+        "GetStringUTFRegion", thread_id, string.Value(), 0U, 3U,
+        region.Value()));
+    std::array<std::byte, 4> region_bytes{};
+    fixture.memory.Read(region, region_bytes, thread_id);
+    CHECK(region_bytes == std::array<std::byte, 4>{
+                              std::byte{'A'}, std::byte{0xc0},
+                              std::byte{0x80}, std::byte{'B'}});
+
+    static_cast<void>(fixture.CallEnvironment(
+        "ReleaseStringUTFChars", thread_id, string.Value(),
+        pointer.Value()));
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "ReleaseStringUTFChars", thread_id, string.Value(),
+            pointer.Value())),
+        "ReleaseStringUTFChars pointer does not match an active lease",
+        ogplay::runtime::JniGuestBindingError);
+    CHECK(fixture.CallEnvironment(
+              "GetStringUTFChars", thread_id, string.Value()) != 0U);
 }
 
 TEST_CASE("guest JNI array length resolves the unified primitive array") {

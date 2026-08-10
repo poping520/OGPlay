@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 Asphalt 6 资源与 Java 媒体回调批次已完成
+更新：2026-08-10 · M8 Asphalt 6 JNI modified UTF-8 字符串槽批次已完成
 
 ## 当前阶段
 
@@ -29,12 +29,16 @@
 
 ## 进行中
 
-- Asphalt 6 JNI string/working-directory 与 Android media framework 批次；新 exact
-  Scenario 已越过 Device、GLResLoader、GLMediaPlayer 三个完整 native init，在第 4 个
-  native call 停于未绑定 `GetStringUTFChars`，尚未声称 guest 首帧或主界面。
+- Asphalt 6 JNI class/object 与 Android framework 批次；新 exact Scenario 已越过
+  modified UTF-8 字符串访问，在第 4 个 native call 停于未绑定 `FindClass`，尚未声称
+  guest 首帧或主界面。
 
 ## 最近完成
 
+- [WU-0364] 批量绑定 modified UTF-8 的 length/chars/release/region 四槽；64 KiB guest
+  lease arena 支持 NUL copy、isCopy、first-fit 与严格配对。首次 exact 清理暴露并修复
+  binder 晚于 string store 析构的宿主崩溃；复采样稳定停于下一类 `FindClass`；focused
+  2/2、full CTest 488/488。
 - [WU-0363] 一次声明 GLResLoader 5 与 GLMediaPlayer 41 个 exact descriptor；字符串资源
   复用 `/apk/assets` direct-asset VFS，编号音频走真实 `raw_NNN.ogg` loader，Java 原版
   固定/no-op 媒体语义保留逐方法计数和音量状态。exact Scenario 越过前三个 native init，
@@ -44,11 +48,6 @@
   background、fully-loaded、键盘和 managed-swap 状态；浏览器/商店/付费/GLive/IGP/trophy
   无宿主实现时明确失败。exact Scenario 已从第 1 个 native call 推进到第 2 个
   `GLResLoader.nativeInit`，首个新类别缺口为资源读取；focused 1/1、full CTest 486/486。
-- [WU-0361] 提交 exact `asphalt6.bootstrap` 场景及 APK/external 逻辑 fixture；
-  有界采样在第 0 帧、第 1 个 native call 停于 `Device.a()[B`，Result 明确
-  记录进程退出 1 且非 clean shutdown。静态/动态交叉统计 5 个回调类、76 个
-  Java descriptor、96 个 GL 导入（当前处理 41、差集 55）、30 个 pthread 导入和
-  972 个 payload 文件，后续按类别批量闭合；focused 3/3、full CTest 485/485。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -80,7 +79,7 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 批量闭合 JNI UTF string 槽、Android media framework，并补齐 `nativeGetSDFolder`
+1. 批量闭合 JNI class/object 与 Android framework，并补齐 `nativeGetSDFolder`
    的声明式 working-directory 参数。
 2. 按 GLES2 state/resource/query/draw 子批次闭合，然后固化主界面
    Scenario 与三轮 gate。

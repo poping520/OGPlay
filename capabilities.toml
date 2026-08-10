@@ -493,7 +493,7 @@ note = "M5 WU-0305 提供 GLES1/2 共用的 depth-range、line/polygon 与 stenc
 [gles.shader_program]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 真实 ANGLE 闭合 13 项 shader/program handler、二级源码和可选长度搬运、编译链接查询、符号定位、use/delete 及 GPU 计数"
+note = "M4 真实 ANGLE 闭合 shader/program 生命周期、源码、编译链接与符号定位；M8 WU-0376 批量补齐 active attribute/uniform 及 program/shader info-log，四组多输出均经 IDL 预检并保持截断/NUL 语义"
 
 [gles.buffer_texture]
 status = "complete"
@@ -508,7 +508,7 @@ note = "M8 WU-0372 一次闭合 GLES2 framebuffer/renderbuffer 10 项生命周�
 [gles.vertex_uniform]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 真实 ANGLE 闭合 7 项 vertex/uniform handler，VBO offset 与栈参数受检，client array 明确失败，标量位模式和 matrix3 guest 搬运保持精确"
+note = "M4 闭合 VBO offset、uniform scalar/matrix3；M8 WU-0376 批量补齐八项 float/int vector、matrix4 与 constant vertex attribute，IDL payload/A32 位型/栈参数受检；client array 仍明确失败"
 
 [gles.m4_exit_surface]
 status = "complete"

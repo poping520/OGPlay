@@ -1422,6 +1422,41 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
         {program, 0x8b82U, query_output.Value()}));
     CHECK(fixture.bus.Read32(query_output, 1) == 1);
 
+    const auto reflected_length = fixture.output.Add(0x700);
+    const auto reflected_size = fixture.output.Add(0x704);
+    const auto reflected_type = fixture.output.Add(0x708);
+    const auto reflected_name = fixture.output.Add(0x720);
+    fixture.bus.Write32(fixture.stack, reflected_size.Value(), 1);
+    fixture.bus.Write32(fixture.stack.Add(4), reflected_type.Value(), 1);
+    fixture.bus.Write32(fixture.stack.Add(8), reflected_name.Value(), 1);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetActiveAttrib",
+        {program, 0, 32, reflected_length.Value()}));
+    CHECK(fixture.bus.Read32(reflected_length, 1) == 9U);
+    CHECK(fixture.bus.Read32(reflected_size, 1) == 1U);
+    CHECK(fixture.bus.Read32(reflected_type, 1) == 0x8B50U);
+    CHECK(fixture.bus.Read8(reflected_name.Add(9), 1) == 0U);
+
+    const auto uniform_reflected_name = fixture.output.Add(0x760);
+    fixture.bus.Write32(fixture.stack.Add(8), uniform_reflected_name.Value(), 1);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetActiveUniform",
+        {program, 0, 32, reflected_length.Value()}));
+    CHECK(fixture.bus.Read32(reflected_length, 1) == 5U);
+    CHECK(fixture.bus.Read32(reflected_type, 1) == 0x8B52U);
+    CHECK(fixture.bus.Read8(uniform_reflected_name.Add(5), 1) == 0U);
+
+    const auto info_log = fixture.output.Add(0x7a0);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetProgramInfoLog",
+        {program, 32, reflected_length.Value(), info_log.Value()}));
+    CHECK(fixture.bus.Read32(reflected_length, 1) == 0U);
+    CHECK(fixture.bus.Read8(info_log, 1) == 0U);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetShaderInfoLog",
+        {vertex, 32, reflected_length.Value(), info_log.Value()}));
+    CHECK(fixture.bus.Read32(reflected_length, 1) == 0U);
+
     WriteGuestString(fixture, attribute_name, "aPosition");
     WriteGuestString(fixture, uniform_name, "uTint");
     CHECK(fixture.Call("libGLESv2.so", "glGetAttribLocation",
@@ -1441,6 +1476,25 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
         {UINT32_MAX, std::bit_cast<std::uint32_t>(0.5F)}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glUniform1i",
                                    {UINT32_MAX, 2}));
+    const auto vector_address = fixture.output.Add(0x800);
+    constexpr std::array<float, 4> vector_values{0.1F, 0.2F, 0.3F, 0.4F};
+    constexpr std::array<std::int32_t, 4> integer_values{1, 2, 3, 4};
+    fixture.memory.Write(vector_address,
+                         std::as_bytes(std::span(vector_values)), 1);
+    fixture.memory.Write(vector_address.Add(0x20),
+                         std::as_bytes(std::span(integer_values)), 1);
+    for (const auto* symbol : {"glUniform1fv", "glUniform2fv",
+                               "glUniform3fv", "glUniform4fv"}) {
+        static_cast<void>(fixture.Call(
+            "libGLESv2.so", symbol,
+            {UINT32_MAX, 1, vector_address.Value()}));
+    }
+    for (const auto* symbol : {"glUniform1iv", "glUniform2iv",
+                               "glUniform3iv", "glUniform4iv"}) {
+        static_cast<void>(fixture.Call(
+            "libGLESv2.so", symbol,
+            {UINT32_MAX, 1, vector_address.Add(0x20).Value()}));
+    }
     const auto matrix_address = fixture.output.Add(0x600);
     constexpr std::array<float, 9> identity{1.0F, 0.0F, 0.0F,
                                             0.0F, 1.0F, 0.0F,
@@ -1448,6 +1502,21 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     fixture.memory.Write(matrix_address, std::as_bytes(std::span(identity)), 1);
     static_cast<void>(fixture.Call("libGLESv2.so", "glUniformMatrix3fv",
                                    {UINT32_MAX, 1, 0, matrix_address.Value()}));
+    const auto matrix4_address = fixture.output.Add(0x880);
+    constexpr std::array<float, 16> identity4{
+        1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F,
+        0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F};
+    fixture.memory.Write(matrix4_address,
+                         std::as_bytes(std::span(identity4)), 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glUniformMatrix4fv",
+                                   {UINT32_MAX, 1, 0,
+                                    matrix4_address.Value()}));
+    fixture.bus.Write32(fixture.stack, std::bit_cast<std::uint32_t>(1.0F), 1);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glVertexAttrib4f",
+        {0, std::bit_cast<std::uint32_t>(0.0F),
+         std::bit_cast<std::uint32_t>(0.0F),
+         std::bit_cast<std::uint32_t>(0.0F)}));
     CHECK_THROWS_AS(
         fixture.Call("libGLESv2.so", "glUniformMatrix3fv",
                      {UINT32_MAX, 1, 0, 0x1000U}),

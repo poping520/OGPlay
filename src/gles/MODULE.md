@@ -102,7 +102,8 @@
 - buffer subrange 的 guest offset/size 必须非负，输入 payload 先完整预检再调用 ANGLE；
   `AngleFrame::BufferSubData` 只接受拥有精确长度的受检 span，并立即检查原生错误。
 - vertex pointer 只有绑定 array buffer 后才能把 32 位 guest 值解释为 VBO offset；client
-  array 继续明确失败。uniform 数组按 IDL 形状完整搬运后再转换为宿主标量。
+  array 继续明确失败。uniform vector/matrix 数组按 IDL 形状完整搬运后再转换为宿主标量；
+  shader/program active-variable 与 info-log 查询来自真实 ANGLE 对象并保留截断/NUL 语义。
 - integer query 与 readback 输出必须先按 IDL/transfer state 预检再调用 ANGLE；draw indices
   只有绑定 element buffer 后才能作为 offset。查询字符串必须来自 ANGLE 并复制到只读 guest
   页，禁止返回宿主指针或伪造固定文本。

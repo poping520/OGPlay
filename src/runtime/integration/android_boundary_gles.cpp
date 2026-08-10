@@ -221,6 +221,68 @@ public:
                 std::bit_cast<std::int32_t>(args[1]), args[2] != 0, values);
             return 0;
         }
+        if (symbol == "glUniform1fv" || symbol == "glUniform2fv" ||
+            symbol == "glUniform3fv" || symbol == "glUniform4fv" ||
+            symbol == "glUniform1iv" || symbol == "glUniform2iv" ||
+            symbol == "glUniform3iv" || symbol == "glUniform4iv") {
+            auto call = PrepareCall(symbol, std::span(args).first<3>(), tid);
+            const auto components =
+                symbol == "glUniform1fv" || symbol == "glUniform1iv" ? 1U :
+                symbol == "glUniform2fv" || symbol == "glUniform2iv" ? 2U :
+                symbol == "glUniform3fv" || symbol == "glUniform3iv" ? 3U : 4U;
+            const auto count = std::bit_cast<std::int32_t>(args[1]);
+            if (symbol.ends_with("fv")) {
+                RequireFrame(frame, symbol).UniformFloats(
+                    std::bit_cast<std::int32_t>(args[0]), count, components,
+                    ReadFloats(Pointer(call)));
+            } else {
+                RequireFrame(frame, symbol).UniformIntegers(
+                    std::bit_cast<std::int32_t>(args[0]), count, components,
+                    ReadIntegers(Pointer(call)));
+            }
+            return 0;
+        }
+        if (symbol == "glUniformMatrix4fv") {
+            auto call = PrepareCall(symbol, args, tid);
+            RequireFrame(frame, symbol).UniformMatrix4(
+                std::bit_cast<std::int32_t>(args[0]),
+                std::bit_cast<std::int32_t>(args[1]), args[2] != 0,
+                ReadFloats(Pointer(call)));
+            return 0;
+        }
+        if (symbol == "glVertexAttrib4f") {
+            RequireFrame(frame, symbol).VertexAttribute4f(
+                args[0], std::bit_cast<float>(args[1]),
+                std::bit_cast<float>(args[2]), std::bit_cast<float>(args[3]),
+                std::bit_cast<float>(StackWord(state, 0)));
+            return 0;
+        }
+        if (symbol == "glGetActiveAttrib" ||
+            symbol == "glGetActiveUniform") {
+            std::array<std::uint32_t, 7> all{
+                args[0], args[1], args[2], args[3], StackWord(state, 0),
+                StackWord(state, 4), StackWord(state, 8)};
+            auto call = PrepareCall(symbol, all, tid);
+            const auto result = symbol == "glGetActiveAttrib"
+                ? RequireFrame(frame, symbol).GetActiveAttribute(all[0], all[1])
+                : RequireFrame(frame, symbol).GetActiveUniform(all[0], all[1]);
+            const auto length = WriteText(Pointer(call, 6), result.name);
+            WriteWord(Pointer(call, 3), length);
+            WriteWord(Pointer(call, 4),
+                      std::bit_cast<std::uint32_t>(result.size));
+            WriteWord(Pointer(call, 5), result.type);
+            return 0;
+        }
+        if (symbol == "glGetProgramInfoLog" ||
+            symbol == "glGetShaderInfoLog") {
+            auto call = PrepareCall(symbol, args, tid);
+            const auto log = symbol == "glGetProgramInfoLog"
+                ? RequireFrame(frame, symbol).GetProgramInfoLog(args[0])
+                : RequireFrame(frame, symbol).GetShaderInfoLog(args[0]);
+            const auto length = WriteText(Pointer(call, 3), log);
+            WriteWord(Pointer(call, 2), length);
+            return 0;
+        }
         if (symbol == "glGetIntegerv") {
             auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
             auto& output = Pointer(call);
@@ -333,6 +395,19 @@ private:
         return *call.pointers.front().transfer;
     }
 
+    static gles::GuestBuffer& Pointer(gles::PreparedGlesCall& call,
+                                      const std::size_t parameter_index) {
+        const auto found = std::ranges::find_if(
+            call.pointers, [parameter_index](const auto& pointer) {
+                return pointer.parameter_index == parameter_index;
+            });
+        if (found == call.pointers.end() || !found->transfer.has_value()) {
+            throw std::logic_error(
+                "GLES resource handler expected a transferred parameter");
+        }
+        return *found->transfer;
+    }
+
     static std::vector<std::uint32_t> ReadWords(
         const gles::GuestBuffer& transfer) {
         const auto bytes = transfer.Bytes();
@@ -358,6 +433,38 @@ private:
             values.push_back(std::bit_cast<float>(word));
         }
         return values;
+    }
+
+    static std::vector<std::int32_t> ReadIntegers(
+        const gles::GuestBuffer& transfer) {
+        const auto words = ReadWords(transfer);
+        std::vector<std::int32_t> values;
+        values.reserve(words.size());
+        for (const auto word : words) {
+            values.push_back(std::bit_cast<std::int32_t>(word));
+        }
+        return values;
+    }
+
+    static void WriteWord(gles::GuestBuffer& transfer,
+                          const std::uint32_t word) {
+        if (transfer.IsNull()) return;
+        WriteWords(transfer, std::span(&word, 1));
+    }
+
+    static std::uint32_t WriteText(gles::GuestBuffer& transfer,
+                                   const std::string_view text) {
+        auto bytes = transfer.WritableBytes();
+        const auto length = bytes.empty()
+            ? 0U
+            : std::min(text.size(), bytes.size() - 1U);
+        std::ranges::fill(bytes, std::byte{});
+        for (std::size_t index = 0; index < length; ++index) {
+            bytes[index] = static_cast<std::byte>(
+                static_cast<unsigned char>(text[index]));
+        }
+        transfer.Commit();
+        return static_cast<std::uint32_t>(length);
     }
 
     static void WriteWords(gles::GuestBuffer& transfer,

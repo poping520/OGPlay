@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 guest worker failure teardown 批次已完成
+更新：2026-08-10 · M8 GLES2 shader reflection/uniform 批次已完成
 
 ## 当前阶段
 
@@ -30,11 +30,16 @@
 ## 进行中
 
 - Asphalt 6 exact 已越过 JNI_OnLoad、GLES discovery/FBO/state 与 AudioTrack bootstrap；
-  资源 worker 失败现可全量退出/join，不再造成宿主崩溃。当前明确停在 shader reflection
-  `glGetActiveAttrib`；96 个唯一 GL 导入已静态盘点，尚未声称首帧或主界面。
+  资源 worker 失败可全量退出/join。shader/program reflection、info-log 与 uniform vector/
+  matrix4 静态差集已整批闭合；当前明确停在 client-side `glVertexAttribPointer` staging；
+  96 个唯一 GL 导入已静态盘点，尚未声称首帧或主界面。
 
 ## 最近完成
 
+- [WU-0376] 一次闭合 active attribute/uniform、program/shader info-log、八项 vector uniform、
+  matrix4 与 constant vertex attribute 共 14 项；多输出和数组均经 IDL transfer。exact 越过
+  整个 shader/uniform 批次，进入 client-side vertex array staging；focused 1/1、full CTest
+  496/496。
 - [WU-0375] child 在首次执行前或 slice 间均响应外部 exit；session stop 先退出/中断再全量
   join，首错延迟上报，最后才允许析构。exact 从 SIGSEGV 恢复为明确 `glGetActiveAttrib`
   失败；focused 2/2、full CTest 496/496。
@@ -75,8 +80,7 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 按静态差集一次闭合 shader/program reflection、info-log 与 uniform vector/matrix 批次。
-2. 随后实现 client-side vertex/index staging 与 texture subimage 批次，再处理 license/VFS
+1. 实现 client-side vertex/index staging 与 texture subimage 批次，再处理 license/VFS
    并固化主界面 Scenario 与三轮 gate。
 
 ## 阻塞

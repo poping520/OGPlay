@@ -127,7 +127,8 @@
   `GL_BACK`，标准 `GL_FRONT_AND_BACK` 仍事务更新两面，其他非法 face 失败；context reset
   恢复两面默认值但不得丢失配置策略。
 - shader/program handler 必须把 guest 二级源码数组、可选长度、查询输出和符号名完整
-  预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
+  预检后调用 ANGLE；active attribute/uniform 与 info-log 多输出先整体预检，再按 `bufSize`
+  截断提交；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、
   像素格式及对齐；状态只在 ANGLE 成功后提交，删除已绑定 buffer 必须同步解除搬运状态。
 - GLES2 framebuffer/renderbuffer 批次复用生成目录和名称数组预检，真实转发生命周期、绑定、
@@ -137,7 +138,8 @@
   混合链接 guest 的 core `glSampleCoverage` 也必须在 GLES1 dispatch 转入相同 ANGLE context。
   flush 不得触发 managed/guest surface present。
 - vertex attribute handler 只接受已有 VBO 的受检 offset；uniform 标量保持位模式，矩阵数据
-  必须先按 IDL 长度完整搬运，任何坏地址都不得触达 ANGLE。
+  必须先按 IDL 长度完整搬运，任何坏地址都不得触达 ANGLE；vector/matrix4 批量入口同样
+  复用 IDL 计数，constant attribute 的第五个 float 从 A32 guest 栈读取。
 - `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽；integer query、
   draw indices 与 readback 输出复用 transfer state，draw 成功后由主 HLE 更新指标。
 - 超采样倍率必须在创建任何 ANGLE 资源前完整验证；viewport 缩放溢出明确失败，guest

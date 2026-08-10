@@ -21,6 +21,12 @@ struct AngleFrameInfo final {
     std::uint64_t program_link_count{};
 };
 
+struct AngleActiveVariable final {
+    std::string name;
+    std::int32_t size{};
+    std::uint32_t type{};
+};
+
 class AngleFrame final {
 public:
     static AngleFrame CreatePbuffer(AngleBackend backend,
@@ -52,6 +58,12 @@ public:
     void LinkProgram(std::uint32_t program);
     [[nodiscard]] std::int32_t GetProgramParameter(std::uint32_t program,
                                                     std::uint32_t parameter);
+    [[nodiscard]] AngleActiveVariable GetActiveAttribute(
+        std::uint32_t program, std::uint32_t index);
+    [[nodiscard]] AngleActiveVariable GetActiveUniform(
+        std::uint32_t program, std::uint32_t index);
+    [[nodiscard]] std::string GetProgramInfoLog(std::uint32_t program);
+    [[nodiscard]] std::string GetShaderInfoLog(std::uint32_t shader);
     [[nodiscard]] std::int32_t GetAttribLocation(std::uint32_t program,
                                                   const std::string& name);
     [[nodiscard]] std::int32_t GetUniformLocation(std::uint32_t program,
@@ -122,8 +134,18 @@ public:
     void Uniform1f(std::int32_t location, float value);
     void Uniform1i(std::int32_t location, std::int32_t value);
     void Uniform4f(std::int32_t location, float x, float y, float z, float w);
+    void UniformFloats(std::int32_t location, std::int32_t count,
+                       std::uint32_t components,
+                       std::span<const float> values);
+    void UniformIntegers(std::int32_t location, std::int32_t count,
+                         std::uint32_t components,
+                         std::span<const std::int32_t> values);
     void UniformMatrix3(std::int32_t location, std::int32_t count,
                         bool transpose, std::span<const float> values);
+    void UniformMatrix4(std::int32_t location, std::int32_t count,
+                        bool transpose, std::span<const float> values);
+    void VertexAttribute4f(std::uint32_t index, float x, float y,
+                           float z, float w);
     void SetCapability(std::uint32_t capability, bool enabled);
     void BlendColor(float red, float green, float blue, float alpha);
     void BlendEquation(std::uint32_t mode);

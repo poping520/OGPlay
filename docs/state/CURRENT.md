@@ -1,19 +1,17 @@
 # 当前状态
 
-更新：2026-08-10 · M5 已打开
+更新：2026-08-10 · M5 能力范围已封板，M6 AI 自动化测试待打开
 
 ## 当前阶段
 
 - M0、M1、M2、M3、M4 已完成并验收。
-- M5 去硬编码正在推进；首个精确 legacy title Profile 已闭合 APK 身份、Bionic 依赖、
-  native-call 目标/A32 调用帧与 Android link preflight，完整 JNIEnv/JavaVM guest ABI
-  也已映射；指定 `gl_surface_view` guest process 已执行并提交首个 managed ANGLE frame。
-- Windows/MSVC、Linux/x64 与 macOS/arm64 均在同一主仓库 commit `f1b59bb` 上以 ANGLE
-  开启和 warnings-as-errors 通过严格全量 CTest 302/302。记录见
-  [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
-- 当前 M5 增量 WU 的开发与验收目标为 macOS-arm64 + ANGLE：warnings-as-errors、全量
-  CTest 与 exact-APK bounded smoke；其他平台留到显式跨平台检查点，不再阻塞每个
-  增量 WU。
+- M5 的 `WU-0199..0327` 共 129 项，已冻结为 M5-A Profile/启动基础、M5-B 首个
+  exact-title guest/GLES bring-up、M5-C 音频/输入/第二 title/lifecycle 三个批次；历史任务
+  不移动、不重编号，正式 M5 验收尚未声明。
+- 下一个开发方向为 M6 AI 自动化测试，从 `WU-0328` 开始；目标是让 AI 与 CI 通过同一
+  Profile-backed runner 执行 exact APK 的有界场景、输入、readback、断言和证据收集。
+- Windows/MSVC、Linux/x64 与 macOS/arm64 的 M4 基线均在 commit `f1b59bb` 以 ANGLE、
+  warnings-as-errors 和严格全量 CTest 302/302 通过，见 [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
 
 ## 已验收基线
 
@@ -24,67 +22,47 @@
 | M2 Bionic 与 Syscall | 完成 | [M2-ACCEPTANCE.md](M2-ACCEPTANCE.md) | `docs/tasks/m2/` |
 | M3 JNI 与 Java 框架 | 完成 | [M3-ACCEPTANCE.md](M3-ACCEPTANCE.md) | `docs/tasks/m3/` |
 | M4 ANGLE 与 NativeActivity | 完成 | [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md) | `docs/tasks/m4/` |
+| M5 去硬编码机制 | 待验收 | 尚未建立 | [三批索引](../tasks/m5/README.md) |
 
 能力的机器可读现状以仓库根目录 `capabilities.toml` 为准；本文件不重复维护完整能力历史。
 
 ## 进行中
 
-- 无。
+- 无；M6 首个 Work Unit 尚未创建。
 
 ## 最近完成
 
-- [WU-0327] Profile guest lifecycle 新增受检 suspend/resume，精确执行 pause/resume phase；
-  挂起期间拒绝 frame/input，Stop 不重复 pause。电影策略仍留给后续 WU。
-- [WU-0326] legacy `(IFZ)V` big-audio play 现把 boolean loop 同步提交到 voice state 与真实
-  Ogg mixer，PCM 尾部受控回绕；Release exact APK 300 帧 32.513 秒、退出码 0。
-- [WU-0325] A32 observer slice 上限由 500 万调为 2000 万 tick，在保持窗口响应上界时将
-  Dynarmic 重入次数降至四分之一；exact 80 帧 122.645 秒且退出码 0，窗口保持响应。
-- [WU-0324] GLSurfaceView 已把 A32 slice observer 接到非消费式 SDL event pump；exact APK
-  长帧多次采样均 `Responding=True` 且 CPU 前进，Windows 不再判定窗口挂起。
-- [WU-0323] HAL WindowInput 新增非消费式 event pump，可在主线程长任务期间处理宿主消息，
-  同时保留输入队列给正常帧循环；guest observer 接线留给下一 WU。
-- [WU-0322] A32 guest call 现按最多 500 万 tick 的 CPU slice 执行，长计算可在保持原总预算、
-  return trap 与错误语义时发布显式 observer；SDL 接线留给下一 WU。
-- [WU-0321] GLSurfaceView 停止顺序现为 pause/shutdown、guest module finalizer、关闭
-  managed ANGLE surface；exact APK 跨纹理加载后 80 帧正常退出，不再无 frame 清理纹理。
-- [WU-0320] legacy big audio 批量 pause/resume 只迁移对应类别 voice，并在统一
-  handler 下同步状态与真实 Ogg mixer；第二个 exact APK 已越过 `audio.resume_all_big`，
-  推进至独立 `glDeleteTextures` 无 current ANGLE frame 边界。
-- [WU-0314] legacy phone-language 回调现从统一受检 Locale 配置派生确定性语言索引，
-  支持 ISO-639 两/三字母代码且不读取宿主区域设置；第二个 exact APK 单帧干净退出，
-  120 帧 smoke 推进至独立 A32 guest fault，全量 CTest 通过。
-- [WU-0313] legacy Java `process.exit` 现发布线程安全、可查询的 guest 会话退出请求，
-  GLSurfaceView 前端观察请求后执行正常 lifecycle/session teardown；宿主进程不会被 handler
-  直接终止，第二个 exact APK 已完成单帧有界运行并干净退出，全量 CTest 通过。
-- [WU-0312] 第二个 exact Profile 已以纯数据声明 JADX/ELF 共同确认的 30 项 GLMediaPlayer
-  static Java lookup，复用通用 audio implementation id 并保留新增语义的显式命名；真实 APK
-  已越过 audio native init 并推进至下一独立边界，全量 CTest 通过。
-- [WU-0311] 第二个 exact Profile 已以纯数据声明 JADX/ELF 共同确认的 15 项 activity static
-  Java lookup，复用通用 implementation id 且生产代码无游戏分支；真实 APK 已越过 activity
-  native init，推进至下一独立边界，全量 CTest 通过。
-- [WU-0310] GLES1 client-array descriptor 现于创建/reset 后恢复规范 size/type/stride/
-  pointer/buffer/enable 默认值；Dungeon Hunter 已越过状态保存/临时绘制/恢复与全部 GL 初始化，
-  明确推进至独立 JNI 缺口 `sendAppToBackground()V`，全量 CTest 通过。
-- [WU-0309] GLES1 已补齐 current-matrix 右乘、current normal 与六项 eye-space clip plane，
-  fixed shader 对启用平面执行真实裁剪；Dungeon Hunter 目标 ELF 的 74 个 GL import 已达到
-  74/74 显式 handler、缺口 0，实跑保持在独立 client-array type 边界，全量 CTest 437/437。
-## 目标 ELF 尚未实现的 GL 入口
+- [WU-0327] Profile guest lifecycle 新增受检 suspend/resume；挂起期间拒绝 frame/input，
+  Stop 不重复 pause。电影策略与自动触发仍未声明。
+- [WU-0326] legacy big-audio looping play 将 JNI boolean 同步提交到 voice state 与真实
+  Ogg mixer；Release exact APK 300 帧 32.513 秒、退出码 0。
+- [WU-0325] A32 observer slice 调整为 2000 万 tick，降低 Dynarmic 重入开销并保持窗口响应。
+- [WU-0324] GLSurfaceView 把 A32 slice observer 接到非消费式 SDL event pump；长 guest call
+  期间窗口保持响应且不提前消费输入。
+- [WU-0321] guest module finalizer 在 shutdown 与 managed ANGLE surface close 之间执行。
+- [WU-0319] `audio.load_movie` 发布线程安全、递增序号且可查询的电影请求，不伪造宿主播放。
+- [WU-0309] Dungeon Hunter 目标 ELF 74/74 GL imports 获得显式 handler；Asphalt 5 的
+  62/62 目标 GL imports 也已闭合。
 
-以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式
-GLES1 handler 对照得出；当前已实现 62 个，尚余 0 个。它只表示该目标实际导入且尚未
-实现的入口，不代表完整 GLES1 命名空间。
+## M6 起点
 
-- 无。
+已有 Control Service/JSON-RPC、固定步长 Clock、能力账本、结构化日志、GPU 查询和
+Software/ANGLE 黄金帧基础，但 `agent-stdio` 尚未拥有 `run-apk` 的 Profile-backed exact
+guest session；输入、frame capture、检查点和退出状态也未在同一自动化会话闭环。
 
 ## 下一步（按优先级）
 
-1. 临时以电影请求触发 suspend/resume，验证是否越过每帧重复 logo 请求，再声明 Profile 策略。
-2. 建立可自动判定的 exact-APK 主界面/readback 检查，替代人工视觉验收。
-3. 为其他声明音频 source 的 Profile 补齐 OBB/external 前端挂载路径。
+1. 创建 WU-0328：冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
+2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
+3. 把现有 Profile guest session 接入 Agent Control，再实现有界 step/until、输入和 readback。
+4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+   suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞
 
-- 触摸标题页后 guest 每帧重复请求同一 logo MP4；真实 Activity pause/resume 尚未接到
-  已发布的电影请求。
+- 触摸标题页后 guest 每帧重复请求同一 logo MP4；Activity suspend/resume 尚未接到已发布的
+  电影请求。M6 首个端到端场景应稳定复现并机器判定该边界。
+- 最新 M5 WU 记录的 Windows full CTest 为 441/443；既有 ETC1 参数和 VFS 大小写目录树
+  两项失败仍需在 M5 正式验收前复核，不能宣称全量测试全绿。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

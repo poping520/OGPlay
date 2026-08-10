@@ -10,11 +10,13 @@ Work Unit 按所属里程碑存放，创建后不因完成状态移动。文件�
 | M2 | WU-0041..0103 | 完成 | [`m2/`](m2/) | [`M2-ACCEPTANCE.md`](../state/M2-ACCEPTANCE.md) |
 | M3 | WU-0104..0149 | 完成 | [`m3/`](m3/) | [`M3-ACCEPTANCE.md`](../state/M3-ACCEPTANCE.md) |
 | M4 | WU-0150..0198 | 完成 | [`m4/`](m4/) | [`M4-ACCEPTANCE.md`](../state/M4-ACCEPTANCE.md) |
+| M5 | WU-0199..0327 | 能力范围已封板，待里程碑验收 | [`m5/`](m5/) | 三批拆分见 [`m5/README.md`](m5/README.md) |
+| M6 | 从 WU-0328 开始 | 下一阶段：AI 自动化测试 | [`m6/`](m6/) | 规划见 [`m6/README.md`](m6/README.md) |
 
 ## 规则
 
 - 一个 Work Unit 在一次会话内形成一句话目标、显式依赖和机器可判定验收。
-- 新任务直接创建在当前里程碑目录，例如 `docs/tasks/m4/WU-0150.md`。
+- 新任务直接创建在当前里程碑目录，例如下一项任务使用 `docs/tasks/m6/WU-0328.md`。
 - `CURRENT.md` 只保留正在进行和最近完成的少量 WU；完整历史保留在本目录、里程碑
   验收文档和 Git 中。
 - 查找任务可使用 `rg --files docs/tasks | rg 'WU-0105.md'`，不要假定 WU 位于根目录。

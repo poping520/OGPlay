@@ -18,9 +18,10 @@
 | [04 · Android 运行时层](04-android-runtime.md) | Bionic 三版本、syscall、完整 JNI、DEX 决策框架 |
 | [05 · 去硬编码：Title Profile 与 Quirk](05-title-profiles.md) | 把游戏特判变成数据，通用性的核心 |
 | [06 · 用户体验](06-user-experience.md) | 资源导入、输入映射与手柄、前端 |
-| [07 · 开发路线图](07-roadmap.md) | M0–M8 里程碑与出口条件 |
+| [07 · 开发路线图](07-roadmap.md) | M0–M9 里程碑与出口条件 |
 | [08 · 项目命名](08-naming.md) | 命名决定与配套约定 |
 | [09 · 日志与诊断系统](09-logging.md) | 结构化日志、环形缓冲、崩溃诊断包 |
+| [10 · AI 自动化测试](10-ai-automation-testing.md) | exact-APK 场景、检查点、证据包与 AI/CI 共用执行层 |
 
 [03](03-agent-interface.md) 与 [09](09-logging.md) 合起来构成整个可观测性体系：
 前者是**主动查询**，后者是**被动记录**。

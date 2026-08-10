@@ -8,7 +8,7 @@
 
 CLI 支持版本、能力账本、结构化 Agent 请求，以及由精确 Title Profile 驱动的 APK
 预检、M4 NativeActivity 与声明式 GLSurfaceView 交互窗口运行；
-`run-apk --supersample <1..4>` 可显式选择内部渲染倍率，省略时为 1×；GUI 留在 M6。
+`run-apk --supersample <1..4>` 可显式选择内部渲染倍率，省略时为 1×；GUI 留在 M7。
 `run-apk --external-dir <host-dir>` 可把一个独立数据目录按精确 Profile 声明的 external
 guest 根进行 lazy mount；guest 路径不由用户参数或宿主目录名决定。
 交互窗口标题始终显示 FPS 状态：首个采样周期前为 `FPS --`，之后每 0.5 秒按成功
@@ -63,4 +63,5 @@ present 数更新一位小数的实时值。
 
 ## 测试
 
-CLI 参数契约和真实 APK smoke 由 CTest/有界集成命令驱动；GUI 行为测试在 M6 增加。
+CLI 参数契约和真实 APK smoke 由 CTest/有界集成命令驱动；M6 将 smoke 收敛为结构化
+AI 自动化场景，GUI 行为测试在 M7 增加。

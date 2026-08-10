@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M5 能力范围已封板，M6 AI 自动化测试待打开
+更新：2026-08-10 · M6 AI 自动化测试已打开
 
 ## 当前阶段
 
@@ -8,7 +8,7 @@
 - M5 的 `WU-0199..0327` 共 129 项，已冻结为 M5-A Profile/启动基础、M5-B 首个
   exact-title guest/GLES bring-up、M5-C 音频/输入/第二 title/lifecycle 三个批次；历史任务
   不移动、不重编号，正式 M5 验收尚未声明。
-- 下一个开发方向为 M6 AI 自动化测试，从 `WU-0328` 开始；目标是让 AI 与 CI 通过同一
+- M6 AI 自动化测试已从 `WU-0328` 开始；目标是让 AI 与 CI 通过同一
   Profile-backed runner 执行 exact APK 的有界场景、输入、readback、断言和证据收集。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 的 M4 基线均在 commit `f1b59bb` 以 ANGLE、
   warnings-as-errors 和严格全量 CTest 302/302 通过，见 [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
@@ -28,10 +28,12 @@
 
 ## 进行中
 
-- 无；M6 首个 Work Unit 尚未创建。
+- 无；下一项为 WU-0329 `run-apk` loopback Streamable HTTP 接线。
 
 ## 最近完成
 
+- [WU-0328] 传输无关 MCP adapter 已闭合 initialize/ping/tools，`frame_capture` 将最近一次
+  已呈现 RGBA8 guest frame 返回为 PNG ImageContent；无帧明确失败，focused CTest 5/5。
 - [WU-0327] Profile guest lifecycle 新增受检 suspend/resume；挂起期间拒绝 frame/input，
   Stop 不重复 pause。电影策略与自动触发仍未声明。
 - [WU-0326] legacy big-audio looping play 将 JNI boolean 同步提交到 voice state 与真实
@@ -52,9 +54,10 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0328：冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
-2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
-3. 把现有 Profile guest session 接入 Agent Control，再实现有界 step/until、输入和 readback。
+1. 创建 WU-0329：让 `run-apk --mcp-port` 只在 `127.0.0.1` 启动 Streamable HTTP，
+   并把已呈现帧以移动所有权发布到 WU-0328 的 screenshot store。
+2. 冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
+3. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
 4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
@@ -62,7 +65,7 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 - 触摸标题页后 guest 每帧重复请求同一 logo MP4；Activity suspend/resume 尚未接到已发布的
   电影请求。M6 首个端到端场景应稳定复现并机器判定该边界。
-- 最新 M5 WU 记录的 Windows full CTest 为 441/443；既有 ETC1 参数和 VFS 大小写目录树
+- 最新 WU-0328 记录的 Windows full CTest 为 446/448；既有 ETC1 参数和 VFS 大小写目录树
   两项失败仍需在 M5 正式验收前复核，不能宣称全量测试全绿。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

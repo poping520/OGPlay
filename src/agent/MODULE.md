@@ -9,6 +9,10 @@
 
 - `ControlService::Request`：session/run/sym/hle/log/gpu 的传输无关分派。
 - `JsonRpcAdapter::Handle`：逐行 JSON-RPC 2.0 编解码，可由 stdio/TCP/UDS 共用。
+- `FrameSnapshotStore`：以移动所有权保留最近一次已呈现 RGBA8 guest frame；发布新帧时
+  返回旧缓冲供前端回收，读取时只按请求复制，不在每帧编码或复制截图。
+- `McpProtocolAdapter::Handle`：实现 MCP initialize/ping/tools/list/tools/call 最小协议面；
+  `frame_capture` 只读工具把最近帧编码为 MCP `image/png` content，并返回精确序号和尺寸。
 - `gpu.stats/render_targets/capabilities/trace`：从可选 `GpuStateProvider` 序列化强类型
   快照；未连接 provider 明确失败，trace 限额为 1..1000。
 - M6 增加 frame/fs/mem/cpu 分组。
@@ -17,6 +21,8 @@
 
 - 返回结构化结果，不返回供正则刮取的自由文本。
 - 查询与副作用操作分开；未知方法明确返回错误。
+- MCP 截图不得推进 guest、消费输入或伪造无帧成功；无最近帧时返回显式 tool error。
+- MCP 图像最大 64 MiB RGBA8，尺寸、字节数、PNG/Base64 输出必须在发布前完整受检。
 - 调试接口与 CI 断言读取同一份状态。
 - `sym.resolve` 使用 core 的 provider；`hle.unimplemented/null_calls` 直接读取运行时账本。
 - `gpu.*` 不接受 provider 生成的 JSON；过滤与限额经结构化参数传入同一快照接口。

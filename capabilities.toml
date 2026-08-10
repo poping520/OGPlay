@@ -150,6 +150,11 @@ status = "complete"
 test = "tests/agent/control_service_tests.cpp"
 note = "M0 可查 capabilities、unimplemented 与 null_calls"
 
+[agent.mcp_frame_capture]
+status = "complete"
+test = "tests/agent/mcp_protocol_tests.cpp"
+note = "M6 WU-0328 完成 MCP lifecycle/tools 最小协议和最新已呈现 RGBA8 帧的 PNG image tool；HTTP transport 单独记账"
+
 [golden.software_frame]
 status = "complete"
 test = "tests/golden/golden_frame_tests.cpp"

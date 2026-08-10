@@ -366,7 +366,10 @@ target_include_directories(ogplay_session PUBLIC
 )
 ogplay_set_project_warnings(ogplay_session)
 
-add_library(ogplay_agent src/agent/control_service.cpp)
+add_library(ogplay_agent
+    src/agent/control_service.cpp
+    src/agent/mcp_protocol.cpp
+)
 add_library(OGPlay::Agent ALIAS ogplay_agent)
 target_link_libraries(ogplay_agent PUBLIC OGPlay::Core OGPlay::Session)
 ogplay_set_project_warnings(ogplay_agent)
@@ -407,6 +410,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/core/capability_ledger_tests.cpp
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp
+        tests/agent/mcp_protocol_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
         tests/gles/angle_frame_tests.cpp

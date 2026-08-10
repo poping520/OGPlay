@@ -395,9 +395,19 @@ ogplay_set_project_warnings(ogplay_session)
 add_library(ogplay_agent
     src/agent/control_service.cpp
     src/agent/mcp_protocol.cpp
+    src/agent/stb_image_write.cpp
 )
 add_library(OGPlay::Agent ALIAS ogplay_agent)
 target_link_libraries(ogplay_agent PUBLIC OGPlay::Core OGPlay::Session)
+target_include_directories(ogplay_agent SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
+if(MSVC)
+    set_source_files_properties(src/agent/stb_image_write.cpp PROPERTIES
+        COMPILE_OPTIONS "/w")
+else()
+    set_source_files_properties(src/agent/stb_image_write.cpp PROPERTIES
+        COMPILE_OPTIONS "-w")
+endif()
 ogplay_set_project_warnings(ogplay_agent)
 
 add_library(ogplay_frontend

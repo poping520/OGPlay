@@ -205,7 +205,18 @@ target_include_directories(ogplay_loader PUBLIC
 )
 ogplay_set_project_warnings(ogplay_loader)
 
+add_library(ogplay_pvrtc_vendor OBJECT
+    third_party/powervr/PVRTDecompress.cpp
+)
+target_include_directories(ogplay_pvrtc_vendor PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/powervr")
+target_compile_features(ogplay_pvrtc_vendor PRIVATE cxx_std_20)
+set_target_properties(ogplay_pvrtc_vendor PROPERTIES
+    CXX_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON)
+
 add_library(ogplay_gles
+    $<TARGET_OBJECTS:ogplay_pvrtc_vendor>
     src/gles/angle_backend.cpp
     src/gles/angle_frame.cpp
     src/gles/angle_frame_state.cpp
@@ -215,6 +226,7 @@ add_library(ogplay_gles
     src/gles/gles_dispatch.cpp
     src/gles/gles_transfer_state.cpp
     src/gles/guest_transfer.cpp
+    src/gles/pvrtc.cpp
     src/gles/supersample.cpp
 )
 set(OGPLAY_GLES_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -268,7 +280,9 @@ add_library(OGPlay::Gles ALIAS ogplay_gles)
 target_include_directories(ogplay_gles PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    PRIVATE "${OGPLAY_GLES_GENERATED_DIR}"
+    PRIVATE
+        "${OGPLAY_GLES_GENERATED_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/powervr"
 )
 ogplay_set_project_warnings(ogplay_gles)
 target_link_libraries(ogplay_gles PRIVATE OGPlay::Hal OGPlay::Memory)
@@ -522,6 +536,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/cpu/interpreter_tests.cpp
         tests/cpu/m1_guest_sample_tests.cpp
         tests/cpu/thread_group_tests.cpp
+        tests/gles/pvrtc_tests.cpp
         tests/audio/ogg_vorbis_tests.cpp
         tests/audio/java_sound_pool_mixer_tests.cpp
         tests/session/quirk_registry_tests.cpp

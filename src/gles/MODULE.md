@@ -24,6 +24,11 @@
 - `DecodeEtc1Rgba8`：按 Khronos ETC1 64-bit block 规范解码 individual/differential、flip、
   modifier selector 与边缘部分块，输出受检 RGBA8；尺寸、压缩长度和非法 differential
   color 明确失败。
+- `DecodePvrtc1Rgba8`：以薄适配层调用固定 commit、原样 vendor 的 PowerVR Native SDK
+  `PVRTDecompressPVRTC`，解码 PVRTC1 2bpp/4bpp RGB/RGBA；适配层验证二次幂尺寸、最小
+  编码面、精确压缩长度、输入对齐和所有大小溢出，并输出受检 RGBA8。
+  PowerVR vendor 源码、头文件与 license 必须保持上游逐字节哈希；项目差异只能进入薄
+  adapter，不得复制、改写或维护第二份 PVRTC 解码算法。
 - `CreateNativeAngleEglApi`：ANGLE 启用时创建真实 API；关闭时明确抛出 unavailable，绝不
   回退系统 EGL。
 - `data/gles/*.json`：GLES 边界的声明式单一事实源；每个指针显式声明方向、可空性和

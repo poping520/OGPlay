@@ -182,8 +182,27 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
         CHECK(fixture.dispatcher.IsJavaVmBound(
             *ogplay::runtime::FindJniInvokeSlot(name)));
     }
+    constexpr std::string_view class_object_names[]{
+        "FindClass", "GetMethodID", "GetObjectClass", "IsInstanceOf",
+        "NewObject", "NewObjectV", "NewObjectA"};
+    for (const auto name : class_object_names) {
+        CHECK(fixture.dispatcher.IsEnvironmentBound(
+            *ogplay::runtime::FindJniSlot(name)));
+    }
+    constexpr std::string_view instance_types[]{
+        "Object", "Boolean", "Byte", "Char", "Short", "Int", "Long",
+        "Float", "Double", "Void"};
+    constexpr std::string_view call_variants[]{"", "V", "A"};
+    for (const auto type : instance_types) {
+        for (const auto variant : call_variants) {
+            CHECK(fixture.dispatcher.IsEnvironmentBound(
+                *ogplay::runtime::FindJniSlot(
+                    std::string("Call") + std::string(type) + "Method" +
+                    std::string(variant))));
+        }
+    }
     CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(
-        *ogplay::runtime::FindJniSlot("FindClass")));
+        *ogplay::runtime::FindJniSlot("GetFieldID")));
     fixture.Seal();
 }
 

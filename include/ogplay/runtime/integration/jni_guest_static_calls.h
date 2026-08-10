@@ -18,4 +18,9 @@ void BindJniGuestStaticCallSlots(JniGuestCallDispatcher& dispatcher,
                                  JniInvocationEngine& invocations,
                                  memory::AddressSpace& address_space);
 
+void BindJniGuestClassAndInstanceSlots(
+    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+    JniClassRegistry& classes, JniInvocationEngine& invocations,
+    memory::AddressSpace& address_space);
+
 }  // namespace ogplay::runtime

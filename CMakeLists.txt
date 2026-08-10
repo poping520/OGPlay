@@ -515,6 +515,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/jni_environment_tests.cpp
         tests/runtime/jni_guest_abi_tests.cpp
         tests/runtime/jni_guest_bindings_tests.cpp
+        tests/runtime/jni_guest_instance_calls_tests.cpp
         tests/runtime/jni_java_vm_tests.cpp
         tests/runtime/jni_array_tests.cpp
         tests/runtime/jni_class_registry_tests.cpp

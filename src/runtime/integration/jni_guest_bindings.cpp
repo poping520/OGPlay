@@ -294,6 +294,8 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
         });
     BindJniGuestStaticCallSlots(dispatcher, environment, classes, invocations,
                                 address_space);
+    BindJniGuestClassAndInstanceSlots(
+        dispatcher, environment, classes, invocations, address_space);
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetArrayLength"),
         [&environment, &arrays](const JniGuestCallFrame& frame) {

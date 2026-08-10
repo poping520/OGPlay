@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 Asphalt 6 JNI modified UTF-8 字符串槽批次已完成
+更新：2026-08-10 · M8 Asphalt 6 JNI class/object/instance call 批次已完成
 
 ## 当前阶段
 
@@ -29,12 +29,16 @@
 
 ## 进行中
 
-- Asphalt 6 JNI class/object 与 Android framework 批次；新 exact Scenario 已越过
-  modified UTF-8 字符串访问，在第 4 个 native call 停于未绑定 `FindClass`，尚未声称
-  guest 首帧或主界面。
+- Asphalt 6 Android 平台身份 framework 批次；新 exact Scenario 已越过完整 JNI
+  class/object/instance call family，在第 4 个 native call 明确停于未声明
+  `android/os/Build`，尚未声称 guest 首帧或主界面。
 
 ## 最近完成
 
+- [WU-0365] 绑定 FindClass/GetMethodID/GetObjectClass/IsInstanceOf、三种 NewObject 和
+  10 类返回值 × Call/CallV/CallA 共 30 个 instance call 槽；对象保留精确 class，
+  构造失败事务回滚。exact 复采样稳定停于下一类 `android/os/Build`；focused 1/1、
+  full CTest 489/489。
 - [WU-0364] 批量绑定 modified UTF-8 的 length/chars/release/region 四槽；64 KiB guest
   lease arena 支持 NUL copy、isCopy、first-fit 与严格配对。首次 exact 清理暴露并修复
   binder 晚于 string store 析构的宿主崩溃；复采样稳定停于下一类 `FindClass`；focused
@@ -43,11 +47,6 @@
   复用 `/apk/assets` direct-asset VFS，编号音频走真实 `raw_NNN.ogg` loader，Java 原版
   固定/no-op 媒体语义保留逐方法计数和音量状态。exact Scenario 越过前三个 native init，
   新类别首缺口为 `GetStringUTFChars`；focused 1/1、full CTest 487/487。
-- [WU-0362] 一次声明 Device 8、GLGame 18、GameRenderer 4 个 exact Java descriptor；
-  通用平台 handler 提供可注入设备/版本事实、确定性离线网络，以及可查询的 unique-code、
-  background、fully-loaded、键盘和 managed-swap 状态；浏览器/商店/付费/GLive/IGP/trophy
-  无宿主实现时明确失败。exact Scenario 已从第 1 个 native call 推进到第 2 个
-  `GLResLoader.nativeInit`，首个新类别缺口为资源读取；focused 1/1、full CTest 486/486。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -79,8 +78,8 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 批量闭合 JNI class/object 与 Android framework，并补齐 `nativeGetSDFolder`
-   的声明式 working-directory 参数。
+1. 批量闭合 Build/SystemProperties/Settings/Context/Telephony Android 身份 framework，
+   再实现 AudioTrack 完整媒体类与声明式 working-directory 调用。
 2. 按 GLES2 state/resource/query/draw 子批次闭合，然后固化主界面
    Scenario 与三轮 gate。
 

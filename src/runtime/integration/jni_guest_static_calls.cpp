@@ -4,6 +4,9 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -14,6 +17,7 @@
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "ogplay/runtime/jni/jni_object.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -42,6 +46,29 @@ constexpr std::array kStaticCallTypes{
         throw std::logic_error("required JNI guest slot is absent");
     }
     return *slot;
+}
+
+[[nodiscard]] std::uint8_t Read8(memory::AddressSpace& address_space,
+                                 memory::GuestAddress address,
+                                 std::uint64_t thread_id);
+
+[[nodiscard]] std::string ReadCString(
+    memory::AddressSpace& address_space,
+    const memory::GuestAddress address, const std::uint64_t thread_id,
+    const std::string_view field) {
+    constexpr std::size_t kMaximumBytes = 1024;
+    if (address.IsNull()) {
+        throw JniGuestBindingError(
+            "JNI guest " + std::string(field) + " pointer is null");
+    }
+    std::string result;
+    for (std::size_t index = 0; index < kMaximumBytes; ++index) {
+        const auto value = Read8(address_space, address.Add(index), thread_id);
+        if (value == 0U) return result;
+        result.push_back(static_cast<char>(value));
+    }
+    throw JniGuestBindingError(
+        "JNI guest " + std::string(field) + " is not null-terminated");
 }
 
 [[nodiscard]] std::uint8_t Read8(memory::AddressSpace& address_space,
@@ -332,6 +359,133 @@ void BindOne(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
         });
 }
 
+class InstanceObjects final {
+public:
+    [[nodiscard]] JniObjectIdentity Allocate(
+        const JniObjectIdentity java_class) {
+        const auto object = AllocateJniHostObjectIdentity();
+        std::scoped_lock lock(mutex_);
+        objects_.emplace(object.value, java_class);
+        return object;
+    }
+
+    void Forget(const JniObjectIdentity object) {
+        std::scoped_lock lock(mutex_);
+        objects_.erase(object.value);
+    }
+
+    [[nodiscard]] JniObjectIdentity ClassOf(
+        const JniObjectIdentity object) const {
+        std::scoped_lock lock(mutex_);
+        const auto found = objects_.find(object.value);
+        if (object.domain != JniObjectDomain::host || found == objects_.end()) {
+            throw JniGuestBindingError(
+                "JNI guest receiver is not a constructed instance");
+        }
+        return found->second;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::map<std::uint64_t, JniObjectIdentity> objects_;
+};
+
+[[nodiscard]] std::vector<JniValue> ReadArguments(
+    memory::AddressSpace& address_space, const JniGuestCallFrame& frame,
+    const JniMethodDescriptor& descriptor, const JniArgumentSource source) {
+    switch (source) {
+    case JniArgumentSource::variadic:
+        return ReadVariadicArguments(address_space, frame, descriptor);
+    case JniArgumentSource::va_list:
+        return ReadVaListArguments(address_space, frame, descriptor);
+    case JniArgumentSource::value_array:
+        return ReadValueArrayArguments(address_space, frame, descriptor);
+    }
+    throw JniGuestBindingError("JNI guest argument source is invalid");
+}
+
+void BindInstanceCall(
+    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+    JniClassRegistry& classes, JniInvocationEngine& invocations,
+    memory::AddressSpace& address_space,
+    const std::shared_ptr<InstanceObjects>& objects, const StaticCallType type,
+    const std::string_view variant, const JniArgumentSource source) {
+    const auto name = std::string("Call") + std::string(type.suffix) +
+                      "Method" + std::string(variant);
+    dispatcher.BindEnvironment(
+        EnvironmentSlot(name),
+        [&environment, &classes, &invocations, &address_space, objects, type,
+         source, name](const JniGuestCallFrame& frame) {
+            const auto receiver = JniReference{frame.registers[1]};
+            const auto identity = environment.ResolveObjectForHle(
+                frame.thread_id, receiver);
+            if (!identity.has_value()) {
+                throw JniGuestBindingError(
+                    name + " requires a valid object reference");
+            }
+            const auto receiver_class = objects->ClassOf(*identity);
+            const auto method =
+                classes.ResolveMethod(JniMethodId{frame.registers[2]});
+            if (!ResultMatches(method.layout.result.kind, type.result)) {
+                throw JniGuestBindingError(
+                    name + " return type does not match method descriptor");
+            }
+            const auto arguments = ReadArguments(
+                address_space, frame, method.layout, source);
+            return EncodeResult(
+                invocations.InvokeVirtual(
+                    frame.thread_id, receiver, receiver_class, method.id,
+                    arguments, source),
+                method.layout.result.kind);
+        });
+}
+
+void BindNewObject(
+    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+    JniClassRegistry& classes, JniInvocationEngine& invocations,
+    memory::AddressSpace& address_space,
+    const std::shared_ptr<InstanceObjects>& objects,
+    const std::string_view variant, const JniArgumentSource source) {
+    const auto name = std::string("NewObject") + std::string(variant);
+    dispatcher.BindEnvironment(
+        EnvironmentSlot(name),
+        [&environment, &classes, &invocations, &address_space, objects, source,
+         name](const JniGuestCallFrame& frame) {
+            const auto java_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!java_class.has_value()) {
+                throw JniGuestBindingError(
+                    name + " requires a valid class reference");
+            }
+            const auto method =
+                classes.ResolveMethod(JniMethodId{frame.registers[2]});
+            if (method.declaration.is_static ||
+                method.declaration.name != "<init>" ||
+                method.layout.result.kind != JniTypeKind::void_value) {
+                throw JniGuestBindingError(
+                    name + " requires a void instance constructor");
+            }
+            const auto arguments = ReadArguments(
+                address_space, frame, method.layout, source);
+            const auto object = objects->Allocate(*java_class);
+            JniReference reference;
+            try {
+                reference = environment.PublishLocalObject(
+                    frame.thread_id, object);
+                static_cast<void>(invocations.InvokeNonvirtual(
+                    frame.thread_id, reference, *java_class, *java_class,
+                    method.id, arguments, source));
+                return EncodeResult(JniValue{reference}, JniTypeKind::object);
+            } catch (...) {
+                if (!reference.IsNull()) {
+                    environment.DeleteLocalRef(frame.thread_id, reference);
+                }
+                objects->Forget(object);
+                throw;
+            }
+        });
+}
+
 }  // namespace
 
 void BindJniGuestStaticCallSlots(JniGuestCallDispatcher& dispatcher,
@@ -346,6 +500,106 @@ void BindJniGuestStaticCallSlots(JniGuestCallDispatcher& dispatcher,
                 type, "V", JniArgumentSource::va_list);
         BindOne(dispatcher, environment, classes, invocations, address_space,
                 type, "A", JniArgumentSource::value_array);
+    }
+}
+
+void BindJniGuestClassAndInstanceSlots(
+    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+    JniClassRegistry& classes, JniInvocationEngine& invocations,
+    memory::AddressSpace& address_space) {
+    const auto objects = std::make_shared<InstanceObjects>();
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("FindClass"),
+        [&environment, &classes,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto name = ReadCString(
+                address_space, memory::GuestAddress{frame.registers[1]},
+                frame.thread_id, "class name");
+            const auto java_class = classes.FindClass(name);
+            if (!java_class.has_value()) {
+                throw JniGuestBindingError(
+                    "JNI guest class is not declared: " + name);
+            }
+            return EncodeResult(
+                JniValue{environment.PublishLocalObject(
+                    frame.thread_id, *java_class)},
+                JniTypeKind::object);
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("GetMethodID"),
+        [&environment, &classes,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto java_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!java_class.has_value()) {
+                throw JniGuestBindingError(
+                    "GetMethodID requires a valid class reference");
+            }
+            const auto name = ReadCString(
+                address_space, memory::GuestAddress{frame.registers[2]},
+                frame.thread_id, "method name");
+            const auto descriptor = ReadCString(
+                address_space, memory::GuestAddress{frame.registers[3]},
+                frame.thread_id, "method descriptor");
+            const auto method = classes.GetMethodId(
+                *java_class, name, descriptor, false);
+            if (!method.has_value()) {
+                throw JniGuestBindingError(
+                    "JNI guest instance method is not declared: " +
+                    name + descriptor);
+            }
+            return EncodeResult(JniValue{JniInt{
+                                    static_cast<JniInt>(method->Value())}},
+                                JniTypeKind::integer);
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("GetObjectClass"),
+        [&environment, objects](const JniGuestCallFrame& frame) {
+            const auto object = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!object.has_value()) {
+                throw JniGuestBindingError(
+                    "GetObjectClass requires a valid object reference");
+            }
+            return EncodeResult(
+                JniValue{environment.PublishLocalObject(
+                    frame.thread_id, objects->ClassOf(*object))},
+                JniTypeKind::object);
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("IsInstanceOf"),
+        [&environment, &classes,
+         objects](const JniGuestCallFrame& frame) {
+            const auto object = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            const auto java_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[2]});
+            if (!java_class.has_value()) {
+                throw JniGuestBindingError(
+                    "IsInstanceOf requires a valid class reference");
+            }
+            const auto matches = !object.has_value() || classes.IsAssignableFrom(
+                *java_class, objects->ClassOf(*object));
+            return EncodeResult(
+                JniValue{static_cast<JniBoolean>(matches)},
+                JniTypeKind::boolean);
+        });
+    BindNewObject(dispatcher, environment, classes, invocations,
+                  address_space, objects, "", JniArgumentSource::variadic);
+    BindNewObject(dispatcher, environment, classes, invocations,
+                  address_space, objects, "V", JniArgumentSource::va_list);
+    BindNewObject(dispatcher, environment, classes, invocations,
+                  address_space, objects, "A", JniArgumentSource::value_array);
+    for (const auto type : kStaticCallTypes) {
+        BindInstanceCall(dispatcher, environment, classes, invocations,
+                         address_space, objects, type, "",
+                         JniArgumentSource::variadic);
+        BindInstanceCall(dispatcher, environment, classes, invocations,
+                         address_space, objects, type, "V",
+                         JniArgumentSource::va_list);
+        BindInstanceCall(dispatcher, environment, classes, invocations,
+                         address_space, objects, type, "A",
+                         JniArgumentSource::value_array);
     }
 }
 

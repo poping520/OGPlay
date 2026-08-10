@@ -141,6 +141,11 @@
   length/chars/release/region 必须解析统一 string store，`isCopy` 明确写 true，lease
   以 string identity + pointer + token 配对并 first-fit 回收。arena owner 不得在析构时
   反向访问可能已销毁的 string store；坏引用、region、输出、release 或容量明确失败。
+- JNI guest class/object/instance family 只解析 class registry 已声明的精确名称与 instance
+  method descriptor；三种 NewObject 仅接受 void `<init>` 并在失败时回滚 ref/object 映射。
+  每个 host object 保存精确 class identity，GetObjectClass/IsInstanceOf 与 30 个普通
+  instance Call/CallV/CallA 复用 invocation engine 的 assignability、argument/return 校验；
+  未声明 class/method、伪 receiver 或返回类型不匹配必须明确失败。
 - `PreflightAndroidGuestLink` 复用生产 Bionic namespace 与 Android boundary 完成映射和
   重定位但不执行 guest；报告 guest/boundary 模块及 relocation 数，任一缺失导入明确失败。
 - `InitializeApi19GuestProcess` 事务映射统一 root TLS/thread-info/preinit、4 MiB 栈、

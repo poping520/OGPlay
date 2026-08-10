@@ -202,6 +202,7 @@ public:
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;
     [[nodiscard]] JniClassRegistry& Classes() noexcept;
+    void InitializeJniLibrary();
     void OpenManagedSurface();
     void PresentManagedSurface();
     void CloseManagedSurface();

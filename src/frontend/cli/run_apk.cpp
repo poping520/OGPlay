@@ -645,6 +645,7 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                     guest->PushInput(input);
                 },
             });
+        guest->InitializeJniLibrary();
         static_cast<void>(lifecycle->Start());
         agent::McpLifecycleState mcp_lifecycle{
             agent::McpLifecycleState::running};

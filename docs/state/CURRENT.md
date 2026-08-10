@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 guest JNI library load 规划批次已完成
+更新：2026-08-10 · M8 guest JNI library lifecycle 集成批次已完成
 
 ## 当前阶段
 
@@ -29,12 +29,16 @@
 
 ## 进行中
 
-- Asphalt 6 下一批为 Profile 声明预装与 JNI_OnLoad 执行顺序集成；反汇编确认此前 license
-  memory fault 是 root `JNI_OnLoad` 未执行导致 JavaVM 为 null，试运行则证明 OnLoad 必须在
-  `GLUtils/SUtils` 等 Profile class 装入 registry 后执行。尚未声称首帧或主界面。
+- Asphalt 6 exact 已按 constructors→Profile Java registry→root JNI_OnLoad→native callback
+  执行，越过此前 null JavaVM 与 OnLoad 全部 class/method lookup；下一批按 GLES1
+  state/string/query/resource 静态盘点集中闭合。尚未声称首帧或主界面。
 
 ## 最近完成
 
+- [WU-0370] session 增加一次性 root JNI library 初始化，GLSurfaceView 前端只在 Profile
+  class registry 装配后、startup callback 前调用；静态盘点并一次声明 SUtils、Device、
+  GameInstaller 的 OnLoad lookup。exact 越过 JNI_OnLoad 与前五个 startup callback，稳定
+  停在 GameRenderer nativeInit 的 GLES1 string query；full CTest 494/494。
 - [WU-0369] 冻结 root-only JNI_OnLoad exported function 选择、JavaVM/null A32 调用帧与
   JNI 1.1/1.2/1.4/1.6 返回校验；不误调用 ELF dependency 同名导出，执行顺序接线由
   WU-0370 承接；focused 2/2、full CTest 494/494。
@@ -49,10 +53,6 @@
   descriptor/type/static-kind 严格校验，word、符号扩展、float 与 long/double 栈参数遵循
   A32 soft-float ABI，为整组 Android 平台身份常量提供可复用 field store 通路；focused
   1/1、full CTest 490/490，exact 复采样仍精确停于下一批 `android/os/Build` 类声明。
-- [WU-0365] 绑定 FindClass/GetMethodID/GetObjectClass/IsInstanceOf、三种 NewObject 和
-  10 类返回值 × Call/CallV/CallA 共 30 个 instance call 槽；对象保留精确 class，
-  构造失败事务回滚。exact 复采样稳定停于下一类 `android/os/Build`；focused 1/1、
-  full CTest 489/489。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -77,9 +77,8 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 预装 Profile Java class 并按 constructors→JNI_OnLoad→native callback 执行，再批量闭合
-   license/VFS 与声明式 working-directory 调用。
-2. 按 GLES2 state/resource/query/draw 子批次闭合，然后固化主界面
+1. 静态反汇编与 exact trace 合并盘点 GLES1 string/state/query/resource 缺口，按类别批量闭合。
+2. 闭合后续 license/VFS 与声明式 working-directory 调用，再固化主界面
    Scenario 与三轮 gate。
 
 ## 阻塞

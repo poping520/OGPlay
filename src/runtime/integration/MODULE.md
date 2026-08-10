@@ -171,8 +171,10 @@
   finalizer 把宿主生命周期线程永久阻塞。
 - guest JNI library lifecycle 只从显式 root module 自身选择唯一 exported/defined function
   `JNI_OnLoad`，不误调用 ELF 依赖的同名导出；调用帧固定为统一 guest JavaVM、null reserved，
-  保留 ARM/Thumb symbol state，返回只接受 JNI 1.1/1.2/1.4/1.6。Profile class 预装与实际
-  constructors→JNI_OnLoad→native callback 顺序由后续集成 WU 完成。
+  保留 ARM/Thumb symbol state，返回只接受 JNI 1.1/1.2/1.4/1.6。
+- `AndroidGuestCallSession::InitializeJniLibrary` 只可在运行中的会话调用一次；调用方必须在
+  ELF constructors 完成并注册所需 Java class 后显式调用，成功或 root 无 OnLoad 时才发布
+  library-ready。失败、重复或停止后调用不得伪造完成。
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求；会话只发布最新请求与累计次数，不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。

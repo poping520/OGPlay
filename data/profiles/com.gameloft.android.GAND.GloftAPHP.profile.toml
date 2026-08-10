@@ -53,8 +53,24 @@ method = [
   { name = "d", sig = "()[B", impl = "application.version_bytes", static = true },
   { name = "IsWifiEnable", sig = "()Z", impl = "network.wifi_enabled", static = true },
   { name = "getHostName", sig = "()[B", impl = "device.host_name_bytes", static = true },
+  { name = "getUserAgent", sig = "()Ljava/lang/String;", impl = "network.user_agent", static = true },
   { name = "e", sig = "(I)V", impl = "device.set_unique_code", static = true },
   { name = "f", sig = "()[B", impl = "network.user_agent_bytes", static = true },
+]
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAPHP/GLUtils/SUtils"
+method = [
+  { name = "getPreferenceString", sig = "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", impl = "preferences.get_string", static = true },
+  { name = "getPackage", sig = "()Ljava/lang/String;", impl = "application.package", static = true },
+  { name = "getSaveFolder", sig = "()Ljava/lang/String;", impl = "storage.save_folder", static = true },
+  { name = "getContext", sig = "()Landroid/content/Context;", impl = "activity.current", static = true },
+]
+
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftAPHP/installer/GameInstaller"
+method = [
+  { name = "Exit", sig = "()V", impl = "process.exit", static = true },
 ]
 
 [[java.class]]

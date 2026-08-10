@@ -17,6 +17,8 @@ guest 根进行 lazy mount；guest 路径不由用户参数或宿主目录名决
 `--mcp-port <1..65535>` 保留为自定义端口入口，二者均省略时不创建 listener。
 `--mcp-manual-step` 仅与上述 MCP transport 和 `gl_surface_view` Profile 组合；窗口隐藏，
 启动后不自行推进，guest 主线程逐一消费 step/suspend/resume/shutdown 命令并发布原子状态。
+GLSurfaceView 启动固定按 ELF constructors、Profile Java registry、root JNI_OnLoad、Profile
+startup callback 排序；JNI_OnLoad 完成前不得进入标题 native callback。
 `McpPointerDispatcher` 在 guest 主线程每步最多从 MCP queue 取得一个 pointer phase，将
 button/motion 保真映射为通用 boundary input，并与 `MouseTouchMapper` 的已捕获桌面手势互斥。
 交互窗口标题始终显示 FPS 状态：首个采样周期前为 `FPS --`，之后每 0.5 秒按成功
@@ -70,6 +72,8 @@ present 数更新一位小数的实时值。
   managed ANGLE surface；phase、class、export 和参数全部来自已匹配 Profile。Profile
   引用完整 direct-asset implementation set 时，CLI 必须把 APK `assets/` 路径和尺寸懒挂载
   到 `/apk` VFS，首次读取才经统一 loader 解压并校验；只把该组通用 ID 交给 guest session。
+- `ProfileGuestLifecycle::Create` 完成 class registry 装配后，前端必须成功执行一次 guest
+  JNI library 初始化才可调用 lifecycle `Start`；错误不得回退为直接执行 startup phase。
 - 前端必须把 Profile 已验证的 `runtime.maximum_ticks_per_call` 原样交给通用 guest session；
   不得按标题、生命周期阶段或宿主性能改写预算。
 - `gl_surface_view` 帧循环必须观察 guest 的显式进程退出请求，并在请求后通过正常

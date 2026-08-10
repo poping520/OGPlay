@@ -3,7 +3,7 @@
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"
-note = "M0 完成环形缓冲、sink、限流、JSONL、符号 provider、帧标记与诊断包"
+note = "M0 完成环形缓冲、sink、限流、符号 provider、帧标记与诊断包；M6 WU-0335 将 JSONL 与诊断 JSON 统一迁移到严格 yyjson writer"
 
 [core.json]
 status = "complete"
@@ -18,7 +18,7 @@ note = "M0 支持账本读取、未实现命中聚合及相对 Git 基线的单�
 [agent.control_service]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"
-note = "M0 完成传输无关分派、JSON-RPC 参数与标准错误模型"
+note = "M0 完成传输无关分派、JSON-RPC 参数与标准错误模型；M6 WU-0335 统一以 core yyjson 严格解析和构造所有响应"
 
 [agent.session]
 status = "complete"

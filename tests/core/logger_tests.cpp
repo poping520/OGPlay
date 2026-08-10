@@ -132,6 +132,19 @@ TEST_CASE("diagnostic bundle contains ring, session and unimplemented state") {
     std::filesystem::remove_all(directory);
 }
 
+TEST_CASE("diagnostic bundle rejects malformed session JSON") {
+    const auto directory = std::filesystem::temp_directory_path() /
+                           "ogplay-invalid-diagnostic-test";
+    std::filesystem::remove_all(directory);
+    ogplay::core::Logger logger;
+    ogplay::core::CapabilityLedger ledger;
+
+    CHECK_THROWS_AS(logger.DumpDiagnosticBundle(directory, ledger, "summary",
+                                                R"({"phase":})"),
+                    std::invalid_argument);
+    std::filesystem::remove_all(directory);
+}
+
 TEST_CASE("console and file sinks render text and JSONL") {
     std::FILE* console_file = nullptr;
 #ifdef _MSC_VER

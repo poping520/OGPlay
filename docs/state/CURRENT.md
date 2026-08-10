@@ -28,10 +28,20 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0331 exact-APK 场景/checkpoint schema 与严格自检。
+- 无；下一项为 WU-0336 exact-APK 场景/checkpoint schema 与严格自检。
 
 ## 最近完成
 
+- [WU-0335] Control Service、JSON-RPC、Logger JSONL 与诊断包清除手写 JSON，统一经 core
+  yyjson 严格解析/构造；focused 31/31、Windows full CTest 460/460。
+- [WU-0334] MCP envelope/params/schema 迁移到严格 yyjson；语法、重复键、超限、非法 id、
+  嵌套字段误取和工具参数均明确失败，真实 loopback transport 保持通过。
+- [WU-0333] 固定接入 yyjson 0.12.0，并发布不暴露第三方类型的 RAII `JsonDocument`/
+  `JsonWriter`；1 MiB、64 层、UTF-8、重复键与精确整数均有机器契约。
+- [WU-0332] VFS host mount 改用三平台可构造的已有 guest path 大小写折叠冲突夹具，
+  复核失败事务不部分发布；原生产实现无需改变。
+- [WU-0331] Windows ANGLE 不发布 ETC1 扩展时按 Khronos 规范解码为 RGBA8 上传；
+  individual/differential/selector/flip/partial block 均有测试，Asphalt 5 2 帧退出码 0。
 - [WU-0330] `run-apk --mcp-port` 默认关闭且只接受本机端口；指定 Asphalt 5 exact APK
   经真实 MCP 取得 sequence 2 的 800×480 Gameloft PNG，2 帧正常退出码 0，focused 9/9。
 - [WU-0329] loopback Streamable HTTP transport 已固定 `127.0.0.1` 和 `/mcp`，真实 TCP
@@ -58,7 +68,7 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0331，冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
+1. 创建 WU-0336，冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
 2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
 3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
@@ -67,7 +77,6 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 - 触摸标题页后 guest 每帧重复请求同一 logo MP4；Activity suspend/resume 尚未接到已发布的
   电影请求。M6 首个端到端场景应稳定复现并机器判定该边界。
-- 最新 WU-0330 记录的 Windows full CTest 为 449/451；既有 ETC1 参数和 VFS 大小写目录树
-  两项失败仍需在 M5 正式验收前复核，不能宣称全量测试全绿。
+- 最新 WU-0335 记录的 Windows full CTest 为 460/460；先前 ETC1 与 VFS 两项阻塞已清除。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

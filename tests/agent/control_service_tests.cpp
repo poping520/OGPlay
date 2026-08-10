@@ -136,6 +136,12 @@ TEST_CASE("JSON-RPC uses standard parse, request and method errors") {
               .find("\"code\":-32600") != std::string::npos);
     CHECK(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"missing"})")
               .find("\"code\":-32601") != std::string::npos);
+    CHECK(fixture.rpc.Handle(
+              R"({"jsonrpc":"2.0","id":1,"id":2,"method":"system.ping"})")
+              .find("\"code\":-32600") != std::string::npos);
+    CHECK(fixture.rpc.Handle(
+              R"({"jsonrpc":"2.0","id":1,"method":"system.ping","nested":{"method":"missing"}})")
+              .find("\"result\"") != std::string::npos);
 }
 
 TEST_CASE("GPU agent queries serialize strong typed provider snapshots") {

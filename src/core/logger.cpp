@@ -3,39 +3,15 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/json.h"
 
 namespace ogplay::core {
 namespace {
-
-std::string JsonString(const std::string_view input) {
-    std::ostringstream output;
-    output << '"';
-    for (const char raw_character : input) {
-        const auto character = static_cast<unsigned char>(raw_character);
-        switch (character) {
-        case '\\': output << "\\\\"; break;
-        case '"': output << "\\\""; break;
-        case '\n': output << "\\n"; break;
-        case '\r': output << "\\r"; break;
-        case '\t': output << "\\t"; break;
-        default:
-            if (character < 0x20U) {
-                output << "\\u" << std::hex << std::setw(4) << std::setfill('0')
-                       << static_cast<unsigned int>(character) << std::dec;
-            } else {
-                output << static_cast<char>(character);
-            }
-        }
-    }
-    output << '"';
-    return output.str();
-}
 
 std::string Hex(const std::uint64_t value) {
     std::ostringstream output;
@@ -70,31 +46,32 @@ std::string RenderFieldText(const FieldValue& value,
     }, value);
 }
 
-std::string RenderFieldJson(const FieldValue& value,
-                            const GuestSymbolProvider* symbols) {
-    return std::visit([symbols](const auto& item) -> std::string {
+JsonWriter::Value RenderFieldJson(JsonWriter& writer, const FieldValue& value,
+                                  const GuestSymbolProvider* symbols) {
+    return std::visit([&writer, symbols](const auto& item) -> JsonWriter::Value {
         using Value = std::decay_t<decltype(item)>;
         if constexpr (std::is_same_v<Value, std::string>) {
-            return JsonString(item);
+            return writer.String(item);
         } else if constexpr (std::is_same_v<Value, bool>) {
-            return item ? "true" : "false";
+            return writer.Bool(item);
         } else if constexpr (std::is_same_v<Value, GuestAddress>) {
-            std::ostringstream output;
-            output << "{\"address\":" << item.value;
+            const auto object = writer.Object();
+            writer.AddUnsignedInteger(object, "address", item.value);
             if (symbols != nullptr) {
                 if (const auto symbol = symbols->Resolve(item.value)) {
-                    output << ",\"module\":" << JsonString(symbol->module)
-                           << ",\"symbol\":" << JsonString(symbol->symbol)
-                           << ",\"offset\":" << symbol->offset
-                           << ",\"source_hint\":" << JsonString(symbol->source_hint);
+                    writer.AddString(object, "module", symbol->module);
+                    writer.AddString(object, "symbol", symbol->symbol);
+                    writer.AddUnsignedInteger(object, "offset", symbol->offset);
+                    writer.AddString(object, "source_hint", symbol->source_hint);
                 }
             }
-            output << '}';
-            return output.str();
+            return object;
+        } else if constexpr (std::is_same_v<Value, std::int64_t>) {
+            return writer.Integer(item);
+        } else if constexpr (std::is_same_v<Value, std::uint64_t>) {
+            return writer.UnsignedInteger(item);
         } else {
-            std::ostringstream output;
-            output << item;
-            return output.str();
+            return writer.Real(item);
         }
     }, value);
 }
@@ -299,22 +276,22 @@ std::string Logger::RenderJson(const LogRecord& record) const {
     }
     const auto wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         record.wall.time_since_epoch()).count();
-    std::ostringstream output;
-    output << "{\"ts_ms\":" << wall_ms << ",\"frame\":" << record.frame
-           << ",\"guest_ticks\":" << record.guest_ticks
-           << ",\"host_thread\":" << record.host_thread
-           << ",\"guest_thread\":" << record.guest_thread
-           << ",\"level\":" << JsonString(ToString(record.level))
-           << ",\"category\":" << JsonString(record.category)
-           << ",\"message\":" << JsonString(record.message) << ",\"fields\":{";
-    bool first = true;
+    JsonWriter writer;
+    const auto root = writer.Object();
+    writer.AddInteger(root, "ts_ms", wall_ms);
+    writer.AddUnsignedInteger(root, "frame", record.frame);
+    writer.AddUnsignedInteger(root, "guest_ticks", record.guest_ticks);
+    writer.AddUnsignedInteger(root, "host_thread", record.host_thread);
+    writer.AddUnsignedInteger(root, "guest_thread", record.guest_thread);
+    writer.AddString(root, "level", ToString(record.level));
+    writer.AddString(root, "category", record.category);
+    writer.AddString(root, "message", record.message);
+    const auto fields = writer.Object();
     for (const auto& field : record.fields) {
-        if (!first) output << ',';
-        first = false;
-        output << JsonString(field.key) << ':' << RenderFieldJson(field.value, symbols.get());
+        writer.Add(fields, field.key, RenderFieldJson(writer, field.value, symbols.get()));
     }
-    output << "}}";
-    return output.str();
+    writer.Add(root, "fields", fields);
+    return writer.Serialize(root);
 }
 
 std::optional<SymbolizedAddress> Logger::ResolveGuestAddress(
@@ -353,22 +330,30 @@ void Logger::DumpDiagnosticBundle(const std::filesystem::path& directory,
                                   const std::string_view session_json) const {
     std::filesystem::create_directories(directory);
     WriteUtf8(directory / "summary.txt", summary);
-    WriteUtf8(directory / "session.json", session_json);
+    JsonParseError parse_error;
+    auto session = JsonDocument::ParseStrict(session_json, parse_error);
+    if (!session) {
+        throw std::invalid_argument("session diagnostic JSON is invalid: " +
+                                    parse_error.message);
+    }
+    JsonWriter session_writer;
+    WriteUtf8(directory / "session.json",
+              session_writer.Serialize(session_writer.Copy(session->Root())));
     DumpRingJsonl(directory / "ring.jsonl");
 
-    std::ostringstream unimplemented;
-    unimplemented << "{\"unimplemented\":[";
-    bool first = true;
+    JsonWriter writer;
+    const auto root = writer.Object();
+    const auto unimplemented = writer.Array();
     for (const auto& hit : ledger.Unimplemented()) {
-        if (!first) unimplemented << ',';
-        first = false;
-        unimplemented << "{\"symbol\":" << JsonString(hit.id)
-                      << ",\"count\":" << hit.count
-                      << ",\"first_lr\":" << hit.first_lr
-                      << ",\"last_lr\":" << hit.last_lr << '}';
+        const auto item = writer.Object();
+        writer.AddString(item, "symbol", hit.id);
+        writer.AddUnsignedInteger(item, "count", hit.count);
+        writer.AddUnsignedInteger(item, "first_lr", hit.first_lr);
+        writer.AddUnsignedInteger(item, "last_lr", hit.last_lr);
+        writer.Append(unimplemented, item);
     }
-    unimplemented << "]}";
-    WriteUtf8(directory / "unimplemented.json", unimplemented.str());
+    writer.Add(root, "unimplemented", unimplemented);
+    WriteUtf8(directory / "unimplemented.json", writer.Serialize(root));
 }
 
 std::string_view ToString(const LogLevel level) noexcept {

@@ -2,12 +2,31 @@
 
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 
 #if OGPLAY_HAS_ANGLE
 #include <GLES2/gl2.h>
 #endif
 
 namespace ogplay::gles {
+namespace {
+
+[[nodiscard]] bool HasExtensionToken(const std::string_view extensions,
+                                     const std::string_view token) {
+    std::size_t offset{};
+    while (offset < extensions.size()) {
+        const auto end = extensions.find(' ', offset);
+        const auto candidate = extensions.substr(
+            offset, end == std::string_view::npos ? extensions.size() - offset
+                                                   : end - offset);
+        if (candidate == token) return true;
+        if (end == std::string_view::npos) break;
+        offset = end + 1U;
+    }
+    return false;
+}
+
+}  // namespace
 
 void AngleFrame::SetCapability(const std::uint32_t capability,
                                const bool enabled) {
@@ -175,7 +194,15 @@ std::string AngleFrame::GetString(const std::uint32_t parameter) {
 #if OGPLAY_HAS_ANGLE
     const auto* value = glGetString(parameter); RequireNoError("glGetString");
     if (value == nullptr) throw std::runtime_error("glGetString returned null");
-    return reinterpret_cast<const char*>(value);
+    auto result = std::string(reinterpret_cast<const char*>(value));
+    constexpr std::uint32_t kGlExtensions = 0x1f03U;
+    constexpr std::string_view kPvrtc =
+        "GL_IMG_texture_compression_pvrtc";
+    if (parameter == kGlExtensions && !HasExtensionToken(result, kPvrtc)) {
+        if (!result.empty()) result.push_back(' ');
+        result.append(kPvrtc);
+    }
+    return result;
 #else
     static_cast<void>(parameter); throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif

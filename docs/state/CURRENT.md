@@ -28,10 +28,22 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0336 exact-APK 场景/checkpoint schema 与严格自检。
+- 无；下一项为 WU-0341 exact-APK 场景/checkpoint schema 与严格自检。
 
 ## 最近完成
 
+- [WU-0340] ANGLE 缺少 PVRTC 时调用官方 decoder 转为 RGBA8 上传；MCP sequence 686 的
+  800×480 帧纹理清晰，Release 300 帧 15.058 秒正常退出，
+  Windows full CTest 464/464。
+- [WU-0339] 原样 vendor PowerVR Native SDK 固定 commit 的 `PVRTDecompress.cpp/.h` 和 MIT
+  license；OGPlay 薄 adapter 只做校验与调用，非均匀 twiddled word 黄金哈希在内 focused
+  CTest 3/3 通过。
+- [WU-0338] A32 tick exhaustion 诊断新增 consumed、PC、LR，精确定位 Asphalt 5 PVRTC
+  guest 软件解压路径，不提高 Profile tick budget。
+- [WU-0337] Profile phase 失败先中断 guest wait 再清理，清理错误不覆盖原始 native call，
+  Asphalt 5 原“未响应”复现可观测退出。
+- [WU-0336] futex 新增失败清理 sticky interruption，当前及未来匹配 wait 明确返回
+  `-EINTR`，普通 value mismatch、WAKE N 与普通全局唤醒语义不变。
 - [WU-0335] Control Service、JSON-RPC、Logger JSONL 与诊断包清除手写 JSON，统一经 core
   yyjson 严格解析/构造；focused 31/31、Windows full CTest 460/460。
 - [WU-0334] MCP envelope/params/schema 迁移到严格 yyjson；语法、重复键、超限、非法 id、
@@ -55,8 +67,6 @@
 - [WU-0325] A32 observer slice 调整为 2000 万 tick，降低 Dynarmic 重入开销并保持窗口响应。
 - [WU-0324] GLSurfaceView 把 A32 slice observer 接到非消费式 SDL event pump；长 guest call
   期间窗口保持响应且不提前消费输入。
-- [WU-0321] guest module finalizer 在 shutdown 与 managed ANGLE surface close 之间执行。
-- [WU-0319] `audio.load_movie` 发布线程安全、递增序号且可查询的电影请求，不伪造宿主播放。
 - [WU-0309] Dungeon Hunter 目标 ELF 74/74 GL imports 获得显式 handler；Asphalt 5 的
   62/62 目标 GL imports 也已闭合。
 
@@ -68,7 +78,7 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0336，冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
+1. 创建 WU-0341，冻结 exact-APK 场景/checkpoint 纯数据 schema 与严格自检。
 2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
 3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
@@ -77,6 +87,7 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 - 触摸标题页后 guest 每帧重复请求同一 logo MP4；Activity suspend/resume 尚未接到已发布的
   电影请求。M6 首个端到端场景应稳定复现并机器判定该边界。
-- 最新 WU-0335 记录的 Windows full CTest 为 460/460；先前 ETC1 与 VFS 两项阻塞已清除。
+- WU-0340 的 MCP sequence 686、800×480 原始帧已确认纹理清晰；Release exact APK 300 帧
+  与 Windows full CTest 464/464 均通过。
 
 长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

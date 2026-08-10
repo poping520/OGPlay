@@ -635,6 +635,11 @@ status = "complete"
 test = "tests/gles/etc1_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
 note = "WU-0331 按 Khronos ETC1 block 规范闭合 individual/differential、selector、flip、partial block 与非法输入，并仅在 ANGLE 缺少原生/lossy ETC1 时回退"
 
+[gles.pvrtc1_decode_fallback]
+status = "complete"
+test = "tests/gles/pvrtc_tests.cpp; Asphalt 5 exact APK bounded 300-frame smoke"
+note = "WU-0339 原样 vendor 固定 commit 的 PowerVR Native SDK PVRTDecompress.cpp/.h，薄 adapter 闭合校验；WU-0340 在 ANGLE 无原生扩展时发布真实回退并上传 RGBA8，MCP exact frame 验证纹理清晰"
+
 [runtime.gles1_legacy_fixed_state]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

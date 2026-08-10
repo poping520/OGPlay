@@ -73,6 +73,9 @@
 - ETC1 上传优先使用 ANGLE 原生 `GL_OES_compressed_ETC1_RGB8_texture`，其次使用其显式
   lossy-decode 扩展；两者都不可用时才由通用 ETC1 解码器转为 RGBA8 后调用 ANGLE
   `glTexImage2D`。其他压缩格式不得借此伪造支持。
+- PVRTC1 上传优先使用 ANGLE 原生 `GL_IMG_texture_compression_pvrtc`；无原生扩展时，
+  仅因官方 2bpp/4bpp 软件解码器真实可用而向 guest 发布该扩展，并转为 RGBA8 调用
+  `glTexImage2D`。未知压缩枚举不得借该回退伪造成功。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
 - GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；扩展

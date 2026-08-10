@@ -1,6 +1,7 @@
 #include "ogplay/gles/angle_frame.h"
 
 #include "ogplay/gles/etc1.h"
+#include "ogplay/gles/pvrtc.h"
 
 #include <algorithm>
 #include <limits>
@@ -470,6 +471,36 @@ void AngleFrame::CompressedTextureImage2D(
     const std::int32_t height, const std::int32_t border,
     const std::span<const std::byte> data) {
 #if OGPLAY_HAS_ANGLE
+    constexpr std::uint32_t kPvrtcRgb4 = 0x8c00U;
+    constexpr std::uint32_t kPvrtcRgb2 = 0x8c01U;
+    constexpr std::uint32_t kPvrtcRgba2 = 0x8c03U;
+    const bool pvrtc = internal_format >= kPvrtcRgb4 &&
+                       internal_format <= kPvrtcRgba2;
+    if (pvrtc) {
+        const auto* extensions = reinterpret_cast<const char*>(
+            glGetString(GL_EXTENSIONS));
+        RequireNoError("glGetString(GL_EXTENSIONS) for PVRTC upload");
+        if (!HasExtension(extensions, "GL_IMG_texture_compression_pvrtc")) {
+            if (width <= 0 || height <= 0) {
+                throw std::invalid_argument(
+                    "PVRTC fallback dimensions must be positive");
+            }
+            const auto bpp = internal_format == kPvrtcRgb2 ||
+                                     internal_format == kPvrtcRgba2
+                                 ? 2U
+                                 : 4U;
+            const auto opaque = internal_format == kPvrtcRgb4 ||
+                                internal_format == kPvrtcRgb2;
+            const auto rgba = DecodePvrtc1Rgba8(
+                static_cast<std::uint32_t>(width),
+                static_cast<std::uint32_t>(height),
+                static_cast<std::uint8_t>(bpp), opaque, data);
+            glTexImage2D(target, level, GL_RGBA, width, height, border,
+                         GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+            RequireNoError("glTexImage2D decoded PVRTC");
+            return;
+        }
+    }
     auto host_format = internal_format;
     if (internal_format == kEtc1Rgb8Oes) {
         const auto* extensions = reinterpret_cast<const char*>(

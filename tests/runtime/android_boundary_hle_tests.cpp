@@ -1475,6 +1475,28 @@ TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
     fixture.memory.Write(buffer_data, vertices, 1);
     fixture.memory.Write(texture_data, pixels, 1);
 
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenFramebuffers",
+                                   {1, names.Value()}));
+    const auto framebuffer = fixture.bus.Read32(names, 1);
+    REQUIRE(framebuffer != 0U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenRenderbuffers",
+                                   {1, names.Add(4).Value()}));
+    const auto renderbuffer = fixture.bus.Read32(names.Add(4), 1);
+    REQUIRE(renderbuffer != 0U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindFramebuffer",
+                                   {0x8D40U, framebuffer}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindRenderbuffer",
+                                   {0x8D41U, renderbuffer}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glRenderbufferStorage",
+                                   {0x8D41U, 0x8056U, 2U, 2U}));
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glFramebufferRenderbuffer",
+        {0x8D40U, 0x8CE0U, 0x8D41U, renderbuffer}));
+    CHECK(fixture.Call("libGLESv2.so", "glCheckFramebufferStatus",
+                       {0x8D40U}) == 0x8CD5U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindFramebuffer",
+                                   {0x8D40U, 0U}));
+
     static_cast<void>(fixture.Call("libGLESv2.so", "glGenBuffers",
                                    {2, names.Value()}));
     const auto vertex_buffer = fixture.bus.Read32(names, 1);
@@ -1522,6 +1544,18 @@ TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
     fixture.bus.Write32(fixture.stack.Add(16), texture_data.Value(), 1);
     static_cast<void>(fixture.Call("libGLESv2.so", "glTexImage2D",
                                    {0x0de1U, 0, 0x1908U, 2}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenerateMipmap",
+                                   {0x0de1U}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindFramebuffer",
+                                   {0x8D40U, framebuffer}));
+    fixture.bus.Write32(fixture.stack, 0U, 1U);
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glFramebufferTexture2D",
+        {0x8D40U, 0x8CE0U, 0x0DE1U, texture}));
+    CHECK(fixture.Call("libGLESv2.so", "glCheckFramebufferStatus",
+                       {0x8D40U}) == 0x8CD5U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindFramebuffer",
+                                   {0x8D40U, 0U}));
     CHECK_THROWS_AS(fixture.Call("libGLESv2.so", "glGenBuffers", {1, 0}),
                     ogplay::gles::GuestTransferError);
 
@@ -1532,6 +1566,12 @@ TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
     fixture.bus.Write32(names.Add(4), index_buffer, 1);
     static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteBuffers",
                                    {2, names.Value()}));
+    fixture.bus.Write32(names, framebuffer, 1);
+    fixture.bus.Write32(names.Add(4), renderbuffer, 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteFramebuffers",
+                                   {1, names.Value()}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteRenderbuffers",
+                                   {1, names.Add(4).Value()}));
 }
 
 TEST_CASE("Android boundary supersamples without changing guest surface size") {

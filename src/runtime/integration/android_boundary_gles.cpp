@@ -47,15 +47,24 @@ public:
         const std::array<std::uint32_t, 4>& args,
         const cpu::A32State& state, gles::AngleFrame* const frame) {
         const auto tid = state.ThreadId();
-        if (symbol == "glGenBuffers" || symbol == "glGenTextures") {
+        if (symbol == "glGenBuffers" || symbol == "glGenTextures" ||
+            symbol == "glGenFramebuffers" ||
+            symbol == "glGenRenderbuffers") {
             auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
+            auto& current = RequireFrame(frame, symbol);
             auto names = symbol == "glGenBuffers"
-                ? RequireFrame(frame, symbol).GenerateBuffers(args[0])
-                : RequireFrame(frame, symbol).GenerateTextures(args[0]);
+                             ? current.GenerateBuffers(args[0])
+                         : symbol == "glGenTextures"
+                             ? current.GenerateTextures(args[0])
+                         : symbol == "glGenFramebuffers"
+                             ? current.GenerateFramebuffers(args[0])
+                             : current.GenerateRenderbuffers(args[0]);
             WriteWords(Pointer(call), names);
             return 0;
         }
-        if (symbol == "glDeleteBuffers" || symbol == "glDeleteTextures") {
+        if (symbol == "glDeleteBuffers" || symbol == "glDeleteTextures" ||
+            symbol == "glDeleteFramebuffers" ||
+            symbol == "glDeleteRenderbuffers") {
             auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
             const auto names = ReadWords(Pointer(call));
             if (symbol == "glDeleteBuffers") {
@@ -67,8 +76,12 @@ public:
                 if (std::ranges::find(names, bound.element_array_buffer) != names.end()) {
                     transfer_state_.BindBuffer(0x8893U, 0);
                 }
-            } else {
+            } else if (symbol == "glDeleteTextures") {
                 RequireFrame(frame, symbol).DeleteTextures(names);
+            } else if (symbol == "glDeleteFramebuffers") {
+                RequireFrame(frame, symbol).DeleteFramebuffers(names);
+            } else {
+                RequireFrame(frame, symbol).DeleteRenderbuffers(names);
             }
             return 0;
         }
@@ -92,6 +105,38 @@ public:
         }
         if (symbol == "glBindTexture") {
             RequireFrame(frame, symbol).BindTexture(args[0], args[1]);
+            return 0;
+        }
+        if (symbol == "glBindFramebuffer") {
+            RequireFrame(frame, symbol).BindFramebuffer(args[0], args[1]);
+            return 0;
+        }
+        if (symbol == "glBindRenderbuffer") {
+            RequireFrame(frame, symbol).BindRenderbuffer(args[0], args[1]);
+            return 0;
+        }
+        if (symbol == "glCheckFramebufferStatus") {
+            return RequireFrame(frame, symbol).CheckFramebufferStatus(args[0]);
+        }
+        if (symbol == "glRenderbufferStorage") {
+            RequireFrame(frame, symbol).RenderbufferStorage(
+                args[0], args[1], std::bit_cast<std::int32_t>(args[2]),
+                std::bit_cast<std::int32_t>(args[3]));
+            return 0;
+        }
+        if (symbol == "glFramebufferTexture2D") {
+            RequireFrame(frame, symbol).FramebufferTexture2D(
+                args[0], args[1], args[2], args[3],
+                std::bit_cast<std::int32_t>(StackWord(state, 0)));
+            return 0;
+        }
+        if (symbol == "glFramebufferRenderbuffer") {
+            RequireFrame(frame, symbol).FramebufferRenderbuffer(
+                args[0], args[1], args[2], args[3]);
+            return 0;
+        }
+        if (symbol == "glGenerateMipmap") {
+            RequireFrame(frame, symbol).GenerateMipmap(args[0]);
             return 0;
         }
         if (symbol == "glPixelStorei") {

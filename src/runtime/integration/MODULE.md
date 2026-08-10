@@ -130,6 +130,9 @@
   预检后调用 ANGLE；编译/链接失败通过真实查询值表达，边界本身不得伪造成功。
 - buffer/texture handler 必须复用生成目录与 transfer state 预检 guest 名称数组、数据长度、
   像素格式及对齐；状态只在 ANGLE 成功后提交，删除已绑定 buffer 必须同步解除搬运状态。
+- GLES2 framebuffer/renderbuffer 批次复用生成目录和名称数组预检，真实转发生命周期、绑定、
+  storage、两类 attachment、status 与 mipmap；第五个 `glFramebufferTexture2D` 参数必须从
+  A32 guest 栈读取，坏 guest 输出或 ANGLE 错误不得产生部分回写或伪造完整状态。
 - vertex attribute handler 只接受已有 VBO 的受检 offset；uniform 标量保持位模式，矩阵数据
   必须先按 IDL 长度完整搬运，任何坏地址都不得触达 ANGLE。
 - `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽；integer query、

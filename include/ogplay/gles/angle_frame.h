@@ -66,6 +66,26 @@ public:
                     std::uint32_t usage);
     void BufferSubData(std::uint32_t target, std::uint32_t offset,
                        std::span<const std::byte> data);
+    [[nodiscard]] std::vector<std::uint32_t> GenerateFramebuffers(
+        std::size_t count);
+    void DeleteFramebuffers(std::span<const std::uint32_t> framebuffers);
+    void BindFramebuffer(std::uint32_t target, std::uint32_t framebuffer);
+    [[nodiscard]] std::uint32_t CheckFramebufferStatus(std::uint32_t target);
+    [[nodiscard]] std::vector<std::uint32_t> GenerateRenderbuffers(
+        std::size_t count);
+    void DeleteRenderbuffers(std::span<const std::uint32_t> renderbuffers);
+    void BindRenderbuffer(std::uint32_t target, std::uint32_t renderbuffer);
+    void RenderbufferStorage(std::uint32_t target,
+                             std::uint32_t internal_format,
+                             std::int32_t width, std::int32_t height);
+    void FramebufferTexture2D(std::uint32_t target,
+                              std::uint32_t attachment,
+                              std::uint32_t texture_target,
+                              std::uint32_t texture, std::int32_t level);
+    void FramebufferRenderbuffer(std::uint32_t target,
+                                 std::uint32_t attachment,
+                                 std::uint32_t renderbuffer_target,
+                                 std::uint32_t renderbuffer);
     [[nodiscard]] std::vector<std::uint32_t> GenerateTextures(std::size_t count);
     void DeleteTextures(std::span<const std::uint32_t> textures);
     void ActiveTexture(std::uint32_t texture);

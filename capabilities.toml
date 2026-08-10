@@ -500,6 +500,11 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
 note = "M4 真实 ANGLE 闭合 11 项 buffer/texture handler，名称数组显式回写、资源与像素数据有界搬运，null 分配、unpack 对齐及绑定状态受检"
 
+[gles.framebuffer_resources]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
+note = "M8 WU-0372 一次闭合 GLES2 framebuffer/renderbuffer 10 项生命周期、绑定、storage、attachment、status 及 mipmap；exact Asphalt 6 越过 FBO 建立并进入 glBlendEquation"
+
 [gles.vertex_uniform]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"

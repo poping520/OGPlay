@@ -132,8 +132,8 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
     }
 
     CHECK_THROWS_WITH_AS(
-        fixture.Call("libGLESv2.so", "glBlendColor"),
-        "Android boundary HLE is not implemented: glBlendColor",
+        fixture.Call("libGLESv2.so", "glValidateProgram"),
+        "Android boundary HLE is not implemented: glValidateProgram",
         std::runtime_error);
 }
 
@@ -1291,7 +1291,20 @@ TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
                   std::bit_cast<std::uint32_t>(0.5F),
                   std::bit_cast<std::uint32_t>(0.75F),
                   std::bit_cast<std::uint32_t>(1.0F)}));
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glBlendColor",
+        {std::bit_cast<std::uint32_t>(0.1F),
+         std::bit_cast<std::uint32_t>(0.2F),
+         std::bit_cast<std::uint32_t>(0.3F),
+         std::bit_cast<std::uint32_t>(0.4F)}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBlendEquation",
+                                   {0x8006U}));
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glSampleCoverage",
+        {std::bit_cast<std::uint32_t>(1.0F), 0U}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glClear", {0x00004000U}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glFlush"));
+    CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
     CHECK(fixture.Call("libEGL.so", "eglSwapBuffers", {1, 3}) == 1);
     const auto frame = fixture.boundary.TakeLatestFrame();
     REQUIRE(frame.has_value());

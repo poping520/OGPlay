@@ -247,6 +247,25 @@ public:
             RequireFrame(frame, symbol).BlendFunction(args[0], args[1]);
             return 0;
         }
+        if (symbol == "glBlendColor") {
+            RequireFrame(frame, symbol).BlendColor(
+                std::bit_cast<float>(args[0]), std::bit_cast<float>(args[1]),
+                std::bit_cast<float>(args[2]), std::bit_cast<float>(args[3]));
+            return 0;
+        }
+        if (symbol == "glBlendEquation") {
+            RequireFrame(frame, symbol).BlendEquation(args[0]);
+            return 0;
+        }
+        if (symbol == "glSampleCoverage") {
+            RequireFrame(frame, symbol).SampleCoverage(
+                std::bit_cast<float>(args[0]), args[1] != 0U);
+            return 0;
+        }
+        if (symbol == "glFlush") {
+            RequireFrame(frame, symbol).Flush();
+            return 0;
+        }
         if (symbol == "glDrawElements") {
             if (transfer_state_.Snapshot().element_array_buffer == 0) {
                 throw std::runtime_error("glDrawElements client indices are not implemented");

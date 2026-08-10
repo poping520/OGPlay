@@ -488,7 +488,7 @@ note = "M4 在真实 ANGLE pbuffer 上闭合综合样例所需 state/query/draw/
 [gles.angle_scalar_state]
 status = "complete"
 test = "tests/gles/angle_frame_tests.cpp"
-note = "M5 WU-0305 提供 GLES1/2 共用的 depth-range、line/polygon 与 stencil 原生 ANGLE 状态调用面"
+note = "M5 WU-0305 提供 GLES1/2 共用的 depth-range、line/polygon 与 stencil 原生 ANGLE 状态；M8 WU-0373 补齐 blend color/equation、sample coverage 与非 present flush，mixed GLES1/GLES2 sample-coverage 共享真实 context"
 
 [gles.shader_program]
 status = "complete"

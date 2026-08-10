@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 GLES2 framebuffer resource 批次已完成
+更新：2026-08-10 · M8 GLES blend/raster state 批次已完成
 
 ## 当前阶段
 
@@ -29,12 +29,15 @@
 
 ## 进行中
 
-- Asphalt 6 exact 已越过 JNI_OnLoad、mixed GLES capability discovery 与 FBO 建立；96 个
-  唯一 GL 导入已静态盘点，当前稳定进入 `glBlendEquation`，下一批按状态接口集合闭合。
-  尚未声称首帧或主界面。
+- Asphalt 6 exact 已越过 JNI_OnLoad、mixed GLES capability discovery、FBO 建立与剩余
+  blend/raster state；96 个唯一 GL 导入已静态盘点，当前稳定进入 AudioTrack Java/JNI
+  媒体类边界。尚未声称首帧或主界面。
 
 ## 最近完成
 
+- [WU-0373] 按导入差集一次补齐 blend color/equation、sample coverage 与 flush，并覆盖
+  mixed GLES1/GLES2 的共享 sample-coverage trap；flush 不触发 present。exact 越过图形
+  状态批次，稳定进入 AudioTrack class lookup；focused 2/2、full CTest 494/494。
 - [WU-0372] 一次接入 framebuffer/renderbuffer 生成、删除、绑定、storage、两类 attachment、
   status 共 10 项及 mipmap；名称数组、A32 栈参数和 ANGLE 错误均受检。exact 越过完整 FBO
   建立，稳定进入 `glBlendEquation`；focused 1/1、full CTest 494/494。
@@ -49,10 +52,6 @@
 - [WU-0369] 冻结 root-only JNI_OnLoad exported function 选择、JavaVM/null A32 调用帧与
   JNI 1.1/1.2/1.4/1.6 返回校验；不误调用 ELF dependency 同名导出，执行顺序接线由
   WU-0370 承接；focused 2/2、full CTest 494/494。
-- [WU-0368] 一次安装 Build/VERSION 12 个 APK 引用字段与 SystemProperties、Settings.Secure、
-  Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot、UUID 服务对象链；补齐同批
-  GLGame compact platform callbacks，offline tracking 有计数且不触网。exact 越过全部
-  platform JNI lookup，进入下一类 license/VFS memory fault；focused 1/1、full CTest 492/492。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -77,7 +76,7 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 以 `glBlendEquation` 为采样点一次闭合缺失的 GLES2 blend/raster/depth 状态接口集合。
+1. 静态盘点 AudioTrack 及同一初始化路径引用的媒体类/方法，按完整类族批量实现。
 2. 继续按 96 项 GL 导入的 shader/program、uniform/client-array/draw 子批次闭合，再处理
    license/VFS 并固化主界面 Scenario 与三轮 gate。
 

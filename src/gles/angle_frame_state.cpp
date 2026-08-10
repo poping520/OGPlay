@@ -50,6 +50,25 @@ void AngleFrame::BlendFunction(const std::uint32_t source,
 #endif
 }
 
+void AngleFrame::BlendColor(const float red, const float green,
+                            const float blue, const float alpha) {
+#if OGPLAY_HAS_ANGLE
+    glBlendColor(red, green, blue, alpha); RequireNoError("glBlendColor");
+#else
+    static_cast<void>(red); static_cast<void>(green);
+    static_cast<void>(blue); static_cast<void>(alpha);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::BlendEquation(const std::uint32_t mode) {
+#if OGPLAY_HAS_ANGLE
+    glBlendEquation(mode); RequireNoError("glBlendEquation");
+#else
+    static_cast<void>(mode); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::ColorMask(const bool red, const bool green, const bool blue,
                            const bool alpha) {
 #if OGPLAY_HAS_ANGLE
@@ -146,6 +165,16 @@ void AngleFrame::PolygonOffset(const float factor, const float units) {
 #endif
 }
 
+void AngleFrame::SampleCoverage(const float value, const bool invert) {
+#if OGPLAY_HAS_ANGLE
+    glSampleCoverage(value, invert ? GL_TRUE : GL_FALSE);
+    RequireNoError("glSampleCoverage");
+#else
+    static_cast<void>(value); static_cast<void>(invert);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::StencilFunction(const std::uint32_t function,
                                  const std::int32_t reference,
                                  const std::uint32_t mask) {
@@ -173,6 +202,14 @@ void AngleFrame::StencilOperation(const std::uint32_t stencil_fail,
 #else
     static_cast<void>(stencil_fail); static_cast<void>(depth_fail);
     static_cast<void>(depth_pass); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::Flush() {
+#if OGPLAY_HAS_ANGLE
+    glFlush(); RequireNoError("glFlush");
+#else
+    throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }
 

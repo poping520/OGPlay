@@ -125,6 +125,8 @@ public:
     void UniformMatrix3(std::int32_t location, std::int32_t count,
                         bool transpose, std::span<const float> values);
     void SetCapability(std::uint32_t capability, bool enabled);
+    void BlendColor(float red, float green, float blue, float alpha);
+    void BlendEquation(std::uint32_t mode);
     void BlendFunction(std::uint32_t source, std::uint32_t destination);
     void ColorMask(bool red, bool green, bool blue, bool alpha);
     void ClearStencil(std::int32_t value);
@@ -137,12 +139,14 @@ public:
     void Hint(std::uint32_t target, std::uint32_t mode);
     void LineWidth(float width);
     void PolygonOffset(float factor, float units);
+    void SampleCoverage(float value, bool invert);
     void StencilFunction(std::uint32_t function, std::int32_t reference,
                          std::uint32_t mask);
     void StencilMask(std::uint32_t mask);
     void StencilOperation(std::uint32_t stencil_fail,
                           std::uint32_t depth_fail,
                           std::uint32_t depth_pass);
+    void Flush();
     [[nodiscard]] std::vector<std::int32_t> GetIntegers(
         std::uint32_t parameter, std::size_t count);
     [[nodiscard]] std::string GetString(std::uint32_t parameter);

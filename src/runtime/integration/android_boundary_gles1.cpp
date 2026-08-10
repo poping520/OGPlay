@@ -585,37 +585,24 @@ void BindAndroidBoundaryGles1Core(
             state.BindTexture(arguments[0], arguments[1]);
             return 0U;
         });
-    dispatch.Bind(
-        "glBlendFunc",
-        [require_frame](const std::span<const std::uint32_t> arguments,
-                        const std::uint64_t) {
-            require_frame("glBlendFunc")
-                .BlendFunction(arguments[0], arguments[1]);
-            return 0U;
-        });
-    dispatch.Bind(
-        "glColorMask",
-        [require_frame](const std::span<const std::uint32_t> arguments,
-                        const std::uint64_t) {
-            require_frame("glColorMask")
-                .ColorMask(arguments[0] != 0U, arguments[1] != 0U,
-                           arguments[2] != 0U, arguments[3] != 0U);
-            return 0U;
-        });
-    dispatch.Bind(
-        "glCullFace",
-        [require_frame](const std::span<const std::uint32_t> arguments,
-                        const std::uint64_t) {
-            require_frame("glCullFace").CullFace(arguments[0]);
-            return 0U;
-        });
-    dispatch.Bind(
-        "glDepthFunc",
-        [require_frame](const std::span<const std::uint32_t> arguments,
-                        const std::uint64_t) {
-            require_frame("glDepthFunc").DepthFunction(arguments[0]);
-            return 0U;
-        });
+    dispatch.Bind("glBlendFunc", [require_frame](const auto arguments, const auto) {
+        require_frame("glBlendFunc").BlendFunction(arguments[0], arguments[1]);
+        return 0U;
+    });
+    dispatch.Bind("glColorMask", [require_frame](const auto arguments, const auto) {
+        require_frame("glColorMask").ColorMask(
+            arguments[0] != 0U, arguments[1] != 0U,
+            arguments[2] != 0U, arguments[3] != 0U);
+        return 0U;
+    });
+    dispatch.Bind("glCullFace", [require_frame](const auto arguments, const auto) {
+        require_frame("glCullFace").CullFace(arguments[0]);
+        return 0U;
+    });
+    dispatch.Bind("glDepthFunc", [require_frame](const auto arguments, const auto) {
+        require_frame("glDepthFunc").DepthFunction(arguments[0]);
+        return 0U;
+    });
     dispatch.Bind(
         "glDepthMask",
         [require_frame](const std::span<const std::uint32_t> arguments,
@@ -642,6 +629,13 @@ void BindAndroidBoundaryGles1Core(
             require_frame("glFinish").Finish();
             return 0U;
         });
+    dispatch.Bind("glSampleCoverage", [require_frame](const auto arguments,
+                                                       const auto) {
+        require_frame("glSampleCoverage")
+            .SampleCoverage(std::bit_cast<float>(arguments[0]),
+                            arguments[1] != 0U);
+        return 0U;
+    });
     dispatch.Bind(
         "glFrontFace",
         [require_frame](const std::span<const std::uint32_t> arguments,
@@ -757,13 +751,10 @@ void BindAndroidBoundaryGles1Core(
                              supersample_factor));
             return 0U;
         });
-    dispatch.Bind(
-        "glClear",
-        [require_frame](const std::span<const std::uint32_t> arguments,
-                        const std::uint64_t) {
-            require_frame("glClear").Clear(arguments[0]);
-            return 0U;
-        });
+    dispatch.Bind("glClear", [require_frame](const auto arguments, const auto) {
+        require_frame("glClear").Clear(arguments[0]);
+        return 0U;
+    });
     dispatch.Bind(
         "glClearColor",
         [require_frame](

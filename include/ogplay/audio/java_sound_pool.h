@@ -18,6 +18,7 @@ struct JavaSoundPoolVoiceSnapshot final {
     float volume{1.0F};
     float pitch{1.0F};
     std::uint64_t reset_count{};
+    bool looping{};
 };
 
 class JavaSoundPoolState final {
@@ -82,7 +83,8 @@ public:
 
     [[nodiscard]] bool Play(const JavaSoundPoolKind kind,
                             const std::int32_t resource,
-                            const std::int32_t instance, const float volume) {
+                            const std::int32_t instance, const float volume,
+                            const bool looping = false) {
         std::scoped_lock lock(mutex_);
         if (!active_ || !std::isfinite(volume) || volume < 0.0F ||
             volume > 1.0F) {
@@ -100,12 +102,13 @@ public:
             });
         if (found == voices_.end()) {
             voices_.push_back({resource, instance, kind, volume, 1.0F,
-                               JavaSoundPoolVoiceStatus::playing, 0});
+                               JavaSoundPoolVoiceStatus::playing, 0, looping});
         } else {
             found->volume = volume;
             found->pitch = 1.0F;
             found->status = JavaSoundPoolVoiceStatus::playing;
             found->reset_count = 0;
+            found->looping = looping;
         }
         return true;
     }
@@ -213,7 +216,8 @@ public:
             });
         if (found == voices_.end()) return std::nullopt;
         return JavaSoundPoolVoiceSnapshot{found->status, found->volume,
-                                          found->pitch, found->reset_count};
+                                          found->pitch, found->reset_count,
+                                          found->looping};
     }
 
     [[nodiscard]] std::size_t StopAll(
@@ -306,6 +310,7 @@ private:
         float pitch{1.0F};
         JavaSoundPoolVoiceStatus status{JavaSoundPoolVoiceStatus::playing};
         std::uint64_t reset_count{};
+        bool looping{};
 
         bool operator==(const Voice&) const = default;
     };

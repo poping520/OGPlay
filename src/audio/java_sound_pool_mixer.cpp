@@ -57,7 +57,7 @@ std::vector<JavaSoundPoolMixer::Voice>::iterator JavaSoundPoolMixer::FindVoice(
 bool JavaSoundPoolMixer::Play(const JavaSoundPoolKind kind,
                               const std::int32_t resource,
                               const std::int32_t instance,
-                              const float volume) {
+                              const float volume, const bool looping) {
     std::scoped_lock lock(mutex_);
     if (!resources_.contains(resource) || !std::isfinite(volume) ||
         volume < 0.0F || volume > 1.0F) {
@@ -66,12 +66,13 @@ bool JavaSoundPoolMixer::Play(const JavaSoundPoolKind kind,
     const auto found = FindVoice(kind, resource, instance);
     if (found == voices_.end()) {
         voices_.push_back({kind, resource, instance, 0.0, volume, 1.0F,
-                           false});
+                           false, looping});
     } else {
         found->position = 0.0;
         found->volume = volume;
         found->pitch = 1.0F;
         found->paused = false;
+        found->looping = looping;
     }
     return true;
 }
@@ -199,11 +200,19 @@ std::size_t JavaSoundPoolMixer::RenderStereoPcm16(
         }
         const auto& pcm = sound->second;
         const auto source_frames = pcm.Frames();
+        if (source_frames == 0U) {
+            voice = voices_.erase(voice);
+            continue;
+        }
         const auto step = static_cast<double>(pcm.sample_rate) /
                           static_cast<double>(output_rate) * voice->pitch;
         std::size_t rendered{};
-        while (rendered < output_frames &&
-               voice->position < static_cast<double>(source_frames)) {
+        while (rendered < output_frames) {
+            if (voice->position >= static_cast<double>(source_frames)) {
+                if (!voice->looping) break;
+                voice->position = std::fmod(
+                    voice->position, static_cast<double>(source_frames));
+            }
             const auto first = static_cast<std::size_t>(voice->position);
             const auto second = std::min(first + 1U, source_frames - 1U);
             const auto fraction = voice->position - static_cast<double>(first);
@@ -222,7 +231,8 @@ std::size_t JavaSoundPoolMixer::RenderStereoPcm16(
             voice->position += step;
             ++rendered;
         }
-        if (voice->position >= static_cast<double>(source_frames)) {
+        if (!voice->looping &&
+            voice->position >= static_cast<double>(source_frames)) {
             voice = voices_.erase(voice);
         } else {
             ++voice;

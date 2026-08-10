@@ -102,14 +102,14 @@ public:
     }
     void Play(const audio::JavaSoundPoolKind kind,
               const std::int32_t resource, const std::int32_t instance,
-              const float volume) {
+              const float volume, const bool looping = false) {
         std::scoped_lock lock(mutex_);
         if (!state_.IsLoaded(kind, resource)) {
             static_cast<void>(LoadLocked(kind, resource));
         }
-        if (!state_.Play(kind, resource, instance, volume)) return;
+        if (!state_.Play(kind, resource, instance, volume, looping)) return;
         if (mixer_ != nullptr &&
-            !mixer_->Play(kind, resource, instance, volume)) {
+            !mixer_->Play(kind, resource, instance, volume, looping)) {
             static_cast<void>(state_.Stop(kind, resource, instance));
         }
     }
@@ -273,6 +273,17 @@ void BindAndroidGuestJavaAudioHandlers(
             const auto volume = std::get<JniFloat>(invocation.arguments[1]);
             controls->Play(audio::JavaSoundPoolKind::big, resource, 0,
                            volume);
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "audio.play_sound_big_looping",
+        [controls](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            const auto volume = std::get<JniFloat>(invocation.arguments[1]);
+            const auto looping =
+                std::get<JniBoolean>(invocation.arguments[2]) != 0U;
+            controls->Play(audio::JavaSoundPoolKind::big, resource, 0,
+                           volume, looping);
             return JniValue{std::monostate{}};
         });
     invocations.RegisterHandler(

@@ -26,7 +26,8 @@ public:
     [[nodiscard]] bool Load(std::int32_t resource);
     void Unload(std::int32_t resource);
     [[nodiscard]] bool Play(JavaSoundPoolKind kind, std::int32_t resource,
-                            std::int32_t instance, float volume);
+                            std::int32_t instance, float volume,
+                            bool looping = false);
     void Pause(JavaSoundPoolKind kind, std::int32_t resource,
                std::int32_t instance);
     void Resume(JavaSoundPoolKind kind, std::int32_t resource,
@@ -62,6 +63,7 @@ private:
         float volume{1.0F};
         float pitch{1.0F};
         bool paused{};
+        bool looping{};
     };
 
     [[nodiscard]] std::vector<Voice>::iterator FindVoice(

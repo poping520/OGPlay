@@ -28,10 +28,12 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0352 补充 MCP swipe 测试使用文档。
+- 无；下一项为 WU-0353 exact-APK 场景/checkpoint schema 与严格自检。
 
 ## 最近完成
 
+- [WU-0352] MCP 测试文档增加 swipe 调用示例，明确 `steps` 是确定性 guest-loop motion
+  数量而非毫秒，并记录端点、步数和当前手势能力边界。
 - [WU-0351] MCP 发布严格 `swipe(startX,startY,endX,endY,steps)` 工具；两个端点以最近 guest
   帧校验，1..120 个 motion 阶段和响应元数据均有 schema、协议与 loopback HTTP 测试；
   Asphalt 5 exact 12 步 swipe 后 frame 500→518 且持续响应，full CTest 476/476。
@@ -74,10 +76,9 @@ guest session；输入、frame capture、检查点和退出状态也未在同一
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0352，补充 MCP swipe 的简明测试使用文档。
-2. 创建 WU-0353，冻结 exact-APK 场景/checkpoint schema 与严格自检。
-3. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
-4. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
+1. 创建 WU-0353，冻结 exact-APK 场景/checkpoint schema 与严格自检。
+2. 建立结构化 action/assertion/result 与证据包契约，所有动作均有 frame/tick/wall-time 上限。
+3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 
 ## 阻塞

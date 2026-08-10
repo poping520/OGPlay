@@ -1,6 +1,6 @@
 # OGPlay MCP 测试使用
 
-OGPlay MCP 用于在真实 `run-apk` 会话中读取最新 guest 画面并注入点击。M6 的长期自动化
+OGPlay MCP 用于在真实 `run-apk` 会话中读取最新 guest 画面并注入触摸手势。M6 的长期自动化
 目标与未完成项见 [AI 自动化测试规划](roadmap/10-ai-automation-testing.md)。
 
 ## 启动
@@ -24,18 +24,23 @@ build\windows-msvc\Release\ogplay.exe run-apk <apk> `
    同时传入 `{"format":"png","overlay":"coordinates"}`。
 3. 参考顶部/左侧每 100 px 标签、主线和每 25 px 边缘刻度，估算目标中心的 guest 坐标，
    再调用 `click {"x":400,"y":240}`。
-4. 调用 `frame_capture {}` 获取干净的默认 JPEG；需要无损证据时调用
+4. 需要滑动时调用
+   `swipe {"startX":100,"startY":240,"endX":700,"endY":240,"steps":12}`。
+   `steps` 是 1..120 个等距 motion 阶段，不是毫秒；完整手势在连续 guest loop 中依次派发
+   down、指定数量的 move 和 up。
+5. 调用 `frame_capture {}` 获取干净的默认 JPEG；需要无损证据时调用
    `frame_capture {"format":"png"}`，对比 `sequence`、画面和结构化状态。
-5. 关闭窗口，确认 guest、音频、surface 和 MCP listener 正常清理。
+6. 关闭窗口，确认 guest、音频、surface 和 MCP listener 正常清理。
 
 点击坐标基于 MCP 截图尺寸，不是宿主窗口尺寸；黑边、缩放和窗口位置不参与计算。
 坐标网格只绘制在返回的截图副本上，不改变尺寸或实时 guest 帧；省略 `overlay` 时截图不带
-网格。截图失败、无首帧、坐标越界或点击队列满都会返回明确 tool error。
+网格。截图失败、无首帧、坐标越界、相同 swipe 端点、非法步数或手势队列满都会返回明确
+tool error。
 
 ## 当前边界
 
-- 已有工具：`frame_capture`、`click`。
-- MCP 不负责启动或终止 APK，也不提供 drag、按键、`step/until` 或场景断言。
+- 已有工具：`frame_capture`、`click`、`swipe`。
+- MCP 不负责启动或终止 APK，也不提供长按/保持拖拽、多点触控、按键、`step/until` 或场景断言。
 - 帧序号推进不等于 UI 动作成功；人工调试可检查画面，CI 必须等待后续结构化 checkpoint
   和 golden 断言，不能只依赖目测。
 - 服务只绑定 `127.0.0.1`；端口占用会使启动明确失败。

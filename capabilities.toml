@@ -168,7 +168,7 @@ note = "M6 WU-0341 发布 click schema、最近 guest 帧整数坐标校验和 6
 [frontend.mcp_http_transport]
 status = "complete"
 test = "tests/frontend/mcp_http_server_tests.cpp"
-note = "M6 WU-0329 提供仅绑定 127.0.0.1 的有界 Streamable HTTP POST /mcp transport；Origin、route、media type 与 body 均 fail closed，CLI 启动参数另行接线"
+note = "M6 WU-0329 提供仅绑定 127.0.0.1 的有界 Streamable HTTP POST /mcp transport；Origin、route、media type 与 body 均 fail closed；WU-0342 将 click 送入调用方有界队列"
 
 [frontend.run_apk_mcp]
 status = "complete"

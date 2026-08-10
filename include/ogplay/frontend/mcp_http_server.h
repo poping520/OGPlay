@@ -6,6 +6,7 @@
 
 namespace ogplay::agent {
 class FrameSnapshotStore;
+class McpInputQueue;
 }
 
 namespace ogplay::frontend {
@@ -14,7 +15,8 @@ class McpHttpServer final {
 public:
     static std::unique_ptr<McpHttpServer> Start(
         std::uint16_t port,
-        agent::FrameSnapshotStore& frames);
+        agent::FrameSnapshotStore& frames,
+        agent::McpInputQueue& inputs);
 
     ~McpHttpServer();
 

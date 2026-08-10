@@ -58,7 +58,8 @@ std::string Request(const std::uint16_t port, const std::string_view method,
 
 TEST_CASE("MCP HTTP binds loopback and serves protocol responses") {
     ogplay::agent::FrameSnapshotStore frames;
-    auto server = ogplay::frontend::McpHttpServer::Start(0, frames);
+    ogplay::agent::McpInputQueue inputs;
+    auto server = ogplay::frontend::McpHttpServer::Start(0, frames, inputs);
 
     CHECK(server->Port() != 0);
     CHECK(server->Endpoint() ==
@@ -79,8 +80,9 @@ TEST_CASE("MCP HTTP binds loopback and serves protocol responses") {
 
 TEST_CASE("MCP HTTP returns the latest frame through a real loopback request") {
     ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
     static_cast<void>(frames.Publish({2, 1, 73, {255, 0, 0, 255, 0, 255, 0, 255}}));
-    auto server = ogplay::frontend::McpHttpServer::Start(0, frames);
+    auto server = ogplay::frontend::McpHttpServer::Start(0, frames, inputs);
 
     const auto response = Request(
         server->Port(), "POST", "/mcp",
@@ -90,11 +92,27 @@ TEST_CASE("MCP HTTP returns the latest frame through a real loopback request") {
     CHECK(response.find("\"sequence\":73") != std::string::npos);
     CHECK(response.find("\"width\":2") != std::string::npos);
     CHECK(response.find("\"height\":1") != std::string::npos);
+
+    const auto click = Request(
+        server->Port(), "POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":"click","method":"tools/call","params":{"name":"click","arguments":{"x":1,"y":0}}})");
+    CHECK(click.find("HTTP/1.1 200 OK") != std::string::npos);
+    CHECK(click.find("\"requestSequence\":1") != std::string::npos);
+    CHECK(click.find("\"frameSequence\":73") != std::string::npos);
+    const auto down = inputs.TakeNextPointerEvent();
+    const auto up = inputs.TakeNextPointerEvent();
+    REQUIRE(down.has_value());
+    REQUIRE(up.has_value());
+    CHECK(down->pressed);
+    CHECK_FALSE(up->pressed);
+    CHECK(down->x == 1U);
+    CHECK(down->y == 0U);
 }
 
 TEST_CASE("MCP HTTP rejects non-loopback origins and unsupported routes") {
     ogplay::agent::FrameSnapshotStore frames;
-    auto server = ogplay::frontend::McpHttpServer::Start(0, frames);
+    ogplay::agent::McpInputQueue inputs;
+    auto server = ogplay::frontend::McpHttpServer::Start(0, frames, inputs);
 
     const auto forbidden = Request(
         server->Port(), "POST", "/mcp", R"({"jsonrpc":"2.0","id":1,"method":"ping"})",

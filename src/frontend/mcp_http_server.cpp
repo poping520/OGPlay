@@ -269,8 +269,10 @@ private:
 }  // namespace
 
 struct McpHttpServer::Impl final {
-    explicit Impl(const std::uint16_t requested_port, agent::FrameSnapshotStore& frames)
-        : acceptor(io), protocol(frames) {
+    explicit Impl(const std::uint16_t requested_port,
+                  agent::FrameSnapshotStore& frames,
+                  agent::McpInputQueue& inputs)
+        : acceptor(io), protocol(frames, inputs) {
         boost::system::error_code error;
         const tcp::endpoint endpoint(boost::asio::ip::make_address_v4("127.0.0.1"), requested_port);
         acceptor.open(endpoint.protocol(), error);
@@ -318,9 +320,10 @@ struct McpHttpServer::Impl final {
 };
 
 std::unique_ptr<McpHttpServer> McpHttpServer::Start(
-    const std::uint16_t port, agent::FrameSnapshotStore& frames) {
+    const std::uint16_t port, agent::FrameSnapshotStore& frames,
+    agent::McpInputQueue& inputs) {
     return std::unique_ptr<McpHttpServer>(
-        new McpHttpServer(std::make_unique<Impl>(port, frames)));
+        new McpHttpServer(std::make_unique<Impl>(port, frames, inputs)));
 }
 
 McpHttpServer::McpHttpServer(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

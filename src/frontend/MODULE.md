@@ -20,7 +20,8 @@ present 数更新一位小数的实时值。
 声明 `audio.sound_pool` 的 GLSurfaceView Profile 会按 source/path_pattern 从 APK 读取编码
 资源，将会话离线 mixer 的 stereo PCM16 按队列水位提交到 SDL3 默认音频设备。
 `McpHttpServer::Start` 只监听 IPv4 loopback，端口 0 仅供测试选择临时端口；endpoint 固定为
-`/mcp`，每个请求直接委托传输无关的 `McpProtocolAdapter`。
+`/mcp`，每个请求直接委托传输无关的 `McpProtocolAdapter`；server 同时持有调用方提供的
+有界 MCP input queue，不从 worker thread 直接进入 guest。
 
 ## 不变量
 

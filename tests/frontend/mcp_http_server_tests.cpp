@@ -66,7 +66,7 @@ TEST_CASE("MCP HTTP binds loopback and serves protocol responses") {
 
     const auto response = Request(
         server->Port(), "POST", "/mcp",
-        R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}})");
+        R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"fixture","version":"1"}}})");
     CHECK(response.find("HTTP/1.1 200 OK") != std::string::npos);
     CHECK(response.find("MCP-Protocol-Version: 2025-11-25") != std::string::npos);
     CHECK(response.find("\"protocolVersion\":\"2025-11-25\"") != std::string::npos);

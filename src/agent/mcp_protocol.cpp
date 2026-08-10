@@ -1,12 +1,14 @@
 #include "ogplay/agent/mcp_protocol.h"
 
+#include "ogplay/core/json.h"
+
 #include <array>
-#include <cctype>
-#include <charconv>
 #include <limits>
+#include <optional>
 #include <span>
-#include <sstream>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace ogplay::agent {
@@ -25,107 +27,33 @@ void ValidateFrame(const FrameSnapshot& frame) {
     }
 }
 
-std::string JsonString(const std::string_view input) {
-    std::string result{"\""};
-    for (const char raw_character : input) {
-        const auto character = static_cast<unsigned char>(raw_character);
-        switch (character) {
-        case '\\': result += "\\\\"; break;
-        case '"': result += "\\\""; break;
-        case '\n': result += "\\n"; break;
-        case '\r': result += "\\r"; break;
-        case '\t': result += "\\t"; break;
-        default:
-            if (character < 0x20U) {
-                constexpr char hex[] = "0123456789abcdef";
-                result += "\\u00";
-                result += hex[character >> 4U];
-                result += hex[character & 0x0fU];
-            } else {
-                result += static_cast<char>(character);
-            }
-            break;
-        }
-    }
-    result += '"';
-    return result;
+void AddRpcId(core::JsonWriter& writer, const core::JsonWriter::Value envelope,
+              const std::optional<core::JsonValue> id) {
+    if (id.has_value()) writer.Add(envelope, "id", writer.Copy(*id));
+    else writer.AddNull(envelope, "id");
 }
 
-std::optional<std::size_t> MemberValueStart(const std::string_view json,
-                                            const std::string_view key) {
-    const auto key_position = json.find('"' + std::string(key) + '"');
-    if (key_position == std::string_view::npos) return std::nullopt;
-    const auto colon = json.find(':', key_position + key.size() + 2U);
-    if (colon == std::string_view::npos) {
-        throw std::invalid_argument("JSON member has no value");
-    }
-    auto position = colon + 1U;
-    while (position < json.size() &&
-           std::isspace(static_cast<unsigned char>(json[position]))) {
-        ++position;
-    }
-    if (position == json.size()) throw std::invalid_argument("JSON member has an empty value");
-    return position;
-}
-
-std::optional<std::string> StringMember(const std::string_view json,
-                                        const std::string_view key) {
-    const auto start = MemberValueStart(json, key);
-    if (!start) return std::nullopt;
-    if (json[*start] != '"') throw std::invalid_argument("JSON member must be a string");
-    std::string value;
-    bool escaped = false;
-    for (auto position = *start + 1U; position < json.size(); ++position) {
-        const auto character = json[position];
-        if (escaped) {
-            switch (character) {
-            case '"': value += '"'; break;
-            case '\\': value += '\\'; break;
-            case 'n': value += '\n'; break;
-            case 'r': value += '\r'; break;
-            case 't': value += '\t'; break;
-            default: throw std::invalid_argument("unsupported JSON escape");
-            }
-            escaped = false;
-        } else if (character == '\\') {
-            escaped = true;
-        } else if (character == '"') {
-            return value;
-        } else {
-            value += character;
-        }
-    }
-    throw std::invalid_argument("unterminated JSON string");
-}
-
-std::string IdMember(const std::string_view json) {
-    const auto start = MemberValueStart(json, "id");
-    if (!start) return "null";
-    if (json[*start] == '"') return JsonString(*StringMember(json, "id"));
-    auto end = *start;
-    while (end < json.size() &&
-           (std::isdigit(static_cast<unsigned char>(json[end])) || json[end] == '-')) {
-        ++end;
-    }
-    if (end == *start) {
-        if (json.substr(*start, 4U) == "null") return "null";
-        throw std::invalid_argument("JSON-RPC id must be string, integer or null");
-    }
-    return std::string(json.substr(*start, end - *start));
-}
-
-std::string RpcResult(const std::string_view id, const std::string_view result) {
-    return "{\"jsonrpc\":\"2.0\",\"id\":" + std::string(id) +
-           ",\"result\":" + std::string(result) + '}';
-}
-
-std::string RpcError(const std::string_view id, const int code,
+std::string RpcError(const std::optional<core::JsonValue> id, const int code,
                      const std::string_view message) {
-    std::ostringstream json;
-    json << "{\"jsonrpc\":\"2.0\",\"id\":" << id
-         << ",\"error\":{\"code\":" << code
-         << ",\"message\":" << JsonString(message) << "}}";
-    return json.str();
+    core::JsonWriter writer;
+    const auto envelope = writer.Object();
+    writer.AddString(envelope, "jsonrpc", "2.0");
+    AddRpcId(writer, envelope, id);
+    const auto error = writer.Object();
+    writer.AddInteger(error, "code", code);
+    writer.AddString(error, "message", message);
+    writer.Add(envelope, "error", error);
+    return writer.Serialize(envelope);
+}
+
+template <typename BuildResult>
+std::string RpcResult(const core::JsonValue id, BuildResult&& build_result) {
+    core::JsonWriter writer;
+    const auto envelope = writer.Object();
+    writer.AddString(envelope, "jsonrpc", "2.0");
+    writer.Add(envelope, "id", writer.Copy(id));
+    writer.Add(envelope, "result", build_result(writer));
+    return writer.Serialize(envelope);
 }
 
 std::uint32_t Crc32(const std::span<const std::uint8_t> bytes) {
@@ -237,27 +165,93 @@ std::string Base64(const std::span<const std::uint8_t> input) {
     return output;
 }
 
-std::string ToolsList() {
-    return R"({"tools":[{"name":"frame_capture","title":"Capture latest OGPlay frame","description":"Returns the latest presented guest frame as PNG without advancing guest execution or consuming input.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}}]})";
+core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
+    const auto result = writer.Object();
+    const auto tools = writer.Array();
+    const auto tool = writer.Object();
+    writer.AddString(tool, "name", "frame_capture");
+    writer.AddString(tool, "title", "Capture latest OGPlay frame");
+    writer.AddString(tool, "description",
+                     "Returns the latest presented guest frame as PNG without advancing "
+                     "guest execution or consuming input.");
+    const auto input_schema = writer.Object();
+    writer.AddString(input_schema, "type", "object");
+    writer.Add(input_schema, "properties", writer.Object());
+    writer.AddBool(input_schema, "additionalProperties", false);
+    writer.Add(tool, "inputSchema", input_schema);
+
+    const auto output_schema = writer.Object();
+    writer.AddString(output_schema, "type", "object");
+    const auto properties = writer.Object();
+    for (const std::string_view name : {"sequence", "width", "height"}) {
+        const auto property = writer.Object();
+        writer.AddString(property, "type", "integer");
+        writer.Add(properties, name, property);
+    }
+    writer.Add(output_schema, "properties", properties);
+    const auto required = writer.Array();
+    writer.Append(required, writer.String("sequence"));
+    writer.Append(required, writer.String("width"));
+    writer.Append(required, writer.String("height"));
+    writer.Add(output_schema, "required", required);
+    writer.Add(tool, "outputSchema", output_schema);
+
+    const auto annotations = writer.Object();
+    writer.AddBool(annotations, "readOnlyHint", true);
+    writer.AddBool(annotations, "destructiveHint", false);
+    writer.AddBool(annotations, "idempotentHint", true);
+    writer.AddBool(annotations, "openWorldHint", false);
+    writer.Add(tool, "annotations", annotations);
+    writer.Append(tools, tool);
+    writer.Add(result, "tools", tools);
+    return result;
 }
 
-std::string CaptureResult(FrameSnapshotStore& frames) {
+std::string FrameMetadataText(const FrameSnapshot& frame) {
+    core::JsonWriter writer;
+    const auto metadata = writer.Object();
+    writer.AddUnsignedInteger(metadata, "sequence", frame.sequence);
+    writer.AddUnsignedInteger(metadata, "width", frame.width);
+    writer.AddUnsignedInteger(metadata, "height", frame.height);
+    return writer.Serialize(metadata);
+}
+
+core::JsonWriter::Value ToolError(core::JsonWriter& writer, const std::string_view message) {
+    const auto result = writer.Object();
+    const auto content = writer.Array();
+    const auto text = writer.Object();
+    writer.AddString(text, "type", "text");
+    writer.AddString(text, "text", message);
+    writer.Append(content, text);
+    writer.Add(result, "content", content);
+    writer.AddBool(result, "isError", true);
+    return result;
+}
+
+core::JsonWriter::Value CaptureResult(core::JsonWriter& writer, FrameSnapshotStore& frames) {
     const auto frame = frames.Latest();
-    if (!frame) {
-        return R"({"content":[{"type":"text","text":"No presented guest frame is available."}],"isError":true})";
-    }
+    if (!frame) return ToolError(writer, "No presented guest frame is available.");
+
     const auto png = EncodePng(*frame);
-    std::ostringstream result;
-    result << "{\"content\":[{\"type\":\"image\",\"data\":"
-           << JsonString(Base64(png))
-           << ",\"mimeType\":\"image/png\"},{\"type\":\"text\",\"text\":"
-           << JsonString("Captured frame " + std::to_string(frame->sequence) + " (" +
-                         std::to_string(frame->width) + "x" +
-                         std::to_string(frame->height) + ").")
-           << "}],\"structuredContent\":{\"sequence\":" << frame->sequence
-           << ",\"width\":" << frame->width << ",\"height\":" << frame->height
-           << "},\"isError\":false}";
-    return result.str();
+    const auto result = writer.Object();
+    const auto content = writer.Array();
+    const auto image = writer.Object();
+    writer.AddString(image, "type", "image");
+    writer.AddString(image, "data", Base64(png));
+    writer.AddString(image, "mimeType", "image/png");
+    writer.Append(content, image);
+    const auto text = writer.Object();
+    writer.AddString(text, "type", "text");
+    writer.AddString(text, "text", FrameMetadataText(*frame));
+    writer.Append(content, text);
+    writer.Add(result, "content", content);
+    const auto structured = writer.Object();
+    writer.AddUnsignedInteger(structured, "sequence", frame->sequence);
+    writer.AddUnsignedInteger(structured, "width", frame->width);
+    writer.AddUnsignedInteger(structured, "height", frame->height);
+    writer.Add(result, "structuredContent", structured);
+    writer.AddBool(result, "isError", false);
+    return result;
 }
 
 }  // namespace
@@ -290,59 +284,128 @@ McpProtocolAdapter::McpProtocolAdapter(FrameSnapshotStore& frames,
 
 std::optional<std::string> McpProtocolAdapter::Handle(
     const std::string_view request) const {
-    std::string id = "null";
-    try {
-        const auto first = request.find_first_not_of(" \t\r\n");
-        const auto last = request.find_last_not_of(" \t\r\n");
-        if (first == std::string_view::npos || request[first] != '{' ||
-            request[last] != '}') {
-            throw std::invalid_argument("JSON-RPC request must be an object");
-        }
-        if (StringMember(request, "jsonrpc") != "2.0") {
-            return RpcError(id, -32600, "invalid JSON-RPC version");
-        }
-        const auto method = StringMember(request, "method");
-        if (!method || method->empty()) return RpcError(id, -32600, "method is required");
-        const bool notification = !MemberValueStart(request, "id").has_value();
-        if (!notification) id = IdMember(request);
+    core::JsonParseError parse_error;
+    auto document = core::JsonDocument::ParseStrict(request, parse_error);
+    if (!document.has_value()) {
+        const int code = parse_error.kind == core::JsonParseErrorKind::syntax ? -32700 : -32600;
+        return RpcError(std::nullopt, code, parse_error.message);
+    }
 
+    const auto root = document->Root();
+    if (!root.IsObject()) {
+        return RpcError(std::nullopt, -32600, "JSON-RPC request must be an object");
+    }
+
+    auto id = root.Member("id");
+    const bool notification = !id.has_value();
+    if (id.has_value() && !id->IsString() && !id->IsInteger()) {
+        return RpcError(std::nullopt, -32600,
+                        "JSON-RPC id must be a string or integer");
+    }
+    const auto version = root.Member("jsonrpc");
+    if (!version.has_value() || version->String() != std::optional<std::string_view>{"2.0"}) {
+        return RpcError(id, -32600, "invalid JSON-RPC version");
+    }
+    const auto method_value = root.Member("method");
+    const auto method = method_value ? method_value->String() : std::nullopt;
+    if (!method.has_value() || method->empty()) {
+        return RpcError(id, -32600, "method is required");
+    }
+
+    try {
         if (*method == "notifications/initialized" || *method == "notifications/cancelled") {
-            return notification ? std::nullopt : std::optional{RpcResult(id, "{}")};
+            if (notification) return std::nullopt;
+            return RpcError(id, -32600, "notification method must not include an id");
         }
         if (notification) return std::nullopt;
+
+        const auto params = root.Member("params");
+        if (params.has_value() && !params->IsObject()) {
+            return RpcError(id, -32602, "params must be an object");
+        }
         if (*method == "initialize") {
-            const auto requested = StringMember(request, "protocolVersion");
-            const auto negotiated = requested &&
-                                            (*requested == "2025-11-25" ||
-                                             *requested == "2025-06-18" ||
-                                             *requested == "2025-03-26")
-                                        ? *requested
-                                        : std::string(kProtocolVersion);
-            std::ostringstream result;
-            result << "{\"protocolVersion\":" << JsonString(negotiated)
-                   << ",\"capabilities\":{\"tools\":{\"listChanged\":false}},"
-                      "\"serverInfo\":{\"name\":\"ogplay\",\"version\":"
-                   << JsonString(server_version_)
-                   << "},\"instructions\":"
-                   << JsonString("OGPlay exposes read-only runtime inspection. "
-                                 "frame_capture returns the latest presented guest frame "
-                                 "and never advances execution or consumes input.")
-                   << '}';
-            return RpcResult(id, result.str());
-        }
-        if (*method == "ping") return RpcResult(id, "{}");
-        if (*method == "tools/list") return RpcResult(id, ToolsList());
-        if (*method == "tools/call") {
-            const auto name = StringMember(request, "name");
-            if (!name || name->empty()) return RpcError(id, -32602, "tool name is required");
-            if (*name != "frame_capture") {
-                return RpcError(id, -32602, "unknown MCP tool: " + *name);
+            if (!params.has_value()) {
+                return RpcError(id, -32602, "initialize params are required");
             }
-            return RpcResult(id, CaptureResult(frames_));
+            const auto requested_value = params->Member("protocolVersion");
+            const auto requested = requested_value ? requested_value->String() : std::nullopt;
+            const auto capabilities = params->Member("capabilities");
+            const auto client_info = params->Member("clientInfo");
+            const auto client_name = client_info ? client_info->Member("name") : std::nullopt;
+            const auto client_version = client_info ? client_info->Member("version") : std::nullopt;
+            if (!requested.has_value() || !capabilities.has_value() ||
+                !capabilities->IsObject() || !client_info.has_value() ||
+                !client_info->IsObject() || !client_name.has_value() ||
+                !client_name->IsString() || !client_version.has_value() ||
+                !client_version->IsString()) {
+                return RpcError(id, -32602,
+                                "initialize requires protocolVersion, capabilities and clientInfo");
+            }
+            const auto negotiated = *requested == "2025-11-25" ||
+                                            *requested == "2025-06-18" ||
+                                            *requested == "2025-03-26"
+                                        ? *requested
+                                        : kProtocolVersion;
+            return RpcResult(*id, [&](core::JsonWriter& writer) {
+                const auto result = writer.Object();
+                writer.AddString(result, "protocolVersion", negotiated);
+                const auto server_capabilities = writer.Object();
+                const auto tools = writer.Object();
+                writer.AddBool(tools, "listChanged", false);
+                writer.Add(server_capabilities, "tools", tools);
+                writer.Add(result, "capabilities", server_capabilities);
+                const auto server_info = writer.Object();
+                writer.AddString(server_info, "name", "ogplay");
+                writer.AddString(server_info, "version", server_version_);
+                writer.Add(result, "serverInfo", server_info);
+                writer.AddString(
+                    result, "instructions",
+                    "OGPlay exposes read-only runtime inspection. frame_capture returns the "
+                    "latest presented guest frame and never advances execution or consumes input.");
+                return result;
+            });
         }
-        return RpcError(id, -32601, "method not found: " + *method);
-    } catch (const std::invalid_argument& error) {
-        return RpcError(id, -32602, error.what());
+        if (*method == "ping") {
+            return RpcResult(*id, [](core::JsonWriter& writer) { return writer.Object(); });
+        }
+        if (*method == "tools/list") {
+            if (params.has_value()) {
+                const auto cursor = params->Member("cursor");
+                if (cursor.has_value()) {
+                    if (!cursor->IsString()) {
+                        return RpcError(id, -32602, "tools/list cursor must be a string");
+                    }
+                    return RpcError(id, -32602, "tools/list cursor is not recognized");
+                }
+            }
+            return RpcResult(*id, [](core::JsonWriter& writer) { return ToolsList(writer); });
+        }
+        if (*method == "tools/call") {
+            if (!params.has_value()) {
+                return RpcError(id, -32602, "tools/call params are required");
+            }
+            const auto name_value = params->Member("name");
+            const auto name = name_value ? name_value->String() : std::nullopt;
+            if (!name.has_value() || name->empty()) {
+                return RpcError(id, -32602, "tool name is required");
+            }
+            if (*name != "frame_capture") {
+                return RpcError(id, -32602, "unknown MCP tool: " + std::string(*name));
+            }
+            const auto arguments = params->Member("arguments");
+            if (arguments.has_value() && !arguments->IsObject()) {
+                return RpcError(id, -32602, "tool arguments must be an object");
+            }
+            if (arguments.has_value() && arguments->Size() != 0U) {
+                return RpcResult(*id, [](core::JsonWriter& writer) {
+                    return ToolError(writer, "frame_capture does not accept arguments");
+                });
+            }
+            return RpcResult(*id, [&](core::JsonWriter& writer) {
+                return CaptureResult(writer, frames_);
+            });
+        }
+        return RpcError(id, -32601, "method not found: " + std::string(*method));
     } catch (const std::exception& error) {
         return RpcError(id, -32603, error.what());
     }

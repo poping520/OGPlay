@@ -143,5 +143,37 @@ TEST_CASE("MCP protocol rejects unknown tools and malformed requests") {
     CHECK(unknown->find("unknown MCP tool") != std::string::npos);
     const auto malformed = mcp.Handle("not-json");
     REQUIRE(malformed.has_value());
-    CHECK(malformed->find("\"code\":-32602") != std::string::npos);
+    CHECK(malformed->find("\"code\":-32700") != std::string::npos);
+}
+
+TEST_CASE("MCP protocol strictly validates JSON-RPC envelopes and scoped params") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpProtocolAdapter mcp{frames};
+
+    const auto nested_method = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":"\u6d4b\u8bd5","params":{"method":"fake"},"method":"ping"})");
+    REQUIRE(nested_method.has_value());
+    CHECK(nested_method->find("\"id\":\"测试\"") != std::string::npos);
+    CHECK(nested_method->find("\"result\":{}") != std::string::npos);
+
+    const auto null_id = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":null,"method":"ping"})");
+    REQUIRE(null_id.has_value());
+    CHECK(null_id->find("\"code\":-32600") != std::string::npos);
+
+    const auto duplicate = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":1,"id":2,"method":"ping"})");
+    REQUIRE(duplicate.has_value());
+    CHECK(duplicate->find("\"code\":-32600") != std::string::npos);
+
+    const auto incomplete_initialize = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":3,"method":"initialize","params":{"protocolVersion":"2025-11-25"}})");
+    REQUIRE(incomplete_initialize.has_value());
+    CHECK(incomplete_initialize->find("\"code\":-32602") != std::string::npos);
+
+    const auto invalid_arguments = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"frame_capture","arguments":{"advance":true}}})");
+    REQUIRE(invalid_arguments.has_value());
+    CHECK(invalid_arguments->find("\"isError\":true") != std::string::npos);
+    CHECK(invalid_arguments->find("does not accept arguments") != std::string::npos);
 }

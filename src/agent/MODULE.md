@@ -13,6 +13,8 @@
   返回旧缓冲供前端回收，读取时只按请求复制，不在每帧编码或复制截图。
 - `McpProtocolAdapter::Handle`：实现 MCP initialize/ping/tools/list/tools/call 最小协议面；
   `frame_capture` 只读工具把最近帧编码为 MCP `image/png` content，并返回精确序号和尺寸。
+- 协议编解码只通过 core `JsonDocument`/`JsonWriter`；MCP initialize 与工具 schema 按
+  JSON-RPC 对象作用域验证，不扫描嵌套文本。
 - `gpu.stats/render_targets/capabilities/trace`：从可选 `GpuStateProvider` 序列化强类型
   快照；未连接 provider 明确失败，trace 限额为 1..1000。
 - M6 增加 frame/fs/mem/cpu 分组。
@@ -27,6 +29,7 @@
 - `sym.resolve` 使用 core 的 provider；`hle.unimplemented/null_calls` 直接读取运行时账本。
 - `gpu.*` 不接受 provider 生成的 JSON；过滤与限额经结构化参数传入同一快照接口。
 - 协议错误使用 JSON-RPC 标准错误码；内核状态错误放在 server error 范围。
+- JSON 语法错误与无效 request 分别映射 -32700/-32600；重复键、超限和错误类型明确失败。
 
 ## 禁止
 

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 guest JNI library lifecycle 集成批次已完成
+更新：2026-08-10 · M8 mixed GLES capability query 批次已完成
 
 ## 当前阶段
 
@@ -29,12 +29,16 @@
 
 ## 进行中
 
-- Asphalt 6 exact 已按 constructors→Profile Java registry→root JNI_OnLoad→native callback
-  执行，越过此前 null JavaVM 与 OnLoad 全部 class/method lookup；下一批按 GLES1
-  state/string/query/resource 静态盘点集中闭合。尚未声称首帧或主界面。
+- Asphalt 6 exact 已越过 JNI_OnLoad 与 mixed GLES capability discovery；96 个唯一 GL 导入
+  已静态盘点，下一批一次实现 framebuffer/renderbuffer 资源族并继续采样。尚未声称首帧
+  或主界面。
 
 ## 最近完成
 
+- [WU-0371] 为同时链接 GLES1/GLES2 的 guest 批量转发 shading-language string、8 项 shader/
+  texture/uniform/varying capability 与 current-program/framebuffer/renderbuffer 三项状态；五个
+  string 结果使用独立只读槽。exact 越过完整 discovery，稳定进入 `glBindFramebuffer`；
+  focused 1/1、full CTest 494/494。
 - [WU-0370] session 增加一次性 root JNI library 初始化，GLSurfaceView 前端只在 Profile
   class registry 装配后、startup callback 前调用；静态盘点并一次声明 SUtils、Device、
   GameInstaller 的 OnLoad lookup。exact 越过 JNI_OnLoad 与前五个 startup callback，稳定
@@ -49,10 +53,6 @@
 - [WU-0367] 将 NewObject 与 framework HLE host object 统一到会话级精确 class registry，
   GetObjectClass/IsInstanceOf/30 个 instance call 不再只识别 guest 构造对象；为 Context、
   service 与 UUID 对象链批量接入消除结构性缺口；focused 3/3、full CTest 491/491。
-- [WU-0366] 批量绑定 GetStaticFieldID 与 9 类 getter/setter 共 19 个 static field 槽；
-  descriptor/type/static-kind 严格校验，word、符号扩展、float 与 long/double 栈参数遵循
-  A32 soft-float ABI，为整组 Android 平台身份常量提供可复用 field store 通路；focused
-  1/1、full CTest 490/490，exact 复采样仍精确停于下一批 `android/os/Build` 类声明。
 - [WU-0359] 提交 Asphalt 5 exact `title_flow`：固定 frame 430 选择 English，frame 464
   点击标题页后在 468/468000 进入 Main Menu，干净 PNG SHA-256 固定为
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`；macOS-arm64 连续
@@ -77,8 +77,8 @@ GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 静态反汇编与 exact trace 合并盘点 GLES1 string/state/query/resource 缺口，按类别批量闭合。
-2. 闭合后续 license/VFS 与声明式 working-directory 调用，再固化主界面
+1. 一次实现 GLES2 framebuffer/renderbuffer 生成、删除、绑定、存储、附着与状态检查资源族。
+2. 继续按 96 项 GL 导入的 shader/program、uniform/draw 子批次闭合，再处理 license/VFS 并固化主界面
    Scenario 与三轮 gate。
 
 ## 阻塞

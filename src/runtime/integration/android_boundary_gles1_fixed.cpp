@@ -34,8 +34,8 @@ constexpr std::uint32_t kQuadraticAttenuation = 0x1209U;
 constexpr std::uint32_t kMaterialEmission = 0x1600U;
 constexpr std::uint32_t kMaterialAmbientAndDiffuse = 0x1602U;
 constexpr memory::GuestAddress kGles1QueryStringRegion{0x70010000U};
-constexpr std::uint32_t kQueryStringSlotBytes = 16U * 1024U;
-constexpr std::uint32_t kQueryStringRegionBytes = kQueryStringSlotBytes * 4U;
+constexpr std::uint32_t kQueryStringSlotBytes = 12U * 1024U;
+constexpr std::uint32_t kQueryStringRegionBytes = 64U * 1024U;
 constexpr std::uint32_t kTexture0 = 0x84C0U;
 constexpr std::uint32_t kTexture31 = 0x84DFU;
 
@@ -144,6 +144,7 @@ void RequireCount(const std::span<const float> values, const std::size_t expecte
     case 0x1F01U: return kQueryStringSlotBytes;
     case 0x1F02U: return kQueryStringSlotBytes * 2U;
     case 0x1F03U: return kQueryStringSlotBytes * 3U;
+    case 0x8B8CU: return kQueryStringSlotBytes * 4U;
     default: throw std::invalid_argument("GLES1 string query is unsupported");
     }
 }

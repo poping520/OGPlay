@@ -64,13 +64,16 @@
   规则、负 image size、guest 范围与传输上限必须在任何 ANGLE 调用前明确验证。ETC1 在
   ANGLE 未发布原生或 lossy decode 扩展时通过 gles 模块的规范解码器上传 RGBA8，guest
   texture base format 仍保持 RGB 事实。
-- GLES1 `glGetString` 只接受 vendor/renderer/version/extensions，查询真实 ANGLE context
-  后写入 GLES1 专属、分槽且只读的 guest 页；不得与 GLES2 shading-language 槽复用地址。
+- GLES1 `glGetString` 接受 vendor/renderer/version/extensions；混合链接 guest 经共享符号
+  查询 shading-language 时也转发真实 ANGLE context。五类结果写入 GLES1 专属、分槽且
+  只读的 guest region，任何稳定指针不得因另一 pname 查询被覆盖。
 - GLES1 `glGetIntegerv` 对矩阵栈、shade model、active/client texture、texture/buffer binding、
   client-array descriptor、pixel alignment 与固定管线真实上限返回转换器拥有的 context 状态；
   颜色位数、深度位数、legacy blend alias 及设备尺寸等兼容查询转发真实 ANGLE context。
   `glGetBooleanv` 将 capability/native 查询转换为逐字节 `GLboolean`；查询形状必须显式受检，
   guest 输出先完整预检再一次提交，未知 pname、无 current frame 或 ANGLE 错误不得伪造结果。
+  同时链接 GLES1/GLES2 的 guest 可经共享 `glGetIntegerv` 查询 GLES2 shader/texture/uniform/
+  varying 上限以及 current program、framebuffer、renderbuffer binding，值仍来自真实 ANGLE。
 - GLES1 legacy fixed-state 批次显式绑定 alpha function、client active texture、current color
   与 texture environment；`glTexEnvf` 保留浮点参数语义；状态按 context/texture unit 隔离、
   验证、clamp 并随 reset 恢复默认。

@@ -193,6 +193,19 @@ void WriteGuestNames(gles::GuestBuffer& output,
     case 0x84E8U:  // GL_MAX_RENDERBUFFER_SIZE
     case 0x851CU:  // GL_MAX_CUBE_MAP_TEXTURE_SIZE
     case 0x86A2U:  // GL_NUM_COMPRESSED_TEXTURE_FORMATS
+    // Mixed GLES1/GLES2 binaries resolve shared glGetIntegerv through one
+    // boundary symbol while still querying GLES2 capability limits.
+    case 0x8869U:  // GL_MAX_VERTEX_ATTRIBS
+    case 0x8872U:  // GL_MAX_TEXTURE_IMAGE_UNITS
+    case 0x8B4CU:  // GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS
+    case 0x8B4DU:  // GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS
+    case 0x8DF9U:  // GL_NUM_SHADER_BINARY_FORMATS (hybrid GLES1/GLES2 binary)
+    case 0x8DFBU:  // GL_MAX_VERTEX_UNIFORM_VECTORS
+    case 0x8DFCU:  // GL_MAX_VARYING_VECTORS
+    case 0x8DFDU:  // GL_MAX_FRAGMENT_UNIFORM_VECTORS
+    case 0x8B8DU:  // GL_CURRENT_PROGRAM
+    case 0x8CA6U:  // GL_FRAMEBUFFER_BINDING
+    case 0x8CA7U:  // GL_RENDERBUFFER_BINDING
     case 0x8B9AU:  // GL_IMPLEMENTATION_COLOR_READ_TYPE
     case 0x8B9BU: return 1U;  // GL_IMPLEMENTATION_COLOR_READ_FORMAT
     default:

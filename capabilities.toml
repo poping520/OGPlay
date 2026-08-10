@@ -665,6 +665,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_library_lifecycle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
 note = "M8 WU-0370 固定 constructors→Profile Java registry→root JNI_OnLoad→native callback 顺序；一次性 session API 校验版本，Asphalt 6 exact 越过 OnLoad 与前五个 startup callback"
 
+[runtime.gles_mixed_capability_queries]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
+note = "M8 WU-0371 为混合链接 guest 批量转发 shading-language、8 项 GLES2 capability 与 3 项 binding-state 查询；五个 string pointer 分槽只读，exact 越过 discovery 进入 FBO resource 批次"
+
 [runtime.java_sound_pool_lifecycle]
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; bounded exact-APK run-apk smoke"

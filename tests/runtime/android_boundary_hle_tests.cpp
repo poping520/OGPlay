@@ -569,9 +569,19 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             fixture.memory.Write(ogplay::memory::GuestAddress{vendor},
                                  std::array{std::byte{'X'}}, 1U),
             ogplay::memory::MemoryFault);
-        CHECK_THROWS_WITH_AS(
-            fixture.Call("libGLESv1_CM.so", "glGetString", {0x8B8CU}),
-            "GLES1 string query is unsupported", std::invalid_argument);
+        const auto shading_language = fixture.Call(
+            "libGLESv1_CM.so", "glGetString", {0x8B8CU});
+        REQUIRE(shading_language != 0U);
+        CHECK(fixture.bus.Read8(
+                  ogplay::memory::GuestAddress{shading_language}, 1U) != 0U);
+        for (const auto pname : std::array{
+                 0x8869U, 0x8872U, 0x8B4CU, 0x8B4DU, 0x8DF9U, 0x8DFBU,
+                 0x8DFCU, 0x8DFDU, 0x8B8DU, 0x8CA6U, 0x8CA7U}) {
+            fixture.bus.Write32(query_output, 0x7fffffffU, 1U);
+            CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                               {pname, query_output.Value()}) == 0U);
+            CHECK(fixture.bus.Read32(query_output, 1U) != 0x7fffffffU);
+        }
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glMatrixMode",
                   {ogplay::runtime::detail::kGles1Projection}) == 0U);

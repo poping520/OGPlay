@@ -66,3 +66,20 @@ python tools/validate_scenarios.py --schema data/scenarios/scenario-v1.schema.js
 
 `tools/scenario_model.py` 是 AI/CI runner 共用的强类型 action/assertion/result 模型；工具
 不得绕过严格 validator 直接从未验证 TOML 构造执行计划。
+
+执行一个场景时，宿主 fixture 必须在命令行按 logical id 映射，路径不会写回 Scenario 或
+Result。runner 会创建专用证据目录，按 startup/checkpoint/total 的 frame、guest tick 与
+wall-time 三重预算驱动同一个 `run-apk --mcp-manual-step` 会话；任何结果都会请求正常
+shutdown，超时才清理自己启动的子进程。
+
+```text
+python tools/run_scenario.py \
+  --scenario data/scenarios/<id>.scenario.toml \
+  --profiles data/profiles --ogplay build/dev/ogplay \
+  --system-dir <api19-lib-dir> --fixture <logical-id>=<host-path> \
+  --evidence-dir <new-output-directory>
+```
+
+证据引用始终相对输出目录；`frame` 写无网格 PNG，`state` 写原子 session JSON，`logs` 引用
+同一子进程 stdout/stderr。当前 MCP 尚未发布 GPU trace，因此请求 `gpu_trace` 证据会明确
+失败，不会伪造空 trace。

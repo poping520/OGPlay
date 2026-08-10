@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M6 Profile-backed MCP 手动会话已接通
+更新：2026-08-10 · M6 通用自动测试执行闭环已完成
 
 ## 当前阶段
 
@@ -28,10 +28,14 @@
 
 ## 进行中
 
-- 无；下一项为 WU-0358 Scenario runner 与结果/证据闭环。
+- 无；下一项为 WU-0359 Asphalt 5 exact 场景与连续三轮 gate。
 
 ## 最近完成
 
+- [WU-0358] Python runner 从强类型 Scenario 启动同一 Profile-backed MCP manual-step 会话，
+  实时门禁 startup/checkpoint/total 三重预算，执行动作与逐帧断言，落盘相对 frame/state/log
+  证据和 Result v1；成功/失败均正常 shutdown，超时清理明确记账；focused 6/6、full
+  CTest 484/484。
 - [WU-0357] `run-apk --mcp-manual-step` 复用 GLSurfaceView exact Profile bootstrap、ANGLE、
   lifecycle、audio 与 teardown；guest 主线程消费 step/suspend/resume/shutdown，启动、帧、
   movie/exit/fault 状态原子发布，普通交互模式不变；Asphalt 5 exact 从 0/0 精确步进到
@@ -65,13 +69,14 @@
 
 已有 Scenario v1 身份/fixture/预算/checkpoint/action/assertion/result 契约、Control
 Service/JSON-RPC、固定步长 Clock、能力账本、结构化日志、GPU 查询和 Software/ANGLE
-黄金帧基础。MCP 已通过 `run-apk` 接入同一 Profile-backed exact guest 会话，但尚无读取
-Scenario、预算等待、结构化断言、证据写入和退出清理的 runner。
+黄金帧基础。通用 runner 已闭合 Scenario→exact Profile session→action/step→assertion→
+evidence/Result→shutdown；尚待把 Asphalt 5 的标题页触摸/电影请求边界固化为仓库场景并做
+连续三轮确定性验收。OBB fixture 与 MCP GPU trace 仍明确未实现。
 
 ## 下一步（按优先级）
 
-1. 创建 WU-0358，建立 Scenario runner，接入有界 step/until、输入、断言、证据和清理。
-2. 提交 Asphalt 5 首个 exact 场景并执行连续三轮确定性 gate。
+1. 创建 WU-0359，提交 Asphalt 5 首个 exact 场景并执行连续三轮确定性 gate。
+2. 根据实测 Result 固化 movie request 名称、frame/tick 上界和可复现证据摘要。
 3. 将当前标题页触摸→重复 logo 电影请求作为首个自动化场景，断言 movie request、
    suspend/resume、稳定检查点和正常 shutdown。
 

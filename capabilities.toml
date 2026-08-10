@@ -35,6 +35,11 @@ status = "complete"
 test = "MCP HTTP bridges session commands without entering guest code; frontend.run_apk_options"
 note = "M6 WU-0357 为 gl_surface_view run-apk 增加显式 MCP manual-step 模式；复用 exact Profile bootstrap/lifecycle/ANGLE/audio/teardown，guest 主线程消费命令并发布 frame/ticks/movie/exit/fault 原子状态"
 
+[automation.scenario_runner]
+status = "complete"
+test = "tools.scenario_runner_self_test"
+note = "M6 WU-0358 以同一 Profile-backed MCP manual-step 会话执行强类型 Scenario；三重预算、逐断言 expected/actual、相对 frame/state/log 证据、Result v1 与正常/超时清理形成 AI/CI 共用闭环；OBB 和 gpu_trace 仍明确失败"
+
 [agent.control_service]
 status = "complete"
 test = "tests/agent/control_service_tests.cpp"

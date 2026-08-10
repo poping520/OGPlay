@@ -161,7 +161,15 @@ A32GuestCallResult InvokeA32GuestCall(
         cpu.SetState(updated);
         if (slice_observer) slice_observer();
     }
-    throw A32GuestCallError("A32 guest call exhausted its tick budget");
+    const auto exhausted = cpu.GetState();
+    throw A32GuestCallError(
+        "A32 guest call exhausted its tick budget: consumed=" +
+        std::to_string(consumed) + " pc=" +
+        std::to_string(
+            exhausted.Register(cpu::CoreRegister::pc)) +
+        " lr=" +
+        std::to_string(
+            exhausted.Register(cpu::CoreRegister::lr)));
 }
 
 GuestThreadRunOutcome RunAndroidArmGuestThread(

@@ -548,7 +548,7 @@ note = "M5 WU-0235 按 phase 将已解析 target、JNIEnv、实例/jclass、surf
 [runtime.a32_guest_call_executor]
 status = "complete"
 test = "tests/runtime/guest_thread_runner_tests.cpp"
-note = "M5 WU-0236/0322/0325 以通用 AAPCS 执行器装入调用帧；长计算按 2000 万 tick 切片发布 observer，总预算与返回 trap 语义不变"
+note = "M5 WU-0236/0322/0325 以通用 AAPCS 执行器装入调用帧；长计算按 2000 万 tick 切片发布 observer，总预算与返回 trap 语义不变；WU-0338 在预算耗尽诊断中保留 consumed tick、PC 与 LR"
 
 [runtime.jni_guest_trap_dispatch]
 status = "complete"

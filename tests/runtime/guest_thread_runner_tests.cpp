@@ -325,7 +325,8 @@ TEST_CASE("A32 guest call rejects invalid frames and unhandled stops") {
                 fixture.memory, frame,
                 fixture.stack.Add(fixture.memory.PageSize()),
                 fixture.code.Add(64), 2)),
-            "A32 guest call exhausted its tick budget",
+            "A32 guest call exhausted its tick budget: consumed=2 pc=65536 "
+            "lr=65600",
             ogplay::runtime::A32GuestCallError);
     }
 }

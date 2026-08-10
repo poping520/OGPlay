@@ -32,6 +32,8 @@ present 数更新一位小数的实时值。
 - `--external-dir` 最多出现一次；匹配 Profile 必须声明且只声明一个 external mount，
   required 输入与 manifest 缺失须在创建窗口前失败。宿主目录经 runtime/vfs 通用入口
   索引，不在前端复制文件内容或实现路径语义。
+- Profile 声明 `data.working_directory` 时，前端必须在 guest 启动前注入同一 VFS；相对
+  文件访问由 VFS 通用解析，前端不得拼接单个资源路径。
 - pointer 事件经 input 模块按最近 guest 帧与当前窗口的等比内容区映射；鼠标主键模拟固定
   id 的单点触摸，悬停不注入；黑边按下/移动不注入，黑边释放仍夹紧转发以闭合已开始的
   手势。

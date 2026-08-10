@@ -12,6 +12,7 @@ lifecycle = "gl_surface_view"
 width = 1024
 height = 600
 [data]
+working_directory = "/sdcard/gameloft/games/DungeonHunter"
 mounts = [
   { guest = "/sdcard/gameloft/games/DungeonHunter", source = "external", required = true },
 ]

@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0315] VFS 现可从显式、受检的 Profile 工作目录解析相对 guest 路径，并继续拒绝
+  traversal；第二个 exact APK 的 `./data/...` 资源已命中 external 数据，原空对象 fault
+  消失并推进至独立 tick-budget 边界，全量 CTest 通过。
 - [WU-0314] legacy phone-language 回调现从统一受检 Locale 配置派生确定性语言索引，
   支持 ISO-639 两/三字母代码且不读取宿主区域设置；第二个 exact APK 单帧干净退出，
   120 帧 smoke 推进至独立 A32 guest fault，全量 CTest 通过。
@@ -69,9 +72,6 @@
 - [WU-0303] 第二个 exact Profile 已以 package/version/SO/ABI、1024x600 surface、15 个静态
   JNI lifecycle call 和 required external payload 闭合；真实 API 19 link preflight 完成
   5+2 模块与 50,746 个 relocation，全量 CTest 436/436 通过。
-- [WU-0302] `run-apk --external-dir` 现将一个显式宿主目录精确挂到匹配 Profile 声明的
-  external guest 根；声明数量、required 输入及 manifest 在窗口前受检，CTest 436/436
-  通过，现有 Asphalt Profile 预检无回归。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

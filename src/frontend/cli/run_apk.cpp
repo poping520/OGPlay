@@ -351,6 +351,10 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     const auto& profile = *match->profile;
     runtime::VirtualFileSystem filesystem;
     MountExternalDirectory(profile, external_directory, filesystem);
+    if (profile.data.has_value() &&
+        profile.data->working_directory.has_value()) {
+        filesystem.SetWorkingDirectory(*profile.data->working_directory);
+    }
     const auto& bionic = runtime::SelectBionicProfile(profile.runtime.api_level);
     const auto owned_system = ReadSystemLibraries(*system_directory, bionic);
     std::vector<runtime::BionicModuleSource> system_sources;

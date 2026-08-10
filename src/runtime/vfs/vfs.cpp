@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -65,7 +66,8 @@ constexpr std::int32_t kEfbig = 27;
     return value;
 }
 
-[[nodiscard]] std::string NormalizePath(const std::string_view path) {
+[[nodiscard]] std::string NormalizeAbsolutePath(
+    const std::string_view path, const bool allow_root) {
     if (path.empty() || path.front() != '/') {
         throw VfsError(kEnotdir, "VFS path must be absolute");
     }
@@ -91,8 +93,29 @@ constexpr std::int32_t kEfbig = 27;
         if (end == std::string_view::npos) break;
         cursor = end + 1;
     }
-    if (result.empty()) throw VfsError(kEisdir, "VFS root is not a file");
+    if (result.empty()) {
+        if (allow_root) return "/";
+        throw VfsError(kEisdir, "VFS root is not a file");
+    }
     return result;
+}
+
+[[nodiscard]] std::string NormalizePath(const std::string_view path) {
+    return NormalizeAbsolutePath(path, false);
+}
+
+[[nodiscard]] std::string ResolvePath(
+    const std::string_view path,
+    const std::optional<std::string>& working_directory) {
+    if (!path.empty() && path.front() == '/') return NormalizePath(path);
+    if (!working_directory.has_value()) {
+        throw VfsError(kEnotdir,
+                       "relative VFS path requires a working directory");
+    }
+    auto absolute = *working_directory;
+    if (absolute != "/") absolute.push_back('/');
+    absolute.append(path);
+    return NormalizePath(absolute);
 }
 
 struct File final {
@@ -293,9 +316,20 @@ public:
         MountLazy(VfsSource::external, root, entries, true);
     }
 
-    [[nodiscard]] VfsFileInfo Stat(const std::string_view path) const {
-        const auto normalized = NormalizePath(path);
+    void SetWorkingDirectory(const std::string_view path) {
+        const auto normalized = NormalizeAbsolutePath(path, true);
         std::scoped_lock lock(mutex_);
+        working_directory_ = normalized;
+    }
+
+    [[nodiscard]] std::optional<std::string> WorkingDirectory() const {
+        std::scoped_lock lock(mutex_);
+        return working_directory_;
+    }
+
+    [[nodiscard]] VfsFileInfo Stat(const std::string_view path) const {
+        std::scoped_lock lock(mutex_);
+        const auto normalized = ResolvePath(path, working_directory_);
         const auto found = files_.find(normalized);
         if (found == files_.end()) throw VfsError(kEnoent, "VFS file not found");
         return {found->second->size, found->second->writable,
@@ -307,8 +341,8 @@ public:
         if (!options.read && !options.write) {
             throw VfsError(kEinval, "VFS open has no access mode");
         }
-        const auto normalized = NormalizePath(path);
         std::scoped_lock lock(mutex_);
+        const auto normalized = ResolvePath(path, working_directory_);
         auto found = files_.find(normalized);
         if (found == files_.end()) {
             if (!options.create) throw VfsError(kEnoent, "VFS file not found");
@@ -461,6 +495,7 @@ private:
     }
 
     mutable std::mutex mutex_;
+    std::optional<std::string> working_directory_;
     std::map<std::string, std::shared_ptr<File>, std::less<>> files_;
     std::map<std::int32_t, OpenFile> descriptors_;
 };
@@ -490,6 +525,12 @@ void VirtualFileSystem::MountLazyReadOnly(
 void VirtualFileSystem::MountHostDirectory(
     const std::string_view root, const std::filesystem::path& directory) {
     impl_->MountHostDirectory(root, directory);
+}
+void VirtualFileSystem::SetWorkingDirectory(const std::string_view path) {
+    impl_->SetWorkingDirectory(path);
+}
+std::optional<std::string> VirtualFileSystem::WorkingDirectory() const {
+    return impl_->WorkingDirectory();
 }
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);

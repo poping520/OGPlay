@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -78,6 +79,8 @@ public:
                            std::span<const VfsLazyMountEntry> entries);
     void MountHostDirectory(std::string_view root,
                             const std::filesystem::path& directory);
+    void SetWorkingDirectory(std::string_view path);
+    [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);

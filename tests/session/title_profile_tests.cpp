@@ -159,13 +159,18 @@ TEST_CASE("Title Profile C++ loader decodes strict identity and runtime") {
     CHECK(ogplay::session::ToString(profile.runtime.lifecycle) == "gl_surface_view");
 }
 
-TEST_CASE("Dungeon Hunter Profile declares its DEX activity callbacks") {
+TEST_CASE("Dungeon Hunter Profile declares its DEX Java callbacks") {
     const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
                       "data/profiles/com.gameloft.android.GAND.GloftDUNQ."
                       "DungeonHunter.profile.toml";
     const auto profile = ogplay::session::LoadTitleProfile(path);
-    REQUIRE(profile.java_classes.size() == 1U);
-    const auto& java_class = profile.java_classes.front();
+    REQUIRE(profile.java_classes.size() == 2U);
+    const auto activity = std::ranges::find(
+        profile.java_classes,
+        "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter",
+        &ogplay::session::ProfileJavaClass::name);
+    REQUIRE(activity != profile.java_classes.end());
+    const auto& java_class = *activity;
     CHECK(java_class.name ==
           "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter");
     REQUIRE(java_class.methods.size() == 15U);
@@ -194,6 +199,24 @@ TEST_CASE("Dungeon Hunter Profile declares its DEX activity callbacks") {
     CHECK(java_class.methods[14].implementation ==
           "analytics.track_first_run");
     CHECK(std::ranges::all_of(java_class.methods, [](const auto& method) {
+        return method.is_static;
+    }));
+    const auto media = std::ranges::find(
+        profile.java_classes,
+        "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer",
+        &ogplay::session::ProfileJavaClass::name);
+    REQUIRE(media != profile.java_classes.end());
+    REQUIRE(media->methods.size() == 30U);
+    CHECK(media->methods[0].name == "isSoundLoaded");
+    CHECK(media->methods[0].signature == "(II)I");
+    CHECK(media->methods[7].name == "playSoundBig");
+    CHECK(media->methods[7].signature == "(IFZ)V");
+    CHECK(media->methods[10].name == "pauseAllSoundBig");
+    CHECK(media->methods[13].name == "resumeAllSoundBig");
+    CHECK(media->methods[26].name == "detectPhoneLang");
+    CHECK(media->methods[26].signature == "()I");
+    CHECK(media->methods[29].name == "Paused");
+    CHECK(std::ranges::all_of(media->methods, [](const auto& method) {
         return method.is_static;
     }));
 }

@@ -33,6 +33,9 @@
 
 ## 最近完成
 
+- [WU-0312] 第二个 exact Profile 已以纯数据声明 JADX/ELF 共同确认的 30 项 GLMediaPlayer
+  static Java lookup，复用通用 audio implementation id 并保留新增语义的显式命名；真实 APK
+  已越过 audio native init 并推进至下一独立边界，全量 CTest 通过。
 - [WU-0311] 第二个 exact Profile 已以纯数据声明 JADX/ELF 共同确认的 15 项 activity static
   Java lookup，复用通用 implementation id 且生产代码无游戏分支；真实 APK 已越过 activity
   native init，推进至下一独立边界，全量 CTest 通过。
@@ -69,9 +72,6 @@
 - [WU-0300] APK/OBB 只读 VFS backing 现仅挂载路径与尺寸，首次读取才物化、核对并缓存；
   Debug exact APK 单帧由约 12.75 秒稳定降至 3.78–3.81 秒，120 帧正常退出，全量
   CTest 434/434 通过。
-- [WU-0299] SDL 窗口现以无混合复制呈现 opaque guest framebuffer，alpha=0 不再把有效
-  RGB 混入黑底；透明红像素契约与 CTest 432/432 通过，用户确认 Debug exact APK 闪屏
-  恢复完整白底、主界面无回归，424 帧后正常关闭。
 ## 目标 ELF 尚未实现的 GL 入口
 
 以下清单以 `docs/demo/games/libasphalt5.so` 的 62 个 GL import 与 WU-0264 后的显式

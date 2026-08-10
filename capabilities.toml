@@ -657,8 +657,8 @@ note = "M5 WU-0247 将 Profile Java declarations 与 native-call class receiver 
 
 [profiles.legacy_audio_java_declarations]
 status = "complete"
-test = "tools.title_profiles_current; bounded exact-APK run-apk smoke"
-note = "M5 WU-0248 以纯 Profile 数据声明首个目标 audio native init 经 JADX 与 ELF 共同确认的 25 个 static Java lookup"
+test = "tests/session/title_profile_tests.cpp; tools.title_profiles_current; bounded exact-APK run-apk smoke"
+note = "M5 WU-0248/0312 以纯 Profile 数据声明两个目标 audio native init 经 JADX 与 ELF 共同确认的完整 static Java lookup"
 
 [profiles.legacy_activity_java_declarations]
 status = "complete"

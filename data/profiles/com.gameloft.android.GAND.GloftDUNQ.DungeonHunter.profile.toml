@@ -40,6 +40,41 @@ method = [
   { name = "TrackingRegisterFirstRun", sig = "()V", impl = "analytics.track_first_run", static = true },
 ]
 
+[[java.class]]
+name = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer"
+method = [
+  { name = "isSoundLoaded", sig = "(II)I", impl = "audio.is_sound_loaded", static = true },
+  { name = "isSoundLoadedBig", sig = "(I)I", impl = "audio.is_sound_loaded_big", static = true },
+  { name = "unloadSound", sig = "(II)V", impl = "audio.unload_sound", static = true },
+  { name = "unloadSoundBig", sig = "(I)V", impl = "audio.unload_sound_big", static = true },
+  { name = "loadSound", sig = "(II)V", impl = "audio.load_sound", static = true },
+  { name = "loadSoundBig", sig = "(I)V", impl = "audio.load_sound_big", static = true },
+  { name = "playSound", sig = "(IIF)V", impl = "audio.play_sound", static = true },
+  { name = "playSoundBig", sig = "(IFZ)V", impl = "audio.play_sound_big_looping", static = true },
+  { name = "pauseSound", sig = "(II)V", impl = "audio.pause_sound", static = true },
+  { name = "pauseSoundBig", sig = "(I)V", impl = "audio.pause_sound_big", static = true },
+  { name = "pauseAllSoundBig", sig = "()V", impl = "audio.pause_all_big", static = true },
+  { name = "resumeSound", sig = "(II)V", impl = "audio.resume_sound", static = true },
+  { name = "resumeSoundBig", sig = "(I)V", impl = "audio.resume_sound_big", static = true },
+  { name = "resumeAllSoundBig", sig = "()V", impl = "audio.resume_all_big", static = true },
+  { name = "stopSound", sig = "(II)V", impl = "audio.stop_sound", static = true },
+  { name = "stopSoundBig", sig = "(I)V", impl = "audio.stop_sound_big", static = true },
+  { name = "setVolume", sig = "(IIF)V", impl = "audio.set_volume", static = true },
+  { name = "setVolumeBig", sig = "(IF)V", impl = "audio.set_volume_big", static = true },
+  { name = "resetSound", sig = "(I)V", impl = "audio.reset_sound", static = true },
+  { name = "setPitch", sig = "(IIF)V", impl = "audio.set_pitch", static = true },
+  { name = "stopAllSounds", sig = "()V", impl = "audio.stop_all_sounds", static = true },
+  { name = "stopAllPool", sig = "(I)V", impl = "audio.stop_all_pool", static = true },
+  { name = "stopAllBig", sig = "(I)V", impl = "audio.stop_all_big", static = true },
+  { name = "destroySoundPool", sig = "()V", impl = "audio.destroy_sound_pool", static = true },
+  { name = "initSoundPoolArray", sig = "()V", impl = "audio.init_sound_pool_array", static = true },
+  { name = "loadMovie", sig = "(Ljava/lang/String;)V", impl = "audio.load_movie", static = true },
+  { name = "detectPhoneLang", sig = "()I", impl = "locale.detect_phone_language", static = true },
+  { name = "isMediaPlaying", sig = "(I)Z", impl = "audio.is_media_playing", static = true },
+  { name = "openBrowser", sig = "(Ljava/lang/String;)V", impl = "browser.open", static = true },
+  { name = "Paused", sig = "()V", impl = "activity.paused", static = true },
+]
+
 [[runtime.native_call]]
 phase = "startup"
 class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"

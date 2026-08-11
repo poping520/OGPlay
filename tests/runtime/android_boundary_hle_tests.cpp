@@ -1691,7 +1691,7 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
                                    {0, 2, 0x1406U, 0}));
     static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
                                    {0x0004U, 0U, 3U}));
-    CHECK(fixture.boundary.Stats().draws == 3);
+    CHECK(fixture.boundary.Stats().draws == 5);
     static_cast<void>(fixture.Call("libGLESv2.so", "glDisableVertexAttribArray",
                                    {0}));
 
@@ -1709,7 +1709,7 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     const auto stats = fixture.boundary.Stats();
     CHECK(stats.shader_compiles == 2);
     CHECK(stats.program_links == 1);
-    CHECK(stats.draws == 3);
+    CHECK(stats.draws == 5);
 }
 
 TEST_CASE("Android GLES boundary transfers buffer and texture resources") {

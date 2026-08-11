@@ -413,35 +413,26 @@ private:
                            const cpu::A32State& state) {
         const auto tid = state.ThreadId();
         if (module == "libGLESv1_CM.so") {
-            if ((symbol == "glDrawArrays" || symbol == "glDrawElements") &&
-                !gles1_draw_state_.Array(detail::kGles1VertexArray, 0x84C0U)
-                     .enabled &&
-                gles_dispatch_.HasEnabledVertexAttribute()) {
-                try {
-                    if (const auto redirected = gles_dispatch_.Dispatch(
-                            symbol, args, state,
-                            angle_frame_.has_value() ? &*angle_frame_ : nullptr);
-                        redirected.has_value()) {
-                        std::scoped_lock lock(mutex_);
-                        ++gpu_stats_.draws;
-                        ++gpu_stats_.draw_targets.front().draws;
-                        return *redirected;
-                    }
-                } catch (const gles::GuestTransferError& error) {
-                    const auto gles1 = gles1_state_.TransferState().Snapshot();
-                    const auto gles2 = gles_dispatch_.TransferState();
-                    throw gles::GuestTransferError(
-                        "mixed GLES1/GLES2 draw redirect failed: " +
-                        std::string(error.what()) +
-                        "; gles1_array_buffer=" +
-                        std::to_string(gles1.array_buffer) +
-                        " gles2_array_buffer=" +
-                        std::to_string(gles2.array_buffer) +
-                        " gles1_element_buffer=" +
-                        std::to_string(gles1.element_array_buffer) +
-                        " gles2_element_buffer=" +
-                        std::to_string(gles2.element_array_buffer));
+            const auto draw_call = symbol == "glDrawArrays" ||
+                                   symbol == "glDrawElements";
+            if (draw_call &&
+                gl_context_.SelectDrawRenderer(
+                    gles1_draw_state_
+                        .Array(detail::kGles1VertexArray, 0x84C0U)
+                        .enabled,
+                    gles_dispatch_.HasEnabledVertexAttribute()) ==
+                    GuestGlRenderer::programmable) {
+                const auto result = gles_dispatch_.Dispatch(
+                    symbol, args, state,
+                    angle_frame_.has_value() ? &*angle_frame_ : nullptr);
+                if (!result.has_value()) {
+                    throw std::logic_error(
+                        "selected programmable draw has no GLES2 handler");
                 }
+                std::scoped_lock lock(mutex_);
+                ++gpu_stats_.draws;
+                ++gpu_stats_.draw_targets.front().draws;
+                return *result;
             }
             auto api = gles::GlesApi::gles1;
             auto id = gles::FindGlesFunction(api, symbol);

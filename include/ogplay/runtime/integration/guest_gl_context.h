@@ -12,6 +12,8 @@ namespace ogplay::runtime {
 
 using GuestGlContextId = std::uint32_t;
 
+enum class GuestGlRenderer : std::uint8_t { fixed_function, programmable };
+
 struct SharedGlState final {
     gles::GlesTransferState transfer;
     std::uint32_t active_texture{0x84C0U};
@@ -89,6 +91,9 @@ public:
     [[nodiscard]] const SharedGlState& Shared() const noexcept;
     [[nodiscard]] NativeGlState& Native() noexcept;
     [[nodiscard]] const NativeGlState& Native() const noexcept;
+    [[nodiscard]] GuestGlRenderer SelectDrawRenderer(
+        bool fixed_vertex_array_enabled,
+        bool programmable_attribute_enabled) const noexcept;
     void Reset() noexcept;
 
 private:

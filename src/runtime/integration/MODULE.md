@@ -36,8 +36,6 @@
   未绑定固定管线调用明确失败，不得误用同名 GLES2 handler。
 - guest transfer 失败必须保留原异常类别，并附带 `module!symbol`、r0-r3、SP、LR 与
   thread；client attribute staging 还须报告完整 descriptor 和 definition/enable LR。
-  混合 GLES1 draw 转入 GLES2 的失败必须同时报告两套 buffer binding，避免把 VBO offset
-  0 与 null client pointer 混为一谈。
 - GLES1 `glViewport` / `glScissor` 直接转发当前 `AngleFrame`，与 GLES2 共用受检
   超采样坐标换算；没有当前 frame、换算溢出或 ANGLE 错误明确失败。
 - GLES1 `glShadeModel` 只接受标准 `GL_FLAT` / `GL_SMOOTH`，写入独立、显式的
@@ -157,9 +155,8 @@
   不得触达 ANGLE；vector/matrix4 批量入口同样复用 IDL 计数，constant attribute 的第五个
   float 从 A32 guest 栈读取。已绑定 element buffer 时不得为启用的 client attribute 猜测
   索引范围。
-- 同时链接 GLES1/GLES2 的 guest 若把 `glDrawArrays`/`glDrawElements` 解析到 GLES1，但未
-  启用 `GL_VERTEX_ARRAY` 且已有启用的 GLES2 vertex attribute，必须转入同一 GLES2
-  staging/draw 路径；固定管线 `GL_VERTEX_ARRAY` 路径保持不变。
+- draw renderer 由统一 Context 的 current program、fixed client-array 与 programmable
+  attribute 事实共同决定；symbol 所属 library 不拥有 renderer 或 context state。
 - `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽；integer query、
   draw indices 与 readback 输出复用 transfer state，draw 成功后由主 HLE 更新指标。
 - `glTexSubImage2D` 与 `glTexImage2D` 一样按 unpack/format 完整预检像素后再调用 ANGLE。

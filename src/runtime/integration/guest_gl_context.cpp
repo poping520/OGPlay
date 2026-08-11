@@ -253,6 +253,16 @@ NativeGlState& GuestGlContext::Native() noexcept { return native_; }
 
 const NativeGlState& GuestGlContext::Native() const noexcept { return native_; }
 
+GuestGlRenderer GuestGlContext::SelectDrawRenderer(
+    const bool fixed_vertex_array_enabled,
+    const bool programmable_attribute_enabled) const noexcept {
+    if (!fixed_vertex_array_enabled && programmable_attribute_enabled &&
+        shared_.CurrentProgram() != 0U) {
+        return GuestGlRenderer::programmable;
+    }
+    return GuestGlRenderer::fixed_function;
+}
+
 void GuestGlContext::Reset() noexcept {
     shared_.Reset();
     native_.Reset();

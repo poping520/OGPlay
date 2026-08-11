@@ -6,6 +6,8 @@
 #include <optional>
 #include <string_view>
 
+#include "ogplay/gles/gles_transfer_state.h"
+
 namespace ogplay::cpu {
 class A32State;
 }
@@ -31,6 +33,7 @@ public:
         std::string_view symbol, const std::array<std::uint32_t, 4>& arguments,
         const cpu::A32State& state, gles::AngleFrame* frame);
     [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept;
+    [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept;
     void Reset() noexcept;
 
 private:

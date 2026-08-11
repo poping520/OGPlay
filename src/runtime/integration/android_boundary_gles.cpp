@@ -247,6 +247,8 @@ public:
             const auto index = args[0];
             RequireAttributeIndex(index);
             attributes_[index].enabled = symbol == "glEnableVertexAttribArray";
+            attributes_[index].enable_lr =
+                state.Register(cpu::CoreRegister::lr);
             RequireFrame(frame, symbol).SetVertexAttributeEnabled(
                 index, attributes_[index].enabled);
             return 0;
@@ -286,6 +288,8 @@ public:
                 .buffer = buffer,
                 .enabled = attributes_[index].enabled,
                 .defined = true,
+                .definition_lr = state.Register(cpu::CoreRegister::lr),
+                .enable_lr = attributes_[index].enable_lr,
             };
             if (buffer != 0U) {
                 RequireFrame(frame, symbol).VertexAttributePointer(
@@ -514,6 +518,10 @@ public:
         });
     }
 
+    [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept {
+        return transfer_state_.Snapshot();
+    }
+
     void Reset() noexcept {
         transfer_state_ = {};
         attributes_ = {};
@@ -532,6 +540,8 @@ private:
         std::uint32_t buffer{};
         bool enabled{};
         bool defined{};
+        std::uint32_t definition_lr{};
+        std::uint32_t enable_lr{};
     };
 
     static void RequireAttributeIndex(const std::uint32_t index) {
@@ -573,9 +583,24 @@ private:
             }
             const auto bytes = ClientArrayBytes(
                 attribute.size, attribute.type, attribute.stride, maximum_index);
-            const auto transfer = gles::PrepareGuestInput(
-                address_space_, memory::GuestAddress{attribute.pointer}, bytes,
-                false, client_array_staging_[index], thread_id);
+            std::span<const std::byte> transfer;
+            try {
+                transfer = gles::PrepareGuestInput(
+                    address_space_, memory::GuestAddress{attribute.pointer},
+                    bytes, false, client_array_staging_[index], thread_id);
+            } catch (const gles::GuestTransferError& error) {
+                throw gles::GuestTransferError(
+                    "GLES2 client attribute " + std::to_string(index) +
+                    " transfer failed: " + error.what() +
+                    "; pointer=" + std::to_string(attribute.pointer) +
+                    " bytes=" + std::to_string(bytes) +
+                    " size=" + std::to_string(attribute.size) +
+                    " type=" + std::to_string(attribute.type) +
+                    " stride=" + std::to_string(attribute.stride) +
+                    " definition_lr=" +
+                    std::to_string(attribute.definition_lr) +
+                    " enable_lr=" + std::to_string(attribute.enable_lr));
+            }
             frame.BindBuffer(kArrayBuffer, staging_buffers_[index]);
             frame.BufferData(kArrayBuffer,
                              static_cast<std::uint32_t>(transfer.size()),
@@ -792,6 +817,11 @@ std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(
 
 bool AndroidBoundaryGles::HasEnabledVertexAttribute() const noexcept {
     return impl_->HasEnabledVertexAttribute();
+}
+
+gles::GlesTransferStateSnapshot
+AndroidBoundaryGles::TransferState() const noexcept {
+    return impl_->TransferState();
 }
 
 void AndroidBoundaryGles::Reset() noexcept { impl_->Reset(); }

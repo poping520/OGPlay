@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-11 · Dungeon Hunter 有界加载预算与 run-apk 进度日志已完成
+更新：2026-08-11 · Asphalt 6 mixed GLES buffer-state 根因已定位
 
 ## 当前阶段
 
@@ -30,11 +30,15 @@
 ## 进行中
 
 - Asphalt 6 exact 已越过 JNI_OnLoad、GLES discovery/FBO/state、AudioTrack、shader/uniform
-  与 client vertex/index staging（含混合链接 GLES1 draw 转入）；当前停在
-  `required guest pointer is null`；尚未声称首帧或主界面。
+  与 client vertex/index staging；当前确认混合链接 `glDrawArrays` 进入 GLES2 时，
+  GLES1 记录 `GL_ARRAY_BUFFER=1` 而 GLES2 仍为 0，导致 VBO offset 0 被误判为 null
+  client pointer；尚未声称首帧或主界面。
 
 ## 最近完成
 
+- [WU-0379] guest transfer 错误新增 `module!symbol`、寄存器、attribute provenance 与
+  GLES1/GLES2 buffer binding 诊断。exact 将 null pointer 收敛到共同 `glBindBuffer`
+  状态分裂，而非 guest 坏指针；full CTest 497/497。
 - [WU-0378] Dungeon Hunter 第 75 帧命中的 guest 内置 PVRTC 解压批次经测量需约
   96.99 亿 tick；Profile/通用上限提高到仍受限的 100 亿，exact 120/240 帧均通过。
   `run-apk` 新增有界结构化启动、帧、长调用和 teardown 日志；full CTest 497/497。
@@ -65,8 +69,8 @@ Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实�
 
 ## 下一步（按优先级）
 
-1. 诊断 exact `required guest pointer is null`，再闭合 license/VFS/媒体并固化主界面
-   Scenario 与三轮 gate。
+1. 统一同一 ANGLE context 下 GLES1/GLES2 的共同 buffer binding 事实，使 VBO offset 0
+   不再被 client staging 误判；随后继续 license/VFS/媒体与主界面 Scenario 三轮 gate。
 
 ## 阻塞
 

@@ -19,6 +19,7 @@
 
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
+#include "ogplay/gles/guest_transfer.h"
 #include "ogplay/gles/supersample.h"
 #include "ogplay/runtime/integration/android_boundary_gles.h"
 #include "android_boundary_gles1.h"
@@ -154,11 +155,26 @@ public:
             state.Register(cpu::CoreRegister::r2), state.Register(cpu::CoreRegister::r3)};
         std::uint32_t result{};
         const auto& symbol = resolved->symbol;
-        if (resolved->module == "libc.so") {
-            result = ExecuteBionicMemoryIntercept(
-                address_space_, {symbol, arguments, state.ThreadId()});
-        } else {
-            result = Dispatch(resolved->module, symbol, arguments, state);
+        try {
+            if (resolved->module == "libc.so") {
+                result = ExecuteBionicMemoryIntercept(
+                    address_space_, {symbol, arguments, state.ThreadId()});
+            } else {
+                result = Dispatch(resolved->module, symbol, arguments, state);
+            }
+        } catch (const gles::GuestTransferError& error) {
+            throw gles::GuestTransferError(
+                "Android boundary guest transfer failed in " +
+                resolved->module + "!" + symbol + ": " + error.what() +
+                "; r0=" + std::to_string(arguments[0]) +
+                " r1=" + std::to_string(arguments[1]) +
+                " r2=" + std::to_string(arguments[2]) +
+                " r3=" + std::to_string(arguments[3]) +
+                " sp=" + std::to_string(
+                    state.Register(cpu::CoreRegister::sp)) +
+                " lr=" + std::to_string(
+                    state.Register(cpu::CoreRegister::lr)) +
+                " thread=" + std::to_string(state.ThreadId()));
         }
         RecordGpuCall(symbol, arguments);
         state.SetRegister(cpu::CoreRegister::r0, result);
@@ -399,14 +415,30 @@ private:
                 !gles1_draw_state_.Array(detail::kGles1VertexArray, 0x84C0U)
                      .enabled &&
                 gles_dispatch_.HasEnabledVertexAttribute()) {
-                if (const auto redirected = gles_dispatch_.Dispatch(
-                        symbol, args, state,
-                        angle_frame_.has_value() ? &*angle_frame_ : nullptr);
-                    redirected.has_value()) {
-                    std::scoped_lock lock(mutex_);
-                    ++gpu_stats_.draws;
-                    ++gpu_stats_.draw_targets.front().draws;
-                    return *redirected;
+                try {
+                    if (const auto redirected = gles_dispatch_.Dispatch(
+                            symbol, args, state,
+                            angle_frame_.has_value() ? &*angle_frame_ : nullptr);
+                        redirected.has_value()) {
+                        std::scoped_lock lock(mutex_);
+                        ++gpu_stats_.draws;
+                        ++gpu_stats_.draw_targets.front().draws;
+                        return *redirected;
+                    }
+                } catch (const gles::GuestTransferError& error) {
+                    const auto gles1 = gles1_state_.TransferState().Snapshot();
+                    const auto gles2 = gles_dispatch_.TransferState();
+                    throw gles::GuestTransferError(
+                        "mixed GLES1/GLES2 draw redirect failed: " +
+                        std::string(error.what()) +
+                        "; gles1_array_buffer=" +
+                        std::to_string(gles1.array_buffer) +
+                        " gles2_array_buffer=" +
+                        std::to_string(gles2.array_buffer) +
+                        " gles1_element_buffer=" +
+                        std::to_string(gles1.element_array_buffer) +
+                        " gles2_element_buffer=" +
+                        std::to_string(gles2.element_array_buffer));
                 }
             }
             auto api = gles::GlesApi::gles1;

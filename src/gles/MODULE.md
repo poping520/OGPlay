@@ -53,7 +53,7 @@
 - `MakeSupersampleLayout` / `ResolveSupersampledRgba8`：验证 1..4× 渲染尺寸并用确定性
   RGBA8 box filter 还原逻辑帧；拥有型 1× readback 原样转移存储，不重复逐像素 resolve；
   NativeActivity pbuffer、viewport、swap 与 CLI 已接入。
-- `OGPLAY_ENABLE_ANGLE`：默认关闭；开启时只接受清单校验通过的预编译 SDK，并导入
+- `OGPLAY_ENABLE_ANGLE`：默认开启；启用时只接受清单校验通过的预编译 SDK，并导入
   `ANGLE::EGL`/`ANGLE::GLESv2`。构建后把 SDK `bin/`（含 SwiftShader ICD）暂存到可执行
   文件旁；macOS 额外拷贝 `lib/libEGL.dylib` 与 `lib/libGLESv2.dylib`，因其 install name
   为 `./…`，必须与 ctest 工作目录中的可执行文件同目录。

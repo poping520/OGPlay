@@ -24,6 +24,10 @@
 - `AndroidBoundaryHle` 同时从隔离目录发布完整 145 项 `libGLESv1_CM.so` core Thumb
   trap 及固定 header 受检的 3 项 matrix-palette extension trap；core/extension 独立记账，
   未绑定固定管线调用明确失败，不得误用同名 GLES2 handler。
+- guest transfer 失败必须保留原异常类别，并附带 `module!symbol`、r0-r3、SP、LR 与
+  thread；client attribute staging 还须报告完整 descriptor 和 definition/enable LR。
+  混合 GLES1 draw 转入 GLES2 的失败必须同时报告两套 buffer binding，避免把 VBO offset
+  0 与 null client pointer 混为一谈。
 - GLES1 `glViewport` / `glScissor` 直接转发当前 `AngleFrame`，与 GLES2 共用受检
   超采样坐标换算；没有当前 frame、换算溢出或 ANGLE 错误明确失败。
 - GLES1 `glShadeModel` 只接受标准 `GL_FLAT` / `GL_SMOOTH`，写入独立、显式的

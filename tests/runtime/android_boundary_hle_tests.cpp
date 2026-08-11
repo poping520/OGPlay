@@ -605,9 +605,21 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glLoadMatrixf",
                            {fixture.output.Value()}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glPopMatrix") == 0U);
-        CHECK_THROWS_AS(
-            fixture.Call("libGLESv1_CM.so", "glGenTextures", {1U, 0U}),
-            ogplay::gles::GuestTransferError);
+        try {
+            static_cast<void>(fixture.Call(
+                "libGLESv1_CM.so", "glGenTextures", {1U, 0U}));
+            FAIL_CHECK("required GLES transfer unexpectedly succeeded");
+        } catch (const ogplay::gles::GuestTransferError& error) {
+            const std::string message{error.what()};
+            CHECK(message.find(
+                      "libGLESv1_CM.so!glGenTextures: required guest pointer "
+                      "is null") != std::string::npos);
+            CHECK(message.find("r0=1 r1=0 r2=0 r3=0") !=
+                  std::string::npos);
+            CHECK(message.find("sp=") != std::string::npos);
+            CHECK(message.find("lr=") != std::string::npos);
+            CHECK(message.find("thread=1") != std::string::npos);
+        }
         CHECK_THROWS_WITH_AS(
             fixture.Call("libGLESv1_CM.so", "glGenTextures",
                          {std::bit_cast<std::uint32_t>(-1),
@@ -1567,6 +1579,35 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
 
     static_cast<void>(fixture.Call("libGLESv2.so", "glEnableVertexAttribArray",
                                    {0}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glBindBuffer",
+                                   {0x8892U, element_buffer}));
+    fixture.bus.Write32(fixture.stack, 0, 1);
+    fixture.bus.Write32(fixture.stack.Add(4), 0, 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glVertexAttribPointer",
+                                   {0, 2, 0x1406U, 0}));
+    try {
+        static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                                       {0x0004U, 0U, 1U}));
+        FAIL_CHECK("null redirected GLES2 client attribute unexpectedly drew");
+    } catch (const ogplay::gles::GuestTransferError& error) {
+        const std::string message{error.what()};
+        CHECK(message.find("libGLESv1_CM.so!glDrawArrays") !=
+              std::string::npos);
+        CHECK(message.find(
+                  "mixed GLES1/GLES2 draw redirect failed: GLES2 client "
+                  "attribute 0 transfer failed: required guest pointer is null") !=
+              std::string::npos);
+        CHECK(message.find("pointer=0 bytes=8 size=2 type=5126 stride=0") !=
+              std::string::npos);
+        CHECK(message.find("definition_lr=0 enable_lr=0") !=
+              std::string::npos);
+        CHECK(message.find(
+                  "gles1_array_buffer=" + std::to_string(element_buffer) +
+                  " gles2_array_buffer=0") !=
+              std::string::npos);
+    }
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glBindBuffer",
+                                   {0x8892U, 0}));
     fixture.bus.Write32(fixture.stack, 0, 1);
     fixture.bus.Write32(fixture.stack.Add(4), client_vertices.Value(), 1);
     static_cast<void>(fixture.Call("libGLESv2.so", "glVertexAttribPointer",

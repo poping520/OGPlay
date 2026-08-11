@@ -1,6 +1,9 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 
 #include <stdexcept>
+#include <utility>
+
+#include "ogplay/runtime/jni/jni_object.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -135,6 +138,33 @@ void JniEnvironment::Throw(const std::uint64_t thread_id,
     exceptions_.Throw(thread_id, object.value_or(JniObjectIdentity{}));
 }
 
+void JniEnvironment::ThrowNew(
+    const std::uint64_t thread_id,
+    const JniObjectIdentity exception_class,
+    std::string modified_utf8_message) {
+    RequireAllowed(thread_id, "ThrowNew");
+    if (exception_class.value == 0U) {
+        throw JniExceptionError(
+            JniExceptionErrorReason::invalid_throwable,
+            "JNI exception class identity cannot be zero");
+    }
+    const auto throwable = AllocateJniHostObjectIdentity();
+    {
+        std::scoped_lock lock(throwable_mutex_);
+        throwables_.emplace(
+            throwable.value,
+            JniThrowableMetadata{throwable, exception_class,
+                                 std::move(modified_utf8_message)});
+    }
+    try {
+        exceptions_.Throw(thread_id, throwable);
+    } catch (...) {
+        std::scoped_lock lock(throwable_mutex_);
+        throwables_.erase(throwable.value);
+        throw;
+    }
+}
+
 JniReference JniEnvironment::ExceptionOccurred(const std::uint64_t thread_id) {
     RequireAllowed(thread_id, "ExceptionOccurred");
     const auto throwable = exceptions_.Occurred(thread_id);
@@ -147,9 +177,34 @@ bool JniEnvironment::ExceptionCheck(const std::uint64_t thread_id) const {
     return exceptions_.HasPending(thread_id);
 }
 
+void JniEnvironment::ExceptionDescribe(const std::uint64_t thread_id) {
+    RequireAllowed(thread_id, "ExceptionDescribe");
+    const auto pending = exceptions_.Occurred(thread_id);
+    if (!pending.has_value()) return;
+    JniThrowableMetadata metadata{*pending, {}, {}};
+    {
+        std::scoped_lock lock(throwable_mutex_);
+        const auto found = throwables_.find(pending->value);
+        if (found != throwables_.end()) metadata = found->second;
+    }
+    exception_logger_.Write(
+        core::LogLevel::error, "runtime.jni.exception",
+        "pending JNI exception",
+        {.guest_thread = thread_id},
+        {{"throwable", metadata.throwable.value},
+         {"exception_class", metadata.exception_class.value},
+         {"message", metadata.modified_utf8_message}},
+        {.mode = core::RateLimitMode::none});
+}
+
 void JniEnvironment::ExceptionClear(const std::uint64_t thread_id) {
     RequireAllowed(thread_id, "ExceptionClear");
     exceptions_.Clear(thread_id);
+}
+
+std::vector<core::LogRecord> JniEnvironment::ExceptionDiagnostics() const {
+    return exception_logger_.Snapshot(
+        std::nullopt, "runtime.jni.exception");
 }
 
 void JniEnvironment::RequireAllowed(const std::uint64_t thread_id,

@@ -2,11 +2,24 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
+#include <mutex>
+#include <string>
+#include <vector>
 
+#include "ogplay/core/logger.h"
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_exception.h"
 
 namespace ogplay::runtime {
+
+struct JniThrowableMetadata final {
+    JniObjectIdentity throwable;
+    JniObjectIdentity exception_class;
+    std::string modified_utf8_message;
+
+    bool operator==(const JniThrowableMetadata&) const = default;
+};
 
 class JniEnvironment final {
 public:
@@ -45,15 +58,23 @@ public:
         std::uint64_t thread_id, JniReference reference) const;
 
     void Throw(std::uint64_t thread_id, JniReference throwable);
+    void ThrowNew(std::uint64_t thread_id,
+                  JniObjectIdentity exception_class,
+                  std::string modified_utf8_message);
     [[nodiscard]] JniReference ExceptionOccurred(std::uint64_t thread_id);
     [[nodiscard]] bool ExceptionCheck(std::uint64_t thread_id) const;
+    void ExceptionDescribe(std::uint64_t thread_id);
     void ExceptionClear(std::uint64_t thread_id);
+    [[nodiscard]] std::vector<core::LogRecord> ExceptionDiagnostics() const;
 
 private:
     void RequireAllowed(std::uint64_t thread_id, const char* slot_name) const;
 
     JniReferenceTable references_;
     JniExceptionState exceptions_;
+    mutable std::mutex throwable_mutex_;
+    std::map<std::uint64_t, JniThrowableMetadata> throwables_;
+    core::Logger exception_logger_;
 };
 
 }  // namespace ogplay::runtime

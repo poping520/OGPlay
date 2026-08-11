@@ -23,6 +23,7 @@
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
+#include "ogplay/runtime/jni/jni_utf.h"
 
 namespace ogplay::runtime {
 
@@ -171,6 +172,27 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
     dispatcher.BindEnvironment(
+        EnvironmentSlot("ThrowNew"),
+        [&environment, &classes,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto java_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!java_class.has_value()) {
+                throw JniGuestBindingError(
+                    "ThrowNew requires a valid exception class reference");
+            }
+            static_cast<void>(
+                classes.IsAssignableFrom(*java_class, *java_class));
+            const auto message = ReadCString(
+                address_space, memory::GuestAddress{frame.registers[2]},
+                frame.thread_id, "exception message");
+            const std::vector<std::uint8_t> encoded(
+                message.begin(), message.end());
+            static_cast<void>(DecodeJniModifiedUtf8(encoded));
+            environment.ThrowNew(frame.thread_id, *java_class, message);
+            return Int(static_cast<JniInt>(JniStatus::ok));
+        });
+    dispatcher.BindEnvironment(
         EnvironmentSlot("ExceptionOccurred"),
         [&environment](const JniGuestCallFrame& frame) {
             return Reference(
@@ -180,6 +202,12 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
         EnvironmentSlot("ExceptionClear"),
         [&environment](const JniGuestCallFrame& frame) {
             environment.ExceptionClear(frame.thread_id);
+            return JniGuestCallResult{};
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("ExceptionDescribe"),
+        [&environment](const JniGuestCallFrame& frame) {
+            environment.ExceptionDescribe(frame.thread_id);
             return JniGuestCallResult{};
         });
     dispatcher.BindEnvironment(

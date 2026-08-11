@@ -276,6 +276,86 @@ TEST_CASE("guest JNI object arrays enforce assignability and null semantics") {
         JniObjectArrayError);
 }
 
+TEST_CASE("guest JNI nonvirtual calls decode stacked normal V and A arguments") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    const auto base = fixture.classes.RegisterClass(
+        {"fixture/NonvirtualBase", {},
+         {{"value", "(I)I", "nonvirtual.base", false}}, {}});
+    const auto child = fixture.classes.RegisterClass(
+        {"fixture/NonvirtualChild", "fixture/NonvirtualBase",
+         {{"value", "(I)I", "nonvirtual.child", false}}, {}});
+    const auto method = fixture.classes.GetMethodId(
+        base, "value", "(I)I", false);
+    REQUIRE(method.has_value());
+    std::vector<JniArgumentSource> sources;
+    fixture.invocations.RegisterHandler(
+        "nonvirtual.base",
+        [&sources, base](const JniInvocation& invocation) {
+            CHECK(invocation.kind == JniInvocationKind::nonvirtual_instance);
+            CHECK(invocation.dispatch_class == base);
+            sources.push_back(invocation.argument_source);
+            return JniValue{std::get<JniInt>(invocation.arguments[0]) + 1};
+        });
+    fixture.invocations.RegisterHandler(
+        "nonvirtual.child", [](const JniInvocation&) {
+            return JniValue{JniInt{-1}};
+        });
+    const auto object = fixture.objects.Allocate(child);
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const auto object_ref = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, object);
+    const auto class_ref = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, base);
+    fixture.dispatcher.Seal();
+
+    fixture.Write64(41U);
+    CHECK(fixture.Call("CallNonvirtualIntMethod", object_ref.Value(),
+                       class_ref.Value(), method->Value()) == 42U);
+    fixture.bus.Write32(fixture.output.Add(0x300U), 41U);
+    fixture.Write64(fixture.output.Add(0x300U).Value());
+    CHECK(fixture.Call("CallNonvirtualIntMethodV", object_ref.Value(),
+                       class_ref.Value(), method->Value()) == 42U);
+    fixture.bus.Write32(fixture.output.Add(0x340U), 41U);
+    fixture.Write64(fixture.output.Add(0x340U).Value());
+    CHECK(fixture.Call("CallNonvirtualIntMethodA", object_ref.Value(),
+                       class_ref.Value(), method->Value()) == 42U);
+    CHECK(sources == std::vector{JniArgumentSource::variadic,
+                                 JniArgumentSource::va_list,
+                                 JniArgumentSource::value_array});
+}
+
+TEST_CASE("guest JNI ThrowNew describes one stable pending throwable") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    const auto exception_class = fixture.classes.RegisterClass(
+        {"fixture/Failure", {}, {}, {}});
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const auto class_ref = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, exception_class);
+    fixture.WriteString(0x200U, "broken input");
+    fixture.dispatcher.Seal();
+
+    CHECK(fixture.Call("ThrowNew", class_ref.Value(),
+                       fixture.output.Add(0x200U).Value()) == 0U);
+    CHECK(fixture.Call("ExceptionCheck") == 1U);
+    const auto first = JniReference{fixture.Call("ExceptionOccurred")};
+    REQUIRE_FALSE(first.IsNull());
+    static_cast<void>(fixture.Call("ExceptionDescribe"));
+    CHECK(fixture.Call("ExceptionCheck") == 1U);
+    const auto second = JniReference{fixture.Call("ExceptionOccurred")};
+    const auto diagnostics = fixture.environment.ExceptionDiagnostics();
+    REQUIRE(diagnostics.size() == 1U);
+    CHECK(diagnostics[0].guest_thread == InstanceFixture::thread_id);
+    CHECK(std::get<std::uint64_t>(diagnostics[0].fields[1].value) ==
+          exception_class.value);
+    CHECK(std::get<std::string>(diagnostics[0].fields[2].value) ==
+          "broken input");
+    static_cast<void>(fixture.Call("ExceptionClear"));
+    CHECK(fixture.environment.IsSameObject(
+        InstanceFixture::thread_id, first, second));
+}
+
 TEST_CASE("guest JNI static field family uses exact descriptors and A32 ABI") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;

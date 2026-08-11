@@ -149,6 +149,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     GuestBindingsFixture fixture;
     constexpr std::string_view environment_names[]{
         "GetVersion",          "Throw",
+        "ThrowNew",            "ExceptionDescribe",
         "ExceptionOccurred",   "ExceptionClear",
         "PushLocalFrame",      "PopLocalFrame",
         "NewGlobalRef",        "DeleteGlobalRef",
@@ -206,6 +207,10 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
                 *ogplay::runtime::FindJniSlot(
                     std::string("Call") + std::string(type) + "Method" +
                     std::string(variant))));
+            CHECK(fixture.dispatcher.IsEnvironmentBound(
+                *ogplay::runtime::FindJniSlot(
+                    std::string("CallNonvirtual") + std::string(type) +
+                    "Method" + std::string(variant))));
         }
     }
     constexpr std::string_view field_types[]{
@@ -264,7 +269,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
                                  ? 1U
                                  : 0U;
     }
-    CHECK(environment_count == 178U);
+    CHECK(environment_count == 210U);
     std::size_t java_vm_count{};
     for (std::size_t index = 3U;
          index < ogplay::runtime::kJniInvokeInterfaceSlotCount; ++index) {

@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -230,8 +231,8 @@ constexpr std::array kStaticCallTypes{
 
 [[nodiscard]] std::vector<JniValue> ReadVariadicArguments(
     memory::AddressSpace& address_space, const JniGuestCallFrame& frame,
-    const JniMethodDescriptor& descriptor) {
-    std::size_t register_index = 3U;
+    const JniMethodDescriptor& descriptor,
+    std::size_t register_index = 3U) {
     std::uint32_t stack_offset{};
     const auto word = [&]() {
         if (register_index < frame.registers.size()) {
@@ -280,8 +281,10 @@ constexpr std::array kStaticCallTypes{
 
 [[nodiscard]] std::vector<JniValue> ReadVaListArguments(
     memory::AddressSpace& address_space, const JniGuestCallFrame& frame,
-    const JniMethodDescriptor& descriptor) {
-    auto cursor = memory::GuestAddress{frame.registers[3]};
+    const JniMethodDescriptor& descriptor,
+    const std::optional<memory::GuestAddress> values = std::nullopt) {
+    auto cursor = values.value_or(
+        memory::GuestAddress{frame.registers[3]});
     if (cursor.IsNull() && !descriptor.parameters.empty()) {
         throw JniGuestBindingError("JNI guest va_list pointer is null");
     }
@@ -353,8 +356,11 @@ constexpr std::array kStaticCallTypes{
 
 [[nodiscard]] std::vector<JniValue> ReadValueArrayArguments(
     memory::AddressSpace& address_space, const JniGuestCallFrame& frame,
-    const JniMethodDescriptor& descriptor) {
-    const auto values = memory::GuestAddress{frame.registers[3]};
+    const JniMethodDescriptor& descriptor,
+    const std::optional<memory::GuestAddress> explicit_values =
+        std::nullopt) {
+    const auto values = explicit_values.value_or(
+        memory::GuestAddress{frame.registers[3]});
     if (values.IsNull() && !descriptor.parameters.empty()) {
         throw JniGuestBindingError("JNI guest jvalue array pointer is null");
     }
@@ -457,16 +463,73 @@ void BindOne(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
 
 [[nodiscard]] std::vector<JniValue> ReadArguments(
     memory::AddressSpace& address_space, const JniGuestCallFrame& frame,
-    const JniMethodDescriptor& descriptor, const JniArgumentSource source) {
+    const JniMethodDescriptor& descriptor, const JniArgumentSource source,
+    const bool nonvirtual = false) {
+    const auto stacked_pointer = [&]() {
+        return memory::GuestAddress{
+            Read32(address_space, frame.stack_pointer, frame.thread_id)};
+    };
     switch (source) {
     case JniArgumentSource::variadic:
-        return ReadVariadicArguments(address_space, frame, descriptor);
+        return ReadVariadicArguments(
+            address_space, frame, descriptor, nonvirtual ? 4U : 3U);
     case JniArgumentSource::va_list:
-        return ReadVaListArguments(address_space, frame, descriptor);
+        return ReadVaListArguments(
+            address_space, frame, descriptor,
+            nonvirtual
+                ? std::optional<memory::GuestAddress>{stacked_pointer()}
+                : std::nullopt);
     case JniArgumentSource::value_array:
-        return ReadValueArrayArguments(address_space, frame, descriptor);
+        return ReadValueArrayArguments(
+            address_space, frame, descriptor,
+            nonvirtual
+                ? std::optional<memory::GuestAddress>{stacked_pointer()}
+                : std::nullopt);
     }
     throw JniGuestBindingError("JNI guest argument source is invalid");
+}
+
+void BindNonvirtualCall(
+    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+    JniClassRegistry& classes, JniInvocationEngine& invocations,
+    memory::AddressSpace& address_space,
+    const std::shared_ptr<JniGuestObjectRegistry>& objects,
+    const StaticCallType type, const std::string_view variant,
+    const JniArgumentSource source) {
+    const auto name = std::string("CallNonvirtual") +
+                      std::string(type.suffix) + "Method" +
+                      std::string(variant);
+    dispatcher.BindEnvironment(
+        EnvironmentSlot(name),
+        [&environment, &classes, &invocations, &address_space, objects, type,
+         source, name](const JniGuestCallFrame& frame) {
+            const auto receiver = JniReference{frame.registers[1]};
+            const auto object = environment.ResolveObjectForHle(
+                frame.thread_id, receiver);
+            const auto dispatch_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[2]});
+            if (!object.has_value()) {
+                throw JniGuestBindingError(
+                    name + " requires a valid object reference");
+            }
+            if (!dispatch_class.has_value()) {
+                throw JniGuestBindingError(
+                    name + " requires a valid class reference");
+            }
+            const auto method =
+                classes.ResolveMethod(JniMethodId{frame.registers[3]});
+            if (!ResultMatches(method.layout.result.kind, type.result)) {
+                throw JniGuestBindingError(
+                    name + " return type does not match method descriptor");
+            }
+            const auto arguments = ReadArguments(
+                address_space, frame, method.layout, source, true);
+            return EncodeResult(
+                invocations.InvokeNonvirtual(
+                    frame.thread_id, receiver, objects->ClassOf(*object),
+                    *dispatch_class, method.id, arguments, source),
+                method.layout.result.kind);
+        });
 }
 
 void BindInstanceCall(
@@ -674,6 +737,15 @@ void BindJniGuestClassAndInstanceSlots(
         BindInstanceCall(dispatcher, environment, classes, invocations,
                          address_space, object_registry, type, "A",
                          JniArgumentSource::value_array);
+        BindNonvirtualCall(dispatcher, environment, classes, invocations,
+                           address_space, object_registry, type, "",
+                           JniArgumentSource::variadic);
+        BindNonvirtualCall(dispatcher, environment, classes, invocations,
+                           address_space, object_registry, type, "V",
+                           JniArgumentSource::va_list);
+        BindNonvirtualCall(dispatcher, environment, classes, invocations,
+                           address_space, object_registry, type, "A",
+                           JniArgumentSource::value_array);
     }
 }
 

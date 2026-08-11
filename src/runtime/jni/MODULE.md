@@ -18,8 +18,11 @@ Bionic、syscall、execution 或 integration。
   丢失定位所需的注册表身份。
 - guest handle 保持固定宽度，不暴露宿主指针。
 - JNI monitor 按强类型 object identity 隔离 owner guest thread、recursion 与 waiters；同线程
-  可重入，非 owner exit 明确失败。thread detach 释放其全部 ownership，sticky shutdown
-  interrupt 唤醒全部当前 waiter 并拒绝后续 enter，避免 session teardown 永久阻塞。
+  可重入，非 owner exit 明确失败。thread detach 释放其全部 ownership。
+- monitor 的临时中断与永久关闭是两个语义，不共用 sticky boolean。`InterruptWaiters` 提升
+  interrupt generation 并唤醒全部当前 waiter，被唤醒者以 `interrupted` 失败且不得取得
+  ownership，之后新的 `Enter` 使用新 generation 仍可正常竞争；`Shutdown` 只在 table 即将
+  永久销毁时调用，唤醒全部 waiter 并让当前与后续 `Enter` 一律以 `shut_down` 失败。
 - `BuildJniNativeExportNames` 严格验证 class/method/descriptor，并按 JNI 规范同时产出
   short 与含参数 descriptor 的 long 名；Unicode 必须先转为 UTF-16 code unit 再转义。
 

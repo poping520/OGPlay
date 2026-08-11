@@ -256,7 +256,9 @@
   项按名称记账并失败，未知 trap 地址不得吞掉。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family，随后封口 dispatcher；
-  aggregate contract 固定当前 212 个 JNIEnv 与 4 个 JavaVM 精确 slot 集合，Core binder
+  aggregate contract 以精确 slot 集合等价（当前 212 个 JNIEnv 与 4 个 JavaVM）机器验证，
+  数量本身只是辅助诊断；Critical array/string、DirectByteBuffer、Reflection、FatalError 与
+  DestroyJavaVM 属于显式 expected-unbound 清单，不得为提高覆盖率注册假 handler。Core binder
   不得再隐式注册其他 family。引用、异常和线程状态复用同一环境，guest 输出指针在 VM
   状态变更前预检，
   `GetStaticMethodID` 只精确查询统一 class registry，`NewStringUTF` 使用受检 guest C
@@ -301,8 +303,11 @@
   `runtime.jni.exception` diagnostic，且不得清除或替换 pending throwable。
 - MonitorEnter/MonitorExit 只解析统一 JNIEnv reference 后进入 environment 拥有的 monitor
   table，不返回 fake success；reentrant/owner/等待语义全部位于 runtime/jni。JavaVM detach
-  自动释放该 guest thread 的 ownership；session Stop 与公开 blocking-wait interrupt 都先
-  sticky interrupt monitor waiters，再 join guest child，禁止 monitor contention 导致死锁。
+  自动释放该 guest thread 的 ownership。
+- session teardown 顺序固定为：请求 child 退出 → `InterruptBlockingWaits` 只做临时唤醒 →
+  join 全部 child → 执行 guest fini/destructor → root JNI detach → 永久 monitor shutdown。
+  `InterruptBlockingWaits` 无论由 Stop 还是外部调用，都不得永久停用 monitor；guest
+  finalizer 阶段的 `MonitorEnter` 必须仍能成功，permanent shutdown 只允许发生在其后。
 - `NativeActivityRunRequest::supersample_factor` 选择受检 1..4× 内部渲染倍率；guest 的
   EGL surface 和输出帧保持逻辑尺寸，ANGLE pbuffer、viewport 与 GPU render target 使用
   放大尺寸，swap 时通过 gles 确定性 resolve 还原。

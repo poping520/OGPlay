@@ -9,7 +9,11 @@ Asphalt 6 是首个 M8 目标，以
 payload 为本地 fixture；APK、payload、证据和宿主绝对路径不进入 Profile、Scenario
 或 Result。
 
-适配按以下批次切分，只在实际开始时分配下一个全局 WU 编号：
+M8 的 Work Unit 文件名使用里程碑内递增编号 `WU-M<里程碑>-<三位序号>.md`，例如
+`WU-M8-001.md`、`WU-M9-001.md`、`WU-M10-001.md`。M8 早期沿用四位全局编号创建的
+`WU-0360..0379` 保持原名不重编号，新任务一律使用里程碑内编号。
+
+适配按以下批次切分，只在实际开始时分配下一个里程碑内编号：
 
 | 顺序 | 批次 | 机器出口 |
 | ---: | --- | --- |
@@ -23,9 +27,24 @@ payload 为本地 fixture；APK、payload、证据和宿主绝对路径不进入
 每个实现批次仍须遵守单 WU 不超过 10 个文件；批次内允许一次实现多个同类
 函数，但不允许把 JNI、GLES、VFS 和线程无边界混在同一 WU。
 
-已建工作单：
+## JNI Guest ABI 扩展工作单（里程碑内编号）
 
-- [WU-M8-001](WU-M8-001.md)：JNI Guest Binding 统一注册入口。
+| Work Unit | 标题 | 状态 | 目标 |
+| --- | --- | --- | --- |
+| [WU-M8-001](WU-M8-001.md) | JNI Guest Binding 统一注册入口 | 完成 | 用唯一 `BindJniGuestSlots` context 组合全部 family 并封口 dispatcher |
+| [WU-M8-002](WU-M8-002.md) | RegisterNatives / UnregisterNatives | 完成 | RegisterNatives/UnregisterNatives 接入唯一 `JniNativeRegistry` 与通用 A32 executor |
+| [WU-M8-003](WU-M8-003.md) | Instance Field 与 UTF-16 String | 完成 | 19 个 instance field 槽与 5 个 UTF-16 string 槽复用统一 field/string store |
+| [WU-M8-004](WU-M8-004.md) | Primitive Array 与 Object Array | 完成 | 8 类 primitive 的 40 槽与 object array 3 槽接入统一 array store 和受检 guest arena |
+| [WU-M8-005](WU-M8-005.md) | Nonvirtual Call + Exception API | 完成 | 30 个 CallNonvirtual 槽复用 descriptor 驱动 ABI，ThrowNew/ExceptionDescribe 使用真实 throwable |
+| [WU-M8-006](WU-M8-006.md) | JNI Monitor | 完成 | MonitorEnter/MonitorExit 使用真实可重入、按 object identity 隔离的 monitor table |
+| [WU-M8-007](WU-M8-007.md) | JNI M8 验收闭环 | 完成 | 修复 monitor 临时中断/永久关闭生命周期，binding 改为精确集合等价，闭合索引与能力记录 |
+
+M8 JNI Guest ABI 扩展在 WU-M8-007 后为 Contract Complete：233 个 JNIEnv 槽中 212 个
+behavior-backed，JavaVM 4 个，其余为 reserved 或显式 expected-unbound。exact-title 运行
+里程碑与之独立，见 `docs/state/CURRENT.md`。
+
+## 早期全局编号工作单
+
 - [WU-0360](WU-0360.md)：Asphalt 6 exact 身份、静态能力矩阵与根 SONAME 别名预检。
 - [WU-0361](WU-0361.md)：exact APK + external payload 有界启动采样与四组缺口聚合。
 - [WU-0378](WU-0378.md)：恢复 Dungeon Hunter 有界加载预算并补齐 run-apk 结构化进度日志。

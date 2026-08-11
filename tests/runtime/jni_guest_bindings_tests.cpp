@@ -1,7 +1,10 @@
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -143,154 +146,167 @@ private:
         static_cast<ogplay::runtime::JniInt>(status));
 }
 
+constexpr std::string_view kCallTypes[]{
+    "Object", "Boolean", "Byte", "Char", "Short",
+    "Int", "Long", "Float", "Double", "Void"};
+constexpr std::string_view kCallVariants[]{"", "V", "A"};
+constexpr std::string_view kFieldTypes[]{
+    "Object", "Boolean", "Byte", "Char", "Short",
+    "Int", "Long", "Float", "Double"};
+constexpr std::string_view kArrayTypes[]{
+    "Boolean", "Byte", "Char", "Short", "Int", "Long", "Float", "Double"};
+
+[[nodiscard]] std::set<std::string> ExpectedEnvironmentSlots() {
+    std::set<std::string> names{
+        "GetVersion", "Throw", "ThrowNew", "ExceptionOccurred",
+        "ExceptionDescribe", "ExceptionClear", "ExceptionCheck",
+        "PushLocalFrame", "PopLocalFrame", "NewGlobalRef", "DeleteGlobalRef",
+        "DeleteLocalRef", "IsSameObject", "NewLocalRef", "EnsureLocalCapacity",
+        "GetJavaVM", "NewWeakGlobalRef", "DeleteWeakGlobalRef",
+        "MonitorEnter", "MonitorExit", "FindClass", "GetMethodID",
+        "GetStaticMethodID", "GetObjectClass", "IsInstanceOf", "NewObject",
+        "NewObjectV", "NewObjectA", "RegisterNatives", "UnregisterNatives",
+        "GetFieldID", "GetStaticFieldID", "NewStringUTF", "GetStringUTFLength",
+        "GetStringUTFChars", "ReleaseStringUTFChars", "GetStringUTFRegion",
+        "NewString", "GetStringLength", "GetStringChars", "ReleaseStringChars",
+        "GetStringRegion", "GetArrayLength", "NewObjectArray",
+        "GetObjectArrayElement", "SetObjectArrayElement"};
+    for (const auto type : kCallTypes) {
+        for (const auto variant : kCallVariants) {
+            const auto suffix =
+                std::string(type) + "Method" + std::string(variant);
+            names.insert("CallStatic" + suffix);
+            names.insert("Call" + suffix);
+            names.insert("CallNonvirtual" + suffix);
+        }
+    }
+    for (const auto type : kFieldTypes) {
+        const auto stem = std::string(type);
+        names.insert("GetStatic" + stem + "Field");
+        names.insert("SetStatic" + stem + "Field");
+        names.insert("Get" + stem + "Field");
+        names.insert("Set" + stem + "Field");
+    }
+    for (const auto type : kArrayTypes) {
+        const auto stem = std::string(type);
+        names.insert("New" + stem + "Array");
+        names.insert("Get" + stem + "ArrayRegion");
+        names.insert("Set" + stem + "ArrayRegion");
+        names.insert("Get" + stem + "ArrayElements");
+        names.insert("Release" + stem + "ArrayElements");
+    }
+    return names;
+}
+
+[[nodiscard]] std::set<std::string> BoundEnvironmentSlots(
+    const ogplay::runtime::JniGuestCallDispatcher& dispatcher) {
+    std::set<std::string> names;
+    for (std::size_t index = ogplay::runtime::kJniReservedSlotCount;
+         index < ogplay::runtime::kJniNativeInterfaceSlotCount; ++index) {
+        const ogplay::runtime::JniSlot slot{static_cast<std::uint16_t>(index)};
+        if (dispatcher.IsEnvironmentBound(slot)) {
+            names.emplace(ogplay::runtime::JniSlotName(slot));
+        }
+    }
+    return names;
+}
+
+[[nodiscard]] std::set<std::string> BoundJavaVmSlots(
+    const ogplay::runtime::JniGuestCallDispatcher& dispatcher) {
+    std::set<std::string> names;
+    for (std::size_t index = 3U;
+         index < ogplay::runtime::kJniInvokeInterfaceSlotCount; ++index) {
+        const ogplay::runtime::JniInvokeSlot slot{
+            static_cast<std::uint8_t>(index)};
+        if (dispatcher.IsJavaVmBound(slot)) {
+            names.emplace(ogplay::runtime::JniInvokeSlotName(slot));
+        }
+    }
+    return names;
+}
+
+[[nodiscard]] std::string Missing(const std::set<std::string>& expected,
+                                  const std::set<std::string>& actual) {
+    std::vector<std::string> only;
+    std::set_difference(expected.begin(), expected.end(), actual.begin(),
+                        actual.end(), std::back_inserter(only));
+    std::string joined;
+    for (const auto& name : only) {
+        if (!joined.empty()) joined += ' ';
+        joined += name;
+    }
+    return joined;
+}
+
 }  // namespace
 
 TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     GuestBindingsFixture fixture;
-    constexpr std::string_view environment_names[]{
-        "GetVersion",          "Throw",
-        "ThrowNew",            "ExceptionDescribe",
-        "ExceptionOccurred",   "ExceptionClear",
-        "PushLocalFrame",      "PopLocalFrame",
-        "NewGlobalRef",        "DeleteGlobalRef",
-        "DeleteLocalRef",      "IsSameObject",
-        "NewLocalRef",         "EnsureLocalCapacity",
-        "GetJavaVM",           "NewWeakGlobalRef",
-        "DeleteWeakGlobalRef", "ExceptionCheck",
-        "MonitorEnter",        "MonitorExit",
-        "GetStaticMethodID",   "CallStaticObjectMethod",
-        "CallStaticObjectMethodV", "CallStaticObjectMethodA",
-        "CallStaticBooleanMethod", "CallStaticBooleanMethodV",
-        "CallStaticBooleanMethodA", "CallStaticByteMethod",
-        "CallStaticByteMethodV", "CallStaticByteMethodA",
-        "CallStaticCharMethod", "CallStaticCharMethodV",
-        "CallStaticCharMethodA", "CallStaticShortMethod",
-        "CallStaticShortMethodV", "CallStaticShortMethodA",
-        "CallStaticIntMethod", "CallStaticIntMethodV",
-        "CallStaticIntMethodA", "CallStaticLongMethod",
-        "CallStaticLongMethodV", "CallStaticLongMethodA",
-        "CallStaticFloatMethod", "CallStaticFloatMethodV",
-        "CallStaticFloatMethodA", "CallStaticDoubleMethod",
-        "CallStaticDoubleMethodV", "CallStaticDoubleMethodA",
-        "CallStaticVoidMethod", "CallStaticVoidMethodV",
-        "CallStaticVoidMethodA",
-        "GetArrayLength",      "GetByteArrayRegion",
-        "NewStringUTF",        "GetStringUTFLength",
-        "GetStringUTFChars",   "ReleaseStringUTFChars",
-        "GetStringUTFRegion"};
-    for (const auto name : environment_names) {
+    const auto expected_environment = ExpectedEnvironmentSlots();
+    const auto bound_environment = BoundEnvironmentSlots(fixture.dispatcher);
+    CHECK(Missing(expected_environment, bound_environment).empty());
+    CHECK(Missing(bound_environment, expected_environment).empty());
+    CHECK(bound_environment == expected_environment);
+    CHECK(bound_environment.size() == 212U);
+
+    const std::set<std::string> expected_java_vm{
+        "AttachCurrentThread", "AttachCurrentThreadAsDaemon",
+        "DetachCurrentThread", "GetEnv"};
+    const auto bound_java_vm = BoundJavaVmSlots(fixture.dispatcher);
+    CHECK(Missing(expected_java_vm, bound_java_vm).empty());
+    CHECK(Missing(bound_java_vm, expected_java_vm).empty());
+    CHECK(bound_java_vm == expected_java_vm);
+    CHECK(bound_java_vm.size() == 4U);
+
+    for (const auto name : {"GetPrimitiveArrayCritical",
+                            "ReleasePrimitiveArrayCritical",
+                            "GetStringCritical", "ReleaseStringCritical",
+                            "NewDirectByteBuffer", "GetDirectBufferAddress",
+                            "GetDirectBufferCapacity", "FromReflectedMethod",
+                            "FromReflectedField", "ToReflectedMethod",
+                            "ToReflectedField", "FatalError"}) {
         CAPTURE(name);
-        CHECK(fixture.dispatcher.IsEnvironmentBound(
+        CHECK_FALSE(expected_environment.contains(name));
+        CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(
             *ogplay::runtime::FindJniSlot(name)));
     }
-    constexpr std::array<std::string_view, 4> java_vm_names{
-        "AttachCurrentThread", "DetachCurrentThread", "GetEnv",
-        "AttachCurrentThreadAsDaemon"};
-    for (const auto name : java_vm_names) {
-        CAPTURE(name);
-        CHECK(fixture.dispatcher.IsJavaVmBound(
-            *ogplay::runtime::FindJniInvokeSlot(name)));
-    }
-    constexpr std::string_view class_object_names[]{
-        "FindClass", "GetMethodID", "GetObjectClass", "IsInstanceOf",
-        "NewObject", "NewObjectV", "NewObjectA"};
-    for (const auto name : class_object_names) {
-        CHECK(fixture.dispatcher.IsEnvironmentBound(
-            *ogplay::runtime::FindJniSlot(name)));
-    }
-    constexpr std::string_view instance_types[]{
-        "Object", "Boolean", "Byte", "Char", "Short", "Int", "Long",
-        "Float", "Double", "Void"};
-    constexpr std::string_view call_variants[]{"", "V", "A"};
-    for (const auto type : instance_types) {
-        for (const auto variant : call_variants) {
-            CHECK(fixture.dispatcher.IsEnvironmentBound(
-                *ogplay::runtime::FindJniSlot(
-                    std::string("Call") + std::string(type) + "Method" +
-                    std::string(variant))));
-            CHECK(fixture.dispatcher.IsEnvironmentBound(
-                *ogplay::runtime::FindJniSlot(
-                    std::string("CallNonvirtual") + std::string(type) +
-                    "Method" + std::string(variant))));
+    CHECK_FALSE(fixture.dispatcher.IsJavaVmBound(
+        *ogplay::runtime::FindJniInvokeSlot("DestroyJavaVM")));
+
+    for (std::size_t index = 0;
+         index < ogplay::runtime::kJniReservedSlotCount; ++index) {
+        CAPTURE(index);
+        CHECK_THROWS_AS(
+            static_cast<void>(fixture.dispatcher.IsEnvironmentBound(
+                ogplay::runtime::JniSlot{
+                    static_cast<std::uint16_t>(index)})),
+            std::invalid_argument);
+        CHECK(fixture.bus.Read32(
+                  ogplay::runtime::kJniGuestEnvironmentTable.Add(
+                      index * sizeof(std::uint32_t))) == 0U);
+        if (index < 3U) {
+            CHECK(fixture.bus.Read32(
+                      ogplay::runtime::kJniGuestInvokeTable.Add(
+                          index * sizeof(std::uint32_t))) == 0U);
         }
-    }
-    constexpr std::string_view field_types[]{
-        "Object", "Boolean", "Byte", "Char", "Short", "Int", "Long",
-        "Float", "Double"};
-    CHECK(fixture.dispatcher.IsEnvironmentBound(
-        *ogplay::runtime::FindJniSlot("GetStaticFieldID")));
-    CHECK(fixture.dispatcher.IsEnvironmentBound(
-        *ogplay::runtime::FindJniSlot("RegisterNatives")));
-    CHECK(fixture.dispatcher.IsEnvironmentBound(
-        *ogplay::runtime::FindJniSlot("UnregisterNatives")));
-    CHECK(fixture.dispatcher.IsEnvironmentBound(
-        *ogplay::runtime::FindJniSlot("GetFieldID")));
-    constexpr std::string_view utf16_names[]{
-        "NewString", "GetStringLength", "GetStringChars",
-        "ReleaseStringChars", "GetStringRegion"};
-    for (const auto name : utf16_names) {
-        CHECK(fixture.dispatcher.IsEnvironmentBound(
-            *ogplay::runtime::FindJniSlot(name)));
-    }
-    constexpr std::string_view array_types[]{
-        "Boolean", "Byte", "Char", "Short",
-        "Int", "Long", "Float", "Double"};
-    for (const auto type : array_types) {
-        const auto stem = std::string(type);
-        const std::array names{
-            "New" + stem + "Array",
-            "Get" + stem + "ArrayRegion",
-            "Set" + stem + "ArrayRegion",
-            "Get" + stem + "ArrayElements",
-            "Release" + stem + "ArrayElements"};
-        for (const auto& name : names) {
-            CHECK(fixture.dispatcher.IsEnvironmentBound(
-                *ogplay::runtime::FindJniSlot(name)));
-        }
-    }
-    for (const auto name : {"NewObjectArray", "GetObjectArrayElement",
-                            "SetObjectArrayElement"}) {
-        CHECK(fixture.dispatcher.IsEnvironmentBound(
-            *ogplay::runtime::FindJniSlot(name)));
-    }
-    for (const auto type : field_types) {
-        CHECK(fixture.dispatcher.IsEnvironmentBound(
-            *ogplay::runtime::FindJniSlot(
-                std::string("GetStatic") + std::string(type) + "Field")));
-        CHECK(fixture.dispatcher.IsEnvironmentBound(
-            *ogplay::runtime::FindJniSlot(
-                std::string("SetStatic") + std::string(type) + "Field")));
     }
 
-    std::size_t environment_count{};
-    for (std::size_t index = ogplay::runtime::kJniReservedSlotCount;
-         index < ogplay::runtime::kJniNativeInterfaceSlotCount; ++index) {
-        environment_count += fixture.dispatcher.IsEnvironmentBound(
-            ogplay::runtime::JniSlot{static_cast<std::uint16_t>(index)})
-                                 ? 1U
-                                 : 0U;
-    }
-    CHECK(environment_count == 212U);
-    std::size_t java_vm_count{};
-    for (std::size_t index = 3U;
-         index < ogplay::runtime::kJniInvokeInterfaceSlotCount; ++index) {
-        java_vm_count += fixture.dispatcher.IsJavaVmBound(
-            ogplay::runtime::JniInvokeSlot{
-                static_cast<std::uint8_t>(index)})
-                             ? 1U
-                             : 0U;
-    }
-    CHECK(java_vm_count == 4U);
-    CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(
-        *ogplay::runtime::FindJniSlot("GetStringCritical")));
+    const auto handler = [](const ogplay::runtime::JniGuestCallFrame&) {
+        return ogplay::runtime::JniGuestCallResult{};
+    };
+    CHECK_THROWS_WITH_AS(
+        fixture.dispatcher.BindEnvironment(
+            *ogplay::runtime::FindJniSlot("GetFieldID"), handler),
+        "JNI guest environment slot is already bound", std::logic_error);
+    CHECK_THROWS_WITH_AS(
+        fixture.dispatcher.BindJavaVm(
+            *ogplay::runtime::FindJniInvokeSlot("GetEnv"), handler),
+        "JNI guest JavaVM slot is already bound", std::logic_error);
     fixture.Seal();
     CHECK(fixture.dispatcher.IsSealed());
     CHECK_THROWS_WITH_AS(
         fixture.dispatcher.BindEnvironment(
-            *ogplay::runtime::FindJniSlot("GetFieldID"),
-            [](const ogplay::runtime::JniGuestCallFrame&) {
-                return ogplay::runtime::JniGuestCallResult{};
-            }),
+            *ogplay::runtime::FindJniSlot("GetStringCritical"), handler),
         "JNI guest dispatcher is sealed", std::logic_error);
 }
 

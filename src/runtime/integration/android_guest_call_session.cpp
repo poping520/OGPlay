@@ -585,8 +585,7 @@ public:
                 lifecycle_.RequestExit(child.thread_id, 0);
             }
         }
-        static_cast<void>(environment_.InterruptMonitors());
-        static_cast<void>(futex_table_.InterruptAll());
+        static_cast<void>(InterruptBlockingWaits());
         std::exception_ptr first_child_failure;
         for (const auto& child : children) {
             try {
@@ -603,6 +602,7 @@ public:
         }
         if (first_child_failure) {
             running_ = false;
+            static_cast<void>(environment_.ShutdownMonitors());
             std::rethrow_exception(first_child_failure);
         }
         auto fini_order = guest_load_order_;
@@ -615,6 +615,7 @@ public:
                     {call.address, {}, {}}));
             });
         const auto detached = java_vm_.DetachCurrentThread(kRootThreadId);
+        static_cast<void>(environment_.ShutdownMonitors());
         if (detached != JniStatus::ok) {
             throw AndroidGuestCallSessionError(
                 "Android guest root JNI thread detachment failed");
@@ -703,7 +704,7 @@ public:
     }
     std::size_t InterruptBlockingWaits() {
         return futex_table_.InterruptAll() +
-               environment_.InterruptMonitors();
+               environment_.InterruptMonitorWaiters();
     }
     bool Running() const noexcept { return running_; }
     bool ExitRequested() const noexcept { return process_state_.ExitRequested(); }

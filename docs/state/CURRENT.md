@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-11 · 图形 Context/HLE/内存热路径优化已正式验收闭环
+更新：2026-08-11 · M8 JNI Guest ABI 扩展已 Contract Complete
 
 ## 当前阶段
 
@@ -9,8 +9,11 @@
   正式 M5 验收尚未声明。
 - M6 AI 自动化测试已从 `WU-0328` 开始；目标是让 AI 与 CI 通过同一
   Profile-backed runner 执行 exact APK 的有界场景、输入、readback、断言和证据收集。
-- M8 兼容性冲刺从 `WU-0360` 开始；Asphalt 6 按静态盘点→JNI/Java→GLES2→
-  线程/VFS→媒体→主界面三轮 gate 批次推进，不为单个缺失函数切 WU。
+- M8 兼容性冲刺从 `WU-0360` 开始，新任务改用里程碑内编号 `WU-M8-001..`；Asphalt 6 按
+  静态盘点→JNI/Java→GLES2→线程/VFS→媒体→主界面三轮 gate 批次推进。
+- M8 JNI Guest ABI 扩展（`WU-M8-001..007`）为 Contract Complete：233 个 JNIEnv 槽中
+  212 个 behavior-backed，JavaVM 4 个，其余 reserved 或显式 expected-unbound；绑定集合
+  以精确集合等价机器验证。这只是契约结论，不代表任何 exact-title 运行里程碑。
 - Windows/MSVC、Linux/x64 与 macOS/arm64 的 M4 基线均在 commit `f1b59bb` 以 ANGLE、
   warnings-as-errors 和严格全量 CTest 302/302 通过，见 [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
 
@@ -31,14 +34,17 @@
 
 - Asphalt 6 exact 已越过旧 mixed GLES buffer-state/client-pointer 故障；当前在 Profile
   native call 5 的 `CallStaticIntMethodV requires a valid class reference` 明确失败，尚未
-  声称首帧或主界面。
+  声称首帧或主界面。该失败是独立跟踪的 class reference 发布/解析问题，不是缺 JNI 槽。
 
 ## 最近完成
 
+- [WU-M8-007] monitor 的临时中断与永久关闭拆成 `InterruptWaiters`/`Shutdown` 两个语义：
+  interrupt generation 唤醒当前 waiter 但不禁用后续 `MonitorEnter`，session teardown 改为
+  临时中断 → join child → guest fini → root detach → 永久 shutdown，finalizer 阶段仍可加锁。
+  aggregate binding 改为精确集合等价并显式验证 expected-unbound 与 reserved 槽。
 - [WU-M8-006] guest MonitorEnter/MonitorExit 接入真实可重入 monitor table；owner、recursion、
   waiter 与 condition wakeup 按 object identity 隔离，非 owner exit 明确失败，JavaVM detach
-  释放 ownership，session shutdown 在 join 前 sticky interrupt 全部 waiter。Windows/MSVC
-  focused 5/5 与 full CTest 522/522 通过；最终 aggregate 为 JNIEnv/JavaVM 212/4。
+  释放 ownership。最终 aggregate 为 JNIEnv/JavaVM 212/4。
 - [WU-M8-005] guest nonvirtual 30 槽复用现有 descriptor/A32 decoder 和 invocation engine；
   ABI 从 r3 取 method、从栈取首参数或 V/A pointer。ThrowNew 创建带 class/Modified UTF-8
   message 的真实 throwable，ExceptionDescribe 写结构化诊断且保留 pending identity。
@@ -59,20 +65,9 @@
 - [WU-0377] 一次闭合 GLES2 client vertex/index staging、`glDrawArrays`、`glTexSubImage2D`
   与混合链接 GLES1 draw 转入；opaque EBO+client attribute 明确失败。exact 越过 staging，
   进入 `required guest pointer is null`；focused 2/2、full CTest 496/496。
-- [WU-0376] 一次闭合 active attribute/uniform、info-log、八项 vector uniform、matrix4 与
-  constant vertex attribute 共 14 项。exact 进入 client-array staging；focused 1/1、
-  full CTest 496/496。
 - [WU-0375] child 在首次执行前或 slice 间均响应外部 exit；session stop 先退出/中断再全量
   join。exact 从 SIGSEGV 恢复为明确 `glGetActiveAttrib` 失败；focused 2/2、full CTest
   496/496。
-- [WU-0374] Profile 声明 AudioTrack 七项精确调用，通用 HLE 受检实现 PCM16 配置与
-  write。exact 越过音频 bootstrap；focused 3/3、full CTest 495/495。
-- [WU-0373] 补齐 blend color/equation、sample coverage 与 flush，覆盖混合链接
-  sample-coverage。exact 进入 AudioTrack lookup；focused 2/2、full CTest 494/494。
-- [WU-0372] 接入 FBO/renderbuffer 10 项及 mipmap。exact 进入 `glBlendEquation`；
-  focused 1/1、full CTest 494/494。
-- [WU-0371] 批量转发 shading-language 与 GLES2 capability/state 查询。exact 进入
-  `glBindFramebuffer`；focused 1/1、full CTest 494/494。
 - [WU-0359] Asphalt 5 exact `title_flow` 三轮 gate 通过；Main Menu golden SHA-256
   `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`。
 
@@ -84,7 +79,9 @@ Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实�
 ## 下一步（按优先级）
 
 1. 修复 Asphalt 6 Profile native call 5 的 static class reference 发布/解析，再继续
-   license/VFS/媒体与主界面 Scenario 三轮 gate。
+   license/VFS/媒体与主界面 Scenario 三轮 gate。该阻塞与 JNI 槽位覆盖无关。
+2. 把 `JniObjectArrayStore` 从 array binder 内部持有改为 session 级 Java object-model
+   统一所有权；当前不影响正确性，属后续 backlog。
 
 ## 阻塞
 

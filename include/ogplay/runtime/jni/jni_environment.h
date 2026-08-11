@@ -19,6 +19,7 @@ enum class JniMonitorErrorReason : std::uint8_t {
     recursion_overflow,
     not_owner,
     interrupted,
+    shut_down,
 };
 
 class JniMonitorError final : public std::runtime_error {
@@ -34,7 +35,8 @@ struct JniMonitorSnapshot final {
     std::uint64_t owner_thread{};
     std::size_t recursion{};
     std::size_t waiting_threads{};
-    bool interrupted{};
+    std::uint64_t interrupt_generation{};
+    bool shut_down{};
 };
 
 class JniMonitorTable final {
@@ -49,7 +51,8 @@ public:
     void Enter(JniObjectIdentity object, std::uint64_t thread_id);
     void Exit(JniObjectIdentity object, std::uint64_t thread_id);
     [[nodiscard]] std::size_t ReleaseThread(std::uint64_t thread_id);
-    [[nodiscard]] std::size_t InterruptAll();
+    [[nodiscard]] std::size_t InterruptWaiters();
+    [[nodiscard]] std::size_t Shutdown();
     [[nodiscard]] JniMonitorSnapshot Snapshot(
         JniObjectIdentity object) const;
 
@@ -113,7 +116,8 @@ public:
     [[nodiscard]] std::vector<core::LogRecord> ExceptionDiagnostics() const;
     void MonitorEnter(std::uint64_t thread_id, JniReference object);
     void MonitorExit(std::uint64_t thread_id, JniReference object);
-    [[nodiscard]] std::size_t InterruptMonitors();
+    [[nodiscard]] std::size_t InterruptMonitorWaiters();
+    [[nodiscard]] std::size_t ShutdownMonitors();
     [[nodiscard]] JniMonitorSnapshot MonitorSnapshot(
         JniObjectIdentity object) const;
 

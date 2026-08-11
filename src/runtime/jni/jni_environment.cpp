@@ -35,7 +35,7 @@ public:
                const std::uint64_t thread_id) {
         Validate(object, thread_id);
         std::unique_lock lock(mutex_);
-        if (interrupted_) Interrupted();
+        if (shut_down_) ShutDown();
         auto& entry = monitors_[Key(object)];
         if (entry.owner_thread == thread_id) {
             if (entry.recursion == std::numeric_limits<std::size_t>::max()) {
@@ -46,12 +46,15 @@ public:
             return;
         }
         if (entry.owner_thread != 0U) {
+            const auto generation = interrupt_generation_;
             ++entry.waiting_threads;
-            entry.changed.wait(lock, [this, &entry] {
-                return interrupted_ || entry.owner_thread == 0U;
+            entry.changed.wait(lock, [this, &entry, generation] {
+                return shut_down_ || interrupt_generation_ != generation ||
+                       entry.owner_thread == 0U;
             });
             --entry.waiting_threads;
-            if (interrupted_) Interrupted();
+            if (shut_down_) ShutDown();
+            if (interrupt_generation_ != generation) Interrupted();
         }
         entry.owner_thread = thread_id;
         entry.recursion = 1U;
@@ -92,17 +95,17 @@ public:
         return released;
     }
 
-    [[nodiscard]] std::size_t InterruptAll() {
+    [[nodiscard]] std::size_t InterruptWaiters() {
         std::scoped_lock lock(mutex_);
-        if (interrupted_) return 0U;
-        interrupted_ = true;
-        std::size_t waiting{};
-        for (auto& [object, entry] : monitors_) {
-            static_cast<void>(object);
-            waiting += entry.waiting_threads;
-            entry.changed.notify_all();
-        }
-        return waiting;
+        ++interrupt_generation_;
+        return WakeAllLocked();
+    }
+
+    [[nodiscard]] std::size_t Shutdown() {
+        std::scoped_lock lock(mutex_);
+        if (shut_down_) return 0U;
+        shut_down_ = true;
+        return WakeAllLocked();
     }
 
     [[nodiscard]] JniMonitorSnapshot Snapshot(
@@ -113,9 +116,13 @@ public:
         }
         std::scoped_lock lock(mutex_);
         const auto found = monitors_.find(Key(object));
-        if (found == monitors_.end()) return {.interrupted = interrupted_};
+        if (found == monitors_.end()) {
+            return {.interrupt_generation = interrupt_generation_,
+                    .shut_down = shut_down_};
+        }
         return {found->second.owner_thread, found->second.recursion,
-                found->second.waiting_threads, interrupted_};
+                found->second.waiting_threads, interrupt_generation_,
+                shut_down_};
     }
 
 private:
@@ -127,6 +134,16 @@ private:
     };
 
     using MonitorKey = std::pair<JniObjectDomain, std::uint64_t>;
+
+    [[nodiscard]] std::size_t WakeAllLocked() {
+        std::size_t waiting{};
+        for (auto& [object, entry] : monitors_) {
+            static_cast<void>(object);
+            waiting += entry.waiting_threads;
+            entry.changed.notify_all();
+        }
+        return waiting;
+    }
 
     [[nodiscard]] static MonitorKey Key(const JniObjectIdentity object) {
         return {object.domain, object.value};
@@ -146,7 +163,12 @@ private:
 
     [[noreturn]] static void Interrupted() {
         Fail(JniMonitorErrorReason::interrupted,
-             "JNI monitor wait was interrupted by shutdown");
+             "JNI monitor wait was interrupted");
+    }
+
+    [[noreturn]] static void ShutDown() {
+        Fail(JniMonitorErrorReason::shut_down,
+             "JNI monitor table is shut down");
     }
 
     [[noreturn]] static void Fail(const JniMonitorErrorReason reason,
@@ -156,7 +178,8 @@ private:
 
     mutable std::mutex mutex_;
     std::map<MonitorKey, Entry> monitors_;
-    bool interrupted_{};
+    std::uint64_t interrupt_generation_{};
+    bool shut_down_{};
 };
 
 JniMonitorTable::JniMonitorTable() : impl_(std::make_unique<Impl>()) {}
@@ -175,8 +198,11 @@ void JniMonitorTable::Exit(const JniObjectIdentity object,
 std::size_t JniMonitorTable::ReleaseThread(const std::uint64_t thread_id) {
     return impl_->ReleaseThread(thread_id);
 }
-std::size_t JniMonitorTable::InterruptAll() {
-    return impl_->InterruptAll();
+std::size_t JniMonitorTable::InterruptWaiters() {
+    return impl_->InterruptWaiters();
+}
+std::size_t JniMonitorTable::Shutdown() {
+    return impl_->Shutdown();
 }
 JniMonitorSnapshot JniMonitorTable::Snapshot(
     const JniObjectIdentity object) const {
@@ -387,8 +413,12 @@ void JniEnvironment::MonitorExit(const std::uint64_t thread_id,
     monitors_.Exit(identity.value_or(JniObjectIdentity{}), thread_id);
 }
 
-std::size_t JniEnvironment::InterruptMonitors() {
-    return monitors_.InterruptAll();
+std::size_t JniEnvironment::InterruptMonitorWaiters() {
+    return monitors_.InterruptWaiters();
+}
+
+std::size_t JniEnvironment::ShutdownMonitors() {
+    return monitors_.Shutdown();
 }
 
 JniMonitorSnapshot JniEnvironment::MonitorSnapshot(

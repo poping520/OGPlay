@@ -625,6 +625,41 @@ status = "complete"
 test = "tests/runtime/jni_native_registry_tests.cpp"
 note = "M8 WU-M8-002 将 ARM32 RegisterNatives/UnregisterNatives 以整批预检和声明 resolve 接入唯一 JniNativeRegistry，保留 Thumb bit，并把动态 mapping 接入通用 A32 guest invocation"
 
+[runtime.jni_guest_instance_fields]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M8 WU-M8-003 绑定 GetFieldID 与 Object/Boolean/Byte/Char/Short/Int/Long/Float/Double 的 9 对 instance getter/setter 共 19 槽；receiver 先经当前 JNIEnv resolve 再由 JniGuestObjectRegistry 取 class，field ID/descriptor/kind 与 static 严格分离，long/double 遵循 A32 soft-float word-pair 与对齐栈 ABI。不含 reflection field 与 ID 缓存失效语义"
+
+[runtime.jni_guest_utf16_strings]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M8 WU-M8-003 绑定 NewString/GetStringLength/GetStringChars/ReleaseStringChars/GetStringRegion 共 5 槽，长度与 region 以 UTF-16 code unit 计；M3 Modified UTF-8 五槽保持可用。GetStringChars 使用独立 64 KiB copy-based guest arena 并写 JNI_TRUE，lease 以 string identity + pointer + token 配对。GetStringCritical/ReleaseStringCritical 明确排除，保持 unbound"
+
+[runtime.jni_guest_arrays]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M8 WU-M8-004 绑定 8 类 primitive 的 New/GetRegion/SetRegion/GetElements/ReleaseElements 共 40 槽与 NewObjectArray/GetObjectArrayElement/SetObjectArrayElement 3 槽；Elements 使用独立 4 MiB 有界 guest arena，严格实现 0/JNI_COMMIT/JNI_ABORT、wrong pointer 与 double release，object array 验证 initial/set assignability。GetPrimitiveArrayCritical/ReleasePrimitiveArrayCritical 明确排除；JniObjectArrayStore 仍由 array binder 持有，session 级 Java object-model 统一属后续范围"
+
+[runtime.jni_guest_nonvirtual_calls]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M8 WU-M8-005 绑定 10 种返回类型的 CallNonvirtual*Method/V/A 共 30 槽，与 virtual/static call 共用 descriptor 驱动的 A32 word cursor、va_list、jvalue 与返回编码；method 从 r3 取得，首个 Java 参数或 V/A pointer 从 guest 栈取得，语义由唯一 JniInvocationEngine::InvokeNonvirtual 完成。不含 reflection 调用与跨 VM 派发"
+
+[runtime.jni_guest_exceptions]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M8 WU-M8-005 让 ThrowNew 完整读取校验 Modified UTF-8 message 并在 runtime/jni 保存 throwable identity、exception class 与 message；ExceptionDescribe 写结构化 runtime.jni.exception diagnostic 且不清除或替换 pending throwable，与 M3 的 Throw/ExceptionOccurred/ExceptionCheck/ExceptionClear 共用同一状态。FatalError 明确排除，保持 unbound"
+
+[runtime.jni_guest_monitors]
+status = "complete"
+test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M8 WU-M8-006/WU-M8-007 让 MonitorEnter/MonitorExit 进入 environment 拥有的真实 monitor table：按 object identity 隔离 owner/recursion/waiter，同线程可重入，非 owner exit 明确失败，竞争线程真实阻塞并在 owner exit 或 detach 后取得 ownership。临时中断与永久关闭为独立语义：InterruptWaiters 提升 generation 唤醒当前 waiter 且不影响后续 Enter，Shutdown 唤醒 waiter 并永久拒绝 Enter；session teardown 只在 guest finalizer 与 root detach 之后执行 Shutdown。不实现 Object.wait/notify 与 Binder monitor"
+
+[runtime.jni_guest_binding_manifest]
+status = "complete"
+test = "tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M8 WU-M8-007 让 aggregate contract 以精确 slot 集合等价验证：实际绑定集合逐名与 expected manifest 相等（当前 JNIEnv 212、JavaVM 4），数量仅作辅助诊断；Critical array/string、DirectByteBuffer、Reflection、FatalError 与 DestroyJavaVM 属显式 expected-unbound 清单，reserved 槽拒绝绑定且 ABI 表项为 0，重复绑定与 Seal 后绑定均明确失败"
+
 [runtime.jni_guest_static_method_lookup]
 status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"

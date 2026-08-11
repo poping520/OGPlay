@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <future>
+#include <optional>
 #include <stdexcept>
 #include <span>
 #include <string>
@@ -639,6 +640,37 @@ TEST_CASE("guest JNI UTF-16 strings own checked code-unit leases") {
         JniStringError);
 }
 
+namespace {
+
+template <typename Snapshot>
+[[nodiscard]] bool WaitForWaiters(const Snapshot snapshot,
+                                  const std::size_t expected) {
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (snapshot().waiting_threads != expected) {
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        std::this_thread::yield();
+    }
+    return true;
+}
+
+template <typename Enter>
+[[nodiscard]] std::future<std::optional<ogplay::runtime::JniMonitorErrorReason>>
+BlockingEnter(const Enter enter) {
+    return std::async(
+        std::launch::async,
+        [enter]() -> std::optional<ogplay::runtime::JniMonitorErrorReason> {
+            try {
+                enter();
+            } catch (const ogplay::runtime::JniMonitorError& error) {
+                return error.Reason();
+            }
+            return std::nullopt;
+        });
+}
+
+}  // namespace
+
 TEST_CASE("JNI monitor is reentrant and rejects a non-owner exit") {
     using namespace ogplay::runtime;
     JniMonitorTable monitors;
@@ -688,7 +720,7 @@ TEST_CASE("JNI monitor contention transfers ownership after detach release") {
     const auto transferred =
         waiter.wait_for(2s) == std::future_status::ready;
     if (!transferred) {
-        static_cast<void>(environment.InterruptMonitors());
+        static_cast<void>(environment.InterruptMonitorWaiters());
     }
     REQUIRE(transferred);
     waiter.get();
@@ -697,33 +729,91 @@ TEST_CASE("JNI monitor contention transfers ownership after detach release") {
     environment.DetachThread(12U);
 }
 
-TEST_CASE("JNI monitor shutdown interrupts every current waiter") {
+TEST_CASE("JNI monitor waiter interruption keeps the subsystem usable") {
     using namespace ogplay::runtime;
     using namespace std::chrono_literals;
     JniMonitorTable monitors;
     const auto object = AllocateJniHostObjectIdentity();
     monitors.Enter(object, 21U);
-    auto waiter = std::async(std::launch::async, [&] {
-        try {
-            monitors.Enter(object, 22U);
-        } catch (const JniMonitorError& error) {
-            return error.Reason() == JniMonitorErrorReason::interrupted;
-        }
-        return false;
-    });
-    const auto wait_deadline = std::chrono::steady_clock::now() + 2s;
-    while (monitors.Snapshot(object).waiting_threads == 0U &&
-           std::chrono::steady_clock::now() < wait_deadline) {
-        std::this_thread::yield();
-    }
-    const auto blocked = monitors.Snapshot(object).waiting_threads == 1U;
-    const auto interrupted = monitors.InterruptAll();
-    REQUIRE(blocked);
-    CHECK(interrupted == 1U);
+    auto waiter = BlockingEnter([&] { monitors.Enter(object, 22U); });
+    REQUIRE(WaitForWaiters([&] { return monitors.Snapshot(object); }, 1U));
+    CHECK(monitors.InterruptWaiters() == 1U);
     REQUIRE(waiter.wait_for(2s) == std::future_status::ready);
-    CHECK(waiter.get());
-    CHECK(monitors.Snapshot(object).interrupted);
-    CHECK_THROWS_AS(monitors.Enter(object, 23U), JniMonitorError);
+    const auto reason = waiter.get();
+    REQUIRE(reason.has_value());
+    CHECK(*reason == JniMonitorErrorReason::interrupted);
+    CHECK(monitors.Snapshot(object).owner_thread == 21U);
+    CHECK_FALSE(monitors.Snapshot(object).shut_down);
+
+    monitors.Exit(object, 21U);
+    monitors.Enter(object, 23U);
+    CHECK(monitors.Snapshot(object).owner_thread == 23U);
+    auto later = BlockingEnter([&] { monitors.Enter(object, 24U); });
+    REQUIRE(WaitForWaiters([&] { return monitors.Snapshot(object); }, 1U));
+    monitors.Exit(object, 23U);
+    REQUIRE(later.wait_for(2s) == std::future_status::ready);
+    CHECK_FALSE(later.get().has_value());
+    CHECK(monitors.Snapshot(object).owner_thread == 24U);
+    monitors.Exit(object, 24U);
+}
+
+TEST_CASE("JNI monitor shutdown wakes waiters and rejects later entry") {
+    using namespace ogplay::runtime;
+    using namespace std::chrono_literals;
+    JniMonitorTable monitors;
+    const auto object = AllocateJniHostObjectIdentity();
+    monitors.Enter(object, 31U);
+    auto waiter = BlockingEnter([&] { monitors.Enter(object, 32U); });
+    REQUIRE(WaitForWaiters([&] { return monitors.Snapshot(object); }, 1U));
+    CHECK(monitors.Shutdown() == 1U);
+    REQUIRE(waiter.wait_for(2s) == std::future_status::ready);
+    const auto reason = waiter.get();
+    REQUIRE(reason.has_value());
+    CHECK(*reason == JniMonitorErrorReason::shut_down);
+    CHECK(monitors.Snapshot(object).shut_down);
+    CHECK(monitors.Shutdown() == 0U);
+    monitors.Exit(object, 31U);
+    CHECK_THROWS_WITH_AS(monitors.Enter(object, 33U),
+                         "JNI monitor table is shut down", JniMonitorError);
+}
+
+TEST_CASE("JNI monitor teardown order keeps finalizer locking available") {
+    using namespace ogplay::runtime;
+    using namespace std::chrono_literals;
+    JniEnvironment environment;
+    const auto object = AllocateJniHostObjectIdentity();
+    constexpr std::uint64_t root = 41U;
+    constexpr std::uint64_t child = 42U;
+    environment.AttachThread(root);
+    environment.AttachThread(child);
+    const auto root_reference = environment.PublishLocalObject(root, object);
+    const auto child_reference = environment.PublishLocalObject(child, object);
+    environment.MonitorEnter(root, root_reference);
+    auto guest_child = BlockingEnter(
+        [&] { environment.MonitorEnter(child, child_reference); });
+    REQUIRE(WaitForWaiters(
+        [&] { return environment.MonitorSnapshot(object); }, 1U));
+
+    // Session Stop interrupts temporary waits before joining guest children.
+    CHECK(environment.InterruptMonitorWaiters() == 1U);
+    REQUIRE(guest_child.wait_for(2s) == std::future_status::ready);
+    const auto reason = guest_child.get();
+    REQUIRE(reason.has_value());
+    CHECK(*reason == JniMonitorErrorReason::interrupted);
+    environment.DetachThread(child);
+
+    // Guest finalizers run after the join and may still lock monitors.
+    environment.MonitorExit(root, root_reference);
+    environment.MonitorEnter(root, root_reference);
+    CHECK(environment.MonitorSnapshot(object).owner_thread == root);
+    environment.MonitorExit(root, root_reference);
+
+    environment.DetachThread(root);
+    CHECK(environment.ShutdownMonitors() == 0U);
+    environment.AttachThread(root);
+    const auto reopened = environment.PublishLocalObject(root, object);
+    CHECK_THROWS_WITH_AS(environment.MonitorEnter(root, reopened),
+                         "JNI monitor table is shut down", JniMonitorError);
 }
 
 TEST_CASE("guest JNI monitor bindings expose real recursion state") {

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -88,6 +89,18 @@ public:
                 static_cast<unsigned char>(character)));
         }
         bytes.push_back(std::byte{});
+        memory.Write(output.Add(offset), bytes);
+    }
+
+    void WriteUtf16(const std::uint32_t offset,
+                    const std::span<const ogplay::runtime::JniChar> value) {
+        std::vector<std::byte> bytes(value.size() * 2U);
+        for (std::size_t index = 0; index < value.size(); ++index) {
+            bytes[index * 2U] =
+                static_cast<std::byte>(value[index] & 0xffU);
+            bytes[index * 2U + 1U] =
+                static_cast<std::byte>(value[index] >> 8U);
+        }
         memory.Write(output.Add(offset), bytes);
     }
 
@@ -294,4 +307,153 @@ TEST_CASE("guest JNI instance calls accept framework registered host objects") {
             AllocateJniHostObjectIdentity())),
         "JNI guest receiver is not a registered instance",
         JniGuestBindingError);
+}
+
+TEST_CASE("guest JNI instance fields resolve receivers and preserve A32 values") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    static_cast<void>(fixture.classes.RegisterClass(
+        {"java/lang/Object", {}, {}, {}}));
+    const auto holder_class = fixture.classes.RegisterClass(
+        {"fixture/Holder", "java/lang/Object", {},
+         {{"count", "I", "holder.count", false},
+          {"wide", "J", "holder.wide", false},
+          {"ratio", "D", "holder.ratio", false},
+          {"token", "Ljava/lang/Object;", "holder.token", false},
+          {"shared", "I", "holder.shared", true}}});
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const auto holder = fixture.objects.Allocate(holder_class);
+    const auto holder_ref = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, holder);
+    const auto token = fixture.objects.Allocate(
+        *fixture.classes.FindClass("java/lang/Object"));
+    const auto token_ref = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, token);
+    fixture.WriteString(0x100U, "fixture/Holder");
+    fixture.WriteString(0x140U, "count");
+    fixture.WriteString(0x160U, "I");
+    fixture.WriteString(0x180U, "wide");
+    fixture.WriteString(0x1a0U, "J");
+    fixture.WriteString(0x1c0U, "ratio");
+    fixture.WriteString(0x1e0U, "D");
+    fixture.WriteString(0x200U, "token");
+    fixture.WriteString(0x220U, "Ljava/lang/Object;");
+    fixture.WriteString(0x240U, "shared");
+    fixture.dispatcher.Seal();
+
+    const auto java_class = fixture.Call(
+        "FindClass", fixture.output.Add(0x100U).Value());
+    const auto count = fixture.Call(
+        "GetFieldID", java_class, fixture.output.Add(0x140U).Value(),
+        fixture.output.Add(0x160U).Value());
+    const auto wide = fixture.Call(
+        "GetFieldID", java_class, fixture.output.Add(0x180U).Value(),
+        fixture.output.Add(0x1a0U).Value());
+    const auto ratio = fixture.Call(
+        "GetFieldID", java_class, fixture.output.Add(0x1c0U).Value(),
+        fixture.output.Add(0x1e0U).Value());
+    const auto token_field = fixture.Call(
+        "GetFieldID", java_class, fixture.output.Add(0x200U).Value(),
+        fixture.output.Add(0x220U).Value());
+    const auto shared = fixture.Call(
+        "GetStaticFieldID", java_class,
+        fixture.output.Add(0x240U).Value(),
+        fixture.output.Add(0x160U).Value());
+
+    static_cast<void>(fixture.Call(
+        "SetIntField", holder_ref.Value(), count, 0xfffffff9U));
+    CHECK(fixture.Call("GetIntField", holder_ref.Value(), count) ==
+          0xfffffff9U);
+    constexpr JniLong wide_value = INT64_C(-0x11223344556677);
+    fixture.Write64(std::bit_cast<std::uint64_t>(wide_value));
+    static_cast<void>(fixture.Call(
+        "SetLongField", holder_ref.Value(), wide));
+    const auto wide_result = fixture.CallPair(
+        "GetLongField", holder_ref.Value(), wide);
+    CHECK((static_cast<std::uint64_t>(wide_result[1]) << 32U |
+           wide_result[0]) == std::bit_cast<std::uint64_t>(wide_value));
+    constexpr JniDouble ratio_value = 41.5;
+    fixture.Write64(std::bit_cast<std::uint64_t>(ratio_value));
+    static_cast<void>(fixture.Call(
+        "SetDoubleField", holder_ref.Value(), ratio));
+    const auto ratio_result = fixture.CallPair(
+        "GetDoubleField", holder_ref.Value(), ratio);
+    CHECK((static_cast<std::uint64_t>(ratio_result[1]) << 32U |
+           ratio_result[0]) == std::bit_cast<std::uint64_t>(ratio_value));
+    static_cast<void>(fixture.Call(
+        "SetObjectField", holder_ref.Value(), token_field,
+        token_ref.Value()));
+    CHECK(fixture.Call(
+              "GetObjectField", holder_ref.Value(), token_field) ==
+          token_ref.Value());
+
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.Call(
+            "GetFloatField", holder_ref.Value(), count)),
+        JniGuestBindingError);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.Call(
+            "GetIntField", holder_ref.Value(), shared)),
+        JniFieldStoreError);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.Call(
+            "GetStaticIntField", java_class, count)),
+        JniFieldStoreError);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.Call("GetIntField", 0x1234U, count)),
+        std::exception);
+}
+
+TEST_CASE("guest JNI UTF-16 strings own checked code-unit leases") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const std::array<JniChar, 4> text{'A', 0xd83dU, 0xde00U, 0U};
+    fixture.WriteUtf16(0x100U, text);
+    fixture.dispatcher.Seal();
+
+    const auto string = JniReference{fixture.Call(
+        "NewString", fixture.output.Add(0x100U).Value(),
+        static_cast<std::uint32_t>(text.size()))};
+    REQUIRE_FALSE(string.IsNull());
+    CHECK(fixture.Call("GetStringLength", string.Value()) == 4U);
+    const auto pointer = fixture.Call(
+        "GetStringChars", string.Value(), fixture.output.Add(0x300U).Value());
+    REQUIRE(pointer != 0U);
+    CHECK(fixture.bus.Read8(fixture.output.Add(0x300U)) == 1U);
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        CHECK(fixture.bus.Read16(
+                  ogplay::memory::GuestAddress{pointer}.Add(index * 2U)) ==
+              text[index]);
+    }
+    fixture.bus.Write32(fixture.output.Add(0x800U),
+                        fixture.output.Add(0x400U).Value());
+    static_cast<void>(fixture.Call(
+        "GetStringRegion", string.Value(), 1U, 2U));
+    CHECK(fixture.bus.Read16(fixture.output.Add(0x400U)) == 0xd83dU);
+    CHECK(fixture.bus.Read16(fixture.output.Add(0x402U)) == 0xde00U);
+
+    const auto other = JniReference{fixture.Call(
+        "NewString", fixture.output.Add(0x100U).Value(),
+        static_cast<std::uint32_t>(text.size()))};
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.Call(
+            "ReleaseStringChars", other.Value(), pointer)),
+        "ReleaseStringChars pointer does not match an active lease",
+        JniGuestBindingError);
+    static_cast<void>(fixture.Call(
+        "ReleaseStringChars", string.Value(), pointer));
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.Call(
+            "ReleaseStringChars", string.Value(), pointer)),
+        "ReleaseStringChars pointer does not match an active lease",
+        JniGuestBindingError);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.Call(
+            "NewString", 0xfffffff0U, 16U)),
+        std::exception);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.Call(
+            "GetStringRegion", string.Value(), 3U, 2U)),
+        JniStringError);
 }

@@ -554,7 +554,13 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
     BindJniGuestStaticFieldSlots(
         dispatcher, context.environment, context.classes, context.fields,
         context.address_space);
+    BindJniGuestInstanceFieldSlots(
+        dispatcher, context.environment, context.classes, context.fields,
+        context.objects, context.address_space);
     BindJniGuestModifiedUtf8Slots(
+        dispatcher, context.environment, context.strings,
+        context.address_space);
+    BindJniGuestUtf16Slots(
         dispatcher, context.environment, context.strings,
         context.address_space);
     if (context.natives != nullptr) {

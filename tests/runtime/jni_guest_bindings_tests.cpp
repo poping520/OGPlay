@@ -217,6 +217,15 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
         *ogplay::runtime::FindJniSlot("RegisterNatives")));
     CHECK(fixture.dispatcher.IsEnvironmentBound(
         *ogplay::runtime::FindJniSlot("UnregisterNatives")));
+    CHECK(fixture.dispatcher.IsEnvironmentBound(
+        *ogplay::runtime::FindJniSlot("GetFieldID")));
+    constexpr std::string_view utf16_names[]{
+        "NewString", "GetStringLength", "GetStringChars",
+        "ReleaseStringChars", "GetStringRegion"};
+    for (const auto name : utf16_names) {
+        CHECK(fixture.dispatcher.IsEnvironmentBound(
+            *ogplay::runtime::FindJniSlot(name)));
+    }
     for (const auto type : field_types) {
         CHECK(fixture.dispatcher.IsEnvironmentBound(
             *ogplay::runtime::FindJniSlot(
@@ -234,7 +243,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
                                  ? 1U
                                  : 0U;
     }
-    CHECK(environment_count == 112U);
+    CHECK(environment_count == 136U);
     std::size_t java_vm_count{};
     for (std::size_t index = 3U;
          index < ogplay::runtime::kJniInvokeInterfaceSlotCount; ++index) {
@@ -246,7 +255,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     }
     CHECK(java_vm_count == 4U);
     CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(
-        *ogplay::runtime::FindJniSlot("GetFieldID")));
+        *ogplay::runtime::FindJniSlot("GetStringCritical")));
     fixture.Seal();
     CHECK(fixture.dispatcher.IsSealed());
     CHECK_THROWS_WITH_AS(

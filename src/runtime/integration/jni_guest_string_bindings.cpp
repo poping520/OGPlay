@@ -22,6 +22,9 @@ namespace {
 
 constexpr memory::GuestAddress kStringLeaseBegin{0x71300000U};
 constexpr std::uint64_t kStringLeaseSize = 64U * 1024U;
+constexpr memory::GuestAddress kUtf16LeaseBegin{0x71310000U};
+constexpr std::uint64_t kUtf16LeaseSize = 64U * 1024U;
+constexpr std::size_t kMaximumUtf16CodeUnits = 1024U * 1024U;
 
 [[nodiscard]] JniSlot Slot(const std::string_view name) {
     const auto slot = FindJniSlot(name);
@@ -163,6 +166,117 @@ private:
     std::vector<Lease> leases_;
 };
 
+[[nodiscard]] std::vector<std::byte> EncodeUtf16(
+    const std::span<const JniChar> chars, const bool terminate) {
+    std::vector<std::byte> bytes(
+        (chars.size() + (terminate ? 1U : 0U)) * sizeof(JniChar));
+    for (std::size_t index = 0; index < chars.size(); ++index) {
+        bytes[index * 2U] = static_cast<std::byte>(chars[index] & 0xffU);
+        bytes[index * 2U + 1U] =
+            static_cast<std::byte>(chars[index] >> 8U);
+    }
+    return bytes;
+}
+
+class Utf16Leases final {
+public:
+    Utf16Leases(JniEnvironment& environment, JniStringStore& strings,
+                memory::AddressSpace& address_space)
+        : environment_(&environment), strings_(&strings),
+          address_space_(&address_space) {
+        address_space_->Map(
+            {kUtf16LeaseBegin, kUtf16LeaseSize},
+            memory::PageProtection::read | memory::PageProtection::write);
+    }
+
+    ~Utf16Leases() {
+        std::scoped_lock lock(mutex_);
+        try {
+            address_space_->Unmap({kUtf16LeaseBegin, kUtf16LeaseSize});
+        } catch (...) {
+        }
+    }
+
+    [[nodiscard]] std::uint32_t Acquire(const JniGuestCallFrame& frame) {
+        const auto string = ResolveString(*environment_, frame);
+        const auto is_copy = memory::GuestAddress{frame.registers[2]};
+        if (!is_copy.IsNull()) {
+            address_space_->Validate(
+                {is_copy, 1U}, memory::AccessType::write, frame.thread_id);
+        }
+        auto access = strings_->Acquire(string, JniStringAccessKind::chars);
+        const auto bytes = EncodeUtf16(access.chars, true);
+        std::scoped_lock lock(mutex_);
+        try {
+            const auto pointer = Allocate(bytes.size());
+            address_space_->Write(pointer, bytes, frame.thread_id);
+            if (!is_copy.IsNull()) {
+                address_space_->Write8(is_copy, 1U, frame.thread_id);
+            }
+            leases_.push_back(
+                {pointer, bytes.size(), string, access.token});
+            return pointer.Value();
+        } catch (...) {
+            strings_->Release(string, access.token,
+                              JniStringAccessKind::chars);
+            throw;
+        }
+    }
+
+    void Release(const JniGuestCallFrame& frame) {
+        const auto string = ResolveString(*environment_, frame);
+        const auto pointer = memory::GuestAddress{frame.registers[2]};
+        std::scoped_lock lock(mutex_);
+        const auto found = std::ranges::find_if(
+            leases_, [pointer](const Lease& lease) {
+                return lease.pointer == pointer;
+            });
+        if (found == leases_.end() || found->string != string) {
+            throw JniGuestBindingError(
+                "ReleaseStringChars pointer does not match an active lease");
+        }
+        strings_->Release(found->string, found->token,
+                          JniStringAccessKind::chars);
+        leases_.erase(found);
+    }
+
+private:
+    struct Lease final {
+        memory::GuestAddress pointer;
+        std::size_t size{};
+        JniObjectIdentity string;
+        std::uint64_t token{};
+    };
+
+    [[nodiscard]] memory::GuestAddress Allocate(const std::size_t size) const {
+        if (size == 0 || size > kUtf16LeaseSize) {
+            throw JniGuestBindingError(
+                "JNI guest UTF-16 lease exceeds its arena");
+        }
+        auto ordered = leases_;
+        std::ranges::sort(ordered, {}, &Lease::pointer);
+        std::uint64_t offset{};
+        for (const auto& lease : ordered) {
+            const auto lease_offset =
+                lease.pointer.Value() - kUtf16LeaseBegin.Value();
+            if (size <= lease_offset - offset) break;
+            offset = lease_offset + lease.size;
+        }
+        if (offset > kUtf16LeaseSize ||
+            size > kUtf16LeaseSize - offset) {
+            throw JniGuestBindingError(
+                "JNI guest UTF-16 lease arena is full");
+        }
+        return kUtf16LeaseBegin.Add(offset);
+    }
+
+    JniEnvironment* environment_{};
+    JniStringStore* strings_{};
+    memory::AddressSpace* address_space_{};
+    mutable std::mutex mutex_;
+    std::vector<Lease> leases_;
+};
+
 }  // namespace
 
 void BindJniGuestModifiedUtf8Slots(
@@ -204,6 +318,103 @@ void BindJniGuestModifiedUtf8Slots(
             }
             address_space.Write(
                 destination, std::as_bytes(std::span{bytes}), frame.thread_id);
+            return JniGuestCallResult{};
+        });
+}
+
+void BindJniGuestUtf16Slots(
+    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+    JniStringStore& strings, memory::AddressSpace& address_space) {
+    const auto leases = std::make_shared<Utf16Leases>(
+        environment, strings, address_space);
+    dispatcher.BindEnvironment(
+        Slot("NewString"),
+        [&environment, &strings,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto length = std::bit_cast<JniSize>(frame.registers[2]);
+            if (length < 0 ||
+                static_cast<std::size_t>(length) >
+                    kMaximumUtf16CodeUnits) {
+                throw JniGuestBindingError(
+                    "NewString length is invalid");
+            }
+            const auto count = static_cast<std::size_t>(length);
+            const auto byte_size = count * sizeof(JniChar);
+            const auto source = memory::GuestAddress{frame.registers[1]};
+            std::vector<std::byte> bytes(byte_size);
+            if (!bytes.empty()) {
+                if (source.IsNull()) {
+                    throw JniGuestBindingError(
+                        "NewString requires non-null UTF-16 input");
+                }
+                address_space.Validate(
+                    {source, byte_size}, memory::AccessType::read,
+                    frame.thread_id);
+                address_space.Read(source, bytes, frame.thread_id);
+            }
+            std::vector<JniChar> chars(count);
+            for (std::size_t index = 0; index < count; ++index) {
+                chars[index] = static_cast<JniChar>(
+                    std::to_integer<std::uint16_t>(bytes[index * 2U]) |
+                    (std::to_integer<std::uint16_t>(
+                         bytes[index * 2U + 1U])
+                     << 8U));
+            }
+            const auto identity = strings.Create(chars);
+            try {
+                const auto reference = environment.PublishLocalObject(
+                    frame.thread_id, identity);
+                return Word(reference.Value());
+            } catch (...) {
+                strings.Delete(identity);
+                throw;
+            }
+        });
+    dispatcher.BindEnvironment(
+        Slot("GetStringLength"),
+        [&environment, &strings](const JniGuestCallFrame& frame) {
+            return Int(strings.Length(ResolveString(environment, frame)));
+        });
+    dispatcher.BindEnvironment(
+        Slot("GetStringChars"),
+        [leases](const JniGuestCallFrame& frame) {
+            return Word(leases->Acquire(frame));
+        });
+    dispatcher.BindEnvironment(
+        Slot("ReleaseStringChars"),
+        [leases](const JniGuestCallFrame& frame) {
+            leases->Release(frame);
+            return JniGuestCallResult{};
+        });
+    dispatcher.BindEnvironment(
+        Slot("GetStringRegion"),
+        [&environment, &strings,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto start = std::bit_cast<JniSize>(frame.registers[2]);
+            const auto length = std::bit_cast<JniSize>(frame.registers[3]);
+            if (start < 0 || length < 0) {
+                throw JniGuestBindingError(
+                    "GetStringRegion range is invalid");
+            }
+            const auto byte_size =
+                static_cast<std::size_t>(length) * sizeof(JniChar);
+            const auto destination = memory::GuestAddress{
+                Read32(address_space, frame.stack_pointer, frame.thread_id)};
+            if (byte_size != 0U) {
+                if (destination.IsNull()) {
+                    throw JniGuestBindingError(
+                        "GetStringRegion requires a non-null output buffer");
+                }
+                address_space.Validate(
+                    {destination, byte_size}, memory::AccessType::write,
+                    frame.thread_id);
+            }
+            const auto chars = strings.Region(
+                ResolveString(environment, frame), start, length);
+            if (!chars.empty()) {
+                address_space.Write(
+                    destination, EncodeUtf16(chars, false), frame.thread_id);
+            }
             return JniGuestCallResult{};
         });
 }

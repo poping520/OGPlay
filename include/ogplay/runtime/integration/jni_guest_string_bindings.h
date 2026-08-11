@@ -14,4 +14,8 @@ void BindJniGuestModifiedUtf8Slots(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
     JniStringStore& strings, memory::AddressSpace& address_space);
 
+void BindJniGuestUtf16Slots(
+    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+    JniStringStore& strings, memory::AddressSpace& address_space);
+
 }  // namespace ogplay::runtime

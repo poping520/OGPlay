@@ -35,14 +35,14 @@
 
 ## 最近完成
 
+- [WU-M8-003] guest instance field 19 槽与 UTF-16 string 5 槽闭合；receiver 通过统一
+  object registry 定位 class，static/instance 与 descriptor kind 严格互斥，UTF-16 lease
+  支持 surrogate/code-unit、wrong-string/double-release 检查。Windows/MSVC focused
+  8/8 与 full CTest 514/514 通过，当前 aggregate 为 JNIEnv/JavaVM 136/4。
 - [WU-M8-002] guest `RegisterNatives` / `UnregisterNatives` 接入唯一 native registry；
   ARM32 12-byte 批次先完整预检/resolve 后提交，Thumb bit 保持，registered-native session
   入口进入通用 A32 executor。Windows/MSVC focused 6/6 与 full CTest 512/512 通过，
   当前 aggregate 为 JNIEnv/JavaVM 112/4。
-- [WU-M8-001] JNI guest registration 收敛为 production 唯一 `BindJniGuestSlots` aggregate；
-  Core 不再隐藏 Class/Instance、Static Call 与 Modified UTF-8 注册，当前 JNIEnv/JavaVM
-  精确集合保持 110/4，Seal 后拒绝扩展。Windows/MSVC focused 23/23 与 full CTest
-  510/510 通过。
 - [WU-OPT-CLOSURE-01] 正式闭合前 12 项优化验收：统一 active texture 与 GLES1 texture
   matrix unit，以 `(unit,target)` 隔离 2D/cube-map binding/metadata/delete，并让超采样下
   GLES1/GLES2 viewport/scissor query 返回 logical state；六类高频 setter 不再复制整个

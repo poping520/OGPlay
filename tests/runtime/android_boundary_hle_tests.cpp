@@ -574,6 +574,39 @@ TEST_CASE("supersample cross API queries preserve logical raster state") {
     CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
 }
 
+TEST_CASE("new GL context exposes logical default raster state") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture(2U);
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
+    const auto output = fixture.output;
+
+    const auto check_box = [&fixture](const ogplay::memory::GuestAddress address) {
+        CHECK(fixture.bus.Read32(address, 1U) == 0U);
+        CHECK(fixture.bus.Read32(address.Add(4U), 1U) == 0U);
+        CHECK(fixture.bus.Read32(address.Add(8U), 1U) == 4U);
+        CHECK(fixture.bus.Read32(address.Add(12U), 1U) == 3U);
+    };
+
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x0BA2U, output.Value()}) == 0U);
+    check_box(output);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                       {0x0BA2U, output.Add(16U).Value()}) == 0U);
+    check_box(output.Add(16U));
+
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x0C10U, output.Add(32U).Value()}) == 0U);
+    check_box(output.Add(32U));
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                       {0x0C10U, output.Add(48U).Value()}) == 0U);
+    check_box(output.Add(48U));
+
+    constexpr auto kDither = UINT32_C(0x0BD0);
+    CHECK(fixture.Call("libGLESv2.so", "glIsEnabled", {kDither}) == 1U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled", {kDither}) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+}
+
 TEST_CASE("GLES1 matrix state composes and bounds stacks") {
     ogplay::runtime::SharedGlState shared;
     ogplay::runtime::detail::AndroidBoundaryGles1MatrixState matrices(shared);

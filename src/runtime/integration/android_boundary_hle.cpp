@@ -183,6 +183,7 @@ public:
         }
         angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
             backend_, layout_.render_width, layout_.render_height));
+        InitializeGuestGlDefaults();
         managed_surface_ = true;
         std::scoped_lock lock(mutex_);
         gpu_render_target_ready_ = true;
@@ -327,6 +328,37 @@ public:
         return result;
     }
 private:
+    void InitializeGuestGlDefaults() {
+        constexpr auto kDither = UINT32_C(0x0BD0);
+        const auto maximum_dimension = static_cast<std::uint32_t>(
+            (std::numeric_limits<std::int32_t>::max)());
+        if (layout_.logical_width > maximum_dimension ||
+            layout_.logical_height > maximum_dimension) {
+            throw std::overflow_error(
+                "guest GL logical drawable dimensions exceed GLsizei");
+        }
+
+        const auto logical_width =
+            static_cast<std::int32_t>(layout_.logical_width);
+        const auto logical_height =
+            static_cast<std::int32_t>(layout_.logical_height);
+        const std::array<std::int32_t, 4> logical{
+            0, 0, logical_width, logical_height};
+
+        auto& frame = RequireFrame("initialize GL defaults");
+        const auto render_width = detail::ScaleAndroidBoundaryViewportComponent(
+            logical_width, layout_.factor);
+        const auto render_height = detail::ScaleAndroidBoundaryViewportComponent(
+            logical_height, layout_.factor);
+        frame.Viewport(0, 0, render_width, render_height);
+        frame.Scissor(0, 0, render_width, render_height);
+        frame.SetCapability(kDither, true);
+
+        auto& shared = gl_context_.Shared();
+        shared.SetViewport(logical);
+        shared.SetScissor(logical);
+        shared.SetCapability(kDither, true);
+    }
     void Write32(const std::uint32_t address, const std::uint32_t value,
                  const std::uint64_t thread_id) {
         if (address == 0) return;
@@ -646,6 +678,7 @@ private:
             if (args[3] != 0 && !angle_frame_.has_value()) {
                 angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
                     backend_, layout_.render_width, layout_.render_height));
+                InitializeGuestGlDefaults();
                 std::scoped_lock lock(mutex_);
                 gpu_render_target_ready_ = true;
             }

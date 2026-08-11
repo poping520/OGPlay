@@ -182,11 +182,24 @@ TEST_CASE("legacy Android platform identity installs one complete class group") 
     const auto game = classes.RegisterClass(
         {"fixture/Game", {},
          {{"d", "()V", "analytics.track_launch", true},
+          {"TrackingRegisterFirstRun", "()V", "analytics.track_first_run",
+           true},
+          {"increaseNumOfLaunch", "()V", "analytics.increase_launch_count",
+           true},
+          {"GetNumbOfLaunch", "()I", "analytics.get_launch_count", true},
           {"da", "()Landroid/app/Activity;", "activity.current", true},
           {"db", "()[B", "device.identifier_bytes", true},
           {"dc", "()[B", "device.identifier_bytes", true}}, {}});
     static_cast<void>(invoke_static(game, "d", "()V"));
     CHECK(state.OfflineTrackingCount() == 1U);
+    static_cast<void>(invoke_static(game, "TrackingRegisterFirstRun", "()V"));
+    CHECK(state.OfflineTrackingCount() == 2U);
+    CHECK(std::get<JniInt>(invoke_static(game, "GetNumbOfLaunch", "()I")) ==
+          JniInt{0});
+    static_cast<void>(invoke_static(game, "increaseNumOfLaunch", "()V"));
+    static_cast<void>(invoke_static(game, "increaseNumOfLaunch", "()V"));
+    CHECK(std::get<JniInt>(invoke_static(game, "GetNumbOfLaunch", "()I")) ==
+          JniInt{2});
     const auto activity = std::get<JniReference>(invoke_static(
         game, "da", "()Landroid/app/Activity;"));
     CHECK(environment.ResolveObjectForHle(kThread, activity) ==

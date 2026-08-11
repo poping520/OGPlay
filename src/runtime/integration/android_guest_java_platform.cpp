@@ -132,6 +132,10 @@ void AndroidGuestPlatformState::RecordOfflineTracking() {
     std::scoped_lock lock(mutex_);
     ++offline_tracking_count_;
 }
+void AndroidGuestPlatformState::IncreaseLaunchCount() {
+    std::scoped_lock lock(mutex_);
+    ++launch_count_;
+}
 std::optional<std::int32_t> AndroidGuestPlatformState::UniqueCode() const {
     std::scoped_lock lock(mutex_);
     return unique_code_;
@@ -159,6 +163,10 @@ std::uint64_t AndroidGuestPlatformState::ManagedSwapRequests() const {
 std::uint64_t AndroidGuestPlatformState::OfflineTrackingCount() const {
     std::scoped_lock lock(mutex_);
     return offline_tracking_count_;
+}
+std::int32_t AndroidGuestPlatformState::LaunchCount() const {
+    std::scoped_lock lock(mutex_);
+    return launch_count_;
 }
 
 void BindAndroidGuestJavaPlatformHandlers(
@@ -265,6 +273,23 @@ void BindAndroidGuestJavaPlatformHandlers(
         [&state](const JniInvocation&) {
             state.RecordOfflineTracking();
             return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "analytics.track_first_run",
+        [&state](const JniInvocation&) {
+            state.RecordOfflineTracking();
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "analytics.increase_launch_count",
+        [&state](const JniInvocation&) {
+            state.IncreaseLaunchCount();
+            return JniValue{std::monostate{}};
+        });
+    invocations.RegisterHandler(
+        "analytics.get_launch_count",
+        [&state](const JniInvocation&) {
+            return JniValue{JniInt{state.LaunchCount()}};
         });
     invocations.RegisterHandler(
         "platform.unavailable",

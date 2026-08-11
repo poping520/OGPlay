@@ -698,7 +698,7 @@ note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享�
 [runtime.android_legacy_platform_identity]
 status = "complete"
 test = "tests/runtime/android_guest_framework_platform_tests.cpp; Asphalt 6 exact bootstrap sampling"
-note = "M8 WU-0368 批量安装 APK 引用的 Build/VERSION 12 个字段、SystemProperties、Settings.Secure、Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；身份事实确定性注入，service/UUID 对象走共享 registry，offline tracking 可查询"
+note = "M8 WU-0368 批量安装 APK 引用的 Build/VERSION 12 个字段、SystemProperties、Settings.Secure、Context/ContentResolver/Telephony、Activity、Bundle、ViewRoot 与 UUID；身份事实确定性注入，service/UUID 对象走共享 registry，offline tracking（track_launch/track_first_run 同口径）与 launch count 可查询"
 
 [runtime.jni_guest_library_load_plan]
 status = "complete"

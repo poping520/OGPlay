@@ -50,6 +50,7 @@ public:
     void SetKeyboard(bool visible, std::span<const JniChar> text);
     void RequestManagedSwap();
     void RecordOfflineTracking();
+    void IncreaseLaunchCount();
     [[nodiscard]] std::optional<std::int32_t> UniqueCode() const;
     [[nodiscard]] bool BackgroundRequested() const;
     [[nodiscard]] bool FullyLoaded() const;
@@ -57,6 +58,7 @@ public:
     [[nodiscard]] std::vector<JniChar> KeyboardText() const;
     [[nodiscard]] std::uint64_t ManagedSwapRequests() const;
     [[nodiscard]] std::uint64_t OfflineTrackingCount() const;
+    [[nodiscard]] std::int32_t LaunchCount() const;
 
 private:
     mutable std::mutex mutex_;
@@ -64,6 +66,7 @@ private:
     std::vector<JniChar> keyboard_text_;
     std::uint64_t managed_swap_requests_{};
     std::uint64_t offline_tracking_count_{};
+    std::int32_t launch_count_{};
     bool background_requested_{};
     bool fully_loaded_{};
     bool keyboard_visible_{};

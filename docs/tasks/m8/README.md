@@ -51,6 +51,12 @@ behavior-backed，JavaVM 4 个，其余为 reserved 或显式 expected-unbound�
 | [WU-M8-009](WU-M8-009.md) | 迁移 Android native 边界到 runtime/boundary | 完成 | boundary HLE、GLES1/GLES2 组件、GuestGlContext 与 A32CallFrame 迁出 integration |
 | [WU-M8-010](WU-M8-010.md) | integration 契约收敛与模块文档瘦身 | 完成 | 三份 MODULE.md 与模块索引和拆分后代码事实一致 |
 
+## 兼容性批次工作单
+
+| Work Unit | 标题 | 状态 | 目标 |
+| --- | --- | --- | --- |
+| [WU-M8-011](WU-M8-011.md) | Dungeon Hunter analytics 调用族 handler | 完成 | 闭合 track_first_run/启动计数 analytics 族；license/服务组保持明确失败待反编译证据 |
+
 ## 早期全局编号工作单
 
 - [WU-0360](WU-0360.md)：Asphalt 6 exact 身份、静态能力矩阵与根 SONAME 别名预检。

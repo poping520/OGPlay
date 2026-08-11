@@ -39,6 +39,9 @@ jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
 
 ## 最近完成
 
+- [WU-M8-011] Dungeon Hunter"继续"命中 `analytics.track_first_run` 缺 handler；
+  analytics 族一次闭合（记账+启动计数）。DUNQ profile 另有 13 个 impl id
+  无 handler（license/billing/online 等），保持明确失败，待反编译证据。
 - [WU-PERF-04] `run-apk` 长 guest call 的 slice observer 事件泵按宿主 Clock 节流
   （250 Hz 上限；observer 在每次 supervisor call 后触发，此前无条件泵 Cocoa 事件循环
   占用约 67% CPU）。Dungeon Hunter 120 帧 Release 实测 54.26s → 约 10s（-81%），
@@ -61,18 +64,8 @@ jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
   message 的真实 throwable，ExceptionDescribe 写结构化诊断且保留 pending identity。
   Windows/MSVC focused 3/3 与 full CTest 518/518 通过，当前 aggregate 为 JNIEnv/JavaVM
   210/4。
-- [WU-OPT-CLOSURE-01] 正式闭合前 12 项优化验收：统一 active texture 与 GLES1 texture
-  matrix unit，以 `(unit,target)` 隔离 2D/cube-map binding/metadata/delete，并让超采样下
-  GLES1/GLES2 viewport/scissor query 返回 logical state；六类高频 setter 不再复制整个
-  `SharedGlState`，2048 项 raw trace ring 改用独立 mutex。Windows/MSVC warnings-as-errors
-  构建、focused 486/486 与 full CTest 509/509 通过；Asphalt 6 exact 仍越过旧 mixed
-  GLES/client-pointer 故障，停在后续 `CallStaticIntMethodV` class reference 边界。
-- [WU-0379] guest transfer 错误新增 `module!symbol`、寄存器、attribute provenance 与
-  GLES1/GLES2 buffer binding 诊断。exact 将 null pointer 收敛到共同 `glBindBuffer`
-  状态分裂，而非 guest 坏指针；full CTest 497/497。
-- [WU-0378] Dungeon Hunter 第 75 帧命中的 guest 内置 PVRTC 解压批次经测量需约
-  96.99 亿 tick；Profile/通用上限提高到仍受限的 100 亿，exact 120/240 帧均通过。
-  `run-apk` 新增有界结构化启动、帧、长调用和 teardown 日志；full CTest 497/497。
+- [WU-OPT-CLOSURE-01] 正式闭合前 12 项优化验收：texture unit 状态隔离、logical
+  viewport/scissor query、高频 setter 去整体复制。Windows/MSVC 全绿。
 
 ## M6 起点
 

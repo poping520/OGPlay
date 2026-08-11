@@ -2,7 +2,9 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <ranges>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -13,6 +15,63 @@ namespace ogplay::runtime::detail {
 namespace {
 
 constexpr std::uint32_t kThunkStride = 4U;
+
+[[nodiscard]] HleRoute RouteFor(const std::string_view library,
+                                const std::string_view name) {
+    if (library == "libc.so") return HleRoute::bionic_memory;
+    if (library == "libandroid.so") return HleRoute::android;
+    if (library == "libEGL.so") return HleRoute::egl;
+    if (library == "liblog.so") return HleRoute::log;
+    if (library == "libGLESv2.so") return HleRoute::gles2;
+    if (library == "libGLESv1_CM.so") {
+        if (gles::FindGlesFunction(gles::GlesApi::gles1, name).has_value()) {
+            return HleRoute::gles1;
+        }
+        return HleRoute::gles1_extension;
+    }
+    throw std::logic_error("Android boundary symbol has no HLE route");
+}
+
+[[nodiscard]] std::uint16_t FunctionIdFor(const HleRoute route,
+                                          const std::string_view name,
+                                          const std::size_t fallback) {
+    if (route == HleRoute::gles1 || route == HleRoute::gles1_extension ||
+        route == HleRoute::gles2) {
+        const auto api = route == HleRoute::gles1
+                             ? gles::GlesApi::gles1
+                         : route == HleRoute::gles1_extension
+                             ? gles::GlesApi::gles1_extensions
+                             : gles::GlesApi::gles2;
+        const auto id = gles::FindGlesFunction(api, name);
+        if (!id.has_value()) {
+            throw std::logic_error("generated GLES symbol has no function id");
+        }
+        return *id;
+    }
+    if (fallback > (std::numeric_limits<std::uint16_t>::max)()) {
+        throw std::length_error("Android boundary function id overflows");
+    }
+    return static_cast<std::uint16_t>(fallback);
+}
+
+[[nodiscard]] std::uint8_t ParameterCountFor(const HleRoute route,
+                                             const std::uint16_t function_id) {
+    if (route == HleRoute::gles1 || route == HleRoute::gles1_extension ||
+        route == HleRoute::gles2) {
+        const auto api = route == HleRoute::gles1
+                             ? gles::GlesApi::gles1
+                         : route == HleRoute::gles1_extension
+                             ? gles::GlesApi::gles1_extensions
+                             : gles::GlesApi::gles2;
+        const auto count = gles::DescribeGlesFunction(api, function_id)
+                               .parameter_count;
+        if (count > (std::numeric_limits<std::uint8_t>::max)()) {
+            throw std::length_error("GLES parameter count overflows descriptor");
+        }
+        return static_cast<std::uint8_t>(count);
+    }
+    return 4U;
+}
 
 }  // namespace
 
@@ -93,6 +152,40 @@ std::vector<BionicHleSymbol> BuildAndroidBoundarySymbols() {
                                                    kThunkStride + 1U}});
     }
     return result;
+}
+
+std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
+    const std::span<const BionicHleSymbol> symbols) {
+    std::vector<HleThunkDescriptor> result;
+    result.reserve(symbols.size());
+    for (std::size_t index = 0; index < symbols.size(); ++index) {
+        const auto& symbol = symbols[index];
+        const auto code_address = symbol.address.Value() & ~std::uint32_t{1};
+        const auto expected = kBionicHleThunkBegin +
+                              static_cast<std::uint32_t>(index) * kThunkStride;
+        if (code_address != expected) {
+            throw std::logic_error("Android boundary thunk catalog is not dense");
+        }
+        const auto route = RouteFor(symbol.library, symbol.symbol);
+        const auto function_id = FunctionIdFor(route, symbol.symbol, index);
+        result.push_back({symbol.library, symbol.symbol, route, function_id,
+                          ParameterCountFor(route, function_id)});
+    }
+    return result;
+}
+
+const HleThunkDescriptor* DecodeAndroidBoundaryThunk(
+    const std::uint64_t pc,
+    const std::span<const HleThunkDescriptor> descriptors) noexcept {
+    const auto code = pc & ~UINT64_C(1);
+    if (code < kBionicHleThunkBegin || code >= kBionicHleThunkEnd) {
+        return nullptr;
+    }
+    const auto offset = code - kBionicHleThunkBegin;
+    if (offset % kThunkStride != 0U) return nullptr;
+    const auto index = offset / kThunkStride;
+    if (index >= descriptors.size()) return nullptr;
+    return &descriptors[static_cast<std::size_t>(index)];
 }
 
 }  // namespace ogplay::runtime::detail

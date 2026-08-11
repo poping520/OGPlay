@@ -157,6 +157,8 @@
   索引范围。
 - draw renderer 由统一 Context 的 current program、fixed client-array 与 programmable
   attribute 事实共同决定；symbol 所属 library 不拥有 renderer 或 context state。
+- Android boundary thunk catalog 必须保持从 `kBionicHleThunkBegin` 开始的 dense 4-byte
+  slot；execution 只用 range/alignment/index decode，symbol provider 仅供链接与诊断。
 - `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽；integer query、
   draw indices 与 readback 输出复用 transfer state，draw 成功后由主 HLE 更新指标。
 - `glTexSubImage2D` 与 `glTexImage2D` 一样按 unpack/format 完整预检像素后再调用 ANGLE。

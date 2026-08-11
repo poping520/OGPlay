@@ -59,7 +59,9 @@ public:
          const AndroidBoundaryOptions options)
         : address_space_(address_space), backend_(backend),
           layout_(gles::MakeSupersampleLayout(width, height, supersample_factor)),
-          symbols_(detail::BuildAndroidBoundarySymbols()), provider_(symbols_),
+          symbols_(detail::BuildAndroidBoundarySymbols()),
+          descriptors_(detail::BuildAndroidBoundaryDescriptors(symbols_)),
+          provider_(symbols_),
           gles_dispatch_(address_space, gl_context_),
           gles1_state_(gl_context_.Shared()) {
         detail::BindAndroidBoundaryGles1Core(
@@ -149,25 +151,27 @@ public:
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
         if (!mapped_ || stopped.reason != cpu::RunStopReason::supervisor_call ||
             stopped.immediate != 2) return false;
-        const auto resolved = provider_.Resolve(stopped.pc.Value());
-        if (!resolved.has_value()) return false;
+        const auto* descriptor = detail::DecodeAndroidBoundaryThunk(
+            stopped.pc.Value(), descriptors_);
+        if (descriptor == nullptr) return false;
         auto state = cpu.GetState();
         const auto arguments = std::array{
             state.Register(cpu::CoreRegister::r0), state.Register(cpu::CoreRegister::r1),
             state.Register(cpu::CoreRegister::r2), state.Register(cpu::CoreRegister::r3)};
         std::uint32_t result{};
-        const auto& symbol = resolved->symbol;
+        const auto symbol = descriptor->name;
         try {
-            if (resolved->module == "libc.so") {
+            if (descriptor->route == detail::HleRoute::bionic_memory) {
                 result = ExecuteBionicMemoryIntercept(
                     address_space_, {symbol, arguments, state.ThreadId()});
             } else {
-                result = Dispatch(resolved->module, symbol, arguments, state);
+                result = Dispatch(descriptor->library, symbol, arguments, state);
             }
         } catch (const gles::GuestTransferError& error) {
             throw gles::GuestTransferError(
                 "Android boundary guest transfer failed in " +
-                resolved->module + "!" + symbol + ": " + error.what() +
+                std::string(descriptor->library) + "!" + std::string(symbol) +
+                ": " + error.what() +
                 "; r0=" + std::to_string(arguments[0]) +
                 " r1=" + std::to_string(arguments[1]) +
                 " r2=" + std::to_string(arguments[2]) +
@@ -750,6 +754,7 @@ private:
     gles::AngleBackend backend_;
     gles::SupersampleLayout layout_;
     std::vector<BionicHleSymbol> symbols_;
+    std::vector<detail::HleThunkDescriptor> descriptors_;
     BionicHleSymbolProvider provider_;
     GuestGlContext gl_context_;
     AndroidBoundaryGles gles_dispatch_;

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bit>
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <span>
@@ -21,6 +22,7 @@
 #include "../../src/runtime/integration/android_boundary_gles1_draw.h"
 #include "../../src/runtime/integration/android_boundary_gles1_query.h"
 #include "../../src/runtime/integration/android_boundary_gles1_support.h"
+#include "../../src/runtime/integration/android_boundary_symbols.h"
 
 namespace {
 
@@ -114,6 +116,48 @@ TEST_CASE("Android boundary maps explicit Thumb HLE thunks") {
         1, ogplay::cpu::RunStopReason::supervisor_call,
         ogplay::memory::GuestAddress{0x70000f00U}, 0xdf02U, 2, std::nullopt};
     CHECK_FALSE(fixture.boundary.Handle(fixture.cpu, unknown));
+}
+
+TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {
+    const auto symbols =
+        ogplay::runtime::detail::BuildAndroidBoundarySymbols();
+    const auto descriptors =
+        ogplay::runtime::detail::BuildAndroidBoundaryDescriptors(symbols);
+    REQUIRE(descriptors.size() == symbols.size());
+    const auto address = symbols.front().address.Value();
+    CHECK(ogplay::runtime::detail::DecodeAndroidBoundaryThunk(
+              address, descriptors) == &descriptors.front());
+    CHECK(ogplay::runtime::detail::DecodeAndroidBoundaryThunk(
+              address & ~1U, descriptors) == &descriptors.front());
+    CHECK(ogplay::runtime::detail::DecodeAndroidBoundaryThunk(
+              (address & ~1U) + 2U, descriptors) == nullptr);
+    CHECK(ogplay::runtime::detail::DecodeAndroidBoundaryThunk(
+              0x6FFFFFFEU, descriptors) == nullptr);
+
+    ogplay::runtime::BionicHleSymbolProvider provider(symbols);
+    constexpr std::size_t iterations = 1'000'000U;
+    std::size_t decoded{};
+    const auto decode_begin = std::chrono::steady_clock::now();
+    for (std::size_t iteration = 0; iteration < iterations; ++iteration) {
+        decoded += ogplay::runtime::detail::DecodeAndroidBoundaryThunk(
+                       address, descriptors) != nullptr
+                       ? 1U
+                       : 0U;
+    }
+    const auto decode_elapsed = std::chrono::steady_clock::now() - decode_begin;
+    std::size_t resolved{};
+    const auto resolve_begin = std::chrono::steady_clock::now();
+    for (std::size_t iteration = 0; iteration < iterations; ++iteration) {
+        resolved += provider.Resolve(address).has_value() ? 1U : 0U;
+    }
+    const auto resolve_elapsed = std::chrono::steady_clock::now() - resolve_begin;
+    INFO("decode_us=" << std::chrono::duration_cast<std::chrono::microseconds>(
+                              decode_elapsed).count()
+                       << " resolve_us="
+                       << std::chrono::duration_cast<std::chrono::microseconds>(
+                              resolve_elapsed).count());
+    CHECK(decoded == iterations);
+    CHECK(resolved == iterations);
 }
 
 TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {

@@ -1634,6 +1634,22 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
                                    {0}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glDrawArrays",
                                    {0x0004U, 0U, 3U}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                                   {0x8074U}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
+                                   {2U, 0x1406U, 0U, client_vertices.Value()}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                                   {0x0004U, 0U, 3U}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDisableClientState",
+                                   {0x8074U}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                                   {0x8B8DU, fixture.output.Add(0x9C0).Value()}));
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x9C0), 1) == program);
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                                   {0x8894U, fixture.output.Add(0x9C4).Value()}));
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x9C4), 1) == 0U);
+    CHECK_NOTHROW(static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glDrawArrays", {0x0004U, 0U, 3U})));
     const auto client_indices = fixture.output.Add(0x980);
     constexpr std::array<std::uint16_t, 3> index_values{0, 1, 2};
     fixture.memory.Write(client_indices, std::as_bytes(std::span(index_values)),

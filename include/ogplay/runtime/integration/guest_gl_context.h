@@ -47,6 +47,10 @@ struct SharedGlState final {
     [[nodiscard]] std::int32_t ClearStencil() const noexcept;
     void SetCapability(std::uint32_t capability, bool enabled);
     [[nodiscard]] bool Capability(std::uint32_t capability) const;
+    void SetCurrentProgram(std::uint32_t program) noexcept;
+    [[nodiscard]] std::uint32_t CurrentProgram() const noexcept;
+    [[nodiscard]] const std::map<std::uint32_t, std::uint32_t>&
+    TextureBindings() const noexcept;
 
     void Reset() noexcept;
 
@@ -62,6 +66,18 @@ private:
     float clear_depth_{1.0F};
     std::int32_t clear_stencil_{};
     std::map<std::uint32_t, bool> capabilities_;
+    std::uint32_t current_program_{};
+};
+
+class NativeGlState final {
+public:
+    void BeginFixedDraw();
+    void EndFixedDraw();
+    [[nodiscard]] bool FixedDrawActive() const noexcept;
+    void Reset() noexcept;
+
+private:
+    bool fixed_draw_active_{};
 };
 
 class GuestGlContext final {
@@ -71,11 +87,14 @@ public:
     [[nodiscard]] GuestGlContextId Id() const noexcept;
     [[nodiscard]] SharedGlState& Shared() noexcept;
     [[nodiscard]] const SharedGlState& Shared() const noexcept;
+    [[nodiscard]] NativeGlState& Native() noexcept;
+    [[nodiscard]] const NativeGlState& Native() const noexcept;
     void Reset() noexcept;
 
 private:
     GuestGlContextId id_{};
     SharedGlState shared_;
+    NativeGlState native_;
 };
 
 }  // namespace ogplay::runtime

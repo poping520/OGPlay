@@ -549,6 +549,32 @@ public:
         return context_.Shared().transfer.Snapshot();
     }
 
+    void RestoreNativeState(gles::AngleFrame& frame) {
+        const auto& shared = context_.Shared();
+        frame.UseProgram(shared.CurrentProgram());
+        for (const auto& [unit, texture] : shared.TextureBindings()) {
+            frame.ActiveTexture(unit);
+            frame.BindTexture(0x0DE1U, texture);
+        }
+        frame.ActiveTexture(shared.active_texture);
+        frame.BindFramebuffer(0x8D40U, shared.Framebuffer());
+        for (std::size_t index = 0; index < attributes_.size(); ++index) {
+            const auto& attribute = attributes_[index];
+            if (attribute.defined && attribute.buffer != 0U) {
+                frame.BindBuffer(kArrayBuffer, attribute.buffer);
+                frame.VertexAttributePointer(
+                    static_cast<std::uint32_t>(index), attribute.size,
+                    attribute.type, attribute.normalized, attribute.stride,
+                    attribute.pointer);
+            }
+            frame.SetVertexAttributeEnabled(static_cast<std::uint32_t>(index),
+                                            attribute.enabled);
+        }
+        const auto buffers = shared.transfer.Snapshot();
+        frame.BindBuffer(kArrayBuffer, buffers.array_buffer);
+        frame.BindBuffer(kElementArrayBuffer, buffers.element_array_buffer);
+    }
+
     void Reset() noexcept {
         context_.Reset();
         attributes_ = {};
@@ -853,6 +879,10 @@ bool AndroidBoundaryGles::HasEnabledVertexAttribute() const noexcept {
 gles::GlesTransferStateSnapshot
 AndroidBoundaryGles::TransferState() const noexcept {
     return impl_->TransferState();
+}
+
+void AndroidBoundaryGles::RestoreNativeState(gles::AngleFrame& frame) {
+    impl_->RestoreNativeState(frame);
 }
 
 void AndroidBoundaryGles::Reset() noexcept { impl_->Reset(); }

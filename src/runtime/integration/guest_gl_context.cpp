@@ -187,6 +187,19 @@ bool SharedGlState::Capability(const std::uint32_t capability) const {
     return found != capabilities_.end() && found->second;
 }
 
+void SharedGlState::SetCurrentProgram(const std::uint32_t program) noexcept {
+    current_program_ = program;
+}
+
+std::uint32_t SharedGlState::CurrentProgram() const noexcept {
+    return current_program_;
+}
+
+const std::map<std::uint32_t, std::uint32_t>&
+SharedGlState::TextureBindings() const noexcept {
+    return bound_textures_;
+}
+
 void SharedGlState::Reset() noexcept {
     transfer = {};
     active_texture = 0x84C0U;
@@ -201,7 +214,28 @@ void SharedGlState::Reset() noexcept {
     clear_depth_ = 1.0F;
     clear_stencil_ = 0;
     capabilities_.clear();
+    current_program_ = 0U;
 }
+
+void NativeGlState::BeginFixedDraw() {
+    if (fixed_draw_active_) {
+        throw std::logic_error("nested GLES1 fixed draw native transaction");
+    }
+    fixed_draw_active_ = true;
+}
+
+void NativeGlState::EndFixedDraw() {
+    if (!fixed_draw_active_) {
+        throw std::logic_error("GLES1 fixed draw native transaction is not active");
+    }
+    fixed_draw_active_ = false;
+}
+
+bool NativeGlState::FixedDrawActive() const noexcept {
+    return fixed_draw_active_;
+}
+
+void NativeGlState::Reset() noexcept { fixed_draw_active_ = false; }
 
 GuestGlContext::GuestGlContext(const GuestGlContextId id) : id_(id) {
     if (id_ == 0U) {
@@ -215,6 +249,13 @@ SharedGlState& GuestGlContext::Shared() noexcept { return shared_; }
 
 const SharedGlState& GuestGlContext::Shared() const noexcept { return shared_; }
 
-void GuestGlContext::Reset() noexcept { shared_.Reset(); }
+NativeGlState& GuestGlContext::Native() noexcept { return native_; }
+
+const NativeGlState& GuestGlContext::Native() const noexcept { return native_; }
+
+void GuestGlContext::Reset() noexcept {
+    shared_.Reset();
+    native_.Reset();
+}
 
 }  // namespace ogplay::runtime

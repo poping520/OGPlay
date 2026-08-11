@@ -461,9 +461,28 @@ private:
                                   : StackWord(state, static_cast<std::uint32_t>(
                                                          (index - args.size()) * 4U)));
             }
-            return (api == gles::GlesApi::gles1 ? gles1_dispatch_
-                                                 : gles1_extensions_dispatch_)
-                .Invoke(*id, all, tid);
+            auto& dispatch = api == gles::GlesApi::gles1
+                                 ? gles1_dispatch_
+                                 : gles1_extensions_dispatch_;
+            const auto fixed_draw = api == gles::GlesApi::gles1 &&
+                                    (symbol == "glDrawArrays" ||
+                                     symbol == "glDrawElements");
+            if (!fixed_draw) return dispatch.Invoke(*id, all, tid);
+            gl_context_.Native().BeginFixedDraw();
+            try {
+                const auto result = dispatch.Invoke(*id, all, tid);
+                gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
+                gl_context_.Native().EndFixedDraw();
+                return result;
+            } catch (...) {
+                try {
+                    gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
+                    gl_context_.Native().EndFixedDraw();
+                } catch (...) {
+                    gl_context_.Native().Reset();
+                }
+                throw;
+            }
         }
         if (symbol == "AConfiguration_new") return kFakeConfiguration;
         if (symbol == "AConfiguration_delete" ||
@@ -686,7 +705,11 @@ private:
             return SignedResult(RequireFrame(symbol).GetUniformLocation(
                 args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
         }
-        if (symbol == "glUseProgram") { RequireFrame(symbol).UseProgram(args[0]); return 0; }
+        if (symbol == "glUseProgram") {
+            RequireFrame(symbol).UseProgram(args[0]);
+            gl_context_.Shared().SetCurrentProgram(args[0]);
+            return 0;
+        }
         if (symbol == "glDeleteProgram") { RequireFrame(symbol).DeleteProgram(args[0]); return 0; }
         return std::nullopt;
     }

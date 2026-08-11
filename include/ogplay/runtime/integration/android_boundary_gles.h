@@ -38,6 +38,7 @@ public:
         const cpu::A32State& state, gles::AngleFrame* frame);
     [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept;
     [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept;
+    void RestoreNativeState(gles::AngleFrame& frame);
     void Reset() noexcept;
 
 private:

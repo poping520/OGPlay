@@ -19,6 +19,8 @@
   同样由 `SharedGlState` 唯一拥有；object name 只由同一个 ANGLE context 生成和删除。
 - framebuffer/renderbuffer binding、viewport/scissor、clear state 与 GLES1/GLES2 共有
   capability 也只有一份 shared shadow；所有字段仅在对应 ANGLE mutation 成功后提交。
+- GLES1 fixed draw 通过显式 native transaction 临时使用内部 program/buffer/attribute；
+  成功和异常返回前均恢复 guest programmable state，internal object 不写入 shared state。
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
 - Android guest call session 只在通用 A32 slice 边界调用显式 observer；observer 由上层

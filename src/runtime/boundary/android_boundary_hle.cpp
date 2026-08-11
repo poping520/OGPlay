@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/android_boundary_hle.h"
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 
 #include <algorithm>
 #include <array>
@@ -21,9 +21,9 @@
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/gles/supersample.h"
-#include "ogplay/runtime/integration/android_boundary_gles.h"
-#include "ogplay/runtime/integration/a32_call_frame.h"
-#include "ogplay/runtime/integration/guest_gl_context.h"
+#include "ogplay/runtime/boundary/android_boundary_gles.h"
+#include "ogplay/runtime/boundary/a32_call_frame.h"
+#include "ogplay/runtime/boundary/guest_gl_context.h"
 #include "android_boundary_gles1.h"
 #include "android_boundary_gles1_draw.h"
 #include "android_boundary_gles1_fixed.h"

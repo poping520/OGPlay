@@ -10,7 +10,7 @@
 #include <string_view>
 
 #include "ogplay/loader/module_loader.h"
-#include "ogplay/runtime/integration/android_boundary_hle.h"
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 
 namespace ogplay::runtime {
 

@@ -13,7 +13,7 @@
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
-#include "ogplay/runtime/integration/guest_gl_context.h"
+#include "ogplay/runtime/boundary/guest_gl_context.h"
 
 namespace ogplay::memory {
 class AddressSpace;

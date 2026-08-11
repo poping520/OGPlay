@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "ogplay/hal/clock.h"
-#include "ogplay/runtime/integration/android_boundary_hle.h"
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/session/lifecycle.h"

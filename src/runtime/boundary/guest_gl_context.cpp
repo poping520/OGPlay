@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/guest_gl_context.h"
+#include "ogplay/runtime/boundary/guest_gl_context.h"
 
 #include <algorithm>
 #include <stdexcept>

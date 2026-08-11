@@ -18,7 +18,7 @@
 #include "ogplay/loader/module_loader.h"
 #include "ogplay/runtime/execution/guest_thread_runner.h"
 #include "ogplay/runtime/framework/framework_asset.h"
-#include "ogplay/runtime/integration/android_boundary_hle.h"
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/vfs/vfs.h"

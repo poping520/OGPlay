@@ -316,15 +316,15 @@ add_library(ogplay_runtime
     src/runtime/integration/android_guest_java_movie.cpp
     src/runtime/integration/android_guest_java_platform.cpp
     src/runtime/integration/headless_bionic_runner.cpp
-    src/runtime/integration/guest_gl_context.cpp
-    src/runtime/integration/a32_call_frame.cpp
-    src/runtime/integration/android_boundary_gles.cpp
-    src/runtime/integration/android_boundary_gles1.cpp
-    src/runtime/integration/android_boundary_gles1_draw.cpp
-    src/runtime/integration/android_boundary_gles1_fixed.cpp
-    src/runtime/integration/android_boundary_gles1_query.cpp
-    src/runtime/integration/android_boundary_hle.cpp
-    src/runtime/integration/android_boundary_symbols.cpp
+    src/runtime/boundary/guest_gl_context.cpp
+    src/runtime/boundary/a32_call_frame.cpp
+    src/runtime/boundary/android_boundary_gles.cpp
+    src/runtime/boundary/android_boundary_gles1.cpp
+    src/runtime/boundary/android_boundary_gles1_draw.cpp
+    src/runtime/boundary/android_boundary_gles1_fixed.cpp
+    src/runtime/boundary/android_boundary_gles1_query.cpp
+    src/runtime/boundary/android_boundary_hle.cpp
+    src/runtime/boundary/android_boundary_symbols.cpp
     src/runtime/integration/android_link_preflight.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
     src/runtime/jni_guest/jni_guest_bindings.cpp

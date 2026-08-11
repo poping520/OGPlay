@@ -4,7 +4,7 @@
 
 #include "ogplay/hal/window_input.h"
 #include "ogplay/input/mouse_touch_mapper.h"
-#include "ogplay/runtime/integration/android_boundary_hle.h"
+#include "ogplay/runtime/boundary/android_boundary_hle.h"
 
 namespace ogplay::agent {
 class McpInputQueue;

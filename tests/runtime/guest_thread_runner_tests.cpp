@@ -215,14 +215,16 @@ TEST_CASE("A32 guest call slices long execution and publishes progress") {
     lifecycle.Register(91U);
     ogplay::core::CapabilityLedger ledger;
     auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
-    std::uint32_t observations{};
+    std::vector<std::uint64_t> observations;
 
     const auto result = ogplay::runtime::InvokeA32GuestCall(
         cpu, dispatcher, lifecycle, memory,
         {ogplay::memory::GuestAddress{0x10000U}, {}, {}},
         stack.Add(memory.PageSize()), return_trap,
         ogplay::runtime::kA32GuestCallSliceTicks * 2U + 2U, {},
-        [&observations] { ++observations; });
+        [&observations](const std::uint64_t consumed_ticks) {
+            observations.push_back(consumed_ticks);
+        });
 
     CHECK(result.return_value == 73U);
     CHECK(result.ticks_consumed ==
@@ -230,7 +232,9 @@ TEST_CASE("A32 guest call slices long execution and publishes progress") {
     CHECK(cpu.budgets == std::vector<std::uint64_t>{
                              ogplay::runtime::kA32GuestCallSliceTicks,
                              ogplay::runtime::kA32GuestCallSliceTicks, 2U});
-    CHECK(observations == 2U);
+    CHECK(observations == std::vector<std::uint64_t>{
+                              ogplay::runtime::kA32GuestCallSliceTicks,
+                              ogplay::runtime::kA32GuestCallSliceTicks * 2U});
 }
 
 TEST_CASE("A32 guest call consumes only explicit HLE traps") {

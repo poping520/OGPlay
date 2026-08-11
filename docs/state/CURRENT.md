@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-10 · M8 GLES2 client vertex/index staging 批次已完成
+更新：2026-08-11 · Dungeon Hunter 有界加载预算与 run-apk 进度日志已完成
 
 ## 当前阶段
 
@@ -35,6 +35,9 @@
 
 ## 最近完成
 
+- [WU-0378] Dungeon Hunter 第 75 帧命中的 guest 内置 PVRTC 解压批次经测量需约
+  96.99 亿 tick；Profile/通用上限提高到仍受限的 100 亿，exact 120/240 帧均通过。
+  `run-apk` 新增有界结构化启动、帧、长调用和 teardown 日志；full CTest 497/497。
 - [WU-0377] 一次闭合 GLES2 client vertex/index staging、`glDrawArrays`、`glTexSubImage2D`
   与混合链接 GLES1 draw 转入；opaque EBO+client attribute 明确失败。exact 越过 staging，
   进入 `required guest pointer is null`；focused 2/2、full CTest 496/496。

@@ -144,7 +144,7 @@ A32GuestCallResult InvokeA32GuestCall(
                 throw A32GuestCallError(
                     "A32 guest call CPU made no progress");
             }
-            if (slice_observer) slice_observer();
+            if (slice_observer) slice_observer(consumed);
             continue;
         }
         if (!ConsumeAndroidArmSupervisorCall(
@@ -159,7 +159,7 @@ A32GuestCallResult InvokeA32GuestCall(
         auto updated = cpu.GetState();
         updated.SetThreadPointer(current.thread_pointer);
         cpu.SetState(updated);
-        if (slice_observer) slice_observer();
+        if (slice_observer) slice_observer(consumed);
     }
     const auto exhausted = cpu.GetState();
     throw A32GuestCallError(

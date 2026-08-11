@@ -20,8 +20,10 @@
 
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/mcp_session_control.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/frontend/mcp_http_server.h"
 #include "ogplay/frontend/mcp_input_dispatch.h"
+#include "ogplay/frontend/run_apk_progress.h"
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/hal/window_input.h"
@@ -41,6 +43,9 @@ namespace ogplay::frontend {
 namespace {
 
 constexpr std::uint16_t kDefaultMcpPort = 15971U;
+
+constexpr core::RateLimitPolicy kUnrestrictedLog{
+    .mode = core::RateLimitMode::none};
 
 void Write(const std::string_view text) {
     static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stdout));
@@ -369,7 +374,8 @@ void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
 
 }  // namespace
 
-int RunApkCommand(const int argc, const char* const argv[]) {
+int RunApkCommand(const int argc, const char* const argv[],
+                  core::Logger& logger) {
     if (argc < 5) {
         throw std::invalid_argument(
             "run-apk requires <apk> --system-dir <api19-lib-dir>");
@@ -485,6 +491,18 @@ int RunApkCommand(const int argc, const char* const argv[]) {
     }
     const auto module_inputs = launch->modules.Inputs();
     const auto root_name = std::string(launch->modules.RootName());
+    logger.Write(
+        core::LogLevel::info, "frontend.run_apk", "exact Profile selected", {},
+        {{"package", manifest.package},
+         {"root_module", root_name},
+         {"api_level", static_cast<std::uint64_t>(profile.runtime.api_level)},
+         {"lifecycle", std::string(session::ToString(profile.runtime.lifecycle))},
+         {"surface_width", static_cast<std::uint64_t>(profile.runtime.surface.width)},
+         {"surface_height", static_cast<std::uint64_t>(profile.runtime.surface.height)},
+         {"maximum_ticks_per_call", profile.runtime.maximum_ticks_per_call},
+         {"guest_modules", static_cast<std::uint64_t>(module_inputs.size())},
+         {"native_calls", static_cast<std::uint64_t>(launch->native_calls.size())}},
+        kUnrestrictedLog);
     if (preflight) {
         const auto linked = runtime::PreflightAndroidGuestLink(
             {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
@@ -540,6 +558,11 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                   .width = profile.runtime.surface.width,
                   .height = profile.runtime.surface.height,
                   .hidden = mcp_manual_step, .resizable = true});
+    logger.Write(
+        core::LogLevel::info, "frontend.run_apk", "SDL window opened", {},
+        {{"hidden", mcp_manual_step},
+         {"supersample", static_cast<std::uint64_t>(supersample_factor)}},
+        kUnrestrictedLog);
     bool quit{};
     std::uint64_t presented{};
     std::uint32_t guest_width = profile.runtime.surface.width;
@@ -613,16 +636,28 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 {48000U, 2U, hal::AudioSampleFormat::signed_16_le});
             audio_output->Start();
         }
+        std::uint64_t active_frame{};
+        RunApkGuestCallProgress call_progress{logger};
+        const auto runtime_progress = [&logger](const std::string_view stage) {
+            logger.Write(
+                core::LogLevel::info, "runtime.guest_session", stage, {}, {},
+                kUnrestrictedLog);
+        };
+        const auto guest_slice_observer = [&](const std::uint64_t consumed_ticks) {
+            window->PumpEvents();
+            call_progress.Observe(consumed_ticks);
+        };
+        call_progress.Begin(0U, 0U);
         auto guest = runtime::AndroidGuestCallSession::Start(
             {profile.runtime.api_level, root_name, module_inputs,
              NativeBackend(), profile.runtime.surface.width,
              profile.runtime.surface.height,
              profile.runtime.maximum_ticks_per_call,
-             supersample_factor, &filesystem, {}, direct_assets,
+             supersample_factor, &filesystem, runtime_progress, direct_assets,
              {.allow_gles1_material_single_face = ProfileEnablesQuirk(
                   profile, "gles1_material_front_face")},
              std::move(sound_loader),
-             [&window] { window->PumpEvents(); },
+             guest_slice_observer,
              {.installation_id = "ogplay-" + manifest.package,
               .version_name = manifest.version_name.value_or("unknown")}});
         auto lifecycle = session::ProfileGuestLifecycle::Create(
@@ -631,21 +666,34 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 guest->GuestEnvironment(),
                 &guest->Environment(),
                 &guest->Classes(),
-                [&guest](const runtime::A32GuestCallFrame& frame) {
-                    return guest->Invoke(frame);
+                [&](const runtime::A32GuestCallFrame& frame) {
+                    call_progress.Begin(active_frame, frame.target.Value());
+                    const auto result = guest->Invoke(frame);
+                    call_progress.Complete(result.ticks_consumed);
+                    return result;
                 },
                 [&guest] { guest->OpenManagedSurface(); },
                 [&guest] { guest->PresentManagedSurface(); },
                 [&guest] {
                     static_cast<void>(guest->InterruptBlockingWaits());
                 },
-                [&guest] { guest->Stop(); },
+                [&] {
+                    call_progress.Begin(active_frame, 0U);
+                    guest->Stop();
+                },
                 [&guest] { guest->CloseManagedSurface(); },
                 [&guest](const runtime::AndroidBoundaryInput& input) {
                     guest->PushInput(input);
                 },
             });
+        logger.Write(core::LogLevel::info, "frontend.run_apk",
+                     "initializing root JNI library", {}, {},
+                     kUnrestrictedLog);
+        call_progress.Begin(0U, 0U);
         guest->InitializeJniLibrary();
+        logger.Write(core::LogLevel::info, "frontend.run_apk",
+                     "starting Profile lifecycle", {}, {},
+                     kUnrestrictedLog);
         static_cast<void>(lifecycle->Start());
         agent::McpLifecycleState mcp_lifecycle{
             agent::McpLifecycleState::running};
@@ -723,7 +771,9 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                         mcp_inputs.get(), mouse_touch); input.has_value()) {
                     lifecycle->QueueInput(*input);
                 }
+                active_frame = lifecycle->State().frame + 1U;
                 static_cast<void>(lifecycle->StepFrame());
+                const auto stepped = lifecycle->State();
                 if (mcp_manual_step) --permitted_steps;
                 if (audio_output) {
                     PumpAudio(*guest, *audio_output, audio_samples);
@@ -740,6 +790,10 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                         quit = true;
                     }
                 }
+                const auto stats = guest->Stats();
+                LogProfileFrameProgress(
+                    logger, stepped.frame, stepped.clock_ticks,
+                    presented, stats.draws, stats.clears);
                 publish_session();
             } catch (const std::exception& error) {
                 if (!failure) failure = std::current_exception();
@@ -747,11 +801,19 @@ int RunApkCommand(const int argc, const char* const argv[]) {
                 mcp_lifecycle = agent::McpLifecycleState::failed;
                 permitted_steps = 0U;
                 publish_session();
+                logger.Write(
+                    core::LogLevel::error, "frontend.run_apk",
+                    "Profile GLSurfaceView failed",
+                    {.frame = lifecycle->State().frame},
+                    {{"reason", std::string(error.what())}});
                 if (!mcp_manual_step) quit = true;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
+        logger.Write(core::LogLevel::info, "frontend.run_apk",
+                     "stopping Profile lifecycle",
+                     {.frame = lifecycle->State().frame}, {}, kUnrestrictedLog);
         try {
             static_cast<void>(lifecycle->Stop());
             if (!failure) mcp_lifecycle = agent::McpLifecycleState::stopped;
@@ -765,6 +827,9 @@ int RunApkCommand(const int argc, const char* const argv[]) {
         if (failure) std::rethrow_exception(failure);
     }
     window->Close();
+    logger.Write(core::LogLevel::info, "frontend.run_apk",
+                 "APK session stopped", {}, {{"presented", presented}},
+                 kUnrestrictedLog);
     Write("OGPlay: stopped after " + std::to_string(presented) + " presented frames.\n");
     return 0;
 }

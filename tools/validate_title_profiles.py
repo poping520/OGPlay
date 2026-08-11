@@ -190,7 +190,7 @@ def _validate_runtime(value: Any) -> None:
         )
     if "maximum_ticks_per_call" in table:
         _integer(table["maximum_ticks_per_call"],
-                 "runtime.maximum_ticks_per_call", 1, 1_000_000_000)
+                 "runtime.maximum_ticks_per_call", 1, 10_000_000_000)
     surface = _table(table["surface"], "runtime.surface")
     _keys(surface, "runtime.surface", {"width", "height"}, {"width", "height"})
     _integer(surface["width"], "runtime.surface.width", 1, 16384)
@@ -493,10 +493,10 @@ def self_test(schema_path: Path) -> int:
         assert document["runtime"]["surface"]["width"] == 1280
         budgeted = _valid_profile().replace(
             'lifecycle = "gl_surface_view"',
-            'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 1000000000'
+            'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 10000000000'
         )
         valid.write_text(budgeted, encoding="utf-8", newline="\n")
-        assert load_profile(valid)["runtime"]["maximum_ticks_per_call"] == 1_000_000_000
+        assert load_profile(valid)["runtime"]["maximum_ticks_per_call"] == 10_000_000_000
         valid.write_text(_valid_profile().replace(
             'abi = "armeabi-v7a"', 'abi = "armeabi"'
         ), encoding="utf-8", newline="\n")
@@ -512,7 +512,7 @@ def self_test(schema_path: Path) -> int:
             ),
             "unbounded call budget": _valid_profile().replace(
                 'lifecycle = "gl_surface_view"',
-                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 1000000001'
+                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 10000000001'
             ),
             "zero call budget": _valid_profile().replace(
                 'lifecycle = "gl_surface_view"',
@@ -520,7 +520,7 @@ def self_test(schema_path: Path) -> int:
             ),
             "text call budget": _valid_profile().replace(
                 'lifecycle = "gl_surface_view"',
-                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = "1000000000"'
+                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = "10000000000"'
             ),
             "unsupported ABI": _valid_profile().replace(
                 'abi = "armeabi-v7a"', 'abi = "x86"'

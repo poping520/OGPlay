@@ -2,6 +2,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -39,15 +40,17 @@ int main(const int argc, const char* const argv[]) {
     }
     if (argc < 2) return Usage();
 
+    ogplay::core::Logger logger;
+    logger.AddSink(std::make_shared<ogplay::core::ConsoleSink>(stderr),
+                   ogplay::core::LogLevel::info);
     try {
         if (std::string_view(argv[1]) == "run-apk") {
-            return ogplay::frontend::RunApkCommand(argc, argv);
+            return ogplay::frontend::RunApkCommand(argc, argv, logger);
         }
         const auto ledger_path = argc >= 3 && std::string_view(argv[1]) == "capabilities"
                                      ? std::filesystem::path(argv[2])
                                      : std::filesystem::path(OGPLAY_SOURCE_DIR) / "capabilities.toml";
         auto ledger = ogplay::core::CapabilityLedger::Load(ledger_path);
-        ogplay::core::Logger logger;
         ogplay::hal::FixedStepClock clock(1'000, 60'000);
         ogplay::session::Session session(clock);
         ogplay::agent::ControlService service(ledger, logger, session);

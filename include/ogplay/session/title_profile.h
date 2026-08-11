@@ -81,7 +81,7 @@ struct ProfileRuntime final {
     static constexpr std::uint64_t kDefaultMaximumTicksPerCall =
         UINT64_C(200000000);
     static constexpr std::uint64_t kMaximumTicksPerCall =
-        UINT64_C(1000000000);
+        UINT64_C(10000000000);
 
     ProfileRuntime() = default;
     ProfileRuntime(std::uint32_t api, ProfileLifecycle lifecycle_value,

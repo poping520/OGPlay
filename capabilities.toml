@@ -82,8 +82,8 @@ note = "M5 WU-0265..0267 登记并注入精确 Profile quirk；默认严格拒�
 
 [profiles.dungeon_hunter_p1000]
 status = "partial"
-test = "tools.title_profiles_current; exact APK run-apk preflight"
-note = "M5 WU-0303/0318 以纯数据 Profile 闭合身份、1024x600 GLSurfaceView 生命周期、required external payload 与 10 亿 tick 加载预算；exact APK 已提交 1 frame，后续明确停在 audio.load_movie handler"
+test = "tools.title_profiles_current; tests/frontend/run_apk_progress_tests.cpp; exact APK 240-frame local gate"
+note = "M5 WU-0303/0318 与 M8 WU-0378 以纯数据 Profile 闭合身份、1024x600 GLSurfaceView 生命周期、required external payload 与实测 100 亿 tick 有界加载预算；20/40/80/90 亿均耗尽，100 亿可完成 guest 内置 PVRTC 批次，exact APK 已连续提交 240 frame，尚未声明主界面 gate"
 
 [profiles.asphalt6_glstore_v132]
 status = "partial"
@@ -438,7 +438,7 @@ note = "M4 冻结三平台 ANGLE renderer/device 候选顺序、显式可用性�
 [gles.angle_dependency]
 status = "complete"
 test = "third_party/angle-prebuilt/tools/package_angle_sdk.py verify --sdk third_party/angle-prebuilt/windows-x64/release"
-note = "M4 浅 submodule 交付同 commit 的共享头、Windows/Linux x64 与 macOS x64/arm64 Release SDK；b47ed8c 起 Linux 包同时交付受检 Vulkan loader；CMake 校验平台/CPU/GN 参数、运行时列表及逐文件哈希后导入 EGL/GLESv2"
+note = "M4 浅 submodule 交付同 commit 的共享头、Windows/Linux x64 与 macOS x64/arm64 Release SDK；b47ed8c 起 Linux 包同时交付受检 Vulkan loader；CMake 默认启用 ANGLE、仍可显式关闭，并校验平台/CPU/GN 参数、运行时列表及逐文件哈希后导入 EGL/GLESv2"
 
 [gles.angle]
 status = "complete"
@@ -532,8 +532,8 @@ note = "M4 已在真实 API 19 Bionic 上启动最小 APK 并完成 2x 超采样
 
 [frontend.minimal_apk_run]
 status = "partial"
-test = "cmake/CheckRunApkOptions.cmake"
-note = "M4 CLI 可运行唯一 armeabi-v7a NativeActivity 库，SDL 显示 ANGLE readback 并转发键鼠；--supersample 受检为 1..4，guest 渲染线程失败时窗口立即关闭并输出精确原因；通用多库入口和 profile import 留待 M6"
+test = "cmake/CheckRunApkOptions.cmake; tests/frontend/run_apk_progress_tests.cpp"
+note = "CLI 以 exact Profile 运行 NativeActivity 或 GLSurfaceView 的 ARMv7 多库闭包，SDL 显示 ANGLE readback 并转发键鼠；--supersample 受检为 1..4，guest 失败时窗口立即关闭并输出精确原因；M8 WU-0378 增加 Profile/bootstrap/JNI/lifecycle/frame/teardown 结构化 info 日志，长 guest call 按实际累计 tick 有界报告；无 Profile 的通用 APK 推断不在当前范围"
 
 [loader.hle_boundary_namespace]
 status = "complete"

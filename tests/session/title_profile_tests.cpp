@@ -164,7 +164,7 @@ TEST_CASE("Title Profile C++ loader decodes strict identity and runtime") {
     budgeted.replace(
         budgeted.find("lifecycle = \"gl_surface_view\"") +
             std::string("lifecycle = \"gl_surface_view\"").size(),
-        0, "\nmaximum_ticks_per_call = 1000000000");
+        0, "\nmaximum_ticks_per_call = 10000000000");
     CHECK(ogplay::session::LoadTitleProfileText(
               budgeted, "org.example.legacy")
               .runtime.maximum_ticks_per_call ==
@@ -303,7 +303,7 @@ TEST_CASE("Title Profile C++ loader rejects schema and TOML violations") {
     bad_budget.replace(
         bad_budget.find("lifecycle = \"gl_surface_view\"") +
             std::string("lifecycle = \"gl_surface_view\"").size(),
-        0, "\nmaximum_ticks_per_call = 1000000001");
+        0, "\nmaximum_ticks_per_call = 10000000001");
     CHECK_THROWS_WITH(
         static_cast<void>(ogplay::session::LoadTitleProfileText(
             bad_budget, "org.example.legacy")),
@@ -323,7 +323,7 @@ TEST_CASE("Title Profile C++ loader rejects schema and TOML violations") {
     text_budget.replace(
         text_budget.find("lifecycle = \"gl_surface_view\"") +
             std::string("lifecycle = \"gl_surface_view\"").size(),
-        0, "\nmaximum_ticks_per_call = \"1000000000\"");
+        0, "\nmaximum_ticks_per_call = \"10000000000\"");
     CHECK_THROWS_WITH(
         static_cast<void>(ogplay::session::LoadTitleProfileText(
             text_budget, "org.example.legacy")),

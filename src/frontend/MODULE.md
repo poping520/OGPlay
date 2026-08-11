@@ -21,6 +21,9 @@ GLSurfaceView 启动固定按 ELF constructors、Profile Java registry、root JN
 startup callback 排序；JNI_OnLoad 完成前不得进入标题 native callback。
 `McpPointerDispatcher` 在 guest 主线程每步最多从 MCP queue 取得一个 pointer phase，将
 button/motion 保真映射为通用 boundary input，并与 `MouseTouchMapper` 的已捕获桌面手势互斥。
+`run-apk` 复用 core 结构化 Logger 输出 exact Profile、guest session bootstrap、JNI/lifecycle、
+首帧与每 60 帧进度、长 guest call 和有序 teardown；单次调用每累计 10 亿 tick 报告一次
+目标地址与进度，日志 observer 只在既有 A32 slice 边界运行，不改变预算或 guest Clock。
 交互窗口标题始终显示 FPS 状态：首个采样周期前为 `FPS --`，之后每 0.5 秒按成功
 present 数更新一位小数的实时值。
 声明 `audio.sound_pool` 的 GLSurfaceView Profile 会按 source/path_pattern 从 APK 读取编码
@@ -76,6 +79,8 @@ present 数更新一位小数的实时值。
   JNI library 初始化才可调用 lifecycle `Start`；错误不得回退为直接执行 startup phase。
 - 前端必须把 Profile 已验证的 `runtime.maximum_ticks_per_call` 原样交给通用 guest session；
   不得按标题、生命周期阶段或宿主性能改写预算。
+- `run-apk` 结构化日志不得进入 guest、消费输入或推进 Clock；长调用进度只读取当前
+  target/slice 事实，默认 info 输出必须有界，普通帧不得逐帧刷屏。
 - `gl_surface_view` 帧循环必须观察 guest 的显式进程退出请求，并在请求后通过正常
   lifecycle/session teardown 结束；guest module finalizer 必须在 managed ANGLE surface
   关闭前执行，不得从 Java handler 直接杀死整个 CLI 进程。

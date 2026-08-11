@@ -11,7 +11,7 @@ option(OGPLAY_BUILD_TESTS "Build OGPlay unit and contract tests" ON)
 option(OGPLAY_WARNINGS_AS_ERRORS "Treat OGPlay warnings as errors" OFF)
 option(OGPLAY_ENABLE_SDL3 "Configure the bundled SDL3 platform dependency" ON)
 option(OGPLAY_ENABLE_DYNARMIC "Configure the bundled Dynarmic CPU dependency" ON)
-option(OGPLAY_ENABLE_ANGLE "Link an externally GN-built ANGLE SDK" OFF)
+option(OGPLAY_ENABLE_ANGLE "Link an externally GN-built ANGLE SDK" ON)
 set(OGPLAY_ANGLE_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt"
     CACHE PATH "Root of the platform-partitioned ANGLE prebuilt SDK")
 set(OGPLAY_ANGLE_SDK_CONFIGURATION "release" CACHE STRING
@@ -422,6 +422,7 @@ ogplay_set_project_warnings(ogplay_agent)
 add_library(ogplay_frontend
     src/frontend/mcp_http_server.cpp
     src/frontend/mcp_input_dispatch.cpp
+    src/frontend/run_apk_progress.cpp
 )
 add_library(OGPlay::Frontend ALIAS ogplay_frontend)
 target_link_libraries(ogplay_frontend PUBLIC
@@ -474,6 +475,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/agent/mcp_protocol_tests.cpp
         tests/frontend/mcp_http_server_tests.cpp
         tests/frontend/mcp_input_dispatch_tests.cpp
+        tests/frontend/run_apk_progress_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
         tests/gles/angle_frame_tests.cpp

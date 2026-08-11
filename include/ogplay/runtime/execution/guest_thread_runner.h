@@ -29,7 +29,7 @@ struct GuestThreadRunOutcome final {
 
 using GuestSupervisorCallHandler =
     std::function<bool(cpu::Cpu&, const cpu::RunResult&)>;
-using A32GuestCallSliceObserver = std::function<void()>;
+using A32GuestCallSliceObserver = std::function<void(std::uint64_t)>;
 
 inline constexpr std::uint64_t kA32GuestCallSliceTicks = UINT64_C(20000000);
 

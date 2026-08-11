@@ -45,6 +45,63 @@ constexpr std::size_t kMaximumShaderSourceCount = 1024;
 constexpr std::size_t kMaximumShaderSourceBytes = 4U * 1024U * 1024U;
 constexpr std::size_t kMaximumGlesNameBytes = 4096;
 
+enum class AndroidFunction : std::uint16_t {
+    configuration_new = 5,
+    configuration_delete = 6,
+    configuration_from_asset_manager = 7,
+    configuration_get_language = 8,
+    configuration_get_country = 9,
+    looper_prepare = 10,
+    looper_add_fd = 11,
+    looper_poll_all = 12,
+    input_queue_attach_looper = 13,
+    input_queue_detach_looper = 14,
+    input_queue_get_event = 15,
+    input_queue_pre_dispatch_event = 16,
+    input_queue_finish_event = 17,
+    input_event_get_type = 18,
+    key_event_get_action = 19,
+    key_event_get_key_code = 20,
+    motion_event_get_action = 21,
+    motion_event_get_x = 22,
+    motion_event_get_y = 23,
+    native_window_set_buffers_geometry = 24,
+};
+
+enum class EglFunction : std::uint16_t {
+    get_display = 25,
+    initialize = 26,
+    choose_config = 27,
+    get_config_attrib = 28,
+    create_window_surface = 29,
+    create_context = 30,
+    make_current = 31,
+    query_surface = 32,
+    swap_buffers = 33,
+    destroy_context = 34,
+    destroy_surface = 35,
+    terminate = 36,
+};
+
+enum class Gles2Function : gles::GlesThunkId {
+    attach_shader = 1, clear = 15, clear_color = 16, compile_shader = 20,
+    create_program = 25, create_shader = 26, delete_program = 30,
+    delete_shader = 32, draw_arrays = 40, draw_elements = 41,
+    get_attrib_location = 57, get_program_iv = 65, get_shader_iv = 70,
+    get_uniform_location = 74, link_program = 89, scissor = 96,
+    shader_source = 98, use_program = 130, viewport = 141,
+};
+
+[[nodiscard]] constexpr std::uint16_t Id(const AndroidFunction function) {
+    return static_cast<std::uint16_t>(function);
+}
+[[nodiscard]] constexpr std::uint16_t Id(const EglFunction function) {
+    return static_cast<std::uint16_t>(function);
+}
+[[nodiscard]] constexpr gles::GlesThunkId Id(const Gles2Function function) {
+    return static_cast<gles::GlesThunkId>(function);
+}
+
 std::uint32_t SignedResult(const std::int32_t value) noexcept {
     return std::bit_cast<std::uint32_t>(value);
 }
@@ -159,18 +216,18 @@ public:
             state.Register(cpu::CoreRegister::r0), state.Register(cpu::CoreRegister::r1),
             state.Register(cpu::CoreRegister::r2), state.Register(cpu::CoreRegister::r3)};
         std::uint32_t result{};
-        const auto symbol = descriptor->name;
         try {
             if (descriptor->route == detail::HleRoute::bionic_memory) {
                 result = ExecuteBionicMemoryIntercept(
-                    address_space_, {symbol, arguments, state.ThreadId()});
+                    address_space_, {descriptor->name, arguments, state.ThreadId()});
             } else {
-                result = Dispatch(descriptor->library, symbol, arguments, state);
+                result = Dispatch(*descriptor, arguments, state);
             }
         } catch (const gles::GuestTransferError& error) {
             throw gles::GuestTransferError(
                 "Android boundary guest transfer failed in " +
-                std::string(descriptor->library) + "!" + std::string(symbol) +
+                std::string(descriptor->library) + "!" +
+                std::string(descriptor->name) +
                 ": " + error.what() +
                 "; r0=" + std::to_string(arguments[0]) +
                 " r1=" + std::to_string(arguments[1]) +
@@ -182,7 +239,7 @@ public:
                     state.Register(cpu::CoreRegister::lr)) +
                 " thread=" + std::to_string(state.ThreadId()));
         }
-        RecordGpuCall(symbol, arguments);
+        RecordGpuCall(descriptor->name, arguments);
         state.SetRegister(cpu::CoreRegister::r0, result);
         cpu.SetState(state);
         return true;
@@ -411,14 +468,17 @@ private:
         Write32(args[3], data, thread_id);
         return ident;
     }
-    std::uint32_t Dispatch(const std::string_view module,
-                           const std::string_view symbol,
+    std::uint32_t Dispatch(const detail::HleThunkDescriptor& descriptor,
                            const std::array<std::uint32_t, 4>& args,
                            const cpu::A32State& state) {
+        const auto symbol = descriptor.name;
+        const auto function_id = descriptor.function_id;
         const auto tid = state.ThreadId();
-        if (module == "libGLESv1_CM.so") {
-            const auto draw_call = symbol == "glDrawArrays" ||
-                                   symbol == "glDrawElements";
+        if (descriptor.route == detail::HleRoute::gles1 ||
+            descriptor.route == detail::HleRoute::gles1_extension) {
+            const auto draw_call =
+                descriptor.route == detail::HleRoute::gles1 &&
+                (function_id == 35U || function_id == 36U);
             if (draw_call &&
                 gl_context_.SelectDrawRenderer(
                     gles1_draw_state_
@@ -427,7 +487,9 @@ private:
                     gles_dispatch_.HasEnabledVertexAttribute()) ==
                     GuestGlRenderer::programmable) {
                 const auto result = gles_dispatch_.Dispatch(
-                    symbol, args, state,
+                    function_id == 35U ? Id(Gles2Function::draw_arrays)
+                                       : Id(Gles2Function::draw_elements),
+                    args, state,
                     angle_frame_.has_value() ? &*angle_frame_ : nullptr);
                 if (!result.has_value()) {
                     throw std::logic_error(
@@ -438,34 +500,21 @@ private:
                 ++gpu_stats_.draw_targets.front().draws;
                 return *result;
             }
-            auto api = gles::GlesApi::gles1;
-            auto id = gles::FindGlesFunction(api, symbol);
-            if (!id.has_value()) {
-                api = gles::GlesApi::gles1_extensions;
-                id = gles::FindGlesFunction(api, symbol);
-            }
-            if (!id.has_value()) {
-                throw std::logic_error("GLES1 boundary symbol is outside its catalog");
-            }
-            const auto info = gles::DescribeGlesFunction(api, *id);
             std::vector<std::uint32_t> all;
-            all.reserve(info.parameter_count);
-            for (std::size_t index = 0; index < info.parameter_count; ++index) {
+            all.reserve(descriptor.parameter_count);
+            for (std::size_t index = 0; index < descriptor.parameter_count; ++index) {
                 all.push_back(index < args.size()
                                   ? args[index]
                                   : StackWord(state, static_cast<std::uint32_t>(
                                                          (index - args.size()) * 4U)));
             }
-            auto& dispatch = api == gles::GlesApi::gles1
+            auto& dispatch = descriptor.route == detail::HleRoute::gles1
                                  ? gles1_dispatch_
                                  : gles1_extensions_dispatch_;
-            const auto fixed_draw = api == gles::GlesApi::gles1 &&
-                                    (symbol == "glDrawArrays" ||
-                                     symbol == "glDrawElements");
-            if (!fixed_draw) return dispatch.Invoke(*id, all, tid);
+            if (!draw_call) return dispatch.Invoke(function_id, all, tid);
             gl_context_.Native().BeginFixedDraw();
             try {
-                const auto result = dispatch.Invoke(*id, all, tid);
+                const auto result = dispatch.Invoke(function_id, all, tid);
                 gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
                 gl_context_.Native().EndFixedDraw();
                 return result;
@@ -479,33 +528,48 @@ private:
                 throw;
             }
         }
-        if (symbol == "AConfiguration_new") return kFakeConfiguration;
-        if (symbol == "AConfiguration_delete" ||
-            symbol == "AConfiguration_fromAssetManager") return 0;
-        if (symbol == "AConfiguration_getLanguage" ||
-            symbol == "AConfiguration_getCountry") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::configuration_new)) {
+            return kFakeConfiguration;
+        }
+        if (descriptor.route == detail::HleRoute::android &&
+            (function_id == Id(AndroidFunction::configuration_delete) ||
+             function_id == Id(AndroidFunction::configuration_from_asset_manager))) {
+            return 0;
+        }
+        if (descriptor.route == detail::HleRoute::android &&
+            (function_id == Id(AndroidFunction::configuration_get_language) ||
+             function_id == Id(AndroidFunction::configuration_get_country))) {
             if (args[1] != 0) {
                 const std::array bytes{std::byte{'e'}, std::byte{'n'}};
                 address_space_.Write(memory::GuestAddress{args[1]}, bytes, tid);
             }
             return 0;
         }
-        if (symbol == "ALooper_prepare") return kFakeLooper;
-        if (symbol == "ALooper_addFd") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::looper_prepare)) return kFakeLooper;
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::looper_add_fd)) {
             std::scoped_lock lock(mutex_);
             command_ident_ = args[2];
             command_data_ = StackWord(state, 4);
             return 1;
         }
-        if (symbol == "ALooper_pollAll") return PollAll(args, tid);
-        if (symbol == "AInputQueue_attachLooper") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::looper_poll_all)) {
+            return PollAll(args, tid);
+        }
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::input_queue_attach_looper)) {
             std::scoped_lock lock(mutex_);
             input_ident_ = args[2];
             input_data_ = StackWord(state, 0);
             return 0;
         }
-        if (symbol == "AInputQueue_detachLooper") return 0;
-        if (symbol == "AInputQueue_getEvent") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::input_queue_detach_looper)) return 0;
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::input_queue_get_event)) {
             std::scoped_lock lock(mutex_);
             if (inputs_.empty()) return SignedResult(-1);
             active_input_ = inputs_.front();
@@ -513,51 +577,70 @@ private:
             Write32(args[1], kFakeInputEvent, tid);
             return 0;
         }
-        if (symbol == "AInputQueue_preDispatchEvent") return 0;
-        if (symbol == "AInputQueue_finishEvent") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::input_queue_pre_dispatch_event)) return 0;
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::input_queue_finish_event)) {
             std::scoped_lock lock(mutex_);
             active_input_.reset();
             return 0;
         }
-        if (symbol == "AInputEvent_getType") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::input_event_get_type)) {
             std::scoped_lock lock(mutex_);
             return active_input_.has_value() && active_input_->type == AndroidBoundaryInputType::key
                        ? 1U : 2U;
         }
-        if (symbol == "AKeyEvent_getAction") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::key_event_get_action)) {
             std::scoped_lock lock(mutex_);
             return active_input_.has_value() && active_input_->pressed ? 0U : 1U;
         }
-        if (symbol == "AKeyEvent_getKeyCode") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::key_event_get_key_code)) {
             std::scoped_lock lock(mutex_);
             return active_input_.has_value() ? static_cast<std::uint32_t>(active_input_->code) : 0U;
         }
-        if (symbol == "AMotionEvent_getAction") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::motion_event_get_action)) {
             std::scoped_lock lock(mutex_);
             if (!active_input_.has_value() ||
                 active_input_->type == AndroidBoundaryInputType::pointer_motion) return 2U;
             return active_input_->pressed ? 0U : 1U;
         }
-        if (symbol == "AMotionEvent_getX" || symbol == "AMotionEvent_getY") {
+        if (descriptor.route == detail::HleRoute::android &&
+            (function_id == Id(AndroidFunction::motion_event_get_x) ||
+             function_id == Id(AndroidFunction::motion_event_get_y))) {
             std::scoped_lock lock(mutex_);
             const auto value = !active_input_.has_value() ? 0.0F
-                : symbol == "AMotionEvent_getX" ? active_input_->x : active_input_->y;
+                : function_id == Id(AndroidFunction::motion_event_get_x)
+                      ? active_input_->x : active_input_->y;
             return std::bit_cast<std::uint32_t>(value);
         }
-        if (symbol == "ANativeWindow_setBuffersGeometry") return 0;
-        if (symbol == "eglGetDisplay") return kFakeDisplay;
-        if (symbol == "eglInitialize") {
+        if (descriptor.route == detail::HleRoute::android &&
+            function_id == Id(AndroidFunction::native_window_set_buffers_geometry)) return 0;
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::get_display)) return kFakeDisplay;
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::initialize)) {
             Write32(args[1], 1, tid); Write32(args[2], 5, tid); return 1;
         }
-        if (symbol == "eglChooseConfig") {
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::choose_config)) {
             Write32(args[2], kFakeConfig, tid);
             Write32(StackWord(state, 0), 1, tid);
             return 1;
         }
-        if (symbol == "eglGetConfigAttrib") { Write32(args[3], 0, tid); return 1; }
-        if (symbol == "eglCreateWindowSurface") return kFakeSurface;
-        if (symbol == "eglCreateContext") return kFakeContext;
-        if (symbol == "eglMakeCurrent") {
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::get_config_attrib)) {
+            Write32(args[3], 0, tid); return 1;
+        }
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::create_window_surface)) return kFakeSurface;
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::create_context)) return kFakeContext;
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::make_current)) {
             if (managed_surface_) {
                 throw std::runtime_error(
                     "guest EGL cannot replace a host-managed ANGLE surface");
@@ -570,18 +653,23 @@ private:
             }
             return 1;
         }
-        if (symbol == "eglQuerySurface") {
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::query_surface)) {
             Write32(args[3], args[2] == kEglWidth ? layout_.logical_width :
                              args[2] == kEglHeight ? layout_.logical_height : 0, tid);
             return 1;
         }
-        if (symbol == "eglSwapBuffers") {
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::swap_buffers)) {
             if (!angle_frame_.has_value()) throw std::runtime_error("eglSwapBuffers has no current ANGLE frame");
             PublishFrame();
             return 1;
         }
-        if (symbol == "eglDestroyContext" || symbol == "eglDestroySurface") return 1;
-        if (symbol == "eglTerminate") {
+        if (descriptor.route == detail::HleRoute::egl &&
+            (function_id == Id(EglFunction::destroy_context) ||
+             function_id == Id(EglFunction::destroy_surface))) return 1;
+        if (descriptor.route == detail::HleRoute::egl &&
+            function_id == Id(EglFunction::terminate)) {
             if (managed_surface_) {
                 throw std::runtime_error(
                     "guest EGL cannot terminate a host-managed ANGLE surface");
@@ -595,22 +683,28 @@ private:
             gpu_render_target_ready_ = false;
             return 1;
         }
-        if (const auto shader_program = DispatchShaderProgram(symbol, args, state);
+        if (descriptor.route == detail::HleRoute::log) return 0;
+        if (descriptor.route != detail::HleRoute::gles2) {
+            throw std::runtime_error(
+                "Android boundary HLE function id is not implemented");
+        }
+        if (const auto shader_program = DispatchShaderProgram(function_id, args, state);
             shader_program.has_value()) {
             return *shader_program;
         }
         if (const auto resources = gles_dispatch_.Dispatch(
-                symbol, args, state,
+                function_id, args, state,
                 angle_frame_.has_value() ? &*angle_frame_ : nullptr);
             resources.has_value()) {
-            if (symbol == "glDrawElements" || symbol == "glDrawArrays") {
+            if (function_id == Id(Gles2Function::draw_elements) ||
+                function_id == Id(Gles2Function::draw_arrays)) {
                 std::scoped_lock lock(mutex_);
                 ++gpu_stats_.draws;
                 ++gpu_stats_.draw_targets.front().draws;
             }
             return *resources;
         }
-        if (symbol == "glViewport") {
+        if (function_id == Id(Gles2Function::viewport)) {
             const std::array logical{
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<std::int32_t>(args[1]),
@@ -628,7 +722,7 @@ private:
             gl_context_.Shared().SetViewport(logical);
             return 0;
         }
-        if (symbol == "glScissor") {
+        if (function_id == Id(Gles2Function::scissor)) {
             const std::array logical{
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<std::int32_t>(args[1]),
@@ -646,7 +740,7 @@ private:
             gl_context_.Shared().SetScissor(logical);
             return 0;
         }
-        if (symbol == "glClearColor") {
+        if (function_id == Id(Gles2Function::clear_color)) {
             const std::array color{std::bit_cast<float>(args[0]),
                                    std::bit_cast<float>(args[1]),
                                    std::bit_cast<float>(args[2]),
@@ -655,57 +749,68 @@ private:
             gl_context_.Shared().SetClearColor(color);
             return 0;
         }
-        if (symbol == "glClear") {
+        if (function_id == Id(Gles2Function::clear)) {
             RequireFrame(symbol).Clear(args[0]);
             std::scoped_lock lock(mutex_);
             ++gpu_stats_.clears;
             return 0;
         }
-        if (symbol == "__android_log_print" || symbol == "__android_log_write") return 0;
         throw std::runtime_error("Android boundary HLE is not implemented: " + std::string(symbol));
     }
     std::optional<std::uint32_t> DispatchShaderProgram(
-        const std::string_view symbol,
+        const gles::GlesThunkId function_id,
         const std::array<std::uint32_t, 4>& args,
         const cpu::A32State& state) {
+        const auto symbol = gles::DescribeGlesFunction(
+                                gles::GlesApi::gles2, function_id).name;
         const auto tid = state.ThreadId();
-        if (symbol == "glCreateShader") return RequireFrame(symbol).CreateShader(args[0]);
-        if (symbol == "glShaderSource") {
+        if (function_id == Id(Gles2Function::create_shader)) {
+            return RequireFrame(symbol).CreateShader(args[0]);
+        }
+        if (function_id == Id(Gles2Function::shader_source)) {
             RequireFrame(symbol).ShaderSource(args[0], ReadShaderSources(args, tid)); return 0;
         }
-        if (symbol == "glCompileShader") {
+        if (function_id == Id(Gles2Function::compile_shader)) {
             RequireFrame(symbol).CompileShader(args[0]); std::scoped_lock lock(mutex_);
             ++gpu_stats_.shader_compiles; return 0;
         }
-        if (symbol == "glGetShaderiv") {
+        if (function_id == Id(Gles2Function::get_shader_iv)) {
             const auto value = RequireFrame(symbol).GetShaderParameter(args[0], args[1]);
             WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol); return 0;
         }
-        if (symbol == "glDeleteShader") { RequireFrame(symbol).DeleteShader(args[0]); return 0; }
-        if (symbol == "glCreateProgram") return RequireFrame(symbol).CreateProgram();
-        if (symbol == "glAttachShader") { RequireFrame(symbol).AttachShader(args[0], args[1]); return 0; }
-        if (symbol == "glLinkProgram") {
+        if (function_id == Id(Gles2Function::delete_shader)) {
+            RequireFrame(symbol).DeleteShader(args[0]); return 0;
+        }
+        if (function_id == Id(Gles2Function::create_program)) {
+            return RequireFrame(symbol).CreateProgram();
+        }
+        if (function_id == Id(Gles2Function::attach_shader)) {
+            RequireFrame(symbol).AttachShader(args[0], args[1]); return 0;
+        }
+        if (function_id == Id(Gles2Function::link_program)) {
             RequireFrame(symbol).LinkProgram(args[0]); std::scoped_lock lock(mutex_);
             ++gpu_stats_.program_links; return 0;
         }
-        if (symbol == "glGetProgramiv") {
+        if (function_id == Id(Gles2Function::get_program_iv)) {
             const auto value = RequireFrame(symbol).GetProgramParameter(args[0], args[1]);
             WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol); return 0;
         }
-        if (symbol == "glGetAttribLocation") {
+        if (function_id == Id(Gles2Function::get_attrib_location)) {
             return SignedResult(RequireFrame(symbol).GetAttribLocation(
                 args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
         }
-        if (symbol == "glGetUniformLocation") {
+        if (function_id == Id(Gles2Function::get_uniform_location)) {
             return SignedResult(RequireFrame(symbol).GetUniformLocation(
                 args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
         }
-        if (symbol == "glUseProgram") {
+        if (function_id == Id(Gles2Function::use_program)) {
             RequireFrame(symbol).UseProgram(args[0]);
             gl_context_.Shared().SetCurrentProgram(args[0]);
             return 0;
         }
-        if (symbol == "glDeleteProgram") { RequireFrame(symbol).DeleteProgram(args[0]); return 0; }
+        if (function_id == Id(Gles2Function::delete_program)) {
+            RequireFrame(symbol).DeleteProgram(args[0]); return 0;
+        }
         return std::nullopt;
     }
     gles::AngleFrame& RequireFrame(const std::string_view operation) {

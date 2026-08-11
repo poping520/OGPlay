@@ -38,6 +38,55 @@ constexpr std::uint32_t kFloat = 0x1406U;
 constexpr std::uint32_t kFixed = 0x140CU;
 constexpr std::size_t kMaximumVertexAttributes = 16U;
 
+// These values are generated-catalog slots. ValidateGles2FunctionIds() makes
+// catalog drift fail during boundary construction instead of misrouting a call.
+enum class Gles2Function : gles::GlesThunkId {
+    active_texture = 0, attach_shader = 1, bind_buffer = 3,
+    bind_framebuffer = 4, bind_renderbuffer = 5, bind_texture = 6,
+    blend_color = 7, blend_equation = 8, blend_func = 10,
+    buffer_data = 12, check_framebuffer_status = 14, clear = 15,
+    clear_color = 16, compile_shader = 20, create_program = 25,
+    create_shader = 26, delete_buffers = 28, delete_framebuffers = 29,
+    delete_program = 30, delete_renderbuffers = 31, delete_shader = 32,
+    delete_textures = 33, disable = 38, disable_vertex_attrib_array = 39,
+    draw_arrays = 40, draw_elements = 41, enable = 42,
+    enable_vertex_attrib_array = 43, flush = 45,
+    framebuffer_renderbuffer = 46, framebuffer_texture_2d = 47,
+    gen_buffers = 49, gen_framebuffers = 50, gen_renderbuffers = 51,
+    gen_textures = 52, generate_mipmap = 53, get_active_attrib = 54,
+    get_active_uniform = 55, get_attrib_location = 57, get_error = 60,
+    get_integerv = 63, get_program_info_log = 64, get_program_iv = 65,
+    get_shader_info_log = 67, get_shader_iv = 70, get_string = 71,
+    get_uniform_location = 74, is_enabled = 82, link_program = 89,
+    pixel_store_i = 90, read_pixels = 92, renderbuffer_storage = 94,
+    sample_coverage = 95, scissor = 96, shader_source = 98,
+    tex_image_2d = 105, tex_parameter_i = 108, tex_sub_image_2d = 110,
+    uniform_1f = 111, uniform_1fv = 112, uniform_1i = 113,
+    uniform_1iv = 114, uniform_2fv = 116, uniform_2iv = 118,
+    uniform_3fv = 120, uniform_3iv = 122, uniform_4f = 123,
+    uniform_4fv = 124, uniform_4iv = 126, uniform_matrix_3fv = 128,
+    uniform_matrix_4fv = 129, use_program = 130, vertex_attrib_4f = 138,
+    vertex_attrib_pointer = 140, viewport = 141,
+};
+
+[[nodiscard]] constexpr gles::GlesThunkId Id(const Gles2Function function) {
+    return static_cast<gles::GlesThunkId>(function);
+}
+
+void ValidateGles2FunctionIds() {
+    static constexpr std::array expected{
+        std::pair{Gles2Function::active_texture, std::string_view{"glActiveTexture"}},
+        std::pair{Gles2Function::draw_arrays, std::string_view{"glDrawArrays"}},
+        std::pair{Gles2Function::draw_elements, std::string_view{"glDrawElements"}},
+        std::pair{Gles2Function::viewport, std::string_view{"glViewport"}},
+    };
+    for (const auto& [id, name] : expected) {
+        if (gles::DescribeGlesFunction(gles::GlesApi::gles2, Id(id)).name != name) {
+            throw std::logic_error("generated GLES2 function ids changed");
+        }
+    }
+}
+
 std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
     switch (parameter) {
     case 0x1f00U: return 0;
@@ -98,34 +147,40 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
 class AndroidBoundaryGles::Impl final {
 public:
     Impl(memory::AddressSpace& address_space, GuestGlContext& context)
-        : address_space_(address_space), context_(context) {}
+        : address_space_(address_space), context_(context) {
+        ValidateGles2FunctionIds();
+    }
 
     std::optional<std::uint32_t> Dispatch(
-        const std::string_view symbol,
+        const gles::GlesThunkId function_id,
         const std::array<std::uint32_t, 4>& args,
         const cpu::A32State& state, gles::AngleFrame* const frame) {
+        const auto symbol = gles::DescribeGlesFunction(
+                                gles::GlesApi::gles2, function_id).name;
         const auto tid = state.ThreadId();
-        if (symbol == "glGenBuffers" || symbol == "glGenTextures" ||
-            symbol == "glGenFramebuffers" ||
-            symbol == "glGenRenderbuffers") {
+        if (function_id == Id(Gles2Function::gen_buffers) ||
+            function_id == Id(Gles2Function::gen_textures) ||
+            function_id == Id(Gles2Function::gen_framebuffers) ||
+            function_id == Id(Gles2Function::gen_renderbuffers)) {
             auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
             auto& current = RequireFrame(frame, symbol);
-            auto names = symbol == "glGenBuffers"
+            auto names = function_id == Id(Gles2Function::gen_buffers)
                              ? current.GenerateBuffers(args[0])
-                         : symbol == "glGenTextures"
+                         : function_id == Id(Gles2Function::gen_textures)
                              ? current.GenerateTextures(args[0])
-                         : symbol == "glGenFramebuffers"
+                         : function_id == Id(Gles2Function::gen_framebuffers)
                              ? current.GenerateFramebuffers(args[0])
                              : current.GenerateRenderbuffers(args[0]);
             WriteWords(Pointer(call), names);
             return 0;
         }
-        if (symbol == "glDeleteBuffers" || symbol == "glDeleteTextures" ||
-            symbol == "glDeleteFramebuffers" ||
-            symbol == "glDeleteRenderbuffers") {
+        if (function_id == Id(Gles2Function::delete_buffers) ||
+            function_id == Id(Gles2Function::delete_textures) ||
+            function_id == Id(Gles2Function::delete_framebuffers) ||
+            function_id == Id(Gles2Function::delete_renderbuffers)) {
             auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
             const auto names = ReadWords(Pointer(call));
-            if (symbol == "glDeleteBuffers") {
+            if (function_id == Id(Gles2Function::delete_buffers)) {
                 RequireFrame(frame, symbol).DeleteBuffers(names);
                 const auto bound = context_.Shared().transfer.Snapshot();
                 if (std::ranges::find(names, bound.array_buffer) != names.end()) {
@@ -134,10 +189,10 @@ public:
                 if (std::ranges::find(names, bound.element_array_buffer) != names.end()) {
                     context_.Shared().transfer.BindBuffer(0x8893U, 0);
                 }
-            } else if (symbol == "glDeleteTextures") {
+            } else if (function_id == Id(Gles2Function::delete_textures)) {
                 RequireFrame(frame, symbol).DeleteTextures(names);
                 context_.Shared().DeleteTextures(names);
-            } else if (symbol == "glDeleteFramebuffers") {
+            } else if (function_id == Id(Gles2Function::delete_framebuffers)) {
                 RequireFrame(frame, symbol).DeleteFramebuffers(names);
                 context_.Shared().DeleteFramebuffers(names);
             } else {
@@ -146,73 +201,73 @@ public:
             }
             return 0;
         }
-        if (symbol == "glBindBuffer") {
+        if (function_id == Id(Gles2Function::bind_buffer)) {
             auto next = context_.Shared().transfer;
             next.BindBuffer(args[0], args[1]);
             RequireFrame(frame, symbol).BindBuffer(args[0], args[1]);
             context_.Shared().transfer = std::move(next);
             return 0;
         }
-        if (symbol == "glBufferData") {
+        if (function_id == Id(Gles2Function::buffer_data)) {
             auto call = PrepareCall(symbol, args, tid);
             const auto& data = Pointer(call);
             RequireFrame(frame, symbol).BufferData(
                 args[0], args[1], OptionalBytes(data), args[3]);
             return 0;
         }
-        if (symbol == "glActiveTexture") {
+        if (function_id == Id(Gles2Function::active_texture)) {
             auto next = context_.Shared();
             next.SetActiveTexture(args[0]);
             RequireFrame(frame, symbol).ActiveTexture(args[0]);
             context_.Shared().SetActiveTexture(args[0]);
             return 0;
         }
-        if (symbol == "glBindTexture") {
+        if (function_id == Id(Gles2Function::bind_texture)) {
             auto next = context_.Shared();
             next.BindTexture(args[0], args[1]);
             RequireFrame(frame, symbol).BindTexture(args[0], args[1]);
             context_.Shared().BindTexture(args[0], args[1]);
             return 0;
         }
-        if (symbol == "glBindFramebuffer") {
+        if (function_id == Id(Gles2Function::bind_framebuffer)) {
             auto next = context_.Shared();
             next.BindFramebuffer(args[0], args[1]);
             RequireFrame(frame, symbol).BindFramebuffer(args[0], args[1]);
             context_.Shared().BindFramebuffer(args[0], args[1]);
             return 0;
         }
-        if (symbol == "glBindRenderbuffer") {
+        if (function_id == Id(Gles2Function::bind_renderbuffer)) {
             auto next = context_.Shared();
             next.BindRenderbuffer(args[0], args[1]);
             RequireFrame(frame, symbol).BindRenderbuffer(args[0], args[1]);
             context_.Shared().BindRenderbuffer(args[0], args[1]);
             return 0;
         }
-        if (symbol == "glCheckFramebufferStatus") {
+        if (function_id == Id(Gles2Function::check_framebuffer_status)) {
             return RequireFrame(frame, symbol).CheckFramebufferStatus(args[0]);
         }
-        if (symbol == "glRenderbufferStorage") {
+        if (function_id == Id(Gles2Function::renderbuffer_storage)) {
             RequireFrame(frame, symbol).RenderbufferStorage(
                 args[0], args[1], std::bit_cast<std::int32_t>(args[2]),
                 std::bit_cast<std::int32_t>(args[3]));
             return 0;
         }
-        if (symbol == "glFramebufferTexture2D") {
+        if (function_id == Id(Gles2Function::framebuffer_texture_2d)) {
             RequireFrame(frame, symbol).FramebufferTexture2D(
                 args[0], args[1], args[2], args[3],
                 std::bit_cast<std::int32_t>(StackWord(state, 0)));
             return 0;
         }
-        if (symbol == "glFramebufferRenderbuffer") {
+        if (function_id == Id(Gles2Function::framebuffer_renderbuffer)) {
             RequireFrame(frame, symbol).FramebufferRenderbuffer(
                 args[0], args[1], args[2], args[3]);
             return 0;
         }
-        if (symbol == "glGenerateMipmap") {
+        if (function_id == Id(Gles2Function::generate_mipmap)) {
             RequireFrame(frame, symbol).GenerateMipmap(args[0]);
             return 0;
         }
-        if (symbol == "glPixelStorei") {
+        if (function_id == Id(Gles2Function::pixel_store_i)) {
             const auto value = std::bit_cast<std::int32_t>(args[1]);
             auto next = context_.Shared().transfer;
             next.PixelStore(args[0], value);
@@ -220,12 +275,12 @@ public:
             context_.Shared().transfer = std::move(next);
             return 0;
         }
-        if (symbol == "glTexParameteri") {
+        if (function_id == Id(Gles2Function::tex_parameter_i)) {
             RequireFrame(frame, symbol).TextureParameter(
                 args[0], args[1], std::bit_cast<std::int32_t>(args[2]));
             return 0;
         }
-        if (symbol == "glTexImage2D") {
+        if (function_id == Id(Gles2Function::tex_image_2d)) {
             std::array<std::uint32_t, 9> all{args[0], args[1], args[2], args[3]};
             for (std::size_t index = 4; index < all.size(); ++index) {
                 all[index] = StackWord(state,
@@ -245,7 +300,7 @@ public:
             }
             return 0;
         }
-        if (symbol == "glTexSubImage2D") {
+        if (function_id == Id(Gles2Function::tex_sub_image_2d)) {
             std::array<std::uint32_t, 9> all{args[0], args[1], args[2], args[3]};
             for (std::size_t index = 4; index < all.size(); ++index) {
                 all[index] = StackWord(state,
@@ -261,18 +316,19 @@ public:
                 Pointer(call).Bytes());
             return 0;
         }
-        if (symbol == "glEnableVertexAttribArray" ||
-            symbol == "glDisableVertexAttribArray") {
+        if (function_id == Id(Gles2Function::enable_vertex_attrib_array) ||
+            function_id == Id(Gles2Function::disable_vertex_attrib_array)) {
             const auto index = args[0];
             RequireAttributeIndex(index);
-            attributes_[index].enabled = symbol == "glEnableVertexAttribArray";
+            attributes_[index].enabled =
+                function_id == Id(Gles2Function::enable_vertex_attrib_array);
             attributes_[index].enable_lr =
                 state.Register(cpu::CoreRegister::lr);
             RequireFrame(frame, symbol).SetVertexAttributeEnabled(
                 index, attributes_[index].enabled);
             return 0;
         }
-        if (symbol == "glVertexAttribPointer") {
+        if (function_id == Id(Gles2Function::vertex_attrib_pointer)) {
             const auto index = args[0];
             RequireAttributeIndex(index);
             const auto size = std::bit_cast<std::int32_t>(args[1]);
@@ -316,19 +372,19 @@ public:
             }
             return 0;
         }
-        if (symbol == "glUniform1f") {
+        if (function_id == Id(Gles2Function::uniform_1f)) {
             RequireFrame(frame, symbol).Uniform1f(
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<float>(args[1]));
             return 0;
         }
-        if (symbol == "glUniform1i") {
+        if (function_id == Id(Gles2Function::uniform_1i)) {
             RequireFrame(frame, symbol).Uniform1i(
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<std::int32_t>(args[1]));
             return 0;
         }
-        if (symbol == "glUniform4f") {
+        if (function_id == Id(Gles2Function::uniform_4f)) {
             RequireFrame(frame, symbol).Uniform4f(
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<float>(args[1]), std::bit_cast<float>(args[2]),
@@ -336,7 +392,7 @@ public:
                 std::bit_cast<float>(StackWord(state, 0)));
             return 0;
         }
-        if (symbol == "glUniformMatrix3fv") {
+        if (function_id == Id(Gles2Function::uniform_matrix_3fv)) {
             auto call = PrepareCall(symbol, args, tid);
             const auto values = ReadFloats(Pointer(call));
             RequireFrame(frame, symbol).UniformMatrix3(
@@ -344,15 +400,22 @@ public:
                 std::bit_cast<std::int32_t>(args[1]), args[2] != 0, values);
             return 0;
         }
-        if (symbol == "glUniform1fv" || symbol == "glUniform2fv" ||
-            symbol == "glUniform3fv" || symbol == "glUniform4fv" ||
-            symbol == "glUniform1iv" || symbol == "glUniform2iv" ||
-            symbol == "glUniform3iv" || symbol == "glUniform4iv") {
+        if (function_id == Id(Gles2Function::uniform_1fv) ||
+            function_id == Id(Gles2Function::uniform_2fv) ||
+            function_id == Id(Gles2Function::uniform_3fv) ||
+            function_id == Id(Gles2Function::uniform_4fv) ||
+            function_id == Id(Gles2Function::uniform_1iv) ||
+            function_id == Id(Gles2Function::uniform_2iv) ||
+            function_id == Id(Gles2Function::uniform_3iv) ||
+            function_id == Id(Gles2Function::uniform_4iv)) {
             auto call = PrepareCall(symbol, std::span(args).first<3>(), tid);
             const auto components =
-                symbol == "glUniform1fv" || symbol == "glUniform1iv" ? 1U :
-                symbol == "glUniform2fv" || symbol == "glUniform2iv" ? 2U :
-                symbol == "glUniform3fv" || symbol == "glUniform3iv" ? 3U : 4U;
+                function_id == Id(Gles2Function::uniform_1fv) ||
+                        function_id == Id(Gles2Function::uniform_1iv) ? 1U :
+                function_id == Id(Gles2Function::uniform_2fv) ||
+                        function_id == Id(Gles2Function::uniform_2iv) ? 2U :
+                function_id == Id(Gles2Function::uniform_3fv) ||
+                        function_id == Id(Gles2Function::uniform_3iv) ? 3U : 4U;
             const auto count = std::bit_cast<std::int32_t>(args[1]);
             if (symbol.ends_with("fv")) {
                 RequireFrame(frame, symbol).UniformFloats(
@@ -365,7 +428,7 @@ public:
             }
             return 0;
         }
-        if (symbol == "glUniformMatrix4fv") {
+        if (function_id == Id(Gles2Function::uniform_matrix_4fv)) {
             auto call = PrepareCall(symbol, args, tid);
             RequireFrame(frame, symbol).UniformMatrix4(
                 std::bit_cast<std::int32_t>(args[0]),
@@ -373,20 +436,20 @@ public:
                 ReadFloats(Pointer(call)));
             return 0;
         }
-        if (symbol == "glVertexAttrib4f") {
+        if (function_id == Id(Gles2Function::vertex_attrib_4f)) {
             RequireFrame(frame, symbol).VertexAttribute4f(
                 args[0], std::bit_cast<float>(args[1]),
                 std::bit_cast<float>(args[2]), std::bit_cast<float>(args[3]),
                 std::bit_cast<float>(StackWord(state, 0)));
             return 0;
         }
-        if (symbol == "glGetActiveAttrib" ||
-            symbol == "glGetActiveUniform") {
+        if (function_id == Id(Gles2Function::get_active_attrib) ||
+            function_id == Id(Gles2Function::get_active_uniform)) {
             std::array<std::uint32_t, 7> all{
                 args[0], args[1], args[2], args[3], StackWord(state, 0),
                 StackWord(state, 4), StackWord(state, 8)};
             auto call = PrepareCall(symbol, all, tid);
-            const auto result = symbol == "glGetActiveAttrib"
+            const auto result = function_id == Id(Gles2Function::get_active_attrib)
                 ? RequireFrame(frame, symbol).GetActiveAttribute(all[0], all[1])
                 : RequireFrame(frame, symbol).GetActiveUniform(all[0], all[1]);
             const auto length = WriteText(Pointer(call, 6), result.name);
@@ -396,17 +459,17 @@ public:
             WriteWord(Pointer(call, 5), result.type);
             return 0;
         }
-        if (symbol == "glGetProgramInfoLog" ||
-            symbol == "glGetShaderInfoLog") {
+        if (function_id == Id(Gles2Function::get_program_info_log) ||
+            function_id == Id(Gles2Function::get_shader_info_log)) {
             auto call = PrepareCall(symbol, args, tid);
-            const auto log = symbol == "glGetProgramInfoLog"
+            const auto log = function_id == Id(Gles2Function::get_program_info_log)
                 ? RequireFrame(frame, symbol).GetProgramInfoLog(args[0])
                 : RequireFrame(frame, symbol).GetShaderInfoLog(args[0]);
             const auto length = WriteText(Pointer(call, 3), log);
             WriteWord(Pointer(call, 2), length);
             return 0;
         }
-        if (symbol == "glGetIntegerv") {
+        if (function_id == Id(Gles2Function::get_integerv)) {
             auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
             auto& output = Pointer(call);
             const auto values = RequireFrame(frame, symbol).GetIntegers(
@@ -419,47 +482,50 @@ public:
             WriteWords(output, words);
             return 0;
         }
-        if (symbol == "glGetString") {
+        if (function_id == Id(Gles2Function::get_string)) {
             return WriteQueryString(args[0],
                                     RequireFrame(frame, symbol).GetString(args[0]), tid);
         }
-        if (symbol == "glGetError") return RequireFrame(frame, symbol).GetError();
-        if (symbol == "glIsEnabled") {
+        if (function_id == Id(Gles2Function::get_error)) {
+            return RequireFrame(frame, symbol).GetError();
+        }
+        if (function_id == Id(Gles2Function::is_enabled)) {
             static_cast<void>(RequireFrame(frame, symbol));
             return context_.Shared().Capability(args[0]) ? 1U : 0U;
         }
-        if (symbol == "glEnable" || symbol == "glDisable") {
-            const auto enabled = symbol == "glEnable";
+        if (function_id == Id(Gles2Function::enable) ||
+            function_id == Id(Gles2Function::disable)) {
+            const auto enabled = function_id == Id(Gles2Function::enable);
             auto next = context_.Shared();
             next.SetCapability(args[0], enabled);
             RequireFrame(frame, symbol).SetCapability(args[0], enabled);
             context_.Shared().SetCapability(args[0], enabled);
             return 0;
         }
-        if (symbol == "glBlendFunc") {
+        if (function_id == Id(Gles2Function::blend_func)) {
             RequireFrame(frame, symbol).BlendFunction(args[0], args[1]);
             return 0;
         }
-        if (symbol == "glBlendColor") {
+        if (function_id == Id(Gles2Function::blend_color)) {
             RequireFrame(frame, symbol).BlendColor(
                 std::bit_cast<float>(args[0]), std::bit_cast<float>(args[1]),
                 std::bit_cast<float>(args[2]), std::bit_cast<float>(args[3]));
             return 0;
         }
-        if (symbol == "glBlendEquation") {
+        if (function_id == Id(Gles2Function::blend_equation)) {
             RequireFrame(frame, symbol).BlendEquation(args[0]);
             return 0;
         }
-        if (symbol == "glSampleCoverage") {
+        if (function_id == Id(Gles2Function::sample_coverage)) {
             RequireFrame(frame, symbol).SampleCoverage(
                 std::bit_cast<float>(args[0]), args[1] != 0U);
             return 0;
         }
-        if (symbol == "glFlush") {
+        if (function_id == Id(Gles2Function::flush)) {
             RequireFrame(frame, symbol).Flush();
             return 0;
         }
-        if (symbol == "glDrawArrays") {
+        if (function_id == Id(Gles2Function::draw_arrays)) {
             auto& current = RequireFrame(frame, symbol);
             const auto first = std::bit_cast<std::int32_t>(args[1]);
             const auto count = std::bit_cast<std::int32_t>(args[2]);
@@ -478,7 +544,7 @@ public:
             RestoreBufferBindings(current);
             return 0;
         }
-        if (symbol == "glDrawElements") {
+        if (function_id == Id(Gles2Function::draw_elements)) {
             auto& current = RequireFrame(frame, symbol);
             const auto count = std::bit_cast<std::int32_t>(args[1]);
             const auto type = args[2];
@@ -521,7 +587,7 @@ public:
             RestoreBufferBindings(current);
             return 0;
         }
-        if (symbol == "glReadPixels") {
+        if (function_id == Id(Gles2Function::read_pixels)) {
             std::array<std::uint32_t, 7> all{
                 args[0], args[1], args[2], args[3],
                 StackWord(state, 0), StackWord(state, 4), StackWord(state, 8)};
@@ -869,7 +935,17 @@ std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(
     const std::string_view symbol,
     const std::array<std::uint32_t, 4>& arguments,
     const cpu::A32State& state, gles::AngleFrame* const frame) {
-    return impl_->Dispatch(symbol, arguments, state, frame);
+    const auto function_id = gles::FindGlesFunction(
+        gles::GlesApi::gles2, symbol);
+    if (!function_id.has_value()) return std::nullopt;
+    return Dispatch(*function_id, arguments, state, frame);
+}
+
+std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(
+    const gles::GlesThunkId function_id,
+    const std::array<std::uint32_t, 4>& arguments,
+    const cpu::A32State& state, gles::AngleFrame* const frame) {
+    return impl_->Dispatch(function_id, arguments, state, frame);
 }
 
 bool AndroidBoundaryGles::HasEnabledVertexAttribute() const noexcept {

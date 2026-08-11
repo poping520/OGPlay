@@ -14,6 +14,7 @@ class A32State;
 
 namespace ogplay::gles {
 class AngleFrame;
+using GlesThunkId = std::uint16_t;
 }
 
 namespace ogplay::memory {
@@ -35,6 +36,10 @@ public:
 
     [[nodiscard]] std::optional<std::uint32_t> Dispatch(
         std::string_view symbol, const std::array<std::uint32_t, 4>& arguments,
+        const cpu::A32State& state, gles::AngleFrame* frame);
+    [[nodiscard]] std::optional<std::uint32_t> Dispatch(
+        gles::GlesThunkId function_id,
+        const std::array<std::uint32_t, 4>& arguments,
         const cpu::A32State& state, gles::AngleFrame* frame);
     [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept;
     [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept;

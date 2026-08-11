@@ -160,6 +160,39 @@ TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {
     CHECK(resolved == iterations);
 }
 
+TEST_CASE("Android boundary descriptors carry execution routing ids") {
+    const auto symbols =
+        ogplay::runtime::detail::BuildAndroidBoundarySymbols();
+    const auto descriptors =
+        ogplay::runtime::detail::BuildAndroidBoundaryDescriptors(symbols);
+    const auto descriptor_for = [&](const std::string_view library,
+                                    const std::string_view name) {
+        for (std::size_t index = 0; index < symbols.size(); ++index) {
+            if (symbols[index].library == library &&
+                symbols[index].symbol == name) {
+                return &descriptors[index];
+            }
+        }
+        return static_cast<const ogplay::runtime::detail::HleThunkDescriptor*>(
+            nullptr);
+    };
+
+    const auto* android = descriptor_for("libandroid.so", "ALooper_prepare");
+    REQUIRE(android != nullptr);
+    CHECK(android->route == ogplay::runtime::detail::HleRoute::android);
+    CHECK(android->function_id == 10U);
+
+    const auto* gles2 = descriptor_for("libGLESv2.so", "glDrawElements");
+    REQUIRE(gles2 != nullptr);
+    CHECK(gles2->route == ogplay::runtime::detail::HleRoute::gles2);
+    CHECK(gles2->function_id == 41U);
+
+    const auto* gles1 = descriptor_for("libGLESv1_CM.so", "glDrawElements");
+    REQUIRE(gles1 != nullptr);
+    CHECK(gles1->route == ogplay::runtime::detail::HleRoute::gles1);
+    CHECK(gles1->function_id == 36U);
+}
+
 TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
     BoundaryFixture fixture;
     CHECK(ogplay::gles::GlesDispatchTable::FunctionCount() == 142);

@@ -271,6 +271,8 @@
   放大尺寸，swap 时通过 gles 确定性 resolve 还原。
 - `NativeActivitySession` 实现 core GPU provider，快照只报告真实发生的 clear、默认 FBO、
   ANGLE 后端和最近 2048 条 EGL/GLES 调用；未查询到的扩展、限制和 guest FBO 不伪造。
+- Android boundary 的正常执行链只以 dense descriptor 的 route/function id 路由；
+  library/name 只服务于 ELF 查询、诊断与 trace 渲染，禁止重新参与 HLE/GLES handler 选择。
 - executor、时钟、VFS 和 profile 必须显式注入或由确定性 fixture 建立。
 - 不包含平台 UI、真实 present 或游戏专属逻辑。
 

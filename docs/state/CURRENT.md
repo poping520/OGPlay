@@ -1,7 +1,7 @@
 # 当前状态
 
-更新：2026-08-11 · run-apk slice observer 事件泵节流（WU-PERF-04）；runtime 拆出
-jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
+更新：2026-08-11 · 稳定期性能三连（WU-PERF-04..06）与呈现管线方向（ADR-0019）；
+runtime 拆出 jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
 
 ## 当前阶段
 
@@ -39,6 +39,10 @@ jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
 
 ## 最近完成
 
+- [WU-PERF-05/06] 帧循环仅空转时休眠、Dynarmic code cache 16→64 MiB（消除稳定期
+  整缓存冲刷重编译）、窗口呈现改为 renderer 流式纹理（CPU blit 消除，呈现占比
+  25%→10%）。Dungeon Hunter 600 帧 13.2s→11.87s，加载后约 165 FPS；full CTest
+  527/527。稳定期剩余瓶颈为 `glReadPixels` 同步回读（约 50%），方向见 ADR-0019。
 - [WU-M8-011] Dungeon Hunter"继续"命中 `analytics.track_first_run` 缺 handler；
   analytics 族一次闭合（记账+启动计数）。DUNQ profile 另有 13 个 impl id
   无 handler（license/billing/online 等），保持明确失败，待反编译证据。
@@ -80,9 +84,11 @@ Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实�
    统一所有权；当前不影响正确性，已并入 DexVM 设计（`docs/design/dexvm/`）。
 3. （非阻塞长线）DexVM 有界 DEX 解释器方案已定稿并 Accepted：ADR-0017 与
    `docs/design/dexvm/` 六章；启动排期待定，M8 继续按 profile 路线推进。
-4. （非阻塞长线）性能 backlog：ANGLE window surface 零拷贝呈现（替代 pbuffer +
-   `glReadPixels` 全帧回读）；GLES client array 基于映射世代票据的内容不变跳读；
-   AddressSpace 回调读与 bionic intercept 的逐次取锁（WU-PERF-04 采样证据）。
+4. （非阻塞长线）性能 backlog（方向见 ADR-0019）：ANGLE window surface 零拷贝
+   呈现为里程碑级主项，中间可做 PBO/fence 异步回读；GLES client array 基于映射
+   世代票据的内容不变跳读；AddressSpace 回调读与 bionic intercept 的逐次取锁
+   （直连页表按 ADR-0016 排除 r-x 页，rodata 查表访问走全局锁回调，加载期约占
+   guest 执行 13%，需新 ADR 证明无锁化线程安全）。
 
 ## 阻塞
 

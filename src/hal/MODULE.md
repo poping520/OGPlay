@@ -46,7 +46,8 @@
 - 暂停期间 ticks 不增长；不支持的推进方式必须明确失败。
 - SDL video 生命周期由创建它的宿主主线程拥有；输入只保留规范化宿主事实，不翻译 guest
   语义；只泵消息不得消费或改写待轮询事件。
-- 帧尺寸与字节数必须精确匹配；只有 SDL surface 更新成功才累计 present。
+- 帧尺寸与字节数必须精确匹配；只有 renderer 上传、缩放与 present 全部成功才累计
+  present。guest 帧经流式纹理上传后由 renderer 缩放合成，不再走 CPU surface blit。
 - RGBA8 guest framebuffer 作为不透明窗口内容复制，alpha 保留为像素事实但不得与预清理的
   黑色宿主 surface 混合；窗口透明合成不属于当前契约。
 - FPS 只能基于成功 present 计数，并从统一 Clock 获取时间；不得在窗口后端直接创建另一

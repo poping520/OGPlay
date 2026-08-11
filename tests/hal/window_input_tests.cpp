@@ -121,7 +121,9 @@ TEST_CASE("SDL window presents exact RGBA8 frames") {
 
     auto* window = SDL_GetWindowFromID(host->State().id);
     REQUIRE(window != nullptr);
-    auto* surface = SDL_GetWindowSurface(window);
+    auto* renderer = SDL_GetRenderer(window);
+    REQUIRE(renderer != nullptr);
+    auto* surface = SDL_RenderReadPixels(renderer, nullptr);
     REQUIRE(surface != nullptr);
     Uint8 red{}, green{}, blue{}, alpha{};
     REQUIRE(SDL_ReadSurfacePixel(surface, 0, 0, &red, &green, &blue, &alpha));
@@ -130,6 +132,7 @@ TEST_CASE("SDL window presents exact RGBA8 frames") {
     CHECK(red == 255); CHECK(green == 0); CHECK(blue == 0); CHECK(alpha == 255);
     REQUIRE(SDL_ReadSurfacePixel(surface, 250, 0, &red, &green, &blue, &alpha));
     CHECK(red == 0); CHECK(green == 0); CHECK(blue == 0); CHECK(alpha == 255);
+    SDL_DestroySurface(surface);
 }
 
 TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {

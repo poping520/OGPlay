@@ -165,11 +165,20 @@ public:
         window_ = SDL_CreateWindow(options.title.c_str(), static_cast<int>(options.width),
                                    static_cast<int>(options.height), flags);
         if (window_ == nullptr) throw SdlError("SDL_CreateWindow");
+        renderer_ = SDL_CreateRenderer(window_, nullptr);
+        if (renderer_ == nullptr) {
+            SDL_DestroyWindow(window_);
+            window_ = nullptr;
+            throw SdlError("SDL_CreateRenderer");
+        }
         present_count_ = 0;
     }
 
     void Close() noexcept override {
         if (window_ == nullptr) return;
+        DestroyFrameTexture();
+        SDL_DestroyRenderer(renderer_);
+        renderer_ = nullptr;
         SDL_DestroyWindow(window_);
         window_ = nullptr;
     }
@@ -237,36 +246,70 @@ public:
             throw std::invalid_argument("RGBA8 frame byte count does not match dimensions");
         }
 
-        auto* target = SDL_GetWindowSurface(window_);
-        if (target == nullptr) throw SdlError("SDL_GetWindowSurface");
-        if (target->w <= 0 || target->h <= 0) {
-            throw std::runtime_error("SDL window surface dimensions are invalid");
+        EnsureFrameTexture(width, height);
+        if (!SDL_UpdateTexture(texture_, nullptr, pixels.data(),
+                               static_cast<int>(row_bytes))) {
+            throw SdlError("SDL_UpdateTexture");
         }
-        auto* source = SDL_CreateSurfaceFrom(
-            static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_RGBA32,
-            const_cast<std::uint8_t*>(pixels.data()), static_cast<int>(row_bytes));
-        if (source == nullptr) throw SdlError("SDL_CreateSurfaceFrom");
-        const auto blend_disabled = SDL_SetSurfaceBlendMode(
-            source, SDL_BLENDMODE_NONE);
+        int output_width{};
+        int output_height{};
+        if (!SDL_GetCurrentRenderOutputSize(renderer_, &output_width,
+                                            &output_height)) {
+            throw SdlError("SDL_GetCurrentRenderOutputSize");
+        }
+        if (output_width <= 0 || output_height <= 0) {
+            throw std::runtime_error("SDL render output dimensions are invalid");
+        }
         const auto layout = FitDisplayRect(
-            width, height, static_cast<std::uint32_t>(target->w),
-            static_cast<std::uint32_t>(target->h));
-        const SDL_Rect destination{
-            static_cast<int>(layout.x), static_cast<int>(layout.y),
-            static_cast<int>(layout.width), static_cast<int>(layout.height)};
-        const auto cleared = SDL_FillSurfaceRect(
-            target, nullptr, SDL_MapSurfaceRGBA(target, 0, 0, 0, 255));
-        const auto blitted = blend_disabled && cleared && SDL_BlitSurfaceScaled(
-            source, nullptr, target, &destination, SDL_SCALEMODE_NEAREST);
-        SDL_DestroySurface(source);
-        if (!blend_disabled) throw SdlError("SDL_SetSurfaceBlendMode");
-        if (!cleared) throw SdlError("SDL_FillSurfaceRect");
-        if (!blitted) throw SdlError("SDL_BlitSurfaceScaled");
-        if (!SDL_UpdateWindowSurface(window_)) throw SdlError("SDL_UpdateWindowSurface");
+            width, height, static_cast<std::uint32_t>(output_width),
+            static_cast<std::uint32_t>(output_height));
+        const SDL_FRect destination{
+            static_cast<float>(layout.x), static_cast<float>(layout.y),
+            static_cast<float>(layout.width), static_cast<float>(layout.height)};
+        if (!SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255)) {
+            throw SdlError("SDL_SetRenderDrawColor");
+        }
+        if (!SDL_RenderClear(renderer_)) throw SdlError("SDL_RenderClear");
+        if (!SDL_RenderTexture(renderer_, texture_, nullptr, &destination)) {
+            throw SdlError("SDL_RenderTexture");
+        }
+        if (!SDL_RenderPresent(renderer_)) throw SdlError("SDL_RenderPresent");
         ++present_count_;
     }
 
 private:
+    void DestroyFrameTexture() noexcept {
+        if (texture_ != nullptr) {
+            SDL_DestroyTexture(texture_);
+            texture_ = nullptr;
+        }
+        texture_width_ = 0;
+        texture_height_ = 0;
+    }
+
+    void EnsureFrameTexture(const std::uint32_t width,
+                            const std::uint32_t height) {
+        if (texture_ != nullptr && texture_width_ == width &&
+            texture_height_ == height) {
+            return;
+        }
+        DestroyFrameTexture();
+        texture_ = SDL_CreateTexture(
+            renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING,
+            static_cast<int>(width), static_cast<int>(height));
+        if (texture_ == nullptr) throw SdlError("SDL_CreateTexture");
+        if (!SDL_SetTextureBlendMode(texture_, SDL_BLENDMODE_NONE)) {
+            DestroyFrameTexture();
+            throw SdlError("SDL_SetTextureBlendMode");
+        }
+        if (!SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_NEAREST)) {
+            DestroyFrameTexture();
+            throw SdlError("SDL_SetTextureScaleMode");
+        }
+        texture_width_ = width;
+        texture_height_ = height;
+    }
+
     [[nodiscard]] bool IsOwnedWindow(const SDL_WindowID id) const noexcept {
         return id == 0 || id == SDL_GetWindowID(window_);
     }
@@ -362,6 +405,10 @@ private:
     }
 
     SDL_Window* window_{};
+    SDL_Renderer* renderer_{};
+    SDL_Texture* texture_{};
+    std::uint32_t texture_width_{};
+    std::uint32_t texture_height_{};
     bool initialized_{};
     std::uint64_t present_count_{};
 };

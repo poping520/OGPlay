@@ -293,7 +293,7 @@ note = "M5 WU-0296 让声明 audio.sound_pool 的 GLSurfaceView Profile 按纯�
 [memory.direct_address_space]
 status = "complete"
 test = "tests/memory/address_space_tests.cpp"
-note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿主页上保持独立映射、权限与释放；M5 WU-0290 为 RW 非执行页维护稳定 JIT 数据页表"
+note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿主页上保持独立映射、权限与释放；M5 WU-0290 为 RW 非执行页维护稳定 JIT 数据页表；优化 WU-PERF-02..03 增加一次锁 page-aware C string scan 与映射世代 write-preflight 票据"
 
 [memory.soft_mmu]
 status = "complete"
@@ -463,12 +463,12 @@ note = "M4 GLES2 core 142 个入口和 397 个参数全部进入有序 IDL；输
 [gles.guest_transfer]
 status = "complete"
 test = "tests/gles/guest_transfer_tests.cpp"
-note = "M4 完成强类型 guest 指针的 input/output/inout 全区间权限预检、限额暂存和显式回写；M5 WU-0291 增加每次刷新内容的可复用 input 高水位暂存；null、溢出、方向及重复提交明确失败"
+note = "M4 完成强类型 guest 指针的 input/output/inout 全区间权限预检、限额暂存和显式回写；M5 WU-0291 增加每次刷新内容的可复用 input 高水位暂存；优化 WU-PERF-03 让 input 以单次 Read 验证复制，output 以映射世代票据在正常 Commit 去重并在映射变化后重验；null、溢出、方向及重复提交明确失败"
 
 [gles.gles2_dispatch]
 status = "partial"
 test = "tests/gles/gles_dispatch_tests.cpp"
-note = "M4 已把 142 个生成入口接入稳定 thunk、显式分派和 Android HLE 命名空间；综合样例使用的 42 项全部真实绑定，其他未绑定调用继续明确失败"
+note = "M4 已把 142 个生成入口接入稳定 thunk、显式分派和 Android HLE 命名空间；综合样例使用的 42 项全部真实绑定；优化 WU-HLE-02..03 让正常执行全链路携带 function id，并在初始化封口后无锁读取已绑定 handler，其他未绑定调用继续线程安全记账并明确失败"
 
 [gles.call_preparation]
 status = "complete"
@@ -478,7 +478,7 @@ note = "M4 完成受限长度表达式、类型/二级 guest 指针字节换算�
 [gles.transfer_state]
 status = "complete"
 test = "tests/gles/gles_transfer_state_tests.cpp"
-note = "M4 完成上下文级 pack/unpack、array/element buffer 与动态输出形状解析；像素、索引和常用查询可安全换算搬运长度，buffer offset 和 client array 显式 deferred，真实 ANGLE handler 状态同步留给后续 WU"
+note = "M4 完成 pack/unpack、array/element buffer 与动态输出形状解析；优化 WU-GLCTX-01..05 将 buffer/texture/FBO/raster/current-program 统一到单一 GuestGlContext，并以 NativeGlState transaction 恢复 fixed draw 污染；像素、索引和常用查询可安全换算，buffer offset 和 client array 显式 deferred"
 
 [gles.angle_frame]
 status = "complete"
@@ -508,7 +508,7 @@ note = "M8 WU-0372 一次闭合 GLES2 framebuffer/renderbuffer 10 项生命周�
 [gles.vertex_uniform]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 闭合 VBO offset、uniform scalar/matrix3；M8 WU-0376 批量补齐八项 float/int vector、matrix4 与 constant vertex attribute；WU-0377 闭合 client vertex/index staging、DrawArrays、TexSubImage2D 和混合链接 draw 转入；WU-0379 确认共同 glBindBuffer 在两套 transfer state 间尚未同步，VBO offset 0 会被误判为 client null，修复待下一 WU；opaque EBO+client attribute 继续明确失败"
+note = "M4 闭合 VBO offset、uniform scalar/matrix3；M8 WU-0376 批量补齐八项 float/int vector、matrix4 与 constant vertex attribute；WU-0377 闭合 client vertex/index staging、DrawArrays、TexSubImage2D 和混合链接 draw 转入；优化 WU-GLCTX-01..05 已消除两套 buffer state 与 symbol-origin draw redirect，Asphalt 6 exact 越过旧 VBO offset 0 client-null 故障；opaque EBO+client attribute 继续明确失败"
 
 [gles.m4_exit_surface]
 status = "complete"
@@ -523,7 +523,7 @@ note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢�
 [runtime.android_boundary_hle]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用，并让 GLES1 legacy setter 以验证/frame/窄提交替代整状态复制；完整 NDK 与 GLES2 槽仍不在本能力范围"
+note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；优化 WU-HLE-01..04 以 dense descriptor 算术 decode、route/function-id、sealed GLES1 dispatch 与一次 bulk stack read 的固定 A32CallFrame 替换字符串/逐字热路径，WU-PERF-01 将 trace 格式化推迟到查询；完整 NDK 与 GLES2 槽仍不在本能力范围"
 
 [runtime.native_activity_session]
 status = "partial"

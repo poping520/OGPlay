@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-11 · Asphalt 6 mixed GLES buffer-state 根因已定位
+更新：2026-08-11 · 图形 Context/HLE/内存热路径 12 项优化已完成
 
 ## 当前阶段
 
@@ -29,13 +29,17 @@
 
 ## 进行中
 
-- Asphalt 6 exact 已越过 JNI_OnLoad、GLES discovery/FBO/state、AudioTrack、shader/uniform
-  与 client vertex/index staging；当前确认混合链接 `glDrawArrays` 进入 GLES2 时，
-  GLES1 记录 `GL_ARRAY_BUFFER=1` 而 GLES2 仍为 0，导致 VBO offset 0 被误判为 null
-  client pointer；尚未声称首帧或主界面。
+- Asphalt 6 exact 已越过旧 mixed GLES buffer-state/client-pointer 故障；当前在 Profile
+  native call 5 的 `CallStaticIntMethodV requires a valid class reference` 明确失败，尚未
+  声称首帧或主界面。
 
 ## 最近完成
 
+- [optimization 12 WU] 以统一 `GuestGlContext`/Shared/Native state 闭合 GLES1/GLES2
+  context ownership 与 renderer policy；HLE 改为 dense descriptor、route/function-id、
+  sealed dispatch 与固定 `A32CallFrame`；GPU trace 改为 2048 项 raw ring，guest C string
+  改为 page-aware scan，GuestTransfer 以映射世代票据去除重复验证。Windows/MSVC
+  warnings-as-errors 构建与 full CTest 506/506 通过；Asphalt 6 exact 未退回旧 mixed draw。
 - [WU-0379] guest transfer 错误新增 `module!symbol`、寄存器、attribute provenance 与
   GLES1/GLES2 buffer binding 诊断。exact 将 null pointer 收敛到共同 `glBindBuffer`
   状态分裂，而非 guest 坏指针；full CTest 497/497。
@@ -69,8 +73,8 @@ Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实�
 
 ## 下一步（按优先级）
 
-1. 统一同一 ANGLE context 下 GLES1/GLES2 的共同 buffer binding 事实，使 VBO offset 0
-   不再被 client staging 误判；随后继续 license/VFS/媒体与主界面 Scenario 三轮 gate。
+1. 修复 Asphalt 6 Profile native call 5 的 static class reference 发布/解析，再继续
+   license/VFS/媒体与主界面 Scenario 三轮 gate。
 
 ## 阻塞
 

@@ -150,7 +150,8 @@ TEST_CASE("guest C string scan is page aware bounded and fault precise") {
     CHECK(memory.CStringLength(first.Add(17U), 1U, 91) == 0U);
 
     memory.Protect({second, page}, ogplay::memory::PageProtection::none);
-    CHECK_THROWS_AS(memory.CStringLength(crossing, 2U, 92),
+    CHECK_THROWS_AS(static_cast<void>(
+                        memory.CStringLength(crossing, 2U, 92)),
                     std::length_error);
     try {
         static_cast<void>(memory.CStringLength(crossing, 4U, 93));
@@ -162,6 +163,6 @@ TEST_CASE("guest C string scan is page aware bounded and fault precise") {
               ogplay::memory::FaultReason::permission_denied);
         CHECK(fault.ThreadId() == 93U);
     }
-    CHECK_THROWS_AS(memory.CStringLength(first, 0U, 94),
+    CHECK_THROWS_AS(static_cast<void>(memory.CStringLength(first, 0U, 94)),
                     std::length_error);
 }

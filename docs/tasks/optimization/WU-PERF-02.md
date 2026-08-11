@@ -8,4 +8,4 @@
 - [x] GLES cstring、Bionic strlen、HLE shader/name 与 JNI name/descriptor 共用该 API。
 - [x] 成功扫描后按精确长度一次读取字符串内容，不再每字符 Read/lock/validate。
 - [x] 测试覆盖页内 NUL、跨页 NUL、上限、权限 fault 和线程 id。
-- [ ] PERF 阶段统一构建与测试。
+- [x] PERF 阶段 `windows-msvc` 构建与 full CTest 506/506。

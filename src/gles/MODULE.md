@@ -38,10 +38,11 @@
   分别核对 GLES1.1 core 145 项与 GLES2 core 142 项入口集合。
 - header subset 模式只允许目录声明固定 header 中真实存在的入口，用于隔离的标准扩展
   catalog；首个 GLES1 扩展目录覆盖 `GL_OES_matrix_palette` 的 3 个目标所需入口。
-- `GuestBuffer::Prepare`：依据 input/output/inout 对完整 guest 区间预检权限，并建立有大小
-  上限的宿主暂存；输出只能显式 `Commit`，对象不可复制。
+- `GuestBuffer::Prepare`：input 由单次 Read 完成验证与复制；output/inout 在 ANGLE 前取得
+  带映射世代的 write preflight 并建立有大小上限的宿主暂存；输出只能显式 `Commit`，
+  映射未变化时不得重复验证，变化时必须重新验证并 fail closed，对象不可复制。
 - `PrepareGuestInput`：对重复 input 搬运复用调用方暂存高水位容量，返回精确长度 span；
-  每次调用仍完整预检并重新读取 guest 内容，禁止把暂存容量复用误作内容缓存。
+  每次调用仍由单次 Read 完整验证并重新读取 guest 内容，禁止把暂存容量复用误作内容缓存。
 - `GlesDispatchTable`：从生成目录提供 142 个稳定 GLES2 thunk ID、精确名称/形状查询和
   显式 handler 绑定；未绑定调用抛错并累计可查询线程命中。
 - `GlesFunctionCount/FindGlesFunction/DescribeGlesFunction`：以显式 API 选择查询隔离的

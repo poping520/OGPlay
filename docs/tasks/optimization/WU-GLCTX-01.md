@@ -9,6 +9,6 @@ active texture 的权威状态。
 - [x] GLES1/GLES2 transfer resolver 读取同一 `GlesTransferState`。
 - [x] buffer、pack/unpack alignment 与 active texture 均在 native 调用成功后提交。
 - [x] mixed draw 的 VBO offset 0 不再因两份 buffer binding 而误判为 null client pointer。
-- [ ] GLCTX 阶段统一构建与测试。
+- [x] GLCTX 阶段统一构建与测试；最终 `windows-msvc` full CTest 506/506。
 
 非目标：texture object metadata、FBO/raster 与 fixed draw native state 由后续 WU 迁移。

@@ -38,8 +38,6 @@ std::span<const std::byte> PrepareGuestInput(
         return std::span<const std::byte>{};
     }
 
-    const memory::GuestRange range(address, size);
-    memory.Validate(range, memory::AccessType::read, thread_id);
     const auto host_size = static_cast<std::size_t>(size);
     if (storage.size() < host_size) {
         storage.resize(host_size);
@@ -60,28 +58,28 @@ GuestBuffer GuestBuffer::Prepare(memory::AddressSpace& memory,
         if (!nullable) {
             throw GuestTransferError("required guest pointer is null");
         }
-        return GuestBuffer(memory, address, size, direction, thread_id, true, {});
+        return GuestBuffer(memory, address, size, direction, thread_id, true,
+                           {}, std::nullopt);
     }
     if (size > size_limit || size > std::numeric_limits<std::size_t>::max()) {
         throw GuestTransferError("guest transfer exceeds configured size limit");
     }
     if (size == 0) {
-        return GuestBuffer(memory, address, size, direction, thread_id, false, {});
+        return GuestBuffer(memory, address, size, direction, thread_id, false,
+                           {}, std::nullopt);
     }
 
     const memory::GuestRange range(address, size);
-    if (ReadsGuest(direction)) {
-        memory.Validate(range, memory::AccessType::read, thread_id);
-    }
+    std::optional<memory::ValidatedGuestWrite> write_validation;
     if (WritesGuest(direction)) {
-        memory.Validate(range, memory::AccessType::write, thread_id);
+        write_validation = memory.PreflightWrite(range, thread_id);
     }
     std::vector<std::byte> bytes(static_cast<std::size_t>(size));
     if (ReadsGuest(direction)) {
         memory.Read(address, bytes, thread_id);
     }
     return GuestBuffer(memory, address, size, direction, thread_id, false,
-                       std::move(bytes));
+                       std::move(bytes), std::move(write_validation));
 }
 
 GuestBuffer::GuestBuffer(memory::AddressSpace& memory,
@@ -89,9 +87,12 @@ GuestBuffer::GuestBuffer(memory::AddressSpace& memory,
                          const std::uint64_t size,
                          const GuestTransferDirection direction,
                          const std::uint64_t thread_id, const bool is_null,
-                         std::vector<std::byte> bytes) noexcept
+                         std::vector<std::byte> bytes,
+                         std::optional<memory::ValidatedGuestWrite>
+                             write_validation) noexcept
     : memory_(&memory), address_(address), size_(size), direction_(direction),
-      thread_id_(thread_id), is_null_(is_null), bytes_(std::move(bytes)) {}
+      thread_id_(thread_id), is_null_(is_null), bytes_(std::move(bytes)),
+      write_validation_(std::move(write_validation)) {}
 
 bool GuestBuffer::IsNull() const noexcept {
     return is_null_;
@@ -128,9 +129,11 @@ void GuestBuffer::Commit() {
         throw GuestTransferError("guest buffer was already committed");
     }
     if (!is_null_ && size_ != 0) {
-        const memory::GuestRange range(address_, size_);
-        memory_->Validate(range, memory::AccessType::write, thread_id_);
-        memory_->Write(address_, bytes_, thread_id_);
+        if (!write_validation_.has_value()) {
+            throw std::logic_error(
+                "guest output buffer has no write preflight");
+        }
+        memory_->WritePrevalidated(*write_validation_, bytes_);
     }
     committed_ = true;
 }

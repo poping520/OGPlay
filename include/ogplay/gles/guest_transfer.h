@@ -2,15 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <vector>
 
-#include "ogplay/memory/address.h"
-
-namespace ogplay::memory {
-class AddressSpace;
-}
+#include "ogplay/memory/address_space.h"
 
 namespace ogplay::gles {
 
@@ -56,7 +53,8 @@ private:
     GuestBuffer(memory::AddressSpace& memory, memory::GuestAddress address,
                 std::uint64_t size, GuestTransferDirection direction,
                 std::uint64_t thread_id, bool is_null,
-                std::vector<std::byte> bytes) noexcept;
+                std::vector<std::byte> bytes,
+                std::optional<memory::ValidatedGuestWrite> write_validation) noexcept;
 
     memory::AddressSpace* memory_{};
     memory::GuestAddress address_{};
@@ -66,6 +64,7 @@ private:
     bool is_null_{};
     bool committed_{};
     std::vector<std::byte> bytes_;
+    std::optional<memory::ValidatedGuestWrite> write_validation_;
 };
 
 }  // namespace ogplay::gles

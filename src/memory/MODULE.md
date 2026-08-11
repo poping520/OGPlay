@@ -14,6 +14,9 @@
   不会被误判为未映射；固定宽度标量访问在一次锁内完成验证与小端搬运；
   `CStringLength` 在一次锁内逐 guest 页验证并对连续宿主字节使用 `memchr`，越界页仍发布
   精确 fault。
+- `PreflightWrite` 返回绑定地址、大小、线程与映射世代的不可伪造票据；
+  `WritePrevalidated` 只在世代未变化时省略重复权限验证，映射或权限变化后必须在写入前
+  重新验证。
 - `MemoryFault`：携带 guest 地址、访问类型、失败原因和 guest 线程 ID。
 - `MemoryBus`：CPU 只依赖的 8/16/32/64 位小端数据访存及 16/32 位取指接口。
 - `CheckedMemoryBus`：完整权限验证和观察器钩子的 soft-MMU 调试后端。

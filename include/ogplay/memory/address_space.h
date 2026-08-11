@@ -64,6 +64,24 @@ private:
     std::uint64_t thread_id_;
 };
 
+class ValidatedGuestWrite final {
+public:
+    ValidatedGuestWrite() = default;
+
+private:
+    ValidatedGuestWrite(GuestAddress address, std::uint64_t size,
+                        std::uint64_t generation,
+                        std::uint64_t thread_id) noexcept
+        : address_(address), size_(size), generation_(generation),
+          thread_id_(thread_id) {}
+
+    GuestAddress address_{};
+    std::uint64_t size_{};
+    std::uint64_t generation_{};
+    std::uint64_t thread_id_{};
+    friend class AddressSpace;
+};
+
 class AddressSpace final {
 public:
     AddressSpace();
@@ -88,6 +106,10 @@ public:
                std::uint64_t thread_id = 0) const;
     void Write(GuestAddress address, std::span<const std::byte> source,
                std::uint64_t thread_id = 0);
+    [[nodiscard]] ValidatedGuestWrite PreflightWrite(
+        const GuestRange& range, std::uint64_t thread_id = 0) const;
+    void WritePrevalidated(const ValidatedGuestWrite& validation,
+                           std::span<const std::byte> source);
     [[nodiscard]] std::size_t CStringLength(
         GuestAddress address, std::size_t maximum_bytes,
         std::uint64_t thread_id = 0) const;

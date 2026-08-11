@@ -82,6 +82,30 @@ TEST_CASE("guest output transfer does not read and commits explicitly") {
                                std::byte{0x40}});
 }
 
+TEST_CASE("guest output commit revalidates when mappings change after preflight") {
+    ogplay::memory::AddressSpace memory;
+    memory.Map({kStart, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    auto buffer = ogplay::gles::GuestBuffer::Prepare(
+        memory, kStart, 4U, ogplay::gles::GuestTransferDirection::output,
+        false, 47U);
+    buffer.WritableBytes()[0] = std::byte{0x7f};
+    memory.Protect({kStart, memory.PageSize()},
+                   ogplay::memory::PageProtection::read);
+    try {
+        buffer.Commit();
+        FAIL("commit after write permission removal did not fault");
+    } catch (const ogplay::memory::MemoryFault& fault) {
+        CHECK(fault.Address() == kStart);
+        CHECK(fault.Access() == ogplay::memory::AccessType::write);
+        CHECK(fault.Reason() ==
+              ogplay::memory::FaultReason::permission_denied);
+        CHECK(fault.ThreadId() == 47U);
+    }
+    CHECK_FALSE(buffer.IsCommitted());
+}
+
 TEST_CASE("guest inout transfer preflights both permissions") {
     ogplay::memory::AddressSpace memory;
     memory.Map({kStart, memory.PageSize()},

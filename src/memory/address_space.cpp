@@ -85,6 +85,7 @@ public:
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
         std::fill(mapped_.begin() + first, mapped_.begin() + last, true);
         UpdateDirectPages(first, last);
+        ++mapping_generation_;
     }
 
     void Protect(const GuestRange& range, const PageProtection protection) {
@@ -95,6 +96,7 @@ public:
         RequireMapped(range, first, last, AccessType::read, 0);
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
         UpdateDirectPages(first, last);
+        ++mapping_generation_;
     }
 
     void Unmap(const GuestRange& range) {
@@ -108,6 +110,7 @@ public:
         std::fill(mapped_.begin() + first, mapped_.begin() + last, false);
         UpdateDirectPages(first, last);
         ReleaseUnusedHostBacking(range);
+        ++mapping_generation_;
     }
 
     void Validate(const GuestRange& range, const AccessType access,
@@ -159,6 +162,27 @@ public:
         std::scoped_lock lock(mutex_);
         ValidateLocked(range, AccessType::write, thread_id);
         std::memcpy(reservation_->Base() + address.Value(), source.data(), source.size());
+    }
+
+    [[nodiscard]] std::uint64_t PreflightWrite(
+        const GuestRange& range, const std::uint64_t thread_id) const {
+        std::scoped_lock lock(mutex_);
+        ValidateLocked(range, AccessType::write, thread_id);
+        return mapping_generation_;
+    }
+
+    void WritePrevalidated(const GuestAddress address,
+                           const std::span<const std::byte> source,
+                           const std::uint64_t expected_generation,
+                           const std::uint64_t thread_id) {
+        if (source.empty()) return;
+        const GuestRange range(address, source.size());
+        std::scoped_lock lock(mutex_);
+        if (mapping_generation_ != expected_generation) {
+            ValidateLocked(range, AccessType::write, thread_id);
+        }
+        std::memcpy(reservation_->Base() + address.Value(), source.data(),
+                    source.size());
     }
 
     [[nodiscard]] std::size_t CStringLength(
@@ -313,6 +337,7 @@ public:
         mapped_.swap(replacement_mapped);
         host_committed_.swap(replacement_host_committed);
         UpdateDirectPages(0, static_cast<PageIterator>(pages_.size()));
+        ++mapping_generation_;
     }
 
 private:
@@ -465,6 +490,7 @@ private:
     std::vector<bool> host_committed_;
     std::unique_ptr<DirectMemoryPageTable> direct_page_table_;
     mutable std::mutex mutex_;
+    std::uint64_t mapping_generation_{};
 };
 
 AddressSpace::AddressSpace() : impl_(std::make_unique<Impl>()) {}
@@ -503,6 +529,22 @@ void AddressSpace::Write(const GuestAddress address,
                          const std::span<const std::byte> source,
                          const std::uint64_t thread_id) {
     impl_->Write(address, source, thread_id);
+}
+ValidatedGuestWrite AddressSpace::PreflightWrite(
+    const GuestRange& range, const std::uint64_t thread_id) const {
+    return ValidatedGuestWrite(
+        range.Start(), range.Size(), impl_->PreflightWrite(range, thread_id),
+        thread_id);
+}
+void AddressSpace::WritePrevalidated(
+    const ValidatedGuestWrite& validation,
+    const std::span<const std::byte> source) {
+    if (validation.size_ != source.size()) {
+        throw std::invalid_argument(
+            "prevalidated guest write size does not match its source");
+    }
+    impl_->WritePrevalidated(validation.address_, source,
+                             validation.generation_, validation.thread_id_);
 }
 std::size_t AddressSpace::CStringLength(
     const GuestAddress address, const std::size_t maximum_bytes,

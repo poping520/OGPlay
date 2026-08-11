@@ -206,6 +206,47 @@ TEST_CASE("GLES1 shade model state validates and resets") {
     CHECK_FALSE(state.GenerateMipmapEnabled(0x0DE1U));
 }
 
+TEST_CASE("Android boundary shares GLES object namespace and texture state") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
+
+    const auto names = fixture.output;
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGenTextures",
+                                   {1U, names.Value()}));
+    const auto from_gles1 = fixture.bus.Read32(names, 1);
+    REQUIRE(from_gles1 != 0U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glActiveTexture",
+                                   {0x84C1U}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindTexture",
+                                   {0x0DE1U, from_gles1}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                                   {0x8069U, names.Add(8U).Value()}));
+    CHECK(fixture.bus.Read32(names.Add(8U), 1) == from_gles1);
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenTextures",
+                                   {1U, names.Add(4U).Value()}));
+    const auto from_gles2 = fixture.bus.Read32(names.Add(4U), 1);
+    REQUIRE(from_gles2 != 0U);
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glBindTexture",
+                                   {0x0DE1U, from_gles2}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                                   {0x8069U, names.Add(8U).Value()}));
+    CHECK(fixture.bus.Read32(names.Add(8U), 1) == from_gles2);
+
+    fixture.bus.Write32(names.Add(12U), from_gles2, 1);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glDeleteTextures",
+                                   {1U, names.Add(12U).Value()}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                                   {0x8069U, names.Add(8U).Value()}));
+    CHECK(fixture.bus.Read32(names.Add(8U), 1) == 0U);
+
+    fixture.bus.Write32(names.Add(12U), from_gles1, 1);
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDeleteTextures",
+                                   {1U, names.Add(12U).Value()}));
+    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+}
+
 TEST_CASE("GLES1 matrix state composes and bounds stacks") {
     ogplay::runtime::detail::AndroidBoundaryGles1MatrixState matrices;
     CHECK(matrices.Mode() == ogplay::runtime::detail::kGles1Modelview);

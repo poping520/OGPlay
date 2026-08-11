@@ -106,9 +106,6 @@ private:
     std::array<std::uint32_t, 5> hints_{kGles1DontCare, kGles1DontCare,
                                        kGles1DontCare, kGles1DontCare,
                                        kGles1DontCare};
-    std::map<std::uint32_t, std::uint32_t> bound_textures_;
-    std::map<std::uint32_t, std::uint32_t> texture_base_formats_;
-    std::map<std::uint32_t, bool> generate_mipmap_;
     std::map<std::uint64_t, bool> capabilities_;
     AndroidBoundaryGles1MatrixState matrices_;
     std::unique_ptr<AndroidBoundaryGles1FixedState> fixed_;

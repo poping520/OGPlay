@@ -15,6 +15,8 @@
 - 同一 guest EGL current context 下，GLES1 与 GLES2 入口共享同一个
   `GuestGlContext`；buffer binding、pack/unpack alignment 与 active texture 由
   `SharedGlState` 唯一拥有，library origin 只决定 API 语义。
+- texture binding、delete semantics、level-zero base format 与 generate-mipmap metadata
+  同样由 `SharedGlState` 唯一拥有；object name 只由同一个 ANGLE context 生成和删除。
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
 - Android guest call session 只在通用 A32 slice 边界调用显式 observer；observer 由上层

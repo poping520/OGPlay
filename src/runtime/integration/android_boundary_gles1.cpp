@@ -270,9 +270,6 @@ void AndroidBoundaryGles1State::Reset() {
     shade_model_ = kGles1SmoothShadeModel;
     hints_.fill(kGles1DontCare);
     shared_->Reset();
-    bound_textures_.clear();
-    texture_base_formats_.clear();
-    generate_mipmap_.clear();
     capabilities_.clear();
     matrices_.Reset();
     fixed_->Reset();
@@ -316,7 +313,7 @@ std::uint32_t AndroidBoundaryGles1State::Hint(
 void AndroidBoundaryGles1State::SetActiveTexture(
     const std::uint32_t texture) {
     matrices_.SetActiveTexture(texture);
-    shared_->active_texture = texture;
+    shared_->SetActiveTexture(texture);
 }
 
 std::uint32_t AndroidBoundaryGles1State::ActiveTexture() const noexcept {
@@ -328,7 +325,7 @@ void AndroidBoundaryGles1State::BindTexture(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    bound_textures_[shared_->active_texture] = texture;
+    shared_->BindTexture(target, texture);
 }
 
 std::uint32_t AndroidBoundaryGles1State::BoundTexture(
@@ -336,20 +333,12 @@ std::uint32_t AndroidBoundaryGles1State::BoundTexture(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    const auto found = bound_textures_.find(shared_->active_texture);
-    return found == bound_textures_.end() ? 0U : found->second;
+    return shared_->BoundTexture(target);
 }
 
 void AndroidBoundaryGles1State::DeleteTextures(
     const std::span<const std::uint32_t> textures) noexcept {
-    for (const auto texture : textures) {
-        generate_mipmap_.erase(texture);
-        texture_base_formats_.erase(texture);
-        for (auto& [unit, bound] : bound_textures_) {
-            static_cast<void>(unit);
-            if (bound == texture) bound = 0U;
-        }
-    }
+    shared_->DeleteTextures(textures);
 }
 
 void AndroidBoundaryGles1State::SetTextureBaseFormat(
@@ -357,12 +346,12 @@ void AndroidBoundaryGles1State::SetTextureBaseFormat(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    texture_base_formats_[bound_textures_[shared_->active_texture]] = format;
+    shared_->SetTextureBaseFormat(target, format);
 }
 
 std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
     const std::uint32_t target) const {
-    return TextureBaseFormat(shared_->active_texture, target);
+    return shared_->TextureBaseFormat(target);
 }
 
 std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
@@ -374,11 +363,7 @@ std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
         throw std::invalid_argument(
             "GLES1 texture unit is outside GL_TEXTURE0..31");
     }
-    const auto bound = bound_textures_.find(texture_unit);
-    const auto texture = bound == bound_textures_.end() ? 0U : bound->second;
-    const auto found = texture_base_formats_.find(texture);
-    if (found == texture_base_formats_.end()) return std::nullopt;
-    return found->second;
+    return shared_->TextureBaseFormat(texture_unit, target);
 }
 
 void AndroidBoundaryGles1State::SetGenerateMipmap(
@@ -386,7 +371,7 @@ void AndroidBoundaryGles1State::SetGenerateMipmap(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    generate_mipmap_[bound_textures_[shared_->active_texture]] = enabled;
+    shared_->SetGenerateMipmap(target, enabled);
 }
 
 bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
@@ -394,10 +379,7 @@ bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    const auto bound = bound_textures_.find(shared_->active_texture);
-    const auto texture = bound == bound_textures_.end() ? 0U : bound->second;
-    const auto found = generate_mipmap_.find(texture);
-    return found != generate_mipmap_.end() && found->second;
+    return shared_->GenerateMipmapEnabled(target);
 }
 
 void AndroidBoundaryGles1State::SetCapability(

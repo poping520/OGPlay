@@ -136,6 +136,7 @@ public:
                 }
             } else if (symbol == "glDeleteTextures") {
                 RequireFrame(frame, symbol).DeleteTextures(names);
+                context_.Shared().DeleteTextures(names);
             } else if (symbol == "glDeleteFramebuffers") {
                 RequireFrame(frame, symbol).DeleteFramebuffers(names);
             } else {
@@ -158,12 +159,17 @@ public:
             return 0;
         }
         if (symbol == "glActiveTexture") {
+            auto next = context_.Shared();
+            next.SetActiveTexture(args[0]);
             RequireFrame(frame, symbol).ActiveTexture(args[0]);
-            context_.Shared().active_texture = args[0];
+            context_.Shared().SetActiveTexture(args[0]);
             return 0;
         }
         if (symbol == "glBindTexture") {
+            auto next = context_.Shared();
+            next.BindTexture(args[0], args[1]);
             RequireFrame(frame, symbol).BindTexture(args[0], args[1]);
+            context_.Shared().BindTexture(args[0], args[1]);
             return 0;
         }
         if (symbol == "glBindFramebuffer") {
@@ -226,6 +232,9 @@ public:
                 std::bit_cast<std::int32_t>(all[4]),
                 std::bit_cast<std::int32_t>(all[5]), all[6], all[7],
                 OptionalBytes(pixels));
+            if (std::bit_cast<std::int32_t>(all[1]) == 0) {
+                context_.Shared().SetTextureBaseFormat(all[0], all[2]);
+            }
             return 0;
         }
         if (symbol == "glTexSubImage2D") {

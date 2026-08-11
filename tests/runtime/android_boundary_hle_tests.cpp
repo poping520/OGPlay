@@ -388,6 +388,115 @@ TEST_CASE("Android boundary shares GLES object namespace and texture state") {
     CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
 }
 
+TEST_CASE("GLES2 active texture selects the GLES1 texture matrix unit") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
+    const auto output = fixture.output;
+
+    CHECK(fixture.Call("libGLESv2.so", "glActiveTexture", {0x84C1U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glMatrixMode",
+                       {ogplay::runtime::detail::kGles1Texture}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glLoadIdentity") == 0U);
+    CHECK(fixture.Call(
+              "libGLESv1_CM.so", "glTranslatef",
+              {std::bit_cast<std::uint32_t>(1.0F),
+               std::bit_cast<std::uint32_t>(2.0F),
+               std::bit_cast<std::uint32_t>(3.0F)}) == 0U);
+
+    CHECK(fixture.Call("libGLESv1_CM.so", "glActiveTexture", {0x84C0U}) ==
+          0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetFloatv",
+                       {0x0BA8U, output.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(output.Add(48U), 1U)) ==
+          doctest::Approx(0.0F));
+
+    CHECK(fixture.Call("libGLESv1_CM.so", "glActiveTexture", {0x84C1U}) ==
+          0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetFloatv",
+                       {0x0BA8U, output.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(output.Add(48U), 1U)) ==
+          doctest::Approx(1.0F));
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(output.Add(52U), 1U)) ==
+          doctest::Approx(2.0F));
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(output.Add(56U), 1U)) ==
+          doctest::Approx(3.0F));
+    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+}
+
+TEST_CASE("shared texture bindings preserve independent GLES2 targets") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
+    const auto output = fixture.output;
+    CHECK(fixture.Call("libGLESv2.so", "glGenTextures",
+                       {3U, output.Value()}) == 0U);
+    const auto texture_2d = fixture.bus.Read32(output, 1U);
+    const auto texture_cube = fixture.bus.Read32(output.Add(4U), 1U);
+    const auto texture_gles1 = fixture.bus.Read32(output.Add(8U), 1U);
+    REQUIRE(texture_2d != 0U);
+    REQUIRE(texture_cube != 0U);
+    REQUIRE(texture_gles1 != 0U);
+
+    CHECK(fixture.Call("libGLESv2.so", "glActiveTexture", {0x84C0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindTexture",
+                       {0x0DE1U, texture_2d}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindTexture",
+                       {0x8513U, texture_cube}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x8069U, output.Add(32U).Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x8514U, output.Add(36U).Value()}) == 0U);
+    CHECK(fixture.bus.Read32(output.Add(32U), 1U) == texture_2d);
+    CHECK(fixture.bus.Read32(output.Add(36U), 1U) == texture_cube);
+
+    CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
+                       {0x0DE1U, texture_gles1}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x8069U, output.Add(32U).Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x8514U, output.Add(36U).Value()}) == 0U);
+    CHECK(fixture.bus.Read32(output.Add(32U), 1U) == texture_gles1);
+    CHECK(fixture.bus.Read32(output.Add(36U), 1U) == texture_cube);
+
+    fixture.bus.Write32(output.Add(16U), texture_cube, 1U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glDeleteTextures",
+                       {1U, output.Add(16U).Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x8069U, output.Add(32U).Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x8514U, output.Add(36U).Value()}) == 0U);
+    CHECK(fixture.bus.Read32(output.Add(32U), 1U) == texture_gles1);
+    CHECK(fixture.bus.Read32(output.Add(36U), 1U) == 0U);
+
+    ogplay::runtime::SharedGlState metadata;
+    metadata.BindTexture(0x0DE1U, 41U);
+    metadata.SetTextureBaseFormat(0x0DE1U, 0x1908U);
+    metadata.SetGenerateMipmap(0x0DE1U, true);
+    metadata.BindTexture(0x8513U, 42U);
+    metadata.SetTextureBaseFormat(0x8513U, 0x1907U);
+    metadata.SetGenerateMipmap(0x8513U, true);
+    metadata.SetActiveTexture(0x84C1U);
+    metadata.BindTexture(0x0DE1U, 42U);
+    metadata.BindTexture(0x8513U, 42U);
+    metadata.SetActiveTexture(0x84C0U);
+    CHECK(metadata.TextureBaseFormat(0x0DE1U) == 0x1908U);
+    CHECK(metadata.TextureBaseFormat(0x8513U) == 0x1907U);
+    CHECK(metadata.GenerateMipmapEnabled(0x0DE1U));
+    CHECK(metadata.GenerateMipmapEnabled(0x8513U));
+    const std::array deleted_cube{42U};
+    metadata.DeleteTextures(deleted_cube);
+    CHECK(metadata.BoundTexture(0x0DE1U) == 41U);
+    CHECK(metadata.BoundTexture(0x8513U) == 0U);
+    CHECK(metadata.BoundTexture(0x84C1U, 0x0DE1U) == 0U);
+    CHECK(metadata.BoundTexture(0x84C1U, 0x8513U) == 0U);
+    CHECK(metadata.TextureBaseFormat(0x0DE1U) == 0x1908U);
+    CHECK_FALSE(metadata.TextureBaseFormat(0x8513U).has_value());
+    CHECK(metadata.GenerateMipmapEnabled(0x0DE1U));
+    CHECK_FALSE(metadata.GenerateMipmapEnabled(0x8513U));
+    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+}
+
 TEST_CASE("Android boundary shares framebuffer raster and capability state") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;
@@ -427,8 +536,47 @@ TEST_CASE("Android boundary shares framebuffer raster and capability state") {
     CHECK(fixture.Call("libGLESv2.so", "glIsEnabled", {0x0BE2U}) == 0U);
 }
 
+TEST_CASE("supersample cross API queries preserve logical raster state") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture(2U);
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
+    const auto output = fixture.output;
+
+    CHECK(fixture.Call("libGLESv1_CM.so", "glViewport",
+                       {1U, 2U, 100U, 200U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x0BA2U, output.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(output, 1U) == 1U);
+    CHECK(fixture.bus.Read32(output.Add(4U), 1U) == 2U);
+    CHECK(fixture.bus.Read32(output.Add(8U), 1U) == 100U);
+    CHECK(fixture.bus.Read32(output.Add(12U), 1U) == 200U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                       {0x0BA2U, output.Add(32U).Value()}) == 0U);
+    CHECK(fixture.bus.Read32(output.Add(32U), 1U) == 1U);
+    CHECK(fixture.bus.Read32(output.Add(36U), 1U) == 2U);
+    CHECK(fixture.bus.Read32(output.Add(40U), 1U) == 100U);
+    CHECK(fixture.bus.Read32(output.Add(44U), 1U) == 200U);
+
+    CHECK(fixture.Call("libGLESv2.so", "glScissor",
+                       {3U, 4U, 50U, 60U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                       {0x0C10U, output.Add(16U).Value()}) == 0U);
+    CHECK(fixture.bus.Read32(output.Add(16U), 1U) == 3U);
+    CHECK(fixture.bus.Read32(output.Add(20U), 1U) == 4U);
+    CHECK(fixture.bus.Read32(output.Add(24U), 1U) == 50U);
+    CHECK(fixture.bus.Read32(output.Add(28U), 1U) == 60U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x0C10U, output.Add(48U).Value()}) == 0U);
+    CHECK(fixture.bus.Read32(output.Add(48U), 1U) == 3U);
+    CHECK(fixture.bus.Read32(output.Add(52U), 1U) == 4U);
+    CHECK(fixture.bus.Read32(output.Add(56U), 1U) == 50U);
+    CHECK(fixture.bus.Read32(output.Add(60U), 1U) == 60U);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+}
+
 TEST_CASE("GLES1 matrix state composes and bounds stacks") {
-    ogplay::runtime::detail::AndroidBoundaryGles1MatrixState matrices;
+    ogplay::runtime::SharedGlState shared;
+    ogplay::runtime::detail::AndroidBoundaryGles1MatrixState matrices(shared);
     CHECK(matrices.Mode() == ogplay::runtime::detail::kGles1Modelview);
     CHECK(matrices.StackDepth(ogplay::runtime::detail::kGles1Modelview) == 1U);
     CHECK(matrices.Current()[0] == 1.0F);
@@ -466,9 +614,9 @@ TEST_CASE("GLES1 matrix state composes and bounds stacks") {
         ogplay::runtime::detail::Gles1TransformClipPlane(singular, plane),
         "GLES1 clip-plane modelview matrix is singular", std::invalid_argument);
     matrices.SetMode(ogplay::runtime::detail::kGles1Texture);
-    matrices.SetActiveTexture(0x84C0U);
+    shared.SetActiveTexture(0x84C0U);
     matrices.Translate(0.25F, 0.0F, 0.0F);
-    matrices.SetActiveTexture(0x84C1U);
+    shared.SetActiveTexture(0x84C1U);
     CHECK(matrices.Current()[12] == 0.0F);
     matrices.Translate(0.5F, 0.0F, 0.0F);
     CHECK(matrices.Current(ogplay::runtime::detail::kGles1Texture,
@@ -476,8 +624,8 @@ TEST_CASE("GLES1 matrix state composes and bounds stacks") {
     CHECK(matrices.Current(ogplay::runtime::detail::kGles1Texture,
                            0x84C1U)[12] == 0.5F);
     CHECK_THROWS_WITH_AS(
-        matrices.SetActiveTexture(0U),
-        "GLES1 texture unit is outside GL_TEXTURE0..31",
+        shared.SetActiveTexture(0U),
+        "shared GL texture unit is outside GL_TEXTURE0..31",
         std::invalid_argument);
     const ogplay::runtime::detail::Gles1Matrix invalid{
         std::numeric_limits<float>::quiet_NaN()};

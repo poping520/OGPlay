@@ -1,7 +1,7 @@
 #include "ogplay/runtime/integration/guest_gl_context.h"
 
-#include <stdexcept>
 #include <algorithm>
+#include <stdexcept>
 
 namespace ogplay::runtime {
 
@@ -10,26 +10,30 @@ namespace {
 constexpr std::uint32_t kTexture0 = 0x84C0U;
 constexpr std::uint32_t kTexture31 = 0x84DFU;
 constexpr std::uint32_t kTexture2d = 0x0DE1U;
+constexpr std::uint32_t kTextureCubeMap = 0x8513U;
 
-void ValidateTextureTarget(const std::uint32_t target) {
-    if (target != kTexture2d) {
-        throw std::invalid_argument("shared GL texture target must be GL_TEXTURE_2D");
+[[nodiscard]] std::uint32_t TextureBindingTargetForMetadata(
+    const std::uint32_t target) {
+    if (target >= 0x8515U && target <= 0x851AU) {
+        return kTextureCubeMap;
     }
+    if (target == kTexture2d || target == kTextureCubeMap) return target;
+    throw std::invalid_argument("shared GL texture metadata target is invalid");
 }
 
-void ValidateFramebufferTarget(const std::uint32_t target) {
+void RequireFramebufferTarget(const std::uint32_t target) {
     if (target != 0x8D40U) {
         throw std::invalid_argument("shared GL framebuffer target is invalid");
     }
 }
 
-void ValidateRenderbufferTarget(const std::uint32_t target) {
+void RequireRenderbufferTarget(const std::uint32_t target) {
     if (target != 0x8D41U) {
         throw std::invalid_argument("shared GL renderbuffer target is invalid");
     }
 }
 
-void ValidateCommonCapability(const std::uint32_t capability) {
+void RequireCommonCapability(const std::uint32_t capability) {
     switch (capability) {
     case 0x0BE2U: case 0x0B44U: case 0x0B71U: case 0x0BD0U:
     case 0x8037U: case 0x809EU: case 0x80A0U: case 0x0C11U:
@@ -42,17 +46,27 @@ void ValidateCommonCapability(const std::uint32_t capability) {
 
 }  // namespace
 
-void SharedGlState::SetActiveTexture(const std::uint32_t texture) {
+void SharedGlState::ValidateActiveTexture(const std::uint32_t texture) const {
     if (texture < kTexture0 || texture > kTexture31) {
         throw std::invalid_argument("shared GL texture unit is outside GL_TEXTURE0..31");
     }
+}
+
+void SharedGlState::SetActiveTexture(const std::uint32_t texture) {
+    ValidateActiveTexture(texture);
     active_texture = texture;
+}
+
+void SharedGlState::ValidateTextureTarget(const std::uint32_t target) const {
+    if (target != kTexture2d && target != kTextureCubeMap) {
+        throw std::invalid_argument("shared GL texture target is invalid");
+    }
 }
 
 void SharedGlState::BindTexture(const std::uint32_t target,
                                 const std::uint32_t texture) {
     ValidateTextureTarget(target);
-    bound_textures_[active_texture] = texture;
+    bound_textures_[{active_texture, target}] = texture;
 }
 
 std::uint32_t SharedGlState::BoundTexture(const std::uint32_t target) const {
@@ -65,17 +79,21 @@ std::uint32_t SharedGlState::BoundTexture(
     if (texture_unit < kTexture0 || texture_unit > kTexture31) {
         throw std::invalid_argument("shared GL texture unit is outside GL_TEXTURE0..31");
     }
-    const auto found = bound_textures_.find(texture_unit);
+    const auto found = bound_textures_.find({texture_unit, target});
     return found == bound_textures_.end() ? 0U : found->second;
 }
 
 void SharedGlState::DeleteTextures(
     const std::span<const std::uint32_t> textures) noexcept {
     for (const auto texture : textures) {
-        generate_mipmap_.erase(texture);
-        texture_base_formats_.erase(texture);
-        for (auto& [unit, bound] : bound_textures_) {
-            static_cast<void>(unit);
+        std::erase_if(generate_mipmap_, [texture](const auto& entry) {
+            return entry.first.texture == texture;
+        });
+        std::erase_if(texture_base_formats_, [texture](const auto& entry) {
+            return entry.first.texture == texture;
+        });
+        for (auto& [binding, bound] : bound_textures_) {
+            static_cast<void>(binding);
             if (bound == texture) bound = 0U;
         }
     }
@@ -83,7 +101,8 @@ void SharedGlState::DeleteTextures(
 
 void SharedGlState::SetTextureBaseFormat(const std::uint32_t target,
                                          const std::uint32_t format) {
-    texture_base_formats_[BoundTexture(target)] = format;
+    const auto binding_target = TextureBindingTargetForMetadata(target);
+    texture_base_formats_[{BoundTexture(binding_target), target}] = format;
 }
 
 std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
@@ -93,26 +112,40 @@ std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
 
 std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
     const std::uint32_t texture_unit, const std::uint32_t target) const {
+    const auto binding_target = TextureBindingTargetForMetadata(target);
     const auto found = texture_base_formats_.find(
-        BoundTexture(texture_unit, target));
+        {BoundTexture(texture_unit, binding_target), target});
     if (found == texture_base_formats_.end()) return std::nullopt;
     return found->second;
 }
 
 void SharedGlState::SetGenerateMipmap(const std::uint32_t target,
                                       const bool enabled) {
-    generate_mipmap_[BoundTexture(target)] = enabled;
+    const auto binding_target = TextureBindingTargetForMetadata(target);
+    generate_mipmap_[{BoundTexture(binding_target), target}] = enabled;
 }
 
 bool SharedGlState::GenerateMipmapEnabled(const std::uint32_t target) const {
-    const auto found = generate_mipmap_.find(BoundTexture(target));
+    const auto binding_target = TextureBindingTargetForMetadata(target);
+    const auto found = generate_mipmap_.find(
+        {BoundTexture(binding_target), target});
     return found != generate_mipmap_.end() && found->second;
+}
+
+void SharedGlState::ValidateFramebufferTarget(
+    const std::uint32_t target) const {
+    RequireFramebufferTarget(target);
 }
 
 void SharedGlState::BindFramebuffer(const std::uint32_t target,
                                     const std::uint32_t framebuffer) {
     ValidateFramebufferTarget(target);
     framebuffer_ = framebuffer;
+}
+
+void SharedGlState::ValidateRenderbufferTarget(
+    const std::uint32_t target) const {
+    RequireRenderbufferTarget(target);
 }
 
 void SharedGlState::BindRenderbuffer(const std::uint32_t target,
@@ -175,14 +208,19 @@ const std::array<float, 4>& SharedGlState::ClearColor() const noexcept {
 float SharedGlState::ClearDepth() const noexcept { return clear_depth_; }
 std::int32_t SharedGlState::ClearStencil() const noexcept { return clear_stencil_; }
 
+void SharedGlState::ValidateCapability(
+    const std::uint32_t capability) const {
+    RequireCommonCapability(capability);
+}
+
 void SharedGlState::SetCapability(const std::uint32_t capability,
                                   const bool enabled) {
-    ValidateCommonCapability(capability);
+    ValidateCapability(capability);
     capabilities_[capability] = enabled;
 }
 
 bool SharedGlState::Capability(const std::uint32_t capability) const {
-    ValidateCommonCapability(capability);
+    ValidateCapability(capability);
     const auto found = capabilities_.find(capability);
     return found != capabilities_.end() && found->second;
 }
@@ -195,7 +233,7 @@ std::uint32_t SharedGlState::CurrentProgram() const noexcept {
     return current_program_;
 }
 
-const std::map<std::uint32_t, std::uint32_t>&
+const std::map<TextureBindingKey, std::uint32_t>&
 SharedGlState::TextureBindings() const noexcept {
     return bound_textures_;
 }

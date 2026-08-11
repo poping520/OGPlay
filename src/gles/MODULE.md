@@ -50,7 +50,8 @@
 - `PrepareGles2Call`：按生成参数目录求值字面量、标量、常量乘法和有界 C 字符串，换算
   元素字节并创建 `GuestBuffer`；复杂表达式经 `GlesLengthResolver` 显式注入。
 - `GlesTransferState`：保存上下文级 pack/unpack 对齐、array/element buffer 绑定及动态查询
-  形状；解析像素、索引和常用查询长度，并把缓冲对象偏移与 client array 标为 deferred。
+  形状；解析像素、索引和常用查询长度（包括 GLES2 cube-map binding query），并把缓冲
+  对象偏移与 client array 标为 deferred。
 - `MakeSupersampleLayout` / `ResolveSupersampledRgba8`：验证 1..4× 渲染尺寸并用确定性
   RGBA8 box filter 还原逻辑帧；拥有型 1× readback 原样转移存储，不重复逐像素 resolve；
   NativeActivity pbuffer、viewport、swap 与 CLI 已接入。
@@ -106,9 +107,11 @@
   延迟到 draw，按实际索引范围经内部 VBO/EBO 暂存后再进入 ANGLE。uniform vector/matrix
   数组按 IDL 形状完整搬运后再转换为宿主标量；shader/program active-variable 与 info-log
   查询来自真实 ANGLE 对象并保留截断/NUL 语义。
-- integer query 与 readback 输出必须先按 IDL/transfer state 预检再调用 ANGLE；draw indices
-  在绑定 element buffer 后作为 offset，未绑定则按 guest 索引完整搬运。查询字符串必须来自
-  ANGLE 并复制到只读 guest 页，禁止返回宿主指针或伪造固定文本。
+- integer query 与 readback 输出必须先按 IDL/transfer state 预检；统一 context 已拥有的
+  logical viewport/scissor 与 target-aware texture binding query 从 shared guest state 返回，
+  其他 native state 再调用 ANGLE。draw indices 在绑定 element buffer 后作为 offset，未绑定
+  则按 guest 索引完整搬运。查询字符串必须来自 ANGLE 并复制到只读 guest 页，禁止返回
+  宿主指针或伪造固定文本。
 - `AngleFrame::DrawArrays` 直接转发 ANGLE；client staging 由 runtime boundary 在调用前完成。
 - texture subimage 像素必须先按 unpack alignment 与真实 format/type 预检，再调用 ANGLE。
 - guest 内存参数先验证再搬运；GL 状态可供 Agent 查询。

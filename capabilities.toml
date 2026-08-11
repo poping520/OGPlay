@@ -88,7 +88,7 @@ note = "M5 WU-0303/0318 与 M8 WU-0378 以纯数据 Profile 闭合身份、1024x
 [profiles.asphalt6_glstore_v132]
 status = "partial"
 test = "tools.title_profiles_current; tests/runtime/android_boundary_hle_tests.cpp; exact APK local bootstrap"
-note = "M8 WU-0360..0379 已越过 JNI_OnLoad、平台 JNI、FBO/state、AudioTrack、shader/uniform 与 client staging；当前 exact nativeInit 确认共同 glBindBuffer 经 GLES1 dispatch 后只留下 gles1_array_buffer=1、gles2_array_buffer=0，使混合 GLES1 draw 转入 GLES2 时把 VBO offset 0 误判为 null client pointer；guest 首帧与主界面 gate 尚未完成"
+note = "M8 WU-0360..0379 与优化验收闭环已越过 JNI_OnLoad、平台 JNI、FBO/state、AudioTrack、shader/uniform、client staging 及旧 mixed GLES buffer/client-pointer 故障；当前 exact Profile native call 5 明确停在 CallStaticIntMethodV class reference，guest 首帧与主界面 gate 尚未完成"
 
 [session.lifecycle_templates]
 status = "complete"
@@ -478,7 +478,7 @@ note = "M4 完成受限长度表达式、类型/二级 guest 指针字节换算�
 [gles.transfer_state]
 status = "complete"
 test = "tests/gles/gles_transfer_state_tests.cpp"
-note = "M4 完成 pack/unpack、array/element buffer 与动态输出形状解析；优化 WU-GLCTX-01..05 将 buffer/texture/FBO/raster/current-program 统一到单一 GuestGlContext，并以 NativeGlState transaction 恢复 fixed draw 污染；像素、索引和常用查询可安全换算，buffer offset 和 client array 显式 deferred"
+note = "M4 完成 pack/unpack、array/element buffer 与动态输出形状解析；优化 WU-GLCTX-01..05 将 buffer/texture/FBO/raster/current-program 统一到单一 GuestGlContext，并以 NativeGlState transaction 恢复 fixed draw 污染；验收闭环补齐 GLES2 cube-map binding 查询形状；像素、索引和常用查询可安全换算，buffer offset 和 client array 显式 deferred"
 
 [gles.angle_frame]
 status = "complete"
@@ -498,7 +498,7 @@ note = "M4 真实 ANGLE 闭合 shader/program 生命周期、源码、编译链�
 [gles.buffer_texture]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 真实 ANGLE 闭合 11 项 buffer/texture handler，名称数组显式回写、资源与像素数据有界搬运，null 分配、unpack 对齐及绑定状态受检"
+note = "M4 真实 ANGLE 闭合 11 项 buffer/texture handler，名称数组显式回写、资源与像素数据有界搬运，null 分配、unpack 对齐及绑定状态受检；优化验收闭环统一 active texture/GLES1 texture matrix，并以 (unit,target) 隔离 2D/cube-map binding、metadata 与跨 API delete"
 
 [gles.framebuffer_resources]
 status = "complete"
@@ -518,12 +518,12 @@ note = "M4 从样例源码核对 42 项 GLES2 调用并全部执行；真实 ANG
 [gles.supersample_resolve]
 status = "complete"
 test = "tests/gles/supersample_tests.cpp"
-note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢出、布局、字节数、方向与舍入；M5 WU-0289 为拥有型 1x readback 保留原存储，消除重复 resolve；已接入 NativeActivity pbuffer/viewport/swap 及 CLI 配置"
+note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢出、布局、字节数、方向与舍入；M5 WU-0289 为拥有型 1x readback 保留原存储，消除重复 resolve；优化验收闭环让 GLES1/GLES2 viewport/scissor query 返回统一 logical state，不泄露 native 放大坐标"
 
 [runtime.android_boundary_hle]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；优化 WU-HLE-01..04 以 dense descriptor 算术 decode、route/function-id、sealed GLES1 dispatch 与一次 bulk stack read 的固定 A32CallFrame 替换字符串/逐字热路径，WU-PERF-01 将 trace 格式化推迟到查询；完整 NDK 与 GLES2 槽仍不在本能力范围"
+note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；优化 WU-HLE-01..04 以 dense descriptor 算术 decode、route/function-id、sealed GLES1 dispatch 与一次 bulk stack read 的固定 A32CallFrame 替换字符串/逐字热路径，WU-PERF-01 将 trace 格式化推迟到查询，验收闭环再以独立 trace mutex 移除 raw recording 对 boundary 主锁的竞争；完整 NDK 与 GLES2 槽仍不在本能力范围"
 
 [runtime.native_activity_session]
 status = "partial"

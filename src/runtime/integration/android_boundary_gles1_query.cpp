@@ -482,14 +482,14 @@ void BindAndroidBoundaryGles1Legacy(
                 case 0x0BA6U:
                 case 0x0BA7U:
                 case 0x0BA8U: {
-                    auto matrices = core.Matrices();
-                    matrices.SetMode(arguments[0] == 0x0BA6U
-                                         ? kGles1Modelview
-                                         : arguments[0] == 0x0BA7U
-                                               ? kGles1Projection
-                                               : kGles1Texture);
-                    values.assign(matrices.Current().begin(),
-                                  matrices.Current().end());
+                    const auto mode = arguments[0] == 0x0BA6U
+                                          ? kGles1Modelview
+                                          : arguments[0] == 0x0BA7U
+                                                ? kGles1Projection
+                                                : kGles1Texture;
+                    const auto& matrix = core.Matrices().Current(
+                        mode, core.ActiveTexture());
+                    values.assign(matrix.begin(), matrix.end());
                     break;
                 }
                 case 0x0B00U:
@@ -513,9 +513,19 @@ void BindAndroidBoundaryGles1Legacy(
         [&legacy, &core, &draw, &address_space, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t thread_id) {
+            std::optional<std::array<std::int32_t, 4>> logical;
+            if (arguments[0] == 0x0BA2U) {
+                logical = core.Shared().Viewport();
+            } else if (arguments[0] == 0x0C10U) {
+                logical = core.Shared().Scissor();
+            }
             auto owned = Gles1ClientArrayInteger(arguments[0], draw, legacy);
-            if (!owned) owned = Gles1OwnedInteger(arguments[0], core, legacy);
-            const auto count = owned.has_value()
+            if (!owned && !logical.has_value()) {
+                owned = Gles1OwnedInteger(arguments[0], core, legacy);
+            }
+            const auto count = logical.has_value()
+                                   ? logical->size()
+                               : owned.has_value()
                                    ? 1U
                                    : NativeIntegerQueryCount(arguments[0]);
             auto output = gles::GuestBuffer::Prepare(
@@ -525,7 +535,10 @@ void BindAndroidBoundaryGles1Legacy(
             auto& frame = require_frame("glGetIntegerv");
             const auto native_pname = arguments[0] == 0x0BE0U ? 0x80C9U :
                                       arguments[0] == 0x0BE1U ? 0x80C8U : arguments[0];
-            const auto values = owned.has_value()
+            const auto values = logical.has_value()
+                                    ? std::vector<std::int32_t>(
+                                          logical->begin(), logical->end())
+                                : owned.has_value()
                                     ? std::vector<std::int32_t>{*owned}
                                     : frame.GetIntegers(native_pname, count);
             WriteGuestIntegers(output, values);

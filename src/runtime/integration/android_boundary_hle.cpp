@@ -300,7 +300,7 @@ public:
     }
     [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
         const std::string_view filter, const std::size_t limit) const {
-        std::scoped_lock lock(mutex_);
+        std::scoped_lock lock(trace_mutex_);
         std::vector<core::GpuTraceEntry> result;
         const auto available = std::min(gpu_trace_count_, gpu_trace_.size());
         result.reserve(std::min(limit, available));
@@ -851,7 +851,7 @@ private:
             descriptor_index > (std::numeric_limits<std::uint16_t>::max)()) {
             throw std::logic_error("GPU trace descriptor is outside its catalog");
         }
-        std::scoped_lock lock(mutex_);
+        std::scoped_lock lock(trace_mutex_);
         gpu_trace_[gpu_trace_write_] = {
             static_cast<std::uint16_t>(descriptor_index), args};
         gpu_trace_write_ = (gpu_trace_write_ + 1U) % gpu_trace_.size();
@@ -881,6 +881,7 @@ private:
     bool managed_surface_{};
     std::uint64_t frame_sequence_{};
     mutable std::mutex mutex_;
+    mutable std::mutex trace_mutex_;
     std::condition_variable ready_;
     std::uint64_t pending_command_writes_{};
     std::uint32_t command_ident_{};

@@ -36,10 +36,10 @@ using Gles1Matrix = std::array<float, 16>;
 
 class AndroidBoundaryGles1MatrixState final {
 public:
-    AndroidBoundaryGles1MatrixState();
+    explicit AndroidBoundaryGles1MatrixState(
+        const SharedGlState& shared);
 
     void Reset();
-    void SetActiveTexture(std::uint32_t texture);
     void SetMode(std::uint32_t mode);
     [[nodiscard]] std::uint32_t Mode() const noexcept;
     void LoadIdentity();
@@ -57,9 +57,10 @@ private:
     [[nodiscard]] std::vector<Gles1Matrix>& CurrentStack() noexcept;
     [[nodiscard]] const std::vector<Gles1Matrix>& Stack(
         std::uint32_t mode, std::uint32_t texture) const;
+    [[nodiscard]] std::uint32_t ActiveTexture() const noexcept;
 
+    const SharedGlState* shared_{};
     std::uint32_t mode_{kGles1Modelview};
-    std::uint32_t active_texture_{0x84C0U};
     std::vector<Gles1Matrix> modelview_;
     std::vector<Gles1Matrix> projection_;
     std::array<std::vector<Gles1Matrix>, 32> textures_;
@@ -77,8 +78,10 @@ public:
     void SetTransferState(gles::GlesTransferState state) noexcept;
     void SetHint(std::uint32_t target, std::uint32_t mode);
     [[nodiscard]] std::uint32_t Hint(std::uint32_t target) const;
+    void ValidateActiveTexture(std::uint32_t texture) const;
     void SetActiveTexture(std::uint32_t texture);
     [[nodiscard]] std::uint32_t ActiveTexture() const noexcept;
+    void ValidateTextureTarget(std::uint32_t target) const;
     void BindTexture(std::uint32_t target, std::uint32_t texture);
     [[nodiscard]] std::uint32_t BoundTexture(std::uint32_t target) const;
     void DeleteTextures(std::span<const std::uint32_t> textures) noexcept;

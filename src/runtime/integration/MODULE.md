@@ -14,11 +14,17 @@
 
 - 同一 guest EGL current context 下，GLES1 与 GLES2 入口共享同一个
   `GuestGlContext`；buffer binding、pack/unpack alignment 与 active texture 由
-  `SharedGlState` 唯一拥有，library origin 只决定 API 语义。
+  `SharedGlState` 唯一拥有，GLES1 texture matrix 也直接以该 active texture 选择 unit，
+  library origin 只决定 API 语义。
 - texture binding、delete semantics、level-zero base format 与 generate-mipmap metadata
-  同样由 `SharedGlState` 唯一拥有；object name 只由同一个 ANGLE context 生成和删除。
+  同样由 `SharedGlState` 唯一拥有；binding 以 `(texture unit,target)` 区分 2D/cube-map，
+  metadata 显式携带 object/target，删除 object 清除所有 unit/target 引用。Shared state
+  表达 GLES1/GLES2 能力并集，GLES1 handler 另行拒绝其 API 不支持的 target；object name
+  只由同一个 ANGLE context 生成和删除。
 - framebuffer/renderbuffer binding、viewport/scissor、clear state 与 GLES1/GLES2 共有
-  capability 也只有一份 shared shadow；所有字段仅在对应 ANGLE mutation 成功后提交。
+  capability 也只有一份 shared shadow；viewport/scissor 的 guest query 返回该 logical
+  shadow，不泄露超采样后的 native 坐标。高频 setter 先验证、执行 ANGLE、再原位提交，
+  不复制含动态容器的整个 `SharedGlState`；所有字段仅在对应 ANGLE mutation 成功后提交。
 - GLES1 fixed draw 通过显式 native transaction 临时使用内部 program/buffer/attribute；
   成功和异常返回前均恢复 guest programmable state，internal object 不写入 shared state。
 
@@ -271,8 +277,8 @@
   放大尺寸，swap 时通过 gles 确定性 resolve 还原。
 - `NativeActivitySession` 实现 core GPU provider，快照只报告真实发生的 clear、默认 FBO、
   ANGLE 后端和最近 2048 条 EGL/GLES 调用；热路径只向固定 raw ring 写 descriptor id 与
-  四个寄存器，字符串、map 和十进制格式化推迟到 trace 查询；未查询到的扩展、限制和
-  guest FBO 不伪造。
+  四个寄存器，并只获取独立 trace mutex，不竞争 Android boundary 主 mutex；字符串、map
+  和十进制格式化推迟到 trace 查询；未查询到的扩展、限制和 guest FBO 不伪造。
 - Android boundary 的正常执行链只以 dense descriptor 的 route/function id 路由；
   library/name 只服务于 ELF 查询、诊断与 trace 渲染，禁止重新参与 HLE/GLES handler 选择。
 - `A32CallFrame` 按 descriptor 的精确 parameter count 固定存储 r0-r3，并以一次 guest

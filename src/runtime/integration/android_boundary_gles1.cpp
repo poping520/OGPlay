@@ -120,29 +120,20 @@ void WriteTextureNames(gles::GuestBuffer& transfer,
 
 }  // namespace
 
-AndroidBoundaryGles1MatrixState::AndroidBoundaryGles1MatrixState() {
+AndroidBoundaryGles1MatrixState::AndroidBoundaryGles1MatrixState(
+    const SharedGlState& shared) : shared_(&shared) {
     Reset();
 }
 
 void AndroidBoundaryGles1MatrixState::Reset() {
     mode_ = kGles1Modelview;
-    active_texture_ = 0x84C0U;
     modelview_.assign(1, Gles1IdentityMatrix());
     projection_.assign(1, Gles1IdentityMatrix());
     for (auto& texture : textures_) texture.assign(1, Gles1IdentityMatrix());
 }
 
-void AndroidBoundaryGles1MatrixState::SetActiveTexture(
-    const std::uint32_t texture) {
-    if (texture < 0x84C0U || texture > 0x84DFU) {
-        throw std::invalid_argument(
-            "GLES1 texture unit is outside GL_TEXTURE0..31");
-    }
-    active_texture_ = texture;
-}
-
 void AndroidBoundaryGles1MatrixState::SetMode(const std::uint32_t mode) {
-    static_cast<void>(Stack(mode, active_texture_));
+    static_cast<void>(Stack(mode, ActiveTexture()));
     mode_ = mode;
 }
 
@@ -223,7 +214,7 @@ void AndroidBoundaryGles1MatrixState::Translate(
 }
 
 const Gles1Matrix& AndroidBoundaryGles1MatrixState::Current() const noexcept {
-    return Stack(mode_, active_texture_).back();
+    return Stack(mode_, ActiveTexture()).back();
 }
 
 const Gles1Matrix& AndroidBoundaryGles1MatrixState::Current(
@@ -233,14 +224,14 @@ const Gles1Matrix& AndroidBoundaryGles1MatrixState::Current(
 
 std::size_t AndroidBoundaryGles1MatrixState::StackDepth(
     const std::uint32_t mode) const {
-    return Stack(mode, active_texture_).size();
+    return Stack(mode, ActiveTexture()).size();
 }
 
 std::vector<Gles1Matrix>&
 AndroidBoundaryGles1MatrixState::CurrentStack() noexcept {
     if (mode_ == kGles1Projection) return projection_;
     if (mode_ == kGles1Texture) {
-        return textures_.at(active_texture_ - 0x84C0U);
+        return textures_.at(ActiveTexture() - 0x84C0U);
     }
     return modelview_;
 }
@@ -253,13 +244,19 @@ const std::vector<Gles1Matrix>& AndroidBoundaryGles1MatrixState::Stack(
     throw std::invalid_argument("glMatrixMode mode is invalid for GLES1");
 }
 
+std::uint32_t AndroidBoundaryGles1MatrixState::ActiveTexture() const noexcept {
+    return shared_->active_texture;
+}
+
 AndroidBoundaryGles1State::AndroidBoundaryGles1State()
-    : fixed_(std::make_unique<AndroidBoundaryGles1FixedState>()) {
+    : matrices_(*shared_),
+      fixed_(std::make_unique<AndroidBoundaryGles1FixedState>()) {
     Reset();
 }
 
 AndroidBoundaryGles1State::AndroidBoundaryGles1State(SharedGlState& shared)
     : shared_(&shared),
+      matrices_(*shared_),
       fixed_(std::make_unique<AndroidBoundaryGles1FixedState>()) {
     Reset();
 }
@@ -310,9 +307,17 @@ std::uint32_t AndroidBoundaryGles1State::Hint(
     return hints_[HintIndex(target)];
 }
 
+void AndroidBoundaryGles1State::ValidateActiveTexture(
+    const std::uint32_t texture) const {
+    if (texture < 0x84C0U || texture > 0x84DFU) {
+        throw std::invalid_argument(
+            "GLES1 texture unit is outside GL_TEXTURE0..31");
+    }
+}
+
 void AndroidBoundaryGles1State::SetActiveTexture(
     const std::uint32_t texture) {
-    matrices_.SetActiveTexture(texture);
+    ValidateActiveTexture(texture);
     shared_->SetActiveTexture(texture);
 }
 
@@ -320,11 +325,16 @@ std::uint32_t AndroidBoundaryGles1State::ActiveTexture() const noexcept {
     return shared_->active_texture;
 }
 
-void AndroidBoundaryGles1State::BindTexture(
-    const std::uint32_t target, const std::uint32_t texture) {
+void AndroidBoundaryGles1State::ValidateTextureTarget(
+    const std::uint32_t target) const {
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
+}
+
+void AndroidBoundaryGles1State::BindTexture(
+    const std::uint32_t target, const std::uint32_t texture) {
+    ValidateTextureTarget(target);
     shared_->BindTexture(target, texture);
 }
 
@@ -558,6 +568,7 @@ void BindAndroidBoundaryGles1Core(
         [&state, require_frame](
             const std::span<const std::uint32_t> arguments,
             const std::uint64_t) {
+            state.ValidateActiveTexture(arguments[0]);
             require_frame("glActiveTexture").ActiveTexture(arguments[0]);
             state.SetActiveTexture(arguments[0]);
             return 0U;
@@ -578,6 +589,7 @@ void BindAndroidBoundaryGles1Core(
         "glBindTexture",
         [&state, require_frame](const std::span<const std::uint32_t> arguments,
                                const std::uint64_t) {
+            state.ValidateTextureTarget(arguments[0]);
             require_frame("glBindTexture")
                 .BindTexture(arguments[0], arguments[1]);
             state.BindTexture(arguments[0], arguments[1]);

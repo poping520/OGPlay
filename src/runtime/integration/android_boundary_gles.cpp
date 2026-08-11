@@ -217,29 +217,25 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::active_texture)) {
-            auto next = context_.Shared();
-            next.SetActiveTexture(args[0]);
+            context_.Shared().ValidateActiveTexture(args[0]);
             RequireFrame(frame, symbol).ActiveTexture(args[0]);
             context_.Shared().SetActiveTexture(args[0]);
             return 0;
         }
         if (function_id == Id(Gles2Function::bind_texture)) {
-            auto next = context_.Shared();
-            next.BindTexture(args[0], args[1]);
+            context_.Shared().ValidateTextureTarget(args[0]);
             RequireFrame(frame, symbol).BindTexture(args[0], args[1]);
             context_.Shared().BindTexture(args[0], args[1]);
             return 0;
         }
         if (function_id == Id(Gles2Function::bind_framebuffer)) {
-            auto next = context_.Shared();
-            next.BindFramebuffer(args[0], args[1]);
+            context_.Shared().ValidateFramebufferTarget(args[0]);
             RequireFrame(frame, symbol).BindFramebuffer(args[0], args[1]);
             context_.Shared().BindFramebuffer(args[0], args[1]);
             return 0;
         }
         if (function_id == Id(Gles2Function::bind_renderbuffer)) {
-            auto next = context_.Shared();
-            next.BindRenderbuffer(args[0], args[1]);
+            context_.Shared().ValidateRenderbufferTarget(args[0]);
             RequireFrame(frame, symbol).BindRenderbuffer(args[0], args[1]);
             context_.Shared().BindRenderbuffer(args[0], args[1]);
             return 0;
@@ -476,12 +472,27 @@ public:
         if (function_id == Id(Gles2Function::get_integerv)) {
             auto call = PrepareCall(function_id, std::span(args).first<2>(), tid);
             auto& output = Pointer(call);
-            const auto values = RequireFrame(frame, symbol).GetIntegers(
-                args[0], output.WritableBytes().size() / 4U);
             std::vector<std::uint32_t> words;
-            words.reserve(values.size());
-            for (const auto value : values) {
-                words.push_back(std::bit_cast<std::uint32_t>(value));
+            if (args[0] == 0x0BA2U || args[0] == 0x0C10U) {
+                static_cast<void>(RequireFrame(frame, symbol));
+                const auto& logical = args[0] == 0x0BA2U
+                                          ? context_.Shared().Viewport()
+                                          : context_.Shared().Scissor();
+                words.reserve(logical.size());
+                for (const auto value : logical) {
+                    words.push_back(std::bit_cast<std::uint32_t>(value));
+                }
+            } else if (args[0] == 0x8069U || args[0] == 0x8514U) {
+                static_cast<void>(RequireFrame(frame, symbol));
+                const auto target = args[0] == 0x8069U ? 0x0DE1U : 0x8513U;
+                words.push_back(context_.Shared().BoundTexture(target));
+            } else {
+                const auto values = RequireFrame(frame, symbol).GetIntegers(
+                    args[0], output.WritableBytes().size() / 4U);
+                words.reserve(values.size());
+                for (const auto value : values) {
+                    words.push_back(std::bit_cast<std::uint32_t>(value));
+                }
             }
             WriteWords(output, words);
             return 0;
@@ -500,8 +511,7 @@ public:
         if (function_id == Id(Gles2Function::enable) ||
             function_id == Id(Gles2Function::disable)) {
             const auto enabled = function_id == Id(Gles2Function::enable);
-            auto next = context_.Shared();
-            next.SetCapability(args[0], enabled);
+            context_.Shared().ValidateCapability(args[0]);
             RequireFrame(frame, symbol).SetCapability(args[0], enabled);
             context_.Shared().SetCapability(args[0], enabled);
             return 0;
@@ -623,9 +633,9 @@ public:
     void RestoreNativeState(gles::AngleFrame& frame) {
         const auto& shared = context_.Shared();
         frame.UseProgram(shared.CurrentProgram());
-        for (const auto& [unit, texture] : shared.TextureBindings()) {
-            frame.ActiveTexture(unit);
-            frame.BindTexture(0x0DE1U, texture);
+        for (const auto& [binding, texture] : shared.TextureBindings()) {
+            frame.ActiveTexture(binding.texture_unit);
+            frame.BindTexture(binding.target, texture);
         }
         frame.ActiveTexture(shared.active_texture);
         frame.BindFramebuffer(0x8D40U, shared.Framebuffer());

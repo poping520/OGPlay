@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-11 · 图形 Context/HLE/内存热路径 12 项优化已完成
+更新：2026-08-11 · 图形 Context/HLE/内存热路径优化已正式验收闭环
 
 ## 当前阶段
 
@@ -35,11 +35,12 @@
 
 ## 最近完成
 
-- [optimization 12 WU] 以统一 `GuestGlContext`/Shared/Native state 闭合 GLES1/GLES2
-  context ownership 与 renderer policy；HLE 改为 dense descriptor、route/function-id、
-  sealed dispatch 与固定 `A32CallFrame`；GPU trace 改为 2048 项 raw ring，guest C string
-  改为 page-aware scan，GuestTransfer 以映射世代票据去除重复验证。Windows/MSVC
-  warnings-as-errors 构建与 full CTest 506/506 通过；Asphalt 6 exact 未退回旧 mixed draw。
+- [WU-OPT-CLOSURE-01] 正式闭合前 12 项优化验收：统一 active texture 与 GLES1 texture
+  matrix unit，以 `(unit,target)` 隔离 2D/cube-map binding/metadata/delete，并让超采样下
+  GLES1/GLES2 viewport/scissor query 返回 logical state；六类高频 setter 不再复制整个
+  `SharedGlState`，2048 项 raw trace ring 改用独立 mutex。Windows/MSVC warnings-as-errors
+  构建、focused 486/486 与 full CTest 509/509 通过；Asphalt 6 exact 仍越过旧 mixed
+  GLES/client-pointer 故障，停在后续 `CallStaticIntMethodV` class reference 边界。
 - [WU-0379] guest transfer 错误新增 `module!symbol`、寄存器、attribute provenance 与
   GLES1/GLES2 buffer binding 诊断。exact 将 null pointer 收敛到共同 `glBindBuffer`
   状态分裂，而非 guest 坏指针；full CTest 497/497。

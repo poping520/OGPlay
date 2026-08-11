@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <compare>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -14,11 +15,25 @@ using GuestGlContextId = std::uint32_t;
 
 enum class GuestGlRenderer : std::uint8_t { fixed_function, programmable };
 
+struct TextureBindingKey final {
+    std::uint32_t texture_unit{};
+    std::uint32_t target{};
+    auto operator<=>(const TextureBindingKey&) const = default;
+};
+
+struct TextureObjectKey final {
+    std::uint32_t texture{};
+    std::uint32_t target{};
+    auto operator<=>(const TextureObjectKey&) const = default;
+};
+
 struct SharedGlState final {
     gles::GlesTransferState transfer;
     std::uint32_t active_texture{0x84C0U};
 
+    void ValidateActiveTexture(std::uint32_t texture) const;
     void SetActiveTexture(std::uint32_t texture);
+    void ValidateTextureTarget(std::uint32_t target) const;
     void BindTexture(std::uint32_t target, std::uint32_t texture);
     [[nodiscard]] std::uint32_t BoundTexture(std::uint32_t target) const;
     [[nodiscard]] std::uint32_t BoundTexture(std::uint32_t texture_unit,
@@ -31,7 +46,9 @@ struct SharedGlState final {
         std::uint32_t texture_unit, std::uint32_t target) const;
     void SetGenerateMipmap(std::uint32_t target, bool enabled);
     [[nodiscard]] bool GenerateMipmapEnabled(std::uint32_t target) const;
+    void ValidateFramebufferTarget(std::uint32_t target) const;
     void BindFramebuffer(std::uint32_t target, std::uint32_t framebuffer);
+    void ValidateRenderbufferTarget(std::uint32_t target) const;
     void BindRenderbuffer(std::uint32_t target, std::uint32_t renderbuffer);
     void DeleteFramebuffers(std::span<const std::uint32_t> framebuffers) noexcept;
     void DeleteRenderbuffers(std::span<const std::uint32_t> renderbuffers) noexcept;
@@ -47,19 +64,20 @@ struct SharedGlState final {
     [[nodiscard]] const std::array<float, 4>& ClearColor() const noexcept;
     [[nodiscard]] float ClearDepth() const noexcept;
     [[nodiscard]] std::int32_t ClearStencil() const noexcept;
+    void ValidateCapability(std::uint32_t capability) const;
     void SetCapability(std::uint32_t capability, bool enabled);
     [[nodiscard]] bool Capability(std::uint32_t capability) const;
     void SetCurrentProgram(std::uint32_t program) noexcept;
     [[nodiscard]] std::uint32_t CurrentProgram() const noexcept;
-    [[nodiscard]] const std::map<std::uint32_t, std::uint32_t>&
+    [[nodiscard]] const std::map<TextureBindingKey, std::uint32_t>&
     TextureBindings() const noexcept;
 
     void Reset() noexcept;
 
 private:
-    std::map<std::uint32_t, std::uint32_t> bound_textures_;
-    std::map<std::uint32_t, std::uint32_t> texture_base_formats_;
-    std::map<std::uint32_t, bool> generate_mipmap_;
+    std::map<TextureBindingKey, std::uint32_t> bound_textures_;
+    std::map<TextureObjectKey, std::uint32_t> texture_base_formats_;
+    std::map<TextureObjectKey, bool> generate_mipmap_;
     std::uint32_t framebuffer_{};
     std::uint32_t renderbuffer_{};
     std::array<std::int32_t, 4> viewport_{};

@@ -35,6 +35,10 @@
 
 ## 最近完成
 
+- [WU-M8-001] JNI guest registration 收敛为 production 唯一 `BindJniGuestSlots` aggregate；
+  Core 不再隐藏 Class/Instance、Static Call 与 Modified UTF-8 注册，当前 JNIEnv/JavaVM
+  精确集合保持 110/4，Seal 后拒绝扩展。Windows/MSVC focused 23/23 与 full CTest
+  510/510 通过。
 - [WU-OPT-CLOSURE-01] 正式闭合前 12 项优化验收：统一 active texture 与 GLES1 texture
   matrix unit，以 `(unit,target)` 隔离 2D/cube-map binding/metadata/delete，并让超采样下
   GLES1/GLES2 viewport/scissor query 返回 logical state；六类高频 setter 不再复制整个

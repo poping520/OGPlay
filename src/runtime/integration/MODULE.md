@@ -254,8 +254,11 @@
 - `JniGuestCallDispatcher` 只消费精确落入上述目录的 `SVC #3`，校验 JNIEnv/JavaVM
   receiver 与非零线程后发布寄存器/栈调用帧；slot 必须在执行前显式绑定并封口，未绑定
   项按名称记账并失败，未知 trap 地址不得吞掉。
-- `BindJniGuestCoreSlots` 只绑定已有真实 M3 语义的 50 个 JNIEnv slot 与 4 个
-  JavaVM slot；引用、异常和线程状态复用同一环境，guest 输出指针在 VM 状态变更前预检，
+- production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
+  Static Call、Static Field、Modified UTF-8 与 JavaVM family，随后封口 dispatcher；
+  aggregate contract 固定当前 110 个 JNIEnv 与 4 个 JavaVM 精确 slot 集合，Core binder
+  不得再隐式注册其他 family。引用、异常和线程状态复用同一环境，guest 输出指针在 VM
+  状态变更前预检，
   `GetStaticMethodID` 只精确查询统一 class registry，`NewStringUTF` 使用受检 guest C
   string、M3 Modified UTF-8 解码与 string store 后发布 local reference；
   10 种 `CallStatic*Method` 返回类型的普通、`V`、`A` 共 30 个槽按 method descriptor

@@ -25,6 +25,7 @@ payload 为本地 fixture；APK、payload、证据和宿主绝对路径不进入
 
 已建工作单：
 
+- [WU-M8-001](WU-M8-001.md)：JNI Guest Binding 统一注册入口。
 - [WU-0360](WU-0360.md)：Asphalt 6 exact 身份、静态能力矩阵与根 SONAME 别名预检。
 - [WU-0361](WU-0361.md)：exact APK + external payload 有界启动采样与四组缺口聚合。
 - [WU-0378](WU-0378.md)：恢复 Dungeon Hunter 有界加载预算并补齐 run-apk 结构化进度日志。

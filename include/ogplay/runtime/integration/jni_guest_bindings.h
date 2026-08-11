@@ -10,11 +10,24 @@ namespace ogplay::runtime {
 
 class JniEnvironment;
 class JniClassRegistry;
+class JniFieldStore;
 class JniInvocationEngine;
 class JniJavaVm;
 class JniGuestObjectRegistry;
 class JniPrimitiveArrayStore;
 class JniStringStore;
+
+struct JniGuestBindingContext final {
+    JniEnvironment& environment;
+    JniClassRegistry& classes;
+    JniInvocationEngine& invocations;
+    JniFieldStore& fields;
+    JniStringStore& strings;
+    JniPrimitiveArrayStore& arrays;
+    JniJavaVm& java_vm;
+    JniGuestObjectRegistry& objects;
+    memory::AddressSpace& address_space;
+};
 
 class JniGuestBindingError final : public std::runtime_error {
 public:
@@ -24,11 +37,15 @@ public:
 void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniEnvironment& environment,
                            JniClassRegistry& classes,
-                           JniInvocationEngine& invocations,
                            JniStringStore& strings,
                            JniPrimitiveArrayStore& arrays,
-                           JniJavaVm& java_vm,
-                           memory::AddressSpace& address_space,
-                           JniGuestObjectRegistry* objects = nullptr);
+                           memory::AddressSpace& address_space);
+
+void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
+                             JniJavaVm& java_vm,
+                             memory::AddressSpace& address_space);
+
+void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
+                       JniGuestBindingContext& context);
 
 }  // namespace ogplay::runtime

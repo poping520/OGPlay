@@ -35,11 +35,10 @@ public:
         memory.Map({output, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
-        ogplay::runtime::BindJniGuestCoreSlots(
-            dispatcher, environment, classes, invocations, strings, arrays,
-            java_vm, memory, &objects);
-        ogplay::runtime::BindJniGuestStaticFieldSlots(
-            dispatcher, environment, classes, fields, memory);
+        ogplay::runtime::JniGuestBindingContext context{
+            environment, classes, invocations, fields, strings, arrays,
+            java_vm, objects, memory};
+        ogplay::runtime::BindJniGuestSlots(dispatcher, context);
     }
 
     void Write64(const std::uint64_t value) {

@@ -21,7 +21,6 @@
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
 #include "ogplay/runtime/integration/jni_guest_library_lifecycle.h"
 #include "ogplay/runtime/integration/jni_guest_static_calls.h"
-#include "ogplay/runtime/integration/jni_guest_static_fields.h"
 #include "ogplay/runtime/integration/jni_guest_dispatch.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
 #include "ogplay/runtime/framework/framework_locale.h"
@@ -493,11 +492,10 @@ public:
             {kRootThreadId, "ogplay-profile"});
         lifecycle_.Register(kRootThreadId, process_memory_.thread_pointer);
         BindSyscalls();
-        BindJniGuestCoreSlots(
-            jni_dispatcher_, environment_, classes_, invocations_, strings_,
-            arrays_, java_vm_, address_space_, &objects_);
-        BindJniGuestStaticFieldSlots(
-            jni_dispatcher_, environment_, classes_, fields_, address_space_);
+        JniGuestBindingContext jni_bindings{
+            environment_, classes_, invocations_, fields_, strings_, arrays_,
+            java_vm_, objects_, address_space_};
+        BindJniGuestSlots(jni_dispatcher_, jni_bindings);
         jni_dispatcher_.Seal();
         const auto attached = java_vm_.AttachCurrentThread(
             kRootThreadId, kJniVersion1_6);

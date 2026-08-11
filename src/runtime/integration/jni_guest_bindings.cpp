@@ -12,10 +12,12 @@
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_static_calls.h"
+#include "ogplay/runtime/integration/jni_guest_static_fields.h"
 #include "ogplay/runtime/integration/jni_guest_string_bindings.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
+#include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
@@ -145,12 +147,9 @@ void RequireNullAttachArguments(const JniGuestCallFrame& frame) {
 void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniEnvironment& environment,
                            JniClassRegistry& classes,
-                           JniInvocationEngine& invocations,
                            JniStringStore& strings,
                            JniPrimitiveArrayStore& arrays,
-                           JniJavaVm& java_vm,
-                           memory::AddressSpace& address_space,
-                           JniGuestObjectRegistry* objects) {
+                           memory::AddressSpace& address_space) {
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetVersion"),
         [&environment](const JniGuestCallFrame& frame) {
@@ -293,11 +292,6 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             }
             return Word(method->Value());
         });
-    BindJniGuestStaticCallSlots(dispatcher, environment, classes, invocations,
-                                address_space);
-    BindJniGuestClassAndInstanceSlots(
-        dispatcher, environment, classes, invocations, address_space,
-        objects);
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetArrayLength"),
         [&environment, &arrays](const JniGuestCallFrame& frame) {
@@ -354,9 +348,11 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                 throw;
             }
         });
-    BindJniGuestModifiedUtf8Slots(
-        dispatcher, environment, strings, address_space);
+}
 
+void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
+                             JniJavaVm& java_vm,
+                             memory::AddressSpace& address_space) {
     dispatcher.BindJavaVm(
         JavaVmSlot("AttachCurrentThread"),
         [&java_vm, &address_space](const JniGuestCallFrame& frame) {
@@ -402,6 +398,27 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             WriteEnvironmentResult(address_space, frame, result);
             return Int(static_cast<JniInt>(result.status));
         });
+}
+
+void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
+                       JniGuestBindingContext& context) {
+    BindJniGuestCoreSlots(dispatcher, context.environment, context.classes,
+                          context.strings, context.arrays,
+                          context.address_space);
+    BindJniGuestClassAndInstanceSlots(
+        dispatcher, context.environment, context.classes,
+        context.invocations, context.address_space, &context.objects);
+    BindJniGuestStaticCallSlots(
+        dispatcher, context.environment, context.classes,
+        context.invocations, context.address_space);
+    BindJniGuestStaticFieldSlots(
+        dispatcher, context.environment, context.classes, context.fields,
+        context.address_space);
+    BindJniGuestModifiedUtf8Slots(
+        dispatcher, context.environment, context.strings,
+        context.address_space);
+    BindJniGuestJavaVmSlots(dispatcher, context.java_vm,
+                            context.address_space);
 }
 
 }  // namespace ogplay::runtime

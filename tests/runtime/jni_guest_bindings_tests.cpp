@@ -13,9 +13,11 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/jni_guest_abi.h"
 #include "ogplay/runtime/integration/jni_guest_bindings.h"
+#include "ogplay/runtime/integration/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
+#include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
@@ -28,14 +30,15 @@ struct GuestBindingsFixture final {
           cpu(bus),
           abi(memory),
           dispatcher(ledger),
-          invocations(classes),
+          invocations(classes), fields(classes), objects(classes),
           java_vm(environment) {
         memory.Map({output, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
-        ogplay::runtime::BindJniGuestCoreSlots(
-            dispatcher, environment, classes, invocations, strings, arrays,
-            java_vm, memory);
+        ogplay::runtime::JniGuestBindingContext context{
+            environment, classes, invocations, fields, strings, arrays,
+            java_vm, objects, memory};
+        ogplay::runtime::BindJniGuestSlots(dispatcher, context);
     }
 
     [[nodiscard]] std::uint32_t CallEnvironment(
@@ -87,6 +90,8 @@ struct GuestBindingsFixture final {
     ogplay::runtime::JniEnvironment environment;
     ogplay::runtime::JniClassRegistry classes;
     ogplay::runtime::JniInvocationEngine invocations;
+    ogplay::runtime::JniFieldStore fields;
+    ogplay::runtime::JniGuestObjectRegistry objects;
     ogplay::runtime::JniStringStore strings;
     ogplay::runtime::JniPrimitiveArrayStore arrays;
     ogplay::runtime::JniJavaVm java_vm;
@@ -138,7 +143,7 @@ private:
 
 }  // namespace
 
-TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
+TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     GuestBindingsFixture fixture;
     constexpr std::string_view environment_names[]{
         "GetVersion",          "Throw",
@@ -201,9 +206,50 @@ TEST_CASE("guest JNI core bindings cover exact behavior-backed slots") {
                     std::string(variant))));
         }
     }
+    constexpr std::string_view field_types[]{
+        "Object", "Boolean", "Byte", "Char", "Short", "Int", "Long",
+        "Float", "Double"};
+    CHECK(fixture.dispatcher.IsEnvironmentBound(
+        *ogplay::runtime::FindJniSlot("GetStaticFieldID")));
+    for (const auto type : field_types) {
+        CHECK(fixture.dispatcher.IsEnvironmentBound(
+            *ogplay::runtime::FindJniSlot(
+                std::string("GetStatic") + std::string(type) + "Field")));
+        CHECK(fixture.dispatcher.IsEnvironmentBound(
+            *ogplay::runtime::FindJniSlot(
+                std::string("SetStatic") + std::string(type) + "Field")));
+    }
+
+    std::size_t environment_count{};
+    for (std::size_t index = ogplay::runtime::kJniReservedSlotCount;
+         index < ogplay::runtime::kJniNativeInterfaceSlotCount; ++index) {
+        environment_count += fixture.dispatcher.IsEnvironmentBound(
+            ogplay::runtime::JniSlot{static_cast<std::uint16_t>(index)})
+                                 ? 1U
+                                 : 0U;
+    }
+    CHECK(environment_count == 110U);
+    std::size_t java_vm_count{};
+    for (std::size_t index = 3U;
+         index < ogplay::runtime::kJniInvokeInterfaceSlotCount; ++index) {
+        java_vm_count += fixture.dispatcher.IsJavaVmBound(
+            ogplay::runtime::JniInvokeSlot{
+                static_cast<std::uint8_t>(index)})
+                             ? 1U
+                             : 0U;
+    }
+    CHECK(java_vm_count == 4U);
     CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(
         *ogplay::runtime::FindJniSlot("GetFieldID")));
     fixture.Seal();
+    CHECK(fixture.dispatcher.IsSealed());
+    CHECK_THROWS_WITH_AS(
+        fixture.dispatcher.BindEnvironment(
+            *ogplay::runtime::FindJniSlot("GetFieldID"),
+            [](const ogplay::runtime::JniGuestCallFrame&) {
+                return ogplay::runtime::JniGuestCallResult{};
+            }),
+        "JNI guest dispatcher is sealed", std::logic_error);
 }
 
 TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {

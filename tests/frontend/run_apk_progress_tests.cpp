@@ -6,6 +6,27 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/frontend/run_apk_progress.h"
 
+TEST_CASE("host event pump gate throttles pumps to the host interval") {
+    ogplay::frontend::HostEventPumpGate gate{4'000'000U};
+
+    CHECK(gate.ShouldPump(0U));
+    CHECK_FALSE(gate.ShouldPump(1U));
+    CHECK_FALSE(gate.ShouldPump(3'999'999U));
+    CHECK(gate.ShouldPump(4'000'000U));
+    CHECK_FALSE(gate.ShouldPump(7'999'999U));
+    CHECK(gate.ShouldPump(9'000'000U));
+    CHECK_FALSE(gate.ShouldPump(12'999'999U));
+    CHECK(gate.ShouldPump(13'000'000U));
+}
+
+TEST_CASE("host event pump gate with a zero interval always pumps") {
+    ogplay::frontend::HostEventPumpGate gate{0U};
+
+    CHECK(gate.ShouldPump(5U));
+    CHECK(gate.ShouldPump(5U));
+    CHECK(gate.ShouldPump(6U));
+}
+
 TEST_CASE("run-apk progress logging is bounded and structured") {
     ogplay::core::Logger logger;
     ogplay::frontend::RunApkGuestCallProgress call_progress{logger};

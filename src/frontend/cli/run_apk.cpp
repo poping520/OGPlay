@@ -638,13 +638,18 @@ int RunApkCommand(const int argc, const char* const argv[],
         }
         std::uint64_t active_frame{};
         RunApkGuestCallProgress call_progress{logger};
+        constexpr std::uint64_t kGuestCallEventPumpHz = 250U;
+        HostEventPumpGate pump_gate{
+            frame_rate_clock.TicksPerSecond() / kGuestCallEventPumpHz};
         const auto runtime_progress = [&logger](const std::string_view stage) {
             logger.Write(
                 core::LogLevel::info, "runtime.guest_session", stage, {}, {},
                 kUnrestrictedLog);
         };
         const auto guest_slice_observer = [&](const std::uint64_t consumed_ticks) {
-            window->PumpEvents();
+            if (pump_gate.ShouldPump(frame_rate_clock.Ticks())) {
+                window->PumpEvents();
+            }
             call_progress.Observe(consumed_ticks);
         };
         call_progress.Begin(0U, 0U);

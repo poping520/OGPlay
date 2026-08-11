@@ -1,6 +1,7 @@
 # 当前状态
 
-更新：2026-08-11 · runtime 拆出 jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
+更新：2026-08-11 · run-apk slice observer 事件泵节流（WU-PERF-04）；runtime 拆出
+jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
 
 ## 当前阶段
 
@@ -38,6 +39,11 @@
 
 ## 最近完成
 
+- [WU-PERF-04] `run-apk` 长 guest call 的 slice observer 事件泵按宿主 Clock 节流
+  （250 Hz 上限；observer 在每次 supervisor call 后触发，此前无条件泵 Cocoa 事件循环
+  占用约 67% CPU）。Dungeon Hunter 120 帧 Release 实测 54.26s → 约 10s（-81%），
+  guest 执行占比 12% → 78%；full CTest 526/526。遗留热点（AddressSpace 逐次取锁的
+  回调读与 bionic intercept Validate）记录在任务单。
 - [WU-M8-008..010] 按 ADR-0018 把 guest JNI ABI 与 Android native 边界从
   `runtime/integration` 纯机械迁出为 `jni_guest` 与 `boundary` 子模块，integration 收敛
   为装配层，三份 MODULE.md 按代码事实重写；行为零变更，macOS/arm64 full CTest
@@ -81,6 +87,9 @@ Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实�
    统一所有权；当前不影响正确性，已并入 DexVM 设计（`docs/design/dexvm/`）。
 3. （非阻塞长线）DexVM 有界 DEX 解释器方案已定稿并 Accepted：ADR-0017 与
    `docs/design/dexvm/` 六章；启动排期待定，M8 继续按 profile 路线推进。
+4. （非阻塞长线）性能 backlog：ANGLE window surface 零拷贝呈现（替代 pbuffer +
+   `glReadPixels` 全帧回读）；GLES client array 基于映射世代票据的内容不变跳读；
+   AddressSpace 回调读与 bionic intercept 的逐次取锁（WU-PERF-04 采样证据）。
 
 ## 阻塞
 

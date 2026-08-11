@@ -10,6 +10,20 @@ namespace ogplay::frontend {
 
 inline constexpr std::uint64_t kLongGuestCallLogTicks = UINT64_C(1000000000);
 
+/// 以宿主 Clock ticks 节流长 guest call 期间的窗口事件泵。slice observer 在
+/// 每次 supervisor call 之后都会触发，无条件泵事件会让宿主事件循环吞掉大部分
+/// CPU 时间；gate 首次放行，其后每个 interval 至多放行一次。
+class HostEventPumpGate final {
+public:
+    explicit HostEventPumpGate(std::uint64_t interval_ticks) noexcept;
+
+    [[nodiscard]] bool ShouldPump(std::uint64_t host_ticks) noexcept;
+
+private:
+    std::uint64_t interval_ticks_{};
+    std::uint64_t next_pump_ticks_{};
+};
+
 class RunApkGuestCallProgress final {
 public:
     explicit RunApkGuestCallProgress(core::Logger& logger) noexcept;

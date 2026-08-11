@@ -10,6 +10,16 @@ constexpr core::RateLimitPolicy kUnrestrictedLog{
 
 }  // namespace
 
+HostEventPumpGate::HostEventPumpGate(
+    const std::uint64_t interval_ticks) noexcept
+    : interval_ticks_(interval_ticks) {}
+
+bool HostEventPumpGate::ShouldPump(const std::uint64_t host_ticks) noexcept {
+    if (host_ticks < next_pump_ticks_) return false;
+    next_pump_ticks_ = host_ticks + interval_ticks_;
+    return true;
+}
+
 RunApkGuestCallProgress::RunApkGuestCallProgress(
     core::Logger& logger) noexcept
     : logger_(&logger) {}

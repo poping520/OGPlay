@@ -264,6 +264,20 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
         std::runtime_error);
 }
 
+TEST_CASE("Android boundary GPU trace ring retains the newest raw calls") {
+    BoundaryFixture fixture;
+    constexpr std::size_t calls = 2050U;
+    for (std::size_t index = 0; index < calls; ++index) {
+        CHECK(fixture.Call("libEGL.so", "eglGetDisplay") == 1U);
+    }
+    const auto trace = fixture.boundary.Trace("eglGetDisplay", calls);
+    REQUIRE(trace.size() == 2048U);
+    for (const auto& entry : trace) {
+        CHECK(entry.call == "eglGetDisplay");
+        CHECK(entry.arguments.at("r0") == "0");
+    }
+}
+
 TEST_CASE("GLES1 shade model state validates and resets") {
     ogplay::runtime::detail::AndroidBoundaryGles1State state;
     CHECK(state.ShadeModel() ==

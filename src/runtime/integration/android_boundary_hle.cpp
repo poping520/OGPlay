@@ -242,7 +242,7 @@ public:
                     state.Register(cpu::CoreRegister::lr)) +
                 " thread=" + std::to_string(state.ThreadId()));
         }
-        RecordGpuCall(descriptor->name, arguments);
+        RecordGpuCall(*descriptor, arguments);
         state.SetRegister(cpu::CoreRegister::r0, result);
         cpu.SetState(state);
         return true;
@@ -302,12 +302,26 @@ public:
         const std::string_view filter, const std::size_t limit) const {
         std::scoped_lock lock(mutex_);
         std::vector<core::GpuTraceEntry> result;
-        result.reserve(std::min(limit, gpu_trace_.size()));
-        for (auto entry = gpu_trace_.rbegin();
-             entry != gpu_trace_.rend() && result.size() < limit; ++entry) {
-            if (filter.empty() || entry->call.find(filter) != std::string::npos) {
-                result.push_back(*entry);
+        const auto available = std::min(gpu_trace_count_, gpu_trace_.size());
+        result.reserve(std::min(limit, available));
+        for (std::size_t offset = 0;
+             offset < available && result.size() < limit; ++offset) {
+            const auto index =
+                (gpu_trace_write_ + gpu_trace_.size() - 1U - offset) %
+                gpu_trace_.size();
+            const auto& raw = gpu_trace_[index];
+            const auto name = descriptors_[raw.descriptor_index].name;
+            if (!filter.empty() && name.find(filter) == std::string_view::npos) {
+                continue;
             }
+            core::GpuTraceEntry entry;
+            entry.call = name;
+            for (std::size_t argument = 0; argument < raw.registers.size();
+                 ++argument) {
+                entry.arguments.emplace("r" + std::to_string(argument),
+                                        std::to_string(raw.registers[argument]));
+            }
+            result.push_back(std::move(entry));
         }
         std::reverse(result.begin(), result.end());
         return result;
@@ -825,20 +839,28 @@ private:
         }
         ready_.notify_all();
     }
-    void RecordGpuCall(const std::string_view symbol,
+    void RecordGpuCall(const detail::HleThunkDescriptor& descriptor,
                        const std::array<std::uint32_t, 4>& args) {
-        if (!symbol.starts_with("egl") && !symbol.starts_with("gl")) return;
-        core::GpuTraceEntry entry;
-        entry.call = symbol;
-        for (std::size_t index = 0; index < args.size(); ++index) {
-            entry.arguments.emplace("r" + std::to_string(index),
-                                    std::to_string(args[index]));
+        if (descriptor.route != detail::HleRoute::egl &&
+            descriptor.route != detail::HleRoute::gles1 &&
+            descriptor.route != detail::HleRoute::gles1_extension &&
+            descriptor.route != detail::HleRoute::gles2) return;
+        const auto descriptor_index = static_cast<std::size_t>(
+            &descriptor - descriptors_.data());
+        if (descriptor_index >= descriptors_.size() ||
+            descriptor_index > (std::numeric_limits<std::uint16_t>::max)()) {
+            throw std::logic_error("GPU trace descriptor is outside its catalog");
         }
         std::scoped_lock lock(mutex_);
-        gpu_trace_.push_back(std::move(entry));
-        constexpr std::size_t kMaximumGpuTraceEntries = 2048;
-        if (gpu_trace_.size() > kMaximumGpuTraceEntries) gpu_trace_.pop_front();
+        gpu_trace_[gpu_trace_write_] = {
+            static_cast<std::uint16_t>(descriptor_index), args};
+        gpu_trace_write_ = (gpu_trace_write_ + 1U) % gpu_trace_.size();
+        gpu_trace_count_ = std::min(gpu_trace_count_ + 1U, gpu_trace_.size());
     }
+    struct RawGpuTraceEntry final {
+        std::uint16_t descriptor_index{};
+        std::array<std::uint32_t, 4> registers{};
+    };
     memory::AddressSpace& address_space_;
     gles::AngleBackend backend_;
     gles::SupersampleLayout layout_;
@@ -870,7 +892,9 @@ private:
     std::optional<AndroidBoundaryFrame> latest_frame_;
     std::vector<std::uint8_t> recycled_rgba8_;
     core::GpuStats gpu_stats_{0, 0, 0, 0, 0, {{0, 0, "color0"}}};
-    std::deque<core::GpuTraceEntry> gpu_trace_;
+    std::array<RawGpuTraceEntry, 2048> gpu_trace_{};
+    std::size_t gpu_trace_write_{};
+    std::size_t gpu_trace_count_{};
     bool gpu_render_target_ready_{};
 };
 AndroidBoundaryHle::AndroidBoundaryHle(memory::AddressSpace& address_space,

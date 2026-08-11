@@ -270,7 +270,9 @@
   EGL surface 和输出帧保持逻辑尺寸，ANGLE pbuffer、viewport 与 GPU render target 使用
   放大尺寸，swap 时通过 gles 确定性 resolve 还原。
 - `NativeActivitySession` 实现 core GPU provider，快照只报告真实发生的 clear、默认 FBO、
-  ANGLE 后端和最近 2048 条 EGL/GLES 调用；未查询到的扩展、限制和 guest FBO 不伪造。
+  ANGLE 后端和最近 2048 条 EGL/GLES 调用；热路径只向固定 raw ring 写 descriptor id 与
+  四个寄存器，字符串、map 和十进制格式化推迟到 trace 查询；未查询到的扩展、限制和
+  guest FBO 不伪造。
 - Android boundary 的正常执行链只以 dense descriptor 的 route/function id 路由；
   library/name 只服务于 ELF 查询、诊断与 trace 渲染，禁止重新参与 HLE/GLES handler 选择。
 - `A32CallFrame` 按 descriptor 的精确 parameter count 固定存储 r0-r3，并以一次 guest

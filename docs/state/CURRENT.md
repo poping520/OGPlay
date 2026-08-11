@@ -85,10 +85,12 @@ Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实�
 3. （非阻塞长线）DexVM 有界 DEX 解释器方案已定稿并 Accepted：ADR-0017 与
    `docs/design/dexvm/` 六章；启动排期待定，M8 继续按 profile 路线推进。
 4. （非阻塞长线）性能 backlog（方向见 ADR-0019）：ANGLE window surface 零拷贝
-   呈现为里程碑级主项，中间可做 PBO/fence 异步回读；GLES client array 基于映射
-   世代票据的内容不变跳读；AddressSpace 回调读与 bionic intercept 的逐次取锁
-   （直连页表按 ADR-0016 排除 r-x 页，rodata 查表访问走全局锁回调，加载期约占
-   guest 执行 13%，需新 ADR 证明无锁化线程安全）。
+   呈现为里程碑级主项，中间可做 PBO/fence 异步回读；AddressSpace 回调读与
+   bionic intercept 的逐次取锁（直连页表按 ADR-0016 排除 r-x 页，rodata 查表
+   访问走全局锁回调，加载期约占 guest 执行 13%，需新 ADR 证明无锁化线程安全）。
+   已否决：client array 用映射世代票据做内容不变跳读——世代只随 Map/Protect/
+   Unmap 递增，原地改写顶点不触发，跳读会渲染陈旧几何；内容哈希仍需全量读，
+   写追踪 observer 会把页踢出直连页表，均不成立，且该路径稳定期已不热。
 
 ## 阻塞
 

@@ -384,6 +384,10 @@ bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
 
 void AndroidBoundaryGles1State::SetCapability(
     const std::uint32_t capability, const bool enabled) {
+    if (SharedCapability(capability)) {
+        shared_->SetCapability(capability, enabled);
+        return;
+    }
     capabilities_[CapabilityKey(capability, shared_->active_texture)] = enabled;
 }
 
@@ -394,6 +398,7 @@ bool AndroidBoundaryGles1State::Capability(
 
 bool AndroidBoundaryGles1State::Capability(
     const std::uint32_t texture_unit, const std::uint32_t capability) const {
+    if (SharedCapability(capability)) return shared_->Capability(capability);
     const auto found = capabilities_.find(
         CapabilityKey(capability, texture_unit));
     return found != capabilities_.end() && found->second;
@@ -426,6 +431,12 @@ AndroidBoundaryGles1State::Fixed() const noexcept {
     return *fixed_;
 }
 
+SharedGlState& AndroidBoundaryGles1State::Shared() noexcept { return *shared_; }
+
+const SharedGlState& AndroidBoundaryGles1State::Shared() const noexcept {
+    return *shared_;
+}
+
 std::int32_t ScaleAndroidBoundaryViewportComponent(
     const std::int32_t value, const std::uint32_t factor) {
     const auto scaled = static_cast<std::int64_t>(value) * factor;
@@ -444,7 +455,7 @@ void BindAndroidBoundaryGles1Core(
         throw std::invalid_argument("GLES1 boundary binding is incomplete");
     }
     BindAndroidBoundaryGles1FixedState(
-        dispatch, state.Fixed(), address_space, require_frame);
+        dispatch, state.Fixed(), address_space, require_frame, &state.Shared());
     dispatch.Bind(
         "glGenTextures",
         [&address_space, require_frame](
@@ -702,10 +713,14 @@ void BindAndroidBoundaryGles1Core(
         });
     dispatch.Bind(
         "glViewport",
-        [supersample_factor, require_frame](
+        [&state, supersample_factor, require_frame](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {
-            require_frame("glViewport")
-                .Viewport(ScaleAndroidBoundaryViewportComponent(
+            const std::array logical{
+                std::bit_cast<std::int32_t>(arguments[0]),
+                std::bit_cast<std::int32_t>(arguments[1]),
+                std::bit_cast<std::int32_t>(arguments[2]),
+                std::bit_cast<std::int32_t>(arguments[3])};
+            require_frame("glViewport").Viewport(ScaleAndroidBoundaryViewportComponent(
                               std::bit_cast<std::int32_t>(arguments[0]),
                               supersample_factor),
                           ScaleAndroidBoundaryViewportComponent(
@@ -715,16 +730,20 @@ void BindAndroidBoundaryGles1Core(
                               std::bit_cast<std::int32_t>(arguments[2]),
                               supersample_factor),
                           ScaleAndroidBoundaryViewportComponent(
-                              std::bit_cast<std::int32_t>(arguments[3]),
-                              supersample_factor));
+                              std::bit_cast<std::int32_t>(arguments[3]), supersample_factor));
+            state.Shared().SetViewport(logical);
             return 0U;
         });
     dispatch.Bind(
         "glScissor",
-        [supersample_factor, require_frame](
+        [&state, supersample_factor, require_frame](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {
-            require_frame("glScissor")
-                .Scissor(ScaleAndroidBoundaryViewportComponent(
+            const std::array logical{
+                std::bit_cast<std::int32_t>(arguments[0]),
+                std::bit_cast<std::int32_t>(arguments[1]),
+                std::bit_cast<std::int32_t>(arguments[2]),
+                std::bit_cast<std::int32_t>(arguments[3])};
+            require_frame("glScissor").Scissor(ScaleAndroidBoundaryViewportComponent(
                              std::bit_cast<std::int32_t>(arguments[0]),
                              supersample_factor),
                          ScaleAndroidBoundaryViewportComponent(
@@ -734,8 +753,8 @@ void BindAndroidBoundaryGles1Core(
                              std::bit_cast<std::int32_t>(arguments[2]),
                              supersample_factor),
                          ScaleAndroidBoundaryViewportComponent(
-                             std::bit_cast<std::int32_t>(arguments[3]),
-                             supersample_factor));
+                             std::bit_cast<std::int32_t>(arguments[3]), supersample_factor));
+            state.Shared().SetScissor(logical);
             return 0U;
         });
     dispatch.Bind("glClear", [require_frame](const auto arguments, const auto) {
@@ -744,21 +763,24 @@ void BindAndroidBoundaryGles1Core(
     });
     dispatch.Bind(
         "glClearColor",
-        [require_frame](
+        [&state, require_frame](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {
-            require_frame("glClearColor")
-                .ClearColor(std::bit_cast<float>(arguments[0]),
-                            std::bit_cast<float>(arguments[1]),
-                            std::bit_cast<float>(arguments[2]),
-                            std::bit_cast<float>(arguments[3]));
+            const std::array color{std::bit_cast<float>(arguments[0]),
+                                   std::bit_cast<float>(arguments[1]),
+                                   std::bit_cast<float>(arguments[2]),
+                                   std::bit_cast<float>(arguments[3])};
+            require_frame("glClearColor").ClearColor(
+                color[0], color[1], color[2], color[3]);
+            state.Shared().SetClearColor(color);
             return 0U;
         });
     dispatch.Bind(
         "glClearDepthf",
-        [require_frame](
+        [&state, require_frame](
             const std::span<const std::uint32_t> arguments, const std::uint64_t) {
-            require_frame("glClearDepthf").ClearDepth(
-                std::bit_cast<float>(arguments[0]));
+            const auto depth = std::bit_cast<float>(arguments[0]);
+            require_frame("glClearDepthf").ClearDepth(depth);
+            state.Shared().SetClearDepth(depth);
             return 0U;
         });
     dispatch.Bind(

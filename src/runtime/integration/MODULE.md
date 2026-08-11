@@ -17,6 +17,8 @@
   `SharedGlState` 唯一拥有，library origin 只决定 API 语义。
 - texture binding、delete semantics、level-zero base format 与 generate-mipmap metadata
   同样由 `SharedGlState` 唯一拥有；object name 只由同一个 ANGLE context 生成和删除。
+- framebuffer/renderbuffer binding、viewport/scissor、clear state 与 GLES1/GLES2 共有
+  capability 也只有一份 shared shadow；所有字段仅在对应 ANGLE mutation 成功后提交。
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
 - Android guest call session 只在通用 A32 slice 边界调用显式 observer；observer 由上层

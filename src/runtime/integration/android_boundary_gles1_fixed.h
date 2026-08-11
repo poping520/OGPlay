@@ -60,6 +60,7 @@ class AndroidBoundaryGles1FixedState final {
 void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
                                         AndroidBoundaryGles1FixedState& state,
                                         memory::AddressSpace& address_space,
-                                        AndroidBoundaryFrameResolver require_frame);
+                                        AndroidBoundaryFrameResolver require_frame,
+                                        SharedGlState* shared = nullptr);
 
 } // namespace ogplay::runtime::detail

@@ -247,6 +247,45 @@ TEST_CASE("Android boundary shares GLES object namespace and texture state") {
     CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
 }
 
+TEST_CASE("Android boundary shares framebuffer raster and capability state") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1);
+    const auto output = fixture.output;
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenFramebuffers",
+                                   {1U, output.Value()}));
+    const auto framebuffer = fixture.bus.Read32(output, 1);
+    REQUIRE(framebuffer != 0U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glBindFramebuffer",
+                                   {0x8D40U, framebuffer}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                                   {0x8CA6U, output.Add(16U).Value()}));
+    CHECK(fixture.bus.Read32(output.Add(16U), 1) == framebuffer);
+
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glViewport",
+                                   {1U, 2U, 3U, 1U}));
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                                   {0x0BA2U, output.Add(32U).Value()}));
+    CHECK(fixture.bus.Read32(output.Add(32U), 1) == 1U);
+    CHECK(fixture.bus.Read32(output.Add(36U), 1) == 2U);
+    CHECK(fixture.bus.Read32(output.Add(40U), 1) == 3U);
+    CHECK(fixture.bus.Read32(output.Add(44U), 1) == 1U);
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glScissor",
+                                   {0U, 1U, 2U, 2U}));
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                                   {0x0C10U, output.Add(48U).Value()}));
+    CHECK(fixture.bus.Read32(output.Add(52U), 1) == 1U);
+    CHECK(fixture.bus.Read32(output.Add(56U), 1) == 2U);
+    CHECK(fixture.bus.Read32(output.Add(60U), 1) == 2U);
+
+    static_cast<void>(fixture.Call("libGLESv2.so", "glEnable", {0x0BE2U}));
+    CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled", {0x0BE2U}) == 1U);
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDisable", {0x0BE2U}));
+    CHECK(fixture.Call("libGLESv2.so", "glIsEnabled", {0x0BE2U}) == 0U);
+}
+
 TEST_CASE("GLES1 matrix state composes and bounds stacks") {
     ogplay::runtime::detail::AndroidBoundaryGles1MatrixState matrices;
     CHECK(matrices.Mode() == ogplay::runtime::detail::kGles1Modelview);

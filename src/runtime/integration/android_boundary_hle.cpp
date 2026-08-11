@@ -597,6 +597,11 @@ private:
             return *resources;
         }
         if (symbol == "glViewport") {
+            const std::array logical{
+                std::bit_cast<std::int32_t>(args[0]),
+                std::bit_cast<std::int32_t>(args[1]),
+                std::bit_cast<std::int32_t>(args[2]),
+                std::bit_cast<std::int32_t>(args[3])};
             RequireFrame(symbol).Viewport(
                 detail::ScaleAndroidBoundaryViewportComponent(
                     std::bit_cast<std::int32_t>(args[0]), layout_.factor),
@@ -606,9 +611,15 @@ private:
                     std::bit_cast<std::int32_t>(args[2]), layout_.factor),
                 detail::ScaleAndroidBoundaryViewportComponent(
                     std::bit_cast<std::int32_t>(args[3]), layout_.factor));
+            gl_context_.Shared().SetViewport(logical);
             return 0;
         }
         if (symbol == "glScissor") {
+            const std::array logical{
+                std::bit_cast<std::int32_t>(args[0]),
+                std::bit_cast<std::int32_t>(args[1]),
+                std::bit_cast<std::int32_t>(args[2]),
+                std::bit_cast<std::int32_t>(args[3])};
             RequireFrame(symbol).Scissor(
                 detail::ScaleAndroidBoundaryViewportComponent(
                     std::bit_cast<std::int32_t>(args[0]), layout_.factor),
@@ -618,13 +629,16 @@ private:
                     std::bit_cast<std::int32_t>(args[2]), layout_.factor),
                 detail::ScaleAndroidBoundaryViewportComponent(
                     std::bit_cast<std::int32_t>(args[3]), layout_.factor));
+            gl_context_.Shared().SetScissor(logical);
             return 0;
         }
         if (symbol == "glClearColor") {
-            RequireFrame(symbol).ClearColor(std::bit_cast<float>(args[0]),
-                                            std::bit_cast<float>(args[1]),
-                                            std::bit_cast<float>(args[2]),
-                                            std::bit_cast<float>(args[3]));
+            const std::array color{std::bit_cast<float>(args[0]),
+                                   std::bit_cast<float>(args[1]),
+                                   std::bit_cast<float>(args[2]),
+                                   std::bit_cast<float>(args[3])};
+            RequireFrame(symbol).ClearColor(color[0], color[1], color[2], color[3]);
+            gl_context_.Shared().SetClearColor(color);
             return 0;
         }
         if (symbol == "glClear") {

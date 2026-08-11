@@ -139,8 +139,10 @@ public:
                 context_.Shared().DeleteTextures(names);
             } else if (symbol == "glDeleteFramebuffers") {
                 RequireFrame(frame, symbol).DeleteFramebuffers(names);
+                context_.Shared().DeleteFramebuffers(names);
             } else {
                 RequireFrame(frame, symbol).DeleteRenderbuffers(names);
+                context_.Shared().DeleteRenderbuffers(names);
             }
             return 0;
         }
@@ -173,11 +175,17 @@ public:
             return 0;
         }
         if (symbol == "glBindFramebuffer") {
+            auto next = context_.Shared();
+            next.BindFramebuffer(args[0], args[1]);
             RequireFrame(frame, symbol).BindFramebuffer(args[0], args[1]);
+            context_.Shared().BindFramebuffer(args[0], args[1]);
             return 0;
         }
         if (symbol == "glBindRenderbuffer") {
+            auto next = context_.Shared();
+            next.BindRenderbuffer(args[0], args[1]);
             RequireFrame(frame, symbol).BindRenderbuffer(args[0], args[1]);
+            context_.Shared().BindRenderbuffer(args[0], args[1]);
             return 0;
         }
         if (symbol == "glCheckFramebufferStatus") {
@@ -416,8 +424,16 @@ public:
                                     RequireFrame(frame, symbol).GetString(args[0]), tid);
         }
         if (symbol == "glGetError") return RequireFrame(frame, symbol).GetError();
+        if (symbol == "glIsEnabled") {
+            static_cast<void>(RequireFrame(frame, symbol));
+            return context_.Shared().Capability(args[0]) ? 1U : 0U;
+        }
         if (symbol == "glEnable" || symbol == "glDisable") {
-            RequireFrame(frame, symbol).SetCapability(args[0], symbol == "glEnable");
+            const auto enabled = symbol == "glEnable";
+            auto next = context_.Shared();
+            next.SetCapability(args[0], enabled);
+            RequireFrame(frame, symbol).SetCapability(args[0], enabled);
+            context_.Shared().SetCapability(args[0], enabled);
             return 0;
         }
         if (symbol == "glBlendFunc") {

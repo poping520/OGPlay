@@ -98,6 +98,8 @@ public:
     [[nodiscard]] const AndroidBoundaryGles1MatrixState& Matrices() const noexcept;
     [[nodiscard]] AndroidBoundaryGles1FixedState& Fixed() noexcept;
     [[nodiscard]] const AndroidBoundaryGles1FixedState& Fixed() const noexcept;
+    [[nodiscard]] SharedGlState& Shared() noexcept;
+    [[nodiscard]] const SharedGlState& Shared() const noexcept;
 
 private:
     SharedGlState owned_shared_;

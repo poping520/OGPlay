@@ -644,15 +644,17 @@ float AndroidBoundaryGles1FixedState::PointParameter(
 }
 
 void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,
-                                        AndroidBoundaryGles1FixedState& state,
-                                        memory::AddressSpace& address_space,
-                                        AndroidBoundaryFrameResolver require_frame) {
+                                         AndroidBoundaryGles1FixedState& state,
+                                         memory::AddressSpace& address_space,
+                                         AndroidBoundaryFrameResolver require_frame,
+                                         SharedGlState* const shared) {
     if (!require_frame) {
         throw std::invalid_argument("GLES1 fixed-state binding is incomplete");
     }
-    dispatch.Bind("glClearStencil", [require_frame](const auto arguments, const auto) {
-        require_frame("glClearStencil")
-            .ClearStencil(std::bit_cast<std::int32_t>(arguments[0]));
+    dispatch.Bind("glClearStencil", [require_frame, shared](const auto arguments, const auto) {
+        const auto value = std::bit_cast<std::int32_t>(arguments[0]);
+        require_frame("glClearStencil").ClearStencil(value);
+        if (shared != nullptr) shared->SetClearStencil(value);
         return 0U;
     });
     dispatch.Bind("glDepthRangef", [require_frame](const auto arguments, const auto) {

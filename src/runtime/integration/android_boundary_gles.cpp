@@ -20,6 +20,7 @@
 #include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
+#include "ogplay/runtime/integration/guest_gl_context.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -96,8 +97,8 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
 
 class AndroidBoundaryGles::Impl final {
 public:
-    explicit Impl(memory::AddressSpace& address_space)
-        : address_space_(address_space) {}
+    Impl(memory::AddressSpace& address_space, GuestGlContext& context)
+        : address_space_(address_space), context_(context) {}
 
     std::optional<std::uint32_t> Dispatch(
         const std::string_view symbol,
@@ -126,12 +127,12 @@ public:
             const auto names = ReadWords(Pointer(call));
             if (symbol == "glDeleteBuffers") {
                 RequireFrame(frame, symbol).DeleteBuffers(names);
-                const auto bound = transfer_state_.Snapshot();
+                const auto bound = context_.Shared().transfer.Snapshot();
                 if (std::ranges::find(names, bound.array_buffer) != names.end()) {
-                    transfer_state_.BindBuffer(0x8892U, 0);
+                    context_.Shared().transfer.BindBuffer(0x8892U, 0);
                 }
                 if (std::ranges::find(names, bound.element_array_buffer) != names.end()) {
-                    transfer_state_.BindBuffer(0x8893U, 0);
+                    context_.Shared().transfer.BindBuffer(0x8893U, 0);
                 }
             } else if (symbol == "glDeleteTextures") {
                 RequireFrame(frame, symbol).DeleteTextures(names);
@@ -143,10 +144,10 @@ public:
             return 0;
         }
         if (symbol == "glBindBuffer") {
-            auto next = transfer_state_;
+            auto next = context_.Shared().transfer;
             next.BindBuffer(args[0], args[1]);
             RequireFrame(frame, symbol).BindBuffer(args[0], args[1]);
-            transfer_state_ = std::move(next);
+            context_.Shared().transfer = std::move(next);
             return 0;
         }
         if (symbol == "glBufferData") {
@@ -158,6 +159,7 @@ public:
         }
         if (symbol == "glActiveTexture") {
             RequireFrame(frame, symbol).ActiveTexture(args[0]);
+            context_.Shared().active_texture = args[0];
             return 0;
         }
         if (symbol == "glBindTexture") {
@@ -198,10 +200,10 @@ public:
         }
         if (symbol == "glPixelStorei") {
             const auto value = std::bit_cast<std::int32_t>(args[1]);
-            auto next = transfer_state_;
+            auto next = context_.Shared().transfer;
             next.PixelStore(args[0], value);
             RequireFrame(frame, symbol).PixelStore(args[0], value);
-            transfer_state_ = std::move(next);
+            context_.Shared().transfer = std::move(next);
             return 0;
         }
         if (symbol == "glTexParameteri") {
@@ -278,7 +280,7 @@ public:
                 throw std::logic_error(
                     "glVertexAttribPointer expected a deferred pointer");
             }
-            const auto buffer = transfer_state_.Snapshot().array_buffer;
+            const auto buffer = context_.Shared().transfer.Snapshot().array_buffer;
             attributes_[index] = {
                 .size = size,
                 .type = type,
@@ -464,7 +466,7 @@ public:
                 throw std::logic_error("glDrawElements expected one pointer");
             }
             const auto element_buffer =
-                transfer_state_.Snapshot().element_array_buffer;
+                context_.Shared().transfer.Snapshot().element_array_buffer;
             if (element_buffer != 0U) {
                 if (!call.pointers.front().deferred) {
                     throw std::logic_error(
@@ -519,11 +521,11 @@ public:
     }
 
     [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept {
-        return transfer_state_.Snapshot();
+        return context_.Shared().transfer.Snapshot();
     }
 
     void Reset() noexcept {
-        transfer_state_ = {};
+        context_.Reset();
         attributes_ = {};
         staging_buffers_.clear();
         client_array_staging_.clear();
@@ -612,7 +614,7 @@ private:
     }
 
     void RestoreBufferBindings(gles::AngleFrame& frame) {
-        const auto bound = transfer_state_.Snapshot();
+        const auto bound = context_.Shared().transfer.Snapshot();
         frame.BindBuffer(kArrayBuffer, bound.array_buffer);
         frame.BindBuffer(kElementArrayBuffer, bound.element_array_buffer);
     }
@@ -639,7 +641,7 @@ private:
             throw std::logic_error("GLES resource handler is not cataloged");
         }
         return gles::PrepareGles2Call(
-            address_space_, *id, args, tid, &transfer_state_);
+            address_space_, *id, args, tid, &context_.Shared().transfer);
     }
 
     static gles::GuestBuffer& Pointer(gles::PreparedGlesCall& call) {
@@ -796,7 +798,7 @@ private:
     }
 
     memory::AddressSpace& address_space_;
-    gles::GlesTransferState transfer_state_;
+    GuestGlContext& context_;
     std::array<Attribute, kMaximumVertexAttributes> attributes_{};
     std::vector<std::uint32_t> staging_buffers_;
     std::vector<std::vector<std::byte>> client_array_staging_;
@@ -805,7 +807,11 @@ private:
 };
 
 AndroidBoundaryGles::AndroidBoundaryGles(memory::AddressSpace& address_space)
-    : impl_(std::make_unique<Impl>(address_space)) {}
+    : owned_context_(std::make_unique<GuestGlContext>()),
+      impl_(std::make_unique<Impl>(address_space, *owned_context_)) {}
+AndroidBoundaryGles::AndroidBoundaryGles(memory::AddressSpace& address_space,
+                                         GuestGlContext& context)
+    : impl_(std::make_unique<Impl>(address_space, context)) {}
 AndroidBoundaryGles::~AndroidBoundaryGles() = default;
 
 std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(

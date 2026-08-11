@@ -22,9 +22,13 @@ class AddressSpace;
 
 namespace ogplay::runtime {
 
+class GuestGlContext;
+
 class AndroidBoundaryGles final {
 public:
     explicit AndroidBoundaryGles(memory::AddressSpace& address_space);
+    AndroidBoundaryGles(memory::AddressSpace& address_space,
+                        GuestGlContext& context);
     ~AndroidBoundaryGles();
     AndroidBoundaryGles(const AndroidBoundaryGles&) = delete;
     AndroidBoundaryGles& operator=(const AndroidBoundaryGles&) = delete;
@@ -38,6 +42,7 @@ public:
 
 private:
     class Impl;
+    std::unique_ptr<GuestGlContext> owned_context_;
     std::unique_ptr<Impl> impl_;
 };
 

@@ -22,6 +22,7 @@
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/gles/supersample.h"
 #include "ogplay/runtime/integration/android_boundary_gles.h"
+#include "ogplay/runtime/integration/guest_gl_context.h"
 #include "android_boundary_gles1.h"
 #include "android_boundary_gles1_draw.h"
 #include "android_boundary_gles1_fixed.h"
@@ -59,7 +60,8 @@ public:
         : address_space_(address_space), backend_(backend),
           layout_(gles::MakeSupersampleLayout(width, height, supersample_factor)),
           symbols_(detail::BuildAndroidBoundarySymbols()), provider_(symbols_),
-          gles_dispatch_(address_space) {
+          gles_dispatch_(address_space, gl_context_),
+          gles1_state_(gl_context_.Shared()) {
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& {
@@ -721,6 +723,7 @@ private:
     gles::SupersampleLayout layout_;
     std::vector<BionicHleSymbol> symbols_;
     BionicHleSymbolProvider provider_;
+    GuestGlContext gl_context_;
     AndroidBoundaryGles gles_dispatch_;
     detail::AndroidBoundaryGles1State gles1_state_;
     detail::AndroidBoundaryGles1DrawState gles1_draw_state_;

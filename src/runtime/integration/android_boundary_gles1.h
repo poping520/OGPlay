@@ -13,6 +13,7 @@
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
+#include "ogplay/runtime/integration/guest_gl_context.h"
 
 namespace ogplay::memory {
 class AddressSpace;
@@ -67,6 +68,7 @@ private:
 class AndroidBoundaryGles1State final {
 public:
     AndroidBoundaryGles1State();
+    explicit AndroidBoundaryGles1State(SharedGlState& shared);
     ~AndroidBoundaryGles1State();
     void Reset();
     void SetShadeModel(std::uint32_t mode);
@@ -98,16 +100,16 @@ public:
     [[nodiscard]] const AndroidBoundaryGles1FixedState& Fixed() const noexcept;
 
 private:
+    SharedGlState owned_shared_;
+    SharedGlState* shared_{&owned_shared_};
     std::uint32_t shade_model_{kGles1SmoothShadeModel};
     std::array<std::uint32_t, 5> hints_{kGles1DontCare, kGles1DontCare,
                                        kGles1DontCare, kGles1DontCare,
                                        kGles1DontCare};
-    std::uint32_t active_texture_{0x84C0U};
     std::map<std::uint32_t, std::uint32_t> bound_textures_;
     std::map<std::uint32_t, std::uint32_t> texture_base_formats_;
     std::map<std::uint32_t, bool> generate_mipmap_;
     std::map<std::uint64_t, bool> capabilities_;
-    gles::GlesTransferState transfer_state_;
     AndroidBoundaryGles1MatrixState matrices_;
     std::unique_ptr<AndroidBoundaryGles1FixedState> fixed_;
 };

@@ -258,17 +258,22 @@ AndroidBoundaryGles1State::AndroidBoundaryGles1State()
     Reset();
 }
 
+AndroidBoundaryGles1State::AndroidBoundaryGles1State(SharedGlState& shared)
+    : shared_(&shared),
+      fixed_(std::make_unique<AndroidBoundaryGles1FixedState>()) {
+    Reset();
+}
+
 AndroidBoundaryGles1State::~AndroidBoundaryGles1State() = default;
 
 void AndroidBoundaryGles1State::Reset() {
     shade_model_ = kGles1SmoothShadeModel;
     hints_.fill(kGles1DontCare);
-    active_texture_ = 0x84C0U;
+    shared_->Reset();
     bound_textures_.clear();
     texture_base_formats_.clear();
     generate_mipmap_.clear();
     capabilities_.clear();
-    transfer_state_ = {};
     matrices_.Reset();
     fixed_->Reset();
 }
@@ -287,12 +292,12 @@ std::uint32_t AndroidBoundaryGles1State::ShadeModel() const noexcept {
 
 const gles::GlesTransferState&
 AndroidBoundaryGles1State::TransferState() const noexcept {
-    return transfer_state_;
+    return shared_->transfer;
 }
 
 void AndroidBoundaryGles1State::SetTransferState(
     gles::GlesTransferState state) noexcept {
-    transfer_state_ = std::move(state);
+    shared_->transfer = std::move(state);
 }
 
 void AndroidBoundaryGles1State::SetHint(const std::uint32_t target,
@@ -311,11 +316,11 @@ std::uint32_t AndroidBoundaryGles1State::Hint(
 void AndroidBoundaryGles1State::SetActiveTexture(
     const std::uint32_t texture) {
     matrices_.SetActiveTexture(texture);
-    active_texture_ = texture;
+    shared_->active_texture = texture;
 }
 
 std::uint32_t AndroidBoundaryGles1State::ActiveTexture() const noexcept {
-    return active_texture_;
+    return shared_->active_texture;
 }
 
 void AndroidBoundaryGles1State::BindTexture(
@@ -323,7 +328,7 @@ void AndroidBoundaryGles1State::BindTexture(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    bound_textures_[active_texture_] = texture;
+    bound_textures_[shared_->active_texture] = texture;
 }
 
 std::uint32_t AndroidBoundaryGles1State::BoundTexture(
@@ -331,7 +336,7 @@ std::uint32_t AndroidBoundaryGles1State::BoundTexture(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    const auto found = bound_textures_.find(active_texture_);
+    const auto found = bound_textures_.find(shared_->active_texture);
     return found == bound_textures_.end() ? 0U : found->second;
 }
 
@@ -352,12 +357,12 @@ void AndroidBoundaryGles1State::SetTextureBaseFormat(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    texture_base_formats_[bound_textures_[active_texture_]] = format;
+    texture_base_formats_[bound_textures_[shared_->active_texture]] = format;
 }
 
 std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
     const std::uint32_t target) const {
-    return TextureBaseFormat(active_texture_, target);
+    return TextureBaseFormat(shared_->active_texture, target);
 }
 
 std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
@@ -381,7 +386,7 @@ void AndroidBoundaryGles1State::SetGenerateMipmap(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    generate_mipmap_[bound_textures_[active_texture_]] = enabled;
+    generate_mipmap_[bound_textures_[shared_->active_texture]] = enabled;
 }
 
 bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
@@ -389,7 +394,7 @@ bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
     if (target != 0x0DE1U) {
         throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
     }
-    const auto bound = bound_textures_.find(active_texture_);
+    const auto bound = bound_textures_.find(shared_->active_texture);
     const auto texture = bound == bound_textures_.end() ? 0U : bound->second;
     const auto found = generate_mipmap_.find(texture);
     return found != generate_mipmap_.end() && found->second;
@@ -397,12 +402,12 @@ bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
 
 void AndroidBoundaryGles1State::SetCapability(
     const std::uint32_t capability, const bool enabled) {
-    capabilities_[CapabilityKey(capability, active_texture_)] = enabled;
+    capabilities_[CapabilityKey(capability, shared_->active_texture)] = enabled;
 }
 
 bool AndroidBoundaryGles1State::Capability(
     const std::uint32_t capability) const {
-    return Capability(active_texture_, capability);
+    return Capability(shared_->active_texture, capability);
 }
 
 bool AndroidBoundaryGles1State::Capability(

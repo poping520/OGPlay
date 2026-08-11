@@ -316,6 +316,7 @@ add_library(ogplay_runtime
     src/runtime/integration/android_guest_java_movie.cpp
     src/runtime/integration/android_guest_java_platform.cpp
     src/runtime/integration/headless_bionic_runner.cpp
+    src/runtime/integration/guest_gl_context.cpp
     src/runtime/integration/android_boundary_gles.cpp
     src/runtime/integration/android_boundary_gles1.cpp
     src/runtime/integration/android_boundary_gles1_draw.cpp

@@ -22,6 +22,7 @@
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/gles/supersample.h"
 #include "ogplay/runtime/integration/android_boundary_gles.h"
+#include "ogplay/runtime/integration/a32_call_frame.h"
 #include "ogplay/runtime/integration/guest_gl_context.h"
 #include "android_boundary_gles1.h"
 #include "android_boundary_gles1_draw.h"
@@ -214,16 +215,16 @@ public:
             stopped.pc.Value(), descriptors_);
         if (descriptor == nullptr) return false;
         auto state = cpu.GetState();
-        const auto arguments = std::array{
-            state.Register(cpu::CoreRegister::r0), state.Register(cpu::CoreRegister::r1),
-            state.Register(cpu::CoreRegister::r2), state.Register(cpu::CoreRegister::r3)};
+        const A32CallFrame call(address_space_, state,
+                                descriptor->parameter_count);
+        const auto arguments = call.RegisterArguments();
         std::uint32_t result{};
         try {
             if (descriptor->route == detail::HleRoute::bionic_memory) {
                 result = ExecuteBionicMemoryIntercept(
                     address_space_, {descriptor->name, arguments, state.ThreadId()});
             } else {
-                result = Dispatch(*descriptor, arguments, state);
+                result = Dispatch(*descriptor, call);
             }
         } catch (const gles::GuestTransferError& error) {
             throw gles::GuestTransferError(
@@ -429,18 +430,6 @@ private:
         }
         return result;
     }
-    std::uint32_t StackWord(const cpu::A32State& state, const std::uint32_t offset) {
-        std::array<std::byte, 4> bytes{};
-        address_space_.Read(memory::GuestAddress{
-                                state.Register(cpu::CoreRegister::sp) + offset},
-                            bytes, state.ThreadId());
-        std::uint32_t value{};
-        for (std::size_t index = 0; index < bytes.size(); ++index) {
-            value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[index]))
-                     << (index * 8U);
-        }
-        return value;
-    }
     std::uint32_t PollAll(const std::array<std::uint32_t, 4>& args,
                           const std::uint64_t thread_id) {
         const auto timeout = std::bit_cast<std::int32_t>(args[0]);
@@ -471,11 +460,11 @@ private:
         return ident;
     }
     std::uint32_t Dispatch(const detail::HleThunkDescriptor& descriptor,
-                           const std::array<std::uint32_t, 4>& args,
-                           const cpu::A32State& state) {
+                           const A32CallFrame& call) {
+        const auto args = call.RegisterArguments();
         const auto symbol = descriptor.name;
         const auto function_id = descriptor.function_id;
-        const auto tid = state.ThreadId();
+        const auto tid = call.ThreadId();
         if (descriptor.route == detail::HleRoute::gles1 ||
             descriptor.route == detail::HleRoute::gles1_extension) {
             const auto draw_call =
@@ -491,7 +480,7 @@ private:
                 const auto result = gles_dispatch_.Dispatch(
                     function_id == 35U ? Id(Gles2Function::draw_arrays)
                                        : Id(Gles2Function::draw_elements),
-                    args, state,
+                    call,
                     angle_frame_.has_value() ? &*angle_frame_ : nullptr);
                 if (!result.has_value()) {
                     throw std::logic_error(
@@ -502,14 +491,7 @@ private:
                 ++gpu_stats_.draw_targets.front().draws;
                 return *result;
             }
-            std::vector<std::uint32_t> all;
-            all.reserve(descriptor.parameter_count);
-            for (std::size_t index = 0; index < descriptor.parameter_count; ++index) {
-                all.push_back(index < args.size()
-                                  ? args[index]
-                                  : StackWord(state, static_cast<std::uint32_t>(
-                                                         (index - args.size()) * 4U)));
-            }
+            const auto all = call.Arguments();
             auto& dispatch = descriptor.route == detail::HleRoute::gles1
                                  ? gles1_dispatch_
                                  : gles1_extensions_dispatch_;
@@ -554,7 +536,7 @@ private:
             function_id == Id(AndroidFunction::looper_add_fd)) {
             std::scoped_lock lock(mutex_);
             command_ident_ = args[2];
-            command_data_ = StackWord(state, 4);
+            command_data_ = call.Argument(5);
             return 1;
         }
         if (descriptor.route == detail::HleRoute::android &&
@@ -565,7 +547,7 @@ private:
             function_id == Id(AndroidFunction::input_queue_attach_looper)) {
             std::scoped_lock lock(mutex_);
             input_ident_ = args[2];
-            input_data_ = StackWord(state, 0);
+            input_data_ = call.Argument(4);
             return 0;
         }
         if (descriptor.route == detail::HleRoute::android &&
@@ -630,7 +612,7 @@ private:
         if (descriptor.route == detail::HleRoute::egl &&
             function_id == Id(EglFunction::choose_config)) {
             Write32(args[2], kFakeConfig, tid);
-            Write32(StackWord(state, 0), 1, tid);
+            Write32(call.Argument(4), 1, tid);
             return 1;
         }
         if (descriptor.route == detail::HleRoute::egl &&
@@ -690,12 +672,12 @@ private:
             throw std::runtime_error(
                 "Android boundary HLE function id is not implemented");
         }
-        if (const auto shader_program = DispatchShaderProgram(function_id, args, state);
+        if (const auto shader_program = DispatchShaderProgram(function_id, call);
             shader_program.has_value()) {
             return *shader_program;
         }
         if (const auto resources = gles_dispatch_.Dispatch(
-                function_id, args, state,
+                function_id, call,
                 angle_frame_.has_value() ? &*angle_frame_ : nullptr);
             resources.has_value()) {
             if (function_id == Id(Gles2Function::draw_elements) ||
@@ -761,11 +743,11 @@ private:
     }
     std::optional<std::uint32_t> DispatchShaderProgram(
         const gles::GlesThunkId function_id,
-        const std::array<std::uint32_t, 4>& args,
-        const cpu::A32State& state) {
+        const A32CallFrame& call) {
+        const auto args = call.RegisterArguments();
         const auto symbol = gles::DescribeGlesFunction(
                                 gles::GlesApi::gles2, function_id).name;
-        const auto tid = state.ThreadId();
+        const auto tid = call.ThreadId();
         if (function_id == Id(Gles2Function::create_shader)) {
             return RequireFrame(symbol).CreateShader(args[0]);
         }

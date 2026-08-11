@@ -70,7 +70,16 @@ constexpr std::uint32_t kThunkStride = 4U;
         }
         return static_cast<std::uint8_t>(count);
     }
-    return 4U;
+    static constexpr std::array<std::uint8_t, 42> counts{
+        3, 3, 3, 3, 1,
+        0, 1, 2, 2, 2, 1, 6, 4, 5, 1, 2, 2, 3, 1, 1, 1, 1, 2, 2, 4,
+        1, 3, 5, 4, 4, 4, 4, 4, 2, 2, 2, 1,
+        4, 4, 1, 3, 3,
+    };
+    if (function_id >= counts.size()) {
+        throw std::logic_error("non-GLES function id is outside its catalog");
+    }
+    return counts[function_id];
 }
 
 }  // namespace

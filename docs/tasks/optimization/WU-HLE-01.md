@@ -9,6 +9,6 @@ range/alignment/index 算术定位 dense descriptor。
 - [x] decode 同时接受 Thumb bit 地址与 code PC，拒绝越界、错位和未发布 slot。
 - [x] logger/debugger 继续可用 `Resolve()`，execution 不再调用它。
 - [x] focused perf case 可人工比较 1M 次 Resolve 与 Decode，不设置绝对时间 gate。
-- [ ] HLE 阶段统一构建与测试。
+- [x] HLE 阶段统一构建与测试：`windows-msvc` 构建通过，CTest 503/503。
 
 非目标：execution routing 的 module/symbol 字符串比较由 WU-HLE-02 删除。

@@ -8,4 +8,4 @@
 - [x] 封口后禁止新增或替换绑定，重复封口保持幂等。
 - [x] 已绑定 Invoke/IsBound 不获取 dispatch mutex。
 - [x] 未绑定调用继续在线程安全计数后明确失败。
-- [ ] HLE 阶段统一构建与测试。
+- [x] HLE 阶段统一构建与测试：`windows-msvc` 构建通过，CTest 503/503。

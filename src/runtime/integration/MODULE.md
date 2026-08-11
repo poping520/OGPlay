@@ -273,6 +273,8 @@
   ANGLE 后端和最近 2048 条 EGL/GLES 调用；未查询到的扩展、限制和 guest FBO 不伪造。
 - Android boundary 的正常执行链只以 dense descriptor 的 route/function id 路由；
   library/name 只服务于 ELF 查询、诊断与 trace 渲染，禁止重新参与 HLE/GLES handler 选择。
+- `A32CallFrame` 按 descriptor 的精确 parameter count 固定存储 r0-r3，并以一次 guest
+  bulk read 解码剩余栈参数；Android/EGL/GLES handler 不得自行逐字读取 guest 栈。
 - executor、时钟、VFS 和 profile 必须显式注入或由确定性 fixture 建立。
 - 不包含平台 UI、真实 present 或游戏专属逻辑。
 

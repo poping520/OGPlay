@@ -18,6 +18,7 @@
 #include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/integration/android_boundary_hle.h"
+#include "ogplay/runtime/integration/a32_call_frame.h"
 #include "../../src/runtime/integration/android_boundary_gles1.h"
 #include "../../src/runtime/integration/android_boundary_gles1_draw.h"
 #include "../../src/runtime/integration/android_boundary_gles1_query.h"
@@ -191,6 +192,55 @@ TEST_CASE("Android boundary descriptors carry execution routing ids") {
     REQUIRE(gles1 != nullptr);
     CHECK(gles1->route == ogplay::runtime::detail::HleRoute::gles1);
     CHECK(gles1->function_id == 36U);
+    CHECK(gles1->parameter_count == 4U);
+
+    const auto* tex_image = descriptor_for("libGLESv2.so", "glTexImage2D");
+    REQUIRE(tex_image != nullptr);
+    CHECK(tex_image->parameter_count == 9U);
+
+    const auto* add_fd = descriptor_for("libandroid.so", "ALooper_addFd");
+    REQUIRE(add_fd != nullptr);
+    CHECK(add_fd->parameter_count == 6U);
+}
+
+TEST_CASE("A32 call frame bulk decodes register and stack arguments") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress stack{0x6e200000U};
+    memory.Map({stack, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    const std::array<std::uint32_t, 5> stack_words{
+        0x44444444U, 0x55555555U, 0x66666666U, 0x77777777U,
+        0x88888888U};
+    std::array<std::byte, stack_words.size() * sizeof(std::uint32_t)> bytes{};
+    for (std::size_t word = 0; word < stack_words.size(); ++word) {
+        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
+            bytes[word * sizeof(std::uint32_t) + byte] =
+                static_cast<std::byte>(stack_words[word] >> (byte * 8U));
+        }
+    }
+    memory.Write(stack, bytes, 71);
+
+    ogplay::cpu::A32State state;
+    state.SetThreadId(71);
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, 0x00000000U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r1, 0x11111111U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r2, 0x22222222U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r3, 0x33333333U);
+    state.SetRegister(ogplay::cpu::CoreRegister::sp, stack.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::lr, 0xabcdef01U);
+    const ogplay::runtime::A32CallFrame call(memory, state, 9U);
+    REQUIRE(call.Arguments().size() == 9U);
+    for (std::size_t index = 0; index < call.Arguments().size(); ++index) {
+        CHECK(call.Argument(index) == static_cast<std::uint32_t>(index) *
+                                          0x11111111U);
+    }
+    CHECK(call.ThreadId() == 71U);
+    CHECK(call.LinkRegister() == 0xabcdef01U);
+    CHECK_THROWS_AS(static_cast<void>(call.Argument(9U)), std::out_of_range);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::runtime::A32CallFrame(memory, state, 10U)),
+        std::length_error);
 }
 
 TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {

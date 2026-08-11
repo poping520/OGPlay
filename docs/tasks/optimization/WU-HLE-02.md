@@ -9,4 +9,4 @@
 - [x] GLES1/2 handler 全链路接收生成目录的 function id。
 - [x] 字符串只用于兼容入口、错误信息、查询与 trace，不参与正常 handler 选择。
 - [x] descriptor 测试锁定 Android/GLES1/GLES2 的代表性 route/id。
-- [ ] HLE 阶段统一构建与测试。
+- [x] HLE 阶段统一构建与测试：`windows-msvc` 构建通过，CTest 503/503。

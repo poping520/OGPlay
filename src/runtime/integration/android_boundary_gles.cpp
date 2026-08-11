@@ -21,6 +21,7 @@
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/integration/guest_gl_context.h"
+#include "ogplay/runtime/integration/a32_call_frame.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -153,16 +154,16 @@ public:
 
     std::optional<std::uint32_t> Dispatch(
         const gles::GlesThunkId function_id,
-        const std::array<std::uint32_t, 4>& args,
-        const cpu::A32State& state, gles::AngleFrame* const frame) {
+        const A32CallFrame& a32_call, gles::AngleFrame* const frame) {
         const auto symbol = gles::DescribeGlesFunction(
                                 gles::GlesApi::gles2, function_id).name;
-        const auto tid = state.ThreadId();
+        const auto args = a32_call.RegisterArguments();
+        const auto tid = a32_call.ThreadId();
         if (function_id == Id(Gles2Function::gen_buffers) ||
             function_id == Id(Gles2Function::gen_textures) ||
             function_id == Id(Gles2Function::gen_framebuffers) ||
             function_id == Id(Gles2Function::gen_renderbuffers)) {
-            auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
+            auto call = PrepareCall(function_id, std::span(args).first<2>(), tid);
             auto& current = RequireFrame(frame, symbol);
             auto names = function_id == Id(Gles2Function::gen_buffers)
                              ? current.GenerateBuffers(args[0])
@@ -178,7 +179,7 @@ public:
             function_id == Id(Gles2Function::delete_textures) ||
             function_id == Id(Gles2Function::delete_framebuffers) ||
             function_id == Id(Gles2Function::delete_renderbuffers)) {
-            auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
+            auto call = PrepareCall(function_id, std::span(args).first<2>(), tid);
             const auto names = ReadWords(Pointer(call));
             if (function_id == Id(Gles2Function::delete_buffers)) {
                 RequireFrame(frame, symbol).DeleteBuffers(names);
@@ -209,7 +210,7 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::buffer_data)) {
-            auto call = PrepareCall(symbol, args, tid);
+            auto call = PrepareCall(function_id, args, tid);
             const auto& data = Pointer(call);
             RequireFrame(frame, symbol).BufferData(
                 args[0], args[1], OptionalBytes(data), args[3]);
@@ -255,7 +256,7 @@ public:
         if (function_id == Id(Gles2Function::framebuffer_texture_2d)) {
             RequireFrame(frame, symbol).FramebufferTexture2D(
                 args[0], args[1], args[2], args[3],
-                std::bit_cast<std::int32_t>(StackWord(state, 0)));
+                std::bit_cast<std::int32_t>(a32_call.Argument(4)));
             return 0;
         }
         if (function_id == Id(Gles2Function::framebuffer_renderbuffer)) {
@@ -283,10 +284,9 @@ public:
         if (function_id == Id(Gles2Function::tex_image_2d)) {
             std::array<std::uint32_t, 9> all{args[0], args[1], args[2], args[3]};
             for (std::size_t index = 4; index < all.size(); ++index) {
-                all[index] = StackWord(state,
-                    static_cast<std::uint32_t>((index - 4U) * 4U));
+                all[index] = a32_call.Argument(index);
             }
-            auto call = PrepareCall(symbol, all, tid);
+            auto call = PrepareCall(function_id, all, tid);
             const auto& pixels = Pointer(call);
             RequireFrame(frame, symbol).TextureImage2D(
                 all[0], std::bit_cast<std::int32_t>(all[1]),
@@ -303,10 +303,9 @@ public:
         if (function_id == Id(Gles2Function::tex_sub_image_2d)) {
             std::array<std::uint32_t, 9> all{args[0], args[1], args[2], args[3]};
             for (std::size_t index = 4; index < all.size(); ++index) {
-                all[index] = StackWord(state,
-                    static_cast<std::uint32_t>((index - 4U) * 4U));
+                all[index] = a32_call.Argument(index);
             }
-            auto call = PrepareCall(symbol, all, tid);
+            auto call = PrepareCall(function_id, all, tid);
             RequireFrame(frame, symbol).TextureSubImage2D(
                 all[0], std::bit_cast<std::int32_t>(all[1]),
                 std::bit_cast<std::int32_t>(all[2]),
@@ -323,7 +322,7 @@ public:
             attributes_[index].enabled =
                 function_id == Id(Gles2Function::enable_vertex_attrib_array);
             attributes_[index].enable_lr =
-                state.Register(cpu::CoreRegister::lr);
+                a32_call.LinkRegister();
             RequireFrame(frame, symbol).SetVertexAttributeEnabled(
                 index, attributes_[index].enabled);
             return 0;
@@ -334,8 +333,8 @@ public:
             const auto size = std::bit_cast<std::int32_t>(args[1]);
             const auto type = args[2];
             const auto normalized = args[3] != 0;
-            const auto stride = std::bit_cast<std::int32_t>(StackWord(state, 0));
-            const auto pointer = StackWord(state, 4);
+            const auto stride = std::bit_cast<std::int32_t>(a32_call.Argument(4));
+            const auto pointer = a32_call.Argument(5);
             if (size < 1 || size > 4) {
                 throw std::invalid_argument(
                     "GLES2 vertex attribute size is outside 1..4");
@@ -348,7 +347,7 @@ public:
             std::array<std::uint32_t, 6> all{
                 args[0], args[1], args[2], args[3],
                 static_cast<std::uint32_t>(stride), pointer};
-            auto call = PrepareCall(symbol, all, tid);
+            auto call = PrepareCall(function_id, all, tid);
             if (call.pointers.size() != 1 || !call.pointers.front().deferred) {
                 throw std::logic_error(
                     "glVertexAttribPointer expected a deferred pointer");
@@ -363,7 +362,7 @@ public:
                 .buffer = buffer,
                 .enabled = attributes_[index].enabled,
                 .defined = true,
-                .definition_lr = state.Register(cpu::CoreRegister::lr),
+                .definition_lr = a32_call.LinkRegister(),
                 .enable_lr = attributes_[index].enable_lr,
             };
             if (buffer != 0U) {
@@ -389,11 +388,11 @@ public:
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<float>(args[1]), std::bit_cast<float>(args[2]),
                 std::bit_cast<float>(args[3]),
-                std::bit_cast<float>(StackWord(state, 0)));
+                std::bit_cast<float>(a32_call.Argument(4)));
             return 0;
         }
         if (function_id == Id(Gles2Function::uniform_matrix_3fv)) {
-            auto call = PrepareCall(symbol, args, tid);
+            auto call = PrepareCall(function_id, args, tid);
             const auto values = ReadFloats(Pointer(call));
             RequireFrame(frame, symbol).UniformMatrix3(
                 std::bit_cast<std::int32_t>(args[0]),
@@ -408,7 +407,7 @@ public:
             function_id == Id(Gles2Function::uniform_2iv) ||
             function_id == Id(Gles2Function::uniform_3iv) ||
             function_id == Id(Gles2Function::uniform_4iv)) {
-            auto call = PrepareCall(symbol, std::span(args).first<3>(), tid);
+            auto call = PrepareCall(function_id, std::span(args).first<3>(), tid);
             const auto components =
                 function_id == Id(Gles2Function::uniform_1fv) ||
                         function_id == Id(Gles2Function::uniform_1iv) ? 1U :
@@ -417,7 +416,12 @@ public:
                 function_id == Id(Gles2Function::uniform_3fv) ||
                         function_id == Id(Gles2Function::uniform_3iv) ? 3U : 4U;
             const auto count = std::bit_cast<std::int32_t>(args[1]);
-            if (symbol.ends_with("fv")) {
+            const auto floating =
+                function_id == Id(Gles2Function::uniform_1fv) ||
+                function_id == Id(Gles2Function::uniform_2fv) ||
+                function_id == Id(Gles2Function::uniform_3fv) ||
+                function_id == Id(Gles2Function::uniform_4fv);
+            if (floating) {
                 RequireFrame(frame, symbol).UniformFloats(
                     std::bit_cast<std::int32_t>(args[0]), count, components,
                     ReadFloats(Pointer(call)));
@@ -429,7 +433,7 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::uniform_matrix_4fv)) {
-            auto call = PrepareCall(symbol, args, tid);
+            auto call = PrepareCall(function_id, args, tid);
             RequireFrame(frame, symbol).UniformMatrix4(
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<std::int32_t>(args[1]), args[2] != 0,
@@ -440,15 +444,15 @@ public:
             RequireFrame(frame, symbol).VertexAttribute4f(
                 args[0], std::bit_cast<float>(args[1]),
                 std::bit_cast<float>(args[2]), std::bit_cast<float>(args[3]),
-                std::bit_cast<float>(StackWord(state, 0)));
+                std::bit_cast<float>(a32_call.Argument(4)));
             return 0;
         }
         if (function_id == Id(Gles2Function::get_active_attrib) ||
             function_id == Id(Gles2Function::get_active_uniform)) {
             std::array<std::uint32_t, 7> all{
-                args[0], args[1], args[2], args[3], StackWord(state, 0),
-                StackWord(state, 4), StackWord(state, 8)};
-            auto call = PrepareCall(symbol, all, tid);
+                args[0], args[1], args[2], args[3], a32_call.Argument(4),
+                a32_call.Argument(5), a32_call.Argument(6)};
+            auto call = PrepareCall(function_id, all, tid);
             const auto result = function_id == Id(Gles2Function::get_active_attrib)
                 ? RequireFrame(frame, symbol).GetActiveAttribute(all[0], all[1])
                 : RequireFrame(frame, symbol).GetActiveUniform(all[0], all[1]);
@@ -461,7 +465,7 @@ public:
         }
         if (function_id == Id(Gles2Function::get_program_info_log) ||
             function_id == Id(Gles2Function::get_shader_info_log)) {
-            auto call = PrepareCall(symbol, args, tid);
+            auto call = PrepareCall(function_id, args, tid);
             const auto log = function_id == Id(Gles2Function::get_program_info_log)
                 ? RequireFrame(frame, symbol).GetProgramInfoLog(args[0])
                 : RequireFrame(frame, symbol).GetShaderInfoLog(args[0]);
@@ -470,7 +474,7 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::get_integerv)) {
-            auto call = PrepareCall(symbol, std::span(args).first<2>(), tid);
+            auto call = PrepareCall(function_id, std::span(args).first<2>(), tid);
             auto& output = Pointer(call);
             const auto values = RequireFrame(frame, symbol).GetIntegers(
                 args[0], output.WritableBytes().size() / 4U);
@@ -552,7 +556,7 @@ public:
                 throw std::invalid_argument("GLES2 draw element count is negative");
             }
             if (count == 0) return 0;
-            auto call = PrepareCall(symbol, args, tid);
+            auto call = PrepareCall(function_id, args, tid);
             if (call.pointers.size() != 1) {
                 throw std::logic_error("glDrawElements expected one pointer");
             }
@@ -590,8 +594,9 @@ public:
         if (function_id == Id(Gles2Function::read_pixels)) {
             std::array<std::uint32_t, 7> all{
                 args[0], args[1], args[2], args[3],
-                StackWord(state, 0), StackWord(state, 4), StackWord(state, 8)};
-            auto call = PrepareCall(symbol, all, tid);
+                a32_call.Argument(4), a32_call.Argument(5),
+                a32_call.Argument(6)};
+            auto call = PrepareCall(function_id, all, tid);
             auto& output = Pointer(call);
             RequireFrame(frame, symbol).ReadPixels(
                 std::bit_cast<std::int32_t>(all[0]),
@@ -736,29 +741,12 @@ private:
         frame.BindBuffer(kElementArrayBuffer, bound.element_array_buffer);
     }
 
-    std::uint32_t StackWord(const cpu::A32State& state,
-                            const std::uint32_t offset) const {
-        std::array<std::byte, 4> bytes{};
-        address_space_.Read(memory::GuestAddress{
-            state.Register(cpu::CoreRegister::sp) + offset}, bytes,
-            state.ThreadId());
-        std::uint32_t value{};
-        for (std::size_t index = 0; index < bytes.size(); ++index) {
-            value |= static_cast<std::uint32_t>(
-                std::to_integer<std::uint8_t>(bytes[index])) << (index * 8U);
-        }
-        return value;
-    }
-
     gles::PreparedGlesCall PrepareCall(
-        const std::string_view symbol, const std::span<const std::uint32_t> args,
+        const gles::GlesThunkId function_id,
+        const std::span<const std::uint32_t> args,
         const std::uint64_t tid) {
-        const auto id = gles::GlesDispatchTable::Find(symbol);
-        if (!id.has_value()) {
-            throw std::logic_error("GLES resource handler is not cataloged");
-        }
         return gles::PrepareGles2Call(
-            address_space_, *id, args, tid, &context_.Shared().transfer);
+            address_space_, function_id, args, tid, &context_.Shared().transfer);
     }
 
     static gles::GuestBuffer& Pointer(gles::PreparedGlesCall& call) {
@@ -933,19 +921,17 @@ AndroidBoundaryGles::~AndroidBoundaryGles() = default;
 
 std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(
     const std::string_view symbol,
-    const std::array<std::uint32_t, 4>& arguments,
-    const cpu::A32State& state, gles::AngleFrame* const frame) {
+    const A32CallFrame& call, gles::AngleFrame* const frame) {
     const auto function_id = gles::FindGlesFunction(
         gles::GlesApi::gles2, symbol);
     if (!function_id.has_value()) return std::nullopt;
-    return Dispatch(*function_id, arguments, state, frame);
+    return Dispatch(*function_id, call, frame);
 }
 
 std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(
     const gles::GlesThunkId function_id,
-    const std::array<std::uint32_t, 4>& arguments,
-    const cpu::A32State& state, gles::AngleFrame* const frame) {
-    return impl_->Dispatch(function_id, arguments, state, frame);
+    const A32CallFrame& call, gles::AngleFrame* const frame) {
+    return impl_->Dispatch(function_id, call, frame);
 }
 
 bool AndroidBoundaryGles::HasEnabledVertexAttribute() const noexcept {

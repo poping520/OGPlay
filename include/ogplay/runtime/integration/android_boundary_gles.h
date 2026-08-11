@@ -8,10 +8,6 @@
 
 #include "ogplay/gles/gles_transfer_state.h"
 
-namespace ogplay::cpu {
-class A32State;
-}
-
 namespace ogplay::gles {
 class AngleFrame;
 using GlesThunkId = std::uint16_t;
@@ -24,6 +20,7 @@ class AddressSpace;
 namespace ogplay::runtime {
 
 class GuestGlContext;
+class A32CallFrame;
 
 class AndroidBoundaryGles final {
 public:
@@ -35,12 +32,11 @@ public:
     AndroidBoundaryGles& operator=(const AndroidBoundaryGles&) = delete;
 
     [[nodiscard]] std::optional<std::uint32_t> Dispatch(
-        std::string_view symbol, const std::array<std::uint32_t, 4>& arguments,
-        const cpu::A32State& state, gles::AngleFrame* frame);
+        std::string_view symbol, const A32CallFrame& call,
+        gles::AngleFrame* frame);
     [[nodiscard]] std::optional<std::uint32_t> Dispatch(
         gles::GlesThunkId function_id,
-        const std::array<std::uint32_t, 4>& arguments,
-        const cpu::A32State& state, gles::AngleFrame* frame);
+        const A32CallFrame& call, gles::AngleFrame* frame);
     [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept;
     [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept;
     void RestoreNativeState(gles::AngleFrame& frame);

@@ -585,6 +585,7 @@ public:
                 lifecycle_.RequestExit(child.thread_id, 0);
             }
         }
+        static_cast<void>(environment_.InterruptMonitors());
         static_cast<void>(futex_table_.InterruptAll());
         std::exception_ptr first_child_failure;
         for (const auto& child : children) {
@@ -700,7 +701,10 @@ public:
                                   const std::uint32_t sample_rate) {
         return sound_pool_mixer_.RenderStereoPcm16(output, sample_rate);
     }
-    std::size_t InterruptBlockingWaits() { return futex_table_.InterruptAll(); }
+    std::size_t InterruptBlockingWaits() {
+        return futex_table_.InterruptAll() +
+               environment_.InterruptMonitors();
+    }
     bool Running() const noexcept { return running_; }
     bool ExitRequested() const noexcept { return process_state_.ExitRequested(); }
     std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const {

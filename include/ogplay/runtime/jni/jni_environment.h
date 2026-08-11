@@ -13,6 +13,51 @@
 
 namespace ogplay::runtime {
 
+enum class JniMonitorErrorReason : std::uint8_t {
+    invalid_thread,
+    invalid_object,
+    recursion_overflow,
+    not_owner,
+    interrupted,
+};
+
+class JniMonitorError final : public std::runtime_error {
+public:
+    JniMonitorError(JniMonitorErrorReason reason, std::string message);
+    [[nodiscard]] JniMonitorErrorReason Reason() const noexcept;
+
+private:
+    JniMonitorErrorReason reason_;
+};
+
+struct JniMonitorSnapshot final {
+    std::uint64_t owner_thread{};
+    std::size_t recursion{};
+    std::size_t waiting_threads{};
+    bool interrupted{};
+};
+
+class JniMonitorTable final {
+public:
+    JniMonitorTable();
+    ~JniMonitorTable();
+    JniMonitorTable(const JniMonitorTable&) = delete;
+    JniMonitorTable& operator=(const JniMonitorTable&) = delete;
+    JniMonitorTable(JniMonitorTable&&) noexcept;
+    JniMonitorTable& operator=(JniMonitorTable&&) noexcept;
+
+    void Enter(JniObjectIdentity object, std::uint64_t thread_id);
+    void Exit(JniObjectIdentity object, std::uint64_t thread_id);
+    [[nodiscard]] std::size_t ReleaseThread(std::uint64_t thread_id);
+    [[nodiscard]] std::size_t InterruptAll();
+    [[nodiscard]] JniMonitorSnapshot Snapshot(
+        JniObjectIdentity object) const;
+
+private:
+    class Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
 struct JniThrowableMetadata final {
     JniObjectIdentity throwable;
     JniObjectIdentity exception_class;
@@ -66,12 +111,18 @@ public:
     void ExceptionDescribe(std::uint64_t thread_id);
     void ExceptionClear(std::uint64_t thread_id);
     [[nodiscard]] std::vector<core::LogRecord> ExceptionDiagnostics() const;
+    void MonitorEnter(std::uint64_t thread_id, JniReference object);
+    void MonitorExit(std::uint64_t thread_id, JniReference object);
+    [[nodiscard]] std::size_t InterruptMonitors();
+    [[nodiscard]] JniMonitorSnapshot MonitorSnapshot(
+        JniObjectIdentity object) const;
 
 private:
     void RequireAllowed(std::uint64_t thread_id, const char* slot_name) const;
 
     JniReferenceTable references_;
     JniExceptionState exceptions_;
+    JniMonitorTable monitors_;
     mutable std::mutex throwable_mutex_;
     std::map<std::uint64_t, JniThrowableMetadata> throwables_;
     core::Logger exception_logger_;

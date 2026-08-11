@@ -304,6 +304,20 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                             : 0U);
         });
     dispatcher.BindEnvironment(
+        EnvironmentSlot("MonitorEnter"),
+        [&environment](const JniGuestCallFrame& frame) {
+            environment.MonitorEnter(
+                frame.thread_id, JniReference{frame.registers[1]});
+            return Int(static_cast<JniInt>(JniStatus::ok));
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("MonitorExit"),
+        [&environment](const JniGuestCallFrame& frame) {
+            environment.MonitorExit(
+                frame.thread_id, JniReference{frame.registers[1]});
+            return Int(static_cast<JniInt>(JniStatus::ok));
+        });
+    dispatcher.BindEnvironment(
         EnvironmentSlot("GetStaticMethodID"),
         [&environment, &classes,
          &address_space](const JniGuestCallFrame& frame) {

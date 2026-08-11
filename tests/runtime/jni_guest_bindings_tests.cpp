@@ -157,6 +157,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
         "NewLocalRef",         "EnsureLocalCapacity",
         "GetJavaVM",           "NewWeakGlobalRef",
         "DeleteWeakGlobalRef", "ExceptionCheck",
+        "MonitorEnter",        "MonitorExit",
         "GetStaticMethodID",   "CallStaticObjectMethod",
         "CallStaticObjectMethodV", "CallStaticObjectMethodA",
         "CallStaticBooleanMethod", "CallStaticBooleanMethodV",
@@ -269,7 +270,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
                                  ? 1U
                                  : 0U;
     }
-    CHECK(environment_count == 210U);
+    CHECK(environment_count == 212U);
     std::size_t java_vm_count{};
     for (std::size_t index = 3U;
          index < ogplay::runtime::kJniInvokeInterfaceSlotCount; ++index) {

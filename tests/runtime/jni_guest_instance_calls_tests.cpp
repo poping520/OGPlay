@@ -1,11 +1,15 @@
 #include <array>
+#include <atomic>
 #include <bit>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <stdexcept>
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -633,4 +637,114 @@ TEST_CASE("guest JNI UTF-16 strings own checked code-unit leases") {
         static_cast<void>(fixture.Call(
             "GetStringRegion", string.Value(), 3U, 2U)),
         JniStringError);
+}
+
+TEST_CASE("JNI monitor is reentrant and rejects a non-owner exit") {
+    using namespace ogplay::runtime;
+    JniMonitorTable monitors;
+    const auto object = AllocateJniHostObjectIdentity();
+
+    monitors.Enter(object, 1U);
+    monitors.Enter(object, 1U);
+    CHECK(monitors.Snapshot(object).owner_thread == 1U);
+    CHECK(monitors.Snapshot(object).recursion == 2U);
+    monitors.Exit(object, 1U);
+    CHECK(monitors.Snapshot(object).recursion == 1U);
+    CHECK_THROWS_WITH_AS(
+        monitors.Exit(object, 2U),
+        "JNI monitor exit requires the owning guest thread",
+        JniMonitorError);
+    monitors.Exit(object, 1U);
+    CHECK(monitors.Snapshot(object).owner_thread == 0U);
+}
+
+TEST_CASE("JNI monitor contention transfers ownership after detach release") {
+    using namespace ogplay::runtime;
+    using namespace std::chrono_literals;
+    JniEnvironment environment;
+    const auto object = AllocateJniHostObjectIdentity();
+    environment.AttachThread(11U);
+    environment.AttachThread(12U);
+    const auto first = environment.PublishLocalObject(11U, object);
+    const auto second = environment.PublishLocalObject(12U, object);
+    environment.MonitorEnter(11U, first);
+    std::atomic<bool> acquired{};
+    auto waiter = std::async(std::launch::async, [&] {
+        environment.MonitorEnter(12U, second);
+        acquired = true;
+        environment.MonitorExit(12U, second);
+    });
+    const auto wait_deadline = std::chrono::steady_clock::now() + 2s;
+    while (environment.MonitorSnapshot(object).waiting_threads == 0U &&
+           std::chrono::steady_clock::now() < wait_deadline) {
+        std::this_thread::yield();
+    }
+    const auto blocked =
+        environment.MonitorSnapshot(object).waiting_threads == 1U;
+    if (!blocked) environment.DetachThread(11U);
+    REQUIRE(blocked);
+    CHECK_FALSE(acquired.load());
+    environment.DetachThread(11U);
+    const auto transferred =
+        waiter.wait_for(2s) == std::future_status::ready;
+    if (!transferred) {
+        static_cast<void>(environment.InterruptMonitors());
+    }
+    REQUIRE(transferred);
+    waiter.get();
+    CHECK(acquired.load());
+    CHECK(environment.MonitorSnapshot(object).owner_thread == 0U);
+    environment.DetachThread(12U);
+}
+
+TEST_CASE("JNI monitor shutdown interrupts every current waiter") {
+    using namespace ogplay::runtime;
+    using namespace std::chrono_literals;
+    JniMonitorTable monitors;
+    const auto object = AllocateJniHostObjectIdentity();
+    monitors.Enter(object, 21U);
+    auto waiter = std::async(std::launch::async, [&] {
+        try {
+            monitors.Enter(object, 22U);
+        } catch (const JniMonitorError& error) {
+            return error.Reason() == JniMonitorErrorReason::interrupted;
+        }
+        return false;
+    });
+    const auto wait_deadline = std::chrono::steady_clock::now() + 2s;
+    while (monitors.Snapshot(object).waiting_threads == 0U &&
+           std::chrono::steady_clock::now() < wait_deadline) {
+        std::this_thread::yield();
+    }
+    const auto blocked = monitors.Snapshot(object).waiting_threads == 1U;
+    const auto interrupted = monitors.InterruptAll();
+    REQUIRE(blocked);
+    CHECK(interrupted == 1U);
+    REQUIRE(waiter.wait_for(2s) == std::future_status::ready);
+    CHECK(waiter.get());
+    CHECK(monitors.Snapshot(object).interrupted);
+    CHECK_THROWS_AS(monitors.Enter(object, 23U), JniMonitorError);
+}
+
+TEST_CASE("guest JNI monitor bindings expose real recursion state") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    const auto java_class = fixture.classes.RegisterClass(
+        {"fixture/Lock", {}, {}, {}});
+    const auto object = fixture.objects.Allocate(java_class);
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const auto reference = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, object);
+    fixture.dispatcher.Seal();
+
+    CHECK(fixture.Call("MonitorEnter", reference.Value()) == 0U);
+    CHECK(fixture.Call("MonitorEnter", reference.Value()) == 0U);
+    CHECK(fixture.environment.MonitorSnapshot(object).recursion == 2U);
+    CHECK(fixture.Call("MonitorExit", reference.Value()) == 0U);
+    CHECK(fixture.environment.MonitorSnapshot(object).recursion == 1U);
+    CHECK(fixture.Call("MonitorExit", reference.Value()) == 0U);
+    CHECK(fixture.environment.MonitorSnapshot(object).owner_thread == 0U);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.Call("MonitorExit", reference.Value())),
+        JniMonitorError);
 }

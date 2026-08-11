@@ -17,6 +17,9 @@ Bionic、syscall、execution 或 integration。
 - 已解析方法缺少 implementation handler 时，错误必须携带规范 implementation ID，禁止
   丢失定位所需的注册表身份。
 - guest handle 保持固定宽度，不暴露宿主指针。
+- JNI monitor 按强类型 object identity 隔离 owner guest thread、recursion 与 waiters；同线程
+  可重入，非 owner exit 明确失败。thread detach 释放其全部 ownership，sticky shutdown
+  interrupt 唤醒全部当前 waiter 并拒绝后续 enter，避免 session teardown 永久阻塞。
 - `BuildJniNativeExportNames` 严格验证 class/method/descriptor，并按 JNI 规范同时产出
   short 与含参数 descriptor 的 long 名；Unicode 必须先转为 UTF-16 code unit 再转义。
 

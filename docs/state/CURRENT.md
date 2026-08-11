@@ -35,16 +35,15 @@
 
 ## 最近完成
 
+- [WU-M8-006] guest MonitorEnter/MonitorExit 接入真实可重入 monitor table；owner、recursion、
+  waiter 与 condition wakeup 按 object identity 隔离，非 owner exit 明确失败，JavaVM detach
+  释放 ownership，session shutdown 在 join 前 sticky interrupt 全部 waiter。Windows/MSVC
+  focused 5/5 与 full CTest 522/522 通过；最终 aggregate 为 JNIEnv/JavaVM 212/4。
 - [WU-M8-005] guest nonvirtual 30 槽复用现有 descriptor/A32 decoder 和 invocation engine；
   ABI 从 r3 取 method、从栈取首参数或 V/A pointer。ThrowNew 创建带 class/Modified UTF-8
   message 的真实 throwable，ExceptionDescribe 写结构化诊断且保留 pending identity。
   Windows/MSVC focused 3/3 与 full CTest 518/518 通过，当前 aggregate 为 JNIEnv/JavaVM
   210/4。
-- [WU-M8-004] guest primitive array 40 槽与 object array 3 槽闭合；8 类 New/Region/
-  Elements 共享完整 range 预检和 4 MiB guest lease，严格执行 release 0/COMMIT/ABORT，
-  object value 受 assignability 校验，GetArrayLength 通过显式 Contains 支持两类 store。
-  Windows/MSVC focused 3/3 与 full CTest 516/516 通过，当前 aggregate 为 JNIEnv/JavaVM
-  178/4。
 - [WU-OPT-CLOSURE-01] 正式闭合前 12 项优化验收：统一 active texture 与 GLES1 texture
   matrix unit，以 `(unit,target)` 隔离 2D/cube-map binding/metadata/delete，并让超采样下
   GLES1/GLES2 viewport/scissor query 返回 logical state；六类高频 setter 不再复制整个

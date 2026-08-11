@@ -256,7 +256,7 @@
   项按名称记账并失败，未知 trap 地址不得吞掉。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family，随后封口 dispatcher；
-  aggregate contract 固定当前 210 个 JNIEnv 与 4 个 JavaVM 精确 slot 集合，Core binder
+  aggregate contract 固定当前 212 个 JNIEnv 与 4 个 JavaVM 精确 slot 集合，Core binder
   不得再隐式注册其他 family。引用、异常和线程状态复用同一环境，guest 输出指针在 VM
   状态变更前预检，
   `GetStaticMethodID` 只精确查询统一 class registry，`NewStringUTF` 使用受检 guest C
@@ -299,6 +299,10 @@
   receiver 语义。ThrowNew 完整读取并校验 Modified UTF-8 message，在 runtime/jni 保存
   throwable identity、exception class 与 message；ExceptionDescribe 写结构化
   `runtime.jni.exception` diagnostic，且不得清除或替换 pending throwable。
+- MonitorEnter/MonitorExit 只解析统一 JNIEnv reference 后进入 environment 拥有的 monitor
+  table，不返回 fake success；reentrant/owner/等待语义全部位于 runtime/jni。JavaVM detach
+  自动释放该 guest thread 的 ownership；session Stop 与公开 blocking-wait interrupt 都先
+  sticky interrupt monitor waiters，再 join guest child，禁止 monitor contention 导致死锁。
 - `NativeActivityRunRequest::supersample_factor` 选择受检 1..4× 内部渲染倍率；guest 的
   EGL surface 和输出帧保持逻辑尺寸，ANGLE pbuffer、viewport 与 GPU render target 使用
   放大尺寸，swap 时通过 gles 确定性 resolve 还原。

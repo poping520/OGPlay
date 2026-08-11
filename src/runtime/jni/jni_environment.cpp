@@ -1,5 +1,8 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 
+#include <condition_variable>
+#include <limits>
+#include <map>
 #include <stdexcept>
 #include <utility>
 
@@ -18,6 +21,168 @@ namespace {
 
 }  // namespace
 
+JniMonitorError::JniMonitorError(const JniMonitorErrorReason reason,
+                                 std::string message)
+    : std::runtime_error(std::move(message)), reason_(reason) {}
+
+JniMonitorErrorReason JniMonitorError::Reason() const noexcept {
+    return reason_;
+}
+
+class JniMonitorTable::Impl final {
+public:
+    void Enter(const JniObjectIdentity object,
+               const std::uint64_t thread_id) {
+        Validate(object, thread_id);
+        std::unique_lock lock(mutex_);
+        if (interrupted_) Interrupted();
+        auto& entry = monitors_[Key(object)];
+        if (entry.owner_thread == thread_id) {
+            if (entry.recursion == std::numeric_limits<std::size_t>::max()) {
+                Fail(JniMonitorErrorReason::recursion_overflow,
+                     "JNI monitor recursion count overflowed");
+            }
+            ++entry.recursion;
+            return;
+        }
+        if (entry.owner_thread != 0U) {
+            ++entry.waiting_threads;
+            entry.changed.wait(lock, [this, &entry] {
+                return interrupted_ || entry.owner_thread == 0U;
+            });
+            --entry.waiting_threads;
+            if (interrupted_) Interrupted();
+        }
+        entry.owner_thread = thread_id;
+        entry.recursion = 1U;
+    }
+
+    void Exit(const JniObjectIdentity object,
+              const std::uint64_t thread_id) {
+        Validate(object, thread_id);
+        std::scoped_lock lock(mutex_);
+        const auto found = monitors_.find(Key(object));
+        if (found == monitors_.end() ||
+            found->second.owner_thread != thread_id) {
+            Fail(JniMonitorErrorReason::not_owner,
+                 "JNI monitor exit requires the owning guest thread");
+        }
+        if (--found->second.recursion == 0U) {
+            found->second.owner_thread = 0U;
+            found->second.changed.notify_one();
+        }
+    }
+
+    [[nodiscard]] std::size_t ReleaseThread(
+        const std::uint64_t thread_id) {
+        if (thread_id == 0U) {
+            Fail(JniMonitorErrorReason::invalid_thread,
+                 "JNI monitor thread ID cannot be zero");
+        }
+        std::scoped_lock lock(mutex_);
+        std::size_t released{};
+        for (auto& [object, entry] : monitors_) {
+            static_cast<void>(object);
+            if (entry.owner_thread != thread_id) continue;
+            entry.owner_thread = 0U;
+            entry.recursion = 0U;
+            ++released;
+            entry.changed.notify_one();
+        }
+        return released;
+    }
+
+    [[nodiscard]] std::size_t InterruptAll() {
+        std::scoped_lock lock(mutex_);
+        if (interrupted_) return 0U;
+        interrupted_ = true;
+        std::size_t waiting{};
+        for (auto& [object, entry] : monitors_) {
+            static_cast<void>(object);
+            waiting += entry.waiting_threads;
+            entry.changed.notify_all();
+        }
+        return waiting;
+    }
+
+    [[nodiscard]] JniMonitorSnapshot Snapshot(
+        const JniObjectIdentity object) const {
+        if (object.value == 0U) {
+            Fail(JniMonitorErrorReason::invalid_object,
+                 "JNI monitor object identity cannot be zero");
+        }
+        std::scoped_lock lock(mutex_);
+        const auto found = monitors_.find(Key(object));
+        if (found == monitors_.end()) return {.interrupted = interrupted_};
+        return {found->second.owner_thread, found->second.recursion,
+                found->second.waiting_threads, interrupted_};
+    }
+
+private:
+    struct Entry final {
+        std::condition_variable changed;
+        std::uint64_t owner_thread{};
+        std::size_t recursion{};
+        std::size_t waiting_threads{};
+    };
+
+    using MonitorKey = std::pair<JniObjectDomain, std::uint64_t>;
+
+    [[nodiscard]] static MonitorKey Key(const JniObjectIdentity object) {
+        return {object.domain, object.value};
+    }
+
+    static void Validate(const JniObjectIdentity object,
+                         const std::uint64_t thread_id) {
+        if (thread_id == 0U) {
+            Fail(JniMonitorErrorReason::invalid_thread,
+                 "JNI monitor thread ID cannot be zero");
+        }
+        if (object.value == 0U) {
+            Fail(JniMonitorErrorReason::invalid_object,
+                 "JNI monitor object identity cannot be zero");
+        }
+    }
+
+    [[noreturn]] static void Interrupted() {
+        Fail(JniMonitorErrorReason::interrupted,
+             "JNI monitor wait was interrupted by shutdown");
+    }
+
+    [[noreturn]] static void Fail(const JniMonitorErrorReason reason,
+                                  const char* message) {
+        throw JniMonitorError(reason, message);
+    }
+
+    mutable std::mutex mutex_;
+    std::map<MonitorKey, Entry> monitors_;
+    bool interrupted_{};
+};
+
+JniMonitorTable::JniMonitorTable() : impl_(std::make_unique<Impl>()) {}
+JniMonitorTable::~JniMonitorTable() = default;
+JniMonitorTable::JniMonitorTable(JniMonitorTable&&) noexcept = default;
+JniMonitorTable& JniMonitorTable::operator=(JniMonitorTable&&) noexcept =
+    default;
+void JniMonitorTable::Enter(const JniObjectIdentity object,
+                            const std::uint64_t thread_id) {
+    impl_->Enter(object, thread_id);
+}
+void JniMonitorTable::Exit(const JniObjectIdentity object,
+                           const std::uint64_t thread_id) {
+    impl_->Exit(object, thread_id);
+}
+std::size_t JniMonitorTable::ReleaseThread(const std::uint64_t thread_id) {
+    return impl_->ReleaseThread(thread_id);
+}
+std::size_t JniMonitorTable::InterruptAll() {
+    return impl_->InterruptAll();
+}
+JniMonitorSnapshot JniMonitorTable::Snapshot(
+    const JniObjectIdentity object) const {
+    return impl_->Snapshot(object);
+}
+
 JniEnvironment::JniEnvironment(const JniReferenceLimits limits)
     : references_(limits) {}
 
@@ -33,6 +198,7 @@ void JniEnvironment::AttachThread(const std::uint64_t thread_id,
 }
 
 void JniEnvironment::DetachThread(const std::uint64_t thread_id) {
+    static_cast<void>(monitors_.ReleaseThread(thread_id));
     references_.DetachThread(thread_id);
     exceptions_.DetachThread(thread_id);
 }
@@ -205,6 +371,29 @@ void JniEnvironment::ExceptionClear(const std::uint64_t thread_id) {
 std::vector<core::LogRecord> JniEnvironment::ExceptionDiagnostics() const {
     return exception_logger_.Snapshot(
         std::nullopt, "runtime.jni.exception");
+}
+
+void JniEnvironment::MonitorEnter(const std::uint64_t thread_id,
+                                  const JniReference object) {
+    RequireAllowed(thread_id, "MonitorEnter");
+    const auto identity = references_.Resolve(thread_id, object);
+    monitors_.Enter(identity.value_or(JniObjectIdentity{}), thread_id);
+}
+
+void JniEnvironment::MonitorExit(const std::uint64_t thread_id,
+                                 const JniReference object) {
+    RequireAllowed(thread_id, "MonitorExit");
+    const auto identity = references_.Resolve(thread_id, object);
+    monitors_.Exit(identity.value_or(JniObjectIdentity{}), thread_id);
+}
+
+std::size_t JniEnvironment::InterruptMonitors() {
+    return monitors_.InterruptAll();
+}
+
+JniMonitorSnapshot JniEnvironment::MonitorSnapshot(
+    const JniObjectIdentity object) const {
+    return monitors_.Snapshot(object);
 }
 
 void JniEnvironment::RequireAllowed(const std::uint64_t thread_id,

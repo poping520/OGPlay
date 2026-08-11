@@ -389,19 +389,19 @@ private:
             throw std::invalid_argument(std::string(operation) +
                                         " requires a guest string pointer");
         }
-        std::string result;
-        result.reserve(std::min<std::size_t>(maximum_bytes, 256));
-        for (std::size_t offset = 0; offset < maximum_bytes; ++offset) {
-            std::array<std::byte, 1> bytes{};
-            address_space_.Read(memory::GuestAddress{address}.Add(offset),
-                                bytes, thread_id);
-            const auto value = static_cast<char>(
-                std::to_integer<unsigned char>(bytes[0]));
-            if (value == '\0') return result;
-            result.push_back(value);
+        std::size_t length{};
+        try {
+            length = address_space_.CStringLength(
+                memory::GuestAddress{address}, maximum_bytes, thread_id);
+        } catch (const std::length_error&) {
+            throw std::length_error(std::string(operation) +
+                                    " guest string exceeds its byte limit");
         }
-        throw std::length_error(std::string(operation) +
-                                " guest string exceeds its byte limit");
+        std::string result(length, '\0');
+        address_space_.Read(memory::GuestAddress{address},
+                            std::as_writable_bytes(std::span(result)),
+                            thread_id);
+        return result;
     }
     std::vector<std::string> ReadShaderSources(
         const std::array<std::uint32_t, 4>& args,

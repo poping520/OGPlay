@@ -11,7 +11,9 @@
 - `LowAddressGuard()`：`0x00000000–0x0000ffff` 默认保留区间。
 - `AddressSpace`：4 GiB reservation 上的 Map/Unmap/Protect/Read/Write/Validate；
   `ValidateMapped` 只检查映射存在性，映射账本与页权限独立，因此 `PROT_NONE` guard page
-  不会被误判为未映射；固定宽度标量访问在一次锁内完成验证与小端搬运。
+  不会被误判为未映射；固定宽度标量访问在一次锁内完成验证与小端搬运；
+  `CStringLength` 在一次锁内逐 guest 页验证并对连续宿主字节使用 `memchr`，越界页仍发布
+  精确 fault。
 - `MemoryFault`：携带 guest 地址、访问类型、失败原因和 guest 线程 ID。
 - `MemoryBus`：CPU 只依赖的 8/16/32/64 位小端数据访存及 16/32 位取指接口。
 - `CheckedMemoryBus`：完整权限验证和观察器钩子的 soft-MMU 调试后端。

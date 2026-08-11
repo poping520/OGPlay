@@ -130,3 +130,38 @@ TEST_CASE("guest mapping validates alignment permissions and the final page") {
     memory.Read(ogplay::memory::GuestAddress{0xffffffff}, output);
     CHECK(output == marker);
 }
+
+TEST_CASE("guest C string scan is page aware bounded and fault precise") {
+    ogplay::memory::AddressSpace memory;
+    const auto page = memory.PageSize();
+    const ogplay::memory::GuestAddress first{0x30000U};
+    const auto second = first.Add(page);
+    const auto writable = ogplay::memory::PageProtection::read |
+                          ogplay::memory::PageProtection::write;
+    memory.Map({first, page}, writable);
+    memory.Map({second, page}, writable);
+
+    const auto crossing = first.Add(page - 2U);
+    const std::array text{
+        std::byte{'a'}, std::byte{'b'}, std::byte{'c'}, std::byte{}};
+    memory.Write(crossing, text, 91);
+    CHECK(memory.CStringLength(crossing, text.size(), 91) == 3U);
+    memory.Write8(first.Add(17U), 0U, 91);
+    CHECK(memory.CStringLength(first.Add(17U), 1U, 91) == 0U);
+
+    memory.Protect({second, page}, ogplay::memory::PageProtection::none);
+    CHECK_THROWS_AS(memory.CStringLength(crossing, 2U, 92),
+                    std::length_error);
+    try {
+        static_cast<void>(memory.CStringLength(crossing, 4U, 93));
+        FAIL("cross-page C string scan did not fault");
+    } catch (const ogplay::memory::MemoryFault& fault) {
+        CHECK(fault.Address() == second);
+        CHECK(fault.Access() == ogplay::memory::AccessType::read);
+        CHECK(fault.Reason() ==
+              ogplay::memory::FaultReason::permission_denied);
+        CHECK(fault.ThreadId() == 93U);
+    }
+    CHECK_THROWS_AS(memory.CStringLength(first, 0U, 94),
+                    std::length_error);
+}

@@ -61,17 +61,17 @@ namespace {
         throw JniGuestBindingError(
             "JNI guest " + std::string(field) + " pointer is null");
     }
-    std::string result;
-    result.reserve(32);
-    for (std::size_t index = 0; index < kMaximumBytes; ++index) {
-        std::byte byte{};
-        address_space.Read(address.Add(index), std::span{&byte, 1}, thread_id);
-        const auto value = std::to_integer<unsigned char>(byte);
-        if (value == 0) return result;
-        result.push_back(static_cast<char>(value));
+    std::size_t length{};
+    try {
+        length = address_space.CStringLength(address, kMaximumBytes, thread_id);
+    } catch (const std::length_error&) {
+        throw JniGuestBindingError(
+            "JNI guest " + std::string(field) + " is not null-terminated");
     }
-    throw JniGuestBindingError(
-        "JNI guest " + std::string(field) + " is not null-terminated");
+    std::string result(length, '\0');
+    address_space.Read(address, std::as_writable_bytes(std::span(result)),
+                       thread_id);
+    return result;
 }
 
 [[nodiscard]] std::size_t Capacity(const std::uint32_t value,

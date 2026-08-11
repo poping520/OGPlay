@@ -157,15 +157,14 @@ namespace catalog = generated::gles2;
     if (address.IsNull()) {
         throw GlesCallPreparationError("required GLES string pointer is null");
     }
-    for (std::uint64_t offset = 0; offset < size_limit; ++offset) {
-        std::byte value{};
-        memory.Read(address.Add(offset), std::span(&value, 1), thread_id);
-        if (value == std::byte{}) {
-            return offset + 1;
-        }
+    try {
+        return memory.CStringLength(
+                   address, static_cast<std::size_t>(size_limit), thread_id) +
+               1U;
+    } catch (const std::length_error&) {
+        throw GlesCallPreparationError(
+            "GLES string is not terminated within the transfer limit");
     }
-    throw GlesCallPreparationError(
-        "GLES string is not terminated within the transfer limit");
 }
 
 }  // namespace

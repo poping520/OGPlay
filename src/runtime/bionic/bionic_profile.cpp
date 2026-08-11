@@ -184,19 +184,16 @@ std::uint32_t ExecuteBionicMemoryIntercept(
         if (call.maximum_string_bytes == 0) {
             throw BionicProfileError("strlen intercept has a zero bound");
         }
-        for (std::size_t index = 0; index < call.maximum_string_bytes;
-             ++index) {
-            std::byte value{};
-            address_space.Read(destination.Add(index), std::span{&value, 1},
-                               call.thread_id);
-            if (value == std::byte{}) {
-                if (index > std::numeric_limits<std::uint32_t>::max()) {
-                    throw BionicProfileError("strlen result overflows A32");
-                }
-                return static_cast<std::uint32_t>(index);
+        try {
+            const auto length = address_space.CStringLength(
+                destination, call.maximum_string_bytes, call.thread_id);
+            if (length > std::numeric_limits<std::uint32_t>::max()) {
+                throw BionicProfileError("strlen result overflows A32");
             }
+            return static_cast<std::uint32_t>(length);
+        } catch (const std::length_error&) {
+            throw BionicProfileError("strlen intercept exceeded its bound");
         }
-        throw BionicProfileError("strlen intercept exceeded its bound");
     }
 
     if (std::find(kInterceptedLibcSymbols.begin(),

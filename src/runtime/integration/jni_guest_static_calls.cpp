@@ -154,14 +154,17 @@ constexpr std::array kStaticCallTypes{
         throw JniGuestBindingError(
             "JNI guest " + std::string(field) + " pointer is null");
     }
-    std::string result;
-    for (std::size_t index = 0; index < kMaximumBytes; ++index) {
-        const auto value = Read8(address_space, address.Add(index), thread_id);
-        if (value == 0U) return result;
-        result.push_back(static_cast<char>(value));
+    std::size_t length{};
+    try {
+        length = address_space.CStringLength(address, kMaximumBytes, thread_id);
+    } catch (const std::length_error&) {
+        throw JniGuestBindingError(
+            "JNI guest " + std::string(field) + " is not null-terminated");
     }
-    throw JniGuestBindingError(
-        "JNI guest " + std::string(field) + " is not null-terminated");
+    std::string result(length, '\0');
+    address_space.Read(address, std::as_writable_bytes(std::span(result)),
+                       thread_id);
+    return result;
 }
 
 [[nodiscard]] std::uint8_t Read8(memory::AddressSpace& address_space,

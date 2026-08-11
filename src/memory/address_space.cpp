@@ -161,6 +161,32 @@ public:
         std::memcpy(reservation_->Base() + address.Value(), source.data(), source.size());
     }
 
+    [[nodiscard]] std::size_t CStringLength(
+        const GuestAddress address, const std::size_t maximum_bytes,
+        const std::uint64_t thread_id) const {
+        std::scoped_lock lock(mutex_);
+        std::size_t scanned{};
+        while (scanned < maximum_bytes) {
+            const auto current = address.Add(scanned);
+            const auto page_offset = current.Value() % page_size_;
+            const auto page_remaining =
+                static_cast<std::size_t>(page_size_ - page_offset);
+            const auto chunk = std::min(maximum_bytes - scanned,
+                                        page_remaining);
+            ValidateLocked(GuestRange(current, chunk), AccessType::read,
+                           thread_id);
+            const auto* begin = reservation_->Base() + current.Value();
+            const auto* terminator = static_cast<const std::byte*>(
+                std::memchr(begin, 0, chunk));
+            if (terminator != nullptr) {
+                return scanned + static_cast<std::size_t>(terminator - begin);
+            }
+            scanned += chunk;
+        }
+        throw std::length_error(
+            "guest C string is not terminated within the byte limit");
+    }
+
     template <typename UInt>
     [[nodiscard]] UInt ReadScalar(const GuestAddress address,
                                   const std::uint64_t thread_id) const {
@@ -477,6 +503,11 @@ void AddressSpace::Write(const GuestAddress address,
                          const std::span<const std::byte> source,
                          const std::uint64_t thread_id) {
     impl_->Write(address, source, thread_id);
+}
+std::size_t AddressSpace::CStringLength(
+    const GuestAddress address, const std::size_t maximum_bytes,
+    const std::uint64_t thread_id) const {
+    return impl_->CStringLength(address, maximum_bytes, thread_id);
 }
 std::uint8_t AddressSpace::Read8(const GuestAddress address,
                                  const std::uint64_t thread_id) const {

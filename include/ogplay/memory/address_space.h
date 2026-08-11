@@ -88,6 +88,9 @@ public:
                std::uint64_t thread_id = 0) const;
     void Write(GuestAddress address, std::span<const std::byte> source,
                std::uint64_t thread_id = 0);
+    [[nodiscard]] std::size_t CStringLength(
+        GuestAddress address, std::size_t maximum_bytes,
+        std::uint64_t thread_id = 0) const;
     [[nodiscard]] std::uint8_t Read8(GuestAddress address,
                                      std::uint64_t thread_id = 0) const;
     [[nodiscard]] std::uint16_t Read16(GuestAddress address,

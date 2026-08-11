@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/jni_guest_bindings.h"
+#include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 
 #include <array>
 #include <bit>
@@ -11,10 +11,10 @@
 #include <vector>
 
 #include "ogplay/memory/address_space.h"
-#include "ogplay/runtime/integration/jni_guest_abi.h"
-#include "ogplay/runtime/integration/jni_guest_static_calls.h"
-#include "ogplay/runtime/integration/jni_guest_static_fields.h"
-#include "ogplay/runtime/integration/jni_guest_string_bindings.h"
+#include "ogplay/runtime/jni_guest/jni_guest_abi.h"
+#include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
+#include "ogplay/runtime/jni_guest/jni_guest_static_fields.h"
+#include "ogplay/runtime/jni_guest/jni_guest_string_bindings.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
@@ -93,20 +93,6 @@ namespace {
             std::string(slot) + " capacity cannot be negative");
     }
     return static_cast<std::size_t>(signed_value);
-}
-
-[[nodiscard]] std::uint32_t Read32(
-    memory::AddressSpace& address_space,
-    const memory::GuestAddress address,
-    const std::uint64_t thread_id) {
-    std::array<std::byte, 4> bytes{};
-    address_space.Read(address, bytes, thread_id);
-    std::uint32_t value{};
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        value |= std::to_integer<std::uint32_t>(bytes[index])
-                 << static_cast<unsigned>(index * 8U);
-    }
-    return value;
 }
 
 void ValidateOutput(memory::AddressSpace& address_space,

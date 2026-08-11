@@ -7,7 +7,7 @@
 
 #include <doctest/doctest.h>
 
-#include "ogplay/runtime/integration/jni_guest_library_lifecycle.h"
+#include "ogplay/runtime/jni_guest/jni_guest_library_lifecycle.h"
 #include "ogplay/runtime/jni/jni.h"
 
 namespace {

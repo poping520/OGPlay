@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/jni_guest_string_bindings.h"
+#include "ogplay/runtime/jni_guest/jni_guest_string_bindings.h"
 
 #include <algorithm>
 #include <array>
@@ -11,8 +11,8 @@
 #include <vector>
 
 #include "ogplay/memory/address_space.h"
-#include "ogplay/runtime/integration/jni_guest_bindings.h"
-#include "ogplay/runtime/integration/jni_guest_dispatch.h"
+#include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
+#include "ogplay/runtime/jni_guest/jni_guest_dispatch.h"
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_object.h"

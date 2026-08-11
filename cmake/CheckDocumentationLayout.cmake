@@ -28,7 +28,7 @@ foreach(required IN ITEMS
 endforeach()
 
 foreach(runtime_submodule IN ITEMS
-        jni framework bionic syscall execution vfs integration)
+        jni jni_guest framework bionic syscall execution vfs integration)
     set(module_contract
         "${ROOT}/src/runtime/${runtime_submodule}/MODULE.md")
     if(NOT EXISTS "${module_contract}")

@@ -52,15 +52,13 @@ public:
 private:
     GuestBuffer(memory::AddressSpace& memory, memory::GuestAddress address,
                 std::uint64_t size, GuestTransferDirection direction,
-                std::uint64_t thread_id, bool is_null,
-                std::vector<std::byte> bytes,
+                bool is_null, std::vector<std::byte> bytes,
                 std::optional<memory::ValidatedGuestWrite> write_validation) noexcept;
 
     memory::AddressSpace* memory_{};
     memory::GuestAddress address_{};
     std::uint64_t size_{};
     GuestTransferDirection direction_{};
-    std::uint64_t thread_id_{};
     bool is_null_{};
     bool committed_{};
     std::vector<std::byte> bytes_;

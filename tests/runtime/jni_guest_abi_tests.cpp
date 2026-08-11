@@ -7,9 +7,9 @@
 #include "ogplay/memory/address_space.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/cpu/interpreter.h"
-#include "ogplay/runtime/integration/jni_guest_dispatch.h"
+#include "ogplay/runtime/jni_guest/jni_guest_dispatch.h"
 #include "ogplay/runtime/jni/jni.h"
-#include "ogplay/runtime/integration/jni_guest_abi.h"
+#include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 
 namespace {

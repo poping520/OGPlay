@@ -12,7 +12,7 @@
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_object.h"
-#include "ogplay/runtime/integration/jni_guest_static_calls.h"
+#include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 
 namespace ogplay::runtime {
 namespace {

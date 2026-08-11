@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "ogplay/runtime/integration/jni_guest_dispatch.h"
+#include "ogplay/runtime/jni_guest/jni_guest_dispatch.h"
 
 namespace ogplay::memory {
 class AddressSpace;

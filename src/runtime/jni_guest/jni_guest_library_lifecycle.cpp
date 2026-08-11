@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/jni_guest_library_lifecycle.h"
+#include "ogplay/runtime/jni_guest/jni_guest_library_lifecycle.h"
 
 #include <cstddef>
 #include <cstdint>

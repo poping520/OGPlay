@@ -1,4 +1,4 @@
-#include "ogplay/runtime/integration/jni_guest_abi.h"
+#include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 
 #include <array>
 #include <cstddef>

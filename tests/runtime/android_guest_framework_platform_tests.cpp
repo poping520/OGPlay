@@ -8,7 +8,7 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/runtime/integration/android_guest_call_session.h"
-#include "ogplay/runtime/integration/jni_guest_static_calls.h"
+#include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_invocation.h"

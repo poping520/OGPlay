@@ -58,14 +58,14 @@ GuestBuffer GuestBuffer::Prepare(memory::AddressSpace& memory,
         if (!nullable) {
             throw GuestTransferError("required guest pointer is null");
         }
-        return GuestBuffer(memory, address, size, direction, thread_id, true,
+        return GuestBuffer(memory, address, size, direction, true,
                            {}, std::nullopt);
     }
     if (size > size_limit || size > std::numeric_limits<std::size_t>::max()) {
         throw GuestTransferError("guest transfer exceeds configured size limit");
     }
     if (size == 0) {
-        return GuestBuffer(memory, address, size, direction, thread_id, false,
+        return GuestBuffer(memory, address, size, direction, false,
                            {}, std::nullopt);
     }
 
@@ -78,7 +78,7 @@ GuestBuffer GuestBuffer::Prepare(memory::AddressSpace& memory,
     if (ReadsGuest(direction)) {
         memory.Read(address, bytes, thread_id);
     }
-    return GuestBuffer(memory, address, size, direction, thread_id, false,
+    return GuestBuffer(memory, address, size, direction, false,
                        std::move(bytes), std::move(write_validation));
 }
 
@@ -86,12 +86,11 @@ GuestBuffer::GuestBuffer(memory::AddressSpace& memory,
                          const memory::GuestAddress address,
                          const std::uint64_t size,
                          const GuestTransferDirection direction,
-                         const std::uint64_t thread_id, const bool is_null,
-                         std::vector<std::byte> bytes,
+                         const bool is_null, std::vector<std::byte> bytes,
                          std::optional<memory::ValidatedGuestWrite>
                              write_validation) noexcept
     : memory_(&memory), address_(address), size_(size), direction_(direction),
-      thread_id_(thread_id), is_null_(is_null), bytes_(std::move(bytes)),
+      is_null_(is_null), bytes_(std::move(bytes)),
       write_validation_(std::move(write_validation)) {}
 
 bool GuestBuffer::IsNull() const noexcept {

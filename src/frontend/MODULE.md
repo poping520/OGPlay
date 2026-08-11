@@ -81,6 +81,8 @@ present 数更新一位小数的实时值。
   不得按标题、生命周期阶段或宿主性能改写预算。
 - `run-apk` 结构化日志不得进入 guest、消费输入或推进 Clock；长调用进度只读取当前
   target/slice 事实，默认 info 输出必须有界，普通帧不得逐帧刷屏。
+- `gl_surface_view` 帧循环只在未成功呈现 guest 帧的迭代休眠让出 CPU；成功呈现的
+  迭代不征收固定延迟，空转（未推进/暂停/手动模式无许可）路径必须继续休眠。
 - `gl_surface_view` 帧循环必须观察 guest 的显式进程退出请求，并在请求后通过正常
   lifecycle/session teardown 结束；guest module finalizer 必须在 managed ANGLE surface
   关闭前执行，不得从 Java handler 直接杀死整个 CLI 进程。

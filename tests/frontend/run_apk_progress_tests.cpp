@@ -6,6 +6,13 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/frontend/run_apk_progress.h"
 
+TEST_CASE("frame loop only idle-sleeps when no guest frame was presented") {
+    static_assert(!ogplay::frontend::ShouldIdleSleepAfterFrameStep(true));
+    static_assert(ogplay::frontend::ShouldIdleSleepAfterFrameStep(false));
+    CHECK_FALSE(ogplay::frontend::ShouldIdleSleepAfterFrameStep(true));
+    CHECK(ogplay::frontend::ShouldIdleSleepAfterFrameStep(false));
+}
+
 TEST_CASE("host event pump gate throttles pumps to the host interval") {
     ogplay::frontend::HostEventPumpGate gate{4'000'000U};
 

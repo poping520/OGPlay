@@ -360,7 +360,10 @@ public:
         // still disables register get/set elimination on the Arm64 backend.
         config.check_halt_on_memory_access = false;
         config.enable_cycle_counting = true;
-        config.code_cache_size = 16U * 1024U * 1024U;
+        // 16 MiB was exhausted by real titles at steady state: Dynarmic clears
+        // the whole cache when full and recompiles hot blocks every frame.
+        // Dynarmic caps the cache at 128 MiB; the mapping is committed lazily.
+        config.code_cache_size = 64U * 1024U * 1024U;
         config.coprocessors[15] =
             std::make_shared<ThreadPointerCoprocessor>(thread_pointer);
         return config;

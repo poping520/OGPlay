@@ -15,7 +15,9 @@
 - `InterpreterCpu`：确定性逐指令后端；当前覆盖 A32/T32 标量算术、条件、控制流及
   word/byte 单次 load/store 基础集。
 - `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调及其受保护数据页表
-  访存，并与解释器共享状态、tick、停止、fault 及 TPIDRURO 契约。
+  访存，并与解释器共享状态、tick、停止、fault 及 TPIDRURO 契约。code cache 为
+  64 MiB（Dynarmic 上限 128 MiB，映射惰性提交）：16 MiB 会被真实标题稳定期打满，
+  触发整缓存冲刷与逐帧重编译。
 - `DynarmicExecutionContext`：为同一 guest 进程的 JIT CPU 分配唯一 processor ID 并共享
   exclusive monitor；普通写与 exclusive compare/write 也共享提交锁，使 LDREX/STREX
   在真实宿主线程间保持原子语义。

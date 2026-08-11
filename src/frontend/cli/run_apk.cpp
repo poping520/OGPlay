@@ -746,6 +746,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                     }
                 }
             }
+            bool frame_presented = false;
             try {
                 if (mcp_session) {
                     if (const auto command = mcp_session->TakeNextCommand(); command) {
@@ -788,6 +789,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                     guest_width = frame->width;
                     guest_height = frame->height;
                     ++presented;
+                    frame_presented = true;
                     update_frame_rate();
                     PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
                     if (exit_after_frames.has_value() &&
@@ -813,7 +815,9 @@ int RunApkCommand(const int argc, const char* const argv[],
                     {{"reason", std::string(error.what())}});
                 if (!mcp_manual_step) quit = true;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if (ShouldIdleSleepAfterFrameStep(frame_presented)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
         logger.Write(core::LogLevel::info, "frontend.run_apk",

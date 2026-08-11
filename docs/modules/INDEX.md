@@ -23,9 +23,11 @@
 | 子模块 | 契约 | 依赖定位 |
 | --- | --- | --- |
 | jni | [src/runtime/jni/MODULE.md](../../src/runtime/jni/MODULE.md) | JNI/JavaVM ABI 与对象模型 |
+| jni_guest | [src/runtime/jni_guest/MODULE.md](../../src/runtime/jni_guest/MODULE.md) | guest JNI ABI 物化与 slot 绑定，依赖 jni/execution |
+| boundary | [src/runtime/boundary/MODULE.md](../../src/runtime/boundary/MODULE.md) | Android native/GLES 边界与共享 GL 状态，依赖 gles 模块 |
 | framework | [src/runtime/framework/MODULE.md](../../src/runtime/framework/MODULE.md) | 声明式框架 HLE，依赖 jni/vfs |
 | bionic | [src/runtime/bionic/MODULE.md](../../src/runtime/bionic/MODULE.md) | guest Bionic profile、自检与 TLS |
 | syscall | [src/runtime/syscall/MODULE.md](../../src/runtime/syscall/MODULE.md) | ARM syscall 与线程退出状态，依赖 vfs |
 | execution | [src/runtime/execution/MODULE.md](../../src/runtime/execution/MODULE.md) | guest runner/clone，依赖 bionic/syscall |
 | vfs | [src/runtime/vfs/MODULE.md](../../src/runtime/vfs/MODULE.md) | Android 路径、挂载与 descriptor 核心 |
-| integration | [src/runtime/integration/MODULE.md](../../src/runtime/integration/MODULE.md) | 顶层无界面累计装配 |
+| integration | [src/runtime/integration/MODULE.md](../../src/runtime/integration/MODULE.md) | 顶层装配、会话与 runner，依赖 jni_guest/boundary |

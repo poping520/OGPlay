@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-11 · M8 JNI Contract Complete；DexVM 设计定稿（ADR-0017，未启动）
+更新：2026-08-11 · runtime 拆出 jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
 
 ## 当前阶段
 
@@ -38,6 +38,11 @@
 
 ## 最近完成
 
+- [WU-M8-008..010] 按 ADR-0018 把 guest JNI ABI 与 Android native 边界从
+  `runtime/integration` 纯机械迁出为 `jni_guest` 与 `boundary` 子模块，integration 收敛
+  为装配层，三份 MODULE.md 按代码事实重写；行为零变更，macOS/arm64 full CTest
+  524/524。附带修复 macOS -Werror 基线（`GuestBuffer` 残留 `thread_id_`、未使用
+  `Read32`）。
 - [WU-M8-007] monitor 的临时中断与永久关闭拆成 `InterruptWaiters`/`Shutdown` 两个语义：
   interrupt generation 唤醒当前 waiter 但不禁用后续 `MonitorEnter`，session teardown 改为
   临时中断 → join child → guest fini → root detach → 永久 shutdown，finalizer 阶段仍可加锁。

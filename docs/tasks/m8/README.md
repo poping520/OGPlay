@@ -43,6 +43,14 @@ M8 JNI Guest ABI 扩展在 WU-M8-007 后为 Contract Complete：233 个 JNIEnv �
 behavior-backed，JavaVM 4 个，其余为 reserved 或显式 expected-unbound。exact-title 运行
 里程碑与之独立，见 `docs/state/CURRENT.md`。
 
+## Runtime 结构重构工作单（ADR-0018）
+
+| Work Unit | 标题 | 状态 | 目标 |
+| --- | --- | --- | --- |
+| [WU-M8-008](WU-M8-008.md) | 迁移 guest JNI ABI 到 runtime/jni_guest | 完成 | 8 个 `jni_guest_*` 实现与 7 个公共头纯机械迁出 integration |
+| [WU-M8-009](WU-M8-009.md) | 迁移 Android native 边界到 runtime/boundary | 完成 | boundary HLE、GLES1/GLES2 组件、GuestGlContext 与 A32CallFrame 迁出 integration |
+| [WU-M8-010](WU-M8-010.md) | integration 契约收敛与模块文档瘦身 | 完成 | 三份 MODULE.md 与模块索引和拆分后代码事实一致 |
+
 ## 早期全局编号工作单
 
 - [WU-0360](WU-0360.md)：Asphalt 6 exact 身份、静态能力矩阵与根 SONAME 别名预检。

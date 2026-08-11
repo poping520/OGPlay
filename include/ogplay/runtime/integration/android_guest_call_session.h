@@ -224,6 +224,9 @@ public:
     AndroidGuestCallSession& operator=(const AndroidGuestCallSession&) = delete;
 
     [[nodiscard]] A32GuestCallResult Invoke(const A32GuestCallFrame& frame);
+    [[nodiscard]] A32GuestCallResult InvokeRegisteredNative(
+        JniObjectIdentity java_class, std::string_view name,
+        std::string_view descriptor, const A32GuestCallFrame& frame);
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;

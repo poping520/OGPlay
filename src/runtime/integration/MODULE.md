@@ -256,7 +256,7 @@
   项按名称记账并失败，未知 trap 地址不得吞掉。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static Field、Modified UTF-8 与 JavaVM family，随后封口 dispatcher；
-  aggregate contract 固定当前 110 个 JNIEnv 与 4 个 JavaVM 精确 slot 集合，Core binder
+  aggregate contract 固定当前 112 个 JNIEnv 与 4 个 JavaVM 精确 slot 集合，Core binder
   不得再隐式注册其他 family。引用、异常和线程状态复用同一环境，guest 输出指针在 VM
   状态变更前预检，
   `GetStaticMethodID` 只精确查询统一 class registry，`NewStringUTF` 使用受检 guest C
@@ -270,6 +270,11 @@
   从 A32 guest 栈读取第 5 个参数并一次性写入受检 guest 内存；错误 return kind、class、
   method、handler、array reference/type/region 或输出缓冲明确失败，
   成功查询只发布统一 Guest JNI ABI 地址。非空 attach arguments 在实现其结构前明确失败。
+- guest `RegisterNatives` 将完整 ARM32 12-byte method 数组、字符串、descriptor、class 与
+  target 先整批校验/resolve，再一次提交到唯一 `JniNativeRegistry`；Thumb bit 保持不变，
+  `ResolveJniRegisteredNativeCall` 与 session registered-native 入口把 mapping 交给通用 A32
+  executor。`UnregisterNatives` 只清除指定 class，非法 count/range/method 或注销后的解析
+  必须明确失败。
 - `BindJniGuestStaticFieldSlots` 批量绑定 `GetStaticFieldID` 与 Object/Boolean/Byte/Char/
   Short/Int/Long/Float/Double 的 9 对 static field getter/setter；field ID 只精确查询统一
   class registry，读写复用统一 field store，槽类型必须匹配 descriptor。word、符号扩展、

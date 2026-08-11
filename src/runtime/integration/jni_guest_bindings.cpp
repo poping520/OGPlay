@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -20,6 +21,7 @@
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
 
 namespace ogplay::runtime {
@@ -400,6 +402,144 @@ void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
         });
 }
 
+void BindJniGuestNativeRegistrationSlots(
+    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+    JniClassRegistry& classes, JniNativeRegistry& natives,
+    memory::AddressSpace& address_space) {
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("RegisterNatives"),
+        [&environment, &classes, &natives,
+         &address_space](const JniGuestCallFrame& frame) {
+            const auto java_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!java_class.has_value()) {
+                throw JniGuestBindingError(
+                    "RegisterNatives requires a valid class reference");
+            }
+            try {
+                static_cast<void>(
+                    classes.IsAssignableFrom(*java_class, *java_class));
+            } catch (const JniClassRegistryError&) {
+                throw JniGuestBindingError(
+                    "RegisterNatives requires a declared class");
+            }
+
+            const auto signed_count =
+                std::bit_cast<JniInt>(frame.registers[3]);
+            if (signed_count < 0) {
+                throw JniGuestBindingError(
+                    "RegisterNatives method count cannot be negative");
+            }
+            constexpr std::uint64_t kNativeMethodSize = 12U;
+            constexpr std::uint64_t kMaximumNativeMethods = 65536U;
+            const auto count = static_cast<std::uint64_t>(signed_count);
+            if (count > kMaximumNativeMethods ||
+                count > std::numeric_limits<std::uint32_t>::max() /
+                            kNativeMethodSize) {
+                throw JniGuestBindingError(
+                    "RegisterNatives method array size is invalid");
+            }
+            const auto byte_size = count * kNativeMethodSize;
+            std::vector<std::byte> encoded(static_cast<std::size_t>(byte_size));
+            const auto methods_address =
+                memory::GuestAddress{frame.registers[2]};
+            if (!encoded.empty()) {
+                if (methods_address.IsNull()) {
+                    throw JniGuestBindingError(
+                        "RegisterNatives requires a non-null method array");
+                }
+                address_space.Validate(
+                    {methods_address, byte_size}, memory::AccessType::read,
+                    frame.thread_id);
+                address_space.Read(methods_address, encoded,
+                                   frame.thread_id);
+            }
+
+            const auto word = [&encoded](const std::size_t offset) {
+                std::uint32_t value{};
+                for (std::size_t index = 0; index < 4U; ++index) {
+                    value |= std::to_integer<std::uint32_t>(
+                                 encoded[offset + index])
+                             << static_cast<unsigned>(index * 8U);
+                }
+                return value;
+            };
+            std::vector<JniNativeMethod> methods;
+            methods.reserve(static_cast<std::size_t>(count));
+            for (std::size_t index = 0; index < count; ++index) {
+                const auto offset = index *
+                                    static_cast<std::size_t>(kNativeMethodSize);
+                const auto name = ReadCString(
+                    address_space, memory::GuestAddress{word(offset)},
+                    frame.thread_id, "native method name");
+                const auto descriptor = ReadCString(
+                    address_space, memory::GuestAddress{word(offset + 4U)},
+                    frame.thread_id, "native method descriptor");
+                const auto target = memory::GuestAddress{word(offset + 8U)};
+                if (target.IsNull()) {
+                    throw JniGuestBindingError(
+                        "RegisterNatives target cannot be null");
+                }
+                bool declared{};
+                try {
+                    declared = classes.GetMethodId(
+                                   *java_class, name, descriptor, false)
+                                   .has_value() ||
+                               classes.GetMethodId(
+                                   *java_class, name, descriptor, true)
+                                   .has_value();
+                } catch (const std::exception& error) {
+                    throw JniGuestBindingError(
+                        "RegisterNatives method is invalid: " +
+                        std::string(error.what()));
+                }
+                if (!declared) {
+                    throw JniGuestBindingError(
+                        "RegisterNatives method is not declared: " + name +
+                        descriptor);
+                }
+                methods.push_back({name, descriptor, target});
+            }
+            natives.RegisterNatives(*java_class, methods);
+            return Int(static_cast<JniInt>(JniStatus::ok));
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("UnregisterNatives"),
+        [&environment, &classes,
+         &natives](const JniGuestCallFrame& frame) {
+            const auto java_class = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!java_class.has_value()) {
+                throw JniGuestBindingError(
+                    "UnregisterNatives requires a valid class reference");
+            }
+            try {
+                static_cast<void>(
+                    classes.IsAssignableFrom(*java_class, *java_class));
+            } catch (const JniClassRegistryError&) {
+                throw JniGuestBindingError(
+                    "UnregisterNatives requires a declared class");
+            }
+            static_cast<void>(natives.UnregisterNatives(*java_class));
+            return Int(static_cast<JniInt>(JniStatus::ok));
+        });
+}
+
+A32GuestCallFrame ResolveJniRegisteredNativeCall(
+    const JniNativeRegistry& natives, const JniObjectIdentity java_class,
+    const std::string_view name, const std::string_view descriptor,
+    A32GuestCallFrame frame) {
+    const auto target = natives.Resolve(
+        java_class, std::string(name), std::string(descriptor));
+    if (!target.has_value()) {
+        throw JniGuestBindingError(
+            "registered JNI native method is unresolved: " +
+            std::string(name) + std::string(descriptor));
+    }
+    frame.target = *target;
+    return frame;
+}
+
 void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
                        JniGuestBindingContext& context) {
     BindJniGuestCoreSlots(dispatcher, context.environment, context.classes,
@@ -417,6 +557,11 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
     BindJniGuestModifiedUtf8Slots(
         dispatcher, context.environment, context.strings,
         context.address_space);
+    if (context.natives != nullptr) {
+        BindJniGuestNativeRegistrationSlots(
+            dispatcher, context.environment, context.classes,
+            *context.natives, context.address_space);
+    }
     BindJniGuestJavaVmSlots(dispatcher, context.java_vm,
                             context.address_space);
 }

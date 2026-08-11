@@ -27,6 +27,7 @@
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 
@@ -494,7 +495,7 @@ public:
         BindSyscalls();
         JniGuestBindingContext jni_bindings{
             environment_, classes_, invocations_, fields_, strings_, arrays_,
-            java_vm_, objects_, address_space_};
+            java_vm_, objects_, address_space_, &natives_};
         BindJniGuestSlots(jni_dispatcher_, jni_bindings);
         jni_dispatcher_.Seal();
         const auto attached = java_vm_.AttachCurrentThread(
@@ -559,6 +560,13 @@ public:
             [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                 return HandleBoundary(cpu, stopped);
             }, slice_observer_);
+    }
+
+    A32GuestCallResult InvokeRegisteredNative(
+        const JniObjectIdentity java_class, const std::string_view name,
+        const std::string_view descriptor, const A32GuestCallFrame& frame) {
+        return Invoke(ResolveJniRegisteredNativeCall(
+            natives_, java_class, name, descriptor, frame));
     }
 
     bool HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
@@ -729,6 +737,7 @@ private:
     AndroidGuestMovieState movie_state_;
     AndroidGuestLegacyMediaState media_state_;
     JniPrimitiveArrayStore arrays_;
+    JniNativeRegistry natives_;
     JniJavaVm java_vm_;
     hal::RealtimeClock clock_;
     cpu::FutexTable futex_table_;
@@ -778,6 +787,20 @@ A32GuestCallResult AndroidGuestCallSession::Invoke(
     } catch (const std::exception& error) {
         throw AndroidGuestCallSessionError(
             "Android guest invocation failed: " +
+            std::string(error.what()));
+    }
+}
+A32GuestCallResult AndroidGuestCallSession::InvokeRegisteredNative(
+    const JniObjectIdentity java_class, const std::string_view name,
+    const std::string_view descriptor, const A32GuestCallFrame& frame) {
+    try {
+        return impl_->InvokeRegisteredNative(java_class, name, descriptor,
+                                             frame);
+    } catch (const AndroidGuestCallSessionError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestCallSessionError(
+            "registered JNI native invocation failed: " +
             std::string(error.what()));
     }
 }

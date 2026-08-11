@@ -620,6 +620,11 @@ status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"
 note = "M5 WU-0238 将 16 个 JNIEnv 引用/异常基础 slot 与 4 个 JavaVM slot 绑定到真实 M3 状态；guest 输出指针受检，统一发布 guest JNIEnv/JavaVM 地址"
 
+[runtime.jni_guest_native_registration]
+status = "complete"
+test = "tests/runtime/jni_native_registry_tests.cpp"
+note = "M8 WU-M8-002 将 ARM32 RegisterNatives/UnregisterNatives 以整批预检和声明 resolve 接入唯一 JniNativeRegistry，保留 Thumb bit，并把动态 mapping 接入通用 A32 guest invocation"
+
 [runtime.jni_guest_static_method_lookup]
 status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"

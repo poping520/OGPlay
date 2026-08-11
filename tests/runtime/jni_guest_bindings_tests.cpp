@@ -20,6 +20,7 @@
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
 
 namespace {
@@ -37,7 +38,7 @@ struct GuestBindingsFixture final {
                        ogplay::memory::PageProtection::write);
         ogplay::runtime::JniGuestBindingContext context{
             environment, classes, invocations, fields, strings, arrays,
-            java_vm, objects, memory};
+            java_vm, objects, memory, &natives};
         ogplay::runtime::BindJniGuestSlots(dispatcher, context);
     }
 
@@ -94,6 +95,7 @@ struct GuestBindingsFixture final {
     ogplay::runtime::JniGuestObjectRegistry objects;
     ogplay::runtime::JniStringStore strings;
     ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::JniNativeRegistry natives;
     ogplay::runtime::JniJavaVm java_vm;
     const ogplay::memory::GuestAddress output{0x72000000U};
 
@@ -211,6 +213,10 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
         "Float", "Double"};
     CHECK(fixture.dispatcher.IsEnvironmentBound(
         *ogplay::runtime::FindJniSlot("GetStaticFieldID")));
+    CHECK(fixture.dispatcher.IsEnvironmentBound(
+        *ogplay::runtime::FindJniSlot("RegisterNatives")));
+    CHECK(fixture.dispatcher.IsEnvironmentBound(
+        *ogplay::runtime::FindJniSlot("UnregisterNatives")));
     for (const auto type : field_types) {
         CHECK(fixture.dispatcher.IsEnvironmentBound(
             *ogplay::runtime::FindJniSlot(
@@ -228,7 +234,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
                                  ? 1U
                                  : 0U;
     }
-    CHECK(environment_count == 110U);
+    CHECK(environment_count == 112U);
     std::size_t java_vm_count{};
     for (std::size_t index = 3U;
          index < ogplay::runtime::kJniInvokeInterfaceSlotCount; ++index) {

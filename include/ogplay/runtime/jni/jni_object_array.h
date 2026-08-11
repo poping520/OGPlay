@@ -48,6 +48,7 @@ public:
         JniObjectIdentity element_class, JniSize length,
         std::optional<JniObjectValue> initial = std::nullopt);
     void Delete(JniObjectIdentity array);
+    [[nodiscard]] bool Contains(JniObjectIdentity array) const noexcept;
     [[nodiscard]] JniSize Length(JniObjectIdentity array) const;
     [[nodiscard]] JniObjectIdentity ElementClass(
         JniObjectIdentity array) const;

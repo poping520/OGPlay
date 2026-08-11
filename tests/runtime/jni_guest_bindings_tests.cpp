@@ -226,6 +226,27 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
         CHECK(fixture.dispatcher.IsEnvironmentBound(
             *ogplay::runtime::FindJniSlot(name)));
     }
+    constexpr std::string_view array_types[]{
+        "Boolean", "Byte", "Char", "Short",
+        "Int", "Long", "Float", "Double"};
+    for (const auto type : array_types) {
+        const auto stem = std::string(type);
+        const std::array names{
+            "New" + stem + "Array",
+            "Get" + stem + "ArrayRegion",
+            "Set" + stem + "ArrayRegion",
+            "Get" + stem + "ArrayElements",
+            "Release" + stem + "ArrayElements"};
+        for (const auto& name : names) {
+            CHECK(fixture.dispatcher.IsEnvironmentBound(
+                *ogplay::runtime::FindJniSlot(name)));
+        }
+    }
+    for (const auto name : {"NewObjectArray", "GetObjectArrayElement",
+                            "SetObjectArrayElement"}) {
+        CHECK(fixture.dispatcher.IsEnvironmentBound(
+            *ogplay::runtime::FindJniSlot(name)));
+    }
     for (const auto type : field_types) {
         CHECK(fixture.dispatcher.IsEnvironmentBound(
             *ogplay::runtime::FindJniSlot(
@@ -243,7 +264,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
                                  ? 1U
                                  : 0U;
     }
-    CHECK(environment_count == 136U);
+    CHECK(environment_count == 178U);
     std::size_t java_vm_count{};
     for (std::size_t index = 3U;
          index < ogplay::runtime::kJniInvokeInterfaceSlotCount; ++index) {
@@ -397,20 +418,20 @@ TEST_CASE("guest JNI byte array region copies checked bytes to guest memory") {
         static_cast<void>(fixture.CallEnvironment(
             "GetByteArrayRegion", 405U, 0U, 0U, 1U,
             destination.Value())),
-        "GetByteArrayRegion requires a valid array reference",
+        "GetByteArrayRegion requires a valid reference",
         ogplay::runtime::JniGuestBindingError);
     CHECK_THROWS_WITH_AS(
         static_cast<void>(fixture.CallEnvironment(
             "GetByteArrayRegion", 405U, integer_array.Value(), 0U, 1U,
             destination.Value())),
-        "GetByteArrayRegion requires a byte array reference",
+        "GetByteArrayRegion received the wrong array type",
         ogplay::runtime::JniGuestBindingError);
     CHECK_THROWS_AS(
         static_cast<void>(fixture.CallEnvironment(
             "GetByteArrayRegion", 405U, array.Value(),
             std::bit_cast<std::uint32_t>(ogplay::runtime::JniInt{-1}), 1U,
             destination.Value())),
-        ogplay::runtime::JniArrayError);
+        ogplay::runtime::JniGuestBindingError);
     CHECK_THROWS_WITH_AS(
         static_cast<void>(fixture.CallEnvironment(
             "GetByteArrayRegion", 405U, array.Value(), 0U, 1U, 0U)),

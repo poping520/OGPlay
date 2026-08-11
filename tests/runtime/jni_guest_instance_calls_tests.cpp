@@ -24,6 +24,7 @@
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_object.h"
+#include "ogplay/runtime/jni/jni_object_array.h"
 
 namespace {
 
@@ -177,6 +178,102 @@ TEST_CASE("guest JNI class object and instance call family dispatches exact meth
     CHECK(fixture.Call(
               "IsInstanceOf", object.Value(), class_reference.Value()) == 1U);
     CHECK(fixture.classes.FindClass("fixture/Counter") == java_class);
+}
+
+TEST_CASE("guest JNI primitive arrays preserve region and lease semantics") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    fixture.dispatcher.Seal();
+
+    const auto array = JniReference{fixture.Call("NewIntArray", 3U)};
+    REQUIRE_FALSE(array.IsNull());
+    CHECK(fixture.Call("GetArrayLength", array.Value()) == 3U);
+
+    fixture.bus.Write32(fixture.output.Add(0x200U), 10U);
+    fixture.bus.Write32(fixture.output.Add(0x204U), 20U);
+    fixture.bus.Write32(fixture.output.Add(0x208U), 30U);
+    fixture.Write64(fixture.output.Add(0x200U).Value());
+    static_cast<void>(
+        fixture.Call("SetIntArrayRegion", array.Value(), 0U, 3U));
+
+    fixture.Write64(fixture.output.Add(0x300U).Value());
+    static_cast<void>(
+        fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x300U)) == 10U);
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x304U)) == 20U);
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x308U)) == 30U);
+
+    const auto elements = fixture.Call(
+        "GetIntArrayElements", array.Value(),
+        fixture.output.Add(0x20U).Value());
+    REQUIRE(elements != 0U);
+    CHECK(fixture.bus.Read8(fixture.output.Add(0x20U)) == 1U);
+    fixture.bus.Write32(ogplay::memory::GuestAddress{elements}.Add(4U), 99U);
+    static_cast<void>(fixture.Call(
+        "ReleaseIntArrayElements", array.Value(), elements, 1U));
+    fixture.bus.Write32(ogplay::memory::GuestAddress{elements}.Add(8U), 77U);
+    static_cast<void>(fixture.Call(
+        "ReleaseIntArrayElements", array.Value(), elements, 2U));
+
+    fixture.Write64(fixture.output.Add(0x300U).Value());
+    static_cast<void>(
+        fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x304U)) == 99U);
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x308U)) == 30U);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.Call(
+            "ReleaseIntArrayElements", array.Value(), elements, 0U)),
+        "ReleaseIntArrayElements pointer does not match an active lease",
+        JniGuestBindingError);
+
+    const auto second_lease = fixture.Call(
+        "GetIntArrayElements", array.Value(), 0U);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.Call(
+            "ReleaseIntArrayElements", array.Value(), second_lease, 3U)),
+        "ReleaseIntArrayElements mode must be 0, JNI_COMMIT or JNI_ABORT",
+        JniGuestBindingError);
+    static_cast<void>(fixture.Call(
+        "ReleaseIntArrayElements", array.Value(), second_lease, 2U));
+}
+
+TEST_CASE("guest JNI object arrays enforce assignability and null semantics") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    const auto base = fixture.classes.RegisterClass({"fixture/Base", {}, {}, {}});
+    const auto child = fixture.classes.RegisterClass(
+        {"fixture/Child", "fixture/Base", {}, {}});
+    const auto other = fixture.classes.RegisterClass(
+        {"fixture/Other", {}, {}, {}});
+    const auto child_object = fixture.objects.Allocate(child);
+    const auto other_object = fixture.objects.Allocate(other);
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const auto base_ref = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, base);
+    const auto child_ref = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, child_object);
+    const auto other_ref = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, other_object);
+    fixture.dispatcher.Seal();
+
+    const auto array = JniReference{fixture.Call(
+        "NewObjectArray", 2U, base_ref.Value(), child_ref.Value())};
+    REQUIRE_FALSE(array.IsNull());
+    CHECK(fixture.Call("GetArrayLength", array.Value()) == 2U);
+    const auto element = JniReference{fixture.Call(
+        "GetObjectArrayElement", array.Value(), 0U)};
+    CHECK(fixture.environment.IsSameObject(
+        InstanceFixture::thread_id, element, child_ref));
+
+    static_cast<void>(fixture.Call(
+        "SetObjectArrayElement", array.Value(), 1U, 0U));
+    CHECK(fixture.Call("GetObjectArrayElement", array.Value(), 1U) == 0U);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.Call(
+            "SetObjectArrayElement", array.Value(), 0U,
+            other_ref.Value())),
+        JniObjectArrayError);
 }
 
 TEST_CASE("guest JNI static field family uses exact descriptors and A32 ABI") {

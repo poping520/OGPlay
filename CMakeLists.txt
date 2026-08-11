@@ -328,6 +328,7 @@ add_library(ogplay_runtime
     src/runtime/integration/android_link_preflight.cpp
     src/runtime/integration/jni_guest_abi.cpp
     src/runtime/integration/jni_guest_bindings.cpp
+    src/runtime/integration/jni_guest_array_bindings.cpp
     src/runtime/integration/jni_guest_dispatch.cpp
     src/runtime/integration/jni_guest_library_lifecycle.cpp
     src/runtime/integration/jni_guest_static_calls.cpp

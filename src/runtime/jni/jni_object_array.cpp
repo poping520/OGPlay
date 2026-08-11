@@ -56,6 +56,12 @@ public:
         }
     }
 
+    [[nodiscard]] bool Contains(const JniObjectIdentity array) const noexcept {
+        if (array.domain != JniObjectDomain::host) return false;
+        std::scoped_lock lock(mutex_);
+        return arrays_.contains(array.value);
+    }
+
     [[nodiscard]] JniSize Length(const JniObjectIdentity array) const {
         std::scoped_lock lock(mutex_);
         return static_cast<JniSize>(Require(array).elements.size());
@@ -158,6 +164,10 @@ JniObjectIdentity JniObjectArrayStore::New(
 }
 void JniObjectArrayStore::Delete(const JniObjectIdentity array) {
     impl_->Delete(array);
+}
+bool JniObjectArrayStore::Contains(
+    const JniObjectIdentity array) const noexcept {
+    return impl_->Contains(array);
 }
 JniSize JniObjectArrayStore::Length(const JniObjectIdentity array) const {
     return impl_->Length(array);

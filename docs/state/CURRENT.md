@@ -35,14 +35,15 @@
 
 ## 最近完成
 
+- [WU-M8-004] guest primitive array 40 槽与 object array 3 槽闭合；8 类 New/Region/
+  Elements 共享完整 range 预检和 4 MiB guest lease，严格执行 release 0/COMMIT/ABORT，
+  object value 受 assignability 校验，GetArrayLength 通过显式 Contains 支持两类 store。
+  Windows/MSVC focused 3/3 与 full CTest 516/516 通过，当前 aggregate 为 JNIEnv/JavaVM
+  178/4。
 - [WU-M8-003] guest instance field 19 槽与 UTF-16 string 5 槽闭合；receiver 通过统一
   object registry 定位 class，static/instance 与 descriptor kind 严格互斥，UTF-16 lease
   支持 surrogate/code-unit、wrong-string/double-release 检查。Windows/MSVC focused
   8/8 与 full CTest 514/514 通过，当前 aggregate 为 JNIEnv/JavaVM 136/4。
-- [WU-M8-002] guest `RegisterNatives` / `UnregisterNatives` 接入唯一 native registry；
-  ARM32 12-byte 批次先完整预检/resolve 后提交，Thumb bit 保持，registered-native session
-  入口进入通用 A32 executor。Windows/MSVC focused 6/6 与 full CTest 512/512 通过，
-  当前 aggregate 为 JNIEnv/JavaVM 112/4。
 - [WU-OPT-CLOSURE-01] 正式闭合前 12 项优化验收：统一 active texture 与 GLES1 texture
   matrix unit，以 `(unit,target)` 隔离 2D/cube-map binding/metadata/delete，并让超采样下
   GLES1/GLES2 viewport/scissor query 返回 logical state；六类高频 setter 不再复制整个

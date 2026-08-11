@@ -255,8 +255,8 @@
   receiver 与非零线程后发布寄存器/栈调用帧；slot 必须在执行前显式绑定并封口，未绑定
   项按名称记账并失败，未知 trap 地址不得吞掉。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
-  Static Call、Static Field、Modified UTF-8 与 JavaVM family，随后封口 dispatcher；
-  aggregate contract 固定当前 136 个 JNIEnv 与 4 个 JavaVM 精确 slot 集合，Core binder
+  Static Call、Static/Instance Field、String、Array 与 JavaVM family，随后封口 dispatcher；
+  aggregate contract 固定当前 178 个 JNIEnv 与 4 个 JavaVM 精确 slot 集合，Core binder
   不得再隐式注册其他 family。引用、异常和线程状态复用同一环境，guest 输出指针在 VM
   状态变更前预检，
   `GetStaticMethodID` 只精确查询统一 class registry，`NewStringUTF` 使用受检 guest C
@@ -265,10 +265,7 @@
   分别解码 A32 variadic、对齐 `va_list` 与 8 字节步长 `jvalue[]`，再进入统一 invocation
   engine；小整数符号/零扩展、float/double/long 双字返回及 void 均遵循 A32 guest ABI，
   调用名与 descriptor 返回类型不符时明确失败；
-  `GetArrayLength` 只解析统一环境中的 primitive array identity；
-  `GetByteArrayRegion` 只接受统一 store 中的 byte array，按有符号 `jsize` 校验区间，
-  从 A32 guest 栈读取第 5 个参数并一次性写入受检 guest 内存；错误 return kind、class、
-  method、handler、array reference/type/region 或输出缓冲明确失败，
+  错误 return kind、class、method、handler、array reference/type/region 或输出缓冲明确失败，
   成功查询只发布统一 Guest JNI ABI 地址。非空 attach arguments 在实现其结构前明确失败。
 - guest `RegisterNatives` 将完整 ARM32 12-byte method 数组、字符串、descriptor、class 与
   target 先整批校验/resolve，再一次提交到唯一 `JniNativeRegistry`；Thumb bit 保持不变，
@@ -289,6 +286,13 @@
   64 KiB copy-based guest arena 并写 `JNI_TRUE`，lease 以 string identity + pointer + token
   配对，wrong-string/double release、坏 range/pointer 与 arena exhaustion 明确失败；Critical
   两槽继续 unbound。
+- primitive array 40 槽由统一 binder 批量接入 `JniPrimitiveArrayStore`；8 类 New/Region/
+  Elements 都按 little-endian ARM32 ABI 搬运，第五个 region buffer 从 guest 栈读取并在
+  semantic mutation 前完整预检。Elements 使用独立 4 MiB 有界 guest arena，严格实现
+  `0`/`JNI_COMMIT`/`JNI_ABORT`、wrong pointer/double release 与类型配对。object array 3 槽
+  复用 `JniObjectArrayStore` 并验证 initial/set assignability；`GetArrayLength` 通过显式
+  `Contains` 区分 object/primitive store，不使用异常探测。创建后 local reference 发布失败
+  必须删除 semantic array。
 - `NativeActivityRunRequest::supersample_factor` 选择受检 1..4× 内部渲染倍率；guest 的
   EGL surface 和输出帧保持逻辑尺寸，ANGLE pbuffer、viewport 与 GPU render target 使用
   放大尺寸，swap 时通过 gles 确定性 resolve 还原。

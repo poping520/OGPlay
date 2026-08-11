@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-11 · M8 JNI Guest ABI 扩展已 Contract Complete
+更新：2026-08-11 · M8 JNI Contract Complete；DexVM 设计定稿（ADR-0017，未启动）
 
 ## 当前阶段
 
@@ -62,14 +62,6 @@
 - [WU-0378] Dungeon Hunter 第 75 帧命中的 guest 内置 PVRTC 解压批次经测量需约
   96.99 亿 tick；Profile/通用上限提高到仍受限的 100 亿，exact 120/240 帧均通过。
   `run-apk` 新增有界结构化启动、帧、长调用和 teardown 日志；full CTest 497/497。
-- [WU-0377] 一次闭合 GLES2 client vertex/index staging、`glDrawArrays`、`glTexSubImage2D`
-  与混合链接 GLES1 draw 转入；opaque EBO+client attribute 明确失败。exact 越过 staging，
-  进入 `required guest pointer is null`；focused 2/2、full CTest 496/496。
-- [WU-0375] child 在首次执行前或 slice 间均响应外部 exit；session stop 先退出/中断再全量
-  join。exact 从 SIGSEGV 恢复为明确 `glGetActiveAttrib` 失败；focused 2/2、full CTest
-  496/496。
-- [WU-0359] Asphalt 5 exact `title_flow` 三轮 gate 通过；Main Menu golden SHA-256
-  `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`。
 
 ## M6 起点
 
@@ -81,7 +73,9 @@ Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实�
 1. 修复 Asphalt 6 Profile native call 5 的 static class reference 发布/解析，再继续
    license/VFS/媒体与主界面 Scenario 三轮 gate。该阻塞与 JNI 槽位覆盖无关。
 2. 把 `JniObjectArrayStore` 从 array binder 内部持有改为 session 级 Java object-model
-   统一所有权；当前不影响正确性，属后续 backlog。
+   统一所有权；当前不影响正确性，已并入 DexVM 设计（`docs/design/dexvm/`）。
+3. （非阻塞长线）DexVM 有界 DEX 解释器方案已定稿并 Accepted：ADR-0017 与
+   `docs/design/dexvm/` 六章；启动排期待定，M8 继续按 profile 路线推进。
 
 ## 阻塞
 

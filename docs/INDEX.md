@@ -4,6 +4,7 @@
 
 - 规划：[roadmap/README.md](roadmap/README.md)（当前规范的唯一来源）
 - 架构决策：[adr/](adr/)
+- 长期方案设计：[design/dexvm/README.md](design/dexvm/README.md)（有界 DEX 解释器，ADR-0017，未启动）
 - 模块契约：[modules/INDEX.md](modules/INDEX.md)
 - 排查手册：[playbook/](playbook/)
 - 当前交接：[state/CURRENT.md](state/CURRENT.md)

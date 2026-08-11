@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -66,6 +67,8 @@ public:
     [[nodiscard]] static GlesFunctionInfo Describe(GlesThunkId id);
 
     void Bind(std::string_view name, GlesHandler handler);
+    void Seal();
+    [[nodiscard]] bool IsSealed() const noexcept;
     [[nodiscard]] bool IsBound(GlesThunkId id) const;
     [[nodiscard]] GlesGuestValue Invoke(
         GlesThunkId id, std::span<const GlesGuestValue> arguments,
@@ -81,6 +84,7 @@ private:
 
     GlesApi api_{GlesApi::gles2};
     mutable std::mutex mutex_;
+    std::atomic_bool sealed_{false};
     std::vector<GlesHandler> handlers_;
     std::vector<UnimplementedState> unimplemented_;
 };

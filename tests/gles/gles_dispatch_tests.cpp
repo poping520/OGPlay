@@ -45,6 +45,28 @@ TEST_CASE("GLES2 dispatch invokes only an explicitly bound exact handler") {
                     ogplay::gles::GlesDispatchError);
 }
 
+TEST_CASE("sealed GLES dispatch keeps handlers immutable and callable") {
+    ogplay::gles::GlesDispatchTable dispatch;
+    const auto clear = ogplay::gles::GlesDispatchTable::Find("glClear");
+    REQUIRE(clear);
+    std::uint32_t calls{};
+    dispatch.Bind("glClear", [&calls](const auto arguments, const auto) {
+        ++calls;
+        return arguments[0];
+    });
+    dispatch.Seal();
+    CHECK(dispatch.IsSealed());
+    dispatch.Seal();
+    const std::array arguments{UINT32_C(0x4000)};
+    CHECK(dispatch.Invoke(*clear, arguments, 3) == 0x4000U);
+    CHECK(dispatch.Invoke(*clear, arguments, 4) == 0x4000U);
+    CHECK(calls == 2U);
+    CHECK_THROWS_AS(dispatch.Bind("glGetError", [](const auto, const auto) {
+                        return std::uint32_t{};
+                    }),
+                    ogplay::gles::GlesDispatchError);
+}
+
 TEST_CASE("GLES2 dispatch validates thunk and argument shape") {
     ogplay::gles::GlesDispatchTable dispatch;
     const auto clear = ogplay::gles::GlesDispatchTable::Find("glClear");

@@ -147,6 +147,9 @@ void GlesDispatchTable::Bind(const std::string_view name, GlesHandler handler) {
         throw GlesDispatchError("cannot bind an empty GLES2 handler");
     }
     std::scoped_lock lock(mutex_);
+    if (sealed_.load(std::memory_order_relaxed)) {
+        throw GlesDispatchError("cannot bind a sealed GLES dispatch table");
+    }
     auto& slot = handlers_[static_cast<std::size_t>(*id)];
     if (slot) {
         throw GlesDispatchError("GLES2 handler is already bound");
@@ -154,9 +157,21 @@ void GlesDispatchTable::Bind(const std::string_view name, GlesHandler handler) {
     slot = std::move(handler);
 }
 
+void GlesDispatchTable::Seal() {
+    std::scoped_lock lock(mutex_);
+    sealed_.store(true, std::memory_order_release);
+}
+
+bool GlesDispatchTable::IsSealed() const noexcept {
+    return sealed_.load(std::memory_order_acquire);
+}
+
 bool GlesDispatchTable::IsBound(const GlesThunkId id) const {
     const auto index = static_cast<std::size_t>(id);
     static_cast<void>(DescribeGlesFunction(api_, id));
+    if (sealed_.load(std::memory_order_acquire)) {
+        return static_cast<bool>(handlers_[index]);
+    }
     std::scoped_lock lock(mutex_);
     return static_cast<bool>(handlers_[index]);
 }
@@ -169,15 +184,30 @@ GlesGuestValue GlesDispatchTable::Invoke(
         throw GlesDispatchError("GLES2 call has the wrong guest argument count");
     }
 
+    const auto index = static_cast<std::size_t>(id);
+    if (sealed_.load(std::memory_order_acquire)) {
+        const auto& handler = handlers_[index];
+        if (handler) return handler(arguments, thread_id);
+        std::scoped_lock lock(mutex_);
+        auto& state = unimplemented_[index];
+        if (state.hits == 0) {
+            state.first_thread = thread_id;
+        }
+        ++state.hits;
+        state.last_thread = thread_id;
+        if (api_ == GlesApi::gles2) {
+            throw GlesUnimplementedError(id, info.name, thread_id);
+        }
+        throw GlesDispatchError(UnimplementedMessage(api_, id, info.name, thread_id));
+    }
+
     GlesHandler handler;
     {
         std::scoped_lock lock(mutex_);
-        handler = handlers_[static_cast<std::size_t>(id)];
+        handler = handlers_[index];
         if (!handler) {
-            auto& state = unimplemented_[static_cast<std::size_t>(id)];
-            if (state.hits == 0) {
-                state.first_thread = thread_id;
-            }
+            auto& state = unimplemented_[index];
+            if (state.hits == 0) state.first_thread = thread_id;
             ++state.hits;
             state.last_thread = thread_id;
         }

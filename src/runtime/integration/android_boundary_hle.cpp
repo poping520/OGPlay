@@ -148,6 +148,8 @@ public:
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });
+        gles1_dispatch_.Seal();
+        gles1_extensions_dispatch_.Seal();
         gles1_state_.Fixed().SetMaterialSingleFaceQuirk(
             options.allow_gles1_material_single_face);
     }

@@ -306,6 +306,9 @@ public:
             }
         }
 
+        // The executor requires an 8-byte aligned stack tail.
+        if (stack.size() % 2 != 0) stack.push_back(0);
+
         A32GuestCallFrame frame;
         std::size_t register_count = words.size() < 4 ? words.size() : 4;
         for (std::size_t index = 0; index < register_count; ++index) {

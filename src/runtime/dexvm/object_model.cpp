@@ -145,8 +145,23 @@ VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
         return VmObjectRef(found->second + 1);
     }
     Impl::Record record;
-    record.kind = VmObjectKind::external;
     record.identity = identity;
+    // Objects created on the JNI side (NewStringUTF, NewByteArray, ...)
+    // flow in with host identities; classify them against the shared
+    // stores so the interpreter sees the same object with its real form.
+    record.kind = VmObjectKind::external;
+    try {
+        static_cast<void>(impl_->strings->Length(identity));
+        record.kind = VmObjectKind::string;
+        record.java_class = impl_->string_class;
+    } catch (const JniStringError&) {
+        try {
+            record.primitive_kind = impl_->arrays->Kind(identity);
+            record.kind = VmObjectKind::primitive_array;
+        } catch (const JniArrayError&) {
+            record.kind = VmObjectKind::external;
+        }
+    }
     return impl_->Register(std::move(record));
 }
 

@@ -4,6 +4,7 @@
 // (interpreter.cpp, interp_exec.cpp, interp_arith.cpp,
 // interpreter_builtins.cpp). Not installed; include order is private.
 
+#include <deque>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -41,7 +42,9 @@ public:
     InterpreterConfig config;
     InterpreterStats stats;
 
-    std::vector<Frame> frames;
+    // Deque keeps outer-frame references valid across nested pushes
+    // (new-instance triggering <clinit>, native re-entry, ...).
+    std::deque<Frame> frames;
     VmObjectRef pending_exception;
     DexClassId pending_exception_class;
     VmValue exit_result;  // value returned by the most recent popped frame
@@ -65,7 +68,8 @@ public:
         const auto* frame = frames.empty() ? nullptr : &frames.back();
         std::string where = "dexvm";
         if (frame != nullptr) {
-            where = frame->method->name + " pc " +
+            where = linker->Class(frame->method->owner).descriptor + "." +
+                    frame->method->name + " pc " +
                     std::to_string(frame->pc);
         }
         throw DexVmError(DexVmErrorReason::invalid_operand,

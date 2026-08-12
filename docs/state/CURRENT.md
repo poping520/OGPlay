@@ -48,6 +48,8 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
    方法级接管的现成素材。
 2. dexvm 记账缺口按命中批次闭合：J/D 出向返回解码、string 资源、
    MediaPlayer 完成回调、`dexvm.stats/stack` Agent 查询面（04 §8）。
+   GC-B 优先级上调：pilot 试玩实证 GC-A 记账在资源重载路径线性增长
+   （已用 512 MiB 预算诚实覆盖换语言/进赛道，长时游玩需 GC-B）。
 3. 阶段 4（线程/wait-notify/GC-B/java.* P2P3）在厚层 title（libGDX 类）
    立项时启动；05 §4 gate 3。
 4. Windows/Linux 三平台 M9 严格出口复验（当前仅 macOS/arm64 本地全绿）。

@@ -62,7 +62,16 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
 
 [[nodiscard]] std::vector<std::byte> ReadApkFile(const Context& context,
                                                  const std::string& path) {
-    return loader::ReadApkEntry(context->apk_bytes, context->archive, path);
+    try {
+        return loader::ReadApkEntry(context->apk_bytes, context->archive,
+                                    path);
+    } catch (const std::exception& error) {
+        // Missing/damaged entries surface as the Java IOException the
+        // interpreted glue actually catches, not a host-side abort.
+        throw dx::VmJavaThrow{"Ljava/io/IOException;",
+                              "APK entry is unavailable: " + path + " (" +
+                                  error.what() + ")"};
+    }
 }
 
 void RegisterContextActivity(dx::IntrinsicRegistry& registry,

@@ -141,6 +141,20 @@ public:
         const auto outcome = vm->Call(method_id, arguments);
         if (outcome.exception.IsValid()) {
             // JNI semantics: leave the exception pending for the caller.
+            if (logger != nullptr) {
+                std::string rendered =
+                    linker.Class(method.owner).descriptor + "." +
+                    method.name + " threw " +
+                    linker.Class(outcome.exception_class).descriptor + ": " +
+                    outcome.exception_message;
+                for (const auto& entry : outcome.exception_stack) {
+                    rendered += " | at " + entry.class_descriptor + "." +
+                                entry.method_name + " pc " +
+                                std::to_string(entry.pc);
+                }
+                logger->Write(core::LogLevel::warn, "runtime.dexvm",
+                              rendered);
+            }
             const auto throwable = session->Environment().PublishLocalObject(
                 invocation.thread_id,
                 model->ToIdentity(outcome.exception));

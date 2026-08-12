@@ -15,8 +15,12 @@ lifecycle = "dex_activity"
 [runtime.surface]
 width = 800
 height = 480
+# 512 MiB: resource bytes flow through interpreted GLResLoader as transient
+# byte arrays; GC-A never reclaims (04 §5), so the budget must cover the
+# cumulative allocation until GC-B lands (stage 4). Measured: title flow +
+# language switch + race load peak below 300 MiB.
 [runtime.dexvm]
-heap_budget_bytes = 67108864
+heap_budget_bytes = 536870912
 max_frames = 512
 ticks_per_call = 200000000
 [quirks]

@@ -12,7 +12,11 @@
   metadata 精确交叉验证。
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package、versionCode/versionName、
-  minSdk/targetSdk 事实，不执行资源解析或猜测身份。
+  minSdk/targetSdk 与 launcher activity（action MAIN + category LAUNCHER 的第一个
+  activity，相对名按 package 规范化）事实，不执行资源解析或猜测身份。
+- `ParseArsc`：严格读取 resources.arsc（ResTable/string pool/package/type/entry），
+  产出 resid ↔ (type, name, 文件路径) 双向事实；默认配置优先，复杂值与多 locale
+  明确不支持，越界/截断即失败。
 - `ReadApkArmNativeLibraries`：稳定枚举 `lib/armeabi[-v7a]/*.so`，通过统一条目入口拥有
   解压后原始字节并计算小写 SHA-256；只返回目录事实，不按 ABI、大小或导出符号选入口。
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序

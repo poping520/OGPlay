@@ -1,4 +1,8 @@
-schema = 1
+# DexVM pilot (WU-M9-019): schema v2, dex_activity lifecycle.
+# No native_call, no [[java.class]] — the interpreted DEX drives the title
+# (docs/design/dexvm/04-integration.md §7). Migrated from v1 after the
+# title-flow gate passed 3/3 with the identical Main Menu golden.
+schema = 2
 [identity]
 package = "com.gameloft.android.GAND.GloftAsphalt5.asphalt5"
 name = "Asphalt 5"
@@ -7,194 +11,14 @@ so_sha256 = ["9c7eea1374b76200f47557415f4518535cce065a0d2c50c7bab75209f7b87b48"]
 abi = "armeabi"
 [runtime]
 api_level = 19
-lifecycle = "gl_surface_view"
+lifecycle = "dex_activity"
 [runtime.surface]
 width = 800
 height = 480
+[runtime.dexvm]
+heap_budget_bytes = 67108864
+max_frames = 512
+ticks_per_call = 200000000
 [quirks]
 enabled = ["gles1_material_front_face"]
 [quirks.gles1_material_front_face]
-[audio]
-sound_pool = { source = "apk", path_pattern = "res/raw/raw_{resource:03}.ogg" }
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
-method = "nativeGetJNIEnv"
-signature = "()V"
-dispatch = "instance"
-arguments = []
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLResLoader"
-method = "nativeInit"
-signature = "(I)V"
-dispatch = "static"
-arguments = [{ source = "constant", value = 0 }]
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLMediaPlayer"
-method = "nativeInit"
-signature = "(I)V"
-dispatch = "static"
-arguments = [{ source = "constant", value = 0 }]
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeInit"
-signature = "()V"
-dispatch = "static"
-arguments = []
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
-method = "nativeInit"
-signature = "(IIIII)V"
-dispatch = "instance"
-arguments = [
-  { source = "constant", value = 0 },
-  { source = "constant", value = 1 },
-  { source = "surface_width" },
-  { source = "surface_height" },
-  { source = "constant", value = 0 },
-]
-[[runtime.native_call]]
-phase = "resume"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeIsRunning"
-signature = "(Z)V"
-dispatch = "static"
-arguments = [{ source = "constant", value = 1 }]
-[[runtime.native_call]]
-phase = "resume"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeCheckwifi"
-signature = "(Z)V"
-dispatch = "static"
-arguments = [{ source = "constant", value = 0 }]
-[[runtime.native_call]]
-phase = "resume"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeCheckSilent"
-signature = "(Z)V"
-dispatch = "static"
-arguments = [{ source = "constant", value = 0 }]
-
-[[runtime.native_call]]
-phase = "resume"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5GLSurfaceView"
-method = "nativeResume"
-signature = "()V"
-dispatch = "instance"
-arguments = []
-
-[[runtime.native_call]]
-phase = "frame"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
-method = "nativeRender"
-signature = "()V"
-dispatch = "static"
-arguments = []
-
-[[runtime.native_call]]
-phase = "pause"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5GLSurfaceView"
-method = "nativePause"
-signature = "()V"
-dispatch = "instance"
-arguments = []
-
-[[runtime.native_call]]
-phase = "shutdown"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5Renderer"
-method = "nativeDestroy"
-signature = "()V"
-dispatch = "instance"
-arguments = []
-
-[[runtime.native_call]]
-phase = "pointer_down"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeTouchPressed"
-signature = "(III)V"
-dispatch = "static"
-arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }]
-
-[[runtime.native_call]]
-phase = "pointer_move"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeTouchMoved"
-signature = "(III)V"
-dispatch = "static"
-arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }]
-
-[[runtime.native_call]]
-phase = "pointer_up"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeTouchReleased"
-signature = "(III)V"
-dispatch = "static"
-arguments = [{ source = "input_x" }, { source = "input_y" }, { source = "input_pointer" }]
-
-[[runtime.native_call]]
-phase = "key_down"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeSetOnKeyDown"
-signature = "(I)V"
-dispatch = "static"
-arguments = [{ source = "input_key" }]
-
-[[java.class]]
-name = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLResLoader"
-method = [
-  { name = "getResourceFull", sig = "(Ljava/lang/String;)[B", impl = "resource.load_full", static = true },
-  { name = "getResourceBytes", sig = "(Ljava/lang/String;II)[B", impl = "resource.load_range", static = true },
-  { name = "getResourceLength", sig = "(Ljava/lang/String;)I", impl = "resource.length", static = true },
-]
-
-[[java.class]]
-name = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/GLMediaPlayer"
-method = [
-  { name = "isSoundLoaded", sig = "(II)I", impl = "audio.is_sound_loaded", static = true },
-  { name = "isSoundLoadedBig", sig = "(I)I", impl = "audio.is_sound_loaded_big", static = true },
-  { name = "unloadSound", sig = "(II)V", impl = "audio.unload_sound", static = true },
-  { name = "unloadSoundBig", sig = "(I)V", impl = "audio.unload_sound_big", static = true },
-  { name = "loadSound", sig = "(II)V", impl = "audio.load_sound", static = true },
-  { name = "loadSoundBig", sig = "(I)V", impl = "audio.load_sound_big", static = true },
-  { name = "playSound", sig = "(IIF)V", impl = "audio.play_sound", static = true },
-  { name = "playSoundBig", sig = "(IF)V", impl = "audio.play_sound_big", static = true },
-  { name = "pauseSound", sig = "(II)V", impl = "audio.pause_sound", static = true },
-  { name = "pauseSoundBig", sig = "(I)V", impl = "audio.pause_sound_big", static = true },
-  { name = "resumeSound", sig = "(II)V", impl = "audio.resume_sound", static = true },
-  { name = "resumeSoundBig", sig = "(I)V", impl = "audio.resume_sound_big", static = true },
-  { name = "stopSound", sig = "(II)V", impl = "audio.stop_sound", static = true },
-  { name = "stopSoundBig", sig = "(I)V", impl = "audio.stop_sound_big", static = true },
-  { name = "setVolume", sig = "(IIF)V", impl = "audio.set_volume", static = true },
-  { name = "setVolumeBig", sig = "(IF)V", impl = "audio.set_volume_big", static = true },
-  { name = "resetSound", sig = "(I)V", impl = "audio.reset_sound", static = true },
-  { name = "setPitch", sig = "(IIF)V", impl = "audio.set_pitch", static = true },
-  { name = "stopAllSounds", sig = "()V", impl = "audio.stop_all_sounds", static = true },
-  { name = "stopAllPool", sig = "(I)V", impl = "audio.stop_all_pool", static = true },
-  { name = "stopAllBig", sig = "(I)V", impl = "audio.stop_all_big", static = true },
-  { name = "destroySoundPool", sig = "()V", impl = "audio.destroy_sound_pool", static = true },
-  { name = "initSoundPoolArray", sig = "()V", impl = "audio.init_sound_pool_array", static = true },
-  { name = "loadMovie", sig = "(Ljava/lang/String;)V", impl = "audio.load_movie", static = true },
-  { name = "isMediaPlaying", sig = "(I)Z", impl = "audio.is_media_playing", static = true },
-]
-
-[[java.class]]
-name = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = [
-  { name = "sendAppToBackground", sig = "()V", impl = "activity.send_to_background", static = true },
-  { name = "Exit", sig = "()V", impl = "process.exit", static = true },
-  { name = "sendUnlockMessage", sig = "()V", impl = "telephony.send_unlock_message", static = true },
-  { name = "saveRMS", sig = "(Ljava/lang/String;)V", impl = "storage.save_rms", static = true },
-  { name = "ChangeDisplaymode", sig = "(I)V", impl = "display.change_mode", static = true },
-]
-
-[[runtime.native_call]]
-phase = "key_up"
-class = "com/gameloft/android/GAND/GloftAsphalt5/asphalt5/Asphalt5"
-method = "nativeSetOnKeyUp"
-signature = "(I)V"
-dispatch = "static"
-arguments = [{ source = "input_key" }]

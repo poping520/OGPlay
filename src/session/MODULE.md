@@ -31,6 +31,14 @@
   覆盖原始 phase 异常；
   Java declarations 与 native-call receiver 进入调用方提供的统一
   class registry，调用帧仍只进入注入的通用 executor。
+- `DexActivityLifecycle`：`dex_activity`（schema v2）的生命周期反转驱动
+  （ADR-0017）：实例化 Manifest launcher activity 并解释执行
+  `<clinit>`/onCreate/onStart/onResume，onSizeChanged 与 focus 先于
+  setRenderer 捕获的 renderer 回调（onSurfaceCreated/Changed），逐帧
+  onDrawFrame + present，输入构造 MotionEvent 经解释执行的
+  onTouchEvent/onKeyDown 派发；suspend/resume 与 teardown（surfaceDestroyed→
+  onStop/onDestroy）沿用存量 finalize/close 顺序；无 native_call、无
+  `[[java.class]]` 参与。未捕获 Java 异常携带完整解释器栈失败。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与
   测试引用；含 quirk 的 Profile 目录必须显式通过注册表验证。
 - `DescribeLifecycle` / `LifecycleFrameRunner`：把三种 Profile 生命周期映射为稳定的通用

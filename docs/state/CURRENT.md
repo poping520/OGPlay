@@ -1,91 +1,61 @@
 # 当前状态
 
-更新：2026-08-11 · 稳定期性能三连（WU-PERF-04..06）与呈现管线方向（ADR-0019）；
-runtime 拆出 jni_guest/boundary（ADR-0018）；DexVM 设计经复盘调整（ADR-0017，未启动）
+更新：2026-08-12 · M9 DexVM 启动并达成 pilot gate：Asphalt 5 以 schema v2
+`dex_activity` 全程解释执行进入主界面，golden 与 v1 路线逐位一致
 
 ## 当前阶段
 
-- M0、M1、M2、M3、M4 已完成并验收。
-- M5 的 `WU-0199..0327` 共 129 项已冻结为三个批次；历史任务不移动、不重编号，
-  正式 M5 验收尚未声明。
-- M6 AI 自动化测试已从 `WU-0328` 开始；目标是让 AI 与 CI 通过同一
-  Profile-backed runner 执行 exact APK 的有界场景、输入、readback、断言和证据收集。
-- M8 兼容性冲刺从 `WU-0360` 开始，新任务改用里程碑内编号 `WU-M8-001..`；Asphalt 6 按
-  静态盘点→JNI/Java→GLES2→线程/VFS→媒体→主界面三轮 gate 批次推进。
-- M8 JNI Guest ABI 扩展（`WU-M8-001..007`）为 Contract Complete：233 个 JNIEnv 槽中
-  212 个 behavior-backed，JavaVM 4 个，其余 reserved 或显式 expected-unbound；绑定集合
-  以精确集合等价机器验证。这只是契约结论，不代表任何 exact-title 运行里程碑。
-- Windows/MSVC、Linux/x64 与 macOS/arm64 的 M4 基线均在 commit `f1b59bb` 以 ANGLE、
-  warnings-as-errors 和严格全量 CTest 302/302 通过，见 [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md)。
+- M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
+- **M9 DexVM 已启动**（`WU-M9-001..019`，ADR-0017、`docs/design/dexvm/`）：
+  阶段 0（AOSP 基线/测量/opcode 目录/dexasm）、阶段 1（解释器内核）、
+  阶段 2（JNI 双向桥 + java.* P1）、阶段 3（android.* intrinsic +
+  dex_activity + profile v2 + pilot 迁移）全部交付。
+- **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除全部 16 条
+  `native_call` 与 33 条 `[[java.class]]` 映射（201 行 v1 → 25 行 v2），
+  `asphalt5.title_flow` 三轮 + 迁移后复验 passed——468 帧固定预算、主界面
+  PNG SHA-256 `9ee57323…` 与 v1 逐位一致、无 fault、clean shutdown。
+  `System.loadLibrary`(<clinit>)、onCreate 副作用链、GetStaticMethodID 查
+  真实 DEX 方法表、native→解释器第三路由均真实发生。
+- M8 Asphalt 6 仍在 Profile native call 5 的 class reference 明确失败处，
+  与 M9 互不阻塞（该问题在 dexvm 路线下按设计自动消解，待 A6 迁移评估）。
 
 ## 已验收基线
 
-| 里程碑 | 状态 | 验收记录 | Work Unit |
-| --- | --- | --- | --- |
-| M0 工程地基 | 完成 | [M0-ACCEPTANCE.md](M0-ACCEPTANCE.md) | `docs/tasks/m0/` |
-| M1 内核与跨平台 | 完成 | [M1-ACCEPTANCE.md](M1-ACCEPTANCE.md) | `docs/tasks/m1/` |
-| M2 Bionic 与 Syscall | 完成 | [M2-ACCEPTANCE.md](M2-ACCEPTANCE.md) | `docs/tasks/m2/` |
-| M3 JNI 与 Java 框架 | 完成 | [M3-ACCEPTANCE.md](M3-ACCEPTANCE.md) | `docs/tasks/m3/` |
-| M4 ANGLE 与 NativeActivity | 完成 | [M4-ACCEPTANCE.md](M4-ACCEPTANCE.md) | `docs/tasks/m4/` |
-| M5 去硬编码机制 | 待验收 | 尚未建立 | [三批索引](../tasks/m5/README.md) |
+M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
+`docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
+能力现状以 `capabilities.toml` 为准。macOS/arm64 full CTest 558/558。
 
-能力的机器可读现状以仓库根目录 `capabilities.toml` 为准；本文件不重复维护完整能力历史。
+## M9 交付摘要
 
-## 进行中
-
-- Asphalt 6 exact 已越过旧 mixed GLES buffer-state/client-pointer 故障；当前在 Profile
-  native call 5 的 `CallStaticIntMethodV requires a valid class reference` 明确失败，尚未
-  声称首帧或主界面。该失败是独立跟踪的 class reference 发布/解析问题，不是缺 JNI 槽。
-
-## 最近完成
-
-- [WU-PERF-05/06] 帧循环仅空转时休眠、Dynarmic code cache 16→64 MiB（消除稳定期
-  整缓存冲刷重编译）、窗口呈现改为 renderer 流式纹理（CPU blit 消除，呈现占比
-  25%→10%）。Dungeon Hunter 600 帧 13.2s→11.87s，加载后约 165 FPS；full CTest
-  527/527。稳定期剩余瓶颈为 `glReadPixels` 同步回读（约 50%），方向见 ADR-0019。
-- [WU-M8-011] Dungeon Hunter"继续"命中 `analytics.track_first_run` 缺 handler；
-  analytics 族一次闭合（记账+启动计数）。DUNQ profile 另有 13 个 impl id
-  无 handler（license/billing/online 等），保持明确失败，待反编译证据。
-- [WU-PERF-04] `run-apk` 长 guest call 的 slice observer 事件泵按宿主 Clock 节流
-  （250 Hz 上限；observer 在每次 supervisor call 后触发，此前无条件泵 Cocoa 事件循环
-  占用约 67% CPU）。Dungeon Hunter 120 帧 Release 实测 54.26s → 约 10s（-81%），
-  guest 执行占比 12% → 78%；full CTest 526/526。遗留热点（AddressSpace 逐次取锁的
-  回调读与 bionic intercept Validate）记录在任务单。
-- [WU-M8-008..010] 按 ADR-0018 把 guest JNI ABI 与 Android native 边界从
-  `runtime/integration` 纯机械迁出为 `jni_guest` 与 `boundary` 子模块，integration 收敛
-  为装配层，三份 MODULE.md 按代码事实重写；行为零变更，macOS/arm64 full CTest
-  524/524。附带修复 macOS -Werror 基线（`GuestBuffer` 残留 `thread_id_`、未使用
-  `Read32`）。
-- [WU-M8-005..007] guest nonvirtual/exception/monitor 槽位闭合与 M8 JNI 验收：
-  真实可重入 monitor table、临时中断/永久关闭两级语义、aggregate binding 精确
-  集合等价（JNIEnv 212 / JavaVM 4）。
-
-## M6 起点
-
-Scenario→exact Profile session→action/step→assertion→evidence/Result→shutdown 已闭合；
-Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实现。
+- `third_party/aosp-dalvik`（android-4.4.4_r2 浅 submodule）+ 锚点哈希门禁；
+  opcode 目录 218 项由 bytecode.txt 机器派生并三锚点比对；dexasm 确定性
+  汇编器（golden 锁字节 + Python/C++ 双解析器回读锁结构）。
+- `loader.dex_code`（指令流/try-catch/静态初始值受检读取）、`loader.arsc`
+  （resid↔路径事实，SoundPool 的 0x7f040009+n 由机器事实取代人工 pattern）、
+  Manifest launcher activity 事实。
+- `runtime/dexvm`：类链接（层级/布局/vtable/懒预检）、JavaObjectModel
+  （字符串/基元数组委托存量 JNI store——native 与解释器同对象）、GC-A 预算
+  arena、tagged 帧解释器全 dex 035 家族、异常展开、`<clinit>` 状态机、
+  java.* P1 intrinsic；一致性夹具 20+ 用例对照 AOSP mterp 语义。
+- `DexVmGuestBridge`：出向 descriptor→A32 编组（RegisterNatives→Java_ 导出），
+  入向解释类注册进 JniClassRegistry（233 槽 ABI 不变的第三路由）；
+  `DexActivityLifecycle` 生命周期反转；Title Profile v2（Python/C++ 双校验）。
 
 ## 下一步（按优先级）
 
-1. 修复 Asphalt 6 Profile native call 5 的 static class reference 发布/解析，再继续
-   license/VFS/媒体与主界面 Scenario 三轮 gate。该阻塞与 JNI 槽位覆盖无关。
-2. 把 `JniObjectArrayStore` 从 array binder 内部持有改为 session 级 Java object-model
-   统一所有权；当前不影响正确性，已并入 DexVM 设计（`docs/design/dexvm/`）。
-3. （非阻塞长线）DexVM 方案经 WU-M8-011 复盘调整（ADR-0017、`docs/design/dexvm/`）：
-   新增方法级接管——第三路由在 v1 生命周期下逐方法替换 `[[java.class]]` 胶水
-   （阶段 2 出口）；M8 期间 v1 胶水目录冻结增长，行为敏感缺口保持明确失败；
-   impl id 对账门禁待做（06 裁决 13/14、m8 README）。
-4. （非阻塞长线）性能 backlog（方向见 ADR-0019）：ANGLE window surface 零拷贝
-   呈现为里程碑级主项，中间可做 PBO/fence 异步回读；AddressSpace 回调读与
-   bionic intercept 的逐次取锁（直连页表按 ADR-0016 排除 r-x 页，rodata 查表
-   访问走全局锁回调，加载期约占 guest 执行 13%，需新 ADR 证明无锁化线程安全）。
-   已否决：client array 用映射世代票据做内容不变跳读——世代只随 Map/Protect/
-   Unmap 递增，原地改写顶点不触发，跳读会渲染陈旧几何；内容哈希仍需全量读，
-   写追踪 observer 会把页踢出直连页表，均不成立，且该路径稳定期已不热。
+1. M8 继续：Asphalt 6 class reference 失败——评估直接按 dexvm 方法级接管
+   （04 §1 gate 0）或修 v1 装配；Dungeon Hunter 13 个滞留 impl id 是
+   方法级接管的现成素材。
+2. dexvm 记账缺口按命中批次闭合：J/D 出向返回解码、string 资源、
+   MediaPlayer 完成回调、`dexvm.stats/stack` Agent 查询面（04 §8）。
+3. 阶段 4（线程/wait-notify/GC-B/java.* P2P3）在厚层 title（libGDX 类）
+   立项时启动；05 §4 gate 3。
+4. Windows/Linux 三平台 M9 严格出口复验（当前仅 macOS/arm64 本地全绿）。
+5. 存量性能 backlog 不变（ADR-0019 呈现管线方向等）。
 
 ## 阻塞
 
-- 单场景自动测试闭环无阻塞。OBB fixture、MCP GPU trace 与多场景趋势属于已知后续范围，
-  当前请求会明确失败，不伪造成功。
+- 无新增阻塞。dexvm 未实现面（反射/finalizer/多 ClassLoader/odex 等
+  非目标，及未挂接 intrinsic）全部记账并明确失败，不伪造成功。
 
-长期限制与非阻塞事项见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。
+长期限制见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

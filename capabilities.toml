@@ -1000,6 +1000,36 @@ status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp"
 note = "M9 WU-M9-012 P1 起步：Object/String/Class/Throwable + 异常层级 + Runnable/CharSequence 目录与内建 handler；System/Math/StringBuilder/集合按 WU-M9-013 批次推进，缺失 handler 记账 + UnsatisfiedLinkError"
 
+[dexvm.jni_bridge]
+status = "complete"
+test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3"
+note = "M9 WU-M9-014/015 出向按 descriptor 编组 A32 soft-float 帧（RegisterNatives→Java_ 导出名→记账失败），入向把全部解释类/方法注册进 JniClassRegistry（dexvm.m<id> handler），233 槽 ABI 不变即第三路由；J/D 出向返回暂记账明确失败"
+
+[dexvm.intrinsics_android_core]
+status = "partial"
+test = "Asphalt 5 exact dexvm title-flow gate 3/3"
+note = "M9 WU-M9-018 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败；string 资源、MediaPlayer 完成回调等缺口记账"
+
+[loader.arsc]
+status = "complete"
+test = "tests/dexvm/arsc_tests.cpp"
+note = "M9 WU-M9-015 严格 resources.arsc 读取：resid↔(type,name,文件路径)双向查询，UTF-8/UTF-16 string pool，默认配置优先；复杂值/多 locale 明确不支持，越界即失败；本地 exact 交叉验证 0x7f040009→res/raw/raw_000.ogg 与 v1 人工 pattern 一致"
+
+[session.dex_activity_lifecycle]
+status = "complete"
+test = "Asphalt 5 exact dexvm title-flow gate 3/3; tests/session/lifecycle_tests.cpp"
+note = "M9 WU-M9-018 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序"
+
+[session.title_profile_v2]
+status = "complete"
+test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
+note = "M9 WU-M9-017 schema v2：dex_activity + 受检 [runtime.dexvm] 预算，禁止 native_call 与 [[java.class]]；v1 冻结不动，Python/C++ 双版本并行校验"
+
+[profiles.asphalt5_dexvm_pilot]
+status = "complete"
+test = "tools.title_profiles_current; asphalt5.title_flow exact gate 3/3 + post-migration"
+note = "M9 WU-M9-019 pilot 迁移完成：v1 的 16 条 native_call 与 33 条 java 映射删除，25 行 v2 profile 经同一 Scenario 三轮进主界面，golden SHA 与 v1 逐位一致（9ee57323…），clean shutdown"
+
 [runtime.android_link_preflight]
 status = "complete"
 test = "tests/runtime/android_link_preflight_tests.cpp"

@@ -46,6 +46,20 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
 - `AndroidGuestCallSession::InitializeJniLibrary` 只可在运行中的会话调用一次;调用方必须
   在 ELF constructors 完成并注册所需 Java class 后显式调用,成功或 root 无 OnLoad 时才
   发布 library-ready。失败、重复或停止后调用不得伪造完成。
+- `DexVmGuestBridge`(ADR-0017)在运行中的会话之上装配 dexvm:链接
+  core+android intrinsic 目录与单一 classes.dex,对象模型复用会话的
+  string/primitive-array store(native 与解释器同一对象)。出向 native 调用按
+  descriptor 编组 A32 soft-float 帧(r0=JNIEnv、r1=receiver/jclass、64 位偶对齐、
+  栈 8 字节对齐),解析顺序 RegisterNatives → `Java_` 导出名 → 记账明确失败;
+  入向把全部解释类/方法注册进会话 `JniClassRegistry`(impl id `dexvm.m<id>`),
+  FindClass/GetStaticMethodID/CallStatic* 经不变的 233 槽 ABI 命中真实 DEX 事实
+  并落入解释执行(第三路由);解释器未捕获异常按 JNI 语义置 pending。
+  J/D 出向返回值暂记账明确失败。
+- `DexVmAndroidContext` + `AndroidIntrinsicCatalog/RegisterAndroidBuiltins`:
+  android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
+  resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
+  IO 走 APK 条目与会话内存文件、身份为确定性配置、SMS/网络记账明确失败;
+  统一时间由生命周期驱动发布(System.currentTimeMillis/Thread.sleep 同源)。
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求;会话只发布最新请求与累计次数,不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。

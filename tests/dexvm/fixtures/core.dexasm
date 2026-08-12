@@ -1,0 +1,100 @@
+# Core dexasm fixture: cross-checked by the C++ L1 parser readback test.
+.class public LBase;
+.super Ljava/lang/Object;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public value()I
+.registers 2
+    const/16 v0, 10
+    return v0
+.end method
+
+.class public LFixture;
+.super LBase;
+.implements Ljava/lang/Runnable;
+
+.field static public counter:I = 41
+.field static public tag:Ljava/lang/String; = "fixture"
+.field public score:J
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, LBase;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 1
+    return-void
+.end method
+
+.method public value()I
+.registers 2
+    const/16 v0, 32
+    return v0
+.end method
+
+.method static public divide(II)I
+.registers 4
+    :try_start
+    div-int v0, v2, v3
+    :try_end
+    return v0
+    :handler
+    const/4 v0, -1
+    return v0
+    .catch Ljava/lang/ArithmeticException; :try_start :try_end :handler
+.end method
+
+.method static public pick(I)I
+.registers 3
+    packed-switch v2, :table
+    sparse-switch v2, :sparse
+    const/4 v0, 0
+    return v0
+    :case_one
+    const/4 v0, 1
+    return v0
+    :case_two
+    const/16 v0, 22
+    return v0
+    :case_neg
+    const/16 v0, -7
+    return v0
+    :table
+    .packed-switch 1
+        :case_one
+        :case_two
+    .end packed-switch
+    :sparse
+    .sparse-switch
+        -100 -> :case_neg
+        1000 -> :case_two
+    .end sparse-switch
+.end method
+
+.method static public fill()[I
+.registers 2
+    const/4 v0, 3
+    new-array v0, v0, [I
+    fill-array-data v0, :data
+    return-object v0
+    :data
+    .array-data 4
+        7 8 9
+    .end array-data
+.end method
+
+.method static public wide()J
+.registers 3
+    const-wide v0, 0x123456789abcdef0
+    return-wide v0
+.end method
+
+.method static native nativeHook(I)I
+.end method

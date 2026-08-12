@@ -955,6 +955,11 @@ status = "complete"
 test = "tools.dexvm_opcode_generator_self_test; tools.dexvm_opcode_catalog_current"
 note = "M9 WU-M9-003 dex 035 全部 218 个已定义 opcode 的声明式目录由 AOSP bytecode.txt 机器派生，unused/odex 拒绝集显式覆盖余下 38 个编码点；--verify-aosp 对 bytecode.txt/DexOpcodes.h/InstrUtils.cpp 三锚点逐项等价，C++ 解码表确定性生成并有 --check 门禁"
 
+[tools.dexasm]
+status = "complete"
+test = "tools.dexasm_self_test; tests/dexvm/dexasm_readback_tests.cpp"
+note = "M9 WU-M9-004/005 确定性 dex 035 汇编器：受限 IR、24 种标准格式、try/catch、switch/array payload、静态初始值；opcode 事实一律取自声明式目录；golden SHA 锁字节，Python 与 C++ L1 双解析器回读锁结构，构建期批量汇编测试夹具；libdex/dexdump 交叉裁判评估后降级不采用"
+
 [runtime.android_link_preflight]
 status = "complete"
 test = "tests/runtime/android_link_preflight_tests.cpp"

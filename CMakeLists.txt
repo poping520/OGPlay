@@ -264,6 +264,26 @@ add_custom_command(
     VERBATIM
 )
 add_custom_target(ogplay_dexvm_codegen DEPENDS "${OGPLAY_DEXVM_OPCODE_TABLE}")
+set(OGPLAY_DEXVM_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/dexvm_fixtures")
+file(GLOB OGPLAY_DEXVM_FIXTURE_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dexvm/fixtures/*.dexasm")
+add_custom_command(
+    OUTPUT "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp"
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/dexasm.py"
+        --catalog "${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json"
+        --batch-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/dexvm/fixtures"
+        --batch-output "${OGPLAY_DEXVM_FIXTURE_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E touch "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/dexasm.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/dex_survey_lib.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json"
+        ${OGPLAY_DEXVM_FIXTURE_SOURCES}
+    VERBATIM
+)
+add_custom_target(ogplay_dexvm_fixtures
+    DEPENDS "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp")
 add_custom_command(
     OUTPUT "${OGPLAY_GLES1_CATALOG}"
     COMMAND ${Python3_EXECUTABLE}
@@ -598,6 +618,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/profile_vfs_tests.cpp
         tests/session/session_tests.cpp
         tests/session/title_profile_tests.cpp
+        tests/dexvm/dexasm_readback_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)
         list(APPEND OGPLAY_TEST_SOURCES
@@ -623,8 +644,10 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     target_compile_definitions(ogplay_tests PRIVATE
         OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+        OGPLAY_DEXVM_FIXTURE_DIR="${OGPLAY_DEXVM_FIXTURE_DIR}"
         OGPLAY_ANGLE_HAS_SWIFTSHADER=$<BOOL:${_angle_has_swiftshader}>
     )
+    add_dependencies(ogplay_tests ogplay_dexvm_fixtures)
     if(MSVC)
         target_compile_options(ogplay_tests PRIVATE /wd5285)
         target_link_libraries(ogplay_tests PRIVATE ws2_32)
@@ -874,6 +897,16 @@ if(OGPLAY_BUILD_TESTS)
             --check
     )
     set_tests_properties(tools.dexvm_opcode_catalog_current
+        PROPERTIES LABELS "tools;dexvm")
+
+    add_test(
+        NAME tools.dexasm_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexasm.py
+            --catalog ${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json
+            --self-test
+    )
+    set_tests_properties(tools.dexasm_self_test
         PROPERTIES LABELS "tools;dexvm")
 
     add_test(

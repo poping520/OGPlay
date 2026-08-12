@@ -40,6 +40,10 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 - `DexVmGuestBridge`：出向 descriptor→A32 编组（RegisterNatives→Java_ 导出），
   入向解释类注册进 JniClassRegistry（233 槽 ABI 不变的第三路由）；
   `DexActivityLifecycle` 生命周期反转；Title Profile v2（Python/C++ 双校验）。
+- Scenario runner 易用性批次（WU-M9-020/021，复盘驱动）：失败必留
+  failure_logs 证据、失败输出机读 JSON、预算报错带算术、`--fresh`、
+  `--watch` 增量编写模式（追加 checkpoint 免全量重放：实测 2ms vs 30s；
+  v1 schema 零改动）。
 
 ## 下一步（按优先级）
 

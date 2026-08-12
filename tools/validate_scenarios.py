@@ -121,7 +121,7 @@ def _integer(value: Any, field: str, maximum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ScenarioError(f"{field} must be an integer")
     if value < 1 or value > maximum:
-        raise ScenarioError(f"{field} must be in 1..{maximum}")
+        raise ScenarioError(f"{field} must be in 1..{maximum} (got {value})")
     return value
 
 
@@ -351,11 +351,17 @@ def _validate_checkpoints(value: Any, limits: dict[str, int]) -> None:
         _validate_action(checkpoint["action"], f"{field}.action")
         _validate_assertions(checkpoint["assertion"], f"{field}.assertion")
     if used_frames > limits["total_frames"]:
-        raise ScenarioError("checkpoint frame budgets exceed total frame budget")
+        raise ScenarioError(
+            "checkpoint frame budgets exceed total frame budget "
+            f"(sum={used_frames}, total={limits['total_frames']})")
     if used_ticks > limits["total_ticks"]:
-        raise ScenarioError("checkpoint tick budgets exceed total tick budget")
+        raise ScenarioError(
+            "checkpoint tick budgets exceed total tick budget "
+            f"(sum={used_ticks}, total={limits['total_ticks']})")
     if used_wall_time > limits["total_wall_time_ms"]:
-        raise ScenarioError("checkpoint wall-time budgets exceed total budget")
+        raise ScenarioError(
+            "checkpoint wall-time budgets exceed total budget "
+            f"(sum={used_wall_time}, total={limits['total_wall_time_ms']})")
 
 
 def validate_scenario(

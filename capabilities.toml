@@ -38,7 +38,7 @@ note = "M6 WU-0357 为 gl_surface_view run-apk 增加显式 MCP manual-step 模�
 [automation.scenario_runner]
 status = "complete"
 test = "tools.scenario_runner_self_test"
-note = "M6 WU-0358 以同一 Profile-backed MCP manual-step 会话执行强类型 Scenario；三重预算、逐断言 expected/actual、相对 frame/state/log 证据、Result v1 与正常/超时清理形成 AI/CI 共用闭环；OBB 和 gpu_trace 仍明确失败"
+note = "M6 WU-0358 以同一 Profile-backed MCP manual-step 会话执行强类型 Scenario；三重预算、逐断言 expected/actual、相对 frame/state/log 证据、Result v1 与正常/超时清理形成 AI/CI 共用闭环；OBB 和 gpu_trace 仍明确失败。M9 WU-M9-020/021 增加失败必留 failure_logs 证据、失败输出机读 JSON、预算报错带算术、--fresh，与 --watch 增量编写模式（前缀签名比对、gen 目录、overlay 坐标截图、SIGINT/SIGTERM 优雅收尾；v1 schema 零改动）"
 
 [automation.asphalt5_title_flow]
 status = "complete"

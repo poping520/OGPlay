@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
-"""Run one validated OGPlay Scenario v1 through the loopback MCP session."""
+"""Run one validated OGPlay Scenario v1 through the loopback MCP session.
+
+Authoring aids (M9 usability batch):
+  --fresh   wipe an existing evidence directory instead of failing;
+  --watch   incremental authoring mode: execute the current checkpoints,
+            keep the session alive, and when the scenario file changes
+            execute only checkpoints appended after the unchanged prefix.
+            Editing an already-executed checkpoint (or any failure)
+            restarts the session and replays everything in a new
+            gen<N> evidence directory. Ctrl-C shuts the session down
+            cleanly and writes the final Result v1 for the last
+            generation. Deterministic frame/tick budgets stay enforced;
+            the *total* wall-time budget is reinterpreted per checkpoint
+            run because an authoring session is open-ended.
+Failed checkpoints always collect a failure_logs.txt evidence tail even
+when the scenario did not request log evidence.
+"""
 
 from __future__ import annotations
 
@@ -84,6 +100,16 @@ class McpClient:
             raise RunnerError(f"MCP {name} omitted structuredContent")
         return structured
 
+    def capture_overlay_png(self) -> bytes:
+        """Coordinate-grid screenshot used by watch-mode click authoring."""
+        result = self.call("frame_capture",
+                           {"format": "png", "overlay": "coordinates"})
+        images = [item for item in result.get("content", [])
+                  if isinstance(item, dict) and item.get("type") == "image"]
+        if len(images) != 1:
+            raise RunnerError("MCP frame_capture overlay returned no image")
+        return base64.b64decode(images[0]["data"], validate=True)
+
     def capture_png(self) -> tuple[dict[str, Any], bytes]:
         result = self.call("frame_capture", {"format": "png"})
         structured = result.get("structuredContent")
@@ -112,6 +138,28 @@ class LaunchedSession:
 
 def _milliseconds(start: float) -> int:
     return max(0, round((time.monotonic() - start) * 1000.0))
+
+
+def _tail_lines(path: Path, count: int = 200) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    lines = text.splitlines()
+    return "\n".join(lines[-count:])
+
+
+def _checkpoint_signature(checkpoint: ScenarioCheckpoint) -> str:
+    # Dataclass repr is deterministic for identical content across reloads.
+    return repr(checkpoint)
+
+
+def _unchanged_prefix(executed_signatures: Sequence[str],
+                      checkpoints: Sequence[ScenarioCheckpoint]) -> bool:
+    if len(checkpoints) < len(executed_signatures):
+        return False
+    return all(_checkpoint_signature(checkpoints[index]) == signature
+               for index, signature in enumerate(executed_signatures))
 
 
 def _state(client: McpClient) -> dict[str, Any]:
@@ -348,6 +396,23 @@ class ScenarioExecutor:
                 results = results or self._assertions(checkpoint, state)
                 evidence = self._evidence(checkpoint, state)
             except (RunnerError, URLError, TimeoutError, KeyError, ValueError):
+                pass
+            # Failures always keep a log tail next to the checkpoint even
+            # when the scenario did not request log evidence: the failing
+            # moment is exactly when the diagnostics matter.
+            try:
+                directory = self.evidence_dir / checkpoint.id
+                directory.mkdir(parents=True, exist_ok=True)
+                tail_path = directory / "failure_logs.txt"
+                tail_path.write_text(
+                    "=== stderr tail ===\n" +
+                    _tail_lines(self.stderr_path) +
+                    "\n=== stdout tail ===\n" +
+                    _tail_lines(self.stdout_path) + "\n",
+                    encoding="utf-8", newline="\n")
+                evidence = evidence + (
+                    tail_path.relative_to(self.evidence_dir).as_posix(),)
+            except OSError:
                 pass
         status = ResultStatus.PASSED.value if error is None else ResultStatus.FAILED.value
         return CheckpointResult(
@@ -601,6 +666,40 @@ def self_test(result_schema: Path) -> int:
         assert failed.checkpoints[0].endFrame == 1
         assert "frame budget exhausted" in (failed.firstFailure or "")
         assert failed.shutdown.clean
+        # Failures always collect a log tail as extra evidence.
+        failure_tail = failed_evidence / failure_plan.checkpoints[0].id / \
+            "failure_logs.txt"
+        assert failure_tail.is_file()
+        assert "started" in failure_tail.read_text(encoding="utf-8")
+        assert any(reference.endswith("failure_logs.txt")
+                   for reference in failed.checkpoints[0].evidence)
+
+        # Watch-mode prefix comparison and tail helper.
+        checkpoints = plan.checkpoints
+        signatures = [_checkpoint_signature(item) for item in checkpoints]
+        assert _unchanged_prefix(signatures, checkpoints)
+        assert _unchanged_prefix(signatures[:1], checkpoints)
+        assert not _unchanged_prefix(signatures, checkpoints[:1])
+        edited = (replace(checkpoints[0], max_frames=checkpoints[0].max_frames + 1),) + checkpoints[1:]
+        assert not _unchanged_prefix(signatures, edited)
+        tail_probe = root / "tail.txt"
+        tail_probe.write_text("\n".join(str(index) for index in range(300)),
+                              encoding="utf-8")
+        tail = _tail_lines(tail_probe, 200)
+        assert tail.splitlines()[0] == "100" and tail.splitlines()[-1] == "299"
+        assert _tail_lines(root / "absent.txt") == ""
+
+        # --fresh evidence handling.
+        fresh_dir = root / "fresh"
+        fresh_dir.mkdir()
+        (fresh_dir / "stale.txt").write_text("old", encoding="utf-8")
+        prepared = _prepare_evidence_dir(fresh_dir, fresh=True)
+        assert prepared.is_dir() and not any(prepared.iterdir())
+        try:
+            _prepare_evidence_dir(fresh_dir, fresh=False)
+            raise AssertionError("existing evidence dir was accepted")
+        except (FileExistsError, OSError):
+            pass
 
         try:
             _parse_fixtures(["duplicate=/one", "duplicate=/two"])
@@ -625,7 +724,210 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--system-dir", type=Path)
     parser.add_argument("--fixture", action="append", default=[])
     parser.add_argument("--evidence-dir", type=Path)
+    parser.add_argument("--fresh", action="store_true",
+                        help="wipe an existing evidence directory")
+    parser.add_argument("--watch", action="store_true",
+                        help="incremental authoring mode (see module doc)")
     return parser.parse_args(argv)
+
+
+def _prepare_evidence_dir(path: Path, fresh: bool) -> Path:
+    evidence = path.resolve()
+    if fresh and evidence.exists():
+        import shutil
+        shutil.rmtree(evidence)
+    evidence.mkdir(parents=True, exist_ok=False)
+    return evidence
+
+
+def _write_result(evidence: Path, result: ScenarioResult) -> None:
+    (evidence / "result.json").write_text(
+        result.to_json() + "\n", encoding="utf-8", newline="\n")
+
+
+def _run_once(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
+              system_dir: Path, profiles: Path,
+              evidence: Path) -> ScenarioResult:
+    port = _free_port()
+    started = time.monotonic()
+    launched = _launch(plan, fixtures, ogplay, system_dir, profiles,
+                       evidence, port)
+    try:
+        executor = ScenarioExecutor(
+            plan, McpClient(f"http://127.0.0.1:{port}/mcp"), launched.process,
+            evidence, evidence / "stdout.log", evidence / "stderr.log",
+            started)
+        return executor.run()
+    finally:
+        launched.close_logs()
+
+
+class _WatchGeneration:
+    """One live session executing a growing checkpoint prefix."""
+
+    def __init__(self, plan: ScenarioPlan, fixtures: dict[str, Path],
+                 ogplay: Path, system_dir: Path, profiles: Path,
+                 evidence: Path) -> None:
+        self.evidence = evidence
+        self.port = _free_port()
+        self.launched = _launch(plan, fixtures, ogplay, system_dir, profiles,
+                                evidence, self.port)
+        self.client = McpClient(f"http://127.0.0.1:{self.port}/mcp")
+        self.executor = ScenarioExecutor(
+            plan, self.client, self.launched.process, evidence,
+            evidence / "stdout.log", evidence / "stderr.log",
+            time.monotonic())
+        self.plan = plan
+        self.signatures: list[str] = []
+        self.results: list[CheckpointResult] = []
+        self.failed = False
+        self.progress_path = evidence / "watch_progress.jsonl"
+        self.executor.wait_startup()
+
+    def _note(self, message: str) -> None:
+        print(f"[watch] {message}", flush=True)
+
+    def _record(self, result: CheckpointResult) -> None:
+        with self.progress_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "id": result.id, "status": result.status,
+                "endFrame": result.endFrame, "endTicks": result.endTicks,
+                "error": result.error,
+            }, separators=(",", ":")) + "\n")
+
+    def _overlay(self, checkpoint_id: str) -> None:
+        try:
+            image = self.client.capture_overlay_png()
+        except (RunnerError, URLError, TimeoutError, ValueError):
+            return
+        directory = self.evidence / checkpoint_id
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "frame_overlay.png").write_bytes(image)
+
+    def execute_from(self, checkpoints: Sequence[ScenarioCheckpoint]) -> None:
+        for checkpoint in checkpoints[len(self.signatures):]:
+            # An open-ended authoring session reinterprets the total
+            # wall-time budget per checkpoint run; frame/tick budgets are
+            # deterministic and stay absolute.
+            self.executor.started_at = time.monotonic()
+            result = self.executor.checkpoint(checkpoint)
+            self.signatures.append(_checkpoint_signature(checkpoint))
+            self.results.append(result)
+            self._record(result)
+            state = self.executor.last_state or {}
+            self._note(f"checkpoint {result.id}: {result.status} "
+                       f"frame={result.endFrame} ticks={result.endTicks} "
+                       f"presented={state.get('presentedFrame')}"
+                       + (f" error={result.error}" if result.error else ""))
+            self._overlay(checkpoint.id)
+            if result.status == ResultStatus.FAILED.value:
+                self.failed = True
+                self._note("session stays alive; edit the scenario to "
+                           "retry (any change restarts the session)")
+                break
+
+    def finish(self) -> ScenarioResult:
+        shutdown = self.executor.shutdown()
+        self.launched.close_logs()
+        first_failure = None
+        for result in self.results:
+            if result.status == ResultStatus.FAILED.value:
+                first_failure = f"{result.id}: {result.error}"
+                break
+        if first_failure is None and not shutdown.clean:
+            first_failure = f"shutdown: {shutdown.error}"
+        status = (ResultStatus.PASSED.value if first_failure is None
+                  else ResultStatus.FAILED.value)
+        return ScenarioResult(
+            scenarioId=self.plan.id, status=status, profile=self.plan.profile,
+            checkpoints=tuple(self.results), firstFailure=first_failure,
+            shutdown=shutdown)
+
+    def abort(self) -> None:
+        try:
+            self.executor.shutdown()
+        finally:
+            self.launched.close_logs()
+
+
+def _run_watch(args: argparse.Namespace, fixtures: dict[str, Path],
+               ogplay: Path, evidence: Path) -> int:
+    # Background jobs of non-interactive shells inherit an ignored SIGINT,
+    # in which case Python never raises KeyboardInterrupt; restore both
+    # SIGINT and SIGTERM so the graceful-finish path always works.
+    import signal
+
+    def _finish(_signum: int, _frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, _finish)
+    signal.signal(signal.SIGTERM, _finish)
+
+    scenario = args.scenario.resolve()
+    profiles = args.profiles.resolve()
+    system_dir = args.system_dir.resolve()
+
+    def load() -> ScenarioPlan:
+        return load_plan(scenario, profiles)
+
+    plan = load()
+    digest = hashlib.sha256(scenario.read_bytes()).hexdigest()
+    generation = 0
+    current: _WatchGeneration | None = None
+    try:
+        while True:
+            if current is None:
+                generation += 1
+                gen_dir = evidence / f"gen{generation:02d}"
+                gen_dir.mkdir(parents=True, exist_ok=False)
+                print(f"[watch] generation {generation}: replaying "
+                      f"{len(plan.checkpoints)} checkpoint(s) into "
+                      f"{gen_dir}", flush=True)
+                current = _WatchGeneration(plan, fixtures, ogplay,
+                                           system_dir, profiles, gen_dir)
+                current.execute_from(plan.checkpoints)
+                print("[watch] waiting for scenario changes "
+                      "(Ctrl-C to finish)", flush=True)
+            time.sleep(0.5)
+            try:
+                new_digest = hashlib.sha256(scenario.read_bytes()).hexdigest()
+            except OSError:
+                continue
+            if new_digest == digest:
+                continue
+            digest = new_digest
+            try:
+                plan = load()
+            except Exception as error:  # validation feedback, keep waiting
+                print(f"[watch] scenario is invalid: {error}", flush=True)
+                continue
+            if (not current.failed and
+                    _unchanged_prefix(current.signatures, plan.checkpoints)):
+                appended = len(plan.checkpoints) - len(current.signatures)
+                print(f"[watch] prefix unchanged; executing {appended} "
+                      f"appended checkpoint(s)", flush=True)
+                current.plan = plan
+                current.executor.plan = plan
+                current.execute_from(plan.checkpoints)
+                print("[watch] waiting for scenario changes "
+                      "(Ctrl-C to finish)", flush=True)
+            else:
+                reason = ("a previous checkpoint failed" if current.failed
+                          else "the executed prefix changed")
+                print(f"[watch] {reason}; restarting the session",
+                      flush=True)
+                current.abort()
+                current = None
+    except KeyboardInterrupt:
+        print("[watch] finishing: clean shutdown + final result",
+              flush=True)
+        if current is None:
+            return 2
+        result = current.finish()
+        _write_result(current.evidence, result)
+        _write_result(evidence, result)
+        print(result.to_json())
+        return 0 if result.status == ResultStatus.PASSED.value else 1
 
 
 def main(argv: Sequence[str]) -> int:
@@ -643,21 +945,12 @@ def main(argv: Sequence[str]) -> int:
     ogplay = args.ogplay.resolve()
     if not ogplay.is_file():
         raise RunnerError(f"OGPlay executable does not exist: {ogplay}")
-    evidence = args.evidence_dir.resolve()
-    evidence.mkdir(parents=True, exist_ok=False)
-    port = _free_port()
-    started = time.monotonic()
-    launched = _launch(plan, fixtures, ogplay, args.system_dir.resolve(),
-                       args.profiles.resolve(), evidence, port)
-    try:
-        executor = ScenarioExecutor(
-            plan, McpClient(f"http://127.0.0.1:{port}/mcp"), launched.process,
-            evidence, evidence / "stdout.log", evidence / "stderr.log", started)
-        result = executor.run()
-    finally:
-        launched.close_logs()
-    (evidence / "result.json").write_text(
-        result.to_json() + "\n", encoding="utf-8", newline="\n")
+    evidence = _prepare_evidence_dir(args.evidence_dir, args.fresh)
+    if args.watch:
+        return _run_watch(args, fixtures, ogplay, evidence)
+    result = _run_once(plan, fixtures, ogplay, args.system_dir.resolve(),
+                       args.profiles.resolve(), evidence)
+    _write_result(evidence, result)
     print(result.to_json())
     return 0 if result.status == ResultStatus.PASSED.value else 1
 
@@ -666,5 +959,10 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main(sys.argv[1:]))
     except (RunnerError, OSError, ValueError) as error:
+        # One machine-readable line on stdout (invalid runs previously
+        # printed bare text, breaking any JSON-consuming wrapper), plus the
+        # human-readable line on stderr.
+        print(json.dumps({"schema": 1, "status": "invalid",
+                          "reason": str(error)}, separators=(",", ":")))
         print(f"Scenario runner failed: {error}", file=sys.stderr)
         raise SystemExit(2)

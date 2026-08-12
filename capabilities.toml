@@ -960,6 +960,11 @@ status = "complete"
 test = "tools.dexasm_self_test; tests/dexvm/dexasm_readback_tests.cpp"
 note = "M9 WU-M9-004/005 确定性 dex 035 汇编器：受限 IR、24 种标准格式、try/catch、switch/array payload、静态初始值；opcode 事实一律取自声明式目录；golden SHA 锁字节，Python 与 C++ L1 双解析器回读锁结构，构建期批量汇编测试夹具；libdex/dexdump 交叉裁判评估后降级不采用"
 
+[loader.dex_code]
+status = "complete"
+test = "tests/dexvm/dex_code_tests.cpp"
+note = "M9 WU-M9-006 在 L1 之上受检读取方法指令流、try/catch（区间有序不重叠、handler 偏移命中真实条目、type/地址受检）与静态初始值 encoded_array（11 种形态，符号/右零扩展对照 dex-format）；指令级分支/payload 校验留给 dexvm 链接预检"
+
 [runtime.android_link_preflight]
 status = "complete"
 test = "tests/runtime/android_link_preflight_tests.cpp"

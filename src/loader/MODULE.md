@@ -22,6 +22,13 @@
   对 code_item 只提取寄存器、参数、try 数和指令 code-unit 数，不解释指令。
 - `AnalyzeDexL1(image, class_data, libraries, signatures)`：输出应用类/方法/native 数量、
   总指令与渲染回调规模、Java 厚度和 DEX 执行候选；引擎规则由声明式 catalog 注入。
+- `ReadDexMethodCode(bytes, image, code)`：受检复制方法指令 code-unit 流并解码
+  try/catch——try 区间必须非空、有序、不重叠且落在指令流内，handler 偏移必须命中
+  encoded handler 列表的真实条目，type 索引与 handler 地址全部受检；不解释指令，
+  分支目标/payload 引用等指令级校验属 dexvm 链接预检（ADR-0017）。
+- `ReadDexStaticValues(bytes, image, offset)`：受检解码 class_def static_values 的
+  encoded_array；支持 boolean/byte/short/char/int/long/float/double/string/type/null，
+  size 超界、索引越界、非最小 ULEB128 与 annotation 等不支持形态均明确失败。
 - `ParseElf32Arm(bytes)`：从不可信字节解析 little-endian ELF32/ARM ET_EXEC/ET_DYN，
   返回入口、ARM flags、程序头和未知 tag 不丢失的动态项事实模型。
 - `ReadElf32DynamicInfo(bytes, image)`：只在 file-backed `PT_LOAD` 范围内解析动态字符串表、

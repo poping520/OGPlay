@@ -188,6 +188,7 @@ add_library(ogplay_loader
     src/loader/dex.cpp
     src/loader/dex_analysis.cpp
     src/loader/dex_class_data.cpp
+    src/loader/dex_code.cpp
     src/loader/dynamic_linker.cpp
     src/loader/elf.cpp
     src/loader/lifecycle.cpp
@@ -619,6 +620,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/session_tests.cpp
         tests/session/title_profile_tests.cpp
         tests/dexvm/dexasm_readback_tests.cpp
+        tests/dexvm/dex_code_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)
         list(APPEND OGPLAY_TEST_SOURCES

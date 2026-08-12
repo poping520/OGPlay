@@ -185,6 +185,7 @@ add_library(ogplay_loader
     src/loader/apk.cpp
     src/loader/apk_manifest.cpp
     src/loader/apk_native.cpp
+    src/loader/binary_xml.cpp
     src/loader/dex.cpp
     src/loader/dex_analysis.cpp
     src/loader/dex_class_data.cpp
@@ -365,6 +366,7 @@ add_library(ogplay_runtime
     src/runtime/integration/dexvm_android.cpp
     src/runtime/integration/dexvm_android_handlers.cpp
     src/runtime/integration/dexvm_bridge.cpp
+    src/runtime/integration/host_image_decode.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
     src/runtime/jni_guest/jni_guest_bindings.cpp
     src/runtime/jni_guest/jni_guest_array_bindings.cpp
@@ -385,6 +387,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/interp_arith.cpp
     src/runtime/dexvm/interpreter_builtins.cpp
     src/runtime/dexvm/intrinsics_java.cpp
+    src/runtime/dexvm/intrinsics_string.cpp
     src/runtime/jni/jni.cpp
     src/runtime/jni/jni_exception.cpp
     src/runtime/jni/jni_field_store.cpp
@@ -421,6 +424,15 @@ target_include_directories(ogplay_runtime PUBLIC
     PRIVATE "${OGPLAY_GLES_GENERATED_DIR}"
 )
 add_dependencies(ogplay_runtime ogplay_dexvm_codegen)
+target_include_directories(ogplay_runtime SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
+if(MSVC)
+    set_source_files_properties(src/runtime/integration/host_image_decode.cpp
+        PROPERTIES COMPILE_OPTIONS "/w")
+else()
+    set_source_files_properties(src/runtime/integration/host_image_decode.cpp
+        PROPERTIES COMPILE_OPTIONS "-w")
+endif()
 ogplay_set_project_warnings(ogplay_runtime)
 
 add_library(ogplay_session
@@ -602,6 +614,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/vfs_tests.cpp
         tests/loader/apk_tests.cpp
         tests/loader/apk_manifest_tests.cpp
+        tests/loader/binary_xml_tests.cpp
         tests/loader/apk_native_tests.cpp
         tests/loader/elf_tests.cpp
         tests/loader/dex_tests.cpp

@@ -43,6 +43,11 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.object.to_string"},
             {"getClass", "()Ljava/lang/Class;", false, false,
              "core.object.get_class"},
+            // Cooperative single-thread model (04 §3): a timed wait cannot
+            // observe cross-thread progress inside one tick, so it returns
+            // as an elapsed timeout. Untimed wait() would deadlock and is
+            // deliberately not declared.
+            {"wait", "(J)V", false, false, "core.object.wait_timed"},
         };
         catalog.push_back(std::move(object));
     }
@@ -56,6 +61,11 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         IntrinsicClassDecl sequence;
         sequence.descriptor = "Ljava/lang/CharSequence;";
         sequence.is_interface = true;
+        // invoke-interface dispatches through the receiver's vtable; the
+        // handler key here is never called directly.
+        sequence.methods = {
+            {"length", "()I", false, false, "core.string.length"},
+        };
         catalog.push_back(std::move(sequence));
     }
     {
@@ -78,6 +88,22 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
                              "Ljava/lang/Comparable;",
                              "Ljava/io/Serializable;"};
         string.methods = {
+            // Constructors bind the value into the freshly allocated
+            // instance (JavaObjectModel::BindString). Byte decoding uses
+            // the platform default charset (UTF-8) with U+FFFD
+            // replacement, matching CodingErrorAction.REPLACE.
+            {"<init>", "()V", false, false, "core.string.init_empty"},
+            {"<init>", "(Ljava/lang/String;)V", false, false,
+             "core.string.init_copy"},
+            {"<init>", "([B)V", false, false, "core.string.init_bytes"},
+            {"<init>", "([BII)V", false, false,
+             "core.string.init_bytes_range"},
+            {"<init>", "([BLjava/lang/String;)V", false, false,
+             "core.string.init_bytes_charset"},
+            {"<init>", "([C)V", false, false, "core.string.init_chars"},
+            {"<init>", "([CII)V", false, false,
+             "core.string.init_chars_range"},
+            {"getBytes", "()[B", false, false, "core.string.get_bytes"},
             {"length", "()I", false, false, "core.string.length"},
             {"charAt", "(I)C", false, false, "core.string.char_at"},
             {"equals", "(Ljava/lang/Object;)Z", false, false,
@@ -98,6 +124,23 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"endsWith", "(Ljava/lang/String;)Z", false, false,
              "core.string.ends_with"},
             {"indexOf", "(I)I", false, false, "core.string.index_of_char"},
+            {"indexOf", "(II)I", false, false,
+             "core.string.index_of_char_from"},
+            {"contains", "(Ljava/lang/CharSequence;)Z", false, false,
+             "core.string.contains"},
+            {"getChars", "(II[CI)V", false, false,
+             "core.string.get_chars"},
+            {"toCharArray", "()[C", false, false,
+             "core.string.to_char_array"},
+            {"replace",
+             "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)"
+             "Ljava/lang/String;",
+             false, false, "core.string.replace_seq"},
+            {"replaceAll",
+             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+             false, false, "core.string.replace_all"},
+            {"split", "(Ljava/lang/String;)[Ljava/lang/String;", false,
+             false, "core.string.split"},
             {"indexOf", "(Ljava/lang/String;)I", false, false,
              "core.string.index_of_string"},
             {"lastIndexOf", "(I)I", false, false,
@@ -159,8 +202,54 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"toString", "()Ljava/lang/String;", false, false,
              "core.builder.to_string"},
             {"length", "()I", false, false, "core.builder.length"},
+            {"charAt", "(I)C", false, false, "core.builder.char_at"},
+            {"setCharAt", "(IC)V", false, false,
+             "core.builder.set_char_at"},
+            {"deleteCharAt", "(I)Ljava/lang/StringBuilder;", false, false,
+             "core.builder.delete_char_at"},
+            {"insert", "(IC)Ljava/lang/StringBuilder;", false, false,
+             "core.builder.insert_char"},
         };
         catalog.push_back(std::move(builder));
+        // StringBuffer shares the builder buffer handlers; the cooperative
+        // single-thread model makes the synchronization difference moot.
+        IntrinsicClassDecl buffer;
+        buffer.descriptor = "Ljava/lang/StringBuffer;";
+        buffer.superclass = "Ljava/lang/Object;";
+        buffer.interfaces = {"Ljava/lang/CharSequence;"};
+        buffer.methods = {
+            {"<init>", "()V", false, false, "core.builder.init"},
+            {"<init>", "(I)V", false, false, "core.builder.init_capacity"},
+            {"<init>", "(Ljava/lang/String;)V", false, false,
+             "core.builder.init_string"},
+            {"append", "(Ljava/lang/String;)Ljava/lang/StringBuffer;",
+             false, false, "core.builder.append_string"},
+            {"append", "(Ljava/lang/Object;)Ljava/lang/StringBuffer;",
+             false, false, "core.builder.append_object"},
+            {"append", "(I)Ljava/lang/StringBuffer;", false, false,
+             "core.builder.append_int"},
+            {"append", "(J)Ljava/lang/StringBuffer;", false, false,
+             "core.builder.append_long"},
+            {"append", "(Z)Ljava/lang/StringBuffer;", false, false,
+             "core.builder.append_boolean"},
+            {"append", "(C)Ljava/lang/StringBuffer;", false, false,
+             "core.builder.append_char"},
+            {"append", "(F)Ljava/lang/StringBuffer;", false, false,
+             "core.builder.append_float"},
+            {"append", "(D)Ljava/lang/StringBuffer;", false, false,
+             "core.builder.append_double"},
+            {"toString", "()Ljava/lang/String;", false, false,
+             "core.builder.to_string"},
+            {"length", "()I", false, false, "core.builder.length"},
+            {"charAt", "(I)C", false, false, "core.builder.char_at"},
+            {"setCharAt", "(IC)V", false, false,
+             "core.builder.set_char_at"},
+            {"deleteCharAt", "(I)Ljava/lang/StringBuffer;", false, false,
+             "core.builder.delete_char_at"},
+            {"insert", "(IC)Ljava/lang/StringBuffer;", false, false,
+             "core.builder.insert_char"},
+        };
+        catalog.push_back(std::move(buffer));
     }
     {
         IntrinsicClassDecl system;
@@ -176,6 +265,9 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "(Ljava/lang/Object;ILjava/lang/Object;II)V", true, false,
              "core.system.arraycopy"},
             {"gc", "()V", true, false, "core.system.gc"},
+            {"setProperty",
+             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+             true, false, "core.system.set_property"},
             // Time, loadLibrary and exit are platform actions: handlers are
             // injected at session assembly (unified Clock / ELF loader).
             {"currentTimeMillis", "()J", true, false,
@@ -337,6 +429,21 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         catalog.push_back(std::move(hashtable));
     }
     {
+        IntrinsicClassDecl list_interface;
+        list_interface.descriptor = "Ljava/util/List;";
+        list_interface.is_interface = true;
+        list_interface.methods = {
+            {"add", "(Ljava/lang/Object;)Z", false, false,
+             "core.list.add"},
+            {"get", "(I)Ljava/lang/Object;", false, false,
+             "core.list.get"},
+            {"size", "()I", false, false, "core.list.size"},
+            {"iterator", "()Ljava/util/Iterator;", false, false,
+             "core.list.iterator"},
+            {"contains", "(Ljava/lang/Object;)Z", false, false,
+             "core.list.contains"},
+        };
+        catalog.push_back(std::move(list_interface));
         const std::vector<IntrinsicMethodDecl> list_methods = {
             {"<init>", "()V", false, false, "core.list.init"},
             {"<init>", "(I)V", false, false, "core.list.init_capacity"},
@@ -357,17 +464,82 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"size", "()I", false, false, "core.list.size"},
             {"clear", "()V", false, false, "core.list.clear"},
             {"isEmpty", "()Z", false, false, "core.list.is_empty"},
+            {"iterator", "()Ljava/util/Iterator;", false, false,
+             "core.list.iterator"},
+            {"contains", "(Ljava/lang/Object;)Z", false, false,
+             "core.list.contains"},
+            {"copyInto", "([Ljava/lang/Object;)V", false, false,
+             "core.list.copy_into"},
         };
         IntrinsicClassDecl vector;
         vector.descriptor = "Ljava/util/Vector;";
         vector.superclass = "Ljava/lang/Object;";
+        vector.interfaces = {"Ljava/util/List;"};
         vector.methods = list_methods;
         catalog.push_back(std::move(vector));
         IntrinsicClassDecl array_list;
         array_list.descriptor = "Ljava/util/ArrayList;";
         array_list.superclass = "Ljava/lang/Object;";
+        array_list.interfaces = {"Ljava/util/List;"};
         array_list.methods = list_methods;
         catalog.push_back(std::move(array_list));
+    }
+    {
+        // Deterministic PRNG (unified-Clock world: an unseeded Random gets
+        // a per-instance deterministic seed so replays reproduce).
+        IntrinsicClassDecl random;
+        random.descriptor = "Ljava/util/Random;";
+        random.superclass = "Ljava/lang/Object;";
+        random.methods = {
+            {"<init>", "()V", false, false, "core.random.init"},
+            {"<init>", "(J)V", false, false, "core.random.init_seed"},
+            {"nextDouble", "()D", false, false, "core.random.next_double"},
+            {"nextInt", "(I)I", false, false, "core.random.next_int_bound"},
+            {"nextInt", "()I", false, false, "core.random.next_int"},
+            {"nextFloat", "()F", false, false, "core.random.next_float"},
+        };
+        catalog.push_back(std::move(random));
+    }
+    {
+        // Wall-clock facts come from the platform clock (injected at
+        // session assembly like System.currentTimeMillis).
+        IntrinsicClassDecl date;
+        date.descriptor = "Ljava/util/Date;";
+        date.superclass = "Ljava/lang/Object;";
+        date.methods = {
+            {"<init>", "()V", false, false, "platform.date.init"},
+            {"getTime", "()J", false, false, "platform.date.get_time"},
+            {"getYear", "()I", false, false, "platform.date.get_year"},
+        };
+        date.fields = {{"millis", "J", false, false, 0, ""}};
+        catalog.push_back(std::move(date));
+    }
+    {
+        IntrinsicClassDecl iterator_interface;
+        iterator_interface.descriptor = "Ljava/util/Iterator;";
+        iterator_interface.is_interface = true;
+        iterator_interface.methods = {
+            {"hasNext", "()Z", false, false, "core.iterator.has_next"},
+            {"next", "()Ljava/lang/Object;", false, false,
+             "core.iterator.next"},
+        };
+        catalog.push_back(std::move(iterator_interface));
+        // Host-provided iterator over the shared list storage; instances
+        // only come from List.iterator().
+        IntrinsicClassDecl iterator_impl;
+        iterator_impl.descriptor = "Ljava/util/CollectionIterator;";
+        iterator_impl.superclass = "Ljava/lang/Object;";
+        iterator_impl.interfaces = {"Ljava/util/Iterator;"};
+        iterator_impl.fields = {
+            {"list", "Ljava/lang/Object;", false, false, 0, ""},
+            {"index", "I", false, false, 0, ""},
+        };
+        iterator_impl.methods = {
+            {"hasNext", "()Z", false, false, "core.iterator.has_next"},
+            {"next", "()Ljava/lang/Object;", false, false,
+             "core.iterator.next"},
+        };
+        catalog.push_back(std::move(iterator_impl));
     }
     {
         IntrinsicClassDecl class_class;
@@ -392,6 +564,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.throwable.get_message"},
             {"toString", "()Ljava/lang/String;", false, true,
              "core.throwable.to_string"},
+            {"printStackTrace", "()V", false, false,
+             "core.throwable.print_stack_trace"},
         };
         catalog.push_back(std::move(throwable));
     }
@@ -430,6 +604,30 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
                                 "Ljava/lang/Exception;"));
     catalog.push_back(Exception("Ljava/io/IOException;",
                                 "Ljava/lang/Exception;"));
+    catalog.push_back(Exception("Ljava/io/FileNotFoundException;",
+                                "Ljava/io/IOException;"));
+    catalog.push_back(Exception("Ljava/io/UnsupportedEncodingException;",
+                                "Ljava/io/IOException;"));
+    catalog.push_back(Exception("Ljava/util/regex/PatternSyntaxException;",
+                                "Ljava/lang/IllegalArgumentException;"));
+    catalog.push_back(Exception("Ljava/util/NoSuchElementException;",
+                                "Ljava/lang/RuntimeException;"));
+    // Network exception family: referenced by catch clauses on the titles'
+    // (never successful) network paths.
+    catalog.push_back(Exception("Ljava/net/SocketException;",
+                                "Ljava/io/IOException;"));
+    catalog.push_back(Exception("Ljava/net/SocketTimeoutException;",
+                                "Ljava/io/IOException;"));
+    catalog.push_back(Exception("Ljava/net/UnknownHostException;",
+                                "Ljava/io/IOException;"));
+    catalog.push_back(Exception("Ljava/net/MalformedURLException;",
+                                "Ljava/io/IOException;"));
+    catalog.push_back(Exception("Ljava/io/EOFException;",
+                                "Ljava/io/IOException;"));
+    catalog.push_back(Exception("Ljava/lang/NumberFormatException;",
+                                "Ljava/lang/IllegalArgumentException;"));
+    catalog.push_back(Exception("Ljava/lang/IllegalThreadStateException;",
+                                "Ljava/lang/IllegalArgumentException;"));
 
     catalog.push_back(Exception("Ljava/lang/Error;",
                                 "Ljava/lang/Throwable;"));

@@ -1,6 +1,7 @@
 #include "ogplay/runtime/dexvm/class_linker.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <unordered_map>
 #include <utility>
@@ -534,9 +535,13 @@ void DexClassLinker::Link() {
         Fail(DexVmErrorReason::unknown_class,
              "core intrinsic catalog is not registered");
     }
-    // Resolve dex-declared hierarchy names to ids.
+    // Resolve dex-declared hierarchy names to ids. Missing classes are
+    // collected across the whole dex before failing so a single run reports
+    // the complete linkage gap instead of only the first hit.
     if (impl_->image.has_value()) {
         const auto& image = *impl_->image;
+        // missing descriptor -> first requiring class (deterministic order).
+        std::map<std::string, std::string> missing;
         for (auto& linked : impl_->classes) {
             if (linked.is_intrinsic ||
                 !linked.dex_class_def_index.has_value()) {
@@ -549,11 +554,10 @@ void DexClassLinker::Link() {
                     image.types[*definition.superclass_type_index].descriptor;
                 const auto super = FindClass(name);
                 if (!super.has_value()) {
-                    Fail(DexVmErrorReason::unknown_class,
-                         "superclass is not available: " + name +
-                             " (required by " + linked.descriptor + ")");
+                    missing.emplace(name, linked.descriptor);
+                } else {
+                    linked.super = *super;
                 }
-                linked.super = *super;
             } else if (linked.descriptor != "Ljava/lang/Object;") {
                 Fail(DexVmErrorReason::invalid_hierarchy,
                      "class without superclass: " + linked.descriptor);
@@ -563,12 +567,21 @@ void DexClassLinker::Link() {
                 const auto name = image.types[interface_index].descriptor;
                 const auto interface_id = FindClass(name);
                 if (!interface_id.has_value()) {
-                    Fail(DexVmErrorReason::unknown_class,
-                         "interface is not available: " + name +
-                             " (required by " + linked.descriptor + ")");
+                    missing.emplace(name, linked.descriptor);
+                    continue;
                 }
                 linked.interfaces.push_back(*interface_id);
             }
+        }
+        if (!missing.empty()) {
+            std::string message =
+                "hierarchy classes are not available (" +
+                std::to_string(missing.size()) + "):";
+            for (const auto& [name, required_by] : missing) {
+                message += "\n  " + name + " (required by " + required_by +
+                           ")";
+            }
+            Fail(DexVmErrorReason::unknown_class, std::move(message));
         }
     }
     std::set<std::uint32_t> visiting;

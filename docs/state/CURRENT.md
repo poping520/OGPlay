@@ -1,7 +1,7 @@
 # 当前状态
 
-更新：2026-08-12 · M9 DexVM 启动并达成 pilot gate：Asphalt 5 以 schema v2
-`dex_activity` 全程解释执行进入主界面，golden 与 v1 路线逐位一致
+更新：2026-08-12 · M9 DexVM：Asphalt 5 pilot gate 已过；Dungeon Hunter 以
+schema v2 `dex_activity` 全程解释执行推进到标题画面渲染（视觉确认 ~21 FPS）
 
 ## 当前阶段
 
@@ -48,16 +48,21 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 
 ## 进行中：更多 title 上 dexvm 路线
 
-Dungeon Hunter 与 Asphalt 6 的 v2 staging profile 已就位
-（`data/profiles-dexvm/`），两者的阻塞点已定位：
-
+- **Dungeon Hunter 已到标题画面**（2026-08-12 批次）：链接器一次性收集全部缺失
+  层级类 + `tools/dexvm_gap_report.py` 机器缺口报告驱动逐轮闭合。本批交付：
+  层级占位批次、String 构造族/StringBuffer/Random/Date/集合迭代器/IO 流等
+  java.* 扩展、Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/
+  SharedPreferences（会话内存）、协作 Java 线程 + Timer、多 Activity 流转、
+  widget 状态层、`setContentView(I)` 经 `ParseBinaryXmlElements` 布局注入
+  （`loader/binary_xml.cpp`）、`runOnUiThread` 同步执行、`VideoView.start()`
+  立即回调 OnCompletionListener（安装器 → 视频 Activity → 游戏主 Activity
+  全链路打通）。另修复 precheck 的 k22b 寄存器校验误报（ASprite.Load 根因）。
+  下一步：标题画面后的输入/进游戏流程验证与长时游玩。
 - **Asphalt 6**：`loader.dex_l1` 过严，拒绝以数组类型为 owner 的 method_id
   （A6 有 4 处 `[Lcom/…;->clone`），dex-format 允许——必须先放宽解析。
-- **Dungeon Hunter**：链接期缺 android.* 层级 intrinsic（`View$OnClickListener`
-  等，两款合计 40 项链接阻塞类）；纯层级占位即可解锁，方法保持记账失败。
 
-完整缺口清单、工作队列（7 项，含 `dexvm.trace` 诊断与 GC-B）、精确复现命令与
-本轮踩坑经验见 **[docs/tasks/m9/HANDOFF-TITLES.md](../tasks/m9/HANDOFF-TITLES.md)**。
+完整缺口清单、工作队列、精确复现命令与本轮踩坑经验见
+**[docs/tasks/m9/HANDOFF-TITLES.md](../tasks/m9/HANDOFF-TITLES.md)**。
 
 ## 下一步（按优先级）
 

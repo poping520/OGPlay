@@ -60,6 +60,12 @@ private:
                     std::vector<runtime::dexvm::VmValue> arguments);
     void DispatchInput();
     void MarkFailed() noexcept;
+    // Cooperative Java threads + in-process startActivity, both serviced
+    // at frame boundaries (installer-style titles run a worker thread and
+    // then switch to the game activity).
+    void PumpJavaThreads();
+    void ServiceActivitySwitch();
+    void EnsureRendererCallbacks();
 
     DexActivityLifecycleBindings bindings_;
     std::vector<runtime::AndroidBoundaryInput> pending_input_;
@@ -72,6 +78,9 @@ private:
     float pointer_x_{};
     float pointer_y_{};
     bool guest_finalized_{};
+    // Renderer callbacks fire once when the interpreted glue registers a
+    // renderer; installer phases run frames without one.
+    bool renderer_ready_{};
 };
 
 }  // namespace ogplay::session

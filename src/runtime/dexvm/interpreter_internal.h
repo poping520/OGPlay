@@ -185,5 +185,8 @@ public:
 void RegisterCoreBuiltinHandlers(IntrinsicRegistry& registry);
 // P1 batch: StringBuilder/System/Math/boxed values/collections/streams.
 void RegisterJavaCoreBuiltins(IntrinsicRegistry& registry);
+// String/StringBuilder surface (intrinsics_string.cpp); called by
+// RegisterJavaCoreBuiltins.
+void RegisterJavaStringBuiltins(IntrinsicRegistry& registry);
 
 }  // namespace ogplay::runtime::dexvm

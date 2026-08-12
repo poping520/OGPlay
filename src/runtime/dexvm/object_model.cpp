@@ -259,6 +259,25 @@ VmObjectRef JavaObjectModel::InternString(const std::u16string_view value) {
     return created;
 }
 
+void JavaObjectModel::BindString(const VmObjectRef ref,
+                                 const std::u16string_view value) {
+    auto& record = impl_->At(ref);
+    if (record.kind != VmObjectKind::vm_instance ||
+        record.java_class != impl_->string_class) {
+        Fail(DexVmErrorReason::object_model_failure,
+             "string constructor receiver is not an unbound string "
+             "instance");
+    }
+    impl_->Reserve(value.size() * 2ULL);
+    std::vector<JniChar> units(value.begin(), value.end());
+    const auto identity = impl_->strings->Create(units);
+    impl_->by_identity.erase(record.identity);
+    impl_->by_identity.emplace(
+        identity, static_cast<std::uint32_t>(ref.Value() - 1));
+    record.kind = VmObjectKind::string;
+    record.identity = identity;
+}
+
 std::u16string JavaObjectModel::StringValue(const VmObjectRef ref) const {
     const auto& record = impl_->At(ref);
     if (record.kind != VmObjectKind::string &&

@@ -60,6 +60,13 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
   IO 走 APK 条目与会话内存文件、身份为确定性配置、SMS/网络记账明确失败;
   统一时间由生命周期驱动发布(System.currentTimeMillis/Thread.sleep 同源)。
+- android.* intrinsic 的 widget 层（TextView/EditText/ImageView/VideoView/对话框等）
+  只持有状态、不做宿主渲染:`setContentView(I)` 经 arsc resid → APK 布局条目 →
+  `ParseBinaryXmlElements` 实例化 widget intrinsic,`android:id` 进入 view registry
+  供 `findViewById` 查询,文档序首元素登记为 content view;`runOnUiThread` 在协作
+  单线程模型下同步执行 runnable;`VideoView.start()` 因视频播放未提供而立即回调
+  已注册的 `OnCompletionListener`(等价于播放完成),使 splash-video Activity 正常
+  推进,不伪造播放事实。
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求;会话只发布最新请求与累计次数,不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。

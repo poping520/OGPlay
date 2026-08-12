@@ -651,6 +651,17 @@ int RunApkCommand(const int argc, const char* const argv[],
             dex_context->surface_height = profile.runtime.surface.height;
             dex_context->api_level =
                 static_cast<std::int32_t>(profile.runtime.api_level);
+            // Java File/streams resolve through the same guest VFS as
+            // native fopen (external mounts, /apk assets).
+            dex_context->vfs = &filesystem;
+            if (external_directory.has_value()) {
+                std::error_code space_error;
+                const auto space = std::filesystem::space(
+                    *external_directory, space_error);
+                if (!space_error) {
+                    dex_context->external_free_bytes = space.available;
+                }
+            }
         }
         auto sound_loader =
             dex_mode

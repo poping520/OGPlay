@@ -80,6 +80,11 @@ public:
     [[nodiscard]] VmObjectRef NewString(std::u16string_view value);
     [[nodiscard]] VmObjectRef InternString(std::u16string_view value);
     [[nodiscard]] std::u16string StringValue(VmObjectRef ref) const;
+    // Converts a freshly allocated vm_instance of the string class into a
+    // real string record in place (same handle, new store-backed identity).
+    // This is how interpreted `new-instance String` + `String.<init>`
+    // constructors publish their value without moving the object.
+    void BindString(VmObjectRef ref, std::u16string_view value);
 
     [[nodiscard]] VmObjectRef NewPrimitiveArray(DexClassId array_class,
                                                 JniPrimitiveKind kind,

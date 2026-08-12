@@ -123,6 +123,11 @@ LifecycleFrameState DexActivityLifecycle::Start() {
         CallActivity("onStart", "()V", {});
         CallActivity("onResume", "()V", {});
 
+        // Installer-style launchers may request the game activity right in
+        // onCreate (startActivity + finish); service that before demanding
+        // a content view.
+        ServiceActivitySwitch();
+
         if (!context.content_view.IsValid()) {
             Fail("onCreate did not install a content view");
         }
@@ -137,21 +142,10 @@ LifecycleFrameState DexActivityLifecycle::Start() {
         CallOnView(context.content_view, "onWindowFocusChanged", "(Z)V",
                    {dx::VmValue::Int(1)});
 
-        if (!context.renderer.IsValid()) {
-            Fail("setRenderer was never called by the interpreted glue");
-        }
-        CallOnView(context.renderer, "onSurfaceCreated",
-                   "(Ljavax/microedition/khronos/opengles/GL10;"
-                   "Ljavax/microedition/khronos/egl/EGLConfig;)V",
-                   {dx::VmValue::Ref(dx::VmObjectRef{}),
-                    dx::VmValue::Ref(dx::VmObjectRef{})});
-        CallOnView(context.renderer, "onSurfaceChanged",
-                   "(Ljavax/microedition/khronos/opengles/GL10;II)V",
-                   {dx::VmValue::Ref(dx::VmObjectRef{}),
-                    dx::VmValue::Int(static_cast<std::int32_t>(
-                        context.surface_width)),
-                    dx::VmValue::Int(static_cast<std::int32_t>(
-                        context.surface_height))});
+        // A renderer may not exist yet (installer phase draws nothing);
+        // frames then only pump cooperative threads until the interpreted
+        // glue registers one.
+        EnsureRendererCallbacks();
 
         state_ = LifecycleRunState::running;
     } catch (...) {
@@ -237,10 +231,15 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
     if (suspended_) return State();
     try {
         DispatchInput();
-        CallOnView(bindings_.context->renderer, "onDrawFrame",
-                   "(Ljavax/microedition/khronos/opengles/GL10;)V",
-                   {dx::VmValue::Ref(dx::VmObjectRef{})});
-        if (bindings_.present_surface) bindings_.present_surface();
+        PumpJavaThreads();
+        ServiceActivitySwitch();
+        EnsureRendererCallbacks();
+        if (renderer_ready_) {
+            CallOnView(bindings_.context->renderer, "onDrawFrame",
+                       "(Ljavax/microedition/khronos/opengles/GL10;)V",
+                       {dx::VmValue::Ref(dx::VmObjectRef{})});
+            if (bindings_.present_surface) bindings_.present_surface();
+        }
         clock_.AdvanceFrames(1);
         bindings_.context->uptime_millis += kMillisPerFrame;
         ++frame_;
@@ -249,6 +248,94 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
         throw;
     }
     return State();
+}
+
+void DexActivityLifecycle::PumpJavaThreads() {
+    const auto error = runtime::PumpJavaThreads(bindings_.bridge->Vm(),
+                                                *bindings_.context);
+    if (error.has_value()) Fail(*error);
+}
+
+void DexActivityLifecycle::ServiceActivitySwitch() {
+    auto& context = *bindings_.context;
+    while (!context.pending_activity_descriptor.empty()) {
+        const auto descriptor =
+            std::exchange(context.pending_activity_descriptor, {});
+        // finish() on the departing activity targets that activity, not
+        // the session.
+        context.exit_requested = false;
+        if (auto* logger = bindings_.bridge->Vm().Log(); logger != nullptr) {
+            logger->Write(core::LogLevel::info, "session.dex_lifecycle",
+                          "switching activity: " + descriptor);
+        }
+
+        auto& vm = bindings_.bridge->Vm();
+        auto& linker = bindings_.bridge->Linker();
+
+        // Retire the old activity deterministically before the new one.
+        CallActivity("onPause", "()V", {});
+        CallActivity("onStop", "()V", {});
+        CallActivity("onDestroy", "()V", {});
+        context.content_view = dx::VmObjectRef{};
+        context.renderer = dx::VmObjectRef{};
+        renderer_ready_ = false;
+
+        const auto activity_class = linker.FindClass(descriptor);
+        if (!activity_class.has_value()) {
+            Fail("startActivity target is not in the dex: " + descriptor);
+        }
+        RequireOutcome(vm.EnsureClassInitialized(*activity_class),
+                       "activity <clinit>");
+        const auto init = linker.FindDirectMethod(*activity_class,
+                                                  "<init>", "()V");
+        if (!init.has_value()) {
+            Fail("activity has no default constructor: " + descriptor);
+        }
+        const auto activity = vm.Model().NewInstance(
+            *activity_class, linker.Class(*activity_class).instance_slots);
+        context.activity = activity;
+        RequireOutcome(
+            vm.Call(*init, std::vector<dx::VmValue>{
+                               dx::VmValue::Ref(activity)}),
+            "activity <init>");
+        CallActivity("onCreate", "(Landroid/os/Bundle;)V",
+                     {dx::VmValue::Ref(dx::VmObjectRef{})});
+        CallActivity("onStart", "()V", {});
+        CallActivity("onResume", "()V", {});
+
+        if (!context.content_view.IsValid() &&
+            context.pending_activity_descriptor.empty()) {
+            Fail("activity did not install a content view: " + descriptor);
+        }
+        if (context.content_view.IsValid()) {
+            CallOnView(context.content_view, "onSizeChanged", "(IIII)V",
+                       {dx::VmValue::Int(static_cast<std::int32_t>(
+                            context.surface_width)),
+                        dx::VmValue::Int(static_cast<std::int32_t>(
+                            context.surface_height)),
+                        dx::VmValue::Int(0), dx::VmValue::Int(0)});
+            CallOnView(context.content_view, "onWindowFocusChanged",
+                       "(Z)V", {dx::VmValue::Int(1)});
+        }
+    }
+}
+
+void DexActivityLifecycle::EnsureRendererCallbacks() {
+    auto& context = *bindings_.context;
+    if (renderer_ready_ || !context.renderer.IsValid()) return;
+    CallOnView(context.renderer, "onSurfaceCreated",
+               "(Ljavax/microedition/khronos/opengles/GL10;"
+               "Ljavax/microedition/khronos/egl/EGLConfig;)V",
+               {dx::VmValue::Ref(dx::VmObjectRef{}),
+                dx::VmValue::Ref(dx::VmObjectRef{})});
+    CallOnView(context.renderer, "onSurfaceChanged",
+               "(Ljavax/microedition/khronos/opengles/GL10;II)V",
+               {dx::VmValue::Ref(dx::VmObjectRef{}),
+                dx::VmValue::Int(static_cast<std::int32_t>(
+                    context.surface_width)),
+                dx::VmValue::Int(static_cast<std::int32_t>(
+                    context.surface_height))});
+    renderer_ready_ = true;
 }
 
 LifecycleFrameState DexActivityLifecycle::Stop() {

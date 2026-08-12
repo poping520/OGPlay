@@ -1,11 +1,17 @@
-// java.* P1 intrinsic handlers: String surface, StringBuilder, System
-// (arraycopy/streams), Math, boxed values and the collection minimum set.
-// Native halves follow AOSP vm/native/java_lang_System.cpp (arraycopy
-// ordering) at the pinned baseline; pure-library behaviour follows the
-// class-library documentation (07 §2; libcore is not vendored).
+// java.* P1 intrinsic handlers: System (arraycopy/streams), Math, boxed
+// values and the collection minimum set. String/StringBuilder handlers live
+// in intrinsics_string.cpp. Native halves follow AOSP
+// vm/native/java_lang_System.cpp (arraycopy ordering) at the pinned
+// baseline; pure-library behaviour follows the class-library documentation
+// (07 §2; libcore is not vendored).
 
+#include <bit>
 #include <cmath>
 #include <cstdlib>
+#include <memory>
+#include <random>
+#include <string>
+#include <unordered_map>
 
 #include "interpreter_internal.h"
 
@@ -37,36 +43,6 @@ namespace {
         out.push_back(unit < 0x80 ? static_cast<char>(unit) : '?');
     }
     return out;
-}
-
-[[nodiscard]] char16_t AsciiLower(const char16_t unit) {
-    return unit >= u'A' && unit <= u'Z' ? static_cast<char16_t>(unit + 32)
-                                        : unit;
-}
-
-[[nodiscard]] char16_t AsciiUpper(const char16_t unit) {
-    return unit >= u'a' && unit <= u'z' ? static_cast<char16_t>(unit - 32)
-                                        : unit;
-}
-
-[[nodiscard]] std::int32_t CompareStrings(const std::u16string& lhs,
-                                          const std::u16string& rhs,
-                                          const bool ignore_case) {
-    const auto size = std::min(lhs.size(), rhs.size());
-    for (std::size_t index = 0; index < size; ++index) {
-        auto left = lhs[index];
-        auto right = rhs[index];
-        if (ignore_case) {
-            left = AsciiLower(left);
-            right = AsciiLower(right);
-        }
-        if (left != right) {
-            return static_cast<std::int32_t>(left) -
-                   static_cast<std::int32_t>(right);
-        }
-    }
-    return static_cast<std::int32_t>(lhs.size()) -
-           static_cast<std::int32_t>(rhs.size());
 }
 
 // Boxed-value slot access: boxed intrinsics declare a single "value" field
@@ -108,261 +84,6 @@ void GuestLine(IntrinsicContext& context, const std::string& line) {
     logger->Write(core::LogLevel::info, "runtime.dexvm.guest", line);
 }
 
-void RegisterStringHandlers(IntrinsicRegistry& registry) {
-    registry.Register("core.string.equals_ignore_case",
-                      [](IntrinsicContext& context) {
-        const auto other = context.arguments[0].ref;
-        if (!other.IsValid()) return VmValue::Int(0);
-        return VmValue::Int(
-            CompareStrings(Value(context, context.receiver),
-                           Value(context, other), true) == 0
-                ? 1
-                : 0);
-    });
-    registry.Register("core.string.compare_to",
-                      [](IntrinsicContext& context) {
-        return VmValue::Int(CompareStrings(
-            Value(context, context.receiver),
-            Value(context, context.arguments[0].ref), false));
-    });
-    registry.Register("core.string.compare_to_ignore_case",
-                      [](IntrinsicContext& context) {
-        return VmValue::Int(CompareStrings(
-            Value(context, context.receiver),
-            Value(context, context.arguments[0].ref), true));
-    });
-    registry.Register("core.string.concat", [](IntrinsicContext& context) {
-        return Make(context, Value(context, context.receiver) +
-                                 Value(context, context.arguments[0].ref));
-    });
-    registry.Register("core.string.starts_with",
-                      [](IntrinsicContext& context) {
-        return VmValue::Int(
-            Value(context, context.receiver)
-                    .starts_with(Value(context, context.arguments[0].ref))
-                ? 1
-                : 0);
-    });
-    registry.Register("core.string.ends_with",
-                      [](IntrinsicContext& context) {
-        return VmValue::Int(
-            Value(context, context.receiver)
-                    .ends_with(Value(context, context.arguments[0].ref))
-                ? 1
-                : 0);
-    });
-    registry.Register("core.string.index_of_char",
-                      [](IntrinsicContext& context) {
-        const auto haystack = Value(context, context.receiver);
-        const auto found = haystack.find(static_cast<char16_t>(
-            context.arguments[0].cat1 & 0xffffU));
-        return VmValue::Int(found == std::u16string::npos
-                                ? -1
-                                : static_cast<std::int32_t>(found));
-    });
-    registry.Register("core.string.index_of_string",
-                      [](IntrinsicContext& context) {
-        const auto haystack = Value(context, context.receiver);
-        const auto found =
-            haystack.find(Value(context, context.arguments[0].ref));
-        return VmValue::Int(found == std::u16string::npos
-                                ? -1
-                                : static_cast<std::int32_t>(found));
-    });
-    registry.Register("core.string.last_index_of_char",
-                      [](IntrinsicContext& context) {
-        const auto haystack = Value(context, context.receiver);
-        const auto found = haystack.rfind(static_cast<char16_t>(
-            context.arguments[0].cat1 & 0xffffU));
-        return VmValue::Int(found == std::u16string::npos
-                                ? -1
-                                : static_cast<std::int32_t>(found));
-    });
-    registry.Register("core.string.last_index_of_string",
-                      [](IntrinsicContext& context) {
-        const auto haystack = Value(context, context.receiver);
-        const auto found =
-            haystack.rfind(Value(context, context.arguments[0].ref));
-        return VmValue::Int(found == std::u16string::npos
-                                ? -1
-                                : static_cast<std::int32_t>(found));
-    });
-    const auto substring = [](IntrinsicContext& context,
-                              const std::int32_t begin,
-                              const std::int32_t end) {
-        const auto value = Value(context, context.receiver);
-        if (begin < 0 || end < begin ||
-            static_cast<std::size_t>(end) > value.size()) {
-            throw VmJavaThrow{
-                "Ljava/lang/StringIndexOutOfBoundsException;",
-                "begin " + std::to_string(begin) + ", end " +
-                    std::to_string(end) + ", length " +
-                    std::to_string(value.size())};
-        }
-        return Make(context, value.substr(
-                                 static_cast<std::size_t>(begin),
-                                 static_cast<std::size_t>(end - begin)));
-    };
-    registry.Register("core.string.substring_from",
-                      [substring](IntrinsicContext& context) {
-        const auto value = Value(context, context.receiver);
-        return substring(context, context.arguments[0].AsInt(),
-                         static_cast<std::int32_t>(value.size()));
-    });
-    registry.Register("core.string.substring_range",
-                      [substring](IntrinsicContext& context) {
-        return substring(context, context.arguments[0].AsInt(),
-                         context.arguments[1].AsInt());
-    });
-    registry.Register("core.string.to_lower", [](IntrinsicContext& context) {
-        auto value = Value(context, context.receiver);
-        for (auto& unit : value) unit = AsciiLower(unit);
-        return Make(context, value);
-    });
-    registry.Register("core.string.to_upper", [](IntrinsicContext& context) {
-        auto value = Value(context, context.receiver);
-        for (auto& unit : value) unit = AsciiUpper(unit);
-        return Make(context, value);
-    });
-    registry.Register("core.string.trim", [](IntrinsicContext& context) {
-        const auto value = Value(context, context.receiver);
-        std::size_t begin = 0;
-        std::size_t end = value.size();
-        while (begin < end && value[begin] <= u' ') ++begin;
-        while (end > begin && value[end - 1] <= u' ') --end;
-        return Make(context, value.substr(begin, end - begin));
-    });
-    registry.Register("core.string.is_empty", [](IntrinsicContext& context) {
-        return VmValue::Int(
-            Value(context, context.receiver).empty() ? 1 : 0);
-    });
-    registry.Register("core.string.value_of_int",
-                      [](IntrinsicContext& context) {
-        return Make(context,
-                    Widen(std::to_string(context.arguments[0].AsInt())));
-    });
-    registry.Register("core.string.value_of_long",
-                      [](IntrinsicContext& context) {
-        return Make(context,
-                    Widen(std::to_string(context.arguments[0].AsLong())));
-    });
-    registry.Register("core.string.value_of_float",
-                      [](IntrinsicContext& context) {
-        return Make(context,
-                    Widen(std::to_string(context.arguments[0].AsFloat())));
-    });
-    registry.Register("core.string.value_of_double",
-                      [](IntrinsicContext& context) {
-        return Make(context,
-                    Widen(std::to_string(context.arguments[0].AsDouble())));
-    });
-    registry.Register("core.string.value_of_boolean",
-                      [](IntrinsicContext& context) {
-        return Make(context, context.arguments[0].AsInt() != 0
-                                 ? u"true"
-                                 : std::u16string(u"false"));
-    });
-    registry.Register("core.string.value_of_char",
-                      [](IntrinsicContext& context) {
-        return Make(context,
-                    std::u16string(1, static_cast<char16_t>(
-                                          context.arguments[0].cat1 &
-                                          0xffffU)));
-    });
-}
-
-void RegisterBuilderHandlers(IntrinsicRegistry& registry) {
-    registry.Register("core.builder.init", [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver).clear();
-        return VmValue::Void();
-    });
-    registry.Register("core.builder.init_capacity",
-                      [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver).clear();
-        return VmValue::Void();
-    });
-    registry.Register("core.builder.init_string",
-                      [](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) =
-            Value(context, context.arguments[0].ref);
-        return VmValue::Void();
-    });
-    const auto self = [](IntrinsicContext& context) {
-        return VmValue::Ref(context.receiver);
-    };
-    registry.Register("core.builder.append_string",
-                      [self](IntrinsicContext& context) {
-        const auto argument = context.arguments[0].ref;
-        context.vm.BuilderBuffer(context.receiver) +=
-            argument.IsValid() ? Value(context, argument)
-                               : std::u16string(u"null");
-        return self(context);
-    });
-    registry.Register("core.builder.append_object",
-                      [self](IntrinsicContext& context) {
-        const auto argument = context.arguments[0].ref;
-        auto& buffer = context.vm.BuilderBuffer(context.receiver);
-        if (!argument.IsValid()) {
-            buffer += u"null";
-        } else {
-            auto& model = context.vm.Model();
-            const auto kind = model.Kind(argument);
-            if (kind == VmObjectKind::string ||
-                kind == VmObjectKind::external) {
-                buffer += Value(context, argument);
-            } else {
-                buffer += Widen("@" + std::to_string(argument.Value()));
-            }
-        }
-        return self(context);
-    });
-    registry.Register("core.builder.append_int",
-                      [self](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            Widen(std::to_string(context.arguments[0].AsInt()));
-        return self(context);
-    });
-    registry.Register("core.builder.append_long",
-                      [self](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            Widen(std::to_string(context.arguments[0].AsLong()));
-        return self(context);
-    });
-    registry.Register("core.builder.append_boolean",
-                      [self](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            context.arguments[0].AsInt() != 0 ? u"true"
-                                              : std::u16string(u"false");
-        return self(context);
-    });
-    registry.Register("core.builder.append_char",
-                      [self](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) += static_cast<char16_t>(
-            context.arguments[0].cat1 & 0xffffU);
-        return self(context);
-    });
-    registry.Register("core.builder.append_float",
-                      [self](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            Widen(std::to_string(context.arguments[0].AsFloat()));
-        return self(context);
-    });
-    registry.Register("core.builder.append_double",
-                      [self](IntrinsicContext& context) {
-        context.vm.BuilderBuffer(context.receiver) +=
-            Widen(std::to_string(context.arguments[0].AsDouble()));
-        return self(context);
-    });
-    registry.Register("core.builder.to_string",
-                      [](IntrinsicContext& context) {
-        return Make(context, context.vm.BuilderBuffer(context.receiver));
-    });
-    registry.Register("core.builder.length", [](IntrinsicContext& context) {
-        return VmValue::Int(static_cast<std::int32_t>(
-            context.vm.BuilderBuffer(context.receiver).size()));
-    });
-}
-
 void RegisterSystemHandlers(IntrinsicRegistry& registry) {
     registry.Register("core.system.clinit", [](IntrinsicContext& context) {
         auto& vm = context.vm;
@@ -376,6 +97,110 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
     });
     registry.Register("core.system.gc", [](IntrinsicContext&) {
         // GC-A never collects (04 §5); the call is legal and does nothing.
+        return VmValue::Void();
+    });
+    // Session-lifetime property table shared by set/get within one
+    // registry (one interpreter instance).
+    registry.Register(
+        "core.system.set_property",
+        [properties = std::make_shared<
+             std::unordered_map<std::string, std::string>>()](
+            IntrinsicContext& context) {
+            const auto key =
+                context.vm.StringUtf8(context.arguments[0].ref);
+            const auto value =
+                context.vm.StringUtf8(context.arguments[1].ref);
+            const auto previous = properties->find(key);
+            VmValue result = VmValue::Ref(VmObjectRef{});
+            if (previous != properties->end()) {
+                result =
+                    VmValue::Ref(context.vm.NewStringUtf8(previous->second));
+            }
+            (*properties)[key] = value;
+            return result;
+        });
+    // Deterministic PRNG family: unseeded instances take sequential seeds
+    // so a replayed session reproduces exactly (unified-Clock policy).
+    {
+        const auto engines = std::make_shared<
+            std::unordered_map<std::uint32_t, std::mt19937_64>>();
+        const auto counter = std::make_shared<std::uint64_t>(0x5DEECE66DULL);
+        const auto engine_of =
+            [engines](IntrinsicContext& context) -> std::mt19937_64& {
+            const auto found =
+                engines->find(context.receiver.Value());
+            if (found == engines->end()) {
+                throw VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "Random instance was never constructed"};
+            }
+            return found->second;
+        };
+        registry.Register("core.random.init",
+                          [engines, counter](IntrinsicContext& context) {
+            (*engines)[context.receiver.Value()] =
+                std::mt19937_64((*counter)++);
+            return VmValue::Void();
+        });
+        registry.Register("core.random.init_seed",
+                          [engines](IntrinsicContext& context) {
+            (*engines)[context.receiver.Value()] = std::mt19937_64(
+                static_cast<std::uint64_t>(context.arguments[0].AsLong()));
+            return VmValue::Void();
+        });
+        registry.Register("core.random.next_double",
+                          [engine_of](IntrinsicContext& context) {
+            auto& engine = engine_of(context);
+            VmValue out;
+            out.kind = VmValue::Kind::wide;
+            const double value =
+                static_cast<double>(engine() >> 11U) * 0x1.0p-53;
+            out.wide = std::bit_cast<std::uint64_t>(value);
+            return out;
+        });
+        registry.Register("core.random.next_float",
+                          [engine_of](IntrinsicContext& context) {
+            auto& engine = engine_of(context);
+            const float value =
+                static_cast<float>(engine() >> 40U) * 0x1.0p-24F;
+            VmValue out = VmValue::Int(0);
+            out.cat1 = std::bit_cast<std::uint32_t>(value);
+            return out;
+        });
+        registry.Register("core.random.next_int",
+                          [engine_of](IntrinsicContext& context) {
+            return VmValue::Int(
+                static_cast<std::int32_t>(engine_of(context)()));
+        });
+        registry.Register("core.random.next_int_bound",
+                          [engine_of](IntrinsicContext& context) {
+            const auto bound = context.arguments[0].AsInt();
+            if (bound <= 0) {
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "bound must be positive"};
+            }
+            return VmValue::Int(static_cast<std::int32_t>(
+                engine_of(context)() %
+                static_cast<std::uint64_t>(bound)));
+        });
+    }
+    registry.Register("core.throwable.print_stack_trace",
+                      [](IntrinsicContext& context) {
+        auto* logger = context.vm.Log();
+        if (logger != nullptr) {
+            const auto message =
+                context.vm.ThrowableMessage(context.receiver);
+            logger->Write(core::LogLevel::warn, "runtime.dexvm.guest",
+                          "printStackTrace: " +
+                              (message.IsValid()
+                                   ? context.vm.StringUtf8(message)
+                                   : std::string("<no message>")));
+        }
+        return VmValue::Void();
+    });
+    registry.Register("core.object.wait_timed", [](IntrinsicContext&) {
+        // Cooperative single-thread model (04 §3): other threads only run
+        // at lifecycle boundaries, so a timed wait cannot observe progress
+        // within this tick; it returns as an elapsed timeout.
         return VmValue::Void();
     });
     registry.Register("core.system.arraycopy",
@@ -792,13 +617,75 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         return VmValue::Int(
             context.vm.ListStorage(context.receiver).empty() ? 1 : 0);
     });
+    registry.Register("core.list.contains", [](IntrinsicContext& context) {
+        const auto& elements = context.vm.ListStorage(context.receiver);
+        for (const auto element : elements) {
+            if (context.vm.JavaEquals(element, context.arguments[0].ref)) {
+                return VmValue::Int(1);
+            }
+        }
+        return VmValue::Int(0);
+    });
+    registry.Register("core.list.copy_into", [](IntrinsicContext& context) {
+        auto& model = context.vm.Model();
+        const auto& elements = context.vm.ListStorage(context.receiver);
+        const auto target = context.arguments[0].ref;
+        if (!target.IsValid()) {
+            throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "copyInto target array is null"};
+        }
+        if (static_cast<std::size_t>(model.ArrayLength(target)) <
+            elements.size()) {
+            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                              "copyInto target array is too small"};
+        }
+        for (std::size_t index = 0; index < elements.size(); ++index) {
+            model.SetObjectElement(target, static_cast<JniSize>(index),
+                                   elements[index]);
+        }
+        return VmValue::Void();
+    });
+    // Iterator over the shared list storage. State lives in the instance
+    // slots (list ref, cursor); mutation during iteration follows the
+    // storage (no fail-fast modCount is claimed).
+    registry.Register("core.list.iterator", [](IntrinsicContext& context) {
+        auto& vm = context.vm;
+        const auto instance =
+            vm.NewIntrinsicInstance("Ljava/util/CollectionIterator;");
+        const auto slots = vm.Model().InstanceSlots(instance);
+        slots[0] = {context.receiver.Value(), SlotTag::ref};
+        slots[1] = {0, SlotTag::cat1};
+        return VmValue::Ref(instance);
+    });
+    registry.Register("core.iterator.has_next",
+                      [](IntrinsicContext& context) {
+        const auto slots = context.vm.Model().InstanceSlots(
+            context.receiver);
+        const auto& elements =
+            context.vm.ListStorage(VmObjectRef(slots[0].bits));
+        return VmValue::Int(
+            static_cast<std::size_t>(slots[1].bits) < elements.size() ? 1
+                                                                      : 0);
+    });
+    registry.Register("core.iterator.next", [](IntrinsicContext& context) {
+        const auto slots = context.vm.Model().InstanceSlots(
+            context.receiver);
+        const auto& elements =
+            context.vm.ListStorage(VmObjectRef(slots[0].bits));
+        const auto index = static_cast<std::size_t>(slots[1].bits);
+        if (index >= elements.size()) {
+            throw VmJavaThrow{"Ljava/util/NoSuchElementException;",
+                              "iterator is exhausted"};
+        }
+        slots[1] = {static_cast<std::uint32_t>(index + 1), SlotTag::cat1};
+        return VmValue::Ref(elements[index]);
+    });
 }
 
 }  // namespace
 
 void RegisterJavaCoreBuiltins(IntrinsicRegistry& registry) {
-    RegisterStringHandlers(registry);
-    RegisterBuilderHandlers(registry);
+    RegisterJavaStringBuiltins(registry);
     RegisterSystemHandlers(registry);
     RegisterMathHandlers(registry);
     RegisterBoxedHandlers(registry);

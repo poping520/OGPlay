@@ -163,11 +163,16 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
                 check_register((unit >> 8U) & 0xffU, wide_dest);
                 break;
             case DexInstructionFormat::k23x:
-            case DexInstructionFormat::k22b:
                 check_register((unit >> 8U) & 0xffU, wide_dest);
                 check_register(units[instruction_pc + 1] & 0xffU, false);
                 check_register((units[instruction_pc + 1] >> 8U) & 0xffU,
                                false);
+                break;
+            case DexInstructionFormat::k22b:
+                // AA|op CC|BB: the second unit's high byte is a signed
+                // literal, not a register (libdex/InstrUtils.cpp).
+                check_register((unit >> 8U) & 0xffU, wide_dest);
+                check_register(units[instruction_pc + 1] & 0xffU, false);
                 break;
             case DexInstructionFormat::k22t:
             case DexInstructionFormat::k22s:

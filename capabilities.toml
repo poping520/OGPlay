@@ -1007,8 +1007,8 @@ note = "M9 WU-M9-014/015 出向按 descriptor 编组 A32 soft-float 帧（Regist
 
 [dexvm.intrinsics_android_core]
 status = "partial"
-test = "Asphalt 5 exact dexvm title-flow gate 3/3"
-note = "M9 WU-M9-018 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败；string 资源、MediaPlayer 完成回调等缺口记账"
+test = "Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染"
+note = "M9 WU-M9-018 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败。DUNQ 批次扩展：Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/Build、SharedPreferences(会话内存)、多 Activity 流转+协作线程/Timer、widget 状态层（TextView/EditText/VideoView 等）、setContentView(I) 经 binary XML 布局注入 view registry、runOnUiThread 同步执行、VideoView.start() 立即回调 OnCompletionListener（播放本身仍为记账缺口）"
 
 [loader.arsc]
 status = "complete"

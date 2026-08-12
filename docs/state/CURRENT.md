@@ -20,25 +20,16 @@ Asphalt 5 逐位回归通过；1:1 宿主 Java 线程已交付（WU-M9-028），
   字节码，这是显式记账的限制而非并发。`dexvm.threads` 为 `partial`：
   wait-set 未实现，`Object.wait()` 仍明确失败；子线程 native 调用仍复用 root
   guest 栈，需要停泊时以 `blocking_in_native` 明确失败。
-- **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除全部 16 条
-  历史 replay 调用与 Java handler 映射，
-  `asphalt5.title_flow` 三轮 + 迁移后复验 passed——468 帧固定预算、主界面
-  PNG SHA-256 `9ee57323…` 保持逐位一致、无 fault、clean shutdown。本次删除旧实现后
-  又以 production v2 目录复验一次，结论不变。
-  `System.loadLibrary`(<clinit>)、onCreate 副作用链、GetStaticMethodID 查
-  真实 DEX 方法表、native→解释器第三路由均真实发生。
-- **存档持久化沙盒设计已落地**（2026-08-12）：ADR-0020（Proposed）+
-  `docs/design/sandbox/`。根因确认为设计而非缺陷——VFS external、DexVM
-  `memory_files`、SharedPreferences 三条写入通道均止于会话内存。方案：
-  每 package 一个宿主沙盒目录，可写命名空间以文件粒度 overlay 覆盖只读底层，
-  确定性 flush 点原子落盘；WU 分解 SBX-1..7。未启动，capabilities 无变化。
-- **GUI 主面板基础版设计已落地**（2026-08-12）：roadmap GUI 选型改为
-  SDL3 + Dear ImGui（与游戏窗口同渲染栈），`docs/design/launcher/` 交付
-  完整方案——可双击的 `ogplay-gui` 独立进程（Windows 免控制台/macOS
-  bundle；`ogplay gui` 供开发测试）+ 每 package 一目录的游戏库 +
-  导入（APK 复制入库、数据包原地引用）/删除/点击 spawn `run-apk` 子进程，
-  图标与名称走 manifest icon/label 增量 + `loader.arsc` + stb 提取链；
-  WU 分解 GUI-1..7。未启动，capabilities 无变化。
+- **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除全部 16 条历史 replay
+  调用与 Java handler 映射后，`asphalt5.title_flow` 三轮 + 迁移后复验 passed
+  ——468 帧固定预算、主界面 PNG SHA-256 `9ee57323…` 逐位一致、无 fault、
+  clean shutdown。`System.loadLibrary`(<clinit>)、onCreate 副作用链、
+  GetStaticMethodID 查真实 DEX 方法表、native→解释器第三路由均真实发生。
+- **两份设计已落地但未启动**（2026-08-12，capabilities 无变化）：存档持久化
+  沙盒（ADR-0020 Proposed + `docs/design/sandbox/`，每 package 一个宿主沙盒
+  目录 + 文件粒度 overlay + 确定性 flush，WU 分解 SBX-1..7；根因是设计缺失
+  而非缺陷——三条写入通道都止于会话内存）与 GUI 主面板基础版
+  （`docs/design/launcher/`，SDL3 + Dear ImGui，WU 分解 GUI-1..7）。
 
 ## 已验收基线
 
@@ -53,12 +44,11 @@ macOS/arm64 本次 full CTest 为 601/601（含 WU-M9-028 宿主线程用例）�
   Bitmap(stb_image)/Canvas、Environment/StatFs、SharedPreferences、协作线程+
   Timer、多 Activity 流转、widget 状态层、布局注入、`VideoView` 完成回调，修复
   precheck k22b 误报。下一步：输入/进游戏与长时游玩。
-- **适配流水线（复盘驱动，2026-08-12）**：上一款靠「跑一轮发现一个缺口」花了
-  几十轮，现改为一次收割——`run-apk --survey-gaps` 诊断模式把未声明的平台类/
-  方法合成中性桩并逐次记账，输出按命中排序的机读工作单（默认关闭，关闭即
-  明确失败，survey 运行显式标注非兼容性结论）；`tools/dexvm_stub_gen.py` 由
-  缺口报告生成占位与中性方法行，引用返回值一律进人工决策清单；空接收者诊断
-  补上声明类与调用点。流程见 [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
+- **适配流水线（复盘驱动，2026-08-12）**：改为一次收割——`run-apk
+  --survey-gaps` 把未声明的平台类/方法合成中性桩并逐次记账，输出按命中排序的
+  机读工作单（默认关闭，关闭即明确失败，survey 运行标注为非兼容性结论）；
+  `tools/dexvm_stub_gen.py` 由缺口报告生成占位，引用返回值进人工决策清单。
+  流程见 [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
 - **Asphalt 6（2026-08-12 实测）**：production v2 Profile 在 external `InsTime` 与
   `file000000.dat` 验证后，入口覆盖实际启动 `GLGame`，并在 guest `<clinit>` 后把
   `GameInstaller.sbStarted=true` 作为 provisioned-data 事实写入；安装器/DRM 入口未执行。

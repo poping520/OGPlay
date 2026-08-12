@@ -435,15 +435,17 @@ void RegisterStringExtendedHandlers(IntrinsicRegistry& registry) {
         auto remaining = value;
         while (std::regex_search(remaining, match, pattern) &&
                !(match.position(0) == 0 && match.length(0) == 0)) {
+            const auto position =
+                static_cast<std::string::size_type>(match.position(0));
+            const auto length =
+                static_cast<std::string::size_type>(match.length(0));
             if (match.length(0) == 0) {
                 // Zero-width match: split after the next character.
-                segments.push_back(
-                    remaining.substr(0, match.position(0) + 1));
-                remaining = remaining.substr(match.position(0) + 1);
+                segments.push_back(remaining.substr(0, position + 1));
+                remaining = remaining.substr(position + 1);
             } else {
-                segments.push_back(remaining.substr(0, match.position(0)));
-                remaining = remaining.substr(match.position(0) +
-                                             match.length(0));
+                segments.push_back(remaining.substr(0, position));
+                remaining = remaining.substr(position + length);
             }
             cursor += 1;
             if (cursor > value.size()) break;  // defensive progress bound

@@ -14,7 +14,10 @@
 namespace ogplay::hal {
 namespace {
 
-std::recursive_mutex g_environment_mutex;
+std::recursive_mutex& EnvironmentMutex() {
+    static std::recursive_mutex mutex;
+    return mutex;
+}
 
 void ValidateOverrides(
     const std::span<const HostEnvironmentOverride> overrides) {
@@ -51,7 +54,7 @@ void RestoreEnvironment(
 }  // namespace
 
 struct ScopedHostEnvironment::Impl final {
-    std::unique_lock<std::recursive_mutex> lock{g_environment_mutex};
+    std::unique_lock<std::recursive_mutex> lock{EnvironmentMutex()};
     std::vector<std::pair<std::string, std::optional<std::string>>> previous;
 
     ~Impl() {
@@ -110,7 +113,7 @@ std::filesystem::path HostExecutableDirectory() {
 
 std::optional<std::string> HostEnvironmentValue(
     const std::string_view name) {
-    const std::lock_guard lock(g_environment_mutex);
+    const std::lock_guard lock(EnvironmentMutex());
     const std::string owned_name(name);
     const auto* value = std::getenv(owned_name.c_str());
     return value == nullptr

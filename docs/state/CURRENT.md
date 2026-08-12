@@ -2,7 +2,7 @@
 
 更新：2026-08-12 · M9 DexVM：Asphalt 5 pilot gate 已过；Dungeon Hunter 到标题
 画面（~21 FPS）；Asphalt 6 越过 DEX 解析/链接期，解释执行推进到 GameInstaller
-安装器，卡在 DRM（AES/SHA1PRNG）——已单独立项
+安装器；最新 exact 测试先停在缺失 `Intent.setPackage(String)`，DRM 仍是后续决策点
 
 ## 当前阶段
 
@@ -27,8 +27,8 @@
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）full CTest
-598/598（含新增 loader method_id owner 正/反例）。
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）与本次
+macOS/arm64 full CTest 均为 598/598。
 
 ## M9 交付摘要
 
@@ -52,16 +52,12 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
   明确失败，survey 运行显式标注非兼容性结论）；`tools/dexvm_stub_gen.py` 由
   缺口报告生成占位与中性方法行，引用返回值一律进人工决策清单；空接收者诊断
   补上声明类与调用点。流程见 [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
-- **Asphalt 6（2026-08-12 推进）**：DEX 解析放宽（method_id owner 允许数组
-  descriptor，正/反例就位）；链接补 18 个层级占位；解释执行补齐 `Float.TYPE`+
-  `Array.newInstance`、`String.valueOf(Object)`、真实 `ZipInputStream` 解压、
-  `File.list/isDirectory`+VFS `ListDirectory`、`Handler/Looper/Message` 同步派发、
-  `WeakReference`、`getExternalFilesDir`、`DataInputStream` 大端读、布局参数族、
-  `org.xml/org.json` 纳入平台前缀。生命周期：onCreate 内 finish 的 Activity 不再
-  收 onStart/onResume。survey 健壮性：中性桩 null 触发的 `object_model_failure`
-  在 survey 转 guest NPE，不再终止进程。**唯一阻塞**：DRM `GloftDRM`/
-  `StringEncrypter` 需真实 AES+SHA1PRNG（否则游戏自身 DRM 抛异常），**单独立项**
-  不伪造。full CTest windows-msvc 598/598。
+- **Asphalt 6（2026-08-12 实测）**：DEX 数组 owner 解析、18 个层级占位及 IO/
+  Handler/布局等平台面已推进到 `GameInstaller`。本次最新 Release exact Scenario
+  中，DexVM 路线在 `Intent.setPackage(String)` 未声明处明确失败、无首帧；生产
+  v1 路线仍在 native call 5 的 `CallStaticIntMethodV` class reference 失败。
+  DRM `GloftDRM`/`StringEncrypter` 的 AES+SHA1PRNG 消费点仍须调查后决定真实实现
+  或按非目标裁剪，结论前不伪造成功。证据在 `.local/automation/`，不入库。
 
 开发方式手册（适配/测试/排查的操作步骤）见
 **[docs/playbook/README.md](../playbook/README.md)**；title 阻塞点与工作队列见
@@ -69,9 +65,8 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 
 ## 下一步（按优先级）
 
-1. M8 继续：Asphalt 6 class reference 失败——评估直接按 dexvm 方法级接管
-   （04 §1 gate 0）或修 v1 装配；Dungeon Hunter 13 个滞留 impl id 是
-   方法级接管的现成素材。
+1. Asphalt 6：先按测量批次闭合 `Intent.setPackage`，再做 DRM 消费点调查；
+   启动作用域裁剪设计须先评审/落 ADR，不能先用 profile 伪造已安装事实。
 2. dexvm 记账缺口按命中批次闭合：J/D 出向返回解码、string 资源、
    MediaPlayer 完成回调、`dexvm.stats/stack` Agent 查询面（04 §8）。
    GC-B 优先级上调：pilot 试玩实证 GC-A 记账在资源重载路径线性增长

@@ -173,9 +173,12 @@ TEST_CASE("rgba canvas letterboxes with centered black bars") {
     const auto canvas = ogplay::video::ComposeRgbaOnCanvas(frame, 8U, 4U);
     REQUIRE(canvas.size() == 8U * 4U * 4U);
     const auto pixel = [&](std::size_t x, std::size_t y) {
-        return std::vector<std::uint8_t>(canvas.begin() + (y * 8U + x) * 4U,
-                                         canvas.begin() + (y * 8U + x) * 4U +
-                                             4U);
+        using PixelDifference =
+            std::vector<std::uint8_t>::difference_type;
+        const auto offset =
+            static_cast<PixelDifference>((y * 8U + x) * 4U);
+        const auto begin = canvas.cbegin() + offset;
+        return std::vector<std::uint8_t>(begin, begin + 4);
     };
     CHECK(pixel(0, 0) == std::vector<std::uint8_t>{0, 0, 0, 255});
     CHECK(pixel(1, 1) == std::vector<std::uint8_t>{0, 0, 0, 255});

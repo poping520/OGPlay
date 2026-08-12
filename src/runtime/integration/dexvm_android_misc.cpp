@@ -215,11 +215,11 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
                       [context](dx::IntrinsicContext& call) {
         const auto millis =
             1'400'000'000'000LL + context->uptime_millis.load();
+        const auto millis_bits = static_cast<std::uint64_t>(millis);
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-        slots[0] = {static_cast<std::uint32_t>(millis & 0xffffffffULL),
+        slots[0] = {static_cast<std::uint32_t>(millis_bits & 0xffffffffULL),
                     dx::SlotTag::wide_lo};
-        slots[1] = {static_cast<std::uint32_t>(
-                        static_cast<std::uint64_t>(millis) >> 32U),
+        slots[1] = {static_cast<std::uint32_t>(millis_bits >> 32U),
                     dx::SlotTag::wide_hi};
         return dx::VmValue::Void();
     });

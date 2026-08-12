@@ -307,8 +307,11 @@ void FfmpegVideoPlayer::AppendPcm(const ffabi::Frame* frame) {
     if (pcm_buffer_.size() + (end - begin) > kMaxBufferedPcmSamples) {
         throw VideoPlayerError("ffmpeg pcm buffer overflow");
     }
-    pcm_buffer_.insert(pcm_buffer_.end(), converted.begin() + begin,
-                       converted.begin() + end);
+    using PcmDifference = std::vector<std::int16_t>::difference_type;
+    pcm_buffer_.insert(
+        pcm_buffer_.end(),
+        converted.cbegin() + static_cast<PcmDifference>(begin),
+        converted.cbegin() + static_cast<PcmDifference>(end));
 }
 
 void FfmpegVideoPlayer::DrainAudioFrames() {

@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -193,6 +194,11 @@ struct DexVmAndroidContext final {
         std::int64_t start_uptime_ms{};
         bool playing{};
         bool completed{};
+        // Nearest-neighbour resampler state for the audio pump: the phase
+        // remainder (< output rate) and the source frame that stays current
+        // across pump batches while upsampling.
+        std::uint32_t pcm_phase{};
+        std::vector<std::int16_t> pcm_carry;
     };
     std::unordered_map<std::uint64_t, VideoViewState> video_views;
 };
@@ -204,6 +210,22 @@ struct DexVmAndroidContext final {
 [[nodiscard]] std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::function<void(std::vector<std::uint8_t> rgba8)>& publish);
+
+// True while at least one VideoView is actively playing decoded video. The
+// frontend uses this to pace the free-running frame loop to real time so
+// the deterministic per-frame uptime clock matches the wall clock during
+// playback (manual stepping stays unpaced and reproducible).
+[[nodiscard]] bool AnyVideoPlaying(const DexVmAndroidContext& context);
+
+// Mixes decoded audio of every playing VideoView into the interleaved
+// stereo S16 buffer (saturating add on top of the existing content), pulling
+// PCM from each player's audio cursor with deterministic nearest-neighbour
+// resampling to output_rate. Mono duplicates to both channels, wider
+// layouts take the first two. Returns the number of views that contributed.
+// Paused, stopped and completed views contribute silence.
+[[nodiscard]] std::size_t MixVideoPcmIntoStereo(
+    DexVmAndroidContext& context, std::span<std::int16_t> interleaved_stereo,
+    std::uint32_t output_rate);
 
 // Widget click dispatch (device semantics for the layout subset the bounds
 // derivation supports). FindClickableViewAt answers the topmost visible view

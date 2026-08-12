@@ -72,6 +72,10 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
   `ComposeRgbaOnCanvas` letterbox 到 surface 尺寸后交给发布回调,到达时长时在 guest
   线程回调 `OnCompletionListener` 恰好一次。工厂缺失、路径不可解析或打开失败时诚实
   回退:结构化 warn + `start()` 立即回调 completion,不伪造播放事实。
+  `MixVideoPcmIntoStereo` 把所有播放中 VideoView 的音频经确定性最近邻重采样饱和
+  混入宿主立体声输出,暂停/停止/播完即静默;`AnyVideoPlaying` 供前端在自由运行时
+  把帧循环按真实时间节流,使每帧 16 ms 的确定性 uptime 与墙钟一致(手动步进不节流,
+  保持可复现)。
 - widget 点击分发(`dexvm_android_widget_dispatch.cpp`):`setOnClickListener`/
   `setVisibility`/`getVisibility` 是真实状态;inflation 记录布局事实并用 `android:src`
   drawable 测量 wrap_content 图像控件。bounds 只对受支持的子集推导(fill×fill 根视图、

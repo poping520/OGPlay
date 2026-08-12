@@ -47,6 +47,20 @@ constexpr const char* kGuestVideoPath = "/sdcard/short-mp4v-aac.mp4";
     };
 }
 
+[[nodiscard]] ogplay::video::VideoPlayerFactory FakeAudioFactory(
+    const std::uint32_t sample_rate, const std::uint8_t channels) {
+    return [sample_rate, channels](const std::filesystem::path&) {
+        ogplay::video::VideoMetadata metadata;
+        metadata.width = 8U;
+        metadata.height = 4U;
+        metadata.duration_ms = 1000;
+        metadata.audio_sample_rate = sample_rate;
+        metadata.audio_channels = channels;
+        return std::unique_ptr<ogplay::video::VideoPlayer>(
+            std::make_unique<ogplay::video::FakeVideoPlayer>(metadata, 10U));
+    };
+}
+
 struct VideoVm final {
     JniStringStore strings;
     JniPrimitiveArrayStore arrays;
@@ -258,6 +272,81 @@ TEST_CASE("videoview without a decoder falls back to immediate completion") {
     CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 0);
     vm.CallOn(view, "start", "()V");
     CHECK(vm.Completions() == 1);
+}
+
+TEST_CASE("AnyVideoPlaying reports only actively playing views") {
+    VideoVm vm(FakeFactory());
+    CHECK_FALSE(AnyVideoPlaying(*vm.context));
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    CHECK_FALSE(AnyVideoPlaying(*vm.context));
+    vm.CallOn(view, "start", "()V");
+    CHECK(AnyVideoPlaying(*vm.context));
+    vm.CallOn(view, "pause", "()V");
+    CHECK_FALSE(AnyVideoPlaying(*vm.context));
+    vm.CallOn(view, "start", "()V");
+    vm.CallOn(view, "stopPlayback", "()V");
+    CHECK_FALSE(AnyVideoPlaying(*vm.context));
+}
+
+TEST_CASE("video audio mixes into the stereo output with resampling") {
+    // Mono 8 kHz ramp into 16 kHz stereo: every source sample lands twice
+    // on both channels, on top of the existing buffer content.
+    VideoVm vm(FakeAudioFactory(8000U, 1U));
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(view, "start", "()V");
+
+    std::vector<std::int16_t> buffer(16U, 100);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, buffer, 16000U) == 1U);
+    const std::vector<std::int16_t> expected{
+        100, 100, 100, 100, 101, 101, 101, 101,
+        102, 102, 102, 102, 103, 103, 103, 103};
+    CHECK(buffer == expected);
+}
+
+TEST_CASE("video audio resampling stays continuous across pump batches") {
+    // 8 kHz into 12 kHz: source index sequence 0,0,1,2,2,3 must not repeat
+    // or skip when the six frames split into two batches of three.
+    VideoVm vm(FakeAudioFactory(8000U, 2U));
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    vm.CallOn(view, "start", "()V");
+
+    std::vector<std::int16_t> first(6U, 0);
+    std::vector<std::int16_t> second(6U, 0);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, first, 12000U) == 1U);
+    CHECK(MixVideoPcmIntoStereo(*vm.context, second, 12000U) == 1U);
+    CHECK(first == std::vector<std::int16_t>{0, 0, 0, 0, 1, 1});
+    CHECK(second == std::vector<std::int16_t>{2, 2, 2, 2, 3, 3});
+}
+
+TEST_CASE("paused, stopped and audioless videos contribute silence") {
+    VideoVm vm(FakeAudioFactory(8000U, 1U));
+    const auto view = vm.NewVideoView();
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    std::vector<std::int16_t> buffer(8U, 0);
+    // Not started yet.
+    CHECK(MixVideoPcmIntoStereo(*vm.context, buffer, 16000U) == 0U);
+    vm.CallOn(view, "start", "()V");
+    vm.CallOn(view, "pause", "()V");
+    CHECK(MixVideoPcmIntoStereo(*vm.context, buffer, 16000U) == 0U);
+    vm.CallOn(view, "stopPlayback", "()V");
+    CHECK(MixVideoPcmIntoStereo(*vm.context, buffer, 16000U) == 0U);
+    CHECK(buffer == std::vector<std::int16_t>(8U, 0));
+
+    // A playing stream without an audio track also stays silent.
+    VideoVm silent(FakeFactory());
+    const auto silent_view = silent.NewVideoView();
+    silent.CallOn(silent_view, "setVideoPath", "(Ljava/lang/String;)V",
+                  {VmValue::Ref(
+                      silent.interpreter.NewStringUtf8(kGuestVideoPath))});
+    silent.CallOn(silent_view, "start", "()V");
+    CHECK(MixVideoPcmIntoStereo(*silent.context, buffer, 16000U) == 0U);
 }
 
 TEST_CASE("videoview with a missing file falls back to immediate completion") {

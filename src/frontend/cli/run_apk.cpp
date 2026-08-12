@@ -302,7 +302,8 @@ SoundResourceLoader(const session::TitleProfile& profile,
 
 void PumpAudio(runtime::AndroidGuestCallSession& guest,
                hal::AudioOutput& output,
-               std::vector<std::int16_t>& samples) {
+               std::vector<std::int16_t>& samples,
+               runtime::DexVmAndroidContext* dex_context) {
     constexpr std::uint32_t kSampleRate = 48000U;
     constexpr std::uint64_t kTargetQueuedFrames = 4096U;
     constexpr std::size_t kMaximumChunksPerPump = 4U;
@@ -310,7 +311,14 @@ void PumpAudio(runtime::AndroidGuestCallSession& guest,
          chunk < kMaximumChunksPerPump &&
          output.QueuedFrames() < kTargetQueuedFrames;
          ++chunk) {
-        const auto frames = guest.RenderStereoAudio(samples, kSampleRate);
+        auto frames = guest.RenderStereoAudio(samples, kSampleRate);
+        if (dex_context != nullptr && !dex_context->video_views.empty()) {
+            // The mixer zero-fills the whole buffer, so decoded VideoView
+            // audio mixes over the full chunk even when no sound is queued.
+            frames = samples.size() / 2U;
+            static_cast<void>(runtime::MixVideoPcmIntoStereo(
+                *dex_context, samples, kSampleRate));
+        }
         const auto sample_count = frames * 2U;
         output.Submit(std::as_bytes(
             std::span{samples}.first(sample_count)));
@@ -712,6 +720,13 @@ int RunApkCommand(const int argc, const char* const argv[],
             audio_output->Start();
         }
         std::uint64_t active_frame{};
+        // Real-time pacing while a VideoView plays: the dex lifecycle
+        // advances its deterministic uptime by 16 ms per frame, so during
+        // free-running playback each frame must also cost 16 ms of wall
+        // time or the video (and its audio) races ahead. Games without
+        // active playback keep the unthrottled loop; manual stepping is
+        // never paced.
+        std::chrono::steady_clock::time_point video_pace_deadline{};
         RunApkGuestCallProgress call_progress{logger};
         constexpr std::uint64_t kGuestCallEventPumpHz = 250U;
         HostEventPumpGate pump_gate{
@@ -954,8 +969,22 @@ int RunApkCommand(const int argc, const char* const argv[],
                 static_cast<void>(driver.step());
                 const auto stepped = driver.state();
                 if (mcp_manual_step) --permitted_steps;
+                if (!mcp_manual_step && dex_context &&
+                    runtime::AnyVideoPlaying(*dex_context)) {
+                    constexpr auto kVideoFramePeriod =
+                        std::chrono::milliseconds(16);
+                    const auto now = std::chrono::steady_clock::now();
+                    if (video_pace_deadline < now - kVideoFramePeriod) {
+                        video_pace_deadline = now;  // playback (re)started
+                    }
+                    video_pace_deadline += kVideoFramePeriod;
+                    std::this_thread::sleep_until(video_pace_deadline);
+                } else {
+                    video_pace_deadline = {};
+                }
                 if (audio_output) {
-                    PumpAudio(*guest, *audio_output, audio_samples);
+                    PumpAudio(*guest, *audio_output, audio_samples,
+                              dex_context.get());
                 }
                 if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
                     window->PresentRgba8(frame->rgba8, frame->width, frame->height);

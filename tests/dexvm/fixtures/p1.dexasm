@@ -130,6 +130,30 @@
     return v4
 .end method
 
+.method static public stackOps()I
+.registers 8
+    new-instance v0, Ljava/util/Stack;
+    invoke-direct {v0}, Ljava/util/Stack;-><init>()V
+    const-string v1, "bottom"
+    invoke-virtual {v0, v1}, Ljava/util/Stack;->push(Ljava/lang/Object;)Ljava/lang/Object;
+    const-string v2, "top"
+    invoke-virtual {v0, v2}, Ljava/util/Stack;->push(Ljava/lang/Object;)Ljava/lang/Object;
+    const-string v3, "bottom"
+    invoke-virtual {v0, v3}, Ljava/util/Stack;->search(Ljava/lang/Object;)I
+    move-result v4
+    invoke-virtual {v0}, Ljava/util/Stack;->peek()Ljava/lang/Object;
+    move-result-object v5
+    check-cast v5, Ljava/lang/String;
+    invoke-virtual {v5}, Ljava/lang/String;->length()I
+    move-result v6
+    invoke-virtual {v0}, Ljava/util/Stack;->pop()Ljava/lang/Object;
+    invoke-virtual {v0}, Ljava/util/Stack;->size()I
+    move-result v7
+    add-int/2addr v4, v6
+    add-int/2addr v4, v7
+    return v4
+.end method
+
 .method static public copyArrays()I
 .registers 8
     const/4 v0, 4
@@ -168,5 +192,23 @@
     sget-object v0, Ljava/lang/System;->out:Ljava/io/PrintStream;
     const-string v1, "hello from dexvm"
     invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method static public notifyOwnedMonitor()V
+.registers 2
+    new-instance v0, Ljava/lang/Object;
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    monitor-enter v0
+    invoke-virtual {v0}, Ljava/lang/Object;->notifyAll()V
+    monitor-exit v0
+    return-void
+.end method
+
+.method static public notifyUnownedMonitor()V
+.registers 1
+    new-instance v0, Ljava/lang/Object;
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    invoke-virtual {v0}, Ljava/lang/Object;->notify()V
     return-void
 .end method

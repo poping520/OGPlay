@@ -36,13 +36,14 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         object.descriptor = "Ljava/lang/Object;";
         object.methods = {
             {"<init>", "()V", false, false, "core.object.init"},
-            {"equals", "(Ljava/lang/Object;)Z", false, true,
-             "core.object.equals"},
+        {"equals", "(Ljava/lang/Object;)Z", false, true, "core.object.equals"},
             {"hashCode", "()I", false, true, "core.object.hash_code"},
             {"toString", "()Ljava/lang/String;", false, true,
              "core.object.to_string"},
             {"getClass", "()Ljava/lang/Class;", false, false,
              "core.object.get_class"},
+        {"notify", "()V", false, false, "core.object.notify"},
+        {"notifyAll", "()V", false, false, "core.object.notify"},
             // Cooperative single-thread model (04 §3): a timed wait cannot
             // observe cross-thread progress inside one tick, so it returns
             // as an elapsed timeout. Untimed wait() would deadlock and is
@@ -84,8 +85,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         IntrinsicClassDecl string;
         string.descriptor = "Ljava/lang/String;";
         string.superclass = "Ljava/lang/Object;";
-        string.interfaces = {"Ljava/lang/CharSequence;",
-                             "Ljava/lang/Comparable;",
+    string.interfaces = {"Ljava/lang/CharSequence;", "Ljava/lang/Comparable;",
                              "Ljava/io/Serializable;"};
         string.methods = {
             // Constructors bind the value into the freshly allocated
@@ -96,18 +96,15 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"<init>", "(Ljava/lang/String;)V", false, false,
              "core.string.init_copy"},
             {"<init>", "([B)V", false, false, "core.string.init_bytes"},
-            {"<init>", "([BII)V", false, false,
-             "core.string.init_bytes_range"},
+        {"<init>", "([BII)V", false, false, "core.string.init_bytes_range"},
             {"<init>", "([BLjava/lang/String;)V", false, false,
              "core.string.init_bytes_charset"},
             {"<init>", "([C)V", false, false, "core.string.init_chars"},
-            {"<init>", "([CII)V", false, false,
-             "core.string.init_chars_range"},
+        {"<init>", "([CII)V", false, false, "core.string.init_chars_range"},
             {"getBytes", "()[B", false, false, "core.string.get_bytes"},
             {"length", "()I", false, false, "core.string.length"},
             {"charAt", "(I)C", false, false, "core.string.char_at"},
-            {"equals", "(Ljava/lang/Object;)Z", false, false,
-             "core.string.equals"},
+        {"equals", "(Ljava/lang/Object;)Z", false, false, "core.string.equals"},
             {"equalsIgnoreCase", "(Ljava/lang/String;)Z", false, false,
              "core.string.equals_ignore_case"},
             {"hashCode", "()I", false, false, "core.string.hash_code"},
@@ -117,34 +114,30 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.string.compare_to"},
             {"compareToIgnoreCase", "(Ljava/lang/String;)I", false, false,
              "core.string.compare_to_ignore_case"},
-            {"concat", "(Ljava/lang/String;)Ljava/lang/String;", false,
-             false, "core.string.concat"},
+        {"concat", "(Ljava/lang/String;)Ljava/lang/String;", false, false,
+         "core.string.concat"},
             {"startsWith", "(Ljava/lang/String;)Z", false, false,
              "core.string.starts_with"},
             {"endsWith", "(Ljava/lang/String;)Z", false, false,
              "core.string.ends_with"},
             {"indexOf", "(I)I", false, false, "core.string.index_of_char"},
-            {"indexOf", "(II)I", false, false,
-             "core.string.index_of_char_from"},
+        {"indexOf", "(II)I", false, false, "core.string.index_of_char_from"},
             {"contains", "(Ljava/lang/CharSequence;)Z", false, false,
              "core.string.contains"},
-            {"getChars", "(II[CI)V", false, false,
-             "core.string.get_chars"},
-            {"toCharArray", "()[C", false, false,
-             "core.string.to_char_array"},
+        {"getChars", "(II[CI)V", false, false, "core.string.get_chars"},
+        {"toCharArray", "()[C", false, false, "core.string.to_char_array"},
             {"replace",
              "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)"
              "Ljava/lang/String;",
              false, false, "core.string.replace_seq"},
             {"replaceAll",
-             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-             false, false, "core.string.replace_all"},
-            {"split", "(Ljava/lang/String;)[Ljava/lang/String;", false,
-             false, "core.string.split"},
+         "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", false,
+         false, "core.string.replace_all"},
+        {"split", "(Ljava/lang/String;)[Ljava/lang/String;", false, false,
+         "core.string.split"},
             {"indexOf", "(Ljava/lang/String;)I", false, false,
              "core.string.index_of_string"},
-            {"lastIndexOf", "(I)I", false, false,
-             "core.string.last_index_of_char"},
+        {"lastIndexOf", "(I)I", false, false, "core.string.last_index_of_char"},
             {"lastIndexOf", "(Ljava/lang/String;)I", false, false,
              "core.string.last_index_of_string"},
             {"substring", "(I)Ljava/lang/String;", false, false,
@@ -155,8 +148,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.string.to_lower"},
             {"toUpperCase", "()Ljava/lang/String;", false, false,
              "core.string.to_upper"},
-            {"trim", "()Ljava/lang/String;", false, false,
-             "core.string.trim"},
+        {"trim", "()Ljava/lang/String;", false, false, "core.string.trim"},
             {"isEmpty", "()Z", false, false, "core.string.is_empty"},
             {"valueOf", "(I)Ljava/lang/String;", true, false,
              "core.string.value_of_int"},
@@ -170,8 +162,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.string.value_of_boolean"},
             {"valueOf", "(C)Ljava/lang/String;", true, false,
              "core.string.value_of_char"},
-            {"valueOf", "(Ljava/lang/Object;)Ljava/lang/String;", true,
-             false, "core.string.value_of_object"},
+        {"valueOf", "(Ljava/lang/Object;)Ljava/lang/String;", true, false,
+         "core.string.value_of_object"},
         };
         catalog.push_back(std::move(string));
     }
@@ -185,10 +177,10 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"<init>", "(I)V", false, false, "core.builder.init_capacity"},
             {"<init>", "(Ljava/lang/String;)V", false, false,
              "core.builder.init_string"},
-            {"append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
-             false, false, "core.builder.append_string"},
-            {"append", "(Ljava/lang/Object;)Ljava/lang/StringBuilder;",
-             false, false, "core.builder.append_object"},
+        {"append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false,
+         false, "core.builder.append_string"},
+        {"append", "(Ljava/lang/Object;)Ljava/lang/StringBuilder;", false,
+         false, "core.builder.append_object"},
             {"append", "(I)Ljava/lang/StringBuilder;", false, false,
              "core.builder.append_int"},
             {"append", "(J)Ljava/lang/StringBuilder;", false, false,
@@ -205,8 +197,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.builder.to_string"},
             {"length", "()I", false, false, "core.builder.length"},
             {"charAt", "(I)C", false, false, "core.builder.char_at"},
-            {"setCharAt", "(IC)V", false, false,
-             "core.builder.set_char_at"},
+        {"setCharAt", "(IC)V", false, false, "core.builder.set_char_at"},
             {"deleteCharAt", "(I)Ljava/lang/StringBuilder;", false, false,
              "core.builder.delete_char_at"},
             {"insert", "(IC)Ljava/lang/StringBuilder;", false, false,
@@ -224,10 +215,10 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"<init>", "(I)V", false, false, "core.builder.init_capacity"},
             {"<init>", "(Ljava/lang/String;)V", false, false,
              "core.builder.init_string"},
-            {"append", "(Ljava/lang/String;)Ljava/lang/StringBuffer;",
-             false, false, "core.builder.append_string"},
-            {"append", "(Ljava/lang/Object;)Ljava/lang/StringBuffer;",
-             false, false, "core.builder.append_object"},
+        {"append", "(Ljava/lang/String;)Ljava/lang/StringBuffer;", false, false,
+         "core.builder.append_string"},
+        {"append", "(Ljava/lang/Object;)Ljava/lang/StringBuffer;", false, false,
+         "core.builder.append_object"},
             {"append", "(I)Ljava/lang/StringBuffer;", false, false,
              "core.builder.append_int"},
             {"append", "(J)Ljava/lang/StringBuffer;", false, false,
@@ -244,8 +235,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.builder.to_string"},
             {"length", "()I", false, false, "core.builder.length"},
             {"charAt", "(I)C", false, false, "core.builder.char_at"},
-            {"setCharAt", "(IC)V", false, false,
-             "core.builder.set_char_at"},
+        {"setCharAt", "(IC)V", false, false, "core.builder.set_char_at"},
             {"deleteCharAt", "(I)Ljava/lang/StringBuffer;", false, false,
              "core.builder.delete_char_at"},
             {"insert", "(IC)Ljava/lang/StringBuffer;", false, false,
@@ -263,13 +253,12 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"err", "Ljava/io/PrintStream;", true, false, 0, ""},
         };
         system.methods = {
-            {"arraycopy",
-             "(Ljava/lang/Object;ILjava/lang/Object;II)V", true, false,
+        {"arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", true, false,
              "core.system.arraycopy"},
             {"gc", "()V", true, false, "core.system.gc"},
             {"setProperty",
-             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-             true, false, "core.system.set_property"},
+         "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", true,
+         false, "core.system.set_property"},
             // Time, loadLibrary and exit are platform actions: handlers are
             // injected at session assembly (unified Clock / ELF loader).
             {"currentTimeMillis", "()J", true, false,
@@ -288,10 +277,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         stream.methods = {
             {"println", "(Ljava/lang/String;)V", false, false,
              "core.printstream.println_string"},
-            {"println", "(I)V", false, false,
-             "core.printstream.println_int"},
-            {"println", "()V", false, false,
-             "core.printstream.println_empty"},
+        {"println", "(I)V", false, false, "core.printstream.println_int"},
+        {"println", "()V", false, false, "core.printstream.println_empty"},
             {"print", "(Ljava/lang/String;)V", false, false,
              "core.printstream.print_string"},
         };
@@ -352,8 +339,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         boxed.fields = {{"value", "J", false, false, 0, ""}};
         boxed.methods = {
             {"<init>", "(J)V", false, false, "core.long.init"},
-            {"valueOf", "(J)Ljava/lang/Long;", true, false,
-             "core.long.value_of"},
+        {"valueOf", "(J)Ljava/lang/Long;", true, false, "core.long.value_of"},
             {"longValue", "()J", false, false, "core.long.long_value"},
             {"parseLong", "(Ljava/lang/String;)J", true, false,
              "core.long.parse_long"},
@@ -371,8 +357,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"<init>", "(Z)V", false, false, "core.boolean.init"},
             {"valueOf", "(Z)Ljava/lang/Boolean;", true, false,
              "core.boolean.value_of"},
-            {"booleanValue", "()Z", false, false,
-             "core.boolean.boolean_value"},
+        {"booleanValue", "()Z", false, false, "core.boolean.boolean_value"},
         };
         catalog.push_back(std::move(boxed));
     }
@@ -387,8 +372,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         boxed.clinit_handler = "core.float.clinit";
         boxed.methods = {
             {"<init>", "(F)V", false, false, "core.float.init"},
-            {"valueOf", "(F)Ljava/lang/Float;", true, false,
-             "core.float.value_of"},
+        {"valueOf", "(F)Ljava/lang/Float;", true, false, "core.float.value_of"},
             {"floatValue", "()F", false, false, "core.float.float_value"},
         };
         catalog.push_back(std::move(boxed));
@@ -410,15 +394,14 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         const std::vector<IntrinsicMethodDecl> map_methods = {
             {"<init>", "()V", false, false, "core.map.init"},
             {"<init>", "(I)V", false, false, "core.map.init_capacity"},
-            {"put",
-             "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        {"put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
              false, false, "core.map.put"},
             {"get", "(Ljava/lang/Object;)Ljava/lang/Object;", false, false,
              "core.map.get"},
             {"containsKey", "(Ljava/lang/Object;)Z", false, false,
              "core.map.contains_key"},
-            {"remove", "(Ljava/lang/Object;)Ljava/lang/Object;", false,
-             false, "core.map.remove"},
+        {"remove", "(Ljava/lang/Object;)Ljava/lang/Object;", false, false,
+         "core.map.remove"},
             {"size", "()I", false, false, "core.map.size"},
             {"clear", "()V", false, false, "core.map.clear"},
             {"isEmpty", "()Z", false, false, "core.map.is_empty"},
@@ -439,10 +422,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         list_interface.descriptor = "Ljava/util/List;";
         list_interface.is_interface = true;
         list_interface.methods = {
-            {"add", "(Ljava/lang/Object;)Z", false, false,
-             "core.list.add"},
-            {"get", "(I)Ljava/lang/Object;", false, false,
-             "core.list.get"},
+        {"add", "(Ljava/lang/Object;)Z", false, false, "core.list.add"},
+        {"get", "(I)Ljava/lang/Object;", false, false, "core.list.get"},
             {"size", "()I", false, false, "core.list.size"},
             {"iterator", "()Ljava/util/Iterator;", false, false,
              "core.list.iterator"},
@@ -457,14 +438,12 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"addElement", "(Ljava/lang/Object;)V", false, false,
              "core.list.add_element"},
             {"get", "(I)Ljava/lang/Object;", false, false, "core.list.get"},
-            {"elementAt", "(I)Ljava/lang/Object;", false, false,
-             "core.list.get"},
+        {"elementAt", "(I)Ljava/lang/Object;", false, false, "core.list.get"},
             {"set", "(ILjava/lang/Object;)Ljava/lang/Object;", false, false,
              "core.list.set"},
             {"setElementAt", "(Ljava/lang/Object;I)V", false, false,
              "core.list.set_element_at"},
-            {"removeElementAt", "(I)V", false, false,
-             "core.list.remove_at"},
+        {"removeElementAt", "(I)V", false, false, "core.list.remove_at"},
             {"remove", "(I)Ljava/lang/Object;", false, false,
              "core.list.remove_returning"},
             {"size", "()I", false, false, "core.list.size"},
@@ -483,6 +462,19 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         vector.interfaces = {"Ljava/util/List;"};
         vector.methods = list_methods;
         catalog.push_back(std::move(vector));
+    IntrinsicClassDecl stack;
+    stack.descriptor = "Ljava/util/Stack;";
+    stack.superclass = "Ljava/util/Vector;";
+    stack.methods = {
+        {"<init>", "()V", false, false, "core.list.init"},
+        {"push", "(Ljava/lang/Object;)Ljava/lang/Object;", false, false,
+         "core.stack.push"},
+        {"pop", "()Ljava/lang/Object;", false, false, "core.stack.pop"},
+        {"peek", "()Ljava/lang/Object;", false, false, "core.stack.peek"},
+        {"empty", "()Z", false, false, "core.list.is_empty"},
+        {"search", "(Ljava/lang/Object;)I", false, false, "core.stack.search"},
+    };
+    catalog.push_back(std::move(stack));
         IntrinsicClassDecl array_list;
         array_list.descriptor = "Ljava/util/ArrayList;";
         array_list.superclass = "Ljava/lang/Object;";
@@ -527,8 +519,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         iterator_interface.is_interface = true;
         iterator_interface.methods = {
             {"hasNext", "()Z", false, false, "core.iterator.has_next"},
-            {"next", "()Ljava/lang/Object;", false, false,
-             "core.iterator.next"},
+        {"next", "()Ljava/lang/Object;", false, false, "core.iterator.next"},
         };
         catalog.push_back(std::move(iterator_interface));
         // Host-provided iterator over the shared list storage; instances
@@ -543,8 +534,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         };
         iterator_impl.methods = {
             {"hasNext", "()Z", false, false, "core.iterator.has_next"},
-            {"next", "()Ljava/lang/Object;", false, false,
-             "core.iterator.next"},
+        {"next", "()Ljava/lang/Object;", false, false, "core.iterator.next"},
         };
         catalog.push_back(std::move(iterator_impl));
     }
@@ -555,8 +545,24 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         class_class.methods = {
             {"getName", "()Ljava/lang/String;", false, false,
              "core.class.get_name"},
+        {"getDeclaredMethods", "()[Ljava/lang/reflect/Method;", false, false,
+         "core.class.get_declared_methods"},
         };
         catalog.push_back(std::move(class_class));
+    IntrinsicClassDecl reflect_method;
+    reflect_method.descriptor = "Ljava/lang/reflect/Method;";
+    reflect_method.superclass = "Ljava/lang/Object;";
+    reflect_method.fields = {
+        {"vmMethodId", "I", false, false, 0, ""},
+        {"name", "Ljava/lang/String;", false, false, 0, ""},
+    };
+    reflect_method.methods = {
+        {"getName", "()Ljava/lang/String;", false, false,
+         "core.reflect.method_get_name"},
+        {"invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
+         false, false, "core.reflect.method_invoke"},
+    };
+    catalog.push_back(std::move(reflect_method));
         // GC-A never collects (04 §5), so a weak reference truthfully stays
         // reachable for the whole session.
         IntrinsicClassDecl weak_reference;
@@ -573,13 +579,14 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         };
         catalog.push_back(std::move(weak_reference));
         // Reflective array construction is real (typed arrays from the
-        // object model); the rest of java.lang.reflect stays a non-goal.
+    // object model). Method reflection is deliberately bounded to
+    // declared enumeration and zero-argument int-like invocation.
         IntrinsicClassDecl reflect_array;
         reflect_array.descriptor = "Ljava/lang/reflect/Array;";
         reflect_array.superclass = "Ljava/lang/Object;";
         reflect_array.methods = {
-            {"newInstance", "(Ljava/lang/Class;[I)Ljava/lang/Object;", true,
-             false, "core.reflect.array_new_instance"},
+        {"newInstance", "(Ljava/lang/Class;[I)Ljava/lang/Object;", true, false,
+         "core.reflect.array_new_instance"},
         };
         catalog.push_back(std::move(reflect_array));
     }
@@ -602,10 +609,10 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         catalog.push_back(std::move(throwable));
     }
 
-    catalog.push_back(Exception("Ljava/lang/Exception;",
-                                "Ljava/lang/Throwable;"));
-    catalog.push_back(Exception("Ljava/lang/RuntimeException;",
-                                "Ljava/lang/Exception;"));
+  catalog.push_back(
+      Exception("Ljava/lang/Exception;", "Ljava/lang/Throwable;"));
+  catalog.push_back(
+      Exception("Ljava/lang/RuntimeException;", "Ljava/lang/Exception;"));
     catalog.push_back(Exception("Ljava/lang/NullPointerException;",
                                 "Ljava/lang/RuntimeException;"));
     catalog.push_back(Exception("Ljava/lang/ArithmeticException;",
@@ -630,47 +637,47 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
                                 "Ljava/lang/RuntimeException;"));
     catalog.push_back(Exception("Ljava/lang/UnsupportedOperationException;",
                                 "Ljava/lang/RuntimeException;"));
-    catalog.push_back(Exception("Ljava/lang/ClassNotFoundException;",
-                                "Ljava/lang/Exception;"));
-    catalog.push_back(Exception("Ljava/lang/InterruptedException;",
-                                "Ljava/lang/Exception;"));
-    catalog.push_back(Exception("Ljava/io/IOException;",
-                                "Ljava/lang/Exception;"));
-    catalog.push_back(Exception("Ljava/io/FileNotFoundException;",
-                                "Ljava/io/IOException;"));
+  catalog.push_back(
+      Exception("Ljava/lang/ClassNotFoundException;", "Ljava/lang/Exception;"));
+  catalog.push_back(
+      Exception("Ljava/lang/InterruptedException;", "Ljava/lang/Exception;"));
+  catalog.push_back(
+      Exception("Ljava/io/IOException;", "Ljava/lang/Exception;"));
+  catalog.push_back(
+      Exception("Ljava/io/FileNotFoundException;", "Ljava/io/IOException;"));
     catalog.push_back(Exception("Ljava/io/UnsupportedEncodingException;",
                                 "Ljava/io/IOException;"));
     catalog.push_back(Exception("Ljava/util/regex/PatternSyntaxException;",
                                 "Ljava/lang/IllegalArgumentException;"));
     catalog.push_back(Exception("Ljava/util/NoSuchElementException;",
                                 "Ljava/lang/RuntimeException;"));
+  catalog.push_back(Exception("Ljava/util/EmptyStackException;",
+                              "Ljava/lang/RuntimeException;"));
     // Network exception family: referenced by catch clauses on the titles'
     // (never successful) network paths.
-    catalog.push_back(Exception("Ljava/net/SocketException;",
-                                "Ljava/io/IOException;"));
-    catalog.push_back(Exception("Ljava/net/SocketTimeoutException;",
-                                "Ljava/io/IOException;"));
-    catalog.push_back(Exception("Ljava/net/UnknownHostException;",
-                                "Ljava/io/IOException;"));
-    catalog.push_back(Exception("Ljava/net/MalformedURLException;",
-                                "Ljava/io/IOException;"));
-    catalog.push_back(Exception("Ljava/io/EOFException;",
-                                "Ljava/io/IOException;"));
+  catalog.push_back(
+      Exception("Ljava/net/SocketException;", "Ljava/io/IOException;"));
+  catalog.push_back(
+      Exception("Ljava/net/SocketTimeoutException;", "Ljava/io/IOException;"));
+  catalog.push_back(
+      Exception("Ljava/net/UnknownHostException;", "Ljava/io/IOException;"));
+  catalog.push_back(
+      Exception("Ljava/net/MalformedURLException;", "Ljava/io/IOException;"));
+  catalog.push_back(
+      Exception("Ljava/io/EOFException;", "Ljava/io/IOException;"));
     catalog.push_back(Exception("Ljava/lang/NumberFormatException;",
                                 "Ljava/lang/IllegalArgumentException;"));
     catalog.push_back(Exception("Ljava/lang/IllegalThreadStateException;",
                                 "Ljava/lang/IllegalArgumentException;"));
 
-    catalog.push_back(Exception("Ljava/lang/Error;",
-                                "Ljava/lang/Throwable;"));
-    catalog.push_back(Exception("Ljava/lang/LinkageError;",
-                                "Ljava/lang/Error;"));
+  catalog.push_back(Exception("Ljava/lang/Error;", "Ljava/lang/Throwable;"));
+  catalog.push_back(Exception("Ljava/lang/LinkageError;", "Ljava/lang/Error;"));
     catalog.push_back(Exception("Ljava/lang/NoClassDefFoundError;",
                                 "Ljava/lang/LinkageError;"));
     catalog.push_back(Exception("Ljava/lang/UnsatisfiedLinkError;",
                                 "Ljava/lang/LinkageError;"));
-    catalog.push_back(Exception("Ljava/lang/VirtualMachineError;",
-                                "Ljava/lang/Error;"));
+  catalog.push_back(
+      Exception("Ljava/lang/VirtualMachineError;", "Ljava/lang/Error;"));
     catalog.push_back(Exception("Ljava/lang/StackOverflowError;",
                                 "Ljava/lang/VirtualMachineError;"));
     catalog.push_back(Exception("Ljava/lang/OutOfMemoryError;",

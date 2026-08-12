@@ -34,17 +34,14 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         wifi.descriptor = "Landroid/net/wifi/WifiManager;";
         wifi.superclass = "Ljava/lang/Object;";
         wifi.methods = {
-            {"isWifiEnabled", "()Z", false, false,
-             "android.wifi.is_enabled"},
-            {"getWifiState", "()I", false, false,
-             "android.wifi.get_state"},
-            {"setWifiEnabled", "(Z)Z", false, false,
-             "android.wifi.set_enabled"},
-            {"getConnectionInfo", "()Landroid/net/wifi/WifiInfo;", false,
-             false, "android.wifi.get_connection_info"},
+        {"isWifiEnabled", "()Z", false, false, "android.wifi.is_enabled"},
+        {"getWifiState", "()I", false, false, "android.wifi.get_state"},
+        {"setWifiEnabled", "(Z)Z", false, false, "android.wifi.set_enabled"},
+        {"getConnectionInfo", "()Landroid/net/wifi/WifiInfo;", false, false,
+         "android.wifi.get_connection_info"},
             {"createWifiLock",
-             "(ILjava/lang/String;)Landroid/net/wifi/WifiManager$WifiLock;",
-             false, false, "android.wifi.create_lock"},
+         "(ILjava/lang/String;)Landroid/net/wifi/WifiManager$WifiLock;", false,
+         false, "android.wifi.create_lock"},
         };
         catalog.push_back(std::move(wifi));
         // Wake locks are real no-ops: the host never sleeps mid-session.
@@ -91,10 +88,9 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         };
         message.methods = {
             {"obtain",
-             "(Landroid/os/Handler;ILjava/lang/Object;)Landroid/os/Message;",
-             true, false, "android.message.obtain_static"},
-            {"sendToTarget", "()V", false, false,
-             "android.message.send_to_target"},
+         "(Landroid/os/Handler;ILjava/lang/Object;)Landroid/os/Message;", true,
+         false, "android.message.obtain_static"},
+        {"sendToTarget", "()V", false, false, "android.message.send_to_target"},
         };
         catalog.push_back(std::move(message));
         Decl handler;
@@ -110,8 +106,8 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
              "android.handler.obtain_message"},
             {"obtainMessage", "(I)Landroid/os/Message;", false, false,
              "android.handler.obtain_message_what"},
-            {"obtainMessage", "(ILjava/lang/Object;)Landroid/os/Message;",
-             false, false, "android.handler.obtain_message_what_obj"},
+        {"obtainMessage", "(ILjava/lang/Object;)Landroid/os/Message;", false,
+         false, "android.handler.obtain_message_what_obj"},
             {"sendMessage", "(Landroid/os/Message;)Z", false, false,
              "android.handler.send_message"},
             {"dispatchMessage", "(Landroid/os/Message;)V", false, false,
@@ -133,10 +129,10 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         connectivity.descriptor = "Landroid/net/ConnectivityManager;";
         connectivity.superclass = "Ljava/lang/Object;";
         connectivity.methods = {
-            {"getActiveNetworkInfo", "()Landroid/net/NetworkInfo;", false,
-             false, "android.connectivity.get_active_network_info"},
-            {"getNetworkInfo", "(I)Landroid/net/NetworkInfo;", false,
-             false, "android.connectivity.get_network_info"},
+        {"getActiveNetworkInfo", "()Landroid/net/NetworkInfo;", false, false,
+         "android.connectivity.get_active_network_info"},
+        {"getNetworkInfo", "(I)Landroid/net/NetworkInfo;", false, false,
+         "android.connectivity.get_network_info"},
         };
         catalog.push_back(std::move(connectivity));
         Decl network_info;
@@ -165,15 +161,14 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         manager.descriptor = "Landroid/hardware/SensorManager;";
         manager.superclass = "Ljava/lang/Object;";
         manager.methods = {
-            {"getDefaultSensor", "(I)Landroid/hardware/Sensor;", false,
-             false, "android.sensor_manager.get_default"},
+        {"getDefaultSensor", "(I)Landroid/hardware/Sensor;", false, false,
+         "android.sensor_manager.get_default"},
             {"registerListener",
              "(Landroid/hardware/SensorEventListener;"
              "Landroid/hardware/Sensor;I)Z",
              false, false, "android.sensor_manager.register"},
-            {"unregisterListener",
-             "(Landroid/hardware/SensorEventListener;)V", false, false,
-             "android.sensor_manager.unregister"},
+        {"unregisterListener", "(Landroid/hardware/SensorEventListener;)V",
+         false, false, "android.sensor_manager.unregister"},
         };
         catalog.push_back(std::move(manager));
     }
@@ -184,8 +179,8 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         telephony.methods = {
             {"getDeviceId", "()Ljava/lang/String;", false, false,
              "android.telephony.get_device_id"},
-            {"getDeviceSoftwareVersion", "()Ljava/lang/String;", false,
-             false, "android.telephony.get_software_version"},
+        {"getDeviceSoftwareVersion", "()Ljava/lang/String;", false, false,
+         "android.telephony.get_software_version"},
             {"getLine1Number", "()Ljava/lang/String;", false, false,
              "android.telephony.get_line1_number"},
             {"getNetworkOperator", "()Ljava/lang/String;", false, false,
@@ -202,14 +197,12 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
              "android.telephony.empty_string"},
             {"getSimOperatorName", "()Ljava/lang/String;", false, false,
              "android.telephony.empty_string"},
-            {"isNetworkRoaming", "()Z", false, false,
-             "android.telephony.false"},
-            {"getSimState", "()I", false, false,
-             "android.telephony.get_sim_state"},
+        {"isNetworkRoaming", "()Z", false, false, "android.telephony.false"},
+        {"getSimState", "()I", false, false, "android.telephony.get_sim_state"},
             {"getPhoneType", "()I", false, false,
              "android.telephony.get_phone_type"},
-            {"listen", "(Landroid/telephony/PhoneStateListener;I)V",
-             false, false, "android.telephony.listen"},
+        {"listen", "(Landroid/telephony/PhoneStateListener;I)V", false, false,
+         "android.telephony.listen"},
         };
         catalog.push_back(std::move(telephony));
     }
@@ -227,17 +220,14 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
             {"stop", "(I)V", false, false, "android.sound_pool.stop"},
             {"unload", "(I)Z", false, false, "android.sound_pool.unload"},
             {"release", "()V", false, false, "android.sound_pool.release"},
-            {"setVolume", "(IFF)V", false, false,
-             "android.sound_pool.set_volume"},
-            {"setRate", "(IF)V", false, false,
-             "android.sound_pool.set_rate"},
+        {"setVolume", "(IFF)V", false, false, "android.sound_pool.set_volume"},
+        {"setRate", "(IF)V", false, false, "android.sound_pool.set_rate"},
         };
         catalog.push_back(std::move(pool));
     }
     {
         Decl completion;
-        completion.descriptor =
-            "Landroid/media/MediaPlayer$OnCompletionListener;";
+    completion.descriptor = "Landroid/media/MediaPlayer$OnCompletionListener;";
         completion.is_interface = true;
         catalog.push_back(std::move(completion));
         Decl player;
@@ -247,29 +237,22 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
             {"<init>", "()V", false, false, "android.media_player.init"},
             {"setDataSource", "(Ljava/lang/String;)V", false, false,
              "android.media_player.set_data_source"},
-            {"isLooping", "()Z", false, false,
-             "android.media_player.is_looping"},
-            {"create",
-             "(Landroid/content/Context;I)Landroid/media/MediaPlayer;",
+        {"isLooping", "()Z", false, false, "android.media_player.is_looping"},
+        {"create", "(Landroid/content/Context;I)Landroid/media/MediaPlayer;",
              true, false, "android.media_player.create"},
-            {"isPlaying", "()Z", false, false,
-             "android.media_player.is_playing"},
+        {"isPlaying", "()Z", false, false, "android.media_player.is_playing"},
             {"start", "()V", false, false, "android.media_player.start"},
             {"pause", "()V", false, false, "android.media_player.pause"},
             {"stop", "()V", false, false, "android.media_player.stop"},
-            {"release", "()V", false, false,
-             "android.media_player.release"},
-            {"prepare", "()V", false, false,
-             "android.media_player.prepare"},
-            {"seekTo", "(I)V", false, false,
-             "android.media_player.seek_to"},
+        {"release", "()V", false, false, "android.media_player.release"},
+        {"prepare", "()V", false, false, "android.media_player.prepare"},
+        {"seekTo", "(I)V", false, false, "android.media_player.seek_to"},
             {"setLooping", "(Z)V", false, false,
              "android.media_player.set_looping"},
-            {"setVolume", "(FF)V", false, false,
-             "android.media_player.set_volume"},
+        {"setVolume", "(FF)V", false, false, "android.media_player.set_volume"},
             {"setOnCompletionListener",
-             "(Landroid/media/MediaPlayer$OnCompletionListener;)V", false,
-             false, "android.media_player.set_completion_listener"},
+         "(Landroid/media/MediaPlayer$OnCompletionListener;)V", false, false,
+         "android.media_player.set_completion_listener"},
         };
         catalog.push_back(std::move(player));
     }
@@ -283,8 +266,23 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
              "android.bundle.get"},
             {"getInt", "(Ljava/lang/String;)I", false, false,
              "android.bundle.get_int"},
-            {"getString", "(Ljava/lang/String;)Ljava/lang/String;", false,
-             false, "android.bundle.get_string"},
+        {"getString", "(Ljava/lang/String;)Ljava/lang/String;", false, false,
+         "android.bundle.get_string"},
+        {"putString", "(Ljava/lang/String;Ljava/lang/String;)V", false, false,
+         "android.bundle.put_string"},
+        {"putInt", "(Ljava/lang/String;I)V", false, false,
+         "android.bundle.put_int"},
+        {"getLong", "(Ljava/lang/String;)J", false, false,
+         "android.bundle.get_long"},
+        {"putLong", "(Ljava/lang/String;J)V", false, false,
+         "android.bundle.put_long"},
+        {"getByteArray", "(Ljava/lang/String;)[B", false, false,
+         "android.bundle.get_byte_array"},
+        {"putByteArray", "(Ljava/lang/String;[B)V", false, false,
+         "android.bundle.put_byte_array"},
+        {"containsKey", "(Ljava/lang/String;)Z", false, false,
+         "android.bundle.contains"},
+        {"clear", "()V", false, false, "android.bundle.clear"},
         };
         catalog.push_back(std::move(bundle));
     }
@@ -307,8 +305,7 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         statfs.methods = {
             {"<init>", "(Ljava/lang/String;)V", false, false,
              "android.statfs.init"},
-            {"getBlockSize", "()I", false, false,
-             "android.statfs.get_block_size"},
+        {"getBlockSize", "()I", false, false, "android.statfs.get_block_size"},
             {"getAvailableBlocks", "()I", false, false,
              "android.statfs.get_available_blocks"},
         };
@@ -346,9 +343,8 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         receiver.superclass = "Ljava/lang/Object;";
         receiver.methods = {
             {"<init>", "()V", false, false, "android.receiver.init"},
-            {"onReceive",
-             "(Landroid/content/Context;Landroid/content/Intent;)V", false,
-             true, "android.receiver.on_receive_noop"},
+        {"onReceive", "(Landroid/content/Context;Landroid/content/Intent;)V",
+         false, true, "android.receiver.on_receive_noop"},
         };
         catalog.push_back(std::move(receiver));
         Decl filter;
@@ -357,8 +353,7 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         filter.methods = {
             {"<init>", "(Ljava/lang/String;)V", false, false,
              "android.intent_filter.init"},
-            {"<init>", "()V", false, false,
-             "android.intent_filter.init_empty"},
+        {"<init>", "()V", false, false, "android.intent_filter.init_empty"},
             {"addAction", "(Ljava/lang/String;)V", false, false,
              "android.intent_filter.add_action"},
         };
@@ -370,34 +365,28 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
             {"<init>", "(Ljava/lang/String;)V", false, false,
              "android.intent.init"},
             {"<init>", "()V", false, false, "android.intent.init"},
-            {"<init>", "(Ljava/lang/String;Landroid/net/Uri;)V", false,
-             false, "android.intent.init"},
-            {"<init>", "(Ljava/lang/String;Landroid/net/Uri;)V", false,
-             false, "android.intent.init"},
-            {"<init>",
-             "(Landroid/content/Context;Ljava/lang/Class;)V", false, false,
-             "android.intent.init_component"},
+        {"<init>", "(Ljava/lang/String;Landroid/net/Uri;)V", false, false,
+         "android.intent.init"},
+        {"<init>", "(Landroid/content/Context;Ljava/lang/Class;)V", false,
+         false, "android.intent.init_component"},
             {"setClassName",
              "(Ljava/lang/String;Ljava/lang/String;)"
              "Landroid/content/Intent;",
              false, false, "android.intent.set_class_name"},
             {"addFlags", "(I)Landroid/content/Intent;", false, false,
              "android.intent.set_flags"},
-            {"putExtra",
-             "(Ljava/lang/String;I)Landroid/content/Intent;", false, false,
-             "android.intent.put_extra_int"},
+        {"putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;", false,
+         false, "android.intent.put_extra_int"},
             {"putExtra",
              "(Ljava/lang/String;Ljava/lang/String;)"
              "Landroid/content/Intent;",
              false, false, "android.intent.put_extra_string"},
-            {"getStringExtra",
-             "(Ljava/lang/String;)Ljava/lang/String;", false, false,
-             "android.intent.get_string_extra"},
+        {"getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;", false,
+         false, "android.intent.get_string_extra"},
             {"getIntExtra", "(Ljava/lang/String;I)I", false, false,
              "android.intent.get_int_extra"},
-            {"addCategory",
-             "(Ljava/lang/String;)Landroid/content/Intent;", false, false,
-             "android.intent.set_flags"},
+        {"addCategory", "(Ljava/lang/String;)Landroid/content/Intent;", false,
+         false, "android.intent.set_flags"},
             {"getAction", "()Ljava/lang/String;", false, false,
              "android.intent.get_action"},
             {"getExtras", "()Landroid/os/Bundle;", false, false,
@@ -453,14 +442,11 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
             {"pointer", "I", false, false, 0, ""},
         };
         motion.methods = {
-            {"getAction", "()I", false, false,
-             "android.motion_event.get_action"},
+        {"getAction", "()I", false, false, "android.motion_event.get_action"},
             {"getX", "()F", false, false, "android.motion_event.get_x"},
             {"getY", "()F", false, false, "android.motion_event.get_y"},
-            {"getX", "(I)F", false, false,
-             "android.motion_event.get_x_indexed"},
-            {"getY", "(I)F", false, false,
-             "android.motion_event.get_y_indexed"},
+        {"getX", "(I)F", false, false, "android.motion_event.get_x_indexed"},
+        {"getY", "(I)F", false, false, "android.motion_event.get_y_indexed"},
             {"getPointerCount", "()I", false, false,
              "android.motion_event.get_pointer_count"},
             {"getPointerId", "(I)I", false, false,
@@ -493,13 +479,18 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         thread.interfaces = {"Ljava/lang/Runnable;"};
         thread.methods = {
             {"sleep", "(J)V", true, false, "android.thread.sleep"},
+        {"<init>", "()V", false, false, "android.thread.init"},
             {"<init>", "(Ljava/lang/Runnable;)V", false, false,
              "android.thread.init_runnable"},
             {"start", "()V", false, false, "android.thread.start"},
             {"join", "()V", false, false, "android.thread.join"},
             {"isAlive", "()Z", false, false, "android.thread.is_alive"},
-            {"setPriority", "(I)V", false, false,
-             "android.thread.set_priority"},
+        {"getId", "()J", false, false, "android.thread.get_id"},
+        {"getName", "()Ljava/lang/String;", false, false,
+         "android.thread.get_name"},
+        {"setName", "(Ljava/lang/String;)V", false, false,
+         "android.thread.set_name"},
+        {"setPriority", "(I)V", false, false, "android.thread.set_priority"},
         };
         catalog.push_back(std::move(thread));
     }
@@ -537,8 +528,8 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         message.descriptor = "Landroid/telephony/SmsMessage;";
         message.superclass = "Ljava/lang/Object;";
         message.methods = {
-            {"createFromPdu", "([B)Landroid/telephony/SmsMessage;", true,
-             false, "android.sms.create_from_pdu"},
+        {"createFromPdu", "([B)Landroid/telephony/SmsMessage;", true, false,
+         "android.sms.create_from_pdu"},
             {"getMessageBody", "()Ljava/lang/String;", false, false,
              "android.sms.get_message_body"},
             {"getOriginatingAddress", "()Ljava/lang/String;", false, false,
@@ -551,11 +542,63 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         encoder.descriptor = "Ljava/net/URLEncoder;";
         encoder.superclass = "Ljava/lang/Object;";
         encoder.methods = {
-            {"encode",
-             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        {"encode", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
              true, false, "android.url_encoder.encode"},
         };
         catalog.push_back(std::move(encoder));
+    }
+  {
+    Decl factory;
+    factory.descriptor = "Ljavax/xml/parsers/SAXParserFactory;";
+    factory.superclass = "Ljava/lang/Object;";
+    factory.methods = {
+        {"newInstance", "()Ljavax/xml/parsers/SAXParserFactory;", true, false,
+         "android.sax.factory_instance"},
+        {"newSAXParser", "()Ljavax/xml/parsers/SAXParser;", false, false,
+         "android.sax.new_parser"},
+    };
+    catalog.push_back(std::move(factory));
+    Decl parser;
+    parser.descriptor = "Ljavax/xml/parsers/SAXParser;";
+    parser.superclass = "Ljava/lang/Object;";
+    parser.methods = {
+        {"getXMLReader", "()Lorg/xml/sax/XMLReader;", false, false,
+         "android.sax.get_reader"},
+    };
+    catalog.push_back(std::move(parser));
+    Decl content_handler;
+    content_handler.descriptor = "Lorg/xml/sax/ContentHandler;";
+    content_handler.is_interface = true;
+    catalog.push_back(std::move(content_handler));
+    Decl reader;
+    reader.descriptor = "Lorg/xml/sax/XMLReader;";
+    reader.is_interface = true;
+    reader.methods = {
+        {"setContentHandler", "(Lorg/xml/sax/ContentHandler;)V", false, false,
+         "android.sax.set_content_handler"},
+        {"parse", "(Lorg/xml/sax/InputSource;)V", false, false,
+         "android.sax.parse_unsupported"},
+    };
+    catalog.push_back(std::move(reader));
+    Decl reader_impl;
+    reader_impl.descriptor = "Lorg/xml/sax/XMLReader$Impl;";
+    reader_impl.superclass = "Ljava/lang/Object;";
+    reader_impl.interfaces = {"Lorg/xml/sax/XMLReader;"};
+    reader_impl.methods = {
+        {"setContentHandler", "(Lorg/xml/sax/ContentHandler;)V", false, false,
+         "android.sax.set_content_handler"},
+        {"parse", "(Lorg/xml/sax/InputSource;)V", false, false,
+         "android.sax.parse_unsupported"},
+    };
+    catalog.push_back(std::move(reader_impl));
+    Decl input_source;
+    input_source.descriptor = "Lorg/xml/sax/InputSource;";
+    input_source.superclass = "Ljava/lang/Object;";
+    input_source.methods = {
+        {"<init>", "(Ljava/io/InputStream;)V", false, false,
+         "android.graphics.noop"},
+    };
+    catalog.push_back(std::move(input_source));
     }
     {
         // Network surface is a non-goal: classes resolve so linking works,
@@ -582,8 +625,7 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
             {"disconnect", "()V", false, false, "android.net.unsupported"},
             {"getInputStream", "()Ljava/io/InputStream;", false, false,
              "android.net.unsupported"},
-            {"setConnectTimeout", "(I)V", false, false,
-             "android.net.unsupported"},
+        {"setConnectTimeout", "(I)V", false, false, "android.net.unsupported"},
         };
         catalog.push_back(std::move(http));
         // TLS setup is local state and succeeds as truthful no-ops (trust
@@ -593,15 +635,14 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         ssl_context.descriptor = "Ljavax/net/ssl/SSLContext;";
         ssl_context.superclass = "Ljava/lang/Object;";
         ssl_context.methods = {
-            {"getInstance",
-             "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;", true, false,
-             "android.ssl.context_instance"},
+        {"getInstance", "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;", true,
+         false, "android.ssl.context_instance"},
             {"init",
              "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;"
              "Ljava/security/SecureRandom;)V",
              false, false, "android.graphics.noop"},
-            {"getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;",
-             false, false, "android.ssl.socket_factory"},
+        {"getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;", false, false,
+         "android.ssl.socket_factory"},
         };
         catalog.push_back(std::move(ssl_context));
         Decl ssl_factory;
@@ -620,19 +661,15 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         https.descriptor = "Ljavax/net/ssl/HttpsURLConnection;";
         https.superclass = "Ljava/net/HttpURLConnection;";
         https.methods = {
-            {"setDefaultHostnameVerifier",
-             "(Ljavax/net/ssl/HostnameVerifier;)V", true, false,
-             "android.graphics.noop"},
-            {"setDefaultSSLSocketFactory",
-             "(Ljavax/net/ssl/SSLSocketFactory;)V", true, false,
-             "android.graphics.noop"},
+        {"setDefaultHostnameVerifier", "(Ljavax/net/ssl/HostnameVerifier;)V",
+         true, false, "android.graphics.noop"},
+        {"setDefaultSSLSocketFactory", "(Ljavax/net/ssl/SSLSocketFactory;)V",
+         true, false, "android.graphics.noop"},
             {"setRequestMethod", "(Ljava/lang/String;)V", false, false,
              "android.net.unsupported"},
-            {"setRequestProperty",
-             "(Ljava/lang/String;Ljava/lang/String;)V", false, false,
-             "android.net.unsupported"},
-            {"getResponseCode", "()I", false, false,
-             "android.net.unsupported"},
+        {"setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V", false,
+         false, "android.net.unsupported"},
+        {"getResponseCode", "()I", false, false, "android.net.unsupported"},
             {"getInputStream", "()Ljava/io/InputStream;", false, false,
              "android.net.unsupported"},
         };

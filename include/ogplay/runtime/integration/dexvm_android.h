@@ -109,6 +109,15 @@ struct DexVmAndroidContext final {
     // SharedPreferences/Editor instance handle -> preference file name.
     std::unordered_map<std::uint32_t, std::string> preference_names;
 
+  // Bundle values retain their Java kind and object identity. This store
+  // is shared by interpreted and native JNI callers through the DexVM
+  // intrinsic bridge.
+  using BundleValue =
+      std::variant<std::int32_t, std::int64_t, std::string, dexvm::VmObjectRef>;
+  std::unordered_map<std::uint32_t,
+                     std::unordered_map<std::string, BundleValue>>
+      bundles;
+
     // Editable instance handle -> owning EditText handle; the text itself
     // lives in the interpreter's builder buffer of the owner.
     std::unordered_map<std::uint32_t, std::uint32_t> editable_owner;
@@ -129,10 +138,12 @@ struct DexVmAndroidContext final {
     // Each View exposes one stable observer. Listener identity is retained
     // for a future managed layout pass; registration itself does not invent
     // an event.
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef>
-        view_tree_observers;
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef>
-        global_layout_listeners;
+  std::unordered_map<std::uint32_t, dexvm::VmObjectRef> view_tree_observers;
+  std::unordered_map<std::uint32_t, dexvm::VmObjectRef> global_layout_listeners;
+
+  // SAX reader setup is real local state. Parsing remains an explicit gap
+  // until the bounded XML callback pipeline is implemented.
+  std::unordered_map<std::uint32_t, dexvm::VmObjectRef> sax_content_handlers;
 
     // SoundPool stream id -> (resource id) mapping for voice controls.
     std::unordered_map<std::int32_t, std::int32_t> sound_streams;
@@ -159,13 +170,16 @@ struct DexVmAndroidContext final {
     // terminates exhausts the tick budget and fails explicitly; nothing
     // pretends to be concurrent.
     struct JavaThreadState final {
-        dexvm::VmObjectRef runnable;
+    dexvm::VmObjectRef runnable{};
         bool started{};
         bool finished{};
         // java.lang.Thread priority (MIN_PRIORITY=1, NORM_PRIORITY=5,
         // MAX_PRIORITY=10). The cooperative executor records this guest
         // fact but deliberately does not claim host scheduler enforcement.
         std::int32_t priority{5};
+    // Stable deterministic identity and guest-visible name. The id is
+    // derived from the VM object handle and is never reused in-session.
+    std::string name;
     };
     std::unordered_map<std::uint32_t, JavaThreadState> java_threads;
     std::vector<dexvm::VmObjectRef> java_thread_queue;
@@ -259,8 +273,9 @@ struct DexVmAndroidContext final {
 // resampling to output_rate. Mono duplicates to both channels, wider
 // layouts take the first two. Returns the number of views that contributed.
 // Paused, stopped and completed views contribute silence.
-[[nodiscard]] std::size_t MixVideoPcmIntoStereo(
-    DexVmAndroidContext& context, std::span<std::int16_t> interleaved_stereo,
+[[nodiscard]] std::size_t
+MixVideoPcmIntoStereo(DexVmAndroidContext &context,
+                      std::span<std::int16_t> interleaved_stereo,
     std::uint32_t output_rate);
 
 // Widget click dispatch (device semantics for the layout subset the bounds
@@ -268,8 +283,8 @@ struct DexVmAndroidContext final {
 // with a registered OnClickListener whose derived bounds contain the point;
 // views without derivable bounds never match (recorded gap, the touch falls
 // through to Activity.onTouchEvent).
-[[nodiscard]] std::optional<std::uint64_t> FindClickableViewAt(
-    const DexVmAndroidContext& context, float x, float y);
+[[nodiscard]] std::optional<std::uint64_t>
+FindClickableViewAt(const DexVmAndroidContext &context, float x, float y);
 
 // True when the view's derived bounds contain the point (up-inside check of
 // a click gesture).
@@ -278,15 +293,15 @@ struct DexVmAndroidContext final {
 
 // Invokes the registered OnClickListener.onClick(view) on the guest thread.
 // Returns a rendered message when the guest callback raised.
-[[nodiscard]] std::optional<std::string> InvokeViewOnClick(
-    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+[[nodiscard]] std::optional<std::string>
+InvokeViewOnClick(dexvm::Interpreter &vm, DexVmAndroidContext &context,
     std::uint64_t handle);
 
 // Runs every queued cooperative Java thread to completion on the calling
 // (VM host) thread. Returns a rendered uncaught-exception message when a
 // thread died, matching the process-fatal default handler on device.
-[[nodiscard]] std::optional<std::string> PumpJavaThreads(
-    dexvm::Interpreter& vm, DexVmAndroidContext& context);
+[[nodiscard]] std::optional<std::string>
+PumpJavaThreads(dexvm::Interpreter &vm, DexVmAndroidContext &context);
 
 [[nodiscard]] std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog();
 
@@ -295,8 +310,7 @@ void RegisterAndroidBuiltins(dexvm::IntrinsicRegistry& registry,
 
 // Builds a MotionEvent intrinsic instance for input dispatch.
 [[nodiscard]] dexvm::VmObjectRef MakeMotionEvent(dexvm::Interpreter& vm,
-                                                 std::int32_t action,
-                                                 float x, float y,
-                                                 std::int32_t pointer);
+                                                 std::int32_t action, float x,
+                                                 float y, std::int32_t pointer);
 
 }  // namespace ogplay::runtime

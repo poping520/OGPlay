@@ -51,7 +51,8 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
   string/primitive-array store(native 与解释器同一对象)。出向 native 调用按
   descriptor 编组 A32 soft-float 帧(r0=JNIEnv、r1=receiver/jclass、64 位偶对齐、
   栈 8 字节对齐),解析顺序 RegisterNatives → `Java_` 导出名 → 记账明确失败;
-  入向把全部解释类/方法注册进会话 `JniClassRegistry`(impl id `dexvm.m<id>`),
+  入向把全部解释类/方法及 session 尚未拥有的 code-defined intrinsic 平台类注册进
+  会话 `JniClassRegistry`(impl id `dexvm.m<id>`),
   FindClass/GetStaticMethodID/CallStatic* 经不变的 233 槽 ABI 命中真实 DEX 事实
   并落入解释执行(第三路由);解释器未捕获异常按 JNI 语义置 pending。
   J/D 出向返回值暂记账明确失败。
@@ -71,9 +72,15 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
   校验 Java 1..10 范围并保存 guest 优先级事实；协作执行器不伪造宿主调度优先级。
   每个 `View` 的 `ViewTreeObserver` 身份稳定并保存/移除 global-layout listener；当前
   managed layout 尚不发布虚构的 global-layout 事件。
+- `Bundle` 在会话内按 key 保存 String/int/long/byte[] 的真实类型和对象身份，typed getter
+  对缺失键返回 Android 默认值，`containsKey`/`clear` 观察同一状态；解释 DEX 与 native
+  JNI 经同一 intrinsic handler 读写。
 - `URLEncoder.encode(String,String)` 实现 Java form URL encoding 的 UTF-8
   字节级契约（空格为 `+`、其余保留集外字节为大写 `%HH`），未知 charset 抛出
   `UnsupportedEncodingException`；这不扩大实际网络连接非目标范围。
+- SAX factory/parser/XMLReader 的本地构造与 content-handler 身份真实保留；实际
+  `parse(InputSource)` 尚无有界 XML callback pipeline，调用时抛
+  `UnsupportedOperationException`，不得把网络/配置解析伪造成成功。
 - android.* intrinsic 的 widget 层（TextView/EditText/ImageView/VideoView/对话框等）
   只持有状态、不做宿主渲染:`setContentView(I)` 经 arsc resid → APK 布局条目 →
   `ParseBinaryXmlElements` 实例化 widget intrinsic,`android:id` 进入 view registry

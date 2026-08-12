@@ -88,7 +88,7 @@ note = "M5 WU-0303/0318 与 M8 WU-0378 以纯数据 Profile 闭合身份、1024x
 [profiles.asphalt6_glstore_v132]
 status = "partial"
 test = "tools.title_profiles_current; tests/session/profile_entry_scope_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml; exact APK local bootstrap"
-note = "WU-M9-022..026 以 v2 entry 直接启动引擎 Activity，并在 required external manifest 就绪后应用 GameInstaller.sbStarted 真实 provisioned-data preset；exact 已越过 Activity/GL surface/电话状态/URL encoding，当前明确停在 native FindClass 无法看见 DexVM intrinsic android/content/Intent，guest 首帧与主界面 gate 尚未完成"
+note = "WU-M9-022..026 以 v2 entry/manifest GLGame 启动引擎 Activity，required external manifest 就绪后应用 GameInstaller.sbStarted 真实 provisioned-data preset；native 已可见 DexVM intrinsic 平台类，exact 启动 GLThread 后三轮一致明确停在阶段 4 Object.wait() wait-set 边界，guest 首帧与主界面 gate 尚未完成；删除 preset 会真实回到 GameInstaller 商业外壳"
 
 [session.lifecycle_templates]
 status = "complete"
@@ -997,13 +997,13 @@ note = "M9 WU-M9-012 per-class 状态机 uninitialized→initializing→initiali
 
 [dexvm.intrinsics_java_core]
 status = "partial"
-test = "tests/dexvm/interpreter_tests.cpp"
-note = "M9 WU-M9-012 P1 起步：Object/String/Class/Throwable + 异常层级 + Runnable/CharSequence 目录与内建 handler；System/Math/StringBuilder/集合按 WU-M9-013 批次推进，缺失 handler 记账 + UnsatisfiedLinkError"
+test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
+note = "M9 WU-M9-012/013 P1：Object/String/Class/Throwable、System/Math/StringBuilder/装箱/集合；WU-M9-026 增 Stack、受 monitor 所有权校验的 notify/notifyAll 与有界 getDeclaredMethods/零参整数类 Method.invoke。无超时 wait 与跨线程 wait-set 属阶段 4，仍明确失败"
 
 [dexvm.jni_bridge]
 status = "complete"
-test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3"
-note = "M9 WU-M9-014/015 出向按 descriptor 编组 A32 soft-float 帧（RegisterNatives→Java_ 导出名→记账失败），入向把全部解释类/方法注册进 JniClassRegistry（dexvm.m<id> handler），233 槽 ABI 不变即第三路由；J/D 出向返回暂记账明确失败"
+test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 WU-M9-026 exact bootstrap"
+note = "M9 WU-M9-014/015 出向按 descriptor 编组 A32 soft-float 帧（RegisterNatives→Java_ 导出名→记账失败），入向把解释类/方法与缺失的 intrinsic 平台类/方法发布到同一 JniClassRegistry（不替换 session 已有类，dexvm.m<id> handler），233 槽 ABI 不变；J/D 出向返回暂记账明确失败"
 
 [dexvm.intrinsics_android_core]
 status = "partial"

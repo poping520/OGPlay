@@ -7,8 +7,8 @@ TEST_CASE("JNI class registry resolves hierarchy and assignability") {
     const auto object = classes.RegisterClass({"java/lang/Object", {}, {}, {}});
     const auto activity = classes.RegisterClass(
         {"android/app/Activity", "java/lang/Object", {}, {}});
-    const auto derived = classes.RegisterClass(
-        {"test/Derived", "android/app/Activity", {}, {}});
+  const auto derived =
+      classes.RegisterClass({"test/Derived", "android/app/Activity", {}, {}});
     CHECK(classes.FindClass("java/lang/Object") == object);
     CHECK(classes.GetSuperclass(object) == std::nullopt);
     CHECK(classes.GetSuperclass(activity) == object);
@@ -20,8 +20,8 @@ TEST_CASE("JNI class registry resolves hierarchy and assignability") {
 
 TEST_CASE("JNI member lookup distinguishes static overloads and inheritance") {
     ogplay::runtime::JniClassRegistry classes;
-    const auto base = classes.RegisterClass(
-        {"test/Base",
+  const auto base =
+      classes.RegisterClass({"test/Base",
          {},
          {{"run", "(I)I", "base.run.int", false},
           {"run", "(J)J", "base.run.long", false},
@@ -38,12 +38,10 @@ TEST_CASE("JNI member lookup distinguishes static overloads and inheritance") {
     CHECK(*integer != *wide);
     CHECK(classes.ResolveMethod(*integer).declaration.implementation ==
           "base.run.int");
-    CHECK(classes.GetMethodId(base, "create", "()Ltest/Base;", true)
-              .has_value());
-    CHECK_FALSE(classes.GetMethodId(base, "create", "()Ltest/Base;", false)
-                    .has_value());
-    CHECK_FALSE(classes.GetMethodId(derived, "<init>", "()V", false)
-                    .has_value());
+  CHECK(classes.GetMethodId(base, "create", "()Ltest/Base;", true).has_value());
+  CHECK_FALSE(
+      classes.GetMethodId(base, "create", "()Ltest/Base;", false).has_value());
+  CHECK_FALSE(classes.GetMethodId(derived, "<init>", "()V", false).has_value());
     CHECK(classes.GetFieldId(derived, "value", "I", false).has_value());
     CHECK(classes.GetFieldId(derived, "count", "I", true).has_value());
 }
@@ -51,25 +49,45 @@ TEST_CASE("JNI member lookup distinguishes static overloads and inheritance") {
 TEST_CASE("JNI class registration validates transactionally") {
     ogplay::runtime::JniClassRegistry classes;
     CHECK_THROWS_AS(
-        static_cast<void>(classes.RegisterClass(
-            {"broken.Name", {}, {}, {}})),
+      static_cast<void>(classes.RegisterClass({"broken.Name", {}, {}, {}})),
         ogplay::runtime::JniClassRegistryError);
-    CHECK_THROWS_AS(
-        static_cast<void>(classes.RegisterClass(
+  CHECK_THROWS_AS(static_cast<void>(classes.RegisterClass(
             {"test/Child", "test/Missing", {}, {}})),
         ogplay::runtime::JniClassRegistryError);
     CHECK_FALSE(classes.FindClass("test/Child").has_value());
     CHECK_THROWS_AS(
         static_cast<void>(classes.RegisterClass(
-            {"test/Duplicate", {},
-             {{"run", "()V", "one", false},
-              {"run", "()V", "two", true}}, {}})),
+          {"test/Duplicate",
+           {},
+           {{"run", "()V", "one", false}, {"run", "()V", "two", true}},
+           {}})),
         ogplay::runtime::JniClassRegistryError);
     CHECK_FALSE(classes.FindClass("test/Duplicate").has_value());
     CHECK_THROWS_AS(
         static_cast<void>(classes.RegisterClass(
-            {"test/BadSignature", {},
-             {{"run", "(V)V", "bad", false}}, {}})),
+          {"test/BadSignature", {}, {{"run", "(V)V", "bad", false}}, {}})),
         ogplay::runtime::JniClassRegistryError);
     CHECK_FALSE(classes.FindClass("test/BadSignature").has_value());
+}
+
+TEST_CASE(
+    "JNI class registry extends one platform class without replacing it") {
+  ogplay::runtime::JniClassRegistry classes;
+  const auto object = classes.RegisterClass({"java/lang/Object", {}, {}, {}});
+  const auto bundle =
+      classes.RegisterClass({"android/os/Bundle", "java/lang/Object", {}, {}});
+  const auto constructor = classes.RegisterMethod(
+      bundle, {"<init>", "()V", "dexvm.bundle.init", false});
+  CHECK(classes.FindClass("java/lang/Object") == object);
+  CHECK(classes.FindClass("android/os/Bundle") == bundle);
+  CHECK(classes.GetMethodId(bundle, "<init>", "()V", false) == constructor);
+  CHECK(classes.ResolveMethod(constructor).declaration.implementation ==
+        "dexvm.bundle.init");
+  CHECK_THROWS_AS(static_cast<void>(classes.RegisterMethod(
+                      bundle, {"<init>", "()V", "duplicate", false})),
+                  ogplay::runtime::JniClassRegistryError);
+  CHECK_THROWS_AS(static_cast<void>(classes.RegisterMethod(
+                      bundle, {"broken", "(V)V", "bad", false})),
+                  ogplay::runtime::JniClassRegistryError);
+  CHECK(classes.GetMethodId(bundle, "broken", "()V", false) == std::nullopt);
 }

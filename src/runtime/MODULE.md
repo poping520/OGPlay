@@ -110,7 +110,8 @@
 - `JniNativeRegistry`：按类身份、方法名和严格描述符事务注册 guest native 地址，
   支持重载精确查询、幂等重注册、冲突拒绝与按类 UnregisterNatives。
 - `JniClassRegistry`：事务装载声明式类、方法和字段，提供稳定强类型 ID、父类查找、
-  可赋值判断及遵循继承/静态/构造器规则的成员查找。
+  可赋值判断及遵循继承/静态/构造器规则的成员查找；多个通用平台 provider 可向同一
+  已注册类追加互不冲突的方法，重复签名仍明确失败。
 - `JniFieldStore`：按 descriptor 生成 Java 默认值并隔离实例字段，静态字段按声明共享；
   访问统一检查字段类别、对象类兼容性和精确值类型。
 - `JniInvocationEngine`：把 `...`/`V`/`A` 参数源归一化为类型化值，按描述符校验参数

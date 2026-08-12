@@ -60,18 +60,18 @@ JniClassRegistryErrorReason JniClassRegistryError::Reason() const noexcept {
 
 class JniClassRegistry::Impl final {
 public:
-    [[nodiscard]] JniObjectIdentity Register(
-        const JniClassDeclaration& declaration) {
+  [[nodiscard]] JniObjectIdentity
+  Register(const JniClassDeclaration &declaration) {
         ValidateClassName(declaration.name);
         std::set<MemberKey> method_keys;
         std::vector<JniMethodDescriptor> method_layouts;
         method_layouts.reserve(declaration.methods.size());
         for (const auto& method : declaration.methods) {
             ValidateMemberName(method.name);
-            if (method.implementation.empty()) InvalidMember();
+      if (method.implementation.empty())
+        InvalidMember();
             try {
-                method_layouts.push_back(
-                    ParseJniMethodDescriptor(method.descriptor));
+        method_layouts.push_back(ParseJniMethodDescriptor(method.descriptor));
             } catch (const JniSignatureError& error) {
                 InvalidMember(error.what());
             }
@@ -85,7 +85,8 @@ public:
         field_types.reserve(declaration.fields.size());
         for (const auto& field : declaration.fields) {
             ValidateMemberName(field.name);
-            if (field.implementation.empty()) InvalidMember();
+      if (field.implementation.empty())
+        InvalidMember();
             try {
                 field_types.push_back(ParseJniFieldDescriptor(field.descriptor));
             } catch (const JniSignatureError& error) {
@@ -113,14 +114,12 @@ public:
         EnsureIds(declaration.methods.size(), declaration.fields.size());
 
         ClassEntry entry{declaration.name, superclass, {}, {}};
-        for (std::size_t index = 0; index < declaration.methods.size();
-             ++index) {
+    for (std::size_t index = 0; index < declaration.methods.size(); ++index) {
             const JniMethodId id{next_method_id_++};
             const auto& method = declaration.methods[index];
             entry.methods.emplace(MemberKey{method.name, method.descriptor}, id);
-            methods_.emplace(id.Value(),
-                             JniResolvedMethod{{}, id, method,
-                                               method_layouts[index]});
+      methods_.emplace(
+          id.Value(), JniResolvedMethod{{}, id, method, method_layouts[index]});
         }
         for (std::size_t index = 0; index < declaration.fields.size(); ++index) {
             const JniFieldId id{next_field_id_++};
@@ -144,8 +143,38 @@ public:
         return identity;
     }
 
-    [[nodiscard]] std::optional<JniObjectIdentity> Find(
-        const std::string& name) const {
+  [[nodiscard]] JniMethodId
+  RegisterMethod(const JniObjectIdentity java_class,
+                 const JniMethodDeclaration &declaration) {
+    ValidateMemberName(declaration.name);
+    if (declaration.implementation.empty())
+      InvalidMember();
+    JniMethodDescriptor layout;
+    try {
+      layout = ParseJniMethodDescriptor(declaration.descriptor);
+    } catch (const JniSignatureError &error) {
+      InvalidMember(error.what());
+    }
+    std::scoped_lock lock(mutex_);
+    if (java_class.domain != JniObjectDomain::host)
+      UnknownClass();
+    const auto found = classes_.find(java_class.value);
+    if (found == classes_.end())
+      UnknownClass();
+    auto &entry = found->second;
+    const MemberKey key{declaration.name, declaration.descriptor};
+    if (entry.methods.contains(key))
+      DuplicateMember();
+    EnsureIds(1U, 0U);
+    const JniMethodId id{next_method_id_++};
+    entry.methods.emplace(key, id);
+    methods_.emplace(id.Value(), JniResolvedMethod{java_class, id, declaration,
+                                                   std::move(layout)});
+    return id;
+  }
+
+  [[nodiscard]] std::optional<JniObjectIdentity>
+  Find(const std::string &name) const {
         std::scoped_lock lock(mutex_);
         const auto found = classes_by_name_.find(name);
         return found == classes_by_name_.end()
@@ -153,8 +182,8 @@ public:
                    : std::optional<JniObjectIdentity>{found->second};
     }
 
-    [[nodiscard]] std::optional<JniObjectIdentity> Superclass(
-        const JniObjectIdentity java_class) const {
+  [[nodiscard]] std::optional<JniObjectIdentity>
+  Superclass(const JniObjectIdentity java_class) const {
         std::scoped_lock lock(mutex_);
         return RequireClass(java_class).superclass;
     }
@@ -164,16 +193,19 @@ public:
         std::scoped_lock lock(mutex_);
         static_cast<void>(RequireClass(target));
         while (true) {
-            if (source == target) return true;
+      if (source == target)
+        return true;
             const auto& source_entry = RequireClass(source);
-            if (!source_entry.superclass.has_value()) return false;
+      if (!source_entry.superclass.has_value())
+        return false;
             source = *source_entry.superclass;
         }
     }
 
-    [[nodiscard]] std::optional<JniMethodId> Method(
-        JniObjectIdentity java_class, const std::string& name,
-        const std::string& descriptor, const bool is_static) const {
+  [[nodiscard]] std::optional<JniMethodId> Method(JniObjectIdentity java_class,
+                                                  const std::string &name,
+                                                  const std::string &descriptor,
+                                                  const bool is_static) const {
         ValidateMemberName(name);
         static_cast<void>(ParseJniMethodDescriptor(descriptor));
         std::scoped_lock lock(mutex_);
@@ -187,14 +219,16 @@ public:
                            ? std::optional<JniMethodId>{found->second}
                            : std::nullopt;
             }
-            if (constructor || !entry.superclass.has_value()) return std::nullopt;
+      if (constructor || !entry.superclass.has_value())
+        return std::nullopt;
             java_class = *entry.superclass;
         }
     }
 
-    [[nodiscard]] std::optional<JniFieldId> Field(
-        JniObjectIdentity java_class, const std::string& name,
-        const std::string& descriptor, const bool is_static) const {
+  [[nodiscard]] std::optional<JniFieldId> Field(JniObjectIdentity java_class,
+                                                const std::string &name,
+                                                const std::string &descriptor,
+                                                const bool is_static) const {
         ValidateMemberName(name);
         static_cast<void>(ParseJniFieldDescriptor(descriptor));
         std::scoped_lock lock(mutex_);
@@ -207,7 +241,8 @@ public:
                            ? std::optional<JniFieldId>{found->second}
                            : std::nullopt;
             }
-            if (!entry.superclass.has_value()) return std::nullopt;
+      if (!entry.superclass.has_value())
+        return std::nullopt;
             java_class = *entry.superclass;
         }
     }
@@ -215,14 +250,16 @@ public:
     [[nodiscard]] JniResolvedMethod ResolveMethod(const JniMethodId id) const {
         std::scoped_lock lock(mutex_);
         const auto found = methods_.find(id.Value());
-        if (found == methods_.end()) InvalidMember();
+    if (found == methods_.end())
+      InvalidMember();
         return found->second;
     }
 
     [[nodiscard]] JniResolvedField ResolveField(const JniFieldId id) const {
         std::scoped_lock lock(mutex_);
         const auto found = fields_.find(id.Value());
-        if (found == fields_.end()) InvalidMember();
+    if (found == fields_.end())
+      InvalidMember();
         return found->second;
     }
 
@@ -234,11 +271,13 @@ private:
         std::map<MemberKey, JniFieldId> fields;
     };
 
-    [[nodiscard]] const ClassEntry& RequireClass(
-        const JniObjectIdentity java_class) const {
-        if (java_class.domain != JniObjectDomain::host) UnknownClass();
+  [[nodiscard]] const ClassEntry &
+  RequireClass(const JniObjectIdentity java_class) const {
+    if (java_class.domain != JniObjectDomain::host)
+      UnknownClass();
         const auto found = classes_.find(java_class.value);
-        if (found == classes_.end()) UnknownClass();
+    if (found == classes_.end())
+      UnknownClass();
         return found->second;
     }
 
@@ -279,19 +318,24 @@ private:
 JniClassRegistry::JniClassRegistry() : impl_(std::make_unique<Impl>()) {}
 JniClassRegistry::~JniClassRegistry() = default;
 JniClassRegistry::JniClassRegistry(JniClassRegistry&&) noexcept = default;
-JniClassRegistry& JniClassRegistry::operator=(JniClassRegistry&&) noexcept =
-    default;
+JniClassRegistry &
+JniClassRegistry::operator=(JniClassRegistry &&) noexcept = default;
 
-JniObjectIdentity JniClassRegistry::RegisterClass(
-    const JniClassDeclaration& declaration) {
+JniObjectIdentity
+JniClassRegistry::RegisterClass(const JniClassDeclaration &declaration) {
     return impl_->Register(declaration);
 }
-std::optional<JniObjectIdentity> JniClassRegistry::FindClass(
-    const std::string& name) const {
+JniMethodId
+JniClassRegistry::RegisterMethod(const JniObjectIdentity java_class,
+                                 const JniMethodDeclaration &declaration) {
+  return impl_->RegisterMethod(java_class, declaration);
+}
+std::optional<JniObjectIdentity>
+JniClassRegistry::FindClass(const std::string &name) const {
     return impl_->Find(name);
 }
-std::optional<JniObjectIdentity> JniClassRegistry::GetSuperclass(
-    const JniObjectIdentity java_class) const {
+std::optional<JniObjectIdentity>
+JniClassRegistry::GetSuperclass(const JniObjectIdentity java_class) const {
     return impl_->Superclass(java_class);
 }
 bool JniClassRegistry::IsAssignableFrom(const JniObjectIdentity target,

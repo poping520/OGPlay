@@ -64,15 +64,11 @@ struct VmValue final {
     [[nodiscard]] std::int32_t AsInt() const {
         return static_cast<std::int32_t>(cat1);
     }
-    [[nodiscard]] float AsFloat() const {
-        return std::bit_cast<float>(cat1);
-    }
+  [[nodiscard]] float AsFloat() const { return std::bit_cast<float>(cat1); }
     [[nodiscard]] std::int64_t AsLong() const {
         return static_cast<std::int64_t>(wide);
     }
-    [[nodiscard]] double AsDouble() const {
-        return std::bit_cast<double>(wide);
-    }
+  [[nodiscard]] double AsDouble() const { return std::bit_cast<double>(wide); }
 };
 
 // Thrown by intrinsic handlers and internal helpers to raise a Java
@@ -109,8 +105,7 @@ using IntrinsicHandler = std::function<VmValue(IntrinsicContext&)>;
 class IntrinsicRegistry final {
 public:
     void Register(std::string handler_id, IntrinsicHandler handler);
-    [[nodiscard]] const IntrinsicHandler* Find(
-        std::string_view handler_id) const;
+  [[nodiscard]] const IntrinsicHandler *Find(std::string_view handler_id) const;
     [[nodiscard]] std::size_t Size() const noexcept;
 
 private:
@@ -199,11 +194,17 @@ public:
                             std::string_view field_descriptor,
                             std::uint64_t bits);
     // Allocates an intrinsic-class instance (vm_instance form).
-    [[nodiscard]] VmObjectRef NewIntrinsicInstance(
-        std::string_view class_descriptor);
+  [[nodiscard]] VmObjectRef
+  NewIntrinsicInstance(std::string_view class_descriptor);
     // Java equality used by collections: string content equality when both
     // sides are strings, reference identity otherwise.
     [[nodiscard]] bool JavaEquals(VmObjectRef left, VmObjectRef right) const;
+
+  // Object.notify/notifyAll stage-1 semantics: validates that the current
+  // interpreter call owns the receiver monitor. There is no wait-set until
+  // the threaded runtime integration lands, so a valid notification wakes
+  // zero parked threads without changing monitor ownership.
+  void NotifyMonitor(VmObjectRef receiver) const;
 
 private:
     class Impl;

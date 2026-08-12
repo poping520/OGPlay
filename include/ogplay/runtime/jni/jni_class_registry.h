@@ -75,20 +75,26 @@ public:
     JniClassRegistry(JniClassRegistry&&) noexcept;
     JniClassRegistry& operator=(JniClassRegistry&&) noexcept;
 
-    [[nodiscard]] JniObjectIdentity RegisterClass(
-        const JniClassDeclaration& declaration);
-    [[nodiscard]] std::optional<JniObjectIdentity> FindClass(
-        const std::string& name) const;
-    [[nodiscard]] std::optional<JniObjectIdentity> GetSuperclass(
-        JniObjectIdentity java_class) const;
+  [[nodiscard]] JniObjectIdentity
+  RegisterClass(const JniClassDeclaration &declaration);
+  // Adds one declared method to an existing class. This is used when two
+  // platform providers share a class identity but own disjoint methods;
+  // an existing declaration with the same name/descriptor is rejected.
+  [[nodiscard]] JniMethodId
+  RegisterMethod(JniObjectIdentity java_class,
+                 const JniMethodDeclaration &declaration);
+  [[nodiscard]] std::optional<JniObjectIdentity>
+  FindClass(const std::string &name) const;
+  [[nodiscard]] std::optional<JniObjectIdentity>
+  GetSuperclass(JniObjectIdentity java_class) const;
     [[nodiscard]] bool IsAssignableFrom(JniObjectIdentity target,
                                         JniObjectIdentity source) const;
 
-    [[nodiscard]] std::optional<JniMethodId> GetMethodId(
-        JniObjectIdentity java_class, const std::string& name,
+  [[nodiscard]] std::optional<JniMethodId>
+  GetMethodId(JniObjectIdentity java_class, const std::string &name,
         const std::string& descriptor, bool is_static) const;
-    [[nodiscard]] std::optional<JniFieldId> GetFieldId(
-        JniObjectIdentity java_class, const std::string& name,
+  [[nodiscard]] std::optional<JniFieldId>
+  GetFieldId(JniObjectIdentity java_class, const std::string &name,
         const std::string& descriptor, bool is_static) const;
     [[nodiscard]] JniResolvedMethod ResolveMethod(JniMethodId id) const;
     [[nodiscard]] JniResolvedField ResolveField(JniFieldId id) const;

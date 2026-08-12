@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "ogplay/runtime/jni/jni_invocation.h"
@@ -21,7 +22,8 @@ struct DescriptorWalk final {
     [[nodiscard]] char Next() {
         const char shorty = descriptor[index];
         if (shorty == 'L' || shorty == '[') {
-            while (descriptor[index] == '[') ++index;
+      while (descriptor[index] == '[')
+        ++index;
             if (descriptor[index] == 'L') {
                 index = descriptor.find(';', index) + 1;
             } else {
@@ -55,45 +57,150 @@ public:
 
     std::unordered_map<std::uint32_t, JniObjectIdentity> class_identities;
     std::unordered_map<std::uint32_t, JniReference> class_global_refs;
+  std::unordered_set<std::uint32_t> registering_classes;
 
     DexVmGuestBridge* owner{};
 
     // ---- reference conversion ------------------------------------------
 
     [[nodiscard]] JniReference PublishLocal(const dx::VmObjectRef ref) {
-        if (!ref.IsValid()) return JniReference{};
-        return session->Environment().PublishLocalObject(
-            kRootThreadId, model->ToIdentity(ref));
+    if (!ref.IsValid())
+      return JniReference{};
+    return session->Environment().PublishLocalObject(kRootThreadId,
+                                                     model->ToIdentity(ref));
     }
 
     [[nodiscard]] dx::VmObjectRef FromReference(const JniReference reference,
                                                 const std::uint64_t thread) {
-        if (reference.IsNull()) return dx::VmObjectRef{};
+    if (reference.IsNull())
+      return dx::VmObjectRef{};
         const auto identity =
             session->Environment().ResolveObjectForHle(thread, reference);
         if (!identity.has_value()) {
-            throw DexVmBridgeError(
-                "dexvm bridge cannot resolve a JNI reference");
+      throw DexVmBridgeError("dexvm bridge cannot resolve a JNI reference");
         }
         return model->FromIdentity(*identity);
     }
 
     // ---- inbound (native -> interpreter) --------------------------------
 
+  void PublishMissingMethods(const dx::DexClassId class_id,
+                             const JniObjectIdentity identity) {
+    auto &classes = session->Classes();
+    auto &invocations = session->Invocations();
+    for (const auto method_id : linker.MethodsOf(class_id)) {
+      const auto &method = linker.Method(method_id);
+      if (method.name == "<clinit>")
+        continue;
+      const auto existing = classes.GetMethodId(
+          identity, method.name, method.descriptor, method.is_static);
+      if (existing.has_value() &&
+          classes.ResolveMethod(*existing).declaring_class == identity) {
+        continue;
+      }
+      const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
+      try {
+        static_cast<void>(classes.RegisterMethod(
+            identity, {method.name, method.descriptor, implementation,
+                       method.is_static}));
+      } catch (const JniClassRegistryError &error) {
+        throw DexVmBridgeError("cannot publish DexVM method to JNI: " +
+                               linker.Class(class_id).descriptor + "." +
+                               method.name + method.descriptor + ": " +
+                               error.what());
+      }
+      invocations.RegisterHandler(
+          implementation, [this, method_id](const JniInvocation &invocation) {
+            return InvokeInterpreted(method_id, invocation);
+          });
+    }
+  }
+
+  [[nodiscard]] JniObjectIdentity
+  RegisterClassForNative(const dx::DexClassId class_id) {
+    auto &classes = session->Classes();
+    auto &invocations = session->Invocations();
+    const auto &linked = linker.Class(class_id);
+    if (linked.is_array) {
+      throw DexVmBridgeError("dexvm bridge cannot register an array JNI class");
+    }
+    const auto name = linked.descriptor.substr(1, linked.descriptor.size() - 2);
+    if (const auto existing = classes.FindClass(name); existing.has_value()) {
+      class_identities.emplace(class_id.Value(), *existing);
+      PublishMissingMethods(class_id, *existing);
+      return *existing;
+    }
+    if (!registering_classes.emplace(class_id.Value()).second) {
+      throw DexVmBridgeError("dexvm JNI class hierarchy contains a cycle");
+    }
+    JniClassDeclaration declaration;
+    declaration.name = name;
+    if (linked.super.has_value()) {
+      const auto &super = linker.Class(*linked.super);
+      if (!super.is_array) {
+        static_cast<void>(RegisterClassForNative(*linked.super));
+        declaration.superclass =
+            super.descriptor.substr(1, super.descriptor.size() - 2);
+      }
+    }
+    std::vector<std::pair<std::string, dx::VmMethodId>> handlers;
+    for (const auto method_id : linker.MethodsOf(class_id)) {
+      const auto &method = linker.Method(method_id);
+      if (method.name == "<clinit>")
+        continue;
+      const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
+      declaration.methods.push_back(
+          {method.name, method.descriptor, implementation, method.is_static});
+      handlers.emplace_back(implementation, method_id);
+    }
+    JniObjectIdentity identity;
+    try {
+      identity = classes.RegisterClass(declaration);
+    } catch (const JniClassRegistryError &error) {
+      throw DexVmBridgeError("cannot publish DexVM class to JNI: " + name +
+                             ": " + error.what());
+    }
+    registering_classes.erase(class_id.Value());
+    class_identities.emplace(class_id.Value(), identity);
+    class_global_refs.emplace(class_id.Value(),
+                              session->Environment().PublishGlobalObjectForHle(
+                                  kRootThreadId, identity));
+    for (const auto &[implementation, method_id] : handlers) {
+      invocations.RegisterHandler(
+          implementation, [this, method_id](const JniInvocation &invocation) {
+            return InvokeInterpreted(method_id, invocation);
+          });
+    }
+    return identity;
+  }
+
     void RegisterDexClasses() {
+    // Native JNI sees the same code-defined intrinsic classes as the
+    // interpreter. Existing session platform classes retain ownership;
+    // missing classes are registered with handlers that route back into
+    // the linked VM method. This keeps FindClass/GetMethodID honest and
+    // avoids a second, title-specific platform registry.
+    for (const auto class_id : linker.AllClasses()) {
+      const auto &linked = linker.Class(class_id);
+      if (!linked.is_intrinsic || linked.is_array)
+        continue;
+      static_cast<void>(RegisterClassForNative(class_id));
+    }
+
         auto& classes = session->Classes();
         auto& invocations = session->Invocations();
         for (const auto class_id : linker.AllClasses()) {
             const auto& linked = linker.Class(class_id);
-            if (linked.is_intrinsic || linked.is_array) continue;
+      if (linked.is_intrinsic || linked.is_array)
+        continue;
             JniClassDeclaration declaration;
             declaration.name =
                 linked.descriptor.substr(1, linked.descriptor.size() - 2);
             if (linked.super.has_value()) {
                 const auto& super = linker.Class(*linked.super);
                 if (!super.is_intrinsic) {
-                    declaration.superclass = super.descriptor.substr(
-                        1, super.descriptor.size() - 2);
+          declaration.superclass =
+              super.descriptor.substr(1, super.descriptor.size() - 2);
                 }
             }
             std::vector<std::pair<std::string, dx::VmMethodId>> handlers;
@@ -106,34 +213,31 @@ public:
                 const auto implementation =
                     "dexvm.m" + std::to_string(method_id.Value());
                 declaration.methods.push_back(
-                    {method.name, method.descriptor, implementation,
-                     method.is_static});
+            {method.name, method.descriptor, implementation, method.is_static});
                 handlers.emplace_back(implementation, method_id);
             }
             const auto identity = classes.RegisterClass(declaration);
             class_identities.emplace(class_id.Value(), identity);
             class_global_refs.emplace(
-                class_id.Value(),
-                session->Environment().PublishGlobalObjectForHle(
+          class_id.Value(), session->Environment().PublishGlobalObjectForHle(
                     kRootThreadId, identity));
             for (const auto& [implementation, method_id] : handlers) {
                 invocations.RegisterHandler(
-                    implementation,
-                    [this, method_id](const JniInvocation& invocation) {
+            implementation, [this, method_id](const JniInvocation &invocation) {
                         return InvokeInterpreted(method_id, invocation);
                     });
             }
         }
     }
 
-    [[nodiscard]] JniValue InvokeInterpreted(
-        const dx::VmMethodId method_id, const JniInvocation& invocation) {
+  [[nodiscard]] JniValue InvokeInterpreted(const dx::VmMethodId method_id,
+                                           const JniInvocation &invocation) {
         const auto& method = linker.Method(method_id);
         std::vector<dx::VmValue> arguments;
         arguments.reserve(invocation.arguments.size() + 1);
         if (!method.is_static) {
-            arguments.push_back(dx::VmValue::Ref(FromReference(
-                invocation.receiver, invocation.thread_id)));
+      arguments.push_back(dx::VmValue::Ref(
+          FromReference(invocation.receiver, invocation.thread_id)));
         }
         for (const auto& value : invocation.arguments) {
             arguments.push_back(ToVmValue(value, invocation.thread_id));
@@ -143,21 +247,17 @@ public:
             // JNI semantics: leave the exception pending for the caller.
             if (logger != nullptr) {
                 std::string rendered =
-                    linker.Class(method.owner).descriptor + "." +
-                    method.name + " threw " +
-                    linker.Class(outcome.exception_class).descriptor + ": " +
-                    outcome.exception_message;
+            linker.Class(method.owner).descriptor + "." + method.name +
+            " threw " + linker.Class(outcome.exception_class).descriptor +
+            ": " + outcome.exception_message;
                 for (const auto& entry : outcome.exception_stack) {
                     rendered += " | at " + entry.class_descriptor + "." +
-                                entry.method_name + " pc " +
-                                std::to_string(entry.pc);
+                      entry.method_name + " pc " + std::to_string(entry.pc);
                 }
-                logger->Write(core::LogLevel::warn, "runtime.dexvm",
-                              rendered);
+        logger->Write(core::LogLevel::warn, "runtime.dexvm", rendered);
             }
             const auto throwable = session->Environment().PublishLocalObject(
-                invocation.thread_id,
-                model->ToIdentity(outcome.exception));
+          invocation.thread_id, model->ToIdentity(outcome.exception));
             session->Environment().Throw(invocation.thread_id, throwable);
             return DefaultReturn(method.return_shorty);
         }
@@ -211,8 +311,7 @@ public:
             case 'C':
                 return JniValue{static_cast<JniChar>(value.cat1 & 0xffffU)};
             case 'S':
-                return JniValue{
-                    static_cast<JniShort>(value.cat1 & 0xffffU)};
+      return JniValue{static_cast<JniShort>(value.cat1 & 0xffffU)};
             case 'I':
                 return JniValue{static_cast<JniInt>(value.cat1)};
             case 'J':
@@ -230,40 +329,49 @@ public:
                 return JniValue{as_double};
             }
             case 'L': {
-                if (!value.ref.IsValid()) return JniValue{JniReference{}};
+      if (!value.ref.IsValid())
+        return JniValue{JniReference{}};
                 return JniValue{session->Environment().PublishLocalObject(
                     thread, model->ToIdentity(value.ref))};
             }
             default:
-                throw DexVmBridgeError(
-                    "dexvm bridge cannot convert return shorty");
+      throw DexVmBridgeError("dexvm bridge cannot convert return shorty");
         }
     }
 
     [[nodiscard]] static JniValue DefaultReturn(const char shorty) {
         switch (shorty) {
-            case 'V': return JniValue{};
-            case 'Z': return JniValue{JniBoolean{}};
-            case 'B': return JniValue{JniByte{}};
-            case 'C': return JniValue{JniChar{}};
-            case 'S': return JniValue{JniShort{}};
-            case 'I': return JniValue{JniInt{}};
-            case 'J': return JniValue{JniLong{}};
-            case 'F': return JniValue{JniFloat{}};
-            case 'D': return JniValue{JniDouble{}};
-            default: return JniValue{JniReference{}};
+    case 'V':
+      return JniValue{};
+    case 'Z':
+      return JniValue{JniBoolean{}};
+    case 'B':
+      return JniValue{JniByte{}};
+    case 'C':
+      return JniValue{JniChar{}};
+    case 'S':
+      return JniValue{JniShort{}};
+    case 'I':
+      return JniValue{JniInt{}};
+    case 'J':
+      return JniValue{JniLong{}};
+    case 'F':
+      return JniValue{JniFloat{}};
+    case 'D':
+      return JniValue{JniDouble{}};
+    default:
+      return JniValue{JniReference{}};
         }
     }
 
     // ---- outbound (interpreter -> native) --------------------------------
 
-    [[nodiscard]] dx::VmValue InvokeNative(
-        const dx::LinkedMethod& method, const dx::VmObjectRef receiver,
+  [[nodiscard]] dx::VmValue
+  InvokeNative(const dx::LinkedMethod &method, const dx::VmObjectRef receiver,
         const std::span<const dx::VmValue> arguments) {
         const auto& owner_class = linker.Class(method.owner);
         const auto class_name =
-            owner_class.descriptor.substr(1,
-                                          owner_class.descriptor.size() - 2);
+        owner_class.descriptor.substr(1, owner_class.descriptor.size() - 2);
 
         // AAPCS soft-float marshaling (04 §1 table): r0 = JNIEnv, r1 =
         // receiver or jclass, arguments from r2, 64-bit values on even
@@ -273,8 +381,8 @@ public:
         if (method.is_static) {
             const auto global = class_global_refs.find(method.owner.Value());
             if (global == class_global_refs.end()) {
-                throw DexVmBridgeError(
-                    "dexvm bridge has no class reference for " + class_name);
+        throw DexVmBridgeError("dexvm bridge has no class reference for " +
+                               class_name);
             }
             words.push_back(global->second.Value());
         } else {
@@ -293,12 +401,15 @@ public:
         };
         const auto push_pair = [&](const std::uint64_t bits) {
             if (words.size() <= 2) {
-                if (words.size() % 2 != 0) words.push_back(0);  // align pair
+        if (words.size() % 2 != 0)
+          words.push_back(0); // align pair
                 words.push_back(static_cast<std::uint32_t>(bits));
                 words.push_back(static_cast<std::uint32_t>(bits >> 32U));
             } else {
-                if (stack.size() % 2 != 0) stack.push_back(0);
-                while (words.size() < 4) words.push_back(0);
+        if (stack.size() % 2 != 0)
+          stack.push_back(0);
+        while (words.size() < 4)
+          words.push_back(0);
                 stack.push_back(static_cast<std::uint32_t>(bits));
                 stack.push_back(static_cast<std::uint32_t>(bits >> 32U));
             }
@@ -321,7 +432,8 @@ public:
         }
 
         // The executor requires an 8-byte aligned stack tail.
-        if (stack.size() % 2 != 0) stack.push_back(0);
+    if (stack.size() % 2 != 0)
+      stack.push_back(0);
 
         A32GuestCallFrame frame;
         std::size_t register_count = words.size() < 4 ? words.size() : 4;
@@ -336,16 +448,16 @@ public:
         bool invoked = false;
         if (identity != class_identities.end()) {
             try {
-                result = session->InvokeRegisteredNative(
-                    identity->second, method.name, method.descriptor, frame);
+        result = session->InvokeRegisteredNative(identity->second, method.name,
+                                                 method.descriptor, frame);
                 invoked = true;
             } catch (const std::exception&) {
                 invoked = false;
             }
         }
         if (!invoked) {
-            const auto target = session->FindNativeExport(
-                class_name, method.name, method.descriptor);
+      const auto target =
+          session->FindNativeExport(class_name, method.name, method.descriptor);
             if (!target.has_value()) {
                 if (ledger != nullptr) {
                     ledger->RecordUnimplemented(
@@ -353,8 +465,8 @@ public:
                 }
                 throw dx::VmJavaThrow{
                     "Ljava/lang/UnsatisfiedLinkError;",
-                    "native method has no registered mapping or export: " +
-                        class_name + "." + method.name + method.descriptor};
+            "native method has no registered mapping or export: " + class_name +
+                "." + method.name + method.descriptor};
             }
             frame.target = *target;
             result = session->Invoke(frame);
@@ -363,8 +475,7 @@ public:
         // Pending exception propagates into the interpreter.
         if (session->Environment().ExceptionCheck(kRootThreadId)) {
             session->Environment().ExceptionClear(kRootThreadId);
-            throw dx::VmJavaThrow{
-                "Ljava/lang/RuntimeException;",
+      throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
                 "native method raised a pending JNI exception: " +
                     class_name + "." + method.name};
         }
@@ -376,16 +487,15 @@ public:
             case 'J':
             case 'D':
                 if (ledger != nullptr) {
-                    ledger->RecordUnimplemented(
-                        "dexvm.bridge.wide_native_return", 0);
+        ledger->RecordUnimplemented("dexvm.bridge.wide_native_return", 0);
                 }
                 throw DexVmBridgeError(
                     "dexvm bridge does not decode 64-bit native returns "
-                    "yet: " + method.name);
+          "yet: " +
+          method.name);
             case 'L': {
                 const JniReference reference(result.return_value);
-                return dx::VmValue::Ref(
-                    FromReference(reference, kRootThreadId));
+      return dx::VmValue::Ref(FromReference(reference, kRootThreadId));
             }
             default: {
                 dx::VmValue value;
@@ -421,10 +531,11 @@ DexVmGuestBridge::DexVmGuestBridge(
         session.Strings(), session.Arrays(), config.heap);
 
     dx::IntrinsicRegistry registry;
-    if (platform_handlers) platform_handlers(registry);
-    impl_->vm = std::make_unique<dx::Interpreter>(
-        impl_->linker, *impl_->model, std::move(registry), this, ledger,
-        config.interpreter);
+  if (platform_handlers)
+    platform_handlers(registry);
+  impl_->vm = std::make_unique<dx::Interpreter>(impl_->linker, *impl_->model,
+                                                std::move(registry), this,
+                                                ledger, config.interpreter);
     impl_->vm->RegisterCoreBuiltins();
     impl_->vm->SetLogger(logger);
 
@@ -448,20 +559,22 @@ JniReference DexVmGuestBridge::PublishLocal(const dexvm::VmObjectRef ref) {
     return impl_->PublishLocal(ref);
 }
 
-dexvm::VmObjectRef DexVmGuestBridge::FromReference(
-    const JniReference reference) {
+dexvm::VmObjectRef
+DexVmGuestBridge::FromReference(const JniReference reference) {
     return impl_->FromReference(reference, kRootThreadId);
 }
 
 std::optional<JniObjectIdentity> DexVmGuestBridge::RegisteredClassIdentity(
     const dexvm::DexClassId java_class) const {
     const auto found = impl_->class_identities.find(java_class.Value());
-    if (found == impl_->class_identities.end()) return std::nullopt;
+  if (found == impl_->class_identities.end())
+    return std::nullopt;
     return found->second;
 }
 
-dexvm::VmValue DexVmGuestBridge::Invoke(
-    const dexvm::LinkedMethod& method, const dexvm::VmObjectRef receiver,
+dexvm::VmValue
+DexVmGuestBridge::Invoke(const dexvm::LinkedMethod &method,
+                         const dexvm::VmObjectRef receiver,
     const std::span<const dexvm::VmValue> arguments) {
     return impl_->InvokeNative(method, receiver, arguments);
 }

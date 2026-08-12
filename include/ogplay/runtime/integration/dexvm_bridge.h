@@ -19,11 +19,11 @@ namespace ogplay::runtime {
 //   outbound  interpreter -> native: descriptor-driven A32 marshaling into
 //             the existing guest call executor (RegisterNatives mappings
 //             first, then Java_ export names);
-//   inbound   native -> interpreter: every interpreted dex class/method is
-//             registered into the session's JniClassRegistry with a
-//             "dexvm.m<id>" implementation handler, so FindClass /
-//             GetStaticMethodID / CallStatic* resolve real DEX facts through
-//             the unchanged 233-slot ABI (the third route).
+//   inbound   native -> interpreter: interpreted dex classes plus missing
+//             code-defined intrinsic platform classes are registered into
+//             the session's JniClassRegistry with "dexvm.m<id>" handlers,
+//             so FindClass/GetMethodID/Call* resolve the same linked VM facts
+//             through the unchanged 233-slot ABI (the third route).
 
 struct DexVmBridgeConfig final {
     dexvm::InterpreterConfig interpreter{};
@@ -40,8 +40,7 @@ public:
     DexVmGuestBridge(
         AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
         std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
-        const std::function<void(dexvm::IntrinsicRegistry&)>&
-            platform_handlers,
+      const std::function<void(dexvm::IntrinsicRegistry &)> &platform_handlers,
         core::CapabilityLedger& ledger, core::Logger* logger,
         DexVmBridgeConfig config = {});
     ~DexVmGuestBridge() override;
@@ -56,12 +55,12 @@ public:
     // Reference conversions on the session root thread.
     [[nodiscard]] JniReference PublishLocal(dexvm::VmObjectRef ref);
     [[nodiscard]] dexvm::VmObjectRef FromReference(JniReference reference);
-    [[nodiscard]] std::optional<JniObjectIdentity> RegisteredClassIdentity(
-        dexvm::DexClassId java_class) const;
+  [[nodiscard]] std::optional<JniObjectIdentity>
+  RegisteredClassIdentity(dexvm::DexClassId java_class) const;
 
     // Outbound native invocation (dexvm::NativeMethodBridge).
-    [[nodiscard]] dexvm::VmValue Invoke(
-        const dexvm::LinkedMethod& method, dexvm::VmObjectRef receiver,
+  [[nodiscard]] dexvm::VmValue
+  Invoke(const dexvm::LinkedMethod &method, dexvm::VmObjectRef receiver,
         std::span<const dexvm::VmValue> arguments) override;
 
 private:

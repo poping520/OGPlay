@@ -1,13 +1,13 @@
 # 当前状态
 
 更新：2026-08-12 · M9 DexVM：Profile v2 entry scope 已交付、Profile v1 已完全删除；
-Asphalt 5 逐位回归通过；Asphalt 6 已直达引擎 Activity，当前停在 native→DexVM
-intrinsic 的 JNI 类可见性（`android/content/Intent`）
+Asphalt 5 逐位回归通过；Asphalt 6 已启动渲染线程，三轮确定停在阶段 4
+`Object.wait()` 真实 wait-set 边界
 
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM 已启动**（`WU-M9-001..025`，ADR-0017/0022）：
+- **M9 DexVM 已启动**（`WU-M9-001..026`，ADR-0017/0022）：
   阶段 0（AOSP 基线/测量/opcode 目录/dexasm）、阶段 1（解释器内核）、
   阶段 2（JNI 双向桥 + java.* P1）、阶段 3（android.* intrinsic +
   dex_activity + profile v2 + pilot 迁移）全部交付；entry override、静态预置和
@@ -30,7 +30,8 @@ intrinsic 的 JNI 类可见性（`android/content/Intent`）
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
 能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）与本次
-macOS/arm64 本次 full CTest 为 585/585（删除旧 Profile 专属用例后重新发现）。
+macOS/arm64 本次 full CTest 为 590/590（WU-M9-026 新增 JNI 目录扩展、
+monitor ownership、Bundle/SAX/有界反射用例）。
 
 ## M9 交付摘要
 
@@ -60,10 +61,12 @@ macOS/arm64 本次 full CTest 为 585/585（删除旧 Profile 专属用例后重
 - **Asphalt 6（2026-08-12 实测）**：production v2 Profile 在 external `InsTime` 与
   `file000000.dat` 验证后，入口覆盖实际启动 `GLGame`，并在 guest `<clinit>` 后把
   `GameInstaller.sbStarted=true` 作为 provisioned-data 事实写入；安装器/DRM 入口未执行。
-  通用补齐 AudioManager、离线 Telephony、SurfaceHolder/ViewTreeObserver、Thread priority
-  与 UTF-8 URLEncoder 后，当前首个边界是 native `FindClass` 只能看 session registry，
-  看不到 DexVM intrinsic `android/content/Intent`。这是桥接架构缺口，保持明确失败、无首帧，
-  不用假 Intent 掩盖。证据 `.local/automation/asphalt6-entry-scope-dev10-20260812`（不入库）。
+  DexVM intrinsic 平台类已发布至同一 native JNI registry，后续通用补齐
+  typed Bundle、SAX 构造链（parse 明确未支持）、有界方法反射、Stack 与 Thread
+  id/name。exact 已启动 `GLThread`，`dev19..21` 三轮一致停在无超时
+  `Object.wait()`；这需要 1:1 宿主 Java 线程 + monitor wait-set，不用空返回掩盖。
+  删除 `sbStarted` preset 会真实切回 `GameInstaller` 商业外壳，在
+  `Intent.setPackage` 处明确失败；未触及 DRM 消费链。尚无首帧/主界面。
 
 开发方式手册（适配/测试/排查的操作步骤）见
 **[docs/playbook/README.md](../playbook/README.md)**；title 阻塞点与工作队列见
@@ -71,14 +74,15 @@ macOS/arm64 本次 full CTest 为 585/585（删除旧 Profile 专属用例后重
 
 ## 下一步（按优先级）
 
-1. Asphalt 6（WU-M9-026）：统一 DexVM intrinsic 对 native JNI `FindClass`/method/field 的
-   可见性与调用路由，先闭合 `Intent` 的真实类契约，再重跑 exact；达到主界面后才宣告 gate。
+1. Asphalt 6 阶段 4（WU-M9-027..030）：先拆分 Interpreter per-thread 执行态，
+   再以 1:1 宿主线程执行 Java `Thread.run()`，最后按统一 monitor/Clock 实现
+   wait-set 与 `Object.wait/notify`；重跑 exact，达到主界面后才宣告 gate。
 2. dexvm 记账缺口按命中批次闭合：J/D 出向返回解码、string 资源、
    MediaPlayer 完成回调、`dexvm.stats/stack` Agent 查询面（04 §8）。
    GC-B 优先级上调：pilot 试玩实证 GC-A 记账在资源重载路径线性增长
    （已用 512 MiB 预算诚实覆盖换语言/进赛道，长时游玩需 GC-B）。
-3. 阶段 4（线程/wait-notify/GC-B/java.* P2P3）在厚层 title（libGDX 类）
-   立项时启动；05 §4 gate 3。
+3. 阶段 4 线程/wait-notify 已因 A6 真实边界立项；GC-B/java.* 其余
+   P2P3 仍按厚层 title 需求推进；05 §4 gate 3。
 4. Linux M9 严格出口复验（macOS/arm64 与 Windows/x64 已全绿；Windows 侧
    修复了 dexvm 的 MSVC 可移植性：`__builtin_memcpy`→`std::bit_cast`、
    遮蔽警告，aosp-dalvik 子模块需 LF 检出——autocrlf 会破坏锚点哈希）。

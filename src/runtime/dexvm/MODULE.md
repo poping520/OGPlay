@@ -35,7 +35,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   的结论级 Profile preset 写入精确槽位；类、字段、静态性、类型或槽位不匹配
   均明确失败，禁止绕过 `<clinit>`。
 - `RegisterCoreBuiltinHandlers`：core.object/string/class/throwable handler
-  （String/StringBuilder 面在 `intrinsics_string.cpp`）。
+  （String/StringBuilder 面在 `intrinsics_string.cpp`）。Class/Method 反射只开放
+  真实 declared-method 枚举和零参数、int-like 返回的调用；其他参数/返回类型明确抛
+  `UnsupportedOperationException`，不宣称完整反射。
 
 - Gap survey（诊断，默认关闭）：`EnableGapSurvey()` 后，未声明的**平台**类/
   方法被合成为中性桩（0/null/void）并逐次记账，一次运行即可收割新 title 的
@@ -65,9 +67,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 ## 尚未实现（记账可查）
 
-- monitor 指令目前是单线程重入计数（多线程 wait/notify 属阶段 4，
-  `runtime.jni_guest_monitors` 接线随集成 WU）。
-- `Method.invoke` 等反射面、finalizer、GC-B。
+- monitor 指令目前是单线程重入计数；`notify/notifyAll` 会校验
+  当前 monitor 所有权，但多线程 wait-set 仍属阶段 4，
+  `runtime.jni_guest_monitors` 接线随集成 WU。
+- 反射仅覆盖有界的 `getDeclaredMethods` / 零参整数类返回值
+  `Method.invoke`；其余反射面、finalizer、GC-B 未实现。
 
 ## 测试
 

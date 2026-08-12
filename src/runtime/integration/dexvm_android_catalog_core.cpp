@@ -12,15 +12,14 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         context.superclass = "Ljava/lang/Object;";
         context.methods = {
             {"<init>", "()V", false, false, "android.context.init"},
-            {"getAssets", "()Landroid/content/res/AssetManager;", false,
-             false, "android.context.get_assets"},
+        {"getAssets", "()Landroid/content/res/AssetManager;", false, false,
+         "android.context.get_assets"},
             {"getPackageName", "()Ljava/lang/String;", false, false,
              "android.context.get_package_name"},
-            {"getResources", "()Landroid/content/res/Resources;", false,
-             false, "android.context.get_resources"},
-            {"getSystemService",
-             "(Ljava/lang/String;)Ljava/lang/Object;", false, false,
-             "android.context.get_system_service"},
+        {"getResources", "()Landroid/content/res/Resources;", false, false,
+         "android.context.get_resources"},
+        {"getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", false,
+         false, "android.context.get_system_service"},
             {"registerReceiver",
              "(Landroid/content/BroadcastReceiver;"
              "Landroid/content/IntentFilter;)Landroid/content/Intent;",
@@ -28,23 +27,21 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             {"startActivity", "(Landroid/content/Intent;)V", false, false,
              "android.context.start_activity"},
             {"getSharedPreferences",
-             "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
-             false, false, "android.context.get_shared_preferences"},
-            {"getContentResolver",
-             "()Landroid/content/ContentResolver;", false, false,
-             "android.context.get_content_resolver"},
+         "(Ljava/lang/String;I)Landroid/content/SharedPreferences;", false,
+         false, "android.context.get_shared_preferences"},
+        {"getContentResolver", "()Landroid/content/ContentResolver;", false,
+         false, "android.context.get_content_resolver"},
             // No receivers beyond the session's own exist; broadcasts have
             // no audience and truthfully go nowhere.
             {"sendBroadcast", "(Landroid/content/Intent;)V", false, false,
              "android.context.send_broadcast"},
-            {"getExternalFilesDir",
-             "(Ljava/lang/String;)Ljava/io/File;", false, false,
-             "android.context.get_external_files_dir"},
+        {"getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;", false,
+         false, "android.context.get_external_files_dir"},
             // No service infrastructure exists on this platform; the
             // documented "service not found" answer is null.
             {"startService",
-             "(Landroid/content/Intent;)Landroid/content/ComponentName;",
-             false, false, "android.context.start_service_none"},
+         "(Landroid/content/Intent;)Landroid/content/ComponentName;", false,
+         false, "android.context.start_service_none"},
         };
         catalog.push_back(std::move(context));
         Decl resolver;
@@ -60,8 +57,8 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             {"second", "Ljava/lang/Object;", false, false, 0, ""},
         };
         pair.methods = {
-            {"<init>", "(Ljava/lang/Object;Ljava/lang/Object;)V", false,
-             false, "android.pair.init"},
+        {"<init>", "(Ljava/lang/Object;Ljava/lang/Object;)V", false, false,
+         "android.pair.init"},
         };
         catalog.push_back(std::move(pair));
     }
@@ -73,8 +70,8 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         prefs_interface.descriptor = "Landroid/content/SharedPreferences;";
         prefs_interface.is_interface = true;
         prefs_interface.methods = {
-            {"edit", "()Landroid/content/SharedPreferences$Editor;", false,
-             false, "android.prefs.edit"},
+        {"edit", "()Landroid/content/SharedPreferences$Editor;", false, false,
+         "android.prefs.edit"},
             {"getBoolean", "(Ljava/lang/String;Z)Z", false, false,
              "android.prefs.get_boolean"},
             {"getInt", "(Ljava/lang/String;I)I", false, false,
@@ -82,8 +79,8 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             {"getLong", "(Ljava/lang/String;J)J", false, false,
              "android.prefs.get_long"},
             {"getString",
-             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-             false, false, "android.prefs.get_string"},
+         "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", false,
+         false, "android.prefs.get_string"},
         };
         Decl prefs_impl;
         prefs_impl.descriptor = "Landroid/content/SharedPreferencesImpl;";
@@ -93,8 +90,7 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         catalog.push_back(std::move(prefs_interface));
         catalog.push_back(std::move(prefs_impl));
         Decl editor_interface;
-        editor_interface.descriptor =
-            "Landroid/content/SharedPreferences$Editor;";
+    editor_interface.descriptor = "Landroid/content/SharedPreferences$Editor;";
         editor_interface.is_interface = true;
         editor_interface.methods = {
             {"putBoolean",
@@ -113,11 +109,9 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             {"commit", "()Z", false, false, "android.prefs_editor.commit"},
         };
         Decl editor_impl;
-        editor_impl.descriptor =
-            "Landroid/content/SharedPreferencesEditorImpl;";
+    editor_impl.descriptor = "Landroid/content/SharedPreferencesEditorImpl;";
         editor_impl.superclass = "Ljava/lang/Object;";
-        editor_impl.interfaces = {
-            "Landroid/content/SharedPreferences$Editor;"};
+    editor_impl.interfaces = {"Landroid/content/SharedPreferences$Editor;"};
         editor_impl.methods = editor_interface.methods;
         catalog.push_back(std::move(editor_interface));
         catalog.push_back(std::move(editor_impl));
@@ -130,21 +124,14 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             {"<init>", "()V", false, false, "android.activity.init"},
             {"onCreate", "(Landroid/os/Bundle;)V", false, true,
              "android.activity.lifecycle_noop"},
-            {"onStart", "()V", false, true,
-             "android.activity.lifecycle_noop"},
-            {"onRestart", "()V", false, true,
-             "android.activity.lifecycle_noop"},
-            {"onResume", "()V", false, true,
-             "android.activity.lifecycle_noop"},
-            {"onPause", "()V", false, true,
-             "android.activity.lifecycle_noop"},
-            {"onStop", "()V", false, true,
-             "android.activity.lifecycle_noop"},
-            {"onDestroy", "()V", false, true,
-             "android.activity.lifecycle_noop"},
-            {"onConfigurationChanged",
-             "(Landroid/content/res/Configuration;)V", false, true,
-             "android.activity.lifecycle_noop"},
+        {"onStart", "()V", false, true, "android.activity.lifecycle_noop"},
+        {"onRestart", "()V", false, true, "android.activity.lifecycle_noop"},
+        {"onResume", "()V", false, true, "android.activity.lifecycle_noop"},
+        {"onPause", "()V", false, true, "android.activity.lifecycle_noop"},
+        {"onStop", "()V", false, true, "android.activity.lifecycle_noop"},
+        {"onDestroy", "()V", false, true, "android.activity.lifecycle_noop"},
+        {"onConfigurationChanged", "(Landroid/content/res/Configuration;)V",
+         false, true, "android.activity.lifecycle_noop"},
             {"getWindow", "()Landroid/view/Window;", false, false,
              "android.activity.get_window"},
             {"requestWindowFeature", "(I)Z", false, false,
@@ -174,8 +161,8 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             // and title subclasses commonly wrap it (super.finish() still
             // reaches the intrinsic).
             {"finish", "()V", false, true, "android.activity.finish"},
-            {"getWindowManager", "()Landroid/view/WindowManager;", false,
-             false, "android.activity.get_window_manager"},
+        {"getWindowManager", "()Landroid/view/WindowManager;", false, false,
+         "android.activity.get_window_manager"},
         };
         catalog.push_back(std::move(activity));
     }
@@ -203,8 +190,9 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         display.superclass = "Ljava/lang/Object;";
         display.methods = {
             {"getWidth", "()I", false, false, "android.display.get_width"},
-            {"getHeight", "()I", false, false,
-             "android.display.get_height"},
+        {"getHeight", "()I", false, false, "android.display.get_height"},
+        {"getRotation", "()I", false, false, "android.display.get_rotation"},
+        {"getOrientation", "()I", false, false, "android.display.get_rotation"},
         };
         catalog.push_back(std::move(display));
     }
@@ -215,23 +203,19 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         window.methods = {
             {"setFlags", "(II)V", false, false, "android.window.noop"},
             {"addFlags", "(I)V", false, false, "android.window.noop_add"},
-            {"clearFlags", "(I)V", false, false,
-             "android.window.noop_clear"},
-            {"getAttributes",
-             "()Landroid/view/WindowManager$LayoutParams;", false, false,
-             "android.window.get_attributes"},
+        {"clearFlags", "(I)V", false, false, "android.window.noop_clear"},
+        {"getAttributes", "()Landroid/view/WindowManager$LayoutParams;", false,
+         false, "android.window.get_attributes"},
         };
         catalog.push_back(std::move(window));
         // Attribute holder: the title only passes it around (no fields are
         // referenced per the gap report); the instance is a singleton.
         Decl layout_params;
-        layout_params.descriptor =
-            "Landroid/view/WindowManager$LayoutParams;";
+    layout_params.descriptor = "Landroid/view/WindowManager$LayoutParams;";
         layout_params.superclass = "Ljava/lang/Object;";
         catalog.push_back(std::move(layout_params));
         Decl absolute_params;
-        absolute_params.descriptor =
-            "Landroid/widget/AbsoluteLayout$LayoutParams;";
+    absolute_params.descriptor = "Landroid/widget/AbsoluteLayout$LayoutParams;";
         absolute_params.superclass = "Ljava/lang/Object;";
         absolute_params.methods = {
             {"<init>", "(IIII)V", false, false, "android.graphics.noop"},
@@ -245,50 +229,39 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         view.methods = {
             {"<init>", "(Landroid/content/Context;)V", false, false,
              "android.view.init"},
-            {"onSizeChanged", "(IIII)V", false, true,
-             "android.view.noop_size"},
+        {"onSizeChanged", "(IIII)V", false, true, "android.view.noop_size"},
             {"onWindowFocusChanged", "(Z)V", false, true,
              "android.view.noop_focus"},
             // Focus flags: the dex_activity lifecycle drives a single
             // fullscreen view, focus state is implicit; flag setters are
             // truthful no-ops and requestFocus reports success.
-            {"setFocusable", "(Z)V", false, false,
-             "android.view.noop_flag"},
+        {"setFocusable", "(Z)V", false, false, "android.view.noop_flag"},
             {"setFocusableInTouchMode", "(Z)V", false, false,
              "android.view.noop_flag"},
-            {"requestFocus", "()Z", false, false,
-             "android.view.request_focus"},
+        {"requestFocus", "()Z", false, false, "android.view.request_focus"},
             // Canvas invalidation has no consumer yet (installer views
             // draw nothing); ids default to NO_ID (-1).
             {"invalidate", "()V", false, false, "android.view.noop_flag"},
-            {"postInvalidate", "()V", false, false,
-             "android.view.noop_flag"},
+        {"postInvalidate", "()V", false, false, "android.view.noop_flag"},
             {"getId", "()I", false, false, "android.view.get_id"},
             // Visibility and click listeners are real state consumed by
             // the widget click dispatch; background drawing stays a no-op
             // (the GL surface / video frame is the visual output).
-            {"setVisibility", "(I)V", false, false,
-             "android.view.set_visibility"},
-            {"getVisibility", "()I", false, false,
-             "android.view.get_visibility"},
-            {"setBackgroundColor", "(I)V", false, false,
-             "android.widget.noop"},
-            {"setBackgroundResource", "(I)V", false, false,
-             "android.widget.noop"},
-            {"setBackgroundDrawable",
-             "(Landroid/graphics/drawable/Drawable;)V", false, false,
-             "android.widget.noop"},
-            {"setOnClickListener",
-             "(Landroid/view/View$OnClickListener;)V", false, false,
-             "android.view.set_on_click_listener"},
-            {"setOnTouchListener",
-             "(Landroid/view/View$OnTouchListener;)V", false, false,
-             "android.widget.noop"},
+        {"setVisibility", "(I)V", false, false, "android.view.set_visibility"},
+        {"getVisibility", "()I", false, false, "android.view.get_visibility"},
+        {"setBackgroundColor", "(I)V", false, false, "android.widget.noop"},
+        {"setBackgroundResource", "(I)V", false, false, "android.widget.noop"},
+        {"setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V",
+         false, false, "android.widget.noop"},
+        {"setOnClickListener", "(Landroid/view/View$OnClickListener;)V", false,
+         false, "android.view.set_on_click_listener"},
+        {"setOnTouchListener", "(Landroid/view/View$OnTouchListener;)V", false,
+         false, "android.widget.noop"},
             {"clearFocus", "()V", false, false, "android.widget.noop"},
             {"getWindowToken", "()Landroid/os/IBinder;", false, false,
              "android.widget.null"},
-            {"getViewTreeObserver", "()Landroid/view/ViewTreeObserver;",
-             false, false, "android.view.get_tree_observer"},
+        {"getViewTreeObserver", "()Landroid/view/ViewTreeObserver;", false,
+         false, "android.view.get_tree_observer"},
         };
         catalog.push_back(std::move(view));
     }
@@ -298,14 +271,14 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         observer.superclass = "Ljava/lang/Object;";
         observer.methods = {
             {"addOnGlobalLayoutListener",
-             "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
-             false, false, "android.view_tree.add_global_listener"},
+         "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V", false,
+         false, "android.view_tree.add_global_listener"},
             {"removeGlobalOnLayoutListener",
-             "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
-             false, false, "android.view_tree.remove_global_listener"},
+         "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V", false,
+         false, "android.view_tree.remove_global_listener"},
             {"removeOnGlobalLayoutListener",
-             "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
-             false, false, "android.view_tree.remove_global_listener"},
+         "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V", false,
+         false, "android.view_tree.remove_global_listener"},
         };
         catalog.push_back(std::move(observer));
     }
@@ -314,10 +287,9 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         holder.descriptor = "Landroid/view/SurfaceHolder;";
         holder.is_interface = true;
         holder.methods = {
-            {"addCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
-             false, false, "android.surface_holder.add_callback"},
-            {"setType", "(I)V", false, false,
-             "android.surface_holder.set_type"},
+        {"addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", false,
+         false, "android.surface_holder.add_callback"},
+        {"setType", "(I)V", false, false, "android.surface_holder.set_type"},
             {"setFormat", "(I)V", false, false,
              "android.surface_holder.set_format"},
         };
@@ -327,10 +299,9 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         holder_impl.superclass = "Ljava/lang/Object;";
         holder_impl.interfaces = {"Landroid/view/SurfaceHolder;"};
         holder_impl.methods = {
-            {"addCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
-             false, false, "android.surface_holder.add_callback"},
-            {"setType", "(I)V", false, false,
-             "android.surface_holder.set_type"},
+        {"addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", false,
+         false, "android.surface_holder.add_callback"},
+        {"setType", "(I)V", false, false, "android.surface_holder.set_type"},
             {"setFormat", "(I)V", false, false,
              "android.surface_holder.set_format"},
         };
@@ -348,8 +319,7 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
     }
     {
         Decl renderer_interface;
-        renderer_interface.descriptor =
-            "Landroid/opengl/GLSurfaceView$Renderer;";
+    renderer_interface.descriptor = "Landroid/opengl/GLSurfaceView$Renderer;";
         renderer_interface.is_interface = true;
         catalog.push_back(std::move(renderer_interface));
         Decl gl10;
@@ -357,8 +327,7 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         gl10.is_interface = true;
         catalog.push_back(std::move(gl10));
         Decl egl_config;
-        egl_config.descriptor =
-            "Ljavax/microedition/khronos/egl/EGLConfig;";
+    egl_config.descriptor = "Ljavax/microedition/khronos/egl/EGLConfig;";
         egl_config.superclass = "Ljava/lang/Object;";
         catalog.push_back(std::move(egl_config));
     }
@@ -369,9 +338,8 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         surface.methods = {
             {"<init>", "(Landroid/content/Context;)V", false, false,
              "android.glsurfaceview.init"},
-            {"setRenderer",
-             "(Landroid/opengl/GLSurfaceView$Renderer;)V", false, false,
-             "android.glsurfaceview.set_renderer"},
+        {"setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V", false,
+         false, "android.glsurfaceview.set_renderer"},
             {"requestRender", "()V", false, false,
              "android.glsurfaceview.request_render"},
             // Render pause/resume is owned by the lifecycle driver.
@@ -387,12 +355,11 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         resources.descriptor = "Landroid/content/res/Resources;";
         resources.superclass = "Ljava/lang/Object;";
         resources.methods = {
-            {"getConfiguration",
-             "()Landroid/content/res/Configuration;", false, false,
-             "android.resources.get_configuration"},
+        {"getConfiguration", "()Landroid/content/res/Configuration;", false,
+         false, "android.resources.get_configuration"},
             {"getIdentifier",
-             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
-             false, false, "android.resources.get_identifier"},
+         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I", false,
+         false, "android.resources.get_identifier"},
             {"openRawResource", "(I)Ljava/io/InputStream;", false, false,
              "android.resources.open_raw_resource"},
             {"getString", "(I)Ljava/lang/String;", false, false,
@@ -412,10 +379,10 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
         assets.descriptor = "Landroid/content/res/AssetManager;";
         assets.superclass = "Ljava/lang/Object;";
         assets.methods = {
-            {"open", "(Ljava/lang/String;)Ljava/io/InputStream;", false,
-             false, "android.assets.open"},
-            {"open", "(Ljava/lang/String;I)Ljava/io/InputStream;", false,
-             false, "android.assets.open_mode"},
+        {"open", "(Ljava/lang/String;)Ljava/io/InputStream;", false, false,
+         "android.assets.open"},
+        {"open", "(Ljava/lang/String;I)Ljava/io/InputStream;", false, false,
+         "android.assets.open_mode"},
         };
         catalog.push_back(std::move(assets));
     }

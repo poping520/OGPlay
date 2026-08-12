@@ -11,25 +11,19 @@ namespace ogplay::runtime::android_intrinsics {
 
 void RegisterContextActivity(dx::IntrinsicRegistry& registry,
                              const Context& context) {
-    registry.Register("android.context.init", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    registry.Register("android.activity.init", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
+  registry.Register("android.context.init",
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  registry.Register("android.activity.init",
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
     registry.Register("android.activity.lifecycle_noop",
-                      [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    registry.Register("android.activity.get_window",
-                      [context](dx::IntrinsicContext& call) {
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  registry.Register(
+      "android.activity.get_window", [context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "window", "Landroid/view/Window;"));
     });
     registry.Register("android.activity.request_window_feature",
-                      [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(1);
-    });
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Int(1); });
     registry.Register("android.activity.set_content_view",
                       [context](dx::IntrinsicContext& call) {
         context->content_view = call.arguments[0].ref;
@@ -38,14 +32,14 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
     // Minimal layout inflation: binary XML tags become widget intrinsic
     // instances and android:id entries feed findViewById. Layout geometry
     // attributes are not applied (the widget layer holds state only).
-    registry.Register("android.activity.set_content_view_id",
+  registry.Register(
+      "android.activity.set_content_view_id",
                       [context](dx::IntrinsicContext& call) {
         const auto layout_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
         const auto* entry = context->arsc.FindById(layout_id);
         if (entry == nullptr || !entry->string_value.has_value()) {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/IllegalArgumentException;",
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                 "layout resource id has no file entry: " +
                     std::to_string(layout_id)};
         }
@@ -81,20 +75,21 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         for (std::size_t index = 0; index < elements.size(); ++index) {
             const auto& element = elements[index];
             const auto parent_fact =
-                element.parent < 0 ? -1 : fact_of[static_cast<std::size_t>(
-                                              element.parent)];
-            if (element.name == "merge") continue;  // container marker
+              element.parent < 0
+                  ? -1
+                  : fact_of[static_cast<std::size_t>(element.parent)];
+          if (element.name == "merge")
+            continue; // container marker
             const auto found = kTagDescriptors.find(element.name);
             if (found == kTagDescriptors.end()) {
                 GuestLog(call, core::LogLevel::warn,
-                         "layout tag has no widget intrinsic: " +
-                             element.name);
+                     "layout tag has no widget intrinsic: " + element.name);
                 fact_of[index] = parent_fact;
                 continue;
             }
-            const auto instance =
-                call.vm.NewIntrinsicInstance(found->second);
-            if (!root.IsValid()) root = instance;
+          const auto instance = call.vm.NewIntrinsicInstance(found->second);
+          if (!root.IsValid())
+            root = instance;
             if (element.id != 0) {
                 context->view_registry[element.id] = instance;
             }
@@ -112,8 +107,7 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
             // (bounds stay underivable, a recorded gap).
             if (element.src != 0) {
                 const auto* drawable = context->arsc.FindById(element.src);
-                if (drawable != nullptr &&
-                    drawable->string_value.has_value()) {
+            if (drawable != nullptr && drawable->string_value.has_value()) {
                     try {
                         const auto image = DecodeImageToArgb(
                             ReadApkFile(context, *drawable->string_value));
@@ -131,8 +125,7 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
             context->layout_views.push_back(std::move(fact));
         }
         if (!root.IsValid()) {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/IllegalStateException;",
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                 "layout produced no inflatable widget: " +
                     *entry->string_value};
         }
@@ -144,8 +137,8 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
     // The whole VM is the UI thread in the cooperative model, so the
     // runnable executes synchronously (matches Android semantics when the
     // caller is already on the UI thread).
-    registry.Register("android.activity.run_on_ui_thread",
-                      [](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.activity.run_on_ui_thread", [](dx::IntrinsicContext &call) {
         const auto runnable = call.arguments[0].ref;
         if (!runnable.IsValid()) {
             throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
@@ -154,11 +147,9 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         auto& vm = call.vm;
         auto& linker = vm.Linker();
         const auto runnable_class = vm.Model().ObjectClass(runnable);
-        const auto index =
-            linker.FindVtableIndex(runnable_class, "run", "()V");
+        const auto index = linker.FindVtableIndex(runnable_class, "run", "()V");
         if (!index.has_value()) {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/IllegalStateException;",
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                 "runOnUiThread target has no run() method"};
         }
         const auto outcome =
@@ -171,7 +162,8 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    registry.Register("android.activity.find_view_by_id",
+  registry.Register(
+      "android.activity.find_view_by_id",
                       [context](dx::IntrinsicContext& call) {
         const auto found = context->view_registry.find(
             static_cast<std::uint32_t>(call.arguments[0].AsInt()));
@@ -182,17 +174,11 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         return dx::VmValue::Ref(found->second);
     });
     registry.Register("android.activity.set_volume_control_stream",
-                      [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
     registry.Register("android.activity.on_key_false",
-                      [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(0);
-    });
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Int(0); });
     registry.Register("android.activity.on_touch_false",
-                      [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(0);
-    });
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Int(0); });
     registry.Register("android.activity.finish",
                       [context](dx::IntrinsicContext&) {
         context->exit_requested = true;
@@ -202,52 +188,49 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
                       [context](dx::IntrinsicContext& call) {
         return MakeString(call, context->package_name);
     });
-    registry.Register("android.context.get_resources",
-                      [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(Singleton(
-            call, context, "resources",
+  registry.Register(
+      "android.context.get_resources", [context](dx::IntrinsicContext &call) {
+        return dx::VmValue::Ref(Singleton(call, context, "resources",
             "Landroid/content/res/Resources;"));
     });
-    registry.Register("android.context.get_assets",
-                      [context](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.context.get_assets", [context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(Singleton(
-            call, context, "assets",
-            "Landroid/content/res/AssetManager;"));
+            call, context, "assets", "Landroid/content/res/AssetManager;"));
     });
-    registry.Register("android.context.get_system_service",
+  registry.Register(
+      "android.context.get_system_service",
                       [context](dx::IntrinsicContext& call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
         if (name == "phone") {
             return dx::VmValue::Ref(Singleton(
-                call, context, "phone",
-                "Landroid/telephony/TelephonyManager;"));
+              call, context, "phone", "Landroid/telephony/TelephonyManager;"));
         }
         if (name == "audio") {
-            return dx::VmValue::Ref(Singleton(
-                call, context, "audio", "Landroid/media/AudioManager;"));
+          return dx::VmValue::Ref(Singleton(call, context, "audio",
+                                            "Landroid/media/AudioManager;"));
         }
         if (name == "wifi") {
-            return dx::VmValue::Ref(Singleton(
-                call, context, "wifi", "Landroid/net/wifi/WifiManager;"));
+          return dx::VmValue::Ref(Singleton(call, context, "wifi",
+                                            "Landroid/net/wifi/WifiManager;"));
         }
         if (name == "sensor") {
             return dx::VmValue::Ref(Singleton(
-                call, context, "sensor",
-                "Landroid/hardware/SensorManager;"));
+              call, context, "sensor", "Landroid/hardware/SensorManager;"));
         }
         if (name == "connectivity") {
-            return dx::VmValue::Ref(Singleton(
-                call, context, "connectivity",
+          return dx::VmValue::Ref(
+              Singleton(call, context, "connectivity",
                 "Landroid/net/ConnectivityManager;"));
         }
         if (name == "input_method") {
-            return dx::VmValue::Ref(Singleton(
-                call, context, "input_method",
+          return dx::VmValue::Ref(
+              Singleton(call, context, "input_method",
                 "Landroid/view/inputmethod/InputMethodManager;"));
         }
         if (name == "window") {
-            return dx::VmValue::Ref(Singleton(
-                call, context, "window_manager",
+          return dx::VmValue::Ref(
+              Singleton(call, context, "window_manager",
                 "Landroid/view/WindowManagerImpl;"));
         }
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -255,8 +238,8 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
     });
     registry.Register("android.activity.get_window_manager",
                       [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(Singleton(
-            call, context, "window_manager",
+                      return dx::VmValue::Ref(
+                          Singleton(call, context, "window_manager",
             "Landroid/view/WindowManagerImpl;"));
     });
     registry.Register("android.windowmanager.get_default_display",
@@ -264,19 +247,23 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         return dx::VmValue::Ref(Singleton(
             call, context, "display", "Landroid/view/Display;"));
     });
-    registry.Register("android.display.get_width",
-                      [context](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(
-            static_cast<std::int32_t>(context->surface_width));
+  registry.Register("android.display.get_width", [context](
+                                                     dx::IntrinsicContext &) {
+    return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_width));
     });
-    registry.Register("android.display.get_height",
-                      [context](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(
-            static_cast<std::int32_t>(context->surface_height));
+  registry.Register("android.display.get_height", [context](
+                                                      dx::IntrinsicContext &) {
+    return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_height));
+  });
+  registry.Register("android.display.get_rotation", [](dx::IntrinsicContext &) {
+    // Managed surface coordinates are landscape-natural and never
+    // rotate independently from the host window.
+    return dx::VmValue::Int(0);
     });
     registry.Register("android.connectivity.get_active_network_info",
                       [](dx::IntrinsicContext&) {
-        // Truthful offline fact: no active network (documented null).
+                      // Truthful offline fact: no active network (documented
+                      // null).
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
     registry.Register("android.connectivity.get_network_info",
@@ -290,34 +277,35 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
             Singleton(call, context, "content_resolver",
                       "Landroid/content/ContentResolver;"));
     });
-    registry.Register("android.context.send_broadcast",
-                      [](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.context.send_broadcast", [](dx::IntrinsicContext &call) {
         // No other process exists; the broadcast truthfully has no
         // audience. Logged so silent drops stay visible.
         GuestLog(call, core::LogLevel::debug,
                  "sendBroadcast dropped: no receivers on this platform");
         return dx::VmValue::Void();
     });
-    registry.Register("android.context.start_service_none",
-                      [](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.context.start_service_none", [](dx::IntrinsicContext &call) {
         GuestLog(call, core::LogLevel::debug,
                  "startService answered null: no services on this platform");
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
     registry.Register("android.context.register_receiver",
                       [](dx::IntrinsicContext&) {
-        // Sticky broadcast lookup: nothing pending on this platform.
+                      // Sticky broadcast lookup: nothing pending on this
+                      // platform.
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-    registry.Register("android.context.start_activity",
+  registry.Register(
+      "android.context.start_activity",
                       [context](dx::IntrinsicContext& call) -> dx::VmValue {
         // In-process activity switch: only intents with an explicit
         // component that resolves to a dex activity are supported; anything
         // else (external apps, market links, ...) stays an explicit
         // failure.
         const auto intent = call.arguments[0].ref;
-        const auto component =
-            context->intent_components.find(intent.Value());
+        const auto component = context->intent_components.find(intent.Value());
         if (component == context->intent_components.end()) {
             throw dx::VmJavaThrow{
                 "Ljava/lang/UnsupportedOperationException;",
@@ -328,8 +316,8 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         context->current_intent = intent;
         return dx::VmValue::Void();
     });
-    registry.Register("android.activity.get_intent",
-                      [context](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.activity.get_intent", [context](dx::IntrinsicContext &call) {
         if (context->current_intent.IsValid()) {
             return dx::VmValue::Ref(context->current_intent);
         }
@@ -341,48 +329,39 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
 
 void RegisterViewSurface(dx::IntrinsicRegistry& registry,
                          const Context& context) {
-    registry.Register("android.window.noop", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    registry.Register("android.window.noop_add", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
+  registry.Register("android.window.noop",
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  registry.Register("android.window.noop_add",
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
     registry.Register("android.window.noop_clear",
-                      [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    registry.Register("android.view.init", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    registry.Register("android.view.noop_size", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    registry.Register("android.view.noop_focus", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
-    registry.Register("android.view.noop_flag", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  registry.Register("android.view.init",
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  registry.Register("android.view.noop_size",
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  registry.Register("android.view.noop_focus",
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  registry.Register("android.view.noop_flag",
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
     registry.Register("android.graphics.noop", [](dx::IntrinsicContext&) {
         // Pure drawing state with no consuming canvas surface yet.
         return dx::VmValue::Void();
     });
     registry.Register("android.paint.set_typeface",
                       [](dx::IntrinsicContext& call) {
-        // Returns the typeface that was set, per the platform contract.
+                      // Returns the typeface that was set, per the platform
+                      // contract.
         return dx::VmValue::Ref(call.arguments[0].ref);
     });
-    registry.Register("android.typeface.default_from_style",
-                      [](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.typeface.default_from_style", [](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(
             call.vm.NewIntrinsicInstance("Landroid/graphics/Typeface;"));
     });
-    registry.Register("android.typeface.clinit",
-                      [](dx::IntrinsicContext& call) {
+  registry.Register("android.typeface.clinit", [](dx::IntrinsicContext &call) {
         auto& vm = call.vm;
         vm.SetIntrinsicStaticRef(
-            "Landroid/graphics/Typeface;", "SERIF",
-            "Landroid/graphics/Typeface;",
+        "Landroid/graphics/Typeface;", "SERIF", "Landroid/graphics/Typeface;",
             vm.NewIntrinsicInstance("Landroid/graphics/Typeface;"));
         return dx::VmValue::Void();
     });
@@ -396,36 +375,34 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
         return dx::VmValue::Int(static_cast<std::int32_t>(slots[3].bits) -
                                 static_cast<std::int32_t>(slots[1].bits));
     });
-    registry.Register("android.window.get_attributes",
-                      [context](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.window.get_attributes", [context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "window_attributes",
                       "Landroid/view/WindowManager$LayoutParams;"));
     });
-    registry.Register("android.view.request_focus",
-                      [](dx::IntrinsicContext&) {
+  registry.Register("android.view.request_focus", [](dx::IntrinsicContext &) {
         // The single fullscreen view always holds focus.
         return dx::VmValue::Int(1);
     });
     registry.Register("android.view.get_id", [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(-1);  // View.NO_ID: no id was assigned
     });
-    registry.Register("android.view.get_tree_observer",
-                      [context](dx::IntrinsicContext& call) {
-        auto& observer =
-            context->view_tree_observers[call.receiver.Value()];
+  registry.Register(
+      "android.view.get_tree_observer", [context](dx::IntrinsicContext &call) {
+        auto &observer = context->view_tree_observers[call.receiver.Value()];
         if (!observer.IsValid()) {
-            observer = call.vm.NewIntrinsicInstance(
-                "Landroid/view/ViewTreeObserver;");
+          observer =
+              call.vm.NewIntrinsicInstance("Landroid/view/ViewTreeObserver;");
         }
         return dx::VmValue::Ref(observer);
     });
-    registry.Register("android.view_tree.add_global_listener",
+  registry.Register(
+      "android.view_tree.add_global_listener",
                       [context](dx::IntrinsicContext& call) {
         const auto listener = call.arguments[0].ref;
         if (!listener.IsValid()) {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/NullPointerException;",
+          throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
                 "global layout listener is null"};
         }
         context->global_layout_listeners[call.receiver.Value()] = listener;
@@ -441,12 +418,12 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    registry.Register("android.surface_view.get_holder",
-                      [context](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.surface_view.get_holder", [context](dx::IntrinsicContext &call) {
         auto& holder = context->surface_holders[call.receiver.Value()];
         if (!holder.IsValid()) {
-            holder = call.vm.NewIntrinsicInstance(
-                "Landroid/view/SurfaceHolder$Impl;");
+          holder =
+              call.vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
         }
         return dx::VmValue::Ref(holder);
     });
@@ -458,8 +435,8 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
     });
     registry.Register("android.surface_holder.set_type",
                       [](dx::IntrinsicContext&) {
-        // Managed EGL owns the surface type; the legacy value is only a
-        // device hint and has no observable effect here.
+                      // Managed EGL owns the surface type; the legacy value is
+                      // only a device hint and has no observable effect here.
         return dx::VmValue::Void();
     });
     registry.Register("android.surface_holder.set_format",
@@ -468,18 +445,14 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
         return dx::VmValue::Void();
     });
     registry.Register("android.glsurfaceview.init",
-                      [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
     registry.Register("android.glsurfaceview.set_renderer",
                       [context](dx::IntrinsicContext& call) {
         context->renderer = call.arguments[0].ref;
         return dx::VmValue::Void();
     });
     registry.Register("android.glsurfaceview.request_render",
-                      [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
+                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
     registry.Register("android.glsurfaceview.lifecycle_noop",
                       [](dx::IntrinsicContext&) {
         // Render pause/resume is owned by the lifecycle driver.
@@ -491,32 +464,34 @@ void RegisterResources(dx::IntrinsicRegistry& registry,
                        const Context& context) {
     registry.Register("android.resources.get_configuration",
                       [context](dx::IntrinsicContext& call) {
-        const auto instance = Singleton(
-            call, context, "configuration",
+                      const auto instance =
+                          Singleton(call, context, "configuration",
             "Landroid/content/res/Configuration;");
-        // keyboard = KEYBOARD_NOKEYS (1): desktop host has no guest keypad.
-        const auto slots = call.vm.Model().InstanceSlots(instance);
+                      // keyboard = KEYBOARD_NOKEYS (1): desktop host has no
+                      // guest keypad.
+                      const auto slots =
+                          call.vm.Model().InstanceSlots(instance);
         slots[0] = {1U, dx::SlotTag::cat1};
         return dx::VmValue::Ref(instance);
     });
-    registry.Register("android.resources.get_identifier",
+  registry.Register(
+      "android.resources.get_identifier",
                       [context](dx::IntrinsicContext& call) {
         const auto entry_name = call.vm.StringUtf8(call.arguments[0].ref);
         const auto type_name = call.vm.StringUtf8(call.arguments[1].ref);
-        const auto* entry =
-            context->arsc.FindByName(type_name, entry_name);
+        const auto *entry = context->arsc.FindByName(type_name, entry_name);
         return dx::VmValue::Int(
             entry == nullptr ? 0
                              : static_cast<std::int32_t>(entry->resource_id));
     });
-    registry.Register("android.resources.open_raw_resource",
+  registry.Register(
+      "android.resources.open_raw_resource",
                       [context](dx::IntrinsicContext& call) {
         const auto resource_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
         const auto* entry = context->arsc.FindById(resource_id);
         if (entry == nullptr || !entry->string_value.has_value()) {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/IllegalArgumentException;",
+          throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                 "resource id has no file entry: " +
                     std::to_string(resource_id)};
         }
@@ -529,17 +504,17 @@ void RegisterResources(dx::IntrinsicRegistry& registry,
             "Ljava/lang/UnsupportedOperationException;",
             "string resources are not provided yet"};
     });
-    registry.Register("android.assets.open",
-                      [context](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.assets.open", [context](dx::IntrinsicContext &call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-        return dx::VmValue::Ref(OpenStream(
-            call, context, ReadApkFile(context, "assets/" + name)));
+        return dx::VmValue::Ref(
+            OpenStream(call, context, ReadApkFile(context, "assets/" + name)));
     });
-    registry.Register("android.assets.open_mode",
-                      [context](dx::IntrinsicContext& call) {
+  registry.Register(
+      "android.assets.open_mode", [context](dx::IntrinsicContext &call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-        return dx::VmValue::Ref(OpenStream(
-            call, context, ReadApkFile(context, "assets/" + name)));
+        return dx::VmValue::Ref(
+            OpenStream(call, context, ReadApkFile(context, "assets/" + name)));
     });
 }
 

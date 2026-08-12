@@ -55,7 +55,8 @@ namespace {
                           "boxed value slot is missing"};
     }
     auto bits = static_cast<std::uint64_t>(slots[0].bits);
-    if (wide) bits |= static_cast<std::uint64_t>(slots[1].bits) << 32U;
+  if (wide)
+    bits |= static_cast<std::uint64_t>(slots[1].bits) << 32U;
     return bits;
 }
 
@@ -65,8 +66,7 @@ void SetBoxedBits(IntrinsicContext& context, const VmObjectRef receiver,
     slots[0] = {static_cast<std::uint32_t>(bits),
                 wide ? SlotTag::wide_lo : SlotTag::cat1};
     if (wide) {
-        slots[1] = {static_cast<std::uint32_t>(bits >> 32U),
-                    SlotTag::wide_hi};
+    slots[1] = {static_cast<std::uint32_t>(bits >> 32U), SlotTag::wide_hi};
     }
 }
 
@@ -80,18 +80,19 @@ void SetBoxedBits(IntrinsicContext& context, const VmObjectRef receiver,
 
 void GuestLine(IntrinsicContext& context, const std::string& line) {
     auto* logger = context.vm.Log();
-    if (logger == nullptr) return;
+  if (logger == nullptr)
+    return;
     logger->Write(core::LogLevel::info, "runtime.dexvm.guest", line);
 }
 
 void RegisterSystemHandlers(IntrinsicRegistry& registry) {
     registry.Register("core.system.clinit", [](IntrinsicContext& context) {
         auto& vm = context.vm;
-        vm.SetIntrinsicStaticRef(
-            "Ljava/lang/System;", "out", "Ljava/io/PrintStream;",
+    vm.SetIntrinsicStaticRef("Ljava/lang/System;", "out",
+                             "Ljava/io/PrintStream;",
             vm.NewIntrinsicInstance("Ljava/io/PrintStream;"));
-        vm.SetIntrinsicStaticRef(
-            "Ljava/lang/System;", "err", "Ljava/io/PrintStream;",
+    vm.SetIntrinsicStaticRef("Ljava/lang/System;", "err",
+                             "Ljava/io/PrintStream;",
             vm.NewIntrinsicInstance("Ljava/io/PrintStream;"));
         return VmValue::Void();
     });
@@ -103,18 +104,15 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
     // registry (one interpreter instance).
     registry.Register(
         "core.system.set_property",
-        [properties = std::make_shared<
-             std::unordered_map<std::string, std::string>>()](
+      [properties =
+           std::make_shared<std::unordered_map<std::string, std::string>>()](
             IntrinsicContext& context) {
-            const auto key =
-                context.vm.StringUtf8(context.arguments[0].ref);
-            const auto value =
-                context.vm.StringUtf8(context.arguments[1].ref);
+        const auto key = context.vm.StringUtf8(context.arguments[0].ref);
+        const auto value = context.vm.StringUtf8(context.arguments[1].ref);
             const auto previous = properties->find(key);
             VmValue result = VmValue::Ref(VmObjectRef{});
             if (previous != properties->end()) {
-                result =
-                    VmValue::Ref(context.vm.NewStringUtf8(previous->second));
+          result = VmValue::Ref(context.vm.NewStringUtf8(previous->second));
             }
             (*properties)[key] = value;
             return result;
@@ -122,82 +120,73 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
     // Deterministic PRNG family: unseeded instances take sequential seeds
     // so a replayed session reproduces exactly (unified-Clock policy).
     {
-        const auto engines = std::make_shared<
-            std::unordered_map<std::uint32_t, std::mt19937_64>>();
+    const auto engines =
+        std::make_shared<std::unordered_map<std::uint32_t, std::mt19937_64>>();
         const auto counter = std::make_shared<std::uint64_t>(0x5DEECE66DULL);
         const auto engine_of =
             [engines](IntrinsicContext& context) -> std::mt19937_64& {
-            const auto found =
-                engines->find(context.receiver.Value());
+      const auto found = engines->find(context.receiver.Value());
             if (found == engines->end()) {
                 throw VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                   "Random instance was never constructed"};
             }
             return found->second;
         };
-        registry.Register("core.random.init",
-                          [engines, counter](IntrinsicContext& context) {
-            (*engines)[context.receiver.Value()] =
-                std::mt19937_64((*counter)++);
+    registry.Register(
+        "core.random.init", [engines, counter](IntrinsicContext &context) {
+          (*engines)[context.receiver.Value()] = std::mt19937_64((*counter)++);
             return VmValue::Void();
         });
-        registry.Register("core.random.init_seed",
-                          [engines](IntrinsicContext& context) {
+    registry.Register(
+        "core.random.init_seed", [engines](IntrinsicContext &context) {
             (*engines)[context.receiver.Value()] = std::mt19937_64(
                 static_cast<std::uint64_t>(context.arguments[0].AsLong()));
             return VmValue::Void();
         });
-        registry.Register("core.random.next_double",
-                          [engine_of](IntrinsicContext& context) {
+    registry.Register(
+        "core.random.next_double", [engine_of](IntrinsicContext &context) {
             auto& engine = engine_of(context);
             VmValue out;
             out.kind = VmValue::Kind::wide;
-            const double value =
-                static_cast<double>(engine() >> 11U) * 0x1.0p-53;
+          const double value = static_cast<double>(engine() >> 11U) * 0x1.0p-53;
             out.wide = std::bit_cast<std::uint64_t>(value);
             return out;
         });
-        registry.Register("core.random.next_float",
-                          [engine_of](IntrinsicContext& context) {
+    registry.Register(
+        "core.random.next_float", [engine_of](IntrinsicContext &context) {
             auto& engine = engine_of(context);
-            const float value =
-                static_cast<float>(engine() >> 40U) * 0x1.0p-24F;
+          const float value = static_cast<float>(engine() >> 40U) * 0x1.0p-24F;
             VmValue out = VmValue::Int(0);
             out.cat1 = std::bit_cast<std::uint32_t>(value);
             return out;
         });
-        registry.Register("core.random.next_int",
-                          [engine_of](IntrinsicContext& context) {
-            return VmValue::Int(
-                static_cast<std::int32_t>(engine_of(context)()));
+    registry.Register(
+        "core.random.next_int", [engine_of](IntrinsicContext &context) {
+          return VmValue::Int(static_cast<std::int32_t>(engine_of(context)()));
         });
-        registry.Register("core.random.next_long",
-                          [engine_of](IntrinsicContext& context) {
-            return VmValue::Long(
-                static_cast<std::int64_t>(engine_of(context)()));
+    registry.Register(
+        "core.random.next_long", [engine_of](IntrinsicContext &context) {
+          return VmValue::Long(static_cast<std::int64_t>(engine_of(context)()));
         });
-        registry.Register("core.random.next_int_bound",
-                          [engine_of](IntrinsicContext& context) {
+    registry.Register(
+        "core.random.next_int_bound", [engine_of](IntrinsicContext &context) {
             const auto bound = context.arguments[0].AsInt();
             if (bound <= 0) {
                 throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
                                   "bound must be positive"};
             }
             return VmValue::Int(static_cast<std::int32_t>(
-                engine_of(context)() %
-                static_cast<std::uint64_t>(bound)));
+              engine_of(context)() % static_cast<std::uint64_t>(bound)));
         });
     }
-    registry.Register("core.throwable.print_stack_trace",
-                      [](IntrinsicContext& context) {
+  registry.Register(
+      "core.throwable.print_stack_trace", [](IntrinsicContext &context) {
         auto* logger = context.vm.Log();
         if (logger != nullptr) {
-            const auto message =
-                context.vm.ThrowableMessage(context.receiver);
+          const auto message = context.vm.ThrowableMessage(context.receiver);
             logger->Write(core::LogLevel::warn, "runtime.dexvm.guest",
                           "printStackTrace: " +
-                              (message.IsValid()
-                                   ? context.vm.StringUtf8(message)
+                            (message.IsValid() ? context.vm.StringUtf8(message)
                                    : std::string("<no message>")));
         }
         return VmValue::Void();
@@ -208,8 +197,7 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
         // within this tick; it returns as an elapsed timeout.
         return VmValue::Void();
     });
-    registry.Register("core.system.arraycopy",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.system.arraycopy", [](IntrinsicContext &context) {
         auto& model = context.vm.Model();
         const auto source = context.arguments[0].ref;
         const auto source_pos = context.arguments[1].AsInt();
@@ -223,8 +211,7 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
         if (length < 0 || source_pos < 0 || target_pos < 0 ||
             source_pos > model.ArrayLength(source) - length ||
             target_pos > model.ArrayLength(target) - length) {
-            throw VmJavaThrow{
-                "Ljava/lang/ArrayIndexOutOfBoundsException;",
+      throw VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;",
                 "arraycopy range is out of bounds"};
         }
         const auto source_kind = model.Kind(source);
@@ -235,46 +222,40 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
             std::vector<VmObjectRef> staged;
             staged.reserve(static_cast<std::size_t>(length));
             for (std::int32_t index = 0; index < length; ++index) {
-                staged.push_back(
-                    model.GetObjectElement(source, source_pos + index));
+        staged.push_back(model.GetObjectElement(source, source_pos + index));
             }
             for (std::int32_t index = 0; index < length; ++index) {
                 model.SetObjectElement(target, target_pos + index,
-                                       staged[static_cast<std::size_t>(
-                                           index)]);
+                               staged[static_cast<std::size_t>(index)]);
             }
             return VmValue::Void();
         }
         if (source_kind == VmObjectKind::primitive_array &&
             target_kind == VmObjectKind::primitive_array &&
-            model.PrimitiveArrayKind(source) ==
-                model.PrimitiveArrayKind(target)) {
+        model.PrimitiveArrayKind(source) == model.PrimitiveArrayKind(target)) {
             std::vector<std::uint64_t> staged;
             staged.reserve(static_cast<std::size_t>(length));
             for (std::int32_t index = 0; index < length; ++index) {
-                staged.push_back(
-                    model.GetPrimitiveElement(source, source_pos + index));
+        staged.push_back(model.GetPrimitiveElement(source, source_pos + index));
             }
             for (std::int32_t index = 0; index < length; ++index) {
                 model.SetPrimitiveElement(target, target_pos + index,
-                                          staged[static_cast<std::size_t>(
-                                              index)]);
+                                  staged[static_cast<std::size_t>(index)]);
             }
             return VmValue::Void();
         }
         throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",
                           "arraycopy element types are incompatible"};
     });
-    registry.Register("core.printstream.println_string",
-                      [](IntrinsicContext& context) {
+  registry.Register(
+      "core.printstream.println_string", [](IntrinsicContext &context) {
         const auto argument = context.arguments[0].ref;
-        GuestLine(context, argument.IsValid()
-                               ? Narrow(Value(context, argument))
+        GuestLine(context, argument.IsValid() ? Narrow(Value(context, argument))
                                : std::string("null"));
         return VmValue::Void();
     });
-    registry.Register("core.printstream.println_int",
-                      [](IntrinsicContext& context) {
+  registry.Register(
+      "core.printstream.println_int", [](IntrinsicContext &context) {
         GuestLine(context, std::to_string(context.arguments[0].AsInt()));
         return VmValue::Void();
     });
@@ -283,11 +264,10 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
         GuestLine(context, "");
         return VmValue::Void();
     });
-    registry.Register("core.printstream.print_string",
-                      [](IntrinsicContext& context) {
+  registry.Register(
+      "core.printstream.print_string", [](IntrinsicContext &context) {
         const auto argument = context.arguments[0].ref;
-        GuestLine(context, argument.IsValid()
-                               ? Narrow(Value(context, argument))
+        GuestLine(context, argument.IsValid() ? Narrow(Value(context, argument))
                                : std::string("null"));
         return VmValue::Void();
     });
@@ -309,12 +289,12 @@ void RegisterMathHandlers(IntrinsicRegistry& registry) {
         return VmValue::Double(std::fabs(context.arguments[0].AsDouble()));
     });
     registry.Register("core.math.max_int", [](IntrinsicContext& context) {
-        return VmValue::Int(std::max(context.arguments[0].AsInt(),
-                                     context.arguments[1].AsInt()));
+    return VmValue::Int(
+        std::max(context.arguments[0].AsInt(), context.arguments[1].AsInt()));
     });
     registry.Register("core.math.min_int", [](IntrinsicContext& context) {
-        return VmValue::Int(std::min(context.arguments[0].AsInt(),
-                                     context.arguments[1].AsInt()));
+    return VmValue::Int(
+        std::min(context.arguments[0].AsInt(), context.arguments[1].AsInt()));
     });
     registry.Register("core.math.max_float", [](IntrinsicContext& context) {
         return VmValue::Float(std::fmax(context.arguments[0].AsFloat(),
@@ -352,25 +332,19 @@ void RegisterMathHandlers(IntrinsicRegistry& registry) {
 void RegisterBoxedHandlers(IntrinsicRegistry& registry) {
     registry.Register("core.integer.init", [](IntrinsicContext& context) {
         SetBoxedBits(context, context.receiver,
-                     static_cast<std::uint32_t>(
-                         context.arguments[0].AsInt()),
+                 static_cast<std::uint32_t>(context.arguments[0].AsInt()),
                      false);
         return VmValue::Void();
     });
-    registry.Register("core.integer.value_of",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.integer.value_of", [](IntrinsicContext &context) {
         return MakeBoxed(context, "Ljava/lang/Integer;",
-                         static_cast<std::uint32_t>(
-                             context.arguments[0].AsInt()),
+                     static_cast<std::uint32_t>(context.arguments[0].AsInt()),
                          false);
     });
-    registry.Register("core.integer.int_value",
-                      [](IntrinsicContext& context) {
-        return VmValue::Int(static_cast<std::int32_t>(
-            BoxedBits(context, false)));
+  registry.Register("core.integer.int_value", [](IntrinsicContext &context) {
+    return VmValue::Int(static_cast<std::int32_t>(BoxedBits(context, false)));
     });
-    registry.Register("core.integer.parse_int",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.integer.parse_int", [](IntrinsicContext &context) {
         const auto text = Narrow(Value(context, context.arguments[0].ref));
         char* end = nullptr;
         const auto value = std::strtol(text.c_str(), &end, 10);
@@ -380,32 +354,27 @@ void RegisterBoxedHandlers(IntrinsicRegistry& registry) {
         }
         return VmValue::Int(static_cast<std::int32_t>(value));
     });
-    registry.Register("core.integer.to_string",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.integer.to_string", [](IntrinsicContext &context) {
         return Make(context, Widen(std::to_string(static_cast<std::int32_t>(
                                  BoxedBits(context, false)))));
     });
-    registry.Register("core.integer.to_string_static",
-                      [](IntrinsicContext& context) {
+  registry.Register(
+      "core.integer.to_string_static", [](IntrinsicContext &context) {
         return Make(context,
                     Widen(std::to_string(context.arguments[0].AsInt())));
     });
     registry.Register("core.long.init", [](IntrinsicContext& context) {
-        SetBoxedBits(context, context.receiver, context.arguments[0].wide,
-                     true);
+    SetBoxedBits(context, context.receiver, context.arguments[0].wide, true);
         return VmValue::Void();
     });
     registry.Register("core.long.value_of", [](IntrinsicContext& context) {
-        return MakeBoxed(context, "Ljava/lang/Long;",
-                         context.arguments[0].wide, true);
+    return MakeBoxed(context, "Ljava/lang/Long;", context.arguments[0].wide,
+                     true);
     });
-    registry.Register("core.long.long_value",
-                      [](IntrinsicContext& context) {
-        return VmValue::Long(
-            static_cast<std::int64_t>(BoxedBits(context, true)));
+  registry.Register("core.long.long_value", [](IntrinsicContext &context) {
+    return VmValue::Long(static_cast<std::int64_t>(BoxedBits(context, true)));
     });
-    registry.Register("core.long.parse_long",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.long.parse_long", [](IntrinsicContext &context) {
         const auto text = Narrow(Value(context, context.arguments[0].ref));
         char* end = nullptr;
         const auto value = std::strtoll(text.c_str(), &end, 10);
@@ -424,13 +393,12 @@ void RegisterBoxedHandlers(IntrinsicRegistry& registry) {
                      context.arguments[0].AsInt() != 0 ? 1U : 0U, false);
         return VmValue::Void();
     });
-    registry.Register("core.boolean.value_of",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.boolean.value_of", [](IntrinsicContext &context) {
         return MakeBoxed(context, "Ljava/lang/Boolean;",
                          context.arguments[0].AsInt() != 0 ? 1U : 0U, false);
     });
-    registry.Register("core.boolean.boolean_value",
-                      [](IntrinsicContext& context) {
+  registry.Register(
+      "core.boolean.boolean_value", [](IntrinsicContext &context) {
         return VmValue::Int(BoxedBits(context, false) != 0 ? 1 : 0);
     });
     registry.Register("core.float.clinit", [](IntrinsicContext& context) {
@@ -441,33 +409,28 @@ void RegisterBoxedHandlers(IntrinsicRegistry& registry) {
         return VmValue::Void();
     });
     registry.Register("core.float.init", [](IntrinsicContext& context) {
-        SetBoxedBits(context, context.receiver, context.arguments[0].cat1,
-                     false);
+    SetBoxedBits(context, context.receiver, context.arguments[0].cat1, false);
         return VmValue::Void();
     });
     registry.Register("core.float.value_of", [](IntrinsicContext& context) {
-        return MakeBoxed(context, "Ljava/lang/Float;",
-                         context.arguments[0].cat1, false);
+    return MakeBoxed(context, "Ljava/lang/Float;", context.arguments[0].cat1,
+                     false);
     });
-    registry.Register("core.float.float_value",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.float.float_value", [](IntrinsicContext &context) {
         VmValue out;
         out.kind = VmValue::Kind::cat1;
         out.cat1 = static_cast<std::uint32_t>(BoxedBits(context, false));
         return out;
     });
     registry.Register("core.double.init", [](IntrinsicContext& context) {
-        SetBoxedBits(context, context.receiver, context.arguments[0].wide,
-                     true);
+    SetBoxedBits(context, context.receiver, context.arguments[0].wide, true);
         return VmValue::Void();
     });
-    registry.Register("core.double.value_of",
-                      [](IntrinsicContext& context) {
-        return MakeBoxed(context, "Ljava/lang/Double;",
-                         context.arguments[0].wide, true);
+  registry.Register("core.double.value_of", [](IntrinsicContext &context) {
+    return MakeBoxed(context, "Ljava/lang/Double;", context.arguments[0].wide,
+                     true);
     });
-    registry.Register("core.double.double_value",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.double.double_value", [](IntrinsicContext &context) {
         VmValue out;
         out.kind = VmValue::Kind::wide;
         out.wide = BoxedBits(context, true);
@@ -490,8 +453,7 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         context.vm.MapStorage(context.receiver).clear();
         return VmValue::Void();
     });
-    registry.Register("core.map.init_capacity",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.map.init_capacity", [](IntrinsicContext &context) {
         context.vm.MapStorage(context.receiver).clear();
         return VmValue::Void();
     });
@@ -501,8 +463,7 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         const auto value = context.arguments[1].ref;
         const auto found = map_find(context, key);
         if (found >= 0) {
-            const auto previous =
-                entries[static_cast<std::size_t>(found)].second;
+      const auto previous = entries[static_cast<std::size_t>(found)].second;
             entries[static_cast<std::size_t>(found)].second = value;
             return VmValue::Ref(previous);
         }
@@ -511,23 +472,23 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
     });
     registry.Register("core.map.get", [map_find](IntrinsicContext& context) {
         const auto found = map_find(context, context.arguments[0].ref);
-        if (found < 0) return VmValue::Ref(VmObjectRef{});
-        return VmValue::Ref(context.vm.MapStorage(context.receiver)
-                                [static_cast<std::size_t>(found)]
+    if (found < 0)
+      return VmValue::Ref(VmObjectRef{});
+    return VmValue::Ref(
+        context.vm.MapStorage(context.receiver)[static_cast<std::size_t>(found)]
                                     .second);
     });
-    registry.Register("core.map.contains_key",
-                      [map_find](IntrinsicContext& context) {
+  registry.Register(
+      "core.map.contains_key", [map_find](IntrinsicContext &context) {
         return VmValue::Int(
             map_find(context, context.arguments[0].ref) >= 0 ? 1 : 0);
     });
-    registry.Register("core.map.remove",
-                      [map_find](IntrinsicContext& context) {
+  registry.Register("core.map.remove", [map_find](IntrinsicContext &context) {
         auto& entries = context.vm.MapStorage(context.receiver);
         const auto found = map_find(context, context.arguments[0].ref);
-        if (found < 0) return VmValue::Ref(VmObjectRef{});
-        const auto previous =
-            entries[static_cast<std::size_t>(found)].second;
+    if (found < 0)
+      return VmValue::Ref(VmObjectRef{});
+    const auto previous = entries[static_cast<std::size_t>(found)].second;
         entries.erase(entries.begin() + found);
         return VmValue::Ref(previous);
     });
@@ -540,16 +501,14 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         return VmValue::Void();
     });
     registry.Register("core.map.is_empty", [](IntrinsicContext& context) {
-        return VmValue::Int(
-            context.vm.MapStorage(context.receiver).empty() ? 1 : 0);
+    return VmValue::Int(context.vm.MapStorage(context.receiver).empty() ? 1
+                                                                        : 0);
     });
 
     const auto check_index = [](const std::vector<VmObjectRef>& elements,
                                 const std::int32_t index) {
-        if (index < 0 ||
-            static_cast<std::size_t>(index) >= elements.size()) {
-            throw VmJavaThrow{
-                "Ljava/lang/IndexOutOfBoundsException;",
+    if (index < 0 || static_cast<std::size_t>(index) >= elements.size()) {
+      throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
                 "index " + std::to_string(index) + ", size " +
                     std::to_string(elements.size())};
         }
@@ -558,8 +517,7 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         context.vm.ListStorage(context.receiver).clear();
         return VmValue::Void();
     });
-    registry.Register("core.list.init_capacity",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.list.init_capacity", [](IntrinsicContext &context) {
         context.vm.ListStorage(context.receiver).clear();
         return VmValue::Void();
     });
@@ -568,36 +526,31 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
             .push_back(context.arguments[0].ref);
         return VmValue::Int(1);
     });
-    registry.Register("core.list.add_element",
-                      [](IntrinsicContext& context) {
+  registry.Register("core.list.add_element", [](IntrinsicContext &context) {
         context.vm.ListStorage(context.receiver)
             .push_back(context.arguments[0].ref);
         return VmValue::Void();
     });
-    registry.Register("core.list.get",
-                      [check_index](IntrinsicContext& context) {
+  registry.Register("core.list.get", [check_index](IntrinsicContext &context) {
         auto& elements = context.vm.ListStorage(context.receiver);
         const auto index = context.arguments[0].AsInt();
         check_index(elements, index);
         return VmValue::Ref(elements[static_cast<std::size_t>(index)]);
     });
-    registry.Register("core.list.set",
-                      [check_index](IntrinsicContext& context) {
+  registry.Register("core.list.set", [check_index](IntrinsicContext &context) {
         auto& elements = context.vm.ListStorage(context.receiver);
         const auto index = context.arguments[0].AsInt();
         check_index(elements, index);
         const auto previous = elements[static_cast<std::size_t>(index)];
-        elements[static_cast<std::size_t>(index)] =
-            context.arguments[1].ref;
+    elements[static_cast<std::size_t>(index)] = context.arguments[1].ref;
         return VmValue::Ref(previous);
     });
-    registry.Register("core.list.set_element_at",
-                      [check_index](IntrinsicContext& context) {
+  registry.Register(
+      "core.list.set_element_at", [check_index](IntrinsicContext &context) {
         auto& elements = context.vm.ListStorage(context.receiver);
         const auto index = context.arguments[1].AsInt();
         check_index(elements, index);
-        elements[static_cast<std::size_t>(index)] =
-            context.arguments[0].ref;
+        elements[static_cast<std::size_t>(index)] = context.arguments[0].ref;
         return VmValue::Void();
     });
     registry.Register("core.list.remove_at",
@@ -608,8 +561,8 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         elements.erase(elements.begin() + index);
         return VmValue::Void();
     });
-    registry.Register("core.list.remove_returning",
-                      [check_index](IntrinsicContext& context) {
+  registry.Register(
+      "core.list.remove_returning", [check_index](IntrinsicContext &context) {
         auto& elements = context.vm.ListStorage(context.receiver);
         const auto index = context.arguments[0].AsInt();
         check_index(elements, index);
@@ -626,8 +579,8 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         return VmValue::Void();
     });
     registry.Register("core.list.is_empty", [](IntrinsicContext& context) {
-        return VmValue::Int(
-            context.vm.ListStorage(context.receiver).empty() ? 1 : 0);
+    return VmValue::Int(context.vm.ListStorage(context.receiver).empty() ? 1
+                                                                         : 0);
     });
     registry.Register("core.list.contains", [](IntrinsicContext& context) {
         const auto& elements = context.vm.ListStorage(context.receiver);
@@ -638,6 +591,37 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         }
         return VmValue::Int(0);
     });
+  registry.Register("core.stack.push", [](IntrinsicContext &context) {
+    const auto value = context.arguments[0].ref;
+    context.vm.ListStorage(context.receiver).push_back(value);
+    return VmValue::Ref(value);
+  });
+  registry.Register("core.stack.peek", [](IntrinsicContext &context) {
+    const auto &elements = context.vm.ListStorage(context.receiver);
+    if (elements.empty()) {
+      throw VmJavaThrow{"Ljava/util/EmptyStackException;", "empty stack"};
+    }
+    return VmValue::Ref(elements.back());
+  });
+  registry.Register("core.stack.pop", [](IntrinsicContext &context) {
+    auto &elements = context.vm.ListStorage(context.receiver);
+    if (elements.empty()) {
+      throw VmJavaThrow{"Ljava/util/EmptyStackException;", "empty stack"};
+    }
+    const auto value = elements.back();
+    elements.pop_back();
+    return VmValue::Ref(value);
+  });
+  registry.Register("core.stack.search", [](IntrinsicContext &context) {
+    const auto &elements = context.vm.ListStorage(context.receiver);
+    std::int32_t distance = 1;
+    for (auto it = elements.rbegin(); it != elements.rend(); ++it, ++distance) {
+      if (context.vm.JavaEquals(*it, context.arguments[0].ref)) {
+        return VmValue::Int(distance);
+      }
+    }
+    return VmValue::Int(-1);
+  });
     registry.Register("core.list.copy_into", [](IntrinsicContext& context) {
         auto& model = context.vm.Model();
         const auto& elements = context.vm.ListStorage(context.receiver);
@@ -646,8 +630,7 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
             throw VmJavaThrow{"Ljava/lang/NullPointerException;",
                               "copyInto target array is null"};
         }
-        if (static_cast<std::size_t>(model.ArrayLength(target)) <
-            elements.size()) {
+    if (static_cast<std::size_t>(model.ArrayLength(target)) < elements.size()) {
             throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
                               "copyInto target array is too small"};
         }
@@ -669,21 +652,15 @@ void RegisterCollectionHandlers(IntrinsicRegistry& registry) {
         slots[1] = {0, SlotTag::cat1};
         return VmValue::Ref(instance);
     });
-    registry.Register("core.iterator.has_next",
-                      [](IntrinsicContext& context) {
-        const auto slots = context.vm.Model().InstanceSlots(
-            context.receiver);
-        const auto& elements =
-            context.vm.ListStorage(VmObjectRef(slots[0].bits));
+  registry.Register("core.iterator.has_next", [](IntrinsicContext &context) {
+    const auto slots = context.vm.Model().InstanceSlots(context.receiver);
+    const auto &elements = context.vm.ListStorage(VmObjectRef(slots[0].bits));
         return VmValue::Int(
-            static_cast<std::size_t>(slots[1].bits) < elements.size() ? 1
-                                                                      : 0);
+        static_cast<std::size_t>(slots[1].bits) < elements.size() ? 1 : 0);
     });
     registry.Register("core.iterator.next", [](IntrinsicContext& context) {
-        const auto slots = context.vm.Model().InstanceSlots(
-            context.receiver);
-        const auto& elements =
-            context.vm.ListStorage(VmObjectRef(slots[0].bits));
+    const auto slots = context.vm.Model().InstanceSlots(context.receiver);
+    const auto &elements = context.vm.ListStorage(VmObjectRef(slots[0].bits));
         const auto index = static_cast<std::size_t>(slots[1].bits);
         if (index >= elements.size()) {
             throw VmJavaThrow{"Ljava/util/NoSuchElementException;",

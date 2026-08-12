@@ -48,7 +48,11 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [WU-M9-023](WU-M9-023.md) | 入口覆盖与 provisioned 前提 | 完成 |
 | [WU-M9-024](WU-M9-024.md) | guest 静态字段预设 | 完成 |
 | [WU-M9-025](WU-M9-025.md) | Profile v1 完全移除 | 完成 |
-| [WU-M9-026](WU-M9-026.md) | Asphalt 6 启动作用域 exact gate | 进行中 |
+| [WU-M9-026](WU-M9-026.md) | Asphalt 6 启动作用域 exact gate | 完成 |
+| [WU-M9-027](WU-M9-027.md) | 解释器 per-thread 执行状态拆分 | 待开始 |
+| [WU-M9-028](WU-M9-028.md) | Java Thread 1:1 宿主线程执行 | 待开始 |
+| [WU-M9-029](WU-M9-029.md) | monitor wait-set 与 Object.wait/notify | 待开始 |
+| [WU-M9-030](WU-M9-030.md) | Asphalt 6 首帧与主界面 exact gate | 待开始 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 
@@ -56,10 +60,10 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 [`docs/playbook/NEW-TITLE.md`](../../playbook/NEW-TITLE.md)；staging profile 在
 `data/profiles-dexvm/`，通过各自 gate 后再迁移进 `data/profiles/`。
 
-进度：Dungeon Hunter 已越过链接与解释期，进入标题画面。Asphalt 6 已由 v2 entry
-直接进入引擎 Activity，provisioned-data preset 实际应用，并越过 Activity/GL surface/
-电话状态/URL encoding 等启动链；当前首个边界是 native `FindClass` 看不到 DexVM 平台
-intrinsic `android/content/Intent`，需统一 native→DexVM intrinsic JNI 可见性，不能伪造成功。
+进度：Dungeon Hunter 已越过链接与解释期，进入标题画面。Asphalt 6 的
+native→DexVM intrinsic JNI 可见性已统一，并已启动 `GLThread`；三轮 exact
+一致停在无超时 `Object.wait()`，这是阶段 4 真实线程/wait-set 边界，
+无首帧，不使用空返回掩盖。
 
 其余在办项（GC-B 精确标记清除、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)

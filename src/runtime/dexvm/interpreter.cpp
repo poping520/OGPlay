@@ -13,17 +13,17 @@ void IntrinsicRegistry::Register(std::string handler_id,
     for (const auto& [existing, _] : handlers_) {
         if (existing == handler_id) {
             throw DexVmError(DexVmErrorReason::internal_invariant,
-                             "intrinsic handler registered twice: " +
-                                 handler_id);
+                       "intrinsic handler registered twice: " + handler_id);
         }
     }
     handlers_.emplace_back(std::move(handler_id), std::move(handler));
 }
 
-const IntrinsicHandler* IntrinsicRegistry::Find(
-    const std::string_view handler_id) const {
+const IntrinsicHandler *
+IntrinsicRegistry::Find(const std::string_view handler_id) const {
     for (const auto& [existing, handler] : handlers_) {
-        if (existing == handler_id) return &handler;
+    if (existing == handler_id)
+      return &handler;
     }
     return nullptr;
 }
@@ -39,12 +39,18 @@ namespace {
 // Neutral answer for a survey stub: zero/null of the declared return kind.
 [[nodiscard]] VmValue NeutralValueFor(const char return_shorty) {
     switch (return_shorty) {
-        case 'V': return VmValue::Void();
-        case 'J': return VmValue::Long(0);
-        case 'F': return VmValue::Float(0.0F);
-        case 'D': return VmValue::Double(0.0);
-        case 'L': return VmValue::Ref(VmObjectRef{});
-        default: return VmValue::Int(0);
+  case 'V':
+    return VmValue::Void();
+  case 'J':
+    return VmValue::Long(0);
+  case 'F':
+    return VmValue::Float(0.0F);
+  case 'D':
+    return VmValue::Double(0.0);
+  case 'L':
+    return VmValue::Ref(VmObjectRef{});
+  default:
+    return VmValue::Int(0);
     }
 }
 
@@ -74,14 +80,13 @@ std::vector<VmStackEntry> Interpreter::Impl::CaptureStack() const {
     std::vector<VmStackEntry> stack;
     for (auto it = frames.rbegin(); it != frames.rend(); ++it) {
         const auto& method = *it->method;
-        stack.push_back({linker->Class(method.owner).descriptor,
-                         method.name, it->pc});
+    stack.push_back(
+        {linker->Class(method.owner).descriptor, method.name, it->pc});
     }
     return stack;
 }
 
-VmObjectRef Interpreter::Impl::AllocateInstance(
-    const DexClassId java_class) {
+VmObjectRef Interpreter::Impl::AllocateInstance(const DexClassId java_class) {
     const auto& linked = linker->Class(java_class);
     if (linked.is_interface || linked.is_array) {
         FailCode("cannot instantiate " + linked.descriptor);
@@ -92,15 +97,14 @@ VmObjectRef Interpreter::Impl::AllocateInstance(
     return model->NewInstance(java_class, linked.instance_slots);
 }
 
-VmObjectRef Interpreter::Impl::InternDexString(
-    const std::uint32_t string_index) {
+VmObjectRef
+Interpreter::Impl::InternDexString(const std::uint32_t string_index) {
     const auto& image = linker->Image();
     if (string_index >= image.strings.size()) {
         FailCode("string index out of range");
     }
     const auto& value = image.strings[string_index].value;
-    return model->InternString(
-        std::u16string_view(value.data(), value.size()));
+  return model->InternString(std::u16string_view(value.data(), value.size()));
 }
 
 void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
@@ -110,8 +114,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
             return;
         case ClinitState::failed:
             ThrowJava("Ljava/lang/NoClassDefFoundError;",
-                      "class initialization previously failed: " +
-                          linked.descriptor);
+              "class initialization previously failed: " + linked.descriptor);
             return;
         case ClinitState::initializing:
             // Same-thread re-entrancy is allowed by the JLS; stage 1 runs a
@@ -127,8 +130,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
     if (linked.super.has_value()) {
         EnsureInitialized(*linked.super);
         if (pending_exception.IsValid()) {
-            linker->MutableClass(java_class).clinit_state =
-                ClinitState::failed;
+      linker->MutableClass(java_class).clinit_state = ClinitState::failed;
             return;
         }
     }
@@ -140,8 +142,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
     for (std::size_t index = 0;
          index < values.size() && index < mutable_class.own_static_fields.size();
          ++index) {
-        const auto& field = linker->Field(
-            mutable_class.own_static_fields[index]);
+    const auto &field = linker->Field(mutable_class.own_static_fields[index]);
         const auto& value = values[index];
         auto& storage = mutable_class.static_storage;
         using loader::DexEncodedValueKind;
@@ -151,15 +152,13 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
             case DexEncodedValueKind::short_value:
             case DexEncodedValueKind::char_value:
             case DexEncodedValueKind::int_value:
-                storage[field.slot] = static_cast<std::uint32_t>(
-                    static_cast<std::int32_t>(value.integral));
+      storage[field.slot] =
+          static_cast<std::uint32_t>(static_cast<std::int32_t>(value.integral));
                 break;
             case DexEncodedValueKind::long_value: {
-                const auto bits =
-                    static_cast<std::uint64_t>(value.integral);
+      const auto bits = static_cast<std::uint64_t>(value.integral);
                 storage[field.slot] = static_cast<std::uint32_t>(bits);
-                storage[field.slot + 1] =
-                    static_cast<std::uint32_t>(bits >> 32U);
+      storage[field.slot + 1] = static_cast<std::uint32_t>(bits >> 32U);
                 break;
             }
             case DexEncodedValueKind::float_value: {
@@ -170,19 +169,15 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
             case DexEncodedValueKind::double_value: {
                 const auto bits = std::bit_cast<std::uint64_t>(value.floating);
                 storage[field.slot] = static_cast<std::uint32_t>(bits);
-                storage[field.slot + 1] =
-                    static_cast<std::uint32_t>(bits >> 32U);
+      storage[field.slot + 1] = static_cast<std::uint32_t>(bits >> 32U);
                 break;
             }
             case DexEncodedValueKind::string_index:
-                storage[field.slot] =
-                    InternDexString(value.index).Value();
+      storage[field.slot] = InternDexString(value.index).Value();
                 break;
             case DexEncodedValueKind::type_index:
                 storage[field.slot] =
-                    model
-                        ->ClassObject(linker->ResolveTypeIndex(value.index))
-                        .Value();
+          model->ClassObject(linker->ResolveTypeIndex(value.index)).Value();
                 break;
             case DexEncodedValueKind::null_reference:
                 storage[field.slot] = 0;
@@ -192,9 +187,10 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
 
     // Intrinsic constant statics materialize before any handler runs.
     for (const auto& constant : mutable_class.intrinsic_constants) {
-        const auto field_id = linker->FindFieldRecursive(
-            java_class, constant.name, constant.descriptor);
-        if (!field_id.has_value()) continue;
+    const auto field_id = linker->FindFieldRecursive(java_class, constant.name,
+                                                     constant.descriptor);
+    if (!field_id.has_value())
+      continue;
         const auto& field = linker->Field(*field_id);
         auto& storage = linker->MutableClass(java_class).static_storage;
         if (constant.descriptor == "Ljava/lang/String;") {
@@ -204,8 +200,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
         } else if (field.is_wide) {
             const auto bits = static_cast<std::uint64_t>(constant.integral);
             storage[field.slot] = static_cast<std::uint32_t>(bits);
-            storage[field.slot + 1] =
-                static_cast<std::uint32_t>(bits >> 32U);
+      storage[field.slot + 1] = static_cast<std::uint32_t>(bits >> 32U);
         } else {
             storage[field.slot] = static_cast<std::uint32_t>(
                 static_cast<std::int32_t>(constant.integral));
@@ -215,8 +210,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
         const auto* handler =
             intrinsics.Find(mutable_class.intrinsic_clinit_handler);
         if (handler == nullptr) {
-            linker->MutableClass(java_class).clinit_state =
-                ClinitState::failed;
+      linker->MutableClass(java_class).clinit_state = ClinitState::failed;
             ThrowJava("Ljava/lang/UnsatisfiedLinkError;",
                       "intrinsic clinit handler is not implemented: " +
                           mutable_class.intrinsic_clinit_handler);
@@ -226,8 +220,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
         try {
             (void)(*handler)(context);
         } catch (const VmJavaThrow& thrown) {
-            linker->MutableClass(java_class).clinit_state =
-                ClinitState::failed;
+      linker->MutableClass(java_class).clinit_state = ClinitState::failed;
             ThrowJava(thrown.descriptor, thrown.message);
             return;
         }
@@ -239,8 +232,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
         PushInterpretedFrame(linker->Method(*clinit), {}, 0);
         const auto outcome = Run(frames.size() - 1);
         if (outcome.exception.IsValid()) {
-            linker->MutableClass(java_class).clinit_state =
-                ClinitState::failed;
+      linker->MutableClass(java_class).clinit_state = ClinitState::failed;
             // Initialization failure is sticky NoClassDefFoundError for
             // later users; the original throwable propagates now.
             SetPending(outcome.exception);
@@ -267,8 +259,7 @@ void Interpreter::Impl::PushInterpretedFrame(
     frame.regs.assign(code.info.registers_size, Slot{});
     // Arguments occupy the trailing registers (Dalvik ins convention).
     std::uint32_t reg =
-        static_cast<std::uint32_t>(code.info.registers_size) -
-        method.ins_words;
+      static_cast<std::uint32_t>(code.info.registers_size) - method.ins_words;
     for (const auto& value : arguments) {
         switch (value.kind) {
             case VmValue::Kind::cat1:
@@ -278,8 +269,7 @@ void Interpreter::Impl::PushInterpretedFrame(
             case VmValue::Kind::wide:
                 frame.regs[reg] = {static_cast<std::uint32_t>(value.wide),
                                    SlotTag::wide_lo};
-                frame.regs[reg + 1] = {
-                    static_cast<std::uint32_t>(value.wide >> 32U),
+      frame.regs[reg + 1] = {static_cast<std::uint32_t>(value.wide >> 32U),
                     SlotTag::wide_hi};
                 reg += 2;
                 break;
@@ -295,32 +285,31 @@ void Interpreter::Impl::PushInterpretedFrame(
     ++stats.method_calls;
 }
 
-VmValue Interpreter::Impl::InvokeIntrinsic(
-    const LinkedMethod& method, const VmObjectRef receiver,
+VmValue
+Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
+                                   const VmObjectRef receiver,
     const std::span<const VmValue> arguments) {
     const auto* handler = intrinsics.Find(method.intrinsic_handler);
     if (handler == nullptr) {
         if (ledger != nullptr) {
-            ledger->RecordUnimplemented(
-                "dexvm.intrinsic." + method.intrinsic_handler, 0);
+      ledger->RecordUnimplemented("dexvm.intrinsic." + method.intrinsic_handler,
+                                  0);
         }
         const auto& declaring = linker->Class(method.owner).descriptor;
         if (linker->GapSurveyEnabled()) {
             // Survey mode: record and answer neutrally so one run harvests
             // every gap the title reaches. Never a compatibility result.
-            linker->RecordGapSurveyHit(declaring,
-                                       method.name + method.descriptor);
+      linker->RecordGapSurveyHit(declaring, method.name + method.descriptor);
             if (logger != nullptr) {
                 logger->Write(core::LogLevel::warn, "runtime.dexvm.survey",
-                              "SURVEY neutral stub: " + declaring + "." +
-                                  method.name + method.descriptor);
+                      "SURVEY neutral stub: " + declaring + "." + method.name +
+                          method.descriptor);
             }
             return NeutralValueFor(method.return_shorty);
         }
-        throw VmJavaThrow{
-            "Ljava/lang/UnsatisfiedLinkError;",
-            "intrinsic handler is not implemented: " + declaring + "." +
-                method.name + method.descriptor + " (" +
+    throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
+                      "intrinsic handler is not implemented: " + declaring +
+                          "." + method.name + method.descriptor + " (" +
                 method.intrinsic_handler + ")"};
     }
     ++stats.intrinsic_calls;
@@ -343,8 +332,7 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
                 model->SetEmergencyReserve(true);
                 ThrowJava("Ljava/lang/OutOfMemoryError;", error.what());
                 model->SetEmergencyReserve(false);
-            } else if (error.Reason() ==
-                           DexVmErrorReason::object_model_failure &&
+      } else if (error.Reason() == DexVmErrorReason::object_model_failure &&
                        linker->GapSurveyEnabled()) {
                 // Survey mode is diagnostic-only: a neutral stub's null/zero
                 // flowed into a host accessor. Surface it as a guest
@@ -361,7 +349,8 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
                 throw;
             }
         }
-        if (!pending_exception.IsValid()) continue;
+    if (!pending_exception.IsValid())
+      continue;
 
         // Exception unwinding (02 §8; catch matching follows AOSP
         // vm/Exception.cpp dvmFindCatchBlock: declaration order, then
@@ -377,10 +366,9 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
                         continue;
                     }
                     for (const auto& handler : block.typed_handlers) {
-                        const auto handler_class = linker->ResolveTypeIndex(
-                            handler.type_index);
-                        if (linker->IsAssignable(handler_class,
-                                                 pending_exception_class)) {
+            const auto handler_class =
+                linker->ResolveTypeIndex(handler.type_index);
+            if (linker->IsAssignable(handler_class, pending_exception_class)) {
                             frame.pc = handler.handler_pc;
                             handled = true;
                             break;
@@ -390,7 +378,8 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
                         frame.pc = *block.catch_all_pc;
                         handled = true;
                     }
-                    if (handled) break;
+          if (handled)
+            break;
                 }
             }
             if (handled) {
@@ -475,9 +464,7 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
             const auto receiver = method.is_static || arguments.empty()
                                       ? VmObjectRef{}
                                       : arguments.front().ref;
-            const auto rest = method.is_static
-                                  ? arguments
-                                  : arguments.subspan(1);
+    const auto rest = method.is_static ? arguments : arguments.subspan(1);
             try {
                 outcome.value = impl_->InvokeIntrinsic(method, receiver, rest);
             } catch (const VmJavaThrow& thrown) {
@@ -493,11 +480,9 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
         case MethodKind::native: {
             if (impl_->bridge == nullptr) {
                 if (impl_->ledger != nullptr) {
-                    impl_->ledger->RecordUnimplemented(
-                        "dexvm.native_bridge", 0);
+        impl_->ledger->RecordUnimplemented("dexvm.native_bridge", 0);
                 }
-                throw DexVmError(
-                    DexVmErrorReason::native_bridge_unavailable,
+      throw DexVmError(DexVmErrorReason::native_bridge_unavailable,
                     "native method requires the JNI bridge: " +
                         impl_->linker->Class(method.owner).descriptor + "." +
                         method.name);
@@ -506,30 +491,26 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
             const auto receiver = method.is_static || arguments.empty()
                                       ? VmObjectRef{}
                                       : arguments.front().ref;
-            const auto rest = method.is_static ? arguments
-                                               : arguments.subspan(1);
+    const auto rest = method.is_static ? arguments : arguments.subspan(1);
             ++impl_->stats.native_calls;
             outcome.value = impl_->bridge->Invoke(method, receiver, rest);
             return outcome;
         }
         case MethodKind::abstract:
             throw DexVmError(DexVmErrorReason::invalid_member,
-                             "abstract method invoked directly: " +
-                                 method.name);
+                     "abstract method invoked directly: " + method.name);
     }
     throw DexVmError(DexVmErrorReason::internal_invariant,
                      "unreachable method kind");
 }
 
-VmCallOutcome Interpreter::EnsureClassInitialized(
-    const DexClassId java_class) {
+VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
     impl_->EnsureInitialized(java_class);
     VmCallOutcome outcome;
     if (impl_->pending_exception.IsValid()) {
         outcome.exception = impl_->pending_exception;
         outcome.exception_class = impl_->pending_exception_class;
-        const auto state =
-            impl_->throwables.find(impl_->pending_exception.Value());
+    const auto state = impl_->throwables.find(impl_->pending_exception.Value());
         if (state != impl_->throwables.end()) {
             outcome.exception_message = state->second.message_utf8;
             outcome.exception_stack = state->second.stack;
@@ -564,8 +545,7 @@ VmObjectRef Interpreter::NewStringUtf8(const std::string_view utf8) {
         } else if ((byte & 0xf0U) == 0xe0U && index + 2 < utf8.size()) {
             units.push_back(static_cast<char16_t>(
                 ((byte & 0x0fU) << 12U) |
-                ((static_cast<std::uint8_t>(utf8[index + 1]) & 0x3fU)
-                 << 6U) |
+          ((static_cast<std::uint8_t>(utf8[index + 1]) & 0x3fU) << 6U) |
                 (static_cast<std::uint8_t>(utf8[index + 2]) & 0x3fU)));
             index += 3;
         } else {
@@ -617,13 +597,13 @@ void Interpreter::SetThrowableMessage(const VmObjectRef throwable,
                                       const VmObjectRef message) {
     auto& state = impl_->throwables[throwable.Value()];
     state.message = message;
-    state.message_utf8 =
-        message.IsValid() ? StringUtf8(message) : std::string{};
+  state.message_utf8 = message.IsValid() ? StringUtf8(message) : std::string{};
 }
 
 VmObjectRef Interpreter::ThrowableMessage(const VmObjectRef throwable) const {
     const auto state = impl_->throwables.find(throwable.Value());
-    if (state == impl_->throwables.end()) return VmObjectRef{};
+  if (state == impl_->throwables.end())
+    return VmObjectRef{};
     return state->second.message;
 }
 
@@ -640,18 +620,18 @@ core::Logger* Interpreter::Log() const noexcept { return impl_->logger; }
 std::u16string& Interpreter::BuilderBuffer(const VmObjectRef instance) {
     return impl_->builders[instance.Value()];
 }
-std::vector<VmObjectRef>& Interpreter::ListStorage(
-    const VmObjectRef instance) {
+std::vector<VmObjectRef> &Interpreter::ListStorage(const VmObjectRef instance) {
     return impl_->lists[instance.Value()];
 }
-std::vector<std::pair<VmObjectRef, VmObjectRef>>& Interpreter::MapStorage(
-    const VmObjectRef instance) {
+std::vector<std::pair<VmObjectRef, VmObjectRef>> &
+Interpreter::MapStorage(const VmObjectRef instance) {
     return impl_->maps[instance.Value()];
 }
 
-void Interpreter::SetIntrinsicStaticRef(
-    const std::string_view class_descriptor, const std::string_view field_name,
-    const std::string_view field_descriptor, const VmObjectRef value) {
+void Interpreter::SetIntrinsicStaticRef(const std::string_view class_descriptor,
+                                        const std::string_view field_name,
+                                        const std::string_view field_descriptor,
+                                        const VmObjectRef value) {
     const auto java_class = impl_->linker->FindClass(class_descriptor);
     if (!java_class.has_value()) {
         throw DexVmError(DexVmErrorReason::unknown_class,
@@ -670,8 +650,7 @@ void Interpreter::SetIntrinsicStaticRef(
         value.Value();
 }
 
-void Interpreter::SetStaticFieldBits(
-    const std::string_view class_descriptor,
+void Interpreter::SetStaticFieldBits(const std::string_view class_descriptor,
     const std::string_view field_name,
     const std::string_view field_descriptor,
     const std::uint64_t bits) {
@@ -684,16 +663,15 @@ void Interpreter::SetStaticFieldBits(
     const auto field_id = impl_->linker->FindFieldRecursive(
         *java_class, std::string(field_name), std::string(field_descriptor));
     if (!field_id.has_value()) {
-        throw DexVmError(DexVmErrorReason::invalid_member,
-                         "preset static field is not declared: " +
-                             std::string(field_name) +
+    throw DexVmError(
+        DexVmErrorReason::invalid_member,
+        "preset static field is not declared: " + std::string(field_name) +
                              std::string(field_descriptor));
     }
     const auto& field = impl_->linker->Field(*field_id);
     if (!field.is_static) {
         throw DexVmError(DexVmErrorReason::invalid_member,
-                         "preset target is not static: " +
-                             std::string(field_name));
+                     "preset target is not static: " + std::string(field_name));
     }
     auto& owner = impl_->linker->MutableClass(field.owner);
     if (owner.clinit_state != ClinitState::initialized) {
@@ -701,8 +679,7 @@ void Interpreter::SetStaticFieldBits(
                          "preset target class is not initialized: " +
                              owner.descriptor);
     }
-    if (field.slot + (field.is_wide ? 2U : 1U) >
-        owner.static_storage.size()) {
+  if (field.slot + (field.is_wide ? 2U : 1U) > owner.static_storage.size()) {
         throw DexVmError(DexVmErrorReason::internal_invariant,
                          "preset static slot is out of range: " +
                              std::string(field_name));
@@ -714,8 +691,8 @@ void Interpreter::SetStaticFieldBits(
     }
 }
 
-VmObjectRef Interpreter::NewIntrinsicInstance(
-    const std::string_view class_descriptor) {
+VmObjectRef
+Interpreter::NewIntrinsicInstance(const std::string_view class_descriptor) {
     const auto java_class = impl_->linker->FindClass(class_descriptor);
     if (!java_class.has_value()) {
         throw DexVmError(DexVmErrorReason::unknown_class,
@@ -727,8 +704,10 @@ VmObjectRef Interpreter::NewIntrinsicInstance(
 
 bool Interpreter::JavaEquals(const VmObjectRef left,
                              const VmObjectRef right) const {
-    if (left == right) return true;
-    if (!left.IsValid() || !right.IsValid()) return false;
+  if (left == right)
+    return true;
+  if (!left.IsValid() || !right.IsValid())
+    return false;
     const auto left_kind = impl_->model->Kind(left);
     const auto right_kind = impl_->model->Kind(right);
     const auto is_string = [](const VmObjectKind kind) {
@@ -744,6 +723,15 @@ bool Interpreter::JavaEquals(const VmObjectRef left,
         }
     }
     return false;
+}
+
+void Interpreter::NotifyMonitor(const VmObjectRef receiver) const {
+  const auto held = impl_->monitors.find(receiver.Value());
+  if (!receiver.IsValid() || held == impl_->monitors.end() ||
+      held->second <= 0) {
+    throw VmJavaThrow{"Ljava/lang/IllegalMonitorStateException;",
+                      "current thread does not own receiver monitor"};
+  }
 }
 
 }  // namespace ogplay::runtime::dexvm

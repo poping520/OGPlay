@@ -68,6 +68,50 @@ struct Vm final {
     }
 };
 
+IntrinsicRegistry AndroidRegistry(
+    const std::shared_ptr<ogplay::runtime::DexVmAndroidContext> &context) {
+  IntrinsicRegistry registry;
+  ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+  return registry;
+}
+
+struct AndroidVm final {
+  JniStringStore strings;
+  JniPrimitiveArrayStore arrays;
+  JavaObjectModel model{strings, arrays};
+  DexClassLinker linker;
+  std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context{
+      std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
+  ogplay::core::CapabilityLedger ledger;
+  Interpreter interpreter;
+
+  AndroidVm()
+      : interpreter(
+            [this]() -> DexClassLinker & {
+              auto catalog = CoreIntrinsicCatalog();
+              const auto android = ogplay::runtime::AndroidIntrinsicCatalog();
+              catalog.insert(catalog.end(), android.begin(), android.end());
+              linker.RegisterIntrinsics(catalog);
+              linker.RegisterDex(ReadInterpreterFixture());
+              linker.Link();
+              return linker;
+            }(),
+            model, AndroidRegistry(context), nullptr, ledger) {
+    interpreter.RegisterCoreBuiltins();
+  }
+
+  [[nodiscard]] VmMethodId Virtual(const std::string_view descriptor,
+                                   const std::string_view name,
+                                   const std::string_view signature) {
+    const auto owner = linker.FindClass(descriptor);
+    REQUIRE(owner.has_value());
+    const auto index = linker.FindVtableIndex(*owner, std::string(name),
+                                              std::string(signature));
+    REQUIRE(index.has_value());
+    return linker.Class(*owner).vtable[*index];
+  }
+};
+
 ogplay::session::TitleProfile PresetProfile() {
     ogplay::session::TitleProfile profile;
     profile.schema = 2;
@@ -111,15 +155,15 @@ TEST_CASE("Profile static preset applies only after guest clinit") {
 
     Vm with_preset;
     ogplay::core::Logger logger;
-    ogplay::session::ApplyProfileStaticPresets(
-        PresetProfile(), with_preset.interpreter, &logger);
+  ogplay::session::ApplyProfileStaticPresets(PresetProfile(),
+                                             with_preset.interpreter, &logger);
     const auto applied = with_preset.linker.FindClass("LCounter;");
     REQUIRE(applied.has_value());
     CHECK(with_preset.linker.Class(*applied).clinit_state ==
           ClinitState::initialized);
     CHECK(with_preset.linker.Class(*applied).static_storage[0] == 42U);
-    const auto records = logger.Snapshot(
-        ogplay::core::LogLevel::info, "session.profile_entry");
+  const auto records =
+      logger.Snapshot(ogplay::core::LogLevel::info, "session.profile_entry");
     REQUIRE(records.size() == 1U);
     CHECK(records.front().message == "applied static field preset");
 }
@@ -129,16 +173,14 @@ TEST_CASE("Profile static preset rejects missing guest facts") {
     auto missing_class = PresetProfile();
     missing_class.runtime.presets.front().class_name = "Missing";
     CHECK_THROWS_WITH_AS(
-        ogplay::session::ApplyProfileStaticPresets(
-            missing_class, vm.interpreter),
+      ogplay::session::ApplyProfileStaticPresets(missing_class, vm.interpreter),
         "Profile preset class is not in the dex: LMissing;",
         ogplay::session::ProfileEntryScopeError);
 
     auto wrong_field = PresetProfile();
     wrong_field.runtime.presets.front().field = "absent";
     CHECK_THROWS_AS(
-        ogplay::session::ApplyProfileStaticPresets(
-            wrong_field, vm.interpreter),
+      ogplay::session::ApplyProfileStaticPresets(wrong_field, vm.interpreter),
         ogplay::session::ProfileEntryScopeError);
 }
 
@@ -176,8 +218,7 @@ TEST_CASE("Profile static presets preserve every supported field type") {
         const auto& storage = vm.linker.Class(*owner).static_storage;
         std::uint64_t result = storage[linked.slot];
         if (linked.is_wide) {
-            result |= static_cast<std::uint64_t>(storage[linked.slot + 1U])
-                      << 32U;
+      result |= static_cast<std::uint64_t>(storage[linked.slot + 1U]) << 32U;
         }
         return result;
     };
@@ -190,8 +231,7 @@ TEST_CASE("Profile static presets preserve every supported field type") {
     CHECK(std::bit_cast<float>(static_cast<std::uint32_t>(bits("f", "F"))) ==
           doctest::Approx(1.25F));
     CHECK(std::bit_cast<double>(bits("d", "D")) == doctest::Approx(-2.5));
-    CHECK(vm.interpreter.StringUtf8(
-              VmObjectRef(static_cast<std::uint32_t>(
+  CHECK(vm.interpreter.StringUtf8(VmObjectRef(static_cast<std::uint32_t>(
                   bits("text", "Ljava/lang/String;")))) == "ready");
 
     auto instance = profile;
@@ -210,29 +250,25 @@ TEST_CASE("AudioManager reports the deterministic external music fact") {
     DexClassLinker linker;
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
-    catalog.insert(catalog.end(), android_catalog.begin(),
-                   android_catalog.end());
+  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    auto context =
-        std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
     ogplay::runtime::RegisterAndroidBuiltins(registry, context);
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter(linker, model, std::move(registry), nullptr,
-                            ledger);
+  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
-    const auto audio_class =
-        linker.FindClass("Landroid/media/AudioManager;");
+  const auto audio_class = linker.FindClass("Landroid/media/AudioManager;");
     REQUIRE(audio_class.has_value());
-    const auto index = linker.FindVtableIndex(
-        *audio_class, "isMusicActive", "()Z");
+  const auto index =
+      linker.FindVtableIndex(*audio_class, "isMusicActive", "()Z");
     REQUIRE(index.has_value());
-    const auto instance = interpreter.NewIntrinsicInstance(
-        "Landroid/media/AudioManager;");
-    const auto outcome = interpreter.Call(
-        linker.Class(*audio_class).vtable[*index],
+  const auto instance =
+      interpreter.NewIntrinsicInstance("Landroid/media/AudioManager;");
+  const auto outcome =
+      interpreter.Call(linker.Class(*audio_class).vtable[*index],
         std::vector<VmValue>{VmValue::Ref(instance)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 0);
@@ -245,57 +281,49 @@ TEST_CASE("TelephonyManager records and cancels offline listeners") {
     DexClassLinker linker;
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
-    catalog.insert(catalog.end(), android_catalog.begin(),
-                   android_catalog.end());
+  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    auto context =
-        std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
     ogplay::runtime::RegisterAndroidBuiltins(registry, context);
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter(linker, model, std::move(registry), nullptr,
-                            ledger);
+  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
     const auto manager_class =
         linker.FindClass("Landroid/telephony/TelephonyManager;");
     REQUIRE(manager_class.has_value());
     const auto index = linker.FindVtableIndex(
-        *manager_class, "listen",
-        "(Landroid/telephony/PhoneStateListener;I)V");
+      *manager_class, "listen", "(Landroid/telephony/PhoneStateListener;I)V");
     REQUIRE(index.has_value());
-    const auto manager = interpreter.NewIntrinsicInstance(
-        "Landroid/telephony/TelephonyManager;");
+  const auto manager =
+      interpreter.NewIntrinsicInstance("Landroid/telephony/TelephonyManager;");
     const auto listener = interpreter.NewIntrinsicInstance(
         "Landroid/telephony/PhoneStateListener;");
     const auto target = linker.Class(*manager_class).vtable[*index];
     auto outcome = interpreter.Call(
         target, std::vector<VmValue>{VmValue::Ref(manager),
-                                     VmValue::Ref(listener),
-                                     VmValue::Int(32)});
+                                   VmValue::Ref(listener), VmValue::Int(32)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(context->telephony_listeners.at(listener.Value()) == 32);
     outcome = interpreter.Call(
         target, std::vector<VmValue>{VmValue::Ref(manager),
-                                     VmValue::Ref(listener),
-                                     VmValue::Int(0)});
+                                   VmValue::Ref(listener), VmValue::Int(0)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK_FALSE(context->telephony_listeners.contains(listener.Value()));
 
-    const auto sim_state = linker.FindVtableIndex(
-        *manager_class, "getSimState", "()I");
-    const auto phone_type = linker.FindVtableIndex(
-        *manager_class, "getPhoneType", "()I");
+  const auto sim_state =
+      linker.FindVtableIndex(*manager_class, "getSimState", "()I");
+  const auto phone_type =
+      linker.FindVtableIndex(*manager_class, "getPhoneType", "()I");
     REQUIRE(sim_state.has_value());
     REQUIRE(phone_type.has_value());
-    outcome = interpreter.Call(
-        linker.Class(*manager_class).vtable[*sim_state],
+  outcome = interpreter.Call(linker.Class(*manager_class).vtable[*sim_state],
         std::vector<VmValue>{VmValue::Ref(manager)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 1);
-    outcome = interpreter.Call(
-        linker.Class(*manager_class).vtable[*phone_type],
+  outcome = interpreter.Call(linker.Class(*manager_class).vtable[*phone_type],
         std::vector<VmValue>{VmValue::Ref(manager)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(outcome.value.AsInt() == 0);
@@ -308,18 +336,15 @@ TEST_CASE("SurfaceView owns a stable holder and callback identity") {
     DexClassLinker linker;
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
-    catalog.insert(catalog.end(), android_catalog.begin(),
-                   android_catalog.end());
+  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    auto context =
-        std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
     ogplay::runtime::RegisterAndroidBuiltins(registry, context);
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter(linker, model, std::move(registry), nullptr,
-                            ledger);
+  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
     const auto view_class = linker.FindClass("Landroid/view/SurfaceView;");
     REQUIRE(view_class.has_value());
@@ -329,26 +354,24 @@ TEST_CASE("SurfaceView owns a stable holder and callback identity") {
     const auto view =
         interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
     const auto target = linker.Class(*view_class).vtable[*get_holder];
-    const auto first = interpreter.Call(
-        target, std::vector<VmValue>{VmValue::Ref(view)});
-    const auto second = interpreter.Call(
-        target, std::vector<VmValue>{VmValue::Ref(view)});
+  const auto first =
+      interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(view)});
+  const auto second =
+      interpreter.Call(target, std::vector<VmValue>{VmValue::Ref(view)});
     REQUIRE_FALSE(first.exception.IsValid());
     REQUIRE_FALSE(second.exception.IsValid());
     CHECK(first.value.ref.IsValid());
     CHECK(first.value.ref == second.value.ref);
 
-    const auto holder_class =
-        linker.FindClass("Landroid/view/SurfaceHolder;");
+  const auto holder_class = linker.FindClass("Landroid/view/SurfaceHolder;");
     REQUIRE(holder_class.has_value());
     const auto add_callback = linker.FindVtableIndex(
-        *holder_class, "addCallback",
-        "(Landroid/view/SurfaceHolder$Callback;)V");
+      *holder_class, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V");
     REQUIRE(add_callback.has_value());
     const auto callback =
         interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
-    const auto added = interpreter.Call(
-        linker.Class(*holder_class).vtable[*add_callback],
+  const auto added =
+      interpreter.Call(linker.Class(*holder_class).vtable[*add_callback],
         std::vector<VmValue>{VmValue::Ref(first.value.ref),
                              VmValue::Ref(callback)});
     REQUIRE_FALSE(added.exception.IsValid());
@@ -362,31 +385,49 @@ TEST_CASE("Thread priority validates and records the guest fact") {
     DexClassLinker linker;
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
-    catalog.insert(catalog.end(), android_catalog.begin(),
-                   android_catalog.end());
+  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    auto context =
-        std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
     ogplay::runtime::RegisterAndroidBuiltins(registry, context);
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter(linker, model, std::move(registry), nullptr,
-                            ledger);
+  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
     const auto thread_class = linker.FindClass("Ljava/lang/Thread;");
     REQUIRE(thread_class.has_value());
-    const auto set_priority = linker.FindVtableIndex(
-        *thread_class, "setPriority", "(I)V");
+  const auto set_priority =
+      linker.FindVtableIndex(*thread_class, "setPriority", "(I)V");
     REQUIRE(set_priority.has_value());
-    const auto thread =
-        interpreter.NewIntrinsicInstance("Ljava/lang/Thread;");
+  const auto thread = interpreter.NewIntrinsicInstance("Ljava/lang/Thread;");
     const auto target = linker.Class(*thread_class).vtable[*set_priority];
     auto outcome = interpreter.Call(
         target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(7)});
     REQUIRE_FALSE(outcome.exception.IsValid());
     CHECK(context->java_threads.at(thread.Value()).priority == 7);
+
+  const auto get_id = linker.FindVtableIndex(*thread_class, "getId", "()J");
+  const auto set_name =
+      linker.FindVtableIndex(*thread_class, "setName", "(Ljava/lang/String;)V");
+  const auto get_name =
+      linker.FindVtableIndex(*thread_class, "getName", "()Ljava/lang/String;");
+  REQUIRE(get_id.has_value());
+  REQUIRE(set_name.has_value());
+  REQUIRE(get_name.has_value());
+  outcome = interpreter.Call(linker.Class(*thread_class).vtable[*get_id],
+                             std::vector<VmValue>{VmValue::Ref(thread)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.AsLong() == static_cast<std::int64_t>(thread.Value()));
+  outcome = interpreter.Call(
+      linker.Class(*thread_class).vtable[*set_name],
+      std::vector<VmValue>{VmValue::Ref(thread),
+                           VmValue::Ref(interpreter.NewStringUtf8("render"))});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  outcome = interpreter.Call(linker.Class(*thread_class).vtable[*get_name],
+                             std::vector<VmValue>{VmValue::Ref(thread)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(interpreter.StringUtf8(outcome.value.ref) == "render");
 
     outcome = interpreter.Call(
         target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(11)});
@@ -401,31 +442,27 @@ TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {
     DexClassLinker linker;
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
-    catalog.insert(catalog.end(), android_catalog.begin(),
-                   android_catalog.end());
+  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    auto context =
-        std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
     ogplay::runtime::RegisterAndroidBuiltins(registry, context);
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter(linker, model, std::move(registry), nullptr,
-                            ledger);
+  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
     const auto view_class = linker.FindClass("Landroid/view/View;");
     REQUIRE(view_class.has_value());
     const auto get_observer = linker.FindVtableIndex(
-        *view_class, "getViewTreeObserver",
-        "()Landroid/view/ViewTreeObserver;");
+      *view_class, "getViewTreeObserver", "()Landroid/view/ViewTreeObserver;");
     REQUIRE(get_observer.has_value());
     const auto view = interpreter.NewIntrinsicInstance("Landroid/view/View;");
     const auto get_target = linker.Class(*view_class).vtable[*get_observer];
-    const auto first = interpreter.Call(
-        get_target, std::vector<VmValue>{VmValue::Ref(view)});
-    const auto second = interpreter.Call(
-        get_target, std::vector<VmValue>{VmValue::Ref(view)});
+  const auto first =
+      interpreter.Call(get_target, std::vector<VmValue>{VmValue::Ref(view)});
+  const auto second =
+      interpreter.Call(get_target, std::vector<VmValue>{VmValue::Ref(view)});
     REQUIRE_FALSE(first.exception.IsValid());
     REQUIRE_FALSE(second.exception.IsValid());
     CHECK(first.value.ref == second.value.ref);
@@ -437,10 +474,9 @@ TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {
         *observer_class, "addOnGlobalLayoutListener",
         "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V");
     REQUIRE(add_listener.has_value());
-    const auto listener =
-        interpreter.NewIntrinsicInstance("Landroid/view/View;");
-    const auto added = interpreter.Call(
-        linker.Class(*observer_class).vtable[*add_listener],
+  const auto listener = interpreter.NewIntrinsicInstance("Landroid/view/View;");
+  const auto added =
+      interpreter.Call(linker.Class(*observer_class).vtable[*add_listener],
         std::vector<VmValue>{VmValue::Ref(first.value.ref),
                              VmValue::Ref(listener)});
     REQUIRE_FALSE(added.exception.IsValid());
@@ -455,18 +491,15 @@ TEST_CASE("URLEncoder applies UTF-8 form encoding") {
     DexClassLinker linker;
     auto catalog = CoreIntrinsicCatalog();
     const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
-    catalog.insert(catalog.end(), android_catalog.begin(),
-                   android_catalog.end());
+  catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    auto context =
-        std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
     ogplay::runtime::RegisterAndroidBuiltins(registry, context);
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter(linker, model, std::move(registry), nullptr,
-                            ledger);
+  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
     const auto encoder = linker.FindClass("Ljava/net/URLEncoder;");
     REQUIRE(encoder.has_value());
@@ -475,18 +508,130 @@ TEST_CASE("URLEncoder applies UTF-8 form encoding") {
         "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
     REQUIRE(encode.has_value());
     auto outcome = interpreter.Call(
-        *encode,
-        std::vector<VmValue>{
+      *encode, std::vector<VmValue>{
             VmValue::Ref(interpreter.NewStringUtf8("a b+c/\xC3\xA9")),
             VmValue::Ref(interpreter.NewStringUtf8("UTF-8"))});
     REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK(interpreter.StringUtf8(outcome.value.ref) ==
-          "a+b%2Bc%2F%C3%A9");
+  CHECK(interpreter.StringUtf8(outcome.value.ref) == "a+b%2Bc%2F%C3%A9");
 
     outcome = interpreter.Call(
         *encode,
-        std::vector<VmValue>{
-            VmValue::Ref(interpreter.NewStringUtf8("value")),
+      std::vector<VmValue>{VmValue::Ref(interpreter.NewStringUtf8("value")),
             VmValue::Ref(interpreter.NewStringUtf8("UTF-16"))});
     CHECK(outcome.exception.IsValid());
+}
+
+TEST_CASE("Bundle preserves typed values and clear state") {
+  AndroidVm vm;
+  const auto bundle =
+      vm.interpreter.NewIntrinsicInstance("Landroid/os/Bundle;");
+  const auto key = vm.interpreter.NewStringUtf8("count");
+  auto outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/os/Bundle;", "putInt", "(Ljava/lang/String;I)V"),
+      std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key),
+                           VmValue::Int(37)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/os/Bundle;", "containsKey", "(Ljava/lang/String;)Z"),
+      std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.AsInt() == 1);
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/os/Bundle;", "getInt", "(Ljava/lang/String;)I"),
+      std::vector<VmValue>{VmValue::Ref(bundle), VmValue::Ref(key)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.AsInt() == 37);
+  outcome =
+      vm.interpreter.Call(vm.Virtual("Landroid/os/Bundle;", "clear", "()V"),
+                          std::vector<VmValue>{VmValue::Ref(bundle)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(vm.context->bundles.at(bundle.Value()).empty());
+}
+
+TEST_CASE("SAX setup retains its handler and parsing fails explicitly") {
+  AndroidVm vm;
+  const auto factory_class =
+      vm.linker.FindClass("Ljavax/xml/parsers/SAXParserFactory;");
+  REQUIRE(factory_class.has_value());
+  const auto new_instance = vm.linker.FindDirectMethod(
+      *factory_class, "newInstance", "()Ljavax/xml/parsers/SAXParserFactory;");
+  REQUIRE(new_instance.has_value());
+  auto outcome = vm.interpreter.Call(*new_instance, {});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  const auto factory = outcome.value.ref;
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Ljavax/xml/parsers/SAXParserFactory;", "newSAXParser",
+                 "()Ljavax/xml/parsers/SAXParser;"),
+      std::vector<VmValue>{VmValue::Ref(factory)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  const auto parser = outcome.value.ref;
+  outcome = vm.interpreter.Call(vm.Virtual("Ljavax/xml/parsers/SAXParser;",
+                                           "getXMLReader",
+                                           "()Lorg/xml/sax/XMLReader;"),
+                                std::vector<VmValue>{VmValue::Ref(parser)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  const auto reader = outcome.value.ref;
+  const auto handler =
+      vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Lorg/xml/sax/XMLReader$Impl;", "setContentHandler",
+                 "(Lorg/xml/sax/ContentHandler;)V"),
+      std::vector<VmValue>{VmValue::Ref(reader), VmValue::Ref(handler)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(vm.context->sax_content_handlers.at(reader.Value()) == handler);
+  const auto input =
+      vm.interpreter.NewIntrinsicInstance("Lorg/xml/sax/InputSource;");
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Lorg/xml/sax/XMLReader$Impl;", "parse",
+                 "(Lorg/xml/sax/InputSource;)V"),
+      std::vector<VmValue>{VmValue::Ref(reader), VmValue::Ref(input)});
+  REQUIRE(outcome.exception.IsValid());
+  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+        "Ljava/lang/UnsupportedOperationException;");
+}
+
+TEST_CASE("bounded method reflection enumerates and invokes display rotation") {
+  AndroidVm vm;
+  const auto display_class = vm.linker.FindClass("Landroid/view/Display;");
+  REQUIRE(display_class.has_value());
+  const auto display_class_object = vm.model.ClassObject(*display_class);
+  auto outcome = vm.interpreter.Call(
+      vm.Virtual("Ljava/lang/Class;", "getDeclaredMethods",
+                 "()[Ljava/lang/reflect/Method;"),
+      std::vector<VmValue>{VmValue::Ref(display_class_object)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  const auto methods = outcome.value.ref;
+  VmObjectRef rotation;
+  for (JniSize index = 0; index < vm.model.ArrayLength(methods); ++index) {
+    const auto method = vm.model.GetObjectElement(methods, index);
+    const auto named =
+        vm.interpreter.Call(vm.Virtual("Ljava/lang/reflect/Method;", "getName",
+                                       "()Ljava/lang/String;"),
+                            std::vector<VmValue>{VmValue::Ref(method)});
+    REQUIRE_FALSE(named.exception.IsValid());
+    if (vm.interpreter.StringUtf8(named.value.ref) == "getRotation") {
+      rotation = method;
+      break;
+    }
+  }
+  REQUIRE(rotation.IsValid());
+  const auto display =
+      vm.interpreter.NewIntrinsicInstance("Landroid/view/Display;");
+  const auto object_class = vm.linker.ResolveDescriptor("Ljava/lang/Object;");
+  const auto object_array_class =
+      vm.linker.ResolveDescriptor("[Ljava/lang/Object;");
+  const auto no_arguments =
+      vm.model.NewObjectArray(object_array_class, object_class, 0);
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Ljava/lang/reflect/Method;", "invoke",
+                 "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"),
+      std::vector<VmValue>{VmValue::Ref(rotation), VmValue::Ref(display),
+                           VmValue::Ref(no_arguments)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  const auto boxed = outcome.value.ref;
+  outcome =
+      vm.interpreter.Call(vm.Virtual("Ljava/lang/Integer;", "intValue", "()I"),
+                          std::vector<VmValue>{VmValue::Ref(boxed)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.AsInt() == 0);
 }

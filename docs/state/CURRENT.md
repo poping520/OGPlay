@@ -24,6 +24,13 @@ Asphalt 5 逐位回归通过；Asphalt 6 已启动渲染线程，三轮确定停
   `memory_files`、SharedPreferences 三条写入通道均止于会话内存。方案：
   每 package 一个宿主沙盒目录，可写命名空间以文件粒度 overlay 覆盖只读底层，
   确定性 flush 点原子落盘；WU 分解 SBX-1..7。未启动，capabilities 无变化。
+- **GUI 主面板基础版设计已落地**（2026-08-12）：roadmap GUI 选型改为
+  SDL3 + Dear ImGui（与游戏窗口同渲染栈），`docs/design/launcher/` 交付
+  完整方案——可双击的 `ogplay-gui` 独立进程（Windows 免控制台/macOS
+  bundle；`ogplay gui` 供开发测试）+ 每 package 一目录的游戏库 +
+  导入（APK 复制入库、数据包原地引用）/删除/点击 spawn `run-apk` 子进程，
+  图标与名称走 manifest icon/label 增量 + `loader.arsc` + stb 提取链；
+  WU 分解 GUI-1..7。未启动，capabilities 无变化。
 
 ## 已验收基线
 

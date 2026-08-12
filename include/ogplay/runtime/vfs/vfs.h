@@ -46,6 +46,14 @@ struct VfsFileInfo final {
     std::uint64_t size{};
     bool writable{};
     VfsSource source{VfsSource::runtime};
+    bool is_directory{};
+};
+
+struct VfsDirectoryEntry final {
+    std::string name;
+    bool is_directory{};
+
+    bool operator==(const VfsDirectoryEntry&) const = default;
 };
 
 struct VfsPipeDescriptors final {
@@ -86,11 +94,18 @@ public:
     void SetWorkingDirectory(std::string_view path);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
-    // Immediate children (file and implicit-directory names, sorted,
-    // deduplicated) of a directory path; empty when nothing is below it.
-    // Directories exist implicitly through the files mounted beneath them.
-    [[nodiscard]] std::vector<std::string> ListDirectory(
+    // Immediate children (sorted, deduplicated) of a directory path; empty
+    // when nothing is below it. Directories exist both implicitly, through
+    // the files mounted beneath them, and explicitly through CreateDirectory.
+    [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(
         std::string_view path) const;
+
+    // Directory and metadata operations (ADR-0020). Pure in-memory
+    // semantics; a sandbox attached later persists them at flush points.
+    void CreateDirectory(std::string_view path);   // parent must exist
+    void RemoveFile(std::string_view path);        // unlink
+    void RemoveDirectory(std::string_view path);   // rmdir, -ENOTEMPTY
+    void Rename(std::string_view from, std::string_view to);
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
@@ -101,6 +116,11 @@ public:
     [[nodiscard]] std::uint64_t Seek(std::int32_t descriptor,
                                      std::int64_t offset,
                                      VfsSeekWhence whence);
+    void Truncate(std::int32_t descriptor, std::uint64_t size);
+    // fsync/fdatasync join here; without an attached sandbox both only
+    // check the descriptor, which keeps the call honest rather than absent.
+    void Flush(std::int32_t descriptor);
+    void FlushAll();
     void Close(std::int32_t descriptor);
 
 private:

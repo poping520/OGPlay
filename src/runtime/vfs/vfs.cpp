@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -28,6 +29,7 @@ constexpr std::int32_t kEnotdir = 20;
 constexpr std::int32_t kEisdir = 21;
 constexpr std::int32_t kEinval = 22;
 constexpr std::int32_t kEfbig = 27;
+constexpr std::int32_t kEnotempty = 39;
 
 [[nodiscard]] std::vector<std::byte> ReadHostFile(
     const std::filesystem::path& path) {
@@ -350,31 +352,138 @@ public:
         std::scoped_lock lock(mutex_);
         const auto normalized = ResolvePath(path, working_directory_);
         const auto found = files_.find(normalized);
-        if (found == files_.end()) throw VfsError(kEnoent, "VFS file not found");
-        return {found->second->size, found->second->writable,
-                found->second->source};
+        if (found != files_.end()) {
+            return {found->second->size, found->second->writable,
+                    found->second->source, false};
+        }
+        if (IsDirectoryLocked(normalized)) {
+            return {0, true, VfsSource::runtime, true};
+        }
+        throw VfsError(kEnoent, "VFS file not found");
     }
 
-    [[nodiscard]] std::vector<std::string> ListDirectory(
+    [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(
         const std::string_view path) const {
         std::scoped_lock lock(mutex_);
         auto prefix = ResolvePath(path, working_directory_);
         if (prefix.empty() || prefix.back() != '/') prefix.push_back('/');
-        std::vector<std::string> names;
-        for (auto it = files_.lower_bound(prefix);
-             it != files_.end() && it->first.starts_with(prefix); ++it) {
-            const auto remainder =
-                std::string_view(it->first).substr(prefix.size());
+        // Merged from both indexes and deduplicated by name, so getdents64
+        // sees one stable order regardless of how a directory came to be.
+        std::map<std::string, bool, std::less<>> children;
+        const auto collect = [&prefix, &children](const std::string& key,
+                                                  const bool leaf_is_directory) {
+            if (!key.starts_with(prefix)) return;
+            const auto remainder = std::string_view(key).substr(prefix.size());
+            if (remainder.empty()) return;
             const auto slash = remainder.find('/');
             auto name = std::string(remainder.substr(0, slash));
-            if (name.empty()) continue;
-            // The map is sorted, so children of one subdirectory arrive
-            // contiguously; dedup against the previous name.
-            if (names.empty() || names.back() != name) {
-                names.push_back(std::move(name));
-            }
+            const bool is_directory =
+                slash != std::string_view::npos || leaf_is_directory;
+            auto& recorded = children[std::move(name)];
+            recorded = recorded || is_directory;
+        };
+        for (auto it = files_.lower_bound(prefix);
+             it != files_.end() && it->first.starts_with(prefix); ++it) {
+            collect(it->first, false);
         }
-        return names;
+        for (auto it = directories_.lower_bound(prefix);
+             it != directories_.end() && it->starts_with(prefix); ++it) {
+            collect(*it, true);
+        }
+        std::vector<VfsDirectoryEntry> entries;
+        entries.reserve(children.size());
+        for (auto& [name, is_directory] : children) {
+            entries.push_back({name, is_directory});
+        }
+        return entries;
+    }
+
+    void CreateDirectory(const std::string_view path) {
+        std::scoped_lock lock(mutex_);
+        const auto normalized = ResolvePath(path, working_directory_);
+        if (files_.contains(normalized)) {
+            throw VfsError(kEexist, "VFS path already holds a file");
+        }
+        if (IsDirectoryLocked(normalized)) {
+            throw VfsError(kEexist, "VFS directory already exists");
+        }
+        const auto slash = normalized.rfind('/');
+        const auto parent = slash == 0 ? std::string("/")
+                                       : normalized.substr(0, slash);
+        if (parent != "/" && !IsDirectoryLocked(parent)) {
+            throw VfsError(kEnoent, "VFS parent directory does not exist");
+        }
+        directories_.insert(normalized);
+    }
+
+    void RemoveFile(const std::string_view path) {
+        std::scoped_lock lock(mutex_);
+        const auto normalized = ResolvePath(path, working_directory_);
+        const auto found = files_.find(normalized);
+        if (found == files_.end()) {
+            if (IsDirectoryLocked(normalized)) {
+                throw VfsError(kEisdir, "VFS path is a directory");
+            }
+            throw VfsError(kEnoent, "VFS file not found");
+        }
+        if (!found->second->writable) {
+            throw VfsError(kEacces, "VFS file is read-only");
+        }
+        files_.erase(found);
+    }
+
+    void RemoveDirectory(const std::string_view path) {
+        std::scoped_lock lock(mutex_);
+        const auto normalized = ResolvePath(path, working_directory_);
+        if (files_.contains(normalized)) {
+            throw VfsError(kEnotdir, "VFS path is not a directory");
+        }
+        if (!IsDirectoryLocked(normalized)) {
+            throw VfsError(kEnoent, "VFS directory not found");
+        }
+        auto prefix = normalized;
+        prefix.push_back('/');
+        const auto child_file = files_.lower_bound(prefix);
+        if (child_file != files_.end() &&
+            child_file->first.starts_with(prefix)) {
+            throw VfsError(kEnotempty, "VFS directory is not empty");
+        }
+        const auto child_directory = directories_.lower_bound(prefix);
+        if (child_directory != directories_.end() &&
+            child_directory->starts_with(prefix)) {
+            throw VfsError(kEnotempty, "VFS directory is not empty");
+        }
+        if (directories_.erase(normalized) == 0) {
+            // Implicit directories exist only through their children, and
+            // the checks above proved there are none left.
+            throw VfsError(kEnoent, "VFS directory not found");
+        }
+    }
+
+    void Rename(const std::string_view from, const std::string_view to) {
+        std::scoped_lock lock(mutex_);
+        const auto source = ResolvePath(from, working_directory_);
+        const auto target = ResolvePath(to, working_directory_);
+        if (source == target) return;
+        const auto found = files_.find(source);
+        if (found == files_.end()) {
+            if (IsDirectoryLocked(source)) {
+                // Moving a subtree has no caller yet; guessing at it would
+                // be worse than saying so.
+                throw VfsError(kEinval,
+                               "VFS directory rename is not implemented");
+            }
+            throw VfsError(kEnoent, "VFS rename source not found");
+        }
+        if (!found->second->writable) {
+            throw VfsError(kEacces, "VFS rename source is read-only");
+        }
+        if (IsDirectoryLocked(target)) {
+            throw VfsError(kEisdir, "VFS rename target is a directory");
+        }
+        auto file = found->second;
+        files_.erase(found);
+        files_.insert_or_assign(target, std::move(file));
     }
 
     [[nodiscard]] std::int32_t Open(const std::string_view path,
@@ -491,6 +600,29 @@ public:
         return result;
     }
 
+    void Truncate(const std::int32_t descriptor, const std::uint64_t size) {
+        std::scoped_lock lock(mutex_);
+        auto& open = FindDescriptor(descriptor);
+        if (!open.writable) {
+            throw VfsError(kEbadf, "VFS descriptor is not writable");
+        }
+        if (size > std::numeric_limits<std::size_t>::max()) {
+            throw VfsError(kEfbig, "VFS truncate size is not representable");
+        }
+        // Growing has to see the backing bytes first, or the tail would be
+        // zeroes over content that was never read.
+        Materialize(*open.file);
+        open.file->contents.resize(static_cast<std::size_t>(size));
+        open.file->size = size;
+    }
+
+    void Flush(const std::int32_t descriptor) {
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(FindDescriptor(descriptor));
+    }
+
+    void FlushAll() { std::scoped_lock lock(mutex_); }
+
     void Close(const std::int32_t descriptor) {
         std::scoped_lock lock(mutex_);
         if (descriptors_.erase(descriptor) != 1) {
@@ -527,6 +659,22 @@ private:
         throw VfsError(kEbadf, "VFS descriptor table is full");
     }
 
+    // A path is a directory when it was created explicitly or when some
+    // file lives beneath it. Callers hold mutex_.
+    [[nodiscard]] bool IsDirectoryLocked(const std::string& path) const {
+        if (path == "/") return true;
+        if (directories_.contains(path)) return true;
+        auto prefix = path;
+        prefix.push_back('/');
+        const auto file = files_.lower_bound(prefix);
+        if (file != files_.end() && file->first.starts_with(prefix)) {
+            return true;
+        }
+        const auto directory = directories_.lower_bound(prefix);
+        return directory != directories_.end() &&
+               directory->starts_with(prefix);
+    }
+
     [[nodiscard]] OpenFile& FindDescriptor(const std::int32_t descriptor) {
         const auto found = descriptors_.find(descriptor);
         if (found == descriptors_.end()) {
@@ -538,6 +686,8 @@ private:
     mutable std::mutex mutex_;
     std::optional<std::string> working_directory_;
     std::map<std::string, std::shared_ptr<File>, std::less<>> files_;
+    // Directories created explicitly; implicit ones come from files_.
+    std::set<std::string, std::less<>> directories_;
     std::map<std::int32_t, OpenFile> descriptors_;
     // Guest path -> backing host file for host-directory mounts, so media
     // decoders can open the real file directly.
@@ -583,9 +733,22 @@ std::optional<std::string> VirtualFileSystem::WorkingDirectory() const {
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);
 }
-std::vector<std::string> VirtualFileSystem::ListDirectory(
+std::vector<VfsDirectoryEntry> VirtualFileSystem::ListDirectory(
     const std::string_view path) const {
     return impl_->ListDirectory(path);
+}
+void VirtualFileSystem::CreateDirectory(const std::string_view path) {
+    impl_->CreateDirectory(path);
+}
+void VirtualFileSystem::RemoveFile(const std::string_view path) {
+    impl_->RemoveFile(path);
+}
+void VirtualFileSystem::RemoveDirectory(const std::string_view path) {
+    impl_->RemoveDirectory(path);
+}
+void VirtualFileSystem::Rename(const std::string_view from,
+                               const std::string_view to) {
+    impl_->Rename(from, to);
 }
 std::int32_t VirtualFileSystem::Open(const std::string_view path,
                                      const VfsOpenOptions options) {
@@ -608,6 +771,14 @@ std::uint64_t VirtualFileSystem::Seek(const std::int32_t descriptor,
                                       const VfsSeekWhence whence) {
     return impl_->Seek(descriptor, offset, whence);
 }
+void VirtualFileSystem::Truncate(const std::int32_t descriptor,
+                                 const std::uint64_t size) {
+    impl_->Truncate(descriptor, size);
+}
+void VirtualFileSystem::Flush(const std::int32_t descriptor) {
+    impl_->Flush(descriptor);
+}
+void VirtualFileSystem::FlushAll() { impl_->FlushAll(); }
 void VirtualFileSystem::Close(const std::int32_t descriptor) {
     impl_->Close(descriptor);
 }

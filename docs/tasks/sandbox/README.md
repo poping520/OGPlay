@@ -11,7 +11,7 @@
 | WU | 一句话目标 | 依赖 | 状态 |
 | --- | --- | --- | --- |
 | [SBX-1](SBX-1.md) | `SandboxStore`：布局、装载索引、原子写、tombstone、转义、配额 | — | 完成 |
-| [SBX-2](SBX-2.md) | VFS 目录操作 + `Truncate/Flush/FlushAll` 内存语义 + 目录 Stat | — | 待开始 |
+| [SBX-2](SBX-2.md) | VFS 目录操作 + `Truncate/Flush/FlushAll` 内存语义 + 目录 Stat | — | 完成 |
 | [SBX-3](SBX-3.md) | `AttachSandbox`：overlay 解析、脏节点跟踪、flush 点 | SBX-1、SBX-2 | 待开始 |
 | [SBX-4](SBX-4.md) | syscall 缺口绑定与 ABI 编组 | SBX-2 | 待开始 |
 | [SBX-5](SBX-5.md) | DexVM File 族改线 VFS、`mkdirs` 去伪成功 | SBX-3 | 待开始 |

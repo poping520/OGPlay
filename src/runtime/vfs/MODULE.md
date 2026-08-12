@@ -9,8 +9,15 @@ open/read/write/seek/close 核心；并提供每游戏持久沙盒的宿主存�
 只读 APK/OBB backing 与宿主 external 目录可仅挂载路径、尺寸和显式全量读取回调；
 `Stat`、`Open`、`Seek` 不触发读取，首次 `Read` 或非截断 `Write` 才物化内容，严格核对
 声明尺寸并缓存成功结果。external 修改只存在于会话内，不反写宿主目录。
-`ListDirectory` 返回某目录路径的直接子项名（文件与隐式目录名，排序去重），目录通过
-其下挂载的文件隐式存在；不触发读取。
+`ListDirectory` 返回某目录路径的直接子项（名字 + `is_directory`，排序去重），
+显式目录（`CreateDirectory`）与隐式目录（其下挂载了文件）合并为同一份稳定序，
+`getdents64` 由此确定；不触发读取。目录操作 `CreateDirectory`/`RemoveFile`/
+`RemoveDirectory`/`Rename` 与 `Truncate`/`Flush`/`FlushAll` 均为内存语义，
+errno 契约与平台一致（父目录缺失 `-ENOENT`、已存在 `-EEXIST`、对目录 unlink
+`-EISDIR`、对文件 rmdir `-ENOTDIR`、非空 `-ENOTEMPTY`、只读来源 `-EACCES`）。
+目录 `Stat` 返回目录事实而非 `-ENOENT`。目录整棵子树的 rename 尚无调用方，
+明确 `-EINVAL` 而不是猜测。未 attach 沙盒时 `Flush`/`FlushAll` 只校验
+descriptor，不伪装落盘。
 
 `SandboxStore`（`sandbox_store.h`）是**唯一接触沙盒目录的代码**：
 `<root>/<package>/` 下 `meta.toml` 记 schema/package/versionCode，`fs/` 与 guest
@@ -49,7 +56,8 @@ syscall 与 framework Asset 只能单向调用本模块。
 
 对应 `tests/runtime/vfs_tests.cpp`，并由 syscall 与 Asset 契约累计覆盖。宿主目录事务测试
 使用预存 guest 路径的 ASCII 大小写折叠冲突，不依赖宿主文件系统能否创建反斜杠文件名。
-`SandboxStore` 对应 `tests/runtime/sandbox_store_tests.cpp`（布局跨开启往返、
+目录操作与 `Truncate`/`Flush` 的内存语义、errno 契约与枚举稳定序在同一文件内
+按用例覆盖。`SandboxStore` 对应 `tests/runtime/sandbox_store_tests.cpp`（布局跨开启往返、
 原子替换与崩溃残留清理、转义双向无损、逃逸与保留后缀拒绝、字节/文件数配额
 `-ENOSPC`、tombstone 遮蔽与解除、非空目录 `-ENOTEMPTY`、rename、meta.toml
 拒绝），全部在测试自建临时目录内进行，不触碰用户数据目录。

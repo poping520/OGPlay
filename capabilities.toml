@@ -370,6 +370,11 @@ status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp"
 note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样本执行；mem 热点拦截具备生产 handler 与吞吐基准"
 
+[runtime.vfs_directory_ops]
+status = "complete"
+test = "tests/runtime/vfs_tests.cpp"
+note = "ADR-0020 SBX-2 为 VFS 补齐 CreateDirectory/RemoveFile/RemoveDirectory/Rename 与 Truncate/Flush/FlushAll 的内存语义、目录 Stat 事实与 is_directory 枚举；显式目录与隐式目录合并为单一稳定序供 getdents64 使用。errno 与平台一致（-ENOENT/-EEXIST/-EISDIR/-ENOTDIR/-ENOTEMPTY/-EACCES/-EBADF）；目录子树 rename 无调用方，明确 -EINVAL 不猜测；未 attach 沙盒时 Flush 只校验 descriptor 不伪装落盘"
+
 [runtime.vfs_sandbox_persistence]
 status = "partial"
 test = "tests/runtime/sandbox_store_tests.cpp"

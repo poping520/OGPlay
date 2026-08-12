@@ -519,7 +519,9 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
     const auto list_children = [context](const std::string& path) {
         std::vector<std::string> names;
         if (context->vfs != nullptr) {
-            names = context->vfs->ListDirectory(path);
+            for (auto& entry : context->vfs->ListDirectory(path)) {
+                names.push_back(std::move(entry.name));
+            }
         }
         auto prefix = path;
         if (prefix.empty() || prefix.back() != '/') prefix.push_back('/');

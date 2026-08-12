@@ -5,6 +5,10 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "ogplay/runtime/vfs/vfs.h"
 
@@ -316,4 +320,142 @@ TEST_CASE("VFS pipe connects isolated read and write descriptors") {
                     ogplay::runtime::VfsError);
     vfs.Close(pipe.read_descriptor);
     vfs.Close(pipe.write_descriptor);
+}
+
+// ---- directory and metadata operations (SBX-2, ADR-0020) -----------------
+
+namespace {
+
+using ogplay::runtime::VfsDirectoryEntry;
+using ogplay::runtime::VfsError;
+using ogplay::runtime::VirtualFileSystem;
+
+[[nodiscard]] std::int32_t ErrnoOf(const std::function<void()>& action) {
+    try {
+        action();
+    } catch (const VfsError& error) {
+        return error.ErrorNumber();
+    }
+    return 0;
+}
+
+void PutText(VirtualFileSystem& vfs, const std::string_view path,
+             const std::string_view text) {
+    std::vector<std::byte> bytes;
+    bytes.reserve(text.size());
+    for (const auto character : text) {
+        bytes.push_back(static_cast<std::byte>(character));
+    }
+    vfs.PutFile(path, bytes, true);
+}
+
+}  // namespace
+
+TEST_CASE("VFS mkdir requires a parent and refuses to collide") {
+    VirtualFileSystem vfs;
+    vfs.CreateDirectory("/data");
+    vfs.CreateDirectory("/data/files");
+    CHECK(vfs.Stat("/data/files").is_directory);
+    CHECK(vfs.Stat("/data/files").size == 0);
+
+    // A missing parent is -ENOENT, not an implicit mkdir -p.
+    CHECK(ErrnoOf([&] { vfs.CreateDirectory("/data/files/a/b"); }) == 2);
+    CHECK(ErrnoOf([&] { vfs.CreateDirectory("/data/files"); }) == 17);
+    PutText(vfs, "/data/files/save.dat", "body");
+    CHECK(ErrnoOf([&] { vfs.CreateDirectory("/data/files/save.dat"); }) == 17);
+    // Directories implied by a mounted file are directories too.
+    CHECK(vfs.Stat("/data").is_directory);
+    CHECK_FALSE(vfs.Stat("/data/files/save.dat").is_directory);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/data/missing")); }) == 2);
+}
+
+TEST_CASE("VFS enumerates explicit and implicit directories in one order") {
+    VirtualFileSystem vfs;
+    PutText(vfs, "/sdcard/game/b.dat", "b");
+    PutText(vfs, "/sdcard/game/sub/c.dat", "c");
+    vfs.CreateDirectory("/sdcard/game/a-empty");
+
+    const auto entries = vfs.ListDirectory("/sdcard/game");
+    const std::vector<VfsDirectoryEntry> expected{
+        {"a-empty", true}, {"b.dat", false}, {"sub", true}};
+    CHECK(entries == expected);
+    // An empty directory really is empty, not absent.
+    CHECK(vfs.ListDirectory("/sdcard/game/a-empty").empty());
+}
+
+TEST_CASE("VFS unlink and rmdir carry the platform errno contract") {
+    VirtualFileSystem vfs;
+    PutText(vfs, "/sdcard/keep.dat", "keep");
+    vfs.CreateDirectory("/sdcard/dir");
+    PutText(vfs, "/sdcard/dir/inner.dat", "inner");
+
+    CHECK(ErrnoOf([&] { vfs.RemoveFile("/sdcard/missing"); }) == 2);
+    CHECK(ErrnoOf([&] { vfs.RemoveFile("/sdcard/dir"); }) == 21);   // EISDIR
+    CHECK(ErrnoOf([&] { vfs.RemoveDirectory("/sdcard/keep.dat"); }) == 20);
+    CHECK(ErrnoOf([&] { vfs.RemoveDirectory("/sdcard/dir"); }) == 39);
+
+    vfs.RemoveFile("/sdcard/dir/inner.dat");
+    vfs.RemoveDirectory("/sdcard/dir");
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/dir")); }) == 2);
+    CHECK(ErrnoOf([&] { vfs.RemoveDirectory("/sdcard/dir"); }) == 2);
+    CHECK(vfs.ListDirectory("/sdcard") ==
+          std::vector<VfsDirectoryEntry>{{"keep.dat", false}});
+}
+
+TEST_CASE("VFS unlink refuses a read-only mounted file") {
+    VirtualFileSystem vfs;
+    const std::array contents{std::byte{7}};
+    const std::array entries{
+        ogplay::runtime::VfsMountEntry{"data.bin",
+                                       {contents.begin(), contents.end()}}};
+    vfs.Mount(ogplay::runtime::VfsSource::apk, "/apk", entries);
+    CHECK(ErrnoOf([&] { vfs.RemoveFile("/apk/data.bin"); }) == 13);
+}
+
+TEST_CASE("VFS rename moves a file and leaves nothing behind") {
+    VirtualFileSystem vfs;
+    PutText(vfs, "/sdcard/old.sav", "body");
+    vfs.CreateDirectory("/sdcard/dir");
+
+    vfs.Rename("/sdcard/old.sav", "/sdcard/new.sav");
+    CHECK(vfs.Stat("/sdcard/new.sav").size == 4);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/old.sav")); }) == 2);
+    CHECK(ErrnoOf([&] { vfs.Rename("/sdcard/gone", "/sdcard/x"); }) == 2);
+    // Subtree moves have no caller yet and are refused rather than guessed.
+    CHECK(ErrnoOf([&] { vfs.Rename("/sdcard/dir", "/sdcard/dir2"); }) == 22);
+    CHECK(ErrnoOf([&] { vfs.Rename("/sdcard/new.sav", "/sdcard/dir"); }) == 21);
+    // Renaming onto an existing file replaces it, as on the platform.
+    PutText(vfs, "/sdcard/victim.sav", "old-and-longer");
+    vfs.Rename("/sdcard/new.sav", "/sdcard/victim.sav");
+    CHECK(vfs.Stat("/sdcard/victim.sav").size == 4);
+}
+
+TEST_CASE("VFS truncate shrinks and grows through the descriptor") {
+    VirtualFileSystem vfs;
+    PutText(vfs, "/sdcard/save.dat", "0123456789");
+    const auto writer = vfs.Open("/sdcard/save.dat", {.read = true,
+                                                      .write = true});
+    vfs.Truncate(writer, 4);
+    CHECK(vfs.Stat("/sdcard/save.dat").size == 4);
+    vfs.Truncate(writer, 6);
+    CHECK(vfs.Stat("/sdcard/save.dat").size == 6);
+    std::array<std::byte, 6> output{};
+    CHECK(vfs.Read(writer, output) == 6);
+    CHECK(output[3] == std::byte{'3'});
+    CHECK(output[4] == std::byte{0});  // grown tail reads as zeroes
+    vfs.Close(writer);
+
+    const auto reader = vfs.Open("/sdcard/save.dat", {.read = true});
+    CHECK(ErrnoOf([&] { vfs.Truncate(reader, 0); }) == 9);  // EBADF
+    vfs.Close(reader);
+}
+
+TEST_CASE("VFS flush validates its descriptor without a sandbox attached") {
+    VirtualFileSystem vfs;
+    PutText(vfs, "/sdcard/save.dat", "body");
+    const auto writer = vfs.Open("/sdcard/save.dat", {.write = true});
+    vfs.Flush(writer);   // no store yet: honest no-op, not a missing call
+    vfs.FlushAll();
+    vfs.Close(writer);
+    CHECK(ErrnoOf([&] { vfs.Flush(writer); }) == 9);
 }

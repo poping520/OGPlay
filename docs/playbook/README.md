@@ -7,8 +7,8 @@
 | 场景 | 读这篇 |
 | --- | --- |
 | 让一款新游戏跑上 dexvm 路线 | [NEW-TITLE.md](NEW-TITLE.md) |
-| 手工看画面、点一下试试 | [MCP-TESTING.md](MCP-TESTING.md) |
-| 把一次手工试玩固化成可复跑的场景 | [SCENARIO-RUNNER.md](SCENARIO-RUNNER.md) |
+| 用 MCP 工具驱动会话：截图、触摸、步进、读状态 | [MCP-TESTING.md](MCP-TESTING.md) |
+| 把一次试玩固化成可复跑的场景 | [SCENARIO-RUNNER.md](SCENARIO-RUNNER.md) |
 | 遇到黑屏、死锁、guest fault 等症状 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 
 两条贯穿全部手册的纪律：

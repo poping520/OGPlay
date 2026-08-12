@@ -20,7 +20,8 @@
 
 - AI 适配游戏：[playbook/NEW-TITLE.md](playbook/NEW-TITLE.md)（dexvm 路线，含缺口
   survey 流程与失败判读表）
-- AI 测试 · MCP 接口：[playbook/MCP-TESTING.md](playbook/MCP-TESTING.md)（手工截图与点击）
+- AI 测试 · MCP 工具：[playbook/MCP-TESTING.md](playbook/MCP-TESTING.md)（截图、触摸、
+  帧步进与会话状态）
 - AI 测试 · 场景 runner：[playbook/SCENARIO-RUNNER.md](playbook/SCENARIO-RUNNER.md)
   （`tools/run_scenario.py`，可复跑用例与证据判读）
 - 排查手册：[playbook/TROUBLESHOOTING.md](playbook/TROUBLESHOOTING.md)（按症状索引）

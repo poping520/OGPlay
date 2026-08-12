@@ -31,6 +31,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   native 走 `NativeMethodBridge`（未注入则记账 + 明确失败）。
   `EnsureClassInitialized` 实现 `<clinit>` 状态机（同线程重入放行、失败粘滞
   NoClassDefFoundError、静态初始值先于 `<clinit>` 物化）。
+  `SetStaticFieldBits` 仅接受已完成初始化的真实 guest 静态字段，供 ADR-0022
+  的结论级 Profile preset 写入精确槽位；类、字段、静态性、类型或槽位不匹配
+  均明确失败，禁止绕过 `<clinit>`。
 - `RegisterCoreBuiltinHandlers`：core.object/string/class/throwable handler
   （String/StringBuilder 面在 `intrinsics_string.cpp`）。
 

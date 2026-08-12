@@ -57,13 +57,13 @@ note = "M0 空会话支持 open/close/state；M1 装配 guest"
 
 [session.title_profile_schema]
 status = "complete"
-test = "tools/validate_title_profiles.py --self-test; tests/session/title_profile_tests.cpp"
-note = "M5 冻结 Title Profile v1 schema，并由 Python 目录门禁及 C++ 强类型加载共同覆盖 identity/runtime/data/audio/java/quirks/input、UTF-8 和 200 行上限；WU-0317 增加默认 2 亿、受检范围 1..10 亿的单次调用预算"
+test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
+note = "ADR-0022/WU-M9-022/025 收敛为 Title Profile v2 单一 schema；Python/C++ 同步覆盖 identity/runtime entry+presets/data/audio/quirks/input、UTF-8、200 行上限并拒绝 schema 1"
 
 [session.title_profile_loader]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "M5 WU-0200..0202/0317 完成受限纯数据 TOML、强类型 identity/runtime 与单次调用预算、规范 VFS/audio 声明、Java 绑定、quirk 参数及输入模板加载；未知或非法内容明确失败"
+note = "WU-M9-022/025 的 v2-only loader 完成受限纯数据 TOML、强类型 identity/runtime entry+presets 与预算、规范 VFS/audio、quirk/input；未知字段和旧 schema 明确失败"
 
 [session.title_profile_catalog]
 status = "complete"
@@ -87,8 +87,8 @@ note = "M5 WU-0303/0318 与 M8 WU-0378 以纯数据 Profile 闭合身份、1024x
 
 [profiles.asphalt6_glstore_v132]
 status = "partial"
-test = "tools.title_profiles_current; tests/runtime/android_boundary_hle_tests.cpp; exact APK local bootstrap"
-note = "M8 WU-0360..0379 与优化验收闭环已越过 JNI_OnLoad、平台 JNI、FBO/state、AudioTrack、shader/uniform、client staging 及旧 mixed GLES buffer/client-pointer 故障；当前 exact Profile native call 5 明确停在 CallStaticIntMethodV class reference，guest 首帧与主界面 gate 尚未完成"
+test = "tools.title_profiles_current; tests/session/profile_entry_scope_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml; exact APK local bootstrap"
+note = "WU-M9-022..026 以 v2 entry 直接启动引擎 Activity，并在 required external manifest 就绪后应用 GameInstaller.sbStarted 真实 provisioned-data preset；exact 已越过 Activity/GL surface/电话状态/URL encoding，当前明确停在 native FindClass 无法看见 DexVM intrinsic android/content/Intent，guest 首帧与主界面 gate 尚未完成"
 
 [session.lifecycle_templates]
 status = "complete"
@@ -102,8 +102,8 @@ note = "M5 WU-0207 以 guest 根 + source 精确配对已导入文件并装配�
 
 [session.profile_java]
 status = "complete"
-test = "tests/session/profile_java_tests.cpp"
-note = "M5 WU-0208 将 Profile Java 类/实例方法事务装入全新 JNI registry/engine，只绑定实际引用的通用 implementation handler；缺失重复 handler 与非法 JNI 声明明确失败"
+test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+note = "历史能力已由 ADR-0022/WU-M9-025 退役并从生产代码、schema 和测试删除；v2 明确拒绝 Profile Java handler 映射，Java 能力只来自 DexVM 与代码定义平台目录"
 
 [input.template_catalog]
 status = "complete"
@@ -577,18 +577,18 @@ note = "M5 WU-0223 串联 APK 精确 Profile 与对应 API 的 Bionic guest 闭�
 
 [profiles.first_exact_legacy_title]
 status = "complete"
-test = "tools/validate_title_profiles.py --schema data/profiles/title-profile-v1.schema.json --profiles data/profiles"
-note = "M5 WU-0224 提交首个精确 legacy title Profile：APK 身份/hash/armeabi 与通用 API 19、gl_surface_view、800x480 声明均经真实目标预检"
+test = "tools.title_profiles_current; tests/session/profile_apk_tests.cpp"
+note = "精确 APK 身份能力保留并已迁移至 v2 dex_activity；旧生命周期声明已由 ADR-0022/WU-M9-025 退役"
 
 [profiles.declarative_native_calls]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "M5 WU-0225 允许 Profile 以强类型 phase/class/method/JNI signature/dispatch 与受限参数来源描述 native 调用；Python/C++ 同步拒绝脚本、地址与形状矛盾"
+note = "历史能力已由 ADR-0022/WU-M9-025 退役并完整删除；v2 loader 对旧调用字段明确失败，运行只由解释 DEX 生命周期驱动"
 
 [profiles.first_legacy_native_sequence]
 status = "complete"
-test = "tools/validate_title_profiles.py --schema data/profiles/title-profile-v1.schema.json --profiles data/profiles"
-note = "M5 WU-0226 以标题 Profile 纯数据声明首个 legacy APK 的 startup/resume/frame/pause/shutdown 与 pointer/key native 调用序列"
+test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+note = "历史序列已由 ADR-0022/WU-M9-025 退役并从 Profile 数据删除；该账本项仅保留单调历史，当前入口为 dex_activity"
 
 [runtime.jni_native_export_names]
 status = "complete"
@@ -597,13 +597,13 @@ note = "M5 WU-0227 从受检 class/method/descriptor 生成 JNI short/long 导�
 
 [profiles.native_call_targets]
 status = "complete"
-test = "tests/session/profile_native_calls_tests.cpp"
-note = "M5 WU-0228 把 Profile native calls 按 JNI short/long 顺序解析为 root ELF 强类型 guest 地址；真实目标 17 项全部命中"
+test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+note = "历史 Profile target resolver 已由 ADR-0022/WU-M9-025 从生产代码和测试删除；JNI 导出名等通用 runtime 原语不受影响"
 
 [profiles.native_call_invocations]
 status = "complete"
-test = "tests/session/profile_native_calls_tests.cpp"
-note = "M5 WU-0235 按 phase 将已解析 target、JNIEnv、实例/jclass、surface/input 事实装配为 A32 r0-r3 与 8 字节对齐栈参数；部分运行期状态明确失败"
+test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+note = "历史 Profile invocation assembler 已由 ADR-0022/WU-M9-025 从生产代码和测试删除；A32 通用调用执行器仍由 runtime 自身契约覆盖"
 
 [runtime.a32_guest_call_executor]
 status = "complete"
@@ -817,8 +817,8 @@ note = "M5 WU-0242 为 Java/GLSurfaceView lifecycle 显式 open/present/close AN
 
 [session.profile_guest_lifecycle]
 status = "complete"
-test = "tests/session/profile_native_execution_tests.cpp"
-note = "M5 WU-0243/0321/0327 编排 gl_surface_view native phase；支持受检 suspend/resume，挂起时拒绝 frame/input，finalizer 位于 shutdown 与 surface close 之间；WU-0337 让 phase 失败先中断阻塞 wait 并保留首个错误"
+test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/lifecycle_tests.cpp"
+note = "历史 Profile phase lifecycle 已由 ADR-0022/WU-M9-025 删除；清理顺序与状态机契约由唯一 dex_activity lifecycle 延续"
 
 [profiles.java_method_dispatch]
 status = "complete"
@@ -827,8 +827,8 @@ note = "M5 WU-0245 要求 Profile Java method 显式声明 instance/static kind�
 
 [session.profile_guest_class_registry]
 status = "complete"
-test = "tests/session/profile_native_execution_tests.cpp; tools.title_profiles_current"
-note = "M5 WU-0247 将 Profile Java declarations 与 native-call class receiver 装配进 Android guest session 的同一 JNI class registry"
+test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
+note = "历史 Profile class registry 装配已由 ADR-0022/WU-M9-025 删除；DexVM bridge 仍把真实解释类注册到 session JNI registry"
 
 [profiles.legacy_audio_java_declarations]
 status = "complete"
@@ -1028,7 +1028,12 @@ note = "M9 WU-M9-018 生命周期反转模板：实例化 launcher→<clinit>→
 [session.title_profile_v2]
 status = "complete"
 test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
-note = "M9 WU-M9-017 schema v2：dex_activity + 受检 [runtime.dexvm] 预算，禁止 native_call 与 [[java.class]]；v1 冻结不动，Python/C++ 双版本并行校验"
+note = "M9 WU-M9-017/022/025：schema v2 是唯一 Title Profile，支持 dex_activity、受检 [runtime.dexvm]、entry 和 static presets；schema 1 及其实现已删除"
+
+[session.profile_entry_scope]
+status = "complete"
+test = "tests/session/profile_entry_scope_tests.cpp; tools.title_profiles_current"
+note = "WU-M9-022..024：Profile v2 可在 required data manifest 已验证时覆盖 launch Activity，并在真实 class 初始化后按 Z/B/C/S/I/J/F/D/String 类型写 static field；缺类/字段/类型/前提明确失败且日志保留 reason"
 
 [profiles.asphalt5_dexvm_pilot]
 status = "complete"

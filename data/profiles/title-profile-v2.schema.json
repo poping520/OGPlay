@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogplay.dev/schema/title-profile-v2.schema.json",
+  "title": "OGPlay Title Profile v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "identity", "runtime"],
+  "properties": {
+    "schema": { "const": 2 },
+    "identity": { "$ref": "#/$defs/identity" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "data": { "$ref": "#/$defs/data" },
+    "audio": { "$ref": "#/$defs/audio" },
+    "quirks": { "$ref": "#/$defs/quirks" },
+    "input": { "$ref": "#/$defs/input" }
+  },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "version_code", "so_sha256", "abi"],
+      "properties": {
+        "package": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "version_code": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+        },
+        "so_sha256": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "abi": { "enum": ["armeabi", "armeabi-v7a"] }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_level", "lifecycle", "surface"],
+      "properties": {
+        "api_level": { "enum": [19, 22, 23] },
+        "lifecycle": { "const": "dex_activity" },
+        "maximum_ticks_per_call": {
+          "type": "integer", "minimum": 1, "maximum": 10000000000
+        },
+        "surface": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 1, "maximum": 16384 },
+            "height": { "type": "integer", "minimum": 1, "maximum": 16384 }
+          }
+        },
+        "dexvm": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "heap_budget_bytes": {
+              "type": "integer", "minimum": 1048576, "maximum": 1073741824
+            },
+            "max_frames": { "type": "integer", "minimum": 16, "maximum": 65536 },
+            "ticks_per_call": {
+              "type": "integer", "minimum": 1, "maximum": 10000000000
+            }
+          }
+        },
+        "entry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["launch_activity"],
+          "properties": {
+            "launch_activity": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+$"
+            }
+          }
+        },
+        "presets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/preset" }
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "field", "type", "value", "reason"],
+      "properties": {
+        "class": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+$"
+        },
+        "field": {
+          "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+        },
+        "type": {
+          "enum": ["Z", "B", "C", "S", "I", "J", "F", "D", "Ljava/lang/String;"]
+        },
+        "value": { "type": ["boolean", "integer", "number", "string"] },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mounts": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["guest", "source", "required"],
+            "properties": {
+              "guest": { "type": "string", "pattern": "^/" },
+              "source": { "enum": ["apk", "obb", "external"] },
+              "required": { "type": "boolean" }
+            }
+          }
+        },
+        "working_directory": { "type": "string", "pattern": "^/" },
+        "manifest": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["path", "required"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "required": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cover_music": {
+          "type": "object", "additionalProperties": false,
+          "required": ["source", "path", "loop"],
+          "properties": {
+            "source": { "enum": ["apk", "obb", "external"] },
+            "path": { "type": "string", "minLength": 1 },
+            "loop": { "type": "boolean" }
+          }
+        },
+        "sound_pool": {
+          "type": "object", "additionalProperties": false,
+          "required": ["source", "path_pattern"],
+          "properties": {
+            "source": { "enum": ["apk", "obb", "external"] },
+            "path_pattern": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "quirks": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+        }
+      },
+      "additionalProperties": { "type": "object" }
+    },
+    "input": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile"],
+      "properties": {
+        "profile": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+      }
+    }
+  }
+}

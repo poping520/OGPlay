@@ -393,8 +393,6 @@ void AppendWidgetClasses(std::vector<Decl>& catalog) {
          true},
         {"Landroid/view/SurfaceHolder$Callback;", true, nullptr, nullptr,
          false},
-        {"Landroid/view/SurfaceView;", false, "Landroid/view/View;", nullptr,
-         true},
         {"Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;", true,
          nullptr, nullptr, false},
         {"Landroid/webkit/WebChromeClient;", false, nullptr, nullptr, true},

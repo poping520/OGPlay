@@ -8,21 +8,6 @@ namespace ogplay::session {
 LifecycleTemplateDescription DescribeLifecycle(
     const ProfileLifecycle lifecycle) {
     switch (lifecycle) {
-    case ProfileLifecycle::native_activity:
-        return {lifecycle, LifecycleCallbackRoute::native_activity,
-                LifecycleCallbackRoute::native_activity,
-                LifecycleCallbackRoute::native_activity,
-                LifecycleCallbackRoute::native_activity};
-    case ProfileLifecycle::gl_surface_view:
-        return {lifecycle, LifecycleCallbackRoute::framework_activity,
-                LifecycleCallbackRoute::framework_activity,
-                LifecycleCallbackRoute::gl_surface_view_renderer,
-                LifecycleCallbackRoute::framework_activity};
-    case ProfileLifecycle::custom_jni:
-        return {lifecycle, LifecycleCallbackRoute::custom_jni,
-                LifecycleCallbackRoute::custom_jni,
-                LifecycleCallbackRoute::custom_jni,
-                LifecycleCallbackRoute::custom_jni};
     case ProfileLifecycle::dex_activity:
         // The interpreted lifecycle routes through the framework activity
         // shape; DexActivityLifecycle drives the callbacks directly.
@@ -107,11 +92,9 @@ void LifecycleFrameRunner::RequireState(const LifecycleRunState expected,
 
 std::string_view ToString(const LifecycleCallbackRoute route) noexcept {
     switch (route) {
-    case LifecycleCallbackRoute::native_activity: return "native_activity";
     case LifecycleCallbackRoute::framework_activity: return "framework_activity";
     case LifecycleCallbackRoute::gl_surface_view_renderer:
         return "gl_surface_view_renderer";
-    case LifecycleCallbackRoute::custom_jni: return "custom_jni";
     }
     return "unknown";
 }

@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "ogplay/session/title_profile.h"
-#include "ogplay/runtime/jni/jni_signature.h"
 
 namespace ogplay::session::detail {
 namespace {
@@ -555,36 +554,50 @@ bool NativeJavaName(const std::string_view value, const bool slash_required) {
     return !slash_required || components >= 2;
 }
 
-ProfileNativeCallPhase NativePhase(const std::string_view value) {
-    if (value == "startup") return ProfileNativeCallPhase::startup;
-    if (value == "resume") return ProfileNativeCallPhase::resume;
-    if (value == "frame") return ProfileNativeCallPhase::frame;
-    if (value == "pause") return ProfileNativeCallPhase::pause;
-    if (value == "shutdown") return ProfileNativeCallPhase::shutdown;
-    if (value == "pointer_down") return ProfileNativeCallPhase::pointer_down;
-    if (value == "pointer_move") return ProfileNativeCallPhase::pointer_move;
-    if (value == "pointer_up") return ProfileNativeCallPhase::pointer_up;
-    if (value == "key_down") return ProfileNativeCallPhase::key_down;
-    if (value == "key_up") return ProfileNativeCallPhase::key_up;
-    throw TitleProfileError("runtime.native_call[].phase is unsupported");
+bool NativeBinaryJavaName(const std::string_view value) {
+    std::string slash_name(value);
+    std::replace(slash_name.begin(), slash_name.end(), '.', '/');
+    return value.find('/') == std::string_view::npos &&
+           NativeJavaName(slash_name, true);
 }
 
-ProfileNativeArgumentSource NativeSource(const std::string_view value) {
-    if (value == "constant") return ProfileNativeArgumentSource::constant;
-    if (value == "surface_width") return ProfileNativeArgumentSource::surface_width;
-    if (value == "surface_height") return ProfileNativeArgumentSource::surface_height;
-    if (value == "input_x") return ProfileNativeArgumentSource::input_x;
-    if (value == "input_y") return ProfileNativeArgumentSource::input_y;
-    if (value == "input_pointer") return ProfileNativeArgumentSource::input_pointer;
-    if (value == "input_key") return ProfileNativeArgumentSource::input_key;
-    throw TitleProfileError("runtime.native_call[].arguments[].source is unsupported");
+bool NativeJavaMemberName(const std::string_view value) {
+    return value.find('/') == std::string_view::npos &&
+           value.find('.') == std::string_view::npos &&
+           NativeJavaName(value, false);
 }
 
-bool NativeIntegerKind(const runtime::JniTypeKind kind) {
-    return kind == runtime::JniTypeKind::boolean || kind == runtime::JniTypeKind::byte ||
-           kind == runtime::JniTypeKind::character ||
-           kind == runtime::JniTypeKind::short_integer ||
-           kind == runtime::JniTypeKind::integer;
+ProfileStaticPresetValue NativePresetValue(
+    const TomlValue& value, const std::string_view type) {
+    if (type == "Z") return NativeAs<bool>(value, "runtime.presets[].value");
+    if (type == "Ljava/lang/String;") {
+        return NativeString(value, "runtime.presets[].value");
+    }
+    if (type == "F" || type == "D") {
+        if (const auto* number = std::get_if<double>(&value.value)) return *number;
+        if (const auto* integer = std::get_if<std::int64_t>(&value.value)) {
+            return static_cast<double>(*integer);
+        }
+        throw TitleProfileError(
+            "runtime.presets[].value must be numeric for F/D");
+    }
+    const auto integer = NativeAs<std::int64_t>(
+        value, "runtime.presets[].value");
+    if ((type == "B" && (integer < -128 || integer > 127)) ||
+        (type == "C" && (integer < 0 || integer > 65535)) ||
+        (type == "S" && (integer < -32768 || integer > 32767)) ||
+        (type == "I" &&
+         (integer < std::numeric_limits<std::int32_t>::min() ||
+          integer > std::numeric_limits<std::int32_t>::max()))) {
+        throw TitleProfileError(
+            "runtime.presets[].value is outside the declared type range");
+    }
+    if (type != "B" && type != "C" && type != "S" && type != "I" &&
+        type != "J") {
+        throw TitleProfileError(
+            "runtime.presets[].type must be primitive or java.lang.String");
+    }
+    return integer;
 }
 
 }  // namespace
@@ -594,7 +607,7 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
                                               "runtime");
     NativeKeys(table, "runtime",
                {"api_level", "lifecycle", "maximum_ticks_per_call", "surface",
-                "native_call", "dexvm"},
+                "dexvm", "entry", "presets"},
                {"api_level", "lifecycle", "surface"});
     ProfileRuntime result;
     result.api_level = static_cast<std::uint32_t>(NativeInteger(
@@ -605,11 +618,10 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
     }
     const auto lifecycle = NativeString(
         NativeRequire(table, "lifecycle", "runtime.lifecycle"), "runtime.lifecycle");
-    if (lifecycle == "native_activity") result.lifecycle = ProfileLifecycle::native_activity;
-    else if (lifecycle == "gl_surface_view") result.lifecycle = ProfileLifecycle::gl_surface_view;
-    else if (lifecycle == "custom_jni") result.lifecycle = ProfileLifecycle::custom_jni;
-    else if (lifecycle == "dex_activity") result.lifecycle = ProfileLifecycle::dex_activity;
-    else throw TitleProfileError("runtime.lifecycle is unsupported");
+    if (lifecycle != "dex_activity") {
+        throw TitleProfileError("runtime.lifecycle must be dex_activity");
+    }
+    result.lifecycle = ProfileLifecycle::dex_activity;
     if (const auto* dexvm = NativeOptional(table, "dexvm"); dexvm != nullptr) {
         const auto& dexvm_table = NativeAs<NativeTable>(*dexvm, "runtime.dexvm");
         NativeKeys(dexvm_table, "runtime.dexvm",
@@ -647,85 +659,60 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
     result.surface.height = static_cast<std::uint32_t>(NativeInteger(
         NativeRequire(surface, "height", "runtime.surface.height"),
         "runtime.surface.height", 1, 16384));
-    const auto* call_value = NativeOptional(table, "native_call");
-    if (call_value == nullptr) return result;
-    const auto& calls = NativeAs<NativeArray>(*call_value, "runtime.native_call");
-    if (calls.empty()) throw TitleProfileError("runtime.native_call must not be empty");
-    for (const auto& value : calls) {
-        const auto& call = NativeAs<NativeTable>(value, "runtime.native_call[]");
-        NativeKeys(call, "runtime.native_call[]",
-                   {"phase", "class", "method", "signature", "dispatch", "arguments"},
-                   {"phase", "class", "method", "signature", "dispatch", "arguments"});
-        ProfileNativeCall decoded;
-        decoded.phase = NativePhase(NativeString(
-            NativeRequire(call, "phase", "runtime.native_call[].phase"),
-            "runtime.native_call[].phase"));
-        decoded.class_name = NativeString(
-            NativeRequire(call, "class", "runtime.native_call[].class"),
-            "runtime.native_call[].class");
-        decoded.method = NativeString(
-            NativeRequire(call, "method", "runtime.native_call[].method"),
-            "runtime.native_call[].method");
-        if (!NativeJavaName(decoded.class_name, true) ||
-            !NativeJavaName(decoded.method, false)) {
-            throw TitleProfileError("runtime.native_call[] has an invalid Java name");
+    if (const auto* entry = NativeOptional(table, "entry"); entry != nullptr) {
+        const auto& entry_table = NativeAs<NativeTable>(*entry, "runtime.entry");
+        NativeKeys(entry_table, "runtime.entry", {"launch_activity"},
+                   {"launch_activity"});
+        auto activity = NativeString(
+            NativeRequire(entry_table, "launch_activity",
+                          "runtime.entry.launch_activity"),
+            "runtime.entry.launch_activity");
+        if (!NativeBinaryJavaName(activity)) {
+            throw TitleProfileError(
+                "runtime.entry.launch_activity is not a binary Java class name");
         }
-        decoded.signature = NativeString(
-            NativeRequire(call, "signature", "runtime.native_call[].signature"),
-            "runtime.native_call[].signature");
-        runtime::JniMethodDescriptor descriptor;
-        try { descriptor = runtime::ParseJniMethodDescriptor(decoded.signature); }
-        catch (const runtime::JniSignatureError&) {
-            throw TitleProfileError("runtime.native_call[].signature is invalid");
+        result.entry = ProfileEntry{std::move(activity)};
+    }
+    if (const auto* presets = NativeOptional(table, "presets");
+        presets != nullptr) {
+        const auto& values = NativeAs<NativeArray>(*presets, "runtime.presets");
+        if (values.empty()) {
+            throw TitleProfileError("runtime.presets must not be empty");
         }
-        const auto dispatch = NativeString(
-            NativeRequire(call, "dispatch", "runtime.native_call[].dispatch"),
-            "runtime.native_call[].dispatch");
-        if (dispatch == "instance") decoded.dispatch = ProfileNativeDispatch::instance;
-        else if (dispatch == "static") decoded.dispatch = ProfileNativeDispatch::static_method;
-        else throw TitleProfileError("runtime.native_call[].dispatch is unsupported");
-        const auto& arguments = NativeAs<NativeArray>(
-            NativeRequire(call, "arguments", "runtime.native_call[].arguments"),
-            "runtime.native_call[].arguments");
-        if (arguments.size() != descriptor.parameters.size()) {
-            throw TitleProfileError("runtime.native_call[] argument count does not match signature");
-        }
-        for (std::size_t index = 0; index < arguments.size(); ++index) {
-            const auto& argument = NativeAs<NativeTable>(
-                arguments[index], "runtime.native_call[].arguments[]");
-            NativeKeys(argument, "runtime.native_call[].arguments[]",
-                       {"source", "value"}, {"source"});
-            ProfileNativeArgument item;
-            item.source = NativeSource(NativeString(
-                NativeRequire(argument, "source", "native argument source"),
-                "native argument source"));
-            const auto* constant = NativeOptional(argument, "value");
-            if (item.source == ProfileNativeArgumentSource::constant) {
-                if (constant == nullptr) throw TitleProfileError("constant native argument requires value");
-                item.value = static_cast<std::uint32_t>(NativeInteger(
-                    *constant, "native argument value", 0,
-                    std::numeric_limits<std::uint32_t>::max()));
-            } else if (constant != nullptr) {
-                throw TitleProfileError("non-constant native argument must not declare value");
+        std::set<std::pair<std::string, std::string>> unique;
+        for (const auto& value : values) {
+            const auto& preset = NativeAs<NativeTable>(
+                value, "runtime.presets[]");
+            NativeKeys(preset, "runtime.presets[]",
+                       {"class", "field", "type", "value", "reason"},
+                       {"class", "field", "type", "value", "reason"});
+            ProfileStaticPreset decoded;
+            decoded.class_name = NativeString(
+                NativeRequire(preset, "class", "runtime.presets[].class"),
+                "runtime.presets[].class");
+            decoded.field = NativeString(
+                NativeRequire(preset, "field", "runtime.presets[].field"),
+                "runtime.presets[].field");
+            decoded.type = NativeString(
+                NativeRequire(preset, "type", "runtime.presets[].type"),
+                "runtime.presets[].type");
+            decoded.reason = NativeString(
+                NativeRequire(preset, "reason", "runtime.presets[].reason"),
+                "runtime.presets[].reason");
+            if (!NativeBinaryJavaName(decoded.class_name) ||
+                !NativeJavaMemberName(decoded.field)) {
+                throw TitleProfileError(
+                    "runtime.presets[] has an invalid Java class or field name");
             }
-            if (!NativeIntegerKind(descriptor.parameters[index].kind)) {
-                throw TitleProfileError("native argument source requires an integer JNI parameter");
+            if (!unique.emplace(decoded.class_name, decoded.field).second) {
+                throw TitleProfileError(
+                    "runtime.presets[] contains a duplicate class/field");
             }
-            const auto pointer_source = item.source == ProfileNativeArgumentSource::input_x ||
-                item.source == ProfileNativeArgumentSource::input_y ||
-                item.source == ProfileNativeArgumentSource::input_pointer;
-            const auto pointer_phase = decoded.phase == ProfileNativeCallPhase::pointer_down ||
-                decoded.phase == ProfileNativeCallPhase::pointer_move ||
-                decoded.phase == ProfileNativeCallPhase::pointer_up;
-            const auto key_source = item.source == ProfileNativeArgumentSource::input_key;
-            const auto key_phase = decoded.phase == ProfileNativeCallPhase::key_down ||
-                                   decoded.phase == ProfileNativeCallPhase::key_up;
-            if ((pointer_source && !pointer_phase) || (key_source && !key_phase)) {
-                throw TitleProfileError("native input argument source does not match call phase");
-            }
-            decoded.arguments.push_back(item);
+            decoded.value = NativePresetValue(
+                NativeRequire(preset, "value", "runtime.presets[].value"),
+                decoded.type);
+            result.presets.push_back(std::move(decoded));
         }
-        result.native_calls.push_back(std::move(decoded));
     }
     return result;
 }

@@ -44,6 +44,11 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [WU-M9-019](WU-M9-019.md) | Asphalt 5 pilot v2 profile + exact 主界面 gate | 完成 |
 | [WU-M9-020](WU-M9-020.md) | Scenario runner 易用性批次（失败日志/机读输出/预算算术/--fresh） | 完成 |
 | [WU-M9-021](WU-M9-021.md) | Scenario runner --watch 增量编写模式 | 完成 |
+| [WU-M9-022](WU-M9-022.md) | v2-only 启动作用域 schema | 完成 |
+| [WU-M9-023](WU-M9-023.md) | 入口覆盖与 provisioned 前提 | 完成 |
+| [WU-M9-024](WU-M9-024.md) | guest 静态字段预设 | 完成 |
+| [WU-M9-025](WU-M9-025.md) | Profile v1 完全移除 | 完成 |
+| [WU-M9-026](WU-M9-026.md) | Asphalt 6 启动作用域 exact gate | 进行中 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 
@@ -51,18 +56,10 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 [`docs/playbook/NEW-TITLE.md`](../../playbook/NEW-TITLE.md)；staging profile 在
 `data/profiles-dexvm/`，通过各自 gate 后再迁移进 `data/profiles/`。
 
-进度：Dungeon Hunter 已越过链接与解释期，进入标题画面（缺口 survey 流程与工具
-在本批次落地）。Asphalt 6 仍卡在 **DEX 解析期**，还没进 dexvm：
-
-- 现象：`ogplay: DEX method_id contains an invalid index`。
-- 根因（已核实）：A6 的 `classes.dex` 有 4 个 `method_id` 的 `class_type_index`
-  指向**数组类型**（均为 `clone`）。dex-format 允许数组 descriptor 作为 method
-  引用的 owner（数组继承 `Object.clone()`），是 `src/loader/dex.cpp` 的规则过严，
-  不是坏 dex。
-- 修法：放宽 method_id owner 校验为「class descriptor 或数组 descriptor」，
-  field_id 保持只允许 class descriptor；同步 `src/loader/MODULE.md` 的不变量措辞，
-  并补正/反例测试（数组 owner 的 `clone()` 可解析、非法 descriptor 仍拒绝），
-  测试注释记录 AOSP 依据（`libdex/DexFile.h` + `docs/dex-format`）。
+进度：Dungeon Hunter 已越过链接与解释期，进入标题画面。Asphalt 6 已由 v2 entry
+直接进入引擎 Activity，provisioned-data preset 实际应用，并越过 Activity/GL surface/
+电话状态/URL encoding 等启动链；当前首个边界是 native `FindClass` 看不到 DexVM 平台
+intrinsic `android/content/Intent`，需统一 native→DexVM intrinsic JNI 可见性，不能伪造成功。
 
 其余在办项（GC-B 精确标记清除、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)

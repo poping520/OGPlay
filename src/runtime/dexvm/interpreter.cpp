@@ -670,6 +670,50 @@ void Interpreter::SetIntrinsicStaticRef(
         value.Value();
 }
 
+void Interpreter::SetStaticFieldBits(
+    const std::string_view class_descriptor,
+    const std::string_view field_name,
+    const std::string_view field_descriptor,
+    const std::uint64_t bits) {
+    const auto java_class = impl_->linker->FindClass(class_descriptor);
+    if (!java_class.has_value()) {
+        throw DexVmError(DexVmErrorReason::unknown_class,
+                         "preset static owner is not in the dex: " +
+                             std::string(class_descriptor));
+    }
+    const auto field_id = impl_->linker->FindFieldRecursive(
+        *java_class, std::string(field_name), std::string(field_descriptor));
+    if (!field_id.has_value()) {
+        throw DexVmError(DexVmErrorReason::invalid_member,
+                         "preset static field is not declared: " +
+                             std::string(field_name) +
+                             std::string(field_descriptor));
+    }
+    const auto& field = impl_->linker->Field(*field_id);
+    if (!field.is_static) {
+        throw DexVmError(DexVmErrorReason::invalid_member,
+                         "preset target is not static: " +
+                             std::string(field_name));
+    }
+    auto& owner = impl_->linker->MutableClass(field.owner);
+    if (owner.clinit_state != ClinitState::initialized) {
+        throw DexVmError(DexVmErrorReason::clinit_failure,
+                         "preset target class is not initialized: " +
+                             owner.descriptor);
+    }
+    if (field.slot + (field.is_wide ? 2U : 1U) >
+        owner.static_storage.size()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "preset static slot is out of range: " +
+                             std::string(field_name));
+    }
+    owner.static_storage[field.slot] = static_cast<std::uint32_t>(bits);
+    if (field.is_wide) {
+        owner.static_storage[field.slot + 1U] =
+            static_cast<std::uint32_t>(bits >> 32U);
+    }
+}
+
 VmObjectRef Interpreter::NewIntrinsicInstance(
     const std::string_view class_descriptor) {
     const auto java_class = impl_->linker->FindClass(class_descriptor);

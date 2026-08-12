@@ -1,4 +1,3 @@
-#include <array>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -50,80 +49,55 @@ public:
 
 }  // namespace
 
-TEST_CASE("three lifecycle templates have stable generic callback routes") {
+TEST_CASE("dex activity lifecycle has stable generic callback routes") {
     using CallbackRoute = ogplay::session::LifecycleCallbackRoute;
     using ProfileLifecycle = ogplay::session::ProfileLifecycle;
 
-    const auto native =
-        ogplay::session::DescribeLifecycle(ProfileLifecycle::native_activity);
-    CHECK(native.startup == CallbackRoute::native_activity);
-    CHECK(native.frame_lifecycle == CallbackRoute::native_activity);
-    CHECK(native.render == CallbackRoute::native_activity);
-    CHECK(native.shutdown == CallbackRoute::native_activity);
-
-    const auto surface =
-        ogplay::session::DescribeLifecycle(ProfileLifecycle::gl_surface_view);
+    const auto surface = ogplay::session::DescribeLifecycle(
+        ProfileLifecycle::dex_activity);
     CHECK(surface.startup == CallbackRoute::framework_activity);
     CHECK(surface.frame_lifecycle == CallbackRoute::framework_activity);
     CHECK(surface.render == CallbackRoute::gl_surface_view_renderer);
     CHECK(surface.shutdown == CallbackRoute::framework_activity);
 
-    const auto custom =
-        ogplay::session::DescribeLifecycle(ProfileLifecycle::custom_jni);
-    CHECK(custom.startup == CallbackRoute::custom_jni);
-    CHECK(custom.frame_lifecycle == CallbackRoute::custom_jni);
-    CHECK(custom.render == CallbackRoute::custom_jni);
-    CHECK(custom.shutdown == CallbackRoute::custom_jni);
     CHECK_THROWS_AS(
         static_cast<void>(ogplay::session::DescribeLifecycle(
             static_cast<ProfileLifecycle>(255))),
         ogplay::session::LifecycleSequenceError);
 }
 
-TEST_CASE("every lifecycle template uses the single ordered frame sequence") {
-    const std::array lifecycles{
-        ogplay::session::ProfileLifecycle::native_activity,
-        ogplay::session::ProfileLifecycle::gl_surface_view,
-        ogplay::session::ProfileLifecycle::custom_jni,
+TEST_CASE("dex activity uses the single ordered frame sequence") {
+    const auto lifecycle = ogplay::session::ProfileLifecycle::dex_activity;
+    ogplay::hal::FixedStepClock clock(1'000, 60'000);
+    RecordingHost host;
+    ogplay::session::LifecycleFrameRunner runner(lifecycle, clock, host);
+    const auto description = runner.Description();
+
+    CHECK(runner.Start().state ==
+          ogplay::session::LifecycleRunState::running);
+    const auto frame = runner.StepFrame();
+    CHECK(frame.frame == 1);
+    CHECK(frame.clock_ticks == 1'000);
+    CHECK(runner.Stop().state ==
+          ogplay::session::LifecycleRunState::stopped);
+
+    const std::vector<std::string> expected{
+        "start:" + std::string(ogplay::session::ToString(description.startup)),
+        "input",
+        "lifecycle:" +
+            std::string(ogplay::session::ToString(description.frame_lifecycle)),
+        "render:" + std::string(ogplay::session::ToString(description.render)),
+        "present", "audio", "schedule", "time",
+        "stop:" + std::string(ogplay::session::ToString(description.shutdown)),
     };
-    for (const auto lifecycle : lifecycles) {
-        CAPTURE(ogplay::session::ToString(lifecycle));
-        ogplay::hal::FixedStepClock clock(1'000, 60'000);
-        RecordingHost host;
-        ogplay::session::LifecycleFrameRunner runner(lifecycle, clock, host);
-        const auto description = runner.Description();
-
-        CHECK(runner.Start().state ==
-              ogplay::session::LifecycleRunState::running);
-        const auto frame = runner.StepFrame();
-        CHECK(frame.frame == 1);
-        CHECK(frame.clock_ticks == 1'000);
-        CHECK(runner.Stop().state ==
-              ogplay::session::LifecycleRunState::stopped);
-
-        const std::vector<std::string> expected{
-            "start:" + std::string(ogplay::session::ToString(description.startup)),
-            "input",
-            "lifecycle:" +
-                std::string(ogplay::session::ToString(description.frame_lifecycle)),
-            "render:" +
-                std::string(ogplay::session::ToString(description.render)),
-            "present",
-            "audio",
-            "schedule",
-            "time",
-            "stop:" +
-                std::string(ogplay::session::ToString(description.shutdown)),
-        };
-        CHECK(host.events == expected);
-    }
+    CHECK(host.events == expected);
 }
 
 TEST_CASE("lifecycle sequence rejects misuse and makes frame failure sticky") {
     ogplay::hal::FixedStepClock clock(1, 60);
     RecordingHost host;
     ogplay::session::LifecycleFrameRunner runner(
-        ogplay::session::ProfileLifecycle::custom_jni, clock, host);
+        ogplay::session::ProfileLifecycle::dex_activity, clock, host);
 
     CHECK_THROWS_AS(static_cast<void>(runner.StepFrame()),
                     ogplay::session::LifecycleSequenceError);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate OGPlay Title Profile v1 TOML files without third-party packages."""
+"""Validate OGPlay Title Profile v2 TOML files without third-party packages."""
 
 from __future__ import annotations
 
@@ -14,24 +14,19 @@ from typing import Any, Sequence
 
 
 MAX_PROFILE_LINES = 200
-ROOT_FIELDS = {"schema", "identity", "runtime", "data", "audio", "java",
-               "quirks", "input"}
+ROOT_FIELDS = {"schema", "identity", "runtime", "data", "audio", "quirks",
+               "input"}
 PACKAGE_PATTERN = re.compile(
     r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+\Z"
 )
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
-JAVA_CLASS_PATTERN = re.compile(
-    r"[A-Za-z_$][A-Za-z0-9_$]*(?:/[A-Za-z_$][A-Za-z0-9_$]*)+\Z"
+BINARY_CLASS_PATTERN = re.compile(
+    r"[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+\Z"
 )
-IMPL_PATTERN = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\Z")
+JAVA_MEMBER_PATTERN = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*\Z")
 ID_PATTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
 SOURCES = {"apk", "obb", "external"}
-LIFECYCLES = {"native_activity", "gl_surface_view", "custom_jni"}
 ABIS = {"armeabi", "armeabi-v7a"}
-NATIVE_PHASES = {"startup", "resume", "frame", "pause", "shutdown",
-                 "pointer_down", "pointer_move", "pointer_up", "key_down", "key_up"}
-NATIVE_ARGUMENT_SOURCES = {"constant", "surface_width", "surface_height",
-                           "input_x", "input_y", "input_pointer", "input_key"}
 
 
 class ProfileError(ValueError):
@@ -135,112 +130,6 @@ def _validate_identity(value: Any, expected_package: str) -> None:
         raise ProfileError("identity.abi must be armeabi or armeabi-v7a")
 
 
-def _jni_parameter_kinds(signature: str) -> list[str]:
-    if not signature.startswith("("):
-        raise ProfileError("runtime.native_call[].signature is invalid")
-
-    def parse_type(offset: int, allow_void: bool) -> tuple[str, int]:
-        dimensions = 0
-        while offset < len(signature) and signature[offset] == "[":
-            dimensions += 1
-            offset += 1
-        if offset >= len(signature):
-            raise ProfileError("runtime.native_call[].signature is invalid")
-        marker = signature[offset]
-        if marker == "L":
-            terminator = signature.find(";", offset + 1)
-            if terminator == -1 or terminator == offset + 1:
-                raise ProfileError("runtime.native_call[].signature is invalid")
-            offset = terminator + 1
-            kind = "L"
-        elif marker in "ZBCSIJFDV":
-            offset += 1
-            kind = marker
-        else:
-            raise ProfileError("runtime.native_call[].signature is invalid")
-        if kind == "V" and (not allow_void or dimensions):
-            raise ProfileError("runtime.native_call[].signature is invalid")
-        return ("[" if dimensions else kind), offset
-
-    offset = 1
-    parameters: list[str] = []
-    while offset < len(signature) and signature[offset] != ")":
-        kind, offset = parse_type(offset, False)
-        parameters.append(kind)
-    if offset >= len(signature) or signature[offset] != ")":
-        raise ProfileError("runtime.native_call[].signature is invalid")
-    _, offset = parse_type(offset + 1, True)
-    if offset != len(signature):
-        raise ProfileError("runtime.native_call[].signature is invalid")
-    return parameters
-
-
-def _validate_runtime(value: Any) -> None:
-    table = _table(value, "runtime")
-    _keys(table, "runtime", {"api_level", "lifecycle", "maximum_ticks_per_call",
-                              "surface", "native_call"},
-          {"api_level", "lifecycle", "surface"})
-    api = _integer(table["api_level"], "runtime.api_level", 1, 0xFFFFFFFF)
-    if api not in {19, 22, 23}:
-        raise ProfileError("runtime.api_level must be one of 19, 22 or 23")
-    lifecycle = _string(table["lifecycle"], "runtime.lifecycle")
-    if lifecycle not in LIFECYCLES:
-        raise ProfileError(
-            "runtime.lifecycle must be native_activity, gl_surface_view or custom_jni"
-        )
-    if "maximum_ticks_per_call" in table:
-        _integer(table["maximum_ticks_per_call"],
-                 "runtime.maximum_ticks_per_call", 1, 10_000_000_000)
-    surface = _table(table["surface"], "runtime.surface")
-    _keys(surface, "runtime.surface", {"width", "height"}, {"width", "height"})
-    _integer(surface["width"], "runtime.surface.width", 1, 16384)
-    _integer(surface["height"], "runtime.surface.height", 1, 16384)
-    calls = _array(table.get("native_call", []), "runtime.native_call")
-    if "native_call" in table and not calls:
-        raise ProfileError("runtime.native_call must not be empty")
-    for index, value in enumerate(calls):
-        field = f"runtime.native_call[{index}]"
-        call = _table(value, field)
-        required = {"phase", "class", "method", "signature", "dispatch", "arguments"}
-        _keys(call, field, required, required)
-        phase = _string(call["phase"], f"{field}.phase")
-        if phase not in NATIVE_PHASES:
-            raise ProfileError(f"{field}.phase is unsupported")
-        if JAVA_CLASS_PATTERN.fullmatch(_string(call["class"], f"{field}.class")) is None:
-            raise ProfileError(f"{field}.class is invalid")
-        if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*",
-                        _string(call["method"], f"{field}.method")) is None:
-            raise ProfileError(f"{field}.method is invalid")
-        parameters = _jni_parameter_kinds(
-            _string(call["signature"], f"{field}.signature"))
-        if call["dispatch"] not in {"instance", "static"}:
-            raise ProfileError(f"{field}.dispatch must be instance or static")
-        arguments = _array(call["arguments"], f"{field}.arguments")
-        if len(arguments) != len(parameters):
-            raise ProfileError(f"{field} argument count does not match signature")
-        for argument_index, argument_value in enumerate(arguments):
-            argument_field = f"{field}.arguments[{argument_index}]"
-            argument = _table(argument_value, argument_field)
-            _keys(argument, argument_field, {"source", "value"}, {"source"})
-            source = _string(argument["source"], f"{argument_field}.source")
-            if source not in NATIVE_ARGUMENT_SOURCES:
-                raise ProfileError(f"{argument_field}.source is unsupported")
-            if source == "constant":
-                if "value" not in argument:
-                    raise ProfileError(f"{argument_field} constant requires value")
-                _integer(argument["value"], f"{argument_field}.value", 0, 0xFFFFFFFF)
-            elif "value" in argument:
-                raise ProfileError(f"{argument_field} non-constant must not have value")
-            if parameters[argument_index] not in set("ZBCSI"):
-                raise ProfileError(f"{argument_field} requires an integer JNI parameter")
-            pointer_source = source in {"input_x", "input_y", "input_pointer"}
-            pointer_phase = phase in {"pointer_down", "pointer_move", "pointer_up"}
-            key_source = source == "input_key"
-            key_phase = phase in {"key_down", "key_up"}
-            if pointer_source and not pointer_phase or key_source and not key_phase:
-                raise ProfileError(f"{argument_field}.source does not match call phase")
-
-
 def _validate_data(value: Any) -> None:
     table = _table(value, "data")
     _keys(table, "data", {"mounts", "working_directory", "manifest"})
@@ -285,39 +174,6 @@ def _validate_audio(value: Any) -> None:
         matches = re.findall(r"\{resource(?::0[1-9])?\}", pattern)
         if len(matches) != 1 or re.sub(r"\{resource(?::0[1-9])?\}", "", pattern).find("{") >= 0 or "}" in re.sub(r"\{resource(?::0[1-9])?\}", "", pattern):
             raise ProfileError("audio.sound_pool.path_pattern must contain one valid resource placeholder")
-
-
-def _validate_java(value: Any) -> None:
-    table = _table(value, "java")
-    _keys(table, "java", {"class"}, {"class"})
-    classes = _array(table["class"], "java.class", non_empty=True)
-    class_names: list[str] = []
-    for class_index, value in enumerate(classes):
-        field = f"java.class[{class_index}]"
-        java_class = _table(value, field)
-        _keys(java_class, field, {"name", "method"}, {"name", "method"})
-        name = _string(java_class["name"], f"{field}.name")
-        if JAVA_CLASS_PATTERN.fullmatch(name) is None:
-            raise ProfileError(f"{field}.name must be a slash-separated Java class")
-        class_names.append(name)
-        methods = _array(java_class["method"], f"{field}.method", non_empty=True)
-        method_keys: list[tuple[str, str]] = []
-        for method_index, method_value in enumerate(methods):
-            method_field = f"{field}.method[{method_index}]"
-            method = _table(method_value, method_field)
-            _keys(method, method_field, {"name", "sig", "impl", "static"},
-                  {"name", "sig", "impl", "static"})
-            method_name = _string(method["name"], f"{method_field}.name")
-            signature = _string(method["sig"], f"{method_field}.sig")
-            if not signature.startswith("(") or ")" not in signature[1:]:
-                raise ProfileError(f"{method_field}.sig must be a JNI method signature")
-            impl = _string(method["impl"], f"{method_field}.impl")
-            if IMPL_PATTERN.fullmatch(impl) is None:
-                raise ProfileError(f"{method_field}.impl must be a namespaced binding id")
-            _boolean(method["static"], f"{method_field}.static")
-            method_keys.append((method_name, signature))
-        _unique(method_keys, f"{field}.method name/signature pairs")
-    _unique(class_names, "java.class names")
 
 
 def _validate_pure_data(value: Any, field: str, depth: int = 0) -> None:
@@ -372,12 +228,12 @@ def _validate_input(value: Any) -> None:
 
 
 def _validate_runtime_v2(value: Any) -> None:
-    # Schema v2 (dex_activity): no native_call replay glue; optional dexvm
-    # budgets with checked ranges (docs/design/dexvm/04-integration.md §7).
+    # dex_activity runtime with checked budgets
+    # (docs/design/dexvm/04-integration.md §7).
     table = _table(value, "runtime")
     _keys(table, "runtime",
           {"api_level", "lifecycle", "maximum_ticks_per_call", "surface",
-           "dexvm"},
+           "dexvm", "entry", "presets"},
           {"api_level", "lifecycle", "surface"})
     api = _integer(table["api_level"], "runtime.api_level", 1, 0xFFFFFFFF)
     if api not in {19, 22, 23}:
@@ -405,39 +261,82 @@ def _validate_runtime_v2(value: Any) -> None:
         if "ticks_per_call" in dexvm:
             _integer(dexvm["ticks_per_call"], "runtime.dexvm.ticks_per_call",
                      1, 10_000_000_000)
+    if "entry" in table:
+        entry = _table(table["entry"], "runtime.entry")
+        _keys(entry, "runtime.entry", {"launch_activity"},
+              {"launch_activity"})
+        activity = _string(entry["launch_activity"],
+                           "runtime.entry.launch_activity")
+        if BINARY_CLASS_PATTERN.fullmatch(activity) is None:
+            raise ProfileError(
+                "runtime.entry.launch_activity must be a binary Java class name"
+            )
+    presets = _array(table.get("presets", []), "runtime.presets")
+    if "presets" in table and not presets:
+        raise ProfileError("runtime.presets must not be empty")
+    keys: list[tuple[str, str]] = []
+    for index, value in enumerate(presets):
+        field = f"runtime.presets[{index}]"
+        preset = _table(value, field)
+        required = {"class", "field", "type", "value", "reason"}
+        _keys(preset, field, required, required)
+        owner = _string(preset["class"], f"{field}.class")
+        member = _string(preset["field"], f"{field}.field")
+        descriptor = _string(preset["type"], f"{field}.type")
+        _string(preset["reason"], f"{field}.reason")
+        if BINARY_CLASS_PATTERN.fullmatch(owner) is None:
+            raise ProfileError(f"{field}.class must be a binary Java class name")
+        if JAVA_MEMBER_PATTERN.fullmatch(member) is None:
+            raise ProfileError(f"{field}.field must be a Java member name")
+        keys.append((owner, member))
+        preset_value = preset["value"]
+        if descriptor == "Z":
+            _boolean(preset_value, f"{field}.value")
+        elif descriptor in {"B", "C", "S", "I", "J"}:
+            limits = {
+                "B": (-128, 127), "C": (0, 65535),
+                "S": (-32768, 32767), "I": (-0x80000000, 0x7fffffff),
+                "J": (-0x8000000000000000, 0x7fffffffffffffff),
+            }
+            _integer(preset_value, f"{field}.value", *limits[descriptor])
+        elif descriptor in {"F", "D"}:
+            if isinstance(preset_value, bool) or not isinstance(
+                    preset_value, (int, float)):
+                raise ProfileError(f"{field}.value must be numeric")
+        elif descriptor == "Ljava/lang/String;":
+            _string(preset_value, f"{field}.value")
+        else:
+            raise ProfileError(
+                f"{field}.type must be primitive or java.lang.String"
+            )
+    _unique(keys, "runtime.presets class/field pairs")
 
 
 def validate_profile(document: Any, expected_package: str) -> dict[str, Any]:
     root = _table(document, "profile")
     _keys(root, "profile", ROOT_FIELDS, {"schema", "identity", "runtime"})
-    if root["schema"] not in (1, 2):
-        raise ProfileError("schema must be 1 or 2")
+    if root["schema"] != 2:
+        raise ProfileError("schema must be 2")
     _validate_identity(root["identity"], expected_package)
-    if root["schema"] == 2:
-        if "java" in root:
-            raise ProfileError("schema 2 forbids the java section")
-        _validate_runtime_v2(root["runtime"])
-        validators = {
-            "data": _validate_data,
-            "audio": _validate_audio,
-            "quirks": _validate_quirks,
-            "input": _validate_input,
-        }
-        for field, validator in validators.items():
-            if field in root:
-                validator(root[field])
-        return root
-    _validate_runtime(root["runtime"])
+    _validate_runtime_v2(root["runtime"])
     validators = {
         "data": _validate_data,
         "audio": _validate_audio,
-        "java": _validate_java,
         "quirks": _validate_quirks,
         "input": _validate_input,
     }
     for field, validator in validators.items():
         if field in root:
             validator(root[field])
+    scoped = "entry" in root["runtime"] or "presets" in root["runtime"]
+    required_manifest = any(
+        item.get("required") is True
+        for item in root.get("data", {}).get("manifest", [])
+    )
+    if scoped and not required_manifest:
+        raise ProfileError(
+            "runtime entry scope requires a required data manifest fact"
+        )
     return root
 
 
@@ -454,8 +353,8 @@ def validate_schema(path: Path) -> dict[str, Any]:
         raise ProfileError("profile schema root fields do not match the validator")
     if set(schema.get("required", [])) != {"schema", "identity", "runtime"}:
         raise ProfileError("profile schema required fields do not match the validator")
-    if schema["properties"]["schema"].get("const") != 1:
-        raise ProfileError("profile schema version must be 1")
+    if schema["properties"]["schema"].get("const") != 2:
+        raise ProfileError("profile schema version must be 2")
     schema_abis = schema.get("$defs", {}).get("identity", {}).get(
         "properties", {}).get("abi", {}).get("enum", [])
     if set(schema_abis) != ABIS:
@@ -490,20 +389,28 @@ def validate_directory(path: Path) -> int:
     return len(profiles)
 
 
-def _valid_profile(package: str = "org.example.legacy") -> str:
-    return f"""schema = 1
+def _valid_profile(package: str = "org.example.game") -> str:
+    return f"""schema = 2
 
 [identity]
 package = "{package}"
-name = "Generic Legacy Fixture"
+name = "Generic DexVM Fixture"
 version_code = [1, 2]
 so_sha256 = ["{'0' * 64}", "{'1' * 64}"]
 abi = "armeabi-v7a"
 
 [runtime]
 api_level = 19
-lifecycle = "gl_surface_view"
+lifecycle = "dex_activity"
 surface = {{ width = 1280, height = 720 }}
+[runtime.entry]
+launch_activity = "org.example.game.MainActivity"
+[[runtime.presets]]
+class = "org.example.game.InstallState"
+field = "ready"
+type = "Z"
+value = true
+reason = "fixture data is provisioned"
 
 [data]
 mounts = [{{ guest = "/sdcard/game", source = "external", required = true }}]
@@ -512,15 +419,6 @@ manifest = [{{ path = "files/archive.dat", required = true }}]
 
 [audio]
 cover_music = {{ source = "apk", path = "res/raw/music.ogg", loop = true }}
-
-[[java.class]]
-name = "org/example/Legacy"
-
-[[java.class.method]]
-name = "load"
-sig = "(I)[B"
-impl = "resource.load"
-static = false
 
 [quirks]
 enabled = ["legacy_reads"]
@@ -537,13 +435,13 @@ def self_test(schema_path: Path) -> int:
     validate_schema(schema_path)
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        valid = root / "org.example.legacy.profile.toml"
+        valid = root / "org.example.game.profile.toml"
         valid.write_text(_valid_profile(), encoding="utf-8", newline="\n")
         document = load_profile(valid)
         assert document["runtime"]["surface"]["width"] == 1280
         budgeted = _valid_profile().replace(
-            'lifecycle = "gl_surface_view"',
-            'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 10000000000'
+            'lifecycle = "dex_activity"',
+            'lifecycle = "dex_activity"\nmaximum_ticks_per_call = 10000000000'
         )
         valid.write_text(budgeted, encoding="utf-8", newline="\n")
         assert load_profile(valid)["runtime"]["maximum_ticks_per_call"] == 10_000_000_000
@@ -554,23 +452,24 @@ def self_test(schema_path: Path) -> int:
 
         cases = {
             "filename mismatch": _valid_profile("org.example.other"),
+            "schema v1": _valid_profile().replace("schema = 2", "schema = 1"),
             "unknown field": _valid_profile().replace(
-                "schema = 1", "schema = 1\nscript = \"run-me\""
+                "schema = 2", "schema = 2\nscript = \"run-me\""
             ),
             "bad lifecycle": _valid_profile().replace(
-                'lifecycle = "gl_surface_view"', 'lifecycle = "per_game_loop"'
+                'lifecycle = "dex_activity"', 'lifecycle = "per_game_loop"'
             ),
             "unbounded call budget": _valid_profile().replace(
-                'lifecycle = "gl_surface_view"',
-                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 10000000001'
+                'lifecycle = "dex_activity"',
+                'lifecycle = "dex_activity"\nmaximum_ticks_per_call = 10000000001'
             ),
             "zero call budget": _valid_profile().replace(
-                'lifecycle = "gl_surface_view"',
-                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = 0'
+                'lifecycle = "dex_activity"',
+                'lifecycle = "dex_activity"\nmaximum_ticks_per_call = 0'
             ),
             "text call budget": _valid_profile().replace(
-                'lifecycle = "gl_surface_view"',
-                'lifecycle = "gl_surface_view"\nmaximum_ticks_per_call = "10000000000"'
+                'lifecycle = "dex_activity"',
+                'lifecycle = "dex_activity"\nmaximum_ticks_per_call = "10000000000"'
             ),
             "unsupported ABI": _valid_profile().replace(
                 'abi = "armeabi-v7a"', 'abi = "x86"'
@@ -587,9 +486,18 @@ def self_test(schema_path: Path) -> int:
             "disabled quirk parameters": _valid_profile().replace(
                 'enabled = ["legacy_reads"]', "enabled = []"
             ),
+            "reference preset": _valid_profile().replace(
+                'type = "Z"', 'type = "Ljava/lang/Object;"'
+            ),
+            "empty reason": _valid_profile().replace(
+                'reason = "fixture data is provisioned"', 'reason = ""'
+            ),
+            "preset mismatch": _valid_profile().replace(
+                "value = true", "value = 1"
+            ),
         }
         for label, content in cases.items():
-            candidate = root / "org.example.legacy.profile.toml"
+            candidate = root / "org.example.game.profile.toml"
             candidate.write_text(content, encoding="utf-8", newline="\n")
             try:
                 load_profile(candidate)
@@ -597,7 +505,7 @@ def self_test(schema_path: Path) -> int:
             except ProfileError:
                 pass
 
-        oversized = root / "org.example.legacy.profile.toml"
+        oversized = root / "org.example.game.profile.toml"
         oversized.write_text(_valid_profile() + "\n" * MAX_PROFILE_LINES,
                              encoding="utf-8", newline="\n")
         try:

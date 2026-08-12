@@ -4,6 +4,9 @@
 
 #include "dexvm_android_internal.h"
 
+#include <array>
+#include <cctype>
+
 namespace ogplay::runtime::android_intrinsics {
 
 void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
@@ -35,6 +38,12 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
     registry.Register("android.audio_manager.get_ringer_mode",
                       [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(2);  // RINGER_MODE_NORMAL
+    });
+    registry.Register("android.audio_manager.is_music_active",
+                      [](dx::IntrinsicContext&) {
+        // OGPlay owns the session mixer and does not expose a separate host
+        // media session, so no external music is active.
+        return dx::VmValue::Int(0);
     });
     registry.Register("android.audio_manager.get_stream_max_volume",
                       [](dx::IntrinsicContext&) {
@@ -72,6 +81,30 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
     registry.Register("android.telephony.false",
                       [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(0);
+    });
+    registry.Register("android.telephony.get_sim_state",
+                      [](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(1);  // SIM_STATE_ABSENT
+    });
+    registry.Register("android.telephony.get_phone_type",
+                      [](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(0);  // PHONE_TYPE_NONE
+    });
+    registry.Register("android.telephony.listen",
+                      [context](dx::IntrinsicContext& call) {
+        const auto listener = call.arguments[0].ref;
+        const auto events = call.arguments[1].AsInt();
+        if (!listener.IsValid()) {
+            throw dx::DexVmError(
+                dx::DexVmErrorReason::invalid_operand,
+                "TelephonyManager.listen requires a listener");
+        }
+        if (events == 0) {
+            context->telephony_listeners.erase(listener.Value());
+        } else {
+            context->telephony_listeners[listener.Value()] = events;
+        }
+        return dx::VmValue::Void();
     });
     registry.Register("android.sensor.get_type", [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(1);  // TYPE_ACCELEROMETER
@@ -329,6 +362,53 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
                            found->second.started &&
                            !found->second.finished;
         return dx::VmValue::Int(alive ? 1 : 0);
+    });
+    registry.Register("android.thread.set_priority",
+                      [context](dx::IntrinsicContext& call) {
+        const auto priority = call.arguments[0].AsInt();
+        if (priority < 1 || priority > 10) {
+            throw dx::VmJavaThrow{
+                "Ljava/lang/IllegalArgumentException;",
+                "Thread priority must be between 1 and 10"};
+        }
+        auto& state = context->java_threads[call.receiver.Value()];
+        state.priority = priority;
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.url_encoder.encode",
+                      [](dx::IntrinsicContext& call) {
+        auto charset = call.vm.StringUtf8(call.arguments[1].ref);
+        for (auto& byte : charset) {
+            byte = static_cast<char>(std::toupper(
+                static_cast<unsigned char>(byte)));
+        }
+        if (charset != "UTF-8" && charset != "UTF8") {
+            throw dx::VmJavaThrow{
+                "Ljava/io/UnsupportedEncodingException;", charset};
+        }
+        constexpr std::array<char, 16> kHex = {
+            '0', '1', '2', '3', '4', '5', '6', '7',
+            '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+        std::string encoded;
+        for (const auto byte :
+             call.vm.StringUtf8(call.arguments[0].ref)) {
+            const auto value = static_cast<unsigned char>(byte);
+            const bool safe =
+                (value >= 'a' && value <= 'z') ||
+                (value >= 'A' && value <= 'Z') ||
+                (value >= '0' && value <= '9') || value == '-' ||
+                value == '_' || value == '.' || value == '*';
+            if (safe) {
+                encoded.push_back(static_cast<char>(value));
+            } else if (value == ' ') {
+                encoded.push_back('+');
+            } else {
+                encoded.push_back('%');
+                encoded.push_back(kHex[value >> 4U]);
+                encoded.push_back(kHex[value & 0x0FU]);
+            }
+        }
+        return MakeString(call, encoded);
     });
 }
 [[nodiscard]] std::unordered_map<std::string,

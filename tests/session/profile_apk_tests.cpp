@@ -89,10 +89,10 @@ std::vector<std::byte> DynamicElf(const std::string_view soname,
 ogplay::session::TitleProfile Profile(const std::string_view hash,
                                       const ogplay::session::ProfileAbi abi) {
     ogplay::session::TitleProfile profile;
-    profile.schema = 1;
+    profile.schema = 2;
     profile.identity = {"org.example.legacy", "fixture", {7},
                         {std::string(hash)}, abi};
-    profile.runtime = {19, ogplay::session::ProfileLifecycle::gl_surface_view,
+    profile.runtime = {19, ogplay::session::ProfileLifecycle::dex_activity,
                        {640, 360}};
     return profile;
 }

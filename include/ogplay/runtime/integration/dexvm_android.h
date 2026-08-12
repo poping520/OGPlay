@@ -116,6 +116,24 @@ struct DexVmAndroidContext final {
     // Cached service/singleton intrinsic instances by handler-defined key.
     std::unordered_map<std::string, dexvm::VmObjectRef> singletons;
 
+    // Offline telephony listener registrations. A non-zero mask records the
+    // requested observation; LISTEN_NONE removes it. No host radio means no
+    // callbacks are generated.
+    std::unordered_map<std::uint32_t, std::int32_t> telephony_listeners;
+
+    // SurfaceView owns one stable SurfaceHolder; holder callbacks are kept
+    // for managed-surface lifecycle dispatch.
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> surface_holders;
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> surface_callbacks;
+
+    // Each View exposes one stable observer. Listener identity is retained
+    // for a future managed layout pass; registration itself does not invent
+    // an event.
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef>
+        view_tree_observers;
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef>
+        global_layout_listeners;
+
     // SoundPool stream id -> (resource id) mapping for voice controls.
     std::unordered_map<std::int32_t, std::int32_t> sound_streams;
     std::int32_t next_sound_stream{1};
@@ -144,6 +162,10 @@ struct DexVmAndroidContext final {
         dexvm::VmObjectRef runnable;
         bool started{};
         bool finished{};
+        // java.lang.Thread priority (MIN_PRIORITY=1, NORM_PRIORITY=5,
+        // MAX_PRIORITY=10). The cooperative executor records this guest
+        // fact but deliberately does not claim host scheduler enforcement.
+        std::int32_t priority{5};
     };
     std::unordered_map<std::uint32_t, JavaThreadState> java_threads;
     std::vector<dexvm::VmObjectRef> java_thread_queue;

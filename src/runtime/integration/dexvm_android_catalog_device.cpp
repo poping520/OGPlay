@@ -14,6 +14,8 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         audio.methods = {
             {"getRingerMode", "()I", false, false,
              "android.audio_manager.get_ringer_mode"},
+            {"isMusicActive", "()Z", false, false,
+             "android.audio_manager.is_music_active"},
             {"getStreamMaxVolume", "(I)I", false, false,
              "android.audio_manager.get_stream_max_volume"},
             {"setStreamVolume", "(III)V", false, false,
@@ -202,6 +204,12 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
              "android.telephony.empty_string"},
             {"isNetworkRoaming", "()Z", false, false,
              "android.telephony.false"},
+            {"getSimState", "()I", false, false,
+             "android.telephony.get_sim_state"},
+            {"getPhoneType", "()I", false, false,
+             "android.telephony.get_phone_type"},
+            {"listen", "(Landroid/telephony/PhoneStateListener;I)V",
+             false, false, "android.telephony.listen"},
         };
         catalog.push_back(std::move(telephony));
     }
@@ -490,6 +498,8 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
             {"start", "()V", false, false, "android.thread.start"},
             {"join", "()V", false, false, "android.thread.join"},
             {"isAlive", "()Z", false, false, "android.thread.is_alive"},
+            {"setPriority", "(I)V", false, false,
+             "android.thread.set_priority"},
         };
         catalog.push_back(std::move(thread));
     }
@@ -535,6 +545,17 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
              "android.sms.get_originating_address"},
         };
         catalog.push_back(std::move(message));
+    }
+    {
+        Decl encoder;
+        encoder.descriptor = "Ljava/net/URLEncoder;";
+        encoder.superclass = "Ljava/lang/Object;";
+        encoder.methods = {
+            {"encode",
+             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+             true, false, "android.url_encoder.encode"},
+        };
+        catalog.push_back(std::move(encoder));
     }
     {
         // Network surface is a non-goal: classes resolve so linking works,

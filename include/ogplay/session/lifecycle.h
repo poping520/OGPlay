@@ -10,19 +10,19 @@
 namespace ogplay::session {
 
 enum class LifecycleCallbackRoute : std::uint8_t {
-    native_activity,
     framework_activity,
     gl_surface_view_renderer,
-    custom_jni,
 };
 
 struct LifecycleTemplateDescription final {
-    ProfileLifecycle lifecycle{ProfileLifecycle::native_activity};
-    LifecycleCallbackRoute startup{LifecycleCallbackRoute::native_activity};
+    ProfileLifecycle lifecycle{ProfileLifecycle::dex_activity};
+    LifecycleCallbackRoute startup{LifecycleCallbackRoute::framework_activity};
     LifecycleCallbackRoute frame_lifecycle{
-        LifecycleCallbackRoute::native_activity};
-    LifecycleCallbackRoute render{LifecycleCallbackRoute::native_activity};
-    LifecycleCallbackRoute shutdown{LifecycleCallbackRoute::native_activity};
+        LifecycleCallbackRoute::framework_activity};
+    LifecycleCallbackRoute render{
+        LifecycleCallbackRoute::gl_surface_view_renderer};
+    LifecycleCallbackRoute shutdown{
+        LifecycleCallbackRoute::framework_activity};
 };
 
 enum class LifecycleRunState : std::uint8_t {

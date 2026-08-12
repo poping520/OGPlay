@@ -1,20 +1,22 @@
 # 当前状态
 
-更新：2026-08-12 · M9 DexVM：Asphalt 5 pilot gate 已过；Dungeon Hunter 到标题
-画面（~21 FPS）；Asphalt 6 越过 DEX 解析/链接期，解释执行推进到 GameInstaller
-安装器；最新 exact 测试先停在缺失 `Intent.setPackage(String)`，DRM 仍是后续决策点
+更新：2026-08-12 · M9 DexVM：Profile v2 entry scope 已交付、Profile v1 已完全删除；
+Asphalt 5 逐位回归通过；Asphalt 6 已直达引擎 Activity，当前停在 native→DexVM
+intrinsic 的 JNI 类可见性（`android/content/Intent`）
 
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM 已启动**（`WU-M9-001..019`，ADR-0017、`docs/design/dexvm/`）：
+- **M9 DexVM 已启动**（`WU-M9-001..025`，ADR-0017/0022）：
   阶段 0（AOSP 基线/测量/opcode 目录/dexasm）、阶段 1（解释器内核）、
   阶段 2（JNI 双向桥 + java.* P1）、阶段 3（android.* intrinsic +
-  dex_activity + profile v2 + pilot 迁移）全部交付。
+  dex_activity + profile v2 + pilot 迁移）全部交付；entry override、静态预置和
+  v2-only 清理也已完成。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除全部 16 条
-  `native_call` 与 33 条 `[[java.class]]` 映射（201 行 v1 → 25 行 v2），
+  历史 replay 调用与 Java handler 映射，
   `asphalt5.title_flow` 三轮 + 迁移后复验 passed——468 帧固定预算、主界面
-  PNG SHA-256 `9ee57323…` 与 v1 逐位一致、无 fault、clean shutdown。
+  PNG SHA-256 `9ee57323…` 保持逐位一致、无 fault、clean shutdown。本次删除旧实现后
+  又以 production v2 目录复验一次，结论不变。
   `System.loadLibrary`(<clinit>)、onCreate 副作用链、GetStaticMethodID 查
   真实 DEX 方法表、native→解释器第三路由均真实发生。
 - **存档持久化沙盒设计已落地**（2026-08-12）：ADR-0020（Proposed）+
@@ -28,7 +30,7 @@
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
 能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）与本次
-macOS/arm64 full CTest 均为 598/598。
+macOS/arm64 本次 full CTest 为 585/585（删除旧 Profile 专属用例后重新发现）。
 
 ## M9 交付摘要
 
@@ -39,6 +41,9 @@ macOS/arm64 full CTest 均为 598/598。
   arena、tagged 帧解释器全 dex 035 家族、异常展开、`<clinit>` 状态机。
 - `DexVmGuestBridge` 双向 JNI（233 槽 ABI 不变的第三路由）、
   `DexActivityLifecycle` 生命周期反转、Title Profile v2。
+- ADR-0022 entry scope：Profile 可在 required data manifest 已验证后选择引擎 Activity，
+  并于真实 `<clinit>` 后写受检 Z/B/C/S/I/J/F/D/String static field；schema 1、旧 Java
+  映射和调用重放源文件/头/CTest/数据 schema 均已删除。
 
 ## 进行中：更多 title 上 dexvm 路线
 
@@ -52,12 +57,13 @@ macOS/arm64 full CTest 均为 598/598。
   明确失败，survey 运行显式标注非兼容性结论）；`tools/dexvm_stub_gen.py` 由
   缺口报告生成占位与中性方法行，引用返回值一律进人工决策清单；空接收者诊断
   补上声明类与调用点。流程见 [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
-- **Asphalt 6（2026-08-12 实测）**：DEX 数组 owner 解析、18 个层级占位及 IO/
-  Handler/布局等平台面已推进到 `GameInstaller`。本次最新 Release exact Scenario
-  中，DexVM 路线在 `Intent.setPackage(String)` 未声明处明确失败、无首帧；生产
-  v1 路线仍在 native call 5 的 `CallStaticIntMethodV` class reference 失败。
-  DRM `GloftDRM`/`StringEncrypter` 的 AES+SHA1PRNG 消费点仍须调查后决定真实实现
-  或按非目标裁剪，结论前不伪造成功。证据在 `.local/automation/`，不入库。
+- **Asphalt 6（2026-08-12 实测）**：production v2 Profile 在 external `InsTime` 与
+  `file000000.dat` 验证后，入口覆盖实际启动 `GLGame`，并在 guest `<clinit>` 后把
+  `GameInstaller.sbStarted=true` 作为 provisioned-data 事实写入；安装器/DRM 入口未执行。
+  通用补齐 AudioManager、离线 Telephony、SurfaceHolder/ViewTreeObserver、Thread priority
+  与 UTF-8 URLEncoder 后，当前首个边界是 native `FindClass` 只能看 session registry，
+  看不到 DexVM intrinsic `android/content/Intent`。这是桥接架构缺口，保持明确失败、无首帧，
+  不用假 Intent 掩盖。证据 `.local/automation/asphalt6-entry-scope-dev10-20260812`（不入库）。
 
 开发方式手册（适配/测试/排查的操作步骤）见
 **[docs/playbook/README.md](../playbook/README.md)**；title 阻塞点与工作队列见
@@ -65,8 +71,8 @@ macOS/arm64 full CTest 均为 598/598。
 
 ## 下一步（按优先级）
 
-1. Asphalt 6：先按测量批次闭合 `Intent.setPackage`，再做 DRM 消费点调查；
-   启动作用域裁剪设计须先评审/落 ADR，不能先用 profile 伪造已安装事实。
+1. Asphalt 6（WU-M9-026）：统一 DexVM intrinsic 对 native JNI `FindClass`/method/field 的
+   可见性与调用路由，先闭合 `Intent` 的真实类契约，再重跑 exact；达到主界面后才宣告 gate。
 2. dexvm 记账缺口按命中批次闭合：J/D 出向返回解码、string 资源、
    MediaPlayer 完成回调、`dexvm.stats/stack` Agent 查询面（04 §8）。
    GC-B 优先级上调：pilot 试玩实证 GC-A 记账在资源重载路径线性增长

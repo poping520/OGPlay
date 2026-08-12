@@ -60,6 +60,20 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
   IO 走 APK 条目与会话内存文件、身份为确定性配置、SMS/网络记账明确失败;
   统一时间由生命周期驱动发布(System.currentTimeMillis/Thread.sleep 同源)。
+  `AudioManager.isMusicActive()` 查询受控宿主音频事实：OGPlay 会话没有独立外部
+  media session 时返回 false，不把游戏自身 mixer voice 误报为外部音乐。
+  `TelephonyManager.listen` 在确定性离线电话服务中保存非零监听掩码，`LISTEN_NONE`
+  取消登记；没有宿主 radio，因此 `getSimState`/`getPhoneType` 分别报告
+  `SIM_STATE_ABSENT`/`PHONE_TYPE_NONE`，也不伪造电话状态回调。
+  `SurfaceView.getHolder()` 为每个 view 返回稳定的会话内 `SurfaceHolder`，
+  `addCallback` 保存真实 callback 身份；surface type 由 managed EGL 固定拥有，
+  legacy `setType`/`setFormat` 只是无可观察效果的设备提示。`Thread.setPriority`
+  校验 Java 1..10 范围并保存 guest 优先级事实；协作执行器不伪造宿主调度优先级。
+  每个 `View` 的 `ViewTreeObserver` 身份稳定并保存/移除 global-layout listener；当前
+  managed layout 尚不发布虚构的 global-layout 事件。
+- `URLEncoder.encode(String,String)` 实现 Java form URL encoding 的 UTF-8
+  字节级契约（空格为 `+`、其余保留集外字节为大写 `%HH`），未知 charset 抛出
+  `UnsupportedEncodingException`；这不扩大实际网络连接非目标范围。
 - android.* intrinsic 的 widget 层（TextView/EditText/ImageView/VideoView/对话框等）
   只持有状态、不做宿主渲染:`setContentView(I)` 经 arsc resid → APK 布局条目 →
   `ParseBinaryXmlElements` 实例化 widget intrinsic,`android:id` 进入 view registry

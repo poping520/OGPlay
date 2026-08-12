@@ -287,8 +287,64 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             {"clearFocus", "()V", false, false, "android.widget.noop"},
             {"getWindowToken", "()Landroid/os/IBinder;", false, false,
              "android.widget.null"},
+            {"getViewTreeObserver", "()Landroid/view/ViewTreeObserver;",
+             false, false, "android.view.get_tree_observer"},
         };
         catalog.push_back(std::move(view));
+    }
+    {
+        Decl observer;
+        observer.descriptor = "Landroid/view/ViewTreeObserver;";
+        observer.superclass = "Ljava/lang/Object;";
+        observer.methods = {
+            {"addOnGlobalLayoutListener",
+             "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+             false, false, "android.view_tree.add_global_listener"},
+            {"removeGlobalOnLayoutListener",
+             "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+             false, false, "android.view_tree.remove_global_listener"},
+            {"removeOnGlobalLayoutListener",
+             "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+             false, false, "android.view_tree.remove_global_listener"},
+        };
+        catalog.push_back(std::move(observer));
+    }
+    {
+        Decl holder;
+        holder.descriptor = "Landroid/view/SurfaceHolder;";
+        holder.is_interface = true;
+        holder.methods = {
+            {"addCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
+             false, false, "android.surface_holder.add_callback"},
+            {"setType", "(I)V", false, false,
+             "android.surface_holder.set_type"},
+            {"setFormat", "(I)V", false, false,
+             "android.surface_holder.set_format"},
+        };
+        catalog.push_back(std::move(holder));
+        Decl holder_impl;
+        holder_impl.descriptor = "Landroid/view/SurfaceHolder$Impl;";
+        holder_impl.superclass = "Ljava/lang/Object;";
+        holder_impl.interfaces = {"Landroid/view/SurfaceHolder;"};
+        holder_impl.methods = {
+            {"addCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
+             false, false, "android.surface_holder.add_callback"},
+            {"setType", "(I)V", false, false,
+             "android.surface_holder.set_type"},
+            {"setFormat", "(I)V", false, false,
+             "android.surface_holder.set_format"},
+        };
+        catalog.push_back(std::move(holder_impl));
+        Decl surface_view;
+        surface_view.descriptor = "Landroid/view/SurfaceView;";
+        surface_view.superclass = "Landroid/view/View;";
+        surface_view.methods = {
+            {"<init>", "(Landroid/content/Context;)V", false, false,
+             "android.view.init"},
+            {"getHolder", "()Landroid/view/SurfaceHolder;", false, false,
+             "android.surface_view.get_holder"},
+        };
+        catalog.push_back(std::move(surface_view));
     }
     {
         Decl renderer_interface;

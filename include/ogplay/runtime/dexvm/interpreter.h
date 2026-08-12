@@ -191,6 +191,13 @@ public:
                                std::string_view field_name,
                                std::string_view field_descriptor,
                                VmObjectRef value);
+    // Applies a conclusion-level Profile preset after the guest class has
+    // completed initialization. bits contains the exact Dalvik slot bits
+    // (wide values use all 64 bits; references use the low 32 bits).
+    void SetStaticFieldBits(std::string_view class_descriptor,
+                            std::string_view field_name,
+                            std::string_view field_descriptor,
+                            std::uint64_t bits);
     // Allocates an intrinsic-class instance (vm_instance form).
     [[nodiscard]] VmObjectRef NewIntrinsicInstance(
         std::string_view class_descriptor);

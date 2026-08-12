@@ -410,6 +410,63 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
     registry.Register("android.view.get_id", [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(-1);  // View.NO_ID: no id was assigned
     });
+    registry.Register("android.view.get_tree_observer",
+                      [context](dx::IntrinsicContext& call) {
+        auto& observer =
+            context->view_tree_observers[call.receiver.Value()];
+        if (!observer.IsValid()) {
+            observer = call.vm.NewIntrinsicInstance(
+                "Landroid/view/ViewTreeObserver;");
+        }
+        return dx::VmValue::Ref(observer);
+    });
+    registry.Register("android.view_tree.add_global_listener",
+                      [context](dx::IntrinsicContext& call) {
+        const auto listener = call.arguments[0].ref;
+        if (!listener.IsValid()) {
+            throw dx::VmJavaThrow{
+                "Ljava/lang/NullPointerException;",
+                "global layout listener is null"};
+        }
+        context->global_layout_listeners[call.receiver.Value()] = listener;
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.view_tree.remove_global_listener",
+                      [context](dx::IntrinsicContext& call) {
+        const auto found = context->global_layout_listeners.find(
+            call.receiver.Value());
+        if (found != context->global_layout_listeners.end() &&
+            found->second == call.arguments[0].ref) {
+            context->global_layout_listeners.erase(found);
+        }
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.surface_view.get_holder",
+                      [context](dx::IntrinsicContext& call) {
+        auto& holder = context->surface_holders[call.receiver.Value()];
+        if (!holder.IsValid()) {
+            holder = call.vm.NewIntrinsicInstance(
+                "Landroid/view/SurfaceHolder$Impl;");
+        }
+        return dx::VmValue::Ref(holder);
+    });
+    registry.Register("android.surface_holder.add_callback",
+                      [context](dx::IntrinsicContext& call) {
+        context->surface_callbacks[call.receiver.Value()] =
+            call.arguments[0].ref;
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.surface_holder.set_type",
+                      [](dx::IntrinsicContext&) {
+        // Managed EGL owns the surface type; the legacy value is only a
+        // device hint and has no observable effect here.
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.surface_holder.set_format",
+                      [](dx::IntrinsicContext&) {
+        // Pixel format is fixed by the managed RGBA8 EGL surface.
+        return dx::VmValue::Void();
+    });
     registry.Register("android.glsurfaceview.init",
                       [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();

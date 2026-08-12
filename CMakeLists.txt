@@ -475,16 +475,10 @@ ogplay_set_project_warnings(ogplay_runtime)
 add_library(ogplay_session
     src/session/dex_activity_lifecycle.cpp
     src/session/lifecycle.cpp
-    src/session/profile_guest_lifecycle.cpp
+    src/session/profile_entry_scope.cpp
     src/session/profile_asset_bundle.cpp
     src/session/profile_apk.cpp
-    src/session/profile_native_calls.cpp
-    src/session/profile_native_execution.cpp
     src/session/profile_audio.cpp
-    src/session/profile_java.cpp
-    src/session/profile_runtime_catalog.cpp
-    src/session/profile_session_bootstrap.cpp
-    src/session/profile_session_plan.cpp
     src/session/profile_vfs.cpp
     src/session/quirk_registry.cpp
     src/session/session.cpp
@@ -678,13 +672,8 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/lifecycle_tests.cpp
         tests/session/profile_asset_bundle_tests.cpp
         tests/session/profile_apk_tests.cpp
-        tests/session/profile_native_calls_tests.cpp
-        tests/session/profile_native_execution_tests.cpp
+        tests/session/profile_entry_scope_tests.cpp
         tests/session/profile_audio_tests.cpp
-        tests/session/profile_java_tests.cpp
-        tests/session/profile_runtime_catalog_tests.cpp
-        tests/session/profile_session_bootstrap_tests.cpp
-        tests/session/profile_session_plan_tests.cpp
         tests/session/profile_vfs_tests.cpp
         tests/session/session_tests.cpp
         tests/session/title_profile_tests.cpp
@@ -840,7 +829,7 @@ if(OGPLAY_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
             --schema
-                ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v1.schema.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v2.schema.json
             --self-test
     )
     set_tests_properties(tools.title_profile_validator_self_test
@@ -851,7 +840,7 @@ if(OGPLAY_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
             --schema
-                ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v1.schema.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v2.schema.json
             --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
     )
     set_tests_properties(tools.title_profiles_current PROPERTIES LABELS "tools;profiles")

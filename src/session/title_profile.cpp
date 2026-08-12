@@ -168,47 +168,6 @@ void ExactKeys(const Table& table, const std::string_view field,
     });
 }
 
-[[nodiscard]] bool ValidImplementationId(const std::string_view value) {
-    std::size_t begin = 0;
-    std::size_t components = 0;
-    while (begin <= value.size()) {
-        const auto end = value.find('.', begin);
-        const auto component = value.substr(
-            begin, end == std::string_view::npos ? value.size() - begin : end - begin);
-        if (!ValidId(component)) return false;
-        ++components;
-        if (end == std::string_view::npos) break;
-        begin = end + 1;
-    }
-    return components >= 2;
-}
-
-[[nodiscard]] bool ValidJavaClass(const std::string_view value) {
-    std::size_t begin = 0;
-    std::size_t components = 0;
-    while (begin <= value.size()) {
-        const auto end = value.find('/', begin);
-        const auto component = value.substr(
-            begin, end == std::string_view::npos ? value.size() - begin : end - begin);
-        if (component.empty()) return false;
-        const auto first = static_cast<unsigned char>(component.front());
-        if (std::isalpha(first) == 0 && component.front() != '_' &&
-            component.front() != '$') {
-            return false;
-        }
-        for (const char character : component.substr(1)) {
-            const auto byte = static_cast<unsigned char>(character);
-            if (std::isalnum(byte) == 0 && character != '_' && character != '$') {
-                return false;
-            }
-        }
-        ++components;
-        if (end == std::string_view::npos) break;
-        begin = end + 1;
-    }
-    return components >= 2;
-}
-
 [[nodiscard]] bool ValidHash(const std::string_view digest) {
     return digest.size() == 64 &&
            std::all_of(digest.begin(), digest.end(), [](const char character) {
@@ -439,67 +398,6 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     return result;
 }
 
-[[nodiscard]] std::vector<ProfileJavaClass> DecodeJava(
-    const detail::TomlValue& value) {
-    const auto& table = AsTable(value, "java");
-    ExactKeys(table, "java", {"class"}, {"class"});
-    const auto& classes = AsArray(Require(table, "class", "java.class"), "java.class");
-    if (classes.empty()) throw TitleProfileError("java.class must not be empty");
-    std::vector<ProfileJavaClass> result;
-    std::set<std::string, std::less<>> class_names;
-    for (const auto& item : classes) {
-        const auto& java_class = AsTable(item, "java.class[]");
-        ExactKeys(java_class, "java.class[]", {"name", "method"}, {"name", "method"});
-        ProfileJavaClass decoded;
-        decoded.name = AsString(Require(java_class, "name", "java.class[].name"),
-                                "java.class[].name");
-        if (!ValidJavaClass(decoded.name) || !class_names.insert(decoded.name).second) {
-            throw TitleProfileError("java.class names must be valid and unique");
-        }
-        const auto& methods =
-            AsArray(Require(java_class, "method", "java.class[].method"),
-                    "java.class[].method");
-        if (methods.empty()) {
-            throw TitleProfileError("java.class[].method must not be empty");
-        }
-        std::set<std::pair<std::string, std::string>> method_keys;
-        for (const auto& method_value : methods) {
-            const auto& method = AsTable(method_value, "java.class[].method[]");
-            ExactKeys(method, "java.class[].method[]",
-                      {"name", "sig", "impl", "static"},
-                      {"name", "sig", "impl", "static"});
-            ProfileJavaMethod decoded_method;
-            decoded_method.name =
-                AsString(Require(method, "name", "java.class[].method[].name"),
-                         "java.class[].method[].name");
-            decoded_method.signature =
-                AsString(Require(method, "sig", "java.class[].method[].sig"),
-                         "java.class[].method[].sig");
-            const auto closing = decoded_method.signature.find(')');
-            if (!decoded_method.signature.starts_with('(') ||
-                closing == std::string::npos ||
-                closing + 1 >= decoded_method.signature.size()) {
-                throw TitleProfileError("java method signature is invalid");
-            }
-            decoded_method.implementation =
-                AsString(Require(method, "impl", "java.class[].method[].impl"),
-                         "java.class[].method[].impl");
-            decoded_method.is_static =
-                AsBoolean(Require(method, "static",
-                                  "java.class[].method[].static"),
-                          "java.class[].method[].static");
-            if (!ValidImplementationId(decoded_method.implementation) ||
-                !method_keys.emplace(decoded_method.name, decoded_method.signature).second) {
-                throw TitleProfileError(
-                    "java methods must have valid bindings and unique name/signature pairs");
-            }
-            decoded.methods.push_back(std::move(decoded_method));
-        }
-        result.push_back(std::move(decoded));
-    }
-    return result;
-}
-
 [[nodiscard]] ProfileValue ConvertValue(const detail::TomlValue& source,
                                         const std::string_view field,
                                         const std::size_t depth) {
@@ -611,39 +509,28 @@ TitleProfile LoadTitleProfileText(const std::string_view text,
     }
     const auto root = detail::ParseDataToml(text);
     ExactKeys(root, "profile",
-              {"schema", "identity", "runtime", "data", "audio", "java", "quirks",
+              {"schema", "identity", "runtime", "data", "audio", "quirks",
                "input"},
               {"schema", "identity", "runtime"});
     TitleProfile result;
     result.schema = static_cast<std::uint32_t>(
-        AsInteger(Require(root, "schema", "schema"), "schema", 1, 2));
+        AsInteger(Require(root, "schema", "schema"), "schema", 2, 2));
     result.identity = DecodeIdentity(root, expected_package);
     result.runtime = detail::DecodeProfileRuntime(root);
-    // Schema gating (docs/design/dexvm/04-integration.md §7): v2 is the
-    // dex_activity mode and must not declare replay glue; v1 stays frozen.
-    if (result.schema == 2) {
-        if (result.runtime.lifecycle != ProfileLifecycle::dex_activity) {
-            throw TitleProfileError(
-                "schema 2 requires runtime.lifecycle = dex_activity");
-        }
-        if (!result.runtime.native_calls.empty()) {
-            throw TitleProfileError(
-                "schema 2 forbids runtime.native_call declarations");
-        }
-        if (Optional(root, "java") != nullptr) {
-            throw TitleProfileError("schema 2 forbids [[java.class]]");
-        }
-    } else if (result.runtime.lifecycle == ProfileLifecycle::dex_activity) {
+    if (result.runtime.lifecycle != ProfileLifecycle::dex_activity) {
         throw TitleProfileError(
-            "dex_activity lifecycle requires schema = 2");
-    }
-    if (result.runtime.dexvm.has_value() && result.schema != 2) {
-        throw TitleProfileError("runtime.dexvm requires schema = 2");
+            "schema 2 requires runtime.lifecycle = dex_activity");
     }
     if (const auto* data = Optional(root, "data")) result.data = DecodeData(*data);
     if (const auto* audio = Optional(root, "audio")) result.audio = DecodeAudio(*audio);
-    if (const auto* java = Optional(root, "java")) {
-        result.java_classes = DecodeJava(*java);
+    if ((result.runtime.entry.has_value() || !result.runtime.presets.empty()) &&
+        (!result.data.has_value() ||
+         std::none_of(result.data->manifest.begin(), result.data->manifest.end(),
+                      [](const ProfileManifestEntry& entry) {
+                          return entry.required;
+                      }))) {
+        throw TitleProfileError(
+            "runtime entry scope requires a required data manifest fact");
     }
     if (const auto* quirks = Optional(root, "quirks")) {
         result.quirks = DecodeQuirks(*quirks);
@@ -700,7 +587,7 @@ TitleProfileCatalog::TitleProfileCatalog(std::vector<TitleProfile> profiles,
 void TitleProfileCatalog::Validate(const QuirkRegistry* registry) const {
     for (const auto& profile : profiles_) {
         const auto& identity = profile.identity;
-        if ((profile.schema != 1 && profile.schema != 2) ||
+        if (profile.schema != 2 ||
             !ValidPackage(identity.package) ||
             identity.version_codes.empty() || identity.so_sha256.empty() ||
             !ValidAbi(identity.abi) ||
@@ -774,9 +661,6 @@ const std::vector<TitleProfile>& TitleProfileCatalog::Profiles() const noexcept 
 
 std::string_view ToString(const ProfileLifecycle lifecycle) noexcept {
     switch (lifecycle) {
-    case ProfileLifecycle::native_activity: return "native_activity";
-    case ProfileLifecycle::gl_surface_view: return "gl_surface_view";
-    case ProfileLifecycle::custom_jni: return "custom_jni";
     case ProfileLifecycle::dex_activity: return "dex_activity";
     }
     return "unknown";
@@ -795,43 +679,6 @@ std::string_view ToString(const ProfileAbi abi) noexcept {
     switch (abi) {
     case ProfileAbi::armeabi: return "armeabi";
     case ProfileAbi::armeabi_v7a: return "armeabi-v7a";
-    }
-    return "unknown";
-}
-
-std::string_view ToString(const ProfileNativeCallPhase phase) noexcept {
-    switch (phase) {
-    case ProfileNativeCallPhase::startup: return "startup";
-    case ProfileNativeCallPhase::resume: return "resume";
-    case ProfileNativeCallPhase::frame: return "frame";
-    case ProfileNativeCallPhase::pause: return "pause";
-    case ProfileNativeCallPhase::shutdown: return "shutdown";
-    case ProfileNativeCallPhase::pointer_down: return "pointer_down";
-    case ProfileNativeCallPhase::pointer_move: return "pointer_move";
-    case ProfileNativeCallPhase::pointer_up: return "pointer_up";
-    case ProfileNativeCallPhase::key_down: return "key_down";
-    case ProfileNativeCallPhase::key_up: return "key_up";
-    }
-    return "unknown";
-}
-
-std::string_view ToString(const ProfileNativeDispatch dispatch) noexcept {
-    switch (dispatch) {
-    case ProfileNativeDispatch::instance: return "instance";
-    case ProfileNativeDispatch::static_method: return "static";
-    }
-    return "unknown";
-}
-
-std::string_view ToString(const ProfileNativeArgumentSource source) noexcept {
-    switch (source) {
-    case ProfileNativeArgumentSource::constant: return "constant";
-    case ProfileNativeArgumentSource::surface_width: return "surface_width";
-    case ProfileNativeArgumentSource::surface_height: return "surface_height";
-    case ProfileNativeArgumentSource::input_x: return "input_x";
-    case ProfileNativeArgumentSource::input_y: return "input_y";
-    case ProfileNativeArgumentSource::input_pointer: return "input_pointer";
-    case ProfileNativeArgumentSource::input_key: return "input_key";
     }
     return "unknown";
 }

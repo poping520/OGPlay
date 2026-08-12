@@ -67,7 +67,7 @@ private:
 
 [[nodiscard]] std::string ProfileText(
     const std::string_view quirk_id = "legacy_reads") {
-    return "schema = 1\n"
+    return "schema = 2\n"
            "[identity]\n"
            "package = \"org.example.legacy\"\n"
            "version_code = [1]\n"
@@ -77,7 +77,7 @@ private:
            "abi = \"armeabi-v7a\"\n"
            "[runtime]\n"
            "api_level = 19\n"
-           "lifecycle = \"native_activity\"\n"
+           "lifecycle = \"dex_activity\"\n"
            "surface = { width = 1, height = 1 }\n"
            "[quirks]\n"
            "enabled = [\"" +

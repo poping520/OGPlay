@@ -32,16 +32,14 @@
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/integration/android_link_preflight.h"
-#include "ogplay/runtime/integration/native_activity_runner.h"
 #include "ogplay/session/profile_apk.h"
-#include "ogplay/session/profile_audio.h"
 #include "ogplay/loader/arsc.h"
 #include "ogplay/runtime/dexvm/gap_survey.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
+#include "ogplay/session/profile_entry_scope.h"
 #include "ogplay/video/ffmpeg_video_player.h"
-#include "ogplay/session/profile_guest_lifecycle.h"
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
 
@@ -165,31 +163,6 @@ gles::AngleBackend NativeBackend() {
     return std::nullopt;
 }
 
-[[nodiscard]] std::optional<runtime::FrameworkDirectAssetImplementations>
-DirectAssetImplementations(const session::TitleProfile& profile) {
-    runtime::FrameworkDirectAssetImplementations result;
-    for (const auto& java_class : profile.java_classes) {
-        for (const auto& method : java_class.methods) {
-            if (method.implementation == "resource.load_full") {
-                result.load_full = method.implementation;
-            } else if (method.implementation == "resource.load_range") {
-                result.load_range = method.implementation;
-            } else if (method.implementation == "resource.length") {
-                result.length = method.implementation;
-            }
-        }
-    }
-    const auto count = static_cast<unsigned>(!result.load_full.empty()) +
-                       static_cast<unsigned>(!result.load_range.empty()) +
-                       static_cast<unsigned>(!result.length.empty());
-    if (count == 0) return std::nullopt;
-    if (count != 3) {
-        throw std::runtime_error(
-            "Profile direct asset implementation set is incomplete");
-    }
-    return result;
-}
-
 [[nodiscard]] bool ProfileEnablesQuirk(
     const session::TitleProfile& profile, const std::string_view id) {
     return profile.quirks.has_value() &&
@@ -252,52 +225,6 @@ void MountExternalDirectory(
                 "required Profile manifest file is missing: " + entry.path);
         }
     }
-}
-
-[[nodiscard]] std::vector<runtime::VfsLazyMountEntry> IndexApkAssets(
-    const std::span<const std::byte> apk_bytes,
-    const loader::ApkArchive& archive) {
-    std::vector<runtime::VfsLazyMountEntry> result;
-    for (const auto& entry : archive.entries) {
-        if (!entry.name.starts_with("assets/") ||
-            entry.name.size() == std::string_view{"assets/"}.size() ||
-            entry.name.ends_with('/')) {
-            continue;
-        }
-        result.push_back({
-            entry.name,
-            entry.uncompressed_size,
-            [apk_bytes, &archive, name = entry.name] {
-                return loader::ReadApkEntry(apk_bytes, archive, name);
-            },
-        });
-    }
-    if (result.empty()) {
-        throw std::runtime_error(
-            "Profile direct asset HLE requires APK assets");
-    }
-    return result;
-}
-
-[[nodiscard]] audio::JavaSoundPoolMixer::EncodedResourceLoader
-SoundResourceLoader(const session::TitleProfile& profile,
-                    const std::span<const std::byte> apk_bytes,
-                    const loader::ApkArchive& archive) {
-    if (!profile.audio.has_value() ||
-        !profile.audio->sound_pool.has_value()) {
-        return {};
-    }
-    return [&profile, apk_bytes, &archive](const std::int32_t resource) {
-        const auto resolved =
-            session::ResolveProfileSoundPoolPath(profile, resource);
-        if (!resolved.has_value()) return std::vector<std::byte>{};
-        if (resolved->source != session::ProfileSource::apk) {
-            throw std::runtime_error(
-                "run-apk has no mounted SoundPool source: " +
-                std::string(session::ToString(resolved->source)));
-        }
-        return loader::ReadApkEntry(apk_bytes, archive, resolved->path);
-    };
 }
 
 void PumpAudio(runtime::AndroidGuestCallSession& guest,
@@ -524,8 +451,7 @@ int RunApkCommand(const int argc, const char* const argv[],
          {"surface_width", static_cast<std::uint64_t>(profile.runtime.surface.width)},
          {"surface_height", static_cast<std::uint64_t>(profile.runtime.surface.height)},
          {"maximum_ticks_per_call", profile.runtime.maximum_ticks_per_call},
-         {"guest_modules", static_cast<std::uint64_t>(module_inputs.size())},
-         {"native_calls", static_cast<std::uint64_t>(launch->native_calls.size())}},
+         {"guest_modules", static_cast<std::uint64_t>(module_inputs.size())}},
         kUnrestrictedLog);
     if (preflight) {
         const auto linked = runtime::PreflightAndroidGuestLink(
@@ -542,22 +468,13 @@ int RunApkCommand(const int argc, const char* const argv[],
               std::to_string(profile.runtime.surface.height) + " linked=" +
               std::to_string(linked.guest_modules) + "+" +
               std::to_string(linked.boundary_modules) + " relocations=" +
-              std::to_string(linked.relocations) + " native_calls=" +
-              std::to_string(launch->native_calls.size()) + "\n");
+              std::to_string(linked.relocations) + "\n");
         return 0;
     }
-    if (profile.runtime.lifecycle != session::ProfileLifecycle::native_activity &&
-        profile.runtime.lifecycle != session::ProfileLifecycle::gl_surface_view &&
-        profile.runtime.lifecycle != session::ProfileLifecycle::dex_activity) {
+    if (profile.runtime.lifecycle != session::ProfileLifecycle::dex_activity) {
         throw std::runtime_error(
-            "profile lifecycle runner is not implemented by run-apk: " +
+            "run-apk requires a Profile v2 dex_activity lifecycle: " +
             std::string(session::ToString(profile.runtime.lifecycle)));
-    }
-    if (mcp_manual_step &&
-        profile.runtime.lifecycle != session::ProfileLifecycle::gl_surface_view &&
-        profile.runtime.lifecycle != session::ProfileLifecycle::dex_activity) {
-        throw std::runtime_error(
-            "--mcp-manual-step requires a gl_surface_view or dex_activity Profile");
     }
 
     std::unique_ptr<agent::FrameSnapshotStore> mcp_frames;
@@ -604,60 +521,11 @@ int RunApkCommand(const int argc, const char* const argv[],
             window->SetTitle(FrameRateTitle(base_title, *fps));
         }
     };
-    const auto direct_assets = DirectAssetImplementations(profile);
     input::MouseTouchMapper mouse_touch;
     McpPointerDispatcher mcp_pointer;
-    if (profile.runtime.lifecycle == session::ProfileLifecycle::native_activity) {
-        auto guest = runtime::NativeActivitySession::Start(
-            {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
-             profile.runtime.surface.width, profile.runtime.surface.height,
-             profile.runtime.maximum_ticks_per_call, {}, supersample_factor});
-        Write("OGPlay: NativeActivity started; close the window to stop.\n");
-        while (!quit) {
-            const auto window_state = window->State();
-            for (const auto& event : window->PollEvents()) {
-                if (event.type == hal::InputEventType::quit) {
-                    quit = true;
-                } else if (mcp_pointer.SuppressWindowEvent(event.type)) {
-                    continue;
-                } else if (const auto mapped = mouse_touch.Map(
-                               event, window_state, guest_width, guest_height);
-                           mapped.has_value()) {
-                    if (const auto input = MapInput(*mapped); input.has_value()) {
-                        guest->PushInput(*input);
-                    }
-                }
-            }
-            if (const auto input = mcp_pointer.TakeNext(
-                    mcp_inputs.get(), mouse_touch); input.has_value()) {
-                guest->PushInput(*input);
-            }
-            if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
-                window->PresentRgba8(frame->rgba8, frame->width, frame->height);
-                guest_width = frame->width;
-                guest_height = frame->height;
-                ++presented;
-                update_frame_rate();
-                PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
-                if (exit_after_frames.has_value() &&
-                    presented >= *exit_after_frames) {
-                    quit = true;
-                }
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        ReleaseCapturedFrame(mcp_frames.get(), *guest);
-        guest->Stop();
-    } else {
-        if (direct_assets.has_value()) {
-            const auto assets = IndexApkAssets(apk_bytes, archive);
-            filesystem.MountLazyReadOnly(
-                runtime::VfsSource::apk, "/apk", assets);
-        }
-        const bool dex_mode = profile.runtime.lifecycle ==
-                              session::ProfileLifecycle::dex_activity;
+    {
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
-        if (dex_mode) {
+        {
             dex_context = std::make_shared<runtime::DexVmAndroidContext>();
             dex_context->apk_bytes = apk_bytes;
             dex_context->archive = archive;
@@ -697,21 +565,18 @@ int RunApkCommand(const int argc, const char* const argv[],
             }
         }
         auto sound_loader =
-            dex_mode
-                ? audio::JavaSoundPoolMixer::EncodedResourceLoader(
-                      [dex_context](const std::int32_t resource)
-                          -> std::vector<std::byte> {
-                          const auto* entry = dex_context->arsc.FindById(
-                              static_cast<std::uint32_t>(resource));
-                          if (entry == nullptr ||
-                              !entry->string_value.has_value()) {
-                              return {};
-                          }
-                          return loader::ReadApkEntry(
-                              dex_context->apk_bytes, dex_context->archive,
-                              *entry->string_value);
-                      })
-                : SoundResourceLoader(profile, apk_bytes, archive);
+            audio::JavaSoundPoolMixer::EncodedResourceLoader(
+                [dex_context](const std::int32_t resource)
+                    -> std::vector<std::byte> {
+                    const auto* entry = dex_context->arsc.FindById(
+                        static_cast<std::uint32_t>(resource));
+                    if (entry == nullptr || !entry->string_value.has_value()) {
+                        return {};
+                    }
+                    return loader::ReadApkEntry(
+                        dex_context->apk_bytes, dex_context->archive,
+                        *entry->string_value);
+                });
         std::unique_ptr<hal::AudioOutput> audio_output;
         std::vector<std::int16_t> audio_samples(1024U * 2U);
         if (sound_loader) {
@@ -748,7 +613,7 @@ int RunApkCommand(const int argc, const char* const argv[],
              NativeBackend(), profile.runtime.surface.width,
              profile.runtime.surface.height,
              profile.runtime.maximum_ticks_per_call,
-             supersample_factor, &filesystem, runtime_progress, direct_assets,
+             supersample_factor, &filesystem, runtime_progress, std::nullopt,
              {.allow_gles1_material_single_face = ProfileEnablesQuirk(
                   profile, "gles1_material_front_face")},
              std::move(sound_loader),
@@ -756,8 +621,7 @@ int RunApkCommand(const int argc, const char* const argv[],
              {.installation_id = "ogplay-" + manifest.package,
               .version_name = manifest.version_name.value_or("unknown")}});
 
-        // Uniform driver over the two lifecycle implementations so the
-        // frame/MCP loop below stays single-sourced.
+        // Keep the frame/MCP loop independent of lifecycle storage.
         struct LifecycleDriver final {
             std::function<session::LifecycleFrameState()> start;
             std::function<session::LifecycleFrameState()> suspend;
@@ -769,11 +633,10 @@ int RunApkCommand(const int argc, const char* const argv[],
                 queue_input;
         };
         LifecycleDriver driver;
-        std::unique_ptr<session::ProfileGuestLifecycle> lifecycle;
         std::unique_ptr<runtime::DexVmGuestBridge> dex_bridge;
         std::unique_ptr<session::DexActivityLifecycle> dex_lifecycle;
         core::CapabilityLedger dexvm_ledger;
-        if (dex_mode) {
+        {
             dex_context->session = guest.get();
             const auto dex_entry =
                 loader::ReadApkEntry(apk_bytes, archive, "classes.dex");
@@ -805,16 +668,10 @@ int RunApkCommand(const int argc, const char* const argv[],
                              "gap survey enabled; run is diagnostic only",
                              {}, {}, kUnrestrictedLog);
             }
-            if (!manifest.launcher_activity.has_value()) {
-                throw std::runtime_error(
-                    "dex_activity requires a launcher activity in the "
-                    "AndroidManifest");
-            }
-            std::string descriptor = *manifest.launcher_activity;
-            for (auto& character : descriptor) {
-                if (character == '.') character = '/';
-            }
-            descriptor = "L" + descriptor + ";";
+            const auto descriptor = session::ResolveProfileLaunchDescriptor(
+                profile, manifest.launcher_activity);
+            session::ApplyProfileStaticPresets(
+                profile, dex_bridge->Vm(), &logger);
             dex_lifecycle = std::make_unique<session::DexActivityLifecycle>(
                 session::DexActivityLifecycleBindings{
                     dex_bridge.get(), dex_context, descriptor,
@@ -839,43 +696,6 @@ int RunApkCommand(const int argc, const char* const argv[],
                       [&] { return dex_lifecycle->State(); },
                       [&](const runtime::AndroidBoundaryInput& input) {
                           dex_lifecycle->QueueInput(input);
-                      }};
-        } else {
-            lifecycle = session::ProfileGuestLifecycle::Create(
-                profile, launch->native_calls,
-                {
-                    guest->GuestEnvironment(),
-                    &guest->Environment(),
-                    &guest->Classes(),
-                    [&](const runtime::A32GuestCallFrame& frame) {
-                        call_progress.Begin(active_frame,
-                                            frame.target.Value());
-                        const auto result = guest->Invoke(frame);
-                        call_progress.Complete(result.ticks_consumed);
-                        return result;
-                    },
-                    [&guest] { guest->OpenManagedSurface(); },
-                    [&guest] { guest->PresentManagedSurface(); },
-                    [&guest] {
-                        static_cast<void>(guest->InterruptBlockingWaits());
-                    },
-                    [&] {
-                        call_progress.Begin(active_frame, 0U);
-                        guest->Stop();
-                    },
-                    [&guest] { guest->CloseManagedSurface(); },
-                    [&guest](const runtime::AndroidBoundaryInput& input) {
-                        guest->PushInput(input);
-                    },
-                });
-            driver = {[&] { return lifecycle->Start(); },
-                      [&] { return lifecycle->Suspend(); },
-                      [&] { return lifecycle->Resume(); },
-                      [&] { return lifecycle->StepFrame(); },
-                      [&] { return lifecycle->Stop(); },
-                      [&] { return lifecycle->State(); },
-                      [&](const runtime::AndroidBoundaryInput& input) {
-                          lifecycle->QueueInput(input);
                       }};
         }
         logger.Write(core::LogLevel::info, "frontend.run_apk",

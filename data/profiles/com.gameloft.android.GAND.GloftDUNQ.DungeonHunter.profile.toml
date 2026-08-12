@@ -1,4 +1,5 @@
-schema = 1
+# DexVM profile; v1 replay glue retired by ADR-0022.
+schema = 2
 [identity]
 package = "com.gameloft.android.GAND.GloftDUNQ.DungeonHunter"
 name = "Dungeon Hunter"
@@ -7,11 +8,15 @@ so_sha256 = ["0befcb71acc320c964a08a590dd7b1903a91421c7c52c01ede2f19a1771b247a"]
 abi = "armeabi"
 [runtime]
 api_level = 19
-lifecycle = "gl_surface_view"
+lifecycle = "dex_activity"
 maximum_ticks_per_call = 10000000000
 [runtime.surface]
 width = 1024
 height = 600
+[runtime.dexvm]
+heap_budget_bytes = 536870912
+max_frames = 512
+ticks_per_call = 10000000000
 [data]
 working_directory = "/sdcard/gameloft/games/DungeonHunter"
 mounts = [
@@ -21,177 +26,3 @@ manifest = [
   { path = "data/PyData/common_pyarray.bin", required = true },
   { path = "data/sounds/raw_001.ogg", required = true },
 ]
-
-[[java.class]]
-name = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter"
-method = [
-  { name = "sendAppToBackground", sig = "()V", impl = "activity.send_to_background", static = true },
-  { name = "Exit", sig = "()V", impl = "process.exit", static = true },
-  { name = "unlockDemo", sig = "()V", impl = "license.unlock_demo", static = true },
-  { name = "GetPlayMode", sig = "()I", impl = "license.get_play_mode", static = true },
-  { name = "LaunchBilling", sig = "()V", impl = "billing.launch", static = true },
-  { name = "increaseNumOfLaunch", sig = "()V", impl = "analytics.increase_launch_count", static = true },
-  { name = "GetNumbOfLaunch", sig = "()I", impl = "analytics.get_launch_count", static = true },
-  { name = "OpenGLive", sig = "(I)V", impl = "online.open_live", static = true },
-  { name = "NotifyTrophy", sig = "(I)I", impl = "online.notify_trophy", static = true },
-  { name = "IsDemo", sig = "()I", impl = "license.is_demo", static = true },
-  { name = "IsDoubleOption", sig = "()I", impl = "license.is_double_option", static = true },
-  { name = "GetDoubleOptionText1", sig = "()[B", impl = "license.get_double_option_text_1", static = true },
-  { name = "GetDoubleOptionText2", sig = "()[B", impl = "license.get_double_option_text_2", static = true },
-  { name = "GetDoubleOptionText3", sig = "()[B", impl = "license.get_double_option_text_3", static = true },
-  { name = "TrackingRegisterFirstRun", sig = "()V", impl = "analytics.track_first_run", static = true },
-]
-
-[[java.class]]
-name = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer"
-method = [
-  { name = "isSoundLoaded", sig = "(II)I", impl = "audio.is_sound_loaded", static = true },
-  { name = "isSoundLoadedBig", sig = "(I)I", impl = "audio.is_sound_loaded_big", static = true },
-  { name = "unloadSound", sig = "(II)V", impl = "audio.unload_sound", static = true },
-  { name = "unloadSoundBig", sig = "(I)V", impl = "audio.unload_sound_big", static = true },
-  { name = "loadSound", sig = "(II)V", impl = "audio.load_sound", static = true },
-  { name = "loadSoundBig", sig = "(I)V", impl = "audio.load_sound_big", static = true },
-  { name = "playSound", sig = "(IIF)V", impl = "audio.play_sound", static = true },
-  { name = "playSoundBig", sig = "(IFZ)V", impl = "audio.play_sound_big_looping", static = true },
-  { name = "pauseSound", sig = "(II)V", impl = "audio.pause_sound", static = true },
-  { name = "pauseSoundBig", sig = "(I)V", impl = "audio.pause_sound_big", static = true },
-  { name = "pauseAllSoundBig", sig = "()V", impl = "audio.pause_all_big", static = true },
-  { name = "resumeSound", sig = "(II)V", impl = "audio.resume_sound", static = true },
-  { name = "resumeSoundBig", sig = "(I)V", impl = "audio.resume_sound_big", static = true },
-  { name = "resumeAllSoundBig", sig = "()V", impl = "audio.resume_all_big", static = true },
-  { name = "stopSound", sig = "(II)V", impl = "audio.stop_sound", static = true },
-  { name = "stopSoundBig", sig = "(I)V", impl = "audio.stop_sound_big", static = true },
-  { name = "setVolume", sig = "(IIF)V", impl = "audio.set_volume", static = true },
-  { name = "setVolumeBig", sig = "(IF)V", impl = "audio.set_volume_big", static = true },
-  { name = "resetSound", sig = "(I)V", impl = "audio.reset_sound", static = true },
-  { name = "setPitch", sig = "(IIF)V", impl = "audio.set_pitch", static = true },
-  { name = "stopAllSounds", sig = "()V", impl = "audio.stop_all_sounds", static = true },
-  { name = "stopAllPool", sig = "(I)V", impl = "audio.stop_all_pool", static = true },
-  { name = "stopAllBig", sig = "(I)V", impl = "audio.stop_all_big", static = true },
-  { name = "destroySoundPool", sig = "()V", impl = "audio.destroy_sound_pool", static = true },
-  { name = "initSoundPoolArray", sig = "()V", impl = "audio.init_sound_pool_array", static = true },
-  { name = "loadMovie", sig = "(Ljava/lang/String;)V", impl = "audio.load_movie", static = true },
-  { name = "detectPhoneLang", sig = "()I", impl = "locale.detect_phone_language", static = true },
-  { name = "isMediaPlaying", sig = "(I)Z", impl = "audio.is_media_playing", static = true },
-  { name = "openBrowser", sig = "(Ljava/lang/String;)V", impl = "browser.open", static = true },
-  { name = "Paused", sig = "()V", impl = "activity.paused", static = true },
-]
-
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"
-method = "nativeInit"
-signature = "(III)V"
-dispatch = "static"
-arguments = [
-  { source = "surface_width" },
-  { source = "surface_height" },
-  { source = "constant", value = 1 },
-]
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter"
-method = "nativeInit"
-signature = "(I)V"
-dispatch = "static"
-arguments = [{ source = "constant", value = 0 }]
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer"
-method = "nativeInit"
-signature = "(I)V"
-dispatch = "static"
-arguments = [{ source = "constant", value = 0 }]
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer"
-method = "nativeGetTotalSounds"
-signature = "()I"
-dispatch = "static"
-arguments = []
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/GLMediaPlayer"
-method = "nativeGetTotalSoundsOfSameInstance"
-signature = "()I"
-dispatch = "static"
-arguments = []
-[[runtime.native_call]]
-phase = "startup"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"
-method = "nativeResize"
-signature = "(II)V"
-dispatch = "static"
-arguments = [{ source = "surface_width" }, { source = "surface_height" }]
-[[runtime.native_call]]
-phase = "resume"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
-method = "nativeResume"
-signature = "()V"
-dispatch = "static"
-arguments = []
-[[runtime.native_call]]
-phase = "frame"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"
-method = "nativeRender"
-signature = "()V"
-dispatch = "static"
-arguments = []
-[[runtime.native_call]]
-phase = "pause"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
-method = "nativePause"
-signature = "()V"
-dispatch = "static"
-arguments = []
-[[runtime.native_call]]
-phase = "shutdown"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoRenderer"
-method = "nativeDone"
-signature = "()V"
-dispatch = "static"
-arguments = []
-[[runtime.native_call]]
-phase = "pointer_down"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
-method = "nativeOnTouch"
-signature = "(IIII)V"
-dispatch = "static"
-arguments = [
-  { source = "constant", value = 1 }, { source = "input_x" },
-  { source = "input_y" }, { source = "input_pointer" },
-]
-[[runtime.native_call]]
-phase = "pointer_move"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
-method = "nativeOnTouch"
-signature = "(IIII)V"
-dispatch = "static"
-arguments = [
-  { source = "constant", value = 2 }, { source = "input_x" },
-  { source = "input_y" }, { source = "input_pointer" },
-]
-[[runtime.native_call]]
-phase = "pointer_up"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DemoGLSurfaceView"
-method = "nativeOnTouch"
-signature = "(IIII)V"
-dispatch = "static"
-arguments = [
-  { source = "constant", value = 0 }, { source = "input_x" },
-  { source = "input_y" }, { source = "input_pointer" },
-]
-[[runtime.native_call]]
-phase = "key_down"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter"
-method = "nativeOnKeyDown"
-signature = "(I)V"
-dispatch = "static"
-arguments = [{ source = "input_key" }]
-[[runtime.native_call]]
-phase = "key_up"
-class = "com/gameloft/android/GAND/GloftDUNQ/DungeonHunter/DungeonHunter"
-method = "nativeOnKeyUp"
-signature = "(I)V"
-dispatch = "static"
-arguments = [{ source = "input_key" }]

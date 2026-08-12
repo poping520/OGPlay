@@ -271,3 +271,47 @@ TEST_CASE("dexvm heap budget exhaustion surfaces OutOfMemoryError") {
     const auto outcome = vm.CallStatic("LFlow;", "sumArray", "()I");
     ExpectException(vm, outcome, "Ljava/lang/OutOfMemoryError;");
 }
+
+TEST_CASE("dexvm execution contexts isolate mutable interpreter state") {
+    Vm vm;
+    const auto first = vm.interpreter.CreateExecutionContext();
+    const auto second = vm.interpreter.CreateExecutionContext();
+
+    const auto loop = vm.Static("LFlow;", "loopSum", "(I)I");
+    ExpectInt(vm.interpreter.Call(
+                  first, loop, std::vector<VmValue>{VmValue::Int(10)}),
+              45);
+    const auto first_after_loop = vm.interpreter.ExecutionSnapshot(first);
+    CHECK(first_after_loop.frame_depth == 0);
+    CHECK(first_after_loop.ticks > 0);
+
+    ExpectInt(vm.interpreter.Call(
+                  second, loop, std::vector<VmValue>{VmValue::Int(3)}),
+              3);
+    const auto second_after_loop = vm.interpreter.ExecutionSnapshot(second);
+    CHECK(second_after_loop.frame_depth == 0);
+    CHECK(second_after_loop.ticks > 0);
+    CHECK(vm.interpreter.ExecutionSnapshot(first).ticks ==
+          first_after_loop.ticks);
+
+    const auto uncaught = vm.interpreter.Call(
+        first, vm.Static("LThrower;", "uncaught", "()I"), {});
+    ExpectException(vm, uncaught, "LMyError;");
+    CHECK(!vm.interpreter.ExecutionSnapshot(first).has_pending_exception);
+    ExpectInt(vm.interpreter.Call(
+                  second, loop, std::vector<VmValue>{VmValue::Int(2)}),
+              1);
+    CHECK(!vm.interpreter.ExecutionSnapshot(second).has_pending_exception);
+
+    const auto retain = vm.Static("LExecutionContextProbe;", "retainMonitor",
+                                  "()V");
+    const auto retained = vm.interpreter.Call(first, retain, {});
+    CHECK(!retained.exception.IsValid());
+    CHECK(vm.interpreter.ExecutionSnapshot(first).held_monitor_count == 1);
+    CHECK(vm.interpreter.ExecutionSnapshot(second).held_monitor_count == 0);
+
+    Vm other;
+    CHECK_THROWS_AS(
+        static_cast<void>(other.interpreter.ExecutionSnapshot(first)),
+        DexVmError);
+}

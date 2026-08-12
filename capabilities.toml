@@ -985,6 +985,11 @@ status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
 note = "M9 WU-M9-009..012 tagged 帧（零值放宽/wide 对完整性）、表分派全部 dex 035 家族、invoke 三路由（解释/intrinsic/native bridge）、tick 预算与帧深度上限；语义逐 opcode 对照 AOSP mterp，夹具覆盖 NaN 偏置/MIN 除法/移位掩码/饱和转换/switch/payload"
 
+[dexvm.execution_contexts]
+status = "complete"
+test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact title-flow regression"
+note = "M9 WU-M9-027 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；linker/object model/intrinsic 目录共享，默认单线程语义不变。仅交付执行态拆分，不启动宿主线程、不实现 wait-set，不宣称 dexvm.threads ready"
+
 [dexvm.exceptions]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"

@@ -94,6 +94,30 @@ struct VmCallOutcome final {
 
 class Interpreter;
 
+// Strong handle selecting one independent interpreter execution state. The
+// linker, object model and intrinsic catalog remain owned by Interpreter;
+// frames, pending exception, ticks and monitor recursion are selected by
+// this context.
+class InterpreterExecutionContext final {
+public:
+    [[nodiscard]] std::uint64_t Token() const noexcept { return token_; }
+    [[nodiscard]] bool BelongsTo(const Interpreter* interpreter) const noexcept {
+        return owner_ == interpreter;
+    }
+
+private:
+    const Interpreter* owner_{};
+    std::uint64_t token_{};
+    friend class Interpreter;
+};
+
+struct InterpreterExecutionSnapshot final {
+    std::size_t frame_depth{};
+    bool has_pending_exception{};
+    std::uint64_t ticks{};
+    std::size_t held_monitor_count{};
+};
+
 struct IntrinsicContext final {
     Interpreter& vm;
     VmObjectRef receiver;
@@ -149,10 +173,21 @@ public:
     // must match the descriptor ('this' first for instance methods).
     [[nodiscard]] VmCallOutcome Call(VmMethodId method,
                                      std::span<const VmValue> arguments);
+    [[nodiscard]] VmCallOutcome Call(
+        const InterpreterExecutionContext& context, VmMethodId method,
+        std::span<const VmValue> arguments);
+
+    // Creates a new execution context without starting a host thread. WU-M9-027
+    // uses this to prove isolation; Thread.start wiring is a later WU.
+    [[nodiscard]] InterpreterExecutionContext CreateExecutionContext();
+    [[nodiscard]] InterpreterExecutionSnapshot ExecutionSnapshot(
+        const InterpreterExecutionContext& context) const;
 
     // Ensures a class is initialized (triggers <clinit>); returns a Java
     // exception outcome if initialization fails.
     [[nodiscard]] VmCallOutcome EnsureClassInitialized(DexClassId java_class);
+    [[nodiscard]] VmCallOutcome EnsureClassInitialized(
+        const InterpreterExecutionContext& context, DexClassId java_class);
 
     [[nodiscard]] DexClassLinker& Linker() noexcept;
     [[nodiscard]] JavaObjectModel& Model() noexcept;

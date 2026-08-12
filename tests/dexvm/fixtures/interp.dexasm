@@ -343,3 +343,16 @@
     add-int v0, v1, v3
     return v0
 .end method
+
+# Deliberately retains one monitor recursion count after return so the
+# execution-context test can observe that monitor ownership is not global.
+.class public LExecutionContextProbe;
+.super Ljava/lang/Object;
+
+.method static public retainMonitor()V
+.registers 1
+    new-instance v0, Ljava/lang/Object;
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    monitor-enter v0
+    return-void
+.end method

@@ -35,7 +35,6 @@ std::size_t IntrinsicRegistry::Size() const noexcept {
 // ---- Impl helpers ----------------------------------------------------------
 
 namespace {
-
 // Neutral answer for a survey stub: zero/null of the declared return kind.
 [[nodiscard]] VmValue NeutralValueFor(const char return_shorty) {
     switch (return_shorty) {
@@ -57,6 +56,9 @@ namespace {
 }  // namespace
 
 void Interpreter::Impl::SetPending(const VmObjectRef throwable) {
+    auto& execution = Execution();
+    auto& pending_exception = execution.pending_exception;
+    auto& pending_exception_class = execution.pending_exception_class;
     if (!throwable.IsValid()) {
         ThrowJava("Ljava/lang/NullPointerException;", "throw null");
         return;
@@ -71,12 +73,16 @@ void Interpreter::Impl::SetPending(const VmObjectRef throwable) {
 
 void Interpreter::Impl::ThrowJava(const std::string& descriptor,
                                   const std::string& message) {
+    auto& execution = Execution();
+    auto& pending_exception = execution.pending_exception;
+    auto& pending_exception_class = execution.pending_exception_class;
     const auto throwable = owner->MakeThrowable(descriptor, message);
     pending_exception = throwable;
     pending_exception_class = model->ObjectClass(throwable);
 }
 
 std::vector<VmStackEntry> Interpreter::Impl::CaptureStack() const {
+    const auto& frames = Execution().frames;
     std::vector<VmStackEntry> stack;
     for (auto it = frames.rbegin(); it != frames.rend(); ++it) {
         const auto& method = *it->method;
@@ -108,6 +114,9 @@ Interpreter::Impl::InternDexString(const std::uint32_t string_index) {
 }
 
 void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
+    auto& execution = Execution();
+    auto& frames = execution.frames;
+    auto& pending_exception = execution.pending_exception;
     auto& linked = linker->MutableClass(java_class);
     switch (linked.clinit_state) {
         case ClinitState::initialized:
@@ -124,7 +133,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
             break;
     }
     linked.clinit_state = ClinitState::initializing;
-    linked.clinit_thread = clinit_thread_token;
+    linked.clinit_thread = execution.token;
 
     // Superclass first (interfaces are not initialized transitively).
     if (linked.super.has_value()) {
@@ -246,6 +255,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
 void Interpreter::Impl::PushInterpretedFrame(
     const LinkedMethod& method, const std::span<const VmValue> arguments,
     const std::uint32_t caller_advance) {
+    auto& frames = Execution().frames;
     if (frames.size() >= config.max_frames) {
         throw VmJavaThrow{"Ljava/lang/StackOverflowError;",
                           "frame depth " + std::to_string(frames.size())};
@@ -318,6 +328,11 @@ Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
 }
 
 VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
+    auto& execution = Execution();
+    auto& frames = execution.frames;
+    auto& pending_exception = execution.pending_exception;
+    auto& pending_exception_class = execution.pending_exception_class;
+    auto& exit_result = execution.exit_result;
     VmCallOutcome outcome;
     while (frames.size() > entry_depth) {
         try {
@@ -422,6 +437,9 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->ledger = &ledger;
     impl_->config = config;
     impl_->owner = this;
+    auto default_execution = std::make_unique<InterpreterExecutionState>();
+    default_execution->token = 1;
+    impl_->executions.emplace(1, std::move(default_execution));
 
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
@@ -434,27 +452,32 @@ Interpreter::~Interpreter() = default;
 
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                 const std::span<const VmValue> arguments) {
-    if (impl_->frames.empty()) {
+    auto& execution = impl_->Execution();
+    InterpreterExecutionScope execution_scope(impl_.get(), execution);
+    auto& frames = execution.frames;
+    auto& pending_exception = execution.pending_exception;
+    auto& pending_exception_class = execution.pending_exception_class;
+    if (frames.empty()) {
         // The tick budget is per top-level lifecycle entry call (04 §6);
         // nested calls (native -> interpreter re-entry) share the budget.
-        impl_->ticks = 0;
+        execution.ticks = 0;
     }
     const auto& method = impl_->linker->Method(method_id);
     if (method.is_static) {
         impl_->EnsureInitialized(method.owner);
-        if (impl_->pending_exception.IsValid()) {
+        if (pending_exception.IsValid()) {
             VmCallOutcome outcome;
-            outcome.exception = impl_->pending_exception;
-            outcome.exception_class = impl_->pending_exception_class;
-            impl_->pending_exception = VmObjectRef{};
-            impl_->pending_exception_class = DexClassId{};
+            outcome.exception = pending_exception;
+            outcome.exception_class = pending_exception_class;
+            pending_exception = VmObjectRef{};
+            pending_exception_class = DexClassId{};
             return outcome;
         }
     }
     switch (method.kind) {
         case MethodKind::interpreted: {
             impl_->linker->PrecheckMethod(method_id);
-            const auto entry_depth = impl_->frames.size();
+            const auto entry_depth = frames.size();
             impl_->PushInterpretedFrame(method, arguments, 0);
             auto outcome = impl_->Run(entry_depth);
             return outcome;
@@ -469,11 +492,11 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                 outcome.value = impl_->InvokeIntrinsic(method, receiver, rest);
             } catch (const VmJavaThrow& thrown) {
                 impl_->ThrowJava(thrown.descriptor, thrown.message);
-                outcome.exception = impl_->pending_exception;
-                outcome.exception_class = impl_->pending_exception_class;
+                outcome.exception = pending_exception;
+                outcome.exception_class = pending_exception_class;
                 outcome.exception_message = thrown.message;
-                impl_->pending_exception = VmObjectRef{};
-                impl_->pending_exception_class = DexClassId{};
+                pending_exception = VmObjectRef{};
+                pending_exception_class = DexClassId{};
             }
             return outcome;
         }
@@ -504,21 +527,40 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                      "unreachable method kind");
 }
 
+VmCallOutcome Interpreter::Call(
+    const InterpreterExecutionContext& context, const VmMethodId method_id,
+    const std::span<const VmValue> arguments) {
+    auto& execution = impl_->Execution(context);
+    InterpreterExecutionScope execution_scope(impl_.get(), execution);
+    return Call(method_id, arguments);
+}
+
 VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
+    auto& execution = impl_->Execution();
+    InterpreterExecutionScope execution_scope(impl_.get(), execution);
+    auto& pending_exception = execution.pending_exception;
+    auto& pending_exception_class = execution.pending_exception_class;
     impl_->EnsureInitialized(java_class);
     VmCallOutcome outcome;
-    if (impl_->pending_exception.IsValid()) {
-        outcome.exception = impl_->pending_exception;
-        outcome.exception_class = impl_->pending_exception_class;
-    const auto state = impl_->throwables.find(impl_->pending_exception.Value());
+    if (pending_exception.IsValid()) {
+        outcome.exception = pending_exception;
+        outcome.exception_class = pending_exception_class;
+    const auto state = impl_->throwables.find(pending_exception.Value());
         if (state != impl_->throwables.end()) {
             outcome.exception_message = state->second.message_utf8;
             outcome.exception_stack = state->second.stack;
         }
-        impl_->pending_exception = VmObjectRef{};
-        impl_->pending_exception_class = DexClassId{};
+        pending_exception = VmObjectRef{};
+        pending_exception_class = DexClassId{};
     }
     return outcome;
+}
+
+VmCallOutcome Interpreter::EnsureClassInitialized(
+    const InterpreterExecutionContext& context, const DexClassId java_class) {
+    auto& execution = impl_->Execution(context);
+    InterpreterExecutionScope execution_scope(impl_.get(), execution);
+    return EnsureClassInitialized(java_class);
 }
 
 DexClassLinker& Interpreter::Linker() noexcept { return *impl_->linker; }
@@ -726,8 +768,9 @@ bool Interpreter::JavaEquals(const VmObjectRef left,
 }
 
 void Interpreter::NotifyMonitor(const VmObjectRef receiver) const {
-  const auto held = impl_->monitors.find(receiver.Value());
-  if (!receiver.IsValid() || held == impl_->monitors.end() ||
+  const auto& monitors = impl_->Execution().monitors;
+  const auto held = monitors.find(receiver.Value());
+  if (!receiver.IsValid() || held == monitors.end() ||
       held->second <= 0) {
     throw VmJavaThrow{"Ljava/lang/IllegalMonitorStateException;",
                       "current thread does not own receiver monitor"};

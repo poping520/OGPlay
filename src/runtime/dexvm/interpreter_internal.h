@@ -32,6 +32,32 @@ struct ThrowableState final {
     std::vector<VmStackEntry> stack;
 };
 
+struct InterpreterExecutionState final {
+    // Deque keeps outer-frame references valid across nested pushes
+    // (new-instance triggering <clinit>, native re-entry, ...).
+    std::deque<Frame> frames;
+    VmObjectRef pending_exception;
+    DexClassId pending_exception_class;
+    VmValue exit_result;
+    std::unordered_map<std::uint32_t, std::int32_t> monitors;
+    std::uint64_t ticks{};
+    std::uint64_t token{};
+};
+
+class InterpreterExecutionScope final {
+public:
+    InterpreterExecutionScope(void* interpreter,
+                              InterpreterExecutionState& execution);
+    ~InterpreterExecutionScope();
+    InterpreterExecutionScope(const InterpreterExecutionScope&) = delete;
+    InterpreterExecutionScope& operator=(const InterpreterExecutionScope&) =
+        delete;
+
+private:
+    void* interpreter_{};
+    InterpreterExecutionState* previous_{};
+};
+
 class Interpreter::Impl final {
 public:
     DexClassLinker* linker{};
@@ -42,30 +68,34 @@ public:
     InterpreterConfig config;
     InterpreterStats stats;
 
-    // Deque keeps outer-frame references valid across nested pushes
-    // (new-instance triggering <clinit>, native re-entry, ...).
-    std::deque<Frame> frames;
-    VmObjectRef pending_exception;
-    DexClassId pending_exception_class;
-    VmValue exit_result;  // value returned by the most recent popped frame
+    std::unordered_map<std::uint64_t,
+                       std::unique_ptr<InterpreterExecutionState>>
+        executions;
+    std::uint64_t next_execution_token{2};
 
     std::unordered_map<std::uint32_t, ThrowableState> throwables;
-    std::unordered_map<std::uint32_t, std::int32_t> monitors;
     std::unordered_map<std::uint32_t, std::u16string> builders;
     std::unordered_map<std::uint32_t, std::vector<VmObjectRef>> lists;
     std::unordered_map<std::uint32_t,
                        std::vector<std::pair<VmObjectRef, VmObjectRef>>>
         maps;
     core::Logger* logger{};
-    std::uint64_t ticks{};
-    std::uint64_t clinit_thread_token{1};  // single host thread in stage 1
-
     Interpreter* owner{};
+
+    [[nodiscard]] InterpreterExecutionState& Execution();
+    [[nodiscard]] const InterpreterExecutionState& Execution() const;
+    [[nodiscard]] InterpreterExecutionState& Execution(
+        const InterpreterExecutionContext& context);
+    [[nodiscard]] const InterpreterExecutionState& Execution(
+        const InterpreterExecutionContext& context) const;
 
     // ---- register access with tag enforcement (02 §7) -------------------
 
     [[noreturn]] void FailCode(const std::string& message) const {
-        const auto* frame = frames.empty() ? nullptr : &frames.back();
+        const auto& execution = Execution();
+        const auto* frame = execution.frames.empty()
+                                ? nullptr
+                                : &execution.frames.back();
         std::string where = "dexvm";
         if (frame != nullptr) {
             where = linker->Class(frame->method->owner).descriptor + "." +
@@ -145,11 +175,12 @@ public:
     // ---- execution --------------------------------------------------------
 
     void Tick(const std::uint64_t amount = 1) {
-        ticks += amount;
-        if (ticks > config.tick_budget) {
+        auto& execution = Execution();
+        execution.ticks += amount;
+        if (execution.ticks > config.tick_budget) {
             throw DexVmError(DexVmErrorReason::budget_exhausted,
                              "dexvm tick budget exhausted after " +
-                                 std::to_string(ticks) + " ticks");
+                                 std::to_string(execution.ticks) + " ticks");
         }
     }
 

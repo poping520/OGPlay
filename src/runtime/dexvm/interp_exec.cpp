@@ -28,6 +28,11 @@ namespace {
 }  // namespace
 
 void Interpreter::Impl::Step() {
+    auto& execution = Execution();
+    auto& frames = execution.frames;
+    auto& pending_exception = execution.pending_exception;
+    auto& exit_result = execution.exit_result;
+    auto& monitors = execution.monitors;
     auto& frame = frames.back();
     const auto& code = *frame.method->code;
     const auto& units = code.instructions;

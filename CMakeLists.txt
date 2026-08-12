@@ -418,6 +418,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/method_precheck.cpp
     src/runtime/dexvm/object_model.cpp
     src/runtime/dexvm/interpreter.cpp
+    src/runtime/dexvm/interpreter_context.cpp
     src/runtime/dexvm/interp_exec.cpp
     src/runtime/dexvm/interp_object.cpp
     src/runtime/dexvm/interp_arith.cpp

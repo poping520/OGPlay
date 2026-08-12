@@ -29,6 +29,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   （默认 512 → 真实 StackOverflowError）。invoke 三路由：解释方法压帧、
   intrinsic 查 `IntrinsicRegistry`（缺失 handler 记账 + UnsatisfiedLinkError）、
   native 走 `NativeMethodBridge`（未注入则记账 + 明确失败）。
+  `CreateExecutionContext` 建立显式执行 context；`Call(context, ...)` 隔离其
+  帧栈、pending exception、tick、返回值与 monitor recursion，同时共享 linker、
+  object model 与 intrinsic 目录。默认 `Call` 保持原单线程 context；本阶段不
+  创建宿主线程。
   `EnsureClassInitialized` 实现 `<clinit>` 状态机（同线程重入放行、失败粘滞
   NoClassDefFoundError、静态初始值先于 `<clinit>` 物化）。
   `SetStaticFieldBits` 仅接受已完成初始化的真实 guest 静态字段，供 ADR-0022
@@ -52,7 +56,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 `class_linker_internal.h` 持有 `DexClassLinker::Impl` 与共享 helper：注册/
 布局/vtable 在 `class_linker.cpp`，常量池解析与可赋值性在
-`class_linker_resolve.cpp`。
+`class_linker_resolve.cpp`。解释器主循环在 `interpreter.cpp`，显式执行 context
+的选择、校验与 thread-local 活跃路由在 `interpreter_context.cpp`。
 
 ## 不变量
 
@@ -63,11 +68,12 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 - 语义出处：逐 opcode 对照 AOSP `vm/mterp/c/OP_*.cpp`（一致性夹具注释记录），
   分歧按 07 §5 仲裁。无 JIT、不改写指令流（quickening 红线）。
 - 对象非移动，句柄生命周期内稳定。
-- 时间与线程不进入本模块：单指令流在调用方宿主线程执行。
+- 本 WU 不创建宿主线程；显式 context 只拆分可变执行态，调用仍在调用方当前
+  宿主线程同步执行。时间预算仍通过各 context 的 tick 计数约束。
 
 ## 尚未实现（记账可查）
 
-- monitor 指令目前是单线程重入计数；`notify/notifyAll` 会校验
+- monitor 指令目前是每 context 的重入计数；`notify/notifyAll` 会校验
   当前 monitor 所有权，但多线程 wait-set 仍属阶段 4，
   `runtime.jni_guest_monitors` 接线随集成 WU。
 - 反射仅覆盖有界的 `getDeclaredMethods` / 零参整数类返回值
@@ -76,7 +82,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 ## 测试
 
 `tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：算术边界、控制流、
-数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算）；
+数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
+显式执行 context 交错调用的帧/异常/tick/monitor 隔离）；
 `tests/dexvm/dex_code_tests.cpp`、`tests/dexvm/dexasm_readback_tests.cpp`、
 `tests/dexvm/gap_survey_tests.cpp`（survey 开/关对照：关闭即失败、桩答中性值、
 命中计数、工作单排序）。

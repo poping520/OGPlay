@@ -9,6 +9,9 @@ namespace ogplay::runtime::dexvm {
 void Interpreter::Impl::StepObjectOrInvoke(Frame& frame,
                                            const std::uint8_t opcode,
                                            const std::uint16_t unit) {
+    auto& execution = Execution();
+    auto& frames = execution.frames;
+    auto& pending_exception = execution.pending_exception;
     const auto& units = frame.method->code->instructions;
     const auto& info = gen::kDexOpcodeTable[opcode];
     const auto width = info.width;

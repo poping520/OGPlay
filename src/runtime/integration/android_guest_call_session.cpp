@@ -27,6 +27,7 @@
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_native_export.h"
 #include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
@@ -664,6 +665,14 @@ public:
         return guest_jni_.JavaVm(); }
     JniEnvironment& Environment() noexcept { return environment_; }
     JniClassRegistry& Classes() noexcept { return classes_; }
+    JniInvocationEngine& Invocations() noexcept { return invocations_; }
+    JniStringStore& Strings() noexcept { return strings_; }
+    JniPrimitiveArrayStore& Arrays() noexcept { return arrays_; }
+    audio::JavaSoundPoolState& SoundPoolState() noexcept {
+        return sound_pool_; }
+    audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept {
+        return sound_pool_mixer_; }
+    VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
     void InitializeJniLibrary() {
         if (!running_) {
             throw AndroidGuestCallSessionError(
@@ -766,6 +775,29 @@ private:
     A32GuestCallSliceObserver slice_observer_;
     bool jni_library_initialized_{};
     bool running_{};
+
+public:
+    [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
+        const std::string_view class_name,
+        const std::string_view method_name,
+        const std::string_view descriptor) const {
+        const auto names =
+            BuildJniNativeExportNames(class_name, method_name, descriptor);
+        for (const auto* candidate : {&names.long_name, &names.short_name}) {
+            for (const auto& module : loaded_.link_namespace.modules) {
+                for (std::size_t index = 0;
+                     index < module.symbols.symbols.size(); ++index) {
+                    const auto& symbol = module.symbols.symbols[index];
+                    if (symbol.name != *candidate || !symbol.IsExported()) {
+                        continue;
+                    }
+                    return memory::GuestAddress(
+                        module.load_bias.Value() + symbol.value.Value());
+                }
+            }
+        }
+        return std::nullopt;
+    }
 };
 
 std::unique_ptr<AndroidGuestCallSession> AndroidGuestCallSession::Start(
@@ -813,6 +845,29 @@ memory::GuestAddress AndroidGuestCallSession::GuestEnvironment() const noexcept 
 memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept { return impl_->GuestJavaVm(); }
 JniEnvironment& AndroidGuestCallSession::Environment() noexcept { return impl_->Environment(); }
 JniClassRegistry& AndroidGuestCallSession::Classes() noexcept { return impl_->Classes(); }
+JniInvocationEngine& AndroidGuestCallSession::Invocations() noexcept {
+    return impl_->Invocations();
+}
+JniStringStore& AndroidGuestCallSession::Strings() noexcept {
+    return impl_->Strings();
+}
+JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept {
+    return impl_->Arrays();
+}
+audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept {
+    return impl_->SoundPoolState();
+}
+audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept {
+    return impl_->SoundPoolMixer();
+}
+VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept {
+    return impl_->Filesystem();
+}
+std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(
+    const std::string_view class_name, const std::string_view method_name,
+    const std::string_view descriptor) const {
+    return impl_->FindNativeExport(class_name, method_name, descriptor);
+}
 void AndroidGuestCallSession::InitializeJniLibrary() {
     try {
         impl_->InitializeJniLibrary();

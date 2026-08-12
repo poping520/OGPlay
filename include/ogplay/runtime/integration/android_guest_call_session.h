@@ -234,6 +234,17 @@ public:
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;
     [[nodiscard]] JniClassRegistry& Classes() noexcept;
+    [[nodiscard]] JniInvocationEngine& Invocations() noexcept;
+    [[nodiscard]] JniStringStore& Strings() noexcept;
+    [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
+    [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
+    [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
+    [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    // Resolves a Java_ native export (short then long JNI name) across the
+    // loaded guest namespace; empty when the method is not exported.
+    [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
+        std::string_view class_name, std::string_view method_name,
+        std::string_view descriptor) const;
     void InitializeJniLibrary();
     void OpenManagedSurface();
     void PresentManagedSurface();

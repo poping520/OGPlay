@@ -861,4 +861,20 @@ std::size_t DexClassLinker::ClassCount() const noexcept {
     return impl_->classes.size();
 }
 
+std::vector<VmMethodId> DexClassLinker::MethodsOf(
+    const DexClassId owner) const {
+    std::vector<VmMethodId> result;
+    for (const auto& method : impl_->methods) {
+        if (method.owner == owner) result.push_back(method.id);
+    }
+    return result;
+}
+
+std::vector<DexClassId> DexClassLinker::AllClasses() const {
+    std::vector<DexClassId> result;
+    result.reserve(impl_->classes.size());
+    for (const auto& linked : impl_->classes) result.push_back(linked.id);
+    return result;
+}
+
 }  // namespace ogplay::runtime::dexvm

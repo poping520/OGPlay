@@ -188,6 +188,7 @@ add_library(ogplay_loader
     src/loader/dex.cpp
     src/loader/dex_analysis.cpp
     src/loader/dex_class_data.cpp
+    src/loader/arsc.cpp
     src/loader/dex_code.cpp
     src/loader/dynamic_linker.cpp
     src/loader/elf.cpp
@@ -361,6 +362,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/android_boundary_hle.cpp
     src/runtime/boundary/android_boundary_symbols.cpp
     src/runtime/integration/android_link_preflight.cpp
+    src/runtime/integration/dexvm_bridge.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
     src/runtime/jni_guest/jni_guest_bindings.cpp
     src/runtime/jni_guest/jni_guest_array_bindings.cpp
@@ -635,6 +637,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/dex_code_tests.cpp
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/intrinsics_p1_tests.cpp
+        tests/dexvm/arsc_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)
         list(APPEND OGPLAY_TEST_SOURCES

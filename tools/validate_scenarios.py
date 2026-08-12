@@ -530,18 +530,22 @@ def validate_directory(scenario_directory: Path, profile_directory: Path) -> int
 
 
 def _profile_text() -> str:
-    return f'''schema = 1
+    return f'''schema = 2
 
 [identity]
 package = "org.example.legacy"
+name = "Scenario Fixture"
 version_code = [7]
 so_sha256 = ["{'a' * 64}"]
 abi = "armeabi-v7a"
 
 [runtime]
 api_level = 19
-lifecycle = "gl_surface_view"
-surface = {{ width = 800, height = 480 }}
+lifecycle = "dex_activity"
+
+[runtime.surface]
+width = 800
+height = 480
 '''
 
 

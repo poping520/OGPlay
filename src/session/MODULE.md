@@ -43,7 +43,7 @@
 - `runtime.entry` / `runtime.presets` 只有在 required data manifest 非空时才允许，避免把
   未提供数据误报为已安装。
 - static preset 必须在 class 初始化完成后写入，并保留字段真实类型；失败不得发布部分
-  启动成功。
+  启动成功。preset 类型白名单先于值解码校验，未知引用类型不能被值类型错误掩盖。
 - identity ABI 只接受 `armeabi` 与 `armeabi-v7a`；APK 匹配不得猜 main library。
 - VFS 输入必须按 guest 根与 source 双重命中；额外输入和 required 文件缺失明确失败。
 - SoundPool pattern 只接受一个 `{resource}` 或 `{resource:0N}`（N 为 1..9）。

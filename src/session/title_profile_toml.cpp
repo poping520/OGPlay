@@ -569,6 +569,13 @@ bool NativeJavaMemberName(const std::string_view value) {
 
 ProfileStaticPresetValue NativePresetValue(
     const TomlValue& value, const std::string_view type) {
+    constexpr std::array supported_types{"Z", "B", "C", "S", "I", "J",
+                                         "F", "D", "Ljava/lang/String;"};
+    if (std::find(supported_types.begin(), supported_types.end(), type) ==
+        supported_types.end()) {
+        throw TitleProfileError(
+            "runtime.presets[].type must be primitive or java.lang.String");
+    }
     if (type == "Z") return NativeAs<bool>(value, "runtime.presets[].value");
     if (type == "Ljava/lang/String;") {
         return NativeString(value, "runtime.presets[].value");
@@ -591,11 +598,6 @@ ProfileStaticPresetValue NativePresetValue(
           integer > std::numeric_limits<std::int32_t>::max()))) {
         throw TitleProfileError(
             "runtime.presets[].value is outside the declared type range");
-    }
-    if (type != "B" && type != "C" && type != "S" && type != "I" &&
-        type != "J") {
-        throw TitleProfileError(
-            "runtime.presets[].type must be primitive or java.lang.String");
     }
     return integer;
 }

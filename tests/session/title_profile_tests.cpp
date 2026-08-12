@@ -134,7 +134,7 @@ TEST_CASE("preset value must match a supported primitive or String type") {
 
     auto empty_reason = ScopedProfile();
     empty_reason.replace(
-        empty_reason.find("reason = \"fixture data is provisioned\""), 39U,
+        empty_reason.find("reason = \"fixture data is provisioned\""), 38U,
         "reason = \"\"");
     CheckRejected(empty_reason, "runtime.presets[].reason must not be empty");
 }

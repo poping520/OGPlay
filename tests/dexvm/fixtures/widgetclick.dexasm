@@ -1,0 +1,39 @@
+# Widget click dispatch fixture: an OnClickListener with an observable
+# invocation count that stops the bound VideoView on click (the skip-button
+# pattern of splash-video activities).
+.class public LSkipListener;
+.super Ljava/lang/Object;
+
+.field static public clicks:I
+.field static public target:Landroid/widget/VideoView;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public onClick(Landroid/view/View;)V
+.registers 4
+    sget v0, LSkipListener;->clicks:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    sput v0, LSkipListener;->clicks:I
+    sget-object v0, LSkipListener;->target:Landroid/widget/VideoView;
+    if-eqz v0, :done
+    invoke-virtual {v0}, Landroid/widget/VideoView;->stopPlayback()V
+    :done
+    return-void
+.end method
+
+.method static public bind(Landroid/widget/VideoView;)V
+.registers 1
+    sput-object v0, LSkipListener;->target:Landroid/widget/VideoView;
+    return-void
+.end method
+
+.method static public getClicks()I
+.registers 1
+    sget v0, LSkipListener;->clicks:I
+    return v0
+.end method

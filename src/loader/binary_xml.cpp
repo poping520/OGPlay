@@ -13,7 +13,10 @@ namespace {
 constexpr std::uint16_t kXmlType = 0x0003;
 constexpr std::uint16_t kStringPoolType = 0x0001;
 constexpr std::uint16_t kStartElementType = 0x0102;
+constexpr std::uint16_t kEndElementType = 0x0103;
 constexpr std::uint32_t kNoIndex = 0xffffffffU;
+// Res_value data types (AOSP ResourceTypes.h).
+constexpr std::uint8_t kTypeDimension = 0x05;
 constexpr std::uint32_t kUtf8Flag = 0x00000100U;
 constexpr std::string_view kAndroidNamespace =
     "http://schemas.android.com/apk/res/android";
@@ -112,6 +115,19 @@ StringPool ParseStringPool(const std::span<const std::byte> bytes,
     return pool;
 }
 
+// Complex dimension (TYPE_DIMENSION) reduced to its integer mantissa; dp
+// and px share the density-1 interpretation, other radixes truncate.
+std::int32_t DimensionPx(const std::uint32_t data) {
+    return static_cast<std::int32_t>(data) >> 8;
+}
+
+// Layout size attribute: fill_parent/wrap_content arrive as INT_DEC
+// -1/-2, explicit sizes as dimensions.
+std::int32_t LayoutSize(const std::uint8_t type, const std::uint32_t data) {
+    if (type == kTypeDimension) return DimensionPx(data);
+    return static_cast<std::int32_t>(data);
+}
+
 }  // namespace
 
 std::vector<BinaryXmlElement> ParseBinaryXmlElements(
@@ -124,6 +140,7 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
 
     StringPool pool;
     std::vector<BinaryXmlElement> elements;
+    std::vector<std::int32_t> open;  // element indices on the tag stack
     std::size_t offset = 8;
     while (offset + 8 <= document_size) {
         const auto type = Read16(bytes, offset);
@@ -140,6 +157,7 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
             const auto ext = offset + header_size;
             BinaryXmlElement element;
             element.name = pool.At(Read32(bytes, ext + 4));
+            element.parent = open.empty() ? -1 : open.back();
             const auto attribute_start = Read16(bytes, ext + 8);
             const auto attribute_size = Read16(bytes, ext + 10);
             const auto attribute_count = Read16(bytes, ext + 12);
@@ -149,13 +167,33 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
                     ext + attribute_start +
                     static_cast<std::size_t>(attribute_size) * index;
                 const auto ns = pool.At(Read32(bytes, attr));
+                if (ns != kAndroidNamespace) continue;
                 const auto name = pool.At(Read32(bytes, attr + 4));
-                if (name == "id" && ns == kAndroidNamespace) {
+                RequireRange(bytes, attr + 15, 5);
+                const auto value_type =
+                    std::to_integer<std::uint8_t>(bytes[attr + 15]);
+                const auto data = Read32(bytes, attr + 16);
+                if (name == "id") {
                     // Typed value data (reference kind) is the resource id.
-                    element.id = Read32(bytes, attr + 16);
+                    element.id = data;
+                } else if (name == "layout_width") {
+                    element.layout_width = LayoutSize(value_type, data);
+                } else if (name == "layout_height") {
+                    element.layout_height = LayoutSize(value_type, data);
+                } else if (name == "gravity") {
+                    element.gravity = data;
+                } else if (name == "layout_gravity") {
+                    element.layout_gravity = data;
+                } else if (name == "paddingTop") {
+                    element.padding_top = DimensionPx(data);
+                } else if (name == "src") {
+                    element.src = data;
                 }
             }
+            open.push_back(static_cast<std::int32_t>(elements.size()));
             elements.push_back(std::move(element));
+        } else if (type == kEndElementType) {
+            if (!open.empty()) open.pop_back();
         }
         offset += size;
     }

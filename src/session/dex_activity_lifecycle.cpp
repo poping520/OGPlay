@@ -216,6 +216,26 @@ void DexActivityLifecycle::DispatchInput() {
             if (!pointer_down_) continue;  // hover is not a touch
             action = kMotionActionMove;
         }
+        // Device semantics: a down on a visible view with an
+        // OnClickListener is consumed by that view; the matching up inside
+        // its bounds fires onClick. Everything else reaches the activity.
+        if (action == kMotionActionDown) {
+            const auto hit = runtime::FindClickableViewAt(
+                *bindings_.context, pointer_x_, pointer_y_);
+            click_candidate_ = hit.value_or(0U);
+        }
+        if (click_candidate_ != 0U) {
+            if (action == kMotionActionUp) {
+                const auto target = std::exchange(click_candidate_, 0U);
+                if (runtime::ViewContainsPoint(*bindings_.context, target,
+                                               pointer_x_, pointer_y_)) {
+                    const auto error = runtime::InvokeViewOnClick(
+                        vm, *bindings_.context, target);
+                    if (error.has_value()) Fail(*error);
+                }
+            }
+            continue;  // the owning view consumed the gesture
+        }
         const auto event = runtime::MakeMotionEvent(
             vm, action, pointer_x_, pointer_y_, 0);
         CallActivity("onTouchEvent", "(Landroid/view/MotionEvent;)Z",

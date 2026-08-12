@@ -240,10 +240,13 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             {"postInvalidate", "()V", false, false,
              "android.view.noop_flag"},
             {"getId", "()I", false, false, "android.view.get_id"},
-            // Presentation state consumed by nothing (the GL surface is
-            // the only visual output): truthful no-ops / neutral answers.
-            {"setVisibility", "(I)V", false, false, "android.widget.noop"},
-            {"getVisibility", "()I", false, false, "android.widget.zero"},
+            // Visibility and click listeners are real state consumed by
+            // the widget click dispatch; background drawing stays a no-op
+            // (the GL surface / video frame is the visual output).
+            {"setVisibility", "(I)V", false, false,
+             "android.view.set_visibility"},
+            {"getVisibility", "()I", false, false,
+             "android.view.get_visibility"},
             {"setBackgroundColor", "(I)V", false, false,
              "android.widget.noop"},
             {"setBackgroundResource", "(I)V", false, false,
@@ -253,7 +256,7 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
              "android.widget.noop"},
             {"setOnClickListener",
              "(Landroid/view/View$OnClickListener;)V", false, false,
-             "android.widget.noop"},
+             "android.view.set_on_click_listener"},
             {"setOnTouchListener",
              "(Landroid/view/View$OnTouchListener;)V", false, false,
              "android.widget.noop"},

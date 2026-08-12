@@ -154,11 +154,57 @@ TEST_CASE("binary XML layout walk yields tags and android:id references") {
         REQUIRE(elements.size() == 3);
         CHECK(elements[0].name == "LinearLayout");
         CHECK(elements[0].id == 0);
+        CHECK(elements[0].parent == -1);
         CHECK(elements[1].name == "TextView");
         CHECK(elements[1].id == 0x7f0a0001U);
+        CHECK(elements[1].parent == 0);
         CHECK(elements[2].name == "View");
         CHECK(elements[2].id == 0);
+        CHECK(elements[2].parent == 0);
     }
+}
+
+// Layout document exercising the bounds-derivation attribute subset: a
+// bottom bar (fill x wrap, layout_gravity bottom, gravity center_horizontal,
+// paddingTop 8dp) holding one drawable-backed button.
+TEST_CASE("binary XML layout walk decodes the layout attribute subset") {
+    const std::vector<std::string> strings{
+        "LinearLayout",  "ImageButton",   "layout_width", "layout_height",
+        "gravity",       "layout_gravity", "paddingTop",  "src",
+        "http://schemas.android.com/apk/res/android"};
+    constexpr std::uint32_t kNs = 8;
+    std::vector<std::byte> document;
+    Append16(document, 0x0003);
+    Append16(document, 8);
+    Append32(document, 0);
+    Append(document, StringPool(strings, true));
+    Append(document, StartElement(
+        0, {{2, 0xffffffffU, 0x10, 0xffffffffU, kNs},   // fill_parent
+            {3, 0xffffffffU, 0x10, 0xfffffffeU, kNs},   // wrap_content
+            {4, 0xffffffffU, 0x11, 0x00000001U, kNs},   // center_horizontal
+            {5, 0xffffffffU, 0x11, 0x00000050U, kNs},   // bottom
+            {6, 0xffffffffU, 0x05, 0x00000801U, kNs}})); // 8dp
+    Append(document, StartElement(
+        1, {{2, 0xffffffffU, 0x10, 0xfffffffeU, kNs},
+            {3, 0xffffffffU, 0x10, 0xfffffffeU, kNs},
+            {7, 0xffffffffU, 0x01, 0x7f020010U, kNs}}));
+    Append(document, EndElement(1));
+    Append(document, EndElement(0));
+    Set32(document, 4, static_cast<std::uint32_t>(document.size()));
+
+    const auto elements = ogplay::loader::ParseBinaryXmlElements(document);
+    REQUIRE(elements.size() == 2);
+    using Element = ogplay::loader::BinaryXmlElement;
+    CHECK(elements[0].layout_width == Element::kSizeFillParent);
+    CHECK(elements[0].layout_height == Element::kSizeWrapContent);
+    CHECK(elements[0].gravity == 0x01U);
+    CHECK(elements[0].layout_gravity == 0x50U);
+    CHECK(elements[0].padding_top == 8);
+    CHECK(elements[0].src == 0);
+    CHECK(elements[1].parent == 0);
+    CHECK(elements[1].layout_width == Element::kSizeWrapContent);
+    CHECK(elements[1].layout_height == Element::kSizeWrapContent);
+    CHECK(elements[1].src == 0x7f020010U);
 }
 
 TEST_CASE("binary XML layout walk rejects malformed documents") {

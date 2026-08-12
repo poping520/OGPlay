@@ -398,6 +398,7 @@ add_library(ogplay_runtime
     src/runtime/integration/dexvm_android_media.cpp
     src/runtime/integration/dexvm_android_misc.cpp
     src/runtime/integration/dexvm_android_video.cpp
+    src/runtime/integration/dexvm_android_widget_dispatch.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/host_image_decode.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
@@ -693,6 +694,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/intrinsics_p1_tests.cpp
         tests/dexvm/videoview_tests.cpp
+        tests/dexvm/widget_click_tests.cpp
         tests/dexvm/arsc_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)

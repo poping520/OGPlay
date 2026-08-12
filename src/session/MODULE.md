@@ -41,7 +41,10 @@
   `[[java.class]]` 参与。未捕获 Java 异常携带完整解释器栈失败。每帧
   `StepFrame` 先经 `PumpVideoViews` 泵送活跃 VideoView 播放:软件帧走绑定的
   `publish_video_frame` 注入 boundary 帧存储,EOF 在 guest 线程回调
-  onCompletion;视频泵错误按解释器错误同样明确失败。
+  onCompletion;视频泵错误按解释器错误同样明确失败。触摸分发按真机语义:
+  down 命中可见且带 OnClickListener 的 view 时该 view 拥有整个手势(down/move/up
+  不再进 `Activity.onTouchEvent`),up 仍在其 bounds 内则回调 onClick;其余触摸
+  照旧走 `Activity.onTouchEvent`。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 的理由、风险、owner 与
   测试引用；含 quirk 的 Profile 目录必须显式通过注册表验证。
 - `DescribeLifecycle` / `LifecycleFrameRunner`：把三种 Profile 生命周期映射为稳定的通用

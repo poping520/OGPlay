@@ -148,6 +148,32 @@ struct DexVmAndroidContext final {
     // Views inflated from the last setContentView(layout id), keyed by
     // android:id resource id (findViewById source of truth).
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> view_registry;
+    // Per-view interaction state (real storage behind setOnClickListener /
+    // setVisibility; keyed by intrinsic instance handle). Android constants:
+    // VISIBLE=0, INVISIBLE=4, GONE=8.
+    struct WidgetState final {
+        dexvm::VmObjectRef click_listener;
+        std::int32_t visibility{0};
+    };
+    std::unordered_map<std::uint64_t, WidgetState> widget_states;
+    // Layout facts captured at inflation (document order, parents before
+    // children) that click hit-testing derives bounds from. measured_* is
+    // the wrap_content size taken from the android:src drawable (0 when
+    // unknown). Bounds outside the supported derivation subset stay
+    // unresolved and touches fall through to Activity.onTouchEvent.
+    struct LayoutViewFact final {
+        dexvm::VmObjectRef view;
+        std::int32_t parent{-1};  // index into layout_views, -1 for roots
+        std::string tag;
+        std::int32_t layout_width{};
+        std::int32_t layout_height{};
+        std::uint32_t gravity{};
+        std::uint32_t layout_gravity{};
+        std::int32_t padding_top{};
+        std::int32_t measured_width{};
+        std::int32_t measured_height{};
+    };
+    std::vector<LayoutViewFact> layout_views;
     // VideoView -> OnCompletionListener. With a player attached the guest
     // video pump fires it once at end of stream; without one start() still
     // completes synchronously (honest fallback).
@@ -178,6 +204,25 @@ struct DexVmAndroidContext final {
 [[nodiscard]] std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::function<void(std::vector<std::uint8_t> rgba8)>& publish);
+
+// Widget click dispatch (device semantics for the layout subset the bounds
+// derivation supports). FindClickableViewAt answers the topmost visible view
+// with a registered OnClickListener whose derived bounds contain the point;
+// views without derivable bounds never match (recorded gap, the touch falls
+// through to Activity.onTouchEvent).
+[[nodiscard]] std::optional<std::uint64_t> FindClickableViewAt(
+    const DexVmAndroidContext& context, float x, float y);
+
+// True when the view's derived bounds contain the point (up-inside check of
+// a click gesture).
+[[nodiscard]] bool ViewContainsPoint(const DexVmAndroidContext& context,
+                                     std::uint64_t handle, float x, float y);
+
+// Invokes the registered OnClickListener.onClick(view) on the guest thread.
+// Returns a rendered message when the guest callback raised.
+[[nodiscard]] std::optional<std::string> InvokeViewOnClick(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    std::uint64_t handle);
 
 // Runs every queued cooperative Java thread to completion on the calling
 // (VM host) thread. Returns a rendered uncaught-exception message when a

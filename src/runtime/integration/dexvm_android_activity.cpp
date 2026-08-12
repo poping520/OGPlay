@@ -3,6 +3,7 @@
 // findViewById answers from; presentation-only calls stay no-ops.
 
 #include "ogplay/loader/binary_xml.h"
+#include "ogplay/runtime/integration/host_image_decode.h"
 
 #include "dexvm_android_internal.h"
 
@@ -69,15 +70,26 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
                 {"AbsoluteLayout", "Landroid/widget/AbsoluteLayout;"},
             };
         context->view_registry.clear();
+        context->widget_states.clear();
+        context->layout_views.clear();
         dx::VmObjectRef root;
-        for (const auto& element :
-             loader::ParseBinaryXmlElements(bytes)) {
+        const auto elements = loader::ParseBinaryXmlElements(bytes);
+        // Element index -> layout_views index; skipped elements (merge,
+        // unknown tags) map to their own parent so children re-attach to
+        // the nearest instantiated ancestor.
+        std::vector<std::int32_t> fact_of(elements.size(), -1);
+        for (std::size_t index = 0; index < elements.size(); ++index) {
+            const auto& element = elements[index];
+            const auto parent_fact =
+                element.parent < 0 ? -1 : fact_of[static_cast<std::size_t>(
+                                              element.parent)];
             if (element.name == "merge") continue;  // container marker
             const auto found = kTagDescriptors.find(element.name);
             if (found == kTagDescriptors.end()) {
                 GuestLog(call, core::LogLevel::warn,
                          "layout tag has no widget intrinsic: " +
                              element.name);
+                fact_of[index] = parent_fact;
                 continue;
             }
             const auto instance =
@@ -86,6 +98,37 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
             if (element.id != 0) {
                 context->view_registry[element.id] = instance;
             }
+            DexVmAndroidContext::LayoutViewFact fact;
+            fact.view = instance;
+            fact.parent = parent_fact;
+            fact.tag = element.name;
+            fact.layout_width = element.layout_width;
+            fact.layout_height = element.layout_height;
+            fact.gravity = element.gravity;
+            fact.layout_gravity = element.layout_gravity;
+            fact.padding_top = element.padding_top;
+            // wrap_content image widgets measure by their drawable; a
+            // missing or undecodable drawable leaves the size unknown
+            // (bounds stay underivable, a recorded gap).
+            if (element.src != 0) {
+                const auto* drawable = context->arsc.FindById(element.src);
+                if (drawable != nullptr &&
+                    drawable->string_value.has_value()) {
+                    try {
+                        const auto image = DecodeImageToArgb(
+                            ReadApkFile(context, *drawable->string_value));
+                        if (image.has_value()) {
+                            fact.measured_width = image->width;
+                            fact.measured_height = image->height;
+                        }
+                    } catch (const dx::VmJavaThrow&) {
+                        // unreadable entry: size stays unknown
+                    }
+                }
+            }
+            fact_of[index] =
+                static_cast<std::int32_t>(context->layout_views.size());
+            context->layout_views.push_back(std::move(fact));
         }
         if (!root.IsValid()) {
             throw dx::VmJavaThrow{

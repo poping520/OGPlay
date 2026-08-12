@@ -15,8 +15,10 @@
   minSdk/targetSdk 与 launcher activity（action MAIN + category LAUNCHER 的第一个
   activity，相对名按 package 规范化）事实，不执行资源解析或猜测身份。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML（布局 inflation 子集），
-  按文档序返回每个 start-element 的标签名与 `android:id` 资源引用；chunk 结构、
-  string pool 与属性范围全部受检，畸形输入明确失败。不解析布局几何属性。
+  按文档序返回每个 start-element 的标签名、`android:id` 资源引用、父元素索引与
+  bounds 推导所需的布局属性子集（layout_width/height、gravity、layout_gravity、
+  paddingTop、src）；dimension 只取整数 mantissa（dp 按密度 1 视作 px 的记账近似）。
+  chunk 结构、string pool 与属性范围全部受检，畸形输入明确失败。
 - `ParseArsc`：严格读取 resources.arsc（ResTable/string pool/package/type/entry），
   产出 resid ↔ (type, name, 文件路径) 双向事实；默认配置优先，复杂值与多 locale
   明确不支持，越界/截断即失败。

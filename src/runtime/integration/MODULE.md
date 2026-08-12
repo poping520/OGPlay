@@ -72,6 +72,13 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
   `ComposeRgbaOnCanvas` letterbox 到 surface 尺寸后交给发布回调,到达时长时在 guest
   线程回调 `OnCompletionListener` 恰好一次。工厂缺失、路径不可解析或打开失败时诚实
   回退:结构化 warn + `start()` 立即回调 completion,不伪造播放事实。
+- widget 点击分发(`dexvm_android_widget_dispatch.cpp`):`setOnClickListener`/
+  `setVisibility`/`getVisibility` 是真实状态;inflation 记录布局事实并用 `android:src`
+  drawable 测量 wrap_content 图像控件。bounds 只对受支持的子集推导(fill×fill 根视图、
+  fill×wrap 且 layout_gravity 靠上/下边的水平 LinearLayout 按钮行,gravity
+  center_horizontal 居中,GONE 不占位);推导不出的 view 永不消费触摸(记账缺口),
+  事件降级给 `Activity.onTouchEvent`。`FindClickableViewAt` 按文档序从顶向下命中
+  可见且带监听器的 view,`InvokeViewOnClick` 在 guest 线程回调 onClick。
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求;会话只发布最新请求与累计次数,不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。

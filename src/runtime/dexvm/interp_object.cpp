@@ -386,7 +386,11 @@ void Interpreter::Impl::StepObjectOrInvoke(Frame& frame,
                         ? std::span<const VmValue>(arguments)
                         : std::span<const VmValue>(arguments).subspan(1);
                 ++stats.native_calls;
-                frame.last_result = bridge->Invoke(method, receiver, rest);
+                {
+                    const NativeFrame native_frame(*this);
+                    frame.last_result =
+                        bridge->Invoke(method, receiver, rest);
+                }
                 if (!pending_exception.IsValid()) advance();
                 return;
             }

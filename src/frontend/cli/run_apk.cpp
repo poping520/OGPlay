@@ -659,6 +659,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                     runtime::RegisterAndroidBuiltins(registry, dex_context);
                 },
                 dexvm_ledger, &logger, bridge_config);
+            dex_context->threads = &dex_bridge->Threads();
             if (survey_gaps_output.has_value()) {
                 dex_bridge->Linker().EnableGapSurvey();
                 Write("OGPlay: GAP SURVEY RUN — unresolved platform classes "

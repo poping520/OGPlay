@@ -990,6 +990,11 @@ status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact title-flow regression"
 note = "M9 WU-M9-027 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；linker/object model/intrinsic 目录共享，默认单线程语义不变。仅交付执行态拆分，不启动宿主线程、不实现 wait-set，不宣称 dexvm.threads ready"
 
+[dexvm.threads]
+status = "partial"
+test = "tests/dexvm/vm_thread_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
+note = "M9 WU-M9-028 一个 guest Java 线程 = 一个 hal 宿主线程 + 独立 execution context，linker/对象模型/JNI 身份共享；start 二次调用与无 run() 目标明确失败，isAlive/join/interrupt/uncaught 记账/teardown interrupt→join 均有机器测试，guest 死循环由每指令停止检查真实展开。解释执行由 VmExecutionLock 串行化（同一时刻一个线程解释字节码，显式限制不宣称并行）；子线程 native 调用仍复用 root guest 栈与 thread id，需要停泊时以 blocking_in_native 明确失败。wait-set 与 Object.wait 属 WU-M9-029，未实现即失败"
+
 [dexvm.exceptions]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"

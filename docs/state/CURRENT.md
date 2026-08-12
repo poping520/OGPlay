@@ -1,8 +1,8 @@
 # 当前状态
 
 更新：2026-08-12 · M9 DexVM：Profile v2 entry scope 已交付、Profile v1 已完全删除；
-Asphalt 5 逐位回归通过；解释器 per-thread 执行态已拆分，Asphalt 6 下一步进入
-1:1 宿主 Java 线程实现
+Asphalt 5 逐位回归通过；1:1 宿主 Java 线程已交付（WU-M9-028），Asphalt 6 的
+`Object.wait()` 边界已前移到真实子线程，下一步实现 monitor wait-set
 
 ## 当前阶段
 
@@ -12,10 +12,14 @@ Asphalt 5 逐位回归通过；解释器 per-thread 执行态已拆分，Asphalt
   阶段 2（JNI 双向桥 + java.* P1）、阶段 3（android.* intrinsic +
   dex_activity + profile v2 + pilot 迁移）全部交付；entry override、静态预置和
   v2-only 清理也已完成。
-- **阶段 4 线程地基已启动**：WU-M9-027 把 Interpreter 的帧栈、pending
+- **阶段 4 线程地基已交付**：WU-M9-027 把 Interpreter 的帧栈、pending
   exception、返回值、tick 与 monitor recursion 拆为显式 execution context；
-  两个 context 交错调用的隔离测试通过。尚未启动宿主线程、未实现 wait-set，
-  不宣称 `dexvm.threads` ready。
+  WU-M9-028 在其上让 `Thread.start()` 通过 HAL 起一个真实宿主线程执行
+  guest `run()`，并接入 interrupt/join/teardown。解释执行由全 VM
+  `VmExecutionLock` 串行化——真实线程、真实阻塞，但同一时刻只有一个线程解释
+  字节码，这是显式记账的限制而非并发。`dexvm.threads` 为 `partial`：
+  wait-set 未实现，`Object.wait()` 仍明确失败；子线程 native 调用仍复用 root
+  guest 栈，需要停泊时以 `blocking_in_native` 明确失败。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除全部 16 条
   历史 replay 调用与 Java handler 映射，
   `asphalt5.title_flow` 三轮 + 迁移后复验 passed——468 帧固定预算、主界面
@@ -41,7 +45,7 @@ Asphalt 5 逐位回归通过；解释器 per-thread 执行态已拆分，Asphalt
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
 能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）基线全绿；
-macOS/arm64 本次 full CTest 为 591/591（含 WU-M9-027 双 context 隔离用例）。
+macOS/arm64 本次 full CTest 为 601/601（含 WU-M9-028 宿主线程用例）。
 
 ## 进行中：更多 title 上 dexvm 路线
 
@@ -60,11 +64,13 @@ macOS/arm64 本次 full CTest 为 591/591（含 WU-M9-027 双 context 隔离用�
   `GameInstaller.sbStarted=true` 作为 provisioned-data 事实写入；安装器/DRM 入口未执行。
   DexVM intrinsic 平台类已发布至同一 native JNI registry，后续通用补齐
   typed Bundle、SAX 构造链（parse 明确未支持）、有界方法反射、Stack 与 Thread
-  id/name。exact 已启动 `GLThread`，`dev19..21` 三轮一致停在无超时
-  `Object.wait()`；这需要 1:1 宿主 Java 线程 + monitor wait-set，不用空返回掩盖。
-  删除 `sbStarted` preset 会真实切回 `GameInstaller` 商业外壳，在
-  `Intent.setPackage` 处明确失败；未触及 DRM 消费链。WU-M9-027 后 exact 复验仍
-  是同一零首帧 `Object.wait()V` 边界。尚无首帧/主界面。
+  id/name。删除 `sbStarted` preset 会真实切回 `GameInstaller` 商业外壳，在
+  `Intent.setPackage` 处明确失败；未触及 DRM 消费链。
+  APK 自带一份改名的 AOSP `GLSurfaceView`，`GLThread.run()` 在
+  `GLThreadManager` 上做经典 `synchronized`/`wait`/`notifyAll` 守卫循环。
+  WU-M9-028 后该线程已是真实宿主线程，边界前移为
+  `Java thread Thread-287 failed: … Ljava/lang/Object;->wait()V`——需要
+  wait-set，不用空返回掩盖。尚无首帧/主界面。
 
 开发方式手册（适配/测试/排查的操作步骤）见
 **[docs/playbook/README.md](../playbook/README.md)**；title 阻塞点与工作队列见
@@ -72,9 +78,8 @@ macOS/arm64 本次 full CTest 为 591/591（含 WU-M9-027 双 context 隔离用�
 
 ## 下一步（按优先级）
 
-1. Asphalt 6 阶段 4（WU-M9-028..030）：以 1:1 宿主线程执行 Java
-   `Thread.run()`，再按统一 monitor/Clock 实现
-   wait-set 与 `Object.wait/notify`；重跑 exact，达到主界面后才宣告 gate。
+1. Asphalt 6 阶段 4（WU-M9-029..030）：按统一 monitor/Clock 实现 wait-set 与
+   `Object.wait/notify`；重跑 exact，达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
 3. 评审 ADR-0020 后启动存档沙盒 SBX-1/2；Linux M9 严格出口复验仍待执行。

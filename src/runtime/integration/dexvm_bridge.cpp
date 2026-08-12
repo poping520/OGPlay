@@ -54,6 +54,9 @@ public:
     dx::DexClassLinker linker;
     std::unique_ptr<dx::JavaObjectModel> model;
     std::unique_ptr<dx::Interpreter> vm;
+    // Declared after vm so destruction stops every guest Java thread before
+    // the interpreter and object model go away.
+    std::unique_ptr<dx::VmThreadRuntime> threads;
 
     std::unordered_map<std::uint32_t, JniObjectIdentity> class_identities;
     std::unordered_map<std::uint32_t, JniReference> class_global_refs;
@@ -538,13 +541,19 @@ DexVmGuestBridge::DexVmGuestBridge(
                                                 ledger, config.interpreter);
     impl_->vm->RegisterCoreBuiltins();
     impl_->vm->SetLogger(logger);
+    impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
 
     impl_->RegisterDexClasses();
 }
 
-DexVmGuestBridge::~DexVmGuestBridge() = default;
+DexVmGuestBridge::~DexVmGuestBridge() {
+    if (impl_->threads) impl_->threads->Shutdown();
+}
 
 dexvm::Interpreter& DexVmGuestBridge::Vm() noexcept { return *impl_->vm; }
+dexvm::VmThreadRuntime& DexVmGuestBridge::Threads() noexcept {
+    return *impl_->threads;
+}
 dexvm::DexClassLinker& DexVmGuestBridge::Linker() noexcept {
     return impl_->linker;
 }

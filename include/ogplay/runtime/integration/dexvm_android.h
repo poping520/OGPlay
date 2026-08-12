@@ -14,6 +14,7 @@
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/arsc.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/video/video_player.h"
 
 namespace ogplay::runtime {
@@ -164,25 +165,29 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, bool> media_playing;
     std::unordered_map<std::uint32_t, bool> media_looping;
 
-    // Cooperative Java threads (interim form of 04 §3): start() queues the
-    // thread, execution happens on the single VM host thread at lifecycle
-    // frame boundaries, or synchronously at join(). A run() body that never
-    // terminates exhausts the tick budget and fails explicitly; nothing
-    // pretends to be concurrent.
+    // Java threads (04 §3). Thread.start() hands the target to the DexVM
+    // thread runtime, which gives it a real host thread and its own
+    // execution context; this table only keeps the guest-visible Thread
+    // facts (target, name, priority) that the intrinsics answer from.
     struct JavaThreadState final {
     dexvm::VmObjectRef runnable{};
         bool started{};
         bool finished{};
         // java.lang.Thread priority (MIN_PRIORITY=1, NORM_PRIORITY=5,
-        // MAX_PRIORITY=10). The cooperative executor records this guest
-        // fact but deliberately does not claim host scheduler enforcement.
+        // MAX_PRIORITY=10). Recorded as a guest fact; host scheduler
+        // priority is deliberately not claimed.
         std::int32_t priority{5};
     // Stable deterministic identity and guest-visible name. The id is
     // derived from the VM object handle and is never reused in-session.
     std::string name;
     };
     std::unordered_map<std::uint32_t, JavaThreadState> java_threads;
+    // java.util.Timer tasks stay cooperative: schedule() queues the task and
+    // the delay collapses to the next lifecycle frame boundary, so timers
+    // remain deterministic and never outlive the frame loop.
     std::vector<dexvm::VmObjectRef> java_thread_queue;
+    // Owned by the DexVm bridge; set once the interpreter exists.
+    dexvm::VmThreadRuntime* threads{};
 
     // Explicit intent component targets (class descriptors) and the pending
     // activity switch consumed by the dex_activity lifecycle.
@@ -297,9 +302,10 @@ FindClickableViewAt(const DexVmAndroidContext &context, float x, float y);
 InvokeViewOnClick(dexvm::Interpreter &vm, DexVmAndroidContext &context,
     std::uint64_t handle);
 
-// Runs every queued cooperative Java thread to completion on the calling
-// (VM host) thread. Returns a rendered uncaught-exception message when a
-// thread died, matching the process-fatal default handler on device.
+// Frame-boundary service for Java threads: runs queued cooperative Timer
+// tasks on the calling (VM host) thread and drains any uncaught failure the
+// real host threads recorded. Returns a rendered message when a thread died,
+// matching the process-fatal default handler on device.
 [[nodiscard]] std::optional<std::string>
 PumpJavaThreads(dexvm::Interpreter &vm, DexVmAndroidContext &context);
 

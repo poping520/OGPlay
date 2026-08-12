@@ -31,8 +31,26 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   native 走 `NativeMethodBridge`（未注入则记账 + 明确失败）。
   `CreateExecutionContext` 建立显式执行 context；`Call(context, ...)` 隔离其
   帧栈、pending exception、tick、返回值与 monitor recursion，同时共享 linker、
-  object model 与 intrinsic 目录。默认 `Call` 保持原单线程 context；本阶段不
-  创建宿主线程。
+  object model 与 intrinsic 目录。默认 `Call` 保持原单线程 context。
+  `RequestStop(context)` 是 teardown 握手：解释器每条指令检查一次，命中即以
+  `thread_stopped` 展开出全部帧，不强杀线程。
+- `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
+  `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
+  `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复。
+  **同一时刻只有一个线程解释字节码**——这是显式记账的限制而非并发，换来的是
+  linker 解析缓存、object model arena 与 intrinsic 侧表只有单写者，因此全部
+  intrinsic handler 都在锁内运行。
+- `VmThreadRuntime`（`vm_threads.h`）：一个 guest Java 线程 = 一个
+  `hal::StartHostThread` 宿主线程 + 一个独立 execution context，linker/对象
+  模型/JNI 身份共享，子线程与 root 看到同一个对象世界。`Start` 在调用方线程
+  解析 `run()`（无 `run()` 或二次 start 明确抛
+  `IllegalThreadStateException`）、`Join` 释放执行锁后停泊、`Interrupt` 置位
+  并唤醒、`Shutdown` 先 RequestStop 再 join 全部宿主线程（幂等，记录保留供
+  事后查询）。未捕获异常与 VM 错误记入 `TakeFailure()`，由生命周期驱动在帧
+  边界上报，对齐设备上的进程级默认 handler，而不是丢给 `join()` 的调用方。
+  线程持有 guest native 帧时拒绝停泊（`blocking_in_native` +
+  `dexvm.threads.block_in_native` 记账）：A32 执行器只有一条 root guest 栈，
+  让另一个线程复用它就是静默破坏。
   `EnsureClassInitialized` 实现 `<clinit>` 状态机（同线程重入放行、失败粘滞
   NoClassDefFoundError、静态初始值先于 `<clinit>` 物化）。
   `SetStaticFieldBits` 仅接受已完成初始化的真实 guest 静态字段，供 ADR-0022
@@ -57,7 +75,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 `class_linker_internal.h` 持有 `DexClassLinker::Impl` 与共享 helper：注册/
 布局/vtable 在 `class_linker.cpp`，常量池解析与可赋值性在
 `class_linker_resolve.cpp`。解释器主循环在 `interpreter.cpp`，显式执行 context
-的选择、校验与 thread-local 活跃路由在 `interpreter_context.cpp`。
+的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
+`interpreter_context.cpp`，宿主线程生命周期在 `vm_threads.cpp`。
 
 ## 不变量
 
@@ -68,14 +87,22 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 - 语义出处：逐 opcode 对照 AOSP `vm/mterp/c/OP_*.cpp`（一致性夹具注释记录），
   分歧按 07 §5 仲裁。无 JIT、不改写指令流（quickening 红线）。
 - 对象非移动，句柄生命周期内稳定。
-- 本 WU 不创建宿主线程；显式 context 只拆分可变执行态，调用仍在调用方当前
-  宿主线程同步执行。时间预算仍通过各 context 的 tick 计数约束。
+- 一个 guest 线程对应一个宿主线程；解释执行由 `VmExecutionLock` 串行化，
+  不宣称并行。锁序只有一个方向：执行锁 → 线程运行时互斥量 → context 表互斥
+  量，反向获取一律禁止。时间预算仍通过各 context 的 tick 计数约束。
+- guest native 出向调用记入 context 的 `native_depth`；持有该帧时不得停泊。
 
 ## 尚未实现（记账可查）
 
-- monitor 指令目前是每 context 的重入计数；`notify/notifyAll` 会校验
-  当前 monitor 所有权，但多线程 wait-set 仍属阶段 4，
-  `runtime.jni_guest_monitors` 接线随集成 WU。
+- monitor 指令目前是每 context 的重入计数，不提供跨线程互斥（执行锁已经串行
+  化解释）；`notify/notifyAll` 会校验当前 monitor 所有权，但 wait-set 与
+  `Object.wait()` 仍未实现——未声明的 `wait()V` 在解析期即明确失败，
+  绝不空返回。wait-set 是 WU-M9-029，`runtime.jni_guest_monitors` 接线随之。
+- 子线程的 guest native 调用仍走 root guest 线程的 CPU 与栈（JNI local
+  reference 也记在 root thread id 下）。执行锁保证不会并发，但这不是真正的
+  per-thread JavaVM attach；需要停泊时明确失败而不是凑合。
+- `Thread.sleep` 推进统一 uptime 并让出执行锁，不按 Clock 截止时间停泊；
+  按截止时间挂起属 wait-set WU。
 - 反射仅覆盖有界的 `getDeclaredMethods` / 零参整数类返回值
   `Method.invoke`；其余反射面、finalizer、GC-B 未实现。
 
@@ -84,6 +111,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 `tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：算术边界、控制流、
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
 显式执行 context 交错调用的帧/异常/tick/monitor 隔离）；
+`tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、
+二次 start 与无 run() 目标拒绝、isAlive、join、未捕获异常记账、interrupt、
+teardown 逐线程 join、持有 native 帧时拒绝停泊、未实现的 `Object.wait()`
+仍明确失败）；
 `tests/dexvm/dex_code_tests.cpp`、`tests/dexvm/dexasm_readback_tests.cpp`、
 `tests/dexvm/gap_survey_tests.cpp`（survey 开/关对照：关闭即失败、桩答中性值、
 命中计数、工作单排序）。

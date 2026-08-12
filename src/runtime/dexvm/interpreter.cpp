@@ -340,6 +340,12 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
         } catch (const VmJavaThrow& thrown) {
             ThrowJava(thrown.descriptor, thrown.message);
         } catch (const DexVmError& error) {
+            if (error.Reason() == DexVmErrorReason::thread_stopped) {
+                // Teardown unwind: drop this call's frames so the context
+                // is clean enough to be discarded once the thread is joined.
+                while (frames.size() > entry_depth) frames.pop_back();
+                throw;
+            }
             if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
                 // The OutOfMemoryError object itself must still allocate;
                 // a bounded emergency reserve keeps this honest instead of
@@ -439,6 +445,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->owner = this;
     auto default_execution = std::make_unique<InterpreterExecutionState>();
     default_execution->token = 1;
+    impl_->default_execution = default_execution.get();
     impl_->executions.emplace(1, std::move(default_execution));
 
     const auto string_class = linker.FindClass("Ljava/lang/String;");
@@ -452,6 +459,7 @@ Interpreter::~Interpreter() = default;
 
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                 const std::span<const VmValue> arguments) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& frames = execution.frames;
@@ -516,6 +524,7 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                       : arguments.front().ref;
     const auto rest = method.is_static ? arguments : arguments.subspan(1);
             ++impl_->stats.native_calls;
+            const Impl::NativeFrame native_frame(*impl_);
             outcome.value = impl_->bridge->Invoke(method, receiver, rest);
             return outcome;
         }
@@ -530,12 +539,14 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
 VmCallOutcome Interpreter::Call(
     const InterpreterExecutionContext& context, const VmMethodId method_id,
     const std::span<const VmValue> arguments) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution(context);
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     return Call(method_id, arguments);
 }
 
 VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& pending_exception = execution.pending_exception;
@@ -558,6 +569,7 @@ VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
 
 VmCallOutcome Interpreter::EnsureClassInitialized(
     const InterpreterExecutionContext& context, const DexClassId java_class) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution(context);
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     return EnsureClassInitialized(java_class);

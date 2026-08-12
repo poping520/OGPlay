@@ -116,6 +116,47 @@ struct InterpreterExecutionSnapshot final {
     bool has_pending_exception{};
     std::uint64_t ticks{};
     std::size_t held_monitor_count{};
+    std::uint32_t native_depth{};
+    bool stop_requested{};
+};
+
+// Serializes bytecode execution across the real host threads of 04 §3. One
+// guest Java thread is one host thread and blocks for real, but only one of
+// them interprets at a time: linker resolution caches, the object model
+// arena and the intrinsic side tables keep a single writer. The lock is
+// held recursively by its owning host thread; blocking primitives release
+// every level and restore the same depth after they are resumed.
+class VmExecutionLock final {
+public:
+    VmExecutionLock();
+    ~VmExecutionLock();
+    VmExecutionLock(const VmExecutionLock&) = delete;
+    VmExecutionLock& operator=(const VmExecutionLock&) = delete;
+
+    void Acquire();
+    void Release();
+    // Drops every level held by the calling thread and reports the depth so
+    // a blocking primitive can restore it; 0 when the caller held nothing.
+    [[nodiscard]] std::size_t ReleaseForBlocking();
+    void ReacquireAfterBlocking(std::size_t depth);
+    [[nodiscard]] bool HeldByCurrentThread() const;
+
+private:
+    class Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+class VmExecutionLockScope final {
+public:
+    explicit VmExecutionLockScope(VmExecutionLock& lock) : lock_(&lock) {
+        lock_->Acquire();
+    }
+    ~VmExecutionLockScope() { lock_->Release(); }
+    VmExecutionLockScope(const VmExecutionLockScope&) = delete;
+    VmExecutionLockScope& operator=(const VmExecutionLockScope&) = delete;
+
+private:
+    VmExecutionLock* lock_;
 };
 
 struct IntrinsicContext final {
@@ -177,11 +218,24 @@ public:
         const InterpreterExecutionContext& context, VmMethodId method,
         std::span<const VmValue> arguments);
 
-    // Creates a new execution context without starting a host thread. WU-M9-027
-    // uses this to prove isolation; Thread.start wiring is a later WU.
+    // Creates a new execution context. VmThreadRuntime gives each guest Java
+    // thread one of these plus a real host thread; callers may also create
+    // one directly to interleave independent calls on a single thread.
     [[nodiscard]] InterpreterExecutionContext CreateExecutionContext();
+    void DiscardExecutionContext(const InterpreterExecutionContext& context);
     [[nodiscard]] InterpreterExecutionSnapshot ExecutionSnapshot(
         const InterpreterExecutionContext& context) const;
+
+    // Teardown handshake: the context unwinds out of its interpreted frames
+    // with DexVmErrorReason::thread_stopped instead of being killed. Checked
+    // once per instruction, so a guest loop cannot ignore it.
+    void RequestStop(const InterpreterExecutionContext& context);
+
+    [[nodiscard]] VmExecutionLock& ExecutionLock() noexcept;
+    // Guest native frames live on the single root guest stack, so parking a
+    // thread that has one is refused rather than corrupting it.
+    [[nodiscard]] std::uint32_t CurrentNativeDepth() const;
+    [[nodiscard]] core::CapabilityLedger* Ledger() const noexcept;
 
     // Ensures a class is initialized (triggers <clinit>); returns a Java
     // exception outcome if initialization fails.

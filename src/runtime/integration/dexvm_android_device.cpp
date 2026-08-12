@@ -148,8 +148,11 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
     registry.Register("android.thread.sleep",
                       [context](dx::IntrinsicContext& call) {
                       // Unified deterministic time: sleeping advances published
-                      // uptime.
+                      // uptime. It also yields the execution lock so the other
+                      // real Java threads get to run, which is what a sleeping
+                      // thread owes them.
         context->uptime_millis += call.arguments[0].AsLong();
+        if (context->threads != nullptr) context->threads->Yield();
         return dx::VmValue::Void();
     });
   registry.Register("android.looper.noop",
@@ -296,17 +299,58 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
           throw dx::VmJavaThrow{"Ljava/lang/IllegalThreadStateException;",
                 "thread started twice"};
         }
+        // A Thread subclass overriding run() is its own target; a plain
+        // Thread runs the Runnable it was constructed with.
+        const auto target = found->second.runnable.IsValid()
+                                ? found->second.runnable
+                                : call.receiver;
+        ThreadRuntime(context).Start(call.receiver, target,
+                                     found->second.name);
         found->second.started = true;
-        context->java_thread_queue.push_back(call.receiver);
         return dx::VmValue::Void();
     });
   registry.Register(
       "android.thread.join", [context](dx::IntrinsicContext &call) {
-        // Cooperative model: join runs the target to completion now.
-        const auto error = RunJavaThreadNow(call.vm, *context, call.receiver);
-        if (error.has_value()) {
-            throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+        ThreadRuntime(context).Join(call.receiver);
+        const auto found = context->java_threads.find(call.receiver.Value());
+        if (found != context->java_threads.end()) {
+          found->second.finished = true;
         }
+        return dx::VmValue::Void();
+    });
+  registry.Register(
+      "android.thread.current", [context](dx::IntrinsicContext &call) {
+        auto &runtime = ThreadRuntime(context);
+        if (const auto current = runtime.CurrentThreadObject();
+            current.IsValid()) {
+          return dx::VmValue::Ref(current);
+        }
+        // The lifecycle driver runs on the root VM thread, which has no
+        // guest Thread object until something asks for it.
+        const auto main = Singleton(call, context, "thread.main",
+                                    "Ljava/lang/Thread;");
+        auto &state = context->java_threads[main.Value()];
+        if (state.name.empty()) state.name = "main";
+        return dx::VmValue::Ref(main);
+    });
+  registry.Register(
+      "android.thread.interrupt", [context](dx::IntrinsicContext &call) {
+        ThreadRuntime(context).Interrupt(call.receiver);
+        return dx::VmValue::Void();
+    });
+  registry.Register(
+      "android.thread.is_interrupted", [context](dx::IntrinsicContext &call) {
+        return dx::VmValue::Int(
+            ThreadRuntime(context).IsInterrupted(call.receiver) ? 1 : 0);
+    });
+  registry.Register("android.thread.clear_interrupted",
+                    [context](dx::IntrinsicContext &) {
+        return dx::VmValue::Int(
+            ThreadRuntime(context).ClearCurrentInterrupt() ? 1 : 0);
+    });
+  registry.Register("android.thread.yield",
+                    [context](dx::IntrinsicContext &) {
+        ThreadRuntime(context).Yield();
         return dx::VmValue::Void();
     });
   registry.Register("android.timer.init",
@@ -344,10 +388,8 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
     });
   registry.Register(
       "android.thread.is_alive", [context](dx::IntrinsicContext &call) {
-        const auto found = context->java_threads.find(call.receiver.Value());
-        const bool alive = found != context->java_threads.end() &&
-                           found->second.started && !found->second.finished;
-        return dx::VmValue::Int(alive ? 1 : 0);
+        return dx::VmValue::Int(
+            ThreadRuntime(context).IsAlive(call.receiver) ? 1 : 0);
     });
   registry.Register("android.thread.get_id", [](dx::IntrinsicContext &call) {
     return dx::VmValue::Long(static_cast<std::int64_t>(call.receiver.Value()));

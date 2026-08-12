@@ -72,6 +72,15 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
     }
 }
 
+dx::VmThreadRuntime& ThreadRuntime(const Context& context) {
+    if (context->threads == nullptr) {
+        throw dx::DexVmError(
+            dx::DexVmErrorReason::internal_invariant,
+            "the android platform context has no DexVM thread runtime");
+    }
+    return *context->threads;
+}
+
 // Interprets the target's run() to completion on the calling host thread.
 // Returns a rendered message when the body raised an uncaught exception.
 [[nodiscard]] std::optional<std::string> RunJavaThreadNow(
@@ -132,7 +141,7 @@ void RegisterAndroidBuiltins(dx::IntrinsicRegistry& registry,
 
 std::optional<std::string> PumpJavaThreads(dx::Interpreter& vm,
                                            DexVmAndroidContext& context) {
-    // run() bodies may start further threads; drain until stable.
+    // Cooperative Timer tasks; their bodies may queue further tasks.
     while (!context.java_thread_queue.empty()) {
         const auto thread = context.java_thread_queue.front();
         context.java_thread_queue.erase(context.java_thread_queue.begin());
@@ -140,6 +149,10 @@ std::optional<std::string> PumpJavaThreads(dx::Interpreter& vm,
             android_intrinsics::RunJavaThreadNow(vm, context, thread);
         if (error.has_value()) return error;
     }
+    // A real Java thread that died with an uncaught exception is fatal to
+    // the process on device; surface it at the frame boundary rather than
+    // at whoever happens to call join().
+    if (context.threads != nullptr) return context.threads->TakeFailure();
     return std::nullopt;
 }
 

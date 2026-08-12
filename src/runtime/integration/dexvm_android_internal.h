@@ -42,10 +42,16 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
 // Missing or damaged entries throw the Java IOException the glue catches.
 [[nodiscard]] std::vector<std::byte> ReadApkFile(const Context& context,
                                                  const std::string& path);
-// Interprets the target's run() to completion on the calling host thread;
-// returns a rendered message when the body raised an uncaught exception.
+// Interprets the target's run() to completion on the calling host thread.
+// Used for cooperative java.util.Timer tasks, whose delay collapses to the
+// next lifecycle frame boundary; java.lang.Thread goes to ThreadRuntime.
+// Returns a rendered message when the body raised an uncaught exception.
 [[nodiscard]] std::optional<std::string> RunJavaThreadNow(
     dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef thread);
+
+// The session thread runtime; absent only if the platform context was never
+// wired to a bridge, which is a host assembly defect rather than a gap.
+[[nodiscard]] dx::VmThreadRuntime& ThreadRuntime(const Context& context);
 
 // Handler batches, installed together by RegisterAndroidBuiltins.
 void RegisterContextActivity(dx::IntrinsicRegistry& registry,

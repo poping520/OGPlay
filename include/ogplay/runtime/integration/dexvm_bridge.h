@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
 namespace ogplay::runtime {
@@ -48,6 +49,9 @@ public:
     DexVmGuestBridge& operator=(const DexVmGuestBridge&) = delete;
 
     [[nodiscard]] dexvm::Interpreter& Vm() noexcept;
+    // Guest Java threads of this session. Destroyed (interrupt then join)
+    // before the interpreter, so no host thread outlives the object world.
+    [[nodiscard]] dexvm::VmThreadRuntime& Threads() noexcept;
     [[nodiscard]] dexvm::DexClassLinker& Linker() noexcept;
     [[nodiscard]] dexvm::JavaObjectModel& Model() noexcept;
     [[nodiscard]] AndroidGuestCallSession& Session() noexcept;

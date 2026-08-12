@@ -356,3 +356,145 @@
     monitor-enter v0
     return-void
 .end method
+
+# ---- guest Java threads (04 §3) -------------------------------------------
+# Bodies the VmThreadRuntime tests start on real host threads.
+
+.class public LThreadProbe;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.field static public counter:I
+.field static public product:Ljava/lang/Object;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+# Does real interpreted work, then publishes both a primitive and a fresh
+# object into shared static storage so the root thread can prove that the
+# child ran in the same object world.
+.method public run()V
+.registers 3
+    const/16 v0, 100
+    invoke-static {v0}, LFlow;->loopSum(I)I
+    move-result v0
+    sget v1, LThreadProbe;->counter:I
+    add-int/2addr v1, v0
+    sput v1, LThreadProbe;->counter:I
+    new-instance v0, LThreadProbe;
+    invoke-direct {v0}, LThreadProbe;-><init>()V
+    sput-object v0, LThreadProbe;->product:Ljava/lang/Object;
+    return-void
+.end method
+
+.method static public make()Ljava/lang/Runnable;
+.registers 1
+    new-instance v0, LThreadProbe;
+    invoke-direct {v0}, LThreadProbe;-><init>()V
+    return-object v0
+.end method
+
+.method static public counter()I
+.registers 1
+    sget v0, LThreadProbe;->counter:I
+    return v0
+.end method
+
+.method static public product()Ljava/lang/Object;
+.registers 1
+    sget-object v0, LThreadProbe;->product:Ljava/lang/Object;
+    return-object v0
+.end method
+
+# Untimed Object.wait() must stay an explicit failure until the wait-set
+# lands; nothing here may answer it with a silent return.
+.method static public waitUntimed()V
+.registers 1
+    new-instance v0, Ljava/lang/Object;
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    monitor-enter v0
+    invoke-virtual {v0}, Ljava/lang/Object;->wait()V
+    monitor-exit v0
+    return-void
+.end method
+
+# Never returns on its own: only the teardown stop request gets it out.
+.class public LThreadSpin;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 2
+    :head
+    goto :head
+.end method
+
+.method static public make()Ljava/lang/Runnable;
+.registers 1
+    new-instance v0, LThreadSpin;
+    invoke-direct {v0}, LThreadSpin;-><init>()V
+    return-object v0
+.end method
+
+.class public LThreadThrower;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 2
+    invoke-static {}, LThrower;->fail()V
+    return-void
+.end method
+
+.method static public make()Ljava/lang/Runnable;
+.registers 1
+    new-instance v0, LThreadThrower;
+    invoke-direct {v0}, LThreadThrower;-><init>()V
+    return-object v0
+.end method
+
+# Outbound native call used to prove that a thread holding a guest native
+# frame refuses to park instead of handing the root guest stack away.
+.class public LThreadNative;
+.super Ljava/lang/Object;
+
+.method static public native trigger()V
+.end method
+
+.method static public call()V
+.registers 1
+    invoke-static {}, LThreadNative;->trigger()V
+    return-void
+.end method
+
+# A target without run(): start() must refuse it up front.
+.class public LThreadNoRun;
+.super Ljava/lang/Object;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method static public make()Ljava/lang/Object;
+.registers 1
+    new-instance v0, LThreadNoRun;
+    invoke-direct {v0}, LThreadNoRun;-><init>()V
+    return-object v0
+.end method

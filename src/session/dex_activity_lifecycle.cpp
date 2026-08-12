@@ -414,6 +414,10 @@ LifecycleFrameState DexActivityLifecycle::Stop() {
         // Teardown continues; the guest still gets finalized below.
         state_ = LifecycleRunState::failed;
     }
+    // 04 §2 step 10: guest Java threads are interrupted and joined before
+    // the native side is finalized, so no interpreted frame can still be
+    // running when the object world is torn down.
+    bindings_.bridge->Threads().Shutdown();
     if (bindings_.interrupt_guest_waits) bindings_.interrupt_guest_waits();
     if (!guest_finalized_ && bindings_.finalize_guest) {
         bindings_.finalize_guest();

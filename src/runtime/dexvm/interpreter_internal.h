@@ -4,7 +4,9 @@
 // (interpreter.cpp, interp_exec.cpp, interp_arith.cpp,
 // interpreter_builtins.cpp). Not installed; include order is private.
 
+#include <atomic>
 #include <deque>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -42,6 +44,11 @@ struct InterpreterExecutionState final {
     std::unordered_map<std::uint32_t, std::int32_t> monitors;
     std::uint64_t ticks{};
     std::uint64_t token{};
+    // Depth of guest native frames this context currently has live on the
+    // root guest stack (04 §1 outbound marshaling).
+    std::uint32_t native_depth{};
+    // Teardown handshake, read once per instruction by Tick().
+    std::atomic<bool> stop_requested{false};
 };
 
 class InterpreterExecutionScope final {
@@ -68,9 +75,15 @@ public:
     InterpreterConfig config;
     InterpreterStats stats;
 
+    // Guards the context table only. Execution() resolves the active state
+    // from thread-local routing or the cached default, so the hot path never
+    // touches the table and a teardown RequestStop from another host thread
+    // stays safe.
+    mutable std::mutex executions_mutex;
     std::unordered_map<std::uint64_t,
                        std::unique_ptr<InterpreterExecutionState>>
         executions;
+    InterpreterExecutionState* default_execution{};
     std::uint64_t next_execution_token{2};
 
     std::unordered_map<std::uint32_t, ThrowableState> throwables;
@@ -81,6 +94,7 @@ public:
         maps;
     core::Logger* logger{};
     Interpreter* owner{};
+    VmExecutionLock execution_lock;
 
     [[nodiscard]] InterpreterExecutionState& Execution();
     [[nodiscard]] const InterpreterExecutionState& Execution() const;
@@ -177,12 +191,32 @@ public:
     void Tick(const std::uint64_t amount = 1) {
         auto& execution = Execution();
         execution.ticks += amount;
+        if (execution.stop_requested.load(std::memory_order_relaxed)) {
+            throw DexVmError(DexVmErrorReason::thread_stopped,
+                             "dexvm thread stopped at teardown after " +
+                                 std::to_string(execution.ticks) + " ticks");
+        }
         if (execution.ticks > config.tick_budget) {
             throw DexVmError(DexVmErrorReason::budget_exhausted,
                              "dexvm tick budget exhausted after " +
                                  std::to_string(execution.ticks) + " ticks");
         }
     }
+
+    // Marks a live guest native frame so blocking primitives can refuse to
+    // park a thread that owns part of the single root guest stack.
+    class NativeFrame final {
+    public:
+        explicit NativeFrame(Impl& impl) : execution_(&impl.Execution()) {
+            ++execution_->native_depth;
+        }
+        ~NativeFrame() { --execution_->native_depth; }
+        NativeFrame(const NativeFrame&) = delete;
+        NativeFrame& operator=(const NativeFrame&) = delete;
+
+    private:
+        InterpreterExecutionState* execution_;
+    };
 
     // Runs frames until depth drops below entry_depth; returns outcome.
     [[nodiscard]] VmCallOutcome Run(std::size_t entry_depth);

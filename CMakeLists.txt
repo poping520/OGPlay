@@ -419,6 +419,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/object_model.cpp
     src/runtime/dexvm/interpreter.cpp
     src/runtime/dexvm/interpreter_context.cpp
+    src/runtime/dexvm/vm_threads.cpp
     src/runtime/dexvm/interp_exec.cpp
     src/runtime/dexvm/interp_object.cpp
     src/runtime/dexvm/interp_arith.cpp
@@ -683,6 +684,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/dex_code_tests.cpp
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/intrinsics_p1_tests.cpp
+        tests/dexvm/vm_thread_tests.cpp
         tests/dexvm/videoview_tests.cpp
         tests/dexvm/widget_click_tests.cpp
         tests/dexvm/arsc_tests.cpp

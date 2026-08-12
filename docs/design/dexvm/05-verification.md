@@ -80,6 +80,11 @@ dexasm 的存在理由。可选增强：把 AOSP `libdex`+`dexdump` 编译为 ho
 M8 规则不变：**不得退回人工 smoke**，exact 验证一律走 Profile-backed
 Scenario runner：
 
+0. **方法级接管 gate**（阶段 2 出口，最早的真实 title 价值点）：选一个存量
+   title，从其 v1 profile 删除一批 `[[java.class]]` 胶水方法行（优先取
+   WU-M8-011 对账清单中"无 handler、需反编译取证"的行为敏感组），被删方法
+   落到第三路由解释执行；迁移前同一 Scenario 三轮持平，且 profile 行数
+   净减少。生命周期仍走 v1 `native_call`，不依赖 profile v2。
 1. **pilot gate**：现有 Gameloft title 之一切到 `dex_activity` profile v2，
    跑迁移前同一 Scenario（同帧数预算、同 golden、无 fault、clean shutdown）
    三轮通过——与 profile 路线逐位对照是迁移正确性的硬标准。

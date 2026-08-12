@@ -1,7 +1,7 @@
 # 当前状态
 
 更新：2026-08-11 · 稳定期性能三连（WU-PERF-04..06）与呈现管线方向（ADR-0019）；
-runtime 拆出 jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017，未启动）
+runtime 拆出 jni_guest/boundary（ADR-0018）；DexVM 设计经复盘调整（ADR-0017，未启动）
 
 ## 当前阶段
 
@@ -56,20 +56,9 @@ runtime 拆出 jni_guest/boundary（ADR-0018）；DexVM 设计定稿（ADR-0017�
   为装配层，三份 MODULE.md 按代码事实重写；行为零变更，macOS/arm64 full CTest
   524/524。附带修复 macOS -Werror 基线（`GuestBuffer` 残留 `thread_id_`、未使用
   `Read32`）。
-- [WU-M8-007] monitor 的临时中断与永久关闭拆成 `InterruptWaiters`/`Shutdown` 两个语义：
-  interrupt generation 唤醒当前 waiter 但不禁用后续 `MonitorEnter`，session teardown 改为
-  临时中断 → join child → guest fini → root detach → 永久 shutdown，finalizer 阶段仍可加锁。
-  aggregate binding 改为精确集合等价并显式验证 expected-unbound 与 reserved 槽。
-- [WU-M8-006] guest MonitorEnter/MonitorExit 接入真实可重入 monitor table；owner、recursion、
-  waiter 与 condition wakeup 按 object identity 隔离，非 owner exit 明确失败，JavaVM detach
-  释放 ownership。最终 aggregate 为 JNIEnv/JavaVM 212/4。
-- [WU-M8-005] guest nonvirtual 30 槽复用现有 descriptor/A32 decoder 和 invocation engine；
-  ABI 从 r3 取 method、从栈取首参数或 V/A pointer。ThrowNew 创建带 class/Modified UTF-8
-  message 的真实 throwable，ExceptionDescribe 写结构化诊断且保留 pending identity。
-  Windows/MSVC focused 3/3 与 full CTest 518/518 通过，当前 aggregate 为 JNIEnv/JavaVM
-  210/4。
-- [WU-OPT-CLOSURE-01] 正式闭合前 12 项优化验收：texture unit 状态隔离、logical
-  viewport/scissor query、高频 setter 去整体复制。Windows/MSVC 全绿。
+- [WU-M8-005..007] guest nonvirtual/exception/monitor 槽位闭合与 M8 JNI 验收：
+  真实可重入 monitor table、临时中断/永久关闭两级语义、aggregate binding 精确
+  集合等价（JNIEnv 212 / JavaVM 4）。
 
 ## M6 起点
 
@@ -82,8 +71,10 @@ Asphalt 5 标题流三轮通过。OBB fixture 与 MCP GPU trace 仍明确未实�
    license/VFS/媒体与主界面 Scenario 三轮 gate。该阻塞与 JNI 槽位覆盖无关。
 2. 把 `JniObjectArrayStore` 从 array binder 内部持有改为 session 级 Java object-model
    统一所有权；当前不影响正确性，已并入 DexVM 设计（`docs/design/dexvm/`）。
-3. （非阻塞长线）DexVM 有界 DEX 解释器方案已定稿并 Accepted：ADR-0017 与
-   `docs/design/dexvm/` 六章；启动排期待定，M8 继续按 profile 路线推进。
+3. （非阻塞长线）DexVM 方案经 WU-M8-011 复盘调整（ADR-0017、`docs/design/dexvm/`）：
+   新增方法级接管——第三路由在 v1 生命周期下逐方法替换 `[[java.class]]` 胶水
+   （阶段 2 出口）；M8 期间 v1 胶水目录冻结增长，行为敏感缺口保持明确失败；
+   impl id 对账门禁待做（06 裁决 13/14、m8 README）。
 4. （非阻塞长线）性能 backlog（方向见 ADR-0019）：ANGLE window surface 零拷贝
    呈现为里程碑级主项，中间可做 PBO/fence 异步回读；AddressSpace 回调读与
    bionic intercept 的逐次取锁（直连页表按 ADR-0016 排除 r-x 页，rodata 查表

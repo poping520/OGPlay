@@ -18,7 +18,7 @@ M8 的 Work Unit 文件名使用里程碑内递增编号 `WU-M<里程碑>-<三�
 | 顺序 | 批次 | 机器出口 |
 | ---: | --- | --- |
 | 1 | exact 身份、payload 布局和静态能力矩阵 | Profile 校验、ELF/Bionic 预检和聚合缺口清单 |
-| 2 | JNI/Java 调用族 | 以 DEX、ELF 字符串和有界启动现场一次统计类/方法/签名/槽位，按通用语义批量实现 |
+| 2 | JNI/Java 调用族 | 以 DEX、ELF 字符串和有界启动现场一次统计类/方法/签名/槽位，按通用语义批量实现；**仅限语义无歧义的调用族**（见下"Java 胶水过渡纪律"） |
 | 3 | GLES2/RTT 调用族 | 对目标 96 个 GL/EGL 导入做已绑定/未绑定矩阵，按 state/resource/query/draw 批量闭合 |
 | 4 | 线程、VFS 与安卓边界 | 真宿主线程、外置数据和启动阶段在统一 session 中有界运行 |
 | 5 | 音频/影片及其他主界面前置能力 | 只补真实命中的通用缺口，不伪造播放或网络成功 |
@@ -26,6 +26,22 @@ M8 的 Work Unit 文件名使用里程碑内递增编号 `WU-M<里程碑>-<三�
 
 每个实现批次仍须遵守单 WU 不超过 10 个文件；批次内允许一次实现多个同类
 函数，但不允许把 JNI、GLES、VFS 和线程无边界混在同一 WU。
+
+## Java 胶水过渡纪律（WU-M8-011 复盘后生效）
+
+WU-M8-011 实证：Dungeon Hunter profile 引用 16 个无 handler 的 impl id，人工
+只能诚实闭合语义无歧义的 3 个（analytics 记账/计数），license/billing/online
+等 13 个的返回值改变游戏行为，逐个反编译取证的成本随题量线性且不摊销。
+据此（详见 [design/dexvm 06 裁决 13/14](../../design/dexvm/06-migration.md)）：
+
+- v1 `[[java.class]]` 通用 handler 目录**冻结增长**：只补当前 gate 实际阻塞
+  且语义无歧义的调用族；行为敏感组保持 missing-handler 明确失败，缺口清单
+  登记为 DexVM 方法级接管候选，不再人工实现。
+- profile impl id ↔ handler 目录对账应做成机器门禁（小 WU）：全部
+  `data/profiles/*.toml` 引用的 impl id 对照代码注册目录出缺口报告，
+  让缺口在构建期可见而不是运行期点击时爆出。
+- 每次人工补 handler 在 WU 文档记录实际成本（定位、取证、触及文件数），
+  作为 DexVM 排期的证据流。
 
 ## JNI Guest ABI 扩展工作单（里程碑内编号）
 

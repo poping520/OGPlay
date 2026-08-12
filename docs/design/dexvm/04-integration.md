@@ -39,6 +39,22 @@ engine。现状是两路：implementation handler 或 missing-handler 失败。�
 嵌套深度计入统一帧深度预算。`CallStaticIntMethodV` 等 233 槽 ABI 完全不变，
 变的只是解析目的地。
 
+**方法级接管（第三路由的过渡形态，阶段 2 出口）**：第三路由不依赖生命周期
+反转——在 v1 profile 的 `native_call` 生命周期下即可生效。方法解析顺序为：
+v1 `[[java.class]]` impl 映射（存量优先，保证已迁移 title 行为不变）→
+intrinsic → 解释执行 → missing 失败。由此，迁移动作退化为**从 v1 profile 里
+删除一行胶水映射**：被删除的方法自动落到解释执行，其方法体触到的平台面走
+intrinsic，行为敏感的返回值（license/billing 类）来自真实字节码而不是人工
+猜测。v1 schema 保持冻结（只删行不加键），粒度精确到单个方法，每删一批跑
+同一 Scenario gate 持平即为验证。这是"补 Java 胶水没完没了"问题最早的
+结构性止血点——不必等 profile v2 与 `dex_activity`。
+
+**方法级接管的 intrinsic 最小集**由存量 profile 的 impl id 语料校准
+（[03 §3](03-platform-intrinsics.md)）：胶水叶子方法普遍只触达
+SharedPreferences（首启标志、启动计数、解锁状态的持久化）、Telephony/
+Settings（设备身份）、Locale、PackageManager 受限面——远小于 onCreate
+全链路所需的面。
+
 ## 2. 生命周期反转
 
 新增 lifecycle 模板 `dex_activity`（与既有 `native_activity` / `gl_surface_view` /

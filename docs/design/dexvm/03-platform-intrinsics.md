@@ -51,7 +51,11 @@ struct IntrinsicMethod final {
 ## 3. java.* 最小集（分批）
 
 原则：**按真实命中扩展，不预先照搬 JDK 面**。首批以三款存量 Gameloft title
-与一款 libGDX 样本的静态引用测量（阶段 0 工具产出）核准，预计如下：
+与一款 libGDX 样本的静态引用测量（阶段 0 工具产出）核准；此外，存量 profile
+的通用 impl handler 目录（analytics/license/device/audio/locale 等约 60 个 id）
+是"胶水叶子方法实际触达哪些平台 API"的现成实证语料——每个人工 handler 都是
+对一段真实字节码行为的人工摘要，方法级接管（04 §1）的 intrinsic 最小集
+优先以它反推校准。预计如下：
 
 | 批次 | 类 | 后端 |
 | --- | --- | --- |
@@ -107,7 +111,7 @@ capabilities.toml 中已 complete/partial 的框架能力直接换个挂接方�
   下一个实现批次的 WU 素材——这是 M8"先盘点后实现"方法论在 Java 面的
   延续。
 
-## 7. 对照：Asphalt 6 案例在本方案下的形态
+## 7. 对照：exact-title 案例在本方案下的形态
 
 | 现状（profile 路线） | dexvm 路线 |
 | --- | --- |
@@ -116,3 +120,5 @@ capabilities.toml 中已 complete/partial 的框架能力直接换个挂接方�
 | `HasPushNotification` 返回 0 靠 impl 映射 | 该方法是游戏自己的 Java 代码，解释执行返回真实结果；只有其触到的平台面（若有）走 intrinsic |
 | Bundle "注册类但方法为空"，第一个 GetMethodID 爆错 | Bundle 是真实键值 intrinsic，11 个方法真实语义 |
 | InAppBilling 需独立 WU 做对象构造 HLE | `Intent`/`Bundle` intrinsic 构造真实对象，游戏侧逻辑解释执行；仅支付动作本身按非目标明确失败 |
+| Dungeon Hunter（WU-M8-011 实证）：`TrackingRegisterFirstRun` 缺 handler 即停；license/billing/online 组 13 个 impl id 需逐个反编译定语义 | 这些方法体被解释执行，`IsDemo`/`GetPlayMode` 的返回值来自真实字节码（通常读 SharedPreferences），无需人工判定；billing/browser 只在触到平台动作面时按非目标明确失败 |
+| 启动计数 handler 只能做会话内内存计数（跨会话持久化属人工语义猜测） | 胶水方法体自己经 SharedPreferences intrinsic 读写持久值，语义与原 APK 逐位一致 |

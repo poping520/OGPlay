@@ -11,7 +11,7 @@ ADR-0012 与 M8 命名约定（`WU-M<编号>-NNN`）。每阶段出口都是机�
 | WU | 内容 | 出口 |
 | --- | --- | --- |
 | 0-0 | vendor AOSP dalvik：`third_party/aosp-dalvik` 浅 submodule 锁 `android-4.4.4_r2` + commit 校验脚本 + `THIRD_PARTY_NOTICES.md`（[07 §1](07-aosp-reference.md)） | 校验脚本过 CTest |
-| 0-1 | `tools/dex_dependency_survey.py`：题库静态测量（引擎指纹、Java 厚度、平台类引用直方图） | self-test + 本地题库报告产出 |
+| 0-1 | `tools/dex_dependency_survey.py`：题库静态测量（引擎指纹、Java 厚度、平台类引用直方图），输入含存量 profile `[[java.class]]` impl id 语料（校准方法级接管 intrinsic 最小集，03 §3） | self-test + 本地题库报告产出 |
 | 0-2 | `data/dexvm/dalvik_opcodes.json` + 生成器 | `--check`、self-test 与 `--verify-aosp`（对 `opcode-gen/bytecode.txt`、`DexOpcodes.h`、`InstrUtils.cpp` 三锚点）过 CTest |
 | 0-3 | `tools/dexasm.py` 核心（类/方法/常用 format） | golden SHA + L1 回读核对 |
 | 0-4 | dexasm 补齐 try/catch、payload、静态初始值 | 反例夹具可构造 |
@@ -28,11 +28,13 @@ ADR-0012 与 M8 命名约定（`WU-M<编号>-NNN`）。每阶段出口都是机�
 异常与 `<clinit>` → GC-A 预算 arena。
 **出口**：指令一致性套件全绿；full CTest 无回归。
 
-### 阶段 2 · 边界互通 + java.* P1
+### 阶段 2 · 边界互通 + java.* P1 + 方法级接管
 
 JNI 出向编组、入向第三路由、`samples/minimal_dex` 双向夹具、java.* P1
-（语言核心 + System/Math）、字符串统一。
-**出口**：边界互通夹具全绿；native↔解释器嵌套与异常穿透双向可证。
+（语言核心 + System/Math）、字符串统一、方法级接管所需的首批 android.*
+intrinsic（SharedPreferences/Context 受限面等，按 0-1 语料裁定）。
+**出口**：边界互通夹具全绿；native↔解释器嵌套与异常穿透双向可证；
+05 §4 gate 0（方法级接管：存量 title 删胶水行、Scenario 三轮持平）。
 
 ### 阶段 3 · 生命周期反转 + pilot 迁移
 
@@ -70,7 +72,8 @@ Thread intrinsic、wait/notify 扩展、GC-B、java.* P2/P3（集合/装箱/IO�
 | 10 | capabilities 状态单调不后退 | title 迁移后 v1 装配路径使用减少 | 不后退：存量条目状态不动；dexvm 全部走新条目；迁移完成后 v1 相关条目 note 标注"维护态"，状态字段不变 |
 | 11 | `runtime.framework_*` 声明式 HLE"只绑定 profile 实际引用的方法" | intrinsic 是代码定义全量目录 | intrinsic 目录为准（03 §1）；framework 存量 handler 原样复用，绑定判定从"profile 引用"改为"目录声明 + 命中记账" |
 | 12 | `android/os/Bundle`"注册类、方法为空"的现状（platform identity 存量） | 与真实键值 intrinsic 冲突 | 升级为真实键值语义（03 §4）；在 dexvm 启动前，M8 若按既有分析先做"仅声明"方案，属于过渡态，不构成本方案障碍 |
-| 13 | 上一轮讨论的"profile 覆盖审计工具 / 引擎模板"中期方案 | 与本方案的长期路线重叠 | 定位为过渡工具：M8 期间仍可做（成本低、见效快）；dexvm 落地后自然退役，不投入超过 M8 实际需要的量 |
+| 13 | 上一轮讨论的"profile 覆盖审计工具 / 引擎模板"中期方案 | 与本方案的长期路线重叠 | 定位为过渡工具：M8 期间仍可做（成本低、见效快）；dexvm 落地后自然退役，不投入超过 M8 实际需要的量。WU-M8-011 实证后升格为**应做**：profile impl id ↔ handler 目录对账进 CTest，缺口在构建期可见而不是运行期点击时爆出 |
+| 14 | M8 批次 2"JNI/Java 调用族按通用语义批量实现"的持续扩张 | 每新 title 需人工逆向胶水；行为敏感组（license/billing/online）必须逐个反编译取证，成本随题量线性且不摊销（WU-M8-011 实证：DUNQ 引用 16 个缺失 id，人工只能诚实闭合语义无歧义的 3 个，13 个滞留） | v1 胶水目录**冻结增长**：只补当前 gate 实际阻塞且语义无歧义的调用族；行为敏感组不再人工实现，保持 missing 明确失败并登记为方法级接管（04 §1 / 05 §4 gate 0）候选。已实现 handler 不删除（存量 title 生产路径），随阶段 5 进维护态 |
 
 ## 3. AI 实施规范（对 02-ai-workflow 的 dexvm 特化）
 
@@ -112,4 +115,16 @@ Thread intrinsic、wait/notify 扩展、GC-B、java.* P2/P3（集合/装箱/IO�
 M8 继续按 profile 路线推进到 Asphalt 6 主界面 gate——它交付短期结果，同时
 为本方案积累三样东西：完整的 GLES/audio/线程边界（dexvm 直接复用）、
 Asphalt 6 的副作用清单（阶段 3 gate 2 的断言素材）、profile 成本的真实数据
-（阶段排期依据）。两条线在阶段 3 的 pilot 迁移处汇合。
+（阶段排期依据）。两条线的首个汇合点是**阶段 2 的方法级接管 gate 0**
+（早于原定的阶段 3 pilot 迁移）。
+
+M8 期间的过渡纪律（WU-M8-011 复盘后生效，对应裁决 13/14）：
+
+- v1 `[[java.class]]` 胶水目录冻结增长——只闭合当前 gate 实际阻塞且语义
+  无歧义的调用族（如 analytics 记账/计数），行为敏感组保持 missing 明确
+  失败，缺口清单即方法级接管的迁移素材。
+- profile impl id ↔ handler 目录对账做成机器门禁（一个小 WU）：所有
+  `data/profiles/*.toml` 引用的 impl id 对照代码侧注册目录出报告，缺口
+  构建期可见；该门禁在 dexvm 阶段 5 后随 v1 一起进维护态。
+- 每次人工补 handler 的实际成本（定位、取证、文件数）记入 WU 文档，作为
+  dexvm 排期的持续证据流。

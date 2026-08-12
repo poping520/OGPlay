@@ -1,0 +1,27 @@
+# VideoView playback fixture: a completion listener whose invocation count
+# is observable from the host-side tests.
+.class public LVideoListener;
+.super Ljava/lang/Object;
+
+.field static public completions:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public onCompletion(Landroid/media/MediaPlayer;)V
+.registers 4
+    sget v0, LVideoListener;->completions:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    sput v0, LVideoListener;->completions:I
+    return-void
+.end method
+
+.method static public getCompletions()I
+.registers 1
+    sget v0, LVideoListener;->completions:I
+    return v0
+.end method

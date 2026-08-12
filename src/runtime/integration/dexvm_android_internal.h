@@ -65,6 +65,8 @@ void RegisterSharedPreferences(dx::IntrinsicRegistry& registry,
 void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
                              const Context& context);
 void RegisterWidgets(dx::IntrinsicRegistry& registry, const Context& context);
+void RegisterVideoViews(dx::IntrinsicRegistry& registry,
+                        const Context& context);
 void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context);
 
 }  // namespace ogplay::runtime::android_intrinsics

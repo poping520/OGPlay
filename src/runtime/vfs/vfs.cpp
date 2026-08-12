@@ -258,6 +258,7 @@ public:
 
     void MountHostDirectory(const std::string_view root,
                             const std::filesystem::path& directory) {
+        std::vector<std::pair<std::string, std::filesystem::path>> host_paths;
         std::error_code error;
         const auto root_status = std::filesystem::symlink_status(directory, error);
         if (error || !std::filesystem::is_directory(root_status) ||
@@ -299,6 +300,10 @@ public:
                     relative.generic_string(), size,
                     [path] { return ReadHostFile(path); },
                 });
+                auto combined = std::string(root);
+                combined.push_back('/');
+                combined.append(relative.generic_string());
+                host_paths.emplace_back(NormalizePath(combined), path);
             } else if (!std::filesystem::is_directory(status)) {
                 throw VfsError(kEinval,
                                "external VFS backing contains a special file");
@@ -314,6 +319,20 @@ public:
                            "external VFS backing directory has no files");
         }
         MountLazy(VfsSource::external, root, entries, true);
+        std::scoped_lock lock(mutex_);
+        for (auto& [guest_path, host_path] : host_paths) {
+            host_backed_.insert_or_assign(std::move(guest_path),
+                                          std::move(host_path));
+        }
+    }
+
+    [[nodiscard]] std::optional<std::filesystem::path> HostPathFor(
+        const std::string_view path) const {
+        std::scoped_lock lock(mutex_);
+        const auto normalized = ResolvePath(path, working_directory_);
+        const auto found = host_backed_.find(normalized);
+        if (found == host_backed_.end()) return std::nullopt;
+        return found->second;
     }
 
     void SetWorkingDirectory(const std::string_view path) {
@@ -498,6 +517,9 @@ private:
     std::optional<std::string> working_directory_;
     std::map<std::string, std::shared_ptr<File>, std::less<>> files_;
     std::map<std::int32_t, OpenFile> descriptors_;
+    // Guest path -> backing host file for host-directory mounts, so media
+    // decoders can open the real file directly.
+    std::map<std::string, std::filesystem::path, std::less<>> host_backed_;
 };
 
 VirtualFileSystem::VirtualFileSystem() : impl_(std::make_unique<Impl>()) {}
@@ -525,6 +547,10 @@ void VirtualFileSystem::MountLazyReadOnly(
 void VirtualFileSystem::MountHostDirectory(
     const std::string_view root, const std::filesystem::path& directory) {
     impl_->MountHostDirectory(root, directory);
+}
+std::optional<std::filesystem::path> VirtualFileSystem::HostPathFor(
+    const std::string_view path) const {
+    return impl_->HostPathFor(path);
 }
 void VirtualFileSystem::SetWorkingDirectory(const std::string_view path) {
     impl_->SetWorkingDirectory(path);

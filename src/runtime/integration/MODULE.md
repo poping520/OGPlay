@@ -64,9 +64,14 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
   只持有状态、不做宿主渲染:`setContentView(I)` 经 arsc resid → APK 布局条目 →
   `ParseBinaryXmlElements` 实例化 widget intrinsic,`android:id` 进入 view registry
   供 `findViewById` 查询,文档序首元素登记为 content view;`runOnUiThread` 在协作
-  单线程模型下同步执行 runnable;`VideoView.start()` 因视频播放未提供而立即回调
-  已注册的 `OnCompletionListener`(等价于播放完成),使 splash-video Activity 正常
-  推进,不伪造播放事实。
+  单线程模型下同步执行 runnable。
+- VideoView intrinsic(`dexvm_android_video.cpp`,ADR-0021):`setVideoPath` 经 VFS
+  `HostPathFor` 解析宿主文件并用注入的 `VideoPlayerFactory` 打开解码;`start`/`pause`/
+  `seekTo`/`stopPlayback`/`getDuration`/`getCurrentPosition` 驱动真实播放状态,位置由
+  统一 uptime 推进。`PumpVideoViews` 由 guest 循环每步调用:取帧经
+  `ComposeRgbaOnCanvas` letterbox 到 surface 尺寸后交给发布回调,到达时长时在 guest
+  线程回调 `OnCompletionListener` 恰好一次。工厂缺失、路径不可解析或打开失败时诚实
+  回退:结构化 warn + `start()` 立即回调 completion,不伪造播放事实。
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求;会话只发布最新请求与累计次数,不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。

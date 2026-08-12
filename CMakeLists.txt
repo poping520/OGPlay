@@ -91,14 +91,17 @@ add_library(ogplay_hal
 if(WIN32)
     target_sources(ogplay_hal PRIVATE
         src/hal/windows/host_environment.cpp
+        src/hal/windows/shared_library.cpp
         src/hal/windows/virtual_memory.cpp)
 elseif(APPLE)
     target_sources(ogplay_hal PRIVATE
         src/hal/macos/host_environment.cpp
+        src/hal/macos/shared_library.cpp
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
     target_sources(ogplay_hal PRIVATE
         src/hal/linux/host_environment.cpp
+        src/hal/linux/shared_library.cpp
         src/hal/linux/virtual_memory.cpp)
 else()
     message(FATAL_ERROR "OGPlay has no virtual memory HAL for this host platform")
@@ -113,6 +116,9 @@ if(OGPLAY_ENABLE_SDL3)
     target_link_libraries(ogplay_hal PRIVATE SDL3::SDL3)
 else()
     target_compile_definitions(ogplay_hal PRIVATE OGPLAY_HAS_SDL3=0)
+endif()
+if(NOT WIN32)
+    target_link_libraries(ogplay_hal PRIVATE ${CMAKE_DL_LIBS})
 endif()
 ogplay_set_project_warnings(ogplay_hal)
 
@@ -135,6 +141,21 @@ else()
         COMPILE_OPTIONS "-w")
 endif()
 ogplay_set_project_warnings(ogplay_audio)
+
+add_library(ogplay_video
+    src/video/video_player.cpp
+    src/video/fake_video_player.cpp
+    src/video/ffmpeg_loader.cpp
+    src/video/ffmpeg_video_player.cpp
+    src/video/rgba_canvas.cpp
+)
+add_library(OGPlay::Video ALIAS ogplay_video)
+target_link_libraries(ogplay_video PRIVATE OGPlay::Hal)
+target_include_directories(ogplay_video PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+ogplay_set_project_warnings(ogplay_video)
 
 add_library(ogplay_input
     src/input/mouse_touch_mapper.cpp
@@ -376,6 +397,7 @@ add_library(ogplay_runtime
     src/runtime/integration/dexvm_android_io.cpp
     src/runtime/integration/dexvm_android_media.cpp
     src/runtime/integration/dexvm_android_misc.cpp
+    src/runtime/integration/dexvm_android_video.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/host_image_decode.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
@@ -429,6 +451,7 @@ add_library(ogplay_runtime
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC
     OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Loader OGPlay::Memory
+    OGPlay::Video
 )
 target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles)
 target_include_directories(ogplay_runtime PUBLIC
@@ -534,7 +557,7 @@ target_compile_definitions(ogplay PRIVATE
 ogplay_set_project_warnings(ogplay)
 ogplay_stage_angle_runtime(ogplay)
 
-install(TARGETS ogplay ogplay_core ogplay_hal ogplay_audio ogplay_input ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_frontend ogplay_session
+install(TARGETS ogplay ogplay_core ogplay_hal ogplay_audio ogplay_video ogplay_input ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_frontend ogplay_session
     EXPORT OGPlayTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -648,6 +671,8 @@ if(OGPLAY_BUILD_TESTS)
         tests/gles/pvrtc_tests.cpp
         tests/audio/ogg_vorbis_tests.cpp
         tests/audio/java_sound_pool_mixer_tests.cpp
+        tests/video/video_player_tests.cpp
+        tests/video/ffmpeg_video_player_tests.cpp
         tests/session/quirk_registry_tests.cpp
         tests/session/lifecycle_tests.cpp
         tests/session/profile_asset_bundle_tests.cpp
@@ -667,6 +692,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/dex_code_tests.cpp
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/intrinsics_p1_tests.cpp
+        tests/dexvm/videoview_tests.cpp
         tests/dexvm/arsc_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)
@@ -677,7 +703,7 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
     target_link_libraries(ogplay_tests PRIVATE
-        OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime doctest::doctest
+        OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime OGPlay::Video doctest::doctest
     )
     target_include_directories(ogplay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include

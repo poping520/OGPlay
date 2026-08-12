@@ -26,6 +26,8 @@ syscall 与 framework Asset 只能单向调用本模块。
   ASCII 大小写折叠与 traversal 拒绝规则，未配置时不得猜测目录。
 - pipe 返回隔离的只读/只写 descriptor，共享同一有序字节流；创建和 guest descriptor
   数组发布必须是事务性的。
+- `HostPathFor` 只对宿主目录挂载的文件返回其 backing 宿主路径(供需要直接读宿主文件
+  的解码器使用);APK/OBB 条目、会话内新建文件与不存在的路径一律返回空,不猜测路径。
 
 ## 测试
 

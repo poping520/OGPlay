@@ -40,6 +40,7 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
+#include "ogplay/video/ffmpeg_video_player.h"
 #include "ogplay/session/profile_guest_lifecycle.h"
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
@@ -665,6 +666,19 @@ int RunApkCommand(const int argc, const char* const argv[],
             // Java File/streams resolve through the same guest VFS as
             // native fopen (external mounts, /apk assets).
             dex_context->vfs = &filesystem;
+            // Real VideoView playback when the FFmpeg shared libraries are
+            // loadable; otherwise setVideoPath records the gap and start()
+            // keeps the immediate-completion fallback (ADR-0021).
+            if (video::FfmpegAvailable()) {
+                dex_context->video_player_factory =
+                    video::MakeFfmpegVideoPlayerFactory();
+            } else {
+                logger.Write(
+                    core::LogLevel::warn, "frontend.run_apk",
+                    "video decoding is unavailable: " +
+                        video::FfmpegUnavailableReason(),
+                    {}, {}, kUnrestrictedLog);
+            }
             if (external_directory.has_value()) {
                 std::error_code space_error;
                 const auto space = std::filesystem::space(
@@ -791,6 +805,9 @@ int RunApkCommand(const int argc, const char* const argv[],
                     dex_bridge.get(), dex_context, descriptor,
                     [&guest] { guest->OpenManagedSurface(); },
                     [&guest] { guest->PresentManagedSurface(); },
+                    [&guest](std::vector<std::uint8_t> rgba8) {
+                        guest->PublishSoftwareFrame(std::move(rgba8));
+                    },
                     [&guest] {
                         static_cast<void>(guest->InterruptBlockingWaits());
                     },

@@ -233,6 +233,33 @@ TEST_CASE("VFS host directory mount lazily reads and preserves external writes")
     std::filesystem::remove_all(root);
 }
 
+TEST_CASE("VFS answers the backing host path only for host-mounted files") {
+    const auto unique = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto root = std::filesystem::temp_directory_path() /
+                      ("ogplay-vfs-hostpath-" + unique);
+    const auto nested = root / "Data";
+    std::filesystem::create_directories(nested);
+    const auto backing = nested / "Movie.mp4";
+    {
+        std::ofstream output(backing, std::ios::binary);
+        output.write("abc", 3);
+    }
+
+    ogplay::runtime::VirtualFileSystem vfs;
+    vfs.MountHostDirectory("/sdcard/game", root);
+    const std::array memory{std::byte{'m'}};
+    vfs.PutFile("/data/local/file.bin", memory, false);
+
+    const auto host = vfs.HostPathFor("/SDCARD/Game/data/movie.mp4");
+    REQUIRE(host.has_value());
+    CHECK(*host == backing);
+    CHECK_FALSE(vfs.HostPathFor("/data/local/file.bin").has_value());
+    CHECK_FALSE(vfs.HostPathFor("/sdcard/game/data/absent.mp4").has_value());
+
+    std::filesystem::remove_all(root);
+}
+
 TEST_CASE("VFS host directory mount rejects unsafe and ambiguous trees transactionally") {
     const auto unique = std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());

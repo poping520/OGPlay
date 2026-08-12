@@ -140,6 +140,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   resolve。宿主成功 present 后可归还布局完全匹配的拥有型帧;1x surface 复用其 RGBA8
   高水位存储,被新帧覆盖但未消费的同布局存储也可回收,帧内容和序号本身不得缓存或
   复用。超采样帧仍通过 resolve 独立产生逻辑尺寸输出。
+- `PublishSoftwareFrame` 允许上层(如视频解码泵)注入一整帧逻辑尺寸 RGBA8 软件帧,
+  复用统一帧存储与递增 sequence;尺寸与逻辑 surface 布局不符必须明确失败,不得部分
+  发布。
 
 ## 测试
 

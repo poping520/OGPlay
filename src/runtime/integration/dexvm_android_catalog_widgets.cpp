@@ -159,8 +159,9 @@ void AppendWidgetClasses(std::vector<Decl>& catalog) {
              "android.view.init"},
         };
         catalog.push_back(std::move(progress_bar));
-        // Video playback is not provided (recorded gap): controls log
-        // loudly, position/duration answer zero so skip paths trigger.
+        // Real decoded playback through the injected VideoPlayer factory
+        // (ADR-0021); without a decoder the handlers fall back to the
+        // recorded-gap immediate completion.
         Decl video_view;
         video_view.descriptor = "Landroid/widget/VideoView;";
         video_view.superclass = "Landroid/view/View;";
@@ -168,14 +169,16 @@ void AppendWidgetClasses(std::vector<Decl>& catalog) {
             {"<init>", "(Landroid/content/Context;)V", false, false,
              "android.view.init"},
             {"setVideoPath", "(Ljava/lang/String;)V", false, false,
-             "android.videoview.unsupported"},
+             "android.videoview.set_path"},
             {"start", "()V", false, false, "android.videoview.start"},
-            {"pause", "()V", false, false, "android.widget.noop"},
-            {"seekTo", "(I)V", false, false, "android.widget.noop"},
-            {"stopPlayback", "()V", false, false, "android.widget.noop"},
-            {"getDuration", "()I", false, false, "android.widget.zero"},
+            {"pause", "()V", false, false, "android.videoview.pause"},
+            {"seekTo", "(I)V", false, false, "android.videoview.seek_to"},
+            {"stopPlayback", "()V", false, false,
+             "android.videoview.stop_playback"},
+            {"getDuration", "()I", false, false,
+             "android.videoview.get_duration"},
             {"getCurrentPosition", "()I", false, false,
-             "android.widget.zero"},
+             "android.videoview.get_current_position"},
             {"setOnCompletionListener",
              "(Landroid/media/MediaPlayer$OnCompletionListener;)V", false,
              false, "android.videoview.set_completion"},

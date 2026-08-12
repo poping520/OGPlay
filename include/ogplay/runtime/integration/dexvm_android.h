@@ -13,6 +13,7 @@
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/arsc.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/video/video_player.h"
 
 namespace ogplay::runtime {
 
@@ -147,10 +148,36 @@ struct DexVmAndroidContext final {
     // Views inflated from the last setContentView(layout id), keyed by
     // android:id resource id (findViewById source of truth).
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> view_registry;
-    // VideoView -> OnCompletionListener; playback is not provided, so
-    // start() completes synchronously through this listener.
+    // VideoView -> OnCompletionListener. With a player attached the guest
+    // video pump fires it once at end of stream; without one start() still
+    // completes synchronously (honest fallback).
     std::unordered_map<std::uint64_t, dexvm::VmObjectRef> video_completion;
+
+    // Real VideoView playback (ADR-0021). The factory is injected by the
+    // frontend; when it is missing or open fails, setVideoPath records the
+    // gap and start() keeps the immediate-completion fallback.
+    video::VideoPlayerFactory video_player_factory;
+    struct VideoViewState final {
+        std::unique_ptr<video::VideoPlayer> player;
+        std::string guest_path;
+        std::int64_t duration_ms{};
+        // Playback position = base_position_ms + (uptime - start_uptime)
+        // while playing; frozen at base_position_ms otherwise.
+        std::int64_t base_position_ms{};
+        std::int64_t start_uptime_ms{};
+        bool playing{};
+        bool completed{};
+    };
+    std::unordered_map<std::uint64_t, VideoViewState> video_views;
 };
+
+// Advances every playing VideoView to the shared uptime clock: publishes new
+// frames through publish (letterboxed to the surface size) and fires the
+// registered onCompletion exactly once per playback at end of stream.
+// Returns a rendered message when a guest callback raised.
+[[nodiscard]] std::optional<std::string> PumpVideoViews(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    const std::function<void(std::vector<std::uint8_t> rgba8)>& publish);
 
 // Runs every queued cooperative Java thread to completion on the calling
 // (VM host) thread. Returns a rendered uncaught-exception message when a

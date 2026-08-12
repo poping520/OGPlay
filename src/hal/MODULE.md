@@ -32,6 +32,9 @@
   原值；`HostEnvironmentValue` 提供同锁只读查询。
 - `hal::HostExecutableDirectory`：通过平台实现返回当前宿主可执行文件所在的绝对目录，
   供上层定位随程序交付且可重定位的运行时资源。
+- `hal::SharedLibraryFileName` / `OpenSharedLibrary` / `ResolveSharedLibrarySymbol`：
+  按平台命名规则组装带主版本号的共享库文件名，并在进程生命周期内加载与解析符号；
+  加载与解析失败返回 nullptr，句柄不卸载，函数指针到进程退出前保持有效。
 - `hal::GraphicsPresenter`：不暴露 SDL/EGL/平台句柄的 drawable 与 present 契约。
 - `hal::AudioOutput`：格式、启动停止、帧队列与交错样本提交契约。
 - `hal::CreateSdlAudioOutput`：按受检 stream config 打开 SDL3 默认播放设备；支持显式 dummy

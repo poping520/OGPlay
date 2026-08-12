@@ -268,6 +268,25 @@ public:
         latest_frame_.reset();
         return result;
     }
+    // Host-decoded frames (e.g. video playback) enter the same store and
+    // sequence as GL presents; the layout contract stays logical-sized.
+    void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
+        const auto expected = static_cast<std::size_t>(
+            layout_.logical_width) * layout_.logical_height * 4U;
+        if (rgba8.size() != expected) {
+            throw std::invalid_argument(
+                "software frame does not match the logical surface layout");
+        }
+        AndroidBoundaryFrame frame{layout_.logical_width,
+                                   layout_.logical_height, 0,
+                                   std::move(rgba8)};
+        {
+            std::scoped_lock lock(mutex_);
+            frame.sequence = ++frame_sequence_;
+            latest_frame_ = std::move(frame);
+        }
+        ready_.notify_all();
+    }
     void RecycleFrame(AndroidBoundaryFrame&& frame) {
         const auto expected_size = static_cast<std::size_t>(
             layout_.logical_width) * layout_.logical_height * 4U;
@@ -960,6 +979,9 @@ void AndroidBoundaryHle::NotifyFileWrite() { impl_->NotifyFileWrite(); }
 void AndroidBoundaryHle::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
 std::optional<AndroidBoundaryFrame> AndroidBoundaryHle::TakeLatestFrame() {
     return impl_->TakeLatestFrame();
+}
+void AndroidBoundaryHle::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
+    impl_->PublishSoftwareFrame(std::move(rgba8));
 }
 void AndroidBoundaryHle::RecycleFrame(AndroidBoundaryFrame&& frame) {
     impl_->RecycleFrame(std::move(frame));

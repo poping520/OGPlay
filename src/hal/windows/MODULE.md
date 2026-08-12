@@ -11,6 +11,7 @@
 - 回调上层必须经过显式 HAL 接口，不包含 guest、游戏或 Android 语义。
 - `HostExecutableDirectory` 与宿主环境覆盖使用 Win32 模块路径及进程环境 API，
   不把 Windows SDK 类型泄漏到公共 HAL。
+- 共享库加载使用 `LoadLibraryW`/`GetProcAddress`，命名规则为 `<name>-<major>.dll`。
 
 ## 测试
 

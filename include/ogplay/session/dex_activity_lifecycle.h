@@ -25,6 +25,9 @@ struct DexActivityLifecycleBindings final {
     std::string launcher_descriptor;  // "Lcom/example/Game;"
     std::function<void()> open_surface;
     std::function<void()> present_surface;
+    // Receives letterboxed surface-sized RGBA frames from the video pump;
+    // unset drops the frames (video still advances and completes).
+    std::function<void(std::vector<std::uint8_t> rgba8)> publish_video_frame;
     std::function<void()> interrupt_guest_waits;
     std::function<void()> finalize_guest;
     std::function<void()> close_surface;
@@ -64,6 +67,9 @@ private:
     // at frame boundaries (installer-style titles run a worker thread and
     // then switch to the game activity).
     void PumpJavaThreads();
+    // Decoded VideoView playback advances with the same frame clock; frames
+    // publish through the binding and onCompletion fires on this thread.
+    void PumpVideo();
     void ServiceActivitySwitch();
     void EnsureRendererCallbacks();
 

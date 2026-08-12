@@ -125,6 +125,7 @@ void RegisterAndroidBuiltins(dx::IntrinsicRegistry& registry,
     RegisterSharedPreferences(registry, context);
     RegisterGraphicsBitmaps(registry, context);
     RegisterWidgets(registry, context);
+    RegisterVideoViews(registry, context);
     RegisterMisc(registry, context);
 }
 

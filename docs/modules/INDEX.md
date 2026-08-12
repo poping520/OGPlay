@@ -1,6 +1,6 @@
 # 模块契约索引
 
-依赖方向从上到下：`frontend/agent/session → runtime/gles/audio/input/loader → cpu/memory → hal → core`。
+依赖方向从上到下：`frontend/agent/session → runtime/gles/audio/video/input/loader → cpu/memory → hal → core`。
 下层不得引用上层；跨层通知使用显式接口。
 
 | 模块 | 契约 | M0 状态 |
@@ -13,6 +13,7 @@
 | runtime | [src/runtime/MODULE.md](../../src/runtime/MODULE.md) | Bionic/syscall/JNI/framework 聚合与子模块边界 |
 | gles | [src/gles/MODULE.md](../../src/gles/MODULE.md) | ANGLE/IDL 边界契约占位 |
 | audio | [src/audio/MODULE.md](../../src/audio/MODULE.md) | guest 音频 API 边界占位 |
+| video | [src/video/MODULE.md](../../src/video/MODULE.md) | 拉模型视频解码播放接口与 Fake 后端（ADR-0021） |
 | input | [src/input/MODULE.md](../../src/input/MODULE.md) | 输入事件与映射占位 |
 | session | [src/session/MODULE.md](../../src/session/MODULE.md) | 会话编排占位 |
 | agent | [src/agent/MODULE.md](../../src/agent/MODULE.md) | 结构化控制接口最小实现 |

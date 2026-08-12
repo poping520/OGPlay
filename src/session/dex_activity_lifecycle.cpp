@@ -232,6 +232,7 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
     try {
         DispatchInput();
         PumpJavaThreads();
+        PumpVideo();
         ServiceActivitySwitch();
         EnsureRendererCallbacks();
         if (renderer_ready_) {
@@ -253,6 +254,14 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
 void DexActivityLifecycle::PumpJavaThreads() {
     const auto error = runtime::PumpJavaThreads(bindings_.bridge->Vm(),
                                                 *bindings_.context);
+    if (error.has_value()) Fail(*error);
+}
+
+void DexActivityLifecycle::PumpVideo() {
+    if (bindings_.context->video_views.empty()) return;
+    const auto error = runtime::PumpVideoViews(
+        bindings_.bridge->Vm(), *bindings_.context,
+        bindings_.publish_video_frame);
     if (error.has_value()) Fail(*error);
 }
 

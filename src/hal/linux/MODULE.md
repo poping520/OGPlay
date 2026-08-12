@@ -11,6 +11,8 @@
 - 回调上层必须经过显式 HAL 接口，不包含 guest、游戏或 Android 语义。
 - `HostExecutableDirectory` 通过 `/proc/self/exe` 解析；宿主环境覆盖使用 POSIX
   `setenv`/`unsetenv` 并遵守公共 HAL 的作用域恢复契约。
+- 共享库加载使用 `dlopen`/`dlsym`(RTLD_NOW|RTLD_LOCAL),命名规则为
+  `lib<name>.so.<major>`。
 
 ## 测试
 

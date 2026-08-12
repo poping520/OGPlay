@@ -251,6 +251,7 @@ public:
     void CloseManagedSurface();
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
+    void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     [[nodiscard]] std::size_t RenderStereoAudio(
         std::span<std::int16_t> output, std::uint32_t sample_rate);

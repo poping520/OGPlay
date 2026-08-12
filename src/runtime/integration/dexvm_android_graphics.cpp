@@ -347,58 +347,8 @@ void RegisterWidgets(dx::IntrinsicRegistry& registry,
         return dx::VmValue::Ref(
             call.vm.NewIntrinsicInstance("Landroid/app/AlertDialog;"));
     });
-    registry.Register("android.videoview.unsupported",
-                      [](dx::IntrinsicContext& call) {
-        // Recorded gap: video playback is not provided; position and
-        // duration answer zero so skip paths trigger immediately.
-        GuestLog(call, core::LogLevel::warn,
-                 "VideoView playback is not provided on this platform");
-        return dx::VmValue::Void();
-    });
-    registry.Register("android.videoview.set_completion",
-                      [context](dx::IntrinsicContext& call) {
-        context->video_completion[call.receiver.Value()] =
-            call.arguments[0].ref;
-        return dx::VmValue::Void();
-    });
-    // Playback is not provided, so start() reports completion right away
-    // through the registered listener; splash-video activities then advance
-    // exactly as they would after a real playback finished.
-    registry.Register("android.videoview.start",
-                      [context](dx::IntrinsicContext& call) {
-        GuestLog(call, core::LogLevel::warn,
-                 "VideoView playback is not provided; reporting immediate "
-                 "completion");
-        const auto found =
-            context->video_completion.find(call.receiver.Value());
-        if (found == context->video_completion.end() ||
-            !found->second.IsValid()) {
-            return dx::VmValue::Void();
-        }
-        auto& vm = call.vm;
-        auto& linker = vm.Linker();
-        const auto listener_class = vm.Model().ObjectClass(found->second);
-        const auto index = linker.FindVtableIndex(
-            listener_class, "onCompletion",
-            "(Landroid/media/MediaPlayer;)V");
-        if (!index.has_value()) {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/IllegalStateException;",
-                "completion listener has no onCompletion method"};
-        }
-        const auto player =
-            vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
-        const auto outcome = vm.Call(
-            linker.Class(listener_class).vtable[*index],
-            std::vector<dx::VmValue>{dx::VmValue::Ref(found->second),
-                                     dx::VmValue::Ref(player)});
-        if (outcome.exception.IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
-                                  "onCompletion raised: " +
-                                      outcome.exception_message};
-        }
-        return dx::VmValue::Void();
-    });
+    // VideoView handlers live in dexvm_android_video.cpp (real playback
+    // through the injected VideoPlayer factory, ADR-0021).
     registry.Register("android.webview.load_url",
                       [](dx::IntrinsicContext& call) {
         GuestLog(call, core::LogLevel::warn,

@@ -704,6 +704,9 @@ public:
     }
     std::optional<AndroidBoundaryFrame> TakeLatestFrame() {
         return boundary_.TakeLatestFrame(); }
+    void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
+        boundary_.PublishSoftwareFrame(std::move(rgba8));
+    }
     void RecycleFrame(AndroidBoundaryFrame&& frame) {
         boundary_.RecycleFrame(std::move(frame));
     }
@@ -884,6 +887,7 @@ void AndroidGuestCallSession::PresentManagedSurface() { impl_->PresentManagedSur
 void AndroidGuestCallSession::CloseManagedSurface() { impl_->CloseManagedSurface(); }
 void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
 std::optional<AndroidBoundaryFrame> AndroidGuestCallSession::TakeLatestFrame() { return impl_->TakeLatestFrame(); }
+void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { impl_->PublishSoftwareFrame(std::move(rgba8)); }
 void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) { impl_->RecycleFrame(std::move(frame)); }
 std::size_t AndroidGuestCallSession::RenderStereoAudio(const std::span<std::int16_t> output,
                                                        const std::uint32_t sample_rate) { return impl_->RenderStereoAudio(output, sample_rate); }

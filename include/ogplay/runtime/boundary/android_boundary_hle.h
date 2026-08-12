@@ -57,6 +57,9 @@ public:
     void NotifyFileWrite();
     void PushInput(const AndroidBoundaryInput& input);
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
+    // Publishes a host-composed RGBA frame (logical surface size) into the
+    // same frame store and sequence as GL presents.
+    void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;

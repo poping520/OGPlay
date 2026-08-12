@@ -79,6 +79,10 @@ public:
                            std::span<const VfsLazyMountEntry> entries);
     void MountHostDirectory(std::string_view root,
                             const std::filesystem::path& directory);
+    // Backing host file for a guest path inside a host-directory mount;
+    // nullopt for memory-, APK- or OBB-backed entries.
+    [[nodiscard]] std::optional<std::filesystem::path> HostPathFor(
+        std::string_view path) const;
     void SetWorkingDirectory(std::string_view path);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;

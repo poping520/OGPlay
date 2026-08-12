@@ -945,6 +945,11 @@ status = "complete"
 test = "tools.aosp_dalvik_baseline_self_test; tools.aosp_dalvik_baseline_current"
 note = "M9 WU-M9-001 以浅 submodule 固定 platform/dalvik 于 android-4.4.4_r2（36e356c9），机器校验 commit 与 bytecode.txt/DexOpcodes.h/InstrUtils.cpp/NOTICE 锚点哈希；仅作语义参考与机器比对数据源，不编译不链接"
 
+[tools.dex_dependency_survey]
+status = "complete"
+test = "tools.dex_dependency_survey_self_test"
+note = "M9 WU-M9-002 纯 Python 严格 DEX 035 静态测量：应用类规模、Java 厚度（与 loader.dex_l1 同阈值）、平台类/方法引用直方图、native 清单、引擎指纹与 profile impl id 语料；报告本地产出不进仓库"
+
 [runtime.android_link_preflight]
 status = "complete"
 test = "tests/runtime/android_link_preflight_tests.cpp"

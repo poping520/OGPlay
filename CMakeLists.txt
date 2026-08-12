@@ -842,6 +842,15 @@ if(OGPLAY_BUILD_TESTS)
         PROPERTIES LABELS "tools;dexvm")
 
     add_test(
+        NAME tools.dex_dependency_survey_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dex_dependency_survey.py
+            --self-test
+    )
+    set_tests_properties(tools.dex_dependency_survey_self_test
+        PROPERTIES LABELS "tools;dexvm")
+
+    add_test(
         NAME tools.m4_local_exit_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/m4_exit.py

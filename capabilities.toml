@@ -993,7 +993,12 @@ note = "M9 WU-M9-027 显式 context 隔离帧栈、pending exception、返回值
 [dexvm.threads]
 status = "partial"
 test = "tests/dexvm/vm_thread_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
-note = "M9 WU-M9-028 一个 guest Java 线程 = 一个 hal 宿主线程 + 独立 execution context，linker/对象模型/JNI 身份共享；start 二次调用与无 run() 目标明确失败，isAlive/join/interrupt/uncaught 记账/teardown interrupt→join 均有机器测试，guest 死循环由每指令停止检查真实展开。解释执行由 VmExecutionLock 串行化（同一时刻一个线程解释字节码，显式限制不宣称并行）；子线程 native 调用仍复用 root guest 栈与 thread id，需要停泊时以 blocking_in_native 明确失败。wait-set 与 Object.wait 属 WU-M9-029，未实现即失败"
+note = "M9 WU-M9-028 一个 guest Java 线程 = 一个 hal 宿主线程 + 独立 execution context，linker/对象模型/JNI 身份共享；start 二次调用与无 run() 目标明确失败，isAlive/join/interrupt/uncaught 记账/teardown interrupt→join 均有机器测试，guest 死循环由每指令停止检查真实展开。解释执行由 VmExecutionLock 串行化（同一时刻一个线程解释字节码，显式限制不宣称并行）；子线程 native 调用仍复用 root guest 栈与 thread id，需要停泊时以 blocking_in_native 明确失败"
+
+[dexvm.monitors]
+status = "partial"
+test = "tests/dexvm/vm_monitor_tests.cpp; Asphalt 6 exact bootstrap 无 guest fault"
+note = "M9 WU-M9-029 session 级 owner/recursion/wait-set，owner 为 execution context token。Enter/Exit 真实跨线程互斥；Wait 逐步对照 AOSP vm/Sync.cpp waitMonitor——校验 owner、保存并清零 recursion、全量释放、入 wait-set、唤醒后先重获 monitor 并恢复 recursion 才返回或抛 InterruptedException（并清中断位）。notify 取 wait-set 头、notifyAll 全量、超时/interrupt/Shutdown 均可唤醒，无所有权抛 IllegalMonitorStateException。超时只用注入的统一 Clock，无时间源即记账 dexvm.monitors.wait_without_clock 并失败。native 侧 runtime.jni_guest_monitors 仍是独立表，两表未合一；wait(J,I) 未声明"
 
 [dexvm.exceptions]
 status = "complete"

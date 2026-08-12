@@ -40,6 +40,17 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   **同一时刻只有一个线程解释字节码**——这是显式记账的限制而非并发，换来的是
   linker 解析缓存、object model arena 与 intrinsic 侧表只有单写者，因此全部
   intrinsic handler 都在锁内运行。
+- `VmMonitorTable`（`vm_monitors.h`，`Interpreter::Monitors()`）：session 级
+  对象 monitor，owner 是 execution context token。`Enter`/`Exit` 提供真实
+  跨线程互斥（争用时释放执行锁停泊）；`Wait` 逐步对照 AOSP `vm/Sync.cpp`
+  `waitMonitor`——校验 owner → 入 wait-set → 保存并清零 recursion → 全量释放
+  monitor → 停泊 → 唤醒后**先重新竞争 monitor 并恢复原 recursion**，然后才
+  返回或抛 `InterruptedException`。无所有权一律
+  `IllegalMonitorStateException`。唤醒源：`notify`（取 wait-set 头）、
+  `notifyAll`、Clock 超时、`Interrupt`、`Shutdown`。超时只用注入的统一 Clock
+  （`SetTimeSource`），没有时间源的 timed wait 记账并明确失败，绝不读宿主
+  wall clock；条件变量的轮询间隔只是调度唤醒，不参与截止判定。
+  线程结束时 `ReleaseAll` 释放其仍持有的 monitor 与 wait-set 成员资格。
 - `VmThreadRuntime`（`vm_threads.h`）：一个 guest Java 线程 = 一个
   `hal::StartHostThread` 宿主线程 + 一个独立 execution context，linker/对象
   模型/JNI 身份共享，子线程与 root 看到同一个对象世界。`Start` 在调用方线程
@@ -94,15 +105,13 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 ## 尚未实现（记账可查）
 
-- monitor 指令目前是每 context 的重入计数，不提供跨线程互斥（执行锁已经串行
-  化解释）；`notify/notifyAll` 会校验当前 monitor 所有权，但 wait-set 与
-  `Object.wait()` 仍未实现——未声明的 `wait()V` 在解析期即明确失败，
-  绝不空返回。wait-set 是 WU-M9-029，`runtime.jni_guest_monitors` 接线随之。
+- `runtime.jni_guest_monitors`（native 侧 JNI MonitorEnter/Exit）仍是独立的
+  monitor table；两张表尚未合一，native 与解释器对同一对象加锁互不可见。
 - 子线程的 guest native 调用仍走 root guest 线程的 CPU 与栈（JNI local
   reference 也记在 root thread id 下）。执行锁保证不会并发，但这不是真正的
   per-thread JavaVM attach；需要停泊时明确失败而不是凑合。
-- `Thread.sleep` 推进统一 uptime 并让出执行锁，不按 Clock 截止时间停泊；
-  按截止时间挂起属 wait-set WU。
+- `Thread.sleep` 推进统一 uptime 并让出执行锁，不按 Clock 截止时间停泊。
+- `Object.wait(long, int)` 未声明；只有 `wait()` 与 `wait(long)`。
 - 反射仅覆盖有界的 `getDeclaredMethods` / 零参整数类返回值
   `Method.invoke`；其余反射面、finalizer、GC-B 未实现。
 
@@ -113,8 +122,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 显式执行 context 交错调用的帧/异常/tick/monitor 隔离）；
 `tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、
 二次 start 与无 run() 目标拒绝、isAlive、join、未捕获异常记账、interrupt、
-teardown 逐线程 join、持有 native 帧时拒绝停泊、未实现的 `Object.wait()`
-仍明确失败）；
+teardown 逐线程 join、持有 native 帧时拒绝停泊）；
+`tests/dexvm/vm_monitor_tests.cpp`（跨宿主线程 notifyAll 配对、recursion 深度
+恢复（三层 monitor-exit 不平衡即失败）、wait/notify 所有权校验、统一 Clock
+截止时间到期、无 Clock 的 timed wait 明确失败、interrupt 唤醒且抛异常前已
+重获 monitor、wait 前已置位的 interrupt 不停泊、teardown 唤醒全部 waiter）；
 `tests/dexvm/dex_code_tests.cpp`、`tests/dexvm/dexasm_readback_tests.cpp`、
 `tests/dexvm/gap_survey_tests.cpp`（survey 开/关对照：关闭即失败、桩答中性值、
 命中计数、工作单排序）。

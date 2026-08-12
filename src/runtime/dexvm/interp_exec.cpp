@@ -4,6 +4,7 @@
 // baseline (07 §2 mode B); conformance fixtures assert the edge cases.
 
 #include "interpreter_internal.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace ogplay::runtime::dexvm {
 namespace {
@@ -32,7 +33,6 @@ void Interpreter::Impl::Step() {
     auto& frames = execution.frames;
     auto& pending_exception = execution.pending_exception;
     auto& exit_result = execution.exit_result;
-    auto& monitors = execution.monitors;
     auto& frame = frames.back();
     const auto& code = *frame.method->code;
     const auto& units = code.instructions;
@@ -241,7 +241,7 @@ void Interpreter::Impl::Step() {
             return;
         }
 
-        // ---- monitors (stage-1 single-thread accounting) ---------------
+        // ---- monitors (04 §4; AOSP vm/Sync.cpp lockMonitor) -------------
         case 0x1d: {  // monitor-enter
             const auto ref = GetRef(frame, vAA);
             if (!ref.IsValid()) {
@@ -249,7 +249,9 @@ void Interpreter::Impl::Step() {
                           "monitor-enter on null");
                 return;
             }
-            ++monitors[ref.Value()];
+            // Parks (releasing the execution lock) while another thread
+            // owns this object.
+            monitors->Enter(ref, execution.token);
             advance();
             return;
         }
@@ -260,13 +262,7 @@ void Interpreter::Impl::Step() {
                           "monitor-exit on null");
                 return;
             }
-            auto& count = monitors[ref.Value()];
-            if (count <= 0) {
-                ThrowJava("Ljava/lang/IllegalStateException;",
-                          "unbalanced monitor-exit");
-                return;
-            }
-            --count;
+            monitors->Exit(ref, execution.token);
             advance();
             return;
         }

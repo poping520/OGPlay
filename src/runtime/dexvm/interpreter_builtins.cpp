@@ -139,7 +139,11 @@ void RegisterCoreBuiltinHandlers(IntrinsicRegistry& registry) {
         return VmValue::Ref(vm.Model().ClassObject(java_class));
     });
   registry.Register("core.object.notify", [](IntrinsicContext &context) {
-    context.vm.NotifyMonitor(context.receiver);
+    context.vm.NotifyMonitor(context.receiver, false);
+    return VmValue::Void();
+  });
+  registry.Register("core.object.notify_all", [](IntrinsicContext &context) {
+    context.vm.NotifyMonitor(context.receiver, true);
     return VmValue::Void();
   });
 

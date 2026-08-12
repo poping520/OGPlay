@@ -93,6 +93,7 @@ struct VmCallOutcome final {
 };
 
 class Interpreter;
+class VmMonitorTable;
 
 // Strong handle selecting one independent interpreter execution state. The
 // linker, object model and intrinsic catalog remain owned by Interpreter;
@@ -232,6 +233,10 @@ public:
     void RequestStop(const InterpreterExecutionContext& context);
 
     [[nodiscard]] VmExecutionLock& ExecutionLock() noexcept;
+    // Session-wide object monitors: owner, recursion and wait set, keyed by
+    // execution context token (04 §4).
+    [[nodiscard]] VmMonitorTable& Monitors() noexcept;
+    [[nodiscard]] std::uint64_t CurrentContextToken() const;
     // Guest native frames live on the single root guest stack, so parking a
     // thread that has one is refused rather than corrupting it.
     [[nodiscard]] std::uint32_t CurrentNativeDepth() const;
@@ -289,11 +294,12 @@ public:
     // sides are strings, reference identity otherwise.
     [[nodiscard]] bool JavaEquals(VmObjectRef left, VmObjectRef right) const;
 
-  // Object.notify/notifyAll stage-1 semantics: validates that the current
-  // interpreter call owns the receiver monitor. There is no wait-set until
-  // the threaded runtime integration lands, so a valid notification wakes
-  // zero parked threads without changing monitor ownership.
-  void NotifyMonitor(VmObjectRef receiver) const;
+  // Object.notify/notifyAll: validates that the calling context owns the
+  // receiver monitor, then moves waiters out of its wait set.
+  void NotifyMonitor(VmObjectRef receiver, bool all) const;
+  // Object.wait: parks on the receiver monitor and throws
+  // InterruptedException when the wait ended in an interrupt.
+  void WaitOnMonitor(VmObjectRef receiver, std::int64_t timeout_millis) const;
 
 private:
     class Impl;

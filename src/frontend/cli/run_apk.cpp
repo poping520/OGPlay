@@ -35,6 +35,7 @@
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/loader/arsc.h"
 #include "ogplay/runtime/dexvm/gap_survey.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
@@ -660,6 +661,12 @@ int RunApkCommand(const int argc, const char* const argv[],
                 },
                 dexvm_ledger, &logger, bridge_config);
             dex_context->threads = &dex_bridge->Threads();
+            // Object.wait deadlines come from the deterministic uptime the
+            // lifecycle driver publishes from the unified Clock, never from
+            // a host wall clock.
+            dex_bridge->Vm().Monitors().SetTimeSource([dex_context] {
+                return dex_context->uptime_millis.load();
+            });
             if (survey_gaps_output.has_value()) {
                 dex_bridge->Linker().EnableGapSurvey();
                 Write("OGPlay: GAP SURVEY RUN — unresolved platform classes "

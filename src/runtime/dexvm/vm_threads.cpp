@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "ogplay/hal/thread.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace ogplay::runtime::dexvm {
 namespace {
@@ -25,7 +26,6 @@ struct VmThreadRecord final {
     InterpreterExecutionContext context;
     std::unique_ptr<hal::HostThread> host;
     VmThreadStatus status{VmThreadStatus::created};
-    bool interrupted{};
 };
 
 // Per host thread routing, keyed by runtime so independent VMs in one test
@@ -64,7 +64,10 @@ public:
 
     // Parks the calling thread until ready() holds. The execution lock is
     // fully released while parked and restored to the same depth after.
+    // Interruptible, like Thread.join on device.
     void ParkUntil(const std::function<bool()>& ready, const char* what) {
+        const auto self = vm->CurrentContextToken();
+        auto& monitors = vm->Monitors();
         {
             const std::lock_guard guard(mutex);
             if (shutting_down || ready()) return;
@@ -72,12 +75,22 @@ public:
         RefuseParkingWithNativeFrame(what);
         auto& lock = vm->ExecutionLock();
         const auto depth = lock.ReleaseForBlocking();
+        bool interrupted = false;
+        bool satisfied = false;
         {
             std::unique_lock guard(mutex);
-            changed.wait(guard,
-                         [&] { return shutting_down || ready(); });
+            changed.wait(guard, [&] {
+                interrupted = monitors.Interrupted(self);
+                satisfied = ready();
+                return shutting_down || interrupted || satisfied;
+            });
         }
         lock.ReacquireAfterBlocking(depth);
+        if (interrupted && !satisfied) {
+            static_cast<void>(monitors.ClearInterrupt(self));
+            throw VmJavaThrow{"Ljava/lang/InterruptedException;",
+                              std::string(what) + " was interrupted"};
+        }
     }
 
     void Body(VmThreadRecord* record) {
@@ -120,6 +133,9 @@ public:
             failure_text =
                 "Java thread " + record->name + " failed: " + error.what();
         }
+        // A dead thread must not keep anybody out of the monitors it still
+        // held, and its wait-set membership goes with it.
+        vm->Monitors().ReleaseAll(record->context.Token());
         current_records.erase(vm);
         {
             const std::lock_guard locked(mutex);
@@ -222,26 +238,33 @@ void VmThreadRuntime::Join(const VmObjectRef thread_object) {
 }
 
 void VmThreadRuntime::Interrupt(const VmObjectRef thread_object) {
+    std::uint64_t token = 0;
     {
         const std::lock_guard guard(impl_->mutex);
-        auto* record = impl_->Find(thread_object);
-        if (record == nullptr || record->interrupted) return;
-        record->interrupted = true;
+        const auto* record = impl_->Find(thread_object);
+        if (record == nullptr) return;
+        token = record->context.Token();
     }
+    // The monitor table owns the interrupt flag so a thread parked in
+    // Object.wait and one parked in join observe the same fact.
+    impl_->vm->Monitors().Interrupt(token);
     impl_->changed.notify_all();
 }
 
 bool VmThreadRuntime::IsInterrupted(const VmObjectRef thread_object) const {
-    const std::lock_guard guard(impl_->mutex);
-    const auto* record = impl_->Find(thread_object);
-    return record != nullptr && record->interrupted;
+    std::uint64_t token = 0;
+    {
+        const std::lock_guard guard(impl_->mutex);
+        const auto* record = impl_->Find(thread_object);
+        if (record == nullptr) return false;
+        token = record->context.Token();
+    }
+    return impl_->vm->Monitors().Interrupted(token);
 }
 
 bool VmThreadRuntime::ClearCurrentInterrupt() {
-    const std::lock_guard guard(impl_->mutex);
-    const auto found = current_records.find(impl_->vm);
-    if (found == current_records.end()) return false;
-    return std::exchange(found->second->interrupted, false);
+    return impl_->vm->Monitors().ClearInterrupt(
+        impl_->vm->CurrentContextToken());
 }
 
 void VmThreadRuntime::Yield() {
@@ -285,9 +308,10 @@ std::vector<VmThreadSnapshot> VmThreadRuntime::Snapshot() const {
     std::vector<VmThreadSnapshot> snapshot;
     snapshot.reserve(impl_->records.size());
     for (const auto& [_, record] : impl_->records) {
-        snapshot.push_back({record->id, record->object.Value(),
-                            record->status, record->interrupted,
-                            record->name});
+        snapshot.push_back(
+            {record->id, record->object.Value(), record->status,
+             impl_->vm->Monitors().Interrupted(record->context.Token()),
+             record->name});
     }
     return snapshot;
 }
@@ -307,9 +331,12 @@ void VmThreadRuntime::Shutdown() {
         }
     }
     // Interrupt before join, matching the existing guest teardown order.
+    // Waiters have to come out of their wait sets too, or the stop check
+    // never gets a chance to run.
     for (auto* record : live) {
         impl_->vm->RequestStop(record->context);
     }
+    impl_->vm->Monitors().Shutdown();
     impl_->changed.notify_all();
 
     // Joining needs the children to make progress, so the caller must not

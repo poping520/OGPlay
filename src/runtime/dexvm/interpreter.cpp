@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "interpreter_internal.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -447,6 +448,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     default_execution->token = 1;
     impl_->default_execution = default_execution.get();
     impl_->executions.emplace(1, std::move(default_execution));
+    impl_->monitors = std::make_unique<VmMonitorTable>(*this);
 
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
@@ -777,16 +779,6 @@ bool Interpreter::JavaEquals(const VmObjectRef left,
         }
     }
     return false;
-}
-
-void Interpreter::NotifyMonitor(const VmObjectRef receiver) const {
-  const auto& monitors = impl_->Execution().monitors;
-  const auto held = monitors.find(receiver.Value());
-  if (!receiver.IsValid() || held == monitors.end() ||
-      held->second <= 0) {
-    throw VmJavaThrow{"Ljava/lang/IllegalMonitorStateException;",
-                      "current thread does not own receiver monitor"};
-  }
 }
 
 }  // namespace ogplay::runtime::dexvm

@@ -409,18 +409,6 @@
     return-object v0
 .end method
 
-# Untimed Object.wait() must stay an explicit failure until the wait-set
-# lands; nothing here may answer it with a silent return.
-.method static public waitUntimed()V
-.registers 1
-    new-instance v0, Ljava/lang/Object;
-    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
-    monitor-enter v0
-    invoke-virtual {v0}, Ljava/lang/Object;->wait()V
-    monitor-exit v0
-    return-void
-.end method
-
 # Never returns on its own: only the teardown stop request gets it out.
 .class public LThreadSpin;
 .super Ljava/lang/Object;
@@ -465,6 +453,207 @@
 .registers 1
     new-instance v0, LThreadThrower;
     invoke-direct {v0}, LThreadThrower;-><init>()V
+    return-object v0
+.end method
+
+# ---- monitor wait set (04 §4) ---------------------------------------------
+# One shared lock plus a guard flag, the classic pattern the bundled
+# GLSurfaceView of these titles uses.
+
+.class public LWaitProbe;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.field static public lock:Ljava/lang/Object;
+.field static public ready:I
+.field static public observed:I
+
+.method static constructor <clinit>()V
+.registers 1
+    new-instance v0, Ljava/lang/Object;
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    sput-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    return-void
+.end method
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+# synchronized (lock) { while (ready == 0) lock.wait(); observed = 1; }
+.method public run()V
+.registers 3
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    monitor-enter v0
+    :check
+    sget v1, LWaitProbe;->ready:I
+    if-nez v1, :done
+    invoke-virtual {v0}, Ljava/lang/Object;->wait()V
+    goto :check
+    :done
+    const/4 v1, 1
+    sput v1, LWaitProbe;->observed:I
+    monitor-exit v0
+    return-void
+.end method
+
+# synchronized (lock) { ready = 1; lock.notifyAll(); }
+.method static public signal()V
+.registers 2
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    monitor-enter v0
+    const/4 v1, 1
+    sput v1, LWaitProbe;->ready:I
+    invoke-virtual {v0}, Ljava/lang/Object;->notifyAll()V
+    monitor-exit v0
+    return-void
+.end method
+
+.method static public make()Ljava/lang/Runnable;
+.registers 1
+    new-instance v0, LWaitProbe;
+    invoke-direct {v0}, LWaitProbe;-><init>()V
+    return-object v0
+.end method
+
+.method static public lock()Ljava/lang/Object;
+.registers 1
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    return-object v0
+.end method
+
+.method static public observed()I
+.registers 1
+    sget v0, LWaitProbe;->observed:I
+    return v0
+.end method
+
+# Ownership is mandatory for both sides (AOSP vm/Sync.cpp owner checks).
+.method static public notifyWithoutLock()V
+.registers 1
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    invoke-virtual {v0}, Ljava/lang/Object;->notify()V
+    return-void
+.end method
+
+.method static public waitWithoutLock()V
+.registers 1
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    invoke-virtual {v0}, Ljava/lang/Object;->wait()V
+    return-void
+.end method
+
+# Timed wait on the unified Clock; no notify is ever sent.
+.method static public waitTimedOnce()V
+.registers 3
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    monitor-enter v0
+    const-wide/16 v1, 50
+    invoke-virtual {v0, v1, v2}, Ljava/lang/Object;->wait(J)V
+    monitor-exit v0
+    return-void
+.end method
+
+# Runs the timed wait on its own thread; nothing ever notifies it, so only
+# the Clock deadline gets it out.
+.class public LWaitTimedRunner;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 4
+    invoke-static {}, LWaitProbe;->waitTimedOnce()V
+    return-void
+.end method
+
+.method static public make()Ljava/lang/Runnable;
+.registers 1
+    new-instance v0, LWaitTimedRunner;
+    invoke-direct {v0}, LWaitTimedRunner;-><init>()V
+    return-object v0
+.end method
+
+# Enters the same monitor three times before waiting: the three exits after
+# it only balance if wait() restored the saved recursion depth.
+.class public LWaitRecursion;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 3
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    monitor-enter v0
+    monitor-enter v0
+    monitor-enter v0
+    :check
+    sget v1, LWaitProbe;->ready:I
+    if-nez v1, :done
+    invoke-virtual {v0}, Ljava/lang/Object;->wait()V
+    goto :check
+    :done
+    monitor-exit v0
+    monitor-exit v0
+    monitor-exit v0
+    const/16 v1, 33
+    sput v1, LWaitProbe;->observed:I
+    return-void
+.end method
+
+.method static public make()Ljava/lang/Runnable;
+.registers 1
+    new-instance v0, LWaitRecursion;
+    invoke-direct {v0}, LWaitRecursion;-><init>()V
+    return-object v0
+.end method
+
+# Catches the InterruptedException and then exits the monitor: that exit
+# only balances if wait() re-acquired the monitor before throwing.
+.class public LWaitInterrupt;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 3
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    monitor-enter v0
+    :try_start
+    invoke-virtual {v0}, Ljava/lang/Object;->wait()V
+    :try_end
+    goto :out
+    :handler
+    move-exception v1
+    const/16 v1, 7
+    sput v1, LWaitProbe;->observed:I
+    :out
+    monitor-exit v0
+    return-void
+    .catch Ljava/lang/InterruptedException; :try_start :try_end :handler
+.end method
+
+.method static public make()Ljava/lang/Runnable;
+.registers 1
+    new-instance v0, LWaitInterrupt;
+    invoke-direct {v0}, LWaitInterrupt;-><init>()V
     return-object v0
 .end method
 

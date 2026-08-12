@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "interpreter_internal.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -162,9 +163,7 @@ InterpreterExecutionSnapshot Interpreter::ExecutionSnapshot(
     snapshot.frame_depth = execution.frames.size();
     snapshot.has_pending_exception = execution.pending_exception.IsValid();
     snapshot.ticks = execution.ticks;
-    for (const auto& [_, recursion] : execution.monitors) {
-        if (recursion > 0) ++snapshot.held_monitor_count;
-    }
+    snapshot.held_monitor_count = impl_->monitors->HeldCount(execution.token);
     snapshot.native_depth = execution.native_depth;
     snapshot.stop_requested =
         execution.stop_requested.load(std::memory_order_relaxed);
@@ -186,6 +185,52 @@ std::uint32_t Interpreter::CurrentNativeDepth() const {
 
 core::CapabilityLedger* Interpreter::Ledger() const noexcept {
     return impl_->ledger;
+}
+
+// ---- monitors ---------------------------------------------------------
+
+VmMonitorTable& Interpreter::Monitors() noexcept { return *impl_->monitors; }
+
+std::uint64_t Interpreter::CurrentContextToken() const {
+    return impl_->Execution().token;
+}
+
+void Interpreter::NotifyMonitor(const VmObjectRef receiver,
+                                const bool all) const {
+    if (!receiver.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                          "notify on null"};
+    }
+    const auto owner = impl_->Execution().token;
+    if (all) {
+        impl_->monitors->NotifyAll(receiver, owner);
+    } else {
+        impl_->monitors->Notify(receiver, owner);
+    }
+}
+
+void Interpreter::WaitOnMonitor(const VmObjectRef receiver,
+                                const std::int64_t timeout_millis) const {
+    if (!receiver.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                          "wait on null"};
+    }
+    const auto outcome = impl_->monitors->Wait(
+        receiver, impl_->Execution().token, timeout_millis);
+    switch (outcome) {
+        case VmWaitOutcome::notified:
+        case VmWaitOutcome::timed_out:
+            return;
+        case VmWaitOutcome::interrupted:
+            // Thrown only after the monitor was re-acquired and its
+            // recursion restored (AOSP vm/Sync.cpp waitMonitor).
+            throw VmJavaThrow{"Ljava/lang/InterruptedException;",
+                              "wait interrupted"};
+        case VmWaitOutcome::shut_down:
+            throw DexVmError(DexVmErrorReason::thread_stopped,
+                             "Object.wait woke because the VM is shutting "
+                             "down");
+    }
 }
 
 }  // namespace ogplay::runtime::dexvm

@@ -43,11 +43,11 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"getClass", "()Ljava/lang/Class;", false, false,
              "core.object.get_class"},
         {"notify", "()V", false, false, "core.object.notify"},
-        {"notifyAll", "()V", false, false, "core.object.notify"},
-            // Cooperative single-thread model (04 §3): a timed wait cannot
-            // observe cross-thread progress inside one tick, so it returns
-            // as an elapsed timeout. Untimed wait() would deadlock and is
-            // deliberately not declared.
+        {"notifyAll", "()V", false, false, "core.object.notify_all"},
+            // Real wait set across host threads (04 §4). The untimed form
+            // parks until notify/interrupt/teardown; the timed form uses
+            // the unified Clock and refuses to run without one.
+            {"wait", "()V", false, false, "core.object.wait"},
             {"wait", "(J)V", false, false, "core.object.wait_timed"},
         };
         catalog.push_back(std::move(object));

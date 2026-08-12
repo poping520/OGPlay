@@ -191,10 +191,15 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
         }
         return VmValue::Void();
     });
-    registry.Register("core.object.wait_timed", [](IntrinsicContext&) {
-        // Cooperative single-thread model (04 §3): other threads only run
-        // at lifecycle boundaries, so a timed wait cannot observe progress
-        // within this tick; it returns as an elapsed timeout.
+    registry.Register("core.object.wait", [](IntrinsicContext& context) {
+        context.vm.WaitOnMonitor(context.receiver, 0);
+        return VmValue::Void();
+    });
+    registry.Register("core.object.wait_timed", [](IntrinsicContext& context) {
+        // 0 means "no deadline" in the Java contract, which is exactly what
+        // WaitOnMonitor treats it as.
+        context.vm.WaitOnMonitor(context.receiver,
+                                 context.arguments[0].AsLong());
         return VmValue::Void();
     });
   registry.Register("core.system.arraycopy", [](IntrinsicContext &context) {

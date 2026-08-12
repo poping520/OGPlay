@@ -302,12 +302,3 @@ TEST_CASE("dexvm refuses to park a thread that holds a guest native frame") {
     CHECK(recorded);
     vm.threads.Shutdown();
 }
-
-TEST_CASE("dexvm untimed Object.wait still fails explicitly before the "
-          "wait-set lands") {
-    ThreadedVm vm;
-    CHECK_THROWS_AS(
-        static_cast<void>(vm.CallStatic("LThreadProbe;", "waitUntimed",
-                                        "()V")),
-        DexVmError);
-}

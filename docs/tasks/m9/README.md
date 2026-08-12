@@ -51,7 +51,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [WU-M9-026](WU-M9-026.md) | Asphalt 6 启动作用域 exact gate | 完成 |
 | [WU-M9-027](WU-M9-027.md) | 解释器 per-thread 执行状态拆分 | 完成 |
 | [WU-M9-028](WU-M9-028.md) | Java Thread 1:1 宿主线程执行 | 完成 |
-| [WU-M9-029](WU-M9-029.md) | monitor wait-set 与 Object.wait/notify | 待开始 |
+| [WU-M9-029](WU-M9-029.md) | monitor wait-set 与 Object.wait/notify | 完成 |
 | [WU-M9-030](WU-M9-030.md) | Asphalt 6 首帧与主界面 exact gate | 待开始 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）

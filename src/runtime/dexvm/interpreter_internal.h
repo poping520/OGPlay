@@ -41,7 +41,6 @@ struct InterpreterExecutionState final {
     VmObjectRef pending_exception;
     DexClassId pending_exception_class;
     VmValue exit_result;
-    std::unordered_map<std::uint32_t, std::int32_t> monitors;
     std::uint64_t ticks{};
     std::uint64_t token{};
     // Depth of guest native frames this context currently has live on the
@@ -95,6 +94,7 @@ public:
     core::Logger* logger{};
     Interpreter* owner{};
     VmExecutionLock execution_lock;
+    std::unique_ptr<VmMonitorTable> monitors;
 
     [[nodiscard]] InterpreterExecutionState& Execution();
     [[nodiscard]] const InterpreterExecutionState& Execution() const;

@@ -42,3 +42,5 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [WU-M9-017](WU-M9-017.md) | Title Profile v2 schema（dex_activity） | 完成 |
 | [WU-M9-018](WU-M9-018.md) | android.* intrinsic 首批 + dex_activity 生命周期装配 | 完成 |
 | [WU-M9-019](WU-M9-019.md) | Asphalt 5 pilot v2 profile + exact 主界面 gate | 完成 |
+| [WU-M9-020](WU-M9-020.md) | Scenario runner 易用性批次（失败日志/机读输出/预算算术/--fresh） | 完成 |
+| [WU-M9-021](WU-M9-021.md) | Scenario runner --watch 增量编写模式 | 完成 |

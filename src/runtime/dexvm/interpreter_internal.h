@@ -48,6 +48,12 @@ public:
 
     std::unordered_map<std::uint32_t, ThrowableState> throwables;
     std::unordered_map<std::uint32_t, std::int32_t> monitors;
+    std::unordered_map<std::uint32_t, std::u16string> builders;
+    std::unordered_map<std::uint32_t, std::vector<VmObjectRef>> lists;
+    std::unordered_map<std::uint32_t,
+                       std::vector<std::pair<VmObjectRef, VmObjectRef>>>
+        maps;
+    core::Logger* logger{};
     std::uint64_t ticks{};
     std::uint64_t clinit_thread_token{1};  // single host thread in stage 1
 
@@ -173,5 +179,7 @@ public:
 
 // Registers built-in java.* core handlers into a registry.
 void RegisterCoreBuiltinHandlers(IntrinsicRegistry& registry);
+// P1 batch: StringBuilder/System/Math/boxed values/collections/streams.
+void RegisterJavaCoreBuiltins(IntrinsicRegistry& registry);
 
 }  // namespace ogplay::runtime::dexvm

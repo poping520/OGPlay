@@ -36,9 +36,13 @@ struct IntrinsicMethodDecl final {
     std::string handler;
 };
 
-struct IntrinsicConstantField final {
+struct IntrinsicFieldDecl final {
     std::string name;
-    std::string descriptor;  // I / J / Ljava/lang/String; supported
+    std::string descriptor;
+    bool is_static{};
+    // Constant statics (Build.VERSION.SDK_INT) materialize at class
+    // initialization; I / J / Z / Ljava/lang/String; are supported.
+    bool has_constant{};
     std::int64_t integral{};
     std::string string_value;
 };
@@ -49,7 +53,9 @@ struct IntrinsicClassDecl final {
     std::vector<std::string> interfaces;
     bool is_interface{};
     std::vector<IntrinsicMethodDecl> methods;
-    std::vector<IntrinsicConstantField> constants;
+    std::vector<IntrinsicFieldDecl> fields;
+    // Optional intrinsic <clinit> handler id (System.out publication etc.).
+    std::string clinit_handler;
 };
 
 struct LinkedField final {
@@ -107,6 +113,8 @@ struct LinkedClass final {
     std::uint64_t clinit_thread{};
     std::vector<std::uint32_t> static_storage;  // raw slots (wide = 2)
     std::optional<std::uint32_t> dex_class_def_index;
+    std::string intrinsic_clinit_handler;
+    std::vector<IntrinsicFieldDecl> intrinsic_constants;
 };
 
 struct ResolvedMethodRef final {

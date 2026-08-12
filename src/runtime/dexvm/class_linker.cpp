@@ -383,18 +383,29 @@ void DexClassLinker::RegisterIntrinsics(
                     MemberKey(method.name, method.descriptor), method_id);
             }
         }
-        for (const auto& constant : declaration->constants) {
+        for (const auto& declared_field : declaration->fields) {
             LinkedField field;
             field.owner = id;
-            field.name = constant.name;
-            field.descriptor = constant.descriptor;
-            field.is_static = true;
-            field.access_flags = kAccStatic | kAccFinal;
-            field.is_wide = IsWideDescriptor(constant.descriptor);
-            field.is_ref = IsRefDescriptor(constant.descriptor);
+            field.name = declared_field.name;
+            field.descriptor = declared_field.descriptor;
+            field.is_static = declared_field.is_static;
+            field.access_flags = declared_field.is_static
+                                     ? (kAccStatic |
+                                        (declared_field.has_constant
+                                             ? kAccFinal
+                                             : 0U))
+                                     : 0U;
+            field.is_wide = IsWideDescriptor(declared_field.descriptor);
+            field.is_ref = IsRefDescriptor(declared_field.descriptor);
             const auto field_id = impl_->AddField(std::move(field));
-            linked.own_static_fields.push_back(field_id);
+            (declared_field.is_static ? linked.own_static_fields
+                                      : linked.own_instance_fields)
+                .push_back(field_id);
+            if (declared_field.has_constant) {
+                linked.intrinsic_constants.push_back(declared_field);
+            }
         }
+        linked.intrinsic_clinit_handler = declaration->clinit_handler;
     }
 }
 

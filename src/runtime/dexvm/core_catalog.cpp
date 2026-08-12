@@ -82,11 +82,292 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"charAt", "(I)C", false, false, "core.string.char_at"},
             {"equals", "(Ljava/lang/Object;)Z", false, false,
              "core.string.equals"},
+            {"equalsIgnoreCase", "(Ljava/lang/String;)Z", false, false,
+             "core.string.equals_ignore_case"},
             {"hashCode", "()I", false, false, "core.string.hash_code"},
             {"toString", "()Ljava/lang/String;", false, false,
              "core.string.to_string"},
+            {"compareTo", "(Ljava/lang/String;)I", false, false,
+             "core.string.compare_to"},
+            {"compareToIgnoreCase", "(Ljava/lang/String;)I", false, false,
+             "core.string.compare_to_ignore_case"},
+            {"concat", "(Ljava/lang/String;)Ljava/lang/String;", false,
+             false, "core.string.concat"},
+            {"startsWith", "(Ljava/lang/String;)Z", false, false,
+             "core.string.starts_with"},
+            {"endsWith", "(Ljava/lang/String;)Z", false, false,
+             "core.string.ends_with"},
+            {"indexOf", "(I)I", false, false, "core.string.index_of_char"},
+            {"indexOf", "(Ljava/lang/String;)I", false, false,
+             "core.string.index_of_string"},
+            {"lastIndexOf", "(I)I", false, false,
+             "core.string.last_index_of_char"},
+            {"lastIndexOf", "(Ljava/lang/String;)I", false, false,
+             "core.string.last_index_of_string"},
+            {"substring", "(I)Ljava/lang/String;", false, false,
+             "core.string.substring_from"},
+            {"substring", "(II)Ljava/lang/String;", false, false,
+             "core.string.substring_range"},
+            {"toLowerCase", "()Ljava/lang/String;", false, false,
+             "core.string.to_lower"},
+            {"toUpperCase", "()Ljava/lang/String;", false, false,
+             "core.string.to_upper"},
+            {"trim", "()Ljava/lang/String;", false, false,
+             "core.string.trim"},
+            {"isEmpty", "()Z", false, false, "core.string.is_empty"},
+            {"valueOf", "(I)Ljava/lang/String;", true, false,
+             "core.string.value_of_int"},
+            {"valueOf", "(J)Ljava/lang/String;", true, false,
+             "core.string.value_of_long"},
+            {"valueOf", "(F)Ljava/lang/String;", true, false,
+             "core.string.value_of_float"},
+            {"valueOf", "(D)Ljava/lang/String;", true, false,
+             "core.string.value_of_double"},
+            {"valueOf", "(Z)Ljava/lang/String;", true, false,
+             "core.string.value_of_boolean"},
+            {"valueOf", "(C)Ljava/lang/String;", true, false,
+             "core.string.value_of_char"},
         };
         catalog.push_back(std::move(string));
+    }
+    {
+        IntrinsicClassDecl builder;
+        builder.descriptor = "Ljava/lang/StringBuilder;";
+        builder.superclass = "Ljava/lang/Object;";
+        builder.interfaces = {"Ljava/lang/CharSequence;"};
+        builder.methods = {
+            {"<init>", "()V", false, false, "core.builder.init"},
+            {"<init>", "(I)V", false, false, "core.builder.init_capacity"},
+            {"<init>", "(Ljava/lang/String;)V", false, false,
+             "core.builder.init_string"},
+            {"append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+             false, false, "core.builder.append_string"},
+            {"append", "(Ljava/lang/Object;)Ljava/lang/StringBuilder;",
+             false, false, "core.builder.append_object"},
+            {"append", "(I)Ljava/lang/StringBuilder;", false, false,
+             "core.builder.append_int"},
+            {"append", "(J)Ljava/lang/StringBuilder;", false, false,
+             "core.builder.append_long"},
+            {"append", "(Z)Ljava/lang/StringBuilder;", false, false,
+             "core.builder.append_boolean"},
+            {"append", "(C)Ljava/lang/StringBuilder;", false, false,
+             "core.builder.append_char"},
+            {"append", "(F)Ljava/lang/StringBuilder;", false, false,
+             "core.builder.append_float"},
+            {"append", "(D)Ljava/lang/StringBuilder;", false, false,
+             "core.builder.append_double"},
+            {"toString", "()Ljava/lang/String;", false, false,
+             "core.builder.to_string"},
+            {"length", "()I", false, false, "core.builder.length"},
+        };
+        catalog.push_back(std::move(builder));
+    }
+    {
+        IntrinsicClassDecl system;
+        system.descriptor = "Ljava/lang/System;";
+        system.superclass = "Ljava/lang/Object;";
+        system.clinit_handler = "core.system.clinit";
+        system.fields = {
+            {"out", "Ljava/io/PrintStream;", true, false, 0, ""},
+            {"err", "Ljava/io/PrintStream;", true, false, 0, ""},
+        };
+        system.methods = {
+            {"arraycopy",
+             "(Ljava/lang/Object;ILjava/lang/Object;II)V", true, false,
+             "core.system.arraycopy"},
+            {"gc", "()V", true, false, "core.system.gc"},
+            // Time, loadLibrary and exit are platform actions: handlers are
+            // injected at session assembly (unified Clock / ELF loader).
+            {"currentTimeMillis", "()J", true, false,
+             "platform.system.current_time_millis"},
+            {"nanoTime", "()J", true, false, "platform.system.nano_time"},
+            {"loadLibrary", "(Ljava/lang/String;)V", true, false,
+             "platform.system.load_library"},
+            {"exit", "(I)V", true, false, "platform.system.exit"},
+        };
+        catalog.push_back(std::move(system));
+    }
+    {
+        IntrinsicClassDecl stream;
+        stream.descriptor = "Ljava/io/PrintStream;";
+        stream.superclass = "Ljava/lang/Object;";
+        stream.methods = {
+            {"println", "(Ljava/lang/String;)V", false, false,
+             "core.printstream.println_string"},
+            {"println", "(I)V", false, false,
+             "core.printstream.println_int"},
+            {"println", "()V", false, false,
+             "core.printstream.println_empty"},
+            {"print", "(Ljava/lang/String;)V", false, false,
+             "core.printstream.print_string"},
+        };
+        catalog.push_back(std::move(stream));
+    }
+    {
+        IntrinsicClassDecl math;
+        math.descriptor = "Ljava/lang/Math;";
+        math.superclass = "Ljava/lang/Object;";
+        math.methods = {
+            {"abs", "(I)I", true, false, "core.math.abs_int"},
+            {"abs", "(J)J", true, false, "core.math.abs_long"},
+            {"abs", "(F)F", true, false, "core.math.abs_float"},
+            {"abs", "(D)D", true, false, "core.math.abs_double"},
+            {"max", "(II)I", true, false, "core.math.max_int"},
+            {"min", "(II)I", true, false, "core.math.min_int"},
+            {"max", "(FF)F", true, false, "core.math.max_float"},
+            {"min", "(FF)F", true, false, "core.math.min_float"},
+            {"sqrt", "(D)D", true, false, "core.math.sqrt"},
+            {"sin", "(D)D", true, false, "core.math.sin"},
+            {"cos", "(D)D", true, false, "core.math.cos"},
+            {"atan2", "(DD)D", true, false, "core.math.atan2"},
+            {"pow", "(DD)D", true, false, "core.math.pow"},
+            {"floor", "(D)D", true, false, "core.math.floor"},
+            {"ceil", "(D)D", true, false, "core.math.ceil"},
+        };
+        catalog.push_back(std::move(math));
+    }
+    {
+        IntrinsicClassDecl number;
+        number.descriptor = "Ljava/lang/Number;";
+        number.superclass = "Ljava/lang/Object;";
+        catalog.push_back(std::move(number));
+    }
+    {
+        IntrinsicClassDecl boxed;
+        boxed.descriptor = "Ljava/lang/Integer;";
+        boxed.superclass = "Ljava/lang/Number;";
+        boxed.fields = {{"value", "I", false, false, 0, ""}};
+        boxed.methods = {
+            {"<init>", "(I)V", false, false, "core.integer.init"},
+            {"valueOf", "(I)Ljava/lang/Integer;", true, false,
+             "core.integer.value_of"},
+            {"intValue", "()I", false, false, "core.integer.int_value"},
+            {"parseInt", "(Ljava/lang/String;)I", true, false,
+             "core.integer.parse_int"},
+            {"toString", "()Ljava/lang/String;", false, false,
+             "core.integer.to_string"},
+            {"toString", "(I)Ljava/lang/String;", true, false,
+             "core.integer.to_string_static"},
+        };
+        catalog.push_back(std::move(boxed));
+    }
+    {
+        IntrinsicClassDecl boxed;
+        boxed.descriptor = "Ljava/lang/Long;";
+        boxed.superclass = "Ljava/lang/Number;";
+        boxed.fields = {{"value", "J", false, false, 0, ""}};
+        boxed.methods = {
+            {"<init>", "(J)V", false, false, "core.long.init"},
+            {"valueOf", "(J)Ljava/lang/Long;", true, false,
+             "core.long.value_of"},
+            {"longValue", "()J", false, false, "core.long.long_value"},
+            {"parseLong", "(Ljava/lang/String;)J", true, false,
+             "core.long.parse_long"},
+            {"toString", "()Ljava/lang/String;", false, false,
+             "core.long.to_string"},
+        };
+        catalog.push_back(std::move(boxed));
+    }
+    {
+        IntrinsicClassDecl boxed;
+        boxed.descriptor = "Ljava/lang/Boolean;";
+        boxed.superclass = "Ljava/lang/Object;";
+        boxed.fields = {{"value", "Z", false, false, 0, ""}};
+        boxed.methods = {
+            {"<init>", "(Z)V", false, false, "core.boolean.init"},
+            {"valueOf", "(Z)Ljava/lang/Boolean;", true, false,
+             "core.boolean.value_of"},
+            {"booleanValue", "()Z", false, false,
+             "core.boolean.boolean_value"},
+        };
+        catalog.push_back(std::move(boxed));
+    }
+    {
+        IntrinsicClassDecl boxed;
+        boxed.descriptor = "Ljava/lang/Float;";
+        boxed.superclass = "Ljava/lang/Number;";
+        boxed.fields = {{"value", "F", false, false, 0, ""}};
+        boxed.methods = {
+            {"<init>", "(F)V", false, false, "core.float.init"},
+            {"valueOf", "(F)Ljava/lang/Float;", true, false,
+             "core.float.value_of"},
+            {"floatValue", "()F", false, false, "core.float.float_value"},
+        };
+        catalog.push_back(std::move(boxed));
+    }
+    {
+        IntrinsicClassDecl boxed;
+        boxed.descriptor = "Ljava/lang/Double;";
+        boxed.superclass = "Ljava/lang/Number;";
+        boxed.fields = {{"value", "D", false, false, 0, ""}};
+        boxed.methods = {
+            {"<init>", "(D)V", false, false, "core.double.init"},
+            {"valueOf", "(D)Ljava/lang/Double;", true, false,
+             "core.double.value_of"},
+            {"doubleValue", "()D", false, false, "core.double.double_value"},
+        };
+        catalog.push_back(std::move(boxed));
+    }
+    {
+        const std::vector<IntrinsicMethodDecl> map_methods = {
+            {"<init>", "()V", false, false, "core.map.init"},
+            {"<init>", "(I)V", false, false, "core.map.init_capacity"},
+            {"put",
+             "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+             false, false, "core.map.put"},
+            {"get", "(Ljava/lang/Object;)Ljava/lang/Object;", false, false,
+             "core.map.get"},
+            {"containsKey", "(Ljava/lang/Object;)Z", false, false,
+             "core.map.contains_key"},
+            {"remove", "(Ljava/lang/Object;)Ljava/lang/Object;", false,
+             false, "core.map.remove"},
+            {"size", "()I", false, false, "core.map.size"},
+            {"clear", "()V", false, false, "core.map.clear"},
+            {"isEmpty", "()Z", false, false, "core.map.is_empty"},
+        };
+        IntrinsicClassDecl hash_map;
+        hash_map.descriptor = "Ljava/util/HashMap;";
+        hash_map.superclass = "Ljava/lang/Object;";
+        hash_map.methods = map_methods;
+        catalog.push_back(std::move(hash_map));
+        IntrinsicClassDecl hashtable;
+        hashtable.descriptor = "Ljava/util/Hashtable;";
+        hashtable.superclass = "Ljava/lang/Object;";
+        hashtable.methods = map_methods;
+        catalog.push_back(std::move(hashtable));
+    }
+    {
+        const std::vector<IntrinsicMethodDecl> list_methods = {
+            {"<init>", "()V", false, false, "core.list.init"},
+            {"<init>", "(I)V", false, false, "core.list.init_capacity"},
+            {"add", "(Ljava/lang/Object;)Z", false, false, "core.list.add"},
+            {"addElement", "(Ljava/lang/Object;)V", false, false,
+             "core.list.add_element"},
+            {"get", "(I)Ljava/lang/Object;", false, false, "core.list.get"},
+            {"elementAt", "(I)Ljava/lang/Object;", false, false,
+             "core.list.get"},
+            {"set", "(ILjava/lang/Object;)Ljava/lang/Object;", false, false,
+             "core.list.set"},
+            {"setElementAt", "(Ljava/lang/Object;I)V", false, false,
+             "core.list.set_element_at"},
+            {"removeElementAt", "(I)V", false, false,
+             "core.list.remove_at"},
+            {"remove", "(I)Ljava/lang/Object;", false, false,
+             "core.list.remove_returning"},
+            {"size", "()I", false, false, "core.list.size"},
+            {"clear", "()V", false, false, "core.list.clear"},
+            {"isEmpty", "()Z", false, false, "core.list.is_empty"},
+        };
+        IntrinsicClassDecl vector;
+        vector.descriptor = "Ljava/util/Vector;";
+        vector.superclass = "Ljava/lang/Object;";
+        vector.methods = list_methods;
+        catalog.push_back(std::move(vector));
+        IntrinsicClassDecl array_list;
+        array_list.descriptor = "Ljava/util/ArrayList;";
+        array_list.superclass = "Ljava/lang/Object;";
+        array_list.methods = list_methods;
+        catalog.push_back(std::move(array_list));
     }
     {
         IntrinsicClassDecl class_class;

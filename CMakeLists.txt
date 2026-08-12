@@ -380,6 +380,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/interp_object.cpp
     src/runtime/dexvm/interp_arith.cpp
     src/runtime/dexvm/interpreter_builtins.cpp
+    src/runtime/dexvm/intrinsics_java.cpp
     src/runtime/jni/jni.cpp
     src/runtime/jni/jni_exception.cpp
     src/runtime/jni/jni_field_store.cpp
@@ -633,6 +634,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/dexasm_readback_tests.cpp
         tests/dexvm/dex_code_tests.cpp
         tests/dexvm/interpreter_tests.cpp
+        tests/dexvm/intrinsics_p1_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)
         list(APPEND OGPLAY_TEST_SOURCES

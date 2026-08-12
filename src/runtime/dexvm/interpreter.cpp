@@ -70,9 +70,9 @@ VmObjectRef Interpreter::Impl::AllocateInstance(
     if (linked.is_interface || linked.is_array) {
         FailCode("cannot instantiate " + linked.descriptor);
     }
-    if (linked.is_intrinsic) {
-        return model->NewHostBacked(java_class, 0);
-    }
+    // Intrinsic and interpreted classes share the vm_instance form so raw
+    // iget/iput on intrinsic-declared fields (Configuration.keyboard etc.)
+    // work uniformly; opaque host state lives in interpreter side tables.
     return model->NewInstance(java_class, linked.instance_slots);
 }
 
@@ -174,6 +174,49 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
             case DexEncodedValueKind::null_reference:
                 storage[field.slot] = 0;
                 break;
+        }
+    }
+
+    // Intrinsic constant statics materialize before any handler runs.
+    for (const auto& constant : mutable_class.intrinsic_constants) {
+        const auto field_id = linker->FindFieldRecursive(
+            java_class, constant.name, constant.descriptor);
+        if (!field_id.has_value()) continue;
+        const auto& field = linker->Field(*field_id);
+        auto& storage = linker->MutableClass(java_class).static_storage;
+        if (constant.descriptor == "Ljava/lang/String;") {
+            std::u16string value(constant.string_value.begin(),
+                                 constant.string_value.end());
+            storage[field.slot] = model->InternString(value).Value();
+        } else if (field.is_wide) {
+            const auto bits = static_cast<std::uint64_t>(constant.integral);
+            storage[field.slot] = static_cast<std::uint32_t>(bits);
+            storage[field.slot + 1] =
+                static_cast<std::uint32_t>(bits >> 32U);
+        } else {
+            storage[field.slot] = static_cast<std::uint32_t>(
+                static_cast<std::int32_t>(constant.integral));
+        }
+    }
+    if (!mutable_class.intrinsic_clinit_handler.empty()) {
+        const auto* handler =
+            intrinsics.Find(mutable_class.intrinsic_clinit_handler);
+        if (handler == nullptr) {
+            linker->MutableClass(java_class).clinit_state =
+                ClinitState::failed;
+            ThrowJava("Ljava/lang/UnsatisfiedLinkError;",
+                      "intrinsic clinit handler is not implemented: " +
+                          mutable_class.intrinsic_clinit_handler);
+            return;
+        }
+        IntrinsicContext context{*owner, VmObjectRef{}, {}};
+        try {
+            (void)(*handler)(context);
+        } catch (const VmJavaThrow& thrown) {
+            linker->MutableClass(java_class).clinit_state =
+                ClinitState::failed;
+            ThrowJava(thrown.descriptor, thrown.message);
+            return;
         }
     }
 
@@ -541,6 +584,77 @@ VmObjectRef Interpreter::ThrowableMessage(const VmObjectRef throwable) const {
 
 void Interpreter::RegisterCoreBuiltins() {
     RegisterCoreBuiltinHandlers(impl_->intrinsics);
+    RegisterJavaCoreBuiltins(impl_->intrinsics);
+}
+
+void Interpreter::SetLogger(core::Logger* logger) noexcept {
+    impl_->logger = logger;
+}
+core::Logger* Interpreter::Log() const noexcept { return impl_->logger; }
+
+std::u16string& Interpreter::BuilderBuffer(const VmObjectRef instance) {
+    return impl_->builders[instance.Value()];
+}
+std::vector<VmObjectRef>& Interpreter::ListStorage(
+    const VmObjectRef instance) {
+    return impl_->lists[instance.Value()];
+}
+std::vector<std::pair<VmObjectRef, VmObjectRef>>& Interpreter::MapStorage(
+    const VmObjectRef instance) {
+    return impl_->maps[instance.Value()];
+}
+
+void Interpreter::SetIntrinsicStaticRef(
+    const std::string_view class_descriptor, const std::string_view field_name,
+    const std::string_view field_descriptor, const VmObjectRef value) {
+    const auto java_class = impl_->linker->FindClass(class_descriptor);
+    if (!java_class.has_value()) {
+        throw DexVmError(DexVmErrorReason::unknown_class,
+                         "intrinsic static owner is not registered: " +
+                             std::string(class_descriptor));
+    }
+    const auto field_id = impl_->linker->FindFieldRecursive(
+        *java_class, std::string(field_name), std::string(field_descriptor));
+    if (!field_id.has_value()) {
+        throw DexVmError(DexVmErrorReason::invalid_member,
+                         "intrinsic static field is not declared: " +
+                             std::string(field_name));
+    }
+    const auto& field = impl_->linker->Field(*field_id);
+    impl_->linker->MutableClass(field.owner).static_storage[field.slot] =
+        value.Value();
+}
+
+VmObjectRef Interpreter::NewIntrinsicInstance(
+    const std::string_view class_descriptor) {
+    const auto java_class = impl_->linker->FindClass(class_descriptor);
+    if (!java_class.has_value()) {
+        throw DexVmError(DexVmErrorReason::unknown_class,
+                         "intrinsic class is not registered: " +
+                             std::string(class_descriptor));
+    }
+    return impl_->AllocateInstance(*java_class);
+}
+
+bool Interpreter::JavaEquals(const VmObjectRef left,
+                             const VmObjectRef right) const {
+    if (left == right) return true;
+    if (!left.IsValid() || !right.IsValid()) return false;
+    const auto left_kind = impl_->model->Kind(left);
+    const auto right_kind = impl_->model->Kind(right);
+    const auto is_string = [](const VmObjectKind kind) {
+        return kind == VmObjectKind::string || kind == VmObjectKind::external;
+    };
+    if (is_string(left_kind) && is_string(right_kind)) {
+        try {
+            return impl_->model->StringValue(left) ==
+                   impl_->model->StringValue(right);
+        } catch (const JniStringError&) {
+            // External identities that are not strings compare by identity.
+            return false;
+        }
+    }
+    return false;
 }
 
 }  // namespace ogplay::runtime::dexvm

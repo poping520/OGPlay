@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 
@@ -178,8 +179,32 @@ public:
     void SetThrowableMessage(VmObjectRef throwable, VmObjectRef message);
     [[nodiscard]] VmObjectRef ThrowableMessage(VmObjectRef throwable) const;
 
-    // Registers the built-in java.* core handlers (object/string/throwable).
+    // Registers the built-in java.* core handlers (object/string/throwable)
+    // plus the P1 batch (StringBuilder/System/Math/boxed/collections).
     void RegisterCoreBuiltins();
+
+    // Optional structured logger for guest-visible output (System.out,
+    // android.util.Log) and uncaught-exception diagnostics.
+    void SetLogger(core::Logger* logger) noexcept;
+    [[nodiscard]] core::Logger* Log() const noexcept;
+
+    // Intrinsic instance side state (StringBuilder buffers, collections).
+    [[nodiscard]] std::u16string& BuilderBuffer(VmObjectRef instance);
+    [[nodiscard]] std::vector<VmObjectRef>& ListStorage(VmObjectRef instance);
+    [[nodiscard]] std::vector<std::pair<VmObjectRef, VmObjectRef>>&
+    MapStorage(VmObjectRef instance);
+
+    // Writes a reference into an intrinsic static field (System.out etc.).
+    void SetIntrinsicStaticRef(std::string_view class_descriptor,
+                               std::string_view field_name,
+                               std::string_view field_descriptor,
+                               VmObjectRef value);
+    // Allocates an intrinsic-class instance (vm_instance form).
+    [[nodiscard]] VmObjectRef NewIntrinsicInstance(
+        std::string_view class_descriptor);
+    // Java equality used by collections: string content equality when both
+    // sides are strings, reference identity otherwise.
+    [[nodiscard]] bool JavaEquals(VmObjectRef left, VmObjectRef right) const;
 
 private:
     class Impl;

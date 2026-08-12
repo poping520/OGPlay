@@ -107,6 +107,14 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
 - executor、时钟、VFS 和 profile 必须显式注入或由确定性 fixture 建立。
 - 不包含平台 UI、真实 present 或游戏专属逻辑。
 
+## 文件分工（android.* intrinsic）
+
+`dexvm_android.h` 是唯一公共面（`AndroidIntrinsicCatalog` +
+`RegisterAndroidBuiltins`）。私有 `dexvm_android_internal.h` 声明批次入口与
+跨批次 helper；类声明按平台面分在 `dexvm_android_catalog_*.cpp`，handler 按
+同一分面分在 `dexvm_android_{activity,io,device,media,graphics,misc}.cpp`。
+新增能力应加进对应分面文件，而不是让单文件继续增长。
+
 ## 测试
 
 对应 `headless_bionic_runner_tests.cpp`、`headless_jni_contract_tests.cpp`、

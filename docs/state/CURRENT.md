@@ -18,6 +18,12 @@ schema v2 `dex_activity` 全程解释执行推进到标题画面渲染（视觉�
   真实 DEX 方法表、native→解释器第三路由均真实发生。
 - M8 Asphalt 6 仍在 Profile native call 5 的 class reference 明确失败处，
   与 M9 互不阻塞（该问题在 dexvm 路线下按设计自动消解，待 A6 迁移评估）。
+- **存档持久化沙盒设计已落地**（2026-08-12）：ADR-0020（Proposed）+
+  `docs/design/sandbox/`。根因确认为设计而非缺陷——VFS external、DexVM
+  `memory_files`、SharedPreferences 三条写入通道均止于会话内存。方案：
+  每 package 一个宿主沙盒目录，可写命名空间以文件粒度 overlay 覆盖只读
+  APK/OBB/external 底层，确定性 flush 点原子落盘；WU 分解 SBX-1..7。
+  未启动实施，capabilities 无变化。
 
 ## 已验收基线
 
@@ -28,40 +34,28 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 
 ## M9 交付摘要
 
-- `third_party/aosp-dalvik`（android-4.4.4_r2 浅 submodule）+ 锚点哈希门禁；
-  opcode 目录 218 项由 bytecode.txt 机器派生并三锚点比对；dexasm 确定性
-  汇编器（golden 锁字节 + Python/C++ 双解析器回读锁结构）。
-- `loader.dex_code`（指令流/try-catch/静态初始值受检读取）、`loader.arsc`
-  （resid↔路径事实，SoundPool 的 0x7f040009+n 由机器事实取代人工 pattern）、
-  Manifest launcher activity 事实。
-- `runtime/dexvm`：类链接（层级/布局/vtable/懒预检）、JavaObjectModel
-  （字符串/基元数组委托存量 JNI store——native 与解释器同对象）、GC-A 预算
-  arena、tagged 帧解释器全 dex 035 家族、异常展开、`<clinit>` 状态机、
-  java.* P1 intrinsic；一致性夹具 20+ 用例对照 AOSP mterp 语义。
-- `DexVmGuestBridge`：出向 descriptor→A32 编组（RegisterNatives→Java_ 导出），
-  入向解释类注册进 JniClassRegistry（233 槽 ABI 不变的第三路由）；
-  `DexActivityLifecycle` 生命周期反转；Title Profile v2（Python/C++ 双校验）。
-- Scenario runner 易用性批次（WU-M9-020/021，复盘驱动）：失败必留
-  failure_logs 证据、失败输出机读 JSON、预算报错带算术、`--fresh`、
-  `--watch` 增量编写模式（追加 checkpoint 免全量重放：实测 2ms vs 30s；
-  v1 schema 零改动）。
+- 基线与工具：`third_party/aosp-dalvik` 锚点哈希门禁、opcode 目录 218 项机器
+  派生、dexasm 确定性汇编器、Scenario runner 易用性批次（WU-M9-020/021）。
+- 解析层：`loader.dex_code`、`loader.arsc`、Manifest launcher activity 事实。
+- `runtime/dexvm`：类链接、JavaObjectModel（与 native 同对象）、GC-A 预算
+  arena、tagged 帧解释器全 dex 035 家族、异常展开、`<clinit>` 状态机。
+- `DexVmGuestBridge` 双向 JNI（233 槽 ABI 不变的第三路由）、
+  `DexActivityLifecycle` 生命周期反转、Title Profile v2。
 
 ## 进行中：更多 title 上 dexvm 路线
 
-- **Dungeon Hunter 已到标题画面**（2026-08-12 批次）：链接器一次性收集全部缺失
-  层级类 + `tools/dexvm_gap_report.py` 机器缺口报告驱动逐轮闭合。本批交付：
-  层级占位批次、String 构造族/StringBuffer/Random/Date/集合迭代器/IO 流等
-  java.* 扩展、Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/
-  SharedPreferences（会话内存）、协作 Java 线程 + Timer、多 Activity 流转、
-  widget 状态层、`setContentView(I)` 经 `ParseBinaryXmlElements` 布局注入
-  （`loader/binary_xml.cpp`）、`runOnUiThread` 同步执行、`VideoView.start()`
-  立即回调 OnCompletionListener（安装器 → 视频 Activity → 游戏主 Activity
-  全链路打通）。另修复 precheck 的 k22b 寄存器校验误报（ASprite.Load 根因）。
-  下一步：标题画面后的输入/进游戏流程验证与长时游玩。
+- **Dungeon Hunter 已到标题画面**（2026-08-12）：链接器全量缺失类报告 +
+  `tools/dexvm_gap_report.py` 驱动逐轮闭合。本批交付层级占位、java.* 扩展
+  （String 构造族/StringBuffer/Random/集合/IO 流）、Bitmap(stb_image)/Canvas、
+  Environment/StatFs、SharedPreferences（会话内存）、协作线程 + Timer、
+  多 Activity 流转、widget 状态层、`setContentView(I)` 经
+  `ParseBinaryXmlElements` 布局注入、`runOnUiThread` 同步执行、
+  `VideoView.start()` 立即回调完成监听（安装器→视频→主 Activity 全链路），
+  并修复 precheck 的 k22b 误报。下一步：输入/进游戏流程与长时游玩。
 - **Asphalt 6**：`loader.dex_l1` 过严，拒绝以数组类型为 owner 的 method_id
   （A6 有 4 处 `[Lcom/…;->clone`），dex-format 允许——必须先放宽解析。
 
-完整缺口清单、工作队列、精确复现命令与本轮踩坑经验见
+缺口清单、工作队列与复现命令见
 **[docs/tasks/m9/HANDOFF-TITLES.md](../tasks/m9/HANDOFF-TITLES.md)**。
 
 ## 下一步（按优先级）
@@ -78,7 +72,9 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 4. Linux M9 严格出口复验（macOS/arm64 与 Windows/x64 已全绿；Windows 侧
    修复了 dexvm 的 MSVC 可移植性：`__builtin_memcpy`→`std::bit_cast`、
    遮蔽警告，aosp-dalvik 子模块需 LF 检出——autocrlf 会破坏锚点哈希）。
-5. 存量性能 backlog 不变（ADR-0019 呈现管线方向等）。
+5. 存档持久化沙盒：评审 ADR-0020 后按 `docs/design/sandbox/05` 的
+   SBX-1/2（SandboxStore、VFS 目录操作，均不触碰现有行为）先行启动。
+6. 存量性能 backlog 不变（ADR-0019 呈现管线方向等）。
 
 ## 阻塞
 

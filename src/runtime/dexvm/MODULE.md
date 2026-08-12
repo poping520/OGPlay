@@ -31,7 +31,14 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   native 走 `NativeMethodBridge`（未注入则记账 + 明确失败）。
   `EnsureClassInitialized` 实现 `<clinit>` 状态机（同线程重入放行、失败粘滞
   NoClassDefFoundError、静态初始值先于 `<clinit>` 物化）。
-- `RegisterCoreBuiltinHandlers`：core.object/string/class/throwable handler。
+- `RegisterCoreBuiltinHandlers`：core.object/string/class/throwable handler
+  （String/StringBuilder 面在 `intrinsics_string.cpp`）。
+
+## 文件分工
+
+`class_linker_internal.h` 持有 `DexClassLinker::Impl` 与共享 helper：注册/
+布局/vtable 在 `class_linker.cpp`，常量池解析与可赋值性在
+`class_linker_resolve.cpp`。
 
 ## 不变量
 

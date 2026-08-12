@@ -364,7 +364,18 @@ add_library(ogplay_runtime
     src/runtime/boundary/android_boundary_symbols.cpp
     src/runtime/integration/android_link_preflight.cpp
     src/runtime/integration/dexvm_android.cpp
+    src/runtime/integration/dexvm_android_activity.cpp
+    src/runtime/integration/dexvm_android_catalog_core.cpp
+    src/runtime/integration/dexvm_android_catalog_device.cpp
+    src/runtime/integration/dexvm_android_catalog_graphics.cpp
+    src/runtime/integration/dexvm_android_catalog_io.cpp
+    src/runtime/integration/dexvm_android_catalog_widgets.cpp
+    src/runtime/integration/dexvm_android_device.cpp
+    src/runtime/integration/dexvm_android_graphics.cpp
     src/runtime/integration/dexvm_android_handlers.cpp
+    src/runtime/integration/dexvm_android_io.cpp
+    src/runtime/integration/dexvm_android_media.cpp
+    src/runtime/integration/dexvm_android_misc.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/host_image_decode.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
@@ -378,6 +389,7 @@ add_library(ogplay_runtime
     src/runtime/integration/native_activity_runner.cpp
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/dexvm/class_linker.cpp
+    src/runtime/dexvm/class_linker_resolve.cpp
     src/runtime/dexvm/core_catalog.cpp
     src/runtime/dexvm/method_precheck.cpp
     src/runtime/dexvm/object_model.cpp

@@ -2,7 +2,7 @@
 
 ## 职责
 
-提供 CLI 与未来 Qt GUI；二者只编排公共内核 API，不实现兼容行为。
+提供 CLI 与未来 SDL3 + Dear ImGui GUI；二者只编排公共内核 API，不实现兼容行为。
 提供可由前端选择启动的 loopback MCP Streamable HTTP transport；协议与截图编码仍由
 agent 模块拥有，transport 只负责受限 HTTP framing。
 

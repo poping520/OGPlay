@@ -14,7 +14,7 @@
 | AOSP Dalvik | `android-4.4.4_r2`（`36e356c96640775f0a3f167bd2426ea0f0093b8b`） | https://github.com/aosp-mirror/platform_dalvik | Apache-2.0 | DexVM 语义参考与机器校验数据源；默认不编译、不链接进任何发行物 |
 
 Dynarmic 的递归 submodule 版本由其固定提交的 `.gitmodules` 与 gitlink 决定，各组件
-许可证位于对应源码目录。规划中但尚未引入发行物：ANGLE、Qt 6、FFmpeg、zlib、zstd
+许可证位于对应源码目录。规划中但尚未引入发行物：ANGLE、Dear ImGui、FFmpeg、zlib、zstd
 及 AOSP Bionic。任何游戏 APK、OBB、解包资源或设备提取的系统库均不得提交或再分发。
 ## PowerVR Native SDK PVRTC decompression algorithm
 

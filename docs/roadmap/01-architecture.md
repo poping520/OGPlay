@@ -22,7 +22,7 @@
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │  前端                                                           │
-│  GUI(Qt) · CLI · Agent Control Server(JSON-RPC) · MCP Adapter  │
+│ GUI(ImGui) · CLI · Agent Control Server(JSON-RPC) · MCP Adapter│
 ├────────────────────────────────────────────────────────────────┤
 │  会话编排 Session                                                │
 │  题库/Title Profile · 存档 · 配置 · 输入映射 · 兼容性上报          │
@@ -360,7 +360,7 @@ tests/
 | 音频 | miniaudio 或 SDL3 audio | 替换 CoreAudio 直连 |
 | 视频 | FFmpeg | 片头动画 |
 | 压缩 | zlib（沿用）+ zstd | OBB / 存档 |
-| GUI | Qt 6 | 跨平台成熟 |
+| GUI | SDL3 + Dear ImGui | 与游戏窗口共用 SDL3+ANGLE 渲染栈；屏幕叠加编辑器同源 |
 | 构建 | CMake + vcpkg/Conan | 三平台一致的依赖获取 |
 | 测试 | Catch2 或 doctest | 替换自制框架，获得更好的 CI 集成 |
 | 日志 | 自建结构化 Logger（可用 spdlog 做后端） | 需要帧号轴、地址符号化、环形缓冲，现成库不直接满足（[09](09-logging.md)） |

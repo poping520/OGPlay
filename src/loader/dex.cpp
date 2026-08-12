@@ -492,6 +492,16 @@ void ReadStringsTypesAndPrototypes(const Reader& reader, DexImage& image) {
            image.types[index].descriptor.front() == 'L';
 }
 
+// dex-format 允许 method 引用的 owner 为数组类型(数组继承 Object.clone();
+// AOSP libdex/DexFile.h 的 method_id 亦不限制 owner 为 class descriptor)。
+// field 引用的 owner 仍必须是 class descriptor。
+[[nodiscard]] bool IsMethodOwnerType(const DexImage& image,
+                                     const std::uint32_t index) {
+    if (index >= image.types.size()) return false;
+    const auto front = image.types[index].descriptor.front();
+    return front == 'L' || front == '[';
+}
+
 void RequireDataOffset(const DexHeader& header, const std::uint32_t offset,
                        const char* name) {
     if (offset != 0 &&
@@ -552,7 +562,7 @@ void ReadMembersAndClasses(const Reader& reader, DexImage& image) {
         const auto declaring_type = reader.U16(at);
         const auto prototype = reader.U16(at + 2);
         const auto name = reader.U32(at + 4);
-        if (!IsClassType(image, declaring_type) ||
+        if (!IsMethodOwnerType(image, declaring_type) ||
             prototype >= image.prototypes.size() ||
             name >= image.strings.size()) {
             Fail(DexErrorReason::invalid_member, at,

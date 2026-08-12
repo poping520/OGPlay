@@ -170,6 +170,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.string.value_of_boolean"},
             {"valueOf", "(C)Ljava/lang/String;", true, false,
              "core.string.value_of_char"},
+            {"valueOf", "(Ljava/lang/Object;)Ljava/lang/String;", true,
+             false, "core.string.value_of_object"},
         };
         catalog.push_back(std::move(string));
     }
@@ -378,7 +380,11 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         IntrinsicClassDecl boxed;
         boxed.descriptor = "Ljava/lang/Float;";
         boxed.superclass = "Ljava/lang/Number;";
-        boxed.fields = {{"value", "F", false, false, 0, ""}};
+        // TYPE is the primitive float class object, published at class
+        // initialization (Array.newInstance consumers).
+        boxed.fields = {{"value", "F", false, false, 0, ""},
+                        {"TYPE", "Ljava/lang/Class;", true, false, 0, ""}};
+        boxed.clinit_handler = "core.float.clinit";
         boxed.methods = {
             {"<init>", "(F)V", false, false, "core.float.init"},
             {"valueOf", "(F)Ljava/lang/Float;", true, false,
@@ -497,6 +503,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
             {"nextInt", "(I)I", false, false, "core.random.next_int_bound"},
             {"nextInt", "()I", false, false, "core.random.next_int"},
             {"nextFloat", "()F", false, false, "core.random.next_float"},
+            {"nextLong", "()J", false, false, "core.random.next_long"},
         };
         catalog.push_back(std::move(random));
     }
@@ -550,6 +557,31 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
              "core.class.get_name"},
         };
         catalog.push_back(std::move(class_class));
+        // GC-A never collects (04 §5), so a weak reference truthfully stays
+        // reachable for the whole session.
+        IntrinsicClassDecl weak_reference;
+        weak_reference.descriptor = "Ljava/lang/ref/WeakReference;";
+        weak_reference.superclass = "Ljava/lang/Object;";
+        weak_reference.fields = {
+            {"referent", "Ljava/lang/Object;", false, false, 0, ""},
+        };
+        weak_reference.methods = {
+            {"<init>", "(Ljava/lang/Object;)V", false, false,
+             "core.weak_reference.init"},
+            {"get", "()Ljava/lang/Object;", false, false,
+             "core.weak_reference.get"},
+        };
+        catalog.push_back(std::move(weak_reference));
+        // Reflective array construction is real (typed arrays from the
+        // object model); the rest of java.lang.reflect stays a non-goal.
+        IntrinsicClassDecl reflect_array;
+        reflect_array.descriptor = "Ljava/lang/reflect/Array;";
+        reflect_array.superclass = "Ljava/lang/Object;";
+        reflect_array.methods = {
+            {"newInstance", "(Ljava/lang/Class;[I)Ljava/lang/Object;", true,
+             false, "core.reflect.array_new_instance"},
+        };
+        catalog.push_back(std::move(reflect_array));
     }
     {
         IntrinsicClassDecl throwable;

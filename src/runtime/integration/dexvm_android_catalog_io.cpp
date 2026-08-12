@@ -9,13 +9,16 @@ void AppendIoClasses(std::vector<Decl>& catalog) {
         Decl stream;
         stream.descriptor = "Ljava/io/InputStream;";
         stream.superclass = "Ljava/lang/Object;";
+        // Overridable: on the JDK these are plain virtuals and stream
+        // subclasses (FilterInputStream chains in title code) override
+        // them; super calls still reach the intrinsic.
         stream.methods = {
-            {"read", "([BII)I", false, false, "android.stream.read_range"},
-            {"read", "([B)I", false, false, "android.stream.read_full"},
-            {"read", "()I", false, false, "android.stream.read_one"},
-            {"available", "()I", false, false, "android.stream.available"},
-            {"close", "()V", false, false, "android.stream.close"},
-            {"skip", "(J)J", false, false, "android.stream.skip"},
+            {"read", "([BII)I", false, true, "android.stream.read_range"},
+            {"read", "([B)I", false, true, "android.stream.read_full"},
+            {"read", "()I", false, true, "android.stream.read_one"},
+            {"available", "()I", false, true, "android.stream.available"},
+            {"close", "()V", false, true, "android.stream.close"},
+            {"skip", "(J)J", false, true, "android.stream.skip"},
         };
         catalog.push_back(std::move(stream));
     }
@@ -43,6 +46,10 @@ void AppendIoClasses(std::vector<Decl>& catalog) {
             {"createNewFile", "()Z", false, false,
              "android.file.create_new"},
             {"delete", "()Z", false, false, "android.file.delete"},
+            {"isDirectory", "()Z", false, false,
+             "android.file.is_directory"},
+            {"list", "()[Ljava/lang/String;", false, false,
+             "android.file.list"},
         };
         catalog.push_back(std::move(file));
         Decl file_input;
@@ -55,10 +62,57 @@ void AppendIoClasses(std::vector<Decl>& catalog) {
              "android.file_stream.init_path"},
         };
         catalog.push_back(std::move(file_input));
+        // Filter/Buffered wrappers adopt the wrapped stream's record (the
+        // single-owner convention documented on the reader family).
+        Decl filter_input;
+        filter_input.descriptor = "Ljava/io/FilterInputStream;";
+        filter_input.superclass = "Ljava/io/InputStream;";
+        filter_input.methods = {
+            {"<init>", "(Ljava/io/InputStream;)V", false, false,
+             "android.reader.adopt_stream"},
+        };
+        catalog.push_back(std::move(filter_input));
+        Decl buffered_input;
+        buffered_input.descriptor = "Ljava/io/BufferedInputStream;";
+        buffered_input.superclass = "Ljava/io/FilterInputStream;";
+        buffered_input.methods = {
+            {"<init>", "(Ljava/io/InputStream;)V", false, false,
+             "android.reader.adopt_stream"},
+            {"<init>", "(Ljava/io/InputStream;I)V", false, false,
+             "android.reader.adopt_stream"},
+        };
+        catalog.push_back(std::move(buffered_input));
         Decl output;
         output.descriptor = "Ljava/io/OutputStream;";
         output.superclass = "Ljava/lang/Object;";
+        output.methods = {
+            {"write", "([BII)V", false, true,
+             "android.byte_output.write_range"},
+            {"write", "([B)V", false, true,
+             "android.file_output.write_bytes"},
+            {"write", "(I)V", false, true, "android.output.write_one"},
+            {"flush", "()V", false, true, "android.file_output.flush"},
+            {"close", "()V", false, true, "android.file_output.close"},
+        };
         catalog.push_back(std::move(output));
+        Decl filter_output;
+        filter_output.descriptor = "Ljava/io/FilterOutputStream;";
+        filter_output.superclass = "Ljava/io/OutputStream;";
+        filter_output.methods = {
+            {"<init>", "(Ljava/io/OutputStream;)V", false, false,
+             "android.output.adopt"},
+        };
+        catalog.push_back(std::move(filter_output));
+        Decl buffered_output;
+        buffered_output.descriptor = "Ljava/io/BufferedOutputStream;";
+        buffered_output.superclass = "Ljava/io/FilterOutputStream;";
+        buffered_output.methods = {
+            {"<init>", "(Ljava/io/OutputStream;)V", false, false,
+             "android.output.adopt"},
+            {"<init>", "(Ljava/io/OutputStream;I)V", false, false,
+             "android.output.adopt"},
+        };
+        catalog.push_back(std::move(buffered_output));
         Decl file_output;
         file_output.descriptor = "Ljava/io/FileOutputStream;";
         file_output.superclass = "Ljava/io/OutputStream;";
@@ -140,6 +194,11 @@ void AppendIoClasses(std::vector<Decl>& catalog) {
              "android.data_input.read_fully"},
             {"skipBytes", "(I)I", false, false,
              "android.data_input.skip_bytes"},
+            {"readInt", "()I", false, false, "android.data_input.read_int"},
+            {"readLong", "()J", false, false,
+             "android.data_input.read_long"},
+            {"readUTF", "()Ljava/lang/String;", false, false,
+             "android.data_input.read_utf"},
             {"close", "()V", false, false, "android.stream.close"},
         };
         catalog.push_back(std::move(data_input));
@@ -179,6 +238,36 @@ void AppendIoClasses(std::vector<Decl>& catalog) {
             {"close", "()V", false, false, "android.file_output.close"},
         };
         catalog.push_back(std::move(file_writer));
+        // Real zip reading over an adopted stream (title data installers
+        // unpack asset zips at first launch). Entries inflate through the
+        // strict loader ZIP reader; malformed input throws IOException.
+        Decl zip_entry;
+        zip_entry.descriptor = "Ljava/util/zip/ZipEntry;";
+        zip_entry.superclass = "Ljava/lang/Object;";
+        zip_entry.fields = {{"name", "Ljava/lang/String;", false, false, 0,
+                             ""}};
+        zip_entry.methods = {
+            {"getName", "()Ljava/lang/String;", false, false,
+             "android.zip_entry.get_name"},
+            {"isDirectory", "()Z", false, false,
+             "android.zip_entry.is_directory"},
+        };
+        catalog.push_back(std::move(zip_entry));
+        Decl zip_input;
+        zip_input.descriptor = "Ljava/util/zip/ZipInputStream;";
+        zip_input.superclass = "Ljava/io/FilterInputStream;";
+        zip_input.methods = {
+            {"<init>", "(Ljava/io/InputStream;)V", false, false,
+             "android.zip_input.init"},
+            {"getNextEntry", "()Ljava/util/zip/ZipEntry;", false, false,
+             "android.zip_input.get_next_entry"},
+            {"read", "([BII)I", false, false,
+             "android.zip_input.read_range"},
+            {"closeEntry", "()V", false, false,
+             "android.zip_input.close_entry"},
+            {"close", "()V", false, false, "android.zip_input.close"},
+        };
+        catalog.push_back(std::move(zip_input));
         Decl data_output;
         data_output.descriptor = "Ljava/io/DataOutputStream;";
         data_output.superclass = "Ljava/io/OutputStream;";

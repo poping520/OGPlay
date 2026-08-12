@@ -283,6 +283,8 @@ def _parse_class_data(data: bytes, offset: int, parsed: DexClass) -> None:
 
 PLATFORM_PREFIXES = (
     "Landroid/", "Ljava/", "Ljavax/", "Ldalvik/", "Lorg/apache/http/",
+    # AOSP-bundled library packages (SAX, JSON) count as platform.
+    "Lorg/xml/", "Lorg/json/",
 )
 
 

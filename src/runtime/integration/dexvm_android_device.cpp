@@ -143,13 +143,18 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
         return dx::VmValue::Ref(
             call.vm.NewIntrinsicInstance("Landroid/os/Message;"));
     });
-    registry.Register("android.handler.send_message",
-                      [](dx::IntrinsicContext& call) {
-        // Single VM host thread: deliver synchronously through the
-        // receiver's handleMessage override.
+    // Single VM host thread: messages deliver synchronously through the
+    // handler's handleMessage override.
+    const auto deliver_message = [](dx::IntrinsicContext& call,
+                                    const dx::VmObjectRef handler,
+                                    const dx::VmObjectRef message) {
         auto& vm = call.vm;
         auto& linker = vm.Linker();
-        const auto handler_class = vm.Model().ObjectClass(call.receiver);
+        if (!handler.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "message has no delivery target"};
+        }
+        const auto handler_class = vm.Model().ObjectClass(handler);
         const auto index = linker.FindVtableIndex(
             handler_class, "handleMessage", "(Landroid/os/Message;)V");
         if (!index.has_value()) {
@@ -158,11 +163,93 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
         }
         const auto outcome = vm.Call(
             linker.Class(handler_class).vtable[*index],
-            std::vector<dx::VmValue>{dx::VmValue::Ref(call.receiver),
-                                     call.arguments[0]});
+            std::vector<dx::VmValue>{dx::VmValue::Ref(handler),
+                                     dx::VmValue::Ref(message)});
         if (outcome.exception.IsValid()) {
             throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
                                   "handleMessage raised: " +
+                                      outcome.exception_message};
+        }
+    };
+    registry.Register("android.handler.send_message",
+                      [deliver_message](dx::IntrinsicContext& call) {
+        deliver_message(call, call.receiver, call.arguments[0].ref);
+        return dx::VmValue::Int(1);
+    });
+    registry.Register("android.handler.dispatch_message",
+                      [deliver_message](dx::IntrinsicContext& call) {
+        deliver_message(call, call.receiver, call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.looper.get_main_looper",
+                      [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(Singleton(call, context, "main_looper",
+                                          "Landroid/os/Looper;"));
+    });
+    // Message slot layout follows the catalog field order:
+    // what/arg1/arg2/obj/target.
+    const auto make_message = [](dx::IntrinsicContext& call,
+                                 const std::int32_t what,
+                                 const dx::VmObjectRef object,
+                                 const dx::VmObjectRef target) {
+        const auto message =
+            call.vm.NewIntrinsicInstance("Landroid/os/Message;");
+        const auto slots = call.vm.Model().InstanceSlots(message);
+        slots[0] = {static_cast<std::uint32_t>(what), dx::SlotTag::cat1};
+        slots[3] = {object.Value(), dx::SlotTag::ref};
+        slots[4] = {target.Value(), dx::SlotTag::ref};
+        return message;
+    };
+    registry.Register("android.handler.obtain_message_what",
+                      [make_message](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(make_message(call,
+                                             call.arguments[0].AsInt(),
+                                             dx::VmObjectRef{},
+                                             call.receiver));
+    });
+    registry.Register("android.handler.obtain_message_what_obj",
+                      [make_message](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(make_message(call,
+                                             call.arguments[0].AsInt(),
+                                             call.arguments[1].ref,
+                                             call.receiver));
+    });
+    registry.Register("android.message.obtain_static",
+                      [make_message](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(make_message(call,
+                                             call.arguments[1].AsInt(),
+                                             call.arguments[2].ref,
+                                             call.arguments[0].ref));
+    });
+    registry.Register("android.message.send_to_target",
+                      [deliver_message](dx::IntrinsicContext& call) {
+        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+        deliver_message(call, dx::VmObjectRef(slots[4].bits),
+                        call.receiver);
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.handler.post",
+                      [](dx::IntrinsicContext& call) {
+        auto& vm = call.vm;
+        auto& linker = vm.Linker();
+        const auto runnable = call.arguments[0].ref;
+        if (!runnable.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "posted Runnable is null"};
+        }
+        const auto runnable_class = vm.Model().ObjectClass(runnable);
+        const auto index =
+            linker.FindVtableIndex(runnable_class, "run", "()V");
+        if (!index.has_value()) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "posted object has no run()"};
+        }
+        const auto outcome = vm.Call(
+            linker.Class(runnable_class).vtable[*index],
+            std::vector<dx::VmValue>{dx::VmValue::Ref(runnable)});
+        if (outcome.exception.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
+                                  "posted run() raised: " +
                                       outcome.exception_message};
         }
         return dx::VmValue::Int(1);

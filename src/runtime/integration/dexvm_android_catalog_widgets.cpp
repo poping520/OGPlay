@@ -37,7 +37,41 @@ void AppendWidgetClasses(std::vector<Decl>& catalog) {
         layout_params_base.descriptor =
             "Landroid/view/ViewGroup$LayoutParams;";
         layout_params_base.superclass = "Ljava/lang/Object;";
+        layout_params_base.methods = {
+            {"<init>", "(II)V", false, false, "android.widget.noop"},
+        };
         catalog.push_back(std::move(layout_params_base));
+        // Layout-params subclasses: programmatic layout metrics have no
+        // renderer consumer (the GL surface / video frame is the visual
+        // output), so the setters are truthful no-ops.
+        Decl relative_params;
+        relative_params.descriptor =
+            "Landroid/widget/RelativeLayout$LayoutParams;";
+        relative_params.superclass = "Landroid/view/ViewGroup$LayoutParams;";
+        relative_params.methods = {
+            {"<init>", "(II)V", false, false, "android.widget.noop"},
+            {"addRule", "(I)V", false, false, "android.widget.noop"},
+            {"addRule", "(II)V", false, false, "android.widget.noop"},
+        };
+        catalog.push_back(std::move(relative_params));
+        Decl linear_params;
+        linear_params.descriptor =
+            "Landroid/widget/LinearLayout$LayoutParams;";
+        linear_params.superclass = "Landroid/view/ViewGroup$LayoutParams;";
+        linear_params.methods = {
+            {"<init>", "(II)V", false, false, "android.widget.noop"},
+            {"<init>", "(IIF)V", false, false, "android.widget.noop"},
+            {"setMargins", "(IIII)V", false, false, "android.widget.noop"},
+        };
+        catalog.push_back(std::move(linear_params));
+        Decl frame_params;
+        frame_params.descriptor =
+            "Landroid/widget/FrameLayout$LayoutParams;";
+        frame_params.superclass = "Landroid/view/ViewGroup$LayoutParams;";
+        frame_params.methods = {
+            {"<init>", "(II)V", false, false, "android.widget.noop"},
+        };
+        catalog.push_back(std::move(frame_params));
         Decl absolute_layout;
         absolute_layout.descriptor = "Landroid/widget/AbsoluteLayout;";
         absolute_layout.superclass = "Landroid/view/ViewGroup;";
@@ -157,6 +191,14 @@ void AppendWidgetClasses(std::vector<Decl>& catalog) {
         progress_bar.methods = {
             {"<init>", "(Landroid/content/Context;)V", false, false,
              "android.view.init"},
+            // The attribute-set/style form only selects visual style,
+            // which has no renderer consumer here.
+            {"<init>",
+             "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+             false, false, "android.view.init"},
+            {"setMax", "(I)V", false, false, "android.widget.noop"},
+            {"setProgress", "(I)V", false, false, "android.widget.noop"},
+            {"setPadding", "(IIII)V", false, false, "android.widget.noop"},
         };
         catalog.push_back(std::move(progress_bar));
         // Real decoded playback through the injected VideoPlayer factory
@@ -332,6 +374,33 @@ void AppendWidgetClasses(std::vector<Decl>& catalog) {
         {"Ljavax/net/ssl/X509TrustManager;", true, nullptr, nullptr, false},
         {"Lorg/xml/sax/helpers/DefaultHandler;", false, nullptr, nullptr,
          true},
+        // Racing-title link gap batch, gap report 2026-08-12. Stream
+        // subclasses keep their real declared base so instances stay usable
+        // wherever InputStream/OutputStream/View is expected.
+        {"Landroid/app/Dialog;", false, nullptr, nullptr, true},
+        {"Landroid/app/IntentService;", false, nullptr, nullptr, true},
+        {"Landroid/content/DialogInterface$OnCancelListener;", true, nullptr,
+         nullptr, false},
+        {"Landroid/content/DialogInterface$OnDismissListener;", true, nullptr,
+         nullptr, false},
+        {"Landroid/media/MediaPlayer$OnErrorListener;", true, nullptr,
+         nullptr, false},
+        {"Landroid/media/MediaPlayer$OnPreparedListener;", true, nullptr,
+         nullptr, false},
+        {"Landroid/os/AsyncTask;", false, nullptr, nullptr, true},
+        {"Landroid/os/CountDownTimer;", false, nullptr, nullptr, true},
+        {"Landroid/telephony/PhoneStateListener;", false, nullptr, nullptr,
+         true},
+        {"Landroid/view/SurfaceHolder$Callback;", true, nullptr, nullptr,
+         false},
+        {"Landroid/view/SurfaceView;", false, "Landroid/view/View;", nullptr,
+         true},
+        {"Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;", true,
+         nullptr, nullptr, false},
+        {"Landroid/webkit/WebChromeClient;", false, nullptr, nullptr, true},
+        {"Ljava/io/ObjectInputStream;", false, "Ljava/io/InputStream;",
+         nullptr, true},
+        {"Ljava/lang/Enum;", false, nullptr, nullptr, true},
     };
     for (const auto& placeholder : kHierarchyPlaceholders) {
         Decl declaration;

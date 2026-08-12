@@ -72,6 +72,20 @@ struct DexVmAndroidContext final {
     };
     std::unordered_map<std::uint32_t, OutputStream> output_streams;
 
+    // ZipInputStream state: the adopted source bytes go through the strict
+    // ZIP reader once; entries inflate one at a time as the title walks
+    // getNextEntry/read.
+    struct ZipStream final {
+        std::vector<std::byte> raw;
+        loader::ApkArchive archive;
+        std::size_t next_entry{};
+        std::vector<std::byte> entry_bytes;
+        std::size_t cursor{};
+        bool entry_open{};
+        bool closed{};
+    };
+    std::unordered_map<std::uint32_t, ZipStream> zip_streams;
+
     // Session-lifetime in-memory files (v1 storage semantics: writes are
     // visible within the session; cross-session persistence is not claimed).
     // Overlays the shared guest VFS below: Java-side writes land here first

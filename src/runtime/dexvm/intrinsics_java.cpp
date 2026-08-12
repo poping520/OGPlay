@@ -171,6 +171,11 @@ void RegisterSystemHandlers(IntrinsicRegistry& registry) {
             return VmValue::Int(
                 static_cast<std::int32_t>(engine_of(context)()));
         });
+        registry.Register("core.random.next_long",
+                          [engine_of](IntrinsicContext& context) {
+            return VmValue::Long(
+                static_cast<std::int64_t>(engine_of(context)()));
+        });
         registry.Register("core.random.next_int_bound",
                           [engine_of](IntrinsicContext& context) {
             const auto bound = context.arguments[0].AsInt();
@@ -427,6 +432,13 @@ void RegisterBoxedHandlers(IntrinsicRegistry& registry) {
     registry.Register("core.boolean.boolean_value",
                       [](IntrinsicContext& context) {
         return VmValue::Int(BoxedBits(context, false) != 0 ? 1 : 0);
+    });
+    registry.Register("core.float.clinit", [](IntrinsicContext& context) {
+        auto& vm = context.vm;
+        vm.SetIntrinsicStaticRef(
+            "Ljava/lang/Float;", "TYPE", "Ljava/lang/Class;",
+            vm.Model().ClassObject(vm.Linker().ResolveDescriptor("F")));
+        return VmValue::Void();
     });
     registry.Register("core.float.init", [](IntrinsicContext& context) {
         SetBoxedBits(context, context.receiver, context.arguments[0].cat1,

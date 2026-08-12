@@ -117,11 +117,16 @@ LifecycleFrameState DexActivityLifecycle::Start() {
                                dx::VmValue::Ref(activity)}),
             "activity <init>");
 
-        // 04 §2 steps 5..7: interpreted lifecycle chain.
+        // 04 §2 steps 5..7: interpreted lifecycle chain. An activity that
+        // requested a switch (startActivity + finish) inside onCreate never
+        // starts, matching the platform contract.
         CallActivity("onCreate", "(Landroid/os/Bundle;)V",
                      {dx::VmValue::Ref(dx::VmObjectRef{})});
-        CallActivity("onStart", "()V", {});
-        CallActivity("onResume", "()V", {});
+        if (context.pending_activity_descriptor.empty()) {
+            CallActivity("onStart", "()V", {});
+            CallActivity("onResume", "()V", {});
+            activity_started_ = true;
+        }
 
         // Installer-style launchers may request the game activity right in
         // onCreate (startActivity + finish); service that before demanding
@@ -302,9 +307,14 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
         auto& linker = bindings_.bridge->Linker();
 
         // Retire the old activity deterministically before the new one.
-        CallActivity("onPause", "()V", {});
-        CallActivity("onStop", "()V", {});
+        // A never-started activity (finished inside its onCreate) only
+        // receives onDestroy, as on the platform.
+        if (activity_started_) {
+            CallActivity("onPause", "()V", {});
+            CallActivity("onStop", "()V", {});
+        }
         CallActivity("onDestroy", "()V", {});
+        activity_started_ = false;
         context.content_view = dx::VmObjectRef{};
         context.renderer = dx::VmObjectRef{};
         renderer_ready_ = false;
@@ -329,8 +339,11 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
             "activity <init>");
         CallActivity("onCreate", "(Landroid/os/Bundle;)V",
                      {dx::VmValue::Ref(dx::VmObjectRef{})});
-        CallActivity("onStart", "()V", {});
-        CallActivity("onResume", "()V", {});
+        if (context.pending_activity_descriptor.empty()) {
+            CallActivity("onStart", "()V", {});
+            CallActivity("onResume", "()V", {});
+            activity_started_ = true;
+        }
 
         if (!context.content_view.IsValid() &&
             context.pending_activity_descriptor.empty()) {

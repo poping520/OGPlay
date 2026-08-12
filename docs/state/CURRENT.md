@@ -1,7 +1,8 @@
 # 当前状态
 
-更新：2026-08-12 · M9 DexVM：Asphalt 5 pilot gate 已过；Dungeon Hunter 以
-schema v2 `dex_activity` 全程解释执行推进到标题画面渲染（视觉确认 ~21 FPS）
+更新：2026-08-12 · M9 DexVM：Asphalt 5 pilot gate 已过；Dungeon Hunter 到标题
+画面（~21 FPS）；Asphalt 6 越过 DEX 解析/链接期，解释执行推进到 GameInstaller
+安装器，卡在 DRM（AES/SHA1PRNG）——已单独立项
 
 ## 当前阶段
 
@@ -16,21 +17,18 @@ schema v2 `dex_activity` 全程解释执行推进到标题画面渲染（视觉�
   PNG SHA-256 `9ee57323…` 与 v1 逐位一致、无 fault、clean shutdown。
   `System.loadLibrary`(<clinit>)、onCreate 副作用链、GetStaticMethodID 查
   真实 DEX 方法表、native→解释器第三路由均真实发生。
-- M8 Asphalt 6 仍在 Profile native call 5 的 class reference 明确失败处，
-  与 M9 互不阻塞（该问题在 dexvm 路线下按设计自动消解，待 A6 迁移评估）。
 - **存档持久化沙盒设计已落地**（2026-08-12）：ADR-0020（Proposed）+
   `docs/design/sandbox/`。根因确认为设计而非缺陷——VFS external、DexVM
   `memory_files`、SharedPreferences 三条写入通道均止于会话内存。方案：
-  每 package 一个宿主沙盒目录，可写命名空间以文件粒度 overlay 覆盖只读
-  APK/OBB/external 底层，确定性 flush 点原子落盘；WU 分解 SBX-1..7。
-  未启动实施，capabilities 无变化。
+  每 package 一个宿主沙盒目录，可写命名空间以文件粒度 overlay 覆盖只读底层，
+  确定性 flush 点原子落盘；WU 分解 SBX-1..7。未启动，capabilities 无变化。
 
 ## 已验收基线
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
-能力现状以 `capabilities.toml` 为准。macOS/arm64 与 Windows/x64
-（windows-msvc 预设）full CTest 均 558/558。
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）full CTest
+598/598（含新增 loader method_id owner 正/反例）。
 
 ## M9 交付摘要
 
@@ -44,22 +42,26 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 
 ## 进行中：更多 title 上 dexvm 路线
 
-- **Dungeon Hunter 已到标题画面**（2026-08-12）：链接器全量缺失类报告 +
-  `tools/dexvm_gap_report.py` 驱动逐轮闭合。本批交付层级占位、java.* 扩展
-  （String 构造族/StringBuffer/Random/集合/IO 流）、Bitmap(stb_image)/Canvas、
-  Environment/StatFs、SharedPreferences（会话内存）、协作线程 + Timer、
-  多 Activity 流转、widget 状态层、`setContentView(I)` 经
-  `ParseBinaryXmlElements` 布局注入、`runOnUiThread` 同步执行、
-  `VideoView.start()` 立即回调完成监听（安装器→视频→主 Activity 全链路），
-  并修复 precheck 的 k22b 误报。下一步：输入/进游戏流程与长时游玩。
+- **Dungeon Hunter 已到标题画面**（2026-08-12）：交付层级占位、java.* 扩展、
+  Bitmap(stb_image)/Canvas、Environment/StatFs、SharedPreferences、协作线程+
+  Timer、多 Activity 流转、widget 状态层、布局注入、`VideoView` 完成回调，修复
+  precheck k22b 误报。下一步：输入/进游戏与长时游玩。
 - **适配流水线（复盘驱动，2026-08-12）**：上一款靠「跑一轮发现一个缺口」花了
   几十轮，现改为一次收割——`run-apk --survey-gaps` 诊断模式把未声明的平台类/
   方法合成中性桩并逐次记账，输出按命中排序的机读工作单（默认关闭，关闭即
   明确失败，survey 运行显式标注非兼容性结论）；`tools/dexvm_stub_gen.py` 由
   缺口报告生成占位与中性方法行，引用返回值一律进人工决策清单；空接收者诊断
   补上声明类与调用点。流程见 [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
-- **Asphalt 6**：`loader.dex_l1` 过严，拒绝以数组类型为 owner 的 method_id
-  （A6 有 4 处 `[Lcom/…;->clone`），dex-format 允许——必须先放宽解析。
+- **Asphalt 6（2026-08-12 推进）**：DEX 解析放宽（method_id owner 允许数组
+  descriptor，正/反例就位）；链接补 18 个层级占位；解释执行补齐 `Float.TYPE`+
+  `Array.newInstance`、`String.valueOf(Object)`、真实 `ZipInputStream` 解压、
+  `File.list/isDirectory`+VFS `ListDirectory`、`Handler/Looper/Message` 同步派发、
+  `WeakReference`、`getExternalFilesDir`、`DataInputStream` 大端读、布局参数族、
+  `org.xml/org.json` 纳入平台前缀。生命周期：onCreate 内 finish 的 Activity 不再
+  收 onStart/onResume。survey 健壮性：中性桩 null 触发的 `object_model_failure`
+  在 survey 转 guest NPE，不再终止进程。**唯一阻塞**：DRM `GloftDRM`/
+  `StringEncrypter` 需真实 AES+SHA1PRNG（否则游戏自身 DRM 抛异常），**单独立项**
+  不伪造。full CTest windows-msvc 598/598。
 
 开发方式手册（适配/测试/排查的操作步骤）见
 **[docs/playbook/README.md](../playbook/README.md)**；title 阻塞点与工作队列见

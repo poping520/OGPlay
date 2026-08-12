@@ -355,6 +355,28 @@ public:
                 found->second->source};
     }
 
+    [[nodiscard]] std::vector<std::string> ListDirectory(
+        const std::string_view path) const {
+        std::scoped_lock lock(mutex_);
+        auto prefix = ResolvePath(path, working_directory_);
+        if (prefix.empty() || prefix.back() != '/') prefix.push_back('/');
+        std::vector<std::string> names;
+        for (auto it = files_.lower_bound(prefix);
+             it != files_.end() && it->first.starts_with(prefix); ++it) {
+            const auto remainder =
+                std::string_view(it->first).substr(prefix.size());
+            const auto slash = remainder.find('/');
+            auto name = std::string(remainder.substr(0, slash));
+            if (name.empty()) continue;
+            // The map is sorted, so children of one subdirectory arrive
+            // contiguously; dedup against the previous name.
+            if (names.empty() || names.back() != name) {
+                names.push_back(std::move(name));
+            }
+        }
+        return names;
+    }
+
     [[nodiscard]] std::int32_t Open(const std::string_view path,
                                     const VfsOpenOptions options) {
         if (!options.read && !options.write) {
@@ -560,6 +582,10 @@ std::optional<std::string> VirtualFileSystem::WorkingDirectory() const {
 }
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
     return impl_->Stat(path);
+}
+std::vector<std::string> VirtualFileSystem::ListDirectory(
+    const std::string_view path) const {
+    return impl_->ListDirectory(path);
 }
 std::int32_t VirtualFileSystem::Open(const std::string_view path,
                                      const VfsOpenOptions options) {

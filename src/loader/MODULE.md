@@ -85,8 +85,10 @@
   header 与唯一、有序、非重叠的 map 声明必须一致。
 - DEX Modified UTF-8 和 ULEB128 必须最小且完整编码；type/proto 的每个索引、descriptor、
   参数列表和 shorty 必须互相一致。
-- field/method 的声明类必须是 class descriptor；class_def 类型唯一，父类、接口、源码与
-  data offset 全部受检，只保留 annotation/class_data/static value 偏移事实。
+- field 的声明类必须是 class descriptor；method 的声明 owner 允许 class 或数组
+  descriptor（数组继承 `Object.clone()`，AOSP libdex 与 dex-format 均允许），仍拒绝
+  基元与 `V`；class_def 类型唯一，父类、接口、源码与 data offset 全部受检，只保留
+  annotation/class_data/static value 偏移事实。
 - class_data 成员必须归属当前类、严格递增且 static/direct 类别与 access flags 一致；
   native/abstract 不得有 code，其他方法必须有对齐且完整的 code_item。
 - Java 厚度只由版本化阈值和可查询计数推导；引擎指纹不得在生产代码硬编码，必须由

@@ -110,7 +110,7 @@ std::vector<std::uint8_t> TableDex() {
     return bytes;
 }
 
-std::vector<std::uint8_t> ClassDex() {
+std::vector<std::uint8_t> ClassDex(const char* second_type = "I") {
     constexpr std::uint32_t string_ids = 0x70;
     constexpr std::uint32_t type_ids = 0x8c;
     constexpr std::uint32_t proto_ids = 0x98;
@@ -140,7 +140,7 @@ std::vector<std::uint8_t> ClassDex() {
     Put32(bytes, 108, data_offset);
 
     std::size_t cursor = data_offset;
-    const char* values[]{"V", "I", "Lsample/Peer;", "VI", "run",
+    const char* values[]{"V", second_type, "Lsample/Peer;", "VI", "run",
                          "value", "Source.java"};
     for (std::size_t index = 0; index < 7; ++index) {
         Put32(bytes, string_ids + index * 4, static_cast<std::uint32_t>(cursor));
@@ -281,6 +281,34 @@ TEST_CASE("DEX member IDs reject invalid declaring and referenced indices") {
     Put32(bad_method_name, 0xac + 4, 99);
     CHECK_THROWS_AS(
         static_cast<void>(ogplay::loader::ParseDex(bad_method_name)),
+        ogplay::loader::DexError);
+}
+
+// dex-format 允许数组 descriptor 作为 method 引用的 owner(数组继承
+// Object.clone();AOSP libdex/DexFile.h 与 docs/dex-format 均不限制
+// method_id 的 class_idx 指向 class 类型),field 引用的 owner 不允许。
+TEST_CASE("DEX method_id accepts an array type as declaring owner") {
+    auto array_owner = ClassDex("[I");
+    Put16(array_owner, 0xac, 1);
+    const auto image = ogplay::loader::ParseDex(array_owner);
+    REQUIRE(image.methods.size() == 1);
+    CHECK(image.methods[0].class_type_index == 1);
+    CHECK(image.types[1].descriptor == "[I");
+}
+
+TEST_CASE("DEX method_id still rejects a primitive declaring owner") {
+    auto primitive_owner = ClassDex();
+    Put16(primitive_owner, 0xac, 1);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::loader::ParseDex(primitive_owner)),
+        ogplay::loader::DexError);
+}
+
+TEST_CASE("DEX field_id still rejects an array type as declaring owner") {
+    auto array_field_owner = ClassDex("[I");
+    Put16(array_field_owner, 0xa4, 1);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::loader::ParseDex(array_field_owner)),
         ogplay::loader::DexError);
 }
 

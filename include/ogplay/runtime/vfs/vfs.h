@@ -86,6 +86,11 @@ public:
     void SetWorkingDirectory(std::string_view path);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
+    // Immediate children (file and implicit-directory names, sorted,
+    // deduplicated) of a directory path; empty when nothing is below it.
+    // Directories exist implicitly through the files mounted beneath them.
+    [[nodiscard]] std::vector<std::string> ListDirectory(
+        std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);
     [[nodiscard]] VfsPipeDescriptors CreatePipe();

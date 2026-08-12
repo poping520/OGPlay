@@ -31,7 +31,10 @@ namespace ogplay::runtime::dexvm {
            descriptor.starts_with("Ljava/") ||
            descriptor.starts_with("Ljavax/") ||
            descriptor.starts_with("Ldalvik/") ||
-           descriptor.starts_with("Lorg/apache/http/");
+           descriptor.starts_with("Lorg/apache/http/") ||
+           // AOSP-bundled library packages (SAX, JSON) count as platform.
+           descriptor.starts_with("Lorg/xml/") ||
+           descriptor.starts_with("Lorg/json/");
 }
 
 [[nodiscard]] bool IsWideDescriptor(const std::string_view descriptor) {
@@ -406,6 +409,27 @@ DexClassId DexClassLinker::ResolveDescriptor(
         linked.super = FindClass("Ljava/lang/Object;");
         const auto id = impl_->AddClass(std::move(linked));
         if (impl_->link_complete) {
+            auto& stored = impl_->ClassAt(id);
+            auto& object_class = impl_->ClassAt(*stored.super);
+            stored.vtable = object_class.vtable;
+            impl_->ExtrasAt(id).virtual_lookup =
+                impl_->ExtrasAt(object_class.id).virtual_lookup;
+            impl_->ExtrasAt(id).linked = true;
+        }
+        return id;
+    }
+    if (descriptor.size() == 1 &&
+        std::string_view("ZBSCIJFD").find(descriptor) !=
+            std::string_view::npos) {
+        // Primitive class identity (Float.TYPE, Array.newInstance): a
+        // synthesized class record that only backs a class object. It is
+        // never an instance class and never participates in dispatch.
+        LinkedClass linked;
+        linked.descriptor = std::string(descriptor);
+        linked.is_intrinsic = true;
+        linked.super = FindClass("Ljava/lang/Object;");
+        const auto id = impl_->AddClass(std::move(linked));
+        if (impl_->link_complete && impl_->ClassAt(id).super.has_value()) {
             auto& stored = impl_->ClassAt(id);
             auto& object_class = impl_->ClassAt(*stored.super);
             stored.vtable = object_class.vtable;

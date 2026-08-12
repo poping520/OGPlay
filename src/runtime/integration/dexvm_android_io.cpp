@@ -3,6 +3,7 @@
 // documented Java values instead of faking success.
 
 #include <algorithm>
+#include "ogplay/loader/apk.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "dexvm_android_internal.h"
@@ -98,6 +99,52 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
             std::span(stream.bytes).subspan(stream.cursor, wanted));
         stream.cursor += wanted;
         return dx::VmValue::Void();
+    });
+    // Big-endian primitive reads with the documented EOFException when the
+    // stream runs out (the honest end-of-data signal read loops rely on).
+    const auto take_bytes = [context](dx::IntrinsicContext& call,
+                                      const std::size_t wanted) {
+        auto& stream = StreamOf(call, context);
+        if (stream.bytes.size() - stream.cursor < wanted) {
+            throw dx::VmJavaThrow{"Ljava/io/EOFException;",
+                                  "end of stream"};
+        }
+        const auto begin = stream.cursor;
+        stream.cursor += wanted;
+        return std::span(stream.bytes).subspan(begin, wanted);
+    };
+    registry.Register("android.data_input.read_int",
+                      [take_bytes](dx::IntrinsicContext& call) {
+        const auto bytes = take_bytes(call, 4);
+        std::uint32_t value = 0;
+        for (const auto byte : bytes) {
+            value = (value << 8U) | static_cast<std::uint8_t>(byte);
+        }
+        return dx::VmValue::Int(static_cast<std::int32_t>(value));
+    });
+    registry.Register("android.data_input.read_long",
+                      [take_bytes](dx::IntrinsicContext& call) {
+        const auto bytes = take_bytes(call, 8);
+        std::uint64_t value = 0;
+        for (const auto byte : bytes) {
+            value = (value << 8U) | static_cast<std::uint8_t>(byte);
+        }
+        return dx::VmValue::Long(static_cast<std::int64_t>(value));
+    });
+    registry.Register("android.data_input.read_utf",
+                      [take_bytes](dx::IntrinsicContext& call) {
+        const auto length_bytes = take_bytes(call, 2);
+        const auto length = static_cast<std::size_t>(
+            (static_cast<std::uint8_t>(length_bytes[0]) << 8U) |
+            static_cast<std::uint8_t>(length_bytes[1]));
+        const auto bytes = take_bytes(call, length);
+        // writeUTF pairs with this reader; the session writes plain
+        // ASCII/UTF-8 subset, which modified UTF-8 matches byte-for-byte
+        // for code points below 0x80. Non-ASCII goes through the string
+        // store's UTF-8 decoding unchanged.
+        std::string value(reinterpret_cast<const char*>(bytes.data()),
+                          bytes.size());
+        return dx::VmValue::Ref(call.vm.NewStringUtf8(value));
     });
     registry.Register("android.data_input.skip_bytes",
                       [context](dx::IntrinsicContext& call) {
@@ -266,6 +313,147 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         stream.cursor += static_cast<std::size_t>(amount);
         return dx::VmValue::Long(amount);
     });
+
+    // Output wrapper constructors move the wrapped record to the wrapper
+    // handle (single-owner, mirroring android.reader.adopt_stream).
+    registry.Register("android.output.adopt",
+                      [context](dx::IntrinsicContext& call) {
+        const auto target = call.arguments[0].ref;
+        const auto found = context->output_streams.find(target.Value());
+        if (found == context->output_streams.end() || found->second.closed) {
+            throw dx::VmJavaThrow{"Ljava/io/IOException;",
+                                  "wrapped output stream is closed or was "
+                                  "never opened"};
+        }
+        context->output_streams[call.receiver.Value()] =
+            std::move(found->second);
+        context->output_streams.erase(target.Value());
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.output.write_one",
+                      [context](dx::IntrinsicContext& call) {
+        const auto found =
+            context->output_streams.find(call.receiver.Value());
+        if (found == context->output_streams.end() ||
+            found->second.closed) {
+            throw dx::VmJavaThrow{"Ljava/io/IOException;",
+                                  "output stream is closed"};
+        }
+        found->second.bytes.push_back(static_cast<std::byte>(
+            call.arguments[0].AsInt() & 0xff));
+        return dx::VmValue::Void();
+    });
+
+    // ZipInputStream: adopts the wrapped stream's remaining bytes and reads
+    // them with the strict loader ZIP parser (real inflate, CRC-checked).
+    const auto zip_of = [context](dx::IntrinsicContext& call)
+        -> DexVmAndroidContext::ZipStream& {
+        const auto found = context->zip_streams.find(call.receiver.Value());
+        if (found == context->zip_streams.end() || found->second.closed) {
+            throw dx::VmJavaThrow{"Ljava/io/IOException;",
+                                  "zip stream is closed or was never opened"};
+        }
+        return found->second;
+    };
+    registry.Register("android.zip_input.init",
+                      [context](dx::IntrinsicContext& call) {
+        const auto target = call.arguments[0].ref;
+        const auto found = context->streams.find(target.Value());
+        if (found == context->streams.end() || found->second.closed) {
+            throw dx::VmJavaThrow{"Ljava/io/IOException;",
+                                  "wrapped stream is closed or was never "
+                                  "opened"};
+        }
+        DexVmAndroidContext::ZipStream zip;
+        auto& source = found->second;
+        zip.raw.assign(source.bytes.begin() +
+                           static_cast<std::ptrdiff_t>(source.cursor),
+                       source.bytes.end());
+        context->streams.erase(target.Value());
+        try {
+            zip.archive = loader::ParseApkArchive(zip.raw);
+        } catch (const std::exception& error) {
+            throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+        }
+        context->zip_streams[call.receiver.Value()] = std::move(zip);
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.zip_input.get_next_entry",
+                      [zip_of](dx::IntrinsicContext& call) {
+        auto& zip = zip_of(call);
+        zip.entry_bytes.clear();
+        zip.cursor = 0;
+        zip.entry_open = false;
+        if (zip.next_entry >= zip.archive.entries.size()) {
+            return dx::VmValue::Ref(dx::VmObjectRef{});  // end of archive
+        }
+        const auto& entry = zip.archive.entries[zip.next_entry++];
+        try {
+            zip.entry_bytes =
+                loader::ReadApkEntry(zip.raw, zip.archive, entry.name);
+        } catch (const std::exception& error) {
+            throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+        }
+        zip.entry_open = true;
+        const auto object =
+            call.vm.NewIntrinsicInstance("Ljava/util/zip/ZipEntry;");
+        const auto slots = call.vm.Model().InstanceSlots(object);
+        slots[0] = {call.vm.NewStringUtf8(entry.name).Value(),
+                    dx::SlotTag::ref};
+        return dx::VmValue::Ref(object);
+    });
+    registry.Register("android.zip_input.read_range",
+                      [zip_of](dx::IntrinsicContext& call) {
+        auto& zip = zip_of(call);
+        const auto array = call.arguments[0].ref;
+        const auto offset = call.arguments[1].AsInt();
+        const auto length = call.arguments[2].AsInt();
+        if (offset < 0 || length < 0 ||
+            static_cast<std::int64_t>(offset) + length >
+                call.vm.Model().ArrayLength(array)) {
+            throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                                  "zip read range exceeds the array"};
+        }
+        if (!zip.entry_open) return dx::VmValue::Int(-1);
+        const auto remaining = zip.entry_bytes.size() - zip.cursor;
+        if (remaining == 0) return dx::VmValue::Int(-1);
+        const auto amount = std::min<std::size_t>(
+            static_cast<std::size_t>(length), remaining);
+        call.vm.Model().WriteByteRegion(
+            array, offset,
+            std::span(zip.entry_bytes).subspan(zip.cursor, amount));
+        zip.cursor += amount;
+        return dx::VmValue::Int(static_cast<std::int32_t>(amount));
+    });
+    registry.Register("android.zip_input.close_entry",
+                      [zip_of](dx::IntrinsicContext& call) {
+        auto& zip = zip_of(call);
+        zip.entry_bytes.clear();
+        zip.cursor = 0;
+        zip.entry_open = false;
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.zip_input.close",
+                      [context](dx::IntrinsicContext& call) {
+        const auto found = context->zip_streams.find(call.receiver.Value());
+        if (found != context->zip_streams.end()) {
+            found->second.closed = true;
+        }
+        return dx::VmValue::Void();
+    });
+    registry.Register("android.zip_entry.get_name",
+                      [](dx::IntrinsicContext& call) {
+        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+        return dx::VmValue::Ref(dx::VmObjectRef(slots[0].bits));
+    });
+    registry.Register("android.zip_entry.is_directory",
+                      [](dx::IntrinsicContext& call) {
+        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+        const auto name =
+            call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));
+        return dx::VmValue::Int(!name.empty() && name.back() == '/' ? 1
+                                                                    : 0);
+    });
 }
 
 // Reads a whole file from the shared guest VFS; nullopt when the VFS is
@@ -326,12 +514,62 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
                     dx::SlotTag::ref};
         return dx::VmValue::Void();
     });
+    // Directory facts merge the VFS view with the session memory overlay
+    // (directories exist implicitly through the files beneath them).
+    const auto list_children = [context](const std::string& path) {
+        std::vector<std::string> names;
+        if (context->vfs != nullptr) {
+            names = context->vfs->ListDirectory(path);
+        }
+        auto prefix = path;
+        if (prefix.empty() || prefix.back() != '/') prefix.push_back('/');
+        for (const auto& [overlay_path, bytes] : context->memory_files) {
+            static_cast<void>(bytes);
+            if (!overlay_path.starts_with(prefix)) continue;
+            const auto remainder =
+                std::string_view(overlay_path).substr(prefix.size());
+            auto name = std::string(remainder.substr(0, remainder.find('/')));
+            if (name.empty()) continue;
+            if (std::find(names.begin(), names.end(), name) == names.end()) {
+                names.push_back(std::move(name));
+            }
+        }
+        return names;
+    };
     registry.Register("android.file.exists",
-                      [context](dx::IntrinsicContext& call) {
+                      [context, list_children](dx::IntrinsicContext& call) {
         const auto path = FilePathOf(call, call.receiver);
         const bool exists = context->memory_files.contains(path) ||
-                            VfsSizeOf(context, path).has_value();
+                            VfsSizeOf(context, path).has_value() ||
+                            !list_children(path).empty();
         return dx::VmValue::Int(exists ? 1 : 0);
+    });
+    registry.Register("android.file.is_directory",
+                      [list_children](dx::IntrinsicContext& call) {
+        const auto path = FilePathOf(call, call.receiver);
+        return dx::VmValue::Int(!list_children(path).empty() ? 1 : 0);
+    });
+    registry.Register("android.file.list",
+                      [list_children](dx::IntrinsicContext& call) {
+        auto names = list_children(FilePathOf(call, call.receiver));
+        if (names.empty()) {
+            // Documented value for a path that is not a listable directory.
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        }
+        auto& vm = call.vm;
+        const auto array_class =
+            vm.Linker().ResolveDescriptor("[Ljava/lang/String;");
+        const auto element_class =
+            vm.Linker().ResolveDescriptor("Ljava/lang/String;");
+        const auto array = vm.Model().NewObjectArray(
+            array_class, element_class,
+            static_cast<JniSize>(names.size()));
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            vm.Model().SetObjectElement(
+                array, static_cast<JniSize>(index),
+                vm.NewStringUtf8(names[index]));
+        }
+        return dx::VmValue::Ref(array);
     });
     registry.Register("android.file.length",
                       [context](dx::IntrinsicContext& call) {
@@ -370,6 +608,21 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         slots[0] = {
             call.vm.NewStringUtf8(context->external_storage_root).Value(),
             dx::SlotTag::ref};
+        return dx::VmValue::Ref(file);
+    });
+    registry.Register("android.context.get_external_files_dir",
+                      [context](dx::IntrinsicContext& call) {
+        // Platform layout under the external mount; a null type argument
+        // answers the package files root.
+        auto path = context->external_storage_root + "/Android/data/" +
+                    context->package_name + "/files";
+        const auto type = call.arguments[0].ref;
+        if (type.IsValid()) {
+            path += "/" + call.vm.StringUtf8(type);
+        }
+        const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
+        const auto slots = call.vm.Model().InstanceSlots(file);
+        slots[0] = {call.vm.NewStringUtf8(path).Value(), dx::SlotTag::ref};
         return dx::VmValue::Ref(file);
     });
     registry.Register("android.environment.get_external_storage_state",

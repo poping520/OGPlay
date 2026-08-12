@@ -343,6 +343,20 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
                 model->SetEmergencyReserve(true);
                 ThrowJava("Ljava/lang/OutOfMemoryError;", error.what());
                 model->SetEmergencyReserve(false);
+            } else if (error.Reason() ==
+                           DexVmErrorReason::object_model_failure &&
+                       linker->GapSurveyEnabled()) {
+                // Survey mode is diagnostic-only: a neutral stub's null/zero
+                // flowed into a host accessor. Surface it as a guest
+                // NullPointerException so the one survey run keeps harvesting
+                // gaps instead of aborting the process. Never a
+                // compatibility result (the run is loudly flagged).
+                if (logger != nullptr) {
+                    logger->Write(core::LogLevel::warn, "runtime.dexvm.survey",
+                                  std::string("SURVEY neutral-stub fault: ") +
+                                      error.what());
+                }
+                ThrowJava("Ljava/lang/NullPointerException;", error.what());
             } else {
                 throw;
             }

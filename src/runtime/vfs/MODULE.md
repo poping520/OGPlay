@@ -8,6 +8,8 @@ open/read/write/seek/close 核心。
 只读 APK/OBB backing 与宿主 external 目录可仅挂载路径、尺寸和显式全量读取回调；
 `Stat`、`Open`、`Seek` 不触发读取，首次 `Read` 或非截断 `Write` 才物化内容，严格核对
 声明尺寸并缓存成功结果。external 修改只存在于会话内，不反写宿主目录。
+`ListDirectory` 返回某目录路径的直接子项名（文件与隐式目录名，排序去重），目录通过
+其下挂载的文件隐式存在；不触发读取。
 
 ## 依赖
 

@@ -624,6 +624,22 @@ void RegisterStringHandlers(IntrinsicRegistry& registry) {
                                  ? u"true"
                                  : std::u16string(u"false"));
     });
+    // Same rendering policy as StringBuilder.append(Object): strings pass
+    // through, null becomes "null", other objects render as a handle tag.
+    registry.Register("core.string.value_of_object",
+                      [](IntrinsicContext& context) {
+        const auto argument = context.arguments[0].ref;
+        if (!argument.IsValid()) {
+            return Make(context, std::u16string(u"null"));
+        }
+        auto& model = context.vm.Model();
+        const auto kind = model.Kind(argument);
+        if (kind == VmObjectKind::string || kind == VmObjectKind::external) {
+            return Make(context, Value(context, argument));
+        }
+        return Make(context,
+                    Widen("@" + std::to_string(argument.Value())));
+    });
     registry.Register("core.string.value_of_char",
                       [](IntrinsicContext& context) {
         return Make(context,

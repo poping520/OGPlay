@@ -38,8 +38,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   方法被合成为中性桩（0/null/void）并逐次记账，一次运行即可收割新 title 的
   整条缺口队列；`GapSurveyHits()` + `RenderGapSurveyJson()`（`gap_survey.cpp`）
   输出按命中次数排序的机读工作单。survey 运行不是兼容性结论，调用方必须显式
-  标注；关闭时行为不变（未声明即明确失败）。流程见
-  `docs/playbook/NEW-TITLE.md`。
+  标注；关闭时行为不变（未声明即明确失败）。survey 模式下中性桩返回的
+  null/0 若流进 host 访问器触发 `object_model_failure`，会被转成 guest
+  `NullPointerException` 而非终止进程（保证一次运行收割到底；非 survey 仍硬
+  失败）。流程见 `docs/playbook/NEW-TITLE.md`。
 
 ## 文件分工
 

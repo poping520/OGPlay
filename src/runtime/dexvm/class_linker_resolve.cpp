@@ -75,8 +75,10 @@ ResolvedMethodRef DexClassLinker::ResolveMethodIndex(
     }
     if (!resolved.has_value() && GapSurveyEnabled() &&
         IsPlatformDescriptor(owner_descriptor)) {
-        resolved = SynthesizeSurveyMethod(owner, name, descriptor,
-                                          direct_or_static);
+        // invoke-direct covers constructors too: <init> is never static,
+        // so its synthesized stub must count the receiver word.
+        resolved = SynthesizeSurveyMethod(
+            owner, name, descriptor, direct_or_static && name != "<init>");
     }
     if (!resolved.has_value()) {
         Fail(DexVmErrorReason::unresolved_reference,

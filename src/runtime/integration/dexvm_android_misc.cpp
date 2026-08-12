@@ -9,6 +9,12 @@
 namespace ogplay::runtime::android_intrinsics {
 
 void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
+    registry.Register("android.pair.init", [](dx::IntrinsicContext& call) {
+        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+        slots[0] = {call.arguments[0].ref.Value(), dx::SlotTag::ref};
+        slots[1] = {call.arguments[1].ref.Value(), dx::SlotTag::ref};
+        return dx::VmValue::Void();
+    });
     registry.Register("android.bundle.init", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });

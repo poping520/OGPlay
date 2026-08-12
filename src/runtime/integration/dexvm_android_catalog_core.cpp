@@ -37,12 +37,33 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
             // no audience and truthfully go nowhere.
             {"sendBroadcast", "(Landroid/content/Intent;)V", false, false,
              "android.context.send_broadcast"},
+            {"getExternalFilesDir",
+             "(Ljava/lang/String;)Ljava/io/File;", false, false,
+             "android.context.get_external_files_dir"},
+            // No service infrastructure exists on this platform; the
+            // documented "service not found" answer is null.
+            {"startService",
+             "(Landroid/content/Intent;)Landroid/content/ComponentName;",
+             false, false, "android.context.start_service_none"},
         };
         catalog.push_back(std::move(context));
         Decl resolver;
         resolver.descriptor = "Landroid/content/ContentResolver;";
         resolver.superclass = "Ljava/lang/Object;";
         catalog.push_back(std::move(resolver));
+        // Real value pair: the fields are read directly by title code.
+        Decl pair;
+        pair.descriptor = "Landroid/util/Pair;";
+        pair.superclass = "Ljava/lang/Object;";
+        pair.fields = {
+            {"first", "Ljava/lang/Object;", false, false, 0, ""},
+            {"second", "Ljava/lang/Object;", false, false, 0, ""},
+        };
+        pair.methods = {
+            {"<init>", "(Ljava/lang/Object;Ljava/lang/Object;)V", false,
+             false, "android.pair.init"},
+        };
+        catalog.push_back(std::move(pair));
     }
     {
         // SharedPreferences with real session-lifetime typed storage
@@ -149,7 +170,10 @@ void AppendCoreClasses(std::vector<Decl>& catalog) {
              "android.activity.on_key_false"},
             {"onTouchEvent", "(Landroid/view/MotionEvent;)Z", false, true,
              "android.activity.on_touch_false"},
-            {"finish", "()V", false, false, "android.activity.finish"},
+            // Overridable: Activity.finish is a plain virtual on Android
+            // and title subclasses commonly wrap it (super.finish() still
+            // reaches the intrinsic).
+            {"finish", "()V", false, true, "android.activity.finish"},
             {"getWindowManager", "()Landroid/view/WindowManager;", false,
              false, "android.activity.get_window_manager"},
         };

@@ -16,7 +16,66 @@ namespace {
         }
         return name;
     }
+    // Class.getName answers the Java keyword for primitive classes
+    // (Float.TYPE.getName() == "float"); array descriptors stay as-is.
+    switch (descriptor.size() == 1 ? descriptor[0] : '\0') {
+        case 'Z': return "boolean";
+        case 'B': return "byte";
+        case 'C': return "char";
+        case 'S': return "short";
+        case 'I': return "int";
+        case 'J': return "long";
+        case 'F': return "float";
+        case 'D': return "double";
+        case 'V': return "void";
+        default: break;
+    }
     return descriptor;
+}
+
+[[nodiscard]] bool IsPrimitiveDescriptor(const std::string& descriptor) {
+    return descriptor.size() == 1 &&
+           std::string_view("ZBSCIJFD").find(descriptor[0]) !=
+               std::string_view::npos;
+}
+
+[[nodiscard]] JniPrimitiveKind PrimitiveKindFor(const std::string& element) {
+    switch (element[0]) {
+        case 'Z': return JniPrimitiveKind::boolean;
+        case 'B': return JniPrimitiveKind::byte;
+        case 'C': return JniPrimitiveKind::character;
+        case 'S': return JniPrimitiveKind::short_integer;
+        case 'I': return JniPrimitiveKind::integer;
+        case 'J': return JniPrimitiveKind::long_integer;
+        case 'F': return JniPrimitiveKind::float_value;
+        default: return JniPrimitiveKind::double_value;
+    }
+}
+
+// Recursive builder for Array.newInstance: each level allocates the real
+// typed array so subsequent check-cast and aget/aput see honest classes.
+[[nodiscard]] VmObjectRef BuildReflectArray(
+    Interpreter& vm, const std::string& element_descriptor,
+    const std::span<const std::int32_t> dims) {
+    std::string descriptor(dims.size(), '[');
+    descriptor += element_descriptor;
+    const auto array_class = vm.Linker().ResolveDescriptor(descriptor);
+    if (dims.size() == 1 && IsPrimitiveDescriptor(element_descriptor)) {
+        return vm.Model().NewPrimitiveArray(
+            array_class, PrimitiveKindFor(element_descriptor), dims[0]);
+    }
+    const auto element_class =
+        vm.Linker().ResolveDescriptor(descriptor.substr(1));
+    const auto array =
+        vm.Model().NewObjectArray(array_class, element_class, dims[0]);
+    if (dims.size() > 1) {
+        for (std::int32_t index = 0; index < dims[0]; ++index) {
+            vm.Model().SetObjectElement(
+                array, index,
+                BuildReflectArray(vm, element_descriptor, dims.subspan(1)));
+        }
+    }
+    return array;
 }
 
 [[nodiscard]] std::int32_t JavaStringHash(const std::u16string& value) {
@@ -107,6 +166,54 @@ void RegisterCoreBuiltinHandlers(IntrinsicRegistry& registry) {
             vm.Model().ClassOfClassObject(context.receiver);
         return VmValue::Ref(vm.NewStringUtf8(
             DottedName(vm.Linker().Class(java_class).descriptor)));
+    });
+
+    registry.Register("core.weak_reference.init",
+                      [](IntrinsicContext& context) {
+        const auto slots = context.vm.Model().InstanceSlots(context.receiver);
+        slots[0] = {context.arguments[0].ref.Value(), SlotTag::ref};
+        return VmValue::Void();
+    });
+    registry.Register("core.weak_reference.get",
+                      [](IntrinsicContext& context) {
+        const auto slots = context.vm.Model().InstanceSlots(context.receiver);
+        return VmValue::Ref(VmObjectRef(slots[0].bits));
+    });
+
+    registry.Register("core.reflect.array_new_instance",
+                      [](IntrinsicContext& context) {
+        auto& vm = context.vm;
+        auto& model = vm.Model();
+        const auto class_object = context.arguments[0].ref;
+        const auto dims_ref = context.arguments[1].ref;
+        if (!class_object.IsValid() || !dims_ref.IsValid()) {
+            throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "Array.newInstance argument is null"};
+        }
+        const auto element_class = model.ClassOfClassObject(class_object);
+        const auto dim_count = model.ArrayLength(dims_ref);
+        if (dim_count <= 0 || dim_count > 255) {
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "invalid dimension count"};
+        }
+        std::vector<std::int32_t> dims;
+        dims.reserve(static_cast<std::size_t>(dim_count));
+        for (JniSize index = 0; index < dim_count; ++index) {
+            const auto length = static_cast<std::int32_t>(
+                model.GetPrimitiveElement(dims_ref, index));
+            if (length < 0) {
+                throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;",
+                                  std::to_string(length)};
+            }
+            dims.push_back(length);
+        }
+        const auto element_descriptor =
+            vm.Linker().Class(element_class).descriptor;
+        if (element_descriptor == "V") {
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "void array"};
+        }
+        return VmValue::Ref(BuildReflectArray(vm, element_descriptor, dims));
     });
 
     registry.Register("core.throwable.init", [](IntrinsicContext&) {

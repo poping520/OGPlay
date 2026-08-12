@@ -70,6 +70,10 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         looper.methods = {
             {"prepare", "()V", true, false, "android.looper.noop"},
             {"loop", "()V", true, false, "android.looper.noop"},
+            // One host thread drives the VM, so the main looper is the
+            // only looper; it answers a per-session singleton.
+            {"getMainLooper", "()Landroid/os/Looper;", true, false,
+             "android.looper.get_main_looper"},
         };
         catalog.push_back(std::move(looper));
         Decl message;
@@ -79,6 +83,16 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
             {"what", "I", false, false, 0, ""},
             {"arg1", "I", false, false, 0, ""},
             {"arg2", "I", false, false, 0, ""},
+            {"obj", "Ljava/lang/Object;", false, false, 0, ""},
+            // Delivery target recorded by obtainMessage/obtain.
+            {"target", "Landroid/os/Handler;", false, false, 0, ""},
+        };
+        message.methods = {
+            {"obtain",
+             "(Landroid/os/Handler;ILjava/lang/Object;)Landroid/os/Message;",
+             true, false, "android.message.obtain_static"},
+            {"sendToTarget", "()V", false, false,
+             "android.message.send_to_target"},
         };
         catalog.push_back(std::move(message));
         Decl handler;
@@ -86,10 +100,24 @@ void AppendDeviceClasses(std::vector<Decl>& catalog) {
         handler.superclass = "Ljava/lang/Object;";
         handler.methods = {
             {"<init>", "()V", false, false, "android.handler.init"},
+            // The looper argument can only name the main looper on this
+            // single-threaded platform.
+            {"<init>", "(Landroid/os/Looper;)V", false, false,
+             "android.handler.init"},
             {"obtainMessage", "()Landroid/os/Message;", false, false,
              "android.handler.obtain_message"},
+            {"obtainMessage", "(I)Landroid/os/Message;", false, false,
+             "android.handler.obtain_message_what"},
+            {"obtainMessage", "(ILjava/lang/Object;)Landroid/os/Message;",
+             false, false, "android.handler.obtain_message_what_obj"},
             {"sendMessage", "(Landroid/os/Message;)Z", false, false,
              "android.handler.send_message"},
+            {"dispatchMessage", "(Landroid/os/Message;)V", false, false,
+             "android.handler.dispatch_message"},
+            // Synchronous delivery on the single VM thread (the same
+            // policy as runOnUiThread).
+            {"post", "(Ljava/lang/Runnable;)Z", false, false,
+             "android.handler.post"},
             {"handleMessage", "(Landroid/os/Message;)V", false, true,
              "android.handler.handle_message_noop"},
         };

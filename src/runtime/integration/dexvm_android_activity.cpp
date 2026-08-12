@@ -298,6 +298,12 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
                  "sendBroadcast dropped: no receivers on this platform");
         return dx::VmValue::Void();
     });
+    registry.Register("android.context.start_service_none",
+                      [](dx::IntrinsicContext& call) {
+        GuestLog(call, core::LogLevel::debug,
+                 "startService answered null: no services on this platform");
+        return dx::VmValue::Ref(dx::VmObjectRef{});
+    });
     registry.Register("android.context.register_receiver",
                       [](dx::IntrinsicContext&) {
         // Sticky broadcast lookup: nothing pending on this platform.

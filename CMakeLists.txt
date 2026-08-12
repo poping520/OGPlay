@@ -824,6 +824,24 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(tools.remote_incremental_self_test PROPERTIES LABELS tools)
 
     add_test(
+        NAME tools.aosp_dalvik_baseline_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_aosp_dalvik.py
+            --self-test
+    )
+    set_tests_properties(tools.aosp_dalvik_baseline_self_test
+        PROPERTIES LABELS "tools;dexvm")
+
+    add_test(
+        NAME tools.aosp_dalvik_baseline_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_aosp_dalvik.py
+            --baseline ${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosp-dalvik
+    )
+    set_tests_properties(tools.aosp_dalvik_baseline_current
+        PROPERTIES LABELS "tools;dexvm")
+
+    add_test(
         NAME tools.m4_local_exit_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/m4_exit.py

@@ -940,6 +940,11 @@ status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
 note = "M5 WU-0275 为三个 GL_OES_matrix_palette 入口实现受检可重置状态并接入 client-state；完整 palette matrix stack 与 skinning draw 转换尚未实现且启用时明确失败"
 
+[dexvm.aosp_baseline]
+status = "complete"
+test = "tools.aosp_dalvik_baseline_self_test; tools.aosp_dalvik_baseline_current"
+note = "M9 WU-M9-001 以浅 submodule 固定 platform/dalvik 于 android-4.4.4_r2（36e356c9），机器校验 commit 与 bytecode.txt/DexOpcodes.h/InstrUtils.cpp/NOTICE 锚点哈希；仅作语义参考与机器比对数据源，不编译不链接"
+
 [runtime.android_link_preflight]
 status = "complete"
 test = "tests/runtime/android_link_preflight_tests.cpp"

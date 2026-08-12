@@ -11,6 +11,7 @@
 | ext-boost | 1.90（`6a85c3100499e886e11c87a5c2109eedacea0a61`） | https://github.com/azahar-emu/ext-boost | Boost Software License 1.0 | Dynarmic 所需的裁剪 Boost 头文件 |
 | Boost.Pool | 1.90（`740c8076f9d02f0216e8f3dbb15d2fd80f67d7f4`） | https://github.com/boostorg/pool | Boost Software License 1.0 | 补充 Dynarmic 使用的 pool allocator 头文件 |
 | PowerVR Native SDK | `2b1bf2f14d3365d0bb801e2a6a131a319d3a2e48` | https://github.com/powervr-graphics/Native_SDK | MIT | 原样引入 `PVRTDecompress.cpp/.h` 实现 PVRTC1 软件解码 |
+| AOSP Dalvik | `android-4.4.4_r2`（`36e356c96640775f0a3f167bd2426ea0f0093b8b`） | https://github.com/aosp-mirror/platform_dalvik | Apache-2.0 | DexVM 语义参考与机器校验数据源；默认不编译、不链接进任何发行物 |
 
 Dynarmic 的递归 submodule 版本由其固定提交的 `.gitmodules` 与 gitlink 决定，各组件
 许可证位于对应源码目录。规划中但尚未引入发行物：ANGLE、Qt 6、FFmpeg、zlib、zstd

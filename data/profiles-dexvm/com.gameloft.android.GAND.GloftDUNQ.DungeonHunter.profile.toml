@@ -1,0 +1,30 @@
+# DexVM staging profile (WU-M9-022, not yet migrated into data/profiles).
+# Kept out of the production catalog until the title reaches its gate so
+# tools.title_profiles_current stays green on the v1 profile in use.
+schema = 2
+[identity]
+package = "com.gameloft.android.GAND.GloftDUNQ.DungeonHunter"
+name = "Dungeon Hunter"
+version_code = [355]
+so_sha256 = ["0befcb71acc320c964a08a590dd7b1903a91421c7c52c01ede2f19a1771b247a"]
+abi = "armeabi"
+[runtime]
+api_level = 19
+lifecycle = "dex_activity"
+maximum_ticks_per_call = 10000000000
+[runtime.surface]
+width = 1024
+height = 600
+[runtime.dexvm]
+heap_budget_bytes = 536870912
+max_frames = 512
+ticks_per_call = 10000000000
+[data]
+working_directory = "/sdcard/gameloft/games/DungeonHunter"
+mounts = [
+  { guest = "/sdcard/gameloft/games/DungeonHunter", source = "external", required = true },
+]
+manifest = [
+  { path = "data/PyData/common_pyarray.bin", required = true },
+  { path = "data/sounds/raw_001.ogg", required = true },
+]

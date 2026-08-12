@@ -44,3 +44,10 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [WU-M9-019](WU-M9-019.md) | Asphalt 5 pilot v2 profile + exact 主界面 gate | 完成 |
 | [WU-M9-020](WU-M9-020.md) | Scenario runner 易用性批次（失败日志/机读输出/预算算术/--fresh） | 完成 |
 | [WU-M9-021](WU-M9-021.md) | Scenario runner --watch 增量编写模式 | 完成 |
+
+## 批次 4 · 更多 title 上 dexvm 路线（进行中）
+
+Dungeon Hunter 与 Asphalt 6 的阻塞点、缺口清单、工作队列与复现命令见
+**[HANDOFF-TITLES.md](HANDOFF-TITLES.md)**（接手 AI 的上下文根节点）。
+staging profile 在 `data/profiles-dexvm/`，通过各自 gate 后再迁移进
+`data/profiles/`。

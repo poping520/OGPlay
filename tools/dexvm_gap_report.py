@@ -33,9 +33,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import dex_survey_lib as lib
 
-DEFAULT_CATALOG_SOURCES = (
+# Globs, so splitting a catalog into more batch files never silently shrinks
+# the declared set (which would report already-implemented classes as gaps).
+DEFAULT_CATALOG_GLOBS = (
     "src/runtime/dexvm/core_catalog.cpp",
-    "src/runtime/integration/dexvm_android.cpp",
+    "src/runtime/integration/dexvm_android*.cpp",
 )
 
 # org.xml.sax lives outside PLATFORM_PREFIXES but is still a platform class
@@ -43,6 +45,11 @@ DEFAULT_CATALOG_SOURCES = (
 EXTRA_PLATFORM_PREFIXES = ("Lorg/xml/", "Lorg/json/", "Lorg/w3c/")
 
 CLASS_PATTERN = re.compile(r'descriptor\s*=\s*"(L[^"]+;)"')
+# Catalog helpers also declare classes positionally (Exception("L…;", super),
+# container loops, placeholder tables). Any bare class-descriptor literal in a
+# catalog source is a declared type: the linker rejects references to
+# unregistered superclasses/interfaces, so these never over-collect.
+BARE_CLASS_PATTERN = re.compile(r'"(L[a-zA-Z0-9_$/]+;)"')
 METHOD_PATTERN = re.compile(r'\{"([^"]+)",\s*\n?\s*"(\([^"]*\)[^"]*)"')
 FIELD_PATTERN = re.compile(r'\{"([^"]+)",\s*"([^(][^"]*)"')
 PLACEHOLDER_PATTERN = re.compile(r'\{"(L[^"]+;)",\s*(?:true|false)')
@@ -66,6 +73,10 @@ def parse_catalog_sources(paths: list[Path]) -> tuple[set[str], set[tuple[str, s
             events.append((match.start(), "class", (match.group(1), "")))
         for match in PLACEHOLDER_PATTERN.finditer(text):
             events.append((match.start(), "class", (match.group(1), "")))
+        # Bare literals only widen the declared-class set; they must not
+        # re-anchor member attribution, so they are collected separately.
+        classes.update(match.group(1)
+                       for match in BARE_CLASS_PATTERN.finditer(text))
         for match in METHOD_PATTERN.finditer(text):
             events.append((match.start(), "method",
                            (match.group(1), match.group(2))))
@@ -95,18 +106,25 @@ def build_report(dex: lib.DexFile, declared_classes: set[str],
                  declared_members: set[tuple[str, str, str]]) -> dict:
     app_types = {dex.type_name(c.type_index) for c in dex.classes}
 
-    link_blocking: dict[str, list[str]] = {}
+    # role is what the placeholder declaration must be: a class used as a
+    # superclass needs <init>, an interface must be declared as one.
+    link_blocking: dict[str, dict] = {}
     for dex_class in dex.classes:
         requiring = dex.type_name(dex_class.type_index)
-        hierarchy: list[str] = []
+        hierarchy: list[tuple[str, str]] = []
         if dex_class.superclass_index is not None:
-            hierarchy.append(dex.type_name(dex_class.superclass_index))
-        hierarchy += [dex.type_name(i)
+            hierarchy.append((dex.type_name(dex_class.superclass_index),
+                              "superclass"))
+        hierarchy += [(dex.type_name(i), "interface")
                       for i in dex_class.interface_type_indices]
-        for name in hierarchy:
+        for name, role in hierarchy:
             if name in app_types or name in declared_classes:
                 continue
-            link_blocking.setdefault(name, []).append(requiring)
+            entry = link_blocking.setdefault(
+                name, {"role": role, "required_by": []})
+            if entry["role"] != role:
+                entry["role"] = "both"
+            entry["required_by"].append(requiring)
 
     runtime: dict[str, dict] = {}
 
@@ -141,10 +159,11 @@ def build_report(dex: lib.DexFile, declared_classes: set[str],
         entry["fields"] = sorted(set(entry["fields"]))
 
     return {
-        "schema": 1,
+        "schema": 2,
         "link_blocking": {
-            name: sorted(set(requiring))
-            for name, requiring in sorted(link_blocking.items())
+            name: {"role": entry["role"],
+                   "required_by": sorted(set(entry["required_by"]))}
+            for name, entry in sorted(link_blocking.items())
         },
         "runtime": dict(sorted(runtime.items())),
         "summary": {
@@ -166,7 +185,10 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
 
-    sources = [arguments.repo / p for p in DEFAULT_CATALOG_SOURCES]
+    sources = sorted(path for glob in DEFAULT_CATALOG_GLOBS
+                     for path in arguments.repo.glob(glob))
+    if not sources:
+        parser.error("no catalog sources matched; check --repo")
     declared_classes, declared_members = parse_catalog_sources(sources)
     report = build_report(load_dex(arguments.apk), declared_classes,
                           declared_members)

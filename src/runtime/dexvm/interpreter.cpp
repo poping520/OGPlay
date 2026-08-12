@@ -34,6 +34,22 @@ std::size_t IntrinsicRegistry::Size() const noexcept {
 
 // ---- Impl helpers ----------------------------------------------------------
 
+namespace {
+
+// Neutral answer for a survey stub: zero/null of the declared return kind.
+[[nodiscard]] VmValue NeutralValueFor(const char return_shorty) {
+    switch (return_shorty) {
+        case 'V': return VmValue::Void();
+        case 'J': return VmValue::Long(0);
+        case 'F': return VmValue::Float(0.0F);
+        case 'D': return VmValue::Double(0.0);
+        case 'L': return VmValue::Ref(VmObjectRef{});
+        default: return VmValue::Int(0);
+    }
+}
+
+}  // namespace
+
 void Interpreter::Impl::SetPending(const VmObjectRef throwable) {
     if (!throwable.IsValid()) {
         ThrowJava("Ljava/lang/NullPointerException;", "throw null");
@@ -288,11 +304,24 @@ VmValue Interpreter::Impl::InvokeIntrinsic(
             ledger->RecordUnimplemented(
                 "dexvm.intrinsic." + method.intrinsic_handler, 0);
         }
+        const auto& declaring = linker->Class(method.owner).descriptor;
+        if (linker->GapSurveyEnabled()) {
+            // Survey mode: record and answer neutrally so one run harvests
+            // every gap the title reaches. Never a compatibility result.
+            linker->RecordGapSurveyHit(declaring,
+                                       method.name + method.descriptor);
+            if (logger != nullptr) {
+                logger->Write(core::LogLevel::warn, "runtime.dexvm.survey",
+                              "SURVEY neutral stub: " + declaring + "." +
+                                  method.name + method.descriptor);
+            }
+            return NeutralValueFor(method.return_shorty);
+        }
         throw VmJavaThrow{
             "Ljava/lang/UnsatisfiedLinkError;",
-            "intrinsic handler is not implemented: " +
-                linker->Class(method.owner).descriptor + "." + method.name +
-                method.descriptor + " (" + method.intrinsic_handler + ")"};
+            "intrinsic handler is not implemented: " + declaring + "." +
+                method.name + method.descriptor + " (" +
+                method.intrinsic_handler + ")"};
     }
     ++stats.intrinsic_calls;
     IntrinsicContext context{*owner, receiver, arguments};

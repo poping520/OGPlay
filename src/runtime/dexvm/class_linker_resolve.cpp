@@ -73,6 +73,11 @@ ResolvedMethodRef DexClassLinker::ResolveMethodIndex(
         synthetic.ins_words = ArgumentWords(parts, false);
         resolved = impl_->AddMethod(std::move(synthetic));
     }
+    if (!resolved.has_value() && GapSurveyEnabled() &&
+        IsPlatformDescriptor(owner_descriptor)) {
+        resolved = SynthesizeSurveyMethod(owner, name, descriptor,
+                                          direct_or_static);
+    }
     if (!resolved.has_value()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "method cannot be resolved: " + owner_descriptor + "->" + name +

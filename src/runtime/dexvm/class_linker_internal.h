@@ -68,6 +68,11 @@ public:
 
     bool link_complete{};
 
+    // Gap survey state; the map key is "owner" or "owner->member" so the
+    // report order is deterministic.
+    bool gap_survey{};
+    std::map<std::string, std::uint32_t> survey_hits;
+
     [[nodiscard]] DexClassId AddClass(LinkedClass linked) {
         const auto id = DexClassId(
             static_cast<std::uint32_t>(classes.size() + 1));

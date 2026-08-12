@@ -52,6 +52,12 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
   `ParseBinaryXmlElements` 布局注入、`runOnUiThread` 同步执行、
   `VideoView.start()` 立即回调完成监听（安装器→视频→主 Activity 全链路），
   并修复 precheck 的 k22b 误报。下一步：输入/进游戏流程与长时游玩。
+- **适配流水线（复盘驱动，2026-08-12）**：上一款靠「跑一轮发现一个缺口」花了
+  几十轮，现改为一次收割——`run-apk --survey-gaps` 诊断模式把未声明的平台类/
+  方法合成中性桩并逐次记账，输出按命中排序的机读工作单（默认关闭，关闭即
+  明确失败，survey 运行显式标注非兼容性结论）；`tools/dexvm_stub_gen.py` 由
+  缺口报告生成占位与中性方法行，引用返回值一律进人工决策清单；空接收者诊断
+  补上声明类与调用点。流程见 `docs/tasks/m9/PLAYBOOK-NEW-TITLE.md`。
 - **Asphalt 6**：`loader.dex_l1` 过严，拒绝以数组类型为 owner 的 method_id
   （A6 有 4 处 `[Lcom/…;->clone`），dex-format 允许——必须先放宽解析。
 

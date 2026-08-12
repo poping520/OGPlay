@@ -1010,6 +1010,11 @@ status = "partial"
 test = "Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染"
 note = "M9 WU-M9-018 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败。DUNQ 批次扩展：Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/Build、SharedPreferences(会话内存)、多 Activity 流转+协作线程/Timer、widget 状态层（TextView/EditText/VideoView 等）、setContentView(I) 经 binary XML 布局注入 view registry、runOnUiThread 同步执行、VideoView.start() 立即回调 OnCompletionListener（播放本身仍为记账缺口）"
 
+[dexvm.gap_survey]
+status = "complete"
+test = "tests/dexvm/gap_survey_tests.cpp"
+note = "M9 适配流水线：run-apk --survey-gaps 打开诊断 survey 模式，未声明的平台类/方法合成中性桩、逐次记账，一次运行收割整条缺口队列并按命中次数输出机读工作单；默认关闭（关闭即明确失败），survey 运行显式标注为非兼容性结论。配套 tools/dexvm_gap_report.py（静态预检，schema 2 带 role）与 tools/dexvm_stub_gen.py（生成占位/中性方法行，引用返回值一律进人工决策清单）"
+
 [loader.arsc]
 status = "complete"
 test = "tests/dexvm/arsc_tests.cpp"

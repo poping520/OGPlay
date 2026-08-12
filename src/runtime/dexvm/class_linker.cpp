@@ -415,8 +415,93 @@ DexClassId DexClassLinker::ResolveDescriptor(
         }
         return id;
     }
+    if (impl_->gap_survey && IsPlatformDescriptor(descriptor)) {
+        // Survey mode: stand the platform class up as a neutral intrinsic so
+        // the run continues and the gap is reported instead of aborting.
+        LinkedClass linked;
+        linked.descriptor = std::string(descriptor);
+        linked.is_intrinsic = true;
+        linked.super = FindClass("Ljava/lang/Object;");
+        const auto id = impl_->AddClass(std::move(linked));
+        if (impl_->link_complete && impl_->ClassAt(id).super.has_value()) {
+            auto& stored = impl_->ClassAt(id);
+            const auto object_id = *stored.super;
+            stored.vtable = impl_->ClassAt(object_id).vtable;
+            impl_->ExtrasAt(id).virtual_lookup =
+                impl_->ExtrasAt(object_id).virtual_lookup;
+            impl_->ExtrasAt(id).linked = true;
+        }
+        RecordGapSurveyHit(std::string(descriptor), {});
+        return id;
+    }
     Fail(DexVmErrorReason::unknown_class,
          "class is not available: " + std::string(descriptor));
+}
+
+void DexClassLinker::EnableGapSurvey() { impl_->gap_survey = true; }
+
+bool DexClassLinker::GapSurveyEnabled() const noexcept {
+    return impl_->gap_survey;
+}
+
+void DexClassLinker::RecordGapSurveyHit(const std::string& owner_descriptor,
+                                        const std::string& member) {
+    const auto key = member.empty() ? owner_descriptor
+                                    : owner_descriptor + "->" + member;
+    ++impl_->survey_hits[key];
+}
+
+VmMethodId DexClassLinker::SynthesizeSurveyMethod(
+    const DexClassId owner, const std::string& name,
+    const std::string& descriptor, const bool is_static) {
+    if (!impl_->gap_survey) {
+        Fail(DexVmErrorReason::internal_invariant,
+             "survey stubs require survey mode");
+    }
+    LinkedMethod method;
+    method.owner = owner;
+    method.name = name;
+    method.descriptor = descriptor;
+    method.is_static = is_static;
+    method.kind = MethodKind::intrinsic;
+    // Deliberately unregistered: the interpreter answers neutrally and
+    // records the hit, so the stub can never be mistaken for an
+    // implementation.
+    method.intrinsic_handler = "survey.unimplemented";
+    const auto parts = SplitDescriptor(descriptor);
+    method.return_shorty = ShortyOf(parts.return_type);
+    method.ins_words = ArgumentWords(parts, is_static);
+    const bool is_direct =
+        is_static || name == "<init>" || name == "<clinit>";
+    auto& linked = impl_->ClassAt(owner);
+    auto& extra = impl_->ExtrasAt(owner);
+    const auto slot = static_cast<std::uint16_t>(linked.vtable.size());
+    method.vtable_index = is_direct ? -1 : static_cast<std::int32_t>(slot);
+    const auto id = impl_->AddMethod(std::move(method));
+    if (is_direct) {
+        extra.direct_lookup.insert_or_assign(MemberKey(name, descriptor), id);
+    } else {
+        extra.virtual_lookup.insert_or_assign(MemberKey(name, descriptor),
+                                             slot);
+        linked.vtable.push_back(id);
+    }
+    return id;
+}
+
+std::vector<GapSurveyHit> DexClassLinker::GapSurveyHits() const {
+    std::vector<GapSurveyHit> hits;
+    hits.reserve(impl_->survey_hits.size());
+    for (const auto& [key, count] : impl_->survey_hits) {
+        const auto separator = key.find("->");
+        GapSurveyHit hit;
+        hit.owner_descriptor = key.substr(0, separator);
+        if (separator != std::string::npos) {
+            hit.member = key.substr(separator + 2);
+        }
+        hit.hits = count;
+        hits.push_back(std::move(hit));
+    }
+    return hits;
 }
 
 const LinkedClass& DexClassLinker::Class(const DexClassId id) const {

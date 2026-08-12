@@ -127,6 +127,14 @@ struct ResolvedFieldRef final {
     DexClassId declared_owner;
 };
 
+// One platform surface the running title reached but the catalogs do not
+// declare, with how often it was hit (survey mode only).
+struct GapSurveyHit final {
+    std::string owner_descriptor;
+    std::string member;  // empty when the whole class was missing
+    std::uint32_t hits{};
+};
+
 class DexClassLinker final {
 public:
     DexClassLinker();
@@ -181,6 +189,24 @@ public:
     // Structural precheck (lazy, cached per method). Throws DexVmError with
     // class/method diagnostics on malformed code.
     void PrecheckMethod(VmMethodId id);
+
+    // Gap survey (diagnostic only, off by default — see
+    // docs/tasks/m9/PLAYBOOK-NEW-TITLE.md). When enabled, an unresolved
+    // *platform* class or method is synthesized as a recorded neutral stub
+    // instead of failing the run, so one execution harvests the whole gap
+    // list a title actually reaches. A survey run is never a compatibility
+    // result: every stub is logged and reported, and the frontend must label
+    // the run as a survey.
+    void EnableGapSurvey();
+    [[nodiscard]] bool GapSurveyEnabled() const noexcept;
+    // member is "name(descriptor)ret", or empty for a whole missing class.
+    void RecordGapSurveyHit(const std::string& owner_descriptor,
+                            const std::string& member);
+    // Synthesizes a neutral platform method on owner and records the hit.
+    [[nodiscard]] VmMethodId SynthesizeSurveyMethod(
+        DexClassId owner, const std::string& name,
+        const std::string& descriptor, bool is_static);
+    [[nodiscard]] std::vector<GapSurveyHit> GapSurveyHits() const;
 
 private:
     class Impl;

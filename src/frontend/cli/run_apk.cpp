@@ -36,6 +36,7 @@
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/session/profile_audio.h"
 #include "ogplay/loader/arsc.h"
+#include "ogplay/runtime/dexvm/gap_survey.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
@@ -395,6 +396,10 @@ int RunApkCommand(const int argc, const char* const argv[],
     bool default_mcp{};
     bool mcp_manual_step{};
     bool preflight{};
+    // Diagnostic gap survey (dex_activity only): substitutes recorded neutral
+    // stubs for unresolved platform surfaces so one run harvests the whole
+    // work queue. Never a compatibility result.
+    std::optional<std::filesystem::path> survey_gaps_output;
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
         if (option == "--system-dir" && index + 1 < argc) {
@@ -433,6 +438,12 @@ int RunApkCommand(const int argc, const char* const argv[],
             mcp_manual_step = true;
         } else if (option == "--preflight") {
             preflight = true;
+        } else if (option == "--survey-gaps" && index + 1 < argc) {
+            if (survey_gaps_output.has_value()) {
+                throw std::invalid_argument(
+                    "run-apk accepts --survey-gaps only once");
+            }
+            survey_gaps_output = std::filesystem::path{argv[++index]};
         } else {
             throw std::invalid_argument("unknown or incomplete run-apk option: " +
                                         std::string(option));
@@ -756,6 +767,15 @@ int RunApkCommand(const int argc, const char* const argv[],
                     runtime::RegisterAndroidBuiltins(registry, dex_context);
                 },
                 dexvm_ledger, &logger, bridge_config);
+            if (survey_gaps_output.has_value()) {
+                dex_bridge->Linker().EnableGapSurvey();
+                Write("OGPlay: GAP SURVEY RUN — unresolved platform classes "
+                      "and methods answer neutrally and are recorded. This is "
+                      "a diagnostic work queue, not a compatibility result.\n");
+                logger.Write(core::LogLevel::warn, "frontend.run_apk",
+                             "gap survey enabled; run is diagnostic only",
+                             {}, {}, kUnrestrictedLog);
+            }
             if (!manifest.launcher_activity.has_value()) {
                 throw std::runtime_error(
                     "dex_activity requires a launcher activity in the "
@@ -969,6 +989,17 @@ int RunApkCommand(const int argc, const char* const argv[],
         }
         if (audio_output) audio_output->Stop();
         publish_session();
+        if (survey_gaps_output.has_value() && dex_bridge) {
+            // Written before rethrowing: a survey run usually ends on the
+            // first gap that no stub can paper over, and that harvest is
+            // exactly what the next batch needs.
+            const auto hits = dex_bridge->Linker().GapSurveyHits();
+            std::ofstream report(*survey_gaps_output, std::ios::binary);
+            report << runtime::dexvm::RenderGapSurveyJson(
+                hits, apk_path.filename().string());
+            Write("OGPlay: gap survey wrote " + std::to_string(hits.size()) +
+                  " entries to " + survey_gaps_output->string() + "\n");
+        }
         if (failure) std::rethrow_exception(failure);
     }
     window->Close();

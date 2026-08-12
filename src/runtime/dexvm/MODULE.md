@@ -34,6 +34,13 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 - `RegisterCoreBuiltinHandlers`：core.object/string/class/throwable handler
   （String/StringBuilder 面在 `intrinsics_string.cpp`）。
 
+- Gap survey（诊断，默认关闭）：`EnableGapSurvey()` 后，未声明的**平台**类/
+  方法被合成为中性桩（0/null/void）并逐次记账，一次运行即可收割新 title 的
+  整条缺口队列；`GapSurveyHits()` + `RenderGapSurveyJson()`（`gap_survey.cpp`）
+  输出按命中次数排序的机读工作单。survey 运行不是兼容性结论，调用方必须显式
+  标注；关闭时行为不变（未声明即明确失败）。流程见
+  `docs/tasks/m9/PLAYBOOK-NEW-TITLE.md`。
+
 ## 文件分工
 
 `class_linker_internal.h` 持有 `DexClassLinker::Impl` 与共享 helper：注册/
@@ -61,4 +68,6 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 `tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：算术边界、控制流、
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算）；
-`tests/dexvm/dex_code_tests.cpp`、`tests/dexvm/dexasm_readback_tests.cpp`。
+`tests/dexvm/dex_code_tests.cpp`、`tests/dexvm/dexasm_readback_tests.cpp`、
+`tests/dexvm/gap_survey_tests.cpp`（survey 开/关对照：关闭即失败、桩答中性值、
+命中计数、工作单排序）。

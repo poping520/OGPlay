@@ -233,6 +233,18 @@ void RegisterWidgets(dx::IntrinsicRegistry& registry,
     registry.Register("android.widget.zero", [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(0);
     });
+    // Wide/float neutral answers, so a presentation-only getter never needs a
+    // bespoke handler (tools/dexvm_stub_gen.py emits these).
+    registry.Register("android.widget.zero_long", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Long(0);
+    });
+    registry.Register("android.widget.zero_float", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Float(0.0F);
+    });
+    registry.Register("android.widget.zero_double",
+                      [](dx::IntrinsicContext&) {
+        return dx::VmValue::Double(0.0);
+    });
     registry.Register("android.widget.null", [](dx::IntrinsicContext&) {
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });

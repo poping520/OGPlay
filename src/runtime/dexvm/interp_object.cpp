@@ -260,8 +260,18 @@ void Interpreter::Impl::StepObjectOrInvoke(Frame& frame,
         if (!named.is_static) {
             receiver = GetRef(frame, registers[cursor]);
             if (!receiver.IsValid()) {
-                ThrowJava("Ljava/lang/NullPointerException;",
-                          "invoke on null receiver: " + named.name);
+                // Name the target and the call site: a null receiver here is
+                // almost always an earlier lookup (findViewById, getSystemService)
+                // that answered null, and the caller is the only clue to which.
+                ThrowJava(
+                    "Ljava/lang/NullPointerException;",
+                    "invoke on null receiver: " +
+                        linker->Class(named.owner).descriptor + "." +
+                        named.name + named.descriptor + " from v" +
+                        std::to_string(registers[cursor]) + " called by " +
+                        linker->Class(frame.method->owner).descriptor + "." +
+                        frame.method->name + " pc " +
+                        std::to_string(frame.pc));
                 return;
             }
             arguments.push_back(VmValue::Ref(receiver));
@@ -307,10 +317,21 @@ void Interpreter::Impl::StepObjectOrInvoke(Frame& frame,
             }
             const auto index = linker->FindVtableIndex(
                 receiver_class, named.name, named.descriptor);
-            if (!index.has_value()) {
-                FailCode("virtual dispatch failed for " + named.name);
+            if (index.has_value()) {
+                target = linker->Class(receiver_class).vtable[*index];
+            } else if (linker->GapSurveyEnabled() &&
+                       linker->Class(receiver_class).is_intrinsic) {
+                // Survey mode: the receiver's platform class does not declare
+                // the member; stub it on that class and keep going. Copies
+                // first because synthesizing invalidates `named`.
+                const auto name = named.name;
+                const auto descriptor = named.descriptor;
+                target = linker->SynthesizeSurveyMethod(receiver_class, name,
+                                                        descriptor, false);
+            } else {
+                FailCode("virtual dispatch failed for " + named.name + " on " +
+                         linker->Class(receiver_class).descriptor);
             }
-            target = linker->Class(receiver_class).vtable[*index];
         } else if (base == 0x6f) {  // super
             const auto& current = linker->Class(frame.method->owner);
             if (!current.super.has_value()) {

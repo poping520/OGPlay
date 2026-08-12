@@ -250,6 +250,20 @@ add_custom_command(
     VERBATIM
 )
 add_custom_target(ogplay_gles_codegen DEPENDS "${OGPLAY_GLES2_CATALOG}")
+set(OGPLAY_DEXVM_OPCODE_TABLE
+    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/runtime/dexvm/generated/opcode_table.h")
+add_custom_command(
+    OUTPUT "${OGPLAY_DEXVM_OPCODE_TABLE}"
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py"
+        --catalog "${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json"
+        --output "${OGPLAY_DEXVM_OPCODE_TABLE}"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json"
+    VERBATIM
+)
+add_custom_target(ogplay_dexvm_codegen DEPENDS "${OGPLAY_DEXVM_OPCODE_TABLE}")
 add_custom_command(
     OUTPUT "${OGPLAY_GLES1_CATALOG}"
     COMMAND ${Python3_EXECUTABLE}
@@ -839,6 +853,27 @@ if(OGPLAY_BUILD_TESTS)
             --baseline ${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosp-dalvik
     )
     set_tests_properties(tools.aosp_dalvik_baseline_current
+        PROPERTIES LABELS "tools;dexvm")
+
+    add_test(
+        NAME tools.dexvm_opcode_generator_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py
+            --self-test
+    )
+    set_tests_properties(tools.dexvm_opcode_generator_self_test
+        PROPERTIES LABELS "tools;dexvm")
+
+    add_test(
+        NAME tools.dexvm_opcode_catalog_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py
+            --catalog ${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json
+            --verify-aosp ${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosp-dalvik
+            --output ${OGPLAY_DEXVM_OPCODE_TABLE}
+            --check
+    )
+    set_tests_properties(tools.dexvm_opcode_catalog_current
         PROPERTIES LABELS "tools;dexvm")
 
     add_test(

@@ -1,0 +1,2326 @@
+{
+ "schema": "dexvm-opcodes-v1",
+ "source": "AOSP platform/dalvik android-4.4.4_r2 opcode-gen/bytecode.txt (machine-derived)",
+ "rejected_opcodes": [
+  62,
+  63,
+  64,
+  65,
+  66,
+  67,
+  115,
+  121,
+  122,
+  227,
+  228,
+  229,
+  230,
+  231,
+  232,
+  233,
+  234,
+  235,
+  236,
+  237,
+  238,
+  239,
+  240,
+  241,
+  242,
+  243,
+  244,
+  245,
+  246,
+  247,
+  248,
+  249,
+  250,
+  251,
+  252,
+  253,
+  254,
+  255
+ ],
+ "opcodes": [
+  {
+   "opcode": 0,
+   "name": "nop",
+   "format": "10x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 1,
+   "name": "move",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 2,
+   "name": "move/from16",
+   "format": "22x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 3,
+   "name": "move/16",
+   "format": "32x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 4,
+   "name": "move-wide",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 5,
+   "name": "move-wide/from16",
+   "format": "22x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 6,
+   "name": "move-wide/16",
+   "format": "32x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 7,
+   "name": "move-object",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 8,
+   "name": "move-object/from16",
+   "format": "22x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 9,
+   "name": "move-object/16",
+   "format": "32x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 10,
+   "name": "move-result",
+   "format": "11x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 11,
+   "name": "move-result-wide",
+   "format": "11x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 12,
+   "name": "move-result-object",
+   "format": "11x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 13,
+   "name": "move-exception",
+   "format": "11x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 14,
+   "name": "return-void",
+   "format": "10x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "return"
+   ]
+  },
+  {
+   "opcode": 15,
+   "name": "return",
+   "format": "11x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "return"
+   ]
+  },
+  {
+   "opcode": 16,
+   "name": "return-wide",
+   "format": "11x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "return"
+   ]
+  },
+  {
+   "opcode": 17,
+   "name": "return-object",
+   "format": "11x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "return"
+   ]
+  },
+  {
+   "opcode": 18,
+   "name": "const/4",
+   "format": "11n",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 19,
+   "name": "const/16",
+   "format": "21s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 20,
+   "name": "const",
+   "format": "31i",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 21,
+   "name": "const/high16",
+   "format": "21h",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 22,
+   "name": "const-wide/16",
+   "format": "21s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 23,
+   "name": "const-wide/32",
+   "format": "31i",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 24,
+   "name": "const-wide",
+   "format": "51l",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 25,
+   "name": "const-wide/high16",
+   "format": "21h",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 26,
+   "name": "const-string",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "string-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 27,
+   "name": "const-string/jumbo",
+   "format": "31c",
+   "has_result": true,
+   "index_type": "string-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 28,
+   "name": "const-class",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "type-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 29,
+   "name": "monitor-enter",
+   "format": "11x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 30,
+   "name": "monitor-exit",
+   "format": "11x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 31,
+   "name": "check-cast",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "type-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 32,
+   "name": "instance-of",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "type-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 33,
+   "name": "array-length",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 34,
+   "name": "new-instance",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "type-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 35,
+   "name": "new-array",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "type-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 36,
+   "name": "filled-new-array",
+   "format": "35c",
+   "has_result": false,
+   "index_type": "type-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 37,
+   "name": "filled-new-array/range",
+   "format": "3rc",
+   "has_result": false,
+   "index_type": "type-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 38,
+   "name": "fill-array-data",
+   "format": "31t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 39,
+   "name": "throw",
+   "format": "11x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "throw"
+   ]
+  },
+  {
+   "opcode": 40,
+   "name": "goto",
+   "format": "10t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch"
+   ]
+  },
+  {
+   "opcode": 41,
+   "name": "goto/16",
+   "format": "20t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch"
+   ]
+  },
+  {
+   "opcode": 42,
+   "name": "goto/32",
+   "format": "30t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch"
+   ]
+  },
+  {
+   "opcode": 43,
+   "name": "packed-switch",
+   "format": "31t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "switch"
+   ]
+  },
+  {
+   "opcode": 44,
+   "name": "sparse-switch",
+   "format": "31t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "switch"
+   ]
+  },
+  {
+   "opcode": 45,
+   "name": "cmpl-float",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 46,
+   "name": "cmpg-float",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 47,
+   "name": "cmpl-double",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 48,
+   "name": "cmpg-double",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 49,
+   "name": "cmp-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 50,
+   "name": "if-eq",
+   "format": "22t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 51,
+   "name": "if-ne",
+   "format": "22t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 52,
+   "name": "if-lt",
+   "format": "22t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 53,
+   "name": "if-ge",
+   "format": "22t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 54,
+   "name": "if-gt",
+   "format": "22t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 55,
+   "name": "if-le",
+   "format": "22t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 56,
+   "name": "if-eqz",
+   "format": "21t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 57,
+   "name": "if-nez",
+   "format": "21t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 58,
+   "name": "if-ltz",
+   "format": "21t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 59,
+   "name": "if-gez",
+   "format": "21t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 60,
+   "name": "if-gtz",
+   "format": "21t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 61,
+   "name": "if-lez",
+   "format": "21t",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "branch",
+    "continue"
+   ]
+  },
+  {
+   "opcode": 68,
+   "name": "aget",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 69,
+   "name": "aget-wide",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 70,
+   "name": "aget-object",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 71,
+   "name": "aget-boolean",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 72,
+   "name": "aget-byte",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 73,
+   "name": "aget-char",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 74,
+   "name": "aget-short",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 75,
+   "name": "aput",
+   "format": "23x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 76,
+   "name": "aput-wide",
+   "format": "23x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 77,
+   "name": "aput-object",
+   "format": "23x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 78,
+   "name": "aput-boolean",
+   "format": "23x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 79,
+   "name": "aput-byte",
+   "format": "23x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 80,
+   "name": "aput-char",
+   "format": "23x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 81,
+   "name": "aput-short",
+   "format": "23x",
+   "has_result": false,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 82,
+   "name": "iget",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 83,
+   "name": "iget-wide",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 84,
+   "name": "iget-object",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 85,
+   "name": "iget-boolean",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 86,
+   "name": "iget-byte",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 87,
+   "name": "iget-char",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 88,
+   "name": "iget-short",
+   "format": "22c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 89,
+   "name": "iput",
+   "format": "22c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 90,
+   "name": "iput-wide",
+   "format": "22c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 91,
+   "name": "iput-object",
+   "format": "22c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 92,
+   "name": "iput-boolean",
+   "format": "22c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 93,
+   "name": "iput-byte",
+   "format": "22c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 94,
+   "name": "iput-char",
+   "format": "22c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 95,
+   "name": "iput-short",
+   "format": "22c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 96,
+   "name": "sget",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 97,
+   "name": "sget-wide",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 98,
+   "name": "sget-object",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 99,
+   "name": "sget-boolean",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 100,
+   "name": "sget-byte",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 101,
+   "name": "sget-char",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 102,
+   "name": "sget-short",
+   "format": "21c",
+   "has_result": true,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 103,
+   "name": "sput",
+   "format": "21c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 104,
+   "name": "sput-wide",
+   "format": "21c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 105,
+   "name": "sput-object",
+   "format": "21c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 106,
+   "name": "sput-boolean",
+   "format": "21c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 107,
+   "name": "sput-byte",
+   "format": "21c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 108,
+   "name": "sput-char",
+   "format": "21c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 109,
+   "name": "sput-short",
+   "format": "21c",
+   "has_result": false,
+   "index_type": "field-ref",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 110,
+   "name": "invoke-virtual",
+   "format": "35c",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 111,
+   "name": "invoke-super",
+   "format": "35c",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 112,
+   "name": "invoke-direct",
+   "format": "35c",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 113,
+   "name": "invoke-static",
+   "format": "35c",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 114,
+   "name": "invoke-interface",
+   "format": "35c",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 116,
+   "name": "invoke-virtual/range",
+   "format": "3rc",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 117,
+   "name": "invoke-super/range",
+   "format": "3rc",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 118,
+   "name": "invoke-direct/range",
+   "format": "3rc",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 119,
+   "name": "invoke-static/range",
+   "format": "3rc",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 120,
+   "name": "invoke-interface/range",
+   "format": "3rc",
+   "has_result": false,
+   "index_type": "method-ref",
+   "flags": [
+    "continue",
+    "invoke",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 123,
+   "name": "neg-int",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 124,
+   "name": "not-int",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 125,
+   "name": "neg-long",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 126,
+   "name": "not-long",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 127,
+   "name": "neg-float",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 128,
+   "name": "neg-double",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 129,
+   "name": "int-to-long",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 130,
+   "name": "int-to-float",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 131,
+   "name": "int-to-double",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 132,
+   "name": "long-to-int",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 133,
+   "name": "long-to-float",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 134,
+   "name": "long-to-double",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 135,
+   "name": "float-to-int",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 136,
+   "name": "float-to-long",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 137,
+   "name": "float-to-double",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 138,
+   "name": "double-to-int",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 139,
+   "name": "double-to-long",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 140,
+   "name": "double-to-float",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 141,
+   "name": "int-to-byte",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 142,
+   "name": "int-to-char",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 143,
+   "name": "int-to-short",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 144,
+   "name": "add-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 145,
+   "name": "sub-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 146,
+   "name": "mul-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 147,
+   "name": "div-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 148,
+   "name": "rem-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 149,
+   "name": "and-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 150,
+   "name": "or-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 151,
+   "name": "xor-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 152,
+   "name": "shl-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 153,
+   "name": "shr-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 154,
+   "name": "ushr-int",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 155,
+   "name": "add-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 156,
+   "name": "sub-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 157,
+   "name": "mul-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 158,
+   "name": "div-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 159,
+   "name": "rem-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 160,
+   "name": "and-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 161,
+   "name": "or-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 162,
+   "name": "xor-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 163,
+   "name": "shl-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 164,
+   "name": "shr-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 165,
+   "name": "ushr-long",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 166,
+   "name": "add-float",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 167,
+   "name": "sub-float",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 168,
+   "name": "mul-float",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 169,
+   "name": "div-float",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 170,
+   "name": "rem-float",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 171,
+   "name": "add-double",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 172,
+   "name": "sub-double",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 173,
+   "name": "mul-double",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 174,
+   "name": "div-double",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 175,
+   "name": "rem-double",
+   "format": "23x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 176,
+   "name": "add-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 177,
+   "name": "sub-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 178,
+   "name": "mul-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 179,
+   "name": "div-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 180,
+   "name": "rem-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 181,
+   "name": "and-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 182,
+   "name": "or-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 183,
+   "name": "xor-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 184,
+   "name": "shl-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 185,
+   "name": "shr-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 186,
+   "name": "ushr-int/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 187,
+   "name": "add-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 188,
+   "name": "sub-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 189,
+   "name": "mul-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 190,
+   "name": "div-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 191,
+   "name": "rem-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 192,
+   "name": "and-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 193,
+   "name": "or-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 194,
+   "name": "xor-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 195,
+   "name": "shl-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 196,
+   "name": "shr-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 197,
+   "name": "ushr-long/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 198,
+   "name": "add-float/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 199,
+   "name": "sub-float/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 200,
+   "name": "mul-float/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 201,
+   "name": "div-float/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 202,
+   "name": "rem-float/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 203,
+   "name": "add-double/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 204,
+   "name": "sub-double/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 205,
+   "name": "mul-double/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 206,
+   "name": "div-double/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 207,
+   "name": "rem-double/2addr",
+   "format": "12x",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 208,
+   "name": "add-int/lit16",
+   "format": "22s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 209,
+   "name": "rsub-int",
+   "format": "22s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 210,
+   "name": "mul-int/lit16",
+   "format": "22s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 211,
+   "name": "div-int/lit16",
+   "format": "22s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 212,
+   "name": "rem-int/lit16",
+   "format": "22s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 213,
+   "name": "and-int/lit16",
+   "format": "22s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 214,
+   "name": "or-int/lit16",
+   "format": "22s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 215,
+   "name": "xor-int/lit16",
+   "format": "22s",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 216,
+   "name": "add-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 217,
+   "name": "rsub-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 218,
+   "name": "mul-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 219,
+   "name": "div-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 220,
+   "name": "rem-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue",
+    "throw"
+   ]
+  },
+  {
+   "opcode": 221,
+   "name": "and-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 222,
+   "name": "or-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 223,
+   "name": "xor-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 224,
+   "name": "shl-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 225,
+   "name": "shr-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  },
+  {
+   "opcode": 226,
+   "name": "ushr-int/lit8",
+   "format": "22b",
+   "has_result": true,
+   "index_type": "none",
+   "flags": [
+    "continue"
+   ]
+  }
+ ]
+}

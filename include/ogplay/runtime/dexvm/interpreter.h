@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -38,10 +39,7 @@ struct VmValue final {
     [[nodiscard]] static VmValue Float(const float value) {
         VmValue out;
         out.kind = Kind::cat1;
-        std::uint32_t bits{};
-        static_assert(sizeof(bits) == sizeof(value));
-        __builtin_memcpy(&bits, &value, sizeof(bits));
-        out.cat1 = bits;
+        out.cat1 = std::bit_cast<std::uint32_t>(value);
         return out;
     }
     [[nodiscard]] static VmValue Long(const std::int64_t value) {
@@ -53,9 +51,7 @@ struct VmValue final {
     [[nodiscard]] static VmValue Double(const double value) {
         VmValue out;
         out.kind = Kind::wide;
-        std::uint64_t bits{};
-        __builtin_memcpy(&bits, &value, sizeof(bits));
-        out.wide = bits;
+        out.wide = std::bit_cast<std::uint64_t>(value);
         return out;
     }
     [[nodiscard]] static VmValue Ref(const VmObjectRef reference) {
@@ -69,17 +65,13 @@ struct VmValue final {
         return static_cast<std::int32_t>(cat1);
     }
     [[nodiscard]] float AsFloat() const {
-        float value{};
-        __builtin_memcpy(&value, &cat1, sizeof(value));
-        return value;
+        return std::bit_cast<float>(cat1);
     }
     [[nodiscard]] std::int64_t AsLong() const {
         return static_cast<std::int64_t>(wide);
     }
     [[nodiscard]] double AsDouble() const {
-        double value{};
-        __builtin_memcpy(&value, &wide, sizeof(value));
-        return value;
+        return std::bit_cast<double>(wide);
     }
 };
 

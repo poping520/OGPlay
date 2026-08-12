@@ -23,7 +23,8 @@
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
-能力现状以 `capabilities.toml` 为准。macOS/arm64 full CTest 558/558。
+能力现状以 `capabilities.toml` 为准。macOS/arm64 与 Windows/x64
+（windows-msvc 预设）full CTest 均 558/558。
 
 ## M9 交付摘要
 
@@ -69,7 +70,9 @@ Dungeon Hunter 与 Asphalt 6 的 v2 staging profile 已就位
    （已用 512 MiB 预算诚实覆盖换语言/进赛道，长时游玩需 GC-B）。
 3. 阶段 4（线程/wait-notify/GC-B/java.* P2P3）在厚层 title（libGDX 类）
    立项时启动；05 §4 gate 3。
-4. Windows/Linux 三平台 M9 严格出口复验（当前仅 macOS/arm64 本地全绿）。
+4. Linux M9 严格出口复验（macOS/arm64 与 Windows/x64 已全绿；Windows 侧
+   修复了 dexvm 的 MSVC 可移植性：`__builtin_memcpy`→`std::bit_cast`、
+   遮蔽警告，aosp-dalvik 子模块需 LF 检出——autocrlf 会破坏锚点哈希）。
 5. 存量性能 backlog 不变（ADR-0019 呈现管线方向等）。
 
 ## 阻塞

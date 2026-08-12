@@ -148,14 +148,11 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
             }
             case DexEncodedValueKind::float_value: {
                 const auto narrowed = static_cast<float>(value.floating);
-                std::uint32_t bits{};
-                __builtin_memcpy(&bits, &narrowed, sizeof(bits));
-                storage[field.slot] = bits;
+                storage[field.slot] = std::bit_cast<std::uint32_t>(narrowed);
                 break;
             }
             case DexEncodedValueKind::double_value: {
-                std::uint64_t bits{};
-                __builtin_memcpy(&bits, &value.floating, sizeof(bits));
+                const auto bits = std::bit_cast<std::uint64_t>(value.floating);
                 storage[field.slot] = static_cast<std::uint32_t>(bits);
                 storage[field.slot + 1] =
                     static_cast<std::uint32_t>(bits >> 32U);

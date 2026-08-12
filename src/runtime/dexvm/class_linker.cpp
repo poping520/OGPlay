@@ -143,7 +143,7 @@ public:
     std::vector<std::optional<ResolvedMethodRef>> method_cache;
     std::vector<std::optional<ResolvedFieldRef>> field_cache;
 
-    bool linked{};
+    bool link_complete{};
 
     [[nodiscard]] DexClassId AddClass(LinkedClass linked) {
         const auto id = DexClassId(
@@ -321,7 +321,7 @@ DexClassLinker::~DexClassLinker() = default;
 
 void DexClassLinker::RegisterIntrinsics(
     const std::span<const IntrinsicClassDecl> catalog) {
-    if (impl_->linked) {
+    if (impl_->link_complete) {
         Fail(DexVmErrorReason::internal_invariant,
              "intrinsics registered after linking");
     }
@@ -410,7 +410,7 @@ void DexClassLinker::RegisterIntrinsics(
 }
 
 void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
-    if (impl_->linked) {
+    if (impl_->link_complete) {
         Fail(DexVmErrorReason::internal_invariant,
              "dex registered after linking");
     }
@@ -481,14 +481,14 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
                     Ascii(image.strings[method_id_entry.name_string_index]);
                 const auto& prototype =
                     image.prototypes[method_id_entry.prototype_index];
-                std::string descriptor = "(";
+                std::string method_descriptor = "(";
                 for (const auto parameter : prototype.parameter_type_indices) {
-                    descriptor += image.types[parameter].descriptor;
+                    method_descriptor += image.types[parameter].descriptor;
                 }
-                descriptor += ")";
-                descriptor +=
+                method_descriptor += ")";
+                method_descriptor +=
                     image.types[prototype.return_type_index].descriptor;
-                method.descriptor = std::move(descriptor);
+                method.descriptor = std::move(method_descriptor);
                 method.access_flags = encoded.access_flags;
                 method.is_static = (encoded.access_flags & kAccStatic) != 0;
                 if ((encoded.access_flags & kAccNative) != 0) {
@@ -529,7 +529,7 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
 }
 
 void DexClassLinker::Link() {
-    if (impl_->linked) return;
+    if (impl_->link_complete) return;
     if (!FindClass("Ljava/lang/Object;").has_value()) {
         Fail(DexVmErrorReason::unknown_class,
              "core intrinsic catalog is not registered");
@@ -575,10 +575,12 @@ void DexClassLinker::Link() {
     for (auto& linked : impl_->classes) {
         impl_->LinkClass(linked.id, visiting);
     }
-    impl_->linked = true;
+    impl_->link_complete = true;
 }
 
-bool DexClassLinker::IsLinked() const noexcept { return impl_->linked; }
+bool DexClassLinker::IsLinked() const noexcept {
+    return impl_->link_complete;
+}
 
 std::optional<DexClassId> DexClassLinker::FindClass(
     const std::string_view descriptor) const {
@@ -610,7 +612,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         linked.array_element_descriptor = std::string(element);
         linked.super = FindClass("Ljava/lang/Object;");
         const auto id = impl_->AddClass(std::move(linked));
-        if (impl_->linked) {
+        if (impl_->link_complete) {
             auto& stored = impl_->ClassAt(id);
             auto& object_class = impl_->ClassAt(*stored.super);
             stored.vtable = object_class.vtable;

@@ -52,7 +52,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [WU-M9-027](WU-M9-027.md) | 解释器 per-thread 执行状态拆分 | 完成 |
 | [WU-M9-028](WU-M9-028.md) | Java Thread 1:1 宿主线程执行 | 完成 |
 | [WU-M9-029](WU-M9-029.md) | monitor wait-set 与 Object.wait/notify | 完成 |
-| [WU-M9-030](WU-M9-030.md) | Asphalt 6 首帧与主界面 exact gate | 待开始 |
+| [WU-M9-030](WU-M9-030.md) | Asphalt 6 首帧与主界面 exact gate | 完成（未达首帧，边界已固化） |
+| [WU-M9-031](WU-M9-031.md) | 解释执行的 EGL10/GL10 façade | 待开始 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 
@@ -60,10 +61,11 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 [`docs/playbook/NEW-TITLE.md`](../../playbook/NEW-TITLE.md)；staging profile 在
 `data/profiles-dexvm/`，通过各自 gate 后再迁移进 `data/profiles/`。
 
-进度：Dungeon Hunter 已越过链接与解释期，进入标题画面。Asphalt 6 的
-native→DexVM intrinsic JNI 可见性已统一，并已启动 `GLThread`；三轮 exact
-一致停在无超时 `Object.wait()`，这是阶段 4 真实线程/wait-set 边界，
-无首帧，不使用空返回掩盖。
+进度：Dungeon Hunter 已越过链接与解释期，进入标题画面。Asphalt 6 阶段 4
+（真实宿主线程 + monitor wait-set + managed surface 回调）已交付，`GLThread`
+现在真实运行并越过 `Object.wait()`；三轮 exact 一致停在
+`EGLContext` 未声明——自带 `GLSurfaceView` 要自己驱动 EGL。无首帧，
+不使用空返回掩盖，缺口由 WU-M9-031 承接。
 
 其余在办项（GC-B 精确标记清除、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)

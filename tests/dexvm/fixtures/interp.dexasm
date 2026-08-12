@@ -456,6 +456,77 @@
     return-object v0
 .end method
 
+# ---- managed surface lifecycle --------------------------------------------
+# Receives SurfaceHolder.Callback events the way a title's own SurfaceView
+# subclass does, and records what it was handed.
+
+.class public LSurfaceProbe;
+.super Ljava/lang/Object;
+
+.field static public created:I
+.field static public width:I
+.field static public height:I
+.field static public destroyed:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public surfaceCreated(Landroid/view/SurfaceHolder;)V
+.registers 3
+    sget v0, LSurfaceProbe;->created:I
+    add-int/lit8 v0, v0, 1
+    sput v0, LSurfaceProbe;->created:I
+    return-void
+.end method
+
+.method public surfaceChanged(Landroid/view/SurfaceHolder;III)V
+.registers 6
+    sput v4, LSurfaceProbe;->width:I
+    sput v5, LSurfaceProbe;->height:I
+    return-void
+.end method
+
+.method public surfaceDestroyed(Landroid/view/SurfaceHolder;)V
+.registers 3
+    const/4 v0, 1
+    sput v0, LSurfaceProbe;->destroyed:I
+    return-void
+.end method
+
+.method static public make()Ljava/lang/Object;
+.registers 1
+    new-instance v0, LSurfaceProbe;
+    invoke-direct {v0}, LSurfaceProbe;-><init>()V
+    return-object v0
+.end method
+
+.method static public created()I
+.registers 1
+    sget v0, LSurfaceProbe;->created:I
+    return v0
+.end method
+
+.method static public width()I
+.registers 1
+    sget v0, LSurfaceProbe;->width:I
+    return v0
+.end method
+
+.method static public height()I
+.registers 1
+    sget v0, LSurfaceProbe;->height:I
+    return v0
+.end method
+
+.method static public destroyed()I
+.registers 1
+    sget v0, LSurfaceProbe;->destroyed:I
+    return v0
+.end method
+
 # ---- monitor wait set (04 §4) ---------------------------------------------
 # One shared lock plus a guard flag, the classic pattern the bundled
 # GLSurfaceView of these titles uses.

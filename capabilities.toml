@@ -88,7 +88,7 @@ note = "M5 WU-0303/0318 与 M8 WU-0378 以纯数据 Profile 闭合身份、1024x
 [profiles.asphalt6_glstore_v132]
 status = "partial"
 test = "tools.title_profiles_current; tests/session/profile_entry_scope_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml; exact APK local bootstrap"
-note = "WU-M9-022..026 以 v2 entry/manifest GLGame 启动引擎 Activity，required external manifest 就绪后应用 GameInstaller.sbStarted 真实 provisioned-data preset；native 已可见 DexVM intrinsic 平台类，exact 启动 GLThread 后三轮一致明确停在阶段 4 Object.wait() wait-set 边界，guest 首帧与主界面 gate 尚未完成；删除 preset 会真实回到 GameInstaller 商业外壳"
+note = "WU-M9-022..026 以 v2 entry/manifest GLGame 启动引擎 Activity，required external manifest 就绪后应用 GameInstaller.sbStarted 真实 provisioned-data preset；native 已可见 DexVM intrinsic 平台类。WU-M9-028..030 后 GLThread 已是真实宿主线程、越过 Object.wait()、并收到 managed surface 回调，三轮 exact 一致停在自带 GLSurfaceView 自行驱动 EGL 所需的 Ljavax/microedition/khronos/egl/EGLContext 未声明处（WU-M9-031）。guest 首帧与主界面 gate 均未完成；删除 preset 会真实回到 GameInstaller 商业外壳"
 
 [session.lifecycle_templates]
 status = "complete"

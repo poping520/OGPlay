@@ -131,10 +131,12 @@ struct DexVmAndroidContext final {
     // callbacks are generated.
     std::unordered_map<std::uint32_t, std::int32_t> telephony_listeners;
 
-    // SurfaceView owns one stable SurfaceHolder; holder callbacks are kept
-    // for managed-surface lifecycle dispatch.
+    // SurfaceView owns one stable SurfaceHolder. addCallback appends, as on
+    // the platform: these titles register both the view and the activity on
+    // the same holder and both have to receive the surface lifecycle.
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> surface_holders;
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> surface_callbacks;
+    std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>
+        surface_callbacks;
 
     // Each View exposes one stable observer. Listener identity is retained
     // for a future managed layout pass; registration itself does not invent
@@ -301,6 +303,18 @@ FindClickableViewAt(const DexVmAndroidContext &context, float x, float y);
 [[nodiscard]] std::optional<std::string>
 InvokeViewOnClick(dexvm::Interpreter &vm, DexVmAndroidContext &context,
     std::uint64_t handle);
+
+// SurfaceHolder.Callback delivery for guest-implemented SurfaceViews. A
+// title that brings its own GLSurfaceView registers itself on the holder in
+// its constructor and then waits for these callbacks before it will touch
+// EGL, so the managed surface lifecycle has to deliver them. There is one
+// managed surface, so every registered holder callback gets the same event.
+// Returns a rendered message when a guest callback raised.
+enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
+
+[[nodiscard]] std::optional<std::string> DispatchSurfaceHolderCallbacks(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    SurfaceHolderPhase phase);
 
 // Frame-boundary service for Java threads: runs queued cooperative Timer
 // tasks on the calling (VM host) thread and drains any uncaught failure the

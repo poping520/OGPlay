@@ -375,7 +375,105 @@ TEST_CASE("SurfaceView owns a stable holder and callback identity") {
         std::vector<VmValue>{VmValue::Ref(first.value.ref),
                              VmValue::Ref(callback)});
     REQUIRE_FALSE(added.exception.IsValid());
-    CHECK(context->surface_callbacks.at(first.value.ref.Value()) == callback);
+    CHECK(context->surface_callbacks.at(first.value.ref.Value()) ==
+          std::vector<VmObjectRef>{callback});
+}
+
+TEST_CASE("managed surface delivers holder callbacks to every registration") {
+    JniStringStore strings;
+    JniPrimitiveArrayStore arrays;
+    JavaObjectModel model(strings, arrays);
+    DexClassLinker linker;
+    auto catalog = CoreIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
+    catalog.insert(catalog.end(), android_catalog.begin(),
+                   android_catalog.end());
+    linker.RegisterIntrinsics(catalog);
+    linker.RegisterDex(ReadInterpreterFixture());
+    linker.Link();
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+    context->surface_width = 1280;
+    context->surface_height = 720;
+    IntrinsicRegistry registry;
+    ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+    ogplay::core::CapabilityLedger ledger;
+    Interpreter interpreter(linker, model, std::move(registry), nullptr,
+                            ledger);
+    interpreter.RegisterCoreBuiltins();
+
+    const auto probe_class = linker.FindClass("LSurfaceProbe;");
+    REQUIRE(probe_class.has_value());
+    const auto make =
+        linker.FindDirectMethod(*probe_class, "make", "()Ljava/lang/Object;");
+    REQUIRE(make.has_value());
+    const auto read = [&](const std::string& name) {
+        const auto method = linker.FindDirectMethod(*probe_class, name, "()I");
+        REQUIRE(method.has_value());
+        const auto outcome = interpreter.Call(*method, {});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        return outcome.value.AsInt();
+    };
+
+    const auto view =
+        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto view_class = linker.FindClass("Landroid/view/SurfaceView;");
+    REQUIRE(view_class.has_value());
+    const auto get_holder = linker.FindVtableIndex(
+        *view_class, "getHolder", "()Landroid/view/SurfaceHolder;");
+    REQUIRE(get_holder.has_value());
+    const auto holder =
+        interpreter.Call(linker.Class(*view_class).vtable[*get_holder],
+                         std::vector<VmValue>{VmValue::Ref(view)});
+    REQUIRE_FALSE(holder.exception.IsValid());
+
+    const auto holder_class = linker.FindClass("Landroid/view/SurfaceHolder;");
+    REQUIRE(holder_class.has_value());
+    const auto add_callback = linker.FindVtableIndex(
+        *holder_class, "addCallback",
+        "(Landroid/view/SurfaceHolder$Callback;)V");
+    REQUIRE(add_callback.has_value());
+    const auto add = [&](const VmObjectRef callback) {
+        return interpreter.Call(
+            linker.Class(*holder_class).vtable[*add_callback],
+            std::vector<VmValue>{VmValue::Ref(holder.value.ref),
+                                 VmValue::Ref(callback)});
+    };
+
+    // These titles register both the view and the activity on one holder.
+    const auto first = interpreter.Call(*make, {}).value.ref;
+    const auto second = interpreter.Call(*make, {}).value.ref;
+    REQUIRE_FALSE(add(first).exception.IsValid());
+    REQUIRE_FALSE(add(second).exception.IsValid());
+    // addCallback is idempotent per callback, so events are not doubled.
+    REQUIRE_FALSE(add(first).exception.IsValid());
+    CHECK(context->surface_callbacks.at(holder.value.ref.Value()).size() == 2);
+    REQUIRE(add(VmObjectRef{}).exception.IsValid());
+
+    CHECK_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
+                    interpreter, *context,
+                    ogplay::runtime::SurfaceHolderPhase::created)
+                    .has_value());
+    CHECK(read("created") == 2);
+
+    CHECK_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
+                    interpreter, *context,
+                    ogplay::runtime::SurfaceHolderPhase::changed)
+                    .has_value());
+    CHECK(read("width") == 1280);
+    CHECK(read("height") == 720);
+
+    CHECK_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
+                    interpreter, *context,
+                    ogplay::runtime::SurfaceHolderPhase::destroyed)
+                    .has_value());
+    CHECK(read("destroyed") == 1);
+
+    // A registration that cannot receive the event is reported, not skipped.
+    context->surface_callbacks[holder.value.ref.Value()] = {view};
+    CHECK(ogplay::runtime::DispatchSurfaceHolderCallbacks(
+              interpreter, *context,
+              ogplay::runtime::SurfaceHolderPhase::created)
+              .has_value());
 }
 
 TEST_CASE("Thread priority validates and records the guest fact") {

@@ -341,12 +341,6 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
         } catch (const VmJavaThrow& thrown) {
             ThrowJava(thrown.descriptor, thrown.message);
         } catch (const DexVmError& error) {
-            if (error.Reason() == DexVmErrorReason::thread_stopped) {
-                // Teardown unwind: drop this call's frames so the context
-                // is clean enough to be discarded once the thread is joined.
-                while (frames.size() > entry_depth) frames.pop_back();
-                throw;
-            }
             if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
                 // The OutOfMemoryError object itself must still allocate;
                 // a bounded emergency reserve keeps this honest instead of
@@ -368,6 +362,9 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
                 }
                 ThrowJava("Ljava/lang/NullPointerException;", error.what());
             } else {
+                // The call is over: drop its frames so the context stays
+                // usable, and discardable once its thread is joined.
+                while (frames.size() > entry_depth) frames.pop_back();
                 throw;
             }
         }

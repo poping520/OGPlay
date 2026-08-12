@@ -66,10 +66,17 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
   `TelephonyManager.listen` 在确定性离线电话服务中保存非零监听掩码，`LISTEN_NONE`
   取消登记；没有宿主 radio，因此 `getSimState`/`getPhoneType` 分别报告
   `SIM_STATE_ABSENT`/`PHONE_TYPE_NONE`，也不伪造电话状态回调。
-  `SurfaceView.getHolder()` 为每个 view 返回稳定的会话内 `SurfaceHolder`，
-  `addCallback` 保存真实 callback 身份；surface type 由 managed EGL 固定拥有，
-  legacy `setType`/`setFormat` 只是无可观察效果的设备提示。`Thread.setPriority`
-  校验 Java 1..10 范围并保存 guest 优先级事实；协作执行器不伪造宿主调度优先级。
+  `SurfaceView.getHolder()` 为每个 view 返回稳定的会话内 `SurfaceHolder`；
+  `addCallback` 按平台语义**追加**真实 callback 身份（同一 holder 上注册多个
+  是常态：自带 `GLSurfaceView` 的 title 会同时注册 view 与 activity），重复
+  注册去重、null 拒绝。`DispatchSurfaceHolderCallbacks` 由 `dex_activity`
+  生命周期在 surface 就绪/尺寸变化/销毁时投递给全部注册者——自带 SurfaceView
+  的 title 在收到这些之前不会碰 EGL；注册了却没有对应方法的 callback 明确
+  报错，不静默跳过。surface type 由 managed EGL 固定拥有，legacy
+  `setType`/`setFormat` 只是无可观察效果的设备提示。`Thread.setPriority`
+  校验 Java 1..10 范围并保存 guest 优先级事实，不伪造宿主调度优先级。
+  `Thread.start()` 交给 DexVM 线程运行时（真实宿主线程，见
+  `src/runtime/dexvm/MODULE.md`）；`java.util.Timer` 仍是帧边界协作队列。
   每个 `View` 的 `ViewTreeObserver` 身份稳定并保存/移除 global-layout listener；当前
   managed layout 尚不发布虚构的 global-layout 事件。
 - `Bundle` 在会话内按 key 保存 String/int/long/byte[] 的真实类型和对象身份，typed getter

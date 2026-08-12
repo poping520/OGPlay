@@ -63,9 +63,14 @@ private:
                     std::vector<runtime::dexvm::VmValue> arguments);
     void DispatchInput();
     void MarkFailed() noexcept;
-    // Cooperative Java threads + in-process startActivity, both serviced
-    // at frame boundaries (installer-style titles run a worker thread and
-    // then switch to the game activity).
+    // Managed surface lifecycle for guest-implemented SurfaceViews, which
+    // wait on these before they will touch EGL.
+    void DispatchSurfaceHolder(runtime::SurfaceHolderPhase phase);
+    // Replaces a teardown-shaped error with the uncaught Java thread death
+    // that actually caused it, when one was recorded.
+    void RethrowFatalThreadFailure();
+    // Cooperative Timer tasks + in-process startActivity, both serviced at
+    // frame boundaries, plus uncaught failures from real Java threads.
     void PumpJavaThreads();
     // Decoded VideoView playback advances with the same frame clock; frames
     // publish through the binding and onCompletion fires on this thread.

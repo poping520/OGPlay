@@ -147,6 +147,11 @@ LifecycleFrameState DexActivityLifecycle::Start() {
         CallOnView(context.content_view, "onWindowFocusChanged", "(Z)V",
                    {dx::VmValue::Int(1)});
 
+        // A title that brings its own GLSurfaceView is waiting on these
+        // before it will touch EGL; the intrinsic one ignores them.
+        DispatchSurfaceHolder(runtime::SurfaceHolderPhase::created);
+        DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
+
         // A renderer may not exist yet (installer phase draws nothing);
         // frames then only pump cooperative threads until the interpreted
         // glue registers one.
@@ -155,6 +160,7 @@ LifecycleFrameState DexActivityLifecycle::Start() {
         state_ = LifecycleRunState::running;
     } catch (...) {
         MarkFailed();
+        RethrowFatalThreadFailure();
         throw;
     }
     return State();
@@ -271,9 +277,24 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
         ++frame_;
     } catch (...) {
         MarkFailed();
+        RethrowFatalThreadFailure();
         throw;
     }
     return State();
+}
+
+void DexActivityLifecycle::RethrowFatalThreadFailure() {
+    // A Java thread that died takes the VM down with it, which is what
+    // unblocked this thread. Report the death, not the teardown it caused.
+    const auto failure = bindings_.bridge->Threads().TakeFailure();
+    if (failure.has_value()) Fail(*failure);
+}
+
+void DexActivityLifecycle::DispatchSurfaceHolder(
+    const runtime::SurfaceHolderPhase phase) {
+    const auto error = runtime::DispatchSurfaceHolderCallbacks(
+        bindings_.bridge->Vm(), *bindings_.context, phase);
+    if (error.has_value()) Fail(*error);
 }
 
 void DexActivityLifecycle::PumpJavaThreads() {
@@ -389,6 +410,12 @@ LifecycleFrameState DexActivityLifecycle::Stop() {
                        "onWindowFocusChanged", "(Z)V",
                        {dx::VmValue::Int(0)});
             CallActivity("onPause", "()V", {});
+        }
+        if (was_running) {
+            const auto error = runtime::DispatchSurfaceHolderCallbacks(
+                bindings_.bridge->Vm(), *bindings_.context,
+                runtime::SurfaceHolderPhase::destroyed);
+            if (error.has_value()) state_ = LifecycleRunState::failed;
         }
         if (was_running && bindings_.context->renderer.IsValid()) {
             // GLSurfaceView notifies the renderer before teardown.

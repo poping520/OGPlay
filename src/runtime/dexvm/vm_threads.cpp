@@ -143,7 +143,15 @@ public:
             if (!failure_text.empty() && failure.empty()) {
                 failure = std::move(failure_text);
             }
+            if (final_status == VmThreadStatus::failed) {
+                // Uncaught death is fatal to the process on device. Threads
+                // waiting on a handshake this one will never complete must
+                // not be left parked forever: bring the VM down so the
+                // recorded reason is what the session reports.
+                shutting_down = true;
+            }
         }
+        if (final_status == VmThreadStatus::failed) vm->Monitors().Shutdown();
         changed.notify_all();
     }
 };

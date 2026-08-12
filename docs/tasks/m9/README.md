@@ -47,7 +47,23 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 
-Dungeon Hunter 与 Asphalt 6 的阻塞点、缺口清单、工作队列与复现命令见
-**[HANDOFF-TITLES.md](HANDOFF-TITLES.md)**（接手 AI 的上下文根节点）。
-staging profile 在 `data/profiles-dexvm/`，通过各自 gate 后再迁移进
-`data/profiles/`。
+流程、工具与失败判读见
+[`docs/playbook/NEW-TITLE.md`](../../playbook/NEW-TITLE.md)；staging profile 在
+`data/profiles-dexvm/`，通过各自 gate 后再迁移进 `data/profiles/`。
+
+进度：Dungeon Hunter 已越过链接与解释期，进入标题画面（缺口 survey 流程与工具
+在本批次落地）。Asphalt 6 仍卡在 **DEX 解析期**，还没进 dexvm：
+
+- 现象：`ogplay: DEX method_id contains an invalid index`。
+- 根因（已核实）：A6 的 `classes.dex` 有 4 个 `method_id` 的 `class_type_index`
+  指向**数组类型**（均为 `clone`）。dex-format 允许数组 descriptor 作为 method
+  引用的 owner（数组继承 `Object.clone()`），是 `src/loader/dex.cpp` 的规则过严，
+  不是坏 dex。
+- 修法：放宽 method_id owner 校验为「class descriptor 或数组 descriptor」，
+  field_id 保持只允许 class descriptor；同步 `src/loader/MODULE.md` 的不变量措辞，
+  并补正/反例测试（数组 owner 的 `clone()` 可解析、非法 descriptor 仍拒绝），
+  测试注释记录 AOSP 依据（`libdex/DexFile.h` + `docs/dex-format`）。
+
+其余在办项（GC-B 精确标记清除、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
+Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)
+的滚动快照为准。

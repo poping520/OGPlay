@@ -191,7 +191,7 @@ public:
     void PrecheckMethod(VmMethodId id);
 
     // Gap survey (diagnostic only, off by default — see
-    // docs/tasks/m9/PLAYBOOK-NEW-TITLE.md). When enabled, an unresolved
+    // docs/playbook/NEW-TITLE.md). When enabled, an unresolved
     // *platform* class or method is synthesized as a recorded neutral stub
     // instead of failing the run, so one execution harvests the whole gap
     // list a title actually reaches. A survey run is never a compatibility

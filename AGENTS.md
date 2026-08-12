@@ -6,6 +6,8 @@
 2. 阅读 `docs/state/CURRENT.md`、`docs/tasks/<里程碑>/` 下的相关任务单、相关模块的
    `MODULE.md` 以及相邻模块契约；已完成阶段只在需要追溯时读取验收文档。
 3. 在 `capabilities.toml` 中确认能力现状，不凭猜测补实现。
+4. 适配新游戏、跑测试或排查症状前，先读 `docs/playbook/` 下对应的操作手册
+   （总览 `docs/playbook/README.md`），按既有流程做，不要另起一套。
 
 ## 范围边界
 

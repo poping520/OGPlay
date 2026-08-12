@@ -6,7 +6,8 @@
 「发现下一个缺口」的成本从一轮运行降到一条命令。
 
 前置阅读：`AGENTS.md`、`docs/state/CURRENT.md`、`docs/design/dexvm/README.md`、
-`docs/tasks/m9/HANDOFF-TITLES.md`。范围红线以 `AGENTS.md` 为准：survey
+`src/runtime/dexvm/MODULE.md`、`src/runtime/integration/MODULE.md`；在办的 title
+阻塞点见 `docs/tasks/m9/README.md`。范围红线以 `AGENTS.md` 为准：survey
 模式是诊断工具，不是放宽「禁止伪造成功」。
 
 ---
@@ -103,7 +104,7 @@ ogplay run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 | `invoke on null receiver: C.m() from vN called by D.f pc P` | 上游查询返回了 null | 顺着 `called by` 找那次查询（findViewById/getSystemService 之类），补的是**它** |
 | `register out of range at pc N` | 预检规则或格式解码有问题 | 先怀疑我方 precheck（k22b 类 bug 有先例），用 `tools/dexdis.py` 核对 |
 | `dexvm tick budget exhausted` | 预算不够，不是死循环 | 调 profile `[runtime.dexvm]`，别改解释器 |
-| DEX 解析期失败 | 进不到 dexvm | 属 `loader`，见 HANDOFF-TITLES §2 |
+| `DEX method_id contains an invalid index` 等解析期失败 | 还没进 dexvm，属 `loader` | 先判断是坏 dex 还是我方规则过严（已有先例：dex-format 允许数组 descriptor 作 method owner，我方只收 `L…;`），改规则要同步 `src/loader/MODULE.md` 与正/反例测试 |
 
 ---
 
@@ -116,3 +117,59 @@ ogplay run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 
 经验值：Dungeon Hunter 的 61 个类 / 145 个潜在方法里，真正被执行到的是少数；
 盲目补全静态清单是浪费，而不跑 survey 就只能一轮一个地发现它们。
+
+---
+
+## 5. 精确命令与工具
+
+**构建与回归**（Windows Visual Studio 用 `windows-msvc`，其他平台用 `dev`）：
+
+```bash
+cmake --preset dev && cmake --build --preset dev && ctest --preset dev
+```
+
+**跑 title**：必须在构建输出目录下执行（ANGLE 动态库按相对路径加载），
+`--system-dir` 指向 Bionic 的 **lib 子目录**，未通过 gate 的 v2 profile 放在
+`data/profiles-dexvm/`（故意不在 `data/profiles/`，以免与生产 v1 profile 的门禁
+冲突）：
+
+```bash
+cd build/dev
+./ogplay run-apk <title>.apk \
+  --system-dir <api19-lib-dir> \
+  --profiles-dir ../../data/profiles-dexvm \
+  --external-dir <该 title 的外部数据目录> \
+  --exit-after-frames 3
+```
+
+外部数据目录的层级各 title 不同（有的是包名目录，有的是其下的 `files`），
+按 APK 实际读取路径给，不要猜。
+
+**分析工具**：
+
+| 工具 | 用途 | 注意 |
+| --- | --- | --- |
+| `tools/dexvm_gap_report.py` | 静态缺口分层报告（§2 步 1） | 只看平台前缀；`runtime` 段是优先级清单不是必做项 |
+| `tools/dexvm_stub_gen.py` | 生成占位/中性行（§2 步 2） | 第三段（引用返回值/字段）必须人工决策 |
+| `tools/dex_dependency_survey.py` | 题库静态测量 | 产物留 `.local/` |
+| `tools/dexdis.py` | 反汇编辅助 | pc/宽度显示有已知瑕疵，**不可作为权威**；权威事实用 C++ 侧 dump 或 `tools/dex_survey_lib.py` 直读字节 |
+
+**固化为可复跑用例**：进入主界面后写 Scenario 并按 gate 三轮验证，见
+[SCENARIO-RUNNER.md](SCENARIO-RUNNER.md)；通过后再把 profile 迁进
+`data/profiles/`。
+
+---
+
+## 6. 上一轮踩到的纪律（AGENTS.md 之外）
+
+1. **诚实失败要落在游戏能接住的地方**：平台侧缺失抛的应是游戏真能 catch 的
+   Java 异常（`AssetManager.open` 缺条目抛 `java.io.IOException`），而不是宿主
+   C++ 异常，也不是静默返回零。
+2. **不要手算 hex**。上一轮大量时间浪费在人工数 code unit 上；要么 C++ dump
+   二进制 + Python 结构化比对，要么用正式诊断能力。
+3. **v1 冻结**：`[[java.class]]` 胶水目录不再增长（裁决 14）。不要为让新 title
+   跑起来去补 v1 profile，直接走 dexvm 路线。
+4. **每批收尾**：同步 `MODULE.md`、推进 `capabilities.toml`（状态只前进）、滚动
+   更新 `docs/state/CURRENT.md`（≤6144 字节），提交前跑构建 + 全量 `ctest`。
+
+其他跨 title 的易误判症状见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。

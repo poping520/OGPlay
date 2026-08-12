@@ -39,7 +39,7 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   整条缺口队列；`GapSurveyHits()` + `RenderGapSurveyJson()`（`gap_survey.cpp`）
   输出按命中次数排序的机读工作单。survey 运行不是兼容性结论，调用方必须显式
   标注；关闭时行为不变（未声明即明确失败）。流程见
-  `docs/tasks/m9/PLAYBOOK-NEW-TITLE.md`。
+  `docs/playbook/NEW-TITLE.md`。
 
 ## 文件分工
 

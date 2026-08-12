@@ -3,7 +3,7 @@
 本篇冻结 M6 的方向：把当前 exact-APK smoke、人工点击、日志观察和截图目测收敛成
 AI 与 CI 共用的、确定性、有界、可机器判定的兼容性测试执行层。
 
-当前可直接使用的截图与点击步骤见 [OGPlay MCP 测试使用](../OGPLAY-MCP-TESTING.md)；
+当前可直接使用的截图与点击步骤见 [OGPlay MCP 测试使用](../playbook/MCP-TESTING.md)；
 该文档描述现状，本篇定义最终自动化出口。
 
 ---

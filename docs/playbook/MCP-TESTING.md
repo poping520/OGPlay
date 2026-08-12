@@ -1,7 +1,9 @@
 # OGPlay MCP 测试使用
 
-OGPlay MCP 用于在真实 `run-apk` 会话中读取最新 guest 画面并注入触摸手势。M6 的长期自动化
-目标与未完成项见 [AI 自动化测试规划](roadmap/10-ai-automation-testing.md)。
+OGPlay MCP 用于在真实 `run-apk` 会话中读取最新 guest 画面并注入触摸手势，适合**手工探索**：
+看一眼画面、试着点一下。要把探索结果固化成可复跑、可判定的用例，改用
+[SCENARIO-RUNNER.md](SCENARIO-RUNNER.md)。M6 的长期自动化目标与未完成项见
+[AI 自动化测试规划](../roadmap/10-ai-automation-testing.md)。
 
 ## 启动
 
@@ -45,5 +47,5 @@ tool error。
   和 golden 断言，不能只依赖目测。
 - 服务只绑定 `127.0.0.1`；端口占用会使启动明确失败。
 
-当前实现状态见 [CURRENT.md](state/CURRENT.md)，后续 Work Unit 见
-[M6 任务索引](tasks/m6/README.md)。
+当前实现状态见 [CURRENT.md](../state/CURRENT.md)，后续 Work Unit 见
+[M6 任务索引](../tasks/m6/README.md)。

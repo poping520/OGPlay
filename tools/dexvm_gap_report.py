@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dexvm intrinsic gap report (HANDOFF-TITLES §4 recomputation tool).
+"""dexvm intrinsic gap report (step 1 of docs/playbook/NEW-TITLE.md).
 
 Statically compares an APK's platform-class references against the intrinsic
 declarations in the dexvm catalogs and reports the gap in two layers:

@@ -57,12 +57,13 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
   方法合成中性桩并逐次记账，输出按命中排序的机读工作单（默认关闭，关闭即
   明确失败，survey 运行显式标注非兼容性结论）；`tools/dexvm_stub_gen.py` 由
   缺口报告生成占位与中性方法行，引用返回值一律进人工决策清单；空接收者诊断
-  补上声明类与调用点。流程见 `docs/tasks/m9/PLAYBOOK-NEW-TITLE.md`。
+  补上声明类与调用点。流程见 [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
 - **Asphalt 6**：`loader.dex_l1` 过严，拒绝以数组类型为 owner 的 method_id
   （A6 有 4 处 `[Lcom/…;->clone`），dex-format 允许——必须先放宽解析。
 
-缺口清单、工作队列与复现命令见
-**[docs/tasks/m9/HANDOFF-TITLES.md](../tasks/m9/HANDOFF-TITLES.md)**。
+开发方式手册（适配/测试/排查的操作步骤）见
+**[docs/playbook/README.md](../playbook/README.md)**；title 阻塞点与工作队列见
+[`docs/tasks/m9/README.md`](../tasks/m9/README.md)。
 
 ## 下一步（按优先级）
 

@@ -370,6 +370,11 @@ status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp"
 note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样本执行；mem 热点拦截具备生产 handler 与吞吐基准"
 
+[runtime.vfs_sandbox_persistence]
+status = "partial"
+test = "tests/runtime/sandbox_store_tests.cpp"
+note = "ADR-0020 SBX-1 交付 SandboxStore：<root>/<package>/{meta.toml,fs/}，fs/ 与 guest 绝对路径 1:1 便于用户备份；tmp+同目录 rename 原子替换、装载清理崩溃残留并计数、tombstone 空文件标记、%XX 转义（Windows 非法字符/%/结尾句点空格/保留设备名，只看字节双向无损）、traversal 与保留后缀拒绝、256 MiB/65536 文件配额超限 -ENOSPC、meta.toml schema/package/未知键明确失败不猜测迁移。尚未 attach 到 VFS（SBX-3），既有会话行为零变化"
+
 [runtime.vfs]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp"

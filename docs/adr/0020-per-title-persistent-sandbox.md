@@ -1,6 +1,7 @@
 # ADR-0020 · 每游戏持久沙盒（可写命名空间跨会话持久化）
 
-- 状态：Proposed（设计已定稿待评审；实施启动时间由 roadmap 排期另行决定）
+- 状态：Accepted（2026-08-12 评审通过并启动实施；任务单见
+  [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）
 - 日期：2026-08-12
 - 关联：[docs/design/sandbox/](../design/sandbox/README.md)（方案设计全文）、
   [roadmap 06 · §2](../roadmap/06-user-experience.md)（"每个游戏一个独立的虚拟

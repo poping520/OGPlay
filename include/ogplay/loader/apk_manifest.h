@@ -16,6 +16,10 @@ struct AndroidManifestFacts final {
     std::optional<std::string> version_name;
     std::optional<std::uint32_t> min_sdk;
     std::optional<std::uint32_t> target_sdk;
+    // Fully-qualified class of the first activity whose intent filter
+    // declares action MAIN + category LAUNCHER (dex_activity entry
+    // discovery, docs/design/dexvm/04-integration.md §2).
+    std::optional<std::string> launcher_activity;
 };
 
 [[nodiscard]] AndroidManifestFacts ParseAndroidBinaryManifest(

@@ -405,6 +405,11 @@ Interpreter::~Interpreter() = default;
 
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                 const std::span<const VmValue> arguments) {
+    if (impl_->frames.empty()) {
+        // The tick budget is per top-level lifecycle entry call (04 §6);
+        // nested calls (native -> interpreter re-entry) share the budget.
+        impl_->ticks = 0;
+    }
     const auto& method = impl_->linker->Method(method_id);
     if (method.is_static) {
         impl_->EnsureInitialized(method.owner);

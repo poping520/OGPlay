@@ -402,6 +402,9 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
     std::vector<std::string> elements;
     bool saw_manifest{};
     bool saw_uses_sdk{};
+    std::optional<std::string> current_activity;
+    bool activity_action_main{};
+    bool activity_category_launcher{};
     while (cursor < bytes.size()) {
         const auto chunk = ReadChunk(bytes, cursor, "binary XML node");
         if (chunk.type == kStartElementType) {
@@ -431,6 +434,43 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         FindAttribute(attributes, "versionName", kAndroidNamespace)) {
                     facts.version_name =
                         ReadStringAttribute(*version_name, strings, "versionName");
+                }
+            } else if (name == "activity" && elements.size() == 2 &&
+                       elements[1] == "application") {
+                if (const auto* activity_name =
+                        FindAttribute(attributes, "name", kAndroidNamespace)) {
+                    auto value = ReadStringAttribute(*activity_name, strings,
+                                                     "activity name");
+                    if (!value.empty() && value.front() == '.') {
+                        value = facts.package + value;
+                    } else if (value.find('.') == std::string::npos) {
+                        value = facts.package + "." + value;
+                    }
+                    current_activity = std::move(value);
+                    activity_action_main = false;
+                    activity_category_launcher = false;
+                }
+            } else if (name == "action" && current_activity.has_value() &&
+                       !elements.empty() &&
+                       elements.back() == "intent-filter") {
+                if (const auto* action_name =
+                        FindAttribute(attributes, "name", kAndroidNamespace)) {
+                    if (ReadStringAttribute(*action_name, strings,
+                                            "action name") ==
+                        "android.intent.action.MAIN") {
+                        activity_action_main = true;
+                    }
+                }
+            } else if (name == "category" && current_activity.has_value() &&
+                       !elements.empty() &&
+                       elements.back() == "intent-filter") {
+                if (const auto* category_name =
+                        FindAttribute(attributes, "name", kAndroidNamespace)) {
+                    if (ReadStringAttribute(*category_name, strings,
+                                            "category name") ==
+                        "android.intent.category.LAUNCHER") {
+                        activity_category_launcher = true;
+                    }
                 }
             } else if (elements.size() == 1 && name == "uses-sdk") {
                 if (saw_uses_sdk) {
@@ -464,6 +504,13 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                                         "binary XML end element name");
             if (name != elements.back()) {
                 throw std::runtime_error("binary XML element nesting is invalid");
+            }
+            if (name == "activity" && current_activity.has_value()) {
+                if (activity_action_main && activity_category_launcher &&
+                    !facts.launcher_activity.has_value()) {
+                    facts.launcher_activity = current_activity;
+                }
+                current_activity.reset();
             }
             elements.pop_back();
         } else if (chunk.type == kResourceMapType) {

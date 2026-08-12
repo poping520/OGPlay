@@ -107,7 +107,7 @@ ogplay::loader::ApkNativeLibrary Library(
 }
 
 const ogplay::loader::AndroidManifestFacts kManifest{
-    "org.example.legacy", 7, "1.0", 5, std::nullopt};
+    "org.example.legacy", 7, "1.0", 5, std::nullopt, std::nullopt};
 
 }  // namespace
 

@@ -1,0 +1,24 @@
+# DexVM pilot (WU-M9-019): schema v2, dex_activity lifecycle.
+# No native_call, no [[java.class]] — the interpreted DEX drives the title
+# (docs/design/dexvm/04-integration.md §7). Staged here until the pilot gate
+# passes; migration then replaces the v1 profile in data/profiles/.
+schema = 2
+[identity]
+package = "com.gameloft.android.GAND.GloftAsphalt5.asphalt5"
+name = "Asphalt 5"
+version_code = [1]
+so_sha256 = ["9c7eea1374b76200f47557415f4518535cce065a0d2c50c7bab75209f7b87b48"]
+abi = "armeabi"
+[runtime]
+api_level = 19
+lifecycle = "dex_activity"
+[runtime.surface]
+width = 800
+height = 480
+[runtime.dexvm]
+heap_budget_bytes = 67108864
+max_frames = 512
+ticks_per_call = 200000000
+[quirks]
+enabled = ["gles1_material_front_face"]
+[quirks.gles1_material_front_face]

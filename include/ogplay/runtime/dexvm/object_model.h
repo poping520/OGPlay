@@ -100,6 +100,13 @@ public:
 
     [[nodiscard]] JniSize ArrayLength(VmObjectRef ref) const;
 
+    // Bulk byte-array transfer (intrinsic IO paths).
+    void WriteByteRegion(VmObjectRef ref, JniSize start,
+                         std::span<const std::byte> bytes);
+    [[nodiscard]] std::vector<std::byte> ReadByteRegion(VmObjectRef ref,
+                                                        JniSize start,
+                                                        JniSize length) const;
+
     [[nodiscard]] VmObjectRef ClassObject(DexClassId java_class);
     [[nodiscard]] DexClassId ClassOfClassObject(VmObjectRef ref) const;
 

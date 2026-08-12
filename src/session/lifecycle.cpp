@@ -23,6 +23,13 @@ LifecycleTemplateDescription DescribeLifecycle(
                 LifecycleCallbackRoute::custom_jni,
                 LifecycleCallbackRoute::custom_jni,
                 LifecycleCallbackRoute::custom_jni};
+    case ProfileLifecycle::dex_activity:
+        // The interpreted lifecycle routes through the framework activity
+        // shape; DexActivityLifecycle drives the callbacks directly.
+        return {lifecycle, LifecycleCallbackRoute::framework_activity,
+                LifecycleCallbackRoute::framework_activity,
+                LifecycleCallbackRoute::gl_surface_view_renderer,
+                LifecycleCallbackRoute::framework_activity};
     }
     throw LifecycleSequenceError("unsupported profile lifecycle");
 }

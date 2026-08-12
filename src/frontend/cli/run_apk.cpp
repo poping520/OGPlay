@@ -35,6 +35,10 @@
 #include "ogplay/runtime/integration/native_activity_runner.h"
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/session/profile_audio.h"
+#include "ogplay/loader/arsc.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/integration/dexvm_bridge.h"
+#include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/session/profile_guest_lifecycle.h"
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
@@ -523,15 +527,17 @@ int RunApkCommand(const int argc, const char* const argv[],
         return 0;
     }
     if (profile.runtime.lifecycle != session::ProfileLifecycle::native_activity &&
-        profile.runtime.lifecycle != session::ProfileLifecycle::gl_surface_view) {
+        profile.runtime.lifecycle != session::ProfileLifecycle::gl_surface_view &&
+        profile.runtime.lifecycle != session::ProfileLifecycle::dex_activity) {
         throw std::runtime_error(
             "profile lifecycle runner is not implemented by run-apk: " +
             std::string(session::ToString(profile.runtime.lifecycle)));
     }
     if (mcp_manual_step &&
-        profile.runtime.lifecycle != session::ProfileLifecycle::gl_surface_view) {
+        profile.runtime.lifecycle != session::ProfileLifecycle::gl_surface_view &&
+        profile.runtime.lifecycle != session::ProfileLifecycle::dex_activity) {
         throw std::runtime_error(
-            "--mcp-manual-step requires a gl_surface_view Profile");
+            "--mcp-manual-step requires a gl_surface_view or dex_activity Profile");
     }
 
     std::unique_ptr<agent::FrameSnapshotStore> mcp_frames;
@@ -628,7 +634,40 @@ int RunApkCommand(const int argc, const char* const argv[],
             filesystem.MountLazyReadOnly(
                 runtime::VfsSource::apk, "/apk", assets);
         }
-        auto sound_loader = SoundResourceLoader(profile, apk_bytes, archive);
+        const bool dex_mode = profile.runtime.lifecycle ==
+                              session::ProfileLifecycle::dex_activity;
+        std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
+        if (dex_mode) {
+            dex_context = std::make_shared<runtime::DexVmAndroidContext>();
+            dex_context->apk_bytes = apk_bytes;
+            dex_context->archive = archive;
+            const auto arsc_bytes =
+                loader::ReadApkEntry(apk_bytes, archive, "resources.arsc");
+            dex_context->arsc = loader::ParseArsc(std::span(
+                reinterpret_cast<const std::uint8_t*>(arsc_bytes.data()),
+                arsc_bytes.size()));
+            dex_context->package_name = manifest.package;
+            dex_context->surface_width = profile.runtime.surface.width;
+            dex_context->surface_height = profile.runtime.surface.height;
+            dex_context->api_level =
+                static_cast<std::int32_t>(profile.runtime.api_level);
+        }
+        auto sound_loader =
+            dex_mode
+                ? audio::JavaSoundPoolMixer::EncodedResourceLoader(
+                      [dex_context](const std::int32_t resource)
+                          -> std::vector<std::byte> {
+                          const auto* entry = dex_context->arsc.FindById(
+                              static_cast<std::uint32_t>(resource));
+                          if (entry == nullptr ||
+                              !entry->string_value.has_value()) {
+                              return {};
+                          }
+                          return loader::ReadApkEntry(
+                              dex_context->apk_bytes, dex_context->archive,
+                              *entry->string_value);
+                      })
+                : SoundResourceLoader(profile, apk_bytes, archive);
         std::unique_ptr<hal::AudioOutput> audio_output;
         std::vector<std::int16_t> audio_samples(1024U * 2U);
         if (sound_loader) {
@@ -665,32 +704,117 @@ int RunApkCommand(const int argc, const char* const argv[],
              guest_slice_observer,
              {.installation_id = "ogplay-" + manifest.package,
               .version_name = manifest.version_name.value_or("unknown")}});
-        auto lifecycle = session::ProfileGuestLifecycle::Create(
-            profile, launch->native_calls,
-            {
-                guest->GuestEnvironment(),
-                &guest->Environment(),
-                &guest->Classes(),
-                [&](const runtime::A32GuestCallFrame& frame) {
-                    call_progress.Begin(active_frame, frame.target.Value());
-                    const auto result = guest->Invoke(frame);
-                    call_progress.Complete(result.ticks_consumed);
-                    return result;
+
+        // Uniform driver over the two lifecycle implementations so the
+        // frame/MCP loop below stays single-sourced.
+        struct LifecycleDriver final {
+            std::function<session::LifecycleFrameState()> start;
+            std::function<session::LifecycleFrameState()> suspend;
+            std::function<session::LifecycleFrameState()> resume;
+            std::function<session::LifecycleFrameState()> step;
+            std::function<session::LifecycleFrameState()> stop;
+            std::function<session::LifecycleFrameState()> state;
+            std::function<void(const runtime::AndroidBoundaryInput&)>
+                queue_input;
+        };
+        LifecycleDriver driver;
+        std::unique_ptr<session::ProfileGuestLifecycle> lifecycle;
+        std::unique_ptr<runtime::DexVmGuestBridge> dex_bridge;
+        std::unique_ptr<session::DexActivityLifecycle> dex_lifecycle;
+        core::CapabilityLedger dexvm_ledger;
+        if (dex_mode) {
+            dex_context->session = guest.get();
+            const auto dex_entry =
+                loader::ReadApkEntry(apk_bytes, archive, "classes.dex");
+            std::vector<std::uint8_t> dex_bytes(dex_entry.size());
+            std::memcpy(dex_bytes.data(), dex_entry.data(),
+                        dex_entry.size());
+            runtime::DexVmBridgeConfig bridge_config;
+            if (profile.runtime.dexvm.has_value()) {
+                bridge_config.heap.heap_budget_bytes =
+                    profile.runtime.dexvm->heap_budget_bytes;
+                bridge_config.interpreter.max_frames =
+                    profile.runtime.dexvm->max_frames;
+                bridge_config.interpreter.tick_budget =
+                    profile.runtime.dexvm->ticks_per_call;
+            }
+            const auto android_catalog = runtime::AndroidIntrinsicCatalog();
+            dex_bridge = std::make_unique<runtime::DexVmGuestBridge>(
+                *guest, std::move(dex_bytes), android_catalog,
+                [dex_context](runtime::dexvm::IntrinsicRegistry& registry) {
+                    runtime::RegisterAndroidBuiltins(registry, dex_context);
                 },
-                [&guest] { guest->OpenManagedSurface(); },
-                [&guest] { guest->PresentManagedSurface(); },
-                [&guest] {
-                    static_cast<void>(guest->InterruptBlockingWaits());
-                },
-                [&] {
-                    call_progress.Begin(active_frame, 0U);
-                    guest->Stop();
-                },
-                [&guest] { guest->CloseManagedSurface(); },
-                [&guest](const runtime::AndroidBoundaryInput& input) {
-                    guest->PushInput(input);
-                },
-            });
+                dexvm_ledger, &logger, bridge_config);
+            if (!manifest.launcher_activity.has_value()) {
+                throw std::runtime_error(
+                    "dex_activity requires a launcher activity in the "
+                    "AndroidManifest");
+            }
+            std::string descriptor = *manifest.launcher_activity;
+            for (auto& character : descriptor) {
+                if (character == '.') character = '/';
+            }
+            descriptor = "L" + descriptor + ";";
+            dex_lifecycle = std::make_unique<session::DexActivityLifecycle>(
+                session::DexActivityLifecycleBindings{
+                    dex_bridge.get(), dex_context, descriptor,
+                    [&guest] { guest->OpenManagedSurface(); },
+                    [&guest] { guest->PresentManagedSurface(); },
+                    [&guest] {
+                        static_cast<void>(guest->InterruptBlockingWaits());
+                    },
+                    [&] {
+                        call_progress.Begin(active_frame, 0U);
+                        guest->Stop();
+                    },
+                    [&guest] { guest->CloseManagedSurface(); }});
+            driver = {[&] { return dex_lifecycle->Start(); },
+                      [&] { return dex_lifecycle->Suspend(); },
+                      [&] { return dex_lifecycle->Resume(); },
+                      [&] { return dex_lifecycle->StepFrame(); },
+                      [&] { return dex_lifecycle->Stop(); },
+                      [&] { return dex_lifecycle->State(); },
+                      [&](const runtime::AndroidBoundaryInput& input) {
+                          dex_lifecycle->QueueInput(input);
+                      }};
+        } else {
+            lifecycle = session::ProfileGuestLifecycle::Create(
+                profile, launch->native_calls,
+                {
+                    guest->GuestEnvironment(),
+                    &guest->Environment(),
+                    &guest->Classes(),
+                    [&](const runtime::A32GuestCallFrame& frame) {
+                        call_progress.Begin(active_frame,
+                                            frame.target.Value());
+                        const auto result = guest->Invoke(frame);
+                        call_progress.Complete(result.ticks_consumed);
+                        return result;
+                    },
+                    [&guest] { guest->OpenManagedSurface(); },
+                    [&guest] { guest->PresentManagedSurface(); },
+                    [&guest] {
+                        static_cast<void>(guest->InterruptBlockingWaits());
+                    },
+                    [&] {
+                        call_progress.Begin(active_frame, 0U);
+                        guest->Stop();
+                    },
+                    [&guest] { guest->CloseManagedSurface(); },
+                    [&guest](const runtime::AndroidBoundaryInput& input) {
+                        guest->PushInput(input);
+                    },
+                });
+            driver = {[&] { return lifecycle->Start(); },
+                      [&] { return lifecycle->Suspend(); },
+                      [&] { return lifecycle->Resume(); },
+                      [&] { return lifecycle->StepFrame(); },
+                      [&] { return lifecycle->Stop(); },
+                      [&] { return lifecycle->State(); },
+                      [&](const runtime::AndroidBoundaryInput& input) {
+                          lifecycle->QueueInput(input);
+                      }};
+        }
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "initializing root JNI library", {}, {},
                      kUnrestrictedLog);
@@ -699,7 +823,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "starting Profile lifecycle", {}, {},
                      kUnrestrictedLog);
-        static_cast<void>(lifecycle->Start());
+        static_cast<void>(driver.start());
         agent::McpLifecycleState mcp_lifecycle{
             agent::McpLifecycleState::running};
         std::optional<std::string> guest_fault;
@@ -707,7 +831,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         std::uint64_t permitted_steps{};
         const auto publish_session = [&] {
             if (!mcp_session) return;
-            const auto state = lifecycle->State();
+            const auto state = driver.state();
             agent::McpSessionSnapshot snapshot{
                 .lifecycle = mcp_lifecycle,
                 .frame = state.frame,
@@ -728,7 +852,8 @@ int RunApkCommand(const int argc, const char* const argv[],
         Write(mcp_manual_step
                   ? "OGPlay: Profile GLSurfaceView started in MCP manual-step mode.\n"
                   : "OGPlay: Profile GLSurfaceView started; close the window to stop.\n");
-        while (!quit && !guest->ExitRequested()) {
+        while (!quit && !guest->ExitRequested() &&
+               !(dex_context && dex_context->exit_requested.load())) {
             const auto window_state = window->State();
             for (const auto& event : window->PollEvents()) {
                 if (event.type == hal::InputEventType::quit) {
@@ -742,7 +867,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                                event, window_state, guest_width, guest_height);
                            mapped.has_value()) {
                     if (const auto input = MapInput(*mapped); input.has_value()) {
-                        lifecycle->QueueInput(*input);
+                        driver.queue_input(*input);
                     }
                 }
             }
@@ -756,11 +881,11 @@ int RunApkCommand(const int argc, const char* const argv[],
                         } else if (!failure && command->type == Command::Type::step) {
                             permitted_steps += command->frames;
                         } else if (!failure && command->type == Command::Type::suspend) {
-                            static_cast<void>(lifecycle->Suspend());
+                            static_cast<void>(driver.suspend());
                             mcp_lifecycle = agent::McpLifecycleState::suspended;
                             publish_session();
                         } else if (!failure && command->type == Command::Type::resume) {
-                            static_cast<void>(lifecycle->Resume());
+                            static_cast<void>(driver.resume());
                             mcp_lifecycle = agent::McpLifecycleState::running;
                             publish_session();
                         }
@@ -775,11 +900,11 @@ int RunApkCommand(const int argc, const char* const argv[],
                 }
                 if (const auto input = mcp_pointer.TakeNext(
                         mcp_inputs.get(), mouse_touch); input.has_value()) {
-                    lifecycle->QueueInput(*input);
+                    driver.queue_input(*input);
                 }
-                active_frame = lifecycle->State().frame + 1U;
-                static_cast<void>(lifecycle->StepFrame());
-                const auto stepped = lifecycle->State();
+                active_frame = driver.state().frame + 1U;
+                static_cast<void>(driver.step());
+                const auto stepped = driver.state();
                 if (mcp_manual_step) --permitted_steps;
                 if (audio_output) {
                     PumpAudio(*guest, *audio_output, audio_samples);
@@ -811,7 +936,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 logger.Write(
                     core::LogLevel::error, "frontend.run_apk",
                     "Profile GLSurfaceView failed",
-                    {.frame = lifecycle->State().frame},
+                    {.frame = driver.state().frame},
                     {{"reason", std::string(error.what())}});
                 if (!mcp_manual_step) quit = true;
             }
@@ -822,9 +947,9 @@ int RunApkCommand(const int argc, const char* const argv[],
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "stopping Profile lifecycle",
-                     {.frame = lifecycle->State().frame}, {}, kUnrestrictedLog);
+                     {.frame = driver.state().frame}, {}, kUnrestrictedLog);
         try {
-            static_cast<void>(lifecycle->Stop());
+            static_cast<void>(driver.stop());
             if (!failure) mcp_lifecycle = agent::McpLifecycleState::stopped;
         } catch (const std::exception& error) {
             if (!failure) failure = std::current_exception();

@@ -594,7 +594,7 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
                                               "runtime");
     NativeKeys(table, "runtime",
                {"api_level", "lifecycle", "maximum_ticks_per_call", "surface",
-                "native_call"},
+                "native_call", "dexvm"},
                {"api_level", "lifecycle", "surface"});
     ProfileRuntime result;
     result.api_level = static_cast<std::uint32_t>(NativeInteger(
@@ -608,7 +608,29 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
     if (lifecycle == "native_activity") result.lifecycle = ProfileLifecycle::native_activity;
     else if (lifecycle == "gl_surface_view") result.lifecycle = ProfileLifecycle::gl_surface_view;
     else if (lifecycle == "custom_jni") result.lifecycle = ProfileLifecycle::custom_jni;
+    else if (lifecycle == "dex_activity") result.lifecycle = ProfileLifecycle::dex_activity;
     else throw TitleProfileError("runtime.lifecycle is unsupported");
+    if (const auto* dexvm = NativeOptional(table, "dexvm"); dexvm != nullptr) {
+        const auto& dexvm_table = NativeAs<NativeTable>(*dexvm, "runtime.dexvm");
+        NativeKeys(dexvm_table, "runtime.dexvm",
+                   {"heap_budget_bytes", "max_frames", "ticks_per_call"}, {});
+        ProfileRuntime::DexVm budget;
+        if (const auto* heap = NativeOptional(dexvm_table, "heap_budget_bytes")) {
+            budget.heap_budget_bytes = static_cast<std::uint64_t>(NativeInteger(
+                *heap, "runtime.dexvm.heap_budget_bytes", 1U << 20U,
+                1U << 30U));
+        }
+        if (const auto* frames = NativeOptional(dexvm_table, "max_frames")) {
+            budget.max_frames = static_cast<std::uint32_t>(NativeInteger(
+                *frames, "runtime.dexvm.max_frames", 16, 65536));
+        }
+        if (const auto* ticks = NativeOptional(dexvm_table, "ticks_per_call")) {
+            budget.ticks_per_call = static_cast<std::uint64_t>(NativeInteger(
+                *ticks, "runtime.dexvm.ticks_per_call", 1,
+                ProfileRuntime::kMaximumTicksPerCall));
+        }
+        result.dexvm = budget;
+    }
     if (const auto* maximum_ticks =
             NativeOptional(table, "maximum_ticks_per_call");
         maximum_ticks != nullptr) {

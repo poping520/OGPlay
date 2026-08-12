@@ -19,6 +19,7 @@ enum class ProfileLifecycle : std::uint8_t {
     native_activity,
     gl_surface_view,
     custom_jni,
+    dex_activity,  // schema v2: interpreted lifecycle (ADR-0017)
 };
 
 enum class ProfileSource : std::uint8_t { apk, obb, external };
@@ -90,10 +91,17 @@ struct ProfileRuntime final {
         : api_level(api), lifecycle(lifecycle_value), surface(surface_value),
           native_calls(std::move(calls)) {}
 
+    struct DexVm final {
+        std::uint64_t heap_budget_bytes{64ULL * 1024ULL * 1024ULL};
+        std::uint32_t max_frames{512};
+        std::uint64_t ticks_per_call{kDefaultMaximumTicksPerCall};
+    };
+
     std::uint32_t api_level{};
     ProfileLifecycle lifecycle{ProfileLifecycle::native_activity};
     std::uint64_t maximum_ticks_per_call{kDefaultMaximumTicksPerCall};
     ProfileSurface surface;
+    std::optional<DexVm> dexvm;
     std::vector<ProfileNativeCall> native_calls;
 };
 

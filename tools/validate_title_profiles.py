@@ -371,12 +371,62 @@ def _validate_input(value: Any) -> None:
         raise ProfileError("input.profile must be a template id")
 
 
+def _validate_runtime_v2(value: Any) -> None:
+    # Schema v2 (dex_activity): no native_call replay glue; optional dexvm
+    # budgets with checked ranges (docs/design/dexvm/04-integration.md §7).
+    table = _table(value, "runtime")
+    _keys(table, "runtime",
+          {"api_level", "lifecycle", "maximum_ticks_per_call", "surface",
+           "dexvm"},
+          {"api_level", "lifecycle", "surface"})
+    api = _integer(table["api_level"], "runtime.api_level", 1, 0xFFFFFFFF)
+    if api not in {19, 22, 23}:
+        raise ProfileError("runtime.api_level must be one of 19, 22 or 23")
+    if _string(table["lifecycle"], "runtime.lifecycle") != "dex_activity":
+        raise ProfileError("schema 2 requires lifecycle = dex_activity")
+    if "maximum_ticks_per_call" in table:
+        _integer(table["maximum_ticks_per_call"],
+                 "runtime.maximum_ticks_per_call", 1, 10_000_000_000)
+    surface = _table(table["surface"], "runtime.surface")
+    _keys(surface, "runtime.surface", {"width", "height"},
+          {"width", "height"})
+    _integer(surface["width"], "runtime.surface.width", 1, 16384)
+    _integer(surface["height"], "runtime.surface.height", 1, 16384)
+    if "dexvm" in table:
+        dexvm = _table(table["dexvm"], "runtime.dexvm")
+        _keys(dexvm, "runtime.dexvm",
+              {"heap_budget_bytes", "max_frames", "ticks_per_call"}, set())
+        if "heap_budget_bytes" in dexvm:
+            _integer(dexvm["heap_budget_bytes"],
+                     "runtime.dexvm.heap_budget_bytes", 1 << 20, 1 << 30)
+        if "max_frames" in dexvm:
+            _integer(dexvm["max_frames"], "runtime.dexvm.max_frames", 16,
+                     65536)
+        if "ticks_per_call" in dexvm:
+            _integer(dexvm["ticks_per_call"], "runtime.dexvm.ticks_per_call",
+                     1, 10_000_000_000)
+
+
 def validate_profile(document: Any, expected_package: str) -> dict[str, Any]:
     root = _table(document, "profile")
     _keys(root, "profile", ROOT_FIELDS, {"schema", "identity", "runtime"})
-    if root["schema"] != 1:
-        raise ProfileError("schema must be 1")
+    if root["schema"] not in (1, 2):
+        raise ProfileError("schema must be 1 or 2")
     _validate_identity(root["identity"], expected_package)
+    if root["schema"] == 2:
+        if "java" in root:
+            raise ProfileError("schema 2 forbids the java section")
+        _validate_runtime_v2(root["runtime"])
+        validators = {
+            "data": _validate_data,
+            "audio": _validate_audio,
+            "quirks": _validate_quirks,
+            "input": _validate_input,
+        }
+        for field, validator in validators.items():
+            if field in root:
+                validator(root[field])
+        return root
     _validate_runtime(root["runtime"])
     validators = {
         "data": _validate_data,

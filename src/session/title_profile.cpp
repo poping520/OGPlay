@@ -616,9 +616,30 @@ TitleProfile LoadTitleProfileText(const std::string_view text,
               {"schema", "identity", "runtime"});
     TitleProfile result;
     result.schema = static_cast<std::uint32_t>(
-        AsInteger(Require(root, "schema", "schema"), "schema", 1, 1));
+        AsInteger(Require(root, "schema", "schema"), "schema", 1, 2));
     result.identity = DecodeIdentity(root, expected_package);
     result.runtime = detail::DecodeProfileRuntime(root);
+    // Schema gating (docs/design/dexvm/04-integration.md §7): v2 is the
+    // dex_activity mode and must not declare replay glue; v1 stays frozen.
+    if (result.schema == 2) {
+        if (result.runtime.lifecycle != ProfileLifecycle::dex_activity) {
+            throw TitleProfileError(
+                "schema 2 requires runtime.lifecycle = dex_activity");
+        }
+        if (!result.runtime.native_calls.empty()) {
+            throw TitleProfileError(
+                "schema 2 forbids runtime.native_call declarations");
+        }
+        if (Optional(root, "java") != nullptr) {
+            throw TitleProfileError("schema 2 forbids [[java.class]]");
+        }
+    } else if (result.runtime.lifecycle == ProfileLifecycle::dex_activity) {
+        throw TitleProfileError(
+            "dex_activity lifecycle requires schema = 2");
+    }
+    if (result.runtime.dexvm.has_value() && result.schema != 2) {
+        throw TitleProfileError("runtime.dexvm requires schema = 2");
+    }
     if (const auto* data = Optional(root, "data")) result.data = DecodeData(*data);
     if (const auto* audio = Optional(root, "audio")) result.audio = DecodeAudio(*audio);
     if (const auto* java = Optional(root, "java")) {
@@ -679,7 +700,8 @@ TitleProfileCatalog::TitleProfileCatalog(std::vector<TitleProfile> profiles,
 void TitleProfileCatalog::Validate(const QuirkRegistry* registry) const {
     for (const auto& profile : profiles_) {
         const auto& identity = profile.identity;
-        if (profile.schema != 1 || !ValidPackage(identity.package) ||
+        if ((profile.schema != 1 && profile.schema != 2) ||
+            !ValidPackage(identity.package) ||
             identity.version_codes.empty() || identity.so_sha256.empty() ||
             !ValidAbi(identity.abi) ||
             std::any_of(identity.version_codes.begin(), identity.version_codes.end(),
@@ -755,6 +777,7 @@ std::string_view ToString(const ProfileLifecycle lifecycle) noexcept {
     case ProfileLifecycle::native_activity: return "native_activity";
     case ProfileLifecycle::gl_surface_view: return "gl_surface_view";
     case ProfileLifecycle::custom_jni: return "custom_jni";
+    case ProfileLifecycle::dex_activity: return "dex_activity";
     }
     return "unknown";
 }

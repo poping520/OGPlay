@@ -362,6 +362,8 @@ add_library(ogplay_runtime
     src/runtime/boundary/android_boundary_hle.cpp
     src/runtime/boundary/android_boundary_symbols.cpp
     src/runtime/integration/android_link_preflight.cpp
+    src/runtime/integration/dexvm_android.cpp
+    src/runtime/integration/dexvm_android_handlers.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
     src/runtime/jni_guest/jni_guest_bindings.cpp
@@ -422,6 +424,7 @@ add_dependencies(ogplay_runtime ogplay_dexvm_codegen)
 ogplay_set_project_warnings(ogplay_runtime)
 
 add_library(ogplay_session
+    src/session/dex_activity_lifecycle.cpp
     src/session/lifecycle.cpp
     src/session/profile_guest_lifecycle.cpp
     src/session/profile_asset_bundle.cpp

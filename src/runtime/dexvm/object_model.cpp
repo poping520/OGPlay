@@ -430,6 +430,36 @@ JniSize JavaObjectModel::ArrayLength(const VmObjectRef ref) const {
     Fail(DexVmErrorReason::object_model_failure, "object is not an array");
 }
 
+void JavaObjectModel::WriteByteRegion(const VmObjectRef ref,
+                                      const JniSize start,
+                                      const std::span<const std::byte> bytes) {
+    const auto& record = impl_->At(ref);
+    if (record.kind != VmObjectKind::primitive_array ||
+        record.primitive_kind != JniPrimitiveKind::byte) {
+        Fail(DexVmErrorReason::object_model_failure,
+             "bulk byte write requires a byte array");
+    }
+    std::vector<JniByte> staged(bytes.size());
+    std::memcpy(staged.data(), bytes.data(), bytes.size());
+    impl_->arrays->SetRegion(record.identity, start,
+                             JniPrimitiveArrayData{std::move(staged)});
+}
+
+std::vector<std::byte> JavaObjectModel::ReadByteRegion(
+    const VmObjectRef ref, const JniSize start, const JniSize length) const {
+    const auto& record = impl_->At(ref);
+    if (record.kind != VmObjectKind::primitive_array ||
+        record.primitive_kind != JniPrimitiveKind::byte) {
+        Fail(DexVmErrorReason::object_model_failure,
+             "bulk byte read requires a byte array");
+    }
+    const auto data = impl_->arrays->Region(record.identity, start, length);
+    const auto& typed = std::get<std::vector<JniByte>>(data);
+    std::vector<std::byte> out(typed.size());
+    std::memcpy(out.data(), typed.data(), typed.size());
+    return out;
+}
+
 VmObjectRef JavaObjectModel::ClassObject(const DexClassId java_class) {
     const auto found = impl_->class_objects.find(java_class.Value());
     if (found != impl_->class_objects.end()) return found->second;

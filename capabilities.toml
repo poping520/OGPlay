@@ -965,6 +965,41 @@ status = "complete"
 test = "tests/dexvm/dex_code_tests.cpp"
 note = "M9 WU-M9-006 在 L1 之上受检读取方法指令流、try/catch（区间有序不重叠、handler 偏移命中真实条目、type/地址受检）与静态初始值 encoded_array（11 种形态，符号/右零扩展对照 dex-format）；指令级分支/payload 校验留给 dexvm 链接预检"
 
+[dexvm.class_linker]
+status = "complete"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "M9 WU-M9-007 注册/层级/布局/vtable/iftable 四步链接与常量池解析缓存；平台前缀类只认 intrinsic 目录，循环继承/final 覆盖/不可覆盖 intrinsic 装配失败；懒结构预检对照 CodeVerify 子集（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置）"
+
+[dexvm.object_model]
+status = "partial"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "M9 WU-M9-008 统一 VmObjectRef 句柄空间：VM 实例/对象数组/类对象自有，字符串与基元数组委托存量 JNI store 使 native 与解释器同对象；JniObjectArrayStore 吸收与 jni_guest 槽位改线属阶段 2/3"
+
+[dexvm.gc]
+status = "partial"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "M9 WU-M9-008 GC-A 预算 arena：只分配不回收、默认 64 MiB、字节/对象计数可查、耗尽真实 OutOfMemoryError（含紧急保留物化 throwable）；GC-B 精确标记清除属阶段 4"
+
+[dexvm.interpreter_core]
+status = "complete"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "M9 WU-M9-009..012 tagged 帧（零值放宽/wide 对完整性）、表分派全部 dex 035 家族、invoke 三路由（解释/intrinsic/native bridge）、tick 预算与帧深度上限；语义逐 opcode 对照 AOSP mterp，夹具覆盖 NaN 偏置/MIN 除法/移位掩码/饱和转换/switch/payload"
+
+[dexvm.exceptions]
+status = "complete"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "M9 WU-M9-012 throw 与隐式异常（NPE/AIOOBE/CCE/Arithmetic/NegativeArraySize/ArrayStore/StackOverflow/OOM）共用展开路径，catch 按声明顺序 instanceof 匹配 + catch-all，跨帧弹栈，未捕获出口携带类/消息/完整解释器栈"
+
+[dexvm.clinit]
+status = "complete"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "M9 WU-M9-012 per-class 状态机 uninitialized→initializing→initialized|failed；静态初始值先物化再跑 <clinit>，super 连带、接口不连带、失败粘滞 NoClassDefFoundError；跨线程等待属阶段 4"
+
+[dexvm.intrinsics_java_core]
+status = "partial"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "M9 WU-M9-012 P1 起步：Object/String/Class/Throwable + 异常层级 + Runnable/CharSequence 目录与内建 handler；System/Math/StringBuilder/集合按 WU-M9-013 批次推进，缺失 handler 记账 + UnsatisfiedLinkError"
+
 [runtime.android_link_preflight]
 status = "complete"
 test = "tests/runtime/android_link_preflight_tests.cpp"

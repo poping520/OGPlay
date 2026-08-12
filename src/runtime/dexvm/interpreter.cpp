@@ -1,0 +1,546 @@
+#include "ogplay/runtime/dexvm/interpreter.h"
+
+#include <utility>
+
+#include "interpreter_internal.h"
+
+namespace ogplay::runtime::dexvm {
+
+// ---- IntrinsicRegistry -----------------------------------------------------
+
+void IntrinsicRegistry::Register(std::string handler_id,
+                                 IntrinsicHandler handler) {
+    for (const auto& [existing, _] : handlers_) {
+        if (existing == handler_id) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "intrinsic handler registered twice: " +
+                                 handler_id);
+        }
+    }
+    handlers_.emplace_back(std::move(handler_id), std::move(handler));
+}
+
+const IntrinsicHandler* IntrinsicRegistry::Find(
+    const std::string_view handler_id) const {
+    for (const auto& [existing, handler] : handlers_) {
+        if (existing == handler_id) return &handler;
+    }
+    return nullptr;
+}
+
+std::size_t IntrinsicRegistry::Size() const noexcept {
+    return handlers_.size();
+}
+
+// ---- Impl helpers ----------------------------------------------------------
+
+void Interpreter::Impl::SetPending(const VmObjectRef throwable) {
+    if (!throwable.IsValid()) {
+        ThrowJava("Ljava/lang/NullPointerException;", "throw null");
+        return;
+    }
+    pending_exception = throwable;
+    pending_exception_class = model->ObjectClass(throwable);
+    auto& state = throwables[throwable.Value()];
+    if (state.stack.empty()) {
+        state.stack = CaptureStack();
+    }
+}
+
+void Interpreter::Impl::ThrowJava(const std::string& descriptor,
+                                  const std::string& message) {
+    const auto throwable = owner->MakeThrowable(descriptor, message);
+    pending_exception = throwable;
+    pending_exception_class = model->ObjectClass(throwable);
+}
+
+std::vector<VmStackEntry> Interpreter::Impl::CaptureStack() const {
+    std::vector<VmStackEntry> stack;
+    for (auto it = frames.rbegin(); it != frames.rend(); ++it) {
+        const auto& method = *it->method;
+        stack.push_back({linker->Class(method.owner).descriptor,
+                         method.name, it->pc});
+    }
+    return stack;
+}
+
+VmObjectRef Interpreter::Impl::AllocateInstance(
+    const DexClassId java_class) {
+    const auto& linked = linker->Class(java_class);
+    if (linked.is_interface || linked.is_array) {
+        FailCode("cannot instantiate " + linked.descriptor);
+    }
+    if (linked.is_intrinsic) {
+        return model->NewHostBacked(java_class, 0);
+    }
+    return model->NewInstance(java_class, linked.instance_slots);
+}
+
+VmObjectRef Interpreter::Impl::InternDexString(
+    const std::uint32_t string_index) {
+    const auto& image = linker->Image();
+    if (string_index >= image.strings.size()) {
+        FailCode("string index out of range");
+    }
+    const auto& value = image.strings[string_index].value;
+    return model->InternString(
+        std::u16string_view(value.data(), value.size()));
+}
+
+void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
+    auto& linked = linker->MutableClass(java_class);
+    switch (linked.clinit_state) {
+        case ClinitState::initialized:
+            return;
+        case ClinitState::failed:
+            ThrowJava("Ljava/lang/NoClassDefFoundError;",
+                      "class initialization previously failed: " +
+                          linked.descriptor);
+            return;
+        case ClinitState::initializing:
+            // Same-thread re-entrancy is allowed by the JLS; stage 1 runs a
+            // single interpreter thread (04 §3 extends this).
+            return;
+        case ClinitState::uninitialized:
+            break;
+    }
+    linked.clinit_state = ClinitState::initializing;
+    linked.clinit_thread = clinit_thread_token;
+
+    // Superclass first (interfaces are not initialized transitively).
+    if (linked.super.has_value()) {
+        EnsureInitialized(*linked.super);
+        if (pending_exception.IsValid()) {
+            linker->MutableClass(java_class).clinit_state =
+                ClinitState::failed;
+            return;
+        }
+    }
+
+    // Materialize static initial values before running <clinit>
+    // (state machine follows AOSP vm/oo/Class.cpp dvmInitClass).
+    const auto values = linker->StaticValues(linked);
+    auto& mutable_class = linker->MutableClass(java_class);
+    for (std::size_t index = 0;
+         index < values.size() && index < mutable_class.own_static_fields.size();
+         ++index) {
+        const auto& field = linker->Field(
+            mutable_class.own_static_fields[index]);
+        const auto& value = values[index];
+        auto& storage = mutable_class.static_storage;
+        using loader::DexEncodedValueKind;
+        switch (value.kind) {
+            case DexEncodedValueKind::boolean_value:
+            case DexEncodedValueKind::byte_value:
+            case DexEncodedValueKind::short_value:
+            case DexEncodedValueKind::char_value:
+            case DexEncodedValueKind::int_value:
+                storage[field.slot] = static_cast<std::uint32_t>(
+                    static_cast<std::int32_t>(value.integral));
+                break;
+            case DexEncodedValueKind::long_value: {
+                const auto bits =
+                    static_cast<std::uint64_t>(value.integral);
+                storage[field.slot] = static_cast<std::uint32_t>(bits);
+                storage[field.slot + 1] =
+                    static_cast<std::uint32_t>(bits >> 32U);
+                break;
+            }
+            case DexEncodedValueKind::float_value: {
+                const auto narrowed = static_cast<float>(value.floating);
+                std::uint32_t bits{};
+                __builtin_memcpy(&bits, &narrowed, sizeof(bits));
+                storage[field.slot] = bits;
+                break;
+            }
+            case DexEncodedValueKind::double_value: {
+                std::uint64_t bits{};
+                __builtin_memcpy(&bits, &value.floating, sizeof(bits));
+                storage[field.slot] = static_cast<std::uint32_t>(bits);
+                storage[field.slot + 1] =
+                    static_cast<std::uint32_t>(bits >> 32U);
+                break;
+            }
+            case DexEncodedValueKind::string_index:
+                storage[field.slot] =
+                    InternDexString(value.index).Value();
+                break;
+            case DexEncodedValueKind::type_index:
+                storage[field.slot] =
+                    model
+                        ->ClassObject(linker->ResolveTypeIndex(value.index))
+                        .Value();
+                break;
+            case DexEncodedValueKind::null_reference:
+                storage[field.slot] = 0;
+                break;
+        }
+    }
+
+    const auto clinit = mutable_class.clinit;
+    if (clinit.has_value()) {
+        linker->PrecheckMethod(*clinit);
+        PushInterpretedFrame(linker->Method(*clinit), {}, 0);
+        const auto outcome = Run(frames.size() - 1);
+        if (outcome.exception.IsValid()) {
+            linker->MutableClass(java_class).clinit_state =
+                ClinitState::failed;
+            // Initialization failure is sticky NoClassDefFoundError for
+            // later users; the original throwable propagates now.
+            SetPending(outcome.exception);
+            return;
+        }
+    }
+    linker->MutableClass(java_class).clinit_state = ClinitState::initialized;
+    ++stats.classes_initialized;
+}
+
+void Interpreter::Impl::PushInterpretedFrame(
+    const LinkedMethod& method, const std::span<const VmValue> arguments,
+    const std::uint32_t caller_advance) {
+    if (frames.size() >= config.max_frames) {
+        throw VmJavaThrow{"Ljava/lang/StackOverflowError;",
+                          "frame depth " + std::to_string(frames.size())};
+    }
+    if (!frames.empty()) {
+        frames.back().pending_advance = caller_advance;
+    }
+    const auto& code = *method.code;
+    Frame frame;
+    frame.method = &method;
+    frame.regs.assign(code.info.registers_size, Slot{});
+    // Arguments occupy the trailing registers (Dalvik ins convention).
+    std::uint32_t reg =
+        static_cast<std::uint32_t>(code.info.registers_size) -
+        method.ins_words;
+    for (const auto& value : arguments) {
+        switch (value.kind) {
+            case VmValue::Kind::cat1:
+                frame.regs[reg] = {value.cat1, SlotTag::cat1};
+                reg += 1;
+                break;
+            case VmValue::Kind::wide:
+                frame.regs[reg] = {static_cast<std::uint32_t>(value.wide),
+                                   SlotTag::wide_lo};
+                frame.regs[reg + 1] = {
+                    static_cast<std::uint32_t>(value.wide >> 32U),
+                    SlotTag::wide_hi};
+                reg += 2;
+                break;
+            case VmValue::Kind::ref:
+                frame.regs[reg] = {value.ref.Value(), SlotTag::ref};
+                reg += 1;
+                break;
+            case VmValue::Kind::void_value:
+                FailCode("void argument in invoke marshaling");
+        }
+    }
+    frames.push_back(std::move(frame));
+    ++stats.method_calls;
+}
+
+VmValue Interpreter::Impl::InvokeIntrinsic(
+    const LinkedMethod& method, const VmObjectRef receiver,
+    const std::span<const VmValue> arguments) {
+    const auto* handler = intrinsics.Find(method.intrinsic_handler);
+    if (handler == nullptr) {
+        if (ledger != nullptr) {
+            ledger->RecordUnimplemented(
+                "dexvm.intrinsic." + method.intrinsic_handler, 0);
+        }
+        throw VmJavaThrow{
+            "Ljava/lang/UnsatisfiedLinkError;",
+            "intrinsic handler is not implemented: " +
+                linker->Class(method.owner).descriptor + "." + method.name +
+                method.descriptor + " (" + method.intrinsic_handler + ")"};
+    }
+    ++stats.intrinsic_calls;
+    IntrinsicContext context{*owner, receiver, arguments};
+    return (*handler)(context);
+}
+
+VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
+    VmCallOutcome outcome;
+    while (frames.size() > entry_depth) {
+        try {
+            Step();
+        } catch (const VmJavaThrow& thrown) {
+            ThrowJava(thrown.descriptor, thrown.message);
+        } catch (const DexVmError& error) {
+            if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
+                // The OutOfMemoryError object itself must still allocate;
+                // a bounded emergency reserve keeps this honest instead of
+                // crashing while reporting the exhaustion.
+                model->SetEmergencyReserve(true);
+                ThrowJava("Ljava/lang/OutOfMemoryError;", error.what());
+                model->SetEmergencyReserve(false);
+            } else {
+                throw;
+            }
+        }
+        if (!pending_exception.IsValid()) continue;
+
+        // Exception unwinding (02 §8; catch matching follows AOSP
+        // vm/Exception.cpp dvmFindCatchBlock: declaration order, then
+        // catch-all, then pop).
+        while (frames.size() > entry_depth) {
+            auto& frame = frames.back();
+            const auto& method = *frame.method;
+            bool handled = false;
+            if (method.code.has_value()) {
+                for (const auto& block : method.code->tries) {
+                    if (frame.pc < block.start_pc ||
+                        frame.pc >= block.start_pc + block.instruction_count) {
+                        continue;
+                    }
+                    for (const auto& handler : block.typed_handlers) {
+                        const auto handler_class = linker->ResolveTypeIndex(
+                            handler.type_index);
+                        if (linker->IsAssignable(handler_class,
+                                                 pending_exception_class)) {
+                            frame.pc = handler.handler_pc;
+                            handled = true;
+                            break;
+                        }
+                    }
+                    if (!handled && block.catch_all_pc.has_value()) {
+                        frame.pc = *block.catch_all_pc;
+                        handled = true;
+                    }
+                    if (handled) break;
+                }
+            }
+            if (handled) {
+                frame.caught = pending_exception;
+                pending_exception = VmObjectRef{};
+                pending_exception_class = DexClassId{};
+                break;
+            }
+            frames.pop_back();
+        }
+        if (pending_exception.IsValid() && frames.size() <= entry_depth) {
+            outcome.exception = pending_exception;
+            outcome.exception_class = pending_exception_class;
+            const auto state = throwables.find(pending_exception.Value());
+            if (state != throwables.end()) {
+                outcome.exception_message = state->second.message_utf8;
+                outcome.exception_stack = state->second.stack;
+            }
+            pending_exception = VmObjectRef{};
+            pending_exception_class = DexClassId{};
+            return outcome;
+        }
+    }
+    outcome.value = exit_result;
+    return outcome;
+}
+
+// ---- public API ------------------------------------------------------------
+
+Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
+                         IntrinsicRegistry intrinsics,
+                         NativeMethodBridge* bridge,
+                         core::CapabilityLedger& ledger,
+                         const InterpreterConfig config)
+    : impl_(std::make_unique<Impl>()) {
+    impl_->linker = &linker;
+    impl_->model = &model;
+    impl_->intrinsics = std::move(intrinsics);
+    impl_->bridge = bridge;
+    impl_->ledger = &ledger;
+    impl_->config = config;
+    impl_->owner = this;
+
+    const auto string_class = linker.FindClass("Ljava/lang/String;");
+    const auto class_class = linker.FindClass("Ljava/lang/Class;");
+    if (string_class.has_value() && class_class.has_value()) {
+        model.SetCoreClasses(*string_class, *class_class);
+    }
+}
+
+Interpreter::~Interpreter() = default;
+
+VmCallOutcome Interpreter::Call(const VmMethodId method_id,
+                                const std::span<const VmValue> arguments) {
+    const auto& method = impl_->linker->Method(method_id);
+    if (method.is_static) {
+        impl_->EnsureInitialized(method.owner);
+        if (impl_->pending_exception.IsValid()) {
+            VmCallOutcome outcome;
+            outcome.exception = impl_->pending_exception;
+            outcome.exception_class = impl_->pending_exception_class;
+            impl_->pending_exception = VmObjectRef{};
+            impl_->pending_exception_class = DexClassId{};
+            return outcome;
+        }
+    }
+    switch (method.kind) {
+        case MethodKind::interpreted: {
+            impl_->linker->PrecheckMethod(method_id);
+            const auto entry_depth = impl_->frames.size();
+            impl_->PushInterpretedFrame(method, arguments, 0);
+            auto outcome = impl_->Run(entry_depth);
+            return outcome;
+        }
+        case MethodKind::intrinsic: {
+            VmCallOutcome outcome;
+            const auto receiver = method.is_static || arguments.empty()
+                                      ? VmObjectRef{}
+                                      : arguments.front().ref;
+            const auto rest = method.is_static
+                                  ? arguments
+                                  : arguments.subspan(1);
+            try {
+                outcome.value = impl_->InvokeIntrinsic(method, receiver, rest);
+            } catch (const VmJavaThrow& thrown) {
+                impl_->ThrowJava(thrown.descriptor, thrown.message);
+                outcome.exception = impl_->pending_exception;
+                outcome.exception_class = impl_->pending_exception_class;
+                outcome.exception_message = thrown.message;
+                impl_->pending_exception = VmObjectRef{};
+                impl_->pending_exception_class = DexClassId{};
+            }
+            return outcome;
+        }
+        case MethodKind::native: {
+            if (impl_->bridge == nullptr) {
+                if (impl_->ledger != nullptr) {
+                    impl_->ledger->RecordUnimplemented(
+                        "dexvm.native_bridge", 0);
+                }
+                throw DexVmError(
+                    DexVmErrorReason::native_bridge_unavailable,
+                    "native method requires the JNI bridge: " +
+                        impl_->linker->Class(method.owner).descriptor + "." +
+                        method.name);
+            }
+            VmCallOutcome outcome;
+            const auto receiver = method.is_static || arguments.empty()
+                                      ? VmObjectRef{}
+                                      : arguments.front().ref;
+            const auto rest = method.is_static ? arguments
+                                               : arguments.subspan(1);
+            ++impl_->stats.native_calls;
+            outcome.value = impl_->bridge->Invoke(method, receiver, rest);
+            return outcome;
+        }
+        case MethodKind::abstract:
+            throw DexVmError(DexVmErrorReason::invalid_member,
+                             "abstract method invoked directly: " +
+                                 method.name);
+    }
+    throw DexVmError(DexVmErrorReason::internal_invariant,
+                     "unreachable method kind");
+}
+
+VmCallOutcome Interpreter::EnsureClassInitialized(
+    const DexClassId java_class) {
+    impl_->EnsureInitialized(java_class);
+    VmCallOutcome outcome;
+    if (impl_->pending_exception.IsValid()) {
+        outcome.exception = impl_->pending_exception;
+        outcome.exception_class = impl_->pending_exception_class;
+        const auto state =
+            impl_->throwables.find(impl_->pending_exception.Value());
+        if (state != impl_->throwables.end()) {
+            outcome.exception_message = state->second.message_utf8;
+            outcome.exception_stack = state->second.stack;
+        }
+        impl_->pending_exception = VmObjectRef{};
+        impl_->pending_exception_class = DexClassId{};
+    }
+    return outcome;
+}
+
+DexClassLinker& Interpreter::Linker() noexcept { return *impl_->linker; }
+JavaObjectModel& Interpreter::Model() noexcept { return *impl_->model; }
+const InterpreterStats& Interpreter::Stats() const noexcept {
+    return impl_->stats;
+}
+
+VmObjectRef Interpreter::NewStringUtf8(const std::string_view utf8) {
+    std::u16string units;
+    units.reserve(utf8.size());
+    // Strict ASCII fast path; multi-byte UTF-8 decoded checked.
+    std::size_t index = 0;
+    while (index < utf8.size()) {
+        const auto byte = static_cast<std::uint8_t>(utf8[index]);
+        if (byte < 0x80) {
+            units.push_back(byte);
+            index += 1;
+        } else if ((byte & 0xe0U) == 0xc0U && index + 1 < utf8.size()) {
+            units.push_back(static_cast<char16_t>(
+                ((byte & 0x1fU) << 6U) |
+                (static_cast<std::uint8_t>(utf8[index + 1]) & 0x3fU)));
+            index += 2;
+        } else if ((byte & 0xf0U) == 0xe0U && index + 2 < utf8.size()) {
+            units.push_back(static_cast<char16_t>(
+                ((byte & 0x0fU) << 12U) |
+                ((static_cast<std::uint8_t>(utf8[index + 1]) & 0x3fU)
+                 << 6U) |
+                (static_cast<std::uint8_t>(utf8[index + 2]) & 0x3fU)));
+            index += 3;
+        } else {
+            throw DexVmError(DexVmErrorReason::invalid_operand,
+                             "invalid UTF-8 in string literal");
+        }
+    }
+    return impl_->model->NewString(units);
+}
+
+std::string Interpreter::StringUtf8(const VmObjectRef string_ref) const {
+    const auto value = impl_->model->StringValue(string_ref);
+    std::string out;
+    out.reserve(value.size());
+    for (const auto unit : value) {
+        if (unit < 0x80) {
+            out.push_back(static_cast<char>(unit));
+        } else if (unit < 0x800) {
+            out.push_back(static_cast<char>(0xc0U | (unit >> 6U)));
+            out.push_back(static_cast<char>(0x80U | (unit & 0x3fU)));
+        } else {
+            out.push_back(static_cast<char>(0xe0U | (unit >> 12U)));
+            out.push_back(static_cast<char>(0x80U | ((unit >> 6U) & 0x3fU)));
+            out.push_back(static_cast<char>(0x80U | (unit & 0x3fU)));
+        }
+    }
+    return out;
+}
+
+VmObjectRef Interpreter::MakeThrowable(const std::string_view descriptor,
+                                       const std::string_view message) {
+    const auto java_class = impl_->linker->FindClass(descriptor);
+    if (!java_class.has_value()) {
+        throw DexVmError(DexVmErrorReason::unknown_class,
+                         "throwable class is not registered: " +
+                             std::string(descriptor));
+    }
+    const auto throwable = impl_->AllocateInstance(*java_class);
+    auto& state = impl_->throwables[throwable.Value()];
+    state.message_utf8 = std::string(message);
+    if (!message.empty()) {
+        state.message = NewStringUtf8(message);
+    }
+    state.stack = impl_->CaptureStack();
+    return throwable;
+}
+
+void Interpreter::SetThrowableMessage(const VmObjectRef throwable,
+                                      const VmObjectRef message) {
+    auto& state = impl_->throwables[throwable.Value()];
+    state.message = message;
+    state.message_utf8 =
+        message.IsValid() ? StringUtf8(message) : std::string{};
+}
+
+VmObjectRef Interpreter::ThrowableMessage(const VmObjectRef throwable) const {
+    const auto state = impl_->throwables.find(throwable.Value());
+    if (state == impl_->throwables.end()) return VmObjectRef{};
+    return state->second.message;
+}
+
+void Interpreter::RegisterCoreBuiltins() {
+    RegisterCoreBuiltinHandlers(impl_->intrinsics);
+}
+
+}  // namespace ogplay::runtime::dexvm

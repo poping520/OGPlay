@@ -7,6 +7,8 @@
 ## 子模块
 
 - [jni](jni/MODULE.md)：JNI/JavaVM ABI 与对象模型。
+- [dexvm](dexvm/MODULE.md)：有界 DEX 解释器——类链接、统一对象模型、解释内核
+  与 java.* 核心 intrinsic（ADR-0017）。
 - [framework](framework/MODULE.md)：声明式 Android/Java 框架 HLE。
 - [bionic](bionic/MODULE.md)：真实 guest Bionic profile、自检与 TLS。
 - [syscall](syscall/MODULE.md)：ARM syscall、kernel helper 与线程退出状态。

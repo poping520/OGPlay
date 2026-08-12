@@ -23,6 +23,7 @@
 | 子模块 | 契约 | 依赖定位 |
 | --- | --- | --- |
 | jni | [src/runtime/jni/MODULE.md](../../src/runtime/jni/MODULE.md) | JNI/JavaVM ABI 与对象模型 |
+| dexvm | [src/runtime/dexvm/MODULE.md](../../src/runtime/dexvm/MODULE.md) | 有界 DEX 解释器（ADR-0017），依赖 loader/jni/core |
 | jni_guest | [src/runtime/jni_guest/MODULE.md](../../src/runtime/jni_guest/MODULE.md) | guest JNI ABI 物化与 slot 绑定，依赖 jni/execution |
 | boundary | [src/runtime/boundary/MODULE.md](../../src/runtime/boundary/MODULE.md) | Android native/GLES 边界与共享 GL 状态，依赖 gles 模块 |
 | framework | [src/runtime/framework/MODULE.md](../../src/runtime/framework/MODULE.md) | 声明式框架 HLE，依赖 jni/vfs |

@@ -371,6 +371,15 @@ add_library(ogplay_runtime
     src/runtime/jni_guest/jni_guest_string_bindings.cpp
     src/runtime/integration/native_activity_runner.cpp
     src/runtime/integration/headless_jni_contract.cpp
+    src/runtime/dexvm/class_linker.cpp
+    src/runtime/dexvm/core_catalog.cpp
+    src/runtime/dexvm/method_precheck.cpp
+    src/runtime/dexvm/object_model.cpp
+    src/runtime/dexvm/interpreter.cpp
+    src/runtime/dexvm/interp_exec.cpp
+    src/runtime/dexvm/interp_object.cpp
+    src/runtime/dexvm/interp_arith.cpp
+    src/runtime/dexvm/interpreter_builtins.cpp
     src/runtime/jni/jni.cpp
     src/runtime/jni/jni_exception.cpp
     src/runtime/jni/jni_field_store.cpp
@@ -404,7 +413,9 @@ target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles)
 target_include_directories(ogplay_runtime PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE "${OGPLAY_GLES_GENERATED_DIR}"
 )
+add_dependencies(ogplay_runtime ogplay_dexvm_codegen)
 ogplay_set_project_warnings(ogplay_runtime)
 
 add_library(ogplay_session
@@ -621,6 +632,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/title_profile_tests.cpp
         tests/dexvm/dexasm_readback_tests.cpp
         tests/dexvm/dex_code_tests.cpp
+        tests/dexvm/interpreter_tests.cpp
     )
     if(OGPLAY_ENABLE_DYNARMIC)
         list(APPEND OGPLAY_TEST_SOURCES

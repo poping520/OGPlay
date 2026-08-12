@@ -1,0 +1,345 @@
+# Interpreter conformance fixture. Expected values per family are recorded
+# in tests/dexvm/interpreter_tests.cpp with their AOSP mterp source
+# (docs/design/dexvm/05-verification.md §2).
+
+.class public LCounter;
+.super Ljava/lang/Object;
+
+.field static public seed:I = 7
+.field public value:I
+
+.method public constructor <init>(I)V
+.registers 2
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    iput v1, v0, LCounter;->value:I
+    return-void
+.end method
+
+.method public increment()V
+.registers 2
+    iget v0, v1, LCounter;->value:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v1, LCounter;->value:I
+    return-void
+.end method
+
+.method public get()I
+.registers 2
+    iget v0, v1, LCounter;->value:I
+    return v0
+.end method
+
+# Virtual dispatch: subclass overrides describe().
+.method public describe()I
+.registers 2
+    const/16 v0, 100
+    return v0
+.end method
+
+.class public LDoubler;
+.super LCounter;
+
+.method public constructor <init>(I)V
+.registers 2
+    invoke-direct {v0, v1}, LCounter;-><init>(I)V
+    return-void
+.end method
+
+.method public describe()I
+.registers 3
+    invoke-super {v2}, LCounter;->describe()I
+    move-result v0
+    mul-int/lit8 v0, v0, 2
+    return v0
+.end method
+
+.class public LArith;
+.super Ljava/lang/Object;
+
+.method static public divide(II)I
+.registers 4
+    div-int v0, v2, v3
+    return v0
+.end method
+
+.method static public divideCaught(II)I
+.registers 4
+    :try_start
+    div-int v0, v2, v3
+    :try_end
+    return v0
+    :handler
+    move-exception v1
+    const/16 v0, -99
+    return v0
+    .catch Ljava/lang/ArithmeticException; :try_start :try_end :handler
+.end method
+
+.method static public remainder(II)I
+.registers 4
+    rem-int v0, v2, v3
+    return v0
+.end method
+
+.method static public cmplFloat(FF)I
+.registers 4
+    cmpl-float v0, v2, v3
+    return v0
+.end method
+
+.method static public cmpgFloat(FF)I
+.registers 4
+    cmpg-float v0, v2, v3
+    return v0
+.end method
+
+.method static public shifts(II)I
+.registers 4
+    shl-int v0, v2, v3
+    return v0
+.end method
+
+.method static public ushr(II)I
+.registers 4
+    ushr-int v0, v2, v3
+    return v0
+.end method
+
+.method static public floatToInt(F)I
+.registers 3
+    float-to-int v0, v2
+    return v0
+.end method
+
+.method static public longMul(JJ)J
+.registers 6
+    mul-long v0, v2, v4
+    return-wide v0
+.end method
+
+.method static public intToShort(I)I
+.registers 3
+    int-to-short v0, v2
+    return v0
+.end method
+
+.class public LFlow;
+.super Ljava/lang/Object;
+
+.method static public loopSum(I)I
+.registers 4
+    const/4 v0, 0
+    const/4 v1, 0
+    :head
+    if-ge v1, v3, :done
+    add-int/2addr v0, v1
+    add-int/lit8 v1, v1, 1
+    goto :head
+    :done
+    return v0
+.end method
+
+.method static public pick(I)I
+.registers 3
+    packed-switch v2, :table
+    const/4 v0, 0
+    return v0
+    :one
+    const/4 v0, 1
+    return v0
+    :two
+    const/16 v0, 22
+    return v0
+    :table
+    .packed-switch 1
+        :one
+        :two
+    .end packed-switch
+.end method
+
+.method static public sparse(I)I
+.registers 3
+    sparse-switch v2, :table
+    const/4 v0, -1
+    return v0
+    :neg
+    const/16 v0, 111
+    return v0
+    :big
+    const/16 v0, 222
+    return v0
+    :table
+    .sparse-switch
+        -5 -> :neg
+        1000 -> :big
+    .end sparse-switch
+.end method
+
+.method static public sumArray()I
+.registers 4
+    const/4 v0, 3
+    new-array v0, v0, [I
+    fill-array-data v0, :data
+    const/4 v1, 0
+    aget v2, v0, v1
+    const/4 v1, 1
+    aget v3, v0, v1
+    add-int/2addr v2, v3
+    const/4 v1, 2
+    aget v3, v0, v1
+    add-int/2addr v2, v3
+    return v2
+    :data
+    .array-data 4
+        7 8 9
+    .end array-data
+.end method
+
+.method static public outOfBounds()I
+.registers 3
+    const/4 v0, 2
+    new-array v0, v0, [I
+    const/4 v1, 5
+    aget v2, v0, v1
+    return v2
+.end method
+
+.method static public npe()I
+.registers 3
+    const/4 v0, 0
+    aget v1, v0, v0
+    return v1
+.end method
+
+.method static public recurse(I)I
+.registers 3
+    add-int/lit8 v0, v2, 1
+    invoke-static {v0}, LFlow;->recurse(I)I
+    move-result v0
+    return v0
+.end method
+
+.class public LClinitUser;
+.super Ljava/lang/Object;
+
+.field static public state:I
+
+.method static constructor <clinit>()V
+.registers 2
+    const/16 v0, 55
+    sput v0, LClinitUser;->state:I
+    return-void
+.end method
+
+.method static public read()I
+.registers 2
+    sget v0, LClinitUser;->state:I
+    return v0
+.end method
+
+# Custom exception subclass thrown and caught across frames.
+.class public LMyError;
+.super Ljava/lang/Exception;
+
+.method public constructor <init>(Ljava/lang/String;)V
+.registers 2
+    invoke-direct {v0, v1}, Ljava/lang/Exception;-><init>(Ljava/lang/String;)V
+    return-void
+.end method
+
+.class public LThrower;
+.super Ljava/lang/Object;
+
+.method static public fail()V
+.registers 2
+    new-instance v0, LMyError;
+    const-string v1, "boom"
+    invoke-direct {v0, v1}, LMyError;-><init>(Ljava/lang/String;)V
+    throw v0
+.end method
+
+.method static public catchAcrossFrames()I
+.registers 3
+    :try_start
+    invoke-static {}, LThrower;->fail()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-virtual {v1}, Ljava/lang/Throwable;->getMessage()Ljava/lang/String;
+    move-result-object v2
+    invoke-virtual {v2}, Ljava/lang/String;->length()I
+    move-result v0
+    :cleanup
+    return v0
+    .catch Ljava/lang/Exception; :try_start :try_end :handler
+.end method
+
+.method static public uncaught()I
+.registers 1
+    invoke-static {}, LThrower;->fail()V
+    const/4 v0, 0
+    return v0
+.end method
+
+# Interface dispatch through Runnable.
+.class public LTask;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.field static public ran:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 2
+    const/16 v0, 77
+    sput v0, LTask;->ran:I
+    return-void
+.end method
+
+.method static public exercise()I
+.registers 2
+    new-instance v0, LTask;
+    invoke-direct {v0}, LTask;-><init>()V
+    invoke-interface {v0}, Ljava/lang/Runnable;->run()V
+    sget v1, LTask;->ran:I
+    return v1
+.end method
+
+# instanceof / checkcast / strings
+.class public LTypes;
+.super Ljava/lang/Object;
+
+.method static public isRunnable()I
+.registers 3
+    new-instance v0, LTask;
+    invoke-direct {v0}, LTask;-><init>()V
+    instance-of v1, v0, Ljava/lang/Runnable;
+    return v1
+.end method
+
+.method static public badCast()V
+.registers 3
+    new-instance v0, LTask;
+    invoke-direct {v0}, LTask;-><init>()V
+    check-cast v0, LCounter;
+    return-void
+.end method
+
+.method static public strings()I
+.registers 4
+    const-string v0, "hello"
+    invoke-virtual {v0}, Ljava/lang/String;->length()I
+    move-result v1
+    const-string v2, "hello"
+    invoke-virtual {v0, v2}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+    move-result v3
+    add-int v0, v1, v3
+    return v0
+.end method

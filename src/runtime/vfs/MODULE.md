@@ -26,20 +26,30 @@ tmp + 同目录 rename（崩溃只会留旧内容或新内容，不会半截）�
 `*.__ogplay_tmp__` 并计数上报。删除底层文件用 `.__ogplay_tombstone__` 空文件
 标记。宿主文件名对 Windows 非法字符、`%` 本身、结尾句点/空格与保留设备名做
 `%XX` 百分号转义，只看字节、双向无损。配额默认 256 MiB / 65536 文件，超限
-`-ENOSPC`。attach 到 VFS 由后续 WU 承接；本组件本身不改变任何既有会话行为。
+`-ENOSPC`。`AttachSandbox(store, writable_roots)` 把它挂成 VFS 的覆盖层：解析顺序为
+覆盖层文件 → 覆盖层 tombstone（视为 `-ENOENT`，枚举也不出现）→ 只读底层；
+写入只允许落在可写命名空间内（默认 `/data/data/<pkg>`、`/sdcard`，这些根本身
+成为目录），越界 `-EACCES`。落盘点按设计 03 §2 枚举：`close`、`Flush`(fsync)、
+`FlushAll`(pause/shutdown) 落文件内容，`mkdir`/`unlink`/`rmdir`/`rename` 立即落
+元数据。删除仍由只读底层提供的路径写 tombstone，避免下次会话"旧文件复活"。
+未 attach 时行为与既有逐字节一致——持久化是纯增量能力。
 
 ## 依赖
 
 只依赖标准库；不得依赖 syscall、JNI、framework、Bionic、execution 或 integration。
+文件分工：`vfs.cpp` 挂载与 descriptor IO，`vfs_sandbox.cpp` 目录/元数据操作与
+沙盒覆盖层，`sandbox_store.cpp` 宿主存储，`vfs_internal.h` 为三者共享内部状态。
 syscall 与 framework Asset 只能单向调用本模块。
 
 ## 不变量
 
 - 路径索引按 ASCII 大小写不敏感，拒绝逃逸和歧义。
 - 挂载事务化；来源与可写性事实不可丢失。
-- 懒加载 backing 允许 APK/OBB 只读来源与受检宿主 external 目录；external 保持会话内
-  可写，符号链接、特殊文件、空目录与大小写歧义必须在发布挂载前失败。读取失败不得缓存
-  为成功，返回尺寸必须与挂载元数据完全一致。
+- 懒加载 backing 允许 APK/OBB 只读来源与受检宿主 external 目录；符号链接、特殊文件、
+  空目录与大小写歧义必须在发布挂载前失败（此约束只针对底层挂载，沙盒覆盖层允许空目录）。
+  读取失败不得缓存为成功，返回尺寸必须与挂载元数据完全一致。
+- 底层（APK/OBB/external 宿主目录）永远只读、永不反写；guest 对 external 文件的修改
+  经覆盖层持久化（ADR-0020 取代了旧契约"external 修改只存在于会话内"）。
 - descriptor offset 隔离，错误携带稳定 Linux errno。
 - relative guest 路径只有在调用方显式设置受检绝对工作目录后才解析；解析复用相同的
   ASCII 大小写折叠与 traversal 拒绝规则，未配置时不得猜测目录。
@@ -57,7 +67,11 @@ syscall 与 framework Asset 只能单向调用本模块。
 对应 `tests/runtime/vfs_tests.cpp`，并由 syscall 与 Asset 契约累计覆盖。宿主目录事务测试
 使用预存 guest 路径的 ASCII 大小写折叠冲突，不依赖宿主文件系统能否创建反斜杠文件名。
 目录操作与 `Truncate`/`Flush` 的内存语义、errno 契约与枚举稳定序在同一文件内
-按用例覆盖。`SandboxStore` 对应 `tests/runtime/sandbox_store_tests.cpp`（布局跨开启往返、
+按用例覆盖。沙盒覆盖层对应 `tests/runtime/vfs_sandbox_tests.cpp`，核心用例是
+**跨会话持久**：同一宿主目录上先后两个 VFS，会话 2 逐字读到会话 1 留下的内容；
+另覆盖 overlay 遮蔽与 tombstone 不复活、可写命名空间越界 `-EACCES`、落盘点
+（写入不落、fsync 落、close 落、幂等）、元数据立即落盘、未 attach 时行为不变。
+`SandboxStore` 对应 `tests/runtime/sandbox_store_tests.cpp`（布局跨开启往返、
 原子替换与崩溃残留清理、转义双向无损、逃逸与保留后缀拒绝、字节/文件数配额
 `-ENOSPC`、tombstone 遮蔽与解除、非空目录 `-ENOTEMPTY`、rename、meta.toml
 拒绝），全部在测试自建临时目录内进行，不触碰用户数据目录。

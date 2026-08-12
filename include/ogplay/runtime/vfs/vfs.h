@@ -18,6 +18,8 @@
 
 namespace ogplay::runtime {
 
+class SandboxStore;
+
 struct VfsOpenOptions final {
     bool read{};
     bool write{};
@@ -25,7 +27,8 @@ struct VfsOpenOptions final {
     bool truncate{};
 };
 
-enum class VfsSource : std::uint8_t { runtime, apk, obb, external };
+// sandbox: backed by the per-title persistent overlay (ADR-0020).
+enum class VfsSource : std::uint8_t { runtime, apk, obb, external, sandbox };
 
 struct VfsMountEntry final {
     std::string path;
@@ -116,6 +119,13 @@ public:
     [[nodiscard]] std::uint64_t Seek(std::int32_t descriptor,
                                      std::int64_t offset,
                                      VfsSeekWhence whence);
+    // Attaches the per-title overlay. Writes inside writable_roots then
+    // persist at the flush points; everything else keeps its current
+    // read-only base-layer behaviour.
+    void AttachSandbox(SandboxStore& store,
+                       std::span<const std::string> writable_roots);
+    [[nodiscard]] bool SandboxAttached() const;
+
     void Truncate(std::int32_t descriptor, std::uint64_t size);
     // fsync/fdatasync join here; without an attached sandbox both only
     // check the descriptor, which keeps the call honest rather than absent.

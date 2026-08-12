@@ -378,7 +378,7 @@ note = "ADR-0020 SBX-2 为 VFS 补齐 CreateDirectory/RemoveFile/RemoveDirectory
 [runtime.vfs_sandbox_persistence]
 status = "partial"
 test = "tests/runtime/sandbox_store_tests.cpp"
-note = "ADR-0020 SBX-1 交付 SandboxStore：<root>/<package>/{meta.toml,fs/}，fs/ 与 guest 绝对路径 1:1 便于用户备份；tmp+同目录 rename 原子替换、装载清理崩溃残留并计数、tombstone 空文件标记、%XX 转义（Windows 非法字符/%/结尾句点空格/保留设备名，只看字节双向无损）、traversal 与保留后缀拒绝、256 MiB/65536 文件配额超限 -ENOSPC、meta.toml schema/package/未知键明确失败不猜测迁移。尚未 attach 到 VFS（SBX-3），既有会话行为零变化"
+note = "ADR-0020 SBX-1 交付 SandboxStore：<root>/<package>/{meta.toml,fs/}，fs/ 与 guest 绝对路径 1:1 便于用户备份；tmp+同目录 rename 原子替换、装载清理崩溃残留并计数、tombstone 空文件标记、%XX 转义（Windows 非法字符/%/结尾句点空格/保留设备名，只看字节双向无损）、traversal 与保留后缀拒绝、256 MiB/65536 文件配额超限 -ENOSPC、meta.toml schema/package/未知键明确失败不猜测迁移。SBX-3 以 AttachSandbox 挂为 VFS 覆盖层：解析顺序 overlay→tombstone→只读底层，写入限可写命名空间（越界 -EACCES），落盘点为 close/fsync/FlushAll 与立即落盘的 mkdir/unlink/rmdir/rename，跨会话持久有机器用例。未 attach 时行为逐字节不变。session/CLI 接线与一次性沙盒属 SBX-7，syscall 与 DexVM 通道收敛属 SBX-4..6"
 
 [runtime.vfs]
 status = "complete"

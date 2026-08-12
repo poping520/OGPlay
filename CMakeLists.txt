@@ -452,6 +452,7 @@ add_library(ogplay_runtime
     src/runtime/syscall/syscall_thread_lifecycle.cpp
     src/runtime/vfs/sandbox_store.cpp
     src/runtime/vfs/vfs.cpp
+    src/runtime/vfs/vfs_sandbox.cpp
 )
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC
@@ -647,6 +648,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/android_link_preflight_tests.cpp
         tests/runtime/native_activity_runner_tests.cpp
         tests/runtime/sandbox_store_tests.cpp
+        tests/runtime/vfs_sandbox_tests.cpp
         tests/runtime/vfs_tests.cpp
         tests/loader/apk_tests.cpp
         tests/loader/apk_manifest_tests.cpp

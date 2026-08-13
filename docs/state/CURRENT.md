@@ -1,8 +1,8 @@
 # 当前状态
 
-更新：2026-08-12 · M9 DexVM：Profile v2 entry scope 已交付、Profile v1 已完全删除；
-Asphalt 5 逐位回归通过；阶段 4 三个 WU（真实宿主 Java 线程、monitor wait-set、
-managed surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 EGL 面
+更新：2026-08-12 · M9 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
+surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 EGL 面；
+存档沙盒 SBX-1/2/3/7 已交付，DexVM 与 prefs 两条写入通道尚未收敛
 
 ## 当前阶段
 
@@ -22,42 +22,43 @@ managed surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceVi
   字节码，这是显式记账的限制而非并发。`dexvm.threads`/`dexvm.monitors` 均为
   `partial`：子线程 native 调用仍复用 root guest 栈（需要停泊时以
   `blocking_in_native` 明确失败），native 侧 JNI monitor 表尚未与之合一。
-- **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除全部 16 条历史 replay
-  调用与 Java handler 映射后，`asphalt5.title_flow` 三轮 + 迁移后复验 passed
-  ——468 帧固定预算、主界面 PNG SHA-256 `9ee57323…` 逐位一致、无 fault、
-  clean shutdown。`System.loadLibrary`(<clinit>)、onCreate 副作用链、
-  GetStaticMethodID 查真实 DEX 方法表、native→解释器第三路由均真实发生。
-- **两份设计已落地但未启动**（2026-08-12，capabilities 无变化）：存档持久化
-  沙盒（ADR-0020 Proposed + `docs/design/sandbox/`，每 package 一个宿主沙盒
-  目录 + 文件粒度 overlay + 确定性 flush，WU 分解 SBX-1..7；根因是设计缺失
-  而非缺陷——三条写入通道都止于会话内存）与 GUI 主面板基础版
-  （`docs/design/launcher/`，SDL3 + Dear ImGui，WU 分解 GUI-1..7）。
+- **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
+  与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
+  SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
+- **存档持久沙盒实施中**（ADR-0020 已 Accepted，任务单
+  [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：SBX-1（SandboxStore
+  宿主存储）、SBX-2（VFS 目录操作）、SBX-3（AttachSandbox 覆盖层与落盘点）、
+  SBX-7（CLI 接线与一次性沙盒）已交付并各自提交。`run-apk` 现在默认按
+  package 打开持久沙盒，经 VFS 的写入跨会话保留；`--sandbox-dir` /
+  `--ephemeral-sandbox` 可覆盖，自动化默认一次性沙盒，Asphalt 5 golden 逐位
+  不变。**尚未完成**：SBX-4（syscall mkdir/unlink/stat64/getdents64 等仍
+  `-ENOSYS`）、SBX-5（DexVM `File` 族仍写 `memory_files` 会话内存）、
+  SBX-6（SharedPreferences 仍是会话内存）。也就是说三条写入通道里目前只有
+  native 直接经 VFS 的那条真正持久，用户可见的存档问题尚未闭环。
+- **GUI 主面板未启动**：设计见 `docs/design/launcher/`（SDL3 + Dear ImGui，
+  WU 分解 GUI-1..7），capabilities 无变化。
 
 ## 已验收基线
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
 能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）基线全绿；
-macOS/arm64 本次 full CTest 为 609/609（含 WU-M9-028/029 线程与 wait-set 用例）。
+macOS/arm64 本次 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
+沙盒任务单见 [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)。
 
 ## 进行中：更多 title 上 dexvm 路线
 
-- **Dungeon Hunter 已到标题画面**（2026-08-12）：交付层级占位、java.* 扩展、
-  Bitmap(stb_image)/Canvas、Environment/StatFs、SharedPreferences、协作线程+
-  Timer、多 Activity 流转、widget 状态层、布局注入、`VideoView` 完成回调，修复
-  precheck k22b 误报。下一步：输入/进游戏与长时游玩。
-- **适配流水线（复盘驱动，2026-08-12）**：改为一次收割——`run-apk
-  --survey-gaps` 把未声明的平台类/方法合成中性桩并逐次记账，输出按命中排序的
-  机读工作单（默认关闭，关闭即明确失败，survey 运行标注为非兼容性结论）；
-  `tools/dexvm_stub_gen.py` 由缺口报告生成占位，引用返回值进人工决策清单。
-  流程见 [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
-- **Asphalt 6（2026-08-12 实测）**：production v2 Profile 在 external `InsTime` 与
-  `file000000.dat` 验证后，入口覆盖实际启动 `GLGame`，并在 guest `<clinit>` 后把
-  `GameInstaller.sbStarted=true` 作为 provisioned-data 事实写入；安装器/DRM 入口未执行。
-  DexVM intrinsic 平台类已发布至同一 native JNI registry，后续通用补齐
-  typed Bundle、SAX 构造链（parse 明确未支持）、有界方法反射、Stack 与 Thread
-  id/name。删除 `sbStarted` preset 会真实切回 `GameInstaller` 商业外壳，在
-  `Intent.setPackage` 处明确失败；未触及 DRM 消费链。
+- **Dungeon Hunter 已到标题画面**（2026-08-12）：层级占位、java.* 扩展、
+  Bitmap/Canvas、Environment/StatFs、SharedPreferences、Timer、多 Activity
+  流转、widget 状态层、布局注入、`VideoView` 完成回调。下一步：输入与进游戏。
+- **适配流水线**：`run-apk --survey-gaps` 一次收割整条缺口队列（默认关闭，
+  关闭即明确失败，survey 运行标注为非兼容性结论），`tools/dexvm_stub_gen.py`
+  由报告生成占位。流程见
+  [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
+- **Asphalt 6（2026-08-12 实测）**：production v2 Profile 入口覆盖启动
+  `GLGame`，并在 guest `<clinit>` 后写入 `GameInstaller.sbStarted=true` 这一
+  provisioned-data 事实；删除该 preset 会真实切回商业外壳并在
+  `Intent.setPackage` 明确失败，未触及 DRM 消费链。
   APK 自带一份改名的 AOSP `GLSurfaceView`，`GLThread.run()` 在
   `GLThreadManager` 上做经典 `synchronized`/`wait`/`notifyAll` 守卫循环。
   WU-M9-028..030 后该线程已是真实宿主线程、越过 `Object.wait()`、并收到
@@ -78,7 +79,10 @@ macOS/arm64 本次 full CTest 为 609/609（含 WU-M9-028/029 线程与 wait-set
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
-3. 评审 ADR-0020 后启动存档沙盒 SBX-1/2；Linux M9 严格出口复验仍待执行。
+3. 沙盒收口 SBX-5（DexVM `File` 族改线 VFS、`mkdirs` 去伪成功）、SBX-6
+   （SharedPreferences XML 持久）、SBX-4（syscall 缺口）——三者任一落地即
+   立刻生效，不需要再动覆盖层。之后按 GUI-1..7 做主面板。
+4. Linux M9 严格出口复验仍待执行。
 
 ## 阻塞
 

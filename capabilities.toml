@@ -165,6 +165,11 @@ status = "complete"
 test = "frontend.gui_options; frontend.gui_smoke"
 note = "Launcher GUI-1 提供 ogplay-gui 双击入口与 ogplay gui 开发入口；SDL3 强制 EGL/OpenGL ES driver，Dear ImGui GLES2 backend 在随程序交付的 ANGLE 上完成有界三帧空库窗口，日志覆盖写入 library root 下 gui.log"
 
+[frontend.gui_library]
+status = "complete"
+test = "tests/frontend/gui_model_tests.cpp"
+note = "Launcher GUI-2 交付纯模型层 LibraryStore 与 GuiConfig：每 package 目录、APK/meta/icon 原子导入、严格 schema 1 TOML、重复 package 拒绝、损坏条目 fail closed 可见、删除只触及库条目且不碰 external 数据或同级持久沙盒"
+
 [session.profile_bootstrap_inputs]
 status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp; tests/session/profile_session_bootstrap_tests.cpp"

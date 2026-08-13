@@ -10,6 +10,9 @@
 - `RunGuiCommand`：`ogplay gui` 的开发/CI 入口，只接受 `--library-root` 与
   `--smoke-frames`。
 - `RunGuiStandalone`：双击 `ogplay-gui` 的零参数产品入口；失败通过图形消息框呈现。
+- `LibraryStore`：枚举、原子导入和删除 `<root>/library/<package>/` 条目；损坏条目
+  仍以带错误原因的记录返回。
+- `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML 配置读写。
 
 ## 不变量
 
@@ -27,4 +30,5 @@
 
 ## 测试
 
+`tests/frontend/gui_model_tests.cpp` 锁定配置、导入、损坏、重复与删除边界；
 `frontend.gui_smoke` 在有界三帧内验证真实 SDL3/ANGLE/ImGui 空库窗口。

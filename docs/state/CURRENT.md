@@ -2,7 +2,8 @@
 
 更新：2026-08-13 · M9 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
 surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 EGL 面；
-存档沙盒 SBX-1..12 已交付并完成验收补强，Windows/MSVC 663/663 全绿
+存档沙盒 SBX-1..12 已交付并完成验收补强；主面板 GUI-1..2 已交付，
+SDL3/ANGLE/ImGui shell 与严格游戏库模型可用
 
 ## 当前阶段
 
@@ -27,23 +28,18 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
 - **存档持久沙盒 SBX-1..12 全部交付**（ADR-0020 Accepted，任务单
   [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：native/DexVM/prefs 已统一
-  VFS；补强覆盖删除防复活、创建即清 tombstone、guest 目录 fd 与 getdents64
-  分页、fstat64 offset、pause/shutdown `FlushAll`、Java/prefs 完整性及 store
-  装载/配额。二次验收修正：open flags 改按 ARM EABI 值解码（bionic `opendir`
-  的 `O_DIRECTORY=040000` 组合有测试锁定，先前用了 asm-generic 布局导致真实
-  guest 目录打开 `-EINVAL`）；脏字节配额改聚合增量，检查 O(1) 不随文件数扫描；
-  rename 覆盖已打开 target 时孤儿节点不得在 close 复写该名字（有回归测试）；
-  删除无调用方的 `SandboxStore::Rename`。Windows/MSVC 全量 CTest 663/663；
-  本轮未重跑 exact-title。**用户级闭环仍未演示**：title 尚未进入会产生存档的
-  流程。
-- **GUI 主面板未启动**：设计见 `docs/design/launcher/`（SDL3 + Dear ImGui，
-  WU 分解 GUI-1..7），capabilities 无变化。
+  VFS；ARM EABI open flags、目录分页、删除/rename 防复活、生命周期 flush、
+  Java/prefs 完整性、装载与 O(1) 配额均有回归。Windows/MSVC 663/663；本轮未
+  重跑 exact-title。**用户级闭环仍未演示**：title 尚未进入会产生存档的流程。
+- **GUI 主面板已启动**（任务单 [`docs/tasks/launcher/`](../tasks/launcher/README.md)）：
+  GUI-1/2 交付双入口、ANGLE/ImGui 冒烟、`LibraryStore`/`GuiConfig` 及严格持久
+  模型；尚无网格、导入向导或点击启动，下一项是 GUI-3。
 
 ## 已验收基线
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 663/663；
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 672/672；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 沙盒任务单见 [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)。
 
@@ -80,8 +76,8 @@ macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
-3. 启动器主面板 GUI-1..7（`docs/design/launcher/`）：目前只有 CLI，非技术
-   用户无法导入并启动游戏。
+3. 启动器 GUI-3：manifest icon/label 增量及图标/名称提取链；随后 GUI-4 把
+   已交付的 LibraryStore 接入网格视图。
 4. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id（需要
    停泊时以 `blocking_in_native` 明确失败），native 侧 JNI monitor 表与
    DexVM monitor 表尚未合一。

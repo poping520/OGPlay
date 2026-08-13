@@ -236,10 +236,7 @@ public:
                 Reset();
             } else if (stage_ == Stage::waiting_apk) {
                 ImGui::TextUnformatted("请在系统文件选择器中选择 APK…");
-                if (GuiButton("取消##waiting_apk")) {
-                    ImGui::CloseCurrentPopup();
-                    Reset();
-                }
+                ImGui::TextDisabled("请在系统文件选择器中完成选择或取消。");
             } else if (stage_ == Stage::analyzing) {
                 ImGui::TextUnformatted("正在解析 APK、匹配 Profile 并提取图标…");
             } else if (stage_ == Stage::failed) {
@@ -404,8 +401,10 @@ private:
             }
         }
         ImGui::Separator();
-        ImGui::BeginDisabled(dialog_open_);
+        ImGui::BeginDisabled(!CanDismissImportModal(dialog_open_));
         const auto confirm = GuiButton("确认导入##import");
+        ImGui::SameLine();
+        const auto cancel = GuiButton("取消##import_summary");
         ImGui::EndDisabled();
         if (confirm) {
             try {
@@ -423,8 +422,7 @@ private:
                 return false;
             }
         }
-        ImGui::SameLine();
-        if (GuiButton("取消##import_summary")) {
+        if (cancel) {
             ImGui::CloseCurrentPopup();
             Reset();
         }

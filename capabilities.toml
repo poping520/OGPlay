@@ -168,7 +168,7 @@ note = "Launcher GUI-1/4/7/8 提供双入口与随程序交付 ANGLE 上的 ImGu
 [frontend.gui_library]
 status = "complete"
 test = "tests/frontend/gui_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp"
-note = "Launcher GUI-2/5/7 交付严格 LibraryStore/GuiConfig、导入与删除模型：APK visuals、session 精确 Profile 摘要、required external 和原子入库共用公共 API；设置目录受检，删除只移除库条目且保留 external/存档，重复 package、损坏输入明确失败"
+note = "Launcher GUI-2/5/7/10 交付严格 LibraryStore/GuiConfig、导入与删除模型：APK visuals、session 精确 Profile 摘要、required external 和原子入库共用公共 API；宿主选择器未决时导入模态不可先行关闭；设置目录受检，删除只移除库条目且保留 external/存档，重复 package、损坏输入明确失败"
 
 [frontend.gui_launch_spawn]
 status = "complete"

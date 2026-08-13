@@ -38,6 +38,10 @@ namespace {
 
 }  // namespace
 
+bool CanDismissImportModal(const bool host_dialog_pending) noexcept {
+    return !host_dialog_pending;
+}
+
 ApkImportAnalysis AnalyzeApkImport(
     const std::span<const std::byte> apk_bytes,
     const std::filesystem::path& source_apk,

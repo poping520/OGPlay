@@ -167,6 +167,11 @@ ogplay::frontend::ApkImportAnalysis Analysis() {
 
 }  // namespace
 
+TEST_CASE("GUI import modal stays alive while a host dialog is pending") {
+    CHECK_FALSE(ogplay::frontend::CanDismissImportModal(true));
+    CHECK(ogplay::frontend::CanDismissImportModal(false));
+}
+
 TEST_CASE("GUI import builds exact metadata without inventing a Profile") {
     const auto request = ogplay::frontend::BuildLibraryImport(
         Analysis(), std::nullopt, "2026-08-13T00:00:00Z");

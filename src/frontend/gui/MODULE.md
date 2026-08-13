@@ -21,6 +21,7 @@
 - `SelectCjkFont`：按注入候选顺序选择宿主字体，全部缺失时返回空路径供 ASCII 回退。
 - `AnalyzeApkImport` / `BuildLibraryImport`：组合 GUI-3 visuals 与 session 精确 Profile
   匹配，生成可确认的导入摘要和 GUI-2 原子入库请求；时间戳由调用方注入。
+- `CanDismissImportModal`：宿主选择器未决时禁止导入模态先行关闭。
 - `GuiImportUi`：SDL 异步文件/目录对话框、后台只读分析和 ImGui 三态摘要控制器；
   回调只经共享 mailbox 投递事件，文件 IO 与 Profile 判断留在模型/session 层。
 - `LauncherSandboxRoot` / `BuildLaunchPlan`：从库根、严格库条目与 `GuiConfig` 生成
@@ -52,6 +53,8 @@
   退出 0 静默，非零结果呈现退出码与有界日志末尾。
 - SDL 对话框返回的路径必须按 UTF-8 解码；每个用户可见失败同时记录结构化原因，模型
   错误还必须记录错误码与路径，弹窗必须给出可执行下一步。
+- SDL 宿主文件/目录选择器未决时不得关闭其所属导入模态；必须等待回调完成选择或取消，
+  禁止留下后台分析或阻塞后续点击的悬挂选择器。
 - 每个 ImGui 按钮必须经 `GuiButton` 提交；同一帧同一有效作用域的按钮 ID 必须唯一，
   同名按钮使用 `##` 隐藏后缀或 `PushID` 区分，重复即让真实 GUI 冒烟明确失败。
 - 删除只移除 `library/<package>`；不得触碰库外 external 或同库根的持久存档。设置保存

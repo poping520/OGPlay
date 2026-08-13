@@ -13,6 +13,10 @@
 
 namespace ogplay::frontend {
 
+// A native file/folder dialog cannot be closed programmatically. The owning
+// import modal must therefore stay alive until its callback is delivered.
+[[nodiscard]] bool CanDismissImportModal(bool host_dialog_pending) noexcept;
+
 struct ApkImportAnalysis final {
     std::filesystem::path source_apk;
     loader::AndroidManifestFacts manifest;

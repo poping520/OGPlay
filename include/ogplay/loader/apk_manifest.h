@@ -5,10 +5,13 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <variant>
 
 #include "ogplay/loader/apk.h"
 
 namespace ogplay::loader {
+
+using AndroidManifestLabel = std::variant<std::uint32_t, std::string>;
 
 struct AndroidManifestFacts final {
     std::string package;
@@ -16,6 +19,8 @@ struct AndroidManifestFacts final {
     std::optional<std::string> version_name;
     std::optional<std::uint32_t> min_sdk;
     std::optional<std::uint32_t> target_sdk;
+    std::optional<std::uint32_t> application_icon;
+    std::optional<AndroidManifestLabel> application_label;
     // Fully-qualified class of the first activity whose intent filter
     // declares action MAIN + category LAUNCHER (dex_activity entry
     // discovery, docs/design/dexvm/04-integration.md §2).

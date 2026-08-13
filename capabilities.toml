@@ -170,6 +170,11 @@ status = "complete"
 test = "tests/frontend/gui_model_tests.cpp"
 note = "Launcher GUI-2 交付纯模型层 LibraryStore 与 GuiConfig：每 package 目录、APK/meta/icon 原子导入、严格 schema 1 TOML、重复 package 拒绝、损坏条目 fail closed 可见、删除只触及库条目且不碰 external 数据或同级持久沙盒"
 
+[loader.apk_application_visuals]
+status = "complete"
+test = "tests/loader/apk_manifest_tests.cpp; tests/frontend/gui_visuals_tests.cpp"
+note = "Launcher GUI-3 严格产出 application icon resource id 与 label resource/string 二选一事实；提取链复用 ParseArsc/ReadApkEntry 和既有 stb，成功缓存 128x128 RGBA PNG，资源/路径/条目/解码失败均以结构化 fallback 回到占位图标或 package name"
+
 [session.profile_bootstrap_inputs]
 status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp; tests/session/profile_session_bootstrap_tests.cpp"

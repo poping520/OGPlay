@@ -141,11 +141,13 @@ void Append(std::vector<std::byte>& destination, const std::vector<std::byte>& s
 
 std::vector<std::byte> Manifest(const bool utf8 = false,
                                 const std::string_view package = "org.example.game",
-                                const std::uint8_t version_type = 0x10) {
+                                const std::uint8_t version_type = 0x10,
+                                const std::vector<Attribute>& application_attributes = {}) {
     const std::vector<std::string> strings{
         "manifest", "package", "versionCode", "versionName", "uses-sdk",
         "minSdkVersion", "targetSdkVersion", std::string(package), "1.2.3",
-        "http://schemas.android.com/apk/res/android"};
+        "http://schemas.android.com/apk/res/android", "application", "icon",
+        "label", "OGPlay Game"};
     std::vector<std::byte> result;
     Append16(result, 0x0003); Append16(result, 8); Append32(result, 0);
     Append(result, StringPool(strings, utf8));
@@ -155,6 +157,8 @@ std::vector<std::byte> Manifest(const bool utf8 = false,
     Append(result, StartElement(4, {{5, 0xffffffffU, 0x10, 5, 9},
                                     {6, 0xffffffffU, 0x10, 19, 9}}));
     Append(result, EndElement(4));
+    Append(result, StartElement(10, application_attributes));
+    Append(result, EndElement(10));
     Append(result, EndElement(0));
     Set32(result, 4, static_cast<std::uint32_t>(result.size()));
     return result;
@@ -169,6 +173,8 @@ TEST_CASE("binary AndroidManifest exposes exact package version and SDK facts") 
     CHECK(facts.version_name == "1.2.3");
     CHECK(facts.min_sdk == 5);
     CHECK(facts.target_sdk == 19);
+    CHECK_FALSE(facts.application_icon.has_value());
+    CHECK_FALSE(facts.application_label.has_value());
 
     const auto utf8 = ogplay::loader::ParseAndroidBinaryManifest(Manifest(true));
     CHECK(utf8.package == facts.package);
@@ -179,6 +185,37 @@ TEST_CASE("binary AndroidManifest exposes exact package version and SDK facts") 
     const auto imported = ogplay::loader::ReadAndroidManifest(apk, archive);
     CHECK(imported.package == facts.package);
     CHECK(imported.version_name == facts.version_name);
+}
+
+TEST_CASE("binary AndroidManifest distinguishes application visual attributes") {
+    const auto referenced = ogplay::loader::ParseAndroidBinaryManifest(Manifest(
+        false, "org.example.game", 0x10,
+        {{11, 0xffffffffU, 0x01, 0x7f020001U, 9},
+         {12, 0xffffffffU, 0x01, 0x7f030002U, 9}}));
+    CHECK(referenced.application_icon == 0x7f020001U);
+    REQUIRE(referenced.application_label.has_value());
+    REQUIRE(std::holds_alternative<std::uint32_t>(*referenced.application_label));
+    CHECK(std::get<std::uint32_t>(*referenced.application_label) == 0x7f030002U);
+
+    const auto literal = ogplay::loader::ParseAndroidBinaryManifest(Manifest(
+        false, "org.example.game", 0x10,
+        {{12, 13, 0x03, 13, 9}}));
+    REQUIRE(literal.application_label.has_value());
+    REQUIRE(std::holds_alternative<std::string>(*literal.application_label));
+    CHECK(std::get<std::string>(*literal.application_label) == "OGPlay Game");
+}
+
+TEST_CASE("binary AndroidManifest rejects invalid application visual types") {
+    CHECK_THROWS_WITH(
+        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(Manifest(
+            false, "org.example.game", 0x10,
+            {{11, 13, 0x03, 13, 9}}))),
+        "binary AndroidManifest attribute application icon is not a resource reference");
+    CHECK_THROWS_WITH(
+        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(Manifest(
+            false, "org.example.game", 0x10,
+            {{12, 0xffffffffU, 0x10, 7, 9}}))),
+        "binary AndroidManifest application label is neither a resource reference nor a string");
 }
 
 TEST_CASE("binary AndroidManifest rejects identity type and structure errors") {

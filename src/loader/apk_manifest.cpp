@@ -24,6 +24,7 @@ constexpr std::uint16_t kTextType = 0x0104;
 constexpr std::uint32_t kNoIndex = 0xffffffffU;
 constexpr std::uint32_t kUtf8Flag = 0x00000100U;
 constexpr std::uint8_t kStringType = 0x03;
+constexpr std::uint8_t kReferenceType = 0x01;
 constexpr std::uint8_t kIntegerDecimalType = 0x10;
 constexpr std::uint8_t kIntegerHexType = 0x11;
 constexpr std::string_view kAndroidNamespace =
@@ -377,6 +378,16 @@ std::uint32_t ReadIntegerAttribute(const Attribute& attribute,
     return attribute.data;
 }
 
+std::uint32_t ReadReferenceAttribute(const Attribute& attribute,
+                                     const std::string_view name) {
+    if (attribute.data_type != kReferenceType || attribute.data == 0) {
+        throw std::runtime_error("binary AndroidManifest attribute " +
+                                 std::string(name) +
+                                 " is not a resource reference");
+    }
+    return attribute.data;
+}
+
 void SetOnce(std::optional<std::uint32_t>& destination, const std::uint32_t value,
              const std::string_view name) {
     if (destination.has_value()) {
@@ -401,6 +412,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
     AndroidManifestFacts facts;
     std::vector<std::string> elements;
     bool saw_manifest{};
+    bool saw_application{};
     bool saw_uses_sdk{};
     std::optional<std::string> current_activity;
     bool activity_action_main{};
@@ -434,6 +446,31 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         FindAttribute(attributes, "versionName", kAndroidNamespace)) {
                     facts.version_name =
                         ReadStringAttribute(*version_name, strings, "versionName");
+                }
+            } else if (name == "application" && elements.size() == 1) {
+                if (saw_application) {
+                    throw std::runtime_error(
+                        "binary AndroidManifest contains duplicate application");
+                }
+                saw_application = true;
+                if (const auto* icon =
+                        FindAttribute(attributes, "icon", kAndroidNamespace)) {
+                    facts.application_icon =
+                        ReadReferenceAttribute(*icon, "application icon");
+                }
+                if (const auto* label =
+                        FindAttribute(attributes, "label", kAndroidNamespace)) {
+                    if (label->data_type == kReferenceType) {
+                        facts.application_label =
+                            ReadReferenceAttribute(*label, "application label");
+                    } else if (label->data_type == kStringType) {
+                        facts.application_label = ReadStringAttribute(
+                            *label, strings, "application label");
+                    } else {
+                        throw std::runtime_error(
+                            "binary AndroidManifest application label is neither a "
+                            "resource reference nor a string");
+                    }
                 }
             } else if (name == "activity" && elements.size() == 2 &&
                        elements[1] == "application") {

@@ -13,7 +13,8 @@
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package、versionCode/versionName、
   minSdk/targetSdk 与 launcher activity（action MAIN + category LAUNCHER 的第一个
-  activity，相对名按 package 规范化）事实，不执行资源解析或猜测身份。
+  activity，相对名按 package 规范化）事实；`application` icon 保留 resource id，label
+  严格区分 resource id 与字面量，不执行资源解析或猜测身份。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML（布局 inflation 子集），
   按文档序返回每个 start-element 的标签名、`android:id` 资源引用、父元素索引与
   bounds 推导所需的布局属性子集（layout_width/height、gravity、layout_gravity、

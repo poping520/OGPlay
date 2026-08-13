@@ -530,6 +530,7 @@ add_library(ogplay_frontend
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
     src/frontend/gui/model.cpp
+    src/frontend/gui/visuals.cpp
     src/frontend/user_data_dir.cpp
 )
 if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
@@ -561,7 +562,8 @@ add_library(OGPlay::Frontend ALIAS ogplay_frontend)
 target_link_libraries(ogplay_frontend PUBLIC
     OGPlay::Agent OGPlay::Input OGPlay::Runtime)
 target_include_directories(ogplay_frontend SYSTEM PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost)
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 if(WIN32)
     target_link_libraries(ogplay_frontend PRIVATE ws2_32)
 endif()
@@ -627,6 +629,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/frontend/mcp_input_dispatch_tests.cpp
         tests/frontend/run_apk_progress_tests.cpp
         tests/frontend/gui_model_tests.cpp
+        tests/frontend/gui_visuals_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
         tests/gles/angle_frame_tests.cpp

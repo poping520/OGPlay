@@ -9,6 +9,8 @@
 
 #include "ogplay/core/logger.h"
 
+#include "ui_button.h"
+
 namespace ogplay::frontend {
 namespace {
 
@@ -78,10 +80,11 @@ public:
             }
             ImGui::Separator();
             if (!running_) {
-                if (ImGui::Button("确认删除")) removed = Remove();
+                if (GuiButton("确认删除##management")) removed = Remove();
                 ImGui::SameLine();
             }
-            if (ImGui::Button(running_ ? "知道了" : "取消")) {
+            if (GuiButton(running_ ? "知道了##management"
+                                   : "取消##management")) {
                 ImGui::CloseCurrentPopup();
                 Reset();
             }

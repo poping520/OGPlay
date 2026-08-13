@@ -51,6 +51,8 @@
   继承、stderr 覆盖重定向到条目日志。退出 0 静默，非零结果呈现退出码与有界日志末尾。
 - SDL 对话框返回的路径必须按 UTF-8 解码；每个用户可见失败同时记录结构化原因，模型
   错误还必须记录错误码与路径，弹窗必须给出可执行下一步。
+- 每个 ImGui 按钮必须经 `GuiButton` 提交；同一帧同一有效作用域的按钮 ID 必须唯一，
+  同名按钮使用 `##` 隐藏后缀或 `PushID` 区分，重复即让真实 GUI 冒烟明确失败。
 - 删除只移除 `library/<package>`；不得触碰库外 external 或同库根的持久存档。设置保存
   后必须重载 Profile catalog，不能继续使用旧目录事实。
 
@@ -72,4 +74,4 @@
 有界日志末尾；
 `tests/frontend/gui_model_tests.cpp` 同时锁定设置目录校验和删除保留 external/存档；
 `frontend.gui_smoke`/`frontend.gui_library_smoke` 在有界三帧内验证真实
-SDL3/ANGLE/ImGui 空库与 CJK 非空库窗口。
+SDL3/ANGLE/ImGui 空库与 CJK 非空库窗口，并由 `GuiButton` 审计可见按钮 ID 唯一性。

@@ -18,6 +18,8 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/frontend/gui_model.h"
 
+#include "ui_button.h"
+
 namespace ogplay::frontend {
 namespace {
 
@@ -164,11 +166,11 @@ public:
             }
             ImGui::Separator();
             ImGui::BeginDisabled(dialog_open_);
-            const auto save = ImGui::Button("保存");
+            const auto save = GuiButton("保存##settings");
             ImGui::EndDisabled();
             if (save) saved = Save();
             ImGui::SameLine();
-            if (ImGui::Button("取消")) {
+            if (GuiButton("取消##settings")) {
                 ImGui::CloseCurrentPopup();
                 error_.clear();
             }
@@ -187,13 +189,13 @@ private:
         } else {
             ImGui::TextDisabled("未设置");
         }
-        if (ImGui::Button(button)) OpenFolderDialog(target);
+        if (GuiButton(button)) OpenFolderDialog(target);
         if (value.has_value()) {
             ImGui::SameLine();
             const auto clear_label = target == SettingTarget::system
                                          ? "清除系统库目录"
                                          : "使用内置 Profile";
-            if (ImGui::Button(clear_label)) {
+            if (GuiButton(clear_label)) {
                 value.reset();
                 error_.clear();
             }

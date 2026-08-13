@@ -32,6 +32,7 @@
 #include "management_ui.h"
 #include "process_manager.h"
 #include "settings_ui.h"
+#include "ui_button.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -437,15 +438,15 @@ struct LibraryAction final {
                                ImGui::CalcTextSize("设置").x + 54.0F;
     ImGui::SameLine(std::max(ImGui::GetCursorPosX(),
                              ImGui::GetWindowWidth() - buttons_width));
-    const auto import_requested = ImGui::Button("导入游戏");
+    const auto import_requested = GuiButton("导入游戏##toolbar");
     ImGui::SameLine();
-    const auto settings_requested = ImGui::Button("设置");
+    const auto settings_requested = GuiButton("设置##toolbar");
     ImGui::Separator();
     ImGui::Spacing();
     if (tiles.empty()) {
         ImGui::Spacing();
         ImGui::TextWrapped("游戏库为空。导入游戏后会显示在这里。");
-        if (ImGui::Button("导入游戏")) {
+        if (GuiButton("导入游戏##empty_library")) {
             ImGui::End();
             return {.import_requested = true,
                     .settings_requested = settings_requested};
@@ -655,7 +656,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
         if (!result_title.empty() && ImGui::BeginPopupModal(
                 result_title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextWrapped("%s", result_message.c_str());
-            if (ImGui::Button("关闭")) {
+            if (GuiButton("关闭##result")) {
                 ImGui::CloseCurrentPopup();
                 result_title.clear();
                 result_message.clear();
@@ -667,12 +668,12 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextUnformatted(
                 "仍有游戏正在运行。退出主面板不会关闭这些游戏。是否继续？");
-            if (ImGui::Button("继续运行主面板")) {
+            if (GuiButton("继续运行主面板##exit_confirmation")) {
                 exit_confirmation_requested = false;
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("退出但保留游戏")) {
+            if (GuiButton("退出但保留游戏##exit_confirmation")) {
                 exit_confirmation_requested = false;
                 running = false;
                 ImGui::CloseCurrentPopup();

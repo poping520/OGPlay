@@ -560,7 +560,8 @@ if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
         src/frontend/gui/management_ui.cpp
         src/frontend/gui/process_manager.cpp
         src/frontend/gui/settings_ui.cpp
-        src/frontend/gui/shell.cpp)
+        src/frontend/gui/shell.cpp
+        src/frontend/gui/ui_button.cpp)
     target_link_libraries(ogplay_frontend PRIVATE ogplay_imgui ANGLE::EGL ANGLE::GLESv2)
     target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=1)
 else()

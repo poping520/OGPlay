@@ -24,6 +24,8 @@
 #include "ogplay/runtime/integration/host_image_decode.h"
 #include "ogplay/session/quirk_registry.h"
 
+#include "ui_button.h"
+
 namespace ogplay::frontend {
 namespace {
 
@@ -234,7 +236,7 @@ public:
                 Reset();
             } else if (stage_ == Stage::waiting_apk) {
                 ImGui::TextUnformatted("请在系统文件选择器中选择 APK…");
-                if (ImGui::Button("取消")) {
+                if (GuiButton("取消##waiting_apk")) {
                     ImGui::CloseCurrentPopup();
                     Reset();
                 }
@@ -244,9 +246,9 @@ public:
                 ImGui::TextWrapped("%s", error_.c_str());
                 ImGui::Spacing();
                 ImGui::TextWrapped("下一步：重新选择 APK；若提示 Profile 目录错误，请在设置中修正。");
-                if (ImGui::Button("重新选择")) OpenApkDialog();
+                if (GuiButton("重新选择##import_failed")) OpenApkDialog();
                 ImGui::SameLine();
-                if (ImGui::Button("关闭")) {
+                if (GuiButton("关闭##import_failed")) {
                     ImGui::CloseCurrentPopup();
                     Reset();
                 }
@@ -372,7 +374,7 @@ private:
         if (preview_.Id() != 0) {
             ImGui::Image(static_cast<ImTextureID>(preview_.Id()), {96.0F, 96.0F});
         } else {
-            ImGui::Button("?##preview", {96.0F, 96.0F});
+            static_cast<void>(GuiButton("?##preview", {96.0F, 96.0F}));
         }
         ImGui::SameLine();
         ImGui::BeginGroup();
@@ -392,7 +394,7 @@ private:
             analysis.profile->requires_external_data) {
             ImGui::Separator();
             ImGui::TextWrapped("该游戏需要外部数据包。可暂时跳过，入库后将显示“缺数据包”。");
-            if (ImGui::Button("选择数据包目录")) OpenExternalDialog();
+            if (GuiButton("选择数据包目录##import")) OpenExternalDialog();
             if (external_dir_.has_value()) {
                 ImGui::TextWrapped("原地引用：%s", PathUtf8(*external_dir_).c_str());
                 ImGui::TextWrapped("请勿移动或删除此目录。");
@@ -403,7 +405,7 @@ private:
         }
         ImGui::Separator();
         ImGui::BeginDisabled(dialog_open_);
-        const auto confirm = ImGui::Button("确认导入");
+        const auto confirm = GuiButton("确认导入##import");
         ImGui::EndDisabled();
         if (confirm) {
             try {
@@ -422,7 +424,7 @@ private:
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("取消")) {
+        if (GuiButton("取消##import_summary")) {
             ImGui::CloseCurrentPopup();
             Reset();
         }

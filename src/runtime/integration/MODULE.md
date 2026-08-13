@@ -13,7 +13,7 @@ preflight、headless/NativeActivity runner 与累计 contract。低层能力分�
 位于 runtime 顶层,可依赖 jni_guest、boundary、framework、jni、bionic、syscall、
 execution、vfs 及其下层模块。任何下层模块均不得反向依赖 integration。
 
-`java.io.File` 族（`dexvm_android_files.cpp`）全部经共享 `VirtualFileSystem`
+`java.io.File` 族（`dexvm_android/java_io_File*.cpp`）全部经共享 `VirtualFileSystem`
 解析：Java 侧写入与 native `fopen` 看到同一个世界，attach 沙盒后自动跨会话
 持久（ADR-0020）。`File.mkdirs` 逐级真实建目录、真实返回 false——此前无条件
 返回 true 且不建任何目录，是伪成功。`exists`/`isDirectory`/`length`/`delete`/
@@ -65,7 +65,7 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   FindClass/GetStaticMethodID/CallStatic* 经不变的 233 槽 ABI 命中真实 DEX 事实
   并落入解释执行(第三路由);解释器未捕获异常按 JNI 语义置 pending。
   J/D 出向返回值暂记账明确失败。
-- `DexVmAndroidContext` + `AndroidIntrinsicCatalog/RegisterAndroidBuiltins`:
+- `DexVmAndroidContext` + `AndroidIntrinsicCatalog(context)`：
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
   IO 走 APK 条目与会话内存文件、身份为确定性配置、SMS/网络记账明确失败;
@@ -102,7 +102,8 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   `ParseBinaryXmlElements` 实例化 widget intrinsic,`android:id` 进入 view registry
   供 `findViewById` 查询,文档序首元素登记为 content view;`runOnUiThread` 在协作
   单线程模型下同步执行 runnable。
-- VideoView intrinsic(`dexvm_android_video.cpp`,ADR-0021):`setVideoPath` 经 VFS
+- VideoView intrinsic（`dexvm_android/android_widget_VideoView.cpp`，ADR-0021）：
+  `setVideoPath` 经 VFS
   `HostPathFor` 解析宿主文件并用注入的 `VideoPlayerFactory` 打开解码;`start`/`pause`/
   `seekTo`/`stopPlayback`/`getDuration`/`getCurrentPosition` 驱动真实播放状态,位置由
   统一 uptime 推进。`PumpVideoViews` 由 guest 循环每步调用:取帧经
@@ -113,7 +114,7 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   混入宿主立体声输出,暂停/停止/播完即静默;`AnyVideoPlaying` 供前端在自由运行时
   把帧循环按真实时间节流,使每帧 16 ms 的确定性 uptime 与墙钟一致(手动步进不节流,
   保持可复现)。
-- widget 点击分发(`dexvm_android_widget_dispatch.cpp`):`setOnClickListener`/
+- widget 点击分发（`dexvm_android/android_view_View.cpp`）：`setOnClickListener`/
   `setVisibility`/`getVisibility` 是真实状态;inflation 记录布局事实并用 `android:src`
   drawable 测量 wrap_content 图像控件。bounds 只对受支持的子集推导(fill×fill 根视图、
   fill×wrap 且 layout_gravity 靠上/下边的水平 LinearLayout 按钮行,gravity
@@ -162,11 +163,12 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 
 ## 文件分工（android.* intrinsic）
 
-`dexvm_android.h` 是唯一公共面（`AndroidIntrinsicCatalog` +
-`RegisterAndroidBuiltins`）。私有 `dexvm_android_internal.h` 声明批次入口与
-跨批次 helper；类声明按平台面分在 `dexvm_android_catalog_*.cpp`，handler 按
-同一分面分在 `dexvm_android_{activity,io,device,media,graphics,misc}.cpp`。
-新增能力应加进对应分面文件，而不是让单文件继续增长。
+`dexvm_android.h` 是唯一公共面。生产装配只调用
+`AndroidIntrinsicCatalog(context)`；`RegisterAndroidBuiltins` 仅作为 DVM-37 删除前
+的兼容符号保留，不再由 frontend 或 bridge 调用。每个平台类在
+`dexvm_android/<类名>.cpp` 中以 `Declare_<类名>(context)` 同址声明并直接绑定；
+`dexvm_android/catalog.cpp` 只聚合，`shared.h` 只保存跨类 helper。新增能力必须进入
+对应类文件，禁止恢复 catalog/handler 批次或 misc 聚合。
 
 ## 测试
 

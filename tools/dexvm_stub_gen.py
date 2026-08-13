@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""Turns a dexvm gap report into paste-ready catalog declarations.
-
-Consumes `dexvm_gap_report.py --output` (static, schema 2) and/or a run's
-`--survey-gaps` harvest (runtime, hottest first) and emits three sections:
-
-  1. hierarchy placeholders for link-blocking classes (declaring the type is
-     all linking needs);
-  2. neutral method rows for members whose return type is void or primitive,
-     bound to the existing standard handlers;
-  3. a decisions list for everything a stub cannot answer honestly —
-     reference returns, static fields and whole classes still needing a real
-     surface. These must be implemented (or fail loudly), never faked.
-
-The output is a starting point for review, not a build input: nothing is
-written into the tree, and section 3 always requires a human/AI decision.
-"""
+"""Generate review-ready per-class android intrinsic declaration skeletons."""
 
 from __future__ import annotations
 
@@ -23,59 +8,21 @@ import json
 import re
 from pathlib import Path
 
-# Existing standard handlers (src/runtime/integration/dexvm_android_*.cpp).
-NEUTRAL_HANDLERS = {
-    "V": "android.widget.noop",
-    "Z": "android.telephony.false",
-    "B": "android.widget.zero",
-    "S": "android.widget.zero",
-    "C": "android.widget.zero",
-    "I": "android.widget.zero",
-    "J": "android.widget.zero_long",
-    "F": "android.widget.zero_float",
-    "D": "android.widget.zero_double",
-}
-STRING_HANDLER = "android.telephony.empty_string"
-
 MEMBER_PATTERN = re.compile(r"^([^(]+)(\(.*\))(.+)$")
+PRIMITIVE_SHORTIES = frozenset("VZBSCIJFD")
 
 
 def cpp_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def placeholder_row(descriptor: str, role: str) -> str:
-    is_interface = role == "interface"
-    # `both` cannot be satisfied by one declaration; flag it for review.
-    suffix = "  // review: used as class and interface" if role == "both" \
-        else ""
-    with_init = "false" if is_interface else "true"
-    return (f"    {{{cpp_string(descriptor)}, "
-            f"{'true' if is_interface else 'false'}, nullptr, nullptr, "
-            f"{with_init}}},{suffix}")
-
-
-def method_row(member: str, is_static: bool) -> tuple[str, str] | None:
-    """Returns (row, handler) for neutral members, else None."""
-    match = MEMBER_PATTERN.match(member)
-    if match is None:
-        return None
-    name, signature, return_type = match.groups()
-    if return_type == "Ljava/lang/String;":
-        handler = STRING_HANDLER
-    elif return_type in NEUTRAL_HANDLERS:
-        handler = NEUTRAL_HANDLERS[return_type]
-    else:
-        return None
-    static = "true" if is_static else "false"
-    return (f'            {{{cpp_string(name)}, '
-            f'{cpp_string(signature + return_type)}, {static}, false, '
-            f'{cpp_string(handler)}}},', handler)
+def symbol(descriptor: str) -> str:
+    body = re.sub(r"[^A-Za-z0-9]", "_", descriptor[1:-1]).strip("_")
+    return f"Declare_{body}"
 
 
 def load_members(gaps: dict | None, survey: dict | None
                  ) -> list[tuple[str, str, int]]:
-    """Returns (owner, member, hits) with hits 0 for static-only entries."""
     members: dict[tuple[str, str], int] = {}
     if survey is not None:
         for entry in survey.get("missing_members", []):
@@ -85,76 +32,122 @@ def load_members(gaps: dict | None, survey: dict | None
         for owner, entry in gaps.get("runtime", {}).items():
             for member in entry.get("methods", []):
                 members.setdefault((owner, member), 0)
-    # Reached members first (hottest), then the static worklist by name.
     return sorted(((owner, member, hits)
                    for (owner, member), hits in members.items()),
                   key=lambda row: (-row[2], row[0], row[1]))
 
 
+def render_method(member: str) -> str | None:
+    match = MEMBER_PATTERN.match(member)
+    if match is None:
+        return None
+    name, arguments, result = match.groups()
+    signature = arguments + result
+    if result == "Ljava/lang/String;":
+        factory = "PlaceholderString()"
+    elif result in PRIMITIVE_SHORTIES:
+        factory = f"NeutralHandler('{result}')"
+    else:
+        return None
+    return (f"    builder.Virtual({cpp_string(name)}, {cpp_string(signature)}, "
+            f"{factory});")
+
+
+def render(gaps: dict | None, survey: dict | None, reached_only: bool,
+           limit: int) -> str:
+    roles: dict[str, str] = {}
+    if gaps is not None:
+        roles.update({owner: entry["role"]
+                      for owner, entry in gaps.get("link_blocking", {}).items()})
+
+    members = load_members(gaps, survey)
+    if reached_only:
+        members = [row for row in members if row[2] > 0]
+    if limit > 0:
+        members = members[:limit]
+
+    by_owner: dict[str, list[str]] = {}
+    decisions: list[str] = []
+    for owner, member, hits in members:
+        rendered = render_method(member)
+        if rendered is None:
+            decisions.append(f"// {owner}->{member}" +
+                             (f" (hits {hits})" if hits else ""))
+            continue
+        by_owner.setdefault(owner, []).append(rendered)
+
+    owners = sorted(set(roles) | set(by_owner))
+    lines = [
+        "// Generated by tools/dexvm_stub_gen.py; review before adding.",
+        '#include "catalog.h"',
+        "",
+        "namespace ogplay::runtime::android_intrinsics {",
+    ]
+    for owner in owners:
+        lines += ["", f"Decl {symbol(owner)}(const Context& context) {{",
+                  "    static_cast<void>(context);",
+                  f"    dx::IntrinsicClassBuilder builder({cpp_string(owner)});"]
+        role = roles.get(owner, "class")
+        if role == "interface":
+            lines.append("    builder.MarkInterface();")
+        else:
+            lines.append('    builder.Super("Ljava/lang/Object;");')
+            if role == "both":
+                lines.append("    // review: referenced as both class and interface")
+        lines.extend(by_owner.get(owner, []))
+        lines += ["    return std::move(builder).Build();", "}"]
+    lines += ["", "}  // namespace ogplay::runtime::android_intrinsics"]
+    if decisions:
+        lines += ["", "// Needs a real decision; reference-return placeholders are",
+                  "// not generated because a neutral object would be dishonest."]
+        lines.extend(decisions)
+    return "\n".join(lines) + "\n"
+
+
+def self_test() -> int:
+    gaps = {
+        "schema": 2,
+        "link_blocking": {
+            "Landroid/example/Foo;": {"role": "class"},
+        },
+        "runtime": {
+            "Landroid/example/Foo;": {
+                "methods": ["reset()V", "count()I", "name()Ljava/lang/String;",
+                            "object()Ljava/lang/Object;"]
+            }
+        },
+    }
+    output = render(gaps, None, False, 0)
+    assert "Decl Declare_android_example_Foo(const Context& context)" in output
+    assert "NeutralHandler('V')" in output
+    assert "NeutralHandler('I')" in output
+    assert "PlaceholderString()" in output
+    assert "object()Ljava/lang/Object;" in output
+    assert "android.widget." not in output
+    assert ".Register(" not in output
+    print("dexvm stub generator self-test passed")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--gaps", type=Path,
-                        help="dexvm_gap_report.py output (schema 2)")
-    parser.add_argument("--survey", type=Path,
-                        help="run-apk --survey-gaps output")
-    parser.add_argument("--reached-only", action="store_true",
-                        help="drop static-only members (hits == 0)")
-    parser.add_argument("--limit", type=int, default=0,
-                        help="cap the emitted member rows (0 = no cap)")
+    parser.add_argument("--gaps", type=Path)
+    parser.add_argument("--survey", type=Path)
+    parser.add_argument("--reached-only", action="store_true")
+    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--self-test", action="store_true")
     arguments = parser.parse_args()
+    if arguments.self_test:
+        return self_test()
     if arguments.gaps is None and arguments.survey is None:
         parser.error("pass --gaps and/or --survey")
-
     gaps = json.loads(arguments.gaps.read_text(encoding="utf-8")) \
         if arguments.gaps else None
     survey = json.loads(arguments.survey.read_text(encoding="utf-8")) \
         if arguments.survey else None
     if gaps is not None and gaps.get("schema") != 2:
         parser.error("gap report schema 2 expected; regenerate the report")
-
-    print("// Generated by tools/dexvm_stub_gen.py — review before pasting.")
-    print("// Machine-authoritative source stays the linker/interpreter.")
-
-    if gaps is not None and gaps.get("link_blocking"):
-        print("\n// ---- hierarchy placeholders "
-              "(kHierarchyPlaceholders) ----")
-        for descriptor, entry in sorted(gaps["link_blocking"].items()):
-            print(placeholder_row(descriptor, entry["role"]))
-
-    members = load_members(gaps, survey)
-    if arguments.reached_only:
-        members = [row for row in members if row[2] > 0]
-    if arguments.limit > 0:
-        members = members[:arguments.limit]
-
-    neutral: dict[str, list[str]] = {}
-    decisions: list[str] = []
-    for owner, member, hits in members:
-        # Survey harvests do not record staticness; assume instance methods
-        # and let the reviewer flip the flag (a wrong flag fails loudly at
-        # resolution, never silently).
-        rendered = method_row(member, is_static=False)
-        if rendered is None:
-            decisions.append(f"//   {owner}->{member}"
-                             f"{f'  (hits {hits})' if hits else ''}")
-            continue
-        neutral.setdefault(owner, []).append(rendered[0])
-
-    if neutral:
-        print("\n// ---- neutral method rows (void/primitive returns) ----")
-        for owner, rows in sorted(neutral.items()):
-            print(f"        // {owner}")
-            for row in rows:
-                print(row)
-
-    if decisions:
-        print("\n// ---- needs a real decision (reference returns and "
-              "fields) ----")
-        print("// A stub cannot answer these honestly: implement the "
-              "behaviour or")
-        print("// leave the accounted failure in place.")
-        for line in decisions:
-            print(line)
+    print(render(gaps, survey, arguments.reached_only, arguments.limit), end="")
     return 0
 
 

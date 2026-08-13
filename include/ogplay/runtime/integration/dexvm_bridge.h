@@ -41,7 +41,6 @@ public:
     DexVmGuestBridge(
         AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
         std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
-      const std::function<void(dexvm::IntrinsicRegistry &)> &platform_handlers,
         core::CapabilityLedger& ledger, core::Logger* logger,
         DexVmBridgeConfig config = {});
     ~DexVmGuestBridge() override;

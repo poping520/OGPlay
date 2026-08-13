@@ -70,7 +70,7 @@ struct ClickVm final {
           interpreter(
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog());
+                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   linker.Link();
                   return linker;
@@ -82,7 +82,7 @@ struct ClickVm final {
                   context->vfs = &vfs;
                   context->video_player_factory = FakeFactory();
                   IntrinsicRegistry registry;
-                  RegisterAndroidBuiltins(registry, context);
+
                   return registry;
               }(),
               nullptr, ledger, {}) {

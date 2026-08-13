@@ -58,7 +58,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-33](DVM-33.md) | 解释器热路径 execution 传递（消除逐指令查找） | 完成 |
 | [DVM-34](DVM-34.md) | intrinsic 声明即绑定：基础设施与双通道 | 完成 |
 | [DVM-35](DVM-35.md) | java.* intrinsic 按类分文件迁移 | 完成 |
-| [DVM-36](DVM-36.md) | android.* intrinsic 按类分文件迁移 + 生成器切换 | 待开始 |
+| [DVM-36](DVM-36.md) | android.* intrinsic 按类分文件迁移 + 生成器切换 | 完成 |
 | [DVM-37](DVM-37.md) | handler 字符串 id 通道整体删除 | 待开始 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）

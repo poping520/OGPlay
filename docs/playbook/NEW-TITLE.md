@@ -21,7 +21,7 @@
 | 缺 handler | `intrinsic handler is not implemented` | 同上 | 同上 |
 | 虚分派落空 | `virtual dispatch failed for m` | 同上 | 同上 |
 | 空接收者连锁 | `invoke on null receiver: setVisibility` | 报错不含类名/调用点，需要反复加日志定位 | 诊断已带声明类、寄存器与调用者 pc |
-| 样板量 | 76 个占位类、上百个 no-op 方法要手写 | 纯打字 | `tools/dexvm_stub_gen.py` 生成待审代码行 |
+| 样板量 | 占位类与中性方法骨架要手写 | 纯打字 | `tools/dexvm_stub_gen.py` 生成逐类 `Declare_*()` 骨架 |
 | 误报 | 报告把已声明的类算成缺口，白补一轮 | 目录解析漏了循环/工厂式声明 | 报告改为收集全部裸 descriptor 字面量 |
 
 判断标准：**任何需要「再跑一次才知道下一个缺什么」的步骤都是要消掉的。**
@@ -46,9 +46,11 @@ APK 派生产物一律留在 `.local/`，不入库。
 python tools/dexvm_stub_gen.py --gaps .local/<title>_gap.json
 ```
 
-三段输出：占位表行、void/基元返回的中性方法行、以及**需要人工决策**的清单
-（引用返回值与字段）。前两段审阅后贴进对应 `dexvm_android_catalog_*.cpp`；
-第三段不许随手桩掉——要么实现真实行为，要么保留记账失败。
+输出是可编译的逐类 `Declare_*()` builder 骨架：void/基元返回使用
+`NeutralHandler(shorty)`，String 占位使用 `PlaceholderString()`；引用返回值进入
+**需要人工决策**清单。将骨架审阅后保存为
+`src/runtime/integration/dexvm_android/<类名>.cpp`，并把声明加入 `catalog.h` 与
+`catalog.cpp`。人工决策项不许随手桩掉——要么实现真实行为，要么保留记账失败。
 
 ### 步 3 · survey 运行：一次收割全部真实命中
 
@@ -76,8 +78,8 @@ survey 模式下，未声明的平台类/方法会被合成为**中性桩**（0/
 ### 步 4 · 按命中批次实现
 
 热点优先。每批遵守既有约定：
-- 类声明进 `dexvm_android_catalog_*.cpp` 的对应分面，handler 进同名
-  `dexvm_android_*.cpp`；新增能力不要让单文件重新膨胀（≤800 行）。
+- 每个平台类进入 `dexvm_android/<类名>.cpp`，用 `Declare_<类名>(context)` 同址
+  声明并直接绑定 handler；聚合点只更新 `catalog.h/cpp`，禁止恢复 misc 或分面批次。
 - 能诚实回答的才回答（真实状态、真实资源、真实文件）；无法诚实回答的保持
   记账 + 明确失败，不要静默返回零。
 - 游戏名/包名不得进 `src/`，差异只能进 `data/profiles/`。
@@ -150,7 +152,7 @@ cd build/dev
 | 工具 | 用途 | 注意 |
 | --- | --- | --- |
 | `tools/dexvm_gap_report.py` | 静态缺口分层报告（§2 步 1） | 只看平台前缀；`runtime` 段是优先级清单不是必做项 |
-| `tools/dexvm_stub_gen.py` | 生成占位/中性行（§2 步 2） | 第三段（引用返回值/字段）必须人工决策 |
+| `tools/dexvm_stub_gen.py` | 生成逐类 builder 骨架（§2 步 2） | 引用返回值/字段必须人工决策；输出不含 handler id |
 | `tools/dex_dependency_survey.py` | 题库静态测量 | 产物留 `.local/` |
 | `tools/dexdis.py` | 反汇编辅助 | pc/宽度显示有已知瑕疵，**不可作为权威**；权威事实用 C++ 侧 dump 或 `tools/dex_survey_lib.py` 直读字节 |
 

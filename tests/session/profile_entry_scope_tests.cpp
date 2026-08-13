@@ -1,10 +1,12 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <fstream>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -70,8 +72,9 @@ struct Vm final {
 
 IntrinsicRegistry AndroidRegistry(
     const std::shared_ptr<ogplay::runtime::DexVmAndroidContext> &context) {
+  static_cast<void>(context);
   IntrinsicRegistry registry;
-  ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+
   return registry;
 }
 
@@ -89,7 +92,7 @@ struct AndroidVm final {
       : interpreter(
             [this]() -> DexClassLinker & {
               auto catalog = CoreIntrinsicCatalog();
-              const auto android = ogplay::runtime::AndroidIntrinsicCatalog();
+              const auto android = ogplay::runtime::AndroidIntrinsicCatalog(context);
               catalog.insert(catalog.end(), android.begin(), android.end());
               linker.RegisterIntrinsics(catalog);
               linker.RegisterDex(ReadInterpreterFixture());
@@ -111,6 +114,38 @@ struct AndroidVm final {
     return linker.Class(*owner).vtable[*index];
   }
 };
+
+TEST_CASE("android intrinsic catalog is unique and directly bound") {
+  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+  const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
+  CHECK(catalog.size() == 165);
+
+  std::unordered_set<std::string> descriptors;
+  for (const auto& declaration : catalog) {
+    CHECK(descriptors.insert(declaration.descriptor).second);
+    for (const auto& method : declaration.methods) {
+      CHECK(method.handler.empty());
+      CHECK(static_cast<bool>(method.implementation));
+    }
+    CHECK(declaration.clinit_handler.empty());
+    if (declaration.clinit_implementation) {
+      CHECK(static_cast<bool>(declaration.clinit_implementation));
+    }
+  }
+
+  const auto method_count = [&catalog](const std::string_view descriptor) {
+    const auto found = std::find_if(
+        catalog.begin(), catalog.end(), [descriptor](const auto& declaration) {
+          return declaration.descriptor == descriptor;
+        });
+    REQUIRE(found != catalog.end());
+    return found->methods.size();
+  };
+  CHECK(method_count("Landroid/app/Activity;") == 22);
+  CHECK(method_count("Landroid/content/Intent;") == 15);
+  CHECK(method_count("Landroid/os/Bundle;") == 12);
+  CHECK(method_count("Landroid/widget/TextView;") == 14);
+}
 
 ogplay::session::TitleProfile PresetProfile() {
     ogplay::session::TitleProfile profile;
@@ -248,15 +283,15 @@ TEST_CASE("AudioManager reports the deterministic external music fact") {
     JniPrimitiveArrayStore arrays;
     JavaObjectModel model(strings, arrays);
     DexClassLinker linker;
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
-    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
-    ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+
     ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
@@ -279,15 +314,15 @@ TEST_CASE("TelephonyManager records and cancels offline listeners") {
     JniPrimitiveArrayStore arrays;
     JavaObjectModel model(strings, arrays);
     DexClassLinker linker;
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
-    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
-    ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+
     ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
@@ -334,15 +369,15 @@ TEST_CASE("SurfaceView owns a stable holder and callback identity") {
     JniPrimitiveArrayStore arrays;
     JavaObjectModel model(strings, arrays);
     DexClassLinker linker;
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
-    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
-    ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+
     ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
@@ -384,18 +419,18 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
     JniPrimitiveArrayStore arrays;
     JavaObjectModel model(strings, arrays);
     DexClassLinker linker;
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
-    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
     catalog.insert(catalog.end(), android_catalog.begin(),
                    android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     context->surface_width = 1280;
     context->surface_height = 720;
     IntrinsicRegistry registry;
-    ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+
     ogplay::core::CapabilityLedger ledger;
     Interpreter interpreter(linker, model, std::move(registry), nullptr,
                             ledger);
@@ -481,15 +516,15 @@ TEST_CASE("Thread priority validates and records the guest fact") {
     JniPrimitiveArrayStore arrays;
     JavaObjectModel model(strings, arrays);
     DexClassLinker linker;
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
-    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
-    ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+
     ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
@@ -538,15 +573,15 @@ TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {
     JniPrimitiveArrayStore arrays;
     JavaObjectModel model(strings, arrays);
     DexClassLinker linker;
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
-    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
-    ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+
     ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();
@@ -587,15 +622,15 @@ TEST_CASE("URLEncoder applies UTF-8 form encoding") {
     JniPrimitiveArrayStore arrays;
     JavaObjectModel model(strings, arrays);
     DexClassLinker linker;
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     auto catalog = CoreIntrinsicCatalog();
-    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
   catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
     IntrinsicRegistry registry;
-    ogplay::runtime::RegisterAndroidBuiltins(registry, context);
+
     ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
     interpreter.RegisterCoreBuiltins();

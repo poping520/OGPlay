@@ -557,7 +557,6 @@ public:
 DexVmGuestBridge::DexVmGuestBridge(
     AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
     const std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
-    const std::function<void(dexvm::IntrinsicRegistry&)>& platform_handlers,
     core::CapabilityLedger& ledger, core::Logger* logger,
     const DexVmBridgeConfig config)
     : impl_(std::make_unique<Impl>()) {
@@ -580,8 +579,6 @@ DexVmGuestBridge::DexVmGuestBridge(
         session.Strings(), session.Arrays(), config.heap);
 
     dx::IntrinsicRegistry registry;
-  if (platform_handlers)
-    platform_handlers(registry);
   impl_->vm = std::make_unique<dx::Interpreter>(impl_->linker, *impl_->model,
                                                 std::move(registry), this,
                                                 ledger, config.interpreter);

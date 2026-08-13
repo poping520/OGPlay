@@ -622,12 +622,10 @@ int RunApkCommand(const int argc, const char* const argv[],
                 bridge_config.interpreter.tick_budget =
                     profile.runtime.dexvm->ticks_per_call;
             }
-            const auto android_catalog = runtime::AndroidIntrinsicCatalog();
+            const auto android_catalog =
+                runtime::AndroidIntrinsicCatalog(dex_context);
             dex_bridge = std::make_unique<runtime::DexVmGuestBridge>(
                 *guest, std::move(dex_bytes), android_catalog,
-                [dex_context](runtime::dexvm::IntrinsicRegistry& registry) {
-                    runtime::RegisterAndroidBuiltins(registry, dex_context);
-                },
                 dexvm_ledger, &logger, bridge_config);
             dex_context->threads = &dex_bridge->Threads();
             // Object.wait deadlines come from the deterministic uptime the

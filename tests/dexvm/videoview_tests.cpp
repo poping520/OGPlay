@@ -78,7 +78,7 @@ struct VideoVm final {
           interpreter(
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog());
+                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   linker.RegisterDex(ReadFixture("videoview.dex"));
                   linker.Link();
                   return linker;
@@ -90,7 +90,7 @@ struct VideoVm final {
                   context->vfs = &vfs;
                   context->video_player_factory = std::move(factory);
                   IntrinsicRegistry registry;
-                  RegisterAndroidBuiltins(registry, context);
+
                   return registry;
               }(),
               nullptr, ledger, {}) {

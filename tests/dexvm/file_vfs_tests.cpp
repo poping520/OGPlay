@@ -65,7 +65,7 @@ struct FileVm final {
           interpreter(
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog());
+                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   linker.Link();
                   return linker;
               }(),
@@ -74,7 +74,7 @@ struct FileVm final {
                   context->vfs = &vfs;
                   context->package_name = kPackage;
                   IntrinsicRegistry registry;
-                  RegisterAndroidBuiltins(registry, context);
+
                   return registry;
               }(),
               nullptr, ledger, {}) {

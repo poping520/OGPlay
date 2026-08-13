@@ -18,15 +18,11 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..35）已交付；存档沙
   解释字节码。`dexvm.threads`/`dexvm.monitors` 均 `partial`：子线程 native
   调用仍复用 root guest 栈（需停泊时以 `blocking_in_native` 明确失败），
   native 侧 JNI monitor 表尚未与之合一。
-- **intrinsic/热路径优化已交付**：DVM-32 冻结地址稳定的 registry，每方法首调
-  绑定 handler，miss 仍逐次记账并保持 survey/`UnsatisfiedLinkError`；DVM-33
-  从 `Call` 沿 Run/Step/Tick/invoke 传递 execution，不再逐指令查询；DVM-34
-  新增装配校验的 `IntrinsicClassBuilder`、内嵌 handler 与新旧双通道，miss 按
-  owner+签名记账；DVM-35 将 68 个 java.*/javax.* 类拆为一类一文件，直接持有
-  162 个 core handler；四个集中式文件删除，core 注册为空。System/Date 的
-  7 个平台动作由 integration 注入旧 id。Windows/MSVC 710/710。
-- **声明即绑定迁移待续**（DVM-36/37）：迁移 android.* 与平台动作，再删除
-  registry/id；不改变 handler 行为或能力状态。
+- **intrinsic/热路径优化与声明迁移已交付**：DVM-32..34 完成地址稳定绑定、
+  execution 传递和受检 builder 双通道；DVM-35 将 68 个 java.*/javax.* 类拆为
+  一类一文件并直接持有 162 个 core handler；DVM-36 将 165 个 android/platform
+  类迁入 `integration/dexvm_android/` 的逐类 `Declare_*()`，frontend/bridge 只传
+  合并 catalog，生成器改产逐类 builder 骨架。兼容 registry/id 留待 DVM-37 删除。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
@@ -44,7 +40,7 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..35）已交付；存档沙
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 710/710；
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 712/712；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 
 ## 进行中：更多 title 上 dexvm 路线
@@ -75,7 +71,7 @@ macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
-3. DVM-36/37：迁移 android/platform intrinsic 并删除字符串 id。
+3. DVM-37：删除 intrinsic 兼容 registry 与字符串 id。
 4. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
    只读路径去整串拷贝（分析结论见 DVM-32/33 任务单）。
 5. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id，native

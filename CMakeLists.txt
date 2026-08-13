@@ -293,6 +293,8 @@ file(GLOB OGPLAY_DEXVM_FIXTURE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/dexvm/fixtures/*.dexasm")
 file(GLOB OGPLAY_DEXVM_INTRINSIC_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/dexvm/intrinsics/*.cpp")
+file(GLOB OGPLAY_DEXVM_ANDROID_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/integration/dexvm_android/*.cpp")
 add_custom_command(
     OUTPUT "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp"
     COMMAND ${Python3_EXECUTABLE}
@@ -387,22 +389,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/android_boundary_hle.cpp
     src/runtime/boundary/android_boundary_symbols.cpp
     src/runtime/integration/android_link_preflight.cpp
-    src/runtime/integration/dexvm_android.cpp
-    src/runtime/integration/dexvm_android_activity.cpp
-    src/runtime/integration/dexvm_android_catalog_core.cpp
-    src/runtime/integration/dexvm_android_catalog_device.cpp
-    src/runtime/integration/dexvm_android_catalog_graphics.cpp
-    src/runtime/integration/dexvm_android_catalog_io.cpp
-    src/runtime/integration/dexvm_android_catalog_widgets.cpp
-    src/runtime/integration/dexvm_android_device.cpp
-    src/runtime/integration/dexvm_android_graphics.cpp
-    src/runtime/integration/dexvm_android_handlers.cpp
-    src/runtime/integration/dexvm_android_files.cpp
-    src/runtime/integration/dexvm_android_io.cpp
-    src/runtime/integration/dexvm_android_media.cpp
-    src/runtime/integration/dexvm_android_misc.cpp
-    src/runtime/integration/dexvm_android_video.cpp
-    src/runtime/integration/dexvm_android_widget_dispatch.cpp
+    ${OGPLAY_DEXVM_ANDROID_SOURCES}
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/host_image_decode.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
@@ -926,6 +913,14 @@ if(OGPLAY_BUILD_TESTS)
             --self-test
     )
     set_tests_properties(tools.gles_idl_generator_self_test PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.dexvm_stub_generator_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexvm_stub_gen.py
+            --self-test
+    )
+    set_tests_properties(tools.dexvm_stub_generator_self_test PROPERTIES LABELS tools)
 
     add_test(
         NAME tools.gles2_catalog_current

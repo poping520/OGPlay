@@ -319,7 +319,8 @@ enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
 [[nodiscard]] std::optional<std::string>
 PumpJavaThreads(dexvm::Interpreter &vm, DexVmAndroidContext &context);
 
-[[nodiscard]] std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog();
+[[nodiscard]] std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
+    const std::shared_ptr<DexVmAndroidContext>& context);
 
 void RegisterAndroidBuiltins(dexvm::IntrinsicRegistry& registry,
                              std::shared_ptr<DexVmAndroidContext> context);

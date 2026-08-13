@@ -132,6 +132,10 @@ public:
     void FlushFileLocked(File& file);
     void RequireSandboxQuotaLocked(const File& target,
                                    std::uint64_t prospective_size) const;
+    // The only place a node's size or dirty flag may change: it keeps the
+    // running dirty-byte aggregate consistent so quota checks stay O(1)
+    // instead of rescanning every file per write.
+    void SetNodeSizeDirtyLocked(File& file, std::uint64_t size, bool dirty);
     void PersistDirectoryLocked(const std::string& path);
     void PersistRemovalLocked(const std::string& path);
     [[nodiscard]] std::int32_t AllocateDescriptor() const;
@@ -152,6 +156,10 @@ public:
     std::vector<std::string> writable_roots_;
     // Paths the guest deleted that the read-only base layer still provides.
     std::set<std::string, std::less<>> tombstones_;
+    // Σ over dirty overlay nodes of (size - persisted_size), maintained by
+    // SetNodeSizeDirtyLocked and FlushFileLocked. Sizes are bounded by the
+    // sandbox quota and host memory, so a signed 64-bit delta cannot wrap.
+    std::int64_t dirty_overlay_delta_{};
 };
 
 }  // namespace ogplay::runtime

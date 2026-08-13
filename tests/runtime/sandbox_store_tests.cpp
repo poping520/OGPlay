@@ -274,21 +274,6 @@ TEST_CASE("sandbox store removes only empty directories") {
     CHECK_THROWS_AS(store->Remove("/sdcard/dir"), VfsError);
 }
 
-TEST_CASE("sandbox store renames a file and leaves the old name deleted") {
-    const TemporaryRoot root("rename");
-    auto store = SandboxStore::Open(root.path, kPackage);
-    store->WriteFileAtomic("/sdcard/old.sav", Bytes("body"));
-    store->Rename("/sdcard/old.sav", "/sdcard/new.sav");
-    CHECK(Text(store->ReadFile("/sdcard/new.sav")) == "body");
-    const auto renamed_entries = store->Entries();
-    const auto* old_entry = Find(renamed_entries, "/sdcard/old.sav");
-    REQUIRE(old_entry != nullptr);
-    CHECK(old_entry->is_tombstone);
-    CHECK_THROWS_AS(static_cast<void>(store->ReadFile("/sdcard/old.sav")),
-                    VfsError);
-    CHECK_THROWS_AS(store->Rename("/sdcard/missing", "/sdcard/x"), VfsError);
-}
-
 TEST_CASE("sandbox store rejects a meta.toml it did not write") {
     const TemporaryRoot root("meta");
     { const auto store = SandboxStore::Open(root.path, kPackage); }

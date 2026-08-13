@@ -110,6 +110,26 @@ void VirtualFileSystem::Impl::MarkOverlayLocked(const std::string& path,
     file.overlay_path = path;
 }
 
+namespace {
+
+// A dirty overlay node holds (size - persisted_size) bytes that the store
+// has not seen yet; everything else contributes nothing.
+[[nodiscard]] std::int64_t DirtyContribution(const File& file) {
+    if (!file.dirty || file.overlay_path.empty()) return 0;
+    return static_cast<std::int64_t>(file.size) -
+           static_cast<std::int64_t>(file.persisted_size);
+}
+
+}  // namespace
+
+void VirtualFileSystem::Impl::SetNodeSizeDirtyLocked(
+    File& file, const std::uint64_t size, const bool dirty) {
+    dirty_overlay_delta_ -= DirtyContribution(file);
+    file.size = size;
+    file.dirty = dirty;
+    dirty_overlay_delta_ += DirtyContribution(file);
+}
+
 void VirtualFileSystem::Impl::FlushFileLocked(File& file) {
     if (sandbox_ == nullptr || !file.dirty || file.overlay_path.empty()) {
         return;
@@ -117,6 +137,7 @@ void VirtualFileSystem::Impl::FlushFileLocked(File& file) {
     Materialize(file);
     sandbox_->WriteFileAtomic(file.overlay_path, file.contents);
     tombstones_.erase(file.overlay_path);
+    dirty_overlay_delta_ -= DirtyContribution(file);
     file.persisted_size = file.size;
     file.dirty = false;
 }
@@ -124,29 +145,17 @@ void VirtualFileSystem::Impl::FlushFileLocked(File& file) {
 void VirtualFileSystem::Impl::RequireSandboxQuotaLocked(
     const File& target, const std::uint64_t prospective_size) const {
     if (sandbox_ == nullptr || target.overlay_path.empty()) return;
-    auto projected = sandbox_->UsedBytes();
-    const auto replace = [&projected](const std::uint64_t persisted,
-                                      const std::uint64_t current) {
-        if (persisted > projected ||
-            current > std::numeric_limits<std::uint64_t>::max() -
-                          (projected - persisted)) {
-            throw VfsError(kEio, "sandbox quota accounting is inconsistent");
-        }
-        projected = projected - persisted + current;
-    };
-
-    bool saw_target = false;
-    for (const auto& [path, file] : files_) {
-        static_cast<void>(path);
-        if (file.get() == &target) {
-            replace(file->persisted_size, prospective_size);
-            saw_target = true;
-        } else if (file->dirty && !file->overlay_path.empty()) {
-            replace(file->persisted_size, file->size);
-        }
+    // Store bytes plus every dirty node's unpersisted delta, with the
+    // target's contribution replaced by the prospective size. O(1): the
+    // aggregate is maintained at each size/dirty mutation.
+    const auto projected = static_cast<std::int64_t>(sandbox_->UsedBytes()) +
+                           dirty_overlay_delta_ - DirtyContribution(target) +
+                           static_cast<std::int64_t>(prospective_size) -
+                           static_cast<std::int64_t>(target.persisted_size);
+    if (projected < 0) {
+        throw VfsError(kEio, "sandbox quota accounting is inconsistent");
     }
-    if (!saw_target) replace(target.persisted_size, prospective_size);
-    if (projected > sandbox_->QuotaBytes()) {
+    if (static_cast<std::uint64_t>(projected) > sandbox_->QuotaBytes()) {
         throw VfsError(kEnospc,
                        "sandbox byte quota exhausted by dirty VFS data");
     }
@@ -256,7 +265,7 @@ void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
     PersistRemovalLocked(normalized);
     // Open descriptors may keep the unlinked node alive, but close/fsync on
     // that orphan must not publish the deleted pathname again.
-    found->second->dirty = false;
+    SetNodeSizeDirtyLocked(*found->second, found->second->size, false);
     found->second->overlay_path.clear();
     files_.erase(found);
 }
@@ -315,10 +324,20 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
     }
     auto file = found->second;
     files_.erase(found);
+    if (const auto replaced = files_.find(target);
+        replaced != files_.end() && replaced->second != file) {
+        // The node being replaced may live on through open descriptors,
+        // but a later close/fsync on that orphan must not overwrite the
+        // renamed content under the same name.
+        SetNodeSizeDirtyLocked(*replaced->second, replaced->second->size,
+                               false);
+        replaced->second->overlay_path.clear();
+    }
     files_.insert_or_assign(target, file);
     tombstones_.erase(target);
     MarkOverlayLocked(target, *file);
-    if (!file->overlay_path.empty()) file->dirty = true;
+    SetNodeSizeDirtyLocked(*file, file->size,
+                           file->dirty || !file->overlay_path.empty());
     FlushFileLocked(*file);
     PersistRemovalLocked(source);
 }
@@ -341,8 +360,9 @@ void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor,
     Materialize(*open.file);
     RequireSandboxQuotaLocked(*open.file, size);
     open.file->contents.resize(static_cast<std::size_t>(size));
-    open.file->size = size;
-    if (!open.file->overlay_path.empty()) open.file->dirty = true;
+    SetNodeSizeDirtyLocked(
+        *open.file, size,
+        open.file->dirty || !open.file->overlay_path.empty());
 }
 
 void VirtualFileSystem::Impl::Flush(const std::int32_t descriptor) {

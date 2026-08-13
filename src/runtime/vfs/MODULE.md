@@ -37,8 +37,11 @@ tmp + 同目录 rename（崩溃只会留旧内容或新内容，不会半截）�
 成为目录），越界 `-EACCES`。落盘点按设计 03 §2 枚举：`close`、`Flush`(fsync)、
 `FlushAll`(pause/shutdown) 落文件内容，`mkdir`/`unlink`/`rmdir`/`rename` 立即落
 元数据。可写命名空间内删除保守写 tombstone；新建立即解除会话内遮蔽，unlink
-后的存活 descriptor 不得在 close 时复活名字。write-open 本身不置脏，只有新建、
-写入、截断与 rename 才落盘，避免无变化重写。
+或 rename 覆盖后的存活 descriptor 不得在 close 时复活或覆盖该名字。write-open
+本身不置脏，只有新建、写入、截断与 rename 才落盘，避免无变化重写。脏字节
+以聚合增量维护（size/dirty 只经 `SetNodeSizeDirtyLocked` 变更），配额检查
+O(1)，不随文件数扫描。guest rename 由覆盖层组合完成（写新名 + 旧名
+tombstone），`SandboxStore` 自身不提供 rename。
 未 attach 时行为与既有逐字节一致——持久化是纯增量能力。
 
 ## 依赖
@@ -80,5 +83,5 @@ syscall 与 framework Asset 只能单向调用本模块。
 （写入不落、fsync 落、close 落、幂等）、元数据立即落盘、未 attach 时行为不变。
 `SandboxStore` 对应 `tests/runtime/sandbox_store_tests.cpp`（布局跨开启往返、
 原子替换与崩溃残留清理、转义双向无损、逃逸与保留后缀拒绝、字节/文件数配额
-`-ENOSPC`、tombstone 遮蔽与解除、非空目录 `-ENOTEMPTY`、rename、meta.toml
+`-ENOSPC`、tombstone 遮蔽与解除、非空目录 `-ENOTEMPTY`、meta.toml
 拒绝），全部在测试自建临时目录内进行，不触碰用户数据目录。

@@ -634,26 +634,6 @@ void SandboxStore::Remove(const std::string_view guest_path) {
     impl_->entries.erase(found);
 }
 
-void SandboxStore::Rename(const std::string_view from,
-                          const std::string_view to) {
-    RequireNoReservedSuffix(to);
-    const auto source = impl_->entries.find(from);
-    if (source == impl_->entries.end() || source->second.is_tombstone) {
-        throw VfsError(kEnoent, "sandbox rename source not found");
-    }
-    if (source->second.is_directory) {
-        // Directory rename would have to move a subtree; the guest paths
-        // this serves are file renames, and guessing is worse than failing.
-        throw VfsError(kEinval,
-                       "sandbox directory rename is not implemented");
-    }
-    auto contents = ReadFile(from);
-    WriteFileAtomic(to, contents);
-    // Two steps: a crash between them leaves both names, never neither.
-    Remove(from);
-    WriteTombstone(from);
-}
-
 std::uint64_t SandboxStore::UsedBytes() const { return impl_->used_bytes; }
 std::uint64_t SandboxStore::FileCount() const {
     return static_cast<std::uint64_t>(impl_->entries.size());

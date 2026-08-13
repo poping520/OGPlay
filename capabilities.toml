@@ -388,7 +388,7 @@ note = "ADR-0020 SBX-6 把 SharedPreferences 落成 /data/data/<pkg>/shared_pref
 [runtime.syscall_file_metadata]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "ADR-0020 SBX-4 绑定 mkdir/unlink/rename/stat64/getdents64/access/ftruncate/fsync/pread64/pwrite64 族到同一 VFS，ABI 布局由机器测试锁定。SBX-9 补通 guest open(O_DIRECTORY)→目录 descriptor→getdents64；小缓冲按完整记录真分页且不消费下一页，fstat64 不改变 offset，目录 fd 的 fstat/fsync/seek 明确。*at 相对路径仍因无真实 per-process cwd 返回 -ENOTSUP，flock/xattr/inotify 等维持 -ENOSYS，故状态保持 partial"
+note = "ADR-0020 SBX-4 绑定 mkdir/unlink/rename/stat64/getdents64/access/ftruncate/fsync/pread64/pwrite64 族到同一 VFS，ABI 布局由机器测试锁定。SBX-9 补通 guest open(O_DIRECTORY)→目录 descriptor→getdents64，open flags 按 ARM EABI 值解码（O_DIRECTORY=040000、O_NOFOLLOW=0100000、O_LARGEFILE=0400000，非 asm-generic 布局），bionic opendir 的真实 flags 组合有测试锁定；小缓冲按完整记录真分页且不消费下一页，fstat64 不改变 offset，目录 fd 的 fstat/fsync/seek 明确。*at 相对路径仍因无真实 per-process cwd 返回 -ENOTSUP，flock/xattr/inotify 等维持 -ENOSYS，故状态保持 partial"
 
 [runtime.vfs_directory_ops]
 status = "complete"

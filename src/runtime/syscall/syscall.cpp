@@ -587,9 +587,12 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     const auto options = [](const std::uint32_t flags) {
         constexpr std::uint32_t kCreate = 0x40;
         constexpr std::uint32_t kTruncate = 0x200;
-        constexpr std::uint32_t kLargeFile = 0x8000;
-        constexpr std::uint32_t kDirectory = 0x10000;
-        constexpr std::uint32_t kNoFollow = 0x20000;
+        // arch/arm/include/uapi/asm/fcntl.h, not asm-generic: the guest is
+        // an ARM EABI process, and ARM swaps these four around. bionic
+        // opendir() passes O_DIRECTORY = 040000.
+        constexpr std::uint32_t kDirectory = 0x4000;
+        constexpr std::uint32_t kNoFollow = 0x8000;
+        constexpr std::uint32_t kLargeFile = 0x20000;
         constexpr std::uint32_t kCloseOnExec = 0x80000;
         constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate |
                                          kLargeFile | kDirectory | kNoFollow |

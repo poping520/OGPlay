@@ -760,11 +760,14 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
     }
 
     // The guest obtains its directory descriptor through open(O_DIRECTORY),
-    // not a test-only direct VFS call.
+    // not a test-only direct VFS call. The flag combination is exactly what
+    // ARM bionic opendir() issues: O_RDONLY | O_DIRECTORY | O_CLOEXEC with
+    // the ARM EABI value O_DIRECTORY = 040000 (arch/arm asm/fcntl.h).
     fixture.WriteString(0x20000, "/sdcard/dir");
-    constexpr std::uint32_t kODirectory = 0x10000;
+    constexpr std::uint32_t kODirectory = 0x4000;
+    constexpr std::uint32_t kOCloexec = 0x80000;
     const auto directory =
-        fixture.Call(5, {0x20000, kODirectory, 0, 0, 0, 0});
+        fixture.Call(5, {0x20000, kODirectory | kOCloexec, 0, 0, 0, 0});
     REQUIRE(directory >= 3);
 
     // One 32-byte record fits. The second entry must remain pending for the

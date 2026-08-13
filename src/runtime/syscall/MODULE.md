@@ -29,8 +29,10 @@ mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`getdents64`、
 `access`、`ftruncate`、`fsync`/`fdatasync` 与 `pread64`/`pwrite64` 绑到与
 `BindAndroidFileSyscalls` 同一个 VFS。`struct stat64` 按 Android ARM 打包
 布局（96 字节）编组，`linux_dirent64` 记录 8 字节对齐且只发完整记录；两者
-偏移由机器测试锁定。guest `open(O_DIRECTORY)` 取得快照目录 fd；记录装不下时
-回退 cursor 并返回当前页，下一次继续。`fstat64` 直接查询 descriptor 元数据，
+偏移由机器测试锁定。guest `open(O_DIRECTORY)` 取得快照目录 fd；open flags 按
+ARM EABI 布局解码（`arch/arm` 的 `O_DIRECTORY=040000`、`O_NOFOLLOW=0100000`、
+`O_LARGEFILE=0400000`，不是 asm-generic 值），bionic `opendir()` 的真实组合由
+机器测试锁定。记录装不下时回退 cursor 并返回当前页，下一次继续。`fstat64` 直接查询 descriptor 元数据，
 不改变文件 offset，目录 fd 的 fsync/fstat 也有明确语义。`st_mode` 的权限位来自 VFS 真实 writable 事实，时间戳
 保持 0（唯一时间源是统一 Clock）。`*at` 的相对路径没有真实 per-process cwd，
 明确 `-ENOTSUP`。`flock`、`*xattr`、`inotify*` 等维持 `-ENOSYS` 记账。

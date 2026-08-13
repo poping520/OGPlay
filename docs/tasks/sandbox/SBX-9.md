@@ -19,6 +19,10 @@ getdents64 分页形成可用闭环。
 
 - Android ARM `O_DIRECTORY` 加入受检 flags 并路由 `OpenDirectory`；目录路径不会被
   `O_CREAT` 错建成文件。
+- 二次验收修正：flag 值改按 ARM EABI 布局（`arch/arm` 的 `O_DIRECTORY=040000`、
+  `O_NOFOLLOW=0100000`、`O_LARGEFILE=0400000`）。首版误用 asm-generic 值并被测试
+  锁定，真实 ARM guest 的 `opendir()`（`O_RDONLY|O_DIRECTORY|O_CLOEXEC`）会
+  `-EINVAL`；现测试按 bionic 真实组合断言。
 - VFS descriptor 提供不改变 offset 的元数据查询；目录 seek 操作快照 cursor，
   Flush 为已立即落盘元数据的幂等屏障，Truncate 明确 `-EISDIR`。
 - `getdents64` 在完整记录放不下时回退一条 cursor 并返回已编组页。

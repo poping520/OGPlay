@@ -354,9 +354,8 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             // shadowing the new in-memory node in this session now.
             tombstones_.erase(normalized);
             MarkOverlayLocked(normalized, *found->second);
-            if (!found->second->overlay_path.empty()) {
-                found->second->dirty = true;
-            }
+            SetNodeSizeDirtyLocked(*found->second, 0,
+                                   !found->second->overlay_path.empty());
         }
         if (options.write && !found->second->writable) {
             throw VfsError(kEacces, "VFS file is read-only");
@@ -374,11 +373,11 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
                 throw VfsError(kEinval, "VFS truncate requires write access");
             }
             found->second->contents.clear();
-            found->second->size = 0;
             found->second->read_all = {};
-            if (!found->second->overlay_path.empty()) {
-                found->second->dirty = true;
-            }
+            SetNodeSizeDirtyLocked(
+                *found->second, 0,
+                found->second->dirty ||
+                    !found->second->overlay_path.empty());
         }
         const auto descriptor = AllocateDescriptor();
         descriptors_.emplace(
@@ -444,8 +443,9 @@ std::size_t VirtualFileSystem::Impl::Write(
                   open.file->contents.begin() +
                       static_cast<Difference>(open.offset));
         open.offset = end;
-        open.file->size = open.file->contents.size();
-        if (!open.file->overlay_path.empty()) open.file->dirty = true;
+        SetNodeSizeDirtyLocked(
+            *open.file, open.file->contents.size(),
+            open.file->dirty || !open.file->overlay_path.empty());
         return source.size();
     }
 

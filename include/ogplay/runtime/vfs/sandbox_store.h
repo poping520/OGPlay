@@ -57,8 +57,9 @@ public:
     void WriteTombstone(std::string_view guest_path);
     void CreateDirectory(std::string_view guest_path);
     // Removes a file, tombstone or empty directory; absent is -ENOENT.
+    // A guest rename is composed by the VFS overlay (write the new name,
+    // tombstone the old one); the store has no rename of its own.
     void Remove(std::string_view guest_path);
-    void Rename(std::string_view from, std::string_view to);
 
     [[nodiscard]] std::uint64_t UsedBytes() const;
     [[nodiscard]] std::uint64_t FileCount() const;

@@ -74,6 +74,15 @@ void WriteThrough(VirtualFileSystem& vfs, const std::string_view path,
     return text;
 }
 
+[[nodiscard]] std::string Text(const std::vector<std::byte>& bytes) {
+    std::string out;
+    out.reserve(bytes.size());
+    for (const auto value : bytes) {
+        out.push_back(static_cast<char>(value));
+    }
+    return out;
+}
+
 [[nodiscard]] std::int32_t ErrnoOf(const std::function<void()>& action) {
     try {
         action();
@@ -327,6 +336,29 @@ TEST_CASE("VFS sandbox persists rename and rmdir metadata immediately") {
     CHECK(ReadAll(vfs, "/sdcard/new.sav") == "body");
     CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/old.sav")); }) == 2);
     CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/tmpdir")); }) == 2);
+}
+
+TEST_CASE("VFS rename over an open target orphans the replaced node") {
+    const TemporaryRoot root("rename-orphan");
+    auto store = SandboxStore::Open(root.path, kPackage);
+    VirtualFileSystem vfs;
+    vfs.AttachSandbox(*store, kWritableRoots);
+
+    WriteThrough(vfs, "/sdcard/victim.sav", "stale");
+    WriteThrough(vfs, "/sdcard/source.sav", "fresh");
+
+    // The victim stays open across the rename, exactly the descriptor a
+    // game still holds while rotating save slots.
+    const auto held = vfs.Open("/sdcard/victim.sav", {.read = true,
+                                                      .write = true});
+    vfs.Rename("/sdcard/source.sav", "/sdcard/victim.sav");
+    CHECK(ReadAll(vfs, "/sdcard/victim.sav") == "fresh");
+
+    // Closing the orphan is a flush point, but it must not publish the
+    // replaced node's stale bytes under the renamed name.
+    vfs.Close(held);
+    CHECK(ReadAll(vfs, "/sdcard/victim.sav") == "fresh");
+    CHECK(Text(store->ReadFile("/sdcard/victim.sav")) == "fresh");
 }
 
 TEST_CASE("VFS without a sandbox keeps its in-memory behaviour") {

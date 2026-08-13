@@ -29,8 +29,13 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
   [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：native/DexVM/prefs 已统一
   VFS；补强覆盖删除防复活、创建即清 tombstone、guest 目录 fd 与 getdents64
   分页、fstat64 offset、pause/shutdown `FlushAll`、Java/prefs 完整性及 store
-  装载/配额。Windows/MSVC 聚焦回归 37/37、全量 CTest 663/663；本轮未重跑
-  exact-title。**用户级闭环仍未演示**：title 尚未进入会产生存档的流程。
+  装载/配额。二次验收修正：open flags 改按 ARM EABI 值解码（bionic `opendir`
+  的 `O_DIRECTORY=040000` 组合有测试锁定，先前用了 asm-generic 布局导致真实
+  guest 目录打开 `-EINVAL`）；脏字节配额改聚合增量，检查 O(1) 不随文件数扫描；
+  rename 覆盖已打开 target 时孤儿节点不得在 close 复写该名字（有回归测试）；
+  删除无调用方的 `SandboxStore::Rename`。Windows/MSVC 全量 CTest 663/663；
+  本轮未重跑 exact-title。**用户级闭环仍未演示**：title 尚未进入会产生存档的
+  流程。
 - **GUI 主面板未启动**：设计见 `docs/design/launcher/`（SDL3 + Dear ImGui，
   WU 分解 GUI-1..7），capabilities 无变化。
 

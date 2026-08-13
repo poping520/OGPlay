@@ -13,6 +13,13 @@ preflight、headless/NativeActivity runner 与累计 contract。低层能力分�
 位于 runtime 顶层,可依赖 jni_guest、boundary、framework、jni、bionic、syscall、
 execution、vfs 及其下层模块。任何下层模块均不得反向依赖 integration。
 
+`java.io.File` 族（`dexvm_android_files.cpp`）全部经共享 `VirtualFileSystem`
+解析：Java 侧写入与 native `fopen` 看到同一个世界，attach 沙盒后自动跨会话
+持久（ADR-0020）。`File.mkdirs` 逐级真实建目录、真实返回 false——此前无条件
+返回 true 且不建任何目录，是伪成功。`exists`/`isDirectory`/`length`/`delete`/
+`createNewFile` 一律取 VFS 事实；只读层与非空目录的删除真实失败。会话内存
+overlay `memory_files` 已废除。
+
 ## 不变量
 
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。

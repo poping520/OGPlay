@@ -87,15 +87,10 @@ struct DexVmAndroidContext final {
     };
     std::unordered_map<std::uint32_t, ZipStream> zip_streams;
 
-    // Session-lifetime in-memory files (v1 storage semantics: writes are
-    // visible within the session; cross-session persistence is not claimed).
-    // Overlays the shared guest VFS below: Java-side writes land here first
-    // and shadow same-path VFS entries on read.
-    std::unordered_map<std::string, std::vector<std::byte>> memory_files;
-
-    // Shared guest filesystem (same world view as native fopen): external
-    // mounts, APK assets, runtime files. Optional; memory_files still works
-    // standalone in unit tests.
+    // Shared guest filesystem: the single world view for Java File I/O and
+    // native fopen alike (external mounts, APK assets, and the per-title
+    // save sandbox when one is attached). ADR-0020 retired the separate
+    // session-memory overlay that used to shadow it.
     VirtualFileSystem* vfs{};
 
     // SharedPreferences stores (v1 storage semantics like memory_files:

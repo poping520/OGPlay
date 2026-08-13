@@ -394,6 +394,7 @@ add_library(ogplay_runtime
     src/runtime/integration/dexvm_android_device.cpp
     src/runtime/integration/dexvm_android_graphics.cpp
     src/runtime/integration/dexvm_android_handlers.cpp
+    src/runtime/integration/dexvm_android_files.cpp
     src/runtime/integration/dexvm_android_io.cpp
     src/runtime/integration/dexvm_android_media.cpp
     src/runtime/integration/dexvm_android_misc.cpp
@@ -687,6 +688,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/session_tests.cpp
         tests/session/title_profile_tests.cpp
         tests/dexvm/dexasm_readback_tests.cpp
+        tests/dexvm/file_vfs_tests.cpp
         tests/dexvm/gap_survey_tests.cpp
         tests/dexvm/dex_code_tests.cpp
         tests/dexvm/interpreter_tests.cpp

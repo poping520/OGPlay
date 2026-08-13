@@ -372,23 +372,23 @@ note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样�
 
 [frontend.save_sandbox]
 status = "partial"
-test = "frontend.run_apk_options; tests/runtime/vfs_sandbox_tests.cpp; Asphalt 5 exact title-flow gate under --ephemeral-sandbox"
-note = "ADR-0020 SBX-7 让 run-apk 默认按 package 打开持久沙盒（根为 hal 的平台用户数据目录 + /sandbox），--sandbox-dir 显式指定、--ephemeral-sandbox 关闭持久（二者互斥）。preflight 与结构化日志输出沙盒根、package 键与用量/配额；崩溃残留清理计数进 warn 日志。装载失败给出可执行修复提示并终止启动，绝不静默降级为内存模式。scenario runner 默认 --ephemeral-sandbox，golden 逐位不变。native/DexVM/prefs 三条通道的收敛属 SBX-4..6，因此当前只有直接经 VFS 的写入真正持久"
+test = "frontend.run_apk_options; tests/session/profile_vfs_tests.cpp; tests/runtime/vfs_sandbox_tests.cpp; Asphalt 5 exact title-flow gate under --ephemeral-sandbox"
+note = "ADR-0020 SBX-7 让 run-apk 默认按 package 打开持久沙盒（根为 hal 的平台用户数据目录 + /sandbox），--sandbox-dir 显式指定、--ephemeral-sandbox 关闭持久（二者互斥）。preflight 与结构化日志输出沙盒根、package 键与用量/配额；装载失败明确终止，scenario runner 默认一次性沙盒。SBX-4..6 已使 native/DexVM/prefs 三条通道全部收敛 VFS；SBX-10 又把 guest onPause 后与 clean teardown 的 FlushAll 接入生产 lifecycle。用户级进游戏存档闭环仍待 title 深度推进，因此保持 partial"
 
 [dexvm.file_io_vfs]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; Dungeon Hunter exact 240-frame local run; Asphalt 5 exact title-flow gate"
-note = "ADR-0020 SBX-5 废除 DexVmAndroidContext::memory_files：java.io.File/FileInputStream/FileOutputStream/FileWriter 全部经共享 VFS，Java 写入与 native fopen 同一世界，attach 沙盒后跨会话持久。File.mkdirs 逐级真实建目录并真实返回 false（原实现无条件返回 true 且不建任何目录，属伪成功，已有\"回退即失败\"测试）；exists/isDirectory/length/delete/createNewFile 均取 VFS 事实，只读层与非空目录删除真实失败。缺 VFS 是宿主装配缺陷，明确失败而非退回内存"
+note = "ADR-0020 SBX-5 废除 DexVmAndroidContext::memory_files：java.io.File/FileInputStream/FileOutputStream/FileWriter 全部经共享 VFS，Java 写入与 native fopen 同一世界，attach 沙盒后跨会话持久。输出流当前为整文件内存缓冲，在 flush/close 时短期打开 VFS descriptor 整体发布，并非长期持有 descriptor。SBX-11 使 File.list 对空目录返回空数组、DataOutputStream 包装接管同一 output record，双 close 不再截断存档。File.mkdirs/exists/isDirectory/length/delete/createNewFile 均取真实 VFS 事实"
 
 [runtime.preferences_persistence]
 status = "complete"
 test = "tests/runtime/preferences_xml_tests.cpp; tests/dexvm/file_vfs_tests.cpp"
-note = "ADR-0020 SBX-6 把 SharedPreferences 落成 /data/data/<pkg>/shared_prefs/<name>.xml 的 Android 同构 XML，经 VFS 普通文件通道读写，attach 沙盒后跨会话持久；文件视角与 API 视角是同一份事实（个别游戏直接读该文件）。受检子集为 boolean/int/long/float/string，未知元素（含 string set）、未知属性、未知实体、DTD 与畸形值一律明确失败并保留原文件，不静默丢条目。commit() 是落盘点；渲染有序，无编辑重写产生同一份字节"
+note = "ADR-0020 SBX-6 把 SharedPreferences 落成 /data/data/<pkg>/shared_prefs/<name>.xml 的 Android 同构 XML，经 VFS 普通文件通道读写并跨会话持久。受检子集 boolean/int/long/float/string；未知输入明确失败。SBX-10 只把 ENOENT 当首次运行，EIO/EACCES 不再静默清空；SBX-11 以 to_chars/from_chars 最短表示保证 float IEEE-754 往返。commit() 是该文件落盘点，pause/shutdown 另有 FlushAll 兜底"
 
 [runtime.syscall_file_metadata]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "ADR-0020 SBX-4 绑定 mkdir/mkdirat/rmdir/unlink/unlinkat/rename/renameat、stat64/lstat64/fstat64/fstatat64、getdents64、access/faccessat、ftruncate/ftruncate64、fsync/fdatasync、pread64/pwrite64 到同一 VFS。struct stat64 与 linux_dirent64 按 Android ARM EABI 布局编组并由机器测试锁定偏移；st_mode 的权限位取自 VFS 真实 writable 事实，时间戳保持 0（唯一时间源是统一 Clock，VFS 不持有）。getdents64 只发完整记录、8 字节对齐、目录 descriptor 在 open 时快照以保证分页稳定。*at 的相对路径无真实 per-process cwd，明确 -ENOTSUP 不猜目录；flock/xattr/inotify 等维持 -ENOSYS 记账"
+note = "ADR-0020 SBX-4 绑定 mkdir/unlink/rename/stat64/getdents64/access/ftruncate/fsync/pread64/pwrite64 族到同一 VFS，ABI 布局由机器测试锁定。SBX-9 补通 guest open(O_DIRECTORY)→目录 descriptor→getdents64；小缓冲按完整记录真分页且不消费下一页，fstat64 不改变 offset，目录 fd 的 fstat/fsync/seek 明确。*at 相对路径仍因无真实 per-process cwd 返回 -ENOTSUP，flock/xattr/inotify 等维持 -ENOSYS，故状态保持 partial"
 
 [runtime.vfs_directory_ops]
 status = "complete"
@@ -397,8 +397,8 @@ note = "ADR-0020 SBX-2 为 VFS 补齐 CreateDirectory/RemoveFile/RemoveDirectory
 
 [runtime.vfs_sandbox_persistence]
 status = "partial"
-test = "tests/runtime/sandbox_store_tests.cpp"
-note = "ADR-0020 SBX-1 交付 SandboxStore：<root>/<package>/{meta.toml,fs/}，fs/ 与 guest 绝对路径 1:1 便于用户备份；tmp+同目录 rename 原子替换、装载清理崩溃残留并计数、tombstone 空文件标记、%XX 转义（Windows 非法字符/%/结尾句点空格/保留设备名，只看字节双向无损）、traversal 与保留后缀拒绝、256 MiB/65536 文件配额超限 -ENOSPC、meta.toml schema/package/未知键明确失败不猜测迁移。SBX-3 以 AttachSandbox 挂为 VFS 覆盖层：解析顺序 overlay→tombstone→只读底层，写入限可写命名空间（越界 -EACCES），落盘点为 close/fsync/FlushAll 与立即落盘的 mkdir/unlink/rmdir/rename，跨会话持久有机器用例。未 attach 时行为逐字节不变。session/CLI 接线与一次性沙盒属 SBX-7，syscall 与 DexVM 通道收敛属 SBX-4..6"
+test = "tests/runtime/sandbox_store_tests.cpp; tests/runtime/vfs_sandbox_tests.cpp; tests/runtime/preferences_xml_tests.cpp"
+note = "ADR-0020 SBX-1..3 交付 SandboxStore 与 VFS overlay；SBX-8 修复改写后删除的旧底层复活、创建窗口 tombstone 自相矛盾、unlink-open descriptor 复活和无变化 write-open 重写。SBX-12 让 meta 数字损坏统一走 VfsError，attach 前拒绝 ASCII 大小写折叠冲突；宿主布局使用 VFS 规范化小写路径。字节配额合并 store 与全部脏节点并在 write/truncate 返回 -ENOSPC，tombstone 不占 65536 活动项配额。close/fsync/pause/shutdown 与元数据落盘点均已接线；用户级真实游戏存档闭环尚未演示，因此保持 partial"
 
 [runtime.vfs]
 status = "complete"

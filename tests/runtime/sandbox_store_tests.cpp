@@ -214,6 +214,22 @@ TEST_CASE("sandbox store enforces byte and file quotas with -ENOSPC") {
     }
 }
 
+TEST_CASE("sandbox tombstones do not consume the active file quota") {
+    const TemporaryRoot root("tombstone-quota");
+    SandboxConfig config;
+    config.maximum_files = 1;
+    auto store = SandboxStore::Open(root.path, kPackage, config);
+    store->WriteFileAtomic("/sdcard/only", Bytes("x"));
+
+    // Deleting a base-layer path must remain possible even while the
+    // overlay's active-entry limit is full.
+    CHECK_NOTHROW(store->WriteTombstone("/sdcard/base-only"));
+    const auto entries = store->Entries();
+    const auto* deleted = Find(entries, "/sdcard/base-only");
+    REQUIRE(deleted != nullptr);
+    CHECK(deleted->is_tombstone);
+}
+
 TEST_CASE("sandbox store tombstones shadow and then release a path") {
     const TemporaryRoot root("tombstone");
     auto store = SandboxStore::Open(root.path, kPackage);
@@ -297,6 +313,29 @@ TEST_CASE("sandbox store rejects a meta.toml it did not write") {
         output << "schema = 1\npackage = \"" << kPackage
                << "\"\nfuture_key = 1\n";
     }
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+                    VfsError);
+
+    {
+        std::ofstream output(meta, std::ios::trunc);
+        output << "schema = not-a-number\npackage = \"" << kPackage << "\"\n";
+    }
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
+                    VfsError);
+}
+
+TEST_CASE("sandbox store rejects ASCII case-folding conflicts on attach") {
+    const TemporaryRoot root("case-conflict");
+    { const auto store = SandboxStore::Open(root.path, kPackage); }
+    const auto directory = root.path / kPackage / "fs" / "sdcard";
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    REQUIRE_FALSE(error);
+    // %53 decodes to uppercase S, so these host names are distinct even on
+    // Windows but collapse to one guest path under the VFS ASCII rule.
+    { std::ofstream(directory / "%53ave.dat") << "upper"; }
+    { std::ofstream(directory / "save.dat") << "lower"; }
+
     CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage)),
                     VfsError);
 }

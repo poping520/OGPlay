@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ogplay/runtime/vfs/vfs.h"
@@ -141,11 +142,20 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
     });
     // One filesystem view: the VFS already merges the read-only layers with
     // the sandbox overlay, so there is nothing else to consult.
-    const auto list_children = [context](const std::string& path) {
+    const auto list_children = [context](const std::string& path)
+        -> std::optional<std::vector<std::string>> {
+        const auto info = VfsStatOf(context, path);
+        if (!info.has_value() || !info->is_directory ||
+            context->vfs == nullptr) {
+            return std::nullopt;
+        }
         std::vector<std::string> names;
-        if (context->vfs == nullptr) return names;
-        for (auto& entry : context->vfs->ListDirectory(path)) {
-            names.push_back(std::move(entry.name));
+        try {
+            for (auto& entry : context->vfs->ListDirectory(path)) {
+                names.push_back(std::move(entry.name));
+            }
+        } catch (const VfsError&) {
+            return std::nullopt;
         }
         return names;
     };
@@ -164,7 +174,7 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
     registry.Register("android.file.list",
                       [list_children](dx::IntrinsicContext& call) {
         auto names = list_children(FilePathOf(call, call.receiver));
-        if (names.empty()) {
+        if (!names.has_value()) {
             // Documented value for a path that is not a listable directory.
             return dx::VmValue::Ref(dx::VmObjectRef{});
         }
@@ -175,11 +185,11 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
             vm.Linker().ResolveDescriptor("Ljava/lang/String;");
         const auto array = vm.Model().NewObjectArray(
             array_class, element_class,
-            static_cast<JniSize>(names.size()));
-        for (std::size_t index = 0; index < names.size(); ++index) {
+            static_cast<JniSize>(names->size()));
+        for (std::size_t index = 0; index < names->size(); ++index) {
             vm.Model().SetObjectElement(
                 array, static_cast<JniSize>(index),
-                vm.NewStringUtf8(names[index]));
+                vm.NewStringUtf8((*names)[index]));
         }
         return dx::VmValue::Ref(array);
     });
@@ -376,8 +386,13 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
             throw dx::VmJavaThrow{"Ljava/io/IOException;",
                                   "DataOutputStream target is not open"};
         }
+        // The wrapper owns the same stream state. Moving the record and
+        // retiring the old handle makes the common dos.close(); fos.close()
+        // sequence idempotent instead of letting the stale empty buffer
+        // truncate the file after DataOutputStream published it.
         context->output_streams[call.receiver.Value()] =
-            DexVmAndroidContext::OutputStream{found->second.path, {}, false};
+            std::move(found->second);
+        context->output_streams.erase(target.Value());
         return dx::VmValue::Void();
     });
     registry.Register("android.data_output.write_utf",

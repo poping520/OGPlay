@@ -25,6 +25,7 @@ struct VfsOpenOptions final {
     bool write{};
     bool create{};
     bool truncate{};
+    bool directory{};
 };
 
 // sandbox: backed by the per-title persistent overlay (ADR-0020).
@@ -117,6 +118,7 @@ public:
     [[nodiscard]] std::int32_t OpenDirectory(std::string_view path);
     [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(
         std::int32_t descriptor, std::size_t maximum);
+    [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,
                                    std::span<std::byte> destination);

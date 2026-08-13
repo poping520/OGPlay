@@ -1,8 +1,8 @@
 # 当前状态
 
-更新：2026-08-12 · M9 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
+更新：2026-08-13 · M9 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
 surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 EGL 面；
-存档沙盒 SBX-1/2/3/7 已交付，DexVM 与 prefs 两条写入通道尚未收敛
+存档沙盒 SBX-1..12 已交付并完成验收补强，Windows/MSVC 663/663 全绿
 
 ## 当前阶段
 
@@ -25,14 +25,12 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
-- **存档持久沙盒 SBX-1..7 全部交付**（ADR-0020 Accepted，任务单
-  [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：`SandboxStore` 宿主
-  存储、VFS 目录操作与元数据 syscall、`AttachSandbox` 覆盖层与落盘点、
-  DexVM `File` 族改线 VFS（`memory_files` 废除、`mkdirs` 去伪成功）、
-  SharedPreferences 平台同构 XML、CLI 接线与一次性沙盒。三条 guest 写入通道
-  现在都收敛到同一个 VFS，`run-apk` 默认按 package 持久保存，自动化默认
-  一次性沙盒且 Asphalt 5 golden 逐位不变。**用户级闭环仍未演示**：最深入的
-  title 只到标题画面，不触发存档写入，要等 title 深度推进。
+- **存档持久沙盒 SBX-1..12 全部交付**（ADR-0020 Accepted，任务单
+  [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：native/DexVM/prefs 已统一
+  VFS；补强覆盖删除防复活、创建即清 tombstone、guest 目录 fd 与 getdents64
+  分页、fstat64 offset、pause/shutdown `FlushAll`、Java/prefs 完整性及 store
+  装载/配额。Windows/MSVC 聚焦回归 37/37、全量 CTest 663/663；本轮未重跑
+  exact-title。**用户级闭环仍未演示**：title 尚未进入会产生存档的流程。
 - **GUI 主面板未启动**：设计见 `docs/design/launcher/`（SDL3 + Dear ImGui，
   WU 分解 GUI-1..7），capabilities 无变化。
 
@@ -40,8 +38,8 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）基线全绿；
-macOS/arm64 本次 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 663/663；
+macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 沙盒任务单见 [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)。
 
 ## 进行中：更多 title 上 dexvm 路线

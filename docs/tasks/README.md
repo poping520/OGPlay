@@ -21,7 +21,7 @@ Work Unit 按所属里程碑存放，创建后不因完成状态移动。新任�
 
 | 专项 | 编号 | 状态 | 目录 | 设计 |
 | --- | --- | --- | --- | --- |
-| 每游戏持久沙盒 | SBX-1..7 | 进行中 | [`sandbox/`](sandbox/) | [ADR-0020](../adr/0020-per-title-persistent-sandbox.md) |
+| 每游戏持久沙盒 | SBX-1..12 | 进行中 | [`sandbox/`](sandbox/) | [ADR-0020](../adr/0020-per-title-persistent-sandbox.md) |
 
 ## 规则
 

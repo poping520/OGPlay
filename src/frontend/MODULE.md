@@ -25,6 +25,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 里判定，frontend 只决定 OGPlay 在其下放什么。沙盒打不开即终止启动并给出可
 执行修复提示，绝不静默降级为内存模式；自动化（scenario runner）默认一次性
 沙盒以保持 golden 确定性。底层挂载与沙盒装配在 `cli/run_apk_vfs.{h,cpp}`。
+`run-apk` 把 lifecycle 的 pause/clean-stop 持久状态回调绑定到同一 VFS 的
+`FlushAll`，退出时仍打开的脏文件不再依赖 guest 逐个 close。
 
 ## 不变量
 

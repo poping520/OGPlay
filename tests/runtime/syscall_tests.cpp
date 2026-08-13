@@ -759,10 +759,19 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
                                  0, 0, 0}) == 0);
     }
 
-    const auto directory = fixture.vfs.OpenDirectory("/sdcard/dir");
+    // The guest obtains its directory descriptor through open(O_DIRECTORY),
+    // not a test-only direct VFS call.
+    fixture.WriteString(0x20000, "/sdcard/dir");
+    constexpr std::uint32_t kODirectory = 0x10000;
+    const auto directory =
+        fixture.Call(5, {0x20000, kODirectory, 0, 0, 0, 0});
+    REQUIRE(directory >= 3);
+
+    // One 32-byte record fits. The second entry must remain pending for the
+    // next call instead of being consumed and turned into -EINVAL.
     const auto written = fixture.Call(
-        217, {static_cast<std::uint32_t>(directory), 0x20400, 256, 0, 0, 0});
-    REQUIRE(written > 0);
+        217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0});
+    REQUIRE(written == 32);
 
     // linux_dirent64: u64 ino, s64 off, u16 reclen, u8 type, char name[].
     const auto reclen = fixture.ReadField(0x20400, 16, 2);
@@ -773,12 +782,51 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
     CHECK(static_cast<char>(name[0]) == 'a');
     CHECK(static_cast<char>(name[4]) == 'v');
     CHECK(static_cast<char>(name[5]) == '\0');
-    CHECK(static_cast<std::uint64_t>(written) == reclen * 2);
+    CHECK(static_cast<std::uint64_t>(written) == reclen);
 
-    // The snapshot is consumed, so a second call reports end of directory.
+    const auto second = fixture.Call(
+        217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0});
+    CHECK(second == 32);
+    std::vector<std::byte> second_name(6);
+    fixture.memory.Read(GuestAddress{0x20400 + 19}, second_name);
+    CHECK(static_cast<char>(second_name[0]) == 'b');
     CHECK(fixture.Call(217, {static_cast<std::uint32_t>(directory), 0x20400,
-                             256, 0, 0, 0}) == 0);
-    fixture.vfs.Close(directory);
+                             32, 0, 0, 0}) == 0);
+
+    // fstat64 sees a directory and fsync(dirfd) is a safe metadata barrier.
+    CHECK(fixture.Call(197, {static_cast<std::uint32_t>(directory), 0x20200,
+                             0, 0, 0, 0}) == 0);
+    CHECK((fixture.ReadField(0x20200, 16, 4) & 0170000U) == 0040000U);
+    CHECK(fixture.Call(118, {static_cast<std::uint32_t>(directory), 0, 0, 0,
+                             0, 0}) == 0);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(directory), 0, 0, 0, 0,
+                           0}) == 0);
+}
+
+TEST_CASE("Android fstat64 preserves the live file descriptor offset") {
+    MetadataSyscallFixture fixture;
+    fixture.vfs.CreateDirectory("/sdcard");
+    fixture.WriteString(0x20000, "/sdcard/save.dat");
+    const auto descriptor =
+        fixture.Call(5, {0x20000, 0x40 | 2, 0, 0, 0, 0});
+    REQUIRE(descriptor >= 3);
+    const std::array payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+    fixture.memory.Write(GuestAddress{0x20300}, payload);
+    REQUIRE(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300,
+                             3, 0, 0, 0}) == 3);
+    REQUIRE(fixture.Call(19, {static_cast<std::uint32_t>(descriptor), 1, 0, 0,
+                              0, 0}) == 1);
+
+    CHECK(fixture.Call(197, {static_cast<std::uint32_t>(descriptor), 0x20200,
+                             0, 0, 0, 0}) == 0);
+    CHECK(fixture.ReadField(0x20200, 44, 8) == 3);
+    CHECK(fixture.Call(3, {static_cast<std::uint32_t>(descriptor), 0x20320, 1,
+                           0, 0, 0}) == 1);
+    std::array<std::byte, 1> next{};
+    fixture.memory.Read(GuestAddress{0x20320}, next);
+    CHECK(next[0] == std::byte{'b'});
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0,
+                           0}) == 0);
 }
 
 TEST_CASE("Android access, rename and positional IO keep their contracts") {

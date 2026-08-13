@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -125,4 +126,28 @@ TEST_CASE("Profile VFS enforces manifest and working directory coverage") {
     CHECK_THROWS_AS(
         static_cast<void>(ogplay::session::AssembleProfileVfs(profile, Inputs())),
         ogplay::session::ProfileVfsError);
+}
+
+TEST_CASE("Profile lifecycle flush adapter persists every dirty VFS node") {
+    const auto root = std::filesystem::temp_directory_path() /
+                      "ogplay-profile-vfs-lifecycle-flush";
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+    std::filesystem::create_directories(root, error);
+    REQUIRE_FALSE(error);
+
+    auto store = ogplay::runtime::SandboxStore::Open(root, "com.example.game");
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::vector<std::string> roots{"/sdcard"};
+    vfs.AttachSandbox(*store, roots);
+    const auto descriptor = vfs.Open(
+        "/sdcard/open.sav", {.write = true, .create = true});
+    const std::vector<std::byte> bytes{std::byte{'o'}, std::byte{'k'}};
+    REQUIRE(vfs.Write(descriptor, bytes) == 2);
+    REQUIRE(store->UsedBytes() == 0);
+
+    ogplay::session::FlushProfileVfsAtLifecycleBoundary(vfs);
+    CHECK(store->UsedBytes() == 2);
+    vfs.Close(descriptor);
+    std::filesystem::remove_all(root, error);
 }

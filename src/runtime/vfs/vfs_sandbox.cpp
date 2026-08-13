@@ -24,7 +24,7 @@ VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
                 found->second->source, false};
     }
     if (IsDirectoryLocked(normalized)) {
-        return {0, true, VfsSource::runtime, true};
+        return DirectoryInfoLocked(normalized);
     }
     throw VfsError(kEnoent, "VFS file not found");
 }
@@ -76,6 +76,22 @@ bool VirtualFileSystem::Impl::IsDirectoryLocked(const std::string& path) const {
     return directory != directories_.end() && directory->starts_with(prefix);
 }
 
+VfsFileInfo VirtualFileSystem::Impl::DirectoryInfoLocked(
+    const std::string& path) const {
+    const bool writable = sandbox_ == nullptr ||
+                          IsWritableNamespaceLocked(path);
+    VfsSource source = VfsSource::runtime;
+    if (!writable) {
+        auto prefix = path;
+        if (prefix != "/") prefix.push_back('/');
+        const auto child = files_.lower_bound(prefix);
+        if (child != files_.end() && child->first.starts_with(prefix)) {
+            source = child->second->source;
+        }
+    }
+    return {0, writable, source, true};
+}
+
 bool VirtualFileSystem::Impl::IsWritableNamespaceLocked(
     const std::string& path) const {
     for (const auto& root : writable_roots_) {
@@ -89,9 +105,8 @@ bool VirtualFileSystem::Impl::IsWritableNamespaceLocked(
 }
 
 void VirtualFileSystem::Impl::MarkOverlayLocked(const std::string& path,
-                                                File& file) {
+                                                 File& file) {
     if (sandbox_ == nullptr || !IsWritableNamespaceLocked(path)) return;
-    file.dirty = true;
     file.overlay_path = path;
 }
 
@@ -102,7 +117,39 @@ void VirtualFileSystem::Impl::FlushFileLocked(File& file) {
     Materialize(file);
     sandbox_->WriteFileAtomic(file.overlay_path, file.contents);
     tombstones_.erase(file.overlay_path);
+    file.persisted_size = file.size;
     file.dirty = false;
+}
+
+void VirtualFileSystem::Impl::RequireSandboxQuotaLocked(
+    const File& target, const std::uint64_t prospective_size) const {
+    if (sandbox_ == nullptr || target.overlay_path.empty()) return;
+    auto projected = sandbox_->UsedBytes();
+    const auto replace = [&projected](const std::uint64_t persisted,
+                                      const std::uint64_t current) {
+        if (persisted > projected ||
+            current > std::numeric_limits<std::uint64_t>::max() -
+                          (projected - persisted)) {
+            throw VfsError(kEio, "sandbox quota accounting is inconsistent");
+        }
+        projected = projected - persisted + current;
+    };
+
+    bool saw_target = false;
+    for (const auto& [path, file] : files_) {
+        static_cast<void>(path);
+        if (file.get() == &target) {
+            replace(file->persisted_size, prospective_size);
+            saw_target = true;
+        } else if (file->dirty && !file->overlay_path.empty()) {
+            replace(file->persisted_size, file->size);
+        }
+    }
+    if (!saw_target) replace(target.persisted_size, prospective_size);
+    if (projected > sandbox_->QuotaBytes()) {
+        throw VfsError(kEnospc,
+                       "sandbox byte quota exhausted by dirty VFS data");
+    }
 }
 
 void VirtualFileSystem::Impl::PersistDirectoryLocked(const std::string& path) {
@@ -113,21 +160,14 @@ void VirtualFileSystem::Impl::PersistDirectoryLocked(const std::string& path) {
     tombstones_.erase(path);
 }
 
-void VirtualFileSystem::Impl::PersistRemovalLocked(const std::string& path,
-                                                   const bool had_base_layer) {
+void VirtualFileSystem::Impl::PersistRemovalLocked(const std::string& path) {
     if (sandbox_ == nullptr || !IsWritableNamespaceLocked(path)) return;
-    if (had_base_layer) {
-        // A read-only layer still provides this path, so the deletion has to
-        // be recorded or the old file would come back next session.
-        sandbox_->WriteTombstone(path);
-        tombstones_.insert(path);
-        return;
-    }
-    try {
-        sandbox_->Remove(path);
-    } catch (const VfsError& error) {
-        if (error.ErrorNumber() != kEnoent) throw;
-    }
+    // Always record a deletion. Once an overlay has shadowed a base file the
+    // live node no longer retains enough provenance to prove that no lower
+    // layer exists. A redundant tombstone for an overlay-only path is
+    // harmless; omitting one can resurrect stale save data next session.
+    sandbox_->WriteTombstone(path);
+    tombstones_.insert(path);
 }
 
 std::int32_t VirtualFileSystem::Impl::OpenDirectory(
@@ -146,6 +186,7 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(
     open.readable = true;
     open.directory = std::make_shared<OpenDirectoryState>();
     open.directory->entries = std::move(entries);
+    open.directory->info = DirectoryInfoLocked(normalized);
     descriptors_.emplace(descriptor, std::move(open));
     return descriptor;
 }
@@ -165,6 +206,18 @@ std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ReadDirectory(
     return page;
 }
 
+VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(
+    const std::int32_t descriptor) const {
+    std::scoped_lock lock(mutex_);
+    const auto found = descriptors_.find(descriptor);
+    if (found == descriptors_.end()) {
+        throw VfsError(kEbadf, "VFS descriptor is not open");
+    }
+    const auto& open = found->second;
+    if (open.directory) return open.directory->info;
+    return {open.file->size, open.file->writable, open.file->source, false};
+}
+
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolvePath(path, working_directory_);
@@ -174,14 +227,14 @@ void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
     if (IsDirectoryLocked(normalized)) {
         throw VfsError(kEexist, "VFS directory already exists");
     }
+    if (sandbox_ != nullptr && !IsWritableNamespaceLocked(normalized)) {
+        throw VfsError(kEacces, "VFS path is outside the writable namespace");
+    }
     const auto slash = normalized.rfind('/');
     const auto parent =
         slash == 0 ? std::string("/") : normalized.substr(0, slash);
     if (parent != "/" && !IsDirectoryLocked(parent)) {
         throw VfsError(kEnoent, "VFS parent directory does not exist");
-    }
-    if (sandbox_ != nullptr && !IsWritableNamespaceLocked(normalized)) {
-        throw VfsError(kEacces, "VFS path is outside the writable namespace");
     }
     PersistDirectoryLocked(normalized);
     directories_.insert(normalized);
@@ -200,11 +253,11 @@ void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
     if (!found->second->writable) {
         throw VfsError(kEacces, "VFS file is read-only");
     }
-    // A node still carrying a base-layer loader would reappear next session
-    // unless the deletion is tombstoned.
-    const bool had_base_layer = found->second->source != VfsSource::runtime &&
-                                found->second->overlay_path.empty();
-    PersistRemovalLocked(normalized, had_base_layer);
+    PersistRemovalLocked(normalized);
+    // Open descriptors may keep the unlinked node alive, but close/fsync on
+    // that orphan must not publish the deleted pathname again.
+    found->second->dirty = false;
+    found->second->overlay_path.clear();
     files_.erase(found);
 }
 
@@ -233,7 +286,7 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
         // checks above proved there are none left.
         throw VfsError(kEnoent, "VFS directory not found");
     }
-    PersistRemovalLocked(normalized, false);
+    PersistRemovalLocked(normalized);
 }
 
 void VirtualFileSystem::Impl::Rename(const std::string_view from,
@@ -260,21 +313,23 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
     if (sandbox_ != nullptr && !IsWritableNamespaceLocked(target)) {
         throw VfsError(kEacces, "VFS path is outside the writable namespace");
     }
-    const bool had_base_layer = found->second->source != VfsSource::runtime &&
-                                found->second->overlay_path.empty();
     auto file = found->second;
     files_.erase(found);
     files_.insert_or_assign(target, file);
     tombstones_.erase(target);
     MarkOverlayLocked(target, *file);
+    if (!file->overlay_path.empty()) file->dirty = true;
     FlushFileLocked(*file);
-    PersistRemovalLocked(source, had_base_layer);
+    PersistRemovalLocked(source);
 }
 
 void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor,
                                        const std::uint64_t size) {
     std::scoped_lock lock(mutex_);
     auto& open = FindDescriptor(descriptor);
+    if (open.directory) {
+        throw VfsError(kEisdir, "VFS descriptor is a directory");
+    }
     if (!open.writable) {
         throw VfsError(kEbadf, "VFS descriptor is not writable");
     }
@@ -284,6 +339,7 @@ void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor,
     // Growing has to see the backing bytes first, or the tail would be
     // zeroes over content that was never read.
     Materialize(*open.file);
+    RequireSandboxQuotaLocked(*open.file, size);
     open.file->contents.resize(static_cast<std::size_t>(size));
     open.file->size = size;
     if (!open.file->overlay_path.empty()) open.file->dirty = true;
@@ -292,6 +348,7 @@ void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor,
 void VirtualFileSystem::Impl::Flush(const std::int32_t descriptor) {
     std::scoped_lock lock(mutex_);
     auto& open = FindDescriptor(descriptor);
+    if (open.directory) return;
     FlushFileLocked(*open.file);
 }
 
@@ -345,6 +402,7 @@ void VirtualFileSystem::Impl::AttachSandbox(
             file->writable = true;
             file->source = VfsSource::sandbox;
             file->overlay_path = normalized;
+            file->persisted_size = entry.size;
             const auto guest_path = entry.path;
             file->read_all = [&store, guest_path] {
                 return store.ReadFile(guest_path);

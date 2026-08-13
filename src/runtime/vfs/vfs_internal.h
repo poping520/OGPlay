@@ -30,6 +30,7 @@ inline constexpr std::int32_t kEnotdir = 20;
 inline constexpr std::int32_t kEisdir = 21;
 inline constexpr std::int32_t kEinval = 22;
 inline constexpr std::int32_t kEfbig = 27;
+inline constexpr std::int32_t kEnospc = 28;
 inline constexpr std::int32_t kEnotempty = 39;
 
 [[nodiscard]] std::string NormalizeAbsolutePath(std::string_view path,
@@ -51,6 +52,9 @@ struct File final {
     // rename carries the persistence identity with the node.
     bool dirty{};
     std::string overlay_path;
+    // Bytes already counted by SandboxStore::UsedBytes. Dirty quota checks
+    // replace this amount with the node's current in-memory size.
+    std::uint64_t persisted_size{};
 };
 
 // A descriptor opened on a directory: the children are snapshotted so
@@ -58,6 +62,7 @@ struct File final {
 struct OpenDirectoryState final {
     std::vector<VfsDirectoryEntry> entries;
     std::size_t cursor{};
+    VfsFileInfo info;
 };
 
 struct OpenFile final {
@@ -88,6 +93,7 @@ public:
     [[nodiscard]] std::int32_t OpenDirectory(std::string_view path);
     [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(
         std::int32_t descriptor, std::size_t maximum);
+    [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,
                                    std::span<std::byte> destination);
@@ -117,13 +123,17 @@ public:
 
     // Callers hold mutex_ for every helper below.
     [[nodiscard]] bool IsDirectoryLocked(const std::string& path) const;
+    [[nodiscard]] VfsFileInfo DirectoryInfoLocked(
+        const std::string& path) const;
     // True when the path sits under a writable namespace root, which is the
     // only place the overlay accepts writes.
     [[nodiscard]] bool IsWritableNamespaceLocked(const std::string& path) const;
     void MarkOverlayLocked(const std::string& path, File& file);
     void FlushFileLocked(File& file);
+    void RequireSandboxQuotaLocked(const File& target,
+                                   std::uint64_t prospective_size) const;
     void PersistDirectoryLocked(const std::string& path);
-    void PersistRemovalLocked(const std::string& path, bool had_base_layer);
+    void PersistRemovalLocked(const std::string& path);
     [[nodiscard]] std::int32_t AllocateDescriptor() const;
     [[nodiscard]] OpenFile& FindDescriptor(std::int32_t descriptor);
 

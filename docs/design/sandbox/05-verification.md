@@ -38,6 +38,11 @@
 | SBX-5 | DexVM File 族改线 VFS、mkdirs 去伪成功、getFilesDir/Environment/StatFs 事实 + 测试 | SBX-3 |
 | SBX-6 | SharedPreferences XML 持久（framework + dexvm 共享实现）+ 测试 | SBX-3 |
 | SBX-7 | session 装配 + CLI（默认根/`--sandbox-dir`/`--ephemeral-sandbox`/preflight）+ scenario runner 一次性沙盒 + exact-title 存档冒烟 | SBX-3 |
+| SBX-8 | 删除防复活、创建即清 tombstone、unlink-open descriptor 语义 | SBX-3 |
+| SBX-9 | `open(O_DIRECTORY)`、目录 fd、fstat64 offset 与 getdents64 真分页 | SBX-4 |
+| SBX-10 | pause/shutdown `FlushAll` 接线与 prefs 非 ENOENT 错误传播 | SBX-3、6、7 |
+| SBX-11 | File.list 空目录、DataOutputStream 双 close、float 精确往返 | SBX-5、6 |
+| SBX-12 | meta/case-conflict/脏字节与 tombstone 配额硬化 | SBX-1、3、8 |
 
 每个 WU 同步更新触及模块的 `MODULE.md` 与 `capabilities.toml`；启动实施时按
 ADR-0012 在当期里程碑目录建任务单。SBX-1/2 不触碰现有行为，可并行先行。

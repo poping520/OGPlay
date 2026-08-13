@@ -51,4 +51,9 @@ public:
     const TitleProfile& profile, std::span<const ProfileVfsMountInput> inputs,
     runtime::SandboxStore* sandbox = nullptr);
 
+// The single adapter used by pause and clean teardown. Kept in session so
+// lifecycle code does not know SandboxStore or host-directory policy.
+void FlushProfileVfsAtLifecycleBoundary(
+    runtime::VirtualFileSystem& filesystem);
+
 }  // namespace ogplay::session

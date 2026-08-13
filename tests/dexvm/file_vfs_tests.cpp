@@ -217,6 +217,47 @@ TEST_CASE("File.createNewFile reports whether it created anything") {
     CHECK(vm.CallOn(file, "createNewFile", "()Z").AsInt() == 0);
 }
 
+TEST_CASE("File.list distinguishes an empty directory from an invalid path") {
+    FileVm vm;
+    const auto directory = vm.NewFile("/sdcard/empty");
+    REQUIRE(vm.BoolOn(directory, "mkdirs"));
+    const auto empty =
+        vm.CallOn(directory, "list", "()[Ljava/lang/String;").ref;
+    REQUIRE(empty.IsValid());
+    CHECK(vm.model.ArrayLength(empty) == 0);
+
+    const auto missing = vm.NewFile("/sdcard/missing");
+    CHECK_FALSE(vm.CallOn(missing, "list", "()[Ljava/lang/String;")
+                    .ref.IsValid());
+}
+
+TEST_CASE("DataOutputStream and wrapped FileOutputStream share one close state") {
+    FileVm vm;
+    const auto output =
+        vm.interpreter.NewIntrinsicInstance("Ljava/io/FileOutputStream;");
+    static_cast<void>(vm.CallOn(
+        output, "<init>", "(Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/save.dat"))}));
+    const auto data =
+        vm.interpreter.NewIntrinsicInstance("Ljava/io/DataOutputStream;");
+    static_cast<void>(vm.CallOn(
+        data, "<init>", "(Ljava/io/OutputStream;)V",
+        {VmValue::Ref(output)}));
+    static_cast<void>(vm.CallOn(
+        data, "writeUTF", "(Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("save"))}));
+
+    static_cast<void>(vm.CallOn(data, "close", "()V"));
+    // Java finally blocks commonly close both variables. The second close
+    // must not publish the wrapped stream's former empty buffer.
+    static_cast<void>(vm.CallOn(output, "close", "()V"));
+    const auto saved = vm.NativeRead("/sdcard/save.dat");
+    REQUIRE(saved.size() == 6);
+    CHECK(static_cast<unsigned char>(saved[0]) == 0);
+    CHECK(static_cast<unsigned char>(saved[1]) == 4);
+    CHECK(saved.substr(2) == "save");
+}
+
 TEST_CASE("Java file writes survive into the next session") {
     const TemporaryRoot root("crosssession");
     {

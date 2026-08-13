@@ -4,7 +4,10 @@
 
 #include <doctest/doctest.h>
 
+#include <bit>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "ogplay/runtime/framework/preferences_xml.h"
 #include "ogplay/runtime/vfs/vfs.h"
@@ -58,6 +61,15 @@ TEST_CASE("preferences XML round-trips every supported type") {
     CHECK(std::get<std::string>(parsed.at("name")) == "Player One");
     // Rendering is stable, so a rewrite with no edits produces one file.
     CHECK(RenderPreferencesXml(parsed) == xml);
+}
+
+TEST_CASE("preferences XML preserves every float bit through rendering") {
+    PreferenceMap values;
+    values["precise"] = 0.123456789F;
+    const auto parsed = ParsePreferencesXml(RenderPreferencesXml(values));
+    CHECK(std::bit_cast<std::uint32_t>(
+              std::get<float>(parsed.at("precise"))) ==
+          std::bit_cast<std::uint32_t>(std::get<float>(values.at("precise"))));
 }
 
 TEST_CASE("preferences XML escapes and restores hostile text") {
@@ -123,4 +135,20 @@ TEST_CASE("preferences load and store go through the guest filesystem") {
           std::string::npos);
     CHECK(std::get<std::int32_t>(LoadPreferences(vfs, path).at("launches")) ==
           1);
+}
+
+TEST_CASE("preferences load treats only ENOENT as first run") {
+    VirtualFileSystem vfs;
+    const std::vector<VfsLazyMountEntry> entries{{
+        "settings.xml", 4,
+        []() -> std::vector<std::byte> {
+            throw std::runtime_error("backing store failed");
+        }}};
+    vfs.MountLazyReadOnly(VfsSource::apk, "/prefs", entries);
+
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(LoadPreferences(vfs, "/prefs/settings.xml")),
+        doctest::Contains("cannot read /prefs/settings.xml"),
+        PreferencesXmlError);
+    CHECK(LoadPreferences(vfs, "/prefs/missing.xml").empty());
 }

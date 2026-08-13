@@ -18,7 +18,9 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
 持久（ADR-0020）。`File.mkdirs` 逐级真实建目录、真实返回 false——此前无条件
 返回 true 且不建任何目录，是伪成功。`exists`/`isDirectory`/`length`/`delete`/
 `createNewFile` 一律取 VFS 事实；只读层与非空目录的删除真实失败。会话内存
-overlay `memory_files` 已废除。
+overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅对不可列举路径
+返回 null。输出流当前是整文件内存缓冲，flush/close 时短期打开 VFS descriptor
+发布；包装流接管同一 record，使 DataOutputStream 与底层流双 close 幂等。
 
 ## 不变量
 

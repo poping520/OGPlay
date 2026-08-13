@@ -60,8 +60,10 @@ void AttachSandbox(SandboxStore& store,
 ## 3. DexVM 与 framework 收敛（`runtime/integration`、`runtime/framework`）
 
 - **废除 `DexVmAndroidContext::memory_files`**：`File`/`FileInputStream`/
-  `FileOutputStream`/`RandomAccessFile`/`FileWriter` intrinsic 全部改为持有
-  VFS descriptor，路径解析与 native 侧同源（含 working directory 规则）。
+  `FileOutputStream`/`FileWriter` intrinsic 全部经 VFS 解析与发布，路径解析与
+  native 侧同源（含 working directory 规则）。当前流对象为会话内整文件缓冲，
+  flush/close 时短期打开 VFS descriptor 整体发布；尚未实现的 RandomAccessFile
+  不在本期完成面内。
   `File.mkdirs` 改为逐级 `CreateDirectory`，真实建目录、失败真实返回 false，
   消除伪成功。
 - **`Context.getFilesDir`/`getCacheDir`/`getDir`** 返回

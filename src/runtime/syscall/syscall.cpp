@@ -587,11 +587,13 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     const auto options = [](const std::uint32_t flags) {
         constexpr std::uint32_t kCreate = 0x40;
         constexpr std::uint32_t kTruncate = 0x200;
-        constexpr std::uint32_t kNoFollow = 0x8000;
-        constexpr std::uint32_t kLargeFile = 0x20000;
+        constexpr std::uint32_t kLargeFile = 0x8000;
+        constexpr std::uint32_t kDirectory = 0x10000;
+        constexpr std::uint32_t kNoFollow = 0x20000;
         constexpr std::uint32_t kCloseOnExec = 0x80000;
         constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate |
-                                         kNoFollow | kLargeFile | kCloseOnExec;
+                                         kLargeFile | kDirectory | kNoFollow |
+                                         kCloseOnExec;
         if ((flags & ~kKnown) != 0 || (flags & 3U) == 3U) {
             throw VfsError(kEinval, "unsupported Android open flags");
         }
@@ -599,7 +601,8 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
         return VfsOpenOptions{access == 0 || access == 2,
                               access == 1 || access == 2,
                               (flags & kCreate) != 0,
-                              (flags & kTruncate) != 0};
+                              (flags & kTruncate) != 0,
+                              (flags & kDirectory) != 0};
     };
     const auto open = [&vfs, read_path, options](const std::uint32_t path,
                                                  const std::uint32_t flags) {

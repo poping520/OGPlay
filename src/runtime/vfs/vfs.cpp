@@ -324,16 +324,39 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
         if (!options.read && !options.write) {
             throw VfsError(kEinval, "VFS open has no access mode");
         }
+        if (options.directory) {
+            if (options.write || options.create || options.truncate) {
+                throw VfsError(kEinval,
+                               "VFS directory open has file-only options");
+            }
+            return OpenDirectory(path);
+        }
         std::scoped_lock lock(mutex_);
         const auto normalized = ResolvePath(path, working_directory_);
         auto found = files_.find(normalized);
         if (found == files_.end()) {
             if (!options.create) throw VfsError(kEnoent, "VFS file not found");
+            if (IsDirectoryLocked(normalized)) {
+                throw VfsError(kEisdir, "VFS path is a directory");
+            }
+            if (sandbox_ != nullptr &&
+                !IsWritableNamespaceLocked(normalized)) {
+                throw VfsError(kEacces,
+                               "VFS path is outside the writable namespace");
+            }
             found = files_.emplace(
                 normalized,
                     std::make_shared<File>(
                     File{{}, 0, {}, true, VfsSource::runtime,
-                         false, {}})).first;
+                          false, {}})).first;
+            // Creation makes the path visible immediately. The host-side
+            // tombstone is cleared at the next flush, but it must stop
+            // shadowing the new in-memory node in this session now.
+            tombstones_.erase(normalized);
+            MarkOverlayLocked(normalized, *found->second);
+            if (!found->second->overlay_path.empty()) {
+                found->second->dirty = true;
+            }
         }
         if (options.write && !found->second->writable) {
             throw VfsError(kEacces, "VFS file is read-only");
@@ -411,6 +434,8 @@ std::size_t VirtualFileSystem::Impl::Write(
         if (end > std::numeric_limits<std::size_t>::max()) {
             throw VfsError(kEfbig, "VFS file size is not representable");
         }
+        RequireSandboxQuotaLocked(
+            *open.file, std::max<std::uint64_t>(open.file->size, end));
         if (end > open.file->contents.size()) {
             open.file->contents.resize(static_cast<std::size_t>(end));
         }
@@ -429,6 +454,30 @@ std::uint64_t VirtualFileSystem::Impl::Seek(const std::int32_t descriptor,
                                      const VfsSeekWhence whence) {
         std::scoped_lock lock(mutex_);
         auto& open = FindDescriptor(descriptor);
+        if (open.directory) {
+            std::uint64_t base{};
+            if (whence == VfsSeekWhence::current) {
+                base = open.directory->cursor;
+            } else if (whence == VfsSeekWhence::end) {
+                base = open.directory->entries.size();
+            }
+            std::uint64_t result{};
+            if (offset < 0) {
+                const auto magnitude =
+                    static_cast<std::uint64_t>(-(offset + 1)) + 1U;
+                if (magnitude > base) {
+                    throw VfsError(kEinval, "negative VFS directory seek");
+                }
+                result = base - magnitude;
+            } else {
+                result = base + static_cast<std::uint64_t>(offset);
+                if (result > open.directory->entries.size()) {
+                    throw VfsError(kEinval, "VFS directory seek is past end");
+                }
+            }
+            open.directory->cursor = static_cast<std::size_t>(result);
+            return result;
+        }
         std::uint64_t base{};
         if (whence == VfsSeekWhence::current) base = open.offset;
         if (whence == VfsSeekWhence::end) base = open.file->size;
@@ -562,6 +611,10 @@ std::int32_t VirtualFileSystem::OpenDirectory(const std::string_view path) {
 std::vector<VfsDirectoryEntry> VirtualFileSystem::ReadDirectory(
     const std::int32_t descriptor, const std::size_t maximum) {
     return impl_->ReadDirectory(descriptor, maximum);
+}
+VfsFileInfo VirtualFileSystem::DescriptorInfo(
+    const std::int32_t descriptor) const {
+    return impl_->DescriptorInfo(descriptor);
 }
 VfsPipeDescriptors VirtualFileSystem::CreatePipe() {
     return impl_->CreatePipe();

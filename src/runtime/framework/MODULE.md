@@ -35,3 +35,6 @@ Android 同构 XML（标量走属性、`<string>` 走元素正文），经 VFS �
 `commit()` 是落盘点。个别游戏绕过 API 直接读该文件，因此文件视角与 API 视角
 必须指向同一份事实。受检子集为 boolean/int/long/float/string；string set、
 未知元素/属性/实体与 DTD 一律明确失败并保留原文件，不静默丢条目。
+加载只把 `-ENOENT` 解释为首次运行；EIO/EACCES 等 VFS 错误转换为明确
+`PreferencesXmlError`。float 以 locale-free 最短往返表示渲染和受检解析，保持
+IEEE-754 值不变。

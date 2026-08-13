@@ -1,5 +1,6 @@
 #include "ogplay/session/dex_activity_lifecycle.h"
 
+#include <exception>
 #include <utility>
 
 namespace ogplay::session {
@@ -174,6 +175,9 @@ LifecycleFrameState DexActivityLifecycle::Suspend() {
         CallOnView(bindings_.context->content_view, "onWindowFocusChanged",
                    "(Z)V", {dx::VmValue::Int(0)});
         CallActivity("onPause", "()V", {});
+        if (bindings_.flush_persistent_state) {
+            bindings_.flush_persistent_state();
+        }
         suspended_ = true;
     } catch (...) {
         MarkFailed();
@@ -444,8 +448,17 @@ LifecycleFrameState DexActivityLifecycle::Stop() {
     // 04 §2 step 10: guest Java threads are interrupted and joined before
     // the native side is finalized, so no interpreted frame can still be
     // running when the object world is torn down.
+    std::exception_ptr persistence_failure;
     bindings_.bridge->Threads().Shutdown();
     if (bindings_.interrupt_guest_waits) bindings_.interrupt_guest_waits();
+    if (bindings_.flush_persistent_state) {
+        try {
+            bindings_.flush_persistent_state();
+        } catch (...) {
+            state_ = LifecycleRunState::failed;
+            persistence_failure = std::current_exception();
+        }
+    }
     if (!guest_finalized_ && bindings_.finalize_guest) {
         bindings_.finalize_guest();
         guest_finalized_ = true;
@@ -454,6 +467,7 @@ LifecycleFrameState DexActivityLifecycle::Stop() {
         bindings_.close_surface();
         surface_open_ = false;
     }
+    if (persistence_failure) std::rethrow_exception(persistence_failure);
     if (state_ != LifecycleRunState::failed) {
         state_ = LifecycleRunState::stopped;
     }

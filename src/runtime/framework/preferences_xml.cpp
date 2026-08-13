@@ -3,7 +3,9 @@
 
 #include "ogplay/runtime/framework/preferences_xml.h"
 
+#include <array>
 #include <charconv>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -120,6 +122,16 @@ template <typename Integer>
     return value;
 }
 
+[[nodiscard]] std::string RenderFloat(const float value) {
+    std::array<char, 64> buffer{};
+    const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(),
+                                      value, std::chars_format::general);
+    if (result.ec != std::errc{}) {
+        throw PreferencesXmlError("cannot render a preferences float");
+    }
+    return {buffer.data(), result.ptr};
+}
+
 }  // namespace
 
 std::string PreferencesGuestPath(const std::string_view package,
@@ -145,7 +157,7 @@ std::string RenderPreferencesXml(const PreferenceMap& values) {
                    std::to_string(*wide) + "\" />\n";
         } else if (const auto* real = std::get_if<float>(&value)) {
             out += "    <float name=\"" + name + "\" value=\"" +
-                   std::to_string(*real) + "\" />\n";
+                   RenderFloat(*real) + "\" />\n";
         } else {
             // The platform puts string content in the element body.
             out += "    <string name=\"" + name + "\">" +
@@ -287,12 +299,16 @@ PreferenceMap ParsePreferencesXml(const std::string_view xml) {
         } else if (element == "long") {
             values[key] = ParseInteger<std::int64_t>(raw, "long");
         } else if (element == "float") {
-            try {
-                values[key] = std::stof(raw);
-            } catch (const std::exception&) {
+            float parsed{};
+            const auto result = std::from_chars(
+                raw.data(), raw.data() + raw.size(), parsed,
+                std::chars_format::general);
+            if (result.ec != std::errc{} ||
+                result.ptr != raw.data() + raw.size()) {
                 throw PreferencesXmlError(
                     "preferences XML has a malformed float: " + raw);
             }
+            values[key] = parsed;
         } else if (element == "string") {
             values[key] = raw;
         } else {
@@ -310,24 +326,42 @@ PreferenceMap ParsePreferencesXml(const std::string_view xml) {
 }
 
 PreferenceMap LoadPreferences(VirtualFileSystem& filesystem,
-                              const std::string& guest_path) {
+                               const std::string& guest_path) {
     std::vector<std::byte> bytes;
+    VfsFileInfo info;
     try {
-        const auto info = filesystem.Stat(guest_path);
-        const auto descriptor =
+        info = filesystem.Stat(guest_path);
+    } catch (const VfsError& error) {
+        if (error.ErrorNumber() == 2) return {};  // first run: no file yet
+        throw PreferencesXmlError("cannot stat " + guest_path + ": " +
+                                  error.what());
+    }
+
+    std::optional<std::int32_t> descriptor;
+    try {
+        descriptor =
             filesystem.Open(guest_path, VfsOpenOptions{.read = true});
         bytes.resize(static_cast<std::size_t>(info.size));
         std::size_t cursor = 0;
         while (cursor < bytes.size()) {
             const auto got = filesystem.Read(
-                descriptor, std::span(bytes).subspan(cursor));
+                *descriptor, std::span(bytes).subspan(cursor));
             if (got == 0) break;
             cursor += got;
         }
-        filesystem.Close(descriptor);
+        filesystem.Close(*descriptor);
+        descriptor.reset();
         bytes.resize(cursor);
-    } catch (const VfsError&) {
-        return {};  // first run: no file yet
+    } catch (const VfsError& error) {
+        if (descriptor.has_value()) {
+            try {
+                filesystem.Close(*descriptor);
+            } catch (const VfsError&) {
+                // Preserve the read/stat failure that explains the damage.
+            }
+        }
+        throw PreferencesXmlError("cannot read " + guest_path + ": " +
+                                  error.what());
     }
     if (bytes.empty()) return {};
     return ParsePreferencesXml(

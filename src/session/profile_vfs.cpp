@@ -98,6 +98,11 @@ void ValidateInputs(const ProfileData& data,
 
 }  // namespace
 
+void FlushProfileVfsAtLifecycleBoundary(
+    runtime::VirtualFileSystem& filesystem) {
+    filesystem.FlushAll();
+}
+
 std::vector<std::string> ProfileWritableRoots(const TitleProfile& profile) {
     // Both are platform defaults, not per-title declarations: a Profile
     // never has to opt in to keeping its own saves.

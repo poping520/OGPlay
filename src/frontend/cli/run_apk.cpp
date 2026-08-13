@@ -1,6 +1,5 @@
 #include "run_apk.h"
 #include "run_apk_vfs.h"
-
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -42,6 +41,7 @@
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/session/profile_entry_scope.h"
+#include "ogplay/session/profile_vfs.h"
 #include "ogplay/video/ffmpeg_video_player.h"
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
@@ -664,7 +664,8 @@ int RunApkCommand(const int argc, const char* const argv[],
                         call_progress.Begin(active_frame, 0U);
                         guest->Stop();
                     },
-                    [&guest] { guest->CloseManagedSurface(); }});
+                    [&guest] { guest->CloseManagedSurface(); },
+                    [&filesystem] { session::FlushProfileVfsAtLifecycleBoundary(filesystem); }});
             driver = {[&] { return dex_lifecycle->Start(); },
                       [&] { return dex_lifecycle->Suspend(); },
                       [&] { return dex_lifecycle->Resume(); },
@@ -852,5 +853,4 @@ int RunApkCommand(const int argc, const char* const argv[],
     Write("OGPlay: stopped after " + std::to_string(presented) + " presented frames.\n");
     return 0;
 }
-
 }  // namespace ogplay::frontend

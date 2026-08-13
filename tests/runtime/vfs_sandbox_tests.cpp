@@ -157,6 +157,72 @@ TEST_CASE("VFS sandbox overlays and tombstones a read-only base layer") {
                                          {"shadowed.dat", false}});
 }
 
+TEST_CASE("VFS sandbox deletion never resurrects a previously shadowed base file") {
+    const TemporaryRoot root("rewrite-delete-restart");
+    const auto base = Bytes("old-save");
+    const std::vector<VfsMountEntry> entries{{"save.dat", base}};
+
+    {
+        auto store = SandboxStore::Open(root.path, kPackage);
+        VirtualFileSystem vfs;
+        vfs.Mount(VfsSource::external, "/sdcard/data", entries);
+        vfs.AttachSandbox(*store, kWritableRoots);
+        WriteThrough(vfs, "/sdcard/data/save.dat", "new-save");
+    }
+    {
+        auto store = SandboxStore::Open(root.path, kPackage);
+        VirtualFileSystem vfs;
+        vfs.Mount(VfsSource::external, "/sdcard/data", entries);
+        vfs.AttachSandbox(*store, kWritableRoots);
+        CHECK(ReadAll(vfs, "/sdcard/data/save.dat") == "new-save");
+        vfs.RemoveFile("/sdcard/data/save.dat");
+    }
+
+    auto store = SandboxStore::Open(root.path, kPackage);
+    VirtualFileSystem vfs;
+    vfs.Mount(VfsSource::external, "/sdcard/data", entries);
+    vfs.AttachSandbox(*store, kWritableRoots);
+    CHECK(ErrnoOf([&] {
+              static_cast<void>(vfs.Stat("/sdcard/data/save.dat"));
+          }) == 2);
+    CHECK(vfs.ListDirectory("/sdcard/data").empty());
+}
+
+TEST_CASE("VFS sandbox recreate clears a tombstone before close and persists read-only create") {
+    const TemporaryRoot root("delete-recreate");
+    const auto base = Bytes("base");
+    const std::vector<VfsMountEntry> entries{{"save.dat", base}};
+
+    {
+        auto store = SandboxStore::Open(root.path, kPackage);
+        VirtualFileSystem vfs;
+        vfs.Mount(VfsSource::external, "/sdcard/data", entries);
+        vfs.AttachSandbox(*store, kWritableRoots);
+        vfs.RemoveFile("/sdcard/data/save.dat");
+
+        const auto descriptor = vfs.Open(
+            "/sdcard/data/save.dat", {.read = true, .create = true});
+        CHECK(vfs.Stat("/sdcard/data/save.dat").size == 0);
+        CHECK(vfs.ListDirectory("/sdcard/data") ==
+              std::vector<VfsDirectoryEntry>{{"save.dat", false}});
+        // A second delete must see the recreated node rather than the stale
+        // in-memory tombstone.
+        vfs.RemoveFile("/sdcard/data/save.dat");
+        vfs.Close(descriptor);
+
+        const auto recreated = vfs.Open(
+            "/sdcard/data/save.dat", {.read = true, .create = true});
+        vfs.Close(recreated);
+    }
+
+    auto store = SandboxStore::Open(root.path, kPackage);
+    VirtualFileSystem vfs;
+    vfs.Mount(VfsSource::external, "/sdcard/data", entries);
+    vfs.AttachSandbox(*store, kWritableRoots);
+    CHECK(vfs.Stat("/sdcard/data/save.dat").size == 0);
+    CHECK(ReadAll(vfs, "/sdcard/data/save.dat").empty());
+}
+
 TEST_CASE("VFS sandbox refuses writes outside the writable namespace") {
     const TemporaryRoot root("namespace");
     auto store = SandboxStore::Open(root.path, kPackage);
@@ -204,6 +270,44 @@ TEST_CASE("VFS sandbox flushes at close and fsync but not before") {
     // Flushing a clean file is idempotent, not a rewrite.
     vfs.FlushAll();
     CHECK(store->UsedBytes() == 7);
+}
+
+TEST_CASE("VFS sandbox quota includes dirty bytes before close") {
+    const TemporaryRoot root("dirty-quota");
+    SandboxConfig config;
+    config.byte_quota = 5;
+    auto store = SandboxStore::Open(root.path, kPackage, config);
+    VirtualFileSystem vfs;
+    vfs.AttachSandbox(*store, kWritableRoots);
+
+    const auto first = vfs.Open(
+        "/sdcard/first", {.write = true, .create = true});
+    CHECK(vfs.Write(first, Bytes("1234")) == 4);
+    CHECK(store->UsedBytes() == 0);  // still dirty, but already quota-visible
+
+    const auto second = vfs.Open(
+        "/sdcard/second", {.write = true, .create = true});
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Write(second, Bytes("xx"))); }) ==
+          28);
+    vfs.Close(second);  // the empty creation itself is still valid
+    vfs.Close(first);
+    CHECK(store->UsedBytes() == 4);
+}
+
+TEST_CASE("VFS sandbox does not rewrite a clean write-opened base file") {
+    const TemporaryRoot root("clean-open");
+    const auto base = Bytes("base");
+    const std::vector<VfsMountEntry> entries{{"save.dat", base}};
+    auto store = SandboxStore::Open(root.path, kPackage);
+    VirtualFileSystem vfs;
+    vfs.Mount(VfsSource::external, "/sdcard", entries);
+    vfs.AttachSandbox(*store, kWritableRoots);
+
+    const auto descriptor =
+        vfs.Open("/sdcard/save.dat", {.read = true, .write = true});
+    vfs.Close(descriptor);
+    CHECK(store->Entries().empty());
+    CHECK(vfs.Stat("/sdcard/save.dat").source == VfsSource::external);
 }
 
 TEST_CASE("VFS sandbox persists rename and rmdir metadata immediately") {

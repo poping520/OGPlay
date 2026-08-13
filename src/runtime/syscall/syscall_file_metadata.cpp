@@ -202,16 +202,10 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
     }));
     dispatcher.Implement(197, guarded([&vfs, write_stat](
                                           const A32SyscallFrame& frame) {
-        // A descriptor's size is the live node size, which is what a guest
-        // that just wrote and fstat'ed expects to see.
         const auto descriptor = std::bit_cast<std::int32_t>(
             frame.arguments[0]);
-        const auto size = vfs.Seek(descriptor, 0, VfsSeekWhence::end);
-        static_cast<void>(vfs.Seek(descriptor, 0, VfsSeekWhence::begin));
-        VfsFileInfo info;
-        info.size = size;
-        info.writable = true;
-        return write_stat(info, frame.arguments[1], frame.thread_id);
+        return write_stat(vfs.DescriptorInfo(descriptor), frame.arguments[1],
+                          frame.thread_id);
     }));
 
     // access(path, mode) / faccessat: existence plus the real writable fact.
@@ -329,10 +323,12 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
             const auto raw = kDirentHeaderSize + entry.name.size() + 1U;
             const auto record = (raw + 7U) & ~std::size_t{7};
             if (out.size() + record > capacity) {
+                // ReadDirectory advances one snapshot entry at a time. Put
+                // this complete record back for the next getdents64 page.
+                static_cast<void>(vfs.Seek(descriptor, -1,
+                                           VfsSeekWhence::current));
                 if (out.empty()) return -kEinval;  // buffer too small for one
-                // The entry was consumed; rewinding needs a real seekdir,
-                // which no caller has asked for. Refuse rather than drop it.
-                return -kEinval;
+                break;
             }
             const auto base = out.size();
             out.resize(base + record);

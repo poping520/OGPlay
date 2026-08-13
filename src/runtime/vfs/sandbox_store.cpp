@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <fstream>
 #include <map>
 #include <system_error>
@@ -28,6 +29,31 @@ constexpr std::int32_t kEnametoolong = 36;
 
 constexpr std::string_view kTombstoneSuffix = ".__ogplay_tombstone__";
 constexpr std::string_view kTemporarySuffix = ".__ogplay_tmp__";
+
+[[nodiscard]] std::string FoldGuestPath(const std::string_view path) {
+    std::string folded;
+    folded.reserve(path.size());
+    for (const auto character : path) {
+        folded.push_back(character >= 'A' && character <= 'Z'
+                             ? static_cast<char>(character - 'A' + 'a')
+                             : character);
+    }
+    return folded;
+}
+
+template <typename Integer>
+[[nodiscard]] Integer ParseMetaInteger(const std::string& text,
+                                       const std::string_view key) {
+    Integer value{};
+    const auto* first = text.data();
+    const auto* last = first + text.size();
+    const auto parsed = std::from_chars(first, last, value);
+    if (parsed.ec != std::errc{} || parsed.ptr != last) {
+        throw VfsError(kEinval, "sandbox meta.toml has a malformed " +
+                                    std::string(key));
+    }
+    return value;
+}
 constexpr std::string_view kMetaName = "meta.toml";
 constexpr std::string_view kOverlayName = "fs";
 constexpr int kMetaSchema = 1;
@@ -181,8 +207,11 @@ public:
             throw VfsError(kEnospc,
                            "sandbox byte quota exhausted for " + package);
         }
-        if (adds_entry &&
-            static_cast<std::uint64_t>(entries.size()) >= config.maximum_files) {
+        const auto active_entries = static_cast<std::uint64_t>(
+            std::count_if(entries.begin(), entries.end(), [](const auto& item) {
+                return !item.second.is_tombstone;
+            }));
+        if (adds_entry && active_entries >= config.maximum_files) {
             throw VfsError(kEnospc,
                            "sandbox file count limit reached for " + package);
         }
@@ -208,6 +237,7 @@ public:
         const std::filesystem::recursive_directory_iterator end;
         if (error) throw VfsError(kEio, "cannot enumerate the sandbox");
         std::vector<std::filesystem::path> temporaries;
+        std::map<std::string, std::string, std::less<>> folded_paths;
         while (iterator != end) {
             const auto host = iterator->path();
             const auto status = iterator->symlink_status(error);
@@ -243,6 +273,15 @@ public:
                 segment = SandboxStore::UnescapeSegment(segment);
             }
             const auto guest_path = JoinGuestPath(segments);
+            const auto folded = FoldGuestPath(guest_path);
+            if (const auto conflict = folded_paths.find(folded);
+                conflict != folded_paths.end() &&
+                conflict->second != guest_path) {
+                throw VfsError(kEexist,
+                               "sandbox has an ASCII case-folding conflict: " +
+                                   conflict->second + " and " + guest_path);
+            }
+            folded_paths.insert_or_assign(folded, guest_path);
             SandboxEntry entry;
             entry.path = guest_path;
             entry.is_directory = std::filesystem::is_directory(status);
@@ -288,7 +327,7 @@ public:
         std::ifstream input(path);
         if (!input) throw VfsError(kEio, "cannot read the sandbox meta.toml");
         std::string line;
-        int schema = 0;
+        std::uint32_t schema = 0;
         std::string stored_package;
         while (std::getline(input, line)) {
             while (!line.empty() &&
@@ -316,12 +355,11 @@ public:
                 return text;
             };
             if (key == "schema") {
-                schema = std::stoi(value);
+                schema = ParseMetaInteger<std::uint32_t>(value, key);
             } else if (key == "package") {
                 stored_package = unquote(value);
             } else if (key == "version_code") {
-                version_code =
-                    static_cast<std::uint32_t>(std::stoul(value));
+                version_code = ParseMetaInteger<std::uint32_t>(value, key);
             } else {
                 // No guessing at migrations: an unknown key means this
                 // directory was written by something else.
@@ -488,7 +526,8 @@ void SandboxStore::WriteFileAtomic(const std::string_view guest_path,
                              ? 0
                              : existing->second.size;
     impl_->RequireQuota(contents.size(), removed,
-                        existing == impl_->entries.end());
+                        existing == impl_->entries.end() ||
+                            existing->second.is_tombstone);
 
     const auto target = impl_->HostPathFor(guest_path, false);
     impl_->CreateParentDirectories(target);
@@ -527,7 +566,9 @@ void SandboxStore::WriteTombstone(const std::string_view guest_path) {
     if (existing != impl_->entries.end() && existing->second.is_tombstone) {
         return;
     }
-    impl_->RequireQuota(0, 0, existing == impl_->entries.end());
+    // Deletion must remain possible at the file limit. Tombstones do not
+    // consume the active-entry quota.
+    impl_->RequireQuota(0, 0, false);
     const auto target = impl_->HostPathFor(guest_path, true);
     impl_->CreateParentDirectories(target);
     {
@@ -555,7 +596,9 @@ void SandboxStore::CreateDirectory(const std::string_view guest_path) {
         if (existing->second.is_directory) return;
         throw VfsError(kEexist, "sandbox path already holds a file");
     }
-    impl_->RequireQuota(0, 0, existing == impl_->entries.end());
+    impl_->RequireQuota(0, 0,
+                        existing == impl_->entries.end() ||
+                            existing->second.is_tombstone);
     const auto target = impl_->HostPathFor(guest_path, false);
     std::error_code error;
     std::filesystem::create_directories(target, error);

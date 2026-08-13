@@ -31,6 +31,9 @@ struct DexActivityLifecycleBindings final {
     std::function<void()> interrupt_guest_waits;
     std::function<void()> finalize_guest;
     std::function<void()> close_surface;
+    // Runs after guest onPause and again after Java threads stop during clean
+    // teardown. The frontend binds this to VFS FlushAll (ADR-0020).
+    std::function<void()> flush_persistent_state;
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {

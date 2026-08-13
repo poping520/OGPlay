@@ -18,6 +18,9 @@ errno 契约与平台一致（父目录缺失 `-ENOENT`、已存在 `-EEXIST`、
 目录 `Stat` 返回目录事实而非 `-ENOENT`。目录整棵子树的 rename 尚无调用方，
 明确 `-EINVAL` 而不是猜测。未 attach 沙盒时 `Flush`/`FlushAll` 只校验
 descriptor，不伪装落盘。
+`OpenDirectory` 产生 guest 可用的目录 descriptor；目录快照 cursor 支持分页与
+受检 seek，`DescriptorInfo` 不移动 offset，目录 `Flush` 是元数据已立即落盘后的
+幂等屏障，目录 `Truncate` 明确 `-EISDIR`。
 
 `SandboxStore`（`sandbox_store.h`）是**唯一接触沙盒目录的代码**：
 `<root>/<package>/` 下 `meta.toml` 记 schema/package/versionCode，`fs/` 与 guest
@@ -25,13 +28,17 @@ descriptor，不伪装落盘。
 tmp + 同目录 rename（崩溃只会留旧内容或新内容，不会半截）；装载时清理残留
 `*.__ogplay_tmp__` 并计数上报。删除底层文件用 `.__ogplay_tombstone__` 空文件
 标记。宿主文件名对 Windows 非法字符、`%` 本身、结尾句点/空格与保留设备名做
-`%XX` 百分号转义，只看字节、双向无损。配额默认 256 MiB / 65536 文件，超限
-`-ENOSPC`。`AttachSandbox(store, writable_roots)` 把它挂成 VFS 的覆盖层：解析顺序为
+`%XX` 百分号转义，只看字节、双向无损。guest 路径按 VFS ASCII 小写规范落盘；
+装载时 folded key 冲突明确失败。配额默认 256 MiB / 65536 活动项，字节口径合并
+已落盘与未 flush 脏节点，tombstone 不占活动项配额，超限 `-ENOSPC`。
+`AttachSandbox(store, writable_roots)` 把它挂成 VFS 的覆盖层：解析顺序为
 覆盖层文件 → 覆盖层 tombstone（视为 `-ENOENT`，枚举也不出现）→ 只读底层；
 写入只允许落在可写命名空间内（默认 `/data/data/<pkg>`、`/sdcard`，这些根本身
 成为目录），越界 `-EACCES`。落盘点按设计 03 §2 枚举：`close`、`Flush`(fsync)、
 `FlushAll`(pause/shutdown) 落文件内容，`mkdir`/`unlink`/`rmdir`/`rename` 立即落
-元数据。删除仍由只读底层提供的路径写 tombstone，避免下次会话"旧文件复活"。
+元数据。可写命名空间内删除保守写 tombstone；新建立即解除会话内遮蔽，unlink
+后的存活 descriptor 不得在 close 时复活名字。write-open 本身不置脏，只有新建、
+写入、截断与 rename 才落盘，避免无变化重写。
 未 attach 时行为与既有逐字节一致——持久化是纯增量能力。
 
 ## 依赖

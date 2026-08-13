@@ -23,9 +23,11 @@
 - `DexActivityLifecycle`：实例化入口 Activity，解释执行 onCreate/onStart/onResume、
   renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop/onDestroy；
   未捕获 Java 异常携带解释器栈失败。每帧同时泵 VideoView，并按 managed view 命中规则
-  分发触摸与 click。
+  分发触摸与 click。pause 在 guest `onPause` 后调用持久状态 flush 回调；clean stop
+  在线程停止后、guest finalizer 前再次调用，失败向上层传播。
 - `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
-  校验 required mount、manifest 和 working directory。
+  校验 required mount、manifest 和 working directory；
+  `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。
 - `ApplyProfileInput` / `ApplyProfileAudio` / `ResolveProfileSoundPoolPath`：只消费 Profile
   的通用 input id、source/path 与资源占位符，不按标题猜测。
 - `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 并交叉验证 Profile 引用。

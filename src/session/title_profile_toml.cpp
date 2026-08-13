@@ -1,6 +1,7 @@
 #include "title_profile_toml.h"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cctype>
 #include <cstddef>

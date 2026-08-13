@@ -1,0 +1,26 @@
+# DVM-20 · Scenario runner 易用性批次（复盘驱动）
+
+## 目标（一句话）
+
+按 dexvm pilot 期间的实际使用复盘,修掉 runner 的四个高频人机工学问题:
+失败时缺日志证据、校验失败输出不可机读、预算报错不给算术、evidence 目录
+复跑摩擦。冻结的 Scenario/Result v1 schema 均不改动。
+
+## 变更（`tools/run_scenario.py`、`tools/validate_scenarios.py`）
+
+1. **失败必留日志**:checkpoint 失败时无条件写
+   `<checkpoint>/failure_logs.txt`(stdout/stderr 各末 200 行)并计入
+   evidence——失败时刻正是最需要诊断的时刻(pilot 期间 OOM 定位曾被迫
+   翻全局 stderr)。
+2. **失败输出可机读**:校验/启动失败原先向 stdout 打裸文本,任何 JSON
+   消费方都会解析爆炸;现在 stdout 输出单行
+   `{"schema":1,"status":"invalid","reason":…}`,人读文本保留在 stderr。
+3. **预算报错带算术**:`must be in 1..N (got X)`、
+   `checkpoint … exceed total budget (sum=…, total=…)`——不再猜-跑-改。
+4. **`--fresh`**:显式清空已存在的 evidence 目录(默认行为不变)。
+
+## 验收(机器可判定,已过)
+
+- `tools.scenario_runner_self_test` 新增断言:failure_logs.txt 存在且进
+  evidence、`_tail_lines`/`_prepare_evidence_dir` 行为;
+  `tools.scenario_validator_self_test` 与 `tools.scenarios_current` 不回归。

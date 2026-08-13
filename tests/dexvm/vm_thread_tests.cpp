@@ -1,4 +1,4 @@
-// Guest Java threads on real host threads (WU-M9-028, design 04 §3).
+// Guest Java threads on real host threads (DVM-28, design 04 §3).
 // State transitions follow AOSP vm/Thread.cpp: start publishes a running
 // thread, a second start is refused, interrupt raises a flag, teardown
 // interrupts before it joins. Object.wait() must still fail explicitly

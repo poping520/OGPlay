@@ -97,7 +97,7 @@ launcher 不再跳转到外壳的门控事实。对 A6:直接以 `GLGame` 为入
 
 - **诚实前提**:数据已 provisioned(统一 VFS 能解析游戏引擎要读的路径)。前提不成立
   时明确失败,不进游戏。
-- WU-M9-016 已把 manifest launcher 作为事实读出;本机制在其上加一层 profile 覆盖。
+- DVM-16 已把 manifest launcher 作为事实读出;本机制在其上加一层 profile 覆盖。
 
 ### 4.2 静态字段预设(profile 声明)
 
@@ -158,7 +158,7 @@ reason = "C2DM 推送为 AGENTS.md 非目标"
 | 环节 | 改动 | 复用/参照 |
 | --- | --- | --- |
 | profile 解析 | `loader`/profile 增 `[runtime.entry]`/`presets`/`neutralize` 字段 + 校验 | 现有 v2 解析 |
-| 入口覆盖 | `DexActivityLifecycle` 用 `launch_activity` 覆盖 manifest launcher | WU-M9-016 launcher 事实 |
+| 入口覆盖 | `DexActivityLifecycle` 用 `launch_activity` 覆盖 manifest launcher | DVM-16 launcher 事实 |
 | 预设写入 | `EnsureClassInitialized` 之后按 `presets` 写 guest 静态槽 | `SetIntrinsicStaticRef` 的落槽路径,目标改为 guest 类字段 |
 | 方法中性化 | 链接/解析时对声明方法装中性 handler,**非 survey**、有 profile 依据、日志逐条标注 | survey 的中性值逻辑(`NeutralValueFor`),但走结论级路径 |
 

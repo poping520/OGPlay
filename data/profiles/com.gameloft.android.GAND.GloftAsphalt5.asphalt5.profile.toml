@@ -1,4 +1,4 @@
-# DexVM pilot (WU-M9-019): schema v2, dex_activity lifecycle.
+# DexVM pilot (DVM-19): schema v2, dex_activity lifecycle.
 # No native_call, no [[java.class]] — the interpreted DEX drives the title
 # (docs/design/dexvm/04-integration.md §7). Migrated from v1 after the
 # title-flow gate passed 3/3 with the identical Main Menu golden.

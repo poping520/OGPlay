@@ -1,0 +1,34 @@
+# DVM-4 · dexasm 确定性 DEX 汇编器
+
+## 目标（一句话）
+
+`tools/dexasm.py` 把受限 smali 风格 IR 汇编为合法 dex 035 文件，字节级确定，
+覆盖类/字段/方法、全部 24 种标准指令格式、try/catch、switch/array payload 与
+静态初始值。
+
+## 依赖
+
+- DVM-3（opcode 值与 format 一律取自 `data/dexvm/dalvik_opcodes.json`，
+  无第二张人写表）
+- 设计：`docs/design/dexvm/05-verification.md` §1
+
+## 变更
+
+- `tools/dexasm.py`（约 1100 行）：
+  - IR：`.class/.super/.implements/.field(= 静态初始值)/.method/.registers/
+    .catch/.catchall/.packed-switch/.sparse-switch/.array-data/:label`；
+    显式非目标——不承诺 smali 兼容，超出子集即报错。
+  - 池布局按 dex-format 规范排序（string 按码点、type 按 string idx、
+    proto 按 return+params、field/method 按 class/name/type|proto）；
+    class_defs 拓扑序；map_list 按 offset 排序；uleb128/sleb128、4 字节
+    对齐、adler32 + SHA-1 全部落实。
+  - payload 自动 nop 对齐，偏移相对 31t 指令地址；tries 按 (start,end)
+    分组共享 encoded handler。
+  - `--self-test`：golden SHA-256 锁字节 + 独立 Python 解析器回读锁结构 +
+    双次汇编确定性断言；`--batch-input/--batch-output` 供构建期夹具汇编。
+- CTest：`tools.dexasm_self_test`。
+
+## 验收（机器可判定）
+
+- `ctest --preset dev -R tools.dexasm_self_test` 通过。
+- 同输入两次汇编输出逐字节相同（self-test 内断言）。

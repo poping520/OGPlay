@@ -1,0 +1,40 @@
+# DVM-19 · Asphalt 5 pilot：v2 profile + exact 主界面 gate
+
+## 目标（一句话）
+
+pilot title 删除 profile 全部 `native_call` 与 `[[java.class]]`，以 schema v2
+`dex_activity` 经同一 exact Scenario 三轮通过并进入主界面（设计 01 §5
+成功标准 1）。
+
+## 结果（机器可判定，已达成）
+
+- `data/profiles/com.gameloft.android.GAND.GloftAsphalt5.asphalt5.profile.toml`
+  由 201 行 v1（16 条 native_call + 33 条 java 方法映射）替换为 25 行 v2
+  （identity + surface + dexvm 预算 + quirk）——胶水声明清零。
+- `asphalt5.title_flow` Scenario 三轮 + 迁移后生产目录复验全部 passed：
+  固定 468 帧/468000 tick，主界面 PNG SHA-256
+  `9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8`
+  与 v1 路线逐位一致，无 guest fault，clean shutdown（证据
+  `.local/dexvm/gate-01..03、gate-post-migration`，本地不入库）。
+- 途中真实发生（对照 03 §7 的预言）：`<clinit>` 内 `System.loadLibrary`、
+  onCreate 全副作用链（nativeCheckwifi/nativeCheckSilent 出向）、
+  onSurfaceCreated 的 nativeGetJNIEnv/GLResLoader.init/GLMediaPlayer.init
+  （nativeInit/nativeGetTotalSounds 出向 + SoundPool(20,3,0) 构造）、
+  native 侧 GetStaticMethodID/CallStatic* 命中真实 DEX 方法表并第三路由
+  解释执行 getResourceFull/loadSound 等真实方法体。
+- full CTest 558/558 无回归；v1 装配路径原样保留服务其余存量 title。
+
+## 追加（gate 后人工试玩复盘）
+
+- 实测换语言（简体中文）与进入赛道（QUICK RACE）曾在 64 MiB 堆预算下命中
+  GC-A 记账上限：`GLResLoader.getResourceFull` 的瞬态字节数组不回收，标题
+  阶段累计约 66 MiB → OutOfMemoryError 置 pending → native 下一次
+  `GetObjectClass` 被严格门禁挡下。修复：
+  1. 预算提到 512 MiB（受检上限 1 GiB 内；实测换语言 + 进赛道峰值 <300 MiB），
+     GC-B（阶段 4）落地前该预算即诚实上界；
+  2. 入向桥对解释方法遗留的 pending Java 异常输出结构化 warn
+     （类/消息/解释器栈）——本次定位即靠它；
+  3. `AssetManager.open` 缺失条目由宿主 C++ 异常改为游戏真实可捕获的
+     `java.io.IOException`。
+- 人工复验：换语言/主菜单/进入赛道（SAINT TROPEZ 加载并可进游戏）均正常；
+  标准 title_flow gate 与 full CTest 558/558 在 512 MiB 预算下保持通过。

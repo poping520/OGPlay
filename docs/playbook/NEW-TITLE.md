@@ -7,7 +7,7 @@
 
 前置阅读：`AGENTS.md`、`docs/state/CURRENT.md`、`docs/design/dexvm/README.md`、
 `src/runtime/dexvm/MODULE.md`、`src/runtime/integration/MODULE.md`；在办的 title
-阻塞点见 `docs/tasks/m9/README.md`。范围红线以 `AGENTS.md` 为准：survey
+阻塞点见 `docs/tasks/dexvm/README.md`。范围红线以 `AGENTS.md` 为准：survey
 模式是诊断工具，不是放宽「禁止伪造成功」。
 
 ---

@@ -38,7 +38,7 @@ note = "M6 WU-0357 为 gl_surface_view run-apk 增加显式 MCP manual-step 模�
 [automation.scenario_runner]
 status = "complete"
 test = "tools.scenario_runner_self_test"
-note = "M6 WU-0358 以同一 Profile-backed MCP manual-step 会话执行强类型 Scenario；三重预算、逐断言 expected/actual、相对 frame/state/log 证据、Result v1 与正常/超时清理形成 AI/CI 共用闭环；OBB 和 gpu_trace 仍明确失败。M9 WU-M9-020/021 增加失败必留 failure_logs 证据、失败输出机读 JSON、预算报错带算术、--fresh，与 --watch 增量编写模式（前缀签名比对、gen 目录、overlay 坐标截图、SIGINT/SIGTERM 优雅收尾；v1 schema 零改动）"
+note = "M6 WU-0358 以同一 Profile-backed MCP manual-step 会话执行强类型 Scenario；三重预算、逐断言 expected/actual、相对 frame/state/log 证据、Result v1 与正常/超时清理形成 AI/CI 共用闭环；OBB 和 gpu_trace 仍明确失败。DVM-20/21 增加失败必留 failure_logs 证据、失败输出机读 JSON、预算报错带算术、--fresh，与 --watch 增量编写模式（前缀签名比对、gen 目录、overlay 坐标截图、SIGINT/SIGTERM 优雅收尾；v1 schema 零改动）"
 
 [automation.asphalt5_title_flow]
 status = "complete"
@@ -58,12 +58,12 @@ note = "M0 空会话支持 open/close/state；M1 装配 guest"
 [session.title_profile_schema]
 status = "complete"
 test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
-note = "ADR-0022/WU-M9-022/025 收敛为 Title Profile v2 单一 schema；Python/C++ 同步覆盖 identity/runtime entry+presets/data/audio/quirks/input、UTF-8、200 行上限并拒绝 schema 1"
+note = "ADR-0022/DVM-22/25 收敛为 Title Profile v2 单一 schema；Python/C++ 同步覆盖 identity/runtime entry+presets/data/audio/quirks/input、UTF-8、200 行上限并拒绝 schema 1"
 
 [session.title_profile_loader]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "WU-M9-022/025 的 v2-only loader 完成受限纯数据 TOML、强类型 identity/runtime entry+presets 与预算、规范 VFS/audio、quirk/input；未知字段和旧 schema 明确失败"
+note = "DVM-22/25 的 v2-only loader 完成受限纯数据 TOML、强类型 identity/runtime entry+presets 与预算、规范 VFS/audio、quirk/input；未知字段和旧 schema 明确失败"
 
 [session.title_profile_catalog]
 status = "complete"
@@ -88,7 +88,7 @@ note = "M5 WU-0303/0318 与 M8 WU-0378 以纯数据 Profile 闭合身份、1024x
 [profiles.asphalt6_glstore_v132]
 status = "partial"
 test = "tools.title_profiles_current; tests/session/profile_entry_scope_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml; exact APK local bootstrap"
-note = "WU-M9-022..026 以 v2 entry/manifest GLGame 启动引擎 Activity，required external manifest 就绪后应用 GameInstaller.sbStarted 真实 provisioned-data preset；native 已可见 DexVM intrinsic 平台类。WU-M9-028..030 后 GLThread 已是真实宿主线程、越过 Object.wait()、并收到 managed surface 回调，三轮 exact 一致停在自带 GLSurfaceView 自行驱动 EGL 所需的 Ljavax/microedition/khronos/egl/EGLContext 未声明处（WU-M9-031）。guest 首帧与主界面 gate 均未完成；删除 preset 会真实回到 GameInstaller 商业外壳"
+note = "DVM-22..26 以 v2 entry/manifest GLGame 启动引擎 Activity，required external manifest 就绪后应用 GameInstaller.sbStarted 真实 provisioned-data preset；native 已可见 DexVM intrinsic 平台类。DVM-28..30 后 GLThread 已是真实宿主线程、越过 Object.wait()、并收到 managed surface 回调，三轮 exact 一致停在自带 GLSurfaceView 自行驱动 EGL 所需的 Ljavax/microedition/khronos/egl/EGLContext 未声明处（DVM-31）。guest 首帧与主界面 gate 均未完成；删除 preset 会真实回到 GameInstaller 商业外壳"
 
 [session.lifecycle_templates]
 status = "complete"
@@ -103,7 +103,7 @@ note = "M5 WU-0207 以 guest 根 + source 精确配对已导入文件并装配�
 [session.profile_java]
 status = "complete"
 test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
-note = "历史能力已由 ADR-0022/WU-M9-025 退役并从生产代码、schema 和测试删除；v2 明确拒绝 Profile Java handler 映射，Java 能力只来自 DexVM 与代码定义平台目录"
+note = "历史能力已由 ADR-0022/DVM-25 退役并从生产代码、schema 和测试删除；v2 明确拒绝 Profile Java handler 映射，Java 能力只来自 DexVM 与代码定义平台目录"
 
 [input.template_catalog]
 status = "complete"
@@ -628,17 +628,17 @@ note = "M5 WU-0223 串联 APK 精确 Profile 与对应 API 的 Bionic guest 闭�
 [profiles.first_exact_legacy_title]
 status = "complete"
 test = "tools.title_profiles_current; tests/session/profile_apk_tests.cpp"
-note = "精确 APK 身份能力保留并已迁移至 v2 dex_activity；旧生命周期声明已由 ADR-0022/WU-M9-025 退役"
+note = "精确 APK 身份能力保留并已迁移至 v2 dex_activity；旧生命周期声明已由 ADR-0022/DVM-25 退役"
 
 [profiles.declarative_native_calls]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "历史能力已由 ADR-0022/WU-M9-025 退役并完整删除；v2 loader 对旧调用字段明确失败，运行只由解释 DEX 生命周期驱动"
+note = "历史能力已由 ADR-0022/DVM-25 退役并完整删除；v2 loader 对旧调用字段明确失败，运行只由解释 DEX 生命周期驱动"
 
 [profiles.first_legacy_native_sequence]
 status = "complete"
 test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
-note = "历史序列已由 ADR-0022/WU-M9-025 退役并从 Profile 数据删除；该账本项仅保留单调历史，当前入口为 dex_activity"
+note = "历史序列已由 ADR-0022/DVM-25 退役并从 Profile 数据删除；该账本项仅保留单调历史，当前入口为 dex_activity"
 
 [runtime.jni_native_export_names]
 status = "complete"
@@ -648,12 +648,12 @@ note = "M5 WU-0227 从受检 class/method/descriptor 生成 JNI short/long 导�
 [profiles.native_call_targets]
 status = "complete"
 test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
-note = "历史 Profile target resolver 已由 ADR-0022/WU-M9-025 从生产代码和测试删除；JNI 导出名等通用 runtime 原语不受影响"
+note = "历史 Profile target resolver 已由 ADR-0022/DVM-25 从生产代码和测试删除；JNI 导出名等通用 runtime 原语不受影响"
 
 [profiles.native_call_invocations]
 status = "complete"
 test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
-note = "历史 Profile invocation assembler 已由 ADR-0022/WU-M9-025 从生产代码和测试删除；A32 通用调用执行器仍由 runtime 自身契约覆盖"
+note = "历史 Profile invocation assembler 已由 ADR-0022/DVM-25 从生产代码和测试删除；A32 通用调用执行器仍由 runtime 自身契约覆盖"
 
 [runtime.a32_guest_call_executor]
 status = "complete"
@@ -868,7 +868,7 @@ note = "M5 WU-0242 为 Java/GLSurfaceView lifecycle 显式 open/present/close AN
 [session.profile_guest_lifecycle]
 status = "complete"
 test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/lifecycle_tests.cpp"
-note = "历史 Profile phase lifecycle 已由 ADR-0022/WU-M9-025 删除；清理顺序与状态机契约由唯一 dex_activity lifecycle 延续"
+note = "历史 Profile phase lifecycle 已由 ADR-0022/DVM-25 删除；清理顺序与状态机契约由唯一 dex_activity lifecycle 延续"
 
 [profiles.java_method_dispatch]
 status = "complete"
@@ -878,7 +878,7 @@ note = "M5 WU-0245 要求 Profile Java method 显式声明 instance/static kind�
 [session.profile_guest_class_registry]
 status = "complete"
 test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/title_profile_tests.cpp"
-note = "历史 Profile class registry 装配已由 ADR-0022/WU-M9-025 删除；DexVM bridge 仍把真实解释类注册到 session JNI registry"
+note = "历史 Profile class registry 装配已由 ADR-0022/DVM-25 删除；DexVM bridge 仍把真实解释类注册到 session JNI registry"
 
 [profiles.legacy_audio_java_declarations]
 status = "complete"
@@ -993,87 +993,87 @@ note = "M5 WU-0275 为三个 GL_OES_matrix_palette 入口实现受检可重置�
 [dexvm.aosp_baseline]
 status = "complete"
 test = "tools.aosp_dalvik_baseline_self_test; tools.aosp_dalvik_baseline_current"
-note = "M9 WU-M9-001 以浅 submodule 固定 platform/dalvik 于 android-4.4.4_r2（36e356c9），机器校验 commit 与 bytecode.txt/DexOpcodes.h/InstrUtils.cpp/NOTICE 锚点哈希；仅作语义参考与机器比对数据源，不编译不链接"
+note = "DVM-1 以浅 submodule 固定 platform/dalvik 于 android-4.4.4_r2（36e356c9），机器校验 commit 与 bytecode.txt/DexOpcodes.h/InstrUtils.cpp/NOTICE 锚点哈希；仅作语义参考与机器比对数据源，不编译不链接"
 
 [tools.dex_dependency_survey]
 status = "complete"
 test = "tools.dex_dependency_survey_self_test"
-note = "M9 WU-M9-002 纯 Python 严格 DEX 035 静态测量：应用类规模、Java 厚度（与 loader.dex_l1 同阈值）、平台类/方法引用直方图、native 清单、引擎指纹与 profile impl id 语料；报告本地产出不进仓库"
+note = "DVM-2 纯 Python 严格 DEX 035 静态测量：应用类规模、Java 厚度（与 loader.dex_l1 同阈值）、平台类/方法引用直方图、native 清单、引擎指纹与 profile impl id 语料；报告本地产出不进仓库"
 
 [dexvm.opcode_catalog]
 status = "complete"
 test = "tools.dexvm_opcode_generator_self_test; tools.dexvm_opcode_catalog_current"
-note = "M9 WU-M9-003 dex 035 全部 218 个已定义 opcode 的声明式目录由 AOSP bytecode.txt 机器派生，unused/odex 拒绝集显式覆盖余下 38 个编码点；--verify-aosp 对 bytecode.txt/DexOpcodes.h/InstrUtils.cpp 三锚点逐项等价，C++ 解码表确定性生成并有 --check 门禁"
+note = "DVM-3 dex 035 全部 218 个已定义 opcode 的声明式目录由 AOSP bytecode.txt 机器派生，unused/odex 拒绝集显式覆盖余下 38 个编码点；--verify-aosp 对 bytecode.txt/DexOpcodes.h/InstrUtils.cpp 三锚点逐项等价，C++ 解码表确定性生成并有 --check 门禁"
 
 [tools.dexasm]
 status = "complete"
 test = "tools.dexasm_self_test; tests/dexvm/dexasm_readback_tests.cpp"
-note = "M9 WU-M9-004/005 确定性 dex 035 汇编器：受限 IR、24 种标准格式、try/catch、switch/array payload、静态初始值；opcode 事实一律取自声明式目录；golden SHA 锁字节，Python 与 C++ L1 双解析器回读锁结构，构建期批量汇编测试夹具；libdex/dexdump 交叉裁判评估后降级不采用"
+note = "DVM-4/5 确定性 dex 035 汇编器：受限 IR、24 种标准格式、try/catch、switch/array payload、静态初始值；opcode 事实一律取自声明式目录；golden SHA 锁字节，Python 与 C++ L1 双解析器回读锁结构，构建期批量汇编测试夹具；libdex/dexdump 交叉裁判评估后降级不采用"
 
 [loader.dex_code]
 status = "complete"
 test = "tests/dexvm/dex_code_tests.cpp"
-note = "M9 WU-M9-006 在 L1 之上受检读取方法指令流、try/catch（区间有序不重叠、handler 偏移命中真实条目、type/地址受检）与静态初始值 encoded_array（11 种形态，符号/右零扩展对照 dex-format）；指令级分支/payload 校验留给 dexvm 链接预检"
+note = "DVM-6 在 L1 之上受检读取方法指令流、try/catch（区间有序不重叠、handler 偏移命中真实条目、type/地址受检）与静态初始值 encoded_array（11 种形态，符号/右零扩展对照 dex-format）；指令级分支/payload 校验留给 dexvm 链接预检"
 
 [dexvm.class_linker]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
-note = "M9 WU-M9-007 注册/层级/布局/vtable/iftable 四步链接与常量池解析缓存；平台前缀类只认 intrinsic 目录，循环继承/final 覆盖/不可覆盖 intrinsic 装配失败；懒结构预检对照 CodeVerify 子集（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置）"
+note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与常量池解析缓存；平台前缀类只认 intrinsic 目录，循环继承/final 覆盖/不可覆盖 intrinsic 装配失败；懒结构预检对照 CodeVerify 子集（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置）"
 
 [dexvm.object_model]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp"
-note = "M9 WU-M9-008 统一 VmObjectRef 句柄空间：VM 实例/对象数组/类对象自有，字符串与基元数组委托存量 JNI store 使 native 与解释器同对象；JniObjectArrayStore 吸收与 jni_guest 槽位改线属阶段 2/3"
+note = "DVM-8 统一 VmObjectRef 句柄空间：VM 实例/对象数组/类对象自有，字符串与基元数组委托存量 JNI store 使 native 与解释器同对象；JniObjectArrayStore 吸收与 jni_guest 槽位改线属阶段 2/3"
 
 [dexvm.gc]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp"
-note = "M9 WU-M9-008 GC-A 预算 arena：只分配不回收、默认 64 MiB、字节/对象计数可查、耗尽真实 OutOfMemoryError（含紧急保留物化 throwable）；GC-B 精确标记清除属阶段 4"
+note = "DVM-8 GC-A 预算 arena：只分配不回收、默认 64 MiB、字节/对象计数可查、耗尽真实 OutOfMemoryError（含紧急保留物化 throwable）；GC-B 精确标记清除属阶段 4"
 
 [dexvm.interpreter_core]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
-note = "M9 WU-M9-009..012 tagged 帧（零值放宽/wide 对完整性）、表分派全部 dex 035 家族、invoke 三路由（解释/intrinsic/native bridge）、tick 预算与帧深度上限；语义逐 opcode 对照 AOSP mterp，夹具覆盖 NaN 偏置/MIN 除法/移位掩码/饱和转换/switch/payload"
+note = "DVM-9..12 tagged 帧（零值放宽/wide 对完整性）、表分派全部 dex 035 家族、invoke 三路由（解释/intrinsic/native bridge）、tick 预算与帧深度上限；语义逐 opcode 对照 AOSP mterp，夹具覆盖 NaN 偏置/MIN 除法/移位掩码/饱和转换/switch/payload"
 
 [dexvm.execution_contexts]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact title-flow regression"
-note = "M9 WU-M9-027 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；linker/object model/intrinsic 目录共享，默认单线程语义不变。仅交付执行态拆分，不启动宿主线程、不实现 wait-set，不宣称 dexvm.threads ready"
+note = "DVM-27 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；linker/object model/intrinsic 目录共享，默认单线程语义不变。仅交付执行态拆分，不启动宿主线程、不实现 wait-set，不宣称 dexvm.threads ready"
 
 [dexvm.threads]
 status = "partial"
 test = "tests/dexvm/vm_thread_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
-note = "M9 WU-M9-028 一个 guest Java 线程 = 一个 hal 宿主线程 + 独立 execution context，linker/对象模型/JNI 身份共享；start 二次调用与无 run() 目标明确失败，isAlive/join/interrupt/uncaught 记账/teardown interrupt→join 均有机器测试，guest 死循环由每指令停止检查真实展开。解释执行由 VmExecutionLock 串行化（同一时刻一个线程解释字节码，显式限制不宣称并行）；子线程 native 调用仍复用 root guest 栈与 thread id，需要停泊时以 blocking_in_native 明确失败"
+note = "DVM-28 一个 guest Java 线程 = 一个 hal 宿主线程 + 独立 execution context，linker/对象模型/JNI 身份共享；start 二次调用与无 run() 目标明确失败，isAlive/join/interrupt/uncaught 记账/teardown interrupt→join 均有机器测试，guest 死循环由每指令停止检查真实展开。解释执行由 VmExecutionLock 串行化（同一时刻一个线程解释字节码，显式限制不宣称并行）；子线程 native 调用仍复用 root guest 栈与 thread id，需要停泊时以 blocking_in_native 明确失败"
 
 [dexvm.monitors]
 status = "partial"
 test = "tests/dexvm/vm_monitor_tests.cpp; Asphalt 6 exact bootstrap 无 guest fault"
-note = "M9 WU-M9-029 session 级 owner/recursion/wait-set，owner 为 execution context token。Enter/Exit 真实跨线程互斥；Wait 逐步对照 AOSP vm/Sync.cpp waitMonitor——校验 owner、保存并清零 recursion、全量释放、入 wait-set、唤醒后先重获 monitor 并恢复 recursion 才返回或抛 InterruptedException（并清中断位）。notify 取 wait-set 头、notifyAll 全量、超时/interrupt/Shutdown 均可唤醒，无所有权抛 IllegalMonitorStateException。超时只用注入的统一 Clock，无时间源即记账 dexvm.monitors.wait_without_clock 并失败。native 侧 runtime.jni_guest_monitors 仍是独立表，两表未合一；wait(J,I) 未声明"
+note = "DVM-29 session 级 owner/recursion/wait-set，owner 为 execution context token。Enter/Exit 真实跨线程互斥；Wait 逐步对照 AOSP vm/Sync.cpp waitMonitor——校验 owner、保存并清零 recursion、全量释放、入 wait-set、唤醒后先重获 monitor 并恢复 recursion 才返回或抛 InterruptedException（并清中断位）。notify 取 wait-set 头、notifyAll 全量、超时/interrupt/Shutdown 均可唤醒，无所有权抛 IllegalMonitorStateException。超时只用注入的统一 Clock，无时间源即记账 dexvm.monitors.wait_without_clock 并失败。native 侧 runtime.jni_guest_monitors 仍是独立表，两表未合一；wait(J,I) 未声明"
 
 [dexvm.exceptions]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
-note = "M9 WU-M9-012 throw 与隐式异常（NPE/AIOOBE/CCE/Arithmetic/NegativeArraySize/ArrayStore/StackOverflow/OOM）共用展开路径，catch 按声明顺序 instanceof 匹配 + catch-all，跨帧弹栈，未捕获出口携带类/消息/完整解释器栈"
+note = "DVM-12 throw 与隐式异常（NPE/AIOOBE/CCE/Arithmetic/NegativeArraySize/ArrayStore/StackOverflow/OOM）共用展开路径，catch 按声明顺序 instanceof 匹配 + catch-all，跨帧弹栈，未捕获出口携带类/消息/完整解释器栈"
 
 [dexvm.clinit]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
-note = "M9 WU-M9-012 per-class 状态机 uninitialized→initializing→initialized|failed；静态初始值先物化再跑 <clinit>，super 连带、接口不连带、失败粘滞 NoClassDefFoundError；跨线程等待属阶段 4"
+note = "DVM-12 per-class 状态机 uninitialized→initializing→initialized|failed；静态初始值先物化再跑 <clinit>，super 连带、接口不连带、失败粘滞 NoClassDefFoundError；跨线程等待属阶段 4"
 
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "M9 WU-M9-012/013 P1：Object/String/Class/Throwable、System/Math/StringBuilder/装箱/集合；WU-M9-026 增 Stack、受 monitor 所有权校验的 notify/notifyAll 与有界 getDeclaredMethods/零参整数类 Method.invoke。无超时 wait 与跨线程 wait-set 属阶段 4，仍明确失败"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/装箱/集合；DVM-26 增 Stack、受 monitor 所有权校验的 notify/notifyAll 与有界 getDeclaredMethods/零参整数类 Method.invoke。无超时 wait 与跨线程 wait-set 属阶段 4，仍明确失败"
 
 [dexvm.jni_bridge]
 status = "complete"
-test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 WU-M9-026 exact bootstrap"
-note = "M9 WU-M9-014/015 出向按 descriptor 编组 A32 soft-float 帧（RegisterNatives→Java_ 导出名→记账失败），入向把解释类/方法与缺失的 intrinsic 平台类/方法发布到同一 JniClassRegistry（不替换 session 已有类，dexvm.m<id> handler），233 槽 ABI 不变；J/D 出向返回暂记账明确失败"
+test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
+note = "DVM-14/15 出向按 descriptor 编组 A32 soft-float 帧（RegisterNatives→Java_ 导出名→记账失败），入向把解释类/方法与缺失的 intrinsic 平台类/方法发布到同一 JniClassRegistry（不替换 session 已有类，dexvm.m<id> handler），233 槽 ABI 不变；J/D 出向返回暂记账明确失败"
 
 [dexvm.intrinsics_android_core]
 status = "partial"
 test = "Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染"
-note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。M9 WU-M9-018 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败。DUNQ 批次扩展：Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/Build、SharedPreferences(现已持久)、多 Activity 流转+协作线程/Timer、widget 状态层（TextView/EditText/VideoView 等）、setContentView(I) 经 binary XML 布局注入 view registry、runOnUiThread 同步执行、VideoView.start() 立即回调 OnCompletionListener（播放本身仍为记账缺口）"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败。DUNQ 批次扩展：Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/Build、SharedPreferences(现已持久)、多 Activity 流转+协作线程/Timer、widget 状态层（TextView/EditText/VideoView 等）、setContentView(I) 经 binary XML 布局注入 view registry、runOnUiThread 同步执行、VideoView.start() 立即回调 OnCompletionListener（播放本身仍为记账缺口）"
 
 [dexvm.gap_survey]
 status = "complete"
@@ -1083,27 +1083,27 @@ note = "M9 适配流水线：run-apk --survey-gaps 打开诊断 survey 模式，
 [loader.arsc]
 status = "complete"
 test = "tests/dexvm/arsc_tests.cpp"
-note = "M9 WU-M9-015 严格 resources.arsc 读取：resid↔(type,name,文件路径)双向查询，UTF-8/UTF-16 string pool，默认配置优先；复杂值/多 locale 明确不支持，越界即失败；本地 exact 交叉验证 0x7f040009→res/raw/raw_000.ogg 与 v1 人工 pattern 一致"
+note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)双向查询，UTF-8/UTF-16 string pool，默认配置优先；复杂值/多 locale 明确不支持，越界即失败；本地 exact 交叉验证 0x7f040009→res/raw/raw_000.ogg 与 v1 人工 pattern 一致"
 
 [session.dex_activity_lifecycle]
 status = "complete"
 test = "Asphalt 5 exact dexvm title-flow gate 3/3; tests/session/lifecycle_tests.cpp"
-note = "M9 WU-M9-018 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序"
+note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序"
 
 [session.title_profile_v2]
 status = "complete"
 test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
-note = "M9 WU-M9-017/022/025：schema v2 是唯一 Title Profile，支持 dex_activity、受检 [runtime.dexvm]、entry 和 static presets；schema 1 及其实现已删除"
+note = "DVM-17/22/25：schema v2 是唯一 Title Profile，支持 dex_activity、受检 [runtime.dexvm]、entry 和 static presets；schema 1 及其实现已删除"
 
 [session.profile_entry_scope]
 status = "complete"
 test = "tests/session/profile_entry_scope_tests.cpp; tools.title_profiles_current"
-note = "WU-M9-022..024：Profile v2 可在 required data manifest 已验证时覆盖 launch Activity，并在真实 class 初始化后按 Z/B/C/S/I/J/F/D/String 类型写 static field；缺类/字段/类型/前提明确失败且日志保留 reason"
+note = "DVM-22..24：Profile v2 可在 required data manifest 已验证时覆盖 launch Activity，并在真实 class 初始化后按 Z/B/C/S/I/J/F/D/String 类型写 static field；缺类/字段/类型/前提明确失败且日志保留 reason"
 
 [profiles.asphalt5_dexvm_pilot]
 status = "complete"
 test = "tools.title_profiles_current; asphalt5.title_flow exact gate 3/3 + post-migration"
-note = "M9 WU-M9-019 pilot 迁移完成：v1 的 16 条 native_call 与 33 条 java 映射删除，25 行 v2 profile 经同一 Scenario 三轮进主界面，golden SHA 与 v1 逐位一致（9ee57323…），clean shutdown"
+note = "DVM-19 pilot 迁移完成：v1 的 16 条 native_call 与 33 条 java 映射删除，25 行 v2 profile 经同一 Scenario 三轮进主界面，golden SHA 与 v1 逐位一致（9ee57323…），clean shutdown"
 
 [runtime.android_link_preflight]
 status = "complete"

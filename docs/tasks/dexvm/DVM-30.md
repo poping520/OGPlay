@@ -1,0 +1,53 @@
+# DVM-30 · Asphalt 6 首帧与主界面 exact gate
+
+## 目标（一句话）
+
+在真实 Java 线程/wait-set 上重跑 A6 production Profile，固化首帧并继续到
+主界面，或固化下一个真实边界。
+
+## 依赖
+
+- DVM-29。
+
+## 验收
+
+- `asphalt6.bootstrap` 至少三轮首帧确定、无 guest fault、clean shutdown。
+- 达到主界面前 profile 保持 `partial`；达到后方可更新 gate 与能力状态。
+- 如触及 DRM 引擎数据消费，依据消费链另立真实实现 WU，不中性化。
+
+## 结果：未达首帧，边界已固化
+
+主界面与首帧**均未达到**，`profiles.asphalt6_glstore_v132` 保持 `partial`。
+本 WU 的产出是把边界从「静默停住」变成「精确、可复现、指名缺口」。
+
+### 交付的通用能力
+
+- `SurfaceHolder.Callback` 派发：自带 SurfaceView 的 title 在构造函数里
+  `getHolder().addCallback(this)`，然后等 `surfaceCreated`/`surfaceChanged`
+  才会碰 EGL；managed surface 生命周期现在真实投递这三个事件。
+- `addCallback` 改为按平台语义**追加**（原实现每 holder 只留一个，后注册者
+  覆盖先注册者）。A6 在同一个 holder 上注册了 `GLSurfaceView` 与 `GLGame`
+  两个 callback，旧行为把真正需要事件的那个丢掉了。重复注册去重，null 拒绝。
+- 未捕获异常致死的 Java 线程现在会把 VM 带下去：否则等它完成握手的线程会
+  永久停泊（实测把会话挂死到 wall-time 预算）。会话报告记录到的死亡原因，
+  而不是它引发的 teardown。
+- 任何逃逸的 VM 错误都会先弹出该次调用的帧，execution context 不再残留。
+
+### 固化的边界（三轮一致）
+
+```text
+ogplay: Java thread Thread-287 failed:
+    class is not available: Ljavax/microedition/khronos/egl/EGLContext;
+```
+
+`.local/evidence/a6-gate-r1..r3/`，三轮逐字相同（含线程名）。链路：
+`GLGame.onCreate` → 自带 `GLSurfaceView` → `GLThread.start()`（真实宿主线程）
+→ 停泊在 `GLThreadManager` 守卫循环 → 收到 `surfaceCreated` 后唤醒 →
+`EglHelper` 取 `EGLContext.getEGL()` → 类未声明，明确失败。
+
+静态枚举的完整前向缺口（`tools/dexdis.py`）：`EGL10` 的 4 个常量与 18 个
+方法、`EGLContext.getEGL/getGL`、`GL10.glGetString`。由
+[DVM-31](DVM-31.md) 承接。
+
+未触及 DRM 消费链。Asphalt 5 exact 回归逐位持平（468/468000、
+SHA-256 `9ee57323…`、clean shutdown）；macOS/arm64 CTest 609/609。

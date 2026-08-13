@@ -1,4 +1,4 @@
-// java.* P1 intrinsic conformance (WU-M9-013). Pure-library expectations
+// java.* P1 intrinsic conformance (DVM-13). Pure-library expectations
 // follow the class-library documentation; System.arraycopy checks follow
 // AOSP vm/native/java_lang_System.cpp at the pinned baseline.
 

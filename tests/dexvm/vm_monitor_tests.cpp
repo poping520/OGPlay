@@ -1,4 +1,4 @@
-// Monitor wait set across real host threads (WU-M9-029, design 04 §4).
+// Monitor wait set across real host threads (DVM-29, design 04 §4).
 // The sequence under test is AOSP vm/Sync.cpp waitMonitor: validate the
 // owner, save the recursion depth, release the monitor completely, join the
 // wait set, and only return (or throw InterruptedException) after the

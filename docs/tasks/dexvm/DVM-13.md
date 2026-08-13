@@ -1,0 +1,35 @@
+# DVM-13 · java.* P1 intrinsic（语言核心 + System/Math/集合最小集）
+
+## 目标（一句话）
+
+按 pilot title 静态测量的真实命中面扩展 java.* intrinsic：String 全表面、
+StringBuilder、System（out/err/arraycopy/gc）、Math、装箱类型与
+HashMap/Vector 家族，并为此打通 intrinsic 实例字段与静态对象字段。
+
+## 依赖
+
+- DVM-7..12（内核）、DVM-2（测量语料：pilot 引用 46 平台类/148 方法）
+- 语义出处：`vm/native/java_lang_System.cpp`（arraycopy 顺序）、类库文档
+  （libcore 不 vendor，07 §3）
+
+## 变更
+
+- 链接器：`IntrinsicClassDecl` 支持实例/静态字段声明（参与统一布局——
+  pilot 的 `Configuration.keyboard` 被字节码 iget 直读，要求 intrinsic 字段
+  是真实槽位）与 `clinit_handler`；常量静态在类初始化时物化。
+- 解释器：intrinsic 实例统一为 vm_instance 形态（槽板 + 侧表持宿主状态）；
+  新增 `SetLogger`（System.out/Log 输出到结构化日志 `runtime.dexvm.guest`）、
+  `BuilderBuffer/ListStorage/MapStorage` 侧表、`SetIntrinsicStaticRef`、
+  `NewIntrinsicInstance`、`JavaEquals`（集合键语义：字符串按内容）。
+- 目录 + handler：String 26 方法、StringBuilder 13、System（clinit 发布
+  out/err、arraycopy 重叠安全 + 类型检查、gc no-op）、PrintStream、Math 15、
+  Integer/Long/Boolean/Float/Double（槽 0 装箱值）、HashMap/Hashtable、
+  Vector/ArrayList。时间/loadLibrary/exit 声明为 `platform.system.*`
+  handler id，由 session 装配注入（统一 Clock/ELF loader），核心不实现。
+
+## 验收（机器可判定，已过）
+
+- `tests/dexvm/intrinsics_p1_tests.cpp` 6 用例/60 断言全绿：StringBuilder
+  链、String 表面、装箱往返、HashMap 跨对象字符串键、arraycopy/Math、
+  System.out → 结构化日志。
+- 存量 dexvm 套件与 full CTest 无回归。

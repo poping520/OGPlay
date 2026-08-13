@@ -1,0 +1,34 @@
+# DVM-21 · Scenario runner `--watch` 增量编写模式
+
+## 目标（一句话）
+
+消除 scenario 编写期"每改一步就全量重放"的线性成本:会话保活,scenario
+文件追加 checkpoint 只执行增量;前缀被改或有失败则自动重启重放;Ctrl-C/
+SIGTERM 优雅收尾并产出合法 Result v1。
+
+## 设计要点
+
+- **前缀判定**:已执行 checkpoint 的规范签名逐一比对;追加=增量执行,
+  前缀变更或此前有失败=自动进入下一 generation(`gen<N>/` 独立证据目录,
+  全量重放,历史保留)。
+- **确定性不打折**:frame/tick 预算照常绝对执行;仅 *总墙钟* 预算在
+  编写会话中按"每次 checkpoint 运行"重新计——开放式编写会话没有总墙钟
+  语义,最终 CI 验证仍走普通模式。冻结的 Scenario/Result v1 schema 零改动
+  (增量进度写独立的 `watch_progress.jsonl`)。
+- **编写辅助**:每个 checkpoint 执行后额外落 `frame_overlay.png`
+  (MCP 坐标网格截图)供点击坐标标定;实时进度行打到 stdout。
+- **收尾**:KeyboardInterrupt/SIGTERM → 会话 clean shutdown → 最终
+  result.json(gen 目录与根目录各一份)。显式恢复 SIGINT/SIGTERM 处置,
+  规避非交互 shell 后台任务继承 SIGINT=ignore 导致收不了尾的问题(实测
+  踩到)。
+
+## 实测（本地 exact,Asphalt 5 dexvm 路线）
+
+- gen01 前缀(430 帧标题)重放一次约 25.5s;追加 `english_click` 后增量
+  执行 **2ms**(此前等价操作需全量重放约 30s);SIGTERM 后 clean
+  shutdown,最终 Result `passed` 含两个 checkpoint。
+
+## 验收(机器可判定,已过)
+
+- `tools.scenario_runner_self_test` 覆盖 `_unchanged_prefix`(追加/裁剪/
+  编辑三种形态);四项 scenario 工具 CTest 全绿。

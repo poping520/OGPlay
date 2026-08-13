@@ -7,15 +7,15 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM 已启动**（`WU-M9-001..030`，ADR-0017/0022）：
+- **M9 DexVM 已启动**（`DVM-1..30`，ADR-0017/0022）：
   阶段 0（AOSP 基线/测量/opcode 目录/dexasm）、阶段 1（解释器内核）、
   阶段 2（JNI 双向桥 + java.* P1）、阶段 3（android.* intrinsic +
   dex_activity + profile v2 + pilot 迁移）全部交付；entry override、静态预置和
   v2-only 清理也已完成。
-- **阶段 4 线程地基已交付**：WU-M9-027 把 Interpreter 的帧栈、pending
+- **阶段 4 线程地基已交付**：DVM-27 把 Interpreter 的帧栈、pending
   exception、返回值、tick 与 monitor recursion 拆为显式 execution context；
-  WU-M9-028 在其上让 `Thread.start()` 通过 HAL 起一个真实宿主线程执行
-  guest `run()`，并接入 interrupt/join/teardown；WU-M9-029 按 AOSP
+  DVM-28 在其上让 `Thread.start()` 通过 HAL 起一个真实宿主线程执行
+  guest `run()`，并接入 interrupt/join/teardown；DVM-29 按 AOSP
   `vm/Sync.cpp` 实现 owner/recursion/wait-set 与真实
   `Object.wait/notify/notifyAll`，超时只走统一 Clock。解释执行由全 VM
   `VmExecutionLock` 串行化——真实线程、真实阻塞，但同一时刻只有一个线程解释
@@ -39,7 +39,7 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
 ## 已验收基线
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
-`docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
+`docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
 能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 702/702；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 沙盒任务单见 [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)。
@@ -59,21 +59,21 @@ macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例
   `Intent.setPackage` 明确失败，未触及 DRM 消费链。
   APK 自带一份改名的 AOSP `GLSurfaceView`，`GLThread.run()` 在
   `GLThreadManager` 上做经典 `synchronized`/`wait`/`notifyAll` 守卫循环。
-  WU-M9-028..030 后该线程已是真实宿主线程、越过 `Object.wait()`、并收到
+  DVM-28..30 后该线程已是真实宿主线程、越过 `Object.wait()`、并收到
   managed surface 的 `surfaceCreated`/`surfaceChanged`。三轮 exact 逐字一致
   停在 `class is not available: Ljavax/microedition/khronos/egl/EGLContext;`
   ——自带 `GLSurfaceView` 要自己驱动 EGL。**未达首帧**，profile 保持
   `partial`；前向缺口已静态枚举（EGL10 18 个方法 + 4 常量、
-  `EGLContext.getEGL/getGL`、`GL10.glGetString`），由 WU-M9-031 承接。
+  `EGLContext.getEGL/getGL`、`GL10.glGetString`），由 DVM-31 承接。
   证据：`.local/evidence/a6-gate-r1..r3/`。
 
 开发方式手册（适配/测试/排查的操作步骤）见
 **[docs/playbook/README.md](../playbook/README.md)**；title 阻塞点与工作队列见
-[`docs/tasks/m9/README.md`](../tasks/m9/README.md)。
+[`docs/tasks/dexvm/README.md`](../tasks/dexvm/README.md)。
 
 ## 下一步（按优先级）
 
-1. WU-M9-031：解释执行的 EGL10/GL10 façade（自带 `GLSurfaceView` 的通用形态，
+1. DVM-31：解释执行的 EGL10/GL10 façade（自带 `GLSurfaceView` 的通用形态，
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。

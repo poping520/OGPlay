@@ -83,18 +83,11 @@ struct VideoVm final {
                   linker.Link();
                   return linker;
               }(),
-              model,
-              [this, &factory]() {
-                  context->surface_width = 64U;
-                  context->surface_height = 32U;
-                  context->vfs = &vfs;
-                  context->video_player_factory = std::move(factory);
-                  IntrinsicRegistry registry;
-
-                  return registry;
-              }(),
-              nullptr, ledger, {}) {
-        interpreter.RegisterCoreBuiltins();
+              model, nullptr, ledger, {}) {
+        context->surface_width = 64U;
+        context->surface_height = 32U;
+        context->vfs = &vfs;
+        context->video_player_factory = std::move(factory);
         interpreter.SetLogger(&logger);
         vfs.MountHostDirectory(
             "/sdcard",

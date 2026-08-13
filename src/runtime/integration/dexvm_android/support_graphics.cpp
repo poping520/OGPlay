@@ -66,10 +66,9 @@ namespace ogplay::runtime::android_intrinsics {
     return dx::VmValue::Ref(instance);
 }
 
-void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
+void PopulateGraphicsBitmaps(AndroidHandlers& handlers,
                              const Context& context) {
-    Bind(registry, "android.bitmap_config.clinit",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_bitmap_config_clinit = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         auto& vm = call.vm;
         for (const char* name : {"ARGB_4444", "ARGB_8888"}) {
             vm.SetIntrinsicStaticRef(
@@ -79,8 +78,7 @@ void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.region_op.clinit",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_region_op_clinit = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         auto& vm = call.vm;
         vm.SetIntrinsicStaticRef(
             "Landroid/graphics/Region$Op;", "REPLACE",
@@ -88,8 +86,7 @@ void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
             vm.NewIntrinsicInstance("Landroid/graphics/Region$Op;"));
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.bitmap_factory.decode_byte_array",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_bitmap_factory_decode_byte_array = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& model = call.vm.Model();
         const auto array = call.arguments[0].ref;
         const auto offset = call.arguments[1].AsInt();
@@ -124,16 +121,14 @@ void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
         context->bitmaps[instance.Value()] = std::move(state);
         return dx::VmValue::Ref(instance);
     });
-    Bind(registry, "android.bitmap.create",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_bitmap_create = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto array = call.arguments[0].ref;
         const auto width = call.arguments[1].AsInt();
         const auto height = call.arguments[2].AsInt();
         return MakeBitmapFromArray(call, context, array, 0, width, width,
                                    height);
     });
-    Bind(registry, "android.bitmap.create_offset",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_bitmap_create_offset = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto array = call.arguments[0].ref;
         const auto offset = call.arguments[1].AsInt();
         const auto stride = call.arguments[2].AsInt();
@@ -142,16 +137,13 @@ void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
         return MakeBitmapFromArray(call, context, array, offset, stride,
                                    width, height);
     });
-    Bind(registry, "android.bitmap.get_width",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_bitmap_get_width = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(BitmapOf(call, context).width);
     });
-    Bind(registry, "android.bitmap.get_height",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_bitmap_get_height = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(BitmapOf(call, context).height);
     });
-    Bind(registry, "android.bitmap.get_pixels",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_bitmap_get_pixels = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& model = call.vm.Model();
         const auto& state = BitmapOf(call, context);
         const auto array = call.arguments[0].ref;
@@ -195,8 +187,7 @@ void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.bitmap.recycle",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_bitmap_recycle = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found = context->bitmaps.find(call.receiver.Value());
         if (found != context->bitmaps.end()) {
             found->second.recycled = true;
@@ -205,15 +196,13 @@ void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.canvas.save", [](dx::IntrinsicContext&) {
+    handlers.handler_android_canvas_save = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Int(1);
     });
-    Bind(registry, "android.canvas.clip_rect",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_canvas_clip_rect = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Int(1);
     });
-    Bind(registry, "android.canvas.get_clip_bounds",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_canvas_get_clip_bounds = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto rect =
             call.vm.NewIntrinsicInstance("Landroid/graphics/Rect;");
         const auto slots = call.vm.Model().InstanceSlots(rect);
@@ -225,36 +214,34 @@ void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
     });
 }
 
-void RegisterWidgets(dx::IntrinsicRegistry& registry,
+void PopulateWidgets(AndroidHandlers& handlers,
                      const Context& context) {
-    Bind(registry, "android.widget.noop", [](dx::IntrinsicContext&) {
+    handlers.handler_android_widget_noop = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.widget.zero", [](dx::IntrinsicContext&) {
+    handlers.handler_android_widget_zero = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Int(0);
     });
     // Wide/float neutral answers, so a presentation-only getter never needs a
     // bespoke handler (tools/dexvm_stub_gen.py emits these).
-    Bind(registry, "android.widget.zero_long", [](dx::IntrinsicContext&) {
+    handlers.handler_android_widget_zero_long = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Long(0);
     });
-    Bind(registry, "android.widget.zero_float", [](dx::IntrinsicContext&) {
+    handlers.handler_android_widget_zero_float = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Float(0.0F);
     });
-    Bind(registry, "android.widget.zero_double",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_widget_zero_double = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Double(0.0);
     });
-    Bind(registry, "android.widget.null", [](dx::IntrinsicContext&) {
+    handlers.handler_android_widget_null = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-    Bind(registry, "android.widget.self", [](dx::IntrinsicContext& call) {
+    handlers.handler_android_widget_self = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         return Self(call);
     });
     // TextView text is real state in the interpreter's builder buffer so
     // interpreted logic round-trips what it stored.
-    Bind(registry, "android.textview.set_text",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_textview_set_text = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         auto& buffer = call.vm.BuilderBuffer(call.receiver);
         const auto value = call.arguments[0].ref;
         buffer = value.IsValid()
@@ -262,19 +249,16 @@ void RegisterWidgets(dx::IntrinsicRegistry& registry,
                      : std::u16string();
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.textview.get_text",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_textview_get_text = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(
             call.vm.Model().NewString(call.vm.BuilderBuffer(call.receiver)));
     });
-    Bind(registry, "android.textview.get_paint",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_textview_get_paint = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "text_paint",
                       "Landroid/text/TextPaint;"));
     });
-    Bind(registry, "android.edittext.get_editable",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_edittext_get_editable = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto key =
             "editable:" + std::to_string(call.receiver.Value());
         const auto editable = Singleton(call, context, key,
@@ -292,18 +276,15 @@ void RegisterWidgets(dx::IntrinsicRegistry& registry,
         }
         return call.vm.BuilderBuffer(dx::VmObjectRef(found->second));
     };
-    Bind(registry, "android.editable.clear",
-                      [owner_buffer](dx::IntrinsicContext& call) {
+    handlers.handler_android_editable_clear = dx::IntrinsicHandler([owner_buffer](dx::IntrinsicContext& call) {
         owner_buffer(call).clear();
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.editable.length",
-                      [owner_buffer](dx::IntrinsicContext& call) {
+    handlers.handler_android_editable_length = dx::IntrinsicHandler([owner_buffer](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(
             static_cast<std::int32_t>(owner_buffer(call).size()));
     });
-    Bind(registry, "android.editable.replace",
-                      [owner_buffer](dx::IntrinsicContext& call) {
+    handlers.handler_android_editable_replace = dx::IntrinsicHandler([owner_buffer](dx::IntrinsicContext& call) {
         auto& buffer = owner_buffer(call);
         const auto start = call.arguments[0].AsInt();
         const auto end = call.arguments[1].AsInt();
@@ -321,8 +302,7 @@ void RegisterWidgets(dx::IntrinsicRegistry& registry,
                            : std::u16string());
         return Self(call);
     });
-    Bind(registry, "android.paint.get_text_bounds",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_paint_get_text_bounds = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         // No font engine exists; the v1 metric is a deterministic
         // monospace estimate (8x16 px per glyph) so layout math stays
         // finite and consistent.
@@ -342,29 +322,25 @@ void RegisterWidgets(dx::IntrinsicRegistry& registry,
         slots[3] = {0, dx::SlotTag::cat1};
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.dialog.create",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_dialog_create = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(
             call.vm.NewIntrinsicInstance("Landroid/app/AlertDialog;"));
     });
     // VideoView handlers live in support_video.cpp (real playback
     // through the injected VideoPlayer factory, ADR-0021).
-    Bind(registry, "android.webview.load_url",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_webview_load_url = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         GuestLog(call, core::LogLevel::warn,
                  "WebView.loadUrl dropped (web content is a non-goal): " +
                      call.vm.StringUtf8(call.arguments[0].ref));
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.webview.get_settings",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_webview_get_settings = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "web_settings",
                       "Landroid/webkit/WebSettings;"));
     });
     // System settings table shares the session-lifetime preference store.
-    Bind(registry, "android.settings.get_int",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_settings_get_int = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto key = call.vm.StringUtf8(call.arguments[1].ref);
         auto& store = context->preferences["__android.settings.system"];
         const auto found = store.find(key);
@@ -376,26 +352,22 @@ void RegisterWidgets(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Int(call.arguments[2].AsInt());
     });
-    Bind(registry, "android.settings.put_int",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_settings_put_int = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto key = call.vm.StringUtf8(call.arguments[1].ref);
         context->preferences["__android.settings.system"][key] =
             call.arguments[2].AsInt();
         return dx::VmValue::Int(1);
     });
-    Bind(registry, "android.ssl.context_instance",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_ssl_context_instance = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(
             call.vm.NewIntrinsicInstance("Ljavax/net/ssl/SSLContext;"));
     });
-    Bind(registry, "android.ssl.socket_factory",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_ssl_socket_factory = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "ssl_socket_factory",
                       "Ljavax/net/ssl/SSLSocketFactory;"));
     });
-    Bind(registry, "android.scale_type.clinit",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_scale_type_clinit = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         call.vm.SetIntrinsicStaticRef(
             "Landroid/widget/ImageView$ScaleType;", "CENTER",
             "Landroid/widget/ImageView$ScaleType;",
@@ -403,8 +375,7 @@ void RegisterWidgets(dx::IntrinsicRegistry& registry,
                 "Landroid/widget/ImageView$ScaleType;"));
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.network_state.clinit",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_network_state_clinit = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         call.vm.SetIntrinsicStaticRef(
             "Landroid/net/NetworkInfo$State;", "CONNECTED",
             "Landroid/net/NetworkInfo$State;",

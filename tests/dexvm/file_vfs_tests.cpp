@@ -69,16 +69,9 @@ struct FileVm final {
                   linker.Link();
                   return linker;
               }(),
-              model,
-              [this]() {
-                  context->vfs = &vfs;
-                  context->package_name = kPackage;
-                  IntrinsicRegistry registry;
-
-                  return registry;
-              }(),
-              nullptr, ledger, {}) {
-        interpreter.RegisterCoreBuiltins();
+              model, nullptr, ledger, {}) {
+        context->vfs = &vfs;
+        context->package_name = kPackage;
         interpreter.SetLogger(&logger);
         if (sandbox != nullptr) vfs.AttachSandbox(*sandbox, kWritableRoots);
     }

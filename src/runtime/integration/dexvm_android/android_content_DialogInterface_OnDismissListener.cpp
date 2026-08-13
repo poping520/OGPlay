@@ -3,7 +3,10 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& context) {
-    return DeclareAndroidClass(context, "Landroid/content/DialogInterface$OnDismissListener;");
+    static_cast<void>(context);
+    dx::IntrinsicClassBuilder builder("Landroid/content/DialogInterface$OnDismissListener;");
+    builder.MarkInterface();
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

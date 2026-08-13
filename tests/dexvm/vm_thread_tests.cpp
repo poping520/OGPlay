@@ -66,10 +66,8 @@ struct ThreadedVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, IntrinsicRegistry{}, bridge, ledger, {}),
-          threads(interpreter) {
-        interpreter.RegisterCoreBuiltins();
-    }
+              model, bridge, ledger, {}),
+          threads(interpreter) {}
 
     [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
                                     const std::string& name,

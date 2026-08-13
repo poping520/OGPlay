@@ -7,7 +7,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -167,37 +166,6 @@ struct IntrinsicContext final {
     std::span<const VmValue> arguments;
 };
 
-class IntrinsicRegistry final {
-public:
-    void Register(std::string handler_id, IntrinsicHandler handler);
-    [[nodiscard]] const IntrinsicHandler* Find(
-        std::string_view handler_id) const;
-    [[nodiscard]] std::size_t Size() const noexcept;
-    void Freeze() noexcept;
-
-private:
-    struct TransparentStringHash final {
-        using is_transparent = void;
-
-        [[nodiscard]] std::size_t operator()(
-            const std::string_view value) const noexcept {
-            return std::hash<std::string_view>{}(value);
-        }
-        [[nodiscard]] std::size_t operator()(
-            const std::string& value) const noexcept {
-            return (*this)(std::string_view(value));
-        }
-    };
-
-    // unordered_map nodes keep element addresses stable across rehash. The
-    // interpreter caches pointers to these std::function objects after the
-    // registry is frozen at first execution.
-    std::unordered_map<std::string, IntrinsicHandler, TransparentStringHash,
-                       std::equal_to<>>
-        handlers_;
-    bool frozen_{};
-};
-
 // Stage-2 boundary: native methods resolve through this bridge into the A32
 // guest call executor. Without a bridge, native invokes are accounted and
 // fail explicitly (never silently succeed).
@@ -225,7 +193,7 @@ struct InterpreterStats final {
 class Interpreter final {
 public:
     Interpreter(DexClassLinker& linker, JavaObjectModel& model,
-                IntrinsicRegistry intrinsics, NativeMethodBridge* bridge,
+                NativeMethodBridge* bridge,
                 core::CapabilityLedger& ledger, InterpreterConfig config = {});
     ~Interpreter();
     Interpreter(const Interpreter&) = delete;
@@ -279,10 +247,6 @@ public:
                                             std::string_view message);
     void SetThrowableMessage(VmObjectRef throwable, VmObjectRef message);
     [[nodiscard]] VmObjectRef ThrowableMessage(VmObjectRef throwable) const;
-
-    // Registers the built-in java.* core handlers (object/string/throwable)
-    // plus the P1 batch (StringBuilder/System/Math/boxed/collections).
-    void RegisterCoreBuiltins();
 
     // Optional structured logger for guest-visible output (System.out,
     // android.util.Log) and uncaught-exception diagnostics.

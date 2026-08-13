@@ -3,7 +3,10 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_NetworkInfo(const Context& context) {
-    return DeclareAndroidClass(context, "Landroid/net/NetworkInfo;");
+    static_cast<void>(context);
+    dx::IntrinsicClassBuilder builder("Landroid/net/NetworkInfo;");
+    builder.Super("Ljava/lang/Object;");
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

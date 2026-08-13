@@ -103,6 +103,13 @@ IntrinsicClassBuilder& IntrinsicClassBuilder::Overridable(
                   std::move(handler));
 }
 
+IntrinsicClassBuilder& IntrinsicClassBuilder::Unimplemented(
+    std::string name, std::string descriptor, const bool is_static,
+    const bool overridable) {
+    return Method(std::move(name), std::move(descriptor), is_static,
+                  overridable, {});
+}
+
 IntrinsicClassBuilder& IntrinsicClassBuilder::Field(
     std::string name, std::string descriptor, const bool is_static) {
     IntrinsicFieldDecl field;

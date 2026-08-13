@@ -7,38 +7,6 @@
 
 namespace ogplay::runtime::dexvm {
 
-// ---- IntrinsicRegistry -----------------------------------------------------
-
-void IntrinsicRegistry::Register(std::string handler_id,
-                                 IntrinsicHandler handler) {
-    if (frozen_) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "intrinsic registry is frozen: " + handler_id);
-    }
-    const auto [existing, inserted] =
-        handlers_.try_emplace(std::move(handler_id), std::move(handler));
-    if (!inserted) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "intrinsic handler registered twice: " +
-                             existing->first);
-    }
-}
-
-const IntrinsicHandler*
-IntrinsicRegistry::Find(const std::string_view handler_id) const {
-    const auto found = handlers_.find(handler_id);
-    if (found == handlers_.end()) {
-        return nullptr;
-    }
-    return &found->second;
-}
-
-std::size_t IntrinsicRegistry::Size() const noexcept {
-    return handlers_.size();
-}
-
-void IntrinsicRegistry::Freeze() noexcept { frozen_ = true; }
-
 // ---- Impl helpers ----------------------------------------------------------
 
 namespace {
@@ -222,26 +190,10 @@ void Interpreter::Impl::EnsureInitialized(
                 static_cast<std::int32_t>(constant.integral));
         }
     }
-    const IntrinsicHandler* clinit_handler = nullptr;
     if (mutable_class.clinit_implementation) {
-        clinit_handler = &mutable_class.clinit_implementation;
-    } else if (!mutable_class.intrinsic_clinit_handler.empty()) {
-        clinit_handler = intrinsics.Find(
-            mutable_class.intrinsic_clinit_handler);
-    }
-    if (clinit_handler != nullptr ||
-        !mutable_class.intrinsic_clinit_handler.empty()) {
-        const auto* handler = clinit_handler;
-        if (handler == nullptr) {
-      linker->MutableClass(java_class).clinit_state = ClinitState::failed;
-            ThrowJava("Ljava/lang/UnsatisfiedLinkError;",
-                      "intrinsic clinit handler is not implemented: " +
-                          mutable_class.intrinsic_clinit_handler);
-            return;
-        }
         IntrinsicContext context{*owner, VmObjectRef{}, {}};
         try {
-            (void)(*handler)(context);
+            static_cast<void>(mutable_class.clinit_implementation(context));
         } catch (const VmJavaThrow& thrown) {
       linker->MutableClass(java_class).clinit_state = ClinitState::failed;
             ThrowJava(thrown.descriptor, thrown.message);
@@ -314,16 +266,8 @@ VmValue
 Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
                                    const VmObjectRef receiver,
     const std::span<const VmValue> arguments) {
-    const IntrinsicHandler* handler = nullptr;
-    if (method.implementation) {
-        handler = &method.implementation;
-    } else if (!method.handler_bound) {
-        method.resolved_handler = intrinsics.Find(method.intrinsic_handler);
-        method.handler_bound = true;
-    }
-    if (handler == nullptr) {
-        handler = method.resolved_handler;
-    }
+    const auto* handler = method.implementation ? &method.implementation
+                                                : nullptr;
     if (handler == nullptr) {
         const auto& declaring = linker->Class(method.owner).descriptor;
         const auto diagnostic =
@@ -342,12 +286,9 @@ Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
             }
             return NeutralValueFor(method.return_shorty);
         }
-        auto message = "intrinsic handler is not implemented: " + diagnostic;
-        if (!method.intrinsic_handler.empty()) {
-            message += " (" + method.intrinsic_handler + ")";
-        }
         throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
-                          std::move(message)};
+                          "intrinsic handler is not implemented: " +
+                              diagnostic};
     }
     ++stats.intrinsic_calls;
     IntrinsicContext context{*owner, receiver, arguments};
@@ -455,14 +396,12 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
 // ---- public API ------------------------------------------------------------
 
 Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
-                         IntrinsicRegistry intrinsics,
                          NativeMethodBridge* bridge,
                          core::CapabilityLedger& ledger,
                          const InterpreterConfig config)
     : impl_(std::make_unique<Impl>()) {
     impl_->linker = &linker;
     impl_->model = &model;
-    impl_->intrinsics = std::move(intrinsics);
     impl_->bridge = bridge;
     impl_->ledger = &ledger;
     impl_->config = config;
@@ -485,7 +424,6 @@ Interpreter::~Interpreter() = default;
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                 const std::span<const VmValue> arguments) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
-    impl_->intrinsics.Freeze();
     auto& execution = impl_->Execution();
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& frames = execution.frames;
@@ -573,7 +511,6 @@ VmCallOutcome Interpreter::Call(
 
 VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
-    impl_->intrinsics.Freeze();
     auto& execution = impl_->Execution();
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& pending_exception = execution.pending_exception;
@@ -687,8 +624,6 @@ VmObjectRef Interpreter::ThrowableMessage(const VmObjectRef throwable) const {
     return VmObjectRef{};
     return state->second.message;
 }
-
-void Interpreter::RegisterCoreBuiltins() {}
 
 void Interpreter::SetLogger(core::Logger* logger) noexcept {
     impl_->logger = logger;

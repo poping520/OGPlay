@@ -3,7 +3,10 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_org_xml_sax_ContentHandler(const Context& context) {
-    return DeclareAndroidClass(context, "Lorg/xml/sax/ContentHandler;");
+    static_cast<void>(context);
+    dx::IntrinsicClassBuilder builder("Lorg/xml/sax/ContentHandler;");
+    builder.MarkInterface();
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

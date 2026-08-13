@@ -1,7 +1,5 @@
 #pragma once
 
-#include <utility>
-
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 
@@ -15,22 +13,7 @@ namespace dx = dexvm;
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
 
-template <typename Handler>
-void Bind(dx::IntrinsicRegistry& registry, std::string handler_id,
-          Handler&& handler) {
-    registry.Register(std::move(handler_id),
-                      dx::IntrinsicHandler(std::forward<Handler>(handler)));
-}
-
-// Migration-time shape collectors used only behind DeclareAndroidClass().
-void AppendCoreClasses(std::vector<Decl>& catalog);
-void AppendIoClasses(std::vector<Decl>& catalog);
-void AppendDeviceClasses(std::vector<Decl>& catalog);
-void AppendGraphicsClasses(std::vector<Decl>& catalog);
-void AppendWidgetClasses(std::vector<Decl>& catalog);
-[[nodiscard]] std::vector<Decl> RawAndroidIntrinsicCatalog();
-[[nodiscard]] Decl DeclareAndroidClass(const Context& context,
-                                       std::string_view descriptor);
+#include "handlers.inc"
 
 // Helpers shared across handler batches; batch-local helpers stay private to
 // their translation unit.
@@ -66,28 +49,19 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
 // wired to a bridge, which is a host assembly defect rather than a gap.
 [[nodiscard]] dx::VmThreadRuntime& ThreadRuntime(const Context& context);
 
-// Compatibility handler installers retained until DVM-37 removes the id path.
-void RegisterContextActivity(dx::IntrinsicRegistry& registry,
-                             const Context& context);
-void RegisterViewSurface(dx::IntrinsicRegistry& registry,
-                         const Context& context);
-void RegisterResources(dx::IntrinsicRegistry& registry,
-                       const Context& context);
-void RegisterStreams(dx::IntrinsicRegistry& registry, const Context& context);
-void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context);
-void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
-                            const Context& context);
-void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
-                        const Context& context);
-void RegisterSharedPreferences(dx::IntrinsicRegistry& registry,
+void PopulateContextActivity(AndroidHandlers& handlers, const Context& context);
+void PopulateViewSurface(AndroidHandlers& handlers, const Context& context);
+void PopulateResources(AndroidHandlers& handlers, const Context& context);
+void PopulateStreams(AndroidHandlers& handlers, const Context& context);
+void PopulateFiles(AndroidHandlers& handlers, const Context& context);
+void PopulateDeviceServices(AndroidHandlers& handlers, const Context& context);
+void PopulateAudioVideo(AndroidHandlers& handlers, const Context& context);
+void PopulateSharedPreferences(AndroidHandlers& handlers,
                                const Context& context);
-void RegisterGraphicsBitmaps(dx::IntrinsicRegistry& registry,
-                             const Context& context);
-void RegisterWidgets(dx::IntrinsicRegistry& registry, const Context& context);
-void RegisterVideoViews(dx::IntrinsicRegistry& registry,
-                        const Context& context);
-void RegisterWidgetDispatch(dx::IntrinsicRegistry& registry,
-                            const Context& context);
-void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context);
+void PopulateGraphicsBitmaps(AndroidHandlers& handlers, const Context& context);
+void PopulateWidgets(AndroidHandlers& handlers, const Context& context);
+void PopulateVideoViews(AndroidHandlers& handlers, const Context& context);
+void PopulateWidgetDispatch(AndroidHandlers& handlers, const Context& context);
+void PopulateMisc(AndroidHandlers& handlers, const Context& context);
 
 }  // namespace ogplay::runtime::android_intrinsics

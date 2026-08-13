@@ -148,80 +148,24 @@ dx::VmThreadRuntime& ThreadRuntime(const Context& context) {
 
 }  // namespace android_intrinsics
 
-namespace {
-
-void BindAndroidBuiltins(dx::IntrinsicRegistry& registry,
-                         const android_intrinsics::Context& context) {
-    using namespace android_intrinsics;  // NOLINT: batch entry points
-    RegisterContextActivity(registry, context);
-    RegisterViewSurface(registry, context);
-    RegisterResources(registry, context);
-    RegisterStreams(registry, context);
-    RegisterFiles(registry, context);
-    RegisterDeviceServices(registry, context);
-    RegisterAudioVideo(registry, context);
-    RegisterSharedPreferences(registry, context);
-    RegisterGraphicsBitmaps(registry, context);
-    RegisterWidgets(registry, context);
-    RegisterVideoViews(registry, context);
-    RegisterWidgetDispatch(registry, context);
-    RegisterMisc(registry, context);
-}
-
-}  // namespace
-
-void RegisterAndroidBuiltins(dx::IntrinsicRegistry& registry,
-                             const std::shared_ptr<DexVmAndroidContext>
-                                 context) {
-    BindAndroidBuiltins(registry, context);
-}
-
 namespace android_intrinsics {
 
-Decl DeclareAndroidClass(const Context& context,
-                         const std::string_view descriptor) {
-    auto catalog = RawAndroidIntrinsicCatalog();
-    const auto found = std::find_if(
-        catalog.begin(), catalog.end(), [descriptor](const Decl& declaration) {
-            return declaration.descriptor == descriptor;
-        });
-    if (found == catalog.end()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "android intrinsic class is not declared: " +
-                                 std::string(descriptor));
-    }
-
-    dx::IntrinsicRegistry handlers;
-    BindAndroidBuiltins(handlers, context);
-    auto declaration = *found;
-    for (auto& method : declaration.methods) {
-        if (method.handler.empty()) continue;
-        if (method.handler == "core.object.init") {
-            method.implementation = NeutralHandler('V');
-            method.handler.clear();
-            continue;
-        }
-        const auto* implementation = handlers.Find(method.handler);
-        if (implementation == nullptr) {
-            throw dx::DexVmError(
-                dx::DexVmErrorReason::internal_invariant,
-                "android intrinsic handler is not bound: " + method.handler);
-        }
-        method.implementation = *implementation;
-        method.handler.clear();
-    }
-    if (!declaration.clinit_handler.empty()) {
-        const auto* implementation = handlers.Find(declaration.clinit_handler);
-        if (implementation == nullptr) {
-            throw dx::DexVmError(
-                dx::DexVmErrorReason::internal_invariant,
-                "android intrinsic clinit handler is not bound: " +
-                    declaration.clinit_handler);
-        }
-        declaration.clinit_implementation = *implementation;
-        declaration.clinit_handler.clear();
-    }
-    return declaration;
+AndroidHandlers MakeAndroidHandlers(const Context& context) {
+    AndroidHandlers handlers;
+    PopulateContextActivity(handlers, context);
+    PopulateViewSurface(handlers, context);
+    PopulateResources(handlers, context);
+    PopulateStreams(handlers, context);
+    PopulateFiles(handlers, context);
+    PopulateDeviceServices(handlers, context);
+    PopulateAudioVideo(handlers, context);
+    PopulateSharedPreferences(handlers, context);
+    PopulateGraphicsBitmaps(handlers, context);
+    PopulateWidgets(handlers, context);
+    PopulateVideoViews(handlers, context);
+    PopulateWidgetDispatch(handlers, context);
+    PopulateMisc(handlers, context);
+    return handlers;
 }
 
 }  // namespace android_intrinsics

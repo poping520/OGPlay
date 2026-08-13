@@ -626,7 +626,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 runtime::AndroidIntrinsicCatalog(dex_context);
             dex_bridge = std::make_unique<runtime::DexVmGuestBridge>(
                 *guest, std::move(dex_bytes), android_catalog,
-                dexvm_ledger, &logger, bridge_config);
+                dex_context, dexvm_ledger, &logger, bridge_config);
             dex_context->threads = &dex_bridge->Threads();
             // Object.wait deadlines come from the deterministic uptime the
             // lifecycle driver publishes from the unified Clock, never from

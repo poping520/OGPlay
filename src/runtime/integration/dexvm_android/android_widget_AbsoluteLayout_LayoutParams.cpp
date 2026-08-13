@@ -3,7 +3,11 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) {
-    return DeclareAndroidClass(context, "Landroid/widget/AbsoluteLayout$LayoutParams;");
+    const auto handlers = MakeAndroidHandlers(context);
+    dx::IntrinsicClassBuilder builder("Landroid/widget/AbsoluteLayout$LayoutParams;");
+    builder.Super("Ljava/lang/Object;");
+    builder.Virtual("<init>", "(IIII)V", handlers.handler_android_graphics_noop);
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

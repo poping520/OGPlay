@@ -8,20 +8,18 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
-    Bind(registry, "android.pair.init", [](dx::IntrinsicContext& call) {
+void PopulateMisc(AndroidHandlers& handlers, const Context& context) {
+    handlers.handler_android_pair_init = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
         slots[0] = {call.arguments[0].ref.Value(), dx::SlotTag::ref};
         slots[1] = {call.arguments[1].ref.Value(), dx::SlotTag::ref};
         return dx::VmValue::Void();
     });
-  Bind(registry, "android.bundle.init",
-                    [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_init = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
                       context->bundles.try_emplace(call.receiver.Value());
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.bundle.get", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_get = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto bundle = context->bundles.find(call.receiver.Value());
         if (bundle == context->bundles.end()) {
         return dx::VmValue::Ref(dx::VmObjectRef{});
@@ -39,7 +37,7 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
         }
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-  Bind(registry, "android.bundle.get_int", [context](
+  handlers.handler_android_bundle_get_int = dx::IntrinsicHandler([context](
                                                   dx::IntrinsicContext &call) {
     const auto &values = context->bundles[call.receiver.Value()];
     const auto found = values.find(call.vm.StringUtf8(call.arguments[0].ref));
@@ -48,8 +46,7 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
                             : std::get_if<std::int32_t>(&found->second);
     return dx::VmValue::Int(value == nullptr ? 0 : *value);
     });
-  Bind(registry,
-      "android.bundle.get_string", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_get_string = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto &values = context->bundles[call.receiver.Value()];
         const auto found =
             values.find(call.vm.StringUtf8(call.arguments[0].ref));
@@ -59,21 +56,19 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
         return value == nullptr ? dx::VmValue::Ref(dx::VmObjectRef{})
                                 : MakeString(call, *value);
     });
-  Bind(registry,
-      "android.bundle.put_string", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_put_string = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         context->bundles[call.receiver.Value()]
                         [call.vm.StringUtf8(call.arguments[0].ref)] =
             call.vm.StringUtf8(call.arguments[1].ref);
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.bundle.put_int", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_put_int = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         context->bundles[call.receiver.Value()]
                         [call.vm.StringUtf8(call.arguments[0].ref)] =
             call.arguments[1].AsInt();
         return dx::VmValue::Void();
     });
-  Bind(registry, "android.bundle.get_long", [context](
+  handlers.handler_android_bundle_get_long = dx::IntrinsicHandler([context](
                                                    dx::IntrinsicContext &call) {
     const auto &values = context->bundles[call.receiver.Value()];
     const auto found = values.find(call.vm.StringUtf8(call.arguments[0].ref));
@@ -82,15 +77,13 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
                             : std::get_if<std::int64_t>(&found->second);
     return dx::VmValue::Long(value == nullptr ? 0 : *value);
   });
-  Bind(registry,
-      "android.bundle.put_long", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_put_long = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         context->bundles[call.receiver.Value()]
                         [call.vm.StringUtf8(call.arguments[0].ref)] =
             call.arguments[1].AsLong();
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.bundle.get_byte_array", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_get_byte_array = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto &values = context->bundles[call.receiver.Value()];
         const auto found =
             values.find(call.vm.StringUtf8(call.arguments[0].ref));
@@ -99,39 +92,34 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
                                 : std::get_if<dx::VmObjectRef>(&found->second);
         return dx::VmValue::Ref(value == nullptr ? dx::VmObjectRef{} : *value);
       });
-  Bind(registry,
-      "android.bundle.put_byte_array", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_put_byte_array = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         context->bundles[call.receiver.Value()]
                         [call.vm.StringUtf8(call.arguments[0].ref)] =
             call.arguments[1].ref;
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.bundle.contains", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_contains = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto &values = context->bundles[call.receiver.Value()];
         return dx::VmValue::Int(
             values.contains(call.vm.StringUtf8(call.arguments[0].ref)) ? 1 : 0);
       });
-  Bind(registry, "android.bundle.clear",
-                    [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_bundle_clear = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
                       context->bundles[call.receiver.Value()].clear();
         return dx::VmValue::Void();
     });
-  Bind(registry, "android.sax.factory_instance",
-                    [](dx::IntrinsicContext &call) {
+  handlers.handler_android_sax_factory_instance = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
                       return dx::VmValue::Ref(call.vm.NewIntrinsicInstance(
                           "Ljavax/xml/parsers/SAXParserFactory;"));
                     });
-  Bind(registry, "android.sax.new_parser", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_sax_new_parser = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
     return dx::VmValue::Ref(
         call.vm.NewIntrinsicInstance("Ljavax/xml/parsers/SAXParser;"));
   });
-  Bind(registry, "android.sax.get_reader", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_sax_get_reader = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
     return dx::VmValue::Ref(
         call.vm.NewIntrinsicInstance("Lorg/xml/sax/XMLReader$Impl;"));
   });
-  Bind(registry,
-      "android.sax.set_content_handler", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_sax_set_content_handler = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto handler = call.arguments[0].ref;
         if (!handler.IsValid()) {
           throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
@@ -140,34 +128,25 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
         context->sax_content_handlers[call.receiver.Value()] = handler;
         return dx::VmValue::Void();
     });
-  Bind(registry, "android.sax.parse_unsupported",
-                    [](dx::IntrinsicContext &) -> dx::VmValue {
+  handlers.handler_android_sax_parse_unsupported = dx::IntrinsicHandler([](dx::IntrinsicContext &) -> dx::VmValue {
                       throw dx::VmJavaThrow{
                           "Ljava/lang/UnsupportedOperationException;",
                           "SAX parsing is not implemented"};
                     });
-  Bind(registry, "android.receiver.init",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.receiver.on_receive_noop",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.intent_filter.init",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.intent_filter.init_empty",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.intent_filter.add_action",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.intent.init",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry,
-      "android.intent.init_component", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_receiver_init = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_receiver_on_receive_noop = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_intent_filter_init = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_intent_filter_init_empty = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_intent_filter_add_action = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_intent_init = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_intent_init_component = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto class_object = call.arguments[1].ref;
         const auto target = call.vm.Model().ClassOfClassObject(class_object);
         context->intent_components[call.receiver.Value()] =
             call.vm.Linker().Class(target).descriptor;
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.intent.set_class_name",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_intent_set_class_name = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto dotted = call.vm.StringUtf8(call.arguments[1].ref);
         std::string descriptor = "L";
         for (const auto unit : dotted) {
@@ -178,21 +157,18 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
             std::move(descriptor);
         return Self(call);
     });
-  Bind(registry,
-      "android.intent.put_extra_int", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_intent_put_extra_int = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         context->intent_int_extras[call.receiver.Value()]
             [call.vm.StringUtf8(call.arguments[0].ref)] =
                 call.arguments[1].AsInt();
         return Self(call);
     });
-  Bind(registry,
-      "android.intent.put_extra_string", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_intent_put_extra_string = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         context->intent_string_extras[call.receiver.Value()][call.vm.StringUtf8(
             call.arguments[0].ref)] = call.vm.StringUtf8(call.arguments[1].ref);
         return Self(call);
     });
-  Bind(registry,
-      "android.intent.get_string_extra", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_intent_get_string_extra = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto extras =
             context->intent_string_extras.find(call.receiver.Value());
         if (extras != context->intent_string_extras.end()) {
@@ -204,8 +180,7 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
         }
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-  Bind(registry,
-      "android.intent.get_int_extra", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_intent_get_int_extra = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto extras =
             context->intent_int_extras.find(call.receiver.Value());
         if (extras != context->intent_int_extras.end()) {
@@ -217,50 +192,46 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
         }
         return dx::VmValue::Int(call.arguments[1].AsInt());
     });
-  Bind(registry, "android.intent.get_action", [](dx::IntrinsicContext &) {
+  handlers.handler_android_intent_get_action = dx::IntrinsicHandler([](dx::IntrinsicContext &) {
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-  Bind(registry, "android.intent.get_extras", [](dx::IntrinsicContext &) {
+  handlers.handler_android_intent_get_extras = dx::IntrinsicHandler([](dx::IntrinsicContext &) {
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-    Bind(registry, "android.intent.set_flags",
-                    [](dx::IntrinsicContext &call) { return Self(call); });
-    Bind(registry, "android.intent.set_data_and_type",
-                    [](dx::IntrinsicContext &call) { return Self(call); });
-    Bind(registry, "android.pending_intent.get_broadcast",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_intent_set_flags = dx::IntrinsicHandler([](dx::IntrinsicContext &call) { return Self(call); });
+    handlers.handler_android_intent_set_data_and_type = dx::IntrinsicHandler([](dx::IntrinsicContext &call) { return Self(call); });
+    handlers.handler_android_pending_intent_get_broadcast = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-    Bind(registry, "android.uri.parse", [](dx::IntrinsicContext& call) {
+    handlers.handler_android_uri_parse = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
     return dx::VmValue::Ref(call.vm.NewIntrinsicInstance("Landroid/net/Uri;"));
     });
-  Bind(registry, "android.toast.make_text", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_toast_make_text = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(
             call.vm.NewIntrinsicInstance("Landroid/widget/Toast;"));
     });
-    Bind(registry, "android.toast.show", [](dx::IntrinsicContext& call) {
+    handlers.handler_android_toast_show = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         GuestLog(call, core::LogLevel::info, "Toast.show()");
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.sms.get_default", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_sms_get_default = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "sms", "Landroid/telephony/SmsManager;"));
     });
-    for (const auto* blocked :
-         {"android.sms.send_text", "android.sms.create_from_pdu",
-        "android.sms.get_message_body", "android.sms.get_originating_address",
-          "android.net.unsupported"}) {
-        Bind(registry, blocked, [](dx::IntrinsicContext&) -> dx::VmValue {
+    const auto unsupported_network =
+        [](dx::IntrinsicContext&) -> dx::VmValue {
             throw dx::VmJavaThrow{
                 "Ljava/lang/UnsupportedOperationException;",
                 "SMS/network actions are outside the compatibility scope"};
-        });
-    }
+        };
+    handlers.handler_android_sms_send_text = dx::IntrinsicHandler(unsupported_network);
+    handlers.handler_android_sms_create_from_pdu = dx::IntrinsicHandler(unsupported_network);
+    handlers.handler_android_sms_get_message_body = dx::IntrinsicHandler(unsupported_network);
+    handlers.handler_android_sms_get_originating_address = dx::IntrinsicHandler(unsupported_network);
+    handlers.handler_android_net_unsupported = dx::IntrinsicHandler(unsupported_network);
 
     // Motion events read their slots directly.
-  Bind(registry,
-      "android.motion_event.get_action", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_motion_event_get_action = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         return dx::VmValue::Int(static_cast<std::int32_t>(
             call.vm.Model().InstanceSlots(call.receiver)[0].bits));
     });
@@ -271,37 +242,25 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
         value.cat1 = call.vm.Model().InstanceSlots(call.receiver)[slot].bits;
         return value;
     };
-  Bind(registry,
-      "android.motion_event.get_x",
-      [slot_float](dx::IntrinsicContext &call) { return slot_float(call, 1); });
-  Bind(registry,
-      "android.motion_event.get_y",
-      [slot_float](dx::IntrinsicContext &call) { return slot_float(call, 2); });
-  Bind(registry,
-      "android.motion_event.get_x_indexed",
-      [slot_float](dx::IntrinsicContext &call) { return slot_float(call, 1); });
-  Bind(registry,
-      "android.motion_event.get_y_indexed",
-      [slot_float](dx::IntrinsicContext &call) { return slot_float(call, 2); });
-    Bind(registry, "android.motion_event.get_pointer_count",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Int(1); });
-  Bind(registry,
-      "android.motion_event.get_pointer_id", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_motion_event_get_x = dx::IntrinsicHandler([slot_float](dx::IntrinsicContext &call) { return slot_float(call, 1); });
+  handlers.handler_android_motion_event_get_y = dx::IntrinsicHandler([slot_float](dx::IntrinsicContext &call) { return slot_float(call, 2); });
+  handlers.handler_android_motion_event_get_x_indexed = dx::IntrinsicHandler([slot_float](dx::IntrinsicContext &call) { return slot_float(call, 1); });
+  handlers.handler_android_motion_event_get_y_indexed = dx::IntrinsicHandler([slot_float](dx::IntrinsicContext &call) { return slot_float(call, 2); });
+    handlers.handler_android_motion_event_get_pointer_count = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Int(1); });
+  handlers.handler_android_motion_event_get_pointer_id = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         return dx::VmValue::Int(static_cast<std::int32_t>(
             call.vm.Model().InstanceSlots(call.receiver)[3].bits));
     });
 
     // Platform System handlers (declared by the core catalog).
-    Bind(registry, "platform.system.current_time_millis",
-                      [context](dx::IntrinsicContext&) {
+    handlers.handler_platform_system_current_time_millis = dx::IntrinsicHandler([context](dx::IntrinsicContext&) {
                       // Deterministic epoch base plus lifecycle-published
                       // uptime.
         return dx::VmValue::Long(1'400'000'000'000LL +
                                  context->uptime_millis.load());
     });
     // java.util.Date over the same deterministic platform clock.
-  Bind(registry,
-      "platform.date.init", [context](dx::IntrinsicContext &call) {
+  handlers.handler_platform_date_init = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto millis = 1'400'000'000'000LL + context->uptime_millis.load();
         const auto millis_bits = static_cast<std::uint64_t>(millis);
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
@@ -316,12 +275,10 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
         return static_cast<std::int64_t>(
         (static_cast<std::uint64_t>(slots[1].bits) << 32U) | slots[0].bits);
     };
-    Bind(registry, "platform.date.get_time",
-                      [date_millis](dx::IntrinsicContext& call) {
+    handlers.handler_platform_date_get_time = dx::IntrinsicHandler([date_millis](dx::IntrinsicContext& call) {
         return dx::VmValue::Long(date_millis(call));
     });
-  Bind(registry,
-      "platform.date.get_year", [date_millis](dx::IntrinsicContext &call) {
+  handlers.handler_platform_date_get_year = dx::IntrinsicHandler([date_millis](dx::IntrinsicContext &call) {
         using days = std::chrono::days;
         const auto time_point =
             std::chrono::sys_days(std::chrono::January / 1 / 1970) +
@@ -332,12 +289,10 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
         return dx::VmValue::Int(
             static_cast<std::int32_t>(static_cast<int>(date.year())) - 1900);
     });
-  Bind(registry,
-      "platform.system.nano_time", [context](dx::IntrinsicContext &) {
+  handlers.handler_platform_system_nano_time = dx::IntrinsicHandler([context](dx::IntrinsicContext &) {
         return dx::VmValue::Long(context->uptime_millis.load() * 1'000'000LL);
     });
-  Bind(registry,
-      "platform.system.load_library", [](dx::IntrinsicContext &call) {
+  handlers.handler_platform_system_load_library = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         // Libraries are preloaded and initialized by the session
         // (04 §2 step 4); the name is recorded for diagnostics.
         GuestLog(call, core::LogLevel::info,
@@ -345,7 +300,7 @@ void RegisterMisc(dx::IntrinsicRegistry& registry, const Context& context) {
                      call.vm.StringUtf8(call.arguments[0].ref) + ")");
         return dx::VmValue::Void();
     });
-  Bind(registry, "platform.system.exit", [context](dx::IntrinsicContext &) {
+  handlers.handler_platform_system_exit = dx::IntrinsicHandler([context](dx::IntrinsicContext &) {
         context->exit_requested = true;
         return dx::VmValue::Void();
     });

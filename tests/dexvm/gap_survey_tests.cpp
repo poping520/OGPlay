@@ -34,9 +34,7 @@ struct Linked final {
                   linker.Link();
                   return linker;
               }(),
-              model, IntrinsicRegistry{}, nullptr, ledger, {}) {
-        interpreter.RegisterCoreBuiltins();
-    }
+              model, nullptr, ledger, {}) {}
 };
 
 constexpr const char* kAbsent = "Landroid/bogus/Absent;";

@@ -43,8 +43,7 @@ struct Vm final {
     Interpreter interpreter;
 
     explicit Vm(const InterpreterConfig config = {},
-                const JavaObjectModelConfig model_config = {},
-                const bool register_core_builtins = true)
+                const JavaObjectModelConfig model_config = {})
         : model(strings, arrays, model_config),
           linker(),
           interpreter(
@@ -54,11 +53,7 @@ struct Vm final {
                   linker.Link();
                   return linker;
               }(),
-              model, IntrinsicRegistry{}, nullptr, ledger, config) {
-        if (register_core_builtins) {
-            interpreter.RegisterCoreBuiltins();
-        }
-    }
+              model, nullptr, ledger, config) {}
 
     [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
                                     const std::string& name,
@@ -87,8 +82,7 @@ struct IntrinsicVm final {
     ogplay::core::CapabilityLedger ledger;
     Interpreter interpreter;
 
-    IntrinsicVm(std::vector<IntrinsicClassDecl> catalog,
-                IntrinsicRegistry registry = {})
+    explicit IntrinsicVm(std::vector<IntrinsicClassDecl> catalog)
         : model(strings, arrays),
           linker(),
           interpreter(
@@ -101,7 +95,7 @@ struct IntrinsicVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, std::move(registry), nullptr, ledger) {}
+              model, nullptr, ledger) {}
 
     [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
                                     const std::string& name,
@@ -131,26 +125,6 @@ void ExpectException(const VmType& vm, const VmCallOutcome& outcome,
 
 }  // namespace
 
-TEST_CASE("dexvm intrinsic registry preserves duplicate rejection") {
-    IntrinsicRegistry registry;
-    registry.Register("test.duplicate", [](IntrinsicContext&) {
-        return VmValue::Void();
-    });
-
-    bool rejected = false;
-    try {
-        registry.Register("test.duplicate", [](IntrinsicContext&) {
-            return VmValue::Void();
-        });
-    } catch (const DexVmError& error) {
-        rejected = true;
-        CHECK(error.Reason() == DexVmErrorReason::internal_invariant);
-        CHECK(std::string(error.what()).find("registered twice") !=
-              std::string::npos);
-    }
-    CHECK(rejected);
-}
-
 TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     const auto catalog = CoreIntrinsicCatalog();
     std::set<std::string> descriptors;
@@ -165,9 +139,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     };
     for (const auto& declaration : catalog) {
         CHECK(descriptors.insert(declaration.descriptor).second);
-        CHECK(declaration.clinit_handler.empty());
         for (const auto& method : declaration.methods) {
-            CHECK(method.handler.empty());
             if (!method.implementation) {
                 CHECK(platform_implemented.contains(
                     declaration.descriptor + "." + method.name +
@@ -214,64 +186,17 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           });
 }
 
-TEST_CASE("dexvm core builtin registration remains an empty compatibility API") {
-    Vm before_call(InterpreterConfig{}, JavaObjectModelConfig{}, false);
-    CHECK_NOTHROW(before_call.interpreter.RegisterCoreBuiltins());
-    ExpectInt(before_call.interpreter.Call(
-                  before_call.Static("Ljava/lang/Math;", "abs", "(I)I"),
-                  std::vector<VmValue>{VmValue::Int(-7)}),
-              7);
-
-    CHECK_NOTHROW(before_call.interpreter.RegisterCoreBuiltins());
-}
-
-TEST_CASE("dexvm core handlers call directly and legacy misses still bind once") {
+TEST_CASE("dexvm core handlers call directly") {
     Vm hit;
     const auto hit_method =
         hit.Static("Ljava/lang/Math;", "abs", "(I)I");
     REQUIRE(hit.linker.Method(hit_method).implementation);
-    CHECK_FALSE(hit.linker.Method(hit_method).handler_bound);
     ExpectInt(hit.interpreter.Call(
                   hit_method, std::vector<VmValue>{VmValue::Int(-9)}),
               9);
-    CHECK_FALSE(hit.linker.Method(hit_method).handler_bound);
-    CHECK(hit.linker.Method(hit_method).resolved_handler == nullptr);
     ExpectInt(hit.interpreter.Call(
                   hit_method, std::vector<VmValue>{VmValue::Int(-11)}),
               11);
-    CHECK_FALSE(hit.linker.Method(hit_method).handler_bound);
-
-    IntrinsicClassDecl legacy;
-    legacy.descriptor = "Lbuilder/LegacyMiss;";
-    legacy.superclass = "Ljava/lang/Object;";
-    legacy.methods.push_back(
-        {"answer", "()I", true, false, "legacy.missing"});
-    IntrinsicVm miss({std::move(legacy)});
-    const auto miss_method =
-        miss.Static("Lbuilder/LegacyMiss;", "answer", "()I");
-    ExpectException(
-        miss,
-        miss.interpreter.Call(
-            miss_method, {}),
-        "Ljava/lang/UnsatisfiedLinkError;");
-    REQUIRE(miss.linker.Method(miss_method).handler_bound);
-    CHECK(miss.linker.Method(miss_method).resolved_handler == nullptr);
-    ExpectException(
-        miss,
-        miss.interpreter.Call(
-            miss_method, {}),
-        "Ljava/lang/UnsatisfiedLinkError;");
-
-    const auto hits = miss.ledger.Unimplemented();
-    bool found = false;
-    for (const auto& entry : hits) {
-        if (entry.id ==
-            "dexvm.intrinsic.Lbuilder/LegacyMiss;.answer()I") {
-            found = true;
-            CHECK(entry.count == 2U);
-        }
-    }
-    CHECK(found);
 }
 
 TEST_CASE("dexvm intrinsic builder binds implementations without a registry") {
@@ -380,35 +305,6 @@ TEST_CASE("dexvm declaration miss uses the owner signature and repeats") {
     CHECK(hits[0].id ==
           "dexvm.intrinsic.Lbuilder/Missing;.answer()I");
     CHECK(hits[0].count == 2U);
-}
-
-TEST_CASE("dexvm direct and string intrinsic channels coexist") {
-    IntrinsicClassBuilder direct("Lbuilder/NewChannel;");
-    direct.Super("Ljava/lang/Object;")
-        .Static("answer", "()I", [](IntrinsicContext&) {
-            return VmValue::Int(51);
-        });
-
-    IntrinsicClassDecl legacy;
-    legacy.descriptor = "Lbuilder/OldChannel;";
-    legacy.superclass = "Ljava/lang/Object;";
-    legacy.methods.push_back(
-        {"answer", "()I", true, false, "legacy.answer"});
-    std::vector<IntrinsicClassDecl> catalog;
-    catalog.push_back(std::move(direct).Build());
-    catalog.push_back(std::move(legacy));
-    IntrinsicRegistry registry;
-    registry.Register("legacy.answer", [](IntrinsicContext&) {
-        return VmValue::Int(52);
-    });
-    IntrinsicVm vm(std::move(catalog), std::move(registry));
-
-    ExpectInt(vm.interpreter.Call(
-                  vm.Static("Lbuilder/NewChannel;", "answer", "()I"), {}),
-              51);
-    ExpectInt(vm.interpreter.Call(
-                  vm.Static("Lbuilder/OldChannel;", "answer", "()I"), {}),
-              52);
 }
 
 TEST_CASE("dexvm arithmetic edge semantics") {

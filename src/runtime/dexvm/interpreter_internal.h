@@ -67,7 +67,6 @@ class Interpreter::Impl final {
 public:
     DexClassLinker* linker{};
     JavaObjectModel* model{};
-    IntrinsicRegistry intrinsics;
     NativeMethodBridge* bridge{};
     core::CapabilityLedger* ledger{};
     InterpreterConfig config;

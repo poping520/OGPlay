@@ -164,11 +164,11 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 ## 文件分工（android.* intrinsic）
 
 `dexvm_android.h` 是唯一公共面。生产装配只调用
-`AndroidIntrinsicCatalog(context)`；`RegisterAndroidBuiltins` 仅作为 DVM-37 删除前
-的兼容符号保留，不再由 frontend 或 bridge 调用。每个平台类在
+`AndroidIntrinsicCatalog(context)`。每个平台类在
 `dexvm_android/<类名>.cpp` 中以 `Declare_<类名>(context)` 同址声明并直接绑定；
-`dexvm_android/catalog.cpp` 只聚合，`shared.h` 只保存跨类 helper。新增能力必须进入
-对应类文件，禁止恢复 catalog/handler 批次或 misc 聚合。
+`dexvm_android/catalog.cpp` 只聚合，`shared.h` 只保存跨类 helper，support 文件只
+构造命名的拥有型实现，不提供字符串查找入口。新增能力必须进入对应类文件，禁止
+恢复集中式 catalog 或字符串分发通道。
 
 ## 测试
 

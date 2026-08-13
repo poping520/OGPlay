@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "dexvm_android/shared.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 
 namespace ogplay::runtime {
@@ -43,25 +44,33 @@ struct DescriptorWalk final {
     return (first == '[' ) ? 'L' : first;
 }
 
-void BindPlatformCoreHandlerIds(
-    std::vector<dx::IntrinsicClassDecl>& catalog) {
+void BindPlatformCoreHandlers(
+    std::vector<dx::IntrinsicClassDecl>& catalog,
+    const android_intrinsics::AndroidHandlers& handlers) {
+    using HandlerMember =
+        dx::IntrinsicHandler android_intrinsics::AndroidHandlers::*;
     struct Binding final {
         std::string_view owner;
         std::string_view name;
         std::string_view descriptor;
-        std::string_view handler;
+        HandlerMember implementation;
     };
     constexpr Binding bindings[] = {
         {"Ljava/lang/System;", "currentTimeMillis", "()J",
-         "platform.system.current_time_millis"},
+         &android_intrinsics::AndroidHandlers::
+             handler_platform_system_current_time_millis},
         {"Ljava/lang/System;", "nanoTime", "()J",
-         "platform.system.nano_time"},
+         &android_intrinsics::AndroidHandlers::handler_platform_system_nano_time},
         {"Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
-         "platform.system.load_library"},
-        {"Ljava/lang/System;", "exit", "(I)V", "platform.system.exit"},
-        {"Ljava/util/Date;", "<init>", "()V", "platform.date.init"},
-        {"Ljava/util/Date;", "getTime", "()J", "platform.date.get_time"},
-        {"Ljava/util/Date;", "getYear", "()I", "platform.date.get_year"},
+         &android_intrinsics::AndroidHandlers::handler_platform_system_load_library},
+        {"Ljava/lang/System;", "exit", "(I)V",
+         &android_intrinsics::AndroidHandlers::handler_platform_system_exit},
+        {"Ljava/util/Date;", "<init>", "()V",
+         &android_intrinsics::AndroidHandlers::handler_platform_date_init},
+        {"Ljava/util/Date;", "getTime", "()J",
+         &android_intrinsics::AndroidHandlers::handler_platform_date_get_time},
+        {"Ljava/util/Date;", "getYear", "()I",
+         &android_intrinsics::AndroidHandlers::handler_platform_date_get_year},
     };
     for (const auto& binding : bindings) {
         bool found = false;
@@ -70,7 +79,7 @@ void BindPlatformCoreHandlerIds(
             for (auto& method : declaration.methods) {
                 if (method.name == binding.name &&
                     method.descriptor == binding.descriptor) {
-                    method.handler = binding.handler;
+                    method.implementation = handlers.*binding.implementation;
                     found = true;
                     break;
                 }
@@ -557,6 +566,7 @@ public:
 DexVmGuestBridge::DexVmGuestBridge(
     AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
     const std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
+    const std::shared_ptr<DexVmAndroidContext>& android_context,
     core::CapabilityLedger& ledger, core::Logger* logger,
     const DexVmBridgeConfig config)
     : impl_(std::make_unique<Impl>()) {
@@ -567,7 +577,9 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->owner = this;
 
     auto core_catalog = dx::CoreIntrinsicCatalog();
-    BindPlatformCoreHandlerIds(core_catalog);
+    const auto android_handlers =
+        android_intrinsics::MakeAndroidHandlers(android_context);
+    BindPlatformCoreHandlers(core_catalog, android_handlers);
     impl_->linker.RegisterIntrinsics(core_catalog);
     if (!platform_catalog.empty()) {
         impl_->linker.RegisterIntrinsics(platform_catalog);
@@ -578,11 +590,8 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->model = std::make_unique<dx::JavaObjectModel>(
         session.Strings(), session.Arrays(), config.heap);
 
-    dx::IntrinsicRegistry registry;
-  impl_->vm = std::make_unique<dx::Interpreter>(impl_->linker, *impl_->model,
-                                                std::move(registry), this,
-                                                ledger, config.interpreter);
-    impl_->vm->RegisterCoreBuiltins();
+    impl_->vm = std::make_unique<dx::Interpreter>(
+        impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
 

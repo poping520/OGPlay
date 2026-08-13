@@ -11,32 +11,24 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-void RegisterContextActivity(dx::IntrinsicRegistry& registry,
+void PopulateContextActivity(AndroidHandlers& handlers,
                              const Context& context) {
-  Bind(registry, "android.context.init",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.activity.init",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-    Bind(registry, "android.activity.lifecycle_noop",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry,
-      "android.activity.get_window", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_context_init = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_activity_init = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+    handlers.handler_android_activity_lifecycle_noop = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_activity_get_window = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "window", "Landroid/view/Window;"));
     });
-    Bind(registry, "android.activity.request_window_feature",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Int(1); });
-    Bind(registry, "android.activity.set_content_view",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_activity_request_window_feature = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Int(1); });
+    handlers.handler_android_activity_set_content_view = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         context->content_view = call.arguments[0].ref;
         return dx::VmValue::Void();
     });
     // Minimal layout inflation: binary XML tags become widget intrinsic
     // instances and android:id entries feed findViewById. Layout geometry
     // attributes are not applied (the widget layer holds state only).
-  Bind(registry,
-      "android.activity.set_content_view_id",
-                      [context](dx::IntrinsicContext& call) {
+  handlers.handler_android_activity_set_content_view_id = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto layout_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
         const auto* entry = context->arsc.FindById(layout_id);
@@ -139,8 +131,7 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
     // The whole VM is the UI thread in the cooperative model, so the
     // runnable executes synchronously (matches Android semantics when the
     // caller is already on the UI thread).
-  Bind(registry,
-      "android.activity.run_on_ui_thread", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_activity_run_on_ui_thread = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         const auto runnable = call.arguments[0].ref;
         if (!runnable.IsValid()) {
             throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
@@ -164,9 +155,7 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.activity.find_view_by_id",
-                      [context](dx::IntrinsicContext& call) {
+  handlers.handler_android_activity_find_view_by_id = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found = context->view_registry.find(
             static_cast<std::uint32_t>(call.arguments[0].AsInt()));
         if (found == context->view_registry.end()) {
@@ -175,34 +164,25 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Ref(found->second);
     });
-    Bind(registry, "android.activity.set_volume_control_stream",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-    Bind(registry, "android.activity.on_key_false",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Int(0); });
-    Bind(registry, "android.activity.on_touch_false",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Int(0); });
-    Bind(registry, "android.activity.finish",
-                      [context](dx::IntrinsicContext&) {
+    handlers.handler_android_activity_set_volume_control_stream = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+    handlers.handler_android_activity_on_key_false = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Int(0); });
+    handlers.handler_android_activity_on_touch_false = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Int(0); });
+    handlers.handler_android_activity_finish = dx::IntrinsicHandler([context](dx::IntrinsicContext&) {
         context->exit_requested = true;
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.context.get_package_name",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_context_get_package_name = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return MakeString(call, context->package_name);
     });
-  Bind(registry,
-      "android.context.get_resources", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_context_get_resources = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(Singleton(call, context, "resources",
             "Landroid/content/res/Resources;"));
     });
-  Bind(registry,
-      "android.context.get_assets", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_context_get_assets = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(Singleton(
             call, context, "assets", "Landroid/content/res/AssetManager;"));
     });
-  Bind(registry,
-      "android.context.get_system_service",
-                      [context](dx::IntrinsicContext& call) {
+  handlers.handler_android_context_get_system_service = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
         if (name == "phone") {
             return dx::VmValue::Ref(Singleton(
@@ -238,70 +218,60 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               "system service is not provided: " + name};
     });
-    Bind(registry, "android.activity.get_window_manager",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_activity_get_window_manager = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
                       return dx::VmValue::Ref(
                           Singleton(call, context, "window_manager",
             "Landroid/view/WindowManagerImpl;"));
     });
-    Bind(registry, "android.windowmanager.get_default_display",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_windowmanager_get_default_display = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(Singleton(
             call, context, "display", "Landroid/view/Display;"));
     });
-  Bind(registry, "android.display.get_width", [context](
+  handlers.handler_android_display_get_width = dx::IntrinsicHandler([context](
                                                      dx::IntrinsicContext &) {
     return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_width));
     });
-  Bind(registry, "android.display.get_height", [context](
+  handlers.handler_android_display_get_height = dx::IntrinsicHandler([context](
                                                       dx::IntrinsicContext &) {
     return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_height));
   });
-  Bind(registry, "android.display.get_rotation", [](dx::IntrinsicContext &) {
+  handlers.handler_android_display_get_rotation = dx::IntrinsicHandler([](dx::IntrinsicContext &) {
     // Managed surface coordinates are landscape-natural and never
     // rotate independently from the host window.
     return dx::VmValue::Int(0);
     });
-    Bind(registry, "android.connectivity.get_active_network_info",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_connectivity_get_active_network_info = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
                       // Truthful offline fact: no active network (documented
                       // null).
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-    Bind(registry, "android.connectivity.get_network_info",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_connectivity_get_network_info = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         // No network of any type is connected on this platform.
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-    Bind(registry, "android.context.get_content_resolver",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_context_get_content_resolver = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "content_resolver",
                       "Landroid/content/ContentResolver;"));
     });
-  Bind(registry,
-      "android.context.send_broadcast", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_context_send_broadcast = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         // No other process exists; the broadcast truthfully has no
         // audience. Logged so silent drops stay visible.
         GuestLog(call, core::LogLevel::debug,
                  "sendBroadcast dropped: no receivers on this platform");
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.context.start_service_none", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_context_start_service_none = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         GuestLog(call, core::LogLevel::debug,
                  "startService answered null: no services on this platform");
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-    Bind(registry, "android.context.register_receiver",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_context_register_receiver = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
                       // Sticky broadcast lookup: nothing pending on this
                       // platform.
         return dx::VmValue::Ref(dx::VmObjectRef{});
     });
-  Bind(registry,
-      "android.context.start_activity",
-                      [context](dx::IntrinsicContext& call) -> dx::VmValue {
+  handlers.handler_android_context_start_activity = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) -> dx::VmValue {
         // In-process activity switch: only intents with an explicit
         // component that resolves to a dex activity are supported; anything
         // else (external apps, market links, ...) stays an explicit
@@ -318,8 +288,7 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
         context->current_intent = intent;
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.activity.get_intent", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_activity_get_intent = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         if (context->current_intent.IsValid()) {
             return dx::VmValue::Ref(context->current_intent);
         }
@@ -329,69 +298,58 @@ void RegisterContextActivity(dx::IntrinsicRegistry& registry,
     });
 }
 
-void RegisterViewSurface(dx::IntrinsicRegistry& registry,
+void PopulateViewSurface(AndroidHandlers& handlers,
                          const Context& context) {
-  Bind(registry, "android.window.noop",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.window.noop_add",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-    Bind(registry, "android.window.noop_clear",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.view.init",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.view.noop_size",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.view.noop_focus",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  Bind(registry, "android.view.noop_flag",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-    Bind(registry, "android.graphics.noop", [](dx::IntrinsicContext&) {
+  handlers.handler_android_window_noop = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_window_noop_add = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+    handlers.handler_android_window_noop_clear = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_view_init = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_view_noop_size = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_view_noop_focus = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+  handlers.handler_android_view_noop_flag = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+    handlers.handler_android_graphics_noop = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         // Pure drawing state with no consuming canvas surface yet.
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.paint.set_typeface",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_paint_set_typeface = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
                       // Returns the typeface that was set, per the platform
                       // contract.
         return dx::VmValue::Ref(call.arguments[0].ref);
     });
-  Bind(registry,
-      "android.typeface.default_from_style", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_typeface_default_from_style = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(
             call.vm.NewIntrinsicInstance("Landroid/graphics/Typeface;"));
     });
-  Bind(registry, "android.typeface.clinit", [](dx::IntrinsicContext &call) {
+  handlers.handler_android_typeface_clinit = dx::IntrinsicHandler([](dx::IntrinsicContext &call) {
         auto& vm = call.vm;
         vm.SetIntrinsicStaticRef(
         "Landroid/graphics/Typeface;", "SERIF", "Landroid/graphics/Typeface;",
             vm.NewIntrinsicInstance("Landroid/graphics/Typeface;"));
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.rect.width", [](dx::IntrinsicContext& call) {
+    handlers.handler_android_rect_width = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
         return dx::VmValue::Int(static_cast<std::int32_t>(slots[2].bits) -
                                 static_cast<std::int32_t>(slots[0].bits));
     });
-    Bind(registry, "android.rect.height", [](dx::IntrinsicContext& call) {
+    handlers.handler_android_rect_height = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
         return dx::VmValue::Int(static_cast<std::int32_t>(slots[3].bits) -
                                 static_cast<std::int32_t>(slots[1].bits));
     });
-  Bind(registry,
-      "android.window.get_attributes", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_window_get_attributes = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         return dx::VmValue::Ref(
             Singleton(call, context, "window_attributes",
                       "Landroid/view/WindowManager$LayoutParams;"));
     });
-  Bind(registry, "android.view.request_focus", [](dx::IntrinsicContext &) {
+  handlers.handler_android_view_request_focus = dx::IntrinsicHandler([](dx::IntrinsicContext &) {
         // The single fullscreen view always holds focus.
         return dx::VmValue::Int(1);
     });
-    Bind(registry, "android.view.get_id", [](dx::IntrinsicContext&) {
+    handlers.handler_android_view_get_id = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Int(-1);  // View.NO_ID: no id was assigned
     });
-  Bind(registry,
-      "android.view.get_tree_observer", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_view_get_tree_observer = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         auto &observer = context->view_tree_observers[call.receiver.Value()];
         if (!observer.IsValid()) {
           observer =
@@ -399,9 +357,7 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Ref(observer);
     });
-  Bind(registry,
-      "android.view_tree.add_global_listener",
-                      [context](dx::IntrinsicContext& call) {
+  handlers.handler_android_view_tree_add_global_listener = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto listener = call.arguments[0].ref;
         if (!listener.IsValid()) {
           throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
@@ -410,8 +366,7 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
         context->global_layout_listeners[call.receiver.Value()] = listener;
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.view_tree.remove_global_listener",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_view_tree_remove_global_listener = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found = context->global_layout_listeners.find(
             call.receiver.Value());
         if (found != context->global_layout_listeners.end() &&
@@ -420,8 +375,7 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-  Bind(registry,
-      "android.surface_view.get_holder", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_surface_view_get_holder = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         auto& holder = context->surface_holders[call.receiver.Value()];
         if (!holder.IsValid()) {
           holder =
@@ -429,8 +383,7 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Ref(holder);
     });
-    Bind(registry, "android.surface_holder.add_callback",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_surface_holder_add_callback = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto callback = call.arguments[0].ref;
         if (!callback.IsValid()) {
             throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
@@ -444,37 +397,30 @@ void RegisterViewSurface(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.surface_holder.set_type",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_surface_holder_set_type = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
                       // Managed EGL owns the surface type; the legacy value is
                       // only a device hint and has no observable effect here.
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.surface_holder.set_format",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_surface_holder_set_format = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         // Pixel format is fixed by the managed RGBA8 EGL surface.
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.glsurfaceview.init",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-    Bind(registry, "android.glsurfaceview.set_renderer",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_glsurfaceview_init = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+    handlers.handler_android_glsurfaceview_set_renderer = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         context->renderer = call.arguments[0].ref;
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.glsurfaceview.request_render",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-    Bind(registry, "android.glsurfaceview.lifecycle_noop",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_glsurfaceview_request_render = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
+    handlers.handler_android_glsurfaceview_lifecycle_noop = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         // Render pause/resume is owned by the lifecycle driver.
         return dx::VmValue::Void();
     });
 }
 
-void RegisterResources(dx::IntrinsicRegistry& registry,
+void PopulateResources(AndroidHandlers& handlers,
                        const Context& context) {
-    Bind(registry, "android.resources.get_configuration",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_resources_get_configuration = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
                       const auto instance =
                           Singleton(call, context, "configuration",
             "Landroid/content/res/Configuration;");
@@ -485,9 +431,7 @@ void RegisterResources(dx::IntrinsicRegistry& registry,
         slots[0] = {1U, dx::SlotTag::cat1};
         return dx::VmValue::Ref(instance);
     });
-  Bind(registry,
-      "android.resources.get_identifier",
-                      [context](dx::IntrinsicContext& call) {
+  handlers.handler_android_resources_get_identifier = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto entry_name = call.vm.StringUtf8(call.arguments[0].ref);
         const auto type_name = call.vm.StringUtf8(call.arguments[1].ref);
         const auto *entry = context->arsc.FindByName(type_name, entry_name);
@@ -495,9 +439,7 @@ void RegisterResources(dx::IntrinsicRegistry& registry,
             entry == nullptr ? 0
                              : static_cast<std::int32_t>(entry->resource_id));
     });
-  Bind(registry,
-      "android.resources.open_raw_resource",
-                      [context](dx::IntrinsicContext& call) {
+  handlers.handler_android_resources_open_raw_resource = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto resource_id =
             static_cast<std::uint32_t>(call.arguments[0].AsInt());
         const auto* entry = context->arsc.FindById(resource_id);
@@ -509,20 +451,17 @@ void RegisterResources(dx::IntrinsicRegistry& registry,
         return dx::VmValue::Ref(OpenStream(
             call, context, ReadApkFile(context, *entry->string_value)));
     });
-    Bind(registry, "android.resources.get_string",
-                      [](dx::IntrinsicContext&) -> dx::VmValue {
+    handlers.handler_android_resources_get_string = dx::IntrinsicHandler([](dx::IntrinsicContext&) -> dx::VmValue {
         throw dx::VmJavaThrow{
             "Ljava/lang/UnsupportedOperationException;",
             "string resources are not provided yet"};
     });
-  Bind(registry,
-      "android.assets.open", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_assets_open = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
         return dx::VmValue::Ref(
             OpenStream(call, context, ReadApkFile(context, "assets/" + name)));
     });
-  Bind(registry,
-      "android.assets.open_mode", [context](dx::IntrinsicContext &call) {
+  handlers.handler_android_assets_open_mode = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
         return dx::VmValue::Ref(
             OpenStream(call, context, ReadApkFile(context, "assets/" + name)));

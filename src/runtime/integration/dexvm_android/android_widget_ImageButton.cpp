@@ -3,7 +3,11 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageButton(const Context& context) {
-    return DeclareAndroidClass(context, "Landroid/widget/ImageButton;");
+    const auto handlers = MakeAndroidHandlers(context);
+    dx::IntrinsicClassBuilder builder("Landroid/widget/ImageButton;");
+    builder.Super("Landroid/widget/ImageView;");
+    builder.Virtual("<init>", "(Landroid/content/Context;)V", handlers.handler_android_view_init);
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

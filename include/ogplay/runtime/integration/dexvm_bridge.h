@@ -14,6 +14,8 @@
 
 namespace ogplay::runtime {
 
+struct DexVmAndroidContext;
+
 // Assembles the dexvm interpreter on top of a running Android guest call
 // session and bridges both JNI directions (docs/design/dexvm/04-integration.md
 // §1):
@@ -41,6 +43,7 @@ public:
     DexVmGuestBridge(
         AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
         std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
+        const std::shared_ptr<DexVmAndroidContext>& android_context,
         core::CapabilityLedger& ledger, core::Logger* logger,
         DexVmBridgeConfig config = {});
     ~DexVmGuestBridge() override;

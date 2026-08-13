@@ -9,13 +9,12 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
+void PopulateAudioVideo(AndroidHandlers& handlers,
                         const Context& context) {
-    Bind(registry, "android.sound_pool.init", [](dx::IntrinsicContext&) {
+    handlers.handler_android_sound_pool_init = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.sound_pool.load",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_sound_pool_load = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto resource = call.arguments[1].AsInt();
         auto& mixer = context->session->SoundPoolMixer();
         if (!mixer.Load(resource)) {
@@ -26,8 +25,7 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Int(resource);  // sound id == resource id
     });
-    Bind(registry, "android.sound_pool.play",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_sound_pool_play = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto sound = call.arguments[0].AsInt();
         const auto volume = call.arguments[1].AsFloat();
         const auto loop = call.arguments[3].AsInt();
@@ -53,29 +51,25 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
             }
             return dx::VmValue::Void();
         };
-    Bind(registry, "android.sound_pool.pause",
-                      [stream_call](dx::IntrinsicContext& call) {
+    handlers.handler_android_sound_pool_pause = dx::IntrinsicHandler([stream_call](dx::IntrinsicContext& call) {
         return stream_call(call, [](auto& mixer, const auto resource,
                                     const auto stream) {
             mixer.Pause(audio::JavaSoundPoolKind::pool, resource, stream);
         });
     });
-    Bind(registry, "android.sound_pool.resume",
-                      [stream_call](dx::IntrinsicContext& call) {
+    handlers.handler_android_sound_pool_resume = dx::IntrinsicHandler([stream_call](dx::IntrinsicContext& call) {
         return stream_call(call, [](auto& mixer, const auto resource,
                                     const auto stream) {
             mixer.Resume(audio::JavaSoundPoolKind::pool, resource, stream);
         });
     });
-    Bind(registry, "android.sound_pool.stop",
-                      [stream_call](dx::IntrinsicContext& call) {
+    handlers.handler_android_sound_pool_stop = dx::IntrinsicHandler([stream_call](dx::IntrinsicContext& call) {
         return stream_call(call, [](auto& mixer, const auto resource,
                                     const auto stream) {
             mixer.Stop(audio::JavaSoundPoolKind::pool, resource, stream);
         });
     });
-    Bind(registry, "android.sound_pool.set_volume",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_sound_pool_set_volume = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto stream = call.arguments[0].AsInt();
         const auto found = context->sound_streams.find(stream);
         if (found != context->sound_streams.end()) {
@@ -85,8 +79,7 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.sound_pool.set_rate",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_sound_pool_set_rate = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto stream = call.arguments[0].AsInt();
         const auto found = context->sound_streams.find(stream);
         if (found != context->sound_streams.end()) {
@@ -96,24 +89,20 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.sound_pool.unload",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_sound_pool_unload = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         context->session->SoundPoolMixer().Unload(
             call.arguments[0].AsInt());
         return dx::VmValue::Int(1);
     });
-    Bind(registry, "android.sound_pool.release",
-                      [context](dx::IntrinsicContext&) {
+    handlers.handler_android_sound_pool_release = dx::IntrinsicHandler([context](dx::IntrinsicContext&) {
         context->session->SoundPoolMixer().StopAllSounds();
         return dx::VmValue::Void();
     });
 
-    Bind(registry, "android.media_player.init",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_media_player_init = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.set_data_source",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_set_data_source = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         // Path-backed playback is not wired to the mixer yet: record the
         // gap loudly; start() on this instance will have no audio.
         GuestLog(call, core::LogLevel::warn,
@@ -121,16 +110,14 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
                      call.vm.StringUtf8(call.arguments[0].ref));
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.is_looping",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_is_looping = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found =
             context->media_looping.find(call.receiver.Value());
         return dx::VmValue::Int(
             found != context->media_looping.end() && found->second ? 1
                                                                    : 0);
     });
-    Bind(registry, "android.media_player.create",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_create = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto resource = call.arguments[1].AsInt();
         const auto instance = call.vm.NewIntrinsicInstance(
             "Landroid/media/MediaPlayer;");
@@ -151,8 +138,7 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         if (found == context->media_resources.end()) return std::nullopt;
         return found->second;
     };
-    Bind(registry, "android.media_player.start",
-                      [context, media_resource](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_start = dx::IntrinsicHandler([context, media_resource](dx::IntrinsicContext& call) {
         const auto resource = media_resource(call);
         if (resource.has_value()) {
             static_cast<void>(context->session->SoundPoolMixer().Play(
@@ -161,8 +147,7 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.pause",
-                      [context, media_resource](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_pause = dx::IntrinsicHandler([context, media_resource](dx::IntrinsicContext& call) {
         const auto resource = media_resource(call);
         if (resource.has_value()) {
             context->session->SoundPoolMixer().Pause(
@@ -171,8 +156,7 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.stop",
-                      [context, media_resource](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_stop = dx::IntrinsicHandler([context, media_resource](dx::IntrinsicContext& call) {
         const auto resource = media_resource(call);
         if (resource.has_value()) {
             context->session->SoundPoolMixer().Stop(
@@ -181,8 +165,7 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.release",
-                      [context, media_resource](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_release = dx::IntrinsicHandler([context, media_resource](dx::IntrinsicContext& call) {
         const auto resource = media_resource(call);
         if (resource.has_value()) {
             context->session->SoundPoolMixer().Stop(
@@ -193,29 +176,24 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         context->media_playing.erase(call.receiver.Value());
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.is_playing",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_is_playing = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found =
             context->media_playing.find(call.receiver.Value());
         return dx::VmValue::Int(
             found != context->media_playing.end() && found->second ? 1 : 0);
     });
-    Bind(registry, "android.media_player.prepare",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_media_player_prepare = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.seek_to",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_media_player_seek_to = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.set_looping",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_set_looping = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         context->media_looping[call.receiver.Value()] =
             call.arguments[0].AsInt() != 0;
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.set_volume",
-                      [context, media_resource](dx::IntrinsicContext& call) {
+    handlers.handler_android_media_player_set_volume = dx::IntrinsicHandler([context, media_resource](dx::IntrinsicContext& call) {
         const auto resource = media_resource(call);
         if (resource.has_value()) {
             context->session->SoundPoolMixer().SetVolume(
@@ -224,8 +202,7 @@ void RegisterAudioVideo(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.media_player.set_completion_listener",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_media_player_set_completion_listener = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         // Completion callbacks require the media clock; recorded gap.
         return dx::VmValue::Void();
     });

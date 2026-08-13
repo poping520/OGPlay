@@ -126,10 +126,9 @@ struct Rect final {
 
 }  // namespace
 
-void RegisterWidgetDispatch(dx::IntrinsicRegistry& registry,
+void PopulateWidgetDispatch(AndroidHandlers& handlers,
                             const Context& context) {
-    Bind(registry, "android.view.set_on_click_listener",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_view_set_on_click_listener = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto handle = call.receiver.Value();
         context->widget_states[handle].click_listener =
             call.arguments[0].ref;
@@ -146,8 +145,7 @@ void RegisterWidgetDispatch(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.view.set_visibility",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_view_set_visibility = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto value = call.arguments[0].AsInt();
         if (value != kVisible && value != kInvisible && value != kGone) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
@@ -158,8 +156,7 @@ void RegisterWidgetDispatch(dx::IntrinsicRegistry& registry,
         context->widget_states[call.receiver.Value()].visibility = value;
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.view.get_visibility",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_view_get_visibility = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(
             VisibilityOf(*context, call.receiver.Value()));
     });

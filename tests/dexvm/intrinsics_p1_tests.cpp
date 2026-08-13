@@ -45,8 +45,7 @@ struct Vm final {
                   linker.Link();
                   return linker;
               }(),
-              model, IntrinsicRegistry{}, nullptr, ledger, {}) {
-        interpreter.RegisterCoreBuiltins();
+              model, nullptr, ledger, {}) {
         interpreter.SetLogger(&logger);
     }
 

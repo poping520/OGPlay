@@ -65,18 +65,8 @@ struct Vm final {
                   linker.Link();
                   return linker;
               }(),
-              model, IntrinsicRegistry{}, nullptr, ledger) {
-        interpreter.RegisterCoreBuiltins();
-    }
+              model, nullptr, ledger) {}
 };
-
-IntrinsicRegistry AndroidRegistry(
-    const std::shared_ptr<ogplay::runtime::DexVmAndroidContext> &context) {
-  static_cast<void>(context);
-  IntrinsicRegistry registry;
-
-  return registry;
-}
 
 struct AndroidVm final {
   JniStringStore strings;
@@ -99,9 +89,7 @@ struct AndroidVm final {
               linker.Link();
               return linker;
             }(),
-            model, AndroidRegistry(context), nullptr, ledger) {
-    interpreter.RegisterCoreBuiltins();
-  }
+            model, nullptr, ledger) {}
 
   [[nodiscard]] VmMethodId Virtual(const std::string_view descriptor,
                                    const std::string_view name,
@@ -124,10 +112,8 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   for (const auto& declaration : catalog) {
     CHECK(descriptors.insert(declaration.descriptor).second);
     for (const auto& method : declaration.methods) {
-      CHECK(method.handler.empty());
       CHECK(static_cast<bool>(method.implementation));
     }
-    CHECK(declaration.clinit_handler.empty());
     if (declaration.clinit_implementation) {
       CHECK(static_cast<bool>(declaration.clinit_implementation));
     }
@@ -290,11 +276,8 @@ TEST_CASE("AudioManager reports the deterministic external music fact") {
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    IntrinsicRegistry registry;
-
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
-    interpreter.RegisterCoreBuiltins();
+  Interpreter interpreter(linker, model, nullptr, ledger);
   const auto audio_class = linker.FindClass("Landroid/media/AudioManager;");
     REQUIRE(audio_class.has_value());
   const auto index =
@@ -321,11 +304,8 @@ TEST_CASE("TelephonyManager records and cancels offline listeners") {
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    IntrinsicRegistry registry;
-
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
-    interpreter.RegisterCoreBuiltins();
+  Interpreter interpreter(linker, model, nullptr, ledger);
     const auto manager_class =
         linker.FindClass("Landroid/telephony/TelephonyManager;");
     REQUIRE(manager_class.has_value());
@@ -376,11 +356,8 @@ TEST_CASE("SurfaceView owns a stable holder and callback identity") {
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    IntrinsicRegistry registry;
-
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
-    interpreter.RegisterCoreBuiltins();
+  Interpreter interpreter(linker, model, nullptr, ledger);
     const auto view_class = linker.FindClass("Landroid/view/SurfaceView;");
     REQUIRE(view_class.has_value());
     const auto get_holder = linker.FindVtableIndex(
@@ -429,12 +406,8 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
     linker.Link();
     context->surface_width = 1280;
     context->surface_height = 720;
-    IntrinsicRegistry registry;
-
     ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter(linker, model, std::move(registry), nullptr,
-                            ledger);
-    interpreter.RegisterCoreBuiltins();
+    Interpreter interpreter(linker, model, nullptr, ledger);
 
     const auto probe_class = linker.FindClass("LSurfaceProbe;");
     REQUIRE(probe_class.has_value());
@@ -523,11 +496,8 @@ TEST_CASE("Thread priority validates and records the guest fact") {
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    IntrinsicRegistry registry;
-
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
-    interpreter.RegisterCoreBuiltins();
+  Interpreter interpreter(linker, model, nullptr, ledger);
     const auto thread_class = linker.FindClass("Ljava/lang/Thread;");
     REQUIRE(thread_class.has_value());
   const auto set_priority =
@@ -580,11 +550,8 @@ TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    IntrinsicRegistry registry;
-
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
-    interpreter.RegisterCoreBuiltins();
+  Interpreter interpreter(linker, model, nullptr, ledger);
     const auto view_class = linker.FindClass("Landroid/view/View;");
     REQUIRE(view_class.has_value());
     const auto get_observer = linker.FindVtableIndex(
@@ -629,11 +596,8 @@ TEST_CASE("URLEncoder applies UTF-8 form encoding") {
     linker.RegisterIntrinsics(catalog);
     linker.RegisterDex(ReadInterpreterFixture());
     linker.Link();
-    IntrinsicRegistry registry;
-
     ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter(linker, model, std::move(registry), nullptr, ledger);
-    interpreter.RegisterCoreBuiltins();
+  Interpreter interpreter(linker, model, nullptr, ledger);
     const auto encoder = linker.FindClass("Ljava/net/URLEncoder;");
     REQUIRE(encoder.has_value());
     const auto encode = linker.FindDirectMethod(

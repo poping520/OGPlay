@@ -56,10 +56,8 @@ struct MonitorVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, IntrinsicRegistry{}, nullptr, ledger, {}),
-          threads(interpreter) {
-        interpreter.RegisterCoreBuiltins();
-    }
+              model, nullptr, ledger, {}),
+          threads(interpreter) {}
 
     void UseTestClock() {
         interpreter.Monitors().SetTimeSource(

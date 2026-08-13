@@ -322,9 +322,6 @@ PumpJavaThreads(dexvm::Interpreter &vm, DexVmAndroidContext &context);
 [[nodiscard]] std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
     const std::shared_ptr<DexVmAndroidContext>& context);
 
-void RegisterAndroidBuiltins(dexvm::IntrinsicRegistry& registry,
-                             std::shared_ptr<DexVmAndroidContext> context);
-
 // Builds a MotionEvent intrinsic instance for input dispatch.
 [[nodiscard]] dexvm::VmObjectRef MakeMotionEvent(dexvm::Interpreter& vm,
                                                  std::int32_t action, float x,

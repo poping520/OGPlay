@@ -123,15 +123,13 @@ void VfsWriteAll(const Context& context, const std::string& path,
     return call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));
 }
 
-void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
-    Bind(registry, "android.file.init",
-                      [](dx::IntrinsicContext& call) {
+void PopulateFiles(AndroidHandlers& handlers, const Context& context) {
+    handlers.handler_android_file_init = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
         slots[0] = {call.arguments[0].ref.Value(), dx::SlotTag::ref};
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.file.init_parent_child",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_init_parent_child = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         auto joined = call.vm.StringUtf8(call.arguments[0].ref);
         if (!joined.empty() && joined.back() != '/') joined += '/';
         joined += call.vm.StringUtf8(call.arguments[1].ref);
@@ -159,20 +157,17 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         }
         return names;
     };
-    Bind(registry, "android.file.exists",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_exists = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto path = FilePathOf(call, call.receiver);
         return dx::VmValue::Int(
             VfsStatOf(context, path).has_value() ? 1 : 0);
     });
-    Bind(registry, "android.file.is_directory",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_is_directory = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto info = VfsStatOf(context, FilePathOf(call, call.receiver));
         return dx::VmValue::Int(
             info.has_value() && info->is_directory ? 1 : 0);
     });
-    Bind(registry, "android.file.list",
-                      [list_children](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_list = dx::IntrinsicHandler([list_children](dx::IntrinsicContext& call) {
         auto names = list_children(FilePathOf(call, call.receiver));
         if (!names.has_value()) {
             // Documented value for a path that is not a listable directory.
@@ -193,34 +188,29 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         }
         return dx::VmValue::Ref(array);
     });
-    Bind(registry, "android.file.length",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_length = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto size = VfsSizeOf(context, FilePathOf(call, call.receiver));
         // 0 is the documented value for nonexistent paths.
         return dx::VmValue::Long(
             size.has_value() ? static_cast<std::int64_t>(*size) : 0);
     });
-    Bind(registry, "android.file.get_path",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_get_path = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         return MakeString(call, FilePathOf(call, call.receiver));
     });
-    Bind(registry, "android.file.mkdirs",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_mkdirs = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         // Really creates the levels and really reports failure; the old
         // unconditional true hid save directories that never existed.
         return dx::VmValue::Int(
             VfsMakeDirectories(context, FilePathOf(call, call.receiver)) ? 1
                                                                          : 0);
     });
-    Bind(registry, "android.file.create_new",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_create_new = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto path = FilePathOf(call, call.receiver);
         if (VfsStatOf(context, path).has_value()) return dx::VmValue::Int(0);
         VfsWriteAll(context, path, {});
         return dx::VmValue::Int(1);
     });
-    Bind(registry, "android.environment.get_external_storage_dir",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_environment_get_external_storage_dir = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
         const auto slots = call.vm.Model().InstanceSlots(file);
         slots[0] = {
@@ -228,8 +218,7 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
             dx::SlotTag::ref};
         return dx::VmValue::Ref(file);
     });
-    Bind(registry, "android.context.get_external_files_dir",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_context_get_external_files_dir = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         // Platform layout under the external mount; a null type argument
         // answers the package files root.
         auto path = context->external_storage_root + "/Android/data/" +
@@ -243,29 +232,25 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         slots[0] = {call.vm.NewStringUtf8(path).Value(), dx::SlotTag::ref};
         return dx::VmValue::Ref(file);
     });
-    Bind(registry, "android.environment.get_external_storage_state",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_environment_get_external_storage_state = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         // The external mount is required by the profile and read at
         // startup, so MEDIA_MOUNTED is the truthful state.
         return MakeString(call, "mounted");
     });
-    Bind(registry, "android.statfs.init", [](dx::IntrinsicContext&) {
+    handlers.handler_android_statfs_init = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         // Only the external volume is queryable on this platform; the
         // constructor path argument selects nothing further.
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.statfs.get_block_size",
-                      [](dx::IntrinsicContext&) {
+    handlers.handler_android_statfs_get_block_size = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Int(4096);
     });
-    Bind(registry, "android.statfs.get_available_blocks",
-                      [context](dx::IntrinsicContext&) {
+    handlers.handler_android_statfs_get_available_blocks = dx::IntrinsicHandler([context](dx::IntrinsicContext&) {
         const auto blocks = context->external_free_bytes / 4096U;
         return dx::VmValue::Int(static_cast<std::int32_t>(
             std::min<std::uint64_t>(blocks, INT32_MAX)));
     });
-    Bind(registry, "android.file_writer.init_file_append",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_writer_init_file_append = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto path = FilePathOf(call, call.arguments[0].ref);
         DexVmAndroidContext::OutputStream output{path, {}, false};
         if (call.arguments[1].AsInt() != 0) {
@@ -276,8 +261,7 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         context->output_streams[call.receiver.Value()] = std::move(output);
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.file.delete",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_delete = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto path = FilePathOf(call, call.receiver);
         const auto info = VfsStatOf(context, path);
         if (!info.has_value() || context->vfs == nullptr) {
@@ -306,15 +290,13 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
             DexVmAndroidContext::Stream{std::move(*bytes), 0, false};
         return dx::VmValue::Void();
     };
-    Bind(registry, "android.file_stream.init_file",
-                      [context, open_input](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_stream_init_file = dx::IntrinsicHandler([context, open_input](dx::IntrinsicContext& call) {
         const auto file = call.arguments[0].ref;
         const auto slots = call.vm.Model().InstanceSlots(file);
         return open_input(
             call, call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits)));
     });
-    Bind(registry, "android.file_stream.init_path",
-                      [context, open_input](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_stream_init_path = dx::IntrinsicHandler([context, open_input](dx::IntrinsicContext& call) {
         return open_input(call,
                           call.vm.StringUtf8(call.arguments[0].ref));
     });
@@ -324,13 +306,11 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
             DexVmAndroidContext::OutputStream{path, {}, false};
         return dx::VmValue::Void();
     };
-    Bind(registry, "android.file_output.init_path",
-                      [open_output](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_output_init_path = dx::IntrinsicHandler([open_output](dx::IntrinsicContext& call) {
         return open_output(call,
                            call.vm.StringUtf8(call.arguments[0].ref));
     });
-    Bind(registry, "android.file_output.init_file",
-                      [open_output](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_output_init_file = dx::IntrinsicHandler([open_output](dx::IntrinsicContext& call) {
         const auto slots =
             call.vm.Model().InstanceSlots(call.arguments[0].ref);
         return open_output(
@@ -344,8 +324,7 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         found->second.closed = true;
         static_cast<void>(call);
     };
-    Bind(registry, "android.file_output.write_bytes",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_output_write_bytes = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found =
             context->output_streams.find(call.receiver.Value());
         if (found == context->output_streams.end() ||
@@ -361,8 +340,7 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
                                    bytes.end());
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.file_output.flush",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_output_flush = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         // Bytes become visible to readers at flush (and again at close).
         const auto found =
             context->output_streams.find(call.receiver.Value());
@@ -372,13 +350,11 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.file_output.close",
-                      [context, flush_output](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_output_close = dx::IntrinsicHandler([context, flush_output](dx::IntrinsicContext& call) {
         flush_output(call, call.receiver.Value());
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.data_output.init",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_data_output_init = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         // Chain: reuse the wrapped stream's output slot.
         const auto target = call.arguments[0].ref;
         const auto found = context->output_streams.find(target.Value());
@@ -395,8 +371,7 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         context->output_streams.erase(target.Value());
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.data_output.write_utf",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_data_output_write_utf = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto found = context->output_streams.find(call.receiver.Value());
         if (found == context->output_streams.end() || found->second.closed) {
             throw dx::VmJavaThrow{"Ljava/io/IOException;",
@@ -411,8 +386,7 @@ void RegisterFiles(dx::IntrinsicRegistry& registry, const Context& context) {
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.data_output.close",
-                      [context, flush_output](dx::IntrinsicContext& call) {
+    handlers.handler_android_data_output_close = dx::IntrinsicHandler([context, flush_output](dx::IntrinsicContext& call) {
         flush_output(call, call.receiver.Value());
         return dx::VmValue::Void();
     });

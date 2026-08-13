@@ -152,7 +152,6 @@ void DexClassLinker::RegisterIntrinsics(
             linked_method.is_static = method.is_static;
             linked_method.kind = MethodKind::intrinsic;
             linked_method.overridable = method.overridable;
-            linked_method.intrinsic_handler = method.handler;
             linked_method.implementation = method.implementation;
             const auto parts = SplitDescriptor(method.descriptor);
             linked_method.return_shorty = ShortyOf(parts.return_type);
@@ -190,7 +189,6 @@ void DexClassLinker::RegisterIntrinsics(
                 linked.intrinsic_constants.push_back(declared_field);
             }
         }
-        linked.intrinsic_clinit_handler = declaration->clinit_handler;
         linked.clinit_implementation = declaration->clinit_implementation;
     }
 }
@@ -493,7 +491,6 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
     // Deliberately unregistered: the interpreter answers neutrally and
     // records the hit, so the stub can never be mistaken for an
     // implementation.
-    method.intrinsic_handler = "survey.unimplemented";
     const auto parts = SplitDescriptor(descriptor);
     method.return_shorty = ShortyOf(parts.return_type);
     method.ins_words = ArgumentWords(parts, is_static);

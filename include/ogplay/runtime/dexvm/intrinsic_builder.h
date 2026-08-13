@@ -21,6 +21,9 @@ public:
     IntrinsicClassBuilder& Overridable(std::string name,
                                        std::string descriptor,
                                        IntrinsicHandler handler);
+    IntrinsicClassBuilder& Unimplemented(std::string name,
+                                         std::string descriptor,
+                                         bool is_static, bool overridable);
     IntrinsicClassBuilder& Field(std::string name, std::string descriptor,
                                  bool is_static);
     IntrinsicClassBuilder& ConstantInt(std::string name,

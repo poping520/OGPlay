@@ -38,7 +38,6 @@ struct IntrinsicMethodDecl final {
     std::string descriptor;
     bool is_static{};
     bool overridable{};
-    std::string handler;
     IntrinsicHandler implementation;
 };
 
@@ -60,8 +59,6 @@ struct IntrinsicClassDecl final {
     bool is_interface{};
     std::vector<IntrinsicMethodDecl> methods;
     std::vector<IntrinsicFieldDecl> fields;
-    // Optional intrinsic <clinit> handler id (System.out publication etc.).
-    std::string clinit_handler;
     IntrinsicHandler clinit_implementation;
 };
 
@@ -90,13 +87,7 @@ struct LinkedMethod final {
     std::uint16_t ins_words{};
     std::int32_t vtable_index{-1};
     std::optional<loader::DexMethodCode> code;
-    std::string intrinsic_handler;
     IntrinsicHandler implementation;
-    // Lazily bound by the interpreter on first invoke. A bound null pointer
-    // is a real miss (survey stubs and unimplemented intrinsics stay on the
-    // existing miss path). VmExecutionLock guarantees the single writer.
-    mutable const IntrinsicHandler* resolved_handler{};
-    mutable bool handler_bound{};
     bool prechecked{};
 };
 
@@ -126,7 +117,6 @@ struct LinkedClass final {
     std::uint64_t clinit_thread{};
     std::vector<std::uint32_t> static_storage;  // raw slots (wide = 2)
     std::optional<std::uint32_t> dex_class_def_index;
-    std::string intrinsic_clinit_handler;
     IntrinsicHandler clinit_implementation;
     std::vector<IntrinsicFieldDecl> intrinsic_constants;
 };

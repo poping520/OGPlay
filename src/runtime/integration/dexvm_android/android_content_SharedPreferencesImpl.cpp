@@ -3,7 +3,16 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_SharedPreferencesImpl(const Context& context) {
-    return DeclareAndroidClass(context, "Landroid/content/SharedPreferencesImpl;");
+    const auto handlers = MakeAndroidHandlers(context);
+    dx::IntrinsicClassBuilder builder("Landroid/content/SharedPreferencesImpl;");
+    builder.Super("Ljava/lang/Object;");
+    builder.Implements("Landroid/content/SharedPreferences;");
+    builder.Virtual("edit", "()Landroid/content/SharedPreferences$Editor;", handlers.handler_android_prefs_edit);
+    builder.Virtual("getBoolean", "(Ljava/lang/String;Z)Z", handlers.handler_android_prefs_get_boolean);
+    builder.Virtual("getInt", "(Ljava/lang/String;I)I", handlers.handler_android_prefs_get_int);
+    builder.Virtual("getLong", "(Ljava/lang/String;J)J", handlers.handler_android_prefs_get_long);
+    builder.Virtual("getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", handlers.handler_android_prefs_get_string);
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

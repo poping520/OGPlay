@@ -3,7 +3,11 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_AsyncTask(const Context& context) {
-    return DeclareAndroidClass(context, "Landroid/os/AsyncTask;");
+    static_cast<void>(context);
+    dx::IntrinsicClassBuilder builder("Landroid/os/AsyncTask;");
+    builder.Super("Ljava/lang/Object;");
+    builder.Virtual("<init>", "()V", NeutralHandler('V'));
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

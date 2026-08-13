@@ -62,10 +62,9 @@ namespace {
 
 }  // namespace
 
-void RegisterVideoViews(dx::IntrinsicRegistry& registry,
+void PopulateVideoViews(AndroidHandlers& handlers,
                         const Context& context) {
-    Bind(registry, "android.videoview.set_path",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_videoview_set_path = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto handle = call.receiver.Value();
         context->video_views.erase(handle);
         const auto path_ref = call.arguments[0].ref;
@@ -121,8 +120,7 @@ void RegisterVideoViews(dx::IntrinsicRegistry& registry,
                  "VideoView.setVideoPath: decoding " + guest_path);
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.videoview.start",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_videoview_start = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto handle = call.receiver.Value();
         auto* state = VideoStateOf(context, handle);
         if (state == nullptr || state->player == nullptr) {
@@ -151,8 +149,7 @@ void RegisterVideoViews(dx::IntrinsicRegistry& registry,
         state->start_uptime_ms = context->uptime_millis.load();
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.videoview.pause",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_videoview_pause = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto* state = VideoStateOf(context, call.receiver.Value());
         if (state != nullptr && state->playing) {
             state->base_position_ms =
@@ -161,8 +158,7 @@ void RegisterVideoViews(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.videoview.seek_to",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_videoview_seek_to = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto* state = VideoStateOf(context, call.receiver.Value());
         if (state == nullptr || state->player == nullptr) {
             return dx::VmValue::Void();
@@ -179,28 +175,24 @@ void RegisterVideoViews(dx::IntrinsicRegistry& registry,
         state->pcm_carry.clear();
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.videoview.stop_playback",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_videoview_stop_playback = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         context->video_views.erase(call.receiver.Value());
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.videoview.get_duration",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_videoview_get_duration = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto* state = VideoStateOf(context, call.receiver.Value());
         return dx::VmValue::Int(state == nullptr
                                     ? 0
                                     : static_cast<std::int32_t>(
                                           state->duration_ms));
     });
-    Bind(registry, "android.videoview.get_current_position",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_videoview_get_current_position = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto* state = VideoStateOf(context, call.receiver.Value());
         if (state == nullptr) return dx::VmValue::Int(0);
         return dx::VmValue::Int(static_cast<std::int32_t>(
             PositionOf(*state, context->uptime_millis.load())));
     });
-    Bind(registry, "android.videoview.set_completion",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_videoview_set_completion = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         context->video_completion[call.receiver.Value()] =
             call.arguments[0].ref;
         return dx::VmValue::Void();

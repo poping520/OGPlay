@@ -10,10 +10,9 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-void RegisterStreams(dx::IntrinsicRegistry& registry,
+void PopulateStreams(AndroidHandlers& handlers,
                      const Context& context) {
-    Bind(registry, "android.stream.read_one",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_stream_read_one = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         if (stream.cursor >= stream.bytes.size()) {
             return dx::VmValue::Int(-1);
@@ -23,8 +22,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
     });
     // Wrapper constructors adopt the wrapped stream's record: the wrapper
     // handle takes ownership and the wrapped object becomes closed.
-    Bind(registry, "android.reader.adopt_stream",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_reader_adopt_stream = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto target = call.arguments[0].ref;
         const auto found = context->streams.find(target.Value());
         if (found == context->streams.end() || found->second.closed) {
@@ -37,8 +35,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         context->streams.erase(target.Value());
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.reader.read_line",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_reader_read_line = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         if (stream.cursor >= stream.bytes.size()) {
             return dx::VmValue::Ref(dx::VmObjectRef{});  // EOF is null
@@ -62,19 +59,16 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Ref(call.vm.NewStringUtf8(line));
     });
-    Bind(registry, "android.reader.ready",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_reader_ready = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         return dx::VmValue::Int(
             stream.cursor < stream.bytes.size() ? 1 : 0);
     });
-    Bind(registry, "android.charset.for_name",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_charset_for_name = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(
             call.vm.NewIntrinsicInstance("Ljava/nio/charset/Charset;"));
     });
-    Bind(registry, "android.byte_stream.init_input",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_byte_stream_init_input = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& model = call.vm.Model();
         const auto array = call.arguments[0].ref;
         context->streams[call.receiver.Value()] =
@@ -83,8 +77,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
                 0, false};
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.data_input.read_fully",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_data_input_read_fully = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         auto& model = call.vm.Model();
         const auto array = call.arguments[0].ref;
@@ -113,8 +106,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         stream.cursor += wanted;
         return std::span(stream.bytes).subspan(begin, wanted);
     };
-    Bind(registry, "android.data_input.read_int",
-                      [take_bytes](dx::IntrinsicContext& call) {
+    handlers.handler_android_data_input_read_int = dx::IntrinsicHandler([take_bytes](dx::IntrinsicContext& call) {
         const auto bytes = take_bytes(call, 4);
         std::uint32_t value = 0;
         for (const auto byte : bytes) {
@@ -122,8 +114,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Int(static_cast<std::int32_t>(value));
     });
-    Bind(registry, "android.data_input.read_long",
-                      [take_bytes](dx::IntrinsicContext& call) {
+    handlers.handler_android_data_input_read_long = dx::IntrinsicHandler([take_bytes](dx::IntrinsicContext& call) {
         const auto bytes = take_bytes(call, 8);
         std::uint64_t value = 0;
         for (const auto byte : bytes) {
@@ -131,8 +122,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Long(static_cast<std::int64_t>(value));
     });
-    Bind(registry, "android.data_input.read_utf",
-                      [take_bytes](dx::IntrinsicContext& call) {
+    handlers.handler_android_data_input_read_utf = dx::IntrinsicHandler([take_bytes](dx::IntrinsicContext& call) {
         const auto length_bytes = take_bytes(call, 2);
         const auto length = static_cast<std::size_t>(
             (static_cast<std::uint8_t>(length_bytes[0]) << 8U) |
@@ -146,8 +136,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
                           bytes.size());
         return dx::VmValue::Ref(call.vm.NewStringUtf8(value));
     });
-    Bind(registry, "android.data_input.skip_bytes",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_data_input_skip_bytes = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         const auto wanted = call.arguments[0].AsInt();
         const auto amount = std::min<std::size_t>(
@@ -156,15 +145,13 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         stream.cursor += amount;
         return dx::VmValue::Int(static_cast<std::int32_t>(amount));
     });
-    Bind(registry, "android.byte_output.init",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_byte_output_init = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         // No path: bytes stay in memory and never publish to a file.
         context->output_streams[call.receiver.Value()] =
             DexVmAndroidContext::OutputStream{{}, {}, false};
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.byte_output.write_range",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_byte_output_write_range = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found =
             context->output_streams.find(call.receiver.Value());
         if (found == context->output_streams.end() ||
@@ -198,8 +185,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         }
         return found->second;
     };
-    Bind(registry, "android.byte_output.to_byte_array",
-                      [byte_output_of](dx::IntrinsicContext& call) {
+    handlers.handler_android_byte_output_to_byte_array = dx::IntrinsicHandler([byte_output_of](dx::IntrinsicContext& call) {
         auto& output = byte_output_of(call);
         auto& vm = call.vm;
         const auto array_class = vm.Linker().ResolveDescriptor("[B");
@@ -211,20 +197,17 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Ref(array);
     });
-    Bind(registry, "android.byte_output.size",
-                      [byte_output_of](dx::IntrinsicContext& call) {
+    handlers.handler_android_byte_output_size = dx::IntrinsicHandler([byte_output_of](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(static_cast<std::int32_t>(
             byte_output_of(call).bytes.size()));
     });
-    Bind(registry, "android.byte_output.to_string",
-                      [byte_output_of](dx::IntrinsicContext& call) {
+    handlers.handler_android_byte_output_to_string = dx::IntrinsicHandler([byte_output_of](dx::IntrinsicContext& call) {
         auto& output = byte_output_of(call);
         return dx::VmValue::Ref(call.vm.NewStringUtf8(std::string(
             reinterpret_cast<const char*>(output.bytes.data()),
             output.bytes.size())));
     });
-    Bind(registry, "android.file_writer.append_char",
-                      [byte_output_of](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_writer_append_char = dx::IntrinsicHandler([byte_output_of](dx::IntrinsicContext& call) {
         auto& output = byte_output_of(call);
         // BMP code unit encoded as UTF-8 (ASCII fast path; otherwise a
         // string round-trip through the interpreter's UTF-8 rendering).
@@ -242,8 +225,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Ref(call.receiver);
     });
-    Bind(registry, "android.file_writer.append_sequence",
-                      [byte_output_of](dx::IntrinsicContext& call) {
+    handlers.handler_android_file_writer_append_sequence = dx::IntrinsicHandler([byte_output_of](dx::IntrinsicContext& call) {
         auto& output = byte_output_of(call);
         const auto value = call.arguments[0].ref;
         const auto text = value.IsValid()
@@ -254,8 +236,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         }
         return dx::VmValue::Ref(call.receiver);
     });
-    Bind(registry, "android.stream.read_range",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_stream_read_range = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         const auto array = call.arguments[0].ref;
         const auto offset = call.arguments[1].AsInt();
@@ -275,8 +256,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         stream.cursor += amount;
         return dx::VmValue::Int(static_cast<std::int32_t>(amount));
     });
-    Bind(registry, "android.stream.read_full",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_stream_read_full = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         const auto array = call.arguments[0].ref;
         const auto capacity = call.vm.Model().ArrayLength(array);
@@ -290,20 +270,17 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         stream.cursor += amount;
         return dx::VmValue::Int(static_cast<std::int32_t>(amount));
     });
-    Bind(registry, "android.stream.available",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_stream_available = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         return dx::VmValue::Int(static_cast<std::int32_t>(
             stream.bytes.size() - stream.cursor));
     });
-    Bind(registry, "android.stream.close",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_stream_close = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found = context->streams.find(call.receiver.Value());
         if (found != context->streams.end()) found->second.closed = true;
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.stream.skip",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_stream_skip = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         auto& stream = StreamOf(call, context);
         const auto requested = call.arguments[0].AsLong();
         const auto remaining = static_cast<std::int64_t>(
@@ -316,8 +293,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
 
     // Output wrapper constructors move the wrapped record to the wrapper
     // handle (single-owner, mirroring android.reader.adopt_stream).
-    Bind(registry, "android.output.adopt",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_output_adopt = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto target = call.arguments[0].ref;
         const auto found = context->output_streams.find(target.Value());
         if (found == context->output_streams.end() || found->second.closed) {
@@ -330,8 +306,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         context->output_streams.erase(target.Value());
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.output.write_one",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_output_write_one = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found =
             context->output_streams.find(call.receiver.Value());
         if (found == context->output_streams.end() ||
@@ -355,8 +330,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         }
         return found->second;
     };
-    Bind(registry, "android.zip_input.init",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_zip_input_init = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto target = call.arguments[0].ref;
         const auto found = context->streams.find(target.Value());
         if (found == context->streams.end() || found->second.closed) {
@@ -378,8 +352,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         context->zip_streams[call.receiver.Value()] = std::move(zip);
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.zip_input.get_next_entry",
-                      [zip_of](dx::IntrinsicContext& call) {
+    handlers.handler_android_zip_input_get_next_entry = dx::IntrinsicHandler([zip_of](dx::IntrinsicContext& call) {
         auto& zip = zip_of(call);
         zip.entry_bytes.clear();
         zip.cursor = 0;
@@ -402,8 +375,7 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
                     dx::SlotTag::ref};
         return dx::VmValue::Ref(object);
     });
-    Bind(registry, "android.zip_input.read_range",
-                      [zip_of](dx::IntrinsicContext& call) {
+    handlers.handler_android_zip_input_read_range = dx::IntrinsicHandler([zip_of](dx::IntrinsicContext& call) {
         auto& zip = zip_of(call);
         const auto array = call.arguments[0].ref;
         const auto offset = call.arguments[1].AsInt();
@@ -425,29 +397,25 @@ void RegisterStreams(dx::IntrinsicRegistry& registry,
         zip.cursor += amount;
         return dx::VmValue::Int(static_cast<std::int32_t>(amount));
     });
-    Bind(registry, "android.zip_input.close_entry",
-                      [zip_of](dx::IntrinsicContext& call) {
+    handlers.handler_android_zip_input_close_entry = dx::IntrinsicHandler([zip_of](dx::IntrinsicContext& call) {
         auto& zip = zip_of(call);
         zip.entry_bytes.clear();
         zip.cursor = 0;
         zip.entry_open = false;
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.zip_input.close",
-                      [context](dx::IntrinsicContext& call) {
+    handlers.handler_android_zip_input_close = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto found = context->zip_streams.find(call.receiver.Value());
         if (found != context->zip_streams.end()) {
             found->second.closed = true;
         }
         return dx::VmValue::Void();
     });
-    Bind(registry, "android.zip_entry.get_name",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_zip_entry_get_name = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
         return dx::VmValue::Ref(dx::VmObjectRef(slots[0].bits));
     });
-    Bind(registry, "android.zip_entry.is_directory",
-                      [](dx::IntrinsicContext& call) {
+    handlers.handler_android_zip_entry_is_directory = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
         const auto name =
             call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));

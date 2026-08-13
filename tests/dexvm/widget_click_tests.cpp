@@ -75,18 +75,11 @@ struct ClickVm final {
                   linker.Link();
                   return linker;
               }(),
-              model,
-              [this]() {
-                  context->surface_width = 100U;
-                  context->surface_height = 100U;
-                  context->vfs = &vfs;
-                  context->video_player_factory = FakeFactory();
-                  IntrinsicRegistry registry;
-
-                  return registry;
-              }(),
-              nullptr, ledger, {}) {
-        interpreter.RegisterCoreBuiltins();
+              model, nullptr, ledger, {}) {
+        context->surface_width = 100U;
+        context->surface_height = 100U;
+        context->vfs = &vfs;
+        context->video_player_factory = FakeFactory();
         interpreter.SetLogger(&logger);
         vfs.MountHostDirectory(
             "/sdcard",

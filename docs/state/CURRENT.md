@@ -1,7 +1,7 @@
 # 当前状态
 
 更新：2026-08-13 · DexVM 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
-surface 回调）与 intrinsic 声明迁移（DVM-32..35）已交付；存档沙盒 SBX-1..12、
+surface 回调）与 intrinsic 声明迁移（DVM-32..37）已交付；存档沙盒 SBX-1..12、
 主面板 GUI-1..16 与验收报告均已收口
 
 ## 当前阶段
@@ -19,10 +19,11 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..35）已交付；存档沙
   调用仍复用 root guest 栈（需停泊时以 `blocking_in_native` 明确失败），
   native 侧 JNI monitor 表尚未与之合一。
 - **intrinsic/热路径优化与声明迁移已交付**：DVM-32..34 完成地址稳定绑定、
-  execution 传递和受检 builder 双通道；DVM-35 将 68 个 java.*/javax.* 类拆为
+  execution 传递和受检 builder 迁移基础；DVM-35 将 68 个 java.*/javax.* 类拆为
   一类一文件并直接持有 162 个 core handler；DVM-36 将 165 个 android/platform
   类迁入 `integration/dexvm_android/` 的逐类 `Declare_*()`，frontend/bridge 只传
-  合并 catalog，生成器改产逐类 builder 骨架。兼容 registry/id 留待 DVM-37 删除。
+  合并 catalog，生成器改产逐类 builder 骨架；DVM-37 已删除兼容 registry、字符串
+  handler id 与懒绑定缓存，声明内嵌实现成为唯一 intrinsic 分发通道。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
@@ -40,7 +41,7 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..35）已交付；存档沙
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 712/712；
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 709/709；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 
 ## 进行中：更多 title 上 dexvm 路线
@@ -71,12 +72,11 @@ macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
-3. DVM-37：删除 intrinsic 兼容 registry 与字符串 id。
-4. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
+3. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
    只读路径去整串拷贝（分析结论见 DVM-32/33 任务单）。
-5. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id，native
+4. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id，native
    侧 JNI monitor 表与 DexVM monitor 表尚未合一。
-6. Linux M9 严格出口复验待执行；五个生产源文件仍超 800 行
+5. Linux M9 严格出口复验待执行；五个生产源文件仍超 800 行
    （boundary hle/gles/gles1、guest_call_session、run_apk）。
 
 ## 阻塞

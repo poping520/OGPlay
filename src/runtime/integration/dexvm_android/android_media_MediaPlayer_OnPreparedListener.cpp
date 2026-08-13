@@ -3,7 +3,10 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_MediaPlayer_OnPreparedListener(const Context& context) {
-    return DeclareAndroidClass(context, "Landroid/media/MediaPlayer$OnPreparedListener;");
+    static_cast<void>(context);
+    dx::IntrinsicClassBuilder builder("Landroid/media/MediaPlayer$OnPreparedListener;");
+    builder.MarkInterface();
+    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

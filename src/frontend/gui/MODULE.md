@@ -23,6 +23,10 @@
   匹配，生成可确认的导入摘要和 GUI-2 原子入库请求；时间戳由调用方注入。
 - `GuiImportUi`：SDL 异步文件/目录对话框、后台只读分析和 ImGui 三态摘要控制器；
   回调只经共享 mailbox 投递事件，文件 IO 与 Profile 判断留在模型/session 层。
+- `BuildLaunchPlan`：从严格库条目与 `GuiConfig` 生成唯一 `run-apk` argv，并在 spawn
+  前验证全部宿主输入。
+- `GuiProcessManager`：以 SDL3 启动/非阻塞回收游戏子进程，维护同 package 单实例和
+  `last-run.log`；GUI 退出只解除跟踪，不终止游戏。
 
 ## 不变量
 
@@ -39,6 +43,8 @@
   `SummarizeApkProfileMatch`/`FindApkProfileSummary`，不得在 GUI 遍历 Profile mounts。
 - 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest
   损坏、重复 package 和所选 external 目录不存在必须阻止发布并给出下一步。
+- 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；stdin 关闭、stdout
+  继承、stderr 覆盖重定向到条目日志。退出 0 静默，非零结果呈现退出码与有界日志末尾。
 
 ## 禁止
 
@@ -54,5 +60,7 @@
 `tests/frontend/gui_view_model_tests.cpp` 锁定排序、角标优先级与字体候选；
 `tests/frontend/gui_import_tests.cpp` 锁定无 Profile 分析、metadata 装配、可选 external
 与明确失败；
+`tests/frontend/gui_launch_tests.cpp` 锁定 argv、spawn 前校验、单实例状态、退出码与
+有界日志末尾；
 `frontend.gui_smoke`/`frontend.gui_library_smoke` 在有界三帧内验证真实
 SDL3/ANGLE/ImGui 空库与 CJK 非空库窗口。

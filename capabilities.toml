@@ -170,6 +170,11 @@ status = "complete"
 test = "tests/frontend/gui_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp"
 note = "Launcher GUI-2/5 交付严格 LibraryStore/GuiConfig 与导入向导模型：APK visuals、session 精确 Profile 摘要、required external 事实和原子入库共用既有公共 API；无 Profile/跳过数据可入库带角标，重复 package、损坏 APK 和无效目录明确失败"
 
+[frontend.gui_launch_spawn]
+status = "complete"
+test = "tests/frontend/gui_launch_tests.cpp; frontend.gui_smoke; frontend.gui_library_smoke"
+note = "Launcher GUI-6 严格装配同目录 ogplay run-apk 参数并在 spawn 前验证全部输入；SDL 子进程关闭 stdin、继承 stdout、覆盖重定向 stderr，逐帧回收状态/退出码，同 package 单实例，GUI 退出不杀游戏"
+
 [loader.apk_application_visuals]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp; tests/frontend/gui_visuals_tests.cpp"

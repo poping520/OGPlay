@@ -29,6 +29,7 @@
 #include "ogplay/runtime/integration/host_image_decode.h"
 
 #include "import_ui.h"
+#include "process_manager.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -101,6 +102,11 @@ void PrepareLog(core::Logger& logger, const std::filesystem::path& root) {
 
 [[noreturn]] void ThrowSdl(const std::string_view operation) {
     throw std::runtime_error(std::string(operation) + " failed: " + SDL_GetError());
+}
+
+[[nodiscard]] std::string PathUtf8(const std::filesystem::path& path) {
+    const auto value = path.generic_u8string();
+    return {reinterpret_cast<const char*>(value.data()), value.size()};
 }
 
 class SdlVideo final {
@@ -341,7 +347,8 @@ struct Badge final {
     return {};
 }
 
-void DrawTile(const LibraryTile& tile, const LibraryTextures& textures) {
+[[nodiscard]] bool DrawTile(const LibraryTile& tile,
+                            const LibraryTextures& textures) {
     constexpr float icon_size = 128.0F;
     constexpr float tile_width = 152.0F;
     ImGui::PushID(tile.key.c_str());
@@ -389,11 +396,19 @@ void DrawTile(const LibraryTile& tile, const LibraryTextures& textures) {
     ImGui::SetCursorPosX(left + std::max(0.0F, (tile_width - label_width) * 0.5F));
     ImGui::TextUnformatted(fitted.c_str());
     ImGui::EndGroup();
+    const auto selected = ImGui::IsItemClicked(ImGuiMouseButton_Left);
     ImGui::PopID();
+    return selected;
 }
 
-[[nodiscard]] bool DrawLibrary(const std::vector<LibraryTile>& tiles,
-                               const LibraryTextures& textures) {
+struct LibraryAction final {
+    bool import_requested{};
+    std::optional<std::string> selected_package;
+};
+
+[[nodiscard]] LibraryAction DrawLibrary(
+    const std::vector<LibraryTile>& tiles,
+    const LibraryTextures& textures) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -418,7 +433,7 @@ void DrawTile(const LibraryTile& tile, const LibraryTextures& textures) {
         ImGui::TextWrapped("游戏库为空。导入游戏后会显示在这里。");
         if (ImGui::Button("导入游戏")) {
             ImGui::End();
-            return true;
+            return {.import_requested = true};
         }
     } else {
         constexpr float tile_width = 152.0F;
@@ -428,11 +443,32 @@ void DrawTile(const LibraryTile& tile, const LibraryTextures& textures) {
             1, static_cast<int>((available + spacing) / (tile_width + spacing)));
         for (std::size_t index = 0; index < tiles.size(); ++index) {
             if (index % static_cast<std::size_t>(columns) != 0) ImGui::SameLine();
-            DrawTile(tiles[index], textures);
+            if (DrawTile(tiles[index], textures)) {
+                ImGui::End();
+                return {.selected_package = tiles[index].key};
+            }
         }
     }
     ImGui::End();
-    return import_requested;
+    return {.import_requested = import_requested};
+}
+
+[[nodiscard]] const LibraryTile* FindTile(
+    const std::vector<LibraryTile>& tiles, const std::string_view package) {
+    const auto found = std::find_if(tiles.begin(), tiles.end(),
+                                    [package](const LibraryTile& tile) {
+                                        return tile.key == package;
+                                    });
+    return found == tiles.end() ? nullptr : &*found;
+}
+
+[[nodiscard]] const LibraryEntry* FindEntry(
+    const std::vector<LibraryEntry>& entries, const std::string_view package) {
+    const auto found = std::find_if(entries.begin(), entries.end(),
+                                    [package](const LibraryEntry& entry) {
+                                        return entry.key == package;
+                                    });
+    return found == entries.end() ? nullptr : &*found;
 }
 
 int RunShell(const GuiOptions& options, core::Logger& logger) {
@@ -459,11 +495,24 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
     LibraryStore store(options.library_root);
     GuiImportUi import_ui(video.Window(), store,
                           std::filesystem::path(OGPLAY_SOURCE_DIR), logger);
+    GuiProcessManager processes(logger);
     auto entries = store.LoadEntries();
     auto required_external = import_ui.ExternalRequiredPackages(entries);
     auto tiles = BuildLibraryTiles(
-        entries, {.external_required_packages = required_external});
+        entries, {.running_packages = processes.RunningPackages(),
+                  .external_required_packages = required_external});
     auto textures = std::make_unique<LibraryTextures>(tiles, logger);
+    const auto reload_library = [&] {
+        entries = store.LoadEntries();
+        required_external = import_ui.ExternalRequiredPackages(entries);
+        tiles = BuildLibraryTiles(
+            entries, {.running_packages = processes.RunningPackages(),
+                      .external_required_packages = required_external});
+        textures = std::make_unique<LibraryTextures>(tiles, logger);
+    };
+    std::string result_title;
+    std::string result_message;
+    bool exit_confirmation_requested{};
     bool running = true;
     std::uint64_t rendered_frames{};
     while (running) {
@@ -473,7 +522,11 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
             static_cast<void>(import_ui.HandleEvent(event));
             if (event.type == SDL_EVENT_QUIT ||
                 event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-                running = false;
+                if (processes.RunningPackages().empty()) {
+                    running = false;
+                } else {
+                    exit_confirmation_requested = true;
+                }
             }
         }
         if (!running) break;
@@ -481,13 +534,88 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
-        if (DrawLibrary(tiles, *textures)) import_ui.OpenApkDialog();
+        const auto exits = processes.Poll();
+        if (!exits.empty()) {
+            reload_library();
+            for (const auto& exit : exits) {
+                if (exit.exit_code == 0) continue;
+                result_title = "游戏运行失败";
+                result_message = "进程退出码：" + std::to_string(exit.exit_code) +
+                                 "\n完整日志：" + PathUtf8(exit.log_path);
+                const auto tail = ReadLogTail(exit.log_path);
+                if (!tail.empty()) result_message += "\n\n日志末尾：\n" + tail;
+            }
+        }
+        const auto action = DrawLibrary(tiles, *textures);
+        if (action.import_requested) import_ui.OpenApkDialog();
+        if (action.selected_package.has_value()) {
+            const auto* tile = FindTile(tiles, *action.selected_package);
+            const auto* entry = FindEntry(entries, *action.selected_package);
+            try {
+                if (tile == nullptr || entry == nullptr) {
+                    throw GuiModelError(GuiModelErrorCode::not_found,
+                                        "library tile disappeared before launch");
+                }
+                if (tile->status != LibraryTileStatus::ready) {
+                    result_title = "暂时无法启动";
+                    result_message = tile->detail.empty()
+                                         ? "该游戏当前不可启动。"
+                                         : tile->detail;
+                } else {
+                    const auto plan = BuildLaunchPlan(
+                        FindSiblingCliExecutable(), *entry,
+                        LoadGuiConfig(options.library_root));
+                    processes.Launch(plan);
+                    reload_library();
+                }
+            } catch (const std::exception& error) {
+                result_title = "启动失败";
+                result_message = error.what();
+                const auto* model_error =
+                    dynamic_cast<const GuiModelError*>(&error);
+                if (model_error != nullptr && !model_error->Path().empty()) {
+                    result_message += "\n路径：" + PathUtf8(model_error->Path());
+                }
+                result_message +=
+                    "\n\n下一步：检查设置中的系统/Profile 目录，或重新导入游戏。";
+                logger.Write(core::LogLevel::error, "frontend.gui.launch",
+                             "launch request failed", {},
+                             {{"package", *action.selected_package},
+                              {"reason", std::string(error.what())}});
+            }
+        }
         if (import_ui.Draw()) {
-            entries = store.LoadEntries();
-            required_external = import_ui.ExternalRequiredPackages(entries);
-            tiles = BuildLibraryTiles(
-                entries, {.external_required_packages = required_external});
-            textures = std::make_unique<LibraryTextures>(tiles, logger);
+            reload_library();
+        }
+        if (!result_title.empty()) {
+            ImGui::OpenPopup(result_title.c_str());
+        }
+        if (!result_title.empty() && ImGui::BeginPopupModal(
+                result_title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("%s", result_message.c_str());
+            if (ImGui::Button("关闭")) {
+                ImGui::CloseCurrentPopup();
+                result_title.clear();
+                result_message.clear();
+            }
+            ImGui::EndPopup();
+        }
+        if (exit_confirmation_requested) ImGui::OpenPopup("退出主面板？");
+        if (ImGui::BeginPopupModal("退出主面板？", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted(
+                "仍有游戏正在运行。退出主面板不会关闭这些游戏。是否继续？");
+            if (ImGui::Button("继续运行主面板")) {
+                exit_confirmation_requested = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("退出但保留游戏")) {
+                exit_confirmation_requested = false;
+                running = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
         ImGui::Render();
 

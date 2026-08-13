@@ -2,8 +2,8 @@
 
 更新：2026-08-13 · M9 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
 surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 EGL 面；
-存档沙盒 SBX-1..12 已交付并完成验收补强；主面板 GUI-1..5 已交付，
-严格游戏库、APK visuals、图标网格与导入向导可用
+存档沙盒 SBX-1..12 已交付并完成验收补强；主面板 GUI-1..6 已交付，
+严格游戏库、导入向导与同路径子进程启动可用
 
 ## 当前阶段
 
@@ -32,14 +32,15 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
   Java/prefs 完整性、装载与 O(1) 配额均有回归。Windows/MSVC 663/663；本轮未
   重跑 exact-title。**用户级闭环仍未演示**：title 尚未进入会产生存档的流程。
 - **GUI 主面板已启动**（任务单 [`docs/tasks/launcher/`](../tasks/launcher/README.md)）：
-  GUI-1..5 交付双入口、严格库模型、visuals 缓存、网格与异步导入向导；
-  Profile/external 摘要只消费 session 公共事实。尚无点击启动，下一项 GUI-6。
+  GUI-1..6 交付双入口、严格库模型、visuals 缓存、网格、异步导入与点击启动；
+  LaunchPlan 只 spawn 同目录 CLI 的既有 `run-apk`，逐帧回收状态/退出码，stderr
+  覆盖写条目日志，GUI 退出不杀游戏。下一项 GUI-7 设置/删除/错误收口。
 
 ## 已验收基线
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 687/687；
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 691/691；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 沙盒任务单见 [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)。
 
@@ -76,7 +77,7 @@ macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
-3. 启动器 GUI-6：LaunchPlan、SDL 子进程、运行状态与退出结果。
+3. 启动器 GUI-7：设置页、删除确认、错误呈现与契约清单收口。
 4. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id（需要
    停泊时以 `blocking_in_native` 明确失败），native 侧 JNI monitor 表与
    DexVM monitor 表尚未合一。

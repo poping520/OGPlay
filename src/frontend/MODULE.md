@@ -10,7 +10,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - `run-apk`：按 exact Title Profile v2 选择 APK 根库，挂载外部数据，创建 SDL3/ANGLE
   surface，装配 Android guest session + DexVM bridge + `DexActivityLifecycle`。
 - `ogplay-gui` / `ogplay gui`：共用 `frontend/gui` shell；前者是零参数双击入口，后者
-  只为开发/CI 接受库根覆盖与有界帧数。游戏启动仍须 spawn 既有 `run-apk` 路径。
+  只为开发/CI 接受库根覆盖与有界帧数。点击 ready 条目只 spawn 同目录既有
+  `run-apk` 路径；运行状态和退出结果由 SDL 进程对象回收。
 - `--external-dir`：把一个宿主目录按 Profile 声明的唯一 external guest 根 lazy mount；
   guest 路径不取决于宿主目录名。
 - `--supersample <1..4>`：显式选择内部渲染倍率，默认 1×。
@@ -56,6 +57,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
   finalizer 在 managed ANGLE surface 关闭前执行。
 - observer 只泵宿主窗口消息并按宿主时间节流，不推进 guest Clock、消费 guest 输入或
   提交半帧。
+- GUI 子进程必须关闭 stdin、继承 stdout、把 stderr 覆盖写入条目 `last-run.log`；同
+  package 单实例，GUI 退出不得杀死仍运行的游戏。
 
 ## 禁止
 

@@ -10,8 +10,8 @@
 | [GUI-3](GUI-3.md) | manifest icon/label 与图标/名称提取链 | GUI-2 | 完成 |
 | [GUI-4](GUI-4.md) | 库网格、状态角标、空库引导与 CJK 字体 | GUI-1、GUI-2 | 完成 |
 | [GUI-5](GUI-5.md) | 导入向导与 Profile/external 摘要 | GUI-3、GUI-4 | 完成 |
-| GUI-6 | LaunchPlan、子进程与运行结果呈现 | GUI-4 | 待开始 |
+| [GUI-6](GUI-6.md) | LaunchPlan、子进程与运行结果呈现 | GUI-4 | 完成 |
 | GUI-7 | 设置、删除确认、错误呈现与全部契约收口 | GUI-5、GUI-6 | 待开始 |
 
-当前下一项为 GUI-6；GUI-1..5 落地后的 Windows/MSVC 全量 CTest 以
+当前下一项为 GUI-7；GUI-1..6 落地后的 Windows/MSVC 全量 CTest 以
 `docs/state/CURRENT.md` 的滚动基线为准。

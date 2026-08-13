@@ -162,6 +162,13 @@ void BindAndroidThreadLifecycleSyscalls(
     GuestThreadLifecycle& thread_lifecycle);
 void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher,
                              GuestThreadCloneSpawner spawner);
+// File metadata and directory syscalls on top of the same VFS (ADR-0020):
+// mkdir/rmdir/unlink/rename, stat64 family, getdents64, access, ftruncate,
+// fsync and the positional read/write pair.
+void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
+                                     VirtualFileSystem& vfs,
+                                     memory::AddressSpace& address_space);
+
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                              VirtualFileSystem& vfs,
                              memory::AddressSpace& address_space);

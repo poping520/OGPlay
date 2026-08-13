@@ -116,13 +116,23 @@ void AttachSandbox(const SandboxSession& sandbox,
                    const session::TitleProfile& profile,
                    runtime::VirtualFileSystem& filesystem,
                    core::Logger& logger) {
+    const auto writable_roots = session::ProfileWritableRoots(profile);
     if (!sandbox.store) {
+        // The writable roots are directories on the platform whether or not
+        // saves persist, so an ephemeral run behaves the same up to the
+        // persistence itself.
+        for (const auto& root : writable_roots) {
+            try {
+                filesystem.CreateDirectory(root);
+            } catch (const runtime::VfsError&) {
+                // Already present through a mounted base layer.
+            }
+        }
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "ephemeral sandbox: saves are discarded at exit", {}, {},
                      kUnrestrictedLog);
         return;
     }
-    const auto writable_roots = session::ProfileWritableRoots(profile);
     filesystem.AttachSandbox(*sandbox.store, writable_roots);
     if (sandbox.store->TemporaryFilesRemoved() != 0) {
         logger.Write(core::LogLevel::warn, "frontend.run_apk",

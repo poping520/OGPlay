@@ -130,6 +130,41 @@ void VirtualFileSystem::Impl::PersistRemovalLocked(const std::string& path,
     }
 }
 
+std::int32_t VirtualFileSystem::Impl::OpenDirectory(
+    const std::string_view path) {
+    auto entries = ListDirectory(path);
+    std::scoped_lock lock(mutex_);
+    const auto normalized = ResolvePath(path, working_directory_);
+    if (files_.contains(normalized)) {
+        throw VfsError(kEnotdir, "VFS path is not a directory");
+    }
+    if (!IsDirectoryLocked(normalized)) {
+        throw VfsError(kEnoent, "VFS directory not found");
+    }
+    const auto descriptor = AllocateDescriptor();
+    OpenFile open;
+    open.readable = true;
+    open.directory = std::make_shared<OpenDirectoryState>();
+    open.directory->entries = std::move(entries);
+    descriptors_.emplace(descriptor, std::move(open));
+    return descriptor;
+}
+
+std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ReadDirectory(
+    const std::int32_t descriptor, const std::size_t maximum) {
+    std::scoped_lock lock(mutex_);
+    auto& open = FindDescriptor(descriptor);
+    if (!open.directory) {
+        throw VfsError(kEnotdir, "VFS descriptor is not a directory");
+    }
+    auto& state = *open.directory;
+    std::vector<VfsDirectoryEntry> page;
+    while (state.cursor < state.entries.size() && page.size() < maximum) {
+        page.push_back(state.entries[state.cursor++]);
+    }
+    return page;
+}
+
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolvePath(path, working_directory_);

@@ -21,3 +21,14 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 ## 测试
 
 对应 `tests/runtime/syscall_tests.cpp`、guest thread lifecycle 与 SVC bridge 测试。
+
+## 文件元数据与目录（ADR-0020）
+
+`BindAndroidFileMetadataSyscalls`（`syscall_file_metadata.cpp`）把
+mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`getdents64`、
+`access`、`ftruncate`、`fsync`/`fdatasync` 与 `pread64`/`pwrite64` 绑到与
+`BindAndroidFileSyscalls` 同一个 VFS。`struct stat64` 按 Android ARM 打包
+布局（96 字节）编组，`linux_dirent64` 记录 8 字节对齐且只发完整记录；两者
+偏移由机器测试锁定。`st_mode` 的权限位来自 VFS 真实 writable 事实，时间戳
+保持 0（唯一时间源是统一 Clock）。`*at` 的相对路径没有真实 per-process cwd，
+明确 `-ENOTSUP`。`flock`、`*xattr`、`inotify*` 等维持 `-ENOSYS` 记账。

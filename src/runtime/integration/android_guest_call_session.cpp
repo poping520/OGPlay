@@ -638,6 +638,8 @@ public:
             });
         BindAndroidFileSyscalls(
             dispatcher_, *filesystem_, address_space_);
+        BindAndroidFileMetadataSyscalls(
+            dispatcher_, *filesystem_, address_space_);
         BindAndroidThreadLifecycleSyscalls(dispatcher_, lifecycle_);
         BindAndroidArmPrivateSyscalls(
             dispatcher_,

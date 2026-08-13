@@ -111,6 +111,12 @@ public:
     void Rename(std::string_view from, std::string_view to);
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);
+    // Directory descriptor for getdents64: the child list is snapshotted at
+    // open time and consumed by ReadDirectory, so paging is stable even if
+    // the guest creates files while walking.
+    [[nodiscard]] std::int32_t OpenDirectory(std::string_view path);
+    [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(
+        std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,
                                    std::span<std::byte> destination);

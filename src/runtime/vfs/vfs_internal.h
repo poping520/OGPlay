@@ -53,11 +53,19 @@ struct File final {
     std::string overlay_path;
 };
 
+// A descriptor opened on a directory: the children are snapshotted so
+// getdents64 paging stays stable across calls.
+struct OpenDirectoryState final {
+    std::vector<VfsDirectoryEntry> entries;
+    std::size_t cursor{};
+};
+
 struct OpenFile final {
     std::shared_ptr<File> file;
     std::uint64_t offset{};
     bool readable{};
     bool writable{};
+    std::shared_ptr<OpenDirectoryState> directory;
 };
 
 class VirtualFileSystem::Impl final {
@@ -77,6 +85,9 @@ public:
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);
+    [[nodiscard]] std::int32_t OpenDirectory(std::string_view path);
+    [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(
+        std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,
                                    std::span<std::byte> destination);

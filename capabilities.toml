@@ -385,6 +385,11 @@ status = "complete"
 test = "tests/runtime/preferences_xml_tests.cpp; tests/dexvm/file_vfs_tests.cpp"
 note = "ADR-0020 SBX-6 把 SharedPreferences 落成 /data/data/<pkg>/shared_prefs/<name>.xml 的 Android 同构 XML，经 VFS 普通文件通道读写，attach 沙盒后跨会话持久；文件视角与 API 视角是同一份事实（个别游戏直接读该文件）。受检子集为 boolean/int/long/float/string，未知元素（含 string set）、未知属性、未知实体、DTD 与畸形值一律明确失败并保留原文件，不静默丢条目。commit() 是落盘点；渲染有序，无编辑重写产生同一份字节"
 
+[runtime.syscall_file_metadata]
+status = "partial"
+test = "tests/runtime/syscall_tests.cpp"
+note = "ADR-0020 SBX-4 绑定 mkdir/mkdirat/rmdir/unlink/unlinkat/rename/renameat、stat64/lstat64/fstat64/fstatat64、getdents64、access/faccessat、ftruncate/ftruncate64、fsync/fdatasync、pread64/pwrite64 到同一 VFS。struct stat64 与 linux_dirent64 按 Android ARM EABI 布局编组并由机器测试锁定偏移；st_mode 的权限位取自 VFS 真实 writable 事实，时间戳保持 0（唯一时间源是统一 Clock，VFS 不持有）。getdents64 只发完整记录、8 字节对齐、目录 descriptor 在 open 时快照以保证分页稳定。*at 的相对路径无真实 per-process cwd，明确 -ENOTSUP 不猜目录；flock/xattr/inotify 等维持 -ENOSYS 记账"
+
 [runtime.vfs_directory_ops]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp"

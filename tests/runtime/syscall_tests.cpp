@@ -639,3 +639,198 @@ TEST_CASE("clone commit preflights all TID writes and rejects partial state") {
     request.thread_pointer = ogplay::memory::GuestAddress{0x72000000U};
     CHECK(committer.Commit(request, 62) == -3);
 }
+
+// ---- file metadata and directory syscalls (SBX-4, ADR-0020) --------------
+
+namespace {
+
+using ogplay::memory::GuestAddress;
+
+// One guest page of scratch, one dispatcher with both file syscall batches.
+struct MetadataSyscallFixture final {
+    ogplay::core::CapabilityLedger ledger;
+    ogplay::runtime::A32SyscallDispatcher dispatcher;
+    ogplay::runtime::VirtualFileSystem vfs;
+    ogplay::memory::AddressSpace memory;
+
+    MetadataSyscallFixture()
+        : dispatcher(
+              ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger)) {
+        memory.Map({GuestAddress{0x20000}, memory.PageSize()},
+                   ogplay::memory::PageProtection::read |
+                       ogplay::memory::PageProtection::write);
+        ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+        ogplay::runtime::BindAndroidFileMetadataSyscalls(dispatcher, vfs,
+                                                         memory);
+    }
+
+    void WriteString(const std::uint32_t address, const std::string& value) {
+        std::vector<std::byte> bytes;
+        for (const auto character : value) {
+            bytes.push_back(static_cast<std::byte>(character));
+        }
+        bytes.push_back(std::byte{0});
+        memory.Write(GuestAddress{address}, bytes);
+    }
+
+    [[nodiscard]] std::int32_t Call(const std::uint32_t number,
+                                    const std::array<std::uint32_t, 6>& args) {
+        ogplay::runtime::A32SyscallFrame frame;
+        frame.number = number;
+        frame.thread_id = 1;
+        for (std::size_t index = 0; index < args.size(); ++index) {
+            frame.arguments[index] = args[index];
+        }
+        return dispatcher.Dispatch(frame);
+    }
+
+    [[nodiscard]] std::uint64_t ReadField(const std::uint32_t address,
+                                          const std::size_t offset,
+                                          const std::size_t width) {
+        std::vector<std::byte> bytes(width);
+        memory.Read(GuestAddress{address + static_cast<std::uint32_t>(offset)},
+                    bytes);
+        std::uint64_t value = 0;
+        for (std::size_t index = 0; index < width; ++index) {
+            value |= static_cast<std::uint64_t>(
+                         std::to_integer<std::uint8_t>(bytes[index]))
+                     << static_cast<unsigned>(index * 8U);
+        }
+        return value;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
+    MetadataSyscallFixture fixture;
+    // mkdir does not imply -p: the parent has to exist first.
+    fixture.WriteString(0x20000, "/sdcard/saves");
+    CHECK(fixture.Call(39, {0x20000, 0755, 0, 0, 0, 0}) == -2);
+    fixture.vfs.CreateDirectory("/sdcard");
+    CHECK(fixture.Call(39, {0x20000, 0755, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.vfs.Stat("/sdcard/saves").is_directory);
+    // Creating it twice is -EEXIST, exactly as on the platform.
+    CHECK(fixture.Call(39, {0x20000, 0755, 0, 0, 0, 0}) == -17);
+
+    // struct stat64 layout is the Android ARM one; these offsets are the
+    // contract, not an implementation detail.
+    CHECK(fixture.Call(195, {0x20000, 0x20200, 0, 0, 0, 0}) == 0);
+    CHECK((fixture.ReadField(0x20200, 16, 4) & 0170000U) == 0040000U);
+    CHECK(fixture.ReadField(0x20200, 44, 8) == 0);       // st_size
+    CHECK(fixture.ReadField(0x20200, 52, 4) == 4096);    // st_blksize
+    CHECK(fixture.ReadField(0x20200, 88, 8) != 0);       // st_ino
+
+    fixture.WriteString(0x20100, "/sdcard/saves/slot0.sav");
+    const auto descriptor =
+        fixture.Call(5, {0x20100, 0x40 | 1, 0, 0, 0, 0});  // O_CREAT|O_WRONLY
+    REQUIRE(descriptor >= 3);
+    const std::array payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+    fixture.memory.Write(GuestAddress{0x20300}, payload);
+    CHECK(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300, 3,
+                           0, 0, 0}) == 3);
+    CHECK(fixture.Call(118, {static_cast<std::uint32_t>(descriptor), 0, 0, 0,
+                             0, 0}) == 0);  // fsync
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0,
+                           0}) == 0);
+
+    CHECK(fixture.Call(195, {0x20100, 0x20200, 0, 0, 0, 0}) == 0);
+    CHECK((fixture.ReadField(0x20200, 16, 4) & 0170000U) == 0100000U);
+    CHECK(fixture.ReadField(0x20200, 44, 8) == 3);
+
+    // Non-empty directory refuses, the file goes, then the directory goes.
+    CHECK(fixture.Call(40, {0x20000, 0, 0, 0, 0, 0}) == -39);
+    CHECK(fixture.Call(10, {0x20100, 0, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(40, {0x20000, 0, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(195, {0x20000, 0x20200, 0, 0, 0, 0}) == -2);
+}
+
+TEST_CASE("Android getdents64 emits aligned records and pages") {
+    MetadataSyscallFixture fixture;
+    fixture.vfs.CreateDirectory("/sdcard");
+    fixture.WriteString(0x20000, "/sdcard/dir");
+    REQUIRE(fixture.Call(39, {0x20000, 0755, 0, 0, 0, 0}) == 0);
+    for (const auto* name : {"/sdcard/dir/a.sav", "/sdcard/dir/b.sav"}) {
+        fixture.WriteString(0x20100, name);
+        const auto descriptor =
+            fixture.Call(5, {0x20100, 0x40 | 1, 0, 0, 0, 0});
+        REQUIRE(descriptor >= 3);
+        REQUIRE(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0,
+                                 0, 0, 0}) == 0);
+    }
+
+    const auto directory = fixture.vfs.OpenDirectory("/sdcard/dir");
+    const auto written = fixture.Call(
+        217, {static_cast<std::uint32_t>(directory), 0x20400, 256, 0, 0, 0});
+    REQUIRE(written > 0);
+
+    // linux_dirent64: u64 ino, s64 off, u16 reclen, u8 type, char name[].
+    const auto reclen = fixture.ReadField(0x20400, 16, 2);
+    CHECK(reclen % 8 == 0);
+    CHECK(fixture.ReadField(0x20400, 18, 1) == 8);  // DT_REG
+    std::vector<std::byte> name(6);  // "a.sav" plus its NUL
+    fixture.memory.Read(GuestAddress{0x20400 + 19}, name);
+    CHECK(static_cast<char>(name[0]) == 'a');
+    CHECK(static_cast<char>(name[4]) == 'v');
+    CHECK(static_cast<char>(name[5]) == '\0');
+    CHECK(static_cast<std::uint64_t>(written) == reclen * 2);
+
+    // The snapshot is consumed, so a second call reports end of directory.
+    CHECK(fixture.Call(217, {static_cast<std::uint32_t>(directory), 0x20400,
+                             256, 0, 0, 0}) == 0);
+    fixture.vfs.Close(directory);
+}
+
+TEST_CASE("Android access, rename and positional IO keep their contracts") {
+    MetadataSyscallFixture fixture;
+    fixture.WriteString(0x20000, "/sdcard/old.sav");
+    const auto descriptor = fixture.Call(5, {0x20000, 0x40 | 1, 0, 0, 0, 0});
+    REQUIRE(descriptor >= 3);
+    const std::array payload{std::byte{'0'}, std::byte{'1'}, std::byte{'2'},
+                             std::byte{'3'}};
+    fixture.memory.Write(GuestAddress{0x20300}, payload);
+    REQUIRE(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300,
+                             4, 0, 0, 0}) == 4);
+
+    // pwrite64 must not disturb the descriptor offset.
+    const std::array patch{std::byte{'X'}};
+    fixture.memory.Write(GuestAddress{0x20310}, patch);
+    CHECK(fixture.Call(181, {static_cast<std::uint32_t>(descriptor), 0x20310,
+                             1, 0, 1, 0}) == 1);
+    const std::array tail{std::byte{'4'}};
+    fixture.memory.Write(GuestAddress{0x20320}, tail);
+    CHECK(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20320, 1,
+                           0, 0, 0}) == 1);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0,
+                           0}) == 0);
+
+    const auto reader = fixture.Call(5, {0x20000, 0, 0, 0, 0, 0});
+    REQUIRE(reader >= 3);
+    CHECK(fixture.Call(180, {static_cast<std::uint32_t>(reader), 0x20330, 5, 0,
+                             0, 0}) == 5);
+    std::vector<std::byte> read_back(5);
+    fixture.memory.Read(GuestAddress{0x20330}, read_back);
+    CHECK(static_cast<char>(read_back[1]) == 'X');
+    CHECK(static_cast<char>(read_back[4]) == '4');
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(reader), 0, 0, 0, 0,
+                           0}) == 0);
+
+    // access: F_OK on a present file, ENOENT on an absent one.
+    CHECK(fixture.Call(33, {0x20000, 0, 0, 0, 0, 0}) == 0);
+    fixture.WriteString(0x20100, "/sdcard/new.sav");
+    CHECK(fixture.Call(33, {0x20100, 0, 0, 0, 0, 0}) == -2);
+
+    CHECK(fixture.Call(38, {0x20000, 0x20100, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(33, {0x20100, 0, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(33, {0x20000, 0, 0, 0, 0, 0}) == -2);
+}
+
+TEST_CASE("Android *at syscalls refuse relative paths instead of guessing") {
+    MetadataSyscallFixture fixture;
+    fixture.WriteString(0x20000, "relative/path");
+    // No per-process cwd exists, so resolving these would pick a directory
+    // at random; -ENOTSUP says so.
+    CHECK(fixture.Call(323, {0xffffff9c, 0x20000, 0755, 0, 0, 0}) == -95);
+    CHECK(fixture.Call(328, {0xffffff9c, 0x20000, 0, 0, 0, 0}) == -95);
+    CHECK(fixture.Call(327, {0xffffff9c, 0x20000, 0x20200, 0, 0, 0}) == -95);
+}

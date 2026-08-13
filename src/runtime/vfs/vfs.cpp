@@ -360,7 +360,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
         const auto descriptor = AllocateDescriptor();
         descriptors_.emplace(
             descriptor,
-            OpenFile{found->second, 0, options.read, options.write});
+            OpenFile{found->second, 0, options.read, options.write, {}});
         return descriptor;
     }
 
@@ -370,10 +370,10 @@ VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe() {
             File{{}, 0, {}, true, VfsSource::runtime, false, {}});
         const auto read_descriptor = AllocateDescriptor();
         descriptors_.emplace(
-            read_descriptor, OpenFile{pipe, 0, true, false});
+            read_descriptor, OpenFile{pipe, 0, true, false, {}});
         const auto write_descriptor = AllocateDescriptor();
         descriptors_.emplace(
-            write_descriptor, OpenFile{std::move(pipe), 0, false, true});
+            write_descriptor, OpenFile{std::move(pipe), 0, false, true, {}});
         return {read_descriptor, write_descriptor};
     }
 
@@ -381,6 +381,7 @@ std::size_t VirtualFileSystem::Impl::Read(const std::int32_t descriptor,
                                    const std::span<std::byte> destination) {
         std::scoped_lock lock(mutex_);
         auto& open = FindDescriptor(descriptor);
+        if (open.directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
         if (!open.readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
         Materialize(*open.file);
         const auto available = open.offset >= open.file->size
@@ -403,6 +404,7 @@ std::size_t VirtualFileSystem::Impl::Write(
         const std::span<const std::byte> source) {
         std::scoped_lock lock(mutex_);
         auto& open = FindDescriptor(descriptor);
+        if (open.directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
         if (!open.writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
         Materialize(*open.file);
         const auto end = open.offset + source.size();
@@ -453,7 +455,7 @@ void VirtualFileSystem::Impl::Close(const std::int32_t descriptor) {
             throw VfsError(kEbadf, "VFS descriptor is not open");
         }
         // close(2) is a flush point (03 §2); a clean node costs nothing.
-        FlushFileLocked(*found->second.file);
+        if (found->second.file) FlushFileLocked(*found->second.file);
         descriptors_.erase(found);
     }
 
@@ -553,6 +555,13 @@ void VirtualFileSystem::Rename(const std::string_view from,
 std::int32_t VirtualFileSystem::Open(const std::string_view path,
                                      const VfsOpenOptions options) {
     return impl_->Open(path, options);
+}
+std::int32_t VirtualFileSystem::OpenDirectory(const std::string_view path) {
+    return impl_->OpenDirectory(path);
+}
+std::vector<VfsDirectoryEntry> VirtualFileSystem::ReadDirectory(
+    const std::int32_t descriptor, const std::size_t maximum) {
+    return impl_->ReadDirectory(descriptor, maximum);
 }
 VfsPipeDescriptors VirtualFileSystem::CreatePipe() {
     return impl_->CreatePipe();

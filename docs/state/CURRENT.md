@@ -25,16 +25,15 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
-- **存档持久沙盒实施中**（ADR-0020 已 Accepted，任务单
-  [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：SBX-1（SandboxStore
-  宿主存储）、SBX-2（VFS 目录操作）、SBX-3（AttachSandbox 覆盖层与落盘点）、
-  SBX-7（CLI 接线与一次性沙盒）已交付并各自提交。`run-apk` 现在默认按
-  package 打开持久沙盒，经 VFS 的写入跨会话保留；`--sandbox-dir` /
-  `--ephemeral-sandbox` 可覆盖，自动化默认一次性沙盒，Asphalt 5 golden 逐位
-  不变。**尚未完成**：SBX-4（syscall mkdir/unlink/stat64/getdents64 等仍
-  `-ENOSYS`）、SBX-5（DexVM `File` 族仍写 `memory_files` 会话内存）、
-  SBX-6（SharedPreferences 仍是会话内存）。也就是说三条写入通道里目前只有
-  native 直接经 VFS 的那条真正持久，用户可见的存档问题尚未闭环。
+- **存档持久沙盒 SBX-1..7 全部交付**（ADR-0020 Accepted，任务单
+  [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：`SandboxStore` 宿主
+  存储、VFS 目录操作、`AttachSandbox` 覆盖层与落盘点、CLI 接线与一次性沙盒、
+  DexVM `File` 族改线 VFS（`memory_files` 废除、`mkdirs` 去伪成功）、
+  SharedPreferences 落成平台同构 XML、文件元数据与目录 syscall 绑定。三条
+  guest 写入通道（native syscall、DexVM File、prefs）现在都收敛到同一个 VFS，
+  `run-apk` 默认按 package 持久保存，自动化默认一次性沙盒且 Asphalt 5 golden
+  逐位不变。**用户级闭环仍未演示**：当前最深入的 title 只到标题画面，本地
+  运行没有触发任何存档写入，"进游戏产生存档→重启读到"要等 title 深度推进。
 - **GUI 主面板未启动**：设计见 `docs/design/launcher/`（SDL3 + Dear ImGui，
   WU 分解 GUI-1..7），capabilities 无变化。
 

@@ -427,6 +427,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/interp_object.cpp
     src/runtime/dexvm/interp_arith.cpp
     src/runtime/dexvm/interpreter_builtins.cpp
+    src/runtime/dexvm/intrinsic_builder.cpp
     src/runtime/dexvm/intrinsics_java.cpp
     src/runtime/dexvm/intrinsics_string.cpp
     src/runtime/jni/jni.cpp

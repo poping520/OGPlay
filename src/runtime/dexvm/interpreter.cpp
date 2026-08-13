@@ -222,9 +222,16 @@ void Interpreter::Impl::EnsureInitialized(
                 static_cast<std::int32_t>(constant.integral));
         }
     }
-    if (!mutable_class.intrinsic_clinit_handler.empty()) {
-        const auto* handler =
-            intrinsics.Find(mutable_class.intrinsic_clinit_handler);
+    const IntrinsicHandler* clinit_handler = nullptr;
+    if (mutable_class.clinit_implementation) {
+        clinit_handler = &mutable_class.clinit_implementation;
+    } else if (!mutable_class.intrinsic_clinit_handler.empty()) {
+        clinit_handler = intrinsics.Find(
+            mutable_class.intrinsic_clinit_handler);
+    }
+    if (clinit_handler != nullptr ||
+        !mutable_class.intrinsic_clinit_handler.empty()) {
+        const auto* handler = clinit_handler;
         if (handler == nullptr) {
       linker->MutableClass(java_class).clinit_state = ClinitState::failed;
             ThrowJava("Ljava/lang/UnsatisfiedLinkError;",
@@ -307,17 +314,23 @@ VmValue
 Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
                                    const VmObjectRef receiver,
     const std::span<const VmValue> arguments) {
-    if (!method.handler_bound) {
+    const IntrinsicHandler* handler = nullptr;
+    if (method.implementation) {
+        handler = &method.implementation;
+    } else if (!method.handler_bound) {
         method.resolved_handler = intrinsics.Find(method.intrinsic_handler);
         method.handler_bound = true;
     }
-    const auto* handler = method.resolved_handler;
     if (handler == nullptr) {
-        if (ledger != nullptr) {
-      ledger->RecordUnimplemented("dexvm.intrinsic." + method.intrinsic_handler,
-                                  0);
-        }
+        handler = method.resolved_handler;
+    }
+    if (handler == nullptr) {
         const auto& declaring = linker->Class(method.owner).descriptor;
+        const auto diagnostic =
+            declaring + "." + method.name + method.descriptor;
+        if (ledger != nullptr) {
+            ledger->RecordUnimplemented("dexvm.intrinsic." + diagnostic, 0);
+        }
         if (linker->GapSurveyEnabled()) {
             // Survey mode: record and answer neutrally so one run harvests
             // every gap the title reaches. Never a compatibility result.
@@ -329,10 +342,12 @@ Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
             }
             return NeutralValueFor(method.return_shorty);
         }
-    throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
-                      "intrinsic handler is not implemented: " + declaring +
-                          "." + method.name + method.descriptor + " (" +
-                method.intrinsic_handler + ")"};
+        auto message = "intrinsic handler is not implemented: " + diagnostic;
+        if (!method.intrinsic_handler.empty()) {
+            message += " (" + method.intrinsic_handler + ")";
+        }
+        throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
+                          std::move(message)};
     }
     ++stats.intrinsic_calls;
     IntrinsicContext context{*owner, receiver, arguments};

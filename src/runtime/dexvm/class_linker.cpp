@@ -153,6 +153,7 @@ void DexClassLinker::RegisterIntrinsics(
             linked_method.kind = MethodKind::intrinsic;
             linked_method.overridable = method.overridable;
             linked_method.intrinsic_handler = method.handler;
+            linked_method.implementation = method.implementation;
             const auto parts = SplitDescriptor(method.descriptor);
             linked_method.return_shorty = ShortyOf(parts.return_type);
             linked_method.ins_words = ArgumentWords(parts, method.is_static);
@@ -190,6 +191,7 @@ void DexClassLinker::RegisterIntrinsics(
             }
         }
         linked.intrinsic_clinit_handler = declaration->clinit_handler;
+        linked.clinit_implementation = declaration->clinit_implementation;
     }
 }
 

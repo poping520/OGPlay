@@ -18,6 +18,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   规则子集对照 AOSP `CodeVerify.cpp`，不做全量数据流。
 - `CoreIntrinsicCatalog()`：Object/String/Class/Throwable + 隐式异常层级 +
   Runnable/CharSequence 等接口的内建声明。
+- `IntrinsicClassBuilder`：以类为单位声明 static/virtual/overridable 方法、字段、
+  常量与 `<clinit>`，`Build()` 在装配期校验类/方法/字段 descriptor、重复成员和
+  interface 实例字段；builder 只产生内嵌 handler，不产生字符串 handler id。
 - `JavaObjectModel`：session 级统一对象身份（VmObjectRef 句柄空间，0=null）。
   VM 实例与对象数组自有存储；字符串与基元数组委托注入的
   `JniStringStore`/`JniPrimitiveArrayStore`——native 与解释器看到同一对象。
@@ -27,8 +30,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `VmCallOutcome`（值或未捕获 Java 异常 + 消息 + 栈回溯）。tagged 寄存器
   （uninit/cat1/wide 对/ref + 零值放宽）、每指令 1 tick 预算、帧深度上限
   （默认 512 → 真实 StackOverflowError）。invoke 三路由：解释方法压帧、
-  intrinsic 首次调用从 `IntrinsicRegistry` 绑定 handler 指针到 `LinkedMethod`，
-  后续直接调用（缺失 handler 同样缓存 miss，并继续逐次记账 +
+  intrinsic 优先直调声明内嵌的拥有型 handler；存量声明仍在首次调用时从
+  `IntrinsicRegistry` 绑定 handler 指针到 `LinkedMethod`，后续直接调用
+  （缺失 handler 同样缓存 miss，并继续按 owner+方法签名逐次记账 +
   UnsatisfiedLinkError）、
   native 走 `NativeMethodBridge`（未注入则记账 + 明确失败）。
   `CreateExecutionContext` 建立显式执行 context；`Call(context, ...)` 隔离其
@@ -110,6 +114,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `IntrinsicHandler`，由执行锁保证单写，已绑定 miss 以独立标记保存。bridge 的
   析构顺序为 threads → VM → model → linker，因此缓存指针不会越过 registry
   生命周期。
+- `IntrinsicMethodDecl::implementation` 与
+  `IntrinsicClassDecl::clinit_implementation` 是声明即绑定的优先通道；非空时不
+  查询 registry。字符串 id 通道仅为 DVM-35..37 迁移期兼容路径，新 builder
+  不得写入 id；两条通道可在同一 VM 中共存。
 - 热路径在 `Call`/`EnsureClassInitialized` 入口解析一次活跃 execution，沿
   `Run`/`Step`/`Tick`/invoke 与字段家族/`EnsureInitialized`/
   `PushInterpretedFrame` 显式传引用；逐指令不得重查 thread-local 路由。
@@ -131,8 +139,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 ## 测试
 
-`tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：intrinsic registry
-冻结/重复注册、命中与重复 miss 绑定，算术边界、控制流、
+`tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：intrinsic builder
+装配校验与声明即绑定、registry 冻结/重复注册、双通道共存、命中与重复 miss
+绑定，算术边界、控制流、
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
 显式执行 context 交错调用的帧/异常/tick/monitor 隔离）；
 `tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、

@@ -9,10 +9,12 @@
 #include <fstream>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 
@@ -75,6 +77,42 @@ struct Vm final {
     }
 };
 
+struct IntrinsicVm final {
+    JniStringStore strings;
+    JniPrimitiveArrayStore arrays;
+    JavaObjectModel model;
+    DexClassLinker linker;
+    ogplay::core::CapabilityLedger ledger;
+    Interpreter interpreter;
+
+    IntrinsicVm(std::vector<IntrinsicClassDecl> catalog,
+                IntrinsicRegistry registry = {})
+        : model(strings, arrays),
+          linker(),
+          interpreter(
+              [this, &catalog]() -> DexClassLinker& {
+                  auto core = CoreIntrinsicCatalog();
+                  core.insert(core.end(),
+                              std::make_move_iterator(catalog.begin()),
+                              std::make_move_iterator(catalog.end()));
+                  linker.RegisterIntrinsics(core);
+                  linker.Link();
+                  return linker;
+              }(),
+              model, std::move(registry), nullptr, ledger) {}
+
+    [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
+                                    const std::string& name,
+                                    const std::string& descriptor) {
+        const auto java_class = linker.FindClass(class_descriptor);
+        REQUIRE(java_class.has_value());
+        const auto method =
+            linker.FindDirectMethod(*java_class, name, descriptor);
+        REQUIRE(method.has_value());
+        return *method;
+    }
+};
+
 void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
     REQUIRE_MESSAGE(!outcome.exception.IsValid(),
                     "unexpected exception: ", outcome.exception_message);
@@ -82,7 +120,8 @@ void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
     CHECK(outcome.value.AsInt() == expected);
 }
 
-void ExpectException(const Vm& vm, const VmCallOutcome& outcome,
+template <typename VmType>
+void ExpectException(const VmType& vm, const VmCallOutcome& outcome,
                      const std::string& descriptor) {
     REQUIRE(outcome.exception.IsValid());
     CHECK(vm.linker.Class(outcome.exception_class).descriptor == descriptor);
@@ -169,12 +208,149 @@ TEST_CASE("dexvm intrinsic handlers bind once and preserve repeated misses") {
     const auto hits = miss.ledger.Unimplemented();
     bool found = false;
     for (const auto& entry : hits) {
-        if (entry.id == "dexvm.intrinsic.core.math.abs_int") {
+        if (entry.id == "dexvm.intrinsic.Ljava/lang/Math;.abs(I)I") {
             found = true;
             CHECK(entry.count == 2U);
         }
     }
     CHECK(found);
+}
+
+TEST_CASE("dexvm intrinsic builder binds implementations without a registry") {
+    std::uint32_t clinit_calls = 0;
+    IntrinsicClassBuilder builder("Lbuilder/Direct;");
+    builder.Super("Ljava/lang/Object;")
+        .Static("answer", "()I", [](IntrinsicContext&) {
+            return VmValue::Int(42);
+        })
+        .Virtual("virtualAnswer", "()I", [](IntrinsicContext&) {
+            return VmValue::Int(43);
+        })
+        .Overridable("overridableAnswer", "()I", [](IntrinsicContext&) {
+            return VmValue::Int(44);
+        })
+        .ConstantInt("COUNT", "I", 41)
+        .ConstantString("NAME", "direct")
+        .Clinit([&clinit_calls](IntrinsicContext&) {
+            ++clinit_calls;
+            return VmValue::Void();
+        });
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(builder).Build());
+    IntrinsicVm vm(std::move(catalog));
+
+    ExpectInt(vm.interpreter.Call(vm.Static("Lbuilder/Direct;", "answer",
+                                            "()I"),
+                                  {}),
+              42);
+    CHECK(clinit_calls == 1U);
+    ExpectInt(vm.interpreter.Call(vm.Static("Lbuilder/Direct;", "answer",
+                                            "()I"),
+                                  {}),
+              42);
+    CHECK(clinit_calls == 1U);
+
+    const auto java_class = vm.linker.FindClass("Lbuilder/Direct;");
+    REQUIRE(java_class.has_value());
+    const auto instance =
+        vm.interpreter.NewIntrinsicInstance("Lbuilder/Direct;");
+    for (const auto& [name, expected] :
+         std::vector<std::pair<std::string, std::int32_t>>{
+             {"virtualAnswer", 43}, {"overridableAnswer", 44}}) {
+        const auto index =
+            vm.linker.FindVtableIndex(*java_class, name, "()I");
+        REQUIRE(index.has_value());
+        ExpectInt(vm.interpreter.Call(
+                      vm.linker.Class(*java_class).vtable[*index],
+                      std::vector<VmValue>{VmValue::Ref(instance)}),
+                  expected);
+    }
+
+    const auto count = vm.linker.FindFieldRecursive(*java_class, "COUNT", "I");
+    REQUIRE(count.has_value());
+    CHECK(vm.linker.Class(*java_class).static_storage[
+              vm.linker.Field(*count).slot] == 41U);
+    const auto name = vm.linker.FindFieldRecursive(
+        *java_class, "NAME", "Ljava/lang/String;");
+    REQUIRE(name.has_value());
+    const auto name_ref = VmObjectRef(vm.linker.Class(*java_class)
+                                           .static_storage[
+                                               vm.linker.Field(*name).slot]);
+    CHECK(vm.interpreter.StringUtf8(name_ref) == "direct");
+}
+
+TEST_CASE("dexvm intrinsic builder rejects invalid declarations at build") {
+    auto expect_invalid = [](IntrinsicClassBuilder builder) {
+        bool rejected = false;
+        try {
+            static_cast<void>(std::move(builder).Build());
+        } catch (const DexVmError& error) {
+            rejected = true;
+            CHECK(error.Reason() == DexVmErrorReason::internal_invariant);
+        }
+        CHECK(rejected);
+    };
+
+    IntrinsicClassBuilder duplicate("Lbuilder/Duplicate;");
+    duplicate.Static("answer", "()I", {})
+        .Static("answer", "()I", {});
+    expect_invalid(std::move(duplicate));
+
+    IntrinsicClassBuilder invalid_descriptor("Lbuilder/Invalid;");
+    invalid_descriptor.Static("answer", "(I", {});
+    expect_invalid(std::move(invalid_descriptor));
+
+    IntrinsicClassBuilder invalid_interface("Lbuilder/Interface;");
+    invalid_interface.MarkInterface().Field("state", "I", false);
+    expect_invalid(std::move(invalid_interface));
+}
+
+TEST_CASE("dexvm declaration miss uses the owner signature and repeats") {
+    IntrinsicClassBuilder builder("Lbuilder/Missing;");
+    builder.Super("Ljava/lang/Object;").Static("answer", "()I", {});
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(builder).Build());
+    IntrinsicVm vm(std::move(catalog));
+    const auto method = vm.Static("Lbuilder/Missing;", "answer", "()I");
+
+    for (std::uint32_t call = 0; call < 2; ++call) {
+        ExpectException(vm, vm.interpreter.Call(method, {}),
+                        "Ljava/lang/UnsatisfiedLinkError;");
+    }
+    const auto hits = vm.ledger.Unimplemented();
+    REQUIRE(hits.size() == 1U);
+    CHECK(hits[0].id ==
+          "dexvm.intrinsic.Lbuilder/Missing;.answer()I");
+    CHECK(hits[0].count == 2U);
+}
+
+TEST_CASE("dexvm direct and string intrinsic channels coexist") {
+    IntrinsicClassBuilder direct("Lbuilder/NewChannel;");
+    direct.Super("Ljava/lang/Object;")
+        .Static("answer", "()I", [](IntrinsicContext&) {
+            return VmValue::Int(51);
+        });
+
+    IntrinsicClassDecl legacy;
+    legacy.descriptor = "Lbuilder/OldChannel;";
+    legacy.superclass = "Ljava/lang/Object;";
+    legacy.methods.push_back(
+        {"answer", "()I", true, false, "legacy.answer"});
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(direct).Build());
+    catalog.push_back(std::move(legacy));
+    IntrinsicRegistry registry;
+    registry.Register("legacy.answer", [](IntrinsicContext&) {
+        return VmValue::Int(52);
+    });
+    IntrinsicVm vm(std::move(catalog), std::move(registry));
+
+    ExpectInt(vm.interpreter.Call(
+                  vm.Static("Lbuilder/NewChannel;", "answer", "()I"), {}),
+              51);
+    ExpectInt(vm.interpreter.Call(
+                  vm.Static("Lbuilder/OldChannel;", "answer", "()I"), {}),
+              52);
 }
 
 TEST_CASE("dexvm arithmetic edge semantics") {

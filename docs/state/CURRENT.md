@@ -1,13 +1,13 @@
 # 当前状态
 
 更新：2026-08-13 · DexVM 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
-surface 回调）与解释器热路径优化（DVM-32/33）已交付；存档沙盒 SBX-1..12、
+surface 回调）与解释器 intrinsic 优化（DVM-32..34）已交付；存档沙盒 SBX-1..12、
 主面板 GUI-1..16 与验收报告均已收口
 
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM**（`DVM-1..33`，ADR-0017/0022）：阶段 0..3（AOSP 基线/解释器
+- **M9 DexVM**（任务已编号至 `DVM-37`，ADR-0017/0022）：阶段 0..3（AOSP 基线/解释器
   内核/JNI 双向桥/java.*+android.* intrinsic/dex_activity/profile v2/pilot
   迁移）全部交付；entry override、静态预置和 v2-only 清理完成。
 - **阶段 4 线程地基已交付**（DVM-27..29）：显式 per-thread execution
@@ -18,11 +18,13 @@ surface 回调）与解释器热路径优化（DVM-32/33）已交付；存档沙
   解释字节码。`dexvm.threads`/`dexvm.monitors` 均 `partial`：子线程 native
   调用仍复用 root guest 栈（需停泊时以 `blocking_in_native` 明确失败），
   native 侧 JNI monitor 表尚未与之合一。
-- **解释器热路径优化已交付**：DVM-32 把 intrinsic registry 换成地址稳定的
-  异构哈希表并在首次执行后冻结，每方法首调绑定 handler 指针，命中零容器
-  查询，miss 仍逐次记账并保持 survey/`UnsatisfiedLinkError` 语义；DVM-33 在
-  `Call` 入口解析一次 execution 并沿 Run/Step/Tick/invoke 链传引用，逐指令
-  不再重查 thread-local 路由。行为零变化，Windows/MSVC 全量 705/705。
+- **intrinsic/热路径优化已交付**：DVM-32 冻结地址稳定的 registry，每方法首调
+  绑定 handler，miss 仍逐次记账并保持 survey/`UnsatisfiedLinkError`；DVM-33
+  从 `Call` 沿 Run/Step/Tick/invoke 传递 execution，不再逐指令查询；DVM-34
+  新增装配校验的 `IntrinsicClassBuilder`、内嵌 handler 与新旧双通道，miss 按
+  owner+签名记账。存量 handler 未迁移，registry/id 保留。Windows/MSVC 709/709。
+- **声明即绑定迁移待续**（DVM-35..37）：java.*/javax.* 按类迁移 → android.*
+  按类迁移 → 删除 registry 与字符串 id；不改变 handler 行为或能力状态。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
@@ -40,7 +42,7 @@ surface 回调）与解释器热路径优化（DVM-32/33）已交付；存档沙
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 705/705；
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 709/709；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 
 ## 进行中：更多 title 上 dexvm 路线
@@ -71,11 +73,12 @@ macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
-3. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
+3. DVM-35..37：按依赖顺序迁移 intrinsic 声明并删除字符串 id。
+4. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
    只读路径去整串拷贝（分析结论见 DVM-32/33 任务单）。
-4. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id，native
+5. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id，native
    侧 JNI monitor 表与 DexVM monitor 表尚未合一。
-5. Linux M9 严格出口复验待执行；五个生产源文件仍超 800 行
+6. Linux M9 严格出口复验待执行；五个生产源文件仍超 800 行
    （boundary hle/gles/gles1、guest_call_session、run_apk）。
 
 ## 阻塞

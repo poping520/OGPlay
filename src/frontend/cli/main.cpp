@@ -27,7 +27,8 @@ int Usage() {
                   "[--profiles-dir <dir>] [--external-dir <host-dir>] "
                   "[--preflight] [--supersample <1..4>] "
                   "[--exit-after-frames <count>] [--mcp | --mcp-port <1..65535>] "
-                  "[--mcp-manual-step]\n");
+                  "[--mcp-manual-step] "
+                  "[--sandbox-dir <host-dir> | --ephemeral-sandbox]\n");
     return 2;
 }
 

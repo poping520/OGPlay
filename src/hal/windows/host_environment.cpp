@@ -132,4 +132,10 @@ std::optional<std::string> HostEnvironmentValue(
     return ReadEnvironment(std::string(name));
 }
 
+std::optional<std::filesystem::path> HostUserDataDirectory() {
+    const auto appdata = HostEnvironmentValue("APPDATA");
+    if (!appdata.has_value() || appdata->empty()) return std::nullopt;
+    return std::filesystem::path(*appdata) / "OGPlay";
+}
+
 }  // namespace ogplay::hal

@@ -124,4 +124,14 @@ std::optional<std::string> HostEnvironmentValue(
                : std::optional<std::string>(std::string(value));
 }
 
+std::optional<std::filesystem::path> HostUserDataDirectory() {
+    const auto xdg = HostEnvironmentValue("XDG_DATA_HOME");
+    if (xdg.has_value() && !xdg->empty()) {
+        return std::filesystem::path(*xdg) / "ogplay";
+    }
+    const auto home = HostEnvironmentValue("HOME");
+    if (!home.has_value() || home->empty()) return std::nullopt;
+    return std::filesystem::path(*home) / ".local" / "share" / "ogplay";
+}
+
 }  // namespace ogplay::hal

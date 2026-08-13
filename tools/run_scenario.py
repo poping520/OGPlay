@@ -508,6 +508,10 @@ def _launch(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
         str(ogplay), "run-apk", str(apk_paths[0]), "--system-dir", str(system_dir),
         "--profiles-dir", str(profiles), "--mcp-port", str(port),
         "--mcp-manual-step",
+        # Scenario results have to be reproducible, so a run never inherits
+        # or leaves behind saved state (ADR-0020 02 §4). Persistence is
+        # covered by CTest, not by scenarios.
+        "--ephemeral-sandbox",
     ]
     external = [fixtures[item["id"]] for item in plan.fixtures
                 if item["kind"] == "external" and item["id"] in fixtures]

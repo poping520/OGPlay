@@ -16,3 +16,7 @@
 ## 测试
 
 契约测试放在 `tests/hal/`；需要窗口的测试必须提供 headless 跳过条件。
+
+`HostUserDataDirectory()` 返回本平台的用户数据根（Windows `%APPDATA%\OGPlay`、
+macOS `~/Library/Application Support/OGPlay`、Linux `$XDG_DATA_HOME/ogplay` 或
+`~/.local/share/ogplay`）；宿主环境未声明时返回空，由调用方明确报错而不是猜测。

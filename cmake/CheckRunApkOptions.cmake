@@ -89,3 +89,16 @@ expect_failure(mcp_manual_default_valid "cannot open"
     ${_base} --mcp --mcp-manual-step)
 expect_failure(mcp_manual_custom_valid "cannot open"
     ${_base} --mcp-port 3000 --mcp-manual-step)
+expect_failure(sandbox_missing_value
+    "unknown or incomplete run-apk option: --sandbox-dir"
+    ${_base} --sandbox-dir)
+# An empty argument cannot survive a CMake argument list, so the non-empty
+# check is covered by the CLI itself rather than here.
+expect_failure(sandbox_conflict
+    "--ephemeral-sandbox and --sandbox-dir cannot be combined"
+    ${_base} --ephemeral-sandbox --sandbox-dir saves)
+expect_failure(sandbox_conflict_reversed
+    "--ephemeral-sandbox and --sandbox-dir cannot be combined"
+    ${_base} --sandbox-dir saves --ephemeral-sandbox)
+expect_failure(sandbox_valid "cannot open" ${_base} --sandbox-dir saves)
+expect_failure(ephemeral_valid "cannot open" ${_base} --ephemeral-sandbox)

@@ -1,4 +1,5 @@
 #include "run_apk.h"
+#include "run_apk_vfs.h"
 
 #include <array>
 #include <charconv>
@@ -34,6 +35,7 @@
 #include "ogplay/runtime/integration/android_link_preflight.h"
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/loader/arsc.h"
+#include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/runtime/dexvm/gap_survey.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
@@ -171,63 +173,6 @@ gles::AngleBackend NativeBackend() {
                profile.quirks->enabled.end();
 }
 
-[[nodiscard]] const session::ProfileMount* ExternalMount(
-    const session::TitleProfile& profile) {
-    if (!profile.data.has_value()) return nullptr;
-    const session::ProfileMount* result{};
-    for (const auto& mount : profile.data->mounts) {
-        if (mount.source != session::ProfileSource::external) continue;
-        if (result != nullptr) {
-            throw std::runtime_error(
-                "run-apk supports one external Profile mount per session");
-        }
-        result = &mount;
-    }
-    return result;
-}
-
-[[nodiscard]] std::string JoinGuestPath(const std::string_view root,
-                                        const std::string_view relative) {
-    auto result = std::string(root);
-    if (result != "/") result.push_back('/');
-    result.append(relative);
-    return result;
-}
-
-void MountExternalDirectory(
-    const session::TitleProfile& profile,
-    const std::optional<std::filesystem::path>& directory,
-    runtime::VirtualFileSystem& filesystem) {
-    const auto* mount = ExternalMount(profile);
-    if (mount == nullptr) {
-        if (directory.has_value()) {
-            throw std::runtime_error(
-                "--external-dir was supplied but Profile declares no external mount");
-        }
-        return;
-    }
-    if (!directory.has_value()) {
-        if (mount->required) {
-            throw std::runtime_error(
-                "Profile requires --external-dir for guest mount " +
-                mount->guest);
-        }
-        return;
-    }
-    filesystem.MountHostDirectory(mount->guest, *directory);
-    for (const auto& entry : profile.data->manifest) {
-        if (!entry.required) continue;
-        try {
-            static_cast<void>(filesystem.Stat(
-                JoinGuestPath(mount->guest, entry.path)));
-        } catch (const runtime::VfsError& error) {
-            if (error.ErrorNumber() != 2) throw;
-            throw std::runtime_error(
-                "required Profile manifest file is missing: " + entry.path);
-        }
-    }
-}
-
 void PumpAudio(runtime::AndroidGuestCallSession& guest,
                hal::AudioOutput& output,
                std::vector<std::int16_t>& samples,
@@ -337,6 +282,10 @@ int RunApkCommand(const int argc, const char* const argv[],
     // stubs for unresolved platform surfaces so one run harvests the whole
     // work queue. Never a compatibility result.
     std::optional<std::filesystem::path> survey_gaps_output;
+    // Saves persist by default (ADR-0020); automation opts out so golden
+    // frames stay reproducible.
+    std::optional<std::filesystem::path> sandbox_directory;
+    bool ephemeral_sandbox{};
     for (int index = 3; index < argc; ++index) {
         const std::string_view option{argv[index]};
         if (option == "--system-dir" && index + 1 < argc) {
@@ -373,6 +322,15 @@ int RunApkCommand(const int argc, const char* const argv[],
                     "run-apk accepts --mcp-manual-step only once");
             }
             mcp_manual_step = true;
+        } else if (option == "--sandbox-dir" && index + 1 < argc) {
+            const std::string_view value{argv[++index]};
+            if (value.empty()) {
+                throw std::invalid_argument(
+                    "--sandbox-dir requires a non-empty host directory");
+            }
+            sandbox_directory = std::filesystem::path{value};
+        } else if (option == "--ephemeral-sandbox") {
+            ephemeral_sandbox = true;
         } else if (option == "--preflight") {
             preflight = true;
         } else if (option == "--survey-gaps" && index + 1 < argc) {
@@ -388,6 +346,10 @@ int RunApkCommand(const int argc, const char* const argv[],
     }
     if (!system_directory.has_value()) {
         throw std::invalid_argument("run-apk requires --system-dir with API 19 Bionic libraries");
+    }
+    if (ephemeral_sandbox && sandbox_directory.has_value()) {
+        throw std::invalid_argument(
+            "--ephemeral-sandbox and --sandbox-dir cannot be combined");
     }
     if (default_mcp && mcp_port.has_value()) {
         throw std::invalid_argument("--mcp and --mcp-port cannot be combined");
@@ -423,8 +385,14 @@ int RunApkCommand(const int argc, const char* const argv[],
                                  manifest.package);
     }
     const auto& profile = *match->profile;
+    // Declared before the filesystem so the overlay outlives every node
+    // that flushes into it.
+    const auto sandbox =
+        OpenSandbox({sandbox_directory, ephemeral_sandbox}, manifest.package,
+                    manifest.version_code);
     runtime::VirtualFileSystem filesystem;
     MountExternalDirectory(profile, external_directory, filesystem);
+    AttachSandbox(sandbox, profile, filesystem, logger);
     if (profile.data.has_value() &&
         profile.data->working_directory.has_value()) {
         filesystem.SetWorkingDirectory(*profile.data->working_directory);
@@ -469,7 +437,8 @@ int RunApkCommand(const int argc, const char* const argv[],
               std::to_string(profile.runtime.surface.height) + " linked=" +
               std::to_string(linked.guest_modules) + "+" +
               std::to_string(linked.boundary_modules) + " relocations=" +
-              std::to_string(linked.relocations) + "\n");
+              std::to_string(linked.relocations) + " sandbox=" +
+              sandbox.Describe() + "\n");
         return 0;
     }
     if (profile.runtime.lifecycle != session::ProfileLifecycle::dex_activity) {

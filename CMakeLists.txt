@@ -526,6 +526,7 @@ add_library(ogplay_frontend
     src/frontend/mcp_http_server.cpp
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
+    src/frontend/user_data_dir.cpp
 )
 add_library(OGPlay::Frontend ALIAS ogplay_frontend)
 target_link_libraries(ogplay_frontend PUBLIC
@@ -537,7 +538,8 @@ if(WIN32)
 endif()
 ogplay_set_project_warnings(ogplay_frontend)
 
-add_executable(ogplay src/frontend/cli/main.cpp src/frontend/cli/run_apk.cpp)
+add_executable(ogplay src/frontend/cli/main.cpp src/frontend/cli/run_apk.cpp
+    src/frontend/cli/run_apk_vfs.cpp)
 target_link_libraries(ogplay PRIVATE
     OGPlay::Frontend OGPlay::Hal OGPlay::Loader OGPlay::Runtime)
 target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")

@@ -31,6 +31,13 @@ private:
 };
 
 [[nodiscard]] std::filesystem::path HostExecutableDirectory();
+// Per-platform root for this user's application data (roadmap 08). Empty
+// when the host environment does not say where it belongs, which callers
+// must report rather than guess.
+//   Windows  %APPDATA%\\OGPlay
+//   macOS    ~/Library/Application Support/OGPlay
+//   Linux    $XDG_DATA_HOME/ogplay, else ~/.local/share/ogplay
+[[nodiscard]] std::optional<std::filesystem::path> HostUserDataDirectory();
 [[nodiscard]] std::optional<std::string> HostEnvironmentValue(
     std::string_view name);
 

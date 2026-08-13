@@ -98,15 +98,38 @@ void ValidateInputs(const ProfileData& data,
 
 }  // namespace
 
+std::vector<std::string> ProfileWritableRoots(const TitleProfile& profile) {
+    // Both are platform defaults, not per-title declarations: a Profile
+    // never has to opt in to keeping its own saves.
+    return {"/data/data/" + profile.identity.package, "/sdcard"};
+}
+
 ProfileVfsAssembly AssembleProfileVfs(
     const TitleProfile& profile,
-    const std::span<const ProfileVfsMountInput> inputs) {
+    const std::span<const ProfileVfsMountInput> inputs,
+    runtime::SandboxStore* sandbox) {
     auto filesystem = std::make_unique<runtime::VirtualFileSystem>();
+    const auto attach = [&profile, sandbox](
+                            runtime::VirtualFileSystem& target) {
+        std::vector<std::string> roots;
+        if (sandbox == nullptr) return roots;
+        roots = ProfileWritableRoots(profile);
+        try {
+            target.AttachSandbox(*sandbox, roots);
+        } catch (const runtime::VfsError& error) {
+            // Persistence never degrades silently to memory: either the
+            // sandbox attaches or the session fails to assemble.
+            throw ProfileVfsError(
+                std::string("profile sandbox attach failed: ") + error.what());
+        }
+        return roots;
+    };
     if (!profile.data.has_value()) {
         if (!inputs.empty()) {
             throw ProfileVfsError("profile has VFS input but no data declaration");
         }
-        return {std::move(filesystem), {}, {}};
+        auto roots = attach(*filesystem);
+        return {std::move(filesystem), {}, {}, std::move(roots)};
     }
 
     const auto& data = *profile.data;
@@ -131,6 +154,10 @@ ProfileVfsAssembly AssembleProfileVfs(
         }
         mounted_roots.push_back(mount.guest);
     }
+
+    // The overlay goes on after every read-only base layer, so a saved file
+    // shadows the shipped one rather than the other way round.
+    auto writable_roots = attach(*filesystem);
 
     if (data.working_directory.has_value()) {
         const auto covered = std::any_of(
@@ -167,7 +194,8 @@ ProfileVfsAssembly AssembleProfileVfs(
         manifest.push_back({expected.path, expected.required, present});
     }
 
-    return {std::move(filesystem), data.working_directory, std::move(manifest)};
+    return {std::move(filesystem), data.working_directory,
+            std::move(manifest), std::move(writable_roots)};
 }
 
 }  // namespace ogplay::session

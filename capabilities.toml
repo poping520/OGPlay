@@ -370,6 +370,11 @@ status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp"
 note = "M2 三平台 API 19/22/23 真实 Bionic 完成装载自检和累计样本执行；mem 热点拦截具备生产 handler 与吞吐基准"
 
+[frontend.save_sandbox]
+status = "partial"
+test = "frontend.run_apk_options; tests/runtime/vfs_sandbox_tests.cpp; Asphalt 5 exact title-flow gate under --ephemeral-sandbox"
+note = "ADR-0020 SBX-7 让 run-apk 默认按 package 打开持久沙盒（根为 hal 的平台用户数据目录 + /sandbox），--sandbox-dir 显式指定、--ephemeral-sandbox 关闭持久（二者互斥）。preflight 与结构化日志输出沙盒根、package 键与用量/配额；崩溃残留清理计数进 warn 日志。装载失败给出可执行修复提示并终止启动，绝不静默降级为内存模式。scenario runner 默认 --ephemeral-sandbox，golden 逐位不变。native/DexVM/prefs 三条通道的收敛属 SBX-4..6，因此当前只有直接经 VFS 的写入真正持久"
+
 [runtime.vfs_directory_ops]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp"

@@ -14,7 +14,7 @@
 | [SBX-2](SBX-2.md) | VFS 目录操作 + `Truncate/Flush/FlushAll` 内存语义 + 目录 Stat | — | 完成 |
 | [SBX-3](SBX-3.md) | `AttachSandbox`：overlay 解析、脏节点跟踪、flush 点 | SBX-1、SBX-2 | 完成 |
 | [SBX-4](SBX-4.md) | syscall 缺口绑定与 ABI 编组 | SBX-2 | 完成 |
-| [SBX-5](SBX-5.md) | DexVM File 族改线 VFS、`mkdirs` 去伪成功 | SBX-3 | 待开始 |
+| [SBX-5](SBX-5.md) | DexVM File 族改线 VFS、`mkdirs` 去伪成功 | SBX-3 | 完成 |
 | [SBX-6](SBX-6.md) | SharedPreferences XML 持久（framework + dexvm 共享） | SBX-3 | 完成 |
 | [SBX-7](SBX-7.md) | session/CLI 接线、一次性沙盒、确定性回归 | SBX-3 | 完成 |
 
@@ -25,3 +25,10 @@ SBX-7 提前到 SBX-4..6 之前执行：它只依赖 SBX-3，先做完 CLI 接�
 
 进入游戏产生存档 → 正常退出 → 重新启动 → 游戏读到旧存档。以 scenario/人工
 验收 + 沙盒目录文件断言双口径确认。
+
+**尚未达成。** SBX-1..7 全部交付后，三条 guest 写入通道（native syscall、
+DexVM `File`、SharedPreferences）都已收敛到同一个 VFS，机制由机器测试逐条
+覆盖，其中跨会话持久有三个独立用例（VFS 层、Java `File` 层、prefs 层）。
+但用户级闭环还演示不了：当前最深入的 title（Dungeon Hunter）只到标题画面，
+本地有界运行不触发任何存档写入，沙盒里只有 `meta.toml`。等 title 深度推进到
+能进游戏后补这一步。

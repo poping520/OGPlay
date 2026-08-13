@@ -10,6 +10,7 @@
 #include "ogplay/agent/json_rpc.h"
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
+#include "ogplay/frontend/gui.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/session/session.h"
 
@@ -23,6 +24,7 @@ void Write(FILE* stream, const std::string_view text) {
 
 int Usage() {
     Write(stderr, "usage: ogplay --version | capabilities [path] | agent <method> | agent-stdio\n"
+                  "       ogplay gui [--library-root <dir>] [--smoke-frames <count>]\n"
                   "       ogplay run-apk <apk> --system-dir <api19-lib-dir> "
                   "[--profiles-dir <dir>] [--external-dir <host-dir>] "
                   "[--preflight] [--supersample <1..4>] "
@@ -48,6 +50,11 @@ int main(const int argc, const char* const argv[]) {
         if (std::string_view(argv[1]) == "run-apk") {
             return ogplay::frontend::RunApkCommand(argc, argv, logger);
         }
+#if OGPLAY_HAS_GUI
+        if (std::string_view(argv[1]) == "gui") {
+            return ogplay::frontend::RunGuiCommand(argc, argv, logger);
+        }
+#endif
         const auto ledger_path = argc >= 3 && std::string_view(argv[1]) == "capabilities"
                                      ? std::filesystem::path(argv[2])
                                      : std::filesystem::path(OGPLAY_SOURCE_DIR) / "capabilities.toml";

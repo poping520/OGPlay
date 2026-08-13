@@ -531,6 +531,31 @@ add_library(ogplay_frontend
     src/frontend/run_apk_progress.cpp
     src/frontend/user_data_dir.cpp
 )
+if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
+    add_library(ogplay_imgui STATIC
+        third_party/imgui/imgui.cpp
+        third_party/imgui/imgui_draw.cpp
+        third_party/imgui/imgui_tables.cpp
+        third_party/imgui/imgui_widgets.cpp
+        third_party/imgui/backends/imgui_impl_sdl3.cpp
+        third_party/imgui/backends/imgui_impl_opengl3.cpp
+    )
+    target_include_directories(ogplay_imgui SYSTEM PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+    target_compile_definitions(ogplay_imgui PRIVATE IMGUI_IMPL_OPENGL_ES2)
+    target_link_libraries(ogplay_imgui PUBLIC SDL3::SDL3 ANGLE::GLESv2)
+    if(MSVC)
+        target_compile_options(ogplay_imgui PRIVATE /w)
+    else()
+        target_compile_options(ogplay_imgui PRIVATE -w)
+    endif()
+
+    target_sources(ogplay_frontend PRIVATE src/frontend/gui/shell.cpp)
+    target_link_libraries(ogplay_frontend PRIVATE ogplay_imgui ANGLE::EGL ANGLE::GLESv2)
+    target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=1)
+else()
+    target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=0)
+endif()
 add_library(OGPlay::Frontend ALIAS ogplay_frontend)
 target_link_libraries(ogplay_frontend PUBLIC
     OGPlay::Agent OGPlay::Input OGPlay::Runtime)
@@ -561,6 +586,22 @@ target_compile_definitions(ogplay PRIVATE
 )
 ogplay_set_project_warnings(ogplay)
 ogplay_stage_angle_runtime(ogplay)
+
+if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
+    add_executable(ogplay-gui WIN32 MACOSX_BUNDLE src/frontend/gui/main.cpp)
+    target_link_libraries(ogplay-gui PRIVATE OGPlay::Frontend SDL3::SDL3)
+    set_target_properties(ogplay-gui PROPERTIES
+        MACOSX_BUNDLE_BUNDLE_NAME "OGPlay"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.ogplay.launcher")
+    if(APPLE)
+        set_target_properties(ogplay-gui PROPERTIES OUTPUT_NAME "OGPlay")
+    endif()
+    ogplay_set_project_warnings(ogplay-gui)
+    ogplay_stage_angle_runtime(ogplay-gui)
+    install(TARGETS ogplay-gui
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        BUNDLE DESTINATION .)
+endif()
 
 install(TARGETS ogplay ogplay_core ogplay_hal ogplay_audio ogplay_video ogplay_input ogplay_memory ogplay_cpu ogplay_loader ogplay_gles ogplay_runtime ogplay_agent ogplay_frontend ogplay_session
     EXPORT OGPlayTargets
@@ -786,6 +827,26 @@ if(OGPLAY_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckRunApkOptions.cmake
     )
     set_tests_properties(frontend.run_apk_options PROPERTIES LABELS "unit;frontend")
+
+    if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
+        add_test(
+            NAME frontend.gui_options
+            COMMAND ${CMAKE_COMMAND}
+                -DOGPLAY_CLI=$<TARGET_FILE:ogplay>
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckGuiOptions.cmake
+        )
+        set_tests_properties(frontend.gui_options PROPERTIES LABELS "unit;frontend")
+
+        add_test(
+            NAME frontend.gui_smoke
+            COMMAND $<TARGET_FILE:ogplay> gui
+                --library-root ${CMAKE_CURRENT_BINARY_DIR}/gui-smoke-library
+                --smoke-frames 3
+        )
+        set_tests_properties(frontend.gui_smoke PROPERTIES
+            LABELS "integration;frontend"
+            TIMEOUT 30)
+    endif()
 
     add_test(
         NAME integration.m4_exit_strict_environment

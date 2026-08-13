@@ -18,6 +18,7 @@
 | session | [src/session/MODULE.md](../../src/session/MODULE.md) | 会话编排占位 |
 | agent | [src/agent/MODULE.md](../../src/agent/MODULE.md) | 结构化控制接口最小实现 |
 | frontend | [src/frontend/MODULE.md](../../src/frontend/MODULE.md) | CLI/GUI 边界；M0 只建 CLI |
+| frontend/gui | [src/frontend/gui/MODULE.md](../../src/frontend/gui/MODULE.md) | SDL3/ANGLE/ImGui 主面板与纯模型层 |
 
 ## Runtime 子模块
 

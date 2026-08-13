@@ -160,6 +160,11 @@ status = "complete"
 test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"
 note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹配 Profile 声明的唯一 external guest 根，并在窗口创建前校验 required 输入与 manifest"
 
+[frontend.gui_shell]
+status = "complete"
+test = "frontend.gui_options; frontend.gui_smoke"
+note = "Launcher GUI-1 提供 ogplay-gui 双击入口与 ogplay gui 开发入口；SDL3 强制 EGL/OpenGL ES driver，Dear ImGui GLES2 backend 在随程序交付的 ANGLE 上完成有界三帧空库窗口，日志覆盖写入 library root 下 gui.log"
+
 [session.profile_bootstrap_inputs]
 status = "complete"
 test = "tests/session/profile_session_plan_tests.cpp; tests/session/profile_session_bootstrap_tests.cpp"

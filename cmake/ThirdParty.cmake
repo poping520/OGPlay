@@ -38,6 +38,11 @@ endfunction()
 ogplay_require_submodule("third_party/SDL" "SDL3")
 ogplay_require_submodule("third_party/dynarmic" "Dynarmic")
 ogplay_require_submodule("third_party/yyjson" "yyjson")
+if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE AND
+   NOT EXISTS "${PROJECT_SOURCE_DIR}/third_party/imgui/imgui.cpp")
+    message(FATAL_ERROR
+        "Dear ImGui submodule is missing. Run: git submodule update --init --recursive")
+endif()
 
 if(OGPLAY_ENABLE_SDL3)
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)

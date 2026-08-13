@@ -2,13 +2,15 @@
 
 ## 职责
 
-提供 CLI 与未来 GUI；前端只编排公共内核 API，不实现兼容行为。提供可选 loopback MCP
+提供 CLI 与 GUI；前端只编排公共内核 API，不实现兼容行为。提供可选 loopback MCP
 Streamable HTTP transport，并把截图、输入和会话控制交给 agent/session 契约。
 
 ## 公共 API
 
 - `run-apk`：按 exact Title Profile v2 选择 APK 根库，挂载外部数据，创建 SDL3/ANGLE
   surface，装配 Android guest session + DexVM bridge + `DexActivityLifecycle`。
+- `ogplay-gui` / `ogplay gui`：共用 `frontend/gui` shell；前者是零参数双击入口，后者
+  只为开发/CI 接受库根覆盖与有界帧数。游戏启动仍须 spawn 既有 `run-apk` 路径。
 - `--external-dir`：把一个宿主目录按 Profile 声明的唯一 external guest 根 lazy mount；
   guest 路径不取决于宿主目录名。
 - `--supersample <1..4>`：显式选择内部渲染倍率，默认 1×。

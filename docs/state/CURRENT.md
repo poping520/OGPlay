@@ -78,10 +78,15 @@ macOS/arm64 本次 full CTest 为 636/636（含线程、wait-set 与沙盒用例
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
-3. 沙盒收口 SBX-5（DexVM `File` 族改线 VFS、`mkdirs` 去伪成功）、SBX-6
-   （SharedPreferences XML 持久）、SBX-4（syscall 缺口）——三者任一落地即
-   立刻生效，不需要再动覆盖层。之后按 GUI-1..7 做主面板。
-4. Linux M9 严格出口复验仍待执行。
+3. 启动器主面板 GUI-1..7（`docs/design/launcher/`）：目前只有 CLI，非技术
+   用户无法导入并启动游戏。
+4. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id（需要
+   停泊时以 `blocking_in_native` 明确失败），native 侧 JNI monitor 表与
+   DexVM monitor 表尚未合一。
+5. Linux M9 严格出口复验仍待执行；五个生产源文件仍超 800 行上限
+   （`android_boundary_hle.cpp` 1001、`android_boundary_gles.cpp` 962、
+   `android_guest_call_session.cpp` 907、`run_apk.cpp` 856、
+   `android_boundary_gles1.cpp` 820）。
 
 ## 阻塞
 

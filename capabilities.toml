@@ -162,8 +162,8 @@ note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹�
 
 [frontend.gui_shell]
 status = "complete"
-test = "frontend.gui_options; frontend.gui_smoke"
-note = "Launcher GUI-1 提供 ogplay-gui 双击入口与 ogplay gui 开发入口；SDL3 强制 EGL/OpenGL ES driver，Dear ImGui GLES2 backend 在随程序交付的 ANGLE 上完成有界三帧空库窗口，日志覆盖写入 library root 下 gui.log"
+test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; tests/frontend/gui_view_model_tests.cpp"
+note = "Launcher GUI-1/4 提供双入口与随程序交付 ANGLE 上的 ImGui GLES2 窗口；LibraryStore 条目按名称进入自适应图标网格，损坏/缺 Profile/缺数据包/运行中角标严格互斥，空库有引导；宿主 CJK 字体按固定候选加载，缺失时明确记录并回退 ASCII"
 
 [frontend.gui_library]
 status = "complete"

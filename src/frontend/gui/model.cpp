@@ -185,6 +185,20 @@ using FlatToml = std::map<std::string, std::string, std::less<>>;
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
+[[nodiscard]] std::vector<std::byte> ReadIcon(const std::filesystem::path& path) {
+    constexpr std::uintmax_t maximum_icon_bytes = 4U * 1024U * 1024U;
+    std::error_code error;
+    const auto size = std::filesystem::file_size(path, error);
+    if (error || size == 0 || size > maximum_icon_bytes) return {};
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+    std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+    input.read(reinterpret_cast<char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+    if (!input) return {};
+    return bytes;
+}
+
 void WriteText(const std::filesystem::path& path, const std::string_view text) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) throw std::runtime_error("cannot create file");
@@ -434,6 +448,7 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
                 throw std::runtime_error("library APK copy is missing");
             }
             entry.metadata = std::move(metadata);
+            entry.icon_png = ReadIcon(iterator->path() / "icon.png");
         } catch (const std::exception& exception) {
             entry.damage_reason = exception.what();
         }

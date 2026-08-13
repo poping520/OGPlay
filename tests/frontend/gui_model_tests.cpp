@@ -94,6 +94,7 @@ TEST_CASE("library import atomically copies APK metadata and optional icon") {
     CHECK_FALSE(entries[0].Damaged());
     REQUIRE(entries[0].metadata.has_value());
     CHECK(*entries[0].metadata == Metadata(external));
+    CHECK(entries[0].icon_png == icon);
     CHECK(std::filesystem::file_size(entries[0].directory / "game.apk") == 9);
     CHECK(std::filesystem::file_size(entries[0].directory / "icon.png") == 2);
     CHECK(std::filesystem::is_regular_file(external / "keep.dat"));

@@ -3,8 +3,10 @@
 #include <SDL3/SDL.h>
 #include <GLES2/gl2.h>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -14,13 +16,17 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl3.h"
 
 #include "ogplay/core/logger.h"
+#include "ogplay/frontend/gui_model.h"
+#include "ogplay/frontend/gui_view_model.h"
 #include "ogplay/frontend/user_data_dir.h"
+#include "ogplay/runtime/integration/host_image_decode.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -156,12 +162,13 @@ private:
 
 class ImGuiSession final {
 public:
-    explicit ImGuiSession(SdlVideo& video) {
+    ImGuiSession(SdlVideo& video, core::Logger& logger) {
         try {
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
             context_created_ = true;
             ImGui::StyleColorsDark();
+            ConfigureFonts(logger);
             if (!ImGui_ImplSDL3_InitForOpenGL(video.Window(), video.Context())) {
                 throw std::runtime_error("ImGui SDL3 backend initialization failed");
             }
@@ -182,6 +189,42 @@ public:
     ImGuiSession& operator=(const ImGuiSession&) = delete;
 
 private:
+    static void ConfigureFonts(core::Logger& logger) {
+        auto& io = ImGui::GetIO();
+        ImFontConfig default_config;
+        default_config.SizePixels = 16.0F;
+        static_cast<void>(io.Fonts->AddFontDefault(&default_config));
+        const std::array<std::filesystem::path, 7> candidates{
+            "C:/Windows/Fonts/msyh.ttc",
+            "C:/Windows/Fonts/simhei.ttf",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        };
+        const auto font = SelectCjkFont(candidates);
+        if (font.empty()) {
+            logger.Write(core::LogLevel::warn, "frontend.gui.font",
+                         "CJK host font unavailable; using ASCII fallback", {});
+            return;
+        }
+        ImFontConfig config;
+        config.MergeMode = true;
+        config.PixelSnapH = true;
+        const auto path = font.string();
+        if (io.Fonts->AddFontFromFileTTF(
+                path.c_str(), 16.0F, &config,
+                io.Fonts->GetGlyphRangesChineseSimplifiedCommon()) == nullptr) {
+            logger.Write(core::LogLevel::warn, "frontend.gui.font",
+                         "CJK host font could not be loaded; using ASCII fallback", {},
+                         {{"path", path}});
+            return;
+        }
+        logger.Write(core::LogLevel::info, "frontend.gui.font",
+                     "CJK host font loaded", {}, {{"path", path}});
+    }
+
     void Cleanup() noexcept {
         if (renderer_ready_) ImGui_ImplOpenGL3_Shutdown();
         if (platform_ready_) ImGui_ImplSDL3_Shutdown();
@@ -195,7 +238,160 @@ private:
     bool renderer_ready_{};
 };
 
-void DrawEmptyLibrary() {
+class LibraryTextures final {
+public:
+    LibraryTextures(const std::vector<LibraryTile>& tiles, core::Logger& logger) {
+        for (const auto& tile : tiles) {
+            if (tile.icon_png.empty()) continue;
+            const auto decoded = runtime::DecodeImageToArgb(tile.icon_png);
+            if (!decoded.has_value()) {
+                logger.Write(core::LogLevel::warn, "frontend.gui.icon",
+                             "cached icon could not be decoded", {},
+                             {{"package", tile.key}});
+                continue;
+            }
+            std::vector<std::uint8_t> rgba(decoded->argb.size() * 4U);
+            for (std::size_t index = 0; index < decoded->argb.size(); ++index) {
+                const auto argb = decoded->argb[index];
+                rgba[index * 4U] = static_cast<std::uint8_t>(argb >> 16U);
+                rgba[index * 4U + 1U] = static_cast<std::uint8_t>(argb >> 8U);
+                rgba[index * 4U + 2U] = static_cast<std::uint8_t>(argb);
+                rgba[index * 4U + 3U] = static_cast<std::uint8_t>(argb >> 24U);
+            }
+            GLuint texture{};
+            glGenTextures(1, &texture);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, decoded->width, decoded->height,
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+            if (glGetError() != GL_NO_ERROR) {
+                glDeleteTextures(1, &texture);
+                logger.Write(core::LogLevel::warn, "frontend.gui.icon",
+                             "cached icon texture upload failed", {},
+                             {{"package", tile.key}});
+                continue;
+            }
+            textures_.push_back({tile.key, texture});
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    ~LibraryTextures() {
+        for (const auto& item : textures_) glDeleteTextures(1, &item.texture);
+    }
+
+    LibraryTextures(const LibraryTextures&) = delete;
+    LibraryTextures& operator=(const LibraryTextures&) = delete;
+
+    [[nodiscard]] GLuint Find(const std::string_view key) const noexcept {
+        for (const auto& item : textures_) {
+            if (item.key == key) return item.texture;
+        }
+        return 0;
+    }
+
+private:
+    struct Item final {
+        std::string key;
+        GLuint texture{};
+    };
+    std::vector<Item> textures_;
+};
+
+[[nodiscard]] std::string FitLabel(std::string text, const float width) {
+    if (ImGui::CalcTextSize(text.c_str()).x <= width) return text;
+    constexpr std::string_view suffix = "...";
+    while (!text.empty()) {
+        auto begin = text.size() - 1U;
+        while (begin > 0 &&
+               (static_cast<unsigned char>(text[begin]) & 0xc0U) == 0x80U) {
+            --begin;
+        }
+        text.resize(begin);
+        const auto candidate = text + std::string(suffix);
+        if (ImGui::CalcTextSize(candidate.c_str()).x <= width) return candidate;
+    }
+    return std::string(suffix);
+}
+
+struct Badge final {
+    const char* label{};
+    ImU32 color{};
+};
+
+[[nodiscard]] Badge TileBadge(const LibraryTileStatus status) {
+    switch (status) {
+    case LibraryTileStatus::damaged:
+        return {"条目损坏", IM_COL32(184, 52, 52, 235)};
+    case LibraryTileStatus::missing_profile:
+        return {"缺 Profile", IM_COL32(193, 118, 30, 235)};
+    case LibraryTileStatus::missing_external:
+        return {"缺数据包", IM_COL32(193, 118, 30, 235)};
+    case LibraryTileStatus::running:
+        return {"运行中", IM_COL32(38, 142, 82, 235)};
+    case LibraryTileStatus::ready:
+        return {};
+    }
+    return {};
+}
+
+void DrawTile(const LibraryTile& tile, const LibraryTextures& textures) {
+    constexpr float icon_size = 128.0F;
+    constexpr float tile_width = 152.0F;
+    ImGui::PushID(tile.key.c_str());
+    ImGui::BeginGroup();
+    const auto left = ImGui::GetCursorPosX();
+    ImGui::SetCursorPosX(left + (tile_width - icon_size) * 0.5F);
+    const auto image_position = ImGui::GetCursorScreenPos();
+    const auto texture = textures.Find(tile.key);
+    if (texture != 0) {
+        ImGui::Image(static_cast<ImTextureID>(texture), {icon_size, icon_size});
+    } else {
+        ImGui::Dummy({icon_size, icon_size});
+        auto* draw = ImGui::GetWindowDrawList();
+        draw->AddRectFilled(image_position,
+                            {image_position.x + icon_size,
+                             image_position.y + icon_size},
+                            IM_COL32(48, 58, 76, 255), 12.0F);
+        const auto marker = ImGui::CalcTextSize("?");
+        draw->AddText({image_position.x + (icon_size - marker.x) * 0.5F,
+                       image_position.y + (icon_size - marker.y) * 0.5F},
+                      IM_COL32(190, 198, 212, 255), "?");
+    }
+    const auto badge = TileBadge(tile.status);
+    if (badge.label != nullptr) {
+        auto* draw = ImGui::GetWindowDrawList();
+        const auto text = ImGui::CalcTextSize(badge.label);
+        const ImVec2 minimum{image_position.x + icon_size - text.x - 14.0F,
+                             image_position.y + icon_size - text.y - 10.0F};
+        draw->AddRectFilled(minimum,
+                            {image_position.x + icon_size,
+                             image_position.y + icon_size},
+                            badge.color, 6.0F, ImDrawFlags_RoundCornersTopLeft);
+        draw->AddText({minimum.x + 7.0F, minimum.y + 4.0F},
+                      IM_COL32_WHITE, badge.label);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted(tile.display_name.c_str());
+        if (badge.label != nullptr) ImGui::TextUnformatted(badge.label);
+        if (!tile.detail.empty()) ImGui::TextWrapped("%s", tile.detail.c_str());
+        ImGui::EndTooltip();
+    }
+    const auto fitted = FitLabel(tile.display_name, tile_width);
+    const auto label_width = ImGui::CalcTextSize(fitted.c_str()).x;
+    ImGui::SetCursorPosX(left + std::max(0.0F, (tile_width - label_width) * 0.5F));
+    ImGui::TextUnformatted(fitted.c_str());
+    ImGui::EndGroup();
+    ImGui::PopID();
+}
+
+void DrawLibrary(const std::vector<LibraryTile>& tiles,
+                 const LibraryTextures& textures) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -204,15 +400,34 @@ void DrawEmptyLibrary() {
                                        ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("OGPlay launcher", nullptr, flags);
     ImGui::TextUnformatted("OGPlay");
-    ImGui::SameLine();
+    const auto buttons_width = ImGui::CalcTextSize("导入游戏").x +
+                               ImGui::CalcTextSize("设置").x + 54.0F;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(),
+                             ImGui::GetWindowWidth() - buttons_width));
     ImGui::BeginDisabled();
-    ImGui::Button("Import Game");
+    ImGui::Button("导入游戏");
     ImGui::SameLine();
-    ImGui::Button("Settings");
+    ImGui::Button("设置");
     ImGui::EndDisabled();
     ImGui::Separator();
     ImGui::Spacing();
-    ImGui::TextWrapped("Your game library is empty. Import a game to get started.");
+    if (tiles.empty()) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("游戏库为空。导入游戏后会显示在这里。");
+        ImGui::BeginDisabled();
+        ImGui::Button("导入游戏");
+        ImGui::EndDisabled();
+    } else {
+        constexpr float tile_width = 152.0F;
+        constexpr float spacing = 18.0F;
+        const auto available = ImGui::GetContentRegionAvail().x;
+        const auto columns = std::max(
+            1, static_cast<int>((available + spacing) / (tile_width + spacing)));
+        for (std::size_t index = 0; index < tiles.size(); ++index) {
+            if (index % static_cast<std::size_t>(columns) != 0) ImGui::SameLine();
+            DrawTile(tiles[index], textures);
+        }
+    }
     ImGui::End();
 }
 
@@ -236,7 +451,10 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
     }
     logger.Write(core::LogLevel::info, "frontend.gui", "ANGLE context ready", {},
                  {{"vendor", vendor}, {"renderer", renderer}, {"version", version}});
-    ImGuiSession imgui(video);
+    ImGuiSession imgui(video, logger);
+    LibraryStore store(options.library_root);
+    const auto tiles = BuildLibraryTiles(store.LoadEntries(), {});
+    LibraryTextures textures(tiles, logger);
     bool running = true;
     std::uint64_t rendered_frames{};
     while (running) {
@@ -253,7 +471,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
-        DrawEmptyLibrary();
+        DrawLibrary(tiles, textures);
         ImGui::Render();
 
         int width{};

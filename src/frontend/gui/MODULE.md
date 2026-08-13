@@ -16,6 +16,9 @@
 - `ExtractApkApplicationVisuals`：从 APK 严格读取 manifest 身份，复用 loader 的
   resources.arsc 与统一条目读取；名称回退 package，图标归一化为 128×128 PNG，
   非致命失败以 `ApplicationVisualFallback` 枚举返回。
+- `BuildLibraryTiles`：将库条目与运行/required-external 事实合成为名称排序的磁贴，
+  状态优先级固定为损坏、缺 Profile、缺数据包、运行中、ready。
+- `SelectCjkFont`：按注入候选顺序选择宿主字体，全部缺失时返回空路径供 ASCII 回退。
 
 ## 不变量
 
@@ -26,6 +29,8 @@
 - 模型层不得 include ImGui/SDL，不触碰窗口或进程 API。
 - APK/archive/manifest 损坏必须失败；图标/名称资源失败不得阻止导入，也不得静默，
   调用方必须记录返回的 fallback 枚举，空 `icon_png` 明确表示使用内置占位磁贴。
+- 视图每帧只消费 `LibraryTile` 事实，不读取 meta/Profile 或管理进程；长名称单行省略，
+  悬停显示全文，状态角标互斥。
 
 ## 禁止
 
@@ -38,4 +43,6 @@
 `tests/frontend/gui_model_tests.cpp` 锁定配置、导入、损坏、重复与删除边界；
 `tests/frontend/gui_visuals_tests.cpp` 以合成 APK 锁定 resid→arsc→PNG→128×128
 缓存全链和逐级回退；
-`frontend.gui_smoke` 在有界三帧内验证真实 SDL3/ANGLE/ImGui 空库窗口。
+`tests/frontend/gui_view_model_tests.cpp` 锁定排序、角标优先级与字体候选；
+`frontend.gui_smoke`/`frontend.gui_library_smoke` 在有界三帧内验证真实
+SDL3/ANGLE/ImGui 空库与 CJK 非空库窗口。

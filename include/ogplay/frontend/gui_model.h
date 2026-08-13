@@ -60,6 +60,7 @@ struct LibraryEntry final {
     std::string key;
     std::filesystem::path directory;
     std::optional<LibraryMetadata> metadata;
+    std::vector<std::byte> icon_png;
     std::optional<std::string> damage_reason;
 
     [[nodiscard]] bool Damaged() const noexcept {

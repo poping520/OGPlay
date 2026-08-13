@@ -18,10 +18,12 @@
 - `ExtractApkApplicationVisuals`：从 APK 严格读取 manifest 身份，复用 loader 的
   resources.arsc 与统一条目读取；名称回退 package，图标归一化为 128×128 PNG，
   非致命失败以 `ApplicationVisualFallback` 枚举返回。
+- `ResizeArgbBilinear`：以像素中心双线性插值归一化图标 ARGB，拒绝尺寸/像素数不一致。
 - `BuildLibraryTiles`：将库条目与运行/required-external 事实合成为名称排序的磁贴，
   状态优先级固定为损坏、Profile catalog 不可用、缺 Profile、缺数据包、运行中、ready。
 - `GuiMessageQueue`：按 FIFO 保存运行/启动诊断，仅在没有其他 popup 时激活下一条。
 - `SelectCjkFont`：按注入候选顺序选择宿主字体，全部缺失时返回空路径供 ASCII 回退。
+- `GuiEventWaitMilliseconds`：普通运行最多等待 100ms 事件，smoke 为 0ms。
 - `AnalyzeApkImport` / `BuildLibraryImport`：组合 GUI-3 visuals 与 session 精确 Profile
   匹配，生成可确认的导入摘要和 GUI-2 原子入库请求；时间戳由调用方注入。
 - `CanDismissImportModal`：宿主选择器未决时禁止导入模态先行关闭。
@@ -42,6 +44,8 @@
   backend 运行在随程序交付的 ANGLE 上；不得回退出第二套桌面 GL renderer。
 - GUI 进程日志覆盖写入 `<library-root>/gui.log`；CLI 入口同时保留同源 stderr sink。
 - `--smoke-frames` 必须为正整数，完成指定成功 present 数后正常退出。
+- 普通主循环必须用 SDL 事件等待降低空闲渲染频率，最长 100ms 后唤醒轮询子进程与导入；
+  smoke 不得等待。CJK 宿主字体作为 18px scalable 主字体，不得拉伸像素 fallback。
 - 模型层不得 include ImGui/SDL，不触碰窗口或进程 API。
 - APK/archive/manifest 损坏必须失败；图标/名称资源失败不得阻止导入，也不得静默，
   调用方必须记录返回的 fallback 枚举，空 `icon_png` 明确表示使用内置占位磁贴。
@@ -56,6 +60,8 @@
 - 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；stdin 关闭、stdout
   继承、stderr 覆盖重定向到条目日志，并显式传 `--sandbox-dir <library-root>/sandbox`。
   退出 0 静默，非零结果呈现退出码与有界日志末尾。
+- 日志尾部按字节截断时必须前移到下一个完整 UTF-8 codepoint，不得把 continuation byte
+  作为弹窗首字节。
 - SDL 对话框返回的路径必须按 UTF-8 解码；每个用户可见失败同时记录结构化原因，模型
   错误还必须记录错误码与路径，弹窗必须给出可执行下一步。
 - SDL 宿主文件/目录选择器未决时不得关闭其所属导入模态；必须等待回调完成选择或取消，

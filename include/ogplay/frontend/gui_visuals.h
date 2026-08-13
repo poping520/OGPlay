@@ -10,6 +10,11 @@
 
 namespace ogplay::frontend {
 
+[[nodiscard]] std::vector<std::uint32_t> ResizeArgbBilinear(
+    std::span<const std::uint32_t> source, std::uint32_t source_width,
+    std::uint32_t source_height, std::uint32_t destination_width,
+    std::uint32_t destination_height);
+
 inline constexpr std::uint32_t kLauncherIconSize = 128;
 
 enum class ApplicationVisualFallback : std::uint8_t {

@@ -146,8 +146,14 @@ std::string ReadLogTail(const std::filesystem::path& path,
     input.read(text.data(), static_cast<std::streamsize>(text.size()));
     if (!input) return {};
     std::size_t begin = 0;
+    if (available > count) {
+        while (begin < text.size() &&
+               (static_cast<unsigned char>(text[begin]) & 0xc0U) == 0x80U) {
+            ++begin;
+        }
+    }
     std::size_t lines{};
-    for (std::size_t index = text.size(); index > 0; --index) {
+    for (std::size_t index = text.size(); index > begin; --index) {
         if (text[index - 1U] == '\n' && ++lines > maximum_lines) {
             begin = index;
             break;

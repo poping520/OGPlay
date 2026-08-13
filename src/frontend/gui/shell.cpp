@@ -204,9 +204,6 @@ public:
 private:
     static void ConfigureFonts(core::Logger& logger) {
         auto& io = ImGui::GetIO();
-        ImFontConfig default_config;
-        default_config.SizePixels = 16.0F;
-        static_cast<void>(io.Fonts->AddFontDefault(&default_config));
         const std::array<std::filesystem::path, 7> candidates{
             "C:/Windows/Fonts/msyh.ttc",
             "C:/Windows/Fonts/simhei.ttf",
@@ -218,19 +215,26 @@ private:
         };
         const auto font = SelectCjkFont(candidates);
         if (font.empty()) {
+            ImFontConfig fallback;
+            fallback.SizePixels = 18.0F;
+            io.FontDefault = io.Fonts->AddFontDefaultVector(&fallback);
             logger.Write(core::LogLevel::warn, "frontend.gui.font",
-                         "CJK host font unavailable; using ASCII fallback", {});
+                         "CJK host font unavailable; using scalable ASCII fallback", {});
             return;
         }
         ImFontConfig config;
-        config.MergeMode = true;
-        config.PixelSnapH = true;
+        config.OversampleH = 2;
+        config.PixelSnapH = false;
         const auto path = font.string();
-        if (io.Fonts->AddFontFromFileTTF(
-                path.c_str(), 16.0F, &config,
-                io.Fonts->GetGlyphRangesChineseSimplifiedCommon()) == nullptr) {
+        io.FontDefault = io.Fonts->AddFontFromFileTTF(
+            path.c_str(), 18.0F, &config,
+            io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+        if (io.FontDefault == nullptr) {
+            ImFontConfig fallback;
+            fallback.SizePixels = 18.0F;
+            io.FontDefault = io.Fonts->AddFontDefaultVector(&fallback);
             logger.Write(core::LogLevel::warn, "frontend.gui.font",
-                         "CJK host font could not be loaded; using ASCII fallback", {},
+                         "CJK host font could not be loaded; using scalable ASCII fallback", {},
                          {{"path", path}});
             return;
         }
@@ -548,6 +552,12 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
     bool running = true;
     std::uint64_t rendered_frames{};
     while (running) {
+        const auto wait = GuiEventWaitMilliseconds(
+            options.smoke_frames.has_value());
+        if (rendered_frames != 0 && wait != 0) {
+            static_cast<void>(SDL_WaitEventTimeout(
+                nullptr, static_cast<Sint32>(wait)));
+        }
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);

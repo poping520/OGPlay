@@ -146,5 +146,7 @@ TEST_CASE("GUI launch log tail is bounded by lines and bytes") {
     Write(log, "one\ntwo\nthree\nfour\n");
     CHECK(ogplay::frontend::ReadLogTail(log, 2, 1024) == "three\nfour\n");
     CHECK(ogplay::frontend::ReadLogTail(log, 20, 5) == "four\n");
+    Write(log, "prefix\n中文\n");
+    CHECK(ogplay::frontend::ReadLogTail(log, 20, 5) == "文\n");
     CHECK(ogplay::frontend::ReadLogTail(temporary.path / "missing") == "");
 }

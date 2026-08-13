@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -257,6 +258,21 @@ void WriteBytes(const std::filesystem::path& path,
 }
 
 }  // namespace
+
+TEST_CASE("launcher icon resize uses bilinear interpolation") {
+    constexpr std::array<std::uint32_t, 4> source{
+        0xffff0000U, 0xff00ff00U, 0xff0000ffU, 0xffffffffU};
+    const auto resized = ogplay::frontend::ResizeArgbBilinear(
+        source, 2, 2, 3, 3);
+    REQUIRE(resized.size() == 9);
+    CHECK(resized[4] == 0xff808080U);
+    CHECK(resized.front() == source.front());
+    CHECK(resized.back() == source.back());
+    CHECK_THROWS_AS(static_cast<void>(
+                        ogplay::frontend::ResizeArgbBilinear(
+                            source, 0, 2, 3, 3)),
+                    std::invalid_argument);
+}
 
 TEST_CASE("launcher extracts resource label and normalized PNG then caches it") {
     const auto apk = StoredZip({{"AndroidManifest.xml", Manifest(true)},

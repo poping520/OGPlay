@@ -109,4 +109,8 @@ std::filesystem::path SelectCjkFont(
     return {};
 }
 
+std::uint32_t GuiEventWaitMilliseconds(const bool bounded_smoke) noexcept {
+    return bounded_smoke ? 0U : 100U;
+}
+
 }  // namespace ogplay::frontend

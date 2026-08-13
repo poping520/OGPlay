@@ -165,3 +165,8 @@ TEST_CASE("CJK font selection preserves candidates and supports ASCII fallback")
     CHECK(ogplay::frontend::SelectCjkFont(
               std::span<const std::filesystem::path>(&missing, 1)).empty());
 }
+
+TEST_CASE("GUI event wait keeps smoke bounded and idle polling responsive") {
+    CHECK(ogplay::frontend::GuiEventWaitMilliseconds(true) == 0);
+    CHECK(ogplay::frontend::GuiEventWaitMilliseconds(false) == 100);
+}

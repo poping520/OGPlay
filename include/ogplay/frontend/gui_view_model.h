@@ -63,4 +63,7 @@ private:
 [[nodiscard]] std::filesystem::path SelectCjkFont(
     std::span<const std::filesystem::path> candidates);
 
+[[nodiscard]] std::uint32_t GuiEventWaitMilliseconds(
+    bool bounded_smoke) noexcept;
+
 }  // namespace ogplay::frontend

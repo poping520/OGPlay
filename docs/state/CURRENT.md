@@ -2,7 +2,7 @@
 
 更新：2026-08-13 · M9 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
 surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 EGL 面；
-存档沙盒 SBX-1..12 已交付；主面板 GUI-1..14 基础版闭环并完成验收补强
+存档沙盒 SBX-1..12 已交付；主面板 GUI-1..15 基础版闭环并完成验收补强
 
 ## 当前阶段
 
@@ -31,15 +31,15 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
   Java/prefs 完整性、装载与 O(1) 配额均有回归。Windows/MSVC 663/663；本轮未
   重跑 exact-title。**用户级闭环仍未演示**：title 尚未进入会产生存档的流程。
 - **GUI 主面板基础版已交付**（任务单 [`docs/tasks/launcher/`](../tasks/launcher/README.md)）：
-  GUI-1..14 已闭环。验收补强覆盖按钮 ID 冒烟审计、库根存档绑定、宿主选择器期间
+  GUI-1..15 已闭环。验收补强覆盖按钮 ID 冒烟审计、库根存档绑定、宿主选择器期间
   保持导入模态、诊断 FIFO；默认 Profile/quirk 随构建、安装和 macOS bundle 交付，
-  不再依赖编译机源码树；catalog 失效时磁贴明确不可用；字体/图标/空闲等待已优化。
+  不再依赖编译机源码树；catalog 失效时磁贴明确不可用；视觉/空闲及持久化恢复已优化。
 
 ## 已验收基线
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；M9 任务索引见 `docs/tasks/m9/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 700/700；
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 701/701；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 沙盒任务单见 [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)。
 

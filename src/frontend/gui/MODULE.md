@@ -13,8 +13,9 @@
 - `HostBundledDataPaths`：解析随可执行文件交付的默认 Profile/quirk payload；源码树仅作
   开发回退。
 - `LibraryStore`：枚举、原子导入和删除 `<root>/library/<package>/` 条目；损坏条目
-  仍以带错误原因的记录返回。
-- `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML 配置读写。
+  仍以带错误原因的记录返回；枚举前清理崩溃遗留的 `.importing` 目录。
+- `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML 配置读写；`.bak` 提供跨 rename
+  崩溃恢复，旧配置在新配置发布前始终可恢复。
 - `ExtractApkApplicationVisuals`：从 APK 严格读取 manifest 身份，复用 loader 的
   resources.arsc 与统一条目读取；名称回退 package，图标归一化为 128×128 PNG，
   非致命失败以 `ApplicationVisualFallback` 枚举返回。
@@ -28,7 +29,8 @@
   匹配，生成可确认的导入摘要和 GUI-2 原子入库请求；时间戳由调用方注入。
 - `CanDismissImportModal`：宿主选择器未决时禁止导入模态先行关闭。
 - `GuiImportUi`：SDL 异步文件/目录对话框、后台只读分析和 ImGui 三态摘要控制器；
-  回调只经共享 mailbox 投递事件，文件 IO 与 Profile 判断留在模型/session 层。
+  回调和 detached 分析结果只经共享 mailbox 投递事件，文件 IO 与 Profile 判断留在
+  模型/session 层；控制器析构不等待分析完成。
 - `LauncherSandboxRoot` / `BuildLaunchPlan`：从库根、严格库条目与 `GuiConfig` 生成
   唯一 `run-apk` argv，并在 spawn 前验证全部宿主输入。
 - `GuiProcessManager`：以 SDL3 启动/非阻塞回收游戏子进程，维护同 package 单实例和
@@ -57,6 +59,8 @@
   required-external 集合解释为 ready。
 - 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest
   损坏、重复 package 和所选 external 目录不存在必须阻止发布并给出下一步。
+- 库枚举必须删除所有 `.importing` 崩溃残留；配置替换必须保留可恢复旧版本，启动发现
+  仅有 `.bak` 时自动恢复。关闭 GUI 不得 join 正在进行的只读 APK 分析。
 - 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；stdin 关闭、stdout
   继承、stderr 覆盖重定向到条目日志，并显式传 `--sandbox-dir <library-root>/sandbox`。
   退出 0 静默，非零结果呈现退出码与有界日志末尾。

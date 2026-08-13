@@ -4,17 +4,17 @@
 #include <SDL3/SDL_time.h>
 #include <GLES2/gl2.h>
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <future>
+#include <exception>
 #include <iomanip>
 #include <mutex>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 #include "imgui.h"
@@ -69,6 +69,28 @@ public:
 private:
     std::mutex mutex_;
     std::vector<DialogResult> results_;
+};
+
+struct AnalysisResult final {
+    std::optional<ApkImportAnalysis> analysis;
+    std::exception_ptr error;
+};
+
+class AnalysisMailbox final {
+public:
+    void Publish(AnalysisResult result) {
+        std::scoped_lock lock(mutex_);
+        result_ = std::move(result);
+    }
+
+    [[nodiscard]] std::optional<AnalysisResult> Take() {
+        std::scoped_lock lock(mutex_);
+        return std::exchange(result_, std::nullopt);
+    }
+
+private:
+    std::mutex mutex_;
+    std::optional<AnalysisResult> result_;
 };
 
 void SDLCALL DialogCallback(void* userdata, const char* const* files,
@@ -328,19 +350,29 @@ private:
         external_dir_.reset();
         external_error_.clear();
         const auto catalog = profiles_;
-        analysis_future_ = std::async(
-            std::launch::async,
-            [path, catalog] { return AnalyzeApkImportFile(path, *catalog); });
+        const auto mailbox = analysis_mailbox_;
+        const auto event_type = event_type_;
+        std::thread([path, catalog, mailbox, event_type] {
+            AnalysisResult result;
+            try {
+                result.analysis = AnalyzeApkImportFile(path, *catalog);
+            } catch (...) {
+                result.error = std::current_exception();
+            }
+            mailbox->Publish(std::move(result));
+            SDL_Event event{};
+            event.type = event_type;
+            static_cast<void>(SDL_PushEvent(&event));
+        }).detach();
     }
 
     void PollAnalysis() {
-        if (stage_ != Stage::analyzing || !analysis_future_.valid() ||
-            analysis_future_.wait_for(std::chrono::seconds(0)) !=
-                std::future_status::ready) {
-            return;
-        }
+        if (stage_ != Stage::analyzing) return;
+        auto result = analysis_mailbox_->Take();
+        if (!result.has_value()) return;
         try {
-            auto analysis = analysis_future_.get();
+            if (result->error != nullptr) std::rethrow_exception(result->error);
+            auto analysis = std::move(*result->analysis);
             for (const auto& entry : store_.LoadEntries()) {
                 if (entry.key == analysis.manifest.package) {
                     throw GuiModelError(
@@ -471,6 +503,8 @@ private:
     core::Logger& logger_;
     Uint32 event_type_{};
     std::shared_ptr<DialogMailbox> mailbox_{std::make_shared<DialogMailbox>()};
+    std::shared_ptr<AnalysisMailbox> analysis_mailbox_{
+        std::make_shared<AnalysisMailbox>()};
     std::filesystem::path profiles_dir_;
     std::shared_ptr<const session::TitleProfileCatalog> profiles_;
     std::string profiles_error_;
@@ -478,7 +512,6 @@ private:
     bool dialog_open_{};
     bool open_popup_{};
     bool close_popup_{};
-    std::future<ApkImportAnalysis> analysis_future_;
     std::optional<ApkImportAnalysis> analysis_;
     std::optional<std::filesystem::path> external_dir_;
     std::string external_error_;

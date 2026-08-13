@@ -368,13 +368,27 @@ const std::filesystem::path& GuiModelError::Path() const noexcept { return path_
 
 GuiConfig LoadGuiConfig(const std::filesystem::path& library_root) {
     const auto path = library_root / "config.toml";
+    auto backup = path;
+    backup += ".bak";
     std::error_code error;
     if (!std::filesystem::exists(path, error)) {
         if (error) {
             throw GuiModelError(GuiModelErrorCode::io_error,
                                 "cannot inspect GUI config", path);
         }
-        return {};
+        error.clear();
+        if (!std::filesystem::exists(backup, error)) {
+            if (error) {
+                throw GuiModelError(GuiModelErrorCode::io_error,
+                                    "cannot inspect GUI config backup", backup);
+            }
+            return {};
+        }
+        std::filesystem::rename(backup, path, error);
+        if (error) {
+            throw GuiModelError(GuiModelErrorCode::io_error,
+                                "cannot recover GUI config backup", backup);
+        }
     }
     try {
         return DecodeConfig(ReadText(path));
@@ -408,15 +422,35 @@ void SaveGuiConfig(const std::filesystem::path& library_root,
         const auto target = library_root / "config.toml";
         auto temporary = target;
         temporary += ".tmp";
+        auto backup = target;
+        backup += ".bak";
         WriteText(temporary, EncodeConfig(config));
         std::error_code error;
-        static_cast<void>(std::filesystem::remove(target, error));
-        error.clear();
+        static_cast<void>(std::filesystem::remove(backup, error));
+        if (error) {
+            throw std::filesystem::filesystem_error("remove", backup, error);
+        }
+        const auto had_target = std::filesystem::exists(target, error);
+        if (error) {
+            throw std::filesystem::filesystem_error("exists", target, error);
+        }
+        if (had_target) {
+            std::filesystem::rename(target, backup, error);
+            if (error) {
+                throw std::filesystem::filesystem_error(
+                    "rename", target, backup, error);
+            }
+        }
         std::filesystem::rename(temporary, target, error);
         if (error) {
             static_cast<void>(std::filesystem::remove(temporary));
+            if (had_target) {
+                std::error_code restore_error;
+                std::filesystem::rename(backup, target, restore_error);
+            }
             throw std::filesystem::filesystem_error("rename", temporary, target, error);
         }
+        static_cast<void>(std::filesystem::remove(backup, error));
     } catch (const GuiModelError&) {
         throw;
     } catch (const std::exception& exception) {
@@ -447,6 +481,29 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
         throw GuiModelError(GuiModelErrorCode::io_error,
                             "cannot create game library", EntriesRoot());
     }
+    std::vector<std::filesystem::path> stale_imports;
+    for (std::filesystem::directory_iterator iterator(EntriesRoot(), error), end;
+         !error && iterator != end; iterator.increment(error)) {
+        if (iterator->is_directory(error) &&
+            ImportTemporaryKey(PathUtf8(iterator->path().filename()))) {
+            stale_imports.push_back(iterator->path());
+        }
+    }
+    if (error) {
+        throw GuiModelError(GuiModelErrorCode::io_error,
+                            "cannot inspect import temporary directories",
+                            EntriesRoot());
+    }
+    for (const auto& stale : stale_imports) {
+        try {
+            RemoveTree(stale);
+        } catch (const std::exception& exception) {
+            throw GuiModelError(
+                GuiModelErrorCode::io_error,
+                std::string("cannot clean stale import: ") + exception.what(),
+                stale);
+        }
+    }
     for (std::filesystem::directory_iterator iterator(EntriesRoot(), error), end;
          !error && iterator != end; iterator.increment(error)) {
         if (!iterator->is_directory(error)) {
@@ -454,7 +511,6 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
             continue;
         }
         const auto key = PathUtf8(iterator->path().filename());
-        if (ImportTemporaryKey(key)) continue;
         LibraryEntry entry{.key = key, .directory = iterator->path()};
         try {
             auto metadata = DecodeMetadata(ReadText(iterator->path() / "meta.toml"));

@@ -99,6 +99,19 @@ TEST_CASE("GUI settings validate every configured directory before save") {
     }
 }
 
+TEST_CASE("GUI config recovers an interrupted replacement backup") {
+    TemporaryDirectory tree;
+    const auto system = std::filesystem::absolute(tree.path / "system");
+    std::filesystem::create_directories(system);
+    ogplay::frontend::SaveGuiConfig(tree.path, {.system_dir = system});
+    std::filesystem::rename(tree.path / "config.toml",
+                            tree.path / "config.toml.bak");
+    const auto recovered = ogplay::frontend::LoadGuiConfig(tree.path);
+    CHECK(recovered.system_dir == system);
+    CHECK(std::filesystem::is_regular_file(tree.path / "config.toml"));
+    CHECK_FALSE(std::filesystem::exists(tree.path / "config.toml.bak"));
+}
+
 TEST_CASE("library import atomically copies APK metadata and optional icon") {
     TemporaryDirectory tree;
     const auto source = tree.path / "source.apk";
@@ -182,7 +195,7 @@ TEST_CASE("library removal never touches external data or persistent sandbox") {
     CHECK_THROWS_AS(store.Remove("../sandbox"), ogplay::frontend::GuiModelError);
 }
 
-TEST_CASE("library hides only its import temporary directory") {
+TEST_CASE("library cleans all stale import temporary directories") {
     TemporaryDirectory tree;
     ogplay::frontend::LibraryStore store(tree.path / "root");
     std::filesystem::create_directories(store.EntriesRoot() / ".damaged");
@@ -191,6 +204,8 @@ TEST_CASE("library hides only its import temporary directory") {
 
     const auto entries = store.LoadEntries();
     REQUIRE(entries.size() == 1);
+    CHECK_FALSE(std::filesystem::exists(
+        store.EntriesRoot() / ".org.example.game.importing"));
     CHECK(entries[0].key == ".damaged");
     CHECK(entries[0].Damaged());
     store.Remove(".damaged");

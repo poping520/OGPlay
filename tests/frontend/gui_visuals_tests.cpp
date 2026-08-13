@@ -317,6 +317,14 @@ TEST_CASE("launcher visual extraction uses literal and explicit fallbacks") {
     CHECK(empty_result.Used(
         ogplay::frontend::ApplicationVisualFallback::label_literal_empty));
 
+    const auto controlled_label = StoredZip({{"AndroidManifest.xml", Manifest(
+        true, true, 0x7f010000U, 0x7f010001U, "Bad\x01Label")}});
+    const auto controlled_result =
+        ogplay::frontend::ExtractApkApplicationVisuals(controlled_label);
+    CHECK(controlled_result.display_name == "org.example.game");
+    CHECK(controlled_result.Used(
+        ogplay::frontend::ApplicationVisualFallback::label_control_characters));
+
     const auto missing = StoredZip({{"AndroidManifest.xml", Manifest(false)}});
     const auto missing_result = ogplay::frontend::ExtractApkApplicationVisuals(missing);
     CHECK(missing_result.display_name == "org.example.game");

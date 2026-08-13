@@ -168,7 +168,7 @@ note = "Launcher GUI-1/4/7/8/11/12/13/14 提供双入口与随程序交付 ANGLE
 [frontend.gui_library]
 status = "complete"
 test = "tests/frontend/data_directory_tests.cpp; tests/frontend/gui_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp"
-note = "Launcher GUI-2/5/7/10/12/15 交付严格 LibraryStore/GuiConfig、导入与删除模型：APK visuals、session 精确 Profile 摘要、required external 和原子入库共用公共 API；默认 catalog 与 run-apk 共用 bundled profiles/quirks；枚举清理崩溃遗留 importing 目录，config 以 backup 跨 rename 恢复，关闭 GUI 不等待 detached APK 分析；宿主选择器未决时导入模态不可先行关闭；设置目录受检，删除只移除库条目且保留 external/存档，重复 package、损坏输入明确失败"
+note = "Launcher GUI-2/5/7/10/12/15/16 交付严格 LibraryStore/GuiConfig、导入与删除模型：APK visuals、session 精确 Profile 摘要、required external 和原子入库共用公共 API，versionCode 0 可往返；默认 catalog 与 run-apk 共用 bundled profiles/quirks；枚举清理崩溃遗留 importing 目录，config 以 backup 跨 rename 恢复，关闭 GUI 不等待 detached APK 分析；宿主选择器未决时导入模态不可先行关闭；设置目录受检，删除只移除库条目且保留 external/存档，重复 package、损坏输入明确失败"
 
 [frontend.gui_launch_spawn]
 status = "complete"
@@ -178,7 +178,7 @@ note = "Launcher GUI-6/9/14 严格装配同目录 ogplay run-apk 参数并在 sp
 [loader.apk_application_visuals]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp; tests/frontend/gui_visuals_tests.cpp"
-note = "Launcher GUI-3/14 严格产出 application icon resource id 与 label resource/string 二选一事实；提取链复用 ParseArsc/ReadApkEntry 和既有 stb，以双线性 ARGB 缩放缓存 128x128 RGBA PNG，资源/路径/条目/解码失败均以结构化 fallback 回到占位图标或 package name"
+note = "Launcher GUI-3/14/16 严格产出 application icon resource id 与 label resource/string 二选一事实；提取链复用 ParseArsc/ReadApkEntry 和既有 stb，以双线性 ARGB 缩放缓存 128x128 RGBA PNG，资源/路径/条目/解码或 label 控制字符均以结构化 fallback 回到占位图标或 package name"
 
 [session.profile_bootstrap_inputs]
 status = "complete"

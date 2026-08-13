@@ -251,7 +251,7 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     }
     if (metadata.display_name.empty() || !ValidUtf8(metadata.display_name) ||
         !ValidUtf8(metadata.version_name) || metadata.imported_at.empty() ||
-        !ValidUtf8(metadata.imported_at) || metadata.version_code == 0) {
+        !ValidUtf8(metadata.imported_at)) {
         throw GuiModelError(GuiModelErrorCode::invalid_argument,
                             "library metadata is incomplete or invalid");
     }

@@ -26,6 +26,7 @@ enum class ApplicationVisualFallback : std::uint8_t {
     icon_decode_failed,
     label_attribute_missing,
     label_literal_empty,
+    label_control_characters,
     label_resources_unavailable,
     label_resource_missing,
 };

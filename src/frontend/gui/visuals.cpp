@@ -36,6 +36,13 @@ void AppendPngBytes(void* context, void* data, const int size) noexcept {
     return path.ends_with(".png") && !path.ends_with(".9.png");
 }
 
+[[nodiscard]] bool ContainsControlCharacters(const std::string_view text) {
+    return std::any_of(text.begin(), text.end(), [](const char character) {
+        const auto byte = static_cast<unsigned char>(character);
+        return byte < 0x20U || byte == 0x7fU;
+    });
+}
+
 [[nodiscard]] std::vector<std::byte> NormalizeIcon(
     const std::span<const std::byte> encoded) {
     const auto decoded = runtime::DecodeImageToArgb(encoded);
@@ -193,6 +200,11 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
         } else {
             result.display_name = *entry->string_value;
         }
+    }
+    if (ContainsControlCharacters(result.display_name)) {
+        result.display_name = result.manifest.package;
+        result.fallbacks.push_back(
+            ApplicationVisualFallback::label_control_characters);
     }
 
     if (!result.manifest.application_icon.has_value()) {

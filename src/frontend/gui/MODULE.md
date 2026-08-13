@@ -51,6 +51,8 @@
 - 模型层不得 include ImGui/SDL，不触碰窗口或进程 API。
 - APK/archive/manifest 损坏必须失败；图标/名称资源失败不得阻止导入，也不得静默，
   调用方必须记录返回的 fallback 枚举，空 `icon_png` 明确表示使用内置占位磁贴。
+- Android `versionCode` 接受完整 uint32 范围（含 0）；application label 含 C0/DEL 控制
+  字符时必须记账并回退 package name，不得把不可显示文本送入持久 TOML。
 - 视图每帧只消费 `LibraryTile` 事实，不读取 meta/Profile 或管理进程；长名称单行省略，
   悬停显示全文，状态角标互斥。
 - 精确 Profile 和 required external 事实必须来自 `MatchApkTitleProfile` 与

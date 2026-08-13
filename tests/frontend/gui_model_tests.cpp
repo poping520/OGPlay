@@ -137,6 +137,20 @@ TEST_CASE("library import atomically copies APK metadata and optional icon") {
         store.EntriesRoot() / ".org.example.game.importing"));
 }
 
+TEST_CASE("library preserves Android version code zero") {
+    TemporaryDirectory tree;
+    const auto source = tree.path / "source.apk";
+    Write(source, "apk");
+    auto metadata = Metadata();
+    metadata.version_code = 0;
+    ogplay::frontend::LibraryStore store(tree.path / "root");
+    store.Import({.source_apk = source, .metadata = metadata});
+    const auto entries = store.LoadEntries();
+    REQUIRE(entries.size() == 1);
+    REQUIRE(entries[0].metadata.has_value());
+    CHECK(entries[0].metadata->version_code == 0);
+}
+
 TEST_CASE("library rejects duplicate package without replacing original") {
     TemporaryDirectory tree;
     const auto first = tree.path / "first.apk";

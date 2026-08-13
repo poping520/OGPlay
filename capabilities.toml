@@ -380,6 +380,11 @@ status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; Dungeon Hunter exact 240-frame local run; Asphalt 5 exact title-flow gate"
 note = "ADR-0020 SBX-5 废除 DexVmAndroidContext::memory_files：java.io.File/FileInputStream/FileOutputStream/FileWriter 全部经共享 VFS，Java 写入与 native fopen 同一世界，attach 沙盒后跨会话持久。File.mkdirs 逐级真实建目录并真实返回 false（原实现无条件返回 true 且不建任何目录，属伪成功，已有\"回退即失败\"测试）；exists/isDirectory/length/delete/createNewFile 均取 VFS 事实，只读层与非空目录删除真实失败。缺 VFS 是宿主装配缺陷，明确失败而非退回内存"
 
+[runtime.preferences_persistence]
+status = "complete"
+test = "tests/runtime/preferences_xml_tests.cpp; tests/dexvm/file_vfs_tests.cpp"
+note = "ADR-0020 SBX-6 把 SharedPreferences 落成 /data/data/<pkg>/shared_prefs/<name>.xml 的 Android 同构 XML，经 VFS 普通文件通道读写，attach 沙盒后跨会话持久；文件视角与 API 视角是同一份事实（个别游戏直接读该文件）。受检子集为 boolean/int/long/float/string，未知元素（含 string set）、未知属性、未知实体、DTD 与畸形值一律明确失败并保留原文件，不静默丢条目。commit() 是落盘点；渲染有序，无编辑重写产生同一份字节"
+
 [runtime.vfs_directory_ops]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp"
@@ -1043,7 +1048,7 @@ note = "M9 WU-M9-014/015 出向按 descriptor 编组 A32 soft-float 帧（Regist
 [dexvm.intrinsics_android_core]
 status = "partial"
 test = "Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染"
-note = "M9 WU-M9-018 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败。DUNQ 批次扩展：Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/Build、SharedPreferences(会话内存)、多 Activity 流转+协作线程/Timer、widget 状态层（TextView/EditText/VideoView 等）、setContentView(I) 经 binary XML 布局注入 view registry、runOnUiThread 同步执行、VideoView.start() 立即回调 OnCompletionListener（播放本身仍为记账缺口）"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。M9 WU-M9-018 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败。DUNQ 批次扩展：Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/Build、SharedPreferences(现已持久)、多 Activity 流转+协作线程/Timer、widget 状态层（TextView/EditText/VideoView 等）、setContentView(I) 经 binary XML 布局注入 view registry、runOnUiThread 同步执行、VideoView.start() 立即回调 OnCompletionListener（播放本身仍为记账缺口）"
 
 [dexvm.gap_survey]
 status = "complete"

@@ -457,15 +457,50 @@ void RegisterDeviceServices(dx::IntrinsicRegistry& registry,
         return MakeString(call, encoded);
     });
 }
-[[nodiscard]] std::unordered_map<std::string,
-                                 DexVmAndroidContext::PreferenceValue>&
-PreferencesOf(dx::IntrinsicContext& call, const Context& context) {
+[[nodiscard]] std::string PreferencesPathOf(const Context& context,
+                                            const std::string& name) {
+    return PreferencesGuestPath(context->package_name, name);
+}
+
+[[nodiscard]] PreferenceMap& PreferencesOf(dx::IntrinsicContext& call,
+                                           const Context& context) {
     const auto found = context->preference_names.find(call.receiver.Value());
     if (found == context->preference_names.end()) {
     throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
             "SharedPreferences instance has no backing store"};
     }
     return context->preferences[found->second];
+}
+
+// Reads the on-disk XML once per name. A damaged file is a real failure the
+// user can act on, not something to silently start over from.
+void LoadPreferencesOnce(const Context& context, const std::string& name) {
+    if (context->preferences_loaded[name]) return;
+    context->preferences_loaded[name] = true;
+    if (context->vfs == nullptr) return;
+    try {
+        context->preferences[name] =
+            LoadPreferences(*context->vfs, PreferencesPathOf(context, name));
+    } catch (const PreferencesXmlError& error) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              std::string("SharedPreferences file is not "
+                                          "readable: ") + error.what()};
+    }
+}
+
+// commit()/apply() is the flush point: the VFS close persists it.
+void SavePreferences(dx::IntrinsicContext& call, const Context& context) {
+    const auto found = context->preference_names.find(call.receiver.Value());
+    if (found == context->preference_names.end() || context->vfs == nullptr) {
+        return;
+    }
+    try {
+        StorePreferences(*context->vfs,
+                         PreferencesPathOf(context, found->second),
+                         context->preferences[found->second]);
+    } catch (const PreferencesXmlError& error) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", error.what()};
+    }
 }
 
 // Typed preference getter: absent keys answer the caller's default, a
@@ -496,6 +531,7 @@ void RegisterSharedPreferences(dx::IntrinsicRegistry& registry,
             Singleton(call, context, "prefs:" + name,
                       "Landroid/content/SharedPreferencesImpl;");
         context->preference_names[instance.Value()] = name;
+        LoadPreferencesOnce(context, name);
         return dx::VmValue::Ref(instance);
     });
   registry.Register(
@@ -535,9 +571,8 @@ void RegisterSharedPreferences(dx::IntrinsicRegistry& registry,
         }
         return MakeString(call, *value);
     });
-    // v1 write semantics: edits apply immediately and commit() truthfully
-    // reports the store accepted them (session lifetime, like
-    // memory_files); no staged-rollback behaviour is claimed.
+    // Edits apply to the in-memory map immediately and commit() writes the
+    // XML back; no staged-rollback behaviour is claimed.
     registry.Register("android.prefs_editor.put_boolean",
                       [context](dx::IntrinsicContext& call) {
                       PreferencesOf(
@@ -568,7 +603,10 @@ void RegisterSharedPreferences(dx::IntrinsicRegistry& registry,
         return Self(call);
     });
     registry.Register("android.prefs_editor.commit",
-                    [](dx::IntrinsicContext &) { return dx::VmValue::Int(1); });
+                      [context](dx::IntrinsicContext& call) {
+        SavePreferences(call, context);
+        return dx::VmValue::Int(1);
+    });
 }
 
 }  // namespace ogplay::runtime::android_intrinsics

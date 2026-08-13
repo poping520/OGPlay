@@ -364,6 +364,7 @@ add_library(ogplay_runtime
     src/runtime/bionic/bionic_selfcheck.cpp
     src/runtime/bionic/bionic_tls.cpp
     src/runtime/framework/framework_asset.cpp
+    src/runtime/framework/preferences_xml.cpp
     src/runtime/framework/framework_lifecycle.cpp
     src/runtime/framework/framework_locale.cpp
     src/runtime/framework/framework_package.cpp
@@ -650,6 +651,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/android_boundary_gles1_fixed_tests.cpp
         tests/runtime/android_link_preflight_tests.cpp
         tests/runtime/native_activity_runner_tests.cpp
+        tests/runtime/preferences_xml_tests.cpp
         tests/runtime/sandbox_store_tests.cpp
         tests/runtime/vfs_sandbox_tests.cpp
         tests/runtime/vfs_tests.cpp

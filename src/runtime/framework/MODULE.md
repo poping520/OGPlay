@@ -26,3 +26,12 @@ execution、integration 或游戏 profile。
 ## 测试
 
 对应 `tests/runtime/framework_*_tests.cpp` 与累计无界面 JNI 契约。
+
+## SharedPreferences 落盘
+
+`preferences_xml.h` 是 framework HLE 与 DexVM handler 共享的唯一 prefs 读写
+实现（ADR-0020）：guest 路径 `/data/data/<pkg>/shared_prefs/<name>.xml`，
+Android 同构 XML（标量走属性、`<string>` 走元素正文），经 VFS 普通文件通道，
+`commit()` 是落盘点。个别游戏绕过 API 直接读该文件，因此文件视角与 API 视角
+必须指向同一份事实。受检子集为 boolean/int/long/float/string；string set、
+未知元素/属性/实体与 DTD 一律明确失败并保留原文件，不静默丢条目。

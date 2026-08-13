@@ -15,7 +15,7 @@
 | [SBX-3](SBX-3.md) | `AttachSandbox`：overlay 解析、脏节点跟踪、flush 点 | SBX-1、SBX-2 | 完成 |
 | [SBX-4](SBX-4.md) | syscall 缺口绑定与 ABI 编组 | SBX-2 | 待开始 |
 | [SBX-5](SBX-5.md) | DexVM File 族改线 VFS、`mkdirs` 去伪成功 | SBX-3 | 待开始 |
-| [SBX-6](SBX-6.md) | SharedPreferences XML 持久（framework + dexvm 共享） | SBX-3 | 待开始 |
+| [SBX-6](SBX-6.md) | SharedPreferences XML 持久（framework + dexvm 共享） | SBX-3 | 完成 |
 | [SBX-7](SBX-7.md) | session/CLI 接线、一次性沙盒、确定性回归 | SBX-3 | 完成 |
 
 SBX-7 提前到 SBX-4..6 之前执行：它只依赖 SBX-3，先做完 CLI 接线就能端到端

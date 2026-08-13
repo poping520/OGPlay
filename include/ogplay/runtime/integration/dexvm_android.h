@@ -15,6 +15,7 @@
 #include "ogplay/loader/arsc.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
+#include "ogplay/runtime/framework/preferences_xml.h"
 #include "ogplay/video/video_player.h"
 
 namespace ogplay::runtime {
@@ -93,15 +94,15 @@ struct DexVmAndroidContext final {
     // session-memory overlay that used to shadow it.
     VirtualFileSystem* vfs{};
 
-    // SharedPreferences stores (v1 storage semantics like memory_files:
-    // session-lifetime, immediately visible, no cross-session persistence
-    // claim). Values keep their Java type so mismatched getters can throw
-    // the real ClassCastException.
-    using PreferenceValue =
-        std::variant<bool, std::int32_t, std::int64_t, std::string>;
-    std::unordered_map<std::string,
-                       std::unordered_map<std::string, PreferenceValue>>
-        preferences;
+    // SharedPreferences, keyed by prefs file name. Loaded from and written
+    // back to /data/data/<pkg>/shared_prefs/<name>.xml through the VFS, so
+    // they persist with the sandbox and a title that reads the file
+    // directly sees the same fact (ADR-0020). Values keep their Java type
+    // so mismatched getters can throw the real ClassCastException.
+    std::unordered_map<std::string, PreferenceMap> preferences;
+    // Names already loaded, so a reopen does not re-read the file and lose
+    // uncommitted edits.
+    std::unordered_map<std::string, bool> preferences_loaded;
     // SharedPreferences/Editor instance handle -> preference file name.
     std::unordered_map<std::uint32_t, std::string> preference_names;
 

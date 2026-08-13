@@ -236,3 +236,83 @@ TEST_CASE("Java file writes survive into the next session") {
     CHECK(vm.NativeRead("/sdcard/game/saves/slot0.sav") == "progress-42");
     CHECK(vm.BoolOn(vm.NewFile("/sdcard/game/saves"), "isDirectory"));
 }
+
+// ---- SharedPreferences (SBX-6) -------------------------------------------
+
+namespace {
+
+// Drives Context.getSharedPreferences -> edit -> put -> commit the way a
+// title does, then reads back through the getters.
+struct PrefsDriver final {
+    FileVm& vm;
+
+    [[nodiscard]] VmObjectRef Open(const std::string& name) {
+        const auto context_object =
+            vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+        return vm.CallOn(context_object, "getSharedPreferences",
+                         "(Ljava/lang/String;I)"
+                         "Landroid/content/SharedPreferences;",
+                         {VmValue::Ref(vm.interpreter.NewStringUtf8(name)),
+                          VmValue::Int(0)})
+            .ref;
+    }
+
+    [[nodiscard]] VmObjectRef Editor(const VmObjectRef prefs) {
+        return vm.CallOn(prefs, "edit",
+                         "()Landroid/content/SharedPreferences$Editor;")
+            .ref;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("SharedPreferences persist as platform XML across sessions") {
+    const TemporaryRoot root("prefs");
+    {
+        auto store = SandboxStore::Open(root.path, kPackage);
+        FileVm vm(store.get());
+        PrefsDriver driver{vm};
+        const auto prefs = driver.Open("settings");
+        const auto editor = driver.Editor(prefs);
+        static_cast<void>(vm.CallOn(
+            editor, "putInt",
+            "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("launches")),
+             VmValue::Int(3)}));
+        static_cast<void>(vm.CallOn(
+            editor, "putString",
+            "(Ljava/lang/String;Ljava/lang/String;)"
+            "Landroid/content/SharedPreferences$Editor;",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("user")),
+             VmValue::Ref(vm.interpreter.NewStringUtf8("tester"))}));
+        // Nothing is on disk until commit, which is the flush point.
+        CHECK(vm.CallOn(editor, "commit", "()Z").AsInt() == 1);
+
+        // A title that reads shared_prefs directly sees the same fact.
+        CHECK(vm.NativeRead(
+                  "/data/data/com.example.game/shared_prefs/settings.xml")
+                  .find("<int name=\"launches\" value=\"3\" />") !=
+              std::string::npos);
+        vm.vfs.FlushAll();
+    }
+
+    auto store = SandboxStore::Open(root.path, kPackage);
+    FileVm vm(store.get());
+    PrefsDriver driver{vm};
+    const auto prefs = driver.Open("settings");
+    CHECK(vm.CallOn(prefs, "getInt", "(Ljava/lang/String;I)I",
+                    {VmValue::Ref(vm.interpreter.NewStringUtf8("launches")),
+                     VmValue::Int(0)})
+              .AsInt() == 3);
+    const auto user = vm.CallOn(
+        prefs, "getString",
+        "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("user")),
+         VmValue::Ref(VmObjectRef{})});
+    CHECK(vm.interpreter.StringUtf8(user.ref) == "tester");
+    // An absent key still answers the caller's default.
+    CHECK(vm.CallOn(prefs, "getInt", "(Ljava/lang/String;I)I",
+                    {VmValue::Ref(vm.interpreter.NewStringUtf8("missing")),
+                     VmValue::Int(42)})
+              .AsInt() == 42);
+}

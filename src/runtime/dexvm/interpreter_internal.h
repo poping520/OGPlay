@@ -1,8 +1,7 @@
 #pragma once
 
-// Internal interpreter state shared by the kernel translation units
-// (interpreter.cpp, interp_exec.cpp, interp_arith.cpp,
-// interpreter_builtins.cpp). Not installed; include order is private.
+// Internal interpreter state shared by the kernel translation units and
+// intrinsic class files. Not installed; include order is private.
 
 #include <atomic>
 #include <deque>
@@ -251,13 +250,5 @@ public:
     // Utility: convert modified-UTF8-ish ASCII to UTF-16 and back.
     [[nodiscard]] VmObjectRef InternDexString(std::uint32_t string_index);
 };
-
-// Registers built-in java.* core handlers into a registry.
-void RegisterCoreBuiltinHandlers(IntrinsicRegistry& registry);
-// P1 batch: StringBuilder/System/Math/boxed values/collections/streams.
-void RegisterJavaCoreBuiltins(IntrinsicRegistry& registry);
-// String/StringBuilder surface (intrinsics_string.cpp); called by
-// RegisterJavaCoreBuiltins.
-void RegisterJavaStringBuiltins(IntrinsicRegistry& registry);
 
 }  // namespace ogplay::runtime::dexvm

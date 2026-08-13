@@ -688,10 +688,7 @@ VmObjectRef Interpreter::ThrowableMessage(const VmObjectRef throwable) const {
     return state->second.message;
 }
 
-void Interpreter::RegisterCoreBuiltins() {
-    RegisterCoreBuiltinHandlers(impl_->intrinsics);
-    RegisterJavaCoreBuiltins(impl_->intrinsics);
-}
+void Interpreter::RegisterCoreBuiltins() {}
 
 void Interpreter::SetLogger(core::Logger* logger) noexcept {
     impl_->logger = logger;

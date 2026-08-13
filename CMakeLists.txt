@@ -291,6 +291,8 @@ add_custom_target(ogplay_dexvm_codegen DEPENDS "${OGPLAY_DEXVM_OPCODE_TABLE}")
 set(OGPLAY_DEXVM_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/dexvm_fixtures")
 file(GLOB OGPLAY_DEXVM_FIXTURE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/dexvm/fixtures/*.dexasm")
+file(GLOB OGPLAY_DEXVM_INTRINSIC_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/dexvm/intrinsics/*.cpp")
 add_custom_command(
     OUTPUT "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp"
     COMMAND ${Python3_EXECUTABLE}
@@ -415,7 +417,7 @@ add_library(ogplay_runtime
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp
-    src/runtime/dexvm/core_catalog.cpp
+    ${OGPLAY_DEXVM_INTRINSIC_SOURCES}
     src/runtime/dexvm/gap_survey.cpp
     src/runtime/dexvm/method_precheck.cpp
     src/runtime/dexvm/object_model.cpp
@@ -426,10 +428,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/interp_exec.cpp
     src/runtime/dexvm/interp_object.cpp
     src/runtime/dexvm/interp_arith.cpp
-    src/runtime/dexvm/interpreter_builtins.cpp
     src/runtime/dexvm/intrinsic_builder.cpp
-    src/runtime/dexvm/intrinsics_java.cpp
-    src/runtime/dexvm/intrinsics_string.cpp
     src/runtime/jni/jni.cpp
     src/runtime/jni/jni_exception.cpp
     src/runtime/jni/jni_field_store.cpp

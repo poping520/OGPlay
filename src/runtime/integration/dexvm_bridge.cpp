@@ -1,6 +1,7 @@
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 
 #include <cstring>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -40,6 +41,49 @@ struct DescriptorWalk final {
     const auto close = descriptor.find(')');
     const char first = descriptor[close + 1];
     return (first == '[' ) ? 'L' : first;
+}
+
+void BindPlatformCoreHandlerIds(
+    std::vector<dx::IntrinsicClassDecl>& catalog) {
+    struct Binding final {
+        std::string_view owner;
+        std::string_view name;
+        std::string_view descriptor;
+        std::string_view handler;
+    };
+    constexpr Binding bindings[] = {
+        {"Ljava/lang/System;", "currentTimeMillis", "()J",
+         "platform.system.current_time_millis"},
+        {"Ljava/lang/System;", "nanoTime", "()J",
+         "platform.system.nano_time"},
+        {"Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
+         "platform.system.load_library"},
+        {"Ljava/lang/System;", "exit", "(I)V", "platform.system.exit"},
+        {"Ljava/util/Date;", "<init>", "()V", "platform.date.init"},
+        {"Ljava/util/Date;", "getTime", "()J", "platform.date.get_time"},
+        {"Ljava/util/Date;", "getYear", "()I", "platform.date.get_year"},
+    };
+    for (const auto& binding : bindings) {
+        bool found = false;
+        for (auto& declaration : catalog) {
+            if (declaration.descriptor != binding.owner) continue;
+            for (auto& method : declaration.methods) {
+                if (method.name == binding.name &&
+                    method.descriptor == binding.descriptor) {
+                    method.handler = binding.handler;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            throw DexVmBridgeError(
+                "platform core handler target is not declared: " +
+                std::string(binding.owner) + "." +
+                std::string(binding.name) +
+                std::string(binding.descriptor));
+        }
+    }
 }
 
 }  // namespace
@@ -523,7 +567,9 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->config = config;
     impl_->owner = this;
 
-    impl_->linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog());
+    auto core_catalog = dx::CoreIntrinsicCatalog();
+    BindPlatformCoreHandlerIds(core_catalog);
+    impl_->linker.RegisterIntrinsics(core_catalog);
     if (!platform_catalog.empty()) {
         impl_->linker.RegisterIntrinsics(platform_catalog);
     }

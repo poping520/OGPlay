@@ -16,8 +16,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `IsAssignable` 覆盖类层级、接口与数组协变。`PrecheckMethod` 懒执行结构
   预检（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置），
   规则子集对照 AOSP `CodeVerify.cpp`，不做全量数据流。
-- `CoreIntrinsicCatalog()`：Object/String/Class/Throwable + 隐式异常层级 +
-  Runnable/CharSequence 等接口的内建声明。
+- `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
+  handler；覆盖 Object/String/Class/Throwable、隐式异常层级与核心集合接口。
 - `IntrinsicClassBuilder`：以类为单位声明 static/virtual/overridable 方法、字段、
   常量与 `<clinit>`，`Build()` 在装配期校验类/方法/字段 descriptor、重复成员和
   interface 实例字段；builder 只产生内嵌 handler，不产生字符串 handler id。
@@ -73,10 +73,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `SetStaticFieldBits` 仅接受已完成初始化的真实 guest 静态字段，供 ADR-0022
   的结论级 Profile preset 写入精确槽位；类、字段、静态性、类型或槽位不匹配
   均明确失败，禁止绕过 `<clinit>`。
-- `RegisterCoreBuiltinHandlers`：core.object/string/class/throwable handler
-  （String/StringBuilder 面在 `intrinsics_string.cpp`）。Class/Method 反射只开放
-  真实 declared-method 枚举和零参数、int-like 返回的调用；其他参数/返回类型明确抛
-  `UnsupportedOperationException`，不宣称完整反射。
+- `RegisterCoreBuiltins()`：DVM-35 后为空的兼容 API；core handler 已由声明直接
+  持有。Class/Method 反射只开放真实 declared-method 枚举和零参数、int-like
+  返回的调用；其余明确抛 `UnsupportedOperationException`。
 
 - Gap survey（诊断，默认关闭）：`EnableGapSurvey()` 后，未声明的**平台**类/
   方法被合成为中性桩（0/null/void）并逐次记账，一次运行即可收割新 title 的
@@ -94,6 +93,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 `class_linker_resolve.cpp`。解释器主循环在 `interpreter.cpp`，显式执行 context
 的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
 `interpreter_context.cpp`，宿主线程生命周期在 `vm_threads.cpp`。
+`intrinsics/catalog.cpp` 显式聚合目录；每个 Java 类由一个同名 `.cpp` 同址声明
+形状与 handler，`shared.h` 只放跨类内部 helper。原集中式 core catalog 与三个
+handler 文件已删除。
 
 ## 不变量
 
@@ -116,8 +118,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   生命周期。
 - `IntrinsicMethodDecl::implementation` 与
   `IntrinsicClassDecl::clinit_implementation` 是声明即绑定的优先通道；非空时不
-  查询 registry。字符串 id 通道仅为 DVM-35..37 迁移期兼容路径，新 builder
-  不得写入 id；两条通道可在同一 VM 中共存。
+  查询 registry。core catalog 不产生字符串 id；System/Date 的 7 个平台动作在
+  core 中显式留空，由 integration 装配点补入存量 platform id。registry/id 仅为
+  DVM-36/37 迁移期兼容路径。
 - 热路径在 `Call`/`EnsureClassInitialized` 入口解析一次活跃 execution，沿
   `Run`/`Step`/`Tick`/invoke 与字段家族/`EnsureInitialized`/
   `PushInterpretedFrame` 显式传引用；逐指令不得重查 thread-local 路由。
@@ -139,9 +142,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 ## 测试
 
-`tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：intrinsic builder
-装配校验与声明即绑定、registry 冻结/重复注册、双通道共存、命中与重复 miss
-绑定，算术边界、控制流、
+`tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：core catalog 唯一性与
+代表类签名集合、intrinsic builder 装配校验与声明即绑定、registry 重复注册、
+双通道共存、直调与重复 miss 绑定，算术边界、控制流、
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
 显式执行 context 交错调用的帧/异常/tick/monitor 隔离）；
 `tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、

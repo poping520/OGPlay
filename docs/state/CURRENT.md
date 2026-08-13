@@ -1,7 +1,7 @@
 # 当前状态
 
 更新：2026-08-13 · DexVM 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
-surface 回调）与解释器 intrinsic 优化（DVM-32..34）已交付；存档沙盒 SBX-1..12、
+surface 回调）与 intrinsic 声明迁移（DVM-32..35）已交付；存档沙盒 SBX-1..12、
 主面板 GUI-1..16 与验收报告均已收口
 
 ## 当前阶段
@@ -22,9 +22,11 @@ surface 回调）与解释器 intrinsic 优化（DVM-32..34）已交付；存档
   绑定 handler，miss 仍逐次记账并保持 survey/`UnsatisfiedLinkError`；DVM-33
   从 `Call` 沿 Run/Step/Tick/invoke 传递 execution，不再逐指令查询；DVM-34
   新增装配校验的 `IntrinsicClassBuilder`、内嵌 handler 与新旧双通道，miss 按
-  owner+签名记账。存量 handler 未迁移，registry/id 保留。Windows/MSVC 709/709。
-- **声明即绑定迁移待续**（DVM-35..37）：java.*/javax.* 按类迁移 → android.*
-  按类迁移 → 删除 registry 与字符串 id；不改变 handler 行为或能力状态。
+  owner+签名记账；DVM-35 将 68 个 java.*/javax.* 类拆为一类一文件，直接持有
+  162 个 core handler；四个集中式文件删除，core 注册为空。System/Date 的
+  7 个平台动作由 integration 注入旧 id。Windows/MSVC 710/710。
+- **声明即绑定迁移待续**（DVM-36/37）：迁移 android.* 与平台动作，再删除
+  registry/id；不改变 handler 行为或能力状态。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
@@ -42,7 +44,7 @@ surface 回调）与解释器 intrinsic 优化（DVM-32..34）已交付；存档
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 709/709；
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 710/710；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 
 ## 进行中：更多 title 上 dexvm 路线
@@ -73,7 +75,7 @@ macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例
    非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
-3. DVM-35..37：按依赖顺序迁移 intrinsic 声明并删除字符串 id。
+3. DVM-36/37：迁移 android/platform intrinsic 并删除字符串 id。
 4. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
    只读路径去整串拷贝（分析结论见 DVM-32/33 任务单）。
 5. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id，native

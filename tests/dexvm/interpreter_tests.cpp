@@ -5,9 +5,11 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -149,7 +151,70 @@ TEST_CASE("dexvm intrinsic registry preserves duplicate rejection") {
     CHECK(rejected);
 }
 
-TEST_CASE("dexvm intrinsic registry freezes at first execution") {
+TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
+    const auto catalog = CoreIntrinsicCatalog();
+    std::set<std::string> descriptors;
+    const std::set<std::string> platform_implemented = {
+        "Ljava/lang/System;.currentTimeMillis()J",
+        "Ljava/lang/System;.nanoTime()J",
+        "Ljava/lang/System;.loadLibrary(Ljava/lang/String;)V",
+        "Ljava/lang/System;.exit(I)V",
+        "Ljava/util/Date;.<init>()V",
+        "Ljava/util/Date;.getTime()J",
+        "Ljava/util/Date;.getYear()I",
+    };
+    for (const auto& declaration : catalog) {
+        CHECK(descriptors.insert(declaration.descriptor).second);
+        CHECK(declaration.clinit_handler.empty());
+        for (const auto& method : declaration.methods) {
+            CHECK(method.handler.empty());
+            if (!method.implementation) {
+                CHECK(platform_implemented.contains(
+                    declaration.descriptor + "." + method.name +
+                    method.descriptor));
+            }
+        }
+    }
+
+    const auto signatures = [&catalog](const std::string& descriptor) {
+        std::set<std::pair<std::string, std::string>> result;
+        const auto declaration = std::find_if(
+            catalog.begin(), catalog.end(), [&](const auto& candidate) {
+                return candidate.descriptor == descriptor;
+            });
+        REQUIRE(declaration != catalog.end());
+        for (const auto& method : declaration->methods) {
+            result.emplace(method.name, method.descriptor);
+        }
+        return result;
+    };
+
+    CHECK(signatures("Ljava/lang/Object;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"<init>", "()V"},
+              {"equals", "(Ljava/lang/Object;)Z"},
+              {"getClass", "()Ljava/lang/Class;"},
+              {"hashCode", "()I"},
+              {"notify", "()V"},
+              {"notifyAll", "()V"},
+              {"toString", "()Ljava/lang/String;"},
+              {"wait", "()V"},
+              {"wait", "(J)V"},
+          });
+    CHECK(signatures("Ljava/lang/StringBuilder;").size() == 17U);
+    CHECK(signatures("Ljava/lang/String;").size() == 43U);
+    CHECK(signatures("Ljava/lang/Integer;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"<init>", "(I)V"},
+              {"intValue", "()I"},
+              {"parseInt", "(Ljava/lang/String;)I"},
+              {"toString", "()Ljava/lang/String;"},
+              {"toString", "(I)Ljava/lang/String;"},
+              {"valueOf", "(I)Ljava/lang/Integer;"},
+          });
+}
+
+TEST_CASE("dexvm core builtin registration remains an empty compatibility API") {
     Vm before_call(InterpreterConfig{}, JavaObjectModelConfig{}, false);
     CHECK_NOTHROW(before_call.interpreter.RegisterCoreBuiltins());
     ExpectInt(before_call.interpreter.Call(
@@ -157,58 +222,51 @@ TEST_CASE("dexvm intrinsic registry freezes at first execution") {
                   std::vector<VmValue>{VmValue::Int(-7)}),
               7);
 
-    Vm after_call(InterpreterConfig{}, JavaObjectModelConfig{}, false);
-    ExpectInt(after_call.CallStatic("LArith;", "divide", "(II)I",
-                                    {VmValue::Int(8), VmValue::Int(2)}),
-              4);
-    bool rejected = false;
-    try {
-        after_call.interpreter.RegisterCoreBuiltins();
-    } catch (const DexVmError& error) {
-        rejected = true;
-        CHECK(error.Reason() == DexVmErrorReason::internal_invariant);
-        CHECK(std::string(error.what()).find("registry is frozen") !=
-              std::string::npos);
-    }
-    CHECK(rejected);
+    CHECK_NOTHROW(before_call.interpreter.RegisterCoreBuiltins());
 }
 
-TEST_CASE("dexvm intrinsic handlers bind once and preserve repeated misses") {
+TEST_CASE("dexvm core handlers call directly and legacy misses still bind once") {
     Vm hit;
     const auto hit_method =
         hit.Static("Ljava/lang/Math;", "abs", "(I)I");
+    REQUIRE(hit.linker.Method(hit_method).implementation);
     CHECK_FALSE(hit.linker.Method(hit_method).handler_bound);
     ExpectInt(hit.interpreter.Call(
                   hit_method, std::vector<VmValue>{VmValue::Int(-9)}),
               9);
-    const auto* resolved = hit.linker.Method(hit_method).resolved_handler;
-    REQUIRE(hit.linker.Method(hit_method).handler_bound);
-    REQUIRE(resolved != nullptr);
+    CHECK_FALSE(hit.linker.Method(hit_method).handler_bound);
+    CHECK(hit.linker.Method(hit_method).resolved_handler == nullptr);
     ExpectInt(hit.interpreter.Call(
                   hit_method, std::vector<VmValue>{VmValue::Int(-11)}),
               11);
-    CHECK(hit.linker.Method(hit_method).resolved_handler == resolved);
+    CHECK_FALSE(hit.linker.Method(hit_method).handler_bound);
 
-    Vm miss(InterpreterConfig{}, JavaObjectModelConfig{}, false);
+    IntrinsicClassDecl legacy;
+    legacy.descriptor = "Lbuilder/LegacyMiss;";
+    legacy.superclass = "Ljava/lang/Object;";
+    legacy.methods.push_back(
+        {"answer", "()I", true, false, "legacy.missing"});
+    IntrinsicVm miss({std::move(legacy)});
     const auto miss_method =
-        miss.Static("Ljava/lang/Math;", "abs", "(I)I");
+        miss.Static("Lbuilder/LegacyMiss;", "answer", "()I");
     ExpectException(
         miss,
         miss.interpreter.Call(
-            miss_method, std::vector<VmValue>{VmValue::Int(-1)}),
+            miss_method, {}),
         "Ljava/lang/UnsatisfiedLinkError;");
     REQUIRE(miss.linker.Method(miss_method).handler_bound);
     CHECK(miss.linker.Method(miss_method).resolved_handler == nullptr);
     ExpectException(
         miss,
         miss.interpreter.Call(
-            miss_method, std::vector<VmValue>{VmValue::Int(-2)}),
+            miss_method, {}),
         "Ljava/lang/UnsatisfiedLinkError;");
 
     const auto hits = miss.ledger.Unimplemented();
     bool found = false;
     for (const auto& entry : hits) {
-        if (entry.id == "dexvm.intrinsic.Ljava/lang/Math;.abs(I)I") {
+        if (entry.id ==
+            "dexvm.intrinsic.Lbuilder/LegacyMiss;.answer()I") {
             found = true;
             CHECK(entry.count == 2U);
         }

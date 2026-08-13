@@ -23,8 +23,8 @@
   匹配，生成可确认的导入摘要和 GUI-2 原子入库请求；时间戳由调用方注入。
 - `GuiImportUi`：SDL 异步文件/目录对话框、后台只读分析和 ImGui 三态摘要控制器；
   回调只经共享 mailbox 投递事件，文件 IO 与 Profile 判断留在模型/session 层。
-- `BuildLaunchPlan`：从严格库条目与 `GuiConfig` 生成唯一 `run-apk` argv，并在 spawn
-  前验证全部宿主输入。
+- `LauncherSandboxRoot` / `BuildLaunchPlan`：从库根、严格库条目与 `GuiConfig` 生成
+  唯一 `run-apk` argv，并在 spawn 前验证全部宿主输入。
 - `GuiProcessManager`：以 SDL3 启动/非阻塞回收游戏子进程，维护同 package 单实例和
   `last-run.log`；GUI 退出只解除跟踪，不终止游戏。
 - `ValidateGuiConfigDirectories` / `GuiSettingsUi`：保存前严格验证已配置目录；设置页只
@@ -48,7 +48,8 @@
 - 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest
   损坏、重复 package 和所选 external 目录不存在必须阻止发布并给出下一步。
 - 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；stdin 关闭、stdout
-  继承、stderr 覆盖重定向到条目日志。退出 0 静默，非零结果呈现退出码与有界日志末尾。
+  继承、stderr 覆盖重定向到条目日志，并显式传 `--sandbox-dir <library-root>/sandbox`。
+  退出 0 静默，非零结果呈现退出码与有界日志末尾。
 - SDL 对话框返回的路径必须按 UTF-8 解码；每个用户可见失败同时记录结构化原因，模型
   错误还必须记录错误码与路径，弹窗必须给出可执行下一步。
 - 每个 ImGui 按钮必须经 `GuiButton` 提交；同一帧同一有效作用域的按钮 ID 必须唯一，

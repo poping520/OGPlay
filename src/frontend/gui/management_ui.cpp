@@ -8,6 +8,7 @@
 #include "imgui.h"
 
 #include "ogplay/core/logger.h"
+#include "ogplay/frontend/gui_launch.h"
 
 #include "ui_button.h"
 
@@ -67,7 +68,8 @@ public:
                 } else {
                     ImGui::TextWrapped("不会删除任何库外数据目录。");
                 }
-                const auto sandbox = store_.Root() / "sandbox" / package_;
+                const auto sandbox = LauncherSandboxRoot(store_.Root()) /
+                                     package_;
                 ImGui::TextWrapped("不会删除持久存档：%s",
                                    PathUtf8(sandbox).c_str());
             }

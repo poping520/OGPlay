@@ -26,7 +26,18 @@ void RequireDirectory(const std::filesystem::path& path,
 
 }  // namespace
 
+std::filesystem::path LauncherSandboxRoot(
+    const std::filesystem::path& library_root) {
+    if (library_root.empty()) {
+        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+                            "library root must not be empty");
+    }
+    return (std::filesystem::absolute(library_root).lexically_normal() /
+            "sandbox").lexically_normal();
+}
+
 LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
+                           const std::filesystem::path& library_root,
                            const LibraryEntry& entry,
                            const GuiConfig& config) {
     if (entry.Damaged() || !entry.metadata.has_value()) {
@@ -71,6 +82,8 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
         plan.argv.push_back("--external-dir");
         plan.argv.push_back(PathUtf8(*entry.metadata->external_dir));
     }
+    plan.argv.push_back("--sandbox-dir");
+    plan.argv.push_back(PathUtf8(LauncherSandboxRoot(library_root)));
     plan.log_path = std::filesystem::absolute(entry.directory / "last-run.log")
                         .lexically_normal();
     return plan;

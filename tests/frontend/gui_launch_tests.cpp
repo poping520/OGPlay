@@ -67,12 +67,16 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     std::filesystem::create_directories(profiles);
     std::filesystem::create_directories(external);
     const auto plan = ogplay::frontend::BuildLaunchPlan(
-        cli, Entry(entry_dir, external), {system, profiles});
-    REQUIRE(plan.argv.size() == 9);
+        cli, temporary.path, Entry(entry_dir, external), {system, profiles});
+    REQUIRE(plan.argv.size() == 11);
     CHECK(plan.argv[1] == "run-apk");
     CHECK(plan.argv[3] == "--system-dir");
     CHECK(plan.argv[5] == "--profiles-dir");
     CHECK(plan.argv[7] == "--external-dir");
+    CHECK(plan.argv[9] == "--sandbox-dir");
+    CHECK(plan.argv[10] ==
+          ogplay::frontend::LauncherSandboxRoot(temporary.path)
+              .generic_string());
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }
@@ -86,31 +90,37 @@ TEST_CASE("GUI LaunchPlan fails before spawn for every missing required input") 
     std::filesystem::create_directories(system);
     const auto entry = Entry(entry_dir, temporary.path / "missing-external");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, entry, {system, std::nullopt})),
+                        cli, temporary.path, entry,
+                        {system, std::nullopt})),
                     ogplay::frontend::GuiModelError);
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, entry, {})),
+                        cli, temporary.path, entry, {})),
                     ogplay::frontend::GuiModelError);
     auto damaged = entry;
     damaged.damage_reason = "broken";
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, damaged, {system, std::nullopt})),
+                        cli, temporary.path, damaged,
+                        {system, std::nullopt})),
                     ogplay::frontend::GuiModelError);
 
     auto valid = Entry(entry_dir, temporary.path / "external");
     std::filesystem::create_directories(*valid.metadata->external_dir);
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        temporary.path / "missing-cli", valid,
+                        temporary.path / "missing-cli", temporary.path, valid,
                         {system, std::nullopt})),
                     ogplay::frontend::GuiModelError);
     std::filesystem::remove(entry_dir / "game.apk");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, valid, {system, std::nullopt})),
+                        cli, temporary.path, valid,
+                        {system, std::nullopt})),
                     ogplay::frontend::GuiModelError);
     Write(entry_dir / "game.apk", "apk");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
-                        cli, valid,
+                        cli, temporary.path, valid,
                         {system, temporary.path / "missing-profiles"})),
+                    ogplay::frontend::GuiModelError);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
+                        cli, {}, valid, {system, std::nullopt})),
                     ogplay::frontend::GuiModelError);
 }
 

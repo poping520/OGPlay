@@ -17,8 +17,12 @@ struct LaunchPlan final {
     std::filesystem::path log_path;
 };
 
+[[nodiscard]] std::filesystem::path LauncherSandboxRoot(
+    const std::filesystem::path& library_root);
+
 [[nodiscard]] LaunchPlan BuildLaunchPlan(
     const std::filesystem::path& cli_executable,
+    const std::filesystem::path& library_root,
     const LibraryEntry& entry, const GuiConfig& config);
 
 struct GameExit final {

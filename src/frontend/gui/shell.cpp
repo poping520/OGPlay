@@ -604,7 +604,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                                          : tile->detail;
                 } else {
                     const auto plan = BuildLaunchPlan(
-                        FindSiblingCliExecutable(), *entry,
+                        FindSiblingCliExecutable(), store.Root(), *entry,
                         LoadGuiConfig(options.library_root));
                     processes.Launch(plan);
                     reload_library();

@@ -173,7 +173,7 @@ note = "Launcher GUI-2/5/7 交付严格 LibraryStore/GuiConfig、导入与删除
 [frontend.gui_launch_spawn]
 status = "complete"
 test = "tests/frontend/gui_launch_tests.cpp; frontend.gui_smoke; frontend.gui_library_smoke"
-note = "Launcher GUI-6 严格装配同目录 ogplay run-apk 参数并在 spawn 前验证全部输入；SDL 子进程关闭 stdin、继承 stdout、覆盖重定向 stderr，逐帧回收状态/退出码，同 package 单实例，GUI 退出不杀游戏"
+note = "Launcher GUI-6/9 严格装配同目录 ogplay run-apk 参数并在 spawn 前验证输入；显式把当前库根 sandbox 传给 CLI，删除确认消费同一真实路径；SDL 子进程关闭 stdin、继承 stdout、重定向 stderr，逐帧回收状态/退出码，同 package 单实例"
 
 [loader.apk_application_visuals]
 status = "complete"

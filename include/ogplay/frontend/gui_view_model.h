@@ -15,6 +15,7 @@ namespace ogplay::frontend {
 
 enum class LibraryTileStatus : std::uint8_t {
     damaged,
+    profile_catalog_unavailable,
     missing_profile,
     missing_external,
     running,
@@ -24,6 +25,7 @@ enum class LibraryTileStatus : std::uint8_t {
 struct LibraryViewContext final {
     std::vector<std::string> running_packages;
     std::vector<std::string> external_required_packages;
+    std::optional<std::string> profile_catalog_error;
 };
 
 struct LibraryTile final {

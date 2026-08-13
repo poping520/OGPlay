@@ -266,6 +266,13 @@ public:
         return profiles_error_;
     }
 
+    std::optional<std::string> ProfileCatalogError() const {
+        if (profiles_) return std::nullopt;
+        return profiles_error_.empty()
+                   ? std::optional<std::string>("Profile catalog 未加载")
+                   : std::optional<std::string>(profiles_error_);
+    }
+
     std::vector<std::string> ExternalRequiredPackages(
         const std::vector<LibraryEntry>& entries) const {
         std::vector<std::string> result;
@@ -495,6 +502,10 @@ bool GuiImportUi::Draw() { return impl_->Draw(); }
 
 std::optional<std::string> GuiImportUi::ReloadProfiles() {
     return impl_->ReloadProfiles();
+}
+
+std::optional<std::string> GuiImportUi::ProfileCatalogError() const {
+    return impl_->ProfileCatalogError();
 }
 
 std::vector<std::string> GuiImportUi::ExternalRequiredPackages(

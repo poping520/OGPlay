@@ -33,6 +33,7 @@ public:
     [[nodiscard]] bool Draw();
     // Empty means the configured/default Profile catalog reloaded successfully.
     [[nodiscard]] std::optional<std::string> ReloadProfiles();
+    [[nodiscard]] std::optional<std::string> ProfileCatalogError() const;
     [[nodiscard]] std::vector<std::string> ExternalRequiredPackages(
         const std::vector<LibraryEntry>& entries) const;
 

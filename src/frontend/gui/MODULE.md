@@ -19,7 +19,7 @@
   resources.arsc 与统一条目读取；名称回退 package，图标归一化为 128×128 PNG，
   非致命失败以 `ApplicationVisualFallback` 枚举返回。
 - `BuildLibraryTiles`：将库条目与运行/required-external 事实合成为名称排序的磁贴，
-  状态优先级固定为损坏、缺 Profile、缺数据包、运行中、ready。
+  状态优先级固定为损坏、Profile catalog 不可用、缺 Profile、缺数据包、运行中、ready。
 - `GuiMessageQueue`：按 FIFO 保存运行/启动诊断，仅在没有其他 popup 时激活下一条。
 - `SelectCjkFont`：按注入候选顺序选择宿主字体，全部缺失时返回空路径供 ASCII 回退。
 - `AnalyzeApkImport` / `BuildLibraryImport`：组合 GUI-3 visuals 与 session 精确 Profile
@@ -49,6 +49,8 @@
   悬停显示全文，状态角标互斥。
 - 精确 Profile 和 required external 事实必须来自 `MatchApkTitleProfile` 与
   `SummarizeApkProfileMatch`/`FindApkProfileSummary`，不得在 GUI 遍历 Profile mounts。
+- Profile catalog 不可用时所有非损坏磁贴必须显示显式不可用状态，不得把空的
+  required-external 集合解释为 ready。
 - 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest
   损坏、重复 package 和所选 external 目录不存在必须阻止发布并给出下一步。
 - 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；stdin 关闭、stdout

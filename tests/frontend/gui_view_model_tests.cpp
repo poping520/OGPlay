@@ -125,6 +125,36 @@ TEST_CASE("library tile status follows the documented strict priority") {
     CHECK(detail(running.key).find("先退出游戏") != std::string::npos);
 }
 
+TEST_CASE("unavailable Profile catalog fails closed before launch readiness") {
+    auto damaged = Entry("org.example.damaged", "Damaged");
+    damaged.metadata.reset();
+    damaged.damage_reason = "bad metadata";
+    const auto ready = Entry("org.example.ready", "Ready");
+    const std::vector<ogplay::frontend::LibraryEntry> entries{damaged, ready};
+    const auto tiles = ogplay::frontend::BuildLibraryTiles(
+        entries, {.running_packages = {ready.key},
+                  .external_required_packages = {},
+                  .profile_catalog_error = "catalog fixture unavailable"});
+    REQUIRE(tiles.size() == 2);
+    const auto find = [&tiles](const std::string& key)
+        -> const ogplay::frontend::LibraryTile* {
+        for (const auto& tile : tiles) {
+            if (tile.key == key) return &tile;
+        }
+        return nullptr;
+    };
+    const auto* damaged_tile = find(damaged.key);
+    const auto* ready_tile = find(ready.key);
+    REQUIRE(damaged_tile != nullptr);
+    REQUIRE(ready_tile != nullptr);
+    CHECK(damaged_tile->status == ogplay::frontend::LibraryTileStatus::damaged);
+    CHECK(ready_tile->status ==
+          ogplay::frontend::LibraryTileStatus::profile_catalog_unavailable);
+    CHECK(ready_tile->detail.find("catalog fixture unavailable") !=
+          std::string::npos);
+    CHECK(ready_tile->detail.find("设置") != std::string::npos);
+}
+
 TEST_CASE("CJK font selection preserves candidates and supports ASCII fallback") {
     TemporaryDirectory temporary;
     const auto missing = temporary.path / "missing.ttf";

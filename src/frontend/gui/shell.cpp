@@ -340,6 +340,8 @@ struct Badge final {
     switch (status) {
     case LibraryTileStatus::damaged:
         return {"条目损坏", IM_COL32(184, 52, 52, 235)};
+    case LibraryTileStatus::profile_catalog_unavailable:
+        return {"Profile 不可用", IM_COL32(184, 52, 52, 235)};
     case LibraryTileStatus::missing_profile:
         return {"缺 Profile", IM_COL32(193, 118, 30, 235)};
     case LibraryTileStatus::missing_external:
@@ -529,14 +531,16 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
     auto required_external = import_ui.ExternalRequiredPackages(entries);
     auto tiles = BuildLibraryTiles(
         entries, {.running_packages = processes.RunningPackages(),
-                  .external_required_packages = required_external});
+                  .external_required_packages = required_external,
+                  .profile_catalog_error = import_ui.ProfileCatalogError()});
     auto textures = std::make_unique<LibraryTextures>(tiles, logger);
     const auto reload_library = [&] {
         entries = store.LoadEntries();
         required_external = import_ui.ExternalRequiredPackages(entries);
         tiles = BuildLibraryTiles(
             entries, {.running_packages = processes.RunningPackages(),
-                      .external_required_packages = required_external});
+                      .external_required_packages = required_external,
+                      .profile_catalog_error = import_ui.ProfileCatalogError()});
         textures = std::make_unique<LibraryTextures>(tiles, logger);
     };
     GuiMessageQueue messages;

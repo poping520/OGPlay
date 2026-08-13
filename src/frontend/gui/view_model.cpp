@@ -55,6 +55,11 @@ std::vector<LibraryTile> BuildLibraryTiles(
             tile.status = LibraryTileStatus::damaged;
             tile.detail = "库条目损坏：" + entry.damage_reason.value_or(
                 "元数据不可用") + "。可右键删除后重新导入。";
+        } else if (context.profile_catalog_error.has_value()) {
+            tile.status = LibraryTileStatus::profile_catalog_unavailable;
+            tile.detail = "Profile 目录不可用：" +
+                          *context.profile_catalog_error +
+                          "。请在设置中选择有效目录或恢复内置数据。";
         } else if (!entry.metadata->profile_id.has_value()) {
             tile.status = LibraryTileStatus::missing_profile;
             tile.detail = "暂无精确 Profile；等待题库收录后重新导入。";

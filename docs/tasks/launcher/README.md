@@ -17,6 +17,7 @@
 | [GUI-10](GUI-10.md) | 宿主选择器期间保持导入模态 | GUI-5 | 完成 |
 | [GUI-11](GUI-11.md) | 运行结果延后排队呈现 | GUI-6、GUI-7 | 完成 |
 | [GUI-12](GUI-12.md) | 可执行文件相对的 Profile/quirk 数据 | GUI-1、GUI-5 | 完成 |
+| [GUI-13](GUI-13.md) | Profile catalog 失效状态 | GUI-4、GUI-5 | 完成 |
 
-GUI-1..12 已完成，主面板基础版闭环并持续完成首次验收补强；Windows/MSVC 全量 CTest 以
+GUI-1..13 已完成，主面板基础版闭环并持续完成首次验收补强；Windows/MSVC 全量 CTest 以
 `docs/state/CURRENT.md` 的滚动基线为准，后续完整 M7 体验不回填本专项。

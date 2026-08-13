@@ -529,6 +529,7 @@ add_library(ogplay_frontend
     src/frontend/mcp_http_server.cpp
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
+    src/frontend/gui/import.cpp
     src/frontend/gui/model.cpp
     src/frontend/gui/view_model.cpp
     src/frontend/gui/visuals.cpp
@@ -553,7 +554,9 @@ if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
         target_compile_options(ogplay_imgui PRIVATE -w)
     endif()
 
-    target_sources(ogplay_frontend PRIVATE src/frontend/gui/shell.cpp)
+    target_sources(ogplay_frontend PRIVATE
+        src/frontend/gui/import_ui.cpp
+        src/frontend/gui/shell.cpp)
     target_link_libraries(ogplay_frontend PRIVATE ogplay_imgui ANGLE::EGL ANGLE::GLESv2)
     target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=1)
 else()
@@ -565,6 +568,8 @@ target_link_libraries(ogplay_frontend PUBLIC
 target_include_directories(ogplay_frontend SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
+target_compile_definitions(ogplay_frontend PRIVATE
+    OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 if(WIN32)
     target_link_libraries(ogplay_frontend PRIVATE ws2_32)
 endif()
@@ -629,6 +634,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/frontend/mcp_http_server_tests.cpp
         tests/frontend/mcp_input_dispatch_tests.cpp
         tests/frontend/run_apk_progress_tests.cpp
+        tests/frontend/gui_import_tests.cpp
         tests/frontend/gui_model_tests.cpp
         tests/frontend/gui_view_model_tests.cpp
         tests/frontend/gui_visuals_tests.cpp

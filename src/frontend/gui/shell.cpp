@@ -28,6 +28,8 @@
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/runtime/integration/host_image_decode.h"
 
+#include "import_ui.h"
+
 namespace ogplay::frontend {
 namespace {
 
@@ -390,8 +392,8 @@ void DrawTile(const LibraryTile& tile, const LibraryTextures& textures) {
     ImGui::PopID();
 }
 
-void DrawLibrary(const std::vector<LibraryTile>& tiles,
-                 const LibraryTextures& textures) {
+[[nodiscard]] bool DrawLibrary(const std::vector<LibraryTile>& tiles,
+                               const LibraryTextures& textures) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -404,9 +406,9 @@ void DrawLibrary(const std::vector<LibraryTile>& tiles,
                                ImGui::CalcTextSize("设置").x + 54.0F;
     ImGui::SameLine(std::max(ImGui::GetCursorPosX(),
                              ImGui::GetWindowWidth() - buttons_width));
-    ImGui::BeginDisabled();
-    ImGui::Button("导入游戏");
+    const auto import_requested = ImGui::Button("导入游戏");
     ImGui::SameLine();
+    ImGui::BeginDisabled();
     ImGui::Button("设置");
     ImGui::EndDisabled();
     ImGui::Separator();
@@ -414,9 +416,10 @@ void DrawLibrary(const std::vector<LibraryTile>& tiles,
     if (tiles.empty()) {
         ImGui::Spacing();
         ImGui::TextWrapped("游戏库为空。导入游戏后会显示在这里。");
-        ImGui::BeginDisabled();
-        ImGui::Button("导入游戏");
-        ImGui::EndDisabled();
+        if (ImGui::Button("导入游戏")) {
+            ImGui::End();
+            return true;
+        }
     } else {
         constexpr float tile_width = 152.0F;
         constexpr float spacing = 18.0F;
@@ -429,6 +432,7 @@ void DrawLibrary(const std::vector<LibraryTile>& tiles,
         }
     }
     ImGui::End();
+    return import_requested;
 }
 
 int RunShell(const GuiOptions& options, core::Logger& logger) {
@@ -453,14 +457,20 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                  {{"vendor", vendor}, {"renderer", renderer}, {"version", version}});
     ImGuiSession imgui(video, logger);
     LibraryStore store(options.library_root);
-    const auto tiles = BuildLibraryTiles(store.LoadEntries(), {});
-    LibraryTextures textures(tiles, logger);
+    GuiImportUi import_ui(video.Window(), store,
+                          std::filesystem::path(OGPLAY_SOURCE_DIR), logger);
+    auto entries = store.LoadEntries();
+    auto required_external = import_ui.ExternalRequiredPackages(entries);
+    auto tiles = BuildLibraryTiles(
+        entries, {.external_required_packages = required_external});
+    auto textures = std::make_unique<LibraryTextures>(tiles, logger);
     bool running = true;
     std::uint64_t rendered_frames{};
     while (running) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
+            static_cast<void>(import_ui.HandleEvent(event));
             if (event.type == SDL_EVENT_QUIT ||
                 event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 running = false;
@@ -471,7 +481,14 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
-        DrawLibrary(tiles, textures);
+        if (DrawLibrary(tiles, *textures)) import_ui.OpenApkDialog();
+        if (import_ui.Draw()) {
+            entries = store.LoadEntries();
+            required_external = import_ui.ExternalRequiredPackages(entries);
+            tiles = BuildLibraryTiles(
+                entries, {.external_required_packages = required_external});
+            textures = std::make_unique<LibraryTextures>(tiles, logger);
+        }
         ImGui::Render();
 
         int width{};

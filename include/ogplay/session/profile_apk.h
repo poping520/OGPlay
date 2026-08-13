@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "ogplay/loader/apk.h"
@@ -23,6 +24,17 @@ struct ApkProfileLaunch final {
     ApkProfileMatch match;
     runtime::BionicModuleSet modules;
 };
+
+struct ApkProfileSummary final {
+    std::string profile_id;
+    std::string display_name;
+    bool requires_external_data{};
+};
+
+[[nodiscard]] ApkProfileSummary SummarizeApkProfileMatch(
+    const ApkProfileMatch& match);
+[[nodiscard]] std::optional<ApkProfileSummary> FindApkProfileSummary(
+    const TitleProfileCatalog& profiles, std::string_view profile_id);
 
 [[nodiscard]] std::optional<ApkProfileMatch> MatchApkTitleProfile(
     const loader::AndroidManifestFacts& manifest,

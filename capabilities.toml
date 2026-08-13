@@ -167,8 +167,8 @@ note = "Launcher GUI-1/4 提供双入口与随程序交付 ANGLE 上的 ImGui GL
 
 [frontend.gui_library]
 status = "complete"
-test = "tests/frontend/gui_model_tests.cpp"
-note = "Launcher GUI-2 交付纯模型层 LibraryStore 与 GuiConfig：每 package 目录、APK/meta/icon 原子导入、严格 schema 1 TOML、重复 package 拒绝、损坏条目 fail closed 可见、删除只触及库条目且不碰 external 数据或同级持久沙盒"
+test = "tests/frontend/gui_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp"
+note = "Launcher GUI-2/5 交付严格 LibraryStore/GuiConfig 与导入向导模型：APK visuals、session 精确 Profile 摘要、required external 事实和原子入库共用既有公共 API；无 Profile/跳过数据可入库带角标，重复 package、损坏 APK 和无效目录明确失败"
 
 [loader.apk_application_visuals]
 status = "complete"

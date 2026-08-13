@@ -15,6 +15,9 @@
 - `MatchApkTitleProfile` / `PrepareApkProfileLaunch`：以 binary Manifest 和全部 APK ARM
   native library 事实选择唯一根库，再交给统一 Bionic 依赖闭包规划；无匹配返回空，
   闭包错误不发布部分计划。
+- `SummarizeApkProfileMatch` / `FindApkProfileSummary`：向上层只读发布稳定 profile
+  id/name 与“是否声明 required external mount”布尔事实，调用方无需解析或遍历
+  Profile 数据结构；后者供缓存 id 刷新状态。
 - `ResolveProfileLaunchDescriptor`：`runtime.entry.launch_activity` 存在时优先使用，
   否则使用 Manifest launcher；两者均不存在时明确失败。
 - `ApplyProfileStaticPresets`：逐项初始化真实 DEX class（包括 `<clinit>`），再按声明的

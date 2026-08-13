@@ -1,5 +1,6 @@
 #include "ogplay/session/profile_apk.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -16,6 +17,43 @@ namespace {
 }
 
 }  // namespace
+
+namespace {
+
+ApkProfileSummary SummarizeProfile(const TitleProfile& profile) {
+    bool requires_external{};
+    if (profile.data.has_value()) {
+        requires_external = std::any_of(
+            profile.data->mounts.begin(), profile.data->mounts.end(),
+            [](const ProfileMount& mount) {
+                return mount.source == ProfileSource::external && mount.required;
+            });
+    }
+    return {profile.identity.package, profile.identity.name, requires_external};
+}
+
+}  // namespace
+
+ApkProfileSummary SummarizeApkProfileMatch(const ApkProfileMatch& match) {
+    if (match.profile == nullptr) {
+        throw TitleProfileError("matched APK Profile has no profile");
+    }
+    return SummarizeProfile(*match.profile);
+}
+
+std::optional<ApkProfileSummary> FindApkProfileSummary(
+    const TitleProfileCatalog& profiles, const std::string_view profile_id) {
+    std::optional<ApkProfileSummary> result;
+    for (const auto& profile : profiles.Profiles()) {
+        if (profile.identity.package != profile_id) continue;
+        if (result.has_value()) {
+            throw TitleProfileError("Profile catalog contains duplicate profile id: " +
+                                    std::string(profile_id));
+        }
+        result = SummarizeProfile(profile);
+    }
+    return result;
+}
 
 std::optional<ApkProfileMatch> MatchApkTitleProfile(
     const loader::AndroidManifestFacts& manifest,

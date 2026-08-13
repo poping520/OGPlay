@@ -128,12 +128,43 @@ TEST_CASE("APK Profile match combines manifest library hash and ABI exactly") {
     CHECK(match->library.basename == "libgame.so");
     CHECK(match->library.sha256 == kHashA);
     CHECK(match->library.image == libraries[1].image);
+    const auto summary = ogplay::session::SummarizeApkProfileMatch(*match);
+    CHECK(summary.profile_id == "org.example.legacy");
+    CHECK(summary.display_name == "fixture");
+    CHECK_FALSE(summary.requires_external_data);
 
     const ogplay::session::TitleProfileCatalog no_match(
         {Profile(kHashB, ogplay::session::ProfileAbi::armeabi)});
     CHECK_FALSE(ogplay::session::MatchApkTitleProfile(
                     kManifest, std::span{libraries}.subspan(1), no_match)
                     .has_value());
+}
+
+TEST_CASE("APK Profile summary owns the required external decision") {
+    auto profile = Profile(kHashA, ogplay::session::ProfileAbi::armeabi);
+    profile.data = ogplay::session::ProfileData{
+        .mounts = {{"/apk", ogplay::session::ProfileSource::apk, true},
+                   {"/sdcard/game", ogplay::session::ProfileSource::external, true}},
+    };
+    const ogplay::session::TitleProfileCatalog profiles({std::move(profile)});
+    const auto library =
+        Library("libgame.so", kHashA, ogplay::loader::AndroidArmAbi::armeabi);
+    const auto match = ogplay::session::MatchApkTitleProfile(
+        kManifest, std::span{&library, 1}, profiles);
+    REQUIRE(match.has_value());
+    CHECK(ogplay::session::SummarizeApkProfileMatch(*match)
+              .requires_external_data);
+    const auto cached = ogplay::session::FindApkProfileSummary(
+        profiles, "org.example.legacy");
+    REQUIRE(cached.has_value());
+    CHECK(cached->requires_external_data);
+    CHECK_FALSE(ogplay::session::FindApkProfileSummary(
+                    profiles, "org.example.missing")
+                    .has_value());
+    ogplay::session::ApkProfileMatch invalid;
+    CHECK_THROWS_WITH(
+        static_cast<void>(ogplay::session::SummarizeApkProfileMatch(invalid)),
+        "matched APK Profile has no profile");
 }
 
 TEST_CASE("APK Profile match rejects ABI lies and ambiguous main libraries") {

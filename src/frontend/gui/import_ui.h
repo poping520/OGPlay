@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,8 @@ public:
     [[nodiscard]] bool HandleEvent(const SDL_Event& event);
     // Returns true exactly once after an entry is successfully published.
     [[nodiscard]] bool Draw();
+    // Empty means the configured/default Profile catalog reloaded successfully.
+    [[nodiscard]] std::optional<std::string> ReloadProfiles();
     [[nodiscard]] std::vector<std::string> ExternalRequiredPackages(
         const std::vector<LibraryEntry>& entries) const;
 

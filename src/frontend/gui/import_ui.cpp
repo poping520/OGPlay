@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <future>
 #include <iomanip>
 #include <mutex>
@@ -27,6 +28,16 @@ namespace ogplay::frontend {
 namespace {
 
 enum class DialogKind : std::uint8_t { apk, external };
+
+[[nodiscard]] std::filesystem::path Utf8Path(const char* text) {
+    const auto* begin = reinterpret_cast<const char8_t*>(text);
+    return std::filesystem::path(std::u8string(begin, begin + std::strlen(text)));
+}
+
+[[nodiscard]] std::string PathUtf8(const std::filesystem::path& path) {
+    const auto value = path.generic_u8string();
+    return {reinterpret_cast<const char*>(value.data()), value.size()};
+}
 
 struct DialogRequest final {
     Uint32 event_type{};
@@ -68,7 +79,7 @@ void SDLCALL DialogCallback(void* userdata, const char* const* files,
         result.error = SDL_GetError();
         if (result.error.empty()) result.error = "host file dialog failed";
     } else if (files[0] != nullptr) {
-        result.path = std::filesystem::path(files[0]);
+        result.path = Utf8Path(files[0]);
     }
     request->mailbox->Publish(std::move(result));
     SDL_Event event{};
@@ -151,22 +162,7 @@ public:
         if (event_type_ == 0) {
             throw std::runtime_error("SDL could not allocate a GUI dialog event");
         }
-        try {
-            const auto config = LoadGuiConfig(store_.Root());
-            profiles_dir_ = config.profiles_dir.value_or(source_root_ / "data" / "profiles");
-            const auto quirks = session::QuirkRegistry::Load(
-                source_root_ / "data" / "quirks.toml", source_root_);
-            profiles_ = std::make_shared<const session::TitleProfileCatalog>(
-                session::TitleProfileCatalog::LoadDirectory(profiles_dir_, quirks));
-            logger_.Write(core::LogLevel::info, "frontend.gui.import",
-                          "Profile catalog ready", {},
-                          {{"profiles_dir", profiles_dir_.string()}});
-        } catch (const std::exception& error) {
-            profiles_error_ = error.what();
-            logger_.Write(core::LogLevel::warn, "frontend.gui.import",
-                          "Profile catalog unavailable", {},
-                          {{"reason", profiles_error_}});
-        }
+        LoadProfiles();
     }
 
     void OpenApkDialog() {
@@ -190,6 +186,10 @@ public:
                     Fail("无法打开 APK 选择器：" + result.error);
                 } else {
                     external_error_ = "无法打开目录选择器：" + result.error;
+                    logger_.Write(core::LogLevel::error,
+                                  "frontend.gui.import",
+                                  "external folder dialog failed", {},
+                                  {{"reason", result.error}});
                 }
                 continue;
             }
@@ -205,7 +205,11 @@ public:
                 std::error_code error;
                 if (!std::filesystem::is_directory(selected, error) || error) {
                     external_error_ = "所选数据包目录不存在或不可读：" +
-                                      selected.string();
+                                      PathUtf8(selected);
+                    logger_.Write(core::LogLevel::error,
+                                  "frontend.gui.import",
+                                  "external directory rejected", {},
+                                  {{"path", PathUtf8(selected)}});
                 } else {
                     external_dir_ = std::move(selected);
                     external_error_.clear();
@@ -258,6 +262,12 @@ public:
         return imported;
     }
 
+    std::optional<std::string> ReloadProfiles() {
+        LoadProfiles();
+        if (profiles_) return std::nullopt;
+        return profiles_error_;
+    }
+
     std::vector<std::string> ExternalRequiredPackages(
         const std::vector<LibraryEntry>& entries) const {
         std::vector<std::string> result;
@@ -278,6 +288,29 @@ public:
 
 private:
     enum class Stage : std::uint8_t { idle, waiting_apk, analyzing, summary, failed };
+
+    void LoadProfiles() {
+        profiles_.reset();
+        profiles_error_.clear();
+        try {
+            const auto config = LoadGuiConfig(store_.Root());
+            profiles_dir_ = config.profiles_dir.value_or(
+                source_root_ / "data" / "profiles");
+            const auto quirks = session::QuirkRegistry::Load(
+                source_root_ / "data" / "quirks.toml", source_root_);
+            profiles_ = std::make_shared<const session::TitleProfileCatalog>(
+                session::TitleProfileCatalog::LoadDirectory(profiles_dir_,
+                                                             quirks));
+            logger_.Write(core::LogLevel::info, "frontend.gui.import",
+                          "Profile catalog ready", {},
+                          {{"profiles_dir", PathUtf8(profiles_dir_)}});
+        } catch (const std::exception& error) {
+            profiles_error_ = error.what();
+            logger_.Write(core::LogLevel::warn, "frontend.gui.import",
+                          "Profile catalog unavailable", {},
+                          {{"reason", profiles_error_}});
+        }
+    }
 
     void StartAnalysis(const std::filesystem::path& path) {
         if (!profiles_) {
@@ -318,6 +351,8 @@ private:
             preview_.Load(analysis.icon_png);
             analysis_ = std::move(analysis);
             stage_ = Stage::summary;
+        } catch (const GuiModelError& error) {
+            Fail(std::string("APK 解析失败：") + error.what(), error);
         } catch (const std::exception& error) {
             Fail(std::string("APK 解析失败：") + error.what());
         }
@@ -359,7 +394,7 @@ private:
             ImGui::TextWrapped("该游戏需要外部数据包。可暂时跳过，入库后将显示“缺数据包”。");
             if (ImGui::Button("选择数据包目录")) OpenExternalDialog();
             if (external_dir_.has_value()) {
-                ImGui::TextWrapped("原地引用：%s", external_dir_->string().c_str());
+                ImGui::TextWrapped("原地引用：%s", PathUtf8(*external_dir_).c_str());
                 ImGui::TextWrapped("请勿移动或删除此目录。");
             }
             if (!external_error_.empty()) {
@@ -378,6 +413,9 @@ private:
                               "game imported", {},
                               {{"package", analysis.manifest.package}});
                 return true;
+            } catch (const GuiModelError& error) {
+                Fail(std::string("导入失败：") + error.what(), error);
+                return false;
             } catch (const std::exception& error) {
                 Fail(std::string("导入失败：") + error.what());
                 return false;
@@ -396,6 +434,20 @@ private:
         stage_ = Stage::failed;
         logger_.Write(core::LogLevel::error, "frontend.gui.import",
                       "import workflow failed", {}, {{"reason", error_}});
+    }
+
+    void Fail(std::string message, const GuiModelError& error) {
+        if (!error.Path().empty()) {
+            message += "\n路径：" + PathUtf8(error.Path());
+        }
+        error_ = std::move(message);
+        stage_ = Stage::failed;
+        logger_.Write(
+            core::LogLevel::error, "frontend.gui.import",
+            "import workflow failed", {},
+            {{"reason", std::string(error.what())},
+             {"code", static_cast<std::uint64_t>(error.Code())},
+             {"path", PathUtf8(error.Path())}});
     }
 
     void Reset() {
@@ -442,6 +494,10 @@ bool GuiImportUi::HandleEvent(const SDL_Event& event) {
 }
 
 bool GuiImportUi::Draw() { return impl_->Draw(); }
+
+std::optional<std::string> GuiImportUi::ReloadProfiles() {
+    return impl_->ReloadProfiles();
+}
 
 std::vector<std::string> GuiImportUi::ExternalRequiredPackages(
     const std::vector<LibraryEntry>& entries) const {

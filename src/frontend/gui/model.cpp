@@ -384,6 +384,23 @@ GuiConfig LoadGuiConfig(const std::filesystem::path& library_root) {
     }
 }
 
+void ValidateGuiConfigDirectories(const GuiConfig& config) {
+    const auto require_directory = [](const std::filesystem::path& path,
+                                      const std::string_view name) {
+        std::error_code error;
+        if (path.empty() || !std::filesystem::is_directory(path, error) || error) {
+            throw GuiModelError(GuiModelErrorCode::not_found,
+                                std::string(name) + " is unavailable", path);
+        }
+    };
+    if (config.system_dir.has_value()) {
+        require_directory(*config.system_dir, "Android system library directory");
+    }
+    if (config.profiles_dir.has_value()) {
+        require_directory(*config.profiles_dir, "Profile directory");
+    }
+}
+
 void SaveGuiConfig(const std::filesystem::path& library_root,
                    const GuiConfig& config) {
     try {

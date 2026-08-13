@@ -94,6 +94,15 @@ TEST_CASE("library tile status follows the documented strict priority") {
           ogplay::frontend::LibraryTileStatus::missing_external);
     CHECK(status(running.key) == ogplay::frontend::LibraryTileStatus::running);
     CHECK(status(ready.key) == ogplay::frontend::LibraryTileStatus::ready);
+    const auto detail = [&tiles](const std::string& key) -> std::string {
+        for (const auto& tile : tiles) {
+            if (tile.key == key) return tile.detail;
+        }
+        return {};
+    };
+    CHECK(detail(no_profile.key).find("重新导入") != std::string::npos);
+    CHECK(detail(no_external.key).find("数据包") != std::string::npos);
+    CHECK(detail(running.key).find("先退出游戏") != std::string::npos);
 }
 
 TEST_CASE("CJK font selection preserves candidates and supports ASCII fallback") {

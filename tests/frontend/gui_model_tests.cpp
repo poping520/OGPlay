@@ -77,6 +77,28 @@ TEST_CASE("GUI config is strict and round-trips UTF-8 paths") {
     }
 }
 
+TEST_CASE("GUI settings validate every configured directory before save") {
+    TemporaryDirectory tree;
+    const auto system = tree.path / "system";
+    const auto profiles = tree.path / "profiles";
+    std::filesystem::create_directories(system);
+    std::filesystem::create_directories(profiles);
+    CHECK_NOTHROW(ogplay::frontend::ValidateGuiConfigDirectories({}));
+    CHECK_NOTHROW(ogplay::frontend::ValidateGuiConfigDirectories(
+        {system, profiles}));
+    CHECK_THROWS_AS(ogplay::frontend::ValidateGuiConfigDirectories(
+                        {tree.path / "missing-system", std::nullopt}),
+                    ogplay::frontend::GuiModelError);
+    try {
+        ogplay::frontend::ValidateGuiConfigDirectories(
+            {system, tree.path / "missing"});
+        FAIL("missing Profile directory should fail");
+    } catch (const ogplay::frontend::GuiModelError& error) {
+        CHECK(error.Code() == ogplay::frontend::GuiModelErrorCode::not_found);
+        CHECK(error.Path() == tree.path / "missing");
+    }
+}
+
 TEST_CASE("library import atomically copies APK metadata and optional icon") {
     TemporaryDirectory tree;
     const auto source = tree.path / "source.apk";

@@ -557,7 +557,9 @@ if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
 
     target_sources(ogplay_frontend PRIVATE
         src/frontend/gui/import_ui.cpp
+        src/frontend/gui/management_ui.cpp
         src/frontend/gui/process_manager.cpp
+        src/frontend/gui/settings_ui.cpp
         src/frontend/gui/shell.cpp)
     target_link_libraries(ogplay_frontend PRIVATE ogplay_imgui ANGLE::EGL ANGLE::GLESv2)
     target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=1)
@@ -606,6 +608,12 @@ if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.ogplay.launcher")
     if(APPLE)
         set_target_properties(ogplay-gui PROPERTIES OUTPUT_NAME "OGPlay")
+        add_custom_command(TARGET ogplay-gui POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:ogplay>
+                $<TARGET_BUNDLE_CONTENT_DIR:ogplay-gui>/MacOS/ogplay
+            COMMENT "Embedding the OGPlay CLI in the launcher bundle"
+            VERBATIM)
     endif()
     ogplay_set_project_warnings(ogplay-gui)
     ogplay_stage_angle_runtime(ogplay-gui)

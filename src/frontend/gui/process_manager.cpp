@@ -120,6 +120,10 @@ std::vector<std::string> GuiProcessManager::RunningPackages() const {
     return tracker_.RunningPackages();
 }
 
+bool GuiProcessManager::IsRunning(const std::string_view package) const noexcept {
+    return tracker_.IsRunning(package);
+}
+
 std::filesystem::path FindSiblingCliExecutable() {
     const auto* base = SDL_GetBasePath();
     if (base == nullptr) ThrowSdl("SDL_GetBasePath");

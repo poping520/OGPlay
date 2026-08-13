@@ -162,13 +162,13 @@ note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹�
 
 [frontend.gui_shell]
 status = "complete"
-test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; tests/frontend/gui_view_model_tests.cpp"
-note = "Launcher GUI-1/4 提供双入口与随程序交付 ANGLE 上的 ImGui GLES2 窗口；LibraryStore 条目按名称进入自适应图标网格，损坏/缺 Profile/缺数据包/运行中角标严格互斥，空库有引导；宿主 CJK 字体按固定候选加载，缺失时明确记录并回退 ASCII"
+test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_model_tests.cpp"
+note = "Launcher GUI-1/4/7 提供双入口与随程序交付 ANGLE 上的 ImGui GLES2 窗口；自适应库网格含严格互斥状态和 CJK 回退，设置页只编辑 system/Profile 目录并验证存在，右键删除明确保留 external 与持久存档，失败同时呈现下一步并写结构化日志"
 
 [frontend.gui_library]
 status = "complete"
 test = "tests/frontend/gui_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp"
-note = "Launcher GUI-2/5 交付严格 LibraryStore/GuiConfig 与导入向导模型：APK visuals、session 精确 Profile 摘要、required external 事实和原子入库共用既有公共 API；无 Profile/跳过数据可入库带角标，重复 package、损坏 APK 和无效目录明确失败"
+note = "Launcher GUI-2/5/7 交付严格 LibraryStore/GuiConfig、导入与删除模型：APK visuals、session 精确 Profile 摘要、required external 和原子入库共用公共 API；设置目录受检，删除只移除库条目且保留 external/存档，重复 package、损坏输入明确失败"
 
 [frontend.gui_launch_spawn]
 status = "complete"

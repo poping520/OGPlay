@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 #include "ogplay/frontend/gui_launch.h"
@@ -24,6 +25,7 @@ public:
 
     void Launch(const LaunchPlan& plan);
     [[nodiscard]] std::vector<GameExit> Poll();
+    [[nodiscard]] bool IsRunning(std::string_view package) const noexcept;
     [[nodiscard]] std::vector<std::string> RunningPackages() const;
 
 private:

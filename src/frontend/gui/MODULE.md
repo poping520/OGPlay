@@ -27,6 +27,10 @@
   前验证全部宿主输入。
 - `GuiProcessManager`：以 SDL3 启动/非阻塞回收游戏子进程，维护同 package 单实例和
   `last-run.log`；GUI 退出只解除跟踪，不终止游戏。
+- `ValidateGuiConfigDirectories` / `GuiSettingsUi`：保存前严格验证已配置目录；设置页只
+  编辑 system/Profile 目录，库根只读，Profile 留空使用内置默认。
+- `GuiManagementUi`：呈现删除边界并调用 `LibraryStore::Remove`；运行中条目拒绝删除，
+  external 数据和 `<library-root>/sandbox/<package>` 存档始终保留。
 
 ## 不变量
 
@@ -45,6 +49,10 @@
   损坏、重复 package 和所选 external 目录不存在必须阻止发布并给出下一步。
 - 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；stdin 关闭、stdout
   继承、stderr 覆盖重定向到条目日志。退出 0 静默，非零结果呈现退出码与有界日志末尾。
+- SDL 对话框返回的路径必须按 UTF-8 解码；每个用户可见失败同时记录结构化原因，模型
+  错误还必须记录错误码与路径，弹窗必须给出可执行下一步。
+- 删除只移除 `library/<package>`；不得触碰库外 external 或同库根的持久存档。设置保存
+  后必须重载 Profile catalog，不能继续使用旧目录事实。
 
 ## 禁止
 
@@ -62,5 +70,6 @@
 与明确失败；
 `tests/frontend/gui_launch_tests.cpp` 锁定 argv、spawn 前校验、单实例状态、退出码与
 有界日志末尾；
+`tests/frontend/gui_model_tests.cpp` 同时锁定设置目录校验和删除保留 external/存档；
 `frontend.gui_smoke`/`frontend.gui_library_smoke` 在有界三帧内验证真实
 SDL3/ANGLE/ImGui 空库与 CJK 非空库窗口。

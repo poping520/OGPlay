@@ -3,9 +3,9 @@
 OGPlay 是面向 2010–2016 年安卓原生老游戏的跨平台兼容层。它翻译 guest ARM 指令，
 并用宿主原生实现承接 Android API；它不启动 Android 系统镜像。
 
-**M0–M2 已完成验收。** 当前代码具备跨平台 ARM guest 内核、ELF32/ARM linker、
-API 19/22/23 真实 Bionic、Android syscall 基线与统一 VFS；下一阶段进入 M3 JNI 与
-最小框架。规划入口见 [`docs/roadmap/README.md`](docs/roadmap/README.md)，里程碑证据见
+当前能力与验证基线以 [`docs/state/CURRENT.md`](docs/state/CURRENT.md) 和
+[`capabilities.toml`](capabilities.toml) 为准。规划入口见
+[`docs/roadmap/README.md`](docs/roadmap/README.md)，里程碑证据见
 [`docs/state/`](docs/state/)，当前交接见
 [`docs/state/CURRENT.md`](docs/state/CURRENT.md)。
 
@@ -26,6 +26,20 @@ cmake --preset windows-msvc
 cmake --build --preset windows-msvc
 ctest --preset windows-msvc
 ```
+
+## 主面板（游戏启动器）
+
+Windows 构建后可直接双击 `build/windows-msvc/Debug/ogplay-gui.exe`；Linux 开发构建
+产物为 `build/dev/ogplay-gui`，macOS 为 `OGPlay.app`，bundle 内同时携带同路径启动所需
+的 `ogplay` CLI。开发与 CI 也可从终端启动有界入口：
+
+```sh
+build/dev/ogplay gui [--library-root <dir>] [--smoke-frames <count>]
+```
+
+首次使用先在“设置”中选择 Android 系统库目录；Profile 目录留空使用内置默认。随后
+通过“导入游戏”选择 APK 与可选数据包目录，点击无角标磁贴即通过同一 `run-apk` 路径
+启动。右键磁贴可删除库内副本；原地数据包和持久存档不会被删除。
 
 运行最小 CLI：
 

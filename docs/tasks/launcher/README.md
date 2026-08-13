@@ -11,7 +11,7 @@
 | [GUI-4](GUI-4.md) | 库网格、状态角标、空库引导与 CJK 字体 | GUI-1、GUI-2 | 完成 |
 | [GUI-5](GUI-5.md) | 导入向导与 Profile/external 摘要 | GUI-3、GUI-4 | 完成 |
 | [GUI-6](GUI-6.md) | LaunchPlan、子进程与运行结果呈现 | GUI-4 | 完成 |
-| GUI-7 | 设置、删除确认、错误呈现与全部契约收口 | GUI-5、GUI-6 | 待开始 |
+| [GUI-7](GUI-7.md) | 设置、删除确认、错误呈现与全部契约收口 | GUI-5、GUI-6 | 完成 |
 
-当前下一项为 GUI-7；GUI-1..6 落地后的 Windows/MSVC 全量 CTest 以
-`docs/state/CURRENT.md` 的滚动基线为准。
+GUI-1..7 已完成，主面板基础版闭环；Windows/MSVC 全量 CTest 以
+`docs/state/CURRENT.md` 的滚动基线为准，后续完整 M7 体验不回填本专项。

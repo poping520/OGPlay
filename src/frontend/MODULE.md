@@ -59,6 +59,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
   提交半帧。
 - GUI 子进程必须关闭 stdin、继承 stdout、把 stderr 覆盖写入条目 `last-run.log`；同
   package 单实例，GUI 退出不得杀死仍运行的游戏。
+- GUI 删除库条目不得删除 external 数据或持久存档；设置面只保存启动必需的
+  system/Profile 目录，所有用户可见失败必须同时进入结构化日志并给出下一步。
 
 ## 禁止
 

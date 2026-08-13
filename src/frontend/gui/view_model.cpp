@@ -11,6 +11,11 @@ namespace {
     return std::find(values.begin(), values.end(), value) != values.end();
 }
 
+[[nodiscard]] std::string PathUtf8(const std::filesystem::path& path) {
+    const auto value = path.generic_u8string();
+    return {reinterpret_cast<const char*>(value.data()), value.size()};
+}
+
 }  // namespace
 
 std::vector<LibraryTile> BuildLibraryTiles(
@@ -25,10 +30,11 @@ std::vector<LibraryTile> BuildLibraryTiles(
         tile.icon_png = entry.icon_png;
         if (entry.Damaged() || !entry.metadata.has_value()) {
             tile.status = LibraryTileStatus::damaged;
-            tile.detail = entry.damage_reason.value_or("Library metadata is unavailable");
+            tile.detail = "库条目损坏：" + entry.damage_reason.value_or(
+                "元数据不可用") + "。可右键删除后重新导入。";
         } else if (!entry.metadata->profile_id.has_value()) {
             tile.status = LibraryTileStatus::missing_profile;
-            tile.detail = "No exact Profile matched this package";
+            tile.detail = "暂无精确 Profile；等待题库收录后重新导入。";
         } else if (Contains(context.external_required_packages, entry.key)) {
             std::error_code error;
             const auto external = entry.metadata->external_dir;
@@ -36,15 +42,19 @@ std::vector<LibraryTile> BuildLibraryTiles(
                 !std::filesystem::is_directory(*external, error) || error) {
                 tile.status = LibraryTileStatus::missing_external;
                 tile.detail = external.has_value()
-                                  ? external->string()
-                                  : "Required external data directory is not configured";
+                                  ? "记录的数据包目录不可用：" +
+                                        PathUtf8(*external) +
+                                        "。请重新导入并指认目录。"
+                                  : "未指认必需数据包目录；请重新导入并指认目录。";
             } else if (Contains(context.running_packages, entry.key)) {
                 tile.status = LibraryTileStatus::running;
+                tile.detail = "游戏正在运行；请先退出游戏。";
             } else {
                 tile.status = LibraryTileStatus::ready;
             }
         } else if (Contains(context.running_packages, entry.key)) {
             tile.status = LibraryTileStatus::running;
+            tile.detail = "游戏正在运行；请先退出游戏。";
         } else {
             tile.status = LibraryTileStatus::ready;
         }

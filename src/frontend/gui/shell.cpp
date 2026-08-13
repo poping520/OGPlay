@@ -29,7 +29,9 @@
 #include "ogplay/runtime/integration/host_image_decode.h"
 
 #include "import_ui.h"
+#include "management_ui.h"
 #include "process_manager.h"
+#include "settings_ui.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -90,23 +92,25 @@ struct GuiOptions final {
     return {*root, smoke_frames};
 }
 
+[[nodiscard]] std::string PathUtf8(const std::filesystem::path& path) {
+    const auto value = path.generic_u8string();
+    return {reinterpret_cast<const char*>(value.data()), value.size()};
+}
+
 void PrepareLog(core::Logger& logger, const std::filesystem::path& root) {
     std::filesystem::create_directories(root);
     const auto path = root / "gui.log";
     {
         std::ofstream truncate(path, std::ios::binary | std::ios::trunc);
-        if (!truncate) throw std::runtime_error("cannot create GUI log: " + path.string());
+        if (!truncate) {
+            throw std::runtime_error("cannot create GUI log: " + PathUtf8(path));
+        }
     }
     logger.AddSink(std::make_shared<core::FileSink>(path), core::LogLevel::info);
 }
 
 [[noreturn]] void ThrowSdl(const std::string_view operation) {
     throw std::runtime_error(std::string(operation) + " failed: " + SDL_GetError());
-}
-
-[[nodiscard]] std::string PathUtf8(const std::filesystem::path& path) {
-    const auto value = path.generic_u8string();
-    return {reinterpret_cast<const char*>(value.data()), value.size()};
 }
 
 class SdlVideo final {
@@ -347,8 +351,13 @@ struct Badge final {
     return {};
 }
 
-[[nodiscard]] bool DrawTile(const LibraryTile& tile,
-                            const LibraryTextures& textures) {
+struct TileAction final {
+    bool launch_requested{};
+    bool delete_requested{};
+};
+
+[[nodiscard]] TileAction DrawTile(const LibraryTile& tile,
+                                  const LibraryTextures& textures) {
     constexpr float icon_size = 128.0F;
     constexpr float tile_width = 152.0F;
     ImGui::PushID(tile.key.c_str());
@@ -396,14 +405,21 @@ struct Badge final {
     ImGui::SetCursorPosX(left + std::max(0.0F, (tile_width - label_width) * 0.5F));
     ImGui::TextUnformatted(fitted.c_str());
     ImGui::EndGroup();
-    const auto selected = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+    TileAction action{.launch_requested =
+                          ImGui::IsItemClicked(ImGuiMouseButton_Left)};
+    if (ImGui::BeginPopupContextItem("磁贴操作")) {
+        action.delete_requested = ImGui::MenuItem("删除游戏");
+        ImGui::EndPopup();
+    }
     ImGui::PopID();
-    return selected;
+    return action;
 }
 
 struct LibraryAction final {
     bool import_requested{};
+    bool settings_requested{};
     std::optional<std::string> selected_package;
+    std::optional<std::string> delete_package;
 };
 
 [[nodiscard]] LibraryAction DrawLibrary(
@@ -423,9 +439,7 @@ struct LibraryAction final {
                              ImGui::GetWindowWidth() - buttons_width));
     const auto import_requested = ImGui::Button("导入游戏");
     ImGui::SameLine();
-    ImGui::BeginDisabled();
-    ImGui::Button("设置");
-    ImGui::EndDisabled();
+    const auto settings_requested = ImGui::Button("设置");
     ImGui::Separator();
     ImGui::Spacing();
     if (tiles.empty()) {
@@ -433,7 +447,8 @@ struct LibraryAction final {
         ImGui::TextWrapped("游戏库为空。导入游戏后会显示在这里。");
         if (ImGui::Button("导入游戏")) {
             ImGui::End();
-            return {.import_requested = true};
+            return {.import_requested = true,
+                    .settings_requested = settings_requested};
         }
     } else {
         constexpr float tile_width = 152.0F;
@@ -443,14 +458,26 @@ struct LibraryAction final {
             1, static_cast<int>((available + spacing) / (tile_width + spacing)));
         for (std::size_t index = 0; index < tiles.size(); ++index) {
             if (index % static_cast<std::size_t>(columns) != 0) ImGui::SameLine();
-            if (DrawTile(tiles[index], textures)) {
+            const auto tile_action = DrawTile(tiles[index], textures);
+            if (tile_action.launch_requested || tile_action.delete_requested) {
                 ImGui::End();
-                return {.selected_package = tiles[index].key};
+                return {
+                    .settings_requested = settings_requested,
+                    .selected_package = tile_action.launch_requested
+                                            ? std::optional<std::string>{
+                                                  tiles[index].key}
+                                            : std::optional<std::string>{},
+                    .delete_package = tile_action.delete_requested
+                                          ? std::optional<std::string>{
+                                                tiles[index].key}
+                                          : std::optional<std::string>{},
+                };
             }
         }
     }
     ImGui::End();
-    return {.import_requested = import_requested};
+    return {.import_requested = import_requested,
+            .settings_requested = settings_requested};
 }
 
 [[nodiscard]] const LibraryTile* FindTile(
@@ -474,7 +501,7 @@ struct LibraryAction final {
 int RunShell(const GuiOptions& options, core::Logger& logger) {
     PrepareLog(logger, options.library_root);
     logger.Write(core::LogLevel::info, "frontend.gui", "GUI shell starting", {},
-                 {{"library_root", options.library_root.string()}});
+                 {{"library_root", PathUtf8(options.library_root)}});
 
     SdlVideo video;
     const auto* vendor_bytes = glGetString(GL_VENDOR);
@@ -495,6 +522,8 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
     LibraryStore store(options.library_root);
     GuiImportUi import_ui(video.Window(), store,
                           std::filesystem::path(OGPLAY_SOURCE_DIR), logger);
+    GuiSettingsUi settings_ui(video.Window(), options.library_root, logger);
+    GuiManagementUi management_ui(store, logger);
     GuiProcessManager processes(logger);
     auto entries = store.LoadEntries();
     auto required_external = import_ui.ExternalRequiredPackages(entries);
@@ -520,6 +549,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
             static_cast<void>(import_ui.HandleEvent(event));
+            static_cast<void>(settings_ui.HandleEvent(event));
             if (event.type == SDL_EVENT_QUIT ||
                 event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 if (processes.RunningPackages().empty()) {
@@ -544,10 +574,20 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                                  "\n完整日志：" + PathUtf8(exit.log_path);
                 const auto tail = ReadLogTail(exit.log_path);
                 if (!tail.empty()) result_message += "\n\n日志末尾：\n" + tail;
+                result_message +=
+                    "\n\n这是游戏兼容性问题的诊断证据，可随 issue 一并提交。";
             }
         }
         const auto action = DrawLibrary(tiles, *textures);
         if (action.import_requested) import_ui.OpenApkDialog();
+        if (action.settings_requested) settings_ui.Open();
+        if (action.delete_package.has_value()) {
+            const auto* entry = FindEntry(entries, *action.delete_package);
+            if (entry != nullptr) {
+                management_ui.OpenDelete(
+                    *entry, processes.IsRunning(*action.delete_package));
+            }
+        }
         if (action.selected_package.has_value()) {
             const auto* tile = FindTile(tiles, *action.selected_package);
             const auto* entry = FindEntry(entries, *action.selected_package);
@@ -578,15 +618,37 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                 }
                 result_message +=
                     "\n\n下一步：检查设置中的系统/Profile 目录，或重新导入游戏。";
-                logger.Write(core::LogLevel::error, "frontend.gui.launch",
-                             "launch request failed", {},
-                             {{"package", *action.selected_package},
-                              {"reason", std::string(error.what())}});
+                if (model_error != nullptr) {
+                    logger.Write(
+                        core::LogLevel::error, "frontend.gui.launch",
+                        "launch request failed", {},
+                        {{"package", *action.selected_package},
+                         {"reason", std::string(error.what())},
+                         {"code", static_cast<std::uint64_t>(
+                                      model_error->Code())},
+                         {"path", PathUtf8(model_error->Path())}});
+                } else {
+                    logger.Write(core::LogLevel::error,
+                                 "frontend.gui.launch",
+                                 "launch request failed", {},
+                                 {{"package", *action.selected_package},
+                                  {"reason", std::string(error.what())}});
+                }
             }
         }
         if (import_ui.Draw()) {
             reload_library();
         }
+        if (settings_ui.Draw()) {
+            const auto profile_error = import_ui.ReloadProfiles();
+            reload_library();
+            if (profile_error.has_value()) {
+                result_title = "Profile 目录不可用";
+                result_message = *profile_error +
+                    "\n\n下一步：打开设置，选择有效的 Profile 目录或使用内置默认。";
+            }
+        }
+        if (management_ui.Draw()) reload_library();
         if (!result_title.empty()) {
             ImGui::OpenPopup(result_title.c_str());
         }

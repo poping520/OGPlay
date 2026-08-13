@@ -41,6 +41,7 @@ struct GuiConfig final {
 };
 
 [[nodiscard]] GuiConfig LoadGuiConfig(const std::filesystem::path& library_root);
+void ValidateGuiConfigDirectories(const GuiConfig& config);
 void SaveGuiConfig(const std::filesystem::path& library_root,
                    const GuiConfig& config);
 

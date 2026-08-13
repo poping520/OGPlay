@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,25 @@ ogplay::frontend::LibraryEntry Entry(
 }
 
 }  // namespace
+
+TEST_CASE("GUI messages wait for workflows and preserve FIFO order") {
+    ogplay::frontend::GuiMessageQueue messages;
+    messages.Push("first", "first body");
+    messages.Push("second", "second body");
+
+    CHECK_FALSE(messages.ActivateNext(true));
+    CHECK(messages.Active() == nullptr);
+    CHECK(messages.ActivateNext(false));
+    REQUIRE(messages.Active() != nullptr);
+    CHECK(messages.Active()->title == "first");
+    CHECK_FALSE(messages.ActivateNext(false));
+
+    messages.DismissActive();
+    CHECK(messages.ActivateNext(false));
+    REQUIRE(messages.Active() != nullptr);
+    CHECK(messages.Active()->title == "second");
+    CHECK_THROWS_AS(messages.Push("", "body"), std::invalid_argument);
+}
 
 TEST_CASE("library tiles sort by display name and preserve cached icons") {
     auto second = Entry("org.example.second", "Zulu");

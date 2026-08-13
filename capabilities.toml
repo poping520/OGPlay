@@ -163,7 +163,7 @@ note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹�
 [frontend.gui_shell]
 status = "complete"
 test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_model_tests.cpp"
-note = "Launcher GUI-1/4/7/8 提供双入口与随程序交付 ANGLE 上的 ImGui GLES2 窗口；自适应库网格含严格互斥状态和 CJK 回退，设置页只编辑 system/Profile 目录并验证存在，右键删除保留 external/存档；可见按钮 ID 逐帧审计，重复会让真实 GUI 冒烟明确失败"
+note = "Launcher GUI-1/4/7/8/11 提供双入口与随程序交付 ANGLE 上的 ImGui GLES2 窗口；自适应库网格含严格互斥状态和 CJK 回退，设置页只编辑 system/Profile 目录并验证存在，右键删除保留 external/存档；运行诊断仅在其他 popup 关闭后按 FIFO 呈现；可见按钮 ID 逐帧审计，重复会让真实 GUI 冒烟明确失败"
 
 [frontend.gui_library]
 status = "complete"

@@ -18,6 +18,7 @@
   非致命失败以 `ApplicationVisualFallback` 枚举返回。
 - `BuildLibraryTiles`：将库条目与运行/required-external 事实合成为名称排序的磁贴，
   状态优先级固定为损坏、缺 Profile、缺数据包、运行中、ready。
+- `GuiMessageQueue`：按 FIFO 保存运行/启动诊断，仅在没有其他 popup 时激活下一条。
 - `SelectCjkFont`：按注入候选顺序选择宿主字体，全部缺失时返回空路径供 ASCII 回退。
 - `AnalyzeApkImport` / `BuildLibraryImport`：组合 GUI-3 visuals 与 session 精确 Profile
   匹配，生成可确认的导入摘要和 GUI-2 原子入库请求；时间戳由调用方注入。
@@ -59,6 +60,8 @@
   同名按钮使用 `##` 隐藏后缀或 `PushID` 区分，重复即让真实 GUI 冒烟明确失败。
 - 删除只移除 `library/<package>`；不得触碰库外 external 或同库根的持久存档。设置保存
   后必须重载 Profile catalog，不能继续使用旧目录事实。
+- 游戏运行结果和启动诊断必须排队，且只在导入、设置、删除、上下文菜单和退出确认均
+  未打开时呈现；不得用根级 `OpenPopup` 顶掉正在进行的工作流。
 
 ## 禁止
 

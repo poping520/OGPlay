@@ -1,7 +1,9 @@
 #include "ogplay/frontend/gui_view_model.h"
 
 #include <algorithm>
+#include <stdexcept>
 #include <system_error>
+#include <utility>
 
 namespace ogplay::frontend {
 namespace {
@@ -17,6 +19,27 @@ namespace {
 }
 
 }  // namespace
+
+void GuiMessageQueue::Push(std::string title, std::string message) {
+    if (title.empty() || message.empty()) {
+        throw std::invalid_argument("GUI message title and body must not be empty");
+    }
+    pending_.push_back(
+        GuiMessage{.title = std::move(title), .message = std::move(message)});
+}
+
+bool GuiMessageQueue::ActivateNext(const bool another_popup_open) {
+    if (active_.has_value() || another_popup_open || pending_.empty()) return false;
+    active_ = std::move(pending_.front());
+    pending_.pop_front();
+    return true;
+}
+
+const GuiMessage* GuiMessageQueue::Active() const noexcept {
+    return active_.has_value() ? &*active_ : nullptr;
+}
+
+void GuiMessageQueue::DismissActive() noexcept { active_.reset(); }
 
 std::vector<LibraryTile> BuildLibraryTiles(
     const std::span<const LibraryEntry> entries,

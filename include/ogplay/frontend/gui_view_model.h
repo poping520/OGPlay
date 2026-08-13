@@ -2,7 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -30,6 +32,25 @@ struct LibraryTile final {
     LibraryTileStatus status{LibraryTileStatus::damaged};
     std::vector<std::byte> icon_png;
     std::string detail;
+};
+
+struct GuiMessage final {
+    std::string title;
+    std::string message;
+};
+
+// FIFO presentation model. A queued diagnostic may become active only while
+// no unrelated popup is open, so process results cannot displace workflows.
+class GuiMessageQueue final {
+public:
+    void Push(std::string title, std::string message);
+    [[nodiscard]] bool ActivateNext(bool another_popup_open);
+    [[nodiscard]] const GuiMessage* Active() const noexcept;
+    void DismissActive() noexcept;
+
+private:
+    std::deque<GuiMessage> pending_;
+    std::optional<GuiMessage> active_;
 };
 
 [[nodiscard]] std::vector<LibraryTile> BuildLibraryTiles(

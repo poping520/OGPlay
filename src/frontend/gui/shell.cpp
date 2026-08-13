@@ -540,8 +540,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                       .external_required_packages = required_external});
         textures = std::make_unique<LibraryTextures>(tiles, logger);
     };
-    std::string result_title;
-    std::string result_message;
+    GuiMessageQueue messages;
     bool exit_confirmation_requested{};
     bool running = true;
     std::uint64_t rendered_frames{};
@@ -570,13 +569,13 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
             reload_library();
             for (const auto& exit : exits) {
                 if (exit.exit_code == 0) continue;
-                result_title = "游戏运行失败";
-                result_message = "进程退出码：" + std::to_string(exit.exit_code) +
-                                 "\n完整日志：" + PathUtf8(exit.log_path);
+                auto message = "进程退出码：" + std::to_string(exit.exit_code) +
+                               "\n完整日志：" + PathUtf8(exit.log_path);
                 const auto tail = ReadLogTail(exit.log_path);
-                if (!tail.empty()) result_message += "\n\n日志末尾：\n" + tail;
-                result_message +=
+                if (!tail.empty()) message += "\n\n日志末尾：\n" + tail;
+                message +=
                     "\n\n这是游戏兼容性问题的诊断证据，可随 issue 一并提交。";
+                messages.Push("游戏运行失败", std::move(message));
             }
         }
         const auto action = DrawLibrary(tiles, *textures);
@@ -598,10 +597,10 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                                         "library tile disappeared before launch");
                 }
                 if (tile->status != LibraryTileStatus::ready) {
-                    result_title = "暂时无法启动";
-                    result_message = tile->detail.empty()
-                                         ? "该游戏当前不可启动。"
-                                         : tile->detail;
+                    messages.Push("暂时无法启动",
+                                  tile->detail.empty()
+                                      ? "该游戏当前不可启动。"
+                                      : tile->detail);
                 } else {
                     const auto plan = BuildLaunchPlan(
                         FindSiblingCliExecutable(), store.Root(), *entry,
@@ -610,14 +609,13 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                     reload_library();
                 }
             } catch (const std::exception& error) {
-                result_title = "启动失败";
-                result_message = error.what();
+                std::string message = error.what();
                 const auto* model_error =
                     dynamic_cast<const GuiModelError*>(&error);
                 if (model_error != nullptr && !model_error->Path().empty()) {
-                    result_message += "\n路径：" + PathUtf8(model_error->Path());
+                    message += "\n路径：" + PathUtf8(model_error->Path());
                 }
-                result_message +=
+                message +=
                     "\n\n下一步：检查设置中的系统/Profile 目录，或重新导入游戏。";
                 if (model_error != nullptr) {
                     logger.Write(
@@ -635,6 +633,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                                  {{"package", *action.selected_package},
                                   {"reason", std::string(error.what())}});
                 }
+                messages.Push("启动失败", std::move(message));
             }
         }
         if (import_ui.Draw()) {
@@ -644,25 +643,13 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
             const auto profile_error = import_ui.ReloadProfiles();
             reload_library();
             if (profile_error.has_value()) {
-                result_title = "Profile 目录不可用";
-                result_message = *profile_error +
-                    "\n\n下一步：打开设置，选择有效的 Profile 目录或使用内置默认。";
+                messages.Push(
+                    "Profile 目录不可用",
+                    *profile_error +
+                        "\n\n下一步：打开设置，选择有效的 Profile 目录或使用内置默认。");
             }
         }
         if (management_ui.Draw()) reload_library();
-        if (!result_title.empty()) {
-            ImGui::OpenPopup(result_title.c_str());
-        }
-        if (!result_title.empty() && ImGui::BeginPopupModal(
-                result_title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextWrapped("%s", result_message.c_str());
-            if (GuiButton("关闭##result")) {
-                ImGui::CloseCurrentPopup();
-                result_title.clear();
-                result_message.clear();
-            }
-            ImGui::EndPopup();
-        }
         if (exit_confirmation_requested) ImGui::OpenPopup("退出主面板？");
         if (ImGui::BeginPopupModal("退出主面板？", nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -677,6 +664,21 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                 exit_confirmation_requested = false;
                 running = false;
                 ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        if (messages.ActivateNext(
+                ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup))) {
+            ImGui::OpenPopup(messages.Active()->title.c_str());
+        }
+        if (const auto* message = messages.Active();
+            message != nullptr && ImGui::BeginPopupModal(
+                message->title.c_str(), nullptr,
+                ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("%s", message->message.c_str());
+            if (GuiButton("关闭##result")) {
+                ImGui::CloseCurrentPopup();
+                messages.DismissActive();
             }
             ImGui::EndPopup();
         }

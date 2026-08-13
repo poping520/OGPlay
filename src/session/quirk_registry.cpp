@@ -4,6 +4,7 @@
 #include <cctype>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -123,7 +124,8 @@ void ExactDefinitionKeys(const Table& table, const std::string_view id) {
 }
 
 [[nodiscard]] std::pair<std::filesystem::path, std::string> DecodeTestReference(
-    const std::string_view reference, const std::filesystem::path& source_root,
+    const std::string_view reference,
+    const std::optional<std::filesystem::path>& source_root,
     const std::string_view field) {
     const auto separator = reference.find(':');
     if (separator == std::string_view::npos || separator == 0 ||
@@ -145,7 +147,8 @@ void ExactDefinitionKeys(const Table& table, const std::string_view id) {
     if (component == relative.end() || component->generic_string() != "tests") {
         throw QuirkRegistryError(std::string(field) + " must point below tests/");
     }
-    const auto path = source_root / relative;
+    if (!source_root.has_value()) return {relative, case_name};
+    const auto path = *source_root / relative;
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         throw QuirkRegistryError(std::string(field) + " cannot open " + path.string());
@@ -161,7 +164,7 @@ void ExactDefinitionKeys(const Table& table, const std::string_view id) {
 
 [[nodiscard]] QuirkDefinition DecodeDefinition(
     const std::string_view id, const detail::TomlValue& value,
-    const std::filesystem::path& source_root) {
+    const std::optional<std::filesystem::path>& source_root) {
     if (!ValidId(id)) throw QuirkRegistryError("invalid quirk id " + std::string(id));
     const auto& table = AsTable(value, id);
     ExactDefinitionKeys(table, id);
@@ -179,14 +182,9 @@ void ExactDefinitionKeys(const Table& table, const std::string_view id) {
     return result;
 }
 
-}  // namespace
-
-QuirkRegistry::QuirkRegistry(
-    std::map<std::string, QuirkDefinition, std::less<>> definitions)
-    : definitions_(std::move(definitions)) {}
-
-QuirkRegistry QuirkRegistry::Load(const std::filesystem::path& path,
-                                  const std::filesystem::path& source_root) {
+[[nodiscard]] std::map<std::string, QuirkDefinition, std::less<>>
+LoadDefinitions(const std::filesystem::path& path,
+                const std::optional<std::filesystem::path>& source_root) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         throw QuirkRegistryError("cannot open quirk registry: " + path.string());
@@ -214,7 +212,22 @@ QuirkRegistry QuirkRegistry::Load(const std::filesystem::path& path,
         auto definition = DecodeDefinition(id, value, source_root);
         definitions.emplace(id, std::move(definition));
     }
-    return QuirkRegistry(std::move(definitions));
+    return definitions;
+}
+
+}  // namespace
+
+QuirkRegistry::QuirkRegistry(
+    std::map<std::string, QuirkDefinition, std::less<>> definitions)
+    : definitions_(std::move(definitions)) {}
+
+QuirkRegistry QuirkRegistry::Load(const std::filesystem::path& path,
+                                  const std::filesystem::path& source_root) {
+    return QuirkRegistry(LoadDefinitions(path, source_root));
+}
+
+QuirkRegistry QuirkRegistry::LoadPackaged(const std::filesystem::path& path) {
+    return QuirkRegistry(LoadDefinitions(path, std::nullopt));
 }
 
 const QuirkDefinition* QuirkRegistry::Find(const std::string_view id) const noexcept {

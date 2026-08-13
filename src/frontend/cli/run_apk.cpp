@@ -23,6 +23,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/frontend/mcp_http_server.h"
 #include "ogplay/frontend/mcp_input_dispatch.h"
+#include "ogplay/frontend/data_directory.h"
 #include "ogplay/frontend/run_apk_progress.h"
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
@@ -270,8 +271,8 @@ int RunApkCommand(const int argc, const char* const argv[],
     const std::filesystem::path apk_path{argv[2]};
     std::optional<std::filesystem::path> system_directory;
     std::optional<std::filesystem::path> external_directory;
-    auto profiles_directory =
-        std::filesystem::path(OGPLAY_SOURCE_DIR) / "data" / "profiles";
+    const auto bundled_data = HostBundledDataPaths();
+    auto profiles_directory = bundled_data.profiles_directory;
     std::optional<std::uint64_t> exit_after_frames;
     std::optional<std::uint16_t> mcp_port;
     std::uint32_t supersample_factor{1};
@@ -372,9 +373,8 @@ int RunApkCommand(const int argc, const char* const argv[],
 
     const auto apk_bytes = ReadBytes(apk_path);
     const auto archive = loader::ParseApkArchive(apk_bytes);
-    const auto source_root = std::filesystem::path(OGPLAY_SOURCE_DIR);
-    const auto quirks = session::QuirkRegistry::Load(
-        source_root / "data" / "quirks.toml", source_root);
+    const auto quirks =
+        session::QuirkRegistry::LoadPackaged(bundled_data.quirk_registry);
     const auto profiles = session::TitleProfileCatalog::LoadDirectory(
         profiles_directory, quirks);
     const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);

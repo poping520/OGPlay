@@ -20,6 +20,7 @@
 #include "imgui.h"
 
 #include "ogplay/core/logger.h"
+#include "ogplay/frontend/data_directory.h"
 #include "ogplay/frontend/gui_import.h"
 #include "ogplay/runtime/integration/host_image_decode.h"
 #include "ogplay/session/quirk_registry.h"
@@ -156,10 +157,8 @@ private:
 
 class GuiImportUi::Impl final {
 public:
-    Impl(SDL_Window* window, LibraryStore& store,
-         std::filesystem::path source_root, core::Logger& logger)
-        : window_(window), store_(store), source_root_(std::move(source_root)),
-          logger_(logger) {
+    Impl(SDL_Window* window, LibraryStore& store, core::Logger& logger)
+        : window_(window), store_(store), logger_(logger) {
         event_type_ = SDL_RegisterEvents(1);
         if (event_type_ == 0) {
             throw std::runtime_error("SDL could not allocate a GUI dialog event");
@@ -292,11 +291,12 @@ private:
         profiles_.reset();
         profiles_error_.clear();
         try {
+            const auto bundled = HostBundledDataPaths();
             const auto config = LoadGuiConfig(store_.Root());
             profiles_dir_ = config.profiles_dir.value_or(
-                source_root_ / "data" / "profiles");
-            const auto quirks = session::QuirkRegistry::Load(
-                source_root_ / "data" / "quirks.toml", source_root_);
+                bundled.profiles_directory);
+            const auto quirks = session::QuirkRegistry::LoadPackaged(
+                bundled.quirk_registry);
             profiles_ = std::make_shared<const session::TitleProfileCatalog>(
                 session::TitleProfileCatalog::LoadDirectory(profiles_dir_,
                                                              quirks));
@@ -461,7 +461,6 @@ private:
 
     SDL_Window* window_{};
     LibraryStore& store_;
-    std::filesystem::path source_root_;
     core::Logger& logger_;
     Uint32 event_type_{};
     std::shared_ptr<DialogMailbox> mailbox_{std::make_shared<DialogMailbox>()};
@@ -481,9 +480,8 @@ private:
 };
 
 GuiImportUi::GuiImportUi(SDL_Window* window, LibraryStore& store,
-                         std::filesystem::path source_root,
                          core::Logger& logger)
-    : impl_(std::make_unique<Impl>(window, store, std::move(source_root), logger)) {}
+    : impl_(std::make_unique<Impl>(window, store, logger)) {}
 
 GuiImportUi::~GuiImportUi() = default;
 

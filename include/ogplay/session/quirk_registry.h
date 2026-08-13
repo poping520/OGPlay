@@ -28,6 +28,10 @@ class QuirkRegistry final {
 public:
     [[nodiscard]] static QuirkRegistry Load(const std::filesystem::path& path,
                                             const std::filesystem::path& source_root);
+    // Packaged runtimes retain and validate the test reference shape, while
+    // source existence is enforced before packaging by Load/CI validation.
+    [[nodiscard]] static QuirkRegistry LoadPackaged(
+        const std::filesystem::path& path);
 
     [[nodiscard]] const QuirkDefinition* Find(std::string_view id) const noexcept;
     [[nodiscard]] const std::map<std::string, QuirkDefinition, std::less<>>&

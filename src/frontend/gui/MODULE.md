@@ -10,6 +10,8 @@
 - `RunGuiCommand`：`ogplay gui` 的开发/CI 入口，只接受 `--library-root` 与
   `--smoke-frames`。
 - `RunGuiStandalone`：双击 `ogplay-gui` 的零参数产品入口；失败通过图形消息框呈现。
+- `HostBundledDataPaths`：解析随可执行文件交付的默认 Profile/quirk payload；源码树仅作
+  开发回退。
 - `LibraryStore`：枚举、原子导入和删除 `<root>/library/<package>/` 条目；损坏条目
   仍以带错误原因的记录返回。
 - `LoadGuiConfig` / `SaveGuiConfig`：严格 schema 1 TOML 配置读写。
@@ -60,6 +62,8 @@
   同名按钮使用 `##` 隐藏后缀或 `PushID` 区分，重复即让真实 GUI 冒烟明确失败。
 - 删除只移除 `library/<package>`；不得触碰库外 external 或同库根的持久存档。设置保存
   后必须重载 Profile catalog，不能继续使用旧目录事实。
+- 默认 Profile 与 quirk 注册表必须来自同一完整 bundled data payload；用户覆盖 Profile
+  目录时仍使用 bundled quirk 注册表，发行运行不得依赖编译机源码路径。
 - 游戏运行结果和启动诊断必须排队，且只在导入、设置、删除、上下文菜单和退出确认均
   未打开时呈现；不得用根级 `OpenPopup` 顶掉正在进行的工作流。
 

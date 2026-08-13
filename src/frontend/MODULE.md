@@ -12,6 +12,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - `ogplay-gui` / `ogplay gui`：共用 `frontend/gui` shell；前者是零参数双击入口，后者
   只为开发/CI 接受库根覆盖与有界帧数。点击 ready 条目只 spawn 同目录既有
   `run-apk` 路径；运行状态和退出结果由 SDL 进程对象回收。
+- `HostBundledDataPaths`：优先从可执行文件同目录（macOS 为 bundle Resources）解析随
+  程序交付的 `profiles/` 与 `quirks.toml`；源码树只是开发构建回退。
 - `--external-dir`：把一个宿主目录按 Profile 声明的唯一 external guest 根 lazy mount；
   guest 路径不取决于宿主目录名。
 - `--supersample <1..4>`：显式选择内部渲染倍率，默认 1×。
@@ -50,6 +52,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - `--external-dir` 最多一个；Profile 必须声明唯一 external mount。required 输入缺失在
   创建窗口前失败。
 - quirk Profile 必须通过仓库 `data/quirks.toml` 交叉验证；未注册或无测试引用时失败。
+- GUI 与 `run-apk` 的默认 Profile/quirk 必须来自同一完整 bundled data payload；发行
+  运行不得依赖编译机源码路径，用户 Profile 覆盖也不得绕过 bundled quirk 注册表。
 - pointer 事件按最新 guest frame 与等比内容区映射；黑边不开始手势，已开始的 release
   必须闭合。窗口 FPS 使用独立 `RealtimeClock`，不改变 guest Clock。
 - SoundPool loader 只消费解析后的 source/path；每轮音频补充有界，退出时停止设备。

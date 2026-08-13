@@ -141,6 +141,26 @@ TEST_CASE("C++ quirk registry rejects incomplete and stale test references") {
         ogplay::session::QuirkRegistryError);
 }
 
+TEST_CASE("packaged quirk registry validates references without source tests") {
+    TempTree tree;
+    const auto registry_path =
+        tree.Write("payload/quirks.toml", RegistryText("packaged case"));
+    const auto registry =
+        ogplay::session::QuirkRegistry::LoadPackaged(registry_path);
+    CHECK(registry.Find("legacy_reads") != nullptr);
+
+    auto malformed = RegistryText("packaged case");
+    const auto begin = malformed.find("tests/quirk_required_tests.cpp");
+    REQUIRE(begin != std::string::npos);
+    malformed.replace(begin, std::string("tests/quirk_required_tests.cpp").size(),
+                      "../unsafe.cpp");
+    static_cast<void>(tree.Write("payload/quirks.toml", malformed));
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            ogplay::session::QuirkRegistry::LoadPackaged(registry_path)),
+        ogplay::session::QuirkRegistryError);
+}
+
 TEST_CASE("Title Profile catalogs require registered quirks before matching") {
     TempTree tree;
     const auto registry = BuildRegistry(tree);

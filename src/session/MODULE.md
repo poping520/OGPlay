@@ -33,7 +33,8 @@
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。
 - `ApplyProfileInput` / `ApplyProfileAudio` / `ResolveProfileSoundPoolPath`：只消费 Profile
   的通用 input id、source/path 与资源占位符，不按标题猜测。
-- `QuirkRegistry::Load/Validate`：严格加载 `data/quirks.toml` 并交叉验证 Profile 引用。
+- `QuirkRegistry::Load/LoadPackaged/Validate`：严格加载 `data/quirks.toml` 并交叉验证
+  Profile 引用；源码模式额外验证测试文件/用例存在，发行模式保留测试引用形状验证。
 - `ProfileAssetBundle`：拥有已导入 VFS/audio 字节并拒绝非规范路径、大小写歧义、重复项
   和空资产。
 - `Session::OpenEmpty/Close/State/Step/UntilFrame/Pause/Resume`：确定性会话原语。
@@ -52,7 +53,8 @@
 - identity ABI 只接受 `armeabi` 与 `armeabi-v7a`；APK 匹配不得猜 main library。
 - VFS 输入必须按 guest 根与 source 双重命中；额外输入和 required 文件缺失明确失败。
 - SoundPool pattern 只接受一个 `{resource}` 或 `{resource:0N}`（N 为 1..9）。
-- enabled quirk 必须有注册定义和可定位测试；未注入注册表时不得进入匹配目录。
+- enabled quirk 必须有注册定义和可定位测试；源码/CI 在打包前验证测试文件与用例存在，
+  packaged runtime 至少严格保留其引用形状；未注入注册表时不得进入匹配目录。
 - 生命周期清理顺序固定，状态推进由固定帧步进驱动，不依赖 sleep。
 
 ## 禁止

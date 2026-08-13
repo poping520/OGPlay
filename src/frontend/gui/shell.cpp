@@ -521,8 +521,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                  {{"vendor", vendor}, {"renderer", renderer}, {"version", version}});
     ImGuiSession imgui(video, logger);
     LibraryStore store(options.library_root);
-    GuiImportUi import_ui(video.Window(), store,
-                          std::filesystem::path(OGPLAY_SOURCE_DIR), logger);
+    GuiImportUi import_ui(video.Window(), store, logger);
     GuiSettingsUi settings_ui(video.Window(), options.library_root, logger);
     GuiManagementUi management_ui(store, logger);
     GuiProcessManager processes(logger);

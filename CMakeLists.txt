@@ -526,6 +526,7 @@ endif()
 ogplay_set_project_warnings(ogplay_agent)
 
 add_library(ogplay_frontend
+    src/frontend/data_directory.cpp
     src/frontend/mcp_http_server.cpp
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
@@ -601,9 +602,25 @@ target_compile_definitions(ogplay PRIVATE
 ogplay_set_project_warnings(ogplay)
 ogplay_stage_angle_runtime(ogplay)
 
+add_custom_target(ogplay_stage_data ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:ogplay>/data"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/quirks.toml"
+        "$<TARGET_FILE_DIR:ogplay>/data/quirks.toml"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_FILE_DIR:ogplay>/data/profiles"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/profiles"
+        "$<TARGET_FILE_DIR:ogplay>/data/profiles"
+    DEPENDS ogplay
+    COMMENT "Staging OGPlay Profile and quirk data"
+    VERBATIM)
+
 if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
     add_executable(ogplay-gui WIN32 MACOSX_BUNDLE src/frontend/gui/main.cpp)
     target_link_libraries(ogplay-gui PRIVATE OGPlay::Frontend SDL3::SDL3)
+    add_dependencies(ogplay-gui ogplay_stage_data)
     set_target_properties(ogplay-gui PROPERTIES
         MACOSX_BUNDLE_BUNDLE_NAME "OGPlay"
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.ogplay.launcher")
@@ -613,6 +630,9 @@ if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:ogplay>
                 $<TARGET_BUNDLE_CONTENT_DIR:ogplay-gui>/MacOS/ogplay
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                $<TARGET_FILE_DIR:ogplay>/data
+                $<TARGET_BUNDLE_CONTENT_DIR:ogplay-gui>/Resources/data
             COMMENT "Embedding the OGPlay CLI in the launcher bundle"
             VERBATIM)
     endif()
@@ -630,6 +650,10 @@ install(TARGETS ogplay ogplay_core ogplay_hal ogplay_audio ogplay_video ogplay_i
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES data/quirks.toml
+    DESTINATION ${CMAKE_INSTALL_BINDIR}/data)
+install(DIRECTORY data/profiles
+    DESTINATION ${CMAKE_INSTALL_BINDIR}/data)
 
 if(OGPLAY_BUILD_TESTS)
     include(CTest)
@@ -645,6 +669,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/frontend/mcp_http_server_tests.cpp
         tests/frontend/mcp_input_dispatch_tests.cpp
         tests/frontend/run_apk_progress_tests.cpp
+        tests/frontend/data_directory_tests.cpp
         tests/frontend/gui_import_tests.cpp
         tests/frontend/gui_launch_tests.cpp
         tests/frontend/gui_model_tests.cpp
@@ -796,6 +821,7 @@ if(OGPLAY_BUILD_TESTS)
         OGPLAY_ANGLE_HAS_SWIFTSHADER=$<BOOL:${_angle_has_swiftshader}>
     )
     add_dependencies(ogplay_tests ogplay_dexvm_fixtures)
+    add_dependencies(ogplay_tests ogplay_stage_data)
     if(MSVC)
         target_compile_options(ogplay_tests PRIVATE /wd5285)
         target_link_libraries(ogplay_tests PRIVATE ws2_32)

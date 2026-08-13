@@ -21,8 +21,7 @@ namespace ogplay::frontend {
 // event; all model mutation and GL work stays on the GUI main thread.
 class GuiImportUi final {
 public:
-    GuiImportUi(SDL_Window* window, LibraryStore& store,
-                std::filesystem::path source_root, core::Logger& logger);
+    GuiImportUi(SDL_Window* window, LibraryStore& store, core::Logger& logger);
     ~GuiImportUi();
 
     GuiImportUi(const GuiImportUi&) = delete;

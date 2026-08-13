@@ -79,3 +79,16 @@ view/widget → graphics/media/os/net 其余）、每批全量 CTest 全绿。�
 5. 收尾：`src/runtime/integration/MODULE.md` 与新目录 `MODULE.md` 同步、
    `docs/playbook/NEW-TITLE.md` 中生成器使用说明更新、`CURRENT.md` 滚动
    更新。
+
+## 结果（已完成，形态偏差由 DVM-38 收口）
+
+- `src/runtime/integration/dexvm_android/` 交付 165 个平台类的逐类
+  `Declare_*(context)` 文件 + `catalog`/`shared` + `MODULE.md`；misc 拆散，
+  装配点收敛为单 catalog 入参；System/Date 的 7 个平台动作由 bridge 以
+  类型化成员补入 core 声明（目标缺失即装配失败）。
+- `dexvm_stub_gen.py` 重写为生成逐类 `Declare_*()` builder 骨架
+  （`NeutralHandler`/`PlaceholderString` 工厂，零 handler id），
+  `NEW-TITLE.md` 同步；integration 层 `Register("` 归零；全量 CTest 全绿。
+- 与任务书的偏差：交付形态为"声明逐类 + 实现按域聚合在 `support_*.cpp`
+  填充 `AndroidHandlers` 结构体"（类型化成员消除了字符串 id，但实现未与
+  声明同址）；该迁移期装配由 DVM-38 收口为完全同址。

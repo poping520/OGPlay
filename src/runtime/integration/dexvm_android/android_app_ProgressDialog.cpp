@@ -3,14 +3,14 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_ProgressDialog(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Landroid/app/ProgressDialog;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setMessage", "(Ljava/lang/CharSequence;)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setProgressStyle", "(I)V", handlers.handler_android_widget_noop);
-    builder.Virtual("show", "()V", handlers.handler_android_widget_noop);
-    builder.Virtual("dismiss", "()V", handlers.handler_android_widget_noop);
+    builder.Virtual("<init>", "(Landroid/content/Context;)V", WidgetNoopHandler());
+    builder.Virtual("setMessage", "(Ljava/lang/CharSequence;)V", WidgetNoopHandler());
+    builder.Virtual("setProgressStyle", "(I)V", WidgetNoopHandler());
+    builder.Virtual("show", "()V", WidgetNoopHandler());
+    builder.Virtual("dismiss", "()V", WidgetNoopHandler());
     return std::move(builder).Build();
 }
 

@@ -6,9 +6,11 @@
 intrinsic。`catalog.cpp` 是唯一聚合点；每个平台类由同名源文件导出
 `Declare_<类名>(context)`，返回已经直接持有 handler 的不可变声明。
 
-`shared.h` 只暴露跨类共享 helper、占位工厂和迁移期内部装配。资源、VFS、音频、
-视频、widget、线程与设备事实全部来自显式传入的 `DexVmAndroidContext`，不得读取
-游戏身份或另建宿主状态。
+`shared.h` 只暴露跨类共享 helper、占位工厂和迁移期内部装配；跨类复用的 handler
+以 `shared_handlers.cpp` 中的工厂函数（如 `ViewInitHandler()`、
+`PrefsEditHandler(context)`）形式提供，捕获会话状态的工厂显式接收 context。
+资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
+`DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
 
 ## 不变量
 

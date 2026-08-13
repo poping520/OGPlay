@@ -68,3 +68,13 @@ src/runtime/dexvm/intrinsics/
    一致（数量 + 名字 + descriptor）。
 4. 收尾：`src/runtime/dexvm/MODULE.md` 文件分工更新（三个 handler 文件退场、
    `intrinsics/` 接管）、新目录 `MODULE.md`、`CURRENT.md` 滚动更新。
+
+## 结果（已完成）
+
+- `src/runtime/dexvm/intrinsics/` 交付 68 个 java.*/javax.* 逐类文件 +
+  `catalog`/`shared` + `MODULE.md`，声明与 162 个 core handler 实现同址；
+  `core_catalog.cpp`、`interpreter_builtins.cpp`、`intrinsics_java.cpp`、
+  `intrinsics_string.cpp` 四个集中式文件删除，`RegisterCoreBuiltins()` 变为
+  空操作（DVM-37 删除）。
+- dexvm 层 `Register("` 归零；catalog 唯一性与代表类签名集合测试落地；
+  最大类文件 466 行，全量 CTest 全绿、行为零变化。

@@ -1,13 +1,23 @@
+// SMS sending is a non-goal surface: getDefault answers the cached
+// singleton, sendTextMessage fails with accounting (UnsupportedNetwork).
+
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_telephony_SmsManager(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
     dx::IntrinsicClassBuilder builder("Landroid/telephony/SmsManager;");
     builder.Super("Ljava/lang/Object;");
-    builder.Static("getDefault", "()Landroid/telephony/SmsManager;", handlers.handler_android_sms_get_default);
-    builder.Virtual("sendTextMessage", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V", handlers.handler_android_sms_send_text);
+    builder.Static("getDefault", "()Landroid/telephony/SmsManager;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(
+                Singleton(call, context, "sms",
+                          "Landroid/telephony/SmsManager;"));
+        });
+    builder.Virtual("sendTextMessage",
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+        "Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V",
+        dx::IntrinsicHandler(UnsupportedNetwork));
     return std::move(builder).Build();
 }
 

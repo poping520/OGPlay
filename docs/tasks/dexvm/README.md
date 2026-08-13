@@ -60,6 +60,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-35](DVM-35.md) | java.* intrinsic 按类分文件迁移 | 完成 |
 | [DVM-36](DVM-36.md) | android.* intrinsic 按类分文件迁移 + 生成器切换 | 完成 |
 | [DVM-37](DVM-37.md) | handler 字符串 id 通道整体删除 | 完成 |
+| [DVM-38](DVM-38.md) | android intrinsic 实现与声明完全同址 | 进行中 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

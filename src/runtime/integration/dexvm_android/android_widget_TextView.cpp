@@ -3,23 +3,42 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_TextView(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
     dx::IntrinsicClassBuilder builder("Landroid/widget/TextView;");
     builder.Super("Landroid/view/View;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", handlers.handler_android_view_init);
-    builder.Virtual("setText", "(Ljava/lang/CharSequence;)V", handlers.handler_android_textview_set_text);
-    builder.Virtual("getText", "()Ljava/lang/CharSequence;", handlers.handler_android_textview_get_text);
-    builder.Virtual("setTextColor", "(I)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setTextSize", "(F)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setTextSize", "(IF)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setLines", "(I)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setMaxLines", "(I)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setMaxWidth", "(I)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setGravity", "(I)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setId", "(I)V", handlers.handler_android_widget_noop);
-    builder.Virtual("setTypeface", "(Landroid/graphics/Typeface;)V", handlers.handler_android_widget_noop);
-    builder.Virtual("getPaint", "()Landroid/text/TextPaint;", handlers.handler_android_textview_get_paint);
-    builder.Virtual("addTextChangedListener", "(Landroid/text/TextWatcher;)V", handlers.handler_android_widget_noop);
+    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler());
+    // TextView text is real state in the interpreter's builder buffer so
+    // interpreted logic round-trips what it stored.
+    builder.Virtual("setText", "(Ljava/lang/CharSequence;)V",
+        [](dx::IntrinsicContext& call) {
+            auto& buffer = call.vm.BuilderBuffer(call.receiver);
+            const auto value = call.arguments[0].ref;
+            buffer = value.IsValid()
+                         ? call.vm.Model().StringValue(value)
+                         : std::u16string();
+            return dx::VmValue::Void();
+        });
+    builder.Virtual("getText", "()Ljava/lang/CharSequence;",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(
+                call.vm.Model().NewString(
+                    call.vm.BuilderBuffer(call.receiver)));
+        });
+    builder.Virtual("setTextColor", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setTextSize", "(F)V", WidgetNoopHandler());
+    builder.Virtual("setTextSize", "(IF)V", WidgetNoopHandler());
+    builder.Virtual("setLines", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setMaxLines", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setMaxWidth", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setGravity", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setId", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setTypeface", "(Landroid/graphics/Typeface;)V", WidgetNoopHandler());
+    builder.Virtual("getPaint", "()Landroid/text/TextPaint;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(
+                Singleton(call, context, "text_paint",
+                          "Landroid/text/TextPaint;"));
+        });
+    builder.Virtual("addTextChangedListener", "(Landroid/text/TextWatcher;)V", WidgetNoopHandler());
     return std::move(builder).Build();
 }
 

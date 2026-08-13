@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "ogplay/runtime/vfs/vfs.h"
+
 #include "shared.h"
 
 namespace ogplay::runtime {
@@ -77,6 +79,22 @@ void GuestLog(dx::IntrinsicContext& call, const core::LogLevel level,
     return found->second;
 }
 
+std::string FilePathOf(dx::IntrinsicContext& call,
+                       const dx::VmObjectRef file) {
+    const auto slots = call.vm.Model().InstanceSlots(file);
+    return call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));
+}
+
+DexVmAndroidContext::OutputStream& OutputOf(dx::IntrinsicContext& call,
+                                            const Context& context) {
+    const auto found = context->output_streams.find(call.receiver.Value());
+    if (found == context->output_streams.end()) {
+        throw dx::VmJavaThrow{"Ljava/io/IOException;",
+                              "output stream was never opened"};
+    }
+    return found->second;
+}
+
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
                            std::vector<std::byte> bytes,
                            const char* descriptor) {
@@ -100,6 +118,80 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
     }
 }
 
+[[nodiscard]] std::optional<std::vector<std::byte>> VfsReadAll(
+    const Context& context, const std::string& path) {
+    if (context->vfs == nullptr) return std::nullopt;
+    try {
+        const auto info = context->vfs->Stat(path);
+        const auto descriptor =
+            context->vfs->Open(path, VfsOpenOptions{.read = true});
+        std::vector<std::byte> bytes(info.size);
+        std::size_t cursor = 0;
+        while (cursor < bytes.size()) {
+            const auto got = context->vfs->Read(
+                descriptor, std::span(bytes).subspan(cursor));
+            if (got == 0) break;
+            cursor += got;
+        }
+        context->vfs->Close(descriptor);
+        bytes.resize(cursor);
+        return bytes;
+    } catch (const VfsError&) {
+        return std::nullopt;
+    }
+}
+
+// The File family goes through the shared VFS so a Java save and a native
+// fopen see one world, and so the sandbox overlay persists both (ADR-0020).
+// A missing VFS is a host assembly defect, not a guest-visible gap.
+[[nodiscard]] VirtualFileSystem& RequireVfs(const Context& context) {
+    if (context->vfs == nullptr) {
+        throw dx::DexVmError(
+            dx::DexVmErrorReason::internal_invariant,
+            "the android platform context has no guest filesystem");
+    }
+    return *context->vfs;
+}
+
+// close() is a sandbox flush point, so this is where a save reaches disk.
+void VfsWriteAll(const Context& context, const std::string& path,
+                 const std::span<const std::byte> bytes) {
+    auto& vfs = RequireVfs(context);
+    try {
+        const auto descriptor = vfs.Open(
+            path, VfsOpenOptions{.write = true, .create = true,
+                                 .truncate = true});
+        std::size_t cursor = 0;
+        while (cursor < bytes.size()) {
+            cursor += vfs.Write(descriptor, bytes.subspan(cursor));
+        }
+        vfs.Close(descriptor);
+    } catch (const VfsError& error) {
+        throw dx::VmJavaThrow{"Ljava/io/IOException;",
+                              "cannot write " + path + ": " + error.what()};
+    }
+}
+
+void FlushOutput(dx::IntrinsicContext& call, const Context& context,
+                 const std::uint32_t handle) {
+    const auto found = context->output_streams.find(handle);
+    if (found == context->output_streams.end()) return;
+    VfsWriteAll(context, found->second.path, found->second.bytes);
+    found->second.closed = true;
+    static_cast<void>(call);
+}
+
+dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&) {
+    throw dx::VmJavaThrow{
+        "Ljava/lang/UnsupportedOperationException;",
+        "SMS/network actions are outside the compatibility scope"};
+}
+
+[[nodiscard]] std::string PreferencesPathOf(const Context& context,
+                                            const std::string& name) {
+    return PreferencesGuestPath(context->package_name, name);
+}
+
 dx::VmThreadRuntime& ThreadRuntime(const Context& context) {
     if (context->threads == nullptr) {
         throw dx::DexVmError(
@@ -107,6 +199,48 @@ dx::VmThreadRuntime& ThreadRuntime(const Context& context) {
             "the android platform context has no DexVM thread runtime");
     }
     return *context->threads;
+}
+
+DexVmAndroidContext::VideoViewState* VideoStateOf(
+    const Context& context, const std::uint64_t handle) {
+    const auto found = context->video_views.find(handle);
+    return found == context->video_views.end() ? nullptr : &found->second;
+}
+
+std::int64_t VideoPositionOf(
+    const DexVmAndroidContext::VideoViewState& state,
+    const std::int64_t uptime_ms) {
+    if (!state.playing) return state.base_position_ms;
+    const auto elapsed = std::max<std::int64_t>(
+        uptime_ms - state.start_uptime_ms, 0);
+    return std::min(state.base_position_ms + elapsed, state.duration_ms);
+}
+
+std::optional<std::string> InvokeVideoCompletionListener(
+    dx::Interpreter& vm, DexVmAndroidContext& context,
+    const std::uint64_t handle) {
+    const auto found = context.video_completion.find(handle);
+    if (found == context.video_completion.end() ||
+        !found->second.IsValid()) {
+        return std::nullopt;
+    }
+    auto& linker = vm.Linker();
+    const auto listener_class = vm.Model().ObjectClass(found->second);
+    const auto index = linker.FindVtableIndex(
+        listener_class, "onCompletion", "(Landroid/media/MediaPlayer;)V");
+    if (!index.has_value()) {
+        return "completion listener has no onCompletion method";
+    }
+    const auto player =
+        vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+    const auto outcome = vm.Call(
+        linker.Class(listener_class).vtable[*index],
+        std::vector<dx::VmValue>{dx::VmValue::Ref(found->second),
+                                 dx::VmValue::Ref(player)});
+    if (outcome.exception.IsValid()) {
+        return "onCompletion raised: " + outcome.exception_message;
+    }
+    return std::nullopt;
 }
 
 // Interprets the target's run() to completion on the calling host thread.

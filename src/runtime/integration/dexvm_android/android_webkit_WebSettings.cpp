@@ -3,11 +3,11 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_webkit_WebSettings(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Landroid/webkit/WebSettings;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("setJavaScriptEnabled", "(Z)V", handlers.handler_android_widget_noop);
-    builder.Virtual("getUserAgentString", "()Ljava/lang/String;", handlers.handler_android_telephony_empty_string);
+    builder.Virtual("setJavaScriptEnabled", "(Z)V", WidgetNoopHandler());
+    builder.Virtual("getUserAgentString", "()Ljava/lang/String;", TelephonyEmptyStringHandler());
     return std::move(builder).Build();
 }
 

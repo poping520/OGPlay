@@ -3,13 +3,24 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_Display(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
     dx::IntrinsicClassBuilder builder("Landroid/view/Display;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("getWidth", "()I", handlers.handler_android_display_get_width);
-    builder.Virtual("getHeight", "()I", handlers.handler_android_display_get_height);
-    builder.Virtual("getRotation", "()I", handlers.handler_android_display_get_rotation);
-    builder.Virtual("getOrientation", "()I", handlers.handler_android_display_get_rotation);
+    builder.Virtual("getWidth", "()I",
+        [context](dx::IntrinsicContext&) {
+            return dx::VmValue::Int(
+                static_cast<std::int32_t>(context->surface_width));
+        });
+    builder.Virtual("getHeight", "()I",
+        [context](dx::IntrinsicContext&) {
+            return dx::VmValue::Int(
+                static_cast<std::int32_t>(context->surface_height));
+        });
+    // Managed surface coordinates are landscape-natural and never
+    // rotate independently from the host window.
+    const auto get_rotation = dx::IntrinsicHandler(
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.Virtual("getRotation", "()I", get_rotation);
+    builder.Virtual("getOrientation", "()I", get_rotation);
     return std::move(builder).Build();
 }
 

@@ -3,11 +3,18 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceView(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
     dx::IntrinsicClassBuilder builder("Landroid/view/SurfaceView;");
     builder.Super("Landroid/view/View;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", handlers.handler_android_view_init);
-    builder.Virtual("getHolder", "()Landroid/view/SurfaceHolder;", handlers.handler_android_surface_view_get_holder);
+    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler());
+    builder.Virtual("getHolder", "()Landroid/view/SurfaceHolder;",
+        [context](dx::IntrinsicContext& call) {
+            auto& holder = context->surface_holders[call.receiver.Value()];
+            if (!holder.IsValid()) {
+                holder = call.vm.NewIntrinsicInstance(
+                    "Landroid/view/SurfaceHolder$Impl;");
+            }
+            return dx::VmValue::Ref(holder);
+        });
     return std::move(builder).Build();
 }
 

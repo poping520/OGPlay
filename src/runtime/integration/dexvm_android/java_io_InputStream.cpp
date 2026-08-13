@@ -1,17 +1,75 @@
+#include <algorithm>
+
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_InputStream(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
     dx::IntrinsicClassBuilder builder("Ljava/io/InputStream;");
     builder.Super("Ljava/lang/Object;");
-    builder.Overridable("read", "([BII)I", handlers.handler_android_stream_read_range);
-    builder.Overridable("read", "([B)I", handlers.handler_android_stream_read_full);
-    builder.Overridable("read", "()I", handlers.handler_android_stream_read_one);
-    builder.Overridable("available", "()I", handlers.handler_android_stream_available);
-    builder.Overridable("close", "()V", handlers.handler_android_stream_close);
-    builder.Overridable("skip", "(J)J", handlers.handler_android_stream_skip);
+    builder.Overridable("read", "([BII)I",
+        [context](dx::IntrinsicContext& call) {
+            auto& stream = StreamOf(call, context);
+            const auto array = call.arguments[0].ref;
+            const auto offset = call.arguments[1].AsInt();
+            const auto length = call.arguments[2].AsInt();
+            if (offset < 0 || length < 0) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/IndexOutOfBoundsException;",
+                    "negative stream read range"};
+            }
+            const auto remaining = stream.bytes.size() - stream.cursor;
+            if (remaining == 0) return dx::VmValue::Int(-1);
+            const auto amount = std::min<std::size_t>(
+                static_cast<std::size_t>(length), remaining);
+            call.vm.Model().WriteByteRegion(
+                array, offset,
+                std::span(stream.bytes).subspan(stream.cursor, amount));
+            stream.cursor += amount;
+            return dx::VmValue::Int(static_cast<std::int32_t>(amount));
+        });
+    builder.Overridable("read", "([B)I",
+        [context](dx::IntrinsicContext& call) {
+            auto& stream = StreamOf(call, context);
+            const auto array = call.arguments[0].ref;
+            const auto capacity = call.vm.Model().ArrayLength(array);
+            const auto remaining = stream.bytes.size() - stream.cursor;
+            if (remaining == 0) return dx::VmValue::Int(-1);
+            const auto amount = std::min<std::size_t>(
+                static_cast<std::size_t>(capacity), remaining);
+            call.vm.Model().WriteByteRegion(
+                array, 0,
+                std::span(stream.bytes).subspan(stream.cursor, amount));
+            stream.cursor += amount;
+            return dx::VmValue::Int(static_cast<std::int32_t>(amount));
+        });
+    builder.Overridable("read", "()I",
+        [context](dx::IntrinsicContext& call) {
+            auto& stream = StreamOf(call, context);
+            if (stream.cursor >= stream.bytes.size()) {
+                return dx::VmValue::Int(-1);
+            }
+            return dx::VmValue::Int(static_cast<std::int32_t>(
+                static_cast<std::uint8_t>(stream.bytes[stream.cursor++])));
+        });
+    builder.Overridable("available", "()I",
+        [context](dx::IntrinsicContext& call) {
+            auto& stream = StreamOf(call, context);
+            return dx::VmValue::Int(static_cast<std::int32_t>(
+                stream.bytes.size() - stream.cursor));
+        });
+    builder.Overridable("close", "()V", StreamCloseHandler(context));
+    builder.Overridable("skip", "(J)J",
+        [context](dx::IntrinsicContext& call) {
+            auto& stream = StreamOf(call, context);
+            const auto requested = call.arguments[0].AsLong();
+            const auto remaining = static_cast<std::int64_t>(
+                stream.bytes.size() - stream.cursor);
+            const auto amount =
+                std::max<std::int64_t>(0, std::min(requested, remaining));
+            stream.cursor += static_cast<std::size_t>(amount);
+            return dx::VmValue::Long(amount);
+        });
     return std::move(builder).Build();
 }
 

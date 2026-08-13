@@ -3,12 +3,12 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_RelativeLayout_LayoutParams(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Landroid/widget/RelativeLayout$LayoutParams;");
     builder.Super("Landroid/view/ViewGroup$LayoutParams;");
-    builder.Virtual("<init>", "(II)V", handlers.handler_android_widget_noop);
-    builder.Virtual("addRule", "(I)V", handlers.handler_android_widget_noop);
-    builder.Virtual("addRule", "(II)V", handlers.handler_android_widget_noop);
+    builder.Virtual("<init>", "(II)V", WidgetNoopHandler());
+    builder.Virtual("addRule", "(I)V", WidgetNoopHandler());
+    builder.Virtual("addRule", "(II)V", WidgetNoopHandler());
     return std::move(builder).Build();
 }
 

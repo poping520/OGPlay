@@ -24,6 +24,10 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..37）已交付；存档沙
   类迁入 `integration/dexvm_android/` 的逐类 `Declare_*()`，frontend/bridge 只传
   合并 catalog，生成器改产逐类 builder 骨架；DVM-37 已删除兼容 registry、字符串
   handler id 与懒绑定缓存，声明内嵌实现成为唯一 intrinsic 分发通道。
+- **DVM-38 进行中**（android handler 同址收口）：41 个跨类/platform handler
+  已工厂化、5 个死成员删除、bridge 切换；9 个 support 域已迁 7 个。剩余
+  device/widget_dispatch 与脚手架删除，交接见
+  [`DVM-38`](../tasks/dexvm/DVM-38.md) 进展节。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。

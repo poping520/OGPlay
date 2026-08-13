@@ -61,12 +61,6 @@ void PopulateDeviceServices(AndroidHandlers& handlers,
         return dx::VmValue::Ref(call.vm.NewIntrinsicInstance(
             "Landroid/net/wifi/WifiManager$WifiLock;"));
     });
-    handlers.handler_android_telephony_empty_string = dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
-                      // Absent-SIM answers are the empty string per the
-                      // platform docs.
-        return MakeString(call, "");
-    });
-    handlers.handler_android_telephony_false = dx::IntrinsicHandler([](dx::IntrinsicContext &) { return dx::VmValue::Int(0); });
     handlers.handler_android_telephony_get_sim_state = dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         return dx::VmValue::Int(1);  // SIM_STATE_ABSENT
     });
@@ -118,9 +112,6 @@ void PopulateDeviceServices(AndroidHandlers& handlers,
     });
     handlers.handler_android_locale_get_iso3_country = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         return MakeString(call, context->iso3_country);
-    });
-    handlers.handler_android_locale_get_country = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        return MakeString(call, context->iso_country);
     });
     handlers.handler_android_thread_sleep = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
                       // Unified deterministic time: sleeping advances published
@@ -404,21 +395,6 @@ void PopulateDeviceServices(AndroidHandlers& handlers,
         return MakeString(call, encoded);
     });
 }
-[[nodiscard]] std::string PreferencesPathOf(const Context& context,
-                                            const std::string& name) {
-    return PreferencesGuestPath(context->package_name, name);
-}
-
-[[nodiscard]] PreferenceMap& PreferencesOf(dx::IntrinsicContext& call,
-                                           const Context& context) {
-    const auto found = context->preference_names.find(call.receiver.Value());
-    if (found == context->preference_names.end()) {
-    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-            "SharedPreferences instance has no backing store"};
-    }
-    return context->preferences[found->second];
-}
-
 // Reads the on-disk XML once per name. A damaged file is a real failure the
 // user can act on, not something to silently start over from.
 void LoadPreferencesOnce(const Context& context, const std::string& name) {
@@ -435,39 +411,6 @@ void LoadPreferencesOnce(const Context& context, const std::string& name) {
     }
 }
 
-// commit()/apply() is the flush point: the VFS close persists it.
-void SavePreferences(dx::IntrinsicContext& call, const Context& context) {
-    const auto found = context->preference_names.find(call.receiver.Value());
-    if (found == context->preference_names.end() || context->vfs == nullptr) {
-        return;
-    }
-    try {
-        StorePreferences(*context->vfs,
-                         PreferencesPathOf(context, found->second),
-                         context->preferences[found->second]);
-    } catch (const PreferencesXmlError& error) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", error.what()};
-    }
-}
-
-// Typed preference getter: absent keys answer the caller's default, a
-// type mismatch throws the real ClassCastException.
-template <typename ValueType>
-[[nodiscard]] std::optional<ValueType>
-PreferenceValueOf(dx::IntrinsicContext &call, const Context &context,
-    const std::string& key) {
-    auto& store = PreferencesOf(call, context);
-    const auto found = store.find(key);
-  if (found == store.end())
-    return std::nullopt;
-    const auto* value = std::get_if<ValueType>(&found->second);
-    if (value == nullptr) {
-        throw dx::VmJavaThrow{"Ljava/lang/ClassCastException;",
-                              "preference has another type: " + key};
-    }
-    return *value;
-}
-
 void PopulateSharedPreferences(AndroidHandlers& handlers,
                                const Context& context) {
     handlers.handler_android_context_get_shared_preferences = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
@@ -479,69 +422,6 @@ void PopulateSharedPreferences(AndroidHandlers& handlers,
         context->preference_names[instance.Value()] = name;
         LoadPreferencesOnce(context, name);
         return dx::VmValue::Ref(instance);
-    });
-  handlers.handler_android_prefs_edit = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
-        const auto name = context->preference_names.at(call.receiver.Value());
-        const auto editor =
-            Singleton(call, context, "prefs_editor:" + name,
-                      "Landroid/content/SharedPreferencesEditorImpl;");
-        context->preference_names[editor.Value()] = name;
-        return dx::VmValue::Ref(editor);
-    });
-  handlers.handler_android_prefs_get_boolean = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto value = PreferenceValueOf<bool>(call, context, key);
-        return dx::VmValue::Int(
-            value.value_or(call.arguments[1].AsInt() != 0) ? 1 : 0);
-    });
-  handlers.handler_android_prefs_get_int = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto value = PreferenceValueOf<std::int32_t>(call, context, key);
-        return dx::VmValue::Int(value.value_or(call.arguments[1].AsInt()));
-    });
-  handlers.handler_android_prefs_get_long = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto value = PreferenceValueOf<std::int64_t>(call, context, key);
-        return dx::VmValue::Long(value.value_or(call.arguments[1].AsLong()));
-    });
-  handlers.handler_android_prefs_get_string = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
-        const auto key = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto value = PreferenceValueOf<std::string>(call, context, key);
-        if (!value.has_value()) {
-            return dx::VmValue::Ref(call.arguments[1].ref);
-        }
-        return MakeString(call, *value);
-    });
-    // Edits apply to the in-memory map immediately and commit() writes the
-    // XML back; no staged-rollback behaviour is claimed.
-    handlers.handler_android_prefs_editor_put_boolean = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-                      PreferencesOf(
-                          call,
-                          context)[call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.arguments[1].AsInt() != 0;
-        return Self(call);
-    });
-  handlers.handler_android_prefs_editor_put_int = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
-        PreferencesOf(call,
-                      context)[call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.arguments[1].AsInt();
-        return Self(call);
-    });
-  handlers.handler_android_prefs_editor_put_long = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
-        PreferencesOf(call,
-                      context)[call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.arguments[1].AsLong();
-        return Self(call);
-    });
-  handlers.handler_android_prefs_editor_put_string = dx::IntrinsicHandler([context](dx::IntrinsicContext &call) {
-        PreferencesOf(call,
-                      context)[call.vm.StringUtf8(call.arguments[0].ref)] =
-                call.vm.StringUtf8(call.arguments[1].ref);
-        return Self(call);
-    });
-    handlers.handler_android_prefs_editor_commit = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        SavePreferences(call, context);
-        return dx::VmValue::Int(1);
     });
 }
 

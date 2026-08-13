@@ -3,10 +3,10 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Landroid/widget/AbsoluteLayout$LayoutParams;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "(IIII)V", handlers.handler_android_graphics_noop);
+    builder.Virtual("<init>", "(IIII)V", GraphicsNoopHandler());
     return std::move(builder).Build();
 }
 

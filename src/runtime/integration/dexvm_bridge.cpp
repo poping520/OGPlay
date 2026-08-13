@@ -46,31 +46,29 @@ struct DescriptorWalk final {
 
 void BindPlatformCoreHandlers(
     std::vector<dx::IntrinsicClassDecl>& catalog,
-    const android_intrinsics::AndroidHandlers& handlers) {
-    using HandlerMember =
-        dx::IntrinsicHandler android_intrinsics::AndroidHandlers::*;
+    const std::shared_ptr<DexVmAndroidContext>& android_context) {
     struct Binding final {
         std::string_view owner;
         std::string_view name;
         std::string_view descriptor;
-        HandlerMember implementation;
+        dx::IntrinsicHandler implementation;
     };
-    constexpr Binding bindings[] = {
+    const Binding bindings[] = {
         {"Ljava/lang/System;", "currentTimeMillis", "()J",
-         &android_intrinsics::AndroidHandlers::
-             handler_platform_system_current_time_millis},
+         android_intrinsics::PlatformSystemCurrentTimeMillisHandler(
+             android_context)},
         {"Ljava/lang/System;", "nanoTime", "()J",
-         &android_intrinsics::AndroidHandlers::handler_platform_system_nano_time},
+         android_intrinsics::PlatformSystemNanoTimeHandler(android_context)},
         {"Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
-         &android_intrinsics::AndroidHandlers::handler_platform_system_load_library},
+         android_intrinsics::PlatformSystemLoadLibraryHandler()},
         {"Ljava/lang/System;", "exit", "(I)V",
-         &android_intrinsics::AndroidHandlers::handler_platform_system_exit},
+         android_intrinsics::PlatformSystemExitHandler(android_context)},
         {"Ljava/util/Date;", "<init>", "()V",
-         &android_intrinsics::AndroidHandlers::handler_platform_date_init},
+         android_intrinsics::PlatformDateInitHandler(android_context)},
         {"Ljava/util/Date;", "getTime", "()J",
-         &android_intrinsics::AndroidHandlers::handler_platform_date_get_time},
+         android_intrinsics::PlatformDateGetTimeHandler()},
         {"Ljava/util/Date;", "getYear", "()I",
-         &android_intrinsics::AndroidHandlers::handler_platform_date_get_year},
+         android_intrinsics::PlatformDateGetYearHandler()},
     };
     for (const auto& binding : bindings) {
         bool found = false;
@@ -79,7 +77,7 @@ void BindPlatformCoreHandlers(
             for (auto& method : declaration.methods) {
                 if (method.name == binding.name &&
                     method.descriptor == binding.descriptor) {
-                    method.implementation = handlers.*binding.implementation;
+                    method.implementation = binding.implementation;
                     found = true;
                     break;
                 }
@@ -577,9 +575,7 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->owner = this;
 
     auto core_catalog = dx::CoreIntrinsicCatalog();
-    const auto android_handlers =
-        android_intrinsics::MakeAndroidHandlers(android_context);
-    BindPlatformCoreHandlers(core_catalog, android_handlers);
+    BindPlatformCoreHandlers(core_catalog, android_context);
     impl_->linker.RegisterIntrinsics(core_catalog);
     if (!platform_catalog.empty()) {
         impl_->linker.RegisterIntrinsics(platform_catalog);

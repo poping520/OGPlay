@@ -32,6 +32,10 @@ void GuestLog(dx::IntrinsicContext& call, core::LogLevel level,
               const std::string& line);
 [[nodiscard]] DexVmAndroidContext::Stream& StreamOf(dx::IntrinsicContext& call,
                                                     const Context& context);
+// The receiver's output-stream record; throws the documented IOException
+// when the handle was never opened.
+[[nodiscard]] DexVmAndroidContext::OutputStream& OutputOf(
+    dx::IntrinsicContext& call, const Context& context);
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
                            std::vector<std::byte> bytes,
                            const char* descriptor = "Ljava/io/InputStream;");
@@ -48,6 +52,103 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
 // The session thread runtime; absent only if the platform context was never
 // wired to a bridge, which is a host assembly defect rather than a gap.
 [[nodiscard]] dx::VmThreadRuntime& ThreadRuntime(const Context& context);
+
+// Video view state shared by the VideoView intrinsics and the guest video
+// pump (support_video.cpp): lookup, playback-position math, and the
+// onCompletion listener invocation (fresh MediaPlayer argument, matching
+// device behaviour; returns a rendered message on guest exceptions).
+[[nodiscard]] DexVmAndroidContext::VideoViewState* VideoStateOf(
+    const Context& context, std::uint64_t handle);
+[[nodiscard]] std::int64_t VideoPositionOf(
+    const DexVmAndroidContext::VideoViewState& state, std::int64_t uptime_ms);
+[[nodiscard]] std::optional<std::string> InvokeVideoCompletionListener(
+    dx::Interpreter& vm, DexVmAndroidContext& context, std::uint64_t handle);
+
+// Reads a whole file from the shared guest VFS; nullopt when the VFS is
+// absent or the path does not resolve.
+[[nodiscard]] std::optional<std::vector<std::byte>> VfsReadAll(
+    const Context& context, const std::string& path);
+// close() is a sandbox flush point, so this is where a save reaches disk.
+void VfsWriteAll(const Context& context, const std::string& path,
+                 std::span<const std::byte> bytes);
+// Publishes an output stream's bytes to its VFS path and retires the handle.
+void FlushOutput(dx::IntrinsicContext& call, const Context& context,
+                 std::uint32_t handle);
+// Non-goal SMS/network actions fail with accounting instead of pretending.
+dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&);
+[[nodiscard]] std::string PreferencesPathOf(const Context& context,
+                                            const std::string& name);
+// The guest path stored in a java.io.File instance (slot 0).
+[[nodiscard]] std::string FilePathOf(dx::IntrinsicContext& call,
+                                     dx::VmObjectRef file);
+
+// Shared handler factories: cross-class handlers built on demand by the
+// per-class declaration units. Factories that bind session state take the
+// platform context; stateless ones take nothing.
+[[nodiscard]] dx::IntrinsicHandler ByteOutputWriteRangeHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler EditableClearHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler EditableLengthHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler EditableReplaceHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler FileOutputCloseHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler FileOutputFlushHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler FileOutputWriteBytesHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler FileStreamInitFileHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler FileStreamInitPathHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler GraphicsNoopHandler();
+[[nodiscard]] dx::IntrinsicHandler NetUnsupportedHandler();
+[[nodiscard]] dx::IntrinsicHandler OutputAdoptHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorCommitHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorPutBooleanHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorPutIntHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorPutLongHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsEditorPutStringHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsGetBooleanHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsGetIntHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsGetLongHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PrefsGetStringHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler ReaderAdoptStreamHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler SaxParseUnsupportedHandler();
+[[nodiscard]] dx::IntrinsicHandler SaxSetContentHandlerHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler StreamCloseHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler SurfaceHolderAddCallbackHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetFormatHandler();
+[[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetTypeHandler();
+[[nodiscard]] dx::IntrinsicHandler TelephonyEmptyStringHandler();
+[[nodiscard]] dx::IntrinsicHandler TelephonyFalseHandler();
+[[nodiscard]] dx::IntrinsicHandler ViewInitHandler();
+[[nodiscard]] dx::IntrinsicHandler WidgetNoopHandler();
+[[nodiscard]] dx::IntrinsicHandler WindowmanagerGetDefaultDisplayHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PlatformDateGetTimeHandler();
+[[nodiscard]] dx::IntrinsicHandler PlatformDateGetYearHandler();
+[[nodiscard]] dx::IntrinsicHandler PlatformDateInitHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PlatformSystemCurrentTimeMillisHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PlatformSystemExitHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadLibraryHandler();
+[[nodiscard]] dx::IntrinsicHandler PlatformSystemNanoTimeHandler(
+    const Context& context);
 
 void PopulateContextActivity(AndroidHandlers& handlers, const Context& context);
 void PopulateViewSurface(AndroidHandlers& handlers, const Context& context);

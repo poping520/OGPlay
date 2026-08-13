@@ -43,7 +43,6 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_byte_output_size;
     dx::IntrinsicHandler handler_android_byte_output_to_byte_array;
     dx::IntrinsicHandler handler_android_byte_output_to_string;
-    dx::IntrinsicHandler handler_android_byte_output_write_range;
     dx::IntrinsicHandler handler_android_byte_stream_init_input;
     dx::IntrinsicHandler handler_android_canvas_clip_rect;
     dx::IntrinsicHandler handler_android_canvas_get_clip_bounds;
@@ -75,9 +74,6 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_display_get_height;
     dx::IntrinsicHandler handler_android_display_get_rotation;
     dx::IntrinsicHandler handler_android_display_get_width;
-    dx::IntrinsicHandler handler_android_editable_clear;
-    dx::IntrinsicHandler handler_android_editable_length;
-    dx::IntrinsicHandler handler_android_editable_replace;
     dx::IntrinsicHandler handler_android_edittext_get_editable;
     dx::IntrinsicHandler handler_android_environment_get_external_storage_dir;
     dx::IntrinsicHandler handler_android_environment_get_external_storage_state;
@@ -91,13 +87,8 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_file_length;
     dx::IntrinsicHandler handler_android_file_list;
     dx::IntrinsicHandler handler_android_file_mkdirs;
-    dx::IntrinsicHandler handler_android_file_output_close;
-    dx::IntrinsicHandler handler_android_file_output_flush;
     dx::IntrinsicHandler handler_android_file_output_init_file;
     dx::IntrinsicHandler handler_android_file_output_init_path;
-    dx::IntrinsicHandler handler_android_file_output_write_bytes;
-    dx::IntrinsicHandler handler_android_file_stream_init_file;
-    dx::IntrinsicHandler handler_android_file_stream_init_path;
     dx::IntrinsicHandler handler_android_file_writer_append_char;
     dx::IntrinsicHandler handler_android_file_writer_append_sequence;
     dx::IntrinsicHandler handler_android_file_writer_init_file_append;
@@ -105,7 +96,6 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_glsurfaceview_lifecycle_noop;
     dx::IntrinsicHandler handler_android_glsurfaceview_request_render;
     dx::IntrinsicHandler handler_android_glsurfaceview_set_renderer;
-    dx::IntrinsicHandler handler_android_graphics_noop;
     dx::IntrinsicHandler handler_android_handler_dispatch_message;
     dx::IntrinsicHandler handler_android_handler_handle_message_noop;
     dx::IntrinsicHandler handler_android_handler_init;
@@ -128,7 +118,6 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_intent_filter_add_action;
     dx::IntrinsicHandler handler_android_intent_filter_init;
     dx::IntrinsicHandler handler_android_intent_filter_init_empty;
-    dx::IntrinsicHandler handler_android_locale_get_country;
     dx::IntrinsicHandler handler_android_locale_get_default;
     dx::IntrinsicHandler handler_android_locale_get_iso3_country;
     dx::IntrinsicHandler handler_android_locale_get_iso3_language;
@@ -161,25 +150,12 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_motion_event_get_x_indexed;
     dx::IntrinsicHandler handler_android_motion_event_get_y;
     dx::IntrinsicHandler handler_android_motion_event_get_y_indexed;
-    dx::IntrinsicHandler handler_android_net_unsupported;
     dx::IntrinsicHandler handler_android_network_state_clinit;
-    dx::IntrinsicHandler handler_android_output_adopt;
     dx::IntrinsicHandler handler_android_output_write_one;
     dx::IntrinsicHandler handler_android_paint_get_text_bounds;
     dx::IntrinsicHandler handler_android_paint_set_typeface;
     dx::IntrinsicHandler handler_android_pair_init;
     dx::IntrinsicHandler handler_android_pending_intent_get_broadcast;
-    dx::IntrinsicHandler handler_android_prefs_edit;
-    dx::IntrinsicHandler handler_android_prefs_get_boolean;
-    dx::IntrinsicHandler handler_android_prefs_get_int;
-    dx::IntrinsicHandler handler_android_prefs_get_long;
-    dx::IntrinsicHandler handler_android_prefs_get_string;
-    dx::IntrinsicHandler handler_android_prefs_editor_commit;
-    dx::IntrinsicHandler handler_android_prefs_editor_put_boolean;
-    dx::IntrinsicHandler handler_android_prefs_editor_put_int;
-    dx::IntrinsicHandler handler_android_prefs_editor_put_long;
-    dx::IntrinsicHandler handler_android_prefs_editor_put_string;
-    dx::IntrinsicHandler handler_android_reader_adopt_stream;
     dx::IntrinsicHandler handler_android_reader_read_line;
     dx::IntrinsicHandler handler_android_reader_ready;
     dx::IntrinsicHandler handler_android_receiver_init;
@@ -194,8 +170,6 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_sax_factory_instance;
     dx::IntrinsicHandler handler_android_sax_get_reader;
     dx::IntrinsicHandler handler_android_sax_new_parser;
-    dx::IntrinsicHandler handler_android_sax_parse_unsupported;
-    dx::IntrinsicHandler handler_android_sax_set_content_handler;
     dx::IntrinsicHandler handler_android_scale_type_clinit;
     dx::IntrinsicHandler handler_android_sensor_get_type;
     dx::IntrinsicHandler handler_android_sensor_manager_get_default;
@@ -224,17 +198,11 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_statfs_get_block_size;
     dx::IntrinsicHandler handler_android_statfs_init;
     dx::IntrinsicHandler handler_android_stream_available;
-    dx::IntrinsicHandler handler_android_stream_close;
     dx::IntrinsicHandler handler_android_stream_read_full;
     dx::IntrinsicHandler handler_android_stream_read_one;
     dx::IntrinsicHandler handler_android_stream_read_range;
     dx::IntrinsicHandler handler_android_stream_skip;
-    dx::IntrinsicHandler handler_android_surface_holder_add_callback;
-    dx::IntrinsicHandler handler_android_surface_holder_set_format;
-    dx::IntrinsicHandler handler_android_surface_holder_set_type;
     dx::IntrinsicHandler handler_android_surface_view_get_holder;
-    dx::IntrinsicHandler handler_android_telephony_empty_string;
-    dx::IntrinsicHandler handler_android_telephony_false;
     dx::IntrinsicHandler handler_android_telephony_get_device_id;
     dx::IntrinsicHandler handler_android_telephony_get_line1_number;
     dx::IntrinsicHandler handler_android_telephony_get_network_operator;
@@ -281,7 +249,6 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_view_get_id;
     dx::IntrinsicHandler handler_android_view_get_tree_observer;
     dx::IntrinsicHandler handler_android_view_get_visibility;
-    dx::IntrinsicHandler handler_android_view_init;
     dx::IntrinsicHandler handler_android_view_noop_flag;
     dx::IntrinsicHandler handler_android_view_noop_focus;
     dx::IntrinsicHandler handler_android_view_noop_size;
@@ -292,13 +259,8 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_view_tree_remove_global_listener;
     dx::IntrinsicHandler handler_android_webview_get_settings;
     dx::IntrinsicHandler handler_android_webview_load_url;
-    dx::IntrinsicHandler handler_android_widget_noop;
     dx::IntrinsicHandler handler_android_widget_null;
     dx::IntrinsicHandler handler_android_widget_self;
-    dx::IntrinsicHandler handler_android_widget_zero;
-    dx::IntrinsicHandler handler_android_widget_zero_double;
-    dx::IntrinsicHandler handler_android_widget_zero_float;
-    dx::IntrinsicHandler handler_android_widget_zero_long;
     dx::IntrinsicHandler handler_android_wifi_create_lock;
     dx::IntrinsicHandler handler_android_wifi_get_connection_info;
     dx::IntrinsicHandler handler_android_wifi_get_state;
@@ -308,7 +270,6 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_window_noop;
     dx::IntrinsicHandler handler_android_window_noop_add;
     dx::IntrinsicHandler handler_android_window_noop_clear;
-    dx::IntrinsicHandler handler_android_windowmanager_get_default_display;
     dx::IntrinsicHandler handler_android_zip_entry_get_name;
     dx::IntrinsicHandler handler_android_zip_entry_is_directory;
     dx::IntrinsicHandler handler_android_zip_input_close;
@@ -316,13 +277,6 @@ struct AndroidHandlers final {
     dx::IntrinsicHandler handler_android_zip_input_get_next_entry;
     dx::IntrinsicHandler handler_android_zip_input_init;
     dx::IntrinsicHandler handler_android_zip_input_read_range;
-    dx::IntrinsicHandler handler_platform_date_get_time;
-    dx::IntrinsicHandler handler_platform_date_get_year;
-    dx::IntrinsicHandler handler_platform_date_init;
-    dx::IntrinsicHandler handler_platform_system_current_time_millis;
-    dx::IntrinsicHandler handler_platform_system_exit;
-    dx::IntrinsicHandler handler_platform_system_load_library;
-    dx::IntrinsicHandler handler_platform_system_nano_time;
 };
 
 [[nodiscard]] AndroidHandlers MakeAndroidHandlers(

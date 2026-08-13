@@ -118,3 +118,14 @@ public:
    - 双通道共存：同一 VM 内新通道类与旧 id 通道类各自正确分发。
 3. 收尾：`MODULE.md` 公共 API/不变量新增声明即绑定通道；
    `docs/state/CURRENT.md` 滚动更新；`capabilities.toml` 无能力变化。
+
+## 结果（已完成）
+
+- `IntrinsicMethodDecl::implementation`/`IntrinsicClassDecl::clinit_implementation`
+  按方案末尾追加；`IntrinsicClassBuilder` 落地并比任务书多一个显式
+  `Unimplemented()` 动词（比传空 handler 意图更明确）；`Build()` 装配期校验
+  descriptor 形状、重复成员与 interface 实例字段。
+- 双通道迁移期形态如方案：`implementation` 非空直调，否则回落 DVM-32 懒绑定；
+  miss 诊断键切换为 `<owner>.<name><descriptor>`（id 仅非空时附注）。
+- 新增测试四项（builder 无 registry 直调、装配期拒绝、owner 签名重复记账、
+  双通道共存）；全量 CTest 全绿。双通道与懒绑定机制已由 DVM-37 按计划删除。

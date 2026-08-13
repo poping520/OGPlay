@@ -3,12 +3,23 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_util_zip_ZipEntry(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Ljava/util/zip/ZipEntry;");
     builder.Super("Ljava/lang/Object;");
     builder.Field("name", "Ljava/lang/String;", false);
-    builder.Virtual("getName", "()Ljava/lang/String;", handlers.handler_android_zip_entry_get_name);
-    builder.Virtual("isDirectory", "()Z", handlers.handler_android_zip_entry_is_directory);
+    builder.Virtual("getName", "()Ljava/lang/String;",
+        [](dx::IntrinsicContext& call) {
+            const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+            return dx::VmValue::Ref(dx::VmObjectRef(slots[0].bits));
+        });
+    builder.Virtual("isDirectory", "()Z",
+        [](dx::IntrinsicContext& call) {
+            const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+            const auto name =
+                call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));
+            return dx::VmValue::Int(!name.empty() && name.back() == '/' ? 1
+                                                                        : 0);
+        });
     return std::move(builder).Build();
 }
 

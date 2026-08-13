@@ -49,3 +49,16 @@ handler id。
 3. 收尾：`src/runtime/dexvm/MODULE.md`（公共 API 中 registry 相关条目退场、
    声明即绑定成为唯一通道写入不变量）、`src/runtime/integration/MODULE.md`、
    `CURRENT.md` 滚动更新；`capabilities.toml` 无能力状态变化。
+
+## 结果（已完成）
+
+- 删除清单逐项落地：`IntrinsicRegistry`、decl/LinkedMethod/LinkedClass 的
+  字符串 id 字段与懒绑定缓存、`platform_handlers` 回调、
+  `RegisterAndroidBuiltins` 公共面、`"survey.unimplemented"` 哨兵全部退场；
+  `InvokeIntrinsic` 只读 `method.implementation` 直调。
+- 全仓 grep（src/include/tests/tools）
+  `IntrinsicRegistry|intrinsic_handler|resolved_handler|handler_bound|survey\.unimplemented`
+  与 `Register("` 均为 0 命中；9 个测试文件迁移为声明式注册。
+- 全量 CTest 709/709；`capabilities.toml` 零改动。验收另发现的
+  `AndroidHandlers` 迁移期装配（结构体每 `Declare_*` 全量构造一次）由
+  DVM-38 收口。

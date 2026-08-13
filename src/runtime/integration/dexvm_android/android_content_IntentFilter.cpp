@@ -1,14 +1,20 @@
+// IntentFilter is a no-op container: games only construct it to register
+// receivers the session never dispatches to.
+
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_IntentFilter(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Landroid/content/IntentFilter;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "(Ljava/lang/String;)V", handlers.handler_android_intent_filter_init);
-    builder.Virtual("<init>", "()V", handlers.handler_android_intent_filter_init_empty);
-    builder.Virtual("addAction", "(Ljava/lang/String;)V", handlers.handler_android_intent_filter_add_action);
+    builder.Virtual("<init>", "(Ljava/lang/String;)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Virtual("<init>", "()V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Virtual("addAction", "(Ljava/lang/String;)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     return std::move(builder).Build();
 }
 

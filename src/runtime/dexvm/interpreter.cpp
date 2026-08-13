@@ -11,27 +11,33 @@ namespace ogplay::runtime::dexvm {
 
 void IntrinsicRegistry::Register(std::string handler_id,
                                  IntrinsicHandler handler) {
-    for (const auto& [existing, _] : handlers_) {
-        if (existing == handler_id) {
-            throw DexVmError(DexVmErrorReason::internal_invariant,
-                       "intrinsic handler registered twice: " + handler_id);
-        }
+    if (frozen_) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "intrinsic registry is frozen: " + handler_id);
     }
-    handlers_.emplace_back(std::move(handler_id), std::move(handler));
+    const auto [existing, inserted] =
+        handlers_.try_emplace(std::move(handler_id), std::move(handler));
+    if (!inserted) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "intrinsic handler registered twice: " +
+                             existing->first);
+    }
 }
 
-const IntrinsicHandler *
+const IntrinsicHandler*
 IntrinsicRegistry::Find(const std::string_view handler_id) const {
-    for (const auto& [existing, handler] : handlers_) {
-    if (existing == handler_id)
-      return &handler;
+    const auto found = handlers_.find(handler_id);
+    if (found == handlers_.end()) {
+        return nullptr;
     }
-    return nullptr;
+    return &found->second;
 }
 
 std::size_t IntrinsicRegistry::Size() const noexcept {
     return handlers_.size();
 }
+
+void IntrinsicRegistry::Freeze() noexcept { frozen_ = true; }
 
 // ---- Impl helpers ----------------------------------------------------------
 
@@ -300,7 +306,11 @@ VmValue
 Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
                                    const VmObjectRef receiver,
     const std::span<const VmValue> arguments) {
-    const auto* handler = intrinsics.Find(method.intrinsic_handler);
+    if (!method.handler_bound) {
+        method.resolved_handler = intrinsics.Find(method.intrinsic_handler);
+        method.handler_bound = true;
+    }
+    const auto* handler = method.resolved_handler;
     if (handler == nullptr) {
         if (ledger != nullptr) {
       ledger->RecordUnimplemented("dexvm.intrinsic." + method.intrinsic_handler,
@@ -459,6 +469,7 @@ Interpreter::~Interpreter() = default;
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                 const std::span<const VmValue> arguments) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
+    impl_->intrinsics.Freeze();
     auto& execution = impl_->Execution();
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& frames = execution.frames;
@@ -546,6 +557,7 @@ VmCallOutcome Interpreter::Call(
 
 VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
+    impl_->intrinsics.Freeze();
     auto& execution = impl_->Execution();
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& pending_exception = execution.pending_exception;

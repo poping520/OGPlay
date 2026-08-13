@@ -54,7 +54,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-29](DVM-29.md) | monitor wait-set 与 Object.wait/notify | 完成 |
 | [DVM-30](DVM-30.md) | Asphalt 6 首帧与主界面 exact gate | 完成（未达首帧，边界已固化） |
 | [DVM-31](DVM-31.md) | 解释执行的 EGL10/GL10 façade | 待开始 |
-| [DVM-32](DVM-32.md) | intrinsic handler 链接期绑定（消除逐调用查找） | 待开始 |
+| [DVM-32](DVM-32.md) | intrinsic handler 链接期绑定（消除逐调用查找） | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

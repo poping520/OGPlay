@@ -27,7 +27,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `VmCallOutcome`（值或未捕获 Java 异常 + 消息 + 栈回溯）。tagged 寄存器
   （uninit/cat1/wide 对/ref + 零值放宽）、每指令 1 tick 预算、帧深度上限
   （默认 512 → 真实 StackOverflowError）。invoke 三路由：解释方法压帧、
-  intrinsic 查 `IntrinsicRegistry`（缺失 handler 记账 + UnsatisfiedLinkError）、
+  intrinsic 首次调用从 `IntrinsicRegistry` 绑定 handler 指针到 `LinkedMethod`，
+  后续直接调用（缺失 handler 同样缓存 miss，并继续逐次记账 +
+  UnsatisfiedLinkError）、
   native 走 `NativeMethodBridge`（未注入则记账 + 明确失败）。
   `CreateExecutionContext` 建立显式执行 context；`Call(context, ...)` 隔离其
   帧栈、pending exception、tick、返回值与 monitor recursion，同时共享 linker、
@@ -102,6 +104,12 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   不宣称并行。锁序只有一个方向：执行锁 → 线程运行时互斥量 → context 表互斥
   量，反向获取一律禁止。时间预算仍通过各 context 的 tick 计数约束。
 - guest native 出向调用记入 context 的 `native_depth`；持有该帧时不得停泊。
+- `IntrinsicRegistry` 由 `Interpreter` 独占，任一 `Call`/
+  `EnsureClassInitialized` 首次进入执行锁后即冻结，冻结后注册明确失败。registry
+  使用地址稳定的节点存储；`LinkedMethod::resolved_handler` 只指向其拥有的
+  `IntrinsicHandler`，由执行锁保证单写，已绑定 miss 以独立标记保存。bridge 的
+  析构顺序为 threads → VM → model → linker，因此缓存指针不会越过 registry
+  生命周期。
 
 ## 尚未实现（记账可查）
 
@@ -117,7 +125,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 ## 测试
 
-`tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：算术边界、控制流、
+`tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：intrinsic registry
+冻结/重复注册、命中与重复 miss 绑定，算术边界、控制流、
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
 显式执行 context 交错调用的帧/异常/tick/monitor 隔离）；
 `tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、

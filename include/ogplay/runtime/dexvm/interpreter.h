@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -166,16 +167,35 @@ struct IntrinsicContext final {
     std::span<const VmValue> arguments;
 };
 
-using IntrinsicHandler = std::function<VmValue(IntrinsicContext&)>;
-
 class IntrinsicRegistry final {
 public:
     void Register(std::string handler_id, IntrinsicHandler handler);
-  [[nodiscard]] const IntrinsicHandler *Find(std::string_view handler_id) const;
+    [[nodiscard]] const IntrinsicHandler* Find(
+        std::string_view handler_id) const;
     [[nodiscard]] std::size_t Size() const noexcept;
+    void Freeze() noexcept;
 
 private:
-    std::vector<std::pair<std::string, IntrinsicHandler>> handlers_;
+    struct TransparentStringHash final {
+        using is_transparent = void;
+
+        [[nodiscard]] std::size_t operator()(
+            const std::string_view value) const noexcept {
+            return std::hash<std::string_view>{}(value);
+        }
+        [[nodiscard]] std::size_t operator()(
+            const std::string& value) const noexcept {
+            return (*this)(std::string_view(value));
+        }
+    };
+
+    // unordered_map nodes keep element addresses stable across rehash. The
+    // interpreter caches pointers to these std::function objects after the
+    // registry is frozen at first execution.
+    std::unordered_map<std::string, IntrinsicHandler, TransparentStringHash,
+                       std::equal_to<>>
+        handlers_;
+    bool frozen_{};
 };
 
 // Stage-2 boundary: native methods resolve through this bridge into the A32

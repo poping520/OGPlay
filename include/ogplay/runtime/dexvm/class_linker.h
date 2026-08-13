@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -14,6 +15,10 @@
 #include "ogplay/runtime/dexvm/dexvm_types.h"
 
 namespace ogplay::runtime::dexvm {
+
+struct IntrinsicContext;
+struct VmValue;
+using IntrinsicHandler = std::function<VmValue(IntrinsicContext&)>;
 
 // Class linking: registration, hierarchy resolution, field layout, vtable
 // construction and lazy method precheck (docs/design/dexvm/02-architecture.md
@@ -84,6 +89,11 @@ struct LinkedMethod final {
     std::int32_t vtable_index{-1};
     std::optional<loader::DexMethodCode> code;
     std::string intrinsic_handler;
+    // Lazily bound by the interpreter on first invoke. A bound null pointer
+    // is a real miss (survey stubs and unimplemented intrinsics stay on the
+    // existing miss path). VmExecutionLock guarantees the single writer.
+    mutable const IntrinsicHandler* resolved_handler{};
+    mutable bool handler_bound{};
     bool prechecked{};
 };
 

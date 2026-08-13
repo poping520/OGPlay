@@ -1,13 +1,14 @@
 # 当前状态
 
 更新：2026-08-13 · M9 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
-surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 EGL 面；
+surface 回调）与 DVM-32 intrinsic handler 绑定优化已交付，Asphalt 6 边界前移到
+自带 GLSurfaceView 的 EGL 面；
 存档沙盒 SBX-1..12 已交付；主面板 GUI-1..16 基础版与验收报告已收口
 
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM 已启动**（`DVM-1..30`，ADR-0017/0022）：
+- **M9 DexVM 已启动**（`DVM-1..32`，ADR-0017/0022）：
   阶段 0（AOSP 基线/测量/opcode 目录/dexasm）、阶段 1（解释器内核）、
   阶段 2（JNI 双向桥 + java.* P1）、阶段 3（android.* intrinsic +
   dex_activity + profile v2 + pilot 迁移）全部交付；entry override、静态预置和
@@ -22,6 +23,11 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
   字节码，这是显式记账的限制而非并发。`dexvm.threads`/`dexvm.monitors` 均为
   `partial`：子线程 native 调用仍复用 root guest 栈（需要停泊时以
   `blocking_in_native` 明确失败），native 侧 JNI monitor 表尚未与之合一。
+- **DVM-32 已交付**：intrinsic registry 改为地址稳定的异构哈希表，首次
+  `Call`/`EnsureClassInitialized` 后冻结；每个 `LinkedMethod` 首次调用绑定一次
+  handler 指针，命中后零容器查询，真实 miss 同样只绑定一次但仍逐次记账并保持
+  survey/`UnsatisfiedLinkError` 语义。新增冻结、重复注册、命中缓存与重复 miss
+  回归，Windows/MSVC 全量 705/705。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
@@ -40,7 +46,7 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 702/702；
+能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 705/705；
 macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
 沙盒任务单见 [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)。
 

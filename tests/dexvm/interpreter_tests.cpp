@@ -39,7 +39,8 @@ struct Vm final {
     Interpreter interpreter;
 
     explicit Vm(const InterpreterConfig config = {},
-                const JavaObjectModelConfig model_config = {})
+                const JavaObjectModelConfig model_config = {},
+                const bool register_core_builtins = true)
         : model(strings, arrays, model_config),
           linker(),
           interpreter(
@@ -50,7 +51,9 @@ struct Vm final {
                   return linker;
               }(),
               model, IntrinsicRegistry{}, nullptr, ledger, config) {
-        interpreter.RegisterCoreBuiltins();
+        if (register_core_builtins) {
+            interpreter.RegisterCoreBuiltins();
+        }
     }
 
     [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
@@ -86,6 +89,93 @@ void ExpectException(const Vm& vm, const VmCallOutcome& outcome,
 }
 
 }  // namespace
+
+TEST_CASE("dexvm intrinsic registry preserves duplicate rejection") {
+    IntrinsicRegistry registry;
+    registry.Register("test.duplicate", [](IntrinsicContext&) {
+        return VmValue::Void();
+    });
+
+    bool rejected = false;
+    try {
+        registry.Register("test.duplicate", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+    } catch (const DexVmError& error) {
+        rejected = true;
+        CHECK(error.Reason() == DexVmErrorReason::internal_invariant);
+        CHECK(std::string(error.what()).find("registered twice") !=
+              std::string::npos);
+    }
+    CHECK(rejected);
+}
+
+TEST_CASE("dexvm intrinsic registry freezes at first execution") {
+    Vm before_call(InterpreterConfig{}, JavaObjectModelConfig{}, false);
+    CHECK_NOTHROW(before_call.interpreter.RegisterCoreBuiltins());
+    ExpectInt(before_call.interpreter.Call(
+                  before_call.Static("Ljava/lang/Math;", "abs", "(I)I"),
+                  std::vector<VmValue>{VmValue::Int(-7)}),
+              7);
+
+    Vm after_call(InterpreterConfig{}, JavaObjectModelConfig{}, false);
+    ExpectInt(after_call.CallStatic("LArith;", "divide", "(II)I",
+                                    {VmValue::Int(8), VmValue::Int(2)}),
+              4);
+    bool rejected = false;
+    try {
+        after_call.interpreter.RegisterCoreBuiltins();
+    } catch (const DexVmError& error) {
+        rejected = true;
+        CHECK(error.Reason() == DexVmErrorReason::internal_invariant);
+        CHECK(std::string(error.what()).find("registry is frozen") !=
+              std::string::npos);
+    }
+    CHECK(rejected);
+}
+
+TEST_CASE("dexvm intrinsic handlers bind once and preserve repeated misses") {
+    Vm hit;
+    const auto hit_method =
+        hit.Static("Ljava/lang/Math;", "abs", "(I)I");
+    CHECK_FALSE(hit.linker.Method(hit_method).handler_bound);
+    ExpectInt(hit.interpreter.Call(
+                  hit_method, std::vector<VmValue>{VmValue::Int(-9)}),
+              9);
+    const auto* resolved = hit.linker.Method(hit_method).resolved_handler;
+    REQUIRE(hit.linker.Method(hit_method).handler_bound);
+    REQUIRE(resolved != nullptr);
+    ExpectInt(hit.interpreter.Call(
+                  hit_method, std::vector<VmValue>{VmValue::Int(-11)}),
+              11);
+    CHECK(hit.linker.Method(hit_method).resolved_handler == resolved);
+
+    Vm miss(InterpreterConfig{}, JavaObjectModelConfig{}, false);
+    const auto miss_method =
+        miss.Static("Ljava/lang/Math;", "abs", "(I)I");
+    ExpectException(
+        miss,
+        miss.interpreter.Call(
+            miss_method, std::vector<VmValue>{VmValue::Int(-1)}),
+        "Ljava/lang/UnsatisfiedLinkError;");
+    REQUIRE(miss.linker.Method(miss_method).handler_bound);
+    CHECK(miss.linker.Method(miss_method).resolved_handler == nullptr);
+    ExpectException(
+        miss,
+        miss.interpreter.Call(
+            miss_method, std::vector<VmValue>{VmValue::Int(-2)}),
+        "Ljava/lang/UnsatisfiedLinkError;");
+
+    const auto hits = miss.ledger.Unimplemented();
+    bool found = false;
+    for (const auto& entry : hits) {
+        if (entry.id == "dexvm.intrinsic.core.math.abs_int") {
+            found = true;
+            CHECK(entry.count == 2U);
+        }
+    }
+    CHECK(found);
+}
 
 TEST_CASE("dexvm arithmetic edge semantics") {
     Vm vm;

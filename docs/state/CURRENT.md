@@ -27,13 +27,12 @@ surface 回调）已交付，Asphalt 6 边界前移到自带 GLSurfaceView 的 E
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
 - **存档持久沙盒 SBX-1..7 全部交付**（ADR-0020 Accepted，任务单
   [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：`SandboxStore` 宿主
-  存储、VFS 目录操作、`AttachSandbox` 覆盖层与落盘点、CLI 接线与一次性沙盒、
+  存储、VFS 目录操作与元数据 syscall、`AttachSandbox` 覆盖层与落盘点、
   DexVM `File` 族改线 VFS（`memory_files` 废除、`mkdirs` 去伪成功）、
-  SharedPreferences 落成平台同构 XML、文件元数据与目录 syscall 绑定。三条
-  guest 写入通道（native syscall、DexVM File、prefs）现在都收敛到同一个 VFS，
-  `run-apk` 默认按 package 持久保存，自动化默认一次性沙盒且 Asphalt 5 golden
-  逐位不变。**用户级闭环仍未演示**：当前最深入的 title 只到标题画面，本地
-  运行没有触发任何存档写入，"进游戏产生存档→重启读到"要等 title 深度推进。
+  SharedPreferences 平台同构 XML、CLI 接线与一次性沙盒。三条 guest 写入通道
+  现在都收敛到同一个 VFS，`run-apk` 默认按 package 持久保存，自动化默认
+  一次性沙盒且 Asphalt 5 golden 逐位不变。**用户级闭环仍未演示**：最深入的
+  title 只到标题画面，不触发存档写入，要等 title 深度推进。
 - **GUI 主面板未启动**：设计见 `docs/design/launcher/`（SDL3 + Dear ImGui，
   WU 分解 GUI-1..7），capabilities 无变化。
 
@@ -83,10 +82,8 @@ macOS/arm64 本次 full CTest 为 636/636（含线程、wait-set 与沙盒用例
 4. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id（需要
    停泊时以 `blocking_in_native` 明确失败），native 侧 JNI monitor 表与
    DexVM monitor 表尚未合一。
-5. Linux M9 严格出口复验仍待执行；五个生产源文件仍超 800 行上限
-   （`android_boundary_hle.cpp` 1001、`android_boundary_gles.cpp` 962、
-   `android_guest_call_session.cpp` 907、`run_apk.cpp` 856、
-   `android_boundary_gles1.cpp` 820）。
+5. Linux M9 严格出口复验待执行；五个生产源文件仍超 800 行
+   （boundary hle/gles/gles1、guest_call_session、run_apk）。
 
 ## 阻塞
 

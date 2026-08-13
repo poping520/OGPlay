@@ -6,10 +6,9 @@
 
 namespace ogplay::runtime::dexvm {
 
-void Interpreter::Impl::StepObjectOrInvoke(Frame& frame,
-                                           const std::uint8_t opcode,
-                                           const std::uint16_t unit) {
-    auto& execution = Execution();
+void Interpreter::Impl::StepObjectOrInvoke(
+    InterpreterExecutionState& execution, Frame& frame,
+    const std::uint8_t opcode, const std::uint16_t unit) {
     auto& frames = execution.frames;
     auto& pending_exception = execution.pending_exception;
     const auto& units = frame.method->code->instructions;
@@ -185,7 +184,7 @@ void Interpreter::Impl::StepObjectOrInvoke(Frame& frame,
         const auto resolved =
             linker->ResolveFieldIndex(units[frame.pc + 1], true);
         const auto& field = linker->Field(resolved.field);
-        EnsureInitialized(field.owner);
+        EnsureInitialized(execution, field.owner);
         if (pending_exception.IsValid()) return;
         auto& storage = linker->MutableClass(field.owner).static_storage;
         if (field.slot + (field.is_wide ? 2U : 1U) > storage.size()) {
@@ -350,14 +349,14 @@ void Interpreter::Impl::StepObjectOrInvoke(Frame& frame,
         const auto& method = linker->Method(target);
 
         if (method.is_static) {
-            EnsureInitialized(method.owner);
+            EnsureInitialized(execution, method.owner);
             if (pending_exception.IsValid()) return;
         }
 
         switch (method.kind) {
             case MethodKind::interpreted: {
                 linker->PrecheckMethod(target);
-                PushInterpretedFrame(method, arguments, width);
+                PushInterpretedFrame(execution, method, arguments, width);
                 return;
             }
             case MethodKind::intrinsic: {

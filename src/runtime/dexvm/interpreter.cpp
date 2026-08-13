@@ -120,8 +120,8 @@ Interpreter::Impl::InternDexString(const std::uint32_t string_index) {
   return model->InternString(std::u16string_view(value.data(), value.size()));
 }
 
-void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
-    auto& execution = Execution();
+void Interpreter::Impl::EnsureInitialized(
+    InterpreterExecutionState& execution, const DexClassId java_class) {
     auto& frames = execution.frames;
     auto& pending_exception = execution.pending_exception;
     auto& linked = linker->MutableClass(java_class);
@@ -144,7 +144,7 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
 
     // Superclass first (interfaces are not initialized transitively).
     if (linked.super.has_value()) {
-        EnsureInitialized(*linked.super);
+        EnsureInitialized(execution, *linked.super);
         if (pending_exception.IsValid()) {
       linker->MutableClass(java_class).clinit_state = ClinitState::failed;
             return;
@@ -245,8 +245,8 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
     const auto clinit = mutable_class.clinit;
     if (clinit.has_value()) {
         linker->PrecheckMethod(*clinit);
-        PushInterpretedFrame(linker->Method(*clinit), {}, 0);
-        const auto outcome = Run(frames.size() - 1);
+        PushInterpretedFrame(execution, linker->Method(*clinit), {}, 0);
+        const auto outcome = Run(execution, frames.size() - 1);
         if (outcome.exception.IsValid()) {
       linker->MutableClass(java_class).clinit_state = ClinitState::failed;
             // Initialization failure is sticky NoClassDefFoundError for
@@ -260,9 +260,10 @@ void Interpreter::Impl::EnsureInitialized(const DexClassId java_class) {
 }
 
 void Interpreter::Impl::PushInterpretedFrame(
-    const LinkedMethod& method, const std::span<const VmValue> arguments,
+    InterpreterExecutionState& execution, const LinkedMethod& method,
+    const std::span<const VmValue> arguments,
     const std::uint32_t caller_advance) {
-    auto& frames = Execution().frames;
+    auto& frames = execution.frames;
     if (frames.size() >= config.max_frames) {
         throw VmJavaThrow{"Ljava/lang/StackOverflowError;",
                           "frame depth " + std::to_string(frames.size())};
@@ -338,8 +339,8 @@ Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
     return (*handler)(context);
 }
 
-VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
-    auto& execution = Execution();
+VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
+                                     const std::size_t entry_depth) {
     auto& frames = execution.frames;
     auto& pending_exception = execution.pending_exception;
     auto& pending_exception_class = execution.pending_exception_class;
@@ -347,7 +348,7 @@ VmCallOutcome Interpreter::Impl::Run(const std::size_t entry_depth) {
     VmCallOutcome outcome;
     while (frames.size() > entry_depth) {
         try {
-            Step();
+            Step(execution);
         } catch (const VmJavaThrow& thrown) {
             ThrowJava(thrown.descriptor, thrown.message);
         } catch (const DexVmError& error) {
@@ -482,7 +483,7 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
     }
     const auto& method = impl_->linker->Method(method_id);
     if (method.is_static) {
-        impl_->EnsureInitialized(method.owner);
+        impl_->EnsureInitialized(execution, method.owner);
         if (pending_exception.IsValid()) {
             VmCallOutcome outcome;
             outcome.exception = pending_exception;
@@ -496,8 +497,8 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
         case MethodKind::interpreted: {
             impl_->linker->PrecheckMethod(method_id);
             const auto entry_depth = frames.size();
-            impl_->PushInterpretedFrame(method, arguments, 0);
-            auto outcome = impl_->Run(entry_depth);
+            impl_->PushInterpretedFrame(execution, method, arguments, 0);
+            auto outcome = impl_->Run(execution, entry_depth);
             return outcome;
         }
         case MethodKind::intrinsic: {
@@ -562,7 +563,7 @@ VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& pending_exception = execution.pending_exception;
     auto& pending_exception_class = execution.pending_exception_class;
-    impl_->EnsureInitialized(java_class);
+    impl_->EnsureInitialized(execution, java_class);
     VmCallOutcome outcome;
     if (pending_exception.IsValid()) {
         outcome.exception = pending_exception;

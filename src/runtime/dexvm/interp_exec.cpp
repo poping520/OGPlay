@@ -28,8 +28,7 @@ namespace {
 
 }  // namespace
 
-void Interpreter::Impl::Step() {
-    auto& execution = Execution();
+void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
     auto& frames = execution.frames;
     auto& pending_exception = execution.pending_exception;
     auto& exit_result = execution.exit_result;
@@ -50,7 +49,7 @@ void Interpreter::Impl::Step() {
         throw DexVmError(DexVmErrorReason::invalid_opcode,
                          "rejected opcode " + std::to_string(opcode));
     }
-    Tick();
+    Tick(execution);
     ++stats.executed_instructions;
     const auto width = info.width;
     const auto advance = [&] { frames.back().pc += width; };
@@ -319,7 +318,7 @@ void Interpreter::Impl::Step() {
         case 0x22: {  // new-instance
             const auto java_class =
                 linker->ResolveTypeIndex(units[frame.pc + 1]);
-            EnsureInitialized(java_class);
+            EnsureInitialized(execution, java_class);
             if (pending_exception.IsValid()) return;
             SetRef(frame, vAA, AllocateInstance(java_class));
             advance();
@@ -432,7 +431,7 @@ void Interpreter::Impl::Step() {
                           "fill-array-data size exceeds array length");
                 return;
             }
-            Tick(count);
+            Tick(execution, count);
             const auto* bytes = reinterpret_cast<const std::uint8_t*>(
                 units.data() + payload_pc + 4);
             for (std::uint32_t index = 0; index < count; ++index) {
@@ -511,7 +510,7 @@ void Interpreter::Impl::Step() {
                          << 16U));
                 }
             } else {
-                Tick(size);
+                Tick(execution, size);
                 for (std::uint32_t index = 0; index < size; ++index) {
                     const auto key_entry = payload_pc + 2 + index * 2U;
                     const auto candidate = static_cast<std::int32_t>(
@@ -610,7 +609,7 @@ void Interpreter::Impl::Step() {
     }
 
     // Remaining families are in the second half of the dispatcher.
-    StepObjectOrInvoke(frame, opcode, unit);
+    StepObjectOrInvoke(execution, frame, opcode, unit);
 }
 
 }  // namespace ogplay::runtime::dexvm

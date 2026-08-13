@@ -110,6 +110,12 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `IntrinsicHandler`，由执行锁保证单写，已绑定 miss 以独立标记保存。bridge 的
   析构顺序为 threads → VM → model → linker，因此缓存指针不会越过 registry
   生命周期。
+- 热路径在 `Call`/`EnsureClassInitialized` 入口解析一次活跃 execution，沿
+  `Run`/`Step`/`Tick`/invoke 与字段家族/`EnsureInitialized`/
+  `PushInterpretedFrame` 显式传引用；逐指令不得重查 thread-local 路由。
+  `Execution()` 只允许出现在入口与冷路径（异常、诊断、native 帧标记）。
+  一次活跃调用内 context 不可切换（`InterpreterExecutionScope` 强制），
+  该引用因此在整个 `Run` 期间恒定。
 
 ## 尚未实现（记账可查）
 

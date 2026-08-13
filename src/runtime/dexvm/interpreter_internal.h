@@ -188,8 +188,11 @@ public:
 
     // ---- execution --------------------------------------------------------
 
-    void Tick(const std::uint64_t amount = 1) {
-        auto& execution = Execution();
+    // The hot path resolves the active execution once per Call entry and
+    // threads the reference through Run/Step/Tick instead of re-resolving
+    // the thread-local routing on every instruction.
+    void Tick(InterpreterExecutionState& execution,
+              const std::uint64_t amount = 1) {
         execution.ticks += amount;
         if (execution.stop_requested.load(std::memory_order_relaxed)) {
             throw DexVmError(DexVmErrorReason::thread_stopped,
@@ -219,26 +222,29 @@ public:
     };
 
     // Runs frames until depth drops below entry_depth; returns outcome.
-    [[nodiscard]] VmCallOutcome Run(std::size_t entry_depth);
+    [[nodiscard]] VmCallOutcome Run(InterpreterExecutionState& execution,
+                                    std::size_t entry_depth);
 
     // Executes one instruction of the top frame. Returns true when the
     // frame stack changed (push/pop) or pc was redirected.
-    void Step();
+    void Step(InterpreterExecutionState& execution);
 
     // Family handlers (separate translation units).
     [[nodiscard]] bool ExecuteArithmetic(Frame& frame, std::uint8_t opcode,
                                          std::uint16_t unit);
-    void StepObjectOrInvoke(Frame& frame, std::uint8_t opcode,
-                            std::uint16_t unit);
+    void StepObjectOrInvoke(InterpreterExecutionState& execution, Frame& frame,
+                            std::uint8_t opcode, std::uint16_t unit);
 
     // Invocation plumbing.
-    void PushInterpretedFrame(const LinkedMethod& method,
+    void PushInterpretedFrame(InterpreterExecutionState& execution,
+                              const LinkedMethod& method,
                               std::span<const VmValue> arguments,
                               std::uint32_t caller_advance);
     [[nodiscard]] VmValue InvokeIntrinsic(const LinkedMethod& method,
                                           VmObjectRef receiver,
                                           std::span<const VmValue> arguments);
-    void EnsureInitialized(DexClassId java_class);
+    void EnsureInitialized(InterpreterExecutionState& execution,
+                           DexClassId java_class);
 
     [[nodiscard]] VmObjectRef AllocateInstance(DexClassId java_class);
 

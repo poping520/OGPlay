@@ -3,15 +3,24 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_AudioManager(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Landroid/media/AudioManager;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("getRingerMode", "()I", handlers.handler_android_audio_manager_get_ringer_mode);
-    builder.Virtual("isMusicActive", "()Z", handlers.handler_android_audio_manager_is_music_active);
-    builder.Virtual("getStreamMaxVolume", "(I)I", handlers.handler_android_audio_manager_get_stream_max_volume);
-    builder.Virtual("setStreamVolume", "(III)V", handlers.handler_android_audio_manager_set_stream_volume);
-    builder.Virtual("getStreamVolume", "(I)I", handlers.handler_android_audio_manager_get_stream_max_volume);
-    builder.Virtual("setStreamMute", "(IZ)V", handlers.handler_android_audio_manager_set_stream_volume);
+    builder.Virtual("getRingerMode", "()I", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(2);  // RINGER_MODE_NORMAL
+    });
+    builder.Virtual("isMusicActive", "()Z", [](dx::IntrinsicContext&) {
+        // OGPlay owns the session mixer and has no external media session.
+        return dx::VmValue::Int(0);
+    });
+    const auto max_volume = dx::IntrinsicHandler(
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(15); });
+    const auto set_volume = dx::IntrinsicHandler(
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Virtual("getStreamMaxVolume", "(I)I", max_volume);
+    builder.Virtual("setStreamVolume", "(III)V", set_volume);
+    builder.Virtual("getStreamVolume", "(I)I", max_volume);
+    builder.Virtual("setStreamMute", "(IZ)V", set_volume);
     return std::move(builder).Build();
 }
 

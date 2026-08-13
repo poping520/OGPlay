@@ -6,8 +6,8 @@
 intrinsic。`catalog.cpp` 是唯一聚合点；每个平台类由同名源文件导出
 `Declare_<类名>(context)`，返回已经直接持有 handler 的不可变声明。
 
-`shared.h` 只暴露跨类共享 helper、占位工厂和迁移期内部装配；跨类复用的 handler
-以 `shared_handlers.cpp` 中的工厂函数（如 `ViewInitHandler()`、
+声明与实现同址是唯一 handler 形态。`shared.h` 只暴露跨类共享 helper 与工厂；
+跨类复用的 handler 以 `shared_handlers.cpp` 中的工厂函数（如 `ViewInitHandler()`、
 `PrefsEditHandler(context)`）形式提供，捕获会话状态的工厂显式接收 context。
 资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
 `DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
@@ -15,6 +15,8 @@ intrinsic。`catalog.cpp` 是唯一聚合点；每个平台类由同名源文件
 ## 不变量
 
 - 每个类描述符只能由一个 `Declare_*()` 文件发布，`catalog.cpp` 不包含行为。
+- 单类专用 handler 必须直接定义在对应 `Declare_*()`；禁止恢复按域填充函数
+  或全量 handler 容器。
 - catalog 返回的每个非抽象方法都直接持有 implementation；字符串 handler id 只
   允许存在于 DVM-37 将删除的兼容实现中，不能进入最终声明。
 - 新类必须进入独立文件；禁止新增 misc、按 title 或按厂商聚合的实现文件。

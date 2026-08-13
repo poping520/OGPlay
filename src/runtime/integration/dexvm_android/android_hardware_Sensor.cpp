@@ -3,10 +3,12 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_hardware_Sensor(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Landroid/hardware/Sensor;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("getType", "()I", handlers.handler_android_sensor_get_type);
+    builder.Virtual("getType", "()I", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(1);  // TYPE_ACCELEROMETER
+    });
     return std::move(builder).Build();
 }
 

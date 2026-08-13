@@ -13,8 +13,6 @@ namespace dx = dexvm;
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
 
-#include "handlers.inc"
-
 // Helpers shared across handler batches; batch-local helpers stay private to
 // their translation unit.
 [[nodiscard]] dx::VmValue Self(dx::IntrinsicContext& call);
@@ -81,6 +79,17 @@ dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&);
 // The guest path stored in a java.io.File instance (slot 0).
 [[nodiscard]] std::string FilePathOf(dx::IntrinsicContext& call,
                                      dx::VmObjectRef file);
+inline constexpr std::int32_t kVisible = 0;
+inline constexpr std::int32_t kInvisible = 4;
+inline constexpr std::int32_t kGone = 8;
+[[nodiscard]] std::int32_t VisibilityOf(const DexVmAndroidContext& context,
+                                        std::uint64_t handle);
+void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
+                    dx::VmObjectRef message);
+[[nodiscard]] dx::VmObjectRef MakeMessage(dx::IntrinsicContext& call,
+                                          std::int32_t what,
+                                          dx::VmObjectRef object,
+                                          dx::VmObjectRef target);
 
 // Shared handler factories: cross-class handlers built on demand by the
 // per-class declaration units. Factories that bind session state take the
@@ -149,20 +158,5 @@ dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadLibraryHandler();
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemNanoTimeHandler(
     const Context& context);
-
-void PopulateContextActivity(AndroidHandlers& handlers, const Context& context);
-void PopulateViewSurface(AndroidHandlers& handlers, const Context& context);
-void PopulateResources(AndroidHandlers& handlers, const Context& context);
-void PopulateStreams(AndroidHandlers& handlers, const Context& context);
-void PopulateFiles(AndroidHandlers& handlers, const Context& context);
-void PopulateDeviceServices(AndroidHandlers& handlers, const Context& context);
-void PopulateAudioVideo(AndroidHandlers& handlers, const Context& context);
-void PopulateSharedPreferences(AndroidHandlers& handlers,
-                               const Context& context);
-void PopulateGraphicsBitmaps(AndroidHandlers& handlers, const Context& context);
-void PopulateWidgets(AndroidHandlers& handlers, const Context& context);
-void PopulateVideoViews(AndroidHandlers& handlers, const Context& context);
-void PopulateWidgetDispatch(AndroidHandlers& handlers, const Context& context);
-void PopulateMisc(AndroidHandlers& handlers, const Context& context);
 
 }  // namespace ogplay::runtime::android_intrinsics

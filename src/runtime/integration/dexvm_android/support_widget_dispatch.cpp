@@ -14,11 +14,15 @@
 
 namespace ogplay::runtime {
 namespace android_intrinsics {
-namespace {
 
-constexpr std::int32_t kVisible = 0;
-constexpr std::int32_t kInvisible = 4;
-constexpr std::int32_t kGone = 8;
+std::int32_t VisibilityOf(const DexVmAndroidContext& context,
+                          const std::uint64_t handle) {
+    const auto found = context.widget_states.find(handle);
+    return found == context.widget_states.end() ? kVisible
+                                                : found->second.visibility;
+}
+
+namespace {
 
 // android.view.Gravity axis masks.
 constexpr std::uint32_t kHorizontalGravityMask = 0x07;
@@ -39,13 +43,6 @@ struct Rect final {
                py < static_cast<float>(y + height);
     }
 };
-
-[[nodiscard]] std::int32_t VisibilityOf(const DexVmAndroidContext& context,
-                                        const std::uint64_t handle) {
-    const auto found = context.widget_states.find(handle);
-    return found == context.widget_states.end() ? kVisible
-                                                : found->second.visibility;
-}
 
 // Derives bounds for every recorded layout view, honouring the current
 // visibility facts (GONE children take no space). Unsupported shapes stay
@@ -125,42 +122,6 @@ struct Rect final {
 }
 
 }  // namespace
-
-void PopulateWidgetDispatch(AndroidHandlers& handlers,
-                            const Context& context) {
-    handlers.handler_android_view_set_on_click_listener = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto handle = call.receiver.Value();
-        context->widget_states[handle].click_listener =
-            call.arguments[0].ref;
-        const auto known = std::any_of(
-            context->layout_views.begin(), context->layout_views.end(),
-            [handle](const auto& fact) {
-                return fact.view.Value() == handle;
-            });
-        if (!known && call.arguments[0].ref.IsValid()) {
-            GuestLog(call, core::LogLevel::warn,
-                     "setOnClickListener: the view has no layout bounds; "
-                     "clicks fall through to Activity.onTouchEvent "
-                     "(recorded gap)");
-        }
-        return dx::VmValue::Void();
-    });
-    handlers.handler_android_view_set_visibility = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto value = call.arguments[0].AsInt();
-        if (value != kVisible && value != kInvisible && value != kGone) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "setVisibility value is not one of "
-                                  "VISIBLE/INVISIBLE/GONE: " +
-                                      std::to_string(value)};
-        }
-        context->widget_states[call.receiver.Value()].visibility = value;
-        return dx::VmValue::Void();
-    });
-    handlers.handler_android_view_get_visibility = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(
-            VisibilityOf(*context, call.receiver.Value()));
-    });
-}
 
 }  // namespace android_intrinsics
 

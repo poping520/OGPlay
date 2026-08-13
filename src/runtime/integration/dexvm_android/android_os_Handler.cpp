@@ -3,18 +3,67 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Handler(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
+    static_cast<void>(context);
     dx::IntrinsicClassBuilder builder("Landroid/os/Handler;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V", handlers.handler_android_handler_init);
-    builder.Virtual("<init>", "(Landroid/os/Looper;)V", handlers.handler_android_handler_init);
-    builder.Virtual("obtainMessage", "()Landroid/os/Message;", handlers.handler_android_handler_obtain_message);
-    builder.Virtual("obtainMessage", "(I)Landroid/os/Message;", handlers.handler_android_handler_obtain_message_what);
-    builder.Virtual("obtainMessage", "(ILjava/lang/Object;)Landroid/os/Message;", handlers.handler_android_handler_obtain_message_what_obj);
-    builder.Virtual("sendMessage", "(Landroid/os/Message;)Z", handlers.handler_android_handler_send_message);
-    builder.Virtual("dispatchMessage", "(Landroid/os/Message;)V", handlers.handler_android_handler_dispatch_message);
-    builder.Virtual("post", "(Ljava/lang/Runnable;)Z", handlers.handler_android_handler_post);
-    builder.Overridable("handleMessage", "(Landroid/os/Message;)V", handlers.handler_android_handler_handle_message_noop);
+    const auto noop = dx::IntrinsicHandler(
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Virtual("<init>", "()V", noop);
+    builder.Virtual("<init>", "(Landroid/os/Looper;)V", noop);
+    builder.Virtual("obtainMessage", "()Landroid/os/Message;",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(
+                call.vm.NewIntrinsicInstance("Landroid/os/Message;"));
+        });
+    builder.Virtual("obtainMessage", "(I)Landroid/os/Message;",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(MakeMessage(
+                call, call.arguments[0].AsInt(), dx::VmObjectRef{},
+                call.receiver));
+        });
+    builder.Virtual("obtainMessage", "(ILjava/lang/Object;)Landroid/os/Message;",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(MakeMessage(
+                call, call.arguments[0].AsInt(), call.arguments[1].ref,
+                call.receiver));
+        });
+    builder.Virtual("sendMessage", "(Landroid/os/Message;)Z",
+        [](dx::IntrinsicContext& call) {
+            DeliverMessage(call, call.receiver, call.arguments[0].ref);
+            return dx::VmValue::Int(1);
+        });
+    builder.Virtual("dispatchMessage", "(Landroid/os/Message;)V",
+        [](dx::IntrinsicContext& call) {
+            DeliverMessage(call, call.receiver, call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.Virtual("post", "(Ljava/lang/Runnable;)Z",
+        [](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            auto& linker = vm.Linker();
+            const auto runnable = call.arguments[0].ref;
+            if (!runnable.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "posted Runnable is null"};
+            }
+            const auto runnable_class = vm.Model().ObjectClass(runnable);
+            const auto index =
+                linker.FindVtableIndex(runnable_class, "run", "()V");
+            if (!index.has_value()) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "posted object has no run()"};
+            }
+            const auto outcome = vm.Call(
+                linker.Class(runnable_class).vtable[*index],
+                std::vector<dx::VmValue>{dx::VmValue::Ref(runnable)});
+            if (outcome.exception.IsValid()) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/RuntimeException;",
+                    "posted run() raised: " + outcome.exception_message};
+            }
+            return dx::VmValue::Int(1);
+        });
+    builder.Overridable("handleMessage", "(Landroid/os/Message;)V", noop);
     return std::move(builder).Build();
 }
 

@@ -201,6 +201,45 @@ dx::VmThreadRuntime& ThreadRuntime(const Context& context) {
     return *context->threads;
 }
 
+void DeliverMessage(dx::IntrinsicContext& call,
+                    const dx::VmObjectRef handler,
+                    const dx::VmObjectRef message) {
+    auto& vm = call.vm;
+    auto& linker = vm.Linker();
+    if (!handler.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "message has no delivery target"};
+    }
+    const auto handler_class = vm.Model().ObjectClass(handler);
+    const auto index = linker.FindVtableIndex(
+        handler_class, "handleMessage", "(Landroid/os/Message;)V");
+    if (!index.has_value()) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              "handler has no handleMessage"};
+    }
+    const auto outcome = vm.Call(
+        linker.Class(handler_class).vtable[*index],
+        std::vector<dx::VmValue>{dx::VmValue::Ref(handler),
+                                 dx::VmValue::Ref(message)});
+    if (outcome.exception.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
+                              "handleMessage raised: " +
+                                  outcome.exception_message};
+    }
+}
+
+dx::VmObjectRef MakeMessage(dx::IntrinsicContext& call,
+                            const std::int32_t what,
+                            const dx::VmObjectRef object,
+                            const dx::VmObjectRef target) {
+    const auto message = call.vm.NewIntrinsicInstance("Landroid/os/Message;");
+    const auto slots = call.vm.Model().InstanceSlots(message);
+    slots[0] = {static_cast<std::uint32_t>(what), dx::SlotTag::cat1};
+    slots[3] = {object.Value(), dx::SlotTag::ref};
+    slots[4] = {target.Value(), dx::SlotTag::ref};
+    return message;
+}
+
 DexVmAndroidContext::VideoViewState* VideoStateOf(
     const Context& context, const std::uint64_t handle) {
     const auto found = context->video_views.find(handle);
@@ -278,28 +317,6 @@ std::optional<std::string> InvokeVideoCompletionListener(
         return rendered;
     }
     return std::nullopt;
-}
-
-}  // namespace android_intrinsics
-
-namespace android_intrinsics {
-
-AndroidHandlers MakeAndroidHandlers(const Context& context) {
-    AndroidHandlers handlers;
-    PopulateContextActivity(handlers, context);
-    PopulateViewSurface(handlers, context);
-    PopulateResources(handlers, context);
-    PopulateStreams(handlers, context);
-    PopulateFiles(handlers, context);
-    PopulateDeviceServices(handlers, context);
-    PopulateAudioVideo(handlers, context);
-    PopulateSharedPreferences(handlers, context);
-    PopulateGraphicsBitmaps(handlers, context);
-    PopulateWidgets(handlers, context);
-    PopulateVideoViews(handlers, context);
-    PopulateWidgetDispatch(handlers, context);
-    PopulateMisc(handlers, context);
-    return handlers;
 }
 
 }  // namespace android_intrinsics

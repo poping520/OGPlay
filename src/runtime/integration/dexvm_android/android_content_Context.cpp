@@ -2,8 +2,27 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+
+// Reads a preferences file once per name. Damaged XML is a real failure.
+void LoadPreferencesOnce(const Context& context, const std::string& name) {
+    if (context->preferences_loaded[name]) return;
+    context->preferences_loaded[name] = true;
+    if (context->vfs == nullptr) return;
+    try {
+        context->preferences[name] =
+            LoadPreferences(*context->vfs, PreferencesPathOf(context, name));
+    } catch (const PreferencesXmlError& error) {
+        throw dx::VmJavaThrow{
+            "Ljava/lang/IllegalStateException;",
+            std::string("SharedPreferences file is not readable: ") +
+                error.what()};
+    }
+}
+
+}  // namespace
+
 Decl Declare_android_content_Context(const Context& context) {
-    const auto handlers = MakeAndroidHandlers(context);
     dx::IntrinsicClassBuilder builder("Landroid/content/Context;");
     builder.Super("Ljava/lang/Object;");
     builder.Virtual("<init>", "()V", [](dx::IntrinsicContext&) {
@@ -88,7 +107,16 @@ Decl Declare_android_content_Context(const Context& context) {
             context->current_intent = intent;
             return dx::VmValue::Void();
         });
-    builder.Virtual("getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;", handlers.handler_android_context_get_shared_preferences);
+    builder.Virtual("getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+        [context](dx::IntrinsicContext& call) {
+            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+            const auto instance = Singleton(
+                call, context, "prefs:" + name,
+                "Landroid/content/SharedPreferencesImpl;");
+            context->preference_names[instance.Value()] = name;
+            LoadPreferencesOnce(context, name);
+            return dx::VmValue::Ref(instance);
+        });
     builder.Virtual("getContentResolver", "()Landroid/content/ContentResolver;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(

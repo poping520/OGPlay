@@ -7,7 +7,7 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..37）已交付；存档沙
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM**（任务已编号至 `DVM-37`，ADR-0017/0022）：阶段 0..3（AOSP 基线/解释器
+- **M9 DexVM**（任务已编号至 `DVM-38`，ADR-0017/0022）：阶段 0..3（AOSP 基线/解释器
   内核/JNI 双向桥/java.*+android.* intrinsic/dex_activity/profile v2/pilot
   迁移）全部交付；entry override、静态预置和 v2-only 清理完成。
 - **阶段 4 线程地基已交付**（DVM-27..29）：显式 per-thread execution
@@ -24,10 +24,9 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..37）已交付；存档沙
   类迁入 `integration/dexvm_android/` 的逐类 `Declare_*()`，frontend/bridge 只传
   合并 catalog，生成器改产逐类 builder 骨架；DVM-37 已删除兼容 registry、字符串
   handler id 与懒绑定缓存，声明内嵌实现成为唯一 intrinsic 分发通道。
-- **DVM-38 进行中**（android handler 同址收口）：41 个跨类/platform handler
-  已工厂化、5 个死成员删除、bridge 切换；9 个 support 域已迁 7 个。剩余
-  device/widget_dispatch 与脚手架删除，交接见
-  [`DVM-38`](../tasks/dexvm/DVM-38.md) 进展节。
+- **DVM-38 已交付**：android handler 全部与逐类声明同址；41 个跨类/platform
+  handler 工厂化，5 个死成员及 `AndroidHandlers`/Populate 脚手架删除。保留的
+  support 文件只负责 surface/video/widget 派发子系统。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
   与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
   SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。

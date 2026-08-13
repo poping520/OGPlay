@@ -1,6 +1,5 @@
 // Factories for handlers shared by several per-class declaration units
-// (and the platform core bindings in dexvm_bridge.cpp). Bodies moved
-// verbatim from the former AndroidHandlers population batches.
+// (and the platform core bindings in dexvm_bridge.cpp).
 
 #include <algorithm>
 #include <chrono>

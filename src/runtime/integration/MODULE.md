@@ -166,9 +166,9 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 `dexvm_android.h` 是唯一公共面。生产装配只调用
 `AndroidIntrinsicCatalog(context)`。每个平台类在
 `dexvm_android/<类名>.cpp` 中以 `Declare_<类名>(context)` 同址声明并直接绑定；
-`dexvm_android/catalog.cpp` 只聚合，`shared.h` 只保存跨类 helper，support 文件只
-构造命名的拥有型实现，不提供字符串查找入口。新增能力必须进入对应类文件，禁止
-恢复集中式 catalog 或字符串分发通道。
+`dexvm_android/catalog.cpp` 只聚合，`shared.h` 只保存跨类 helper/工厂；保留的
+support 文件只实现 surface/video/widget 派发子系统，不承载 handler。新增能力必须
+进入对应类文件，禁止恢复集中式 handler 容器、Populate 或字符串分发通道。
 
 ## 测试
 

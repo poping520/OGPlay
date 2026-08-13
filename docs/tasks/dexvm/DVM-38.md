@@ -94,3 +94,17 @@ handler 实现体直接内联在其类的 `Declare_*()` 里，`AndroidHandlers`/
 `handlers.inc` 会触发目录级重编（~190 TU、3-5 分钟，单工程内无 /MP
 并行）；被中断的构建可能残留 cl/MSBuild 进程锁 PDB（C1041），等其自行
 退出后重试。
+
+## 最终结果（2026-08-13）
+
+- device 的 60 个 handler 与 widget dispatch 的 3 个 handler 已迁入各自
+  `Declare_*()`；Handler/Message 共用的消息构造、派发 helper，以及 widget
+  可见性事实经 `shared.h` 共享。
+- `AndroidHandlers`、`handlers.inc`、`MakeAndroidHandlers`、全部 `Populate*`
+  和 6 个清空的 support 文件已删除；activity/video/widget support 仅保留
+  surface、视频泵与点击派发公共 API。
+- 验收 grep 为 0，目录内最大源文件 507 行。macOS/arm64 keep-going 构建已编译
+  全部 DVM-38 变更单元；标准全量构建在既有 `preferences_xml.cpp` 浮点
+  `std::from_chars` 的 macOS 部署目标可用性错误处停止。现存测试二进制执行结果为
+  653/655，仅两个旧 GUI smoke 因二进制不含 `gui` 命令失败；由于本次对象未能完成
+  链接，该结果只作基线参考，不冒充变更后全量 CTest。`capabilities.toml` 无变化。

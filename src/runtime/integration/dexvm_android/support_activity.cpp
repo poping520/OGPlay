@@ -1,32 +1,7 @@
-// Migrated: Context/Activity/Window/View/Resources handler bodies now live
-// in their per-class declaration files (android_app_Activity.cpp,
-// android_content_Context.cpp and sibling class units). These empty batches
-// keep the assembly linking until the AndroidHandlers scaffold is removed.
-// DispatchSurfaceHolderCallbacks below is lifecycle glue, not a handler.
+// Managed surface lifecycle callback dispatch. Intrinsic handlers live in
+// their per-class declaration files.
 
 #include "shared.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-void PopulateContextActivity(AndroidHandlers& handlers,
-                             const Context& context) {
-    static_cast<void>(handlers);
-    static_cast<void>(context);
-}
-
-void PopulateViewSurface(AndroidHandlers& handlers,
-                         const Context& context) {
-    static_cast<void>(handlers);
-    static_cast<void>(context);
-}
-
-void PopulateResources(AndroidHandlers& handlers,
-                       const Context& context) {
-    static_cast<void>(handlers);
-    static_cast<void>(context);
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
 

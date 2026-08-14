@@ -134,7 +134,9 @@ Settings（设备身份）、Locale、PackageManager 受限面——远小于 on
 语义）并输出分配画像诊断。对 Gameloft 式薄胶水 title，A 期即可支撑全程——
 诚实、机器可判定，不伪造"有 GC"。
 
-**B 期 · 精确非移动 STW 标记清除（Java 厚层 title 前置）**。根枚举口径与
+**B 期 · 精确非移动 STW 标记清除（Java 厚层 title 前置）**。实施方案已
+展开为 [09 · GC-B](09-gc.md)（含现状盘点、停世界机制修订与 WU 分批，
+冲突处以 09 为准）。根枚举口径与
 标记遍历对照 AOSP `vm/alloc/MarkSweep.cpp`/`Heap.cpp`（并发与分代特性
 不参考）：
 

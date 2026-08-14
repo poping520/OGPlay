@@ -42,6 +42,8 @@ vendor 参考基线——目录类数据机器比对、指令语义逐 opcode �
 | [06 · 迁移与冲突裁决](06-migration.md) | 阶段划分、WU 分解、冲突裁决表、风险 |
 | [07 · AOSP 参考策略](07-aosp-reference.md) | vendor 基线、机器校验/语义参考/测试素材三模式、逐组件对照表、红线 |
 | [08 · 解释执行的 EGL/GL façade](08-egl-facade.md) | 自带 GLSurfaceView 的通用形态：javax EGL 面驱动宿主 ANGLE surface |
+| [09 · GC-B 精确标记清除](09-gc.md) | 04 §5 B 期的实施方案：现状盘点、执行锁即停世界、根集/标记/清扫、WU 分批 |
+| [10 · 解释器 v2 threaded 内核](10-interpreter-threaded.md) | 预解码 + 线程化分派的第二内核：与旧 switch 内核并存可切换，bridge 渐进迁移，tick 逐位等价 |
 
 ## 启动条件与当前状态
 

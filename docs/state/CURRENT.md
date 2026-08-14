@@ -72,10 +72,15 @@ Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同�
 
 1. 继续推进 A6 开场后的主界面/输入 gate；另行裁决 A5 历史哈希漂移，未更新期望
    前不得宣告 A5 exact 通过。
-2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
-   已验证短流程，不代表长时游玩 ready。
-3. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
-   只读路径去整串拷贝（分析结论见 DVM-32/33 任务单）。
+2. 按命中批次闭合 DexVM 缺口并推进 GC-B；实施设计已定稿
+   （`docs/design/dexvm/09-gc.md`：执行锁即停世界、安全分配点触发、
+   侧表契约收口、GC-B-1..6 分批），待建任务单启动。当前 512 MiB GC-A
+   预算只覆盖已验证短流程，不代表长时游玩 ready。
+3. 解释器性能余项：解释器 v2 threaded 内核设计已定稿
+   （`docs/design/dexvm/10-interpreter-threaded.md`：FastCode 预解码、
+   computed goto/稠密 switch 双分派、bridge 渐进迁移、V2-1..6 分批，
+   旧内核保留可切换），args-shorty 预计算并入 V2-5；String intrinsic
+   只读路径去整串拷贝仍独立（分析结论见 DVM-32/33 任务单）。
 4. 阶段 4 收口：子线程 native 调用仍复用 root guest 栈与 thread id，native
    侧 JNI monitor 表与 DexVM monitor 表尚未合一。
 5. Linux M9 严格出口复验待执行；五个生产源文件仍超 800 行

@@ -51,6 +51,9 @@ void MountExternalDirectory(
     const session::TitleProfile& profile,
     const std::optional<std::filesystem::path>& directory,
     runtime::VirtualFileSystem& filesystem) {
+    // Android 4.4 exposes the emulated primary volume through both names.
+    // Canonicalizing the storage path preserves shared file and save state.
+    filesystem.AddPathAlias("/storage/emulated/0", "/sdcard");
     const auto* mount = ExternalMount(profile);
     if (mount == nullptr) {
         if (directory.has_value()) {

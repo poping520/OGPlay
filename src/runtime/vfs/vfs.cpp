@@ -97,16 +97,30 @@ std::string NormalizePath(const std::string_view path) {
 
 std::string ResolvePath(
     const std::string_view path,
-    const std::optional<std::string>& working_directory) {
-    if (!path.empty() && path.front() == '/') return NormalizePath(path);
-    if (!working_directory.has_value()) {
-        throw VfsError(kEnotdir,
-                       "relative VFS path requires a working directory");
+    const std::optional<std::string>& working_directory,
+    const std::map<std::string, std::string, std::less<>>& aliases) {
+    std::string normalized;
+    if (!path.empty() && path.front() == '/') {
+        normalized = NormalizePath(path);
+    } else {
+        if (!working_directory.has_value()) {
+            throw VfsError(kEnotdir,
+                           "relative VFS path requires a working directory");
+        }
+        auto absolute = *working_directory;
+        if (absolute != "/") absolute.push_back('/');
+        absolute.append(path);
+        normalized = NormalizePath(absolute);
     }
-    auto absolute = *working_directory;
-    if (absolute != "/") absolute.push_back('/');
-    absolute.append(path);
-    return NormalizePath(absolute);
+    for (const auto& [alias, target] : aliases) {
+        if (normalized == alias) return target;
+        if (normalized.size() > alias.size() &&
+            normalized.starts_with(alias) &&
+            normalized[alias.size()] == '/') {
+            return target + normalized.substr(alias.size());
+        }
+    }
+    return normalized;
 }
 
 VfsError::VfsError(const std::int32_t error_number, std::string message)
@@ -302,16 +316,32 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root,
 std::optional<std::filesystem::path> VirtualFileSystem::Impl::HostPathFor(
         const std::string_view path) const {
         std::scoped_lock lock(mutex_);
-        const auto normalized = ResolvePath(path, working_directory_);
+        const auto normalized = ResolvePath(path, working_directory_, aliases_);
         const auto found = host_backed_.find(normalized);
         if (found == host_backed_.end()) return std::nullopt;
         return found->second;
     }
 
 void VirtualFileSystem::Impl::SetWorkingDirectory(const std::string_view path) {
-        const auto normalized = NormalizeAbsolutePath(path, true);
         std::scoped_lock lock(mutex_);
+        const auto normalized = path == "/"
+                                    ? std::string("/")
+                                    : ResolvePath(path, std::nullopt, aliases_);
         working_directory_ = normalized;
+    }
+
+void VirtualFileSystem::Impl::AddPathAlias(
+        const std::string_view alias, const std::string_view target) {
+        const auto normalized_alias = NormalizeAbsolutePath(alias, true);
+        const auto normalized_target = NormalizeAbsolutePath(target, true);
+        if (normalized_alias == "/" || normalized_alias == normalized_target) {
+            throw VfsError(kEinval, "VFS path alias is invalid");
+        }
+        std::scoped_lock lock(mutex_);
+        if (aliases_.contains(normalized_alias)) {
+            throw VfsError(kEexist, "VFS path alias already exists");
+        }
+        aliases_.emplace(normalized_alias, normalized_target);
     }
 
 std::optional<std::string> VirtualFileSystem::Impl::WorkingDirectory() const {
@@ -332,7 +362,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
             return OpenDirectory(path);
         }
         std::scoped_lock lock(mutex_);
-        const auto normalized = ResolvePath(path, working_directory_);
+        const auto normalized = ResolvePath(path, working_directory_, aliases_);
         auto found = files_.find(normalized);
         if (found == files_.end()) {
             if (!options.create) throw VfsError(kEnoent, "VFS file not found");
@@ -570,6 +600,11 @@ void VirtualFileSystem::MountLazyReadOnly(
 void VirtualFileSystem::MountHostDirectory(
     const std::string_view root, const std::filesystem::path& directory) {
     impl_->MountHostDirectory(root, directory);
+}
+
+void VirtualFileSystem::AddPathAlias(
+    const std::string_view alias, const std::string_view target) {
+    impl_->AddPathAlias(alias, target);
 }
 std::optional<std::filesystem::path> VirtualFileSystem::HostPathFor(
     const std::string_view path) const {

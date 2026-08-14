@@ -327,7 +327,10 @@ void DexActivityLifecycle::PumpJavaThreads() {
 }
 
 void DexActivityLifecycle::PumpVideo() {
-    if (bindings_.context->video_views.empty()) return;
+    if (bindings_.context->video_views.empty() &&
+        bindings_.context->pending_video_completion.empty()) {
+        return;
+    }
     const auto error = runtime::PumpVideoViews(
         bindings_.bridge->Vm(), *bindings_.context,
         bindings_.publish_video_frame);
@@ -356,6 +359,9 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
             CallActivity("onPause", "()V", {});
             CallActivity("onStop", "()V", {});
         }
+        const auto surface_error = runtime::RetireSurfaceHolderGeneration(
+            vm, context);
+        if (surface_error.has_value()) Fail(*surface_error);
         CallActivity("onDestroy", "()V", {});
         activity_started_ = false;
         // The departing activity's own finish() is answered by its retirement.
@@ -407,6 +413,11 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
             CallOnView(context.content_view, "onWindowFocusChanged",
                        "(Z)V", {dx::VmValue::Int(1)});
         }
+        // A replacement Activity installs a new SurfaceView generation.
+        // Callbacks registered during onCreate must observe the already-open
+        // managed host surface before its GL thread can render.
+        DispatchSurfaceHolder(runtime::SurfaceHolderPhase::created);
+        DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
     }
 }
 
@@ -439,9 +450,8 @@ LifecycleFrameState DexActivityLifecycle::Stop() {
             CallActivity("onPause", "()V", {});
         }
         if (was_running) {
-            const auto error = runtime::DispatchSurfaceHolderCallbacks(
-                bindings_.bridge->Vm(), *bindings_.context,
-                runtime::SurfaceHolderPhase::destroyed);
+            const auto error = runtime::RetireSurfaceHolderGeneration(
+                bindings_.bridge->Vm(), *bindings_.context);
             if (error.has_value()) state_ = LifecycleRunState::failed;
         }
         if (was_running && bindings_.context->renderer.IsValid()) {

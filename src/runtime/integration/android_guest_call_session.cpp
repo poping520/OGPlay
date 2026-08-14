@@ -508,6 +508,7 @@ public:
         static_cast<void>(InstallAndroidGuestFrameworkPlatform(
             classes_, invocations_, environment_, strings_, fields_, objects_,
             kRootThreadId, request.platform));
+        static_cast<void>(InstallAndroidGuestJavaMediaClasses(classes_));
         Progress("process-memory-ready");
 
         clone_runtime_ = std::make_unique<GuestCloneThreadRuntime>(

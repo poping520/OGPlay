@@ -253,7 +253,26 @@ TEST_CASE("videoview stopPlayback releases the player") {
     CHECK(vm.context->video_views.empty());
 }
 
-TEST_CASE("videoview without a decoder falls back to immediate completion") {
+TEST_CASE("videoview media controls follow prepared player state") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewVideoView();
+    CHECK_FALSE(vm.CallOn(view, "canSeekForward", "()Z").AsInt());
+    CHECK_FALSE(vm.CallOn(view, "canSeekBackward", "()Z").AsInt());
+    CHECK_FALSE(vm.CallOn(view, "canPause", "()Z").AsInt());
+
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
+    CHECK(vm.CallOn(view, "canSeekForward", "()Z").AsInt() == 1);
+    CHECK(vm.CallOn(view, "canSeekBackward", "()Z").AsInt() == 1);
+    CHECK(vm.CallOn(view, "canPause", "()Z").AsInt() == 1);
+
+    vm.CallOn(view, "stopPlayback", "()V");
+    CHECK_FALSE(vm.CallOn(view, "canSeekForward", "()Z").AsInt());
+    CHECK_FALSE(vm.CallOn(view, "canSeekBackward", "()Z").AsInt());
+    CHECK_FALSE(vm.CallOn(view, "canPause", "()Z").AsInt());
+}
+
+TEST_CASE("videoview fallback completion is deferred to the video pump") {
     VideoVm vm(ogplay::video::VideoPlayerFactory{});
     const auto view = vm.NewVideoView();
     const auto listener = vm.NewListener();
@@ -264,7 +283,50 @@ TEST_CASE("videoview without a decoder falls back to immediate completion") {
               {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
     CHECK(vm.CallOn(view, "getDuration", "()I").AsInt() == 0);
     vm.CallOn(view, "start", "()V");
+    CHECK(vm.Completions() == 0);
+    CHECK(vm.Pump() == 0U);
     CHECK(vm.Completions() == 1);
+    CHECK(vm.Pump() == 0U);
+    CHECK(vm.Completions() == 1);
+}
+
+TEST_CASE("videoview error listener registration can be replaced and cleared") {
+    VideoVm vm(FakeFactory());
+    const auto view = vm.NewVideoView();
+    const auto first = vm.NewListener();
+    const auto second = vm.NewListener();
+    constexpr auto descriptor =
+        "(Landroid/media/MediaPlayer$OnErrorListener;)V";
+    vm.CallOn(view, "setOnErrorListener", descriptor, {VmValue::Ref(first)});
+    CHECK(vm.context->video_errors.at(view.Value()) == first);
+    vm.CallOn(view, "setOnErrorListener", descriptor, {VmValue::Ref(second)});
+    CHECK(vm.context->video_errors.at(view.Value()) == second);
+    vm.CallOn(view, "setOnErrorListener", descriptor,
+              {VmValue::Ref(VmObjectRef{})});
+    CHECK_FALSE(vm.context->video_errors.contains(view.Value()));
+}
+
+TEST_CASE("WifiInfo without a connection does not invent a MAC address") {
+    VideoVm vm(FakeFactory());
+    const auto info =
+        vm.interpreter.NewIntrinsicInstance("Landroid/net/wifi/WifiInfo;");
+    CHECK_FALSE(vm.CallOn(info, "getMacAddress", "()Ljava/lang/String;")
+                    .ref.IsValid());
+}
+
+TEST_CASE("application Context identity survives Activity replacement") {
+    VideoVm vm(FakeFactory());
+    const auto first =
+        vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    const auto second =
+        vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    const auto first_context = vm.CallOn(
+        first, "getApplicationContext", "()Landroid/content/Context;").ref;
+    const auto second_context = vm.CallOn(
+        second, "getApplicationContext", "()Landroid/content/Context;").ref;
+    CHECK(first_context.IsValid());
+    CHECK(first_context == second_context);
+    CHECK(first_context != first);
 }
 
 TEST_CASE("AnyVideoPlaying reports only actively playing views") {
@@ -342,7 +404,7 @@ TEST_CASE("paused, stopped and audioless videos contribute silence") {
     CHECK(MixVideoPcmIntoStereo(*silent.context, buffer, 16000U) == 0U);
 }
 
-TEST_CASE("videoview with a missing file falls back to immediate completion") {
+TEST_CASE("videoview missing file completion is deferred to the video pump") {
     VideoVm vm(FakeFactory());
     const auto view = vm.NewVideoView();
     const auto listener = vm.NewListener();
@@ -353,6 +415,8 @@ TEST_CASE("videoview with a missing file falls back to immediate completion") {
               {VmValue::Ref(
                   vm.interpreter.NewStringUtf8("/sdcard/missing.mp4"))});
     vm.CallOn(view, "start", "()V");
+    CHECK(vm.Completions() == 0);
+    CHECK(vm.Pump() == 0U);
     CHECK(vm.Completions() == 1);
     CHECK(vm.Pump() == 0U);
 }

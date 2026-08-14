@@ -128,7 +128,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     return found->methods.size();
   };
   CHECK(method_count("Landroid/app/Activity;") == 22);
-  CHECK(method_count("Landroid/content/Intent;") == 15);
+  CHECK(method_count("Landroid/content/Intent;") == 16);
   CHECK(method_count("Landroid/os/Bundle;") == 12);
   CHECK(method_count("Landroid/widget/TextView;") == 14);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
@@ -472,11 +472,11 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
     CHECK(read("width") == 1280);
     CHECK(read("height") == 720);
 
-    CHECK_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
-                    interpreter, *context,
-                    ogplay::runtime::SurfaceHolderPhase::destroyed)
-                    .has_value());
+    CHECK_FALSE(ogplay::runtime::RetireSurfaceHolderGeneration(
+                    interpreter, *context).has_value());
     CHECK(read("destroyed") == 1);
+    CHECK(context->surface_callbacks.empty());
+    CHECK(context->surface_holders.empty());
 
     // A registration that cannot receive the event is reported, not skipped.
     context->surface_callbacks[holder.value.ref.Value()] = {view};
@@ -645,6 +645,70 @@ TEST_CASE("Bundle preserves typed values and clear state") {
                           std::vector<VmValue>{VmValue::Ref(bundle)});
   REQUIRE_FALSE(outcome.exception.IsValid());
   CHECK(vm.context->bundles.at(bundle.Value()).empty());
+}
+
+TEST_CASE("Context unregisterReceiver enforces per-context registration") {
+  AndroidVm vm;
+  const auto first_context =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+  const auto second_context =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+  const auto receiver =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/BroadcastReceiver;");
+  const auto filter =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+  const auto register_receiver = vm.Virtual(
+      "Landroid/content/Context;", "registerReceiver",
+      "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;");
+  const auto unregister_receiver = vm.Virtual(
+      "Landroid/content/Context;", "unregisterReceiver",
+      "(Landroid/content/BroadcastReceiver;)V");
+
+  auto outcome = vm.interpreter.Call(
+      register_receiver,
+      std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver),
+                           VmValue::Ref(filter)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(outcome.value.ref.IsValid());
+  CHECK(vm.context->broadcast_receivers.at(first_context.Value()).contains(
+      receiver.Value()));
+
+  outcome = vm.interpreter.Call(
+      unregister_receiver,
+      std::vector<VmValue>{VmValue::Ref(second_context), VmValue::Ref(receiver)});
+  REQUIRE(outcome.exception.IsValid());
+  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+        "Ljava/lang/IllegalArgumentException;");
+  CHECK(vm.context->broadcast_receivers.at(first_context.Value()).contains(
+      receiver.Value()));
+
+  outcome = vm.interpreter.Call(
+      unregister_receiver,
+      std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(vm.context->broadcast_receivers.contains(first_context.Value()));
+  outcome = vm.interpreter.Call(
+      unregister_receiver,
+      std::vector<VmValue>{VmValue::Ref(first_context), VmValue::Ref(receiver)});
+  REQUIRE(outcome.exception.IsValid());
+  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+        "Ljava/lang/IllegalArgumentException;");
+}
+
+TEST_CASE("Intent removeExtra clears every typed backing entry") {
+  AndroidVm vm;
+  const auto intent = vm.interpreter.NewIntrinsicInstance("Landroid/content/Intent;");
+  const auto key = vm.interpreter.NewStringUtf8("shared-key");
+  vm.context->intent_string_extras[intent.Value()]["shared-key"] = "value";
+  vm.context->intent_int_extras[intent.Value()]["shared-key"] = 42;
+  const auto remove = vm.Virtual("Landroid/content/Intent;", "removeExtra", "(Ljava/lang/String;)V");
+  const std::vector arguments{VmValue::Ref(intent), VmValue::Ref(key)};
+  auto outcome = vm.interpreter.Call(remove, arguments);
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK_FALSE(vm.context->intent_string_extras.contains(intent.Value()));
+  CHECK_FALSE(vm.context->intent_int_extras.contains(intent.Value()));
+  outcome = vm.interpreter.Call(remove, arguments);
+  CHECK_FALSE(outcome.exception.IsValid());
 }
 
 TEST_CASE("SAX setup retains its handler and parsing fails explicitly") {

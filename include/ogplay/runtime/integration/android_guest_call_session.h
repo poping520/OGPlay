@@ -143,6 +143,12 @@ private:
     std::atomic<std::uint64_t> exit_request_count_{};
 };
 
+// Installs the JNI-visible legacy media classes whose handlers are bound by
+// BindAndroidGuestJavaMediaHandlers. Idempotent so standalone tests and the
+// full call session share exactly one declaration.
+[[nodiscard]] JniObjectIdentity InstallAndroidGuestJavaMediaClasses(
+    JniClassRegistry& classes);
+
 void BindAndroidGuestJavaAudioHandlers(
     JniInvocationEngine& invocations,
     audio::JavaSoundPoolState& sound_pool,

@@ -63,6 +63,8 @@ syscall 与 framework Asset 只能单向调用本模块。
 - descriptor offset 隔离，错误携带稳定 Linux errno。
 - relative guest 路径只有在调用方显式设置受检绝对工作目录后才解析；解析复用相同的
   ASCII 大小写折叠与 traversal 拒绝规则，未配置时不得猜测目录。
+- 显式 path alias 在规范化后把别名前缀映射到同一 canonical 节点；alias 与 canonical
+  路径必须共享 descriptor、host backing 与 sandbox overlay，禁止复制两套文件状态。
 - pipe 返回隔离的只读/只写 descriptor，共享同一有序字节流；创建和 guest descriptor
   数组发布必须是事务性的。
 - `HostPathFor` 只对宿主目录挂载的文件返回其 backing 宿主路径(供需要直接读宿主文件

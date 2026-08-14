@@ -230,6 +230,29 @@ AndroidGuestLegacyMediaState::AudioTrack(const JniObjectIdentity track) const {
     return found->second;
 }
 
+JniObjectIdentity InstallAndroidGuestJavaMediaClasses(
+    JniClassRegistry& classes) {
+    if (const auto existing =
+            classes.FindClass("android/media/AudioTrack");
+        existing.has_value()) {
+        return *existing;
+    }
+    if (!classes.FindClass("java/lang/Object").has_value()) {
+        static_cast<void>(classes.RegisterClass(
+            {"java/lang/Object", {}, {}, {}}));
+    }
+    return classes.RegisterClass(
+        {"android/media/AudioTrack", "java/lang/Object",
+         {{"<init>", "(IIIIII)V", "audio.track.construct", false},
+          {"getMinBufferSize", "(III)I", "audio.track.minimum_buffer", true},
+          {"play", "()V", "audio.track.play", false},
+          {"pause", "()V", "audio.track.pause", false},
+          {"stop", "()V", "audio.track.stop", false},
+          {"release", "()V", "audio.track.release", false},
+          {"write", "([BII)I", "audio.track.write", false}},
+         {}});
+}
+
 void BindAndroidGuestJavaMovieHandlers(
     JniInvocationEngine& invocations, JniEnvironment& environment,
     JniStringStore& strings, AndroidGuestMovieState& movie_state) {

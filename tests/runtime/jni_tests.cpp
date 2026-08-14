@@ -99,7 +99,7 @@ TEST_CASE("JNI function table seals bindings and traps every missing slot") {
     CHECK(hits[0].last_lr == 0x5678U);
 }
 
-TEST_CASE("JNI local references are thread and frame scoped with hard capacity") {
+TEST_CASE("JNI local frames auto-grow up to the per-thread hard limit") {
     ogplay::runtime::JniReferenceTable references({4, 2, 2});
     references.AttachThread(11, 2);
     references.AttachThread(22, 1);
@@ -116,12 +116,13 @@ TEST_CASE("JNI local references are thread and frame scoped with hard capacity")
     const auto first = references.NewLocal(11, host);
     const auto second = references.NewLocal(11, vm);
     CHECK(references.LocalCount(11) == 2);
-    CHECK_THROWS_AS(static_cast<void>(references.NewLocal(11, host)),
-                    ogplay::runtime::JniReferenceError);
-    references.EnsureLocalCapacity(11, 1);
     const auto third = references.NewLocal(11, host);
     CHECK(references.LocalCount(11) == 3);
     CHECK_THROWS_AS(references.EnsureLocalCapacity(11, 2),
+                    ogplay::runtime::JniReferenceError);
+    references.EnsureLocalCapacity(11, 1);
+    const auto fourth = references.NewLocal(11, vm);
+    CHECK_THROWS_AS(static_cast<void>(references.NewLocal(11, host)),
                     ogplay::runtime::JniReferenceError);
     CHECK(references.Resolve(11, first) == host);
     CHECK(references.IsSameObject(11, first, third));
@@ -130,6 +131,7 @@ TEST_CASE("JNI local references are thread and frame scoped with hard capacity")
                     ogplay::runtime::JniReferenceError);
 
     references.DeleteLocal(11, third);
+    references.DeleteLocal(11, fourth);
     references.PushLocalFrame(11, 1);
     const auto nested = references.NewLocal(11, vm);
     const auto promoted = references.PopLocalFrame(11, nested);

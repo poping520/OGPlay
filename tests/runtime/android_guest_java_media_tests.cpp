@@ -30,16 +30,8 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
           {"setVolumeMusic", "(FI)V", "audio.music_volume.set", true},
           {"getVolumeMusic", "(I)F", "audio.music_volume.get", true}},
          {}});
-    const auto audio_track = classes.RegisterClass(
-        {"android/media/AudioTrack", {},
-         {{"<init>", "(IIIIII)V", "audio.track.construct", false},
-          {"getMinBufferSize", "(III)I", "audio.track.minimum_buffer", true},
-          {"play", "()V", "audio.track.play", false},
-          {"pause", "()V", "audio.track.pause", false},
-          {"stop", "()V", "audio.track.stop", false},
-          {"release", "()V", "audio.track.release", false},
-          {"write", "([BII)I", "audio.track.write", false}},
-         {}});
+    const auto audio_track = InstallAndroidGuestJavaMediaClasses(classes);
+    CHECK(InstallAndroidGuestJavaMediaClasses(classes) == audio_track);
     JniInvocationEngine invocations{classes};
     JniEnvironment environment;
     environment.AttachThread(9U);

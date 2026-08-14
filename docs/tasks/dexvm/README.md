@@ -61,6 +61,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-36](DVM-36.md) | android.* intrinsic 按类分文件迁移 + 生成器切换 | 完成 |
 | [DVM-37](DVM-37.md) | handler 字符串 id 通道整体删除 | 完成 |
 | [DVM-38](DVM-38.md) | android intrinsic 实现与声明完全同址 | 完成 |
+| [DVM-39](DVM-39.md) | Android 启动期状态接口补齐 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 
@@ -70,9 +71,9 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 进度：Dungeon Hunter 已越过链接与解释期，进入标题画面。DVM-31 已补齐
 Asphalt 6 自带 `GLSurfaceView` 所需的 EGL façade 与条件 swap pacer；原 EGL
-缺口和死锁均已越过，现于首帧前明确停在范围外
-`Context.unregisterReceiver`。A6 exact gate 尚未完成，状态以 DVM-31 结果段及
-`CURRENT.md` 为准。
+缺口和死锁均已越过；DVM-39 继续闭合实际命中的 Android/JNI/VFS 启动边界，
+`asphalt6.bootstrap` 可见开场检查点三轮哈希一致、无 fault、clean shutdown，A6
+启动 gate 已完成。主界面与可游玩 gate 尚未验收，状态以 `CURRENT.md` 为准。
 
 其余在办项（GC-B 精确标记清除、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)

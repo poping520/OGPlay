@@ -61,9 +61,10 @@ Asphalt 6 打包了一份改名的 AOSP `GLSurfaceView`：`GLThread` 自己跑 E
 - swap 使用条件屏障：lifecycle driver 可运行时每宿主帧放行一次；driver 进入
   guest 阻塞原语时立即放行。`VmExecutionLock` 的通用 observer 不感知 EGL，
   N=2 monitor 握手与反向节拍用例均通过。
-- A6 已越过原先 EGL 缺口且不再发生 swap/frame-driver 死锁，但在首帧前停于
-  `Context.unregisterReceiver`。该入口不属于 EGL，本轮按范围不实现，因此 A6
-  三轮首帧 gate **未完成**。
+- A6 已越过原先 EGL 缺口且不再发生 swap/frame-driver 死锁；后续 DVM-39 闭合
+  非 EGL 启动边界后，`asphalt6.bootstrap` 三轮均发布 sequence 6、SHA-256
+  `4f8e4bf1…` 的同一可见开场画面，无 fault 且 clean shutdown。A6 启动 gate 已完成，
+  主界面 gate 尚未验收。
 - A5 当前实现与改动前 `2c8243c` HEAD 对照运行的四个检查点 PNG 均逐位相同；
   主界面均为 `f91150b4…`。场景内历史期望 `9ee57323…` 已与当前基线漂移，故
   静态 scenario 仍判失败，不能宣称 exact gate 通过，但已排除本 WU 引入回归。

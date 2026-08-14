@@ -15,7 +15,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - `HostBundledDataPaths`：优先从可执行文件同目录（macOS 为 bundle Resources）解析随
   程序交付的 `profiles/` 与 `quirks.toml`；源码树只是开发构建回退。
 - `--external-dir`：把一个宿主目录按 Profile 声明的唯一 external guest 根 lazy mount；
-  guest 路径不取决于宿主目录名。
+  guest 路径不取决于宿主目录名。Android 4.4 的 `/storage/emulated/0` 通过 VFS
+  path alias 与 `/sdcard` 共享同一 external 节点和存档 overlay。
 - `--supersample <1..4>`：显式选择内部渲染倍率，默认 1×。
 - `--mcp` / `--mcp-port`：启动仅限本机的 MCP 服务；`--mcp-manual-step` 让 DexVM 会话
   等待 step/suspend/resume/shutdown 命令并发布原子状态。

@@ -26,9 +26,9 @@ type = "Z"
 value = true
 reason = "External game data is provisioned; the installer is an off-target store download shell"
 [data]
-working_directory = "/sdcard/gameloft/games/GloftAPHP"
+working_directory = "/sdcard/Android/data/com.gameloft.android.GAND.GloftAPHP/files"
 mounts = [
-  { guest = "/sdcard/gameloft/games/GloftAPHP", source = "external", required = true },
+  { guest = "/sdcard/Android/data/com.gameloft.android.GAND.GloftAPHP/files", source = "external", required = true },
 ]
 manifest = [
   { path = "InsTime", required = true },

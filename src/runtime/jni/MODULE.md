@@ -17,6 +17,8 @@ Bionic、syscall、execution 或 integration。
 - 已解析方法缺少 implementation handler 时，错误必须携带规范 implementation ID，禁止
   丢失定位所需的注册表身份。
 - guest handle 保持固定宽度，不暴露宿主指针。
+- local frame 的 attach/push 容量是 JNI 保证值而非硬上限；可自动增长到按线程
+  `local_per_thread` 总上限，超过总上限仍明确失败。
 - JNI monitor 按强类型 object identity 隔离 owner guest thread、recursion 与 waiters；同线程
   可重入，非 owner exit 明确失败。thread detach 释放其全部 ownership。
 - monitor 的临时中断与永久关闭是两个语义，不共用 sticky boolean。`InterruptWaiters` 提升

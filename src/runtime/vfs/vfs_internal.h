@@ -38,7 +38,8 @@ inline constexpr std::int32_t kEnotempty = 39;
 [[nodiscard]] std::string NormalizePath(std::string_view path);
 [[nodiscard]] std::string ResolvePath(
     std::string_view path,
-    const std::optional<std::string>& working_directory);
+    const std::optional<std::string>& working_directory,
+    const std::map<std::string, std::string, std::less<>>& aliases);
 [[nodiscard]] std::vector<std::byte> ReadHostFile(
     const std::filesystem::path& path);
 
@@ -84,6 +85,7 @@ public:
                    std::span<const VfsLazyMountEntry> entries, bool writable);
     void MountHostDirectory(std::string_view root,
                             const std::filesystem::path& directory);
+    void AddPathAlias(std::string_view alias, std::string_view target);
     [[nodiscard]] std::optional<std::filesystem::path> HostPathFor(
         std::string_view path) const;
     void SetWorkingDirectory(std::string_view path);
@@ -143,6 +145,7 @@ public:
 
     mutable std::mutex mutex_;
     std::optional<std::string> working_directory_;
+    std::map<std::string, std::string, std::less<>> aliases_;
     std::map<std::string, std::shared_ptr<File>, std::less<>> files_;
     // Directories created explicitly; implicit ones come from files_.
     std::set<std::string, std::less<>> directories_;

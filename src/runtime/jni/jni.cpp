@@ -328,8 +328,10 @@ public:
     void EnsureLocalCapacity(const std::uint64_t thread_id,
                              const std::size_t additional) {
         std::scoped_lock lock(mutex_);
+        const auto& thread = Thread(thread_id);
+        const auto used = LocalCountLocked(thread);
         auto& frame = CurrentFrame(thread_id);
-        if (additional > limits_.local_per_thread - frame.handles.size()) {
+        if (additional > limits_.local_per_thread - used) {
             Capacity("JNI local reference capacity exceeded");
         }
         const auto required = frame.handles.size() + additional;
@@ -338,11 +340,11 @@ public:
 
     void PushLocalFrame(const std::uint64_t thread_id,
                         const std::size_t capacity) {
-        if (capacity > limits_.local_per_thread) {
-            Capacity("JNI local frame capacity exceeds the thread limit");
-        }
         std::scoped_lock lock(mutex_);
         auto& thread = Thread(thread_id);
+        if (capacity > limits_.local_per_thread - LocalCountLocked(thread)) {
+            Capacity("JNI local frame capacity exceeds the thread limit");
+        }
         thread.frames.push_back({capacity, {}});
     }
 
@@ -536,6 +538,13 @@ private:
         return Thread(thread_id).frames.back();
     }
 
+    [[nodiscard]] static std::size_t LocalCountLocked(
+        const ThreadState& thread) {
+        std::size_t count = 0;
+        for (const auto& frame : thread.frames) count += frame.handles.size();
+        return count;
+    }
+
     [[nodiscard]] EntryIterator RequireEntry(const JniReference reference) {
         const auto found = entries_.find(reference.Value());
         if (found == entries_.end()) InvalidReference();
@@ -559,10 +568,14 @@ private:
 
     [[nodiscard]] JniReference AddLocalLocked(
         const std::uint64_t thread_id, const JniObjectIdentity object) {
-        auto& frame = CurrentFrame(thread_id);
-        if (frame.handles.size() >= frame.capacity) {
+        auto& thread = Thread(thread_id);
+        if (LocalCountLocked(thread) >= limits_.local_per_thread) {
             Capacity("JNI local frame capacity exceeded");
         }
+        auto& frame = thread.frames.back();
+        // AttachThread/PushLocalFrame guarantee their requested capacity but
+        // JNI permits the VM to grow a frame beyond it while resources remain.
+        if (frame.handles.size() == frame.capacity) ++frame.capacity;
         const auto reference = AddEntry(JniReferenceKind::local, object, thread_id);
         frame.handles.push_back(reference.Value());
         return reference;

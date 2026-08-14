@@ -91,6 +91,9 @@ public:
                            std::span<const VfsLazyMountEntry> entries);
     void MountHostDirectory(std::string_view root,
                             const std::filesystem::path& directory);
+    // Canonicalizes a path prefix onto an already mounted namespace. Both
+    // spellings then address the same nodes and overlay.
+    void AddPathAlias(std::string_view alias, std::string_view target);
     // Backing host file for a guest path inside a host-directory mount;
     // nullopt for memory-, APK- or OBB-backed entries.
     [[nodiscard]] std::optional<std::filesystem::path> HostPathFor(

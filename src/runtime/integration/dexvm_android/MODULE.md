@@ -33,6 +33,17 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
 - 中性占位只能通过 `NeutralHandler(shorty)` 或 `PlaceholderString()` 显式生成；
   引用返回值不能擅自伪造对象。
 - `DexVmAndroidContext` 是唯一会话状态入口，handler 行为与迁移前保持一致。
+- 动态 BroadcastReceiver 注册按发起调用的 Context 实例拥有；null receiver 只查询
+  sticky broadcast，未注册、重复或跨 Context 注销抛 `IllegalArgumentException`。
+  当前平台没有广播来源，因此不伪造 `onReceive` 派发。
+- Intent extra 当前支持的 String/Int 类型共享逻辑 key 空间；`removeExtra` 从全部
+  类型分表删除该 key，空表随即释放，不存在的 key 无操作。
+- VideoView error listener 按 view 实例注册、替换或清除；没有具体异步错误事件时
+  不伪造 `onError` 回调。pause/seek capability 只反映已打开 player；缺失 player
+  的 completion 延迟到视频 pump，禁止从 `start()` 重入 guest。
+- Activity 替换会关闭旧 SurfaceHolder generation 并清除其 holder/callback；新
+  generation 注册完成后接收仍存活 managed surface 的 created/changed，禁止跨
+  Activity 累积 callback。
 - EGL 规范内失败走 false/EGL_NO_* + last-error；单 surface、单 currency 模型被
   破坏时必须记账并抛出，未知入口同样记账明确失败。
 - guest swap 发布帧后进入条件帧屏障：driver 可运行时等下一次 lifecycle generation；

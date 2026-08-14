@@ -117,6 +117,25 @@ TEST_CASE("VFS mounts APK OBB and external files through one index") {
     vfs.Close(writable);
 }
 
+TEST_CASE("VFS path aliases share mounted nodes") {
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::array contents{std::byte{0x41}};
+    vfs.PutFile("/sdcard/game/data.bin", contents, true);
+    vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+
+    CHECK(vfs.Stat("/storage/emulated/0/game/data.bin").size == 1);
+    const auto writer = vfs.Open(
+        "/storage/emulated/0/game/data.bin", {.write = true});
+    const std::array replacement{std::byte{0x52}};
+    CHECK(vfs.Write(writer, replacement) == 1);
+    vfs.Close(writer);
+    const auto descriptor = vfs.Open("/sdcard/game/data.bin", {.read = true});
+    std::array<std::byte, 1> read{};
+    CHECK(vfs.Read(descriptor, read) == 1);
+    CHECK(read == replacement);
+    vfs.Close(descriptor);
+}
+
 TEST_CASE("VFS mount validation is transactional") {
     ogplay::runtime::VirtualFileSystem vfs;
     const std::vector<ogplay::runtime::VfsMountEntry> invalid{

@@ -14,7 +14,7 @@ namespace ogplay::runtime {
 
 VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_);
+    const auto normalized = ResolvePath(path, working_directory_, aliases_);
     if (tombstones_.contains(normalized)) {
         throw VfsError(kEnoent, "VFS file was deleted");
     }
@@ -32,7 +32,7 @@ VfsFileInfo VirtualFileSystem::Impl::Stat(const std::string_view path) const {
 std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(
     const std::string_view path) const {
     std::scoped_lock lock(mutex_);
-    auto prefix = ResolvePath(path, working_directory_);
+    auto prefix = ResolvePath(path, working_directory_, aliases_);
     if (prefix.empty() || prefix.back() != '/') prefix.push_back('/');
     // Merged from both indexes and deduplicated by name, so getdents64 sees
     // one stable order regardless of how a directory came to be.
@@ -183,7 +183,7 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(
     const std::string_view path) {
     auto entries = ListDirectory(path);
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_);
+    const auto normalized = ResolvePath(path, working_directory_, aliases_);
     if (files_.contains(normalized)) {
         throw VfsError(kEnotdir, "VFS path is not a directory");
     }
@@ -229,7 +229,7 @@ VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(
 
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_);
+    const auto normalized = ResolvePath(path, working_directory_, aliases_);
     if (files_.contains(normalized)) {
         throw VfsError(kEexist, "VFS path already holds a file");
     }
@@ -251,7 +251,7 @@ void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
 
 void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_);
+    const auto normalized = ResolvePath(path, working_directory_, aliases_);
     const auto found = files_.find(normalized);
     if (found == files_.end() || tombstones_.contains(normalized)) {
         if (IsDirectoryLocked(normalized)) {
@@ -272,7 +272,7 @@ void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
 
 void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
-    const auto normalized = ResolvePath(path, working_directory_);
+    const auto normalized = ResolvePath(path, working_directory_, aliases_);
     if (files_.contains(normalized)) {
         throw VfsError(kEnotdir, "VFS path is not a directory");
     }
@@ -301,8 +301,8 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
 void VirtualFileSystem::Impl::Rename(const std::string_view from,
                                      const std::string_view to) {
     std::scoped_lock lock(mutex_);
-    const auto source = ResolvePath(from, working_directory_);
-    const auto target = ResolvePath(to, working_directory_);
+    const auto source = ResolvePath(from, working_directory_, aliases_);
+    const auto target = ResolvePath(to, working_directory_, aliases_);
     if (source == target) return;
     const auto found = files_.find(source);
     if (found == files_.end() || tombstones_.contains(source)) {

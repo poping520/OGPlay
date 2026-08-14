@@ -37,6 +37,14 @@ Decl Declare_android_content_Context(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             return MakeString(call, context->package_name);
         });
+    builder.Virtual("getApplicationContext", "()Landroid/content/Context;",
+        [context](dx::IntrinsicContext& call) {
+            // One guest process owns one application Context; Activity
+            // wrappers may come and go without changing this identity.
+            return dx::VmValue::Ref(Singleton(
+                call, context, "application_context",
+                "Landroid/content/Context;"));
+        });
     builder.Virtual("getResources", "()Landroid/content/res/Resources;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Singleton(call, context, "resources",
@@ -84,9 +92,32 @@ Decl Declare_android_content_Context(const Context& context) {
         });
     builder.Virtual("registerReceiver",
         "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;",
-        [](dx::IntrinsicContext&) {
+        [context](dx::IntrinsicContext& call) {
+            const auto receiver = call.arguments[0].ref;
+            if (receiver.IsValid()) {
+                context->broadcast_receivers[call.receiver.Value()].insert(
+                    receiver.Value());
+            }
             // Sticky broadcast lookup: nothing pending on this platform.
             return dx::VmValue::Ref(dx::VmObjectRef{});
+        });
+    builder.Virtual("unregisterReceiver",
+        "(Landroid/content/BroadcastReceiver;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto receiver = call.arguments[0].ref;
+            const auto owner = context->broadcast_receivers.find(
+                call.receiver.Value());
+            if (!receiver.IsValid() ||
+                owner == context->broadcast_receivers.end() ||
+                owner->second.erase(receiver.Value()) == 0U) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/IllegalArgumentException;",
+                    "Receiver not registered"};
+            }
+            if (owner->second.empty()) {
+                context->broadcast_receivers.erase(owner);
+            }
+            return dx::VmValue::Void();
         });
     builder.Virtual("startActivity", "(Landroid/content/Intent;)V",
         [context](dx::IntrinsicContext& call) -> dx::VmValue {

@@ -68,4 +68,14 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
     return std::nullopt;
 }
 
+std::optional<std::string> RetireSurfaceHolderGeneration(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    const auto error = DispatchSurfaceHolderCallbacks(
+        vm, context, SurfaceHolderPhase::destroyed);
+    if (error.has_value()) return error;
+    context.surface_callbacks.clear();
+    context.surface_holders.clear();
+    return std::nullopt;
+}
+
 }  // namespace ogplay::runtime

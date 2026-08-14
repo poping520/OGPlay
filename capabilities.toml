@@ -88,7 +88,7 @@ note = "M5 WU-0303/0318 与 M8 WU-0378 以纯数据 Profile 闭合身份、1024x
 [profiles.asphalt6_glstore_v132]
 status = "partial"
 test = "tools.title_profiles_current; tests/session/profile_entry_scope_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml; exact APK local bootstrap"
-note = "DVM-22..26 以 v2 entry/manifest GLGame 启动引擎 Activity，required external manifest 就绪后应用 GameInstaller.sbStarted 真实 provisioned-data preset；native 已可见 DexVM intrinsic 平台类。DVM-28..30 后 GLThread 已是真实宿主线程、越过 Object.wait()、并收到 managed surface 回调，三轮 exact 一致停在自带 GLSurfaceView 自行驱动 EGL 所需的 Ljavax/microedition/khronos/egl/EGLContext 未声明处（DVM-31）。guest 首帧与主界面 gate 均未完成；删除 preset 会真实回到 GameInstaller 商业外壳"
+note = "DVM-22..31 建立 v2 entry/manifest/preset、真实 GLThread、managed surface、EGL façade 与条件 swap pacer；DVM-39 继续闭合实际命中的 Android/JNI/VFS 启动边界。asphalt6.bootstrap 可见检查点 sequence 6、SHA-256 4f8e4bf1… 三轮一致，无 fault 且 clean shutdown；额外无 survey 长运行到车辆开场动画。启动 gate 已完成，主界面与可游玩 gate 尚未验收；删除 preset 会真实回到 GameInstaller 商业外壳"
 
 [session.lifecycle_templates]
 status = "complete"
@@ -158,7 +158,7 @@ note = "M5 WU-0215 以不可变所有权 bundle 汇总已导入 VFS/audio 字节
 [frontend.run_apk_external]
 status = "complete"
 test = "frontend.run_apk_options; bounded exact-APK run-apk smoke"
-note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹配 Profile 声明的唯一 external guest 根，并在窗口创建前校验 required 输入与 manifest"
+note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹配 Profile 声明的唯一 external guest 根，并在窗口创建前校验 required 输入与 manifest；DVM-39 将 Android 4.4 /storage/emulated/0 规范到同一 /sdcard VFS 节点，避免 external 与保存 overlay 分裂"
 
 [frontend.gui_shell]
 status = "complete"
@@ -423,7 +423,7 @@ note = "ADR-0020 SBX-1..3 交付 SandboxStore 与 VFS overlay；SBX-8 修复改�
 [runtime.vfs]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp"
-note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close；M5 WU-0300/0301/0315 增加 lazy backing、显式工作目录与受检相对路径解析；WU-0332 以跨平台冲突夹具复核事务回滚"
+note = "M2 完成 APK/OBB/外置统一事务挂载、大小写不敏感索引、来源/权限事实与隔离 fd 的 open/read/write/seek/close；M5 WU-0300/0301/0315 增加 lazy backing、显式工作目录与受检相对路径解析；WU-0332 复核事务回滚；DVM-39 增加 canonical path alias，使 Android /storage/emulated/0 与 /sdcard 共用节点、host backing 和 sandbox overlay"
 
 [runtime.jni]
 status = "complete"
@@ -873,7 +873,7 @@ note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用
 [dexvm.egl_facade]
 status = "partial"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "DVM-31 已实现 AOSP EGL10/GL10 类形状、单 surface façade 状态机、GL currency 接力、managed present 与条件 swap pacer；driver 可运行时一帧一 swap，driver 进入 guest 阻塞时由 VmExecutionLock observer 放行，N=2 monitor 握手及反向节拍测试已通过。A6 已越过 EGL/死锁但在首帧前停于范围外 Context.unregisterReceiver；A5 四检查点与改动前 HEAD 逐位相同，但场景历史期望哈希已漂移；exact gate 均未宣告通过"
+note = "DVM-31 已实现 AOSP EGL10/GL10 类形状、单 surface façade 状态机、GL currency 接力、managed present 与条件 swap pacer；driver 可运行时一帧一 swap，driver guest 阻塞时由通用 observer 放行。DVM-39 后 A6 可见启动 gate 三轮同哈希通过；A5 四检查点与改动前 HEAD 逐位相同但历史期望哈希已漂移，A5 exact gate 仍未宣告通过"
 
 [session.profile_guest_lifecycle]
 status = "complete"
@@ -1082,8 +1082,8 @@ note = "DVM-14/15 出向按 descriptor 编组 A32 soft-float 帧（RegisterNativ
 
 [dexvm.intrinsics_android_core]
 status = "partial"
-test = "Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染"
-note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Activity/Window/View/GLSurfaceView/Resources(arsc)/AssetManager/InputStream/IO/Log/Audio/Wifi/Sensor/Telephony/SoundPool/MediaPlayer/Bundle/Intent/Toast/MotionEvent/Locale/Thread.sleep；SMS/网络记账明确失败。DUNQ 批次扩展：Bitmap/BitmapFactory(stb_image)/Canvas、Environment/StatFs/Build、SharedPreferences(现已持久)、多 Activity 流转+协作线程/Timer、widget 状态层（TextView/EditText/VideoView 等）、setContentView(I) 经 binary XML 布局注入 view registry、runOnUiThread 同步执行、VideoView.start() 立即回调 OnCompletionListener（播放本身仍为记账缺口）"
+test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/videoview_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。没有具体视频错误事件时不伪造回调；广播派发、SMS/网络仍未实现并明确失败"
 
 [dexvm.gap_survey]
 status = "complete"

@@ -27,7 +27,7 @@ namespace {
 }
 
 [[nodiscard]] std::string DescribeGuestCallStop(
-    const cpu::RunResult& stopped) {
+    const cpu::RunResult& stopped, const cpu::A32State& state) {
     auto result =
         "A32 guest call stopped outside a handled boundary: pc=" +
         std::to_string(stopped.pc.Value()) +
@@ -36,8 +36,28 @@ namespace {
         " immediate=" + std::to_string(stopped.immediate);
     if (stopped.fault.has_value()) {
         result += " fault=" +
-                  std::to_string(stopped.fault->address.Value());
+                  std::to_string(stopped.fault->address.Value()) +
+                  " access=" +
+                  std::to_string(static_cast<std::uint8_t>(
+                      stopped.fault->access)) +
+                  " fault_reason=" +
+                  std::to_string(static_cast<std::uint8_t>(
+                      stopped.fault->reason));
     }
+    result += " r0=" +
+              std::to_string(state.Register(cpu::CoreRegister::r0)) +
+              " r1=" +
+              std::to_string(state.Register(cpu::CoreRegister::r1)) +
+              " r2=" +
+              std::to_string(state.Register(cpu::CoreRegister::r2)) +
+              " r3=" +
+              std::to_string(state.Register(cpu::CoreRegister::r3)) +
+              " r12=" +
+              std::to_string(state.Register(cpu::CoreRegister::r12)) +
+              " sp=" +
+              std::to_string(state.Register(cpu::CoreRegister::sp)) +
+              " lr=" +
+              std::to_string(state.Register(cpu::CoreRegister::lr));
     return result;
 }
 
@@ -149,7 +169,8 @@ A32GuestCallResult InvokeA32GuestCall(
         }
         if (!ConsumeAndroidArmSupervisorCall(
                 cpu, stopped, dispatcher, hle_handler)) {
-            throw A32GuestCallError(DescribeGuestCallStop(stopped));
+            throw A32GuestCallError(
+                DescribeGuestCallStop(stopped, cpu.GetState()));
         }
         const auto current = lifecycle.State(state.ThreadId());
         if (current.status != GuestThreadStatus::running) {

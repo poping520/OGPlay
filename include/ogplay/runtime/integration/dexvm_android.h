@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -140,6 +141,12 @@ struct DexVmAndroidContext final {
     // callbacks are generated.
     std::unordered_map<std::uint32_t, std::int32_t> telephony_listeners;
 
+    // Dynamic receiver registrations are owned by the Context instance that
+    // performed registerReceiver(), matching LoadedApk's per-context
+    // dispatcher map. Broadcast delivery remains outside this bounded model.
+    std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>>
+        broadcast_receivers;
+
     // SurfaceView owns one stable SurfaceHolder. addCallback appends, as on
     // the platform: these titles register both the view and the activity on
     // the same holder and both have to receive the surface lifecycle.
@@ -268,14 +275,18 @@ struct DexVmAndroidContext final {
         std::int32_t measured_height{};
     };
     std::vector<LayoutViewFact> layout_views;
-    // VideoView -> OnCompletionListener. With a player attached the guest
-    // video pump fires it once at end of stream; without one start() still
-    // completes synchronously (honest fallback).
+    // VideoView -> OnCompletionListener. The guest video pump fires it once
+    // at end of stream; fallback completion is also deferred to that boundary
+    // so callbacks never run re-entrantly inside start().
     std::unordered_map<std::uint64_t, dexvm::VmObjectRef> video_completion;
+    std::unordered_set<std::uint64_t> pending_video_completion;
+    // VideoView -> OnErrorListener. Registration is real; callbacks are only
+    // eligible once the host video path publishes a concrete async error.
+    std::unordered_map<std::uint64_t, dexvm::VmObjectRef> video_errors;
 
     // Real VideoView playback (ADR-0021). The factory is injected by the
     // frontend; when it is missing or open fails, setVideoPath records the
-    // gap and start() keeps the immediate-completion fallback.
+    // gap and start() schedules the deferred-completion fallback.
     video::VideoPlayerFactory video_player_factory;
     struct VideoViewState final {
         std::unique_ptr<video::VideoPlayer> player;
@@ -363,6 +374,11 @@ enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
 [[nodiscard]] std::optional<std::string> DispatchSurfaceHolderCallbacks(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     SurfaceHolderPhase phase);
+
+// Delivers surfaceDestroyed to the active holder generation, then forgets
+// its holders/callbacks so a replacement Activity starts a fresh generation.
+[[nodiscard]] std::optional<std::string> RetireSurfaceHolderGeneration(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context);
 
 // Frame-boundary service for Java threads: runs queued cooperative Timer
 // tasks on the calling (VM host) thread and drains any uncaught failure the

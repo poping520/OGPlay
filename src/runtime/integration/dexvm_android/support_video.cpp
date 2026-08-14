@@ -119,6 +119,19 @@ std::size_t MixVideoPcmIntoStereo(
 std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::function<void(std::vector<std::uint8_t> rgba8)>& publish) {
+    // Missing/unopenable streams complete asynchronously just like a real
+    // MediaPlayer event. Clear the snapshot before invoking guest callbacks:
+    // a callback may stop or restart the same view.
+    std::vector<std::uint64_t> pending(
+        context.pending_video_completion.begin(),
+        context.pending_video_completion.end());
+    context.pending_video_completion.clear();
+    for (const auto handle : pending) {
+        const auto error = android_intrinsics::InvokeVideoCompletionListener(
+            vm, context, handle);
+        if (error.has_value()) return error;
+    }
+
     // Handle list first: onCompletion may mutate video_views (stopPlayback,
     // replay), which must not invalidate the iteration.
     std::vector<std::uint64_t> handles;

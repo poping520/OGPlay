@@ -314,7 +314,7 @@ TEST_CASE("A32 guest call rejects invalid frames and unhandled stops") {
                 fixture.stack.Add(fixture.memory.PageSize()),
                 fixture.code.Add(64), 8)),
             doctest::Contains(
-                "A32 guest call stopped outside a handled boundary"),
+                " r0=0 r1=0 r2=0 r3=0 r12=0 sp="),
             ogplay::runtime::A32GuestCallError);
     }
     SUBCASE("budget") {

@@ -83,6 +83,20 @@ Decl Declare_android_content_Intent(const Context& context) {
             }
             return dx::VmValue::Int(call.arguments[1].AsInt());
         });
+    builder.Virtual("removeExtra", "(Ljava/lang/String;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto intent = call.receiver.Value();
+            const auto name = call.vm.StringUtf8(call.arguments[0].ref);
+            const auto remove = [intent, &name](auto& extras) {
+                const auto values = extras.find(intent);
+                if (values == extras.end()) return;
+                values->second.erase(name);
+                if (values->second.empty()) extras.erase(values);
+            };
+            remove(context->intent_string_extras);
+            remove(context->intent_int_extras);
+            return dx::VmValue::Void();
+        });
     builder.Virtual("addCategory",
         "(Ljava/lang/String;)Landroid/content/Intent;", set_flags);
     builder.Virtual("getAction", "()Ljava/lang/String;",

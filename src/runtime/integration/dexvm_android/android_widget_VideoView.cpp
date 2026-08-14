@@ -18,6 +18,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto handle = call.receiver.Value();
             context->video_views.erase(handle);
+            context->pending_video_completion.erase(handle);
             const auto path_ref = call.arguments[0].ref;
             if (!path_ref.IsValid()) {
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
@@ -76,18 +77,14 @@ Decl Declare_android_widget_VideoView(const Context& context) {
             const auto handle = call.receiver.Value();
             auto* state = VideoStateOf(context, handle);
             if (state == nullptr || state->player == nullptr) {
-                // Honest fallback: no decoded playback exists, so completion
-                // is reported right away through the registered listener and
-                // splash-video activities advance as after a real playback.
+                // Honest fallback: no decoded playback exists, so schedule
+                // completion at the next video-pump boundary. A real
+                // MediaPlayer callback is asynchronous and must not re-enter
+                // guest code from inside start().
                 GuestLog(call, core::LogLevel::warn,
                          "VideoView.start: no decoded playback; reporting "
-                         "immediate completion");
-                const auto error =
-                    InvokeVideoCompletionListener(call.vm, *context, handle);
-                if (error.has_value()) {
-                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                          *error};
-                }
+                         "deferred completion");
+                context->pending_video_completion.insert(handle);
                 return dx::VmValue::Void();
             }
             if (state->completed) {
@@ -132,6 +129,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
     builder.Virtual("stopPlayback", "()V",
         [context](dx::IntrinsicContext& call) {
             context->video_views.erase(call.receiver.Value());
+            context->pending_video_completion.erase(call.receiver.Value());
             return dx::VmValue::Void();
         });
     builder.Virtual("getDuration", "()I",
@@ -150,10 +148,42 @@ Decl Declare_android_widget_VideoView(const Context& context) {
             return dx::VmValue::Int(static_cast<std::int32_t>(
                 VideoPositionOf(*state, context->uptime_millis.load())));
         });
+    builder.Virtual("canSeekForward", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            // AOSP reports the prepared stream capability. Every host
+            // VideoPlayer implements bounded SeekTo, while an unopened or
+            // released view has not reached the prepared state.
+            const auto* state = VideoStateOf(context, call.receiver.Value());
+            return dx::VmValue::Int(
+                state != nullptr && state->player != nullptr ? 1 : 0);
+        });
+    builder.Virtual("canSeekBackward", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto* state = VideoStateOf(context, call.receiver.Value());
+            return dx::VmValue::Int(
+                state != nullptr && state->player != nullptr ? 1 : 0);
+        });
+    builder.Virtual("canPause", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto* state = VideoStateOf(context, call.receiver.Value());
+            return dx::VmValue::Int(
+                state != nullptr && state->player != nullptr ? 1 : 0);
+        });
     builder.Virtual("setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
         [context](dx::IntrinsicContext& call) {
             context->video_completion[call.receiver.Value()] =
                 call.arguments[0].ref;
+            return dx::VmValue::Void();
+        });
+    builder.Virtual("setOnErrorListener",
+        "(Landroid/media/MediaPlayer$OnErrorListener;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto listener = call.arguments[0].ref;
+            if (listener.IsValid()) {
+                context->video_errors[call.receiver.Value()] = listener;
+            } else {
+                context->video_errors.erase(call.receiver.Value());
+            }
             return dx::VmValue::Void();
         });
     return std::move(builder).Build();

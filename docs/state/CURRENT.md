@@ -6,7 +6,7 @@
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM**（任务已编号至 `DVM-38`，ADR-0017/0022）：阶段 0..3（AOSP 基线/解释器
+- **M9 DexVM**（任务已编号至 `DVM-39`，ADR-0017/0022）：阶段 0..3（AOSP 基线/解释器
   内核/JNI 双向桥/java.*+android.* intrinsic/dex_activity/profile v2/pilot
   迁移）全部交付；entry override、静态预置和 v2-only 清理完成。
 - **阶段 4 线程地基已交付**（DVM-27..29）：显式 per-thread execution
@@ -37,7 +37,7 @@
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
 能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 711/711；
-Windows/x64（windows-msvc）本次 721/721。
+Windows/x64（windows-msvc）本次 728/728。
 Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；
 第三方 target 不被全局注入该选项。
 
@@ -59,9 +59,10 @@ Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同�
 - **DVM-31 EGL façade（2026-08-14）**：host-owned surface 状态机、currency
   接力、managed present 与条件 swap pacer 已实现；driver 可运行时一帧一 swap，
   guest 阻塞时放行，N=2 monitor 握手与反向节拍测试通过。10 个 EGL/GL Java
-  handle 与 façade 实现已聚合为单一翻译单元。A6 已越过 EGL 缺口
-  且无原死锁，但在首帧前停于范围外 `Context.unregisterReceiver`，故 profile
-  保持 `partial`。A5 当前与改动前 HEAD 四检查点 PNG 逐位相同（主界面均为
+  handle 与 façade 实现已聚合为单一翻译单元。DVM-39 继续闭合 Android/JNI/VFS
+  启动边界；A6 可见启动检查点 sequence 6、`4f8e4bf1…` 三轮一致、无 fault、clean
+  shutdown，长运行已进入车辆开场动画。profile 因主界面/可游玩未验收仍为
+  `partial`。A5 当前与改动前 HEAD 四检查点 PNG 逐位相同（主界面均为
   `f91150b4…`），但场景历史期望 `9ee57323…` 已漂移，exact gate 未宣告通过。
 
 开发方式手册见 **[docs/playbook/README.md](../playbook/README.md)**；title
@@ -69,9 +70,8 @@ Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同�
 
 ## 下一步（按优先级）
 
-1. DVM-31 端到端验收：先由后续非 EGL WU 补齐 A6 的
-   `Context.unregisterReceiver`，再执行三轮首帧 gate；另行裁决 A5 历史哈希漂移，
-   未更新期望前不得宣告 exact 通过。
+1. 继续推进 A6 开场后的主界面/输入 gate；另行裁决 A5 历史哈希漂移，未更新期望
+   前不得宣告 A5 exact 通过。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
 3. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
@@ -83,7 +83,7 @@ Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同�
 
 ## 阻塞
 
-- DVM-31 exact gate 受范围外 `Context.unregisterReceiver` 与 A5 历史期望哈希
-  漂移阻塞；本轮不扩展到非 EGL。其余未实现面均记账并明确失败。
+- A6 启动 gate 已通过，主界面/可游玩 gate 尚未执行；A5 exact gate 仍受历史期望
+  哈希漂移阻塞。其余未实现面均记账并明确失败。
 
 长期限制见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

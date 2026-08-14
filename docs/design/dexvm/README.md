@@ -41,6 +41,7 @@ vendor 参考基线——目录类数据机器比对、指令语义逐 opcode �
 | [05 · 验证体系](05-verification.md) | dexasm 夹具、一致性测试、exact-title gate、能力条目 |
 | [06 · 迁移与冲突裁决](06-migration.md) | 阶段划分、WU 分解、冲突裁决表、风险 |
 | [07 · AOSP 参考策略](07-aosp-reference.md) | vendor 基线、机器校验/语义参考/测试素材三模式、逐组件对照表、红线 |
+| [08 · 解释执行的 EGL/GL façade](08-egl-facade.md) | 自带 GLSurfaceView 的通用形态：javax EGL 面驱动宿主 ANGLE surface |
 
 ## 启动条件与当前状态
 

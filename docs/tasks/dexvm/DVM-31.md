@@ -1,5 +1,7 @@
 # DVM-31 · 解释执行的 EGL10/GL10 façade
 
+> 设计展开与分批执行计划：[08 · EGL/GL façade](../../design/dexvm/08-egl-facade.md)
+
 ## 目标（一句话）
 
 让自带 `GLSurfaceView` 的 title 用解释执行的 `javax.microedition.khronos.egl`

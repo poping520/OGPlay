@@ -31,13 +31,20 @@ constexpr std::uint32_t kAtFdCwd = std::bit_cast<std::uint32_t>(-100);
 constexpr std::uint32_t kAtRemoveDir = 0x200;
 constexpr std::uint32_t kMaxIoSize = 16U * 1024U * 1024U;
 
-// Android ARM stat64 is packed; see bionic asm-arm/asm/stat.h.
-constexpr std::size_t kStat64Size = 96;
+// Android ARM stat64 is *not* packed: the ARM EABI aligns every 64-bit member
+// to eight bytes, which pads the struct out to 104 bytes and pushes st_size
+// past the __pad3 field. The guest libc proves it: __swhatbuf reads st_mode
+// at 16 and st_blksize at 56 out of a 104-byte frame. Using the packed x86
+// offsets here hands the guest a 64-bit st_size whose high word is our
+// st_blksize, so every fopen()+fread() sees a terabyte-sized file.
+constexpr std::size_t kStat64Size = 104;
+constexpr std::size_t kStat64LegacyInoOffset = 12;
 constexpr std::size_t kStat64ModeOffset = 16;
-constexpr std::size_t kStat64SizeOffset = 44;
-constexpr std::size_t kStat64BlockSizeOffset = 52;
-constexpr std::size_t kStat64BlocksOffset = 56;
-constexpr std::size_t kStat64InoOffset = 88;
+constexpr std::size_t kStat64LinkCountOffset = 20;
+constexpr std::size_t kStat64SizeOffset = 48;
+constexpr std::size_t kStat64BlockSizeOffset = 56;
+constexpr std::size_t kStat64BlocksOffset = 64;
+constexpr std::size_t kStat64InoOffset = 96;
 constexpr std::uint32_t kModeDirectory = 0040000;
 constexpr std::uint32_t kModeRegular = 0100000;
 
@@ -65,12 +72,14 @@ void PutLittleEndian(const std::span<std::byte> out, const std::size_t offset,
     if (info.writable) mode |= 0222U;
     if (info.is_directory) mode |= 0111U;
     PutLittleEndian(bytes, kStat64ModeOffset, mode, 4);
+    PutLittleEndian(bytes, kStat64LinkCountOffset, 1, 4);
     PutLittleEndian(bytes, kStat64SizeOffset, info.size, 8);
     PutLittleEndian(bytes, kStat64BlockSizeOffset, 4096, 4);
     PutLittleEndian(bytes, kStat64BlocksOffset, (info.size + 511U) / 512U, 8);
     // Inode numbers are not modelled; a stable non-zero value keeps callers
     // that only test for "has an inode" honest without inventing identity.
     PutLittleEndian(bytes, kStat64InoOffset, 1, 8);
+    PutLittleEndian(bytes, kStat64LegacyInoOffset, 1, 4);
     return bytes;
 }
 

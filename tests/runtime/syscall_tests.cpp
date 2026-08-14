@@ -714,12 +714,20 @@ TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
     CHECK(fixture.Call(39, {0x20000, 0755, 0, 0, 0, 0}) == -17);
 
     // struct stat64 layout is the Android ARM one; these offsets are the
-    // contract, not an implementation detail.
+    // contract, not an implementation detail. ARM does not pack the struct,
+    // so the 64-bit members sit on eight-byte boundaries: the guest libc
+    // __swhatbuf reads st_mode at 16 and st_blksize at 56 out of a 104-byte
+    // frame. The packed x86 offsets would put our st_blksize in the high
+    // word of the guest's st_size.
     CHECK(fixture.Call(195, {0x20000, 0x20200, 0, 0, 0, 0}) == 0);
     CHECK((fixture.ReadField(0x20200, 16, 4) & 0170000U) == 0040000U);
-    CHECK(fixture.ReadField(0x20200, 44, 8) == 0);       // st_size
-    CHECK(fixture.ReadField(0x20200, 52, 4) == 4096);    // st_blksize
-    CHECK(fixture.ReadField(0x20200, 88, 8) != 0);       // st_ino
+    CHECK(fixture.ReadField(0x20200, 20, 4) == 1);       // st_nlink
+    CHECK(fixture.ReadField(0x20200, 48, 8) == 0);       // st_size
+    CHECK(fixture.ReadField(0x20200, 56, 4) == 4096);    // st_blksize
+    CHECK(fixture.ReadField(0x20200, 96, 8) != 0);       // st_ino
+    // The padding before st_size stays clear, so a guest reading the 64-bit
+    // st_size cannot pick up a neighbouring field as its high word.
+    CHECK(fixture.ReadField(0x20200, 44, 4) == 0);
 
     fixture.WriteString(0x20100, "/sdcard/saves/slot0.sav");
     const auto descriptor =
@@ -736,7 +744,7 @@ TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
 
     CHECK(fixture.Call(195, {0x20100, 0x20200, 0, 0, 0, 0}) == 0);
     CHECK((fixture.ReadField(0x20200, 16, 4) & 0170000U) == 0100000U);
-    CHECK(fixture.ReadField(0x20200, 44, 8) == 3);
+    CHECK(fixture.ReadField(0x20200, 48, 8) == 3);
 
     // Non-empty directory refuses, the file goes, then the directory goes.
     CHECK(fixture.Call(40, {0x20000, 0, 0, 0, 0, 0}) == -39);
@@ -822,7 +830,7 @@ TEST_CASE("Android fstat64 preserves the live file descriptor offset") {
 
     CHECK(fixture.Call(197, {static_cast<std::uint32_t>(descriptor), 0x20200,
                              0, 0, 0, 0}) == 0);
-    CHECK(fixture.ReadField(0x20200, 44, 8) == 3);
+    CHECK(fixture.ReadField(0x20200, 48, 8) == 3);
     CHECK(fixture.Call(3, {static_cast<std::uint32_t>(descriptor), 0x20320, 1,
                            0, 0, 0}) == 1);
     std::array<std::byte, 1> next{};

@@ -104,6 +104,7 @@ Decl Declare_android_content_Context(const Context& context) {
                     "the compatibility scope"};
             }
             context->pending_activity_descriptor = component->second;
+            context->activity_switch_pending = true;
             context->current_intent = intent;
             return dx::VmValue::Void();
         });

@@ -320,9 +320,8 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
     while (!context.pending_activity_descriptor.empty()) {
         const auto descriptor =
             std::exchange(context.pending_activity_descriptor, {});
-        // finish() on the departing activity targets that activity, not
-        // the session.
-        context.exit_requested = false;
+        context.activity_switch_pending = false;
+        const auto departing = context.activity.Value();
         if (auto* logger = bindings_.bridge->Vm().Log(); logger != nullptr) {
             logger->Write(core::LogLevel::info, "session.dex_lifecycle",
                           "switching activity: " + descriptor);
@@ -340,6 +339,11 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
         }
         CallActivity("onDestroy", "()V", {});
         activity_started_ = false;
+        // The departing activity's own finish() is answered by its retirement.
+        // Its run() may still be executing on its host thread and repeat the
+        // call afterwards; that lands on a handle nothing owns any more.
+        auto finished = departing;
+        context.finishing_activity.compare_exchange_strong(finished, 0U);
         context.content_view = dx::VmObjectRef{};
         context.renderer = dx::VmObjectRef{};
         renderer_ready_ = false;

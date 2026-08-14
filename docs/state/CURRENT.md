@@ -1,7 +1,7 @@
 # 当前状态
 
 更新：2026-08-13 · DexVM 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
-surface 回调）与 intrinsic 声明迁移（DVM-32..37）已交付；存档沙盒 SBX-1..12、
+surface 回调）与 intrinsic 声明迁移（DVM-32..38）已交付；存档沙盒 SBX-1..12、
 主面板 GUI-1..16 与验收报告均已收口
 
 ## 当前阶段
@@ -18,40 +18,40 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..37）已交付；存档沙
   解释字节码。`dexvm.threads`/`dexvm.monitors` 均 `partial`：子线程 native
   调用仍复用 root guest 栈（需停泊时以 `blocking_in_native` 明确失败），
   native 侧 JNI monitor 表尚未与之合一。
-- **intrinsic/热路径优化与声明迁移已交付**：DVM-32..34 完成地址稳定绑定、
-  execution 传递和受检 builder 迁移基础；DVM-35 将 68 个 java.*/javax.* 类拆为
-  一类一文件并直接持有 162 个 core handler；DVM-36 将 165 个 android/platform
-  类迁入 `integration/dexvm_android/` 的逐类 `Declare_*()`，frontend/bridge 只传
-  合并 catalog，生成器改产逐类 builder 骨架；DVM-37 已删除兼容 registry、字符串
-  handler id 与懒绑定缓存，声明内嵌实现成为唯一 intrinsic 分发通道。
-- **DVM-38 已交付**：android handler 全部与逐类声明同址；41 个跨类/platform
-  handler 工厂化，5 个死成员及 `AndroidHandlers`/Populate 脚手架删除。保留的
-  support 文件只负责 surface/video/widget 派发子系统。
-- **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用
-  与 Java handler 映射后，`asphalt5.title_flow` 三轮 passed——468 帧、主界面
-  SHA-256 `9ee57323…` 逐位一致、无 fault、clean shutdown。
+- **intrinsic/热路径优化与声明迁移已交付**（DVM-32..38）：地址稳定绑定、
+  execution 传递、受检 builder；68 个 java.*/javax.* 与 165 个 android/platform
+  类各自一类一文件，handler 与声明同址，`integration/dexvm_android/` 的逐类
+  `Declare_*()` 是唯一 intrinsic 分发通道（兼容 registry、字符串 handler id 与
+  懒绑定缓存已删除）。保留的 support 文件只负责派发子系统。
+- **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用后
+  `asphalt5.title_flow` 三轮 passed——468 帧、主界面 SHA-256 `9ee57323…` 逐位
+  一致、无 fault、clean shutdown。
 - **存档持久沙盒 SBX-1..12 已交付**（ADR-0020 Accepted，任务单
   [`docs/tasks/sandbox/`](../tasks/sandbox/README.md)）：native/DexVM/prefs 统一
-  VFS；ARM EABI open flags、目录分页、删除/rename 防复活、生命周期 flush、
-  完整性与 O(1) 配额均有回归。**用户级闭环仍未演示**：title 尚未进入会产生
-  存档的流程。
+  VFS；ARM EABI open flags 与 `stat64` 布局、目录分页、删除/rename 防复活、
+  生命周期 flush、完整性与 O(1) 配额均有回归。**用户级闭环仍未演示**。
 - **GUI 主面板基础版已收口**（[`docs/tasks/launcher/`](../tasks/launcher/README.md)）：
-  GUI-1..16 闭环；按钮 ID 冒烟审计、库根存档绑定、宿主选择器期间保持导入
-  模态、诊断 FIFO、bundled Profile/quirk 数据（不依赖编译机源码树）、
-  catalog 失效 fail closed、视觉/空闲/持久恢复/边缘元数据全部收口。
+  GUI-1..16 闭环；按钮 ID 冒烟审计、库根存档绑定、导入模态、诊断 FIFO、
+  bundled Profile/quirk 数据、catalog 失效 fail closed 全部收口。
 
 ## 已验收基线
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。Windows/x64（windows-msvc）本次 709/709；
-macOS/arm64 此前 full CTest 为 636/636（含线程、wait-set 与沙盒用例）。
+能力现状以 `capabilities.toml` 为准。macOS/arm64 本次 full CTest 711/711；
+Windows/x64（windows-msvc）此前 709/709。
 
 ## 进行中：更多 title 上 dexvm 路线
 
 - **Dungeon Hunter 已到标题画面**（2026-08-12）：层级占位、java.* 扩展、
   Bitmap/Canvas、Environment/StatFs、SharedPreferences、Timer、多 Activity
   流转、widget 状态层、布局注入、`VideoView` 完成回调。下一步：输入与进游戏。
+- **Dungeon Hunter 启动回归已修复**（2026-08-14，两处均有回归）：`finish()`
+  曾置 session 级 `exit_requested`，真实宿主线程下主循环在 Activity 切换时先
+  看到它就整体退出——改按 `finishing_activity`/`activity_switch_pending` 判定；
+  `stat64` 曾按 x86 打包布局（96 字节）编组，guest 的 64 位 `st_size` 高位字取到
+  我们的 `st_blksize`，`fread` 因此把文件当 TB 级、malloc 失败后写空指针——改为
+  ARM 自然对齐布局（104 字节）。现跑满 300 帧并进入音频加载。
 - **适配流水线**：`run-apk --survey-gaps` 一次收割整条缺口队列（默认关闭，
   关闭即明确失败，survey 运行标注为非兼容性结论），`tools/dexvm_stub_gen.py`
   由报告生成占位。流程见

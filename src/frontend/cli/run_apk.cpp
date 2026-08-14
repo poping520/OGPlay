@@ -712,7 +712,8 @@ int RunApkCommand(const int argc, const char* const argv[],
                   ? "OGPlay: Profile GLSurfaceView started in MCP manual-step mode.\n"
                   : "OGPlay: Profile GLSurfaceView started; close the window to stop.\n");
         while (!quit && !guest->ExitRequested() &&
-               !(dex_context && dex_context->exit_requested.load())) {
+               !(dex_context &&
+                 runtime::SessionExitRequested(*dex_context))) {
             const auto window_state = window->State();
             for (const auto& event : window->PollEvents()) {
                 if (event.type == hal::InputEventType::quit) {

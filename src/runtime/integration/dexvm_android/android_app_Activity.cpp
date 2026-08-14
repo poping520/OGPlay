@@ -204,8 +204,8 @@ Decl Declare_android_app_Activity(const Context& context) {
     builder.Overridable("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.Overridable("finish", "()V",
-        [context](dx::IntrinsicContext&) {
-            context->exit_requested = true;
+        [context](dx::IntrinsicContext& call) {
+            context->finishing_activity = call.receiver.Value();
             return dx::VmValue::Void();
         });
     builder.Virtual("getWindowManager", "()Landroid/view/WindowManager;",

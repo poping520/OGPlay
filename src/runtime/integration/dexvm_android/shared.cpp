@@ -338,6 +338,18 @@ std::optional<std::string> PumpJavaThreads(dx::Interpreter& vm,
     return std::nullopt;
 }
 
+bool SessionExitRequested(const DexVmAndroidContext& context) {
+    if (context.exit_requested.load()) return true;
+    const auto finishing = context.finishing_activity.load();
+    if (finishing == 0U || finishing != context.activity.Value()) {
+        return false;
+    }
+    // The last activity finishing itself ends the session; a handoff still
+    // in flight does not. finish() is published after the startActivity it
+    // follows, so observing the former guarantees the latter is visible.
+    return !context.activity_switch_pending.load();
+}
+
 dx::VmObjectRef MakeMotionEvent(dx::Interpreter& vm,
                                 const std::int32_t action, const float x,
                                 const float y, const std::int32_t pointer) {

@@ -27,9 +27,13 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 `BindAndroidFileMetadataSyscalls`（`syscall_file_metadata.cpp`）把
 mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`getdents64`、
 `access`、`ftruncate`、`fsync`/`fdatasync` 与 `pread64`/`pwrite64` 绑到与
-`BindAndroidFileSyscalls` 同一个 VFS。`struct stat64` 按 Android ARM 打包
-布局（96 字节）编组，`linux_dirent64` 记录 8 字节对齐且只发完整记录；两者
-偏移由机器测试锁定。guest `open(O_DIRECTORY)` 取得快照目录 fd；open flags 按
+`BindAndroidFileSyscalls` 同一个 VFS。`struct stat64` 按 Android ARM 自然对齐
+布局（104 字节，非 x86 的打包布局）编组：`st_mode` 在 16、`st_size` 在 48、
+`st_blksize` 在 56、`st_blocks` 在 64、`st_ino` 在 96，44 处的填充必须保持 0。
+guest libc 的 `__swhatbuf` 就是从 104 字节栈帧的偏移 56 读 `st_blksize`；若按
+96 字节打包布局编组，guest 读到的 64 位 `st_size` 高位字会是我们的
+`st_blksize`，`fopen`+`fread` 会把每个文件都看成 TB 级并 malloc 失败。
+`linux_dirent64` 记录 8 字节对齐且只发完整记录；两者偏移由机器测试锁定。guest `open(O_DIRECTORY)` 取得快照目录 fd；open flags 按
 ARM EABI 布局解码（`arch/arm` 的 `O_DIRECTORY=040000`、`O_NOFOLLOW=0100000`、
 `O_LARGEFILE=0400000`，不是 asm-generic 值），bionic `opendir()` 的真实组合由
 机器测试锁定。记录装不下时回退 cursor 并返回当前页，下一次继续。`fstat64` 直接查询 descriptor 元数据，

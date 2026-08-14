@@ -53,7 +53,17 @@ struct DexVmAndroidContext final {
 
     // Deterministic time published by the lifecycle driver (unified Clock).
     std::atomic<std::int64_t> uptime_millis{0};
+    // System.exit(): the guest asked for the process, not an activity.
     std::atomic<bool> exit_requested{false};
+    // Activity.finish() retires one activity. An installer shell finishing
+    // itself right after startActivity is a handoff, and its run() keeps
+    // executing on its own host thread, so the request is recorded per
+    // activity handle: a finish() from an already retired activity can no
+    // longer be mistaken for the session ending. Ask SessionExitRequested.
+    std::atomic<std::uint32_t> finishing_activity{0};
+    // Raised with pending_activity_descriptor so the exit predicate can see
+    // an in-flight handoff without reading that string across threads.
+    std::atomic<bool> activity_switch_pending{false};
 
     // Captured lifecycle facts.
     dexvm::VmObjectRef activity;
@@ -318,6 +328,12 @@ enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
 // matching the process-fatal default handler on device.
 [[nodiscard]] std::optional<std::string>
 PumpJavaThreads(dexvm::Interpreter &vm, DexVmAndroidContext &context);
+
+// True when the guest asked for the session to end: System.exit(), or the
+// activity that currently owns the screen finished itself with no successor
+// on the way in. A finish() aimed at any other activity handle is a retired
+// or departing activity and never ends the session.
+[[nodiscard]] bool SessionExitRequested(const DexVmAndroidContext& context);
 
 [[nodiscard]] std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
     const std::shared_ptr<DexVmAndroidContext>& context);

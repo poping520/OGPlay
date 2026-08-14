@@ -10,6 +10,13 @@ constexpr core::RateLimitPolicy kUnrestrictedLog{
 
 }  // namespace
 
+HostEventThreadGate::HostEventThreadGate() noexcept
+    : owner_(std::this_thread::get_id()) {}
+
+bool HostEventThreadGate::IsOwnerThread() const noexcept {
+    return std::this_thread::get_id() == owner_;
+}
+
 HostEventPumpGate::HostEventPumpGate(
     const std::uint64_t interval_ticks) noexcept
     : interval_ticks_(interval_ticks) {}

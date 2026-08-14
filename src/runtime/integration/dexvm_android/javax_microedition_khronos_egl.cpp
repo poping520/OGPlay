@@ -20,7 +20,6 @@ constexpr std::int32_t kBadAttribute = 0x3004;
 constexpr std::int32_t kBadConfig = 0x3005;
 constexpr std::int32_t kBadContext = 0x3006;
 constexpr std::int32_t kBadDisplay = 0x3008;
-constexpr std::int32_t kBadMatch = 0x3009;
 constexpr std::int32_t kBadNativeWindow = 0x300B;
 constexpr std::int32_t kBadParameter = 0x300C;
 constexpr std::int32_t kBadSurface = 0x300D;

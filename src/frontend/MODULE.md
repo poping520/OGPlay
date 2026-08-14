@@ -60,8 +60,9 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - SoundPool loader 只消费解析后的 source/path；每轮音频补充有界，退出时停止设备。
 - guest process exit、fault 和 shutdown 都必须进入正常 lifecycle/session teardown；native
   finalizer 在 managed ANGLE surface 关闭前执行。
-- observer 只泵宿主窗口消息并按宿主时间节流，不推进 guest Clock、消费 guest 输入或
-  提交半帧。
+- observer 只在打开并驱动 SDL 窗口的宿主线程泵窗口消息，DexVM Java
+  工作线程上的同一 guest-call observer 必须跳过窗口与共享进度状态；泵事件
+  按宿主时间节流，不推进 guest Clock、消费 guest 输入或提交半帧。
 - GUI 子进程必须关闭 stdin、继承 stdout、把 stderr 覆盖写入条目 `last-run.log`；同
   package 单实例，GUI 退出不得杀死仍运行的游戏；存档根固定为当前库根的 `sandbox/`。
 - GUI 删除库条目不得删除 external 数据或持久存档；设置面只保存启动必需的

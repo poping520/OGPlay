@@ -563,6 +563,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         // never paced.
         std::chrono::steady_clock::time_point video_pace_deadline{};
         RunApkGuestCallProgress call_progress{logger};
+        HostEventThreadGate event_thread_gate;
         constexpr std::uint64_t kGuestCallEventPumpHz = 250U;
         HostEventPumpGate pump_gate{
             frame_rate_clock.TicksPerSecond() / kGuestCallEventPumpHz};
@@ -572,6 +573,10 @@ int RunApkCommand(const int argc, const char* const argv[],
                 kUnrestrictedLog);
         };
         const auto guest_slice_observer = [&](const std::uint64_t consumed_ticks) {
+            // DexVM Java threads reuse the native guest-call observer. SDL
+            // event pumping and the progress gate it mutates belong only to
+            // the host thread that opened and drives the window.
+            if (!event_thread_gate.IsOwnerThread()) return;
             if (pump_gate.ShouldPump(frame_rate_clock.Ticks())) {
                 window->PumpEvents();
             }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <thread>
 
 namespace ogplay::core {
 class Logger;
@@ -9,6 +10,19 @@ class Logger;
 namespace ogplay::frontend {
 
 inline constexpr std::uint64_t kLongGuestCallLogTicks = UINT64_C(1000000000);
+
+/// Binds host UI work to the thread that created the gate. Guest-call slice
+/// observers can also run on DexVM Java host threads, but SDL event pumping is
+/// main-thread-only on every supported platform.
+class HostEventThreadGate final {
+public:
+    HostEventThreadGate() noexcept;
+
+    [[nodiscard]] bool IsOwnerThread() const noexcept;
+
+private:
+    std::thread::id owner_;
+};
 
 /// 帧循环只在没有成功呈现 guest 帧的迭代里休眠让出 CPU;成功呈现的迭代立即
 /// 进入下一帧,不额外征收每帧 1ms 的固定延迟。

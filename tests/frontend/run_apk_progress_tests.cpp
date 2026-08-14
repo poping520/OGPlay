@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <thread>
 
 #include "ogplay/core/logger.h"
 #include "ogplay/frontend/run_apk_progress.h"
@@ -24,6 +25,18 @@ TEST_CASE("host event pump gate throttles pumps to the host interval") {
     CHECK(gate.ShouldPump(9'000'000U));
     CHECK_FALSE(gate.ShouldPump(12'999'999U));
     CHECK(gate.ShouldPump(13'000'000U));
+}
+
+TEST_CASE("host event thread gate rejects DexVM worker threads") {
+    ogplay::frontend::HostEventThreadGate gate;
+    CHECK(gate.IsOwnerThread());
+
+    bool worker_is_owner = true;
+    std::thread worker([&] { worker_is_owner = gate.IsOwnerThread(); });
+    worker.join();
+
+    CHECK_FALSE(worker_is_owner);
+    CHECK(gate.IsOwnerThread());
 }
 
 TEST_CASE("host event pump gate with a zero interval always pumps") {

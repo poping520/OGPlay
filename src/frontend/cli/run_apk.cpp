@@ -663,7 +663,8 @@ int RunApkCommand(const int argc, const char* const argv[],
                         guest->Stop();
                     },
                     [&guest] { guest->CloseManagedSurface(); },
-                    [&filesystem] { session::FlushProfileVfsAtLifecycleBoundary(filesystem); }});
+                    [&filesystem] { session::FlushProfileVfsAtLifecycleBoundary(filesystem); },
+                    [&guest] { guest->ReleaseManagedSurfaceFromCallingThread(); }});
             driver = {[&] { return dex_lifecycle->Start(); },
                       [&] { return dex_lifecycle->Suspend(); },
                       [&] { return dex_lifecycle->Resume(); },

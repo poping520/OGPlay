@@ -1,8 +1,7 @@
 # 当前状态
 
-更新：2026-08-13 · DexVM 阶段 4（真实宿主 Java 线程、monitor wait-set、managed
-surface 回调）与 intrinsic 声明迁移（DVM-32..38）已交付；存档沙盒 SBX-1..12、
-主面板 GUI-1..16 与验收报告均已收口
+更新：2026-08-14 · DVM-31 EGL façade 实现完成，exact gate 尚未闭合；MSVC
+工程内/工程间并行编译已启用；DexVM 阶段 4 与 intrinsic 声明迁移、SBX、GUI 已交付
 
 ## 当前阶段
 
@@ -20,9 +19,8 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..38）已交付；存档沙
   native 侧 JNI monitor 表尚未与之合一。
 - **intrinsic/热路径优化与声明迁移已交付**（DVM-32..38）：地址稳定绑定、
   execution 传递、受检 builder；68 个 java.*/javax.* 与 165 个 android/platform
-  类各自一类一文件，handler 与声明同址，`integration/dexvm_android/` 的逐类
-  `Declare_*()` 是唯一 intrinsic 分发通道（兼容 registry、字符串 handler id 与
-  懒绑定缓存已删除）。保留的 support 文件只负责派发子系统。
+  类均由同址 `Declare_*()` 直接绑定；Android Java handle 后续按 API 家族聚合
+  翻译单元，`Declare_*()` 仍是唯一分发通道（旧 registry/字符串 id 已删除）。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用后
   `asphalt5.title_flow` 三轮 passed——468 帧、主界面 SHA-256 `9ee57323…` 逐位
   一致、无 fault、clean shutdown。
@@ -38,8 +36,10 @@ surface 回调）与 intrinsic 声明迁移（DVM-32..38）已交付；存档沙
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。macOS/arm64 本次 full CTest 711/711；
-Windows/x64（windows-msvc）此前 709/709。
+能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 711/711；
+Windows/x64（windows-msvc）本次 721/721。
+Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；
+第三方 target 不被全局注入该选项。
 
 ## 进行中：更多 title 上 dexvm 路线
 
@@ -56,23 +56,22 @@ Windows/x64（windows-msvc）此前 709/709。
   关闭即明确失败，survey 运行标注为非兼容性结论），`tools/dexvm_stub_gen.py`
   由报告生成占位。流程见
   [`docs/playbook/NEW-TITLE.md`](../playbook/NEW-TITLE.md)。
-- **Asphalt 6（2026-08-12 实测）**：production v2 Profile 入口覆盖启动
-  `GLGame` 并写入 provisioned-data 事实；删除该 preset 真实切回商业外壳并在
-  `Intent.setPackage` 明确失败，未触及 DRM 消费链。APK 自带改名的 AOSP
-  `GLSurfaceView`；DVM-28..30 后 `GLThread` 已是真实宿主线程、越过
-  `Object.wait()`、收到 managed surface 回调。三轮 exact 逐字一致停在
-  `class is not available: Ljavax/microedition/khronos/egl/EGLContext;`——
-  自带 `GLSurfaceView` 要自己驱动 EGL。**未达首帧**，profile 保持 `partial`；
-  前向缺口已静态枚举（EGL10 18 方法 + 4 常量、`EGLContext.getEGL/getGL`、
-  `GL10.glGetString`），由 DVM-31 承接。证据：`.local/evidence/a6-gate-r1..r3/`。
+- **DVM-31 EGL façade（2026-08-14）**：host-owned surface 状态机、currency
+  接力、managed present 与条件 swap pacer 已实现；driver 可运行时一帧一 swap，
+  guest 阻塞时放行，N=2 monitor 握手与反向节拍测试通过。10 个 EGL/GL Java
+  handle 与 façade 实现已聚合为单一翻译单元。A6 已越过 EGL 缺口
+  且无原死锁，但在首帧前停于范围外 `Context.unregisterReceiver`，故 profile
+  保持 `partial`。A5 当前与改动前 HEAD 四检查点 PNG 逐位相同（主界面均为
+  `f91150b4…`），但场景历史期望 `9ee57323…` 已漂移，exact gate 未宣告通过。
 
 开发方式手册见 **[docs/playbook/README.md](../playbook/README.md)**；title
 阻塞点与工作队列见 [`docs/tasks/dexvm/README.md`](../tasks/dexvm/README.md)。
 
 ## 下一步（按优先级）
 
-1. DVM-31：解释执行的 EGL10/GL10 façade（自带 `GLSurfaceView` 的通用形态，
-   非 title 特判），让 A6 取得首帧；达到主界面后才宣告 gate。
+1. DVM-31 端到端验收：先由后续非 EGL WU 补齐 A6 的
+   `Context.unregisterReceiver`，再执行三轮首帧 gate；另行裁决 A5 历史哈希漂移，
+   未更新期望前不得宣告 exact 通过。
 2. 按命中批次闭合 DexVM 缺口并推进 GC-B；当前 512 MiB GC-A 预算只覆盖
    已验证短流程，不代表长时游玩 ready。
 3. 解释器性能余项：invoke 参数封送 args-shorty 预计算、String intrinsic
@@ -84,7 +83,7 @@ Windows/x64（windows-msvc）此前 709/709。
 
 ## 阻塞
 
-- 无新增阻塞。dexvm 未实现面（反射/finalizer/多 ClassLoader/odex 等
-  非目标，及未挂接 intrinsic）全部记账并明确失败，不伪造成功。
+- DVM-31 exact gate 受范围外 `Context.unregisterReceiver` 与 A5 历史期望哈希
+  漂移阻塞；本轮不扩展到非 EGL。其余未实现面均记账并明确失败。
 
 长期限制见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

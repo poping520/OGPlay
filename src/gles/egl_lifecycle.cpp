@@ -342,6 +342,29 @@ bool EglLifecycle::IsCurrent() const noexcept {
     return current_;
 }
 
+void EglLifecycle::BindCurrentOnCallingThread() {
+    if (api_ == nullptr || display_ == 0 || context_ == 0 || surface_ == 0) {
+        throw std::logic_error("EGL lifecycle is not initialized");
+    }
+    if (current_) {
+        throw std::logic_error("EGL lifecycle is already current");
+    }
+    if (!api_->MakeCurrent(display_, surface_, surface_, context_)) {
+        ThrowLastError(*api_, EglOperation::make_current);
+    }
+    current_ = true;
+}
+
+void EglLifecycle::ReleaseCurrent() {
+    if (api_ == nullptr || !current_) {
+        throw std::logic_error("EGL lifecycle is not current");
+    }
+    if (!api_->MakeCurrent(display_, 0, 0, 0)) {
+        ThrowLastError(*api_, EglOperation::make_current);
+    }
+    current_ = false;
+}
+
 void EglLifecycle::Reset() noexcept {
     if (api_ == nullptr) {
         return;

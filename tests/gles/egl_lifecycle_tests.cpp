@@ -156,6 +156,22 @@ TEST_CASE("EGL lifecycle move transfers sole cleanup responsibility") {
     CHECK(std::count(api.calls.begin(), api.calls.end(), "terminate") == 1);
 }
 
+TEST_CASE("EGL lifecycle explicitly releases and rebinds currency") {
+    FakeEglApi api;
+    {
+        auto lifecycle = ogplay::gles::EglLifecycle::CreatePbuffer(
+            api, kBackend, 4, 4);
+        lifecycle.ReleaseCurrent();
+        CHECK_FALSE(lifecycle.IsCurrent());
+        lifecycle.BindCurrentOnCallingThread();
+        CHECK(lifecycle.IsCurrent());
+        CHECK_THROWS_AS(lifecycle.BindCurrentOnCallingThread(),
+                        std::logic_error);
+    }
+    CHECK(std::count(api.calls.begin(), api.calls.end(), "current") == 2);
+    CHECK(std::count(api.calls.begin(), api.calls.end(), "unbind") == 2);
+}
+
 TEST_CASE("EGL lifecycle rejects invalid dimensions before native calls") {
     FakeEglApi api;
     CHECK_THROWS_AS(ogplay::gles::EglLifecycle::CreatePbuffer(

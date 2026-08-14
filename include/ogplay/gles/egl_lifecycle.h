@@ -83,6 +83,8 @@ public:
 
     [[nodiscard]] const EglContextInfo& Info() const noexcept;
     [[nodiscard]] bool IsCurrent() const noexcept;
+    void BindCurrentOnCallingThread();
+    void ReleaseCurrent();
 
 private:
     EglLifecycle(EglApi& api, EglContextInfo info) noexcept;

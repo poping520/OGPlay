@@ -1,5 +1,6 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -25,6 +26,8 @@ public:
     std::condition_variable released;
     std::thread::id owner;
     std::size_t depth{};
+    std::atomic<void*> blocking_observer_context{};
+    std::atomic<BlockingObserver> blocking_observer{};
 };
 
 VmExecutionLock::VmExecutionLock() : impl_(std::make_unique<Impl>()) {}
@@ -56,8 +59,9 @@ void VmExecutionLock::Release() {
 }
 
 std::size_t VmExecutionLock::ReleaseForBlocking() {
+    const auto self = std::this_thread::get_id();
     std::unique_lock lock(impl_->mutex);
-    if (impl_->depth == 0 || impl_->owner != std::this_thread::get_id()) {
+    if (impl_->depth == 0 || impl_->owner != self) {
         return 0;
     }
     const auto held = impl_->depth;
@@ -65,11 +69,28 @@ std::size_t VmExecutionLock::ReleaseForBlocking() {
     impl_->owner = std::thread::id{};
     lock.unlock();
     impl_->released.notify_all();
+    const auto observer =
+        impl_->blocking_observer.load(std::memory_order_acquire);
+    if (observer != nullptr) {
+        observer(impl_->blocking_observer_context.load(
+                     std::memory_order_relaxed),
+                 self, true);
+    }
     return held;
 }
 
 void VmExecutionLock::ReacquireAfterBlocking(const std::size_t depth) {
     if (depth == 0) return;
+    const auto observer =
+        impl_->blocking_observer.load(std::memory_order_acquire);
+    if (observer != nullptr) {
+        observer(impl_->blocking_observer_context.load(
+                     std::memory_order_relaxed),
+                 std::this_thread::get_id(), false);
+    }
+    // The thread is no longer blocked once it starts competing for the VM
+    // lock. Notify first so a conditional pacer makes the current owner park
+    // instead of repeatedly bypassing while this thread waits to reacquire.
     Acquire();
     std::lock_guard lock(impl_->mutex);
     impl_->depth = depth;
@@ -78,6 +99,12 @@ void VmExecutionLock::ReacquireAfterBlocking(const std::size_t depth) {
 bool VmExecutionLock::HeldByCurrentThread() const {
     std::lock_guard lock(impl_->mutex);
     return impl_->depth > 0 && impl_->owner == std::this_thread::get_id();
+}
+
+void VmExecutionLock::SetBlockingObserver(
+    void* context, const BlockingObserver observer) noexcept {
+    impl_->blocking_observer_context.store(context, std::memory_order_relaxed);
+    impl_->blocking_observer.store(observer, std::memory_order_release);
 }
 
 InterpreterExecutionScope::InterpreterExecutionScope(

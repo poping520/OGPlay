@@ -865,6 +865,16 @@ status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
 note = "M5 WU-0242 为 Java/GLSurfaceView lifecycle 显式 open/present/close ANGLE pbuffer，复用统一 resolve；guest EGL 不得替换或终止 host-owned surface"
 
+[gles.context_thread_affinity]
+status = "complete"
+test = "tests/gles/egl_lifecycle_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
+note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用线程受检绑定；同线程释放后可接力，跨线程抢夺明确失败"
+
+[dexvm.egl_facade]
+status = "partial"
+test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
+note = "DVM-31 已实现 AOSP EGL10/GL10 类形状、单 surface façade 状态机、GL currency 接力、managed present 与条件 swap pacer；driver 可运行时一帧一 swap，driver 进入 guest 阻塞时由 VmExecutionLock observer 放行，N=2 monitor 握手及反向节拍测试已通过。A6 已越过 EGL/死锁但在首帧前停于范围外 Context.unregisterReceiver；A5 四检查点与改动前 HEAD 逐位相同，但场景历史期望哈希已漂移；exact gate 均未宣告通过"
+
 [session.profile_guest_lifecycle]
 status = "complete"
 test = "docs/adr/0022-profile-entry-scope-and-v2-only.md; tests/session/lifecycle_tests.cpp"

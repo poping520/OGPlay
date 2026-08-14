@@ -154,7 +154,15 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_java_util_zip_ZipEntry(const Context& context);
 [[nodiscard]] Decl Declare_java_util_zip_ZipInputStream(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLConfig(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL10_Impl(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLContext(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLDisplay(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLSurface(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_opengles_GL(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_opengles_GL10(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_opengles_GL10_Impl(const Context& context);
 [[nodiscard]] Decl Declare_javax_net_ssl_HostnameVerifier(const Context& context);
 [[nodiscard]] Decl Declare_javax_net_ssl_HttpsURLConnection(const Context& context);
 [[nodiscard]] Decl Declare_javax_net_ssl_KeyManager(const Context& context);

@@ -44,6 +44,9 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   会话可向宿主拉取 stereo PCM16,但本层不打开设备;Profile phase、窗口和标题事实不得进入
   该会话。失败清理可显式调用 `InterruptBlockingWaits`,使当前及之后的 guest futex wait 以
   `-EINTR` 返回,避免 finalizer 把宿主生命周期线程永久阻塞。
+  DVM-31 另提供只面向 DexVM EGL façade 的窄转发：查询 managed surface 是否已开、
+  绑定/释放调用线程 GL currency、present 以及读取当前 ANGLE `glGetString`；不暴露
+  原生 EGL handle，也不把 surface 所有权上移给 guest。
 - session stop 必须先快照全部 child、请求仍运行者退出并中断 futex,再逐个 join;单个
   child 的异常只能作为首错延迟上报,禁止跳过其余 join。所有 child 完成后才可执行 guest
   fini 或让 lifecycle/dispatcher/address-space 进入逆序析构。
@@ -164,11 +167,12 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 ## 文件分工（android.* intrinsic）
 
 `dexvm_android.h` 是唯一公共面。生产装配只调用
-`AndroidIntrinsicCatalog(context)`。每个平台类在
-`dexvm_android/<类名>.cpp` 中以 `Declare_<类名>(context)` 同址声明并直接绑定；
-`dexvm_android/catalog.cpp` 只聚合，`shared.h` 只保存跨类 helper/工厂；保留的
-support 文件只实现 surface/video/widget 派发子系统，不承载 handler。新增能力必须
-进入对应类文件，禁止恢复集中式 handler 容器、Populate 或字符串分发通道。
+`AndroidIntrinsicCatalog(context)`。平台类按 API 家族聚合到
+`dexvm_android/<家族>.cpp`，每个类仍以 `Declare_<类名>(context)` 同址声明并直接
+绑定；Java handle 家族聚合文件不受 800 行限制。`catalog.cpp` 只注册聚合，
+`shared.h` 只保存确需跨家族复用的 helper/工厂，support 文件只实现
+surface/video/widget 派发子系统。禁止恢复集中式 handler 容器、Populate 或
+字符串分发通道。
 
 ## 测试
 

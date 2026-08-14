@@ -171,6 +171,18 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_org_xml_sax_XMLReader_Impl(context),
         Declare_org_xml_sax_XMLReader(context),
         Declare_org_xml_sax_helpers_DefaultHandler(context),
+        // Append-only compatibility tail: adding platform shapes must not
+        // renumber the pre-DVM-31 intrinsic class prefix. Object.hashCode()
+        // exposes VM handles, so insertion into the stable prefix is guest-
+        // observable and breaks exact title behavior.
+        Declare_javax_microedition_khronos_egl_EGL(context),
+        Declare_javax_microedition_khronos_egl_EGL10(context),
+        Declare_javax_microedition_khronos_egl_EGL10_Impl(context),
+        Declare_javax_microedition_khronos_egl_EGLContext(context),
+        Declare_javax_microedition_khronos_egl_EGLDisplay(context),
+        Declare_javax_microedition_khronos_egl_EGLSurface(context),
+        Declare_javax_microedition_khronos_opengles_GL(context),
+        Declare_javax_microedition_khronos_opengles_GL10_Impl(context),
     };
 }
 

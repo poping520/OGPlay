@@ -627,6 +627,61 @@
     return-void
 .end method
 
+# Conditional EGL pacing regression: the lifecycle/driver waits on a guest
+# monitor until a worker has completed two swaps. N=2 rejects one-shot permit
+# schemes that only happen to break a single-frame handshake.
+.class public LSwapHandshake;
+.super Ljava/lang/Object;
+
+.field static public lock:Ljava/lang/Object;
+.field static public swaps:I
+.field static public observed:I
+
+.method static constructor <clinit>()V
+.registers 1
+    new-instance v0, Ljava/lang/Object;
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    sput-object v0, LSwapHandshake;->lock:Ljava/lang/Object;
+    return-void
+.end method
+
+.method static public awaitTwo()V
+.registers 3
+    sget-object v0, LSwapHandshake;->lock:Ljava/lang/Object;
+    monitor-enter v0
+    :check
+    sget v1, LSwapHandshake;->swaps:I
+    const/4 v2, 2
+    if-ge v1, v2, :done
+    invoke-virtual {v0}, Ljava/lang/Object;->wait()V
+    goto :check
+    :done
+    sput v1, LSwapHandshake;->observed:I
+    monitor-exit v0
+    return-void
+.end method
+
+.method static public recordSwap()V
+.registers 3
+    sget-object v0, LSwapHandshake;->lock:Ljava/lang/Object;
+    monitor-enter v0
+    sget v1, LSwapHandshake;->swaps:I
+    add-int/lit8 v1, v1, 1
+    sput v1, LSwapHandshake;->swaps:I
+    const/4 v2, 2
+    if-lt v1, v2, :done
+    invoke-virtual {v0}, Ljava/lang/Object;->notifyAll()V
+    :done
+    monitor-exit v0
+    return-void
+.end method
+
+.method static public observed()I
+.registers 1
+    sget v0, LSwapHandshake;->observed:I
+    return v0
+.end method
+
 # Runs the timed wait on its own thread; nothing ever notifies it, so only
 # the Clock deadline gets it out.
 .class public LWaitTimedRunner;

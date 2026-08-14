@@ -59,6 +59,14 @@ AngleFrame::~AngleFrame() = default;
 AngleFrame::AngleFrame(AngleFrame&&) noexcept = default;
 AngleFrame& AngleFrame::operator=(AngleFrame&&) noexcept = default;
 
+void AngleFrame::BindCurrentOnCallingThread() {
+    lifecycle_.BindCurrentOnCallingThread();
+}
+
+void AngleFrame::ReleaseCurrent() {
+    lifecycle_.ReleaseCurrent();
+}
+
 void AngleFrame::Viewport(const std::int32_t x, const std::int32_t y,
                           const std::int32_t width,
                           const std::int32_t height) {

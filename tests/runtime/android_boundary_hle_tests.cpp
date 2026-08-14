@@ -4,11 +4,13 @@
 #include <bit>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1778,6 +1780,43 @@ TEST_CASE("Android boundary owns a managed GLSurface frame lifecycle") {
         fixture.boundary.CloseManagedSurface(),
         "Android boundary managed surface is not open",
         std::logic_error);
+}
+
+TEST_CASE("managed GLSurface currency supports explicit cross-thread handoff") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    fixture.boundary.BindManagedSurfaceOnCallingThread();
+
+    std::string affinity_failure;
+    std::thread contender([&] {
+        try {
+            fixture.boundary.BindManagedSurfaceOnCallingThread();
+        } catch (const std::exception& error) {
+            affinity_failure = error.what();
+        }
+    });
+    contender.join();
+    CHECK(affinity_failure ==
+          "bind managed surface violates GL context thread affinity");
+
+    fixture.boundary.ReleaseManagedSurfaceFromCallingThread();
+    std::exception_ptr handoff_failure;
+    std::thread successor([&] {
+        try {
+            fixture.boundary.BindManagedSurfaceOnCallingThread();
+            fixture.boundary.PresentManagedSurface();
+            fixture.boundary.ReleaseManagedSurfaceFromCallingThread();
+        } catch (...) {
+            handoff_failure = std::current_exception();
+        }
+    });
+    successor.join();
+    CHECK(handoff_failure == nullptr);
+    const auto frame = fixture.boundary.TakeLatestFrame();
+    REQUIRE(frame.has_value());
+    CHECK(frame->sequence == 1);
+    fixture.boundary.CloseManagedSurface();
 }
 
 TEST_CASE("Android GLES boundary compiles and links guest shader sources") {

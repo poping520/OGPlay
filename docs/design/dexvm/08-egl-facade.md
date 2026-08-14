@@ -74,8 +74,8 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
 
 | 事实 | 位置 |
 | --- | --- |
-| `EGLConfig` 已有空壳具体类声明 | `src/runtime/integration/dexvm_android/javax_microedition_khronos_egl_EGLConfig.cpp` |
-| `GL10` 已声明为空接口（无 super、无方法） | `.../javax_microedition_khronos_opengles_GL10.cpp` |
+| `EGLConfig` 原有空壳具体类声明 | 现已并入 `src/runtime/integration/dexvm_android/javax_microedition_khronos_egl.cpp` |
+| `GL10` 原有空接口（无 super、无方法） | 现已并入同一 EGL/GL 家族聚合文件 |
 | `EGLContext/EGL10/EGL/EGLDisplay/EGLSurface/GL` 全部缺失 | 触发本次阻塞 |
 | intrinsic 声明 API（Static/Virtual/Field/ConstantInt/Clinit/Unimplemented） | `include/ogplay/runtime/dexvm/intrinsic_builder.h` |
 | 静态对象单例先例（Field + Clinit + SetIntrinsicStaticRef） | `.../android_graphics_Bitmap_Config.cpp` |
@@ -118,7 +118,11 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
 - 未列入 §4.3 范围的 EGL10 接口方法：接口上声明形状（invoke-interface
   解析需要），Impl 类用 `Unimplemented()` 显式进入记账+失败路径。
 
-### 4.2 新增类清单（一类一文件，进 `catalog.h/cpp`）
+### 4.2 新增类清单（同一 API 家族聚合，进 `catalog.h/cpp`）
+
+下列 10 个 Java handle 的声明、handler 与共享 façade 实现统一位于
+`javax_microedition_khronos_egl.cpp`。各描述符仍有独立 `Declare_*()` 入口，
+但不再为每个类创建翻译单元；该 Java handle 家族聚合文件不受 800 行限制。
 
 | 描述符 | 形态 | 内容 |
 | --- | --- | --- |
@@ -139,7 +143,7 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
 ### 4.3 EGL façade 状态机与方法语义
 
 状态存 `DexVmAndroidContext`（新增 `struct EglFacadeState`，跨 handler 共享；
-helper 放新文件 `support_egl.cpp`，遵守 MODULE 的 shared-handler 工厂约定）：
+helper 与声明同址于 `javax_microedition_khronos_egl.cpp`）：
 
 ```text
 display singleton（惰性建）; initialized 标志; config singleton;
@@ -162,7 +166,7 @@ currency{display,surface,context}（façade 层）; last_error（int）
 | `eglDestroySurface(d, s)` | 退役 façade surface；**宿主 surface 不动**（契约） |
 | `eglDestroyContext(d, ctx)` | 退役 façade context；仍为 current → 模型破坏 |
 | `eglMakeCurrent(d, draw, read, ctx)` | 绑定形（draw==read 为存活 surface 且 ctx 存活）→ 记录 façade currency + **宿主 currency 迁移到调用线程**（§5）；解绑形（NO_SURFACE×2 + NO_CONTEXT）→ 清 currency + 调用线程释放宿主 currency；draw≠read 或混合形 → 记账失败 |
-| `eglSwapBuffers(d, s)` | façade currency 必须在调用线程上且 s 为 current surface，否则 false + `EGL_BAD_SURFACE`；正常路径：`session->PresentManagedSurface()`（readback 发生在 GL-current 的调用线程，线程安全）→ 帧屏障停泊（§6）→ true |
+| `eglSwapBuffers(d, s)` | façade currency 必须在调用线程上且 s 为 current surface，否则 false + `EGL_BAD_SURFACE`；正常路径：`session->PresentManagedSurface()`（readback 发生在 GL-current 的调用线程，线程安全）→ 条件帧屏障（§6）→ true |
 | `eglGetError()` | 返回并复位 last_error（默认 `EGL_SUCCESS`） |
 | `eglGetCurrentDisplay/eglGetCurrentSurface(readdraw)` | 回答 façade currency（未绑定回 EGL_NO_*） |
 | `EGLContext.getEGL()` | EGL10$Impl singleton（`Singleton` helper） |
@@ -201,7 +205,10 @@ title 在 `GLThread`（另一宿主线程）上发起全部 GL 工作——nativ
    `ReleaseCurrent()`（调用线程解绑）与 `BindCurrentOnCallingThread()`。
 2. boundary 维护 `std::optional<std::thread::id> gl_owner_`：
    - `OpenManagedSurface`：创建 + `InitializeGuestGlDefaults()`（此时仍
-     current 于打开线程）→ **随即 `ReleaseCurrent()`，owner 置空**。
+     current 于打开线程）。lifecycle 根据已经建立的通用 render-driver 事实分流：
+     intrinsic `context.renderer` 有效时保留 currency，维持既有精确路径；无
+     intrinsic renderer（guest-owned GLSurfaceView）时在 surface callback 前由打开
+     线程 `ReleaseCurrent()`，owner 置空，随后 GLThread 可合法接力。
    - 每个触碰 ANGLE 的入口（`RequireFrame` 与 present）检查：owner 为空 →
      绑定到调用线程并登记；owner == 调用线程 → 直通；owner 为**其他**线程 →
      记账（新条目 `gles.context_thread_affinity`）并明确失败，绝不静默抢夺。
@@ -214,26 +221,40 @@ title 在 `GLThread`（另一宿主线程）上发起全部 GL 工作——nativ
 3. 串行化由 `VmExecutionLock` 与"native 帧持锁"既有事实保证，owner 检查是
    诚实失败的防线，不是新锁。
 
-**对既有 title 的影响**：intrinsic-renderer 形态（Asphalt 5）首个 GL 调用
-来自主线程 → currency 落回主线程，行为逐位不变（exact 回归验证）。
+**对既有 title 的影响**：intrinsic-renderer 形态保留打开线程 currency；
+guest-owned GLSurfaceView 形态在启动其 GLThread 前显式释放。分流只依赖已经激活的
+render driver，不读取 title 身份。
 
-## 6. present 与帧节拍
+## 6. present 与帧节拍（批次 E 已裁决）
 
-- `eglSwapBuffers` 成功 readback/publish 后，把调用 guest 线程停泊到
-  **下一次宿主帧边界**（`StepFrame` 尾部发信号），每宿主帧最多消费一次 swap。
-  理由：(a) exact gate 需要确定的帧序列；(b) GLThread 否则长期持有
-  `VmExecutionLock`，主线程的输入/线程泵会饥饿；(c) 语义对应设备 vsync。
-- 实现：`DexVmAndroidContext` 新增帧屏障（帧计数 + condvar），
-  `dex_activity_lifecycle.cpp` `StepFrame()` 尾部（`frame_++` 后）唤醒；
-  停泊走既有 `ReleaseForBlocking/ReacquireAfterBlocking`。
-  唤醒源必须包含：帧推进、`VmThreadRuntime::Shutdown`/`RequestStop`、
-  `interrupt_guest_waits`（`Stop()` 既有清场顺序，`dex_activity_lifecycle.cpp:452-473`）。
-- 合法性：swap 由解释执行的 EglHelper 调用，`native_depth==0`，
-  不触发 `blocking_in_native`（已核实 AOSP GLThread 在 swap 时不持
-  GLThreadManager monitor）。
-- 决策点（实现时验证）：若实测出现屏障与 guest monitor 的交叉死锁，退化
-  方案为"publish + 让出执行锁不停泊"，并把帧序确定性问题记入任务单再议——
-  不许静默换方案。
+- 默认节拍不变：`eglSwapBuffers` 成功 readback/publish 后停泊到
+  **下一次宿主帧边界**，`StepFrame()` 在 `frame_++` 后推进 generation，保证
+  driver 可运行时每宿主帧最多消费一次 swap。停泊完整释放并按原深度恢复
+  `VmExecutionLock`，避免 GLThread 饿死输入分发和线程泵。
+- A6 exact 实测证明无条件屏障会形成闭环：GLThread 等 `StepFrame` 尾部；
+  lifecycle driver 在 activity switch/surface callback 的 guest monitor 上等
+  GLThread；GLThread 必须完成后续渲染/swap 才能表态。真机 display 消费独立于
+  UI 线程，不能把也会执行 guest 代码的 lifecycle driver 当成永远可用的外部信号源。
+- 最终模型是**条件帧屏障**。仅 guest-owned GLSurfaceView 路径挂载 pacer 并登记
+  lifecycle driver 的宿主线程 id；intrinsic-renderer 路径不安装 observer，保持
+  既有 exact 执行路径。`VmExecutionLock::ReleaseForBlocking/ReacquireAfterBlocking`
+  提供通用 observer，
+  只在该 driver 进入/离开 guest 阻塞作用域时切换 `driver_blocked`。GLThread
+  自己的释放按线程 id 排除，dexvm 不感知 EGL。
+- swap 的唤醒谓词为：`frame generation 已推进 || driver_blocked || shutdown`。
+  driver 可运行时保持一帧一 swap；driver 停泊在 monitor/wait/join 等 guest
+  阻塞原语时，display 等效为继续消费，GLThread 放行直到 guest 自己走到下一
+  阻塞点；driver 重获执行锁后 observer 自动恢复正常节拍。
+- 确定性来自既有执行模型：`VmExecutionLock` 串行化解释执行、monitor wait-set
+  FIFO、时间只来自统一 Clock，因此 driver 的阻塞点和阻塞期间 guest 能完成的
+  swap 数量都是 guest 执行的确定函数。禁止以 `yield`、墙钟节拍、超时或单帧
+  免停泊额度替代该谓词。
+- teardown 在 Java 线程 shutdown/join 前设置 pacer shutdown 并 `notify_all`。
+  swap 由解释执行的 EglHelper 调用且 `native_depth==0`，不触发
+  `blocking_in_native`。
+- 机器回归：dexasm `LSwapHandshake` 让 driver 在 guest monitor 上等待 worker
+  完成 **2 次** swap 后才 notify，锁死单次额度方案；反向用例证明 driver 未阻塞
+  时 swap 必须等到 `AdvanceEglSwapPacer()`。
 
 ## 7. 分批执行计划（每批一次会话可完成，依赖严格向前）
 
@@ -252,7 +273,7 @@ title 在 `GLThread`（另一宿主线程）上发起全部 GL 工作——nativ
 - 目标：§4.2 全部类可链接，`EGLContext.getEGL()`/`getGL()` 返回可用 Impl
   singleton，EGL_NO_* 引用相等成立；§4.3 范围内方法先以 `Unimplemented()`
   占位（记账失败，不伪造）。
-- 触及：8 个新 intrinsic 文件 + `GL10.cpp` 改造 + `catalog.h/cpp`。
+- 触及：EGL/GL 家族聚合 intrinsic 文件 + `catalog.h/cpp`。
 - 测试：`tests/session/profile_entry_scope_tests.cpp` 追加 catalog 唯一性/
   方法集合锁定；新增 `tests/dexvm/egl_facade_tests.cpp`：dexasm 夹具做
   sget 常量、引用相等、getEGL/getGL、checkcast（GL10$Impl → GL10 → GL）。
@@ -264,8 +285,8 @@ title 在 `GLThread`（另一宿主线程）上发起全部 GL 工作——nativ
 - 目标：display/init/choose/getAttrib/createContext/destroy/terminate/
   error/currency 查询按 §4.3 语义落地；makeCurrent/createWindowSurface/
   swap/glGetString 仍占位。
-- 触及：`dexvm_android.h`（EglFacadeState）、`support_egl.cpp`（新）、
-  EGL10$Impl/EGLContext 声明文件、`egl_facade_tests.cpp`。
+- 触及：`dexvm_android.h`（EglFacadeState）、EGL/GL 家族聚合文件、
+  `egl_facade_tests.cpp`。
 - 测试：完整 AOSP GLSurfaceView 启动序列的状态机走查（两段式 choose、
   属性回退、错误码置取、非法转移全部记账失败）；未知属性→
   `EGL_BAD_ATTRIBUTE` 路径。
@@ -273,7 +294,7 @@ title 在 `GLThread`（另一宿主线程）上发起全部 GL 工作——nativ
 ### 批次 D · 宿主接线（makeCurrent 迁移、surface 绑定、present、glGetString）
 
 - 目标：GLThread 真实驱动宿主 surface。
-- 触及：EGL10$Impl/GL10$Impl 声明文件、`support_egl.cpp`、
+- 触及：EGL/GL 家族聚合文件、
   `android_guest_call_session.h/.cpp`（新增窄访问器：GL 字符串、
   currency 迁移/释放转发）、`egl_facade_tests.cpp`、
   `tests/runtime/android_boundary_hle_tests.cpp`。
@@ -282,9 +303,9 @@ title 在 `GLThread`（另一宿主线程）上发起全部 GL 工作——nativ
 
 ### 批次 E · 帧节拍 + gate 收口
 
-- 目标：swap 停泊/唤醒接入 lifecycle；A6 首帧 gate；全量回归与记账收口。
+- 目标：条件 swap 停泊/唤醒接入 lifecycle；A6 首帧 gate；全量回归与记账收口。
 - 触及：`dexvm_android.h`、`src/session/dex_activity_lifecycle.cpp`、
-  `support_egl.cpp`、`data/scenarios/asphalt6.bootstrap.scenario.toml`、
+  EGL/GL 家族聚合文件、`data/scenarios/asphalt6.bootstrap.scenario.toml`、
   `capabilities.toml`（`dexvm.egl_facade` 定档、
   `profiles.asphalt6_glstore_v132` note）、`docs/state/CURRENT.md`、
   `dexvm_android/MODULE.md`。
@@ -301,8 +322,8 @@ title 在 `GLThread`（另一宿主线程）上发起全部 GL 工作——nativ
 
 ## 8. 风险与决策点（实现前先看）
 
-1. **帧屏障 vs guest monitor 死锁**（§6 决策点）——批次 E 首先用 A6 实测，
-   有证据再退化，不预防性绕路。
+1. **帧屏障 vs guest monitor 死锁**（§6，已裁决）——A6 实测确认交叉等待；
+   条件屏障以 driver 的通用 blocking observer 解环，同时保留正常一帧一 swap。
 2. **接口静态对象字段的链接路径**——批次 B 第一个测试就验证 sget 经
    intrinsic 接口的解析；若 linker 不支持，先补 linker（属于通用能力，
    非 façade 特有）。

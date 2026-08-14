@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -129,6 +130,9 @@ struct InterpreterExecutionSnapshot final {
 // every level and restore the same depth after they are resumed.
 class VmExecutionLock final {
 public:
+    using BlockingObserver =
+        void (*)(void* context, std::thread::id thread, bool blocked) noexcept;
+
     VmExecutionLock();
     ~VmExecutionLock();
     VmExecutionLock(const VmExecutionLock&) = delete;
@@ -141,6 +145,10 @@ public:
     [[nodiscard]] std::size_t ReleaseForBlocking();
     void ReacquireAfterBlocking(std::size_t depth);
     [[nodiscard]] bool HeldByCurrentThread() const;
+    // Observes real host threads entering/leaving guest blocking scopes.
+    // The callback runs outside the execution-lock mutex and must not throw.
+    // Passing nullptr for both arguments detaches the observer.
+    void SetBlockingObserver(void* context, BlockingObserver observer) noexcept;
 
 private:
     class Impl;

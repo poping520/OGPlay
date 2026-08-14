@@ -1,12 +1,15 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -144,6 +147,33 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>
         surface_callbacks;
 
+    struct EglFacadeState final {
+        dexvm::VmObjectRef display;
+        dexvm::VmObjectRef config;
+        dexvm::VmObjectRef no_display;
+        dexvm::VmObjectRef no_context;
+        dexvm::VmObjectRef no_surface;
+        dexvm::VmObjectRef window_surface;
+        std::unordered_map<std::uint32_t, std::int32_t> contexts;
+        dexvm::VmObjectRef current_display;
+        dexvm::VmObjectRef current_surface;
+        dexvm::VmObjectRef current_context;
+        std::optional<std::thread::id> current_thread;
+        std::int32_t last_error{0x3000};
+        bool initialized{};
+        // Conditional display pacing for guest-owned GLSurfaceView threads.
+        // Normally one swap is released per lifecycle frame. If the frame
+        // driver itself enters a guest blocking primitive, swaps pass until
+        // it wakes so monitor handshakes cannot depend on their own signal.
+        std::mutex pace_mutex;
+        std::condition_variable pace_changed;
+        std::optional<std::thread::id> pace_driver;
+        std::uint64_t pace_generation{};
+        bool pace_driver_blocked{};
+        bool pace_shutdown{};
+    };
+    EglFacadeState egl;
+
     // Each View exposes one stable observer. Listener identity is retained
     // for a future managed layout pass; registration itself does not invent
     // an event.
@@ -265,6 +295,18 @@ struct DexVmAndroidContext final {
     };
     std::unordered_map<std::uint64_t, VideoViewState> video_views;
 };
+
+// Installs/removes the generic VmExecutionLock blocking observer for the
+// lifecycle thread. The observer filters by the registered host thread id;
+// a GLThread's own blocking release never changes driver state.
+void AttachEglSwapPacer(DexVmAndroidContext& context,
+                        dexvm::VmExecutionLock& execution_lock);
+void DetachEglSwapPacer(DexVmAndroidContext& context,
+                        dexvm::VmExecutionLock& execution_lock);
+void AdvanceEglSwapPacer(DexVmAndroidContext& context);
+void ShutdownEglSwapPacer(DexVmAndroidContext& context);
+void PaceEglSwap(DexVmAndroidContext& context,
+                 dexvm::VmExecutionLock& execution_lock);
 
 // Advances every playing VideoView to the shared uptime clock: publishes new
 // frames through publish (letterboxed to the surface size) and fires the

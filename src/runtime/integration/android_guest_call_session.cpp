@@ -695,6 +695,18 @@ public:
         Progress("guest-jni-library-ready");
     }
     void OpenManagedSurface() { boundary_.OpenManagedSurface(); }
+    void BindManagedSurfaceOnCallingThread() {
+        boundary_.BindManagedSurfaceOnCallingThread();
+    }
+    void ReleaseManagedSurfaceFromCallingThread() {
+        boundary_.ReleaseManagedSurfaceFromCallingThread();
+    }
+    bool ManagedSurfaceIsOpen() const noexcept {
+        return boundary_.ManagedSurfaceIsOpen();
+    }
+    std::string ManagedGlString(const std::uint32_t parameter) {
+        return boundary_.ManagedGlString(parameter);
+    }
     void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
     void PushInput(const AndroidBoundaryInput& input) {
@@ -885,6 +897,10 @@ void AndroidGuestCallSession::InitializeJniLibrary() {
     }
 }
 void AndroidGuestCallSession::OpenManagedSurface() { impl_->OpenManagedSurface(); }
+void AndroidGuestCallSession::BindManagedSurfaceOnCallingThread() { impl_->BindManagedSurfaceOnCallingThread(); }
+void AndroidGuestCallSession::ReleaseManagedSurfaceFromCallingThread() { impl_->ReleaseManagedSurfaceFromCallingThread(); }
+bool AndroidGuestCallSession::ManagedSurfaceIsOpen() const noexcept { return impl_->ManagedSurfaceIsOpen(); }
+std::string AndroidGuestCallSession::ManagedGlString(const std::uint32_t parameter) { return impl_->ManagedGlString(parameter); }
 void AndroidGuestCallSession::PresentManagedSurface() { impl_->PresentManagedSurface(); }
 void AndroidGuestCallSession::CloseManagedSurface() { impl_->CloseManagedSurface(); }
 void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }

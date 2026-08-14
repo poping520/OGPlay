@@ -770,6 +770,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/title_profile_tests.cpp
         tests/dexvm/dexasm_readback_tests.cpp
         tests/dexvm/file_vfs_tests.cpp
+        tests/dexvm/egl_facade_tests.cpp
         tests/dexvm/gap_survey_tests.cpp
         tests/dexvm/dex_code_tests.cpp
         tests/dexvm/interpreter_tests.cpp

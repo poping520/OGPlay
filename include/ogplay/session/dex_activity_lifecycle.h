@@ -34,6 +34,10 @@ struct DexActivityLifecycleBindings final {
     // Runs after guest onPause and again after Java threads stop during clean
     // teardown. The frontend binds this to VFS FlushAll (ADR-0020).
     std::function<void()> flush_persistent_state;
+    // Guest-owned GLSurfaceView needs the host-created ANGLE context released
+    // before holder callbacks start its GLThread. Intrinsic-renderer sessions
+    // retain the original currency so their exact render path is unchanged.
+    std::function<void()> release_surface_currency;
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {
@@ -103,6 +107,7 @@ private:
     // finish inside onCreate; a never-started activity retires with just
     // onDestroy (no onPause/onStop).
     bool activity_started_{};
+    bool egl_pacer_attached_{};
 };
 
 }  // namespace ogplay::session

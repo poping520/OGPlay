@@ -28,6 +28,13 @@
   未捕获 Java 异常携带解释器栈失败。每帧同时泵 VideoView，并按 managed view 命中规则
   分发触摸与 click。pause 在 guest `onPause` 后调用持久状态 flush 回调；clean stop
   在线程停止后、guest finalizer 前再次调用，失败向上层传播。
+  guest EGL swap 在 intrinsic 内 publish，不由 lifecycle 再次 present。lifecycle
+  仅在 guest-owned GLSurfaceView 路径注册 driver 线程，并在每帧尾推进条件 swap
+  pacer；intrinsic-renderer 不安装 observer。driver 可运行时维持一帧一 swap，
+  driver 停泊于 guest 阻塞原语时由执行锁 observer 放行 GLThread。停止在 shutdown/
+  join guest Java 线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：
+  intrinsic renderer 保留打开线程 GL currency；guest-owned GLSurfaceView 显式释放后
+  交给其 GLThread。
 - `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
   校验 required mount、manifest 和 working directory；
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。

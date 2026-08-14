@@ -247,6 +247,10 @@ public:
         std::string_view descriptor) const;
     void InitializeJniLibrary();
     void OpenManagedSurface();
+    void BindManagedSurfaceOnCallingThread();
+    void ReleaseManagedSurfaceFromCallingThread();
+    [[nodiscard]] bool ManagedSurfaceIsOpen() const noexcept;
+    [[nodiscard]] std::string ManagedGlString(std::uint32_t parameter);
     void PresentManagedSurface();
     void CloseManagedSurface();
     void PushInput(const AndroidBoundaryInput& input);

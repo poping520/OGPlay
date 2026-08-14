@@ -50,6 +50,10 @@ public:
 
     void MapThunks();
     void OpenManagedSurface();
+    void BindManagedSurfaceOnCallingThread();
+    void ReleaseManagedSurfaceFromCallingThread();
+    [[nodiscard]] bool ManagedSurfaceIsOpen() const noexcept;
+    [[nodiscard]] std::string ManagedGlString(std::uint32_t parameter);
     void PresentManagedSurface();
     void CloseManagedSurface();
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept;

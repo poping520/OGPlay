@@ -46,7 +46,12 @@ DexActivityLifecycle::DexActivityLifecycle(
     }
 }
 
-DexActivityLifecycle::~DexActivityLifecycle() = default;
+DexActivityLifecycle::~DexActivityLifecycle() {
+    if (egl_pacer_attached_) {
+        runtime::DetachEglSwapPacer(*bindings_.context,
+                                    bindings_.bridge->Vm().ExecutionLock());
+    }
+}
 
 void DexActivityLifecycle::CallActivity(
     const std::string& name, const std::string& descriptor,
@@ -136,6 +141,17 @@ LifecycleFrameState DexActivityLifecycle::Start() {
 
         if (!context.content_view.IsValid()) {
             Fail("onCreate did not install a content view");
+        }
+        // The two render drivers are mutually exclusive. An intrinsic
+        // renderer keeps the context current on this lifecycle thread (the
+        // established exact path). A guest-owned GLSurfaceView has no
+        // context.renderer and needs currency handed to its GLThread before
+        // surface callbacks start the thread's EGL handshake.
+        if (!context.renderer.IsValid() &&
+            bindings_.release_surface_currency) {
+            runtime::AttachEglSwapPacer(context, vm.ExecutionLock());
+            egl_pacer_attached_ = true;
+            bindings_.release_surface_currency();
         }
         // Surface geometry precedes renderer callbacks (GLSurfaceView
         // semantics; the pilot's onSurfaceCreated spins until size != -1).
@@ -279,6 +295,9 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
         clock_.AdvanceFrames(1);
         bindings_.context->uptime_millis += kMillisPerFrame;
         ++frame_;
+        if (egl_pacer_attached_) {
+            runtime::AdvanceEglSwapPacer(*bindings_.context);
+        }
     } catch (...) {
         MarkFailed();
         RethrowFatalThreadFailure();
@@ -453,6 +472,9 @@ LifecycleFrameState DexActivityLifecycle::Stop() {
     // the native side is finalized, so no interpreted frame can still be
     // running when the object world is torn down.
     std::exception_ptr persistence_failure;
+    if (egl_pacer_attached_) {
+        runtime::ShutdownEglSwapPacer(*bindings_.context);
+    }
     bindings_.bridge->Threads().Shutdown();
     if (bindings_.interrupt_guest_waits) bindings_.interrupt_guest_waits();
     if (bindings_.flush_persistent_state) {

@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 #include "ogplay/gles/angle_frame.h"
@@ -183,10 +184,35 @@ public:
         }
         angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
             backend_, layout_.render_width, layout_.render_height));
+        gl_owner_ = std::this_thread::get_id();
         InitializeGuestGlDefaults();
         managed_surface_ = true;
         std::scoped_lock lock(mutex_);
         gpu_render_target_ready_ = true;
+    }
+    void BindManagedSurfaceOnCallingThread() {
+        static_cast<void>(RequireFrame("bind managed surface"));
+    }
+    void ReleaseManagedSurfaceFromCallingThread() {
+        if (!angle_frame_.has_value()) {
+            throw std::runtime_error(
+                "release managed surface has no current ANGLE frame");
+        }
+        if (!gl_owner_.has_value()) {
+            return;
+        }
+        if (*gl_owner_ != std::this_thread::get_id()) {
+            throw std::runtime_error(
+                "release managed surface violates GL context thread affinity");
+        }
+        angle_frame_->ReleaseCurrent();
+        gl_owner_.reset();
+    }
+    [[nodiscard]] bool ManagedSurfaceIsOpen() const noexcept {
+        return managed_surface_ && angle_frame_.has_value();
+    }
+    [[nodiscard]] std::string ManagedGlString(const std::uint32_t parameter) {
+        return RequireFrame("managed glGetString").GetString(parameter);
     }
     void PresentManagedSurface() {
         if (!managed_surface_ || !angle_frame_.has_value()) {
@@ -200,6 +226,7 @@ public:
             throw std::logic_error(
                 "Android boundary managed surface is not open");
         }
+        gl_owner_.reset();
         angle_frame_.reset();
         managed_surface_ = false;
         gles_dispatch_.Reset();
@@ -697,9 +724,12 @@ private:
             if (args[3] != 0 && !angle_frame_.has_value()) {
                 angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
                     backend_, layout_.render_width, layout_.render_height));
+                gl_owner_ = std::this_thread::get_id();
                 InitializeGuestGlDefaults();
                 std::scoped_lock lock(mutex_);
                 gpu_render_target_ready_ = true;
+            } else if (args[3] == 0 && gl_owner_.has_value()) {
+                ReleaseManagedSurfaceFromCallingThread();
             }
             return 1;
         }
@@ -724,6 +754,7 @@ private:
                 throw std::runtime_error(
                     "guest EGL cannot terminate a host-managed ANGLE surface");
             }
+            gl_owner_.reset();
             angle_frame_.reset();
             gles_dispatch_.Reset();
             gles1_state_.Reset();
@@ -867,6 +898,15 @@ private:
         if (!angle_frame_.has_value()) {
             throw std::runtime_error(std::string(operation) + " has no current ANGLE frame");
         }
+        const auto caller = std::this_thread::get_id();
+        if (!gl_owner_.has_value()) {
+            angle_frame_->BindCurrentOnCallingThread();
+            gl_owner_ = caller;
+        } else if (*gl_owner_ != caller) {
+            throw std::runtime_error(
+                std::string(operation) +
+                " violates GL context thread affinity");
+        }
         return *angle_frame_;
     }
     void PublishFrame() {
@@ -930,6 +970,7 @@ private:
         gles::GlesApi::gles1_extensions};
     bool mapped_{};
     std::optional<gles::AngleFrame> angle_frame_;
+    std::optional<std::thread::id> gl_owner_;
     bool managed_surface_{};
     std::uint64_t frame_sequence_{};
     mutable std::mutex mutex_;
@@ -962,6 +1003,19 @@ AndroidBoundaryHle::~AndroidBoundaryHle() = default;
 void AndroidBoundaryHle::MapThunks() { impl_->MapThunks(); }
 void AndroidBoundaryHle::OpenManagedSurface() {
     impl_->OpenManagedSurface();
+}
+void AndroidBoundaryHle::BindManagedSurfaceOnCallingThread() {
+    impl_->BindManagedSurfaceOnCallingThread();
+}
+void AndroidBoundaryHle::ReleaseManagedSurfaceFromCallingThread() {
+    impl_->ReleaseManagedSurfaceFromCallingThread();
+}
+bool AndroidBoundaryHle::ManagedSurfaceIsOpen() const noexcept {
+    return impl_->ManagedSurfaceIsOpen();
+}
+std::string AndroidBoundaryHle::ManagedGlString(
+    const std::uint32_t parameter) {
+    return impl_->ManagedGlString(parameter);
 }
 void AndroidBoundaryHle::PresentManagedSurface() {
     impl_->PresentManagedSurface();

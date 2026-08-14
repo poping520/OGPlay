@@ -39,6 +39,9 @@ public:
     AngleFrame(AngleFrame&&) noexcept;
     AngleFrame& operator=(AngleFrame&&) noexcept;
 
+    void BindCurrentOnCallingThread();
+    void ReleaseCurrent();
+
     void Viewport(std::int32_t x, std::int32_t y,
                   std::int32_t width, std::int32_t height);
     void Scissor(std::int32_t x, std::int32_t y,

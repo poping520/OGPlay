@@ -19,6 +19,7 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
 
 namespace {
 
@@ -146,6 +147,83 @@ TEST_CASE("dexvm notifyAll releases a waiter parked on another host thread") {
     CHECK(vm.Observed() == 1);
     CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 0U);
     CHECK(!vm.threads.TakeFailure().has_value());
+}
+
+TEST_CASE("conditional swap pacing releases two swaps while driver waits") {
+    MonitorVm vm;
+    vm.UseTestClock();
+    DexVmAndroidContext context;
+    AttachEglSwapPacer(context, vm.interpreter.ExecutionLock());
+
+    std::vector<std::int32_t> sequence;
+    std::atomic<bool> record_failed{};
+    std::atomic<bool> finished{};
+    std::atomic<bool> watchdog_fired{};
+    const auto record_swap =
+        vm.Static("LSwapHandshake;", "recordSwap", "()V");
+    std::thread worker([&] {
+        for (std::int32_t swap = 1; swap <= 2; ++swap) {
+            VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+            PaceEglSwap(context, vm.interpreter.ExecutionLock());
+            const auto recorded = vm.interpreter.Call(record_swap, {});
+            if (recorded.exception.IsValid()) record_failed = true;
+            sequence.push_back(swap);
+        }
+    });
+    std::thread watchdog([&] {
+        for (int attempt = 0; attempt < 5000 && !finished.load(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (!finished.load()) {
+            watchdog_fired = true;
+            ShutdownEglSwapPacer(context);
+        }
+    });
+
+    const auto awaited =
+        vm.CallStatic("LSwapHandshake;", "awaitTwo", "()V");
+    const bool await_failed = awaited.exception.IsValid();
+    worker.join();
+    finished = true;
+    watchdog.join();
+    CHECK_FALSE(watchdog_fired.load());
+    CHECK_FALSE(await_failed);
+    CHECK_FALSE(record_failed.load());
+    const auto observed =
+        vm.CallStatic("LSwapHandshake;", "observed", "()I");
+    REQUIRE_FALSE(observed.exception.IsValid());
+    CHECK(observed.value.AsInt() == 2);
+    CHECK(sequence == std::vector<std::int32_t>{1, 2});
+
+    DetachEglSwapPacer(context, vm.interpreter.ExecutionLock());
+}
+
+TEST_CASE("conditional swap pacing waits for frame when driver is runnable") {
+    MonitorVm vm;
+    DexVmAndroidContext context;
+    AttachEglSwapPacer(context, vm.interpreter.ExecutionLock());
+    std::atomic<bool> entered{};
+    std::atomic<bool> completed{};
+
+    std::thread worker([&] {
+        VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+        entered = true;
+        PaceEglSwap(context, vm.interpreter.ExecutionLock());
+        completed = true;
+    });
+    const bool did_enter = WaitFor([&] { return entered.load(); });
+    CHECK(did_enter);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    CHECK_FALSE(completed.load());
+
+    if (did_enter) {
+        AdvanceEglSwapPacer(context);
+    } else {
+        ShutdownEglSwapPacer(context);
+    }
+    worker.join();
+    CHECK(completed.load());
+    DetachEglSwapPacer(context, vm.interpreter.ExecutionLock());
 }
 
 TEST_CASE("dexvm wait restores the full recursion depth before returning") {

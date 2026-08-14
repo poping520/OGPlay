@@ -15,6 +15,8 @@
   失败。调用方必须保证 API 对象比使用它的 `EglLifecycle` 存活更久。
 - `EglLifecycle::CreatePbuffer`：创建 ANGLE display、RGBA8+D24S8 EGL config、GLES2 context
   和 pbuffer surface 并设为当前；`EglContextInfo` 暴露实际 EGL 版本、后端和尺寸事实。
+- `EglLifecycle::{ReleaseCurrent,BindCurrentOnCallingThread}`：显式释放并在受控调用线程
+  重新绑定同一 context/surface，供 host-managed surface 的 GL currency 合法接力。
 - `AngleFrame`：在独占的真实 ANGLE pbuffer 上执行 viewport/color/depth/stencil clear、
   depth-range、line/polygon/stencil scalar state、shader/program、buffer allocation/subrange、
   texture、framebuffer/renderbuffer 生命周期与附着、vertex/uniform、query/state、draw 与

@@ -63,7 +63,8 @@
     {
       "name": "windows-msvc",
       "configurePreset": "windows-msvc",
-      "configuration": "Debug"
+      "configuration": "Debug",
+      "jobs": 0
     }
   ],
   "testPresets": [

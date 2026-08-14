@@ -53,7 +53,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-28](DVM-28.md) | Java Thread 1:1 宿主线程执行 | 完成 |
 | [DVM-29](DVM-29.md) | monitor wait-set 与 Object.wait/notify | 完成 |
 | [DVM-30](DVM-30.md) | Asphalt 6 首帧与主界面 exact gate | 完成（未达首帧，边界已固化） |
-| [DVM-31](DVM-31.md) | 解释执行的 EGL10/GL10 façade | 待开始 |
+| [DVM-31](DVM-31.md) | 解释执行的 EGL10/GL10 façade | 实现完成（exact gate 未完成） |
 | [DVM-32](DVM-32.md) | intrinsic handler 链接期绑定（消除逐调用查找） | 完成 |
 | [DVM-33](DVM-33.md) | 解释器热路径 execution 传递（消除逐指令查找） | 完成 |
 | [DVM-34](DVM-34.md) | intrinsic 声明即绑定：基础设施与双通道 | 完成 |
@@ -68,11 +68,11 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 [`docs/playbook/NEW-TITLE.md`](../../playbook/NEW-TITLE.md)；staging profile 在
 `data/profiles-dexvm/`，通过各自 gate 后再迁移进 `data/profiles/`。
 
-进度：Dungeon Hunter 已越过链接与解释期，进入标题画面。Asphalt 6 阶段 4
-（真实宿主线程 + monitor wait-set + managed surface 回调）已交付，`GLThread`
-现在真实运行并越过 `Object.wait()`；三轮 exact 一致停在
-`EGLContext` 未声明——自带 `GLSurfaceView` 要自己驱动 EGL。无首帧，
-不使用空返回掩盖，缺口由 DVM-31 承接。
+进度：Dungeon Hunter 已越过链接与解释期，进入标题画面。DVM-31 已补齐
+Asphalt 6 自带 `GLSurfaceView` 所需的 EGL façade 与条件 swap pacer；原 EGL
+缺口和死锁均已越过，现于首帧前明确停在范围外
+`Context.unregisterReceiver`。A6 exact gate 尚未完成，状态以 DVM-31 结果段及
+`CURRENT.md` 为准。
 
 其余在办项（GC-B 精确标记清除、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)

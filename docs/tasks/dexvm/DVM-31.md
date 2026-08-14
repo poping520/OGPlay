@@ -49,3 +49,25 @@ Asphalt 6 打包了一份改名的 AOSP `GLSurfaceView`：`GLThread` 自己跑 E
   三轮一致。
 - 未实现的 EGL/GL 入口记账并明确失败，不返回中性值。
 - Asphalt 5 exact 回归逐位持平。
+
+## 2026-08-14 实施结果
+
+- EGL/GL 的 10 个 Java handle、façade handler 与 swap pacer 已聚合到单一
+  `javax_microedition_khronos_egl.cpp` 翻译单元；catalog 的 10 个声明入口和注册
+  顺序保持不变。
+- façade 实现已完成：AOSP `EGL10`/`GL10` 类形状、单一 host-owned surface
+  状态机、受检 context currency 接力、managed present，以及未实现入口的记账
+  与明确失败均有机器测试。
+- swap 使用条件屏障：lifecycle driver 可运行时每宿主帧放行一次；driver 进入
+  guest 阻塞原语时立即放行。`VmExecutionLock` 的通用 observer 不感知 EGL，
+  N=2 monitor 握手与反向节拍用例均通过。
+- A6 已越过原先 EGL 缺口且不再发生 swap/frame-driver 死锁，但在首帧前停于
+  `Context.unregisterReceiver`。该入口不属于 EGL，本轮按范围不实现，因此 A6
+  三轮首帧 gate **未完成**。
+- A5 当前实现与改动前 `2c8243c` HEAD 对照运行的四个检查点 PNG 均逐位相同；
+  主界面均为 `f91150b4…`。场景内历史期望 `9ee57323…` 已与当前基线漂移，故
+  静态 scenario 仍判失败，不能宣称 exact gate 通过，但已排除本 WU 引入回归。
+- Windows/x64 Release 配置、构建成功；全量 CTest 721/721 通过。
+
+结论：DVM-31 的 EGL 开发范围已实现并有回归覆盖；任务单的端到端验收仍受范围外
+缺口阻塞，状态保持未完全验收。

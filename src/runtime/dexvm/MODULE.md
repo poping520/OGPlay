@@ -41,7 +41,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `thread_stopped` 展开出全部帧，不强杀线程。
 - `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
   `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
-  `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复。
+  `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复；可注入
+  一个宿主线程 id + blocked 状态 observer，回调在锁外执行，供上层观察通用 guest
+  阻塞作用域，dexvm 不感知观察者的 EGL/session 用途。
   **同一时刻只有一个线程解释字节码**——这是显式记账的限制而非并发，换来的是
   linker 解析缓存、object model arena 与 intrinsic 侧表只有单写者，因此全部
   intrinsic handler 都在锁内运行。
@@ -144,7 +146,8 @@ teardown 逐线程 join、持有 native 帧时拒绝停泊）；
 `tests/dexvm/vm_monitor_tests.cpp`（跨宿主线程 notifyAll 配对、recursion 深度
 恢复（三层 monitor-exit 不平衡即失败）、wait/notify 所有权校验、统一 Clock
 截止时间到期、无 Clock 的 timed wait 明确失败、interrupt 唤醒且抛异常前已
-重获 monitor、wait 前已置位的 interrupt 不停泊、teardown 唤醒全部 waiter）；
+重获 monitor、wait 前已置位的 interrupt 不停泊、teardown 唤醒全部 waiter、
+driver 阻塞时 N=2 条件 swap 放行与 driver 可运行时帧推进节拍）；
 `tests/dexvm/dex_code_tests.cpp`、`tests/dexvm/dexasm_readback_tests.cpp`、
 `tests/dexvm/gap_survey_tests.cpp`（survey 开/关对照：关闭即失败、桩答中性值、
 命中计数、工作单排序）。

@@ -5,7 +5,10 @@
 
 #include <array>
 #include <charconv>
+#include <cmath>
+#include <locale>
 #include <optional>
+#include <sstream>
 #include <span>
 #include <vector>
 
@@ -299,14 +302,33 @@ PreferenceMap ParsePreferencesXml(const std::string_view xml) {
         } else if (element == "long") {
             values[key] = ParseInteger<std::int64_t>(raw, "long");
         } else if (element == "float") {
-            float parsed{};
-            const auto result = std::from_chars(
-                raw.data(), raw.data() + raw.size(), parsed,
-                std::chars_format::general);
-            if (result.ec != std::errc{} ||
-                result.ptr != raw.data() + raw.size()) {
+            // Floating-point std::from_chars is unavailable in the libc++
+            // shipped by macOS 15 even though the current SDK declares it.
+            // Keep the intended C++17 implementation visible for when the
+            // deployment baseline provides the symbol:
+            // float parsed{};
+            // const auto result = std::from_chars(
+            //     raw.data(), raw.data() + raw.size(), parsed,
+            //     std::chars_format::general);
+            // if (result.ec != std::errc{} ||
+            //     result.ptr != raw.data() + raw.size()) {
+            //     throw PreferencesXmlError(
+            //         "preferences XML has a malformed float: " + raw);
+            // }
+            // values[key] = parsed;
+
+            double wide{};
+            std::istringstream input(raw);
+            input.imbue(std::locale::classic());
+            input >> std::noskipws >> wide;
+            if (!input || input.peek() != std::char_traits<char>::eof()) {
                 throw PreferencesXmlError(
                     "preferences XML has a malformed float: " + raw);
+            }
+            const auto parsed = static_cast<float>(wide);
+            if (!std::isfinite(parsed) || (parsed == 0.0F && wide != 0.0)) {
+                throw PreferencesXmlError(
+                    "preferences XML float is out of range: " + raw);
             }
             values[key] = parsed;
         } else if (element == "string") {

@@ -5,6 +5,7 @@
 #include <doctest/doctest.h>
 
 #include <bit>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -64,12 +65,22 @@ TEST_CASE("preferences XML round-trips every supported type") {
 }
 
 TEST_CASE("preferences XML preserves every float bit through rendering") {
-    PreferenceMap values;
-    values["precise"] = 0.123456789F;
-    const auto parsed = ParsePreferencesXml(RenderPreferencesXml(values));
-    CHECK(std::bit_cast<std::uint32_t>(
-              std::get<float>(parsed.at("precise"))) ==
-          std::bit_cast<std::uint32_t>(std::get<float>(values.at("precise"))));
+    const std::vector<float> cases{
+        0.123456789F,
+        0.0F,
+        -0.0F,
+        std::numeric_limits<float>::min(),
+        std::numeric_limits<float>::denorm_min(),
+        std::numeric_limits<float>::max(),
+    };
+    for (const auto value : cases) {
+        PreferenceMap values;
+        values["precise"] = value;
+        const auto parsed = ParsePreferencesXml(RenderPreferencesXml(values));
+        CHECK(std::bit_cast<std::uint32_t>(
+                  std::get<float>(parsed.at("precise"))) ==
+              std::bit_cast<std::uint32_t>(value));
+    }
 }
 
 TEST_CASE("preferences XML escapes and restores hostile text") {
@@ -108,6 +119,10 @@ TEST_CASE("preferences XML refuses what it cannot represent") {
     // A set would be silently lost if it were skipped, so it is refused.
     CHECK(fails("<map><set name=\"k\"><string>a</string></set></map>"));
     CHECK(fails("<map><int name=\"k\" value=\"not-a-number\" /></map>"));
+    CHECK(fails("<map><float name=\"k\" value=\"\" /></map>"));
+    CHECK(fails("<map><float name=\"k\" value=\" 1.5\" /></map>"));
+    CHECK(fails("<map><float name=\"k\" value=\"1.5x\" /></map>"));
+    CHECK(fails("<map><float name=\"k\" value=\"1e1000\" /></map>"));
     CHECK(fails("<map><boolean name=\"k\" value=\"yes\" /></map>"));
     CHECK(fails("<map><int value=\"1\" /></map>"));
     CHECK(fails("<map><int name=\"k\" value=\"1\" extra=\"x\" /></map>"));

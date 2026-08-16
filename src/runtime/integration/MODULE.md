@@ -100,11 +100,11 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 - SAX factory/parser/XMLReader 的本地构造与 content-handler 身份真实保留；实际
   `parse(InputSource)` 尚无有界 XML callback pipeline，调用时抛
   `UnsupportedOperationException`，不得把网络/配置解析伪造成成功。
-- android.* intrinsic 的 widget 层（TextView/EditText/ImageView/VideoView/对话框等）
-  只持有状态、不做宿主渲染:`setContentView(I)` 经 arsc resid → APK 布局条目 →
-  `ParseBinaryXmlElements` 实例化 widget intrinsic,`android:id` 进入 view registry
-  供 `findViewById` 查询,文档序首元素登记为 content view;`runOnUiThread` 在协作
-  单线程模型下同步执行 runnable。
+- android.* intrinsic 的 widget 层把每个 live guest View 一一绑定到 `runtime/ui`
+  `UiNodeId`；`setContentView(I)` 经 arsc resid → typed AXML 实例化 widget intrinsic，
+  android id/visibility/hierarchy 只写 UiTree，`findViewById/getId/setId` 经双向 binding
+  返回同一 guest identity。listener ref 仍只由 integration 以 UiNodeId 保存；
+  `runOnUiThread` 在协作单线程模型下同步执行 runnable。
 - VideoView intrinsic（`dexvm_android/android_widget_VideoView.cpp`，ADR-0021）：
   `setVideoPath` 经 VFS
   `HostPathFor` 解析宿主文件并用注入的 `VideoPlayerFactory` 打开解码;`start`/`pause`/
@@ -117,8 +117,9 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   混入宿主立体声输出,暂停/停止/播完即静默;`AnyVideoPlaying` 供前端在自由运行时
   把帧循环按真实时间节流,使每帧 16 ms 的确定性 uptime 与墙钟一致(手动步进不节流,
   保持可复现)。
-- widget 点击分发（`dexvm_android/android_view_View.cpp`）：`setOnClickListener`/
-  `setVisibility`/`getVisibility` 是真实状态;inflation 记录布局事实并用 `android:src`
+- widget 点击分发（`dexvm_android/android_view_View.cpp`）：`setOnClickListener` 的 guest
+  ref 由 integration 保存，`setVisibility/getVisibility` 读写 UiTree；inflation 暂记录
+  迁移期布局事实并用 `android:src`
   drawable 测量 wrap_content 图像控件。bounds 只对受支持的子集推导(fill×fill 根视图、
   fill×wrap 且 layout_gravity 靠上/下边的水平 LinearLayout 按钮行,gravity
   center_horizontal 居中,GONE 不占位);推导不出的 view 永不消费触摸(记账缺口),

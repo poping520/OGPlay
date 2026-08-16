@@ -90,7 +90,7 @@ struct UiNode final {
     std::optional<UiNodeId> parent;
     std::vector<UiNodeId> children;
     UiClass kind{UiClass::View};
-    std::uint32_t android_id{};
+    std::int32_t android_id{-1};
     Visibility visibility{Visibility::Visible};
     bool enabled{true};
     bool clickable{};
@@ -126,9 +126,9 @@ public:
     [[nodiscard]] UiNode* Get(UiNodeId id);
     [[nodiscard]] const UiNode* Get(UiNodeId id) const;
     [[nodiscard]] std::optional<UiNodeId> FindByAndroidId(
-        std::uint32_t android_id) const;
+        std::int32_t android_id) const;
 
-    void SetAndroidId(UiNodeId node, std::uint32_t android_id);
+    void SetAndroidId(UiNodeId node, std::int32_t android_id);
     void SetVisibility(UiNodeId node, Visibility visibility);
     void SetEnabled(UiNodeId node, bool enabled);
     void SetClickable(UiNodeId node, bool clickable);
@@ -151,7 +151,7 @@ private:
     std::uint32_t next_node_{};
     UiNodeId root_;
     NodeMap nodes_;
-    std::unordered_map<std::uint32_t, std::vector<UiNodeId>> id_index_;
+    std::unordered_map<std::int32_t, std::vector<UiNodeId>> id_index_;
 };
 
 }  // namespace ogplay::runtime::ui

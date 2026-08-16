@@ -17,9 +17,17 @@ namespace android_intrinsics {
 
 std::int32_t VisibilityOf(const DexVmAndroidContext& context,
                           const std::uint64_t handle) {
-    const auto found = context.widget_states.find(handle);
-    return found == context.widget_states.end() ? kVisible
-                                                : found->second.visibility;
+    const auto binding = FindViewUiNode(context, handle);
+    if (!binding.has_value()) return kVisible;
+    switch (context.ui_tree.Get(*binding)->visibility) {
+        case ui::Visibility::Visible:
+            return kVisible;
+        case ui::Visibility::Invisible:
+            return kInvisible;
+        case ui::Visibility::Gone:
+            return kGone;
+    }
+    return kVisible;
 }
 
 namespace {
@@ -137,12 +145,17 @@ std::optional<std::uint64_t> FindClickableViewAt(
             !bounds[index]->Contains(x, y)) {
             continue;
         }
-        const auto state = context.widget_states.find(fact.view.Value());
-        if (state == context.widget_states.end()) continue;
-        if (state->second.visibility != android_intrinsics::kVisible) {
+        const auto node = FindViewUiNode(context, fact.view.Value());
+        if (!node.has_value()) continue;
+        if (android_intrinsics::VisibilityOf(context, fact.view.Value()) !=
+            android_intrinsics::kVisible) {
             continue;
         }
-        if (!state->second.click_listener.IsValid()) continue;
+        const auto listener = context.ui_click_listeners.find(*node);
+        if (listener == context.ui_click_listeners.end() ||
+            !listener->second.IsValid()) {
+            continue;
+        }
         return fact.view.Value();
     }
     return std::nullopt;
@@ -165,20 +178,17 @@ bool ViewContainsPoint(const DexVmAndroidContext& context,
 std::optional<std::string> InvokeViewOnClick(dexvm::Interpreter& vm,
                                              DexVmAndroidContext& context,
                                              const std::uint64_t handle) {
-    const auto state = context.widget_states.find(handle);
-    if (state == context.widget_states.end() ||
-        !state->second.click_listener.IsValid()) {
+    const auto node = FindViewUiNode(context, handle);
+    if (!node.has_value()) return "view has no UI binding";
+    const auto listener_binding = context.ui_click_listeners.find(*node);
+    if (listener_binding == context.ui_click_listeners.end() ||
+        !listener_binding->second.IsValid()) {
         return "view has no click listener";
     }
-    dexvm::VmObjectRef view;
-    for (const auto& fact : context.layout_views) {
-        if (fact.view.Value() == handle) {
-            view = fact.view;
-            break;
-        }
-    }
+    const auto view = ViewObjectForUiNode(context, *node);
+    if (!view.IsValid()) return "UI node has no guest View";
     auto& linker = vm.Linker();
-    const auto listener = state->second.click_listener;
+    const auto listener = listener_binding->second;
     const auto listener_class = vm.Model().ObjectClass(listener);
     const auto index = linker.FindVtableIndex(listener_class, "onClick",
                                               "(Landroid/view/View;)V");

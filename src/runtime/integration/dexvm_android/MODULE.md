@@ -9,7 +9,7 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 800 行源文件上限约束。
 
 声明与实现同址是唯一 handler 形态。`shared.h` 只暴露跨类共享 helper 与工厂；
-跨类复用的 handler 以 `shared_handlers.cpp` 中的工厂函数（如 `ViewInitHandler()`、
+跨类复用的 handler 以 `shared_handlers.cpp` 中的工厂函数（如 `ViewInitHandler(context)`、
 `PrefsEditHandler(context)`）形式提供，捕获会话状态的工厂显式接收 context。
 资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
 `DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
@@ -33,6 +33,10 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
 - 中性占位只能通过 `NeutralHandler(shorty)` 或 `PlaceholderString()` 显式生成；
   引用返回值不能擅自伪造对象。
 - `DexVmAndroidContext` 是唯一会话状态入口，handler 行为与迁移前保持一致。
+- 每个 live guest View object 与一个 live UiNode 一一绑定；hierarchy/id/visibility/
+  geometry 只写 `runtime/ui`，guest click/touch listener 只在本层以 UiNodeId 为 key 保存。
+  `findViewById/getId/setId` 必须经双向 binding 返回/修改同一 object/node identity；
+  content generation reset 同时清空两向 binding 与 listener，旧 node 不得继续可见。
 - 动态 BroadcastReceiver 注册按发起调用的 Context 实例拥有；null receiver 只查询
   sticky broadcast，未注册、重复或跨 Context 注销抛 `IllegalArgumentException`。
   当前平台没有广播来源，因此不伪造 `onReceive` 派发。

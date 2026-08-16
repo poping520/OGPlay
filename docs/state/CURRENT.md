@@ -1,7 +1,8 @@
 # 当前状态
 
-更新：2026-08-16 · M10 Layout UI 已启动，LUI-1 generic typed AXML 完成；macOS SDL
-事件泵已隔离 DexVM GLThread；DVM-31 EGL façade 实现完成，exact gate 尚未闭合；MSVC
+更新：2026-08-16 · M10 Layout UI LUI-1..3 已完成，typed AXML、UiTree 与 DexVM View
+binding 已闭合；macOS SDL 事件泵已隔离 DexVM GLThread；DVM-31 EGL façade 实现完成，
+exact gate 尚未闭合；MSVC
 工程内/工程间并行编译已启用；DexVM 阶段 4 与 intrinsic 声明迁移、SBX、GUI 已交付
 
 ## 当前阶段
@@ -9,9 +10,10 @@
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
 - **M9 DexVM**（DVM-1..39，ADR-0017/0022）：阶段 0..3、entry override、
   静态预置和 v2-only 清理均已交付。
-- **M10 Layout UI LUI-1..2 已完成**：compiled AXML 已是 generic typed 输出；新增
-  `runtime/ui` generation-scoped synthetic content root 与唯一 hierarchy/id/visibility/
-  layout/geometry/dirty state。下一步 LUI-3 把 DexVM View identity 接到 UiTree。
+- **M10 Layout UI LUI-1..3 已完成**：compiled AXML 已是 generic typed 输出；
+  `runtime/ui` 持有唯一 tree/state；live guest View 与 UiNodeId 双向绑定，
+  `findViewById/getId/setId/visibility` 已迁移且旧 `view_registry/widget_states` 删除。
+  下一步 LUI-4 提取 registry inflater、strict structural tag 与完整 `<merge>` teardown。
 - **阶段 4 线程地基已交付**（DVM-27..29）：真实宿主线程、独立 execution
   context、wait-set 与统一 Clock 超时已接入；解释仍由 `VmExecutionLock`
   串行。`threads`/`monitors` 保持 `partial`：子线程 native 调用复用 root

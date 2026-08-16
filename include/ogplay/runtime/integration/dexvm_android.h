@@ -20,6 +20,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/framework/preferences_xml.h"
+#include "ogplay/runtime/ui/ui_tree.h"
 #include "ogplay/video/video_player.h"
 
 namespace ogplay::runtime {
@@ -246,17 +247,17 @@ struct DexVmAndroidContext final {
     std::string pending_activity_descriptor;
     // Intent that launched the current/pending activity (getIntent()).
     dexvm::VmObjectRef current_intent;
-    // Views inflated from the last setContentView(layout id), keyed by
-    // android:id resource id (findViewById source of truth).
-    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> view_registry;
-    // Per-view interaction state (real storage behind setOnClickListener /
-    // setVisibility; keyed by intrinsic instance handle). Android constants:
-    // VISIBLE=0, INVISIBLE=4, GONE=8.
-    struct WidgetState final {
-        dexvm::VmObjectRef click_listener;
-        std::int32_t visibility{0};
-    };
-    std::unordered_map<std::uint64_t, WidgetState> widget_states;
+    // One live guest View object <-> one UiTree node. Runtime UI owns all
+    // hierarchy/state/geometry; this integration layer alone owns guest refs
+    // and callbacks keyed by UiNodeId.
+    ui::UiTree ui_tree;
+    std::unordered_map<std::uint64_t, ui::UiNodeId> object_to_ui_node;
+    std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
+        ui_node_to_object;
+    std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
+        ui_click_listeners;
+    std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
+        ui_touch_listeners;
     // Layout facts captured at inflation (document order, parents before
     // children) that click hit-testing derives bounds from. measured_* is
     // the wrap_content size taken from the android:src drawable (0 when
@@ -351,6 +352,20 @@ MixVideoPcmIntoStereo(DexVmAndroidContext &context,
 // through to Activity.onTouchEvent).
 [[nodiscard]] std::optional<std::uint64_t>
 FindClickableViewAt(const DexVmAndroidContext &context, float x, float y);
+
+// DexVM/View binding helpers. BindViewToUiNode enforces the one-to-one live
+// identity invariant; EnsureViewUiNode creates a detached generic node for a
+// Java-created View until ViewGroup/content attachment is implemented.
+void BindViewToUiNode(DexVmAndroidContext& context,
+                      dexvm::VmObjectRef view, ui::UiNodeId node);
+[[nodiscard]] ui::UiNodeId EnsureViewUiNode(DexVmAndroidContext& context,
+                                            dexvm::VmObjectRef view,
+                                            ui::UiClass kind);
+[[nodiscard]] std::optional<ui::UiNodeId> FindViewUiNode(
+    const DexVmAndroidContext& context, std::uint64_t view_handle);
+[[nodiscard]] dexvm::VmObjectRef ViewObjectForUiNode(
+    const DexVmAndroidContext& context, ui::UiNodeId node);
+void ResetViewUiState(DexVmAndroidContext& context);
 
 // True when the view's derived bounds contain the point (up-inside check of
 // a click gesture).

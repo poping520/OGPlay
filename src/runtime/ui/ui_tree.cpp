@@ -114,15 +114,15 @@ const UiNode* UiTree::Get(const UiNodeId id) const {
 }
 
 std::optional<UiNodeId> UiTree::FindByAndroidId(
-    const std::uint32_t android_id) const {
-    if (android_id == 0) return std::nullopt;
+    const std::int32_t android_id) const {
+    if (android_id < 0) return std::nullopt;
     const auto found = id_index_.find(android_id);
     if (found == id_index_.end() || found->second.empty()) return std::nullopt;
     return found->second.front();
 }
 
 void UiTree::SetAndroidId(const UiNodeId node,
-                          const std::uint32_t android_id) {
+                          const std::int32_t android_id) {
     auto& target = Require(node);
     if (target.android_id == android_id) return;
     const bool attached = IsAttached(node);
@@ -189,7 +189,7 @@ bool UiTree::IsAttached(const UiNodeId id) const {
 
 void UiTree::IndexSubtree(const UiNodeId node) {
     auto& target = Require(node);
-    if (target.android_id != 0) {
+    if (target.android_id >= 0) {
         auto& entries = id_index_[target.android_id];
         if (std::find(entries.begin(), entries.end(), node) == entries.end()) {
             entries.push_back(node);

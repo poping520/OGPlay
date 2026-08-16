@@ -5,7 +5,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_webkit_WebView(const Context& context) {
     dx::IntrinsicClassBuilder builder("Landroid/webkit/WebView;");
     builder.Super("Landroid/view/ViewGroup;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler());
+    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.Virtual("loadUrl", "(Ljava/lang/String;)V",
         [](dx::IntrinsicContext& call) {
             GuestLog(call, core::LogLevel::warn,

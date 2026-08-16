@@ -416,9 +416,25 @@ dx::IntrinsicHandler TelephonyFalseHandler() {
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
 }
 
-dx::IntrinsicHandler ViewInitHandler() {
-    return dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+dx::IntrinsicHandler ViewInitHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        const auto descriptor = call.vm.Linker()
+                                    .Class(call.vm.Model().ObjectClass(
+                                        call.receiver))
+                                    .descriptor;
+        static_cast<void>(EnsureViewUiNode(
+            *context, call.receiver, UiClassForDescriptor(descriptor)));
+        return dx::VmValue::Void();
+    });
+}
+
+dx::IntrinsicHandler ViewSetIdHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        const auto node = EnsureViewUiNode(
+            *context, call.receiver, ui::UiClass::View);
+        context->ui_tree.SetAndroidId(node, call.arguments[0].AsInt());
+        return dx::VmValue::Void();
+    });
 }
 
 dx::IntrinsicHandler WidgetNoopHandler() {

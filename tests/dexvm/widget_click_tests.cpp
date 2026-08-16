@@ -60,6 +60,7 @@ struct ClickVm final {
     std::shared_ptr<DexVmAndroidContext> context;
     VirtualFileSystem vfs;
     Interpreter interpreter;
+    VmObjectRef activity;
     VmObjectRef video_view;
     VmObjectRef skip_button;
     VmObjectRef other_button;
@@ -87,12 +88,30 @@ struct ClickVm final {
 
         video_view =
             interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
+        activity = interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
         const auto bar = interpreter.NewIntrinsicInstance(
             "Landroid/widget/LinearLayout;");
         skip_button = interpreter.NewIntrinsicInstance(
             "Landroid/widget/ImageButton;");
         other_button = interpreter.NewIntrinsicInstance(
             "Landroid/widget/ImageButton;");
+
+        const auto video_node = context->ui_tree.CreateNode(
+            ui::UiClass::VideoView);
+        const auto bar_node = context->ui_tree.CreateNode(
+            ui::UiClass::LinearLayout);
+        const auto other_node = context->ui_tree.CreateNode(
+            ui::UiClass::ImageButton);
+        const auto skip_node = context->ui_tree.CreateNode(
+            ui::UiClass::ImageButton);
+        BindViewToUiNode(*context, video_view, video_node);
+        BindViewToUiNode(*context, bar, bar_node);
+        BindViewToUiNode(*context, other_button, other_node);
+        BindViewToUiNode(*context, skip_button, skip_node);
+        context->ui_tree.Attach(context->ui_tree.Root(), video_node);
+        context->ui_tree.Attach(context->ui_tree.Root(), bar_node);
+        context->ui_tree.Attach(bar_node, other_node);
+        context->ui_tree.Attach(bar_node, skip_node);
 
         using Fact = DexVmAndroidContext::LayoutViewFact;
         constexpr auto kFill = ogplay::loader::BinaryXmlElement::
@@ -207,6 +226,37 @@ TEST_CASE("visible button with a listener receives the click") {
     // The sibling without a listener consumes nothing.
     CHECK_FALSE(vm.Click(40.0F, 95.0F).has_value());
     CHECK(vm.CallStaticInt("getClicks") == 1);
+}
+
+TEST_CASE("View id and Activity lookup share the bound guest identity") {
+    ClickVm vm;
+    CHECK(vm.CallOn(vm.skip_button, "getId", "()I").AsInt() == -1);
+    CHECK_FALSE(vm.CallOn(
+        vm.activity, "findViewById", "(I)Landroid/view/View;",
+        {VmValue::Int(-1)}).ref.IsValid());
+    vm.CallOn(vm.skip_button, "setId", "(I)V", {VmValue::Int(0x1234)});
+    CHECK(vm.CallOn(vm.skip_button, "getId", "()I").AsInt() == 0x1234);
+    const auto found = vm.CallOn(
+        vm.activity, "findViewById", "(I)Landroid/view/View;",
+        {VmValue::Int(0x1234)});
+    CHECK(found.ref == vm.skip_button);
+
+    vm.CallOn(vm.skip_button, "setId", "(I)V", {VmValue::Int(0x5678)});
+    CHECK_FALSE(vm.CallOn(
+        vm.activity, "findViewById", "(I)Landroid/view/View;",
+        {VmValue::Int(0x1234)}).ref.IsValid());
+    CHECK(vm.CallOn(
+        vm.activity, "findViewById", "(I)Landroid/view/View;",
+        {VmValue::Int(0x5678)}).ref == vm.skip_button);
+
+    const auto node = FindViewUiNode(*vm.context, vm.skip_button.Value());
+    REQUIRE(node.has_value());
+    const auto extra = vm.context->ui_tree.CreateNode(ui::UiClass::View);
+    CHECK_THROWS_WITH(BindViewToUiNode(*vm.context, vm.skip_button, extra),
+                      "guest View already has a different UI node");
+    CHECK_THROWS_WITH(BindViewToUiNode(
+                          *vm.context, vm.other_button, *node),
+                      "guest View already has a different UI node");
 }
 
 TEST_CASE("hidden buttons do not receive clicks and GONE reflows the row") {

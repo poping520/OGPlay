@@ -5,7 +5,8 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_TextView(const Context& context) {
     dx::IntrinsicClassBuilder builder("Landroid/widget/TextView;");
     builder.Super("Landroid/view/View;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler());
+    builder.Virtual("<init>", "(Landroid/content/Context;)V",
+                    ViewInitHandler(context));
     // TextView text is real state in the interpreter's builder buffer so
     // interpreted logic round-trips what it stored.
     builder.Virtual("setText", "(Ljava/lang/CharSequence;)V",
@@ -30,7 +31,7 @@ Decl Declare_android_widget_TextView(const Context& context) {
     builder.Virtual("setMaxLines", "(I)V", WidgetNoopHandler());
     builder.Virtual("setMaxWidth", "(I)V", WidgetNoopHandler());
     builder.Virtual("setGravity", "(I)V", WidgetNoopHandler());
-    builder.Virtual("setId", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setId", "(I)V", ViewSetIdHandler(context));
     builder.Virtual("setTypeface", "(Landroid/graphics/Typeface;)V", WidgetNoopHandler());
     builder.Virtual("getPaint", "()Landroid/text/TextPaint;",
         [context](dx::IntrinsicContext& call) {

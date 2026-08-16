@@ -5,7 +5,8 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_view_View(const Context& context) {
     dx::IntrinsicClassBuilder builder("Landroid/view/View;");
     builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler());
+    builder.Virtual("<init>", "(Landroid/content/Context;)V",
+                    ViewInitHandler(context));
     builder.Overridable("onSizeChanged", "(IIII)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.Overridable("onWindowFocusChanged", "(Z)V",
@@ -19,12 +20,23 @@ Decl Declare_android_view_View(const Context& context) {
             // The single fullscreen view always holds focus.
             return dx::VmValue::Int(1);
         });
-    builder.Virtual("invalidate", "()V", noop_flag);
-    builder.Virtual("postInvalidate", "()V", noop_flag);
-    builder.Virtual("getId", "()I",
-        [](dx::IntrinsicContext&) {
-            return dx::VmValue::Int(-1);  // View.NO_ID: no id was assigned
+    const auto invalidate = dx::IntrinsicHandler(
+        [context](dx::IntrinsicContext& call) {
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver, ui::UiClass::View);
+            context->ui_tree.MarkDrawDirty(node);
+            return dx::VmValue::Void();
         });
+    builder.Virtual("invalidate", "()V", invalidate);
+    builder.Virtual("postInvalidate", "()V", invalidate);
+    builder.Virtual("getId", "()I",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver, ui::UiClass::View);
+            return dx::VmValue::Int(
+                context->ui_tree.Get(node)->android_id);
+        });
+    builder.Virtual("setId", "(I)V", ViewSetIdHandler(context));
     builder.Virtual("setVisibility", "(I)V", [context](dx::IntrinsicContext& call) {
         const auto value = call.arguments[0].AsInt();
         if (value != kVisible && value != kInvisible && value != kGone) {
@@ -32,7 +44,14 @@ Decl Declare_android_view_View(const Context& context) {
                 "setVisibility value is not one of VISIBLE/INVISIBLE/GONE: " +
                     std::to_string(value)};
         }
-        context->widget_states[call.receiver.Value()].visibility = value;
+        const auto node = EnsureViewUiNode(
+            *context, call.receiver, ui::UiClass::View);
+        const auto visibility = value == kVisible
+                                    ? ui::Visibility::Visible
+                                    : value == kInvisible
+                                          ? ui::Visibility::Invisible
+                                          : ui::Visibility::Gone;
+        context->ui_tree.SetVisibility(node, visibility);
         return dx::VmValue::Void();
     });
     builder.Virtual("getVisibility", "()I", [context](dx::IntrinsicContext& call) {
@@ -44,7 +63,13 @@ Decl Declare_android_view_View(const Context& context) {
     builder.Virtual("setOnClickListener", "(Landroid/view/View$OnClickListener;)V",
         [context](dx::IntrinsicContext& call) {
             const auto handle = call.receiver.Value();
-            context->widget_states[handle].click_listener = call.arguments[0].ref;
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver, ui::UiClass::View);
+            if (call.arguments[0].ref.IsValid()) {
+                context->ui_click_listeners[node] = call.arguments[0].ref;
+            } else {
+                context->ui_click_listeners.erase(node);
+            }
             const auto known = std::any_of(
                 context->layout_views.begin(), context->layout_views.end(),
                 [handle](const auto& fact) { return fact.view.Value() == handle; });
@@ -55,7 +80,17 @@ Decl Declare_android_view_View(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("setOnTouchListener", "(Landroid/view/View$OnTouchListener;)V", WidgetNoopHandler());
+    builder.Virtual("setOnTouchListener", "(Landroid/view/View$OnTouchListener;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = EnsureViewUiNode(
+                *context, call.receiver, ui::UiClass::View);
+            if (call.arguments[0].ref.IsValid()) {
+                context->ui_touch_listeners[node] = call.arguments[0].ref;
+            } else {
+                context->ui_touch_listeners.erase(node);
+            }
+            return dx::VmValue::Void();
+        });
     builder.Virtual("clearFocus", "()V", WidgetNoopHandler());
     builder.Virtual("getWindowToken", "()Landroid/os/IBinder;",
         [](dx::IntrinsicContext&) {

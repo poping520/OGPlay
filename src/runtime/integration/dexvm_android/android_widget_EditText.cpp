@@ -5,7 +5,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_EditText(const Context& context) {
     dx::IntrinsicClassBuilder builder("Landroid/widget/EditText;");
     builder.Super("Landroid/widget/TextView;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler());
+    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.Virtual("getText", "()Landroid/text/Editable;",
         [context](dx::IntrinsicContext& call) {
             const auto key =

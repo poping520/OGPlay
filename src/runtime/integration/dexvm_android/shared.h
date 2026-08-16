@@ -84,6 +84,7 @@ inline constexpr std::int32_t kInvisible = 4;
 inline constexpr std::int32_t kGone = 8;
 [[nodiscard]] std::int32_t VisibilityOf(const DexVmAndroidContext& context,
                                         std::uint64_t handle);
+[[nodiscard]] ui::UiClass UiClassForDescriptor(std::string_view descriptor);
 void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
                     dx::VmObjectRef message);
 [[nodiscard]] dx::VmObjectRef MakeMessage(dx::IntrinsicContext& call,
@@ -143,7 +144,8 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetTypeHandler();
 [[nodiscard]] dx::IntrinsicHandler TelephonyEmptyStringHandler();
 [[nodiscard]] dx::IntrinsicHandler TelephonyFalseHandler();
-[[nodiscard]] dx::IntrinsicHandler ViewInitHandler();
+[[nodiscard]] dx::IntrinsicHandler ViewInitHandler(const Context& context);
+[[nodiscard]] dx::IntrinsicHandler ViewSetIdHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler WidgetNoopHandler();
 [[nodiscard]] dx::IntrinsicHandler WindowmanagerGetDefaultDisplayHandler(
     const Context& context);

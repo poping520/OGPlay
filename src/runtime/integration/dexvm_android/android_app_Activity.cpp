@@ -71,38 +71,50 @@ Decl Declare_android_app_Activity(const Context& context) {
                     {"ScrollView", "Landroid/widget/ScrollView;"},
                     {"AbsoluteLayout", "Landroid/widget/AbsoluteLayout;"},
                 };
-            context->view_registry.clear();
-            context->widget_states.clear();
-            context->layout_views.clear();
+            ResetViewUiState(*context);
             dx::VmObjectRef root;
             const auto elements = loader::ParseBinaryXmlElements(bytes);
             // Element index -> layout_views index; skipped elements (merge,
             // unknown tags) map to their own parent so children re-attach to
             // the nearest instantiated ancestor.
             std::vector<std::int32_t> fact_of(elements.size(), -1);
+            std::vector<ui::UiNodeId> node_of(elements.size());
             for (std::size_t index = 0; index < elements.size(); ++index) {
                 const auto& element = elements[index];
                 const auto parent_fact =
                     element.parent < 0
                         ? -1
                         : fact_of[static_cast<std::size_t>(element.parent)];
-                if (element.name == "merge")
+                const auto parent_node =
+                    element.parent < 0
+                        ? context->ui_tree.Root()
+                        : node_of[static_cast<std::size_t>(element.parent)];
+                if (element.name == "merge") {
+                    node_of[index] = parent_node;
                     continue; // container marker
+                }
                 const auto found = kTagDescriptors.find(element.name);
                 if (found == kTagDescriptors.end()) {
                     GuestLog(call, core::LogLevel::warn,
                              "layout tag has no widget intrinsic: " +
                                  element.name);
                     fact_of[index] = parent_fact;
+                    node_of[index] = parent_node;
                     continue;
                 }
                 const auto instance =
                     call.vm.NewIntrinsicInstance(found->second);
+                const auto node = context->ui_tree.CreateNode(
+                    UiClassForDescriptor(found->second));
+                BindViewToUiNode(*context, instance, node);
+                if (element.id != 0) {
+                    context->ui_tree.SetAndroidId(
+                        node, static_cast<std::int32_t>(element.id));
+                }
+                context->ui_tree.Attach(parent_node, node);
+                node_of[index] = node;
                 if (!root.IsValid())
                     root = instance;
-                if (element.id != 0) {
-                    context->view_registry[element.id] = instance;
-                }
                 DexVmAndroidContext::LayoutViewFact fact;
                 fact.view = instance;
                 fact.parent = parent_fact;
@@ -147,13 +159,13 @@ Decl Declare_android_app_Activity(const Context& context) {
         });
     builder.Virtual("findViewById", "(I)Landroid/view/View;",
         [context](dx::IntrinsicContext& call) {
-            const auto found = context->view_registry.find(
-                static_cast<std::uint32_t>(call.arguments[0].AsInt()));
-            if (found == context->view_registry.end()) {
+            const auto found = context->ui_tree.FindByAndroidId(
+                call.arguments[0].AsInt());
+            if (!found.has_value()) {
                 // Absent id: null is the documented answer.
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             }
-            return dx::VmValue::Ref(found->second);
+            return dx::VmValue::Ref(ViewObjectForUiNode(*context, *found));
         });
     builder.Virtual("getIntent", "()Landroid/content/Intent;",
         [context](dx::IntrinsicContext& call) {

@@ -13,7 +13,7 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_VideoView(const Context& context) {
     dx::IntrinsicClassBuilder builder("Landroid/widget/VideoView;");
     builder.Super("Landroid/view/View;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler());
+    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.Virtual("setVideoPath", "(Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {
             const auto handle = call.receiver.Value();

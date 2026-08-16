@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace ogplay::runtime::ui {
 namespace {
@@ -275,6 +277,167 @@ void LayoutFrameChildren(UiTree& tree, const UiNodeId id,
     }
 }
 
+enum class RelativeVisit : std::uint8_t { Unvisited, Visiting, Resolved };
+
+void LayoutRelativeChildren(UiTree& tree, const UiNodeId id,
+                            const std::int32_t screen_x,
+                            const std::int32_t screen_y) {
+    auto& parent = *tree.Get(id);
+    const auto content_left = parent.padding.left;
+    const auto content_top = parent.padding.top;
+    const auto content_right = parent.measured.width - parent.padding.right;
+    const auto content_bottom = parent.measured.height - parent.padding.bottom;
+    std::unordered_map<std::int32_t, UiNodeId> siblings;
+    for (const auto child_id : parent.children) {
+        const auto android_id = tree.Get(child_id)->android_id;
+        if (android_id < 0) continue;
+        if (!siblings.emplace(android_id, child_id).second) {
+            throw std::runtime_error(
+                "RelativeLayout sibling ids must be unique");
+        }
+    }
+
+    std::unordered_map<UiNodeId, RelativeVisit, UiNodeIdHash> horizontal_visit;
+    std::unordered_map<UiNodeId, RelativeVisit, UiNodeIdHash> vertical_visit;
+    std::unordered_map<UiNodeId, std::int32_t, UiNodeIdHash> lefts;
+    std::unordered_map<UiNodeId, std::int32_t, UiNodeIdHash> tops;
+
+    const auto anchor_for = [&siblings](const std::int32_t android_id) {
+        const auto found = siblings.find(android_id);
+        if (found == siblings.end()) {
+            throw std::runtime_error(
+                "RelativeLayout rule references a missing sibling id");
+        }
+        return found->second;
+    };
+
+    std::function<std::int32_t(UiNodeId)> resolve_horizontal;
+    resolve_horizontal = [&](const UiNodeId child_id) -> std::int32_t {
+        auto& visit = horizontal_visit[child_id];
+        if (visit == RelativeVisit::Visiting) {
+            throw std::runtime_error(
+                "RelativeLayout horizontal dependency cycle");
+        }
+        if (visit == RelativeVisit::Resolved) return lefts.at(child_id);
+        visit = RelativeVisit::Visiting;
+        const auto& child = *tree.Get(child_id);
+        const auto& rules = child.layout.relative;
+        const bool centered = rules.center_in_parent || rules.center_horizontal;
+        const auto rule_count = static_cast<unsigned>(centered) +
+                                static_cast<unsigned>(rules.align_parent_left) +
+                                static_cast<unsigned>(rules.align_parent_right) +
+                                static_cast<unsigned>(rules.left_of.has_value()) +
+                                static_cast<unsigned>(rules.right_of.has_value()) +
+                                static_cast<unsigned>(rules.align_left.has_value()) +
+                                static_cast<unsigned>(rules.align_right.has_value());
+        if (rule_count > 1U) {
+            throw std::runtime_error(
+                "RelativeLayout has conflicting horizontal rules");
+        }
+        std::int32_t left = content_left + child.layout.margin.left;
+        if (centered) {
+            left = content_left +
+                   (content_right - content_left - child.measured.width) / 2 +
+                   child.layout.margin.left - child.layout.margin.right;
+        } else if (rules.align_parent_right) {
+            left = content_right - child.measured.width -
+                   child.layout.margin.right;
+        } else if (rules.left_of.has_value()) {
+            const auto anchor = anchor_for(*rules.left_of);
+            left = resolve_horizontal(anchor) - child.layout.margin.right -
+                   child.measured.width;
+        } else if (rules.right_of.has_value()) {
+            const auto anchor = anchor_for(*rules.right_of);
+            const auto& anchor_node = *tree.Get(anchor);
+            left = resolve_horizontal(anchor) + anchor_node.measured.width +
+                   child.layout.margin.left;
+        } else if (rules.align_left.has_value()) {
+            left = resolve_horizontal(anchor_for(*rules.align_left)) +
+                   child.layout.margin.left;
+        } else if (rules.align_right.has_value()) {
+            const auto anchor = anchor_for(*rules.align_right);
+            const auto& anchor_node = *tree.Get(anchor);
+            left = resolve_horizontal(anchor) + anchor_node.measured.width -
+                   child.measured.width - child.layout.margin.right;
+        }
+        lefts.emplace(child_id, left);
+        visit = RelativeVisit::Resolved;
+        return left;
+    };
+
+    std::function<std::int32_t(UiNodeId)> resolve_vertical;
+    resolve_vertical = [&](const UiNodeId child_id) -> std::int32_t {
+        auto& visit = vertical_visit[child_id];
+        if (visit == RelativeVisit::Visiting) {
+            throw std::runtime_error(
+                "RelativeLayout vertical dependency cycle");
+        }
+        if (visit == RelativeVisit::Resolved) return tops.at(child_id);
+        visit = RelativeVisit::Visiting;
+        const auto& child = *tree.Get(child_id);
+        const auto& rules = child.layout.relative;
+        const bool centered = rules.center_in_parent || rules.center_vertical;
+        const auto rule_count = static_cast<unsigned>(centered) +
+                                static_cast<unsigned>(rules.align_parent_top) +
+                                static_cast<unsigned>(rules.align_parent_bottom) +
+                                static_cast<unsigned>(rules.above.has_value()) +
+                                static_cast<unsigned>(rules.below.has_value()) +
+                                static_cast<unsigned>(rules.align_top.has_value()) +
+                                static_cast<unsigned>(rules.align_bottom.has_value());
+        if (rule_count > 1U) {
+            throw std::runtime_error(
+                "RelativeLayout has conflicting vertical rules");
+        }
+        std::int32_t top = content_top + child.layout.margin.top;
+        if (centered) {
+            top = content_top +
+                  (content_bottom - content_top - child.measured.height) / 2 +
+                  child.layout.margin.top - child.layout.margin.bottom;
+        } else if (rules.align_parent_bottom) {
+            top = content_bottom - child.measured.height -
+                  child.layout.margin.bottom;
+        } else if (rules.above.has_value()) {
+            const auto anchor = anchor_for(*rules.above);
+            top = resolve_vertical(anchor) - child.layout.margin.bottom -
+                  child.measured.height;
+        } else if (rules.below.has_value()) {
+            const auto anchor = anchor_for(*rules.below);
+            const auto& anchor_node = *tree.Get(anchor);
+            top = resolve_vertical(anchor) + anchor_node.measured.height +
+                  child.layout.margin.top;
+        } else if (rules.align_top.has_value()) {
+            top = resolve_vertical(anchor_for(*rules.align_top)) +
+                  child.layout.margin.top;
+        } else if (rules.align_bottom.has_value()) {
+            const auto anchor = anchor_for(*rules.align_bottom);
+            const auto& anchor_node = *tree.Get(anchor);
+            top = resolve_vertical(anchor) + anchor_node.measured.height -
+                  child.measured.height - child.layout.margin.bottom;
+        }
+        tops.emplace(child_id, top);
+        visit = RelativeVisit::Resolved;
+        return top;
+    };
+
+    for (const auto child_id : parent.children) {
+        static_cast<void>(resolve_horizontal(child_id));
+        static_cast<void>(resolve_vertical(child_id));
+    }
+    for (const auto child_id : parent.children) {
+        auto& child = *tree.Get(child_id);
+        if (child.visibility == Visibility::Gone) {
+            child.frame = {};
+            child.screen_frame = {};
+            continue;
+        }
+        const auto left = lefts.at(child_id);
+        const auto top = tops.at(child_id);
+        child.frame = {left, top, left + child.measured.width,
+                       top + child.measured.height};
+        LayoutNode(tree, child_id, screen_x + left, screen_y + top);
+    }
+}
+
 void LayoutHorizontalChildren(UiTree& tree, const UiNodeId id,
                               const std::int32_t screen_x,
                               const std::int32_t screen_y) {
@@ -382,6 +545,8 @@ void LayoutNode(UiTree& tree, const UiNodeId id, const std::int32_t screen_x,
         } else {
             LayoutVerticalChildren(tree, id, screen_x, screen_y);
         }
+    } else if (node.kind == UiClass::RelativeLayout) {
+        LayoutRelativeChildren(tree, id, screen_x, screen_y);
     } else {
         LayoutFrameChildren(tree, id, screen_x, screen_y);
     }

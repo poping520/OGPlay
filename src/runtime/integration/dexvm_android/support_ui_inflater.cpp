@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bit>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -54,6 +55,17 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
 
 [[nodiscard]] std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
     return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
+}
+
+[[nodiscard]] std::int32_t SiblingResourceId(
+    const loader::BinaryXmlAttribute& attribute) {
+    if (attribute.data == 0U ||
+        attribute.data >
+            static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+        throw std::runtime_error(
+            "RelativeLayout sibling rule requires a positive resource id");
+    }
+    return static_cast<std::int32_t>(attribute.data);
 }
 
 [[nodiscard]] std::u16string AsciiText(const std::string& text) {
@@ -171,6 +183,36 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
                attribute.value_type >= kTypeFirstColor &&
                attribute.value_type <= kTypeLastColor) {
         node.background_color = AndroidColorToRgba(attribute.data);
+    } else if (name == "layout_alignParentLeft") {
+        node.layout.relative.align_parent_left = attribute.data != 0U;
+    } else if (name == "layout_alignParentRight") {
+        node.layout.relative.align_parent_right = attribute.data != 0U;
+    } else if (name == "layout_alignParentTop") {
+        node.layout.relative.align_parent_top = attribute.data != 0U;
+    } else if (name == "layout_alignParentBottom") {
+        node.layout.relative.align_parent_bottom = attribute.data != 0U;
+    } else if (name == "layout_centerInParent") {
+        node.layout.relative.center_in_parent = attribute.data != 0U;
+    } else if (name == "layout_centerHorizontal") {
+        node.layout.relative.center_horizontal = attribute.data != 0U;
+    } else if (name == "layout_centerVertical") {
+        node.layout.relative.center_vertical = attribute.data != 0U;
+    } else if (name == "layout_toLeftOf") {
+        node.layout.relative.left_of = SiblingResourceId(attribute);
+    } else if (name == "layout_toRightOf") {
+        node.layout.relative.right_of = SiblingResourceId(attribute);
+    } else if (name == "layout_above") {
+        node.layout.relative.above = SiblingResourceId(attribute);
+    } else if (name == "layout_below") {
+        node.layout.relative.below = SiblingResourceId(attribute);
+    } else if (name == "layout_alignLeft") {
+        node.layout.relative.align_left = SiblingResourceId(attribute);
+    } else if (name == "layout_alignRight") {
+        node.layout.relative.align_right = SiblingResourceId(attribute);
+    } else if (name == "layout_alignTop") {
+        node.layout.relative.align_top = SiblingResourceId(attribute);
+    } else if (name == "layout_alignBottom") {
+        node.layout.relative.align_bottom = SiblingResourceId(attribute);
     } else if (name == "src") {
         drawable_id = attribute.data;
         node.image_resource_id = attribute.data;

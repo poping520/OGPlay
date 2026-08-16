@@ -396,6 +396,40 @@ TEST_CASE("registry inflater rejects unsupported structural layouts") {
                       "merge must be the layout root");
 }
 
+TEST_CASE("registry inflater preserves RelativeLayout sibling rules") {
+    ClickVm vm;
+    std::vector<ogplay::loader::BinaryXmlElement> elements(3);
+    elements[0].name = "RelativeLayout";
+    elements[0].attributes = {
+        AndroidAttribute("layout_width", 0x10, 0xffffffffU),
+        AndroidAttribute("layout_height", 0x10, 0xffffffffU)};
+    elements[1].name = "View";
+    elements[1].parent = 0;
+    elements[1].attributes = {
+        AndroidAttribute("id", 0x01, 700),
+        AndroidAttribute("layout_width", 0x10, 20),
+        AndroidAttribute("layout_height", 0x10, 10),
+        AndroidAttribute("layout_centerInParent", 0x12, 1)};
+    elements[2].name = "View";
+    elements[2].parent = 0;
+    elements[2].attributes = {
+        AndroidAttribute("layout_width", 0x10, 5),
+        AndroidAttribute("layout_height", 0x10, 5),
+        AndroidAttribute("layout_toRightOf", 0x01, 700),
+        AndroidAttribute("layout_below", 0x01, 700)};
+
+    static_cast<void>(InflateUiElements(vm.interpreter, *vm.context, elements));
+    ui::LayoutUiTree(vm.context->ui_tree, {100, 80});
+    const auto* root = vm.context->ui_tree.Get(vm.context->ui_tree.Root());
+    REQUIRE(root->children.size() == 1);
+    const auto* relative = vm.context->ui_tree.Get(root->children[0]);
+    REQUIRE(relative->children.size() == 2);
+    CHECK(vm.context->ui_tree.Get(relative->children[0])->screen_frame ==
+          ui::Rect{40, 35, 60, 45});
+    CHECK(vm.context->ui_tree.Get(relative->children[1])->screen_frame ==
+          ui::Rect{60, 45, 65, 50});
+}
+
 TEST_CASE("hidden buttons do not receive clicks and GONE reflows the row") {
     ClickVm vm;
     const auto listener = vm.NewListener();
@@ -582,4 +616,56 @@ TEST_CASE("TextView Java state controls deterministic measure and draw state") {
             VmValue::Ref(vm.interpreter.NewStringUtf8("two\nlines"))});
     CHECK(unsupported.exception.IsValid());
     CHECK(vm.context->ui_tree.Get(*node)->text == u"H");
+}
+
+TEST_CASE("RelativeLayout Java rules update attached geometry") {
+    ClickVm vm;
+    const auto relative = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/RelativeLayout;");
+    const auto anchor = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/View;");
+    const auto dependent = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/View;");
+    vm.CallOn(anchor, "setId", "(I)V", {VmValue::Int(1001)});
+
+    const auto content_params = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/ViewGroup$LayoutParams;");
+    vm.CallDirect(content_params, "Landroid/view/ViewGroup$LayoutParams;",
+                  "<init>", "(II)V",
+                  {VmValue::Int(-1), VmValue::Int(-1)});
+    vm.CallOn(relative, "setLayoutParams",
+              "(Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(content_params)});
+    const auto anchor_params = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/RelativeLayout$LayoutParams;");
+    vm.CallDirect(anchor_params,
+                  "Landroid/widget/RelativeLayout$LayoutParams;", "<init>",
+                  "(II)V", {VmValue::Int(20), VmValue::Int(10)});
+    vm.CallOn(anchor_params, "addRule", "(I)V", {VmValue::Int(9)});
+    vm.CallOn(anchor_params, "addRule", "(I)V", {VmValue::Int(10)});
+    const auto dependent_params = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/RelativeLayout$LayoutParams;");
+    vm.CallDirect(dependent_params,
+                  "Landroid/widget/RelativeLayout$LayoutParams;", "<init>",
+                  "(II)V", {VmValue::Int(5), VmValue::Int(5)});
+    vm.CallOn(dependent_params, "addRule", "(II)V",
+              {VmValue::Int(1), VmValue::Int(1001)});
+    vm.CallOn(dependent_params, "addRule", "(II)V",
+              {VmValue::Int(3), VmValue::Int(1001)});
+    vm.CallOn(relative, "addView",
+              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(dependent), VmValue::Ref(dependent_params)});
+    vm.CallOn(relative, "addView",
+              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(anchor), VmValue::Ref(anchor_params)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(relative)});
+
+    CHECK(vm.CallOn(dependent, "getLeft", "()I").AsInt() == 20);
+    CHECK(vm.CallOn(dependent, "getTop", "()I").AsInt() == 10);
+    vm.CallOn(dependent_params, "addRule", "(II)V",
+              {VmValue::Int(1), VmValue::Int(0)});
+    vm.CallOn(dependent_params, "addRule", "(I)V", {VmValue::Int(14)});
+    CHECK(vm.CallOn(dependent, "getLeft", "()I").AsInt() == 47);
+    CHECK(vm.CallOn(dependent, "getTop", "()I").AsInt() == 10);
 }

@@ -100,12 +100,31 @@ struct Rect final {
     constexpr auto operator<=>(const Rect&) const = default;
 };
 
+struct RelativeRules final {
+    std::optional<std::int32_t> left_of;
+    std::optional<std::int32_t> right_of;
+    std::optional<std::int32_t> above;
+    std::optional<std::int32_t> below;
+    std::optional<std::int32_t> align_left;
+    std::optional<std::int32_t> align_right;
+    std::optional<std::int32_t> align_top;
+    std::optional<std::int32_t> align_bottom;
+    bool align_parent_left{};
+    bool align_parent_right{};
+    bool align_parent_top{};
+    bool align_parent_bottom{};
+    bool center_in_parent{};
+    bool center_horizontal{};
+    bool center_vertical{};
+};
+
 struct LayoutParams final {
     DimensionSpec width;
     DimensionSpec height;
     Insets margin;
     std::uint32_t layout_gravity{};
     float weight{};
+    RelativeRules relative;
 };
 
 struct UiNode final {

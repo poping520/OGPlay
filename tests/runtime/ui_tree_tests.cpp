@@ -234,3 +234,93 @@ TEST_CASE("horizontal LinearLayout distributes weighted zero-width children") {
     CHECK_THROWS_WITH(ui::LayoutUiTree(tree, {100, 20}),
                       "LinearLayout child weight must be finite and non-negative");
 }
+
+TEST_CASE("RelativeLayout resolves parent center and sibling edge rules") {
+    ui::UiTree tree;
+    const auto relative = tree.CreateNode(ui::UiClass::RelativeLayout);
+    tree.Get(relative)->layout.width.mode = ui::SizeMode::MatchParent;
+    tree.Get(relative)->layout.height.mode = ui::SizeMode::MatchParent;
+    tree.Get(relative)->padding = {5, 5, 5, 5};
+    const auto left = tree.CreateNode(ui::UiClass::View);
+    const auto above = tree.CreateNode(ui::UiClass::View);
+    const auto anchor = tree.CreateNode(ui::UiClass::View);
+    const auto centered = tree.CreateNode(ui::UiClass::View);
+    tree.SetAndroidId(anchor, 100);
+    for (const auto child : {left, above, anchor, centered}) {
+        tree.Attach(relative, child);
+    }
+    tree.Get(anchor)->layout.width = {ui::SizeMode::Fixed, 20};
+    tree.Get(anchor)->layout.height = {ui::SizeMode::Fixed, 10};
+    tree.Get(anchor)->layout.relative.align_parent_right = true;
+    tree.Get(anchor)->layout.relative.align_parent_bottom = true;
+    tree.Get(left)->layout.width = {ui::SizeMode::Fixed, 10};
+    tree.Get(left)->layout.height = {ui::SizeMode::Fixed, 6};
+    tree.Get(left)->layout.margin.right = 2;
+    tree.Get(left)->layout.relative.left_of = 100;
+    tree.Get(left)->layout.relative.align_bottom = 100;
+    tree.Get(above)->layout.width = {ui::SizeMode::Fixed, 8};
+    tree.Get(above)->layout.height = {ui::SizeMode::Fixed, 4};
+    tree.Get(above)->layout.margin.bottom = 1;
+    tree.Get(above)->layout.relative.align_left = 100;
+    tree.Get(above)->layout.relative.above = 100;
+    tree.Get(centered)->layout.width = {ui::SizeMode::Fixed, 10};
+    tree.Get(centered)->layout.height = {ui::SizeMode::Fixed, 10};
+    tree.Get(centered)->layout.relative.center_in_parent = true;
+    tree.Attach(tree.Root(), relative);
+
+    ui::LayoutUiTree(tree, {100, 80});
+    CHECK(tree.Get(anchor)->screen_frame == ui::Rect{75, 65, 95, 75});
+    CHECK(tree.Get(left)->screen_frame == ui::Rect{63, 69, 73, 75});
+    CHECK(tree.Get(above)->screen_frame == ui::Rect{75, 60, 83, 64});
+    CHECK(tree.Get(centered)->screen_frame == ui::Rect{45, 35, 55, 45});
+}
+
+TEST_CASE("RelativeLayout resolves dependencies independent of document order") {
+    ui::UiTree tree;
+    const auto relative = tree.CreateNode(ui::UiClass::RelativeLayout);
+    tree.Get(relative)->layout.width.mode = ui::SizeMode::MatchParent;
+    tree.Get(relative)->layout.height.mode = ui::SizeMode::MatchParent;
+    const auto dependent = tree.CreateNode(ui::UiClass::View);
+    const auto anchor = tree.CreateNode(ui::UiClass::View);
+    tree.SetAndroidId(anchor, 7);
+    tree.Get(anchor)->layout.width = {ui::SizeMode::Fixed, 20};
+    tree.Get(anchor)->layout.height = {ui::SizeMode::Fixed, 10};
+    tree.Get(anchor)->layout.relative.center_in_parent = true;
+    tree.Get(dependent)->layout.width = {ui::SizeMode::Fixed, 5};
+    tree.Get(dependent)->layout.height = {ui::SizeMode::Fixed, 5};
+    tree.Get(dependent)->layout.relative.right_of = 7;
+    tree.Get(dependent)->layout.relative.below = 7;
+    tree.Attach(relative, dependent);
+    tree.Attach(relative, anchor);
+    tree.Attach(tree.Root(), relative);
+
+    ui::LayoutUiTree(tree, {100, 80});
+    CHECK(tree.Get(anchor)->screen_frame == ui::Rect{40, 35, 60, 45});
+    CHECK(tree.Get(dependent)->screen_frame == ui::Rect{60, 45, 65, 50});
+}
+
+TEST_CASE("RelativeLayout fails deterministically on missing refs and cycles") {
+    ui::UiTree missing;
+    const auto missing_parent =
+        missing.CreateNode(ui::UiClass::RelativeLayout);
+    const auto missing_child = missing.CreateNode(ui::UiClass::View);
+    missing.Get(missing_child)->layout.relative.below = 404;
+    missing.Attach(missing_parent, missing_child);
+    missing.Attach(missing.Root(), missing_parent);
+    CHECK_THROWS_WITH(ui::LayoutUiTree(missing, {20, 20}),
+                      "RelativeLayout rule references a missing sibling id");
+
+    ui::UiTree cycle;
+    const auto cycle_parent = cycle.CreateNode(ui::UiClass::RelativeLayout);
+    const auto first = cycle.CreateNode(ui::UiClass::View);
+    const auto second = cycle.CreateNode(ui::UiClass::View);
+    cycle.SetAndroidId(first, 1);
+    cycle.SetAndroidId(second, 2);
+    cycle.Get(first)->layout.relative.below = 2;
+    cycle.Get(second)->layout.relative.above = 1;
+    cycle.Attach(cycle_parent, first);
+    cycle.Attach(cycle_parent, second);
+    cycle.Attach(cycle.Root(), cycle_parent);
+    CHECK_THROWS_WITH(ui::LayoutUiTree(cycle, {20, 20}),
+                      "RelativeLayout vertical dependency cycle");
+}

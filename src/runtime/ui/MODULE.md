@@ -24,6 +24,9 @@ SDL、ANGLE 或视频解码。
   parent gravity 定位整组，child layout_gravity 覆盖交叉轴；INVISIBLE 保留 geometry。
   指定主轴约束下，finite non-negative weight 按剩余像素确定性分配，padding/margin 同时
   参与可用空间和最终 frame；负值/NaN/Inf 明确失败。
+- `RelativeLayout`：LayoutParams 保存 parent align/center 与 sibling above/below/left/right/
+  align-edge 规则；横纵依赖图分别确定性解析且不依赖 document order，missing sibling、重复
+  sibling id、同轴冲突与 cycle 明确失败。
 - `BuildUiRenderList` / `RasterizeUiOverlay`：从 resolved tree 生成 solid/bitmap/clip 命令，
   以整数 source-over 输出透明 RGBA8；`UiOverlayRenderer` 仅在 generation、metrics 或
   draw dirty 改变时重建。
@@ -46,5 +49,6 @@ SDL、ANGLE 或视频解码。
 destroy、generation reset、非法 mutation，以及 FrameLayout fullscreen/bottom/center、
 padding/margin、wrap intrinsic、document-order overlap geometry，以及 horizontal/vertical
 LinearLayout 的 GONE/INVISIBLE、weight、padding/margin geometry。
+RelativeLayout tests 锁定 parent/sibling/center、反向 document order 与 missing/cycle failure。
 `tests/runtime/ui_renderer_tests.cpp` 锁定透明、bitmap、alpha overlap、Z-order、clip、
 visibility、draw cache，以及固定字体 measure/text golden 和 Button content/background。

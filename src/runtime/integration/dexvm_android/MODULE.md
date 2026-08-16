@@ -44,6 +44,9 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
 - `TextView.setText/getText` 与 Editable mutation 共用 UiNode text；textColor/textSize/gravity
   mutation 分别推进 draw/layout dirty。当前 fixed-font backend 只接受单行受支持字形，
   多行、未知字形或非法 size 明确抛 Java 异常且不发布部分 mutation。
+- RelativeLayout XML structural attrs 与 Java LayoutParams `addRule` 写入同一 typed rule；
+  attached params mutation 会推进 UiTree layout dirty。只覆盖 Android 4.4 常用 0..15 rule
+  中除 baseline 外的 parent/sibling 子集，baseline、RTL rule 与非法 anchor 明确失败。
 - drawable resource 按 id 解码一次并缓存为 RGBA `UiBitmap`，renderer 不读取 APK、arsc
   或 guest object。
 - pointer dispatch 在 dirty 时先 traversal，按 clipped reverse draw order 选择 topmost

@@ -185,6 +185,7 @@ public:
 
     [[nodiscard]] UiNode* Get(UiNodeId id);
     [[nodiscard]] const UiNode* Get(UiNodeId id) const;
+    [[nodiscard]] bool IsAttached(UiNodeId id) const;
     [[nodiscard]] std::optional<UiNodeId> FindByAndroidId(
         std::int32_t android_id) const;
 
@@ -203,7 +204,6 @@ private:
 
     [[nodiscard]] UiNode& Require(UiNodeId id);
     [[nodiscard]] const UiNode& Require(UiNodeId id) const;
-    [[nodiscard]] bool IsAttached(UiNodeId id) const;
     void RebuildIndex();
     void IndexSubtree(UiNodeId node);
     void MarkAncestors(UiNodeId node, bool layout, bool draw);

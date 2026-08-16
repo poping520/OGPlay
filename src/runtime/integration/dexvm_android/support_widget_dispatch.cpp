@@ -87,7 +87,8 @@ bool ViewContainsPoint(DexVmAndroidContext& context,
     const auto node = FindViewUiNode(context, handle);
     if (!node.has_value()) return false;
     const auto* state = context.ui_tree.Get(*node);
-    return state != nullptr && state->visibility == ui::Visibility::Visible &&
+    return state != nullptr && context.ui_tree.IsAttached(*node) &&
+           state->visibility == ui::Visibility::Visible &&
            state->enabled &&
            android_intrinsics::Contains(
                state->screen_frame, x, y);

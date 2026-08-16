@@ -140,3 +140,32 @@ TEST_CASE("FrameLayout wrap content uses intrinsic size within parent bounds") {
     ui::LayoutUiTree(tree, {20, 40});
     CHECK(tree.Get(child)->measured == ui::Size{20, 22});
 }
+
+TEST_CASE("horizontal LinearLayout removes GONE and preserves INVISIBLE space") {
+    ui::UiTree tree;
+    const auto row = tree.CreateNode(ui::UiClass::LinearLayout);
+    tree.Get(row)->layout.width.mode = ui::SizeMode::MatchParent;
+    tree.Get(row)->layout.height.mode = ui::SizeMode::WrapContent;
+    tree.Get(row)->layout.layout_gravity = 0x50;
+    tree.Get(row)->gravity = 0x01;
+    const auto gone = tree.CreateNode(ui::UiClass::ImageButton);
+    const auto invisible = tree.CreateNode(ui::UiClass::ImageButton);
+    const auto visible = tree.CreateNode(ui::UiClass::ImageButton);
+    for (const auto child : {gone, invisible, visible}) {
+        tree.Get(child)->intrinsic = {20, 10};
+        tree.Attach(row, child);
+    }
+    tree.SetVisibility(gone, ui::Visibility::Gone);
+    tree.SetVisibility(invisible, ui::Visibility::Invisible);
+    tree.Attach(tree.Root(), row);
+
+    ui::LayoutUiTree(tree, {100, 80});
+    CHECK(tree.Get(row)->screen_frame == ui::Rect{0, 70, 100, 80});
+    CHECK(tree.Get(gone)->measured == ui::Size{});
+    CHECK(tree.Get(invisible)->screen_frame == ui::Rect{30, 70, 50, 80});
+    CHECK(tree.Get(visible)->screen_frame == ui::Rect{50, 70, 70, 80});
+
+    tree.SetVisibility(invisible, ui::Visibility::Gone);
+    ui::LayoutUiTree(tree, {100, 80});
+    CHECK(tree.Get(visible)->screen_frame == ui::Rect{40, 70, 60, 80});
+}

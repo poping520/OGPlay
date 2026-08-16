@@ -253,6 +253,8 @@ dexvm::VmObjectRef InflateUiElements(
                                    : state.padding.top;
             if (const auto image = DecodeDrawable(context, drawable_id);
                 image.has_value()) {
+                context.ui_tree.Get(node)->intrinsic = {image->width,
+                                                        image->height};
                 fact.measured_width = image->width;
                 fact.measured_height = image->height;
             }

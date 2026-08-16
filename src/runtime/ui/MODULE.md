@@ -20,6 +20,8 @@ SDL、ANGLE 或视频解码。
 - `LayoutUiTree`：以 surface `UiMetrics` 的 EXACTLY root constraint 执行有界
   MeasureSpec + FrameLayout traversal；fixed/match/wrap、padding/margin、child
   gravity 与 screen-frame propagation 共用一条路径。
+- Horizontal `LinearLayout`：按 document order 累加非 GONE child 主轴尺寸，parent
+  gravity 定位整行，child layout_gravity 覆盖交叉轴；INVISIBLE 保留 geometry。
 
 ## 不变量
 
@@ -34,4 +36,5 @@ SDL、ANGLE 或视频解码。
 
 `tests/runtime/ui_tree_tests.cpp` 锁定 hierarchy 顺序、id 更新、visibility dirty、detach、
 destroy、generation reset、非法 mutation，以及 FrameLayout fullscreen/bottom/center、
-padding/margin、wrap intrinsic 和 document-order overlap geometry。
+padding/margin、wrap intrinsic、document-order overlap geometry，以及 horizontal row 的
+GONE/INVISIBLE 重排。

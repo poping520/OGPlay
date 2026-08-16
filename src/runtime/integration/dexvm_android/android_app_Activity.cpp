@@ -46,6 +46,9 @@ Decl Declare_android_app_Activity(const Context& context) {
             const auto node = EnsureViewUiNode(
                 *context, view, UiClassForDescriptor(descriptor));
             context->ui_tree.Attach(context->ui_tree.Root(), node);
+            ui::LayoutUiTree(context->ui_tree,
+                             {static_cast<std::int32_t>(context->surface_width),
+                              static_cast<std::int32_t>(context->surface_height)});
             context->content_view = view;
             return dx::VmValue::Void();
         });
@@ -64,6 +67,9 @@ Decl Declare_android_app_Activity(const Context& context) {
             try {
                 context->content_view =
                     InflateUiElements(call.vm, *context, elements);
+                ui::LayoutUiTree(context->ui_tree,
+                                 {static_cast<std::int32_t>(context->surface_width),
+                                  static_cast<std::int32_t>(context->surface_height)});
             } catch (const std::runtime_error& error) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       std::string("layout inflation failed: ") +

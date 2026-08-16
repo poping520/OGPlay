@@ -1,14 +1,6 @@
-// Widget click dispatch: real storage behind setOnClickListener /
-// setVisibility plus bounds derivation for the layout subset the inflater
-// records (fullscreen roots and an edge-anchored horizontal button row).
-// Views whose bounds cannot be derived are a recorded gap: they never
-// consume touches, which then fall through to Activity.onTouchEvent.
+// Widget click dispatch over the UiTree's most recent resolved geometry.
 
-#include <algorithm>
 #include <optional>
-#include <vector>
-
-#include "ogplay/loader/binary_xml.h"
 
 #include "shared.h"
 
@@ -31,102 +23,42 @@ std::int32_t VisibilityOf(const DexVmAndroidContext& context,
 }
 
 namespace {
+[[nodiscard]] bool Contains(const ui::Rect rect, const float x, const float y) {
+    return x >= static_cast<float>(rect.left) &&
+           y >= static_cast<float>(rect.top) &&
+           x < static_cast<float>(rect.right) &&
+           y < static_cast<float>(rect.bottom);
+}
 
-// android.view.Gravity axis masks.
-constexpr std::uint32_t kHorizontalGravityMask = 0x07;
-constexpr std::uint32_t kVerticalGravityMask = 0x70;
-constexpr std::uint32_t kGravityCenterHorizontal = 0x01;
-constexpr std::uint32_t kGravityBottom = 0x50;
-constexpr std::uint32_t kGravityTop = 0x30;
-
-struct Rect final {
-    std::int32_t x{};
-    std::int32_t y{};
-    std::int32_t width{};
-    std::int32_t height{};
-
-    [[nodiscard]] bool Contains(const float px, const float py) const {
-        return px >= static_cast<float>(x) && py >= static_cast<float>(y) &&
-               px < static_cast<float>(x + width) &&
-               py < static_cast<float>(y + height);
+void EnsureLayout(DexVmAndroidContext& context) {
+    if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
+        ui::LayoutUiTree(
+            context.ui_tree,
+            {static_cast<std::int32_t>(context.surface_width),
+             static_cast<std::int32_t>(context.surface_height)});
     }
-};
+}
 
-// Derives bounds for every recorded layout view, honouring the current
-// visibility facts (GONE children take no space). Unsupported shapes stay
-// nullopt. Supported subset:
-//   - root views sized fill_parent x fill_parent -> the whole surface;
-//   - a root LinearLayout with fill_parent width, wrap_content height and
-//     layout_gravity top/bottom -> an edge bar whose visible children stack
-//     horizontally (measured via their drawable), optionally centered by
-//     android:gravity center_horizontal.
-[[nodiscard]] std::vector<std::optional<Rect>> DeriveBounds(
-    const DexVmAndroidContext& context) {
-    const auto& views = context.layout_views;
-    std::vector<std::optional<Rect>> bounds(views.size());
-    const auto surface_width =
-        static_cast<std::int32_t>(context.surface_width);
-    const auto surface_height =
-        static_cast<std::int32_t>(context.surface_height);
-
-    for (std::size_t index = 0; index < views.size(); ++index) {
-        const auto& view = views[index];
-        if (view.parent != -1) continue;
-        constexpr auto kFill = loader::BinaryXmlElement::kSizeFillParent;
-        constexpr auto kWrap = loader::BinaryXmlElement::kSizeWrapContent;
-        if (view.layout_width == kFill && view.layout_height == kFill) {
-            bounds[index] = Rect{0, 0, surface_width, surface_height};
-            continue;
-        }
-        const auto vertical = view.layout_gravity & kVerticalGravityMask;
-        const bool edge_bar =
-            view.tag == "LinearLayout" && view.layout_width == kFill &&
-            view.layout_height == kWrap &&
-            (vertical == kGravityTop || vertical == kGravityBottom);
-        if (!edge_bar) continue;
-
-        // Measure the visible children; any unmeasurable child leaves the
-        // whole bar (and its children) unresolved rather than guessing.
-        std::vector<std::size_t> row;
-        std::int32_t total_width = 0;
-        std::int32_t tallest = 0;
-        bool measurable = true;
-        for (std::size_t child = 0; child < views.size(); ++child) {
-            if (views[child].parent != static_cast<std::int32_t>(index)) {
-                continue;
-            }
-            if (VisibilityOf(context, views[child].view.Value()) == kGone) {
-                continue;
-            }
-            if (views[child].measured_width <= 0 ||
-                views[child].measured_height <= 0) {
-                measurable = false;
-                break;
-            }
-            row.push_back(child);
-            total_width += views[child].measured_width;
-            tallest = std::max(tallest, views[child].measured_height);
-        }
-        if (!measurable) continue;
-
-        const auto bar_height = view.padding_top + tallest;
-        const auto bar_y =
-            vertical == kGravityBottom ? surface_height - bar_height : 0;
-        bounds[index] = Rect{0, bar_y, surface_width, bar_height};
-
-        auto cursor =
-            (view.gravity & kHorizontalGravityMask) ==
-                    kGravityCenterHorizontal
-                ? (surface_width - total_width) / 2
-                : 0;
-        for (const auto child : row) {
-            bounds[child] = Rect{cursor, bar_y + view.padding_top,
-                                 views[child].measured_width,
-                                 views[child].measured_height};
-            cursor += views[child].measured_width;
+[[nodiscard]] std::optional<ui::UiNodeId> HitClickable(
+    const DexVmAndroidContext& context, const ui::UiNodeId id, const float x,
+    const float y) {
+    const auto* node = context.ui_tree.Get(id);
+    if (node == nullptr || node->visibility != ui::Visibility::Visible ||
+        !node->enabled || !Contains(node->screen_frame, x, y)) {
+        return std::nullopt;
+    }
+    for (auto child = node->children.rbegin(); child != node->children.rend();
+         ++child) {
+        if (const auto hit = HitClickable(context, *child, x, y);
+            hit.has_value()) {
+            return hit;
         }
     }
-    return bounds;
+    const auto listener = context.ui_click_listeners.find(id);
+    return listener != context.ui_click_listeners.end() &&
+                   listener->second.IsValid()
+               ? std::optional<ui::UiNodeId>{id}
+               : std::nullopt;
 }
 
 }  // namespace
@@ -134,45 +66,24 @@ struct Rect final {
 }  // namespace android_intrinsics
 
 std::optional<std::uint64_t> FindClickableViewAt(
-    const DexVmAndroidContext& context, const float x, const float y) {
-    const auto bounds = android_intrinsics::DeriveBounds(context);
-    // Later document order draws on top, so scan back to front.
-    for (std::size_t offset = context.layout_views.size(); offset > 0;
-         --offset) {
-        const auto index = offset - 1;
-        const auto& fact = context.layout_views[index];
-        if (!bounds[index].has_value() ||
-            !bounds[index]->Contains(x, y)) {
-            continue;
-        }
-        const auto node = FindViewUiNode(context, fact.view.Value());
-        if (!node.has_value()) continue;
-        if (android_intrinsics::VisibilityOf(context, fact.view.Value()) !=
-            android_intrinsics::kVisible) {
-            continue;
-        }
-        const auto listener = context.ui_click_listeners.find(*node);
-        if (listener == context.ui_click_listeners.end() ||
-            !listener->second.IsValid()) {
-            continue;
-        }
-        return fact.view.Value();
-    }
-    return std::nullopt;
+    DexVmAndroidContext& context, const float x, const float y) {
+    android_intrinsics::EnsureLayout(context);
+    const auto hit = android_intrinsics::HitClickable(
+        context, context.ui_tree.Root(), x, y);
+    if (!hit.has_value()) return std::nullopt;
+    const auto view = ViewObjectForUiNode(context, *hit);
+    return view.IsValid() ? std::optional<std::uint64_t>{view.Value()}
+                          : std::nullopt;
 }
 
-bool ViewContainsPoint(const DexVmAndroidContext& context,
+bool ViewContainsPoint(DexVmAndroidContext& context,
                        const std::uint64_t handle, const float x,
                        const float y) {
-    const auto bounds = android_intrinsics::DeriveBounds(context);
-    for (std::size_t index = 0; index < context.layout_views.size();
-         ++index) {
-        if (context.layout_views[index].view.Value() == handle) {
-            return bounds[index].has_value() &&
-                   bounds[index]->Contains(x, y);
-        }
-    }
-    return false;
+    android_intrinsics::EnsureLayout(context);
+    const auto node = FindViewUiNode(context, handle);
+    return node.has_value() && context.ui_tree.Get(*node) != nullptr &&
+           android_intrinsics::Contains(
+               context.ui_tree.Get(*node)->screen_frame, x, y);
 }
 
 std::optional<std::string> InvokeViewOnClick(dexvm::Interpreter& vm,

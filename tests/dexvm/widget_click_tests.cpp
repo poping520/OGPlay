@@ -123,6 +123,17 @@ struct ClickVm final {
         context->ui_tree.Attach(context->ui_tree.Root(), bar_node);
         context->ui_tree.Attach(bar_node, other_node);
         context->ui_tree.Attach(bar_node, skip_node);
+        auto* video_state = context->ui_tree.Get(video_node);
+        video_state->layout.width.mode = ui::SizeMode::MatchParent;
+        video_state->layout.height.mode = ui::SizeMode::MatchParent;
+        auto* bar_state = context->ui_tree.Get(bar_node);
+        bar_state->layout.width.mode = ui::SizeMode::MatchParent;
+        bar_state->layout.height.mode = ui::SizeMode::WrapContent;
+        bar_state->layout.layout_gravity = 0x50U;
+        bar_state->gravity = 0x01U;
+        bar_state->padding.top = 4;
+        context->ui_tree.Get(other_node)->intrinsic = {20, 10};
+        context->ui_tree.Get(skip_node)->intrinsic = {20, 10};
 
         using Fact = DexVmAndroidContext::LayoutViewFact;
         constexpr auto kFill = ogplay::loader::BinaryXmlElement::

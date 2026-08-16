@@ -358,13 +358,10 @@ MixVideoPcmIntoStereo(DexVmAndroidContext &context,
                       std::span<std::int16_t> interleaved_stereo,
     std::uint32_t output_rate);
 
-// Widget click dispatch (device semantics for the layout subset the bounds
-// derivation supports). FindClickableViewAt answers the topmost visible view
-// with a registered OnClickListener whose derived bounds contain the point;
-// views without derivable bounds never match (recorded gap, the touch falls
-// through to Activity.onTouchEvent).
+// Widget click dispatch uses the UiTree's resolved geometry and refreshes a
+// dirty traversal before hit-test. The full gesture contract lands in LUI-9.
 [[nodiscard]] std::optional<std::uint64_t>
-FindClickableViewAt(const DexVmAndroidContext &context, float x, float y);
+FindClickableViewAt(DexVmAndroidContext &context, float x, float y);
 
 // DexVM/View binding helpers. BindViewToUiNode enforces the one-to-one live
 // identity invariant; EnsureViewUiNode creates a detached generic node for a
@@ -382,7 +379,7 @@ void ResetViewUiState(DexVmAndroidContext& context);
 
 // True when the view's derived bounds contain the point (up-inside check of
 // a click gesture).
-[[nodiscard]] bool ViewContainsPoint(const DexVmAndroidContext& context,
+[[nodiscard]] bool ViewContainsPoint(DexVmAndroidContext& context,
                                      std::uint64_t handle, float x, float y);
 
 // Invokes the registered OnClickListener.onClick(view) on the guest thread.

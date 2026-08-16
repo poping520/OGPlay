@@ -25,6 +25,11 @@ status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp"
 note = "M10 WU-M10-005/LUI-5 实现 EXACTLY/AT_MOST/UNSPECIFIED MeasureSpec，fixed/match/wrap、intrinsic、FrameLayout padding/margin/gravity 与 descendant screen-frame propagation；surface root 使用 exact metrics，非法负尺寸明确失败"
 
+[runtime.ui_horizontal_linear_layout]
+status = "complete"
+test = "tests/runtime/ui_tree_tests.cpp; tests/dexvm/widget_click_tests.cpp"
+note = "M10 WU-M10-006/LUI-6 horizontal LinearLayout 按 document order 计算主/交叉轴，GONE 移除、INVISIBLE 保留 geometry，drawable intrinsic 驱动 ImageButton wrap_content；旧 fullscreen/edge-row bounds 特判已删除，click adapter 只读 UiTree screen_frame"
+
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"

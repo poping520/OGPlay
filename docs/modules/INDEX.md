@@ -33,4 +33,5 @@
 | syscall | [src/runtime/syscall/MODULE.md](../../src/runtime/syscall/MODULE.md) | ARM syscall 与线程退出状态，依赖 vfs |
 | execution | [src/runtime/execution/MODULE.md](../../src/runtime/execution/MODULE.md) | guest runner/clone，依赖 bionic/syscall |
 | vfs | [src/runtime/vfs/MODULE.md](../../src/runtime/vfs/MODULE.md) | Android 路径、挂载与 descriptor 核心 |
+| ui | [src/runtime/ui/MODULE.md](../../src/runtime/ui/MODULE.md) | 有界 View tree/state、布局、绘制与 hit-test |
 | integration | [src/runtime/integration/MODULE.md](../../src/runtime/integration/MODULE.md) | 顶层装配、会话与 runner，依赖 jni_guest/boundary |

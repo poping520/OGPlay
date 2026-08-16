@@ -9,9 +9,9 @@
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
 - **M9 DexVM**（DVM-1..39，ADR-0017/0022）：阶段 0..3、entry override、
   静态预置和 v2-only 清理均已交付。
-- **M10 Layout UI 已启动**：WU-M10-001/LUI-1 将 compiled AXML 扩为保留 namespace、
-  typed value 与 raw string 的通用输出；旧 layout 字段仅作迁移 adapter。LUI-2 开始建立
-  `runtime/ui` 唯一 View tree/state 事实。
+- **M10 Layout UI LUI-1..2 已完成**：compiled AXML 已是 generic typed 输出；新增
+  `runtime/ui` generation-scoped synthetic content root 与唯一 hierarchy/id/visibility/
+  layout/geometry/dirty state。下一步 LUI-3 把 DexVM View identity 接到 UiTree。
 - **阶段 4 线程地基已交付**（DVM-27..29）：真实宿主线程、独立 execution
   context、wait-set 与统一 Clock 超时已接入；解释仍由 `VmExecutionLock`
   串行。`threads`/`monitors` 保持 `partial`：子线程 native 调用复用 root

@@ -362,6 +362,7 @@ else()
 endif()
 
 add_library(ogplay_runtime
+    src/runtime/ui/ui_tree.cpp
     src/runtime/syscall/arm_kernel_helpers.cpp
     src/runtime/bionic/bionic_module_set.cpp
     src/runtime/bionic/bionic_profile.cpp
@@ -731,6 +732,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/android_link_preflight_tests.cpp
         tests/runtime/native_activity_runner_tests.cpp
         tests/runtime/preferences_xml_tests.cpp
+        tests/runtime/ui_tree_tests.cpp
         tests/runtime/sandbox_store_tests.cpp
         tests/runtime/vfs_sandbox_tests.cpp
         tests/runtime/vfs_tests.cpp

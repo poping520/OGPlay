@@ -5,6 +5,11 @@ status = "complete"
 test = "tests/loader/binary_xml_tests.cpp"
 note = "M10 WU-M10-001/LUI-1 保留 namespace/name、typed value type/data 与 raw/typed string；旧 layout 字段仅为迁移期单向 adapter，string-pool chunk 边界和元素 nesting 严格受检"
 
+[runtime.ui_tree]
+status = "complete"
+test = "tests/runtime/ui_tree_tests.cpp"
+note = "M10 WU-M10-002/LUI-2 建立 generation-scoped synthetic content root、唯一 hierarchy/id/visibility/layout/geometry/dirty state；detach/destroy/reset 立即退出 id index，node/child/depth 上限明确失败"
+
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"

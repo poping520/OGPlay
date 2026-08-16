@@ -472,6 +472,7 @@ ogplay_set_project_warnings(ogplay_runtime)
 
 add_library(ogplay_session
     src/session/dex_activity_lifecycle.cpp
+    src/session/ui_compositor.cpp
     src/session/lifecycle.cpp
     src/session/profile_entry_scope.cpp
     src/session/profile_asset_bundle.cpp
@@ -766,6 +767,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/video/ffmpeg_video_player_tests.cpp
         tests/session/quirk_registry_tests.cpp
         tests/session/lifecycle_tests.cpp
+        tests/session/ui_compositor_tests.cpp
         tests/session/profile_asset_bundle_tests.cpp
         tests/session/profile_apk_tests.cpp
         tests/session/profile_entry_scope_tests.cpp

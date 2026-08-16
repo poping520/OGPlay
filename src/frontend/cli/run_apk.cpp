@@ -660,6 +660,10 @@ int RunApkCommand(const int argc, const char* const argv[],
                     [&guest](std::vector<std::uint8_t> rgba8) {
                         guest->PublishSoftwareFrame(std::move(rgba8));
                     },
+                    [&guest] { return guest->TakeLatestFrame(); },
+                    [&guest](std::vector<std::uint8_t> rgba8) {
+                        guest->PublishSoftwareFrame(std::move(rgba8));
+                    },
                     [&guest] {
                         static_cast<void>(guest->InterruptBlockingWaits());
                     },

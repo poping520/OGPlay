@@ -1,4 +1,5 @@
 #include "ogplay/session/dex_activity_lifecycle.h"
+#include "ogplay/session/ui_compositor.h"
 
 #include <exception>
 #include <utility>
@@ -292,6 +293,7 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
                        {dx::VmValue::Ref(dx::VmObjectRef{})});
             if (bindings_.present_surface) bindings_.present_surface();
         }
+        ComposePresentedUiFrame();
         clock_.AdvanceFrames(1);
         bindings_.context->uptime_millis += kMillisPerFrame;
         ++frame_;
@@ -304,6 +306,25 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
         throw;
     }
     return State();
+}
+
+void DexActivityLifecycle::ComposePresentedUiFrame() {
+    if (!bindings_.take_latest_frame || !bindings_.publish_composed_frame) return;
+    auto frame = bindings_.take_latest_frame();
+    if (!frame.has_value()) return;
+    auto& context = *bindings_.context;
+    if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
+        runtime::ui::LayoutUiTree(
+            context.ui_tree,
+            {static_cast<std::int32_t>(frame->width),
+             static_cast<std::int32_t>(frame->height)});
+    }
+    const auto& overlay = context.ui_overlay_renderer.Render(
+        context.ui_tree, context.ui_bitmaps,
+        {static_cast<std::int32_t>(frame->width),
+         static_cast<std::int32_t>(frame->height)});
+    bindings_.publish_composed_frame(
+        ComposeUiOverlay(frame->rgba8, overlay));
 }
 
 void DexActivityLifecycle::RethrowFatalThreadFailure() {

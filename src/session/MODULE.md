@@ -37,6 +37,8 @@
   交给其 GLThread。
   Activity switch 在旧 `onDestroy` 后推进 UI content generation，清空旧 UiTree binding/
   listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。
+- 每帧 present 后由 session 取回最终 base/video frame，与 cached UI overlay 做整数
+  source-over 后重新发布；screenshot/window 只读取合成结果，video 不依赖 UI。
 - `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
   校验 required mount、manifest 和 working directory；
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。
@@ -76,4 +78,5 @@
 ## 测试
 
 `tests/session/` 覆盖 v2 schema、入口/预置、精确身份、VFS、生命周期、输入与确定性；
+`ui_compositor_tests.cpp` 锁定透明 overlay 基线不变和局部合成 exact pixels；
 `tools/validate_title_profiles.py` 提供独立目录门禁。

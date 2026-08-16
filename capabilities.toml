@@ -35,6 +35,11 @@ status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp"
 note = "M10 WU-M10-007/LUI-7 从 resolved UiTree 生成 solid/bitmap/clip render list，以 deterministic integer source-over raster 透明 RGBA8；document-order Z、node alpha、INVISIBLE/GONE 与 draw-dirty generation cache 有 exact pixel tests，drawable 按 resource id 解码缓存"
 
+[session.ui_composition]
+status = "complete"
+test = "tests/session/ui_compositor_tests.cpp; tests/dexvm/videoview_tests.cpp"
+note = "M10 WU-M10-008/LUI-8 在 lifecycle present 边界取最终 VideoView/GLES base，与 cached UI overlay 做 integer source-over 后重新发布；透明 overlay 保持 base exact，可见 overlay 只改目标 region，video 模块无 UI 依赖"
+
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"

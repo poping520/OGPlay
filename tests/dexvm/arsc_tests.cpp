@@ -145,6 +145,8 @@ TEST_CASE("arsc reader maps ids, names and file paths") {
     CHECK(by_id->entry_name == "raw_000");
     REQUIRE(by_id->string_value.has_value());
     CHECK(*by_id->string_value == "res/raw/raw_000.ogg");
+    CHECK(by_id->value_type == 0x03);
+    CHECK(by_id->value_data == 0);
     const auto* by_name = table.FindByName("raw", "raw_000");
     REQUIRE(by_name != nullptr);
     CHECK(by_name->resource_id == 0x7f010000);

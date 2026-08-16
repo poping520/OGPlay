@@ -57,6 +57,14 @@ enum class Orientation : std::uint8_t {
     Vertical,
 };
 
+enum class ImageScaleType : std::uint8_t {
+    Center,
+    CenterInside,
+    FitCenter,
+    FitXy,
+    CenterCrop,
+};
+
 struct DimensionSpec final {
     SizeMode mode{SizeMode::WrapContent};
     std::int32_t px{};
@@ -139,6 +147,7 @@ struct UiNode final {
     Orientation orientation{Orientation::Horizontal};
     std::uint32_t gravity{};
     std::uint32_t image_resource_id{};
+    ImageScaleType image_scale_type{ImageScaleType::FitCenter};
     std::optional<std::uint32_t> background_color;
     std::u16string text;
     std::uint32_t text_color{0xffffffffU};

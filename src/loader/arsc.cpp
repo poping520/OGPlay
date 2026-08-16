@@ -242,6 +242,8 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                             const auto data_type =
                                 reader.U8(value_base + 3);
                             const auto data = reader.U32(value_base + 4);
+                            entry.value_type = data_type;
+                            entry.value_data = data;
                             if (data_type == kValueTypeString &&
                                 data < global_strings.size()) {
                                 entry.string_value = global_strings[data];

@@ -33,6 +33,9 @@ SDL、ANGLE 或视频解码。
 - `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与单行边界；
   内置 5x7 ASCII 字形同时提供确定性 measure/raster，wrap_content 加入 padding，Button
   提供固定 background/padding/clickable 默认语义。
+- `ImageView/ImageButton`：UiNode 保存 CENTER/CENTER_INSIDE/FIT_CENTER/FIT_XY/CENTER_CROP；
+  render-list 在 node content box 内按 API19 对齐语义生成目标 rect，CPU raster 使用确定性
+  nearest-neighbor scale，CENTER_CROP 仍由 node clip 裁切。
 
 ## 不变量
 
@@ -51,4 +54,5 @@ padding/margin、wrap intrinsic、document-order overlap geometry，以及 horiz
 LinearLayout 的 GONE/INVISIBLE、weight、padding/margin geometry。
 RelativeLayout tests 锁定 parent/sibling/center、反向 document order 与 missing/cycle failure。
 `tests/runtime/ui_renderer_tests.cpp` 锁定透明、bitmap、alpha overlap、Z-order、clip、
-visibility、draw cache，以及固定字体 measure/text golden 和 Button content/background。
+visibility、draw cache、固定字体 measure/text golden、Button content/background，以及五种
+ImageView scale destination 与 CENTER_CROP exact pixel golden。

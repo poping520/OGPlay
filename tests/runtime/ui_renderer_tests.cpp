@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <stdexcept>
 
 #include "ogplay/runtime/ui/ui_renderer.h"
 
@@ -148,4 +149,58 @@ TEST_CASE("Button owns deterministic background padding and text content") {
           std::vector<std::uint8_t>{64, 64, 64, 255});
     CHECK(Pixel(frame, 7, 4) ==
           std::vector<std::uint8_t>{255, 255, 255, 255});
+}
+
+TEST_CASE("ImageView scale types produce exact destinations and crop golden") {
+    auto bitmap = std::make_shared<ui::UiBitmap>();
+    bitmap->width = 2;
+    bitmap->height = 1;
+    bitmap->rgba8 = {255, 0, 0, 255, 0, 255, 0, 255};
+    const ui::UiBitmapCache bitmaps{{9, bitmap}};
+    const auto destination = [&bitmaps](const ui::ImageScaleType scale_type) {
+        ui::UiTree tree;
+        const auto image = tree.CreateNode(ui::UiClass::ImageView);
+        tree.Get(image)->layout.width = {ui::SizeMode::Fixed, 4};
+        tree.Get(image)->layout.height = {ui::SizeMode::Fixed, 4};
+        tree.Get(image)->image_resource_id = 9;
+        tree.Get(image)->image_scale_type = scale_type;
+        tree.Attach(tree.Root(), image);
+        ui::LayoutUiTree(tree, {4, 4});
+        const auto commands = ui::BuildUiRenderList(tree, bitmaps);
+        for (const auto& command : commands) {
+            if (const auto* draw = std::get_if<ui::DrawBitmap>(&command)) {
+                return draw->rect;
+            }
+        }
+        throw std::runtime_error("missing bitmap command");
+    };
+    CHECK(destination(ui::ImageScaleType::Center) == ui::Rect{1, 2, 3, 3});
+    CHECK(destination(ui::ImageScaleType::CenterInside) ==
+          ui::Rect{1, 2, 3, 3});
+    CHECK(destination(ui::ImageScaleType::FitCenter) ==
+          ui::Rect{0, 1, 4, 3});
+    CHECK(destination(ui::ImageScaleType::FitXy) == ui::Rect{0, 0, 4, 4});
+    CHECK(destination(ui::ImageScaleType::CenterCrop) ==
+          ui::Rect{-1, 0, 7, 4});
+
+    ui::UiTree crop_tree;
+    const auto crop = crop_tree.CreateNode(ui::UiClass::ImageView);
+    crop_tree.Get(crop)->layout.width = {ui::SizeMode::Fixed, 4};
+    crop_tree.Get(crop)->layout.height = {ui::SizeMode::Fixed, 4};
+    crop_tree.Get(crop)->image_resource_id = 9;
+    crop_tree.Get(crop)->image_scale_type = ui::ImageScaleType::CenterCrop;
+    crop_tree.Attach(crop_tree.Root(), crop);
+    ui::LayoutUiTree(crop_tree, {4, 4});
+    const auto frame = ui::RasterizeUiOverlay(
+        ui::BuildUiRenderList(crop_tree, bitmaps), {4, 4});
+    for (std::uint32_t y = 0; y < 4; ++y) {
+        CHECK(Pixel(frame, 0, y) ==
+              std::vector<std::uint8_t>{255, 0, 0, 255});
+        CHECK(Pixel(frame, 1, y) ==
+              std::vector<std::uint8_t>{255, 0, 0, 255});
+        CHECK(Pixel(frame, 2, y) ==
+              std::vector<std::uint8_t>{255, 0, 0, 255});
+        CHECK(Pixel(frame, 3, y) ==
+              std::vector<std::uint8_t>{0, 255, 0, 255});
+    }
 }

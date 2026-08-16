@@ -84,17 +84,9 @@ Decl Declare_android_app_Activity(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto layout_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
-            const auto* entry = context->arsc.FindById(layout_id);
-            if (entry == nullptr || !entry->string_value.has_value()) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                    "layout resource id has no file entry: " +
-                        std::to_string(layout_id)};
-            }
-            const auto bytes = ReadApkFile(context, *entry->string_value);
-            const auto elements = loader::ParseBinaryXmlElements(bytes);
             try {
                 context->content_view =
-                    InflateUiElements(call.vm, *context, elements);
+                    InflateUiLayoutResource(call.vm, *context, layout_id);
                 ui::LayoutUiTree(context->ui_tree,
                                  {static_cast<std::int32_t>(context->surface_width),
                                   static_cast<std::int32_t>(context->surface_height)});

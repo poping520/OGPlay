@@ -1,8 +1,4 @@
-// Widget click dispatch semantics: visibility and click listeners are real
-// state, bounds derive from the recorded layout facts (fullscreen roots and
-// an edge-anchored button row), and clicks reach onClick only for visible
-// listener-bearing views. The skip-button scenario stops a playing fake
-// VideoView end to end.
+// Widget state, resolved UiTree geometry and listener dispatch integration.
 
 #include <doctest/doctest.h>
 
@@ -428,6 +424,137 @@ TEST_CASE("registry inflater preserves RelativeLayout sibling rules") {
           ui::Rect{40, 35, 60, 45});
     CHECK(vm.context->ui_tree.Get(relative->children[1])->screen_frame ==
           ui::Rect{60, 45, 65, 50});
+}
+
+TEST_CASE("include expansion matches inline geometry and applies overrides") {
+    std::vector<ogplay::loader::BinaryXmlElement> included(2);
+    included[0].name = "LinearLayout";
+    included[0].attributes = {
+        AndroidAttribute("layout_width", 0x10, 10),
+        AndroidAttribute("layout_height", 0x10, 10)};
+    included[1].name = "View";
+    included[1].parent = 0;
+    included[1].attributes = {
+        AndroidAttribute("layout_width", 0x10, 5),
+        AndroidAttribute("layout_height", 0x10, 5)};
+
+    std::vector<ogplay::loader::BinaryXmlElement> outer(2);
+    outer[0].name = "FrameLayout";
+    outer[0].attributes = {
+        AndroidAttribute("layout_width", 0x10, 0xffffffffU),
+        AndroidAttribute("layout_height", 0x10, 0xffffffffU)};
+    outer[1].name = "include";
+    outer[1].parent = 0;
+    outer[1].attributes = {
+        AndroidAttribute("layout", 0x01, 900),
+        AndroidAttribute("id", 0x01, 901),
+        AndroidAttribute("layout_width", 0x10, 40),
+        AndroidAttribute("layout_height", 0x10, 20),
+        AndroidAttribute("layout_gravity", 0x11, 0x11)};
+    const auto expanded = ExpandUiIncludes(
+        outer, [&included](const std::uint32_t id) {
+            if (id != 900U) throw std::runtime_error("unexpected layout id");
+            return included;
+        }, 899U);
+    REQUIRE(expanded.size() == 3);
+    CHECK(expanded[1].name == "LinearLayout");
+    CHECK(expanded[1].parent == 0);
+    CHECK(expanded[2].parent == 1);
+
+    ClickVm include_vm;
+    static_cast<void>(InflateUiElements(include_vm.interpreter,
+                                        *include_vm.context, expanded));
+    ui::LayoutUiTree(include_vm.context->ui_tree, {100, 100});
+    const auto included_root =
+        include_vm.context->ui_tree.FindByAndroidId(901);
+    REQUIRE(included_root.has_value());
+    const auto included_frame =
+        include_vm.context->ui_tree.Get(*included_root)->screen_frame;
+    const auto included_child_frame = include_vm.context->ui_tree.Get(
+        include_vm.context->ui_tree.Get(*included_root)->children[0])->screen_frame;
+
+    std::vector<ogplay::loader::BinaryXmlElement> inline_layout(3);
+    inline_layout[0] = outer[0];
+    inline_layout[1].name = "LinearLayout";
+    inline_layout[1].parent = 0;
+    inline_layout[1].attributes = {
+        AndroidAttribute("id", 0x01, 901),
+        AndroidAttribute("layout_width", 0x10, 40),
+        AndroidAttribute("layout_height", 0x10, 20),
+        AndroidAttribute("layout_gravity", 0x11, 0x11)};
+    inline_layout[2] = included[1];
+    inline_layout[2].parent = 1;
+    ClickVm inline_vm;
+    static_cast<void>(InflateUiElements(inline_vm.interpreter,
+                                        *inline_vm.context, inline_layout));
+    ui::LayoutUiTree(inline_vm.context->ui_tree, {100, 100});
+    const auto inline_root = inline_vm.context->ui_tree.FindByAndroidId(901);
+    REQUIRE(inline_root.has_value());
+    CHECK(included_frame == ui::Rect{30, 40, 70, 60});
+    CHECK(included_frame ==
+          inline_vm.context->ui_tree.Get(*inline_root)->screen_frame);
+    CHECK(included_child_frame == inline_vm.context->ui_tree.Get(
+        inline_vm.context->ui_tree.Get(*inline_root)->children[0])->screen_frame);
+}
+
+TEST_CASE("UI resources resolve string color dimension and image state") {
+    ClickVm vm;
+    vm.context->ui_density = 2.0F;
+    vm.context->ui_scaled_density = 3.0F;
+    vm.context->arsc.entries = {
+        {.resource_id = 100, .type_name = "string", .entry_name = "go",
+         .string_value = "GO", .value_type = 0x03, .value_data = 0},
+        {.resource_id = 101, .type_name = "color", .entry_name = "red",
+         .value_type = 0x1c, .value_data = 0xffff0000U},
+        {.resource_id = 102, .type_name = "color", .entry_name = "alias",
+         .value_type = 0x01, .value_data = 101},
+        {.resource_id = 103, .type_name = "dimen", .entry_name = "pad",
+         .value_type = 0x05, .value_data = 0x00000801U},
+        {.resource_id = 104, .type_name = "dimen", .entry_name = "label",
+         .value_type = 0x05, .value_data = 0x00000802U},
+        {.resource_id = 105, .type_name = "color", .entry_name = "cycle_a",
+         .value_type = 0x01, .value_data = 106},
+        {.resource_id = 106, .type_name = "color", .entry_name = "cycle_b",
+         .value_type = 0x01, .value_data = 105},
+    };
+    CHECK(ResolveUiString(*vm.context, 100) == u"GO");
+    CHECK(ResolveUiColor(*vm.context, 102) == 0xff0000ffU);
+    CHECK(ResolveUiDimension(*vm.context, 103, false) == 16);
+    CHECK(ResolveUiDimension(*vm.context, 104, true) == 24);
+    CHECK_THROWS_WITH(static_cast<void>(ResolveUiColor(*vm.context, 105)),
+                      "UI resource reference cycle");
+
+    std::vector<ogplay::loader::BinaryXmlElement> elements(1);
+    elements[0].name = "TextView";
+    elements[0].attributes = {
+        AndroidAttribute("text", 0x01, 100),
+        AndroidAttribute("textColor", 0x01, 102),
+        AndroidAttribute("padding", 0x01, 103),
+        AndroidAttribute("textSize", 0x01, 104)};
+    const auto text = InflateUiElements(vm.interpreter, *vm.context, elements);
+    const auto text_node = FindViewUiNode(*vm.context, text.Value());
+    REQUIRE(text_node.has_value());
+    CHECK(vm.context->ui_tree.Get(*text_node)->text == u"GO");
+    CHECK(vm.context->ui_tree.Get(*text_node)->text_color == 0xff0000ffU);
+    CHECK(vm.context->ui_tree.Get(*text_node)->padding ==
+          ui::Insets{16, 16, 16, 16});
+    CHECK(vm.context->ui_tree.Get(*text_node)->text_size_px == 24.0F);
+
+    const auto image = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/ImageView;");
+    vm.CallOn(image, "setImageResource", "(I)V", {VmValue::Int(102)});
+    const auto scale = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/ImageView$ScaleType;");
+    vm.context->ui_image_scale_types[scale.Value()] =
+        ui::ImageScaleType::CenterCrop;
+    vm.CallOn(image, "setScaleType",
+              "(Landroid/widget/ImageView$ScaleType;)V",
+              {VmValue::Ref(scale)});
+    const auto image_node = FindViewUiNode(*vm.context, image.Value());
+    REQUIRE(image_node.has_value());
+    CHECK(vm.context->ui_tree.Get(*image_node)->intrinsic == ui::Size{1, 1});
+    CHECK(vm.context->ui_tree.Get(*image_node)->image_scale_type ==
+          ui::ImageScaleType::CenterCrop);
 }
 
 TEST_CASE("hidden buttons do not receive clicks and GONE reflows the row") {

@@ -57,6 +57,14 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   typed attrs，`<merge>` 只允许作为唯一 document root 且不创建 object/node。未知 tag、
   非法 parent/root、未知 `layout_*` structural attr 必须记账或明确失败，禁止跳过并
   re-parent children 后声称成功。
+- `<include>` 在 inflation 前按 layout resource 递归展开，具体 root 支持 id/visibility/
+  layout params override，merge root 直接接父级；depth 16、cycle、非法 child/override 明确失败，
+  include 与 inline 最终进入相同 inflater。
+- UI resource resolver 复用唯一 ArscTable/APK reader，最多 16 层解析 reference，并支持默认
+  配置的 ASCII string、color、px/dp/sp dimension、bitmap/color drawable；session density 未知
+  时显式使用 1.0 fallback。complex style bag、无命中 selector、非默认 qualifier 明确不承诺。
+- ImageView XML/Java resource 与 scaleType setter 共用 UiNode/image cache；CENTER、CENTER_INSIDE、
+  FIT_CENTER、FIT_XY、CENTER_CROP 已闭合，matrix/fitStart/fitEnd 明确失败。
 - 动态 BroadcastReceiver 注册按发起调用的 Context 实例拥有；null receiver 只查询
   sticky broadcast，未注册、重复或跨 Context 注销抛 `IllegalArgumentException`。
   当前平台没有广播来源，因此不伪造 `onReceive` 派发。

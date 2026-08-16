@@ -44,6 +44,9 @@ struct DexVmAndroidContext final {
     std::string package_name;
     std::uint32_t surface_width{};
     std::uint32_t surface_height{};
+    // API19 UI fallback until a title exposes reliable DisplayMetrics.
+    float ui_density{1.0F};
+    float ui_scaled_density{1.0F};
     std::int32_t api_level{19};
     std::string iso3_language{"eng"};
     std::string iso3_country{"USA"};
@@ -269,6 +272,8 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, ui::LayoutParams> ui_layout_params;
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef>
         ui_view_layout_params;
+    std::unordered_map<std::uint32_t, ui::ImageScaleType>
+        ui_image_scale_types;
     // Layout facts captured at inflation (document order, parents before
     // children) that click hit-testing derives bounds from. measured_* is
     // the wrap_content size taken from the android:src drawable (0 when
@@ -326,9 +331,27 @@ struct UiWidgetDescriptor final {
 };
 
 [[nodiscard]] std::span<const UiWidgetDescriptor> UiWidgetRegistry();
+using UiLayoutLoader = std::function<std::vector<loader::BinaryXmlElement>(
+    std::uint32_t)>;
+[[nodiscard]] std::vector<loader::BinaryXmlElement> ExpandUiIncludes(
+    std::span<const loader::BinaryXmlElement> elements,
+    const UiLayoutLoader& loader,
+    std::optional<std::uint32_t> root_layout_id = std::nullopt);
 [[nodiscard]] dexvm::VmObjectRef InflateUiElements(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     std::span<const loader::BinaryXmlElement> elements);
+[[nodiscard]] dexvm::VmObjectRef InflateUiLayoutResource(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    std::uint32_t layout_id);
+[[nodiscard]] std::u16string ResolveUiString(
+    const DexVmAndroidContext& context, std::uint32_t resource_id);
+[[nodiscard]] std::uint32_t ResolveUiColor(
+    const DexVmAndroidContext& context, std::uint32_t resource_id);
+[[nodiscard]] std::int32_t ResolveUiDimension(
+    const DexVmAndroidContext& context, std::uint32_t resource_id,
+    bool scaled);
+[[nodiscard]] std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(
+    DexVmAndroidContext& context, std::uint32_t resource_id);
 
 // Installs/removes the generic VmExecutionLock blocking observer for the
 // lifecycle thread. The observer filters by the registered host thread id;

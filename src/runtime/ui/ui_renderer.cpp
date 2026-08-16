@@ -74,6 +74,60 @@ using Glyph = std::array<std::uint8_t, 7>;
             std::min(a.right, b.right), std::min(a.bottom, b.bottom)};
 }
 
+[[nodiscard]] std::int32_t ScaleRounded(const std::int32_t value,
+                                        const std::int32_t numerator,
+                                        const std::int32_t denominator) {
+    if (denominator <= 0) throw std::runtime_error("invalid UI bitmap scale");
+    return static_cast<std::int32_t>(
+        (static_cast<std::int64_t>(value) * numerator + denominator / 2) /
+        denominator);
+}
+
+[[nodiscard]] Rect ImageDestination(const UiNode& node,
+                                    const UiBitmap& bitmap) {
+    const Rect content{node.screen_frame.left + node.padding.left,
+                       node.screen_frame.top + node.padding.top,
+                       node.screen_frame.right - node.padding.right,
+                       node.screen_frame.bottom - node.padding.bottom};
+    const auto content_width = std::max(0, content.right - content.left);
+    const auto content_height = std::max(0, content.bottom - content.top);
+    if (content_width == 0 || content_height == 0 || bitmap.width <= 0 ||
+        bitmap.height <= 0) {
+        return {content.left, content.top, content.left, content.top};
+    }
+    std::int32_t width = bitmap.width;
+    std::int32_t height = bitmap.height;
+    if (node.image_scale_type == ImageScaleType::FitXy) {
+        width = content_width;
+        height = content_height;
+    } else if (node.image_scale_type == ImageScaleType::FitCenter ||
+               (node.image_scale_type == ImageScaleType::CenterInside &&
+                (bitmap.width > content_width ||
+                 bitmap.height > content_height))) {
+        if (static_cast<std::int64_t>(content_width) * bitmap.height <=
+            static_cast<std::int64_t>(content_height) * bitmap.width) {
+            width = content_width;
+            height = ScaleRounded(bitmap.height, content_width, bitmap.width);
+        } else {
+            height = content_height;
+            width = ScaleRounded(bitmap.width, content_height, bitmap.height);
+        }
+    } else if (node.image_scale_type == ImageScaleType::CenterCrop) {
+        if (static_cast<std::int64_t>(content_width) * bitmap.height >=
+            static_cast<std::int64_t>(content_height) * bitmap.width) {
+            width = content_width;
+            height = ScaleRounded(bitmap.height, content_width, bitmap.width);
+        } else {
+            height = content_height;
+            width = ScaleRounded(bitmap.width, content_height, bitmap.height);
+        }
+    }
+    // API19 ImageView adds 0.5 then truncates the centered translation.
+    const auto left = content.left + (content_width - width + 1) / 2;
+    const auto top = content.top + (content_height - height + 1) / 2;
+    return {left, top, left + width, top + height};
+}
+
 void AppendNode(const UiTree& tree, const UiNodeId id,
                 const UiBitmapCache& bitmaps, UiRenderList& out) {
     const auto& node = *tree.Get(id);
@@ -87,11 +141,8 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
         const auto found = bitmaps.find(node.image_resource_id);
         if (found != bitmaps.end() && found->second != nullptr) {
             const auto& bitmap = *found->second;
-            out.emplace_back(DrawBitmap{
-                {node.screen_frame.left, node.screen_frame.top,
-                 node.screen_frame.left + bitmap.width,
-                 node.screen_frame.top + bitmap.height},
-                found->second, node.alpha});
+            out.emplace_back(DrawBitmap{ImageDestination(node, bitmap),
+                                        found->second, node.alpha});
         }
     }
     if (!node.text.empty()) {
@@ -228,11 +279,20 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                         static_cast<std::size_t>(bitmap->bitmap->height) * 4U) {
                 throw std::runtime_error("invalid UI bitmap command");
             }
-            PaintRect(frame, bitmap->rect, clips.back(), [bitmap](const auto x,
-                                                                   const auto y,
-                                                                   auto* dst) {
-                const auto bx = x - bitmap->rect.left;
-                const auto by = y - bitmap->rect.top;
+            const auto destination_width =
+                bitmap->rect.right - bitmap->rect.left;
+            const auto destination_height =
+                bitmap->rect.bottom - bitmap->rect.top;
+            if (destination_width <= 0 || destination_height <= 0) continue;
+            PaintRect(frame, bitmap->rect, clips.back(),
+                      [bitmap, destination_width, destination_height](
+                          const auto x, const auto y, auto* dst) {
+                const auto bx = static_cast<std::int32_t>(
+                    static_cast<std::int64_t>(x - bitmap->rect.left) *
+                    bitmap->bitmap->width / destination_width);
+                const auto by = static_cast<std::int32_t>(
+                    static_cast<std::int64_t>(y - bitmap->rect.top) *
+                    bitmap->bitmap->height / destination_height);
                 const auto offset =
                     (static_cast<std::size_t>(by) *
                          static_cast<std::size_t>(bitmap->bitmap->width) +

@@ -162,7 +162,26 @@ Decl Declare_android_view_View(const Context& context) {
             context->ui_tree.MarkDrawDirty(node);
             return dx::VmValue::Void();
         });
-    builder.Virtual("setBackgroundResource", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setBackgroundResource", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = ViewNode(call, context);
+            const auto resource_id =
+                static_cast<std::uint32_t>(call.arguments[0].AsInt());
+            if (resource_id == 0U) {
+                context->ui_tree.Get(node)->background_color.reset();
+            } else {
+                try {
+                    context->ui_tree.Get(node)->background_color =
+                        ResolveUiColor(*context, resource_id);
+                } catch (const std::runtime_error& error) {
+                    throw dx::VmJavaThrow{
+                        "Landroid/content/res/Resources$NotFoundException;",
+                        error.what()};
+                }
+            }
+            context->ui_tree.MarkDrawDirty(node);
+            return dx::VmValue::Void();
+        });
     builder.Virtual("setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", WidgetNoopHandler());
     builder.Virtual("setOnClickListener", "(Landroid/view/View$OnClickListener;)V",
         [context](dx::IntrinsicContext& call) {

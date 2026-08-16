@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <compare>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -33,6 +34,7 @@ enum class UiClass : std::uint8_t {
     LinearLayout,
     RelativeLayout,
     TextView,
+    Button,
     ImageView,
     ImageButton,
     VideoView,
@@ -119,6 +121,10 @@ struct UiNode final {
     std::uint32_t gravity{};
     std::uint32_t image_resource_id{};
     std::optional<std::uint32_t> background_color;
+    std::u16string text;
+    std::uint32_t text_color{0xffffffffU};
+    float text_size_px{8.0F};
+    std::int32_t max_lines{1};
     LayoutParams layout;
     Insets padding;
     Size measured;

@@ -80,8 +80,10 @@ ui::UiClass UiClassForDescriptor(const std::string_view descriptor) {
     if (descriptor == "Landroid/widget/RelativeLayout;") {
         return ui::UiClass::RelativeLayout;
     }
+    if (descriptor == "Landroid/widget/Button;") {
+        return ui::UiClass::Button;
+    }
     if (descriptor == "Landroid/widget/TextView;" ||
-        descriptor == "Landroid/widget/Button;" ||
         descriptor == "Landroid/widget/EditText;") {
         return ui::UiClass::TextView;
     }

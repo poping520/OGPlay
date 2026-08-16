@@ -1,5 +1,7 @@
 #include "ogplay/runtime/ui/ui_tree.h"
 
+#include "ogplay/runtime/ui/ui_renderer.h"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -53,6 +55,15 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
                                  node.padding.right;
     std::int32_t desired_height = node.intrinsic.height + node.padding.top +
                                   node.padding.bottom;
+    if ((node.kind == UiClass::TextView || node.kind == UiClass::Button) &&
+        !node.text.empty()) {
+        const auto text = MeasureFixedText(node.text, node.text_size_px);
+        desired_width = std::max(
+            desired_width, text.width + node.padding.left + node.padding.right);
+        desired_height = std::max(
+            desired_height,
+            text.height + node.padding.top + node.padding.bottom);
+    }
     if (node.kind == UiClass::LinearLayout) {
         const bool vertical = node.orientation == Orientation::Vertical;
         const auto main_spec = vertical ? height_spec : width_spec;

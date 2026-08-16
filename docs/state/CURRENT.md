@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-16 · M10 Layout UI LUI-1..11 已完成，Asphalt 6 启动视频 skip UI
+更新：2026-08-16 · M10 Layout UI LUI-1..12 已完成，Asphalt 6 启动视频 skip UI
 三轮 exact gate 已闭合；macOS SDL 事件泵已隔离 GLThread；DVM-31 EGL façade 实现完成；MSVC
 工程内/工程间并行编译已启用；DexVM 阶段 4 与 intrinsic 声明迁移、SBX、GUI 已交付
 
@@ -9,13 +9,14 @@
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
 - **M9 DexVM**（DVM-1..39，ADR-0017/0022）：阶段 0..3、entry override、
   静态预置和 v2-only 清理均已交付。
-- **M10 Layout UI LUI-1..11 已完成**：typed AXML → inflater → 唯一 UiTree/View binding →
+- **M10 Layout UI LUI-1..12 已完成**：typed AXML → inflater → 唯一 UiTree/View binding →
   Frame/Horizontal Linear layout → cached RGBA overlay → session composition 已闭合；pointer
   dispatch 覆盖 reverse-Z、capture、touch/click/cancel/fallthrough。旧 registry/widget/bounds
   事实源已删除。真实 A6 视频中空白点击唤出 bottom-center skip、点击 skip 进入后续 GLES
   帧的三轮 scenario 均 passed/no fault/clean shutdown。horizontal/vertical LinearLayout、
-  padding/margin/weight 与 Java 动态 ViewGroup/setContentView(View)/geometry getter 已闭合。
-  下一步 LUI-12 TextView/Button。
+  padding/margin/weight 与 Java 动态 ViewGroup/setContentView(View)/geometry getter 已闭合；
+  TextView/Button 的 UiNode state、fixed-font measure/raster、wrap_content 与 Java mutation
+  已闭合，单行之外和未知字形明确失败。下一步 LUI-13 RelativeLayout 核心规则。
 - **阶段 4 线程地基已交付**（DVM-27..29）：真实宿主线程、独立 execution
   context、wait-set 与统一 Clock 超时已接入；解释仍由 `VmExecutionLock`
   串行。`threads`/`monitors` 保持 `partial`：子线程 native 调用复用 root
@@ -34,7 +35,7 @@
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 748/748；
+能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 752/752；
 Windows/x64（windows-msvc）本次 728/728。
 Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；
 第三方 target 不被全局注入该选项。

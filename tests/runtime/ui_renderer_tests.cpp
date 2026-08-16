@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <array>
+
 #include "ogplay/runtime/ui/ui_renderer.h"
 
 namespace ui = ogplay::runtime::ui;
@@ -78,4 +80,72 @@ TEST_CASE("UI overlay omits INVISIBLE and GONE nodes") {
     const auto frame = ui::RasterizeUiOverlay(
         ui::BuildUiRenderList(tree, {}), {1, 1});
     CHECK(frame.rgba8 == std::vector<std::uint8_t>(4, 0));
+}
+
+TEST_CASE("fixed UI font drives wrap-content measurement") {
+    CHECK(ui::MeasureFixedText(u"Hi", 8.0F) ==
+          ui::FixedTextMetrics{11, 7, 1});
+    CHECK(ui::MeasureFixedText(u"Hi", 16.0F) ==
+          ui::FixedTextMetrics{22, 14, 2});
+    ui::UiTree tree;
+    const auto text = tree.CreateNode(ui::UiClass::TextView);
+    tree.Get(text)->text = u"HI";
+    tree.Get(text)->padding = {1, 1, 1, 1};
+    tree.Attach(tree.Root(), text);
+    ui::LayoutUiTree(tree, {30, 20});
+    CHECK(tree.Get(text)->measured == ui::Size{13, 9});
+
+    tree.Get(text)->text = u"H";
+    tree.MarkLayoutDirty(text);
+    ui::LayoutUiTree(tree, {30, 20});
+    CHECK(tree.Get(text)->measured == ui::Size{7, 9});
+
+    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"two\nlines", 8.0F),
+                      "multiline fixed-font text is unsupported");
+    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"中", 8.0F),
+                      "unsupported fixed-font glyph");
+}
+
+TEST_CASE("fixed UI font raster matches the exact HI golden") {
+    ui::UiTree tree;
+    const auto text = tree.CreateNode(ui::UiClass::TextView);
+    tree.Get(text)->layout.width = {ui::SizeMode::Fixed, 11};
+    tree.Get(text)->layout.height = {ui::SizeMode::Fixed, 7};
+    tree.Get(text)->text = u"HI";
+    tree.Get(text)->text_color = 0xff0000ffU;
+    tree.Attach(tree.Root(), text);
+    ui::LayoutUiTree(tree, {11, 7});
+    const auto frame = ui::RasterizeUiOverlay(
+        ui::BuildUiRenderList(tree, {}), {11, 7});
+
+    constexpr std::array<std::string_view, 7> golden{
+        "10001001110", "10001000100", "10001000100", "11111000100",
+        "10001000100", "10001000100", "10001001110"};
+    std::vector<std::uint8_t> expected(11U * 7U * 4U, 0U);
+    for (std::size_t y = 0; y < golden.size(); ++y) {
+        for (std::size_t x = 0; x < golden[y].size(); ++x) {
+            if (golden[y][x] != '1') continue;
+            const auto offset = (y * 11U + x) * 4U;
+            expected[offset] = 255U;
+            expected[offset + 3U] = 255U;
+        }
+    }
+    CHECK(frame.rgba8 == expected);
+}
+
+TEST_CASE("Button owns deterministic background padding and text content") {
+    ui::UiTree tree;
+    const auto button = tree.CreateNode(ui::UiClass::Button);
+    tree.Get(button)->text = u"GO";
+    tree.Attach(tree.Root(), button);
+    ui::LayoutUiTree(tree, {40, 20});
+    CHECK(tree.Get(button)->measured == ui::Size{23, 15});
+    const auto frame = ui::RasterizeUiOverlay(
+        ui::BuildUiRenderList(tree, {}), {40, 20});
+    CHECK(Pixel(frame, 0, 0) ==
+          std::vector<std::uint8_t>{64, 64, 64, 255});
+    CHECK(Pixel(frame, 6, 4) ==
+          std::vector<std::uint8_t>{64, 64, 64, 255});
+    CHECK(Pixel(frame, 7, 4) ==
+          std::vector<std::uint8_t>{255, 255, 255, 255});
 }

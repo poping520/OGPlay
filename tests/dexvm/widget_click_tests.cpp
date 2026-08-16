@@ -546,3 +546,40 @@ TEST_CASE("dynamic ViewGroup hierarchy shares layout params and geometry") {
               {VmValue::Int(0), VmValue::Int(1)});
     CHECK_FALSE(vm.context->ui_tree.Get(*fixed_node)->parent.has_value());
 }
+
+TEST_CASE("TextView Java state controls deterministic measure and draw state") {
+    ClickVm vm;
+    const auto text = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/TextView;");
+    vm.CallOn(text, "setText", "(Ljava/lang/CharSequence;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("Hi"))});
+    vm.CallOn(text, "setTextColor", "(I)V",
+              {VmValue::Int(static_cast<std::int32_t>(0xffff0000U))});
+    vm.CallOn(text, "setTextSize", "(F)V", {VmValue::Float(8.0F)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(text)});
+    const auto returned =
+        vm.CallOn(text, "getText", "()Ljava/lang/CharSequence;").ref;
+    CHECK(vm.model.StringValue(returned) == u"Hi");
+    CHECK(vm.CallOn(text, "getWidth", "()I").AsInt() == 11);
+    CHECK(vm.CallOn(text, "getHeight", "()I").AsInt() == 7);
+    const auto node = FindViewUiNode(*vm.context, text.Value());
+    REQUIRE(node.has_value());
+    CHECK(vm.context->ui_tree.Get(*node)->text_color == 0xff0000ffU);
+
+    vm.CallOn(text, "setText", "(Ljava/lang/CharSequence;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("H"))});
+    CHECK(vm.CallOn(text, "getWidth", "()I").AsInt() == 5);
+
+    const auto receiver_class = vm.model.ObjectClass(text);
+    const auto method = vm.linker.FindVtableIndex(
+        receiver_class, "setText", "(Ljava/lang/CharSequence;)V");
+    REQUIRE(method.has_value());
+    const auto unsupported = vm.interpreter.Call(
+        vm.linker.Class(receiver_class).vtable[*method],
+        std::vector<VmValue>{
+            VmValue::Ref(text),
+            VmValue::Ref(vm.interpreter.NewStringUtf8("two\nlines"))});
+    CHECK(unsupported.exception.IsValid());
+    CHECK(vm.context->ui_tree.Get(*node)->text == u"H");
+}

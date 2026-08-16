@@ -41,6 +41,9 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   `Activity.setContentView(View)` 直接维护同一 UiTree；LayoutParams object 保存
   width/height/margin/weight 并在 attach/update 时复制到 node，View geometry getter 在 dirty
   traversal 后读取同一 resolved frame。已带非 content parent 的 view 明确拒绝。
+- `TextView.setText/getText` 与 Editable mutation 共用 UiNode text；textColor/textSize/gravity
+  mutation 分别推进 draw/layout dirty。当前 fixed-font backend 只接受单行受支持字形，
+  多行、未知字形或非法 size 明确抛 Java 异常且不发布部分 mutation。
 - drawable resource 按 id 解码一次并缓存为 RGBA `UiBitmap`，renderer 不读取 APK、arsc
   或 guest object。
 - pointer dispatch 在 dirty 时先 traversal，按 clipped reverse draw order 选择 topmost

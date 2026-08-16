@@ -14,11 +14,13 @@ constexpr std::string_view kAndroidNamespace =
     "http://schemas.android.com/apk/res/android";
 constexpr std::uint8_t kTypeDimension = 0x05;
 constexpr std::uint8_t kTypeFloat = 0x04;
+constexpr std::uint8_t kTypeFirstColor = 0x1c;
+constexpr std::uint8_t kTypeLastColor = 0x1f;
 
 constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
     {"View", "Landroid/view/View;", ui::UiClass::View},
     {"TextView", "Landroid/widget/TextView;", ui::UiClass::TextView},
-    {"Button", "Landroid/widget/Button;", ui::UiClass::TextView},
+    {"Button", "Landroid/widget/Button;", ui::UiClass::Button},
     {"EditText", "Landroid/widget/EditText;", ui::UiClass::TextView},
     {"ImageView", "Landroid/widget/ImageView;", ui::UiClass::ImageView},
     {"ImageButton", "Landroid/widget/ImageButton;", ui::UiClass::ImageButton},
@@ -48,6 +50,24 @@ constexpr std::array<UiWidgetDescriptor, 16> kWidgets{{
         return static_cast<std::int32_t>(attribute.data) >> 8;
     }
     return static_cast<std::int32_t>(attribute.data);
+}
+
+[[nodiscard]] std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
+    return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
+}
+
+[[nodiscard]] std::u16string AsciiText(const std::string& text) {
+    std::u16string value;
+    value.reserve(text.size());
+    for (const auto byte : text) {
+        if (static_cast<unsigned char>(byte) >= 0x80U) {
+            throw std::runtime_error(
+                "fixed-font XML text must use the supported ASCII subset");
+        }
+        value.push_back(static_cast<char16_t>(byte));
+    }
+    static_cast<void>(ui::MeasureFixedText(value, 8.0F));
+    return value;
 }
 
 void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
@@ -120,6 +140,37 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
         node.layout.margin.right = DimensionValue(attribute);
     } else if (name == "layout_marginBottom") {
         node.layout.margin.bottom = DimensionValue(attribute);
+    } else if (name == "text") {
+        if (!attribute.raw_string.has_value()) {
+            throw std::runtime_error(
+                "TextView text resource resolution is not implemented");
+        }
+        node.text = AsciiText(*attribute.raw_string);
+    } else if (name == "textColor") {
+        if (attribute.value_type < kTypeFirstColor ||
+            attribute.value_type > kTypeLastColor) {
+            throw std::runtime_error(
+                "TextView textColor resource resolution is not implemented");
+        }
+        node.text_color = AndroidColorToRgba(attribute.data);
+    } else if (name == "textSize") {
+        const auto size = static_cast<float>(DimensionValue(attribute));
+        static_cast<void>(ui::MeasureFixedText(node.text, size));
+        node.text_size_px = size;
+    } else if (name == "singleLine") {
+        if (attribute.data == 0U) {
+            throw std::runtime_error("multiline TextView is unsupported");
+        }
+        node.max_lines = 1;
+    } else if (name == "maxLines") {
+        if (attribute.data != 1U) {
+            throw std::runtime_error("multiline TextView is unsupported");
+        }
+        node.max_lines = 1;
+    } else if (name == "background" &&
+               attribute.value_type >= kTypeFirstColor &&
+               attribute.value_type <= kTypeLastColor) {
+        node.background_color = AndroidColorToRgba(attribute.data);
     } else if (name == "src") {
         drawable_id = attribute.data;
         node.image_resource_id = attribute.data;

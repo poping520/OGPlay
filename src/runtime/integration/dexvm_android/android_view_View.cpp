@@ -20,6 +20,10 @@ void EnsureLayout(const Context& context) {
     }
 }
 
+std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
+    return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
+}
+
 }  // namespace
 
 Decl Declare_android_view_View(const Context& context) {
@@ -149,7 +153,15 @@ Decl Declare_android_view_View(const Context& context) {
     builder.Virtual("getVisibility", "()I", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(VisibilityOf(*context, call.receiver.Value()));
     });
-    builder.Virtual("setBackgroundColor", "(I)V", WidgetNoopHandler());
+    builder.Virtual("setBackgroundColor", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = ViewNode(call, context);
+            context->ui_tree.Get(node)->background_color =
+                AndroidColorToRgba(static_cast<std::uint32_t>(
+                    call.arguments[0].AsInt()));
+            context->ui_tree.MarkDrawDirty(node);
+            return dx::VmValue::Void();
+        });
     builder.Virtual("setBackgroundResource", "(I)V", WidgetNoopHandler());
     builder.Virtual("setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", WidgetNoopHandler());
     builder.Virtual("setOnClickListener", "(Landroid/view/View$OnClickListener;)V",

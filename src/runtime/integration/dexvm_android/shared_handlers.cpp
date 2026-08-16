@@ -23,16 +23,20 @@ dx::VmValue OpenInput(const Context& context, dx::IntrinsicContext& call,
     return dx::VmValue::Void();
 }
 
-// Editable text lives in the interpreter's builder buffer of the owning
-// text widget.
-[[nodiscard]] std::u16string& OwnerBuffer(const Context& context,
-                                          dx::IntrinsicContext& call) {
+[[nodiscard]] ui::UiNodeId OwnerTextNode(const Context& context,
+                                         dx::IntrinsicContext& call) {
     const auto found = context->editable_owner.find(call.receiver.Value());
     if (found == context->editable_owner.end()) {
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                               "Editable has no owning text widget"};
     }
-    return call.vm.BuilderBuffer(dx::VmObjectRef(found->second));
+    return EnsureViewUiNode(*context, dx::VmObjectRef(found->second),
+                            ui::UiClass::TextView);
+}
+
+[[nodiscard]] std::u16string& OwnerBuffer(const Context& context,
+                                          dx::IntrinsicContext& call) {
+    return context->ui_tree.Get(OwnerTextNode(context, call))->text;
 }
 
 [[nodiscard]] std::int64_t DateMillis(dx::IntrinsicContext& call) {
@@ -116,7 +120,9 @@ dx::IntrinsicHandler ByteOutputWriteRangeHandler(const Context& context) {
 
 dx::IntrinsicHandler EditableClearHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        OwnerBuffer(context, call).clear();
+        const auto node = OwnerTextNode(context, call);
+        context->ui_tree.Get(node)->text.clear();
+        context->ui_tree.MarkLayoutDirty(node);
         return dx::VmValue::Void();
     });
 }
@@ -140,11 +146,20 @@ dx::IntrinsicHandler EditableReplaceHandler(const Context& context) {
                 "Editable.replace range is invalid"};
         }
         const auto value = call.arguments[2].ref;
-        buffer.replace(static_cast<std::size_t>(start),
-                       static_cast<std::size_t>(end - start),
-                       value.IsValid()
-                           ? call.vm.Model().StringValue(value)
-                           : std::u16string());
+        auto candidate = buffer;
+        candidate.replace(static_cast<std::size_t>(start),
+                          static_cast<std::size_t>(end - start),
+                          value.IsValid()
+                              ? call.vm.Model().StringValue(value)
+                              : std::u16string());
+        try {
+            static_cast<void>(ui::MeasureFixedText(candidate, 8.0F));
+        } catch (const std::runtime_error& error) {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  error.what()};
+        }
+        buffer = std::move(candidate);
+        context->ui_tree.MarkLayoutDirty(OwnerTextNode(context, call));
         return Self(call);
     });
 }

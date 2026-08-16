@@ -27,6 +27,9 @@ SDL、ANGLE 或视频解码。
 - `BuildUiRenderList` / `RasterizeUiOverlay`：从 resolved tree 生成 solid/bitmap/clip 命令，
   以整数 source-over 输出透明 RGBA8；`UiOverlayRenderer` 仅在 generation、metrics 或
   draw dirty 改变时重建。
+- `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与单行边界；
+  内置 5x7 ASCII 字形同时提供确定性 measure/raster，wrap_content 加入 padding，Button
+  提供固定 background/padding/clickable 默认语义。
 
 ## 不变量
 
@@ -44,4 +47,4 @@ destroy、generation reset、非法 mutation，以及 FrameLayout fullscreen/bot
 padding/margin、wrap intrinsic、document-order overlap geometry，以及 horizontal/vertical
 LinearLayout 的 GONE/INVISIBLE、weight、padding/margin geometry。
 `tests/runtime/ui_renderer_tests.cpp` 锁定透明、bitmap、alpha overlap、Z-order、clip、
-visibility 与 draw cache。
+visibility、draw cache，以及固定字体 measure/text golden 和 Button content/background。

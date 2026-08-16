@@ -20,7 +20,14 @@ UiNodeId UiTree::CreateNode(const UiClass kind) {
     }
     const UiNodeId id{(static_cast<std::uint64_t>(generation_) << 32U) |
                       ++next_node_};
-    nodes_.emplace(id, UiNode{.id = id, .kind = kind});
+    auto [created, inserted] =
+        nodes_.emplace(id, UiNode{.id = id, .kind = kind});
+    static_cast<void>(inserted);
+    if (kind == UiClass::Button) {
+        created->second.background_color = 0x404040ffU;
+        created->second.padding = {6, 4, 6, 4};
+        created->second.clickable = true;
+    }
     return id;
 }
 

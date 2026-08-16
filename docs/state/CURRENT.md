@@ -22,6 +22,9 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
   guest 栈，JNI/DexVM monitor 尚未合一。
 - **intrinsic/热路径迁移已交付**（DVM-32..38）：地址稳定绑定与 execution
   传递完成；平台类由同址 `Declare_*()` 直接绑定，旧 registry/字符串 id 已删除。
+- **Java System 属性已闭合**：`getProperty`/`setProperty` 共用会话内属性表，
+  `line.separator`、`file.separator`、`path.separator` 发布确定性的 API 19 guest
+  值；未知 key 返回 null，参数异常不读取或泄露宿主属性。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用后
   `asphalt5.title_flow` 三轮 passed——468 帧、主界面 SHA-256 `9ee57323…` 逐位
   一致、无 fault、clean shutdown。
@@ -35,7 +38,7 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`；
 Layout UI 任务索引见 `docs/tasks/layoutui/README.md`。
-能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 765/765；
+能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 766/766；
 Windows/x64（windows-msvc）本次 728/728。
 Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；
 第三方 target 不被全局注入该选项。

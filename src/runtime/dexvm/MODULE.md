@@ -80,6 +80,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   均明确失败，禁止绕过 `<clinit>`。
 - Class/Method 反射只开放真实 declared-method 枚举和零参数、int-like
   返回的调用；其余明确抛 `UnsupportedOperationException`。
+- `System.getProperty(String)` 与 `setProperty(String,String)` 共享每 VM 属性表；
+  separator 默认值来自固定 API 19 guest 事实，未知属性返回 null，禁止泄露宿主属性。
 
 - Gap survey（诊断，默认关闭）：`EnableGapSurvey()` 后，未声明的**平台**类/
   方法被合成为中性桩（0/null/void）并逐次记账，一次运行即可收割新 title 的
@@ -140,7 +142,8 @@ handler 文件已删除。
 ## 测试
 
 `tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：core catalog 唯一性与
-代表类签名集合、intrinsic builder 装配校验与声明即绑定、重复方法拒绝、
+代表类签名集合、System property 默认值/读写/异常、intrinsic builder 装配校验与
+声明即绑定、重复方法拒绝、
 直调与声明未实现的重复 miss 记账，算术边界、控制流、
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
 显式执行 context 交错调用的帧/异常/tick/monitor 隔离）；

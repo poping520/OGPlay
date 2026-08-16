@@ -307,6 +307,73 @@ TEST_CASE("dexvm declaration miss uses the owner signature and repeats") {
     CHECK(hits[0].count == 2U);
 }
 
+TEST_CASE("dexvm System properties are deterministic and mutable") {
+    Vm vm;
+    const auto get = vm.Static(
+        "Ljava/lang/System;", "getProperty",
+        "(Ljava/lang/String;)Ljava/lang/String;");
+    const auto set = vm.Static(
+        "Ljava/lang/System;", "setProperty",
+        "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+    const auto string = [&vm](const std::string& value) {
+        return VmValue::Ref(vm.interpreter.NewStringUtf8(value));
+    };
+    const auto get_property = [&vm, get, &string](const std::string& key) {
+        return vm.interpreter.Call(
+            get, std::vector<VmValue>{string(key)});
+    };
+
+    for (const auto& [key, expected] :
+         std::vector<std::pair<std::string, std::string>>{
+             {"file.separator", "/"},
+             {"line.separator", "\n"},
+             {"path.separator", ":"}}) {
+        const auto outcome = get_property(key);
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        REQUIRE(outcome.value.ref.IsValid());
+        CHECK(vm.interpreter.StringUtf8(outcome.value.ref) == expected);
+    }
+
+    const auto missing = get_property("ogplay.missing");
+    REQUIRE_FALSE(missing.exception.IsValid());
+    CHECK_FALSE(missing.value.ref.IsValid());
+
+    const auto first = vm.interpreter.Call(
+        set, std::vector<VmValue>{string("ogplay.test"), string("first")});
+    REQUIRE_FALSE(first.exception.IsValid());
+    CHECK_FALSE(first.value.ref.IsValid());
+    const auto first_read = get_property("ogplay.test");
+    REQUIRE_FALSE(first_read.exception.IsValid());
+    REQUIRE(first_read.value.ref.IsValid());
+    CHECK(vm.interpreter.StringUtf8(first_read.value.ref) == "first");
+
+    const auto second = vm.interpreter.Call(
+        set, std::vector<VmValue>{string("ogplay.test"), string("second")});
+    REQUIRE_FALSE(second.exception.IsValid());
+    REQUIRE(second.value.ref.IsValid());
+    CHECK(vm.interpreter.StringUtf8(second.value.ref) == "first");
+    const auto second_read = get_property("ogplay.test");
+    REQUIRE_FALSE(second_read.exception.IsValid());
+    REQUIRE(second_read.value.ref.IsValid());
+    CHECK(vm.interpreter.StringUtf8(second_read.value.ref) == "second");
+
+    ExpectException(
+        vm,
+        vm.interpreter.Call(
+            get, std::vector<VmValue>{VmValue::Ref(VmObjectRef{})}),
+        "Ljava/lang/NullPointerException;");
+    ExpectException(vm,
+                    vm.interpreter.Call(
+                        get, std::vector<VmValue>{string("")}),
+                    "Ljava/lang/IllegalArgumentException;");
+    ExpectException(
+        vm,
+        vm.interpreter.Call(
+            set, std::vector<VmValue>{string("ogplay.null"),
+                                      VmValue::Ref(VmObjectRef{})}),
+        "Ljava/lang/NullPointerException;");
+}
+
 TEST_CASE("dexvm arithmetic edge semantics") {
     Vm vm;
     // OP_DIV_INT.cpp: MIN_INT / -1 == MIN_INT (no trap).

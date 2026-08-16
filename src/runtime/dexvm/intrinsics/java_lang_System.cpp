@@ -5,8 +5,41 @@
 
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
+namespace {
+
+using SystemPropertyMap = std::unordered_map<std::string, std::string>;
+
+[[nodiscard]] std::string PropertyKey(IntrinsicContext& context,
+                                      const VmObjectRef reference) {
+    if (!reference.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                          "system property key is null"};
+    }
+    auto key = context.vm.StringUtf8(reference);
+    if (key.empty()) {
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                          "system property key is empty"};
+    }
+    return key;
+}
+
+[[nodiscard]] std::string PropertyValue(IntrinsicContext& context,
+                                        const VmObjectRef reference) {
+    if (!reference.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                          "system property value is null"};
+    }
+    return context.vm.StringUtf8(reference);
+}
+
+}  // namespace
 
 IntrinsicClassDecl Declare_java_lang_System() {
+    auto properties = std::make_shared<SystemPropertyMap>(SystemPropertyMap{
+        {"file.separator", "/"},
+        {"line.separator", "\n"},
+        {"path.separator", ":"},
+    });
     IntrinsicClassBuilder builder("Ljava/lang/System;");
     builder.Super("Ljava/lang/Object;");
     builder.Field("out", "Ljava/io/PrintStream;", true);
@@ -67,12 +100,19 @@ IntrinsicClassDecl Declare_java_lang_System() {
                 // GC-A never collects (04 §5); the call is legal and does nothing.
                 return VmValue::Void();
             });
+    builder.Static("getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
+        [properties](IntrinsicContext& context) {
+                const auto key = PropertyKey(context, context.arguments[0].ref);
+                const auto found = properties->find(key);
+                if (found == properties->end()) {
+                    return VmValue::Ref(VmObjectRef{});
+                }
+                return VmValue::Ref(context.vm.NewStringUtf8(found->second));
+            });
     builder.Static("setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-        [properties =
-                   std::make_shared<std::unordered_map<std::string, std::string>>()](
-                    IntrinsicContext& context) {
-                const auto key = context.vm.StringUtf8(context.arguments[0].ref);
-                const auto value = context.vm.StringUtf8(context.arguments[1].ref);
+        [properties](IntrinsicContext& context) {
+                const auto key = PropertyKey(context, context.arguments[0].ref);
+                const auto value = PropertyValue(context, context.arguments[1].ref);
                     const auto previous = properties->find(key);
                     VmValue result = VmValue::Ref(VmObjectRef{});
                     if (previous != properties->end()) {

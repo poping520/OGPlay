@@ -10,6 +10,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -44,6 +45,16 @@ using namespace ogplay::runtime::dexvm;
         metadata.duration_ms = 1000;
         return std::unique_ptr<ogplay::video::VideoPlayer>(
             std::make_unique<ogplay::video::FakeVideoPlayer>(metadata, 10U));
+    };
+}
+
+[[nodiscard]] ogplay::loader::BinaryXmlAttribute AndroidAttribute(
+    std::string name, const std::uint8_t type, const std::uint32_t data) {
+    return ogplay::loader::BinaryXmlAttribute{
+        .namespace_uri = "http://schemas.android.com/apk/res/android",
+        .name = std::move(name),
+        .value_type = type,
+        .data = data,
     };
 }
 
@@ -257,6 +268,81 @@ TEST_CASE("View id and Activity lookup share the bound guest identity") {
     CHECK_THROWS_WITH(BindViewToUiNode(
                           *vm.context, vm.other_button, *node),
                       "guest View already has a different UI node");
+}
+
+TEST_CASE("registry inflater attaches merge children with exact identities") {
+    ClickVm vm;
+    const auto stale = FindViewUiNode(*vm.context, vm.skip_button.Value());
+    REQUIRE(stale.has_value());
+    vm.context->ui_click_listeners[*stale] = vm.NewListener();
+
+    std::vector<ogplay::loader::BinaryXmlElement> elements(5);
+    elements[0].name = "merge";
+    elements[1].name = "VideoView";
+    elements[1].parent = 0;
+    elements[1].attributes = {
+        AndroidAttribute("id", 0x01, 101),
+        AndroidAttribute("layout_width", 0x10, 0xffffffffU),
+        AndroidAttribute("layout_height", 0x10, 0xffffffffU)};
+    elements[2].name = "TextView";
+    elements[2].parent = 0;
+    elements[2].attributes = {AndroidAttribute("id", 0x01, 102)};
+    elements[3].name = "LinearLayout";
+    elements[3].parent = 0;
+    elements[3].attributes = {
+        AndroidAttribute("id", 0x01, 103),
+        AndroidAttribute("orientation", 0x10, 0),
+        AndroidAttribute("gravity", 0x11, 1),
+        AndroidAttribute("layout_gravity", 0x11, 0x50)};
+    elements[4].name = "ImageButton";
+    elements[4].parent = 3;
+    elements[4].attributes = {
+        AndroidAttribute("id", 0x01, 104),
+        AndroidAttribute("visibility", 0x10, 1)};
+
+    const auto content = InflateUiElements(
+        vm.interpreter, *vm.context, elements);
+    CHECK(vm.context->ui_tree.Get(*stale) == nullptr);
+    CHECK(vm.context->ui_click_listeners.empty());
+    const auto* root = vm.context->ui_tree.Get(vm.context->ui_tree.Root());
+    REQUIRE(root != nullptr);
+    REQUIRE(root->children.size() == 3);
+    CHECK(vm.context->ui_tree.Get(root->children[0])->kind ==
+          ui::UiClass::VideoView);
+    CHECK(vm.context->ui_tree.Get(root->children[1])->kind ==
+          ui::UiClass::TextView);
+    const auto row = root->children[2];
+    CHECK(vm.context->ui_tree.Get(row)->kind == ui::UiClass::LinearLayout);
+    REQUIRE(vm.context->ui_tree.Get(row)->children.size() == 1);
+    const auto button = vm.context->ui_tree.Get(row)->children[0];
+    CHECK(vm.context->ui_tree.Get(button)->visibility ==
+          ui::Visibility::Invisible);
+    CHECK(vm.context->ui_tree.FindByAndroidId(104) == button);
+    const auto button_view = ViewObjectForUiNode(*vm.context, button);
+    CHECK(vm.linker.Class(vm.model.ObjectClass(button_view)).descriptor ==
+          "Landroid/widget/ImageButton;");
+    CHECK(content == ViewObjectForUiNode(*vm.context, root->children[0]));
+}
+
+TEST_CASE("registry inflater rejects unsupported structural layouts") {
+    ClickVm vm;
+    std::vector<ogplay::loader::BinaryXmlElement> unknown(2);
+    unknown[0].name = "UnknownLayout";
+    unknown[1].name = "View";
+    unknown[1].parent = 0;
+    CHECK_THROWS_WITH(static_cast<void>(
+                          InflateUiElements(vm.interpreter, *vm.context, unknown)),
+                      "unsupported structural UI tag: UnknownLayout");
+    CHECK(vm.context->ui_tree.Size() == 1);
+    CHECK(vm.context->object_to_ui_node.empty());
+
+    std::vector<ogplay::loader::BinaryXmlElement> nested_merge(2);
+    nested_merge[0].name = "FrameLayout";
+    nested_merge[1].name = "merge";
+    nested_merge[1].parent = 0;
+    CHECK_THROWS_WITH(static_cast<void>(InflateUiElements(
+                          vm.interpreter, *vm.context, nested_merge)),
+                      "merge must be the layout root");
 }
 
 TEST_CASE("hidden buttons do not receive clicks and GONE reflows the row") {

@@ -370,6 +370,7 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
         auto finished = departing;
         context.finishing_activity.compare_exchange_strong(finished, 0U);
         context.content_view = dx::VmObjectRef{};
+        runtime::ResetViewUiState(context);
         context.renderer = dx::VmObjectRef{};
         renderer_ready_ = false;
 

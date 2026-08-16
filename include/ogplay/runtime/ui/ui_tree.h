@@ -50,6 +50,11 @@ enum class SizeMode : std::uint8_t {
     WrapContent,
 };
 
+enum class Orientation : std::uint8_t {
+    Horizontal,
+    Vertical,
+};
+
 struct DimensionSpec final {
     SizeMode mode{SizeMode::WrapContent};
     std::int32_t px{};
@@ -81,7 +86,7 @@ struct LayoutParams final {
     DimensionSpec width;
     DimensionSpec height;
     Insets margin;
-    std::uint32_t gravity{};
+    std::uint32_t layout_gravity{};
     float weight{};
 };
 
@@ -94,6 +99,9 @@ struct UiNode final {
     Visibility visibility{Visibility::Visible};
     bool enabled{true};
     bool clickable{};
+    Orientation orientation{Orientation::Horizontal};
+    std::uint32_t gravity{};
+    std::uint32_t image_resource_id{};
     LayoutParams layout;
     Insets padding;
     Size measured;

@@ -37,6 +37,10 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   geometry 只写 `runtime/ui`，guest click/touch listener 只在本层以 UiNodeId 为 key 保存。
   `findViewById/getId/setId` 必须经双向 binding 返回/修改同一 object/node identity；
   content generation reset 同时清空两向 binding 与 listener，旧 node 不得继续可见。
+- `UiWidgetRegistry` 是 XML tag → dex descriptor/UiClass 唯一目录；inflater 只解释 generic
+  typed attrs，`<merge>` 只允许作为唯一 document root 且不创建 object/node。未知 tag、
+  非法 parent/root、未知 `layout_*` structural attr 必须记账或明确失败，禁止跳过并
+  re-parent children 后声称成功。
 - 动态 BroadcastReceiver 注册按发起调用的 Context 实例拥有；null receiver 只查询
   sticky broadcast，未注册、重复或跨 Context 注销抛 `IllegalArgumentException`。
   当前平台没有广播来源，因此不伪造 `onReceive` 派发。

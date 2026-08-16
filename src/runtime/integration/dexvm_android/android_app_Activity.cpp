@@ -1,9 +1,8 @@
 // Activity handlers. setContentView(int) inflates the real binary XML
-// layout into the view registry that findViewById answers from;
+// layout through the registry inflater into the UiTree;
 // presentation-only calls stay no-ops.
 
 #include "ogplay/loader/binary_xml.h"
-#include "ogplay/runtime/integration/host_image_decode.h"
 
 #include "catalog.h"
 
@@ -35,12 +34,21 @@ Decl Declare_android_app_Activity(const Context& context) {
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
     builder.Virtual("setContentView", "(Landroid/view/View;)V",
         [context](dx::IntrinsicContext& call) {
-            context->content_view = call.arguments[0].ref;
+            const auto view = call.arguments[0].ref;
+            if (!view.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "content view is null"};
+            }
+            const auto descriptor = call.vm.Linker()
+                                        .Class(call.vm.Model().ObjectClass(view))
+                                        .descriptor;
+            ResetViewUiState(*context);
+            const auto node = EnsureViewUiNode(
+                *context, view, UiClassForDescriptor(descriptor));
+            context->ui_tree.Attach(context->ui_tree.Root(), node);
+            context->content_view = view;
             return dx::VmValue::Void();
         });
-    // Minimal layout inflation: binary XML tags become widget intrinsic
-    // instances and android:id entries feed findViewById. Layout geometry
-    // attributes are not applied (the widget layer holds state only).
     builder.Virtual("setContentView", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto layout_id =
@@ -52,109 +60,15 @@ Decl Declare_android_app_Activity(const Context& context) {
                         std::to_string(layout_id)};
             }
             const auto bytes = ReadApkFile(context, *entry->string_value);
-            static const std::unordered_map<std::string, const char*>
-                kTagDescriptors = {
-                    {"View", "Landroid/view/View;"},
-                    {"TextView", "Landroid/widget/TextView;"},
-                    {"Button", "Landroid/widget/Button;"},
-                    {"EditText", "Landroid/widget/EditText;"},
-                    {"ImageView", "Landroid/widget/ImageView;"},
-                    {"ImageButton", "Landroid/widget/ImageButton;"},
-                    {"ProgressBar", "Landroid/widget/ProgressBar;"},
-                    {"VideoView", "Landroid/widget/VideoView;"},
-                    {"WebView", "Landroid/webkit/WebView;"},
-                    {"LinearLayout", "Landroid/widget/LinearLayout;"},
-                    {"FrameLayout", "Landroid/widget/FrameLayout;"},
-                    {"RelativeLayout", "Landroid/widget/RelativeLayout;"},
-                    {"TableLayout", "Landroid/widget/TableLayout;"},
-                    {"TableRow", "Landroid/widget/TableRow;"},
-                    {"ScrollView", "Landroid/widget/ScrollView;"},
-                    {"AbsoluteLayout", "Landroid/widget/AbsoluteLayout;"},
-                };
-            ResetViewUiState(*context);
-            dx::VmObjectRef root;
             const auto elements = loader::ParseBinaryXmlElements(bytes);
-            // Element index -> layout_views index; skipped elements (merge,
-            // unknown tags) map to their own parent so children re-attach to
-            // the nearest instantiated ancestor.
-            std::vector<std::int32_t> fact_of(elements.size(), -1);
-            std::vector<ui::UiNodeId> node_of(elements.size());
-            for (std::size_t index = 0; index < elements.size(); ++index) {
-                const auto& element = elements[index];
-                const auto parent_fact =
-                    element.parent < 0
-                        ? -1
-                        : fact_of[static_cast<std::size_t>(element.parent)];
-                const auto parent_node =
-                    element.parent < 0
-                        ? context->ui_tree.Root()
-                        : node_of[static_cast<std::size_t>(element.parent)];
-                if (element.name == "merge") {
-                    node_of[index] = parent_node;
-                    continue; // container marker
-                }
-                const auto found = kTagDescriptors.find(element.name);
-                if (found == kTagDescriptors.end()) {
-                    GuestLog(call, core::LogLevel::warn,
-                             "layout tag has no widget intrinsic: " +
-                                 element.name);
-                    fact_of[index] = parent_fact;
-                    node_of[index] = parent_node;
-                    continue;
-                }
-                const auto instance =
-                    call.vm.NewIntrinsicInstance(found->second);
-                const auto node = context->ui_tree.CreateNode(
-                    UiClassForDescriptor(found->second));
-                BindViewToUiNode(*context, instance, node);
-                if (element.id != 0) {
-                    context->ui_tree.SetAndroidId(
-                        node, static_cast<std::int32_t>(element.id));
-                }
-                context->ui_tree.Attach(parent_node, node);
-                node_of[index] = node;
-                if (!root.IsValid())
-                    root = instance;
-                DexVmAndroidContext::LayoutViewFact fact;
-                fact.view = instance;
-                fact.parent = parent_fact;
-                fact.tag = element.name;
-                fact.layout_width = element.layout_width;
-                fact.layout_height = element.layout_height;
-                fact.gravity = element.gravity;
-                fact.layout_gravity = element.layout_gravity;
-                fact.padding_top = element.padding_top;
-                // wrap_content image widgets measure by their drawable; a
-                // missing or undecodable drawable leaves the size unknown
-                // (bounds stay underivable, a recorded gap).
-                if (element.src != 0) {
-                    const auto* drawable = context->arsc.FindById(element.src);
-                    if (drawable != nullptr &&
-                        drawable->string_value.has_value()) {
-                        try {
-                            const auto image = DecodeImageToArgb(ReadApkFile(
-                                context, *drawable->string_value));
-                            if (image.has_value()) {
-                                fact.measured_width = image->width;
-                                fact.measured_height = image->height;
-                            }
-                        } catch (const dx::VmJavaThrow&) {
-                            // unreadable entry: size stays unknown
-                        }
-                    }
-                }
-                fact_of[index] =
-                    static_cast<std::int32_t>(context->layout_views.size());
-                context->layout_views.push_back(std::move(fact));
-            }
-            if (!root.IsValid()) {
+            try {
+                context->content_view =
+                    InflateUiElements(call.vm, *context, elements);
+            } catch (const std::runtime_error& error) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                    "layout produced no inflatable widget: " +
-                        *entry->string_value};
+                                      std::string("layout inflation failed: ") +
+                                          error.what()};
             }
-            // Document order puts the layout root first; it becomes the
-            // installed content view for the lifecycle harness.
-            context->content_view = root;
             return dx::VmValue::Void();
         });
     builder.Virtual("findViewById", "(I)Landroid/view/View;",

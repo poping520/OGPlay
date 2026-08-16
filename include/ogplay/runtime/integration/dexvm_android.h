@@ -9,6 +9,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,6 +18,7 @@
 
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/arsc.h"
+#include "ogplay/loader/binary_xml.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/framework/preferences_xml.h"
@@ -307,6 +309,17 @@ struct DexVmAndroidContext final {
     };
     std::unordered_map<std::uint64_t, VideoViewState> video_views;
 };
+
+struct UiWidgetDescriptor final {
+    std::string_view xml_tag;
+    std::string_view dex_descriptor;
+    ui::UiClass kind;
+};
+
+[[nodiscard]] std::span<const UiWidgetDescriptor> UiWidgetRegistry();
+[[nodiscard]] dexvm::VmObjectRef InflateUiElements(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    std::span<const loader::BinaryXmlElement> elements);
 
 // Installs/removes the generic VmExecutionLock blocking observer for the
 // lifecycle thread. The observer filters by the registered host thread id;

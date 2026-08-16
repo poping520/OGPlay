@@ -103,7 +103,9 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 - android.* intrinsic 的 widget 层把每个 live guest View 一一绑定到 `runtime/ui`
   `UiNodeId`；`setContentView(I)` 经 arsc resid → typed AXML 实例化 widget intrinsic，
   android id/visibility/hierarchy 只写 UiTree，`findViewById/getId/setId` 经双向 binding
-  返回同一 guest identity。listener ref 仍只由 integration 以 UiNodeId 保存；
+  返回同一 guest identity。tag→descriptor/class 来自固定通用 registry，`<merge>` children
+  直接 attach synthetic content root，未知 structural tag/attribute 记账并明确失败。
+  listener ref 仍只由 integration 以 UiNodeId 保存；
   `runOnUiThread` 在协作单线程模型下同步执行 runnable。
 - VideoView intrinsic（`dexvm_android/android_widget_VideoView.cpp`，ADR-0021）：
   `setVideoPath` 经 VFS

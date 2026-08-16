@@ -35,6 +35,8 @@
   join guest Java 线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：
   intrinsic renderer 保留打开线程 GL currency；guest-owned GLSurfaceView 显式释放后
   交给其 GLThread。
+  Activity switch 在旧 `onDestroy` 后推进 UI content generation，清空旧 UiTree binding/
+  listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。
 - `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
   校验 required mount、manifest 和 working directory；
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。

@@ -15,6 +15,11 @@ status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp"
 note = "M10 WU-M10-003/LUI-3 建立 live guest View object 与 UiNodeId 双向一一绑定；findViewById/getId/setId/visibility 只读写 UiTree，click/touch listener 以 node 为 key，旧 view_registry/widget_states 已删除"
 
+[runtime.ui_inflater]
+status = "complete"
+test = "tests/dexvm/widget_click_tests.cpp"
+note = "M10 WU-M10-004/LUI-4 以固定 UiWidgetDescriptor registry 从 generic typed AXML 构造 guest object + UiTree；普通 root/merge attach synthetic content root，非法 parent/root、nested merge、unknown structural tag/attr 事务失败且不发布部分 tree"
+
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"

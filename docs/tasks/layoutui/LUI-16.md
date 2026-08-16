@@ -2,7 +2,7 @@
 
 ## 目标（一句话）
 
-修正 dirty/cache 与 pointer dispatch 的既有语义，使 M10 已声明 complete 的能力通过正式验收。
+修正 dirty/cache 与 pointer dispatch 的既有语义，使 Layout UI 已声明 complete 的能力通过正式验收。
 
 ## 边界
 

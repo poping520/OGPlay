@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-16 · M10 Layout UI 已正式验收 complete，Asphalt 6 启动视频 skip UI 与
+更新：2026-08-16 · Layout UI 已正式验收 complete，Asphalt 6 启动视频 skip UI 与
 Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 GLThread；DVM-31 EGL façade 实现完成；MSVC
 工程内/工程间并行编译已启用；DexVM 阶段 4 与 intrinsic 声明迁移、SBX、GUI 已交付
 
@@ -9,7 +9,7 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
 - **M9 DexVM**（DVM-1..39，ADR-0017/0022）：阶段 0..3、entry override、
   静态预置和 v2-only 清理均已交付。
-- **M10 Layout UI 已正式验收 complete**：LUI-1..15 的 typed AXML、唯一 UiTree、layout/
+- **Layout UI 已正式验收 complete**：LUI-1..15 的 typed AXML、唯一 UiTree、layout/
   render/composition/input、Linear/RelativeLayout、动态 hierarchy、文本、include/resources
   与 ImageView 已闭合；未命中的 style/selector 不扩张。旧并行 geometry facts 已删除，
   hit-test 只读 UiTree，architecture test 禁止 title-specific runtime identity。LUI-16 将
@@ -33,7 +33,8 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
 ## 已验收基线
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
-`docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
+`docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`；
+Layout UI 任务索引见 `docs/tasks/layoutui/README.md`。
 能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 765/765；
 Windows/x64（windows-msvc）本次 728/728。
 Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；

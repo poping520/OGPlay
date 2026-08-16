@@ -3,77 +3,77 @@
 [loader.binary_xml_typed_attributes]
 status = "complete"
 test = "tests/loader/binary_xml_tests.cpp"
-note = "M10 LUI-1 保留 namespace/name、typed value type/data 与 raw/typed string；旧 layout 字段仅为迁移期单向 adapter，string-pool chunk 边界和元素 nesting 严格受检"
+note = "LUI-1 保留 namespace/name、typed value type/data 与 raw/typed string；旧 layout 字段仅为迁移期单向 adapter，string-pool chunk 边界和元素 nesting 严格受检"
 
 [runtime.ui_tree]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp"
-note = "M10 LUI-2 建立 generation-scoped synthetic content root、唯一 hierarchy/id/visibility/layout/geometry/dirty state；detach/destroy/reset 立即退出 id index，node/child/depth 上限明确失败"
+note = "LUI-2 建立 generation-scoped synthetic content root、唯一 hierarchy/id/visibility/layout/geometry/dirty state；detach/destroy/reset 立即退出 id index，node/child/depth 上限明确失败"
 
 [runtime.ui_dexvm_binding]
 status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp"
-note = "M10 LUI-3 建立 live guest View object 与 UiNodeId 双向一一绑定；findViewById/getId/setId/visibility 只读写 UiTree，click/touch listener 以 node 为 key，旧 view_registry/widget_states 已删除"
+note = "LUI-3 建立 live guest View object 与 UiNodeId 双向一一绑定；findViewById/getId/setId/visibility 只读写 UiTree，click/touch listener 以 node 为 key，旧 view_registry/widget_states 已删除"
 
 [runtime.ui_inflater]
 status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp"
-note = "M10 LUI-4 以固定 UiWidgetDescriptor registry 从 generic typed AXML 构造 guest object + UiTree；普通 root/merge attach synthetic content root，非法 parent/root、nested merge、unknown structural tag/attr 事务失败且不发布部分 tree"
+note = "LUI-4 以固定 UiWidgetDescriptor registry 从 generic typed AXML 构造 guest object + UiTree；普通 root/merge attach synthetic content root，非法 parent/root、nested merge、unknown structural tag/attr 事务失败且不发布部分 tree"
 
 [runtime.ui_frame_layout]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp"
-note = "M10 LUI-5 实现 EXACTLY/AT_MOST/UNSPECIFIED MeasureSpec，fixed/match/wrap、intrinsic、FrameLayout padding/margin/gravity 与 descendant screen-frame propagation；surface root 使用 exact metrics，非法负尺寸明确失败"
+note = "LUI-5 实现 EXACTLY/AT_MOST/UNSPECIFIED MeasureSpec，fixed/match/wrap、intrinsic、FrameLayout padding/margin/gravity 与 descendant screen-frame propagation；surface root 使用 exact metrics，非法负尺寸明确失败"
 
 [runtime.ui_horizontal_linear_layout]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "M10 LUI-6 horizontal LinearLayout 按 document order 计算主/交叉轴，GONE 移除、INVISIBLE 保留 geometry，drawable intrinsic 驱动 ImageButton wrap_content；旧 fullscreen/edge-row bounds 特判已删除，click adapter 只读 UiTree screen_frame"
+note = "LUI-6 horizontal LinearLayout 按 document order 计算主/交叉轴，GONE 移除、INVISIBLE 保留 geometry，drawable intrinsic 驱动 ImageButton wrap_content；旧 fullscreen/edge-row bounds 特判已删除，click adapter 只读 UiTree screen_frame"
 
 [runtime.ui_rgba_renderer]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp"
-note = "M10 LUI-7 从 resolved UiTree 生成 solid/bitmap/clip render list，以 deterministic integer source-over raster 透明 RGBA8；LUI-16 将 layout/draw dirty 消费拆分，layout 后文字与 GONE mutation 均强制 cache rebuild；drawable 按 resource id 解码缓存"
+note = "LUI-7 从 resolved UiTree 生成 solid/bitmap/clip render list，以 deterministic integer source-over raster 透明 RGBA8；LUI-16 将 layout/draw dirty 消费拆分，layout 后文字与 GONE mutation 均强制 cache rebuild；drawable 按 resource id 解码缓存"
 
 [session.ui_composition]
 status = "complete"
 test = "tests/session/ui_compositor_tests.cpp; tests/dexvm/videoview_tests.cpp"
-note = "M10 LUI-8 在 frontend 唯一 frame handoff 调 session ComposePresentedFrame，将最终 VideoView/GLES base 与 cached UI overlay integer source-over；不抢占异步 GL frame store，透明 overlay 保持 base exact，video 模块无 UI 依赖"
+note = "LUI-8 在 frontend 唯一 frame handoff 调 session ComposePresentedFrame，将最终 VideoView/GLES base 与 cached UI overlay integer source-over；不抢占异步 GL frame store，透明 overlay 保持 base exact，video 模块无 UI 依赖"
 
 [runtime.ui_pointer_dispatch]
 status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp"
-note = "M10 LUI-9 以 resolved UiTree 做 clipped reverse-Z hit-test；LUI-16 分离 gesture ownership/click eligibility：touch-only false 回退 Activity、true 消费，touch+click 仅在 touch=false 的 UP-inside click；hidden/removed/outside 取消，guest listener identity 由 UiNodeId binding 保证"
+note = "LUI-9 以 resolved UiTree 做 clipped reverse-Z hit-test；LUI-16 分离 gesture ownership/click eligibility：touch-only false 回退 Activity、true 消费，touch+click 仅在 touch=false 的 UP-inside click；hidden/removed/outside 取消，guest listener identity 由 UiNodeId binding 保证"
 
 [profiles.asphalt6_layout_ui_skip]
 status = "complete"
 test = "data/scenarios/asphalt6.layout_ui_skip.scenario.toml; macOS-arm64 exact local gate 3/3"
-note = "M10 LUI-10 以普通 FFmpeg 7 exact APK 场景闭合启动视频超过 3 秒、空白点击走 Activity touch、bottom-center skip golden 可见、点击 skip 进入后续 GLES 帧、no fault 与 clean shutdown；生产代码无 title 分支"
+note = "LUI-10 以普通 FFmpeg 7 exact APK 场景闭合启动视频超过 3 秒、空白点击走 Activity touch、bottom-center skip golden 可见、点击 skip 进入后续 GLES 帧、no fault 与 clean shutdown；生产代码无 title 分支"
 
 [runtime.ui_general_linear_layout]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "M10 LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite weight 与主/交叉轴 gravity；Java LayoutParams、动态 hierarchy 与 geometry getter 共用唯一 UiTree；LUI-16 锁定所有 layout mutation 保留 draw dirty 到 raster 完成"
+note = "LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite weight 与主/交叉轴 gravity；Java LayoutParams、动态 hierarchy 与 geometry getter 共用唯一 UiTree；LUI-16 锁定所有 layout mutation 保留 draw dirty 到 raster 完成"
 
 [runtime.ui_text_widgets]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "M10 LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed font 共用 measure/raster；LUI-16 增加 text layout 后 overlay cache 重建与新像素回归；单行之外与未知字形明确失败"
+note = "LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed font 共用 measure/raster；LUI-16 增加 text layout 后 overlay cache 重建与新像素回归；单行之外与未知字形明确失败"
 
 [runtime.ui_relative_layout]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "M10 LUI-13 实现 parent align/center 与 sibling above/below/left/right/align-edge；横纵依赖图按 sibling android id 确定性解析，XML 与 Java addRule 共用 typed LayoutParams，missing/duplicate/conflict/cycle 明确失败"
+note = "LUI-13 实现 parent align/center 与 sibling above/below/left/right/align-edge；横纵依赖图按 sibling android id 确定性解析，XML 与 Java addRule 共用 typed LayoutParams，missing/duplicate/conflict/cycle 明确失败"
 
 [runtime.ui_include_resources_images]
 status = "complete"
 test = "tests/dexvm/ui_include_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/runtime/ui_renderer_tests.cpp; tests/dexvm/arsc_tests.cpp"
-note = "M10 LUI-14 实现 include root/merge 展开、override、depth/cycle guard；Arsc simple type/data 驱动 16 层 string/color/dimen/reference 与 bitmap/color drawable resolver；ImageView XML/Java 共用五种 scaleType 和 exact crop raster。style/selector/qualifier 只按真实命中扩展，当前未命中且保持明确失败边界"
+note = "LUI-14 实现 include root/merge 展开、override、depth/cycle guard；Arsc simple type/data 驱动 16 层 string/color/dimen/reference 与 bitmap/color drawable resolver；ImageView XML/Java 共用五种 scaleType 和 exact crop raster。style/selector/qualifier 只按真实命中扩展，当前未命中且保持明确失败边界"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
 test = "tools.dexvm_gap_report_self_test; architecture.platform_boundaries; Asphalt 5 exact title-flow 3/3; Asphalt 6 exact layout-ui-skip 3/3"
-note = "M10 LUI-15 修复 builder catalog 静态 survey 并测量四个旧 title；LUI-16 修复 dirty/cache 与 listener dispatch 后以关闭 survey 的 A5/A6 各三轮 exact 回归正式验收 M10。LayoutViewFact/layout_views 保持删除，hit-test 只读 UiTree screen_frame，无 title-specific runtime 分支"
+note = "LUI-15 修复 builder catalog 静态 survey 并测量四个旧 title；LUI-16 修复 dirty/cache 与 listener dispatch 后以关闭 survey 的 A5/A6 各三轮 exact 回归正式验收 Layout UI。LayoutViewFact/layout_views 保持删除，hit-test 只读 UiTree screen_frame，无 title-specific runtime 分支"
 
 [core.structured_logger]
 status = "complete"
@@ -763,7 +763,7 @@ note = "M8 WU-M8-003 绑定 NewString/GetStringLength/GetStringChars/ReleaseStri
 [runtime.jni_guest_arrays]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "M8 WU-M8-004 绑定 8 类 primitive 的 New/GetRegion/SetRegion/GetElements/ReleaseElements 共 40 槽与 NewObjectArray/GetObjectArrayElement/SetObjectArrayElement 3 槽；Elements 使用独立 4 MiB 有界 guest arena，严格实现 0/JNI_COMMIT/JNI_ABORT、wrong pointer 与 double release，object array 验证 initial/set assignability。M10 LUI-10 增加 Get/ReleasePrimitiveArrayCritical 两槽，复用有界 copy lease 并以独立 critical access kind 严格配对；JniObjectArrayStore 仍由 array binder 持有，session 级 Java object-model 统一属后续范围"
+note = "M8 WU-M8-004 绑定 8 类 primitive 的 New/GetRegion/SetRegion/GetElements/ReleaseElements 共 40 槽与 NewObjectArray/GetObjectArrayElement/SetObjectArrayElement 3 槽；Elements 使用独立 4 MiB 有界 guest arena，严格实现 0/JNI_COMMIT/JNI_ABORT、wrong pointer 与 double release，object array 验证 initial/set assignability。LUI-10 增加 Get/ReleasePrimitiveArrayCritical 两槽，复用有界 copy lease 并以独立 critical access kind 严格配对；JniObjectArrayStore 仍由 array binder 持有，session 级 Java object-model 统一属后续范围"
 
 [runtime.jni_guest_nonvirtual_calls]
 status = "complete"
@@ -988,7 +988,7 @@ note = "M5 WU-0229 建立与固定 ANGLE GLES/gl.h 完全一致的 GLES1.1 core 
 [runtime.gles1_core_boundary]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M5 WU-0230 在 libGLESv1_CM.so 发布隔离的 145 项 core Thumb trap；未绑定调用记账并明确失败，不误入同名 GLES2 handler；M10 LUI-10 将真实后续路径命中的 glFlush 转入当前 ANGLE frame，且不触发 present"
+note = "M5 WU-0230 在 libGLESv1_CM.so 发布隔离的 145 项 core Thumb trap；未绑定调用记账并明确失败，不误入同名 GLES2 handler；LUI-10 将真实后续路径命中的 glFlush 转入当前 ANGLE frame，且不触发 present"
 
 [runtime.gles1_viewport_boundary]
 status = "complete"

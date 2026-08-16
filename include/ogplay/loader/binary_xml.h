@@ -2,19 +2,28 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
 namespace ogplay::loader {
 
-// One start-element of an Android binary XML document (layout inflation
-// subset): the tag name, the android:id reference, the element's parent in
-// the flat vector, plus the layout attributes the widget layer derives
-// bounds from. Dimensions resolve complex values by mantissa only (dp is
-// treated as px at density 1, a recorded approximation).
+struct BinaryXmlAttribute final {
+    std::string namespace_uri;
+    std::string name;
+    std::uint8_t value_type{};
+    std::uint32_t data{};
+    std::optional<std::string> raw_string;
+};
+
+// One start-element of an Android binary XML document in document order.
+// attributes is the generic, lossless typed output. The named layout fields
+// below are a temporary compatibility adapter for callers that predate it;
+// new widget semantics must interpret attributes outside the loader.
 struct BinaryXmlElement final {
     std::string name;
+    std::vector<BinaryXmlAttribute> attributes;
     std::uint32_t id{};        // android:id resource reference, 0 when absent
     std::int32_t parent{-1};   // index of the enclosing element, -1 for roots
 

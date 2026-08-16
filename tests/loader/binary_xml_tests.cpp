@@ -205,6 +205,43 @@ TEST_CASE("binary XML layout walk decodes the layout attribute subset") {
     CHECK(elements[1].layout_width == Element::kSizeWrapContent);
     CHECK(elements[1].layout_height == Element::kSizeWrapContent);
     CHECK(elements[1].src == 0x7f020010U);
+    REQUIRE(elements[0].attributes.size() == 5);
+    CHECK(elements[0].attributes[0].namespace_uri ==
+          "http://schemas.android.com/apk/res/android");
+    CHECK(elements[0].attributes[0].name == "layout_width");
+    CHECK(elements[0].attributes[0].value_type == 0x10);
+    CHECK(elements[0].attributes[0].data == 0xffffffffU);
+    CHECK_FALSE(elements[0].attributes[0].raw_string.has_value());
+}
+
+TEST_CASE("binary XML preserves generic typed and namespaced attributes") {
+    const std::vector<std::string> strings{
+        "TextView", "visibility", "orientation", "text", "hello",
+        "custom", "urn:example", "http://schemas.android.com/apk/res/android"};
+    std::vector<std::byte> document;
+    Append16(document, 0x0003);
+    Append16(document, 8);
+    Append32(document, 0);
+    Append(document, StringPool(strings, true));
+    Append(document, StartElement(
+        0, {{1, 0xffffffffU, 0x10, 4U, 7},
+            {2, 0xffffffffU, 0x11, 1U, 7},
+            {3, 4U, 0x03, 4U, 7},
+            {5, 0xffffffffU, 0x01, 0x7f010002U, 6}}));
+    Append(document, EndElement(0));
+    Set32(document, 4, static_cast<std::uint32_t>(document.size()));
+
+    const auto elements = ogplay::loader::ParseBinaryXmlElements(document);
+    REQUIRE(elements.size() == 1);
+    REQUIRE(elements[0].attributes.size() == 4);
+    CHECK(elements[0].attributes[0].name == "visibility");
+    CHECK(elements[0].attributes[0].value_type == 0x10);
+    CHECK(elements[0].attributes[1].name == "orientation");
+    CHECK(elements[0].attributes[1].value_type == 0x11);
+    CHECK(elements[0].attributes[2].name == "text");
+    CHECK(elements[0].attributes[2].raw_string == "hello");
+    CHECK(elements[0].attributes[3].namespace_uri == "urn:example");
+    CHECK(elements[0].attributes[3].data == 0x7f010002U);
 }
 
 TEST_CASE("binary XML layout walk rejects malformed documents") {
@@ -228,4 +265,18 @@ TEST_CASE("binary XML layout walk rejects malformed documents") {
     CHECK_THROWS_WITH(static_cast<void>(
                           ogplay::loader::ParseBinaryXmlElements(bad_chunk)),
                       "binary XML chunk is malformed");
+
+    auto unclosed = Layout(false);
+    unclosed.resize(unclosed.size() - EndElement(0).size());
+    Set32(unclosed, 4, static_cast<std::uint32_t>(unclosed.size()));
+    CHECK_THROWS_WITH(static_cast<void>(
+                          ogplay::loader::ParseBinaryXmlElements(unclosed)),
+                      "binary XML element is not closed");
+
+    auto mismatched = Layout(false);
+    const auto final_end_offset = mismatched.size() - EndElement(0).size();
+    Set32(mismatched, final_end_offset + 20, 1U);
+    CHECK_THROWS_WITH(static_cast<void>(
+                          ogplay::loader::ParseBinaryXmlElements(mismatched)),
+                      "binary XML element nesting is malformed");
 }

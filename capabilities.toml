@@ -1,5 +1,10 @@
 # 状态只能按 unimplemented -> stub -> partial -> complete 前进。
 
+[loader.binary_xml_typed_attributes]
+status = "complete"
+test = "tests/loader/binary_xml_tests.cpp"
+note = "M10 WU-M10-001/LUI-1 保留 namespace/name、typed value type/data 与 raw/typed string；旧 layout 字段仅为迁移期单向 adapter，string-pool chunk 边界和元素 nesting 严格受检"
+
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"

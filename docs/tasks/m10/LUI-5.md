@@ -1,4 +1,4 @@
-# WU-M10-005 · LUI-5 MeasureSpec 与 FrameLayout
+# LUI-5 · MeasureSpec 与 FrameLayout
 
 ## 目标（一句话）
 
@@ -7,7 +7,7 @@
 
 ## 依赖
 
-- WU-M10-002、WU-M10-004 / LUI-2、LUI-4。
+- LUI-2、LUI-4。
 
 ## AOSP 4.4.4 语义参考
 

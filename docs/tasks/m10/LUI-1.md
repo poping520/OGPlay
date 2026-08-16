@@ -1,4 +1,4 @@
-# WU-M10-001 · LUI-1 Generic compiled AXML
+# LUI-1 · Generic compiled AXML
 
 ## 目标（一句话）
 

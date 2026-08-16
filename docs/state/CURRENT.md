@@ -12,7 +12,7 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
 - **M10 Layout UI 已正式验收 complete**：LUI-1..15 的 typed AXML、唯一 UiTree、layout/
   render/composition/input、Linear/RelativeLayout、动态 hierarchy、文本、include/resources
   与 ImageView 已闭合；未命中的 style/selector 不扩张。旧并行 geometry facts 已删除，
-  hit-test 只读 UiTree，architecture test 禁止 title-specific runtime identity。WU-M10-016 将
+  hit-test 只读 UiTree，architecture test 禁止 title-specific runtime identity。LUI-16 将
   layout/draw dirty 分相消费，确保 layout mutation 在 raster 后才清 draw dirty；gesture
   ownership 与 click eligibility 已分离，touch-only false 回退 Activity，四种 touch/click
   组合及 hidden/removed/outside 取消均有机器测试。A5/A6 exact 各三轮复验通过。

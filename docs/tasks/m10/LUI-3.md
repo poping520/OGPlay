@@ -1,4 +1,4 @@
-# WU-M10-003 · LUI-3 DexVM View binding
+# LUI-3 · DexVM View binding
 
 ## 目标（一句话）
 
@@ -7,7 +7,7 @@ UiTree。
 
 ## 依赖
 
-- WU-M10-002/LUI-2。
+- LUI-2。
 
 ## AOSP 4.4.4 语义参考
 

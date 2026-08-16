@@ -1,4 +1,4 @@
-# WU-M10-011 · LUI-11 通用 LinearLayout 与动态 hierarchy
+# LUI-11 · 通用 LinearLayout 与动态 hierarchy
 
 ## 目标（一句话）
 
@@ -6,7 +6,7 @@
 
 ## 依赖
 
-- WU-M10-010 / LUI-10。
+- LUI-10。
 
 ## 验收与结果
 

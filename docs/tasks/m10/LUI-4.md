@@ -1,4 +1,4 @@
-# WU-M10-004 · LUI-4 Registry inflater 与 merge
+# LUI-4 · Registry inflater 与 merge
 
 ## 目标（一句话）
 
@@ -7,7 +7,7 @@ content root 正确承载普通 root 与 `<merge>`。
 
 ## 依赖
 
-- WU-M10-001..003 / LUI-1..3。
+- LUI-1..3。
 
 ## AOSP 4.4.4 语义参考
 

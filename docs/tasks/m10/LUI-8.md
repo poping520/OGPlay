@@ -1,4 +1,4 @@
-# WU-M10-008 · LUI-8 Present composition
+# LUI-8 · Present composition
 
 ## 目标（一句话）
 
@@ -6,7 +6,7 @@
 
 ## 依赖
 
-- WU-M10-007 / LUI-7。
+- LUI-7。
 
 ## 验收与结果
 

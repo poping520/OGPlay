@@ -1,4 +1,4 @@
-# WU-M10-006 · LUI-6 Horizontal LinearLayout 与 visibility
+# LUI-6 · Horizontal LinearLayout 与 visibility
 
 ## 目标（一句话）
 
@@ -6,7 +6,7 @@
 
 ## 依赖
 
-- WU-M10-005 / LUI-5。
+- LUI-5。
 
 ## AOSP 4.4.4 语义参考
 

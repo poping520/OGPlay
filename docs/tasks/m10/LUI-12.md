@@ -1,4 +1,4 @@
-# WU-M10-012 · LUI-12 TextView / Button
+# LUI-12 · TextView / Button
 
 ## 目标（一句话）
 
@@ -6,7 +6,7 @@
 
 ## 依赖
 
-- WU-M10-010 / LUI-10。
+- LUI-10。
 
 ## 验收与结果
 

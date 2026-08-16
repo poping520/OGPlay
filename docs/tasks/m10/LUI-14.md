@@ -1,4 +1,4 @@
-# WU-M10-014 · LUI-14 include / scale / resources
+# LUI-14 · include / scale / resources
 
 ## 目标（一句话）
 
@@ -6,8 +6,8 @@
 
 ## 依赖
 
-- WU-M10-012 / LUI-12。
-- WU-M10-013 / LUI-13。
+- LUI-12。
+- LUI-13。
 
 ## 验收与结果
 

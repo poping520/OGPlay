@@ -1,4 +1,4 @@
-# WU-M10-010 · LUI-10 Asphalt 6 P0 exact gate
+# LUI-10 · Asphalt 6 P0 exact gate
 
 ## 目标（一句话）
 
@@ -6,7 +6,7 @@
 
 ## 依赖
 
-- WU-M10-004..009 / LUI-4..9。
+- LUI-4..9。
 - `docs/playbook/SCENARIO-RUNNER.md`。
 
 ## 验收与结果

@@ -1,4 +1,4 @@
-# WU-M10-009 · LUI-9 Generic UI pointer dispatch
+# LUI-9 · Generic UI pointer dispatch
 
 ## 目标（一句话）
 
@@ -6,7 +6,7 @@
 
 ## 依赖
 
-- WU-M10-003、005、006 / LUI-3、5、6。
+- LUI-3、LUI-5、LUI-6。
 
 ## 验收与结果
 

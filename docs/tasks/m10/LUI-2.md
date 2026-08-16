@@ -1,4 +1,4 @@
-# WU-M10-002 · LUI-2 UiTree 地基
+# LUI-2 · UiTree 地基
 
 ## 目标（一句话）
 
@@ -6,7 +6,7 @@
 
 ## 依赖
 
-- WU-M10-001/LUI-1（generic typed AXML，可并行但已完成）。
+- LUI-1（generic typed AXML，可并行但已完成）。
 
 ## 范围
 

@@ -89,3 +89,54 @@ TEST_CASE("UI tree rejects invalid hierarchy mutations") {
     CHECK_THROWS_WITH(tree.Detach(tree.Root()),
                       "UI content root cannot be detached");
 }
+
+TEST_CASE("FrameLayout resolves fullscreen bottom center and overlap geometry") {
+    ui::UiTree tree;
+    const auto full = tree.CreateNode(ui::UiClass::VideoView);
+    const auto bottom = tree.CreateNode(ui::UiClass::View);
+    const auto centered = tree.CreateNode(ui::UiClass::View);
+    tree.Get(full)->layout.width.mode = ui::SizeMode::MatchParent;
+    tree.Get(full)->layout.height.mode = ui::SizeMode::MatchParent;
+    tree.Get(bottom)->layout.width = {ui::SizeMode::Fixed, 40};
+    tree.Get(bottom)->layout.height = {ui::SizeMode::Fixed, 20};
+    tree.Get(bottom)->layout.layout_gravity = 0x51;
+    tree.Get(centered)->layout.width = {ui::SizeMode::Fixed, 20};
+    tree.Get(centered)->layout.height = {ui::SizeMode::Fixed, 10};
+    tree.Get(centered)->layout.layout_gravity = 0x11;
+    tree.Attach(tree.Root(), full);
+    tree.Attach(tree.Root(), bottom);
+    tree.Attach(tree.Root(), centered);
+
+    ui::LayoutUiTree(tree, {100, 80});
+    CHECK(tree.Get(full)->screen_frame == ui::Rect{0, 0, 100, 80});
+    CHECK(tree.Get(bottom)->screen_frame == ui::Rect{30, 60, 70, 80});
+    CHECK(tree.Get(centered)->screen_frame == ui::Rect{40, 35, 60, 45});
+    CHECK(tree.Get(tree.Root())->children.back() == centered);
+}
+
+TEST_CASE("FrameLayout applies parent padding and child margins") {
+    ui::UiTree tree;
+    auto* root = tree.Get(tree.Root());
+    root->padding = {5, 6, 7, 8};
+    const auto child = tree.CreateNode(ui::UiClass::View);
+    tree.Get(child)->layout.width = {ui::SizeMode::Fixed, 20};
+    tree.Get(child)->layout.height = {ui::SizeMode::Fixed, 10};
+    tree.Get(child)->layout.margin = {2, 3, 4, 5};
+    tree.Get(child)->layout.layout_gravity = 0x55;
+    tree.Attach(tree.Root(), child);
+
+    ui::LayoutUiTree(tree, {100, 80});
+    CHECK(tree.Get(child)->measured == ui::Size{20, 10});
+    CHECK(tree.Get(child)->screen_frame == ui::Rect{69, 57, 89, 67});
+    CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);
+}
+
+TEST_CASE("FrameLayout wrap content uses intrinsic size within parent bounds") {
+    ui::UiTree tree;
+    const auto child = tree.CreateNode(ui::UiClass::ImageView);
+    tree.Get(child)->intrinsic = {24, 16};
+    tree.Get(child)->padding = {1, 2, 3, 4};
+    tree.Attach(tree.Root(), child);
+    ui::LayoutUiTree(tree, {20, 40});
+    CHECK(tree.Get(child)->measured == ui::Size{20, 22});
+}

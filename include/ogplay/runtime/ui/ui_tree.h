@@ -74,6 +74,22 @@ struct Size final {
     constexpr auto operator<=>(const Size&) const = default;
 };
 
+struct UiMetrics final {
+    std::int32_t width{};
+    std::int32_t height{};
+};
+
+enum class MeasureMode : std::uint8_t {
+    Exactly,
+    AtMost,
+    Unspecified,
+};
+
+struct MeasureSpec final {
+    MeasureMode mode{MeasureMode::Unspecified};
+    std::int32_t size{};
+};
+
 struct Rect final {
     std::int32_t left{};
     std::int32_t top{};
@@ -105,6 +121,7 @@ struct UiNode final {
     LayoutParams layout;
     Insets padding;
     Size measured;
+    Size intrinsic;
     Rect frame;
     Rect screen_frame;
     float alpha{1.0F};
@@ -161,5 +178,7 @@ private:
     NodeMap nodes_;
     std::unordered_map<std::int32_t, std::vector<UiNodeId>> id_index_;
 };
+
+void LayoutUiTree(UiTree& tree, UiMetrics metrics);
 
 }  // namespace ogplay::runtime::ui

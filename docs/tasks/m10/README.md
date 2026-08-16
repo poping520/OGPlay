@@ -10,7 +10,7 @@ M10 按 `docs/design/layout-ui/` 实施有界 Android 4.4 XML UI。依赖方向�
 | [WU-M10-002](WU-M10-002.md) | LUI-2 | 完成 | UiTree 地基 |
 | [WU-M10-003](WU-M10-003.md) | LUI-3 | 完成 | DexVM View binding |
 | [WU-M10-004](WU-M10-004.md) | LUI-4 | 完成 | Inflater 与 merge |
-| WU-M10-005 | LUI-5 | 待办 | MeasureSpec + FrameLayout |
+| [WU-M10-005](WU-M10-005.md) | LUI-5 | 完成 | MeasureSpec + FrameLayout |
 | WU-M10-006 | LUI-6 | 待办 | Horizontal LinearLayout + visibility |
 | WU-M10-007 | LUI-7 | 待办 | Bitmap UI renderer |
 | WU-M10-008 | LUI-8 | 待办 | Present composition |

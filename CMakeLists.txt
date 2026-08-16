@@ -362,6 +362,7 @@ else()
 endif()
 
 add_library(ogplay_runtime
+    src/runtime/ui/ui_layout.cpp
     src/runtime/ui/ui_tree.cpp
     src/runtime/syscall/arm_kernel_helpers.cpp
     src/runtime/bionic/bionic_module_set.cpp

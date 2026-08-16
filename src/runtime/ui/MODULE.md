@@ -17,6 +17,9 @@ SDL、ANGLE 或视频解码。
   标 layout/draw dirty。
 - `Reset`：推进 generation，销毁全部旧 node/id index 并创建新的 content root；旧
   `UiNodeId` 永不重新变为有效。
+- `LayoutUiTree`：以 surface `UiMetrics` 的 EXACTLY root constraint 执行有界
+  MeasureSpec + FrameLayout traversal；fixed/match/wrap、padding/margin、child
+  gravity 与 screen-frame propagation 共用一条路径。
 
 ## 不变量
 
@@ -30,4 +33,5 @@ SDL、ANGLE 或视频解码。
 ## 测试
 
 `tests/runtime/ui_tree_tests.cpp` 锁定 hierarchy 顺序、id 更新、visibility dirty、detach、
-destroy、generation reset 与非法 mutation。
+destroy、generation reset、非法 mutation，以及 FrameLayout fullscreen/bottom/center、
+padding/margin、wrap intrinsic 和 document-order overlap geometry。

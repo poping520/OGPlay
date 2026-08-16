@@ -1,0 +1,138 @@
+schema = 1
+id = "asphalt6.layout_ui_skip"
+
+[profile]
+package = "com.gameloft.android.GAND.GloftAPHP"
+version_code = 132
+so_sha256 = "567a0caf773f8edcc2f81e8fc8b6437b1664cbc22514c22e3019b6f8550377a7"
+abi = "armeabi-v7a"
+
+[[fixture]]
+id = "asphalt6.apk"
+kind = "apk"
+required = true
+
+[[fixture]]
+id = "asphalt6.external"
+kind = "external"
+required = true
+
+[limits]
+startup_frames = 1
+startup_ticks = 1000000000
+startup_wall_time_ms = 60000
+total_frames = 230
+total_ticks = 1000230000
+total_wall_time_ms = 600000
+
+[[checkpoint]]
+id = "video_frame"
+provider = "frame"
+max_frames = 1
+max_ticks = 1000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+[checkpoint.action]
+type = "step"
+frames = 1
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 1
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "video_after_three_seconds"
+provider = "frame"
+max_frames = 189
+max_ticks = 189000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+[checkpoint.action]
+type = "step"
+frames = 189
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 3
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "reveal_skip"
+provider = "frame"
+max_frames = 4
+max_ticks = 4000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+[checkpoint.action]
+type = "click"
+x = 640
+y = 360
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 2
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "skip_visible"
+provider = "frame"
+max_frames = 3
+max_ticks = 3000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+[checkpoint.action]
+type = "step"
+frames = 3
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 3
+sha256 = "c85f6587a5ea55b519b5c8fa0cabca87a5589075f6b20bd85af35d3f2e454280"
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "skip_tapped"
+provider = "frame"
+max_frames = 4
+max_ticks = 4000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+[checkpoint.action]
+type = "click"
+x = 640
+y = 707
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 77
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "post_skip"
+provider = "frame"
+max_frames = 8
+max_ticks = 8000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+[checkpoint.action]
+type = "step"
+frames = 8
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 78
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "clean_shutdown"
+provider = "lifecycle"
+max_frames = 1
+max_ticks = 1000
+wall_time_ms = 60000
+evidence = ["state", "logs"]
+[checkpoint.action]
+type = "shutdown"
+[[checkpoint.assertion]]
+type = "process_exit"
+expected = true

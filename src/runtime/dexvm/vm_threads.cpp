@@ -361,6 +361,7 @@ void VmThreadRuntime::Shutdown() {
     const std::lock_guard guard(impl_->mutex);
     for (auto* record : live) {
         record->host.reset();
+        impl_->vm->UnwindStoppedExecutionContext(record->context);
         impl_->vm->DiscardExecutionContext(record->context);
     }
 }

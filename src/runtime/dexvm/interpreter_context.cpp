@@ -202,6 +202,26 @@ void Interpreter::RequestStop(const InterpreterExecutionContext& context) {
                                                    std::memory_order_relaxed);
 }
 
+void Interpreter::UnwindStoppedExecutionContext(
+    const InterpreterExecutionContext& context) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto& execution = impl_->Execution(context);
+    if (!execution.stop_requested.load(std::memory_order_relaxed)) {
+        throw DexVmError(DexVmErrorReason::invalid_operand,
+                         "cannot unwind an execution context that was not "
+                         "stopped");
+    }
+    if (execution.native_depth != 0U) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "stopped execution context still has live native "
+                         "frames after its host thread joined");
+    }
+    execution.frames.clear();
+    execution.pending_exception = VmObjectRef{};
+    execution.pending_exception_class = DexClassId{};
+    execution.exit_result = VmValue::Void();
+}
+
 VmExecutionLock& Interpreter::ExecutionLock() noexcept {
     return impl_->execution_lock;
 }

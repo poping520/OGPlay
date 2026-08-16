@@ -660,10 +660,6 @@ int RunApkCommand(const int argc, const char* const argv[],
                     [&guest](std::vector<std::uint8_t> rgba8) {
                         guest->PublishSoftwareFrame(std::move(rgba8));
                     },
-                    [&guest] { return guest->TakeLatestFrame(); },
-                    [&guest](std::vector<std::uint8_t> rgba8) {
-                        guest->PublishSoftwareFrame(std::move(rgba8));
-                    },
                     [&guest] {
                         static_cast<void>(guest->InterruptBlockingWaits());
                     },
@@ -794,6 +790,8 @@ int RunApkCommand(const int argc, const char* const argv[],
                               dex_context.get());
                 }
                 if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
+                    *frame = dex_lifecycle->ComposePresentedFrame(
+                        std::move(*frame));
                     window->PresentRgba8(frame->rgba8, frame->width, frame->height);
                     guest_width = frame->width;
                     guest_height = frame->height;

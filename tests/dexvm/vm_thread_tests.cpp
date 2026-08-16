@@ -207,6 +207,20 @@ TEST_CASE("dexvm isAlive tracks a running thread until teardown stops it") {
     CHECK(vm.StatusOf(thread_object) == VmThreadStatus::stopped);
     // Unwinding at teardown is not a failure.
     CHECK(!vm.threads.TakeFailure().has_value());
+    // A second shutdown proves the joined context was fully reaped rather
+    // than leaving an interpreted frame for Interpreter destruction.
+    CHECK_NOTHROW(vm.threads.Shutdown());
+}
+
+TEST_CASE("dexvm stopped-context unwind requires the teardown handshake") {
+    ThreadedVm vm;
+    const auto context = vm.interpreter.CreateExecutionContext();
+    CHECK_THROWS_AS(vm.interpreter.UnwindStoppedExecutionContext(context),
+                    DexVmError);
+    vm.interpreter.RequestStop(context);
+    CHECK_NOTHROW(vm.interpreter.UnwindStoppedExecutionContext(context));
+    CHECK(vm.interpreter.ExecutionSnapshot(context).frame_depth == 0U);
+    CHECK_NOTHROW(vm.interpreter.DiscardExecutionContext(context));
 }
 
 TEST_CASE("dexvm teardown joins every live thread deterministically") {

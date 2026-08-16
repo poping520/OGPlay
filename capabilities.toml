@@ -38,12 +38,17 @@ note = "M10 WU-M10-007/LUI-7 从 resolved UiTree 生成 solid/bitmap/clip render
 [session.ui_composition]
 status = "complete"
 test = "tests/session/ui_compositor_tests.cpp; tests/dexvm/videoview_tests.cpp"
-note = "M10 WU-M10-008/LUI-8 在 lifecycle present 边界取最终 VideoView/GLES base，与 cached UI overlay 做 integer source-over 后重新发布；透明 overlay 保持 base exact，可见 overlay 只改目标 region，video 模块无 UI 依赖"
+note = "M10 WU-M10-008/LUI-8 在 frontend 唯一 frame handoff 调 session ComposePresentedFrame，将最终 VideoView/GLES base 与 cached UI overlay integer source-over；不抢占异步 GL frame store，透明 overlay 保持 base exact，video 模块无 UI 依赖"
 
 [runtime.ui_pointer_dispatch]
 status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp"
 note = "M10 WU-M10-009/LUI-9 以 resolved UiTree 做 clipped reverse-Z hit-test、DOWN capture、OnTouchListener 与未消费 UP-inside click；hidden/removed/outside 取消，no-target 回退 Activity，guest listener identity 由 UiNodeId binding 保证"
+
+[profiles.asphalt6_layout_ui_skip]
+status = "complete"
+test = "data/scenarios/asphalt6.layout_ui_skip.scenario.toml; macOS-arm64 exact local gate 3/3"
+note = "M10 WU-M10-010/LUI-10 以普通 FFmpeg 7 exact APK 场景闭合启动视频超过 3 秒、空白点击走 Activity touch、bottom-center skip golden 可见、点击 skip 进入后续 GLES 帧、no fault 与 clean shutdown；生产代码无 title 分支"
 
 [core.structured_logger]
 status = "complete"
@@ -733,7 +738,7 @@ note = "M8 WU-M8-003 绑定 NewString/GetStringLength/GetStringChars/ReleaseStri
 [runtime.jni_guest_arrays]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "M8 WU-M8-004 绑定 8 类 primitive 的 New/GetRegion/SetRegion/GetElements/ReleaseElements 共 40 槽与 NewObjectArray/GetObjectArrayElement/SetObjectArrayElement 3 槽；Elements 使用独立 4 MiB 有界 guest arena，严格实现 0/JNI_COMMIT/JNI_ABORT、wrong pointer 与 double release，object array 验证 initial/set assignability。GetPrimitiveArrayCritical/ReleasePrimitiveArrayCritical 明确排除；JniObjectArrayStore 仍由 array binder 持有，session 级 Java object-model 统一属后续范围"
+note = "M8 WU-M8-004 绑定 8 类 primitive 的 New/GetRegion/SetRegion/GetElements/ReleaseElements 共 40 槽与 NewObjectArray/GetObjectArrayElement/SetObjectArrayElement 3 槽；Elements 使用独立 4 MiB 有界 guest arena，严格实现 0/JNI_COMMIT/JNI_ABORT、wrong pointer 与 double release，object array 验证 initial/set assignability。M10 WU-M10-010 增加 Get/ReleasePrimitiveArrayCritical 两槽，复用有界 copy lease 并以独立 critical access kind 严格配对；JniObjectArrayStore 仍由 array binder 持有，session 级 Java object-model 统一属后续范围"
 
 [runtime.jni_guest_nonvirtual_calls]
 status = "complete"
@@ -958,7 +963,7 @@ note = "M5 WU-0229 建立与固定 ANGLE GLES/gl.h 完全一致的 GLES1.1 core 
 [runtime.gles1_core_boundary]
 status = "complete"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M5 WU-0230 在 libGLESv1_CM.so 发布隔离的 145 项 core Thumb trap；未绑定调用记账并明确失败，不误入同名 GLES2 handler"
+note = "M5 WU-0230 在 libGLESv1_CM.so 发布隔离的 145 项 core Thumb trap；未绑定调用记账并明确失败，不误入同名 GLES2 handler；M10 WU-M10-010 将真实后续路径命中的 glFlush 转入当前 ANGLE frame，且不触发 present"
 
 [runtime.gles1_viewport_boundary]
 status = "complete"

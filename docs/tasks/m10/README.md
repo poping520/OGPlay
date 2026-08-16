@@ -15,7 +15,7 @@ M10 按 `docs/design/layout-ui/` 实施有界 Android 4.4 XML UI。依赖方向�
 | [WU-M10-007](WU-M10-007.md) | LUI-7 | 完成 | Bitmap UI renderer |
 | [WU-M10-008](WU-M10-008.md) | LUI-8 | 完成 | Present composition |
 | [WU-M10-009](WU-M10-009.md) | LUI-9 | 完成 | Generic UI pointer dispatch |
-| WU-M10-010 | LUI-10 | 待办 | Asphalt 6 P0 exact gate |
+| [WU-M10-010](WU-M10-010.md) | LUI-10 | 完成 | Asphalt 6 P0 exact gate |
 | WU-M10-011 | LUI-11 | 待办 | 通用 LinearLayout + 动态 hierarchy |
 | WU-M10-012 | LUI-12 | 待办 | TextView / Button |
 | WU-M10-013 | LUI-13 | 待办 | RelativeLayout 核心规则 |

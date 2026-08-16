@@ -28,9 +28,6 @@ struct DexActivityLifecycleBindings final {
     // Receives letterboxed surface-sized RGBA frames from the video pump;
     // unset drops the frames (video still advances and completes).
     std::function<void(std::vector<std::uint8_t> rgba8)> publish_video_frame;
-    std::function<std::optional<runtime::AndroidBoundaryFrame>()>
-        take_latest_frame;
-    std::function<void(std::vector<std::uint8_t> rgba8)> publish_composed_frame;
     std::function<void()> interrupt_guest_waits;
     std::function<void()> finalize_guest;
     std::function<void()> close_surface;
@@ -61,6 +58,8 @@ public:
     [[nodiscard]] LifecycleFrameState Suspend();
     [[nodiscard]] LifecycleFrameState Resume();
     [[nodiscard]] LifecycleFrameState StepFrame();
+    [[nodiscard]] runtime::AndroidBoundaryFrame ComposePresentedFrame(
+        runtime::AndroidBoundaryFrame frame);
     void QueueInput(const runtime::AndroidBoundaryInput& input);
     [[nodiscard]] LifecycleFrameState Stop();
     [[nodiscard]] LifecycleFrameState State() const;
@@ -85,7 +84,6 @@ private:
     // Decoded VideoView playback advances with the same frame clock; frames
     // publish through the binding and onCompletion fires on this thread.
     void PumpVideo();
-    void ComposePresentedUiFrame();
     void ServiceActivitySwitch();
     void EnsureRendererCallbacks();
 

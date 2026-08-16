@@ -1473,6 +1473,7 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glDisable",
                            {0x0C11U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glFinish") == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glFlush") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDeleteTextures",
                            {2U, fixture.output.Value()}) == 0U);
         fixture.boundary.CloseManagedSurface();

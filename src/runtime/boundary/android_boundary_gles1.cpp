@@ -639,6 +639,13 @@ void BindAndroidBoundaryGles1Core(
             require_frame("glFinish").Finish();
             return 0U;
         });
+    dispatch.Bind(
+        "glFlush",
+        [require_frame](const std::span<const std::uint32_t>,
+                        const std::uint64_t) {
+            require_frame("glFlush").Flush();
+            return 0U;
+        });
     dispatch.Bind("glSampleCoverage", [require_frame](const auto arguments,
                                                        const auto) {
         require_frame("glSampleCoverage")

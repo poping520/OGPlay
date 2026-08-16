@@ -228,6 +228,13 @@ public:
     // once per instruction, so a guest loop cannot ignore it.
     void RequestStop(const InterpreterExecutionContext& context);
 
+    // Completes teardown after the context's host thread has been joined.
+    // Native/A32 re-entry can observe thread_stopped below an outer Java
+    // frame, so joining is the ownership proof that makes dropping those
+    // unreachable frames safe. A context without a stop request is refused.
+    void UnwindStoppedExecutionContext(
+        const InterpreterExecutionContext& context);
+
     [[nodiscard]] VmExecutionLock& ExecutionLock() noexcept;
     // Session-wide object monitors: owner, recursion and wait set, keyed by
     // execution context token (04 §4).

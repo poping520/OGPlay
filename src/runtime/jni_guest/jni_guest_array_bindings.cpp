@@ -208,15 +208,56 @@ public:
 
     [[nodiscard]] std::uint32_t Acquire(
         const JniGuestCallFrame& frame, const JniPrimitiveKind kind,
-        const std::size_t element_size, const char* operation) {
+        const std::size_t element_size, const char* operation,
+        const JniArrayAccessKind access_kind = JniArrayAccessKind::elements) {
         const auto array = ResolvePrimitive(
             *environment_, *arrays_, frame, kind, operation);
+        return AcquireResolved(frame, array, kind, element_size, access_kind);
+    }
+
+    [[nodiscard]] std::uint32_t AcquireCritical(
+        const JniGuestCallFrame& frame) {
+        constexpr auto operation = "GetPrimitiveArrayCritical";
+        const auto array = Resolve(
+            *environment_, frame, frame.registers[1], operation);
+        const auto kind = arrays_->Kind(array);
+        const auto binding = std::ranges::find(
+            kPrimitiveBindings, kind, &PrimitiveBinding::kind);
+        if (binding == kPrimitiveBindings.end()) {
+            throw JniGuestBindingError(
+                "GetPrimitiveArrayCritical received an unknown array type");
+        }
+        return AcquireResolved(frame, array, kind, binding->element_size,
+                               JniArrayAccessKind::critical);
+    }
+
+    void ReleaseCritical(const JniGuestCallFrame& frame) {
+        constexpr auto operation = "ReleasePrimitiveArrayCritical";
+        const auto array = Resolve(
+            *environment_, frame, frame.registers[1], operation);
+        ReleaseResolved(frame, array, arrays_->Kind(array), operation,
+                        JniArrayAccessKind::critical);
+    }
+
+    void Release(const JniGuestCallFrame& frame,
+                 const JniPrimitiveKind kind, const char* operation) {
+        const auto array = ResolvePrimitive(
+            *environment_, *arrays_, frame, kind, operation);
+        ReleaseResolved(frame, array, kind, operation,
+                        JniArrayAccessKind::elements);
+    }
+
+private:
+    [[nodiscard]] std::uint32_t AcquireResolved(
+        const JniGuestCallFrame& frame, const JniObjectIdentity array,
+        const JniPrimitiveKind kind, const std::size_t element_size,
+        const JniArrayAccessKind access_kind) {
         const auto is_copy = memory::GuestAddress{frame.registers[2]};
         if (!is_copy.IsNull()) {
             address_space_->Validate(
                 {is_copy, 1U}, memory::AccessType::write, frame.thread_id);
         }
-        auto access = arrays_->Acquire(array, JniArrayAccessKind::elements);
+        auto access = arrays_->Acquire(array, access_kind);
         const auto bytes = Encode(access.data);
         std::scoped_lock lock(mutex_);
         try {
@@ -229,21 +270,20 @@ public:
                 address_space_->Write8(is_copy, 1U, frame.thread_id);
             }
             leases_.push_back({pointer, allocation_size, bytes.size(), array,
-                               kind, element_size, access.token,
+                               kind, access_kind, element_size, access.token,
                                std::move(access.data)});
             return pointer.Value();
         } catch (...) {
-            arrays_->Release(array, access.token,
-                             JniArrayAccessKind::elements, access.data,
+            arrays_->Release(array, access.token, access_kind, access.data,
                              JniArrayReleaseMode::abort);
             throw;
         }
     }
 
-    void Release(const JniGuestCallFrame& frame,
-                 const JniPrimitiveKind kind, const char* operation) {
-        const auto array = ResolvePrimitive(
-            *environment_, *arrays_, frame, kind, operation);
+    void ReleaseResolved(const JniGuestCallFrame& frame,
+                         const JniObjectIdentity array,
+                         const JniPrimitiveKind kind, const char* operation,
+                         const JniArrayAccessKind access_kind) {
         const auto pointer = memory::GuestAddress{frame.registers[2]};
         const auto raw_mode = std::bit_cast<JniInt>(frame.registers[3]);
         JniArrayReleaseMode mode{};
@@ -257,9 +297,10 @@ public:
         }
         std::scoped_lock lock(mutex_);
         const auto found = std::ranges::find_if(
-            leases_, [pointer, array, kind](const Lease& lease) {
+            leases_, [pointer, array, kind, access_kind](const Lease& lease) {
                 return lease.pointer == pointer && lease.array == array &&
-                       lease.kind == kind;
+                       lease.kind == kind &&
+                       lease.access_kind == access_kind;
             });
         if (found == leases_.end()) {
             throw JniGuestBindingError(
@@ -277,18 +318,17 @@ public:
             }
             data = Decode(kind, bytes);
         }
-        arrays_->Release(array, found->token,
-                         JniArrayAccessKind::elements, data, mode);
+        arrays_->Release(array, found->token, access_kind, data, mode);
         if (mode != JniArrayReleaseMode::commit) leases_.erase(found);
     }
 
-private:
     struct Lease final {
         memory::GuestAddress pointer;
         std::size_t allocation_size{};
         std::size_t byte_size{};
         JniObjectIdentity array;
         JniPrimitiveKind kind{};
+        JniArrayAccessKind access_kind{JniArrayAccessKind::elements};
         std::size_t element_size{};
         std::uint64_t token{};
         JniPrimitiveArrayData original;
@@ -461,6 +501,18 @@ void BindJniGuestArraySlots(
                 return JniGuestCallResult{};
             });
     }
+
+    dispatcher.BindEnvironment(
+        Slot("GetPrimitiveArrayCritical"),
+        [leases](const JniGuestCallFrame& frame) {
+            return Word(leases->AcquireCritical(frame));
+        });
+    dispatcher.BindEnvironment(
+        Slot("ReleasePrimitiveArrayCritical"),
+        [leases](const JniGuestCallFrame& frame) {
+            leases->ReleaseCritical(frame);
+            return JniGuestCallResult{};
+        });
 
     dispatcher.BindEnvironment(
         Slot("NewObjectArray"),

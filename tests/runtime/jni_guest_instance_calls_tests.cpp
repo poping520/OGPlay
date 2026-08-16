@@ -241,6 +241,24 @@ TEST_CASE("guest JNI primitive arrays preserve region and lease semantics") {
         JniGuestBindingError);
     static_cast<void>(fixture.Call(
         "ReleaseIntArrayElements", array.Value(), second_lease, 2U));
+
+    const auto critical = fixture.Call(
+        "GetPrimitiveArrayCritical", array.Value(),
+        fixture.output.Add(0x20U).Value());
+    REQUIRE(critical != 0U);
+    CHECK(fixture.bus.Read8(fixture.output.Add(0x20U)) == 1U);
+    fixture.bus.Write32(ogplay::memory::GuestAddress{critical}, 44U);
+    static_cast<void>(fixture.Call(
+        "ReleasePrimitiveArrayCritical", array.Value(), critical, 0U));
+    fixture.Write64(fixture.output.Add(0x300U).Value());
+    static_cast<void>(
+        fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x300U)) == 44U);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.Call(
+            "ReleasePrimitiveArrayCritical", array.Value(), critical, 0U)),
+        "ReleasePrimitiveArrayCritical pointer does not match an active lease",
+        JniGuestBindingError);
 }
 
 TEST_CASE("guest JNI object arrays enforce assignability and null semantics") {

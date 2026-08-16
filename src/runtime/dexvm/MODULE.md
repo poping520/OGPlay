@@ -38,7 +38,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   帧栈、pending exception、tick、返回值与 monitor recursion，同时共享 linker、
   object model 与 intrinsic 目录。默认 `Call` 保持原单线程 context。
   `RequestStop(context)` 是 teardown 握手：解释器每条指令检查一次，命中即以
-  `thread_stopped` 展开出全部帧，不强杀线程。
+  `thread_stopped` 离开执行；宿主线程 join 后
+  `UnwindStoppedExecutionContext` 清理由 native/A32 重入边界留下的不可达外层帧，
+  未请求停止或仍有 native frame 均明确拒绝，普通 `DiscardExecutionContext`
+  继续禁止丢弃活动栈。
 - `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
   `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
   `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复；可注入
@@ -63,8 +66,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   模型/JNI 身份共享，子线程与 root 看到同一个对象世界。`Start` 在调用方线程
   解析 `run()`（无 `run()` 或二次 start 明确抛
   `IllegalThreadStateException`）、`Join` 释放执行锁后停泊、`Interrupt` 置位
-  并唤醒、`Shutdown` 先 RequestStop 再 join 全部宿主线程（幂等，记录保留供
-  事后查询）。未捕获异常与 VM 错误记入 `TakeFailure()`，由生命周期驱动在帧
+  并唤醒、`Shutdown` 先 RequestStop、join 全部宿主线程，再显式展开 stopped
+  context（幂等，记录保留供事后查询）。未捕获异常与 VM 错误记入
+  `TakeFailure()`，由生命周期驱动在帧
   边界上报，对齐设备上的进程级默认 handler，而不是丢给 `join()` 的调用方。
   线程持有 guest native 帧时拒绝停泊（`blocking_in_native` +
   `dexvm.threads.block_in_native` 记账）：A32 执行器只有一条 root guest 栈，

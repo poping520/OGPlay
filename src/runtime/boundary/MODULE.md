@@ -116,9 +116,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   编译/链接失败通过真实查询值表达。
 - GLES2 framebuffer/renderbuffer 批次真实转发生命周期、绑定、storage、两类 attachment、
   status 与 mipmap;第五个 `glFramebufferTexture2D` 参数必须从 A32 guest 栈读取。
-- GLES2 blend/raster 批次真实转发 blend color/equation、sample coverage 与 flush;混合
-  链接 guest 的 core `glSampleCoverage` 也必须在 GLES1 dispatch 转入相同 ANGLE context,
-  flush 不得触发 managed/guest surface present。
+- GLES2 blend/raster 批次真实转发 blend color/equation、sample coverage 与 flush；混合
+  链接 guest 的 core `glSampleCoverage` 与 `glFlush` 也必须在 GLES1 dispatch 转入相同
+  ANGLE context，flush 不得触发 managed/guest surface present。
 - vertex attribute 延迟保存调用时 array-buffer binding;client array 在 draw 时按
   first/count 或 guest 索引最大值完整预检并上传内部 VBO/EBO,随后恢复 guest buffer
   binding。uniform 标量保持位模式,矩阵/vector 批量入口复用 IDL 计数,constant

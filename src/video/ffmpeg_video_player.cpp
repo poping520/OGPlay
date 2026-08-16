@@ -14,6 +14,7 @@ namespace {
 using ffabi::Api;
 
 constexpr std::size_t kMaxQueuedVideoFrames = 64U;
+constexpr std::size_t kVideoBackpressureThreshold = 48U;
 constexpr std::size_t kMaxBufferedPcmSamples = 8U * 1024U * 1024U;
 
 [[nodiscard]] std::int64_t RescaleToMs(std::int64_t value,
@@ -247,6 +248,10 @@ std::int64_t FfmpegVideoPlayer::FramePtsMs(const ffabi::Frame* frame,
 
 void FfmpegVideoPlayer::ReceiveQueuedVideoFrames() {
     while (true) {
+        // Audio and video share one demux cursor. Audio reads may run ahead
+        // of the presentation clock, so leave decoded output in the codec
+        // until TakeFrame drains the bounded host queue.
+        if (video_queue_.size() >= kMaxQueuedVideoFrames) return;
         ffabi::Frame* frame = api_->av_frame_alloc();
         if (frame == nullptr) {
             throw VideoPlayerError("ffmpeg frame allocation failed");
@@ -260,10 +265,6 @@ void FfmpegVideoPlayer::ReceiveQueuedVideoFrames() {
                 return;
             }
             throw VideoPlayerError("ffmpeg video decode failed");
-        }
-        if (video_queue_.size() >= kMaxQueuedVideoFrames) {
-            api_->av_frame_free(&frame);
-            throw VideoPlayerError("ffmpeg video frame queue overflow");
         }
         video_queue_.push_back(frame);
     }
@@ -466,6 +467,7 @@ std::size_t FfmpegVideoPlayer::ReadPcm(std::span<std::int16_t> interleaved) {
             "ffmpeg player pcm span not a multiple of channel count");
     }
     while (pcm_buffer_.size() < interleaved.size() && !audio_eof_) {
+        if (video_queue_.size() >= kVideoBackpressureThreshold) break;
         if (!ReadAndRoutePacket()) {
             DrainAudioFrames();
             if (demux_eof_) break;

@@ -35,8 +35,10 @@
 - FFmpeg 只镜像 7.x（avutil 59 / avcodec 61 / avformat 61 / swscale 8 /
   swresample 5）ABI 的前导字段，加载器拒绝其他主版本；五个库必须来自同一
   目录，缺一即整体不可用。
-- FFmpeg 后端内部队列有界：视频待取帧 ≤ 64、PCM 缓冲 ≤ 8M 样本，越界抛错
-  而不是静默丢弃。
+- FFmpeg 后端内部队列有界：视频待取帧 ≤ 64、PCM 缓冲 ≤ 8M 样本。音频拉取与
+  视频共用 demux cursor，视频队列达到 48 帧时暂停音频侧继续 demux，保留 decoder
+  headroom；receive 达 64 帧时施加背压等待 `TakeFrame` 消费，不丢帧、不伪造 EOF。
+  PCM 上限及其他真实越界仍明确抛错。
 - 每帧 RGBA 缓冲大小恒等于 `width * height * 4`；PCM span 长度必须是声道数
   的整数倍。
 

@@ -170,7 +170,8 @@ constexpr std::string_view kArrayTypes[]{
         "GetStringUTFChars", "ReleaseStringUTFChars", "GetStringUTFRegion",
         "NewString", "GetStringLength", "GetStringChars", "ReleaseStringChars",
         "GetStringRegion", "GetArrayLength", "NewObjectArray",
-        "GetObjectArrayElement", "SetObjectArrayElement"};
+        "GetObjectArrayElement", "SetObjectArrayElement",
+        "GetPrimitiveArrayCritical", "ReleasePrimitiveArrayCritical"};
     for (const auto type : kCallTypes) {
         for (const auto variant : kCallVariants) {
             const auto suffix =
@@ -247,7 +248,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     CHECK(Missing(expected_environment, bound_environment).empty());
     CHECK(Missing(bound_environment, expected_environment).empty());
     CHECK(bound_environment == expected_environment);
-    CHECK(bound_environment.size() == 212U);
+    CHECK(bound_environment.size() == 214U);
 
     const std::set<std::string> expected_java_vm{
         "AttachCurrentThread", "AttachCurrentThreadAsDaemon",
@@ -258,9 +259,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     CHECK(bound_java_vm == expected_java_vm);
     CHECK(bound_java_vm.size() == 4U);
 
-    for (const auto name : {"GetPrimitiveArrayCritical",
-                            "ReleasePrimitiveArrayCritical",
-                            "GetStringCritical", "ReleaseStringCritical",
+    for (const auto name : {"GetStringCritical", "ReleaseStringCritical",
                             "NewDirectByteBuffer", "GetDirectBufferAddress",
                             "GetDirectBufferCapacity", "FromReflectedMethod",
                             "FromReflectedField", "ToReflectedMethod",

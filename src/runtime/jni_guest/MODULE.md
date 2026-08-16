@@ -23,8 +23,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   项按名称记账并失败,未知 trap 地址不得吞掉。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family,随后封口 dispatcher;
-  aggregate contract 以精确 slot 集合等价(当前 212 个 JNIEnv 与 4 个 JavaVM)机器验证,
-  数量本身只是辅助诊断;Critical array/string、DirectByteBuffer、Reflection、FatalError 与
+  aggregate contract 以精确 slot 集合等价(当前 214 个 JNIEnv 与 4 个 JavaVM)机器验证,
+  数量本身只是辅助诊断;Critical string、DirectByteBuffer、Reflection、FatalError 与
   DestroyJavaVM 属于显式 expected-unbound 清单,不得为提高覆盖率注册假 handler。Core
   binder 不得再隐式注册其他 family。引用、异常和线程状态复用同一环境,guest 输出指针在
   VM 状态变更前预检;非空 attach arguments 在实现其结构前明确失败。
@@ -59,10 +59,12 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   string store。UTF-16 长度与 region 以 code unit 计,NewString 完整预检 guest input 并
   在 reference 发布失败时删除 semantic object;坏引用/range/输出、wrong-string/double
   release 与 arena exhaustion 明确失败,Critical 两槽继续 unbound。
-- primitive array 40 槽由统一 binder 批量接入 `JniPrimitiveArrayStore`;8 类 New/Region/
+- primitive array 42 槽由统一 binder 批量接入 `JniPrimitiveArrayStore`;8 类 New/Region/
   Elements 都按 little-endian ARM32 ABI 搬运,第五个 region buffer 从 guest 栈读取并在
   semantic mutation 前完整预检。Elements 使用独立 4 MiB 有界 guest arena,严格实现
-  `0`/`JNI_COMMIT`/`JNI_ABORT`、wrong pointer/double release 与类型配对。object array
+  `0`/`JNI_COMMIT`/`JNI_ABORT`、wrong pointer/double release 与类型配对；Critical 两槽
+  复用相同有界 copy lease，但以独立 access kind 配对，不能与 Elements 交叉 release。
+  object array
   3 槽复用 `JniObjectArrayStore` 并验证 initial/set assignability;`GetArrayLength` 通过
   显式 `Contains` 区分 object/primitive store,不使用异常探测。创建后 local reference
   发布失败必须删除 semantic array。

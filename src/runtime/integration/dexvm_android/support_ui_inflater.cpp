@@ -129,19 +129,37 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
     }
 }
 
-[[nodiscard]] std::optional<DecodedImage> DecodeDrawable(
-    const DexVmAndroidContext& context, const std::uint32_t drawable_id) {
-    if (drawable_id == 0) return std::nullopt;
+[[nodiscard]] std::shared_ptr<const ui::UiBitmap> DecodeDrawable(
+    DexVmAndroidContext& context, const std::uint32_t drawable_id) {
+    if (drawable_id == 0) return {};
+    if (const auto cached = context.ui_bitmaps.find(drawable_id);
+        cached != context.ui_bitmaps.end()) {
+        return cached->second;
+    }
     const auto* drawable = context.arsc.FindById(drawable_id);
     if (drawable == nullptr || !drawable->string_value.has_value()) {
-        return std::nullopt;
+        return {};
     }
     try {
         const auto bytes = loader::ReadApkEntry(
             context.apk_bytes, context.archive, *drawable->string_value);
-        return DecodeImageToArgb(bytes);
+        const auto decoded = DecodeImageToArgb(bytes);
+        if (!decoded.has_value()) return {};
+        auto bitmap = std::make_shared<ui::UiBitmap>();
+        bitmap->width = decoded->width;
+        bitmap->height = decoded->height;
+        bitmap->rgba8.reserve(decoded->argb.size() * 4U);
+        for (const auto argb : decoded->argb) {
+            bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb >> 16U));
+            bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb >> 8U));
+            bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb));
+            bitmap->rgba8.push_back(static_cast<std::uint8_t>(argb >> 24U));
+        }
+        const auto immutable = std::shared_ptr<const ui::UiBitmap>{bitmap};
+        context.ui_bitmaps.emplace(drawable_id, immutable);
+        return immutable;
     } catch (const std::exception&) {
-        return std::nullopt;
+        return {};
     }
 }
 
@@ -252,7 +270,7 @@ dexvm::VmObjectRef InflateUiElements(
                                    ? element.padding_top
                                    : state.padding.top;
             if (const auto image = DecodeDrawable(context, drawable_id);
-                image.has_value()) {
+                image != nullptr) {
                 context.ui_tree.Get(node)->intrinsic = {image->width,
                                                         image->height};
                 fact.measured_width = image->width;

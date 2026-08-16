@@ -37,6 +37,8 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   geometry 只写 `runtime/ui`，guest click/touch listener 只在本层以 UiNodeId 为 key 保存。
 - drawable decode 的 intrinsic size 写入 UiNode；click adapter 只消费 `screen_frame`，旧
   fullscreen/edge-row `layout_views` bounds 推导已删除。
+- drawable resource 按 id 解码一次并缓存为 RGBA `UiBitmap`，renderer 不读取 APK、arsc
+  或 guest object。
   `findViewById/getId/setId` 必须经双向 binding 返回/修改同一 object/node identity；
   content generation reset 同时清空两向 binding 与 listener，旧 node 不得继续可见。
 - `UiWidgetRegistry` 是 XML tag → dex descriptor/UiClass 唯一目录；inflater 只解释 generic

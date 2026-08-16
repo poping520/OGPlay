@@ -23,6 +23,7 @@
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/framework/preferences_xml.h"
 #include "ogplay/runtime/ui/ui_tree.h"
+#include "ogplay/runtime/ui/ui_renderer.h"
 #include "ogplay/video/video_player.h"
 
 namespace ogplay::runtime {
@@ -253,6 +254,8 @@ struct DexVmAndroidContext final {
     // hierarchy/state/geometry; this integration layer alone owns guest refs
     // and callbacks keyed by UiNodeId.
     ui::UiTree ui_tree;
+    ui::UiBitmapCache ui_bitmaps;
+    ui::UiOverlayRenderer ui_overlay_renderer;
     std::unordered_map<std::uint64_t, ui::UiNodeId> object_to_ui_node;
     std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
         ui_node_to_object;

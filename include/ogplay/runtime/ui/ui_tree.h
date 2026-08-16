@@ -118,6 +118,7 @@ struct UiNode final {
     Orientation orientation{Orientation::Horizontal};
     std::uint32_t gravity{};
     std::uint32_t image_resource_id{};
+    std::optional<std::uint32_t> background_color;
     LayoutParams layout;
     Insets padding;
     Size measured;

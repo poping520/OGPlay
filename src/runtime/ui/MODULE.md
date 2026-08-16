@@ -22,6 +22,9 @@ SDL、ANGLE 或视频解码。
   gravity 与 screen-frame propagation 共用一条路径。
 - Horizontal `LinearLayout`：按 document order 累加非 GONE child 主轴尺寸，parent
   gravity 定位整行，child layout_gravity 覆盖交叉轴；INVISIBLE 保留 geometry。
+- `BuildUiRenderList` / `RasterizeUiOverlay`：从 resolved tree 生成 solid/bitmap/clip 命令，
+  以整数 source-over 输出透明 RGBA8；`UiOverlayRenderer` 仅在 generation、metrics 或
+  draw dirty 改变时重建。
 
 ## 不变量
 
@@ -38,3 +41,5 @@ SDL、ANGLE 或视频解码。
 destroy、generation reset、非法 mutation，以及 FrameLayout fullscreen/bottom/center、
 padding/margin、wrap intrinsic、document-order overlap geometry，以及 horizontal row 的
 GONE/INVISIBLE 重排。
+`tests/runtime/ui_renderer_tests.cpp` 锁定透明、bitmap、alpha overlap、Z-order、clip、
+visibility 与 draw cache。

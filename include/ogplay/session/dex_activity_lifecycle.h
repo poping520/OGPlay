@@ -103,6 +103,7 @@ private:
     // that lands on a visible view with an OnClickListener is consumed by
     // that view; the up inside it fires onClick). 0 = activity-owned.
     std::uint64_t click_candidate_{};
+    bool touch_listener_consumed_{};
     bool guest_finalized_{};
     // Renderer callbacks fire once when the interpreted glue registers a
     // renderer; installer phases run frames without one.

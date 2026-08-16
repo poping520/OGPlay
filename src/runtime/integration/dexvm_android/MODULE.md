@@ -39,6 +39,8 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   fullscreen/edge-row `layout_views` bounds 推导已删除。
 - drawable resource 按 id 解码一次并缓存为 RGBA `UiBitmap`，renderer 不读取 APK、arsc
   或 guest object。
+- pointer dispatch 在 dirty 时先 traversal，按 clipped reverse draw order 选择 topmost
+  enabled/visible listener node；OnTouchListener 与 click listener 均以 UiNodeId 调 guest。
   `findViewById/getId/setId` 必须经双向 binding 返回/修改同一 object/node identity；
   content generation reset 同时清空两向 binding 与 listener，旧 node 不得继续可见。
 - `UiWidgetRegistry` 是 XML tag → dex descriptor/UiClass 唯一目录；inflater 只解释 generic

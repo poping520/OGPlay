@@ -250,6 +250,29 @@ TEST_CASE("visible button with a listener receives the click") {
     CHECK(vm.CallStaticInt("getClicks") == 1);
 }
 
+TEST_CASE("UI hit test chooses the topmost resolved clickable node") {
+    ClickVm vm;
+    vm.CallOn(vm.skip_button, "setOnClickListener",
+              "(Landroid/view/View$OnClickListener;)V",
+              {VmValue::Ref(vm.NewListener())});
+    const auto top_view = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/ImageButton;");
+    const auto top_node = vm.context->ui_tree.CreateNode(ui::UiClass::ImageButton);
+    BindViewToUiNode(*vm.context, top_view, top_node);
+    vm.context->ui_tree.Get(top_node)->layout.width = {ui::SizeMode::Fixed, 20};
+    vm.context->ui_tree.Get(top_node)->layout.height = {ui::SizeMode::Fixed, 10};
+    vm.context->ui_tree.Get(top_node)->layout.layout_gravity = 0x51;
+    vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), top_node);
+    vm.CallOn(top_view, "setOnClickListener",
+              "(Landroid/view/View$OnClickListener;)V",
+              {VmValue::Ref(vm.NewListener())});
+    CHECK(FindClickableViewAt(*vm.context, 50.0F, 95.0F) == top_view.Value());
+    vm.context->ui_tree.SetVisibility(top_node, ui::Visibility::Invisible);
+    CHECK(FindClickableViewAt(*vm.context, 50.0F, 95.0F) ==
+          vm.skip_button.Value());
+    CHECK_FALSE(ViewContainsPoint(*vm.context, top_view.Value(), 50.0F, 95.0F));
+}
+
 TEST_CASE("View id and Activity lookup share the bound guest identity") {
     ClickVm vm;
     CHECK(vm.CallOn(vm.skip_button, "getId", "()I").AsInt() == -1);

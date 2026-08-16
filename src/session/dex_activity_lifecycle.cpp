@@ -255,16 +255,24 @@ void DexActivityLifecycle::DispatchInput() {
             const auto hit = runtime::FindClickableViewAt(
                 *bindings_.context, pointer_x_, pointer_y_);
             click_candidate_ = hit.value_or(0U);
+            touch_listener_consumed_ = false;
         }
         if (click_candidate_ != 0U) {
+            const auto touch = runtime::InvokeViewOnTouch(
+                vm, *bindings_.context, click_candidate_, action,
+                pointer_x_, pointer_y_);
+            if (touch.error.has_value()) Fail(*touch.error);
+            touch_listener_consumed_ = touch_listener_consumed_ || touch.handled;
             if (action == kMotionActionUp) {
                 const auto target = std::exchange(click_candidate_, 0U);
-                if (runtime::ViewContainsPoint(*bindings_.context, target,
+                if (!touch_listener_consumed_ &&
+                    runtime::ViewContainsPoint(*bindings_.context, target,
                                                pointer_x_, pointer_y_)) {
                     const auto error = runtime::InvokeViewOnClick(
                         vm, *bindings_.context, target);
                     if (error.has_value()) Fail(*error);
                 }
+                touch_listener_consumed_ = false;
             }
             continue;  // the owning view consumed the gesture
         }

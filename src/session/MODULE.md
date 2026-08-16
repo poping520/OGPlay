@@ -39,6 +39,8 @@
   listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。
 - 每帧 present 后由 session 取回最终 base/video frame，与 cached UI overlay 做整数
   source-over 后重新发布；screenshot/window 只读取合成结果，video 不依赖 UI。
+- touch DOWN 固定 capture target；MOVE/UP 派发 OnTouchListener，未消费的 UP-inside 才
+  onClick；隐藏/删除/移出 target 取消 click，无 target 回退 Activity.onTouchEvent。
 - `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
   校验 required mount、manifest 和 working directory；
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。

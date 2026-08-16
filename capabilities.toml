@@ -40,6 +40,11 @@ status = "complete"
 test = "tests/session/ui_compositor_tests.cpp; tests/dexvm/videoview_tests.cpp"
 note = "M10 WU-M10-008/LUI-8 在 lifecycle present 边界取最终 VideoView/GLES base，与 cached UI overlay 做 integer source-over 后重新发布；透明 overlay 保持 base exact，可见 overlay 只改目标 region，video 模块无 UI 依赖"
 
+[runtime.ui_pointer_dispatch]
+status = "complete"
+test = "tests/dexvm/widget_click_tests.cpp"
+note = "M10 WU-M10-009/LUI-9 以 resolved UiTree 做 clipped reverse-Z hit-test、DOWN capture、OnTouchListener 与未消费 UP-inside click；hidden/removed/outside 取消，no-target 回退 Activity，guest listener identity 由 UiNodeId binding 保证"
+
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"

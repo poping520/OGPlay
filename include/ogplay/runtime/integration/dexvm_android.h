@@ -385,6 +385,14 @@ void ResetViewUiState(DexVmAndroidContext& context);
 [[nodiscard]] bool ViewContainsPoint(DexVmAndroidContext& context,
                                      std::uint64_t handle, float x, float y);
 
+struct ViewTouchResult final {
+    bool handled{};
+    std::optional<std::string> error;
+};
+[[nodiscard]] ViewTouchResult InvokeViewOnTouch(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    std::uint64_t handle, std::int32_t action, float x, float y);
+
 // Invokes the registered OnClickListener.onClick(view) on the guest thread.
 // Returns a rendered message when the guest callback raised.
 [[nodiscard]] std::optional<std::string>

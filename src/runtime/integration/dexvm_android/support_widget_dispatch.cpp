@@ -1,6 +1,7 @@
 // Widget click dispatch over the UiTree's most recent resolved geometry.
 
 #include <optional>
+#include <vector>
 
 #include "shared.h"
 
@@ -54,9 +55,12 @@ void EnsureLayout(DexVmAndroidContext& context) {
             return hit;
         }
     }
-    const auto listener = context.ui_click_listeners.find(id);
-    return listener != context.ui_click_listeners.end() &&
-                   listener->second.IsValid()
+    const auto click = context.ui_click_listeners.find(id);
+    const auto touch = context.ui_touch_listeners.find(id);
+    return ((click != context.ui_click_listeners.end() &&
+             click->second.IsValid()) ||
+            (touch != context.ui_touch_listeners.end() &&
+             touch->second.IsValid()))
                ? std::optional<ui::UiNodeId>{id}
                : std::nullopt;
 }
@@ -81,9 +85,41 @@ bool ViewContainsPoint(DexVmAndroidContext& context,
                        const float y) {
     android_intrinsics::EnsureLayout(context);
     const auto node = FindViewUiNode(context, handle);
-    return node.has_value() && context.ui_tree.Get(*node) != nullptr &&
+    if (!node.has_value()) return false;
+    const auto* state = context.ui_tree.Get(*node);
+    return state != nullptr && state->visibility == ui::Visibility::Visible &&
+           state->enabled &&
            android_intrinsics::Contains(
-               context.ui_tree.Get(*node)->screen_frame, x, y);
+               state->screen_frame, x, y);
+}
+
+ViewTouchResult InvokeViewOnTouch(dexvm::Interpreter& vm,
+                                  DexVmAndroidContext& context,
+                                  const std::uint64_t handle,
+                                  const std::int32_t action, const float x,
+                                  const float y) {
+    const auto node = FindViewUiNode(context, handle);
+    if (!node.has_value() || context.ui_tree.Get(*node) == nullptr) return {};
+    const auto found = context.ui_touch_listeners.find(*node);
+    if (found == context.ui_touch_listeners.end() ||
+        !found->second.IsValid()) return {};
+    const auto view = ViewObjectForUiNode(context, *node);
+    const auto event = MakeMotionEvent(vm, action, x, y, 0);
+    auto& linker = vm.Linker();
+    const auto listener_class = vm.Model().ObjectClass(found->second);
+    const auto index = linker.FindVtableIndex(
+        listener_class, "onTouch",
+        "(Landroid/view/View;Landroid/view/MotionEvent;)Z");
+    if (!index.has_value()) return {false, "touch listener has no onTouch method"};
+    const auto outcome = vm.Call(
+        linker.Class(listener_class).vtable[*index],
+        std::vector<dexvm::VmValue>{dexvm::VmValue::Ref(found->second),
+                                    dexvm::VmValue::Ref(view),
+                                    dexvm::VmValue::Ref(event)});
+    if (outcome.exception.IsValid()) {
+        return {false, "onTouch raised: " + outcome.exception_message};
+    }
+    return {outcome.value.AsInt() != 0, std::nullopt};
 }
 
 std::optional<std::string> InvokeViewOnClick(dexvm::Interpreter& vm,

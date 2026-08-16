@@ -39,8 +39,9 @@
   listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。
 - frontend 取回最终 present frame 后必须交 session `ComposePresentedFrame` 与 cached UI
   overlay 做整数 source-over；screenshot/window 只读取返回结果，video 不依赖 UI。
-- touch DOWN 固定 capture target；MOVE/UP 派发 OnTouchListener，未消费的 UP-inside 才
-  onClick；隐藏/删除/移出 target 取消 click，无 target 回退 Activity.onTouchEvent。
+- touch DOWN 的 gesture ownership 与 click eligibility 独立：touch-only false 立即回退
+  Activity，touch-only true 保持 capture；带 click listener 时未消费的 UP-inside 才 onClick，
+  touch 消费则禁止 click。隐藏/删除/UP-outside 取消 click，hit-test 仍只读 UiTree frame。
 - `AssembleProfileVfs`：把已导入数据与 Profile mount 精确配对，在全新 VFS 中挂载并
   校验 required mount、manifest 和 working directory；
   `FlushProfileVfsAtLifecycleBoundary` 是 pause/clean stop 共用的 `FlushAll` 适配点。
@@ -81,4 +82,5 @@
 
 `tests/session/` 覆盖 v2 schema、入口/预置、精确身份、VFS、生命周期、输入与确定性；
 `ui_compositor_tests.cpp` 锁定透明 overlay 基线不变和局部合成 exact pixels；
+`tests/dexvm/widget_click_tests.cpp` 锁定 touch/click ownership 四组合及取消路径；
 `tools/validate_title_profiles.py` 提供独立目录门禁。

@@ -33,7 +33,7 @@ note = "M10 WU-M10-006/LUI-6 horizontal LinearLayout 按 document order 计算�
 [runtime.ui_rgba_renderer]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp"
-note = "M10 WU-M10-007/LUI-7 从 resolved UiTree 生成 solid/bitmap/clip render list，以 deterministic integer source-over raster 透明 RGBA8；document-order Z、node alpha、INVISIBLE/GONE 与 draw-dirty generation cache 有 exact pixel tests，drawable 按 resource id 解码缓存"
+note = "M10 WU-M10-007/LUI-7 从 resolved UiTree 生成 solid/bitmap/clip render list，以 deterministic integer source-over raster 透明 RGBA8；WU-M10-016 将 layout/draw dirty 消费拆分，layout 后文字与 GONE mutation 均强制 cache rebuild；drawable 按 resource id 解码缓存"
 
 [session.ui_composition]
 status = "complete"
@@ -43,7 +43,7 @@ note = "M10 WU-M10-008/LUI-8 在 frontend 唯一 frame handoff 调 session Compo
 [runtime.ui_pointer_dispatch]
 status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp"
-note = "M10 WU-M10-009/LUI-9 以 resolved UiTree 做 clipped reverse-Z hit-test、DOWN capture、OnTouchListener 与未消费 UP-inside click；hidden/removed/outside 取消，no-target 回退 Activity，guest listener identity 由 UiNodeId binding 保证"
+note = "M10 WU-M10-009/LUI-9 以 resolved UiTree 做 clipped reverse-Z hit-test；WU-M10-016 分离 gesture ownership/click eligibility：touch-only false 回退 Activity、true 消费，touch+click 仅在 touch=false 的 UP-inside click；hidden/removed/outside 取消，guest listener identity 由 UiNodeId binding 保证"
 
 [profiles.asphalt6_layout_ui_skip]
 status = "complete"
@@ -53,12 +53,12 @@ note = "M10 WU-M10-010/LUI-10 以普通 FFmpeg 7 exact APK 场景闭合启动视
 [runtime.ui_general_linear_layout]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "M10 WU-M10-011/LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite weight 与主/交叉轴 gravity；Java LayoutParams、动态 add/remove/removeViews/update、setContentView(View) subtree 与 geometry getter 共用唯一 UiTree"
+note = "M10 WU-M10-011/LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite weight 与主/交叉轴 gravity；Java LayoutParams、动态 hierarchy 与 geometry getter 共用唯一 UiTree；WU-M10-016 锁定所有 layout mutation 保留 draw dirty 到 raster 完成"
 
 [runtime.ui_text_widgets]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp; tests/dexvm/widget_click_tests.cpp"
-note = "M10 WU-M10-012/LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed font 共用 measure/raster，wrap_content、Java state round-trip、mutation 与 Button background/content 有 exact tests；单行之外与未知字形明确失败"
+note = "M10 WU-M10-012/LUI-12 将 TextView/Button text/textColor/textSize/gravity 收敛到 UiNode；内置 5x7 fixed font 共用 measure/raster；WU-M10-016 增加 text layout 后 overlay cache 重建与新像素回归；单行之外与未知字形明确失败"
 
 [runtime.ui_relative_layout]
 status = "complete"
@@ -73,7 +73,7 @@ note = "M10 WU-M10-014/LUI-14 实现 include root/merge 展开、override、dept
 [runtime.ui_multi_title_convergence]
 status = "complete"
 test = "tools.dexvm_gap_report_self_test; architecture.platform_boundaries; Asphalt 5 exact title-flow 3/3; Asphalt 6 exact layout-ui-skip 3/3"
-note = "M10 WU-M10-015/LUI-15 修复 builder catalog 静态 survey 并测量四个旧 title；关闭 survey 的 A5/A6 场景没有 UI 缺口真实命中，因此不扩张静态候选能力。LayoutViewFact/layout_views 与手造 edge-row facts 已删除，hit-test 只读 UiTree screen_frame，architecture test 禁止并行事实源及 title-specific runtime identity 回归"
+note = "M10 WU-M10-015/LUI-15 修复 builder catalog 静态 survey 并测量四个旧 title；WU-M10-016 修复 dirty/cache 与 listener dispatch 后以关闭 survey 的 A5/A6 各三轮 exact 回归正式验收 M10。LayoutViewFact/layout_views 保持删除，hit-test 只读 UiTree screen_frame，无 title-specific runtime 分支"
 
 [core.structured_logger]
 status = "complete"

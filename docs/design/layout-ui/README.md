@@ -60,7 +60,7 @@ DexVm UI inflater ──────── guest View intrinsic
 
 ## 实现状态
 
-LUI-1..15 已完成。严格 AXML/ARSC loader、generic inflater、UiTree measure/layout、RGBA
+LUI-1..15 与验收修复 WU-M10-016 已完成。严格 AXML/ARSC loader、generic inflater、UiTree measure/layout、RGBA
 renderer、present composition、pointer dispatch、动态 hierarchy、TextView/Button、
 RelativeLayout、include/resource 与 ImageView scaleType 已沿上图依赖方向闭合。
 
@@ -84,5 +84,5 @@ Asphalt 6 启动视频 Skip 与 Asphalt 5 title-flow 各自完成三轮关闭 su
 
 ## 状态
 
-本设计的 LUI-1..15 已于 M10 实施完成；本文继续作为设计溯源，能力现状以
+本设计的 LUI-1..15 已于 M10 实施并经 WU-M10-016 正式验收；本文继续作为设计溯源，能力现状以
 `capabilities.toml` 和模块契约为准。

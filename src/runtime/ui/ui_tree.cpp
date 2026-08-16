@@ -163,10 +163,16 @@ void UiTree::MarkDrawDirty(const UiNodeId node) {
     MarkAncestors(node, false, true);
 }
 
-void UiTree::ClearDirty() {
+void UiTree::ClearLayoutDirty() {
     for (auto& [id, node] : nodes_) {
         static_cast<void>(id);
         node.layout_dirty = false;
+    }
+}
+
+void UiTree::ClearDrawDirty() {
+    for (auto& [id, node] : nodes_) {
+        static_cast<void>(id);
         node.draw_dirty = false;
     }
 }

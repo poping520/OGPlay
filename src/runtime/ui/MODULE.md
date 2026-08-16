@@ -15,6 +15,8 @@ SDL、ANGLE 或视频解码。
   measured/frame/screen frame、alpha 与 dirty state。
 - `SetVisibility`：VISIBLE/INVISIBLE 只标 draw dirty；任意 GONE 转换同时从 node 到 root
   标 layout/draw dirty。
+- dirty 消费严格分相：`LayoutUiTree` 只清 `layout_dirty`；`UiOverlayRenderer` 只在 overlay
+  成功重建后清 `draw_dirty`。layout traversal 不得吞掉尚未 rasterize 的 mutation。
 - `Reset`：推进 generation，销毁全部旧 node/id index 并创建新的 content root；旧
   `UiNodeId` 永不重新变为有效。
 - `LayoutUiTree`：以 surface `UiMetrics` 的 EXACTLY root constraint 执行有界
@@ -41,6 +43,8 @@ SDL、ANGLE 或视频解码。
 
 - hierarchy、android id、visibility、layout params 和 geometry 只有 UiTree 一份权威事实。
 - renderer 与 input 后续只能读取同一 `screen_frame`；不得各自推导 bounds。
+- `ClearLayoutDirty` 与 `ClearDrawDirty` 只能由各自阶段消费；禁止恢复同时清除两类状态的
+  模糊入口。
 - 只有接入当前 content root 的 node 进入 id index；detach/destroy/reset 后立即不可查找。
 - tree 最多 4096 node、每 parent 最多 1024 child、深度最多 128；超限或 cycle 明确失败。
 - 本模块可依赖 core/loader 等下层事实，不得依赖 DexVM integration、session、frontend、
@@ -54,5 +58,5 @@ padding/margin、wrap intrinsic、document-order overlap geometry，以及 horiz
 LinearLayout 的 GONE/INVISIBLE、weight、padding/margin geometry。
 RelativeLayout tests 锁定 parent/sibling/center、反向 document order 与 missing/cycle failure。
 `tests/runtime/ui_renderer_tests.cpp` 锁定透明、bitmap、alpha overlap、Z-order、clip、
-visibility、draw cache、固定字体 measure/text golden、Button content/background，以及五种
+visibility、layout 后 draw cache 刷新、固定字体 measure/text golden、Button content/background，以及五种
 ImageView scale destination 与 CENTER_CROP exact pixel golden。

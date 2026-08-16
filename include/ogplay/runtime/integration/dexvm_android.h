@@ -404,6 +404,21 @@ struct ViewTouchResult final {
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     std::uint64_t handle, std::int32_t action, float x, float y);
 
+struct ViewGestureDispatchResult final {
+    bool handled{};
+    bool keep_capture{};
+    bool click_eligible{};
+    bool touch_consumed{};
+    std::optional<std::string> error;
+};
+// Dispatches one event to a captured View. Gesture ownership and click
+// eligibility are independent: a false touch-only DOWN falls through, while
+// a click listener may retain capture without consuming OnTouchListener.
+[[nodiscard]] ViewGestureDispatchResult DispatchViewGestureEvent(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    std::uint64_t handle, std::int32_t action, float x, float y,
+    bool click_eligible, bool touch_consumed);
+
 // Invokes the registered OnClickListener.onClick(view) on the guest thread.
 // Returns a rendered message when the guest callback raised.
 [[nodiscard]] std::optional<std::string>

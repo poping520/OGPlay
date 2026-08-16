@@ -565,7 +565,7 @@ void LayoutUiTree(UiTree& tree, const UiMetrics metrics) {
             {MeasureMode::Exactly, metrics.height});
     root.frame = {0, 0, metrics.width, metrics.height};
     LayoutNode(tree, tree.Root(), 0, 0);
-    tree.ClearDirty();
+    tree.ClearLayoutDirty();
 }
 
 }  // namespace ogplay::runtime::ui

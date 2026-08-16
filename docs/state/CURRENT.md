@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-16 · M10 Layout UI LUI-1..15 已完成，Asphalt 6 启动视频 skip UI 与
+更新：2026-08-16 · M10 Layout UI 已正式验收 complete，Asphalt 6 启动视频 skip UI 与
 Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 GLThread；DVM-31 EGL façade 实现完成；MSVC
 工程内/工程间并行编译已启用；DexVM 阶段 4 与 intrinsic 声明迁移、SBX、GUI 已交付
 
@@ -9,14 +9,13 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
 - **M9 DexVM**（DVM-1..39，ADR-0017/0022）：阶段 0..3、entry override、
   静态预置和 v2-only 清理均已交付。
-- **M10 Layout UI LUI-1..15 已完成**：typed AXML、唯一 UiTree/View binding、layout/render/
-  composition/pointer dispatch 已闭合。A6 视频 skip 三轮 scenario 均 passed/no fault/clean
-  shutdown。Linear/RelativeLayout、动态 hierarchy/geometry、TextView/Button fixed font、include、
-  simple ARSC resource 与 ImageView 五种 scaleType 已闭合；非法图/文本/资源明确失败，
-  style/selector 无真实命中不扩张。LUI-15 以四个旧 title 静态预检及 A5/A6 关闭 survey
-  的真实场景收敛 P1；没有新的 UI 缺口执行命中，因此未扩张 capability。旧
-  `LayoutViewFact/layout_views` 与手造 edge-row facts 已删除，hit-test 只读 UiTree geometry，
-  architecture test 禁止并行事实源和 title-specific runtime identity 回归。
+- **M10 Layout UI 已正式验收 complete**：LUI-1..15 的 typed AXML、唯一 UiTree、layout/
+  render/composition/input、Linear/RelativeLayout、动态 hierarchy、文本、include/resources
+  与 ImageView 已闭合；未命中的 style/selector 不扩张。旧并行 geometry facts 已删除，
+  hit-test 只读 UiTree，architecture test 禁止 title-specific runtime identity。WU-M10-016 将
+  layout/draw dirty 分相消费，确保 layout mutation 在 raster 后才清 draw dirty；gesture
+  ownership 与 click eligibility 已分离，touch-only false 回退 Activity，四种 touch/click
+  组合及 hidden/removed/outside 取消均有机器测试。A5/A6 exact 各三轮复验通过。
 - **阶段 4 线程地基已交付**（DVM-27..29）：真实宿主线程、独立 execution
   context、wait-set 与统一 Clock 超时已接入；解释仍由 `VmExecutionLock`
   串行。`threads`/`monitors` 保持 `partial`：子线程 native 调用复用 root
@@ -35,7 +34,7 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 762/762；
+能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 765/765；
 Windows/x64（windows-msvc）本次 728/728。
 Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；
 第三方 target 不被全局注入该选项。

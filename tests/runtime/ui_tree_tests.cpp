@@ -32,7 +32,8 @@ TEST_CASE("UI tree updates ids visibility and dirty propagation") {
     ui::UiTree tree;
     const auto child = tree.CreateNode(ui::UiClass::TextView);
     tree.Attach(tree.Root(), child);
-    tree.ClearDirty();
+    tree.ClearLayoutDirty();
+    tree.ClearDrawDirty();
 
     tree.SetAndroidId(child, 7);
     CHECK(tree.FindByAndroidId(7) == child);
@@ -46,7 +47,8 @@ TEST_CASE("UI tree updates ids visibility and dirty propagation") {
     CHECK(tree.Get(child)->draw_dirty);
     CHECK(tree.Get(tree.Root())->draw_dirty);
 
-    tree.ClearDirty();
+    tree.ClearLayoutDirty();
+    tree.ClearDrawDirty();
     tree.SetVisibility(child, ui::Visibility::Gone);
     CHECK(tree.Get(child)->layout_dirty);
     CHECK(tree.Get(tree.Root())->layout_dirty);

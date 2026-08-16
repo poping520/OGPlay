@@ -5,12 +5,24 @@
 .super Ljava/lang/Object;
 
 .field static public clicks:I
+.field static public touches:I
+.field static public touchResult:I
 .field static public target:Landroid/widget/VideoView;
 
 .method public constructor <init>()V
 .registers 1
     invoke-direct {v0}, Ljava/lang/Object;-><init>()V
     return-void
+.end method
+
+.method public onTouch(Landroid/view/View;Landroid/view/MotionEvent;)Z
+.registers 4
+    sget v0, LSkipListener;->touches:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    sput v0, LSkipListener;->touches:I
+    sget v0, LSkipListener;->touchResult:I
+    return v0
 .end method
 
 .method public onClick(Landroid/view/View;)V
@@ -36,4 +48,16 @@
 .registers 1
     sget v0, LSkipListener;->clicks:I
     return v0
+.end method
+
+.method static public getTouches()I
+.registers 1
+    sget v0, LSkipListener;->touches:I
+    return v0
+.end method
+
+.method static public setTouchResult(I)V
+.registers 1
+    sput v0, LSkipListener;->touchResult:I
+    return-void
 .end method

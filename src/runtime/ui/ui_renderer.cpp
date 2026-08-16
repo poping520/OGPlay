@@ -358,7 +358,7 @@ const UiOverlayFrame& UiOverlayRenderer::Render(UiTree& tree,
         generation_ = tree.Generation();
         metrics_ = metrics;
         ++build_count_;
-        tree.ClearDirty();
+        tree.ClearDrawDirty();
     }
     return cached_;
 }

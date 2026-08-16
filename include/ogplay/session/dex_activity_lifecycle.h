@@ -97,11 +97,11 @@ private:
     bool pointer_down_{};
     float pointer_x_{};
     float pointer_y_{};
-    // View that owns the current touch gesture (device semantics: a down
-    // that lands on a visible view with an OnClickListener is consumed by
-    // that view; the up inside it fires onClick). 0 = activity-owned.
-    std::uint64_t click_candidate_{};
-    bool touch_listener_consumed_{};
+    // View that owns the current gesture. Click eligibility is captured
+    // separately from cumulative OnTouchListener consumption.
+    std::uint64_t gesture_candidate_{};
+    bool gesture_click_eligible_{};
+    bool gesture_touch_consumed_{};
     bool guest_finalized_{};
     // Renderer callbacks fire once when the interpreted glue registers a
     // renderer; installer phases run frames without one.

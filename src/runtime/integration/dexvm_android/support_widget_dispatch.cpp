@@ -122,6 +122,44 @@ ViewTouchResult InvokeViewOnTouch(dexvm::Interpreter& vm,
     return {outcome.value.AsInt() != 0, std::nullopt};
 }
 
+ViewGestureDispatchResult DispatchViewGestureEvent(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    const std::uint64_t handle, const std::int32_t action, const float x,
+    const float y, bool click_eligible, bool touch_consumed) {
+    constexpr std::int32_t kActionDown = 0;
+    constexpr std::int32_t kActionUp = 1;
+    const auto touch = InvokeViewOnTouch(vm, context, handle, action, x, y);
+    if (touch.error.has_value()) {
+        return {.error = touch.error};
+    }
+    touch_consumed = touch_consumed || touch.handled;
+    const auto node = FindViewUiNode(context, handle);
+    const auto has_live_click = [&]() {
+        if (!node.has_value() || context.ui_tree.Get(*node) == nullptr) {
+            return false;
+        }
+        const auto found = context.ui_click_listeners.find(*node);
+        return found != context.ui_click_listeners.end() &&
+               found->second.IsValid();
+    }();
+    if (action == kActionDown) click_eligible = has_live_click;
+    if (action == kActionUp) {
+        if (!touch_consumed && click_eligible && has_live_click &&
+            ViewContainsPoint(context, handle, x, y)) {
+            if (const auto error = InvokeViewOnClick(vm, context, handle);
+                error.has_value()) {
+                return {.error = error};
+            }
+        }
+        return {.handled = touch_consumed || click_eligible};
+    }
+    const bool owns_gesture = touch_consumed || click_eligible;
+    return {.handled = owns_gesture,
+            .keep_capture = owns_gesture,
+            .click_eligible = click_eligible,
+            .touch_consumed = touch_consumed};
+}
+
 std::optional<std::string> InvokeViewOnClick(dexvm::Interpreter& vm,
                                              DexVmAndroidContext& context,
                                              const std::uint64_t handle) {

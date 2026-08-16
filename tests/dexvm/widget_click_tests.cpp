@@ -132,7 +132,6 @@ struct ClickVm final {
         context->ui_tree.Get(skip_node)->intrinsic = {20, 10};
 
     }
-
     VmValue CallOn(const VmObjectRef receiver, const std::string& name,
                    const std::string& descriptor,
                    std::vector<VmValue> arguments = {}) {
@@ -147,7 +146,6 @@ struct ClickVm final {
                         outcome.exception_message);
         return outcome.value;
     }
-
     VmValue CallDirect(const VmObjectRef receiver,
                        const std::string& class_descriptor,
                        const std::string& name,
@@ -164,7 +162,6 @@ struct ClickVm final {
                         outcome.exception_message);
         return outcome.value;
     }
-
     [[nodiscard]] VmObjectRef NewListener() {
         const auto java_class = linker.FindClass("LSkipListener;");
         REQUIRE(java_class.has_value());
@@ -182,7 +179,6 @@ struct ClickVm final {
                         outcome.exception_message);
         return listener;
     }
-
     [[nodiscard]] std::int32_t CallStaticInt(const std::string& name) {
         const auto java_class = linker.FindClass("LSkipListener;");
         REQUIRE(java_class.has_value());
@@ -193,7 +189,16 @@ struct ClickVm final {
                         outcome.exception_message);
         return outcome.value.AsInt();
     }
-
+    void SetTouchResult(const bool handled) {
+        const auto java_class = linker.FindClass("LSkipListener;");
+        REQUIRE(java_class.has_value());
+        const auto method = linker.FindDirectMethod(*java_class,
+            "setTouchResult", "(I)V");
+        REQUIRE(method.has_value());
+        const auto outcome = interpreter.Call(*method,
+            std::vector<VmValue>{VmValue::Int(handled ? 1 : 0)});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+    }
     void BindTarget(const VmObjectRef view) {
         const auto java_class = linker.FindClass("LSkipListener;");
         REQUIRE(java_class.has_value());
@@ -231,7 +236,6 @@ TEST_CASE("visible button with a listener receives the click") {
     CHECK_FALSE(vm.Click(40.0F, 95.0F).has_value());
     CHECK(vm.CallStaticInt("getClicks") == 1);
 }
-
 TEST_CASE("UI hit test chooses the topmost resolved clickable node") {
     ClickVm vm;
     vm.CallOn(vm.skip_button, "setOnClickListener",
@@ -254,7 +258,6 @@ TEST_CASE("UI hit test chooses the topmost resolved clickable node") {
           vm.skip_button.Value());
     CHECK_FALSE(ViewContainsPoint(*vm.context, top_view.Value(), 50.0F, 95.0F));
 }
-
 TEST_CASE("View id and Activity lookup share the bound guest identity") {
     ClickVm vm;
     CHECK(vm.CallOn(vm.skip_button, "getId", "()I").AsInt() == -1);
@@ -285,7 +288,6 @@ TEST_CASE("View id and Activity lookup share the bound guest identity") {
                           *vm.context, vm.other_button, *node),
                       "guest View already has a different UI node");
 }
-
 TEST_CASE("registry inflater attaches merge children with exact identities") {
     ClickVm vm;
     const auto stale = FindViewUiNode(*vm.context, vm.skip_button.Value());
@@ -339,7 +341,6 @@ TEST_CASE("registry inflater attaches merge children with exact identities") {
           "Landroid/widget/ImageButton;");
     CHECK(content == ViewObjectForUiNode(*vm.context, root->children[0]));
 }
-
 TEST_CASE("registry inflater rejects unsupported structural layouts") {
     ClickVm vm;
     std::vector<ogplay::loader::BinaryXmlElement> unknown(2);
@@ -360,7 +361,6 @@ TEST_CASE("registry inflater rejects unsupported structural layouts") {
                           vm.interpreter, *vm.context, nested_merge)),
                       "merge must be the layout root");
 }
-
 TEST_CASE("registry inflater preserves RelativeLayout sibling rules") {
     ClickVm vm;
     std::vector<ogplay::loader::BinaryXmlElement> elements(3);
@@ -394,7 +394,6 @@ TEST_CASE("registry inflater preserves RelativeLayout sibling rules") {
     CHECK(vm.context->ui_tree.Get(relative->children[1])->screen_frame ==
           ui::Rect{60, 45, 65, 50});
 }
-
 TEST_CASE("include expansion matches inline geometry and applies overrides") {
     std::vector<ogplay::loader::BinaryXmlElement> included(2);
     included[0].name = "LinearLayout";
@@ -465,7 +464,6 @@ TEST_CASE("include expansion matches inline geometry and applies overrides") {
     CHECK(included_child_frame == inline_vm.context->ui_tree.Get(
         inline_vm.context->ui_tree.Get(*inline_root)->children[0])->screen_frame);
 }
-
 TEST_CASE("UI resources resolve string color dimension and image state") {
     ClickVm vm;
     vm.context->ui_density = 2.0F;
@@ -525,7 +523,6 @@ TEST_CASE("UI resources resolve string color dimension and image state") {
     CHECK(vm.context->ui_tree.Get(*image_node)->image_scale_type ==
           ui::ImageScaleType::CenterCrop);
 }
-
 TEST_CASE("hidden buttons do not receive clicks and GONE reflows the row") {
     ClickVm vm;
     const auto listener = vm.NewListener();
@@ -556,6 +553,41 @@ TEST_CASE("touches outside every clickable view fall through") {
     CHECK_FALSE(vm.Click(50.0F, 50.0F).has_value());
     // Inside the bar but outside both buttons.
     CHECK_FALSE(vm.Click(10.0F, 95.0F).has_value());
+}
+
+TEST_CASE("touch consumption and click eligibility stay independent") {
+    struct Case { bool touch; bool click; bool fallback; int clicks; int cancel; };
+    for (const auto test : {
+             Case{false, false, true, 0, 0}, Case{true, false, false, 0, 0},
+             Case{false, true, false, 1, 0}, Case{true, true, false, 0, 0},
+             Case{false, true, false, 0, 1}, Case{false, true, false, 0, 2},
+             Case{false, true, false, 0, 3}}) {
+        ClickVm vm;
+        const auto listener = vm.NewListener();
+        const auto node =
+            FindViewUiNode(*vm.context, vm.skip_button.Value());
+        REQUIRE(node.has_value());
+        vm.context->ui_touch_listeners[*node] = listener;
+        if (test.click) vm.context->ui_click_listeners[*node] = listener;
+        vm.SetTouchResult(test.touch);
+        auto result = DispatchViewGestureEvent(vm.interpreter, *vm.context,
+            vm.skip_button.Value(), 0, 60.0F, 95.0F, false, false);
+        CHECK_FALSE(result.error.has_value());
+        CHECK((!result.handled) == test.fallback);
+        if (result.keep_capture) {
+            float up_x = 60.0F;
+            if (test.cancel == 1) up_x = 80.0F;
+            if (test.cancel == 2) vm.context->ui_tree.SetVisibility(
+                *node, ui::Visibility::Invisible);
+            if (test.cancel == 3) vm.context->ui_tree.Detach(*node);
+            result = DispatchViewGestureEvent(vm.interpreter, *vm.context,
+                vm.skip_button.Value(), 1, up_x, 95.0F,
+                result.click_eligible, result.touch_consumed);
+            CHECK_FALSE(result.error.has_value());
+        }
+        CHECK(vm.CallStaticInt("getTouches") == (test.fallback ? 1 : 2));
+        CHECK(vm.CallStaticInt("getClicks") == test.clicks);
+    }
 }
 
 TEST_CASE("setVisibility rejects values outside VISIBLE/INVISIBLE/GONE") {

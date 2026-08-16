@@ -194,7 +194,8 @@ public:
     void SetClickable(UiNodeId node, bool clickable);
     void MarkLayoutDirty(UiNodeId node);
     void MarkDrawDirty(UiNodeId node);
-    void ClearDirty();
+    void ClearLayoutDirty();
+    void ClearDrawDirty();
 
 private:
     using NodeMap =

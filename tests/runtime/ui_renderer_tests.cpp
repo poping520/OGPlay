@@ -34,6 +34,51 @@ TEST_CASE("UI overlay starts transparent and honors draw cache") {
     CHECK(renderer.BuildCount() == 2);
 }
 
+TEST_CASE("layout preserves text draw dirty until overlay cache rebuild") {
+    ui::UiTree tree;
+    const auto text = tree.CreateNode(ui::UiClass::TextView);
+    tree.Get(text)->text = u"A";
+    tree.Attach(tree.Root(), text);
+    ui::LayoutUiTree(tree, {30, 8});
+    ui::UiOverlayRenderer renderer;
+    const ui::UiBitmapCache bitmaps;
+    const auto first = renderer.Render(tree, bitmaps, {30, 8});
+    const auto first_pixels = first.rgba8;
+    CHECK(renderer.BuildCount() == 1);
+
+    tree.Get(text)->text = u"BBBB";
+    tree.MarkLayoutDirty(text);
+    ui::LayoutUiTree(tree, {30, 8});
+    CHECK(tree.Get(tree.Root())->draw_dirty);
+    const auto& second = renderer.Render(tree, bitmaps, {30, 8});
+    CHECK(renderer.BuildCount() == 2);
+    CHECK(second.rgba8 != first_pixels);
+    CHECK(tree.Get(text)->measured.width == 23);
+    CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
+}
+
+TEST_CASE("GONE layout mutation rebuilds cache and removes child pixels") {
+    ui::UiTree tree;
+    const auto child = tree.CreateNode(ui::UiClass::View);
+    tree.Get(child)->layout.width = {ui::SizeMode::Fixed, 1};
+    tree.Get(child)->layout.height = {ui::SizeMode::Fixed, 1};
+    tree.Get(child)->background_color = 0xffffffffU;
+    tree.Attach(tree.Root(), child);
+    ui::LayoutUiTree(tree, {1, 1});
+    ui::UiOverlayRenderer renderer;
+    const ui::UiBitmapCache bitmaps;
+    CHECK(renderer.Render(tree, bitmaps, {1, 1}).rgba8 ==
+          std::vector<std::uint8_t>{255, 255, 255, 255});
+    CHECK(renderer.BuildCount() == 1);
+
+    tree.SetVisibility(child, ui::Visibility::Gone);
+    ui::LayoutUiTree(tree, {1, 1});
+    CHECK(tree.Get(tree.Root())->draw_dirty);
+    CHECK(renderer.Render(tree, bitmaps, {1, 1}).rgba8 ==
+          std::vector<std::uint8_t>(4, 0));
+    CHECK(renderer.BuildCount() == 2);
+}
+
 TEST_CASE("UI overlay draws bitmap clips and document-order alpha") {
     ui::UiTree tree;
     const auto bitmap_node = tree.CreateNode(ui::UiClass::ImageButton);

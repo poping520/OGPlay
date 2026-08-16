@@ -248,33 +248,26 @@ void DexActivityLifecycle::DispatchInput() {
             if (!pointer_down_) continue;  // hover is not a touch
             action = kMotionActionMove;
         }
-        // Device semantics: a down on a visible view with an
-        // OnClickListener is consumed by that view; the matching up inside
-        // its bounds fires onClick. Everything else reaches the activity.
+        // A visible listener target may capture DOWN. Touch consumption and
+        // click eligibility are independent; an unconsumed touch-only DOWN
+        // falls through to Activity and does not retain the gesture.
         if (action == kMotionActionDown) {
             const auto hit = runtime::FindClickableViewAt(
                 *bindings_.context, pointer_x_, pointer_y_);
-            click_candidate_ = hit.value_or(0U);
-            touch_listener_consumed_ = false;
+            gesture_candidate_ = hit.value_or(0U);
+            gesture_click_eligible_ = false;
+            gesture_touch_consumed_ = false;
         }
-        if (click_candidate_ != 0U) {
-            const auto touch = runtime::InvokeViewOnTouch(
-                vm, *bindings_.context, click_candidate_, action,
-                pointer_x_, pointer_y_);
-            if (touch.error.has_value()) Fail(*touch.error);
-            touch_listener_consumed_ = touch_listener_consumed_ || touch.handled;
-            if (action == kMotionActionUp) {
-                const auto target = std::exchange(click_candidate_, 0U);
-                if (!touch_listener_consumed_ &&
-                    runtime::ViewContainsPoint(*bindings_.context, target,
-                                               pointer_x_, pointer_y_)) {
-                    const auto error = runtime::InvokeViewOnClick(
-                        vm, *bindings_.context, target);
-                    if (error.has_value()) Fail(*error);
-                }
-                touch_listener_consumed_ = false;
-            }
-            continue;  // the owning view consumed the gesture
+        if (gesture_candidate_ != 0U) {
+            const auto result = runtime::DispatchViewGestureEvent(
+                vm, *bindings_.context, gesture_candidate_, action,
+                pointer_x_, pointer_y_, gesture_click_eligible_,
+                gesture_touch_consumed_);
+            if (result.error.has_value()) Fail(*result.error);
+            gesture_click_eligible_ = result.click_eligible;
+            gesture_touch_consumed_ = result.touch_consumed;
+            if (!result.keep_capture) gesture_candidate_ = 0U;
+            if (result.handled) continue;
         }
         const auto event = runtime::MakeMotionEvent(
             vm, action, pointer_x_, pointer_y_, 0);

@@ -1,6 +1,26 @@
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
+namespace {
+
+ui::UiNodeId ViewNode(dx::IntrinsicContext& call, const Context& context) {
+    const auto descriptor = call.vm.Linker()
+                                .Class(call.vm.Model().ObjectClass(call.receiver))
+                                .descriptor;
+    return EnsureViewUiNode(
+        *context, call.receiver, UiClassForDescriptor(descriptor));
+}
+
+void EnsureLayout(const Context& context) {
+    if (context->ui_tree.Get(context->ui_tree.Root())->layout_dirty) {
+        ui::LayoutUiTree(
+            context->ui_tree,
+            {static_cast<std::int32_t>(context->surface_width),
+             static_cast<std::int32_t>(context->surface_height)});
+    }
+}
+
+}  // namespace
 
 Decl Declare_android_view_View(const Context& context) {
     dx::IntrinsicClassBuilder builder("Landroid/view/View;");
@@ -37,6 +57,78 @@ Decl Declare_android_view_View(const Context& context) {
                 context->ui_tree.Get(node)->android_id);
         });
     builder.Virtual("setId", "(I)V", ViewSetIdHandler(context));
+    builder.Virtual("setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto node = ViewNode(call, context);
+            const auto params = call.arguments[0].ref;
+            if (!params.IsValid()) {
+                context->ui_view_layout_params.erase(call.receiver.Value());
+                context->ui_tree.Get(node)->layout = {};
+            } else {
+                const auto found =
+                    context->ui_layout_params.find(params.Value());
+                if (found == context->ui_layout_params.end()) {
+                    throw dx::VmJavaThrow{
+                        "Ljava/lang/IllegalArgumentException;",
+                        "LayoutParams is not initialized"};
+                }
+                context->ui_view_layout_params[call.receiver.Value()] = params;
+                context->ui_tree.Get(node)->layout = found->second;
+            }
+            context->ui_tree.MarkLayoutDirty(node);
+            return dx::VmValue::Void();
+        });
+    builder.Virtual("getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;",
+        [context](dx::IntrinsicContext& call) {
+            const auto found =
+                context->ui_view_layout_params.find(call.receiver.Value());
+            return dx::VmValue::Ref(
+                found == context->ui_view_layout_params.end()
+                    ? dx::VmObjectRef{}
+                    : found->second);
+        });
+    builder.Virtual("setPadding", "(IIII)V",
+        [context](dx::IntrinsicContext& call) {
+            ui::Insets padding{call.arguments[0].AsInt(),
+                               call.arguments[1].AsInt(),
+                               call.arguments[2].AsInt(),
+                               call.arguments[3].AsInt()};
+            if (padding.left < 0 || padding.top < 0 || padding.right < 0 ||
+                padding.bottom < 0) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "View padding cannot be negative"};
+            }
+            const auto node = ViewNode(call, context);
+            context->ui_tree.Get(node)->padding = padding;
+            context->ui_tree.MarkLayoutDirty(node);
+            return dx::VmValue::Void();
+        });
+    const auto geometry = [context](const auto member) {
+        return dx::IntrinsicHandler(
+            [context, member](dx::IntrinsicContext& call) {
+                const auto node = ViewNode(call, context);
+                EnsureLayout(context);
+                return dx::VmValue::Int(member(*context->ui_tree.Get(node)));
+            });
+    };
+    builder.Virtual("getLeft", "()I", geometry([](const ui::UiNode& node) {
+        return node.frame.left;
+    }));
+    builder.Virtual("getTop", "()I", geometry([](const ui::UiNode& node) {
+        return node.frame.top;
+    }));
+    builder.Virtual("getRight", "()I", geometry([](const ui::UiNode& node) {
+        return node.frame.right;
+    }));
+    builder.Virtual("getBottom", "()I", geometry([](const ui::UiNode& node) {
+        return node.frame.bottom;
+    }));
+    builder.Virtual("getWidth", "()I", geometry([](const ui::UiNode& node) {
+        return node.frame.right - node.frame.left;
+    }));
+    builder.Virtual("getHeight", "()I", geometry([](const ui::UiNode& node) {
+        return node.frame.bottom - node.frame.top;
+    }));
     builder.Virtual("setVisibility", "(I)V", [context](dx::IntrinsicContext& call) {
         const auto value = call.arguments[0].AsInt();
         if (value != kVisible && value != kInvisible && value != kGone) {
@@ -62,7 +154,6 @@ Decl Declare_android_view_View(const Context& context) {
     builder.Virtual("setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", WidgetNoopHandler());
     builder.Virtual("setOnClickListener", "(Landroid/view/View$OnClickListener;)V",
         [context](dx::IntrinsicContext& call) {
-            const auto handle = call.receiver.Value();
             const auto node = EnsureViewUiNode(
                 *context, call.receiver, ui::UiClass::View);
             if (call.arguments[0].ref.IsValid()) {
@@ -70,12 +161,10 @@ Decl Declare_android_view_View(const Context& context) {
             } else {
                 context->ui_click_listeners.erase(node);
             }
-            const auto known = std::any_of(
-                context->layout_views.begin(), context->layout_views.end(),
-                [handle](const auto& fact) { return fact.view.Value() == handle; });
-            if (!known && call.arguments[0].ref.IsValid()) {
+            if (!context->ui_tree.Get(node)->parent.has_value() &&
+                call.arguments[0].ref.IsValid()) {
                 GuestLog(call, core::LogLevel::warn,
-                    "setOnClickListener: the view has no layout bounds; "
+                    "setOnClickListener: the view is detached; "
                     "clicks fall through to Activity.onTouchEvent (recorded gap)");
             }
             return dx::VmValue::Void();

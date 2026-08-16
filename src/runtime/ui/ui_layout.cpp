@@ -1,6 +1,7 @@
 #include "ogplay/runtime/ui/ui_tree.h"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace ogplay::runtime::ui {
@@ -52,32 +53,121 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
                                  node.padding.right;
     std::int32_t desired_height = node.intrinsic.height + node.padding.top +
                                   node.padding.bottom;
-    if (node.kind == UiClass::LinearLayout &&
-        node.orientation == Orientation::Horizontal) {
-        std::int32_t total_width = 0;
-        std::int32_t max_height = 0;
+    if (node.kind == UiClass::LinearLayout) {
+        const bool vertical = node.orientation == Orientation::Vertical;
+        const auto main_spec = vertical ? height_spec : width_spec;
+        std::int32_t total_main = 0;
+        std::int32_t max_cross = 0;
+        float total_weight = 0.0F;
         for (const auto child_id : node.children) {
             auto& child = *tree.Get(child_id);
             if (child.visibility == Visibility::Gone) continue;
+            if (!std::isfinite(child.layout.weight) ||
+                child.layout.weight < 0.0F) {
+                throw std::runtime_error(
+                    "LinearLayout child weight must be finite and non-negative");
+            }
             const auto horizontal = node.padding.left + node.padding.right +
                                     child.layout.margin.left +
                                     child.layout.margin.right;
-            const auto vertical = node.padding.top + node.padding.bottom +
-                                  child.layout.margin.top +
-                                  child.layout.margin.bottom;
-            Measure(tree, child_id,
-                    ChildSpec(width_spec, horizontal, child.layout.width),
-                    ChildSpec(height_spec, vertical, child.layout.height));
-            total_width += child.measured.width + child.layout.margin.left +
-                           child.layout.margin.right;
-            max_height = std::max(max_height,
-                                  child.measured.height + child.layout.margin.top +
-                                      child.layout.margin.bottom);
+            const auto vertical_insets =
+                node.padding.top + node.padding.bottom +
+                child.layout.margin.top + child.layout.margin.bottom;
+            auto child_width =
+                ChildSpec(width_spec, horizontal, child.layout.width);
+            auto child_height =
+                ChildSpec(height_spec, vertical_insets, child.layout.height);
+            const auto& main_dimension =
+                vertical ? child.layout.height : child.layout.width;
+            if (child.layout.weight > 0.0F &&
+                main_dimension.mode == SizeMode::Fixed &&
+                main_dimension.px == 0 &&
+                main_spec.mode == MeasureMode::Exactly) {
+                (vertical ? child_height : child_width) =
+                    {MeasureMode::Exactly, 0};
+            }
+            Measure(tree, child_id, child_width, child_height);
+            total_main += vertical
+                              ? child.measured.height +
+                                    child.layout.margin.top +
+                                    child.layout.margin.bottom
+                              : child.measured.width +
+                                    child.layout.margin.left +
+                                    child.layout.margin.right;
+            max_cross = std::max(
+                max_cross,
+                vertical ? child.measured.width + child.layout.margin.left +
+                               child.layout.margin.right
+                         : child.measured.height + child.layout.margin.top +
+                               child.layout.margin.bottom);
+            total_weight += child.layout.weight;
         }
-        desired_width = std::max(desired_width, total_width + node.padding.left +
-                                                    node.padding.right);
-        desired_height = std::max(desired_height, max_height + node.padding.top +
-                                                     node.padding.bottom);
+        const auto main_padding =
+            vertical ? node.padding.top + node.padding.bottom
+                     : node.padding.left + node.padding.right;
+        if (total_weight > 0.0F &&
+            main_spec.mode != MeasureMode::Unspecified) {
+            auto remaining = main_spec.size - main_padding - total_main;
+            auto weight_left = total_weight;
+            for (const auto child_id : node.children) {
+                auto& child = *tree.Get(child_id);
+                if (child.visibility == Visibility::Gone ||
+                    child.layout.weight == 0.0F) {
+                    continue;
+                }
+                const auto share = static_cast<std::int32_t>(
+                    static_cast<double>(remaining) * child.layout.weight /
+                    weight_left);
+                remaining -= share;
+                weight_left -= child.layout.weight;
+                const auto base =
+                    vertical ? child.measured.height : child.measured.width;
+                const auto target = std::max(0, base + share);
+                const auto horizontal =
+                    node.padding.left + node.padding.right +
+                    child.layout.margin.left + child.layout.margin.right;
+                const auto vertical_insets =
+                    node.padding.top + node.padding.bottom +
+                    child.layout.margin.top + child.layout.margin.bottom;
+                Measure(tree, child_id,
+                        vertical
+                            ? ChildSpec(width_spec, horizontal,
+                                        child.layout.width)
+                            : MeasureSpec{MeasureMode::Exactly, target},
+                        vertical
+                            ? MeasureSpec{MeasureMode::Exactly, target}
+                            : ChildSpec(height_spec, vertical_insets,
+                                        child.layout.height));
+            }
+            total_main = 0;
+            max_cross = 0;
+            for (const auto child_id : node.children) {
+                const auto& child = *tree.Get(child_id);
+                if (child.visibility == Visibility::Gone) continue;
+                total_main += vertical
+                                  ? child.measured.height +
+                                        child.layout.margin.top +
+                                        child.layout.margin.bottom
+                                  : child.measured.width +
+                                        child.layout.margin.left +
+                                        child.layout.margin.right;
+                max_cross = std::max(
+                    max_cross,
+                    vertical
+                        ? child.measured.width + child.layout.margin.left +
+                              child.layout.margin.right
+                        : child.measured.height + child.layout.margin.top +
+                              child.layout.margin.bottom);
+            }
+        }
+        desired_width = std::max(
+            desired_width,
+            (vertical ? max_cross : total_main) + node.padding.left +
+                node.padding.right);
+        desired_height = std::max(
+            desired_height,
+            (vertical ? total_main : max_cross) + node.padding.top +
+                node.padding.bottom);
     } else if (!node.children.empty()) {
         std::int32_t max_width = 0;
         std::int32_t max_height = 0;
@@ -222,14 +312,65 @@ void LayoutHorizontalChildren(UiTree& tree, const UiNodeId id,
     }
 }
 
+void LayoutVerticalChildren(UiTree& tree, const UiNodeId id,
+                            const std::int32_t screen_x,
+                            const std::int32_t screen_y) {
+    auto& parent = *tree.Get(id);
+    std::int32_t total_height = 0;
+    for (const auto child_id : parent.children) {
+        const auto& child = *tree.Get(child_id);
+        if (child.visibility == Visibility::Gone) continue;
+        total_height += child.measured.height + child.layout.margin.top +
+                        child.layout.margin.bottom;
+    }
+    const auto available_height = parent.measured.height - parent.padding.top -
+                                  parent.padding.bottom;
+    std::int32_t cursor = parent.padding.top;
+    if ((parent.gravity & kVerticalMask) == kCenterVertical) {
+        cursor += (available_height - total_height) / 2;
+    } else if ((parent.gravity & kVerticalMask) == kBottom) {
+        cursor += available_height - total_height;
+    }
+    const auto content_width = parent.measured.width - parent.padding.left -
+                               parent.padding.right;
+    for (const auto child_id : parent.children) {
+        auto& child = *tree.Get(child_id);
+        if (child.visibility == Visibility::Gone) {
+            child.frame = {};
+            child.screen_frame = {};
+            continue;
+        }
+        cursor += child.layout.margin.top;
+        const auto cross_gravity = child.layout.layout_gravity != 0
+                                       ? child.layout.layout_gravity
+                                       : parent.gravity;
+        std::int32_t left = parent.padding.left + child.layout.margin.left;
+        if ((cross_gravity & kHorizontalMask) == kCenterHorizontal) {
+            left = parent.padding.left +
+                   (content_width - child.measured.width) / 2 +
+                   child.layout.margin.left - child.layout.margin.right;
+        } else if ((cross_gravity & kHorizontalMask) == kRight) {
+            left = parent.measured.width - parent.padding.right -
+                   child.measured.width - child.layout.margin.right;
+        }
+        child.frame = {left, cursor, left + child.measured.width,
+                       cursor + child.measured.height};
+        LayoutNode(tree, child_id, screen_x + left, screen_y + cursor);
+        cursor += child.measured.height + child.layout.margin.bottom;
+    }
+}
+
 void LayoutNode(UiTree& tree, const UiNodeId id, const std::int32_t screen_x,
                 const std::int32_t screen_y) {
     auto& node = *tree.Get(id);
     node.screen_frame = {screen_x, screen_y, screen_x + node.measured.width,
                          screen_y + node.measured.height};
-    if (node.kind == UiClass::LinearLayout &&
-        node.orientation == Orientation::Horizontal) {
-        LayoutHorizontalChildren(tree, id, screen_x, screen_y);
+    if (node.kind == UiClass::LinearLayout) {
+        if (node.orientation == Orientation::Horizontal) {
+            LayoutHorizontalChildren(tree, id, screen_x, screen_y);
+        } else {
+            LayoutVerticalChildren(tree, id, screen_x, screen_y);
+        }
     } else {
         LayoutFrameChildren(tree, id, screen_x, screen_y);
     }

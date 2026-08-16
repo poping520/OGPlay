@@ -50,6 +50,11 @@ status = "complete"
 test = "data/scenarios/asphalt6.layout_ui_skip.scenario.toml; macOS-arm64 exact local gate 3/3"
 note = "M10 WU-M10-010/LUI-10 以普通 FFmpeg 7 exact APK 场景闭合启动视频超过 3 秒、空白点击走 Activity touch、bottom-center skip golden 可见、点击 skip 进入后续 GLES 帧、no fault 与 clean shutdown；生产代码无 title 分支"
 
+[runtime.ui_general_linear_layout]
+status = "complete"
+test = "tests/runtime/ui_tree_tests.cpp; tests/dexvm/widget_click_tests.cpp"
+note = "M10 WU-M10-011/LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite weight 与主/交叉轴 gravity；Java LayoutParams、动态 add/remove/removeViews/update、setContentView(View) subtree 与 geometry getter 共用唯一 UiTree"
+
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"

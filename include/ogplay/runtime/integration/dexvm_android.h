@@ -263,6 +263,12 @@ struct DexVmAndroidContext final {
         ui_click_listeners;
     std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
         ui_touch_listeners;
+    // Guest LayoutParams objects retain their typed host value independently
+    // of attachment. A View points at its current params object; attaching or
+    // updateViewLayout copies that value into the UiTree's sole layout fact.
+    std::unordered_map<std::uint32_t, ui::LayoutParams> ui_layout_params;
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef>
+        ui_view_layout_params;
     // Layout facts captured at inflation (document order, parents before
     // children) that click hit-testing derives bounds from. measured_* is
     // the wrap_content size taken from the android:src drawable (0 when

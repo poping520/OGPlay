@@ -105,6 +105,8 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   android id/visibility/hierarchy 只写 UiTree，`findViewById/getId/setId` 经双向 binding
   返回同一 guest identity。tag→descriptor/class 来自固定通用 registry，`<merge>` children
   直接 attach synthetic content root，未知 structural tag/attribute 记账并明确失败。
+  `setContentView(View)` 保留 Java 已构造 subtree；`ViewGroup` 动态 add/remove/update、
+  LayoutParams、padding/orientation/gravity 与 geometry getter 全部读写同一 UiTree。
   listener ref 仍只由 integration 以 UiNodeId 保存；
   `runOnUiThread` 在协作单线程模型下同步执行 runnable。
 - VideoView intrinsic（`dexvm_android/android_widget_VideoView.cpp`，ADR-0021）：
@@ -120,13 +122,11 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   把帧循环按真实时间节流,使每帧 16 ms 的确定性 uptime 与墙钟一致(手动步进不节流,
   保持可复现)。
 - widget 点击分发（`dexvm_android/android_view_View.cpp`）：`setOnClickListener` 的 guest
-  ref 由 integration 保存，`setVisibility/getVisibility` 读写 UiTree；inflation 暂记录
-  迁移期布局事实并用 `android:src`
-  drawable 测量 wrap_content 图像控件。bounds 只对受支持的子集推导(fill×fill 根视图、
-  fill×wrap 且 layout_gravity 靠上/下边的水平 LinearLayout 按钮行,gravity
-  center_horizontal 居中,GONE 不占位);推导不出的 view 永不消费触摸(记账缺口),
-  事件降级给 `Activity.onTouchEvent`。`FindClickableViewAt` 按文档序从顶向下命中
-  可见且带监听器的 view,`InvokeViewOnClick` 在 guest 线程回调 onClick。
+  ref 由 integration 保存，`setVisibility/getVisibility` 读写 UiTree；`android:src`
+  drawable 测量 wrap_content 图像控件。bounds 只来自 runtime/ui resolved screen frame；
+  detached/不可布局 view 不消费触摸，事件降级给 `Activity.onTouchEvent`。
+  `FindClickableViewAt` 按 reverse document order 命中可见且带 listener 的 view，
+  `InvokeViewOnClick` 在 guest 线程回调 onClick。
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求;会话只发布最新请求与累计次数,不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。

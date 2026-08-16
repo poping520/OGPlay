@@ -60,6 +60,7 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_node_to_object.clear();
     context.ui_click_listeners.clear();
     context.ui_touch_listeners.clear();
+    context.ui_view_layout_params.clear();
     context.layout_views.clear();
 }
 

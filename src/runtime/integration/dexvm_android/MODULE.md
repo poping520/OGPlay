@@ -37,6 +37,10 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   geometry 只写 `runtime/ui`，guest click/touch listener 只在本层以 UiNodeId 为 key 保存。
 - drawable decode 的 intrinsic size 写入 UiNode；click adapter 只消费 `screen_frame`，旧
   fullscreen/edge-row `layout_views` bounds 推导已删除。
+- Java 动态 `ViewGroup.addView/removeView/removeViews/updateViewLayout` 与
+  `Activity.setContentView(View)` 直接维护同一 UiTree；LayoutParams object 保存
+  width/height/margin/weight 并在 attach/update 时复制到 node，View geometry getter 在 dirty
+  traversal 后读取同一 resolved frame。已带非 content parent 的 view 明确拒绝。
 - drawable resource 按 id 解码一次并缓存为 RGBA `UiBitmap`，renderer 不读取 APK、arsc
   或 guest object。
 - pointer dispatch 在 dirty 时先 traversal，按 clipped reverse draw order 选择 topmost

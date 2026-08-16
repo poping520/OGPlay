@@ -169,3 +169,68 @@ TEST_CASE("horizontal LinearLayout removes GONE and preserves INVISIBLE space") 
     ui::LayoutUiTree(tree, {100, 80});
     CHECK(tree.Get(visible)->screen_frame == ui::Rect{40, 70, 60, 80});
 }
+
+TEST_CASE("vertical LinearLayout distributes weight with padding and margins") {
+    ui::UiTree tree;
+    const auto column = tree.CreateNode(ui::UiClass::LinearLayout);
+    auto* column_state = tree.Get(column);
+    column_state->orientation = ui::Orientation::Vertical;
+    column_state->layout.width.mode = ui::SizeMode::MatchParent;
+    column_state->layout.height.mode = ui::SizeMode::MatchParent;
+    column_state->padding = {5, 5, 5, 5};
+    const auto first = tree.CreateNode(ui::UiClass::View);
+    const auto second = tree.CreateNode(ui::UiClass::View);
+    const auto fixed = tree.CreateNode(ui::UiClass::View);
+    for (const auto child : {first, second, fixed}) {
+        auto* state = tree.Get(child);
+        state->layout.width.mode = ui::SizeMode::MatchParent;
+        state->layout.margin = {2, 1, 3, 1};
+        tree.Attach(column, child);
+    }
+    tree.Get(first)->layout.height = {ui::SizeMode::Fixed, 0};
+    tree.Get(first)->layout.weight = 1.0F;
+    tree.Get(second)->layout.height = {ui::SizeMode::Fixed, 0};
+    tree.Get(second)->layout.weight = 2.0F;
+    tree.Get(fixed)->layout.height = {ui::SizeMode::Fixed, 10};
+    tree.Attach(tree.Root(), column);
+
+    ui::LayoutUiTree(tree, {100, 100});
+    CHECK(tree.Get(first)->screen_frame == ui::Rect{7, 6, 92, 30});
+    CHECK(tree.Get(second)->screen_frame == ui::Rect{7, 32, 92, 82});
+    CHECK(tree.Get(fixed)->screen_frame == ui::Rect{7, 84, 92, 94});
+}
+
+TEST_CASE("horizontal LinearLayout distributes weighted zero-width children") {
+    ui::UiTree tree;
+    const auto row = tree.CreateNode(ui::UiClass::LinearLayout);
+    auto* row_state = tree.Get(row);
+    row_state->layout.width.mode = ui::SizeMode::MatchParent;
+    row_state->layout.height = {ui::SizeMode::Fixed, 20};
+    row_state->padding = {5, 0, 5, 0};
+    const auto first = tree.CreateNode(ui::UiClass::View);
+    const auto second = tree.CreateNode(ui::UiClass::View);
+    const auto fixed = tree.CreateNode(ui::UiClass::View);
+    for (const auto child : {first, second, fixed}) {
+        auto* state = tree.Get(child);
+        state->layout.height.mode = ui::SizeMode::MatchParent;
+        state->layout.margin.left = 1;
+        state->layout.margin.right = 1;
+        tree.Attach(row, child);
+    }
+    tree.Get(first)->layout.width = {ui::SizeMode::Fixed, 0};
+    tree.Get(first)->layout.weight = 1.0F;
+    tree.Get(second)->layout.width = {ui::SizeMode::Fixed, 0};
+    tree.Get(second)->layout.weight = 1.0F;
+    tree.Get(fixed)->layout.width = {ui::SizeMode::Fixed, 10};
+    tree.Attach(tree.Root(), row);
+
+    ui::LayoutUiTree(tree, {100, 20});
+    CHECK(tree.Get(first)->screen_frame == ui::Rect{6, 0, 43, 20});
+    CHECK(tree.Get(second)->screen_frame == ui::Rect{45, 0, 82, 20});
+    CHECK(tree.Get(fixed)->screen_frame == ui::Rect{84, 0, 94, 20});
+
+    tree.Get(first)->layout.weight = -1.0F;
+    tree.MarkLayoutDirty(first);
+    CHECK_THROWS_WITH(ui::LayoutUiTree(tree, {100, 20}),
+                      "LinearLayout child weight must be finite and non-negative");
+}

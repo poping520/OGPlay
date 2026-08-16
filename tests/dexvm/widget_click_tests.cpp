@@ -183,6 +183,23 @@ struct ClickVm final {
         return outcome.value;
     }
 
+    VmValue CallDirect(const VmObjectRef receiver,
+                       const std::string& class_descriptor,
+                       const std::string& name,
+                       const std::string& descriptor,
+                       std::vector<VmValue> arguments = {}) {
+        const auto java_class = linker.FindClass(class_descriptor);
+        REQUIRE_MESSAGE(java_class.has_value(), class_descriptor);
+        const auto method =
+            linker.FindDirectMethod(*java_class, name, descriptor);
+        REQUIRE_MESSAGE(method.has_value(), name);
+        arguments.insert(arguments.begin(), VmValue::Ref(receiver));
+        const auto outcome = interpreter.Call(*method, arguments);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(),
+                        outcome.exception_message);
+        return outcome.value;
+    }
+
     [[nodiscard]] VmObjectRef NewListener() {
         const auto java_class = linker.FindClass("LSkipListener;");
         REQUIRE(java_class.has_value());
@@ -444,4 +461,88 @@ TEST_CASE("skip click stops the playing fake video end to end") {
     CHECK(vm.Click(60.0F, 95.0F).has_value());
     CHECK(vm.CallStaticInt("getClicks") == 1);
     CHECK(vm.context->video_views.empty());  // stopPlayback ran
+}
+
+TEST_CASE("dynamic ViewGroup hierarchy shares layout params and geometry") {
+    ClickVm vm;
+    const auto column = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/LinearLayout;");
+    const auto weighted = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/View;");
+    const auto fixed = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/View;");
+    const auto content_params = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/ViewGroup$LayoutParams;");
+    vm.CallDirect(content_params, "Landroid/view/ViewGroup$LayoutParams;",
+                  "<init>", "(II)V",
+                  {VmValue::Int(-1), VmValue::Int(-1)});
+    vm.CallOn(column, "setLayoutParams",
+              "(Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(content_params)});
+    vm.CallOn(column, "setOrientation", "(I)V", {VmValue::Int(1)});
+    vm.CallOn(column, "setPadding", "(IIII)V",
+              {VmValue::Int(5), VmValue::Int(5), VmValue::Int(5),
+               VmValue::Int(5)});
+
+    const auto weighted_params = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/LinearLayout$LayoutParams;");
+    vm.CallDirect(weighted_params,
+                  "Landroid/widget/LinearLayout$LayoutParams;", "<init>",
+                  "(IIF)V",
+                  {VmValue::Int(-1), VmValue::Int(0), VmValue::Float(1.0F)});
+    vm.CallOn(weighted_params, "setMargins", "(IIII)V",
+              {VmValue::Int(2), VmValue::Int(3), VmValue::Int(4),
+               VmValue::Int(5)});
+    const auto fixed_params = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/LinearLayout$LayoutParams;");
+    vm.CallDirect(fixed_params,
+                  "Landroid/widget/LinearLayout$LayoutParams;", "<init>",
+                  "(II)V", {VmValue::Int(-1), VmValue::Int(20)});
+    vm.CallOn(column, "addView",
+              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(weighted), VmValue::Ref(weighted_params)});
+    vm.CallOn(column, "addView",
+              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(fixed), VmValue::Ref(fixed_params)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(column)});
+
+    CHECK(vm.CallOn(weighted, "getLayoutParams",
+                    "()Landroid/view/ViewGroup$LayoutParams;")
+              .ref == weighted_params);
+    CHECK(vm.CallOn(weighted, "getLeft", "()I").AsInt() == 7);
+    CHECK(vm.CallOn(weighted, "getTop", "()I").AsInt() == 8);
+    CHECK(vm.CallOn(weighted, "getWidth", "()I").AsInt() == 84);
+    CHECK(vm.CallOn(weighted, "getHeight", "()I").AsInt() == 62);
+    CHECK(vm.CallOn(fixed, "getTop", "()I").AsInt() == 75);
+
+    const auto replacement = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/LinearLayout$LayoutParams;");
+    vm.CallDirect(replacement,
+                  "Landroid/widget/LinearLayout$LayoutParams;", "<init>",
+                  "(II)V", {VmValue::Int(-1), VmValue::Int(10)});
+    vm.CallOn(column, "updateViewLayout",
+              "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(weighted), VmValue::Ref(replacement)});
+    CHECK(vm.CallOn(weighted, "getHeight", "()I").AsInt() == 10);
+    CHECK(vm.CallOn(fixed, "getTop", "()I").AsInt() == 15);
+    vm.CallOn(replacement, "setMargins", "(IIII)V",
+              {VmValue::Int(0), VmValue::Int(2), VmValue::Int(0),
+               VmValue::Int(3)});
+    CHECK(vm.CallOn(weighted, "getTop", "()I").AsInt() == 7);
+    CHECK(vm.CallOn(fixed, "getTop", "()I").AsInt() == 20);
+
+    vm.CallOn(column, "removeView", "(Landroid/view/View;)V",
+              {VmValue::Ref(fixed)});
+    const auto fixed_node = FindViewUiNode(*vm.context, fixed.Value());
+    REQUIRE(fixed_node.has_value());
+    CHECK_FALSE(vm.context->ui_tree.Get(*fixed_node)->parent.has_value());
+    vm.CallOn(
+        column, "addView",
+        "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",
+        {VmValue::Ref(fixed), VmValue::Int(0), VmValue::Ref(fixed_params)});
+    CHECK(vm.CallOn(fixed, "getTop", "()I").AsInt() == 5);
+    vm.CallOn(column, "removeViews", "(II)V",
+              {VmValue::Int(0), VmValue::Int(1)});
+    CHECK_FALSE(vm.context->ui_tree.Get(*fixed_node)->parent.has_value());
 }

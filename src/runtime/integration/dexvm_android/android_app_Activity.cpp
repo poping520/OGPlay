@@ -42,10 +42,38 @@ Decl Declare_android_app_Activity(const Context& context) {
             const auto descriptor = call.vm.Linker()
                                         .Class(call.vm.Model().ObjectClass(view))
                                         .descriptor;
-            ResetViewUiState(*context);
             const auto node = EnsureViewUiNode(
                 *context, view, UiClassForDescriptor(descriptor));
-            context->ui_tree.Attach(context->ui_tree.Root(), node);
+            const auto parent = context->ui_tree.Get(node)->parent;
+            if (parent.has_value() && *parent != context->ui_tree.Root()) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "content view already has a parent"};
+            }
+            const auto old_content =
+                context->ui_tree.Get(context->ui_tree.Root())->children;
+            for (const auto old_root : old_content) {
+                if (old_root == node) continue;
+                std::vector<ui::UiNodeId> pending{old_root};
+                while (!pending.empty()) {
+                    const auto current = pending.back();
+                    pending.pop_back();
+                    const auto* state = context->ui_tree.Get(current);
+                    pending.insert(pending.end(), state->children.begin(),
+                                   state->children.end());
+                    const auto object = ViewObjectForUiNode(*context, current);
+                    if (object.IsValid()) {
+                        context->object_to_ui_node.erase(object.Value());
+                        context->ui_view_layout_params.erase(object.Value());
+                    }
+                    context->ui_node_to_object.erase(current);
+                    context->ui_click_listeners.erase(current);
+                    context->ui_touch_listeners.erase(current);
+                }
+                context->ui_tree.DestroySubtree(old_root);
+            }
+            if (!parent.has_value()) {
+                context->ui_tree.Attach(context->ui_tree.Root(), node);
+            }
             ui::LayoutUiTree(context->ui_tree,
                              {static_cast<std::int32_t>(context->surface_width),
                               static_cast<std::int32_t>(context->surface_height)});

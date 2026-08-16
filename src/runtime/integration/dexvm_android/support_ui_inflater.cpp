@@ -582,7 +582,6 @@ dexvm::VmObjectRef InflateUiElements(
         }
 
         std::vector<ui::UiNodeId> node_of(document.size());
-        std::vector<std::int32_t> fact_of(document.size(), -1);
         dexvm::VmObjectRef content_view;
         for (std::size_t index = 0; index < document.size(); ++index) {
             const auto& element = document[index];
@@ -590,10 +589,6 @@ dexvm::VmObjectRef InflateUiElements(
                 element.parent < 0
                     ? context.ui_tree.Root()
                     : node_of[static_cast<std::size_t>(element.parent)];
-            const auto parent_fact =
-                element.parent < 0
-                    ? -1
-                    : fact_of[static_cast<std::size_t>(element.parent)];
             if (element.name == "merge") {
                 if (index != 0 || element.parent >= 0) {
                     throw std::runtime_error("merge must be the layout root");
@@ -635,43 +630,11 @@ dexvm::VmObjectRef InflateUiElements(
             node_of[index] = node;
             if (!content_view.IsValid()) content_view = view;
 
-            DexVmAndroidContext::LayoutViewFact fact;
-            fact.view = view;
-            fact.parent = parent_fact;
-            fact.tag = element.name;
-            const auto& state = *context.ui_tree.Get(node);
-            const auto legacy_size = [](const ui::DimensionSpec spec) {
-                return spec.mode == ui::SizeMode::MatchParent
-                           ? loader::BinaryXmlElement::kSizeFillParent
-                           : spec.mode == ui::SizeMode::WrapContent
-                                 ? loader::BinaryXmlElement::kSizeWrapContent
-                                 : spec.px;
-            };
-            fact.layout_width = element.layout_width != 0
-                                    ? element.layout_width
-                                    : legacy_size(state.layout.width);
-            fact.layout_height = element.layout_height != 0
-                                     ? element.layout_height
-                                     : legacy_size(state.layout.height);
-            fact.gravity = element.gravity != 0 ? element.gravity
-                                                : state.gravity;
-            fact.layout_gravity =
-                element.layout_gravity != 0
-                    ? element.layout_gravity
-                    : state.layout.layout_gravity;
-            fact.padding_top = element.padding_top != 0
-                                   ? element.padding_top
-                                   : state.padding.top;
             if (drawable_id != 0U) {
                 const auto image = ResolveUiDrawable(context, drawable_id);
                 context.ui_tree.Get(node)->intrinsic = {image->width,
                                                         image->height};
-                fact.measured_width = image->width;
-                fact.measured_height = image->height;
             }
-            fact_of[index] =
-                static_cast<std::int32_t>(context.layout_views.size());
-            context.layout_views.push_back(std::move(fact));
         }
         if (!content_view.IsValid()) {
             throw std::runtime_error("layout produced no inflatable widget");

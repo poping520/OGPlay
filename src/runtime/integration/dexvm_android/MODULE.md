@@ -35,8 +35,8 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
 - `DexVmAndroidContext` 是唯一会话状态入口，handler 行为与迁移前保持一致。
 - 每个 live guest View object 与一个 live UiNode 一一绑定；hierarchy/id/visibility/
   geometry 只写 `runtime/ui`，guest click/touch listener 只在本层以 UiNodeId 为 key 保存。
-- drawable decode 的 intrinsic size 写入 UiNode；click adapter 只消费 `screen_frame`，旧
-  fullscreen/edge-row `layout_views` bounds 推导已删除。
+- drawable decode 的 intrinsic size 写入 UiNode；click adapter 只消费 `screen_frame`。
+  旧 fullscreen/edge-row bounds 推导及 `LayoutViewFact/layout_views` 类型与存储均不存在。
 - Java 动态 `ViewGroup.addView/removeView/removeViews/updateViewLayout` 与
   `Activity.setContentView(View)` 直接维护同一 UiTree；LayoutParams object 保存
   width/height/margin/weight 并在 attach/update 时复制到 node，View geometry getter 在 dirty

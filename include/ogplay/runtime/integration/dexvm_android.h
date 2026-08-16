@@ -274,24 +274,6 @@ struct DexVmAndroidContext final {
         ui_view_layout_params;
     std::unordered_map<std::uint32_t, ui::ImageScaleType>
         ui_image_scale_types;
-    // Layout facts captured at inflation (document order, parents before
-    // children) that click hit-testing derives bounds from. measured_* is
-    // the wrap_content size taken from the android:src drawable (0 when
-    // unknown). Bounds outside the supported derivation subset stay
-    // unresolved and touches fall through to Activity.onTouchEvent.
-    struct LayoutViewFact final {
-        dexvm::VmObjectRef view;
-        std::int32_t parent{-1};  // index into layout_views, -1 for roots
-        std::string tag;
-        std::int32_t layout_width{};
-        std::int32_t layout_height{};
-        std::uint32_t gravity{};
-        std::uint32_t layout_gravity{};
-        std::int32_t padding_top{};
-        std::int32_t measured_width{};
-        std::int32_t measured_height{};
-    };
-    std::vector<LayoutViewFact> layout_views;
     // VideoView -> OnCompletionListener. The guest video pump fires it once
     // at end of stream; fallback completion is also deferred to that boundary
     // so callbacks never run re-entrantly inside start().

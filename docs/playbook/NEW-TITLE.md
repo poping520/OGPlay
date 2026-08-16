@@ -22,7 +22,7 @@
 | 虚分派落空 | `virtual dispatch failed for m` | 同上 | 同上 |
 | 空接收者连锁 | `invoke on null receiver: setVisibility` | 报错不含类名/调用点，需要反复加日志定位 | 诊断已带声明类、寄存器与调用者 pc |
 | 样板量 | 占位类与中性方法骨架要手写 | 纯打字 | `tools/dexvm_stub_gen.py` 生成逐类 `Declare_*()` 骨架 |
-| 误报 | 报告把已声明的类算成缺口，白补一轮 | 目录解析漏了循环/工厂式声明 | 报告改为收集全部裸 descriptor 字面量 |
+| 误报 | 报告把已声明的类算成缺口，白补一轮 | 目录解析漏了 builder/循环/工厂式声明 | 报告读取当前 `IntrinsicClassBuilder` 目录并收集裸 descriptor 字面量；self-test 锁定发现路径 |
 
 判断标准：**任何需要「再跑一次才知道下一个缺什么」的步骤都是要消掉的。**
 

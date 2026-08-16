@@ -20,6 +20,6 @@ M10 按 `docs/design/layout-ui/` 实施有界 Android 4.4 XML UI。依赖方向�
 | [WU-M10-012](WU-M10-012.md) | LUI-12 | 完成 | TextView / Button |
 | [WU-M10-013](WU-M10-013.md) | LUI-13 | 完成 | RelativeLayout 核心规则 |
 | [WU-M10-014](WU-M10-014.md) | LUI-14 | 完成 | include / scale / resources |
-| WU-M10-015 | LUI-15 | 待办 | 多 title 收敛与遗留清理 |
+| [WU-M10-015](WU-M10-015.md) | LUI-15 | 完成 | 多 title 收敛与遗留清理 |
 
 每个 WU 单独提交，完成时同步任务单、模块契约、能力账本与当前状态。

@@ -36,8 +36,8 @@ import dex_survey_lib as lib
 # Globs, so splitting a catalog into more batch files never silently shrinks
 # the declared set (which would report already-implemented classes as gaps).
 DEFAULT_CATALOG_GLOBS = (
-    "src/runtime/dexvm/core_catalog.cpp",
-    "src/runtime/integration/dexvm_android*.cpp",
+    "src/runtime/dexvm/intrinsics/*.cpp",
+    "src/runtime/integration/dexvm_android/*.cpp",
 )
 
 # org.xml.sax lives outside PLATFORM_PREFIXES but is still a platform class
@@ -53,6 +53,13 @@ BARE_CLASS_PATTERN = re.compile(r'"(L[a-zA-Z0-9_$/]+;)"')
 METHOD_PATTERN = re.compile(r'\{"([^"]+)",\s*\n?\s*"(\([^"]*\)[^"]*)"')
 FIELD_PATTERN = re.compile(r'\{"([^"]+)",\s*"([^(][^"]*)"')
 PLACEHOLDER_PATTERN = re.compile(r'\{"(L[^"]+;)",\s*(?:true|false)')
+BUILDER_CLASS_PATTERN = re.compile(
+    r'(?:dx::)?IntrinsicClassBuilder\s+([A-Za-z_]\w*)\s*\(\s*"(L[^"]+;)"')
+BUILDER_METHOD_PATTERN = re.compile(
+    r'([A-Za-z_]\w*)\.(?:Virtual|Static|Overridable)\s*\('
+    r'\s*"([^"]+)"\s*,\s*"(\([^"]*\)[^"]*)"')
+BUILDER_FIELD_PATTERN = re.compile(
+    r'([A-Za-z_]\w*)\.Field\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"')
 
 
 def is_platform(descriptor: str) -> bool:
@@ -94,6 +101,32 @@ def parse_catalog_sources(paths: list[Path]) -> tuple[set[str], set[tuple[str, s
                 classes.add(current)
             elif current is not None:
                 members.add((current, payload[0], payload[1]))
+
+        # DVM-32..38 migrated catalogs to IntrinsicClassBuilder. Attribute
+        # builder calls to the most recent construction of the same local
+        # variable; this also handles aggregation files that declare several
+        # classes in source order.
+        builder_events: list[tuple[int, str, tuple[str, ...]]] = []
+        for match in BUILDER_CLASS_PATTERN.finditer(text):
+            builder_events.append(
+                (match.start(), "class", (match.group(1), match.group(2))))
+        for match in BUILDER_METHOD_PATTERN.finditer(text):
+            builder_events.append(
+                (match.start(), "method",
+                 (match.group(1), match.group(2), match.group(3))))
+        for match in BUILDER_FIELD_PATTERN.finditer(text):
+            builder_events.append(
+                (match.start(), "field",
+                 (match.group(1), match.group(2), match.group(3))))
+        builder_events.sort(key=lambda item: item[0])
+        builders: dict[str, str] = {}
+        for _, kind, payload in builder_events:
+            variable = payload[0]
+            if kind == "class":
+                builders[variable] = payload[1]
+                classes.add(payload[1])
+            elif variable in builders:
+                members.add((builders[variable], payload[1], payload[2]))
     return classes, members
 
 
@@ -179,10 +212,11 @@ def build_report(dex: lib.DexFile, declared_classes: set[str],
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apk", required=True, type=Path)
+    parser.add_argument("--apk", type=Path)
     parser.add_argument("--repo", type=Path,
                         default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--self-test", action="store_true")
     arguments = parser.parse_args()
 
     sources = sorted(path for glob in DEFAULT_CATALOG_GLOBS
@@ -190,6 +224,18 @@ def main() -> int:
     if not sources:
         parser.error("no catalog sources matched; check --repo")
     declared_classes, declared_members = parse_catalog_sources(sources)
+    if arguments.self_test:
+        expected_class = "Landroid/view/View;"
+        expected_member = (expected_class, "setVisibility", "(I)V")
+        if expected_class not in declared_classes or \
+                expected_member not in declared_members:
+            parser.error("builder catalog discovery self-test failed")
+        print(json.dumps({"status": "passed", "sources": len(sources),
+                          "classes": len(declared_classes),
+                          "members": len(declared_members)}))
+        return 0
+    if arguments.apk is None:
+        parser.error("--apk is required unless --self-test is used")
     report = build_report(load_dex(arguments.apk), declared_classes,
                           declared_members)
     rendered = json.dumps(report, indent=2, sort_keys=False)

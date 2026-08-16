@@ -131,37 +131,6 @@ struct ClickVm final {
         context->ui_tree.Get(other_node)->intrinsic = {20, 10};
         context->ui_tree.Get(skip_node)->intrinsic = {20, 10};
 
-        using Fact = DexVmAndroidContext::LayoutViewFact;
-        constexpr auto kFill = ogplay::loader::BinaryXmlElement::
-            kSizeFillParent;
-        constexpr auto kWrap = ogplay::loader::BinaryXmlElement::
-            kSizeWrapContent;
-        Fact fullscreen;
-        fullscreen.view = video_view;
-        fullscreen.tag = "VideoView";
-        fullscreen.layout_width = kFill;
-        fullscreen.layout_height = kFill;
-        context->layout_views.push_back(fullscreen);
-        Fact bottom_bar;
-        bottom_bar.view = bar;
-        bottom_bar.tag = "LinearLayout";
-        bottom_bar.layout_width = kFill;
-        bottom_bar.layout_height = kWrap;
-        bottom_bar.gravity = 0x01U;         // center_horizontal
-        bottom_bar.layout_gravity = 0x50U;  // bottom
-        bottom_bar.padding_top = 4;
-        context->layout_views.push_back(bottom_bar);
-        for (const auto& button : {other_button, skip_button}) {
-            Fact fact;
-            fact.view = button;
-            fact.parent = 1;
-            fact.tag = "ImageButton";
-            fact.layout_width = kWrap;
-            fact.layout_height = kWrap;
-            fact.measured_width = 20;
-            fact.measured_height = 10;
-            context->layout_views.push_back(fact);
-        }
     }
 
     VmValue CallOn(const VmObjectRef receiver, const std::string& name,

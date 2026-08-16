@@ -1,7 +1,7 @@
 # 当前状态
 
-更新：2026-08-16 · M10 Layout UI LUI-1..14 已完成，Asphalt 6 启动视频 skip UI
-三轮 exact gate 已闭合；macOS SDL 事件泵已隔离 GLThread；DVM-31 EGL façade 实现完成；MSVC
+更新：2026-08-16 · M10 Layout UI LUI-1..15 已完成，Asphalt 6 启动视频 skip UI 与
+Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 GLThread；DVM-31 EGL façade 实现完成；MSVC
 工程内/工程间并行编译已启用；DexVM 阶段 4 与 intrinsic 声明迁移、SBX、GUI 已交付
 
 ## 当前阶段
@@ -9,12 +9,14 @@
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
 - **M9 DexVM**（DVM-1..39，ADR-0017/0022）：阶段 0..3、entry override、
   静态预置和 v2-only 清理均已交付。
-- **M10 Layout UI LUI-1..14 已完成**：typed AXML、唯一 UiTree/View binding、layout/render/
+- **M10 Layout UI LUI-1..15 已完成**：typed AXML、唯一 UiTree/View binding、layout/render/
   composition/pointer dispatch 已闭合。A6 视频 skip 三轮 scenario 均 passed/no fault/clean
   shutdown。Linear/RelativeLayout、动态 hierarchy/geometry、TextView/Button fixed font、include、
   simple ARSC resource 与 ImageView 五种 scaleType 已闭合；非法图/文本/资源明确失败，
-  style/selector 无真实命中不扩张。
-  下一步 LUI-15 多 title 收敛与遗留清理。
+  style/selector 无真实命中不扩张。LUI-15 以四个旧 title 静态预检及 A5/A6 关闭 survey
+  的真实场景收敛 P1；没有新的 UI 缺口执行命中，因此未扩张 capability。旧
+  `LayoutViewFact/layout_views` 与手造 edge-row facts 已删除，hit-test 只读 UiTree geometry，
+  architecture test 禁止并行事实源和 title-specific runtime identity 回归。
 - **阶段 4 线程地基已交付**（DVM-27..29）：真实宿主线程、独立 execution
   context、wait-set 与统一 Clock 超时已接入；解释仍由 `VmExecutionLock`
   串行。`threads`/`monitors` 保持 `partial`：子线程 native 调用复用 root
@@ -33,7 +35,7 @@
 
 M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`。
-能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 761/761；
+能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 762/762；
 Windows/x64（windows-msvc）本次 728/728。
 Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；
 第三方 target 不被全局注入该选项。
@@ -55,8 +57,8 @@ Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同�
   handle 与 façade 实现已聚合为单一翻译单元。DVM-39 继续闭合 Android/JNI/VFS
   启动边界；A6 可见启动检查点 sequence 6、`4f8e4bf1…` 三轮一致、无 fault、clean
   shutdown，长运行已进入车辆开场动画。profile 因主界面/可游玩未验收仍为
-  `partial`。A5 当前与改动前 HEAD 四检查点 PNG 逐位相同（主界面均为
-  `f91150b4…`），但场景历史期望 `9ee57323…` 已漂移，exact gate 未宣告通过。
+  `partial`。LUI-15 在当前完整 dev 环境复跑 A5，三轮均得到历史 Main Menu exact
+  `9ee57323…`、无 fault、clean shutdown；此前漂移未复现，golden 未改写。
 - **macOS GLThread 宿主事件泵修复（2026-08-14）**：A6 的真实 DexVM Java
   GLThread 进入 native 长调用时会复用 guest slice observer，旧实现因此在
   工作线程调用 `SDL_PumpEvents`，AppKit 以非主线程异常终止。现以创建时
@@ -68,8 +70,7 @@ Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同�
 
 ## 下一步（按优先级）
 
-1. 继续推进 A6 开场后的主界面/输入 gate；另行裁决 A5 历史哈希漂移，未更新期望
-   前不得宣告 A5 exact 通过。
+1. 继续推进 A6 开场后的主界面/输入 gate。
 2. 按命中批次闭合 DexVM 缺口并启动 GC-B-1..6（设计见 `09-gc.md`）；
    当前 512 MiB GC-A 只覆盖已验证短流程。
 3. 启动解释器 v2 threaded 分批（设计见 `10-interpreter-threaded.md`）；
@@ -81,7 +82,6 @@ Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同�
 
 ## 阻塞
 
-- A6 启动 gate 已通过，主界面/可游玩 gate 尚未执行；A5 exact gate 仍受历史期望
-  哈希漂移阻塞。其余未实现面均记账并明确失败。
+- A6 启动 gate 已通过，主界面/可游玩 gate 尚未执行。其余未实现面均记账并明确失败。
 
 长期限制见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。

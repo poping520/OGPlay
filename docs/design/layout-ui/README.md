@@ -58,35 +58,17 @@ DexVm UI inflater ──────── guest View intrinsic
      present
 ```
 
-## 当前代码基础
+## 实现状态
 
-现有实现已经有一条“窄 inflation + 点击事实”路径，应**迁移和泛化**，不是推倒重写：
+LUI-1..15 已完成。严格 AXML/ARSC loader、generic inflater、UiTree measure/layout、RGBA
+renderer、present composition、pointer dispatch、动态 hierarchy、TextView/Button、
+RelativeLayout、include/resource 与 ImageView scaleType 已沿上图依赖方向闭合。
 
-- `src/runtime/integration/dexvm_android/android_app_Activity.cpp`
-  - `setContentView(int)` 能从 `resources.arsc` 找 layout 文件；
-  - 解析 compiled XML；
-  - 为固定 tag 创建 intrinsic 对象；
-  - `android:id` 进入 `view_registry`；
-  - 少量布局事实进入 `layout_views`。
-- `src/loader/binary_xml.cpp`
-  - 已有严格 AXML walker；
-  - 当前只抽取少量 `id/layout_width/layout_height/gravity/layout_gravity/paddingTop/src`
-    属性。
-- `src/runtime/integration/dexvm_android/support_widget_dispatch.cpp`
-  - 已有 visibility/click listener 与 hit-test；
-  - bounds 只支持 fullscreen root 与顶部/底部的特定 horizontal `LinearLayout` 行。
-- `src/runtime/integration/dexvm_android/android_view_View.cpp`
-  - visibility 与 click listener 已有真实状态；
-  - `getId()` 尚未绑定 XML id；
-  - 很多绘制属性仍是 no-op。
-- `src/runtime/integration/dexvm_android/android_view_ViewGroup.cpp`
-  - 动态 `addView/removeView/updateViewLayout` 目前不维护真实 hierarchy。
-- `src/video/`
-  - 已有 VideoView 所需的确定性/FFmpeg player 与 RGBA frame 能力；
-  - UI 子系统不得重复实现视频解码。
-
-本方案的关键迁移原则是：**最终只保留一份 hierarchy/geometry/visibility 事实**。
-`view_registry`、`layout_views`、widget-side geometry 和独立 hit-test 特判不能长期并存。
+UiTree 现在是 hierarchy/id/visibility/layout/geometry 的唯一事实源；旧 `view_registry`、
+`widget_states`、`LayoutViewFact/layout_views` 和 fullscreen/edge-row hit-test 特判均已删除。
+Asphalt 6 启动视频 Skip 与 Asphalt 5 title-flow 各自完成三轮关闭 survey 的 exact scenario。
+未被真实执行命中的静态候选 API 不因本里程碑扩张。逐项能力和限制仍以
+`capabilities.toml`、模块 `MODULE.md` 与 `docs/state/CURRENT.md` 为准。
 
 ## 阅读顺序
 
@@ -102,6 +84,5 @@ DexVm UI inflater ──────── guest View intrinsic
 
 ## 状态
 
-设计目标是给实施 AI 一个可直接执行的根节点；本文不宣称 capability 已完成。真正启动
-任一 WU 前，仍必须按项目流程读取 `CURRENT.md`、当前任务单、相关 `MODULE.md`，并以
-`capabilities.toml` 的当时状态为准。
+本设计的 LUI-1..15 已于 M10 实施完成；本文继续作为设计溯源，能力现状以
+`capabilities.toml` 和模块契约为准。

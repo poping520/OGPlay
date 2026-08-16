@@ -933,6 +933,15 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(tools.dexvm_stub_generator_self_test PROPERTIES LABELS tools)
 
     add_test(
+        NAME tools.dexvm_gap_report_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexvm_gap_report.py
+            --repo ${CMAKE_CURRENT_SOURCE_DIR}
+            --self-test
+    )
+    set_tests_properties(tools.dexvm_gap_report_self_test PROPERTIES LABELS tools)
+
+    add_test(
         NAME tools.gles2_catalog_current
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py

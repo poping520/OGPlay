@@ -61,7 +61,6 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_click_listeners.clear();
     context.ui_touch_listeners.clear();
     context.ui_view_layout_params.clear();
-    context.layout_views.clear();
 }
 
 }  // namespace ogplay::runtime

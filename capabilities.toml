@@ -70,6 +70,11 @@ status = "complete"
 test = "tests/dexvm/ui_include_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/runtime/ui_renderer_tests.cpp; tests/dexvm/arsc_tests.cpp"
 note = "M10 WU-M10-014/LUI-14 实现 include root/merge 展开、override、depth/cycle guard；Arsc simple type/data 驱动 16 层 string/color/dimen/reference 与 bitmap/color drawable resolver；ImageView XML/Java 共用五种 scaleType 和 exact crop raster。style/selector/qualifier 只按真实命中扩展，当前未命中且保持明确失败边界"
 
+[runtime.ui_multi_title_convergence]
+status = "complete"
+test = "tools.dexvm_gap_report_self_test; architecture.platform_boundaries; Asphalt 5 exact title-flow 3/3; Asphalt 6 exact layout-ui-skip 3/3"
+note = "M10 WU-M10-015/LUI-15 修复 builder catalog 静态 survey 并测量四个旧 title；关闭 survey 的 A5/A6 场景没有 UI 缺口真实命中，因此不扩张静态候选能力。LayoutViewFact/layout_views 与手造 edge-row facts 已删除，hit-test 只读 UiTree screen_frame，architecture test 禁止并行事实源及 title-specific runtime identity 回归"
+
 [core.structured_logger]
 status = "complete"
 test = "tests/core/logger_tests.cpp"

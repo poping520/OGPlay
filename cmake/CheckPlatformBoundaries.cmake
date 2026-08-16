@@ -9,6 +9,25 @@ foreach(_module IN LISTS _platform_modules)
     endif()
 endforeach()
 
+# Runtime behavior must remain title-neutral, and UiTree must stay the sole UI
+# geometry source after M10. Include public runtime headers because session
+# state used to carry the retired LayoutViewFact side table there.
+file(GLOB_RECURSE _runtime_policy_files LIST_DIRECTORIES FALSE
+    "${ROOT}/src/*.c" "${ROOT}/src/*.cc" "${ROOT}/src/*.cpp"
+    "${ROOT}/src/*.h" "${ROOT}/src/*.hpp"
+    "${ROOT}/include/ogplay/runtime/*.h"
+    "${ROOT}/include/ogplay/runtime/*.hpp")
+foreach(_file IN LISTS _runtime_policy_files)
+    file(READ "${_file}" _content)
+    string(TOLOWER "${_content}" _lower_content)
+    if(_lower_content MATCHES "(asphalt|gameloft|gloft|dungeon[ _-]*hunter|tales[ _-]*from)")
+        message(FATAL_ERROR "Title-specific runtime branch or identity: ${_file}")
+    endif()
+    if(_content MATCHES "(LayoutViewFact|layout_views)")
+        message(FATAL_ERROR "Retired parallel UI geometry fact source: ${_file}")
+    endif()
+endforeach()
+
 file(GLOB_RECURSE _production_files LIST_DIRECTORIES FALSE
     "${ROOT}/src/*.c" "${ROOT}/src/*.cc" "${ROOT}/src/*.cpp"
     "${ROOT}/src/*.h" "${ROOT}/src/*.hpp")

@@ -72,5 +72,29 @@ namespace ogplay::runtime::dexvm::intrinsics {
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_VirtualMachineError();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StackOverflowError();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_OutOfMemoryError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_AbstractMethodError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_AssertionError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ClassCircularityError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ClassFormatError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_CloneNotSupportedException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_EnumConstantNotPresentException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ExceptionInInitializerError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_IllegalAccessError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_IllegalAccessException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_IncompatibleClassChangeError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_InstantiationError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_InstantiationException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_InternalError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_NoSuchFieldError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_NoSuchFieldException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_NoSuchMethodError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_NoSuchMethodException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ReflectiveOperationException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_SecurityException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ThreadDeath();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_TypeNotPresentException();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_UnknownError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_UnsupportedClassVersionError();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_VerifyError();
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

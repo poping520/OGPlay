@@ -1,5 +1,9 @@
 #include <doctest/doctest.h>
 
+#include <span>
+#include <stdexcept>
+#include <vector>
+
 #include "ogplay/session/ui_compositor.h"
 
 namespace ui = ogplay::runtime::ui;

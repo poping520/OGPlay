@@ -1,13 +1,13 @@
 # 当前状态
 
-更新：2026-08-16 · Layout UI 已正式验收 complete，Asphalt 6 启动视频 skip UI 与
+更新：2026-08-17 · Layout UI 已正式验收 complete，Asphalt 6 启动视频 skip UI 与
 Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 GLThread；DVM-31 EGL façade 实现完成；MSVC
 工程内/工程间并行编译已启用；DexVM 阶段 4 与 intrinsic 声明迁移、SBX、GUI 已交付
 
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM**（DVM-1..39，ADR-0017/0022）：阶段 0..3、entry override、
+- **M9 DexVM**（DVM-1..40，ADR-0017/0022）：阶段 0..3、entry override、
   静态预置和 v2-only 清理均已交付。
 - **Layout UI 已正式验收 complete**：LUI-1..15 的 typed AXML、唯一 UiTree、layout/
   render/composition/input、Linear/RelativeLayout、动态 hierarchy、文本、include/resources
@@ -20,11 +20,10 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
   context、wait-set 与统一 Clock 超时已接入；解释仍由 `VmExecutionLock`
   串行。`threads`/`monitors` 保持 `partial`：子线程 native 调用复用 root
   guest 栈，JNI/DexVM monitor 尚未合一。
-- **intrinsic/热路径迁移已交付**（DVM-32..38）：地址稳定绑定与 execution
+- **intrinsic/热路径迁移已交付**（DVM-32..40）：地址稳定绑定与 execution
   传递完成；平台类由同址 `Declare_*()` 直接绑定，旧 registry/字符串 id 已删除。
-- **Java System 属性已闭合**：`getProperty`/`setProperty` 共用会话内属性表，
-  `line.separator`、`file.separator`、`path.separator` 发布确定性的 API 19 guest
-  值；未知 key 返回 null，参数异常不读取或泄露宿主属性。
+  API 19 `java.lang` Throwable inventory（50 类）已补齐并聚合；13 个依赖尚未
+  建模 cause/object-to-string 的特殊 constructor 显式失败。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用后
   `asphalt5.title_flow` 三轮 passed——468 帧、主界面 SHA-256 `9ee57323…` 逐位
   一致、无 fault、clean shutdown。

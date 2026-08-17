@@ -62,6 +62,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-37](DVM-37.md) | handler 字符串 id 通道整体删除 | 完成 |
 | [DVM-38](DVM-38.md) | android intrinsic 实现与声明完全同址 | 完成 |
 | [DVM-39](DVM-39.md) | Android 启动期状态接口补齐 | 完成 |
+| [DVM-40](DVM-40.md) | java.lang Throwable hierarchy 聚合与 API 19 class shape 补齐 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

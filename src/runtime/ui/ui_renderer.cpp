@@ -304,7 +304,7 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                 Blend(dst, src[0], src[1], src[2], alpha);
             });
         } else if (const auto* text = std::get_if<DrawText>(&command)) {
-            const auto metrics = MeasureFixedText(text->text, text->size_px);
+            const auto text_metrics = MeasureFixedText(text->text, text->size_px);
             const auto alpha = static_cast<std::uint8_t>(
                 (static_cast<std::uint32_t>(text->rgba & 0xffU) *
                      AlphaByte(text->alpha) +
@@ -314,7 +314,7 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                 const auto glyph = GlyphRows(text->text[index]);
                 const auto origin_x =
                     text->x + static_cast<std::int32_t>(index) *
-                                  6 * metrics.scale;
+                                  6 * text_metrics.scale;
                 for (std::int32_t row = 0; row < 7; ++row) {
                     for (std::int32_t column = 0; column < 5; ++column) {
                         if ((glyph[static_cast<std::size_t>(row)] &
@@ -322,10 +322,10 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                             continue;
                         }
                         const Rect pixel{
-                            origin_x + column * metrics.scale,
-                            text->y + row * metrics.scale,
-                            origin_x + (column + 1) * metrics.scale,
-                            text->y + (row + 1) * metrics.scale};
+                            origin_x + column * text_metrics.scale,
+                            text->y + row * text_metrics.scale,
+                            origin_x + (column + 1) * text_metrics.scale,
+                            text->y + (row + 1) * text_metrics.scale};
                         PaintRect(frame, pixel, clips.back(),
                                   [text, alpha](auto, auto, auto* dst) {
                                       Blend(dst,

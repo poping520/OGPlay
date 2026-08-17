@@ -1148,7 +1148,7 @@ note = "DVM-12 per-class 状态机 uninitialized→initializing→initialized|fa
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/装箱/集合；System getProperty/setProperty 共用会话属性表，发布确定性的 API 19 separator 默认值并保留 unknown→null 与参数异常语义；DVM-26 增 Stack、受 monitor 所有权校验的 notify/notifyAll 与有界 getDeclaredMethods/零参整数类 Method.invoke。无超时 wait 与跨线程 wait-set 属阶段 4，仍明确失败"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/装箱/集合；DVM-40 按 android-4.4.4_r2.0.1 本地 Luni 补齐并聚合 50 个 java.lang Throwable class shape，依赖尚未建模 cause/object-to-string 的 13 个特殊 constructor 显式 Unimplemented；System getProperty/setProperty 共用会话属性表，发布确定性的 API 19 separator 默认值并保留 unknown→null 与参数异常语义；DVM-26 增 Stack、受 monitor 所有权校验的 notify/notifyAll 与有界 getDeclaredMethods/零参整数类 Method.invoke。无超时 wait 与跨线程 wait-set 属阶段 4，仍明确失败"
 
 [dexvm.jni_bridge]
 status = "complete"

@@ -7,8 +7,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
@@ -128,7 +130,7 @@ void ExpectException(const VmType& vm, const VmCallOutcome& outcome,
 TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     const auto catalog = CoreIntrinsicCatalog();
     std::set<std::string> descriptors;
-    const std::set<std::string> platform_implemented = {
+    const std::set<std::string> intentionally_unimplemented = {
         "Ljava/lang/System;.currentTimeMillis()J",
         "Ljava/lang/System;.nanoTime()J",
         "Ljava/lang/System;.loadLibrary(Ljava/lang/String;)V",
@@ -136,12 +138,30 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/util/Date;.<init>()V",
         "Ljava/util/Date;.getTime()J",
         "Ljava/util/Date;.getYear()I",
+        "Ljava/lang/AssertionError;.<init>"
+        "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+        "Ljava/lang/AssertionError;.<init>(Ljava/lang/Object;)V",
+        "Ljava/lang/AssertionError;.<init>(Z)V",
+        "Ljava/lang/AssertionError;.<init>(C)V",
+        "Ljava/lang/AssertionError;.<init>(I)V",
+        "Ljava/lang/AssertionError;.<init>(J)V",
+        "Ljava/lang/AssertionError;.<init>(F)V",
+        "Ljava/lang/AssertionError;.<init>(D)V",
+        "Ljava/lang/ReflectiveOperationException;.<init>"
+        "(Ljava/lang/Throwable;)V",
+        "Ljava/lang/ReflectiveOperationException;.<init>"
+        "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+        "Ljava/lang/SecurityException;.<init>"
+        "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+        "Ljava/lang/SecurityException;.<init>(Ljava/lang/Throwable;)V",
+        "Ljava/lang/TypeNotPresentException;.<init>"
+        "(Ljava/lang/String;Ljava/lang/Throwable;)V",
     };
     for (const auto& declaration : catalog) {
         CHECK(descriptors.insert(declaration.descriptor).second);
         for (const auto& method : declaration.methods) {
             if (!method.implementation) {
-                CHECK(platform_implemented.contains(
+                CHECK(intentionally_unimplemented.contains(
                     declaration.descriptor + "." + method.name +
                     method.descriptor));
             }
@@ -184,6 +204,212 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
               {"toString", "(I)Ljava/lang/String;"},
               {"valueOf", "(I)Ljava/lang/Integer;"},
           });
+}
+
+TEST_CASE("dexvm API 19 java.lang throwable inventory is complete") {
+    const std::vector<std::pair<std::string, std::string>> inventory = {
+        {"AbstractMethodError", "IncompatibleClassChangeError"},
+        {"ArithmeticException", "RuntimeException"},
+        {"ArrayIndexOutOfBoundsException", "IndexOutOfBoundsException"},
+        {"ArrayStoreException", "RuntimeException"},
+        {"AssertionError", "Error"},
+        {"ClassCastException", "RuntimeException"},
+        {"ClassCircularityError", "LinkageError"},
+        {"ClassFormatError", "LinkageError"},
+        {"ClassNotFoundException", "ReflectiveOperationException"},
+        {"CloneNotSupportedException", "Exception"},
+        {"EnumConstantNotPresentException", "RuntimeException"},
+        {"Error", "Throwable"},
+        {"Exception", "Throwable"},
+        {"ExceptionInInitializerError", "LinkageError"},
+        {"IllegalAccessError", "IncompatibleClassChangeError"},
+        {"IllegalAccessException", "ReflectiveOperationException"},
+        {"IllegalArgumentException", "RuntimeException"},
+        {"IllegalMonitorStateException", "RuntimeException"},
+        {"IllegalStateException", "RuntimeException"},
+        {"IllegalThreadStateException", "IllegalArgumentException"},
+        {"IncompatibleClassChangeError", "LinkageError"},
+        {"IndexOutOfBoundsException", "RuntimeException"},
+        {"InstantiationError", "IncompatibleClassChangeError"},
+        {"InstantiationException", "ReflectiveOperationException"},
+        {"InternalError", "VirtualMachineError"},
+        {"InterruptedException", "Exception"},
+        {"LinkageError", "Error"},
+        {"NegativeArraySizeException", "RuntimeException"},
+        {"NoClassDefFoundError", "LinkageError"},
+        {"NoSuchFieldError", "IncompatibleClassChangeError"},
+        {"NoSuchFieldException", "ReflectiveOperationException"},
+        {"NoSuchMethodError", "IncompatibleClassChangeError"},
+        {"NoSuchMethodException", "ReflectiveOperationException"},
+        {"NullPointerException", "RuntimeException"},
+        {"NumberFormatException", "IllegalArgumentException"},
+        {"OutOfMemoryError", "VirtualMachineError"},
+        {"ReflectiveOperationException", "Exception"},
+        {"RuntimeException", "Exception"},
+        {"SecurityException", "RuntimeException"},
+        {"StackOverflowError", "VirtualMachineError"},
+        {"StringIndexOutOfBoundsException", "IndexOutOfBoundsException"},
+        {"ThreadDeath", "Error"},
+        {"Throwable", "Object"},
+        {"TypeNotPresentException", "RuntimeException"},
+        {"UnknownError", "VirtualMachineError"},
+        {"UnsatisfiedLinkError", "LinkageError"},
+        {"UnsupportedClassVersionError", "ClassFormatError"},
+        {"UnsupportedOperationException", "RuntimeException"},
+        {"VerifyError", "LinkageError"},
+        {"VirtualMachineError", "Error"},
+    };
+    REQUIRE(inventory.size() == 50U);
+
+    const auto catalog = CoreIntrinsicCatalog();
+    std::map<std::string, std::size_t> descriptor_counts;
+    for (const auto& declaration : catalog) {
+        ++descriptor_counts[declaration.descriptor];
+    }
+    for (const auto& [name, superclass] : inventory) {
+        const auto descriptor = "Ljava/lang/" + name + ";";
+        CAPTURE(descriptor);
+        CHECK(descriptor_counts[descriptor] == 1U);
+        const auto declaration = std::find_if(
+            catalog.begin(), catalog.end(), [&](const auto& candidate) {
+                return candidate.descriptor == descriptor;
+            });
+        REQUIRE(declaration != catalog.end());
+        REQUIRE(declaration->superclass.has_value());
+        CHECK(*declaration->superclass ==
+              "Ljava/lang/" + superclass + ";");
+    }
+}
+
+TEST_CASE("dexvm API 19 throwable representative shapes are source-faithful") {
+    const auto catalog = CoreIntrinsicCatalog();
+    const auto declaration = [&catalog](const std::string& descriptor)
+        -> const IntrinsicClassDecl& {
+        const auto found = std::find_if(
+            catalog.begin(), catalog.end(), [&](const auto& candidate) {
+                return candidate.descriptor == descriptor;
+            });
+        REQUIRE(found != catalog.end());
+        return *found;
+    };
+    const auto methods = [](const IntrinsicClassDecl& java_class) {
+        std::set<std::pair<std::string, std::string>> result;
+        for (const auto& method : java_class.methods) {
+            result.emplace(method.name, method.descriptor);
+        }
+        return result;
+    };
+    const auto fields = [](const IntrinsicClassDecl& java_class) {
+        std::set<std::pair<std::string, std::string>> result;
+        for (const auto& field : java_class.fields) {
+            if (!field.is_static) {
+                result.emplace(field.name, field.descriptor);
+            }
+        }
+        return result;
+    };
+
+    CHECK(methods(declaration("Ljava/lang/AssertionError;")) ==
+          std::set<std::pair<std::string, std::string>>{
+              {"<init>", "()V"},
+              {"<init>",
+               "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
+              {"<init>", "(Ljava/lang/Object;)V"},
+              {"<init>", "(Z)V"},
+              {"<init>", "(C)V"},
+              {"<init>", "(I)V"},
+              {"<init>", "(J)V"},
+              {"<init>", "(F)V"},
+              {"<init>", "(D)V"},
+          });
+
+    const auto& class_not_found =
+        declaration("Ljava/lang/ClassNotFoundException;");
+    CHECK(fields(class_not_found) ==
+          std::set<std::pair<std::string, std::string>>{
+              {"ex", "Ljava/lang/Throwable;"}});
+    CHECK(methods(class_not_found) ==
+          std::set<std::pair<std::string, std::string>>{
+              {"<init>", "()V"},
+              {"<init>", "(Ljava/lang/String;)V"},
+              {"<init>",
+               "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
+              {"getCause", "()Ljava/lang/Throwable;"},
+              {"getException", "()Ljava/lang/Throwable;"},
+          });
+
+    const auto& enum_missing =
+        declaration("Ljava/lang/EnumConstantNotPresentException;");
+    CHECK(fields(enum_missing) ==
+          std::set<std::pair<std::string, std::string>>{
+              {"constantName", "Ljava/lang/String;"},
+              {"enumType", "Ljava/lang/Class;"},
+          });
+    CHECK(methods(enum_missing) ==
+          std::set<std::pair<std::string, std::string>>{
+              {"<init>", "(Ljava/lang/Class;Ljava/lang/String;)V"},
+              {"constantName", "()Ljava/lang/String;"},
+              {"enumType", "()Ljava/lang/Class;"},
+          });
+
+    const auto& initializer =
+        declaration("Ljava/lang/ExceptionInInitializerError;");
+    CHECK(fields(initializer) ==
+          std::set<std::pair<std::string, std::string>>{
+              {"exception", "Ljava/lang/Throwable;"}});
+    CHECK(methods(initializer).contains(
+        {"<init>", "(Ljava/lang/Throwable;)V"}));
+    CHECK(methods(initializer).contains(
+        {"getException", "()Ljava/lang/Throwable;"}));
+    CHECK(methods(initializer).contains(
+        {"getCause", "()Ljava/lang/Throwable;"}));
+
+    const auto& type_missing =
+        declaration("Ljava/lang/TypeNotPresentException;");
+    CHECK(fields(type_missing) ==
+          std::set<std::pair<std::string, std::string>>{
+              {"typeName", "Ljava/lang/String;"}});
+    CHECK(methods(type_missing) ==
+          std::set<std::pair<std::string, std::string>>{
+              {"<init>",
+               "(Ljava/lang/String;Ljava/lang/Throwable;)V"},
+              {"typeName", "()Ljava/lang/String;"},
+          });
+}
+
+TEST_CASE("dexvm java.lang throwable implementation is one family TU") {
+    const std::vector<std::string> classes = {
+        "AbstractMethodError", "ArithmeticException",
+        "ArrayIndexOutOfBoundsException", "ArrayStoreException",
+        "AssertionError", "ClassCastException", "ClassCircularityError",
+        "ClassFormatError", "ClassNotFoundException",
+        "CloneNotSupportedException", "EnumConstantNotPresentException",
+        "Error", "Exception", "ExceptionInInitializerError",
+        "IllegalAccessError", "IllegalAccessException",
+        "IllegalArgumentException", "IllegalMonitorStateException",
+        "IllegalStateException", "IllegalThreadStateException",
+        "IncompatibleClassChangeError", "IndexOutOfBoundsException",
+        "InstantiationError", "InstantiationException", "InternalError",
+        "InterruptedException", "LinkageError", "NegativeArraySizeException",
+        "NoClassDefFoundError", "NoSuchFieldError", "NoSuchFieldException",
+        "NoSuchMethodError", "NoSuchMethodException", "NullPointerException",
+        "NumberFormatException", "OutOfMemoryError",
+        "ReflectiveOperationException", "RuntimeException",
+        "SecurityException", "StackOverflowError",
+        "StringIndexOutOfBoundsException", "ThreadDeath", "Throwable",
+        "TypeNotPresentException", "UnknownError", "UnsatisfiedLinkError",
+        "UnsupportedClassVersionError", "UnsupportedOperationException",
+        "VerifyError", "VirtualMachineError",
+    };
+    const auto directory = std::filesystem::path(OGPLAY_SOURCE_DIR) / "src" /
+                           "runtime" / "dexvm" / "intrinsics";
+    CHECK(std::filesystem::is_regular_file(
+        directory / "java_lang_throwables.cpp"));
+    for (const auto& name : classes) {
+        CAPTURE(name);
+        CHECK_FALSE(std::filesystem::exists(
+            directory / ("java_lang_" + name + ".cpp")));
+    }
 }
 
 TEST_CASE("dexvm core handlers call directly") {

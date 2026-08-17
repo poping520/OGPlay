@@ -49,8 +49,6 @@ void SetThrowableRefField(IntrinsicContext& context,
     return VmObjectRef(slots[linked.slot].bits);
 }
 
-}  // namespace
-
 IntrinsicClassDecl Declare_java_lang_ArithmeticException() {
     IntrinsicClassBuilder builder("Ljava/lang/ArithmeticException;");
     builder.Super("Ljava/lang/RuntimeException;");
@@ -929,6 +927,63 @@ IntrinsicClassDecl Declare_java_lang_InstantiationException() {
             });
     auto result = std::move(builder).Build();
     return result;
+}
+
+}  // namespace
+
+void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog) {
+    catalog.reserve(catalog.size() + 50);
+
+    catalog.push_back(Declare_java_lang_Throwable());
+    catalog.push_back(Declare_java_lang_Exception());
+    catalog.push_back(Declare_java_lang_RuntimeException());
+    catalog.push_back(Declare_java_lang_NullPointerException());
+    catalog.push_back(Declare_java_lang_ArithmeticException());
+    catalog.push_back(Declare_java_lang_IndexOutOfBoundsException());
+    catalog.push_back(Declare_java_lang_ArrayIndexOutOfBoundsException());
+    catalog.push_back(Declare_java_lang_StringIndexOutOfBoundsException());
+    catalog.push_back(Declare_java_lang_ClassCastException());
+    catalog.push_back(Declare_java_lang_NegativeArraySizeException());
+    catalog.push_back(Declare_java_lang_ArrayStoreException());
+    catalog.push_back(Declare_java_lang_IllegalMonitorStateException());
+    catalog.push_back(Declare_java_lang_IllegalArgumentException());
+    catalog.push_back(Declare_java_lang_IllegalStateException());
+    catalog.push_back(Declare_java_lang_UnsupportedOperationException());
+    catalog.push_back(Declare_java_lang_ClassNotFoundException());
+    catalog.push_back(Declare_java_lang_InterruptedException());
+    catalog.push_back(Declare_java_lang_NumberFormatException());
+    catalog.push_back(Declare_java_lang_IllegalThreadStateException());
+    catalog.push_back(Declare_java_lang_Error());
+    catalog.push_back(Declare_java_lang_LinkageError());
+    catalog.push_back(Declare_java_lang_NoClassDefFoundError());
+    catalog.push_back(Declare_java_lang_UnsatisfiedLinkError());
+    catalog.push_back(Declare_java_lang_VirtualMachineError());
+    catalog.push_back(Declare_java_lang_StackOverflowError());
+    catalog.push_back(Declare_java_lang_OutOfMemoryError());
+    catalog.push_back(Declare_java_lang_AbstractMethodError());
+    catalog.push_back(Declare_java_lang_AssertionError());
+    catalog.push_back(Declare_java_lang_ClassCircularityError());
+    catalog.push_back(Declare_java_lang_ClassFormatError());
+    catalog.push_back(Declare_java_lang_CloneNotSupportedException());
+    catalog.push_back(Declare_java_lang_EnumConstantNotPresentException());
+    catalog.push_back(Declare_java_lang_ExceptionInInitializerError());
+    catalog.push_back(Declare_java_lang_IllegalAccessError());
+    catalog.push_back(Declare_java_lang_IllegalAccessException());
+    catalog.push_back(Declare_java_lang_IncompatibleClassChangeError());
+    catalog.push_back(Declare_java_lang_InstantiationError());
+    catalog.push_back(Declare_java_lang_InstantiationException());
+    catalog.push_back(Declare_java_lang_InternalError());
+    catalog.push_back(Declare_java_lang_NoSuchFieldError());
+    catalog.push_back(Declare_java_lang_NoSuchFieldException());
+    catalog.push_back(Declare_java_lang_NoSuchMethodError());
+    catalog.push_back(Declare_java_lang_NoSuchMethodException());
+    catalog.push_back(Declare_java_lang_ReflectiveOperationException());
+    catalog.push_back(Declare_java_lang_SecurityException());
+    catalog.push_back(Declare_java_lang_ThreadDeath());
+    catalog.push_back(Declare_java_lang_TypeNotPresentException());
+    catalog.push_back(Declare_java_lang_UnknownError());
+    catalog.push_back(Declare_java_lang_UnsupportedClassVersionError());
+    catalog.push_back(Declare_java_lang_VerifyError());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

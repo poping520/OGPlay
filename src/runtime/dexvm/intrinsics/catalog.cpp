@@ -4,7 +4,7 @@ namespace ogplay::runtime::dexvm {
 
 std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
     using namespace intrinsics;
-    return {
+    std::vector<IntrinsicClassDecl> catalog{
         Declare_java_lang_Object(),
         Declare_java_lang_Runnable(),
         Declare_java_lang_CharSequence(),
@@ -36,23 +36,11 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_lang_reflect_Method(),
         Declare_java_lang_ref_WeakReference(),
         Declare_java_lang_reflect_Array(),
-        Declare_java_lang_Throwable(),
-        Declare_java_lang_Exception(),
-        Declare_java_lang_RuntimeException(),
-        Declare_java_lang_NullPointerException(),
-        Declare_java_lang_ArithmeticException(),
-        Declare_java_lang_IndexOutOfBoundsException(),
-        Declare_java_lang_ArrayIndexOutOfBoundsException(),
-        Declare_java_lang_StringIndexOutOfBoundsException(),
-        Declare_java_lang_ClassCastException(),
-        Declare_java_lang_NegativeArraySizeException(),
-        Declare_java_lang_ArrayStoreException(),
-        Declare_java_lang_IllegalMonitorStateException(),
-        Declare_java_lang_IllegalArgumentException(),
-        Declare_java_lang_IllegalStateException(),
-        Declare_java_lang_UnsupportedOperationException(),
-        Declare_java_lang_ClassNotFoundException(),
-        Declare_java_lang_InterruptedException(),
+    };
+
+    AppendJavaLangThrowables(catalog);
+
+    catalog.insert(catalog.end(), {
         Declare_java_io_IOException(),
         Declare_java_io_FileNotFoundException(),
         Declare_java_io_UnsupportedEncodingException(),
@@ -64,40 +52,9 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_net_UnknownHostException(),
         Declare_java_net_MalformedURLException(),
         Declare_java_io_EOFException(),
-        Declare_java_lang_NumberFormatException(),
-        Declare_java_lang_IllegalThreadStateException(),
-        Declare_java_lang_Error(),
-        Declare_java_lang_LinkageError(),
-        Declare_java_lang_NoClassDefFoundError(),
-        Declare_java_lang_UnsatisfiedLinkError(),
-        Declare_java_lang_VirtualMachineError(),
-        Declare_java_lang_StackOverflowError(),
-        Declare_java_lang_OutOfMemoryError(),
-        Declare_java_lang_AbstractMethodError(),
-        Declare_java_lang_AssertionError(),
-        Declare_java_lang_ClassCircularityError(),
-        Declare_java_lang_ClassFormatError(),
-        Declare_java_lang_CloneNotSupportedException(),
-        Declare_java_lang_EnumConstantNotPresentException(),
-        Declare_java_lang_ExceptionInInitializerError(),
-        Declare_java_lang_IllegalAccessError(),
-        Declare_java_lang_IllegalAccessException(),
-        Declare_java_lang_IncompatibleClassChangeError(),
-        Declare_java_lang_InstantiationError(),
-        Declare_java_lang_InstantiationException(),
-        Declare_java_lang_InternalError(),
-        Declare_java_lang_NoSuchFieldError(),
-        Declare_java_lang_NoSuchFieldException(),
-        Declare_java_lang_NoSuchMethodError(),
-        Declare_java_lang_NoSuchMethodException(),
-        Declare_java_lang_ReflectiveOperationException(),
-        Declare_java_lang_SecurityException(),
-        Declare_java_lang_ThreadDeath(),
-        Declare_java_lang_TypeNotPresentException(),
-        Declare_java_lang_UnknownError(),
-        Declare_java_lang_UnsupportedClassVersionError(),
-        Declare_java_lang_VerifyError(),
-    };
+    });
+
+    return catalog;
 }
 
 }  // namespace ogplay::runtime::dexvm

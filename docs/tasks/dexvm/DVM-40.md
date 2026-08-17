@@ -85,9 +85,10 @@ superclass 错写为 `Exception`，本 WU 按源码修正为
 ## 方案
 
 - 所有 `java.lang` Throwable 派生类进入 `java_lang_throwables.cpp`。
-- 每个 Java 类仍保留独立的 `Declare_java_lang_Xxx()`。
-- `catalog.h` 仍逐类声明，`catalog.cpp` 仍逐类注册。
-- 不增加 `DeclareJavaLangThrowables()` 等家族级接口。
+- 每个 Java 类仍保留独立的 `Declare_java_lang_Xxx()`，但仅在该 TU 内可见。
+- `catalog.h` 只暴露一个 `AppendJavaLangThrowables()` family 入口。
+- `catalog.cpp` 只调用 family 入口，不逐类注册 Throwable hierarchy。
+- 不增加静态自注册或字符串 handler id 通道。
 - 删除属于该 hierarchy 的旧单类 `.cpp`。
 - 已有声明和 handler 机械迁移；新增类的 descriptor、direct superclass、
   constructors、declared methods 与必要字段按本地 Luni 源码建模。
@@ -132,8 +133,9 @@ superclass 错写为 `Exception`，本 WU 按源码修正为
 - 本地 `android-4.4.4_r2.0.1` Luni 源码盘点得到 50 个顶层
   `java.lang` Throwable classes；OGPlay 原有 26 个，本次新增 24 个。
 - 26 个旧单类 `.cpp` 已删除，50 个独立 `Declare_java_lang_Xxx()` 统一位于
-  `java_lang_throwables.cpp`；最终 934 行。catalog 继续逐类声明、逐类注册，
-  未增加家族级接口。
+  `java_lang_throwables.cpp`；类级 `Declare_*()` 为 TU-private，
+  `catalog.h/cpp` 只通过 `AppendJavaLangThrowables()` family 入口聚合，
+  不再暴露 50 个 Throwable 类级符号。
 - `ClassNotFoundException` 的 direct superclass 从旧 catalog 的 `Exception`
   修正为源码规定的 `ReflectiveOperationException`；特殊字段、constructor、
   getter shape 覆盖 `ClassNotFoundException`、

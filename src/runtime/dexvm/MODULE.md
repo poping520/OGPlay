@@ -99,10 +99,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 `class_linker_resolve.cpp`。解释器主循环在 `interpreter.cpp`，显式执行 context
 的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
 `interpreter_context.cpp`，宿主线程生命周期在 `vm_threads.cpp`。
-`intrinsics/catalog.cpp` 显式逐类聚合目录；每个 Java 类仍由唯一
+`intrinsics/catalog.cpp` 显式聚合目录；每个 Java 类仍由唯一
 `Declare_*()` 同址声明形状与 handler，默认一类一个同名 `.cpp`。唯一文件组织
 例外是 Android 4.4.4 `java.lang` Throwable hierarchy，全部位于
-`intrinsics/java_lang_throwables.cpp`，且不改变 catalog 的类级边界；
+`intrinsics/java_lang_throwables.cpp`；该 family 的类级 `Declare_*()` 为
+TU-private，由单一 `AppendJavaLangThrowables()` 入口加入 core catalog。
 `shared.h` 只放跨类内部 helper。原集中式 core catalog 与三个 handler 文件已
 删除。
 

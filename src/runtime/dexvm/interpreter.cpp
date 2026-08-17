@@ -641,6 +641,26 @@ Interpreter::MapStorage(const VmObjectRef instance) {
     return impl_->maps[instance.Value()];
 }
 
+std::optional<std::string> Interpreter::GetSystemProperty(
+    const std::string_view key) const {
+    const auto found = impl_->system_properties.find(std::string(key));
+    if (found == impl_->system_properties.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
+std::optional<std::string> Interpreter::SetSystemProperty(
+    std::string key, std::string value) {
+    const auto found = impl_->system_properties.find(key);
+    std::optional<std::string> previous;
+    if (found != impl_->system_properties.end()) {
+        previous = found->second;
+    }
+    impl_->system_properties[std::move(key)] = std::move(value);
+    return previous;
+}
+
 void Interpreter::SetIntrinsicStaticRef(const std::string_view class_descriptor,
                                         const std::string_view field_name,
                                         const std::string_view field_descriptor,

@@ -293,6 +293,14 @@ public:
     // sides are strings, reference identity otherwise.
     [[nodiscard]] bool JavaEquals(VmObjectRef left, VmObjectRef right) const;
 
+    // Per-VM guest java.lang.System properties. These never consult the host
+    // process environment and are shared by System and wrapper helpers such
+    // as Boolean.getBoolean/Integer.getInteger/Long.getLong.
+    [[nodiscard]] std::optional<std::string> GetSystemProperty(
+        std::string_view key) const;
+    [[nodiscard]] std::optional<std::string> SetSystemProperty(
+        std::string key, std::string value);
+
   // Object.notify/notifyAll: validates that the calling context owns the
   // receiver monitor, then moves waiters out of its wait set.
   void NotifyMonitor(VmObjectRef receiver, bool all) const;

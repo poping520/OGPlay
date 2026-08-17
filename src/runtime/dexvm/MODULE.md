@@ -80,8 +80,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   均明确失败，禁止绕过 `<clinit>`。
 - Class/Method 反射只开放真实 declared-method 枚举和零参数、int-like
   返回的调用；其余明确抛 `UnsupportedOperationException`。
-- `System.getProperty(String)` 与 `setProperty(String,String)` 共享每 VM 属性表；
-  separator 默认值来自固定 API 19 guest 事实，未知属性返回 null，禁止泄露宿主属性。
+- `System.getProperty(String)`、`setProperty(String,String)` 与 primitive wrapper
+  property API 共享每 VM 属性表；separator 默认值来自固定 API 19 guest 事实，
+  未知属性返回 null，禁止泄露宿主属性。
 
 - Gap survey（诊断，默认关闭）：`EnableGapSurvey()` 后，未声明的**平台**类/
   方法被合成为中性桩（0/null/void）并逐次记账，一次运行即可收割新 title 的
@@ -101,9 +102,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 `interpreter_context.cpp`，宿主线程生命周期在 `vm_threads.cpp`。
 `intrinsics/catalog.cpp` 显式聚合目录；每个 Java 类仍由唯一
 `Declare_*()` 同址声明形状与 handler，默认一类一个同名 `.cpp`。唯一文件组织
-例外是 Android 4.4.4 `java.lang` Throwable hierarchy，全部位于
-`intrinsics/java_lang_throwables.cpp`；该 family 的类级 `Declare_*()` 为
-TU-private，由单一 `AppendJavaLangThrowables()` 入口加入 core catalog。
+例外是 Android 4.4.4 `java.lang` Throwable hierarchy 与 primitive wrapper
+family，分别位于 `intrinsics/java_lang_throwables.cpp` 与
+`intrinsics/java_lang_primitive_wrappers.cpp`；Java class 仍是一等逻辑单位，
+family 内类级 `Declare_*()` 均为 TU-private，catalog 只调用对应 `Append*()`。
+family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自注册。
 `shared.h` 只放跨类内部 helper。原集中式 core catalog 与三个 handler 文件已
 删除。
 

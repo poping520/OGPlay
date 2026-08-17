@@ -89,6 +89,11 @@ public:
     std::unordered_map<std::uint32_t,
                        std::vector<std::pair<VmObjectRef, VmObjectRef>>>
         maps;
+    std::unordered_map<std::string, std::string> system_properties{
+        {"file.separator", "/"},
+        {"line.separator", "\n"},
+        {"path.separator", ":"},
+    };
     core::Logger* logger{};
     Interpreter* owner{};
     VmExecutionLock execution_lock;

@@ -7,7 +7,7 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
 ## 当前阶段
 
 - M0..M4 已完成并验收；M5 冻结待验收；M6 自动化闭环在用；M8 兼容冲刺继续。
-- **M9 DexVM**（DVM-1..40，ADR-0017/0022）：阶段 0..3、entry override、
+- **M9 DexVM**（DVM-1..41，ADR-0017/0022）：阶段 0..3、entry override、
   静态预置和 v2-only 清理均已交付。
 - **Layout UI 已正式验收 complete**：LUI-1..15 的 typed AXML、唯一 UiTree、layout/
   render/composition/input、Linear/RelativeLayout、动态 hierarchy、文本、include/resources
@@ -20,10 +20,10 @@ Asphalt 5 title-flow 均三轮 exact gate 闭合；macOS SDL 事件泵已隔离 
   context、wait-set 与统一 Clock 超时已接入；解释仍由 `VmExecutionLock`
   串行。`threads`/`monitors` 保持 `partial`：子线程 native 调用复用 root
   guest 栈，JNI/DexVM monitor 尚未合一。
-- **intrinsic/热路径迁移已交付**（DVM-32..40）：地址稳定绑定与 execution
+- **intrinsic/热路径迁移已交付**（DVM-32..41）：地址稳定绑定与 execution
   传递完成；平台类由同址 `Declare_*()` 直接绑定，旧 registry/字符串 id 已删除。
-  API 19 `java.lang` Throwable inventory（50 类）已补齐并聚合；13 个依赖尚未
-  建模 cause/object-to-string 的特殊 constructor 显式失败。
+  API 19 Throwable 50 类与 primitive wrapper 9 类已 family 聚合；前 8 个 wrapper
+  public API 完成，Character 44 项高频 API 完成、其余 Unicode 面保持 partial。
 - **pilot gate（05 §4 gate 1）已通过**：Asphalt 5 删除 16 条历史 replay 调用后
   `asphalt5.title_flow` 三轮 passed——468 帧、主界面 SHA-256 `9ee57323…` 逐位
   一致、无 fault、clean shutdown。
@@ -38,7 +38,7 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`；
 Layout UI 任务索引见 `docs/tasks/layoutui/README.md`。
 能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 766/766；
-Windows/x64（windows-msvc）本次 728/728。
+Windows/x64（windows-msvc）本次 775/775。
 Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；
 第三方 target 不被全局注入该选项。
 

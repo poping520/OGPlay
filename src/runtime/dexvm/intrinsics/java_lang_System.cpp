@@ -7,8 +7,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 namespace {
 
-using SystemPropertyMap = std::unordered_map<std::string, std::string>;
-
 [[nodiscard]] std::string PropertyKey(IntrinsicContext& context,
                                       const VmObjectRef reference) {
     if (!reference.IsValid()) {
@@ -35,11 +33,6 @@ using SystemPropertyMap = std::unordered_map<std::string, std::string>;
 }  // namespace
 
 IntrinsicClassDecl Declare_java_lang_System() {
-    auto properties = std::make_shared<SystemPropertyMap>(SystemPropertyMap{
-        {"file.separator", "/"},
-        {"line.separator", "\n"},
-        {"path.separator", ":"},
-    });
     IntrinsicClassBuilder builder("Ljava/lang/System;");
     builder.Super("Ljava/lang/Object;");
     builder.Field("out", "Ljava/io/PrintStream;", true);
@@ -101,25 +94,22 @@ IntrinsicClassDecl Declare_java_lang_System() {
                 return VmValue::Void();
             });
     builder.Static("getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
-        [properties](IntrinsicContext& context) {
+        [](IntrinsicContext& context) {
                 const auto key = PropertyKey(context, context.arguments[0].ref);
-                const auto found = properties->find(key);
-                if (found == properties->end()) {
+                const auto value = context.vm.GetSystemProperty(key);
+                if (!value.has_value()) {
                     return VmValue::Ref(VmObjectRef{});
                 }
-                return VmValue::Ref(context.vm.NewStringUtf8(found->second));
+                return VmValue::Ref(context.vm.NewStringUtf8(*value));
             });
     builder.Static("setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-        [properties](IntrinsicContext& context) {
+        [](IntrinsicContext& context) {
                 const auto key = PropertyKey(context, context.arguments[0].ref);
                 const auto value = PropertyValue(context, context.arguments[1].ref);
-                    const auto previous = properties->find(key);
-                    VmValue result = VmValue::Ref(VmObjectRef{});
-                    if (previous != properties->end()) {
-                  result = VmValue::Ref(context.vm.NewStringUtf8(previous->second));
-                    }
-                    (*properties)[key] = value;
-                    return result;
+                const auto previous = context.vm.SetSystemProperty(key, value);
+                return previous.has_value()
+                           ? VmValue::Ref(context.vm.NewStringUtf8(*previous))
+                           : VmValue::Ref(VmObjectRef{});
                 });
     builder.Static("currentTimeMillis", "()J",
         {});

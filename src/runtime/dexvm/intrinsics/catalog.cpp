@@ -16,12 +16,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_lang_System(),
         Declare_java_io_PrintStream(),
         Declare_java_lang_Math(),
-        Declare_java_lang_Number(),
-        Declare_java_lang_Integer(),
-        Declare_java_lang_Long(),
-        Declare_java_lang_Boolean(),
-        Declare_java_lang_Float(),
-        Declare_java_lang_Double(),
         Declare_java_util_HashMap(),
         Declare_java_util_Hashtable(),
         Declare_java_util_List(),
@@ -37,6 +31,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_lang_ref_WeakReference(),
         Declare_java_lang_reflect_Array(),
     };
+
+    AppendJavaLangPrimitiveWrappers(catalog);
 
     AppendJavaLangThrowables(catalog);
 

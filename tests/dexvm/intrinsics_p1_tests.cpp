@@ -94,6 +94,7 @@ TEST_CASE("dexvm P1 boxed values") {
     const auto boxed = vm.CallStatic("longBox", "()J");
     REQUIRE(boxed.value.kind == VmValue::Kind::wide);
     CHECK(boxed.value.AsLong() == 0x1234567800000000LL);
+    ExpectInt(vm.CallStatic("primitiveWrappers", "()I"), 107);
 }
 
 TEST_CASE("dexvm P1 collections use Java string equality for keys") {

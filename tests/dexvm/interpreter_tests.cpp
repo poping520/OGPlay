@@ -6,6 +6,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -195,15 +196,395 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           });
     CHECK(signatures("Ljava/lang/StringBuilder;").size() == 17U);
     CHECK(signatures("Ljava/lang/String;").size() == 43U);
-    CHECK(signatures("Ljava/lang/Integer;") ==
-          std::set<std::pair<std::string, std::string>>{
-              {"<init>", "(I)V"},
-              {"intValue", "()I"},
-              {"parseInt", "(Ljava/lang/String;)I"},
-              {"toString", "()Ljava/lang/String;"},
-              {"toString", "(I)Ljava/lang/String;"},
-              {"valueOf", "(I)Ljava/lang/Integer;"},
-          });
+    CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
+}
+
+TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
+    const auto catalog = CoreIntrinsicCatalog();
+    const auto declaration = [&catalog](const std::string& descriptor)
+        -> const IntrinsicClassDecl& {
+        const auto found = std::find_if(catalog.begin(), catalog.end(),
+            [&](const auto& candidate) { return candidate.descriptor == descriptor; });
+        REQUIRE(found != catalog.end());
+        CHECK(std::count_if(catalog.begin(), catalog.end(), [&](const auto& candidate) {
+            return candidate.descriptor == descriptor; }) == 1);
+        return *found;
+    };
+    const auto signatures = [](const IntrinsicClassDecl& java_class) {
+        std::set<std::string> result;
+        for (const auto& method : java_class.methods) {
+            result.insert(method.name + method.descriptor);
+            CHECK(static_cast<bool>(method.implementation));
+        }
+        return result;
+    };
+    const auto fields = [](const IntrinsicClassDecl& java_class) {
+        std::set<std::string> result;
+        for (const auto& field : java_class.fields) {
+            result.insert(field.name + ":" + field.descriptor);
+        }
+        return result;
+    };
+    const auto expect = [&](const char* name, const char* superclass,
+                            std::initializer_list<const char*> interfaces,
+                            std::initializer_list<const char*> methods) {
+        const auto& java_class = declaration("Ljava/lang/" + std::string(name) + ";");
+        REQUIRE(java_class.superclass.has_value());
+        CHECK(*java_class.superclass == superclass);
+        CHECK(std::set<std::string>(java_class.interfaces.begin(), java_class.interfaces.end()) ==
+              std::set<std::string>(interfaces.begin(), interfaces.end()));
+        CHECK(signatures(java_class) == std::set<std::string>(methods.begin(), methods.end()));
+    };
+
+    expect("Number", "Ljava/lang/Object;", {"Ljava/io/Serializable;"}, {
+        "<init>()V", "byteValue()B", "shortValue()S", "intValue()I",
+        "longValue()J", "floatValue()F", "doubleValue()D"});
+    expect("Byte", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"}, {
+        "<init>(B)V","<init>(Ljava/lang/String;)V","byteValue()B","shortValue()S","intValue()I","longValue()J","floatValue()F","doubleValue()D",
+        "compareTo(Ljava/lang/Byte;)I","compare(BB)I","decode(Ljava/lang/String;)Ljava/lang/Byte;","equals(Ljava/lang/Object;)Z","hashCode()I",
+        "parseByte(Ljava/lang/String;)B","parseByte(Ljava/lang/String;I)B","toString()Ljava/lang/String;","toString(B)Ljava/lang/String;","toHexString(BZ)Ljava/lang/String;",
+        "valueOf(B)Ljava/lang/Byte;","valueOf(Ljava/lang/String;)Ljava/lang/Byte;","valueOf(Ljava/lang/String;I)Ljava/lang/Byte;"});
+    expect("Short", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"}, {
+        "<init>(S)V","<init>(Ljava/lang/String;)V","byteValue()B","shortValue()S","intValue()I","longValue()J","floatValue()F","doubleValue()D",
+        "compareTo(Ljava/lang/Short;)I","compare(SS)I","decode(Ljava/lang/String;)Ljava/lang/Short;","equals(Ljava/lang/Object;)Z","hashCode()I",
+        "parseShort(Ljava/lang/String;)S","parseShort(Ljava/lang/String;I)S","toString()Ljava/lang/String;","toString(S)Ljava/lang/String;","reverseBytes(S)S",
+        "valueOf(S)Ljava/lang/Short;","valueOf(Ljava/lang/String;)Ljava/lang/Short;","valueOf(Ljava/lang/String;I)Ljava/lang/Short;"});
+    const auto integral_methods = [](const char* wrapper, const char* primitive,
+                                     const char* parse, const char* property) {
+        std::set<std::string> out{
+            std::string("<init>(")+primitive+")V","<init>(Ljava/lang/String;)V","byteValue()B","shortValue()S","intValue()I","longValue()J","floatValue()F","doubleValue()D",
+            std::string("compareTo(Ljava/lang/")+wrapper+";)I",std::string("compare(")+primitive+primitive+")I",std::string("decode(Ljava/lang/String;)Ljava/lang/")+wrapper+";",
+            "equals(Ljava/lang/Object;)Z","hashCode()I",std::string(parse)+"(Ljava/lang/String;)"+primitive,std::string(parse)+"(Ljava/lang/String;I)"+primitive,
+            "toString()Ljava/lang/String;",std::string("toString(")+primitive+")Ljava/lang/String;",std::string("toString(")+primitive+"I)Ljava/lang/String;",
+            std::string("toBinaryString(")+primitive+")Ljava/lang/String;",std::string("toHexString(")+primitive+")Ljava/lang/String;",std::string("toOctalString(")+primitive+")Ljava/lang/String;",
+            std::string("valueOf(")+primitive+")Ljava/lang/"+wrapper+";",std::string("valueOf(Ljava/lang/String;)Ljava/lang/")+wrapper+";",std::string("valueOf(Ljava/lang/String;I)Ljava/lang/")+wrapper+";",
+            std::string(property)+"(Ljava/lang/String;)Ljava/lang/"+wrapper+";",std::string(property)+"(Ljava/lang/String;"+primitive+")Ljava/lang/"+wrapper+";",std::string(property)+"(Ljava/lang/String;Ljava/lang/"+wrapper+";)Ljava/lang/"+wrapper+";",
+            std::string("highestOneBit(")+primitive+")"+primitive,std::string("lowestOneBit(")+primitive+")"+primitive,std::string("numberOfLeadingZeros(")+primitive+")I",std::string("numberOfTrailingZeros(")+primitive+")I",
+            std::string("bitCount(")+primitive+")I",std::string("rotateLeft(")+primitive+"I)"+primitive,std::string("rotateRight(")+primitive+"I)"+primitive,
+            std::string("reverseBytes(")+primitive+")"+primitive,std::string("reverse(")+primitive+")"+primitive,std::string("signum(")+primitive+")I"};
+        return out;
+    };
+    const auto check_integral = [&](const char* wrapper, const char* primitive,
+                                    const char* parse, const char* property) {
+        const auto actual = signatures(declaration(
+            "Ljava/lang/" + std::string(wrapper) + ";"));
+        const auto expected = integral_methods(wrapper, primitive, parse, property);
+        std::vector<std::string> missing;
+        std::vector<std::string> extra;
+        std::set_difference(expected.begin(), expected.end(), actual.begin(),
+                            actual.end(), std::back_inserter(missing));
+        std::set_difference(actual.begin(), actual.end(), expected.begin(),
+                            expected.end(), std::back_inserter(extra));
+        std::string missing_text;
+        std::string extra_text;
+        for (const auto& value : missing) missing_text += value + " | ";
+        for (const auto& value : extra) extra_text += value + " | ";
+        CAPTURE(std::string(wrapper));
+        CAPTURE(missing_text);
+        CAPTURE(extra_text);
+        CHECK(actual == expected);
+    };
+    check_integral("Integer", "I", "parseInt", "getInteger");
+    check_integral("Long", "J", "parseLong", "getLong");
+    expect("Boolean", "Ljava/lang/Object;", {"Ljava/io/Serializable;","Ljava/lang/Comparable;"}, {
+        "<init>(Z)V","<init>(Ljava/lang/String;)V","booleanValue()Z","compare(ZZ)I","compareTo(Ljava/lang/Boolean;)I","equals(Ljava/lang/Object;)Z","hashCode()I",
+        "getBoolean(Ljava/lang/String;)Z","parseBoolean(Ljava/lang/String;)Z","toString()Ljava/lang/String;","toString(Z)Ljava/lang/String;","valueOf(Z)Ljava/lang/Boolean;","valueOf(Ljava/lang/String;)Ljava/lang/Boolean;"});
+    expect("Float", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"}, {
+        "<init>(F)V","<init>(D)V","<init>(Ljava/lang/String;)V","byteValue()B","shortValue()S","intValue()I","longValue()J","floatValue()F","doubleValue()D",
+        "compare(FF)I","compareTo(Ljava/lang/Float;)I","equals(Ljava/lang/Object;)Z","hashCode()I","isInfinite()Z","isInfinite(F)Z","isNaN()Z","isNaN(F)Z",
+        "parseFloat(Ljava/lang/String;)F","toString()Ljava/lang/String;","toString(F)Ljava/lang/String;","toHexString(F)Ljava/lang/String;","valueOf(F)Ljava/lang/Float;","valueOf(Ljava/lang/String;)Ljava/lang/Float;",
+        "floatToIntBits(F)I","floatToRawIntBits(F)I","intBitsToFloat(I)F"});
+    expect("Double", "Ljava/lang/Number;", {"Ljava/lang/Comparable;"}, {
+        "<init>(D)V","<init>(Ljava/lang/String;)V","byteValue()B","shortValue()S","intValue()I","longValue()J","floatValue()F","doubleValue()D",
+        "compare(DD)I","compareTo(Ljava/lang/Double;)I","equals(Ljava/lang/Object;)Z","hashCode()I","isInfinite()Z","isInfinite(D)Z","isNaN()Z","isNaN(D)Z",
+        "parseDouble(Ljava/lang/String;)D","toString()Ljava/lang/String;","toString(D)Ljava/lang/String;","toHexString(D)Ljava/lang/String;","valueOf(D)Ljava/lang/Double;","valueOf(Ljava/lang/String;)Ljava/lang/Double;",
+        "doubleToLongBits(D)J","doubleToRawLongBits(D)J","longBitsToDouble(J)D"});
+
+    CHECK(fields(declaration("Ljava/lang/Number;")).empty());
+    CHECK(fields(declaration("Ljava/lang/Byte;")) == std::set<std::string>{
+        "MAX_VALUE:B","MIN_VALUE:B","SIZE:I","TYPE:Ljava/lang/Class;","value:B"});
+    CHECK(fields(declaration("Ljava/lang/Short;")) == std::set<std::string>{
+        "MAX_VALUE:S","MIN_VALUE:S","SIZE:I","TYPE:Ljava/lang/Class;","value:S"});
+    CHECK(fields(declaration("Ljava/lang/Integer;")) == std::set<std::string>{
+        "MAX_VALUE:I","MIN_VALUE:I","SIZE:I","TYPE:Ljava/lang/Class;","value:I"});
+    CHECK(fields(declaration("Ljava/lang/Long;")) == std::set<std::string>{
+        "MAX_VALUE:J","MIN_VALUE:J","SIZE:I","TYPE:Ljava/lang/Class;","value:J"});
+    const std::set<std::string> floating_fields{
+        "MAX_EXPONENT:I","MAX_VALUE:X","MIN_EXPONENT:I","MIN_NORMAL:X",
+        "MIN_VALUE:X","NEGATIVE_INFINITY:X","NaN:X","POSITIVE_INFINITY:X",
+        "SIZE:I","TYPE:Ljava/lang/Class;","value:X"};
+    const auto specialize_floating_fields = [&](const char primitive) {
+        auto result = floating_fields;
+        std::set<std::string> specialized;
+        for (auto field : result) {
+            if (field.ends_with(":X")) field.back() = primitive;
+            specialized.insert(std::move(field));
+        }
+        return specialized;
+    };
+    CHECK(fields(declaration("Ljava/lang/Float;")) == specialize_floating_fields('F'));
+    CHECK(fields(declaration("Ljava/lang/Double;")) == specialize_floating_fields('D'));
+    CHECK(fields(declaration("Ljava/lang/Boolean;")) == std::set<std::string>{
+        "FALSE:Ljava/lang/Boolean;","TRUE:Ljava/lang/Boolean;",
+        "TYPE:Ljava/lang/Class;","value:Z"});
+
+    const auto& character = declaration("Ljava/lang/Character;");
+    CHECK(*character.superclass == "Ljava/lang/Object;");
+    CHECK(character.interfaces.size() == 2U);
+    CHECK(signatures(character) == std::set<std::string>{
+        "<init>(C)V","charValue()C","valueOf(C)Ljava/lang/Character;",
+        "compareTo(Ljava/lang/Character;)I","compare(CC)I","equals(Ljava/lang/Object;)Z","hashCode()I",
+        "toString()Ljava/lang/String;","toString(C)Ljava/lang/String;","digit(CI)I","digit(II)I","forDigit(II)C",
+        "isDigit(C)Z","isDigit(I)Z","isLetter(C)Z","isLetter(I)Z","isLetterOrDigit(C)Z","isLetterOrDigit(I)Z",
+        "isLowerCase(C)Z","isLowerCase(I)Z","isUpperCase(C)Z","isUpperCase(I)Z","isWhitespace(C)Z","isWhitespace(I)Z",
+        "isSpaceChar(C)Z","isSpaceChar(I)Z","isSpace(C)Z","isISOControl(C)Z","isISOControl(I)Z",
+        "toLowerCase(C)C","toLowerCase(I)I","toUpperCase(C)C","toUpperCase(I)I",
+        "isHighSurrogate(C)Z","isLowSurrogate(C)Z","isSurrogatePair(CC)Z","isValidCodePoint(I)Z","isBmpCodePoint(I)Z",
+        "isSupplementaryCodePoint(I)Z","charCount(I)I","toCodePoint(CC)I","highSurrogate(I)C","lowSurrogate(I)C","reverseBytes(C)C"});
+    CHECK(fields(character).size() == 66U);
+}
+
+TEST_CASE("dexvm primitive wrapper parsing bits and Character boundaries") {
+    Vm vm;
+    const auto string = [&](std::string_view value) {
+        return VmValue::Ref(vm.interpreter.NewStringUtf8(value));
+    };
+    const auto call_on = [&](const char* owner, VmObjectRef receiver,
+                             const char* name, const char* descriptor,
+                             std::vector<VmValue> arguments = {}) {
+        const auto java_class = vm.linker.FindClass(owner);
+        REQUIRE(java_class.has_value());
+        std::optional<VmMethodId> method;
+        for (const auto candidate : vm.linker.Class(*java_class).vtable) {
+            const auto& linked = vm.linker.Method(candidate);
+            if (linked.name == name && linked.descriptor == descriptor) {
+                method = candidate;
+                break;
+            }
+        }
+        CAPTURE(std::string(owner));
+        CAPTURE(std::string(name));
+        CAPTURE(std::string(descriptor));
+        REQUIRE(method.has_value());
+        arguments.insert(arguments.begin(), VmValue::Ref(receiver));
+        return vm.interpreter.Call(*method, arguments);
+    };
+    const auto as_string = [&](const VmCallOutcome& outcome) {
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        return vm.interpreter.StringUtf8(outcome.value.ref);
+    };
+    const auto expect_long = [](const VmCallOutcome& outcome,
+                                std::int64_t expected) {
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        REQUIRE(outcome.value.kind == VmValue::Kind::wide);
+        CHECK(outcome.value.AsLong() == expected);
+    };
+    const auto static_bits = [&](const char* owner, const char* name,
+                                 const char* descriptor) {
+        const auto java_class = vm.linker.FindClass(owner);
+        REQUIRE(java_class.has_value());
+        const auto field = vm.linker.FindFieldRecursive(
+            *java_class, name, descriptor);
+        REQUIRE(field.has_value());
+        const auto& linked = vm.linker.Field(*field);
+        const auto& storage = vm.linker.Class(linked.owner).static_storage;
+        std::uint64_t bits = storage[linked.slot];
+        if (linked.is_wide) bits |= static_cast<std::uint64_t>(
+            storage[linked.slot + 1]) << 32U;
+        return bits;
+    };
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "parseInt", "(Ljava/lang/String;I)I", {string("7fffffff"), VmValue::Int(16)}), std::numeric_limits<std::int32_t>::max());
+    ExpectException(vm, vm.CallStatic("Ljava/lang/Integer;", "parseInt", "(Ljava/lang/String;)I", {string("2147483648")}), "Ljava/lang/NumberFormatException;");
+    const auto parsed_min = vm.CallStatic("Ljava/lang/Long;", "parseLong", "(Ljava/lang/String;)J", {string("-9223372036854775808")});
+    REQUIRE_FALSE(parsed_min.exception.IsValid());
+    CHECK(parsed_min.value.AsLong() == std::numeric_limits<std::int64_t>::min());
+    ExpectException(vm, vm.CallStatic("Ljava/lang/Byte;", "parseByte", "(Ljava/lang/String;)B", {string("128")}), "Ljava/lang/NumberFormatException;");
+    ExpectInt(vm.CallStatic("Ljava/lang/Short;", "reverseBytes", "(S)S", {VmValue::Int(0x0100)}), 1);
+    ExpectException(vm, vm.CallStatic("Ljava/lang/Integer;", "parseInt", "(Ljava/lang/String;)I", {VmValue::Ref(VmObjectRef{0})}), "Ljava/lang/NumberFormatException;");
+    ExpectException(vm, vm.CallStatic("Ljava/lang/Float;", "parseFloat",
+                                      "(Ljava/lang/String;)F",
+                                      {VmValue::Ref(VmObjectRef{})}),
+                    "Ljava/lang/NullPointerException;");
+    ExpectException(vm, vm.CallStatic("Ljava/lang/Double;", "parseDouble",
+                                      "(Ljava/lang/String;)D",
+                                      {VmValue::Ref(VmObjectRef{})}),
+                    "Ljava/lang/NullPointerException;");
+    ExpectException(vm, vm.CallStatic(
+                            "Ljava/lang/Float;", "valueOf",
+                            "(Ljava/lang/String;)Ljava/lang/Float;",
+                            {VmValue::Ref(VmObjectRef{})}),
+                    "Ljava/lang/NullPointerException;");
+    ExpectException(vm, vm.CallStatic(
+                            "Ljava/lang/Double;", "valueOf",
+                            "(Ljava/lang/String;)Ljava/lang/Double;",
+                            {VmValue::Ref(VmObjectRef{})}),
+                    "Ljava/lang/NullPointerException;");
+
+    const std::string tiny_float_text =
+        "0." + std::string(80, '0') + "1";
+    const auto tiny_float = vm.CallStatic(
+        "Ljava/lang/Float;", "parseFloat", "(Ljava/lang/String;)F",
+        {string(tiny_float_text)});
+    REQUIRE_FALSE(tiny_float.exception.IsValid());
+    CHECK(tiny_float.value.AsFloat() == 0.0F);
+    CHECK_FALSE(std::signbit(tiny_float.value.AsFloat()));
+
+    const std::string tiny_double_text =
+        "-0." + std::string(400, '0') + "1";
+    const auto tiny_double = vm.CallStatic(
+        "Ljava/lang/Double;", "parseDouble", "(Ljava/lang/String;)D",
+        {string(tiny_double_text)});
+    REQUIRE_FALSE(tiny_double.exception.IsValid());
+    CHECK(tiny_double.value.AsDouble() == 0.0);
+    CHECK(std::signbit(tiny_double.value.AsDouble()));
+
+    ExpectException(vm, vm.CallStatic(
+                            "Ljava/lang/Float;", "parseFloat",
+                            "(Ljava/lang/String;)F", {string("0x1.0")}),
+                    "Ljava/lang/NumberFormatException;");
+    ExpectException(vm, vm.CallStatic(
+                            "Ljava/lang/Double;", "parseDouble",
+                            "(Ljava/lang/String;)D", {string("-0X1.0")}),
+                    "Ljava/lang/NumberFormatException;");
+
+    const auto hex_float = vm.CallStatic(
+        "Ljava/lang/Float;", "parseFloat", "(Ljava/lang/String;)F",
+        {string("0x1.0p0")});
+    REQUIRE_FALSE(hex_float.exception.IsValid());
+    CHECK(hex_float.value.AsFloat() == 1.0F);
+    const auto hex_double = vm.CallStatic(
+        "Ljava/lang/Double;", "parseDouble", "(Ljava/lang/String;)D",
+        {string("-0x1.8p1")});
+    REQUIRE_FALSE(hex_double.exception.IsValid());
+    CHECK(hex_double.value.AsDouble() == -3.0);
+
+    const std::string huge_negative_exponent =
+        std::string(400, '9') + "e-1";
+    const auto still_overflow = vm.CallStatic(
+        "Ljava/lang/Double;", "parseDouble", "(Ljava/lang/String;)D",
+        {string(huge_negative_exponent)});
+    REQUIRE_FALSE(still_overflow.exception.IsValid());
+    CHECK(std::isinf(still_overflow.value.AsDouble()));
+    CHECK(still_overflow.value.AsDouble() > 0.0);
+
+    const auto decoded = vm.CallStatic("Ljava/lang/Integer;", "decode", "(Ljava/lang/String;)Ljava/lang/Integer;", {string("-0x80000000")});
+    REQUIRE_FALSE(decoded.exception.IsValid());
+    ExpectInt(call_on("Ljava/lang/Integer;", decoded.value.ref, "intValue", "()I"), std::numeric_limits<std::int32_t>::min());
+    CHECK(as_string(vm.CallStatic("Ljava/lang/Integer;", "toString", "(II)Ljava/lang/String;", {VmValue::Int(35), VmValue::Int(36)})) == "z");
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "rotateLeft", "(II)I", {VmValue::Int(1), VmValue::Int(-1)}), std::numeric_limits<std::int32_t>::min());
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "numberOfLeadingZeros", "(I)I", {VmValue::Int(0)}), 32);
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "highestOneBit", "(I)I", {VmValue::Int(0)}), 0);
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "highestOneBit", "(I)I", {VmValue::Int(-1)}), std::numeric_limits<std::int32_t>::min());
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "lowestOneBit", "(I)I", {VmValue::Int(std::numeric_limits<std::int32_t>::max())}), 1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "numberOfLeadingZeros", "(I)I", {VmValue::Int(1)}), 31);
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "numberOfLeadingZeros", "(I)I", {VmValue::Int(-1)}), 0);
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "numberOfTrailingZeros", "(I)I", {VmValue::Int(std::numeric_limits<std::int32_t>::min())}), 31);
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "rotateLeft", "(II)I", {VmValue::Int(1), VmValue::Int(33)}), 2);
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "reverse", "(I)I", {VmValue::Int(1)}), std::numeric_limits<std::int32_t>::min());
+    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "reverseBytes", "(I)I", {VmValue::Int(0x01020304)}), 0x04030201);
+    expect_long(vm.CallStatic("Ljava/lang/Long;", "highestOneBit", "(J)J", {VmValue::Long(0)}), 0);
+    expect_long(vm.CallStatic("Ljava/lang/Long;", "highestOneBit", "(J)J", {VmValue::Long(-1)}), std::numeric_limits<std::int64_t>::min());
+    ExpectInt(vm.CallStatic("Ljava/lang/Long;", "numberOfLeadingZeros", "(J)I", {VmValue::Long(1)}), 63);
+    ExpectInt(vm.CallStatic("Ljava/lang/Long;", "numberOfTrailingZeros", "(J)I", {VmValue::Long(std::numeric_limits<std::int64_t>::min())}), 63);
+    expect_long(vm.CallStatic("Ljava/lang/Long;", "rotateLeft", "(JI)J", {VmValue::Long(1), VmValue::Int(65)}), 2);
+    expect_long(vm.CallStatic("Ljava/lang/Long;", "rotateRight", "(JI)J", {VmValue::Long(1), VmValue::Int(-1)}), 2);
+    expect_long(vm.CallStatic("Ljava/lang/Long;", "reverse", "(J)J", {VmValue::Long(1)}), std::numeric_limits<std::int64_t>::min());
+    expect_long(vm.CallStatic("Ljava/lang/Long;", "reverseBytes", "(J)J", {VmValue::Long(0x0102030405060708LL)}), 0x0807060504030201LL);
+    ExpectInt(vm.CallStatic("Ljava/lang/Float;", "compare", "(FF)I", {VmValue::Float(-0.0F), VmValue::Float(0.0F)}), -1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Float;", "floatToIntBits", "(F)I", {VmValue::Float(std::numeric_limits<float>::quiet_NaN())}), 0x7fc00000);
+    const auto raw_nan = std::bit_cast<float>(0x7fc01234U);
+    ExpectInt(vm.CallStatic("Ljava/lang/Float;", "floatToRawIntBits", "(F)I", {VmValue::Float(raw_nan)}), 0x7fc01234);
+    CHECK(as_string(vm.CallStatic("Ljava/lang/Float;", "toString", "(F)Ljava/lang/String;", {VmValue::Float(-0.0F)})) == "-0.0");
+    for (const auto& [value, text] : std::vector<std::pair<float, std::string>>{
+             {0.0F,"0.0"},{1.0F,"1.0"},{-1.0F,"-1.0"},{0.5F,"0.5"},
+             {1.5F,"1.5"},{1.0e8F,"1.0E8"},{1.0e-4F,"1.0E-4"},
+             {std::numeric_limits<float>::denorm_min(),"1.4E-45"},
+             {std::bit_cast<float>(0x00000003U),"4.2E-45"}}) {
+        CAPTURE(text);
+        CHECK(as_string(vm.CallStatic("Ljava/lang/Float;", "toString",
+            "(F)Ljava/lang/String;", {VmValue::Float(value)})) == text);
+    }
+    CHECK(as_string(vm.CallStatic("Ljava/lang/Float;", "toString", "(F)Ljava/lang/String;", {VmValue::Float(std::numeric_limits<float>::quiet_NaN())})) == "NaN");
+    CHECK(as_string(vm.CallStatic("Ljava/lang/Float;", "toString", "(F)Ljava/lang/String;", {VmValue::Float(-std::numeric_limits<float>::infinity())})) == "-Infinity");
+    CHECK(as_string(vm.CallStatic("Ljava/lang/Float;", "toHexString",
+                                  "(F)Ljava/lang/String;",
+                                  {VmValue::Float(std::numeric_limits<float>::denorm_min())})) ==
+          "0x0.000002p-126");
+    CHECK(as_string(vm.CallStatic(
+              "Ljava/lang/Float;", "toHexString", "(F)Ljava/lang/String;",
+              {VmValue::Float(std::bit_cast<float>(0x007fffffU))})) ==
+          "0x0.fffffep-126");
+    CHECK(as_string(vm.CallStatic("Ljava/lang/Double;", "toString", "(D)Ljava/lang/String;", {VmValue::Double(std::numeric_limits<double>::infinity())})) == "Infinity");
+    CHECK(as_string(vm.CallStatic(
+              "Ljava/lang/Double;", "toString", "(D)Ljava/lang/String;",
+              {VmValue::Double(std::numeric_limits<double>::denorm_min())})) ==
+          "4.9E-324");
+    CHECK(as_string(vm.CallStatic(
+              "Ljava/lang/Double;", "toHexString", "(D)Ljava/lang/String;",
+              {VmValue::Double(std::numeric_limits<double>::denorm_min())})) ==
+          "0x0.0000000000001p-1022");
+    CHECK(as_string(vm.CallStatic(
+              "Ljava/lang/Double;", "toHexString", "(D)Ljava/lang/String;",
+              {VmValue::Double(
+                  std::bit_cast<double>(0x000fffffffffffffULL))})) ==
+          "0x0.fffffffffffffp-1022");
+    const auto parsed_half = vm.CallStatic("Ljava/lang/Double;", "parseDouble", "(Ljava/lang/String;)D", {string("  +0.5  ")});
+    REQUIRE_FALSE(parsed_half.exception.IsValid());
+    CHECK(parsed_half.value.AsDouble() == 0.5);
+    ExpectInt(vm.CallStatic("Ljava/lang/Double;", "compare", "(DD)I", {VmValue::Double(std::numeric_limits<double>::quiet_NaN()), VmValue::Double(std::numeric_limits<double>::infinity())}), 1);
+    const auto raw_double_nan = std::bit_cast<double>(0x7ff8000000001234ULL);
+    expect_long(vm.CallStatic("Ljava/lang/Double;", "doubleToRawLongBits", "(D)J", {VmValue::Double(raw_double_nan)}), static_cast<std::int64_t>(0x7ff8000000001234ULL));
+    const auto infinity = vm.CallStatic("Ljava/lang/Float;", "valueOf", "(F)Ljava/lang/Float;", {VmValue::Float(std::numeric_limits<float>::infinity())});
+    REQUIRE_FALSE(infinity.exception.IsValid());
+    ExpectInt(call_on("Ljava/lang/Float;", infinity.value.ref, "intValue", "()I"), std::numeric_limits<std::int32_t>::max());
+    const auto true_one = vm.CallStatic("Ljava/lang/Boolean;", "valueOf", "(Z)Ljava/lang/Boolean;", {VmValue::Int(1)});
+    const auto true_two = vm.CallStatic("Ljava/lang/Boolean;", "valueOf", "(Ljava/lang/String;)Ljava/lang/Boolean;", {string("TRUE")});
+    REQUIRE_FALSE(true_one.exception.IsValid());
+    REQUIRE_FALSE(true_two.exception.IsValid());
+    CHECK(true_one.value.ref == true_two.value.ref);
+    const auto false_one = vm.CallStatic("Ljava/lang/Boolean;", "valueOf", "(Z)Ljava/lang/Boolean;", {VmValue::Int(0)});
+    REQUIRE_FALSE(false_one.exception.IsValid());
+    CHECK(false_one.value.ref != true_one.value.ref);
+    ExpectInt(call_on("Ljava/lang/Boolean;", true_one.value.ref, "hashCode", "()I"), 1231);
+    ExpectInt(call_on("Ljava/lang/Boolean;", false_one.value.ref, "compareTo", "(Ljava/lang/Boolean;)I", {VmValue::Ref(true_one.value.ref)}), -1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "toCodePoint", "(CC)I", {VmValue::Int(0xd800), VmValue::Int(0xdc00)}), 0x10000);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "isValidCodePoint", "(I)Z", {VmValue::Int(0x110000)}), 0);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "isSupplementaryCodePoint", "(I)Z", {VmValue::Int(0x10ffff)}), 1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "digit", "(II)I", {VmValue::Int('Z'), VmValue::Int(36)}), 35);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "digit", "(II)I", {VmValue::Int('1'), VmValue::Int(2)}), 1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "digit", "(II)I", {VmValue::Int('a'), VmValue::Int(10)}), -1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "forDigit", "(II)C", {VmValue::Int(15), VmValue::Int(16)}), 'f');
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "isLetterOrDigit", "(I)Z", {VmValue::Int('Q')}), 1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "toLowerCase", "(I)I", {VmValue::Int('Q')}), 'q');
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "isWhitespace", "(I)Z", {VmValue::Int('\n')}), 1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "isHighSurrogate", "(C)Z", {VmValue::Int(0xdbff)}), 1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "isLowSurrogate", "(C)Z", {VmValue::Int(0xdfff)}), 1);
+    ExpectInt(vm.CallStatic("Ljava/lang/Character;", "toCodePoint", "(CC)I", {VmValue::Int(0xdbff), VmValue::Int(0xdfff)}), 0x10ffff);
+    static_cast<void>(
+        vm.interpreter.SetSystemProperty("feature.enabled", "TrUe"));
+    ExpectInt(vm.CallStatic("Ljava/lang/Boolean;", "getBoolean", "(Ljava/lang/String;)Z", {string("feature.enabled")}), 1);
+    CHECK(static_bits("Ljava/lang/Byte;", "MAX_VALUE", "B") == 127U);
+    CHECK(static_bits("Ljava/lang/Short;", "MIN_VALUE", "S") == 0xffff8000U);
+    CHECK(static_bits("Ljava/lang/Integer;", "MIN_VALUE", "I") == 0x80000000U);
+    CHECK(static_bits("Ljava/lang/Long;", "MAX_VALUE", "J") == 0x7fffffffffffffffULL);
+    CHECK(static_bits("Ljava/lang/Float;", "NaN", "F") == 0x7fc00000U);
+    CHECK(static_bits("Ljava/lang/Float;", "MIN_NORMAL", "F") == 0x00800000U);
+    CHECK(static_bits("Ljava/lang/Double;", "MIN_NORMAL", "D") == 0x0010000000000000ULL);
+    CHECK(static_bits("Ljava/lang/Character;", "MAX_CODE_POINT", "I") == 0x10ffffU);
+    CHECK(VmObjectRef{static_cast<std::uint32_t>(static_bits(
+        "Ljava/lang/Boolean;", "TRUE", "Ljava/lang/Boolean;"))} ==
+        true_one.value.ref);
+    for (const auto& [owner, primitive] :
+         std::vector<std::pair<std::string, std::string>>{
+             {"Ljava/lang/Byte;","B"},{"Ljava/lang/Short;","S"},
+             {"Ljava/lang/Integer;","I"},{"Ljava/lang/Long;","J"},
+             {"Ljava/lang/Float;","F"},{"Ljava/lang/Double;","D"},
+             {"Ljava/lang/Boolean;","Z"},{"Ljava/lang/Character;","C"}}) {
+        CAPTURE(owner);
+        CHECK(VmObjectRef{static_cast<std::uint32_t>(static_bits(
+                  owner.c_str(), "TYPE", "Ljava/lang/Class;"))} ==
+              vm.model.ClassObject(vm.linker.ResolveDescriptor(primitive)));
+    }
 }
 
 TEST_CASE("dexvm API 19 java.lang throwable inventory is complete") {
@@ -409,6 +790,30 @@ TEST_CASE("dexvm java.lang throwable implementation is one family TU") {
         CAPTURE(name);
         CHECK_FALSE(std::filesystem::exists(
             directory / ("java_lang_" + name + ".cpp")));
+    }
+}
+
+TEST_CASE("dexvm java.lang primitive wrappers are one family TU") {
+    const std::vector<std::string> classes = {
+        "Number", "Byte", "Short", "Integer", "Long", "Float", "Double",
+        "Boolean", "Character",
+    };
+    const auto directory = std::filesystem::path(OGPLAY_SOURCE_DIR) / "src" /
+                           "runtime" / "dexvm" / "intrinsics";
+    CHECK(std::filesystem::is_regular_file(
+        directory / "java_lang_primitive_wrappers.cpp"));
+    for (const auto& name : classes) {
+        CAPTURE(name);
+        CHECK_FALSE(std::filesystem::exists(
+            directory / ("java_lang_" + name + ".cpp")));
+    }
+    std::ifstream header(directory / "catalog.h", std::ios::binary);
+    REQUIRE(header.good());
+    const std::string source(std::istreambuf_iterator<char>(header), {});
+    CHECK(source.find("AppendJavaLangPrimitiveWrappers") != std::string::npos);
+    for (const auto& name : classes) {
+        CAPTURE(name);
+        CHECK(source.find("Declare_java_lang_" + name) == std::string::npos);
     }
 }
 

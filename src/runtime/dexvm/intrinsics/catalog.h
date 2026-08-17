@@ -7,6 +7,8 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 
 void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaLangPrimitiveWrappers(
+    std::vector<IntrinsicClassDecl>& catalog);
 
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Object();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runnable();
@@ -19,12 +21,6 @@ void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_System();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_PrintStream();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Number();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Integer();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Long();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Boolean();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Float();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Double();
 [[nodiscard]] IntrinsicClassDecl Declare_java_util_HashMap();
 [[nodiscard]] IntrinsicClassDecl Declare_java_util_Hashtable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_util_List();

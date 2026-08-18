@@ -59,6 +59,34 @@ public:
          const loader::ApkSelectedNativeLibraries& libraries)
         : process_(&process), libraries_(&libraries) {}
 
+    Impl(AndroidGuestProcess& process,
+         const loader::ApkSelectedNativeLibraries& libraries,
+         const BionicProfile& bionic,
+         const std::span<const BionicModuleSource> system_libraries,
+         core::Logger* logger)
+        : process_(&process), libraries_(&libraries),
+          boundary_libraries_(bionic.boundary_libraries.begin(),
+                              bionic.boundary_libraries.end()),
+          logger_(logger) {
+        system_libraries_.reserve(system_libraries.size());
+        for (const auto& source : system_libraries) {
+            if (!IsLibraryBasename(source.name) || source.image.empty() ||
+                std::any_of(system_libraries_.begin(), system_libraries_.end(),
+                            [&](const auto& existing) {
+                                return existing.name == source.name;
+                            })) {
+                throw NativeLibraryLoadError(
+                    NativeLibraryLoadErrorReason::invalid_request,
+                    "dynamic Bionic system library source is invalid or duplicate: " +
+                        source.name);
+            }
+            system_libraries_.push_back(
+                {source.name,
+                 std::vector<std::byte>(source.image.begin(),
+                                        source.image.end())});
+        }
+    }
+
     NativeLibraryLoadResult LoadLibrary(
         const std::string_view logical_name,
         const JavaClassLoaderToken class_loader) {
@@ -119,45 +147,84 @@ private:
             NativeLibraryLoadErrorReason::prior_failure};
     };
 
-    [[nodiscard]] std::vector<const loader::ApkNativeLibrary*> Closure(
+    struct OwnedSystemLibrary final {
+        std::string name;
+        std::vector<std::byte> image;
+    };
+
+    struct ClosureModule final {
+        std::string name;
+        std::span<const std::byte> image;
+        std::string diagnostic_name;
+        bool require_soname_match{};
+    };
+
+    [[nodiscard]] bool IsBoundary(const std::string_view name) const {
+        return std::find(boundary_libraries_.begin(),
+                         boundary_libraries_.end(), name) !=
+               boundary_libraries_.end();
+    }
+
+    [[nodiscard]] const OwnedSystemLibrary* FindSystemLibrary(
+        const std::string_view name) const {
+        const auto found = std::find_if(
+            system_libraries_.begin(), system_libraries_.end(),
+            [&](const auto& source) { return source.name == name; });
+        return found == system_libraries_.end() ? nullptr : &*found;
+    }
+
+    [[nodiscard]] std::vector<ClosureModule> Closure(
         const loader::ApkNativeLibrary& root) const {
-        std::vector<const loader::ApkNativeLibrary*> result{&root};
+        std::vector<ClosureModule> result{{root.soname, root.image,
+                                           root.entry_name, true}};
         std::set<std::string, std::less<>> selected{root.soname};
         for (std::size_t index = 0; index < result.size(); ++index) {
-            const auto& library = *result[index];
+            const auto& library = result[index];
             try {
                 const auto image = loader::ParseElf32Arm(library.image);
                 if (image.type != loader::Elf32ImageType::shared_object) {
                     throw NativeLibraryLoadError(
                         NativeLibraryLoadErrorReason::malformed_elf,
                         "APK native library is not ET_DYN: " +
-                            library.entry_name);
+                            library.diagnostic_name);
                 }
                 const auto dynamic = loader::ReadElf32DynamicInfo(
                     library.image, image);
-                if (dynamic.soname.has_value() &&
-                    *dynamic.soname != library.soname) {
+                if (library.require_soname_match &&
+                    dynamic.soname.has_value() &&
+                    *dynamic.soname != library.name) {
                     throw NativeLibraryLoadError(
                         NativeLibraryLoadErrorReason::soname_mismatch,
                         "APK native DT_SONAME disagrees with inventory: " +
-                            library.entry_name);
+                            library.diagnostic_name);
                 }
                 for (const auto& needed : dynamic.needed) {
                     if (selected.contains(needed) ||
-                        process_->HasLoadedModule(needed)) {
+                        process_->HasLoadedModule(needed) ||
+                        IsBoundary(needed)) {
                         continue;
                     }
                     const auto* dependency = libraries_->FindSoname(needed);
-                    if (dependency == nullptr) continue;
-                    selected.insert(needed);
-                    result.push_back(dependency);
+                    if (dependency != nullptr) {
+                        selected.insert(needed);
+                        result.push_back({dependency->soname,
+                                          dependency->image,
+                                          dependency->entry_name, true});
+                        continue;
+                    }
+                    const auto* system = FindSystemLibrary(needed);
+                    if (system != nullptr) {
+                        selected.insert(needed);
+                        result.push_back({system->name, system->image,
+                                          system->name, true});
+                    }
                 }
             } catch (const NativeLibraryLoadError&) {
                 throw;
             } catch (const std::exception& error) {
                 throw NativeLibraryLoadError(
                     NativeLibraryLoadErrorReason::malformed_elf,
-                    "APK native ELF is malformed: " + library.entry_name +
+                    "native ELF is malformed: " + library.diagnostic_name +
                         ": " + error.what());
             }
         }
@@ -213,9 +280,9 @@ private:
             const auto closure = Closure(library);
             std::vector<AndroidGuestApplicationModuleSource> sources;
             sources.reserve(closure.size());
-            for (const auto* module : closure) {
-                if (process_->HasLoadedModule(module->soname)) continue;
-                sources.push_back({module->soname, module->image});
+            for (const auto& module : closure) {
+                if (process_->HasLoadedModule(module.name)) continue;
+                sources.push_back({module.name, module.image});
             }
             auto application = process_->LoadApplicationModules(
                 library.soname, sources);
@@ -242,6 +309,20 @@ private:
             entry.record.jni_on_load_calls = jni_version.has_value() ? 1U : 0U;
             entry.loading_thread = {};
             condition_.notify_all();
+            if (logger_ != nullptr) {
+                logger_->Write(
+                    core::LogLevel::info, "runtime.native_library",
+                    "explicit native load completed", {},
+                    {{"sequence", handle},
+                     {"soname", library.soname},
+                     {"initialized_modules",
+                      static_cast<std::uint64_t>(
+                          application.initialized_modules.size())},
+                     {"jni_on_load_calls",
+                      static_cast<std::uint64_t>(
+                          jni_version.has_value() ? 1U : 0U)}},
+                    {.mode = core::RateLimitMode::none});
+            }
             return {handle, canonical_path, application.root_module_index,
                     std::move(application.initialized_modules), jni_version,
                     false, false};
@@ -280,6 +361,9 @@ private:
 
     AndroidGuestProcess* process_{};
     const loader::ApkSelectedNativeLibraries* libraries_{};
+    std::vector<std::string_view> boundary_libraries_;
+    std::vector<OwnedSystemLibrary> system_libraries_;
+    core::Logger* logger_{};
     mutable std::mutex mutex_;
     std::condition_variable condition_;
     std::map<std::string, RegistryEntry, std::less<>> records_;
@@ -290,6 +374,15 @@ NativeLibraryLoader::NativeLibraryLoader(
     AndroidGuestProcess& process,
     const loader::ApkSelectedNativeLibraries& libraries)
     : impl_(std::make_unique<Impl>(process, libraries)) {}
+
+NativeLibraryLoader::NativeLibraryLoader(
+    AndroidGuestProcess& process,
+    const loader::ApkSelectedNativeLibraries& libraries,
+    const BionicProfile& bionic,
+    const std::span<const BionicModuleSource> system_libraries,
+    core::Logger* logger)
+    : impl_(std::make_unique<Impl>(process, libraries, bionic,
+                                   system_libraries, logger)) {}
 
 NativeLibraryLoader::~NativeLibraryLoader() = default;
 

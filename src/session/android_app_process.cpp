@@ -87,7 +87,9 @@ public:
                 inventory, *selected_abi);
             native_libraries =
                 std::make_unique<runtime::NativeLibraryLoader>(
-                    session->Process(), *selected);
+                    session->Process(), *selected,
+                    runtime::SelectBionicProfile(request.api_level),
+                    request.system_libraries, request.logger);
         }
         context->session = session.get();
         context->native_libraries = native_libraries.get();

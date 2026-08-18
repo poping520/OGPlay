@@ -45,10 +45,13 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   canonical path 唯一的 Loading/Loaded/Failed registry，保留 ClassLoader token；同 loader
   重复 load 幂等，同线程递归 loading 成功返回现有 handle，跨 loader 明确失败，Failed
   重试稳定失败。selected APK ABI inventory 是唯一 app resolver；ET_DYN/DT_SONAME、依赖、
-  relocation、constructor 与 JNI version 均受检。namespace/map 事务完成后才逐 module
+  relocation、constructor 与 JNI version 均受检。rootless create 未映射的 Bionic guest
+  source 由 loader 自有副本保留，只在应用 `DT_NEEDED` 可达时动态加入同一 namespace；
+  boundary library 仍走 HLE，缺失依赖明确失败。namespace/map 事务完成后才逐 module
   调用 guest constructor，registry mutex 绝不跨 guest call；仅显式请求 root 执行
   `JNI_OnLoad`，dependency 不隐式执行。已映射 module 由 process 持有至 Stop 并按实际完成
-  constructor 的逆序 finalization；不支持 dlclose/unmap。
+  constructor 的逆序 finalization；每次成功 explicit load 结构化记录 sequence/soname，
+  不把 `DT_NEEDED` 依赖误记为 Java load；不支持 dlclose/unmap。
 - DexVM `System.load*` 通过 `DexVmAndroidContext` 注入同一个 process loader 与稳定
   application ClassLoader token。调用期间 `NativeLibraryLoader` registry mutex 不跨
   constructor/JNI_OnLoad；JNI callback 直接回到 `DexVmGuestBridge::InvokeInterpreted`，

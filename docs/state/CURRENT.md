@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-18 · APK Startup APS-1..8 已交付；Profile 已降级为 optional override
+更新：2026-08-18 · APK Startup APS-1..9 已全部交付
 
 ## 当前阶段
 
@@ -14,7 +14,10 @@
   顺序与异常短路；APS-7 新增 `AndroidAppProcess` 并把 `run-apk` 切到 Manifest 驱动的
   rootless generic path，app ELF 只由 Java `System.load*` 动态追加；APS-8 新增 optional
   Profile v3 与 v1/v2 legacy applicability adapter，无 Profile、纯 Java或旧 hash 不命中
-  都继续 generic startup，Profile 不再决定 root `.so` 或 process ABI。
+  都继续 generic startup，Profile 不再决定 root `.so` 或 process ABI；APS-9 已闭合 A–J
+  fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
+  链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
+  shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
 - **M9 DexVM**：DVM-1..41 已交付；解释执行仍由 `VmExecutionLock` 串行。子线程 native
   调用仍复用 root guest 栈/thread id，JNI/DexVM monitor 表尚未合一；`threads` 与
   `monitors` 保持 `partial`。
@@ -23,16 +26,15 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：800/800 CTest。
+- Windows/x64 `windows-msvc`：804/804 CTest。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 
 ## 下一步
 
-1. 实施 APS-9 integration gates 与设计迁移收口，统一执行全量验证。
-2. 按命中批次闭合 DexVM 缺口，随后推进 GC-B 与解释器 v2 threaded 分批。
-3. 收口子线程 native guest 栈/thread id 与 JNI/DexVM monitor 统一。
-4. Linux M9 严格出口复验。
+1. 按命中批次闭合 DexVM 缺口，随后推进 GC-B 与解释器 v2 threaded 分批。
+2. 收口子线程 native guest 栈/thread id 与 JNI/DexVM monitor 统一。
+3. Linux M9 严格出口复验。
 
 ## 阻塞与边界
 

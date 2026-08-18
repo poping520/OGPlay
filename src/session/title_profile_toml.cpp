@@ -614,10 +614,15 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
                    {"api_level", "maximum_ticks_per_call", "surface",
                     "dexvm", "entry", "presets"},
                    {"api_level"});
-    } else {
+    } else if (schema == 1U) {
         NativeKeys(table, "runtime",
                    {"api_level", "lifecycle", "maximum_ticks_per_call",
                     "surface", "dexvm", "entry", "presets", "native_call"},
+                   {"api_level", "lifecycle", "surface"});
+    } else {
+        NativeKeys(table, "runtime",
+                   {"api_level", "lifecycle", "maximum_ticks_per_call",
+                    "surface", "dexvm", "entry", "presets"},
                    {"api_level", "lifecycle", "surface"});
     }
     ProfileRuntime result;

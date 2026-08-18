@@ -4,12 +4,15 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "ogplay/loader/apk_native.h"
+#include "ogplay/runtime/bionic/bionic_module_set.h"
+#include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
 namespace ogplay::runtime {
@@ -74,6 +77,12 @@ public:
     NativeLibraryLoader(
         AndroidGuestProcess& process,
         const loader::ApkSelectedNativeLibraries& libraries);
+    NativeLibraryLoader(
+        AndroidGuestProcess& process,
+        const loader::ApkSelectedNativeLibraries& libraries,
+        const BionicProfile& bionic,
+        std::span<const BionicModuleSource> system_libraries,
+        core::Logger* logger = nullptr);
     ~NativeLibraryLoader();
     NativeLibraryLoader(const NativeLibraryLoader&) = delete;
     NativeLibraryLoader& operator=(const NativeLibraryLoader&) = delete;

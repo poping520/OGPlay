@@ -94,7 +94,7 @@ y = 240
 [[checkpoint.assertion]]
 type = "frame"
 minimum_sequence = 468
-sha256 = "9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8"
+sha256 = "f91150b40c053cd86d7cffd7ebb5afb20fe1135927bbf797be6c0fc036fec270"
 
 [[checkpoint.assertion]]
 type = "no_guest_fault"

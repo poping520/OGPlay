@@ -1,5 +1,10 @@
 # 方案：Profile 驱动的启动作用域裁剪
 
+> **启动架构已被取代：** 本文保留 entry/preset quirk 的历史设计与验收事实，但其中
+> “Profile 决定启动资格、入口或 root native module”的规则已由
+> [APK Startup 设计](../apk-startup/README.md)取代。当前默认入口来自 Manifest，Profile
+> 仅能作为经评审的 optional compatibility override。
+
 把"补不尽的 Java 层"变成"只执行游戏引擎必需的 Java,商业外壳按非目标裁剪"——
 用**通用机制 + 每游戏数据(Title Profile)**表达,不在 `src/` 写游戏分支,不伪造成功。
 

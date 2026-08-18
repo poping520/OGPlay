@@ -55,8 +55,9 @@
   字符时必须记账并回退 package name，不得把不可显示文本送入持久 TOML。
 - 视图每帧只消费 `LibraryTile` 事实，不读取 meta/Profile 或管理进程；长名称单行省略，
   悬停显示全文，状态角标互斥。
-- 精确 Profile 和 required external 事实必须来自 `MatchApkTitleProfile` 与
-  `SummarizeApkProfileMatch`/`FindApkProfileSummary`，不得在 GUI 遍历 Profile mounts。
+- optional Profile 和 required external 事实必须来自
+  `SelectApkCompatibilityProfile` 与 `SummarizeCompatibilityProfile`，不得在 GUI
+  重复解析 applicability 或遍历 Profile mounts；no match 是 generic APK，不是错误。
 - Profile catalog 不可用时所有非损坏磁贴必须显示显式不可用状态，不得把空的
   required-external 集合解释为 ready。
 - 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest

@@ -1,5 +1,10 @@
 # 04 · 运行时集成
 
+> **启动规则已被取代：** 本文的 DexVM 内核、intrinsic 与生命周期验收事实继续有效；
+> §1/§7 中 v1/v2 exact Profile 作为启动安全边界、Profile/native-call 驱动入口的假设，
+> 已由 [APK Startup 设计](../apk-startup/README.md)取代。当前启动由 Manifest 与
+> `AndroidAppProcess` 驱动，Profile 只提供 optional compatibility override。
+
 ## 1. JNI 双向互通
 
 **解释器 → native（出向）**：`invoke-*` 解析到带 `native` 标志的方法时，经
@@ -178,6 +183,10 @@ Settings（设备身份）、Locale、PackageManager 受限面——远小于 on
   Scenario 三轮 gate 的可重复性与现状等价。
 
 ## 7. Title Profile v2
+
+> 本节是 DVM 迁移时的历史契约。v2 exact identity 现仅作为 legacy applicability
+> adapter；新配置使用 optional v3，详见
+> [ABI 与 Title Profile 迁移](../apk-startup/06-profile-and-abi.md)。
 
 schema v2（v1 冻结不动，二者由 `schema = 1|2` 区分，校验器同仓支持）：
 

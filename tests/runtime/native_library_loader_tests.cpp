@@ -486,6 +486,29 @@ TEST_CASE("native library loader appends dependency constructors and one explici
     CHECK(fixture.process->AttachedJniThreadCount() == 0U);
 }
 
+TEST_CASE("native library loader resolves Bionic dependencies after rootless startup") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    auto application = AppElf(
+        {"libusesystem.so", "libstdc++.so", runtime::kJniVersion1_6});
+    auto libstdcpp = AppElf({"libstdc++.so", "", std::nullopt});
+    loader::ApkNativeLibraryInventory inventory{{
+        Library("libusesystem.so", application),
+    }};
+    const auto selected = loader::SelectApkNativeLibraries(
+        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const runtime::BionicModuleSource system[]{{"libstdc++.so", libstdcpp}};
+    runtime::NativeLibraryLoader libraries(
+        *fixture.process, selected, runtime::SelectBionicProfile(19), system);
+
+    const auto loaded = libraries.LoadLibrary("usesystem", 7U);
+    CHECK(loaded.initialized_modules ==
+          std::vector<std::string>{"libstdc++.so", "libusesystem.so"});
+    CHECK(fixture.process->HasLoadedModule("libstdc++.so"));
+    CHECK(fixture.process->HasLoadedModule("libusesystem.so"));
+    CHECK(loaded.jni_version == runtime::kJniVersion1_6);
+}
+
 TEST_CASE("native library loader keeps malformed unresolved and bad JNI failures stable") {
     using namespace ogplay;
     FixtureProcess fixture;
@@ -785,13 +808,22 @@ TEST_CASE("AndroidAppProcess rejects a manifest without a launcher") {
 }
 
 TEST_CASE("run-apk delegates application startup and never selects an ELF root") {
-    const auto path = std::string(OGPLAY_SOURCE_DIR) +
-                      "/src/frontend/cli/run_apk.cpp";
-    std::ifstream input(path, std::ios::binary);
-    REQUIRE(input.good());
-    const std::string source{std::istreambuf_iterator<char>(input), {}};
-    CHECK(source.find("AndroidAppProcess::Create") != std::string::npos);
-    CHECK(source.find("AndroidGuestCallSession::Start") == std::string::npos);
-    CHECK(source.find("PrepareApkProfileLaunch") == std::string::npos);
-    CHECK(source.find("InitializeJniLibrary") == std::string::npos);
+    const auto read_source = [](const std::string_view relative) {
+        const auto path = std::string(OGPLAY_SOURCE_DIR) + std::string(relative);
+        std::ifstream input(path, std::ios::binary);
+        if (!input.good()) throw std::runtime_error("missing frontend source");
+        return std::string{std::istreambuf_iterator<char>(input), {}};
+    };
+    const auto cli = read_source("/src/frontend/cli/run_apk.cpp");
+    CHECK(cli.find("AndroidAppProcess::Create") != std::string::npos);
+    CHECK(cli.find("SelectApkCompatibilityProfile") != std::string::npos);
+    CHECK(cli.find("AndroidGuestCallSession::Start") == std::string::npos);
+    CHECK(cli.find("PrepareApkProfileLaunch") == std::string::npos);
+    CHECK(cli.find("MatchApkTitleProfile") == std::string::npos);
+    CHECK(cli.find("InitializeJniLibrary") == std::string::npos);
+    CHECK(cli.find("so_sha256") == std::string::npos);
+
+    const auto gui = read_source("/src/frontend/gui/import.cpp");
+    CHECK(gui.find("SelectApkCompatibilityProfile") != std::string::npos);
+    CHECK(gui.find("MatchApkTitleProfile") == std::string::npos);
 }

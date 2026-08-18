@@ -117,8 +117,8 @@ note = "M6 WU-0358 以同一 Profile-backed MCP manual-step 会话执行强类�
 
 [automation.asphalt5_title_flow]
 status = "complete"
-test = "tools.scenarios_current; tools.scenario_runner_self_test; macOS-arm64 exact local gate 3/3"
-note = "M6 WU-0359 以逻辑 asphalt5.apk fixture 自动选择 English、进入稳定 title、点击到 Main Menu 并验证 suspend/resume；三轮固定 frame/ticks 468/468000、Main Menu PNG SHA-256 9ee57323dae576c38d4d29984c067b5bceaa86f77724c8f3b174bcd1a81962b8、无 guest fault 且 clean shutdown"
+test = "tools.scenarios_current; tools.scenario_runner_self_test; Windows exact local gate 3/3"
+note = "M6 WU-0359 以逻辑 asphalt5.apk fixture 自动选择 English、进入稳定 title、点击到 Main Menu 并验证 suspend/resume；APS-9 收口 DVM-31 已记录的历史 golden 漂移，三轮固定 frame/ticks 468/468000、Main Menu PNG SHA-256 f91150b40c053cd86d7cffd7ebb5afb20fe1135927bbf797be6c0fc036fec270、无 guest fault且 clean shutdown"
 
 [agent.control_service]
 status = "complete"
@@ -718,7 +718,7 @@ note = "APS-3 抽出 AndroidGuestProcess rootless create：仅以 API 19 system 
 [runtime.dynamic_native_library_loader]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp"
-note = "APS-4 在 AndroidGuestProcess 上事务追加 selected-ABI APK ELF closure，依赖优先执行 constructors 并由 process 反序 finalization；NativeLibraryLoader 以 canonical path + ClassLoader token 管理 Loading/Loaded/Failed，同 loader 幂等/同线程递归成功/跨 loader 失败，仅显式 root 执行并校验 JNI_OnLoad，无 OnLoad 成功，失败重试稳定；APS-5 将 DexVM System.load/System.loadLibrary 接入同一 loader，Java 失败映射为 NPE/UnsatisfiedLinkError，并以 A JNI_OnLoad→解释 Java callback→load B 锁定同线程重入与各一次 OnLoad"
+note = "APS-4 在 AndroidGuestProcess 上事务追加 selected-ABI APK ELF closure，依赖优先执行 constructors 并由 process 反序 finalization；NativeLibraryLoader 以 canonical path + ClassLoader token 管理 Loading/Loaded/Failed，同 loader 幂等/同线程递归成功/跨 loader 失败，仅显式 root 执行并校验 JNI_OnLoad。APS-5 以 A JNI_OnLoad→Java callback→load B 锁定重入；APS-9 让 rootless shell 保留未映射 Bionic source 并只按应用 DT_NEEDED 动态追加，结构化记录 explicit load 顺序且不把依赖算作 Java load"
 
 [runtime.application_startup]
 status = "complete"

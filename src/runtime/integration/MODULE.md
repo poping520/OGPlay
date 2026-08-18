@@ -32,7 +32,14 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 - `InitializeApi19GuestProcess` 事务映射统一 root TLS/thread-info/preinit、4 MiB 栈、
   `SVC #1` 返回 trap 与空 property area,并只向受检 libc 导出槽发布地址;固定布局冲突、
   非法线程/进程名或写入失败必须回滚新增映射和导出槽。
-- `AndroidGuestCallSession` 组合真实 Bionic namespace、API 19 process、syscall/clone、
+- `AndroidGuestProcess` 是 Android native 进程资源的底层所有者：rootless create 只接收
+  API 19 system module closure，以 `libc.so` 建立 process-lifetime namespace，在没有
+  APK application ELF 时也必须完成 Bionic process memory、syscall/clone、boundary、
+  guest JNI ABI/JavaVM 与 root thread attach。请求面不得接受 application module；
+  `ApplicationModuleCount()` 必须为 0，Stop 必须 detach root JNI thread 且幂等。
+  `AndroidGuestCallSession` 仅是旧 root-module 启动面的 legacy adapter，委托同一个
+  process owner；dynamic application load 不属于 APS-3。
+- legacy process 组合真实 Bionic namespace、API 19 process、syscall/clone、
   guest JNI ABI/core bindings 与 Android HLE,执行 guest init/fini 并只接受通用 A32
   frame;可选直接资源 implementation set 只安装通用 framework HLE 并拥有统一 JNI array
   store。通用 SoundPool handler 驱动同一会话拥有的 `JavaSoundPoolState`:分类 stop 批次

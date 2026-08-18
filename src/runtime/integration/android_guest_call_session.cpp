@@ -425,9 +425,72 @@ void BindAndroidGuestJavaLocaleHandlers(
         });
 }
 
-class AndroidGuestCallSession::Impl final {
+namespace {
+
+struct AndroidGuestProcessStartup final {
+    std::uint32_t api{};
+    std::string root_module;
+    std::span<const loader::Elf32ModuleInput> modules;
+    gles::AngleBackend backend;
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::uint64_t maximum_ticks_per_call{};
+    std::uint32_t supersample_factor{};
+    VirtualFileSystem* filesystem{};
+    std::function<void(std::string_view)> progress;
+    std::optional<FrameworkDirectAssetImplementations> direct_assets;
+    AndroidBoundaryOptions boundary_options;
+    audio::JavaSoundPoolMixer::EncodedResourceLoader sound_resource_loader;
+    A32GuestCallSliceObserver guest_call_slice_observer;
+    AndroidGuestPlatformConfig platform;
+    std::size_t application_module_count{};
+};
+
+[[nodiscard]] AndroidGuestProcessStartup RootlessStartup(
+    const AndroidGuestProcessRequest& request) {
+    return {request.api,
+            "libc.so",
+            request.system_modules,
+            request.backend,
+            request.width,
+            request.height,
+            request.maximum_ticks_per_call,
+            request.supersample_factor,
+            request.filesystem,
+            request.progress,
+            request.direct_assets,
+            request.boundary_options,
+            request.sound_resource_loader,
+            request.guest_call_slice_observer,
+            request.platform,
+            0};
+}
+
+[[nodiscard]] AndroidGuestProcessStartup LegacyStartup(
+    const AndroidGuestCallSessionRequest& request) {
+    return {request.api,
+            request.root_module,
+            request.modules,
+            request.backend,
+            request.width,
+            request.height,
+            request.maximum_ticks_per_call,
+            request.supersample_factor,
+            request.filesystem,
+            request.progress,
+            request.direct_assets,
+            request.boundary_options,
+            request.sound_resource_loader,
+            request.guest_call_slice_observer,
+            request.platform,
+            1};
+}
+
+}  // namespace
+
+class AndroidGuestProcess::Impl final {
 public:
-    explicit Impl(const AndroidGuestCallSessionRequest& request)
+    explicit Impl(const AndroidGuestProcessStartup& request)
         : boundary_(address_space_, request.backend, request.width,
                     request.height, request.supersample_factor,
                     request.boundary_options),
@@ -445,17 +508,18 @@ public:
           root_module_(request.root_module),
           maximum_ticks_(request.maximum_ticks_per_call),
           progress_(request.progress),
-          slice_observer_(request.guest_call_slice_observer) {
+          slice_observer_(request.guest_call_slice_observer),
+          application_module_count_(request.application_module_count) {
 #if !OGPLAY_HAS_DYNARMIC
         static_cast<void>(request);
-        throw AndroidGuestCallSessionError(
+        throw AndroidGuestProcessError(
             "Android guest call session requires Dynarmic");
 #else
         if (request.api != 19 || request.root_module.empty() ||
             request.modules.empty() || request.width == 0 ||
             request.height == 0 || request.maximum_ticks_per_call == 0 ||
             filesystem_ == nullptr) {
-            throw AndroidGuestCallSessionError(
+            throw AndroidGuestProcessError(
                 "Android guest call session request is incomplete");
         }
         BindAndroidGuestJavaAudioHandlers(
@@ -502,7 +566,7 @@ public:
         const auto attached = java_vm_.AttachCurrentThread(
             kRootThreadId, kJniVersion1_6);
         if (attached.status != JniStatus::ok) {
-            throw AndroidGuestCallSessionError(
+            throw AndroidGuestProcessError(
                 "Android guest root JNI thread attachment failed");
         }
         static_cast<void>(InstallAndroidGuestFrameworkPlatform(
@@ -552,7 +616,7 @@ public:
 
     A32GuestCallResult Invoke(const A32GuestCallFrame& frame) {
         if (!root_cpu_) {
-            throw AndroidGuestCallSessionError(
+            throw AndroidGuestProcessError(
                 "Android guest call session has no root CPU");
         }
         return InvokeA32GuestCall(
@@ -593,7 +657,7 @@ public:
             try {
                 const auto joined = clone_runtime_->Join(child.thread_id);
                 if (joined.run.reason != GuestThreadRunStop::guest_exit) {
-                    throw AndroidGuestCallSessionError(
+                    throw AndroidGuestProcessError(
                         "Android guest child did not exit cleanly");
                 }
             } catch (...) {
@@ -619,7 +683,7 @@ public:
         const auto detached = java_vm_.DetachCurrentThread(kRootThreadId);
         static_cast<void>(environment_.ShutdownMonitors());
         if (detached != JniStatus::ok) {
-            throw AndroidGuestCallSessionError(
+            throw AndroidGuestProcessError(
                 "Android guest root JNI thread detachment failed");
         }
         running_ = false;
@@ -678,11 +742,11 @@ public:
     VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
     void InitializeJniLibrary() {
         if (!running_) {
-            throw AndroidGuestCallSessionError(
+            throw AndroidGuestProcessError(
                 "guest JNI library cannot initialize in a stopped session");
         }
         if (jni_library_initialized_) {
-            throw AndroidGuestCallSessionError(
+            throw AndroidGuestProcessError(
                 "guest JNI library is already initialized");
         }
         const auto on_load = BuildJniGuestLibraryOnLoad(
@@ -712,7 +776,7 @@ public:
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
     void PushInput(const AndroidBoundaryInput& input) {
         if (!running_) {
-            throw AndroidGuestCallSessionError(
+            throw AndroidGuestProcessError(
                 "Android guest call session is stopped");
         }
         boundary_.PushInput(input);
@@ -735,6 +799,15 @@ public:
     }
     bool Running() const noexcept { return running_; }
     bool ExitRequested() const noexcept { return process_state_.ExitRequested(); }
+    std::size_t ApplicationModuleCount() const noexcept {
+        return application_module_count_;
+    }
+    std::size_t LoadedGuestModuleCount() const noexcept {
+        return loaded_.modules.size();
+    }
+    std::size_t AttachedJniThreadCount() const {
+        return java_vm_.AttachedThreadCount();
+    }
     std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const {
         return movie_state_.Latest();
     }
@@ -791,6 +864,7 @@ private:
     std::uint64_t maximum_ticks_{};
     std::function<void(std::string_view)> progress_;
     A32GuestCallSliceObserver slice_observer_;
+    std::size_t application_module_count_{};
     bool jni_library_initialized_{};
     bool running_{};
 
@@ -818,107 +892,220 @@ public:
     }
 };
 
+std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::Start(
+    const AndroidGuestProcessRequest& request) {
+    try {
+        return std::unique_ptr<AndroidGuestProcess>(
+            new AndroidGuestProcess(
+                std::make_unique<Impl>(RootlessStartup(request))));
+    } catch (const AndroidGuestProcessError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestProcessError(
+            "Android guest process startup failed: " +
+            std::string(error.what()));
+    }
+}
+std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::StartLegacy(
+    const AndroidGuestCallSessionRequest& request) {
+    return std::unique_ptr<AndroidGuestProcess>(
+        new AndroidGuestProcess(
+            std::make_unique<Impl>(LegacyStartup(request))));
+}
+AndroidGuestProcess::AndroidGuestProcess(std::unique_ptr<Impl> impl) noexcept
+    : impl_(std::move(impl)) {}
+AndroidGuestProcess::~AndroidGuestProcess() = default;
+A32GuestCallResult AndroidGuestProcess::Invoke(
+    const A32GuestCallFrame& frame) {
+    try {
+        return impl_->Invoke(frame);
+    } catch (const AndroidGuestProcessError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestProcessError(
+            "Android guest invocation failed: " +
+            std::string(error.what()));
+    }
+}
+A32GuestCallResult AndroidGuestProcess::InvokeRegisteredNative(
+    const JniObjectIdentity java_class, const std::string_view name,
+    const std::string_view descriptor, const A32GuestCallFrame& frame) {
+    try {
+        return impl_->InvokeRegisteredNative(java_class, name, descriptor,
+                                             frame);
+    } catch (const AndroidGuestProcessError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestProcessError(
+            "registered JNI native invocation failed: " +
+            std::string(error.what()));
+    }
+}
+memory::GuestAddress AndroidGuestProcess::GuestEnvironment() const noexcept { return impl_->GuestEnvironment(); }
+memory::GuestAddress AndroidGuestProcess::GuestJavaVm() const noexcept { return impl_->GuestJavaVm(); }
+JniEnvironment& AndroidGuestProcess::Environment() noexcept { return impl_->Environment(); }
+JniClassRegistry& AndroidGuestProcess::Classes() noexcept { return impl_->Classes(); }
+JniInvocationEngine& AndroidGuestProcess::Invocations() noexcept {
+    return impl_->Invocations();
+}
+JniStringStore& AndroidGuestProcess::Strings() noexcept {
+    return impl_->Strings();
+}
+JniPrimitiveArrayStore& AndroidGuestProcess::Arrays() noexcept {
+    return impl_->Arrays();
+}
+audio::JavaSoundPoolState& AndroidGuestProcess::SoundPoolState() noexcept {
+    return impl_->SoundPoolState();
+}
+audio::JavaSoundPoolMixer& AndroidGuestProcess::SoundPoolMixer() noexcept {
+    return impl_->SoundPoolMixer();
+}
+VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
+    return impl_->Filesystem();
+}
+std::optional<memory::GuestAddress> AndroidGuestProcess::FindNativeExport(
+    const std::string_view class_name, const std::string_view method_name,
+    const std::string_view descriptor) const {
+    return impl_->FindNativeExport(class_name, method_name, descriptor);
+}
+void AndroidGuestProcess::InitializeJniLibrary() {
+    try {
+        impl_->InitializeJniLibrary();
+    } catch (const AndroidGuestProcessError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestProcessError(
+            "guest JNI library initialization failed: " +
+            std::string(error.what()));
+    }
+}
+void AndroidGuestProcess::OpenManagedSurface() { impl_->OpenManagedSurface(); }
+void AndroidGuestProcess::BindManagedSurfaceOnCallingThread() { impl_->BindManagedSurfaceOnCallingThread(); }
+void AndroidGuestProcess::ReleaseManagedSurfaceFromCallingThread() { impl_->ReleaseManagedSurfaceFromCallingThread(); }
+bool AndroidGuestProcess::ManagedSurfaceIsOpen() const noexcept { return impl_->ManagedSurfaceIsOpen(); }
+std::string AndroidGuestProcess::ManagedGlString(const std::uint32_t parameter) { return impl_->ManagedGlString(parameter); }
+void AndroidGuestProcess::PresentManagedSurface() { impl_->PresentManagedSurface(); }
+void AndroidGuestProcess::CloseManagedSurface() { impl_->CloseManagedSurface(); }
+void AndroidGuestProcess::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
+std::optional<AndroidBoundaryFrame> AndroidGuestProcess::TakeLatestFrame() { return impl_->TakeLatestFrame(); }
+void AndroidGuestProcess::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { impl_->PublishSoftwareFrame(std::move(rgba8)); }
+void AndroidGuestProcess::RecycleFrame(AndroidBoundaryFrame&& frame) { impl_->RecycleFrame(std::move(frame)); }
+std::size_t AndroidGuestProcess::RenderStereoAudio(const std::span<std::int16_t> output,
+                                                   const std::uint32_t sample_rate) { return impl_->RenderStereoAudio(output, sample_rate); }
+std::size_t AndroidGuestProcess::InterruptBlockingWaits() { return impl_->InterruptBlockingWaits(); }
+void AndroidGuestProcess::Stop() { impl_->Stop(); }
+bool AndroidGuestProcess::Running() const noexcept { return impl_->Running(); }
+bool AndroidGuestProcess::ExitRequested() const noexcept { return impl_->ExitRequested(); }
+std::size_t AndroidGuestProcess::ApplicationModuleCount() const noexcept { return impl_->ApplicationModuleCount(); }
+std::size_t AndroidGuestProcess::LoadedGuestModuleCount() const noexcept { return impl_->LoadedGuestModuleCount(); }
+std::size_t AndroidGuestProcess::AttachedJniThreadCount() const { return impl_->AttachedJniThreadCount(); }
+std::optional<AndroidGuestMovieRequest> AndroidGuestProcess::LatestMovieRequest() const { return impl_->LatestMovieRequest(); }
+core::GpuStats AndroidGuestProcess::Stats() const { return impl_->Stats(); }
+std::vector<core::GpuRenderTarget> AndroidGuestProcess::RenderTargets() const { return impl_->RenderTargets(); }
+core::GpuCapabilities AndroidGuestProcess::Capabilities() const { return impl_->Capabilities(); }
+std::vector<core::GpuTraceEntry> AndroidGuestProcess::Trace(
+    const std::string_view filter, const std::size_t limit) const { return impl_->Trace(filter, limit); }
+
 std::unique_ptr<AndroidGuestCallSession> AndroidGuestCallSession::Start(
     const AndroidGuestCallSessionRequest& request) {
+    if (request.api != 19 || request.root_module.empty() ||
+        request.modules.empty() || request.width == 0 ||
+        request.height == 0 || request.maximum_ticks_per_call == 0 ||
+        request.filesystem == nullptr) {
+        throw AndroidGuestCallSessionError(
+            "Android guest call session request is incomplete");
+    }
     try {
         return std::unique_ptr<AndroidGuestCallSession>(
-            new AndroidGuestCallSession(std::make_unique<Impl>(request)));
-    } catch (const AndroidGuestCallSessionError&) {
-        throw;
+            new AndroidGuestCallSession(AndroidGuestProcess::StartLegacy(request)));
     } catch (const std::exception& error) {
         throw AndroidGuestCallSessionError(
             "Android guest call session startup failed: " +
             std::string(error.what()));
     }
 }
-AndroidGuestCallSession::AndroidGuestCallSession(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+AndroidGuestCallSession::AndroidGuestCallSession(
+    std::unique_ptr<AndroidGuestProcess> process) noexcept
+    : process_(std::move(process)) {}
 AndroidGuestCallSession::~AndroidGuestCallSession() = default;
 A32GuestCallResult AndroidGuestCallSession::Invoke(
     const A32GuestCallFrame& frame) {
     try {
-        return impl_->Invoke(frame);
+        return process_->Invoke(frame);
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestCallSessionError(
-            "Android guest invocation failed: " +
-            std::string(error.what()));
+        throw AndroidGuestCallSessionError(error.what());
     }
 }
 A32GuestCallResult AndroidGuestCallSession::InvokeRegisteredNative(
     const JniObjectIdentity java_class, const std::string_view name,
     const std::string_view descriptor, const A32GuestCallFrame& frame) {
     try {
-        return impl_->InvokeRegisteredNative(java_class, name, descriptor,
-                                             frame);
+        return process_->InvokeRegisteredNative(
+            java_class, name, descriptor, frame);
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestCallSessionError(
-            "registered JNI native invocation failed: " +
-            std::string(error.what()));
+        throw AndroidGuestCallSessionError(error.what());
     }
 }
-memory::GuestAddress AndroidGuestCallSession::GuestEnvironment() const noexcept { return impl_->GuestEnvironment(); }
-memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept { return impl_->GuestJavaVm(); }
-JniEnvironment& AndroidGuestCallSession::Environment() noexcept { return impl_->Environment(); }
-JniClassRegistry& AndroidGuestCallSession::Classes() noexcept { return impl_->Classes(); }
-JniInvocationEngine& AndroidGuestCallSession::Invocations() noexcept {
-    return impl_->Invocations();
-}
-JniStringStore& AndroidGuestCallSession::Strings() noexcept {
-    return impl_->Strings();
-}
-JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept {
-    return impl_->Arrays();
-}
-audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept {
-    return impl_->SoundPoolState();
-}
-audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept {
-    return impl_->SoundPoolMixer();
-}
-VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept {
-    return impl_->Filesystem();
-}
-std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(
-    const std::string_view class_name, const std::string_view method_name,
-    const std::string_view descriptor) const {
-    return impl_->FindNativeExport(class_name, method_name, descriptor);
-}
+memory::GuestAddress AndroidGuestCallSession::GuestEnvironment() const noexcept { return process_->GuestEnvironment(); }
+memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept { return process_->GuestJavaVm(); }
+JniEnvironment& AndroidGuestCallSession::Environment() noexcept { return process_->Environment(); }
+JniClassRegistry& AndroidGuestCallSession::Classes() noexcept { return process_->Classes(); }
+JniInvocationEngine& AndroidGuestCallSession::Invocations() noexcept { return process_->Invocations(); }
+JniStringStore& AndroidGuestCallSession::Strings() noexcept { return process_->Strings(); }
+JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept { return process_->Arrays(); }
+audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept { return process_->SoundPoolState(); }
+audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept { return process_->SoundPoolMixer(); }
+VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept { return process_->Filesystem(); }
+std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const { return process_->FindNativeExport(class_name, method_name, descriptor); }
 void AndroidGuestCallSession::InitializeJniLibrary() {
     try {
-        impl_->InitializeJniLibrary();
+        process_->InitializeJniLibrary();
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestCallSessionError(
-            "guest JNI library initialization failed: " +
-            std::string(error.what()));
+        throw AndroidGuestCallSessionError(error.what());
     }
 }
-void AndroidGuestCallSession::OpenManagedSurface() { impl_->OpenManagedSurface(); }
-void AndroidGuestCallSession::BindManagedSurfaceOnCallingThread() { impl_->BindManagedSurfaceOnCallingThread(); }
-void AndroidGuestCallSession::ReleaseManagedSurfaceFromCallingThread() { impl_->ReleaseManagedSurfaceFromCallingThread(); }
-bool AndroidGuestCallSession::ManagedSurfaceIsOpen() const noexcept { return impl_->ManagedSurfaceIsOpen(); }
-std::string AndroidGuestCallSession::ManagedGlString(const std::uint32_t parameter) { return impl_->ManagedGlString(parameter); }
-void AndroidGuestCallSession::PresentManagedSurface() { impl_->PresentManagedSurface(); }
-void AndroidGuestCallSession::CloseManagedSurface() { impl_->CloseManagedSurface(); }
-void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
-std::optional<AndroidBoundaryFrame> AndroidGuestCallSession::TakeLatestFrame() { return impl_->TakeLatestFrame(); }
-void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { impl_->PublishSoftwareFrame(std::move(rgba8)); }
-void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) { impl_->RecycleFrame(std::move(frame)); }
-std::size_t AndroidGuestCallSession::RenderStereoAudio(const std::span<std::int16_t> output,
-                                                       const std::uint32_t sample_rate) { return impl_->RenderStereoAudio(output, sample_rate); }
-std::size_t AndroidGuestCallSession::InterruptBlockingWaits() { return impl_->InterruptBlockingWaits(); }
-void AndroidGuestCallSession::Stop() { impl_->Stop(); }
-bool AndroidGuestCallSession::Running() const noexcept { return impl_->Running(); }
-bool AndroidGuestCallSession::ExitRequested() const noexcept { return impl_->ExitRequested(); }
-std::optional<AndroidGuestMovieRequest> AndroidGuestCallSession::LatestMovieRequest() const { return impl_->LatestMovieRequest(); }
-core::GpuStats AndroidGuestCallSession::Stats() const { return impl_->Stats(); }
-std::vector<core::GpuRenderTarget> AndroidGuestCallSession::RenderTargets() const { return impl_->RenderTargets(); }
-core::GpuCapabilities AndroidGuestCallSession::Capabilities() const { return impl_->Capabilities(); }
-std::vector<core::GpuTraceEntry> AndroidGuestCallSession::Trace(
-    const std::string_view filter, const std::size_t limit) const { return impl_->Trace(filter, limit); }
+void AndroidGuestCallSession::OpenManagedSurface() { process_->OpenManagedSurface(); }
+void AndroidGuestCallSession::BindManagedSurfaceOnCallingThread() { process_->BindManagedSurfaceOnCallingThread(); }
+void AndroidGuestCallSession::ReleaseManagedSurfaceFromCallingThread() { process_->ReleaseManagedSurfaceFromCallingThread(); }
+bool AndroidGuestCallSession::ManagedSurfaceIsOpen() const noexcept { return process_->ManagedSurfaceIsOpen(); }
+std::string AndroidGuestCallSession::ManagedGlString(std::uint32_t parameter) { return process_->ManagedGlString(parameter); }
+void AndroidGuestCallSession::PresentManagedSurface() { process_->PresentManagedSurface(); }
+void AndroidGuestCallSession::CloseManagedSurface() { process_->CloseManagedSurface(); }
+void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) {
+    try {
+        process_->PushInput(input);
+    } catch (const AndroidGuestCallSessionError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestCallSessionError(error.what());
+    }
+}
+std::optional<AndroidBoundaryFrame> AndroidGuestCallSession::TakeLatestFrame() { return process_->TakeLatestFrame(); }
+void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { process_->PublishSoftwareFrame(std::move(rgba8)); }
+void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) { process_->RecycleFrame(std::move(frame)); }
+std::size_t AndroidGuestCallSession::RenderStereoAudio(std::span<std::int16_t> output, std::uint32_t sample_rate) { return process_->RenderStereoAudio(output, sample_rate); }
+std::size_t AndroidGuestCallSession::InterruptBlockingWaits() { return process_->InterruptBlockingWaits(); }
+void AndroidGuestCallSession::Stop() {
+    try {
+        process_->Stop();
+    } catch (const AndroidGuestCallSessionError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestCallSessionError(error.what());
+    }
+}
+bool AndroidGuestCallSession::Running() const noexcept { return process_->Running(); }
+bool AndroidGuestCallSession::ExitRequested() const noexcept { return process_->ExitRequested(); }
+std::optional<AndroidGuestMovieRequest> AndroidGuestCallSession::LatestMovieRequest() const { return process_->LatestMovieRequest(); }
+core::GpuStats AndroidGuestCallSession::Stats() const { return process_->Stats(); }
+std::vector<core::GpuRenderTarget> AndroidGuestCallSession::RenderTargets() const { return process_->RenderTargets(); }
+core::GpuCapabilities AndroidGuestCallSession::Capabilities() const { return process_->Capabilities(); }
+std::vector<core::GpuTraceEntry> AndroidGuestCallSession::Trace(std::string_view filter, std::size_t limit) const { return process_->Trace(filter, limit); }
 
 }  // namespace ogplay::runtime

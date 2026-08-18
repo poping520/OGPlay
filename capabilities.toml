@@ -705,6 +705,11 @@ status = "complete"
 test = "tests/runtime/bionic_module_set_tests.cpp"
 note = "M5 WU-0222 从根 ELF 的 DT_NEEDED 递归拥有 profile 声明的真实 guest 库，排除 HLE boundary 与未使用来源，并受检分配不碰 thunk 区的 load bias"
 
+[runtime.android_guest_process_shell]
+status = "complete"
+test = "tests/runtime/android_guest_call_session_tests.cpp"
+note = "APS-3 抽出 AndroidGuestProcess rootless create：仅以 API 19 system module closure 建立 process-lifetime namespace，无 APK application ELF 也完成 Bionic/syscall/boundary/JNI/JavaVM/root thread；application module count 固定为 0，Stop detach 且幂等，旧 AndroidGuestCallSession 通过 legacy adapter 复用同一 owner"
+
 [profiles.apk_launch_preflight]
 status = "complete"
 test = "tests/session/profile_apk_tests.cpp"

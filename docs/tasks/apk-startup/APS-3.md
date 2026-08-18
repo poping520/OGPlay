@@ -35,3 +35,19 @@
 - JavaVM/JNI thread attach 基础操作可用；
 - legacy session tests 通过 adapter 无回归；
 - clean stop 无 module/fd/thread 泄漏断言回归。
+
+## 结果（机器可判定，已达成）
+
+- `AndroidGuestProcess::Start` 只接收已选 API 的 system module closure，以 `libc.so`
+  建立 process-lifetime ELF namespace；请求面没有 application root/module 字段，启动后
+  `ApplicationModuleCount() == 0`。
+- process shell 独立拥有 address space、Bionic process memory、syscall/boundary、JNI
+  guest ABI、JavaVM、root CPU/thread lifecycle 与 system ELF init/fini；根 JNI 线程在
+  create 时 attach，在 `Stop()` 时 detach，重复 Stop 幂等。
+- `AndroidGuestCallSession` 已降为 legacy adapter：旧 root-module request 经私有
+  `StartLegacy` 进入同一个 process owner，frontend 调用面保持不变；APS-3 不提供任何
+  dynamic application ELF API，该能力仍归 APS-4。
+- 确定性最小 `libc.so` fixture 验证 rootless create/stop、0 个 application module、
+  process-lifetime namespace、JavaVM/JNI attach 清理，以及 legacy adapter 实际启动/停止。
+- Windows MSVC：`cmake --preset windows-msvc`、Release `ogplay_tests` build 与完整
+  `ctest --preset windows-msvc` 通过，790/790。

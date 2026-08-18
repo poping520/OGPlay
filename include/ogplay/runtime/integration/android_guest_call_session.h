@@ -219,6 +219,96 @@ struct AndroidGuestCallSessionRequest final {
     AndroidGuestPlatformConfig platform{};
 };
 
+// Creates the Android-native process substrate before any APK application
+// module is admitted. system_modules must contain libc.so and its already
+// selected API-level dependency closure; APK application ELFs are deliberately
+// outside this request and are added by the later app-loading layer.
+struct AndroidGuestProcessRequest final {
+    std::uint32_t api{19};
+    std::span<const loader::Elf32ModuleInput> system_modules;
+    gles::AngleBackend backend;
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::uint64_t maximum_ticks_per_call{UINT64_C(200000000)};
+    std::uint32_t supersample_factor{1};
+    VirtualFileSystem* filesystem{};
+    std::function<void(std::string_view)> progress;
+    std::optional<FrameworkDirectAssetImplementations> direct_assets{};
+    AndroidBoundaryOptions boundary_options{};
+    audio::JavaSoundPoolMixer::EncodedResourceLoader sound_resource_loader{};
+    A32GuestCallSliceObserver guest_call_slice_observer{};
+    AndroidGuestPlatformConfig platform{};
+};
+
+class AndroidGuestProcessError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+class AndroidGuestProcess final : public core::GpuStateProvider {
+public:
+    [[nodiscard]] static std::unique_ptr<AndroidGuestProcess> Start(
+        const AndroidGuestProcessRequest& request);
+    ~AndroidGuestProcess();
+    AndroidGuestProcess(const AndroidGuestProcess&) = delete;
+    AndroidGuestProcess& operator=(const AndroidGuestProcess&) = delete;
+
+    [[nodiscard]] A32GuestCallResult Invoke(const A32GuestCallFrame& frame);
+    [[nodiscard]] A32GuestCallResult InvokeRegisteredNative(
+        JniObjectIdentity java_class, std::string_view name,
+        std::string_view descriptor, const A32GuestCallFrame& frame);
+    [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
+    [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
+    [[nodiscard]] JniEnvironment& Environment() noexcept;
+    [[nodiscard]] JniClassRegistry& Classes() noexcept;
+    [[nodiscard]] JniInvocationEngine& Invocations() noexcept;
+    [[nodiscard]] JniStringStore& Strings() noexcept;
+    [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
+    [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
+    [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
+    [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
+        std::string_view class_name, std::string_view method_name,
+        std::string_view descriptor) const;
+    void InitializeJniLibrary();
+    void OpenManagedSurface();
+    void BindManagedSurfaceOnCallingThread();
+    void ReleaseManagedSurfaceFromCallingThread();
+    [[nodiscard]] bool ManagedSurfaceIsOpen() const noexcept;
+    [[nodiscard]] std::string ManagedGlString(std::uint32_t parameter);
+    void PresentManagedSurface();
+    void CloseManagedSurface();
+    void PushInput(const AndroidBoundaryInput& input);
+    [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
+    void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
+    void RecycleFrame(AndroidBoundaryFrame&& frame);
+    [[nodiscard]] std::size_t RenderStereoAudio(
+        std::span<std::int16_t> output, std::uint32_t sample_rate);
+    [[nodiscard]] std::size_t InterruptBlockingWaits();
+    void Stop();
+    [[nodiscard]] bool Running() const noexcept;
+    [[nodiscard]] bool ExitRequested() const noexcept;
+    [[nodiscard]] std::size_t ApplicationModuleCount() const noexcept;
+    [[nodiscard]] std::size_t LoadedGuestModuleCount() const noexcept;
+    [[nodiscard]] std::size_t AttachedJniThreadCount() const;
+    [[nodiscard]] std::optional<AndroidGuestMovieRequest>
+    LatestMovieRequest() const;
+
+    [[nodiscard]] core::GpuStats Stats() const override;
+    [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
+    [[nodiscard]] core::GpuCapabilities Capabilities() const override;
+    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
+        std::string_view filter, std::size_t limit) const override;
+
+private:
+    class Impl;
+    explicit AndroidGuestProcess(std::unique_ptr<Impl> impl) noexcept;
+    [[nodiscard]] static std::unique_ptr<AndroidGuestProcess> StartLegacy(
+        const AndroidGuestCallSessionRequest& request);
+    std::unique_ptr<Impl> impl_;
+    friend class AndroidGuestCallSession;
+};
+
 class AndroidGuestCallSessionError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -279,9 +369,9 @@ public:
         std::string_view filter, std::size_t limit) const override;
 
 private:
-    class Impl;
-    explicit AndroidGuestCallSession(std::unique_ptr<Impl> impl) noexcept;
-    std::unique_ptr<Impl> impl_;
+    explicit AndroidGuestCallSession(
+        std::unique_ptr<AndroidGuestProcess> process) noexcept;
+    std::unique_ptr<AndroidGuestProcess> process_;
 };
 
 }  // namespace ogplay::runtime

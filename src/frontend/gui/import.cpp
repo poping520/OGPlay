@@ -53,10 +53,8 @@ ApkImportAnalysis AnalyzeApkImport(
     auto visuals = ExtractApkApplicationVisuals(apk_bytes);
     const auto archive = loader::ParseApkArchive(apk_bytes);
     const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
-    const auto match = libraries.empty()
-                           ? std::optional<session::ApkProfileMatch>{}
-                           : session::MatchApkTitleProfile(
-                                 visuals.manifest, libraries, profiles);
+    const auto selection = session::SelectApkCompatibilityProfile(
+        visuals.manifest, libraries, profiles);
     ApkImportAnalysis result{
         .source_apk = std::filesystem::absolute(source_apk).lexically_normal(),
         .manifest = std::move(visuals.manifest),
@@ -64,7 +62,10 @@ ApkImportAnalysis AnalyzeApkImport(
         .icon_png = std::move(visuals.icon_png),
         .visual_fallbacks = std::move(visuals.fallbacks),
     };
-    if (match.has_value()) result.profile = session::SummarizeApkProfileMatch(*match);
+    if (selection.profile != nullptr) {
+        result.profile =
+            session::SummarizeCompatibilityProfile(*selection.profile);
+    }
     return result;
 }
 

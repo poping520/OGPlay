@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-18 · APK Startup APS-1..7 已交付；generic frontend 已切换
+更新：2026-08-18 · APK Startup APS-1..8 已交付；Profile 已降级为 optional override
 
 ## 当前阶段
 
@@ -12,8 +12,9 @@
   A JNI_OnLoad → Java callback → load B 夹具闭合同线程重入；APS-6 已在 Activity/surface
   前建立 default/custom Application process root，固定 class init、构造、attach、onCreate
   顺序与异常短路；APS-7 新增 `AndroidAppProcess` 并把 `run-apk` 切到 Manifest 驱动的
-  rootless generic path，app ELF 只由 Java `System.load*` 动态追加，无 Profile/纯 Java
-  不再被启动 gate 阻断。
+  rootless generic path，app ELF 只由 Java `System.load*` 动态追加；APS-8 新增 optional
+  Profile v3 与 v1/v2 legacy applicability adapter，无 Profile、纯 Java或旧 hash 不命中
+  都继续 generic startup，Profile 不再决定 root `.so` 或 process ABI。
 - **M9 DexVM**：DVM-1..41 已交付；解释执行仍由 `VmExecutionLock` 串行。子线程 native
   调用仍复用 root guest 栈/thread id，JNI/DexVM monitor 表尚未合一；`threads` 与
   `monitors` 保持 `partial`。
@@ -28,7 +29,7 @@
 
 ## 下一步
 
-1. 实施 APS-8 optional Profile v3 与 legacy applicability adapter。
+1. 实施 APS-9 integration gates 与设计迁移收口，统一执行全量验证。
 2. 按命中批次闭合 DexVM 缺口，随后推进 GC-B 与解释器 v2 threaded 分批。
 3. 收口子线程 native guest 栈/thread id 与 JNI/DexVM monitor 统一。
 4. Linux M9 严格出口复验。

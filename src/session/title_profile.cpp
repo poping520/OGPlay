@@ -15,7 +15,8 @@
 
 namespace ogplay::session {
 namespace detail {
-[[nodiscard]] ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root);
+[[nodiscard]] ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
+                                                  std::uint32_t schema);
 }
 namespace {
 
@@ -266,10 +267,18 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
 }
 
 [[nodiscard]] ProfileIdentity DecodeIdentity(const Table& root,
-                                             const std::string_view expected_package) {
+                                             const std::string_view expected_package,
+                                             const std::uint32_t schema) {
     const auto& table = AsTable(Require(root, "identity", "identity"), "identity");
-    ExactKeys(table, "identity", {"package", "name", "version_code", "so_sha256", "abi"},
-              {"package", "version_code", "so_sha256", "abi"});
+    if (schema == 3U) {
+        ExactKeys(table, "identity",
+                  {"package", "name", "version_code", "so_sha256"},
+                  {"package"});
+    } else {
+        ExactKeys(table, "identity",
+                  {"package", "name", "version_code", "so_sha256", "abi"},
+                  {"package", "version_code", "so_sha256", "abi"});
+    }
     ProfileIdentity result;
     result.package = AsString(Require(table, "package", "identity.package"),
                               "identity.package");
@@ -282,30 +291,40 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     if (const auto* name = Optional(table, "name")) {
         result.name = AsString(*name, "identity.name");
     }
-    const auto& versions =
-        AsArray(Require(table, "version_code", "identity.version_code"),
-                "identity.version_code");
-    if (versions.empty()) throw TitleProfileError("identity.version_code must not be empty");
-    for (std::size_t index = 0; index < versions.size(); ++index) {
-        result.version_codes.push_back(static_cast<std::uint32_t>(AsInteger(
-            versions[index], "identity.version_code", 1,
-            std::numeric_limits<std::uint32_t>::max())));
-    }
-    RequireUnique(result.version_codes, "identity.version_code");
-    const auto& hashes = AsArray(Require(table, "so_sha256", "identity.so_sha256"),
-                                 "identity.so_sha256");
-    if (hashes.empty()) throw TitleProfileError("identity.so_sha256 must not be empty");
-    for (const auto& value : hashes) {
-        auto digest = AsString(value, "identity.so_sha256");
-        if (!ValidHash(digest)) {
-            throw TitleProfileError(
-                "identity.so_sha256 must contain lowercase SHA-256 digests");
+    if (const auto* version_value = Optional(table, "version_code")) {
+        const auto& versions = AsArray(*version_value, "identity.version_code");
+        if (versions.empty()) {
+            throw TitleProfileError("identity.version_code must not be empty");
         }
-        result.so_sha256.push_back(std::move(digest));
+        for (std::size_t index = 0; index < versions.size(); ++index) {
+            result.version_codes.push_back(static_cast<std::uint32_t>(AsInteger(
+                versions[index], "identity.version_code", 1,
+                std::numeric_limits<std::uint32_t>::max())));
+        }
+        RequireUnique(result.version_codes, "identity.version_code");
     }
-    RequireUnique(result.so_sha256, "identity.so_sha256");
-    result.abi = DecodeAbi(
-        AsString(Require(table, "abi", "identity.abi"), "identity.abi"));
+    if (const auto* hash_value = Optional(table, "so_sha256")) {
+        const auto& hashes = AsArray(*hash_value, "identity.so_sha256");
+        if (hashes.empty()) {
+            throw TitleProfileError("identity.so_sha256 must not be empty");
+        }
+        for (const auto& value : hashes) {
+            auto digest = AsString(value, "identity.so_sha256");
+            if (!ValidHash(digest)) {
+                throw TitleProfileError(
+                    "identity.so_sha256 must contain lowercase SHA-256 digests");
+            }
+            result.so_sha256.push_back(std::move(digest));
+        }
+        RequireUnique(result.so_sha256, "identity.so_sha256");
+    }
+    if (schema != 3U) {
+        result.abi = DecodeAbi(
+            AsString(Require(table, "abi", "identity.abi"), "identity.abi"));
+        result.has_abi_guard = true;
+    } else {
+        result.has_abi_guard = false;
+    }
     return result;
 }
 
@@ -498,6 +517,11 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     });
 }
 
+[[nodiscard]] bool ApplicabilityOverlaps(const auto& left,
+                                         const auto& right) {
+    return left.empty() || right.empty() || Intersects(left, right);
+}
+
 }  // namespace
 
 TitleProfile LoadTitleProfileText(const std::string_view text,
@@ -509,17 +533,16 @@ TitleProfile LoadTitleProfileText(const std::string_view text,
     }
     const auto root = detail::ParseDataToml(text);
     ExactKeys(root, "profile",
-              {"schema", "identity", "runtime", "data", "audio", "quirks",
-               "input"},
+              {"schema", "identity", "runtime", "data", "audio", "java",
+               "quirks", "input"},
               {"schema", "identity", "runtime"});
     TitleProfile result;
     result.schema = static_cast<std::uint32_t>(
-        AsInteger(Require(root, "schema", "schema"), "schema", 2, 2));
-    result.identity = DecodeIdentity(root, expected_package);
-    result.runtime = detail::DecodeProfileRuntime(root);
-    if (result.runtime.lifecycle != ProfileLifecycle::dex_activity) {
-        throw TitleProfileError(
-            "schema 2 requires runtime.lifecycle = dex_activity");
+        AsInteger(Require(root, "schema", "schema"), "schema", 1, 3));
+    result.identity = DecodeIdentity(root, expected_package, result.schema);
+    result.runtime = detail::DecodeProfileRuntime(root, result.schema);
+    if (result.schema != 1U && Optional(root, "java") != nullptr) {
+        throw TitleProfileError("schema 2/3 forbids legacy java replay glue");
     }
     if (const auto* data = Optional(root, "data")) result.data = DecodeData(*data);
     if (const auto* audio = Optional(root, "audio")) result.audio = DecodeAudio(*audio);
@@ -587,10 +610,13 @@ TitleProfileCatalog::TitleProfileCatalog(std::vector<TitleProfile> profiles,
 void TitleProfileCatalog::Validate(const QuirkRegistry* registry) const {
     for (const auto& profile : profiles_) {
         const auto& identity = profile.identity;
-        if (profile.schema != 2 ||
+        const bool legacy = profile.schema == 1U || profile.schema == 2U;
+        if ((profile.schema < 1U || profile.schema > 3U) ||
             !ValidPackage(identity.package) ||
-            identity.version_codes.empty() || identity.so_sha256.empty() ||
-            !ValidAbi(identity.abi) ||
+            (legacy && (identity.version_codes.empty() ||
+                        identity.so_sha256.empty() ||
+                        !identity.has_abi_guard || !ValidAbi(identity.abi))) ||
+            (!legacy && identity.has_abi_guard) ||
             std::any_of(identity.version_codes.begin(), identity.version_codes.end(),
                         [](const std::uint32_t version) { return version == 0; }) ||
             std::any_of(identity.so_sha256.begin(), identity.so_sha256.end(),
@@ -614,9 +640,12 @@ void TitleProfileCatalog::Validate(const QuirkRegistry* registry) const {
         for (std::size_t right = left + 1; right < profiles_.size(); ++right) {
             const auto& second = profiles_[right].identity;
             if (first.package == second.package &&
-                Intersects(first.version_codes, second.version_codes) &&
-                Intersects(first.so_sha256, second.so_sha256)) {
-                throw TitleProfileError("Title Profile catalog has an ambiguous fingerprint");
+                ApplicabilityOverlaps(first.version_codes,
+                                      second.version_codes) &&
+                ApplicabilityOverlaps(first.so_sha256,
+                                      second.so_sha256)) {
+                throw TitleProfileError(
+                    "Title Profile catalog has an ambiguous applicability scope");
             }
         }
     }
@@ -640,6 +669,9 @@ const TitleProfile* TitleProfileCatalog::Match(const TitleIdentity& identity) co
     }
     const TitleProfile* match = nullptr;
     for (const auto& profile : profiles_) {
+        // This exact-fingerprint API is retained for legacy v1/v2 callers.
+        // Schema v3 applicability is resolved by SelectApkCompatibilityProfile.
+        if (profile.schema == 3U) continue;
         const auto& candidate = profile.identity;
         if (candidate.package == identity.package &&
             std::find(candidate.version_codes.begin(), candidate.version_codes.end(),

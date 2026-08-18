@@ -605,24 +605,41 @@ ProfileStaticPresetValue NativePresetValue(
 
 }  // namespace
 
-ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
+ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
+                                    const std::uint32_t schema) {
     const auto& table = NativeAs<NativeTable>(NativeRequire(root, "runtime", "runtime"),
                                               "runtime");
-    NativeKeys(table, "runtime",
-               {"api_level", "lifecycle", "maximum_ticks_per_call", "surface",
-                "dexvm", "entry", "presets"},
-               {"api_level", "lifecycle", "surface"});
+    if (schema == 3U) {
+        NativeKeys(table, "runtime",
+                   {"api_level", "maximum_ticks_per_call", "surface",
+                    "dexvm", "entry", "presets"},
+                   {"api_level"});
+    } else {
+        NativeKeys(table, "runtime",
+                   {"api_level", "lifecycle", "maximum_ticks_per_call",
+                    "surface", "dexvm", "entry", "presets", "native_call"},
+                   {"api_level", "lifecycle", "surface"});
+    }
     ProfileRuntime result;
+    result.surface = {800, 480};
     result.api_level = static_cast<std::uint32_t>(NativeInteger(
         NativeRequire(table, "api_level", "runtime.api_level"), "runtime.api_level",
         1, std::numeric_limits<std::uint32_t>::max()));
     if (result.api_level != 19 && result.api_level != 22 && result.api_level != 23) {
         throw TitleProfileError("runtime.api_level must be 19, 22 or 23");
     }
-    const auto lifecycle = NativeString(
-        NativeRequire(table, "lifecycle", "runtime.lifecycle"), "runtime.lifecycle");
-    if (lifecycle != "dex_activity") {
-        throw TitleProfileError("runtime.lifecycle must be dex_activity");
+    if (schema != 3U) {
+        const auto lifecycle = NativeString(
+            NativeRequire(table, "lifecycle", "runtime.lifecycle"),
+            "runtime.lifecycle");
+        const bool supported_legacy =
+            schema == 1U &&
+            (lifecycle == "native_activity" ||
+             lifecycle == "gl_surface_view" || lifecycle == "custom_jni");
+        if (lifecycle != "dex_activity" && !supported_legacy) {
+            throw TitleProfileError(
+                "runtime.lifecycle is unsupported for this schema");
+        }
     }
     result.lifecycle = ProfileLifecycle::dex_activity;
     if (const auto* dexvm = NativeOptional(table, "dexvm"); dexvm != nullptr) {
@@ -653,15 +670,18 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root) {
             *maximum_ticks, "runtime.maximum_ticks_per_call", 1,
             ProfileRuntime::kMaximumTicksPerCall));
     }
-    const auto& surface = NativeAs<NativeTable>(
-        NativeRequire(table, "surface", "runtime.surface"), "runtime.surface");
-    NativeKeys(surface, "runtime.surface", {"width", "height"}, {"width", "height"});
-    result.surface.width = static_cast<std::uint32_t>(NativeInteger(
-        NativeRequire(surface, "width", "runtime.surface.width"),
-        "runtime.surface.width", 1, 16384));
-    result.surface.height = static_cast<std::uint32_t>(NativeInteger(
-        NativeRequire(surface, "height", "runtime.surface.height"),
-        "runtime.surface.height", 1, 16384));
+    if (const auto* surface_value = NativeOptional(table, "surface")) {
+        const auto& surface =
+            NativeAs<NativeTable>(*surface_value, "runtime.surface");
+        NativeKeys(surface, "runtime.surface", {"width", "height"},
+                   {"width", "height"});
+        result.surface.width = static_cast<std::uint32_t>(NativeInteger(
+            NativeRequire(surface, "width", "runtime.surface.width"),
+            "runtime.surface.width", 1, 16384));
+        result.surface.height = static_cast<std::uint32_t>(NativeInteger(
+            NativeRequire(surface, "height", "runtime.surface.height"),
+            "runtime.surface.height", 1, 16384));
+    }
     if (const auto* entry = NativeOptional(table, "entry"); entry != nullptr) {
         const auto& entry_table = NativeAs<NativeTable>(*entry, "runtime.entry");
         NativeKeys(entry_table, "runtime.entry", {"launch_activity"},

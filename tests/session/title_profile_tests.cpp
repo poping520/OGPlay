@@ -45,6 +45,15 @@ constexpr std::string_view kHash =
            "manifest = [{ path = \"archive.dat\", required = true }]\n";
 }
 
+[[nodiscard]] std::string V3Profile() {
+    return "schema = 3\n"
+           "[identity]\n"
+           "package = \"org.example.game\"\n"
+           "name = \"Optional Fixture\"\n"
+           "[runtime]\n"
+           "api_level = 19\n";
+}
+
 void CheckRejected(const std::string& text, const std::string_view message) {
     try {
         static_cast<void>(ogplay::session::LoadTitleProfileText(
@@ -87,10 +96,17 @@ TEST_CASE("Title Profile v2 decodes entry override and audited preset") {
     CHECK(preset.reason == "fixture data is provisioned");
 }
 
-TEST_CASE("Title Profile v1 and replay glue are permanently rejected") {
+TEST_CASE("Title Profile v1 is adapted without restoring replay startup") {
     auto v1 = BaseProfile();
     v1.replace(v1.find("schema = 2"), 10U, "schema = 1");
-    CheckRejected(v1, "schema is outside the supported range");
+    v1.replace(v1.find("dex_activity"), 12U, "gl_surface_view");
+    v1 += "[[runtime.native_call]]\nphase = \"startup\"\n"
+          "[[java.class]]\nname = \"org/example/Legacy\"\n";
+    const auto adapted = ogplay::session::LoadTitleProfileText(
+        v1, "org.example.game");
+    CHECK(adapted.schema == 1U);
+    CHECK(adapted.runtime.lifecycle ==
+          ogplay::session::ProfileLifecycle::dex_activity);
 
     auto native_call = BaseProfile();
     native_call += "[[runtime.native_call]]\nphase = \"startup\"\n";
@@ -98,7 +114,28 @@ TEST_CASE("Title Profile v1 and replay glue are permanently rejected") {
 
     auto java = BaseProfile();
     java += "[[java.class]]\nname = \"org/example/Legacy\"\n";
-    CheckRejected(java, "profile has unknown field java");
+    CheckRejected(java, "forbids legacy java replay glue");
+}
+
+TEST_CASE("Title Profile v3 permits optional applicability guards") {
+    const auto profile = ogplay::session::LoadTitleProfileText(
+        V3Profile(), "org.example.game");
+    CHECK(profile.schema == 3U);
+    CHECK(profile.identity.version_codes.empty());
+    CHECK(profile.identity.so_sha256.empty());
+    CHECK_FALSE(profile.identity.has_abi_guard);
+    CHECK(profile.runtime.lifecycle ==
+          ogplay::session::ProfileLifecycle::dex_activity);
+    CHECK(profile.runtime.surface.width == 800U);
+    CHECK(profile.runtime.surface.height == 480U);
+
+    auto abi = V3Profile();
+    abi.replace(abi.find("name ="), 0U, "abi = \"armeabi\"\n");
+    CheckRejected(abi, "identity has unknown field abi");
+
+    auto root = V3Profile();
+    root += "root_library = \"libgame.so\"\n";
+    CheckRejected(root, "runtime has unknown field root_library");
 }
 
 TEST_CASE("entry scope requires a real provisioned data fact") {
@@ -146,6 +183,14 @@ TEST_CASE("Title Profile catalog matches only the exact v2 fingerprint") {
     CHECK(catalog.Match({"org.example.game", 7U, std::string(kHash)}) !=
           nullptr);
     CHECK(catalog.Match({"org.example.game", 8U, std::string(kHash)}) ==
+          nullptr);
+}
+
+TEST_CASE("legacy exact lookup does not reinterpret schema v3") {
+    auto profile = ogplay::session::LoadTitleProfileText(
+        V3Profile(), "org.example.game");
+    const ogplay::session::TitleProfileCatalog catalog({std::move(profile)});
+    CHECK(catalog.Match({"org.example.game", 7U, std::string(kHash)}) ==
           nullptr);
 }
 

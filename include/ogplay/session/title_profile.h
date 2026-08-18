@@ -29,6 +29,9 @@ struct ProfileIdentity final {
     std::vector<std::uint32_t> version_codes;
     std::vector<std::string> so_sha256;
     ProfileAbi abi{ProfileAbi::armeabi_v7a};
+    // v1/v2 exact applicability guard. Schema v3 forbids ABI and leaves
+    // process selection entirely to the APK inventory resolver.
+    bool has_abi_guard{true};
 };
 
 struct ProfileSurface final {

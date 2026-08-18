@@ -378,14 +378,14 @@ int RunApkCommand(const int argc, const char* const argv[],
     const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
     const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
-    const auto match = session::MatchApkTitleProfile(manifest, libraries, profiles);
+    const auto compatibility =
+        session::SelectApkCompatibilityProfile(manifest, libraries, profiles);
     session::TitleProfile generic_profile;
     generic_profile.schema = 2;
     generic_profile.identity.package = manifest.package;
     generic_profile.runtime.api_level = 19;
     generic_profile.runtime.surface = {800, 480};
-    const auto* selected_profile =
-        match.has_value() ? match->profile : nullptr;
+    const auto* selected_profile = compatibility.profile;
     const auto& profile = selected_profile != nullptr
                               ? *selected_profile
                               : generic_profile;

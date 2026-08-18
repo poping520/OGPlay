@@ -97,6 +97,17 @@ ogplay::session::TitleProfile Profile(const std::string_view hash,
     return profile;
 }
 
+ogplay::session::TitleProfile V3Profile() {
+    ogplay::session::TitleProfile profile;
+    profile.schema = 3;
+    profile.identity.package = "org.example.legacy";
+    profile.identity.name = "optional fixture";
+    profile.identity.has_abi_guard = false;
+    profile.runtime = {19, ogplay::session::ProfileLifecycle::dex_activity,
+                       {800, 480}};
+    return profile;
+}
+
 ogplay::loader::ApkNativeLibrary Library(
     const std::string_view name, const std::string_view hash,
     const ogplay::loader::AndroidArmAbi abi) {
@@ -139,6 +150,38 @@ TEST_CASE("APK Profile match combines manifest library hash and ABI exactly") {
     CHECK_FALSE(ogplay::session::MatchApkTitleProfile(
                     kManifest, std::span{libraries}.subspan(1), no_match)
                     .has_value());
+}
+
+TEST_CASE("compatibility profile selection treats no match as generic startup") {
+    const ogplay::session::TitleProfileCatalog empty({});
+    const auto none = ogplay::session::SelectApkCompatibilityProfile(
+        kManifest, {}, empty);
+    CHECK(none.profile == nullptr);
+    CHECK(none.applicability_notes ==
+          std::vector<std::string>{"generic startup",
+                                   "no applicable compatibility profile"});
+
+    const auto library =
+        Library("libgame.so", kHashA, ogplay::loader::AndroidArmAbi::armeabi);
+    const ogplay::session::TitleProfileCatalog exact(
+        {Profile(kHashA, ogplay::session::ProfileAbi::armeabi)});
+    CHECK(ogplay::session::SelectApkCompatibilityProfile(
+              kManifest, std::span{&library, 1}, exact)
+              .profile != nullptr);
+
+    const ogplay::session::TitleProfileCatalog mismatch(
+        {Profile(kHashB, ogplay::session::ProfileAbi::armeabi)});
+    CHECK(ogplay::session::SelectApkCompatibilityProfile(
+              kManifest, std::span{&library, 1}, mismatch)
+              .profile == nullptr);
+
+    const ogplay::session::TitleProfileCatalog optional({V3Profile()});
+    const auto selected = ogplay::session::SelectApkCompatibilityProfile(
+        kManifest, {}, optional);
+    REQUIRE(selected.profile != nullptr);
+    CHECK(selected.profile->schema == 3U);
+    CHECK(ogplay::session::SummarizeCompatibilityProfile(*selected.profile)
+              .display_name == "optional fixture");
 }
 
 TEST_CASE("APK Profile summary owns the required external decision") {

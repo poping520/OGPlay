@@ -31,6 +31,20 @@ struct ApkProfileSummary final {
     bool requires_external_data{};
 };
 
+struct CompatibilityProfileSelection final {
+    const TitleProfile* profile{};
+    std::vector<std::string> applicability_notes;
+};
+
+// Optional compatibility selection. A null profile is a successful generic
+// result, including pure-Java APKs and legacy hash mismatches.
+[[nodiscard]] CompatibilityProfileSelection SelectApkCompatibilityProfile(
+    const loader::AndroidManifestFacts& manifest,
+    std::span<const loader::ApkNativeLibrary> libraries,
+    const TitleProfileCatalog& profiles);
+
+[[nodiscard]] ApkProfileSummary SummarizeCompatibilityProfile(
+    const TitleProfile& profile);
 [[nodiscard]] ApkProfileSummary SummarizeApkProfileMatch(
     const ApkProfileMatch& match);
 [[nodiscard]] std::optional<ApkProfileSummary> FindApkProfileSummary(

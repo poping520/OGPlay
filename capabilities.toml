@@ -698,7 +698,12 @@ note = "M5 WU-0220 的 Title Profile v1、Python 校验器与 C++ loader 以同�
 [profiles.apk_exact_identity_match]
 status = "complete"
 test = "tests/session/profile_apk_tests.cpp"
-note = "M5 WU-0221 组合 binary Manifest 与全部 ARM native library 的 package/version/hash/ABI 事实，只发布唯一精确 Profile 候选且不猜 main library"
+note = "M5 WU-0221 的 package/version/hash/ABI exact match 由 APS-8 保留为 v1/v2 legacy applicability adapter；旧 hash 不命中只是不应用 override，不再阻断 generic startup，也不参与 root library 或 process ABI 选择"
+
+[profiles.optional_compatibility_v3]
+status = "complete"
+test = "tests/session/title_profile_tests.cpp; tests/session/profile_apk_tests.cpp; tools.title_profile_validator_self_test; tools.title_profiles_current"
+note = "APS-8 新增 schema v3 optional compatibility config：package/api_level 必填，version/hash guard 可选，ABI/lifecycle/root library 禁止；no profile/no hash/纯 Java均继续 generic startup，旧 v1 声明仅适配有效数据且不恢复 native-call/Java replay"
 
 [runtime.bionic_guest_dependency_closure]
 status = "complete"
@@ -728,7 +733,7 @@ note = "APS-7 以显式 DexVmReady/ApplicationStarted/ActivityResumed/Stopped �
 [profiles.apk_launch_preflight]
 status = "complete"
 test = "tests/session/profile_apk_tests.cpp"
-note = "M5 WU-0223 串联 APK 精确 Profile 与对应 API 的 Bionic guest 闭包；CLI 由 Profile 获取根库、API、生命周期和 surface，并可在执行前输出受检 preflight"
+note = "M5 WU-0223 的 legacy exact-root preflight API 为兼容保留；APS-7/8 的 CLI 已改为 rootless generic startup 与 optional compatibility selection，不再由 Profile 获取根库、生命周期或 ABI"
 
 [profiles.first_exact_legacy_title]
 status = "complete"
@@ -1203,7 +1208,7 @@ note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCrea
 [session.title_profile_v2]
 status = "complete"
 test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
-note = "DVM-17/22/25：schema v2 是唯一 Title Profile，支持 dex_activity、受检 [runtime.dexvm]、entry 和 static presets；schema 1 及其实现已删除"
+note = "DVM-17/22/25 冻结的 schema v2 exact 契约继续支持 dex_activity、受检 dexvm、entry 和 static presets；APS-8 将其作为 legacy applicability adapter，并增加只读取 compatibility 数据的 v1 adapter 与 optional v3，不恢复历史执行路径"
 
 [session.profile_entry_scope]
 status = "complete"

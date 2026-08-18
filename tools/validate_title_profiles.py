@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate OGPlay Title Profile v2 TOML files without third-party packages."""
+"""Validate OGPlay Title Profile v2/v3 TOML files without third-party packages."""
 
 from __future__ import annotations
 
@@ -100,10 +100,16 @@ def _relative_path(value: Any, field: str) -> str:
     return path
 
 
-def _validate_identity(value: Any, expected_package: str) -> None:
+def _validate_identity(value: Any, expected_package: str, schema: int) -> None:
     table = _table(value, "identity")
-    _keys(table, "identity", {"package", "name", "version_code", "so_sha256", "abi"},
-          {"package", "version_code", "so_sha256", "abi"})
+    if schema == 3:
+        _keys(table, "identity",
+              {"package", "name", "version_code", "so_sha256"},
+              {"package"})
+    else:
+        _keys(table, "identity",
+              {"package", "name", "version_code", "so_sha256", "abi"},
+              {"package", "version_code", "so_sha256", "abi"})
     package = _string(table["package"], "identity.package")
     if PACKAGE_PATTERN.fullmatch(package) is None:
         raise ProfileError("identity.package is not a valid Android package name")
@@ -113,11 +119,13 @@ def _validate_identity(value: Any, expected_package: str) -> None:
         )
     if "name" in table:
         _string(table["name"], "identity.name")
-    versions = _array(table["version_code"], "identity.version_code", non_empty=True)
+    versions = _array(table.get("version_code", []), "identity.version_code",
+                      non_empty="version_code" in table)
     for index, version in enumerate(versions):
         _integer(version, f"identity.version_code[{index}]", 1, 0xFFFFFFFF)
     _unique(versions, "identity.version_code")
-    hashes = _array(table["so_sha256"], "identity.so_sha256", non_empty=True)
+    hashes = _array(table.get("so_sha256", []), "identity.so_sha256",
+                    non_empty="so_sha256" in table)
     for index, digest in enumerate(hashes):
         if HASH_PATTERN.fullmatch(_string(
                 digest, f"identity.so_sha256[{index}]")) is None:
@@ -125,9 +133,10 @@ def _validate_identity(value: Any, expected_package: str) -> None:
                 f"identity.so_sha256[{index}] must be 64 lowercase hex characters"
             )
     _unique(hashes, "identity.so_sha256")
-    abi = _string(table["abi"], "identity.abi")
-    if abi not in ABIS:
-        raise ProfileError("identity.abi must be armeabi or armeabi-v7a")
+    if schema != 3:
+        abi = _string(table["abi"], "identity.abi")
+        if abi not in ABIS:
+            raise ProfileError("identity.abi must be armeabi or armeabi-v7a")
 
 
 def _validate_data(value: Any) -> None:
@@ -227,27 +236,32 @@ def _validate_input(value: Any) -> None:
         raise ProfileError("input.profile must be a template id")
 
 
-def _validate_runtime_v2(value: Any) -> None:
+def _validate_runtime(value: Any, schema: int) -> None:
     # dex_activity runtime with checked budgets
     # (docs/design/dexvm/04-integration.md §7).
     table = _table(value, "runtime")
-    _keys(table, "runtime",
-          {"api_level", "lifecycle", "maximum_ticks_per_call", "surface",
-           "dexvm", "entry", "presets"},
-          {"api_level", "lifecycle", "surface"})
+    common = {"api_level", "maximum_ticks_per_call", "surface", "dexvm",
+              "entry", "presets"}
+    if schema == 3:
+        _keys(table, "runtime", common, {"api_level"})
+    else:
+        _keys(table, "runtime", common | {"lifecycle"},
+              {"api_level", "lifecycle", "surface"})
     api = _integer(table["api_level"], "runtime.api_level", 1, 0xFFFFFFFF)
     if api not in {19, 22, 23}:
         raise ProfileError("runtime.api_level must be one of 19, 22 or 23")
-    if _string(table["lifecycle"], "runtime.lifecycle") != "dex_activity":
+    if schema != 3 and _string(
+            table["lifecycle"], "runtime.lifecycle") != "dex_activity":
         raise ProfileError("schema 2 requires lifecycle = dex_activity")
     if "maximum_ticks_per_call" in table:
         _integer(table["maximum_ticks_per_call"],
                  "runtime.maximum_ticks_per_call", 1, 10_000_000_000)
-    surface = _table(table["surface"], "runtime.surface")
-    _keys(surface, "runtime.surface", {"width", "height"},
-          {"width", "height"})
-    _integer(surface["width"], "runtime.surface.width", 1, 16384)
-    _integer(surface["height"], "runtime.surface.height", 1, 16384)
+    if "surface" in table:
+        surface = _table(table["surface"], "runtime.surface")
+        _keys(surface, "runtime.surface", {"width", "height"},
+              {"width", "height"})
+        _integer(surface["width"], "runtime.surface.width", 1, 16384)
+        _integer(surface["height"], "runtime.surface.height", 1, 16384)
     if "dexvm" in table:
         dexvm = _table(table["dexvm"], "runtime.dexvm")
         _keys(dexvm, "runtime.dexvm",
@@ -315,10 +329,11 @@ def _validate_runtime_v2(value: Any) -> None:
 def validate_profile(document: Any, expected_package: str) -> dict[str, Any]:
     root = _table(document, "profile")
     _keys(root, "profile", ROOT_FIELDS, {"schema", "identity", "runtime"})
-    if root["schema"] != 2:
-        raise ProfileError("schema must be 2")
-    _validate_identity(root["identity"], expected_package)
-    _validate_runtime_v2(root["runtime"])
+    schema = root["schema"]
+    if schema not in {2, 3}:
+        raise ProfileError("schema must be 2 or 3")
+    _validate_identity(root["identity"], expected_package, schema)
+    _validate_runtime(root["runtime"], schema)
     validators = {
         "data": _validate_data,
         "audio": _validate_audio,
@@ -353,13 +368,36 @@ def validate_schema(path: Path) -> dict[str, Any]:
         raise ProfileError("profile schema root fields do not match the validator")
     if set(schema.get("required", [])) != {"schema", "identity", "runtime"}:
         raise ProfileError("profile schema required fields do not match the validator")
-    if schema["properties"]["schema"].get("const") != 2:
-        raise ProfileError("profile schema version must be 2")
-    schema_abis = schema.get("$defs", {}).get("identity", {}).get(
-        "properties", {}).get("abi", {}).get("enum", [])
-    if set(schema_abis) != ABIS:
-        raise ProfileError("profile schema ABI values do not match the validator")
+    version = schema["properties"]["schema"].get("const")
+    if version not in {2, 3}:
+        raise ProfileError("profile schema version must be 2 or 3")
+    identity = schema.get("$defs", {}).get("identity", {})
+    identity_properties = identity.get("properties", {})
+    if version == 2:
+        schema_abis = identity_properties.get("abi", {}).get("enum", [])
+        if set(schema_abis) != ABIS:
+            raise ProfileError(
+                "profile schema ABI values do not match the validator")
+    else:
+        if "abi" in identity_properties:
+            raise ProfileError("profile schema v3 must not expose ABI")
+        if set(identity.get("required", [])) != {"package"}:
+            raise ProfileError("profile schema v3 identity guard is not optional")
+        runtime = schema.get("$defs", {}).get("runtime", {})
+        runtime_properties = runtime.get("properties", {})
+        if "lifecycle" in runtime_properties or "root_library" in runtime_properties:
+            raise ProfileError(
+                "profile schema v3 must not expose lifecycle or root library")
+        if set(runtime.get("required", [])) != {"api_level"}:
+            raise ProfileError("profile schema v3 runtime defaults do not match")
     return schema
+
+
+def validate_schema_family(schema_path: Path) -> None:
+    validate_schema(schema_path)
+    sibling = schema_path.with_name("title-profile-v3.schema.json")
+    if sibling != schema_path:
+        validate_schema(sibling)
 
 
 def load_profile(path: Path) -> dict[str, Any]:
@@ -431,8 +469,20 @@ profile = "generic_touch"
 """
 
 
+def _valid_v3_profile(package: str = "org.example.game") -> str:
+    return f"""schema = 3
+
+[identity]
+package = "{package}"
+name = "Optional Compatibility Fixture"
+
+[runtime]
+api_level = 19
+"""
+
+
 def self_test(schema_path: Path) -> int:
-    validate_schema(schema_path)
+    validate_schema_family(schema_path)
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         valid = root / "org.example.game.profile.toml"
@@ -449,6 +499,28 @@ def self_test(schema_path: Path) -> int:
             'abi = "armeabi-v7a"', 'abi = "armeabi"'
         ), encoding="utf-8", newline="\n")
         assert load_profile(valid)["identity"]["abi"] == "armeabi"
+        valid.write_text(_valid_v3_profile(), encoding="utf-8", newline="\n")
+        assert "so_sha256" not in load_profile(valid)["identity"]
+
+        v3_cases = {
+            "v3 forced ABI": _valid_v3_profile().replace(
+                'name = "Optional Compatibility Fixture"',
+                'name = "Optional Compatibility Fixture"\nabi = "armeabi"'
+            ),
+            "v3 root library": _valid_v3_profile().replace(
+                "api_level = 19", 'api_level = 19\nroot_library = "libgame.so"'
+            ),
+            "v3 lifecycle": _valid_v3_profile().replace(
+                "api_level = 19", 'api_level = 19\nlifecycle = "dex_activity"'
+            ),
+        }
+        for label, content in v3_cases.items():
+            valid.write_text(content, encoding="utf-8", newline="\n")
+            try:
+                load_profile(valid)
+                raise AssertionError(f"{label} was accepted")
+            except ProfileError:
+                pass
 
         cases = {
             "filename mismatch": _valid_profile("org.example.other"),
@@ -533,7 +605,7 @@ def main(argv: Sequence[str]) -> int:
     try:
         if args.self_test:
             return self_test(args.schema)
-        validate_schema(args.schema)
+        validate_schema_family(args.schema)
         count = validate_directory(args.profiles)
         print(f"validated {count} Title Profile file(s)")
         return 0

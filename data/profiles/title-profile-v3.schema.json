@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogplay.dev/schema/title-profile-v3.schema.json",
+  "title": "OGPlay Optional Compatibility Profile v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "identity", "runtime"],
+  "properties": {
+    "schema": { "const": 3 },
+    "identity": { "$ref": "#/$defs/identity" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "data": { "$ref": "title-profile-v2.schema.json#/$defs/data" },
+    "audio": { "$ref": "title-profile-v2.schema.json#/$defs/audio" },
+    "quirks": { "$ref": "title-profile-v2.schema.json#/$defs/quirks" },
+    "input": { "$ref": "title-profile-v2.schema.json#/$defs/input" }
+  },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package"],
+      "properties": {
+        "package": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "version_code": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+        },
+        "so_sha256": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_level"],
+      "properties": {
+        "api_level": { "enum": [19, 22, 23] },
+        "maximum_ticks_per_call": {
+          "type": "integer", "minimum": 1, "maximum": 10000000000
+        },
+        "surface": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 1, "maximum": 16384 },
+            "height": { "type": "integer", "minimum": 1, "maximum": 16384 }
+          }
+        },
+        "dexvm": { "$ref": "title-profile-v2.schema.json#/$defs/runtime/properties/dexvm" },
+        "entry": { "$ref": "title-profile-v2.schema.json#/$defs/runtime/properties/entry" },
+        "presets": { "$ref": "title-profile-v2.schema.json#/$defs/runtime/properties/presets" }
+      }
+    }
+  }
+}

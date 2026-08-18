@@ -11,10 +11,12 @@
   调用方显式保证未压缩的窄接口；使用 bit 3 的 ZIP32 data descriptor 同样与 central
   metadata 精确交叉验证。
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
-  UTF-16 string pool、元素与 typed attribute，产出 package、versionCode/versionName、
-  minSdk/targetSdk 与 launcher activity（action MAIN + category LAUNCHER 的第一个
-  activity，相对名按 package 规范化）事实；`application` icon 保留 resource id，label
-  严格区分 resource id 与字面量，不执行资源解析或猜测身份。
+  UTF-16 string pool、元素与 typed attribute，产出 package/version/SDK、默认或自定义
+  Application 类，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
+  组件事实；`NormalizeAndroidManifestClassName` 对齐 API 19 `buildClassName`，
+  `ResolveLauncherComponent` 确定性选择首个 enabled MAIN+LAUNCHER 组件并把 alias 映射到
+  已声明 target，no-launcher/非法 alias 以 typed error 失败。`application` icon 保留
+  resource id，label 严格区分 resource id 与字面量，不执行资源解析或猜测身份。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。

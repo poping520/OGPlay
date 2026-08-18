@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -164,7 +166,207 @@ std::vector<std::byte> Manifest(const bool utf8 = false,
     return result;
 }
 
+struct ComponentFixture final {
+    std::string tag{"activity"};
+    std::string name;
+    std::optional<std::string> target;
+    bool enabled{true};
+    std::vector<std::vector<std::string>> filters;
+};
+
+std::vector<std::byte> StartupManifest(
+    const std::optional<std::string>& application_name,
+    const std::vector<ComponentFixture>& components) {
+    std::vector<std::string> strings{
+        "manifest", "package", "versionCode", "application", "name",
+        "enabled", "targetActivity", "activity", "activity-alias",
+        "intent-filter", "action", "category", "org.example.game",
+        "http://schemas.android.com/apk/res/android"};
+    const auto add = [&](const std::string& value) {
+        if (std::find(strings.begin(), strings.end(), value) == strings.end()) {
+            strings.push_back(value);
+        }
+    };
+    if (application_name.has_value()) add(*application_name);
+    for (const auto& component : components) {
+        add(component.name);
+        if (component.target.has_value()) add(*component.target);
+        for (const auto& filter : component.filters) {
+            for (const auto& value : filter) add(value);
+        }
+    }
+    const auto index = [&](const std::string_view value) {
+        const auto found = std::find(strings.begin(), strings.end(), value);
+        REQUIRE(found != strings.end());
+        return static_cast<std::uint32_t>(std::distance(strings.begin(), found));
+    };
+    const auto android_namespace = index(
+        "http://schemas.android.com/apk/res/android");
+
+    std::vector<std::byte> result;
+    Append16(result, 0x0003); Append16(result, 8); Append32(result, 0);
+    Append(result, StringPool(strings, false));
+    Append(result, StartElement(index("manifest"),
+                                {{index("package"), index("org.example.game"),
+                                  0x03, index("org.example.game")},
+                                 {index("versionCode"), 0xffffffffU, 0x10, 1,
+                                  android_namespace}}));
+    std::vector<Attribute> application_attributes;
+    if (application_name.has_value()) {
+        application_attributes.push_back(
+            {index("name"), index(*application_name), 0x03,
+             index(*application_name), android_namespace});
+    }
+    Append(result, StartElement(index("application"), application_attributes));
+    for (const auto& component : components) {
+        std::vector<Attribute> attributes{
+            {index("name"), index(component.name), 0x03,
+             index(component.name), android_namespace}};
+        if (!component.enabled) {
+            attributes.push_back({index("enabled"), 0xffffffffU, 0x12, 0,
+                                  android_namespace});
+        }
+        if (component.target.has_value()) {
+            attributes.push_back(
+                {index("targetActivity"), index(*component.target), 0x03,
+                 index(*component.target), android_namespace});
+        }
+        Append(result, StartElement(index(component.tag), attributes));
+        for (const auto& filter : component.filters) {
+            Append(result, StartElement(index("intent-filter"), {}));
+            for (const auto& value : filter) {
+                const auto tag = value.starts_with("android.intent.action.")
+                                     ? "action"
+                                     : "category";
+                Append(result, StartElement(index(tag),
+                                            {{index("name"), index(value), 0x03,
+                                              index(value), android_namespace}}));
+                Append(result, EndElement(index(tag)));
+            }
+            Append(result, EndElement(index("intent-filter")));
+        }
+        Append(result, EndElement(index(component.tag)));
+    }
+    Append(result, EndElement(index("application")));
+    Append(result, EndElement(index("manifest")));
+    Set32(result, 4, static_cast<std::uint32_t>(result.size()));
+    return result;
+}
+
+constexpr std::string_view kMain = "android.intent.action.MAIN";
+constexpr std::string_view kLauncher = "android.intent.category.LAUNCHER";
+
 }  // namespace
+
+TEST_CASE("Android Manifest class names follow KitKat PackageParser rules") {
+    using ogplay::loader::NormalizeAndroidManifestClassName;
+    CHECK(NormalizeAndroidManifestClassName("org.example.game", ".App") ==
+          "org.example.game.App");
+    CHECK(NormalizeAndroidManifestClassName("org.example.game", "App") ==
+          "org.example.game.App");
+    CHECK(NormalizeAndroidManifestClassName("org.example.game", "org.other.App") ==
+          "org.other.App");
+    CHECK_THROWS_AS(
+        static_cast<void>(
+            NormalizeAndroidManifestClassName("org.example.game", "Bad.App")),
+        ogplay::loader::AndroidManifestStartupError);
+}
+
+TEST_CASE("binary AndroidManifest publishes default and custom Application classes") {
+    const auto defaults = ogplay::loader::ParseAndroidBinaryManifest(
+        StartupManifest(std::nullopt, {}));
+    CHECK(defaults.application_class == "android.app.Application");
+
+    const auto custom = ogplay::loader::ParseAndroidBinaryManifest(
+        StartupManifest(".GameApplication", {}));
+    CHECK(custom.application_class == "org.example.game.GameApplication");
+}
+
+TEST_CASE("binary AndroidManifest resolves direct launcher in document order") {
+    const std::vector<ComponentFixture> components{
+        {"activity", ".First", std::nullopt, true,
+         {{std::string(kMain), std::string(kLauncher)}}},
+        {"activity", ".Second", std::nullopt, true,
+         {{std::string(kMain), std::string(kLauncher)}}}};
+    for (int pass = 0; pass < 3; ++pass) {
+        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
+            StartupManifest(std::nullopt, components));
+        const auto launcher = ogplay::loader::ResolveLauncherComponent(facts);
+        CHECK(launcher.component_name == "org.example.game.First");
+        CHECK(launcher.activity_class == "org.example.game.First");
+        CHECK_FALSE(launcher.via_alias);
+        CHECK(facts.launcher_activity == launcher.activity_class);
+    }
+}
+
+TEST_CASE("binary AndroidManifest resolves activity-alias to its target") {
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
+        std::nullopt,
+        {{"activity", ".RealActivity", std::nullopt, true, {}},
+         {"activity-alias", ".Launcher", ".RealActivity", true,
+          {{std::string(kMain), std::string(kLauncher)}}}}));
+    const auto launcher = ogplay::loader::ResolveLauncherComponent(facts);
+    CHECK(launcher.component_name == "org.example.game.Launcher");
+    CHECK(launcher.activity_class == "org.example.game.RealActivity");
+    CHECK(launcher.via_alias);
+    REQUIRE(facts.activity_components.size() == 2);
+    CHECK(facts.activity_components[1].target_activity ==
+          "org.example.game.RealActivity");
+}
+
+TEST_CASE("launcher action and category must belong to one intent-filter") {
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
+        std::nullopt,
+        {{"activity", ".Split", std::nullopt, true,
+          {{std::string(kMain)}, {std::string(kLauncher)}}}}));
+    CHECK_FALSE(facts.launcher_activity.has_value());
+    try {
+        static_cast<void>(ogplay::loader::ResolveLauncherComponent(facts));
+        FAIL("expected no-launcher error");
+    } catch (const ogplay::loader::AndroidManifestStartupError& error) {
+        CHECK(error.Reason() ==
+              ogplay::loader::AndroidManifestStartupErrorReason::no_launcher);
+    }
+}
+
+TEST_CASE("disabled launcher components do not resolve") {
+    for (const auto& components : std::vector<std::vector<ComponentFixture>>{
+             {{"activity", ".Disabled", std::nullopt, false,
+               {{std::string(kMain), std::string(kLauncher)}}}},
+             {{"activity", ".Target", std::nullopt, true, {}},
+              {"activity-alias", ".Alias", ".Target", false,
+               {{std::string(kMain), std::string(kLauncher)}}}}}) {
+        const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
+            StartupManifest(std::nullopt, components));
+        CHECK_THROWS_AS(
+            static_cast<void>(ogplay::loader::ResolveLauncherComponent(facts)),
+            ogplay::loader::AndroidManifestStartupError);
+    }
+}
+
+TEST_CASE("enabled activity-alias resolves independently of target enabled state") {
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(
+        std::nullopt,
+        {{"activity", ".Target", std::nullopt, false, {}},
+         {"activity-alias", ".Alias", ".Target", true,
+          {{std::string(kMain), std::string(kLauncher)}}}}));
+    const auto launcher = ogplay::loader::ResolveLauncherComponent(facts);
+    CHECK(launcher.component_name == "org.example.game.Alias");
+    CHECK(launcher.activity_class == "org.example.game.Target");
+}
+
+TEST_CASE("activity-alias requires a previously declared Activity target") {
+    try {
+        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
+            StartupManifest(std::nullopt,
+                            {{"activity-alias", ".Alias", ".Missing", true,
+                              {{std::string(kMain), std::string(kLauncher)}}}})));
+        FAIL("expected alias target error");
+    } catch (const ogplay::loader::AndroidManifestStartupError& error) {
+        CHECK(error.Reason() ==
+              ogplay::loader::AndroidManifestStartupErrorReason::alias_target_not_found);
+    }
+}
 
 TEST_CASE("binary AndroidManifest exposes exact package version and SDK facts") {
     const auto facts = ogplay::loader::ParseAndroidBinaryManifest(Manifest());

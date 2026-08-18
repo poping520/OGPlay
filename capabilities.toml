@@ -675,6 +675,11 @@ status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp"
 note = "M5 WU-0218 严格解析二进制 Manifest 的 UTF-8/UTF-16 string pool 与 typed attributes，产出 package/versionCode/versionName/minSdk/targetSdk 事实"
 
+[loader.apk_startup_manifest]
+status = "complete"
+test = "tests/loader/apk_manifest_tests.cpp"
+note = "APS-1 按 API 19 PackageParser 规则发布默认/自定义 Application 类、声明序 Activity/activity-alias、enabled 与逐 intent-filter 事实；launcher 确定性选择且 no-launcher/非法 alias 以 typed error 失败，不依赖 Title Profile"
+
 [loader.apk_arm_native_catalog]
 status = "complete"
 test = "tests/loader/apk_native_tests.cpp"

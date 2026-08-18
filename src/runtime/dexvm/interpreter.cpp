@@ -68,6 +68,7 @@ std::vector<VmStackEntry> Interpreter::Impl::CaptureStack() const {
 }
 
 VmObjectRef Interpreter::Impl::AllocateInstance(const DexClassId java_class) {
+    linker->EnsureClassLinked(java_class);
     const auto& linked = linker->Class(java_class);
     if (linked.is_interface || linked.is_array) {
         FailCode("cannot instantiate " + linked.descriptor);
@@ -434,6 +435,8 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
         // nested calls (native -> interpreter re-entry) share the budget.
         execution.ticks = 0;
     }
+    const auto owner = impl_->linker->Method(method_id).owner;
+    impl_->linker->EnsureClassLinked(owner);
     const auto& method = impl_->linker->Method(method_id);
     if (method.is_static) {
         impl_->EnsureInitialized(execution, method.owner);
@@ -515,6 +518,7 @@ VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {
     InterpreterExecutionScope execution_scope(impl_.get(), execution);
     auto& pending_exception = execution.pending_exception;
     auto& pending_exception_class = execution.pending_exception_class;
+    impl_->linker->EnsureClassLinked(java_class);
     impl_->EnsureInitialized(execution, java_class);
     VmCallOutcome outcome;
     if (pending_exception.IsValid()) {

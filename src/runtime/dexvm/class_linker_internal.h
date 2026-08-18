@@ -49,6 +49,8 @@ public:
         std::unordered_map<std::string, std::uint16_t> virtual_lookup;
         std::unordered_map<std::string, VmMethodId> direct_lookup;
         std::unordered_map<std::string, VmFieldId> field_lookup;
+        std::optional<std::string> missing_super;
+        std::vector<std::string> missing_interfaces;
         bool linked{};
     };
 

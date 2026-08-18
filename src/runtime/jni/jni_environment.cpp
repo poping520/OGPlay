@@ -234,6 +234,10 @@ bool JniEnvironment::IsThreadAttached(const std::uint64_t thread_id) const {
            exceptions_.IsThreadAttached(thread_id);
 }
 
+std::size_t JniEnvironment::GlobalReferenceCount() const {
+    return references_.GlobalCount();
+}
+
 JniInt JniEnvironment::GetVersion(const std::uint64_t thread_id) const {
     RequireAllowed(thread_id, "GetVersion");
     return kJniVersion1_6;

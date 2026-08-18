@@ -104,6 +104,7 @@ public:
                                     JniReference right) const;
     [[nodiscard]] std::optional<JniObjectIdentity> ResolveObjectForHle(
         std::uint64_t thread_id, JniReference reference) const;
+    [[nodiscard]] std::size_t GlobalReferenceCount() const;
 
     void Throw(std::uint64_t thread_id, JniReference throwable);
     void ThrowNew(std::uint64_t thread_id,

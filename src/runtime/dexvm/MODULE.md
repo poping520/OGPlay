@@ -10,8 +10,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 - `DexClassLinker`：`RegisterIntrinsics`（代码定义目录，平台命名空间只能来自
   这里）→ `RegisterDex`（单一 classes.dex，dex 中平台前缀类被忽略）→ `Link`
-  （层级解析/字段布局/vtable/iftable，循环继承、final 覆盖、接口当 super、
-  不可覆盖 intrinsic 方法均装配失败）。常量池解析带缓存
+  （只链接 VM 启动所需的 intrinsic；APK class_def 全量注册但按首次解析、实例化
+  或调用才完成层级/字段布局/vtable/iftable）。未触达可选类缺失父类/接口不阻断
+  进程；一旦触达，循环继承、缺失层级、final 覆盖、接口当 super、不可覆盖
+  intrinsic 方法仍明确失败，survey 模式则只为真实触达的平台层级缺口合成并记账。
+  常量池解析带缓存
   （`ResolveTypeIndex/ResolveMethodIndex/ResolveFieldIndex`），数组类按需合成，
   `IsAssignable` 覆盖类层级、接口与数组协变。`PrecheckMethod` 懒执行结构
   预检（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置），
@@ -148,7 +151,8 @@ family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自
 
 ## 测试
 
-`tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：core catalog 唯一性与
+`tests/dexvm/interpreter_tests.cpp`（dexasm 夹具一致性：未触达缺失层级类不阻断
+whole-DEX 启动、首次触达明确失败/survey 才记账；core catalog 唯一性与
 代表类签名集合、System property 默认值/读写/异常、intrinsic builder 装配校验与
 声明即绑定、重复方法拒绝、
 直调与声明未实现的重复 miss 记账，算术边界、控制流、

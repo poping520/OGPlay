@@ -106,7 +106,8 @@ capabilities.toml 中已 complete/partial 的框架能力直接换个挂接方�
   调用形态），绝不返回默认值。
 - 未实现 intrinsic **类**命中（FindClass/const-class/forName）：区分两种
   语义——`forName` 抛 ClassNotFoundException 是**真实结果**（游戏自己会
-  处理）；链接期 super/接口缺失是**装配失败**（明确报错）。
+  处理）；APK 类的 super/接口缺失只在该类首次触达时明确失败，未触达类不升级为
+  进程装配依赖；survey 模式在同一触达点合成中性层级类并记账。
 - 缺口聚合经 Agent 接口与 `hle.unimplemented()` 同级查询，输出可直接生成
   下一个实现批次的 WU 素材——这是 M8"先盘点后实现"方法论在 Java 面的
   延续。

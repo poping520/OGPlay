@@ -16,7 +16,7 @@
 
 | 轮次类别 | 症状 | 为什么要一轮运行 | 现在怎么消掉 |
 | --- | --- | --- | --- |
-| 链接期缺类 | `class is not available: L…;` | 链接在第一个缺失层级类上失败 | 链接器已一次报全 + 静态预检（§2 步 1），批量补占位 |
+| 首次触达缺层级类 | `class hierarchy is not available: L…;` | APK 可选类已注册，但真实路径首次链接它时缺父类/接口 | 静态预检列潜在清单；survey（§2 步 3）只收割真实命中 |
 | 常量池缺方法 | `method cannot be resolved: L…;->m()V` | 解释器在第一条未声明方法上中止 | **survey 模式**（§2 步 3）一次跑出全部命中 |
 | 缺 handler | `intrinsic handler is not implemented` | 同上 | 同上 |
 | 虚分派落空 | `virtual dispatch failed for m` | 同上 | 同上 |
@@ -36,8 +36,9 @@
 python tools/dexvm_gap_report.py --apk <title>.apk --output .local/<title>_gap.json
 ```
 
-输出两层：`link_blocking`（必须先补，否则链接失败，含 `role` 字段区分
-superclass/interface）与 `runtime`（**潜在**命中，是优先级清单而非必做项）。
+输出两层：`link_blocking`（潜在层级缺口，含 `role` 字段区分
+superclass/interface）与 `runtime`（潜在成员命中）。两者都是静态优先级清单，
+不再要求启动前盲补；是否真实可达以步骤 3 的 survey 为准。
 APK 派生产物一律留在 `.local/`，不入库。
 
 ### 步 2 · 生成占位与中性行
@@ -112,7 +113,7 @@ ogplay run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 
 ## 4. 一次会话的节奏建议
 
-1. 步 1 + 步 2：一条命令拿到全部链接期缺口，批量补齐后先让链接过。
+1. 步 1：一条命令拿到潜在层级/成员缺口；不要因 APK 打包了未触达 SDK 就盲补。
 2. 步 3：一次 survey 拿到运行期工作单（这一步替掉了上一款的绝大部分轮次）。
 3. 步 4：按热点分 2–3 批实现，每批构建 + 复跑一次，而不是每个方法跑一次。
 4. 步 5：关闭 survey 复跑，写测试与文档，提交。

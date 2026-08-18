@@ -218,9 +218,6 @@ public:
     }
     registering_classes.erase(class_id.Value());
     class_identities.emplace(class_id.Value(), identity);
-    class_global_refs.emplace(class_id.Value(),
-                              session->Environment().PublishGlobalObjectForHle(
-                                  kRootThreadId, identity));
     for (const auto &[implementation, method_id] : handlers) {
       invocations.RegisterHandler(
           implementation, [this, method_id](const JniInvocation &invocation) {
@@ -228,6 +225,26 @@ public:
           });
     }
     return identity;
+  }
+
+  [[nodiscard]] JniReference
+  GlobalClassReference(const dx::DexClassId class_id) {
+    if (const auto found = class_global_refs.find(class_id.Value());
+        found != class_global_refs.end()) {
+      return found->second;
+    }
+    auto identity = class_identities.find(class_id.Value());
+    if (identity == class_identities.end()) {
+      static_cast<void>(RegisterClassForNative(class_id));
+      identity = class_identities.find(class_id.Value());
+    }
+    if (identity == class_identities.end()) {
+      throw DexVmBridgeError("dexvm bridge cannot publish a class reference");
+    }
+    const auto reference = session->Environment().PublishGlobalObjectForHle(
+        kRootThreadId, identity->second);
+    class_global_refs.emplace(class_id.Value(), reference);
+    return reference;
   }
 
     void RegisterDexClasses() {
@@ -274,9 +291,6 @@ public:
             }
             const auto identity = classes.RegisterClass(declaration);
             class_identities.emplace(class_id.Value(), identity);
-            class_global_refs.emplace(
-          class_id.Value(), session->Environment().PublishGlobalObjectForHle(
-                    kRootThreadId, identity));
             for (const auto& [implementation, method_id] : handlers) {
                 invocations.RegisterHandler(
             implementation, [this, method_id](const JniInvocation &invocation) {
@@ -435,12 +449,7 @@ public:
         std::vector<std::uint32_t> words;
         words.push_back(session->GuestEnvironment().Value());
         if (method.is_static) {
-            const auto global = class_global_refs.find(method.owner.Value());
-            if (global == class_global_refs.end()) {
-        throw DexVmBridgeError("dexvm bridge has no class reference for " +
-                               class_name);
-            }
-            words.push_back(global->second.Value());
+            words.push_back(GlobalClassReference(method.owner).Value());
         } else {
             words.push_back(PublishLocal(receiver).Value());
         }

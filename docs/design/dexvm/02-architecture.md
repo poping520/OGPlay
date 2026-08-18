@@ -122,10 +122,14 @@ session bootstrap（identity 精确匹配，复用现有 profile bootstrap）
 
 1. **注册**：session 装配时一次性注册全部 class_def 元数据（数百个类，成本
    可忽略），同时合并 intrinsic 目录。应用类与 intrinsic 类同名冲突即装配失败。
-2. **层级解析**：super 链与接口表可跨边界指向 intrinsic 类（`GLGame extends
+2. **按需层级解析**：`Link()` 只完成 intrinsic 启动底座；APK 类在首次解析、
+   实例化或方法调用时才链接其可达 super 链与接口表。DEX 中未触达的广告/SDK/
+   可选组件即使缺 framework 层级也不成为进程启动依赖；首次触达仍在任何布局或
+   执行前明确失败（survey 模式则合成并记账该次真实命中）。super 链与接口表可
+   跨边界指向 intrinsic 类（`GLGame extends
    android.app.Activity` 是常态）。intrinsic 类为此声明自己的虚方法表与可被
    override 的方法集（见 03 §2）。循环继承、final 类被继承、接口当 super
-   等结构错误在此步明确失败。
+   等结构错误在对应类首次链接时明确失败。
 3. **布局与 vtable**（算法参考 AOSP `vm/oo/Class.cpp` 的 vtable 构建）：
    - 实例字段布局：从 super 布局末尾起，按声明顺序追加，宽度对齐
      （ref/cat1 一槽、wide 两槽对齐）；intrinsic 基类贡献一个不透明宿主

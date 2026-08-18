@@ -318,13 +318,13 @@ void DexClassLinker::Link() {
         Fail(DexVmErrorReason::unknown_class,
              "core intrinsic catalog is not registered");
     }
-    // Resolve dex-declared hierarchy names to ids. Missing classes are
-    // collected across the whole dex before failing so a single run reports
-    // the complete linkage gap instead of only the first hit.
+    // Resolve hierarchy names that are already available. A DEX commonly
+    // contains optional SDK/support classes that the selected execution path
+    // never loads. Keep classes with absent hierarchy nodes registered but
+    // defer their layout/vtable work until first use, so those dormant classes
+    // do not become process-start requirements.
     if (impl_->image.has_value()) {
         const auto& image = *impl_->image;
-        // missing descriptor -> first requiring class (deterministic order).
-        std::map<std::string, std::string> missing;
         for (auto& linked : impl_->classes) {
             if (linked.is_intrinsic ||
                 !linked.dex_class_def_index.has_value()) {
@@ -337,7 +337,7 @@ void DexClassLinker::Link() {
                     image.types[*definition.superclass_type_index].descriptor;
                 const auto super = FindClass(name);
                 if (!super.has_value()) {
-                    missing.emplace(name, linked.descriptor);
+                    impl_->ExtrasAt(linked.id).missing_super = name;
                 } else {
                     linked.super = *super;
                 }
@@ -350,26 +350,21 @@ void DexClassLinker::Link() {
                 const auto name = image.types[interface_index].descriptor;
                 const auto interface_id = FindClass(name);
                 if (!interface_id.has_value()) {
-                    missing.emplace(name, linked.descriptor);
+                    impl_->ExtrasAt(linked.id)
+                        .missing_interfaces.push_back(name);
                     continue;
                 }
                 linked.interfaces.push_back(*interface_id);
             }
         }
-        if (!missing.empty()) {
-            std::string message =
-                "hierarchy classes are not available (" +
-                std::to_string(missing.size()) + "):";
-            for (const auto& [name, required_by] : missing) {
-                message += "\n  " + name + " (required by " + required_by +
-                           ")";
-            }
-            Fail(DexVmErrorReason::unknown_class, std::move(message));
-        }
     }
     std::set<std::uint32_t> visiting;
     for (auto& linked : impl_->classes) {
-        impl_->LinkClass(linked.id, visiting);
+        // Platform catalogs are the VM's startup substrate. APK classes are
+        // deliberately left registered-but-unlinked until their first real
+        // use, at which point EnsureClassLinked runs every hierarchy/layout/
+        // override check for that reachable chain.
+        if (linked.is_intrinsic) impl_->LinkClass(linked.id, visiting);
     }
     impl_->link_complete = true;
 }
@@ -385,9 +380,69 @@ std::optional<DexClassId> DexClassLinker::FindClass(
     return impl_->classes[found->second].id;
 }
 
+void DexClassLinker::EnsureClassLinked(const DexClassId id) {
+    if (!impl_->link_complete) {
+        Fail(DexVmErrorReason::internal_invariant,
+             "class used before initial linking completed");
+    }
+    if (impl_->ExtrasAt(id).linked) return;
+
+    std::set<std::uint32_t> materializing;
+    const auto materialize = [&](const auto& self,
+                                 const DexClassId current) -> void {
+        if (impl_->ExtrasAt(current).linked) return;
+        if (!materializing.insert(current.Value()).second) return;
+
+        // ResolveDescriptor may append a survey class and reallocate both
+        // class vectors, so copy pending names and always re-fetch by id.
+        const auto missing_super = impl_->ExtrasAt(current).missing_super;
+        const auto missing_interfaces =
+            impl_->ExtrasAt(current).missing_interfaces;
+        const auto required_by = impl_->ClassAt(current).descriptor;
+
+        if (missing_super.has_value()) {
+            if (!impl_->gap_survey ||
+                !IsPlatformDescriptor(*missing_super)) {
+                Fail(DexVmErrorReason::unknown_class,
+                     "class hierarchy is not available: " + *missing_super +
+                         " (required by " + required_by + ")");
+            }
+            const auto super = ResolveDescriptor(*missing_super);
+            impl_->ClassAt(current).super = super;
+            impl_->ExtrasAt(current).missing_super.reset();
+        }
+        if (!missing_interfaces.empty()) {
+            for (const auto& name : missing_interfaces) {
+                if (!impl_->gap_survey || !IsPlatformDescriptor(name)) {
+                    Fail(DexVmErrorReason::unknown_class,
+                         "class hierarchy is not available: " + name +
+                             " (required by " + required_by + ")");
+                }
+                const auto interface_id = ResolveDescriptor(name);
+                impl_->ClassAt(interface_id).is_interface = true;
+                impl_->ClassAt(current).interfaces.push_back(interface_id);
+            }
+            impl_->ExtrasAt(current).missing_interfaces.clear();
+        }
+
+        const auto super = impl_->ClassAt(current).super;
+        const auto interfaces = impl_->ClassAt(current).interfaces;
+        if (super.has_value()) self(self, *super);
+        for (const auto interface_id : interfaces) {
+            self(self, interface_id);
+        }
+        materializing.erase(current.Value());
+    };
+    materialize(materialize, id);
+
+    std::set<std::uint32_t> visiting;
+    impl_->LinkClass(id, visiting);
+}
+
 DexClassId DexClassLinker::ResolveDescriptor(
     const std::string_view descriptor) {
     if (const auto existing = FindClass(descriptor); existing.has_value()) {
+        if (impl_->link_complete) EnsureClassLinked(*existing);
         return *existing;
     }
     if (descriptor.starts_with("[")) {

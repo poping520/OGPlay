@@ -2,6 +2,18 @@
 # in tests/dexvm/interpreter_tests.cpp with their AOSP mterp source
 # (docs/design/dexvm/05-verification.md §2).
 
+# An optional packaged class whose framework parent is deliberately absent.
+# Whole-DEX linking must not make it a startup dependency; resolving it later
+# must expose the real hierarchy gap (or record it in survey mode).
+.class public LDormantOptional;
+.super Landroid/optional/MissingActivity;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/optional/MissingActivity;-><init>()V
+    return-void
+.end method
+
 .class public LCounter;
 .super Ljava/lang/Object;
 

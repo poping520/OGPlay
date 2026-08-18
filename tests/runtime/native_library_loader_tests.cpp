@@ -294,6 +294,7 @@ struct ApplicationProcess final {
     std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context;
     ogplay::core::CapabilityLedger ledger;
     std::unique_ptr<ogplay::runtime::DexVmGuestBridge> bridge;
+    std::size_t globals_before_bridge{};
 
     ApplicationProcess() {
         const std::array inputs{
@@ -323,6 +324,7 @@ struct ApplicationProcess final {
         context->session = session.get();
         context->native_libraries = libraries.get();
         auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
+        globals_before_bridge = session->Environment().GlobalReferenceCount();
         bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
             *session, ReadDexFixture("application.dex"), catalog, context,
             ledger, nullptr);
@@ -679,6 +681,8 @@ TEST_CASE("minimal Application startup preserves order identity and native loads
 
     SUBCASE("framework default is a stable process root") {
         ApplicationProcess fixture;
+        CHECK(fixture.session->Environment().GlobalReferenceCount() ==
+              fixture.globals_before_bridge);
         const auto first = session::StartDexApplication(
             *fixture.bridge, fixture.context, "Landroid/app/Application;");
         const auto repeated = session::StartDexApplication(

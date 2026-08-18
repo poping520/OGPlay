@@ -153,6 +153,10 @@ public:
     [[nodiscard]] bool IsLinked() const noexcept;
     [[nodiscard]] std::optional<DexClassId> FindClass(
         std::string_view descriptor) const;
+    // Completes deferred hierarchy linking when a registered class is first
+    // used. Unavailable hierarchy nodes fail here (or become recorded survey
+    // stubs in gap-survey mode), never during the whole-DEX startup scan.
+    void EnsureClassLinked(DexClassId id);
     // Resolves (and synthesizes on first use) an array class.
     [[nodiscard]] DexClassId ResolveDescriptor(std::string_view descriptor);
 

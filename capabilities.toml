@@ -1192,8 +1192,8 @@ note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久�
 
 [dexvm.gap_survey]
 status = "complete"
-test = "tests/dexvm/gap_survey_tests.cpp"
-note = "M9 适配流水线：run-apk --survey-gaps 打开诊断 survey 模式，未声明的平台类/方法合成中性桩、逐次记账，一次运行收割整条缺口队列并按命中次数输出机读工作单；默认关闭（关闭即明确失败），survey 运行显式标注为非兼容性结论。配套 tools/dexvm_gap_report.py（静态预检，schema 2 带 role）与 tools/dexvm_stub_gen.py（生成占位/中性方法行，引用返回值一律进人工决策清单）"
+test = "tests/dexvm/gap_survey_tests.cpp; tests/dexvm/interpreter_tests.cpp"
+note = "M9 适配流水线：run-apk --survey-gaps 打开诊断 survey 模式，未声明的平台类/方法合成中性桩、逐次记账，一次运行收割整条缺口队列并按命中次数输出机读工作单；APK class_def 全量注册、按首次真实使用链接，未触达的缺失层级不阻断启动，触达后默认明确失败或在 survey 中合成并记账。survey 运行显式标注为非兼容性结论。配套 tools/dexvm_gap_report.py（静态潜在清单，schema 2 带 role）与 tools/dexvm_stub_gen.py（生成占位/中性方法行，引用返回值一律进人工决策清单）"
 
 [loader.arsc]
 status = "complete"

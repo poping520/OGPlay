@@ -200,6 +200,43 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
 }
 
+TEST_CASE("dormant classes with missing hierarchy link only when reached") {
+    Vm vm;
+
+    // An unrelated usable class proves Link() no longer rejects the entire
+    // DEX because an optional packaged class names an absent framework base.
+    CHECK(vm.linker.ResolveDescriptor("LCounter;").IsValid());
+
+    try {
+        static_cast<void>(
+            vm.linker.ResolveDescriptor("LDormantOptional;"));
+        FAIL("reached class with missing hierarchy did not fail");
+    } catch (const DexVmError& error) {
+        const std::string message = error.what();
+        CHECK(message.find("class hierarchy is not available: ") !=
+              std::string::npos);
+        CHECK(message.find("Landroid/optional/MissingActivity;") !=
+              std::string::npos);
+        CHECK(message.find("required by LDormantOptional;") !=
+              std::string::npos);
+    }
+}
+
+TEST_CASE("survey records a missing hierarchy only when its class is reached") {
+    Vm vm;
+    vm.linker.EnableGapSurvey();
+    CHECK(vm.linker.GapSurveyHits().empty());
+
+    const auto optional =
+        vm.linker.ResolveDescriptor("LDormantOptional;");
+    CHECK(optional.IsValid());
+    const auto hits = vm.linker.GapSurveyHits();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].owner_descriptor ==
+          "Landroid/optional/MissingActivity;");
+    CHECK(hits[0].member.empty());
+}
+
 TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
     const auto catalog = CoreIntrinsicCatalog();
     const auto declaration = [&catalog](const std::string& descriptor)
@@ -1111,6 +1148,7 @@ TEST_CASE("dexvm virtual and super dispatch through subclass") {
     // Construct LDoubler and call describe() virtually via LCounter ref.
     const auto doubler_class = vm.linker.FindClass("LDoubler;");
     REQUIRE(doubler_class.has_value());
+    vm.linker.EnsureClassLinked(*doubler_class);
     const auto init =
         vm.linker.FindDirectMethod(*doubler_class, "<init>", "(I)V");
     REQUIRE(init.has_value());

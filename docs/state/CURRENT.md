@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-18 · APK Startup APS-1..9 已全部交付
+更新：2026-08-18 · DexVM APK 类链接已切为首次真实使用
 
 ## 当前阶段
 
@@ -20,13 +20,17 @@
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
 - **M9 DexVM**：DVM-1..41 已交付；解释执行仍由 `VmExecutionLock` 串行。子线程 native
   调用仍复用 root guest 栈/thread id，JNI/DexVM monitor 表尚未合一；`threads` 与
-  `monitors` 保持 `partial`。
+  `monitors` 保持 `partial`。APK class_def 现为全量注册、首次解析/实例化/调用时链接；
+  未触达 SDK 类的缺失父类/接口不再阻断进程，触达后仍明确失败或在 survey 中记账。
+  JNI class identity 仍全量发布，但 jclass global reference 改为 static native 真正出向
+  时才创建。PVZ NA 已越过 222/70 类静态层级清单和全局引用容量，当前真实首缺口为
+  `COPPAActivity.isTaskRoot()Z`（尚未实现，不等同于 title 启动成功）。
 - **兼容性基线**：Layout UI 已验收 complete；存档沙盒、GUI、intrinsic 声明迁移与
   MSVC 工程内/工程间并行编译已交付。能力现状以 `capabilities.toml` 为准。
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：804/804 CTest。
+- Windows/x64 `windows-msvc`：806/806 CTest。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 

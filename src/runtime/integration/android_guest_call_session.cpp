@@ -624,13 +624,42 @@ public:
             throw AndroidGuestProcessError(
                 "Android guest call session has no root CPU");
         }
-        return InvokeA32GuestCall(
-            *root_cpu_, dispatcher_, lifecycle_, address_space_, frame,
-            process_memory_.stack_top, process_memory_.return_trap,
-            maximum_ticks_,
-            [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
-                return HandleBoundary(cpu, stopped);
-            }, slice_observer_);
+        std::scoped_lock call_lock(guest_call_mutex_);
+        std::unique_ptr<cpu::DynarmicCpu> nested_cpu;
+        cpu::Cpu* target = root_cpu_.get();
+        auto stack_top = process_memory_.stack_top;
+        if (active_guest_call_cpu_ != nullptr) {
+            const auto caller = active_guest_call_cpu_->GetState();
+            const auto caller_sp =
+                caller.Register(cpu::CoreRegister::sp) & ~UINT32_C(7);
+            if (caller_sp == 0U) {
+                throw AndroidGuestProcessError(
+                    "nested Android guest call has no aligned caller stack");
+            }
+            stack_top = memory::GuestAddress{caller_sp};
+            nested_cpu = std::make_unique<cpu::DynarmicCpu>(
+                memory_bus_, execution_context_);
+            cpu::A32State nested_state;
+            nested_state.SetThreadId(caller.ThreadId());
+            nested_state.SetThreadPointer(caller.ThreadPointer());
+            nested_cpu->SetState(nested_state);
+            target = nested_cpu.get();
+        }
+        auto* const previous = active_guest_call_cpu_;
+        active_guest_call_cpu_ = target;
+        try {
+            auto result = InvokeA32GuestCall(
+                *target, dispatcher_, lifecycle_, address_space_, frame,
+                stack_top, process_memory_.return_trap, maximum_ticks_,
+                [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
+                    return HandleBoundary(cpu, stopped);
+                }, slice_observer_);
+            active_guest_call_cpu_ = previous;
+            return result;
+        } catch (...) {
+            active_guest_call_cpu_ = previous;
+            throw;
+        }
     }
 
     A32GuestCallResult InvokeRegisteredNative(
@@ -1040,6 +1069,11 @@ private:
     std::unique_ptr<FrameworkDirectAssetHle> direct_assets_;
     std::unique_ptr<GuestCloneThreadRuntime> clone_runtime_;
     std::unique_ptr<cpu::DynarmicCpu> root_cpu_;
+    // Serializes use of the root guest executor. Same-thread JNI reentry gets
+    // an isolated CPU whose stack begins below the suspended caller SP, so a
+    // nested JNI_OnLoad cannot overwrite the outer register/stack frame.
+    std::recursive_mutex guest_call_mutex_;
+    cpu::Cpu* active_guest_call_cpu_{};
     loader::Elf32LoadedNamespace loaded_;
     std::vector<loader::Elf32LoadedModule> dynamic_modules_;
     std::string root_module_;
@@ -1276,6 +1310,7 @@ JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept { return proc
 audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept { return process_->SoundPoolState(); }
 audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept { return process_->SoundPoolMixer(); }
 VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept { return process_->Filesystem(); }
+AndroidGuestProcess& AndroidGuestCallSession::Process() noexcept { return *process_; }
 std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const { return process_->FindNativeExport(class_name, method_name, descriptor); }
 void AndroidGuestCallSession::InitializeJniLibrary() {
     try {

@@ -40,6 +40,7 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
+#include "ogplay/runtime/integration/native_library_loader.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/session/profile_entry_scope.h"
 #include "ogplay/session/profile_vfs.h"
@@ -379,12 +380,15 @@ int RunApkCommand(const int argc, const char* const argv[],
         profiles_directory, quirks);
     const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
     const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
+    const loader::ApkNativeLibraryInventory native_inventory{libraries};
     const auto match = session::MatchApkTitleProfile(manifest, libraries, profiles);
     if (!match.has_value() || match->profile == nullptr) {
         throw std::runtime_error("APK has no exact Title Profile: " +
                                  manifest.package);
     }
     const auto& profile = *match->profile;
+    const auto selected_native_libraries = loader::SelectApkNativeLibraries(
+        native_inventory, match->library.abi);
     // Declared before the filesystem so the overlay outlives every node
     // that flushes into it.
     const auto sandbox =
@@ -593,8 +597,11 @@ int RunApkCommand(const int argc, const char* const argv[],
                   profile, "gles1_material_front_face")},
              std::move(sound_loader),
              guest_slice_observer,
-             {.installation_id = "ogplay-" + manifest.package,
-              .version_name = manifest.version_name.value_or("unknown")}});
+              {.installation_id = "ogplay-" + manifest.package,
+               .version_name = manifest.version_name.value_or("unknown")}});
+        runtime::NativeLibraryLoader native_libraries(
+            guest->Process(), selected_native_libraries);
+        dex_context->native_libraries = &native_libraries;
 
         // Keep the frame/MCP loop independent of lifecycle storage.
         struct LifecycleDriver final {
@@ -680,11 +687,6 @@ int RunApkCommand(const int argc, const char* const argv[],
                           dex_lifecycle->QueueInput(input);
                       }};
         }
-        logger.Write(core::LogLevel::info, "frontend.run_apk",
-                     "initializing root JNI library", {}, {},
-                     kUnrestrictedLog);
-        call_progress.Begin(0U, 0U);
-        guest->InitializeJniLibrary();
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "starting Profile lifecycle", {}, {},
                      kUnrestrictedLog);

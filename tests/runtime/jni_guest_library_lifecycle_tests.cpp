@@ -75,7 +75,7 @@ TEST_CASE("guest JNI library lifecycle preserves absence and rejects bad ABI") {
         static_cast<std::uint32_t>(runtime::kJniVersion1_6)));
     CHECK_THROWS_WITH_AS(
         runtime::ValidateJniGuestLibraryOnLoadResult(0xffffffffU),
-        "guest JNI_OnLoad returned an unsupported JNI version",
+        "guest JNI_OnLoad returned an unsupported JNI version: 4294967295",
         std::runtime_error);
 
     CHECK_THROWS_WITH_AS(

@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <utility>
 
 #include "shared.h"
+#include "ogplay/runtime/integration/native_library_loader.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -517,15 +519,61 @@ dx::IntrinsicHandler PlatformSystemExitHandler(const Context& context) {
     });
 }
 
-dx::IntrinsicHandler PlatformSystemLoadLibraryHandler() {
-    return dx::IntrinsicHandler([](dx::IntrinsicContext& call) {
-        // Libraries are preloaded and initialized by the session
-        // (04 §2 step 4); the name is recorded for diagnostics.
-        GuestLog(call, core::LogLevel::info,
-                 "System.loadLibrary(" +
-                     call.vm.StringUtf8(call.arguments[0].ref) + ")");
-        return dx::VmValue::Void();
-    });
+namespace {
+
+[[nodiscard]] std::string SystemLoadArgument(dx::IntrinsicContext& call,
+                                             const char* name) {
+    const auto reference = call.arguments[0].ref;
+    if (!reference.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              std::string(name) + " == null"};
+    }
+    return call.vm.StringUtf8(reference);
+}
+
+template <typename Load>
+dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(
+    const Context& context, const char* argument_name, Load load) {
+    return dx::IntrinsicHandler(
+        [context, argument_name, load = std::move(load)](
+            dx::IntrinsicContext& call) {
+            const auto argument = SystemLoadArgument(call, argument_name);
+            if (context->native_libraries == nullptr ||
+                context->application_class_loader_token == 0U) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/UnsatisfiedLinkError;",
+                    "APK native library loader is unavailable"};
+            }
+            try {
+                load(*context->native_libraries, argument,
+                     context->application_class_loader_token);
+            } catch (const NativeLibraryLoadError& error) {
+                throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
+                                      error.what()};
+            }
+            return dx::VmValue::Void();
+        });
+}
+
+}  // namespace
+
+dx::IntrinsicHandler PlatformSystemLoadHandler(const Context& context) {
+    return PlatformSystemLoadHandlerImpl(
+        context, "pathName",
+        [](NativeLibraryLoader& libraries, const std::string_view path,
+           const JavaClassLoaderToken class_loader) {
+            static_cast<void>(libraries.LoadPath(path, class_loader));
+        });
+}
+
+dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(
+    const Context& context) {
+    return PlatformSystemLoadHandlerImpl(
+        context, "libraryName",
+        [](NativeLibraryLoader& libraries, const std::string_view name,
+           const JavaClassLoaderToken class_loader) {
+            static_cast<void>(libraries.LoadLibrary(name, class_loader));
+        });
 }
 
 dx::IntrinsicHandler PlatformSystemNanoTimeHandler(const Context& context) {

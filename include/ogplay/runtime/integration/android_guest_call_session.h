@@ -352,6 +352,7 @@ public:
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    [[nodiscard]] AndroidGuestProcess& Process() noexcept;
     // Resolves a Java_ native export (short then long JNI name) across the
     // loaded guest namespace; empty when the method is not exported.
     [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(

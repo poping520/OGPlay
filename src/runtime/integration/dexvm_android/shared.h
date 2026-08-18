@@ -157,7 +157,10 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemExitHandler(
     const Context& context);
-[[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadLibraryHandler();
+[[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadHandler(
+    const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(
+    const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemNanoTimeHandler(
     const Context& context);
 

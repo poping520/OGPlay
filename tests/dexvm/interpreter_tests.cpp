@@ -134,6 +134,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     const std::set<std::string> intentionally_unimplemented = {
         "Ljava/lang/System;.currentTimeMillis()J",
         "Ljava/lang/System;.nanoTime()J",
+        "Ljava/lang/System;.load(Ljava/lang/String;)V",
         "Ljava/lang/System;.loadLibrary(Ljava/lang/String;)V",
         "Ljava/lang/System;.exit(I)V",
         "Ljava/util/Date;.<init>()V",

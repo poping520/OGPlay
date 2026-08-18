@@ -1,13 +1,22 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <iterator>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <doctest/doctest.h>
 
+#include "ogplay/core/capability_ledger.h"
 #include "ogplay/loader/elf.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/integration/native_library_loader.h"
+#include "ogplay/runtime/jni/jni.h"
+#include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 
 namespace {
 
@@ -94,7 +103,56 @@ struct AppElfOptions final {
     std::string dependency;
     std::optional<std::uint32_t> jni_version;
     bool constructor{true};
+    bool call_aps5_callback{};
 };
+
+[[nodiscard]] std::uint32_t EnvironmentThunk(const std::string_view name) {
+    const auto slot = ogplay::runtime::FindJniSlot(name);
+    if (!slot.has_value()) throw std::runtime_error("missing JNI slot");
+    return ogplay::runtime::kJniThunkBegin +
+           static_cast<std::uint32_t>(slot->Value()) * 4U + 1U;
+}
+
+[[nodiscard]] std::uint32_t JavaVmThunk(const std::string_view name) {
+    const auto slot = ogplay::runtime::FindJniInvokeSlot(name);
+    if (!slot.has_value()) throw std::runtime_error("missing JavaVM slot");
+    return ogplay::runtime::kJniInvokeThunkBegin +
+           static_cast<std::uint32_t>(slot->Value()) * 4U + 1U;
+}
+
+void WriteAps5OnLoad(std::vector<std::byte>& bytes,
+                     const std::uint32_t version) {
+    constexpr std::size_t kCode = 0x1000U;
+    const std::array code{
+        0xe92d40f0U, 0xe24dd00cU, 0xe1a04000U, 0xe1a00004U,
+        0xe28d1000U, 0xe59f2064U, 0xe59fc064U, 0xe12fff3cU,
+        0xe59d4000U, 0xe1a00004U, 0xe28f1068U, 0xe59fc054U,
+        0xe12fff3cU, 0xe1a05000U, 0xe1a00004U, 0xe1a01005U,
+        0xe28f2060U, 0xe28f3068U, 0xe59fc03cU, 0xe12fff3cU,
+        0xe1a06000U, 0xe1a00004U, 0xe1a01005U, 0xe1a02006U,
+        0xe59fc028U, 0xe12fff3cU, 0xe59f0010U, 0xe28dd00cU,
+        0xe8bd80f0U,
+    };
+    for (std::size_t index = 0; index < code.size(); ++index) {
+        Put32(bytes, kCode + index * 4U, code[index]);
+    }
+    Put32(bytes, kCode + 0x80U, version);
+    Put32(bytes, kCode + 0x84U, JavaVmThunk("GetEnv"));
+    Put32(bytes, kCode + 0x88U, EnvironmentThunk("FindClass"));
+    Put32(bytes, kCode + 0x8cU, EnvironmentThunk("GetStaticMethodID"));
+    Put32(bytes, kCode + 0x90U,
+          EnvironmentThunk("CallStaticVoidMethod"));
+    const auto put_string = [&bytes](const std::size_t offset,
+                                     const std::string_view value) {
+        for (std::size_t index = 0; index < value.size(); ++index) {
+            bytes[offset + index] = static_cast<std::byte>(value[index]);
+        }
+        bytes[offset + value.size()] = std::byte{};
+    };
+    put_string(kCode + 0x98U, "fixture/Aps5");
+    put_string(kCode + 0xa8U, "callback");
+    put_string(kCode + 0xb4U, "()V");
+}
 
 [[nodiscard]] std::vector<std::byte> AppElf(const AppElfOptions& options) {
     std::vector<std::byte> bytes(0x1100, std::byte{});
@@ -175,7 +233,7 @@ struct AppElfOptions final {
                16);
     if (options.constructor) {
         PutDynamic(bytes, dynamic, ogplay::loader::kElfDynamicInit,
-                   0x20010U);
+                   options.call_aps5_callback ? 0x200f0U : 0x20010U);
     }
     Put32(bytes, 0x190, 1);
     Put32(bytes, 0x194, options.jni_version.has_value() ? 2U : 1U);
@@ -187,11 +245,16 @@ struct AppElfOptions final {
         Put32(bytes, 0x1c8, 8);
         bytes[0x1cc] = std::byte{0x12};
         Put16(bytes, 0x1ce, 1);
-        Put32(bytes, 0x1000, 0xe59f0000U);
-        Put32(bytes, 0x1004, 0xe12fff1eU);
-        Put32(bytes, 0x1008, *options.jni_version);
+        if (options.call_aps5_callback) {
+            WriteAps5OnLoad(bytes, *options.jni_version);
+        } else {
+            Put32(bytes, 0x1000, 0xe59f0000U);
+            Put32(bytes, 0x1004, 0xe12fff1eU);
+            Put32(bytes, 0x1008, *options.jni_version);
+        }
     }
-    Put32(bytes, 0x1010, 0xe12fff1eU);
+    Put32(bytes, options.call_aps5_callback ? 0x10f0U : 0x1010U,
+          0xe12fff1eU);
     return bytes;
 }
 
@@ -213,6 +276,16 @@ struct FixtureProcess final {
             {19, std::span{&libc_input, 1}, {}, 64, 36,
              UINT64_C(100000), 1, &filesystem, {}})};
 };
+
+[[nodiscard]] std::vector<std::uint8_t> ReadDexFixture(
+    const std::string& name) {
+    const std::string path =
+        std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) throw std::runtime_error("missing DEX fixture: " + path);
+    return {std::istreambuf_iterator<char>(stream),
+            std::istreambuf_iterator<char>()};
+}
 
 }  // namespace
 
@@ -326,4 +399,95 @@ TEST_CASE("native library loader keeps malformed unresolved and bad JNI failures
         static_cast<void>(libraries.LoadPath("C:/host/libbad.so", 3U)),
         runtime::NativeLibraryLoadError);
     CHECK(libraries.Records().size() == 4U);
+}
+
+TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
+    using namespace ogplay;
+    auto libc = LibcElf();
+    auto a = AppElf(
+        {"liba.so", "libc.so", runtime::kJniVersion1_6, true, true});
+    auto b = AppElf({"libb.so", "", runtime::kJniVersion1_4});
+    auto path = AppElf({"libpath.so", "", runtime::kJniVersion1_4});
+    std::array module_inputs{
+        loader::Elf32ModuleInput{"liba.so", a,
+                                 memory::GuestAddress{0x20000000U}},
+        loader::Elf32ModuleInput{"libc.so", libc,
+                                 memory::GuestAddress{0x10000000U}},
+    };
+    runtime::VirtualFileSystem filesystem;
+    auto session = runtime::AndroidGuestCallSession::Start(
+        {19, "liba.so", module_inputs, {}, 64, 36, UINT64_C(200000),
+         1, &filesystem, {}});
+    loader::ApkNativeLibraryInventory inventory{{
+        Library("liba.so", a),
+        Library("libb.so", b),
+        Library("libpath.so", path),
+    }};
+    const auto selected = loader::SelectApkNativeLibraries(
+        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(session->Process(), selected);
+    auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    context->session = session.get();
+    context->native_libraries = &libraries;
+    core::CapabilityLedger ledger;
+    auto catalog = runtime::AndroidIntrinsicCatalog(context);
+    auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
+        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
+        nullptr);
+    context->threads = &bridge->Threads();
+
+    const auto aps5_class = bridge->Linker().FindClass("Lfixture/Aps5;");
+    REQUIRE(aps5_class.has_value());
+    const auto method = [&](const std::string_view name,
+                            const std::string_view descriptor) {
+        const auto found = bridge->Linker().FindDirectMethod(
+            *aps5_class, std::string(name), std::string(descriptor));
+        REQUIRE(found.has_value());
+        return *found;
+    };
+    const auto expect_link_error = [
+        &](const runtime::dexvm::VmCallOutcome& outcome) {
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(bridge->Linker().Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/UnsatisfiedLinkError;");
+    };
+
+    const auto nested = bridge->Vm().Call(method("start", "()V"), {});
+    REQUIRE_MESSAGE(!nested.exception.IsValid(), nested.exception_message);
+    auto records = libraries.Records();
+    REQUIRE(records.size() == 2U);
+    CHECK(records[0].soname == "liba.so");
+    CHECK(records[0].jni_on_load_calls == 1U);
+    CHECK(records[1].soname == "libb.so");
+    CHECK(records[1].jni_on_load_calls == 1U);
+
+    const auto load_path = method("loadPath", "(Ljava/lang/String;)V");
+    const auto call_with_string = [&](const runtime::dexvm::VmMethodId target,
+                                      const std::string& value) {
+        const std::array arguments{runtime::dexvm::VmValue::Ref(
+            bridge->Vm().NewStringUtf8(value))};
+        return bridge->Vm().Call(target, arguments);
+    };
+    const auto path_result = call_with_string(
+        load_path, runtime::NativeLibraryLoader::SyntheticGuestPath(
+                       "libpath.so"));
+    REQUIRE_MESSAGE(!path_result.exception.IsValid(),
+                    path_result.exception_message);
+
+    const auto load_library =
+        method("loadLibrary", "(Ljava/lang/String;)V");
+    expect_link_error(call_with_string(load_library, "missing"));
+    expect_link_error(call_with_string(
+        load_path, "/data/local/tmp/libmissing.so"));
+
+    records = libraries.Records();
+    REQUIRE(records.size() == 3U);
+    CHECK(records[0].jni_on_load_calls == 1U);
+    CHECK(records[1].jni_on_load_calls == 1U);
+    CHECK(records[2].soname == "libpath.so");
+    CHECK(records[2].jni_on_load_calls == 1U);
+
+    bridge.reset();
+    session->Stop();
+    CHECK_FALSE(session->Running());
 }

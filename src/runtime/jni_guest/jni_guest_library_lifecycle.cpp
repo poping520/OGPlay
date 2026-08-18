@@ -90,7 +90,8 @@ void ValidateJniGuestLibraryOnLoadResult(const std::uint32_t result) {
     if (result != kJniVersion1_1 && result != kJniVersion1_2 &&
         result != kJniVersion1_4 && result != kJniVersion1_6Bits) {
         throw std::runtime_error(
-            "guest JNI_OnLoad returned an unsupported JNI version");
+            "guest JNI_OnLoad returned an unsupported JNI version: " +
+            std::to_string(result));
     }
 }
 

@@ -713,7 +713,7 @@ note = "APS-3 抽出 AndroidGuestProcess rootless create：仅以 API 19 system 
 [runtime.dynamic_native_library_loader]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp"
-note = "APS-4 在 AndroidGuestProcess 上事务追加 selected-ABI APK ELF closure，依赖优先执行 constructors 并由 process 反序 finalization；NativeLibraryLoader 以 canonical path + ClassLoader token 管理 Loading/Loaded/Failed，同 loader 幂等/同线程递归成功/跨 loader 失败，仅显式 root 执行并校验 JNI_OnLoad，无 OnLoad 成功，失败重试稳定"
+note = "APS-4 在 AndroidGuestProcess 上事务追加 selected-ABI APK ELF closure，依赖优先执行 constructors 并由 process 反序 finalization；NativeLibraryLoader 以 canonical path + ClassLoader token 管理 Loading/Loaded/Failed，同 loader 幂等/同线程递归成功/跨 loader 失败，仅显式 root 执行并校验 JNI_OnLoad，无 OnLoad 成功，失败重试稳定；APS-5 将 DexVM System.load/System.loadLibrary 接入同一 loader，Java 失败映射为 NPE/UnsatisfiedLinkError，并以 A JNI_OnLoad→解释 Java callback→load B 锁定同线程重入与各一次 OnLoad"
 
 [profiles.apk_launch_preflight]
 status = "complete"

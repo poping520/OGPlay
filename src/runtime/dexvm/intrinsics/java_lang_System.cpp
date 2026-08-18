@@ -115,6 +115,8 @@ IntrinsicClassDecl Declare_java_lang_System() {
         {});
     builder.Static("nanoTime", "()J",
         {});
+    builder.Static("load", "(Ljava/lang/String;)V",
+        {});
     builder.Static("loadLibrary", "(Ljava/lang/String;)V",
         {});
     builder.Static("exit", "(I)V",

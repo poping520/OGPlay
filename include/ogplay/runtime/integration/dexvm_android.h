@@ -29,6 +29,7 @@
 namespace ogplay::runtime {
 
 class AndroidGuestCallSession;
+class NativeLibraryLoader;
 class VirtualFileSystem;
 
 // android.* intrinsic surface for the dex_activity lifecycle
@@ -38,6 +39,12 @@ class VirtualFileSystem;
 
 struct DexVmAndroidContext final {
     AndroidGuestCallSession* session{};
+    // Process-wide APK native loader used by java.lang.System.load*.
+    // The application ClassLoader has one stable non-zero identity for the
+    // lifetime of this context; APS-5 intentionally does not invent a second
+    // loader namespace.
+    NativeLibraryLoader* native_libraries{};
+    std::uint64_t application_class_loader_token{1U};
     loader::ArscTable arsc;
     std::vector<std::byte> apk_bytes;
     loader::ApkArchive archive;

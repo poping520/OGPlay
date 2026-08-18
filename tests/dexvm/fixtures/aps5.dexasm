@@ -1,0 +1,31 @@
+# APS-5 real reentry fixture. start() enters the native loader for A;
+# A's guest JNI_OnLoad calls callback() through the JNI ABI, and callback()
+# enters the same System.loadLibrary handler to load B.
+.class public Lfixture/Aps5;
+.super Ljava/lang/Object;
+
+.method static public start()V
+.registers 1
+    const-string v0, "a"
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method static public callback()V
+.registers 1
+    const-string v0, "b"
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method static public loadPath(Ljava/lang/String;)V
+.registers 1
+    invoke-static {v0}, Ljava/lang/System;->load(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method static public loadLibrary(Ljava/lang/String;)V
+.registers 1
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+    return-void
+.end method

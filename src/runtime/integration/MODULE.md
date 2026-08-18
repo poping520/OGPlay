@@ -48,6 +48,13 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   调用 guest constructor，registry mutex 绝不跨 guest call；仅显式请求 root 执行
   `JNI_OnLoad`，dependency 不隐式执行。已映射 module 由 process 持有至 Stop 并按实际完成
   constructor 的逆序 finalization；不支持 dlclose/unmap。
+- DexVM `System.load*` 通过 `DexVmAndroidContext` 注入同一个 process loader 与稳定
+  application ClassLoader token。调用期间 `NativeLibraryLoader` registry mutex 不跨
+  constructor/JNI_OnLoad；JNI callback 直接回到 `DexVmGuestBridge::InvokeInterpreted`，
+  `VmExecutionLock` 以 owner/depth 支持同宿主线程递归，因此 A JNI_OnLoad → Java → load B
+  不需释放 VM 状态；native guest-call executor 在重入时创建独立 CPU，并以外层暂停现场的
+  当前 SP 作为 nested 栈顶，禁止覆盖外层寄存器/栈帧。Java 边界只观察
+  NPE/UnsatisfiedLinkError，底层 typed loader reason 仍保留给 host 测试与诊断。
 - legacy process 组合真实 Bionic namespace、API 19 process、syscall/clone、
   guest JNI ABI/core bindings 与 Android HLE,执行 guest init/fini 并只接受通用 A32
   frame;可选直接资源 implementation set 只安装通用 framework HLE 并拥有统一 JNI array

@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,19 @@
 #include "ogplay/session/lifecycle.h"
 
 namespace ogplay::session {
+
+struct ContentViewGestureDispatchResult final {
+    bool handled{};
+    bool keep_capture{};
+    std::optional<std::string> error;
+};
+// Dispatches to the content View's virtual onTouchEvent. Only a handled DOWN
+// establishes capture; a captured target keeps receiving MOVE/UP even if an
+// individual later event returns false. Non-captured MOVE/UP are not invoked.
+[[nodiscard]] ContentViewGestureDispatchResult DispatchContentViewGestureEvent(
+    runtime::dexvm::Interpreter& vm,
+    runtime::dexvm::VmObjectRef content_view, std::int32_t action, float x,
+    float y, bool captured);
 
 // dex_activity lifecycle template (docs/design/dexvm/04-integration.md §2):
 // the real interpreted onCreate/onStart/onResume drive the title; the host
@@ -102,6 +116,7 @@ private:
     std::uint64_t gesture_candidate_{};
     bool gesture_click_eligible_{};
     bool gesture_touch_consumed_{};
+    bool content_view_captured_{};
     bool guest_finalized_{};
     // Renderer callbacks fire once when the interpreted glue registers a
     // renderer; installer phases run frames without one.

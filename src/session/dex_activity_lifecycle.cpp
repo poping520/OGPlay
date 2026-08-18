@@ -34,6 +34,37 @@ void RequireOutcome(const dx::VmCallOutcome& outcome,
 
 }  // namespace
 
+ContentViewGestureDispatchResult DispatchContentViewGestureEvent(
+    dx::Interpreter& vm, const dx::VmObjectRef content_view,
+    const std::int32_t action, const float x, const float y,
+    const bool captured) {
+    if (!content_view.IsValid()) {
+        return {.error = "content view is missing"};
+    }
+    if (action != kMotionActionDown && !captured) return {};
+
+    auto& linker = vm.Linker();
+    const auto receiver_class = vm.Model().ObjectClass(content_view);
+    const auto index = linker.FindVtableIndex(
+        receiver_class, "onTouchEvent", "(Landroid/view/MotionEvent;)Z");
+    if (!index.has_value()) {
+        return {.error = "content view has no onTouchEvent method"};
+    }
+    const auto event = runtime::MakeMotionEvent(vm, action, x, y, 0);
+    const auto outcome = vm.Call(
+        linker.Class(receiver_class).vtable[*index],
+        std::vector<dx::VmValue>{dx::VmValue::Ref(content_view),
+                                 dx::VmValue::Ref(event)});
+    if (outcome.exception.IsValid()) {
+        return {.error = "content view onTouchEvent raised: " +
+                         outcome.exception_message};
+    }
+    const bool handled = outcome.value.AsInt() != 0;
+    return {.handled = handled,
+            .keep_capture = action != kMotionActionUp &&
+                            (action == kMotionActionDown ? handled : captured)};
+}
+
 DexActivityLifecycle::DexActivityLifecycle(
     DexActivityLifecycleBindings bindings,
     const std::uint64_t ticks_per_frame,
@@ -257,8 +288,10 @@ void DexActivityLifecycle::DispatchInput() {
             gesture_candidate_ = hit.value_or(0U);
             gesture_click_eligible_ = false;
             gesture_touch_consumed_ = false;
+            content_view_captured_ = false;
         }
-        if (gesture_candidate_ != 0U) {
+        const bool had_listener_candidate = gesture_candidate_ != 0U;
+        if (had_listener_candidate) {
             const auto result = runtime::DispatchViewGestureEvent(
                 vm, *bindings_.context, gesture_candidate_, action,
                 pointer_x_, pointer_y_, gesture_click_eligible_,
@@ -267,6 +300,14 @@ void DexActivityLifecycle::DispatchInput() {
             gesture_click_eligible_ = result.click_eligible;
             gesture_touch_consumed_ = result.touch_consumed;
             if (!result.keep_capture) gesture_candidate_ = 0U;
+            if (result.handled) continue;
+        }
+        if (!had_listener_candidate) {
+            const auto result = DispatchContentViewGestureEvent(
+                vm, bindings_.context->content_view, action, pointer_x_,
+                pointer_y_, content_view_captured_);
+            if (result.error.has_value()) Fail(*result.error);
+            content_view_captured_ = result.keep_capture;
             if (result.handled) continue;
         }
         const auto event = runtime::MakeMotionEvent(
@@ -389,6 +430,10 @@ void DexActivityLifecycle::ServiceActivitySwitch() {
         auto finished = departing;
         context.finishing_activity.compare_exchange_strong(finished, 0U);
         context.content_view = dx::VmObjectRef{};
+        gesture_candidate_ = 0U;
+        gesture_click_eligible_ = false;
+        gesture_touch_consumed_ = false;
+        content_view_captured_ = false;
         runtime::ResetViewUiState(context);
         context.renderer = dx::VmObjectRef{};
         renderer_ready_ = false;

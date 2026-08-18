@@ -42,8 +42,8 @@ note = "LUI-8 在 frontend 唯一 frame handoff 调 session ComposePresentedFram
 
 [runtime.ui_pointer_dispatch]
 status = "complete"
-test = "tests/dexvm/widget_click_tests.cpp"
-note = "LUI-9 以 resolved UiTree 做 clipped reverse-Z hit-test；LUI-16 分离 gesture ownership/click eligibility：touch-only false 回退 Activity、true 消费，touch+click 仅在 touch=false 的 UP-inside click；hidden/removed/outside 取消，guest listener identity 由 UiNodeId binding 保证"
+test = "tests/dexvm/widget_click_tests.cpp; Dungeon Hunter Release exact MCP title-to-main-menu smoke"
+note = "LUI-9 以 resolved UiTree 做 clipped reverse-Z hit-test；LUI-16 分离 listener gesture ownership/click eligibility；LUI-17 在无 listener target 时先虚派发 content View，消费 DOWN 才捕获 MOVE/UP，未消费再回退 Activity；hidden/removed/outside/Activity switch 取消对应 capture，guest identity 由 UiNodeId/content_view binding 保证"
 
 [profiles.asphalt6_layout_ui_skip]
 status = "complete"

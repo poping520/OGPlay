@@ -126,7 +126,8 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   drawable 测量 wrap_content 图像控件。bounds 只来自 runtime/ui resolved screen frame；
   detached/不可布局 view 不消费触摸，事件降级给 `Activity.onTouchEvent`。
   `FindClickableViewAt` 按 reverse document order 命中可见且带 listener 的 view，
-  `InvokeViewOnClick` 在 guest 线程回调 onClick。
+  `InvokeViewOnClick` 在 guest 线程回调 onClick。`View.onTouchEvent` 是默认 false 的
+  overridable 基类入口，供 session 对无 listener target 的 content view 做真实虚派发。
 - `audio.load_movie` 必须把非空 Java `String` 解析为最多 4096 个 UTF-16 code unit 的
   线程安全、递增序号电影请求;会话只发布最新请求与累计次数,不宣称已启动宿主播放器。
   null、未知字符串对象或超限名称必须在状态变化前明确失败。

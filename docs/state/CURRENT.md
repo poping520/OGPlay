@@ -38,15 +38,15 @@ M0..M4 验收文档见 `docs/state/M*-ACCEPTANCE.md`；M5 三批索引见
 `docs/tasks/m5/README.md`；DexVM 任务索引见 `docs/tasks/dexvm/README.md`；
 Layout UI 任务索引见 `docs/tasks/layoutui/README.md`。
 能力现状以 `capabilities.toml` 为准。macOS/arm64 最近 full CTest 766/766；
-Windows/x64（windows-msvc）本次 775/775。
+Windows/x64（windows-msvc）本次 776/776。
 Windows 预设以原生核数并行构建工程，OGPlay 自有 MSVC target 同时启用 `/MP`；
 第三方 target 不被全局注入该选项。
 
 ## 进行中：更多 title 上 dexvm 路线
 
-- **Dungeon Hunter 已到标题画面**（2026-08-12）：层级占位、java.* 扩展、
-  Bitmap/Canvas、Environment/StatFs、SharedPreferences、Timer、多 Activity
-  流转、widget 状态层、布局注入、`VideoView` 完成回调。下一步：输入与进游戏。
+- **Dungeon Hunter 已进入主菜单**（2026-08-17）：LUI-17 修复无 listener target
+  时跳过自定义 content View `onTouchEvent` 的通用缺口；Release exact MCP 点击后由
+  封面进入 NEW GAME 主菜单，running、无 fault、clean shutdown。
 - **Dungeon Hunter 启动回归已修复**（2026-08-14）：Activity 切换不再误置
   session exit，`stat64` 改为 ARM 104 字节自然对齐；现跑满 300 帧进入音频加载。
 - **适配流水线**：`run-apk --survey-gaps` 一次收割整条缺口队列（默认关闭，

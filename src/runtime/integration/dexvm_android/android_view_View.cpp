@@ -35,6 +35,8 @@ Decl Declare_android_view_View(const Context& context) {
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.Overridable("onWindowFocusChanged", "(Z)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Overridable("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     const auto noop_flag = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.Virtual("setFocusable", "(Z)V", noop_flag);

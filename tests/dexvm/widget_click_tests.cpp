@@ -14,9 +14,11 @@
 #include "ogplay/loader/binary_xml.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/video/fake_video_player.h"
 
 namespace {
@@ -66,6 +68,8 @@ struct ClickVm final {
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context;
     VirtualFileSystem vfs;
+    std::int32_t content_view_events{};
+    bool content_view_handled{};
     Interpreter interpreter;
     VmObjectRef activity;
     VmObjectRef video_view;
@@ -79,6 +83,17 @@ struct ClickVm final {
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+                  IntrinsicClassBuilder content_view("LTestContentView;");
+                  content_view.Super("Landroid/view/View;")
+                      .Overridable("onTouchEvent",
+                                   "(Landroid/view/MotionEvent;)Z",
+                          [this](IntrinsicContext&) {
+                              ++content_view_events;
+                              return VmValue::Int(content_view_handled ? 1 : 0);
+                          });
+                  std::vector<IntrinsicClassDecl> test_catalog;
+                  test_catalog.push_back(std::move(content_view).Build());
+                  linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   linker.Link();
                   return linker;
@@ -588,6 +603,47 @@ TEST_CASE("touch consumption and click eligibility stay independent") {
         CHECK(vm.CallStaticInt("getTouches") == (test.fallback ? 1 : 2));
         CHECK(vm.CallStaticInt("getClicks") == test.clicks);
     }
+}
+
+TEST_CASE("content view captures a gesture only after handling DOWN") {
+    ClickVm vm;
+    const auto view =
+        vm.interpreter.NewIntrinsicInstance("LTestContentView;");
+
+    vm.content_view_handled = true;
+    auto result = ogplay::session::DispatchContentViewGestureEvent(
+        vm.interpreter, view, 0, 12.0F, 34.0F, false);
+    CHECK_FALSE(result.error.has_value());
+    CHECK(result.handled);
+    CHECK(result.keep_capture);
+    CHECK(vm.content_view_events == 1);
+
+    vm.content_view_handled = false;
+    result = ogplay::session::DispatchContentViewGestureEvent(
+        vm.interpreter, view, 2, 13.0F, 35.0F, result.keep_capture);
+    CHECK_FALSE(result.error.has_value());
+    CHECK_FALSE(result.handled);
+    CHECK(result.keep_capture);
+    CHECK(vm.content_view_events == 2);
+    result = ogplay::session::DispatchContentViewGestureEvent(
+        vm.interpreter, view, 1, 13.0F, 35.0F, result.keep_capture);
+    CHECK_FALSE(result.error.has_value());
+    CHECK_FALSE(result.handled);
+    CHECK_FALSE(result.keep_capture);
+    CHECK(vm.content_view_events == 3);
+
+    result = ogplay::session::DispatchContentViewGestureEvent(
+        vm.interpreter, view, 2, 14.0F, 36.0F, false);
+    CHECK_FALSE(result.error.has_value());
+    CHECK_FALSE(result.handled);
+    CHECK_FALSE(result.keep_capture);
+    CHECK(vm.content_view_events == 3);
+    result = ogplay::session::DispatchContentViewGestureEvent(
+        vm.interpreter, view, 0, 14.0F, 36.0F, false);
+    CHECK_FALSE(result.error.has_value());
+    CHECK_FALSE(result.handled);
+    CHECK_FALSE(result.keep_capture);
+    CHECK(vm.content_view_events == 4);
 }
 
 TEST_CASE("setVisibility rejects values outside VISIBLE/INVISIBLE/GONE") {

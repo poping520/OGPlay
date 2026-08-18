@@ -36,9 +36,18 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   API 19 system module closure，以 `libc.so` 建立 process-lifetime namespace，在没有
   APK application ELF 时也必须完成 Bionic process memory、syscall/clone、boundary、
   guest JNI ABI/JavaVM 与 root thread attach。请求面不得接受 application module；
-  `ApplicationModuleCount()` 必须为 0，Stop 必须 detach root JNI thread 且幂等。
+  create 返回时 `ApplicationModuleCount()` 必须为 0，后续只随成功发布的动态 guest
+  application module 单调增加；Stop 必须 detach root JNI thread 且幂等。
   `AndroidGuestCallSession` 仅是旧 root-module 启动面的 legacy adapter，委托同一个
-  process owner；dynamic application load 不属于 APS-3。
+  process owner。
+- `NativeLibraryLoader` 是 process service：logical name 与 synthetic guest path 共享按
+  canonical path 唯一的 Loading/Loaded/Failed registry，保留 ClassLoader token；同 loader
+  重复 load 幂等，同线程递归 loading 成功返回现有 handle，跨 loader 明确失败，Failed
+  重试稳定失败。selected APK ABI inventory 是唯一 app resolver；ET_DYN/DT_SONAME、依赖、
+  relocation、constructor 与 JNI version 均受检。namespace/map 事务完成后才逐 module
+  调用 guest constructor，registry mutex 绝不跨 guest call；仅显式请求 root 执行
+  `JNI_OnLoad`，dependency 不隐式执行。已映射 module 由 process 持有至 Stop 并按实际完成
+  constructor 的逆序 finalization；不支持 dlclose/unmap。
 - legacy process 组合真实 Bionic namespace、API 19 process、syscall/clone、
   guest JNI ABI/core bindings 与 Android HLE,执行 guest init/fini 并只接受通用 A32
   frame;可选直接资源 implementation set 只安装通用 framework HLE 并拥有统一 JNI array
@@ -62,7 +71,7 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   shutdown。`InterruptBlockingWaits` 无论由 Stop 还是外部调用,都不得永久停用 monitor;
   guest finalizer 阶段的 `MonitorEnter` 必须仍能成功,permanent shutdown 只允许发生在
   其后。
-- `AndroidGuestCallSession::InitializeJniLibrary` 只可在运行中的会话调用一次;调用方必须
+- legacy `AndroidGuestCallSession::InitializeJniLibrary` 只可在运行中的会话调用一次;调用方必须
   在 ELF constructors 完成并注册所需 Java class 后显式调用,成功或 root 无 OnLoad 时才
   发布 library-ready。失败、重复或停止后调用不得伪造完成。
 - `DexVmGuestBridge`(ADR-0017)在运行中的会话之上装配 dexvm:链接

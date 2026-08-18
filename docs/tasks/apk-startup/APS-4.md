@@ -44,3 +44,28 @@ frontend/root-module 模型迁入 loader。
 - malformed/unresolved/invalid JNI version 负例明确失败；
 - AOSP 对照结论写回“结果”段；
 - full CTest 无回归。
+
+## 结果（机器可判定，已达成）
+
+- AOSP 对照：`.local/asop/dalvik/vm/Native.cpp` 的 `SharedLib`、
+  `checkOnLoadResult()`、`dvmLoadNativeCode()` 与 `dvmCreateSystemLibraryName()` 证明
+  Dalvik 以路径作为全局 identity；同 ClassLoader 重复 load 幂等，同线程递归 loading
+  返回成功，另一线程等待唯一结果，同一路径跨 ClassLoader 明确失败。`dlopen()` 完成依赖
+  与 constructors 后，Dalvik 只对显式请求 handle 查找/调用 `JNI_OnLoad`；无 OnLoad 成功，
+  JNI_ERR/坏版本永久标记失败。`.local/asop/dalvik/vm/Jni.cpp` 的 `FindClass()` 证明
+  JNI_OnLoad 期间用 `classLoaderOverride` 解析类。
+- `ExtendElf32ModuleNamespace` 在既有 namespace 上解析、追加、映射并按动态 root scope
+  重定位新 guest modules；Bionic extender 可按新依赖追加 HLE boundary。映射/重定位失败
+  恢复地址空间且不发布 namespace，既有 module index 保持稳定。
+- `AndroidGuestProcess` 以确定性空闲 load bias 追加 application closure，逐 module 执行
+  依赖优先 constructors，成功初始化的 module 纳入 process stop 反序 finalization；
+  constructor/JNI 失败后已发布映射保留为 process-lifetime 失败事实，不伪造卸载。
+- `NativeLibraryLoader` 同时支持 logical name 与稳定 `/data/app-lib/<soname>` synthetic
+  guest path，且只从 selected ABI inventory 解析；装载时交叉验证 ET_DYN/DT_SONAME，
+  registry 保存 Loading/Loaded/Failed、ClassLoader token、handle、JNI version/call count。
+  registry mutex 不跨 constructors/JNI_OnLoad guest call，同线程递归不自锁。
+- 直接 C++ fixture 覆盖 A→B dependency constructor 顺序、仅 A 的显式 JNI_OnLoad、B
+  后续显式 load、无 OnLoad 成功、重复幂等、跨 ClassLoader、malformed/unresolved、
+  SONAME mismatch、invalid JNI version 与稳定 Failed 重试；未接 DexVM `System.load*`。
+- Windows MSVC：`cmake --preset windows-msvc`、完整 Release build 通过；APS-4 定向
+  2/2、完整 `ctest --preset windows-msvc` 792/792。

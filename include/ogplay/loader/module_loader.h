@@ -31,12 +31,25 @@ struct Elf32LoadedNamespace final {
     std::vector<Elf32LoadedModule> modules;
 };
 
+struct Elf32LoadedModuleExtension final {
+    Elf32LinkNamespaceExtension link_extension;
+    std::vector<Elf32LoadedModule> modules;
+};
+
 using Elf32LinkNamespaceBuilder = std::function<Elf32LinkNamespace(
     std::string_view, std::span<const Elf32LinkModule>)>;
+using Elf32LinkNamespaceExtender = std::function<Elf32LinkNamespaceExtension(
+    const Elf32LinkNamespace&, std::string_view,
+    std::span<const Elf32LinkModule>)>;
 
 [[nodiscard]] Elf32LoadedNamespace LoadElf32ModuleNamespace(
     std::string_view root_name, std::span<const Elf32ModuleInput> inputs,
     memory::AddressSpace& address_space,
     const Elf32LinkNamespaceBuilder& namespace_builder = {});
+[[nodiscard]] Elf32LoadedModuleExtension ExtendElf32ModuleNamespace(
+    const Elf32LinkNamespace& link_namespace, std::string_view root_name,
+    std::span<const Elf32ModuleInput> inputs,
+    memory::AddressSpace& address_space,
+    const Elf32LinkNamespaceExtender& namespace_extender = {});
 
 }  // namespace ogplay::loader

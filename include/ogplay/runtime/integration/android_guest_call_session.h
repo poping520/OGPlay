@@ -245,6 +245,16 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+struct AndroidGuestApplicationModuleSource final {
+    std::string name;
+    std::span<const std::byte> image;
+};
+
+struct AndroidGuestApplicationLoad final {
+    std::size_t root_module_index{};
+    std::vector<std::string> initialized_modules;
+};
+
 class AndroidGuestProcess final : public core::GpuStateProvider {
 public:
     [[nodiscard]] static std::unique_ptr<AndroidGuestProcess> Start(
@@ -270,7 +280,6 @@ public:
     [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
         std::string_view class_name, std::string_view method_name,
         std::string_view descriptor) const;
-    void InitializeJniLibrary();
     void OpenManagedSurface();
     void BindManagedSurfaceOnCallingThread();
     void ReleaseManagedSurfaceFromCallingThread();
@@ -291,6 +300,12 @@ public:
     [[nodiscard]] std::size_t ApplicationModuleCount() const noexcept;
     [[nodiscard]] std::size_t LoadedGuestModuleCount() const noexcept;
     [[nodiscard]] std::size_t AttachedJniThreadCount() const;
+    [[nodiscard]] bool HasLoadedModule(std::string_view name) const;
+    [[nodiscard]] AndroidGuestApplicationLoad LoadApplicationModules(
+        std::string_view root_module,
+        std::span<const AndroidGuestApplicationModuleSource> modules);
+    [[nodiscard]] std::optional<std::uint32_t> InitializeExplicitJniLibrary(
+        std::string_view root_module);
     [[nodiscard]] std::optional<AndroidGuestMovieRequest>
     LatestMovieRequest() const;
 
@@ -305,6 +320,7 @@ private:
     explicit AndroidGuestProcess(std::unique_ptr<Impl> impl) noexcept;
     [[nodiscard]] static std::unique_ptr<AndroidGuestProcess> StartLegacy(
         const AndroidGuestCallSessionRequest& request);
+    void InitializeJniLibrary();
     std::unique_ptr<Impl> impl_;
     friend class AndroidGuestCallSession;
 };

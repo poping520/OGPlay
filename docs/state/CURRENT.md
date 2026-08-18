@@ -1,13 +1,14 @@
 # 当前状态
 
-更新：2026-08-18 · APK Startup 阶段 A 已完成；APS-1..3 已交付
+更新：2026-08-18 · APK Startup 阶段 A 已完成；APS-1..4 已交付
 
 ## 当前阶段
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3
-  已抽出无 application ELF 的 `AndroidGuestProcess`，旧 session 经 adapter 复用。
-  dynamic app load 与 frontend 切换尚未实施。
+  已抽出无 application ELF 的 `AndroidGuestProcess`；APS-4 已加入 process-lifetime ELF
+  append、selected-ABI `NativeLibraryLoader`、constructors 与显式 JNI_OnLoad 状态机。
+  DexVM `System.load*` 接线与 frontend 切换尚未实施。
 - **M9 DexVM**：DVM-1..41 已交付；解释执行仍由 `VmExecutionLock` 串行。子线程 native
   调用仍复用 root guest 栈/thread id，JNI/DexVM monitor 表尚未合一；`threads` 与
   `monitors` 保持 `partial`。
@@ -16,13 +17,13 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：790/790 CTest。
+- Windows/x64 `windows-msvc`：792/792 CTest。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 
 ## 下一步
 
-1. 实施 APS-4 process-lifetime ELF namespace 动态 application load。
+1. 实施 APS-5 DexVM `System.load/System.loadLibrary` 与重入接线。
 2. 按命中批次闭合 DexVM 缺口，随后推进 GC-B 与解释器 v2 threaded 分批。
 3. 收口子线程 native guest 栈/thread id 与 JNI/DexVM monitor 统一。
 4. Linux M9 严格出口复验。

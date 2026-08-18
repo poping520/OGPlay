@@ -76,5 +76,11 @@ private:
     const BionicProfile& profile, std::string_view root_name,
     std::span<const loader::Elf32LinkModule> guest_modules,
     const BionicHleSymbolProvider& hle_symbols);
+[[nodiscard]] loader::Elf32LinkNamespaceExtension ExtendBionicLinkNamespace(
+    const BionicProfile& profile,
+    const loader::Elf32LinkNamespace& link_namespace,
+    std::string_view root_name,
+    std::span<const loader::Elf32LinkModule> guest_modules,
+    const BionicHleSymbolProvider& hle_symbols);
 
 }  // namespace ogplay::runtime

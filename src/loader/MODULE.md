@@ -28,11 +28,13 @@
 - `ReadApkArmNativeLibraries` / `ReadApkNativeLibraryInventory`：稳定枚举
   `lib/armeabi[-v7a]/*.so`，拥有解压字节与小写 SHA-256，并按 ABI、entry basename
   soname、`lib<logical>.so` logical name 建立不可变 inventory；此阶段不解析 ELF
-  `DT_SONAME`，APS-4 动态装载时必须交叉验证。
+  `DT_SONAME`，动态装载时交叉验证；selected view 还可按精确 APK entry 查询，但不允许
+  跨 ABI。
 - `ResolveApkProcessAbi`：只取 runtime-supported ABI 有序列表与 inventory ABI 的首个
-  交集；默认优先 `armeabi-v7a` 再 `armeabi`，不读取 Profile/hash。空 inventory 因当前
-  guest process 仍要求 native root 而 typed failure；`ApkSelectedNativeLibraries` 将后续
-  soname/logical lookup 永久限制在已选 process ABI。
+  交集；默认优先 `armeabi-v7a` 再 `armeabi`，不读取 Profile/hash。空 inventory 对
+  native ABI resolver 仍是 typed `native_abi_required`，rootless Java-capable process
+  不调用该 resolver；`ApkSelectedNativeLibraries` 将后续 soname/logical/entry lookup
+  永久限制在已选 process ABI。
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度，不执行任何字节码。
@@ -70,6 +72,9 @@
 - `LoadElf32ModuleNamespace`：一次完成多模块事实解析、依赖排序、映射、版本化符号解析与
   ARM REL 应用；可注入 builder 追加只参与查找的绝对 HLE 边界模块，且不得删除、替换
   或重排 guest 身份；任一阶段失败都恢复调用前完整 guest 地址空间。
+- `ExtendElf32ModuleNamespace`：在 process-lifetime namespace 上事务追加 guest modules，
+  为动态 root 建立独立 scope，并只映射/重定位本次 guest 输入；extender 可在其后追加
+  HLE-only module，但不得重排/替换输入。失败恢复完整地址空间，成功保留既有索引。
 - `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，
   对重复、元数据残缺、非对齐及非 file-backed 范围明确失败。
 - `ReadElf32TlsInfo`：解析唯一 `PT_TLS` 模板，保留初始化字节、BSS 大小与对齐，

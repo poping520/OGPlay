@@ -1,10 +1,14 @@
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <exception>
+#include <iterator>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <span>
 #include <string>
 #include <utility>
@@ -509,6 +513,7 @@ public:
           maximum_ticks_(request.maximum_ticks_per_call),
           progress_(request.progress),
           slice_observer_(request.guest_call_slice_observer),
+          api_(request.api),
           application_module_count_(request.application_module_count) {
 #if !OGPLAY_HAS_DYNARMIC
         static_cast<void>(request);
@@ -808,6 +813,105 @@ public:
     std::size_t AttachedJniThreadCount() const {
         return java_vm_.AttachedThreadCount();
     }
+    bool HasLoadedModule(const std::string_view name) const {
+        std::scoped_lock lock(dynamic_link_mutex_);
+        return HasLoadedModuleLocked(name);
+    }
+    AndroidGuestApplicationLoad LoadApplicationModules(
+        const std::string_view root_module,
+        const std::span<const AndroidGuestApplicationModuleSource> sources) {
+        if (!running_ || root_module.empty()) {
+            throw AndroidGuestProcessError(
+                "dynamic application load request is incomplete");
+        }
+
+        loader::Elf32LoadedModuleExtension extension;
+        std::vector<std::size_t> initialization_order;
+        std::vector<std::string> initialization_names;
+        std::size_t root_module_index{};
+        {
+            std::scoped_lock lock(dynamic_link_mutex_);
+            std::vector<AndroidGuestApplicationModuleSource> missing_sources;
+            missing_sources.reserve(sources.size());
+            for (const auto& source : sources) {
+                if (!HasLoadedModuleLocked(source.name)) {
+                    missing_sources.push_back(source);
+                }
+            }
+            auto inputs = AssignDynamicLoadBiases(missing_sources);
+            const auto old_namespace_size =
+                loaded_.link_namespace.modules.size();
+            const auto& profile = SelectBionicProfile(api_);
+            extension = loader::ExtendElf32ModuleNamespace(
+                loaded_.link_namespace, root_module, inputs, address_space_,
+                [&profile, this](
+                    const loader::Elf32LinkNamespace& link_namespace,
+                    const std::string_view root,
+                    const std::span<const loader::Elf32LinkModule> modules) {
+                    return ExtendBionicLinkNamespace(
+                        profile, link_namespace, root, modules,
+                        boundary_.Symbols());
+                });
+            root_module_index = extension.link_extension.scope.root_module;
+            for (std::size_t index = 0; index < inputs.size(); ++index) {
+                const auto namespace_index = old_namespace_size + index;
+                lifecycle_modules_.push_back(
+                    {namespace_index, inputs[index].load_bias,
+                     extension.modules[index].lifecycle});
+            }
+            for (const auto namespace_index :
+                 extension.link_extension.scope.load_order) {
+                if (namespace_index < old_namespace_size ||
+                    namespace_index >= old_namespace_size + inputs.size()) {
+                    continue;
+                }
+                initialization_order.push_back(namespace_index);
+                initialization_names.push_back(
+                    extension.link_extension.link_namespace
+                        .modules[namespace_index]
+                        .name);
+            }
+            loaded_.link_namespace =
+                extension.link_extension.link_namespace;
+            dynamic_modules_.insert(
+                dynamic_modules_.end(),
+                std::make_move_iterator(extension.modules.begin()),
+                std::make_move_iterator(extension.modules.end()));
+            application_module_count_ += inputs.size();
+        }
+
+        for (const auto namespace_index : initialization_order) {
+            const std::array one{namespace_index};
+            const auto plan = BuildGuestInitializationPlan(
+                lifecycle_modules_, one);
+            try {
+                ExecuteGuestLifecycle(
+                    plan, [this](const GuestLifecycleCall& call) {
+                        static_cast<void>(Invoke({call.address, {}, {}}));
+                    });
+            } catch (const std::exception& error) {
+                throw AndroidGuestProcessError(
+                    "guest constructor failed: " +
+                    std::string(error.what()));
+            }
+            std::scoped_lock lock(dynamic_link_mutex_);
+            guest_load_order_.push_back(namespace_index);
+        }
+        return {root_module_index, std::move(initialization_names)};
+    }
+    std::optional<std::uint32_t> InitializeExplicitJniLibrary(
+        const std::string_view root_module) {
+        std::optional<JniGuestLibraryOnLoad> on_load;
+        {
+            std::scoped_lock lock(dynamic_link_mutex_);
+            on_load = BuildJniGuestLibraryOnLoad(
+                loaded_.link_namespace, root_module, guest_jni_.JavaVm());
+        }
+        if (!on_load.has_value()) return std::nullopt;
+        const auto result = Invoke(on_load->call).return_value;
+        ValidateJniGuestLibraryOnLoadResult(result);
+        return result;
+    }
     std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const {
         return movie_state_.Latest();
     }
@@ -821,6 +925,86 @@ public:
     }
 
 private:
+    [[nodiscard]] bool HasLoadedModuleLocked(
+        const std::string_view name) const {
+        return std::ranges::any_of(
+            loaded_.link_namespace.modules,
+            [name](const loader::Elf32LinkModule& module) {
+                return module.name == name ||
+                       (module.dynamic.soname.has_value() &&
+                        *module.dynamic.soname == name);
+            });
+    }
+
+    [[nodiscard]] std::vector<loader::Elf32ModuleInput>
+    AssignDynamicLoadBiases(
+        const std::span<const AndroidGuestApplicationModuleSource> sources) {
+        constexpr std::uint64_t kFirstDynamicBias = 0x30000000U;
+        constexpr std::uint64_t kLoadAlignment = 0x10000U;
+        const auto align_up = [](const std::uint64_t value) {
+            return (value + kLoadAlignment - 1U) & ~(kLoadAlignment - 1U);
+        };
+        const auto snapshot = address_space_.CaptureSnapshot();
+        std::vector<memory::GuestRange> occupied;
+        occupied.reserve(snapshot.mappings.size() + sources.size() * 2U);
+        for (const auto& mapping : snapshot.mappings) {
+            occupied.push_back(mapping.range);
+        }
+        std::vector<loader::Elf32ModuleInput> result;
+        result.reserve(sources.size());
+        std::set<std::string, std::less<>> names;
+        std::uint64_t cursor = kFirstDynamicBias;
+        for (const auto& source : sources) {
+            if (source.name.empty() || source.image.empty() ||
+                !names.insert(source.name).second) {
+                throw AndroidGuestProcessError(
+                    "dynamic application module source is invalid or duplicate: " +
+                    source.name);
+            }
+            const auto image = loader::ParseElf32Arm(source.image);
+            if (image.type != loader::Elf32ImageType::shared_object) {
+                throw AndroidGuestProcessError(
+                    "dynamic application module is not ET_DYN: " +
+                    source.name);
+            }
+            bool assigned{};
+            while (!assigned) {
+                if (cursor >= kBionicHleThunkBegin ||
+                    cursor > std::numeric_limits<std::uint32_t>::max()) {
+                    throw AndroidGuestProcessError(
+                        "dynamic application module address space is exhausted");
+                }
+                const auto bias = memory::GuestAddress{
+                    static_cast<std::uint32_t>(cursor)};
+                const auto plan = loader::BuildElf32LoadPlan(
+                    image, bias, address_space_.PageSize());
+                std::uint64_t next_cursor = cursor;
+                bool collision{};
+                for (const auto& region : plan.regions) {
+                    next_cursor = std::max(
+                        next_cursor, region.range.EndExclusive());
+                    for (const auto& used : occupied) {
+                        if (!region.range.Overlaps(used)) continue;
+                        collision = true;
+                        next_cursor = std::max(
+                            next_cursor, used.EndExclusive());
+                    }
+                }
+                if (collision) {
+                    cursor = align_up(next_cursor + kLoadAlignment);
+                    continue;
+                }
+                result.push_back({source.name, source.image, bias});
+                for (const auto& region : plan.regions) {
+                    occupied.push_back(region.range);
+                }
+                cursor = align_up(next_cursor + kLoadAlignment);
+                assigned = true;
+            }
+        }
+        return result;
+    }
+
     memory::AddressSpace address_space_;
     memory::CheckedMemoryBus memory_bus_{address_space_};
     AndroidBoundaryHle boundary_;
@@ -857,6 +1041,7 @@ private:
     std::unique_ptr<GuestCloneThreadRuntime> clone_runtime_;
     std::unique_ptr<cpu::DynarmicCpu> root_cpu_;
     loader::Elf32LoadedNamespace loaded_;
+    std::vector<loader::Elf32LoadedModule> dynamic_modules_;
     std::string root_module_;
     Api19GuestProcessMemory process_memory_;
     std::vector<GuestLifecycleModule> lifecycle_modules_;
@@ -864,9 +1049,11 @@ private:
     std::uint64_t maximum_ticks_{};
     std::function<void(std::string_view)> progress_;
     A32GuestCallSliceObserver slice_observer_;
+    std::uint32_t api_{19};
     std::size_t application_module_count_{};
     bool jni_library_initialized_{};
     bool running_{};
+    mutable std::mutex dynamic_link_mutex_;
 
 public:
     [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
@@ -999,6 +1186,35 @@ bool AndroidGuestProcess::ExitRequested() const noexcept { return impl_->ExitReq
 std::size_t AndroidGuestProcess::ApplicationModuleCount() const noexcept { return impl_->ApplicationModuleCount(); }
 std::size_t AndroidGuestProcess::LoadedGuestModuleCount() const noexcept { return impl_->LoadedGuestModuleCount(); }
 std::size_t AndroidGuestProcess::AttachedJniThreadCount() const { return impl_->AttachedJniThreadCount(); }
+bool AndroidGuestProcess::HasLoadedModule(const std::string_view name) const {
+    return impl_->HasLoadedModule(name);
+}
+AndroidGuestApplicationLoad AndroidGuestProcess::LoadApplicationModules(
+    const std::string_view root_module,
+    const std::span<const AndroidGuestApplicationModuleSource> modules) {
+    try {
+        return impl_->LoadApplicationModules(root_module, modules);
+    } catch (const AndroidGuestProcessError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestProcessError(
+            "dynamic application ELF load failed: " +
+            std::string(error.what()));
+    }
+}
+std::optional<std::uint32_t>
+AndroidGuestProcess::InitializeExplicitJniLibrary(
+    const std::string_view root_module) {
+    try {
+        return impl_->InitializeExplicitJniLibrary(root_module);
+    } catch (const AndroidGuestProcessError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw AndroidGuestProcessError(
+            "explicit JNI library initialization failed: " +
+            std::string(error.what()));
+    }
+}
 std::optional<AndroidGuestMovieRequest> AndroidGuestProcess::LatestMovieRequest() const { return impl_->LatestMovieRequest(); }
 core::GpuStats AndroidGuestProcess::Stats() const { return impl_->Stats(); }
 std::vector<core::GpuRenderTarget> AndroidGuestProcess::RenderTargets() const { return impl_->RenderTargets(); }

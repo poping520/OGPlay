@@ -64,6 +64,8 @@ public:
         AndroidArmAbi abi, std::string_view soname) const noexcept;
     [[nodiscard]] const ApkNativeLibrary* FindLogicalName(
         AndroidArmAbi abi, std::string_view logical_name) const noexcept;
+    [[nodiscard]] const ApkNativeLibrary* FindEntryName(
+        AndroidArmAbi abi, std::string_view entry_name) const noexcept;
 
 private:
     std::vector<ApkNativeLibrary> libraries_;
@@ -79,6 +81,8 @@ public:
         std::string_view soname) const noexcept;
     [[nodiscard]] const ApkNativeLibrary* FindLogicalName(
         std::string_view logical_name) const noexcept;
+    [[nodiscard]] const ApkNativeLibrary* FindEntryName(
+        std::string_view entry_name) const noexcept;
 
 private:
     const ApkNativeLibraryInventory* inventory_{};

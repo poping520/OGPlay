@@ -284,6 +284,15 @@ const ApkNativeLibrary* ApkNativeLibraryInventory::FindLogicalName(
     return found == libraries_.end() ? nullptr : &*found;
 }
 
+const ApkNativeLibrary* ApkNativeLibraryInventory::FindEntryName(
+    const AndroidArmAbi abi, const std::string_view entry_name) const noexcept {
+    const auto found = std::ranges::find_if(
+        libraries_, [abi, entry_name](const ApkNativeLibrary& library) {
+            return library.abi == abi && library.entry_name == entry_name;
+        });
+    return found == libraries_.end() ? nullptr : &*found;
+}
+
 ApkSelectedNativeLibraries::ApkSelectedNativeLibraries(
     const ApkNativeLibraryInventory& inventory, const AndroidArmAbi abi)
     : inventory_(&inventory), abi_(abi) {
@@ -305,6 +314,11 @@ const ApkNativeLibrary* ApkSelectedNativeLibraries::FindSoname(
 const ApkNativeLibrary* ApkSelectedNativeLibraries::FindLogicalName(
     const std::string_view logical_name) const noexcept {
     return inventory_->FindLogicalName(abi_, logical_name);
+}
+
+const ApkNativeLibrary* ApkSelectedNativeLibraries::FindEntryName(
+    const std::string_view entry_name) const noexcept {
+    return inventory_->FindEntryName(abi_, entry_name);
 }
 
 std::vector<ApkNativeLibrary> ReadApkArmNativeLibraries(

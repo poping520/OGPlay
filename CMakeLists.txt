@@ -381,6 +381,7 @@ add_library(ogplay_runtime
     src/runtime/integration/android_guest_call_session.cpp
     src/runtime/integration/android_guest_java_movie.cpp
     src/runtime/integration/android_guest_java_platform.cpp
+    src/runtime/integration/native_library_loader.cpp
     src/runtime/integration/headless_bionic_runner.cpp
     src/runtime/boundary/guest_gl_context.cpp
     src/runtime/boundary/a32_call_frame.cpp
@@ -734,6 +735,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/android_boundary_gles1_fixed_tests.cpp
         tests/runtime/android_link_preflight_tests.cpp
         tests/runtime/native_activity_runner_tests.cpp
+        tests/runtime/native_library_loader_tests.cpp
         tests/runtime/preferences_xml_tests.cpp
         tests/runtime/ui_tree_tests.cpp
         tests/runtime/ui_renderer_tests.cpp

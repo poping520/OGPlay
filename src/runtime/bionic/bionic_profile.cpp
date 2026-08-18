@@ -316,4 +316,52 @@ loader::Elf32LinkNamespace BuildBionicLinkNamespace(
     return loader::BuildElf32LinkNamespace(root_name, modules);
 }
 
+loader::Elf32LinkNamespaceExtension ExtendBionicLinkNamespace(
+    const BionicProfile& profile,
+    const loader::Elf32LinkNamespace& link_namespace,
+    const std::string_view root_name,
+    const std::span<const loader::Elf32LinkModule> guest_modules,
+    const BionicHleSymbolProvider& hle_symbols) {
+    std::vector<loader::Elf32LinkModule> modules(guest_modules.begin(),
+                                                 guest_modules.end());
+    std::set<std::string, std::less<>> present_names;
+    std::set<std::string, std::less<>> imported_symbols;
+    const auto index_present = [&](const loader::Elf32LinkModule& module) {
+        present_names.insert(module.name);
+        present_names.insert(std::string(CanonicalName(module)));
+    };
+    for (const auto& module : link_namespace.modules) index_present(module);
+    for (auto& module : modules) {
+        const auto library = CanonicalName(module);
+        if (Contains(profile.boundary_libraries, library)) {
+            throw BionicProfileError(
+                "HLE boundary library must not be supplied as a guest ELF: " +
+                std::string(library));
+        }
+        index_present(module);
+        for (const auto& symbol : module.symbols.symbols) {
+            if (symbol.section_index == 0 && !symbol.name.empty()) {
+                imported_symbols.insert(symbol.name);
+            }
+        }
+        BindInterceptedExports(module, profile, hle_symbols);
+    }
+
+    std::set<std::string, std::less<>> required_boundaries;
+    for (const auto& module : modules) {
+        for (const auto& needed : module.dynamic.needed) {
+            if (!present_names.contains(needed) &&
+                Contains(profile.boundary_libraries, needed)) {
+                required_boundaries.insert(needed);
+            }
+        }
+    }
+    for (const auto& library : required_boundaries) {
+        modules.push_back(
+            MakeBoundaryModule(library, imported_symbols, hle_symbols));
+    }
+    return loader::ExtendElf32LinkNamespace(
+        link_namespace, root_name, modules);
+}
+
 }  // namespace ogplay::runtime

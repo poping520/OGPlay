@@ -92,7 +92,7 @@ session bootstrap（identity 精确匹配，复用现有 profile bootstrap）
 
 - `tools/generate_dexvm_opcodes.py`：生成确定性 C++ 解码表与 dispatch
   骨架；`--self-test` 核对 opcode 数、格式覆盖与空洞区间；
-  `--verify-aosp` 与 vendor 的 AOSP 基线机器比对——`opcode-gen/bytecode.txt`
+  `--verify-aosp` 可与 `.local/asop/dalvik` 的 AOSP 基线做按需机器比对——`opcode-gen/bytecode.txt`
   （AOSP 自己的机器可读 opcode 定义源）逐项等价、`libdex/DexOpcodes.h`
   枚举二次核对、`libdex/InstrUtils.cpp` 宽度/标志表核对（见 [07 §2 模式 A](07-aosp-reference.md)）。
   目录内容不靠人抄，靠机器比对。

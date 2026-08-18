@@ -107,11 +107,10 @@ Scenario runner：
 
 | 条目 | 内容 |
 | --- | --- |
-| `dexvm.aosp_baseline` | AOSP dalvik 固定 tag submodule + commit 校验 + NOTICES（对齐 `gles.angle_dependency` 先例） |
 | `tools.dexasm` | 确定性 DEX 汇编器 + self-test + golden/回读双保险 |
 | `tools.dex_dependency_survey` | 题库 Java 厚度/引擎指纹/平台类引用测量（roadmap 04 §7.2 落地） |
 | `loader.dex_code` | 指令流/try-catch/静态初始值受检读取 |
-| `dexvm.opcode_catalog` | 声明式指令目录 + 生成器 `--check` + `--verify-aosp` 机器比对 |
+| `dexvm.opcode_catalog` | 声明式指令目录 + 生成器 `--check`；外部 AOSP 机器比对按需执行 |
 | `dexvm.class_linker` | 注册/层级/布局/vtable/静态预检 |
 | `dexvm.object_model` | JavaObjectModel 统一对象身份（吸收 array/string store 迁移） |
 | `dexvm.interpreter_core` | 帧/分派/invoke 三路由/确定性语义 |

@@ -2,7 +2,7 @@
 """Minimal strict DEX 035 reader shared by stage-0 dexvm tooling.
 
 Structure layout follows AOSP libdex/DexFile.h at the pinned baseline
-(third_party/aosp-dalvik, android-4.4.4_r2). Only the sections needed for
+(the pinned Android 4.4.4_r2.0.1 AOSP baseline). Only the sections needed for
 static measurement are parsed; every out-of-range offset or index raises
 DexFormatError instead of guessing.
 """

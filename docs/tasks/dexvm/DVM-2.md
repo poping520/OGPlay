@@ -7,7 +7,7 @@ native 方法清单、引擎指纹与存量 profile impl id 语料——校准 i
 
 ## 依赖
 
-- DVM-1（基线已 vendor，结构布局对照 `libdex/DexFile.h`）
+- 结构布局对照 AOSP `libdex/DexFile.h`
 - 设计：`docs/design/dexvm/06-migration.md` 阶段 0-1、`03-platform-intrinsics.md` §3
 
 ## 变更

@@ -24,8 +24,8 @@
 由此，游戏 Java 胶水层的行为不再需要人工逆向成 profile 声明——它被真实执行；
 Title Profile 退化为 identity、数据布局、预算与 quirk。
 
-实现不从零臆造：以固定 tag 的 AOSP Dalvik（KitKat，与 API 19 目标同代）为
-vendor 参考基线——目录类数据机器比对、指令语义逐 opcode 对照、结构校验
+实现不从零臆造：以 `.local/asop/dalvik` 中固定 tag 的 AOSP Dalvik（KitKat，与
+API 19 目标同代）为本地参考基线——目录类数据机器比对、指令语义逐 opcode 对照、结构校验
 规则对标，但不移植其对象模型/GC/线程实现体（见 [07](07-aosp-reference.md)）。
 这与项目既有姿态一致：CPU 用 dynarmic、GLES 用 ANGLE、PVRTC 用 PowerVR SDK，
 从不凭记忆重写已有权威实现的语义。
@@ -40,7 +40,7 @@ vendor 参考基线——目录类数据机器比对、指令语义逐 opcode �
 | [04 · 运行时集成](04-integration.md) | JNI 双向、生命周期反转、线程/monitor、GC、预算 |
 | [05 · 验证体系](05-verification.md) | dexasm 夹具、一致性测试、exact-title gate、能力条目 |
 | [06 · 迁移与冲突裁决](06-migration.md) | 阶段划分、WU 分解、冲突裁决表、风险 |
-| [07 · AOSP 参考策略](07-aosp-reference.md) | vendor 基线、机器校验/语义参考/测试素材三模式、逐组件对照表、红线 |
+| [07 · AOSP 参考策略](07-aosp-reference.md) | 本地参考资料、机器校验/语义参考/测试素材三模式、逐组件对照表、红线 |
 | [08 · 解释执行的 EGL/GL façade](08-egl-facade.md) | 自带 GLSurfaceView 的通用形态：javax EGL 面驱动宿主 ANGLE surface |
 | [09 · GC-B 精确标记清除](09-gc.md) | 04 §5 B 期的实施方案：现状盘点、执行锁即停世界、根集/标记/清扫、WU 分批 |
 | [10 · 解释器 v2 threaded 内核](10-interpreter-threaded.md) | 预解码 + 线程化分派的第二内核：与旧 switch 内核并存可切换，bridge 渐进迁移，tick 逐位等价 |
@@ -74,4 +74,4 @@ vendor 参考基线——目录类数据机器比对、指令语义逐 opcode �
 | JavaObjectModel | session 级统一对象模型，VM 对象与宿主背衬对象共用引用身份 |
 | 生命周期反转 | 由解释执行的真实 `onCreate`/`onDrawFrame` 驱动游戏，取代 profile `native_call` 序列 |
 | L1 / L2 | roadmap 04 §7 的 DEX 分级：L1 只读解析（已完成），L2 解释执行（本方案） |
-| AOSP 基线 | vendor 固定 tag（`android-4.4.4_r2`）的 `platform/dalvik` 源码树，参考与机器校验源，不编译进运行时 |
+| AOSP 基线 | `.local/asop/dalvik` 中对齐 `android-4.4.4_r2` 的 `platform/dalvik` 源码树，仅作参考，不编译进运行时 |

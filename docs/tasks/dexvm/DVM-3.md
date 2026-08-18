@@ -7,7 +7,6 @@
 
 ## 依赖
 
-- DVM-1（AOSP 基线）
 - 设计：`docs/design/dexvm/02-architecture.md` §4、`07-aosp-reference.md` §2 模式 A
 
 ## 变更

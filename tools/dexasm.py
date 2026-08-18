@@ -4,7 +4,7 @@
 Assembles a restricted smali-flavoured IR (NOT smali-compatible) into a valid
 dex 035 file. Byte-deterministic: identical input yields identical output.
 Pool layout, alignment, uleb128 and checksum rules follow docs/dex-format at
-the pinned AOSP baseline (third_party/aosp-dalvik); opcode values and formats
+the pinned AOSP baseline; opcode values and formats
 come from data/dexvm/dalvik_opcodes.json, never a second hand-written table.
 
 It is a test tool, not a general assembler: anything outside the supported

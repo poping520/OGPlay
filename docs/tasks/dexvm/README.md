@@ -14,7 +14,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | 批次 | 阶段 | 内容 | WU |
 | --- | --- | --- | --- |
-| 批次 0 | 阶段 0 · 地基 | vendor AOSP 基线、题库测量、opcode 目录、dexasm | DVM-1..5 |
+| 批次 0 | 阶段 0 · 地基 | AOSP 参考资料、题库测量、opcode 目录、dexasm | DVM-1..5 |
 | 批次 1 | 阶段 1 · 解释器内核 | dex_code 读取、类链接、对象模型、指令家族、异常、clinit、GC-A | DVM-6.. |
 | 批次 2 | 阶段 2 · 边界互通 | JNI 出向编组、入向第三路由、java.* P1 intrinsic | 随批次 1 收敛后分配 |
 | 批次 3 | 阶段 3 · 生命周期反转 | Manifest 组件、dex_activity、android.* intrinsic、profile v2、pilot 迁移 | 随批次 2 收敛后分配 |
@@ -23,7 +23,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
-| [DVM-1](DVM-1.md) | vendor AOSP dalvik 固定 tag 参考基线 + 校验 + NOTICES | 完成 |
+| [DVM-1](DVM-1.md) | AOSP Dalvik 本地参考资料说明 | 完成 |
 | [DVM-2](DVM-2.md) | dex_dependency_survey 题库静态测量工具 | 完成 |
 | [DVM-3](DVM-3.md) | 声明式 opcode 目录 + 生成器 + AOSP 机器比对 | 完成 |
 | [DVM-4](DVM-4.md) | dexasm 确定性 DEX 汇编器核心 | 完成 |

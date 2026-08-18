@@ -20,10 +20,6 @@
 [submodule "third_party/yyjson"]
 	path = third_party/yyjson
 	url = https://github.com/ibireme/yyjson.git
-[submodule "third_party/aosp-dalvik"]
-	path = third_party/aosp-dalvik
-	url = https://github.com/aosp-mirror/platform_dalvik.git
-	shallow = true
 [submodule "third_party/imgui"]
 	path = third_party/imgui
 	url = https://github.com/ocornut/imgui.git

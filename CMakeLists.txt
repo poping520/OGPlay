@@ -1080,24 +1080,6 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(tools.remote_incremental_self_test PROPERTIES LABELS tools)
 
     add_test(
-        NAME tools.aosp_dalvik_baseline_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_aosp_dalvik.py
-            --self-test
-    )
-    set_tests_properties(tools.aosp_dalvik_baseline_self_test
-        PROPERTIES LABELS "tools;dexvm")
-
-    add_test(
-        NAME tools.aosp_dalvik_baseline_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_aosp_dalvik.py
-            --baseline ${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosp-dalvik
-    )
-    set_tests_properties(tools.aosp_dalvik_baseline_current
-        PROPERTIES LABELS "tools;dexvm")
-
-    add_test(
         NAME tools.dexvm_opcode_generator_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py
@@ -1111,7 +1093,6 @@ if(OGPLAY_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py
             --catalog ${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json
-            --verify-aosp ${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosp-dalvik
             --output ${OGPLAY_DEXVM_OPCODE_TABLE}
             --check
     )

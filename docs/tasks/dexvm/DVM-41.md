@@ -194,7 +194,7 @@ Unicode property 路径。它们不声明成假成功 stub；能力保持 partia
 
 ## 文件与 catalog 结果
 
-- 新增 `java_lang_primitive_wrappers.cpp`，最终 **877 行**；family TU 按契约允许超过
+- 新增 `java_lang_primitive_wrappers.cpp`；family TU 按契约允许超过
   通常 800 行。
 - 删除旧 cpp **6** 个；不存在 Byte/Short/Character 独立 cpp。
 - 9 个 `Declare_*` 全部位于 anonymous namespace；`catalog.h` 删除 **6** 个旧 class

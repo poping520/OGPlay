@@ -7,22 +7,20 @@ Dalvik VM 完全开源（Apache-2.0），且 KitKat（android-4.4，API 19）恰
 
 项目先例：CPU 不自写 JIT（dynarmic）、GLES 不自写转译（ANGLE）、PVRTC 不
 自写解码（PowerVR SDK 原样 vendor）、GLES 目录逐项对齐固定 ANGLE 头文件
-（`--verify-header`）。DexVM 对 AOSP Dalvik 采取同一姿态。
+（`--verify-header`）。DexVM 对 AOSP Dalvik 采取本地资料参考姿态。
 
-## 1. Vendor 决定
+## 1. 本地参考资料
 
-- 以浅 submodule 固定 vendor `platform/dalvik` 源码树（镜像
-  `github.com/aosp-mirror/platform_dalvik`，网络白名单内），tag 锁定
-  `android-4.4.4_r2`（KitKat 最终版，纯 Dalvik，无 ART 混杂）。
-- 位置 `third_party/aosp-dalvik/`，遵守 ADR-0007（第三方一律 submodule）；
-  `THIRD_PARTY_NOTICES.md` 增补 Apache-2.0 条目；CMake 校验脚本核对
-  commit 固定（对齐 angle-prebuilt 的逐文件校验精神）。
-- **默认不编译、不链接**。它是参考与机器校验的数据源，不是运行时依赖。
-  唯一允许的编译形态见 §4 的 host 工具评估项。
+- 以 `platform/dalvik` 的 KitKat 源码作为语义参考，tag 对齐
+  `android-4.4.4_r2`（纯 Dalvik，无 ART 混杂）。
+- 位置 `.local/asop/dalvik/`，属于本地参考资料，不进入版本库，也不作为第三方
+  submodule；需要时可由工具显式执行锚点文件比对。
+- **默认不编译、不链接**。它是参考资料，不是运行时依赖。可选的 host 工具评估
+  见 §4。
 
 ## 2. 三种使用模式
 
-**模式 A · 机器校验源（硬依赖，进 CTest）**。声明式目录不靠人抄，靠机器比对：
+**模式 A · 机器校验源（按需执行）**。声明式目录不靠人抄，必要时可对本地资料树做机器比对：
 
 | 我方产物 | AOSP 校验锚点 | 校验内容 |
 | --- | --- | --- |
@@ -30,7 +28,7 @@ Dalvik VM 完全开源（Apache-2.0），且 KitKat（android-4.4，API 19）恰
 | 同上 | `libdex/DexOpcodes.h` | 枚举值与名称表二次核对 |
 | 生成的解码表 | `libdex/InstrUtils.cpp` 宽度/标志表 | 指令宽度与 format 归属 |
 
-生成器提供 `--verify-aosp third_party/aosp-dalvik/...`，与
+生成器提供 `--verify-aosp .local/asop/dalvik/...`，与
 `gles.gles2_catalog` 的 `--verify-header` 完全同构。目录与 AOSP 表任何
 分歧都是 CTest 失败。
 

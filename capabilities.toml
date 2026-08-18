@@ -1075,11 +1075,6 @@ status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
 note = "M5 WU-0275 为三个 GL_OES_matrix_palette 入口实现受检可重置状态并接入 client-state；完整 palette matrix stack 与 skinning draw 转换尚未实现且启用时明确失败"
 
-[dexvm.aosp_baseline]
-status = "complete"
-test = "tools.aosp_dalvik_baseline_self_test; tools.aosp_dalvik_baseline_current"
-note = "DVM-1 以浅 submodule 固定 platform/dalvik 于 android-4.4.4_r2（36e356c9），机器校验 commit 与 bytecode.txt/DexOpcodes.h/InstrUtils.cpp/NOTICE 锚点哈希；仅作语义参考与机器比对数据源，不编译不链接"
-
 [tools.dex_dependency_survey]
 status = "complete"
 test = "tools.dex_dependency_survey_self_test"
@@ -1088,7 +1083,7 @@ note = "DVM-2 纯 Python 严格 DEX 035 静态测量：应用类规模、Java �
 [dexvm.opcode_catalog]
 status = "complete"
 test = "tools.dexvm_opcode_generator_self_test; tools.dexvm_opcode_catalog_current"
-note = "DVM-3 dex 035 全部 218 个已定义 opcode 的声明式目录由 AOSP bytecode.txt 机器派生，unused/odex 拒绝集显式覆盖余下 38 个编码点；--verify-aosp 对 bytecode.txt/DexOpcodes.h/InstrUtils.cpp 三锚点逐项等价，C++ 解码表确定性生成并有 --check 门禁"
+note = "DVM-3 dex 035 全部 218 个已定义 opcode 的声明式目录由 AOSP bytecode.txt 机器派生，unused/odex 拒绝集显式覆盖余下 38 个编码点；C++ 解码表确定性生成并有 --check 门禁，外部 AOSP 资料比对不作为默认构建依赖"
 
 [tools.dexasm]
 status = "complete"

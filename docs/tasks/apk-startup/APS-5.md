@@ -64,6 +64,10 @@
   `DexVmAndroidContext` 接到同一个 process `NativeLibraryLoader`，携带稳定非零
   application ClassLoader token。null 映射 NPE，其余 typed loader 失败映射 ULE；旧
   preloaded/log-only 成功路径已删除。
+- `System.load(path)` 保留 synthetic APK native mapping，并在其外对规范化 absolute
+  guest path 通过共享 VFS 读取 library image；VFS image 进入同一 loaded registry、
+  dynamic namespace、constructor 与 explicit `JNI_OnLoad` 管线，host-style path 继续
+  明确拒绝。
 - `run-apk` 为匹配 APK 建立 selected-ABI inventory/loader，不再在生命周期前无条件调用
   legacy root `InitializeJniLibrary`；JNI_OnLoad 由实际 `System.load*` 请求拥有。
 - 锁审计确认 loader registry mutex 在 constructor/JNI_OnLoad 前释放，JNI invocation
@@ -72,7 +76,7 @@
   调用现使用独立 CPU 与外层 SP 下方的栈空间。
 - `aps5.dexasm` + ARM ELF A/B 夹具实际执行
   Java `start` → load A → A `JNI_OnLoad` → JNI `CallStaticVoidMethod` → 解释执行 Java
-  `callback` → load B；聚焦断言 21/21，A/B `JNI_OnLoad` 各一次，且 logical/path 正例、
+  `callback` → load B；A/B `JNI_OnLoad` 各一次，logical/synthetic-path/VFS-path 正例与
   missing logical/bad guest path 的 pending Java `UnsatisfiedLinkError` 均受检。
 - Windows `cmake --preset windows-msvc`、全量 build 成功；
   `ctest --preset windows-msvc` 为 793/793。

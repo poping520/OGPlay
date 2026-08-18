@@ -630,7 +630,12 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
     result.api_level = static_cast<std::uint32_t>(NativeInteger(
         NativeRequire(table, "api_level", "runtime.api_level"), "runtime.api_level",
         1, std::numeric_limits<std::uint32_t>::max()));
-    if (result.api_level != 19 && result.api_level != 22 && result.api_level != 23) {
+    if (schema == 3U && result.api_level != 19) {
+        throw TitleProfileError(
+            "runtime.api_level must be 19 for schema 3");
+    }
+    if (schema != 3U && result.api_level != 19 &&
+        result.api_level != 22 && result.api_level != 23) {
         throw TitleProfileError("runtime.api_level must be 19, 22 or 23");
     }
     if (schema != 3U) {

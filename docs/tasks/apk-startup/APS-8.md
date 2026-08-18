@@ -41,5 +41,7 @@
 - C++ loader 可读取 v1/v2/v3：v1 历史 lifecycle/native-call/Java 声明只做数据迁移并
   归一到 generic DexVM Activity，不恢复 replay；v3 的 version/hash guard 可省略。
 - v3 JSON Schema 与 Python validator 同步禁止 `abi`、`lifecycle`、root library，并覆盖
-  无 hash 正例和强制 ABI/root library 负例。
+  无 hash 正例和强制 ABI/root library 负例；当前 generic `AndroidAppProcess` 只实现
+  API 19，因此 v3 `runtime.api_level` 同步冻结为 19，避免 schema 声明运行时无法兑现的
+  API 22/23。
 - CLI 与 GUI 导入均改用 optional selection；process ABI 仍只来自 APK inventory resolver。

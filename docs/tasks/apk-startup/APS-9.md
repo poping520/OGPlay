@@ -43,7 +43,7 @@
 | --- | --- |
 | A/B | `minimal Application startup preserves order identity and native loads` 的 clinit/onCreate 子例 |
 | C/D | `AndroidAppProcess keeps Activity native loads Java-driven` 的 clinit/onCreate 子例 |
-| E | `DexVM System load APIs support nested JNI OnLoad Java reentry` 的 synthetic path 调用 |
+| E | `DexVM System load APIs support nested JNI OnLoad Java reentry` 的 synthetic path 与 VFS-backed absolute guest path 调用 |
 | F | `native library loader appends dependency constructors and one explicit JNI_OnLoad` 的重复 load |
 | G | DexVM→A JNI_OnLoad→Java callback→B load 的真实嵌套 fixture；记录顺序 A、B |
 | H | 同一 DexVM fixture 的 missing name/path → `UnsatisfiedLinkError` |

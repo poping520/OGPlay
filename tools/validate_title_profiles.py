@@ -248,7 +248,9 @@ def _validate_runtime(value: Any, schema: int) -> None:
         _keys(table, "runtime", common | {"lifecycle"},
               {"api_level", "lifecycle", "surface"})
     api = _integer(table["api_level"], "runtime.api_level", 1, 0xFFFFFFFF)
-    if api not in {19, 22, 23}:
+    if schema == 3 and api != 19:
+        raise ProfileError("runtime.api_level must be 19 for schema 3")
+    if schema != 3 and api not in {19, 22, 23}:
         raise ProfileError("runtime.api_level must be one of 19, 22 or 23")
     if schema != 3 and _string(
             table["lifecycle"], "runtime.lifecycle") != "dex_activity":
@@ -388,6 +390,9 @@ def validate_schema(path: Path) -> dict[str, Any]:
         if "lifecycle" in runtime_properties or "root_library" in runtime_properties:
             raise ProfileError(
                 "profile schema v3 must not expose lifecycle or root library")
+        if runtime_properties.get("api_level", {}).get("const") != 19:
+            raise ProfileError(
+                "profile schema v3 api_level must match API 19 runtime support")
         if set(runtime.get("required", [])) != {"api_level"}:
             raise ProfileError("profile schema v3 runtime defaults do not match")
     return schema
@@ -512,6 +517,9 @@ def self_test(schema_path: Path) -> int:
             ),
             "v3 lifecycle": _valid_v3_profile().replace(
                 "api_level = 19", 'api_level = 19\nlifecycle = "dex_activity"'
+            ),
+            "v3 unsupported api": _valid_v3_profile().replace(
+                "api_level = 19", "api_level = 22"
             ),
         }
         for label, content in v3_cases.items():

@@ -104,6 +104,8 @@ v3 约束：
 - `identity.package` 必填；
 - `version_code` 是否必填由现有 profile 安全策略评审决定，但缺省必须有清晰适用范围；
 - `so_sha256` 可选，仅为 applicability guard；
+- 当前 generic `AndroidAppProcess` 只实现 API 19，因此 v3 `runtime.api_level` 先冻结为
+  19；扩展到 22/23 必须先由 process/runtime 层提供真实支持；
 - 不再提供“root library”字段；
 - `abi` 若为历史兼容字段，只能作为 assertion/guard，不能覆盖 resolver 选出的 ABI；
 - launcher 默认来自 Manifest，只有 entry-scope 明确 quirk 才覆盖；

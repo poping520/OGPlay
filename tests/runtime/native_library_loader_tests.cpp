@@ -575,6 +575,7 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
         {"liba.so", "libc.so", runtime::kJniVersion1_6, true, true});
     auto b = AppElf({"libb.so", "", runtime::kJniVersion1_4});
     auto path = AppElf({"libpath.so", "", runtime::kJniVersion1_4});
+    auto vfs = AppElf({"libvfs.so", "", runtime::kJniVersion1_6});
     std::array module_inputs{
         loader::Elf32ModuleInput{"liba.so", a,
                                  memory::GuestAddress{0x20000000U}},
@@ -582,6 +583,7 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
                                  memory::GuestAddress{0x10000000U}},
     };
     runtime::VirtualFileSystem filesystem;
+    filesystem.PutFile("/data/data/fixture/files/libvfs.so", vfs, false);
     auto session = runtime::AndroidGuestCallSession::Start(
         {19, "liba.so", module_inputs, {}, 64, 36, UINT64_C(200000),
          1, &filesystem, {}});
@@ -641,6 +643,15 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     REQUIRE_MESSAGE(!path_result.exception.IsValid(),
                     path_result.exception_message);
 
+    const auto vfs_result = call_with_string(
+        load_path, "/data/data/fixture/files/./LIBVFS.so");
+    REQUIRE_MESSAGE(!vfs_result.exception.IsValid(),
+                    vfs_result.exception_message);
+    const auto vfs_repeated = call_with_string(
+        load_path, "/data/data/fixture/files/libvfs.so");
+    REQUIRE_MESSAGE(!vfs_repeated.exception.IsValid(),
+                    vfs_repeated.exception_message);
+
     const auto load_library =
         method("loadLibrary", "(Ljava/lang/String;)V");
     expect_link_error(call_with_string(load_library, "missing"));
@@ -648,11 +659,15 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
         load_path, "/data/local/tmp/libmissing.so"));
 
     records = libraries.Records();
-    REQUIRE(records.size() == 3U);
+    REQUIRE(records.size() == 4U);
     CHECK(records[0].jni_on_load_calls == 1U);
     CHECK(records[1].jni_on_load_calls == 1U);
     CHECK(records[2].soname == "libpath.so");
     CHECK(records[2].jni_on_load_calls == 1U);
+    CHECK(records[3].canonical_path ==
+          "/data/data/fixture/files/libvfs.so");
+    CHECK(records[3].soname == "libvfs.so");
+    CHECK(records[3].jni_on_load_calls == 1U);
 
     bridge.reset();
     session->Stop();

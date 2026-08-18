@@ -136,6 +136,12 @@ TEST_CASE("Title Profile v3 permits optional applicability guards") {
     auto root = V3Profile();
     root += "root_library = \"libgame.so\"\n";
     CheckRejected(root, "runtime has unknown field root_library");
+
+    auto api22 = V3Profile();
+    api22.replace(api22.find("api_level = 19"),
+                  std::string_view{"api_level = 19"}.size(),
+                  "api_level = 22");
+    CheckRejected(api22, "runtime.api_level must be 19 for schema 3");
 }
 
 TEST_CASE("entry scope requires a real provisioned data fact") {

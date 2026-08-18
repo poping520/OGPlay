@@ -1,13 +1,13 @@
 # 当前状态
 
-更新：2026-08-18 · APK Startup 阶段 A 开始；APS-1 已交付
+更新：2026-08-18 · APK Startup 阶段 A 已完成；APS-1..2 已交付
 
 ## 当前阶段
 
-- **APK Startup**：APS-1 已从 Manifest 发布默认/自定义 Application、按声明序保存的
-  Activity/activity-alias、enabled 与逐 intent-filter 事实，并确定性解析
-  MAIN/LAUNCHER；no-launcher 与非法 alias 明确分类失败。frontend 尚未切换，下一项
-  APS-2 为 APK native inventory 与 process ABI resolver。
+- **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
+  APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图。纯 Java
+  APK 因现有 guest session 要求 native root 而明确失败，rootless shell 归 APS-3。
+  frontend 尚未切换。
 - **M9 DexVM**：DVM-1..41 已交付；解释执行仍由 `VmExecutionLock` 串行。子线程 native
   调用仍复用 root guest 栈/thread id，JNI/DexVM monitor 表尚未合一；`threads` 与
   `monitors` 保持 `partial`。
@@ -16,13 +16,13 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：782/782 CTest。
+- Windows/x64 `windows-msvc`：788/788 CTest。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 
 ## 下一步
 
-1. 实施 APS-2 native inventory 与 ABI resolver。
+1. 实施 APS-3 rootless Android guest process shell。
 2. 按命中批次闭合 DexVM 缺口，随后推进 GC-B 与解释器 v2 threaded 分批。
 3. 收口子线程 native guest 栈/thread id 与 JNI/DexVM monitor 统一。
 4. Linux M9 严格出口复验。

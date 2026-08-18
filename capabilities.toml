@@ -685,6 +685,11 @@ status = "complete"
 test = "tests/loader/apk_native_tests.cpp"
 note = "M5 WU-0219 稳定枚举 armeabi/armeabi-v7a native library，拥有解压字节并产出精确小写 SHA-256；不猜 main library"
 
+[loader.apk_native_inventory]
+status = "complete"
+test = "tests/loader/apk_native_tests.cpp"
+note = "APS-2 以 ABI/entry-soname/logical name 组织不可变 APK inventory；process ABI 只按 runtime 支持顺序与 APK ABI 交集选择，默认 v7a 优先，选定视图隔离其它 ABI，且不读取 Profile/so_sha256。纯 Java APK 在 rootless process shell 前明确失败"
+
 [profiles.legacy_arm_abi_identity]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"

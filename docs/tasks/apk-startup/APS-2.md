@@ -31,3 +31,19 @@
 - selected ABI 后无法解析其它 ABI 同名库；
 - resolver 不读取 `so_sha256`；
 - full CTest 无回归。
+
+## 结果（机器可判定，已达成）
+
+- `ApkNativeLibraryInventory` 以 ABI、APK entry、entry basename soname 与可选
+  `lib<logical>.so` logical name 组织 owned image；同 ABI lookup identity 重复会 typed
+  failure。ELF 内部 `DT_SONAME` 尚不在 inventory 阶段解析，APS-4 装载时必须交叉验证。
+- `ResolveApkProcessAbi(runtime_supported, inventory)` 严格采用 runtime 支持列表顺序；
+  项目默认列表固定为 `armeabi-v7a`、`armeabi`。resolver 只查询 ABI presence，不读取
+  `so_sha256`、Profile 或 root library。
+- `ApkSelectedNativeLibraries` 固定一个 process ABI，后续 soname/logical lookup 不再接受
+  ABI 参数，因此无法误取其它 ABI 的同名 library。
+- 纯 Java APK 调研结论：当前 `AndroidGuestCallSession` 构造检查要求非空
+  `root_module`/`modules`，`BionicModuleSet` 也拒绝空 module set，故 APS-2 对空 inventory
+  返回 `native_abi_required`；不得伪造默认 ABI，rootless/Java-capable mode 归 APS-3。
+- Windows MSVC：`cmake --preset windows-msvc`、`cmake --build --preset windows-msvc`
+  通过；APS-2 定向 8/8，完整 `ctest --preset windows-msvc` 788/788。

@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace ogplay::loader {
@@ -155,6 +156,22 @@ bool DecodeLibraryPath(const std::string_view entry, AndroidArmAbi& abi,
     return true;
 }
 
+std::optional<std::string> LogicalName(const std::string_view soname) {
+    constexpr std::string_view prefix = "lib";
+    constexpr std::string_view suffix = ".so";
+    if (!soname.starts_with(prefix) || !soname.ends_with(suffix) ||
+        soname.size() <= prefix.size() + suffix.size()) {
+        return std::nullopt;
+    }
+    return std::string(soname.substr(
+        prefix.size(), soname.size() - prefix.size() - suffix.size()));
+}
+
+constexpr std::array kRuntimeSupportedAbis{
+    AndroidArmAbi::armeabi_v7a,
+    AndroidArmAbi::armeabi,
+};
+
 }  // namespace
 
 std::string_view ToString(const AndroidArmAbi abi) noexcept {
@@ -163,6 +180,131 @@ std::string_view ToString(const AndroidArmAbi abi) noexcept {
     case AndroidArmAbi::armeabi_v7a: return "armeabi-v7a";
     }
     return "unknown";
+}
+
+ApkNativeInventoryError::ApkNativeInventoryError(
+    const ApkNativeInventoryErrorReason reason, std::string message)
+    : std::runtime_error(std::move(message)), reason_(reason) {}
+
+ApkNativeInventoryErrorReason ApkNativeInventoryError::Reason() const noexcept {
+    return reason_;
+}
+
+ApkNativeLibraryInventory::ApkNativeLibraryInventory(
+    std::vector<ApkNativeLibrary> libraries)
+    : libraries_(std::move(libraries)) {
+    for (auto& library : libraries_) {
+        if (library.basename.empty() || library.entry_name.empty() ||
+            library.image.empty()) {
+            throw ApkNativeInventoryError(
+                ApkNativeInventoryErrorReason::invalid_library_identity,
+                "APK native inventory contains an incomplete library identity");
+        }
+        if (library.soname.empty()) library.soname = library.basename;
+        const auto logical_name = LogicalName(library.soname);
+        if (library.soname != library.basename ||
+            (library.logical_name.has_value() &&
+             library.logical_name != logical_name)) {
+            throw ApkNativeInventoryError(
+                ApkNativeInventoryErrorReason::invalid_library_identity,
+                "APK native inventory library identity disagrees with its entry basename: " +
+                    library.entry_name);
+        }
+        library.logical_name = logical_name;
+    }
+    std::ranges::sort(libraries_, [](const ApkNativeLibrary& left,
+                                     const ApkNativeLibrary& right) {
+        if (left.abi != right.abi) {
+            return left.abi == AndroidArmAbi::armeabi_v7a;
+        }
+        if (left.soname != right.soname) return left.soname < right.soname;
+        return left.entry_name < right.entry_name;
+    });
+    for (std::size_t index = 1; index < libraries_.size(); ++index) {
+        const auto& previous = libraries_[index - 1U];
+        const auto& current = libraries_[index];
+        if (previous.abi != current.abi) continue;
+        if (previous.soname == current.soname) {
+            throw ApkNativeInventoryError(
+                ApkNativeInventoryErrorReason::duplicate_soname,
+                "APK native inventory contains duplicate soname for " +
+                    std::string(ToString(current.abi)) + ": " + current.soname);
+        }
+    }
+    for (std::size_t index = 0; index < libraries_.size(); ++index) {
+        if (!libraries_[index].logical_name.has_value()) continue;
+        for (std::size_t other = index + 1U; other < libraries_.size(); ++other) {
+            if (libraries_[index].abi == libraries_[other].abi &&
+                libraries_[other].logical_name == libraries_[index].logical_name) {
+                throw ApkNativeInventoryError(
+                    ApkNativeInventoryErrorReason::duplicate_logical_name,
+                    "APK native inventory contains duplicate logical name for " +
+                        std::string(ToString(libraries_[index].abi)) + ": " +
+                        *libraries_[index].logical_name);
+            }
+        }
+    }
+}
+
+bool ApkNativeLibraryInventory::Empty() const noexcept { return libraries_.empty(); }
+
+bool ApkNativeLibraryInventory::HasAbi(const AndroidArmAbi abi) const noexcept {
+    return std::ranges::any_of(libraries_, [abi](const ApkNativeLibrary& library) {
+        return library.abi == abi;
+    });
+}
+
+std::vector<AndroidArmAbi> ApkNativeLibraryInventory::Abis() const {
+    std::vector<AndroidArmAbi> result;
+    for (const auto abi : kRuntimeSupportedAbis) {
+        if (HasAbi(abi)) result.push_back(abi);
+    }
+    return result;
+}
+
+std::span<const ApkNativeLibrary> ApkNativeLibraryInventory::Libraries() const noexcept {
+    return libraries_;
+}
+
+const ApkNativeLibrary* ApkNativeLibraryInventory::FindSoname(
+    const AndroidArmAbi abi, const std::string_view soname) const noexcept {
+    const auto found = std::ranges::find_if(
+        libraries_, [abi, soname](const ApkNativeLibrary& library) {
+            return library.abi == abi && library.soname == soname;
+        });
+    return found == libraries_.end() ? nullptr : &*found;
+}
+
+const ApkNativeLibrary* ApkNativeLibraryInventory::FindLogicalName(
+    const AndroidArmAbi abi, const std::string_view logical_name) const noexcept {
+    const auto found = std::ranges::find_if(
+        libraries_, [abi, logical_name](const ApkNativeLibrary& library) {
+            return library.abi == abi && library.logical_name == logical_name;
+        });
+    return found == libraries_.end() ? nullptr : &*found;
+}
+
+ApkSelectedNativeLibraries::ApkSelectedNativeLibraries(
+    const ApkNativeLibraryInventory& inventory, const AndroidArmAbi abi)
+    : inventory_(&inventory), abi_(abi) {
+    if (!inventory.HasAbi(abi)) {
+        throw ApkNativeInventoryError(
+            ApkNativeInventoryErrorReason::abi_not_present,
+            "APK native inventory does not contain selected ABI " +
+                std::string(ToString(abi)));
+    }
+}
+
+AndroidArmAbi ApkSelectedNativeLibraries::Abi() const noexcept { return abi_; }
+
+const ApkNativeLibrary* ApkSelectedNativeLibraries::FindSoname(
+    const std::string_view soname) const noexcept {
+    return inventory_->FindSoname(abi_, soname);
+}
+
+const ApkNativeLibrary* ApkSelectedNativeLibraries::FindLogicalName(
+    const std::string_view logical_name) const noexcept {
+    return inventory_->FindLogicalName(abi_, logical_name);
 }
 
 std::vector<ApkNativeLibrary> ReadApkArmNativeLibraries(
@@ -176,11 +318,47 @@ std::vector<ApkNativeLibrary> ReadApkArmNativeLibraries(
         if (image.empty()) {
             throw std::runtime_error("APK native library is empty: " + entry.name);
         }
+        const auto soname = basename;
         result.push_back({entry.name, std::move(basename), abi, Sha256(image),
-                          std::move(image)});
+                          std::move(image), soname, LogicalName(soname)});
     }
     std::ranges::sort(result, {}, &ApkNativeLibrary::entry_name);
     return result;
+}
+
+ApkNativeLibraryInventory ReadApkNativeLibraryInventory(
+    const std::span<const std::byte> apk_bytes, const ApkArchive& archive) {
+    return ApkNativeLibraryInventory{
+        ReadApkArmNativeLibraries(apk_bytes, archive)};
+}
+
+std::span<const AndroidArmAbi> RuntimeSupportedAndroidArmAbis() noexcept {
+    return kRuntimeSupportedAbis;
+}
+
+AndroidArmAbi ResolveApkProcessAbi(
+    const std::span<const AndroidArmAbi> runtime_supported,
+    const ApkNativeLibraryInventory& inventory) {
+    if (inventory.Empty()) {
+        throw ApkNativeInventoryError(
+            ApkNativeInventoryErrorReason::native_abi_required,
+            "APK has no native ABI and the current guest process requires one");
+    }
+    for (const auto abi : runtime_supported) {
+        if (inventory.HasAbi(abi)) return abi;
+    }
+    throw ApkNativeInventoryError(
+        ApkNativeInventoryErrorReason::no_compatible_abi,
+        "APK native ABIs do not intersect runtime-supported ABIs");
+}
+
+AndroidArmAbi ResolveApkProcessAbi(const ApkNativeLibraryInventory& inventory) {
+    return ResolveApkProcessAbi(RuntimeSupportedAndroidArmAbis(), inventory);
+}
+
+ApkSelectedNativeLibraries SelectApkNativeLibraries(
+    const ApkNativeLibraryInventory& inventory, const AndroidArmAbi abi) {
+    return ApkSelectedNativeLibraries{inventory, abi};
 }
 
 }  // namespace ogplay::loader

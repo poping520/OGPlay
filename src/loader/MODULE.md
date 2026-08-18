@@ -25,8 +25,14 @@
   产出 resid ↔ (type, name, typed simple value/文件路径) 双向事实；Res_value type/data
   原样保留给上层有界 string/color/dimension/reference resolver；默认配置优先，复杂值与多 locale
   明确不支持，越界/截断即失败。
-- `ReadApkArmNativeLibraries`：稳定枚举 `lib/armeabi[-v7a]/*.so`，通过统一条目入口拥有
-  解压后原始字节并计算小写 SHA-256；只返回目录事实，不按 ABI、大小或导出符号选入口。
+- `ReadApkArmNativeLibraries` / `ReadApkNativeLibraryInventory`：稳定枚举
+  `lib/armeabi[-v7a]/*.so`，拥有解压字节与小写 SHA-256，并按 ABI、entry basename
+  soname、`lib<logical>.so` logical name 建立不可变 inventory；此阶段不解析 ELF
+  `DT_SONAME`，APS-4 动态装载时必须交叉验证。
+- `ResolveApkProcessAbi`：只取 runtime-supported ABI 有序列表与 inventory ABI 的首个
+  交集；默认优先 `armeabi-v7a` 再 `armeabi`，不读取 Profile/hash。空 inventory 因当前
+  guest process 仍要求 native root 而 typed failure；`ApkSelectedNativeLibraries` 将后续
+  soname/logical lookup 永久限制在已选 process ABI。
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度，不执行任何字节码。
@@ -83,7 +89,8 @@
 - binary Manifest 必须是单一完整 XML chunk，根元素、元素嵌套、字符串索引、UTF 编码和
   typed attribute 全部受检；package 与正 versionCode 缺失或非法时不得发布身份事实。
 - native library catalog 只接受 ABI 与 basename 之间恰有一级的 `.so` 路径，空字节失败；
-  catalog 以完整 entry path 稳定排序且不隐含 main library 选择。
+  catalog 以完整 entry path 稳定排序且不隐含 main library 选择；inventory 同一 ABI 的
+  soname/logical name 必须唯一，ABI resolver 禁止读取 `so_sha256` 或猜 root library。
 - DEX header 固定为 0x70 字节且只接受 little-endian 035..040；固定表必须 4 字节对齐，
   header 与唯一、有序、非重叠的 map 声明必须一致。
 - DEX Modified UTF-8 和 ULEB128 必须最小且完整编码；type/proto 的每个索引、descriptor、

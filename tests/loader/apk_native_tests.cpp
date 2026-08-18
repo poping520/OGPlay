@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
@@ -92,6 +93,13 @@ std::vector<std::byte> MakeApk(const std::vector<Input>& inputs) {
     return bytes;
 }
 
+ogplay::loader::ApkNativeLibraryInventory Inventory(
+    const std::vector<Input>& inputs) {
+    const auto apk = MakeApk(inputs);
+    const auto archive = ogplay::loader::ParseApkArchive(apk);
+    return ogplay::loader::ReadApkNativeLibraryInventory(apk, archive);
+}
+
 }  // namespace
 
 TEST_CASE("APK native catalog owns exact ARM library bytes and SHA-256") {
@@ -133,4 +141,121 @@ TEST_CASE("APK native catalog rejects empty libraries and never selects one") {
     CHECK(ogplay::loader::ToString(ogplay::loader::AndroidArmAbi::armeabi) == "armeabi");
     CHECK(ogplay::loader::ToString(ogplay::loader::AndroidArmAbi::armeabi_v7a) ==
           "armeabi-v7a");
+}
+
+TEST_CASE("APK native inventory records soname logical name and ABI facts") {
+    const auto inventory = Inventory({
+        {"lib/armeabi/libold.so", Bytes("old")},
+        {"lib/armeabi-v7a/libgame.so", Bytes("game")},
+        {"lib/armeabi-v7a/plugin.so", Bytes("plugin")},
+    });
+    CHECK_FALSE(inventory.Empty());
+    CHECK(inventory.HasAbi(ogplay::loader::AndroidArmAbi::armeabi));
+    CHECK(inventory.HasAbi(ogplay::loader::AndroidArmAbi::armeabi_v7a));
+    CHECK(inventory.Abis() ==
+          std::vector{ogplay::loader::AndroidArmAbi::armeabi_v7a,
+                      ogplay::loader::AndroidArmAbi::armeabi});
+    const auto* game = inventory.FindSoname(
+        ogplay::loader::AndroidArmAbi::armeabi_v7a, "libgame.so");
+    REQUIRE(game != nullptr);
+    CHECK(game->logical_name == "game");
+    CHECK(inventory.FindLogicalName(
+              ogplay::loader::AndroidArmAbi::armeabi_v7a, "plugin") == nullptr);
+}
+
+TEST_CASE("APK native inventory rejects forged and duplicate lookup identities") {
+    using ogplay::loader::AndroidArmAbi;
+    using ogplay::loader::ApkNativeInventoryError;
+    using ogplay::loader::ApkNativeLibrary;
+    SUBCASE("logical name disagrees with the entry basename") {
+        CHECK_THROWS_AS(
+            static_cast<void>(ogplay::loader::ApkNativeLibraryInventory({
+                ApkNativeLibrary{"lib/armeabi/libgame.so", "libgame.so",
+                                 AndroidArmAbi::armeabi, "ignored", Bytes("x"),
+                                 "libgame.so", "other"},
+            })),
+            ApkNativeInventoryError);
+    }
+    SUBCASE("same ABI contains duplicate soname") {
+        CHECK_THROWS_AS(
+            static_cast<void>(ogplay::loader::ApkNativeLibraryInventory({
+                ApkNativeLibrary{"first", "libgame.so", AndroidArmAbi::armeabi,
+                                 "ignored", Bytes("x")},
+                ApkNativeLibrary{"second", "libgame.so", AndroidArmAbi::armeabi,
+                                 "ignored", Bytes("y")},
+            })),
+            ApkNativeInventoryError);
+    }
+}
+
+TEST_CASE("APK process ABI resolver covers single and dual ABI inventories") {
+    const auto armeabi = Inventory({{"lib/armeabi/libgame.so", Bytes("a")}});
+    CHECK(ogplay::loader::ResolveApkProcessAbi(armeabi) ==
+          ogplay::loader::AndroidArmAbi::armeabi);
+
+    const auto v7a = Inventory({{"lib/armeabi-v7a/libgame.so", Bytes("v7")}});
+    CHECK(ogplay::loader::ResolveApkProcessAbi(v7a) ==
+          ogplay::loader::AndroidArmAbi::armeabi_v7a);
+
+    const auto dual = Inventory({
+        {"lib/armeabi/libgame.so", Bytes("a")},
+        {"lib/armeabi-v7a/libgame.so", Bytes("v7")},
+    });
+    CHECK(ogplay::loader::ResolveApkProcessAbi(dual) ==
+          ogplay::loader::AndroidArmAbi::armeabi_v7a);
+    constexpr std::array reversed{
+        ogplay::loader::AndroidArmAbi::armeabi,
+        ogplay::loader::AndroidArmAbi::armeabi_v7a,
+    };
+    CHECK(ogplay::loader::ResolveApkProcessAbi(reversed, dual) ==
+          ogplay::loader::AndroidArmAbi::armeabi);
+}
+
+TEST_CASE("selected native library view cannot cross the process ABI") {
+    const auto inventory = Inventory({
+        {"lib/armeabi/libgame.so", Bytes("old")},
+        {"lib/armeabi-v7a/libgame.so", Bytes("new")},
+    });
+    const auto abi = ogplay::loader::ResolveApkProcessAbi(inventory);
+    const auto selected = ogplay::loader::SelectApkNativeLibraries(inventory, abi);
+    CHECK(selected.Abi() == ogplay::loader::AndroidArmAbi::armeabi_v7a);
+    const auto* game = selected.FindLogicalName("game");
+    REQUIRE(game != nullptr);
+    CHECK(game->entry_name == "lib/armeabi-v7a/libgame.so");
+    CHECK(game->image == Bytes("new"));
+    CHECK(selected.FindSoname("libmissing.so") == nullptr);
+}
+
+TEST_CASE("APK process ABI resolver reports empty and disjoint inventories") {
+    const ogplay::loader::ApkNativeLibraryInventory empty{
+        std::vector<ogplay::loader::ApkNativeLibrary>{}};
+    try {
+        static_cast<void>(ogplay::loader::ResolveApkProcessAbi(empty));
+        FAIL("expected pure Java ABI limitation");
+    } catch (const ogplay::loader::ApkNativeInventoryError& error) {
+        CHECK(error.Reason() ==
+              ogplay::loader::ApkNativeInventoryErrorReason::native_abi_required);
+    }
+
+    const auto v7a = Inventory({{"lib/armeabi-v7a/libgame.so", Bytes("v7")}});
+    constexpr std::array only_armeabi{ogplay::loader::AndroidArmAbi::armeabi};
+    try {
+        static_cast<void>(ogplay::loader::ResolveApkProcessAbi(only_armeabi, v7a));
+        FAIL("expected incompatible ABI error");
+    } catch (const ogplay::loader::ApkNativeInventoryError& error) {
+        CHECK(error.Reason() ==
+              ogplay::loader::ApkNativeInventoryErrorReason::no_compatible_abi);
+    }
+}
+
+TEST_CASE("APK process ABI resolver does not inspect profile hash facts") {
+    const auto apk = MakeApk({{"lib/armeabi/libgame.so", Bytes("a")}});
+    const auto archive = ogplay::loader::ParseApkArchive(apk);
+    auto libraries = ogplay::loader::ReadApkArmNativeLibraries(apk, archive);
+    REQUIRE(libraries.size() == 1);
+    libraries[0].sha256 = "not-a-profile-fingerprint";
+    const ogplay::loader::ApkNativeLibraryInventory inventory{
+        std::move(libraries)};
+    CHECK(ogplay::loader::ResolveApkProcessAbi(inventory) ==
+          ogplay::loader::AndroidArmAbi::armeabi);
 }

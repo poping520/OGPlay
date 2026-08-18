@@ -472,6 +472,7 @@ endif()
 ogplay_set_project_warnings(ogplay_runtime)
 
 add_library(ogplay_session
+    src/session/android_app_process.cpp
     src/session/dex_activity_lifecycle.cpp
     src/session/ui_compositor.cpp
     src/session/lifecycle.cpp

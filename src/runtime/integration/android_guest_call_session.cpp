@@ -1274,6 +1274,17 @@ std::unique_ptr<AndroidGuestCallSession> AndroidGuestCallSession::Start(
             std::string(error.what()));
     }
 }
+
+std::unique_ptr<AndroidGuestCallSession>
+AndroidGuestCallSession::AdoptProcess(
+    std::unique_ptr<AndroidGuestProcess> process) {
+    if (!process) {
+        throw AndroidGuestCallSessionError(
+            "cannot adopt an empty Android guest process");
+    }
+    return std::unique_ptr<AndroidGuestCallSession>(
+        new AndroidGuestCallSession(std::move(process)));
+}
 AndroidGuestCallSession::AndroidGuestCallSession(
     std::unique_ptr<AndroidGuestProcess> process) noexcept
     : process_(std::move(process)) {}

@@ -7,6 +7,11 @@
 
 ## 公共 API
 
+- `AndroidAppProcess::Create/StartApplication/StartLauncherActivity/Stop`：拥有 Manifest、
+  native inventory/ABI、rootless guest process、动态 loader、DexVM、Application root 与
+  Activity lifecycle；Create 只准备 API 19 system ELF，不预载 APK `.so`。Manifest launcher
+  是默认入口，显式 compatibility entry 才覆盖；无 native inventory 保持 Java-capable
+  process mode。
 - `LoadTitleProfileText` / `LoadTitleProfile`：把 v2 纯数据 TOML 严格转换为
   identity/runtime/data/audio/quirks/input 强类型模型；唯一运行模板是
   `dex_activity`。
@@ -75,6 +80,8 @@
 - enabled quirk 必须有注册定义和可定位测试；源码/CI 在打包前验证测试文件与用例存在，
   packaged runtime 至少严格保留其引用形状；未注入注册表时不得进入匹配目录。
 - 生命周期清理顺序固定，状态推进由固定帧步进驱动，不依赖 sleep。
+- app process 状态只允许 DexVmReady→ApplicationStarted→ActivityResumed→Stopped；
+  frontend 不得跳过 Application 或直接选择/初始化 APK ELF root。
 - Application 初始化失败必须先清除临时 root，且不得打开 surface、初始化或构造 Activity。
 
 ## 禁止

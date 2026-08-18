@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-18 · APK Startup 阶段 A 已完成；APS-1..6 已交付
+更新：2026-08-18 · APK Startup APS-1..7 已交付；generic frontend 已切换
 
 ## 当前阶段
 
@@ -11,7 +11,9 @@
   APS-5 已把 DexVM `System.load/System.loadLibrary` 接到同一 loader，并以真实
   A JNI_OnLoad → Java callback → load B 夹具闭合同线程重入；APS-6 已在 Activity/surface
   前建立 default/custom Application process root，固定 class init、构造、attach、onCreate
-  顺序与异常短路。完整 rootless frontend 切换仍由 APS-7 推进。
+  顺序与异常短路；APS-7 新增 `AndroidAppProcess` 并把 `run-apk` 切到 Manifest 驱动的
+  rootless generic path，app ELF 只由 Java `System.load*` 动态追加，无 Profile/纯 Java
+  不再被启动 gate 阻断。
 - **M9 DexVM**：DVM-1..41 已交付；解释执行仍由 `VmExecutionLock` 串行。子线程 native
   调用仍复用 root guest 栈/thread id，JNI/DexVM monitor 表尚未合一；`threads` 与
   `monitors` 保持 `partial`。
@@ -20,13 +22,13 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：795/795 CTest。
+- Windows/x64 `windows-msvc`：800/800 CTest。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 
 ## 下一步
 
-1. 实施 APS-7 `AndroidAppProcess` frontend orchestrator。
+1. 实施 APS-8 optional Profile v3 与 legacy applicability adapter。
 2. 按命中批次闭合 DexVM 缺口，随后推进 GC-B 与解释器 v2 threaded 分批。
 3. 收口子线程 native guest 栈/thread id 与 JNI/DexVM monitor 统一。
 4. Linux M9 严格出口复验。

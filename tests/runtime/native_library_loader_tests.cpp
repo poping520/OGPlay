@@ -18,6 +18,7 @@
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
+#include "ogplay/session/android_app_process.h"
 
 namespace {
 
@@ -362,6 +363,74 @@ struct ApplicationProcess final {
             std::istreambuf_iterator<char>()};
 }
 
+[[nodiscard]] ogplay::loader::AndroidManifestFacts AppManifest(
+    const std::string& activity, const bool has_launcher = true) {
+    ogplay::loader::AndroidManifestFacts manifest;
+    manifest.package = "fixture";
+    manifest.version_code = 1;
+    manifest.application_class = "android.app.Application";
+    if (has_launcher) {
+        manifest.activity_components.push_back({
+            ogplay::loader::AndroidManifestComponentKind::activity,
+            activity, std::nullopt, true,
+            {{{"android.intent.action.MAIN"},
+              {"android.intent.category.LAUNCHER"}}}});
+    }
+    return manifest;
+}
+
+struct OrchestratedApp final {
+    std::vector<std::byte> libc{LibcElf()};
+    std::vector<std::byte> native_a{
+        AppElf({"liba.so", "libc.so", ogplay::runtime::kJniVersion1_6})};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context{
+        std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
+    ogplay::core::CapabilityLedger ledger;
+    std::unique_ptr<ogplay::session::AndroidAppProcess> app;
+
+    explicit OrchestratedApp(const std::string& activity,
+                             const bool has_launcher = true,
+                             const bool with_native = true) {
+        const ogplay::runtime::BionicModuleSource system{
+            "libc.so", libc};
+        std::vector<ogplay::loader::ApkNativeLibrary> libraries;
+        if (with_native) libraries.push_back(Library("liba.so", native_a));
+        ogplay::session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest(activity, has_launcher);
+        request.native_libraries = std::move(libraries);
+        request.system_libraries = std::span{&system, 1};
+        request.dex_bytes = ReadDexFixture("application.dex");
+        request.context = context;
+        request.surface_width = 64;
+        request.surface_height = 36;
+        request.maximum_ticks_per_call = UINT64_C(200000);
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        app = ogplay::session::AndroidAppProcess::Create(
+            std::move(request));
+    }
+
+    [[nodiscard]] std::int32_t CallStaticInt(
+        const std::string& owner, const std::string& name) {
+        auto& bridge = app->DexVm();
+        const auto java_class = bridge.Linker().FindClass(owner);
+        if (!java_class.has_value()) {
+            throw std::runtime_error("fixture class is not linked");
+        }
+        const auto method = bridge.Linker().FindDirectMethod(
+            *java_class, name, "()I");
+        if (!method.has_value()) {
+            throw std::runtime_error("fixture method is not linked");
+        }
+        const auto outcome = bridge.Vm().Call(*method, {});
+        if (outcome.exception.IsValid()) {
+            throw std::runtime_error(outcome.exception_message);
+        }
+        return outcome.value.AsInt();
+    }
+};
+
 }  // namespace
 
 TEST_CASE("native library loader appends dependency constructors and one explicit JNI_OnLoad") {
@@ -641,4 +710,88 @@ TEST_CASE("Application failure prevents launcher construction and surface effect
     CHECK_FALSE(fixture.context->activity.IsValid());
     CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;",
                                 "getInstances") == 0);
+}
+
+TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app ELF") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.LauncherActivity");
+    CHECK(fixture.app->State() ==
+          session::AndroidAppProcessState::dex_vm_ready);
+    CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.app->StartLauncherActivity()),
+        session::AndroidAppProcessError);
+
+    fixture.app->StartApplication();
+    CHECK(fixture.app->State() ==
+          session::AndroidAppProcessState::application_started);
+    CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+    const auto started = fixture.app->StartLauncherActivity();
+    CHECK(started.state == session::LifecycleRunState::running);
+    CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;", "getStage") == 3);
+    CHECK(fixture.app->Context()->application.IsValid());
+    CHECK(fixture.app->Context()->activity.IsValid());
+
+    const auto stopped = fixture.app->Stop();
+    CHECK(stopped.state == session::LifecycleRunState::stopped);
+    CHECK_FALSE(fixture.app->NativeProcess().Running());
+    CHECK(fixture.app->State() ==
+          session::AndroidAppProcessState::stopped);
+}
+
+TEST_CASE("AndroidAppProcess supports a pure Java APK without a Profile or ABI") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.LauncherActivity", true, false);
+    CHECK_FALSE(fixture.app->SelectedAbi().has_value());
+    CHECK(fixture.app->NativeLibraries() == nullptr);
+    fixture.app->StartApplication();
+    const auto started = fixture.app->StartLauncherActivity();
+    CHECK(started.state == session::LifecycleRunState::running);
+    CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+    static_cast<void>(fixture.app->Stop());
+}
+
+TEST_CASE("AndroidAppProcess keeps Activity native loads Java-driven") {
+    using namespace ogplay;
+
+    SUBCASE("Activity clinit loads after Application") {
+        OrchestratedApp fixture("fixture.ClinitLoadingActivity");
+        fixture.app->StartApplication();
+        CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+        static_cast<void>(fixture.app->StartLauncherActivity());
+        REQUIRE(fixture.app->NativeLibraries() != nullptr);
+        const auto records = fixture.app->NativeLibraries()->Records();
+        REQUIRE(records.size() == 1U);
+        CHECK(records[0].soname == "liba.so");
+        CHECK(records[0].jni_on_load_calls == 1U);
+        CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 1U);
+    }
+
+    SUBCASE("Activity onCreate loads after construction") {
+        OrchestratedApp fixture("fixture.OnCreateLoadingActivity");
+        fixture.app->StartApplication();
+        CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+        static_cast<void>(fixture.app->StartLauncherActivity());
+        REQUIRE(fixture.app->NativeLibraries() != nullptr);
+        CHECK(fixture.app->NativeLibraries()->Records().size() == 1U);
+        CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 1U);
+    }
+}
+
+TEST_CASE("AndroidAppProcess rejects a manifest without a launcher") {
+    CHECK_THROWS_AS(
+        static_cast<void>(OrchestratedApp("fixture.LauncherActivity", false)),
+        ogplay::session::AndroidAppProcessError);
+}
+
+TEST_CASE("run-apk delegates application startup and never selects an ELF root") {
+    const auto path = std::string(OGPLAY_SOURCE_DIR) +
+                      "/src/frontend/cli/run_apk.cpp";
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input.good());
+    const std::string source{std::istreambuf_iterator<char>(input), {}};
+    CHECK(source.find("AndroidAppProcess::Create") != std::string::npos);
+    CHECK(source.find("AndroidGuestCallSession::Start") == std::string::npos);
+    CHECK(source.find("PrepareApkProfileLaunch") == std::string::npos);
+    CHECK(source.find("InitializeJniLibrary") == std::string::npos);
 }

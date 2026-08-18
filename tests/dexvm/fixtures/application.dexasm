@@ -93,6 +93,7 @@
 .super Landroid/app/Activity;
 
 .field static public instances:I
+.field static public stage:I
 
 .method public constructor <init>()V
 .registers 2
@@ -107,4 +108,80 @@
 .registers 1
     sget v0, Lfixture/LauncherActivity;->instances:I
     return v0
+.end method
+
+.method public onCreate(Landroid/os/Bundle;)V
+.registers 4
+    invoke-super {v2, v3}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+    new-instance v0, Landroid/view/View;
+    invoke-direct {v0, v2}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    const/4 v1, 1
+    sput v1, Lfixture/LauncherActivity;->stage:I
+    return-void
+.end method
+
+.method public onStart()V
+.registers 2
+    invoke-super {v1}, Landroid/app/Activity;->onStart()V
+    const/4 v0, 2
+    sput v0, Lfixture/LauncherActivity;->stage:I
+    return-void
+.end method
+
+.method public onResume()V
+.registers 2
+    invoke-super {v1}, Landroid/app/Activity;->onResume()V
+    const/4 v0, 3
+    sput v0, Lfixture/LauncherActivity;->stage:I
+    return-void
+.end method
+
+.method static public getStage()I
+.registers 1
+    sget v0, Lfixture/LauncherActivity;->stage:I
+    return v0
+.end method
+
+.class public Lfixture/ClinitLoadingActivity;
+.super Landroid/app/Activity;
+
+.method static constructor <clinit>()V
+.registers 1
+    const-string v0, "a"
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method
+
+.method public onCreate(Landroid/os/Bundle;)V
+.registers 3
+    new-instance v0, Landroid/view/View;
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v1, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+
+.class public Lfixture/OnCreateLoadingActivity;
+.super Landroid/app/Activity;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method
+
+.method public onCreate(Landroid/os/Bundle;)V
+.registers 4
+    const-string v0, "a"
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+    new-instance v0, Landroid/view/View;
+    invoke-direct {v0, v2}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
 .end method

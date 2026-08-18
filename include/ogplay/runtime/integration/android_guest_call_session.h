@@ -334,6 +334,10 @@ class AndroidGuestCallSession final : public core::GpuStateProvider {
 public:
     [[nodiscard]] static std::unique_ptr<AndroidGuestCallSession> Start(
         const AndroidGuestCallSessionRequest& request);
+    // Compatibility facade for Java/DexVM services that still consume the
+    // call-session interface while application startup owns a rootless shell.
+    [[nodiscard]] static std::unique_ptr<AndroidGuestCallSession> AdoptProcess(
+        std::unique_ptr<AndroidGuestProcess> process);
     ~AndroidGuestCallSession();
     AndroidGuestCallSession(const AndroidGuestCallSession&) = delete;
     AndroidGuestCallSession& operator=(const AndroidGuestCallSession&) = delete;

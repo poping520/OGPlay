@@ -38,8 +38,9 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   guest JNI ABI/JavaVM 与 root thread attach。请求面不得接受 application module；
   create 返回时 `ApplicationModuleCount()` 必须为 0，后续只随成功发布的动态 guest
   application module 单调增加；Stop 必须 detach root JNI thread 且幂等。
-  `AndroidGuestCallSession` 仅是旧 root-module 启动面的 legacy adapter，委托同一个
-  process owner。
+  `AndroidGuestCallSession` 的旧 `Start` 是 root-module legacy adapter；
+  `AdoptProcess` 仅为 DexVM/JNI 复用既有窄接口包装 rootless owner，不追加或初始化
+  application ELF。
 - `NativeLibraryLoader` 是 process service：logical name 与 synthetic guest path 共享按
   canonical path 唯一的 Loading/Loaded/Failed registry，保留 ClassLoader token；同 loader
   重复 load 幂等，同线程递归 loading 成功返回现有 handle，跨 loader 明确失败，Failed

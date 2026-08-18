@@ -32,21 +32,18 @@
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
-#include "ogplay/runtime/integration/android_link_preflight.h"
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/loader/arsc.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/runtime/dexvm/gap_survey.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
-#include "ogplay/runtime/integration/dexvm_bridge.h"
-#include "ogplay/runtime/integration/native_library_loader.h"
-#include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/session/profile_entry_scope.h"
 #include "ogplay/session/profile_vfs.h"
 #include "ogplay/video/ffmpeg_video_player.h"
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
+#include "ogplay/session/android_app_process.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -175,7 +172,7 @@ gles::AngleBackend NativeBackend() {
                profile.quirks->enabled.end();
 }
 
-void PumpAudio(runtime::AndroidGuestCallSession& guest,
+void PumpAudio(runtime::AndroidGuestProcess& guest,
                hal::AudioOutput& output,
                std::vector<std::int16_t>& samples,
                runtime::DexVmAndroidContext* dex_context) {
@@ -382,13 +379,16 @@ int RunApkCommand(const int argc, const char* const argv[],
     const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
     const auto match = session::MatchApkTitleProfile(manifest, libraries, profiles);
-    if (!match.has_value() || match->profile == nullptr) {
-        throw std::runtime_error("APK has no exact Title Profile: " +
-                                 manifest.package);
-    }
-    const auto& profile = *match->profile;
-    const auto selected_native_libraries = loader::SelectApkNativeLibraries(
-        native_inventory, match->library.abi);
+    session::TitleProfile generic_profile;
+    generic_profile.schema = 2;
+    generic_profile.identity.package = manifest.package;
+    generic_profile.runtime.api_level = 19;
+    generic_profile.runtime.surface = {800, 480};
+    const auto* selected_profile =
+        match.has_value() ? match->profile : nullptr;
+    const auto& profile = selected_profile != nullptr
+                              ? *selected_profile
+                              : generic_profile;
     // Declared before the filesystem so the overlay outlives every node
     // that flushes into it.
     const auto sandbox =
@@ -408,49 +408,42 @@ int RunApkCommand(const int argc, const char* const argv[],
     for (const auto& source : owned_system) {
         system_sources.push_back({source.name, source.image});
     }
-    auto launch = session::PrepareApkProfileLaunch(
-        manifest, libraries, profiles, system_sources);
-    if (!launch.has_value()) {
-        throw std::logic_error("exact APK Profile disappeared during launch planning");
-    }
-    const auto module_inputs = launch->modules.Inputs();
-    const auto root_name = std::string(launch->modules.RootName());
+    const auto process_abi = native_inventory.Empty()
+                                 ? std::optional<loader::AndroidArmAbi>{}
+                                 : std::optional{loader::ResolveApkProcessAbi(
+                                       native_inventory)};
     logger.Write(
-        core::LogLevel::info, "frontend.run_apk", "exact Profile selected", {},
+        core::LogLevel::info, "frontend.run_apk", "APK startup facts selected", {},
         {{"package", manifest.package},
-         {"root_module", root_name},
+         {"profile", selected_profile != nullptr
+                         ? profile.identity.package
+                         : "none"},
          {"api_level", static_cast<std::uint64_t>(profile.runtime.api_level)},
          {"lifecycle", std::string(session::ToString(profile.runtime.lifecycle))},
          {"surface_width", static_cast<std::uint64_t>(profile.runtime.surface.width)},
          {"surface_height", static_cast<std::uint64_t>(profile.runtime.surface.height)},
          {"maximum_ticks_per_call", profile.runtime.maximum_ticks_per_call},
-         {"guest_modules", static_cast<std::uint64_t>(module_inputs.size())}},
+         {"native_libraries", static_cast<std::uint64_t>(
+                                  native_inventory.Libraries().size())}},
         kUnrestrictedLog);
     if (preflight) {
-        const auto linked = runtime::PreflightAndroidGuestLink(
-            {profile.runtime.api_level, root_name, module_inputs, NativeBackend(),
-             profile.runtime.surface.width, profile.runtime.surface.height,
-             supersample_factor});
         Write("OGPlay: preflight ready: package=" + manifest.package +
-              " root=" + root_name + " abi=" +
-              std::string(loader::ToString(launch->match.library.abi)) +
+              " rootless=true abi=" +
+              (process_abi.has_value()
+                   ? std::string(loader::ToString(*process_abi))
+                   : std::string("none")) +
               " api=" + std::to_string(profile.runtime.api_level) +
               " lifecycle=" + std::string(session::ToString(profile.runtime.lifecycle)) +
-              " modules=" + std::to_string(module_inputs.size()) + " surface=" +
+              " native=" + std::to_string(native_inventory.Libraries().size()) +
+              " surface=" +
               std::to_string(profile.runtime.surface.width) + "x" +
-              std::to_string(profile.runtime.surface.height) + " linked=" +
-              std::to_string(linked.guest_modules) + "+" +
-              std::to_string(linked.boundary_modules) + " relocations=" +
-              std::to_string(linked.relocations) + " sandbox=" +
+              std::to_string(profile.runtime.surface.height) + " profile=" +
+              (selected_profile != nullptr ? profile.identity.package
+                                           : "none") +
+              " sandbox=" +
               sandbox.Describe() + "\n");
         return 0;
     }
-    if (profile.runtime.lifecycle != session::ProfileLifecycle::dex_activity) {
-        throw std::runtime_error(
-            "run-apk requires a Profile v2 dex_activity lifecycle: " +
-            std::string(session::ToString(profile.runtime.lifecycle)));
-    }
-
     std::unique_ptr<agent::FrameSnapshotStore> mcp_frames;
     std::unique_ptr<agent::McpInputQueue> mcp_inputs;
     std::unique_ptr<agent::McpSessionControl> mcp_session;
@@ -587,21 +580,6 @@ int RunApkCommand(const int argc, const char* const argv[],
             call_progress.Observe(consumed_ticks);
         };
         call_progress.Begin(0U, 0U);
-        auto guest = runtime::AndroidGuestCallSession::Start(
-            {profile.runtime.api_level, root_name, module_inputs,
-             NativeBackend(), profile.runtime.surface.width,
-             profile.runtime.surface.height,
-             profile.runtime.maximum_ticks_per_call,
-             supersample_factor, &filesystem, runtime_progress, std::nullopt,
-             {.allow_gles1_material_single_face = ProfileEnablesQuirk(
-                  profile, "gles1_material_front_face")},
-             std::move(sound_loader),
-             guest_slice_observer,
-              {.installation_id = "ogplay-" + manifest.package,
-               .version_name = manifest.version_name.value_or("unknown")}});
-        runtime::NativeLibraryLoader native_libraries(
-            guest->Process(), selected_native_libraries);
-        dex_context->native_libraries = &native_libraries;
 
         // Keep the frame/MCP loop independent of lifecycle storage.
         struct LifecycleDriver final {
@@ -615,73 +593,85 @@ int RunApkCommand(const int argc, const char* const argv[],
                 queue_input;
         };
         LifecycleDriver driver;
-        std::unique_ptr<runtime::DexVmGuestBridge> dex_bridge;
-        std::unique_ptr<session::DexActivityLifecycle> dex_lifecycle;
         core::CapabilityLedger dexvm_ledger;
+        const auto dex_entry =
+            loader::ReadApkEntry(apk_bytes, archive, "classes.dex");
+        std::vector<std::uint8_t> dex_bytes(dex_entry.size());
+        std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
+        runtime::DexVmBridgeConfig bridge_config;
+        if (profile.runtime.dexvm.has_value()) {
+            bridge_config.heap.heap_budget_bytes =
+                profile.runtime.dexvm->heap_budget_bytes;
+            bridge_config.interpreter.max_frames =
+                profile.runtime.dexvm->max_frames;
+            bridge_config.interpreter.tick_budget =
+                profile.runtime.dexvm->ticks_per_call;
+        }
+        session::AndroidAppProcessRequest app_request;
+        app_request.manifest = manifest;
+        app_request.native_libraries = libraries;
+        app_request.system_libraries = system_sources;
+        app_request.dex_bytes = std::move(dex_bytes);
+        app_request.context = dex_context;
+        if (profile.runtime.entry.has_value()) {
+            app_request.launcher_override =
+                profile.runtime.entry->launch_activity;
+        }
+        app_request.api_level = profile.runtime.api_level;
+        app_request.surface_width = profile.runtime.surface.width;
+        app_request.surface_height = profile.runtime.surface.height;
+        app_request.maximum_ticks_per_call =
+            profile.runtime.maximum_ticks_per_call;
+        app_request.supersample_factor = supersample_factor;
+        app_request.backend = NativeBackend();
+        app_request.filesystem = &filesystem;
+        app_request.progress = runtime_progress;
+        app_request.boundary_options = {
+            .allow_gles1_material_single_face = ProfileEnablesQuirk(
+                profile, "gles1_material_front_face")};
+        app_request.sound_resource_loader = std::move(sound_loader);
+        app_request.guest_call_slice_observer = guest_slice_observer;
+        app_request.platform = {
+            .installation_id = "ogplay-" + manifest.package,
+            .version_name = manifest.version_name.value_or("unknown")};
+        app_request.dexvm = bridge_config;
+        app_request.ledger = &dexvm_ledger;
+        app_request.logger = &logger;
+        app_request.configure_dex_vm =
+            [&, dex_context](runtime::dexvm::Interpreter& vm) {
+                vm.Monitors().SetTimeSource([dex_context] {
+                    return dex_context->uptime_millis.load();
+                });
+                if (survey_gaps_output.has_value()) {
+                    vm.Linker().EnableGapSurvey();
+                    Write("OGPlay: GAP SURVEY RUN — unresolved platform classes "
+                          "and methods answer neutrally and are recorded. This is "
+                          "a diagnostic work queue, not a compatibility result.\n");
+                    logger.Write(core::LogLevel::warn, "frontend.run_apk",
+                                 "gap survey enabled; run is diagnostic only",
+                                 {}, {}, kUnrestrictedLog);
+                }
+                session::ApplyProfileStaticPresets(profile, vm, &logger);
+            };
+        app_request.host.flush_persistent_state = [&filesystem] {
+            session::FlushProfileVfsAtLifecycleBoundary(filesystem);
+        };
+        app_request.host.before_process_stop = [&] {
+            call_progress.Begin(active_frame, 0U);
+        };
+        auto app_process = session::AndroidAppProcess::Create(
+            std::move(app_request));
+        auto* guest = &app_process->NativeProcess();
+        auto* dex_lifecycle = &app_process->ActivityLifecycle();
         {
-            dex_context->session = guest.get();
-            const auto dex_entry =
-                loader::ReadApkEntry(apk_bytes, archive, "classes.dex");
-            std::vector<std::uint8_t> dex_bytes(dex_entry.size());
-            std::memcpy(dex_bytes.data(), dex_entry.data(),
-                        dex_entry.size());
-            runtime::DexVmBridgeConfig bridge_config;
-            if (profile.runtime.dexvm.has_value()) {
-                bridge_config.heap.heap_budget_bytes =
-                    profile.runtime.dexvm->heap_budget_bytes;
-                bridge_config.interpreter.max_frames =
-                    profile.runtime.dexvm->max_frames;
-                bridge_config.interpreter.tick_budget =
-                    profile.runtime.dexvm->ticks_per_call;
-            }
-            const auto android_catalog =
-                runtime::AndroidIntrinsicCatalog(dex_context);
-            dex_bridge = std::make_unique<runtime::DexVmGuestBridge>(
-                *guest, std::move(dex_bytes), android_catalog,
-                dex_context, dexvm_ledger, &logger, bridge_config);
-            dex_context->threads = &dex_bridge->Threads();
-            // Object.wait deadlines come from the deterministic uptime the
-            // lifecycle driver publishes from the unified Clock, never from
-            // a host wall clock.
-            dex_bridge->Vm().Monitors().SetTimeSource([dex_context] {
-                return dex_context->uptime_millis.load();
-            });
-            if (survey_gaps_output.has_value()) {
-                dex_bridge->Linker().EnableGapSurvey();
-                Write("OGPlay: GAP SURVEY RUN — unresolved platform classes "
-                      "and methods answer neutrally and are recorded. This is "
-                      "a diagnostic work queue, not a compatibility result.\n");
-                logger.Write(core::LogLevel::warn, "frontend.run_apk",
-                             "gap survey enabled; run is diagnostic only",
-                             {}, {}, kUnrestrictedLog);
-            }
-            const auto descriptor = session::ResolveProfileLaunchDescriptor(
-                profile, manifest.launcher_activity);
-            session::ApplyProfileStaticPresets(
-                profile, dex_bridge->Vm(), &logger);
-            dex_lifecycle = std::make_unique<session::DexActivityLifecycle>(
-                session::DexActivityLifecycleBindings{
-                    dex_bridge.get(), dex_context, descriptor,
-                    [&guest] { guest->OpenManagedSurface(); },
-                    [&guest] { guest->PresentManagedSurface(); },
-                    [&guest](std::vector<std::uint8_t> rgba8) {
-                        guest->PublishSoftwareFrame(std::move(rgba8));
-                    },
-                    [&guest] {
-                        static_cast<void>(guest->InterruptBlockingWaits());
-                    },
-                    [&] {
-                        call_progress.Begin(active_frame, 0U);
-                        guest->Stop();
-                    },
-                    [&guest] { guest->CloseManagedSurface(); },
-                    [&filesystem] { session::FlushProfileVfsAtLifecycleBoundary(filesystem); },
-                    [&guest] { guest->ReleaseManagedSurfaceFromCallingThread(); }});
-            driver = {[&] { return dex_lifecycle->Start(); },
+            driver = {[&] {
+                          app_process->StartApplication();
+                          return app_process->StartLauncherActivity();
+                      },
                       [&] { return dex_lifecycle->Suspend(); },
                       [&] { return dex_lifecycle->Resume(); },
                       [&] { return dex_lifecycle->StepFrame(); },
-                      [&] { return dex_lifecycle->Stop(); },
+                      [&] { return app_process->Stop(); },
                       [&] { return dex_lifecycle->State(); },
                       [&](const runtime::AndroidBoundaryInput& input) {
                           dex_lifecycle->QueueInput(input);
@@ -842,11 +832,11 @@ int RunApkCommand(const int argc, const char* const argv[],
         }
         if (audio_output) audio_output->Stop();
         publish_session();
-        if (survey_gaps_output.has_value() && dex_bridge) {
+        if (survey_gaps_output.has_value()) {
             // Written before rethrowing: a survey run usually ends on the
             // first gap that no stub can paper over, and that harvest is
             // exactly what the next batch needs.
-            const auto hits = dex_bridge->Linker().GapSurveyHits();
+            const auto hits = app_process->DexVm().Linker().GapSurveyHits();
             std::ofstream report(*survey_gaps_output, std::ios::binary);
             report << runtime::dexvm::RenderGapSurveyJson(
                 hits, apk_path.filename().string());

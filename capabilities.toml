@@ -657,8 +657,8 @@ note = "M4 已在真实 API 19 Bionic 上启动最小 APK 并完成 2x 超采样
 
 [frontend.minimal_apk_run]
 status = "partial"
-test = "cmake/CheckRunApkOptions.cmake; tests/frontend/run_apk_progress_tests.cpp"
-note = "CLI 以 exact Profile 运行 NativeActivity 或 GLSurfaceView 的 ARMv7 多库闭包，SDL 显示 ANGLE readback 并转发键鼠；--supersample 受检为 1..4，guest 失败时窗口立即关闭并输出精确原因；M8 WU-0378 增加 Profile/bootstrap/JNI/lifecycle/frame/teardown 结构化 info 日志，长 guest call 按实际累计 tick 有界报告；无 Profile 的通用 APK 推断不在当前范围"
+test = "cmake/CheckRunApkOptions.cmake; tests/frontend/run_apk_progress_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
+note = "APS-7 将 CLI 切到 Manifest→rootless AndroidAppProcess→Application→launcher Activity 的 generic path；exact Profile 仅在命中时覆盖 surface/预算/data/quirk/entry，无 Profile 使用 API19 与受控默认 surface 继续。frontend 不再选择 app root `.so`、组织应用 ELF 闭包或显式 JNI_OnLoad；SDL/frame/input/MCP 行为保持，真实标题可玩性仍逐项验证"
 
 [loader.hle_boundary_namespace]
 status = "complete"
@@ -719,6 +719,11 @@ note = "APS-4 在 AndroidGuestProcess 上事务追加 selected-ABI APK ELF closu
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp"
 note = "APS-6 在 launcher Activity 前完成 default/custom Application 的 resolve、class init、默认构造、base Context attach 与虚派 onCreate；process root identity 稳定并由 Context/Activity 可见，clinit/onCreate 可触发真实 System.loadLibrary/JNI_OnLoad，任何异常均在 surface 与 Activity 构造前失败"
+
+[session.android_app_process]
+status = "complete"
+test = "tests/runtime/native_library_loader_tests.cpp"
+note = "APS-7 以显式 DexVmReady/ApplicationStarted/ActivityResumed/Stopped 状态拥有 package、ABI、rootless process、NativeLibraryLoader、DexVM、Application 与 Activity lifecycle；Manifest launcher 默认、entry override 可选，纯 Java无 ABI可启动，Activity clinit/onCreate 才动态追加 ELF，Stop 先停 Java threads 再 finalization"
 
 [profiles.apk_launch_preflight]
 status = "complete"

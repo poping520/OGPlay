@@ -44,3 +44,28 @@ Manifest → process/DexVM prepare → Application → launcher Activity 的 gen
 - frontend 测试证明没有 app `.so` preload；
 - clean stop/finalization 全绿；
 - full CTest 无回归。
+
+## 语义核对结论
+
+- API 19 `ActivityThread.performLaunchActivity` 在 Activity 构造前取得 package Context 与
+  process Application，随后由 `Activity.attach` 注入 Application/window/context，再进入
+  instrumentation `callActivityOnCreate`；OGPlay 保留这些对游戏可见的前置事实和顺序，
+  不复制 ActivityThread/Instrumentation/task 管理结构。
+- `Activity.attach` 的本 WU 可见前提是稳定 Application identity、package Context 与已准备
+  window/surface service；这些由 process context/intrinsic 提供，Activity 生命周期仍复用
+  `DexActivityLifecycle`。
+
+## 结果（机器可判定，已达成）
+
+- 新增 session 级 `AndroidAppProcess`，Create 内部按 package→API19 system ELF shell→
+  optional ABI/loader→DexVM 准备推进，再显式执行 Application 与 Manifest launcher；非法
+  跨阶段调用明确失败，Stop 复用 lifecycle 的 Java threads→native finalization 反序。
+- `AndroidGuestCallSession::AdoptProcess` 只包装 rootless process 供现有 DexVM/JNI 接口复用，
+  不加载 app ELF；`run-apk` 已删除 legacy Start/root module/`PrepareApkProfileLaunch` 与显式
+  JNI 初始化决策。
+- frontend 无 exact Profile 时使用 Manifest、API 19 与受控 800×480 默认继续；命中旧
+  Profile 时仅消费现有 data/surface/budget/quirk/entry override，ABI 始终由 APK inventory
+  resolver 决定。
+- fixture 覆盖无 Profile/无 ABI pure-Java、Application→Activity onCreate/onStart/onResume、
+  no launcher、Activity `<clinit>`/`onCreate` loadLibrary、创建后零 application modules、
+  clean Stop；源码门禁证明 frontend 不含 legacy root/preload API。

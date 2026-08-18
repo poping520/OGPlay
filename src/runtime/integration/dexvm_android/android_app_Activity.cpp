@@ -184,6 +184,17 @@ Decl Declare_android_app_Activity(const Context& context) {
             context->finishing_activity = call.receiver.Value();
             return dx::VmValue::Void();
         });
+    // AOSP Activity.isTaskRoot: whether this activity is the first one of
+    // its task. OGPlay runs one task per process; the manifest launcher
+    // opened it, in-process startActivity handoffs did not. The retired
+    // shell of a handoff keeps answering true for its own handle, as its
+    // token would on the platform.
+    builder.Virtual("isTaskRoot", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                call.receiver.Value() == context->task_root_activity ? 1
+                                                                     : 0);
+        });
     builder.Virtual("getWindowManager", "()Landroid/view/WindowManager;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(

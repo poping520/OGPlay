@@ -781,6 +781,23 @@ TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app E
           session::AndroidAppProcessState::stopped);
 }
 
+TEST_CASE("Activity.isTaskRoot is true for the launcher and false after a handoff") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.TaskRootLauncherActivity");
+    fixture.app->StartApplication();
+    const auto started = fixture.app->StartLauncherActivity();
+    CHECK(started.state == session::LifecycleRunState::running);
+    // The launcher recorded its own answer before requesting the handoff.
+    CHECK(fixture.CallStaticInt("Lfixture/TaskRootLauncherActivity;",
+                                "getRootSeen") == 1);
+    // The handoff really ran, and the arriving activity answered false.
+    CHECK(fixture.CallStaticInt("Lfixture/TaskRootChildActivity;",
+                                "getInstances") == 1);
+    CHECK(fixture.CallStaticInt("Lfixture/TaskRootChildActivity;",
+                                "getRootSeen") == 0);
+    static_cast<void>(fixture.app->Stop());
+}
+
 TEST_CASE("AndroidAppProcess supports a pure Java APK without a Profile or ABI") {
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LauncherActivity", true, false);

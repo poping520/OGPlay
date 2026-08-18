@@ -102,6 +102,9 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
   IO 走 APK 条目与会话内存文件、身份为确定性配置、SMS/网络记账明确失败;
   统一时间由生命周期驱动发布(System.currentTimeMillis/Thread.sleep 同源)。
+  `Activity.isTaskRoot()` 按生命周期发布的 `task_root_activity` 句柄判定：
+  Manifest launcher 打开了进程唯一 task，经 `startActivity` 切换到达的 Activity
+  不是根；已退出的 handoff shell 对自身句柄仍回答 true，与平台按 token 回答一致。
   `AudioManager.isMusicActive()` 查询受控宿主音频事实：OGPlay 会话没有独立外部
   media session 时返回 false，不把游戏自身 mixer voice 误报为外部音乐。
   `TelephonyManager.listen` 在确定性离线电话服务中保存非零监听掩码，`LISTEN_NONE`

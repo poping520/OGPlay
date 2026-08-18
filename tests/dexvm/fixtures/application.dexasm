@@ -185,3 +185,77 @@
     invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
     return-void
 .end method
+
+.class public Lfixture/TaskRootLauncherActivity;
+.super Landroid/app/Activity;
+
+.field static public rootSeen:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method
+
+.method static public getRootSeen()I
+.registers 1
+    sget v0, Lfixture/TaskRootLauncherActivity;->rootSeen:I
+    return v0
+.end method
+
+.method public onCreate(Landroid/os/Bundle;)V
+.registers 5
+    invoke-super {v3, v4}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+    invoke-virtual {v3}, Landroid/app/Activity;->isTaskRoot()Z
+    move-result v0
+    sput v0, Lfixture/TaskRootLauncherActivity;->rootSeen:I
+    new-instance v0, Landroid/content/Intent;
+    invoke-direct {v0}, Landroid/content/Intent;-><init>()V
+    const-string v1, "fixture"
+    const-string v2, "fixture.TaskRootChildActivity"
+    invoke-virtual {v0, v1, v2}, Landroid/content/Intent;->setClassName(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;
+    invoke-virtual {v3, v0}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
+    new-instance v0, Landroid/view/View;
+    invoke-direct {v0, v3}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v3, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+
+.class public Lfixture/TaskRootChildActivity;
+.super Landroid/app/Activity;
+
+.field static public instances:I
+.field static public rootSeen:I
+
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Landroid/app/Activity;-><init>()V
+    sget v0, Lfixture/TaskRootChildActivity;->instances:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/TaskRootChildActivity;->instances:I
+    return-void
+.end method
+
+.method static public getInstances()I
+.registers 1
+    sget v0, Lfixture/TaskRootChildActivity;->instances:I
+    return v0
+.end method
+
+.method static public getRootSeen()I
+.registers 1
+    sget v0, Lfixture/TaskRootChildActivity;->rootSeen:I
+    return v0
+.end method
+
+.method public onCreate(Landroid/os/Bundle;)V
+.registers 4
+    invoke-super {v2, v3}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+    invoke-virtual {v2}, Landroid/app/Activity;->isTaskRoot()Z
+    move-result v0
+    sput v0, Lfixture/TaskRootChildActivity;->rootSeen:I
+    new-instance v0, Landroid/view/View;
+    invoke-direct {v0, v2}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method

@@ -23,14 +23,16 @@
   `monitors` 保持 `partial`。APK class_def 现为全量注册、首次解析/实例化/调用时链接；
   未触达 SDK 类的缺失父类/接口不再阻断进程，触达后仍明确失败或在 survey 中记账。
   JNI class identity 仍全量发布，但 jclass global reference 改为 static native 真正出向
-  时才创建。PVZ NA 已越过 222/70 类静态层级清单和全局引用容量，当前真实首缺口为
-  `COPPAActivity.isTaskRoot()Z`（尚未实现，不等同于 title 启动成功）。
+  时才创建。PVZ NA 已越过 222/70 类静态层级清单和全局引用容量；其首缺口
+  `COPPAActivity.isTaskRoot()Z` 已实现（Manifest launcher 为进程唯一 task 根，
+  startActivity 到达的 Activity 回答 false，handle 记账于 `task_root_activity`），
+  PVZ NA 后续缺口待下一次命中批次确认，不等同于 title 启动成功。
 - **兼容性基线**：Layout UI 已验收 complete；存档沙盒、GUI、intrinsic 声明迁移与
   MSVC 工程内/工程间并行编译已交付。能力现状以 `capabilities.toml` 为准。
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：806/806 CTest。
+- Windows/x64 `windows-msvc`：807/807 CTest。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 

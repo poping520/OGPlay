@@ -128,7 +128,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     return found->methods.size();
   };
   CHECK(method_count("Landroid/app/Application;") == 4);
-  CHECK(method_count("Landroid/app/Activity;") == 23);
+  CHECK(method_count("Landroid/app/Activity;") == 24);
   CHECK(method_count("Landroid/content/Intent;") == 16);
   CHECK(method_count("Landroid/os/Bundle;") == 12);
   CHECK(method_count("Landroid/widget/TextView;") == 16);

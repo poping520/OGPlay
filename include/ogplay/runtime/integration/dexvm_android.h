@@ -85,6 +85,11 @@ struct DexVmAndroidContext final {
 
     // Captured lifecycle facts.
     dexvm::VmObjectRef activity;
+    // Handle of the launcher activity that opened the process's single
+    // task; Activity.isTaskRoot() answers against it. Stored as a plain
+    // handle (not the ref) so a retired handoff shell keeps answering
+    // for its own token, matching the platform.
+    std::uint32_t task_root_activity{0};
     // Process-lifetime Application root and its attached package Context.
     // application_descriptor is published only after onCreate succeeds;
     // the object itself is provisionally visible during onCreate, matching

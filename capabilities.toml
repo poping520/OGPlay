@@ -1187,8 +1187,8 @@ note = "DVM-14/15 出向按 descriptor 编组 A32 soft-float 帧（RegisterNativ
 
 [dexvm.intrinsics_android_core]
 status = "partial"
-test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/videoview_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
-note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。没有具体视频错误事件时不伪造回调；广播派发、SMS/网络仍未实现并明确失败"
+test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z`：Manifest launcher 在实例化时发布为进程唯一 task 的根（handle 记账于 DexVmAndroidContext::task_root_activity），startActivity 切换到达的 Activity 回答 false，已退出的 shell 对自身句柄仍回答 true（对照 AOSP Activity.getTaskForActivity 语义）。没有具体视频错误事件时不伪造回调；广播派发、SMS/网络仍未实现并明确失败"
 
 [dexvm.gap_survey]
 status = "complete"

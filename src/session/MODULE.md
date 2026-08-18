@@ -46,7 +46,9 @@
   intrinsic renderer 保留打开线程 GL currency；guest-owned GLSurfaceView 显式释放后
   交给其 GLThread。
   Activity switch 在旧 `onDestroy` 后推进 UI content generation，清空旧 UiTree binding/
-  listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。
+  listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。入口 Activity
+  实例化时把自身句柄发布为 `task_root_activity`（进程唯一 task 的根，
+  `Activity.isTaskRoot()` 的判定依据），switch 到达的 Activity 不是根。
 - frontend 取回最终 present frame 后必须交 session `ComposePresentedFrame` 与 cached UI
   overlay 做整数 source-over；screenshot/window 只读取返回结果，video 不依赖 UI。
 - touch DOWN 的 gesture ownership 与 click eligibility 独立：touch-only false 立即回退

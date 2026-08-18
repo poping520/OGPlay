@@ -17,6 +17,7 @@
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
+#include "ogplay/session/dex_activity_lifecycle.h"
 
 namespace {
 
@@ -278,6 +279,80 @@ struct FixtureProcess final {
 };
 
 [[nodiscard]] std::vector<std::uint8_t> ReadDexFixture(
+    const std::string& name);
+
+struct ApplicationProcess final {
+    std::vector<std::byte> libc{LibcElf()};
+    std::vector<std::byte> native_a{
+        AppElf({"liba.so", "libc.so", ogplay::runtime::kJniVersion1_6})};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    std::unique_ptr<ogplay::runtime::AndroidGuestCallSession> session;
+    std::unique_ptr<ogplay::loader::ApkNativeLibraryInventory> inventory;
+    std::unique_ptr<ogplay::loader::ApkSelectedNativeLibraries> selected;
+    std::unique_ptr<ogplay::runtime::NativeLibraryLoader> libraries;
+    std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context;
+    ogplay::core::CapabilityLedger ledger;
+    std::unique_ptr<ogplay::runtime::DexVmGuestBridge> bridge;
+
+    ApplicationProcess() {
+        const std::array inputs{
+            ogplay::loader::Elf32ModuleInput{
+                "liba.so", native_a,
+                ogplay::memory::GuestAddress{0x20000000U}},
+            ogplay::loader::Elf32ModuleInput{
+                "libc.so", libc,
+                ogplay::memory::GuestAddress{0x10000000U}},
+        };
+        session = ogplay::runtime::AndroidGuestCallSession::Start(
+            {19, "liba.so", inputs, {}, 64, 36,
+             UINT64_C(200000), 1, &filesystem, {}});
+        inventory =
+            std::make_unique<ogplay::loader::ApkNativeLibraryInventory>(
+                std::vector<ogplay::loader::ApkNativeLibrary>{
+                    Library("liba.so", native_a)});
+        selected =
+            std::make_unique<ogplay::loader::ApkSelectedNativeLibraries>(
+                ogplay::loader::SelectApkNativeLibraries(
+                    *inventory,
+                    ogplay::loader::AndroidArmAbi::armeabi_v7a));
+        libraries = std::make_unique<ogplay::runtime::NativeLibraryLoader>(
+            session->Process(), *selected);
+        context =
+            std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+        context->session = session.get();
+        context->native_libraries = libraries.get();
+        auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
+        bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
+            *session, ReadDexFixture("application.dex"), catalog, context,
+            ledger, nullptr);
+        context->threads = &bridge->Threads();
+    }
+
+    ~ApplicationProcess() {
+        bridge.reset();
+        if (session && session->Running()) session->Stop();
+    }
+
+    [[nodiscard]] std::int32_t CallStaticInt(
+        const std::string& owner, const std::string& name) {
+        const auto java_class = bridge->Linker().FindClass(owner);
+        if (!java_class.has_value()) {
+            throw std::runtime_error("fixture class is not linked");
+        }
+        const auto method = bridge->Linker().FindDirectMethod(
+            *java_class, name, "()I");
+        if (!method.has_value()) {
+            throw std::runtime_error("fixture method is not linked");
+        }
+        const auto outcome = bridge->Vm().Call(*method, {});
+        if (outcome.exception.IsValid()) {
+            throw std::runtime_error(outcome.exception_message);
+        }
+        return outcome.value.AsInt();
+    }
+};
+
+[[nodiscard]] std::vector<std::uint8_t> ReadDexFixture(
     const std::string& name) {
     const std::string path =
         std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
@@ -490,4 +565,80 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     bridge.reset();
     session->Stop();
     CHECK_FALSE(session->Running());
+}
+
+TEST_CASE("minimal Application startup preserves order identity and native loads") {
+    using namespace ogplay;
+
+    SUBCASE("framework default is a stable process root") {
+        ApplicationProcess fixture;
+        const auto first = session::StartDexApplication(
+            *fixture.bridge, fixture.context, "Landroid/app/Application;");
+        const auto repeated = session::StartDexApplication(
+            *fixture.bridge, fixture.context, "Landroid/app/Application;");
+        CHECK(first == repeated);
+        CHECK(fixture.context->application == first);
+        CHECK(fixture.context->application_base_context.IsValid());
+    }
+
+    SUBCASE("custom startup observes clinit construct attach onCreate order") {
+        ApplicationProcess fixture;
+        const auto application = session::StartDexApplication(
+            *fixture.bridge, fixture.context,
+            "Lfixture/CustomApplication;");
+        CHECK(application.IsValid());
+        CHECK(fixture.CallStaticInt("Lfixture/CustomApplication;",
+                                    "getStage") == 4);
+        CHECK(session::StartDexApplication(
+                  *fixture.bridge, fixture.context,
+                  "Lfixture/CustomApplication;") == application);
+        CHECK_THROWS_AS(
+            static_cast<void>(session::StartDexApplication(
+                *fixture.bridge, fixture.context,
+                "Landroid/app/Application;")),
+            session::DexActivityLifecycleError);
+    }
+
+    SUBCASE("clinit may load the first native library") {
+        ApplicationProcess fixture;
+        static_cast<void>(session::StartDexApplication(
+            *fixture.bridge, fixture.context,
+            "Lfixture/ClinitLoadingApplication;"));
+        const auto records = fixture.libraries->Records();
+        REQUIRE(records.size() == 1U);
+        CHECK(records[0].soname == "liba.so");
+        CHECK(records[0].jni_on_load_calls == 1U);
+    }
+
+    SUBCASE("onCreate may load the first native library") {
+        ApplicationProcess fixture;
+        static_cast<void>(session::StartDexApplication(
+            *fixture.bridge, fixture.context,
+            "Lfixture/OnCreateLoadingApplication;"));
+        const auto records = fixture.libraries->Records();
+        REQUIRE(records.size() == 1U);
+        CHECK(records[0].soname == "liba.so");
+        CHECK(records[0].jni_on_load_calls == 1U);
+    }
+}
+
+TEST_CASE("Application failure prevents launcher construction and surface effects") {
+    using namespace ogplay;
+    ApplicationProcess fixture;
+    bool opened{};
+    session::DexActivityLifecycleBindings bindings;
+    bindings.bridge = fixture.bridge.get();
+    bindings.context = fixture.context;
+    bindings.launcher_descriptor = "Lfixture/LauncherActivity;";
+    bindings.application_descriptor = "Lfixture/ThrowingApplication;";
+    bindings.open_surface = [&] { opened = true; };
+    session::DexActivityLifecycle lifecycle(std::move(bindings));
+
+    CHECK_THROWS_AS(static_cast<void>(lifecycle.Start()),
+                    session::DexActivityLifecycleError);
+    CHECK_FALSE(opened);
+    CHECK_FALSE(fixture.context->application.IsValid());
+    CHECK_FALSE(fixture.context->activity.IsValid());
+    CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;",
+                                "getInstances") == 0);
 }

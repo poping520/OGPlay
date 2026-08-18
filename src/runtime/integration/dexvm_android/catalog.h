@@ -5,6 +5,7 @@
 namespace ogplay::runtime::android_intrinsics {
 
 [[nodiscard]] Decl Declare_android_app_Activity(const Context& context);
+[[nodiscard]] Decl Declare_android_app_Application(const Context& context);
 [[nodiscard]] Decl Declare_android_app_AlertDialog_Builder(const Context& context);
 [[nodiscard]] Decl Declare_android_app_AlertDialog(const Context& context);
 [[nodiscard]] Decl Declare_android_app_Dialog(const Context& context);

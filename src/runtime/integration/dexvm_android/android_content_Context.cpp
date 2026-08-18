@@ -41,6 +41,9 @@ Decl Declare_android_content_Context(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             // One guest process owns one application Context; Activity
             // wrappers may come and go without changing this identity.
+            if (context->application.IsValid()) {
+                return dx::VmValue::Ref(context->application);
+            }
             return dx::VmValue::Ref(Singleton(
                 call, context, "application_context",
                 "Landroid/content/Context;"));

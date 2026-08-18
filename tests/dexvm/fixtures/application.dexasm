@@ -1,0 +1,110 @@
+# APS-6 process Application startup fixtures.
+.class public Lfixture/CustomApplication;
+.super Landroid/app/Application;
+
+.field static public stage:I
+
+.method static constructor <clinit>()V
+.registers 1
+    const/4 v0, 1
+    sput v0, Lfixture/CustomApplication;->stage:I
+    return-void
+.end method
+
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Landroid/app/Application;-><init>()V
+    const/4 v0, 2
+    sput v0, Lfixture/CustomApplication;->stage:I
+    return-void
+.end method
+
+.method protected attachBaseContext(Landroid/content/Context;)V
+.registers 3
+    invoke-super {v1, v2}, Landroid/app/Application;->attachBaseContext(Landroid/content/Context;)V
+    const/4 v0, 3
+    sput v0, Lfixture/CustomApplication;->stage:I
+    return-void
+.end method
+
+.method public onCreate()V
+.registers 2
+    const/4 v0, 4
+    sput v0, Lfixture/CustomApplication;->stage:I
+    return-void
+.end method
+
+.method static public getStage()I
+.registers 1
+    sget v0, Lfixture/CustomApplication;->stage:I
+    return v0
+.end method
+
+.class public Lfixture/ClinitLoadingApplication;
+.super Landroid/app/Application;
+
+.method static constructor <clinit>()V
+.registers 1
+    const-string v0, "a"
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Application;-><init>()V
+    return-void
+.end method
+
+.class public Lfixture/OnCreateLoadingApplication;
+.super Landroid/app/Application;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Application;-><init>()V
+    return-void
+.end method
+
+.method public onCreate()V
+.registers 2
+    const-string v0, "a"
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+    return-void
+.end method
+
+.class public Lfixture/ThrowingApplication;
+.super Landroid/app/Application;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Application;-><init>()V
+    return-void
+.end method
+
+.method public onCreate()V
+.registers 3
+    new-instance v1, Ljava/lang/RuntimeException;
+    const-string v2, "application failed"
+    invoke-direct {v1, v2}, Ljava/lang/RuntimeException;-><init>(Ljava/lang/String;)V
+    throw v1
+.end method
+
+.class public Lfixture/LauncherActivity;
+.super Landroid/app/Activity;
+
+.field static public instances:I
+
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Landroid/app/Activity;-><init>()V
+    sget v0, Lfixture/LauncherActivity;->instances:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/LauncherActivity;->instances:I
+    return-void
+.end method
+
+.method static public getInstances()I
+.registers 1
+    sget v0, Lfixture/LauncherActivity;->instances:I
+    return v0
+.end method

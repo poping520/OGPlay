@@ -14,6 +14,14 @@
 
 namespace ogplay::session {
 
+// Minimal API-19 Application startup. Repeated calls for the same descriptor
+// return the process root; a different descriptor or a failed startup is an
+// explicit error and never permits Activity startup to continue.
+[[nodiscard]] runtime::dexvm::VmObjectRef StartDexApplication(
+    runtime::DexVmGuestBridge& bridge,
+    const std::shared_ptr<runtime::DexVmAndroidContext>& context,
+    const std::string& application_descriptor);
+
 struct ContentViewGestureDispatchResult final {
     bool handled{};
     bool keep_capture{};
@@ -52,6 +60,9 @@ struct DexActivityLifecycleBindings final {
     // before holder callbacks start its GLThread. Intrinsic-renderer sessions
     // retain the original currency so their exact render path is unchanged.
     std::function<void()> release_surface_currency;
+    // Manifest-selected process Application. Kept at the aggregate tail so
+    // existing lifecycle hosts retain source compatibility.
+    std::string application_descriptor{"Landroid/app/Application;"};
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {

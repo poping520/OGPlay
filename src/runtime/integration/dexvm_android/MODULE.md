@@ -33,6 +33,10 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
 - 中性占位只能通过 `NeutralHandler(shorty)` 或 `PlaceholderString()` 显式生成；
   引用返回值不能擅自伪造对象。
 - `DexVmAndroidContext` 是唯一会话状态入口，handler 行为与迁移前保持一致。
+- process `Application`、attached base Context 与 descriptor 由 context 持有；
+  `Context.getApplicationContext` 和 `Activity.getApplication` 必须返回同一稳定 Java root。
+  API 19 的 bounded Application→ContextWrapper→Context 等价只覆盖游戏进程直接可见行为，
+  不引入 Instrumentation 或完整 framework。
 - `System.load/System.loadLibrary` 只经 context 注入的 process
   `NativeLibraryLoader`，并始终携带稳定 application ClassLoader token；null 参数抛
   `NullPointerException`，resolver/linker/JNI_OnLoad 失败映射为

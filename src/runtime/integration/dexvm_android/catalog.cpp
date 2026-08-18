@@ -183,6 +183,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_javax_microedition_khronos_egl_EGLSurface(context),
         Declare_javax_microedition_khronos_opengles_GL(context),
         Declare_javax_microedition_khronos_opengles_GL10_Impl(context),
+        Declare_android_app_Application(context),
     };
 }
 

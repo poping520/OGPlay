@@ -85,6 +85,13 @@ struct DexVmAndroidContext final {
 
     // Captured lifecycle facts.
     dexvm::VmObjectRef activity;
+    // Process-lifetime Application root and its attached package Context.
+    // application_descriptor is published only after onCreate succeeds;
+    // the object itself is provisionally visible during onCreate, matching
+    // ActivityThread's initial-application identity.
+    dexvm::VmObjectRef application;
+    dexvm::VmObjectRef application_base_context;
+    std::string application_descriptor;
     dexvm::VmObjectRef renderer;
     dexvm::VmObjectRef content_view;
 

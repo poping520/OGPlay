@@ -23,7 +23,9 @@
 - `ApplyProfileStaticPresets`：逐项初始化真实 DEX class（包括 `<clinit>`），再按声明的
   primitive/String 类型写真实 static field；类、字段、类型、范围或初始化不一致即失败，
   每次写入记录 `reason`。
-- `DexActivityLifecycle`：实例化入口 Activity，解释执行 onCreate/onStart/onResume、
+- `StartDexApplication` / `DexActivityLifecycle`：先按
+  resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
+  Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
   renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop/onDestroy；
   未捕获 Java 异常携带解释器栈失败。每帧同时泵 VideoView，并按 managed view 命中规则
   分发触摸与 click。pause 在 guest `onPause` 后调用持久状态 flush 回调；clean stop
@@ -73,6 +75,7 @@
 - enabled quirk 必须有注册定义和可定位测试；源码/CI 在打包前验证测试文件与用例存在，
   packaged runtime 至少严格保留其引用形状；未注入注册表时不得进入匹配目录。
 - 生命周期清理顺序固定，状态推进由固定帧步进驱动，不依赖 sleep。
+- Application 初始化失败必须先清除临时 root，且不得打开 surface、初始化或构造 Activity。
 
 ## 禁止
 

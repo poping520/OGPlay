@@ -8,6 +8,26 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
+Decl Declare_android_app_Application(const Context& context) {
+    dx::IntrinsicClassBuilder builder("Landroid/app/Application;");
+    // Bounded equivalence for API 19 Application->ContextWrapper->Context:
+    // the wrapper has no independent service/resource behavior in OGPlay.
+    builder.Super("Landroid/content/Context;");
+    builder.Virtual("<init>", "()V", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Void();
+    });
+    builder.Overridable("attachBaseContext", "(Landroid/content/Context;)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Overridable("onCreate", "()V", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Void();
+    });
+    builder.Virtual("getBaseContext", "()Landroid/content/Context;",
+        [context](dx::IntrinsicContext&) {
+            return dx::VmValue::Ref(context->application_base_context);
+        });
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_app_Activity(const Context& context) {
     dx::IntrinsicClassBuilder builder("Landroid/app/Activity;");
     builder.Super("Landroid/content/Context;");
@@ -29,6 +49,10 @@ Decl Declare_android_app_Activity(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
                 Singleton(call, context, "window", "Landroid/view/Window;"));
+        });
+    builder.Virtual("getApplication", "()Landroid/app/Application;",
+        [context](dx::IntrinsicContext&) {
+            return dx::VmValue::Ref(context->application);
         });
     builder.Virtual("requestWindowFeature", "(I)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });

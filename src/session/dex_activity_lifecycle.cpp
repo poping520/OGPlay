@@ -34,6 +34,76 @@ void RequireOutcome(const dx::VmCallOutcome& outcome,
 
 }  // namespace
 
+dx::VmObjectRef StartDexApplication(
+    runtime::DexVmGuestBridge& bridge,
+    const std::shared_ptr<runtime::DexVmAndroidContext>& context,
+    const std::string& application_descriptor) {
+    if (!context || application_descriptor.empty()) {
+        Fail("Application startup requires a platform context and descriptor");
+    }
+    if (context->application.IsValid()) {
+        if (context->application_descriptor != application_descriptor) {
+            Fail("a different Application is already started in this process");
+        }
+        return context->application;
+    }
+
+    auto& vm = bridge.Vm();
+    auto& linker = bridge.Linker();
+    const auto java_class = linker.FindClass(application_descriptor);
+    if (!java_class.has_value()) {
+        Fail("Application class is not linked: " + application_descriptor);
+    }
+    RequireOutcome(vm.EnsureClassInitialized(*java_class),
+                   "Application <clinit>");
+    const auto init = linker.FindDirectMethod(*java_class, "<init>", "()V");
+    if (!init.has_value()) {
+        Fail("Application has no default constructor: " +
+             application_descriptor);
+    }
+    const auto application = vm.Model().NewInstance(
+        *java_class, linker.Class(*java_class).instance_slots);
+    const auto base_context =
+        vm.NewIntrinsicInstance("Landroid/content/Context;");
+    context->application = application;
+    context->application_base_context = base_context;
+    try {
+        RequireOutcome(
+            vm.Call(*init, std::vector<dx::VmValue>{
+                               dx::VmValue::Ref(application)}),
+            "Application <init>");
+        const auto attach = linker.FindVtableIndex(
+            *java_class, "attachBaseContext", "(Landroid/content/Context;)V");
+        if (!attach.has_value()) {
+            Fail("Application has no attachBaseContext method: " +
+                 application_descriptor);
+        }
+        RequireOutcome(
+            vm.Call(linker.Class(*java_class).vtable[*attach],
+                    std::vector<dx::VmValue>{dx::VmValue::Ref(application),
+                                             dx::VmValue::Ref(base_context)}),
+            "Application attachBaseContext");
+        const auto on_create = linker.FindVtableIndex(
+            *java_class, "onCreate", "()V");
+        if (!on_create.has_value()) {
+            Fail("Application has no onCreate method: " +
+                 application_descriptor);
+        }
+        RequireOutcome(
+            vm.Call(linker.Class(*java_class).vtable[*on_create],
+                    std::vector<dx::VmValue>{
+                        dx::VmValue::Ref(application)}),
+            "Application onCreate");
+        context->application_descriptor = application_descriptor;
+        return application;
+    } catch (...) {
+        context->application = dx::VmObjectRef{};
+        context->application_base_context = dx::VmObjectRef{};
+        context->application_descriptor.clear();
+        throw;
+    }
+}
+
 ContentViewGestureDispatchResult DispatchContentViewGestureEvent(
     dx::Interpreter& vm, const dx::VmObjectRef content_view,
     const std::int32_t action, const float x, const float y,
@@ -72,9 +142,10 @@ DexActivityLifecycle::DexActivityLifecycle(
     : bindings_(std::move(bindings)),
       clock_(ticks_per_frame, ticks_per_second) {
     if (bindings_.bridge == nullptr || !bindings_.context ||
-        bindings_.launcher_descriptor.empty()) {
+        bindings_.launcher_descriptor.empty() ||
+        bindings_.application_descriptor.empty()) {
         Fail("dex_activity lifecycle requires a bridge, a platform context "
-             "and a launcher activity");
+             "and Application/launcher descriptors");
     }
 }
 
@@ -128,6 +199,12 @@ LifecycleFrameState DexActivityLifecycle::Start() {
         auto& vm = bindings_.bridge->Vm();
         auto& linker = bindings_.bridge->Linker();
         auto& context = *bindings_.context;
+
+        // The process Application is fully initialized before any Activity
+        // class initialization, construction, or surface side effect.
+        static_cast<void>(StartDexApplication(
+            *bindings_.bridge, bindings_.context,
+            bindings_.application_descriptor));
 
         if (bindings_.open_surface) bindings_.open_surface();
         surface_open_ = true;

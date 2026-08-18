@@ -21,6 +21,13 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   规则子集对照 AOSP `CodeVerify.cpp`，不做全量数据流。
 - `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
   handler；覆盖 Object/String/Class/Throwable、隐式异常层级与核心集合接口。
+  `java.lang.Enum` 语义对照 pinned libcore `Enum.java`：name/ordinal 为声明式
+  instance slot（解释子类继承布局）、构造器 `(String,I)` 写入、查询方法 final、
+  `toString` 保持 overridable、`clone` 恒抛 CloneNotSupportedException、
+  `getDeclaringClass` 按直接父类是否为 Enum 判定、静态 `valueOf(Class,String)`
+  不走反射缓存——先 `<clinit>` 再按该 enum 自身同型 static 常量字段的活值按名
+  匹配，null 参数 NPE、非 enum/未命中 IllegalArgumentException（消息对照 AOSP）。
+  enum 子类的 `values()` 依赖数组 `clone()`，该面尚未实现，命中即明确失败。
 - `IntrinsicClassBuilder`：以类为单位声明 static/virtual/overridable 方法、字段、
   常量与 `<clinit>`，`Build()` 在装配期校验类/方法/字段 descriptor、重复成员和
   interface 实例字段；声明在构建时直接持有实现，未实现方法通过

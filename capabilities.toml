@@ -1178,7 +1178,7 @@ note = "DVM-12 per-class 状态机 uninitialized→initializing→initialized|fa
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40 聚合 50 个 API 19 Throwable class shape，13 个特殊 constructor 显式失败；DVM-41 聚合 Number/Byte/Short/Integer/Long/Float/Double/Boolean/Character，前 8 类 public API 与 Character 44 项高频 API 均绑定真实 handler，integral radix/overflow、IEEE-754 bits/special values、ASCII 与 surrogate/code-point 有机器和真实 DEX 测试；Character 42 项完整 Unicode API deferred，能力保持 partial。System 与 wrapper property API 共用每 VM guest 属性表，不读宿主环境"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40 聚合 50 个 API 19 Throwable class shape，13 个特殊 constructor 显式失败；DVM-41 聚合 Number/Byte/Short/Integer/Long/Float/Double/Boolean/Character，前 8 类 public API 与 Character 44 项高频 API 均绑定真实 handler，integral radix/overflow、IEEE-754 bits/special values、ASCII 与 surrogate/code-point 有机器和真实 DEX 测试；后续批次把 java.lang.Enum 从 android 目录中性壳迁入 core 并按 pinned libcore Enum.java 交付全表面：name/ordinal 声明式 slot 由 (String,I) 构造器写入，name/ordinal/equals/hashCode/compareTo/getDeclaringClass/静态 valueOf(Class,String) 真实语义（valueOf 先 clinit 再按 enum 自身 static 常量字段按名匹配，NPE/IAE 消息对照 AOSP；toString 保持可 override；clone 恒抛 CloneNotSupportedException），enum values() 依赖的数组 clone 仍明确失败。Character 42 项完整 Unicode API deferred，能力保持 partial。System 与 wrapper property API 共用每 VM guest 属性表，不读宿主环境"
 
 [dexvm.jni_bridge]
 status = "complete"

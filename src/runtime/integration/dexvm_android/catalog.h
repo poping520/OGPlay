@@ -142,7 +142,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_java_io_OutputStream(const Context& context);
 [[nodiscard]] Decl Declare_java_io_Reader(const Context& context);
 [[nodiscard]] Decl Declare_java_io_Writer(const Context& context);
-[[nodiscard]] Decl Declare_java_lang_Enum(const Context& context);
 [[nodiscard]] Decl Declare_java_lang_Thread(const Context& context);
 [[nodiscard]] Decl Declare_java_net_HttpURLConnection(const Context& context);
 [[nodiscard]] Decl Declare_java_net_URL(const Context& context);

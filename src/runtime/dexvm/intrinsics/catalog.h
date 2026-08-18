@@ -14,6 +14,7 @@ void AppendJavaLangPrimitiveWrappers(
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runnable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_CharSequence();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Comparable();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Enum();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_Serializable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StringBuilder();

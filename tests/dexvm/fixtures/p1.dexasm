@@ -262,3 +262,230 @@
     invoke-virtual {v0}, Ljava/lang/Object;->notify()V
     return-void
 .end method
+
+# java.lang.Enum conformance (AOSP libcore libart Enum.java).
+.class public LP1Enum;
+.super Ljava/lang/Enum;
+
+.field static public SMALL:LP1Enum;
+.field static public LARGE:LP1Enum;
+
+.method static constructor <clinit>()V
+.registers 3
+    new-instance v0, LP1Enum;
+    const-string v1, "SMALL"
+    const/4 v2, 0
+    invoke-direct {v0, v1, v2}, LP1Enum;-><init>(Ljava/lang/String;I)V
+    sput-object v0, LP1Enum;->SMALL:LP1Enum;
+    new-instance v0, LP1Enum;
+    const-string v1, "LARGE"
+    const/4 v2, 1
+    invoke-direct {v0, v1, v2}, LP1Enum;-><init>(Ljava/lang/String;I)V
+    sput-object v0, LP1Enum;->LARGE:LP1Enum;
+    return-void
+.end method
+
+.method public constructor <init>(Ljava/lang/String;I)V
+.registers 4
+    invoke-direct {v1, v2, v3}, Ljava/lang/Enum;-><init>(Ljava/lang/String;I)V
+    return-void
+.end method
+
+.method static public smallConstant()Ljava/lang/Enum;
+.registers 1
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    return-object v0
+.end method
+
+.method static public nameOf()Ljava/lang/String;
+.registers 2
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->name()Ljava/lang/String;
+    move-result-object v1
+    return-object v1
+.end method
+
+.method static public ordinals()I
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->ordinal()I
+    move-result v1
+    sget-object v0, LP1Enum;->LARGE:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->ordinal()I
+    move-result v0
+    add-int/2addr v1, v0
+    return v1
+.end method
+
+.method static public stringOf()Ljava/lang/String;
+.registers 2
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->toString()Ljava/lang/String;
+    move-result-object v1
+    return-object v1
+.end method
+
+.method static public hashOfSmall()I
+.registers 2
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->hashCode()I
+    move-result v1
+    return v1
+.end method
+
+.method static public equalsSelf()I
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    sget-object v1, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0, v1}, Ljava/lang/Enum;->equals(Ljava/lang/Object;)Z
+    move-result v2
+    return v2
+.end method
+
+.method static public equalsOther()I
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    sget-object v1, LP1Enum;->LARGE:LP1Enum;
+    invoke-virtual {v0, v1}, Ljava/lang/Enum;->equals(Ljava/lang/Object;)Z
+    move-result v2
+    return v2
+.end method
+
+.method static public compare()I
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    sget-object v1, LP1Enum;->LARGE:LP1Enum;
+    invoke-virtual {v0, v1}, Ljava/lang/Enum;->compareTo(Ljava/lang/Enum;)I
+    move-result v2
+    return v2
+.end method
+
+.method static public compareBridge()I
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    sget-object v1, LP1Enum;->LARGE:LP1Enum;
+    invoke-virtual {v0, v1}, Ljava/lang/Enum;->compareTo(Ljava/lang/Object;)I
+    move-result v2
+    return v2
+.end method
+
+.method static public compareBridgeMismatch()I
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    const-string v1, "str"
+    invoke-virtual {v0, v1}, Ljava/lang/Enum;->compareTo(Ljava/lang/Object;)I
+    move-result v2
+    return v2
+.end method
+
+.method static public compareNull()I
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    const/4 v1, 0
+    invoke-virtual {v0, v1}, Ljava/lang/Enum;->compareTo(Ljava/lang/Enum;)I
+    move-result v2
+    return v2
+.end method
+
+.method static public declaringIsOwn()I
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->getDeclaringClass()Ljava/lang/Class;
+    move-result-object v1
+    invoke-virtual {v0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    move-result-object v2
+    if-ne v1, v2, :mismatch
+    const/4 v0, 1
+    return v0
+    :mismatch
+    const/4 v0, 0
+    return v0
+.end method
+
+.method static public valueOfSmall()Ljava/lang/Enum;
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->getDeclaringClass()Ljava/lang/Class;
+    move-result-object v0
+    const-string v1, "SMALL"
+    invoke-static {v0, v1}, Ljava/lang/Enum;->valueOf(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+    move-result-object v2
+    return-object v2
+.end method
+
+.method static public valueOfMissing()Ljava/lang/Enum;
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->getDeclaringClass()Ljava/lang/Class;
+    move-result-object v0
+    const-string v1, "NOPE"
+    invoke-static {v0, v1}, Ljava/lang/Enum;->valueOf(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+    move-result-object v2
+    return-object v2
+.end method
+
+.method static public valueOfNullName()Ljava/lang/Enum;
+.registers 3
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->getDeclaringClass()Ljava/lang/Class;
+    move-result-object v0
+    const/4 v1, 0
+    invoke-static {v0, v1}, Ljava/lang/Enum;->valueOf(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+    move-result-object v2
+    return-object v2
+.end method
+
+.method static public valueOfNotEnum()Ljava/lang/Enum;
+.registers 3
+    const-string v0, "x"
+    invoke-virtual {v0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    move-result-object v0
+    const-string v1, "SMALL"
+    invoke-static {v0, v1}, Ljava/lang/Enum;->valueOf(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+    move-result-object v2
+    return-object v2
+.end method
+
+.method static public cloneOfSmall()Ljava/lang/Object;
+.registers 2
+    sget-object v0, LP1Enum;->SMALL:LP1Enum;
+    invoke-virtual {v0}, Ljava/lang/Enum;->clone()Ljava/lang/Object;
+    move-result-object v1
+    return-object v1
+.end method
+
+# toString is not final on the platform: enum types may override it.
+.class public LP1EnumTagged;
+.super Ljava/lang/Enum;
+
+.field static public TAG:LP1EnumTagged;
+
+.method static constructor <clinit>()V
+.registers 3
+    new-instance v0, LP1EnumTagged;
+    const-string v1, "TAG"
+    const/4 v2, 0
+    invoke-direct {v0, v1, v2}, LP1EnumTagged;-><init>(Ljava/lang/String;I)V
+    sput-object v0, LP1EnumTagged;->TAG:LP1EnumTagged;
+    return-void
+.end method
+
+.method public constructor <init>(Ljava/lang/String;I)V
+.registers 4
+    invoke-direct {v1, v2, v3}, Ljava/lang/Enum;-><init>(Ljava/lang/String;I)V
+    return-void
+.end method
+
+.method public toString()Ljava/lang/String;
+.registers 1
+    const-string v0, "TAG!"
+    return-object v0
+.end method
+
+.method static public tagged()Ljava/lang/String;
+.registers 2
+    sget-object v0, LP1EnumTagged;->TAG:LP1EnumTagged;
+    invoke-virtual {v0}, Ljava/lang/Enum;->toString()Ljava/lang/String;
+    move-result-object v1
+    return-object v1
+.end method

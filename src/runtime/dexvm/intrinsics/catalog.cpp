@@ -9,6 +9,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_lang_Runnable(),
         Declare_java_lang_CharSequence(),
         Declare_java_lang_Comparable(),
+        Declare_java_lang_Enum(),
         Declare_java_io_Serializable(),
         Declare_java_lang_String(),
         Declare_java_lang_StringBuilder(),

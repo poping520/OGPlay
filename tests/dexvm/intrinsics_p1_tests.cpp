@@ -51,11 +51,13 @@ struct Vm final {
 
   [[nodiscard]] VmCallOutcome CallStatic(const std::string &name,
                                          const std::string &descriptor,
-        std::vector<VmValue> arguments = {}) {
-        const auto java_class = linker.FindClass("LP1;");
+        std::vector<VmValue> arguments = {},
+        const std::string &owner = "LP1;") {
+        const auto java_class = linker.FindClass(owner);
         REQUIRE(java_class.has_value());
     const auto method = linker.FindDirectMethod(*java_class, name, descriptor);
-        REQUIRE_MESSAGE(method.has_value(), name);
+        const std::string qualified = owner + "." + name;
+        REQUIRE_MESSAGE(method.has_value(), qualified);
         return interpreter.Call(*method, arguments);
     }
 
@@ -70,6 +72,14 @@ void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
   REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     REQUIRE(outcome.value.kind == VmValue::Kind::cat1);
     CHECK(outcome.value.AsInt() == expected);
+}
+
+void ExpectThrow(const Vm& vm, const VmCallOutcome& outcome,
+                 const std::string& descriptor, const std::string& message) {
+  const std::string context = "expected " + descriptor + " but it returned";
+  REQUIRE_MESSAGE(outcome.exception.IsValid(), context);
+  CHECK(vm.linker.Class(outcome.exception_class).descriptor == descriptor);
+  CHECK(outcome.exception_message == message);
 }
 
 }  // namespace
@@ -128,4 +138,74 @@ TEST_CASE("dexvm Object notify validates monitor ownership") {
   REQUIRE(unowned.exception.IsValid());
   CHECK(vm.linker.Class(unowned.exception_class).descriptor ==
         "Ljava/lang/IllegalMonitorStateException;");
+}
+
+TEST_CASE("dexvm P1 Enum constants answer name/ordinal/hash/identity") {
+  Vm vm;
+  CHECK(vm.AsString(vm.CallStatic("nameOf", "()Ljava/lang/String;", {},
+                                  "LP1Enum;")) == "SMALL");
+  ExpectInt(vm.CallStatic("ordinals", "()I", {}, "LP1Enum;"), 1);
+  CHECK(vm.AsString(vm.CallStatic("stringOf", "()Ljava/lang/String;", {},
+                                  "LP1Enum;")) == "SMALL");
+  ExpectInt(vm.CallStatic("equalsSelf", "()I", {}, "LP1Enum;"), 1);
+  ExpectInt(vm.CallStatic("equalsOther", "()I", {}, "LP1Enum;"), 0);
+
+  // AOSP Enum.hashCode: ordinal + name.hashCode (Java formula, UTF-16 units).
+  std::int32_t name_hash = 0;
+  for (const auto unit : std::u16string{u"SMALL"}) {
+    name_hash = 31 * name_hash + static_cast<std::int32_t>(unit);
+  }
+  ExpectInt(vm.CallStatic("hashOfSmall", "()I", {}, "LP1Enum;"),
+            0 + name_hash);
+
+  // toString is not final: the subclass override wins virtual dispatch.
+  CHECK(vm.AsString(vm.CallStatic("tagged", "()Ljava/lang/String;", {},
+                                  "LP1EnumTagged;")) == "TAG!");
+}
+
+TEST_CASE("dexvm P1 Enum compareTo follows ordinals") {
+  Vm vm;
+  ExpectInt(vm.CallStatic("compare", "()I", {}, "LP1Enum;"), -1);
+  ExpectInt(vm.CallStatic("compareBridge", "()I", {}, "LP1Enum;"), -1);
+  ExpectThrow(vm, vm.CallStatic("compareBridgeMismatch", "()I", {},
+                                "LP1Enum;"),
+              "Ljava/lang/ClassCastException;",
+              "argument is not an enum constant");
+  ExpectThrow(vm, vm.CallStatic("compareNull", "()I", {}, "LP1Enum;"),
+              "Ljava/lang/NullPointerException;",
+              "ordinal of null enum constant");
+}
+
+TEST_CASE("dexvm P1 Enum getDeclaringClass and valueOf") {
+  Vm vm;
+  ExpectInt(vm.CallStatic("declaringIsOwn", "()I", {}, "LP1Enum;"), 1);
+
+  // valueOf answers the live singleton, not a copy.
+  const auto resolved = vm.CallStatic(
+      "valueOfSmall", "()Ljava/lang/Enum;", {}, "LP1Enum;");
+  REQUIRE_MESSAGE(!resolved.exception.IsValid(), resolved.exception_message);
+  const auto constant = vm.CallStatic(
+      "smallConstant", "()Ljava/lang/Enum;", {}, "LP1Enum;");
+  REQUIRE_MESSAGE(!constant.exception.IsValid(), constant.exception_message);
+  CHECK(resolved.value.ref == constant.value.ref);
+
+  ExpectThrow(vm, vm.CallStatic("valueOfMissing", "()Ljava/lang/Enum;", {},
+                                "LP1Enum;"),
+              "Ljava/lang/IllegalArgumentException;",
+              "NOPE is not a constant in P1Enum");
+  ExpectThrow(vm, vm.CallStatic("valueOfNullName", "()Ljava/lang/Enum;", {},
+                                "LP1Enum;"),
+              "Ljava/lang/NullPointerException;", "name == null");
+  ExpectThrow(vm, vm.CallStatic("valueOfNotEnum", "()Ljava/lang/Enum;", {},
+                                "LP1Enum;"),
+              "Ljava/lang/IllegalArgumentException;",
+              "class java.lang.String is not an enum type");
+}
+
+TEST_CASE("dexvm P1 Enum clone is rejected like the platform") {
+  Vm vm;
+  ExpectThrow(vm, vm.CallStatic("cloneOfSmall", "()Ljava/lang/Object;", {},
+                                "LP1Enum;"),
+              "Ljava/lang/CloneNotSupportedException;",
+              "Enums may not be cloned");
 }

@@ -360,8 +360,12 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
 
 GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto& execution = impl_->Execution();
+    impl_->RecordTrace(DexVmTraceKind::gc_begin, execution);
     const auto mark = MarkReachable();
     const auto swept = SweepGarbage(mark);
+    impl_->RecordTrace(DexVmTraceKind::gc_end, execution, nullptr, 0, 0,
+                       swept.freed_bytes);
     ++impl_->stats.gc_collections;
     impl_->stats.gc_freed_bytes += swept.freed_bytes;
     impl_->stats.gc_host_destructors_run += swept.host_destructors_run;
@@ -428,6 +432,8 @@ void Interpreter::NotifyMonitor(const VmObjectRef receiver,
                           "notify on null"};
     }
     const auto owner = impl_->Execution().token;
+    impl_->RecordTrace(DexVmTraceKind::monitor_notify, impl_->Execution(),
+                       nullptr, 0, 0, receiver.Value());
     if (all) {
         impl_->monitors->NotifyAll(receiver, owner);
     } else {
@@ -441,6 +447,8 @@ void Interpreter::WaitOnMonitor(const VmObjectRef receiver,
         throw VmJavaThrow{"Ljava/lang/NullPointerException;",
                           "wait on null"};
     }
+    impl_->RecordTrace(DexVmTraceKind::monitor_wait, impl_->Execution(),
+                       nullptr, 0, 0, receiver.Value());
     const auto outcome = impl_->monitors->Wait(
         receiver, impl_->Execution().token, timeout_millis);
     switch (outcome) {

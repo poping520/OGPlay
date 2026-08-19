@@ -87,6 +87,15 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `UnwindStoppedExecutionContext` 清理由 native/A32 重入边界留下的不可达外层帧，
   未请求停止或仍有 native frame 均明确拒绝，普通 `DiscardExecutionContext`
   继续禁止丢弃活动栈。
+- `InterpreterConfig::diagnostics` / `Interpreter::Trace`（DVM-52）：默认容量 0
+  精确关闭；启用后在构造期分配固定事件环，记录 instruction、method、exception、
+  class init、monitor、native 与 GC 的稳定整数事实。指令事件可采样，event mask 与
+  query filter/limit 受检；guest 热路径不分配/格式化，也不保存 host 指针，class/
+  method 文本只在查询时解析。`RenderDexVmTraceJson` 输出 schema 1。
+- `Interpreter::StackSnapshot`（DVM-52）：获取 `VmExecutionLock` 后枚举全部 execution
+  context 的 Java 帧、dex pc、tick 与 pending exception，并用 context token 关联
+  `VmThreadRuntime` 的 guest id/name/status；这是等待当前 guest call 释放全 VM 锁的
+  停界查询，不宣称异步抢占。`RenderDexVmStacksJson` 输出 schema 1。
 - `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
   `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
   `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复；可注入
@@ -147,7 +156,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 布局/vtable 在 `class_linker.cpp`，常量池解析与可赋值性在
 `class_linker_resolve.cpp`。解释器主循环在 `interpreter.cpp`，显式执行 context
 的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
-`interpreter_context.cpp`，宿主线程生命周期在 `vm_threads.cpp`。
+`interpreter_context.cpp`，诊断 ring/query/JSON 在 `diagnostics.cpp`，宿主线程
+生命周期在 `vm_threads.cpp`。
 `intrinsics/catalog.cpp` 显式聚合目录；每个 Java 类仍由唯一
 `Declare_*()` 同址声明形状与 handler，默认一类一个同名 `.cpp`。唯一文件组织
 例外是 Android 4.4.4 `java.lang` Throwable hierarchy、primitive wrapper
@@ -211,7 +221,9 @@ whole-DEX 启动、首次触达明确失败/survey 才记账；core catalog 唯�
 声明即绑定、重复方法拒绝、
 直调与声明未实现的重复 miss 记账，算术边界、控制流、
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
-显式执行 context 交错调用的帧/异常/tick/monitor 隔离、跨线程 clinit 等待）；
+显式执行 context 交错调用的帧/异常/tick/monitor 隔离、跨线程 clinit 等待；
+DVM-52 默认关闭、固定 ring 覆盖/筛选/采样、语义事件族、跨 context stack 与
+schema-1 JSON）；
 `tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、
 二次 start 与无 run() 目标拒绝、isAlive、join、未捕获异常记账、interrupt、
 teardown 逐线程 join、持有 native 帧时拒绝停泊）；

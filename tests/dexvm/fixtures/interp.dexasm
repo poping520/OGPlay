@@ -1165,3 +1165,14 @@
     const/4 v0, 0
     return v0
 .end method
+
+# DVM-52: enters a test-only intrinsic which snapshots the active caller.
+.class public LDiagnosticsProbe;
+.super Ljava/lang/Object;
+
+.method static public capture()I
+.registers 1
+    invoke-static {}, Ldiagnostics/Host;->capture()I
+    move-result v0
+    return v0
+.end method

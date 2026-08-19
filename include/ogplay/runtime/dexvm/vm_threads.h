@@ -30,6 +30,7 @@ enum class VmThreadStatus : std::uint8_t {
 
 struct VmThreadSnapshot final {
     std::uint64_t id{};
+    std::uint64_t context_token{};
     std::uint32_t object{};
     VmThreadStatus status{VmThreadStatus::created};
     bool interrupted{};

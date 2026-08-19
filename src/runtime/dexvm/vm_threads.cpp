@@ -486,7 +486,7 @@ std::vector<VmThreadSnapshot> VmThreadRuntime::Snapshot() const {
     std::vector<VmThreadSnapshot> snapshot;
     snapshot.reserve(impl_->records.size() + 1U);
     if (impl_->root_object.IsValid()) {
-        snapshot.push_back({1U, impl_->root_object.Value(),
+        snapshot.push_back({1U, 1U, impl_->root_object.Value(),
                             impl_->shutting_down ? VmThreadStatus::stopped
                                                 : VmThreadStatus::running,
                             impl_->vm->Monitors().Interrupted(1U),
@@ -494,7 +494,7 @@ std::vector<VmThreadSnapshot> VmThreadRuntime::Snapshot() const {
     }
     for (const auto& [_, record] : impl_->records) {
         snapshot.push_back(
-            {record->id, record->object.Value(), record->status,
+            {record->id, record->context.Token(), record->object.Value(), record->status,
              impl_->vm->Monitors().Interrupted(record->context.Token()),
              record->name});
     }

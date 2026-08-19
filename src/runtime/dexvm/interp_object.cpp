@@ -365,7 +365,22 @@ void Interpreter::Impl::StepObjectOrInvoke(
                         ? std::span<const VmValue>(arguments)
                         : std::span<const VmValue>(arguments).subspan(1);
                 const MethodMonitorScope monitor(*this, method, arguments);
-                frame.last_result = InvokeIntrinsic(method, receiver, rest);
+                RecordTrace(DexVmTraceKind::method_enter, execution, &method,
+                            frame.pc);
+                try {
+                    frame.last_result = InvokeIntrinsic(method, receiver, rest);
+                    RecordTrace(DexVmTraceKind::method_exit, execution,
+                                &method, frame.pc);
+                } catch (const VmJavaThrow& thrown) {
+                    ThrowJava(thrown.descriptor, thrown.message);
+                    RecordTrace(DexVmTraceKind::method_exit, execution,
+                                &method, frame.pc, 0, 1);
+                    return;
+                } catch (...) {
+                    RecordTrace(DexVmTraceKind::method_exit, execution,
+                                &method, frame.pc, 0, 1);
+                    throw;
+                }
                 if (!pending_exception.IsValid()) advance();
                 return;
             }
@@ -390,8 +405,24 @@ void Interpreter::Impl::StepObjectOrInvoke(
                     const MethodMonitorScope monitor(*this, method,
                                                      arguments);
                     const NativeFrame native_frame(*this);
-                    frame.last_result =
-                        bridge->Invoke(method, receiver, rest);
+                    RecordTrace(DexVmTraceKind::native_enter, execution,
+                                &method, frame.pc);
+                    RecordTrace(DexVmTraceKind::method_enter, execution,
+                                &method, frame.pc);
+                    try {
+                        frame.last_result =
+                            bridge->Invoke(method, receiver, rest);
+                        RecordTrace(DexVmTraceKind::native_exit, execution,
+                                    &method, frame.pc);
+                        RecordTrace(DexVmTraceKind::method_exit, execution,
+                                    &method, frame.pc);
+                    } catch (...) {
+                        RecordTrace(DexVmTraceKind::native_exit, execution,
+                                    &method, frame.pc, 0, 1);
+                        RecordTrace(DexVmTraceKind::method_exit, execution,
+                                    &method, frame.pc, 0, 1);
+                        throw;
+                    }
                 }
                 if (!pending_exception.IsValid()) advance();
                 return;

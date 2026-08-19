@@ -13,6 +13,7 @@
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/diagnostics.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 
 namespace ogplay::runtime::dexvm {
@@ -199,6 +200,7 @@ public:
 struct InterpreterConfig final {
     std::uint32_t max_frames{512};
     std::uint64_t tick_budget{200'000'000ULL};
+    DexVmDiagnosticsConfig diagnostics;
 };
 
 struct InterpreterStats final {
@@ -290,6 +292,13 @@ public:
     [[nodiscard]] DexClassLinker& Linker() noexcept;
     [[nodiscard]] JavaObjectModel& Model() noexcept;
     [[nodiscard]] const InterpreterStats& Stats() const noexcept;
+
+    // DVM-52 diagnostics. Filtering and descriptor formatting happen only
+    // at query time; StackSnapshot uses the execution lock as a safe point.
+    [[nodiscard]] bool DiagnosticsEnabled() const noexcept;
+    [[nodiscard]] std::vector<DexVmTraceEntry> Trace(
+        std::string_view filter = {}, std::size_t limit = 100) const;
+    [[nodiscard]] std::vector<DexVmThreadStack> StackSnapshot() const;
 
     // GC root surface. The execution lock is the stop-the-world boundary;
     // callers may inspect this deterministically while it is held.

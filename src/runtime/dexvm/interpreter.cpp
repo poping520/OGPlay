@@ -48,6 +48,8 @@ void Interpreter::Impl::ReleaseFrameMonitor(Frame& frame) noexcept {
     if (!frame.synchronized_monitor.IsValid()) return;
     try {
         monitors->Exit(frame.synchronized_monitor, Execution().token);
+        RecordTrace(DexVmTraceKind::monitor_exit, Execution(), frame.method,
+                    frame.pc, 0, frame.synchronized_monitor.Value());
     } catch (const std::exception&) {
     }
     frame.synchronized_monitor = VmObjectRef(0);
@@ -72,6 +74,13 @@ void Interpreter::Impl::SetPending(const VmObjectRef throwable) {
     }
     pending_exception = throwable;
     pending_exception_class = model->ObjectClass(throwable);
+    const auto* method = execution.frames.empty()
+                             ? nullptr
+                             : execution.frames.back().method;
+    const auto pc = execution.frames.empty() ? 0U
+                                             : execution.frames.back().pc;
+    RecordTrace(DexVmTraceKind::exception_throw, execution, method, pc, 0,
+                throwable.Value());
     auto& state = throwables[throwable.Value()];
     if (state.stack.empty()) {
         state.stack = CaptureStack();
@@ -86,6 +95,13 @@ void Interpreter::Impl::ThrowJava(const std::string& descriptor,
     const auto throwable = owner->MakeThrowable(descriptor, message);
     pending_exception = throwable;
     pending_exception_class = model->ObjectClass(throwable);
+    const auto* method = execution.frames.empty()
+                             ? nullptr
+                             : execution.frames.back().method;
+    const auto pc = execution.frames.empty() ? 0U
+                                             : execution.frames.back().pc;
+    RecordTrace(DexVmTraceKind::exception_throw, execution, method, pc, 0,
+                throwable.Value());
 }
 
 std::vector<VmStackEntry> Interpreter::Impl::CaptureStack() const {
@@ -161,6 +177,8 @@ void Interpreter::Impl::EnsureInitialized(
     auto& linked = linker->MutableClass(java_class);
     linked.clinit_state = ClinitState::initializing;
     linked.clinit_thread = execution.token;
+    RecordTrace(DexVmTraceKind::class_init_begin, execution, nullptr, 0, 0,
+                java_class.Value());
     try {
 
     // Superclass first (interfaces are not initialized transitively).
@@ -168,6 +186,8 @@ void Interpreter::Impl::EnsureInitialized(
         EnsureInitialized(execution, *linked.super);
         if (pending_exception.IsValid()) {
             PublishClinitState(java_class, ClinitState::failed);
+            RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
+                        0, 0, java_class.Value());
             return;
         }
     }
@@ -249,6 +269,8 @@ void Interpreter::Impl::EnsureInitialized(
             static_cast<void>(mutable_class.clinit_implementation(context));
         } catch (const VmJavaThrow& thrown) {
             PublishClinitState(java_class, ClinitState::failed);
+            RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
+                        0, 0, java_class.Value());
             ThrowJava(thrown.descriptor, thrown.message);
             return;
         }
@@ -261,6 +283,8 @@ void Interpreter::Impl::EnsureInitialized(
         const auto outcome = Run(execution, frames.size() - 1);
         if (outcome.exception.IsValid()) {
             PublishClinitState(java_class, ClinitState::failed);
+            RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
+                        0, 0, java_class.Value());
             // Initialization failure is sticky NoClassDefFoundError for
             // later users; the original throwable propagates now.
             SetPending(outcome.exception);
@@ -268,12 +292,16 @@ void Interpreter::Impl::EnsureInitialized(
         }
     }
     PublishClinitState(java_class, ClinitState::initialized);
+    RecordTrace(DexVmTraceKind::class_init_end, execution, nullptr, 0, 0,
+                java_class.Value());
     ++stats.classes_initialized;
     } catch (...) {
         auto& failed = linker->MutableClass(java_class);
         if (failed.clinit_state == ClinitState::initializing &&
             failed.clinit_thread == execution.token) {
             PublishClinitState(java_class, ClinitState::failed);
+            RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
+                        0, 0, java_class.Value());
         }
         throw;
     }
@@ -320,6 +348,8 @@ void Interpreter::Impl::PushInterpretedFrame(
     const auto synchronized_monitor = frame.synchronized_monitor;
     if (synchronized_monitor.IsValid()) {
         monitors->Enter(synchronized_monitor, execution.token);
+        RecordTrace(DexVmTraceKind::monitor_enter, execution, &method, 0, 0,
+                    synchronized_monitor.Value());
     }
     try {
         frames.push_back(std::move(frame));
@@ -333,6 +363,7 @@ void Interpreter::Impl::PushInterpretedFrame(
         throw;
     }
     ++stats.method_calls;
+    RecordTrace(DexVmTraceKind::method_enter, execution, &method, 0);
 }
 
 VmValue
@@ -405,6 +436,8 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                 // The call is over: drop its frames so the context stays
                 // usable, and discardable once its thread is joined.
                 while (frames.size() > entry_depth) {
+                    RecordTrace(DexVmTraceKind::method_exit, execution,
+                                frames.back().method, frames.back().pc, 0, 1);
                     ReleaseFrameMonitor(frames.back());
                     frames.pop_back();
                 }
@@ -445,11 +478,16 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                 }
             }
             if (handled) {
+                RecordTrace(DexVmTraceKind::exception_catch, execution,
+                            frame.method, frame.pc, 0,
+                            pending_exception.Value());
                 frame.caught = pending_exception;
                 pending_exception = VmObjectRef{};
                 pending_exception_class = DexClassId{};
                 break;
             }
+            RecordTrace(DexVmTraceKind::method_exit, execution, frame.method,
+                        frame.pc, 0, 1);
             ReleaseFrameMonitor(frame);
             frames.pop_back();
         }
@@ -482,6 +520,15 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->bridge = bridge;
     impl_->ledger = &ledger;
     impl_->config = config;
+    if (config.diagnostics.instruction_sample_interval == 0U) {
+        throw std::invalid_argument(
+            "DexVM instruction trace sample interval must be non-zero");
+    }
+    if (config.diagnostics.trace_capacity > 1'000'000U) {
+        throw std::invalid_argument(
+            "DexVM trace capacity must not exceed 1000000 entries");
+    }
+    impl_->trace_ring.resize(config.diagnostics.trace_capacity);
     impl_->owner = this;
     auto default_execution = std::make_unique<InterpreterExecutionState>();
     default_execution->token = 1;
@@ -604,17 +651,26 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                       ? VmObjectRef{}
                                       : arguments.front().ref;
             const auto rest = method.is_static ? arguments : arguments.subspan(1);
+            const Impl::MethodMonitorScope monitor(*impl_, method, arguments);
+            impl_->RecordTrace(DexVmTraceKind::method_enter, execution,
+                               &method);
             try {
-                const Impl::MethodMonitorScope monitor(*impl_, method,
-                                                       arguments);
                 outcome.value = impl_->InvokeIntrinsic(method, receiver, rest);
+                impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
+                                   &method);
             } catch (const VmJavaThrow& thrown) {
                 impl_->ThrowJava(thrown.descriptor, thrown.message);
+                impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
+                                   &method, 0, 0, 1);
                 outcome.exception = pending_exception;
                 outcome.exception_class = pending_exception_class;
                 outcome.exception_message = thrown.message;
                 pending_exception = VmObjectRef{};
                 pending_exception_class = DexClassId{};
+            } catch (...) {
+                impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
+                                   &method, 0, 0, 1);
+                throw;
             }
             return outcome;
         }
@@ -636,7 +692,23 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
             ++impl_->stats.native_calls;
             const Impl::MethodMonitorScope monitor(*impl_, method, arguments);
             const Impl::NativeFrame native_frame(*impl_);
-            outcome.value = impl_->bridge->Invoke(method, receiver, rest);
+            impl_->RecordTrace(DexVmTraceKind::native_enter, execution,
+                               &method);
+            impl_->RecordTrace(DexVmTraceKind::method_enter, execution,
+                               &method);
+            try {
+                outcome.value = impl_->bridge->Invoke(method, receiver, rest);
+                impl_->RecordTrace(DexVmTraceKind::native_exit, execution,
+                                   &method);
+                impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
+                                   &method);
+            } catch (...) {
+                impl_->RecordTrace(DexVmTraceKind::native_exit, execution,
+                                   &method, 0, 0, 1);
+                impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
+                                   &method, 0, 0, 1);
+                throw;
+            }
             return outcome;
         }
         case MethodKind::abstract:

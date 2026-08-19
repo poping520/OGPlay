@@ -408,6 +408,7 @@ add_library(ogplay_runtime
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp
+    src/runtime/dexvm/diagnostics.cpp
     ${OGPLAY_DEXVM_INTRINSIC_SOURCES}
     src/runtime/dexvm/gap_survey.cpp
     src/runtime/dexvm/method_precheck.cpp

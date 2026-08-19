@@ -1155,6 +1155,16 @@ status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact title-flow regression"
 note = "DVM-27 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；DVM-50 补齐跨 context clinit 等待与同步方法展开。linker/object model/intrinsic 目录共享，解释执行继续由 VmExecutionLock 串行"
 
+[dexvm.trace]
+status = "complete"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "DVM-52 交付默认关闭、构造期定容的语义事件环；覆盖 instruction/method/exception/clinit/monitor/native/GC，支持 event mask、instruction sampling、最近记录上限与 event/class/method/descriptor filter。热路径只写固定整数记录，文本与 schema-1 JSON 在查询时生成，不保存 host 指针"
+
+[dexvm.stack]
+status = "complete"
+test = "tests/dexvm/interpreter_tests.cpp"
+note = "DVM-52 交付 VmExecutionLock 安全点上的全 execution-context Java 栈快照，并以 context token 关联 guest thread id/name/status；输出 class/method/descriptor/dex pc、tick 与 pending guest exception。查询不会异步抢占正在执行的 guest call，MCP/CLI 消费层后续接入"
+
 [dexvm.threads]
 status = "complete"
 test = "tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"

@@ -52,6 +52,18 @@ struct InterpreterExecutionState final {
     std::atomic<bool> stop_requested{false};
 };
 
+struct RawDexVmTraceEntry final {
+    std::uint64_t sequence{};
+    DexVmTraceKind kind{DexVmTraceKind::instruction};
+    std::uint64_t context_token{};
+    std::uint64_t tick{};
+    DexClassId java_class;
+    VmMethodId method;
+    std::uint32_t dex_pc{};
+    std::uint8_t opcode{};
+    std::uint64_t value{};
+};
+
 class InterpreterExecutionScope final {
 public:
     InterpreterExecutionScope(void* interpreter,
@@ -107,6 +119,10 @@ public:
     std::unique_ptr<VmMonitorTable> monitors;
     VmThreadRuntime* threads{};
     InterpreterGcIntegration gc_integration;
+    std::vector<RawDexVmTraceEntry> trace_ring;
+    std::size_t trace_head{};
+    std::size_t trace_size{};
+    std::uint64_t trace_sequence{};
 
     [[nodiscard]] InterpreterExecutionState& Execution();
     [[nodiscard]] const InterpreterExecutionState& Execution() const;
@@ -197,6 +213,12 @@ public:
     void ThrowJava(const std::string& descriptor, const std::string& message);
     void SetPending(VmObjectRef throwable);
     [[nodiscard]] std::vector<VmStackEntry> CaptureStack() const;
+    void RecordTrace(DexVmTraceKind kind,
+                     const InterpreterExecutionState& execution,
+                     const LinkedMethod* method = nullptr,
+                     std::uint32_t dex_pc = 0,
+                     std::uint8_t opcode = 0,
+                     std::uint64_t value = 0);
 
     // ---- execution --------------------------------------------------------
 
@@ -261,15 +283,22 @@ public:
     public:
         MethodMonitorScope(Impl& impl, const LinkedMethod& method,
                            std::span<const VmValue> arguments)
-            : impl_(&impl), object_(impl.MethodMonitor(method, arguments)) {
+            : impl_(&impl), method_(&method),
+              object_(impl.MethodMonitor(method, arguments)) {
             if (object_.IsValid()) {
                 impl_->monitors->Enter(object_, impl_->Execution().token);
+                impl_->RecordTrace(DexVmTraceKind::monitor_enter,
+                                   impl_->Execution(), &method, 0, 0,
+                                   object_.Value());
             }
         }
         ~MethodMonitorScope() {
             if (!object_.IsValid()) return;
             try {
                 impl_->monitors->Exit(object_, impl_->Execution().token);
+                impl_->RecordTrace(DexVmTraceKind::monitor_exit,
+                                   impl_->Execution(), method_, 0, 0,
+                                   object_.Value());
             } catch (const std::exception&) {
             }
         }
@@ -278,6 +307,7 @@ public:
 
     private:
         Impl* impl_{};
+        const LinkedMethod* method_{};
         VmObjectRef object_;
     };
     [[nodiscard]] VmValue InvokeIntrinsic(const LinkedMethod& method,

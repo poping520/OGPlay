@@ -51,6 +51,10 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
     }
     Tick(execution);
     ++stats.executed_instructions;
+    if (!trace_ring.empty()) {
+        RecordTrace(DexVmTraceKind::instruction, execution, frame.method,
+                    frame.pc, opcode);
+    }
     const auto width = info.width;
     const auto advance = [&] { frames.back().pc += width; };
 
@@ -155,6 +159,8 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 static_cast<std::int64_t>(GetWide(frame, vAA)));
             if (opcode == 0x11) result = VmValue::Ref(GetRef(frame, vAA));
             exit_result = result;
+            RecordTrace(DexVmTraceKind::method_exit, execution, frame.method,
+                        frame.pc, opcode);
             ReleaseFrameMonitor(frame);
             frames.pop_back();
             if (!frames.empty()) {
@@ -260,6 +266,8 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
             // Parks (releasing the execution lock) while another thread
             // owns this object.
             monitors->Enter(ref, execution.token);
+            RecordTrace(DexVmTraceKind::monitor_enter, execution,
+                        frame.method, frame.pc, opcode, ref.Value());
             advance();
             return;
         }
@@ -271,6 +279,8 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 return;
             }
             monitors->Exit(ref, execution.token);
+            RecordTrace(DexVmTraceKind::monitor_exit, execution,
+                        frame.method, frame.pc, opcode, ref.Value());
             advance();
             return;
         }

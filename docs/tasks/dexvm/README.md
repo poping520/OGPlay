@@ -74,6 +74,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-49](DVM-49.md) | 统一 Java 对象与 intrinsic 状态底座 | 完成 |
 | [DVM-50](DVM-50.md) | 线程 native 上下文与统一 monitor | 完成 |
 | [DVM-51](DVM-51.md) | intrinsic 类型化调用、预绑定字段与 API-19 骨架工具 | 完成 |
+| [DVM-52](DVM-52.md) | 默认关闭的有界语义 trace 与跨 context Java 栈安全点查询 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 
@@ -87,6 +88,6 @@ Asphalt 6 自带 `GLSurfaceView` 所需的 EGL façade 与条件 swap pacer；�
 `asphalt6.bootstrap` 可见开场检查点三轮哈希一致、无 fault、clean shutdown，A6
 启动 gate 已完成。主界面与可游玩 gate 尚未验收，状态以 `CURRENT.md` 为准。
 
-其余在办项（GC-B exact/长运行验收、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
+其余在办项（GC-B exact/长运行验收、诊断查询面的 MCP/CLI 消费、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)
 的滚动快照为准。

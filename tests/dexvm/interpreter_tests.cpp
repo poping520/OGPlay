@@ -50,12 +50,18 @@ struct Vm final {
     Interpreter interpreter;
 
     explicit Vm(const InterpreterConfig config = {},
-                const JavaObjectModelConfig model_config = {})
+                const JavaObjectModelConfig model_config = {},
+                std::vector<IntrinsicClassDecl> extra_catalog = {})
         : model(strings, arrays, model_config),
           linker(),
           interpreter(
-              [this]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+              [this, &extra_catalog]() -> DexClassLinker& {
+                  auto catalog = CoreIntrinsicCatalog();
+                  catalog.insert(
+                      catalog.end(),
+                      std::make_move_iterator(extra_catalog.begin()),
+                      std::make_move_iterator(extra_catalog.end()));
+                  linker.RegisterIntrinsics(catalog);
                   linker.RegisterDex(ReadFixture("interp.dex"));
                   linker.Link();
                   return linker;
@@ -1677,4 +1683,170 @@ TEST_CASE("dexvm execution contexts isolate mutable interpreter state") {
     CHECK_THROWS_AS(
         static_cast<void>(other.interpreter.ExecutionSnapshot(first)),
         DexVmError);
+}
+
+TEST_CASE("dexvm diagnostics stay disabled unless explicitly configured") {
+    Vm vm;
+    CHECK_FALSE(vm.interpreter.DiagnosticsEnabled());
+    ExpectInt(vm.CallStatic("LArith;", "divide", "(II)I",
+                            {VmValue::Int(12), VmValue::Int(3)}),
+              4);
+    CHECK(vm.interpreter.Trace("", 16).empty());
+
+    const auto second = vm.interpreter.CreateExecutionContext();
+    const auto stacks = vm.interpreter.StackSnapshot();
+    REQUIRE(stacks.size() == 2);
+    CHECK(stacks[0].context_token != 0);
+    CHECK(stacks[1].context_token == second.Token());
+    CHECK(stacks[0].thread_status == "idle");
+    CHECK(stacks[1].thread_status == "idle");
+    CHECK(stacks[0].frames.empty());
+    CHECK(stacks[1].frames.empty());
+
+    std::vector<DexVmThreadStack> live_stacks;
+    auto builder = IntrinsicClassBuilder::Class("Ldiagnostics/Host;");
+    builder.StaticMethod("capture", "()I",
+                         [&live_stacks](IntrinsicContext& context) {
+                             live_stacks = context.vm.StackSnapshot();
+                             const auto found = std::find_if(
+                                 live_stacks.begin(), live_stacks.end(),
+                                 [](const auto& stack) {
+                                     return !stack.frames.empty();
+                                 });
+                             return VmValue::Int(
+                                 found == live_stacks.end()
+                                     ? 0
+                                     : static_cast<std::int32_t>(
+                                           found->frames.size()));
+                         });
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(builder).Build());
+    Vm live(InterpreterConfig{}, JavaObjectModelConfig{}, std::move(catalog));
+    ExpectInt(live.CallStatic("LDiagnosticsProbe;", "capture", "()I"), 1);
+    const auto running = std::find_if(
+        live_stacks.begin(), live_stacks.end(),
+        [](const auto& stack) { return !stack.frames.empty(); });
+    REQUIRE(running != live_stacks.end());
+    REQUIRE(running->frames.size() == 1);
+    CHECK(running->thread_status == "running");
+    CHECK(running->frames[0].class_descriptor == "LDiagnosticsProbe;");
+    CHECK(running->frames[0].method_name == "capture");
+    CHECK(running->frames[0].method_descriptor == "()I");
+}
+
+TEST_CASE("dexvm diagnostics use a bounded filtered event ring") {
+    InterpreterConfig config;
+    config.diagnostics.trace_capacity = 3;
+    config.diagnostics.event_mask =
+        DexVmTraceBit(DexVmTraceKind::method_enter) |
+        DexVmTraceBit(DexVmTraceKind::method_exit);
+    Vm vm(config);
+    CHECK(vm.interpreter.DiagnosticsEnabled());
+
+    for (int i = 0; i < 3; ++i) {
+        ExpectInt(vm.CallStatic("LArith;", "divide", "(II)I",
+                                {VmValue::Int(12), VmValue::Int(3)}),
+                  4);
+    }
+    const auto trace = vm.interpreter.Trace("divide", 16);
+    REQUIRE(trace.size() == 3);
+    CHECK(trace[0].sequence > 1);
+    CHECK(trace[0].sequence < trace[1].sequence);
+    CHECK(trace[1].sequence < trace[2].sequence);
+    for (const auto& entry : trace) {
+        CHECK(entry.class_descriptor == "LArith;");
+        CHECK(entry.method_name == "divide");
+        CHECK(entry.method_descriptor == "(II)I");
+        CHECK(entry.context_token != 0);
+        CHECK((entry.kind == DexVmTraceKind::method_enter ||
+               entry.kind == DexVmTraceKind::method_exit));
+    }
+    CHECK(vm.interpreter.Trace("does-not-exist", 16).empty());
+    CHECK_THROWS_AS(static_cast<void>(vm.interpreter.Trace("", 0)),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(static_cast<void>(vm.interpreter.Trace("", 10001)),
+                    std::invalid_argument);
+
+    const auto json = RenderDexVmTraceJson(trace);
+    CHECK(json.find("\"schema\":1") != std::string::npos);
+    CHECK(json.find("\"event\":\"method_") != std::string::npos);
+    CHECK(json.find("\"class\":\"LArith;\"") != std::string::npos);
+    CHECK(json.find("0x") == std::string::npos);
+}
+
+TEST_CASE("dexvm diagnostics sample only instruction events") {
+    InterpreterConfig config;
+    config.diagnostics.trace_capacity = 64;
+    config.diagnostics.event_mask =
+        DexVmTraceBit(DexVmTraceKind::instruction);
+    config.diagnostics.instruction_sample_interval = 2;
+    Vm vm(config);
+
+    ExpectInt(vm.CallStatic("LFlow;", "loopSum", "(I)I",
+                            {VmValue::Int(4)}),
+              6);
+    const auto trace = vm.interpreter.Trace("instruction", 64);
+    REQUIRE(!trace.empty());
+    for (const auto& entry : trace) {
+        CHECK(entry.kind == DexVmTraceKind::instruction);
+        CHECK(entry.tick % 2 == 0);
+        CHECK(entry.class_descriptor == "LFlow;");
+        CHECK(entry.method_name == "loopSum");
+    }
+
+    const auto stacks_json =
+        RenderDexVmStacksJson(vm.interpreter.StackSnapshot());
+    CHECK(stacks_json.find("\"schema\":1") != std::string::npos);
+    CHECK(stacks_json.find("\"status\":\"idle\"") !=
+          std::string::npos);
+}
+
+TEST_CASE("dexvm diagnostics cover semantic fault and runtime events") {
+    InterpreterConfig config;
+    config.diagnostics.trace_capacity = 512;
+    config.diagnostics.event_mask =
+        kDexVmTraceAllEvents &
+        ~DexVmTraceBit(DexVmTraceKind::instruction);
+    JavaObjectModelConfig heap;
+    heap.heap_budget_bytes = 128;
+    heap.gc_watermark_percent = 75;
+    Vm vm(config, heap);
+
+    ExpectInt(vm.CallStatic("LClinitUser;", "read", "()I"), 55);
+    ExpectInt(vm.CallStatic("LArith;", "divideCaught", "(II)I",
+                            {VmValue::Int(1), VmValue::Int(0)}),
+              -99);
+    ExpectInt(vm.CallStatic("LFlow;", "gcChurn", "()I"), 10);
+    const auto monitor = vm.CallStatic("LWaitProbe;", "signal", "()V");
+    REQUIRE_FALSE(monitor.exception.IsValid());
+
+    std::set<DexVmTraceKind> observed;
+    for (const auto& entry : vm.interpreter.Trace("", 512)) {
+        observed.insert(entry.kind);
+    }
+    for (const auto kind : {DexVmTraceKind::class_init_begin,
+                            DexVmTraceKind::class_init_end,
+                            DexVmTraceKind::exception_throw,
+                            DexVmTraceKind::exception_catch,
+                            DexVmTraceKind::monitor_enter,
+                            DexVmTraceKind::monitor_exit,
+                            DexVmTraceKind::monitor_notify,
+                            DexVmTraceKind::gc_begin,
+                            DexVmTraceKind::gc_end}) {
+        CAPTURE(DexVmTraceKindName(kind));
+        CHECK(observed.contains(kind));
+    }
+}
+
+TEST_CASE("dexvm diagnostics reject invalid recorder configuration") {
+    InterpreterConfig zero_sample;
+    zero_sample.diagnostics.trace_capacity = 1;
+    zero_sample.diagnostics.instruction_sample_interval = 0;
+    CHECK_THROWS_AS(static_cast<void>(Vm(zero_sample)),
+                    std::invalid_argument);
+
+    InterpreterConfig excessive_ring;
+    excessive_ring.diagnostics.trace_capacity = 1'000'001;
+    CHECK_THROWS_AS(static_cast<void>(Vm(excessive_ring)),
+                    std::invalid_argument);
 }

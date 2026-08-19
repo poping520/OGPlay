@@ -158,6 +158,19 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/SecurityException;.<init>(Ljava/lang/Throwable;)V",
         "Ljava/lang/TypeNotPresentException;.<init>"
         "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+        "Ljava/lang/Appendable;.append(C)Ljava/lang/Appendable;",
+        "Ljava/lang/Appendable;.append"
+        "(Ljava/lang/CharSequence;)Ljava/lang/Appendable;",
+        "Ljava/lang/Appendable;.append"
+        "(Ljava/lang/CharSequence;II)Ljava/lang/Appendable;",
+        "Ljava/lang/AutoCloseable;.close()V",
+        "Ljava/lang/CharSequence;.charAt(I)C",
+        "Ljava/lang/CharSequence;.subSequence(II)Ljava/lang/CharSequence;",
+        "Ljava/lang/CharSequence;.toString()Ljava/lang/String;",
+        "Ljava/lang/Comparable;.compareTo(Ljava/lang/Object;)I",
+        "Ljava/lang/Iterable;.iterator()Ljava/util/Iterator;",
+        "Ljava/lang/Readable;.read(Ljava/nio/CharBuffer;)I",
+        "Ljava/lang/Runnable;.run()V",
     };
     for (const auto& declaration : catalog) {
         CHECK(descriptors.insert(declaration.descriptor).second);
@@ -186,6 +199,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     CHECK(signatures("Ljava/lang/Object;") ==
           std::set<std::pair<std::string, std::string>>{
               {"<init>", "()V"},
+              {"clone", "()Ljava/lang/Object;"},
               {"equals", "(Ljava/lang/Object;)Z"},
               {"getClass", "()Ljava/lang/Class;"},
               {"hashCode", "()I"},
@@ -194,7 +208,39 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
               {"toString", "()Ljava/lang/String;"},
               {"wait", "()V"},
               {"wait", "(J)V"},
+              {"wait", "(JI)V"},
           });
+    CHECK(signatures("Ljava/lang/Cloneable;").empty());
+    CHECK(signatures("Ljava/lang/Appendable;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"append", "(C)Ljava/lang/Appendable;"},
+              {"append", "(Ljava/lang/CharSequence;)Ljava/lang/Appendable;"},
+              {"append",
+               "(Ljava/lang/CharSequence;II)Ljava/lang/Appendable;"},
+          });
+    CHECK(signatures("Ljava/lang/AutoCloseable;") ==
+          std::set<std::pair<std::string, std::string>>{{"close", "()V"}});
+    CHECK(signatures("Ljava/lang/Iterable;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"iterator", "()Ljava/util/Iterator;"},
+          });
+    CHECK(signatures("Ljava/lang/Readable;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"read", "(Ljava/nio/CharBuffer;)I"},
+          });
+    CHECK(signatures("Ljava/lang/CharSequence;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"length", "()I"},
+              {"charAt", "(I)C"},
+              {"subSequence", "(II)Ljava/lang/CharSequence;"},
+              {"toString", "()Ljava/lang/String;"},
+          });
+    CHECK(signatures("Ljava/lang/Comparable;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"compareTo", "(Ljava/lang/Object;)I"},
+          });
+    CHECK(signatures("Ljava/lang/Runnable;") ==
+          std::set<std::pair<std::string, std::string>>{{"run", "()V"}});
     CHECK(signatures("Ljava/lang/StringBuilder;").size() == 17U);
     CHECK(signatures("Ljava/lang/String;").size() == 43U);
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
@@ -855,6 +901,56 @@ TEST_CASE("dexvm java.lang primitive wrappers are one family TU") {
     }
 }
 
+TEST_CASE("dexvm API 19 java.lang interface inventory is complete") {
+    const std::vector<std::string> inventory = {
+        "Appendable", "AutoCloseable", "CharSequence", "Cloneable",
+        "Comparable", "Iterable", "Readable", "Runnable",
+    };
+    REQUIRE(inventory.size() == 8U);
+
+    const auto catalog = CoreIntrinsicCatalog();
+    std::map<std::string, std::size_t> descriptor_counts;
+    for (const auto& declaration : catalog) {
+        ++descriptor_counts[declaration.descriptor];
+    }
+    for (const auto& name : inventory) {
+        const auto descriptor = "Ljava/lang/" + name + ";";
+        CAPTURE(descriptor);
+        CHECK(descriptor_counts[descriptor] == 1U);
+        const auto declaration = std::find_if(
+            catalog.begin(), catalog.end(), [&](const auto& candidate) {
+                return candidate.descriptor == descriptor;
+            });
+        REQUIRE(declaration != catalog.end());
+        CHECK(declaration->is_interface);
+        CHECK_FALSE(declaration->superclass.has_value());
+    }
+}
+
+TEST_CASE("dexvm java.lang interfaces are one family TU") {
+    const std::vector<std::string> classes = {
+        "Appendable", "AutoCloseable", "CharSequence", "Cloneable",
+        "Comparable", "Iterable", "Readable", "Runnable",
+    };
+    const auto directory = std::filesystem::path(OGPLAY_SOURCE_DIR) / "src" /
+                           "runtime" / "dexvm" / "intrinsics";
+    CHECK(std::filesystem::is_regular_file(
+        directory / "java_lang_interfaces.cpp"));
+    for (const auto& name : classes) {
+        CAPTURE(name);
+        CHECK_FALSE(std::filesystem::exists(
+            directory / ("java_lang_" + name + ".cpp")));
+    }
+    std::ifstream header(directory / "catalog.h", std::ios::binary);
+    REQUIRE(header.good());
+    const std::string source(std::istreambuf_iterator<char>(header), {});
+    CHECK(source.find("AppendJavaLangInterfaces") != std::string::npos);
+    for (const auto& name : classes) {
+        CAPTURE(name);
+        CHECK(source.find("Declare_java_lang_" + name) == std::string::npos);
+    }
+}
+
 TEST_CASE("dexvm core handlers call directly") {
     Vm hit;
     const auto hit_method =
@@ -1256,6 +1352,26 @@ TEST_CASE("dexvm objects, fields and dispatch") {
     ExpectException(vm, vm.CallStatic("LTypes;", "badCast", "()V"),
                     "Ljava/lang/ClassCastException;");
     ExpectInt(vm.CallStatic("LTypes;", "strings", "()I"), 6);
+}
+
+TEST_CASE("dexvm Object.clone is a shallow copy gated by Cloneable") {
+    Vm vm;
+    // Cloneable check and payload copy follow libcore Object.java plus
+    // AOSP vm/alloc/Alloc.cpp dvmCloneObject at the pinned baseline.
+    ExpectInt(vm.CallStatic("LCloneProbe;", "cloneFields", "()I"), 1);
+    const auto denied = vm.CallStatic("LCloneProbe;", "clonePlainObject",
+                                      "()Ljava/lang/Object;");
+    ExpectException(vm, denied, "Ljava/lang/CloneNotSupportedException;");
+    CHECK(denied.exception_message == "Class doesn't implement Cloneable");
+    ExpectInt(vm.CallStatic("LCloneProbe;", "cloneInts", "()I"), 1);
+    ExpectInt(vm.CallStatic("LCloneProbe;", "cloneObjects", "()I"), 1);
+    const auto ints = vm.linker.ResolveDescriptor("[I");
+    const auto cloneable =
+        vm.linker.ResolveDescriptor("Ljava/lang/Cloneable;");
+    const auto serializable =
+        vm.linker.ResolveDescriptor("Ljava/io/Serializable;");
+    CHECK(vm.linker.IsAssignable(cloneable, ints));
+    CHECK(vm.linker.IsAssignable(serializable, ints));
 }
 
 TEST_CASE("dexvm virtual and super dispatch through subclass") {

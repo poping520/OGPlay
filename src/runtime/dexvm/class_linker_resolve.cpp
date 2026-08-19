@@ -180,7 +180,14 @@ bool DexClassLinker::IsAssignable(const DexClassId target,
     const auto& target_class = impl_->ClassAt(target);
     const auto& source_class = impl_->ClassAt(source);
     if (source_class.is_array) {
-        if (target_class.descriptor == "Ljava/lang/Object;") return true;
+        // JLS 10.7 / AOSP TypeCheck: every array type is a subtype of
+        // Object, Cloneable, and Serializable. Object.clone() uses
+        // `this instanceof Cloneable`, so this must match the Java check.
+        if (target_class.descriptor == "Ljava/lang/Object;" ||
+            target_class.descriptor == "Ljava/lang/Cloneable;" ||
+            target_class.descriptor == "Ljava/io/Serializable;") {
+            return true;
+        }
         if (!target_class.is_array) return false;
         const auto& source_element = source_class.array_element_descriptor;
         const auto& target_element = target_class.array_element_descriptor;

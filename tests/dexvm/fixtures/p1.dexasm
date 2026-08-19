@@ -454,6 +454,31 @@
     return-object v1
 .end method
 
+.method static public cloneValues()I
+.registers 6
+    const/4 v0, 2
+    new-array v1, v0, [LP1Enum;
+    const/4 v2, 0
+    sget-object v3, LP1Enum;->SMALL:LP1Enum;
+    aput-object v3, v1, v2
+    const/4 v2, 1
+    sget-object v3, LP1Enum;->LARGE:LP1Enum;
+    aput-object v3, v1, v2
+    invoke-virtual {v1}, [LP1Enum;->clone()Ljava/lang/Object;
+    move-result-object v4
+    check-cast v4, [LP1Enum;
+    if-eq v1, v4, :fail
+    const/4 v2, 0
+    aget-object v0, v4, v2
+    sget-object v3, LP1Enum;->SMALL:LP1Enum;
+    if-ne v0, v3, :fail
+    const/4 v0, 1
+    return v0
+    :fail
+    const/4 v0, 0
+    return v0
+.end method
+
 # toString is not final on the platform: enum types may override it.
 .class public LP1EnumTagged;
 .super Ljava/lang/Enum;

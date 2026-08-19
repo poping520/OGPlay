@@ -639,6 +639,50 @@
     return-void
 .end method
 
+# The wait(JI) probes run without monitor ownership: the (msec, nsec) pair
+# is validated before any monitor state, matching the layering of wait(J)
+# where the monitor table rejects a negative timeout before the owner check.
+.method static public waitNanoBadMillis()V
+.registers 4
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    const-wide/16 v1, -1
+    const/4 v3, 0
+    invoke-virtual {v0, v1, v2, v3}, Ljava/lang/Object;->wait(JI)V
+    return-void
+.end method
+
+.method static public waitNanoBadNanosLow()V
+.registers 4
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    const-wide/16 v1, 0
+    const/4 v3, -1
+    invoke-virtual {v0, v1, v2, v3}, Ljava/lang/Object;->wait(JI)V
+    return-void
+.end method
+
+.method static public waitNanoBadNanosHigh()V
+.registers 4
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    const-wide/16 v1, 0
+    const v3, 1000000
+    invoke-virtual {v0, v1, v2, v3}, Ljava/lang/Object;->wait(JI)V
+    return-void
+.end method
+
+# A nanos remainder below one millisecond rounds the deadline up:
+# wait(0, 999999) parks on a 1 ms deadline; no notify is ever sent.
+.method static public waitNanoTimedOnce()V
+.registers 4
+    sget-object v0, LWaitProbe;->lock:Ljava/lang/Object;
+    monitor-enter v0
+    const-wide/16 v1, 0
+    const v3, 999999
+    invoke-virtual {v0, v1, v2, v3}, Ljava/lang/Object;->wait(JI)V
+    monitor-exit v0
+    return-void
+.end method
+
+
 # Conditional EGL pacing regression: the lifecycle/driver waits on a guest
 # monitor until a worker has completed two swaps. N=2 rejects one-shot permit
 # schemes that only happen to break a single-frame handshake.
@@ -716,6 +760,30 @@
 .registers 1
     new-instance v0, LWaitTimedRunner;
     invoke-direct {v0}, LWaitTimedRunner;-><init>()V
+    return-object v0
+.end method
+
+# Runs the wait(JI) probes that park: waitNanoTimedOnce on the probe lock.
+.class public LWaitNanoRunner;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 4
+    invoke-static {}, LWaitProbe;->waitNanoTimedOnce()V
+    return-void
+.end method
+
+.method static public make()Ljava/lang/Runnable;
+.registers 1
+    new-instance v0, LWaitNanoRunner;
+    invoke-direct {v0}, LWaitNanoRunner;-><init>()V
     return-object v0
 .end method
 
@@ -824,4 +892,144 @@
     new-instance v0, LThreadNoRun;
     invoke-direct {v0}, LThreadNoRun;-><init>()V
     return-object v0
+.end method
+
+# Object.clone: Cloneable instance, non-Cloneable rejection, array shallow
+# copy, and array instanceof Cloneable/Serializable (JLS 10.7).
+.class public LCloneBase;
+.super Ljava/lang/Object;
+
+.field public inherited:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.class public LCloneBox;
+.super LCloneBase;
+.implements Ljava/lang/Cloneable;
+
+.field public flag:I
+.field public wide:J
+.field public peer:Ljava/lang/Object;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, LCloneBase;-><init>()V
+    return-void
+.end method
+
+.method public clone()Ljava/lang/Object;
+.registers 1
+    invoke-super {v0}, Ljava/lang/Object;->clone()Ljava/lang/Object;
+    move-result-object v0
+    return-object v0
+.end method
+
+.class public LCloneProbe;
+.super Ljava/lang/Object;
+
+.method static public cloneFields()I
+.registers 8
+    new-instance v0, LCloneBox;
+    invoke-direct {v0}, LCloneBox;-><init>()V
+    const/16 v1, 17
+    iput v1, v0, LCloneBase;->inherited:I
+    const/16 v1, 41
+    iput v1, v0, LCloneBox;->flag:I
+    const-wide v2, 0x100000001
+    iput-wide v2, v0, LCloneBox;->wide:J
+    new-instance v4, Ljava/lang/Object;
+    invoke-direct {v4}, Ljava/lang/Object;-><init>()V
+    iput-object v4, v0, LCloneBox;->peer:Ljava/lang/Object;
+    invoke-virtual {v0}, LCloneBox;->clone()Ljava/lang/Object;
+    move-result-object v5
+    check-cast v5, LCloneBox;
+    if-eq v0, v5, :fail
+    iget v1, v5, LCloneBase;->inherited:I
+    const/16 v6, 17
+    if-ne v1, v6, :fail
+    iget v1, v5, LCloneBox;->flag:I
+    const/16 v6, 41
+    if-ne v1, v6, :fail
+    iget-wide v2, v5, LCloneBox;->wide:J
+    const-wide v6, 0x100000001
+    cmp-long v1, v2, v6
+    if-nez v1, :fail
+    iget-object v1, v5, LCloneBox;->peer:Ljava/lang/Object;
+    if-ne v1, v4, :fail
+    const/4 v0, 1
+    return v0
+    :fail
+    const/4 v0, 0
+    return v0
+.end method
+
+.method static public clonePlainObject()Ljava/lang/Object;
+.registers 2
+    new-instance v0, Ljava/lang/Object;
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    invoke-virtual {v0}, Ljava/lang/Object;->clone()Ljava/lang/Object;
+    move-result-object v1
+    return-object v1
+.end method
+
+.method static public cloneInts()I
+.registers 6
+    const/4 v0, 2
+    new-array v1, v0, [I
+    fill-array-data v1, :data
+    invoke-virtual {v1}, [I->clone()Ljava/lang/Object;
+    move-result-object v4
+    check-cast v4, [I
+    if-eq v1, v4, :fail
+    const/4 v2, 0
+    const/16 v3, 11
+    aput v3, v4, v2
+    aget v0, v1, v2
+    const/16 v3, 7
+    if-ne v0, v3, :fail
+    aget v0, v4, v2
+    const/16 v3, 11
+    if-ne v0, v3, :fail
+    const/4 v2, 1
+    aget v0, v4, v2
+    const/16 v3, 9
+    if-ne v0, v3, :fail
+    instance-of v0, v1, Ljava/lang/Cloneable;
+    if-eqz v0, :fail
+    instance-of v0, v1, Ljava/io/Serializable;
+    if-eqz v0, :fail
+    const/4 v0, 1
+    return v0
+    :fail
+    const/4 v0, 0
+    return v0
+    :data
+    .array-data 4
+        7 9
+    .end array-data
+.end method
+
+.method static public cloneObjects()I
+.registers 6
+    const/4 v0, 1
+    new-array v1, v0, [Ljava/lang/Object;
+    new-instance v2, Ljava/lang/Object;
+    invoke-direct {v2}, Ljava/lang/Object;-><init>()V
+    const/4 v3, 0
+    aput-object v2, v1, v3
+    invoke-virtual {v1}, [Ljava/lang/Object;->clone()Ljava/lang/Object;
+    move-result-object v4
+    check-cast v4, [Ljava/lang/Object;
+    if-eq v1, v4, :fail
+    aget-object v0, v4, v3
+    if-ne v0, v2, :fail
+    const/4 v0, 1
+    return v0
+    :fail
+    const/4 v0, 0
+    return v0
 .end method

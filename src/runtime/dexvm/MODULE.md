@@ -16,18 +16,29 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   intrinsic 方法仍明确失败，survey 模式则只为真实触达的平台层级缺口合成并记账。
   常量池解析带缓存
   （`ResolveTypeIndex/ResolveMethodIndex/ResolveFieldIndex`），数组类按需合成，
-  `IsAssignable` 覆盖类层级、接口与数组协变。`PrecheckMethod` 懒执行结构
+  `IsAssignable` 覆盖类层级、接口、数组协变，以及数组对
+  `Object`/`Cloneable`/`Serializable` 的 JLS 可赋值性。`PrecheckMethod` 懒执行结构
   预检（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置），
   规则子集对照 AOSP `CodeVerify.cpp`，不做全量数据流。
 - `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
-  handler；覆盖 Object/String/Class/Throwable、隐式异常层级与核心集合接口。
+  handler；覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，
+  以及 pinned libcore `java.lang` 顶层 8 个 interface
+  （`Appendable`/`AutoCloseable`/`CharSequence`/`Cloneable`/`Comparable`/
+  `Iterable`/`Readable`/`Runnable`，family TU `java_lang_interfaces.cpp`）。
   `java.lang.Enum` 语义对照 pinned libcore `Enum.java`：name/ordinal 为声明式
   instance slot（解释子类继承布局）、构造器 `(String,I)` 写入、查询方法 final、
   `toString` 保持 overridable、`clone` 恒抛 CloneNotSupportedException、
   `getDeclaringClass` 按直接父类是否为 Enum 判定、静态 `valueOf(Class,String)`
   不走反射缓存——先 `<clinit>` 再按该 enum 自身同型 static 常量字段的活值按名
   匹配，null 参数 NPE、非 enum/未命中 IllegalArgumentException（消息对照 AOSP）。
-  enum 子类的 `values()` 依赖数组 `clone()`，该面尚未实现，命中即明确失败。
+  enum 子类的 `values()` 走数组 `Object.clone()`：数组可赋给 `Cloneable` /
+  `Serializable`，浅拷贝顶层元素。
+- `java.lang.Object.clone` 是 overridable virtual intrinsic（不是
+  `internalClone`）：`instanceof Cloneable` 失败抛
+  `CloneNotSupportedException`（消息对照 libcore Object.java），成功则
+  `Interpreter::CloneObject` 浅拷贝 payload 与 list/map/builder 侧表。
+  `JavaObjectModel::CloneObject` 对照 AOSP `dvmCloneObject`：新句柄/identity，
+  只复制 `vm_instance` 槽板或数组元素；string/class/host_backed 明确失败。
 - `IntrinsicClassBuilder`：工厂 `Class/RootClass/Interface` 一次声明类型头
   （descriptor、父类、接口；普通类默认父类 `Ljava/lang/Object;`，仅
   `java.lang.Object` 用 `RootClass` 显式无父类），方法按
@@ -41,7 +52,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 - `JavaObjectModel`：session 级统一对象身份（VmObjectRef 句柄空间，0=null）。
   VM 实例与对象数组自有存储；字符串与基元数组委托注入的
   `JniStringStore`/`JniPrimitiveArrayStore`——native 与解释器看到同一对象。
-  GC-A 预算 arena：只分配不回收，默认 64 MiB，耗尽抛
+  `CloneObject` 分配新句柄后浅拷贝 instance slot / 数组元素（对照 AOSP
+  `dvmCloneObject`）。GC-A 预算 arena：只分配不回收，默认 64 MiB，耗尽抛
   `heap_budget_exhausted`；`SetEmergencyReserve` 仅供解释器物化 OOM throwable。
 - `Interpreter`：`Call(method, args)` 在当前宿主线程执行至完成，返回
   `VmCallOutcome`（值或未捕获 Java 异常 + 消息 + 栈回溯）。tagged 寄存器
@@ -118,9 +130,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 `interpreter_context.cpp`，宿主线程生命周期在 `vm_threads.cpp`。
 `intrinsics/catalog.cpp` 显式聚合目录；每个 Java 类仍由唯一
 `Declare_*()` 同址声明形状与 handler，默认一类一个同名 `.cpp`。唯一文件组织
-例外是 Android 4.4.4 `java.lang` Throwable hierarchy 与 primitive wrapper
-family，分别位于 `intrinsics/java_lang_throwables.cpp` 与
-`intrinsics/java_lang_primitive_wrappers.cpp`；Java class 仍是一等逻辑单位，
+例外是 Android 4.4.4 `java.lang` Throwable hierarchy、primitive wrapper
+family 与接口 family，分别位于 `intrinsics/java_lang_throwables.cpp`、
+`intrinsics/java_lang_primitive_wrappers.cpp` 与
+`intrinsics/java_lang_interfaces.cpp`；Java class 仍是一等逻辑单位，
 family 内类级 `Declare_*()` 均为 TU-private，catalog 只调用对应 `Append*()`。
 family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自注册。
 `shared.h` 只放跨类内部 helper。原集中式 core catalog 与三个 handler 文件已

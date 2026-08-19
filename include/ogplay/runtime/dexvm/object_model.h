@@ -105,6 +105,11 @@ public:
 
     [[nodiscard]] JniSize ArrayLength(VmObjectRef ref) const;
 
+    // Object.clone payload copy (AOSP dvmCloneObject): new identity and
+    // header, shallow-copied instance slots or array elements. Supports
+    // vm_instance, primitive_array, and object_array; other kinds fail.
+    [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
+
     // Bulk byte-array transfer (intrinsic IO paths).
     void WriteByteRegion(VmObjectRef ref, JniSize start,
                          std::span<const std::byte> bytes);

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-19 · IntrinsicClassBuilder API 已重构为工厂式声明并完成全仓调用点迁移
+更新：2026-08-19 · java.lang 顶层 8 个 interface 聚合进 java_lang_interfaces.cpp
 
 ## 当前阶段
 
@@ -24,11 +24,22 @@
   未触达 SDK 类的缺失父类/接口不再阻断进程，触达后仍明确失败或在 survey 中记账。
   JNI class identity 仍全量发布，但 jclass global reference 改为 static native 真正出向
   时才创建。`java.lang.Enum` intrinsic 已按 pinned libcore Enum.java 迁入 core 目录并交付
-  全表面（valueOf 直读 enum static 常量不走反射；enum `values()` 依赖的数组 clone 仍是
-  记账缺口）。PVZ NA 已越过 222/70 类静态层级清单和全局引用容量；其首缺口
+  全表面（valueOf 直读 enum static 常量不走反射；enum `values()` 经数组
+  `Object.clone()` 浅拷贝）。`Object.clone()` 为 overridable virtual
+  intrinsic：`Cloneable` 检查对照 libcore Object.java，payload 浅拷贝对照
+  AOSP `dvmCloneObject`；数组可赋给 `Cloneable`/`Serializable`。
+  pinned libcore `java.lang` 顶层 8 个 interface 已全部进入
+  `java_lang_interfaces.cpp`（含 `Appendable`/`AutoCloseable`/`Iterable`/
+  `Readable`）；`Readable.read` 依赖尚未交付的 `java.nio.CharBuffer`，与其余
+  未实现接口方法一样显式失败。PVZ NA 已越过 222/70 类静态层级清单和全局引用容量；其首缺口
   `COPPAActivity.isTaskRoot()Z` 已实现（Manifest launcher 为进程唯一 task 根，
   startActivity 到达的 Activity 回答 false，handle 记账于 `task_root_activity`），
   PVZ NA 后续缺口待下一次命中批次确认，不等同于 title 启动成功。
+  `Object.wait(JI)V` 已按 pinned AOSP 4.4.4 `vm/Sync.cpp waitMonitor` 补全：
+  (msec, nsec) 整体校验（消息 "timeout arguments out of range"，先于所有权
+  检查，与 wait(J) 在 monitor 表的分层一致）、非零纳秒进位到下一整毫秒
+  deadline、(0,0) 保持无限期；夹具探针与假时钟 deadline 测试在
+  vm_monitor_tests 固化。
   `IntrinsicClassBuilder` 已重构为工厂式 API：`Class/RootClass/Interface` 一次
   声明类型头（普通类默认父类 Object，仅 java.lang.Object 显式无父类），
   方法 `Constructor/StaticMethod/VirtualMethod/FinalMethod`、字段
@@ -41,7 +52,7 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：812/812 CTest。
+- Windows/x64 `windows-msvc`：818/818 CTest。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 

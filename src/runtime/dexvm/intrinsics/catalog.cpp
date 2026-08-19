@@ -6,9 +6,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
     using namespace intrinsics;
     std::vector<IntrinsicClassDecl> catalog{
         Declare_java_lang_Object(),
-        Declare_java_lang_Runnable(),
-        Declare_java_lang_CharSequence(),
-        Declare_java_lang_Comparable(),
         Declare_java_lang_Enum(),
         Declare_java_io_Serializable(),
         Declare_java_lang_String(),
@@ -33,6 +30,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_lang_reflect_Array(),
     };
 
+    AppendJavaLangInterfaces(catalog);
     AppendJavaLangPrimitiveWrappers(catalog);
 
     AppendJavaLangThrowables(catalog);

@@ -5,14 +5,22 @@ handler 与对应 `Declare_*` 同址；`catalog.cpp` 只负责显式聚合，
 `shared.h` 只保存跨类复用的内部 helper。
 
 文件组织默认仍是一类一个同名源文件。例外是 Android 4.4.4 `java.lang`
-Throwable hierarchy 与 primitive wrapper family，分别统一位于
-`java_lang_throwables.cpp` 和 `java_lang_primitive_wrappers.cpp`。Java class 仍是
+Throwable hierarchy、primitive wrapper family 与接口 family，分别统一位于
+`java_lang_throwables.cpp`、`java_lang_primitive_wrappers.cpp` 和
+`java_lang_interfaces.cpp`。Java class 仍是
 一等逻辑单位，每类保留独立 `Declare_*()`，但这些函数为 family TU-private；
-文件只向 `catalog.h` 暴露对应的 `AppendJavaLangThrowables()` 或
-`AppendJavaLangPrimitiveWrappers()`，`catalog.cpp` 不感知 family 内具体 class。
+文件只向 `catalog.h` 暴露对应的 `AppendJavaLangThrowables()`、
+`AppendJavaLangPrimitiveWrappers()` 或 `AppendJavaLangInterfaces()`，
+`catalog.cpp` 不感知 family 内具体 class。
 后续 API-family 沿用相同规则。family TU 为控制翻译单元数量允许超过通常 800 行。
 禁止新增 `misc`/`common`/`all` 等无语义聚合文件、字符串 core handler id、
 全局静态自注册，以及 android.* 声明和行为顺手修改。
+
+`java_lang_interfaces.cpp` 覆盖 pinned libcore `java.lang` 顶层 8 个
+interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持
+不变，其余接口方法（含 `Readable.read(CharBuffer)`）为显式
+`UnimplementedVirtual`，不伪造成功。不纳入 `Thread.UncaughtExceptionHandler`
+与 `java.lang.annotation`。
 
 `java.lang.System` 的 `getProperty`/`setProperty` 与 primitive wrapper property
 API 共用每 VM 属性表；默认只发布

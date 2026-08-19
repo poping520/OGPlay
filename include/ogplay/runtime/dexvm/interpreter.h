@@ -268,6 +268,10 @@ public:
     void SetLogger(core::Logger* logger) noexcept;
     [[nodiscard]] core::Logger* Log() const noexcept;
 
+    // Object.clone: model-level shallow copy plus intrinsic side tables
+    // (list/map/builder) keyed by the source handle.
+    [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
+
     // Intrinsic instance side state (StringBuilder buffers, collections).
     [[nodiscard]] std::u16string& BuilderBuffer(VmObjectRef instance);
     [[nodiscard]] std::vector<VmObjectRef>& ListStorage(VmObjectRef instance);

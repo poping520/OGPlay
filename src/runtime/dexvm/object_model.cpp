@@ -1,5 +1,6 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 
+#include <algorithm>
 #include <cstring>
 #include <unordered_map>
 #include <variant>
@@ -462,6 +463,58 @@ JniSize JavaObjectModel::ArrayLength(const VmObjectRef ref) const {
             impl_->object_arrays[record.storage].elements.size());
     }
     Fail(DexVmErrorReason::object_model_failure, "object is not an array");
+}
+
+VmObjectRef JavaObjectModel::CloneObject(const VmObjectRef source) {
+    // Capture identity fields before New* reallocates records/storage.
+    // New header (handle, identity, lock) is allocated; only payload is
+    // copied, matching AOSP dvmCloneObject's memcpy past sizeof(Object).
+    switch (Kind(source)) {
+        case VmObjectKind::vm_instance: {
+            const auto java_class = ObjectClass(source);
+            const auto source_span = InstanceSlots(source);
+            const std::vector<Slot> source_slots(source_span.begin(),
+                                                 source_span.end());
+            const auto clone = NewInstance(
+                java_class,
+                static_cast<std::uint16_t>(source_slots.size()));
+            auto target_slots = InstanceSlots(clone);
+            std::copy(source_slots.begin(), source_slots.end(),
+                      target_slots.begin());
+            return clone;
+        }
+        case VmObjectKind::primitive_array: {
+            const auto java_class = ObjectClass(source);
+            const auto kind = PrimitiveArrayKind(source);
+            const auto source_identity = impl_->At(source).identity;
+            const auto length = impl_->arrays->Length(source_identity);
+            const auto clone = NewPrimitiveArray(java_class, kind, length);
+            if (length > 0) {
+                const auto data =
+                    impl_->arrays->Region(source_identity, 0, length);
+                impl_->arrays->SetRegion(impl_->At(clone).identity, 0, data);
+            }
+            return clone;
+        }
+        case VmObjectKind::object_array: {
+            const auto java_class = ObjectClass(source);
+            const auto element_class = ObjectArrayElementClass(source);
+            const auto elements =
+                impl_->object_arrays[impl_->At(source).storage].elements;
+            const auto clone = NewObjectArray(
+                java_class, element_class,
+                static_cast<JniSize>(elements.size()));
+            impl_->object_arrays[impl_->At(clone).storage].elements = elements;
+            return clone;
+        }
+        case VmObjectKind::host_backed:
+        case VmObjectKind::string:
+        case VmObjectKind::class_object:
+        case VmObjectKind::external:
+            break;
+    }
+    Fail(DexVmErrorReason::object_model_failure,
+         "clone is not supported for this object kind");
 }
 
 void JavaObjectModel::WriteByteRegion(const VmObjectRef ref,

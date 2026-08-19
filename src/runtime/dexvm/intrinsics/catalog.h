@@ -9,11 +9,9 @@ namespace ogplay::runtime::dexvm::intrinsics {
 void AppendJavaLangThrowables(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaLangPrimitiveWrappers(
     std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog);
 
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Object();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runnable();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_CharSequence();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Comparable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Enum();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_Serializable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();

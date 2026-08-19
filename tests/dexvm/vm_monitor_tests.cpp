@@ -287,6 +287,46 @@ TEST_CASE("dexvm timed wait ends on the unified Clock deadline") {
     CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 0U);
 }
 
+// AOSP vm/Sync.cpp waitMonitor rejects the (msec, nsec) pair as a unit
+// before parking; the probes run without monitor ownership to pin that the
+// argument check fires before the owner check, like wait(J)'s negative
+// timeout in the monitor table.
+TEST_CASE("dexvm Object.wait validates the millis/nanos pair") {
+    MonitorVm vm;
+    vm.UseTestClock();
+    for (const auto* probe :
+         {"waitNanoBadMillis", "waitNanoBadNanosLow", "waitNanoBadNanosHigh"}) {
+        const auto outcome = vm.CallStatic("LWaitProbe;", probe, "()V");
+        REQUIRE_MESSAGE(outcome.exception.IsValid(), probe);
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+        CHECK(outcome.exception_message == "timeout arguments out of range");
+        CHECK(vm.interpreter.Monitors().WaitingCount(vm.Lock()) == 0U);
+    }
+}
+
+// A nonzero nanos remainder below one millisecond rounds the deadline up:
+// wait(0, 999999) parks on a 1 ms deadline (it must not become the untimed
+// wait(0, 0)), and only the deadline gets the waiter out.
+TEST_CASE("dexvm Object.wait rounds a nonzero nanos onto the deadline") {
+    MonitorVm vm;
+    vm.UseTestClock();
+    const auto lock = vm.Lock();
+    const auto waiter = vm.Make("LWaitNanoRunner;");
+    const auto thread_object = vm.NewThreadObject();
+    vm.threads.Start(thread_object, waiter, "nano-waiter");
+    REQUIRE(WaitFor(
+        [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+
+    // Clock still at 0: the rounded-up deadline has not arrived yet.
+    CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 1U);
+
+    vm.clock_millis.store(1);
+    vm.threads.Join(thread_object);
+    CHECK(!vm.threads.TakeFailure().has_value());
+    CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 0U);
+}
+
 TEST_CASE("dexvm timed wait without a Clock fails instead of guessing") {
     MonitorVm vm;  // no time source published
     CHECK_THROWS_AS(static_cast<void>(vm.CallStatic("LWaitProbe;",

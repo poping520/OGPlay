@@ -634,6 +634,23 @@ void Interpreter::SetLogger(core::Logger* logger) noexcept {
 }
 core::Logger* Interpreter::Log() const noexcept { return impl_->logger; }
 
+VmObjectRef Interpreter::CloneObject(const VmObjectRef source) {
+    const auto clone = impl_->model->CloneObject(source);
+    if (const auto found = impl_->lists.find(source.Value());
+        found != impl_->lists.end()) {
+        impl_->lists[clone.Value()] = found->second;
+    }
+    if (const auto found = impl_->maps.find(source.Value());
+        found != impl_->maps.end()) {
+        impl_->maps[clone.Value()] = found->second;
+    }
+    if (const auto found = impl_->builders.find(source.Value());
+        found != impl_->builders.end()) {
+        impl_->builders[clone.Value()] = found->second;
+    }
+    return clone;
+}
+
 std::u16string& Interpreter::BuilderBuffer(const VmObjectRef instance) {
     return impl_->builders[instance.Value()];
 }

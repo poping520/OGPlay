@@ -209,3 +209,8 @@ TEST_CASE("dexvm P1 Enum clone is rejected like the platform") {
               "Ljava/lang/CloneNotSupportedException;",
               "Enums may not be cloned");
 }
+
+TEST_CASE("dexvm P1 enum values array clone is a shallow copy") {
+    Vm vm;
+    ExpectInt(vm.CallStatic("cloneValues", "()I", {}, "LP1Enum;"), 1);
+}

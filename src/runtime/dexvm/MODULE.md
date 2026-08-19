@@ -116,11 +116,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   context（幂等，记录保留供事后查询）。未捕获异常与 VM 错误记入
   `TakeFailure()`，由生命周期驱动在帧
   边界上报，对齐设备上的进程级默认 handler，而不是丢给 `join()` 的调用方。
-  线程持有 guest native 帧时拒绝停泊（`blocking_in_native` +
-  `dexvm.threads.block_in_native` 记账）：A32 执行器只有一条 root guest 栈，
-  让另一个线程复用它就是静默破坏。
-  `EnsureClassInitialized` 实现 `<clinit>` 状态机（同线程重入放行、失败粘滞
-  NoClassDefFoundError、静态初始值先于 `<clinit>` 物化）。
+  每个 child 启动/退出时经 `NativeMethodBridge` 挂接/释放独立 A32 CPU、guest stack、
+  Bionic TLS/thread-info、process thread id 与 JNI local-frame 环境，因此 guest native
+  帧存活时仍可安全停泊。`EnsureClassInitialized` 对同线程重入放行，其他 context
+  释放执行锁等待；初始化成功、失败与 teardown 都唤醒等待者并重查粘滞状态。
   `SetStaticFieldBits` 仅接受已完成初始化的真实 guest 静态字段，供 ADR-0022
   的结论级 Profile preset 写入精确槽位；类、字段、静态性、类型或槽位不匹配
   均明确失败，禁止绕过 `<clinit>`。
@@ -181,7 +180,8 @@ family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自
 - 一个 guest 线程对应一个宿主线程；解释执行由 `VmExecutionLock` 串行化，
   不宣称并行。锁序只有一个方向：执行锁 → 线程运行时互斥量 → context 表互斥
   量，反向获取一律禁止。时间预算仍通过各 context 的 tick 计数约束。
-- guest native 出向调用记入 context 的 `native_depth`；持有该帧时不得停泊。
+- guest native 出向调用记入 context 的 `native_depth`；它用于 teardown 完整性检查，
+  不再禁止停泊，因为每个 Java 线程拥有独立 native 栈/TLS。
 - `IntrinsicMethodDecl::implementation` 与
   `IntrinsicClassDecl::clinit_implementation` 是唯一 intrinsic 分发通道；链接器
   只搬运拥有型实现，不保存字符串标识或懒解析缓存。System/Date 的 7 个平台动作
@@ -195,11 +195,6 @@ family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自
 
 ## 尚未实现（记账可查）
 
-- `runtime.jni_guest_monitors`（native 侧 JNI MonitorEnter/Exit）仍是独立的
-  monitor table；两张表尚未合一，native 与解释器对同一对象加锁互不可见。
-- 子线程的 guest native 调用仍走 root guest 线程的 CPU 与栈（JNI local
-  reference 也记在 root thread id 下）。执行锁保证不会并发，但这不是真正的
-  per-thread JavaVM attach；需要停泊时明确失败而不是凑合。
 - 反射仅覆盖有界的 `getDeclaredMethods` / 零参整数类返回值
   `Method.invoke`；其余反射面、finalizer、GC-B 未实现。
 
@@ -211,7 +206,7 @@ whole-DEX 启动、首次触达明确失败/survey 才记账；core catalog 唯�
 声明即绑定、重复方法拒绝、
 直调与声明未实现的重复 miss 记账，算术边界、控制流、
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
-显式执行 context 交错调用的帧/异常/tick/monitor 隔离）；
+显式执行 context 交错调用的帧/异常/tick/monitor 隔离、跨线程 clinit 等待）；
 `tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、
 二次 start 与无 run() 目标拒绝、isAlive、join、未捕获异常记账、interrupt、
 teardown 逐线程 join、持有 native 帧时拒绝停泊）；

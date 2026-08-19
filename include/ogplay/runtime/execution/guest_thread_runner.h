@@ -37,11 +37,14 @@ struct A32GuestCallFrame final {
     memory::GuestAddress target;
     std::array<std::uint32_t, 4> registers{};
     std::span<const std::uint32_t> stack_words;
+    // Selects the prepared guest thread context. The process root is 1.
+    std::uint64_t thread_id{1};
 };
 
 struct A32GuestCallResult final {
     std::uint64_t ticks_consumed{};
     std::uint32_t return_value{};
+    std::uint32_t return_value_high{};
 };
 
 class A32GuestCallError final : public std::runtime_error {

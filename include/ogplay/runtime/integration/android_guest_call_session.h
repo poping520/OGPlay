@@ -267,6 +267,9 @@ public:
     [[nodiscard]] A32GuestCallResult InvokeRegisteredNative(
         JniObjectIdentity java_class, std::string_view name,
         std::string_view descriptor, const A32GuestCallFrame& frame);
+    void PrepareDexVmThread(std::uint64_t thread_id,
+                            std::uint32_t allocation_slot);
+    void ReleaseDexVmThread(std::uint64_t thread_id) noexcept;
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;
@@ -347,6 +350,9 @@ public:
     [[nodiscard]] A32GuestCallResult InvokeRegisteredNative(
         JniObjectIdentity java_class, std::string_view name,
         std::string_view descriptor, const A32GuestCallFrame& frame);
+    void PrepareDexVmThread(std::uint64_t thread_id,
+                            std::uint32_t allocation_slot);
+    void ReleaseDexVmThread(std::uint64_t thread_id) noexcept;
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;

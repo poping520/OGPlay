@@ -59,19 +59,6 @@ public:
         return record->name;
     }
 
-    // Guest native frames sit on the single root guest stack, so a thread
-    // holding one cannot be parked: another thread would reuse that stack.
-    void RefuseParkingWithNativeFrame(const char* what) const {
-        if (vm->CurrentNativeDepth() == 0) return;
-        if (auto* ledger = vm->Ledger(); ledger != nullptr) {
-            ledger->RecordUnimplemented("dexvm.threads.block_in_native", 0);
-        }
-        throw DexVmError(DexVmErrorReason::blocking_in_native,
-                         std::string(what) +
-                             " cannot park a thread that has a live guest "
-                             "native frame on the root guest stack");
-    }
-
     // Parks the calling thread until ready() holds. The execution lock is
     // fully released while parked and restored to the same depth after.
     // Interruptible, like Thread.join on device.
@@ -103,7 +90,6 @@ public:
                         "no time source");
             }
         }
-        RefuseParkingWithNativeFrame(what);
         std::int64_t deadline = 0;
         if (timeout_millis.has_value()) {
             const auto now = clock();
@@ -141,6 +127,7 @@ public:
         std::string failure_text;
         auto final_status = VmThreadStatus::finished;
         try {
+            vm->AttachNativeThread(record->id, record->context.Token());
             const VmExecutionLockScope guard(vm->ExecutionLock());
             {
                 const std::lock_guard locked(mutex);
@@ -179,6 +166,7 @@ public:
         // A dead thread must not keep anybody out of the monitors it still
         // held, and its wait-set membership goes with it.
         vm->Monitors().ReleaseAll(record->context.Token());
+        vm->DetachNativeThread(record->id, record->context.Token());
         current_records.erase(vm);
         {
             const std::lock_guard locked(mutex);
@@ -349,7 +337,6 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
         throw VmJavaThrow{"Ljava/lang/InterruptedException;",
                           "Thread.sleep() was interrupted"};
     }
-    impl_->RefuseParkingWithNativeFrame("Thread.sleep()");
     VmMonotonicMillis clock;
     std::int64_t deadline = 0;
     if (timeout_millis > 0) {
@@ -460,7 +447,6 @@ void VmThreadRuntime::Rename(const VmObjectRef thread_object,
 void VmThreadRuntime::Yield() {
     auto& lock = impl_->vm->ExecutionLock();
     if (!lock.HeldByCurrentThread()) return;
-    if (impl_->vm->CurrentNativeDepth() != 0) return;
     {
         const std::lock_guard guard(impl_->mutex);
         if (impl_->records.empty()) return;

@@ -64,11 +64,6 @@ enum class DexVmErrorReason : std::uint8_t {
     // A Java thread was asked to stop at teardown and unwound out of its
     // interpreted frames instead of being killed.
     thread_stopped,
-    // A thread tried to park while one of its guest native frames is still
-    // live. The A32 executor owns a single root guest stack, so parking
-    // there would hand a live frame to another thread: recorded gap,
-    // explicit failure, never silent corruption.
-    blocking_in_native,
     internal_invariant,
 };
 

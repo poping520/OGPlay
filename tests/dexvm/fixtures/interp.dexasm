@@ -973,8 +973,8 @@
     return-object v0
 .end method
 
-# Outbound native call used to prove that a thread holding a guest native
-# frame refuses to park instead of handing the root guest stack away.
+# Outbound native call used to prove that a thread may park with a live guest
+# native frame now that each Java thread owns its A32 stack/TLS context.
 .class public LThreadNative;
 .super Ljava/lang/Object;
 
@@ -985,6 +985,28 @@
 .registers 1
     invoke-static {}, LThreadNative;->trigger()V
     return-void
+.end method
+
+.class public LSyncNative;
+.super Ljava/lang/Object;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method static public make()LSyncNative;
+.registers 1
+    new-instance v0, LSyncNative;
+    invoke-direct {v0}, LSyncNative;-><init>()V
+    return-object v0
+.end method
+
+.method static public synchronized native classLocked()V
+.end method
+
+.method public synchronized native instanceLocked()V
 .end method
 
 # A target without run(): start() must refuse it up front.

@@ -20,6 +20,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace {
 
@@ -290,32 +291,70 @@ TEST_CASE("dexvm join returns immediately for a never-started target") {
     CHECK(vm.threads.LiveCount() == 0U);
 }
 
-TEST_CASE("dexvm refuses to park a thread that holds a guest native frame") {
+TEST_CASE("dexvm may park while a guest native frame is live") {
     StubNativeBridge bridge;
     ThreadedVm vm(&bridge);
-    const auto target = vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;");
-    const auto thread_object = target;
+    vm.interpreter.Monitors().SetTimeSource([] {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    });
 
     std::uint32_t depth_inside = 0;
     bridge.action = [&] {
         depth_inside = vm.interpreter.CurrentNativeDepth();
-        // The child cannot run while this frame owns the execution lock, so
-        // this join would have to park: the single root guest stack makes
-        // that unsafe, and it is refused rather than corrupted.
-        vm.threads.Start(thread_object, "spin",
-                         vm.threads.AllocateThreadId());
-        vm.threads.Join(thread_object);
+        vm.threads.Sleep(1);
     };
 
-    CHECK_THROWS_AS(
-        static_cast<void>(vm.CallStatic("LThreadNative;", "call", "()V")),
-        DexVmError);
+    const auto outcome = vm.CallStatic("LThreadNative;", "call", "()V");
+    CHECK_FALSE(outcome.exception.IsValid());
     CHECK(depth_inside == 1U);
     CHECK(vm.interpreter.CurrentNativeDepth() == 0U);
-    bool recorded = false;
     for (const auto& hit : vm.ledger.Unimplemented()) {
-        if (hit.id == "dexvm.threads.block_in_native") recorded = true;
+        CHECK(hit.id != "dexvm.threads.block_in_native");
     }
-    CHECK(recorded);
-    vm.threads.Shutdown();
+}
+
+TEST_CASE("dexvm synchronized native methods use class and receiver monitors") {
+    StubNativeBridge bridge;
+    ThreadedVm vm(&bridge);
+    const auto java_class = vm.linker.FindClass("LSyncNative;");
+    REQUIRE(java_class.has_value());
+    VmObjectRef expected(0);
+    std::size_t observed{};
+    bridge.action = [&] {
+        CHECK(vm.interpreter.Monitors().IsOwner(
+            expected, vm.interpreter.CurrentContextToken()));
+        ++observed;
+    };
+
+    expected = vm.model.ClassObject(*java_class);
+    const auto static_outcome =
+        vm.CallStatic("LSyncNative;", "classLocked", "()V");
+    CHECK_FALSE(static_outcome.exception.IsValid());
+    CHECK(vm.interpreter.Monitors().HeldCount(1) == 0U);
+
+    const auto created =
+        vm.CallStatic("LSyncNative;", "make", "()LSyncNative;");
+    REQUIRE(created.value.kind == VmValue::Kind::ref);
+    expected = created.value.ref;
+    const auto index = vm.linker.FindVtableIndex(
+        *java_class, "instanceLocked", "()V");
+    REQUIRE(index.has_value());
+    const auto instance_outcome = vm.interpreter.Call(
+        vm.linker.Class(*java_class).vtable[*index],
+        std::vector<VmValue>{VmValue::Ref(expected)});
+    CHECK_FALSE(instance_outcome.exception.IsValid());
+    CHECK(observed == 2U);
+    CHECK(vm.interpreter.Monitors().HeldCount(1) == 0U);
+
+    bridge.action = [] {
+        throw VmJavaThrow{"Ljava/lang/RuntimeException;", "native failure"};
+    };
+    CHECK_THROWS_AS(
+        static_cast<void>(vm.interpreter.Call(
+            vm.linker.Class(*java_class).vtable[*index],
+            std::vector<VmValue>{VmValue::Ref(expected)})),
+        VmJavaThrow);
+    CHECK(vm.interpreter.Monitors().HeldCount(1) == 0U);
 }

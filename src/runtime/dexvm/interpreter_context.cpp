@@ -202,6 +202,7 @@ InterpreterExecutionSnapshot Interpreter::ExecutionSnapshot(
 void Interpreter::RequestStop(const InterpreterExecutionContext& context) {
     impl_->Execution(context).stop_requested.store(true,
                                                    std::memory_order_relaxed);
+    impl_->clinit_changed.notify_all();
 }
 
 void Interpreter::UnwindStoppedExecutionContext(
@@ -218,7 +219,10 @@ void Interpreter::UnwindStoppedExecutionContext(
                          "stopped execution context still has live native "
                          "frames after its host thread joined");
     }
-    execution.frames.clear();
+    while (!execution.frames.empty()) {
+        impl_->ReleaseFrameMonitor(execution.frames.back());
+        execution.frames.pop_back();
+    }
     execution.pending_exception = VmObjectRef{};
     execution.pending_exception_class = DexClassId{};
     execution.exit_result = VmValue::Void();
@@ -389,6 +393,20 @@ void Interpreter::Impl::PrepareSafeAllocation(
 
 std::uint32_t Interpreter::CurrentNativeDepth() const {
     return impl_->Execution().native_depth;
+}
+
+void Interpreter::AttachNativeThread(const std::uint64_t guest_thread_id,
+                                     const std::uint64_t execution_token) {
+    if (impl_->bridge != nullptr) {
+        impl_->bridge->AttachThread(guest_thread_id, execution_token);
+    }
+}
+
+void Interpreter::DetachNativeThread(const std::uint64_t guest_thread_id,
+                                     const std::uint64_t execution_token) noexcept {
+    if (impl_->bridge != nullptr) {
+        impl_->bridge->DetachThread(guest_thread_id, execution_token);
+    }
 }
 
 core::CapabilityLedger* Interpreter::Ledger() const noexcept {

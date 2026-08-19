@@ -76,9 +76,9 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   method/class/receiver 语义。ThrowNew 完整读取并校验 Modified UTF-8 message,在
   runtime/jni 保存 throwable identity、exception class 与 message;ExceptionDescribe 写
   结构化 `runtime.jni.exception` diagnostic,且不得清除或替换 pending throwable。
-- MonitorEnter/MonitorExit 只解析统一 JNIEnv reference 后进入 environment 拥有的 monitor
-  table,不返回 fake success;reentrant/owner/等待语义全部位于 runtime/jni。JavaVM
-  detach 自动释放该 guest thread 的 ownership。
+- MonitorEnter/MonitorExit 只解析统一 JNIEnv reference 后进入 environment 的唯一 monitor
+  backend,不返回 fake success；默认语义位于 runtime/jni，DexVM 装配时由 hooks 委托给
+  `VmMonitorTable`。JavaVM detach 通过同一 backend 释放该 guest thread 的 ownership。
 - guest JNI library lifecycle 只从显式 root module 自身选择唯一 exported/defined
   function `JNI_OnLoad`,不误调用 ELF 依赖的同名导出;调用帧固定为统一 guest JavaVM、
   null reserved,保留 ARM/Thumb symbol state,返回只接受 JNI 1.1/1.2/1.4/1.6。

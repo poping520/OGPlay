@@ -59,27 +59,15 @@ public:
                                what};
     }
 
-    void RefuseParkingWithNativeFrame(const char* what) const {
-        if (vm->CurrentNativeDepth() == 0) return;
-        if (auto* ledger = vm->Ledger(); ledger != nullptr) {
-            ledger->RecordUnimplemented("dexvm.monitors.block_in_native", 0);
-        }
-        throw DexVmError(DexVmErrorReason::blocking_in_native,
-                         std::string(what) +
-                             " cannot park a thread that has a live guest "
-                             "native frame on the root guest stack");
-    }
-
     // Takes ownership of the monitor, parking while somebody else holds it.
     // The execution lock is released for the whole park.
     void AcquireLocked(std::unique_lock<std::mutex>& guard,
                        const VmObjectRef object, const std::uint64_t owner,
-                       const std::int32_t recursion, const char* what) {
+                       const std::int32_t recursion) {
         auto* monitor = &MonitorFor(object);
         while (monitor->recursion != 0 && monitor->owner != owner) {
             if (shutting_down) break;
             guard.unlock();
-            RefuseParkingWithNativeFrame(what);
             auto& lock = vm->ExecutionLock();
             const auto depth = lock.ReleaseForBlocking();
             {
@@ -129,7 +117,7 @@ void VmMonitorTable::Enter(const VmObjectRef object,
         monitor.recursion = 1;
         return;
     }
-    impl_->AcquireLocked(guard, object, owner, 1, "monitor-enter");
+    impl_->AcquireLocked(guard, object, owner, 1);
 }
 
 void VmMonitorTable::Exit(const VmObjectRef object,
@@ -216,7 +204,6 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
                          "a timed Object.wait needs the unified Clock; this "
                          "session published no time source");
     }
-    impl_->RefuseParkingWithNativeFrame("Object.wait()");
 
     // Join the wait set and release the monitor completely, keeping the
     // AOSP ordering: append first, then clear count and owner.
@@ -268,8 +255,7 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     // call returns or its caller throws (JLS ordering, AOSP "done:" label).
     {
         std::unique_lock guard(impl_->mutex);
-        impl_->AcquireLocked(guard, object, owner, saved_recursion,
-                             "wait() reacquire");
+        impl_->AcquireLocked(guard, object, owner, saved_recursion);
         auto& monitor = impl_->MonitorFor(object);
         const auto position = std::find(monitor.wait_set.begin(),
                                         monitor.wait_set.end(), owner);
@@ -367,6 +353,18 @@ void VmMonitorTable::Shutdown() {
 bool VmMonitorTable::ShuttingDown() const {
     const std::lock_guard guard(impl_->mutex);
     return impl_->shutting_down;
+}
+
+VmMonitorSnapshot VmMonitorTable::Snapshot(const VmObjectRef object) const {
+    if (!object.IsValid()) return {};
+    const std::lock_guard guard(impl_->mutex);
+    const auto found = impl_->monitors.find(object.Value());
+    if (found == impl_->monitors.end()) {
+        return {.shutting_down = impl_->shutting_down};
+    }
+    return {found->second->owner,
+            static_cast<std::size_t>(found->second->recursion),
+            found->second->wait_set.size(), impl_->shutting_down};
 }
 
 }  // namespace ogplay::runtime::dexvm

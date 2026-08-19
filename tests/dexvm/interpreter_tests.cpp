@@ -6,14 +6,18 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <cmath>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1028,6 +1032,66 @@ TEST_CASE("dexvm intrinsic builder binds implementations without a registry") {
                                            .static_storage[
                                                vm.linker.Field(*name).slot]);
     CHECK(vm.interpreter.StringUtf8(name_ref) == "direct");
+}
+
+TEST_CASE("dexvm class initialization waits across execution contexts") {
+    std::mutex gate_mutex;
+    std::condition_variable gate_changed;
+    bool initializer_entered{};
+    bool release_initializer{};
+    std::atomic<std::uint32_t> initializer_calls{};
+    std::atomic<std::uint32_t> method_calls{};
+    auto builder = IntrinsicClassBuilder::Class("Lbuilder/Concurrent;");
+    builder.StaticMethod("answer", "()I", [&](IntrinsicContext&) {
+               ++method_calls;
+               return VmValue::Int(7);
+           })
+        .ClassInitializer([&](IntrinsicContext& context) {
+            ++initializer_calls;
+            auto& execution_lock = context.vm.ExecutionLock();
+            const auto depth = execution_lock.ReleaseForBlocking();
+            {
+                std::unique_lock lock(gate_mutex);
+                initializer_entered = true;
+                gate_changed.notify_all();
+                gate_changed.wait(lock, [&] { return release_initializer; });
+            }
+            execution_lock.ReacquireAfterBlocking(depth);
+            return VmValue::Void();
+        });
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(builder).Build());
+    IntrinsicVm vm(std::move(catalog));
+    const auto method = vm.Static("Lbuilder/Concurrent;", "answer", "()I");
+    const auto first_context = vm.interpreter.CreateExecutionContext();
+    const auto second_context = vm.interpreter.CreateExecutionContext();
+    VmCallOutcome first;
+    VmCallOutcome second;
+    std::thread first_thread([&] {
+        first = vm.interpreter.Call(first_context, method, {});
+    });
+    {
+        std::unique_lock lock(gate_mutex);
+        gate_changed.wait(lock, [&] { return initializer_entered; });
+    }
+    std::thread second_thread([&] {
+        second = vm.interpreter.Call(second_context, method, {});
+    });
+    {
+        const std::scoped_lock lock(gate_mutex);
+        CHECK(method_calls.load() == 0U);
+        release_initializer = true;
+    }
+    gate_changed.notify_all();
+    first_thread.join();
+    second_thread.join();
+
+    ExpectInt(first, 7);
+    ExpectInt(second, 7);
+    CHECK(initializer_calls.load() == 1U);
+    CHECK(method_calls.load() == 2U);
+    vm.interpreter.DiscardExecutionContext(first_context);
+    vm.interpreter.DiscardExecutionContext(second_context);
 }
 
 TEST_CASE("dexvm intrinsic builder rejects invalid declarations at build") {

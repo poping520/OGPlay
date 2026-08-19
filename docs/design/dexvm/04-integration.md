@@ -107,12 +107,15 @@ Settings（设备身份）、Locale、PackageManager 受限面——远小于 on
   优先级记录不强制（记账）。
 - 1 guest 线程 = 1 宿主线程模型不变；Java 线程与 native `pthread_create`
   线程在同一 JavaVM attach 语义下对等。
+- 每个 Java 子线程拥有独立 A32 CPU、guest stack、Bionic TLS/thread-info、
+  process thread id 与 JNI local-frame；同线程 JNI 重入继承 suspended SP/TLS，
+  因而 native frame 存活期间允许 monitor/join/sleep 停泊。
 - 守护线程：session teardown 复用"先中断后 join"存量顺序，不引入强杀。
 
 ## 4. monitor 与 wait/notify
 
-- `monitor-enter/exit` 指令与 `synchronized` 方法标志直接复用存量 monitor
-  table（owner/recursion/竞争阻塞/detach 释放语义已完备）；synchronized
+- `monitor-enter/exit` 指令、`synchronized` 方法标志与 JNI MonitorEnter/Exit
+  使用 session 唯一 monitor table（owner/recursion/竞争阻塞/detach 释放语义已完备）；synchronized
   方法在异常展开弹帧时自动释放（02 §8）。
 - **扩展 wait-set**（推翻存量"不实现 Object.wait/notify"的边界，见 06 冲突表；
   状态机对照 AOSP `vm/Sync.cpp` 的 `waitMonitor/notifyMonitor`，薄锁/胖锁

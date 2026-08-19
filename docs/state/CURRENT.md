@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-49 Java 对象与 intrinsic 状态底座完成，DVM-47 gate 仍受阻
+更新：2026-08-20 · DVM-50 线程 native 上下文与统一 monitor 完成，DVM-47 gate 仍受阻
 
 ## 当前阶段
 
@@ -18,7 +18,7 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48、49 已交付；DVM-47 gate 仍受阻。解释执行仍由
+- **M9 DexVM**：DVM-1..46、48..50 已交付；DVM-47 gate 仍受阻。解释执行仍由
   `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
@@ -26,9 +26,7 @@
   golden 且日志确认多轮真实回收。DVM-47 仍受阻：A6 在 GC gate 前命中 APS-4
   DT_SONAME/inventory identity 通用契约，DH 无 guest fault 但固定 step 的呈现序列
   100/97 漂移，A6 长运行因此未执行；`dexvm.gc` 诚实保持 `partial`。
-  子线程 native
-  调用仍复用 root guest 栈/thread id，JNI/DexVM monitor 表尚未合一；`threads` 与
-  `monitors` 保持 `partial`。APK class_def 现为全量注册、首次解析/实例化/调用时链接；
+  APK class_def 现为全量注册、首次解析/实例化/调用时链接；
   未触达 SDK 类的缺失父类/接口不再阻断进程，触达后仍明确失败或在 survey 中记账。
   JNI class identity 仍全量发布，但 jclass global reference 改为 static native 真正出向
   时才创建。`java.lang.Enum` intrinsic 已按 pinned libcore Enum.java 迁入 core 目录并交付
@@ -48,30 +46,29 @@
   start-once、name/priority/isAlive、interrupt、join/timed join、sleep/yield/
   holdsLock 与 active GC roots 均闭合；`Object.wait(JI)`/join/sleep 共用注入的
   monotonic Clock，停泊释放 execution lock。priority 不映射 host scheduler，
-  daemon 不驱动 session 退出；既有 native 栈/monitor 边界使总能力仍为 partial。
+  daemon 不驱动 session 退出。
   DVM-49 统一 session `Object[]` identity/store 与 class 映射；intrinsic 状态改走
-  trace/sweep/clone 注册契约。
-  `IntrinsicClassBuilder` 已重构为工厂式 API：`Class/RootClass/Interface` 一次
-  声明类型头（普通类默认父类 Object，仅 java.lang.Object 显式无父类），
-  方法 `Constructor/StaticMethod/VirtualMethod/FinalMethod`、字段
-  `InstanceField/StaticField`、未实现 `Unimplemented*` 各自语义化命名，空
-  handler、保留名、构造器返回值与整型常量范围在声明/装配期拒绝；core
-  intrinsics、dexvm_android、集成与测试共 206 个源文件及 gap-report 源解析
-  已迁移，VM/linker 语义不变。
+  trace/sweep/clone 注册契约。DVM-50 为每个 Java 子线程建立独立 A32 CPU/stack、
+  Bionic TLS/thread-info、guest id、JNI attach/local frame 与可复用 teardown；native
+  frame 可安全停泊，J/D 返回读取 r0:r1。JNI MonitorEnter/Exit/detach 已委托到唯一
+  `VmMonitorTable`，jclass 与 Class object 同锁；interpreted/intrinsic/native 的实例与
+  static synchronized 方法语义闭合。跨 context `<clinit>` 会释放执行锁等待，并在
+  成功、失败或停止时唤醒重查。`dexvm.threads`/`monitors` 已推进为 `complete`。
+  `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在
+  装配期拒绝，VM/linker 语义不变。
 - **兼容性基线**：Layout UI 已验收 complete；存档沙盒、GUI、intrinsic 声明迁移与
   MSVC 工程内/工程间并行编译已交付。能力现状以 `capabilities.toml` 为准。
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：832/832 CTest（含 DVM-49、DVM-48、GC-B、Profile、Scenario 与文档门禁）。
+- Windows/x64 `windows-msvc`：836/836 CTest（含 DVM-50、GC-B、Profile、Scenario 与文档门禁）。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 呈现确定性后复验 DVM-47 长运行 gate。
-2. 收口子线程 native guest 栈/thread id 与 JNI/DexVM monitor 统一。
-3. Linux M9 严格出口复验。
+2. Linux M9 严格出口复验。
 
 ## 阻塞与边界
 

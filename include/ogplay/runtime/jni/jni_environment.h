@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
@@ -37,6 +38,17 @@ struct JniMonitorSnapshot final {
     std::size_t waiting_threads{};
     std::uint64_t interrupt_generation{};
     bool shut_down{};
+};
+
+// Optional monitor backend used when JNI objects are owned by a higher-level
+// object model. Hooks are copied before invocation so callbacks may block.
+struct JniMonitorHooks final {
+    std::function<void(JniObjectIdentity, std::uint64_t)> enter;
+    std::function<void(JniObjectIdentity, std::uint64_t)> exit;
+    std::function<std::size_t(std::uint64_t)> release_thread;
+    std::function<std::size_t()> interrupt_waiters;
+    std::function<std::size_t()> shutdown;
+    std::function<JniMonitorSnapshot(JniObjectIdentity)> snapshot;
 };
 
 class JniMonitorTable final {
@@ -123,6 +135,7 @@ public:
     [[nodiscard]] std::size_t ShutdownMonitors();
     [[nodiscard]] JniMonitorSnapshot MonitorSnapshot(
         JniObjectIdentity object) const;
+    void SetMonitorHooks(JniMonitorHooks hooks);
 
 private:
     void RequireAllowed(std::uint64_t thread_id, const char* slot_name) const;
@@ -130,6 +143,8 @@ private:
     JniReferenceTable references_;
     JniExceptionState exceptions_;
     JniMonitorTable monitors_;
+    mutable std::mutex monitor_hooks_mutex_;
+    JniMonitorHooks monitor_hooks_;
     mutable std::mutex throwable_mutex_;
     std::map<std::uint64_t, JniThrowableMetadata> throwables_;
     core::Logger exception_logger_;

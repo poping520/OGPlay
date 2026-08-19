@@ -10,6 +10,7 @@ namespace ogplay::runtime::dexvm {
 // ---- Impl helpers ----------------------------------------------------------
 
 namespace {
+constexpr std::uint32_t kAccSynchronized = 0x0020U;
 // Neutral answer for a survey stub: zero/null of the declared return kind.
 [[nodiscard]] VmValue NeutralValueFor(const char return_shorty) {
     switch (return_shorty) {
@@ -29,6 +30,37 @@ namespace {
 }
 
 }  // namespace
+
+VmObjectRef Interpreter::Impl::MethodMonitor(
+    const LinkedMethod& method,
+    const std::span<const VmValue> arguments) const {
+    if ((method.access_flags & kAccSynchronized) == 0U) return VmObjectRef(0);
+    if (method.is_static) return model->ClassObject(method.owner);
+    if (arguments.empty() || arguments.front().kind != VmValue::Kind::ref ||
+        !arguments.front().ref.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                          "synchronized instance method has no receiver"};
+    }
+    return arguments.front().ref;
+}
+
+void Interpreter::Impl::ReleaseFrameMonitor(Frame& frame) noexcept {
+    if (!frame.synchronized_monitor.IsValid()) return;
+    try {
+        monitors->Exit(frame.synchronized_monitor, Execution().token);
+    } catch (const std::exception&) {
+    }
+    frame.synchronized_monitor = VmObjectRef(0);
+}
+
+void Interpreter::Impl::PublishClinitState(const DexClassId java_class,
+                                           const ClinitState state) {
+    auto& linked = linker->MutableClass(java_class);
+    linked.clinit_state = state;
+    if (state != ClinitState::initializing) linked.clinit_thread = 0;
+    clinit_generation.fetch_add(1U, std::memory_order_release);
+    clinit_changed.notify_all();
+}
 
 void Interpreter::Impl::SetPending(const VmObjectRef throwable) {
     auto& execution = Execution();
@@ -93,29 +125,49 @@ void Interpreter::Impl::EnsureInitialized(
     InterpreterExecutionState& execution, const DexClassId java_class) {
     auto& frames = execution.frames;
     auto& pending_exception = execution.pending_exception;
-    auto& linked = linker->MutableClass(java_class);
-    switch (linked.clinit_state) {
+    for (;;) {
+      auto& observed = linker->MutableClass(java_class);
+      switch (observed.clinit_state) {
         case ClinitState::initialized:
             return;
         case ClinitState::failed:
             ThrowJava("Ljava/lang/NoClassDefFoundError;",
-              "class initialization previously failed: " + linked.descriptor);
+              "class initialization previously failed: " + observed.descriptor);
             return;
         case ClinitState::initializing:
-            // Same-thread re-entrancy is allowed by the JLS; stage 1 runs a
-            // single interpreter thread (04 §3 extends this).
-            return;
+            if (observed.clinit_thread == execution.token) return;
+            {
+                const auto generation =
+                    clinit_generation.load(std::memory_order_acquire);
+                auto& lock = execution_lock;
+                const auto depth = lock.ReleaseForBlocking();
+                std::unique_lock wait_lock(clinit_wait_mutex);
+                clinit_changed.wait(wait_lock, [&] {
+                    return clinit_generation.load(std::memory_order_acquire) !=
+                               generation ||
+                           execution.stop_requested.load(
+                               std::memory_order_relaxed);
+                });
+                wait_lock.unlock();
+                lock.ReacquireAfterBlocking(depth);
+                Tick(execution, 0);
+            }
+            continue;
         case ClinitState::uninitialized:
             break;
+      }
+      break;
     }
+    auto& linked = linker->MutableClass(java_class);
     linked.clinit_state = ClinitState::initializing;
     linked.clinit_thread = execution.token;
+    try {
 
     // Superclass first (interfaces are not initialized transitively).
     if (linked.super.has_value()) {
         EnsureInitialized(execution, *linked.super);
         if (pending_exception.IsValid()) {
-      linker->MutableClass(java_class).clinit_state = ClinitState::failed;
+            PublishClinitState(java_class, ClinitState::failed);
             return;
         }
     }
@@ -196,7 +248,7 @@ void Interpreter::Impl::EnsureInitialized(
         try {
             static_cast<void>(mutable_class.clinit_implementation(context));
         } catch (const VmJavaThrow& thrown) {
-      linker->MutableClass(java_class).clinit_state = ClinitState::failed;
+            PublishClinitState(java_class, ClinitState::failed);
             ThrowJava(thrown.descriptor, thrown.message);
             return;
         }
@@ -208,15 +260,23 @@ void Interpreter::Impl::EnsureInitialized(
         PushInterpretedFrame(execution, linker->Method(*clinit), {}, 0);
         const auto outcome = Run(execution, frames.size() - 1);
         if (outcome.exception.IsValid()) {
-      linker->MutableClass(java_class).clinit_state = ClinitState::failed;
+            PublishClinitState(java_class, ClinitState::failed);
             // Initialization failure is sticky NoClassDefFoundError for
             // later users; the original throwable propagates now.
             SetPending(outcome.exception);
             return;
         }
     }
-    linker->MutableClass(java_class).clinit_state = ClinitState::initialized;
+    PublishClinitState(java_class, ClinitState::initialized);
     ++stats.classes_initialized;
+    } catch (...) {
+        auto& failed = linker->MutableClass(java_class);
+        if (failed.clinit_state == ClinitState::initializing &&
+            failed.clinit_thread == execution.token) {
+            PublishClinitState(java_class, ClinitState::failed);
+        }
+        throw;
+    }
 }
 
 void Interpreter::Impl::PushInterpretedFrame(
@@ -228,12 +288,10 @@ void Interpreter::Impl::PushInterpretedFrame(
         throw VmJavaThrow{"Ljava/lang/StackOverflowError;",
                           "frame depth " + std::to_string(frames.size())};
     }
-    if (!frames.empty()) {
-        frames.back().pending_advance = caller_advance;
-    }
     const auto& code = *method.code;
     Frame frame;
     frame.method = &method;
+    frame.synchronized_monitor = MethodMonitor(method, arguments);
     frame.regs.assign(code.info.registers_size, Slot{});
     // Arguments occupy the trailing registers (Dalvik ins convention).
     std::uint32_t reg =
@@ -259,7 +317,21 @@ void Interpreter::Impl::PushInterpretedFrame(
                 FailCode("void argument in invoke marshaling");
         }
     }
-    frames.push_back(std::move(frame));
+    const auto synchronized_monitor = frame.synchronized_monitor;
+    if (synchronized_monitor.IsValid()) {
+        monitors->Enter(synchronized_monitor, execution.token);
+    }
+    try {
+        frames.push_back(std::move(frame));
+        if (frames.size() > 1U) {
+            frames[frames.size() - 2U].pending_advance = caller_advance;
+        }
+    } catch (...) {
+        if (synchronized_monitor.IsValid()) {
+            monitors->Exit(synchronized_monitor, execution.token);
+        }
+        throw;
+    }
     ++stats.method_calls;
 }
 
@@ -332,7 +404,10 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
             } else {
                 // The call is over: drop its frames so the context stays
                 // usable, and discardable once its thread is joined.
-                while (frames.size() > entry_depth) frames.pop_back();
+                while (frames.size() > entry_depth) {
+                    ReleaseFrameMonitor(frames.back());
+                    frames.pop_back();
+                }
                 throw;
             }
         }
@@ -375,6 +450,7 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                 pending_exception_class = DexClassId{};
                 break;
             }
+            ReleaseFrameMonitor(frame);
             frames.pop_back();
         }
         if (pending_exception.IsValid() && frames.size() <= entry_depth) {
@@ -527,8 +603,10 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
             const auto receiver = method.is_static || arguments.empty()
                                       ? VmObjectRef{}
                                       : arguments.front().ref;
-    const auto rest = method.is_static ? arguments : arguments.subspan(1);
+            const auto rest = method.is_static ? arguments : arguments.subspan(1);
             try {
+                const Impl::MethodMonitorScope monitor(*impl_, method,
+                                                       arguments);
                 outcome.value = impl_->InvokeIntrinsic(method, receiver, rest);
             } catch (const VmJavaThrow& thrown) {
                 impl_->ThrowJava(thrown.descriptor, thrown.message);
@@ -556,6 +634,7 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                       : arguments.front().ref;
     const auto rest = method.is_static ? arguments : arguments.subspan(1);
             ++impl_->stats.native_calls;
+            const Impl::MethodMonitorScope monitor(*impl_, method, arguments);
             const Impl::NativeFrame native_frame(*impl_);
             outcome.value = impl_->bridge->Invoke(method, receiver, rest);
             return outcome;

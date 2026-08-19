@@ -1,6 +1,8 @@
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 
+#include <algorithm>
 #include <cstring>
+#include <mutex>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -10,11 +12,14 @@
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace ogplay::runtime {
 namespace {
 
 constexpr std::uint64_t kRootThreadId = 1;
+constexpr std::uint64_t kDexVmProcessThreadBase = UINT64_C(0x40000000);
+constexpr std::uint32_t kDexVmNativeContextSlots = 32;
 
 namespace dx = ogplay::runtime::dexvm;
 
@@ -205,7 +210,13 @@ public:
 
     std::unordered_map<std::uint32_t, JniObjectIdentity> class_identities;
     std::unordered_map<std::uint32_t, JniReference> class_global_refs;
-  std::unordered_set<std::uint32_t> registering_classes;
+    std::unordered_set<std::uint32_t> registering_classes;
+    mutable std::mutex thread_contexts_mutex;
+    std::unordered_map<std::uint64_t, std::uint64_t> token_to_process_thread{
+        {1, kRootThreadId}};
+    std::unordered_map<std::uint64_t, std::uint64_t> process_thread_to_token{
+        {kRootThreadId, 1}};
+    std::unordered_map<std::uint64_t, std::uint32_t> process_thread_slots;
 
     DexVmGuestBridge* owner{};
 
@@ -250,9 +261,21 @@ public:
         return {array_class, element_class};
     }
 
+    [[nodiscard]] dx::VmObjectRef MonitorObject(
+        const JniObjectIdentity identity) {
+        for (const auto& [raw_class, registered] : class_identities) {
+            if (registered == identity) {
+                return model->ClassObject(dx::DexClassId(raw_class));
+            }
+        }
+        return model->FromIdentity(identity);
+    }
+
     // ---- reference conversion ------------------------------------------
 
-    [[nodiscard]] JniReference PublishLocal(const dx::VmObjectRef ref) {
+    [[nodiscard]] JniReference PublishLocal(
+        const dx::VmObjectRef ref,
+        const std::uint64_t thread = kRootThreadId) {
     if (!ref.IsValid())
       return JniReference{};
     const auto identity = model->ToIdentity(ref);
@@ -268,8 +291,29 @@ public:
         session->Objects().Register(identity, class_identity);
       }
     }
-    return session->Environment().PublishLocalObject(kRootThreadId,
-                                                     identity);
+    return session->Environment().PublishLocalObject(thread, identity);
+    }
+
+    [[nodiscard]] std::uint64_t ProcessThreadForToken(
+        const std::uint64_t token) const {
+        const std::scoped_lock lock(thread_contexts_mutex);
+        const auto found = token_to_process_thread.find(token);
+        if (found == token_to_process_thread.end()) {
+            throw DexVmBridgeError(
+                "DexVM execution context has no native thread context");
+        }
+        return found->second;
+    }
+
+    [[nodiscard]] std::uint64_t TokenForProcessThread(
+        const std::uint64_t thread) const {
+        const std::scoped_lock lock(thread_contexts_mutex);
+        const auto found = process_thread_to_token.find(thread);
+        if (found == process_thread_to_token.end()) {
+            throw JniMonitorError(JniMonitorErrorReason::invalid_thread,
+                                  "JNI monitor thread is not a DexVM thread");
+        }
+        return found->second;
     }
 
     [[nodiscard]] dx::VmObjectRef FromReference(const JniReference reference,
@@ -585,6 +629,20 @@ public:
   [[nodiscard]] dx::VmValue
   InvokeNative(const dx::LinkedMethod &method, const dx::VmObjectRef receiver,
         const std::span<const dx::VmValue> arguments) {
+        const auto process_thread =
+            ProcessThreadForToken(vm->CurrentContextToken());
+        auto& environment = session->Environment();
+        environment.PushLocalFrame(process_thread, arguments.size() + 8U);
+        struct LocalFrameScope final {
+            JniEnvironment* environment{};
+            std::uint64_t thread{};
+            ~LocalFrameScope() {
+                try {
+                    static_cast<void>(environment->PopLocalFrame(thread));
+                } catch (const std::exception&) {
+                }
+            }
+        } local_frame{&environment, process_thread};
         const auto& owner_class = linker.Class(method.owner);
         const auto class_name =
         owner_class.descriptor.substr(1, owner_class.descriptor.size() - 2);
@@ -597,7 +655,7 @@ public:
         if (method.is_static) {
             words.push_back(GlobalClassReference(method.owner).Value());
         } else {
-            words.push_back(PublishLocal(receiver).Value());
+            words.push_back(PublishLocal(receiver, process_thread).Value());
         }
 
         DescriptorWalk walk{method.descriptor};
@@ -634,7 +692,7 @@ public:
                     push_pair(value.wide);
                     break;
                 case 'L':
-                    push_word(PublishLocal(value.ref).Value());
+                    push_word(PublishLocal(value.ref, process_thread).Value());
                     break;
                 default:
                     push_word(value.cat1);
@@ -652,6 +710,7 @@ public:
             frame.registers[index] = words[index];
         }
         frame.stack_words = stack;
+        frame.thread_id = process_thread;
 
         // Resolution: RegisterNatives mapping first, then Java_ exports.
         A32GuestCallResult result{};
@@ -684,8 +743,8 @@ public:
         }
 
         // Pending exception propagates into the interpreter.
-        if (session->Environment().ExceptionCheck(kRootThreadId)) {
-            session->Environment().ExceptionClear(kRootThreadId);
+        if (session->Environment().ExceptionCheck(process_thread)) {
+            session->Environment().ExceptionClear(process_thread);
       throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
                 "native method raised a pending JNI exception: " +
                     class_name + "." + method.name};
@@ -696,17 +755,20 @@ public:
             case 'V':
                 return dx::VmValue::Void();
             case 'J':
-            case 'D':
-                if (ledger != nullptr) {
-        ledger->RecordUnimplemented("dexvm.bridge.wide_native_return", 0);
-                }
-                throw DexVmBridgeError(
-                    "dexvm bridge does not decode 64-bit native returns "
-          "yet: " +
-          method.name);
+            case 'D': {
+                const auto bits = static_cast<std::uint64_t>(
+                                      result.return_value) |
+                                  (static_cast<std::uint64_t>(
+                                       result.return_value_high)
+                                   << 32U);
+                dx::VmValue value;
+                value.kind = dx::VmValue::Kind::wide;
+                value.wide = bits;
+                return value;
+            }
             case 'L': {
                 const JniReference reference(result.return_value);
-      return dx::VmValue::Ref(FromReference(reference, kRootThreadId));
+      return dx::VmValue::Ref(FromReference(reference, process_thread));
             }
             default: {
                 dx::VmValue value;
@@ -762,6 +824,56 @@ DexVmGuestBridge::DexVmGuestBridge(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
+    session.Environment().SetMonitorHooks(JniMonitorHooks{
+        [bridge_state](const JniObjectIdentity identity,
+                       const std::uint64_t thread) {
+            if (identity.value == 0U) {
+                throw JniMonitorError(JniMonitorErrorReason::invalid_object,
+                                      "JNI monitor object is null");
+            }
+            bridge_state->vm->Monitors().Enter(
+                bridge_state->MonitorObject(identity),
+                bridge_state->TokenForProcessThread(thread));
+        },
+        [bridge_state](const JniObjectIdentity identity,
+                       const std::uint64_t thread) {
+            if (identity.value == 0U) {
+                throw JniMonitorError(JniMonitorErrorReason::invalid_object,
+                                      "JNI monitor object is null");
+            }
+            try {
+                bridge_state->vm->Monitors().Exit(
+                    bridge_state->MonitorObject(identity),
+                    bridge_state->TokenForProcessThread(thread));
+            } catch (const dx::VmJavaThrow&) {
+                throw JniMonitorError(JniMonitorErrorReason::not_owner,
+                                      "JNI monitor exit by non-owner");
+            }
+        },
+        [bridge_state](const std::uint64_t thread) {
+            const auto token = bridge_state->TokenForProcessThread(thread);
+            const auto held = bridge_state->vm->Monitors().HeldCount(token);
+            bridge_state->vm->Monitors().ReleaseAll(token);
+            return held;
+        },
+        [] { return std::size_t{}; },
+        [bridge_state] {
+            bridge_state->vm->Monitors().Shutdown();
+            return std::size_t{};
+        },
+        [bridge_state](const JniObjectIdentity identity) {
+            if (identity.value == 0U) return JniMonitorSnapshot{};
+            const auto snapshot = bridge_state->vm->Monitors().Snapshot(
+                bridge_state->MonitorObject(identity));
+            std::uint64_t owner_thread{};
+            if (snapshot.owner != 0U) {
+                owner_thread = bridge_state->ProcessThreadForToken(
+                    snapshot.owner);
+            }
+            return JniMonitorSnapshot{owner_thread, snapshot.recursion,
+                                      snapshot.waiting, 0,
+                                      snapshot.shutting_down};
+        }});
     impl_->vm->SetGcIntegration(dx::InterpreterGcIntegration{
         [&session](const std::function<void(JniObjectIdentity)>& visit) {
             session.Environment().VisitReferenceRoots(visit);
@@ -784,6 +896,9 @@ DexVmGuestBridge::DexVmGuestBridge(
 
 DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->threads) impl_->threads->Shutdown();
+    if (impl_->session) {
+        impl_->session->Environment().SetMonitorHooks({});
+    }
 }
 
 dexvm::Interpreter& DexVmGuestBridge::Vm() noexcept { return *impl_->vm; }
@@ -822,6 +937,58 @@ DexVmGuestBridge::Invoke(const dexvm::LinkedMethod &method,
                          const dexvm::VmObjectRef receiver,
     const std::span<const dexvm::VmValue> arguments) {
     return impl_->InvokeNative(method, receiver, arguments);
+}
+
+void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id,
+                                    const std::uint64_t execution_token) {
+    if (guest_thread_id < 2U) {
+        throw DexVmBridgeError("DexVM child thread id is invalid");
+    }
+    const auto process_thread = kDexVmProcessThreadBase + guest_thread_id;
+    std::uint32_t slot = kDexVmNativeContextSlots;
+    {
+        const std::scoped_lock lock(impl_->thread_contexts_mutex);
+        for (std::uint32_t candidate = 0;
+             candidate < kDexVmNativeContextSlots; ++candidate) {
+            const auto used = std::find_if(
+                impl_->process_thread_slots.begin(),
+                impl_->process_thread_slots.end(),
+                [candidate](const auto& entry) {
+                    return entry.second == candidate;
+                });
+            if (used == impl_->process_thread_slots.end()) {
+                slot = candidate;
+                break;
+            }
+        }
+        if (slot == kDexVmNativeContextSlots) {
+            throw DexVmBridgeError(
+                "DexVM native thread context pool is exhausted");
+        }
+        impl_->process_thread_slots.emplace(process_thread, slot);
+    }
+    try {
+        impl_->session->PrepareDexVmThread(process_thread, slot);
+        const std::scoped_lock lock(impl_->thread_contexts_mutex);
+        impl_->token_to_process_thread.emplace(execution_token,
+                                               process_thread);
+        impl_->process_thread_to_token.emplace(process_thread,
+                                               execution_token);
+    } catch (...) {
+        const std::scoped_lock lock(impl_->thread_contexts_mutex);
+        impl_->process_thread_slots.erase(process_thread);
+        throw;
+    }
+}
+
+void DexVmGuestBridge::DetachThread(const std::uint64_t guest_thread_id,
+                                    const std::uint64_t execution_token) noexcept {
+    const auto process_thread = kDexVmProcessThreadBase + guest_thread_id;
+    impl_->session->ReleaseDexVmThread(process_thread);
+    const std::scoped_lock lock(impl_->thread_contexts_mutex);
+    impl_->token_to_process_thread.erase(execution_token);
+    impl_->process_thread_to_token.erase(process_thread);
+    impl_->process_thread_slots.erase(process_thread);
 }
 
 }  // namespace ogplay::runtime

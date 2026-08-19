@@ -98,7 +98,10 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   并落入解释执行(第三路由)；class identity 注册不为每个 APK 类预占 JNI global
   reference，只有真实 static native 出向调用需要 jclass 时才按 owner 懒创建并缓存，
   避免大 DEX 在执行入口前耗尽全局引用表；解释器未捕获异常按 JNI 语义置 pending。
-  J/D 出向返回值暂记账明确失败。
+  每个 DexVM child 拥有独立 A32 CPU/stack、Bionic TLS/thread-info、process thread id、
+  JNI attach 与逐调用 local frame；同线程重入继承 suspended SP/TLS，J/D 返回读取
+  r0:r1。JNI monitor hooks 映射到 DexVM execution token 与对象身份，jclass 规范化为
+  同一 Class object，使 native monitor 与 static synchronized 竞争同一状态机。
 - `DexVmAndroidContext` + `AndroidIntrinsicCatalog(context)`：
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、

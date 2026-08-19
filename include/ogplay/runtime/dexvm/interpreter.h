@@ -181,6 +181,16 @@ struct IntrinsicContext final {
 class NativeMethodBridge {
 public:
     virtual ~NativeMethodBridge() = default;
+    virtual void AttachThread(std::uint64_t guest_thread_id,
+                              std::uint64_t execution_token) {
+        static_cast<void>(guest_thread_id);
+        static_cast<void>(execution_token);
+    }
+    virtual void DetachThread(std::uint64_t guest_thread_id,
+                              std::uint64_t execution_token) noexcept {
+        static_cast<void>(guest_thread_id);
+        static_cast<void>(execution_token);
+    }
     [[nodiscard]] virtual VmValue Invoke(const LinkedMethod& method,
                                          VmObjectRef receiver,
                                          std::span<const VmValue> arguments) = 0;
@@ -262,9 +272,13 @@ public:
     // execution context token (04 §4).
     [[nodiscard]] VmMonitorTable& Monitors() noexcept;
     [[nodiscard]] std::uint64_t CurrentContextToken() const;
-    // Guest native frames live on the single root guest stack, so parking a
-    // thread that has one is refused rather than corrupting it.
+    // Live native-frame depth is retained for teardown integrity checks;
+    // each Java thread now owns an independent A32 stack/TLS context.
     [[nodiscard]] std::uint32_t CurrentNativeDepth() const;
+    void AttachNativeThread(std::uint64_t guest_thread_id,
+                            std::uint64_t execution_token);
+    void DetachNativeThread(std::uint64_t guest_thread_id,
+                            std::uint64_t execution_token) noexcept;
     [[nodiscard]] core::CapabilityLedger* Ledger() const noexcept;
 
     // Ensures a class is initialized (triggers <clinit>); returns a Java

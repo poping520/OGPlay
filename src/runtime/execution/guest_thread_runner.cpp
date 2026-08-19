@@ -155,8 +155,10 @@ A32GuestCallResult InvokeA32GuestCall(
         consumed += stopped.ticks_consumed;
         if (stopped.reason == cpu::RunStopReason::supervisor_call &&
             stopped.immediate == 1U && stopped.pc == return_trap) {
+            const auto returned = cpu.GetState();
             return {consumed,
-                    cpu.GetState().Register(cpu::CoreRegister::r0)};
+                    returned.Register(cpu::CoreRegister::r0),
+                    returned.Register(cpu::CoreRegister::r1)};
         }
         if (stopped.reason == cpu::RunStopReason::budget_exhausted) {
             if (consumed >= tick_budget) break;

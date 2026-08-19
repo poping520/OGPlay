@@ -177,7 +177,8 @@ TEST_CASE("A32 guest call executes registers and aligned stack words") {
     fixture.bus.Write32(fixture.code.Add(8), 0xe0800003U);  // add r0, r0, r3
     fixture.bus.Write32(fixture.code.Add(12), 0xe59d4000U); // ldr r4, [sp]
     fixture.bus.Write32(fixture.code.Add(16), 0xe0800004U); // add r0, r0, r4
-    fixture.bus.Write32(fixture.code.Add(20), 0xe12fff1eU); // bx lr
+    fixture.bus.Write32(fixture.code.Add(20), 0xe3a0102aU); // mov r1, #42
+    fixture.bus.Write32(fixture.code.Add(24), 0xe12fff1eU); // bx lr
     const auto return_trap = fixture.code.Add(64);
     fixture.bus.Write32(return_trap, 0xef000001U);          // svc #1
     fixture.Start(85);
@@ -190,7 +191,8 @@ TEST_CASE("A32 guest call executes registers and aligned stack words") {
         frame, fixture.stack.Add(fixture.memory.PageSize()), return_trap, 32);
 
     CHECK(result.return_value == 15U);
-    CHECK(result.ticks_consumed == 7U);
+    CHECK(result.return_value_high == 42U);
+    CHECK(result.ticks_consumed == 8U);
     const auto state = fixture.cpu.GetState();
     CHECK(state.Register(ogplay::cpu::CoreRegister::sp) ==
           fixture.stack.Add(fixture.memory.PageSize() - 8U).Value());

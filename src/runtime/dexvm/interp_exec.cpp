@@ -155,6 +155,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 static_cast<std::int64_t>(GetWide(frame, vAA)));
             if (opcode == 0x11) result = VmValue::Ref(GetRef(frame, vAA));
             exit_result = result;
+            ReleaseFrameMonitor(frame);
             frames.pop_back();
             if (!frames.empty()) {
                 auto& caller = frames.back();

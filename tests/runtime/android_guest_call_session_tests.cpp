@@ -133,6 +133,28 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     process->Stop();
 }
 
+TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {
+    auto libc = MinimalLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36,
+         1000, 1, &filesystem, {}});
+
+    constexpr std::uint64_t first = UINT64_C(0x40000002);
+    constexpr std::uint64_t second = UINT64_C(0x40000003);
+    process->PrepareDexVmThread(first, 0);
+    CHECK(process->AttachedJniThreadCount() == 2U);
+    process->ReleaseDexVmThread(first);
+    CHECK(process->AttachedJniThreadCount() == 1U);
+    process->PrepareDexVmThread(second, 0);
+    CHECK(process->AttachedJniThreadCount() == 2U);
+    process->ReleaseDexVmThread(second);
+    CHECK(process->AttachedJniThreadCount() == 1U);
+    process->Stop();
+}
+
 TEST_CASE("legacy Android guest call session delegates process ownership") {
     auto libc = MinimalLibcElf();
     const ogplay::loader::Elf32ModuleInput module{

@@ -224,7 +224,13 @@ void JniEnvironment::AttachThread(const std::uint64_t thread_id,
 }
 
 void JniEnvironment::DetachThread(const std::uint64_t thread_id) {
-    static_cast<void>(monitors_.ReleaseThread(thread_id));
+    std::function<std::size_t(std::uint64_t)> release;
+    {
+        const std::scoped_lock lock(monitor_hooks_mutex_);
+        release = monitor_hooks_.release_thread;
+    }
+    static_cast<void>(release ? release(thread_id)
+                              : monitors_.ReleaseThread(thread_id));
     references_.DetachThread(thread_id);
     exceptions_.DetachThread(thread_id);
 }
@@ -416,27 +422,61 @@ void JniEnvironment::MonitorEnter(const std::uint64_t thread_id,
                                   const JniReference object) {
     RequireAllowed(thread_id, "MonitorEnter");
     const auto identity = references_.Resolve(thread_id, object);
-    monitors_.Enter(identity.value_or(JniObjectIdentity{}), thread_id);
+    std::function<void(JniObjectIdentity, std::uint64_t)> enter;
+    {
+        const std::scoped_lock lock(monitor_hooks_mutex_);
+        enter = monitor_hooks_.enter;
+    }
+    const auto resolved = identity.value_or(JniObjectIdentity{});
+    if (enter) enter(resolved, thread_id);
+    else monitors_.Enter(resolved, thread_id);
 }
 
 void JniEnvironment::MonitorExit(const std::uint64_t thread_id,
                                  const JniReference object) {
     RequireAllowed(thread_id, "MonitorExit");
     const auto identity = references_.Resolve(thread_id, object);
-    monitors_.Exit(identity.value_or(JniObjectIdentity{}), thread_id);
+    std::function<void(JniObjectIdentity, std::uint64_t)> exit;
+    {
+        const std::scoped_lock lock(monitor_hooks_mutex_);
+        exit = monitor_hooks_.exit;
+    }
+    const auto resolved = identity.value_or(JniObjectIdentity{});
+    if (exit) exit(resolved, thread_id);
+    else monitors_.Exit(resolved, thread_id);
 }
 
 std::size_t JniEnvironment::InterruptMonitorWaiters() {
-    return monitors_.InterruptWaiters();
+    std::function<std::size_t()> interrupt;
+    {
+        const std::scoped_lock lock(monitor_hooks_mutex_);
+        interrupt = monitor_hooks_.interrupt_waiters;
+    }
+    return interrupt ? interrupt() : monitors_.InterruptWaiters();
 }
 
 std::size_t JniEnvironment::ShutdownMonitors() {
-    return monitors_.Shutdown();
+    std::function<std::size_t()> shutdown;
+    {
+        const std::scoped_lock lock(monitor_hooks_mutex_);
+        shutdown = monitor_hooks_.shutdown;
+    }
+    return shutdown ? shutdown() : monitors_.Shutdown();
 }
 
 JniMonitorSnapshot JniEnvironment::MonitorSnapshot(
     const JniObjectIdentity object) const {
-    return monitors_.Snapshot(object);
+    std::function<JniMonitorSnapshot(JniObjectIdentity)> snapshot;
+    {
+        const std::scoped_lock lock(monitor_hooks_mutex_);
+        snapshot = monitor_hooks_.snapshot;
+    }
+    return snapshot ? snapshot(object) : monitors_.Snapshot(object);
+}
+
+void JniEnvironment::SetMonitorHooks(JniMonitorHooks hooks) {
+    const std::scoped_lock lock(monitor_hooks_mutex_);
+    monitor_hooks_ = std::move(hooks);
 }
 
 void JniEnvironment::RequireAllowed(const std::uint64_t thread_id,

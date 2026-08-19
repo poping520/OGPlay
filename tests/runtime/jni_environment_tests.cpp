@@ -112,3 +112,56 @@ TEST_CASE("JNI HLE global object publication crosses attached threads") {
     environment.DetachThread(42);
     environment.DetachThread(41);
 }
+
+TEST_CASE("JNI environment delegates every monitor operation to one backend") {
+    ogplay::runtime::JniEnvironment environment({8, 4, 4});
+    environment.AttachThread(51, 4);
+    const ogplay::runtime::JniObjectIdentity object{
+        ogplay::runtime::JniObjectDomain::dex_vm, 0x5151};
+    const auto reference = environment.PublishLocalObject(51, object);
+    std::size_t entered{};
+    std::size_t exited{};
+    std::size_t released{};
+    std::size_t interrupted{};
+    std::size_t shut_down{};
+    environment.SetMonitorHooks({
+        [&](const auto actual, const auto thread) {
+            CHECK(actual == object);
+            CHECK(thread == 51U);
+            ++entered;
+        },
+        [&](const auto actual, const auto thread) {
+            CHECK(actual == object);
+            CHECK(thread == 51U);
+            ++exited;
+        },
+        [&](const auto thread) {
+            CHECK(thread == 51U);
+            ++released;
+            return std::size_t{2};
+        },
+        [&] {
+            ++interrupted;
+            return std::size_t{3};
+        },
+        [&] {
+            ++shut_down;
+            return std::size_t{4};
+        },
+        [&](const auto actual) {
+            CHECK(actual == object);
+            return ogplay::runtime::JniMonitorSnapshot{51, 2, 1, 0, false};
+        }});
+
+    environment.MonitorEnter(51, reference);
+    environment.MonitorExit(51, reference);
+    CHECK(environment.MonitorSnapshot(object).recursion == 2U);
+    CHECK(environment.InterruptMonitorWaiters() == 3U);
+    CHECK(environment.ShutdownMonitors() == 4U);
+    environment.DetachThread(51);
+    CHECK(entered == 1U);
+    CHECK(exited == 1U);
+    CHECK(released == 1U);
+    CHECK(interrupted == 1U);
+    CHECK(shut_down == 1U);
+}

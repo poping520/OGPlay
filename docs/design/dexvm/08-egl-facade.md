@@ -84,8 +84,7 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
 | managed surface open/present/close | `AndroidGuestCallSession::{Open,Present,Close}ManagedSurface` → `src/runtime/boundary/android_boundary_hle.cpp:179-211` |
 | ANGLE context 目前创建线程一次性 make-current，无迁移 | `src/gles/egl_lifecycle.cpp:302`（创建即 current）、`:350`（析构时解绑） |
 | intrinsic handler 全部在 `VmExecutionLock` 内、调用方宿主线程上执行 | `src/runtime/dexvm/MODULE.md` |
-| 子线程 native 调用在调用方宿主线程上执行（复用 root guest 栈） | 同上"尚未实现"节 |
-| 持有 native 帧的线程禁止停泊（`blocking_in_native`） | `src/runtime/dexvm/vm_threads.cpp:52-63` |
+| DVM-50：子线程 native 调用拥有独立 A32 stack/TLS，可安全停泊 | `src/runtime/integration/android_guest_call_session.cpp` |
 | guest 数组读写 API | `JavaObjectModel::{Get,Set}PrimitiveElement/SetObjectElement/ArrayLength`（`include/ogplay/runtime/dexvm/object_model.h`） |
 | singleton/字符串 helper | `src/runtime/integration/dexvm_android/shared.h`（`Singleton`、`MakeString`） |
 | SurfaceHolder 注册表（native_window 校验依据） | `DexVmAndroidContext::surface_holders` |
@@ -250,8 +249,7 @@ render driver，不读取 title 身份。
   swap 数量都是 guest 执行的确定函数。禁止以 `yield`、墙钟节拍、超时或单帧
   免停泊额度替代该谓词。
 - teardown 在 Java 线程 shutdown/join 前设置 pacer shutdown 并 `notify_all`。
-  swap 由解释执行的 EglHelper 调用且 `native_depth==0`，不触发
-  `blocking_in_native`。
+  swap 由解释执行的 EglHelper 调用；DVM-50 后 native depth 不再改变停泊安全性。
 - 机器回归：dexasm `LSwapHandshake` 让 driver 在 guest monitor 上等待 worker
   完成 **2 次** swap 后才 notify，锁死单次额度方案；反向用例证明 driver 未阻塞
   时 swap 必须等到 `AdvanceEglSwapPacer()`。

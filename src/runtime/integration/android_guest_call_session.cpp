@@ -12,12 +12,14 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 
 #include "ogplay/audio/java_sound_pool.h"
 #include "ogplay/cpu/dynarmic.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/bionic/bionic_tls.h"
 #include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
 #include "ogplay/runtime/execution/guest_lifecycle.h"
 #include "ogplay/runtime/integration/api19_guest_process.h"
@@ -40,6 +42,13 @@ namespace ogplay::runtime {
 namespace {
 
 constexpr std::uint64_t kRootThreadId = 1;
+constexpr std::uint32_t kDexVmThreadMaximum = 32;
+constexpr std::uint32_t kDexVmTlsBase = 0x6a100000U;
+constexpr std::uint32_t kDexVmStackBase = 0x6c000000U;
+constexpr std::uint32_t kDexVmStackSize = 1024U * 1024U;
+
+thread_local std::unordered_map<const void*, cpu::Cpu*>
+    active_guest_call_cpus;
 
 [[nodiscard]] std::vector<GuestLifecycleModule> LifecycleModules(
     const loader::Elf32LoadedNamespace& loaded,
@@ -494,6 +503,20 @@ struct AndroidGuestProcessStartup final {
 
 class AndroidGuestProcess::Impl final {
 public:
+    struct DexVmThreadContext final {
+        DexVmThreadContext(const std::uint64_t id,
+                           const memory::GuestRange info,
+                           const memory::GuestRange stack_mapping)
+            : thread_id(id), thread_info(info), stack(stack_mapping) {}
+        std::uint64_t thread_id{};
+        std::optional<BionicTlsBlock> tls;
+        memory::GuestRange thread_info;
+        memory::GuestRange stack;
+        memory::GuestAddress stack_top;
+        std::unique_ptr<cpu::DynarmicCpu> cpu;
+        std::recursive_mutex call_mutex;
+    };
+
     explicit Impl(const AndroidGuestProcessStartup& request)
         : boundary_(address_space_, request.backend, request.width,
                     request.height, request.supersample_factor,
@@ -624,12 +647,14 @@ public:
             throw AndroidGuestProcessError(
                 "Android guest call session has no root CPU");
         }
-        std::scoped_lock call_lock(guest_call_mutex_);
         std::unique_ptr<cpu::DynarmicCpu> nested_cpu;
-        cpu::Cpu* target = root_cpu_.get();
-        auto stack_top = process_memory_.stack_top;
-        if (active_guest_call_cpu_ != nullptr) {
-            const auto caller = active_guest_call_cpu_->GetState();
+        cpu::Cpu* target{};
+        memory::GuestAddress stack_top;
+        std::shared_ptr<DexVmThreadContext> dexvm_context;
+        std::unique_lock<std::recursive_mutex> call_lock;
+        const auto active = active_guest_call_cpus.find(this);
+        if (active != active_guest_call_cpus.end()) {
+            const auto caller = active->second->GetState();
             const auto caller_sp =
                 caller.Register(cpu::CoreRegister::sp) & ~UINT32_C(7);
             if (caller_sp == 0U) {
@@ -644,9 +669,30 @@ public:
             nested_state.SetThreadPointer(caller.ThreadPointer());
             nested_cpu->SetState(nested_state);
             target = nested_cpu.get();
+        } else if (frame.thread_id == kRootThreadId) {
+            call_lock = std::unique_lock<std::recursive_mutex>(
+                guest_call_mutex_);
+            target = root_cpu_.get();
+            stack_top = process_memory_.stack_top;
+        } else {
+            {
+                const std::scoped_lock lock(dexvm_threads_mutex_);
+                const auto found = dexvm_threads_.find(frame.thread_id);
+                if (found == dexvm_threads_.end()) {
+                    throw AndroidGuestProcessError(
+                        "Android guest call thread context is not prepared");
+                }
+                dexvm_context = found->second;
+            }
+            call_lock = std::unique_lock<std::recursive_mutex>(
+                dexvm_context->call_mutex);
+            target = dexvm_context->cpu.get();
+            stack_top = dexvm_context->stack_top;
         }
-        auto* const previous = active_guest_call_cpu_;
-        active_guest_call_cpu_ = target;
+        auto* const previous = active == active_guest_call_cpus.end()
+                                   ? nullptr
+                                   : active->second;
+        active_guest_call_cpus[this] = target;
         try {
             auto result = InvokeA32GuestCall(
                 *target, dispatcher_, lifecycle_, address_space_, frame,
@@ -654,11 +700,115 @@ public:
                 [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                     return HandleBoundary(cpu, stopped);
                 }, slice_observer_);
-            active_guest_call_cpu_ = previous;
+            if (previous != nullptr) active_guest_call_cpus[this] = previous;
+            else active_guest_call_cpus.erase(this);
             return result;
         } catch (...) {
-            active_guest_call_cpu_ = previous;
+            if (previous != nullptr) active_guest_call_cpus[this] = previous;
+            else active_guest_call_cpus.erase(this);
             throw;
+        }
+    }
+
+    void PrepareDexVmThread(const std::uint64_t thread_id,
+                            const std::uint32_t allocation_slot) {
+        if (thread_id == 0U || thread_id == kRootThreadId ||
+            allocation_slot >= kDexVmThreadMaximum) {
+            throw AndroidGuestProcessError(
+                "DexVM guest thread context request is outside its pool");
+        }
+        const std::scoped_lock contexts_lock(dexvm_threads_mutex_);
+        if (dexvm_threads_.contains(thread_id)) return;
+
+        const auto page_size = address_space_.PageSize();
+        const memory::GuestAddress tls_address{
+            kDexVmTlsBase + allocation_slot * static_cast<std::uint32_t>(2U * page_size)};
+        const memory::GuestAddress thread_info_address{
+            tls_address.Value() + static_cast<std::uint32_t>(page_size)};
+        const memory::GuestAddress stack_address{
+            kDexVmStackBase + allocation_slot * kDexVmStackSize};
+        auto context = std::make_shared<DexVmThreadContext>(
+            thread_id, memory::GuestRange{thread_info_address, page_size},
+            memory::GuestRange{stack_address, kDexVmStackSize});
+        bool info_mapped{};
+        bool stack_mapped{};
+        bool lifecycle_registered{};
+        bool jni_attached{};
+        try {
+            const auto rw = memory::PageProtection::read |
+                            memory::PageProtection::write;
+            address_space_.Map(context->thread_info, rw);
+            info_mapped = true;
+            context->tls = CreateBionicTlsBlock(
+                address_space_, tls_address, thread_info_address,
+                kApi19GuestPreinitAddress);
+            address_space_.Map(context->stack, rw);
+            stack_mapped = true;
+            context->stack_top = stack_address.Add(kDexVmStackSize - 64U);
+
+            const auto tid32 = static_cast<std::uint32_t>(thread_id);
+            memory_bus_.Write32(thread_info_address.Add(12),
+                                stack_address.Value(), thread_id);
+            memory_bus_.Write32(thread_info_address.Add(16),
+                                kDexVmStackSize, thread_id);
+            memory_bus_.Write32(thread_info_address.Add(20),
+                                static_cast<std::uint32_t>(page_size), thread_id);
+            memory_bus_.Write32(thread_info_address.Add(32), tid32, thread_id);
+            memory_bus_.Write32(thread_info_address.Add(60),
+                                tls_address.Value(), thread_id);
+            lifecycle_.Register(thread_id, context->tls->thread_pointer);
+            lifecycle_registered = true;
+            const auto attached = java_vm_.AttachCurrentThread(
+                thread_id, kJniVersion1_6);
+            if (attached.status != JniStatus::ok) {
+                throw AndroidGuestProcessError(
+                    "DexVM guest thread JNI attachment failed");
+            }
+            jni_attached = true;
+            context->cpu = std::make_unique<cpu::DynarmicCpu>(
+                memory_bus_, execution_context_);
+            cpu::A32State state;
+            state.SetThreadId(thread_id);
+            state.SetThreadPointer(context->tls->thread_pointer);
+            context->cpu->SetState(state);
+            dexvm_threads_.emplace(thread_id, std::move(context));
+        } catch (...) {
+            if (jni_attached) {
+                static_cast<void>(java_vm_.DetachCurrentThread(thread_id));
+            }
+            if (lifecycle_registered) {
+                lifecycle_.RequestExit(thread_id, 0);
+                static_cast<void>(lifecycle_.CompleteExit(thread_id));
+                static_cast<void>(lifecycle_.Reap(thread_id));
+            }
+            if (stack_mapped) address_space_.Unmap(context->stack);
+            if (context->tls.has_value()) {
+                DestroyBionicTlsBlock(address_space_, *context->tls);
+            }
+            if (info_mapped) address_space_.Unmap(context->thread_info);
+            throw;
+        }
+    }
+
+    void ReleaseDexVmThread(const std::uint64_t thread_id) noexcept {
+        std::shared_ptr<DexVmThreadContext> context;
+        {
+            const std::scoped_lock lock(dexvm_threads_mutex_);
+            const auto found = dexvm_threads_.find(thread_id);
+            if (found == dexvm_threads_.end()) return;
+            context = std::move(found->second);
+            dexvm_threads_.erase(found);
+        }
+        try {
+            const std::scoped_lock call_lock(context->call_mutex);
+            static_cast<void>(java_vm_.DetachCurrentThread(thread_id));
+            lifecycle_.RequestExit(thread_id, 0);
+            static_cast<void>(lifecycle_.CompleteExit(thread_id));
+            static_cast<void>(lifecycle_.Reap(thread_id));
+            address_space_.Unmap(context->stack);
+            DestroyBionicTlsBlock(address_space_, *context->tls);
+            address_space_.Unmap(context->thread_info);
+        } catch (const std::exception&) {
         }
     }
 
@@ -676,6 +826,17 @@ public:
 
     void Stop() {
         if (!running_) return;
+        std::vector<std::uint64_t> dexvm_thread_ids;
+        {
+            const std::scoped_lock lock(dexvm_threads_mutex_);
+            dexvm_thread_ids.reserve(dexvm_threads_.size());
+            for (const auto& [thread_id, _] : dexvm_threads_) {
+                dexvm_thread_ids.push_back(thread_id);
+            }
+        }
+        for (const auto thread_id : dexvm_thread_ids) {
+            ReleaseDexVmThread(thread_id);
+        }
         auto children = lifecycle_.States();
         std::erase_if(children, [](const GuestThreadRuntimeState& state) {
             return state.thread_id == kRootThreadId;
@@ -1074,7 +1235,9 @@ private:
     // an isolated CPU whose stack begins below the suspended caller SP, so a
     // nested JNI_OnLoad cannot overwrite the outer register/stack frame.
     std::recursive_mutex guest_call_mutex_;
-    cpu::Cpu* active_guest_call_cpu_{};
+    std::mutex dexvm_threads_mutex_;
+    std::unordered_map<std::uint64_t, std::shared_ptr<DexVmThreadContext>>
+        dexvm_threads_;
     loader::Elf32LoadedNamespace loaded_;
     std::vector<loader::Elf32LoadedModule> dynamic_modules_;
     std::string root_module_;
@@ -1162,6 +1325,14 @@ A32GuestCallResult AndroidGuestProcess::InvokeRegisteredNative(
             "registered JNI native invocation failed: " +
             std::string(error.what()));
     }
+}
+void AndroidGuestProcess::PrepareDexVmThread(
+    const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
+    impl_->PrepareDexVmThread(thread_id, allocation_slot);
+}
+void AndroidGuestProcess::ReleaseDexVmThread(
+    const std::uint64_t thread_id) noexcept {
+    impl_->ReleaseDexVmThread(thread_id);
 }
 memory::GuestAddress AndroidGuestProcess::GuestEnvironment() const noexcept { return impl_->GuestEnvironment(); }
 memory::GuestAddress AndroidGuestProcess::GuestJavaVm() const noexcept { return impl_->GuestJavaVm(); }
@@ -1314,6 +1485,14 @@ A32GuestCallResult AndroidGuestCallSession::InvokeRegisteredNative(
     } catch (const std::exception& error) {
         throw AndroidGuestCallSessionError(error.what());
     }
+}
+void AndroidGuestCallSession::PrepareDexVmThread(
+    const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
+    process_->PrepareDexVmThread(thread_id, allocation_slot);
+}
+void AndroidGuestCallSession::ReleaseDexVmThread(
+    const std::uint64_t thread_id) noexcept {
+    process_->ReleaseDexVmThread(thread_id);
 }
 memory::GuestAddress AndroidGuestCallSession::GuestEnvironment() const noexcept { return process_->GuestEnvironment(); }
 memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept { return process_->GuestJavaVm(); }

@@ -21,6 +21,9 @@ Bionic、syscall、execution 或 integration。
   `local_per_thread` 总上限，超过总上限仍明确失败。
 - JNI monitor 按强类型 object identity 隔离 owner guest thread、recursion 与 waiters；同线程
   可重入，非 owner exit 明确失败。thread detach 释放其全部 ownership。
+- `JniEnvironment::SetMonitorHooks` 可由拥有 Java 对象模型的上层安装唯一 monitor
+  后端；enter/exit/detach/interrupt/shutdown/snapshot 全量委托，回调在 hooks 锁外执行，
+  因而可阻塞。未安装时继续使用本模块默认表，runtime/jni 不反向依赖 DexVM。
 - monitor 的临时中断与永久关闭是两个语义，不共用 sticky boolean。`InterruptWaiters` 提升
   interrupt generation 并唤醒全部当前 waiter，被唤醒者以 `interrupted` 失败且不得取得
   ownership，之后新的 `Enter` 使用新 generation 仍可正常竞争；`Shutdown` 只在 table 即将

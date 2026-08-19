@@ -1153,17 +1153,17 @@ note = "DVM-9..12 tagged 帧（零值放宽/wide 对完整性）、表分派全�
 [dexvm.execution_contexts]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact title-flow regression"
-note = "DVM-27 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；linker/object model/intrinsic 目录共享，默认单线程语义不变。仅交付执行态拆分，不启动宿主线程、不实现 wait-set，不宣称 dexvm.threads ready"
+note = "DVM-27 显式 context 隔离帧栈、pending exception、返回值、tick 与 monitor recursion；DVM-50 补齐跨 context clinit 等待与同步方法展开。linker/object model/intrinsic 目录共享，解释执行继续由 VmExecutionLock 串行"
 
 [dexvm.threads]
-status = "partial"
-test = "tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
-note = "DVM-28 一个 guest Java 线程 = 一个 hal 宿主线程 + 独立 execution context；DVM-48 将 pinned Android 4.4.4 java.lang.Thread 迁入 core：root/child stable identity、构造期 per-VM ID、virtual this.run、Runnable 转发、start-once、name/priority/isAlive、单一 monitor interrupt flag、join/timed join、sleep/yield/holdsLock 与 active GC roots均有机器测试，wait/join/sleep 共用注入 monotonic Clock。解释执行仍由 VmExecutionLock 串行；子线程 native 调用仍复用 root guest 栈与 thread id，需要停泊时以 blocking_in_native 明确失败，因此能力保持 partial"
+status = "complete"
+test = "tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
+note = "DVM-28/48 交付 1:1 host thread、独立 execution context 与 API 19 Thread core；DVM-50 为每个子线程补齐可复用的独立 A32 CPU/stack、Bionic TLS/thread-info、guest thread id、JNI attach/local frame 与 teardown，native frame 可安全停泊。解释执行仍由 VmExecutionLock 串行，这是设计边界而非线程上下文缺口"
 
 [dexvm.monitors]
-status = "partial"
-test = "tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; Asphalt 6 exact bootstrap 无 guest fault"
-note = "DVM-29 session 级 owner/recursion/wait-set，owner 为 execution context token。Enter/Exit 真实跨线程互斥；Wait 对照 AOSP vm/Sync.cpp waitMonitor，释放并恢复完整 recursion，interrupt 清位。DVM-48 的 Object.wait(JI)、Thread timed join/sleep 共享同一注入 monotonic Clock，host wait 只调度重查；interrupt 唤醒 wait/join/sleep。无 Clock 的 timed blocking 明确记账失败。native 侧 runtime.jni_guest_monitors 仍是独立表，两表未合一，能力保持 partial"
+status = "complete"
+test = "tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/runtime/jni_environment_tests.cpp; Asphalt 6 exact bootstrap 无 guest fault"
+note = "DVM-29 的 session owner/recursion/wait-set 与 DVM-48 wait/join/sleep Clock 语义保留；DVM-50 将 JNI MonitorEnter/Exit/detach 委托到同一 VmMonitorTable，jclass 与 Class object 同一身份，并覆盖 interpreted/intrinsic/native 的实例和静态 ACC_SYNCHRONIZED 语义及所有展开出口"
 
 [dexvm.exceptions]
 status = "complete"
@@ -1173,7 +1173,7 @@ note = "DVM-12 throw 与隐式异常（NPE/AIOOBE/CCE/Arithmetic/NegativeArraySi
 [dexvm.clinit]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
-note = "DVM-12 per-class 状态机 uninitialized→initializing→initialized|failed；静态初始值先物化再跑 <clinit>，super 连带、接口不连带、失败粘滞 NoClassDefFoundError；跨线程等待属阶段 4"
+note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘滞；DVM-50 对同线程递归放行，其他 execution context 释放执行锁等待，成功/失败/teardown 均唤醒并重查状态"
 
 [dexvm.intrinsics_java_core]
 status = "partial"
@@ -1182,8 +1182,8 @@ note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder
 
 [dexvm.jni_bridge]
 status = "complete"
-test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
-note = "DVM-14/15 出向按 descriptor 编组 A32 soft-float 帧（RegisterNatives→Java_ 导出名→记账失败），入向把解释类/方法与缺失的 intrinsic 平台类/方法发布到同一 JniClassRegistry（不替换 session 已有类，dexvm.m<id> handler），233 槽 ABI 不变；J/D 出向返回暂记账明确失败"
+test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
+note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回"
 
 [dexvm.intrinsics_android_core]
 status = "partial"

@@ -4,6 +4,7 @@
 // intrinsic class files. Not installed; include order is private.
 
 #include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <optional>
@@ -12,6 +13,7 @@
 
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/generated/opcode_table.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -24,6 +26,7 @@ struct Frame final {
     std::uint32_t pending_advance{};  // caller pc advance after callee return
     VmValue last_result;
     VmObjectRef caught;  // consumed by move-exception
+    VmObjectRef synchronized_monitor;
 };
 
 struct ThrowableState final {
@@ -98,6 +101,9 @@ public:
     core::Logger* logger{};
     Interpreter* owner{};
     VmExecutionLock execution_lock;
+    std::mutex clinit_wait_mutex;
+    std::condition_variable clinit_changed;
+    std::atomic<std::uint64_t> clinit_generation{};
     std::unique_ptr<VmMonitorTable> monitors;
     VmThreadRuntime* threads{};
     InterpreterGcIntegration gc_integration;
@@ -212,8 +218,7 @@ public:
         }
     }
 
-    // Marks a live guest native frame so blocking primitives can refuse to
-    // park a thread that owns part of the single root guest stack.
+    // Marks live guest native frames for teardown integrity checks.
     class NativeFrame final {
     public:
         explicit NativeFrame(Impl& impl) : execution_(&impl.Execution()) {
@@ -246,6 +251,35 @@ public:
                               const LinkedMethod& method,
                               std::span<const VmValue> arguments,
                               std::uint32_t caller_advance);
+    [[nodiscard]] VmObjectRef MethodMonitor(
+        const LinkedMethod& method,
+        std::span<const VmValue> arguments) const;
+    void ReleaseFrameMonitor(Frame& frame) noexcept;
+    void PublishClinitState(DexClassId java_class, ClinitState state);
+
+    class MethodMonitorScope final {
+    public:
+        MethodMonitorScope(Impl& impl, const LinkedMethod& method,
+                           std::span<const VmValue> arguments)
+            : impl_(&impl), object_(impl.MethodMonitor(method, arguments)) {
+            if (object_.IsValid()) {
+                impl_->monitors->Enter(object_, impl_->Execution().token);
+            }
+        }
+        ~MethodMonitorScope() {
+            if (!object_.IsValid()) return;
+            try {
+                impl_->monitors->Exit(object_, impl_->Execution().token);
+            } catch (const std::exception&) {
+            }
+        }
+        MethodMonitorScope(const MethodMonitorScope&) = delete;
+        MethodMonitorScope& operator=(const MethodMonitorScope&) = delete;
+
+    private:
+        Impl* impl_{};
+        VmObjectRef object_;
+    };
     [[nodiscard]] VmValue InvokeIntrinsic(const LinkedMethod& method,
                                           VmObjectRef receiver,
                                           std::span<const VmValue> arguments);

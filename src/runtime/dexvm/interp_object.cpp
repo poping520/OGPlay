@@ -364,6 +364,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
                     method.is_static
                         ? std::span<const VmValue>(arguments)
                         : std::span<const VmValue>(arguments).subspan(1);
+                const MethodMonitorScope monitor(*this, method, arguments);
                 frame.last_result = InvokeIntrinsic(method, receiver, rest);
                 if (!pending_exception.IsValid()) advance();
                 return;
@@ -386,6 +387,8 @@ void Interpreter::Impl::StepObjectOrInvoke(
                         : std::span<const VmValue>(arguments).subspan(1);
                 ++stats.native_calls;
                 {
+                    const MethodMonitorScope monitor(*this, method,
+                                                     arguments);
                     const NativeFrame native_frame(*this);
                     frame.last_result =
                         bridge->Invoke(method, receiver, rest);

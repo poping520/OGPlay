@@ -28,6 +28,13 @@ enum class VmWaitOutcome : std::uint8_t {
 // without one rather than reading a host wall clock.
 using VmMonotonicMillis = std::function<std::int64_t()>;
 
+struct VmMonitorSnapshot final {
+    std::uint64_t owner{};
+    std::size_t recursion{};
+    std::size_t waiting{};
+    bool shutting_down{};
+};
+
 class VmMonitorTable final {
 public:
     explicit VmMonitorTable(Interpreter& vm);
@@ -71,6 +78,7 @@ public:
 
     // Diagnostics: how many contexts sit in the wait set of this object.
     [[nodiscard]] std::size_t WaitingCount(VmObjectRef object) const;
+    [[nodiscard]] VmMonitorSnapshot Snapshot(VmObjectRef object) const;
     void ReleaseObjectForGc(VmObjectRef object);
 
 private:

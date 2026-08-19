@@ -1498,6 +1498,62 @@ TEST_CASE("dexvm control flow and switches") {
               -1);
 }
 
+TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
+    InterpreterConfig switch_config;
+    switch_config.diagnostics.trace_capacity = 512;
+    InterpreterConfig threaded_config = switch_config;
+    threaded_config.backend = InterpreterBackend::threaded;
+    Vm switch_vm(switch_config);
+    Vm threaded_vm(threaded_config);
+
+    const auto compare_int = [&](const std::string& owner,
+                                 const std::string& name,
+                                 const std::string& descriptor,
+                                 const std::vector<VmValue>& arguments) {
+        const auto expected =
+            switch_vm.CallStatic(owner, name, descriptor, arguments);
+        const auto actual =
+            threaded_vm.CallStatic(owner, name, descriptor, arguments);
+        REQUIRE_FALSE(expected.exception.IsValid());
+        REQUIRE_FALSE(actual.exception.IsValid());
+        CHECK(actual.value.kind == expected.value.kind);
+        CHECK(actual.value.cat1 == expected.value.cat1);
+        CHECK(actual.value.wide == expected.value.wide);
+    };
+    compare_int("LFlow;", "loopSum", "(I)I", {VmValue::Int(20)});
+    compare_int("LFlow;", "sparse", "(I)I", {VmValue::Int(1000)});
+    compare_int("LTask;", "exercise", "()I", {});
+
+    const auto expected_exception =
+        switch_vm.CallStatic("LThrower;", "uncaught", "()I");
+    const auto actual_exception =
+        threaded_vm.CallStatic("LThrower;", "uncaught", "()I");
+    REQUIRE(expected_exception.exception.IsValid());
+    REQUIRE(actual_exception.exception.IsValid());
+    CHECK(switch_vm.linker.Class(expected_exception.exception_class).descriptor ==
+          threaded_vm.linker.Class(actual_exception.exception_class).descriptor);
+    CHECK(actual_exception.exception_message ==
+          expected_exception.exception_message);
+
+    CHECK(threaded_vm.interpreter.Stats().backend ==
+          InterpreterBackend::threaded);
+    CHECK(switch_vm.interpreter.Stats().executed_instructions ==
+          threaded_vm.interpreter.Stats().executed_instructions);
+    CHECK(threaded_vm.interpreter.Stats().fast_code_builds > 0);
+    CHECK(threaded_vm.interpreter.Stats().fast_code_bytes > 0);
+    CHECK(switch_vm.interpreter.Stats().fast_code_builds == 0);
+
+    const auto switch_trace = switch_vm.interpreter.Trace("instruction", 512);
+    const auto threaded_trace =
+        threaded_vm.interpreter.Trace("instruction", 512);
+    REQUIRE(switch_trace.size() == threaded_trace.size());
+    for (std::size_t index = 0; index < switch_trace.size(); ++index) {
+        CHECK(switch_trace[index].tick == threaded_trace[index].tick);
+        CHECK(switch_trace[index].dex_pc == threaded_trace[index].dex_pc);
+        CHECK(switch_trace[index].opcode == threaded_trace[index].opcode);
+    }
+}
+
 TEST_CASE("dexvm arrays and implicit exceptions") {
     Vm vm;
     ExpectInt(vm.CallStatic("LFlow;", "sumArray", "()I"), 24);

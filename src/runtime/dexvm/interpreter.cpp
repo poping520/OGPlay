@@ -408,7 +408,11 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
     VmCallOutcome outcome;
     while (frames.size() > entry_depth) {
         try {
-            Step(execution);
+            if (config.backend == InterpreterBackend::threaded) {
+                StepThreaded(execution);
+            } else {
+                Step(execution);
+            }
         } catch (const VmJavaThrow& thrown) {
             ThrowJava(thrown.descriptor, thrown.message);
         } catch (const DexVmError& error) {
@@ -520,6 +524,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->bridge = bridge;
     impl_->ledger = &ledger;
     impl_->config = config;
+    impl_->stats.backend = config.backend;
     if (config.diagnostics.instruction_sample_interval == 0U) {
         throw std::invalid_argument(
             "DexVM instruction trace sample interval must be non-zero");

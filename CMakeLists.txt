@@ -419,6 +419,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/vm_monitors.cpp
     src/runtime/dexvm/vm_threads.cpp
     src/runtime/dexvm/interp_exec.cpp
+    src/runtime/dexvm/interp_threaded.cpp
     src/runtime/dexvm/interp_object.cpp
     src/runtime/dexvm/interp_arith.cpp
     src/runtime/dexvm/intrinsic_builder.cpp

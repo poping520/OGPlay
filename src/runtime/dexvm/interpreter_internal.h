@@ -261,6 +261,10 @@ public:
     // Executes one instruction of the top frame. Returns true when the
     // frame stack changed (push/pop) or pc was redirected.
     void Step(InterpreterExecutionState& execution);
+    // FastCode dispatch entry. DVM-54 initially bridges every handler back
+    // to Step(); later WUs replace one family at a time without changing the
+    // outer exception/unwind loop.
+    void StepThreaded(InterpreterExecutionState& execution);
 
     // Family handlers (separate translation units).
     [[nodiscard]] bool ExecuteArithmetic(Frame& frame, std::uint8_t opcode,

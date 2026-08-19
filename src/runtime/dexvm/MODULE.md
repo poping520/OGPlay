@@ -99,7 +99,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 - `FastCode`（DVM-53）：由已通过 `PrecheckMethod` 的原始 u2 指令流确定性派生，
   预解码 opcode/宽度/操作数、dex pc 到内部索引、受检分支目标以及 packed/sparse
   switch 与 fill-array-data 边表；缓存按 `LinkedMethod` 懒构建并只读共享，不保存
-  guest 引用、不计入 guest heap，且绝不改写原 DEX。threaded 执行后端尚未接线。
+  guest 引用、不计入 guest heap，且绝不改写原 DEX。
+- `InterpreterBackend`（DVM-54）：默认 `switch_dispatch` 保持原路径；显式
+  `threaded` 经 FastCode handler 表分派，GCC/Clang 使用 computed goto，MSVC 使用
+  dense switch。当前全部 handler bridge 到唯一 `Step` 语义体，因此异常展开、tick、
+  trace 与 switch 精确共源；stats 报告后端及 FastCode 构建次数/宿主字节数。
 - `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
   `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
   `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复；可注入
@@ -159,7 +163,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 `class_linker_internal.h` 持有 `DexClassLinker::Impl` 与共享 helper：注册/
 布局/vtable 在 `class_linker.cpp`，常量池解析与可赋值性在
 `class_linker_resolve.cpp`，方法结构预检及 `FastCode` 懒缓存入口在
-`method_precheck.cpp`，构建器位于 `fast_code.cpp`。解释器主循环在 `interpreter.cpp`，显式执行 context
+`method_precheck.cpp`，构建器位于 `fast_code.cpp`。解释器主循环在 `interpreter.cpp`，
+FastCode 分派骨架在 `interp_threaded.cpp`，显式执行 context
 的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
 `interpreter_context.cpp`，诊断 ring/query/JSON 在 `diagnostics.cpp`，宿主线程
 生命周期在 `vm_threads.cpp`。
@@ -242,7 +247,8 @@ holdsLock、runtime rename diagnostics 与 active/finished GC roots）；
 重获 monitor、wait 前已置位的 interrupt 不停泊、teardown 唤醒全部 waiter、
 driver 阻塞时 N=2 条件 swap 放行与 driver 可运行时帧推进节拍）；
 `tests/dexvm/fast_code_tests.cpp`（DVM-53 指令边界/操作数/分支索引、三类 payload
-边表及畸形输入拒绝）；`tests/dexvm/dex_code_tests.cpp`、
+边表及畸形输入拒绝）；`tests/dexvm/interpreter_tests.cpp` 的 DVM-54 双后端夹具
+比较返回、异常、指令数、tick 与 trace；`tests/dexvm/dex_code_tests.cpp`、
 `tests/dexvm/dexasm_readback_tests.cpp`、
 `tests/dexvm/gap_survey_tests.cpp`（survey 开/关对照：关闭即失败、桩答中性值、
 命中计数、工作单排序）。

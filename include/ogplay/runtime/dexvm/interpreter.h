@@ -197,14 +197,23 @@ public:
                                          std::span<const VmValue> arguments) = 0;
 };
 
+enum class InterpreterBackend : std::uint8_t {
+    switch_dispatch,
+    threaded,
+};
+
 struct InterpreterConfig final {
     std::uint32_t max_frames{512};
     std::uint64_t tick_budget{200'000'000ULL};
+    InterpreterBackend backend{InterpreterBackend::switch_dispatch};
     DexVmDiagnosticsConfig diagnostics;
 };
 
 struct InterpreterStats final {
+    InterpreterBackend backend{InterpreterBackend::switch_dispatch};
     std::uint64_t executed_instructions{};
+    std::uint64_t fast_code_builds{};
+    std::uint64_t fast_code_bytes{};
     std::uint64_t method_calls{};
     std::uint64_t intrinsic_calls{};
     std::uint64_t native_calls{};

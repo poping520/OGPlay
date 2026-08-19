@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-53 FastCode 基建完成，DVM-47 gate 仍受阻
+更新：2026-08-20 · DVM-54 Threaded 全 bridge 骨架完成，DVM-47 gate 仍受阻
 
 ## 当前阶段
 
@@ -18,7 +18,7 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48..53 已交付；DVM-47 gate 仍受阻。解释执行仍由
+- **M9 DexVM**：DVM-1..46、48..54 已交付；DVM-47 gate 仍受阻。解释执行仍由
   `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
@@ -60,7 +60,9 @@
   消费与异步可抢占 safepoint 仍属后续层。
   DVM-53 已交付不改写 DEX 的只读 `FastCode` 懒缓存：预解码操作数、dex pc/内部索引、
   受检分支目标及三类 payload 边表；`dexvm.interpreter_threaded` 已立项为 partial，
-  threaded dispatch 尚未接线，现有 switch 后端行为不变。
+  DVM-54 已接入显式 threaded dispatcher，当前全部 handler bridge 到原 `Step`，
+  双后端返回、异常、指令数、tick 与 trace 等价；默认仍为 switch，直达 handler
+  家族迁移尚未完成。
   `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在
   装配期拒绝，VM/linker 语义不变。
 ## 验证基线

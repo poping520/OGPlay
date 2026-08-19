@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <set>
+#include <memory>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -20,6 +21,8 @@ struct GcVm final {
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
+    std::shared_ptr<std::uint32_t> destructor_calls =
+        std::make_shared<std::uint32_t>(0);
     Interpreter vm;
 
     GcVm()
@@ -30,6 +33,14 @@ struct GcVm final {
                  builder.InstanceField("child", "Ljava/lang/Object;");
                  builder.StaticField("root", "Ljava/lang/Object;");
                  catalog.push_back(std::move(builder).Build());
+                 auto host =
+                     IntrinsicClassBuilder::Class("Lgc/HostBox;");
+                 host.HostStateDestructor(
+                     [calls = destructor_calls](std::uint64_t state) {
+                         CHECK(state == 99);
+                         ++*calls;
+                     });
+                 catalog.push_back(std::move(host).Build());
                  linker.RegisterIntrinsics(catalog);
                  linker.Link();
                  return linker;
@@ -150,6 +161,28 @@ TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
     const auto second = fixture.vm.CollectGarbage();
     CHECK(second.freed_objects == 0);
     CHECK(second.freed_bytes == 0);
+}
+
+TEST_CASE("DexVM host state destructor runs exactly once only after death") {
+    GcVm fixture;
+    const auto host_class = fixture.linker.FindClass("Lgc/HostBox;");
+    REQUIRE(host_class.has_value());
+    const auto live = fixture.model.NewHostBacked(*host_class, 99);
+    static_cast<void>(fixture.model.NewHostBacked(*host_class, 99));
+    fixture.vm.SetGcIntegration(
+        {{}, {}, [live](const VmRootVisitor& visit) { visit(live); }});
+
+    const auto first = fixture.vm.CollectGarbage();
+    CHECK(first.freed_objects == 1);
+    CHECK(*fixture.destructor_calls == 1);
+    const auto second = fixture.vm.CollectGarbage();
+    CHECK(second.freed_objects == 0);
+    CHECK(*fixture.destructor_calls == 1);
+
+    fixture.vm.SetGcIntegration({});
+    const auto third = fixture.vm.CollectGarbage();
+    CHECK(third.freed_objects == 1);
+    CHECK(*fixture.destructor_calls == 2);
 }
 
 }  // namespace

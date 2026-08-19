@@ -190,6 +190,7 @@ void DexClassLinker::RegisterIntrinsics(
             }
         }
         linked.clinit_implementation = declaration->clinit_implementation;
+        linked.host_state_destructor = declaration->host_state_destructor;
     }
 }
 

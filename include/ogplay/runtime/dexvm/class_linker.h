@@ -19,6 +19,7 @@ namespace ogplay::runtime::dexvm {
 struct IntrinsicContext;
 struct VmValue;
 using IntrinsicHandler = std::function<VmValue(IntrinsicContext&)>;
+using HostStateDestructor = std::function<void(std::uint64_t)>;
 
 // Class linking: registration, hierarchy resolution, field layout, vtable
 // construction and lazy method precheck (docs/design/dexvm/02-architecture.md
@@ -60,6 +61,7 @@ struct IntrinsicClassDecl final {
     std::vector<IntrinsicMethodDecl> methods;
     std::vector<IntrinsicFieldDecl> fields;
     IntrinsicHandler clinit_implementation;
+    HostStateDestructor host_state_destructor;
 };
 
 struct LinkedField final {
@@ -121,6 +123,7 @@ struct LinkedClass final {
     std::vector<std::uint16_t> static_ref_slots;
     std::optional<std::uint32_t> dex_class_def_index;
     IntrinsicHandler clinit_implementation;
+    HostStateDestructor host_state_destructor;
     std::vector<IntrinsicFieldDecl> intrinsic_constants;
 };
 

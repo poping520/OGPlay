@@ -307,7 +307,8 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
         if (!record.occupied || mark.marked[index]) continue;
         const auto ref = VmObjectRef(static_cast<std::uint32_t>(index + 1U));
         if (hooks.before_release) {
-            hooks.before_release(ref, record.java_class, record.host_state);
+            hooks.before_release(ref, record.kind, record.java_class,
+                                 record.host_state);
         }
         switch (record.kind) {
             case VmObjectKind::string:

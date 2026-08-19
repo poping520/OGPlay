@@ -65,7 +65,8 @@ struct GcMarkResult final {
 };
 
 struct GcSweepHooks final {
-    std::function<void(VmObjectRef, DexClassId, std::uint64_t)> before_release;
+    std::function<void(VmObjectRef, VmObjectKind, DexClassId, std::uint64_t)>
+        before_release;
     std::function<void(VmObjectRef, JniObjectIdentity)> release_external_state;
 };
 

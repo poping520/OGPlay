@@ -314,7 +314,16 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
     return impl_->model->Sweep(
         mark,
         GcSweepHooks{
-            [this](const VmObjectRef ref, DexClassId, std::uint64_t) {
+            [this](const VmObjectRef ref, const VmObjectKind kind,
+                   const DexClassId java_class,
+                   const std::uint64_t host_state) {
+                if (kind == VmObjectKind::host_backed &&
+                    java_class.IsValid()) {
+                    const auto& linked = impl_->linker->Class(java_class);
+                    if (linked.host_state_destructor) {
+                        linked.host_state_destructor(host_state);
+                    }
+                }
                 impl_->throwables.erase(ref.Value());
                 impl_->builders.erase(ref.Value());
                 impl_->lists.erase(ref.Value());

@@ -250,6 +250,15 @@ namespace ogplay::runtime::dexvm {
         return *this;
     }
 
+    IntrinsicClassBuilder& IntrinsicClassBuilder::HostStateDestructor(
+        ogplay::runtime::dexvm::HostStateDestructor destructor) {
+        if (!destructor) {
+            FailBuild("intrinsic host-state destructor is empty");
+        }
+        declaration_.host_state_destructor = std::move(destructor);
+        return *this;
+    }
+
     IntrinsicClassDecl IntrinsicClassBuilder::Build() && {
         ValidateClassDescriptor(declaration_.descriptor);
 

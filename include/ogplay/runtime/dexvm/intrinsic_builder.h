@@ -62,6 +62,9 @@ namespace ogplay::runtime::dexvm {
 
         IntrinsicClassBuilder& ClassInitializer(IntrinsicHandler handler);
 
+        IntrinsicClassBuilder& HostStateDestructor(
+            ogplay::runtime::dexvm::HostStateDestructor destructor);
+
         [[nodiscard]] IntrinsicClassDecl Build() &&;
 
     private:

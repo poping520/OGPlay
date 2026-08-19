@@ -316,12 +316,14 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
         GcSweepHooks{
             [this](const VmObjectRef ref, const VmObjectKind kind,
                    const DexClassId java_class,
-                   const std::uint64_t host_state) {
+                   const std::uint64_t host_state) -> bool {
+                bool destructor_ran = false;
                 if (kind == VmObjectKind::host_backed &&
                     java_class.IsValid()) {
                     const auto& linked = impl_->linker->Class(java_class);
                     if (linked.host_state_destructor) {
                         linked.host_state_destructor(host_state);
+                        destructor_ran = true;
                     }
                 }
                 impl_->throwables.erase(ref.Value());
@@ -329,6 +331,7 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
                 impl_->lists.erase(ref.Value());
                 impl_->maps.erase(ref.Value());
                 impl_->monitors->ReleaseObjectForGc(ref);
+                return destructor_ran;
             },
             [this](VmObjectRef, const JniObjectIdentity identity) {
                 if (impl_->gc_integration.clear_weak_references) {
@@ -337,10 +340,37 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
             }});
 }
 
-GcSweepResult Interpreter::CollectGarbage() {
+GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     const auto mark = MarkReachable();
-    return SweepGarbage(mark);
+    const auto swept = SweepGarbage(mark);
+    ++impl_->stats.gc_collections;
+    impl_->stats.gc_freed_bytes += swept.freed_bytes;
+    impl_->stats.gc_host_destructors_run += swept.host_destructors_run;
+    impl_->stats.gc_peak_allocated_bytes = std::max(
+        impl_->stats.gc_peak_allocated_bytes,
+        mark.live_bytes + mark.garbage_bytes);
+    const auto pause_ticks = mark.live_objects + mark.garbage_objects;
+    impl_->stats.gc_pause_ticks += pause_ticks;
+    if (impl_->logger != nullptr) {
+        impl_->logger->Write(
+            core::LogLevel::info, "runtime.dexvm.gc",
+            "trigger=" + std::string(trigger) +
+                " live_bytes=" + std::to_string(mark.live_bytes) +
+                " freed_bytes=" + std::to_string(swept.freed_bytes) +
+                " live_objects=" + std::to_string(mark.live_objects) +
+                " freed_objects=" + std::to_string(swept.freed_objects) +
+                " host_destructors_run=" +
+                std::to_string(swept.host_destructors_run) +
+                " pause_ticks=" + std::to_string(pause_ticks));
+    }
+    return swept;
+}
+
+void Interpreter::Impl::PrepareSafeAllocation(
+    const std::uint64_t request_bytes, const std::string_view trigger) {
+    if (!model->ShouldCollectFor(request_bytes)) return;
+    static_cast<void>(owner->CollectGarbage(trigger));
 }
 
 std::uint32_t Interpreter::CurrentNativeDepth() const {

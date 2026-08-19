@@ -67,6 +67,7 @@ struct ProfileRuntime final {
 
     struct DexVm final {
         std::uint64_t heap_budget_bytes{64ULL * 1024ULL * 1024ULL};
+        std::uint32_t gc_watermark_percent{75};
         std::uint32_t max_frames{512};
         std::uint64_t ticks_per_call{kDefaultMaximumTicksPerCall};
     };

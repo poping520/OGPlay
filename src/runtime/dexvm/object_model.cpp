@@ -156,6 +156,9 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings,
     impl_->strings = &strings;
     impl_->arrays = &arrays;
     impl_->config = config;
+    if (config.gc_watermark_percent > 100U) {
+        throw std::invalid_argument("DexVM GC watermark must be in 0..100");
+    }
 }
 
 JavaObjectModel::~JavaObjectModel() = default;
@@ -306,9 +309,10 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
         auto& record = impl_->records[index];
         if (!record.occupied || mark.marked[index]) continue;
         const auto ref = VmObjectRef(static_cast<std::uint32_t>(index + 1U));
-        if (hooks.before_release) {
+        if (hooks.before_release &&
             hooks.before_release(ref, record.kind, record.java_class,
-                                 record.host_state);
+                                 record.host_state)) {
+            ++result.host_destructors_run;
         }
         switch (record.kind) {
             case VmObjectKind::string:
@@ -767,6 +771,39 @@ std::uint64_t JavaObjectModel::ObjectCount() const noexcept {
 }
 std::uint64_t JavaObjectModel::HeapBudgetBytes() const noexcept {
     return impl_->config.heap_budget_bytes;
+}
+
+std::uint32_t JavaObjectModel::GcWatermarkPercent() const noexcept {
+    return impl_->config.gc_watermark_percent;
+}
+
+bool JavaObjectModel::ShouldCollectFor(
+    const std::uint64_t request_bytes) const noexcept {
+    const auto percent = impl_->config.gc_watermark_percent;
+    if (percent == 0U) return false;
+    const auto watermark =
+        (impl_->config.heap_budget_bytes * percent) / 100ULL;
+    return request_bytes > watermark ||
+           impl_->allocated_bytes > watermark - request_bytes;
+}
+
+std::uint64_t JavaObjectModel::EstimateInstanceBytes(
+    const std::uint16_t slot_count) noexcept {
+    return 32ULL + static_cast<std::uint64_t>(slot_count) * 8ULL;
+}
+
+std::uint64_t JavaObjectModel::EstimateStringBytes(
+    const std::size_t code_units) noexcept {
+    return 32ULL + static_cast<std::uint64_t>(code_units) * 2ULL;
+}
+
+std::uint64_t JavaObjectModel::EstimatePrimitiveArrayBytes(
+    const JniPrimitiveKind kind, const JniSize length) {
+    return 32ULL + static_cast<std::uint64_t>(length) * PrimitiveWidth(kind);
+}
+
+std::uint64_t JavaObjectModel::EstimateObjectArrayBytes(const JniSize length) {
+    return 32ULL + static_cast<std::uint64_t>(length) * 4ULL;
 }
 
 }  // namespace ogplay::runtime::dexvm

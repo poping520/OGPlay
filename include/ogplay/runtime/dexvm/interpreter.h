@@ -197,6 +197,11 @@ struct InterpreterStats final {
     std::uint64_t intrinsic_calls{};
     std::uint64_t native_calls{};
     std::uint64_t classes_initialized{};
+    std::uint64_t gc_collections{};
+    std::uint64_t gc_freed_bytes{};
+    std::uint64_t gc_peak_allocated_bytes{};
+    std::uint64_t gc_pause_ticks{};
+    std::uint64_t gc_host_destructors_run{};
 };
 
 using VmRootVisitor = std::function<void(VmObjectRef)>;
@@ -273,7 +278,8 @@ public:
     [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;
     [[nodiscard]] GcMarkResult MarkReachable();
     [[nodiscard]] GcSweepResult SweepGarbage(const GcMarkResult& mark);
-    [[nodiscard]] GcSweepResult CollectGarbage();
+    [[nodiscard]] GcSweepResult CollectGarbage(
+        std::string_view trigger = "explicit_test");
 
     // Helpers shared with intrinsic handlers.
     [[nodiscard]] VmObjectRef NewStringUtf8(std::string_view utf8);

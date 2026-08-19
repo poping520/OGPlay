@@ -655,12 +655,19 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
     if (const auto* dexvm = NativeOptional(table, "dexvm"); dexvm != nullptr) {
         const auto& dexvm_table = NativeAs<NativeTable>(*dexvm, "runtime.dexvm");
         NativeKeys(dexvm_table, "runtime.dexvm",
-                   {"heap_budget_bytes", "max_frames", "ticks_per_call"}, {});
+                   {"heap_budget_bytes", "gc_watermark_percent", "max_frames",
+                    "ticks_per_call"}, {});
         ProfileRuntime::DexVm budget;
         if (const auto* heap = NativeOptional(dexvm_table, "heap_budget_bytes")) {
             budget.heap_budget_bytes = static_cast<std::uint64_t>(NativeInteger(
                 *heap, "runtime.dexvm.heap_budget_bytes", 1U << 20U,
                 1U << 30U));
+        }
+        if (const auto* watermark =
+                NativeOptional(dexvm_table, "gc_watermark_percent")) {
+            budget.gc_watermark_percent = static_cast<std::uint32_t>(
+                NativeInteger(*watermark,
+                              "runtime.dexvm.gc_watermark_percent", 0, 100));
         }
         if (const auto* frames = NativeOptional(dexvm_table, "max_frames")) {
             budget.max_frames = static_cast<std::uint32_t>(NativeInteger(

@@ -257,6 +257,8 @@ public:
     [[nodiscard]] VmObjectRef InternDexString(std::uint32_t string_index);
     void TraceIntrinsicSideTables(VmObjectRef owner,
                                   const VmRootVisitor& visitor) const;
+    void PrepareSafeAllocation(std::uint64_t request_bytes,
+                               std::string_view trigger);
 };
 
 }  // namespace ogplay::runtime::dexvm

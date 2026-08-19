@@ -221,17 +221,25 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
             advance();
             return;
         case 0x1a:  // const-string
+            PrepareSafeAllocation(
+                JavaObjectModel::EstimateStringBytes(
+                    linker->Image().strings[units[frame.pc + 1]].value.size()),
+                "const-string");
             SetRef(frame, vAA, InternDexString(units[frame.pc + 1]));
             advance();
             return;
         case 0x1b:  // const-string/jumbo
-            SetRef(frame, vAA,
-                   InternDexString(
-                       static_cast<std::uint32_t>(units[frame.pc + 1]) |
-                       (static_cast<std::uint32_t>(units[frame.pc + 2])
-                        << 16U)));
+        {
+            const auto string_index =
+                static_cast<std::uint32_t>(units[frame.pc + 1]) |
+                (static_cast<std::uint32_t>(units[frame.pc + 2]) << 16U);
+            PrepareSafeAllocation(JavaObjectModel::EstimateStringBytes(
+                                      linker->Image().strings[string_index].value.size()),
+                                  "const-string-jumbo");
+            SetRef(frame, vAA, InternDexString(string_index));
             advance();
             return;
+        }
         case 0x1c: {  // const-class (does not trigger <clinit>, 02 §5)
             const auto java_class =
                 linker->ResolveTypeIndex(units[frame.pc + 1]);
@@ -318,6 +326,9 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
         case 0x22: {  // new-instance
             const auto java_class =
                 linker->ResolveTypeIndex(units[frame.pc + 1]);
+            PrepareSafeAllocation(JavaObjectModel::EstimateInstanceBytes(
+                                      linker->Class(java_class).instance_slots),
+                                  "new-instance");
             EnsureInitialized(execution, java_class);
             if (pending_exception.IsValid()) return;
             SetRef(frame, vAA, AllocateInstance(java_class));
@@ -341,14 +352,19 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
             const auto& element = linked.array_element_descriptor;
             if (element.starts_with("L") || element.starts_with("[")) {
                 const auto element_class = linker->ResolveDescriptor(element);
+                PrepareSafeAllocation(
+                    JavaObjectModel::EstimateObjectArrayBytes(length),
+                    "new-array");
                 SetRef(frame, vA,
                        model->NewObjectArray(array_class, element_class,
                                              length));
             } else {
+                const auto kind = ArrayKindFor(element);
+                PrepareSafeAllocation(
+                    JavaObjectModel::EstimatePrimitiveArrayBytes(kind, length),
+                    "new-array");
                 SetRef(frame, vA,
-                       model->NewPrimitiveArray(array_class,
-                                                ArrayKindFor(element),
-                                                length));
+                       model->NewPrimitiveArray(array_class, kind, length));
             }
             advance();
             return;
@@ -379,6 +395,11 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 }
             }
             if (element == "I") {
+                PrepareSafeAllocation(
+                    JavaObjectModel::EstimatePrimitiveArrayBytes(
+                        JniPrimitiveKind::integer,
+                        static_cast<JniSize>(registers.size())),
+                    "filled-new-array");
                 const auto array = model->NewPrimitiveArray(
                     array_class, JniPrimitiveKind::integer,
                     static_cast<JniSize>(registers.size()));
@@ -391,6 +412,10 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 frame.last_result = VmValue::Ref(array);
             } else if (element.starts_with("L") || element.starts_with("[")) {
                 const auto element_class = linker->ResolveDescriptor(element);
+                PrepareSafeAllocation(
+                    JavaObjectModel::EstimateObjectArrayBytes(
+                        static_cast<JniSize>(registers.size())),
+                    "filled-new-array");
                 const auto array = model->NewObjectArray(
                     array_class, element_class,
                     static_cast<JniSize>(registers.size()));

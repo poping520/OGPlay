@@ -62,6 +62,9 @@
             "heap_budget_bytes": {
               "type": "integer", "minimum": 1048576, "maximum": 1073741824
             },
+            "gc_watermark_percent": {
+              "type": "integer", "minimum": 0, "maximum": 100
+            },
             "max_frames": { "type": "integer", "minimum": 16, "maximum": 65536 },
             "ticks_per_call": {
               "type": "integer", "minimum": 1, "maximum": 10000000000

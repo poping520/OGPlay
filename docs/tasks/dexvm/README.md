@@ -68,6 +68,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-43](DVM-43.md) | GC-B 精确标记器（只统计） | 完成 |
 | [DVM-44](DVM-44.md) | GC-B 清扫器、预算回减与句柄复用 | 完成 |
 | [DVM-45](DVM-45.md) | GC-B host-backed 宿主状态析构 | 完成 |
+| [DVM-46](DVM-46.md) | GC-B 安全点水位触发、OOM 与 Profile 参数 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

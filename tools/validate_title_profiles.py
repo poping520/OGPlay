@@ -267,10 +267,14 @@ def _validate_runtime(value: Any, schema: int) -> None:
     if "dexvm" in table:
         dexvm = _table(table["dexvm"], "runtime.dexvm")
         _keys(dexvm, "runtime.dexvm",
-              {"heap_budget_bytes", "max_frames", "ticks_per_call"}, set())
+              {"heap_budget_bytes", "gc_watermark_percent", "max_frames",
+               "ticks_per_call"}, set())
         if "heap_budget_bytes" in dexvm:
             _integer(dexvm["heap_budget_bytes"],
                      "runtime.dexvm.heap_budget_bytes", 1 << 20, 1 << 30)
+        if "gc_watermark_percent" in dexvm:
+            _integer(dexvm["gc_watermark_percent"],
+                     "runtime.dexvm.gc_watermark_percent", 0, 100)
         if "max_frames" in dexvm:
             _integer(dexvm["max_frames"], "runtime.dexvm.max_frames", 16,
                      65536)

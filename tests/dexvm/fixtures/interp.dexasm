@@ -223,6 +223,17 @@
     return v1
 .end method
 
+.method static public gcChurn()I
+.registers 3
+    const/4 v0, 0
+    const/16 v1, 10
+    :loop
+    new-instance v2, Ljava/lang/Object;
+    add-int/lit8 v0, v0, 1
+    if-lt v0, v1, :loop
+    return v0
+.end method
+
 .method static public recurse(I)I
 .registers 3
     add-int/lit8 v0, v2, 1

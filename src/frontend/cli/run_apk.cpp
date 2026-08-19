@@ -602,6 +602,8 @@ int RunApkCommand(const int argc, const char* const argv[],
         if (profile.runtime.dexvm.has_value()) {
             bridge_config.heap.heap_budget_bytes =
                 profile.runtime.dexvm->heap_budget_bytes;
+            bridge_config.heap.gc_watermark_percent =
+                profile.runtime.dexvm->gc_watermark_percent;
             bridge_config.interpreter.max_frames =
                 profile.runtime.dexvm->max_frames;
             bridge_config.interpreter.tick_budget =

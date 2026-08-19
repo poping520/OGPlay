@@ -21,6 +21,7 @@ height = 480
 # language switch + race load peak below 300 MiB.
 [runtime.dexvm]
 heap_budget_bytes = 536870912
+gc_watermark_percent = 75
 max_frames = 512
 ticks_per_call = 200000000
 [quirks]

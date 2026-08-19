@@ -1460,6 +1460,24 @@ TEST_CASE("dexvm heap budget exhaustion surfaces OutOfMemoryError") {
     ExpectException(vm, outcome, "Ljava/lang/OutOfMemoryError;");
 }
 
+TEST_CASE("dexvm GC watermark bounds allocation and zero disables collection") {
+    JavaObjectModelConfig enabled;
+    enabled.heap_budget_bytes = 128;
+    enabled.gc_watermark_percent = 75;
+    Vm collecting(InterpreterConfig{}, enabled);
+    ExpectInt(collecting.CallStatic("LFlow;", "gcChurn", "()I"), 10);
+    CHECK(collecting.interpreter.Stats().gc_collections > 0);
+    CHECK(collecting.interpreter.Stats().gc_freed_bytes > 0);
+    CHECK(collecting.model.AllocatedBytes() <= enabled.heap_budget_bytes);
+
+    JavaObjectModelConfig disabled = enabled;
+    disabled.gc_watermark_percent = 0;
+    Vm gc_a(InterpreterConfig{}, disabled);
+    const auto outcome = gc_a.CallStatic("LFlow;", "gcChurn", "()I");
+    ExpectException(gc_a, outcome, "Ljava/lang/OutOfMemoryError;");
+    CHECK(gc_a.interpreter.Stats().gc_collections == 0);
+}
+
 TEST_CASE("dexvm execution contexts isolate mutable interpreter state") {
     Vm vm;
     const auto first = vm.interpreter.CreateExecutionContext();

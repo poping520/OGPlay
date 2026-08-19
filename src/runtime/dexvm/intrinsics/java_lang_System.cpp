@@ -89,7 +89,8 @@ IntrinsicClassDecl Declare_java_lang_System() {
             });
     builder.StaticMethod("gc", "()V",
         [](IntrinsicContext&) {
-                // GC-A never collects (04 §5); the call is legal and does nothing.
+                // GC-B remains allocation-flow driven (09 §7). Explicit
+                // System.gc() is legal but intentionally does not force a cycle.
                 return VmValue::Void();
             });
     builder.StaticMethod("getProperty", "(Ljava/lang/String;)Ljava/lang/String;",

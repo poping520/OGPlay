@@ -49,6 +49,7 @@ enum class VmObjectKind : std::uint8_t {
 
 struct JavaObjectModelConfig final {
     std::uint64_t heap_budget_bytes{64ULL * 1024ULL * 1024ULL};
+    std::uint32_t gc_watermark_percent{75};
 };
 
 struct GcMarkResult final {
@@ -65,7 +66,7 @@ struct GcMarkResult final {
 };
 
 struct GcSweepHooks final {
-    std::function<void(VmObjectRef, VmObjectKind, DexClassId, std::uint64_t)>
+    std::function<bool(VmObjectRef, VmObjectKind, DexClassId, std::uint64_t)>
         before_release;
     std::function<void(VmObjectRef, JniObjectIdentity)> release_external_state;
 };
@@ -73,6 +74,7 @@ struct GcSweepHooks final {
 struct GcSweepResult final {
     std::uint64_t freed_bytes{};
     std::uint64_t freed_objects{};
+    std::uint64_t host_destructors_run{};
 };
 
 class JavaObjectModel final {
@@ -161,6 +163,17 @@ public:
     [[nodiscard]] std::uint64_t AllocatedBytes() const noexcept;
     [[nodiscard]] std::uint64_t ObjectCount() const noexcept;
     [[nodiscard]] std::uint64_t HeapBudgetBytes() const noexcept;
+    [[nodiscard]] std::uint32_t GcWatermarkPercent() const noexcept;
+    [[nodiscard]] bool ShouldCollectFor(std::uint64_t request_bytes) const noexcept;
+
+    [[nodiscard]] static std::uint64_t EstimateInstanceBytes(
+        std::uint16_t slot_count) noexcept;
+    [[nodiscard]] static std::uint64_t EstimateStringBytes(
+        std::size_t code_units) noexcept;
+    [[nodiscard]] static std::uint64_t EstimatePrimitiveArrayBytes(
+        JniPrimitiveKind kind, JniSize length);
+    [[nodiscard]] static std::uint64_t EstimateObjectArrayBytes(
+        JniSize length);
 
 private:
     class Impl;

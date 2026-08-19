@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-19 · java.lang 顶层 8 个 interface 聚合进 java_lang_interfaces.cpp
+更新：2026-08-19 · DVM-42..46 GC-B 实现完成，DVM-47 gate 受阻
 
 ## 当前阶段
 
@@ -18,7 +18,14 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..41 已交付；解释执行仍由 `VmExecutionLock` 串行。子线程 native
+- **M9 DexVM**：DVM-1..46 已交付；解释执行仍由 `VmExecutionLock` 串行。GC-B 已实现
+  全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
+  发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
+  exact 三轮保持 `468/468000`、`f91150b4...`，16 MiB/1% 强制回收探针也通过同一
+  golden 且日志确认多轮真实回收。DVM-47 仍受阻：A6 在 GC gate 前命中 APS-4
+  DT_SONAME/inventory identity 通用契约，DH 无 guest fault 但固定 step 的呈现序列
+  100/97 漂移，A6 长运行因此未执行；`dexvm.gc` 诚实保持 `partial`。
+  子线程 native
   调用仍复用 root guest 栈/thread id，JNI/DexVM monitor 表尚未合一；`threads` 与
   `monitors` 保持 `partial`。APK class_def 现为全量注册、首次解析/实例化/调用时链接；
   未触达 SDK 类的缺失父类/接口不再阻断进程，触达后仍明确失败或在 survey 中记账。
@@ -52,19 +59,21 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：818/818 CTest。
+- Windows/x64 `windows-msvc`：824/824 CTest（含 GC-B、Profile、Scenario 与文档门禁）。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 
 ## 下一步
 
-1. 按命中批次闭合 DexVM 缺口，随后推进 GC-B 与解释器 v2 threaded 分批。
+1. 通用闭合 A6 DT_SONAME identity 与 DH 呈现确定性后复验 DVM-47 长运行 gate。
 2. 收口子线程 native guest 栈/thread id 与 JNI/DexVM monitor 统一。
 3. Linux M9 严格出口复验。
 
 ## 阻塞与边界
 
 - A6 主界面/可游玩 gate 尚未完成；现有启动证据不等同于完整可玩性。
+- DVM-47 未完成：A6/DH 三轮 exact 与 GC 长运行门禁尚未全部成立，不得把
+  `dexvm.gc` 推进为 complete。
 - 未实现能力继续记账并明确失败；长期限制见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。
 
 任务索引：[APK Startup](../tasks/apk-startup/README.md) ·

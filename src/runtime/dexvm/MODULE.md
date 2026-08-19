@@ -53,8 +53,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   VM 实例与对象数组自有存储；字符串与基元数组委托注入的
   `JniStringStore`/`JniPrimitiveArrayStore`——native 与解释器看到同一对象。
   `CloneObject` 分配新句柄后浅拷贝 instance slot / 数组元素（对照 AOSP
-  `dvmCloneObject`）。GC-A 预算 arena：只分配不回收，默认 64 MiB，耗尽抛
-  `heap_budget_exhausted`；`SetEmergencyReserve` 仅供解释器物化 OOM throwable。
+  `dvmCloneObject`）。GC-B 是精确、非移动、STW 标记清除：对象记录保存原始
+  `reserved_bytes`，清扫回减预算并以确定性 LIFO 空闲链复用记录/实例槽/数组槽；
+  空闲记录访问明确失败。intern 字符串与 class 对象为不朽强根；JNI weak global
+  不是根，目标死亡时被清空。默认堆预算 64 MiB；`SetEmergencyReserve` 仅供解释器
+  物化 OOM throwable。
 - `Interpreter`：`Call(method, args)` 在当前宿主线程执行至完成，返回
   `VmCallOutcome`（值或未捕获 Java 异常 + 消息 + 栈回溯）。tagged 寄存器
   （uninit/cat1/wide 对/ref + 零值放宽）、每指令 1 tick 预算、帧深度上限
@@ -77,7 +80,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   阻塞作用域，dexvm 不感知观察者的 EGL/session 用途。
   **同一时刻只有一个线程解释字节码**——这是显式记账的限制而非并发，换来的是
   linker 解析缓存、object model arena 与 intrinsic 侧表只有单写者，因此全部
-  intrinsic handler 都在锁内运行。
+  intrinsic handler 都在锁内运行。该执行锁同时是 GC 的停世界边界：GC 只在
+  六类解释器安全分配指令最前端运行；阻塞原语不得跨 `ReleaseForBlocking` 在
+  C++ 栈保留未根化的新鲜句柄。
 - `VmMonitorTable`（`vm_monitors.h`，`Interpreter::Monitors()`）：session 级
   对象 monitor，owner 是 execution context token。`Enter`/`Exit` 提供真实
   跨线程互斥（争用时释放执行锁停泊）；`Wait` 逐步对照 AOSP `vm/Sync.cpp`
@@ -148,6 +153,17 @@ family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自
 - 语义出处：逐 opcode 对照 AOSP `vm/mterp/c/OP_*.cpp`（一致性夹具注释记录），
   分歧按 07 §5 仲裁。无 JIT、不改写指令流（quickening 红线）。
 - 对象非移动，句柄生命周期内稳定。
+- GC 根集必须覆盖全部 context 的全部帧 tagged ref、last_result/caught、pending/
+  exit result、静态 ref 槽、JNI local/global、Thread 对象、intern/class 对象以及
+  Android session 显式登记的外部长期引用。intrinsic 侧存储是封闭集合：
+  throwable/list/map 随 owner trace，builder 无引用；四表都随 owner sweep，新增
+  持 `VmObjectRef` 的侧表必须同时注册 trace 与 sweep hook。
+- GC 只由分配流决定：`gc_watermark_percent` 范围 0..100、默认 75，0 精确关闭；
+  `System.gc()` 保持合法 no-op。结构化 `runtime.dexvm.gc` 日志与 stats 记录回收量、
+  对象数、宿主析构次数及确定性 pause ticks，不以 wall clock 参与决策。
+- host-backed 对象只有显式声明 `HostStateDestructor` 才在清扫时释放宿主状态，
+  每个死亡对象恰调用一次，不执行 guest finalizer；string/primitive-array store、
+  monitor、JNI weak 与身份映射均随死亡记录清理。
 - 一个 guest 线程对应一个宿主线程；解释执行由 `VmExecutionLock` 串行化，
   不宣称并行。锁序只有一个方向：执行锁 → 线程运行时互斥量 → context 表互斥
   量，反向获取一律禁止。时间预算仍通过各 context 的 tick 计数约束。

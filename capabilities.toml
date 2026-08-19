@@ -1142,8 +1142,8 @@ note = "DVM-8 统一 VmObjectRef 句柄空间：VM 实例/对象数组/类对象
 
 [dexvm.gc]
 status = "partial"
-test = "tests/dexvm/interpreter_tests.cpp"
-note = "DVM-8 GC-A 预算 arena：只分配不回收、默认 64 MiB、字节/对象计数可查、耗尽真实 OutOfMemoryError（含紧急保留物化 throwable）；GC-B 精确标记清除属阶段 4"
+test = "tests/dexvm/gc_tests.cpp; tools.title_profiles_current; tools.scenarios_current; Asphalt 5 title_flow exact 3/3 + forced-GC probe"
+note = "DVM-42..46 已交付精确非移动 STW 标记清除：全 context/JNI/静态/Thread/intern/class/session 根、侧表 trace+sweep、三类空闲链与预算回减、weak/monitor/store 清理、host-backed 析构、安全 opcode 水位触发、OOM 前回收、确定性 stats/log；gc_watermark_percent 0..100 默认 75，0 回到 GC-A。A5 默认水位 exact 3/3，16 MiB/1% 强制 GC 仍同 golden 且真实回收；DVM-47 因 A6 APS-4 DT_SONAME 前置阻断、DH 呈现时点不稳定及 A6 长运行未执行，能力保持 partial"
 
 [dexvm.interpreter_core]
 status = "complete"

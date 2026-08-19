@@ -69,6 +69,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-44](DVM-44.md) | GC-B 清扫器、预算回减与句柄复用 | 完成 |
 | [DVM-45](DVM-45.md) | GC-B host-backed 宿主状态析构 | 完成 |
 | [DVM-46](DVM-46.md) | GC-B 安全点水位触发、OOM 与 Profile 参数 | 完成 |
+| [DVM-47](DVM-47.md) | GC-B exact-title 与长运行 gate 复验 | 受阻（实现与 A5 GC gate 完成） |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 
@@ -82,6 +83,6 @@ Asphalt 6 自带 `GLSurfaceView` 所需的 EGL façade 与条件 swap pacer；�
 `asphalt6.bootstrap` 可见开场检查点三轮哈希一致、无 fault、clean shutdown，A6
 启动 gate 已完成。主界面与可游玩 gate 尚未验收，状态以 `CURRENT.md` 为准。
 
-其余在办项（GC-B 精确标记清除、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
+其余在办项（GC-B exact/长运行验收、`dexvm.trace`/`dexvm.stack` 诊断、两款 title 的
 Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CURRENT.md)
 的滚动快照为准。

@@ -13,6 +13,7 @@
 #include "ogplay/loader/dex_class_data.h"
 #include "ogplay/loader/dex_code.h"
 #include "ogplay/runtime/dexvm/dexvm_types.h"
+#include "ogplay/runtime/dexvm/fast_code.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -95,6 +96,7 @@ struct LinkedMethod final {
     std::optional<loader::DexMethodCode> code;
     IntrinsicHandler implementation;
     bool prechecked{};
+    std::shared_ptr<FastCode> fast_code;
 };
 
 enum class ClinitState : std::uint8_t {
@@ -209,6 +211,9 @@ public:
     // Structural precheck (lazy, cached per method). Throws DexVmError with
     // class/method diagnostics on malformed code.
     void PrecheckMethod(VmMethodId id);
+    // Builds once after structural precheck. The cache is derived host
+    // metadata and never mutates the original dex instruction stream.
+    [[nodiscard]] const FastCode& FastCodeFor(VmMethodId id);
 
     // Gap survey (diagnostic only, off by default — see
     // docs/playbook/NEW-TITLE.md). When enabled, an unresolved

@@ -74,6 +74,7 @@ Thread intrinsic、wait/notify 扩展、GC-B、java.* P2/P3（集合/装箱/IO�
 | 12 | `android/os/Bundle`"注册类、方法为空"的现状（platform identity 存量） | 与真实键值 intrinsic 冲突 | 升级为真实键值语义（03 §4）；在 dexvm 启动前，M8 若按既有分析先做"仅声明"方案，属于过渡态，不构成本方案障碍 |
 | 13 | 上一轮讨论的"profile 覆盖审计工具 / 引擎模板"中期方案 | 与本方案的长期路线重叠 | 定位为过渡工具：M8 期间仍可做（成本低、见效快）；dexvm 落地后自然退役，不投入超过 M8 实际需要的量。WU-M8-011 实证后升格为**应做**：profile impl id ↔ handler 目录对账进 CTest，缺口在构建期可见而不是运行期点击时爆出 |
 | 14 | M8 批次 2"JNI/Java 调用族按通用语义批量实现"的持续扩张 | 每新 title 需人工逆向胶水；行为敏感组（license/billing/online）必须逐个反编译取证，成本随题量线性且不摊销（WU-M8-011 实证：DUNQ 引用 16 个缺失 id，人工只能诚实闭合语义无歧义的 3 个，13 个滞留） | v1 胶水目录**冻结增长**：只补当前 gate 实际阻塞且语义无歧义的调用族；行为敏感组不再人工实现，保持 missing 明确失败并登记为方法级接管（04 §1 / 05 §4 gate 0）候选。已实现 handler 不删除（存量 title 生产路径），随阶段 5 进维护态 |
+| 15 | 上游 Dalvik mterp quickening / 自改写 opcode | 与 OGPlay 原 DEX 不改写红线及可切换双后端冲突 | 只构建按 `LinkedMethod` 生命周期持有的只读 `FastCode` 派生缓存；解析结果、内部索引与 handler 分类只写缓存，不写回 u2 指令流，switch 后端始终以原 DEX 为事实源 |
 
 ## 3. AI 实施规范（对 02-ai-workflow 的 dexvm 特化）
 

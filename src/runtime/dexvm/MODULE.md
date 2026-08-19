@@ -96,6 +96,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   context 的 Java 帧、dex pc、tick 与 pending exception，并用 context token 关联
   `VmThreadRuntime` 的 guest id/name/status；这是等待当前 guest call 释放全 VM 锁的
   停界查询，不宣称异步抢占。`RenderDexVmStacksJson` 输出 schema 1。
+- `FastCode`（DVM-53）：由已通过 `PrecheckMethod` 的原始 u2 指令流确定性派生，
+  预解码 opcode/宽度/操作数、dex pc 到内部索引、受检分支目标以及 packed/sparse
+  switch 与 fill-array-data 边表；缓存按 `LinkedMethod` 懒构建并只读共享，不保存
+  guest 引用、不计入 guest heap，且绝不改写原 DEX。threaded 执行后端尚未接线。
 - `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
   `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
   `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复；可注入
@@ -154,7 +158,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 
 `class_linker_internal.h` 持有 `DexClassLinker::Impl` 与共享 helper：注册/
 布局/vtable 在 `class_linker.cpp`，常量池解析与可赋值性在
-`class_linker_resolve.cpp`。解释器主循环在 `interpreter.cpp`，显式执行 context
+`class_linker_resolve.cpp`，方法结构预检及 `FastCode` 懒缓存入口在
+`method_precheck.cpp`，构建器位于 `fast_code.cpp`。解释器主循环在 `interpreter.cpp`，显式执行 context
 的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
 `interpreter_context.cpp`，诊断 ring/query/JSON 在 `diagnostics.cpp`，宿主线程
 生命周期在 `vm_threads.cpp`。
@@ -236,6 +241,8 @@ holdsLock、runtime rename diagnostics 与 active/finished GC roots）；
 截止时间到期、无 Clock 的 timed wait 明确失败、interrupt 唤醒且抛异常前已
 重获 monitor、wait 前已置位的 interrupt 不停泊、teardown 唤醒全部 waiter、
 driver 阻塞时 N=2 条件 swap 放行与 driver 可运行时帧推进节拍）；
-`tests/dexvm/dex_code_tests.cpp`、`tests/dexvm/dexasm_readback_tests.cpp`、
+`tests/dexvm/fast_code_tests.cpp`（DVM-53 指令边界/操作数/分支索引、三类 payload
+边表及畸形输入拒绝）；`tests/dexvm/dex_code_tests.cpp`、
+`tests/dexvm/dexasm_readback_tests.cpp`、
 `tests/dexvm/gap_survey_tests.cpp`（survey 开/关对照：关闭即失败、桩答中性值、
 命中计数、工作单排序）。

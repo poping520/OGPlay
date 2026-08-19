@@ -263,4 +263,19 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
     method.prechecked = true;
 }
 
+const FastCode& DexClassLinker::FastCodeFor(const VmMethodId id) {
+    PrecheckMethod(id);
+    auto& method = MutableMethod(id);
+    if (method.kind != MethodKind::interpreted || !method.code.has_value()) {
+        throw DexVmError(DexVmErrorReason::invalid_code,
+                         "FastCode requested for a non-interpreted method");
+    }
+    if (!method.fast_code) {
+        const auto where = Class(method.owner).descriptor + "." + method.name;
+        method.fast_code =
+            std::make_shared<FastCode>(BuildFastCode(*method.code, where));
+    }
+    return *method.fast_code;
+}
+
 }  // namespace ogplay::runtime::dexvm

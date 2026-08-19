@@ -1150,6 +1150,11 @@ status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
 note = "DVM-9..12 tagged 帧（零值放宽/wide 对完整性）、表分派全部 dex 035 家族、invoke 三路由（解释/intrinsic/native bridge）、tick 预算与帧深度上限；语义逐 opcode 对照 AOSP mterp，夹具覆盖 NaN 偏置/MIN 除法/移位掩码/饱和转换/switch/payload"
 
+[dexvm.interpreter_threaded]
+status = "partial"
+test = "tests/dexvm/fast_code_tests.cpp"
+note = "DVM-53 交付按 LinkedMethod 懒构建、只读共享的 FastCode：预解码操作数、dex pc 映射、分支内部索引与 packed/sparse/fill-array-data payload 边表；不保存 guest 引用、不占 guest heap、不改写原 DEX。threaded dispatch 与指令家族迁移尚未完成"
+
 [dexvm.execution_contexts]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; Asphalt 5 exact title-flow regression"

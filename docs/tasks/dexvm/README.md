@@ -75,6 +75,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-50](DVM-50.md) | 线程 native 上下文与统一 monitor | 完成 |
 | [DVM-51](DVM-51.md) | intrinsic 类型化调用、预绑定字段与 API-19 骨架工具 | 完成 |
 | [DVM-52](DVM-52.md) | 默认关闭的有界语义 trace 与跨 context Java 栈安全点查询 | 完成 |
+| [DVM-53](DVM-53.md) | FastCode 预解码构建器 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

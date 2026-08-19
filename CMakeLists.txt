@@ -409,6 +409,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp
     src/runtime/dexvm/diagnostics.cpp
+    src/runtime/dexvm/fast_code.cpp
     ${OGPLAY_DEXVM_INTRINSIC_SOURCES}
     src/runtime/dexvm/gap_survey.cpp
     src/runtime/dexvm/method_precheck.cpp
@@ -781,6 +782,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/title_profile_tests.cpp
         tests/dexvm/dexasm_readback_tests.cpp
         tests/dexvm/file_vfs_tests.cpp
+        tests/dexvm/fast_code_tests.cpp
         tests/dexvm/egl_facade_tests.cpp
         tests/dexvm/gap_survey_tests.cpp
         tests/dexvm/gc_tests.cpp

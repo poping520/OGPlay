@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <string>
+
 #include "ogplay/runtime/dexvm/fast_code.h"
 #include "ogplay/runtime/dexvm/dexvm_types.h"
 
@@ -63,18 +65,68 @@ TEST_CASE("FastCode parses switch and array payload side tables") {
           std::vector<std::uint16_t>{0x0201U, 0x0003U});
 }
 
+void ExpectFastCodeRejects(std::initializer_list<std::uint16_t> units,
+                           const char* where, const char* detail,
+                           const DexVmErrorReason reason) {
+    try {
+        static_cast<void>(BuildFastCode(Code(units), where));
+        FAIL("expected DexVmError");
+    } catch (const DexVmError& error) {
+        CHECK(error.Reason() == reason);
+        CHECK(std::string(error.what()) ==
+              std::string(where) + ": " + detail);
+    }
+}
+
 TEST_CASE("FastCode rejects malformed boundaries and payload references") {
-    CHECK_THROWS_AS(static_cast<void>(BuildFastCode(
-                        Code({0x0114U}), "LBad;.truncated")),
-                    DexVmError);
-    CHECK_THROWS_AS(
-        static_cast<void>(BuildFastCode(
-            Code({0x002bU, 0x0003U, 0x0000U, 0x000eU}),
-            "LBad;.payload")),
-        DexVmError);
-    CHECK_THROWS_AS(static_cast<void>(BuildFastCode(
-                        Code({0x0228U, 0x000eU}), "LBad;.branch")),
-                    DexVmError);
+    ExpectFastCodeRejects({0x0114U}, "LBad;.truncated",
+                          "instruction exceeds method end",
+                          DexVmErrorReason::invalid_code);
+    ExpectFastCodeRejects({0x0228U, 0x000eU}, "LBad;.branch",
+                          "branch target out of method",
+                          DexVmErrorReason::invalid_code);
+    ExpectFastCodeRejects({0x002bU, 0x0003U, 0x0000U, 0x000eU},
+                          "LBad;.payload",
+                          "payload reference does not hit a payload",
+                          DexVmErrorReason::invalid_code);
+    ExpectFastCodeRejects({0x00ffU}, "LBad;.opcode", "rejected opcode 255",
+                          DexVmErrorReason::invalid_opcode);
+    ExpectFastCodeRejects({0x6071U, 0x0000U, 0x0000U, 0x000eU},
+                          "LBad;.invoke",
+                          "35c register count exceeds 5 at pc 0",
+                          DexVmErrorReason::invalid_code);
+}
+
+TEST_CASE("FastCode round-trips opcode, dex pc, and invoke words") {
+    const auto units = std::vector<std::uint16_t>{
+        0xf012U, 0x0114U, 0x5678U, 0x1234U, 0x0128U, 0x010fU};
+    const auto fast = BuildFastCode(Code({0xf012U, 0x0114U, 0x5678U, 0x1234U,
+                                          0x0128U, 0x010fU}),
+                                    "LFast;.linear");
+    REQUIRE(fast.instructions.size() == 4);
+    for (std::uint32_t index = 0; index < fast.instructions.size(); ++index) {
+        const auto& instruction = fast.instructions[index];
+        CHECK((units[instruction.dex_pc] & 0xffU) == instruction.opcode);
+        CHECK(fast.IndexForDexPc(instruction.dex_pc) == index);
+    }
+    CHECK(fast.instructions[2].branch_target == 3);
+    CHECK(fast.instructions[3].dex_pc == 5);
+
+    const auto invoke = BuildFastCode(
+        Code({0x2071U, 0x0003U, 0x0021U, 0x000eU}), "LFast;.invoke");
+    REQUIRE(invoke.instructions.size() == 2);
+    CHECK((0x2071U & 0xffU) == invoke.instructions[0].opcode);
+    CHECK(invoke.invokes[0].registers == std::vector<std::uint16_t>{1, 2});
+    CHECK(invoke.IndexForDexPc(3) == 1);
+
+    const auto packed = BuildFastCode(
+        Code({0x002bU, 0x0004U, 0x0000U, 0x000eU, 0x0100U, 0x0001U, 0x0007U,
+              0x0000U, 0x0003U, 0x0000U}),
+        "LFast;.packed");
+    CHECK((0x002bU & 0xffU) == packed.instructions[0].opcode);
+    CHECK(packed.payloads[0].keys == std::vector<std::int32_t>{7});
+    CHECK(packed.payloads[0].targets == std::vector<std::uint32_t>{1});
+    CHECK(packed.instructions[1].opcode == 0x0eU);
 }
 
 TEST_CASE("FastCode preassembles invoke register words") {

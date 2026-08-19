@@ -1,45 +1,3 @@
-// Direct FastCode handlers for monitor/type/allocation/array/switch/field
-// families. Constant-pool indices resolve once under VmExecutionLock and
-// flip the derived instruction from checked to fast without touching DEX.
-
-#include <algorithm>
-
-#include "interpreter_internal.h"
-
-namespace ogplay::runtime::dexvm {
-namespace {
-
-constexpr std::uint32_t kObjectElementFlag = 0x80000000U;
-
-[[nodiscard]] JniPrimitiveKind ArrayKindFor(const std::string& element) {
-    if (element == "Z") return JniPrimitiveKind::boolean;
-    if (element == "B") return JniPrimitiveKind::byte;
-    if (element == "C") return JniPrimitiveKind::character;
-    if (element == "S") return JniPrimitiveKind::short_integer;
-    if (element == "I") return JniPrimitiveKind::integer;
-    if (element == "J") return JniPrimitiveKind::long_integer;
-    if (element == "F") return JniPrimitiveKind::float_value;
-    if (element == "D") return JniPrimitiveKind::double_value;
-    throw DexVmError(DexVmErrorReason::invalid_operand,
-                     "not a primitive array element: " + element);
-}
-
-}  // namespace
-
-void Interpreter::Impl::StepObject(
-    InterpreterExecutionState& execution, const FastCode& code,
-    const FastInstruction& instruction) {
-    auto& frames = execution.frames;
-    auto& pending_exception = execution.pending_exception;
-    auto& frame = frames.back();
-    const auto opcode = instruction.opcode;
-    Tick(execution);
-    ++stats.executed_instructions;
-    if (!trace_ring.empty()) {
-        RecordTrace(DexVmTraceKind::instruction, execution, frame.method,
-                    instruction.dex_pc, opcode);
-    }
-
     if (instruction.handler == FastHandler::object_checked) {
         if (opcode >= 0x1fU && opcode <= 0x25U) {
             const auto java_class = linker->ResolveTypeIndex(
@@ -71,7 +29,6 @@ void Interpreter::Impl::StepObject(
         instruction.handler = FastHandler::object_fast;
     }
 
-    const auto advance = [&] { frame.pc += instruction.width; };
     const auto java_class = [&] {
         return DexClassId(instruction.resolved_id);
     };
@@ -79,12 +36,12 @@ void Interpreter::Impl::StepObject(
     switch (opcode) {
         case 0x1d:
         case 0x1e: {
-            const auto ref = GetFastRef(frame, instruction.a);
+            const auto ref = GetFastRef(regs, instruction.a);
             if (!ref.IsValid()) {
                 ThrowJava("Ljava/lang/NullPointerException;",
                           opcode == 0x1d ? "monitor-enter on null"
                                          : "monitor-exit on null");
-                return;
+                goto yield;
             }
             if (opcode == 0x1d) {
                 monitors->Enter(ref, execution.token);
@@ -95,11 +52,11 @@ void Interpreter::Impl::StepObject(
                 RecordTrace(DexVmTraceKind::monitor_exit, execution,
                             frame.method, frame.pc, opcode, ref.Value());
             }
-            advance();
-            return;
+            ip += 1U;
+            goto fetch;
         }
         case 0x1f: {
-            const auto ref = GetFastRef(frame, instruction.a);
+            const auto ref = GetFastRef(regs, instruction.a);
             if (ref.IsValid()) {
                 const auto source = model->ObjectClass(ref);
                 if (!source.IsValid() ||
@@ -111,61 +68,64 @@ void Interpreter::Impl::StepObject(
                              : std::string("<external>")) +
                             " cannot be cast to " +
                             linker->Class(java_class()).descriptor);
-                    return;
+                    goto yield;
                 }
             }
-            advance();
-            return;
+            ip += 1U;
+            goto fetch;
         }
         case 0x20: {
-            const auto ref = GetFastRef(frame, instruction.b);
+            const auto ref = GetFastRef(regs, instruction.b);
             bool result = false;
             if (ref.IsValid()) {
                 const auto source = model->ObjectClass(ref);
                 result = source.IsValid() &&
                          linker->IsAssignable(java_class(), source);
             }
-            SetFastCat1(frame, instruction.a, result ? 1U : 0U);
-            advance();
-            return;
+            SetFastCat1(regs, instruction.a, result ? 1U : 0U);
+            ip += 1U;
+            goto fetch;
         }
         case 0x21: {
-            const auto ref = GetFastRef(frame, instruction.b);
+            const auto ref = GetFastRef(regs, instruction.b);
             if (!ref.IsValid()) {
                 ThrowJava("Ljava/lang/NullPointerException;",
                           "array-length on null");
-                return;
+                goto yield;
             }
-            SetFastCat1(frame, instruction.a,
+            SetFastCat1(regs, instruction.a,
                         static_cast<std::uint32_t>(model->ArrayLength(ref)));
-            advance();
-            return;
+            ip += 1U;
+            goto fetch;
         }
         case 0x22: {
             const auto type = java_class();
             PrepareSafeAllocation(JavaObjectModel::EstimateInstanceBytes(
                                       linker->Class(type).instance_slots),
                                   "new-instance");
+            stats.executed_instructions += executed;
+            executed = 0;
             EnsureInitialized(execution, type);
-            if (pending_exception.IsValid()) return;
-            SetFastRef(frame, instruction.a, AllocateInstance(type));
-            advance();
-            return;
+            ticks = execution.ticks;
+            if (pending_exception.IsValid()) goto yield;
+            SetFastRef(regs, instruction.a, AllocateInstance(type));
+            ip += 1U;
+            goto fetch;
         }
         case 0x23: {
             const auto length = static_cast<std::int32_t>(
-                GetFastCat1(frame, instruction.b));
+                GetFastCat1(regs, instruction.b));
             if (length < 0) {
                 ThrowJava("Ljava/lang/NegativeArraySizeException;",
                           std::to_string(length));
-                return;
+                goto yield;
             }
             const auto type = java_class();
             if ((instruction.resolved_aux & kObjectElementFlag) != 0U) {
                 PrepareSafeAllocation(
                     JavaObjectModel::EstimateObjectArrayBytes(length),
                     "new-array");
-                SetFastRef(frame, instruction.a,
+                SetFastRef(regs, instruction.a,
                            model->NewObjectArray(
                                type,
                                DexClassId(instruction.resolved_aux &
@@ -178,15 +138,16 @@ void Interpreter::Impl::StepObject(
                     JavaObjectModel::EstimatePrimitiveArrayBytes(kind,
                                                                   length),
                     "new-array");
-                SetFastRef(frame, instruction.a,
+                SetFastRef(regs, instruction.a,
                            model->NewPrimitiveArray(type, kind, length));
             }
-            advance();
-            return;
+            ip += 1U;
+            goto fetch;
         }
         case 0x24:
         case 0x25: {
-            std::vector<std::uint32_t> registers;
+            std::array<std::uint32_t, 256> registers{};
+            std::uint32_t register_count = instruction.a;
             if (opcode == 0x24) {
                 const std::uint32_t candidates[5] = {
                     (instruction.c >> 0U) & 0xfU,
@@ -194,30 +155,31 @@ void Interpreter::Impl::StepObject(
                     (instruction.c >> 8U) & 0xfU,
                     (instruction.c >> 12U) & 0xfU,
                     instruction.b};
-                for (std::uint32_t index = 0; index < instruction.a;
+                for (std::uint32_t index = 0; index < register_count;
                      ++index) {
-                    registers.push_back(candidates[index]);
+                    registers[index] = candidates[index];
                 }
             } else {
-                for (std::uint32_t index = 0; index < instruction.a;
+                for (std::uint32_t index = 0; index < register_count;
                      ++index) {
-                    registers.push_back(instruction.b + index);
+                    registers[index] = instruction.b + index;
                 }
             }
             const auto type = java_class();
             if ((instruction.resolved_aux & kObjectElementFlag) != 0U) {
                 PrepareSafeAllocation(
                     JavaObjectModel::EstimateObjectArrayBytes(
-                        static_cast<JniSize>(registers.size())),
+                        static_cast<JniSize>(register_count)),
                     "filled-new-array");
                 const auto array = model->NewObjectArray(
                     type,
                     DexClassId(instruction.resolved_aux & ~kObjectElementFlag),
-                    static_cast<JniSize>(registers.size()));
-                for (std::size_t index = 0; index < registers.size(); ++index) {
+                    static_cast<JniSize>(register_count));
+                for (std::uint32_t index = 0; index < register_count;
+                     ++index) {
                     model->SetObjectElement(
                         array, static_cast<JniSize>(index),
-                        GetFastRef(frame, registers[index]));
+                        GetFastRef(regs, registers[index]));
                 }
                 frame.last_result = VmValue::Ref(array);
             } else {
@@ -228,35 +190,36 @@ void Interpreter::Impl::StepObject(
                 }
                 PrepareSafeAllocation(
                     JavaObjectModel::EstimatePrimitiveArrayBytes(
-                        kind, static_cast<JniSize>(registers.size())),
+                        kind, static_cast<JniSize>(register_count)),
                     "filled-new-array");
                 const auto array = model->NewPrimitiveArray(
-                    type, kind, static_cast<JniSize>(registers.size()));
-                for (std::size_t index = 0; index < registers.size(); ++index) {
+                    type, kind, static_cast<JniSize>(register_count));
+                for (std::uint32_t index = 0; index < register_count;
+                     ++index) {
                     model->SetPrimitiveElement(
                         array, static_cast<JniSize>(index),
-                        GetFastCat1(frame, registers[index]));
+                        GetFastCat1(regs, registers[index]));
                 }
                 frame.last_result = VmValue::Ref(array);
             }
-            advance();
-            return;
+            ip += 1U;
+            goto fetch;
         }
         case 0x26: {
-            const auto ref = GetFastRef(frame, instruction.a);
+            const auto ref = GetFastRef(regs, instruction.a);
             if (!ref.IsValid()) {
                 ThrowJava("Ljava/lang/NullPointerException;",
                           "fill-array-data on null");
-                return;
+                goto yield;
             }
             const auto& payload = code.payloads[instruction.payload];
             if (payload.element_count >
                 static_cast<std::uint32_t>(model->ArrayLength(ref))) {
                 ThrowJava("Ljava/lang/ArrayIndexOutOfBoundsException;",
                           "fill-array-data size exceeds array length");
-                return;
+                goto yield;
             }
-            Tick(execution, payload.tick_weight);
+            add_ticks(payload.tick_weight);
             const auto kind = model->PrimitiveArrayKind(ref);
             for (std::uint32_t index = 0; index < payload.element_count;
                  ++index) {
@@ -281,60 +244,74 @@ void Interpreter::Impl::StepObject(
                 model->SetPrimitiveElement(ref, static_cast<JniSize>(index),
                                            bits);
             }
-            advance();
-            return;
+            ip += 1U;
+            goto fetch;
         }
         case 0x27:
-            SetPending(GetFastRef(frame, instruction.a));
-            return;
+            SetPending(GetFastRef(regs, instruction.a));
+            goto yield;
         case 0x2b:
         case 0x2c: {
             const auto key = static_cast<std::int32_t>(
-                GetFastCat1(frame, instruction.a));
+                GetFastCat1(regs, instruction.a));
             const auto& payload = code.payloads[instruction.payload];
-            if (opcode == 0x2c) Tick(execution, payload.tick_weight);
+            if (opcode == 0x2c) add_ticks(payload.tick_weight);
+            if (opcode == 0x2b) {
+                if (!payload.keys.empty()) {
+                    const auto index =
+                        static_cast<std::int64_t>(key) - payload.keys.front();
+                    if (index >= 0 &&
+                        static_cast<std::uint64_t>(index) <
+                            payload.targets.size()) {
+                        ip = payload.targets[static_cast<std::size_t>(index)];
+                        goto fetch;
+                    }
+                }
+                ip += 1U;
+                goto fetch;
+            }
             const auto found = std::find(payload.keys.begin(),
                                          payload.keys.end(), key);
-            frame.pc = instruction.dex_pc + instruction.width;
             if (found != payload.keys.end()) {
-                const auto index = static_cast<std::size_t>(
-                    found - payload.keys.begin());
-                frame.pc = code.instructions[payload.targets[index]].dex_pc;
+                ip = payload.targets[static_cast<std::size_t>(
+                    found - payload.keys.begin())];
+            } else {
+                ip += 1U;
             }
-            return;
+            goto fetch;
         }
         default:
             break;
     }
 
     if (opcode >= 0x44U && opcode <= 0x51U) {
-        const auto array = GetFastRef(frame, instruction.b);
+        const auto array = GetFastRef(regs, instruction.b);
         if (!array.IsValid()) {
             ThrowJava("Ljava/lang/NullPointerException;",
                       "array access on null");
-            return;
+            goto yield;
         }
         const auto index = static_cast<std::int32_t>(
-            GetFastCat1(frame, instruction.c));
+            GetFastCat1(regs, instruction.c));
         const auto length = model->ArrayLength(array);
         if (index < 0 || index >= length) {
             ThrowJava("Ljava/lang/ArrayIndexOutOfBoundsException;",
                       "index " + std::to_string(index) + " length " +
                           std::to_string(length));
-            return;
+            goto yield;
         }
-        const bool is_object = opcode == 0x46U || opcode == 0x4dU;
-        const bool is_wide = opcode == 0x45U || opcode == 0x4cU;
-        const bool is_get = opcode <= 0x4aU;
+        const bool is_object = opcode == 0x46 || opcode == 0x4d;
+        const bool is_wide = opcode == 0x45 || opcode == 0x4c;
+        const bool is_get = opcode <= 0x4a;
         if (is_object) {
             if (model->Kind(array) != VmObjectKind::object_array) {
                 FailCode("aget/aput-object on non-object array");
             }
             if (is_get) {
-                SetFastRef(frame, instruction.a,
+                SetFastRef(regs, instruction.a,
                            model->GetObjectElement(array, index));
             } else {
-                const auto value = GetFastRef(frame, instruction.a);
+                const auto value = GetFastRef(regs, instruction.a);
                 if (value.IsValid()) {
                     const auto element_class =
                         model->ObjectArrayElementClass(array);
@@ -343,13 +320,13 @@ void Interpreter::Impl::StepObject(
                         !linker->IsAssignable(element_class, value_class)) {
                         ThrowJava("Ljava/lang/ArrayStoreException;",
                                   linker->Class(value_class).descriptor);
-                        return;
+                        goto yield;
                     }
                 }
                 model->SetObjectElement(array, index, value);
             }
-            advance();
-            return;
+            ip += 1U;
+            goto fetch;
         }
         if (model->Kind(array) != VmObjectKind::primitive_array &&
             model->Kind(array) != VmObjectKind::external) {
@@ -386,7 +363,7 @@ void Interpreter::Impl::StepObject(
         if (is_get) {
             const auto bits = model->GetPrimitiveElement(array, index);
             if (is_wide) {
-                SetFastWide(frame, instruction.a, bits);
+                SetFastWide(regs, instruction.a, bits);
             } else {
                 std::uint32_t narrowed = static_cast<std::uint32_t>(bits);
                 if (kind == JniPrimitiveKind::byte) {
@@ -398,26 +375,26 @@ void Interpreter::Impl::StepObject(
                         static_cast<std::int32_t>(
                             static_cast<std::int16_t>(narrowed)));
                 }
-                SetFastCat1(frame, instruction.a, narrowed);
+                SetFastCat1(regs, instruction.a, narrowed);
             }
         } else {
             model->SetPrimitiveElement(
                 array, index,
-                is_wide ? GetFastWide(frame, instruction.a)
+                is_wide ? GetFastWide(regs, instruction.a)
                         : static_cast<std::uint64_t>(
-                              GetFastCat1(frame, instruction.a)));
+                              GetFastCat1(regs, instruction.a)));
         }
-        advance();
-        return;
+        ip += 1U;
+        goto fetch;
     }
 
     if (opcode >= 0x52U && opcode <= 0x5fU) {
         const auto& field = linker->Field(VmFieldId(instruction.resolved_id));
-        const auto receiver = GetFastRef(frame, instruction.b);
+        const auto receiver = GetFastRef(regs, instruction.b);
         if (!receiver.IsValid()) {
             ThrowJava("Ljava/lang/NullPointerException;",
                       "field access on null: " + field.name);
-            return;
+            goto yield;
         }
         if (model->Kind(receiver) != VmObjectKind::vm_instance) {
             FailCode("field access on non-VM instance: " + field.name);
@@ -436,32 +413,35 @@ void Interpreter::Impl::StepObject(
                              slots[field.slot + 1].bits)
                          << 32U));
             } else if (field.is_ref) {
-                SetFastRef(frame, instruction.a,
+                SetFastRef(regs, instruction.a,
                            VmObjectRef(slots[field.slot].bits));
             } else {
-                SetFastCat1(frame, instruction.a, slots[field.slot].bits);
+                SetFastCat1(regs, instruction.a, slots[field.slot].bits);
             }
         } else if (field.is_wide) {
-            const auto bits = GetFastWide(frame, instruction.a);
+            const auto bits = GetFastWide(regs, instruction.a);
             slots[field.slot] = {static_cast<std::uint32_t>(bits),
                                  SlotTag::wide_lo};
             slots[field.slot + 1] = {
                 static_cast<std::uint32_t>(bits >> 32U), SlotTag::wide_hi};
         } else if (field.is_ref) {
             slots[field.slot] = {
-                GetFastRef(frame, instruction.a).Value(), SlotTag::ref};
+                GetFastRef(regs, instruction.a).Value(), SlotTag::ref};
         } else {
             slots[field.slot] = {
-                GetFastCat1(frame, instruction.a), SlotTag::cat1};
+                GetFastCat1(regs, instruction.a), SlotTag::cat1};
         }
-        advance();
-        return;
+        ip += 1U;
+        goto fetch;
     }
 
     if (opcode >= 0x60U && opcode <= 0x6dU) {
         const auto& field = linker->Field(VmFieldId(instruction.resolved_id));
+        stats.executed_instructions += executed;
+        executed = 0;
         EnsureInitialized(execution, field.owner);
-        if (pending_exception.IsValid()) return;
+        ticks = execution.ticks;
+        if (pending_exception.IsValid()) goto yield;
         auto& storage = linker->MutableClass(field.owner).static_storage;
         if (field.slot + (field.is_wide ? 2U : 1U) > storage.size()) {
             FailCode("static slot out of range: " + field.name);
@@ -475,26 +455,23 @@ void Interpreter::Impl::StepObject(
                         (static_cast<std::uint64_t>(storage[field.slot + 1])
                          << 32U));
             } else if (field.is_ref) {
-                SetFastRef(frame, instruction.a,
+                SetFastRef(regs, instruction.a,
                            VmObjectRef(storage[field.slot]));
             } else {
-                SetFastCat1(frame, instruction.a, storage[field.slot]);
+                SetFastCat1(regs, instruction.a, storage[field.slot]);
             }
         } else if (field.is_wide) {
-            const auto bits = GetFastWide(frame, instruction.a);
+            const auto bits = GetFastWide(regs, instruction.a);
             storage[field.slot] = static_cast<std::uint32_t>(bits);
             storage[field.slot + 1] =
                 static_cast<std::uint32_t>(bits >> 32U);
         } else if (field.is_ref) {
-            storage[field.slot] = GetFastRef(frame, instruction.a).Value();
+            storage[field.slot] = GetFastRef(regs, instruction.a).Value();
         } else {
-            storage[field.slot] = GetFastCat1(frame, instruction.a);
+            storage[field.slot] = GetFastCat1(regs, instruction.a);
         }
-        advance();
-        return;
+        ip += 1U;
+        goto fetch;
     }
 
     FailCode("non-object opcode reached object handler");
-}
-
-}  // namespace ogplay::runtime::dexvm

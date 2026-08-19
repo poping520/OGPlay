@@ -119,7 +119,10 @@ public:
     }
     [[nodiscard]] LinkedMethod& MethodAt(const VmMethodId id) {
         if (!id.IsValid() || id.Value() > methods.size()) {
-            Fail(DexVmErrorReason::invalid_member, "method id is invalid");
+            Fail(DexVmErrorReason::invalid_member,
+                 "method id is invalid (" + std::to_string(id.Value()) +
+                     " of " + std::to_string(methods.size()) + " methods, " +
+                     std::to_string(classes.size()) + " classes)");
         }
         return methods[id.Value() - 1];
     }
@@ -211,6 +214,12 @@ public:
             const auto existing = extra.virtual_lookup.find(key);
             if (existing != extra.virtual_lookup.end()) {
                 const auto index = existing->second;
+                if (index >= linked.vtable.size() ||
+                    !linked.vtable[index].IsValid()) {
+                    Fail(DexVmErrorReason::invalid_hierarchy,
+                         "vtable override slot is invalid at " +
+                             linked.descriptor + "." + method.name);
+                }
                 const auto& overridden = MethodAt(linked.vtable[index]);
                 if (overridden.kind == MethodKind::intrinsic &&
                     !overridden.overridable && !linked.is_intrinsic) {

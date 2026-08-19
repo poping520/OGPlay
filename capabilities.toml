@@ -1153,7 +1153,7 @@ note = "DVM-9..12 tagged 帧（零值放宽/wide 对完整性）、表分派全�
 [dexvm.interpreter_threaded]
 status = "partial"
 test = "tests/dexvm/fast_code_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/session/title_profile_tests.cpp; Asphalt 5 title_flow threaded exact 3/3; Dungeon Hunter bootstrap threaded gate"
-note = "DVM-53..58 已交付只读 FastCode、双分派 glue、全部 dex035 指令家族直达 handler及受检 Profile/CLI/Scenario backend 选择；解析缓存只在执行锁内 checked→fast，不改 DEX。双后端夹具语义/tick/trace 持平，A5 threaded exact 3/3 为 468/468000 与 f91150b4...；title 总 wall-time 中位数 24484 ms，对照 switch 24297 ms，无稳定收益。DH threaded 在 240047 ms wall gate 失败，switch 对照同样停在相同 Activity/SMS-network 边界；A6 按本轮边界未执行。三 gate 与收益条件未闭合，默认仍为 switch，能力诚实保持 partial"
+note = "DVM-53..59 已交付只读 FastCode、单函数 threaded 稳态循环（opcode computed goto / MSVC 稠密 switch、同帧 fetch、局部 ip/Slot*/tick）、k35c/k3rc/wide-pair Precheck、force_all_bridge 与 dexasm 双后端。packed-switch O(1)，invoke 栈上 array，clinit 不跨 AddClass 悬挂引用。微基准只报告。DVM-58 已接入受检 Profile/CLI/Scenario。title 三 gate 未作本轮验收，默认仍为 switch，能力诚实保持 partial"
 
 [dexvm.execution_contexts]
 status = "complete"

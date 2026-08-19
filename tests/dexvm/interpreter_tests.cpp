@@ -13,6 +13,7 @@
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <limits>
 #include <iostream>
 #include <map>
@@ -129,6 +130,113 @@ void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
                     "unexpected exception: ", outcome.exception_message);
     REQUIRE(outcome.value.kind == VmValue::Kind::cat1);
     CHECK(outcome.value.AsInt() == expected);
+}
+
+void ReportThreadedMicrobenchmark(const char* tag,
+                                  const char* owner,
+                                  const char* name,
+                                  const char* descriptor,
+                                  const std::int32_t input,
+                                  const std::int32_t expected) {
+    InterpreterConfig threaded_config;
+    threaded_config.backend = InterpreterBackend::threaded;
+    Vm switch_vm;
+    Vm threaded_vm(threaded_config);
+    const std::vector<VmValue> arguments{VmValue::Int(input)};
+    ExpectInt(switch_vm.CallStatic(owner, name, descriptor, arguments),
+              expected);
+    ExpectInt(threaded_vm.CallStatic(owner, name, descriptor, arguments),
+              expected);
+    constexpr std::uint32_t kIterations = 400;
+    const auto run = [&](Vm& vm) {
+        std::int64_t checksum{};
+        const auto start = std::chrono::steady_clock::now();
+        for (std::uint32_t index = 0; index < kIterations; ++index) {
+            const auto outcome =
+                vm.CallStatic(owner, name, descriptor, arguments);
+            REQUIRE_FALSE(outcome.exception.IsValid());
+            checksum += outcome.value.AsInt();
+        }
+        const auto elapsed =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - start);
+        return std::pair{elapsed.count(), checksum};
+    };
+    const auto [switch_us, switch_sum] = run(switch_vm);
+    const auto [threaded_us, threaded_sum] = run(threaded_vm);
+    CHECK(threaded_sum == switch_sum);
+    std::cout << tag << " switch_us=" << switch_us
+              << " threaded_us=" << threaded_us << '\n';
+}
+
+template <typename Fn>
+void WithEachBackend(Fn&& fn) {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        INFO("backend=",
+             backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        fn(config);
+    }
+}
+
+void InstallMalformedCode(Vm& vm, const std::string& owner,
+                          const std::string& name,
+                          const std::string& descriptor,
+                          const std::uint16_t registers,
+                          std::initializer_list<std::uint16_t> units) {
+    const auto id = vm.Static(owner, name, descriptor);
+    auto& method = vm.linker.MutableMethod(id);
+    method.prechecked = false;
+    method.fast_code.reset();
+    REQUIRE(method.code.has_value());
+    method.code->info.registers_size = registers;
+    method.code->instructions.assign(units);
+}
+
+void ExpectInvalidRegister(Vm& vm, const std::string& owner,
+                           const std::string& name,
+                           const std::string& descriptor,
+                           std::vector<VmValue> arguments) {
+    try {
+        static_cast<void>(vm.CallStatic(owner, name, descriptor,
+                                        std::move(arguments)));
+        FAIL("expected DexVmError for out-of-range registers");
+    } catch (const DexVmError& error) {
+        CHECK(error.Reason() == DexVmErrorReason::invalid_register);
+        CHECK(std::string(error.what()).find("register out of range") !=
+              std::string::npos);
+    }
+}
+
+void ExpectMatchingStructuralDiagnostic(
+    std::initializer_list<std::uint16_t> units, const char* detail) {
+    Vm vm;
+    const auto id = vm.Static("LFlow;", "loopSum", "(I)I");
+    auto& method = vm.linker.MutableMethod(id);
+    method.prechecked = false;
+    method.fast_code.reset();
+    REQUIRE(method.code.has_value());
+    method.code->instructions.assign(units);
+    const auto where = std::string("LFlow;.loopSum");
+    std::string precheck_what;
+    DexVmErrorReason precheck_reason{};
+    try {
+        vm.linker.PrecheckMethod(id);
+        FAIL("expected PrecheckMethod to reject");
+    } catch (const DexVmError& error) {
+        precheck_what = error.what();
+        precheck_reason = error.Reason();
+    }
+    try {
+        static_cast<void>(BuildFastCode(*method.code, where));
+        FAIL("expected BuildFastCode to reject");
+    } catch (const DexVmError& error) {
+        CHECK(std::string(error.what()) == precheck_what);
+        CHECK(error.Reason() == precheck_reason);
+        CHECK(precheck_what == where + ": " + detail);
+    }
 }
 
 template <typename VmType>
@@ -456,6 +564,7 @@ TEST_CASE("dexvm primitive wrapper parsing bits and Character boundaries") {
         REQUIRE(java_class.has_value());
         std::optional<VmMethodId> method;
         for (const auto candidate : vm.linker.Class(*java_class).vtable) {
+            if (!candidate.IsValid()) continue;
             const auto& linked = vm.linker.Method(candidate);
             if (linked.name == name && linked.descriptor == descriptor) {
                 method = candidate;
@@ -493,7 +602,13 @@ TEST_CASE("dexvm primitive wrapper parsing bits and Character boundaries") {
             storage[linked.slot + 1]) << 32U;
         return bits;
     };
-    ExpectInt(vm.CallStatic("Ljava/lang/Integer;", "parseInt", "(Ljava/lang/String;I)I", {string("7fffffff"), VmValue::Int(16)}), std::numeric_limits<std::int32_t>::max());
+    const auto parse_radix = vm.Static("Ljava/lang/Integer;", "parseInt",
+                                       "(Ljava/lang/String;I)I");
+    REQUIRE(parse_radix.Value() < 10000U);
+    ExpectInt(vm.interpreter.Call(
+                  parse_radix, std::vector<VmValue>{string("7fffffff"),
+                                                    VmValue::Int(16)}),
+              std::numeric_limits<std::int32_t>::max());
     ExpectException(vm, vm.CallStatic("Ljava/lang/Integer;", "parseInt", "(Ljava/lang/String;)I", {string("2147483648")}), "Ljava/lang/NumberFormatException;");
     const auto parsed_min = vm.CallStatic("Ljava/lang/Long;", "parseLong", "(Ljava/lang/String;)J", {string("-9223372036854775808")});
     REQUIRE_FALSE(parsed_min.exception.IsValid());
@@ -1420,7 +1535,8 @@ TEST_CASE("dexvm System properties are deterministic and mutable") {
 }
 
 TEST_CASE("dexvm arithmetic edge semantics") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     // OP_DIV_INT.cpp: MIN_INT / -1 == MIN_INT (no trap).
     ExpectInt(vm.CallStatic("LArith;", "divide", "(II)I",
                             {VmValue::Int(std::numeric_limits<
@@ -1482,10 +1598,12 @@ TEST_CASE("dexvm arithmetic edge semantics") {
         {VmValue::Long(0x100000001LL), VmValue::Long(3)});
     REQUIRE(product.value.kind == VmValue::Kind::wide);
     CHECK(product.value.AsLong() == 0x300000003LL);
+    });
 }
 
 TEST_CASE("dexvm control flow and switches") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     ExpectInt(vm.CallStatic("LFlow;", "loopSum", "(I)I", {VmValue::Int(10)}),
               45);
     ExpectInt(vm.CallStatic("LFlow;", "pick", "(I)I", {VmValue::Int(1)}), 1);
@@ -1498,9 +1616,80 @@ TEST_CASE("dexvm control flow and switches") {
               222);
     ExpectInt(vm.CallStatic("LFlow;", "sparse", "(I)I", {VmValue::Int(3)}),
               -1);
+    });
 }
 
 TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
+    InterpreterConfig switch_config;
+    switch_config.diagnostics.trace_capacity = 512;
+    InterpreterConfig threaded_config = switch_config;
+    threaded_config.backend = InterpreterBackend::threaded;
+    threaded_config.force_all_bridge = true;
+    Vm switch_vm(switch_config);
+    Vm threaded_vm(threaded_config);
+
+    const auto compare_int = [&](const std::string& owner,
+                                 const std::string& name,
+                                 const std::string& descriptor,
+                                 const std::vector<VmValue>& arguments) {
+        const auto expected =
+            switch_vm.CallStatic(owner, name, descriptor, arguments);
+        const auto actual =
+            threaded_vm.CallStatic(owner, name, descriptor, arguments);
+        REQUIRE_FALSE(expected.exception.IsValid());
+        REQUIRE_FALSE(actual.exception.IsValid());
+        CHECK(actual.value.kind == expected.value.kind);
+        CHECK(actual.value.cat1 == expected.value.cat1);
+        CHECK(actual.value.wide == expected.value.wide);
+    };
+    compare_int("LFlow;", "loopSum", "(I)I", {VmValue::Int(20)});
+    compare_int("LFlow;", "sparse", "(I)I", {VmValue::Int(1000)});
+    compare_int("LArith;", "divide", "(II)I",
+                {VmValue::Int(-91), VmValue::Int(7)});
+    compare_int("LArith;", "shifts", "(II)I",
+                {VmValue::Int(3), VmValue::Int(33)});
+    compare_int("LFlow;", "sumArray", "()I", {});
+    compare_int("LArrayLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LSwitchLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LInstanceLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LVirtualLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LWideLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LTypeLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LTask;", "exercise", "()I", {});
+    compare_int("LTypes;", "isRunnable", "()I", {});
+    compare_int("LCloneProbe;", "cloneFields", "()I", {});
+    compare_int("LClinitUser;", "read", "()I", {});
+
+    const auto expected_exception =
+        switch_vm.CallStatic("LThrower;", "uncaught", "()I");
+    const auto actual_exception =
+        threaded_vm.CallStatic("LThrower;", "uncaught", "()I");
+    REQUIRE(expected_exception.exception.IsValid());
+    REQUIRE(actual_exception.exception.IsValid());
+    CHECK(switch_vm.linker.Class(expected_exception.exception_class).descriptor ==
+          threaded_vm.linker.Class(actual_exception.exception_class).descriptor);
+    CHECK(actual_exception.exception_message ==
+          expected_exception.exception_message);
+
+    CHECK(threaded_vm.interpreter.Stats().backend ==
+          InterpreterBackend::threaded);
+    CHECK(switch_vm.interpreter.Stats().executed_instructions ==
+          threaded_vm.interpreter.Stats().executed_instructions);
+    CHECK(threaded_vm.interpreter.Stats().fast_code_builds == 0);
+    CHECK(switch_vm.interpreter.Stats().fast_code_builds == 0);
+
+    const auto switch_trace = switch_vm.interpreter.Trace("instruction", 512);
+    const auto threaded_trace =
+        threaded_vm.interpreter.Trace("instruction", 512);
+    REQUIRE(switch_trace.size() == threaded_trace.size());
+    for (std::size_t index = 0; index < switch_trace.size(); ++index) {
+        CHECK(switch_trace[index].tick == threaded_trace[index].tick);
+        CHECK(switch_trace[index].dex_pc == threaded_trace[index].dex_pc);
+        CHECK(switch_trace[index].opcode == threaded_trace[index].opcode);
+    }
+}
+
+TEST_CASE("dexvm threaded direct handlers match switch ticks") {
     InterpreterConfig switch_config;
     switch_config.diagnostics.trace_capacity = 512;
     InterpreterConfig threaded_config = switch_config;
@@ -1526,12 +1715,14 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
     compare_int("LFlow;", "sparse", "(I)I", {VmValue::Int(1000)});
     compare_int("LArith;", "divide", "(II)I",
                 {VmValue::Int(-91), VmValue::Int(7)});
-    compare_int("LArith;", "shifts", "(II)I",
-                {VmValue::Int(3), VmValue::Int(33)});
     compare_int("LFlow;", "sumArray", "()I", {});
+    compare_int("LArrayLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LSwitchLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LInstanceLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LVirtualLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LWideLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LTypeLoop;", "run", "(I)I", {VmValue::Int(20)});
     compare_int("LTask;", "exercise", "()I", {});
-    compare_int("LTypes;", "isRunnable", "()I", {});
-    compare_int("LCloneProbe;", "cloneFields", "()I", {});
     compare_int("LClinitUser;", "read", "()I", {});
 
     const auto expected_exception =
@@ -1550,7 +1741,6 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
     CHECK(switch_vm.interpreter.Stats().executed_instructions ==
           threaded_vm.interpreter.Stats().executed_instructions);
     CHECK(threaded_vm.interpreter.Stats().fast_code_builds > 0);
-    CHECK(threaded_vm.interpreter.Stats().fast_code_bytes > 0);
     CHECK(switch_vm.interpreter.Stats().fast_code_builds == 0);
 
     const auto switch_trace = switch_vm.interpreter.Trace("instruction", 512);
@@ -1562,7 +1752,11 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
         CHECK(switch_trace[index].dex_pc == threaded_trace[index].dex_pc);
         CHECK(switch_trace[index].opcode == threaded_trace[index].opcode);
     }
+}
 
+TEST_CASE("dexvm threaded direct handlers cache checked to fast") {
+    InterpreterConfig threaded_config;
+    threaded_config.backend = InterpreterBackend::threaded;
     Vm cache_vm(threaded_config);
     const auto array_method = cache_vm.Static("LFlow;", "sumArray", "()I");
     const auto& array_code = cache_vm.linker.FastCodeFor(array_method);
@@ -1604,132 +1798,143 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
     ExpectInt(cache_vm.interpreter.Call(
                   invoke_method, std::vector<VmValue>{VmValue::Int(20)}),
               210);
+    CHECK(cache_vm.interpreter.Stats().fast_code_builds > 0);
+    CHECK(cache_vm.interpreter.Stats().fast_code_bytes > 0);
+}
+
+TEST_CASE("dexvm extra interpreter microbenchmark fixtures have fixed results") {
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
+    ExpectInt(vm.CallStatic("LArrayLoop;", "run", "(I)I", {VmValue::Int(10)}),
+              45);
+    ExpectInt(vm.CallStatic("LSwitchLoop;", "run", "(I)I", {VmValue::Int(8)}),
+              20);
+    ExpectInt(vm.CallStatic("LInstanceLoop;", "run", "(I)I", {VmValue::Int(7)}),
+              7);
+    ExpectInt(vm.CallStatic("LVirtualLoop;", "run", "(I)I", {VmValue::Int(7)}),
+              7);
+    ExpectInt(vm.CallStatic("LWideLoop;", "run", "(I)I", {VmValue::Int(10)}),
+              45);
+    ExpectInt(vm.CallStatic("LTypeLoop;", "run", "(I)I", {VmValue::Int(9)}), 9);
+    });
+}
+
+TEST_CASE("dexvm precheck rejects invoke and wide-field register words") {
+    WithEachBackend([](InterpreterConfig config) {
+        {
+            Vm vm(config);
+            InstallMalformedCode(vm, "LFlow;", "loopSum", "(I)I", 1,
+                                 {0x1071U, 0x0000U, 0x0001U, 0x000eU});
+            ExpectInvalidRegister(vm, "LFlow;", "loopSum", "(I)I",
+                                  {VmValue::Int(1)});
+        }
+        {
+            Vm vm(config);
+            InstallMalformedCode(vm, "LFlow;", "loopSum", "(I)I", 2,
+                                 {0x0277U, 0x0000U, 0x0001U, 0x000eU});
+            ExpectInvalidRegister(vm, "LFlow;", "loopSum", "(I)I",
+                                  {VmValue::Int(1)});
+        }
+        {
+            Vm vm(config);
+            InstallMalformedCode(vm, "LFlow;", "loopSum", "(I)I", 1,
+                                 {0x1024U, 0x0000U, 0x0002U, 0x000eU});
+            ExpectInvalidRegister(vm, "LFlow;", "loopSum", "(I)I",
+                                  {VmValue::Int(1)});
+        }
+        {
+            Vm vm(config);
+            InstallMalformedCode(vm, "LFlow;", "loopSum", "(I)I", 2,
+                                 {0x0153U, 0x0000U, 0x000eU});
+            ExpectInvalidRegister(vm, "LFlow;", "loopSum", "(I)I",
+                                  {VmValue::Int(1)});
+        }
+    });
+}
+
+TEST_CASE("dexvm FastCode and Precheck share structural diagnostics") {
+    ExpectMatchingStructuralDiagnostic({0x0114U},
+                                       "instruction exceeds method end");
+    ExpectMatchingStructuralDiagnostic({0x0228U, 0x000eU},
+                                       "branch target out of method");
+    ExpectMatchingStructuralDiagnostic({0x002bU, 0x0003U, 0x0000U, 0x000eU},
+                                       "payload reference does not hit a payload");
+    ExpectMatchingStructuralDiagnostic({0x00ffU}, "rejected opcode 255");
+    ExpectMatchingStructuralDiagnostic({0x6071U, 0x0000U, 0x0000U, 0x000eU},
+                                       "35c register count exceeds 5 at pc 0");
 }
 
 TEST_CASE("dexvm threaded straight microbenchmark reports switch comparison") {
-    InterpreterConfig threaded_config;
-    threaded_config.backend = InterpreterBackend::threaded;
-    Vm switch_vm;
-    Vm threaded_vm(threaded_config);
-    constexpr std::int32_t kInput = 200;
-    constexpr std::uint32_t kIterations = 400;
-
-    ExpectInt(switch_vm.CallStatic("LFlow;", "loopSum", "(I)I",
-                                   {VmValue::Int(kInput)}),
-              19'900);
-    ExpectInt(threaded_vm.CallStatic("LFlow;", "loopSum", "(I)I",
-                                     {VmValue::Int(kInput)}),
-              19'900);
-    const auto run = [&](Vm& vm) {
-        std::int64_t checksum{};
-        const auto start = std::chrono::steady_clock::now();
-        for (std::uint32_t index = 0; index < kIterations; ++index) {
-            const auto outcome = vm.CallStatic(
-                "LFlow;", "loopSum", "(I)I", {VmValue::Int(kInput)});
-            REQUIRE_FALSE(outcome.exception.IsValid());
-            checksum += outcome.value.AsInt();
-        }
-        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - start);
-        return std::pair{elapsed.count(), checksum};
-    };
-    const auto [switch_us, switch_sum] = run(switch_vm);
-    const auto [threaded_us, threaded_sum] = run(threaded_vm);
-    CHECK(threaded_sum == switch_sum);
-    std::cout << "DEXVM_STRAIGHT_BENCH switch_us=" << switch_us
-              << " threaded_us=" << threaded_us << '\n';
+    ReportThreadedMicrobenchmark("DEXVM_STRAIGHT_BENCH", "LFlow;", "loopSum",
+                                 "(I)I", 200, 19'900);
 }
 
 TEST_CASE("dexvm threaded object microbenchmark reports switch comparison") {
-    InterpreterConfig threaded_config;
-    threaded_config.backend = InterpreterBackend::threaded;
-    Vm switch_vm;
-    Vm threaded_vm(threaded_config);
-    constexpr std::int32_t kInput = 200;
-    constexpr std::uint32_t kIterations = 400;
-
-    ExpectInt(switch_vm.CallStatic("LFieldLoop;", "run", "(I)I",
-                                   {VmValue::Int(kInput)}),
-              kInput);
-    ExpectInt(threaded_vm.CallStatic("LFieldLoop;", "run", "(I)I",
-                                     {VmValue::Int(kInput)}),
-              kInput);
-    const auto run = [&](Vm& vm) {
-        std::int64_t checksum{};
-        const auto start = std::chrono::steady_clock::now();
-        for (std::uint32_t index = 0; index < kIterations; ++index) {
-            const auto outcome = vm.CallStatic(
-                "LFieldLoop;", "run", "(I)I", {VmValue::Int(kInput)});
-            REQUIRE_FALSE(outcome.exception.IsValid());
-            checksum += outcome.value.AsInt();
-        }
-        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - start);
-        return std::pair{elapsed.count(), checksum};
-    };
-    const auto [switch_us, switch_sum] = run(switch_vm);
-    const auto [threaded_us, threaded_sum] = run(threaded_vm);
-    CHECK(threaded_sum == switch_sum);
-    std::cout << "DEXVM_OBJECT_BENCH switch_us=" << switch_us
-              << " threaded_us=" << threaded_us << '\n';
+    ReportThreadedMicrobenchmark("DEXVM_OBJECT_BENCH", "LFieldLoop;", "run",
+                                 "(I)I", 200, 200);
 }
 
 TEST_CASE("dexvm threaded invoke microbenchmark reports switch comparison") {
-    InterpreterConfig threaded_config;
-    threaded_config.backend = InterpreterBackend::threaded;
-    Vm switch_vm;
-    Vm threaded_vm(threaded_config);
-    constexpr std::int32_t kInput = 200;
-    constexpr std::uint32_t kIterations = 400;
-    constexpr std::int32_t kExpected = 20'100;
+    ReportThreadedMicrobenchmark("DEXVM_INVOKE_BENCH", "LInvokeLoop;", "run",
+                                 "(I)I", 200, 20'100);
+}
 
-    ExpectInt(switch_vm.CallStatic("LInvokeLoop;", "run", "(I)I",
-                                   {VmValue::Int(kInput)}),
-              kExpected);
-    ExpectInt(threaded_vm.CallStatic("LInvokeLoop;", "run", "(I)I",
-                                     {VmValue::Int(kInput)}),
-              kExpected);
-    const auto run = [&](Vm& vm) {
-        std::int64_t checksum{};
-        const auto start = std::chrono::steady_clock::now();
-        for (std::uint32_t index = 0; index < kIterations; ++index) {
-            const auto outcome = vm.CallStatic(
-                "LInvokeLoop;", "run", "(I)I", {VmValue::Int(kInput)});
-            REQUIRE_FALSE(outcome.exception.IsValid());
-            checksum += outcome.value.AsInt();
-        }
-        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - start);
-        return std::pair{elapsed.count(), checksum};
-    };
-    const auto [switch_us, switch_sum] = run(switch_vm);
-    const auto [threaded_us, threaded_sum] = run(threaded_vm);
-    CHECK(threaded_sum == switch_sum);
-    std::cout << "DEXVM_INVOKE_BENCH switch_us=" << switch_us
-              << " threaded_us=" << threaded_us << '\n';
+TEST_CASE("dexvm threaded array microbenchmark reports switch comparison") {
+    ReportThreadedMicrobenchmark("DEXVM_ARRAY_BENCH", "LArrayLoop;", "run",
+                                 "(I)I", 200, 19'900);
+}
+
+TEST_CASE("dexvm threaded switch microbenchmark reports switch comparison") {
+    ReportThreadedMicrobenchmark("DEXVM_SWITCH_BENCH", "LSwitchLoop;", "run",
+                                 "(I)I", 200, 500);
+}
+
+TEST_CASE("dexvm threaded instance microbenchmark reports switch comparison") {
+    ReportThreadedMicrobenchmark("DEXVM_INSTANCE_BENCH", "LInstanceLoop;",
+                                 "run", "(I)I", 200, 200);
+}
+
+TEST_CASE("dexvm threaded virtual microbenchmark reports switch comparison") {
+    ReportThreadedMicrobenchmark("DEXVM_VIRTUAL_BENCH", "LVirtualLoop;", "run",
+                                 "(I)I", 200, 200);
+}
+
+TEST_CASE("dexvm threaded wide microbenchmark reports switch comparison") {
+    ReportThreadedMicrobenchmark("DEXVM_WIDE_BENCH", "LWideLoop;", "run",
+                                 "(I)I", 200, 19'900);
+}
+
+TEST_CASE("dexvm threaded type microbenchmark reports switch comparison") {
+    ReportThreadedMicrobenchmark("DEXVM_TYPE_BENCH", "LTypeLoop;", "run",
+                                 "(I)I", 200, 200);
 }
 
 TEST_CASE("dexvm arrays and implicit exceptions") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     ExpectInt(vm.CallStatic("LFlow;", "sumArray", "()I"), 24);
     ExpectException(vm, vm.CallStatic("LFlow;", "outOfBounds", "()I"),
                     "Ljava/lang/ArrayIndexOutOfBoundsException;");
     ExpectException(vm, vm.CallStatic("LFlow;", "npe", "()I"),
                     "Ljava/lang/NullPointerException;");
+    });
 }
 
 TEST_CASE("dexvm objects, fields and dispatch") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     // Instance fields via <init>/iget/iput and virtual dispatch.
     ExpectInt(vm.CallStatic("LTask;", "exercise", "()I"), 77);
     ExpectInt(vm.CallStatic("LTypes;", "isRunnable", "()I"), 1);
     ExpectException(vm, vm.CallStatic("LTypes;", "badCast", "()V"),
                     "Ljava/lang/ClassCastException;");
     ExpectInt(vm.CallStatic("LTypes;", "strings", "()I"), 6);
+    });
 }
 
 TEST_CASE("dexvm Object.clone is a shallow copy gated by Cloneable") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     // Cloneable check and payload copy follow libcore Object.java plus
     // AOSP vm/alloc/Alloc.cpp dvmCloneObject at the pinned baseline.
     ExpectInt(vm.CallStatic("LCloneProbe;", "cloneFields", "()I"), 1);
@@ -1746,10 +1951,12 @@ TEST_CASE("dexvm Object.clone is a shallow copy gated by Cloneable") {
         vm.linker.ResolveDescriptor("Ljava/io/Serializable;");
     CHECK(vm.linker.IsAssignable(cloneable, ints));
     CHECK(vm.linker.IsAssignable(serializable, ints));
+    });
 }
 
 TEST_CASE("dexvm virtual and super dispatch through subclass") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     // Construct LDoubler and call describe() virtually via LCounter ref.
     const auto doubler_class = vm.linker.FindClass("LDoubler;");
     REQUIRE(doubler_class.has_value());
@@ -1779,10 +1986,12 @@ TEST_CASE("dexvm virtual and super dispatch through subclass") {
                   vm.linker.Class(*doubler_class).vtable[*get_index],
                   std::vector<VmValue>{VmValue::Ref(instance)}),
               4);
+    });
 }
 
 TEST_CASE("dexvm clinit runs once before static access") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     ExpectInt(vm.CallStatic("LClinitUser;", "read", "()I"), 55);
     CHECK(vm.interpreter.Stats().classes_initialized >= 1);
     const auto before = vm.interpreter.Stats().classes_initialized;
@@ -1795,10 +2004,12 @@ TEST_CASE("dexvm clinit runs once before static access") {
         vm.interpreter.EnsureClassInitialized(*counter_class);
     REQUIRE(!outcome.exception.IsValid());
     CHECK(vm.linker.Class(*counter_class).static_storage[0] == 7);
+    });
 }
 
 TEST_CASE("dexvm exceptions across frames with real messages") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     // Custom VM exception subclass: caught by Exception handler in the
     // caller frame; message length of "boom" is 4.
     ExpectInt(vm.CallStatic("LThrower;", "catchAcrossFrames", "()I"), 4);
@@ -1808,37 +2019,44 @@ TEST_CASE("dexvm exceptions across frames with real messages") {
     CHECK(uncaught.exception_message == "boom");
     REQUIRE(!uncaught.exception_stack.empty());
     CHECK(uncaught.exception_stack[0].method_name == "fail");
+    });
 }
 
 TEST_CASE("dexvm stack overflow is a real catchable error") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     const auto outcome =
         vm.CallStatic("LFlow;", "recurse", "(I)I", {VmValue::Int(0)});
     ExpectException(vm, outcome, "Ljava/lang/StackOverflowError;");
+    });
 }
 
 TEST_CASE("dexvm tick budget exhaustion is a fatal structured error") {
-    InterpreterConfig config;
+    WithEachBackend([](InterpreterConfig config) {
     config.tick_budget = 100;
     Vm vm(config);
     CHECK_THROWS_AS(static_cast<void>(vm.CallStatic(
                         "LFlow;", "recurse", "(I)I", {VmValue::Int(0)})),
                     DexVmError);
+    });
 }
 
 TEST_CASE("dexvm heap budget exhaustion surfaces OutOfMemoryError") {
+    WithEachBackend([](InterpreterConfig config) {
     JavaObjectModelConfig model_config;
     model_config.heap_budget_bytes = 40;
-    Vm vm(InterpreterConfig{}, model_config);
+    Vm vm(config, model_config);
     const auto outcome = vm.CallStatic("LFlow;", "sumArray", "()I");
     ExpectException(vm, outcome, "Ljava/lang/OutOfMemoryError;");
+    });
 }
 
 TEST_CASE("dexvm GC watermark bounds allocation and zero disables collection") {
+    WithEachBackend([](InterpreterConfig config) {
     JavaObjectModelConfig enabled;
     enabled.heap_budget_bytes = 128;
     enabled.gc_watermark_percent = 75;
-    Vm collecting(InterpreterConfig{}, enabled);
+    Vm collecting(config, enabled);
     ExpectInt(collecting.CallStatic("LFlow;", "gcChurn", "()I"), 10);
     CHECK(collecting.interpreter.Stats().gc_collections > 0);
     CHECK(collecting.interpreter.Stats().gc_freed_bytes > 0);
@@ -1846,14 +2064,16 @@ TEST_CASE("dexvm GC watermark bounds allocation and zero disables collection") {
 
     JavaObjectModelConfig disabled = enabled;
     disabled.gc_watermark_percent = 0;
-    Vm gc_a(InterpreterConfig{}, disabled);
+    Vm gc_a(config, disabled);
     const auto outcome = gc_a.CallStatic("LFlow;", "gcChurn", "()I");
     ExpectException(gc_a, outcome, "Ljava/lang/OutOfMemoryError;");
     CHECK(gc_a.interpreter.Stats().gc_collections == 0);
+    });
 }
 
 TEST_CASE("dexvm execution contexts isolate mutable interpreter state") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     const auto first = vm.interpreter.CreateExecutionContext();
     const auto second = vm.interpreter.CreateExecutionContext();
 
@@ -1894,10 +2114,12 @@ TEST_CASE("dexvm execution contexts isolate mutable interpreter state") {
     CHECK_THROWS_AS(
         static_cast<void>(other.interpreter.ExecutionSnapshot(first)),
         DexVmError);
+    });
 }
 
 TEST_CASE("dexvm diagnostics stay disabled unless explicitly configured") {
-    Vm vm;
+    WithEachBackend([](InterpreterConfig config) {
+    Vm vm(config);
     CHECK_FALSE(vm.interpreter.DiagnosticsEnabled());
     ExpectInt(vm.CallStatic("LArith;", "divide", "(II)I",
                             {VmValue::Int(12), VmValue::Int(3)}),
@@ -1932,7 +2154,7 @@ TEST_CASE("dexvm diagnostics stay disabled unless explicitly configured") {
                          });
     std::vector<IntrinsicClassDecl> catalog;
     catalog.push_back(std::move(builder).Build());
-    Vm live(InterpreterConfig{}, JavaObjectModelConfig{}, std::move(catalog));
+    Vm live(config, JavaObjectModelConfig{}, std::move(catalog));
     ExpectInt(live.CallStatic("LDiagnosticsProbe;", "capture", "()I"), 1);
     const auto running = std::find_if(
         live_stacks.begin(), live_stacks.end(),
@@ -1943,10 +2165,11 @@ TEST_CASE("dexvm diagnostics stay disabled unless explicitly configured") {
     CHECK(running->frames[0].class_descriptor == "LDiagnosticsProbe;");
     CHECK(running->frames[0].method_name == "capture");
     CHECK(running->frames[0].method_descriptor == "()I");
+    });
 }
 
 TEST_CASE("dexvm diagnostics use a bounded filtered event ring") {
-    InterpreterConfig config;
+    WithEachBackend([](InterpreterConfig config) {
     config.diagnostics.trace_capacity = 3;
     config.diagnostics.event_mask =
         DexVmTraceBit(DexVmTraceKind::method_enter) |
@@ -1983,10 +2206,11 @@ TEST_CASE("dexvm diagnostics use a bounded filtered event ring") {
     CHECK(json.find("\"event\":\"method_") != std::string::npos);
     CHECK(json.find("\"class\":\"LArith;\"") != std::string::npos);
     CHECK(json.find("0x") == std::string::npos);
+    });
 }
 
 TEST_CASE("dexvm diagnostics sample only instruction events") {
-    InterpreterConfig config;
+    WithEachBackend([](InterpreterConfig config) {
     config.diagnostics.trace_capacity = 64;
     config.diagnostics.event_mask =
         DexVmTraceBit(DexVmTraceKind::instruction);
@@ -2010,10 +2234,11 @@ TEST_CASE("dexvm diagnostics sample only instruction events") {
     CHECK(stacks_json.find("\"schema\":1") != std::string::npos);
     CHECK(stacks_json.find("\"status\":\"idle\"") !=
           std::string::npos);
+    });
 }
 
 TEST_CASE("dexvm diagnostics cover semantic fault and runtime events") {
-    InterpreterConfig config;
+    WithEachBackend([](InterpreterConfig config) {
     config.diagnostics.trace_capacity = 512;
     config.diagnostics.event_mask =
         kDexVmTraceAllEvents &
@@ -2047,6 +2272,7 @@ TEST_CASE("dexvm diagnostics cover semantic fault and runtime events") {
         CAPTURE(DexVmTraceKindName(kind));
         CHECK(observed.contains(kind));
     }
+    });
 }
 
 TEST_CASE("dexvm diagnostics reject invalid recorder configuration") {

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-58 Threaded gate 裁决完成，默认保持 switch
+更新：2026-08-20 · DVM-59 Threaded 稳态循环与 Precheck 闭合
 
 ## 当前阶段
 
@@ -18,7 +18,7 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48..58 已交付；DVM-47 gate 仍受阻。解释执行仍由
+- **M9 DexVM**：DVM-1..46、48..59 已交付；DVM-47 gate 仍受阻。解释执行仍由
   `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
@@ -34,16 +34,15 @@
   阻塞原语释放执行锁并只用统一 Clock，`dexvm.threads`/`monitors` 为 `complete`。
   DVM-51 已交付类型化 intrinsic、预绑定字段与 API-19 shape 工具；DVM-52 已交付默认
   关闭的有界 `dexvm.trace` 和停界 `dexvm.stack`，MCP/CLI 消费与异步抢占仍属后续。
-  DVM-53..57 已交付不改写 DEX 的只读 `FastCode`、双后端分派及全部 dex035
-  指令家族直达 handler；类型/字段/方法/数组类别与 invoke shorty 在执行锁内
-  首执行缓存并 checked→fast，双后端夹具结果、异常、指令数、tick 与 trace 等价。
-  三类 MSVC Debug 微基准分别获益 6.1% / 29.1% / 19.9%；stop 双表无证据不做，
-  逐指令检查不变。DVM-58 已把 backend 接入受检 Profile/CLI/Scenario 链。
-  A5 threaded exact 三轮均为 468/468000、`f91150b4...`、无 fault 且 clean shutdown；
-  其 title 总 wall-time 中位数 24,484 ms，对照 switch 24,297 ms，无稳定收益。
-  DH threaded 在 240,047 ms wall gate 失败，switch 对照也停在同一 Activity
-  switch/SMS-network 边界；A6 按本轮明确测试边界未执行。因此默认切换条件不成立，
-  `dexvm.interpreter_threaded` 诚实保持 `partial`，生产默认仍为 switch。
+  DVM-53..59 已交付只读 FastCode、单函数 threaded 稳态循环（opcode computed
+  goto / MSVC 稠密 switch、同帧 `fetch` 不 `frames.back()`、局部 ip/`Slot*`/
+  tick）、`k35c`/`k3rc`/wide-pair Precheck、`force_all_bridge` 与 dexasm 双后端。
+  packed-switch O(1)；invoke 走栈上 array；clinit 不跨 `AddClass` 悬挂引用。
+  Windows Release 微基准三轮中位相对 switch：straight +34%、object +39%、
+  invoke −13%、array +22%、packed-switch +38%、instance +39%、virtual −5%、
+  wide +37%、instance-of +34%。只报告、不设时序断言。stop 双表无证据不做。
+  DVM-58 已把 backend 接入受检 Profile/CLI/Scenario 链。title 三 gate 未作
+  本轮验收，`dexvm.interpreter_threaded` 保持 `partial`，生产默认仍为 switch。
   `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在
   装配期拒绝，VM/linker 语义不变。
 ## 验证基线

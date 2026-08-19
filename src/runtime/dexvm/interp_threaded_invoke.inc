@@ -1,23 +1,3 @@
-// Direct FastCode invoke handlers. Register word lists are built with
-// FastCode; constant-pool resolution and descriptor shorty parsing happen
-// once under VmExecutionLock before invoke_checked flips to invoke_fast.
-
-#include "interpreter_internal.h"
-
-namespace ogplay::runtime::dexvm {
-
-void Interpreter::Impl::StepInvoke(
-    InterpreterExecutionState& execution, const FastCode& code,
-    const FastInstruction& instruction) {
-    auto& frame = execution.frames.back();
-    auto& pending_exception = execution.pending_exception;
-    Tick(execution);
-    ++stats.executed_instructions;
-    if (!trace_ring.empty()) {
-        RecordTrace(DexVmTraceKind::instruction, execution, frame.method,
-                    instruction.dex_pc, instruction.opcode);
-    }
-
     const auto& invoke = code.invokes[instruction.invoke];
     if (instruction.handler == FastHandler::invoke_checked) {
         const bool direct_or_static = invoke.base_opcode == 0x70U ||
@@ -52,8 +32,8 @@ void Interpreter::Impl::StepInvoke(
                 }
             } else {
                 invoke.argument_shorty.push_back(kind);
-                ++words;
                 ++cursor;
+                ++words;
             }
         }
         if (words != invoke.registers.size()) {
@@ -66,13 +46,12 @@ void Interpreter::Impl::StepInvoke(
 
     const auto named_id = VmMethodId(invoke.resolved_method);
     const auto& named = linker->Method(named_id);
-    std::vector<VmValue> arguments;
-    arguments.reserve(invoke.argument_shorty.size() +
-                      (named.is_static ? 0U : 1U));
+    std::array<VmValue, 256> argument_storage{};
+    std::size_t argument_count{};
     std::size_t register_cursor{};
     VmObjectRef receiver;
     if (!named.is_static) {
-        receiver = GetFastRef(frame, invoke.registers[register_cursor]);
+        receiver = GetFastRef(regs, invoke.registers[register_cursor]);
         if (!receiver.IsValid()) {
             ThrowJava(
                 "Ljava/lang/NullPointerException;",
@@ -84,26 +63,30 @@ void Interpreter::Impl::StepInvoke(
                     linker->Class(frame.method->owner).descriptor + "." +
                     frame.method->name + " pc " +
                     std::to_string(frame.pc));
-            return;
+            goto yield;
         }
-        arguments.push_back(VmValue::Ref(receiver));
+        argument_storage[argument_count++] = VmValue::Ref(receiver);
         ++register_cursor;
     }
     for (const auto kind : invoke.argument_shorty) {
         if (kind == 'J' || kind == 'D') {
-            arguments.push_back(VmValue::Long(static_cast<std::int64_t>(
-                GetFastWide(frame, invoke.registers[register_cursor]))));
+            argument_storage[argument_count++] = VmValue::Long(
+                static_cast<std::int64_t>(
+                    GetFastWide(regs, invoke.registers[register_cursor])));
             register_cursor += 2U;
         } else if (kind == 'L') {
-            arguments.push_back(VmValue::Ref(
-                GetFastRef(frame, invoke.registers[register_cursor])));
+            argument_storage[argument_count++] = VmValue::Ref(
+                GetFastRef(regs, invoke.registers[register_cursor]));
             ++register_cursor;
         } else {
-            arguments.push_back(VmValue::Int(static_cast<std::int32_t>(
-                GetFastCat1(frame, invoke.registers[register_cursor]))));
+            argument_storage[argument_count++] = VmValue::Int(
+                static_cast<std::int32_t>(
+                    GetFastCat1(regs, invoke.registers[register_cursor])));
             ++register_cursor;
         }
     }
+    const std::span<const VmValue> arguments(argument_storage.data(),
+                                             argument_count);
 
     VmMethodId target = named_id;
     if (invoke.base_opcode == 0x6eU || invoke.base_opcode == 0x72U) {
@@ -137,44 +120,57 @@ void Interpreter::Impl::StepInvoke(
         }
         target = linker->Class(*current.super).vtable[*index];
     }
-    const auto& method = linker->Method(target);
-    if (method.is_static) {
-        EnsureInitialized(execution, method.owner);
-        if (pending_exception.IsValid()) return;
+    const auto target_id = target;
+    const auto callee_static = linker->Method(target_id).is_static;
+    const auto callee_kind = linker->Method(target_id).kind;
+    const auto callee_owner = linker->Method(target_id).owner;
+    if (callee_static) {
+        stats.executed_instructions += executed;
+        executed = 0;
+        EnsureInitialized(execution, callee_owner);
+        ticks = execution.ticks;
+        if (pending_exception.IsValid()) goto yield;
     }
 
-    switch (method.kind) {
+    switch (callee_kind) {
         case MethodKind::interpreted:
-            linker->PrecheckMethod(target);
-            PushInterpretedFrame(execution, method, arguments,
-                                 instruction.width);
-            return;
+            linker->PrecheckMethod(target_id);
+            PushInterpretedFrame(execution, linker->Method(target_id),
+                                 arguments, instruction.width);
+            goto yield;
         case MethodKind::intrinsic: {
+            const auto& method = linker->Method(target_id);
             const auto rest =
-                method.is_static
-                    ? std::span<const VmValue>(arguments)
-                    : std::span<const VmValue>(arguments).subspan(1);
+                method.is_static ? arguments : arguments.subspan(1);
             const MethodMonitorScope monitor(*this, method, arguments);
             RecordTrace(DexVmTraceKind::method_enter, execution, &method,
                         frame.pc);
+            stats.executed_instructions += executed;
+            executed = 0;
             try {
-                frame.last_result = InvokeIntrinsic(method, receiver, rest);
-                RecordTrace(DexVmTraceKind::method_exit, execution, &method,
-                            frame.pc);
+                frame.last_result = InvokeIntrinsic(
+                    linker->Method(target_id), receiver, rest);
+                ticks = execution.ticks;
+                RecordTrace(DexVmTraceKind::method_exit, execution,
+                            &linker->Method(target_id), frame.pc);
             } catch (const VmJavaThrow& thrown) {
+                ticks = execution.ticks;
                 ThrowJava(thrown.descriptor, thrown.message);
-                RecordTrace(DexVmTraceKind::method_exit, execution, &method,
+                RecordTrace(DexVmTraceKind::method_exit, execution, nullptr,
                             frame.pc, 0, 1);
-                return;
+                goto yield;
             } catch (...) {
-                RecordTrace(DexVmTraceKind::method_exit, execution, &method,
+                ticks = execution.ticks;
+                RecordTrace(DexVmTraceKind::method_exit, execution, nullptr,
                             frame.pc, 0, 1);
                 throw;
             }
-            if (!pending_exception.IsValid()) frame.pc += instruction.width;
-            return;
+            if (pending_exception.IsValid()) goto yield;
+            ip += 1U;
+            goto fetch;
         }
         case MethodKind::native: {
+            const auto& method = linker->Method(target_id);
             if (bridge == nullptr) {
                 if (ledger != nullptr) {
                     ledger->RecordUnimplemented("dexvm.native_bridge", 0);
@@ -186,9 +182,7 @@ void Interpreter::Impl::StepInvoke(
                         method.name + method.descriptor);
             }
             const auto rest =
-                method.is_static
-                    ? std::span<const VmValue>(arguments)
-                    : std::span<const VmValue>(arguments).subspan(1);
+                method.is_static ? arguments : arguments.subspan(1);
             ++stats.native_calls;
             const MethodMonitorScope monitor(*this, method, arguments);
             const NativeFrame native_frame(*this);
@@ -196,28 +190,30 @@ void Interpreter::Impl::StepInvoke(
                         frame.pc);
             RecordTrace(DexVmTraceKind::method_enter, execution, &method,
                         frame.pc);
+            stats.executed_instructions += executed;
+            executed = 0;
             try {
-                frame.last_result = bridge->Invoke(method, receiver, rest);
-                RecordTrace(DexVmTraceKind::native_exit, execution, &method,
-                            frame.pc);
-                RecordTrace(DexVmTraceKind::method_exit, execution, &method,
-                            frame.pc);
+                frame.last_result =
+                    bridge->Invoke(linker->Method(target_id), receiver, rest);
+                ticks = execution.ticks;
+                RecordTrace(DexVmTraceKind::native_exit, execution,
+                            &linker->Method(target_id), frame.pc);
+                RecordTrace(DexVmTraceKind::method_exit, execution,
+                            &linker->Method(target_id), frame.pc);
             } catch (...) {
-                RecordTrace(DexVmTraceKind::native_exit, execution, &method,
+                ticks = execution.ticks;
+                RecordTrace(DexVmTraceKind::native_exit, execution, nullptr,
                             frame.pc, 0, 1);
-                RecordTrace(DexVmTraceKind::method_exit, execution, &method,
+                RecordTrace(DexVmTraceKind::method_exit, execution, nullptr,
                             frame.pc, 0, 1);
                 throw;
             }
-            if (!pending_exception.IsValid()) frame.pc += instruction.width;
-            return;
+            if (pending_exception.IsValid()) goto yield;
+            ip += 1U;
+            goto fetch;
         }
         case MethodKind::abstract:
-            throw VmJavaThrow{"Ljava/lang/AbstractMethodError;",
-                              linker->Class(method.owner).descriptor + "." +
-                                  method.name + method.descriptor};
+            FailCode("abstract method invoked: " +
+                     linker->Method(target_id).name);
     }
     FailCode("unreachable invoke method kind");
-}
-
-}  // namespace ogplay::runtime::dexvm

@@ -174,16 +174,18 @@ void Interpreter::Impl::EnsureInitialized(
       }
       break;
     }
-    auto& linked = linker->MutableClass(java_class);
-    linked.clinit_state = ClinitState::initializing;
-    linked.clinit_thread = execution.token;
+    // ResolveDescriptor/AddClass can reallocate the class vector. Never keep
+    // a LinkedClass& across those calls; re-fetch by id after each mutation.
+    const auto super = linker->MutableClass(java_class).super;
+    linker->MutableClass(java_class).clinit_state = ClinitState::initializing;
+    linker->MutableClass(java_class).clinit_thread = execution.token;
     RecordTrace(DexVmTraceKind::class_init_begin, execution, nullptr, 0, 0,
                 java_class.Value());
     try {
 
     // Superclass first (interfaces are not initialized transitively).
-    if (linked.super.has_value()) {
-        EnsureInitialized(execution, *linked.super);
+    if (super.has_value()) {
+        EnsureInitialized(execution, *super);
         if (pending_exception.IsValid()) {
             PublishClinitState(java_class, ClinitState::failed);
             RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
@@ -194,79 +196,92 @@ void Interpreter::Impl::EnsureInitialized(
 
     // Materialize static initial values before running <clinit>
     // (state machine follows AOSP vm/oo/Class.cpp dvmInitClass).
-    const auto values = linker->StaticValues(linked);
-    auto& mutable_class = linker->MutableClass(java_class);
+    const auto values = linker->StaticValues(linker->Class(java_class));
+    const auto static_field_count =
+        linker->Class(java_class).own_static_fields.size();
     for (std::size_t index = 0;
-         index < values.size() && index < mutable_class.own_static_fields.size();
-         ++index) {
-    const auto &field = linker->Field(mutable_class.own_static_fields[index]);
+         index < values.size() && index < static_field_count; ++index) {
+        const auto field_id = linker->Class(java_class).own_static_fields[index];
+        const auto slot = linker->Field(field_id).slot;
         const auto& value = values[index];
-        auto& storage = mutable_class.static_storage;
         using loader::DexEncodedValueKind;
+        auto write_slot = [&](const std::uint16_t offset,
+                              const std::uint32_t bits) {
+            linker->MutableClass(java_class)
+                .static_storage[slot + offset] = bits;
+        };
         switch (value.kind) {
             case DexEncodedValueKind::boolean_value:
             case DexEncodedValueKind::byte_value:
             case DexEncodedValueKind::short_value:
             case DexEncodedValueKind::char_value:
             case DexEncodedValueKind::int_value:
-      storage[field.slot] =
-          static_cast<std::uint32_t>(static_cast<std::int32_t>(value.integral));
+                write_slot(0, static_cast<std::uint32_t>(
+                                  static_cast<std::int32_t>(value.integral)));
                 break;
             case DexEncodedValueKind::long_value: {
-      const auto bits = static_cast<std::uint64_t>(value.integral);
-                storage[field.slot] = static_cast<std::uint32_t>(bits);
-      storage[field.slot + 1] = static_cast<std::uint32_t>(bits >> 32U);
+                const auto bits = static_cast<std::uint64_t>(value.integral);
+                write_slot(0, static_cast<std::uint32_t>(bits));
+                write_slot(1, static_cast<std::uint32_t>(bits >> 32U));
                 break;
             }
             case DexEncodedValueKind::float_value: {
                 const auto narrowed = static_cast<float>(value.floating);
-                storage[field.slot] = std::bit_cast<std::uint32_t>(narrowed);
+                write_slot(0, std::bit_cast<std::uint32_t>(narrowed));
                 break;
             }
             case DexEncodedValueKind::double_value: {
                 const auto bits = std::bit_cast<std::uint64_t>(value.floating);
-                storage[field.slot] = static_cast<std::uint32_t>(bits);
-      storage[field.slot + 1] = static_cast<std::uint32_t>(bits >> 32U);
+                write_slot(0, static_cast<std::uint32_t>(bits));
+                write_slot(1, static_cast<std::uint32_t>(bits >> 32U));
                 break;
             }
             case DexEncodedValueKind::string_index:
-      storage[field.slot] = InternDexString(value.index).Value();
+                write_slot(0, InternDexString(value.index).Value());
                 break;
             case DexEncodedValueKind::type_index:
-                storage[field.slot] =
-          model->ClassObject(linker->ResolveTypeIndex(value.index)).Value();
+                write_slot(0, model->ClassObject(
+                                  linker->ResolveTypeIndex(value.index))
+                                  .Value());
                 break;
             case DexEncodedValueKind::null_reference:
-                storage[field.slot] = 0;
+                write_slot(0, 0);
                 break;
         }
     }
 
     // Intrinsic constant statics materialize before any handler runs.
-    for (const auto& constant : mutable_class.intrinsic_constants) {
-    const auto field_id = linker->FindFieldRecursive(java_class, constant.name,
-                                                     constant.descriptor);
-    if (!field_id.has_value())
-      continue;
+    const auto intrinsic_constants =
+        linker->Class(java_class).intrinsic_constants;
+    for (const auto& constant : intrinsic_constants) {
+        const auto field_id = linker->FindFieldRecursive(
+            java_class, constant.name, constant.descriptor);
+        if (!field_id.has_value()) continue;
         const auto& field = linker->Field(*field_id);
-        auto& storage = linker->MutableClass(java_class).static_storage;
+        const auto slot = field.slot;
+        const auto is_wide = field.is_wide;
         if (constant.descriptor == "Ljava/lang/String;") {
             std::u16string value(constant.string_value.begin(),
                                  constant.string_value.end());
-            storage[field.slot] = model->InternString(value).Value();
-        } else if (field.is_wide) {
+            linker->MutableClass(java_class).static_storage[slot] =
+                model->InternString(value).Value();
+        } else if (is_wide) {
             const auto bits = static_cast<std::uint64_t>(constant.integral);
-            storage[field.slot] = static_cast<std::uint32_t>(bits);
-      storage[field.slot + 1] = static_cast<std::uint32_t>(bits >> 32U);
+            auto& storage = linker->MutableClass(java_class).static_storage;
+            storage[slot] = static_cast<std::uint32_t>(bits);
+            storage[slot + 1] = static_cast<std::uint32_t>(bits >> 32U);
         } else {
-            storage[field.slot] = static_cast<std::uint32_t>(
-                static_cast<std::int32_t>(constant.integral));
+            linker->MutableClass(java_class).static_storage[slot] =
+                static_cast<std::uint32_t>(
+                    static_cast<std::int32_t>(constant.integral));
         }
     }
-    if (mutable_class.clinit_implementation) {
+    const auto clinit_implementation =
+        linker->Class(java_class).clinit_implementation;
+    if (clinit_implementation) {
         IntrinsicContext context{*owner, VmObjectRef{}, {}};
         try {
-            static_cast<void>(mutable_class.clinit_implementation(context));
+            static_cast<void>(clinit_implementation(context));
         } catch (const VmJavaThrow& thrown) {
             PublishClinitState(java_class, ClinitState::failed);
             RecordTrace(DexVmTraceKind::class_init_fail, execution, nullptr,
@@ -276,7 +291,7 @@ void Interpreter::Impl::EnsureInitialized(
         }
     }
 
-    const auto clinit = mutable_class.clinit;
+    const auto clinit = linker->Class(java_class).clinit;
     if (clinit.has_value()) {
         linker->PrecheckMethod(*clinit);
         PushInterpretedFrame(execution, linker->Method(*clinit), {}, 0);
@@ -370,25 +385,27 @@ VmValue
 Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
                                    const VmObjectRef receiver,
     const std::span<const VmValue> arguments) {
-    const auto* handler = method.implementation ? &method.implementation
-                                                : nullptr;
-    if (handler == nullptr) {
-        const auto& declaring = linker->Class(method.owner).descriptor;
-        const auto diagnostic =
-            declaring + "." + method.name + method.descriptor;
+    const auto handler = method.implementation;
+    const auto owner_id = method.owner;
+    const auto name = method.name;
+    const auto descriptor = method.descriptor;
+    const auto return_shorty = method.return_shorty;
+    if (!handler) {
+        const auto& declaring = linker->Class(owner_id).descriptor;
+        const auto diagnostic = declaring + "." + name + descriptor;
         if (ledger != nullptr) {
             ledger->RecordUnimplemented("dexvm.intrinsic." + diagnostic, 0);
         }
         if (linker->GapSurveyEnabled()) {
             // Survey mode: record and answer neutrally so one run harvests
             // every gap the title reaches. Never a compatibility result.
-      linker->RecordGapSurveyHit(declaring, method.name + method.descriptor);
+            linker->RecordGapSurveyHit(declaring, name + descriptor);
             if (logger != nullptr) {
                 logger->Write(core::LogLevel::warn, "runtime.dexvm.survey",
-                      "SURVEY neutral stub: " + declaring + "." + method.name +
-                          method.descriptor);
+                              "SURVEY neutral stub: " + declaring + "." + name +
+                                  descriptor);
             }
-            return NeutralValueFor(method.return_shorty);
+            return NeutralValueFor(return_shorty);
         }
         throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
                           "intrinsic handler is not implemented: " +
@@ -396,7 +413,7 @@ Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
     }
     ++stats.intrinsic_calls;
     IntrinsicContext context{*owner, receiver, arguments};
-    return (*handler)(context);
+    return handler(context);
 }
 
 VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
@@ -630,9 +647,8 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
     }
     const auto owner = impl_->linker->Method(method_id).owner;
     impl_->linker->EnsureClassLinked(owner);
-    const auto& method = impl_->linker->Method(method_id);
-    if (method.is_static) {
-        impl_->EnsureInitialized(execution, method.owner);
+    if (impl_->linker->Method(method_id).is_static) {
+        impl_->EnsureInitialized(execution, owner);
         if (pending_exception.IsValid()) {
             VmCallOutcome outcome;
             outcome.exception = pending_exception;
@@ -642,31 +658,37 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
             return outcome;
         }
     }
-    switch (method.kind) {
+    const auto kind = impl_->linker->Method(method_id).kind;
+    switch (kind) {
         case MethodKind::interpreted: {
             impl_->linker->PrecheckMethod(method_id);
             const auto entry_depth = frames.size();
-            impl_->PushInterpretedFrame(execution, method, arguments, 0);
+            impl_->PushInterpretedFrame(execution,
+                                        impl_->linker->Method(method_id),
+                                        arguments, 0);
             auto outcome = impl_->Run(execution, entry_depth);
             return outcome;
         }
         case MethodKind::intrinsic: {
+            const auto is_static = impl_->linker->Method(method_id).is_static;
             VmCallOutcome outcome;
-            const auto receiver = method.is_static || arguments.empty()
+            const auto receiver = is_static || arguments.empty()
                                       ? VmObjectRef{}
                                       : arguments.front().ref;
-            const auto rest = method.is_static ? arguments : arguments.subspan(1);
-            const Impl::MethodMonitorScope monitor(*impl_, method, arguments);
+            const auto rest = is_static ? arguments : arguments.subspan(1);
+            const Impl::MethodMonitorScope monitor(
+                *impl_, impl_->linker->Method(method_id), arguments);
             impl_->RecordTrace(DexVmTraceKind::method_enter, execution,
-                               &method);
+                               &impl_->linker->Method(method_id));
             try {
-                outcome.value = impl_->InvokeIntrinsic(method, receiver, rest);
+                outcome.value = impl_->InvokeIntrinsic(
+                    impl_->linker->Method(method_id), receiver, rest);
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
-                                   &method);
+                                   &impl_->linker->Method(method_id));
             } catch (const VmJavaThrow& thrown) {
                 impl_->ThrowJava(thrown.descriptor, thrown.message);
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
-                                   &method, 0, 0, 1);
+                                   nullptr, 0, 0, 1);
                 outcome.exception = pending_exception;
                 outcome.exception_class = pending_exception_class;
                 outcome.exception_message = thrown.message;
@@ -674,7 +696,7 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                 pending_exception_class = DexClassId{};
             } catch (...) {
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
-                                   &method, 0, 0, 1);
+                                   nullptr, 0, 0, 1);
                 throw;
             }
             return outcome;
@@ -682,43 +704,49 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
         case MethodKind::native: {
             if (impl_->bridge == nullptr) {
                 if (impl_->ledger != nullptr) {
-        impl_->ledger->RecordUnimplemented("dexvm.native_bridge", 0);
+                    impl_->ledger->RecordUnimplemented("dexvm.native_bridge", 0);
                 }
-      throw DexVmError(DexVmErrorReason::native_bridge_unavailable,
+                const auto& method = impl_->linker->Method(method_id);
+                throw DexVmError(
+                    DexVmErrorReason::native_bridge_unavailable,
                     "native method requires the JNI bridge: " +
                         impl_->linker->Class(method.owner).descriptor + "." +
                         method.name);
             }
+            const auto is_static = impl_->linker->Method(method_id).is_static;
             VmCallOutcome outcome;
-            const auto receiver = method.is_static || arguments.empty()
+            const auto receiver = is_static || arguments.empty()
                                       ? VmObjectRef{}
                                       : arguments.front().ref;
-    const auto rest = method.is_static ? arguments : arguments.subspan(1);
+            const auto rest = is_static ? arguments : arguments.subspan(1);
             ++impl_->stats.native_calls;
-            const Impl::MethodMonitorScope monitor(*impl_, method, arguments);
+            const Impl::MethodMonitorScope monitor(
+                *impl_, impl_->linker->Method(method_id), arguments);
             const Impl::NativeFrame native_frame(*impl_);
             impl_->RecordTrace(DexVmTraceKind::native_enter, execution,
-                               &method);
+                               &impl_->linker->Method(method_id));
             impl_->RecordTrace(DexVmTraceKind::method_enter, execution,
-                               &method);
+                               &impl_->linker->Method(method_id));
             try {
-                outcome.value = impl_->bridge->Invoke(method, receiver, rest);
+                outcome.value = impl_->bridge->Invoke(
+                    impl_->linker->Method(method_id), receiver, rest);
                 impl_->RecordTrace(DexVmTraceKind::native_exit, execution,
-                                   &method);
+                                   &impl_->linker->Method(method_id));
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
-                                   &method);
+                                   &impl_->linker->Method(method_id));
             } catch (...) {
                 impl_->RecordTrace(DexVmTraceKind::native_exit, execution,
-                                   &method, 0, 0, 1);
+                                   nullptr, 0, 0, 1);
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
-                                   &method, 0, 0, 1);
+                                   nullptr, 0, 0, 1);
                 throw;
             }
             return outcome;
         }
         case MethodKind::abstract:
             throw DexVmError(DexVmErrorReason::invalid_member,
-                     "abstract method invoked directly: " + method.name);
+                             "abstract method invoked directly: " +
+                                 impl_->linker->Method(method_id).name);
     }
     throw DexVmError(DexVmErrorReason::internal_invariant,
                      "unreachable method kind");

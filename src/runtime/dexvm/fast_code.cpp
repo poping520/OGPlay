@@ -12,10 +12,10 @@ namespace {
 
 namespace gen = ogplay::runtime::dexvm::generated;
 
-[[noreturn]] void Invalid(const std::string_view where,
-                          const std::string& detail) {
-    throw DexVmError(DexVmErrorReason::invalid_code,
-                     std::string(where) + ": " + detail);
+[[noreturn]] void Invalid(
+    const std::string_view where, const std::string& detail,
+    const DexVmErrorReason reason = DexVmErrorReason::invalid_code) {
+    throw DexVmError(reason, std::string(where) + ": " + detail);
 }
 
 [[nodiscard]] std::uint32_t U32(const std::vector<std::uint16_t>& units,
@@ -56,7 +56,8 @@ namespace gen = ogplay::runtime::dexvm::generated;
                 (static_cast<std::uint64_t>(units[pc + 1]) * count + 1U) /
                     2U;
     } else {
-        Invalid(where, "unknown payload ident");
+        Invalid(where, "unknown payload ident",
+                DexVmErrorReason::invalid_opcode);
     }
     if (width > units.size() - pc ||
         width > std::numeric_limits<std::uint32_t>::max()) {
@@ -227,7 +228,10 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
             continue;
         }
         const auto& info = gen::kDexOpcodeTable[opcode];
-        if (!info.defined) Invalid(where, "rejected opcode");
+        if (!info.defined) {
+            Invalid(where, "rejected opcode " + std::to_string(opcode),
+                    DexVmErrorReason::invalid_opcode);
+        }
         if (info.width == 0 || info.width > units.size() - pc) {
             Invalid(where, "instruction exceeds method end");
         }
@@ -236,6 +240,11 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         instruction.width = info.width;
         instruction.dex_pc = pc;
         DecodeOperands(units, instruction);
+        if (info.format == gen::DexInstructionFormat::k35c &&
+            instruction.a > 5U) {
+            Invalid(where, "35c register count exceeds 5 at pc " +
+                               std::to_string(pc));
+        }
         if (IsStraightOpcode(opcode)) {
             instruction.handler = FastHandler::straight;
         } else if (IsObjectOpcode(opcode)) {
@@ -277,7 +286,9 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         result.instructions.push_back(instruction);
         pc += info.width;
     }
-    if (pc != units.size()) Invalid(where, "instruction stream misaligned");
+    if (pc != units.size()) {
+        Invalid(where, "instruction stream is misaligned");
+    }
 
     for (auto& instruction : result.instructions) {
         const auto& info = gen::kDexOpcodeTable[instruction.opcode];

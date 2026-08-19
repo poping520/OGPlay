@@ -210,20 +210,23 @@ public:
 
     // FastCode construction runs after register-boundary precheck, so direct
     // handlers may omit the redundant bounds branch while preserving every
-    // Dalvik tag check and zero-as-null relaxation.
-    [[nodiscard]] std::uint32_t GetFastCat1(Frame& frame,
-                                            std::uint32_t reg) {
-        const auto& slot = frame.regs[reg];
+    // Dalvik tag check and zero-as-null relaxation. Slot* overloads keep the
+    // register file in a loop-local pointer (design 10 §5).
+    [[nodiscard]] std::uint32_t GetFastCat1(Slot* regs, std::uint32_t reg) {
+        const auto& slot = regs[reg];
         if (slot.tag != SlotTag::cat1) {
             FailCode("register v" + std::to_string(reg) +
                      " does not hold a cat1 value");
         }
         return slot.bits;
     }
-    [[nodiscard]] std::uint64_t GetFastWide(Frame& frame,
+    [[nodiscard]] std::uint32_t GetFastCat1(Frame& frame,
                                             std::uint32_t reg) {
-        const auto& lo = frame.regs[reg];
-        const auto& hi = frame.regs[reg + 1];
+        return GetFastCat1(frame.regs.data(), reg);
+    }
+    [[nodiscard]] std::uint64_t GetFastWide(Slot* regs, std::uint32_t reg) {
+        const auto& lo = regs[reg];
+        const auto& hi = regs[reg + 1];
         if (lo.tag != SlotTag::wide_lo || hi.tag != SlotTag::wide_hi) {
             FailCode("register pair v" + std::to_string(reg) +
                      " does not hold a complete wide value");
@@ -231,8 +234,12 @@ public:
         return static_cast<std::uint64_t>(lo.bits) |
                (static_cast<std::uint64_t>(hi.bits) << 32U);
     }
-    [[nodiscard]] VmObjectRef GetFastRef(Frame& frame, std::uint32_t reg) {
-        auto& slot = frame.regs[reg];
+    [[nodiscard]] std::uint64_t GetFastWide(Frame& frame,
+                                            std::uint32_t reg) {
+        return GetFastWide(frame.regs.data(), reg);
+    }
+    [[nodiscard]] VmObjectRef GetFastRef(Slot* regs, std::uint32_t reg) {
+        auto& slot = regs[reg];
         if (slot.tag == SlotTag::ref) return VmObjectRef(slot.bits);
         if (slot.tag == SlotTag::cat1 && slot.bits == 0) {
             slot.tag = SlotTag::ref;
@@ -241,16 +248,28 @@ public:
         FailCode("register v" + std::to_string(reg) +
                  " does not hold a reference");
     }
+    [[nodiscard]] VmObjectRef GetFastRef(Frame& frame, std::uint32_t reg) {
+        return GetFastRef(frame.regs.data(), reg);
+    }
+    void SetFastCat1(Slot* regs, std::uint32_t reg, std::uint32_t bits) {
+        regs[reg] = {bits, SlotTag::cat1};
+    }
     void SetFastCat1(Frame& frame, std::uint32_t reg, std::uint32_t bits) {
-        frame.regs[reg] = {bits, SlotTag::cat1};
+        SetFastCat1(frame.regs.data(), reg, bits);
+    }
+    void SetFastWide(Slot* regs, std::uint32_t reg, std::uint64_t bits) {
+        regs[reg] = {static_cast<std::uint32_t>(bits), SlotTag::wide_lo};
+        regs[reg + 1] = {static_cast<std::uint32_t>(bits >> 32U),
+                         SlotTag::wide_hi};
     }
     void SetFastWide(Frame& frame, std::uint32_t reg, std::uint64_t bits) {
-        frame.regs[reg] = {static_cast<std::uint32_t>(bits), SlotTag::wide_lo};
-        frame.regs[reg + 1] = {
-            static_cast<std::uint32_t>(bits >> 32U), SlotTag::wide_hi};
+        SetFastWide(frame.regs.data(), reg, bits);
+    }
+    void SetFastRef(Slot* regs, std::uint32_t reg, VmObjectRef ref) {
+        regs[reg] = {ref.Value(), SlotTag::ref};
     }
     void SetFastRef(Frame& frame, std::uint32_t reg, VmObjectRef ref) {
-        frame.regs[reg] = {ref.Value(), SlotTag::ref};
+        SetFastRef(frame.regs.data(), reg, ref);
     }
 
     // ---- exceptions -------------------------------------------------------
@@ -306,24 +325,14 @@ public:
     // Executes one instruction of the top frame. Returns true when the
     // frame stack changed (push/pop) or pc was redirected.
     void Step(InterpreterExecutionState& execution);
-    // FastCode dispatch entry. DVM-54 initially bridges every handler back
-    // to Step(); later WUs replace one family at a time without changing the
-    // outer exception/unwind loop.
+    // FastCode steady-state loop. Same-frame handlers stay in this function
+    // via included fragments; frame push/pop and pending exceptions return
+    // to Run() for the shared unwind path.
     void StepThreaded(InterpreterExecutionState& execution);
 
-    // Family handlers (separate translation units).
     [[nodiscard]] bool ExecuteArithmetic(
         Frame& frame, std::uint8_t opcode, std::uint16_t unit,
         const FastInstruction* decoded = nullptr);
-    void StepStraight(InterpreterExecutionState& execution,
-                      const FastCode& code,
-                      const FastInstruction& instruction);
-    void StepObject(InterpreterExecutionState& execution,
-                    const FastCode& code,
-                    const FastInstruction& instruction);
-    void StepInvoke(InterpreterExecutionState& execution,
-                    const FastCode& code,
-                    const FastInstruction& instruction);
     void StepObjectOrInvoke(InterpreterExecutionState& execution, Frame& frame,
                             std::uint8_t opcode, std::uint16_t unit);
 

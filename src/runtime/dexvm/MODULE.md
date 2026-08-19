@@ -18,7 +18,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   （`ResolveTypeIndex/ResolveMethodIndex/ResolveFieldIndex`），数组类按需合成，
   `IsAssignable` 覆盖类层级、接口、数组协变，以及数组对
   `Object`/`Cloneable`/`Serializable` 的 JLS 可赋值性。`PrecheckMethod` 懒执行结构
-  预检（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置），
+  预检（未定义 opcode、寄存器越界含 `k35c`/`k3rc` 参数表与 wide pair、分支/payload
+  目标、move-result 位置），
   规则子集对照 AOSP `CodeVerify.cpp`，不做全量数据流。
 - `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
   handler；覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，
@@ -100,19 +101,23 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   预解码 opcode/宽度/操作数、dex pc 到内部索引、受检分支目标以及 packed/sparse
   switch 与 fill-array-data 边表；缓存按 `LinkedMethod` 懒构建并只读共享，不保存
   guest 引用、不计入 guest heap，且绝不改写原 DEX。
-- `InterpreterBackend`（DVM-54）：默认 `switch_dispatch` 保持原路径；显式
-  `threaded` 经 FastCode handler 表分派，GCC/Clang 使用 computed goto，MSVC 使用
-  dense switch。DVM-55 已把 move/const/return/goto/if/cmp/算术族迁入直达 handler：
-  不再读取 u2 或重复检查预检已证明的寄存器边界，但保留 tag/wide-pair/zero-as-null
-  校验；算术复用唯一语义体。DVM-56 已把 monitor/type/分配/数组/switch/字段迁入
-  直达 handler；类型、字段与数组元素类别在执行锁内首执行解析并将 FastCode
-  `object_checked` 翻为 `object_fast`，只改派生缓存。DVM-57 已把五种 invoke 及
-  range 变体迁入直达 handler：构建期预拼 register words，首执行缓存解析方法与
-  参数 shorty 并翻为 `invoke_fast`；动态派发仍逐次执行。异常展开、tick、trace
-  与 switch 精确共源；stats 报告后端及 FastCode 构建次数/宿主字节数。
-  DVM-58 将后端选择接入受检 Profile/CLI/Scenario 链；默认仍为 `switch`。
-  exact-title gate 尚未全部闭合且 title wall-time 采样无稳定收益，因此尚不满足
-  默认切换条件。
+- `InterpreterBackend`（DVM-54..59）：默认 `switch_dispatch` 保持原路径；显式
+  `threaded` 走 FastCode 单函数稳态循环。同帧热路径把 `ip`、`Slot* regs` 和
+  tick 放在局部变量，handler 尾部 `fetch` 下一条，不再每指令 `frames.back()`。
+  GCC/Clang 按 opcode 做 computed goto（每 opcode 独立入口 stub），MSVC 用
+  稠密 `FastHandler` switch。压帧/弹帧/pending 才回到 `Run()`。家族体以 `.inc`
+  拼入 `interp_threaded.cpp`。`force_all_bridge` 把每条指令桥回旧 `Step()`。
+  直线/对象/invoke 直达 handler 不再读 u2，也不再检查预检已证明的寄存器边界，
+  但保留 tag/wide-pair/zero-as-null；算术复用 `ExecuteArithmetic`。类型、字段、
+  数组元素类别与 invoke shorty 在执行锁内首执行缓存并 checked→fast。
+  packed-switch 按 first-key O(1) 索引；invoke 参数走栈上 array。
+  `<clinit>` / intrinsic 调用不跨 `AddClass` 悬挂 `LinkedClass&`。
+  对象/invoke 慢路径仍调用共享 `InvokeIntrinsic`/`PushInterpretedFrame`/
+  `EnsureInitialized`，字段与数组体在 `.inc` 中另有一份，语义对照旧内核夹具。
+  DVM-58 将后端接入受检 Profile/CLI/Scenario 链；默认仍为 `switch`。
+  DVM-59 闭合 Precheck `k35c`/`k3rc`/wide pair、FastCode 与 Precheck 结构反例
+  诊断逐字一致、dexasm 双后端与 tick/trace 对照。exact-title gate 不是本轮
+  验收，能力保持 `partial`。
 - `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
   `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
   `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复；可注入
@@ -173,9 +178,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 布局/vtable 在 `class_linker.cpp`，常量池解析与可赋值性在
 `class_linker_resolve.cpp`，方法结构预检及 `FastCode` 懒缓存入口在
 `method_precheck.cpp`，构建器位于 `fast_code.cpp`。解释器主循环在 `interpreter.cpp`，
-FastCode 分派骨架在 `interp_threaded.cpp`，直线、对象、invoke 族分别在
-`interp_threaded_straight.cpp`、`interp_threaded_object.cpp`、
-`interp_threaded_invoke.cpp`，显式执行 context
+FastCode 单函数稳态循环在 `interp_threaded.cpp`（`#include`
+`interp_threaded_{straight,object,invoke}.inc`），显式执行 context
 的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
 `interpreter_context.cpp`，诊断 ring/query/JSON 在 `diagnostics.cpp`，宿主线程
 生命周期在 `vm_threads.cpp`。
@@ -223,7 +227,7 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
   只搬运拥有型实现，不保存字符串标识或懒解析缓存。System/Date 的 7 个平台动作
   在 integration 装配点以成员指针直接补入 core 声明。
 - 热路径在 `Call`/`EnsureClassInitialized` 入口解析一次活跃 execution，沿
-  `Run`/`Step`/`Tick`/invoke 与字段家族/`EnsureInitialized`/
+  `Run`/`Step`/`StepThreaded`/`Tick`/invoke 与字段家族/`EnsureInitialized`/
   `PushInterpretedFrame` 显式传引用；逐指令不得重查 thread-local 路由。
   `Execution()` 只允许出现在入口与冷路径（异常、诊断、native 帧标记）。
   一次活跃调用内 context 不可切换（`InterpreterExecutionScope` 强制），
@@ -262,8 +266,12 @@ holdsLock、runtime rename diagnostics 与 active/finished GC roots）；
 重获 monitor、wait 前已置位的 interrupt 不停泊、teardown 唤醒全部 waiter、
 driver 阻塞时 N=2 条件 swap 放行与 driver 可运行时帧推进节拍）；
 `tests/dexvm/fast_code_tests.cpp`（DVM-53 指令边界/操作数/分支索引、三类 payload
-边表及畸形输入拒绝）；`tests/dexvm/interpreter_tests.cpp` 的 DVM-54 双后端夹具
-比较返回、异常、指令数、tick 与 trace；`tests/dexvm/dex_code_tests.cpp`、
+边表及畸形输入拒绝，失败诊断字符串与 Precheck 口径一致）；`tests/dexvm/interpreter_tests.cpp` 的 DVM-54/59
+dexasm 夹具按 switch/threaded 双后端跑返回、异常、tick 与 trace；`force_all_bridge`
+永久保留为 Step() 桥回归锚点；threaded 微基准覆盖直线、静态字段、
+invoke-static，以及数组 aget/aput、packed-switch、iget/iput、invoke-virtual、
+wide 算术与 instance-of，只报告 switch 对照、不设时序断言；畸形 `k35c`/`k3rc`/
+`iget-wide` 寄存器在两后端都抛 `invalid_register`。`tests/dexvm/dex_code_tests.cpp`、
 `tests/dexvm/dexasm_readback_tests.cpp`、
 `tests/dexvm/gap_survey_tests.cpp`（survey 开/关对照：关闭即失败、桩答中性值、
 命中计数、工作单排序）。

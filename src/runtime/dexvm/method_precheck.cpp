@@ -75,6 +75,95 @@ struct Decoded final {
     return {opcode, info.width, false};
 }
 
+[[nodiscard]] bool WritesWidePair(const std::uint8_t opcode) {
+    switch (opcode) {
+        case 0x04:
+        case 0x05:
+        case 0x06:
+        case 0x0b:
+        case 0x10:
+        case 0x16:
+        case 0x17:
+        case 0x18:
+        case 0x19:
+        case 0x45:
+        case 0x4c:
+        case 0x53:
+        case 0x5a:
+        case 0x61:
+        case 0x68:
+        case 0x7d:
+        case 0x7e:
+        case 0x80:
+        case 0x81:
+        case 0x83:
+        case 0x86:
+        case 0x88:
+        case 0x89:
+        case 0x8b:
+            return true;
+        default:
+            break;
+    }
+    if ((opcode >= 0x9b && opcode <= 0xa5) ||
+        (opcode >= 0xab && opcode <= 0xaf) ||
+        (opcode >= 0xbb && opcode <= 0xc5) ||
+        (opcode >= 0xcb && opcode <= 0xcf)) {
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]] bool ReadsWidePairSrc1(const std::uint8_t opcode) {
+    switch (opcode) {
+        case 0x04:
+        case 0x05:
+        case 0x06:
+        case 0x10:
+        case 0x2f:
+        case 0x30:
+        case 0x31:
+        case 0x7d:
+        case 0x7e:
+        case 0x80:
+        case 0x84:
+        case 0x85:
+        case 0x86:
+        case 0x8a:
+        case 0x8b:
+        case 0x8c:
+            return true;
+        default:
+            break;
+    }
+    if ((opcode >= 0x9b && opcode <= 0xa5) ||
+        (opcode >= 0xab && opcode <= 0xaf) ||
+        (opcode >= 0xbb && opcode <= 0xc5) ||
+        (opcode >= 0xcb && opcode <= 0xcf)) {
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]] bool ReadsWidePairSrc2(const std::uint8_t opcode) {
+    switch (opcode) {
+        case 0x2f:
+        case 0x30:
+        case 0x31:
+            return true;
+        default:
+            break;
+    }
+    // Long/double binary ops except shifts, whose second source is cat1.
+    if ((opcode >= 0x9b && opcode <= 0xa2) ||
+        (opcode >= 0xab && opcode <= 0xaf) ||
+        (opcode >= 0xbb && opcode <= 0xc2) ||
+        (opcode >= 0xcb && opcode <= 0xcf)) {
+        return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 void DexClassLinker::PrecheckMethod(const VmMethodId id) {
@@ -133,25 +222,26 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
                         std::to_string(instruction_pc));
             }
         };
-        const bool wide_dest =
-            info.name.find("-wide") != std::string_view::npos;
-
         using gen::DexInstructionFormat;
         switch (info.format) {
             case DexInstructionFormat::k12x:
-                check_register((unit >> 8U) & 0xfU, wide_dest);
-                check_register((unit >> 12U) & 0xfU, wide_dest);
+                check_register((unit >> 8U) & 0xfU, WritesWidePair(opcode));
+                check_register((unit >> 12U) & 0xfU,
+                               ReadsWidePairSrc1(opcode));
                 break;
             case DexInstructionFormat::k22x:
-                check_register((unit >> 8U) & 0xffU, wide_dest);
-                check_register(units[instruction_pc + 1], wide_dest);
+                check_register((unit >> 8U) & 0xffU, WritesWidePair(opcode));
+                check_register(units[instruction_pc + 1],
+                               ReadsWidePairSrc1(opcode));
                 break;
             case DexInstructionFormat::k32x:
-                check_register(units[instruction_pc + 1], wide_dest);
-                check_register(units[instruction_pc + 2], wide_dest);
+                check_register(units[instruction_pc + 1],
+                               WritesWidePair(opcode));
+                check_register(units[instruction_pc + 2],
+                               ReadsWidePairSrc1(opcode));
                 break;
             case DexInstructionFormat::k11n:
-                check_register((unit >> 8U) & 0xfU, wide_dest);
+                check_register((unit >> 8U) & 0xfU, WritesWidePair(opcode));
                 break;
             case DexInstructionFormat::k11x:
             case DexInstructionFormat::k21s:
@@ -160,29 +250,66 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
             case DexInstructionFormat::k31i:
             case DexInstructionFormat::k31c:
             case DexInstructionFormat::k51l:
-                check_register((unit >> 8U) & 0xffU, wide_dest);
+                check_register((unit >> 8U) & 0xffU, WritesWidePair(opcode));
                 break;
             case DexInstructionFormat::k23x:
-                check_register((unit >> 8U) & 0xffU, wide_dest);
-                check_register(units[instruction_pc + 1] & 0xffU, false);
+                check_register((unit >> 8U) & 0xffU, WritesWidePair(opcode));
+                check_register(units[instruction_pc + 1] & 0xffU,
+                               ReadsWidePairSrc1(opcode));
                 check_register((units[instruction_pc + 1] >> 8U) & 0xffU,
-                               false);
+                               ReadsWidePairSrc2(opcode));
                 break;
             case DexInstructionFormat::k22b:
                 // AA|op CC|BB: the second unit's high byte is a signed
                 // literal, not a register (libdex/InstrUtils.cpp).
-                check_register((unit >> 8U) & 0xffU, wide_dest);
+                check_register((unit >> 8U) & 0xffU, WritesWidePair(opcode));
                 check_register(units[instruction_pc + 1] & 0xffU, false);
                 break;
             case DexInstructionFormat::k22t:
             case DexInstructionFormat::k22s:
-            case DexInstructionFormat::k22c:
                 check_register((unit >> 8U) & 0xfU, false);
+                check_register((unit >> 12U) & 0xfU, false);
+                break;
+            case DexInstructionFormat::k22c:
+                // B|A|op CCCC: A is dest/src (wide for iget-wide/iput-wide),
+                // B is the object register.
+                check_register((unit >> 8U) & 0xfU, WritesWidePair(opcode));
                 check_register((unit >> 12U) & 0xfU, false);
                 break;
             case DexInstructionFormat::k21t:
                 check_register((unit >> 8U) & 0xffU, false);
                 break;
+            case DexInstructionFormat::k35c: {
+                const auto count = (unit >> 12U) & 0xfU;
+                if (count > 5U) {
+                    throw DexVmError(
+                        DexVmErrorReason::invalid_code,
+                        where + ": 35c register count exceeds 5 at pc " +
+                            std::to_string(instruction_pc));
+                }
+                const auto listed = units[instruction_pc + 2];
+                const std::uint32_t words[5] = {
+                    listed & 0xfU,
+                    (listed >> 4U) & 0xfU,
+                    (listed >> 8U) & 0xfU,
+                    (listed >> 12U) & 0xfU,
+                    (unit >> 8U) & 0xfU,
+                };
+                for (std::uint32_t index = 0; index < count; ++index) {
+                    check_register(words[index], false);
+                }
+                break;
+            }
+            case DexInstructionFormat::k3rc: {
+                const auto count = (unit >> 8U) & 0xffU;
+                const auto first =
+                    static_cast<std::uint32_t>(units[instruction_pc + 2]);
+                if (count > 0U) {
+                    check_register(first, false);
+                    check_register(first + count - 1U, false);
+                }
+                break;
+            }
             default:
                 break;
         }

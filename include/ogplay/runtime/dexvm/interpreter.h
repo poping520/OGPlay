@@ -206,6 +206,10 @@ struct InterpreterConfig final {
     std::uint32_t max_frames{512};
     std::uint64_t tick_budget{200'000'000ULL};
     InterpreterBackend backend{InterpreterBackend::switch_dispatch};
+    // Test-only: dispatch every FastCode entry through the switch kernel
+    // Step() so the bridge path stays a regression anchor after families
+    // migrate to direct handlers.
+    bool force_all_bridge{false};
     DexVmDiagnosticsConfig diagnostics;
 };
 

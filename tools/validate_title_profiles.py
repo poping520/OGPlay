@@ -268,7 +268,7 @@ def _validate_runtime(value: Any, schema: int) -> None:
         dexvm = _table(table["dexvm"], "runtime.dexvm")
         _keys(dexvm, "runtime.dexvm",
               {"heap_budget_bytes", "gc_watermark_percent", "max_frames",
-               "ticks_per_call"}, set())
+               "ticks_per_call", "interpreter"}, set())
         if "heap_budget_bytes" in dexvm:
             _integer(dexvm["heap_budget_bytes"],
                      "runtime.dexvm.heap_budget_bytes", 1 << 20, 1 << 30)
@@ -281,6 +281,12 @@ def _validate_runtime(value: Any, schema: int) -> None:
         if "ticks_per_call" in dexvm:
             _integer(dexvm["ticks_per_call"], "runtime.dexvm.ticks_per_call",
                      1, 10_000_000_000)
+        if "interpreter" in dexvm:
+            interpreter = _string(
+                dexvm["interpreter"], "runtime.dexvm.interpreter")
+            if interpreter not in {"switch", "threaded"}:
+                raise ProfileError(
+                    "runtime.dexvm.interpreter must be switch or threaded")
     if "entry" in table:
         entry = _table(table["entry"], "runtime.entry")
         _keys(entry, "runtime.entry", {"launch_activity"},
@@ -504,6 +510,12 @@ def self_test(schema_path: Path) -> int:
         )
         valid.write_text(budgeted, encoding="utf-8", newline="\n")
         assert load_profile(valid)["runtime"]["maximum_ticks_per_call"] == 10_000_000_000
+        threaded = _valid_profile().replace(
+            '[runtime.entry]',
+            '[runtime.dexvm]\ninterpreter = "threaded"\n[runtime.entry]'
+        )
+        valid.write_text(threaded, encoding="utf-8", newline="\n")
+        assert load_profile(valid)["runtime"]["dexvm"]["interpreter"] == "threaded"
         valid.write_text(_valid_profile().replace(
             'abi = "armeabi-v7a"', 'abi = "armeabi"'
         ), encoding="utf-8", newline="\n")
@@ -554,6 +566,10 @@ def self_test(schema_path: Path) -> int:
             "text call budget": _valid_profile().replace(
                 'lifecycle = "dex_activity"',
                 'lifecycle = "dex_activity"\nmaximum_ticks_per_call = "10000000000"'
+            ),
+            "unsupported interpreter": _valid_profile().replace(
+                '[runtime.entry]',
+                '[runtime.dexvm]\ninterpreter = "jit"\n[runtime.entry]'
             ),
             "unsupported ABI": _valid_profile().replace(
                 'abi = "armeabi-v7a"', 'abi = "x86"'

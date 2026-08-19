@@ -66,10 +66,16 @@ struct ProfileRuntime final {
         : api_level(api), lifecycle(lifecycle_value), surface(surface_value) {}
 
     struct DexVm final {
+        enum class Interpreter : std::uint8_t {
+            switch_dispatch,
+            threaded,
+        };
+
         std::uint64_t heap_budget_bytes{64ULL * 1024ULL * 1024ULL};
         std::uint32_t gc_watermark_percent{75};
         std::uint32_t max_frames{512};
         std::uint64_t ticks_per_call{kDefaultMaximumTicksPerCall};
+        Interpreter interpreter{Interpreter::switch_dispatch};
     };
 
     std::uint32_t api_level{};

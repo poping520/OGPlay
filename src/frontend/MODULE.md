@@ -18,6 +18,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
   guest 路径不取决于宿主目录名。Android 4.4 的 `/storage/emulated/0` 通过 VFS
   path alias 与 `/sdcard` 共享同一 external 节点和存档 overlay。
 - `--supersample <1..4>`：显式选择内部渲染倍率，默认 1×。
+- `--dexvm-interpreter switch|threaded`：受检覆盖本次 `run-apk` 的 DexVM 后端；
+  CLI 优先于 Profile，省略时消费 Profile 的选择（Profile 也省略则为 `switch`）。
 - `--mcp` / `--mcp-port`：启动仅限本机的 MCP 服务；`--mcp-manual-step` 让 DexVM 会话
   等待 step/suspend/resume/shutdown 命令并发布原子状态。
 - `McpPointerDispatcher`：在 guest 主线程把 MCP pointer phase 映射为通用 boundary input，
@@ -37,6 +39,7 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 ## 不变量
 
 - CLI 和 GUI 共用相同 session/config/profile；生产库不得裸输出。
+- DexVM backend 的实际值与来源必须进入结构化启动日志；非法值和重复覆盖明确失败。
 - MCP HTTP 只绑定 `127.0.0.1`，拒绝非 loopback Origin、非 `/mcp`、非 JSON POST、
   chunked/unbounded body；worker 只排队，不进入 guest。
 - MCP manual-step 必须显式启用 transport，不能与 preflight 组合；无许可时不得推进 guest

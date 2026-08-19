@@ -1152,8 +1152,8 @@ note = "DVM-9..12 tagged 帧（零值放宽/wide 对完整性）、表分派全�
 
 [dexvm.interpreter_threaded]
 status = "partial"
-test = "tests/dexvm/fast_code_tests.cpp; tests/dexvm/interpreter_tests.cpp"
-note = "DVM-53..57 已交付只读 FastCode、双分派 glue 及全部 dex035 指令家族直达 handler；类型/字段/方法/数组类别与 invoke shorty 在执行锁内首执行缓存并 checked→fast，不改 DEX。双后端结果/异常/指令数/tick/trace 持平；MSVC Debug invoke 循环中位数 switch 274968 us、threaded 220322 us。stop 双表因无必要证据未采用，逐指令检查契约不变。默认仍为 switch，等待 A5/DH exact gate 与最终裁决"
+test = "tests/dexvm/fast_code_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/session/title_profile_tests.cpp; Asphalt 5 title_flow threaded exact 3/3; Dungeon Hunter bootstrap threaded gate"
+note = "DVM-53..58 已交付只读 FastCode、双分派 glue、全部 dex035 指令家族直达 handler及受检 Profile/CLI/Scenario backend 选择；解析缓存只在执行锁内 checked→fast，不改 DEX。双后端夹具语义/tick/trace 持平，A5 threaded exact 3/3 为 468/468000 与 f91150b4...；title 总 wall-time 中位数 24484 ms，对照 switch 24297 ms，无稳定收益。DH threaded 在 240047 ms wall gate 失败，switch 对照同样停在相同 Activity/SMS-network 边界；A6 按本轮边界未执行。三 gate 与收益条件未闭合，默认仍为 switch，能力诚实保持 partial"
 
 [dexvm.execution_contexts]
 status = "complete"

@@ -122,6 +122,18 @@ std::uint16_t ParseMcpPort(const std::string_view text) {
     return static_cast<std::uint16_t>(value);
 }
 
+runtime::dexvm::InterpreterBackend ParseDexVmInterpreter(
+    const std::string_view text) {
+    if (text == "switch") {
+        return runtime::dexvm::InterpreterBackend::switch_dispatch;
+    }
+    if (text == "threaded") {
+        return runtime::dexvm::InterpreterBackend::threaded;
+    }
+    throw std::invalid_argument(
+        "--dexvm-interpreter requires switch or threaded");
+}
+
 std::string FrameRateTitle(const std::string_view base, const double fps) {
     std::array<char, 32> text{};
     const auto result = std::to_chars(
@@ -273,6 +285,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     auto profiles_directory = bundled_data.profiles_directory;
     std::optional<std::uint64_t> exit_after_frames;
     std::optional<std::uint16_t> mcp_port;
+    std::optional<runtime::dexvm::InterpreterBackend> dexvm_interpreter;
     std::uint32_t supersample_factor{1};
     bool default_mcp{};
     bool mcp_manual_step{};
@@ -321,6 +334,12 @@ int RunApkCommand(const int argc, const char* const argv[],
                     "run-apk accepts --mcp-manual-step only once");
             }
             mcp_manual_step = true;
+        } else if (option == "--dexvm-interpreter" && index + 1 < argc) {
+            if (dexvm_interpreter.has_value()) {
+                throw std::invalid_argument(
+                    "run-apk accepts --dexvm-interpreter only once");
+            }
+            dexvm_interpreter = ParseDexVmInterpreter(argv[++index]);
         } else if (option == "--sandbox-dir" && index + 1 < argc) {
             const std::string_view value{argv[++index]};
             if (value.empty()) {
@@ -608,7 +627,30 @@ int RunApkCommand(const int argc, const char* const argv[],
                 profile.runtime.dexvm->max_frames;
             bridge_config.interpreter.tick_budget =
                 profile.runtime.dexvm->ticks_per_call;
+            bridge_config.interpreter.backend =
+                profile.runtime.dexvm->interpreter ==
+                        session::ProfileRuntime::DexVm::Interpreter::threaded
+                    ? runtime::dexvm::InterpreterBackend::threaded
+                    : runtime::dexvm::InterpreterBackend::switch_dispatch;
         }
+        if (dexvm_interpreter.has_value()) {
+            bridge_config.interpreter.backend = *dexvm_interpreter;
+        }
+        const std::string backend_source = dexvm_interpreter.has_value()
+                                               ? "command_line"
+                                           : profile.runtime.dexvm.has_value()
+                                               ? "profile"
+                                               : "default";
+        logger.Write(
+            core::LogLevel::info, "frontend.run_apk",
+            "DexVM interpreter selected", {},
+            {{"backend",
+              bridge_config.interpreter.backend ==
+                      runtime::dexvm::InterpreterBackend::threaded
+                  ? "threaded"
+                  : "switch"},
+             {"source", backend_source}},
+            kUnrestrictedLog);
         session::AndroidAppProcessRequest app_request;
         app_request.manifest = manifest;
         app_request.native_libraries = libraries;

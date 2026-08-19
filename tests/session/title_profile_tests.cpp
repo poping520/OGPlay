@@ -81,6 +81,21 @@ TEST_CASE("Title Profile v2 loader decodes exact identity and runtime") {
     CHECK(profile.runtime.presets.empty());
 }
 
+TEST_CASE("Title Profile v2 validates the DexVM interpreter backend") {
+    auto threaded = BaseProfile();
+    threaded += "[runtime.dexvm]\ninterpreter = \"threaded\"\n";
+    const auto profile = ogplay::session::LoadTitleProfileText(
+        threaded, "org.example.game");
+    REQUIRE(profile.runtime.dexvm.has_value());
+    CHECK(profile.runtime.dexvm->interpreter ==
+          ogplay::session::ProfileRuntime::DexVm::Interpreter::threaded);
+
+    auto invalid = BaseProfile();
+    invalid += "[runtime.dexvm]\ninterpreter = \"jit\"\n";
+    CheckRejected(invalid,
+                  "runtime.dexvm.interpreter must be switch or threaded");
+}
+
 TEST_CASE("Title Profile v2 decodes entry override and audited preset") {
     const auto profile = ogplay::session::LoadTitleProfileText(
         ScopedProfile(), "org.example.game");

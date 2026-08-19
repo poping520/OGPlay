@@ -656,7 +656,7 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
         const auto& dexvm_table = NativeAs<NativeTable>(*dexvm, "runtime.dexvm");
         NativeKeys(dexvm_table, "runtime.dexvm",
                    {"heap_budget_bytes", "gc_watermark_percent", "max_frames",
-                    "ticks_per_call"}, {});
+                    "ticks_per_call", "interpreter"}, {});
         ProfileRuntime::DexVm budget;
         if (const auto* heap = NativeOptional(dexvm_table, "heap_budget_bytes")) {
             budget.heap_budget_bytes = static_cast<std::uint64_t>(NativeInteger(
@@ -677,6 +677,21 @@ ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
             budget.ticks_per_call = static_cast<std::uint64_t>(NativeInteger(
                 *ticks, "runtime.dexvm.ticks_per_call", 1,
                 ProfileRuntime::kMaximumTicksPerCall));
+        }
+        if (const auto* interpreter =
+                NativeOptional(dexvm_table, "interpreter")) {
+            const auto value = NativeString(
+                *interpreter, "runtime.dexvm.interpreter");
+            if (value == "switch") {
+                budget.interpreter =
+                    ProfileRuntime::DexVm::Interpreter::switch_dispatch;
+            } else if (value == "threaded") {
+                budget.interpreter =
+                    ProfileRuntime::DexVm::Interpreter::threaded;
+            } else {
+                throw TitleProfileError(
+                    "runtime.dexvm.interpreter must be switch or threaded");
+            }
         }
         result.dexvm = budget;
     }

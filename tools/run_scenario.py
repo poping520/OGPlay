@@ -491,7 +491,7 @@ def _free_port() -> int:
 
 def _launch(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
             system_dir: Path, profiles: Path, evidence_dir: Path,
-            port: int) -> LaunchedSession:
+            port: int, dexvm_interpreter: str | None = None) -> LaunchedSession:
     expected = {item["id"] for item in plan.fixtures if item["required"]}
     missing = sorted(expected - fixtures.keys())
     unknown = sorted(fixtures.keys() - {item["id"] for item in plan.fixtures})
@@ -513,6 +513,8 @@ def _launch(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
         # covered by CTest, not by scenarios.
         "--ephemeral-sandbox",
     ]
+    if dexvm_interpreter is not None:
+        command.extend(["--dexvm-interpreter", dexvm_interpreter])
     external = [fixtures[item["id"]] for item in plan.fixtures
                 if item["kind"] == "external" and item["id"] in fixtures]
     if len(external) > 1:
@@ -732,6 +734,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
                         help="wipe an existing evidence directory")
     parser.add_argument("--watch", action="store_true",
                         help="incremental authoring mode (see module doc)")
+    parser.add_argument("--dexvm-interpreter", choices=("switch", "threaded"),
+                        help="override the selected profile's DexVM backend")
     return parser.parse_args(argv)
 
 
@@ -751,11 +755,12 @@ def _write_result(evidence: Path, result: ScenarioResult) -> None:
 
 def _run_once(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
               system_dir: Path, profiles: Path,
-              evidence: Path) -> ScenarioResult:
+              evidence: Path,
+              dexvm_interpreter: str | None = None) -> ScenarioResult:
     port = _free_port()
     started = time.monotonic()
     launched = _launch(plan, fixtures, ogplay, system_dir, profiles,
-                       evidence, port)
+                       evidence, port, dexvm_interpreter)
     try:
         executor = ScenarioExecutor(
             plan, McpClient(f"http://127.0.0.1:{port}/mcp"), launched.process,
@@ -771,11 +776,12 @@ class _WatchGeneration:
 
     def __init__(self, plan: ScenarioPlan, fixtures: dict[str, Path],
                  ogplay: Path, system_dir: Path, profiles: Path,
-                 evidence: Path) -> None:
+                 evidence: Path,
+                 dexvm_interpreter: str | None = None) -> None:
         self.evidence = evidence
         self.port = _free_port()
         self.launched = _launch(plan, fixtures, ogplay, system_dir, profiles,
-                                evidence, self.port)
+                                evidence, self.port, dexvm_interpreter)
         self.client = McpClient(f"http://127.0.0.1:{self.port}/mcp")
         self.executor = ScenarioExecutor(
             plan, self.client, self.launched.process, evidence,
@@ -888,7 +894,8 @@ def _run_watch(args: argparse.Namespace, fixtures: dict[str, Path],
                       f"{len(plan.checkpoints)} checkpoint(s) into "
                       f"{gen_dir}", flush=True)
                 current = _WatchGeneration(plan, fixtures, ogplay,
-                                           system_dir, profiles, gen_dir)
+                                           system_dir, profiles, gen_dir,
+                                           args.dexvm_interpreter)
                 current.execute_from(plan.checkpoints)
                 print("[watch] waiting for scenario changes "
                       "(Ctrl-C to finish)", flush=True)
@@ -953,7 +960,8 @@ def main(argv: Sequence[str]) -> int:
     if args.watch:
         return _run_watch(args, fixtures, ogplay, evidence)
     result = _run_once(plan, fixtures, ogplay, args.system_dir.resolve(),
-                       args.profiles.resolve(), evidence)
+                       args.profiles.resolve(), evidence,
+                       args.dexvm_interpreter)
     _write_result(evidence, result)
     print(result.to_json())
     return 0 if result.status == ResultStatus.PASSED.value else 1

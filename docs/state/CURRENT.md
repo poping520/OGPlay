@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-57 Threaded invoke 完成，DVM-47 gate 仍受阻
+更新：2026-08-20 · DVM-58 Threaded gate 裁决完成，默认保持 switch
 
 ## 当前阶段
 
@@ -18,7 +18,7 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48..57 已交付；DVM-47 gate 仍受阻。解释执行仍由
+- **M9 DexVM**：DVM-1..46、48..58 已交付；DVM-47 gate 仍受阻。解释执行仍由
   `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
@@ -26,60 +26,36 @@
   golden 且日志确认多轮真实回收。DVM-47 仍受阻：A6 在 GC gate 前命中 APS-4
   DT_SONAME/inventory identity 通用契约，DH 无 guest fault 但固定 step 的呈现序列
   100/97 漂移，A6 长运行因此未执行；`dexvm.gc` 诚实保持 `partial`。
-  APK class_def 现为全量注册、首次解析/实例化/调用时链接；
-  未触达 SDK 类的缺失父类/接口不再阻断进程，触达后仍明确失败或在 survey 中记账。
-  JNI class identity 仍全量发布，但 jclass global reference 改为 static native 真正出向
-  时才创建。`java.lang.Enum` intrinsic 已按 pinned libcore Enum.java 迁入 core 目录并交付
-  全表面（valueOf 直读 enum static 常量不走反射；enum `values()` 经数组
-  `Object.clone()` 浅拷贝）。`Object.clone()` 为 overridable virtual
-  intrinsic：`Cloneable` 检查对照 libcore Object.java，payload 浅拷贝对照
-  AOSP `dvmCloneObject`；数组可赋给 `Cloneable`/`Serializable`。
-  pinned libcore `java.lang` 顶层 8 个 interface 已全部进入
-  `java_lang_interfaces.cpp`（含 `Appendable`/`AutoCloseable`/`Iterable`/
-  `Readable`）；`Readable.read` 依赖尚未交付的 `java.nio.CharBuffer`，与其余
-  未实现接口方法一样显式失败。PVZ NA 已越过 222/70 类静态层级清单和全局引用容量；其首缺口
-  `COPPAActivity.isTaskRoot()Z` 已实现（Manifest launcher 为进程唯一 task 根，
-  startActivity 到达的 Activity 回答 false，handle 记账于 `task_root_activity`），
-  PVZ NA 后续缺口待下一次命中批次确认，不等同于 title 启动成功。
-  DVM-48 已把 `java.lang.Thread` 从 Android 侧表迁入 dexvm core：root/child
-  stable identity、构造期 per-VM ID、virtual `this.run()`、Runnable 转发、
-  start-once、name/priority/isAlive、interrupt、join/timed join、sleep/yield/
-  holdsLock 与 active GC roots 均闭合；`Object.wait(JI)`/join/sleep 共用注入的
-  monotonic Clock，停泊释放 execution lock。priority 不映射 host scheduler，
-  daemon 不驱动 session 退出。
-  DVM-49 统一 session `Object[]` identity/store 与 class 映射；intrinsic 状态改走
-  trace/sweep/clone 注册契约。DVM-50 为每个 Java 子线程建立独立 A32 CPU/stack、
-  Bionic TLS/thread-info、guest id、JNI attach/local frame 与可复用 teardown；native
-  frame 可安全停泊，J/D 返回读取 r0:r1。JNI MonitorEnter/Exit/detach 已委托到唯一
-  `VmMonitorTable`，jclass 与 Class object 同锁；interpreted/intrinsic/native 的实例与
-  static synchronized 方法语义闭合。跨 context `<clinit>` 会释放执行锁等待，并在
-  成功、失败或停止时唤醒重查。`dexvm.threads`/`monitors` 已推进为 `complete`。
-  DVM-51 已交付类型化 intrinsic 调用、预绑定字段与 API-19 shape/骨架工具。
-  DVM-52 已交付默认关闭、定容/采样/筛选的 `dexvm.trace` 事件环及执行锁安全点上的
-  全 context `dexvm.stack`，两者均有 schema-1 JSON 且不保存 host 指针；MCP/CLI
-  消费与异步可抢占 safepoint 仍属后续层。
-  DVM-53 已交付不改写 DEX 的只读 `FastCode` 懒缓存：预解码操作数、dex pc/内部索引、
-  受检分支目标及三类 payload 边表；`dexvm.interpreter_threaded` 已立项为 partial，
-  DVM-54 已接入显式 threaded dispatcher，当前全部 handler bridge 到原 `Step`，
-  双后端返回、异常、指令数、tick 与 trace 等价。DVM-55 已把 move/const/return/
-  goto/if/cmp/算术迁入直达 handler；MSVC Debug tight-loop 中位数从 44,712 us 降至
-  41,988 us（6.1%）。DVM-56 又把 monitor/type/分配/数组/switch/字段迁入直达
-  handler，类型/字段/数组类别首执行缓存并 checked→fast；字段循环中位数从
-  69,911 us 降至 49,538 us（29.1%）。DVM-57 已迁移全部 invoke/range：register
-  words 构建期预拼，解析方法与 shorty 首执行缓存；invoke 循环中位数从 274,968 us
-  降至 220,322 us（19.9%）。stop 双表无证据不做，逐指令检查不变；默认仍为 switch，
-  等待 A5/DH exact gate 与最终裁决。
+  APK class_def 全量注册并懒链接；未触达 SDK 层级缺口不阻断，触达后明确失败或记账。
+  API-19 `Enum`/clone/java.lang interface shape 已补齐；PVZ NA 越过静态层级与引用容量，
+  `isTaskRoot()` 使用通用 task root 事实，后续 title 缺口尚待确认。
+  DVM-48..50 已闭合 `java.lang.Thread`、统一 Object[]/class identity、每 guest Java
+  线程独立 A32/JNI/Bionic 上下文、统一 monitor/synchronized 与跨 context clinit；
+  阻塞原语释放执行锁并只用统一 Clock，`dexvm.threads`/`monitors` 为 `complete`。
+  DVM-51 已交付类型化 intrinsic、预绑定字段与 API-19 shape 工具；DVM-52 已交付默认
+  关闭的有界 `dexvm.trace` 和停界 `dexvm.stack`，MCP/CLI 消费与异步抢占仍属后续。
+  DVM-53..57 已交付不改写 DEX 的只读 `FastCode`、双后端分派及全部 dex035
+  指令家族直达 handler；类型/字段/方法/数组类别与 invoke shorty 在执行锁内
+  首执行缓存并 checked→fast，双后端夹具结果、异常、指令数、tick 与 trace 等价。
+  三类 MSVC Debug 微基准分别获益 6.1% / 29.1% / 19.9%；stop 双表无证据不做，
+  逐指令检查不变。DVM-58 已把 backend 接入受检 Profile/CLI/Scenario 链。
+  A5 threaded exact 三轮均为 468/468000、`f91150b4...`、无 fault 且 clean shutdown；
+  其 title 总 wall-time 中位数 24,484 ms，对照 switch 24,297 ms，无稳定收益。
+  DH threaded 在 240,047 ms wall gate 失败，switch 对照也停在同一 Activity
+  switch/SMS-network 边界；A6 按本轮明确测试边界未执行。因此默认切换条件不成立，
+  `dexvm.interpreter_threaded` 诚实保持 `partial`，生产默认仍为 switch。
   `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在
   装配期拒绝，VM/linker 语义不变。
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：843/843 CTest（含 DVM-52、GC-B、Profile、Scenario 与文档门禁）。
+- Windows/x64 `windows-msvc`：852/852 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 
 ## 下一步
 
-1. 通用闭合 A6 DT_SONAME identity 与 DH 呈现确定性后复验 DVM-47 长运行 gate。
+1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
+   复验 DVM-47 与 interpreter threaded title gate。
 2. Linux M9 严格出口复验。
 
 ## 阻塞与边界

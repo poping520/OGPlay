@@ -68,7 +68,8 @@
             "max_frames": { "type": "integer", "minimum": 16, "maximum": 65536 },
             "ticks_per_call": {
               "type": "integer", "minimum": 1, "maximum": 10000000000
-            }
+            },
+            "interpreter": { "enum": ["switch", "threaded"] }
           }
         },
         "entry": {

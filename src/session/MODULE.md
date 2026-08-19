@@ -72,6 +72,8 @@
 
 - Title Profile 接受 legacy schema 1/2 与 optional schema 3，统一归一到
   `dex_activity` 架构；未知 root/runtime 字段在加载期失败。
+- v1/v2 `runtime.dexvm.interpreter` 只接受 `switch`/`threaded`；省略时固定归一为
+  `switch`，Profile 只表达通用 backend 选择，不承载 title 专属解释器行为。
 - 游戏身份信息只有 Title Profile 一个来源；`src/` 不出现标题、厂商或包名分支。
 - Profile 文件为 UTF-8 纯数据且不超过 200 行；未知字段、路径逃逸、非法或歧义身份失败。
 - runtime 单次 guest call 预算省略时保持受检默认值，只接受 1..100 亿；DexVM heap、

@@ -110,6 +110,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   range 变体迁入直达 handler：构建期预拼 register words，首执行缓存解析方法与
   参数 shorty 并翻为 `invoke_fast`；动态派发仍逐次执行。异常展开、tick、trace
   与 switch 精确共源；stats 报告后端及 FastCode 构建次数/宿主字节数。
+  DVM-58 将后端选择接入受检 Profile/CLI/Scenario 链；默认仍为 `switch`。
+  exact-title gate 尚未全部闭合且 title wall-time 采样无稳定收益，因此尚不满足
+  默认切换条件。
 - `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
   `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
   `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复；可注入

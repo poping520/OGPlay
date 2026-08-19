@@ -318,6 +318,9 @@ public:
     void StepStraight(InterpreterExecutionState& execution,
                       const FastCode& code,
                       const FastInstruction& instruction);
+    void StepObject(InterpreterExecutionState& execution,
+                    const FastCode& code,
+                    const FastInstruction& instruction);
     void StepObjectOrInvoke(InterpreterExecutionState& execution, Frame& frame,
                             std::uint8_t opcode, std::uint16_t unit);
 

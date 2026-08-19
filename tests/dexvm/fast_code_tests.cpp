@@ -45,7 +45,7 @@ TEST_CASE("FastCode parses switch and array payload side tables") {
               0x0100U, 0x0001U, 0x0007U, 0x0000U, 0x0003U, 0x0000U}),
         "LFast;.packed");
     REQUIRE(packed.payloads.size() == 1);
-    CHECK(packed.instructions[0].handler == FastHandler::bridge);
+    CHECK(packed.instructions[0].handler == FastHandler::object_fast);
     CHECK(packed.payloads[0].kind == FastPayloadKind::packed_switch);
     CHECK(packed.payloads[0].keys == std::vector<std::int32_t>{7});
     CHECK(packed.payloads[0].targets == std::vector<std::uint32_t>{1});

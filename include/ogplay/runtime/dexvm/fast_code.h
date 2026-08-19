@@ -13,8 +13,10 @@ inline constexpr std::uint32_t kInvalidFastIndex = 0xffffffffU;
 enum class FastHandler : std::uint16_t {
     bridge,
     straight,
-    object,
-    invoke,
+    object_checked,
+    object_fast,
+    invoke_checked,
+    invoke_fast,
 };
 
 enum class FastPayloadKind : std::uint8_t {
@@ -24,7 +26,7 @@ enum class FastPayloadKind : std::uint8_t {
 };
 
 struct FastInstruction final {
-    FastHandler handler{FastHandler::bridge};
+    mutable FastHandler handler{FastHandler::bridge};
     std::uint8_t opcode{};
     std::uint8_t width{};
     std::uint16_t a{};
@@ -34,6 +36,8 @@ struct FastInstruction final {
     std::uint32_t dex_pc{};
     std::uint32_t branch_target{kInvalidFastIndex};
     std::uint32_t payload{kInvalidFastIndex};
+    mutable std::uint32_t resolved_id{kInvalidFastIndex};
+    mutable std::uint32_t resolved_aux{kInvalidFastIndex};
 };
 
 struct FastPayload final {

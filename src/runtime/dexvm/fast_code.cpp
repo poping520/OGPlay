@@ -187,6 +187,17 @@ void DecodeOperands(const std::vector<std::uint16_t>& units,
            (opcode >= 0x7bU && opcode <= 0xe2U);
 }
 
+[[nodiscard]] bool IsObjectOpcode(const std::uint8_t opcode) {
+    return (opcode >= 0x1dU && opcode <= 0x27U) ||
+           opcode == 0x2bU || opcode == 0x2cU ||
+           (opcode >= 0x44U && opcode <= 0x6dU);
+}
+
+[[nodiscard]] bool ObjectOpcodeNeedsResolution(const std::uint8_t opcode) {
+    return (opcode >= 0x1fU && opcode <= 0x25U) ||
+           (opcode >= 0x52U && opcode <= 0x6dU);
+}
+
 }  // namespace
 
 std::uint32_t FastCode::IndexForDexPc(const std::uint32_t dex_pc) const {
@@ -226,6 +237,13 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         instruction.dex_pc = pc;
         if (IsStraightOpcode(opcode)) {
             instruction.handler = FastHandler::straight;
+        } else if (IsObjectOpcode(opcode)) {
+            instruction.handler = ObjectOpcodeNeedsResolution(opcode)
+                                      ? FastHandler::object_checked
+                                      : FastHandler::object_fast;
+        } else if ((opcode >= 0x6eU && opcode <= 0x72U) ||
+                   (opcode >= 0x74U && opcode <= 0x78U)) {
+            instruction.handler = FastHandler::invoke_checked;
         }
         DecodeOperands(units, instruction);
         result.dex_pc_to_index[pc] =

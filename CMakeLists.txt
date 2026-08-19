@@ -420,6 +420,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/vm_threads.cpp
     src/runtime/dexvm/interp_exec.cpp
     src/runtime/dexvm/interp_threaded.cpp
+    src/runtime/dexvm/interp_threaded_object.cpp
     src/runtime/dexvm/interp_threaded_straight.cpp
     src/runtime/dexvm/interp_object.cpp
     src/runtime/dexvm/interp_arith.cpp

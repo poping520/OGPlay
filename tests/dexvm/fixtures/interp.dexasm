@@ -260,6 +260,24 @@
     return v0
 .end method
 
+.class public LFieldLoop;
+.super Ljava/lang/Object;
+
+.field static public value:I
+
+.method static public run(I)I
+.registers 4
+    const/4 v0, 0
+    sput v0, LFieldLoop;->value:I
+    :head
+    sget v1, LFieldLoop;->value:I
+    add-int/lit8 v1, v1, 1
+    sput v1, LFieldLoop;->value:I
+    if-lt v1, v3, :head
+    sget v0, LFieldLoop;->value:I
+    return v0
+.end method
+
 # Custom exception subclass thrown and caught across frames.
 .class public LMyError;
 .super Ljava/lang/Exception;

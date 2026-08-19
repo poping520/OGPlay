@@ -1153,7 +1153,7 @@ note = "DVM-9..12 tagged 帧（零值放宽/wide 对完整性）、表分派全�
 [dexvm.interpreter_threaded]
 status = "partial"
 test = "tests/dexvm/fast_code_tests.cpp; tests/dexvm/interpreter_tests.cpp"
-note = "DVM-53 交付只读 FastCode；DVM-54 接入显式 threaded 后端与全 bridge 等价锚点；DVM-55 已将 move/const/return/goto/if/cmp/算术族迁入不重复检查寄存器边界的直达 handler，tag 与异常语义复用既有 helper，双后端结果/指令数/tick/trace 持平。MSVC Debug 算术分支 tight-loop 中位数 switch 44712 us、threaded 41988 us。默认仍为 switch，对象与 invoke 家族尚未迁移"
+note = "DVM-53 交付只读 FastCode；DVM-54 接入显式 threaded 后端与全 bridge 锚点；DVM-55 迁移直线/算术族；DVM-56 迁移 monitor/type/分配/数组/switch/字段族，类型/字段/数组类别在执行锁内首执行解析并由 object_checked 翻为 object_fast，不改 DEX。双后端结果/异常/指令数/tick/trace 持平；MSVC Debug 字段循环中位数 switch 69911 us、threaded 49538 us。默认仍为 switch，invoke 尚未迁移"
 
 [dexvm.execution_contexts]
 status = "complete"

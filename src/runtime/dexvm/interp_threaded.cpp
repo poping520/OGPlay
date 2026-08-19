@@ -23,15 +23,20 @@ void Interpreter::Impl::StepThreaded(
 
 #if defined(__GNUC__) && !defined(_MSC_VER)
     static const void* const labels[] = {
-        &&bridge, &&straight, &&object, &&invoke,
+        &&bridge, &&straight, &&object_checked, &&object_fast,
+        &&invoke_checked, &&invoke_fast,
     };
     goto* labels[static_cast<std::size_t>(instruction.handler)];
 
 straight:
     StepStraight(execution, code, instruction);
     return;
-object:
-invoke:
+object_checked:
+object_fast:
+    StepObject(execution, code, instruction);
+    return;
+invoke_checked:
+invoke_fast:
 bridge:
     Step(execution);
 #else
@@ -39,9 +44,13 @@ bridge:
         case FastHandler::straight:
             StepStraight(execution, code, instruction);
             break;
+        case FastHandler::object_checked:
+        case FastHandler::object_fast:
+            StepObject(execution, code, instruction);
+            break;
         case FastHandler::bridge:
-        case FastHandler::object:
-        case FastHandler::invoke:
+        case FastHandler::invoke_checked:
+        case FastHandler::invoke_fast:
             Step(execution);
             break;
     }

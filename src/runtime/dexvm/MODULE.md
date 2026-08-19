@@ -104,8 +104,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `threaded` 经 FastCode handler 表分派，GCC/Clang 使用 computed goto，MSVC 使用
   dense switch。DVM-55 已把 move/const/return/goto/if/cmp/算术族迁入直达 handler：
   不再读取 u2 或重复检查预检已证明的寄存器边界，但保留 tag/wide-pair/zero-as-null
-  校验；算术复用唯一语义体。对象/invoke/switch 仍 bridge。异常展开、tick、trace
-  与 switch 精确共源；stats 报告后端及 FastCode 构建次数/宿主字节数。
+  校验；算术复用唯一语义体。DVM-56 已把 monitor/type/分配/数组/switch/字段迁入
+  直达 handler；类型、字段与数组元素类别在执行锁内首执行解析并将 FastCode
+  `object_checked` 翻为 `object_fast`，只改派生缓存。invoke 仍 bridge。异常展开、
+  tick、trace 与 switch 精确共源；stats 报告后端及 FastCode 构建次数/宿主字节数。
 - `VmExecutionLock`（`Interpreter::ExecutionLock()`）：全 VM 执行锁。所有
   `Call`/`EnsureClassInitialized` 入口获取，同一宿主线程可重入；阻塞原语用
   `ReleaseForBlocking`/`ReacquireAfterBlocking` 整体释放再按原深度恢复；可注入
@@ -166,8 +168,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 布局/vtable 在 `class_linker.cpp`，常量池解析与可赋值性在
 `class_linker_resolve.cpp`，方法结构预检及 `FastCode` 懒缓存入口在
 `method_precheck.cpp`，构建器位于 `fast_code.cpp`。解释器主循环在 `interpreter.cpp`，
-FastCode 分派骨架在 `interp_threaded.cpp`，直线族在
-`interp_threaded_straight.cpp`，显式执行 context
+FastCode 分派骨架在 `interp_threaded.cpp`，直线族与对象族分别在
+`interp_threaded_straight.cpp`、`interp_threaded_object.cpp`，显式执行 context
 的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
 `interpreter_context.cpp`，诊断 ring/query/JSON 在 `diagnostics.cpp`，宿主线程
 生命周期在 `vm_threads.cpp`。
@@ -220,6 +222,8 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
   `Execution()` 只允许出现在入口与冷路径（异常、诊断、native 帧标记）。
   一次活跃调用内 context 不可切换（`InterpreterExecutionScope` 强制），
   该引用因此在整个 `Run` 期间恒定。
+- FastCode 的 checked→fast 翻转只能在 `VmExecutionLock` 内发生；缓存只保存稳定
+  linker ID、数组元素类别及宿主数值边表，不保存 guest 引用/host 裸指针，GC 不感知。
 
 ## 尚未实现（记账可查）
 

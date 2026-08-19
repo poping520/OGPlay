@@ -271,6 +271,7 @@ public:
     void SetThreadRuntime(VmThreadRuntime* threads) noexcept;
     void VisitRoots(const VmRootVisitor& visitor);
     [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;
+    [[nodiscard]] GcMarkResult MarkReachable();
 
     // Helpers shared with intrinsic handlers.
     [[nodiscard]] VmObjectRef NewStringUtf8(std::string_view utf8);

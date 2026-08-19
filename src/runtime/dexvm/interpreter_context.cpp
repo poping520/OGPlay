@@ -278,6 +278,37 @@ std::size_t Interpreter::RegisteredIntrinsicSideTableCount() const noexcept {
     return 4U;
 }
 
+void Interpreter::Impl::TraceIntrinsicSideTables(
+    const VmObjectRef owner_ref, const VmRootVisitor& visitor) const {
+    if (const auto found = throwables.find(owner_ref.Value());
+        found != throwables.end()) {
+        visitor(found->second.message);
+        visitor(found->second.cause);
+    }
+    if (const auto found = lists.find(owner_ref.Value()); found != lists.end()) {
+        for (const auto element : found->second) visitor(element);
+    }
+    if (const auto found = maps.find(owner_ref.Value()); found != maps.end()) {
+        for (const auto& [key, value] : found->second) {
+            visitor(key);
+            visitor(value);
+        }
+    }
+    // builders contains UTF-16 code units only and intentionally has no edge.
+}
+
+GcMarkResult Interpreter::MarkReachable() {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    std::vector<VmObjectRef> roots;
+    VisitRoots([&](const VmObjectRef ref) {
+        if (ref.IsValid()) roots.push_back(ref);
+    });
+    return impl_->model->MarkReachable(
+        roots, [this](const VmObjectRef owner, const VmRootVisitor& visitor) {
+            impl_->TraceIntrinsicSideTables(owner, visitor);
+        });
+}
+
 std::uint32_t Interpreter::CurrentNativeDepth() const {
     return impl_->Execution().native_depth;
 }

@@ -255,6 +255,8 @@ public:
 
     // Utility: convert modified-UTF8-ish ASCII to UTF-16 and back.
     [[nodiscard]] VmObjectRef InternDexString(std::uint32_t string_index);
+    void TraceIntrinsicSideTables(VmObjectRef owner,
+                                  const VmRootVisitor& visitor) const;
 };
 
 }  // namespace ogplay::runtime::dexvm

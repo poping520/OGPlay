@@ -50,6 +50,7 @@ public:
         DexClassId java_class;
         std::uint32_t storage{};  // index into kind-specific storage
         std::uint64_t host_state{};
+        std::uint64_t reserved_bytes{};
         JniPrimitiveKind primitive_kind{JniPrimitiveKind::integer};
     };
 
@@ -202,13 +203,79 @@ void JavaObjectModel::VisitPermanentRoots(const RootVisitor& visitor) const {
     for (const auto& [_, ref] : impl_->class_objects) visitor(ref);
 }
 
+GcMarkResult JavaObjectModel::MarkReachable(
+    const std::vector<VmObjectRef>& roots,
+    const std::function<void(VmObjectRef, const RootVisitor&)>&
+        trace_host_edges) const {
+    GcMarkResult result;
+    result.marked.assign(impl_->records.size(), false);
+    std::vector<VmObjectRef> gray;
+    const RootVisitor mark = [&](const VmObjectRef ref) {
+        if (!ref.IsValid() || ref.Value() > impl_->records.size()) return;
+        const auto index = static_cast<std::size_t>(ref.Value() - 1U);
+        if (result.marked[index]) return;
+        result.marked[index] = true;
+        gray.push_back(ref);
+    };
+    for (const auto root : roots) mark(root);
+    while (!gray.empty()) {
+        const auto ref = gray.back();
+        gray.pop_back();
+        const auto& record = impl_->At(ref);
+        if (record.java_class.IsValid()) {
+            const auto class_object =
+                impl_->class_objects.find(record.java_class.Value());
+            if (class_object != impl_->class_objects.end()) {
+                mark(class_object->second);
+            }
+        }
+        switch (record.kind) {
+            case VmObjectKind::vm_instance:
+                for (const auto& slot : impl_->instance_storage[record.storage]) {
+                    if (slot.tag == SlotTag::ref) mark(VmObjectRef(slot.bits));
+                }
+                break;
+            case VmObjectKind::object_array:
+                for (const auto element :
+                     impl_->object_arrays[record.storage].elements) {
+                    mark(element);
+                }
+                break;
+            case VmObjectKind::host_backed:
+                break;
+            case VmObjectKind::string:
+            case VmObjectKind::primitive_array:
+            case VmObjectKind::class_object:
+            case VmObjectKind::external:
+                break;
+        }
+        // Registered side tables are logical instance fields. The current
+        // four owners are ordinary intrinsic/throwable instances, while the
+        // hook remains valid for future host-backed declarations as well.
+        if (trace_host_edges) trace_host_edges(ref, mark);
+    }
+    for (std::size_t index = 0; index < impl_->records.size(); ++index) {
+        const auto bytes = impl_->records[index].reserved_bytes;
+        if (result.marked[index]) {
+            ++result.live_objects;
+            result.live_bytes += bytes;
+        } else {
+            ++result.garbage_objects;
+            result.garbage_bytes += bytes;
+        }
+    }
+    return result;
+}
+
 VmObjectRef JavaObjectModel::NewInstance(const DexClassId java_class,
                                          const std::uint16_t slot_count) {
-    impl_->Reserve(32ULL + static_cast<std::uint64_t>(slot_count) * 8ULL);
+    const auto bytes = 32ULL + static_cast<std::uint64_t>(slot_count) * 8ULL;
+    impl_->Reserve(bytes);
     Impl::Record record;
     record.kind = VmObjectKind::vm_instance;
     record.identity = impl_->NextVmIdentity();
     record.java_class = java_class;
+    record.reserved_bytes = bytes;
     record.storage = static_cast<std::uint32_t>(
         impl_->instance_storage.size());
     impl_->instance_storage.emplace_back(slot_count, Slot{});
@@ -232,6 +299,7 @@ VmObjectRef JavaObjectModel::NewHostBacked(const DexClassId java_class,
     record.identity = impl_->NextVmIdentity();
     record.java_class = java_class;
     record.host_state = host_state;
+    record.reserved_bytes = 48ULL;
     return impl_->Register(std::move(record));
 }
 
@@ -255,13 +323,15 @@ void JavaObjectModel::SetHostState(const VmObjectRef ref,
 }
 
 VmObjectRef JavaObjectModel::NewString(const std::u16string_view value) {
-    impl_->Reserve(32ULL + value.size() * 2ULL);
+    const auto bytes = 32ULL + value.size() * 2ULL;
+    impl_->Reserve(bytes);
     std::vector<JniChar> units(value.begin(), value.end());
     const auto identity = impl_->strings->Create(units);
     Impl::Record record;
     record.kind = VmObjectKind::string;
     record.identity = identity;
     record.java_class = impl_->string_class;
+    record.reserved_bytes = bytes;
     return impl_->Register(std::move(record));
 }
 
@@ -291,6 +361,7 @@ void JavaObjectModel::BindString(const VmObjectRef ref,
         identity, static_cast<std::uint32_t>(ref.Value() - 1));
     record.kind = VmObjectKind::string;
     record.identity = identity;
+    record.reserved_bytes += value.size() * 2ULL;
 }
 
 std::u16string JavaObjectModel::StringValue(const VmObjectRef ref) const {
@@ -312,14 +383,16 @@ VmObjectRef JavaObjectModel::NewPrimitiveArray(const DexClassId array_class,
         Fail(DexVmErrorReason::object_model_failure,
              "primitive array length is negative");
     }
-    impl_->Reserve(32ULL + static_cast<std::uint64_t>(length) *
-                               PrimitiveWidth(kind));
+    const auto bytes = 32ULL + static_cast<std::uint64_t>(length) *
+                                  PrimitiveWidth(kind);
+    impl_->Reserve(bytes);
     const auto identity = impl_->arrays->New(kind, length);
     Impl::Record record;
     record.kind = VmObjectKind::primitive_array;
     record.identity = identity;
     record.java_class = array_class;
     record.primitive_kind = kind;
+    record.reserved_bytes = bytes;
     return impl_->Register(std::move(record));
 }
 
@@ -410,11 +483,13 @@ VmObjectRef JavaObjectModel::NewObjectArray(const DexClassId array_class,
         Fail(DexVmErrorReason::object_model_failure,
              "object array length is negative");
     }
-    impl_->Reserve(32ULL + static_cast<std::uint64_t>(length) * 4ULL);
+    const auto bytes = 32ULL + static_cast<std::uint64_t>(length) * 4ULL;
+    impl_->Reserve(bytes);
     Impl::Record record;
     record.kind = VmObjectKind::object_array;
     record.identity = impl_->NextVmIdentity();
     record.java_class = array_class;
+    record.reserved_bytes = bytes;
     record.storage =
         static_cast<std::uint32_t>(impl_->object_arrays.size());
     impl_->object_arrays.push_back(Impl::ObjectArray{
@@ -570,6 +645,7 @@ VmObjectRef JavaObjectModel::ClassObject(const DexClassId java_class) {
     record.identity = impl_->NextVmIdentity();
     record.java_class = impl_->class_class;
     record.host_state = java_class.Value();
+    record.reserved_bytes = 48ULL;
     const auto handle = impl_->Register(std::move(record));
     impl_->class_objects.emplace(java_class.Value(), handle);
     return handle;

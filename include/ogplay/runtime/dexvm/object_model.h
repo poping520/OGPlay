@@ -51,6 +51,19 @@ struct JavaObjectModelConfig final {
     std::uint64_t heap_budget_bytes{64ULL * 1024ULL * 1024ULL};
 };
 
+struct GcMarkResult final {
+    std::vector<bool> marked;
+    std::uint64_t live_bytes{};
+    std::uint64_t garbage_bytes{};
+    std::uint64_t live_objects{};
+    std::uint64_t garbage_objects{};
+
+    [[nodiscard]] bool IsMarked(VmObjectRef ref) const noexcept {
+        return ref.IsValid() && ref.Value() <= marked.size() &&
+               marked[ref.Value() - 1U];
+    }
+};
+
 class JavaObjectModel final {
 public:
     using RootVisitor = std::function<void(VmObjectRef)>;
@@ -71,6 +84,10 @@ public:
     [[nodiscard]] bool IsValidRef(VmObjectRef ref) const noexcept;
     [[nodiscard]] VmObjectRef FindIdentity(JniObjectIdentity identity) const noexcept;
     void VisitPermanentRoots(const RootVisitor& visitor) const;
+    [[nodiscard]] GcMarkResult MarkReachable(
+        const std::vector<VmObjectRef>& roots,
+        const std::function<void(VmObjectRef, const RootVisitor&)>&
+            trace_host_edges) const;
 
     [[nodiscard]] VmObjectRef NewInstance(DexClassId java_class,
                                           std::uint16_t slot_count);

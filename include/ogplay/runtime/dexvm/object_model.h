@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -52,6 +53,7 @@ struct JavaObjectModelConfig final {
 
 class JavaObjectModel final {
 public:
+    using RootVisitor = std::function<void(VmObjectRef)>;
     JavaObjectModel(JniStringStore& strings, JniPrimitiveArrayStore& arrays,
                     JavaObjectModelConfig config = {});
     ~JavaObjectModel();
@@ -67,6 +69,8 @@ public:
     [[nodiscard]] VmObjectKind Kind(VmObjectRef ref) const;
     [[nodiscard]] DexClassId ObjectClass(VmObjectRef ref) const;
     [[nodiscard]] bool IsValidRef(VmObjectRef ref) const noexcept;
+    [[nodiscard]] VmObjectRef FindIdentity(JniObjectIdentity identity) const noexcept;
+    void VisitPermanentRoots(const RootVisitor& visitor) const;
 
     [[nodiscard]] VmObjectRef NewInstance(DexClassId java_class,
                                           std::uint16_t slot_count);

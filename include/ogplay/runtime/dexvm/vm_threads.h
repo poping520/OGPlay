@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -74,6 +75,7 @@ public:
     [[nodiscard]] VmObjectRef CurrentThreadObject() const;
     [[nodiscard]] std::size_t LiveCount() const;
     [[nodiscard]] std::vector<VmThreadSnapshot> Snapshot() const;
+    void VisitThreadRoots(const std::function<void(VmObjectRef)>& visitor) const;
 
     // Teardown: request every live thread to unwind, wake every parked
     // thread, then join all host threads. Idempotent.

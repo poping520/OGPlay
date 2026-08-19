@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "interpreter_internal.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace ogplay::runtime::dexvm {
@@ -224,6 +225,57 @@ void Interpreter::UnwindStoppedExecutionContext(
 
 VmExecutionLock& Interpreter::ExecutionLock() noexcept {
     return impl_->execution_lock;
+}
+
+void Interpreter::SetGcIntegration(InterpreterGcIntegration integration) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    impl_->gc_integration = std::move(integration);
+}
+
+void Interpreter::SetThreadRuntime(VmThreadRuntime* threads) noexcept {
+    impl_->threads = threads;
+}
+
+void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
+    if (!visitor) return;
+    const std::lock_guard contexts_lock(impl_->executions_mutex);
+    for (const auto& [_, execution] : impl_->executions) {
+        for (const auto& frame : execution->frames) {
+            for (const auto& slot : frame.regs) {
+                if (slot.tag == SlotTag::ref) visitor(VmObjectRef(slot.bits));
+            }
+            if (frame.last_result.kind == VmValue::Kind::ref) {
+                visitor(frame.last_result.ref);
+            }
+            visitor(frame.caught);
+        }
+        visitor(execution->pending_exception);
+        if (execution->exit_result.kind == VmValue::Kind::ref) {
+            visitor(execution->exit_result.ref);
+        }
+    }
+    for (const auto class_id : impl_->linker->AllClasses()) {
+        const auto& linked = impl_->linker->Class(class_id);
+        for (const auto slot : linked.static_ref_slots) {
+            visitor(VmObjectRef(linked.static_storage[slot]));
+        }
+    }
+    impl_->model->VisitPermanentRoots(visitor);
+    if (impl_->gc_integration.visit_jni_roots) {
+        impl_->gc_integration.visit_jni_roots(
+            [&](const JniObjectIdentity identity) {
+                visitor(impl_->model->FindIdentity(identity));
+            });
+    }
+    if (impl_->threads != nullptr) impl_->threads->VisitThreadRoots(visitor);
+    if (impl_->gc_integration.visit_session_roots) {
+        impl_->gc_integration.visit_session_roots(visitor);
+    }
+}
+
+std::size_t Interpreter::RegisteredIntrinsicSideTableCount() const noexcept {
+    // Throwable, builder, list and map storage are the closed registered set.
+    return 4U;
 }
 
 std::uint32_t Interpreter::CurrentNativeDepth() const {

@@ -64,6 +64,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-39](DVM-39.md) | Android 启动期状态接口补齐 | 完成 |
 | [DVM-40](DVM-40.md) | java.lang Throwable hierarchy 聚合与 API 19 class shape 补齐 | 完成 |
 | [DVM-41](DVM-41.md) | java.lang primitive wrapper family 聚合与 API 19 公共接口补齐 | 完成 |
+| [DVM-42](DVM-42.md) | GC-B 根枚举与 intrinsic 侧表闭集 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

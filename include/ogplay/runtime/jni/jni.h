@@ -4,6 +4,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <memory>
 #include <span>
@@ -154,6 +155,7 @@ struct JniReferenceLimits final {
 
 class JniReferenceTable final {
 public:
+    using RootVisitor = std::function<void(JniObjectIdentity)>;
     explicit JniReferenceTable(JniReferenceLimits limits = {});
     ~JniReferenceTable();
     JniReferenceTable(const JniReferenceTable&) = delete;
@@ -186,6 +188,9 @@ public:
                                     JniReference left,
                                     JniReference right) const;
     void ClearWeakReferencesTo(JniObjectIdentity object);
+    // Enumerates strong JNI roots. Local references from every attached
+    // thread and process-global references are roots; weak globals are not.
+    void VisitRoots(const RootVisitor& visitor) const;
 
     [[nodiscard]] std::size_t LocalCount(std::uint64_t thread_id) const;
     [[nodiscard]] std::size_t GlobalCount() const;

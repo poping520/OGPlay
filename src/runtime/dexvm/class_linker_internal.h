@@ -190,10 +190,12 @@ public:
 
         // Static storage layout.
         std::uint16_t static_cursor = 0;
+        linked.static_ref_slots.clear();
         for (const auto field_id : linked.own_static_fields) {
             auto& field = FieldAt(field_id);
             if (field.is_wide && (static_cursor % 2) != 0) ++static_cursor;
             field.slot = static_cursor;
+            if (field.is_ref) linked.static_ref_slots.push_back(field.slot);
             static_cursor = static_cast<std::uint16_t>(
                 static_cursor + (field.is_wide ? 2 : 1));
             extra.field_lookup.emplace(

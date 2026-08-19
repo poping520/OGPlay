@@ -98,6 +98,8 @@ public:
     Interpreter* owner{};
     VmExecutionLock execution_lock;
     std::unique_ptr<VmMonitorTable> monitors;
+    VmThreadRuntime* threads{};
+    InterpreterGcIntegration gc_integration;
 
     [[nodiscard]] InterpreterExecutionState& Execution();
     [[nodiscard]] const InterpreterExecutionState& Execution() const;

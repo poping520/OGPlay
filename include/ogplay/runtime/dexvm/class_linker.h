@@ -116,6 +116,9 @@ struct LinkedClass final {
     ClinitState clinit_state{ClinitState::uninitialized};
     std::uint64_t clinit_thread{};
     std::vector<std::uint32_t> static_storage;  // raw slots (wide = 2)
+    // Precomputed exact reference slots. Static storage itself is untagged,
+    // so GC must derive this once from the declared field descriptors.
+    std::vector<std::uint16_t> static_ref_slots;
     std::optional<std::uint32_t> dex_class_def_index;
     IntrinsicHandler clinit_implementation;
     std::vector<IntrinsicFieldDecl> intrinsic_constants;

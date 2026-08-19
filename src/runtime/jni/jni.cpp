@@ -454,6 +454,17 @@ public:
         }
     }
 
+    void VisitRoots(const JniReferenceTable::RootVisitor& visitor) const {
+        if (!visitor) return;
+        std::scoped_lock lock(mutex_);
+        for (const auto& [_, entry] : entries_) {
+            if (entry.kind != JniReferenceKind::weak_global &&
+                entry.object.has_value()) {
+                visitor(*entry.object);
+            }
+        }
+    }
+
     [[nodiscard]] std::size_t LocalCount(const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
         const auto& thread = Thread(thread_id);
@@ -687,6 +698,10 @@ bool JniReferenceTable::IsSameObject(const std::uint64_t thread_id,
 
 void JniReferenceTable::ClearWeakReferencesTo(const JniObjectIdentity object) {
     impl_->ClearWeakReferencesTo(object);
+}
+
+void JniReferenceTable::VisitRoots(const RootVisitor& visitor) const {
+    impl_->VisitRoots(visitor);
 }
 
 std::size_t JniReferenceTable::LocalCount(const std::uint64_t thread_id) const {

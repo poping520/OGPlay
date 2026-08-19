@@ -95,6 +95,96 @@ void BindPlatformCoreHandlers(
     }
 }
 
+void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
+                              const dx::VmRootVisitor& visit) {
+    const auto root = [&](const dx::VmObjectRef ref) {
+        if (ref.IsValid()) visit(ref);
+    };
+    const auto key_root = [&](const auto& table) {
+        for (const auto& [handle, _] : table) {
+            root(dx::VmObjectRef(static_cast<std::uint32_t>(handle)));
+        }
+    };
+    root(context.activity);
+    root(context.application);
+    root(context.application_base_context);
+    root(context.renderer);
+    root(context.content_view);
+    root(context.current_intent);
+    for (const auto& [_, value] : context.singletons) root(value);
+    for (const auto& [_, values] : context.bundles) {
+        for (const auto& [__, value] : values) {
+            if (const auto* ref = std::get_if<dx::VmObjectRef>(&value)) {
+                root(*ref);
+            }
+        }
+    }
+    for (const auto& [owner, holder] : context.surface_holders) {
+        root(dx::VmObjectRef(owner));
+        root(holder);
+    }
+    for (const auto& [owner, callbacks] : context.surface_callbacks) {
+        root(dx::VmObjectRef(owner));
+        for (const auto callback : callbacks) root(callback);
+    }
+    root(context.egl.display);
+    root(context.egl.config);
+    root(context.egl.no_display);
+    root(context.egl.no_context);
+    root(context.egl.no_surface);
+    root(context.egl.window_surface);
+    root(context.egl.current_display);
+    root(context.egl.current_surface);
+    root(context.egl.current_context);
+    key_root(context.egl.contexts);
+    const auto visit_ref_map = [&](const auto& table) {
+        for (const auto& [_, ref] : table) root(ref);
+    };
+    visit_ref_map(context.view_tree_observers);
+    visit_ref_map(context.global_layout_listeners);
+    visit_ref_map(context.sax_content_handlers);
+    for (const auto& [owner, state] : context.java_threads) {
+        root(dx::VmObjectRef(owner));
+        root(state.runnable);
+    }
+    for (const auto task : context.java_thread_queue) root(task);
+    visit_ref_map(context.ui_node_to_object);
+    visit_ref_map(context.ui_click_listeners);
+    visit_ref_map(context.ui_touch_listeners);
+    visit_ref_map(context.ui_view_layout_params);
+    visit_ref_map(context.video_completion);
+    visit_ref_map(context.video_errors);
+
+    // Host side state keyed by a VM owner is logically part of that owner.
+    // Keep the owner live until the explicit close/recycle/lifecycle path
+    // removes its state; this closes the pre-GC raw-handle compatibility gap.
+    key_root(context.streams);
+    key_root(context.output_streams);
+    key_root(context.zip_streams);
+    key_root(context.preference_names);
+    key_root(context.editable_owner);
+    key_root(context.telephony_listeners);
+    key_root(context.broadcast_receivers);
+    key_root(context.bitmaps);
+    key_root(context.media_resources);
+    key_root(context.media_playing);
+    key_root(context.media_looping);
+    key_root(context.intent_components);
+    key_root(context.intent_string_extras);
+    key_root(context.intent_int_extras);
+    for (const auto& [handle, _] : context.object_to_ui_node) {
+        root(dx::VmObjectRef(static_cast<std::uint32_t>(handle)));
+    }
+    key_root(context.ui_layout_params);
+    key_root(context.ui_image_scale_types);
+    for (const auto handle : context.pending_video_completion) {
+        root(dx::VmObjectRef(static_cast<std::uint32_t>(handle)));
+    }
+    for (const auto& [handle, _] : context.video_views) {
+        root(dx::VmObjectRef(static_cast<std::uint32_t>(handle)));
+    }
+}
+
 }  // namespace
 
 class DexVmGuestBridge::Impl final {
@@ -601,6 +691,17 @@ DexVmGuestBridge::DexVmGuestBridge(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
+    impl_->vm->SetThreadRuntime(impl_->threads.get());
+    impl_->vm->SetGcIntegration(dx::InterpreterGcIntegration{
+        [&session](const std::function<void(JniObjectIdentity)>& visit) {
+            session.Environment().VisitReferenceRoots(visit);
+        },
+        [&session](const JniObjectIdentity identity) {
+            session.Environment().ClearWeakReferencesTo(identity);
+        },
+        [android_context](const dx::VmRootVisitor& visit) {
+            if (android_context) VisitAndroidSessionRoots(*android_context, visit);
+        }});
 
     impl_->RegisterDexClasses();
 }

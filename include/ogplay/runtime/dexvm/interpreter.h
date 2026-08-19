@@ -95,6 +95,7 @@ struct VmCallOutcome final {
 
 class Interpreter;
 class VmMonitorTable;
+class VmThreadRuntime;
 
 // Strong handle selecting one independent interpreter execution state. The
 // linker, object model and intrinsic catalog remain owned by Interpreter;
@@ -198,6 +199,15 @@ struct InterpreterStats final {
     std::uint64_t classes_initialized{};
 };
 
+using VmRootVisitor = std::function<void(VmObjectRef)>;
+
+struct InterpreterGcIntegration final {
+    std::function<void(const std::function<void(JniObjectIdentity)>&)>
+        visit_jni_roots;
+    std::function<void(JniObjectIdentity)> clear_weak_references;
+    std::function<void(const VmRootVisitor&)> visit_session_roots;
+};
+
 class Interpreter final {
 public:
     Interpreter(DexClassLinker& linker, JavaObjectModel& model,
@@ -254,6 +264,13 @@ public:
     [[nodiscard]] DexClassLinker& Linker() noexcept;
     [[nodiscard]] JavaObjectModel& Model() noexcept;
     [[nodiscard]] const InterpreterStats& Stats() const noexcept;
+
+    // GC root surface. The execution lock is the stop-the-world boundary;
+    // callers may inspect this deterministically while it is held.
+    void SetGcIntegration(InterpreterGcIntegration integration);
+    void SetThreadRuntime(VmThreadRuntime* threads) noexcept;
+    void VisitRoots(const VmRootVisitor& visitor);
+    [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;
 
     // Helpers shared with intrinsic handlers.
     [[nodiscard]] VmObjectRef NewStringUtf8(std::string_view utf8);

@@ -238,6 +238,15 @@ std::size_t JniEnvironment::GlobalReferenceCount() const {
     return references_.GlobalCount();
 }
 
+void JniEnvironment::VisitReferenceRoots(
+    const JniReferenceTable::RootVisitor& visitor) const {
+    references_.VisitRoots(visitor);
+}
+
+void JniEnvironment::ClearWeakReferencesTo(const JniObjectIdentity object) {
+    references_.ClearWeakReferencesTo(object);
+}
+
 JniInt JniEnvironment::GetVersion(const std::uint64_t thread_id) const {
     RequireAllowed(thread_id, "GetVersion");
     return kJniVersion1_6;

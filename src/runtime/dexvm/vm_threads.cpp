@@ -324,6 +324,16 @@ std::vector<VmThreadSnapshot> VmThreadRuntime::Snapshot() const {
     return snapshot;
 }
 
+void VmThreadRuntime::VisitThreadRoots(
+    const std::function<void(VmObjectRef)>& visitor) const {
+    if (!visitor) return;
+    const std::lock_guard guard(impl_->mutex);
+    for (const auto& [_, record] : impl_->records) {
+        visitor(record->object);
+        visitor(record->target);
+    }
+}
+
 bool VmThreadRuntime::ShuttingDown() const {
     const std::lock_guard guard(impl_->mutex);
     return impl_->shutting_down;

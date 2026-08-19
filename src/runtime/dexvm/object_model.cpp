@@ -188,6 +188,20 @@ bool JavaObjectModel::IsValidRef(const VmObjectRef ref) const noexcept {
     return ref.IsValid() && ref.Value() <= impl_->records.size();
 }
 
+VmObjectRef JavaObjectModel::FindIdentity(
+    const JniObjectIdentity identity) const noexcept {
+    const auto found = impl_->by_identity.find(identity);
+    return found == impl_->by_identity.end()
+               ? VmObjectRef{}
+               : VmObjectRef(found->second + 1U);
+}
+
+void JavaObjectModel::VisitPermanentRoots(const RootVisitor& visitor) const {
+    if (!visitor) return;
+    for (const auto& [_, ref] : impl_->intern_table) visitor(ref);
+    for (const auto& [_, ref] : impl_->class_objects) visitor(ref);
+}
+
 VmObjectRef JavaObjectModel::NewInstance(const DexClassId java_class,
                                          const std::uint16_t slot_count) {
     impl_->Reserve(32ULL + static_cast<std::uint64_t>(slot_count) * 8ULL);

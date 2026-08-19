@@ -68,6 +68,7 @@ public:
 
     // Diagnostics: how many contexts sit in the wait set of this object.
     [[nodiscard]] std::size_t WaitingCount(VmObjectRef object) const;
+    void ReleaseObjectForGc(VmObjectRef object);
 
 private:
     class Impl;

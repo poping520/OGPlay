@@ -115,4 +115,41 @@ TEST_CASE("DexVM marker traces exact object edges and intrinsic side tables") {
     CHECK(marked.garbage_objects == 1);
 }
 
+TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
+    GcVm fixture;
+    const auto survivor = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    const auto dead = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    fixture.vm.ListStorage(dead).push_back(survivor);
+    const auto dead_string = fixture.model.NewString(u"dead");
+    const auto string_identity = fixture.model.ToIdentity(dead_string);
+    const auto before = fixture.model.AllocatedBytes();
+    std::vector<JniObjectIdentity> weak_clears;
+    fixture.vm.SetGcIntegration({
+        {},
+        [&](const JniObjectIdentity identity) { weak_clears.push_back(identity); },
+        [survivor](const VmRootVisitor& visit) { visit(survivor); }});
+
+    const auto first = fixture.vm.CollectGarbage();
+    CHECK(first.freed_objects == 2);
+    CHECK(first.freed_bytes == 80);
+    CHECK(fixture.model.AllocatedBytes() == before - 80);
+    CHECK_FALSE(fixture.model.IsValidRef(dead));
+    CHECK_THROWS_AS(static_cast<void>(fixture.model.Kind(dead)), DexVmError);
+    CHECK_THROWS_AS(static_cast<void>(fixture.strings.Length(string_identity)),
+                    JniStringError);
+    CHECK(std::ranges::find(weak_clears, string_identity) != weak_clears.end());
+
+    const auto reused = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    CHECK(reused == dead_string);
+    CHECK(fixture.vm.ListStorage(reused).empty());
+    fixture.vm.SetGcIntegration(
+        {{}, {}, [survivor, reused](const VmRootVisitor& visit) {
+             visit(survivor);
+             visit(reused);
+         }});
+    const auto second = fixture.vm.CollectGarbage();
+    CHECK(second.freed_objects == 0);
+    CHECK(second.freed_bytes == 0);
+}
+
 }  // namespace

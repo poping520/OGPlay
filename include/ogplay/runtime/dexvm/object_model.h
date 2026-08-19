@@ -64,6 +64,16 @@ struct GcMarkResult final {
     }
 };
 
+struct GcSweepHooks final {
+    std::function<void(VmObjectRef, DexClassId, std::uint64_t)> before_release;
+    std::function<void(VmObjectRef, JniObjectIdentity)> release_external_state;
+};
+
+struct GcSweepResult final {
+    std::uint64_t freed_bytes{};
+    std::uint64_t freed_objects{};
+};
+
 class JavaObjectModel final {
 public:
     using RootVisitor = std::function<void(VmObjectRef)>;
@@ -88,6 +98,8 @@ public:
         const std::vector<VmObjectRef>& roots,
         const std::function<void(VmObjectRef, const RootVisitor&)>&
             trace_host_edges) const;
+    [[nodiscard]] GcSweepResult Sweep(const GcMarkResult& mark,
+                                      const GcSweepHooks& hooks);
 
     [[nodiscard]] VmObjectRef NewInstance(DexClassId java_class,
                                           std::uint16_t slot_count);

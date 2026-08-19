@@ -165,6 +165,18 @@ std::size_t VmMonitorTable::WaitingCount(const VmObjectRef object) const {
     return found->second->wait_set.size();
 }
 
+void VmMonitorTable::ReleaseObjectForGc(const VmObjectRef object) {
+    const std::lock_guard guard(impl_->mutex);
+    const auto found = impl_->monitors.find(object.Value());
+    if (found == impl_->monitors.end()) return;
+    if (found->second->owner != 0 || found->second->recursion != 0 ||
+        !found->second->wait_set.empty()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "GC reached an owned or waited-on object monitor");
+    }
+    impl_->monitors.erase(found);
+}
+
 VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
                                    const std::uint64_t owner,
                                    const std::int64_t timeout_millis) {

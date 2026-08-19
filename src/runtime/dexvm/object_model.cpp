@@ -45,6 +45,7 @@ struct IdentityHash final {
 class JavaObjectModel::Impl final {
 public:
     struct Record final {
+        bool occupied{true};
         VmObjectKind kind{VmObjectKind::external};
         JniObjectIdentity identity;
         DexClassId java_class;
@@ -64,24 +65,35 @@ public:
     JavaObjectModelConfig config;
 
     std::vector<Record> records;
+    std::vector<std::uint32_t> free_records;
     std::unordered_map<JniObjectIdentity, std::uint32_t, IdentityHash>
         by_identity;
     std::vector<std::vector<Slot>> instance_storage;
+    std::vector<std::uint32_t> free_instance_storage;
     std::vector<ObjectArray> object_arrays;
+    std::vector<std::uint32_t> free_object_arrays;
     std::unordered_map<std::u16string, VmObjectRef> intern_table;
     std::unordered_map<std::uint32_t, VmObjectRef> class_objects;
 
     DexClassId string_class;
     DexClassId class_class;
     std::uint64_t allocated_bytes{};
+    std::uint64_t object_count{};
     std::uint64_t next_vm_identity{1};
 
     [[nodiscard]] VmObjectRef Register(Record record) {
-        const auto handle =
-            VmObjectRef(static_cast<std::uint32_t>(records.size() + 1));
-        by_identity.emplace(record.identity,
-                            static_cast<std::uint32_t>(records.size()));
-        records.push_back(std::move(record));
+        std::uint32_t index{};
+        if (free_records.empty()) {
+            index = static_cast<std::uint32_t>(records.size());
+            records.push_back(std::move(record));
+        } else {
+            index = free_records.back();
+            free_records.pop_back();
+            records[index] = std::move(record);
+        }
+        const auto handle = VmObjectRef(index + 1U);
+        by_identity.emplace(records[index].identity, index);
+        ++object_count;
         return handle;
     }
 
@@ -90,14 +102,28 @@ public:
             Fail(DexVmErrorReason::object_model_failure,
                  "object reference is invalid");
         }
-        return records[ref.Value() - 1];
+        auto& record = records[ref.Value() - 1];
+        if (!record.occupied) {
+            throw DexVmError(
+                DexVmErrorReason::object_model_failure,
+                "object reference " + std::to_string(ref.Value()) +
+                    " names a reclaimed record");
+        }
+        return record;
     }
     [[nodiscard]] const Record& At(const VmObjectRef ref) const {
         if (!ref.IsValid() || ref.Value() > records.size()) {
             Fail(DexVmErrorReason::object_model_failure,
                  "object reference is invalid");
         }
-        return records[ref.Value() - 1];
+        const auto& record = records[ref.Value() - 1];
+        if (!record.occupied) {
+            throw DexVmError(
+                DexVmErrorReason::object_model_failure,
+                "object reference " + std::to_string(ref.Value()) +
+                    " names a reclaimed record");
+        }
+        return record;
     }
 
     bool emergency_reserve{};
@@ -186,7 +212,8 @@ DexClassId JavaObjectModel::ObjectClass(const VmObjectRef ref) const {
 }
 
 bool JavaObjectModel::IsValidRef(const VmObjectRef ref) const noexcept {
-    return ref.IsValid() && ref.Value() <= impl_->records.size();
+    return ref.IsValid() && ref.Value() <= impl_->records.size() &&
+           impl_->records[ref.Value() - 1U].occupied;
 }
 
 VmObjectRef JavaObjectModel::FindIdentity(
@@ -255,6 +282,7 @@ GcMarkResult JavaObjectModel::MarkReachable(
         if (trace_host_edges) trace_host_edges(ref, mark);
     }
     for (std::size_t index = 0; index < impl_->records.size(); ++index) {
+        if (!impl_->records[index].occupied) continue;
         const auto bytes = impl_->records[index].reserved_bytes;
         if (result.marked[index]) {
             ++result.live_objects;
@@ -263,6 +291,55 @@ GcMarkResult JavaObjectModel::MarkReachable(
             ++result.garbage_objects;
             result.garbage_bytes += bytes;
         }
+    }
+    return result;
+}
+
+GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
+                                     const GcSweepHooks& hooks) {
+    if (mark.marked.size() != impl_->records.size()) {
+        Fail(DexVmErrorReason::internal_invariant,
+             "GC mark bitmap does not match the object record table");
+    }
+    GcSweepResult result;
+    for (std::size_t index = 0; index < impl_->records.size(); ++index) {
+        auto& record = impl_->records[index];
+        if (!record.occupied || mark.marked[index]) continue;
+        const auto ref = VmObjectRef(static_cast<std::uint32_t>(index + 1U));
+        if (hooks.before_release) {
+            hooks.before_release(ref, record.java_class, record.host_state);
+        }
+        switch (record.kind) {
+            case VmObjectKind::string:
+                impl_->strings->Delete(record.identity);
+                break;
+            case VmObjectKind::primitive_array:
+                impl_->arrays->Delete(record.identity);
+                break;
+            case VmObjectKind::vm_instance:
+                impl_->instance_storage[record.storage].clear();
+                impl_->free_instance_storage.push_back(record.storage);
+                break;
+            case VmObjectKind::object_array:
+                impl_->object_arrays[record.storage].elements.clear();
+                impl_->object_arrays[record.storage].element_class = DexClassId(0);
+                impl_->free_object_arrays.push_back(record.storage);
+                break;
+            case VmObjectKind::host_backed:
+            case VmObjectKind::class_object:
+            case VmObjectKind::external:
+                break;
+        }
+        if (hooks.release_external_state) {
+            hooks.release_external_state(ref, record.identity);
+        }
+        impl_->by_identity.erase(record.identity);
+        result.freed_bytes += record.reserved_bytes;
+        ++result.freed_objects;
+        impl_->allocated_bytes -= record.reserved_bytes;
+        --impl_->object_count;
+        record.occupied = false;
+        impl_->free_records.push_back(static_cast<std::uint32_t>(index));
     }
     return result;
 }
@@ -276,9 +353,15 @@ VmObjectRef JavaObjectModel::NewInstance(const DexClassId java_class,
     record.identity = impl_->NextVmIdentity();
     record.java_class = java_class;
     record.reserved_bytes = bytes;
-    record.storage = static_cast<std::uint32_t>(
-        impl_->instance_storage.size());
-    impl_->instance_storage.emplace_back(slot_count, Slot{});
+    if (impl_->free_instance_storage.empty()) {
+        record.storage = static_cast<std::uint32_t>(
+            impl_->instance_storage.size());
+        impl_->instance_storage.emplace_back(slot_count, Slot{});
+    } else {
+        record.storage = impl_->free_instance_storage.back();
+        impl_->free_instance_storage.pop_back();
+        impl_->instance_storage[record.storage].assign(slot_count, Slot{});
+    }
     return impl_->Register(std::move(record));
 }
 
@@ -359,6 +442,9 @@ void JavaObjectModel::BindString(const VmObjectRef ref,
     impl_->by_identity.erase(record.identity);
     impl_->by_identity.emplace(
         identity, static_cast<std::uint32_t>(ref.Value() - 1));
+    impl_->instance_storage[record.storage].clear();
+    impl_->free_instance_storage.push_back(record.storage);
+    record.storage = 0;
     record.kind = VmObjectKind::string;
     record.identity = identity;
     record.reserved_bytes += value.size() * 2ULL;
@@ -490,11 +576,19 @@ VmObjectRef JavaObjectModel::NewObjectArray(const DexClassId array_class,
     record.identity = impl_->NextVmIdentity();
     record.java_class = array_class;
     record.reserved_bytes = bytes;
-    record.storage =
-        static_cast<std::uint32_t>(impl_->object_arrays.size());
-    impl_->object_arrays.push_back(Impl::ObjectArray{
-        element_class,
-        std::vector<VmObjectRef>(static_cast<std::size_t>(length))});
+    if (impl_->free_object_arrays.empty()) {
+        record.storage =
+            static_cast<std::uint32_t>(impl_->object_arrays.size());
+        impl_->object_arrays.push_back(Impl::ObjectArray{
+            element_class,
+            std::vector<VmObjectRef>(static_cast<std::size_t>(length))});
+    } else {
+        record.storage = impl_->free_object_arrays.back();
+        impl_->free_object_arrays.pop_back();
+        auto& reused = impl_->object_arrays[record.storage];
+        reused.element_class = element_class;
+        reused.elements.assign(static_cast<std::size_t>(length), VmObjectRef{});
+    }
     return impl_->Register(std::move(record));
 }
 
@@ -668,7 +762,7 @@ std::uint64_t JavaObjectModel::AllocatedBytes() const noexcept {
     return impl_->allocated_bytes;
 }
 std::uint64_t JavaObjectModel::ObjectCount() const noexcept {
-    return impl_->records.size();
+    return impl_->object_count;
 }
 std::uint64_t JavaObjectModel::HeapBudgetBytes() const noexcept {
     return impl_->config.heap_budget_bytes;

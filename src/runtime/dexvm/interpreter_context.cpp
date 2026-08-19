@@ -309,6 +309,31 @@ GcMarkResult Interpreter::MarkReachable() {
         });
 }
 
+GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    return impl_->model->Sweep(
+        mark,
+        GcSweepHooks{
+            [this](const VmObjectRef ref, DexClassId, std::uint64_t) {
+                impl_->throwables.erase(ref.Value());
+                impl_->builders.erase(ref.Value());
+                impl_->lists.erase(ref.Value());
+                impl_->maps.erase(ref.Value());
+                impl_->monitors->ReleaseObjectForGc(ref);
+            },
+            [this](VmObjectRef, const JniObjectIdentity identity) {
+                if (impl_->gc_integration.clear_weak_references) {
+                    impl_->gc_integration.clear_weak_references(identity);
+                }
+            }});
+}
+
+GcSweepResult Interpreter::CollectGarbage() {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    const auto mark = MarkReachable();
+    return SweepGarbage(mark);
+}
+
 std::uint32_t Interpreter::CurrentNativeDepth() const {
     return impl_->Execution().native_depth;
 }

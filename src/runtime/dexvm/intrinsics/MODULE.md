@@ -27,7 +27,9 @@ façade：声明 Java-visible fields 并负责参数校验/Java exception，生�
 execution context、parking、interrupt、sleep/join 与 identity mapping 全部委托
 `VmThreadRuntime`/`VmMonitorTable`。`start()` 必须 virtual-dispatch `this.run()`；
 基类 `run()` 才 virtual-dispatch target Runnable。纳秒在统一毫秒 Clock 上向上取整；
-priority 与 daemon 仅是明确有界的 guest fact。
+priority 与 daemon 仅是明确有界的 guest fact。七个字段通过 builder 的预绑定 handle
+访问，handler 参数与字段值统一走 `IntrinsicCall`，不得恢复逐调用 descriptor 查找和
+裸 instance slot 编解码。
 
 `java.lang.System` 的 `getProperty`/`setProperty` 与 primitive wrapper property
 API 共用每 VM 属性表；默认只发布

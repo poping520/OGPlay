@@ -182,6 +182,13 @@ void DexClassLinker::RegisterIntrinsics(
             field.is_wide = IsWideDescriptor(declared_field.descriptor);
             field.is_ref = IsRefDescriptor(declared_field.descriptor);
             const auto field_id = impl_->AddField(std::move(field));
+            if (declared_field.binding_token != 0U &&
+                !impl_->intrinsic_field_bindings
+                     .emplace(declared_field.binding_token, field_id)
+                     .second) {
+                Fail(DexVmErrorReason::internal_invariant,
+                     "duplicate intrinsic field binding token");
+            }
             (declared_field.is_static ? linked.own_static_fields
                                       : linked.own_instance_fields)
                 .push_back(field_id);
@@ -192,6 +199,16 @@ void DexClassLinker::RegisterIntrinsics(
         linked.clinit_implementation = declaration->clinit_implementation;
         linked.host_state_destructor = declaration->host_state_destructor;
     }
+}
+
+VmFieldId DexClassLinker::ResolveIntrinsicFieldBinding(
+    const std::uint64_t token) const {
+    const auto found = impl_->intrinsic_field_bindings.find(token);
+    if (token == 0U || found == impl_->intrinsic_field_bindings.end()) {
+        Fail(DexVmErrorReason::internal_invariant,
+             "intrinsic field handle is not bound to this linker");
+    }
+    return found->second;
 }
 
 void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {

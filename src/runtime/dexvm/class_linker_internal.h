@@ -59,6 +59,7 @@ public:
     std::vector<LinkedMethod> methods;
     std::vector<LinkedField> fields;
     std::unordered_map<std::string, std::uint32_t> class_by_descriptor;
+    std::unordered_map<std::uint64_t, VmFieldId> intrinsic_field_bindings;
 
     std::vector<std::uint8_t> dex_bytes;
     std::optional<loader::DexImage> image;

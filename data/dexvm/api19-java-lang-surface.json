@@ -1,0 +1,8311 @@
+{
+  "schema": 1,
+  "source": "android-4.4.4_r2.0.1",
+  "classes": [
+    {
+      "descriptor": "Ljava/lang/AbstractMethodError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IncompatibleClassChangeError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/AbstractMethodError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/AbstractStringBuilder;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "capacity",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "charAt",
+          "descriptor": "(I)C",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "codePointAt",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "codePointBefore",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "codePointCount",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "ensureCapacity",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getChars",
+          "descriptor": "(II[CI)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "indexOf",
+          "descriptor": "(Ljava/lang/String;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "indexOf",
+          "descriptor": "(Ljava/lang/String;I)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "lastIndexOf",
+          "descriptor": "(Ljava/lang/String;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "lastIndexOf",
+          "descriptor": "(Ljava/lang/String;I)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "length",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "offsetByCodePoints",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "setCharAt",
+          "descriptor": "(IC)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "setLength",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "subSequence",
+          "descriptor": "(II)Ljava/lang/CharSequence;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "substring",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "substring",
+          "descriptor": "(II)Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "trimToSize",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/AbstractStringBuilder.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Appendable;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/Appendable.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ArithmeticException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ArithmeticException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ArrayIndexOutOfBoundsException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IndexOutOfBoundsException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(II)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(III)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ArrayIndexOutOfBoundsException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ArrayStoreException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ArrayStoreException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/AssertionError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Error;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(C)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(D)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(F)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(J)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Object;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Z)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/AssertionError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/AutoCloseable;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/AutoCloseable.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Boolean;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [
+        "Ljava/io/Serializable;",
+        "Ljava/lang/Comparable;"
+      ],
+      "fields": [
+        {
+          "name": "FALSE",
+          "descriptor": "Ljava/lang/Boolean;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TRUE",
+          "descriptor": "Ljava/lang/Boolean;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Z)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "booleanValue",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "compare",
+          "descriptor": "(ZZ)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compareTo",
+          "descriptor": "(Ljava/lang/Boolean;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getBoolean",
+          "descriptor": "(Ljava/lang/String;)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "parseBoolean",
+          "descriptor": "(Ljava/lang/String;)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(Z)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Boolean;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Z)Ljava/lang/Boolean;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Boolean.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Byte;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Number;",
+      "interfaces": [
+        "Ljava/lang/Comparable;"
+      ],
+      "fields": [
+        {
+          "name": "MAX_VALUE",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_VALUE",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SIZE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(B)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "byteValue",
+          "descriptor": "()B",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "compare",
+          "descriptor": "(BB)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compareTo",
+          "descriptor": "(Ljava/lang/Byte;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "decode",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Byte;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "doubleValue",
+          "descriptor": "()D",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "floatValue",
+          "descriptor": "()F",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "intValue",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "longValue",
+          "descriptor": "()J",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "parseByte",
+          "descriptor": "(Ljava/lang/String;)B",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "parseByte",
+          "descriptor": "(Ljava/lang/String;I)B",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "shortValue",
+          "descriptor": "()S",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toHexString",
+          "descriptor": "(BZ)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(B)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(B)Ljava/lang/Byte;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Byte;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;I)Ljava/lang/Byte;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Byte.java"
+    },
+    {
+      "descriptor": "Ljava/lang/CaseMapper;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "toLowerCase",
+          "descriptor": "(Ljava/util/Locale;Ljava/lang/String;[CII)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toUpperCase",
+          "descriptor": "(Ljava/util/Locale;Ljava/lang/String;[CII)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/CaseMapper.java"
+    },
+    {
+      "descriptor": "Ljava/lang/CharSequence;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "charAt",
+          "descriptor": "(I)C",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "length",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "subSequence",
+          "descriptor": "(II)Ljava/lang/CharSequence;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/CharSequence.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Character;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [
+        "Ljava/io/Serializable;",
+        "Ljava/lang/Comparable;"
+      ],
+      "fields": [
+        {
+          "name": "COMBINING_SPACING_MARK",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "CONNECTOR_PUNCTUATION",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "CONTROL",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "CURRENCY_SYMBOL",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DASH_PUNCTUATION",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DECIMAL_DIGIT_NUMBER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_ARABIC_NUMBER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_BOUNDARY_NEUTRAL",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_COMMON_NUMBER_SEPARATOR",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_EUROPEAN_NUMBER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_EUROPEAN_NUMBER_SEPARATOR",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_EUROPEAN_NUMBER_TERMINATOR",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_LEFT_TO_RIGHT",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_NONSPACING_MARK",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_OTHER_NEUTRALS",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_PARAGRAPH_SEPARATOR",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_POP_DIRECTIONAL_FORMAT",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_RIGHT_TO_LEFT",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_SEGMENT_SEPARATOR",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_UNDEFINED",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "DIRECTIONALITY_WHITESPACE",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "ENCLOSING_MARK",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "END_PUNCTUATION",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "FINAL_QUOTE_PUNCTUATION",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "FORMAT",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "INITIAL_QUOTE_PUNCTUATION",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "LETTER_NUMBER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "LINE_SEPARATOR",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "LOWERCASE_LETTER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MATH_SYMBOL",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MAX_CODE_POINT",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MAX_HIGH_SURROGATE",
+          "descriptor": "C",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MAX_LOW_SURROGATE",
+          "descriptor": "C",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MAX_RADIX",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MAX_SURROGATE",
+          "descriptor": "C",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MAX_VALUE",
+          "descriptor": "C",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_CODE_POINT",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_HIGH_SURROGATE",
+          "descriptor": "C",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_LOW_SURROGATE",
+          "descriptor": "C",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_RADIX",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_SUPPLEMENTARY_CODE_POINT",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_SURROGATE",
+          "descriptor": "C",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_VALUE",
+          "descriptor": "C",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MODIFIER_LETTER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MODIFIER_SYMBOL",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "NON_SPACING_MARK",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "OTHER_LETTER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "OTHER_NUMBER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "OTHER_PUNCTUATION",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "OTHER_SYMBOL",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "PARAGRAPH_SEPARATOR",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "PRIVATE_USE",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SIZE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SPACE_SEPARATOR",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "START_PUNCTUATION",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SURROGATE",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TITLECASE_LETTER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "UNASSIGNED",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "UPPERCASE_LETTER",
+          "descriptor": "B",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(C)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "charCount",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "charValue",
+          "descriptor": "()C",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "codePointAt",
+          "descriptor": "(Ljava/lang/CharSequence;I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "codePointAt",
+          "descriptor": "([CI)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "codePointAt",
+          "descriptor": "([CII)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "codePointBefore",
+          "descriptor": "(Ljava/lang/CharSequence;I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "codePointBefore",
+          "descriptor": "([CI)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "codePointBefore",
+          "descriptor": "([CII)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "codePointCount",
+          "descriptor": "(Ljava/lang/CharSequence;II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "codePointCount",
+          "descriptor": "([CII)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compare",
+          "descriptor": "(CC)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compareTo",
+          "descriptor": "(Ljava/lang/Character;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "digit",
+          "descriptor": "(CI)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "digit",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "forDigit",
+          "descriptor": "(II)C",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getDirectionality",
+          "descriptor": "(C)B",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getDirectionality",
+          "descriptor": "(I)B",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getName",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getNumericValue",
+          "descriptor": "(C)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getNumericValue",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getType",
+          "descriptor": "(C)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getType",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "highSurrogate",
+          "descriptor": "(I)C",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isAlphabetic",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "isBmpCodePoint",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isDefined",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isDefined",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isDigit",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isDigit",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isHighSurrogate",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isISOControl",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isISOControl",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isIdentifierIgnorable",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isIdentifierIgnorable",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isIdeographic",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "isJavaIdentifierPart",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isJavaIdentifierPart",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isJavaIdentifierStart",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isJavaIdentifierStart",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isJavaLetter",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isJavaLetterOrDigit",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isLetter",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isLetter",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isLetterOrDigit",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isLetterOrDigit",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isLowSurrogate",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isLowerCase",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isLowerCase",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isMirrored",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isMirrored",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isSpace",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isSpaceChar",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isSpaceChar",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isSupplementaryCodePoint",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isSurrogate",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isSurrogatePair",
+          "descriptor": "(CC)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isTitleCase",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isTitleCase",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isUnicodeIdentifierPart",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isUnicodeIdentifierPart",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isUnicodeIdentifierStart",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isUnicodeIdentifierStart",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isUpperCase",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isUpperCase",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isValidCodePoint",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isWhitespace",
+          "descriptor": "(C)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isWhitespace",
+          "descriptor": "(I)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "lowSurrogate",
+          "descriptor": "(I)C",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "offsetByCodePoints",
+          "descriptor": "(Ljava/lang/CharSequence;II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "offsetByCodePoints",
+          "descriptor": "([CIIII)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "reverseBytes",
+          "descriptor": "(C)C",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toChars",
+          "descriptor": "(I)[C",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toChars",
+          "descriptor": "(I[CI)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toCodePoint",
+          "descriptor": "(CC)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toLowerCase",
+          "descriptor": "(C)C",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toLowerCase",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(C)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toTitleCase",
+          "descriptor": "(C)C",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toTitleCase",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toUpperCase",
+          "descriptor": "(C)C",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toUpperCase",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(C)Ljava/lang/Character;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Character.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ClassCastException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ClassCastException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ClassCircularityError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/LinkageError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ClassCircularityError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ClassFormatError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/LinkageError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ClassFormatError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ClassNotFoundException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/ReflectiveOperationException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getCause",
+          "descriptor": "()Ljava/lang/Throwable;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getException",
+          "descriptor": "()Ljava/lang/Throwable;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ClassNotFoundException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/CloneNotSupportedException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Exception;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/CloneNotSupportedException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Cloneable;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/Cloneable.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Comparable;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/Comparable.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Compiler;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "command",
+          "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compileClass",
+          "descriptor": "(Ljava/lang/Class;)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compileClasses",
+          "descriptor": "(Ljava/lang/String;)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "disable",
+          "descriptor": "()V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "enable",
+          "descriptor": "()V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Compiler.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Deprecated;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/Deprecated.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Double;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Number;",
+      "interfaces": [
+        "Ljava/lang/Comparable;"
+      ],
+      "fields": [
+        {
+          "name": "MAX_EXPONENT",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MAX_VALUE",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_EXPONENT",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_NORMAL",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_VALUE",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "NEGATIVE_INFINITY",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "NaN",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "POSITIVE_INFINITY",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SIZE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(D)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "byteValue",
+          "descriptor": "()B",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "compare",
+          "descriptor": "(DD)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compareTo",
+          "descriptor": "(Ljava/lang/Double;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "doubleToLongBits",
+          "descriptor": "(D)J",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "doubleToRawLongBits",
+          "descriptor": "(D)J",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "doubleValue",
+          "descriptor": "()D",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "floatValue",
+          "descriptor": "()F",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "intValue",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isInfinite",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isInfinite",
+          "descriptor": "(D)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isNaN",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isNaN",
+          "descriptor": "(D)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "longBitsToDouble",
+          "descriptor": "(J)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "longValue",
+          "descriptor": "()J",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "parseDouble",
+          "descriptor": "(Ljava/lang/String;)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "shortValue",
+          "descriptor": "()S",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toHexString",
+          "descriptor": "(D)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(D)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(D)Ljava/lang/Double;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Double;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Double.java"
+    },
+    {
+      "descriptor": "Ljava/lang/EnumConstantNotPresentException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Class;Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "constantName",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "enumType",
+          "descriptor": "()Ljava/lang/Class;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/EnumConstantNotPresentException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Error;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Throwable;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/Error.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Exception;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Throwable;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/Exception.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ExceptionInInitializerError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/LinkageError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getCause",
+          "descriptor": "()Ljava/lang/Throwable;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getException",
+          "descriptor": "()Ljava/lang/Throwable;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ExceptionInInitializerError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/FindBugsSuppressWarnings;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/FindBugsSuppressWarnings.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Float;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Number;",
+      "interfaces": [
+        "Ljava/lang/Comparable;"
+      ],
+      "fields": [
+        {
+          "name": "MAX_EXPONENT",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MAX_VALUE",
+          "descriptor": "F",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_EXPONENT",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_NORMAL",
+          "descriptor": "F",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_VALUE",
+          "descriptor": "F",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "NEGATIVE_INFINITY",
+          "descriptor": "F",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "NaN",
+          "descriptor": "F",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "POSITIVE_INFINITY",
+          "descriptor": "F",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SIZE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(D)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(F)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "byteValue",
+          "descriptor": "()B",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "compare",
+          "descriptor": "(FF)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compareTo",
+          "descriptor": "(Ljava/lang/Float;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "doubleValue",
+          "descriptor": "()D",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "floatToIntBits",
+          "descriptor": "(F)I",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "floatToRawIntBits",
+          "descriptor": "(F)I",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "floatValue",
+          "descriptor": "()F",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "intBitsToFloat",
+          "descriptor": "(I)F",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "intValue",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isInfinite",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isInfinite",
+          "descriptor": "(F)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "isNaN",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isNaN",
+          "descriptor": "(F)Z",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "longValue",
+          "descriptor": "()J",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "parseFloat",
+          "descriptor": "(Ljava/lang/String;)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "shortValue",
+          "descriptor": "()S",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toHexString",
+          "descriptor": "(F)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(F)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(F)Ljava/lang/Float;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Float;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Float.java"
+    },
+    {
+      "descriptor": "Ljava/lang/HexStringParser;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(II)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "parseDouble",
+          "descriptor": "(Ljava/lang/String;)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "parseFloat",
+          "descriptor": "(Ljava/lang/String;)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/HexStringParser.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IllegalAccessError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IncompatibleClassChangeError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/IllegalAccessError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IllegalAccessException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/ReflectiveOperationException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/IllegalAccessException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IllegalArgumentException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/IllegalArgumentException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IllegalMonitorStateException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/IllegalMonitorStateException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IllegalStateException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/IllegalStateException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IllegalThreadStateException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IllegalArgumentException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/IllegalThreadStateException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IncompatibleClassChangeError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/LinkageError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/IncompatibleClassChangeError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IndexOutOfBoundsException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/IndexOutOfBoundsException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/InheritableThreadLocal;",
+      "kind": "class",
+      "superclass": "Ljava/lang/ThreadLocal;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "childValue",
+          "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "modifiers": [
+            "protected"
+          ]
+        }
+      ],
+      "source": "java/lang/InheritableThreadLocal.java"
+    },
+    {
+      "descriptor": "Ljava/lang/InstantiationError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IncompatibleClassChangeError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/InstantiationError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/InstantiationException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/ReflectiveOperationException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/InstantiationException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Integer;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Number;",
+      "interfaces": [
+        "Ljava/lang/Comparable;"
+      ],
+      "fields": [
+        {
+          "name": "MAX_VALUE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_VALUE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SIZE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "bitCount",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "byteValue",
+          "descriptor": "()B",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "compare",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compareTo",
+          "descriptor": "(Ljava/lang/Integer;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "decode",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Integer;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "doubleValue",
+          "descriptor": "()D",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "floatValue",
+          "descriptor": "()F",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getInteger",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Integer;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getInteger",
+          "descriptor": "(Ljava/lang/String;I)Ljava/lang/Integer;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getInteger",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Integer;)Ljava/lang/Integer;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "highestOneBit",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "intValue",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "longValue",
+          "descriptor": "()J",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "lowestOneBit",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "numberOfLeadingZeros",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "numberOfTrailingZeros",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "parseInt",
+          "descriptor": "(Ljava/lang/String;)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "parseInt",
+          "descriptor": "(Ljava/lang/String;I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "reverse",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "reverseBytes",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "rotateLeft",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "rotateRight",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "shortValue",
+          "descriptor": "()S",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "signum",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toBinaryString",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toHexString",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toOctalString",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(II)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(I)Ljava/lang/Integer;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Integer;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;I)Ljava/lang/Integer;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Integer.java"
+    },
+    {
+      "descriptor": "Ljava/lang/IntegralToString;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "appendByteAsHex",
+          "descriptor": "(Ljava/lang/StringBuilder;BZ)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "appendInt",
+          "descriptor": "(Ljava/lang/AbstractStringBuilder;I)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "appendLong",
+          "descriptor": "(Ljava/lang/AbstractStringBuilder;J)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "byteToHexString",
+          "descriptor": "(BZ)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "bytesToHexString",
+          "descriptor": "([BZ)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "intToBinaryString",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "intToHexString",
+          "descriptor": "(IZI)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "intToOctalString",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "intToString",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "intToString",
+          "descriptor": "(II)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "longToBinaryString",
+          "descriptor": "(J)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "longToHexString",
+          "descriptor": "(J)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "longToOctalString",
+          "descriptor": "(J)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "longToString",
+          "descriptor": "(J)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "longToString",
+          "descriptor": "(JI)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/IntegralToString.java"
+    },
+    {
+      "descriptor": "Ljava/lang/InternalError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/VirtualMachineError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/InternalError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/InterruptedException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Exception;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/InterruptedException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Iterable;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/Iterable.java"
+    },
+    {
+      "descriptor": "Ljava/lang/LinkageError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Error;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/LinkageError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Long;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Number;",
+      "interfaces": [
+        "Ljava/lang/Comparable;"
+      ],
+      "fields": [
+        {
+          "name": "MAX_VALUE",
+          "descriptor": "J",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_VALUE",
+          "descriptor": "J",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SIZE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(J)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "bitCount",
+          "descriptor": "(J)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "byteValue",
+          "descriptor": "()B",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "compare",
+          "descriptor": "(JJ)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compareTo",
+          "descriptor": "(Ljava/lang/Long;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "decode",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Long;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "doubleValue",
+          "descriptor": "()D",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "floatValue",
+          "descriptor": "()F",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getLong",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Long;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getLong",
+          "descriptor": "(Ljava/lang/String;J)Ljava/lang/Long;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getLong",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Long;)Ljava/lang/Long;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "highestOneBit",
+          "descriptor": "(J)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "intValue",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "longValue",
+          "descriptor": "()J",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "lowestOneBit",
+          "descriptor": "(J)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "numberOfLeadingZeros",
+          "descriptor": "(J)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "numberOfTrailingZeros",
+          "descriptor": "(J)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "parseLong",
+          "descriptor": "(Ljava/lang/String;)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "parseLong",
+          "descriptor": "(Ljava/lang/String;I)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "reverse",
+          "descriptor": "(J)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "reverseBytes",
+          "descriptor": "(J)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "rotateLeft",
+          "descriptor": "(JI)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "rotateRight",
+          "descriptor": "(JI)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "shortValue",
+          "descriptor": "()S",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "signum",
+          "descriptor": "(J)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toBinaryString",
+          "descriptor": "(J)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toHexString",
+          "descriptor": "(J)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toOctalString",
+          "descriptor": "(J)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(J)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(JI)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(J)Ljava/lang/Long;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Long;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;I)Ljava/lang/Long;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Long.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Math;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [
+        {
+          "name": "E",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "PI",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "IEEEremainder",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "abs",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "abs",
+          "descriptor": "(F)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "abs",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "abs",
+          "descriptor": "(J)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "acos",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "asin",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "atan",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "atan2",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "cbrt",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "ceil",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "copySign",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "copySign",
+          "descriptor": "(FF)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "cos",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "cosh",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "exp",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "expm1",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "floor",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "getExponent",
+          "descriptor": "(D)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getExponent",
+          "descriptor": "(F)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "hypot",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "log",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "log10",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "log1p",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "max",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "max",
+          "descriptor": "(FF)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "max",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "max",
+          "descriptor": "(JJ)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "min",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "min",
+          "descriptor": "(FF)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "min",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "min",
+          "descriptor": "(JJ)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "nextAfter",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "nextAfter",
+          "descriptor": "(FD)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "nextUp",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "nextUp",
+          "descriptor": "(F)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "pow",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "random",
+          "descriptor": "()D",
+          "modifiers": [
+            "public",
+            "static",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "rint",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "round",
+          "descriptor": "(D)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "round",
+          "descriptor": "(F)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "scalb",
+          "descriptor": "(DI)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "scalb",
+          "descriptor": "(FI)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "signum",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "signum",
+          "descriptor": "(F)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "sin",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "sinh",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "sqrt",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "tan",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "tanh",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "toDegrees",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toRadians",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "ulp",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "ulp",
+          "descriptor": "(F)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Math.java"
+    },
+    {
+      "descriptor": "Ljava/lang/NegativeArraySizeException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/NegativeArraySizeException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/NoClassDefFoundError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/LinkageError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/NoClassDefFoundError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/NoSuchFieldError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IncompatibleClassChangeError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/NoSuchFieldError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/NoSuchFieldException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/ReflectiveOperationException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/NoSuchFieldException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/NoSuchMethodError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IncompatibleClassChangeError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/NoSuchMethodError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/NoSuchMethodException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/ReflectiveOperationException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/NoSuchMethodException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/NullPointerException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/NullPointerException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Number;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [
+        "Ljava/io/Serializable;"
+      ],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "byteValue",
+          "descriptor": "()B",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "doubleValue",
+          "descriptor": "()D",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "floatValue",
+          "descriptor": "()F",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "intValue",
+          "descriptor": "()I",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "longValue",
+          "descriptor": "()J",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "shortValue",
+          "descriptor": "()S",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/Number.java"
+    },
+    {
+      "descriptor": "Ljava/lang/NumberFormatException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IllegalArgumentException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/NumberFormatException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/OutOfMemoryError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/VirtualMachineError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/OutOfMemoryError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Override;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/Override.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Package;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [
+        "Ljava/lang/reflect/AnnotatedElement;"
+      ],
+      "fields": [],
+      "methods": [
+        {
+          "name": "getAnnotation",
+          "descriptor": "(Ljava/lang/Class;)Ljava/lang/Object;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getAnnotations",
+          "descriptor": "()[Ljava/lang/annotation/Annotation;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getDeclaredAnnotations",
+          "descriptor": "()[Ljava/lang/annotation/Annotation;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getImplementationTitle",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getImplementationVendor",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getImplementationVersion",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getName",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getPackage",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Package;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getPackages",
+          "descriptor": "()[Ljava/lang/Package;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getSpecificationTitle",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getSpecificationVendor",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getSpecificationVersion",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isAnnotationPresent",
+          "descriptor": "(Ljava/lang/Class;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isCompatibleWith",
+          "descriptor": "(Ljava/lang/String;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isSealed",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isSealed",
+          "descriptor": "(Ljava/net/URL;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/Package.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Process;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "destroy",
+          "descriptor": "()V",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "exitValue",
+          "descriptor": "()I",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "getErrorStream",
+          "descriptor": "()Ljava/io/InputStream;",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "getInputStream",
+          "descriptor": "()Ljava/io/InputStream;",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "getOutputStream",
+          "descriptor": "()Ljava/io/OutputStream;",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        },
+        {
+          "name": "waitFor",
+          "descriptor": "()I",
+          "modifiers": [
+            "public",
+            "abstract"
+          ]
+        }
+      ],
+      "source": "java/lang/Process.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ProcessBuilder;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/util/List;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "([Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "command",
+          "descriptor": "()Ljava/util/List;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "command",
+          "descriptor": "(Ljava/util/List;)Ljava/lang/ProcessBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "command",
+          "descriptor": "([Ljava/lang/String;)Ljava/lang/ProcessBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "directory",
+          "descriptor": "()Ljava/io/File;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "directory",
+          "descriptor": "(Ljava/io/File;)Ljava/lang/ProcessBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "environment",
+          "descriptor": "()Ljava/util/Map;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "redirectErrorStream",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "redirectErrorStream",
+          "descriptor": "(Z)Ljava/lang/ProcessBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "start",
+          "descriptor": "()Ljava/lang/Process;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ProcessBuilder.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ProcessManager;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "exec",
+          "descriptor": "([Ljava/lang/String;[Ljava/lang/String;Ljava/io/File;Z)Ljava/lang/Process;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getInstance",
+          "descriptor": "()Ljava/lang/ProcessManager;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/ProcessManager.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Readable;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/Readable.java"
+    },
+    {
+      "descriptor": "Ljava/lang/RealToString;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "appendDouble",
+          "descriptor": "(Ljava/lang/AbstractStringBuilder;D)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "appendFloat",
+          "descriptor": "(Ljava/lang/AbstractStringBuilder;F)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "convertFloat",
+          "descriptor": "(Ljava/lang/AbstractStringBuilder;F)Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "doubleToString",
+          "descriptor": "(D)Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "floatToString",
+          "descriptor": "(F)Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getInstance",
+          "descriptor": "()Ljava/lang/RealToString;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/RealToString.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ReflectiveOperationException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Exception;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ReflectiveOperationException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Runnable;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "run",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/Runnable.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Runtime;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "addShutdownHook",
+          "descriptor": "(Ljava/lang/Thread;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "availableProcessors",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "exec",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Process;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "exec",
+          "descriptor": "(Ljava/lang/String;[Ljava/lang/String;)Ljava/lang/Process;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "exec",
+          "descriptor": "(Ljava/lang/String;[Ljava/lang/String;Ljava/io/File;)Ljava/lang/Process;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "exec",
+          "descriptor": "([Ljava/lang/String;)Ljava/lang/Process;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "exec",
+          "descriptor": "([Ljava/lang/String;[Ljava/lang/String;)Ljava/lang/Process;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "exec",
+          "descriptor": "([Ljava/lang/String;[Ljava/lang/String;Ljava/io/File;)Ljava/lang/Process;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "exit",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "freeMemory",
+          "descriptor": "()J",
+          "modifiers": [
+            "public",
+            "native"
+          ]
+        },
+        {
+          "name": "gc",
+          "descriptor": "()V",
+          "modifiers": [
+            "public",
+            "native"
+          ]
+        },
+        {
+          "name": "getLocalizedInputStream",
+          "descriptor": "(Ljava/io/InputStream;)Ljava/io/InputStream;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getLocalizedOutputStream",
+          "descriptor": "(Ljava/io/OutputStream;)Ljava/io/OutputStream;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getRuntime",
+          "descriptor": "()Ljava/lang/Runtime;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "halt",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "load",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "loadLibrary",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "maxMemory",
+          "descriptor": "()J",
+          "modifiers": [
+            "public",
+            "native"
+          ]
+        },
+        {
+          "name": "removeShutdownHook",
+          "descriptor": "(Ljava/lang/Thread;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "runFinalization",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "runFinalizersOnExit",
+          "descriptor": "(Z)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "totalMemory",
+          "descriptor": "()J",
+          "modifiers": [
+            "public",
+            "native"
+          ]
+        },
+        {
+          "name": "traceInstructions",
+          "descriptor": "(Z)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "traceMethodCalls",
+          "descriptor": "(Z)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/Runtime.java"
+    },
+    {
+      "descriptor": "Ljava/lang/RuntimeException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Exception;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/RuntimeException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/RuntimePermission;",
+      "kind": "class",
+      "superclass": "Ljava/security/BasicPermission;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getActions",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "implies",
+          "descriptor": "(Ljava/security/Permission;)Z",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/RuntimePermission.java"
+    },
+    {
+      "descriptor": "Ljava/lang/SafeVarargs;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [],
+      "source": "java/lang/SafeVarargs.java"
+    },
+    {
+      "descriptor": "Ljava/lang/SecurityException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/SecurityException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/SecurityManager;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [
+        {
+          "name": "inCheck",
+          "descriptor": "Z",
+          "modifiers": [
+            "protected"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkAccept",
+          "descriptor": "(Ljava/lang/String;I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkAccess",
+          "descriptor": "(Ljava/lang/Thread;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkAccess",
+          "descriptor": "(Ljava/lang/ThreadGroup;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkAwtEventQueueAccess",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkConnect",
+          "descriptor": "(Ljava/lang/String;I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkConnect",
+          "descriptor": "(Ljava/lang/String;ILjava/lang/Object;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkCreateClassLoader",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkDelete",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkExec",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkExit",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkLink",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkListen",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkMemberAccess",
+          "descriptor": "(Ljava/lang/Class;I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkMulticast",
+          "descriptor": "(Ljava/net/InetAddress;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkMulticast",
+          "descriptor": "(Ljava/net/InetAddress;B)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkPackageAccess",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkPackageDefinition",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkPermission",
+          "descriptor": "(Ljava/security/Permission;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkPermission",
+          "descriptor": "(Ljava/security/Permission;Ljava/lang/Object;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkPrintJobAccess",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkPropertiesAccess",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkPropertyAccess",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkRead",
+          "descriptor": "(Ljava/io/FileDescriptor;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkRead",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkRead",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Object;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkSecurityAccess",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkSetFactory",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkSystemClipboardAccess",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkTopLevelWindow",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkWrite",
+          "descriptor": "(Ljava/io/FileDescriptor;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "checkWrite",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "classDepth",
+          "descriptor": "(Ljava/lang/String;)I",
+          "modifiers": [
+            "protected"
+          ]
+        },
+        {
+          "name": "classLoaderDepth",
+          "descriptor": "()I",
+          "modifiers": [
+            "protected"
+          ]
+        },
+        {
+          "name": "currentClassLoader",
+          "descriptor": "()Ljava/lang/ClassLoader;",
+          "modifiers": [
+            "protected"
+          ]
+        },
+        {
+          "name": "currentLoadedClass",
+          "descriptor": "()Ljava/lang/Class;",
+          "modifiers": [
+            "protected"
+          ]
+        },
+        {
+          "name": "getClassContext",
+          "descriptor": "()[Ljava/lang/Class;",
+          "modifiers": [
+            "protected"
+          ]
+        },
+        {
+          "name": "getInCheck",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getSecurityContext",
+          "descriptor": "()Ljava/lang/Object;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getThreadGroup",
+          "descriptor": "()Ljava/lang/ThreadGroup;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "inClass",
+          "descriptor": "(Ljava/lang/String;)Z",
+          "modifiers": [
+            "protected"
+          ]
+        },
+        {
+          "name": "inClassLoader",
+          "descriptor": "()Z",
+          "modifiers": [
+            "protected"
+          ]
+        }
+      ],
+      "source": "java/lang/SecurityManager.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Short;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Number;",
+      "interfaces": [
+        "Ljava/lang/Comparable;"
+      ],
+      "fields": [
+        {
+          "name": "MAX_VALUE",
+          "descriptor": "S",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "MIN_VALUE",
+          "descriptor": "S",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "SIZE",
+          "descriptor": "I",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(S)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "byteValue",
+          "descriptor": "()B",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "compare",
+          "descriptor": "(SS)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "compareTo",
+          "descriptor": "(Ljava/lang/Short;)I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "decode",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Short;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "doubleValue",
+          "descriptor": "()D",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "floatValue",
+          "descriptor": "()F",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "intValue",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "longValue",
+          "descriptor": "()J",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "parseShort",
+          "descriptor": "(Ljava/lang/String;)S",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "parseShort",
+          "descriptor": "(Ljava/lang/String;I)S",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "reverseBytes",
+          "descriptor": "(S)S",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "shortValue",
+          "descriptor": "()S",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "(S)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/Short;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(Ljava/lang/String;I)Ljava/lang/Short;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "valueOf",
+          "descriptor": "(S)Ljava/lang/Short;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/Short.java"
+    },
+    {
+      "descriptor": "Ljava/lang/StackOverflowError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/VirtualMachineError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/StackOverflowError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/StackTraceElement;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [
+        "Ljava/io/Serializable;"
+      ],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "equals",
+          "descriptor": "(Ljava/lang/Object;)Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getClassName",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getFileName",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getLineNumber",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getMethodName",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "hashCode",
+          "descriptor": "()I",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "isNativeMethod",
+          "descriptor": "()Z",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/StackTraceElement.java"
+    },
+    {
+      "descriptor": "Ljava/lang/StrictMath;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [
+        {
+          "name": "E",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "PI",
+          "descriptor": "D",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "IEEEremainder",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "abs",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "abs",
+          "descriptor": "(F)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "abs",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "abs",
+          "descriptor": "(J)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "acos",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "asin",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "atan",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "atan2",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "cbrt",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "ceil",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "copySign",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "copySign",
+          "descriptor": "(FF)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "cos",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "cosh",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "exp",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "expm1",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "floor",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "getExponent",
+          "descriptor": "(D)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getExponent",
+          "descriptor": "(F)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "hypot",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "log",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "log10",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "log1p",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "max",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "max",
+          "descriptor": "(FF)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "max",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "max",
+          "descriptor": "(JJ)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "min",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "min",
+          "descriptor": "(FF)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "min",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "min",
+          "descriptor": "(JJ)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "nextAfter",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "nextAfter",
+          "descriptor": "(FD)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "nextUp",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "nextUp",
+          "descriptor": "(F)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "pow",
+          "descriptor": "(DD)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "random",
+          "descriptor": "()D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "rint",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "round",
+          "descriptor": "(D)J",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "round",
+          "descriptor": "(F)I",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "scalb",
+          "descriptor": "(DI)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "scalb",
+          "descriptor": "(FI)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "signum",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "signum",
+          "descriptor": "(F)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "sin",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "sinh",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "sqrt",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "tan",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "tanh",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "toDegrees",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "toRadians",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "ulp",
+          "descriptor": "(D)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "ulp",
+          "descriptor": "(F)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/StrictMath.java"
+    },
+    {
+      "descriptor": "Ljava/lang/StringBuffer;",
+      "kind": "class",
+      "superclass": "Ljava/lang/AbstractStringBuilder;",
+      "interfaces": [
+        "Ljava/lang/Appendable;",
+        "Ljava/io/Serializable;",
+        "Ljava/lang/CharSequence;"
+      ],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/CharSequence;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(C)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(D)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(F)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(I)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(J)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/CharSequence;)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/CharSequence;II)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/Object;)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/StringBuffer;)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Z)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "([C)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "([CII)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "appendCodePoint",
+          "descriptor": "(I)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "charAt",
+          "descriptor": "(I)C",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "codePointAt",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "codePointBefore",
+          "descriptor": "(I)I",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "codePointCount",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "delete",
+          "descriptor": "(II)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "deleteCharAt",
+          "descriptor": "(I)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "ensureCapacity",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "getChars",
+          "descriptor": "(II[CI)V",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "indexOf",
+          "descriptor": "(Ljava/lang/String;I)I",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(IC)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ID)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(IF)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(II)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(IJ)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ILjava/lang/CharSequence;)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ILjava/lang/CharSequence;II)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ILjava/lang/Object;)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ILjava/lang/String;)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(IZ)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(I[C)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(I[CII)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "lastIndexOf",
+          "descriptor": "(Ljava/lang/String;I)I",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "offsetByCodePoints",
+          "descriptor": "(II)I",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "replace",
+          "descriptor": "(IILjava/lang/String;)Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "reverse",
+          "descriptor": "()Ljava/lang/StringBuffer;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "setCharAt",
+          "descriptor": "(IC)V",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "setLength",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "subSequence",
+          "descriptor": "(II)Ljava/lang/CharSequence;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "substring",
+          "descriptor": "(I)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "substring",
+          "descriptor": "(II)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        },
+        {
+          "name": "trimToSize",
+          "descriptor": "()V",
+          "modifiers": [
+            "public",
+            "synchronized"
+          ]
+        }
+      ],
+      "source": "java/lang/StringBuffer.java"
+    },
+    {
+      "descriptor": "Ljava/lang/StringBuilder;",
+      "kind": "class",
+      "superclass": "Ljava/lang/AbstractStringBuilder;",
+      "interfaces": [
+        "Ljava/lang/Appendable;",
+        "Ljava/lang/CharSequence;",
+        "Ljava/io/Serializable;"
+      ],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/CharSequence;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(C)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(D)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(F)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(I)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(J)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/CharSequence;)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/CharSequence;II)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/Object;)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Ljava/lang/StringBuffer;)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "(Z)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "([C)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "append",
+          "descriptor": "([CII)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "appendCodePoint",
+          "descriptor": "(I)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "delete",
+          "descriptor": "(II)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "deleteCharAt",
+          "descriptor": "(I)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(IC)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ID)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(IF)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(II)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(IJ)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ILjava/lang/CharSequence;)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ILjava/lang/CharSequence;II)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ILjava/lang/Object;)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(ILjava/lang/String;)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(IZ)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(I[C)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "insert",
+          "descriptor": "(I[CII)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "replace",
+          "descriptor": "(IILjava/lang/String;)Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "reverse",
+          "descriptor": "()Ljava/lang/StringBuilder;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/StringBuilder.java"
+    },
+    {
+      "descriptor": "Ljava/lang/StringIndexOutOfBoundsException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/IndexOutOfBoundsException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(II)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(III)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;I)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;II)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/StringIndexOutOfBoundsException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/StringToReal;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "parseDouble",
+          "descriptor": "(Ljava/lang/String;)D",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "parseFloat",
+          "descriptor": "(Ljava/lang/String;)F",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/StringToReal.java"
+    },
+    {
+      "descriptor": "Ljava/lang/SuppressWarnings;",
+      "kind": "interface",
+      "superclass": null,
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "value",
+          "descriptor": "()[Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/SuppressWarnings.java"
+    },
+    {
+      "descriptor": "Ljava/lang/System;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [
+        {
+          "name": "err",
+          "descriptor": "Ljava/io/PrintStream;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "in",
+          "descriptor": "Ljava/io/InputStream;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        },
+        {
+          "name": "out",
+          "descriptor": "Ljava/io/PrintStream;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "arraycopy",
+          "descriptor": "(Ljava/lang/Object;ILjava/lang/Object;II)V",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "clearProperty",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "console",
+          "descriptor": "()Ljava/io/Console;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "currentTimeMillis",
+          "descriptor": "()J",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "exit",
+          "descriptor": "(I)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "gc",
+          "descriptor": "()V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getProperties",
+          "descriptor": "()Ljava/util/Properties;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getProperty",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getProperty",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getSecurityManager",
+          "descriptor": "()Ljava/lang/SecurityManager;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getenv",
+          "descriptor": "()Ljava/util/Map;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "getenv",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "identityHashCode",
+          "descriptor": "(Ljava/lang/Object;)I",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "inheritedChannel",
+          "descriptor": "()Ljava/nio/channels/Channel;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "lineSeparator",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "load",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "loadLibrary",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "logE",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "logE",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "logI",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "logI",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "logW",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "logW",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "mapLibraryName",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "nanoTime",
+          "descriptor": "()J",
+          "modifiers": [
+            "public",
+            "static",
+            "native"
+          ]
+        },
+        {
+          "name": "runFinalization",
+          "descriptor": "()V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "runFinalizersOnExit",
+          "descriptor": "(Z)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "setErr",
+          "descriptor": "(Ljava/io/PrintStream;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "setIn",
+          "descriptor": "(Ljava/io/InputStream;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "setOut",
+          "descriptor": "(Ljava/io/PrintStream;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "setProperties",
+          "descriptor": "(Ljava/util/Properties;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "setProperty",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        },
+        {
+          "name": "setSecurityManager",
+          "descriptor": "(Ljava/lang/SecurityManager;)V",
+          "modifiers": [
+            "public",
+            "static"
+          ]
+        }
+      ],
+      "source": "java/lang/System.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ThreadDeath;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Error;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ThreadDeath.java"
+    },
+    {
+      "descriptor": "Ljava/lang/ThreadLocal;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "get",
+          "descriptor": "()Ljava/lang/Object;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "initialValue",
+          "descriptor": "()Ljava/lang/Object;",
+          "modifiers": [
+            "protected"
+          ]
+        },
+        {
+          "name": "remove",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "set",
+          "descriptor": "(Ljava/lang/Object;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/ThreadLocal.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Throwable;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [
+        "Ljava/io/Serializable;"
+      ],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;ZZ)V",
+          "modifiers": [
+            "protected"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "addSuppressed",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public",
+            "final"
+          ]
+        },
+        {
+          "name": "fillInStackTrace",
+          "descriptor": "()Ljava/lang/Throwable;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getCause",
+          "descriptor": "()Ljava/lang/Throwable;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getLocalizedMessage",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getMessage",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getStackTrace",
+          "descriptor": "()[Ljava/lang/StackTraceElement;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "getSuppressed",
+          "descriptor": "()[Ljava/lang/Throwable;",
+          "modifiers": [
+            "public",
+            "final"
+          ]
+        },
+        {
+          "name": "initCause",
+          "descriptor": "(Ljava/lang/Throwable;)Ljava/lang/Throwable;",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "printStackTrace",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "printStackTrace",
+          "descriptor": "(Ljava/io/PrintStream;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "printStackTrace",
+          "descriptor": "(Ljava/io/PrintWriter;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "setStackTrace",
+          "descriptor": "([Ljava/lang/StackTraceElement;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "toString",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/Throwable.java"
+    },
+    {
+      "descriptor": "Ljava/lang/TypeNotPresentException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "typeName",
+          "descriptor": "()Ljava/lang/String;",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/TypeNotPresentException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/UnknownError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/VirtualMachineError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/UnknownError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/UnsatisfiedLinkError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/LinkageError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/UnsatisfiedLinkError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/UnsupportedClassVersionError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/ClassFormatError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/UnsupportedClassVersionError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/UnsupportedOperationException;",
+      "kind": "class",
+      "superclass": "Ljava/lang/RuntimeException;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/Throwable;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/UnsupportedOperationException.java"
+    },
+    {
+      "descriptor": "Ljava/lang/VerifyError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/LinkageError;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/VerifyError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/VirtualMachineError;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Error;",
+      "interfaces": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "()V",
+          "modifiers": [
+            "public"
+          ]
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Ljava/lang/String;)V",
+          "modifiers": [
+            "public"
+          ]
+        }
+      ],
+      "source": "java/lang/VirtualMachineError.java"
+    },
+    {
+      "descriptor": "Ljava/lang/Void;",
+      "kind": "class",
+      "superclass": "Ljava/lang/Object;",
+      "interfaces": [],
+      "fields": [
+        {
+          "name": "TYPE",
+          "descriptor": "Ljava/lang/Class;",
+          "modifiers": [
+            "public",
+            "static",
+            "final"
+          ]
+        }
+      ],
+      "methods": [],
+      "source": "java/lang/Void.java"
+    }
+  ]
+}

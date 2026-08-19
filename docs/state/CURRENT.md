@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-50 线程 native 上下文与统一 monitor 完成，DVM-47 gate 仍受阻
+更新：2026-08-20 · DVM-51 intrinsic 开发效率底座完成，DVM-47 gate 仍受阻
 
 ## 当前阶段
 
@@ -18,7 +18,7 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48..50 已交付；DVM-47 gate 仍受阻。解释执行仍由
+- **M9 DexVM**：DVM-1..46、48..51 已交付；DVM-47 gate 仍受阻。解释执行仍由
   `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
@@ -54,6 +54,8 @@
   `VmMonitorTable`，jclass 与 Class object 同锁；interpreted/intrinsic/native 的实例与
   static synchronized 方法语义闭合。跨 context `<clinit>` 会释放执行锁等待，并在
   成功、失败或停止时唤醒重查。`dexvm.threads`/`monitors` 已推进为 `complete`。
+  DVM-51 已交付类型化 `IntrinsicCall`、linker 预绑定字段、Thread 代表迁移及 pinned
+  Luni `java.lang` 95 类 shape/骨架工具；无 guest 能力状态变化。
   `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在
   装配期拒绝，VM/linker 语义不变。
 - **兼容性基线**：Layout UI 已验收 complete；存档沙盒、GUI、intrinsic 声明迁移与
@@ -61,7 +63,7 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：836/836 CTest（含 DVM-50、GC-B、Profile、Scenario 与文档门禁）。
+- Windows/x64 `windows-msvc`：838/838 CTest（含 DVM-51、GC-B、Profile、Scenario 与文档门禁）。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 

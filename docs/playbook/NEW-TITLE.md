@@ -53,6 +53,19 @@ python tools/dexvm_stub_gen.py --gaps .local/<title>_gap.json
 `src/runtime/integration/dexvm_android/<类名>.cpp`，并把声明加入 `catalog.h` 与
 `catalog.cpp`。人工决策项不许随手桩掉——要么实现真实行为，要么保留记账失败。
 
+若缺口属于 Luni `java.lang`，先从仓库固定的 API-19 surface 生成 class shape，避免
+手抄字段和方法 descriptor：
+
+```bash
+python tools/dexvm_stub_gen.py \
+  --surface data/dexvm/api19-java-lang-surface.json \
+  --class Ljava/lang/Integer;
+```
+
+该模式使用当前 `IntrinsicClassBuilder` API，字段直接生成
+`BoundInstanceField/BoundStaticField` handle，方法默认显式未实现，待逐项绑定真实
+handler。固定清单的来源与复验命令见 `tools/README.md`。
+
 ### 步 3 · survey 运行：一次收割全部真实命中
 
 ```bash

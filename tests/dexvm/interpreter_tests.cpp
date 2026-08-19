@@ -1034,6 +1034,95 @@ TEST_CASE("dexvm intrinsic builder binds implementations without a registry") {
     CHECK(vm.interpreter.StringUtf8(name_ref) == "direct");
 }
 
+TEST_CASE("dexvm intrinsic call provides typed arguments and prebound fields") {
+    auto builder = IntrinsicClassBuilder::Class("Lbuilder/Typed;");
+    const auto count = builder.BoundInstanceField("count", "I");
+    const auto total = builder.BoundInstanceField("total", "J");
+    const auto ratio = builder.BoundInstanceField("ratio", "F");
+    const auto score = builder.BoundInstanceField("score", "D");
+    const auto name = builder.BoundInstanceField(
+        "name", "Ljava/lang/String;");
+    const auto calls = builder.BoundStaticField("calls", "I");
+
+    builder.Constructor("(IJFDLjava/lang/String;)V",
+        [=](IntrinsicContext& context) {
+            const IntrinsicCall call(context);
+            call.SetInt(count, call.Int(0));
+            call.SetLong(total, call.Long(1));
+            call.SetFloat(ratio, call.Float(2));
+            call.SetDouble(score, call.Double(3));
+            call.SetRef(name, call.NonNullRef(4, "name"));
+            return VmValue::Void();
+        })
+        .VirtualMethod("value", "()D", [=](IntrinsicContext& context) {
+            const IntrinsicCall call(context);
+            return VmValue::Double(
+                static_cast<double>(call.GetInt(count)) +
+                static_cast<double>(call.GetLong(total)) +
+                static_cast<double>(call.GetFloat(ratio)) +
+                call.GetDouble(score));
+        })
+        .VirtualMethod("name", "()Ljava/lang/String;",
+            [=](IntrinsicContext& context) {
+                const IntrinsicCall call(context);
+                return VmValue::Ref(call.GetRef(name));
+            })
+        .StaticMethod("countOf", "(Lbuilder/Typed;)I",
+            [=](IntrinsicContext& context) {
+                const IntrinsicCall call(context);
+                return VmValue::Int(call.GetInt(count, call.NonNullRef(0, "value")));
+            })
+        .StaticMethod("bump", "()I", [=](IntrinsicContext& context) {
+            const IntrinsicCall call(context);
+            const auto next = call.GetInt(calls) + 1;
+            call.SetInt(calls, next);
+            return VmValue::Int(next);
+        });
+
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(builder).Build());
+    IntrinsicVm vm(std::move(catalog));
+    const auto object = vm.interpreter.NewIntrinsicInstance("Lbuilder/Typed;");
+    const auto string = vm.interpreter.NewStringUtf8("typed");
+    const auto constructed = vm.interpreter.Call(
+        vm.Static("Lbuilder/Typed;", "<init>",
+                  "(IJFDLjava/lang/String;)V"),
+        std::vector<VmValue>{
+            VmValue::Ref(object), VmValue::Int(3), VmValue::Long(5),
+            VmValue::Float(1.25F), VmValue::Double(2.5), VmValue::Ref(string)});
+    CHECK_FALSE(constructed.exception.IsValid());
+
+    const auto java_class = vm.linker.FindClass("Lbuilder/Typed;");
+    REQUIRE(java_class.has_value());
+    const auto value_index = vm.linker.FindVtableIndex(*java_class, "value", "()D");
+    REQUIRE(value_index.has_value());
+    const auto value = vm.interpreter.Call(
+        vm.linker.Class(*java_class).vtable[*value_index],
+        std::vector<VmValue>{VmValue::Ref(object)});
+    REQUIRE_FALSE(value.exception.IsValid());
+    CHECK(value.value.AsDouble() == doctest::Approx(11.75));
+
+    const auto name_index = vm.linker.FindVtableIndex(
+        *java_class, "name", "()Ljava/lang/String;");
+    REQUIRE(name_index.has_value());
+    const auto read_name = vm.interpreter.Call(
+        vm.linker.Class(*java_class).vtable[*name_index],
+        std::vector<VmValue>{VmValue::Ref(object)});
+    REQUIRE_FALSE(read_name.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(read_name.value.ref) == "typed");
+
+    ExpectInt(vm.interpreter.Call(
+                  vm.Static("Lbuilder/Typed;", "countOf", "(Lbuilder/Typed;)I"),
+                  std::vector<VmValue>{VmValue::Ref(object)}),
+              3);
+    const auto null_value = vm.interpreter.Call(
+        vm.Static("Lbuilder/Typed;", "countOf", "(Lbuilder/Typed;)I"),
+        std::vector<VmValue>{VmValue::Ref(VmObjectRef{})});
+    ExpectException(vm, null_value, "Ljava/lang/NullPointerException;");
+    ExpectInt(vm.interpreter.Call(vm.Static("Lbuilder/Typed;", "bump", "()I"), {}), 1);
+    ExpectInt(vm.interpreter.Call(vm.Static("Lbuilder/Typed;", "bump", "()I"), {}), 2);
+}
+
 TEST_CASE("dexvm class initialization waits across execution contexts") {
     std::mutex gate_mutex;
     std::condition_variable gate_changed;

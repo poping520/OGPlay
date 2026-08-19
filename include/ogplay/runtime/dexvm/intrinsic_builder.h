@@ -3,11 +3,79 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "ogplay/runtime/dexvm/class_linker.h"
 
 namespace ogplay::runtime::dexvm {
+    class Interpreter;
+
+    // Stable declaration token resolved to a VmFieldId by each linker that
+    // consumes the catalog. Handlers capture this value instead of repeating
+    // owner/name/descriptor lookups or touching raw field slots.
+    class IntrinsicFieldHandle final {
+    public:
+        [[nodiscard]] bool IsValid() const noexcept { return token_ != 0U; }
+
+    private:
+        explicit IntrinsicFieldHandle(std::uint64_t token) : token_(token) {}
+        std::uint64_t token_{};
+        friend class IntrinsicCall;
+        friend class IntrinsicClassBuilder;
+    };
+
+    // Typed façade for intrinsic handlers. Descriptor mismatches are VM
+    // invariants; NonNullRef reports the Java-visible null contract.
+    class IntrinsicCall final {
+    public:
+        explicit IntrinsicCall(IntrinsicContext& context) : context_(&context) {}
+
+        [[nodiscard]] Interpreter& Vm() const noexcept;
+        [[nodiscard]] VmObjectRef Receiver() const;
+        [[nodiscard]] std::int32_t Int(std::size_t index) const;
+        [[nodiscard]] std::int64_t Long(std::size_t index) const;
+        [[nodiscard]] float Float(std::size_t index) const;
+        [[nodiscard]] double Double(std::size_t index) const;
+        [[nodiscard]] VmObjectRef Ref(std::size_t index) const;
+        [[nodiscard]] VmObjectRef NonNullRef(
+            std::size_t index, std::string_view parameter) const;
+
+        [[nodiscard]] std::int32_t GetInt(IntrinsicFieldHandle field) const;
+        [[nodiscard]] std::int32_t GetInt(IntrinsicFieldHandle field,
+                                          VmObjectRef object) const;
+        void SetInt(IntrinsicFieldHandle field, std::int32_t value) const;
+        void SetInt(IntrinsicFieldHandle field, VmObjectRef object,
+                    std::int32_t value) const;
+        [[nodiscard]] std::int64_t GetLong(IntrinsicFieldHandle field) const;
+        [[nodiscard]] std::int64_t GetLong(IntrinsicFieldHandle field,
+                                           VmObjectRef object) const;
+        void SetLong(IntrinsicFieldHandle field, std::int64_t value) const;
+        void SetLong(IntrinsicFieldHandle field, VmObjectRef object,
+                     std::int64_t value) const;
+        [[nodiscard]] float GetFloat(IntrinsicFieldHandle field) const;
+        [[nodiscard]] float GetFloat(IntrinsicFieldHandle field,
+                                     VmObjectRef object) const;
+        void SetFloat(IntrinsicFieldHandle field, float value) const;
+        void SetFloat(IntrinsicFieldHandle field, VmObjectRef object,
+                      float value) const;
+        [[nodiscard]] double GetDouble(IntrinsicFieldHandle field) const;
+        [[nodiscard]] double GetDouble(IntrinsicFieldHandle field,
+                                       VmObjectRef object) const;
+        void SetDouble(IntrinsicFieldHandle field, double value) const;
+        void SetDouble(IntrinsicFieldHandle field, VmObjectRef object,
+                       double value) const;
+        [[nodiscard]] VmObjectRef GetRef(IntrinsicFieldHandle field) const;
+        [[nodiscard]] VmObjectRef GetRef(IntrinsicFieldHandle field,
+                                         VmObjectRef object) const;
+        void SetRef(IntrinsicFieldHandle field, VmObjectRef value) const;
+        void SetRef(IntrinsicFieldHandle field, VmObjectRef object,
+                    VmObjectRef value) const;
+
+    private:
+        IntrinsicContext* context_{};
+    };
+
     class IntrinsicClassBuilder final {
     public:
 
@@ -56,6 +124,12 @@ namespace ogplay::runtime::dexvm {
         IntrinsicClassBuilder& StaticField(std::string name,
                                            std::string descriptor);
 
+        [[nodiscard]] IntrinsicFieldHandle BoundInstanceField(
+            std::string name, std::string descriptor);
+
+        [[nodiscard]] IntrinsicFieldHandle BoundStaticField(
+            std::string name, std::string descriptor);
+
         IntrinsicClassBuilder& ConstantInt(std::string name, std::string descriptor, std::int64_t value);
 
         IntrinsicClassBuilder& ConstantString(std::string name, std::string value);
@@ -94,6 +168,9 @@ namespace ogplay::runtime::dexvm {
         IntrinsicClassBuilder& Field(std::string name,
                                      std::string descriptor,
                                      FieldType type);
+
+        [[nodiscard]] IntrinsicFieldHandle BoundField(
+            std::string name, std::string descriptor, FieldType type);
 
         IntrinsicClassDecl declaration_;
     };

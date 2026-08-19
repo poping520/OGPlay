@@ -59,7 +59,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   未实现方法经 `UnimplementedStatic/Constructor/Virtual/Final` 显式进入
   miss/记账路径。`Build()` 在装配期校验类/方法/字段 descriptor（构造器必须
   返回 void、普通方法不得用 `<init>`/`<clinit>` 保留名）、重复成员、interface
-  实例字段与整型常量的类型/范围。
+  实例字段与整型常量的类型/范围。`BoundInstanceField/BoundStaticField` 产生声明
+  token，由每个 linker 在注册时预绑定到自己的 `VmFieldId`；`IntrinsicCall` 为
+  handler 提供受检的类型化参数、receiver 与 primitive/reference 字段读写，禁止
+  handler 重复按字符串查字段或直接读写裸 slot。
 - `JavaObjectModel`：session 级统一对象身份（VmObjectRef 句柄空间，0=null）。
   VM 实例与对象数组自有存储；字符串与基元数组委托注入的
   `JniStringStore`/`JniPrimitiveArrayStore`——native 与解释器看到同一对象。
@@ -154,7 +157,9 @@ family 与接口 family，分别位于 `intrinsics/java_lang_throwables.cpp`、
 family 内类级 `Declare_*()` 均为 TU-private，catalog 只调用对应 `Append*()`。
 family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自注册。
 `shared.h` 只放跨类内部 helper。原集中式 core catalog 与三个 handler 文件已
-删除。
+删除。pinned Luni `java.lang` 的确定性 public/protected 顶层 class shape 位于
+`data/dexvm/api19-java-lang-surface.json`；用 `tools/dexvm_api19_surface.py` 从本地
+API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成当前 builder 骨架。
 
 ## 不变量
 

@@ -51,6 +51,10 @@ struct IntrinsicFieldDecl final {
     bool has_constant{};
     std::int64_t integral{};
     std::string string_value;
+    // Non-zero only for fields declared through the bound-field builder API.
+    // The linker publishes the final VmFieldId into its per-VM binding table;
+    // handlers retain only this stable declaration token.
+    std::uint64_t binding_token{};
 };
 
 struct IntrinsicClassDecl final {
@@ -171,6 +175,8 @@ public:
     [[nodiscard]] const LinkedMethod& Method(VmMethodId id) const;
     [[nodiscard]] LinkedMethod& MutableMethod(VmMethodId id);
     [[nodiscard]] const LinkedField& Field(VmFieldId id) const;
+    [[nodiscard]] VmFieldId ResolveIntrinsicFieldBinding(
+        std::uint64_t token) const;
 
     // Constant-pool resolution against the registered dex (cached).
     [[nodiscard]] DexClassId ResolveTypeIndex(std::uint32_t type_index);

@@ -16,98 +16,33 @@
 
 namespace ogplay::runtime::dexvm::intrinsics {
     namespace {
-        [[nodiscard]] const LinkedField& ThreadField(
-            Interpreter& vm, const VmObjectRef object, const std::string_view name,
-            const std::string_view descriptor) {
-            const auto java_class = vm.Model().ObjectClass(object);
-            const auto field = vm.Linker().FindFieldRecursive(java_class, std::string(name), std::string(descriptor));
-            if (!field.has_value()) {
-                throw DexVmError(DexVmErrorReason::internal_invariant, "Thread field is missing: " + std::string(name));
-            }
-            return vm.Linker().Field(*field);
-        }
+        struct ThreadFields final {
+            IntrinsicFieldHandle target;
+            IntrinsicFieldHandle name;
+            IntrinsicFieldHandle priority;
+            IntrinsicFieldHandle daemon;
+            IntrinsicFieldHandle stack_size;
+            IntrinsicFieldHandle id;
+            IntrinsicFieldHandle has_been_started;
+        };
 
-        [[nodiscard]] std::span<Slot> CheckedSlots(Interpreter& vm,
-                                                   const VmObjectRef object,
-                                                   const LinkedField& field,
-                                                   const bool wide = false) {
-            auto slots = vm.Model().InstanceSlots(object);
-            const auto needed = static_cast<std::size_t>(field.slot) + (wide ? 2U : 1U);
-            if (needed > slots.size()) {
-                throw DexVmError(DexVmErrorReason::internal_invariant,
-                                 "Thread field slot is out of range: " + field.name);
-            }
-            return slots;
-        }
-
-        void SetRef(Interpreter& vm, const VmObjectRef object,
-                    const std::string_view name, const std::string_view descriptor,
-                    const VmObjectRef value) {
-            const auto& field = ThreadField(vm, object, name, descriptor);
-            auto slots = CheckedSlots(vm, object, field);
-            slots[field.slot] = {value.Value(), SlotTag::ref};
-        }
-
-        [[nodiscard]] VmObjectRef GetRef(Interpreter& vm, const VmObjectRef object,
-                                         const std::string_view name,
-                                         const std::string_view descriptor) {
-            const auto& field = ThreadField(vm, object, name, descriptor);
-            const auto slots = CheckedSlots(vm, object, field);
-            return VmObjectRef(slots[field.slot].bits);
-        }
-
-        void SetInt(Interpreter& vm, const VmObjectRef object,
-                    const std::string_view name, const std::string_view descriptor,
-                    const std::int32_t value) {
-            const auto& field = ThreadField(vm, object, name, descriptor);
-            auto slots = CheckedSlots(vm, object, field);
-            slots[field.slot] = {static_cast<std::uint32_t>(value), SlotTag::cat1};
-        }
-
-        [[nodiscard]] std::int32_t GetInt(Interpreter& vm,
-                                          const VmObjectRef object,
-                                          const std::string_view name,
-                                          const std::string_view descriptor) {
-            const auto& field = ThreadField(vm, object, name, descriptor);
-            const auto slots = CheckedSlots(vm, object, field);
-            return static_cast<std::int32_t>(slots[field.slot].bits);
-        }
-
-        void SetLong(Interpreter& vm, const VmObjectRef object,
-                     const std::string_view name, const std::int64_t value) {
-            const auto& field = ThreadField(vm, object, name, "J");
-            auto slots = CheckedSlots(vm, object, field, true);
-            const auto bits = static_cast<std::uint64_t>(value);
-            slots[field.slot] = {static_cast<std::uint32_t>(bits), SlotTag::wide_lo};
-            slots[field.slot + 1U] = {
-                static_cast<std::uint32_t>(bits >> 32U),
-                SlotTag::wide_hi
-            };
-        }
-
-        [[nodiscard]] std::int64_t GetLong(Interpreter& vm,
-                                           const VmObjectRef object,
-                                           const std::string_view name) {
-            const auto& field = ThreadField(vm, object, name, "J");
-            const auto slots = CheckedSlots(vm, object, field, true);
-            const auto bits = static_cast<std::uint64_t>(slots[field.slot].bits) |
-                              (static_cast<std::uint64_t>(slots[field.slot + 1U].bits) << 32U);
-            return static_cast<std::int64_t>(bits);
-        }
-
-        void InitializeFields(Interpreter& vm, const VmObjectRef object,
+        void InitializeFields(const IntrinsicCall& call,
+                              const ThreadFields& fields,
+                              const VmObjectRef object,
                               const VmObjectRef target, const VmObjectRef name,
                               const std::int64_t id, const std::int32_t priority) {
-            SetRef(vm, object, "target", "Ljava/lang/Runnable;", target);
-            SetRef(vm, object, "name", "Ljava/lang/String;", name);
-            SetInt(vm, object, "priority", "I", priority);
-            SetInt(vm, object, "daemon", "Z", 0);
-            SetLong(vm, object, "stackSize", 0);
-            SetLong(vm, object, "id", id);
-            SetInt(vm, object, "hasBeenStarted", "Z", 0);
+            call.SetRef(fields.target, object, target);
+            call.SetRef(fields.name, object, name);
+            call.SetInt(fields.priority, object, priority);
+            call.SetInt(fields.daemon, object, 0);
+            call.SetLong(fields.stack_size, object, 0);
+            call.SetLong(fields.id, object, id);
+            call.SetInt(fields.has_been_started, object, 0);
         }
 
-        [[nodiscard]] VmObjectRef EnsureCurrentThread(Interpreter& vm) {
+        [[nodiscard]] VmObjectRef EnsureCurrentThread(
+            const IntrinsicCall& call, const ThreadFields& fields) {
+            auto& vm = call.Vm();
             auto& runtime = vm.Threads();
             if (const auto current = runtime.CurrentThreadObject(); current.IsValid()) {
                 return current;
@@ -119,11 +54,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
             // Publish the object before allocating its name: NewStringUtf8 may cross
             // a GC safe allocation point, so the fresh root must already be strong.
             runtime.SetRootThreadObject(root);
-            InitializeFields(vm, root, VmObjectRef{}, vm.NewStringUtf8("main"), 1, 5);
+            InitializeFields(call, fields, root, VmObjectRef{},
+                             vm.NewStringUtf8("main"), 1, 5);
             return root;
         }
 
         [[nodiscard]] VmValue Construct(IntrinsicContext& context,
+                                        const ThreadFields& fields,
                                         const VmObjectRef target,
                                         const VmObjectRef explicit_name,
                                         const bool has_explicit_name) {
@@ -132,15 +69,16 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     "Ljava/lang/NullPointerException;", "threadName == null"
                 };
             }
+            const IntrinsicCall call(context);
             auto& runtime = context.vm.Threads();
-            const auto current = EnsureCurrentThread(context.vm);
-            const auto priority =
-                    GetInt(context.vm, current, "priority", "I");
+            const auto current = EnsureCurrentThread(call, fields);
+            const auto priority = call.GetInt(fields.priority, current);
             const auto id = runtime.AllocateThreadId();
             const auto name = has_explicit_name
                                   ? explicit_name
                                   : context.vm.NewStringUtf8("Thread-" + std::to_string(id));
-            InitializeFields(context.vm, context.receiver, target, name, static_cast<std::int64_t>(id), priority);
+            InitializeFields(call, fields, context.receiver, target, name,
+                             static_cast<std::int64_t>(id), priority);
             return VmValue::Void();
         }
 
@@ -174,34 +112,40 @@ namespace ogplay::runtime::dexvm::intrinsics {
             "Ljava/lang/Object;",
             {"Ljava/lang/Runnable;"}
         );
-        builder.InstanceField("target", "Ljava/lang/Runnable;")
-                .InstanceField("name", "Ljava/lang/String;")
-                .InstanceField("priority", "I")
-                .InstanceField("daemon", "Z")
-                .InstanceField("stackSize", "J")
-                .InstanceField("id", "J")
-                .InstanceField("hasBeenStarted", "Z")
-                .ConstantInt("MIN_PRIORITY", "I", 1)
+        const ThreadFields fields{
+            builder.BoundInstanceField("target", "Ljava/lang/Runnable;"),
+            builder.BoundInstanceField("name", "Ljava/lang/String;"),
+            builder.BoundInstanceField("priority", "I"),
+            builder.BoundInstanceField("daemon", "Z"),
+            builder.BoundInstanceField("stackSize", "J"),
+            builder.BoundInstanceField("id", "J"),
+            builder.BoundInstanceField("hasBeenStarted", "Z"),
+        };
+        builder.ConstantInt("MIN_PRIORITY", "I", 1)
                 .ConstantInt("NORM_PRIORITY", "I", 5)
                 .ConstantInt("MAX_PRIORITY", "I", 10);
 
-        builder.Constructor("()V", [](IntrinsicContext& context) {
-            return Construct(context, VmObjectRef{}, VmObjectRef{}, false);
+        builder.Constructor("()V", [fields](IntrinsicContext& context) {
+            return Construct(context, fields, VmObjectRef{}, VmObjectRef{}, false);
         });
-        builder.Constructor("(Ljava/lang/Runnable;)V", [](IntrinsicContext& context) {
-            return Construct(context, context.arguments[0].ref, VmObjectRef{}, false);
+        builder.Constructor("(Ljava/lang/Runnable;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return Construct(context, fields, call.Ref(0), VmObjectRef{}, false);
         });
-        builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& context) {
-            return Construct(context, VmObjectRef{}, context.arguments[0].ref, true);
+        builder.Constructor("(Ljava/lang/String;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return Construct(context, fields, VmObjectRef{}, call.Ref(0), true);
         });
-        builder.Constructor("(Ljava/lang/Runnable;Ljava/lang/String;)V", [](IntrinsicContext& context) {
-            return Construct(context, context.arguments[0].ref, context.arguments[1].ref, true);
+        builder.Constructor("(Ljava/lang/Runnable;Ljava/lang/String;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return Construct(context, fields, call.Ref(0), call.Ref(1), true);
         });
 
         // AOSP Thread.run: target dispatch belongs here. VmThreadRuntime always
         // dispatches virtual this.run(), so a Thread subclass override wins.
-        builder.VirtualMethod("run", "()V", [](IntrinsicContext& context) {
-            const auto target = GetRef(context.vm, context.receiver, "target", "Ljava/lang/Runnable;");
+        builder.VirtualMethod("run", "()V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto target = call.GetRef(fields.target);
             if (!target.IsValid()) return VmValue::Void();
             auto& linker = context.vm.Linker();
             const auto target_class = context.vm.Model().ObjectClass(target);
@@ -215,48 +159,48 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return VmValue::Void();
         });
 
-        builder.VirtualMethod("start", "()V", [](IntrinsicContext& context) {
-            if (GetInt(context.vm, context.receiver, "hasBeenStarted", "Z") != 0) {
+        builder.VirtualMethod("start", "()V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            if (call.GetInt(fields.has_been_started) != 0) {
                 throw VmJavaThrow{
                     "Ljava/lang/IllegalThreadStateException;", "Thread already started"
                 };
             }
-            SetInt(context.vm, context.receiver, "hasBeenStarted", "Z", 1);
-            const auto name = GetRef(context.vm, context.receiver, "name", "Ljava/lang/String;");
+            call.SetInt(fields.has_been_started, 1);
+            const auto name = call.GetRef(fields.name);
             context.vm.Threads().Start(
                 context.receiver, context.vm.StringUtf8(name),
-                static_cast<std::uint64_t>(GetLong(context.vm, context.receiver, "id"))
+                static_cast<std::uint64_t>(call.GetLong(fields.id))
             );
             return VmValue::Void();
         });
 
-        builder.StaticMethod("currentThread", "()Ljava/lang/Thread;", [](IntrinsicContext& context) {
-            return VmValue::Ref(EnsureCurrentThread(context.vm));
+        builder.StaticMethod("currentThread", "()Ljava/lang/Thread;", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return VmValue::Ref(EnsureCurrentThread(call, fields));
         });
-        builder.VirtualMethod("getId", "()J", [](IntrinsicContext& context) {
-            return VmValue::Long(GetLong(context.vm, context.receiver, "id"));
+        builder.VirtualMethod("getId", "()J", [fields](IntrinsicContext& context) {
+            return VmValue::Long(IntrinsicCall(context).GetLong(fields.id));
         });
-        builder.FinalMethod("getName", "()Ljava/lang/String;", [](IntrinsicContext& context) {
-            return VmValue::Ref(GetRef(
-                context.vm, context.receiver, "name", "Ljava/lang/String;"));
+        builder.FinalMethod("getName", "()Ljava/lang/String;", [fields](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.name));
         });
-        builder.FinalMethod("setName", "(Ljava/lang/String;)V", [](IntrinsicContext& context) {
-            const auto name = context.arguments[0].ref;
-            if (!name.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;", "threadName == null"};
-            }
-            SetRef(context.vm, context.receiver, "name", "Ljava/lang/String;", name);
+        builder.FinalMethod("setName", "(Ljava/lang/String;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto name = call.NonNullRef(0, "threadName");
+            call.SetRef(fields.name, name);
             context.vm.Threads().Rename(context.receiver, context.vm.StringUtf8(name));
             return VmValue::Void();
         });
         builder.FinalMethod("isAlive", "()Z", [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.Threads().IsAlive(context.receiver) ? 1 : 0);
         });
-        builder.FinalMethod("getPriority", "()I", [](IntrinsicContext& context) {
-            return VmValue::Int(GetInt(context.vm, context.receiver, "priority", "I"));
+        builder.FinalMethod("getPriority", "()I", [fields](IntrinsicContext& context) {
+            return VmValue::Int(IntrinsicCall(context).GetInt(fields.priority));
         });
-        builder.FinalMethod("setPriority", "(I)V", [](IntrinsicContext& context) {
-            const auto priority = context.arguments[0].AsInt();
+        builder.FinalMethod("setPriority", "(I)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto priority = call.Int(0);
             if (priority < 1 || priority > 10) {
                 throw VmJavaThrow{
                     "Ljava/lang/IllegalArgumentException;", "Priority out of range: " + std::to_string(priority)
@@ -264,7 +208,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
             }
             // Guest-visible only: host scheduler priority is
             // deliberately not modeled yet.
-            SetInt(context.vm, context.receiver, "priority", "I", priority);
+            call.SetInt(fields.priority, priority);
             return VmValue::Void();
         });
 
@@ -284,7 +228,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return VmValue::Void();
         });
         builder.FinalMethod("join", "(J)V", [](IntrinsicContext& context) {
-            const auto millis = context.arguments[0].AsLong();
+            IntrinsicCall call(context);
+            const auto millis = call.Long(0);
             ValidateTimeout(millis, 0);
             if (millis == 0) {
                 context.vm.Threads().Join(context.receiver);
@@ -294,8 +239,9 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return VmValue::Void();
         });
         builder.FinalMethod("join", "(JI)V", [](IntrinsicContext& context) {
-            const auto millis = context.arguments[0].AsLong();
-            const auto nanos = context.arguments[1].AsInt();
+            IntrinsicCall call(context);
+            const auto millis = call.Long(0);
+            const auto nanos = call.Int(1);
             ValidateTimeout(millis, nanos);
             if (millis == 0 && nanos == 0) {
                 context.vm.Threads().Join(context.receiver);
@@ -306,14 +252,16 @@ namespace ogplay::runtime::dexvm::intrinsics {
         });
 
         builder.StaticMethod("sleep", "(J)V", [](IntrinsicContext& context) {
-            const auto millis = context.arguments[0].AsLong();
+            IntrinsicCall call(context);
+            const auto millis = call.Long(0);
             ValidateTimeout(millis, 0);
             context.vm.Threads().Sleep(millis);
             return VmValue::Void();
         });
         builder.StaticMethod("sleep", "(JI)V", [](IntrinsicContext& context) {
-            const auto millis = context.arguments[0].AsLong();
-            const auto nanos = context.arguments[1].AsInt();
+            IntrinsicCall call(context);
+            const auto millis = call.Long(0);
+            const auto nanos = call.Int(1);
             ValidateTimeout(millis, nanos);
             context.vm.Threads().Sleep(RoundedMillis(millis, nanos));
             return VmValue::Void();
@@ -323,23 +271,22 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return VmValue::Void();
         });
         builder.StaticMethod("holdsLock", "(Ljava/lang/Object;)Z", [](IntrinsicContext& context) {
-            const auto object = context.arguments[0].ref;
-            if (!object.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;", "object == null"};
-            }
+            IntrinsicCall call(context);
+            const auto object = call.NonNullRef(0, "object");
             return VmValue::Int(context.vm.Monitors().IsOwner(object, context.vm.CurrentContextToken()) ? 1 : 0);
         });
 
-        builder.FinalMethod("isDaemon", "()Z", [](IntrinsicContext& context) {
-            return VmValue::Int(GetInt(context.vm, context.receiver, "daemon", "Z"));
+        builder.FinalMethod("isDaemon", "()Z", [fields](IntrinsicContext& context) {
+            return VmValue::Int(IntrinsicCall(context).GetInt(fields.daemon));
         });
-        builder.FinalMethod("setDaemon", "(Z)V", [](IntrinsicContext& context) {
-            if (GetInt(context.vm, context.receiver, "hasBeenStarted", "Z") != 0) {
+        builder.FinalMethod("setDaemon", "(Z)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            if (call.GetInt(fields.has_been_started) != 0) {
                 throw VmJavaThrow{"Ljava/lang/IllegalThreadStateException;", "Thread already started"};
             }
             // Bounded semantics: the flag is exposed, but session termination is
             // not daemon-driven in OGPlay.
-            SetInt(context.vm, context.receiver, "daemon", "Z", context.arguments[0].AsInt() != 0 ? 1 : 0);
+            call.SetInt(fields.daemon, call.Int(0) != 0 ? 1 : 0);
             return VmValue::Void();
         });
 

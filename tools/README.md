@@ -1,5 +1,28 @@
 # 开发工具
 
+## DexVM API-19 intrinsic 骨架
+
+`dexvm_api19_surface.py` 从 pinned Android 4.4.4 Java 源码抽取 public/protected
+顶层 class shape；仓库固定的 Luni `java.lang` 清单可这样复验：
+
+```text
+python tools/dexvm_api19_surface.py \
+  --source-root .local/asop/libcore/luni/src/main/java \
+  --package java.lang \
+  --check data/dexvm/api19-java-lang-surface.json
+```
+
+从清单生成单类当前 builder 骨架（包含预绑定字段 handle，方法保持显式未实现）：
+
+```text
+python tools/dexvm_stub_gen.py \
+  --surface data/dexvm/api19-java-lang-surface.json \
+  --class Ljava/lang/Integer;
+```
+
+生成结果是开发起点，不是行为实现；常量值、private 运行时字段、handler 语义及
+编译器 synthetic bridge 仍须按该类的 pinned 源码人工审阅。
+
 ## M4 本机出口测试
 
 `m4_exit.py` 在当前 Windows、Linux 或 macOS 机器内直接执行严格出口验证，不建立 SSH

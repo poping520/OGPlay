@@ -787,6 +787,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/session_exit_tests.cpp
         tests/dexvm/intrinsics_p1_tests.cpp
+        tests/dexvm/thread_intrinsic_tests.cpp
         tests/dexvm/vm_monitor_tests.cpp
         tests/dexvm/vm_thread_tests.cpp
         tests/dexvm/videoview_tests.cpp

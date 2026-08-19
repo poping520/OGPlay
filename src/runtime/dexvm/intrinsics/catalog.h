@@ -12,6 +12,7 @@ void AppendJavaLangPrimitiveWrappers(
 void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog);
 
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Object();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Enum();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_Serializable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();

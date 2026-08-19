@@ -1157,13 +1157,13 @@ note = "DVM-27 显式 context 隔离帧栈、pending exception、返回值、tic
 
 [dexvm.threads]
 status = "partial"
-test = "tests/dexvm/vm_thread_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
-note = "DVM-28 一个 guest Java 线程 = 一个 hal 宿主线程 + 独立 execution context，linker/对象模型/JNI 身份共享；start 二次调用与无 run() 目标明确失败，isAlive/join/interrupt/uncaught 记账/teardown interrupt→join 均有机器测试，guest 死循环由每指令停止检查真实展开。解释执行由 VmExecutionLock 串行化（同一时刻一个线程解释字节码，显式限制不宣称并行）；子线程 native 调用仍复用 root guest 栈与 thread id，需要停泊时以 blocking_in_native 明确失败"
+test = "tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
+note = "DVM-28 一个 guest Java 线程 = 一个 hal 宿主线程 + 独立 execution context；DVM-48 将 pinned Android 4.4.4 java.lang.Thread 迁入 core：root/child stable identity、构造期 per-VM ID、virtual this.run、Runnable 转发、start-once、name/priority/isAlive、单一 monitor interrupt flag、join/timed join、sleep/yield/holdsLock 与 active GC roots均有机器测试，wait/join/sleep 共用注入 monotonic Clock。解释执行仍由 VmExecutionLock 串行；子线程 native 调用仍复用 root guest 栈与 thread id，需要停泊时以 blocking_in_native 明确失败，因此能力保持 partial"
 
 [dexvm.monitors]
 status = "partial"
-test = "tests/dexvm/vm_monitor_tests.cpp; Asphalt 6 exact bootstrap 无 guest fault"
-note = "DVM-29 session 级 owner/recursion/wait-set，owner 为 execution context token。Enter/Exit 真实跨线程互斥；Wait 逐步对照 AOSP vm/Sync.cpp waitMonitor——校验 owner、保存并清零 recursion、全量释放、入 wait-set、唤醒后先重获 monitor 并恢复 recursion 才返回或抛 InterruptedException（并清中断位）。notify 取 wait-set 头、notifyAll 全量、超时/interrupt/Shutdown 均可唤醒，无所有权抛 IllegalMonitorStateException。超时只用注入的统一 Clock，无时间源即记账 dexvm.monitors.wait_without_clock 并失败。native 侧 runtime.jni_guest_monitors 仍是独立表，两表未合一；wait(J,I) 未声明"
+test = "tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; Asphalt 6 exact bootstrap 无 guest fault"
+note = "DVM-29 session 级 owner/recursion/wait-set，owner 为 execution context token。Enter/Exit 真实跨线程互斥；Wait 对照 AOSP vm/Sync.cpp waitMonitor，释放并恢复完整 recursion，interrupt 清位。DVM-48 的 Object.wait(JI)、Thread timed join/sleep 共享同一注入 monotonic Clock，host wait 只调度重查；interrupt 唤醒 wait/join/sleep。无 Clock 的 timed blocking 明确记账失败。native 侧 runtime.jni_guest_monitors 仍是独立表，两表未合一，能力保持 partial"
 
 [dexvm.exceptions]
 status = "complete"
@@ -1177,8 +1177,8 @@ note = "DVM-12 per-class 状态机 uninitialized→initializing→initialized|fa
 
 [dexvm.intrinsics_java_core]
 status = "partial"
-test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40 聚合 50 个 API 19 Throwable class shape，13 个特殊 constructor 显式失败；DVM-41 聚合 Number/Byte/Short/Integer/Long/Float/Double/Boolean/Character，前 8 类 public API 与 Character 44 项高频 API 均绑定真实 handler，integral radix/overflow、IEEE-754 bits/special values、ASCII 与 surrogate/code-point 有机器和真实 DEX 测试；后续批次把 java.lang.Enum 从 android 目录中性壳迁入 core 并按 pinned libcore Enum.java 交付全表面：name/ordinal 声明式 slot 由 (String,I) 构造器写入，name/ordinal/equals/hashCode/compareTo/getDeclaringClass/静态 valueOf(Class,String) 真实语义（valueOf 先 clinit 再按 enum 自身 static 常量字段按名匹配，NPE/IAE 消息对照 AOSP；toString 保持可 override；clone 恒抛 CloneNotSupportedException），enum values() 经数组 Object.clone() 浅拷贝（数组 instanceof Cloneable/Serializable）。pinned libcore java.lang 顶层 8 个 interface 聚合在 java_lang_interfaces.cpp；Appendable/AutoCloseable/Iterable/Readable 已有 class shape，Readable.read(CharBuffer) 与其余未实现接口方法显式失败。Character 42 项完整 Unicode API deferred，能力保持 partial。System 与 wrapper property API 共用每 VM guest 属性表，不读宿主环境"
+test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core，交付 root/child identity、四构造器、virtual run/start、ID/name/priority/isAlive、interrupt/join/sleep/yield/holdsLock 和有界 daemon 语义；deprecated stop/suspend/resume/destroy 显式未实现。Character 42 项完整 Unicode API、Readable.read(CharBuffer) 等仍 deferred，能力保持 partial；System 与 wrapper property API 共用每 VM guest 属性表，不读宿主环境"
 
 [dexvm.jni_bridge]
 status = "complete"

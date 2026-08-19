@@ -15,6 +15,7 @@
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/session/profile_entry_scope.h"
 
@@ -106,7 +107,7 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  CHECK(catalog.size() == 173);
+    CHECK(catalog.size() == 172);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -501,17 +502,31 @@ TEST_CASE("Thread priority validates and records the guest fact") {
     linker.Link();
     ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter(linker, model, nullptr, ledger);
+    VmThreadRuntime threads(interpreter);
     const auto thread_class = linker.FindClass("Ljava/lang/Thread;");
     REQUIRE(thread_class.has_value());
   const auto set_priority =
       linker.FindVtableIndex(*thread_class, "setPriority", "(I)V");
     REQUIRE(set_priority.has_value());
   const auto thread = interpreter.NewIntrinsicInstance("Ljava/lang/Thread;");
-    const auto target = linker.Class(*thread_class).vtable[*set_priority];
+    const auto constructor =
+        linker.FindDirectMethod(*thread_class, "<init>", "()V");
+    REQUIRE(constructor.has_value());
     auto outcome = interpreter.Call(
+        *constructor, std::vector<VmValue>{VmValue::Ref(thread)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    const auto target = linker.Class(*thread_class).vtable[*set_priority];
+    outcome = interpreter.Call(
         target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(7)});
     REQUIRE_FALSE(outcome.exception.IsValid());
-    CHECK(context->java_threads.at(thread.Value()).priority == 7);
+    const auto get_priority =
+        linker.FindVtableIndex(*thread_class, "getPriority", "()I");
+    REQUIRE(get_priority.has_value());
+    outcome = interpreter.Call(
+        linker.Class(*thread_class).vtable[*get_priority],
+        std::vector<VmValue>{VmValue::Ref(thread)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 7);
 
   const auto get_id = linker.FindVtableIndex(*thread_class, "getId", "()J");
   const auto set_name =
@@ -524,7 +539,7 @@ TEST_CASE("Thread priority validates and records the guest fact") {
   outcome = interpreter.Call(linker.Class(*thread_class).vtable[*get_id],
                              std::vector<VmValue>{VmValue::Ref(thread)});
   REQUIRE_FALSE(outcome.exception.IsValid());
-  CHECK(outcome.value.AsLong() == static_cast<std::int64_t>(thread.Value()));
+  CHECK(outcome.value.AsLong() > 1);
   outcome = interpreter.Call(
       linker.Class(*thread_class).vtable[*set_name],
       std::vector<VmValue>{VmValue::Ref(thread),
@@ -538,7 +553,11 @@ TEST_CASE("Thread priority validates and records the guest fact") {
     outcome = interpreter.Call(
         target, std::vector<VmValue>{VmValue::Ref(thread), VmValue::Int(11)});
     CHECK(outcome.exception.IsValid());
-    CHECK(context->java_threads.at(thread.Value()).priority == 7);
+    outcome = interpreter.Call(
+        linker.Class(*thread_class).vtable[*get_priority],
+        std::vector<VmValue>{VmValue::Ref(thread)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(outcome.value.AsInt() == 7);
 }
 
 TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {

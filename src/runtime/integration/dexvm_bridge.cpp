@@ -691,7 +691,6 @@ DexVmGuestBridge::DexVmGuestBridge(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
-    impl_->vm->SetThreadRuntime(impl_->threads.get());
     impl_->vm->SetGcIntegration(dx::InterpreterGcIntegration{
         [&session](const std::function<void(JniObjectIdentity)>& visit) {
             session.Environment().VisitReferenceRoots(visit);

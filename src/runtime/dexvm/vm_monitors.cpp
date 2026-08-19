@@ -111,6 +111,11 @@ void VmMonitorTable::SetTimeSource(VmMonotonicMillis source) {
     impl_->now = std::move(source);
 }
 
+VmMonotonicMillis VmMonitorTable::TimeSource() const {
+    const std::lock_guard guard(impl_->mutex);
+    return impl_->now;
+}
+
 void VmMonitorTable::Enter(const VmObjectRef object,
                            const std::uint64_t owner) {
     std::unique_lock guard(impl_->mutex);

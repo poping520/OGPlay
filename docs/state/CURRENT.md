@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-19 · DVM-42..46 GC-B 实现完成，DVM-47 gate 受阻
+更新：2026-08-20 · DVM-48 Thread Core 完成，DVM-47 gate 仍受阻
 
 ## 当前阶段
 
@@ -42,11 +42,12 @@
   `COPPAActivity.isTaskRoot()Z` 已实现（Manifest launcher 为进程唯一 task 根，
   startActivity 到达的 Activity 回答 false，handle 记账于 `task_root_activity`），
   PVZ NA 后续缺口待下一次命中批次确认，不等同于 title 启动成功。
-  `Object.wait(JI)V` 已按 pinned AOSP 4.4.4 `vm/Sync.cpp waitMonitor` 补全：
-  (msec, nsec) 整体校验（消息 "timeout arguments out of range"，先于所有权
-  检查，与 wait(J) 在 monitor 表的分层一致）、非零纳秒进位到下一整毫秒
-  deadline、(0,0) 保持无限期；夹具探针与假时钟 deadline 测试在
-  vm_monitor_tests 固化。
+  DVM-48 已把 `java.lang.Thread` 从 Android 侧表迁入 dexvm core：root/child
+  stable identity、构造期 per-VM ID、virtual `this.run()`、Runnable 转发、
+  start-once、name/priority/isAlive、interrupt、join/timed join、sleep/yield/
+  holdsLock 与 active GC roots 均闭合；`Object.wait(JI)`/join/sleep 共用注入的
+  monotonic Clock，停泊释放 execution lock。priority 不映射 host scheduler，
+  daemon 不驱动 session 退出；既有 native 栈/monitor 边界使总能力仍为 partial。
   `IntrinsicClassBuilder` 已重构为工厂式 API：`Class/RootClass/Interface` 一次
   声明类型头（普通类默认父类 Object，仅 java.lang.Object 显式无父类），
   方法 `Constructor/StaticMethod/VirtualMethod/FinalMethod`、字段
@@ -59,7 +60,7 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：824/824 CTest（含 GC-B、Profile、Scenario 与文档门禁）。
+- Windows/x64 `windows-msvc`：830/830 CTest（含 DVM-48、GC-B、Profile、Scenario 与文档门禁）。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 

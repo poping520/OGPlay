@@ -274,6 +274,9 @@ public:
     // callers may inspect this deterministically while it is held.
     void SetGcIntegration(InterpreterGcIntegration integration);
     void SetThreadRuntime(VmThreadRuntime* threads) noexcept;
+    // Checked bridge used by java.lang.Thread intrinsics. The runtime is
+    // session-owned; callers never reach into Interpreter::Impl.
+    [[nodiscard]] VmThreadRuntime& Threads();
     void VisitRoots(const VmRootVisitor& visitor);
     [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;
     [[nodiscard]] GcMarkResult MarkReachable();

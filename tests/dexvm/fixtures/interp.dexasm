@@ -479,6 +479,105 @@
     return-object v0
 .end method
 
+# DVM-48 Thread subclass probes. start() must virtual-dispatch these run()
+# methods instead of bypassing them for the constructor Runnable target.
+.class public LThreadOverride;
+.super Ljava/lang/Thread;
+
+.field static public observed:I
+
+.method public constructor <init>(Ljava/lang/Runnable;)V
+.registers 2
+    invoke-direct {v0, v1}, Ljava/lang/Thread;-><init>(Ljava/lang/Runnable;)V
+    return-void
+.end method
+
+.method public run()V
+.registers 2
+    const/4 v0, 1
+    sput v0, LThreadOverride;->observed:I
+    return-void
+.end method
+
+.method static public observed()I
+.registers 1
+    sget v0, LThreadOverride;->observed:I
+    return v0
+.end method
+
+.class public LThreadIdentity;
+.super Ljava/lang/Thread;
+
+.field static public observed:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Thread;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 2
+    invoke-static {}, Ljava/lang/Thread;->currentThread()Ljava/lang/Thread;
+    move-result-object v0
+    if-ne v0, v1, :fail
+    const/4 v0, 1
+    sput v0, LThreadIdentity;->observed:I
+    return-void
+    :fail
+    const/4 v0, -1
+    sput v0, LThreadIdentity;->observed:I
+    return-void
+.end method
+
+.method static public observed()I
+.registers 1
+    sget v0, LThreadIdentity;->observed:I
+    return v0
+.end method
+
+.class public LThreadSleeper;
+.super Ljava/lang/Thread;
+
+.field static public observed:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Thread;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 3
+    :try_start
+    const/16 v0, 100
+    int-to-long v0, v0
+    invoke-static {v0, v1}, Ljava/lang/Thread;->sleep(J)V
+    :try_end
+    const/4 v0, 1
+    sput v0, LThreadSleeper;->observed:I
+    return-void
+    :handler
+    move-exception v0
+    invoke-static {}, Ljava/lang/Thread;->interrupted()Z
+    move-result v0
+    if-nez v0, :bad
+    const/4 v0, 2
+    sput v0, LThreadSleeper;->observed:I
+    return-void
+    :bad
+    const/4 v0, -1
+    sput v0, LThreadSleeper;->observed:I
+    return-void
+    .catch Ljava/lang/InterruptedException; :try_start :try_end :handler
+.end method
+
+.method static public observed()I
+.registers 1
+    sget v0, LThreadSleeper;->observed:I
+    return v0
+.end method
+
 # ---- managed surface lifecycle --------------------------------------------
 # Receives SurfaceHolder.Callback events the way a title's own SurfaceView
 # subclass does, and records what it was handed.

@@ -136,9 +136,9 @@ bool WaitFor(Predicate predicate) {
 TEST_CASE("dexvm Thread.start runs run() on a real host thread") {
     ThreadedVm vm;
     const auto target = vm.Make("LThreadProbe;", "()Ljava/lang/Runnable;");
-    const auto thread_object = vm.NewThreadObject();
+    const auto thread_object = target;
 
-    vm.threads.Start(thread_object, target, "probe");
+    vm.threads.Start(thread_object, "probe", vm.threads.AllocateThreadId());
     CHECK(vm.threads.ThreadId(thread_object) != 0U);
     vm.threads.Join(thread_object);
 
@@ -153,8 +153,8 @@ TEST_CASE("dexvm Thread.start runs run() on a real host thread") {
 TEST_CASE("dexvm child threads share one object world with the root") {
     ThreadedVm vm;
     const auto target = vm.Make("LThreadProbe;", "()Ljava/lang/Runnable;");
-    const auto thread_object = vm.NewThreadObject();
-    vm.threads.Start(thread_object, target, "probe");
+    const auto thread_object = target;
+    vm.threads.Start(thread_object, "probe", vm.threads.AllocateThreadId());
     vm.threads.Join(thread_object);
 
     const auto product =
@@ -171,27 +171,29 @@ TEST_CASE("dexvm child threads share one object world with the root") {
 TEST_CASE("dexvm Thread.start is refused twice and without a run() target") {
     ThreadedVm vm;
     const auto target = vm.Make("LThreadProbe;", "()Ljava/lang/Runnable;");
-    const auto thread_object = vm.NewThreadObject();
-    vm.threads.Start(thread_object, target, "probe");
-    CHECK_THROWS_AS(vm.threads.Start(thread_object, target, "probe"),
+    const auto thread_object = target;
+    const auto id = vm.threads.AllocateThreadId();
+    vm.threads.Start(thread_object, "probe", id);
+    CHECK_THROWS_AS(vm.threads.Start(thread_object, "probe", id),
                     VmJavaThrow);
     vm.threads.Join(thread_object);
     // A finished thread is still a started thread.
-    CHECK_THROWS_AS(vm.threads.Start(thread_object, target, "probe"),
+    CHECK_THROWS_AS(vm.threads.Start(thread_object, "probe", id),
                     VmJavaThrow);
 
     const auto without_run =
         vm.Make("LThreadNoRun;", "()Ljava/lang/Object;");
     CHECK_THROWS_AS(
-        vm.threads.Start(vm.NewThreadObject(), without_run, "no-run"),
+        vm.threads.Start(without_run, "no-run",
+                         vm.threads.AllocateThreadId()),
         VmJavaThrow);
 }
 
 TEST_CASE("dexvm isAlive tracks a running thread until teardown stops it") {
     ThreadedVm vm;
     const auto target = vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;");
-    const auto thread_object = vm.NewThreadObject();
-    vm.threads.Start(thread_object, target, "spin");
+    const auto thread_object = target;
+    vm.threads.Start(thread_object, "spin", vm.threads.AllocateThreadId());
 
     REQUIRE(WaitFor(
         [&] { return vm.StatusOf(thread_object) == VmThreadStatus::running; }));
@@ -228,14 +230,15 @@ TEST_CASE("dexvm teardown joins every live thread deterministically") {
     // Every target is built before the first thread starts: a body that
     // never blocks keeps the execution lock, so interpreting anything else
     // afterwards would have to wait for teardown.
-    std::vector<std::pair<VmObjectRef, VmObjectRef>> targets;
+    std::vector<VmObjectRef> targets;
     for (int index = 0; index < 4; ++index) {
-        targets.emplace_back(vm.NewThreadObject(),
-                             vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;"));
+        targets.push_back(
+            vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;"));
     }
     std::vector<VmObjectRef> started;
-    for (const auto& [thread_object, target] : targets) {
-        vm.threads.Start(thread_object, target, "spin");
+    for (const auto thread_object : targets) {
+        vm.threads.Start(thread_object, "spin",
+                         vm.threads.AllocateThreadId());
         started.push_back(thread_object);
     }
     REQUIRE(WaitFor([&] { return vm.threads.LiveCount() == 4U; }));
@@ -251,8 +254,9 @@ TEST_CASE("dexvm teardown joins every live thread deterministically") {
 TEST_CASE("dexvm uncaught thread exceptions are recorded, not thrown at join") {
     ThreadedVm vm;
     const auto target = vm.Make("LThreadThrower;", "()Ljava/lang/Runnable;");
-    const auto thread_object = vm.NewThreadObject();
-    vm.threads.Start(thread_object, target, "thrower");
+    const auto thread_object = target;
+    vm.threads.Start(thread_object, "thrower",
+                     vm.threads.AllocateThreadId());
     vm.threads.Join(thread_object);  // join itself stays quiet
 
     CHECK(vm.StatusOf(thread_object) == VmThreadStatus::failed);
@@ -267,8 +271,8 @@ TEST_CASE("dexvm uncaught thread exceptions are recorded, not thrown at join") {
 TEST_CASE("dexvm interrupt raises the flag and clears once") {
     ThreadedVm vm;
     const auto target = vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;");
-    const auto thread_object = vm.NewThreadObject();
-    vm.threads.Start(thread_object, target, "spin");
+    const auto thread_object = target;
+    vm.threads.Start(thread_object, "spin", vm.threads.AllocateThreadId());
     REQUIRE(WaitFor([&] { return vm.threads.LiveCount() == 1U; }));
 
     CHECK(!vm.threads.IsInterrupted(thread_object));
@@ -279,7 +283,7 @@ TEST_CASE("dexvm interrupt raises the flag and clears once") {
     vm.threads.Shutdown();
 }
 
-TEST_CASE("dexvm join is refused on an unknown or self target") {
+TEST_CASE("dexvm join returns immediately for a never-started target") {
     ThreadedVm vm;
     // Joining something that was never started is a no-op, as on device.
     vm.threads.Join(vm.NewThreadObject());
@@ -290,7 +294,7 @@ TEST_CASE("dexvm refuses to park a thread that holds a guest native frame") {
     StubNativeBridge bridge;
     ThreadedVm vm(&bridge);
     const auto target = vm.Make("LThreadSpin;", "()Ljava/lang/Runnable;");
-    const auto thread_object = vm.NewThreadObject();
+    const auto thread_object = target;
 
     std::uint32_t depth_inside = 0;
     bridge.action = [&] {
@@ -298,7 +302,8 @@ TEST_CASE("dexvm refuses to park a thread that holds a guest native frame") {
         // The child cannot run while this frame owns the execution lock, so
         // this join would have to park: the single root guest stack makes
         // that unsafe, and it is refused rather than corrupted.
-        vm.threads.Start(thread_object, target, "spin");
+        vm.threads.Start(thread_object, "spin",
+                         vm.threads.AllocateThreadId());
         vm.threads.Join(thread_object);
     };
 

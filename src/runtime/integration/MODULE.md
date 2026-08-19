@@ -101,7 +101,8 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
   IO 走 APK 条目与会话内存文件、身份为确定性配置、SMS/网络记账明确失败;
-  统一时间由生命周期驱动发布(System.currentTimeMillis/Thread.sleep 同源)。
+  统一时间由生命周期驱动发布；`Object.wait`、`Thread.sleep` 与 timed join
+  共用同一 monotonic source，`System.currentTimeMillis` 仍读取 session 时间事实。
   `Activity.isTaskRoot()` 按生命周期发布的 `task_root_activity` 句柄判定：
   Manifest launcher 打开了进程唯一 task，经 `startActivity` 切换到达的 Activity
   不是根；已退出的 handoff shell 对自身句柄仍回答 true，与平台按 token 回答一致。

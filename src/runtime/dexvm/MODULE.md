@@ -33,6 +33,13 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   匹配，null 参数 NPE、非 enum/未命中 IllegalArgumentException（消息对照 AOSP）。
   enum 子类的 `values()` 走数组 `Object.clone()`：数组可赋给 `Cloneable` /
   `Serializable`，浅拷贝顶层元素。
+- `java.lang.Thread` 对照 pinned libcore `Thread.java`/`VMThread.java` 与 Dalvik
+  `Thread.cpp`/`Sync.cpp`：root context 具有稳定 id=1 `main` Thread 强根；构造时
+  分配 per-VM stable ID；`start()` 经实际 Thread class vtable 虚派发
+  `this.run()`，基类 `run()` 才转发 target Runnable。core façade 覆盖四个构造器、
+  currentThread、id/name/priority/isAlive、interrupt/interrupted、join/timed join、
+  sleep、yield、holdsLock 与有界 daemon flag；priority 不伪造 host scheduler，
+  daemon 不宣称驱动 session 退出。
 - `java.lang.Object.clone` 是 overridable virtual intrinsic（不是
   `internalClone`）：`instanceof Cloneable` 失败抛
   `CloneNotSupportedException`（消息对照 libcore Object.java），成功则
@@ -97,9 +104,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 - `VmThreadRuntime`（`vm_threads.h`）：一个 guest Java 线程 = 一个
   `hal::StartHostThread` 宿主线程 + 一个独立 execution context，linker/对象
   模型/JNI 身份共享，子线程与 root 看到同一个对象世界。`Start` 在调用方线程
-  解析 `run()`（无 `run()` 或二次 start 明确抛
-  `IllegalThreadStateException`）、`Join` 释放执行锁后停泊、`Interrupt` 置位
-  并唤醒、`Shutdown` 先 RequestStop、join 全部宿主线程，再显式展开 stopped
+  从 Thread 对象实际 runtime class 解析 virtual `this.run()`；ID 在构造时由
+  per-VM allocator 分配，root/child identity 与 execution context 显式映射。
+  `Join`/timed join 与 `Sleep` 释放执行锁后停泊，共用 monitor 表注入的 monotonic
+  Clock；`Interrupt` 只写 monitor execution-token interrupt state 并唤醒
+  wait/join/sleep。`Shutdown` 先 RequestStop、join 全部宿主线程，再显式展开 stopped
   context（幂等，记录保留供事后查询）。未捕获异常与 VM 错误记入
   `TakeFailure()`，由生命周期驱动在帧
   边界上报，对齐设备上的进程级默认 handler，而不是丢给 `join()` 的调用方。
@@ -186,8 +195,6 @@ family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自
 - 子线程的 guest native 调用仍走 root guest 线程的 CPU 与栈（JNI local
   reference 也记在 root thread id 下）。执行锁保证不会并发，但这不是真正的
   per-thread JavaVM attach；需要停泊时明确失败而不是凑合。
-- `Thread.sleep` 推进统一 uptime 并让出执行锁，不按 Clock 截止时间停泊。
-- `Object.wait(long, int)` 未声明；只有 `wait()` 与 `wait(long)`。
 - 反射仅覆盖有界的 `getDeclaredMethods` / 零参整数类返回值
   `Method.invoke`；其余反射面、finalizer、GC-B 未实现。
 
@@ -203,6 +210,10 @@ whole-DEX 启动、首次触达明确失败/survey 才记账；core catalog 唯�
 `tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、
 二次 start 与无 run() 目标拒绝、isAlive、join、未捕获异常记账、interrupt、
 teardown 逐线程 join、持有 native 帧时拒绝停泊）；
+`tests/dexvm/thread_intrinsic_tests.cpp`（四构造器/per-VM ID、root/child
+currentThread identity、virtual Thread override 优先于 Runnable、start-once、
+name/priority/daemon/isAlive、单一 interrupt flag、sleep/timed join 假时钟、
+holdsLock、runtime rename diagnostics 与 active/finished GC roots）；
 `tests/dexvm/vm_monitor_tests.cpp`（跨宿主线程 notifyAll 配对、recursion 深度
 恢复（三层 monitor-exit 不平衡即失败）、wait/notify 所有权校验、统一 Clock
 截止时间到期、无 Clock 的 timed wait 明确失败、interrupt 唤醒且抛异常前已

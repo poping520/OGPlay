@@ -236,20 +236,17 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, bool> media_playing;
     std::unordered_map<std::uint32_t, bool> media_looping;
 
-    // Java threads (04 §3). Thread.start() hands the target to the DexVM
-    // thread runtime, which gives it a real host thread and its own
-    // execution context; this table only keeps the guest-visible Thread
-    // facts (target, name, priority) that the intrinsics answer from.
+    // Cooperative java.util.Timer task state. java.lang.Thread itself is a
+    // dexvm core intrinsic and keeps Java-visible facts in declared fields;
+    // this legacy-shaped record is only used by the frame-boundary Timer pump.
     struct JavaThreadState final {
     dexvm::VmObjectRef runnable{};
         bool started{};
         bool finished{};
-        // java.lang.Thread priority (MIN_PRIORITY=1, NORM_PRIORITY=5,
-        // MAX_PRIORITY=10). Recorded as a guest fact; host scheduler
-        // priority is deliberately not claimed.
+        // Timer does not schedule by priority; retained only as neutral state
+        // for the bounded cooperative record.
         std::int32_t priority{5};
-    // Stable deterministic identity and guest-visible name. The id is
-    // derived from the VM object handle and is never reused in-session.
+    // Diagnostic name for the queued TimerTask.
     std::string name;
     };
     std::unordered_map<std::uint32_t, JavaThreadState> java_threads;

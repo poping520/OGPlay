@@ -236,6 +236,14 @@ void Interpreter::SetThreadRuntime(VmThreadRuntime* threads) noexcept {
     impl_->threads = threads;
 }
 
+VmThreadRuntime& Interpreter::Threads() {
+    if (impl_->threads == nullptr) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "java.lang.Thread runtime is not attached");
+    }
+    return *impl_->threads;
+}
+
 void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
     if (!visitor) return;
     const std::lock_guard contexts_lock(impl_->executions_mutex);

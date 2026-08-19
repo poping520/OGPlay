@@ -22,6 +22,13 @@ interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handle
 `UnimplementedVirtual`，不伪造成功。不纳入 `Thread.UncaughtExceptionHandler`
 与 `java.lang.annotation`。
 
+`java_lang_Thread.cpp` 是 pinned libcore `Thread.java`/`VMThread.java` 的 core
+façade：声明 Java-visible fields 并负责参数校验/Java exception，生命周期、
+execution context、parking、interrupt、sleep/join 与 identity mapping 全部委托
+`VmThreadRuntime`/`VmMonitorTable`。`start()` 必须 virtual-dispatch `this.run()`；
+基类 `run()` 才 virtual-dispatch target Runnable。纳秒在统一毫秒 Clock 上向上取整；
+priority 与 daemon 仅是明确有界的 guest fact。
+
 `java.lang.System` 的 `getProperty`/`setProperty` 与 primitive wrapper property
 API 共用每 VM 属性表；默认只发布
 API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取宿主系统属性。

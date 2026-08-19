@@ -36,6 +36,9 @@ public:
     VmMonitorTable& operator=(const VmMonitorTable&) = delete;
 
     void SetTimeSource(VmMonotonicMillis source);
+    // Thread.sleep/join copy this same session clock. Host waits may schedule
+    // rechecks, but only this source decides whether a guest deadline passed.
+    [[nodiscard]] VmMonotonicMillis TimeSource() const;
 
     // monitor-enter / monitor-exit. Enter parks (releasing the execution
     // lock) while another context owns the monitor.

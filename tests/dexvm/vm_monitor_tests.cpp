@@ -129,9 +129,9 @@ TEST_CASE("dexvm notifyAll releases a waiter parked on another host thread") {
     vm.UseTestClock();
     const auto lock = vm.Lock();
     const auto target = vm.Make("LWaitProbe;");
-    const auto thread_object = vm.NewThreadObject();
+    const auto thread_object = target;
 
-    vm.threads.Start(thread_object, target, "waiter");
+    vm.threads.Start(thread_object, "waiter", vm.threads.AllocateThreadId());
     // The waiter has to be in the wait set before anything signals it,
     // otherwise the test would pass without a wait set at all.
     REQUIRE(WaitFor(
@@ -231,9 +231,10 @@ TEST_CASE("dexvm wait restores the full recursion depth before returning") {
     vm.UseTestClock();
     const auto lock = vm.Lock();
     const auto target = vm.Make("LWaitRecursion;");
-    const auto thread_object = vm.NewThreadObject();
+    const auto thread_object = target;
 
-    vm.threads.Start(thread_object, target, "recursive-waiter");
+    vm.threads.Start(thread_object, "recursive-waiter",
+                     vm.threads.AllocateThreadId());
     REQUIRE(WaitFor(
         [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
     // Depth three was released completely: this signal needs the monitor.
@@ -272,8 +273,9 @@ TEST_CASE("dexvm timed wait ends on the unified Clock deadline") {
     // Run the timed wait on its own host thread so the test thread can move
     // the clock. Nothing ever notifies it: only the deadline gets it out.
     const auto waiter = vm.Make("LWaitTimedRunner;");
-    const auto thread_object = vm.NewThreadObject();
-    vm.threads.Start(thread_object, waiter, "timed-waiter");
+    const auto thread_object = waiter;
+    vm.threads.Start(thread_object, "timed-waiter",
+                     vm.threads.AllocateThreadId());
     REQUIRE(WaitFor(
         [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 
@@ -313,8 +315,9 @@ TEST_CASE("dexvm Object.wait rounds a nonzero nanos onto the deadline") {
     vm.UseTestClock();
     const auto lock = vm.Lock();
     const auto waiter = vm.Make("LWaitNanoRunner;");
-    const auto thread_object = vm.NewThreadObject();
-    vm.threads.Start(thread_object, waiter, "nano-waiter");
+    const auto thread_object = waiter;
+    vm.threads.Start(thread_object, "nano-waiter",
+                     vm.threads.AllocateThreadId());
     REQUIRE(WaitFor(
         [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 
@@ -344,9 +347,10 @@ TEST_CASE("dexvm interrupt wakes a waiter and re-acquires before throwing") {
     vm.UseTestClock();
     const auto lock = vm.Lock();
     const auto target = vm.Make("LWaitInterrupt;");
-    const auto thread_object = vm.NewThreadObject();
+    const auto thread_object = target;
 
-    vm.threads.Start(thread_object, target, "interruptible");
+    vm.threads.Start(thread_object, "interruptible",
+                     vm.threads.AllocateThreadId());
     REQUIRE(WaitFor(
         [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 
@@ -383,9 +387,9 @@ TEST_CASE("dexvm teardown wakes every waiter and stops the thread") {
     vm.UseTestClock();
     const auto lock = vm.Lock();
     const auto target = vm.Make("LWaitProbe;");
-    const auto thread_object = vm.NewThreadObject();
+    const auto thread_object = target;
 
-    vm.threads.Start(thread_object, target, "waiter");
+    vm.threads.Start(thread_object, "waiter", vm.threads.AllocateThreadId());
     REQUIRE(WaitFor(
         [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 

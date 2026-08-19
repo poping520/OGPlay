@@ -143,7 +143,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_java_io_OutputStream(context),
         Declare_java_io_Reader(context),
         Declare_java_io_Writer(context),
-        Declare_java_lang_Thread(context),
         Declare_java_net_HttpURLConnection(context),
         Declare_java_net_URL(context),
         Declare_java_net_URLConnection(context),

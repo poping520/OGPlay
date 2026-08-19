@@ -171,6 +171,10 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/Iterable;.iterator()Ljava/util/Iterator;",
         "Ljava/lang/Readable;.read(Ljava/nio/CharBuffer;)I",
         "Ljava/lang/Runnable;.run()V",
+        "Ljava/lang/Thread;.stop()V",
+        "Ljava/lang/Thread;.suspend()V",
+        "Ljava/lang/Thread;.resume()V",
+        "Ljava/lang/Thread;.destroy()V",
     };
     for (const auto& declaration : catalog) {
         CHECK(descriptors.insert(declaration.descriptor).second);

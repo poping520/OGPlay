@@ -43,12 +43,16 @@ public:
     VmThreadRuntime(const VmThreadRuntime&) = delete;
     VmThreadRuntime& operator=(const VmThreadRuntime&) = delete;
 
-    // Starts run() of run_target on a new host thread. The vtable lookup
-    // happens here, on the caller's thread, so a target without run() fails
-    // at start() instead of inside the new thread. A second start on the
-    // same thread object fails explicitly (IllegalThreadStateException).
-    void Start(VmObjectRef thread_object, VmObjectRef run_target,
-               std::string name);
+    // Per-VM Java Thread identity. ID 1 belongs to the root lifecycle thread;
+    // constructed guest Thread objects allocate from 2 before start().
+    [[nodiscard]] std::uint64_t AllocateThreadId();
+    void SetRootThreadObject(VmObjectRef thread_object);
+
+    // Starts virtual this.run() on a new host thread (Thread.start ->
+    // VMThread.create -> dvmCreateInterpThread). The supplied id was allocated
+    // when the Java object was constructed and remains stable after death.
+    void Start(VmObjectRef thread_object, std::string name,
+               std::uint64_t thread_id);
 
     [[nodiscard]] bool IsAlive(VmObjectRef thread_object) const;
     [[nodiscard]] std::uint64_t ThreadId(VmObjectRef thread_object) const;
@@ -56,6 +60,11 @@ public:
     // Parks the calling VM thread until the target finishes. Releases the
     // execution lock while parked so the target can actually run.
     void Join(VmObjectRef thread_object);
+    void Join(VmObjectRef thread_object, std::int64_t timeout_millis);
+
+    // VMThread.sleep / dvmThreadSleep. This parks the current execution
+    // context without releasing any Java monitor owned by the caller.
+    void Sleep(std::int64_t timeout_millis);
 
     // Raises the interrupt flag and wakes the target if it is parked
     // (AOSP vm/Thread.cpp dvmThreadInterrupt).
@@ -63,6 +72,10 @@ public:
     [[nodiscard]] bool IsInterrupted(VmObjectRef thread_object) const;
     // Reads and clears the calling thread's interrupt flag.
     [[nodiscard]] bool ClearCurrentInterrupt();
+
+    // Updates live diagnostics only; the Java-visible name stays in the
+    // Thread object's declared field.
+    void Rename(VmObjectRef thread_object, std::string name);
 
     // Releases the execution lock briefly so other VM threads can run.
     void Yield();

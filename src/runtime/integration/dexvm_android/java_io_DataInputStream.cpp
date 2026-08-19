@@ -5,10 +5,9 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_DataInputStream(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/DataInputStream;");
-    builder.Super("Ljava/io/InputStream;");
-    builder.Virtual("<init>", "(Ljava/io/InputStream;)V", ReaderAdoptStreamHandler(context));
-    builder.Virtual("readFully", "([B)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/DataInputStream;", "Ljava/io/InputStream;");
+    builder.Constructor("(Ljava/io/InputStream;)V", ReaderAdoptStreamHandler(context));
+    builder.FinalMethod("readFully", "([B)V",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             auto& model = call.vm.Model();
@@ -25,7 +24,7 @@ Decl Declare_java_io_DataInputStream(const Context& context) {
             stream.cursor += wanted;
             return dx::VmValue::Void();
         });
-    builder.Virtual("skipBytes", "(I)I",
+    builder.FinalMethod("skipBytes", "(I)I",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             const auto wanted = call.arguments[0].AsInt();
@@ -48,7 +47,7 @@ Decl Declare_java_io_DataInputStream(const Context& context) {
         stream.cursor += wanted;
         return std::span(stream.bytes).subspan(begin, wanted);
     };
-    builder.Virtual("readInt", "()I",
+    builder.FinalMethod("readInt", "()I",
         [take_bytes](dx::IntrinsicContext& call) {
             const auto bytes = take_bytes(call, 4);
             std::uint32_t value = 0;
@@ -57,7 +56,7 @@ Decl Declare_java_io_DataInputStream(const Context& context) {
             }
             return dx::VmValue::Int(static_cast<std::int32_t>(value));
         });
-    builder.Virtual("readLong", "()J",
+    builder.FinalMethod("readLong", "()J",
         [take_bytes](dx::IntrinsicContext& call) {
             const auto bytes = take_bytes(call, 8);
             std::uint64_t value = 0;
@@ -66,7 +65,7 @@ Decl Declare_java_io_DataInputStream(const Context& context) {
             }
             return dx::VmValue::Long(static_cast<std::int64_t>(value));
         });
-    builder.Virtual("readUTF", "()Ljava/lang/String;",
+    builder.FinalMethod("readUTF", "()Ljava/lang/String;",
         [take_bytes](dx::IntrinsicContext& call) {
             const auto length_bytes = take_bytes(call, 2);
             const auto length = static_cast<std::size_t>(
@@ -81,7 +80,7 @@ Decl Declare_java_io_DataInputStream(const Context& context) {
                               bytes.size());
             return dx::VmValue::Ref(call.vm.NewStringUtf8(value));
         });
-    builder.Virtual("close", "()V", StreamCloseHandler(context));
+    builder.FinalMethod("close", "()V", StreamCloseHandler(context));
     return std::move(builder).Build();
 }
 

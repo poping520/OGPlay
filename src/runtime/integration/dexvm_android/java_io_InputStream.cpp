@@ -5,9 +5,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_InputStream(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/InputStream;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Overridable("read", "([BII)I",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/InputStream;", "Ljava/lang/Object;");
+    builder.VirtualMethod("read", "([BII)I",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             const auto array = call.arguments[0].ref;
@@ -28,7 +27,7 @@ Decl Declare_java_io_InputStream(const Context& context) {
             stream.cursor += amount;
             return dx::VmValue::Int(static_cast<std::int32_t>(amount));
         });
-    builder.Overridable("read", "([B)I",
+    builder.VirtualMethod("read", "([B)I",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             const auto array = call.arguments[0].ref;
@@ -43,7 +42,7 @@ Decl Declare_java_io_InputStream(const Context& context) {
             stream.cursor += amount;
             return dx::VmValue::Int(static_cast<std::int32_t>(amount));
         });
-    builder.Overridable("read", "()I",
+    builder.VirtualMethod("read", "()I",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             if (stream.cursor >= stream.bytes.size()) {
@@ -52,14 +51,14 @@ Decl Declare_java_io_InputStream(const Context& context) {
             return dx::VmValue::Int(static_cast<std::int32_t>(
                 static_cast<std::uint8_t>(stream.bytes[stream.cursor++])));
         });
-    builder.Overridable("available", "()I",
+    builder.VirtualMethod("available", "()I",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             return dx::VmValue::Int(static_cast<std::int32_t>(
                 stream.bytes.size() - stream.cursor));
         });
-    builder.Overridable("close", "()V", StreamCloseHandler(context));
-    builder.Overridable("skip", "(J)J",
+    builder.VirtualMethod("close", "()V", StreamCloseHandler(context));
+    builder.VirtualMethod("skip", "(J)J",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             const auto requested = call.arguments[0].AsLong();

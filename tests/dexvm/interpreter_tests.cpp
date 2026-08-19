@@ -870,20 +870,19 @@ TEST_CASE("dexvm core handlers call directly") {
 
 TEST_CASE("dexvm intrinsic builder binds implementations without a registry") {
     std::uint32_t clinit_calls = 0;
-    IntrinsicClassBuilder builder("Lbuilder/Direct;");
-    builder.Super("Ljava/lang/Object;")
-        .Static("answer", "()I", [](IntrinsicContext&) {
+    auto builder = IntrinsicClassBuilder::Class("Lbuilder/Direct;", "Ljava/lang/Object;");
+    builder.StaticMethod("answer", "()I", [](IntrinsicContext&) {
             return VmValue::Int(42);
         })
-        .Virtual("virtualAnswer", "()I", [](IntrinsicContext&) {
+        .FinalMethod("virtualAnswer", "()I", [](IntrinsicContext&) {
             return VmValue::Int(43);
         })
-        .Overridable("overridableAnswer", "()I", [](IntrinsicContext&) {
+        .VirtualMethod("overridableAnswer", "()I", [](IntrinsicContext&) {
             return VmValue::Int(44);
         })
         .ConstantInt("COUNT", "I", 41)
         .ConstantString("NAME", "direct")
-        .Clinit([&clinit_calls](IntrinsicContext&) {
+        .ClassInitializer([&clinit_calls](IntrinsicContext&) {
             ++clinit_calls;
             return VmValue::Void();
         });
@@ -943,23 +942,139 @@ TEST_CASE("dexvm intrinsic builder rejects invalid declarations at build") {
         CHECK(rejected);
     };
 
-    IntrinsicClassBuilder duplicate("Lbuilder/Duplicate;");
-    duplicate.Static("answer", "()I", {})
-        .Static("answer", "()I", {});
+    auto duplicate = IntrinsicClassBuilder::Class("Lbuilder/Duplicate;");
+    duplicate.UnimplementedStatic("answer", "()I")
+        .UnimplementedStatic("answer", "()I");
     expect_invalid(std::move(duplicate));
 
-    IntrinsicClassBuilder invalid_descriptor("Lbuilder/Invalid;");
-    invalid_descriptor.Static("answer", "(I", {});
+    auto invalid_descriptor = IntrinsicClassBuilder::Class("Lbuilder/Invalid;");
+    invalid_descriptor.UnimplementedStatic("answer", "(I");
     expect_invalid(std::move(invalid_descriptor));
 
-    IntrinsicClassBuilder invalid_interface("Lbuilder/Interface;");
-    invalid_interface.MarkInterface().Field("state", "I", false);
+    auto invalid_interface = IntrinsicClassBuilder::Interface("Lbuilder/Interface;");
+    invalid_interface.InstanceField("state", "I");
     expect_invalid(std::move(invalid_interface));
+
+    auto constant_range = IntrinsicClassBuilder::Class("Lbuilder/Range;");
+    constant_range.ConstantInt("MAX", "B", 128);
+    expect_invalid(std::move(constant_range));
+
+    // Declaration-time validation rejects before Build() is reached.
+    const auto reject_direct = [](auto declare) {
+        bool rejected = false;
+        try {
+            declare();
+        } catch (const DexVmError& error) {
+            rejected = true;
+            CHECK(error.Reason() == DexVmErrorReason::internal_invariant);
+        }
+        CHECK(rejected);
+    };
+    reject_direct([] {
+        auto builder = IntrinsicClassBuilder::Class("Lbuilder/BadCtor;");
+        builder.Constructor("()I",
+                            [](IntrinsicContext&) { return VmValue::Int(1); });
+    });
+    reject_direct([] {
+        auto builder = IntrinsicClassBuilder::Class("Lbuilder/Empty;");
+        builder.StaticMethod("answer", "()I", {});
+    });
+    reject_direct([] {
+        auto builder = IntrinsicClassBuilder::Class("Lbuilder/Reserved;");
+        builder.FinalMethod("<init>", "()V",
+                            [](IntrinsicContext&) { return VmValue::Void(); });
+    });
+}
+
+TEST_CASE("dexvm intrinsic builder maps headers, members, and constants") {
+    const auto root = IntrinsicClassBuilder::RootClass("Ljava/lang/Object;")
+                          .Build();
+    CHECK(root.descriptor == "Ljava/lang/Object;");
+    CHECK_FALSE(root.superclass.has_value());
+    CHECK_FALSE(root.is_interface);
+
+    const auto callback = IntrinsicClassBuilder::Interface(
+                              "Lbuilder/Callback;", {"Ljava/lang/Runnable;"})
+                              .Build();
+    CHECK(callback.is_interface);
+    REQUIRE(callback.interfaces.size() == 1U);
+    CHECK(callback.interfaces[0] == "Ljava/lang/Runnable;");
+
+    auto builder = IntrinsicClassBuilder::Class(
+        "Lbuilder/Header;", "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
+    builder.InstanceField("id", "I");
+    builder.StaticField("counter", "I");
+    builder.ConstantInt("MAX", "B", 127);
+    builder.Constructor("()V",
+                        [](IntrinsicContext&) { return VmValue::Void(); });
+    builder.StaticMethod("create", "()Lbuilder/Header;",
+        [](IntrinsicContext& context) { return VmValue::Ref(context.receiver); });
+    builder.VirtualMethod("describe", "()Ljava/lang/String;",
+        [](IntrinsicContext& context) { return VmValue::Ref(context.receiver); });
+    builder.FinalMethod("id", "()I", [](IntrinsicContext&) { return VmValue::Int(7); });
+    builder.UnimplementedConstructor("(I)V");
+    builder.UnimplementedStatic("parse", "(Ljava/lang/String;)I");
+    builder.UnimplementedVirtual("run", "()V");
+    builder.UnimplementedFinal("close", "()V");
+    const auto decl = std::move(builder).Build();
+    CHECK_FALSE(decl.is_interface);
+    REQUIRE(decl.superclass.has_value());
+    CHECK(*decl.superclass == "Ljava/lang/Object;");
+    REQUIRE(decl.interfaces.size() == 1U);
+    CHECK(decl.interfaces[0] == "Ljava/lang/Runnable;");
+
+    const auto find_method = [&decl](const std::string& name,
+                                     const std::string& descriptor) {
+        const auto it = std::find_if(
+            decl.methods.begin(), decl.methods.end(),
+            [&](const IntrinsicMethodDecl& method) {
+                return method.name == name && method.descriptor == descriptor;
+            });
+        REQUIRE(it != decl.methods.end());
+        return *it;
+    };
+
+    const auto init = find_method("<init>", "()V");
+    CHECK_FALSE(init.is_static);
+    CHECK_FALSE(init.overridable);
+    CHECK(init.implementation);
+
+    const auto create = find_method("create", "()Lbuilder/Header;");
+    CHECK(create.is_static);
+    CHECK_FALSE(create.overridable);
+    CHECK(create.implementation);
+
+    const auto describe = find_method("describe", "()Ljava/lang/String;");
+    CHECK_FALSE(describe.is_static);
+    CHECK(describe.overridable);
+    CHECK(describe.implementation);
+
+    const auto id = find_method("id", "()I");
+    CHECK_FALSE(id.is_static);
+    CHECK_FALSE(id.overridable);
+
+    find_method("<init>", "(I)V");
+    CHECK_FALSE(find_method("parse", "(Ljava/lang/String;)I").implementation);
+    CHECK(find_method("run", "()V").overridable);
+    CHECK_FALSE(find_method("close", "()V").overridable);
+
+    const auto find_field = [&decl](const std::string& name) {
+        const auto it = std::find_if(
+            decl.fields.begin(), decl.fields.end(),
+            [&](const IntrinsicFieldDecl& field) { return field.name == name; });
+        REQUIRE(it != decl.fields.end());
+        return *it;
+    };
+    CHECK_FALSE(find_field("id").is_static);
+    CHECK(find_field("counter").is_static);
+    const auto max = find_field("MAX");
+    CHECK(max.has_constant);
+    CHECK(max.integral == 127);
 }
 
 TEST_CASE("dexvm declaration miss uses the owner signature and repeats") {
-    IntrinsicClassBuilder builder("Lbuilder/Missing;");
-    builder.Super("Ljava/lang/Object;").Static("answer", "()I", {});
+    auto builder = IntrinsicClassBuilder::Class("Lbuilder/Missing;", "Ljava/lang/Object;");
+    builder.UnimplementedStatic("answer", "()I");
     std::vector<IntrinsicClassDecl> catalog;
     catalog.push_back(std::move(builder).Build());
     IntrinsicVm vm(std::move(catalog));

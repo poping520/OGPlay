@@ -79,16 +79,15 @@ Decl Declare_java_io_File(const Context& context) {
         }
         return names;
     };
-    dx::IntrinsicClassBuilder builder("Ljava/io/File;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Field("path", "Ljava/lang/String;", false);
-    builder.Virtual("<init>", "(Ljava/lang/String;)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/File;", "Ljava/lang/Object;");
+    builder.InstanceField("path", "Ljava/lang/String;");
+    builder.Constructor("(Ljava/lang/String;)V",
         [](dx::IntrinsicContext& call) {
             const auto slots = call.vm.Model().InstanceSlots(call.receiver);
             slots[0] = {call.arguments[0].ref.Value(), dx::SlotTag::ref};
             return dx::VmValue::Void();
         });
-    builder.Virtual("<init>", "(Ljava/lang/String;Ljava/lang/String;)V",
+    builder.Constructor("(Ljava/lang/String;Ljava/lang/String;)V",
         [](dx::IntrinsicContext& call) {
             auto joined = call.vm.StringUtf8(call.arguments[0].ref);
             if (!joined.empty() && joined.back() != '/') joined += '/';
@@ -98,13 +97,13 @@ Decl Declare_java_io_File(const Context& context) {
                         dx::SlotTag::ref};
             return dx::VmValue::Void();
         });
-    builder.Virtual("exists", "()Z",
+    builder.FinalMethod("exists", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto path = FilePathOf(call, call.receiver);
             return dx::VmValue::Int(
                 VfsStatOf(context, path).has_value() ? 1 : 0);
         });
-    builder.Virtual("length", "()J",
+    builder.FinalMethod("length", "()J",
         [context](dx::IntrinsicContext& call) {
             const auto size =
                 VfsSizeOf(context, FilePathOf(call, call.receiver));
@@ -115,8 +114,8 @@ Decl Declare_java_io_File(const Context& context) {
     const auto get_path = [](dx::IntrinsicContext& call) {
         return MakeString(call, FilePathOf(call, call.receiver));
     };
-    builder.Virtual("getPath", "()Ljava/lang/String;", get_path);
-    builder.Virtual("getAbsolutePath", "()Ljava/lang/String;", get_path);
+    builder.FinalMethod("getPath", "()Ljava/lang/String;", get_path);
+    builder.FinalMethod("getAbsolutePath", "()Ljava/lang/String;", get_path);
     const auto mkdirs = [context](dx::IntrinsicContext& call) {
         // Really creates the levels and really reports failure; the old
         // unconditional true hid save directories that never existed.
@@ -125,9 +124,9 @@ Decl Declare_java_io_File(const Context& context) {
                 ? 1
                 : 0);
     };
-    builder.Virtual("mkdir", "()Z", mkdirs);
-    builder.Virtual("mkdirs", "()Z", mkdirs);
-    builder.Virtual("createNewFile", "()Z",
+    builder.FinalMethod("mkdir", "()Z", mkdirs);
+    builder.FinalMethod("mkdirs", "()Z", mkdirs);
+    builder.FinalMethod("createNewFile", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto path = FilePathOf(call, call.receiver);
             if (VfsStatOf(context, path).has_value()) {
@@ -136,7 +135,7 @@ Decl Declare_java_io_File(const Context& context) {
             VfsWriteAll(context, path, {});
             return dx::VmValue::Int(1);
         });
-    builder.Virtual("delete", "()Z",
+    builder.FinalMethod("delete", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto path = FilePathOf(call, call.receiver);
             const auto info = VfsStatOf(context, path);
@@ -155,14 +154,14 @@ Decl Declare_java_io_File(const Context& context) {
             }
             return dx::VmValue::Int(1);
         });
-    builder.Virtual("isDirectory", "()Z",
+    builder.FinalMethod("isDirectory", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto info =
                 VfsStatOf(context, FilePathOf(call, call.receiver));
             return dx::VmValue::Int(
                 info.has_value() && info->is_directory ? 1 : 0);
         });
-    builder.Virtual("list", "()[Ljava/lang/String;",
+    builder.FinalMethod("list", "()[Ljava/lang/String;",
         [list_children](dx::IntrinsicContext& call) {
             auto names = list_children(FilePathOf(call, call.receiver));
             if (!names.has_value()) {

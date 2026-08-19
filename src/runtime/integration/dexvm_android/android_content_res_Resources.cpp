@@ -3,9 +3,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_res_Resources(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/content/res/Resources;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("getConfiguration", "()Landroid/content/res/Configuration;",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/Resources;", "Ljava/lang/Object;");
+    builder.FinalMethod("getConfiguration", "()Landroid/content/res/Configuration;",
         [context](dx::IntrinsicContext& call) {
             const auto instance = Singleton(call, context, "configuration",
                 "Landroid/content/res/Configuration;");
@@ -15,7 +14,7 @@ Decl Declare_android_content_res_Resources(const Context& context) {
             slots[0] = {1U, dx::SlotTag::cat1};
             return dx::VmValue::Ref(instance);
         });
-    builder.Virtual("getIdentifier",
+    builder.FinalMethod("getIdentifier",
         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
         [context](dx::IntrinsicContext& call) {
             const auto entry_name = call.vm.StringUtf8(call.arguments[0].ref);
@@ -26,7 +25,7 @@ Decl Declare_android_content_res_Resources(const Context& context) {
                     ? 0
                     : static_cast<std::int32_t>(entry->resource_id));
         });
-    builder.Virtual("openRawResource", "(I)Ljava/io/InputStream;",
+    builder.FinalMethod("openRawResource", "(I)Ljava/io/InputStream;",
         [context](dx::IntrinsicContext& call) {
             const auto resource_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
@@ -39,7 +38,7 @@ Decl Declare_android_content_res_Resources(const Context& context) {
             return dx::VmValue::Ref(OpenStream(
                 call, context, ReadApkFile(context, *entry->string_value)));
         });
-    builder.Virtual("getString", "(I)Ljava/lang/String;",
+    builder.FinalMethod("getString", "(I)Ljava/lang/String;",
         [](dx::IntrinsicContext&) -> dx::VmValue {
             throw dx::VmJavaThrow{
                 "Ljava/lang/UnsupportedOperationException;",

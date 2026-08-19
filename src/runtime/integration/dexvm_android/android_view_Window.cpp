@@ -3,15 +3,14 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_Window(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/view/Window;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("setFlags", "(II)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Window;", "Ljava/lang/Object;");
+    builder.FinalMethod("setFlags", "(II)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Virtual("addFlags", "(I)V",
+    builder.FinalMethod("addFlags", "(I)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Virtual("clearFlags", "(I)V",
+    builder.FinalMethod("clearFlags", "(I)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Virtual("getAttributes",
+    builder.FinalMethod("getAttributes",
         "()Landroid/view/WindowManager$LayoutParams;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(

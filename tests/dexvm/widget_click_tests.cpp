@@ -83,9 +83,8 @@ struct ClickVm final {
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
-                  IntrinsicClassBuilder content_view("LTestContentView;");
-                  content_view.Super("Landroid/view/View;")
-                      .Overridable("onTouchEvent",
+                  auto content_view = IntrinsicClassBuilder::Class("LTestContentView;", "Landroid/view/View;");
+                  content_view.VirtualMethod("onTouchEvent",
                                    "(Landroid/view/MotionEvent;)Z",
                           [this](IntrinsicContext&) {
                               ++content_view_events;

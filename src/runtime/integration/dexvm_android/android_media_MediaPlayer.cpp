@@ -10,12 +10,11 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_MediaPlayer(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/media/MediaPlayer;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V", [](dx::IntrinsicContext&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/MediaPlayer;", "Ljava/lang/Object;");
+    builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.Virtual("setDataSource", "(Ljava/lang/String;)V",
+    builder.FinalMethod("setDataSource", "(Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {
             // Path-backed playback is not wired to the mixer yet: record the
             // gap loudly; start() on this instance will have no audio.
@@ -24,7 +23,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                          call.vm.StringUtf8(call.arguments[0].ref));
             return dx::VmValue::Void();
         });
-    builder.Virtual("isLooping", "()Z",
+    builder.FinalMethod("isLooping", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto found =
                 context->media_looping.find(call.receiver.Value());
@@ -32,7 +31,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                 found != context->media_looping.end() && found->second ? 1
                                                                        : 0);
         });
-    builder.Static("create",
+    builder.StaticMethod("create",
         "(Landroid/content/Context;I)Landroid/media/MediaPlayer;",
         [context](dx::IntrinsicContext& call) {
             const auto resource = call.arguments[1].AsInt();
@@ -55,7 +54,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         if (found == context->media_resources.end()) return std::nullopt;
         return found->second;
     };
-    builder.Virtual("isPlaying", "()Z",
+    builder.FinalMethod("isPlaying", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto found =
                 context->media_playing.find(call.receiver.Value());
@@ -63,7 +62,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                 found != context->media_playing.end() && found->second ? 1
                                                                        : 0);
         });
-    builder.Virtual("start", "()V",
+    builder.FinalMethod("start", "()V",
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
@@ -73,7 +72,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("pause", "()V",
+    builder.FinalMethod("pause", "()V",
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
@@ -83,7 +82,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("stop", "()V",
+    builder.FinalMethod("stop", "()V",
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
@@ -93,7 +92,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("release", "()V",
+    builder.FinalMethod("release", "()V",
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
@@ -105,19 +104,19 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             context->media_playing.erase(call.receiver.Value());
             return dx::VmValue::Void();
         });
-    builder.Virtual("prepare", "()V", [](dx::IntrinsicContext&) {
+    builder.FinalMethod("prepare", "()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.Virtual("seekTo", "(I)V", [](dx::IntrinsicContext&) {
+    builder.FinalMethod("seekTo", "(I)V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.Virtual("setLooping", "(Z)V",
+    builder.FinalMethod("setLooping", "(Z)V",
         [context](dx::IntrinsicContext& call) {
             context->media_looping[call.receiver.Value()] =
                 call.arguments[0].AsInt() != 0;
             return dx::VmValue::Void();
         });
-    builder.Virtual("setVolume", "(FF)V",
+    builder.FinalMethod("setVolume", "(FF)V",
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
@@ -127,7 +126,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("setOnCompletionListener",
+    builder.FinalMethod("setOnCompletionListener",
         "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
         [](dx::IntrinsicContext&) {
             // Completion callbacks require the media clock; recorded gap.

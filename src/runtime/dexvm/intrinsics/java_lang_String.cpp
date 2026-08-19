@@ -7,23 +7,19 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_String() {
-    IntrinsicClassBuilder builder("Ljava/lang/String;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Implements("Ljava/lang/CharSequence;");
-    builder.Implements("Ljava/lang/Comparable;");
-    builder.Implements("Ljava/io/Serializable;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/String;", "Ljava/lang/Object;", {"Ljava/lang/CharSequence;", "Ljava/lang/Comparable;", "Ljava/io/Serializable;"});
+    builder.Constructor("()V",
         [](IntrinsicContext& context) {
                 context.vm.Model().BindString(context.receiver, {});
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "(Ljava/lang/String;)V",
+    builder.Constructor("(Ljava/lang/String;)V",
         [](IntrinsicContext& context) {
                 context.vm.Model().BindString(
                     context.receiver, Value(context, context.arguments[0].ref));
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "([B)V",
+    builder.Constructor("([B)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
                 const auto array =
@@ -33,7 +29,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 model.BindString(context.receiver, Utf8DecodeReplace(bytes));
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "([BII)V",
+    builder.Constructor("([BII)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
                 const auto array =
@@ -45,7 +41,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 model.BindString(context.receiver, Utf8DecodeReplace(bytes));
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "([BLjava/lang/String;)V",
+    builder.Constructor("([BLjava/lang/String;)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
                 const auto array = RequireArray(context.arguments[0].ref);
@@ -76,7 +72,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 model.BindString(context.receiver, decoded);
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "([C)V",
+    builder.Constructor("([C)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
                 const auto array =
@@ -86,7 +82,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                     CharsValue(context, array, 0, model.ArrayLength(array)));
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "([CII)V",
+    builder.Constructor("([CII)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
                 const auto array =
@@ -98,7 +94,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                                  CharsValue(context, array, offset, count));
                 return VmValue::Void();
             });
-    builder.Virtual("getBytes", "()[B",
+    builder.FinalMethod("getBytes", "()[B",
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;
                 const auto bytes =
@@ -112,12 +108,12 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return VmValue::Ref(array);
             });
-    builder.Virtual("length", "()I",
+    builder.FinalMethod("length", "()I",
         [](IntrinsicContext& context) {
                 return VmValue::Int(static_cast<std::int32_t>(
                     context.vm.Model().StringValue(context.receiver).size()));
             });
-    builder.Virtual("charAt", "(I)C",
+    builder.FinalMethod("charAt", "(I)C",
         [](IntrinsicContext& context) {
             const auto value = context.vm.Model().StringValue(context.receiver);
                 const auto index = context.arguments[0].AsInt();
@@ -127,7 +123,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return VmValue::Int(value[static_cast<std::size_t>(index)]);
             });
-    builder.Virtual("equals", "(Ljava/lang/Object;)Z",
+    builder.FinalMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
                 const auto other = context.arguments[0].ref;
             if (!other.IsValid())
@@ -142,7 +138,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 model.StringValue(context.receiver) == model.StringValue(other) ? 1
                                         : 0);
             });
-    builder.Virtual("equalsIgnoreCase", "(Ljava/lang/String;)Z",
+    builder.FinalMethod("equalsIgnoreCase", "(Ljava/lang/String;)Z",
         [](IntrinsicContext& context) {
                 const auto other = context.arguments[0].ref;
                 if (!other.IsValid()) return VmValue::Int(0);
@@ -152,33 +148,33 @@ IntrinsicClassDecl Declare_java_lang_String() {
                         ? 1
                         : 0);
             });
-    builder.Virtual("hashCode", "()I",
+    builder.FinalMethod("hashCode", "()I",
         [](IntrinsicContext& context) {
             return VmValue::Int(
                 JavaStringHash(context.vm.Model().StringValue(context.receiver)));
             });
-    builder.Virtual("toString", "()Ljava/lang/String;",
+    builder.FinalMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return VmValue::Ref(context.receiver);
             });
-    builder.Virtual("compareTo", "(Ljava/lang/String;)I",
+    builder.FinalMethod("compareTo", "(Ljava/lang/String;)I",
         [](IntrinsicContext& context) {
                 return VmValue::Int(CompareStrings(
                     Value(context, context.receiver),
                     Value(context, context.arguments[0].ref), false));
             });
-    builder.Virtual("compareToIgnoreCase", "(Ljava/lang/String;)I",
+    builder.FinalMethod("compareToIgnoreCase", "(Ljava/lang/String;)I",
         [](IntrinsicContext& context) {
                 return VmValue::Int(CompareStrings(
                     Value(context, context.receiver),
                     Value(context, context.arguments[0].ref), true));
             });
-    builder.Virtual("concat", "(Ljava/lang/String;)Ljava/lang/String;",
+    builder.FinalMethod("concat", "(Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context, Value(context, context.receiver) +
                                          Value(context, context.arguments[0].ref));
             });
-    builder.Virtual("startsWith", "(Ljava/lang/String;)Z",
+    builder.FinalMethod("startsWith", "(Ljava/lang/String;)Z",
         [](IntrinsicContext& context) {
                 return VmValue::Int(
                     Value(context, context.receiver)
@@ -186,7 +182,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                         ? 1
                         : 0);
             });
-    builder.Virtual("endsWith", "(Ljava/lang/String;)Z",
+    builder.FinalMethod("endsWith", "(Ljava/lang/String;)Z",
         [](IntrinsicContext& context) {
                 return VmValue::Int(
                     Value(context, context.receiver)
@@ -194,7 +190,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                         ? 1
                         : 0);
             });
-    builder.Virtual("indexOf", "(I)I",
+    builder.FinalMethod("indexOf", "(I)I",
         [](IntrinsicContext& context) {
                 const auto haystack = Value(context, context.receiver);
                 const auto found = haystack.find(static_cast<char16_t>(
@@ -203,7 +199,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                                         ? -1
                                         : static_cast<std::int32_t>(found));
             });
-    builder.Virtual("indexOf", "(II)I",
+    builder.FinalMethod("indexOf", "(II)I",
         [](IntrinsicContext& context) {
                 const auto haystack = Value(context, context.receiver);
                 const auto from = context.arguments[1].AsInt();
@@ -216,14 +212,14 @@ IntrinsicClassDecl Declare_java_lang_String() {
                                         ? -1
                                         : static_cast<std::int32_t>(found));
             });
-    builder.Virtual("contains", "(Ljava/lang/CharSequence;)Z",
+    builder.FinalMethod("contains", "(Ljava/lang/CharSequence;)Z",
         [](IntrinsicContext& context) {
                 const auto haystack = Value(context, context.receiver);
                 const auto needle = Value(context, context.arguments[0].ref);
                 return VmValue::Int(
                     haystack.find(needle) != std::u16string::npos ? 1 : 0);
             });
-    builder.Virtual("getChars", "(II[CI)V",
+    builder.FinalMethod("getChars", "(II[CI)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
                 const auto value = Value(context, context.receiver);
@@ -252,7 +248,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return VmValue::Void();
             });
-    builder.Virtual("toCharArray", "()[C",
+    builder.FinalMethod("toCharArray", "()[C",
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;
                 const auto value = Value(context, context.receiver);
@@ -266,7 +262,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return VmValue::Ref(array);
             });
-    builder.Virtual("replace", "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;",
+    builder.FinalMethod("replace", "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto value = Value(context, context.receiver);
                 const auto target = Value(context, context.arguments[0].ref);
@@ -294,7 +290,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return Make(context, out);
             });
-    builder.Virtual("replaceAll", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+    builder.FinalMethod("replaceAll", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto value = ToUtf8(Value(context, context.receiver));
                 const auto pattern =
@@ -305,7 +301,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                             FromUtf8(std::regex_replace(value, pattern,
                                                         replacement)));
             });
-    builder.Virtual("split", "(Ljava/lang/String;)[Ljava/lang/String;",
+    builder.FinalMethod("split", "(Ljava/lang/String;)[Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;
                 const auto value = ToUtf8(Value(context, context.receiver));
@@ -352,7 +348,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return VmValue::Ref(array);
             });
-    builder.Virtual("indexOf", "(Ljava/lang/String;)I",
+    builder.FinalMethod("indexOf", "(Ljava/lang/String;)I",
         [](IntrinsicContext& context) {
                 const auto haystack = Value(context, context.receiver);
                 const auto found =
@@ -361,7 +357,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                                         ? -1
                                         : static_cast<std::int32_t>(found));
             });
-    builder.Virtual("lastIndexOf", "(I)I",
+    builder.FinalMethod("lastIndexOf", "(I)I",
         [](IntrinsicContext& context) {
                 const auto haystack = Value(context, context.receiver);
                 const auto found = haystack.rfind(static_cast<char16_t>(
@@ -370,7 +366,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                                         ? -1
                                         : static_cast<std::int32_t>(found));
             });
-    builder.Virtual("lastIndexOf", "(Ljava/lang/String;)I",
+    builder.FinalMethod("lastIndexOf", "(Ljava/lang/String;)I",
         [](IntrinsicContext& context) {
                 const auto haystack = Value(context, context.receiver);
                 const auto found =
@@ -379,30 +375,30 @@ IntrinsicClassDecl Declare_java_lang_String() {
                                         ? -1
                                         : static_cast<std::int32_t>(found));
             });
-    builder.Virtual("substring", "(I)Ljava/lang/String;",
+    builder.FinalMethod("substring", "(I)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto value = Value(context, context.receiver);
                 return Substring(context, context.arguments[0].AsInt(),
                                  static_cast<std::int32_t>(value.size()));
             });
-    builder.Virtual("substring", "(II)Ljava/lang/String;",
+    builder.FinalMethod("substring", "(II)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Substring(context, context.arguments[0].AsInt(),
                                  context.arguments[1].AsInt());
             });
-    builder.Virtual("toLowerCase", "()Ljava/lang/String;",
+    builder.FinalMethod("toLowerCase", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 auto value = Value(context, context.receiver);
                 for (auto& unit : value) unit = AsciiLower(unit);
                 return Make(context, value);
             });
-    builder.Virtual("toUpperCase", "()Ljava/lang/String;",
+    builder.FinalMethod("toUpperCase", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 auto value = Value(context, context.receiver);
                 for (auto& unit : value) unit = AsciiUpper(unit);
                 return Make(context, value);
             });
-    builder.Virtual("trim", "()Ljava/lang/String;",
+    builder.FinalMethod("trim", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto value = Value(context, context.receiver);
                 std::size_t begin = 0;
@@ -411,45 +407,45 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 while (end > begin && value[end - 1] <= u' ') --end;
                 return Make(context, value.substr(begin, end - begin));
             });
-    builder.Virtual("isEmpty", "()Z",
+    builder.FinalMethod("isEmpty", "()Z",
         [](IntrinsicContext& context) {
                 return VmValue::Int(
                     Value(context, context.receiver).empty() ? 1 : 0);
             });
-    builder.Static("valueOf", "(I)Ljava/lang/String;",
+    builder.StaticMethod("valueOf", "(I)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context,
                             Widen(std::to_string(context.arguments[0].AsInt())));
             });
-    builder.Static("valueOf", "(J)Ljava/lang/String;",
+    builder.StaticMethod("valueOf", "(J)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context,
                             Widen(std::to_string(context.arguments[0].AsLong())));
             });
-    builder.Static("valueOf", "(F)Ljava/lang/String;",
+    builder.StaticMethod("valueOf", "(F)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context,
                             Widen(std::to_string(context.arguments[0].AsFloat())));
             });
-    builder.Static("valueOf", "(D)Ljava/lang/String;",
+    builder.StaticMethod("valueOf", "(D)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context,
                             Widen(std::to_string(context.arguments[0].AsDouble())));
             });
-    builder.Static("valueOf", "(Z)Ljava/lang/String;",
+    builder.StaticMethod("valueOf", "(Z)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context, context.arguments[0].AsInt() != 0
                                          ? u"true"
                                          : std::u16string(u"false"));
             });
-    builder.Static("valueOf", "(C)Ljava/lang/String;",
+    builder.StaticMethod("valueOf", "(C)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context,
                             std::u16string(1, static_cast<char16_t>(
                                                   context.arguments[0].cat1 &
                                                   0xffffU)));
             });
-    builder.Static("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;",
+    builder.StaticMethod("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto argument = context.arguments[0].ref;
                 if (!argument.IsValid()) {

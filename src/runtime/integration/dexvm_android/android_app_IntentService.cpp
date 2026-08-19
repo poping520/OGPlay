@@ -4,9 +4,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_IntentService(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/app/IntentService;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V", NeutralHandler('V'));
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/IntentService;", "Ljava/lang/Object;");
+    builder.Constructor("()V", NeutralHandler('V'));
     return std::move(builder).Build();
 }
 

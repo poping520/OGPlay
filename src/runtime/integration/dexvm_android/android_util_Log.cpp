@@ -4,8 +4,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_util_Log(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/util/Log;");
-    builder.Super("Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/Log;", "Ljava/lang/Object;");
     const auto log = [](const core::LogLevel level) {
         return dx::IntrinsicHandler([level](dx::IntrinsicContext& call) {
             GuestLog(call, level,
@@ -16,12 +15,12 @@ Decl Declare_android_util_Log(const Context& context) {
     };
     const auto debug = log(core::LogLevel::debug);
     const auto error = log(core::LogLevel::error);
-    builder.Static("d", "(Ljava/lang/String;Ljava/lang/String;)I", debug);
-    builder.Static("e", "(Ljava/lang/String;Ljava/lang/String;)I", error);
-    builder.Static("i", "(Ljava/lang/String;Ljava/lang/String;)I", log(core::LogLevel::info));
-    builder.Static("w", "(Ljava/lang/String;Ljava/lang/String;)I", log(core::LogLevel::warn));
-    builder.Static("v", "(Ljava/lang/String;Ljava/lang/String;)I", debug);
-    builder.Static("e", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I", error);
+    builder.StaticMethod("d", "(Ljava/lang/String;Ljava/lang/String;)I", debug);
+    builder.StaticMethod("e", "(Ljava/lang/String;Ljava/lang/String;)I", error);
+    builder.StaticMethod("i", "(Ljava/lang/String;Ljava/lang/String;)I", log(core::LogLevel::info));
+    builder.StaticMethod("w", "(Ljava/lang/String;Ljava/lang/String;)I", log(core::LogLevel::warn));
+    builder.StaticMethod("v", "(Ljava/lang/String;Ljava/lang/String;)I", debug);
+    builder.StaticMethod("e", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I", error);
     return std::move(builder).Build();
 }
 

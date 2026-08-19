@@ -54,12 +54,17 @@ METHOD_PATTERN = re.compile(r'\{"([^"]+)",\s*\n?\s*"(\([^"]*\)[^"]*)"')
 FIELD_PATTERN = re.compile(r'\{"([^"]+)",\s*"([^(][^"]*)"')
 PLACEHOLDER_PATTERN = re.compile(r'\{"(L[^"]+;)",\s*(?:true|false)')
 BUILDER_CLASS_PATTERN = re.compile(
-    r'(?:dx::)?IntrinsicClassBuilder\s+([A-Za-z_]\w*)\s*\(\s*"(L[^"]+;)"')
+    r'auto\s+([A-Za-z_]\w*)\s*=\s*(?:dx::)?IntrinsicClassBuilder::'
+    r'(?:RootClass|Class|Interface)\s*\(\s*"(L[^"]+;)"')
+# Constructor-style calls take the descriptor first; the optional second
+# quoted argument is the descriptor of the named method forms.
 BUILDER_METHOD_PATTERN = re.compile(
-    r'([A-Za-z_]\w*)\.(?:Virtual|Static|Overridable)\s*\('
-    r'\s*"([^"]+)"\s*,\s*"(\([^"]*\)[^"]*)"')
+    r'([A-Za-z_]\w*)\.(?:Constructor|StaticMethod|VirtualMethod|FinalMethod|'
+    r'UnimplementedStatic|UnimplementedVirtual|UnimplementedFinal|'
+    r'UnimplementedConstructor)\s*\(\s*"([^"]+)"(?:\s*,\s*"(\([^"]*\)[^"]*)")?')
 BUILDER_FIELD_PATTERN = re.compile(
-    r'([A-Za-z_]\w*)\.Field\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"')
+    r'([A-Za-z_]\w*)\.(?:InstanceField|StaticField)\s*\('
+    r'\s*"([^"]+)"\s*,\s*"([^"]+)"')
 
 
 def is_platform(descriptor: str) -> bool:
@@ -111,9 +116,14 @@ def parse_catalog_sources(paths: list[Path]) -> tuple[set[str], set[tuple[str, s
             builder_events.append(
                 (match.start(), "class", (match.group(1), match.group(2))))
         for match in BUILDER_METHOD_PATTERN.finditer(text):
-            builder_events.append(
-                (match.start(), "method",
-                 (match.group(1), match.group(2), match.group(3))))
+            if match.group(3) is None:
+                builder_events.append(
+                    (match.start(), "method",
+                     (match.group(1), "<init>", match.group(2))))
+            else:
+                builder_events.append(
+                    (match.start(), "method",
+                     (match.group(1), match.group(2), match.group(3))))
         for match in BUILDER_FIELD_PATTERN.finditer(text):
             builder_events.append(
                 (match.start(), "field",

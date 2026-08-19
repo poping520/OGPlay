@@ -19,20 +19,19 @@ IntrinsicClassDecl Declare_java_util_Random() {
         }
         return found->second;
     };
-    IntrinsicClassBuilder builder("Ljava/util/Random;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Random;", "Ljava/lang/Object;");
+    builder.Constructor("()V",
         [engines, counter](IntrinsicContext &context) {
                   (*engines)[context.receiver.Value()] = std::mt19937_64((*counter)++);
                     return VmValue::Void();
                 });
-    builder.Virtual("<init>", "(J)V",
+    builder.Constructor("(J)V",
         [engines](IntrinsicContext &context) {
                     (*engines)[context.receiver.Value()] = std::mt19937_64(
                         static_cast<std::uint64_t>(context.arguments[0].AsLong()));
                     return VmValue::Void();
                 });
-    builder.Virtual("nextDouble", "()D",
+    builder.FinalMethod("nextDouble", "()D",
         [engine_of](IntrinsicContext &context) {
                     auto& engine = engine_of(context);
                     VmValue out;
@@ -41,7 +40,7 @@ IntrinsicClassDecl Declare_java_util_Random() {
                     out.wide = std::bit_cast<std::uint64_t>(value);
                     return out;
                 });
-    builder.Virtual("nextInt", "(I)I",
+    builder.FinalMethod("nextInt", "(I)I",
         [engine_of](IntrinsicContext &context) {
                     const auto bound = context.arguments[0].AsInt();
                     if (bound <= 0) {
@@ -51,11 +50,11 @@ IntrinsicClassDecl Declare_java_util_Random() {
                     return VmValue::Int(static_cast<std::int32_t>(
                       engine_of(context)() % static_cast<std::uint64_t>(bound)));
                 });
-    builder.Virtual("nextInt", "()I",
+    builder.FinalMethod("nextInt", "()I",
         [engine_of](IntrinsicContext &context) {
                   return VmValue::Int(static_cast<std::int32_t>(engine_of(context)()));
                 });
-    builder.Virtual("nextFloat", "()F",
+    builder.FinalMethod("nextFloat", "()F",
         [engine_of](IntrinsicContext &context) {
                     auto& engine = engine_of(context);
                   const float value = static_cast<float>(engine() >> 40U) * 0x1.0p-24F;
@@ -63,7 +62,7 @@ IntrinsicClassDecl Declare_java_util_Random() {
                     out.cat1 = std::bit_cast<std::uint32_t>(value);
                     return out;
                 });
-    builder.Virtual("nextLong", "()J",
+    builder.FinalMethod("nextLong", "()J",
         [engine_of](IntrinsicContext &context) {
                   return VmValue::Long(static_cast<std::int64_t>(engine_of(context)()));
                 });

@@ -7,9 +7,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_CharSequence() {
-    IntrinsicClassBuilder builder("Ljava/lang/CharSequence;");
-    builder.MarkInterface();
-    builder.Virtual("length", "()I",
+    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/CharSequence;");
+    builder.FinalMethod("length", "()I",
         [](IntrinsicContext& context) {
                 return VmValue::Int(static_cast<std::int32_t>(
                     context.vm.Model().StringValue(context.receiver).size()));

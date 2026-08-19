@@ -23,21 +23,20 @@ void LoadPreferencesOnce(const Context& context, const std::string& name) {
 }  // namespace
 
 Decl Declare_android_content_Context(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/content/Context;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V", [](dx::IntrinsicContext&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;", "Ljava/lang/Object;");
+    builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.Virtual("getAssets", "()Landroid/content/res/AssetManager;",
+    builder.FinalMethod("getAssets", "()Landroid/content/res/AssetManager;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Singleton(
                 call, context, "assets", "Landroid/content/res/AssetManager;"));
         });
-    builder.Virtual("getPackageName", "()Ljava/lang/String;",
+    builder.FinalMethod("getPackageName", "()Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) {
             return MakeString(call, context->package_name);
         });
-    builder.Virtual("getApplicationContext", "()Landroid/content/Context;",
+    builder.FinalMethod("getApplicationContext", "()Landroid/content/Context;",
         [context](dx::IntrinsicContext& call) {
             // One guest process owns one application Context; Activity
             // wrappers may come and go without changing this identity.
@@ -48,12 +47,12 @@ Decl Declare_android_content_Context(const Context& context) {
                 call, context, "application_context",
                 "Landroid/content/Context;"));
         });
-    builder.Virtual("getResources", "()Landroid/content/res/Resources;",
+    builder.FinalMethod("getResources", "()Landroid/content/res/Resources;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Singleton(call, context, "resources",
                 "Landroid/content/res/Resources;"));
         });
-    builder.Virtual("getSystemService",
+    builder.FinalMethod("getSystemService",
         "(Ljava/lang/String;)Ljava/lang/Object;",
         [context](dx::IntrinsicContext& call) {
             const auto name = call.vm.StringUtf8(call.arguments[0].ref);
@@ -93,7 +92,7 @@ Decl Declare_android_content_Context(const Context& context) {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "system service is not provided: " + name};
         });
-    builder.Virtual("registerReceiver",
+    builder.FinalMethod("registerReceiver",
         "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;",
         [context](dx::IntrinsicContext& call) {
             const auto receiver = call.arguments[0].ref;
@@ -104,7 +103,7 @@ Decl Declare_android_content_Context(const Context& context) {
             // Sticky broadcast lookup: nothing pending on this platform.
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
-    builder.Virtual("unregisterReceiver",
+    builder.FinalMethod("unregisterReceiver",
         "(Landroid/content/BroadcastReceiver;)V",
         [context](dx::IntrinsicContext& call) {
             const auto receiver = call.arguments[0].ref;
@@ -122,7 +121,7 @@ Decl Declare_android_content_Context(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("startActivity", "(Landroid/content/Intent;)V",
+    builder.FinalMethod("startActivity", "(Landroid/content/Intent;)V",
         [context](dx::IntrinsicContext& call) -> dx::VmValue {
             // In-process activity switch: only intents with an explicit
             // component that resolves to a dex activity are supported;
@@ -142,7 +141,7 @@ Decl Declare_android_content_Context(const Context& context) {
             context->current_intent = intent;
             return dx::VmValue::Void();
         });
-    builder.Virtual("getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+    builder.FinalMethod("getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
         [context](dx::IntrinsicContext& call) {
             const auto name = call.vm.StringUtf8(call.arguments[0].ref);
             const auto instance = Singleton(
@@ -152,13 +151,13 @@ Decl Declare_android_content_Context(const Context& context) {
             LoadPreferencesOnce(context, name);
             return dx::VmValue::Ref(instance);
         });
-    builder.Virtual("getContentResolver", "()Landroid/content/ContentResolver;",
+    builder.FinalMethod("getContentResolver", "()Landroid/content/ContentResolver;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
                 Singleton(call, context, "content_resolver",
                           "Landroid/content/ContentResolver;"));
         });
-    builder.Virtual("sendBroadcast", "(Landroid/content/Intent;)V",
+    builder.FinalMethod("sendBroadcast", "(Landroid/content/Intent;)V",
         [](dx::IntrinsicContext& call) {
             // No other process exists; the broadcast truthfully has no
             // audience. Logged so silent drops stay visible.
@@ -166,7 +165,7 @@ Decl Declare_android_content_Context(const Context& context) {
                      "sendBroadcast dropped: no receivers on this platform");
             return dx::VmValue::Void();
         });
-    builder.Virtual("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;",
+    builder.FinalMethod("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;",
         [context](dx::IntrinsicContext& call) {
             // Platform layout under the external mount; a null type argument
             // answers the package files root.
@@ -181,7 +180,7 @@ Decl Declare_android_content_Context(const Context& context) {
             slots[0] = {call.vm.NewStringUtf8(path).Value(), dx::SlotTag::ref};
             return dx::VmValue::Ref(file);
         });
-    builder.Virtual("startService",
+    builder.FinalMethod("startService",
         "(Landroid/content/Intent;)Landroid/content/ComponentName;",
         [](dx::IntrinsicContext& call) {
             GuestLog(call, core::LogLevel::debug,

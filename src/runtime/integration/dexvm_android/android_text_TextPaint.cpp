@@ -4,9 +4,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_text_TextPaint(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/text/TextPaint;");
-    builder.Super("Landroid/graphics/Paint;");
-    builder.Virtual("getTextBounds", "(Ljava/lang/String;IILandroid/graphics/Rect;)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/text/TextPaint;", "Landroid/graphics/Paint;");
+    builder.FinalMethod("getTextBounds", "(Ljava/lang/String;IILandroid/graphics/Rect;)V",
         [](dx::IntrinsicContext& call) {
             // No font engine exists; the v1 metric is a deterministic
             // monospace estimate (8x16 px per glyph) so layout math stays

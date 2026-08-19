@@ -18,11 +18,10 @@ std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
 }  // namespace
 
 Decl Declare_android_widget_TextView(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/widget/TextView;");
-    builder.Super("Landroid/view/View;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TextView;", "Landroid/view/View;");
+    builder.Constructor("(Landroid/content/Context;)V",
                     ViewInitHandler(context));
-    builder.Virtual("setText", "(Ljava/lang/CharSequence;)V",
+    builder.FinalMethod("setText", "(Ljava/lang/CharSequence;)V",
         [context](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].ref;
             auto text = value.IsValid() ? call.vm.Model().StringValue(value)
@@ -38,13 +37,13 @@ Decl Declare_android_widget_TextView(const Context& context) {
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
-    builder.Virtual("getText", "()Ljava/lang/CharSequence;",
+    builder.FinalMethod("getText", "()Ljava/lang/CharSequence;",
         [context](dx::IntrinsicContext& call) {
             const auto node = TextNode(call, context);
             return dx::VmValue::Ref(call.vm.Model().NewString(
                 context->ui_tree.Get(node)->text));
         });
-    builder.Virtual("setTextColor", "(I)V",
+    builder.FinalMethod("setTextColor", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = TextNode(call, context);
             context->ui_tree.Get(node)->text_color = AndroidColorToRgba(
@@ -66,11 +65,11 @@ Decl Declare_android_widget_TextView(const Context& context) {
         context->ui_tree.MarkLayoutDirty(node);
         return dx::VmValue::Void();
     };
-    builder.Virtual("setTextSize", "(F)V",
+    builder.FinalMethod("setTextSize", "(F)V",
         [set_text_size](dx::IntrinsicContext& call) {
             return set_text_size(call, 0);
         });
-    builder.Virtual("setTextSize", "(IF)V",
+    builder.FinalMethod("setTextSize", "(IF)V",
         [set_text_size](dx::IntrinsicContext& call) {
             const auto unit = call.arguments[0].AsInt();
             if (unit < 0 || unit > 2) {
@@ -88,15 +87,15 @@ Decl Declare_android_widget_TextView(const Context& context) {
         context->ui_tree.Get(node)->max_lines = 1;
         return dx::VmValue::Void();
     };
-    builder.Virtual("setLines", "(I)V", one_line);
-    builder.Virtual("setMaxLines", "(I)V", one_line);
-    builder.Virtual("setSingleLine", "()V",
+    builder.FinalMethod("setLines", "(I)V", one_line);
+    builder.FinalMethod("setMaxLines", "(I)V", one_line);
+    builder.FinalMethod("setSingleLine", "()V",
         [context](dx::IntrinsicContext& call) {
             const auto node = TextNode(call, context);
             context->ui_tree.Get(node)->max_lines = 1;
             return dx::VmValue::Void();
         });
-    builder.Virtual("setSingleLine", "(Z)V",
+    builder.FinalMethod("setSingleLine", "(Z)V",
         [context](dx::IntrinsicContext& call) {
             if (call.arguments[0].AsInt() == 0) {
                 throw dx::VmJavaThrow{
@@ -107,8 +106,8 @@ Decl Declare_android_widget_TextView(const Context& context) {
             context->ui_tree.Get(node)->max_lines = 1;
             return dx::VmValue::Void();
         });
-    builder.Virtual("setMaxWidth", "(I)V", WidgetNoopHandler());
-    builder.Virtual("setGravity", "(I)V",
+    builder.FinalMethod("setMaxWidth", "(I)V", WidgetNoopHandler());
+    builder.FinalMethod("setGravity", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = TextNode(call, context);
             context->ui_tree.Get(node)->gravity =
@@ -116,15 +115,15 @@ Decl Declare_android_widget_TextView(const Context& context) {
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
-    builder.Virtual("setId", "(I)V", ViewSetIdHandler(context));
-    builder.Virtual("setTypeface", "(Landroid/graphics/Typeface;)V", WidgetNoopHandler());
-    builder.Virtual("getPaint", "()Landroid/text/TextPaint;",
+    builder.FinalMethod("setId", "(I)V", ViewSetIdHandler(context));
+    builder.FinalMethod("setTypeface", "(Landroid/graphics/Typeface;)V", WidgetNoopHandler());
+    builder.FinalMethod("getPaint", "()Landroid/text/TextPaint;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
                 Singleton(call, context, "text_paint",
                           "Landroid/text/TextPaint;"));
         });
-    builder.Virtual("addTextChangedListener", "(Landroid/text/TextWatcher;)V", WidgetNoopHandler());
+    builder.FinalMethod("addTextChangedListener", "(Landroid/text/TextWatcher;)V", WidgetNoopHandler());
     return std::move(builder).Build();
 }
 

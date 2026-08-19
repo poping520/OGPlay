@@ -3,10 +3,9 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_BufferedReader(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/BufferedReader;");
-    builder.Super("Ljava/io/Reader;");
-    builder.Virtual("<init>", "(Ljava/io/Reader;)V", ReaderAdoptStreamHandler(context));
-    builder.Virtual("readLine", "()Ljava/lang/String;",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/BufferedReader;", "Ljava/io/Reader;");
+    builder.Constructor("(Ljava/io/Reader;)V", ReaderAdoptStreamHandler(context));
+    builder.FinalMethod("readLine", "()Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             if (stream.cursor >= stream.bytes.size()) {
@@ -31,13 +30,13 @@ Decl Declare_java_io_BufferedReader(const Context& context) {
             }
             return dx::VmValue::Ref(call.vm.NewStringUtf8(line));
         });
-    builder.Virtual("ready", "()Z",
+    builder.FinalMethod("ready", "()Z",
         [context](dx::IntrinsicContext& call) {
             auto& stream = StreamOf(call, context);
             return dx::VmValue::Int(
                 stream.cursor < stream.bytes.size() ? 1 : 0);
         });
-    builder.Virtual("close", "()V", StreamCloseHandler(context));
+    builder.FinalMethod("close", "()V", StreamCloseHandler(context));
     return std::move(builder).Build();
 }
 

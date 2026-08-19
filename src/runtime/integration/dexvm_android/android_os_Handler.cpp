@@ -4,40 +4,39 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Handler(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/os/Handler;");
-    builder.Super("Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Handler;", "Ljava/lang/Object;");
     const auto noop = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Virtual("<init>", "()V", noop);
-    builder.Virtual("<init>", "(Landroid/os/Looper;)V", noop);
-    builder.Virtual("obtainMessage", "()Landroid/os/Message;",
+    builder.Constructor("()V", noop);
+    builder.Constructor("(Landroid/os/Looper;)V", noop);
+    builder.FinalMethod("obtainMessage", "()Landroid/os/Message;",
         [](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
                 call.vm.NewIntrinsicInstance("Landroid/os/Message;"));
         });
-    builder.Virtual("obtainMessage", "(I)Landroid/os/Message;",
+    builder.FinalMethod("obtainMessage", "(I)Landroid/os/Message;",
         [](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(MakeMessage(
                 call, call.arguments[0].AsInt(), dx::VmObjectRef{},
                 call.receiver));
         });
-    builder.Virtual("obtainMessage", "(ILjava/lang/Object;)Landroid/os/Message;",
+    builder.FinalMethod("obtainMessage", "(ILjava/lang/Object;)Landroid/os/Message;",
         [](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(MakeMessage(
                 call, call.arguments[0].AsInt(), call.arguments[1].ref,
                 call.receiver));
         });
-    builder.Virtual("sendMessage", "(Landroid/os/Message;)Z",
+    builder.FinalMethod("sendMessage", "(Landroid/os/Message;)Z",
         [](dx::IntrinsicContext& call) {
             DeliverMessage(call, call.receiver, call.arguments[0].ref);
             return dx::VmValue::Int(1);
         });
-    builder.Virtual("dispatchMessage", "(Landroid/os/Message;)V",
+    builder.FinalMethod("dispatchMessage", "(Landroid/os/Message;)V",
         [](dx::IntrinsicContext& call) {
             DeliverMessage(call, call.receiver, call.arguments[0].ref);
             return dx::VmValue::Void();
         });
-    builder.Virtual("post", "(Ljava/lang/Runnable;)Z",
+    builder.FinalMethod("post", "(Ljava/lang/Runnable;)Z",
         [](dx::IntrinsicContext& call) {
             auto& vm = call.vm;
             auto& linker = vm.Linker();
@@ -63,7 +62,7 @@ Decl Declare_android_os_Handler(const Context& context) {
             }
             return dx::VmValue::Int(1);
         });
-    builder.Overridable("handleMessage", "(Landroid/os/Message;)V", noop);
+    builder.VirtualMethod("handleMessage", "(Landroid/os/Message;)V", noop);
     return std::move(builder).Build();
 }
 

@@ -11,10 +11,9 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_VideoView(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/widget/VideoView;");
-    builder.Super("Landroid/view/View;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler(context));
-    builder.Virtual("setVideoPath", "(Ljava/lang/String;)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/VideoView;", "Landroid/view/View;");
+    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.FinalMethod("setVideoPath", "(Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {
             const auto handle = call.receiver.Value();
             context->video_views.erase(handle);
@@ -72,7 +71,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
                      "VideoView.setVideoPath: decoding " + guest_path);
             return dx::VmValue::Void();
         });
-    builder.Virtual("start", "()V",
+    builder.FinalMethod("start", "()V",
         [context](dx::IntrinsicContext& call) {
             const auto handle = call.receiver.Value();
             auto* state = VideoStateOf(context, handle);
@@ -98,7 +97,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
             state->start_uptime_ms = context->uptime_millis.load();
             return dx::VmValue::Void();
         });
-    builder.Virtual("pause", "()V",
+    builder.FinalMethod("pause", "()V",
         [context](dx::IntrinsicContext& call) {
             auto* state = VideoStateOf(context, call.receiver.Value());
             if (state != nullptr && state->playing) {
@@ -108,7 +107,7 @@ Decl Declare_android_widget_VideoView(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("seekTo", "(I)V",
+    builder.FinalMethod("seekTo", "(I)V",
         [context](dx::IntrinsicContext& call) {
             auto* state = VideoStateOf(context, call.receiver.Value());
             if (state == nullptr || state->player == nullptr) {
@@ -126,13 +125,13 @@ Decl Declare_android_widget_VideoView(const Context& context) {
             state->pcm_carry.clear();
             return dx::VmValue::Void();
         });
-    builder.Virtual("stopPlayback", "()V",
+    builder.FinalMethod("stopPlayback", "()V",
         [context](dx::IntrinsicContext& call) {
             context->video_views.erase(call.receiver.Value());
             context->pending_video_completion.erase(call.receiver.Value());
             return dx::VmValue::Void();
         });
-    builder.Virtual("getDuration", "()I",
+    builder.FinalMethod("getDuration", "()I",
         [context](dx::IntrinsicContext& call) {
             const auto* state =
                 VideoStateOf(context, call.receiver.Value());
@@ -141,14 +140,14 @@ Decl Declare_android_widget_VideoView(const Context& context) {
                                         : static_cast<std::int32_t>(
                                               state->duration_ms));
         });
-    builder.Virtual("getCurrentPosition", "()I",
+    builder.FinalMethod("getCurrentPosition", "()I",
         [context](dx::IntrinsicContext& call) {
             const auto* state = VideoStateOf(context, call.receiver.Value());
             if (state == nullptr) return dx::VmValue::Int(0);
             return dx::VmValue::Int(static_cast<std::int32_t>(
                 VideoPositionOf(*state, context->uptime_millis.load())));
         });
-    builder.Virtual("canSeekForward", "()Z",
+    builder.FinalMethod("canSeekForward", "()Z",
         [context](dx::IntrinsicContext& call) {
             // AOSP reports the prepared stream capability. Every host
             // VideoPlayer implements bounded SeekTo, while an unopened or
@@ -157,25 +156,25 @@ Decl Declare_android_widget_VideoView(const Context& context) {
             return dx::VmValue::Int(
                 state != nullptr && state->player != nullptr ? 1 : 0);
         });
-    builder.Virtual("canSeekBackward", "()Z",
+    builder.FinalMethod("canSeekBackward", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto* state = VideoStateOf(context, call.receiver.Value());
             return dx::VmValue::Int(
                 state != nullptr && state->player != nullptr ? 1 : 0);
         });
-    builder.Virtual("canPause", "()Z",
+    builder.FinalMethod("canPause", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto* state = VideoStateOf(context, call.receiver.Value());
             return dx::VmValue::Int(
                 state != nullptr && state->player != nullptr ? 1 : 0);
         });
-    builder.Virtual("setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
+    builder.FinalMethod("setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
         [context](dx::IntrinsicContext& call) {
             context->video_completion[call.receiver.Value()] =
                 call.arguments[0].ref;
             return dx::VmValue::Void();
         });
-    builder.Virtual("setOnErrorListener",
+    builder.FinalMethod("setOnErrorListener",
         "(Landroid/media/MediaPlayer$OnErrorListener;)V",
         [context](dx::IntrinsicContext& call) {
             const auto listener = call.arguments[0].ref;

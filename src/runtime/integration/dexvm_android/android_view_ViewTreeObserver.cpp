@@ -3,9 +3,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_ViewTreeObserver(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/view/ViewTreeObserver;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("addOnGlobalLayoutListener",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewTreeObserver;", "Ljava/lang/Object;");
+    builder.FinalMethod("addOnGlobalLayoutListener",
         "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
         [context](dx::IntrinsicContext& call) {
             const auto listener = call.arguments[0].ref;
@@ -26,10 +25,10 @@ Decl Declare_android_view_ViewTreeObserver(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("removeGlobalOnLayoutListener",
+    builder.FinalMethod("removeGlobalOnLayoutListener",
         "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
         remove_global_listener);
-    builder.Virtual("removeOnGlobalLayoutListener",
+    builder.FinalMethod("removeOnGlobalLayoutListener",
         "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
         remove_global_listener);
     return std::move(builder).Build();

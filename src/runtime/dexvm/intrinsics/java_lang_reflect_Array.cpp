@@ -7,9 +7,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_reflect_Array() {
-    IntrinsicClassBuilder builder("Ljava/lang/reflect/Array;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Static("newInstance", "(Ljava/lang/Class;[I)Ljava/lang/Object;",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/reflect/Array;", "Ljava/lang/Object;");
+    builder.StaticMethod("newInstance", "(Ljava/lang/Class;[I)Ljava/lang/Object;",
         [](IntrinsicContext &context) {
                 auto& vm = context.vm;
                 auto& model = vm.Model();

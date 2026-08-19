@@ -4,8 +4,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_IBinder(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/os/IBinder;");
-    builder.MarkInterface();
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/os/IBinder;");
     return std::move(builder).Build();
 }
 

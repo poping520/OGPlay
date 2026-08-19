@@ -4,8 +4,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceHolder_Callback(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/view/SurfaceHolder$Callback;");
-    builder.MarkInterface();
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/SurfaceHolder$Callback;");
     return std::move(builder).Build();
 }
 

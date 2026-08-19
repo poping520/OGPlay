@@ -7,11 +7,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_NoSuchElementException() {
-    IntrinsicClassBuilder builder("Ljava/util/NoSuchElementException;");
-    builder.Super("Ljava/lang/RuntimeException;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/NoSuchElementException;", "Ljava/lang/RuntimeException;");
+    builder.Constructor("()V",
         [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Virtual("<init>", "(Ljava/lang/String;)V",
+    builder.Constructor("(Ljava/lang/String;)V",
         [](IntrinsicContext& context) {
                 const auto message = context.arguments[0].ref;
                 context.vm.SetThrowableMessage(context.receiver, message);

@@ -6,9 +6,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_FileWriter(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/FileWriter;");
-    builder.Super("Ljava/io/Writer;");
-    builder.Virtual("<init>", "(Ljava/io/File;Z)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/FileWriter;", "Ljava/io/Writer;");
+    builder.Constructor("(Ljava/io/File;Z)V",
         [context](dx::IntrinsicContext& call) {
             const auto path = FilePathOf(call, call.arguments[0].ref);
             DexVmAndroidContext::OutputStream output{path, {}, false};
@@ -21,7 +20,7 @@ Decl Declare_java_io_FileWriter(const Context& context) {
                 std::move(output);
             return dx::VmValue::Void();
         });
-    builder.Virtual("append", "(C)Ljava/io/Writer;",
+    builder.FinalMethod("append", "(C)Ljava/io/Writer;",
         [context](dx::IntrinsicContext& call) {
             auto& output = OutputOf(call, context);
             // BMP code unit encoded as UTF-8 (ASCII fast path; otherwise a
@@ -40,7 +39,7 @@ Decl Declare_java_io_FileWriter(const Context& context) {
             }
             return dx::VmValue::Ref(call.receiver);
         });
-    builder.Virtual("append", "(Ljava/lang/CharSequence;)Ljava/io/Writer;",
+    builder.FinalMethod("append", "(Ljava/lang/CharSequence;)Ljava/io/Writer;",
         [context](dx::IntrinsicContext& call) {
             auto& output = OutputOf(call, context);
             const auto value = call.arguments[0].ref;
@@ -52,8 +51,8 @@ Decl Declare_java_io_FileWriter(const Context& context) {
             }
             return dx::VmValue::Ref(call.receiver);
         });
-    builder.Virtual("flush", "()V", FileOutputFlushHandler(context));
-    builder.Virtual("close", "()V", FileOutputCloseHandler(context));
+    builder.FinalMethod("flush", "()V", FileOutputFlushHandler(context));
+    builder.FinalMethod("close", "()V", FileOutputCloseHandler(context));
     return std::move(builder).Build();
 }
 

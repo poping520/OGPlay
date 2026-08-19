@@ -6,9 +6,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_DataOutputStream(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/DataOutputStream;");
-    builder.Super("Ljava/io/OutputStream;");
-    builder.Virtual("<init>", "(Ljava/io/OutputStream;)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/DataOutputStream;", "Ljava/io/OutputStream;");
+    builder.Constructor("(Ljava/io/OutputStream;)V",
         [context](dx::IntrinsicContext& call) {
             // Chain: reuse the wrapped stream's output slot.
             const auto target = call.arguments[0].ref;
@@ -27,7 +26,7 @@ Decl Declare_java_io_DataOutputStream(const Context& context) {
             context->output_streams.erase(target.Value());
             return dx::VmValue::Void();
         });
-    builder.Virtual("writeUTF", "(Ljava/lang/String;)V",
+    builder.FinalMethod("writeUTF", "(Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {
             auto found = context->output_streams.find(call.receiver.Value());
             if (found == context->output_streams.end() ||
@@ -45,7 +44,7 @@ Decl Declare_java_io_DataOutputStream(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("close", "()V", [context](dx::IntrinsicContext& call) {
+    builder.FinalMethod("close", "()V", [context](dx::IntrinsicContext& call) {
         FlushOutput(call, context, call.receiver.Value());
         return dx::VmValue::Void();
     });

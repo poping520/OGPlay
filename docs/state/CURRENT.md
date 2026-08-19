@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-18 · DexVM APK 类链接已切为首次真实使用
+更新：2026-08-19 · IntrinsicClassBuilder API 已重构为工厂式声明并完成全仓调用点迁移
 
 ## 当前阶段
 
@@ -29,12 +29,19 @@
   `COPPAActivity.isTaskRoot()Z` 已实现（Manifest launcher 为进程唯一 task 根，
   startActivity 到达的 Activity 回答 false，handle 记账于 `task_root_activity`），
   PVZ NA 后续缺口待下一次命中批次确认，不等同于 title 启动成功。
+  `IntrinsicClassBuilder` 已重构为工厂式 API：`Class/RootClass/Interface` 一次
+  声明类型头（普通类默认父类 Object，仅 java.lang.Object 显式无父类），
+  方法 `Constructor/StaticMethod/VirtualMethod/FinalMethod`、字段
+  `InstanceField/StaticField`、未实现 `Unimplemented*` 各自语义化命名，空
+  handler、保留名、构造器返回值与整型常量范围在声明/装配期拒绝；core
+  intrinsics、dexvm_android、集成与测试共 206 个源文件及 gap-report 源解析
+  已迁移，VM/linker 语义不变。
 - **兼容性基线**：Layout UI 已验收 complete；存档沙盒、GUI、intrinsic 声明迁移与
   MSVC 工程内/工程间并行编译已交付。能力现状以 `capabilities.toml` 为准。
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：811/811 CTest。
+- Windows/x64 `windows-msvc`：812/812 CTest。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 

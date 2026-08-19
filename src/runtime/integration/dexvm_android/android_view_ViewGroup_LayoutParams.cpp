@@ -15,9 +15,8 @@ ui::DimensionSpec Dimension(const std::int32_t value) {
 }  // namespace
 
 Decl Declare_android_view_ViewGroup_LayoutParams(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/view/ViewGroup$LayoutParams;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "(II)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewGroup$LayoutParams;", "Ljava/lang/Object;");
+    builder.Constructor("(II)V",
         [context](dx::IntrinsicContext& call) {
             ui::LayoutParams params;
             params.width = Dimension(call.arguments[0].AsInt());

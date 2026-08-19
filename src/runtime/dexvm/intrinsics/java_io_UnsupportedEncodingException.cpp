@@ -7,11 +7,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException() {
-    IntrinsicClassBuilder builder("Ljava/io/UnsupportedEncodingException;");
-    builder.Super("Ljava/io/IOException;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/io/UnsupportedEncodingException;", "Ljava/io/IOException;");
+    builder.Constructor("()V",
         [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Virtual("<init>", "(Ljava/lang/String;)V",
+    builder.Constructor("(Ljava/lang/String;)V",
         [](IntrinsicContext& context) {
                 const auto message = context.arguments[0].ref;
                 context.vm.SetThrowableMessage(context.receiver, message);

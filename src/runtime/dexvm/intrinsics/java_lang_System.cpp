@@ -33,11 +33,10 @@ namespace {
 }  // namespace
 
 IntrinsicClassDecl Declare_java_lang_System() {
-    IntrinsicClassBuilder builder("Ljava/lang/System;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Field("out", "Ljava/io/PrintStream;", true);
-    builder.Field("err", "Ljava/io/PrintStream;", true);
-    builder.Static("arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/System;", "Ljava/lang/Object;");
+    builder.StaticField("out", "Ljava/io/PrintStream;");
+    builder.StaticField("err", "Ljava/io/PrintStream;");
+    builder.StaticMethod("arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V",
         [](IntrinsicContext &context) {
                 auto& model = context.vm.Model();
                 const auto source = context.arguments[0].ref;
@@ -88,12 +87,12 @@ IntrinsicClassDecl Declare_java_lang_System() {
                 throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",
                                   "arraycopy element types are incompatible"};
             });
-    builder.Static("gc", "()V",
+    builder.StaticMethod("gc", "()V",
         [](IntrinsicContext&) {
                 // GC-A never collects (04 §5); the call is legal and does nothing.
                 return VmValue::Void();
             });
-    builder.Static("getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
+    builder.StaticMethod("getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto key = PropertyKey(context, context.arguments[0].ref);
                 const auto value = context.vm.GetSystemProperty(key);
@@ -102,7 +101,7 @@ IntrinsicClassDecl Declare_java_lang_System() {
                 }
                 return VmValue::Ref(context.vm.NewStringUtf8(*value));
             });
-    builder.Static("setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+    builder.StaticMethod("setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto key = PropertyKey(context, context.arguments[0].ref);
                 const auto value = PropertyValue(context, context.arguments[1].ref);
@@ -111,17 +110,12 @@ IntrinsicClassDecl Declare_java_lang_System() {
                            ? VmValue::Ref(context.vm.NewStringUtf8(*previous))
                            : VmValue::Ref(VmObjectRef{});
                 });
-    builder.Static("currentTimeMillis", "()J",
-        {});
-    builder.Static("nanoTime", "()J",
-        {});
-    builder.Static("load", "(Ljava/lang/String;)V",
-        {});
-    builder.Static("loadLibrary", "(Ljava/lang/String;)V",
-        {});
-    builder.Static("exit", "(I)V",
-        {});
-    builder.Clinit(
+    builder.UnimplementedStatic("currentTimeMillis", "()J");
+    builder.UnimplementedStatic("nanoTime", "()J");
+    builder.UnimplementedStatic("load", "(Ljava/lang/String;)V");
+    builder.UnimplementedStatic("loadLibrary", "(Ljava/lang/String;)V");
+    builder.UnimplementedStatic("exit", "(I)V");
+    builder.ClassInitializer(
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;
             vm.SetIntrinsicStaticRef("Ljava/lang/System;", "out",

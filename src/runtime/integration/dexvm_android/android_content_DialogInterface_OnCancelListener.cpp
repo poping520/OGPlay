@@ -4,8 +4,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/content/DialogInterface$OnCancelListener;");
-    builder.MarkInterface();
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/content/DialogInterface$OnCancelListener;");
     return std::move(builder).Build();
 }
 

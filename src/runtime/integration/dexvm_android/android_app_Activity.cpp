@@ -9,19 +9,18 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_Application(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/app/Application;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Application;", "Landroid/content/Context;");
     // Bounded equivalence for API 19 Application->ContextWrapper->Context:
     // the wrapper has no independent service/resource behavior in OGPlay.
-    builder.Super("Landroid/content/Context;");
-    builder.Virtual("<init>", "()V", [](dx::IntrinsicContext&) {
+    builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.Overridable("attachBaseContext", "(Landroid/content/Context;)V",
+    builder.VirtualMethod("attachBaseContext", "(Landroid/content/Context;)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Overridable("onCreate", "()V", [](dx::IntrinsicContext&) {
+    builder.VirtualMethod("onCreate", "()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.Virtual("getBaseContext", "()Landroid/content/Context;",
+    builder.FinalMethod("getBaseContext", "()Landroid/content/Context;",
         [context](dx::IntrinsicContext&) {
             return dx::VmValue::Ref(context->application_base_context);
         });
@@ -29,34 +28,33 @@ Decl Declare_android_app_Application(const Context& context) {
 }
 
 Decl Declare_android_app_Activity(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/app/Activity;");
-    builder.Super("Landroid/content/Context;");
-    builder.Virtual("<init>", "()V", [](dx::IntrinsicContext&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Activity;", "Landroid/content/Context;");
+    builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
     const auto lifecycle_noop = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Overridable("onCreate", "(Landroid/os/Bundle;)V", lifecycle_noop);
-    builder.Overridable("onStart", "()V", lifecycle_noop);
-    builder.Overridable("onRestart", "()V", lifecycle_noop);
-    builder.Overridable("onResume", "()V", lifecycle_noop);
-    builder.Overridable("onPause", "()V", lifecycle_noop);
-    builder.Overridable("onStop", "()V", lifecycle_noop);
-    builder.Overridable("onDestroy", "()V", lifecycle_noop);
-    builder.Overridable("onConfigurationChanged",
+    builder.VirtualMethod("onCreate", "(Landroid/os/Bundle;)V", lifecycle_noop);
+    builder.VirtualMethod("onStart", "()V", lifecycle_noop);
+    builder.VirtualMethod("onRestart", "()V", lifecycle_noop);
+    builder.VirtualMethod("onResume", "()V", lifecycle_noop);
+    builder.VirtualMethod("onPause", "()V", lifecycle_noop);
+    builder.VirtualMethod("onStop", "()V", lifecycle_noop);
+    builder.VirtualMethod("onDestroy", "()V", lifecycle_noop);
+    builder.VirtualMethod("onConfigurationChanged",
         "(Landroid/content/res/Configuration;)V", lifecycle_noop);
-    builder.Virtual("getWindow", "()Landroid/view/Window;",
+    builder.FinalMethod("getWindow", "()Landroid/view/Window;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
                 Singleton(call, context, "window", "Landroid/view/Window;"));
         });
-    builder.Virtual("getApplication", "()Landroid/app/Application;",
+    builder.FinalMethod("getApplication", "()Landroid/app/Application;",
         [context](dx::IntrinsicContext&) {
             return dx::VmValue::Ref(context->application);
         });
-    builder.Virtual("requestWindowFeature", "(I)Z",
+    builder.FinalMethod("requestWindowFeature", "(I)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
-    builder.Virtual("setContentView", "(Landroid/view/View;)V",
+    builder.FinalMethod("setContentView", "(Landroid/view/View;)V",
         [context](dx::IntrinsicContext& call) {
             const auto view = call.arguments[0].ref;
             if (!view.IsValid()) {
@@ -104,7 +102,7 @@ Decl Declare_android_app_Activity(const Context& context) {
             context->content_view = view;
             return dx::VmValue::Void();
         });
-    builder.Virtual("setContentView", "(I)V",
+    builder.FinalMethod("setContentView", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto layout_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
@@ -121,7 +119,7 @@ Decl Declare_android_app_Activity(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("findViewById", "(I)Landroid/view/View;",
+    builder.FinalMethod("findViewById", "(I)Landroid/view/View;",
         [context](dx::IntrinsicContext& call) {
             const auto found = context->ui_tree.FindByAndroidId(
                 call.arguments[0].AsInt());
@@ -131,7 +129,7 @@ Decl Declare_android_app_Activity(const Context& context) {
             }
             return dx::VmValue::Ref(ViewObjectForUiNode(*context, *found));
         });
-    builder.Virtual("getIntent", "()Landroid/content/Intent;",
+    builder.FinalMethod("getIntent", "()Landroid/content/Intent;",
         [context](dx::IntrinsicContext& call) {
             if (context->current_intent.IsValid()) {
                 return dx::VmValue::Ref(context->current_intent);
@@ -143,7 +141,7 @@ Decl Declare_android_app_Activity(const Context& context) {
     // The whole VM is the UI thread in the cooperative model, so the
     // runnable executes synchronously (matches Android semantics when the
     // caller is already on the UI thread).
-    builder.Virtual("runOnUiThread", "(Ljava/lang/Runnable;)V",
+    builder.FinalMethod("runOnUiThread", "(Ljava/lang/Runnable;)V",
         [](dx::IntrinsicContext& call) {
             const auto runnable = call.arguments[0].ref;
             if (!runnable.IsValid()) {
@@ -169,17 +167,17 @@ Decl Declare_android_app_Activity(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("setVolumeControlStream", "(I)V",
+    builder.FinalMethod("setVolumeControlStream", "(I)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     const auto on_key_false = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    builder.Overridable("onKeyDown", "(ILandroid/view/KeyEvent;)Z",
+    builder.VirtualMethod("onKeyDown", "(ILandroid/view/KeyEvent;)Z",
         on_key_false);
-    builder.Overridable("onKeyUp", "(ILandroid/view/KeyEvent;)Z",
+    builder.VirtualMethod("onKeyUp", "(ILandroid/view/KeyEvent;)Z",
         on_key_false);
-    builder.Overridable("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
+    builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    builder.Overridable("finish", "()V",
+    builder.VirtualMethod("finish", "()V",
         [context](dx::IntrinsicContext& call) {
             context->finishing_activity = call.receiver.Value();
             return dx::VmValue::Void();
@@ -189,13 +187,13 @@ Decl Declare_android_app_Activity(const Context& context) {
     // opened it, in-process startActivity handoffs did not. The retired
     // shell of a handoff keeps answering true for its own handle, as its
     // token would on the platform.
-    builder.Virtual("isTaskRoot", "()Z",
+    builder.FinalMethod("isTaskRoot", "()Z",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(
                 call.receiver.Value() == context->task_root_activity ? 1
                                                                      : 0);
         });
-    builder.Virtual("getWindowManager", "()Landroid/view/WindowManager;",
+    builder.FinalMethod("getWindowManager", "()Landroid/view/WindowManager;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
                 Singleton(call, context, "window_manager",

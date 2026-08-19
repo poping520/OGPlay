@@ -7,19 +7,18 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_Hashtable() {
-    IntrinsicClassBuilder builder("Ljava/util/Hashtable;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Hashtable;", "Ljava/lang/Object;");
+    builder.Constructor("()V",
         [](IntrinsicContext& context) {
                 context.vm.MapStorage(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "(I)V",
+    builder.Constructor("(I)V",
         [](IntrinsicContext &context) {
                 context.vm.MapStorage(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+    builder.FinalMethod("put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext& context) {
                 auto& entries = context.vm.MapStorage(context.receiver);
                 const auto key = context.arguments[0].ref;
@@ -33,7 +32,7 @@ IntrinsicClassDecl Declare_java_util_Hashtable() {
                 entries.emplace_back(key, value);
                 return VmValue::Ref(VmObjectRef{});
             });
-    builder.Virtual("get", "(Ljava/lang/Object;)Ljava/lang/Object;",
+    builder.FinalMethod("get", "(Ljava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext& context) {
                 const auto found = MapFind(context, context.arguments[0].ref);
             if (found < 0)
@@ -42,12 +41,12 @@ IntrinsicClassDecl Declare_java_util_Hashtable() {
                 context.vm.MapStorage(context.receiver)[static_cast<std::size_t>(found)]
                                             .second);
             });
-    builder.Virtual("containsKey", "(Ljava/lang/Object;)Z",
+    builder.FinalMethod("containsKey", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext &context) {
                 return VmValue::Int(
                     MapFind(context, context.arguments[0].ref) >= 0 ? 1 : 0);
             });
-    builder.Virtual("remove", "(Ljava/lang/Object;)Ljava/lang/Object;",
+    builder.FinalMethod("remove", "(Ljava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext &context) {
                 auto& entries = context.vm.MapStorage(context.receiver);
                 const auto found = MapFind(context, context.arguments[0].ref);
@@ -57,17 +56,17 @@ IntrinsicClassDecl Declare_java_util_Hashtable() {
                 entries.erase(entries.begin() + found);
                 return VmValue::Ref(previous);
             });
-    builder.Virtual("size", "()I",
+    builder.FinalMethod("size", "()I",
         [](IntrinsicContext& context) {
                 return VmValue::Int(static_cast<std::int32_t>(
                     context.vm.MapStorage(context.receiver).size()));
             });
-    builder.Virtual("clear", "()V",
+    builder.FinalMethod("clear", "()V",
         [](IntrinsicContext& context) {
                 context.vm.MapStorage(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("isEmpty", "()Z",
+    builder.FinalMethod("isEmpty", "()Z",
         [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.MapStorage(context.receiver).empty() ? 1
                                                                                 : 0);

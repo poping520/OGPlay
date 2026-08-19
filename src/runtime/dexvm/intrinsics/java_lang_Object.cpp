@@ -7,20 +7,20 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_Object() {
-    IntrinsicClassBuilder builder("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::RootClass("Ljava/lang/Object;");
+    builder.Constructor("()V",
         [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Overridable("equals", "(Ljava/lang/Object;)Z",
+    builder.VirtualMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
             const auto other =
                 context.arguments.empty() ? VmObjectRef{} : context.arguments[0].ref;
                 return VmValue::Int(context.receiver == other ? 1 : 0);
             });
-    builder.Overridable("hashCode", "()I",
+    builder.VirtualMethod("hashCode", "()I",
         [](IntrinsicContext& context) {
             return VmValue::Int(static_cast<std::int32_t>(context.receiver.Value()));
             });
-    builder.Overridable("toString", "()Ljava/lang/String;",
+    builder.VirtualMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;
                 const auto java_class = vm.Model().ObjectClass(context.receiver);
@@ -31,7 +31,7 @@ IntrinsicClassDecl Declare_java_lang_Object() {
                 vm.NewStringUtf8(DottedName(descriptor) + "@" +
                     std::to_string(context.receiver.Value())));
             });
-    builder.Virtual("getClass", "()Ljava/lang/Class;",
+    builder.FinalMethod("getClass", "()Ljava/lang/Class;",
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;
                 const auto java_class = vm.Model().ObjectClass(context.receiver);
@@ -41,22 +41,22 @@ IntrinsicClassDecl Declare_java_lang_Object() {
                 }
                 return VmValue::Ref(vm.Model().ClassObject(java_class));
             });
-    builder.Virtual("notify", "()V",
+    builder.FinalMethod("notify", "()V",
         [](IntrinsicContext &context) {
             context.vm.NotifyMonitor(context.receiver, false);
             return VmValue::Void();
           });
-    builder.Virtual("notifyAll", "()V",
+    builder.FinalMethod("notifyAll", "()V",
         [](IntrinsicContext &context) {
             context.vm.NotifyMonitor(context.receiver, true);
             return VmValue::Void();
           });
-    builder.Virtual("wait", "()V",
+    builder.FinalMethod("wait", "()V",
         [](IntrinsicContext& context) {
                 context.vm.WaitOnMonitor(context.receiver, 0);
                 return VmValue::Void();
             });
-    builder.Virtual("wait", "(J)V",
+    builder.FinalMethod("wait", "(J)V",
         [](IntrinsicContext& context) {
                 // 0 means "no deadline" in the Java contract, which is exactly what
                 // WaitOnMonitor treats it as.

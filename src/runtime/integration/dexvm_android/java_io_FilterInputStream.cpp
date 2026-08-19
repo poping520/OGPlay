@@ -3,9 +3,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_FilterInputStream(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/FilterInputStream;");
-    builder.Super("Ljava/io/InputStream;");
-    builder.Virtual("<init>", "(Ljava/io/InputStream;)V", ReaderAdoptStreamHandler(context));
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/FilterInputStream;", "Ljava/io/InputStream;");
+    builder.Constructor("(Ljava/io/InputStream;)V", ReaderAdoptStreamHandler(context));
     return std::move(builder).Build();
 }
 

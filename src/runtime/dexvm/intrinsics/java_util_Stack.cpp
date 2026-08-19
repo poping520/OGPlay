@@ -7,20 +7,19 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_Stack() {
-    IntrinsicClassBuilder builder("Ljava/util/Stack;");
-    builder.Super("Ljava/util/Vector;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Stack;", "Ljava/util/Vector;");
+    builder.Constructor("()V",
         [](IntrinsicContext& context) {
                 context.vm.ListStorage(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("push", "(Ljava/lang/Object;)Ljava/lang/Object;",
+    builder.FinalMethod("push", "(Ljava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext &context) {
             const auto value = context.arguments[0].ref;
             context.vm.ListStorage(context.receiver).push_back(value);
             return VmValue::Ref(value);
           });
-    builder.Virtual("pop", "()Ljava/lang/Object;",
+    builder.FinalMethod("pop", "()Ljava/lang/Object;",
         [](IntrinsicContext &context) {
             auto &elements = context.vm.ListStorage(context.receiver);
             if (elements.empty()) {
@@ -30,7 +29,7 @@ IntrinsicClassDecl Declare_java_util_Stack() {
             elements.pop_back();
             return VmValue::Ref(value);
           });
-    builder.Virtual("peek", "()Ljava/lang/Object;",
+    builder.FinalMethod("peek", "()Ljava/lang/Object;",
         [](IntrinsicContext &context) {
             const auto &elements = context.vm.ListStorage(context.receiver);
             if (elements.empty()) {
@@ -38,12 +37,12 @@ IntrinsicClassDecl Declare_java_util_Stack() {
             }
             return VmValue::Ref(elements.back());
           });
-    builder.Virtual("empty", "()Z",
+    builder.FinalMethod("empty", "()Z",
         [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.ListStorage(context.receiver).empty() ? 1
                                                                                  : 0);
             });
-    builder.Virtual("search", "(Ljava/lang/Object;)I",
+    builder.FinalMethod("search", "(Ljava/lang/Object;)I",
         [](IntrinsicContext &context) {
             const auto &elements = context.vm.ListStorage(context.receiver);
             std::int32_t distance = 1;

@@ -7,8 +7,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_Serializable() {
-    IntrinsicClassBuilder builder("Ljava/io/Serializable;");
-    builder.MarkInterface();
+    auto builder = IntrinsicClassBuilder::Interface("Ljava/io/Serializable;");
     auto result = std::move(builder).Build();
     return result;
 }

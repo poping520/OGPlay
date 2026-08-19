@@ -3,10 +3,9 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_LinearLayout(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/widget/LinearLayout;");
-    builder.Super("Landroid/view/ViewGroup;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler(context));
-    builder.Virtual("setOrientation", "(I)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/LinearLayout;", "Landroid/view/ViewGroup;");
+    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.FinalMethod("setOrientation", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].AsInt();
             if (value != 0 && value != 1) {
@@ -21,7 +20,7 @@ Decl Declare_android_widget_LinearLayout(const Context& context) {
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
-    builder.Virtual("getOrientation", "()I",
+    builder.FinalMethod("getOrientation", "()I",
         [context](dx::IntrinsicContext& call) {
             const auto node = EnsureViewUiNode(
                 *context, call.receiver, ui::UiClass::LinearLayout);
@@ -31,7 +30,7 @@ Decl Declare_android_widget_LinearLayout(const Context& context) {
                     ? 0
                     : 1);
         });
-    builder.Virtual("setGravity", "(I)V",
+    builder.FinalMethod("setGravity", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = EnsureViewUiNode(
                 *context, call.receiver, ui::UiClass::LinearLayout);

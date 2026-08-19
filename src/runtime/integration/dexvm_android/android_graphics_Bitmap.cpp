@@ -65,9 +65,8 @@ namespace {
 }  // namespace
 
 Decl Declare_android_graphics_Bitmap(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/graphics/Bitmap;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Static("createBitmap",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Bitmap;", "Ljava/lang/Object;");
+    builder.StaticMethod("createBitmap",
         "([IIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
         [context](dx::IntrinsicContext& call) {
             const auto array = call.arguments[0].ref;
@@ -76,7 +75,7 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
             return MakeBitmapFromArray(call, context, array, 0, width, width,
                                        height);
         });
-    builder.Static("createBitmap",
+    builder.StaticMethod("createBitmap",
         "([IIIIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
         [context](dx::IntrinsicContext& call) {
             const auto array = call.arguments[0].ref;
@@ -87,15 +86,15 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
             return MakeBitmapFromArray(call, context, array, offset, stride,
                                        width, height);
         });
-    builder.Virtual("getWidth", "()I",
+    builder.FinalMethod("getWidth", "()I",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(BitmapOf(call, context).width);
         });
-    builder.Virtual("getHeight", "()I",
+    builder.FinalMethod("getHeight", "()I",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(BitmapOf(call, context).height);
         });
-    builder.Virtual("getPixels", "([IIIIIII)V",
+    builder.FinalMethod("getPixels", "([IIIIIII)V",
         [context](dx::IntrinsicContext& call) {
             auto& model = call.vm.Model();
             const auto& state = BitmapOf(call, context);
@@ -142,8 +141,8 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("prepareToDraw", "()V", GraphicsNoopHandler());
-    builder.Virtual("recycle", "()V",
+    builder.FinalMethod("prepareToDraw", "()V", GraphicsNoopHandler());
+    builder.FinalMethod("recycle", "()V",
         [context](dx::IntrinsicContext& call) {
             const auto found = context->bitmaps.find(call.receiver.Value());
             if (found != context->bitmaps.end()) {

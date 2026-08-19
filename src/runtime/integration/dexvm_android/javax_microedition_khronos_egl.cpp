@@ -458,14 +458,12 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_javax_microedition_khronos_egl_EGL(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/egl/EGL;");
-    builder.MarkInterface();
+    auto builder = dx::IntrinsicClassBuilder::Interface("Ljavax/microedition/khronos/egl/EGL;");
     return std::move(builder).Build();
 }
 
 Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/egl/EGL10;");
-    builder.MarkInterface().Implements("Ljavax/microedition/khronos/egl/EGL;");
+    auto builder = dx::IntrinsicClassBuilder::Interface("Ljavax/microedition/khronos/egl/EGL10;", {"Ljavax/microedition/khronos/egl/EGL;"});
     constexpr std::array constants{
         std::pair{"EGL_SUCCESS", 0x3000}, std::pair{"EGL_NOT_INITIALIZED", 0x3001},
         std::pair{"EGL_BAD_ACCESS", 0x3002}, std::pair{"EGL_BAD_ALLOC", 0x3003},
@@ -502,11 +500,11 @@ Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context) {
         std::pair{"EGL_PBUFFER_BIT", 0x01}, std::pair{"EGL_PIXMAP_BIT", 0x02},
         std::pair{"EGL_WINDOW_BIT", 0x04}};
     for (const auto& [name, value] : constants) builder.ConstantInt(name, "I", value);
-    builder.Field("EGL_DEFAULT_DISPLAY", "Ljava/lang/Object;", true)
-        .Field("EGL_NO_DISPLAY", "Ljavax/microedition/khronos/egl/EGLDisplay;", true)
-        .Field("EGL_NO_CONTEXT", "Ljavax/microedition/khronos/egl/EGLContext;", true)
-        .Field("EGL_NO_SURFACE", "Ljavax/microedition/khronos/egl/EGLSurface;", true);
-    builder.Clinit([context](dx::IntrinsicContext& call) {
+    builder.StaticField("EGL_DEFAULT_DISPLAY", "Ljava/lang/Object;")
+        .StaticField("EGL_NO_DISPLAY", "Ljavax/microedition/khronos/egl/EGLDisplay;")
+        .StaticField("EGL_NO_CONTEXT", "Ljavax/microedition/khronos/egl/EGLContext;")
+        .StaticField("EGL_NO_SURFACE", "Ljavax/microedition/khronos/egl/EGLSurface;");
+    builder.ClassInitializer([context](dx::IntrinsicContext& call) {
         context->egl.no_display = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLDisplay;");
         context->egl.no_context = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLContext;");
         context->egl.no_surface = call.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLSurface;");
@@ -519,7 +517,7 @@ Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context) {
         return dx::VmValue::Void();
     });
     const auto method = [&](const char* name, const char* descriptor) {
-        builder.Overridable(name, descriptor, EglUnsupportedHandler(name));
+        builder.VirtualMethod(name, descriptor, EglUnsupportedHandler(name));
     };
     method("eglChooseConfig", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z");
     method("eglCopyBuffers", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljava/lang/Object;)Z");
@@ -550,24 +548,23 @@ Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context) {
 }
 
 Decl Declare_javax_microedition_khronos_egl_EGL10_Impl(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/egl/EGL10$Impl;");
-    builder.Super("Ljava/lang/Object;").Implements("Ljavax/microedition/khronos/egl/EGL10;");
-    builder.Virtual("eglChooseConfig", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z", EglChooseConfigHandler(context));
-    builder.Virtual("eglCreateContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)Ljavax/microedition/khronos/egl/EGLContext;", EglCreateContextHandler(context));
-    builder.Virtual("eglCreateWindowSurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;", EglCreateWindowSurfaceHandler(context));
-    builder.Virtual("eglDestroyContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z", EglDestroyContextHandler(context));
-    builder.Virtual("eglDestroySurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z", EglDestroySurfaceHandler(context));
-    builder.Virtual("eglGetConfigAttrib", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z", EglGetConfigAttribHandler(context));
-    builder.Virtual("eglGetCurrentDisplay", "()Ljavax/microedition/khronos/egl/EGLDisplay;", EglGetCurrentDisplayHandler(context));
-    builder.Virtual("eglGetCurrentSurface", "(I)Ljavax/microedition/khronos/egl/EGLSurface;", EglGetCurrentSurfaceHandler(context));
-    builder.Virtual("eglGetDisplay", "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;", EglGetDisplayHandler(context));
-    builder.Virtual("eglGetError", "()I", EglGetErrorHandler(context));
-    builder.Virtual("eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z", EglInitializeHandler(context));
-    builder.Virtual("eglMakeCurrent", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z", EglMakeCurrentHandler(context));
-    builder.Virtual("eglSwapBuffers", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z", EglSwapBuffersHandler(context));
-    builder.Virtual("eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z", EglTerminateHandler(context));
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGL10$Impl;", "Ljava/lang/Object;", {"Ljavax/microedition/khronos/egl/EGL10;"});
+    builder.FinalMethod("eglChooseConfig", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z", EglChooseConfigHandler(context));
+    builder.FinalMethod("eglCreateContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)Ljavax/microedition/khronos/egl/EGLContext;", EglCreateContextHandler(context));
+    builder.FinalMethod("eglCreateWindowSurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;", EglCreateWindowSurfaceHandler(context));
+    builder.FinalMethod("eglDestroyContext", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z", EglDestroyContextHandler(context));
+    builder.FinalMethod("eglDestroySurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z", EglDestroySurfaceHandler(context));
+    builder.FinalMethod("eglGetConfigAttrib", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z", EglGetConfigAttribHandler(context));
+    builder.FinalMethod("eglGetCurrentDisplay", "()Ljavax/microedition/khronos/egl/EGLDisplay;", EglGetCurrentDisplayHandler(context));
+    builder.FinalMethod("eglGetCurrentSurface", "(I)Ljavax/microedition/khronos/egl/EGLSurface;", EglGetCurrentSurfaceHandler(context));
+    builder.FinalMethod("eglGetDisplay", "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;", EglGetDisplayHandler(context));
+    builder.FinalMethod("eglGetError", "()I", EglGetErrorHandler(context));
+    builder.FinalMethod("eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z", EglInitializeHandler(context));
+    builder.FinalMethod("eglMakeCurrent", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z", EglMakeCurrentHandler(context));
+    builder.FinalMethod("eglSwapBuffers", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z", EglSwapBuffersHandler(context));
+    builder.FinalMethod("eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z", EglTerminateHandler(context));
     const auto gap = [&](const char* name, const char* descriptor) {
-        builder.Virtual(name, descriptor, EglUnsupportedHandler(name));
+        builder.FinalMethod(name, descriptor, EglUnsupportedHandler(name));
     };
     gap("eglCopyBuffers", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljava/lang/Object;)Z");
     gap("eglCreatePbufferSurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;[I)Ljavax/microedition/khronos/egl/EGLSurface;");
@@ -585,18 +582,16 @@ Decl Declare_javax_microedition_khronos_egl_EGL10_Impl(const Context& context) {
 
 Decl Declare_javax_microedition_khronos_egl_EGLConfig(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/egl/EGLConfig;");
-    builder.Super("Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGLConfig;", "Ljava/lang/Object;");
     return std::move(builder).Build();
 }
 
 Decl Declare_javax_microedition_khronos_egl_EGLContext(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/egl/EGLContext;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Static("getEGL", "()Ljavax/microedition/khronos/egl/EGL;", [context](dx::IntrinsicContext& call) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGLContext;", "Ljava/lang/Object;");
+    builder.StaticMethod("getEGL", "()Ljavax/microedition/khronos/egl/EGL;", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(Singleton(call, context, "egl10_impl", "Ljavax/microedition/khronos/egl/EGL10$Impl;"));
     });
-    builder.Virtual("getGL", "()Ljavax/microedition/khronos/opengles/GL;", [context](dx::IntrinsicContext& call) {
+    builder.FinalMethod("getGL", "()Ljavax/microedition/khronos/opengles/GL;", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(Singleton(call, context, "gl10_impl", "Ljavax/microedition/khronos/opengles/GL10$Impl;"));
     });
     return std::move(builder).Build();
@@ -604,38 +599,33 @@ Decl Declare_javax_microedition_khronos_egl_EGLContext(const Context& context) {
 
 Decl Declare_javax_microedition_khronos_egl_EGLDisplay(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/egl/EGLDisplay;");
-    builder.Super("Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGLDisplay;", "Ljava/lang/Object;");
     return std::move(builder).Build();
 }
 
 Decl Declare_javax_microedition_khronos_egl_EGLSurface(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/egl/EGLSurface;");
-    builder.Super("Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/egl/EGLSurface;", "Ljava/lang/Object;");
     return std::move(builder).Build();
 }
 
 Decl Declare_javax_microedition_khronos_opengles_GL(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/opengles/GL;");
-    builder.MarkInterface();
+    auto builder = dx::IntrinsicClassBuilder::Interface("Ljavax/microedition/khronos/opengles/GL;");
     return std::move(builder).Build();
 }
 
 Decl Declare_javax_microedition_khronos_opengles_GL10(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/opengles/GL10;");
-    builder.MarkInterface().Implements("Ljavax/microedition/khronos/opengles/GL;");
-    builder.Overridable("glGetString", "(I)Ljava/lang/String;",
+    auto builder = dx::IntrinsicClassBuilder::Interface("Ljavax/microedition/khronos/opengles/GL10;", {"Ljavax/microedition/khronos/opengles/GL;"});
+    builder.VirtualMethod("glGetString", "(I)Ljava/lang/String;",
                         EglUnsupportedHandler("GL10.glGetString"));
     return std::move(builder).Build();
 }
 
 Decl Declare_javax_microedition_khronos_opengles_GL10_Impl(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljavax/microedition/khronos/opengles/GL10$Impl;");
-    builder.Super("Ljava/lang/Object;").Implements("Ljavax/microedition/khronos/opengles/GL10;");
-    builder.Virtual("glGetString", "(I)Ljava/lang/String;", GlGetStringHandler(context));
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/microedition/khronos/opengles/GL10$Impl;", "Ljava/lang/Object;", {"Ljavax/microedition/khronos/opengles/GL10;"});
+    builder.FinalMethod("glGetString", "(I)Ljava/lang/String;", GlGetStringHandler(context));
     return std::move(builder).Build();
 }
 

@@ -4,14 +4,13 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_javax_xml_parsers_SAXParserFactory(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljavax/xml/parsers/SAXParserFactory;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Static("newInstance", "()Ljavax/xml/parsers/SAXParserFactory;",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/xml/parsers/SAXParserFactory;", "Ljava/lang/Object;");
+    builder.StaticMethod("newInstance", "()Ljavax/xml/parsers/SAXParserFactory;",
         [](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(call.vm.NewIntrinsicInstance(
                 "Ljavax/xml/parsers/SAXParserFactory;"));
         });
-    builder.Virtual("newSAXParser", "()Ljavax/xml/parsers/SAXParser;",
+    builder.FinalMethod("newSAXParser", "()Ljavax/xml/parsers/SAXParser;",
         [](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
                 call.vm.NewIntrinsicInstance("Ljavax/xml/parsers/SAXParser;"));

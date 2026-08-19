@@ -3,11 +3,10 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_OutputStream(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/OutputStream;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Overridable("write", "([BII)V", ByteOutputWriteRangeHandler(context));
-    builder.Overridable("write", "([B)V", FileOutputWriteBytesHandler(context));
-    builder.Overridable("write", "(I)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/OutputStream;", "Ljava/lang/Object;");
+    builder.VirtualMethod("write", "([BII)V", ByteOutputWriteRangeHandler(context));
+    builder.VirtualMethod("write", "([B)V", FileOutputWriteBytesHandler(context));
+    builder.VirtualMethod("write", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto found =
                 context->output_streams.find(call.receiver.Value());
@@ -20,8 +19,8 @@ Decl Declare_java_io_OutputStream(const Context& context) {
                 call.arguments[0].AsInt() & 0xff));
             return dx::VmValue::Void();
         });
-    builder.Overridable("flush", "()V", FileOutputFlushHandler(context));
-    builder.Overridable("close", "()V", FileOutputCloseHandler(context));
+    builder.VirtualMethod("flush", "()V", FileOutputFlushHandler(context));
+    builder.VirtualMethod("close", "()V", FileOutputCloseHandler(context));
     return std::move(builder).Build();
 }
 

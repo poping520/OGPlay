@@ -9,12 +9,11 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_SoundPool(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/media/SoundPool;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "(III)V", [](dx::IntrinsicContext&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/SoundPool;", "Ljava/lang/Object;");
+    builder.Constructor("(III)V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.Virtual("load", "(Landroid/content/Context;II)I",
+    builder.FinalMethod("load", "(Landroid/content/Context;II)I",
         [context](dx::IntrinsicContext& call) {
             const auto resource = call.arguments[1].AsInt();
             auto& mixer = context->session->SoundPoolMixer();
@@ -26,7 +25,7 @@ Decl Declare_android_media_SoundPool(const Context& context) {
             }
             return dx::VmValue::Int(resource);  // sound id == resource id
         });
-    builder.Virtual("play", "(IFFIIF)I",
+    builder.FinalMethod("play", "(IFFIIF)I",
         [context](dx::IntrinsicContext& call) {
             const auto sound = call.arguments[0].AsInt();
             const auto volume = call.arguments[1].AsFloat();
@@ -53,39 +52,39 @@ Decl Declare_android_media_SoundPool(const Context& context) {
             }
             return dx::VmValue::Void();
         };
-    builder.Virtual("pause", "(I)V",
+    builder.FinalMethod("pause", "(I)V",
         [stream_call](dx::IntrinsicContext& call) {
             return stream_call(call, [](auto& mixer, const auto resource,
                                         const auto stream) {
                 mixer.Pause(audio::JavaSoundPoolKind::pool, resource, stream);
             });
         });
-    builder.Virtual("resume", "(I)V",
+    builder.FinalMethod("resume", "(I)V",
         [stream_call](dx::IntrinsicContext& call) {
             return stream_call(call, [](auto& mixer, const auto resource,
                                         const auto stream) {
                 mixer.Resume(audio::JavaSoundPoolKind::pool, resource, stream);
             });
         });
-    builder.Virtual("stop", "(I)V",
+    builder.FinalMethod("stop", "(I)V",
         [stream_call](dx::IntrinsicContext& call) {
             return stream_call(call, [](auto& mixer, const auto resource,
                                         const auto stream) {
                 mixer.Stop(audio::JavaSoundPoolKind::pool, resource, stream);
             });
         });
-    builder.Virtual("unload", "(I)Z",
+    builder.FinalMethod("unload", "(I)Z",
         [context](dx::IntrinsicContext& call) {
             context->session->SoundPoolMixer().Unload(
                 call.arguments[0].AsInt());
             return dx::VmValue::Int(1);
         });
-    builder.Virtual("release", "()V",
+    builder.FinalMethod("release", "()V",
         [context](dx::IntrinsicContext&) {
             context->session->SoundPoolMixer().StopAllSounds();
             return dx::VmValue::Void();
         });
-    builder.Virtual("setVolume", "(IFF)V",
+    builder.FinalMethod("setVolume", "(IFF)V",
         [context](dx::IntrinsicContext& call) {
             const auto stream = call.arguments[0].AsInt();
             const auto found = context->sound_streams.find(stream);
@@ -96,7 +95,7 @@ Decl Declare_android_media_SoundPool(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("setRate", "(IF)V",
+    builder.FinalMethod("setRate", "(IF)V",
         [context](dx::IntrinsicContext& call) {
             const auto stream = call.arguments[0].AsInt();
             const auto found = context->sound_streams.find(stream);

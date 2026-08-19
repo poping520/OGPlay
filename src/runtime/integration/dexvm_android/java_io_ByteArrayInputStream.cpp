@@ -3,9 +3,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_ByteArrayInputStream(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/ByteArrayInputStream;");
-    builder.Super("Ljava/io/InputStream;");
-    builder.Virtual("<init>", "([B)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/ByteArrayInputStream;", "Ljava/io/InputStream;");
+    builder.Constructor("([B)V",
         [context](dx::IntrinsicContext& call) {
             auto& model = call.vm.Model();
             const auto array = call.arguments[0].ref;

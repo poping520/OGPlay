@@ -7,16 +7,15 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_reflect_Method() {
-    IntrinsicClassBuilder builder("Ljava/lang/reflect/Method;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Field("vmMethodId", "I", false);
-    builder.Field("name", "Ljava/lang/String;", false);
-    builder.Virtual("getName", "()Ljava/lang/String;",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/reflect/Method;", "Ljava/lang/Object;");
+    builder.InstanceField("vmMethodId", "I");
+    builder.InstanceField("name", "Ljava/lang/String;");
+    builder.FinalMethod("getName", "()Ljava/lang/String;",
         [](IntrinsicContext &context) {
                 const auto slots = context.vm.Model().InstanceSlots(context.receiver);
                 return VmValue::Ref(VmObjectRef(slots[1].bits));
               });
-    builder.Virtual("invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
+    builder.FinalMethod("invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext &context) {
                 auto &vm = context.vm;
                 const auto slots = vm.Model().InstanceSlots(context.receiver);

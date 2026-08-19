@@ -35,11 +35,10 @@ dx::IntrinsicHandler Init(const Context& context, const bool has_weight) {
 }  // namespace
 
 Decl Declare_android_widget_LinearLayout_LayoutParams(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/widget/LinearLayout$LayoutParams;");
-    builder.Super("Landroid/view/ViewGroup$LayoutParams;");
-    builder.Virtual("<init>", "(II)V", Init(context, false));
-    builder.Virtual("<init>", "(IIF)V", Init(context, true));
-    builder.Virtual("setMargins", "(IIII)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/LinearLayout$LayoutParams;", "Landroid/view/ViewGroup$LayoutParams;");
+    builder.Constructor("(II)V", Init(context, false));
+    builder.Constructor("(IIF)V", Init(context, true));
+    builder.FinalMethod("setMargins", "(IIII)V",
         [context](dx::IntrinsicContext& call) {
             const auto found =
                 context->ui_layout_params.find(call.receiver.Value());

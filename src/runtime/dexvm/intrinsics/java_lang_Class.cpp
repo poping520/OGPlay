@@ -7,16 +7,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
 
     IntrinsicClassDecl Declare_java_lang_Class() {
-        IntrinsicClassBuilder builder("Ljava/lang/Class;");
-        builder.Super("Ljava/lang/Object;");
-        
-        builder.Virtual("getName", "()Ljava/lang/String;", [](IntrinsicContext& context) {
+        auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Class;", "Ljava/lang/Object;");
+        builder.FinalMethod("getName", "()Ljava/lang/String;", [](IntrinsicContext& context) {
             auto& vm = context.vm;
             const auto java_class = vm.Model().ClassOfClassObject(context.receiver);
             return VmValue::Ref(vm.NewStringUtf8(DottedName(vm.Linker().Class(java_class).descriptor)));
         });
 
-        builder.Virtual("getDeclaredMethods", "()[Ljava/lang/reflect/Method;", [](IntrinsicContext& context) {
+        builder.FinalMethod("getDeclaredMethods", "()[Ljava/lang/reflect/Method;", [](IntrinsicContext& context) {
             auto& vm = context.vm;
             const auto represented = vm.Model().ClassOfClassObject(context.receiver);
             std::vector<VmMethodId> declared;

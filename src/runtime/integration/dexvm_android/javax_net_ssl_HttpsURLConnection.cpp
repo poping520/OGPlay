@@ -4,14 +4,13 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_javax_net_ssl_HttpsURLConnection(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljavax/net/ssl/HttpsURLConnection;");
-    builder.Super("Ljava/net/HttpURLConnection;");
-    builder.Static("setDefaultHostnameVerifier", "(Ljavax/net/ssl/HostnameVerifier;)V", GraphicsNoopHandler());
-    builder.Static("setDefaultSSLSocketFactory", "(Ljavax/net/ssl/SSLSocketFactory;)V", GraphicsNoopHandler());
-    builder.Virtual("setRequestMethod", "(Ljava/lang/String;)V", NetUnsupportedHandler());
-    builder.Virtual("setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V", NetUnsupportedHandler());
-    builder.Virtual("getResponseCode", "()I", NetUnsupportedHandler());
-    builder.Virtual("getInputStream", "()Ljava/io/InputStream;", NetUnsupportedHandler());
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljavax/net/ssl/HttpsURLConnection;", "Ljava/net/HttpURLConnection;");
+    builder.StaticMethod("setDefaultHostnameVerifier", "(Ljavax/net/ssl/HostnameVerifier;)V", GraphicsNoopHandler());
+    builder.StaticMethod("setDefaultSSLSocketFactory", "(Ljavax/net/ssl/SSLSocketFactory;)V", GraphicsNoopHandler());
+    builder.FinalMethod("setRequestMethod", "(Ljava/lang/String;)V", NetUnsupportedHandler());
+    builder.FinalMethod("setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V", NetUnsupportedHandler());
+    builder.FinalMethod("getResponseCode", "()I", NetUnsupportedHandler());
+    builder.FinalMethod("getInputStream", "()Ljava/io/InputStream;", NetUnsupportedHandler());
     return std::move(builder).Build();
 }
 

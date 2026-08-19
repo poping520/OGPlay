@@ -138,13 +138,10 @@ namespace {
 }  // namespace
 
 IntrinsicClassDecl Declare_java_lang_Enum() {
-    IntrinsicClassBuilder builder("Ljava/lang/Enum;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Implements("Ljava/lang/Comparable;");
-    builder.Implements("Ljava/io/Serializable;");
-    builder.Field("name", "Ljava/lang/String;", false);
-    builder.Field("ordinal", "I", false);
-    builder.Virtual("<init>", "(Ljava/lang/String;I)V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Enum;", "Ljava/lang/Object;", {"Ljava/lang/Comparable;", "Ljava/io/Serializable;"});
+    builder.InstanceField("name", "Ljava/lang/String;");
+    builder.InstanceField("ordinal", "I");
+    builder.Constructor("(Ljava/lang/String;I)V",
         [](IntrinsicContext& context) {
             const auto& name_field =
                 EnumField(context.vm, context.receiver, "name",
@@ -165,25 +162,25 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
                 SlotTag::cat1};
             return VmValue::Void();
         });
-    builder.Virtual("name", "()Ljava/lang/String;",
+    builder.FinalMethod("name", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
             return VmValue::Ref(NameOf(context.vm, context.receiver));
         });
-    builder.Virtual("ordinal", "()I",
+    builder.FinalMethod("ordinal", "()I",
         [](IntrinsicContext& context) {
             return VmValue::Int(OrdinalOf(context.vm, context.receiver));
         });
     // Not final on the platform: enum types may override toString.
-    builder.Overridable("toString", "()Ljava/lang/String;",
+    builder.VirtualMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
             return VmValue::Ref(NameOf(context.vm, context.receiver));
         });
-    builder.Virtual("equals", "(Ljava/lang/Object;)Z",
+    builder.FinalMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
             const auto other = context.arguments[0].ref;
             return VmValue::Int(context.receiver == other ? 1 : 0);
         });
-    builder.Virtual("hashCode", "()I",
+    builder.FinalMethod("hashCode", "()I",
         [](IntrinsicContext& context) {
             const auto name = NameOf(context.vm, context.receiver);
             return VmValue::Int(
@@ -192,12 +189,12 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
                      ? JavaStringHash(context.vm.Model().StringValue(name))
                      : 0));
         });
-    builder.Virtual("clone", "()Ljava/lang/Object;",
+    builder.FinalMethod("clone", "()Ljava/lang/Object;",
         [](IntrinsicContext&) -> VmValue {
             throw VmJavaThrow{"Ljava/lang/CloneNotSupportedException;",
                               "Enums may not be cloned"};
         });
-    builder.Virtual("compareTo", "(Ljava/lang/Enum;)I",
+    builder.FinalMethod("compareTo", "(Ljava/lang/Enum;)I",
         [](IntrinsicContext& context) {
             return VmValue::Int(CompareOrdinals(
                 context.vm, context.receiver, context.arguments[0].ref));
@@ -205,7 +202,7 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
     // Erased Comparable bridge. The per-enum cast to E is approximated by
     // the Enum-kind check; non-enum arguments fail like the platform's
     // checkcast bridge does.
-    builder.Virtual("compareTo", "(Ljava/lang/Object;)I",
+    builder.FinalMethod("compareTo", "(Ljava/lang/Object;)I",
         [](IntrinsicContext& context) {
             const auto other = context.arguments[0].ref;
             if (other.IsValid()) {
@@ -227,7 +224,7 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
             return VmValue::Int(
                 CompareOrdinals(context.vm, context.receiver, other));
         });
-    builder.Virtual("getDeclaringClass", "()Ljava/lang/Class;",
+    builder.FinalMethod("getDeclaringClass", "()Ljava/lang/Class;",
         [](IntrinsicContext& context) {
             auto& vm = context.vm;
             const auto java_class = vm.Model().ObjectClass(context.receiver);
@@ -241,7 +238,7 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
             }
             return VmValue::Ref(vm.Model().ClassObject(*linked.super));
         });
-    builder.Static("valueOf",
+    builder.StaticMethod("valueOf",
                    "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;",
                    ValueOfConstant);
     return std::move(builder).Build();

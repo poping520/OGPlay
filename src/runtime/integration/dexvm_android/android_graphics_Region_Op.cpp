@@ -4,10 +4,9 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Region_Op(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/graphics/Region$Op;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Field("REPLACE", "Landroid/graphics/Region$Op;", true);
-    builder.Clinit([](dx::IntrinsicContext& call) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Region$Op;", "Ljava/lang/Object;");
+    builder.StaticField("REPLACE", "Landroid/graphics/Region$Op;");
+    builder.ClassInitializer([](dx::IntrinsicContext& call) {
         auto& vm = call.vm;
         vm.SetIntrinsicStaticRef(
             "Landroid/graphics/Region$Op;", "REPLACE",

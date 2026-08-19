@@ -3,9 +3,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Environment(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/os/Environment;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Static("getExternalStorageDirectory", "()Ljava/io/File;",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Environment;", "Ljava/lang/Object;");
+    builder.StaticMethod("getExternalStorageDirectory", "()Ljava/io/File;",
         [context](dx::IntrinsicContext& call) {
             const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
             const auto slots = call.vm.Model().InstanceSlots(file);
@@ -14,7 +13,7 @@ Decl Declare_android_os_Environment(const Context& context) {
                 dx::SlotTag::ref};
             return dx::VmValue::Ref(file);
         });
-    builder.Static("getExternalStorageState", "()Ljava/lang/String;",
+    builder.StaticMethod("getExternalStorageState", "()Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) {
             // The external mount is required by the profile and read at
             // startup, so MEDIA_MOUNTED is the truthful state.

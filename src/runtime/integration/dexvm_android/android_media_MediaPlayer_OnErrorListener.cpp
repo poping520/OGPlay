@@ -4,8 +4,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_media_MediaPlayer_OnErrorListener(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/media/MediaPlayer$OnErrorListener;");
-    builder.MarkInterface();
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/media/MediaPlayer$OnErrorListener;");
     return std::move(builder).Build();
 }
 

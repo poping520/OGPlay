@@ -28,10 +28,16 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   不走反射缓存——先 `<clinit>` 再按该 enum 自身同型 static 常量字段的活值按名
   匹配，null 参数 NPE、非 enum/未命中 IllegalArgumentException（消息对照 AOSP）。
   enum 子类的 `values()` 依赖数组 `clone()`，该面尚未实现，命中即明确失败。
-- `IntrinsicClassBuilder`：以类为单位声明 static/virtual/overridable 方法、字段、
-  常量与 `<clinit>`，`Build()` 在装配期校验类/方法/字段 descriptor、重复成员和
-  interface 实例字段；声明在构建时直接持有实现，未实现方法通过
-  `Unimplemented()` 显式进入 miss/记账路径。
+- `IntrinsicClassBuilder`：工厂 `Class/RootClass/Interface` 一次声明类型头
+  （descriptor、父类、接口；普通类默认父类 `Ljava/lang/Object;`，仅
+  `java.lang.Object` 用 `RootClass` 显式无父类），方法按
+  `Constructor/StaticMethod/VirtualMethod/FinalMethod` 声明、字段按
+  `InstanceField/StaticField` 声明，另有 `ConstantInt/ConstantString` 常量与
+  `ClassInitializer`（`<clinit>`）；声明即持有实现，空 handler 直接拒绝，
+  未实现方法经 `UnimplementedStatic/Constructor/Virtual/Final` 显式进入
+  miss/记账路径。`Build()` 在装配期校验类/方法/字段 descriptor（构造器必须
+  返回 void、普通方法不得用 `<init>`/`<clinit>` 保留名）、重复成员、interface
+  实例字段与整型常量的类型/范围。
 - `JavaObjectModel`：session 级统一对象身份（VmObjectRef 句柄空间，0=null）。
   VM 实例与对象数组自有存储；字符串与基元数组委托注入的
   `JniStringStore`/`JniPrimitiveArrayStore`——native 与解释器看到同一对象。

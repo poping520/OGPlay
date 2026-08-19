@@ -3,14 +3,13 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageView_ScaleType(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/widget/ImageView$ScaleType;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Field("CENTER", "Landroid/widget/ImageView$ScaleType;", true);
-    builder.Field("CENTER_INSIDE", "Landroid/widget/ImageView$ScaleType;", true);
-    builder.Field("FIT_CENTER", "Landroid/widget/ImageView$ScaleType;", true);
-    builder.Field("FIT_XY", "Landroid/widget/ImageView$ScaleType;", true);
-    builder.Field("CENTER_CROP", "Landroid/widget/ImageView$ScaleType;", true);
-    builder.Clinit([context](dx::IntrinsicContext& call) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView$ScaleType;", "Ljava/lang/Object;");
+    builder.StaticField("CENTER", "Landroid/widget/ImageView$ScaleType;");
+    builder.StaticField("CENTER_INSIDE", "Landroid/widget/ImageView$ScaleType;");
+    builder.StaticField("FIT_CENTER", "Landroid/widget/ImageView$ScaleType;");
+    builder.StaticField("FIT_XY", "Landroid/widget/ImageView$ScaleType;");
+    builder.StaticField("CENTER_CROP", "Landroid/widget/ImageView$ScaleType;");
+    builder.ClassInitializer([context](dx::IntrinsicContext& call) {
         const auto publish = [&call, &context](
                                  const std::string_view name,
                                  const ui::ImageScaleType type) {

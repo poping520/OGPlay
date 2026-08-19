@@ -7,46 +7,44 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_Vector() {
-    IntrinsicClassBuilder builder("Ljava/util/Vector;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Implements("Ljava/util/List;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Vector;", "Ljava/lang/Object;", {"Ljava/util/List;"});
+    builder.Constructor("()V",
         [](IntrinsicContext& context) {
                 context.vm.ListStorage(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "(I)V",
+    builder.Constructor("(I)V",
         [](IntrinsicContext &context) {
                 context.vm.ListStorage(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("add", "(Ljava/lang/Object;)Z",
+    builder.FinalMethod("add", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
                 context.vm.ListStorage(context.receiver)
                     .push_back(context.arguments[0].ref);
                 return VmValue::Int(1);
             });
-    builder.Virtual("addElement", "(Ljava/lang/Object;)V",
+    builder.FinalMethod("addElement", "(Ljava/lang/Object;)V",
         [](IntrinsicContext &context) {
                 context.vm.ListStorage(context.receiver)
                     .push_back(context.arguments[0].ref);
                 return VmValue::Void();
             });
-    builder.Virtual("get", "(I)Ljava/lang/Object;",
+    builder.FinalMethod("get", "(I)Ljava/lang/Object;",
         [](IntrinsicContext &context) {
                 auto& elements = context.vm.ListStorage(context.receiver);
                 const auto index = context.arguments[0].AsInt();
                 CheckListIndex(elements, index);
                 return VmValue::Ref(elements[static_cast<std::size_t>(index)]);
             });
-    builder.Virtual("elementAt", "(I)Ljava/lang/Object;",
+    builder.FinalMethod("elementAt", "(I)Ljava/lang/Object;",
         [](IntrinsicContext &context) {
                 auto& elements = context.vm.ListStorage(context.receiver);
                 const auto index = context.arguments[0].AsInt();
                 CheckListIndex(elements, index);
                 return VmValue::Ref(elements[static_cast<std::size_t>(index)]);
             });
-    builder.Virtual("set", "(ILjava/lang/Object;)Ljava/lang/Object;",
+    builder.FinalMethod("set", "(ILjava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext &context) {
                 auto& elements = context.vm.ListStorage(context.receiver);
                 const auto index = context.arguments[0].AsInt();
@@ -55,7 +53,7 @@ IntrinsicClassDecl Declare_java_util_Vector() {
             elements[static_cast<std::size_t>(index)] = context.arguments[1].ref;
                 return VmValue::Ref(previous);
             });
-    builder.Virtual("setElementAt", "(Ljava/lang/Object;I)V",
+    builder.FinalMethod("setElementAt", "(Ljava/lang/Object;I)V",
         [](IntrinsicContext &context) {
                 auto& elements = context.vm.ListStorage(context.receiver);
                 const auto index = context.arguments[1].AsInt();
@@ -63,7 +61,7 @@ IntrinsicClassDecl Declare_java_util_Vector() {
                 elements[static_cast<std::size_t>(index)] = context.arguments[0].ref;
                 return VmValue::Void();
             });
-    builder.Virtual("removeElementAt", "(I)V",
+    builder.FinalMethod("removeElementAt", "(I)V",
         [](IntrinsicContext& context) {
                 auto& elements = context.vm.ListStorage(context.receiver);
                 const auto index = context.arguments[0].AsInt();
@@ -71,7 +69,7 @@ IntrinsicClassDecl Declare_java_util_Vector() {
                 elements.erase(elements.begin() + index);
                 return VmValue::Void();
             });
-    builder.Virtual("remove", "(I)Ljava/lang/Object;",
+    builder.FinalMethod("remove", "(I)Ljava/lang/Object;",
         [](IntrinsicContext &context) {
                 auto& elements = context.vm.ListStorage(context.receiver);
                 const auto index = context.arguments[0].AsInt();
@@ -80,22 +78,22 @@ IntrinsicClassDecl Declare_java_util_Vector() {
                 elements.erase(elements.begin() + index);
                 return VmValue::Ref(previous);
             });
-    builder.Virtual("size", "()I",
+    builder.FinalMethod("size", "()I",
         [](IntrinsicContext& context) {
                 return VmValue::Int(static_cast<std::int32_t>(
                     context.vm.ListStorage(context.receiver).size()));
             });
-    builder.Virtual("clear", "()V",
+    builder.FinalMethod("clear", "()V",
         [](IntrinsicContext& context) {
                 context.vm.ListStorage(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("isEmpty", "()Z",
+    builder.FinalMethod("isEmpty", "()Z",
         [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.ListStorage(context.receiver).empty() ? 1
                                                                                  : 0);
             });
-    builder.Virtual("iterator", "()Ljava/util/Iterator;",
+    builder.FinalMethod("iterator", "()Ljava/util/Iterator;",
         [](IntrinsicContext& context) {
                 auto& vm = context.vm;
                 const auto instance =
@@ -105,7 +103,7 @@ IntrinsicClassDecl Declare_java_util_Vector() {
                 slots[1] = {0, SlotTag::cat1};
                 return VmValue::Ref(instance);
             });
-    builder.Virtual("contains", "(Ljava/lang/Object;)Z",
+    builder.FinalMethod("contains", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
                 const auto& elements = context.vm.ListStorage(context.receiver);
                 for (const auto element : elements) {
@@ -115,7 +113,7 @@ IntrinsicClassDecl Declare_java_util_Vector() {
                 }
                 return VmValue::Int(0);
             });
-    builder.Virtual("copyInto", "([Ljava/lang/Object;)V",
+    builder.FinalMethod("copyInto", "([Ljava/lang/Object;)V",
         [](IntrinsicContext& context) {
                 auto& model = context.vm.Model();
                 const auto& elements = context.vm.ListStorage(context.receiver);

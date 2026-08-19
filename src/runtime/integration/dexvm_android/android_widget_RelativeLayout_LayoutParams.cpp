@@ -80,9 +80,8 @@ void AddRule(ui::LayoutParams& params, const std::int32_t verb,
 }  // namespace
 
 Decl Declare_android_widget_RelativeLayout_LayoutParams(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/widget/RelativeLayout$LayoutParams;");
-    builder.Super("Landroid/view/ViewGroup$LayoutParams;");
-    builder.Virtual("<init>", "(II)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/RelativeLayout$LayoutParams;", "Landroid/view/ViewGroup$LayoutParams;");
+    builder.Constructor("(II)V",
         [context](dx::IntrinsicContext& call) {
             ui::LayoutParams params;
             params.width = Dimension(call.arguments[0].AsInt());
@@ -90,21 +89,21 @@ Decl Declare_android_widget_RelativeLayout_LayoutParams(const Context& context) 
             context->ui_layout_params[call.receiver.Value()] = params;
             return dx::VmValue::Void();
         });
-    builder.Virtual("addRule", "(I)V",
+    builder.FinalMethod("addRule", "(I)V",
         [context](dx::IntrinsicContext& call) {
             AddRule(Params(context, call.receiver),
                     call.arguments[0].AsInt(), -1);
             SyncAttached(context, call.receiver);
             return dx::VmValue::Void();
         });
-    builder.Virtual("addRule", "(II)V",
+    builder.FinalMethod("addRule", "(II)V",
         [context](dx::IntrinsicContext& call) {
             AddRule(Params(context, call.receiver),
                     call.arguments[0].AsInt(), call.arguments[1].AsInt());
             SyncAttached(context, call.receiver);
             return dx::VmValue::Void();
         });
-    builder.Virtual("setMargins", "(IIII)V",
+    builder.FinalMethod("setMargins", "(IIII)V",
         [context](dx::IntrinsicContext& call) {
             Params(context, call.receiver).margin = {
                 call.arguments[0].AsInt(), call.arguments[1].AsInt(),

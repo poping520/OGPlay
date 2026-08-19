@@ -3,10 +3,9 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_io_FileReader(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/io/FileReader;");
-    builder.Super("Ljava/io/Reader;");
-    builder.Virtual("<init>", "(Ljava/lang/String;)V", FileStreamInitPathHandler(context));
-    builder.Virtual("<init>", "(Ljava/io/File;)V", FileStreamInitFileHandler(context));
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/io/FileReader;", "Ljava/io/Reader;");
+    builder.Constructor("(Ljava/lang/String;)V", FileStreamInitPathHandler(context));
+    builder.Constructor("(Ljava/io/File;)V", FileStreamInitFileHandler(context));
     return std::move(builder).Build();
 }
 

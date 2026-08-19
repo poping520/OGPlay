@@ -7,9 +7,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_net_URLEncoder(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljava/net/URLEncoder;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Static("encode", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/net/URLEncoder;", "Ljava/lang/Object;");
+    builder.StaticMethod("encode", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         [](dx::IntrinsicContext& call) {
             auto charset = call.vm.StringUtf8(call.arguments[1].ref);
             for (auto& byte : charset) {

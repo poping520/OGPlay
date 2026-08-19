@@ -5,9 +5,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_BitmapFactory(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/graphics/BitmapFactory;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Static("decodeByteArray", "([BII)Landroid/graphics/Bitmap;",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory;", "Ljava/lang/Object;");
+    builder.StaticMethod("decodeByteArray", "([BII)Landroid/graphics/Bitmap;",
         [context](dx::IntrinsicContext& call) {
             auto& model = call.vm.Model();
             const auto array = call.arguments[0].ref;

@@ -3,10 +3,9 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageView(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/widget/ImageView;");
-    builder.Super("Landroid/view/View;");
-    builder.Virtual("<init>", "(Landroid/content/Context;)V", ViewInitHandler(context));
-    builder.Virtual("setImageResource", "(I)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView;", "Landroid/view/View;");
+    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.FinalMethod("setImageResource", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto descriptor = call.vm.Linker()
                                         .Class(call.vm.Model().ObjectClass(
@@ -34,7 +33,7 @@ Decl Declare_android_widget_ImageView(const Context& context) {
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
-    builder.Virtual("setScaleType", "(Landroid/widget/ImageView$ScaleType;)V",
+    builder.FinalMethod("setScaleType", "(Landroid/widget/ImageView$ScaleType;)V",
         [context](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].ref;
             const auto found = context->ui_image_scale_types.find(value.Value());

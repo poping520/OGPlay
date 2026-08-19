@@ -4,12 +4,11 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_net_HttpURLConnection(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Ljava/net/HttpURLConnection;");
-    builder.Super("Ljava/net/URLConnection;");
-    builder.Virtual("connect", "()V", NetUnsupportedHandler());
-    builder.Virtual("disconnect", "()V", NetUnsupportedHandler());
-    builder.Virtual("getInputStream", "()Ljava/io/InputStream;", NetUnsupportedHandler());
-    builder.Virtual("setConnectTimeout", "(I)V", NetUnsupportedHandler());
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/net/HttpURLConnection;", "Ljava/net/URLConnection;");
+    builder.FinalMethod("connect", "()V", NetUnsupportedHandler());
+    builder.FinalMethod("disconnect", "()V", NetUnsupportedHandler());
+    builder.FinalMethod("getInputStream", "()Ljava/io/InputStream;", NetUnsupportedHandler());
+    builder.FinalMethod("setConnectTimeout", "(I)V", NetUnsupportedHandler());
     return std::move(builder).Build();
 }
 

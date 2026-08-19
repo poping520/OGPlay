@@ -7,73 +7,72 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_Math() {
-    IntrinsicClassBuilder builder("Ljava/lang/Math;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Static("abs", "(I)I",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Math;", "Ljava/lang/Object;");
+    builder.StaticMethod("abs", "(I)I",
         [](IntrinsicContext& context) {
                 const auto value = context.arguments[0].AsInt();
                 return VmValue::Int(value < 0 ? -value : value);
             });
-    builder.Static("abs", "(J)J",
+    builder.StaticMethod("abs", "(J)J",
         [](IntrinsicContext& context) {
                 const auto value = context.arguments[0].AsLong();
                 return VmValue::Long(value < 0 ? -value : value);
             });
-    builder.Static("abs", "(F)F",
+    builder.StaticMethod("abs", "(F)F",
         [](IntrinsicContext& context) {
                 return VmValue::Float(std::fabs(context.arguments[0].AsFloat()));
             });
-    builder.Static("abs", "(D)D",
+    builder.StaticMethod("abs", "(D)D",
         [](IntrinsicContext& context) {
                 return VmValue::Double(std::fabs(context.arguments[0].AsDouble()));
             });
-    builder.Static("max", "(II)I",
+    builder.StaticMethod("max", "(II)I",
         [](IntrinsicContext& context) {
             return VmValue::Int(
                 std::max(context.arguments[0].AsInt(), context.arguments[1].AsInt()));
             });
-    builder.Static("min", "(II)I",
+    builder.StaticMethod("min", "(II)I",
         [](IntrinsicContext& context) {
             return VmValue::Int(
                 std::min(context.arguments[0].AsInt(), context.arguments[1].AsInt()));
             });
-    builder.Static("max", "(FF)F",
+    builder.StaticMethod("max", "(FF)F",
         [](IntrinsicContext& context) {
                 return VmValue::Float(std::fmax(context.arguments[0].AsFloat(),
                                                 context.arguments[1].AsFloat()));
             });
-    builder.Static("min", "(FF)F",
+    builder.StaticMethod("min", "(FF)F",
         [](IntrinsicContext& context) {
                 return VmValue::Float(std::fmin(context.arguments[0].AsFloat(),
                                                 context.arguments[1].AsFloat()));
             });
-    builder.Static("sqrt", "(D)D",
+    builder.StaticMethod("sqrt", "(D)D",
         [](IntrinsicContext& context) {
                 return VmValue::Double(std::sqrt(context.arguments[0].AsDouble()));
             });
-    builder.Static("sin", "(D)D",
+    builder.StaticMethod("sin", "(D)D",
         [](IntrinsicContext& context) {
                 return VmValue::Double(std::sin(context.arguments[0].AsDouble()));
             });
-    builder.Static("cos", "(D)D",
+    builder.StaticMethod("cos", "(D)D",
         [](IntrinsicContext& context) {
                 return VmValue::Double(std::cos(context.arguments[0].AsDouble()));
             });
-    builder.Static("atan2", "(DD)D",
+    builder.StaticMethod("atan2", "(DD)D",
         [](IntrinsicContext& context) {
                 return VmValue::Double(std::atan2(context.arguments[0].AsDouble(),
                                                   context.arguments[1].AsDouble()));
             });
-    builder.Static("pow", "(DD)D",
+    builder.StaticMethod("pow", "(DD)D",
         [](IntrinsicContext& context) {
                 return VmValue::Double(std::pow(context.arguments[0].AsDouble(),
                                                 context.arguments[1].AsDouble()));
             });
-    builder.Static("floor", "(D)D",
+    builder.StaticMethod("floor", "(D)D",
         [](IntrinsicContext& context) {
                 return VmValue::Double(std::floor(context.arguments[0].AsDouble()));
             });
-    builder.Static("ceil", "(D)D",
+    builder.StaticMethod("ceil", "(D)D",
         [](IntrinsicContext& context) {
                 return VmValue::Double(std::ceil(context.arguments[0].AsDouble()));
             });

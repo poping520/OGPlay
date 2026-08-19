@@ -7,26 +7,24 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_StringBuffer() {
-    IntrinsicClassBuilder builder("Ljava/lang/StringBuffer;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Implements("Ljava/lang/CharSequence;");
-    builder.Virtual("<init>", "()V",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/StringBuffer;", "Ljava/lang/Object;", {"Ljava/lang/CharSequence;"});
+    builder.Constructor("()V",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "(I)V",
+    builder.Constructor("(I)V",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver).clear();
                 return VmValue::Void();
             });
-    builder.Virtual("<init>", "(Ljava/lang/String;)V",
+    builder.Constructor("(Ljava/lang/String;)V",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver) =
                     Value(context, context.arguments[0].ref);
                 return VmValue::Void();
             });
-    builder.Virtual("append", "(Ljava/lang/String;)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("append", "(Ljava/lang/String;)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 const auto argument = context.arguments[0].ref;
                 context.vm.BuilderBuffer(context.receiver) +=
@@ -34,7 +32,7 @@ IntrinsicClassDecl Declare_java_lang_StringBuffer() {
                                        : std::u16string(u"null");
                 return BuilderSelf(context);
             });
-    builder.Virtual("append", "(Ljava/lang/Object;)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("append", "(Ljava/lang/Object;)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 const auto argument = context.arguments[0].ref;
                 auto& buffer = context.vm.BuilderBuffer(context.receiver);
@@ -52,60 +50,60 @@ IntrinsicClassDecl Declare_java_lang_StringBuffer() {
                 }
                 return BuilderSelf(context);
             });
-    builder.Virtual("append", "(I)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("append", "(I)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver) +=
                     Widen(std::to_string(context.arguments[0].AsInt()));
                 return BuilderSelf(context);
             });
-    builder.Virtual("append", "(J)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("append", "(J)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver) +=
                     Widen(std::to_string(context.arguments[0].AsLong()));
                 return BuilderSelf(context);
             });
-    builder.Virtual("append", "(Z)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("append", "(Z)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver) +=
                     context.arguments[0].AsInt() != 0 ? u"true"
                                                       : std::u16string(u"false");
                 return BuilderSelf(context);
             });
-    builder.Virtual("append", "(C)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("append", "(C)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver) += static_cast<char16_t>(
                     context.arguments[0].cat1 & 0xffffU);
                 return BuilderSelf(context);
             });
-    builder.Virtual("append", "(F)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("append", "(F)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver) +=
                     Widen(std::to_string(context.arguments[0].AsFloat()));
                 return BuilderSelf(context);
             });
-    builder.Virtual("append", "(D)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("append", "(D)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 context.vm.BuilderBuffer(context.receiver) +=
                     Widen(std::to_string(context.arguments[0].AsDouble()));
                 return BuilderSelf(context);
             });
-    builder.Virtual("toString", "()Ljava/lang/String;",
+    builder.FinalMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context, context.vm.BuilderBuffer(context.receiver));
             });
-    builder.Virtual("length", "()I",
+    builder.FinalMethod("length", "()I",
         [](IntrinsicContext& context) {
                 return VmValue::Int(static_cast<std::int32_t>(
                     context.vm.BuilderBuffer(context.receiver).size()));
             });
-    builder.Virtual("charAt", "(I)C",
+    builder.FinalMethod("charAt", "(I)C",
         [](IntrinsicContext& context) {
                 auto& buffer = context.vm.BuilderBuffer(context.receiver);
                 const auto index = context.arguments[0].AsInt();
                 CheckBuilderIndex(buffer, index);
                 return VmValue::Int(buffer[static_cast<std::size_t>(index)]);
             });
-    builder.Virtual("setCharAt", "(IC)V",
+    builder.FinalMethod("setCharAt", "(IC)V",
         [](IntrinsicContext& context) {
                 auto& buffer = context.vm.BuilderBuffer(context.receiver);
                 const auto index = context.arguments[0].AsInt();
@@ -114,7 +112,7 @@ IntrinsicClassDecl Declare_java_lang_StringBuffer() {
                     context.arguments[1].cat1 & 0xffffU);
                 return VmValue::Void();
             });
-    builder.Virtual("deleteCharAt", "(I)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("deleteCharAt", "(I)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 auto& buffer = context.vm.BuilderBuffer(context.receiver);
                 const auto index = context.arguments[0].AsInt();
@@ -122,7 +120,7 @@ IntrinsicClassDecl Declare_java_lang_StringBuffer() {
                 buffer.erase(buffer.begin() + index);
                 return VmValue::Ref(context.receiver);
             });
-    builder.Virtual("insert", "(IC)Ljava/lang/StringBuffer;",
+    builder.FinalMethod("insert", "(IC)Ljava/lang/StringBuffer;",
         [](IntrinsicContext& context) {
                 auto& buffer = context.vm.BuilderBuffer(context.receiver);
                 const auto index = context.arguments[0].AsInt();

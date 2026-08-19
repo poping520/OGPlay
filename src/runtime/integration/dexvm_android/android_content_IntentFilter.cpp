@@ -7,13 +7,12 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_IntentFilter(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/content/IntentFilter;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "(Ljava/lang/String;)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/IntentFilter;", "Ljava/lang/Object;");
+    builder.Constructor("(Ljava/lang/String;)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Virtual("<init>", "()V",
+    builder.Constructor("()V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Virtual("addAction", "(Ljava/lang/String;)V",
+    builder.FinalMethod("addAction", "(Ljava/lang/String;)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     return std::move(builder).Build();
 }

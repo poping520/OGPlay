@@ -4,9 +4,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_webkit_WebViewClient(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/webkit/WebViewClient;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V", NeutralHandler('V'));
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebViewClient;", "Ljava/lang/Object;");
+    builder.Constructor("()V", NeutralHandler('V'));
     return std::move(builder).Build();
 }
 

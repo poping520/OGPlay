@@ -4,8 +4,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;");
-    builder.MarkInterface();
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;");
     return std::move(builder).Build();
 }
 

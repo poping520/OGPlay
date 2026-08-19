@@ -7,19 +7,17 @@ namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_util_CollectionIterator() {
-    IntrinsicClassBuilder builder("Ljava/util/CollectionIterator;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Implements("Ljava/util/Iterator;");
-    builder.Field("list", "Ljava/lang/Object;", false);
-    builder.Field("index", "I", false);
-    builder.Virtual("hasNext", "()Z",
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/CollectionIterator;", "Ljava/lang/Object;", {"Ljava/util/Iterator;"});
+    builder.InstanceField("list", "Ljava/lang/Object;");
+    builder.InstanceField("index", "I");
+    builder.FinalMethod("hasNext", "()Z",
         [](IntrinsicContext &context) {
             const auto slots = context.vm.Model().InstanceSlots(context.receiver);
             const auto &elements = context.vm.ListStorage(VmObjectRef(slots[0].bits));
                 return VmValue::Int(
                 static_cast<std::size_t>(slots[1].bits) < elements.size() ? 1 : 0);
             });
-    builder.Virtual("next", "()Ljava/lang/Object;",
+    builder.FinalMethod("next", "()Ljava/lang/Object;",
         [](IntrinsicContext& context) {
             const auto slots = context.vm.Model().InstanceSlots(context.receiver);
             const auto &elements = context.vm.ListStorage(VmObjectRef(slots[0].bits));

@@ -6,14 +6,13 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Bundle(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/os/Bundle;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Bundle;", "Ljava/lang/Object;");
+    builder.Constructor("()V",
         [context](dx::IntrinsicContext& call) {
             context->bundles.try_emplace(call.receiver.Value());
             return dx::VmValue::Void();
         });
-    builder.Virtual("get", "(Ljava/lang/String;)Ljava/lang/Object;",
+    builder.FinalMethod("get", "(Ljava/lang/String;)Ljava/lang/Object;",
         [context](dx::IntrinsicContext& call) {
             const auto bundle = context->bundles.find(call.receiver.Value());
             if (bundle == context->bundles.end()) {
@@ -33,7 +32,7 @@ Decl Declare_android_os_Bundle(const Context& context) {
             }
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
-    builder.Virtual("getInt", "(Ljava/lang/String;)I",
+    builder.FinalMethod("getInt", "(Ljava/lang/String;)I",
         [context](dx::IntrinsicContext& call) {
             const auto& values = context->bundles[call.receiver.Value()];
             const auto found =
@@ -44,7 +43,7 @@ Decl Declare_android_os_Bundle(const Context& context) {
                     : std::get_if<std::int32_t>(&found->second);
             return dx::VmValue::Int(value == nullptr ? 0 : *value);
         });
-    builder.Virtual("getString", "(Ljava/lang/String;)Ljava/lang/String;",
+    builder.FinalMethod("getString", "(Ljava/lang/String;)Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) {
             const auto& values = context->bundles[call.receiver.Value()];
             const auto found =
@@ -56,21 +55,21 @@ Decl Declare_android_os_Bundle(const Context& context) {
             return value == nullptr ? dx::VmValue::Ref(dx::VmObjectRef{})
                                     : MakeString(call, *value);
         });
-    builder.Virtual("putString", "(Ljava/lang/String;Ljava/lang/String;)V",
+    builder.FinalMethod("putString", "(Ljava/lang/String;Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {
             context->bundles[call.receiver.Value()]
                             [call.vm.StringUtf8(call.arguments[0].ref)] =
                 call.vm.StringUtf8(call.arguments[1].ref);
             return dx::VmValue::Void();
         });
-    builder.Virtual("putInt", "(Ljava/lang/String;I)V",
+    builder.FinalMethod("putInt", "(Ljava/lang/String;I)V",
         [context](dx::IntrinsicContext& call) {
             context->bundles[call.receiver.Value()]
                             [call.vm.StringUtf8(call.arguments[0].ref)] =
                 call.arguments[1].AsInt();
             return dx::VmValue::Void();
         });
-    builder.Virtual("getLong", "(Ljava/lang/String;)J",
+    builder.FinalMethod("getLong", "(Ljava/lang/String;)J",
         [context](dx::IntrinsicContext& call) {
             const auto& values = context->bundles[call.receiver.Value()];
             const auto found =
@@ -81,14 +80,14 @@ Decl Declare_android_os_Bundle(const Context& context) {
                     : std::get_if<std::int64_t>(&found->second);
             return dx::VmValue::Long(value == nullptr ? 0 : *value);
         });
-    builder.Virtual("putLong", "(Ljava/lang/String;J)V",
+    builder.FinalMethod("putLong", "(Ljava/lang/String;J)V",
         [context](dx::IntrinsicContext& call) {
             context->bundles[call.receiver.Value()]
                             [call.vm.StringUtf8(call.arguments[0].ref)] =
                 call.arguments[1].AsLong();
             return dx::VmValue::Void();
         });
-    builder.Virtual("getByteArray", "(Ljava/lang/String;)[B",
+    builder.FinalMethod("getByteArray", "(Ljava/lang/String;)[B",
         [context](dx::IntrinsicContext& call) {
             const auto& values = context->bundles[call.receiver.Value()];
             const auto found =
@@ -100,14 +99,14 @@ Decl Declare_android_os_Bundle(const Context& context) {
             return dx::VmValue::Ref(value == nullptr ? dx::VmObjectRef{}
                                                      : *value);
         });
-    builder.Virtual("putByteArray", "(Ljava/lang/String;[B)V",
+    builder.FinalMethod("putByteArray", "(Ljava/lang/String;[B)V",
         [context](dx::IntrinsicContext& call) {
             context->bundles[call.receiver.Value()]
                             [call.vm.StringUtf8(call.arguments[0].ref)] =
                 call.arguments[1].ref;
             return dx::VmValue::Void();
         });
-    builder.Virtual("containsKey", "(Ljava/lang/String;)Z",
+    builder.FinalMethod("containsKey", "(Ljava/lang/String;)Z",
         [context](dx::IntrinsicContext& call) {
             const auto& values = context->bundles[call.receiver.Value()];
             return dx::VmValue::Int(
@@ -115,7 +114,7 @@ Decl Declare_android_os_Bundle(const Context& context) {
                     ? 1
                     : 0);
         });
-    builder.Virtual("clear", "()V",
+    builder.FinalMethod("clear", "()V",
         [context](dx::IntrinsicContext& call) {
             context->bundles[call.receiver.Value()].clear();
             return dx::VmValue::Void();

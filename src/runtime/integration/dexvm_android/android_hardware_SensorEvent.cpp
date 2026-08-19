@@ -4,9 +4,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_hardware_SensorEvent(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/hardware/SensorEvent;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Field("values", "[F", false);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/hardware/SensorEvent;", "Ljava/lang/Object;");
+    builder.InstanceField("values", "[F");
     return std::move(builder).Build();
 }
 

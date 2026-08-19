@@ -6,19 +6,18 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_Intent(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/content/Intent;");
-    builder.Super("Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Intent;", "Ljava/lang/Object;");
     const auto intent_init = [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     };
     const auto set_flags = [](dx::IntrinsicContext& call) {
         return Self(call);
     };
-    builder.Virtual("<init>", "(Ljava/lang/String;)V", intent_init);
-    builder.Virtual("<init>", "()V", intent_init);
-    builder.Virtual("<init>", "(Ljava/lang/String;Landroid/net/Uri;)V",
+    builder.Constructor("(Ljava/lang/String;)V", intent_init);
+    builder.Constructor("()V", intent_init);
+    builder.Constructor("(Ljava/lang/String;Landroid/net/Uri;)V",
         intent_init);
-    builder.Virtual("<init>", "(Landroid/content/Context;Ljava/lang/Class;)V",
+    builder.Constructor("(Landroid/content/Context;Ljava/lang/Class;)V",
         [context](dx::IntrinsicContext& call) {
             const auto class_object = call.arguments[1].ref;
             const auto target = call.vm.Model().ClassOfClassObject(class_object);
@@ -26,7 +25,7 @@ Decl Declare_android_content_Intent(const Context& context) {
                 call.vm.Linker().Class(target).descriptor;
             return dx::VmValue::Void();
         });
-    builder.Virtual("setClassName",
+    builder.FinalMethod("setClassName",
         "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
         [context](dx::IntrinsicContext& call) {
             auto dotted = call.vm.StringUtf8(call.arguments[1].ref);
@@ -39,8 +38,8 @@ Decl Declare_android_content_Intent(const Context& context) {
                 std::move(descriptor);
             return Self(call);
         });
-    builder.Virtual("addFlags", "(I)Landroid/content/Intent;", set_flags);
-    builder.Virtual("putExtra",
+    builder.FinalMethod("addFlags", "(I)Landroid/content/Intent;", set_flags);
+    builder.FinalMethod("putExtra",
         "(Ljava/lang/String;I)Landroid/content/Intent;",
         [context](dx::IntrinsicContext& call) {
             context->intent_int_extras[call.receiver.Value()]
@@ -48,7 +47,7 @@ Decl Declare_android_content_Intent(const Context& context) {
                     call.arguments[1].AsInt();
             return Self(call);
         });
-    builder.Virtual("putExtra",
+    builder.FinalMethod("putExtra",
         "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
         [context](dx::IntrinsicContext& call) {
             context->intent_string_extras[call.receiver.Value()]
@@ -56,7 +55,7 @@ Decl Declare_android_content_Intent(const Context& context) {
                     call.vm.StringUtf8(call.arguments[1].ref);
             return Self(call);
         });
-    builder.Virtual("getStringExtra",
+    builder.FinalMethod("getStringExtra",
         "(Ljava/lang/String;)Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) {
             const auto extras =
@@ -70,7 +69,7 @@ Decl Declare_android_content_Intent(const Context& context) {
             }
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
-    builder.Virtual("getIntExtra", "(Ljava/lang/String;I)I",
+    builder.FinalMethod("getIntExtra", "(Ljava/lang/String;I)I",
         [context](dx::IntrinsicContext& call) {
             const auto extras =
                 context->intent_int_extras.find(call.receiver.Value());
@@ -83,7 +82,7 @@ Decl Declare_android_content_Intent(const Context& context) {
             }
             return dx::VmValue::Int(call.arguments[1].AsInt());
         });
-    builder.Virtual("removeExtra", "(Ljava/lang/String;)V",
+    builder.FinalMethod("removeExtra", "(Ljava/lang/String;)V",
         [context](dx::IntrinsicContext& call) {
             const auto intent = call.receiver.Value();
             const auto name = call.vm.StringUtf8(call.arguments[0].ref);
@@ -97,18 +96,18 @@ Decl Declare_android_content_Intent(const Context& context) {
             remove(context->intent_int_extras);
             return dx::VmValue::Void();
         });
-    builder.Virtual("addCategory",
+    builder.FinalMethod("addCategory",
         "(Ljava/lang/String;)Landroid/content/Intent;", set_flags);
-    builder.Virtual("getAction", "()Ljava/lang/String;",
+    builder.FinalMethod("getAction", "()Ljava/lang/String;",
         [](dx::IntrinsicContext&) {
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
-    builder.Virtual("getExtras", "()Landroid/os/Bundle;",
+    builder.FinalMethod("getExtras", "()Landroid/os/Bundle;",
         [](dx::IntrinsicContext&) {
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
-    builder.Virtual("setFlags", "(I)Landroid/content/Intent;", set_flags);
-    builder.Virtual("setDataAndType",
+    builder.FinalMethod("setFlags", "(I)Landroid/content/Intent;", set_flags);
+    builder.FinalMethod("setDataAndType",
         "(Landroid/net/Uri;Ljava/lang/String;)Landroid/content/Intent;",
         [](dx::IntrinsicContext& call) { return Self(call); });
     return std::move(builder).Build();

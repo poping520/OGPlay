@@ -7,11 +7,10 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_content_BroadcastReceiver(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicClassBuilder builder("Landroid/content/BroadcastReceiver;");
-    builder.Super("Ljava/lang/Object;");
-    builder.Virtual("<init>", "()V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/BroadcastReceiver;", "Ljava/lang/Object;");
+    builder.Constructor("()V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Overridable("onReceive",
+    builder.VirtualMethod("onReceive",
         "(Landroid/content/Context;Landroid/content/Intent;)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     return std::move(builder).Build();

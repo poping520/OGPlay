@@ -7,8 +7,7 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_java_util_zip_ZipInputStream(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Ljava/util/zip/ZipInputStream;");
-    builder.Super("Ljava/io/FilterInputStream;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Ljava/util/zip/ZipInputStream;", "Ljava/io/FilterInputStream;");
     // ZipInputStream: adopts the wrapped stream's remaining bytes and reads
     // them with the strict loader ZIP parser (real inflate, CRC-checked).
     const auto zip_of = [context](dx::IntrinsicContext& call)
@@ -20,7 +19,7 @@ Decl Declare_java_util_zip_ZipInputStream(const Context& context) {
         }
         return found->second;
     };
-    builder.Virtual("<init>", "(Ljava/io/InputStream;)V",
+    builder.Constructor("(Ljava/io/InputStream;)V",
         [context](dx::IntrinsicContext& call) {
             const auto target = call.arguments[0].ref;
             const auto found = context->streams.find(target.Value());
@@ -43,7 +42,7 @@ Decl Declare_java_util_zip_ZipInputStream(const Context& context) {
             context->zip_streams[call.receiver.Value()] = std::move(zip);
             return dx::VmValue::Void();
         });
-    builder.Virtual("getNextEntry", "()Ljava/util/zip/ZipEntry;",
+    builder.FinalMethod("getNextEntry", "()Ljava/util/zip/ZipEntry;",
         [zip_of](dx::IntrinsicContext& call) {
             auto& zip = zip_of(call);
             zip.entry_bytes.clear();
@@ -67,7 +66,7 @@ Decl Declare_java_util_zip_ZipInputStream(const Context& context) {
                         dx::SlotTag::ref};
             return dx::VmValue::Ref(object);
         });
-    builder.Virtual("read", "([BII)I",
+    builder.FinalMethod("read", "([BII)I",
         [zip_of](dx::IntrinsicContext& call) {
             auto& zip = zip_of(call);
             const auto array = call.arguments[0].ref;
@@ -90,7 +89,7 @@ Decl Declare_java_util_zip_ZipInputStream(const Context& context) {
             zip.cursor += amount;
             return dx::VmValue::Int(static_cast<std::int32_t>(amount));
         });
-    builder.Virtual("closeEntry", "()V",
+    builder.FinalMethod("closeEntry", "()V",
         [zip_of](dx::IntrinsicContext& call) {
             auto& zip = zip_of(call);
             zip.entry_bytes.clear();
@@ -98,7 +97,7 @@ Decl Declare_java_util_zip_ZipInputStream(const Context& context) {
             zip.entry_open = false;
             return dx::VmValue::Void();
         });
-    builder.Virtual("close", "()V",
+    builder.FinalMethod("close", "()V",
         [context](dx::IntrinsicContext& call) {
             const auto found =
                 context->zip_streams.find(call.receiver.Value());

@@ -71,18 +71,17 @@ dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
 }  // namespace
 
 Decl Declare_android_view_ViewGroup(const Context& context) {
-    dx::IntrinsicClassBuilder builder("Landroid/view/ViewGroup;");
-    builder.Super("Landroid/view/View;");
-    builder.Virtual("addView", "(Landroid/view/View;)V",
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewGroup;", "Landroid/view/View;");
+    builder.FinalMethod("addView", "(Landroid/view/View;)V",
                     AddHandler(context, false, false));
-    builder.Virtual(
+    builder.FinalMethod(
         "addView",
         "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",
         AddHandler(context, true, true));
-    builder.Virtual(
+    builder.FinalMethod(
         "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
         AddHandler(context, false, true));
-    builder.Virtual("removeView", "(Landroid/view/View;)V",
+    builder.FinalMethod("removeView", "(Landroid/view/View;)V",
         [context](dx::IntrinsicContext& call) {
             const auto child = call.arguments[0].ref;
             if (!child.IsValid()) return dx::VmValue::Void();
@@ -94,7 +93,7 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual("removeViews", "(II)V",
+    builder.FinalMethod("removeViews", "(II)V",
         [context](dx::IntrinsicContext& call) {
             const auto parent = NodeFor(call, context, call.receiver);
             const auto start = call.arguments[0].AsInt();
@@ -113,7 +112,7 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.Virtual(
+    builder.FinalMethod(
         "updateViewLayout",
         "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
         [context](dx::IntrinsicContext& call) {

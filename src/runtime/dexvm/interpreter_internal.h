@@ -94,6 +94,7 @@ public:
         {"line.separator", "\n"},
         {"path.separator", ":"},
     };
+    std::vector<IntrinsicStateTableHooks> intrinsic_state_tables;
     core::Logger* logger{};
     Interpreter* owner{};
     VmExecutionLock execution_lock;

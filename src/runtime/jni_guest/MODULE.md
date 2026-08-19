@@ -65,7 +65,9 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   `0`/`JNI_COMMIT`/`JNI_ABORT`、wrong pointer/double release 与类型配对；Critical 两槽
   复用相同有界 copy lease，但以独立 access kind 配对，不能与 Elements 交叉 release。
   object array
-  3 槽复用 `JniObjectArrayStore` 并验证 initial/set assignability;`GetArrayLength` 通过
+  3 槽复用会话级 `JniGuestObjectRegistry::ObjectArrays()` 并验证 initial/set
+  assignability；该 store 同时注入 DexVM object model，native/解释路径共享 identity
+  与元素事实。`GetArrayLength` 通过
   显式 `Contains` 区分 object/primitive store,不使用异常探测。创建后 local reference
   发布失败必须删除 semantic array。
 - nonvirtual 30 槽与 virtual/static call 共用 descriptor 驱动的 A32 word cursor、

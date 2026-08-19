@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-48 Thread Core 完成，DVM-47 gate 仍受阻
+更新：2026-08-20 · DVM-49 Java 对象与 intrinsic 状态底座完成，DVM-47 gate 仍受阻
 
 ## 当前阶段
 
@@ -18,7 +18,8 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46 已交付；解释执行仍由 `VmExecutionLock` 串行。GC-B 已实现
+- **M9 DexVM**：DVM-1..46、48、49 已交付；DVM-47 gate 仍受阻。解释执行仍由
+  `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
   exact 三轮保持 `468/468000`、`f91150b4...`，16 MiB/1% 强制回收探针也通过同一
@@ -48,6 +49,8 @@
   holdsLock 与 active GC roots 均闭合；`Object.wait(JI)`/join/sleep 共用注入的
   monotonic Clock，停泊释放 execution lock。priority 不映射 host scheduler，
   daemon 不驱动 session 退出；既有 native 栈/monitor 边界使总能力仍为 partial。
+  DVM-49 统一 session `Object[]` identity/store 与 class 映射；intrinsic 状态改走
+  trace/sweep/clone 注册契约。
   `IntrinsicClassBuilder` 已重构为工厂式 API：`Class/RootClass/Interface` 一次
   声明类型头（普通类默认父类 Object，仅 java.lang.Object 显式无父类），
   方法 `Constructor/StaticMethod/VirtualMethod/FinalMethod`、字段
@@ -60,7 +63,7 @@
 
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：830/830 CTest（含 DVM-48、GC-B、Profile、Scenario 与文档门禁）。
+- Windows/x64 `windows-msvc`：832/832 CTest（含 DVM-49、DVM-48、GC-B、Profile、Scenario 与文档门禁）。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 

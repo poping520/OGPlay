@@ -1,5 +1,6 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -282,27 +283,33 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
 }
 
 std::size_t Interpreter::RegisteredIntrinsicSideTableCount() const noexcept {
-    // Throwable, builder, list and map storage are the closed registered set.
-    return 4U;
+    return impl_->intrinsic_state_tables.size();
+}
+
+void Interpreter::RegisterIntrinsicStateTable(IntrinsicStateTableHooks hooks) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    if (hooks.name.empty() || !hooks.sweep) {
+        throw DexVmError(DexVmErrorReason::invalid_operand,
+                         "intrinsic state table needs a name and sweep hook");
+    }
+    const auto duplicate = std::find_if(
+        impl_->intrinsic_state_tables.begin(),
+        impl_->intrinsic_state_tables.end(), [&](const auto& registered) {
+            return registered.name == hooks.name;
+        });
+    if (duplicate != impl_->intrinsic_state_tables.end()) {
+        throw DexVmError(DexVmErrorReason::invalid_operand,
+                         "intrinsic state table is already registered: " +
+                             hooks.name);
+    }
+    impl_->intrinsic_state_tables.push_back(std::move(hooks));
 }
 
 void Interpreter::Impl::TraceIntrinsicSideTables(
     const VmObjectRef owner_ref, const VmRootVisitor& visitor) const {
-    if (const auto found = throwables.find(owner_ref.Value());
-        found != throwables.end()) {
-        visitor(found->second.message);
-        visitor(found->second.cause);
+    for (const auto& table : intrinsic_state_tables) {
+        if (table.trace) table.trace(owner_ref, visitor);
     }
-    if (const auto found = lists.find(owner_ref.Value()); found != lists.end()) {
-        for (const auto element : found->second) visitor(element);
-    }
-    if (const auto found = maps.find(owner_ref.Value()); found != maps.end()) {
-        for (const auto& [key, value] : found->second) {
-            visitor(key);
-            visitor(value);
-        }
-    }
-    // builders contains UTF-16 code units only and intentionally has no edge.
 }
 
 GcMarkResult Interpreter::MarkReachable() {
@@ -334,10 +341,9 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
                         destructor_ran = true;
                     }
                 }
-                impl_->throwables.erase(ref.Value());
-                impl_->builders.erase(ref.Value());
-                impl_->lists.erase(ref.Value());
-                impl_->maps.erase(ref.Value());
+                for (const auto& table : impl_->intrinsic_state_tables) {
+                    table.sweep(ref);
+                }
                 impl_->monitors->ReleaseObjectForGc(ref);
                 return destructor_ran;
             },

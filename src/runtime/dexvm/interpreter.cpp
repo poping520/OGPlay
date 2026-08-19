@@ -413,6 +413,71 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->executions.emplace(1, std::move(default_execution));
     impl_->monitors = std::make_unique<VmMonitorTable>(*this);
 
+    RegisterIntrinsicStateTable({
+        "throwable",
+        [state = impl_.get()](const VmObjectRef owner,
+                              const VmRootVisitor& visit) {
+            const auto found = state->throwables.find(owner.Value());
+            if (found == state->throwables.end()) return;
+            visit(found->second.message);
+            visit(found->second.cause);
+        },
+        [state = impl_.get()](const VmObjectRef owner) {
+            state->throwables.erase(owner.Value());
+        },
+        {}});
+    RegisterIntrinsicStateTable({
+        "builder", {},
+        [state = impl_.get()](const VmObjectRef owner) {
+            state->builders.erase(owner.Value());
+        },
+        [state = impl_.get()](const VmObjectRef source,
+                              const VmObjectRef clone) {
+            const auto found = state->builders.find(source.Value());
+            if (found != state->builders.end()) {
+                state->builders[clone.Value()] = found->second;
+            }
+        }});
+    RegisterIntrinsicStateTable({
+        "list",
+        [state = impl_.get()](const VmObjectRef owner,
+                              const VmRootVisitor& visit) {
+            const auto found = state->lists.find(owner.Value());
+            if (found == state->lists.end()) return;
+            for (const auto element : found->second) visit(element);
+        },
+        [state = impl_.get()](const VmObjectRef owner) {
+            state->lists.erase(owner.Value());
+        },
+        [state = impl_.get()](const VmObjectRef source,
+                              const VmObjectRef clone) {
+            const auto found = state->lists.find(source.Value());
+            if (found != state->lists.end()) {
+                state->lists[clone.Value()] = found->second;
+            }
+        }});
+    RegisterIntrinsicStateTable({
+        "map",
+        [state = impl_.get()](const VmObjectRef owner,
+                              const VmRootVisitor& visit) {
+            const auto found = state->maps.find(owner.Value());
+            if (found == state->maps.end()) return;
+            for (const auto& [key, value] : found->second) {
+                visit(key);
+                visit(value);
+            }
+        },
+        [state = impl_.get()](const VmObjectRef owner) {
+            state->maps.erase(owner.Value());
+        },
+        [state = impl_.get()](const VmObjectRef source,
+                              const VmObjectRef clone) {
+            const auto found = state->maps.find(source.Value());
+            if (found != state->maps.end()) {
+                state->maps[clone.Value()] = found->second;
+            }
+        }});
+
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
     if (string_class.has_value() && class_class.has_value()) {
@@ -636,17 +701,8 @@ core::Logger* Interpreter::Log() const noexcept { return impl_->logger; }
 
 VmObjectRef Interpreter::CloneObject(const VmObjectRef source) {
     const auto clone = impl_->model->CloneObject(source);
-    if (const auto found = impl_->lists.find(source.Value());
-        found != impl_->lists.end()) {
-        impl_->lists[clone.Value()] = found->second;
-    }
-    if (const auto found = impl_->maps.find(source.Value());
-        found != impl_->maps.end()) {
-        impl_->maps[clone.Value()] = found->second;
-    }
-    if (const auto found = impl_->builders.find(source.Value());
-        found != impl_->builders.end()) {
-        impl_->builders[clone.Value()] = found->second;
+    for (const auto& table : impl_->intrinsic_state_tables) {
+        if (table.clone) table.clone(source, clone);
     }
     return clone;
 }

@@ -19,12 +19,14 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_object.h"
+#include "ogplay/runtime/jni/jni_object_array.h"
 
 namespace ogplay::runtime {
 
 class JniGuestObjectRegistry::Impl final {
 public:
-    explicit Impl(const JniClassRegistry& classes) : classes_(&classes) {}
+    explicit Impl(const JniClassRegistry& classes)
+        : classes_(&classes), object_arrays_(classes) {}
 
     [[nodiscard]] JniObjectIdentity Allocate(
         const JniObjectIdentity java_class) {
@@ -37,19 +39,19 @@ public:
                   const JniObjectIdentity java_class) {
         Validate(object, java_class);
         std::scoped_lock lock(mutex_);
-        if (!objects_.emplace(object.value, java_class).second) {
+        if (!objects_.emplace(Key(object), java_class).second) {
             throw JniGuestBindingError(
                 "JNI guest object is already registered");
         }
     }
 
     void Forget(const JniObjectIdentity object) {
-        if (object.domain != JniObjectDomain::host || object.value == 0U) {
+        if (object.value == 0U) {
             throw JniGuestBindingError(
                 "JNI guest object identity is invalid");
         }
         std::scoped_lock lock(mutex_);
-        if (objects_.erase(object.value) == 0U) {
+        if (objects_.erase(Key(object)) == 0U) {
             throw JniGuestBindingError(
                 "JNI guest object is not registered");
         }
@@ -58,22 +60,36 @@ public:
     [[nodiscard]] JniObjectIdentity ClassOf(
         const JniObjectIdentity object) const {
         std::scoped_lock lock(mutex_);
-        const auto found = objects_.find(object.value);
-        if (object.domain != JniObjectDomain::host || found == objects_.end()) {
+        const auto found = objects_.find(Key(object));
+        if (object.value == 0U || found == objects_.end()) {
             throw JniGuestBindingError(
                 "JNI guest receiver is not a registered instance");
         }
         return found->second;
     }
 
+    [[nodiscard]] JniObjectArrayStore& ObjectArrays() noexcept {
+        return object_arrays_;
+    }
+
+    [[nodiscard]] const JniObjectArrayStore& ObjectArrays() const noexcept {
+        return object_arrays_;
+    }
+
 private:
+    using ObjectKey = std::pair<std::uint8_t, std::uint64_t>;
+
+    [[nodiscard]] static ObjectKey Key(const JniObjectIdentity object) {
+        return {static_cast<std::uint8_t>(object.domain), object.value};
+    }
+
     void Validate(const JniObjectIdentity object,
                   const JniObjectIdentity java_class) const {
-        if (object.domain != JniObjectDomain::host || object.value == 0U ||
-            java_class.value == 0U) {
+        if (object.value == 0U || java_class.value == 0U) {
             throw JniGuestBindingError(
                 "JNI guest object registration is invalid");
         }
+        if (java_class.domain == JniObjectDomain::dex_vm) return;
         try {
             if (!classes_->IsAssignableFrom(java_class, java_class)) {
                 throw JniGuestBindingError(
@@ -86,8 +102,9 @@ private:
     }
 
     const JniClassRegistry* classes_{};
+    JniObjectArrayStore object_arrays_;
     mutable std::mutex mutex_;
-    std::map<std::uint64_t, JniObjectIdentity> objects_;
+    std::map<ObjectKey, JniObjectIdentity> objects_;
 };
 
 JniGuestObjectRegistry::JniGuestObjectRegistry(
@@ -112,6 +129,13 @@ void JniGuestObjectRegistry::Forget(const JniObjectIdentity object) {
 JniObjectIdentity JniGuestObjectRegistry::ClassOf(
     const JniObjectIdentity object) const {
     return impl_->ClassOf(object);
+}
+JniObjectArrayStore& JniGuestObjectRegistry::ObjectArrays() noexcept {
+    return impl_->ObjectArrays();
+}
+const JniObjectArrayStore&
+JniGuestObjectRegistry::ObjectArrays() const noexcept {
+    return impl_->ObjectArrays();
 }
 
 namespace {

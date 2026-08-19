@@ -206,6 +206,13 @@ struct InterpreterStats final {
 
 using VmRootVisitor = std::function<void(VmObjectRef)>;
 
+struct IntrinsicStateTableHooks final {
+    std::string name;
+    std::function<void(VmObjectRef, const VmRootVisitor&)> trace;
+    std::function<void(VmObjectRef)> sweep;
+    std::function<void(VmObjectRef, VmObjectRef)> clone;
+};
+
 struct InterpreterGcIntegration final {
     std::function<void(const std::function<void(JniObjectIdentity)>&)>
         visit_jni_roots;
@@ -278,6 +285,7 @@ public:
     // session-owned; callers never reach into Interpreter::Impl.
     [[nodiscard]] VmThreadRuntime& Threads();
     void VisitRoots(const VmRootVisitor& visitor);
+    void RegisterIntrinsicStateTable(IntrinsicStateTableHooks hooks);
     [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;
     [[nodiscard]] GcMarkResult MarkReachable();
     [[nodiscard]] GcSweepResult SweepGarbage(const GcMarkResult& mark);

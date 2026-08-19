@@ -13,6 +13,7 @@ namespace ogplay::runtime {
 class JniClassRegistry;
 class JniEnvironment;
 class JniInvocationEngine;
+class JniObjectArrayStore;
 
 class JniGuestObjectRegistry final {
 public:
@@ -27,6 +28,8 @@ public:
     void Register(JniObjectIdentity object, JniObjectIdentity java_class);
     void Forget(JniObjectIdentity object);
     [[nodiscard]] JniObjectIdentity ClassOf(JniObjectIdentity object) const;
+    [[nodiscard]] JniObjectArrayStore& ObjectArrays() noexcept;
+    [[nodiscard]] const JniObjectArrayStore& ObjectArrays() const noexcept;
 
 private:
     class Impl;

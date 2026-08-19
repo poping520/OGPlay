@@ -96,6 +96,10 @@ private:
 
     void ValidateClass(const JniObjectIdentity java_class,
                        const JniObjectArrayErrorReason reason) const {
+        if (java_class.domain == JniObjectDomain::dex_vm &&
+            java_class.value != 0U) {
+            return;
+        }
         try {
             static_cast<void>(classes_->GetSuperclass(java_class));
         } catch (const JniClassRegistryError&) {
@@ -112,6 +116,14 @@ private:
         }
         ValidateClass(value->java_class,
                       JniObjectArrayErrorReason::invalid_value);
+        if (element_class.domain == JniObjectDomain::dex_vm ||
+            value->java_class.domain == JniObjectDomain::dex_vm) {
+            if (element_class != value->java_class) {
+                Fail(JniObjectArrayErrorReason::incompatible_element,
+                     "JNI object array synthetic class is incompatible");
+            }
+            return;
+        }
         if (!classes_->IsAssignableFrom(element_class, value->java_class)) {
             Fail(JniObjectArrayErrorReason::incompatible_element,
                  "JNI object array value is not assignable to element class");

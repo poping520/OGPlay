@@ -46,6 +46,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `Interpreter::CloneObject` 浅拷贝 payload 与 list/map/builder 侧表。
   `JavaObjectModel::CloneObject` 对照 AOSP `dvmCloneObject`：新句柄/identity，
   只复制 `vm_instance` 槽板或数组元素；string/class/host_backed 明确失败。
+- 生产装配的 `JavaObjectModel` 通过 `JavaObjectInterop` 复用会话级
+  `JniObjectArrayStore`：DexVM/JNI 创建、读写、克隆和清扫 `Object[]` 都使用同一
+  identity/store，class identity 的双向适配由 integration 注入；不依赖
+  `JniClassRegistry`。无 interop 的 isolated fixture 才使用模型内 fallback store。
 - `IntrinsicClassBuilder`：工厂 `Class/RootClass/Interface` 一次声明类型头
   （descriptor、父类、接口；普通类默认父类 `Ljava/lang/Object;`，仅
   `java.lang.Object` 用 `RootClass` 显式无父类），方法按
@@ -164,9 +168,10 @@ family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自
 - 对象非移动，句柄生命周期内稳定。
 - GC 根集必须覆盖全部 context 的全部帧 tagged ref、last_result/caught、pending/
   exit result、静态 ref 槽、JNI local/global、Thread 对象、intern/class 对象以及
-  Android session 显式登记的外部长期引用。intrinsic 侧存储是封闭集合：
-  throwable/list/map 随 owner trace，builder 无引用；四表都随 owner sweep，新增
-  持 `VmObjectRef` 的侧表必须同时注册 trace 与 sweep hook。
+  Android session 显式登记的外部长期引用。intrinsic 宿主状态必须通过
+  `RegisterIntrinsicStateTable` 具名注册：持 `VmObjectRef` 的表提供 trace，所有表
+  必须提供 sweep，需要随 `Object.clone()` 复制的表再提供 clone；现有
+  throwable/builder/list/map 四表均走该唯一生命周期通道。
 - GC 只由分配流决定：`gc_watermark_percent` 范围 0..100、默认 75，0 精确关闭；
   `System.gc()` 保持合法 no-op。结构化 `runtime.dexvm.gc` 日志与 stats 记录回收量、
   对象数、宿主析构次数及确定性 pause ticks，不以 wall clock 参与决策。

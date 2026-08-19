@@ -62,6 +62,7 @@ public:
 
     JniStringStore* strings{};
     JniPrimitiveArrayStore* arrays{};
+    JavaObjectInterop interop;
     JavaObjectModelConfig config;
 
     std::vector<Record> records;
@@ -70,8 +71,10 @@ public:
         by_identity;
     std::vector<std::vector<Slot>> instance_storage;
     std::vector<std::uint32_t> free_instance_storage;
-    std::vector<ObjectArray> object_arrays;
-    std::vector<std::uint32_t> free_object_arrays;
+    // Isolated unit fixtures may omit JNI interop. Production sessions use
+    // the injected JniObjectArrayStore and never populate this fallback.
+    std::vector<ObjectArray> fallback_object_arrays;
+    std::vector<std::uint32_t> free_fallback_object_arrays;
     std::unordered_map<std::u16string, VmObjectRef> intern_table;
     std::unordered_map<std::uint32_t, VmObjectRef> class_objects;
 
@@ -151,11 +154,13 @@ public:
 
 JavaObjectModel::JavaObjectModel(JniStringStore& strings,
                                  JniPrimitiveArrayStore& arrays,
-                                 JavaObjectModelConfig config)
+                                 JavaObjectModelConfig config,
+                                 JavaObjectInterop interop)
     : impl_(std::make_unique<Impl>()) {
     impl_->strings = &strings;
     impl_->arrays = &arrays;
     impl_->config = config;
+    impl_->interop = std::move(interop);
     if (config.gc_watermark_percent > 100U) {
         throw std::invalid_argument("DexVM GC watermark must be in 0..100");
     }
@@ -190,7 +195,29 @@ VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
             record.primitive_kind = impl_->arrays->Kind(identity);
             record.kind = VmObjectKind::primitive_array;
         } catch (const JniArrayError&) {
-            record.kind = VmObjectKind::external;
+            if (impl_->interop.object_arrays != nullptr &&
+                impl_->interop.object_arrays->Contains(identity)) {
+                if (!impl_->interop.resolve_object_array_class) {
+                    Fail(DexVmErrorReason::object_model_failure,
+                         "JNI object array class resolver is not installed");
+                }
+                const auto [array_class, element_class] =
+                    impl_->interop.resolve_object_array_class(
+                        impl_->interop.object_arrays->ElementClass(identity));
+                static_cast<void>(element_class);
+                record.kind = VmObjectKind::object_array;
+                record.java_class = array_class;
+                record.reserved_bytes =
+                    EstimateObjectArrayBytes(
+                        impl_->interop.object_arrays->Length(identity));
+                impl_->Reserve(record.reserved_bytes);
+            } else {
+                record.kind = VmObjectKind::external;
+                if (impl_->interop.resolve_object_class) {
+                    record.java_class =
+                        impl_->interop.resolve_object_class(identity);
+                }
+            }
         }
     }
     return impl_->Register(std::move(record));
@@ -236,7 +263,30 @@ void JavaObjectModel::VisitPermanentRoots(const RootVisitor& visitor) const {
 GcMarkResult JavaObjectModel::MarkReachable(
     const std::vector<VmObjectRef>& roots,
     const std::function<void(VmObjectRef, const RootVisitor&)>&
-        trace_host_edges) const {
+        trace_host_edges) {
+    // JNI may have populated an object array without entering dexvm for each
+    // element. Import those identities before sizing the mark bitmap so the
+    // array edge set is complete and stable for this collection.
+    if (impl_->interop.object_arrays != nullptr) {
+        const auto records_before = impl_->records.size();
+        for (std::size_t index = 0; index < records_before; ++index) {
+            const auto identity = impl_->records[index].identity;
+            const auto kind = impl_->records[index].kind;
+            const auto occupied = impl_->records[index].occupied;
+            if (!occupied || kind != VmObjectKind::object_array) {
+                continue;
+            }
+            const auto length =
+                impl_->interop.object_arrays->Length(identity);
+            for (JniSize element = 0; element < length; ++element) {
+                const auto value =
+                    impl_->interop.object_arrays->Get(identity, element);
+                if (value.has_value()) {
+                    static_cast<void>(FromIdentity(value->object));
+                }
+            }
+        }
+    }
     GcMarkResult result;
     result.marked.assign(impl_->records.size(), false);
     std::vector<VmObjectRef> gray;
@@ -266,9 +316,21 @@ GcMarkResult JavaObjectModel::MarkReachable(
                 }
                 break;
             case VmObjectKind::object_array:
-                for (const auto element :
-                     impl_->object_arrays[record.storage].elements) {
-                    mark(element);
+                if (impl_->interop.object_arrays != nullptr) {
+                    for (JniSize index = 0;
+                         index < impl_->interop.object_arrays->Length(record.identity);
+                         ++index) {
+                        const auto value = impl_->interop.object_arrays->Get(
+                            record.identity, index);
+                        if (value.has_value()) {
+                            mark(FindIdentity(value->object));
+                        }
+                    }
+                } else {
+                    for (const auto element :
+                         impl_->fallback_object_arrays[record.storage].elements) {
+                        mark(element);
+                    }
                 }
                 break;
             case VmObjectKind::host_backed:
@@ -326,9 +388,16 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
                 impl_->free_instance_storage.push_back(record.storage);
                 break;
             case VmObjectKind::object_array:
-                impl_->object_arrays[record.storage].elements.clear();
-                impl_->object_arrays[record.storage].element_class = DexClassId(0);
-                impl_->free_object_arrays.push_back(record.storage);
+                if (impl_->interop.object_arrays != nullptr) {
+                    impl_->interop.object_arrays->Delete(record.identity);
+                } else {
+                    auto& array =
+                        impl_->fallback_object_arrays[record.storage];
+                    array.elements.clear();
+                    array.element_class = DexClassId{};
+                    impl_->free_fallback_object_arrays.push_back(
+                        record.storage);
+                }
                 break;
             case VmObjectKind::host_backed:
             case VmObjectKind::class_object:
@@ -574,26 +643,37 @@ VmObjectRef JavaObjectModel::NewObjectArray(const DexClassId array_class,
         Fail(DexVmErrorReason::object_model_failure,
              "object array length is negative");
     }
-    const auto bytes = 32ULL + static_cast<std::uint64_t>(length) * 4ULL;
+    const auto bytes = EstimateObjectArrayBytes(length);
     impl_->Reserve(bytes);
     Impl::Record record;
     record.kind = VmObjectKind::object_array;
-    record.identity = impl_->NextVmIdentity();
+    if (impl_->interop.object_arrays != nullptr) {
+        if (!impl_->interop.publish_class) {
+            Fail(DexVmErrorReason::object_model_failure,
+                 "JNI object array class publisher is not installed");
+        }
+        record.identity = impl_->interop.object_arrays->New(
+            impl_->interop.publish_class(element_class), length);
+    } else {
+        record.identity = impl_->NextVmIdentity();
+        if (impl_->free_fallback_object_arrays.empty()) {
+            record.storage = static_cast<std::uint32_t>(
+                impl_->fallback_object_arrays.size());
+            impl_->fallback_object_arrays.push_back(
+                Impl::ObjectArray{element_class,
+                                  std::vector<VmObjectRef>(
+                                      static_cast<std::size_t>(length))});
+        } else {
+            record.storage = impl_->free_fallback_object_arrays.back();
+            impl_->free_fallback_object_arrays.pop_back();
+            auto& reused = impl_->fallback_object_arrays[record.storage];
+            reused.element_class = element_class;
+            reused.elements.assign(static_cast<std::size_t>(length),
+                                   VmObjectRef{});
+        }
+    }
     record.java_class = array_class;
     record.reserved_bytes = bytes;
-    if (impl_->free_object_arrays.empty()) {
-        record.storage =
-            static_cast<std::uint32_t>(impl_->object_arrays.size());
-        impl_->object_arrays.push_back(Impl::ObjectArray{
-            element_class,
-            std::vector<VmObjectRef>(static_cast<std::size_t>(length))});
-    } else {
-        record.storage = impl_->free_object_arrays.back();
-        impl_->free_object_arrays.pop_back();
-        auto& reused = impl_->object_arrays[record.storage];
-        reused.element_class = element_class;
-        reused.elements.assign(static_cast<std::size_t>(length), VmObjectRef{});
-    }
     return impl_->Register(std::move(record));
 }
 
@@ -604,23 +684,34 @@ DexClassId JavaObjectModel::ObjectArrayElementClass(
         Fail(DexVmErrorReason::object_model_failure,
              "object is not an object array");
     }
-    return impl_->object_arrays[record.storage].element_class;
+    if (impl_->interop.object_arrays == nullptr) {
+        return impl_->fallback_object_arrays[record.storage].element_class;
+    }
+    if (!impl_->interop.resolve_class) {
+        Fail(DexVmErrorReason::object_model_failure,
+             "JNI object array class resolver is not installed");
+    }
+    return impl_->interop.resolve_class(
+        impl_->interop.object_arrays->ElementClass(record.identity));
 }
 
 VmObjectRef JavaObjectModel::GetObjectElement(const VmObjectRef ref,
-                                              const JniSize index) const {
+                                              const JniSize index) {
     const auto& record = impl_->At(ref);
     if (record.kind != VmObjectKind::object_array) {
         Fail(DexVmErrorReason::object_model_failure,
              "object is not an object array");
     }
-    const auto& array = impl_->object_arrays[record.storage];
-    if (index < 0 ||
-        static_cast<std::size_t>(index) >= array.elements.size()) {
-        Fail(DexVmErrorReason::object_model_failure,
-             "object array index is out of range");
+    if (impl_->interop.object_arrays == nullptr) {
+        const auto& array = impl_->fallback_object_arrays[record.storage];
+        if (index < 0 || static_cast<std::size_t>(index) >= array.elements.size()) {
+            Fail(DexVmErrorReason::object_model_failure,
+                 "object array index is out of range");
+        }
+        return array.elements[static_cast<std::size_t>(index)];
     }
-    return array.elements[static_cast<std::size_t>(index)];
+    const auto value = impl_->interop.object_arrays->Get(record.identity, index);
+    return value.has_value() ? FromIdentity(value->object) : VmObjectRef{};
 }
 
 void JavaObjectModel::SetObjectElement(const VmObjectRef ref,
@@ -631,13 +722,22 @@ void JavaObjectModel::SetObjectElement(const VmObjectRef ref,
         Fail(DexVmErrorReason::object_model_failure,
              "object is not an object array");
     }
-    auto& array = impl_->object_arrays[record.storage];
-    if (index < 0 ||
-        static_cast<std::size_t>(index) >= array.elements.size()) {
-        Fail(DexVmErrorReason::object_model_failure,
-             "object array index is out of range");
+    if (impl_->interop.object_arrays == nullptr) {
+        auto& array = impl_->fallback_object_arrays[record.storage];
+        if (index < 0 || static_cast<std::size_t>(index) >= array.elements.size()) {
+            Fail(DexVmErrorReason::object_model_failure,
+                 "object array index is out of range");
+        }
+        array.elements[static_cast<std::size_t>(index)] = value;
+        return;
     }
-    array.elements[static_cast<std::size_t>(index)] = value;
+    std::optional<JniObjectValue> stored;
+    if (value.IsValid()) {
+        stored = JniObjectValue{
+            ToIdentity(value),
+            impl_->interop.publish_class(ObjectClass(value))};
+    }
+    impl_->interop.object_arrays->Set(record.identity, index, stored);
 }
 
 JniSize JavaObjectModel::ArrayLength(const VmObjectRef ref) const {
@@ -647,8 +747,11 @@ JniSize JavaObjectModel::ArrayLength(const VmObjectRef ref) const {
         return impl_->arrays->Length(record.identity);
     }
     if (record.kind == VmObjectKind::object_array) {
-        return static_cast<JniSize>(
-            impl_->object_arrays[record.storage].elements.size());
+        return impl_->interop.object_arrays != nullptr
+                   ? impl_->interop.object_arrays->Length(record.identity)
+                   : static_cast<JniSize>(
+                         impl_->fallback_object_arrays[record.storage]
+                             .elements.size());
     }
     Fail(DexVmErrorReason::object_model_failure, "object is not an array");
 }
@@ -687,12 +790,12 @@ VmObjectRef JavaObjectModel::CloneObject(const VmObjectRef source) {
         case VmObjectKind::object_array: {
             const auto java_class = ObjectClass(source);
             const auto element_class = ObjectArrayElementClass(source);
-            const auto elements =
-                impl_->object_arrays[impl_->At(source).storage].elements;
+            const auto length = ArrayLength(source);
             const auto clone = NewObjectArray(
-                java_class, element_class,
-                static_cast<JniSize>(elements.size()));
-            impl_->object_arrays[impl_->At(clone).storage].elements = elements;
+                java_class, element_class, length);
+            for (JniSize index = 0; index < length; ++index) {
+                SetObjectElement(clone, index, GetObjectElement(source, index));
+            }
             return clone;
         }
         case VmObjectKind::host_backed:

@@ -3,12 +3,15 @@
 #include <algorithm>
 #include <set>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
+#include "ogplay/runtime/jni/jni_class_registry.h"
 
 namespace {
 
@@ -124,6 +127,96 @@ TEST_CASE("DexVM marker traces exact object edges and intrinsic side tables") {
     CHECK_FALSE(marked.IsMarked(garbage));
     CHECK(marked.garbage_bytes == 40);
     CHECK(marked.garbage_objects == 1);
+}
+
+TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
+    GcVm fixture;
+    auto state = std::make_shared<
+        std::unordered_map<std::uint32_t, VmObjectRef>>();
+    fixture.vm.RegisterIntrinsicStateTable({
+        "gc-test-state",
+        [state](const VmObjectRef owner, const VmRootVisitor& visit) {
+            const auto found = state->find(owner.Value());
+            if (found != state->end()) visit(found->second);
+        },
+        [state](const VmObjectRef owner) { state->erase(owner.Value()); },
+        [state](const VmObjectRef source, const VmObjectRef clone) {
+            const auto found = state->find(source.Value());
+            if (found != state->end()) {
+                (*state)[clone.Value()] = found->second;
+            }
+        }});
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 5);
+
+    const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    (*state)[owner.Value()] = child;
+    const auto clone = fixture.vm.CloneObject(owner);
+    REQUIRE(state->contains(clone.Value()));
+    CHECK(state->at(clone.Value()) == child);
+
+    fixture.vm.SetGcIntegration(
+        {{}, {}, [owner](const VmRootVisitor& visit) { visit(owner); }});
+    const auto marked = fixture.vm.MarkReachable();
+    CHECK(marked.IsMarked(owner));
+    CHECK(marked.IsMarked(child));
+    CHECK_FALSE(marked.IsMarked(clone));
+    static_cast<void>(fixture.vm.SweepGarbage(marked));
+    CHECK_FALSE(state->contains(clone.Value()));
+}
+
+TEST_CASE("DexVM and JNI share one object array identity and element store") {
+    JniStringStore strings;
+    JniPrimitiveArrayStore primitives;
+    JniClassRegistry jni_classes;
+    const auto jni_object = jni_classes.RegisterClass({"java/lang/Object"});
+    const auto jni_box = jni_classes.RegisterClass(
+        {"gc/Box", std::string{"java/lang/Object"}});
+    JniGuestObjectRegistry objects(jni_classes);
+    auto& object_arrays = objects.ObjectArrays();
+
+    DexClassLinker linker;
+    auto catalog = CoreIntrinsicCatalog();
+    catalog.push_back(
+        std::move(IntrinsicClassBuilder::Class("Lgc/Box;")).Build());
+    linker.RegisterIntrinsics(catalog);
+    linker.Link();
+    const auto dex_object = linker.FindClass("Ljava/lang/Object;");
+    const auto dex_box = linker.FindClass("Lgc/Box;");
+    REQUIRE(dex_object.has_value());
+    REQUIRE(dex_box.has_value());
+    const auto dex_array = linker.ResolveDescriptor("[Lgc/Box;");
+
+    const auto publish_class = [&](const DexClassId java_class) {
+        return java_class == *dex_box ? jni_box : jni_object;
+    };
+    const auto resolve_class = [&](const JniObjectIdentity java_class) {
+        return java_class == jni_box ? *dex_box : *dex_object;
+    };
+    JavaObjectModel model(
+        strings, primitives, {},
+        {&object_arrays, publish_class, resolve_class, {},
+         [&](const JniObjectIdentity element_class) {
+             return std::pair{dex_array, resolve_class(element_class)};
+         }});
+
+    const auto element = model.NewInstance(*dex_box, 0);
+    objects.Register(model.ToIdentity(element), jni_box);
+    CHECK(objects.ClassOf(model.ToIdentity(element)) == jni_box);
+    const auto array = model.NewObjectArray(dex_array, *dex_box, 1);
+    model.SetObjectElement(array, 0, element);
+    const auto identity = model.ToIdentity(array);
+    REQUIRE(object_arrays.Contains(identity));
+    REQUIRE(object_arrays.Get(identity, 0).has_value());
+    CHECK(object_arrays.Get(identity, 0)->object == model.ToIdentity(element));
+
+    const auto imported_identity = object_arrays.New(jni_box, 1);
+    object_arrays.Set(imported_identity, 0,
+                      JniObjectValue{model.ToIdentity(element), jni_box});
+    const auto imported = model.FromIdentity(imported_identity);
+    CHECK(model.Kind(imported) == VmObjectKind::object_array);
+    CHECK(model.ObjectClass(imported) == dex_array);
+    CHECK(model.GetObjectElement(imported, 0) == element);
 }
 
 TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {

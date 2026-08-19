@@ -6,11 +6,13 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "ogplay/runtime/dexvm/dexvm_types.h"
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_object.h"
+#include "ogplay/runtime/jni/jni_object_array.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -52,6 +54,18 @@ struct JavaObjectModelConfig final {
     std::uint32_t gc_watermark_percent{75};
 };
 
+// Session-owned JNI object services used to keep interpreted and native
+// code on one identity/storage path. Class callbacks are supplied by the
+// integration layer because dexvm must not depend on the JNI class registry.
+struct JavaObjectInterop final {
+    JniObjectArrayStore* object_arrays{};
+    std::function<JniObjectIdentity(DexClassId)> publish_class;
+    std::function<DexClassId(JniObjectIdentity)> resolve_class;
+    std::function<DexClassId(JniObjectIdentity)> resolve_object_class;
+    std::function<std::pair<DexClassId, DexClassId>(JniObjectIdentity)>
+        resolve_object_array_class;
+};
+
 struct GcMarkResult final {
     std::vector<bool> marked;
     std::uint64_t live_bytes{};
@@ -81,7 +95,8 @@ class JavaObjectModel final {
 public:
     using RootVisitor = std::function<void(VmObjectRef)>;
     JavaObjectModel(JniStringStore& strings, JniPrimitiveArrayStore& arrays,
-                    JavaObjectModelConfig config = {});
+                    JavaObjectModelConfig config = {},
+                    JavaObjectInterop interop = {});
     ~JavaObjectModel();
     JavaObjectModel(const JavaObjectModel&) = delete;
     JavaObjectModel& operator=(const JavaObjectModel&) = delete;
@@ -100,7 +115,7 @@ public:
     [[nodiscard]] GcMarkResult MarkReachable(
         const std::vector<VmObjectRef>& roots,
         const std::function<void(VmObjectRef, const RootVisitor&)>&
-            trace_host_edges) const;
+            trace_host_edges);
     [[nodiscard]] GcSweepResult Sweep(const GcMarkResult& mark,
                                       const GcSweepHooks& hooks);
 
@@ -136,7 +151,7 @@ public:
                                              JniSize length);
     [[nodiscard]] DexClassId ObjectArrayElementClass(VmObjectRef ref) const;
     [[nodiscard]] VmObjectRef GetObjectElement(VmObjectRef ref,
-                                               JniSize index) const;
+                                               JniSize index);
     void SetObjectElement(VmObjectRef ref, JniSize index, VmObjectRef value);
 
     [[nodiscard]] JniSize ArrayLength(VmObjectRef ref) const;

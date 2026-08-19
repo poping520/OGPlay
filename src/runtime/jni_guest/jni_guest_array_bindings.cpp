@@ -378,15 +378,15 @@ void BindJniGuestArraySlots(
     JniGuestObjectRegistry& objects, memory::AddressSpace& address_space) {
     const auto leases = std::make_shared<PrimitiveArrayLeases>(
         environment, arrays, address_space);
-    const auto object_arrays = std::make_shared<JniObjectArrayStore>(classes);
+    auto& object_arrays = objects.ObjectArrays();
 
     dispatcher.BindEnvironment(
         Slot("GetArrayLength"),
-        [&environment, &arrays, object_arrays](const JniGuestCallFrame& frame) {
+        [&environment, &arrays, &object_arrays](const JniGuestCallFrame& frame) {
             const auto array = Resolve(
                 environment, frame, frame.registers[1], "GetArrayLength");
-            return Int(object_arrays->Contains(array)
-                           ? object_arrays->Length(array)
+            return Int(object_arrays.Contains(array)
+                           ? object_arrays.Length(array)
                            : arrays.Length(array));
         });
 
@@ -517,7 +517,7 @@ void BindJniGuestArraySlots(
     dispatcher.BindEnvironment(
         Slot("NewObjectArray"),
         [&environment, &classes, &objects,
-         object_arrays](const JniGuestCallFrame& frame) {
+         &object_arrays](const JniGuestCallFrame& frame) {
             const auto length = std::bit_cast<JniSize>(frame.registers[1]);
             const auto element_class = Resolve(
                 environment, frame, frame.registers[2], "NewObjectArray");
@@ -527,22 +527,22 @@ void BindJniGuestArraySlots(
                 environment, objects, frame, frame.registers[3],
                 "NewObjectArray");
             const auto identity =
-                object_arrays->New(element_class, length, initial);
+                object_arrays.New(element_class, length, initial);
             try {
                 return Word(environment.PublishLocalObject(
                     frame.thread_id, identity).Value());
             } catch (...) {
-                object_arrays->Delete(identity);
+                object_arrays.Delete(identity);
                 throw;
             }
         });
     dispatcher.BindEnvironment(
         Slot("GetObjectArrayElement"),
-        [&environment, object_arrays](const JniGuestCallFrame& frame) {
+        [&environment, &object_arrays](const JniGuestCallFrame& frame) {
             const auto array = Resolve(
                 environment, frame, frame.registers[1],
                 "GetObjectArrayElement");
-            const auto value = object_arrays->Get(
+            const auto value = object_arrays.Get(
                 array, std::bit_cast<JniSize>(frame.registers[2]));
             return Word(value.has_value()
                             ? environment.PublishLocalObject(
@@ -552,14 +552,14 @@ void BindJniGuestArraySlots(
     dispatcher.BindEnvironment(
         Slot("SetObjectArrayElement"),
         [&environment, &objects,
-         object_arrays](const JniGuestCallFrame& frame) {
+         &object_arrays](const JniGuestCallFrame& frame) {
             const auto array = Resolve(
                 environment, frame, frame.registers[1],
                 "SetObjectArrayElement");
             const auto value = ResolveObjectValue(
                 environment, objects, frame, frame.registers[3],
                 "SetObjectArrayElement");
-            object_arrays->Set(
+            object_arrays.Set(
                 array, std::bit_cast<JniSize>(frame.registers[2]), value);
             return JniGuestCallResult{};
         });

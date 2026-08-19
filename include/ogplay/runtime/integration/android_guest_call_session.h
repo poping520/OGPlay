@@ -272,6 +272,7 @@ public:
     [[nodiscard]] JniEnvironment& Environment() noexcept;
     [[nodiscard]] JniClassRegistry& Classes() noexcept;
     [[nodiscard]] JniInvocationEngine& Invocations() noexcept;
+    [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
     [[nodiscard]] JniStringStore& Strings() noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
@@ -351,6 +352,7 @@ public:
     [[nodiscard]] JniEnvironment& Environment() noexcept;
     [[nodiscard]] JniClassRegistry& Classes() noexcept;
     [[nodiscard]] JniInvocationEngine& Invocations() noexcept;
+    [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
     [[nodiscard]] JniStringStore& Strings() noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;

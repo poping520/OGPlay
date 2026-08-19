@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "dexvm_android/shared.h"
+#include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
+#include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 
 namespace ogplay::runtime {
@@ -207,13 +209,67 @@ public:
 
     DexVmGuestBridge* owner{};
 
+    [[nodiscard]] JniObjectIdentity JniClassIdentity(
+        const dx::DexClassId java_class) {
+        const auto& linked = linker.Class(java_class);
+        if (linked.is_array) {
+            return {JniObjectDomain::dex_vm, java_class.Value()};
+        }
+        return RegisterClassForNative(java_class);
+    }
+
+    [[nodiscard]] dx::DexClassId DexClassIdentity(
+        const JniObjectIdentity identity) const {
+        if (identity.domain == JniObjectDomain::dex_vm) {
+            const auto java_class = dx::DexClassId(
+                static_cast<std::uint32_t>(identity.value));
+            static_cast<void>(linker.Class(java_class));
+            return java_class;
+        }
+        for (const auto& [raw, registered] : class_identities) {
+            if (registered == identity) return dx::DexClassId(raw);
+        }
+        throw DexVmBridgeError(
+            "JNI class identity is not published in DexVM");
+    }
+
+    [[nodiscard]] dx::DexClassId ObjectClassIdentity(
+        const JniObjectIdentity identity) const {
+        try {
+            return DexClassIdentity(session->Objects().ClassOf(identity));
+        } catch (const JniGuestBindingError&) {
+            return dx::DexClassId(0);
+        }
+    }
+
+    [[nodiscard]] std::pair<dx::DexClassId, dx::DexClassId>
+    ObjectArrayClassIdentity(const JniObjectIdentity element_identity) {
+        const auto element_class = DexClassIdentity(element_identity);
+        const auto array_class = linker.ResolveDescriptor(
+            "[" + linker.Class(element_class).descriptor);
+        return {array_class, element_class};
+    }
+
     // ---- reference conversion ------------------------------------------
 
     [[nodiscard]] JniReference PublishLocal(const dx::VmObjectRef ref) {
     if (!ref.IsValid())
       return JniReference{};
+    const auto identity = model->ToIdentity(ref);
+    const auto java_class = model->ObjectClass(ref);
+    if (java_class.IsValid()) {
+      const auto class_identity = JniClassIdentity(java_class);
+      try {
+        if (session->Objects().ClassOf(identity) != class_identity) {
+          throw DexVmBridgeError(
+              "DexVM object identity is published with another JNI class");
+        }
+      } catch (const JniGuestBindingError&) {
+        session->Objects().Register(identity, class_identity);
+      }
+    }
     return session->Environment().PublishLocalObject(kRootThreadId,
-                                                     model->ToIdentity(ref));
+                                                     identity);
     }
 
     [[nodiscard]] dx::VmObjectRef FromReference(const JniReference reference,
@@ -684,8 +740,23 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->linker.RegisterDex(std::move(dex_bytes));
     impl_->linker.Link();
 
+    auto* const bridge_state = impl_.get();
     impl_->model = std::make_unique<dx::JavaObjectModel>(
-        session.Strings(), session.Arrays(), config.heap);
+        session.Strings(), session.Arrays(), config.heap,
+        dx::JavaObjectInterop{
+            &session.Objects().ObjectArrays(),
+            [bridge_state](const dx::DexClassId java_class) {
+                return bridge_state->JniClassIdentity(java_class);
+            },
+            [bridge_state](const JniObjectIdentity identity) {
+                return bridge_state->DexClassIdentity(identity);
+            },
+            [bridge_state](const JniObjectIdentity identity) {
+                return bridge_state->ObjectClassIdentity(identity);
+            },
+            [bridge_state](const JniObjectIdentity identity) {
+                return bridge_state->ObjectArrayClassIdentity(identity);
+            }});
 
     impl_->vm = std::make_unique<dx::Interpreter>(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
@@ -697,6 +768,12 @@ DexVmGuestBridge::DexVmGuestBridge(
         },
         [&session](const JniObjectIdentity identity) {
             session.Environment().ClearWeakReferencesTo(identity);
+            try {
+                session.Objects().Forget(identity);
+            } catch (const JniGuestBindingError&) {
+                // Strings and primitive arrays have dedicated stores and are
+                // intentionally absent from the generic object registry.
+            }
         },
         [android_context](const dx::VmRootVisitor& visit) {
             if (android_context) VisitAndroidSessionRoots(*android_context, visit);

@@ -71,6 +71,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-46](DVM-46.md) | GC-B 安全点水位触发、OOM 与 Profile 参数 | 完成 |
 | [DVM-47](DVM-47.md) | GC-B exact-title 与长运行 gate 复验 | 受阻（实现与 A5 GC gate 完成） |
 | [DVM-48](DVM-48.md) | `java.lang.Thread` Core 能力栈 | 完成 |
+| [DVM-49](DVM-49.md) | 统一 Java 对象与 intrinsic 状态底座 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

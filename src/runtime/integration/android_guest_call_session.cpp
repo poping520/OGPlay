@@ -767,6 +767,7 @@ public:
     JniEnvironment& Environment() noexcept { return environment_; }
     JniClassRegistry& Classes() noexcept { return classes_; }
     JniInvocationEngine& Invocations() noexcept { return invocations_; }
+    JniGuestObjectRegistry& Objects() noexcept { return objects_; }
     JniStringStore& Strings() noexcept { return strings_; }
     JniPrimitiveArrayStore& Arrays() noexcept { return arrays_; }
     audio::JavaSoundPoolState& SoundPoolState() noexcept {
@@ -1169,6 +1170,9 @@ JniClassRegistry& AndroidGuestProcess::Classes() noexcept { return impl_->Classe
 JniInvocationEngine& AndroidGuestProcess::Invocations() noexcept {
     return impl_->Invocations();
 }
+JniGuestObjectRegistry& AndroidGuestProcess::Objects() noexcept {
+    return impl_->Objects();
+}
 JniStringStore& AndroidGuestProcess::Strings() noexcept {
     return impl_->Strings();
 }
@@ -1316,6 +1320,7 @@ memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept { ret
 JniEnvironment& AndroidGuestCallSession::Environment() noexcept { return process_->Environment(); }
 JniClassRegistry& AndroidGuestCallSession::Classes() noexcept { return process_->Classes(); }
 JniInvocationEngine& AndroidGuestCallSession::Invocations() noexcept { return process_->Invocations(); }
+JniGuestObjectRegistry& AndroidGuestCallSession::Objects() noexcept { return process_->Objects(); }
 JniStringStore& AndroidGuestCallSession::Strings() noexcept { return process_->Strings(); }
 JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept { return process_->Arrays(); }
 audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept { return process_->SoundPoolState(); }

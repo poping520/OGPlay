@@ -77,4 +77,15 @@ TEST_CASE("FastCode rejects malformed boundaries and payload references") {
                     DexVmError);
 }
 
+TEST_CASE("FastCode preassembles invoke register words") {
+    const auto fast = BuildFastCode(
+        Code({0x2071U, 0x0003U, 0x0021U, 0x000eU}),
+        "LFast;.invoke");
+    REQUIRE(fast.invokes.size() == 1);
+    CHECK(fast.instructions[0].handler == FastHandler::invoke_checked);
+    CHECK(fast.invokes[0].base_opcode == 0x71U);
+    CHECK(fast.invokes[0].registers ==
+          std::vector<std::uint16_t>{1, 2});
+}
+
 }  // namespace ogplay::runtime::dexvm

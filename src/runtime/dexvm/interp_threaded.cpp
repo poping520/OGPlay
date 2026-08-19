@@ -37,6 +37,8 @@ object_fast:
     return;
 invoke_checked:
 invoke_fast:
+    StepInvoke(execution, code, instruction);
+    return;
 bridge:
     Step(execution);
 #else
@@ -48,9 +50,11 @@ bridge:
         case FastHandler::object_fast:
             StepObject(execution, code, instruction);
             break;
-        case FastHandler::bridge:
         case FastHandler::invoke_checked:
         case FastHandler::invoke_fast:
+            StepInvoke(execution, code, instruction);
+            break;
+        case FastHandler::bridge:
             Step(execution);
             break;
     }

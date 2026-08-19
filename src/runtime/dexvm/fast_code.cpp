@@ -235,6 +235,7 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         instruction.opcode = opcode;
         instruction.width = info.width;
         instruction.dex_pc = pc;
+        DecodeOperands(units, instruction);
         if (IsStraightOpcode(opcode)) {
             instruction.handler = FastHandler::straight;
         } else if (IsObjectOpcode(opcode)) {
@@ -244,8 +245,33 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         } else if ((opcode >= 0x6eU && opcode <= 0x72U) ||
                    (opcode >= 0x74U && opcode <= 0x78U)) {
             instruction.handler = FastHandler::invoke_checked;
+            FastInvoke invoke;
+            const bool is_range = opcode >= 0x74U;
+            invoke.base_opcode = static_cast<std::uint8_t>(
+                is_range ? opcode - 0x74U + 0x6eU : opcode);
+            if (is_range) {
+                for (std::uint32_t index = 0; index < instruction.a;
+                     ++index) {
+                    invoke.registers.push_back(
+                        static_cast<std::uint16_t>(instruction.b + index));
+                }
+            } else {
+                const std::uint16_t candidates[5] = {
+                    static_cast<std::uint16_t>((instruction.c >> 0U) & 0xfU),
+                    static_cast<std::uint16_t>((instruction.c >> 4U) & 0xfU),
+                    static_cast<std::uint16_t>((instruction.c >> 8U) & 0xfU),
+                    static_cast<std::uint16_t>((instruction.c >> 12U) & 0xfU),
+                    instruction.b};
+                for (std::uint32_t index = 0; index < instruction.a;
+                     ++index) {
+                    invoke.registers.push_back(candidates[index]);
+                }
+            }
+            invoke.argument_shorty.reserve(invoke.registers.size());
+            instruction.invoke =
+                static_cast<std::uint32_t>(result.invokes.size());
+            result.invokes.push_back(std::move(invoke));
         }
-        DecodeOperands(units, instruction);
         result.dex_pc_to_index[pc] =
             static_cast<std::uint32_t>(result.instructions.size());
         result.instructions.push_back(instruction);
@@ -336,6 +362,13 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
                                 payload.keys.capacity() * sizeof(std::int32_t) +
                                 payload.targets.capacity() * sizeof(std::uint32_t) +
                                 payload.data_units.capacity() * sizeof(std::uint16_t);
+    }
+    for (const auto& invoke : result.invokes) {
+        result.storage_bytes += sizeof(FastInvoke) +
+                                invoke.registers.capacity() *
+                                    sizeof(std::uint16_t) +
+                                invoke.argument_shorty.capacity() *
+                                    sizeof(char);
     }
     return result;
 }

@@ -1153,7 +1153,7 @@ note = "DVM-9..12 tagged 帧（零值放宽/wide 对完整性）、表分派全�
 [dexvm.interpreter_threaded]
 status = "partial"
 test = "tests/dexvm/fast_code_tests.cpp; tests/dexvm/interpreter_tests.cpp"
-note = "DVM-53 交付只读 FastCode；DVM-54 接入显式 threaded 后端与全 bridge 锚点；DVM-55 迁移直线/算术族；DVM-56 迁移 monitor/type/分配/数组/switch/字段族，类型/字段/数组类别在执行锁内首执行解析并由 object_checked 翻为 object_fast，不改 DEX。双后端结果/异常/指令数/tick/trace 持平；MSVC Debug 字段循环中位数 switch 69911 us、threaded 49538 us。默认仍为 switch，invoke 尚未迁移"
+note = "DVM-53..57 已交付只读 FastCode、双分派 glue 及全部 dex035 指令家族直达 handler；类型/字段/方法/数组类别与 invoke shorty 在执行锁内首执行缓存并 checked→fast，不改 DEX。双后端结果/异常/指令数/tick/trace 持平；MSVC Debug invoke 循环中位数 switch 274968 us、threaded 220322 us。stop 双表因无必要证据未采用，逐指令检查契约不变。默认仍为 switch，等待 A5/DH exact gate 与最终裁决"
 
 [dexvm.execution_contexts]
 status = "complete"

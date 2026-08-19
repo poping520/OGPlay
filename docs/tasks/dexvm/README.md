@@ -79,6 +79,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-54](DVM-54.md) | Threaded 全 bridge 后端骨架 | 完成 |
 | [DVM-55](DVM-55.md) | Threaded 直线指令家族 | 完成 |
 | [DVM-56](DVM-56.md) | Threaded 对象指令家族 | 完成 |
+| [DVM-57](DVM-57.md) | Threaded invoke 与轮询裁决 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

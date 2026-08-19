@@ -1582,6 +1582,28 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
     ExpectInt(cache_vm.interpreter.Call(field_method, {}), 55);
     CHECK(field_code.instructions[0].handler == FastHandler::object_fast);
     ExpectInt(cache_vm.interpreter.Call(field_method, {}), 55);
+
+    const auto invoke_method =
+        cache_vm.Static("LInvokeLoop;", "run", "(I)I");
+    const auto& invoke_code = cache_vm.linker.FastCodeFor(invoke_method);
+    const auto invoke_instruction = std::find_if(
+        invoke_code.instructions.begin(), invoke_code.instructions.end(),
+        [](const auto& candidate) {
+            return candidate.handler == FastHandler::invoke_checked;
+        });
+    REQUIRE(invoke_instruction != invoke_code.instructions.end());
+    ExpectInt(cache_vm.interpreter.Call(
+                  invoke_method, std::vector<VmValue>{VmValue::Int(20)}),
+              210);
+    CHECK(invoke_instruction->handler == FastHandler::invoke_fast);
+    REQUIRE(invoke_instruction->invoke < invoke_code.invokes.size());
+    const auto& cached_invoke =
+        invoke_code.invokes[invoke_instruction->invoke];
+    CHECK(cached_invoke.resolved_method != kInvalidFastIndex);
+    CHECK(cached_invoke.argument_shorty == std::vector<char>{'I'});
+    ExpectInt(cache_vm.interpreter.Call(
+                  invoke_method, std::vector<VmValue>{VmValue::Int(20)}),
+              210);
 }
 
 TEST_CASE("dexvm threaded straight microbenchmark reports switch comparison") {
@@ -1649,6 +1671,41 @@ TEST_CASE("dexvm threaded object microbenchmark reports switch comparison") {
     const auto [threaded_us, threaded_sum] = run(threaded_vm);
     CHECK(threaded_sum == switch_sum);
     std::cout << "DEXVM_OBJECT_BENCH switch_us=" << switch_us
+              << " threaded_us=" << threaded_us << '\n';
+}
+
+TEST_CASE("dexvm threaded invoke microbenchmark reports switch comparison") {
+    InterpreterConfig threaded_config;
+    threaded_config.backend = InterpreterBackend::threaded;
+    Vm switch_vm;
+    Vm threaded_vm(threaded_config);
+    constexpr std::int32_t kInput = 200;
+    constexpr std::uint32_t kIterations = 400;
+    constexpr std::int32_t kExpected = 20'100;
+
+    ExpectInt(switch_vm.CallStatic("LInvokeLoop;", "run", "(I)I",
+                                   {VmValue::Int(kInput)}),
+              kExpected);
+    ExpectInt(threaded_vm.CallStatic("LInvokeLoop;", "run", "(I)I",
+                                     {VmValue::Int(kInput)}),
+              kExpected);
+    const auto run = [&](Vm& vm) {
+        std::int64_t checksum{};
+        const auto start = std::chrono::steady_clock::now();
+        for (std::uint32_t index = 0; index < kIterations; ++index) {
+            const auto outcome = vm.CallStatic(
+                "LInvokeLoop;", "run", "(I)I", {VmValue::Int(kInput)});
+            REQUIRE_FALSE(outcome.exception.IsValid());
+            checksum += outcome.value.AsInt();
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start);
+        return std::pair{elapsed.count(), checksum};
+    };
+    const auto [switch_us, switch_sum] = run(switch_vm);
+    const auto [threaded_us, threaded_sum] = run(threaded_vm);
+    CHECK(threaded_sum == switch_sum);
+    std::cout << "DEXVM_INVOKE_BENCH switch_us=" << switch_us
               << " threaded_us=" << threaded_us << '\n';
 }
 

@@ -278,6 +278,30 @@
     return v0
 .end method
 
+.class public LInvokeLoop;
+.super Ljava/lang/Object;
+
+.method static public addOne(I)I
+.registers 2
+    add-int/lit8 v0, v1, 1
+    return v0
+.end method
+
+.method static public run(I)I
+.registers 4
+    const/4 v0, 0
+    const/4 v1, 0
+    :head
+    if-ge v1, v3, :done
+    invoke-static {v1}, LInvokeLoop;->addOne(I)I
+    move-result v2
+    add-int/2addr v0, v2
+    add-int/lit8 v1, v1, 1
+    goto :head
+    :done
+    return v0
+.end method
+
 # Custom exception subclass thrown and caught across frames.
 .class public LMyError;
 .super Ljava/lang/Exception;

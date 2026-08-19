@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-56 Threaded 对象族完成，DVM-47 gate 仍受阻
+更新：2026-08-20 · DVM-57 Threaded invoke 完成，DVM-47 gate 仍受阻
 
 ## 当前阶段
 
@@ -18,7 +18,7 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48..56 已交付；DVM-47 gate 仍受阻。解释执行仍由
+- **M9 DexVM**：DVM-1..46、48..57 已交付；DVM-47 gate 仍受阻。解释执行仍由
   `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
@@ -65,7 +65,10 @@
   goto/if/cmp/算术迁入直达 handler；MSVC Debug tight-loop 中位数从 44,712 us 降至
   41,988 us（6.1%）。DVM-56 又把 monitor/type/分配/数组/switch/字段迁入直达
   handler，类型/字段/数组类别首执行缓存并 checked→fast；字段循环中位数从
-  69,911 us 降至 49,538 us（29.1%）。默认仍为 switch，invoke 家族尚未迁移。
+  69,911 us 降至 49,538 us（29.1%）。DVM-57 已迁移全部 invoke/range：register
+  words 构建期预拼，解析方法与 shorty 首执行缓存；invoke 循环中位数从 274,968 us
+  降至 220,322 us（19.9%）。stop 双表无证据不做，逐指令检查不变；默认仍为 switch，
+  等待 A5/DH exact gate 与最终裁决。
   `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在
   装配期拒绝，VM/linker 语义不变。
 ## 验证基线

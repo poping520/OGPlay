@@ -36,8 +36,18 @@ struct FastInstruction final {
     std::uint32_t dex_pc{};
     std::uint32_t branch_target{kInvalidFastIndex};
     std::uint32_t payload{kInvalidFastIndex};
+    std::uint32_t invoke{kInvalidFastIndex};
     mutable std::uint32_t resolved_id{kInvalidFastIndex};
     mutable std::uint32_t resolved_aux{kInvalidFastIndex};
+};
+
+struct FastInvoke final {
+    std::uint8_t base_opcode{};
+    std::vector<std::uint16_t> registers;
+    mutable std::uint32_t resolved_method{kInvalidFastIndex};
+    // One entry per Java argument value, excluding receiver. References and
+    // arrays are normalized to 'L'; J/D consume two register words.
+    mutable std::vector<char> argument_shorty;
 };
 
 struct FastPayload final {
@@ -56,6 +66,7 @@ struct FastPayload final {
 struct FastCode final {
     std::vector<FastInstruction> instructions;
     std::vector<FastPayload> payloads;
+    std::vector<FastInvoke> invokes;
     std::vector<std::uint32_t> dex_pc_to_index;
     std::uint64_t storage_bytes{};
 

@@ -20,6 +20,7 @@ TEST_CASE("FastCode maps executable dex pcs and preassembles operands") {
         Code({0xf012U, 0x0114U, 0x5678U, 0x1234U, 0x0128U, 0x010fU}),
         "LFast;.linear");
     REQUIRE(fast.instructions.size() == 4);
+    CHECK(fast.instructions[0].handler == FastHandler::straight);
     CHECK(fast.instructions[0].a == 0);
     CHECK(static_cast<std::int64_t>(fast.instructions[0].extra) == -1);
     CHECK(fast.instructions[1].a == 1);
@@ -29,6 +30,12 @@ TEST_CASE("FastCode maps executable dex pcs and preassembles operands") {
     CHECK_THROWS_AS(static_cast<void>(fast.IndexForDexPc(2)),
                     std::out_of_range);
     CHECK(fast.storage_bytes >= fast.instructions.size() * sizeof(FastInstruction));
+
+    const auto branch =
+        BuildFastCode(Code({0x2132U, 0x0002U, 0x000eU}), "LFast;.ifEq");
+    CHECK(branch.instructions[0].a == 1);
+    CHECK(branch.instructions[0].b == 2);
+    CHECK(branch.instructions[0].branch_target == 1);
 }
 
 TEST_CASE("FastCode parses switch and array payload side tables") {
@@ -38,6 +45,7 @@ TEST_CASE("FastCode parses switch and array payload side tables") {
               0x0100U, 0x0001U, 0x0007U, 0x0000U, 0x0003U, 0x0000U}),
         "LFast;.packed");
     REQUIRE(packed.payloads.size() == 1);
+    CHECK(packed.instructions[0].handler == FastHandler::bridge);
     CHECK(packed.payloads[0].kind == FastPayloadKind::packed_switch);
     CHECK(packed.payloads[0].keys == std::vector<std::int32_t>{7});
     CHECK(packed.payloads[0].targets == std::vector<std::uint32_t>{1});

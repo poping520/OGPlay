@@ -115,8 +115,9 @@ void DecodeOperands(const std::vector<std::uint16_t>& units,
             out.extra = U64(units, out.dex_pc + 1);
             break;
         case DexInstructionFormat::k21c:
+        case DexInstructionFormat::k21t:
             out.a = (unit >> 8U) & 0xffU;
-            out.extra = next(1);
+            if (format == DexInstructionFormat::k21c) out.extra = next(1);
             break;
         case DexInstructionFormat::k23x:
             out.a = (unit >> 8U) & 0xffU;
@@ -131,6 +132,7 @@ void DecodeOperands(const std::vector<std::uint16_t>& units,
             break;
         case DexInstructionFormat::k22s:
         case DexInstructionFormat::k22c:
+        case DexInstructionFormat::k22t:
             out.a = (unit >> 8U) & 0xfU;
             out.b = (unit >> 12U) & 0xfU;
             out.extra = format == DexInstructionFormat::k22s
@@ -138,6 +140,9 @@ void DecodeOperands(const std::vector<std::uint16_t>& units,
                                   static_cast<std::int64_t>(
                                       static_cast<std::int16_t>(next(1))))
                             : next(1);
+            break;
+        case DexInstructionFormat::k31t:
+            out.a = (unit >> 8U) & 0xffU;
             break;
         case DexInstructionFormat::k35c:
             out.a = (unit >> 12U) & 0xfU;
@@ -173,6 +178,13 @@ void DecodeOperands(const std::vector<std::uint16_t>& units,
         default:
             return 0;
     }
+}
+
+[[nodiscard]] bool IsStraightOpcode(const std::uint8_t opcode) {
+    return opcode <= 0x1cU ||
+           (opcode >= 0x28U && opcode <= 0x2aU) ||
+           (opcode >= 0x2dU && opcode <= 0x3dU) ||
+           (opcode >= 0x7bU && opcode <= 0xe2U);
 }
 
 }  // namespace
@@ -212,6 +224,9 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
         instruction.opcode = opcode;
         instruction.width = info.width;
         instruction.dex_pc = pc;
+        if (IsStraightOpcode(opcode)) {
+            instruction.handler = FastHandler::straight;
+        }
         DecodeOperands(units, instruction);
         result.dex_pc_to_index[pc] =
             static_cast<std::uint32_t>(result.instructions.size());

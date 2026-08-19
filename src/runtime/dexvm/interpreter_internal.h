@@ -208,6 +208,51 @@ public:
         slot.tag = SlotTag::ref;
     }
 
+    // FastCode construction runs after register-boundary precheck, so direct
+    // handlers may omit the redundant bounds branch while preserving every
+    // Dalvik tag check and zero-as-null relaxation.
+    [[nodiscard]] std::uint32_t GetFastCat1(Frame& frame,
+                                            std::uint32_t reg) {
+        const auto& slot = frame.regs[reg];
+        if (slot.tag != SlotTag::cat1) {
+            FailCode("register v" + std::to_string(reg) +
+                     " does not hold a cat1 value");
+        }
+        return slot.bits;
+    }
+    [[nodiscard]] std::uint64_t GetFastWide(Frame& frame,
+                                            std::uint32_t reg) {
+        const auto& lo = frame.regs[reg];
+        const auto& hi = frame.regs[reg + 1];
+        if (lo.tag != SlotTag::wide_lo || hi.tag != SlotTag::wide_hi) {
+            FailCode("register pair v" + std::to_string(reg) +
+                     " does not hold a complete wide value");
+        }
+        return static_cast<std::uint64_t>(lo.bits) |
+               (static_cast<std::uint64_t>(hi.bits) << 32U);
+    }
+    [[nodiscard]] VmObjectRef GetFastRef(Frame& frame, std::uint32_t reg) {
+        auto& slot = frame.regs[reg];
+        if (slot.tag == SlotTag::ref) return VmObjectRef(slot.bits);
+        if (slot.tag == SlotTag::cat1 && slot.bits == 0) {
+            slot.tag = SlotTag::ref;
+            return VmObjectRef{};
+        }
+        FailCode("register v" + std::to_string(reg) +
+                 " does not hold a reference");
+    }
+    void SetFastCat1(Frame& frame, std::uint32_t reg, std::uint32_t bits) {
+        frame.regs[reg] = {bits, SlotTag::cat1};
+    }
+    void SetFastWide(Frame& frame, std::uint32_t reg, std::uint64_t bits) {
+        frame.regs[reg] = {static_cast<std::uint32_t>(bits), SlotTag::wide_lo};
+        frame.regs[reg + 1] = {
+            static_cast<std::uint32_t>(bits >> 32U), SlotTag::wide_hi};
+    }
+    void SetFastRef(Frame& frame, std::uint32_t reg, VmObjectRef ref) {
+        frame.regs[reg] = {ref.Value(), SlotTag::ref};
+    }
+
     // ---- exceptions -------------------------------------------------------
 
     void ThrowJava(const std::string& descriptor, const std::string& message);
@@ -267,8 +312,12 @@ public:
     void StepThreaded(InterpreterExecutionState& execution);
 
     // Family handlers (separate translation units).
-    [[nodiscard]] bool ExecuteArithmetic(Frame& frame, std::uint8_t opcode,
-                                         std::uint16_t unit);
+    [[nodiscard]] bool ExecuteArithmetic(
+        Frame& frame, std::uint8_t opcode, std::uint16_t unit,
+        const FastInstruction* decoded = nullptr);
+    void StepStraight(InterpreterExecutionState& execution,
+                      const FastCode& code,
+                      const FastInstruction& instruction);
     void StepObjectOrInvoke(InterpreterExecutionState& execution, Frame& frame,
                             std::uint8_t opcode, std::uint16_t unit);
 

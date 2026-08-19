@@ -8,11 +8,13 @@
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <set>
@@ -1522,6 +1524,10 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
     };
     compare_int("LFlow;", "loopSum", "(I)I", {VmValue::Int(20)});
     compare_int("LFlow;", "sparse", "(I)I", {VmValue::Int(1000)});
+    compare_int("LArith;", "divide", "(II)I",
+                {VmValue::Int(-91), VmValue::Int(7)});
+    compare_int("LArith;", "shifts", "(II)I",
+                {VmValue::Int(3), VmValue::Int(33)});
     compare_int("LTask;", "exercise", "()I", {});
 
     const auto expected_exception =
@@ -1552,6 +1558,40 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
         CHECK(switch_trace[index].dex_pc == threaded_trace[index].dex_pc);
         CHECK(switch_trace[index].opcode == threaded_trace[index].opcode);
     }
+}
+
+TEST_CASE("dexvm threaded straight microbenchmark reports switch comparison") {
+    InterpreterConfig threaded_config;
+    threaded_config.backend = InterpreterBackend::threaded;
+    Vm switch_vm;
+    Vm threaded_vm(threaded_config);
+    constexpr std::int32_t kInput = 200;
+    constexpr std::uint32_t kIterations = 400;
+
+    ExpectInt(switch_vm.CallStatic("LFlow;", "loopSum", "(I)I",
+                                   {VmValue::Int(kInput)}),
+              19'900);
+    ExpectInt(threaded_vm.CallStatic("LFlow;", "loopSum", "(I)I",
+                                     {VmValue::Int(kInput)}),
+              19'900);
+    const auto run = [&](Vm& vm) {
+        std::int64_t checksum{};
+        const auto start = std::chrono::steady_clock::now();
+        for (std::uint32_t index = 0; index < kIterations; ++index) {
+            const auto outcome = vm.CallStatic(
+                "LFlow;", "loopSum", "(I)I", {VmValue::Int(kInput)});
+            REQUIRE_FALSE(outcome.exception.IsValid());
+            checksum += outcome.value.AsInt();
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start);
+        return std::pair{elapsed.count(), checksum};
+    };
+    const auto [switch_us, switch_sum] = run(switch_vm);
+    const auto [threaded_us, threaded_sum] = run(threaded_vm);
+    CHECK(threaded_sum == switch_sum);
+    std::cout << "DEXVM_STRAIGHT_BENCH switch_us=" << switch_us
+              << " threaded_us=" << threaded_us << '\n';
 }
 
 TEST_CASE("dexvm arrays and implicit exceptions") {

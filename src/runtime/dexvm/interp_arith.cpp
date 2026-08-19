@@ -50,55 +50,90 @@ template <typename Integral, typename Float>
 
 bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
                                           const std::uint8_t opcode,
-                                          const std::uint16_t unit) {
+                                          const std::uint16_t unit,
+                                          const FastInstruction* decoded) {
     const auto& units = frame.method->code->instructions;
-    const auto vAA = static_cast<std::uint32_t>((unit >> 8U) & 0xffU);
-    const auto vA = static_cast<std::uint32_t>((unit >> 8U) & 0xfU);
-    const auto vB4 = static_cast<std::uint32_t>((unit >> 12U) & 0xfU);
+    const auto vAA = decoded != nullptr
+                         ? decoded->a
+                         : static_cast<std::uint32_t>((unit >> 8U) & 0xffU);
+    const auto vA = decoded != nullptr
+                        ? decoded->a
+                        : static_cast<std::uint32_t>((unit >> 8U) & 0xfU);
+    const auto vB4 = decoded != nullptr
+                         ? decoded->b
+                         : static_cast<std::uint32_t>((unit >> 12U) & 0xfU);
+    const auto get_cat1 = [&](const std::uint32_t reg) {
+        return decoded != nullptr ? GetFastCat1(frame, reg)
+                                  : GetCat1(frame, reg);
+    };
+    const auto get_wide = [&](const std::uint32_t reg) {
+        return decoded != nullptr ? GetFastWide(frame, reg)
+                                  : GetWide(frame, reg);
+    };
+    const auto set_cat1 = [&](const std::uint32_t reg,
+                              const std::uint32_t bits) {
+        if (decoded != nullptr) {
+            SetFastCat1(frame, reg, bits);
+        } else {
+            SetCat1(frame, reg, bits);
+        }
+    };
+    const auto set_wide = [&](const std::uint32_t reg,
+                              const std::uint64_t bits) {
+        if (decoded != nullptr) {
+            SetFastWide(frame, reg, bits);
+        } else {
+            SetWide(frame, reg, bits);
+        }
+    };
 
     // ---- cmp family (0x2d..0x31) -----------------------------------------
     if (opcode >= 0x2d && opcode <= 0x31) {
-        const auto second = units[frame.pc + 1];
-        const auto src1 = static_cast<std::uint32_t>(second & 0xffU);
-        const auto src2 = static_cast<std::uint32_t>((second >> 8U) & 0xffU);
+        const auto second = decoded == nullptr ? units[frame.pc + 1] : 0U;
+        const auto src1 = decoded != nullptr
+                              ? decoded->b
+                              : static_cast<std::uint32_t>(second & 0xffU);
+        const auto src2 = decoded != nullptr
+                              ? decoded->c
+                              : static_cast<std::uint32_t>((second >> 8U) & 0xffU);
         std::int32_t result{};
         switch (opcode) {
             case 0x2d: {  // cmpl-float: NaN -> -1
-                const auto lhs = AsFloat(GetCat1(frame, src1));
-                const auto rhs = AsFloat(GetCat1(frame, src2));
+                const auto lhs = AsFloat(get_cat1(src1));
+                const auto rhs = AsFloat(get_cat1(src2));
                 result = lhs > rhs ? 1 : (lhs == rhs ? 0 : -1);
                 break;
             }
             case 0x2e: {  // cmpg-float: NaN -> 1
-                const auto lhs = AsFloat(GetCat1(frame, src1));
-                const auto rhs = AsFloat(GetCat1(frame, src2));
+                const auto lhs = AsFloat(get_cat1(src1));
+                const auto rhs = AsFloat(get_cat1(src2));
                 result = lhs < rhs ? -1 : (lhs == rhs ? 0 : 1);
                 break;
             }
             case 0x2f: {  // cmpl-double
-                const auto lhs = AsDouble(GetWide(frame, src1));
-                const auto rhs = AsDouble(GetWide(frame, src2));
+                const auto lhs = AsDouble(get_wide(src1));
+                const auto rhs = AsDouble(get_wide(src2));
                 result = lhs > rhs ? 1 : (lhs == rhs ? 0 : -1);
                 break;
             }
             case 0x30: {  // cmpg-double
-                const auto lhs = AsDouble(GetWide(frame, src1));
-                const auto rhs = AsDouble(GetWide(frame, src2));
+                const auto lhs = AsDouble(get_wide(src1));
+                const auto rhs = AsDouble(get_wide(src2));
                 result = lhs < rhs ? -1 : (lhs == rhs ? 0 : 1);
                 break;
             }
             case 0x31: {  // cmp-long
                 const auto lhs = static_cast<std::int64_t>(
-                    GetWide(frame, src1));
+                    get_wide(src1));
                 const auto rhs = static_cast<std::int64_t>(
-                    GetWide(frame, src2));
+                    get_wide(src2));
                 result = lhs > rhs ? 1 : (lhs == rhs ? 0 : -1);
                 break;
             }
             default:
                 break;
         }
-        SetCat1(frame, vAA, static_cast<std::uint32_t>(result));
+        set_cat1(vAA, static_cast<std::uint32_t>(result));
         return true;
     }
 
@@ -106,90 +141,90 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
     if (opcode >= 0x7b && opcode <= 0x8f) {
         switch (opcode) {
             case 0x7b:  // neg-int
-                SetCat1(frame, vA, static_cast<std::uint32_t>(
-                    -static_cast<std::int32_t>(GetCat1(frame, vB4))));
+                set_cat1(vA, static_cast<std::uint32_t>(
+                    -static_cast<std::int32_t>(get_cat1(vB4))));
                 break;
             case 0x7c:  // not-int
-                SetCat1(frame, vA, ~GetCat1(frame, vB4));
+                set_cat1(vA, ~get_cat1(vB4));
                 break;
             case 0x7d:  // neg-long
-                SetWide(frame, vA, static_cast<std::uint64_t>(
-                    -static_cast<std::int64_t>(GetWide(frame, vB4))));
+                set_wide(vA, static_cast<std::uint64_t>(
+                    -static_cast<std::int64_t>(get_wide(vB4))));
                 break;
             case 0x7e:  // not-long
-                SetWide(frame, vA, ~GetWide(frame, vB4));
+                set_wide(vA, ~get_wide(vB4));
                 break;
             case 0x7f:  // neg-float
-                SetCat1(frame, vA, FloatBits(-AsFloat(GetCat1(frame, vB4))));
+                set_cat1(vA, FloatBits(-AsFloat(get_cat1(vB4))));
                 break;
             case 0x80:  // neg-double
-                SetWide(frame, vA, DoubleBits(-AsDouble(GetWide(frame, vB4))));
+                set_wide(vA, DoubleBits(-AsDouble(get_wide(vB4))));
                 break;
             case 0x81:  // int-to-long
-                SetWide(frame, vA, static_cast<std::uint64_t>(
+                set_wide(vA, static_cast<std::uint64_t>(
                     static_cast<std::int64_t>(
-                        static_cast<std::int32_t>(GetCat1(frame, vB4)))));
+                        static_cast<std::int32_t>(get_cat1(vB4)))));
                 break;
             case 0x82:  // int-to-float
-                SetCat1(frame, vA, FloatBits(static_cast<float>(
-                    static_cast<std::int32_t>(GetCat1(frame, vB4)))));
+                set_cat1(vA, FloatBits(static_cast<float>(
+                    static_cast<std::int32_t>(get_cat1(vB4)))));
                 break;
             case 0x83:  // int-to-double
-                SetWide(frame, vA, DoubleBits(static_cast<double>(
-                    static_cast<std::int32_t>(GetCat1(frame, vB4)))));
+                set_wide(vA, DoubleBits(static_cast<double>(
+                    static_cast<std::int32_t>(get_cat1(vB4)))));
                 break;
             case 0x84:  // long-to-int
-                SetCat1(frame, vA, static_cast<std::uint32_t>(
-                    GetWide(frame, vB4)));
+                set_cat1(vA, static_cast<std::uint32_t>(
+                    get_wide(vB4)));
                 break;
             case 0x85:  // long-to-float
-                SetCat1(frame, vA, FloatBits(static_cast<float>(
-                    static_cast<std::int64_t>(GetWide(frame, vB4)))));
+                set_cat1(vA, FloatBits(static_cast<float>(
+                    static_cast<std::int64_t>(get_wide(vB4)))));
                 break;
             case 0x86:  // long-to-double
-                SetWide(frame, vA, DoubleBits(static_cast<double>(
-                    static_cast<std::int64_t>(GetWide(frame, vB4)))));
+                set_wide(vA, DoubleBits(static_cast<double>(
+                    static_cast<std::int64_t>(get_wide(vB4)))));
                 break;
             case 0x87:  // float-to-int
-                SetCat1(frame, vA, static_cast<std::uint32_t>(
+                set_cat1(vA, static_cast<std::uint32_t>(
                     SaturateToInt<std::int32_t>(
-                        AsFloat(GetCat1(frame, vB4)))));
+                        AsFloat(get_cat1(vB4)))));
                 break;
             case 0x88:  // float-to-long
-                SetWide(frame, vA, static_cast<std::uint64_t>(
+                set_wide(vA, static_cast<std::uint64_t>(
                     SaturateToInt<std::int64_t>(
-                        AsFloat(GetCat1(frame, vB4)))));
+                        AsFloat(get_cat1(vB4)))));
                 break;
             case 0x89:  // float-to-double
-                SetWide(frame, vA, DoubleBits(static_cast<double>(
-                    AsFloat(GetCat1(frame, vB4)))));
+                set_wide(vA, DoubleBits(static_cast<double>(
+                    AsFloat(get_cat1(vB4)))));
                 break;
             case 0x8a:  // double-to-int
-                SetCat1(frame, vA, static_cast<std::uint32_t>(
+                set_cat1(vA, static_cast<std::uint32_t>(
                     SaturateToInt<std::int32_t>(
-                        AsDouble(GetWide(frame, vB4)))));
+                        AsDouble(get_wide(vB4)))));
                 break;
             case 0x8b:  // double-to-long
-                SetWide(frame, vA, static_cast<std::uint64_t>(
+                set_wide(vA, static_cast<std::uint64_t>(
                     SaturateToInt<std::int64_t>(
-                        AsDouble(GetWide(frame, vB4)))));
+                        AsDouble(get_wide(vB4)))));
                 break;
             case 0x8c:  // double-to-float
-                SetCat1(frame, vA, FloatBits(static_cast<float>(
-                    AsDouble(GetWide(frame, vB4)))));
+                set_cat1(vA, FloatBits(static_cast<float>(
+                    AsDouble(get_wide(vB4)))));
                 break;
             case 0x8d:  // int-to-byte
-                SetCat1(frame, vA, static_cast<std::uint32_t>(
+                set_cat1(vA, static_cast<std::uint32_t>(
                     static_cast<std::int32_t>(static_cast<std::int8_t>(
-                        GetCat1(frame, vB4) & 0xffU))));
+                        get_cat1(vB4) & 0xffU))));
                 break;
             case 0x8e:  // int-to-char
-                SetCat1(frame, vA, GetCat1(frame, vB4) & 0xffffU);
+                set_cat1(vA, get_cat1(vB4) & 0xffffU);
                 break;
             case 0x8f:  // int-to-short
-                SetCat1(frame, vA, static_cast<std::uint32_t>(
+                set_cat1(vA, static_cast<std::uint32_t>(
                     static_cast<std::int32_t>(static_cast<std::int16_t>(
-                        GetCat1(frame, vB4) & 0xffffU))));
+                        get_cat1(vB4) & 0xffffU))));
                 break;
             default:
                 return false;
@@ -251,7 +286,7 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
                 (static_cast<std::uint32_t>(rhs) & 0x1fU)); break;
             default: return false;
         }
-        SetCat1(frame, dest, static_cast<std::uint32_t>(result));
+        set_cat1(dest, static_cast<std::uint32_t>(result));
         return true;
     };
 
@@ -309,7 +344,7 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
                 (static_cast<std::uint64_t>(rhs) & 0x3fU)); break;
             default: return false;
         }
-        SetWide(frame, dest, static_cast<std::uint64_t>(result));
+        set_wide(dest, static_cast<std::uint64_t>(result));
         return true;
     };
 
@@ -325,7 +360,7 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
             case 4: result = std::fmod(lhs, rhs); break;
             default: return false;
         }
-        SetCat1(frame, dest, FloatBits(result));
+        set_cat1(dest, FloatBits(result));
         return true;
     };
 
@@ -341,34 +376,38 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
             case 4: result = std::fmod(lhs, rhs); break;
             default: return false;
         }
-        SetWide(frame, dest, DoubleBits(result));
+        set_wide(dest, DoubleBits(result));
         return true;
     };
 
     // binop vAA, vBB, vCC (0x90..0xaf)
     if (opcode >= 0x90 && opcode <= 0xaf) {
-        const auto second = units[frame.pc + 1];
-        const auto src1 = static_cast<std::uint32_t>(second & 0xffU);
-        const auto src2 = static_cast<std::uint32_t>((second >> 8U) & 0xffU);
+        const auto second = decoded == nullptr ? units[frame.pc + 1] : 0U;
+        const auto src1 = decoded != nullptr
+                              ? decoded->b
+                              : static_cast<std::uint32_t>(second & 0xffU);
+        const auto src2 = decoded != nullptr
+                              ? decoded->c
+                              : static_cast<std::uint32_t>((second >> 8U) & 0xffU);
         if (opcode <= 0x9a) {  // int
             return int_binop(vAA,
-                             static_cast<std::int32_t>(GetCat1(frame, src1)),
-                             static_cast<std::int32_t>(GetCat1(frame, src2)),
+                             static_cast<std::int32_t>(get_cat1(src1)),
+                             static_cast<std::int32_t>(get_cat1(src2)),
                              static_cast<std::uint8_t>(opcode - 0x90));
         }
         if (opcode <= 0xa5) {  // long
             return long_binop(vAA,
-                              static_cast<std::int64_t>(GetWide(frame, src1)),
-                              static_cast<std::int64_t>(GetWide(frame, src2)),
+                              static_cast<std::int64_t>(get_wide(src1)),
+                              static_cast<std::int64_t>(get_wide(src2)),
                               static_cast<std::uint8_t>(opcode - 0x9b));
         }
         if (opcode <= 0xaa) {  // float
-            return float_binop(vAA, AsFloat(GetCat1(frame, src1)),
-                               AsFloat(GetCat1(frame, src2)),
+            return float_binop(vAA, AsFloat(get_cat1(src1)),
+                               AsFloat(get_cat1(src2)),
                                static_cast<std::uint8_t>(opcode - 0xa6));
         }
-        return double_binop(vAA, AsDouble(GetWide(frame, src1)),
-                            AsDouble(GetWide(frame, src2)),
+        return double_binop(vAA, AsDouble(get_wide(src1)),
+                            AsDouble(get_wide(src2)),
                             static_cast<std::uint8_t>(opcode - 0xab));
     }
 
@@ -376,31 +415,34 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
     if (opcode >= 0xb0 && opcode <= 0xcf) {
         if (opcode <= 0xba) {  // int
             return int_binop(vA,
-                             static_cast<std::int32_t>(GetCat1(frame, vA)),
-                             static_cast<std::int32_t>(GetCat1(frame, vB4)),
+                             static_cast<std::int32_t>(get_cat1(vA)),
+                             static_cast<std::int32_t>(get_cat1(vB4)),
                              static_cast<std::uint8_t>(opcode - 0xb0));
         }
         if (opcode <= 0xc5) {  // long
             return long_binop(vA,
-                              static_cast<std::int64_t>(GetWide(frame, vA)),
-                              static_cast<std::int64_t>(GetWide(frame, vB4)),
+                              static_cast<std::int64_t>(get_wide(vA)),
+                              static_cast<std::int64_t>(get_wide(vB4)),
                               static_cast<std::uint8_t>(opcode - 0xbb));
         }
         if (opcode <= 0xca) {  // float
-            return float_binop(vA, AsFloat(GetCat1(frame, vA)),
-                               AsFloat(GetCat1(frame, vB4)),
+            return float_binop(vA, AsFloat(get_cat1(vA)),
+                               AsFloat(get_cat1(vB4)),
                                static_cast<std::uint8_t>(opcode - 0xc6));
         }
-        return double_binop(vA, AsDouble(GetWide(frame, vA)),
-                            AsDouble(GetWide(frame, vB4)),
+        return double_binop(vA, AsDouble(get_wide(vA)),
+                            AsDouble(get_wide(vB4)),
                             static_cast<std::uint8_t>(opcode - 0xcb));
     }
 
     // binop/lit16 vA, vB, #+CCCC (0xd0..0xd7)
     if (opcode >= 0xd0 && opcode <= 0xd7) {
-        const auto literal = static_cast<std::int32_t>(
-            static_cast<std::int16_t>(units[frame.pc + 1]));
-        const auto lhs = static_cast<std::int32_t>(GetCat1(frame, vB4));
+        const auto literal = decoded != nullptr
+                                 ? static_cast<std::int32_t>(
+                                       static_cast<std::int64_t>(decoded->extra))
+                                 : static_cast<std::int32_t>(
+                                       static_cast<std::int16_t>(units[frame.pc + 1]));
+        const auto lhs = static_cast<std::int32_t>(get_cat1(vB4));
         switch (opcode) {
             case 0xd0: return int_binop(vA, lhs, literal, 0);  // add
             case 0xd1: return int_binop(vA, literal, lhs, 1);  // rsub
@@ -417,11 +459,17 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
 
     // binop/lit8 vAA, vBB, #+CC (0xd8..0xe2)
     if (opcode >= 0xd8 && opcode <= 0xe2) {
-        const auto second = units[frame.pc + 1];
-        const auto src = static_cast<std::uint32_t>(second & 0xffU);
-        const auto literal = static_cast<std::int32_t>(
-            static_cast<std::int8_t>((second >> 8U) & 0xffU));
-        const auto lhs = static_cast<std::int32_t>(GetCat1(frame, src));
+        const auto second = decoded == nullptr ? units[frame.pc + 1] : 0U;
+        const auto src = decoded != nullptr
+                             ? decoded->b
+                             : static_cast<std::uint32_t>(second & 0xffU);
+        const auto literal = decoded != nullptr
+                                 ? static_cast<std::int32_t>(
+                                       static_cast<std::int64_t>(decoded->extra))
+                                 : static_cast<std::int32_t>(
+                                       static_cast<std::int8_t>(
+                                           (second >> 8U) & 0xffU));
+        const auto lhs = static_cast<std::int32_t>(get_cat1(src));
         switch (opcode) {
             case 0xd8: return int_binop(vAA, lhs, literal, 0);   // add
             case 0xd9: return int_binop(vAA, literal, lhs, 1);   // rsub

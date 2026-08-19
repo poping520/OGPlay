@@ -11,7 +11,10 @@ void Interpreter::Impl::StepThreaded(
     InterpreterExecutionState& execution) {
     auto& frame = execution.frames.back();
     const bool needs_build = !frame.method->fast_code;
-    const auto& code = linker->FastCodeFor(frame.method->id);
+    if (needs_build) {
+        static_cast<void>(linker->FastCodeFor(frame.method->id));
+    }
+    const auto& code = *frame.method->fast_code;
     if (needs_build) {
         ++stats.fast_code_builds;
         stats.fast_code_bytes += code.storage_bytes;
@@ -25,14 +28,18 @@ void Interpreter::Impl::StepThreaded(
     goto* labels[static_cast<std::size_t>(instruction.handler)];
 
 straight:
+    StepStraight(execution, code, instruction);
+    return;
 object:
 invoke:
 bridge:
     Step(execution);
 #else
     switch (instruction.handler) {
-        case FastHandler::bridge:
         case FastHandler::straight:
+            StepStraight(execution, code, instruction);
+            break;
+        case FastHandler::bridge:
         case FastHandler::object:
         case FastHandler::invoke:
             Step(execution);

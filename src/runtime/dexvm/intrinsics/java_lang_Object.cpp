@@ -1,12 +1,28 @@
 #include "catalog.h"
 #include "shared.h"
 
+#include <charconv>
 #include <limits>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
+    namespace {
+
+    [[nodiscard]] std::string IdentityHashHex(const std::int32_t hash) {
+        char buffer[8];
+        const auto [end, error] = std::to_chars(
+            buffer, buffer + sizeof(buffer),
+            static_cast<std::uint32_t>(hash), 16);
+        if (error != std::errc{}) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "identity hash formatting failed");
+        }
+        return std::string(buffer, end);
+    }
+
+    }  // namespace
 
     IntrinsicClassDecl Declare_java_lang_Object() {
         auto builder = IntrinsicClassBuilder::RootClass("Ljava/lang/Object;");
@@ -21,7 +37,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
         });
 
         builder.VirtualMethod("hashCode", "()I", [](IntrinsicContext& context) {
-            return VmValue::Int(static_cast<std::int32_t>(context.receiver.Value()));
+            return VmValue::Int(
+                context.vm.Model().IdentityHashCode(context.receiver));
         });
 
         builder.VirtualMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& context) {
@@ -30,9 +47,9 @@ namespace ogplay::runtime::dexvm::intrinsics {
             const auto descriptor = java_class.IsValid()
                                         ? vm.Linker().Class(java_class).descriptor
                                         : std::string("<external>");
-            return VmValue::Ref(
-                vm.NewStringUtf8(DottedName(descriptor) + "@" + std::to_string(context.receiver.Value()))
-            );
+            return VmValue::Ref(vm.NewStringUtf8(
+                DottedName(descriptor) + "@" + IdentityHashHex(
+                    vm.Model().IdentityHashCode(context.receiver))));
         });
 
         builder.VirtualMethod("clone", "()Ljava/lang/Object;", [](IntrinsicContext& context) {

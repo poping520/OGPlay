@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · macOS 15 FromChars 与 threaded computed-goto 编译
+更新：2026-08-20 · DVM-61 Java identity 与内部 handle 解耦
 
 ## 当前阶段
 
@@ -18,7 +18,7 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48..60 已交付；DVM-47 gate 仍受阻。解释执行仍由
+- **M9 DexVM**：DVM-1..46、48..61 已交付；DVM-47 gate 仍受阻。解释执行仍由
   `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
@@ -47,9 +47,13 @@
   本轮验收，`dexvm.interpreter_threaded` 保持 `partial`，生产默认仍为 switch。
   `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在
   装配期拒绝，VM/linker 语义不变。
+  DVM-61 已把 guest identity hash 从可复用 `VmObjectRef`/记录槽中分离：普通对象
+  使用不回收的 per-VM hash 序列，Class object 按 descriptor 稳定派生；
+  `Object.hashCode`、默认 `toString` 和 `System.identityHashCode` 共用唯一服务，
+  catalog 重排与 GC handle 复用不再成为 guest 可观察身份。
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：852/852 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
+- Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。

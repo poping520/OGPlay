@@ -225,6 +225,8 @@ TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
     const auto dead = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     fixture.vm.ListStorage(dead).push_back(survivor);
     const auto dead_string = fixture.model.NewString(u"dead");
+    const auto dead_string_hash =
+        fixture.model.IdentityHashCode(dead_string);
     const auto string_identity = fixture.model.ToIdentity(dead_string);
     const auto before = fixture.model.AllocatedBytes();
     std::vector<JniObjectIdentity> weak_clears;
@@ -245,6 +247,7 @@ TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
 
     const auto reused = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     CHECK(reused == dead_string);
+    CHECK(fixture.model.IdentityHashCode(reused) != dead_string_hash);
     CHECK(fixture.vm.ListStorage(reused).empty());
     fixture.vm.SetGcIntegration(
         {{}, {}, [survivor, reused](const VmRootVisitor& visit) {

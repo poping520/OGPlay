@@ -93,6 +93,11 @@ IntrinsicClassDecl Declare_java_lang_System() {
                 // System.gc() is legal but intentionally does not force a cycle.
                 return VmValue::Void();
             });
+    builder.StaticMethod("identityHashCode", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& context) {
+                return VmValue::Int(context.vm.Model().IdentityHashCode(
+                    context.arguments[0].ref));
+            });
     builder.StaticMethod("getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto key = PropertyKey(context, context.arguments[0].ref);

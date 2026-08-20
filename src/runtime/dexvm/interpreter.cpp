@@ -581,6 +581,10 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->default_execution = default_execution.get();
     impl_->executions.emplace(1, std::move(default_execution));
     impl_->monitors = std::make_unique<VmMonitorTable>(*this);
+    model.SetClassDescriptorResolver(
+        [&linker](const DexClassId java_class) {
+            return linker.Class(java_class).descriptor;
+        });
 
     RegisterIntrinsicStateTable({
         "throwable",

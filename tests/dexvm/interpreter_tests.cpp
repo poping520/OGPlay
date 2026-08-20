@@ -123,7 +123,125 @@ struct IntrinsicVm final {
         REQUIRE(method.has_value());
         return *method;
     }
+
+    [[nodiscard]] VmMethodId Virtual(const std::string& class_descriptor,
+                                     const std::string& name,
+                                     const std::string& descriptor) {
+        const auto java_class = linker.FindClass(class_descriptor);
+        REQUIRE(java_class.has_value());
+        for (const auto method : linker.Class(*java_class).vtable) {
+            const auto& linked = linker.Method(method);
+            if (linked.name == name && linked.descriptor == descriptor) {
+                return method;
+            }
+        }
+        FAIL("virtual method is missing: ", class_descriptor, ".", name,
+             descriptor);
+        return VmMethodId{};
+    }
 };
+
+TEST_CASE("DexVM Java identity is independent from handles and catalog order") {
+    const auto call_one = [](IntrinsicVm& vm, const VmMethodId method,
+                             const VmValue argument) {
+        return vm.interpreter.Call(method,
+                                   std::vector<VmValue>{argument});
+    };
+    const auto expect_int = [](const VmCallOutcome& outcome,
+                               const std::int32_t expected) {
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        REQUIRE(outcome.value.kind == VmValue::Kind::cat1);
+        CHECK(outcome.value.AsInt() == expected);
+    };
+    const auto make_catalog = [](const bool reverse) {
+        auto first = IntrinsicClassBuilder::Class("Lidentity/First;").Build();
+        auto second =
+            IntrinsicClassBuilder::Class("Lidentity/Second;").Build();
+        std::vector<IntrinsicClassDecl> catalog;
+        if (reverse) {
+            catalog.push_back(std::move(second));
+            catalog.push_back(std::move(first));
+        } else {
+            catalog.push_back(std::move(first));
+            catalog.push_back(std::move(second));
+        }
+        return catalog;
+    };
+
+    IntrinsicVm left(make_catalog(false));
+    IntrinsicVm right(make_catalog(true));
+    const auto left_first = left.linker.ResolveDescriptor("Lidentity/First;");
+    const auto left_second =
+        left.linker.ResolveDescriptor("Lidentity/Second;");
+    const auto right_first =
+        right.linker.ResolveDescriptor("Lidentity/First;");
+    const auto right_second =
+        right.linker.ResolveDescriptor("Lidentity/Second;");
+    CHECK(left_first != right_first);
+
+    const auto left_class = left.model.ClassObject(left_first);
+    static_cast<void>(left_second);
+    static_cast<void>(right.model.ClassObject(right_second));
+    const auto right_class = right.model.ClassObject(right_first);
+    CHECK(left_class != right_class);
+    CHECK(left.model.IdentityHashCode(left_class) ==
+          right.model.IdentityHashCode(right_class));
+
+    const auto left_object =
+        left.interpreter.NewIntrinsicInstance("Lidentity/First;");
+    const auto right_object =
+        right.interpreter.NewIntrinsicInstance("Lidentity/First;");
+    CHECK(left_object != right_object);
+    const auto identity_hash = left.model.IdentityHashCode(left_object);
+    CHECK(identity_hash == right.model.IdentityHashCode(right_object));
+
+    const auto object_hash = call_one(
+        left,
+        left.Virtual("Lidentity/First;", "hashCode", "()I"),
+        VmValue::Ref(left_object));
+    expect_int(object_hash, identity_hash);
+    const auto system_hash = call_one(
+        left,
+        left.Static("Ljava/lang/System;", "identityHashCode",
+                    "(Ljava/lang/Object;)I"),
+        VmValue::Ref(left_object));
+    expect_int(system_hash, identity_hash);
+    expect_int(call_one(left,
+                        left.Static("Ljava/lang/System;", "identityHashCode",
+                                    "(Ljava/lang/Object;)I"),
+                        VmValue::Ref(VmObjectRef{})),
+               0);
+
+    const auto rendered = call_one(
+        left,
+        left.Virtual("Lidentity/First;", "toString",
+                     "()Ljava/lang/String;"),
+        VmValue::Ref(left_object));
+    REQUIRE_FALSE(rendered.exception.IsValid());
+    const auto text = left.interpreter.StringUtf8(rendered.value.ref);
+    REQUIRE(text.starts_with("identity.First@"));
+    CHECK(static_cast<std::uint32_t>(std::stoul(text.substr(15), nullptr, 16)) ==
+          static_cast<std::uint32_t>(identity_hash));
+
+    auto override = IntrinsicClassBuilder::Class("Lidentity/Override;");
+    override.VirtualMethod("hashCode", "()I", [](IntrinsicContext&) {
+        return VmValue::Int(777);
+    });
+    IntrinsicVm overridden({std::move(override).Build()});
+    const auto overridden_object =
+        overridden.interpreter.NewIntrinsicInstance("Lidentity/Override;");
+    expect_int(call_one(overridden,
+                        overridden.Virtual("Lidentity/Override;", "hashCode",
+                                           "()I"),
+                        VmValue::Ref(overridden_object)),
+               777);
+    expect_int(call_one(overridden,
+                        overridden.Static("Ljava/lang/System;",
+                                          "identityHashCode",
+                                          "(Ljava/lang/Object;)I"),
+                        VmValue::Ref(overridden_object)),
+               overridden.model.IdentityHashCode(overridden_object));
+}
 
 void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
     REQUIRE_MESSAGE(!outcome.exception.IsValid(),

@@ -73,6 +73,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   空闲记录访问明确失败。intern 字符串与 class 对象为不朽强根；JNI weak global
   不是根，目标死亡时被清空。默认堆预算 64 MiB；`SetEmergencyReserve` 仅供解释器
   物化 OOM throwable。
+  guest 可观察的 identity hash 独立于 `VmObjectRef`/记录槽：普通对象使用不回收的
+  per-VM 序列，Class object 按稳定 descriptor 派生；GC 复用 handle 不复用 hash，
+  catalog 重排不改变 Class hash。`IdentityHashCode` 是 `Object.hashCode`、默认
+  `Object.toString` 与 `System.identityHashCode` 的唯一身份服务，null hash 为 0。
 - `Interpreter`：`Call(method, args)` 在当前宿主线程执行至完成，返回
   `VmCallOutcome`（值或未捕获 Java 异常 + 消息 + 栈回溯）。tagged 寄存器
   （uninit/cat1/wide 对/ref + 零值放宽）、每指令 1 tick 预算、帧深度上限
@@ -211,7 +215,7 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
   且明确失败，绝不静默返回默认值。
 - 语义出处：逐 opcode 对照 AOSP `vm/mterp/c/OP_*.cpp`（一致性夹具注释记录），
   分歧按 07 §5 仲裁。无 JIT、不改写指令流（quickening 红线）。
-- 对象非移动，句柄生命周期内稳定。
+- 对象非移动，句柄在对象存活期稳定；清扫后可复用，但 guest identity hash 不复用。
 - GC 根集必须覆盖全部 context 的全部帧 tagged ref、last_result/caught、pending/
   exit result、静态 ref 槽、JNI local/global、Thread 对象、intern/class 对象以及
   Android session 显式登记的外部长期引用。intrinsic 宿主状态必须通过

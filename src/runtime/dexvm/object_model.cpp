@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -53,6 +54,7 @@ public:
         std::uint64_t host_state{};
         std::uint64_t reserved_bytes{};
         JniPrimitiveKind primitive_kind{JniPrimitiveKind::integer};
+        std::uint32_t identity_hash{};
     };
 
     struct ObjectArray final {
@@ -77,14 +79,40 @@ public:
     std::vector<std::uint32_t> free_fallback_object_arrays;
     std::unordered_map<std::u16string, VmObjectRef> intern_table;
     std::unordered_map<std::uint32_t, VmObjectRef> class_objects;
+    std::function<std::string(DexClassId)> class_descriptor_resolver;
 
     DexClassId string_class;
     DexClassId class_class;
     std::uint64_t allocated_bytes{};
     std::uint64_t object_count{};
     std::uint64_t next_vm_identity{1};
+    std::uint64_t next_identity_hash{1};
+
+    [[nodiscard]] std::uint32_t NextIdentityHash() {
+        if (next_identity_hash > std::numeric_limits<std::uint32_t>::max()) {
+            Fail(DexVmErrorReason::object_model_failure,
+                 "Java identity hash space is exhausted");
+        }
+        return static_cast<std::uint32_t>(next_identity_hash++);
+    }
+
+    [[nodiscard]] static std::uint32_t ClassIdentityHash(
+        const std::string_view descriptor) noexcept {
+        // Fixed FNV-1a over the stable descriptor. Identity hash collisions
+        // are legal; zero is reserved here for null/unassigned records.
+        std::uint32_t hash = 2166136261U;
+        for (const auto byte : descriptor) {
+            hash ^= static_cast<std::uint8_t>(
+                static_cast<unsigned char>(byte));
+            hash *= 16777619U;
+        }
+        return hash == 0U ? 1U : hash;
+    }
 
     [[nodiscard]] VmObjectRef Register(Record record) {
+        if (record.identity_hash == 0U) {
+            record.identity_hash = NextIdentityHash();
+        }
         std::uint32_t index{};
         if (free_records.empty()) {
             index = static_cast<std::uint32_t>(records.size());
@@ -174,6 +202,15 @@ void JavaObjectModel::SetCoreClasses(const DexClassId string_class,
     impl_->class_class = class_class;
 }
 
+void JavaObjectModel::SetClassDescriptorResolver(
+    std::function<std::string(DexClassId)> resolver) {
+    if (!resolver) {
+        throw std::invalid_argument(
+            "DexVM class descriptor resolver must not be empty");
+    }
+    impl_->class_descriptor_resolver = std::move(resolver);
+}
+
 VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
     if (identity == JniObjectIdentity{}) return VmObjectRef{};
     const auto found = impl_->by_identity.find(identity);
@@ -239,6 +276,11 @@ DexClassId JavaObjectModel::ObjectClass(const VmObjectRef ref) const {
         return impl_->string_class;
     }
     return record.java_class;
+}
+
+std::int32_t JavaObjectModel::IdentityHashCode(const VmObjectRef ref) const {
+    if (!ref.IsValid()) return 0;
+    return static_cast<std::int32_t>(impl_->At(ref).identity_hash);
 }
 
 bool JavaObjectModel::IsValidRef(const VmObjectRef ref) const noexcept {
@@ -848,6 +890,12 @@ VmObjectRef JavaObjectModel::ClassObject(const DexClassId java_class) {
     record.java_class = impl_->class_class;
     record.host_state = java_class.Value();
     record.reserved_bytes = 48ULL;
+    if (!impl_->class_descriptor_resolver) {
+        Fail(DexVmErrorReason::object_model_failure,
+             "class descriptor resolver is not installed");
+    }
+    record.identity_hash = Impl::ClassIdentityHash(
+        impl_->class_descriptor_resolver(java_class));
     const auto handle = impl_->Register(std::move(record));
     impl_->class_objects.emplace(java_class.Value(), handle);
     return handle;

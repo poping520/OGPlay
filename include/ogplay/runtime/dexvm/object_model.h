@@ -23,8 +23,8 @@ namespace ogplay::runtime::dexvm {
 //   - strings / primitive arrays: delegated to the session's existing JNI
 //     stores so native and interpreted code observe the same object
 //   - object arrays and class objects: interpreter-owned
-// Objects never move; handles stay valid for the session lifetime (GC-A is
-// a budgeted arena without collection, 04 §5).
+// Objects never move while live. GC may reuse an internal handle after the
+// object dies, so guest-visible identity is carried separately from handles.
 
 enum class SlotTag : std::uint8_t {
     uninit,
@@ -104,11 +104,19 @@ public:
     // Core class ids used for objects created without explicit class
     // context (strings flowing in from JNI, class objects).
     void SetCoreClasses(DexClassId string_class, DexClassId class_class);
+    // Class handles and linker ids depend on catalog assembly order. Supplying
+    // the descriptor resolver lets class-object identity remain stable when
+    // platform shapes are inserted or reordered.
+    void SetClassDescriptorResolver(
+        std::function<std::string(DexClassId)> resolver);
 
     [[nodiscard]] VmObjectRef FromIdentity(JniObjectIdentity identity);
     [[nodiscard]] JniObjectIdentity ToIdentity(VmObjectRef ref) const;
     [[nodiscard]] VmObjectKind Kind(VmObjectRef ref) const;
     [[nodiscard]] DexClassId ObjectClass(VmObjectRef ref) const;
+    // Java identity hash: 0 for null, stable for the lifetime of a live
+    // object, and intentionally independent from VmObjectRef/storage reuse.
+    [[nodiscard]] std::int32_t IdentityHashCode(VmObjectRef ref) const;
     [[nodiscard]] bool IsValidRef(VmObjectRef ref) const noexcept;
     [[nodiscard]] VmObjectRef FindIdentity(JniObjectIdentity identity) const noexcept;
     void VisitPermanentRoots(const RootVisitor& visitor) const;

@@ -169,10 +169,9 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_org_xml_sax_XMLReader_Impl(context),
         Declare_org_xml_sax_XMLReader(context),
         Declare_org_xml_sax_helpers_DefaultHandler(context),
-        // Append-only compatibility tail: adding platform shapes must not
-        // renumber the pre-DVM-31 intrinsic class prefix. Object.hashCode()
-        // exposes VM handles, so insertion into the stable prefix is guest-
-        // observable and breaks exact title behavior.
+        // Historical compatibility tail. DVM-61 decouples Java identity hash
+        // from linker ids and object handles, so future catalog insertion no
+        // longer changes Object.hashCode/default toString identity.
         Declare_javax_microedition_khronos_egl_EGL(context),
         Declare_javax_microedition_khronos_egl_EGL10(context),
         Declare_javax_microedition_khronos_egl_EGL10_Impl(context),

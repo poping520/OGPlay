@@ -1138,7 +1138,7 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与常量池解析
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "DVM-8 建立统一 VmObjectRef 句柄空间，字符串与基元数组委托存量 JNI store。DVM-49 完成对象底座闭环：session-owned JniGuestObjectRegistry 同时持有普通对象 class identity 与 JniObjectArrayStore；JavaObjectInterop 让 DexVM/JNI 对 Object[] 共用 identity、元素、class 适配、clone/GC 生命周期，JNI 写入元素在标记前导入同一对象图；无 interop 仅保留 isolated fixture fallback"
+note = "DVM-8 建立统一 VmObjectRef 句柄空间，字符串与基元数组委托存量 JNI store。DVM-49 完成对象底座闭环：session-owned JniGuestObjectRegistry 同时持有普通对象 class identity 与 JniObjectArrayStore；JavaObjectInterop 让 DexVM/JNI 对 Object[] 共用 identity、元素、class 适配、clone/GC 生命周期，JNI 写入元素在标记前导入同一对象图；无 interop 仅保留 isolated fixture fallback。DVM-61 将 guest identity hash 与可复用 VmObjectRef/记录槽解耦，Class hash 按 descriptor 稳定派生，GC 复用 handle 不复用 hash"
 
 [dexvm.gc]
 status = "partial"
@@ -1193,7 +1193,7 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core，交付 root/child identity、四构造器、virtual run/start、ID/name/priority/isAlive、interrupt/join/sleep/yield/holdsLock 和有界 daemon 语义；deprecated stop/suspend/resume/destroy 显式未实现。Character 42 项完整 Unicode API、Readable.read(CharBuffer) 等仍 deferred，能力保持 partial；System 与 wrapper property API 共用每 VM guest 属性表，不读宿主环境"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core，交付 root/child identity、四构造器、virtual run/start、ID/name/priority/isAlive、interrupt/join/sleep/yield/holdsLock 和有界 daemon 语义；DVM-61 统一 Object.hashCode、默认 toString 与 System.identityHashCode 到独立 identity 服务。deprecated stop/suspend/resume/destroy 显式未实现。Character 42 项完整 Unicode API、Readable.read(CharBuffer) 等仍 deferred，能力保持 partial；System 与 wrapper property API 共用每 VM guest 属性表，不读宿主环境"
 
 [dexvm.jni_bridge]
 status = "complete"

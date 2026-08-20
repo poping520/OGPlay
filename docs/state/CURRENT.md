@@ -49,8 +49,9 @@
   装配期拒绝，VM/linker 语义不变。
   DVM-61 已把 guest identity hash 从可复用 `VmObjectRef`/记录槽中分离：普通对象
   使用不回收的 per-VM hash 序列，Class object 按 descriptor 稳定派生；
-  `Object.hashCode`、默认 `toString` 和 `System.identityHashCode` 共用唯一服务，
-  catalog 重排与 GC handle 复用不再成为 guest 可观察身份。
+  `Object.hashCode` 与 `System.identityHashCode` 使用独立 identity 服务，后者绕过
+  override；默认 `Object.toString` 按 libcore 虚调用 receiver 的 `hashCode()` 后转
+  lowercase hex。catalog 重排与 GC handle 复用不再成为 guest 可观察身份。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。

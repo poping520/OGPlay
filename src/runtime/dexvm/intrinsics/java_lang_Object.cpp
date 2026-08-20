@@ -3,6 +3,7 @@
 
 #include <charconv>
 #include <limits>
+#include <vector>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
@@ -10,14 +11,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
     using namespace detail;
     namespace {
 
-    [[nodiscard]] std::string IdentityHashHex(const std::int32_t hash) {
+    [[nodiscard]] std::string HashCodeHex(const std::int32_t hash) {
         char buffer[8];
         const auto [end, error] = std::to_chars(
             buffer, buffer + sizeof(buffer),
             static_cast<std::uint32_t>(hash), 16);
         if (error != std::errc{}) {
             throw DexVmError(DexVmErrorReason::internal_invariant,
-                             "identity hash formatting failed");
+                             "hashCode formatting failed");
         }
         return std::string(buffer, end);
     }
@@ -44,12 +45,33 @@ namespace ogplay::runtime::dexvm::intrinsics {
         builder.VirtualMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& context) {
             auto& vm = context.vm;
             const auto java_class = vm.Model().ObjectClass(context.receiver);
-            const auto descriptor = java_class.IsValid()
-                                        ? vm.Linker().Class(java_class).descriptor
-                                        : std::string("<external>");
+            if (!java_class.IsValid()) {
+                throw VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "object has no VM class"};
+            }
+            auto& linker = vm.Linker();
+            const auto hash_index =
+                linker.FindVtableIndex(java_class, "hashCode", "()I");
+            if (!hash_index.has_value()) {
+                throw DexVmError(DexVmErrorReason::internal_invariant,
+                                 "Object.toString receiver has no hashCode()");
+            }
+            const auto hash_outcome = vm.Call(
+                linker.Class(java_class).vtable[*hash_index],
+                std::vector<VmValue>{VmValue::Ref(context.receiver)});
+            if (hash_outcome.exception.IsValid()) {
+                throw VmJavaThrow{
+                    linker.Class(hash_outcome.exception_class).descriptor,
+                    hash_outcome.exception_message};
+            }
+            if (hash_outcome.value.kind != VmValue::Kind::cat1) {
+                throw DexVmError(DexVmErrorReason::internal_invariant,
+                                 "hashCode() returned a non-int value");
+            }
+            const auto descriptor = linker.Class(java_class).descriptor;
             return VmValue::Ref(vm.NewStringUtf8(
-                DottedName(descriptor) + "@" + IdentityHashHex(
-                    vm.Model().IdentityHashCode(context.receiver))));
+                DottedName(descriptor) + "@" +
+                HashCodeHex(hash_outcome.value.AsInt())));
         });
 
         builder.VirtualMethod("clone", "()Ljava/lang/Object;", [](IntrinsicContext& context) {

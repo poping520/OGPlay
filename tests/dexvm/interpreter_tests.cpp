@@ -230,6 +230,8 @@ TEST_CASE("DexVM Java identity is independent from handles and catalog order") {
     IntrinsicVm overridden({std::move(override).Build()});
     const auto overridden_object =
         overridden.interpreter.NewIntrinsicInstance("Lidentity/Override;");
+    const auto overridden_identity_hash =
+        overridden.model.IdentityHashCode(overridden_object);
     expect_int(call_one(overridden,
                         overridden.Virtual("Lidentity/Override;", "hashCode",
                                            "()I"),
@@ -240,7 +242,35 @@ TEST_CASE("DexVM Java identity is independent from handles and catalog order") {
                                           "identityHashCode",
                                           "(Ljava/lang/Object;)I"),
                         VmValue::Ref(overridden_object)),
-               overridden.model.IdentityHashCode(overridden_object));
+               overridden_identity_hash);
+    CHECK(overridden_identity_hash != 777);
+    const auto overridden_rendered = call_one(
+        overridden,
+        overridden.Virtual("Lidentity/Override;", "toString",
+                           "()Ljava/lang/String;"),
+        VmValue::Ref(overridden_object));
+    REQUIRE_FALSE(overridden_rendered.exception.IsValid());
+    CHECK(overridden.interpreter.StringUtf8(overridden_rendered.value.ref) ==
+          "identity.Override@309");
+
+    const auto string_class =
+        overridden.linker.ResolveDescriptor("Ljava/lang/String;");
+    const auto unbound_string = overridden.interpreter.NewIntrinsicInstance(
+        "Ljava/lang/String;");
+    CHECK(overridden.model.ObjectClass(unbound_string) == string_class);
+    const auto string_hash_before =
+        overridden.model.IdentityHashCode(unbound_string);
+    const auto string_identity_before =
+        overridden.model.ToIdentity(unbound_string);
+    overridden.model.BindString(unbound_string, u"bound");
+    const auto string_identity_after =
+        overridden.model.ToIdentity(unbound_string);
+    CHECK(overridden.model.IdentityHashCode(unbound_string) ==
+          string_hash_before);
+    CHECK(string_identity_after != string_identity_before);
+    CHECK(overridden.model.FindIdentity(string_identity_after) ==
+          unbound_string);
+    CHECK(overridden.model.Kind(unbound_string) == VmObjectKind::string);
 }
 
 void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {

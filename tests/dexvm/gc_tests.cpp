@@ -151,7 +151,10 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
     const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     (*state)[owner.Value()] = child;
+    const auto source_hash = fixture.model.IdentityHashCode(owner);
     const auto clone = fixture.vm.CloneObject(owner);
+    CHECK(fixture.model.IdentityHashCode(clone) != source_hash);
+    CHECK(fixture.model.IdentityHashCode(owner) == source_hash);
     REQUIRE(state->contains(clone.Value()));
     CHECK(state->at(clone.Value()) == child);
 

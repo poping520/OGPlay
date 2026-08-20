@@ -65,6 +65,8 @@
         instruction.handler = FastHandler::invoke_fast;
     }
 
+    bool continue_same_frame = false;
+    {
     VmValue small_storage[8];
     std::vector<VmValue> large_storage;
     VmValue* argument_storage = small_storage;
@@ -222,7 +224,8 @@
                 throw;
             }
             if (pending_exception.IsValid()) goto yield;
-            OGPLAY_DISPATCH_NEXT();
+            continue_same_frame = true;
+            break;
         }
         case MethodKind::native: {
             const auto& method = linker->Method(target_id);
@@ -263,10 +266,15 @@
                 throw;
             }
             if (pending_exception.IsValid()) goto yield;
-            OGPLAY_DISPATCH_NEXT();
+            continue_same_frame = true;
+            break;
         }
         case MethodKind::abstract:
             FailCode("abstract method invoked: " +
                      linker->Method(target_id).name);
+    }
+    }
+    if (continue_same_frame) {
+        OGPLAY_DISPATCH_NEXT();
     }
     FailCode("unreachable invoke method kind");

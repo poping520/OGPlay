@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-60 Threaded 尾跳、invoke wide 安全与热路径
+更新：2026-08-20 · macOS 15 FromChars 与 threaded computed-goto 编译
 
 ## 当前阶段
 
@@ -52,6 +52,7 @@
 - Windows/x64 `windows-msvc`：852/852 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
 - macOS/arm64 最近记录：766/766 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
+- 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 
 ## 下一步
 

@@ -37,5 +37,5 @@ Android 同构 XML（标量走属性、`<string>` 走元素正文），经 VFS �
 未知元素/属性/实体与 DTD 一律明确失败并保留原文件，不静默丢条目。
 加载只把 `-ENOENT` 解释为首次运行；EIO/EACCES 等 VFS 错误转换为明确
 `PreferencesXmlError`。float 以 locale-free 最短往返表示渲染和受检解析，保持
-IEEE-754 值不变；解析显式使用 classic locale 与完整消费检查，避免依赖仅在较新
+IEEE-754 值不变；解析走 `ogplay::hal::FromChars`（完整消费），避免依赖仅在较新
 macOS libc++ 提供的浮点 `std::from_chars` 运行时符号。

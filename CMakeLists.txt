@@ -90,16 +90,19 @@ add_library(ogplay_hal
 )
 if(WIN32)
     target_sources(ogplay_hal PRIVATE
+        src/hal/from_chars.cpp
         src/hal/windows/host_environment.cpp
         src/hal/windows/shared_library.cpp
         src/hal/windows/virtual_memory.cpp)
 elseif(APPLE)
     target_sources(ogplay_hal PRIVATE
+        src/hal/macos/from_chars.cpp
         src/hal/macos/host_environment.cpp
         src/hal/macos/shared_library.cpp
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
     target_sources(ogplay_hal PRIVATE
+        src/hal/from_chars.cpp
         src/hal/linux/host_environment.cpp
         src/hal/linux/shared_library.cpp
         src/hal/linux/virtual_memory.cpp)
@@ -453,7 +456,7 @@ add_library(ogplay_runtime
 )
 add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC
-    OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Loader OGPlay::Memory
+    OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Hal OGPlay::Loader OGPlay::Memory
     OGPlay::Video
 )
 target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles)
@@ -682,6 +685,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/gles/guest_transfer_tests.cpp
         tests/gles/supersample_tests.cpp
         tests/hal/clock_tests.cpp
+        tests/hal/from_chars_tests.cpp
         tests/hal/audio_output_tests.cpp
         tests/hal/host_environment_tests.cpp
         tests/hal/service_contract_tests.cpp

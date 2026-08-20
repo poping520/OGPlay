@@ -107,7 +107,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `EnsureInitialized` 回写。GCC/Clang 每个 handler 尾部 indirect goto 下一条
   opcode（不再回到共享 fetch 间接跳）；MSVC 用 `fetch_at` + 稠密
   `FastHandler` switch loop。压帧/弹帧/pending 才回到 `Run()`。家族体以 `.inc`
-  拼入 `interp_threaded.cpp`。`force_all_bridge` 把每条指令桥回旧 `Step()`。
+  拼入 `interp_threaded.cpp`。Clang 不允许 computed goto 跨过非平凡析构，
+  因此 invoke 的参数 vector、`MethodMonitorScope` 与 `NativeFrame` 必须在
+  尾跳前结束作用域（析构顺序与正规 `goto yield` 相同）。`force_all_bridge`
+  把每条指令桥回旧 `Step()`。
   直线/对象/invoke 直达 handler 不再读 u2，也不再检查预检已证明的寄存器边界，
   但保留 tag/wide-pair/zero-as-null；算术复用 `ExecuteArithmetic`。类型、字段、
   数组元素类别与 invoke shorty 在执行锁内首执行缓存并 checked→fast。

@@ -39,6 +39,9 @@
 - `hal::AudioOutput`：格式、启动停止、帧队列与交错样本提交契约。
 - `hal::CreateSdlAudioOutput`：按受检 stream config 打开 SDL3 默认播放设备；支持显式 dummy
   backend 契约测试，提交前后均以完整 frame 计量队列，不暴露 SDL 类型。
+- `hal::FromChars`：locale-free 浮点解析，契约对齐 `std::from_chars` 的 general/hex。
+  macOS 15 的 libc++ 未导出浮点 `from_chars` 符号，因此 macOS HAL 走 `strtof_l`/
+  `strtod_l`，Windows/Linux 调用 `std::from_chars`。
 - `hal::HostFileSystem` / `CreateStandardHostFileSystem`：宿主文件状态、建目录及二进制读写。
 - video 接口按媒体能力需求在后续里程碑定义。
 

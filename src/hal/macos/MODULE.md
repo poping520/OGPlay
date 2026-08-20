@@ -13,6 +13,8 @@
   `setenv`/`unsetenv` 并遵守公共 HAL 的作用域恢复契约。
 - 共享库加载使用 `dlopen`/`dlsym`(RTLD_NOW|RTLD_LOCAL),命名规则为
   `lib<name>.<major>.dylib`。
+- 浮点 `FromChars` 使用 `strtof_l`/`strtod_l` 与 C locale，对齐 `std::from_chars`
+  的 general/hex 契约。
 
 ## 测试
 

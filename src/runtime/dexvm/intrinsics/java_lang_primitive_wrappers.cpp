@@ -10,6 +10,7 @@
 #include <string>
 #include <system_error>
 
+#include "ogplay/hal/from_chars.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
@@ -362,8 +363,8 @@ template <typename Float>
         format = std::chars_format::hex;
         hex = true;
     }
-    const auto parsed = std::from_chars(begin, text.data() + text.size(), result,
-                                        format);
+    const auto parsed = ogplay::hal::FromChars(
+        begin, text.data() + text.size(), result, format);
     if (parsed.ec == std::errc::result_out_of_range) {
         const bool underflow = FloatingMagnitudeBelowOne(text, hex);
         const auto sign = text.starts_with('-') ? Float{-1} : Float{1};

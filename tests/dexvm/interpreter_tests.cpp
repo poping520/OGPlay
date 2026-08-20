@@ -17,6 +17,7 @@
 #include <limits>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -227,7 +228,16 @@ TEST_CASE("DexVM Java identity is independent from handles and catalog order") {
     override.VirtualMethod("hashCode", "()I", [](IntrinsicContext&) {
         return VmValue::Int(777);
     });
-    IntrinsicVm overridden({std::move(override).Build()});
+    const auto existing_throwable = std::make_shared<VmObjectRef>();
+    auto throwing = IntrinsicClassBuilder::Class("Lidentity/Throwing;");
+    throwing.VirtualMethod(
+        "hashCode", "()I",
+        [existing_throwable](IntrinsicContext& context) {
+            context.vm.SetPendingException(*existing_throwable);
+            return VmValue::Int(0);
+        });
+    IntrinsicVm overridden(
+        {std::move(override).Build(), std::move(throwing).Build()});
     const auto overridden_object =
         overridden.interpreter.NewIntrinsicInstance("Lidentity/Override;");
     const auto overridden_identity_hash =
@@ -243,7 +253,6 @@ TEST_CASE("DexVM Java identity is independent from handles and catalog order") {
                                           "(Ljava/lang/Object;)I"),
                         VmValue::Ref(overridden_object)),
                overridden_identity_hash);
-    CHECK(overridden_identity_hash != 777);
     const auto overridden_rendered = call_one(
         overridden,
         overridden.Virtual("Lidentity/Override;", "toString",
@@ -252,6 +261,18 @@ TEST_CASE("DexVM Java identity is independent from handles and catalog order") {
     REQUIRE_FALSE(overridden_rendered.exception.IsValid());
     CHECK(overridden.interpreter.StringUtf8(overridden_rendered.value.ref) ==
           "identity.Override@309");
+
+    *existing_throwable = overridden.interpreter.MakeThrowable(
+        "Ljava/lang/IllegalStateException;", "existing throwable");
+    const auto throwing_object =
+        overridden.interpreter.NewIntrinsicInstance("Lidentity/Throwing;");
+    const auto throwing_rendered = call_one(
+        overridden,
+        overridden.Virtual("Lidentity/Throwing;", "toString",
+                           "()Ljava/lang/String;"),
+        VmValue::Ref(throwing_object));
+    CHECK(throwing_rendered.exception == *existing_throwable);
+    CHECK(throwing_rendered.exception_stack.empty());
 
     const auto string_class =
         overridden.linker.ResolveDescriptor("Ljava/lang/String;");

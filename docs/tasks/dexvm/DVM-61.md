@@ -32,7 +32,8 @@ intrinsic catalog 编号；`Object.hashCode` 与 `System.identityHashCode` 使�
 - `tests/dexvm/interpreter_tests.cpp`：交换两个 intrinsic class 的 catalog 顺序并
   制造不同 Class handle，验证同 descriptor 的 Class hash、普通对象 hash 均稳定；
   覆盖 Object hash、toString 的 virtual override、System null/override bypass、
-  BindString 身份保持与 clone 新身份。
+  BindString 身份保持、clone 新身份，以及 virtual `hashCode()` 异常保持原
+  throwable identity/stack state。
 - `tests/dexvm/gc_tests.cpp`：清扫后复用同一 handle，断言新对象 identity hash 不同。
 - 本 WU 不跑特定 title；能力属于 DexVM 基础身份栈，`dexvm.object_model` 保持
   `complete`，`dexvm.intrinsics_java_core` 因既有 deferred API 保持 `partial`。

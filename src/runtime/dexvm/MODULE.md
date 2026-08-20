@@ -78,7 +78,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   catalog 重排不改变 Class hash。`Object.hashCode` 与
   `System.identityHashCode` 使用 `IdentityHashCode`（后者绕过 override，null 为
   0）；默认 `Object.toString` 按 API-19/libcore 对 receiver 虚调用 `hashCode()`，
-  再转 lowercase hex。
+  再转 lowercase hex；虚调用异常通过 existing-pending 通路传播原 throwable，
+  禁止按 descriptor/message 重新物化。
 - `Interpreter`：`Call(method, args)` 在当前宿主线程执行至完成，返回
   `VmCallOutcome`（值或未捕获 Java 异常 + 消息 + 栈回溯）。tagged 寄存器
   （uninit/cat1/wide 对/ref + 零值放宽）、每指令 1 tick 预算、帧深度上限

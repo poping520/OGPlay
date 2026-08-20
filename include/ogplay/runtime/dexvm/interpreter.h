@@ -333,6 +333,9 @@ public:
     [[nodiscard]] std::string StringUtf8(VmObjectRef string_ref) const;
     [[nodiscard]] VmObjectRef MakeThrowable(std::string_view descriptor,
                                             std::string_view message);
+    // Intrinsic-only propagation path for an already materialized guest
+    // throwable. Preserves its object identity and side-table state.
+    void SetPendingException(VmObjectRef throwable);
     void SetThrowableMessage(VmObjectRef throwable, VmObjectRef message);
     [[nodiscard]] VmObjectRef ThrowableMessage(VmObjectRef throwable) const;
 

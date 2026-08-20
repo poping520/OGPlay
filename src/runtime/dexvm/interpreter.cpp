@@ -66,6 +66,15 @@ void Interpreter::Impl::PublishClinitState(const DexClassId java_class,
 }
 
 void Interpreter::Impl::SetPending(const VmObjectRef throwable) {
+    SetPendingExisting(throwable);
+    if (!throwable.IsValid()) return;
+    auto& state = throwables[throwable.Value()];
+    if (state.stack.empty()) {
+        state.stack = CaptureStack();
+    }
+}
+
+void Interpreter::Impl::SetPendingExisting(const VmObjectRef throwable) {
     auto& execution = Execution();
     auto& pending_exception = execution.pending_exception;
     auto& pending_exception_class = execution.pending_exception_class;
@@ -82,10 +91,6 @@ void Interpreter::Impl::SetPending(const VmObjectRef throwable) {
                                              : execution.frames.back().pc;
     RecordTrace(DexVmTraceKind::exception_throw, execution, method, pc, 0,
                 throwable.Value());
-    auto& state = throwables[throwable.Value()];
-    if (state.stack.empty()) {
-        state.stack = CaptureStack();
-    }
 }
 
 void Interpreter::Impl::ThrowJava(const std::string& descriptor,
@@ -727,6 +732,18 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                    nullptr, 0, 0, 1);
                 throw;
             }
+            if (pending_exception.IsValid()) {
+                outcome.exception = pending_exception;
+                outcome.exception_class = pending_exception_class;
+                const auto state =
+                    impl_->throwables.find(pending_exception.Value());
+                if (state != impl_->throwables.end()) {
+                    outcome.exception_message = state->second.message_utf8;
+                    outcome.exception_stack = state->second.stack;
+                }
+                pending_exception = VmObjectRef{};
+                pending_exception_class = DexClassId{};
+            }
             return outcome;
         }
         case MethodKind::native: {
@@ -890,6 +907,10 @@ VmObjectRef Interpreter::MakeThrowable(const std::string_view descriptor,
     }
     state.stack = impl_->CaptureStack();
     return throwable;
+}
+
+void Interpreter::SetPendingException(const VmObjectRef throwable) {
+    impl_->SetPendingExisting(throwable);
 }
 
 void Interpreter::SetThrowableMessage(const VmObjectRef throwable,

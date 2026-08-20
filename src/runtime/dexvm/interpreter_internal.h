@@ -288,6 +288,7 @@ public:
 
     void ThrowJava(const std::string& descriptor, const std::string& message);
     void SetPending(VmObjectRef throwable);
+    void SetPendingExisting(VmObjectRef throwable);
     [[nodiscard]] std::vector<VmStackEntry> CaptureStack() const;
     void RecordTrace(DexVmTraceKind kind,
                      const InterpreterExecutionState& execution,

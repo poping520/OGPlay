@@ -51,7 +51,8 @@
   使用不回收的 per-VM hash 序列，Class object 按 descriptor 稳定派生；
   `Object.hashCode` 与 `System.identityHashCode` 使用独立 identity 服务，后者绕过
   override；默认 `Object.toString` 按 libcore 虚调用 receiver 的 `hashCode()` 后转
-  lowercase hex。catalog 重排与 GC handle 复用不再成为 guest 可观察身份。
+  lowercase hex，并原样传播该虚调用抛出的 throwable identity/stack state。
+  catalog 重排与 GC handle 复用不再成为 guest 可观察身份。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。

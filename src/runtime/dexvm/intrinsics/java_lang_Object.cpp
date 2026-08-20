@@ -60,9 +60,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 linker.Class(java_class).vtable[*hash_index],
                 std::vector<VmValue>{VmValue::Ref(context.receiver)});
             if (hash_outcome.exception.IsValid()) {
-                throw VmJavaThrow{
-                    linker.Class(hash_outcome.exception_class).descriptor,
-                    hash_outcome.exception_message};
+                vm.SetPendingException(hash_outcome.exception);
+                return VmValue::Ref(VmObjectRef{});
             }
             if (hash_outcome.value.kind != VmValue::Kind::cat1) {
                 throw DexVmError(DexVmErrorReason::internal_invariant,

@@ -1135,6 +1135,11 @@ status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
 note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与常量池解析缓存；平台前缀类只认 intrinsic 目录，循环继承/final 覆盖/不可覆盖 intrinsic 装配失败；懒结构预检对照 CodeVerify 子集（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置）"
 
+[dexvm.reflection_linker_metadata]
+status = "complete"
+test = "tests/dexvm/class_name_codec_tests.cpp; related intrinsic builder/hierarchy/dispatch tests"
+note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2：bootstrap/application defining-loader role，direct/flattened interfaces 分离，DEX/intrinsic declared member order，完整 raw access flags 与 direct/static/virtual/interface invocation category；array loader 跟随 component，primitive Class 补齐 V。ClassLoader facade、wrapper 与 reflective invoke 由 DVM-63..69 继续交付"
+
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"

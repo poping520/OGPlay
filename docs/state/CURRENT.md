@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-61 Java identity 与内部 handle 解耦
+更新：2026-08-21 · DVM-62 Reflection linker metadata
 
 ## 当前阶段
 
@@ -53,6 +53,12 @@
   override；默认 `Object.toString` 按 libcore 虚调用 receiver 的 `hashCode()` 后转
   lowercase hex，并原样传播该虚调用抛出的 throwable identity/stack state。
   catalog 重排与 GC handle 复用不再成为 guest 可观察身份。
+  DVM-62 已建立 reflection linker metadata 底座：正式 `ClassNameCodec` 统一受检
+  descriptor/name 转换；linker 区分 bootstrap/application defining-loader role，
+  分离 direct 与 flattened interfaces，按 DEX/intrinsic 声明顺序保存 own direct/
+  virtual methods 与 fields，并发布完整 access flags 和 direct/static/virtual/interface
+  调用类别。array loader 跟随 component，primitive Class 补齐 `V`。ClassLoader facade、
+  wrapper 物化、Class core 与 reflective invoke/Field/Array 仍由 DVM-63..69 交付。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
@@ -62,7 +68,8 @@
 
 ## 下一步
 
-1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
+1. 继续 DVM-63：唯一 application `ClassLoader` facade 与受检 lookup/initiate contract。
+2. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 2. Linux M9 严格出口复验。
 

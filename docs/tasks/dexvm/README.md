@@ -84,6 +84,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-59](DVM-59.md) | Threaded 稳态循环与 Precheck 闭合 | 完成（能力保持 partial） |
 | [DVM-60](DVM-60.md) | Threaded 尾跳、invoke wide 安全与热路径 | 完成（能力保持 partial） |
 | [DVM-61](DVM-61.md) | Java 对象身份与内部 handle 解耦 | 完成 |
+| [DVM-62](DVM-62.md) | Reflection linker metadata | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

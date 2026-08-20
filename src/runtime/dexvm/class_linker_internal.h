@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/class_name_codec.h"
 
 // Private glue shared by class_linker.cpp (registration and linking) and
 // class_linker_resolve.cpp (constant-pool resolution and assignability).
@@ -31,10 +32,7 @@ constexpr std::uint32_t kAccAbstract = 0x0400;
 [[nodiscard]] bool IsRefDescriptor(std::string_view descriptor);
 [[nodiscard]] char ShortyOf(std::string_view descriptor);
 
-struct DescriptorParts final {
-    std::vector<std::string> parameters;
-    std::string return_type;
-};
+using DescriptorParts = MethodTypeDescriptor;
 
 [[nodiscard]] DescriptorParts SplitDescriptor(
     const std::string& descriptor);
@@ -158,23 +156,32 @@ public:
             slot_cursor = super.instance_slots;
             linked.vtable = super.vtable;
             extra.virtual_lookup = super_extra.virtual_lookup;
-            // Inherited interfaces flatten into this class's iftable.
-            std::vector<DexClassId> merged = super.interfaces;
-            for (const auto interface_id : linked.interfaces) {
-                if (std::find(merged.begin(), merged.end(), interface_id) ==
-                    merged.end()) {
-                    merged.push_back(interface_id);
-                }
-            }
-            linked.interfaces = std::move(merged);
         }
-        for (const auto interface_id : linked.interfaces) {
+
+        // Keep declared interfaces separate from the flattened iftable used
+        // by assignability and dispatch. Reflection consumes only the former.
+        std::vector<DexClassId> flattened;
+        if (linked.super.has_value()) {
+            flattened = ClassAt(*linked.super).interfaces;
+        }
+        const auto append_unique = [&flattened](const DexClassId candidate) {
+            if (std::find(flattened.begin(), flattened.end(), candidate) ==
+                flattened.end()) {
+                flattened.push_back(candidate);
+            }
+        };
+        for (const auto interface_id : linked.direct_interfaces) {
             LinkClass(interface_id, visiting);
             if (!ClassAt(interface_id).is_interface) {
                 Fail(DexVmErrorReason::invalid_hierarchy,
                      "non-interface implemented by " + linked.descriptor);
             }
+            append_unique(interface_id);
+            for (const auto inherited : ClassAt(interface_id).interfaces) {
+                append_unique(inherited);
+            }
         }
+        linked.interfaces = std::move(flattened);
 
         // Instance field layout: append after super, declaration order,
         // wide fields aligned to slot pairs (AOSP Class.cpp layout intent;
@@ -248,13 +255,7 @@ public:
 
     [[nodiscard]] std::vector<VmMethodId> OwnVirtualMethods(
         const LinkedClass& linked) {
-        std::vector<VmMethodId> result;
-        for (const auto& method : methods) {
-            if (method.owner == linked.id && method.vtable_index == -2) {
-                result.push_back(method.id);
-            }
-        }
-        return result;
+        return linked.own_virtual_methods;
     }
 };
 

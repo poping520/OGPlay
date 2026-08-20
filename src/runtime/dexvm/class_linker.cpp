@@ -51,35 +51,12 @@ namespace ogplay::runtime::dexvm {
 }
 
 [[nodiscard]] DescriptorParts SplitDescriptor(const std::string& descriptor) {
-    DescriptorParts parts;
-    if (descriptor.empty() || descriptor.front() != '(') {
+    try {
+        return ClassNameCodec::ParseMethod(descriptor);
+    } catch (const ClassNameCodecError&) {
         Fail(DexVmErrorReason::invalid_member,
              "method descriptor is malformed: " + descriptor);
     }
-    std::size_t index = 1;
-    while (index < descriptor.size() && descriptor[index] != ')') {
-        const std::size_t start = index;
-        while (index < descriptor.size() && descriptor[index] == '[') ++index;
-        if (index >= descriptor.size()) break;
-        if (descriptor[index] == 'L') {
-            const auto end = descriptor.find(';', index);
-            if (end == std::string::npos) {
-                Fail(DexVmErrorReason::invalid_member,
-                     "method descriptor reference is unterminated: " +
-                         descriptor);
-            }
-            index = end + 1;
-        } else {
-            ++index;
-        }
-        parts.parameters.push_back(descriptor.substr(start, index - start));
-    }
-    if (index >= descriptor.size() || descriptor[index] != ')') {
-        Fail(DexVmErrorReason::invalid_member,
-             "method descriptor has no return type: " + descriptor);
-    }
-    parts.return_type = descriptor.substr(index + 1);
-    return parts;
 }
 
 [[nodiscard]] std::uint16_t ArgumentWords(const DescriptorParts& parts,
@@ -119,7 +96,8 @@ void DexClassLinker::RegisterIntrinsics(
         linked.descriptor = declaration.descriptor;
         linked.is_intrinsic = true;
         linked.is_interface = declaration.is_interface;
-        linked.access_flags = declaration.is_interface ? kAccInterface : 0U;
+        linked.defining_loader = kBootstrapLoader;
+        linked.access_flags = declaration.access_flags;
         const auto id = impl_->AddClass(std::move(linked));
         pending.push_back({&declaration, id});
     }
@@ -142,7 +120,7 @@ void DexClassLinker::RegisterIntrinsics(
                      "intrinsic interface is not registered: " +
                          interface_name);
             }
-            linked.interfaces.push_back(*interface_id);
+            linked.direct_interfaces.push_back(*interface_id);
         }
         for (const auto& method : declaration->methods) {
             LinkedMethod linked_method;
@@ -150,21 +128,32 @@ void DexClassLinker::RegisterIntrinsics(
             linked_method.name = method.name;
             linked_method.descriptor = method.descriptor;
             linked_method.is_static = method.is_static;
+            linked_method.access_flags = method.access_flags;
             linked_method.kind = MethodKind::intrinsic;
             linked_method.overridable = method.overridable;
+            linked_method.declared_invoke_kind =
+                declaration->is_interface &&
+                        method.invoke_kind == DeclaredInvokeKind::virtual_call
+                    ? DeclaredInvokeKind::interface_call
+                    : method.invoke_kind;
             linked_method.implementation = method.implementation;
             const auto parts = SplitDescriptor(method.descriptor);
             linked_method.return_shorty = ShortyOf(parts.return_type);
             linked_method.ins_words = ArgumentWords(parts, method.is_static);
-            const bool is_direct = method.is_static ||
-                                   method.name == "<init>" ||
-                                   method.name == "<clinit>";
+            const bool is_direct =
+                linked_method.declared_invoke_kind ==
+                    DeclaredInvokeKind::direct ||
+                linked_method.declared_invoke_kind ==
+                    DeclaredInvokeKind::static_call;
             // vtable_index -2 marks "virtual, pending vtable placement".
             linked_method.vtable_index = is_direct ? -1 : -2;
             const auto method_id = impl_->AddMethod(std::move(linked_method));
             if (is_direct) {
+                linked.own_direct_methods.push_back(method_id);
                 extra.direct_lookup.emplace(
                     MemberKey(method.name, method.descriptor), method_id);
+            } else {
+                linked.own_virtual_methods.push_back(method_id);
             }
         }
         for (const auto& declared_field : declaration->fields) {
@@ -173,12 +162,7 @@ void DexClassLinker::RegisterIntrinsics(
             field.name = declared_field.name;
             field.descriptor = declared_field.descriptor;
             field.is_static = declared_field.is_static;
-            field.access_flags = declared_field.is_static
-                                     ? (kAccStatic |
-                                        (declared_field.has_constant
-                                             ? kAccFinal
-                                             : 0U))
-                                     : 0U;
+            field.access_flags = declared_field.access_flags;
             field.is_wide = IsWideDescriptor(declared_field.descriptor);
             field.is_ref = IsRefDescriptor(declared_field.descriptor);
             const auto field_id = impl_->AddField(std::move(field));
@@ -242,6 +226,7 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
         }
         LinkedClass linked;
         linked.descriptor = descriptor;
+        linked.defining_loader = kApplicationLoader;
         linked.access_flags = definition.access_flags;
         linked.is_interface = (definition.access_flags & kAccInterface) != 0;
         linked.dex_class_def_index = class_index;
@@ -293,6 +278,12 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
                 method.descriptor = std::move(method_descriptor);
                 method.access_flags = encoded.access_flags;
                 method.is_static = (encoded.access_flags & kAccStatic) != 0;
+                method.declared_invoke_kind = direct
+                    ? (method.is_static ? DeclaredInvokeKind::static_call
+                                        : DeclaredInvokeKind::direct)
+                    : (stored.is_interface
+                           ? DeclaredInvokeKind::interface_call
+                           : DeclaredInvokeKind::virtual_call);
                 if ((encoded.access_flags & kAccNative) != 0) {
                     method.kind = MethodKind::native;
                 } else if ((encoded.access_flags & kAccAbstract) != 0) {
@@ -318,12 +309,15 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
                 method.vtable_index = direct ? -1 : -2;
                 const auto vm_method_id = impl_->AddMethod(std::move(method));
                 if (direct) {
+                    stored.own_direct_methods.push_back(vm_method_id);
                     const auto& added = impl_->MethodAt(vm_method_id);
                     extra.direct_lookup.emplace(
                         MemberKey(added.name, added.descriptor), vm_method_id);
                     if (added.name == "<clinit>") {
                         stored.clinit = vm_method_id;
                     }
+                } else {
+                    stored.own_virtual_methods.push_back(vm_method_id);
                 }
             }
         }
@@ -372,7 +366,7 @@ void DexClassLinker::Link() {
                         .missing_interfaces.push_back(name);
                     continue;
                 }
-                linked.interfaces.push_back(*interface_id);
+                linked.direct_interfaces.push_back(*interface_id);
             }
         }
     }
@@ -438,13 +432,13 @@ void DexClassLinker::EnsureClassLinked(const DexClassId id) {
                 }
                 const auto interface_id = ResolveDescriptor(name);
                 impl_->ClassAt(interface_id).is_interface = true;
-                impl_->ClassAt(current).interfaces.push_back(interface_id);
+                impl_->ClassAt(current).direct_interfaces.push_back(interface_id);
             }
             impl_->ExtrasAt(current).missing_interfaces.clear();
         }
 
         const auto super = impl_->ClassAt(current).super;
-        const auto interfaces = impl_->ClassAt(current).interfaces;
+        const auto interfaces = impl_->ClassAt(current).direct_interfaces;
         if (super.has_value()) self(self, *super);
         for (const auto interface_id : interfaces) {
             self(self, interface_id);
@@ -479,6 +473,12 @@ DexClassId DexClassLinker::ResolveDescriptor(
         linked.descriptor = std::string(descriptor);
         linked.is_array = true;
         linked.array_element_descriptor = std::string(element);
+        if (IsRefDescriptor(element)) {
+            linked.defining_loader =
+                impl_->ClassAt(ResolveDescriptor(element)).defining_loader;
+        } else {
+            linked.defining_loader = kBootstrapLoader;
+        }
         linked.super = FindClass("Ljava/lang/Object;");
         const auto id = impl_->AddClass(std::move(linked));
         if (impl_->link_complete) {
@@ -492,7 +492,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         return id;
     }
     if (descriptor.size() == 1 &&
-        std::string_view("ZBSCIJFD").find(descriptor) !=
+        std::string_view("ZBSCIJFDV").find(descriptor) !=
             std::string_view::npos) {
         // Primitive class identity (Float.TYPE, Array.newInstance): a
         // synthesized class record that only backs a class object. It is
@@ -500,6 +500,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         LinkedClass linked;
         linked.descriptor = std::string(descriptor);
         linked.is_intrinsic = true;
+        linked.defining_loader = kBootstrapLoader;
         linked.super = FindClass("Ljava/lang/Object;");
         const auto id = impl_->AddClass(std::move(linked));
         if (impl_->link_complete && impl_->ClassAt(id).super.has_value()) {
@@ -518,6 +519,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         LinkedClass linked;
         linked.descriptor = std::string(descriptor);
         linked.is_intrinsic = true;
+        linked.defining_loader = kBootstrapLoader;
         linked.super = FindClass("Ljava/lang/Object;");
         const auto id = impl_->AddClass(std::move(linked));
         if (impl_->link_complete && impl_->ClassAt(id).super.has_value()) {
@@ -560,6 +562,14 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
     method.name = name;
     method.descriptor = descriptor;
     method.is_static = is_static;
+    method.access_flags = is_static ? kAccStatic : 0U;
+    method.declared_invoke_kind =
+        is_static ? DeclaredInvokeKind::static_call
+        : (name == "<init>" || name == "<clinit>")
+            ? DeclaredInvokeKind::direct
+        : impl_->ClassAt(owner).is_interface
+            ? DeclaredInvokeKind::interface_call
+            : DeclaredInvokeKind::virtual_call;
     method.kind = MethodKind::intrinsic;
     // Deliberately unregistered: the interpreter answers neutrally and
     // records the hit, so the stub can never be mistaken for an
@@ -575,8 +585,10 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
     method.vtable_index = is_direct ? -1 : static_cast<std::int32_t>(slot);
     const auto id = impl_->AddMethod(std::move(method));
     if (is_direct) {
+        linked.own_direct_methods.push_back(id);
         extra.direct_lookup.insert_or_assign(MemberKey(name, descriptor), id);
     } else {
+        linked.own_virtual_methods.push_back(id);
         extra.virtual_lookup.insert_or_assign(MemberKey(name, descriptor),
                                              slot);
         linked.vtable.push_back(id);
@@ -645,10 +657,10 @@ std::size_t DexClassLinker::ClassCount() const noexcept {
 
 std::vector<VmMethodId> DexClassLinker::MethodsOf(
     const DexClassId owner) const {
-    std::vector<VmMethodId> result;
-    for (const auto& method : impl_->methods) {
-        if (method.owner == owner) result.push_back(method.id);
-    }
+    const auto& linked = impl_->ClassAt(owner);
+    std::vector<VmMethodId> result = linked.own_direct_methods;
+    result.insert(result.end(), linked.own_virtual_methods.begin(),
+                  linked.own_virtual_methods.end());
     return result;
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -35,11 +36,29 @@ enum class MethodKind : std::uint8_t {
     abstract,
 };
 
+struct VmClassLoaderId final {
+    std::uint32_t value{};
+
+    auto operator<=>(const VmClassLoaderId&) const = default;
+};
+
+inline constexpr VmClassLoaderId kBootstrapLoader{0};
+inline constexpr VmClassLoaderId kApplicationLoader{1};
+
+enum class DeclaredInvokeKind : std::uint8_t {
+    direct,
+    static_call,
+    virtual_call,
+    interface_call,
+};
+
 struct IntrinsicMethodDecl final {
     std::string name;
     std::string descriptor;
     bool is_static{};
     bool overridable{};
+    std::uint32_t access_flags{};
+    DeclaredInvokeKind invoke_kind{DeclaredInvokeKind::direct};
     IntrinsicHandler implementation;
 };
 
@@ -47,6 +66,7 @@ struct IntrinsicFieldDecl final {
     std::string name;
     std::string descriptor;
     bool is_static{};
+    std::uint32_t access_flags{};
     // Constant statics (Build.VERSION.SDK_INT) materialize at class
     // initialization; I / J / Z / Ljava/lang/String; are supported.
     bool has_constant{};
@@ -63,6 +83,7 @@ struct IntrinsicClassDecl final {
     std::optional<std::string> superclass;
     std::vector<std::string> interfaces;
     bool is_interface{};
+    std::uint32_t access_flags{};
     std::vector<IntrinsicMethodDecl> methods;
     std::vector<IntrinsicFieldDecl> fields;
     IntrinsicHandler clinit_implementation;
@@ -90,6 +111,7 @@ struct LinkedMethod final {
     MethodKind kind{MethodKind::interpreted};
     bool is_static{};
     bool overridable{};
+    DeclaredInvokeKind declared_invoke_kind{DeclaredInvokeKind::direct};
     char return_shorty{'V'};
     std::uint16_t ins_words{};
     std::int32_t vtable_index{-1};
@@ -110,6 +132,8 @@ struct LinkedClass final {
     DexClassId id;
     std::string descriptor;
     std::optional<DexClassId> super;
+    VmClassLoaderId defining_loader{kBootstrapLoader};
+    std::vector<DexClassId> direct_interfaces;
     std::vector<DexClassId> interfaces;  // direct + inherited, flattened
     std::uint32_t access_flags{};
     bool is_intrinsic{};
@@ -119,6 +143,8 @@ struct LinkedClass final {
     std::uint16_t instance_slots{};
     std::vector<VmFieldId> own_instance_fields;
     std::vector<VmFieldId> own_static_fields;
+    std::vector<VmMethodId> own_direct_methods;
+    std::vector<VmMethodId> own_virtual_methods;
     std::vector<VmMethodId> vtable;
     std::optional<VmMethodId> clinit;
     ClinitState clinit_state{ClinitState::uninitialized};

@@ -21,6 +21,14 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   预检（未定义 opcode、寄存器越界含 `k35c`/`k3rc` 参数表与 wide pair、分支/payload
   目标、move-result 位置），
   规则子集对照 AOSP `CodeVerify.cpp`，不做全量数据流。
+- `ClassNameCodec` / reflection linker metadata（DVM-62）：唯一受检 method/type
+  descriptor 拆分与 `Class.getName`/binary-name 转换入口；linker 为每个 class 发布
+  bootstrap/application defining-loader role、direct interfaces 与 flattened iftable、
+  DEX/intrinsic 声明顺序的 own direct/virtual methods 和 fields。`LinkedMethod` 显式
+  保存 direct/static/virtual/interface invocation category；class/method/field raw
+  access flags 从 DEX 或 `IntrinsicClassBuilder` 一路保真。array defining loader 跟随
+  component，primitive class 包含 `V`。这些 metadata 是 DVM-63..69 的唯一事实源，
+  vtable 不得代替 declared-member query。
 - `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
   handler；覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，
   以及 pinned libcore `java.lang` 顶层 8 个 interface
@@ -171,8 +179,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `SetStaticFieldBits` 仅接受已完成初始化的真实 guest 静态字段，供 ADR-0022
   的结论级 Profile preset 写入精确槽位；类、字段、静态性、类型或槽位不匹配
   均明确失败，禁止绕过 `<clinit>`。
-- Class/Method 反射只开放真实 declared-method 枚举和零参数、int-like
-  返回的调用；其余明确抛 `UnsupportedOperationException`。
+- Class/Method 反射目前仍只开放旧有 declared-method 枚举和零参数、int-like
+  返回的调用；DVM-62 只交付 linker metadata，不提前伪造 DVM-63..69 的 facade、
+  wrapper 或 invoke 行为，其余继续明确抛 `UnsupportedOperationException`。
 - `System.getProperty(String)`、`setProperty(String,String)` 与 primitive wrapper
   property API 共享每 VM 属性表；separator 默认值来自固定 API 19 guest 事实，
   未知属性返回 null，禁止泄露宿主属性。
@@ -253,8 +262,9 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
 
 ## 尚未实现（记账可查）
 
-- 反射仅覆盖有界的 `getDeclaredMethods` / 零参整数类返回值
-  `Method.invoke`；其余反射面、finalizer、GC-B 未实现。
+- reflection linker metadata 已完成；反射行为仍仅覆盖旧有的
+  `getDeclaredMethods` / 零参整数类返回值 `Method.invoke`，ClassLoader facade、
+  wrapper/access、完整 invoke、Constructor/Field/Array 与 system metadata 尚未实现。
 
 ## 测试
 

@@ -516,26 +516,32 @@ namespace ogplay::runtime::dexvm {
             value.Value(), SlotTag::ref};
     }
 
-    IntrinsicClassBuilder IntrinsicClassBuilder::RootClass(std::string descriptor) {
+    IntrinsicClassBuilder IntrinsicClassBuilder::RootClass(
+        std::string descriptor, const std::uint32_t access_flags) {
         IntrinsicClassBuilder builder(std::move(descriptor));
         builder.declaration_.superclass = std::nullopt;
+        builder.declaration_.access_flags = access_flags;
         return builder;
     }
 
     IntrinsicClassBuilder IntrinsicClassBuilder::Class(
         std::string descriptor, std::optional<std::string> superclass,
-        std::vector<std::string> interfaces) {
+        std::vector<std::string> interfaces,
+        const std::uint32_t access_flags) {
         IntrinsicClassBuilder builder(std::move(descriptor));
         builder.declaration_.superclass = std::move(superclass);
         builder.declaration_.interfaces = std::move(interfaces);
+        builder.declaration_.access_flags = access_flags;
         return builder;
     }
 
     IntrinsicClassBuilder IntrinsicClassBuilder::Interface(
-        std::string descriptor, std::vector<std::string> super_interfaces) {
+        std::string descriptor, std::vector<std::string> super_interfaces,
+        const std::uint32_t access_flags) {
         IntrinsicClassBuilder builder(std::move(descriptor));
         builder.declaration_.interfaces = std::move(super_interfaces);
         builder.declaration_.is_interface = true;
+        builder.declaration_.access_flags = access_flags | 0x0600U;
         return builder;
     }
 
@@ -545,96 +551,167 @@ namespace ogplay::runtime::dexvm {
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::Method(
         std::string name, std::string descriptor, const MethodType type,
-        IntrinsicHandler handler) {
+        IntrinsicHandler handler, const std::uint32_t access_flags) {
         IntrinsicMethodDecl method;
         method.name = std::move(name);
         method.descriptor = std::move(descriptor);
         method.is_static = type == MethodType::static_method;
         method.overridable = type == MethodType::virtual_method;
+        method.access_flags = access_flags;
+        switch (type) {
+        case MethodType::constructor:
+            method.access_flags |= 0x10000U;
+            method.invoke_kind = DeclaredInvokeKind::direct;
+            break;
+        case MethodType::direct_method:
+            method.invoke_kind = DeclaredInvokeKind::direct;
+            break;
+        case MethodType::static_method:
+            method.access_flags |= 0x0008U;
+            method.invoke_kind = DeclaredInvokeKind::static_call;
+            break;
+        case MethodType::virtual_method:
+            method.invoke_kind = declaration_.is_interface
+                                     ? DeclaredInvokeKind::interface_call
+                                     : DeclaredInvokeKind::virtual_call;
+            break;
+        case MethodType::final_method:
+            method.access_flags |= 0x0010U;
+            method.invoke_kind = declaration_.is_interface
+                                     ? DeclaredInvokeKind::interface_call
+                                     : DeclaredInvokeKind::virtual_call;
+            break;
+        }
         method.implementation = std::move(handler);
         declaration_.methods.push_back(std::move(method));
         return *this;
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::Constructor(
-        std::string descriptor, IntrinsicHandler handler) {
+        std::string descriptor, IntrinsicHandler handler,
+        const std::uint32_t access_flags) {
         ValidateConstructorDescriptor(descriptor);
         ValidateImplementedHandler(handler, "<init>");
-        return Method("<init>", std::move(descriptor), MethodType::constructor, std::move(handler));
+        return Method("<init>", std::move(descriptor), MethodType::constructor,
+                      std::move(handler), access_flags);
+    }
+
+    IntrinsicClassBuilder& IntrinsicClassBuilder::DirectMethod(
+        std::string name, std::string descriptor, IntrinsicHandler handler,
+        const std::uint32_t access_flags) {
+        ValidateOrdinaryMethodName(name);
+        ValidateImplementedHandler(handler, name);
+        return Method(std::move(name), std::move(descriptor),
+                      MethodType::direct_method, std::move(handler),
+                      access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::StaticMethod(
-        std::string name, std::string descriptor, IntrinsicHandler handler) {
+        std::string name, std::string descriptor, IntrinsicHandler handler,
+        const std::uint32_t access_flags) {
         ValidateOrdinaryMethodName(name);
         ValidateImplementedHandler(handler, name);
-        return Method(std::move(name), std::move(descriptor), MethodType::static_method, std::move(handler));
+        return Method(std::move(name), std::move(descriptor),
+                      MethodType::static_method, std::move(handler),
+                      access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::VirtualMethod(
-        std::string name, std::string descriptor, IntrinsicHandler handler) {
+        std::string name, std::string descriptor, IntrinsicHandler handler,
+        const std::uint32_t access_flags) {
         ValidateOrdinaryMethodName(name);
         ValidateImplementedHandler(handler, name);
-        return Method(std::move(name), std::move(descriptor), MethodType::virtual_method, std::move(handler));
+        return Method(std::move(name), std::move(descriptor),
+                      MethodType::virtual_method, std::move(handler),
+                      access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::FinalMethod(
-        std::string name, std::string descriptor, IntrinsicHandler handler) {
+        std::string name, std::string descriptor, IntrinsicHandler handler,
+        const std::uint32_t access_flags) {
         ValidateOrdinaryMethodName(name);
         ValidateImplementedHandler(handler, name);
-        return Method(std::move(name), std::move(descriptor), MethodType::final_method, std::move(handler));
+        return Method(std::move(name), std::move(descriptor),
+                      MethodType::final_method, std::move(handler),
+                      access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::UnimplementedMethod(
-        std::string name, std::string descriptor, const MethodType type) {
-        return Method(std::move(name), std::move(descriptor), type, {});
+        std::string name, std::string descriptor, const MethodType type,
+        const std::uint32_t access_flags) {
+        return Method(std::move(name), std::move(descriptor), type, {},
+                      access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::UnimplementedStatic(
-        std::string name, std::string descriptor) {
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
         ValidateOrdinaryMethodName(name);
-        return UnimplementedMethod(std::move(name), std::move(descriptor), MethodType::static_method);
+        return UnimplementedMethod(std::move(name), std::move(descriptor),
+                                   MethodType::static_method, access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::UnimplementedConstructor(
-        std::string descriptor) {
+        std::string descriptor, const std::uint32_t access_flags) {
         ValidateConstructorDescriptor(descriptor);
-        return UnimplementedMethod("<init>", std::move(descriptor), MethodType::constructor);
+        return UnimplementedMethod("<init>", std::move(descriptor),
+                                   MethodType::constructor, access_flags);
+    }
+
+    IntrinsicClassBuilder& IntrinsicClassBuilder::UnimplementedDirect(
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
+        ValidateOrdinaryMethodName(name);
+        return UnimplementedMethod(std::move(name), std::move(descriptor),
+                                   MethodType::direct_method, access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::UnimplementedVirtual(
-        std::string name, std::string descriptor) {
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
         ValidateOrdinaryMethodName(name);
-        return UnimplementedMethod(std::move(name), std::move(descriptor), MethodType::virtual_method);
+        return UnimplementedMethod(std::move(name), std::move(descriptor),
+                                   MethodType::virtual_method, access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::UnimplementedFinal(
-        std::string name, std::string descriptor) {
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
         ValidateOrdinaryMethodName(name);
-        return UnimplementedMethod(std::move(name), std::move(descriptor), MethodType::final_method);
+        return UnimplementedMethod(std::move(name), std::move(descriptor),
+                                   MethodType::final_method, access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::Field(
-        std::string name, std::string descriptor, const FieldType type) {
+        std::string name, std::string descriptor, const FieldType type,
+        const std::uint32_t access_flags) {
         IntrinsicFieldDecl field;
         field.name = std::move(name);
         field.descriptor = std::move(descriptor);
         field.is_static = type == FieldType::static_field;
+        field.access_flags = access_flags |
+                             (field.is_static ? 0x0008U : 0U);
         declaration_.fields.push_back(std::move(field));
         return *this;
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::InstanceField(
-        std::string name, std::string descriptor) {
-        return Field(std::move(name), std::move(descriptor), FieldType::instance);
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
+        return Field(std::move(name), std::move(descriptor),
+                     FieldType::instance, access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::StaticField(
-        std::string name, std::string descriptor) {
-        return Field(std::move(name), std::move(descriptor), FieldType::static_field);
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
+        return Field(std::move(name), std::move(descriptor),
+                     FieldType::static_field, access_flags);
     }
 
     IntrinsicFieldHandle IntrinsicClassBuilder::BoundField(
-        std::string name, std::string descriptor, const FieldType type) {
+        std::string name, std::string descriptor, const FieldType type,
+        const std::uint32_t access_flags) {
         const auto token = next_field_binding_token.fetch_add(
             1U, std::memory_order_relaxed);
         if (token == 0U) {
@@ -644,42 +721,50 @@ namespace ogplay::runtime::dexvm {
         field.name = std::move(name);
         field.descriptor = std::move(descriptor);
         field.is_static = type == FieldType::static_field;
+        field.access_flags = access_flags |
+                             (field.is_static ? 0x0008U : 0U);
         field.binding_token = token;
         declaration_.fields.push_back(std::move(field));
         return IntrinsicFieldHandle(token);
     }
 
     IntrinsicFieldHandle IntrinsicClassBuilder::BoundInstanceField(
-        std::string name, std::string descriptor) {
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
         return BoundField(std::move(name), std::move(descriptor),
-                          FieldType::instance);
+                          FieldType::instance, access_flags);
     }
 
     IntrinsicFieldHandle IntrinsicClassBuilder::BoundStaticField(
-        std::string name, std::string descriptor) {
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
         return BoundField(std::move(name), std::move(descriptor),
-                          FieldType::static_field);
+                          FieldType::static_field, access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::ConstantInt(
-        std::string name, std::string descriptor, const std::int64_t value) {
+        std::string name, std::string descriptor, const std::int64_t value,
+        const std::uint32_t access_flags) {
         IntrinsicFieldDecl field;
         field.name = std::move(name);
         field.descriptor = std::move(descriptor);
         field.is_static = true;
         field.has_constant = true;
+        field.access_flags = access_flags | 0x0018U;
         field.integral = value;
         declaration_.fields.push_back(std::move(field));
         return *this;
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::ConstantString(
-        std::string name, std::string value) {
+        std::string name, std::string value,
+        const std::uint32_t access_flags) {
         IntrinsicFieldDecl field;
         field.name = std::move(name);
         field.descriptor = "Ljava/lang/String;";
         field.is_static = true;
         field.has_constant = true;
+        field.access_flags = access_flags | 0x0018U;
         field.string_value = std::move(value);
         declaration_.fields.push_back(std::move(field));
         return *this;

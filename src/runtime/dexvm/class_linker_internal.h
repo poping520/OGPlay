@@ -237,7 +237,9 @@ public:
                 }
                 if ((overridden.access_flags & kAccFinal) != 0) {
                     Fail(DexVmErrorReason::invalid_override,
-                         "final method is overridden: " + overridden.name);
+                         "final method is overridden: " +
+                             ClassAt(overridden.owner).descriptor + "." +
+                             overridden.name + " by " + linked.descriptor);
                 }
                 method.vtable_index = static_cast<std::int32_t>(index);
                 linked.vtable[index] = method_id;

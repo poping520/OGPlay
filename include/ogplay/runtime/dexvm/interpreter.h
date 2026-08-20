@@ -96,6 +96,7 @@ struct VmCallOutcome final {
 
 class Interpreter;
 class ClassLoaderFacade;
+class ReflectionRuntime;
 class VmMonitorTable;
 class VmThreadRuntime;
 
@@ -306,6 +307,7 @@ public:
     [[nodiscard]] DexClassLinker& Linker() noexcept;
     [[nodiscard]] JavaObjectModel& Model() noexcept;
     [[nodiscard]] ClassLoaderFacade& ClassLoaders() noexcept;
+    [[nodiscard]] ReflectionRuntime& Reflection() noexcept;
     [[nodiscard]] const InterpreterStats& Stats() const noexcept;
 
     // DVM-52 diagnostics. Filtering and descriptor formatting happen only

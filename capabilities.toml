@@ -1138,12 +1138,17 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与常量池解析
 [dexvm.reflection_linker_metadata]
 status = "complete"
 test = "tests/dexvm/class_name_codec_tests.cpp; related intrinsic builder/hierarchy/dispatch tests"
-note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2：bootstrap/application defining-loader role，direct/flattened interfaces 分离，DEX/intrinsic declared member order，完整 raw access flags 与 direct/static/virtual/interface invocation category；array loader 跟随 component，primitive Class 补齐 V。ClassLoader facade、wrapper 与 reflective invoke 由 DVM-63..69 继续交付"
+note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2：bootstrap/application defining-loader role，direct/flattened interfaces 分离，DEX/intrinsic declared member order，完整 raw access flags 与 direct/static/virtual/interface invocation category；array loader 跟随 component，primitive Class 补齐 V。ClassLoader facade 与 reflection wrapper 已由 DVM-63/64 交付，Class core 与 reflective invoke/Field/Array 由 DVM-65..69 继续闭合"
 
 [dexvm.class_loader_facade]
 status = "complete"
 test = "tests/dexvm/class_loader_tests.cpp; related codec/linker/catalog/initialization tests"
 note = "DVM-63 以 linker 唯一 class directory 交付稳定 PathClassLoader/BootClassLoader facade、固定 parent 链、defining/initiating loader 分离、无副作用 findLoadedClass 与受检 loadClass delegation；resolve 不触发初始化，动态 classpath、多 namespace、resource lookup 与自定义 class definition 明确不支持"
+
+[dexvm.reflection_wrappers]
+status = "complete"
+test = "tests/dexvm/reflection_tests.cpp; related linker/catalog/GC/bounded reflection tests"
+note = "DVM-64 交付不可变 ReflectionMetadata 与唯一 wrapper factory：declaring Class + opaque declared-order ordinal，不暴露 Vm/Dex member id；Method/Constructor/Field 使用 API-19 hierarchy/shape、fresh identity、semantic equals、defensive type arrays 与 per-wrapper AccessibleObject flag，metadata cache 不持有 guest ref，wrapper 可由 GC 回收"
 
 [dexvm.object_model]
 status = "complete"

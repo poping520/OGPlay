@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-21 · DVM-63 Single ClassLoader facade
+更新：2026-08-21 · DVM-64 Reflection wrappers
 
 ## 当前阶段
 
@@ -46,12 +46,12 @@
   分离 direct 与 flattened interfaces，按 DEX/intrinsic 声明顺序保存 own direct/
   virtual methods 与 fields，并发布完整 access flags 和 direct/static/virtual/interface
   调用类别。array loader 跟随 component，primitive Class 补齐 `V`。
-  DVM-63 已建立每 VM 唯一稳定的 application `PathClassLoader` 与
-  `BootClassLoader` facade，固定 parent 链和 bootstrap/application delegation；linker
-  分离 defining/initiating role，使 `findLoadedClass` 只读且不把已注册 DEX class 当作
-  loaded，`loadClass` 受检解析 binary name、支持 array、忽略 resolve 且不触发初始化。
-  动态 classpath、多 namespace 与自定义 class definition 明确不支持。wrapper 物化、
-  Class core 与 reflective invoke/Field/Array 仍由 DVM-64..69 交付。
+  DVM-63 已闭合唯一 application/boot ClassLoader facade、parent/delegation 与
+  defining/initiating role；动态 classpath、多 namespace 和自定义定义权限仍不支持。
+  DVM-64 已交付 immutable ReflectionMetadata 与唯一 wrapper factory：Method/Constructor/
+  Field 使用 declaring Class + opaque ordinal，不暴露 VM/DEX id；fresh wrapper 具有 semantic
+  equals、defensive 类型数组和 per-wrapper accessible flag，metadata cache 不持有 guest ref，
+  wrapper 可由 GC 回收。Class core 与 invoke/实例化/Field/Array 仍由 DVM-65..69 交付。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
@@ -61,7 +61,7 @@
 
 ## 下一步
 
-1. 继续 DVM-64：Reflection wrappers。
+1. 继续 DVM-65：java.lang.Class core。
 2. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 3. Linux M9 严格出口复验。

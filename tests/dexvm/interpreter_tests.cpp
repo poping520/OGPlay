@@ -535,6 +535,20 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "(Ljava/lang/String;Ljava/lang/ClassLoader;)V",
         "Ldalvik/system/PathClassLoader;.<init>"
         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V",
+        "Ljava/lang/reflect/AnnotatedElement;.isAnnotationPresent"
+        "(Ljava/lang/Class;)Z",
+        "Ljava/lang/reflect/AnnotatedElement;.getAnnotation"
+        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/AnnotatedElement;.getAnnotations"
+        "()[Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/AnnotatedElement;.getDeclaredAnnotations"
+        "()[Ljava/lang/annotation/Annotation;",
+        "Ljava/lang/reflect/GenericDeclaration;.getTypeParameters"
+        "()[Ljava/lang/reflect/TypeVariable;",
+        "Ljava/lang/reflect/Member;.getDeclaringClass()Ljava/lang/Class;",
+        "Ljava/lang/reflect/Member;.getName()Ljava/lang/String;",
+        "Ljava/lang/reflect/Member;.getModifiers()I",
+        "Ljava/lang/reflect/Member;.isSynthetic()Z",
     };
     for (const auto& declaration : catalog) {
         CHECK(descriptors.insert(declaration.descriptor).second);

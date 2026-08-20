@@ -132,7 +132,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/app/Activity;") == 24);
   CHECK(method_count("Landroid/content/Intent;") == 16);
   CHECK(method_count("Landroid/os/Bundle;") == 12);
-  CHECK(method_count("Landroid/widget/TextView;") == 16);
+  CHECK(method_count("Landroid/widget/TextView;") == 15);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
 }

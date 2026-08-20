@@ -411,6 +411,7 @@ add_library(ogplay_runtime
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/dexvm/class_name_codec.cpp
     src/runtime/dexvm/class_loader_facade.cpp
+    src/runtime/dexvm/reflection.cpp
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp
     src/runtime/dexvm/diagnostics.cpp
@@ -789,6 +790,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/session/title_profile_tests.cpp
         tests/dexvm/class_loader_tests.cpp
         tests/dexvm/class_name_codec_tests.cpp
+        tests/dexvm/reflection_tests.cpp
         tests/dexvm/dexasm_readback_tests.cpp
         tests/dexvm/file_vfs_tests.cpp
         tests/dexvm/fast_code_tests.cpp

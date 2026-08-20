@@ -663,12 +663,18 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     }
     impl_->class_loaders =
         std::make_unique<ClassLoaderFacade>(linker, model);
+    impl_->reflection =
+        std::make_unique<ReflectionRuntime>(*this, linker, model);
 }
 
 Interpreter::~Interpreter() = default;
 
 ClassLoaderFacade& Interpreter::ClassLoaders() noexcept {
     return *impl_->class_loaders;
+}
+
+ReflectionRuntime& Interpreter::Reflection() noexcept {
+    return *impl_->reflection;
 }
 
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,

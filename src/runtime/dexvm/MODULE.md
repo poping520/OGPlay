@@ -35,6 +35,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   “已由该 loader 发起”。`findLoadedClass` 只查询、不链接/初始化/合成，`loadClass`
   使用 `ClassNameCodec` 受检 binary name、按 boot/application 边界委托并忽略 API-19
   `resolve` 参数；不支持动态 classpath、多 namespace 或自定义 loader 定义权限。
+- `ReflectionRuntime`（DVM-64）：按 declaring class 缓存 immutable Method/Constructor/Field
+  metadata，并作为唯一 guest wrapper factory。wrapper 只保存 declaring `Class` 与 opaque
+  declared-order ordinal；不得暴露 `VmMethodId`/`VmFieldId`/DEX index，也不得缓存 guest
+  ref。每次查询重新物化普通可回收对象，accessible flag 与类型数组都属于该 wrapper。
 - `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
   handler；覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，
   以及 pinned libcore `java.lang` 顶层 8 个 interface

@@ -115,7 +115,6 @@ Decl Declare_android_widget_TextView(const Context& context) {
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("setId", "(I)V", ViewSetIdHandler(context));
     builder.FinalMethod("setTypeface", "(Landroid/graphics/Typeface;)V", WidgetNoopHandler());
     builder.FinalMethod("getPaint", "()Landroid/text/TextPaint;",
         [context](dx::IntrinsicContext& call) {

@@ -10,7 +10,6 @@ Decl Declare_javax_net_ssl_HttpsURLConnection(const Context& context) {
     builder.FinalMethod("setRequestMethod", "(Ljava/lang/String;)V", NetUnsupportedHandler());
     builder.FinalMethod("setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V", NetUnsupportedHandler());
     builder.FinalMethod("getResponseCode", "()I", NetUnsupportedHandler());
-    builder.FinalMethod("getInputStream", "()Ljava/io/InputStream;", NetUnsupportedHandler());
     return std::move(builder).Build();
 }
 

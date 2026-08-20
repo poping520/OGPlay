@@ -86,6 +86,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-61](DVM-61.md) | Java 对象身份与内部 handle 解耦 | 完成 |
 | [DVM-62](DVM-62.md) | Reflection linker metadata | 完成 |
 | [DVM-63](DVM-63.md) | Single ClassLoader facade | 完成 |
+| [DVM-64](DVM-64.md) | Reflection wrappers | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

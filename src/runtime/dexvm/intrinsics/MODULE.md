@@ -40,3 +40,8 @@ API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取�
 `dalvik.system.PathClassLoader` 分别保持一类一文件；对象身份、parent 与 lookup/
 initiate 状态委托 `ClassLoaderFacade`。动态 classpath 构造器显式未实现，自定义
 ClassLoader 仅映射到唯一 application namespace，不获得第二套 class directory。
+
+reflection R3 shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclaration`、`Type`、
+`Member`、`AccessibleObject`、`Modifier`、`Method`、`Constructor` 与 `Field`。
+`Class.getDeclaredMethods` 和 wrapper handler 只能调用 `ReflectionRuntime`，禁止读写 raw
+member id；annotation/generic、完整 invoke 与 Field 行为仍须明确 deferred。

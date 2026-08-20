@@ -9,7 +9,6 @@ Decl Declare_android_widget_ProgressBar(const Context& context) {
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", ViewInitHandler(context));
     builder.FinalMethod("setMax", "(I)V", WidgetNoopHandler());
     builder.FinalMethod("setProgress", "(I)V", WidgetNoopHandler());
-    builder.FinalMethod("setPadding", "(IIII)V", WidgetNoopHandler());
     return std::move(builder).Build();
 }
 

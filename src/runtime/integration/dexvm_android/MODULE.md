@@ -62,6 +62,7 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   gesture dispatch 分别返回 cumulative touch consumption、click eligibility 与 Activity
   fallback；touch-only false 不得尝试不存在的 click listener。
   `findViewById/getId/setId` 必须经双向 binding 返回/修改同一 object/node identity；
+  subclass 不得重复声明 final 的 `View.setId/setPadding`，直接继承同一 handler；
   content generation reset 同时清空两向 binding 与 listener，旧 node 不得继续可见。
 - `UiWidgetRegistry` 是 XML tag → dex descriptor/UiClass 唯一目录；inflater 只解释 generic
   typed attrs，`<merge>` 只允许作为唯一 document root 且不创建 object/node。未知 tag、

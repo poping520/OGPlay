@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/generated/opcode_table.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 
@@ -121,6 +122,7 @@ public:
     std::condition_variable clinit_changed;
     std::atomic<std::uint64_t> clinit_generation{};
     std::unique_ptr<VmMonitorTable> monitors;
+    std::unique_ptr<ClassLoaderFacade> class_loaders;
     VmThreadRuntime* threads{};
     InterpreterGcIntegration gc_integration;
     std::vector<RawDexVmTraceEntry> trace_ring;

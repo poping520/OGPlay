@@ -6,6 +6,9 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
     using namespace intrinsics;
     std::vector<IntrinsicClassDecl> catalog{
         Declare_java_lang_Object(),
+        Declare_java_lang_ClassLoader(),
+        Declare_java_lang_BootClassLoader(),
+        Declare_dalvik_system_PathClassLoader(),
         Declare_java_lang_Thread(),
         Declare_java_lang_Enum(),
         Declare_java_io_Serializable(),

@@ -661,9 +661,15 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     if (string_class.has_value() && class_class.has_value()) {
         model.SetCoreClasses(*string_class, *class_class);
     }
+    impl_->class_loaders =
+        std::make_unique<ClassLoaderFacade>(linker, model);
 }
 
 Interpreter::~Interpreter() = default;
+
+ClassLoaderFacade& Interpreter::ClassLoaders() noexcept {
+    return *impl_->class_loaders;
+}
 
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                 const std::span<const VmValue> arguments) {

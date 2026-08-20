@@ -133,6 +133,7 @@ struct LinkedClass final {
     std::string descriptor;
     std::optional<DexClassId> super;
     VmClassLoaderId defining_loader{kBootstrapLoader};
+    std::uint8_t initiating_loader_mask{};
     std::vector<DexClassId> direct_interfaces;
     std::vector<DexClassId> interfaces;  // direct + inherited, flattened
     std::uint32_t access_flags{};
@@ -224,6 +225,9 @@ public:
         DexClassId owner, const std::string& name,
         const std::string& descriptor) const;
     [[nodiscard]] bool IsAssignable(DexClassId target, DexClassId source);
+    [[nodiscard]] bool IsInitiatedBy(DexClassId java_class,
+                                     VmClassLoaderId loader) const;
+    void MarkInitiatedBy(DexClassId java_class, VmClassLoaderId loader);
 
     [[nodiscard]] const loader::DexImage& Image() const;
     [[nodiscard]] std::span<const std::uint8_t> DexBytes() const;

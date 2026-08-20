@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-21 · DVM-62 Reflection linker metadata
+更新：2026-08-21 · DVM-63 Single ClassLoader facade
 
 ## 当前阶段
 
@@ -34,31 +34,24 @@
   阻塞原语释放执行锁并只用统一 Clock，`dexvm.threads`/`monitors` 为 `complete`。
   DVM-51 已交付类型化 intrinsic、预绑定字段与 API-19 shape 工具；DVM-52 已交付默认
   关闭的有界 `dexvm.trace` 和停界 `dexvm.stack`，MCP/CLI 消费与异步抢占仍属后续。
-  DVM-53..60 已交付只读 FastCode、单函数 threaded 稳态循环（GCC/Clang handler
-  尾部 computed goto / MSVC 稠密 switch、局部 ip/`Slot*`/ticks）、`k35c`/`k3rc`/
-  invoke-wide pair 证明、`force_all_bridge` 与 dexasm 双后端。packed-switch O(1)；
-  invoke ≤8 槽栈缓冲 + `vtable_index`；解释压帧用 `fast_ip`。clinit 不跨 `AddClass`
-  悬挂引用。Windows Release 微基准预热后五轮中位相对 switch：straight +48%、
-  object +53%、invoke-static +41%、array +26%、packed-switch +51%、instance +51%、
-  invoke-virtual +51%、wide +52%、instance-of +51%。只报告、不设时序断言。
-  DVM-59 的 invoke −13%/−5% 已由清零 256 槽与按名 vtable 查找解释并消除，两类
-  opcode 保留 threaded 直达，不降级 bridge。stop 双表无证据不做。
-  DVM-58 已把 backend 接入受检 Profile/CLI/Scenario 链。title 三 gate 未作
-  本轮验收，`dexvm.interpreter_threaded` 保持 `partial`，生产默认仍为 switch。
-  `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在
-  装配期拒绝，VM/linker 语义不变。
-  DVM-61 已把 guest identity hash 从可复用 `VmObjectRef`/记录槽中分离：普通对象
-  使用不回收的 per-VM hash 序列，Class object 按 descriptor 稳定派生；
-  `Object.hashCode` 与 `System.identityHashCode` 使用独立 identity 服务，后者绕过
-  override；默认 `Object.toString` 按 libcore 虚调用 receiver 的 `hashCode()` 后转
-  lowercase hex，并原样传播该虚调用抛出的 throwable identity/stack state。
-  catalog 重排与 GC handle 复用不再成为 guest 可观察身份。
+  DVM-53..60 已交付 FastCode、threaded 稳态循环、双后端验证与 Profile/CLI/Scenario
+  受检入口；热指令保留直达，微基准只报告、不设时序断言。title 三 gate 未验收，
+  `dexvm.interpreter_threaded` 保持 `partial`，生产默认仍为 switch。
+  `IntrinsicClassBuilder` 类型/方法/字段 API 已完成全仓迁移，非法声明在装配期拒绝。
+  DVM-61 已把 guest identity hash 与可复用 handle/记录槽分离；Class identity 按
+  descriptor 稳定派生，`System.identityHashCode` 绕过 override，`Object.toString`
+  保持 libcore 虚调用及 throwable 传播语义。
   DVM-62 已建立 reflection linker metadata 底座：正式 `ClassNameCodec` 统一受检
   descriptor/name 转换；linker 区分 bootstrap/application defining-loader role，
   分离 direct 与 flattened interfaces，按 DEX/intrinsic 声明顺序保存 own direct/
   virtual methods 与 fields，并发布完整 access flags 和 direct/static/virtual/interface
-  调用类别。array loader 跟随 component，primitive Class 补齐 `V`。ClassLoader facade、
-  wrapper 物化、Class core 与 reflective invoke/Field/Array 仍由 DVM-63..69 交付。
+  调用类别。array loader 跟随 component，primitive Class 补齐 `V`。
+  DVM-63 已建立每 VM 唯一稳定的 application `PathClassLoader` 与
+  `BootClassLoader` facade，固定 parent 链和 bootstrap/application delegation；linker
+  分离 defining/initiating role，使 `findLoadedClass` 只读且不把已注册 DEX class 当作
+  loaded，`loadClass` 受检解析 binary name、支持 array、忽略 resolve 且不触发初始化。
+  动态 classpath、多 namespace 与自定义 class definition 明确不支持。wrapper 物化、
+  Class core 与 reflective invoke/Field/Array 仍由 DVM-64..69 交付。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
@@ -68,10 +61,10 @@
 
 ## 下一步
 
-1. 继续 DVM-63：唯一 application `ClassLoader` facade 与受检 lookup/initiate contract。
+1. 继续 DVM-64：Reflection wrappers。
 2. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
-2. Linux M9 严格出口复验。
+3. Linux M9 严格出口复验。
 
 ## 阻塞与边界
 

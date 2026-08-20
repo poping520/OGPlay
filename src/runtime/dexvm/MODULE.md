@@ -29,6 +29,12 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   access flags 从 DEX 或 `IntrinsicClassBuilder` 一路保真。array defining loader 跟随
   component，primitive class 包含 `V`。这些 metadata 是 DVM-63..69 的唯一事实源，
   vtable 不得代替 declared-member query。
+- `ClassLoaderFacade`（DVM-63）：每个 VM 只发布一个稳定 application
+  `PathClassLoader` 与一个 `BootClassLoader`，parent 固定为 application → boot → null；
+  facade 只消费 linker 的唯一 class directory，并以 initiating-loader bit 区分“已知”与
+  “已由该 loader 发起”。`findLoadedClass` 只查询、不链接/初始化/合成，`loadClass`
+  使用 `ClassNameCodec` 受检 binary name、按 boot/application 边界委托并忽略 API-19
+  `resolve` 参数；不支持动态 classpath、多 namespace 或自定义 loader 定义权限。
 - `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
   handler；覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，
   以及 pinned libcore `java.lang` 顶层 8 个 interface

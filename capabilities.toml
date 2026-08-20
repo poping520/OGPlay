@@ -1140,6 +1140,11 @@ status = "complete"
 test = "tests/dexvm/class_name_codec_tests.cpp; related intrinsic builder/hierarchy/dispatch tests"
 note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2：bootstrap/application defining-loader role，direct/flattened interfaces 分离，DEX/intrinsic declared member order，完整 raw access flags 与 direct/static/virtual/interface invocation category；array loader 跟随 component，primitive Class 补齐 V。ClassLoader facade、wrapper 与 reflective invoke 由 DVM-63..69 继续交付"
 
+[dexvm.class_loader_facade]
+status = "complete"
+test = "tests/dexvm/class_loader_tests.cpp; related codec/linker/catalog/initialization tests"
+note = "DVM-63 以 linker 唯一 class directory 交付稳定 PathClassLoader/BootClassLoader facade、固定 parent 链、defining/initiating loader 分离、无副作用 findLoadedClass 与受检 loadClass delegation；resolve 不触发初始化，动态 classpath、多 namespace、resource lookup 与自定义 class definition 明确不支持"
+
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"

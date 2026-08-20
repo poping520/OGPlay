@@ -1,6 +1,16 @@
 #include "class_linker_internal.h"
 
 namespace ogplay::runtime::dexvm {
+namespace {
+
+[[nodiscard]] std::uint8_t LoaderMask(const VmClassLoaderId loader) {
+    if (loader == kBootstrapLoader) return 0x01U;
+    if (loader == kApplicationLoader) return 0x02U;
+    Fail(DexVmErrorReason::internal_invariant,
+         "class loader role is invalid");
+}
+
+}  // namespace
 
 [[noreturn]] void Fail(const DexVmErrorReason reason, std::string message) {
     throw DexVmError(reason, std::move(message));
@@ -97,6 +107,7 @@ void DexClassLinker::RegisterIntrinsics(
         linked.is_intrinsic = true;
         linked.is_interface = declaration.is_interface;
         linked.defining_loader = kBootstrapLoader;
+        linked.initiating_loader_mask = LoaderMask(kBootstrapLoader);
         linked.access_flags = declaration.access_flags;
         const auto id = impl_->AddClass(std::move(linked));
         pending.push_back({&declaration, id});
@@ -397,6 +408,7 @@ void DexClassLinker::EnsureClassLinked(const DexClassId id) {
         Fail(DexVmErrorReason::internal_invariant,
              "class used before initial linking completed");
     }
+    MarkInitiatedBy(id, impl_->ClassAt(id).defining_loader);
     if (impl_->ExtrasAt(id).linked) return;
 
     std::set<std::uint32_t> materializing;
@@ -489,6 +501,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
                 impl_->ExtrasAt(object_class.id).virtual_lookup;
             impl_->ExtrasAt(id).linked = true;
         }
+        MarkInitiatedBy(id, impl_->ClassAt(id).defining_loader);
         return id;
     }
     if (descriptor.size() == 1 &&
@@ -511,6 +524,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
                 impl_->ExtrasAt(object_class.id).virtual_lookup;
             impl_->ExtrasAt(id).linked = true;
         }
+        MarkInitiatedBy(id, kBootstrapLoader);
         return id;
     }
     if (impl_->gap_survey && IsPlatformDescriptor(descriptor)) {
@@ -541,6 +555,17 @@ void DexClassLinker::EnableGapSurvey() { impl_->gap_survey = true; }
 
 bool DexClassLinker::GapSurveyEnabled() const noexcept {
     return impl_->gap_survey;
+}
+
+bool DexClassLinker::IsInitiatedBy(const DexClassId java_class,
+                                   const VmClassLoaderId loader) const {
+    return (impl_->ClassAt(java_class).initiating_loader_mask &
+            LoaderMask(loader)) != 0U;
+}
+
+void DexClassLinker::MarkInitiatedBy(const DexClassId java_class,
+                                     const VmClassLoaderId loader) {
+    impl_->ClassAt(java_class).initiating_loader_mask |= LoaderMask(loader);
 }
 
 void DexClassLinker::RecordGapSurveyHit(const std::string& owner_descriptor,

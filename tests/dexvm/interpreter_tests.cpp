@@ -530,6 +530,11 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/Thread;.suspend()V",
         "Ljava/lang/Thread;.resume()V",
         "Ljava/lang/Thread;.destroy()V",
+        "Ljava/lang/BootClassLoader;.<init>()V",
+        "Ldalvik/system/PathClassLoader;.<init>"
+        "(Ljava/lang/String;Ljava/lang/ClassLoader;)V",
+        "Ldalvik/system/PathClassLoader;.<init>"
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V",
     };
     for (const auto& declaration : catalog) {
         CHECK(descriptors.insert(declaration.descriptor).second);

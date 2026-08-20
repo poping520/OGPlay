@@ -24,6 +24,10 @@ struct Frame final {
     std::vector<Slot> regs;
     std::uint32_t pc{};
     std::uint32_t pending_advance{};  // caller pc advance after callee return
+    // FastCode index for the next instruction in this frame. Invalidated on
+    // catch/pc redirect; set across interpreted invoke so StepThreaded can
+    // resume without a dex-pc lookup.
+    std::uint32_t fast_ip{kInvalidFastIndex};
     VmValue last_result;
     VmObjectRef caught;  // consumed by move-exception
     VmObjectRef synchronized_monitor;
@@ -147,6 +151,14 @@ public:
         throw DexVmError(DexVmErrorReason::invalid_operand,
                          where + ": " + message);
     }
+
+    // After invoke descriptor/shorty is known: prove GetWide(lo) / GetFastWide
+    // will not read past registers_size, and that 35c listed words for a J/D
+    // argument are the consecutive pair (lo, lo+1). 3rc ranges are consecutive
+    // by encoding; listed_hi may be omitted.
+    void CheckInvokeWidePair(const Frame& frame, std::uint32_t lo,
+                             std::optional<std::uint32_t> listed_hi,
+                             bool require_listed_consecutive);
 
     [[nodiscard]] Slot& RegAt(Frame& frame, const std::uint32_t reg) {
         if (reg >= frame.regs.size()) {

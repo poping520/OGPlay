@@ -1,5 +1,6 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 
+#include <optional>
 #include <utility>
 
 #include "interpreter_internal.h"
@@ -322,6 +323,26 @@ void Interpreter::Impl::EnsureInitialized(
     }
 }
 
+void Interpreter::Impl::CheckInvokeWidePair(
+    const Frame& frame, const std::uint32_t lo,
+    const std::optional<std::uint32_t> listed_hi,
+    const bool require_listed_consecutive) {
+    const auto where = linker->Class(frame.method->owner).descriptor + "." +
+                       frame.method->name + " pc " +
+                       std::to_string(frame.pc);
+    if (lo + 1U >= frame.regs.size()) {
+        throw DexVmError(DexVmErrorReason::invalid_register,
+                         where + ": register out of range");
+    }
+    if (require_listed_consecutive) {
+        if (!listed_hi.has_value() || *listed_hi != lo + 1U) {
+            throw DexVmError(
+                DexVmErrorReason::invalid_register,
+                where + ": wide invoke argument is not a consecutive pair");
+        }
+    }
+}
+
 void Interpreter::Impl::PushInterpretedFrame(
     InterpreterExecutionState& execution, const LinkedMethod& method,
     const std::span<const VmValue> arguments,
@@ -334,6 +355,7 @@ void Interpreter::Impl::PushInterpretedFrame(
     const auto& code = *method.code;
     Frame frame;
     frame.method = &method;
+    frame.fast_ip = 0;
     frame.synchronized_monitor = MethodMonitor(method, arguments);
     frame.regs.assign(code.info.registers_size, Slot{});
     // Arguments occupy the trailing registers (Dalvik ins convention).
@@ -486,12 +508,14 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                 linker->ResolveTypeIndex(handler.type_index);
             if (linker->IsAssignable(handler_class, pending_exception_class)) {
                             frame.pc = handler.handler_pc;
+                            frame.fast_ip = kInvalidFastIndex;
                             handled = true;
                             break;
                         }
                     }
                     if (!handled && block.catch_all_pc.has_value()) {
                         frame.pc = *block.catch_all_pc;
+                        frame.fast_ip = kInvalidFastIndex;
                         handled = true;
                     }
           if (handled)

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-20 · DVM-59 Threaded 稳态循环与 Precheck 闭合
+更新：2026-08-20 · DVM-60 Threaded 尾跳、invoke wide 安全与热路径
 
 ## 当前阶段
 
@@ -18,7 +18,7 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48..59 已交付；DVM-47 gate 仍受阻。解释执行仍由
+- **M9 DexVM**：DVM-1..46、48..60 已交付；DVM-47 gate 仍受阻。解释执行仍由
   `VmExecutionLock` 串行。GC-B 已实现
   全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
   发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
@@ -34,13 +34,15 @@
   阻塞原语释放执行锁并只用统一 Clock，`dexvm.threads`/`monitors` 为 `complete`。
   DVM-51 已交付类型化 intrinsic、预绑定字段与 API-19 shape 工具；DVM-52 已交付默认
   关闭的有界 `dexvm.trace` 和停界 `dexvm.stack`，MCP/CLI 消费与异步抢占仍属后续。
-  DVM-53..59 已交付只读 FastCode、单函数 threaded 稳态循环（opcode computed
-  goto / MSVC 稠密 switch、同帧 `fetch` 不 `frames.back()`、局部 ip/`Slot*`/
-  tick）、`k35c`/`k3rc`/wide-pair Precheck、`force_all_bridge` 与 dexasm 双后端。
-  packed-switch O(1)；invoke 走栈上 array；clinit 不跨 `AddClass` 悬挂引用。
-  Windows Release 微基准三轮中位相对 switch：straight +34%、object +39%、
-  invoke −13%、array +22%、packed-switch +38%、instance +39%、virtual −5%、
-  wide +37%、instance-of +34%。只报告、不设时序断言。stop 双表无证据不做。
+  DVM-53..60 已交付只读 FastCode、单函数 threaded 稳态循环（GCC/Clang handler
+  尾部 computed goto / MSVC 稠密 switch、局部 ip/`Slot*`/ticks）、`k35c`/`k3rc`/
+  invoke-wide pair 证明、`force_all_bridge` 与 dexasm 双后端。packed-switch O(1)；
+  invoke ≤8 槽栈缓冲 + `vtable_index`；解释压帧用 `fast_ip`。clinit 不跨 `AddClass`
+  悬挂引用。Windows Release 微基准预热后五轮中位相对 switch：straight +48%、
+  object +53%、invoke-static +41%、array +26%、packed-switch +51%、instance +51%、
+  invoke-virtual +51%、wide +52%、instance-of +51%。只报告、不设时序断言。
+  DVM-59 的 invoke −13%/−5% 已由清零 256 槽与按名 vtable 查找解释并消除，两类
+  opcode 保留 threaded 直达，不降级 bridge。stop 双表无证据不做。
   DVM-58 已把 backend 接入受检 Profile/CLI/Scenario 链。title 三 gate 未作
   本轮验收，`dexvm.interpreter_threaded` 保持 `partial`，生产默认仍为 switch。
   `IntrinsicClassBuilder` 工厂式类型/方法/字段 API 已完成全仓迁移；非法声明在

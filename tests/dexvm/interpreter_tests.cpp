@@ -148,6 +148,7 @@ void ReportThreadedMicrobenchmark(const char* tag,
     ExpectInt(threaded_vm.CallStatic(owner, name, descriptor, arguments),
               expected);
     constexpr std::uint32_t kIterations = 400;
+    constexpr int kRounds = 5;
     const auto run = [&](Vm& vm) {
         std::int64_t checksum{};
         const auto start = std::chrono::steady_clock::now();
@@ -162,11 +163,38 @@ void ReportThreadedMicrobenchmark(const char* tag,
                 std::chrono::steady_clock::now() - start);
         return std::pair{elapsed.count(), checksum};
     };
-    const auto [switch_us, switch_sum] = run(switch_vm);
-    const auto [threaded_us, threaded_sum] = run(threaded_vm);
+    static_cast<void>(run(switch_vm));
+    static_cast<void>(run(threaded_vm));
+    std::vector<std::int64_t> switch_samples;
+    std::vector<std::int64_t> threaded_samples;
+    switch_samples.reserve(kRounds);
+    threaded_samples.reserve(kRounds);
+    std::int64_t switch_sum{};
+    std::int64_t threaded_sum{};
+    for (int round = 0; round < kRounds; ++round) {
+        const auto switch_run = run(switch_vm);
+        const auto threaded_run = run(threaded_vm);
+        switch_samples.push_back(switch_run.first);
+        threaded_samples.push_back(threaded_run.first);
+        switch_sum = switch_run.second;
+        threaded_sum = threaded_run.second;
+    }
     CHECK(threaded_sum == switch_sum);
+    const auto median_of = [](std::vector<std::int64_t> samples) {
+        std::sort(samples.begin(), samples.end());
+        return samples[samples.size() / 2];
+    };
+    const auto switch_us = median_of(std::move(switch_samples));
+    const auto threaded_us = median_of(std::move(threaded_samples));
     std::cout << tag << " switch_us=" << switch_us
-              << " threaded_us=" << threaded_us << '\n';
+              << " threaded_us=" << threaded_us;
+    if (switch_us > 0) {
+        const auto delta_pct =
+            (100.0 * static_cast<double>(switch_us - threaded_us)) /
+            static_cast<double>(switch_us);
+        std::cout << " delta_pct=" << delta_pct;
+    }
+    std::cout << '\n';
 }
 
 template <typename Fn>
@@ -237,6 +265,44 @@ void ExpectMatchingStructuralDiagnostic(
         CHECK(error.Reason() == precheck_reason);
         CHECK(precheck_what == where + ": " + detail);
     }
+}
+
+struct CapturedDexVmError final {
+    DexVmErrorReason reason{};
+    std::string what;
+};
+
+template <typename Patch>
+CapturedDexVmError CaptureInvokeWideError(const InterpreterBackend backend,
+                                          Patch&& patch) {
+    InterpreterConfig config;
+    config.backend = backend;
+    Vm vm(config);
+    const auto id = vm.Static("LWideArg;", "call", "()I");
+    auto& method = vm.linker.MutableMethod(id);
+    REQUIRE(method.code.has_value());
+    patch(method);
+    method.prechecked = false;
+    method.fast_code.reset();
+    try {
+        static_cast<void>(vm.interpreter.Call(id, {}));
+        FAIL("expected DexVmError for malformed wide invoke");
+    } catch (const DexVmError& error) {
+        return {error.Reason(), error.what()};
+    }
+    return {};
+}
+
+[[nodiscard]] bool PatchOpcodeRegisterWord(std::vector<std::uint16_t>& units,
+                                           const std::uint8_t opcode,
+                                           const std::uint16_t regs_word) {
+    for (std::size_t index = 0; index + 2U < units.size(); ++index) {
+        if (static_cast<std::uint8_t>(units[index] & 0xffU) == opcode) {
+            units[index + 2U] = regs_word;
+            return true;
+        }
+    }
+    return false;
 }
 
 template <typename VmType>
@@ -1654,6 +1720,8 @@ TEST_CASE("dexvm threaded all-bridge backend matches switch semantics") {
     compare_int("LInstanceLoop;", "run", "(I)I", {VmValue::Int(20)});
     compare_int("LVirtualLoop;", "run", "(I)I", {VmValue::Int(20)});
     compare_int("LWideLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LWideArg;", "call", "()I", {});
+    compare_int("LWideArg;", "callRange", "()I", {});
     compare_int("LTypeLoop;", "run", "(I)I", {VmValue::Int(20)});
     compare_int("LTask;", "exercise", "()I", {});
     compare_int("LTypes;", "isRunnable", "()I", {});
@@ -1721,6 +1789,8 @@ TEST_CASE("dexvm threaded direct handlers match switch ticks") {
     compare_int("LInstanceLoop;", "run", "(I)I", {VmValue::Int(20)});
     compare_int("LVirtualLoop;", "run", "(I)I", {VmValue::Int(20)});
     compare_int("LWideLoop;", "run", "(I)I", {VmValue::Int(20)});
+    compare_int("LWideArg;", "call", "()I", {});
+    compare_int("LWideArg;", "callRange", "()I", {});
     compare_int("LTypeLoop;", "run", "(I)I", {VmValue::Int(20)});
     compare_int("LTask;", "exercise", "()I", {});
     compare_int("LClinitUser;", "read", "()I", {});
@@ -1794,6 +1864,7 @@ TEST_CASE("dexvm threaded direct handlers cache checked to fast") {
     const auto& cached_invoke =
         invoke_code.invokes[invoke_instruction->invoke];
     CHECK(cached_invoke.resolved_method != kInvalidFastIndex);
+    CHECK(cached_invoke.is_static);
     CHECK(cached_invoke.argument_shorty == std::vector<char>{'I'});
     ExpectInt(cache_vm.interpreter.Call(
                   invoke_method, std::vector<VmValue>{VmValue::Int(20)}),
@@ -1815,6 +1886,8 @@ TEST_CASE("dexvm extra interpreter microbenchmark fixtures have fixed results") 
               7);
     ExpectInt(vm.CallStatic("LWideLoop;", "run", "(I)I", {VmValue::Int(10)}),
               45);
+    ExpectInt(vm.CallStatic("LWideArg;", "call", "()I"), 7);
+    ExpectInt(vm.CallStatic("LWideArg;", "callRange", "()I"), 9);
     ExpectInt(vm.CallStatic("LTypeLoop;", "run", "(I)I", {VmValue::Int(9)}), 9);
     });
 }
@@ -1850,6 +1923,32 @@ TEST_CASE("dexvm precheck rejects invoke and wide-field register words") {
                                   {VmValue::Int(1)});
         }
     });
+}
+
+TEST_CASE("dexvm invoke-wide 35c rejects non-consecutive and OOB pairs") {
+    const auto compare_backends = [](auto&& patch, const char* needle) {
+        const auto switch_error = CaptureInvokeWideError(
+            InterpreterBackend::switch_dispatch, patch);
+        const auto threaded_error =
+            CaptureInvokeWideError(InterpreterBackend::threaded, patch);
+        CHECK(switch_error.reason == DexVmErrorReason::invalid_register);
+        CHECK(switch_error.what.find(needle) != std::string::npos);
+        CHECK(threaded_error.reason == switch_error.reason);
+        CHECK(threaded_error.what == switch_error.what);
+    };
+    compare_backends(
+        [](LinkedMethod& method) {
+            REQUIRE(PatchOpcodeRegisterWord(method.code->instructions, 0x71U,
+                                            0x0020U));
+        },
+        "wide invoke argument is not a consecutive pair");
+    compare_backends(
+        [](LinkedMethod& method) {
+            method.code->info.registers_size = 2;
+            REQUIRE(PatchOpcodeRegisterWord(method.code->instructions, 0x71U,
+                                            0x0011U));
+        },
+        "register out of range");
 }
 
 TEST_CASE("dexvm FastCode and Precheck share structural diagnostics") {

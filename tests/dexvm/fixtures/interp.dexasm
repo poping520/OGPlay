@@ -423,6 +423,31 @@
     return v0
 .end method
 
+.class public LWideArg;
+.super Ljava/lang/Object;
+
+.method static public takeLong(J)I
+.registers 4
+    long-to-int v0, v2
+    return v0
+.end method
+
+.method static public call()I
+.registers 4
+    const-wide/16 v0, 7
+    invoke-static {v0, v1}, LWideArg;->takeLong(J)I
+    move-result v2
+    return v2
+.end method
+
+.method static public callRange()I
+.registers 4
+    const-wide/16 v0, 9
+    invoke-static/range {v0 .. v1}, LWideArg;->takeLong(J)I
+    move-result v2
+    return v2
+.end method
+
 .class public LTypeLoop;
 .super Ljava/lang/Object;
 

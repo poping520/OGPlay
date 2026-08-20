@@ -1,14 +1,16 @@
 // FastCode threaded interpreter. The steady-state loop lives in one function:
-// GCC/Clang dispatch with per-opcode labels-as-values, MSVC with a dense
-// handler switch. Family bodies are included as fragments so handler tails
-// fetch the next FastCode index without returning to Run() or calling
-// frames.back() on the same-frame path.
+// GCC/Clang dispatch with per-opcode labels-as-values and an indirect goto at
+// every handler tail; MSVC with a dense handler switch loop. Family bodies are
+// included as fragments. Same-frame tails never return to Run() or call
+// frames.back(). ticks/executed stay local until a sync point.
 
 #include "interpreter_internal.h"
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <span>
+#include <vector>
 
 namespace ogplay::runtime::dexvm {
 namespace {
@@ -56,32 +58,117 @@ void Interpreter::Impl::StepThreaded(
         regs = frame_ptr->regs.data();
     }
     const FastCode* code_ptr = frame_ptr->method->fast_code.get();
-    std::uint32_t ip = code_ptr->IndexForDexPc(frame_ptr->pc);
     const auto entry_depth = frames.size();
     std::uint64_t ticks = execution.ticks;
     std::uint64_t executed = 0;
     const FastInstruction* insn = nullptr;
+    std::uint32_t ip = kInvalidFastIndex;
 
-    const auto add_ticks = [&](const std::uint64_t amount) {
+    const auto resolve_ip = [&]() {
+        if (frame_ptr->fast_ip != kInvalidFastIndex) {
+            ip = frame_ptr->fast_ip;
+            frame_ptr->fast_ip = kInvalidFastIndex;
+        } else {
+            ip = code_ptr->IndexForDexPc(frame_ptr->pc);
+        }
+    };
+
+    const auto consume_extra_ticks = [&](const std::uint64_t amount) {
+        if (amount == 0U) return;
         ticks += amount;
-        execution.ticks = ticks;
         if (execution.stop_requested.load(std::memory_order_relaxed)) {
             stats.executed_instructions += executed;
+            executed = 0;
+            execution.ticks = ticks;
             throw DexVmError(DexVmErrorReason::thread_stopped,
                              "dexvm thread stopped at teardown after " +
                                  std::to_string(ticks) + " ticks");
         }
         if (ticks > config.tick_budget) {
             stats.executed_instructions += executed;
+            executed = 0;
+            execution.ticks = ticks;
             throw DexVmError(DexVmErrorReason::budget_exhausted,
                              "dexvm tick budget exhausted after " +
                                  std::to_string(ticks) + " ticks");
         }
     };
 
+#define OGPLAY_SYNC_EXECUTION()                                 \
+    do {                                                        \
+        stats.executed_instructions += executed;                \
+        executed = 0;                                           \
+        execution.ticks = ticks;                                \
+    } while (0)
+
+#define OGPLAY_RECORD_TRACE(...)                                \
+    do {                                                        \
+        if (!trace_ring.empty()) {                              \
+            execution.ticks = ticks;                            \
+            RecordTrace(__VA_ARGS__);                           \
+        }                                                       \
+    } while (0)
+
+#define OGPLAY_FETCH_AND_TICK()                                 \
+    do {                                                        \
+        insn = &code_ptr->instructions[ip];                     \
+        frame_ptr->pc = insn->dex_pc;                           \
+        if (insn->handler == FastHandler::bridge) goto bridge;  \
+        ticks += 1U;                                            \
+        ++executed;                                             \
+        if (execution.stop_requested.load(                      \
+                std::memory_order_relaxed)) {                   \
+            OGPLAY_SYNC_EXECUTION();                            \
+            throw DexVmError(                                   \
+                DexVmErrorReason::thread_stopped,               \
+                "dexvm thread stopped at teardown after " +     \
+                    std::to_string(ticks) + " ticks");          \
+        }                                                       \
+        if (ticks > config.tick_budget) {                       \
+            OGPLAY_SYNC_EXECUTION();                            \
+            throw DexVmError(                                   \
+                DexVmErrorReason::budget_exhausted,             \
+                "dexvm tick budget exhausted after " +          \
+                    std::to_string(ticks) + " ticks");          \
+        }                                                       \
+        OGPLAY_RECORD_TRACE(DexVmTraceKind::instruction,        \
+                            execution, frame_ptr->method,       \
+                            insn->dex_pc, insn->opcode);        \
+    } while (0)
+
+#if defined(__GNUC__) && !defined(_MSC_VER)
+#define OGPLAY_DISPATCH_AT()                                    \
+    do {                                                        \
+        OGPLAY_FETCH_AND_TICK();                                \
+        goto* op_labels[insn->opcode];                          \
+    } while (0)
+#define OGPLAY_DISPATCH_NEXT()                                  \
+    do {                                                        \
+        ip += 1U;                                               \
+        OGPLAY_DISPATCH_AT();                                   \
+    } while (0)
+#define OGPLAY_DISPATCH_TO(idx)                                 \
+    do {                                                        \
+        ip = (idx);                                             \
+        OGPLAY_DISPATCH_AT();                                   \
+    } while (0)
+#else
+#define OGPLAY_DISPATCH_AT() goto fetch_at
+#define OGPLAY_DISPATCH_NEXT()                                  \
+    do {                                                        \
+        ip += 1U;                                               \
+        goto fetch_at;                                          \
+    } while (0)
+#define OGPLAY_DISPATCH_TO(idx)                                 \
+    do {                                                        \
+        ip = (idx);                                             \
+        goto fetch_at;                                          \
+    } while (0)
+#endif
+
 #include "interp_threaded_op_labels.inc"
 
-    goto fetch;
+    goto reload;
 
 reload:
     if (pending_exception.IsValid() || frames.size() != entry_depth) {
@@ -90,29 +177,12 @@ reload:
     frame_ptr = &frames.back();
     regs = frame_ptr->regs.data();
     code_ptr = frame_ptr->method->fast_code.get();
-    ip = code_ptr->IndexForDexPc(frame_ptr->pc);
+    resolve_ip();
+    OGPLAY_DISPATCH_AT();
 
-fetch:
-    if (pending_exception.IsValid() || frames.size() != entry_depth) {
-        goto yield;
-    }
-    insn = &code_ptr->instructions[ip];
-    frame_ptr->pc = insn->dex_pc;
-
-    if (insn->handler == FastHandler::bridge) {
-        goto bridge;
-    }
-
-    add_ticks(1);
-    ++executed;
-    if (!trace_ring.empty()) {
-        RecordTrace(DexVmTraceKind::instruction, execution, frame_ptr->method,
-                    insn->dex_pc, insn->opcode);
-    }
-
-#if defined(__GNUC__) && !defined(_MSC_VER)
-    goto* op_labels[insn->opcode];
-#else
+#if !defined(__GNUC__) || defined(_MSC_VER)
+fetch_at:
+    OGPLAY_FETCH_AND_TICK();
     switch (insn->handler) {
         case FastHandler::straight:
             goto straight;
@@ -152,19 +222,23 @@ invoke: {
 }
 
 bridge:
-    stats.executed_instructions += executed;
-    executed = 0;
-    execution.ticks = ticks;
+    OGPLAY_SYNC_EXECUTION();
     Step(execution);
     ticks = execution.ticks;
     goto reload;
 
 yield:
-    stats.executed_instructions += executed;
-    execution.ticks = ticks;
+    OGPLAY_SYNC_EXECUTION();
     return;
 
 #include "interp_threaded_op_stubs.inc"
+
+#undef OGPLAY_DISPATCH_TO
+#undef OGPLAY_DISPATCH_NEXT
+#undef OGPLAY_DISPATCH_AT
+#undef OGPLAY_FETCH_AND_TICK
+#undef OGPLAY_RECORD_TRACE
+#undef OGPLAY_SYNC_EXECUTION
 }
 
 }  // namespace ogplay::runtime::dexvm

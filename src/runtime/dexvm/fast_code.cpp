@@ -256,6 +256,7 @@ FastCode BuildFastCode(const loader::DexMethodCode& code,
             instruction.handler = FastHandler::invoke_checked;
             FastInvoke invoke;
             const bool is_range = opcode >= 0x74U;
+            invoke.is_range = is_range;
             invoke.base_opcode = static_cast<std::uint8_t>(
                 is_range ? opcode - 0x74U + 0x6eU : opcode);
             if (is_range) {

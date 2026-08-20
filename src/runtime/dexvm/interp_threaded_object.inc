@@ -45,15 +45,14 @@
             }
             if (opcode == 0x1d) {
                 monitors->Enter(ref, execution.token);
-                RecordTrace(DexVmTraceKind::monitor_enter, execution,
+                OGPLAY_RECORD_TRACE(DexVmTraceKind::monitor_enter, execution,
                             frame.method, frame.pc, opcode, ref.Value());
             } else {
                 monitors->Exit(ref, execution.token);
-                RecordTrace(DexVmTraceKind::monitor_exit, execution,
+                OGPLAY_RECORD_TRACE(DexVmTraceKind::monitor_exit, execution,
                             frame.method, frame.pc, opcode, ref.Value());
             }
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x1f: {
             const auto ref = GetFastRef(regs, instruction.a);
@@ -71,8 +70,7 @@
                     goto yield;
                 }
             }
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x20: {
             const auto ref = GetFastRef(regs, instruction.b);
@@ -83,8 +81,7 @@
                          linker->IsAssignable(java_class(), source);
             }
             SetFastCat1(regs, instruction.a, result ? 1U : 0U);
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x21: {
             const auto ref = GetFastRef(regs, instruction.b);
@@ -95,22 +92,19 @@
             }
             SetFastCat1(regs, instruction.a,
                         static_cast<std::uint32_t>(model->ArrayLength(ref)));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x22: {
             const auto type = java_class();
             PrepareSafeAllocation(JavaObjectModel::EstimateInstanceBytes(
                                       linker->Class(type).instance_slots),
                                   "new-instance");
-            stats.executed_instructions += executed;
-            executed = 0;
+            OGPLAY_SYNC_EXECUTION();
             EnsureInitialized(execution, type);
             ticks = execution.ticks;
             if (pending_exception.IsValid()) goto yield;
             SetFastRef(regs, instruction.a, AllocateInstance(type));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x23: {
             const auto length = static_cast<std::int32_t>(
@@ -141,8 +135,7 @@
                 SetFastRef(regs, instruction.a,
                            model->NewPrimitiveArray(type, kind, length));
             }
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x24:
         case 0x25: {
@@ -202,8 +195,7 @@
                 }
                 frame.last_result = VmValue::Ref(array);
             }
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x26: {
             const auto ref = GetFastRef(regs, instruction.a);
@@ -219,7 +211,7 @@
                           "fill-array-data size exceeds array length");
                 goto yield;
             }
-            add_ticks(payload.tick_weight);
+            consume_extra_ticks(payload.tick_weight);
             const auto kind = model->PrimitiveArrayKind(ref);
             for (std::uint32_t index = 0; index < payload.element_count;
                  ++index) {
@@ -244,8 +236,7 @@
                 model->SetPrimitiveElement(ref, static_cast<JniSize>(index),
                                            bits);
             }
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x27:
             SetPending(GetFastRef(regs, instruction.a));
@@ -255,7 +246,7 @@
             const auto key = static_cast<std::int32_t>(
                 GetFastCat1(regs, instruction.a));
             const auto& payload = code.payloads[instruction.payload];
-            if (opcode == 0x2c) add_ticks(payload.tick_weight);
+            if (opcode == 0x2c) consume_extra_ticks(payload.tick_weight);
             if (opcode == 0x2b) {
                 if (!payload.keys.empty()) {
                     const auto index =
@@ -263,22 +254,19 @@
                     if (index >= 0 &&
                         static_cast<std::uint64_t>(index) <
                             payload.targets.size()) {
-                        ip = payload.targets[static_cast<std::size_t>(index)];
-                        goto fetch;
+                        OGPLAY_DISPATCH_TO(
+                            payload.targets[static_cast<std::size_t>(index)]);
                     }
                 }
-                ip += 1U;
-                goto fetch;
+                OGPLAY_DISPATCH_NEXT();
             }
             const auto found = std::find(payload.keys.begin(),
                                          payload.keys.end(), key);
             if (found != payload.keys.end()) {
-                ip = payload.targets[static_cast<std::size_t>(
-                    found - payload.keys.begin())];
-            } else {
-                ip += 1U;
+                OGPLAY_DISPATCH_TO(payload.targets[static_cast<std::size_t>(
+                    found - payload.keys.begin())]);
             }
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         default:
             break;
@@ -325,8 +313,7 @@
                 }
                 model->SetObjectElement(array, index, value);
             }
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         if (model->Kind(array) != VmObjectKind::primitive_array &&
             model->Kind(array) != VmObjectKind::external) {
@@ -384,8 +371,7 @@
                         : static_cast<std::uint64_t>(
                               GetFastCat1(regs, instruction.a)));
         }
-        ip += 1U;
-        goto fetch;
+        OGPLAY_DISPATCH_NEXT();
     }
 
     if (opcode >= 0x52U && opcode <= 0x5fU) {
@@ -431,14 +417,12 @@
             slots[field.slot] = {
                 GetFastCat1(regs, instruction.a), SlotTag::cat1};
         }
-        ip += 1U;
-        goto fetch;
+        OGPLAY_DISPATCH_NEXT();
     }
 
     if (opcode >= 0x60U && opcode <= 0x6dU) {
         const auto& field = linker->Field(VmFieldId(instruction.resolved_id));
-        stats.executed_instructions += executed;
-        executed = 0;
+        OGPLAY_SYNC_EXECUTION();
         EnsureInitialized(execution, field.owner);
         ticks = execution.ticks;
         if (pending_exception.IsValid()) goto yield;
@@ -470,8 +454,7 @@
         } else {
             storage[field.slot] = GetFastCat1(regs, instruction.a);
         }
-        ip += 1U;
-        goto fetch;
+        OGPLAY_DISPATCH_NEXT();
     }
 
     FailCode("non-object opcode reached object handler");

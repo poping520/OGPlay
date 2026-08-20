@@ -4,6 +4,8 @@
 
 #include "interpreter_internal.h"
 
+#include <optional>
+
 namespace ogplay::runtime::dexvm {
 
 void Interpreter::Impl::StepObjectOrInvoke(
@@ -284,6 +286,14 @@ void Interpreter::Impl::StepObjectOrInvoke(
         while (named.descriptor[descriptor_index] != ')') {
             const char shorty = named.descriptor[descriptor_index];
             if (shorty == 'J' || shorty == 'D') {
+                const auto lo = cursor < registers.size()
+                                    ? registers[cursor]
+                                    : 0U;
+                const auto listed_hi =
+                    cursor + 1U < registers.size()
+                        ? std::optional<std::uint32_t>(registers[cursor + 1U])
+                        : std::nullopt;
+                CheckInvokeWidePair(frame, lo, listed_hi, !is_range);
                 arguments.push_back(VmValue::Long(static_cast<std::int64_t>(
                     GetWide(frame, registers[cursor]))));
                 if (shorty == 'D') arguments.back().kind = VmValue::Kind::wide;

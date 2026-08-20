@@ -43,8 +43,11 @@ struct FastInstruction final {
 
 struct FastInvoke final {
     std::uint8_t base_opcode{};
+    bool is_range{};
     std::vector<std::uint16_t> registers;
     mutable std::uint32_t resolved_method{kInvalidFastIndex};
+    mutable bool is_static{};
+    mutable std::int32_t vtable_index{-1};
     // One entry per Java argument value, excluding receiver. References and
     // arrays are normalized to 'L'; J/D consume two register words.
     mutable std::vector<char> argument_shorty;

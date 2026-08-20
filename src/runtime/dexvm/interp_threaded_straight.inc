@@ -1,62 +1,53 @@
     if ((opcode >= 0x2dU && opcode <= 0x31U) || opcode >= 0x7bU) {
         if (ExecuteArithmetic(frame, opcode, 0, &instruction)) {
             if (pending_exception.IsValid()) goto yield;
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
     }
 
     switch (opcode) {
         case 0x00:
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x01:
         case 0x02:
         case 0x03:
             SetFastCat1(regs, instruction.a, GetFastCat1(regs, instruction.b));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x04:
         case 0x05:
         case 0x06:
             SetFastWide(regs, instruction.a, GetFastWide(regs, instruction.b));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x07:
         case 0x08:
         case 0x09:
             SetFastRef(regs, instruction.a, GetFastRef(regs, instruction.b));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x0a:
             if (frame.last_result.kind != VmValue::Kind::cat1) {
                 FailCode("move-result without cat1 result");
             }
             SetFastCat1(regs, instruction.a, frame.last_result.cat1);
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x0b:
             if (frame.last_result.kind != VmValue::Kind::wide) {
                 FailCode("move-result-wide without wide result");
             }
             SetFastWide(regs, instruction.a, frame.last_result.wide);
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x0c:
             if (frame.last_result.kind != VmValue::Kind::ref) {
                 FailCode("move-result-object without reference result");
             }
             SetFastRef(regs, instruction.a, frame.last_result.ref);
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x0d:
             if (!frame.caught.IsValid()) {
                 FailCode("move-exception without caught exception");
             }
             SetFastRef(regs, instruction.a, frame.caught);
             frame.caught = VmObjectRef{};
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x0e:
         case 0x0f:
         case 0x10:
@@ -72,7 +63,7 @@
                 result = VmValue::Ref(GetFastRef(regs, instruction.a));
             }
             exit_result = result;
-            RecordTrace(DexVmTraceKind::method_exit, execution, frame.method,
+            OGPLAY_RECORD_TRACE(DexVmTraceKind::method_exit, execution, frame.method,
                         instruction.dex_pc, opcode);
             ReleaseFrameMonitor(frame);
             frames.pop_back();
@@ -89,28 +80,23 @@
         case 0x14:
             SetFastCat1(regs, instruction.a,
                     static_cast<std::uint32_t>(instruction.extra));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x15:
             SetFastCat1(regs, instruction.a,
                     static_cast<std::uint32_t>(instruction.extra) << 16U);
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x16:
         case 0x17:
             SetFastWide(regs, instruction.a,
                     static_cast<std::uint64_t>(static_cast<std::int64_t>(
                         static_cast<std::int32_t>(instruction.extra))));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x18:
             SetFastWide(regs, instruction.a, instruction.extra);
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x19:
             SetFastWide(regs, instruction.a, instruction.extra << 48U);
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x1a:
         case 0x1b: {
             const auto index = static_cast<std::uint32_t>(instruction.extra);
@@ -119,20 +105,17 @@
                     linker->Image().strings[index].value.size()),
                 opcode == 0x1a ? "const-string" : "const-string-jumbo");
             SetFastRef(regs, instruction.a, InternDexString(index));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         }
         case 0x1c:
             SetFastRef(regs, instruction.a,
                    model->ClassObject(linker->ResolveTypeIndex(
                        static_cast<std::uint32_t>(instruction.extra))));
-            ip += 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_NEXT();
         case 0x28:
         case 0x29:
         case 0x2a:
-            ip = instruction.branch_target;
-            goto fetch;
+            OGPLAY_DISPATCH_TO(instruction.branch_target);
         case 0x32:
         case 0x33:
         case 0x34:
@@ -164,8 +147,7 @@
                 : opcode == 0x35 ? lhs >= rhs
                 : opcode == 0x36 ? lhs > rhs
                                  : lhs <= rhs;
-            ip = taken ? instruction.branch_target : ip + 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_TO(taken ? instruction.branch_target : ip + 1U);
         }
         case 0x38:
         case 0x39:
@@ -191,8 +173,7 @@
                 : opcode == 0x3b ? value >= 0
                 : opcode == 0x3c ? value > 0
                                  : value <= 0;
-            ip = taken ? instruction.branch_target : ip + 1U;
-            goto fetch;
+            OGPLAY_DISPATCH_TO(taken ? instruction.branch_target : ip + 1U);
         }
         default:
             FailCode("non-straight opcode reached straight handler");

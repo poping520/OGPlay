@@ -1,5 +1,5 @@
-# DVM-65 Class structural/member-query fixture. Declaration order and access
-# flags are intentional and form part of the reflection contract.
+# DVM-65..66 Class/reflection fixture. Declaration order and access flags are
+# intentional and form part of the reflection contract.
 
 .class public abstract interface Lreflect/BaseContract;
 .super Ljava/lang/Object;
@@ -92,6 +92,12 @@
     return v0
 .end method
 
+.method packageDerived()I
+.registers 2
+    const/16 v0, 16
+    return v0
+.end method
+
 .method public common()I
 .registers 2
     const/4 v0, 7
@@ -108,4 +114,106 @@
 .registers 2
     const/16 v0, 9
     return v0
+.end method
+
+.method public echo(Ljava/lang/Object;)Ljava/lang/Object;
+.registers 2
+    return-object v1
+.end method
+
+.method public acceptLong(J)J
+.registers 3
+    return-wide v1
+.end method
+
+.method public acceptDouble(D)D
+.registers 3
+    return-wide v1
+.end method
+
+.method public chooseSecond(IJ)J
+.registers 4
+    return-wide v2
+.end method
+
+.method public doNothing()V
+.registers 1
+    return-void
+.end method
+
+.method public throwTarget(Ljava/lang/Throwable;)I
+.registers 2
+    throw v1
+.end method
+
+.class public Lreflect/InvokeStatics;
+.super Ljava/lang/Object;
+
+.field static public initialized:I
+
+.method static constructor <clinit>()V
+.registers 1
+    const/16 v0, 42
+    sput v0, Lreflect/InvokeStatics;->initialized:I
+    return-void
+.end method
+
+.method public static readInitialized()I
+.registers 1
+    sget v0, Lreflect/InvokeStatics;->initialized:I
+    return v0
+.end method
+
+.class Lreflect/PackageOwner;
+.super Ljava/lang/Object;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public value()I
+.registers 2
+    const/16 v0, 23
+    return v0
+.end method
+
+.class public Lreflect/Peer;
+.super Ljava/lang/Object;
+
+.method public static invokeNoArgs(Ljava/lang/reflect/Method;Ljava/lang/Object;)Ljava/lang/Object;
+.registers 3
+    const/4 v0, 0
+    invoke-virtual {v1, v2, v0}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+    move-result-object v0
+    return-object v0
+.end method
+
+.class public Lother/Outsider;
+.super Ljava/lang/Object;
+
+.method public static invokeNoArgs(Ljava/lang/reflect/Method;Ljava/lang/Object;)Ljava/lang/Object;
+.registers 3
+    const/4 v0, 0
+    invoke-virtual {v1, v2, v0}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+    move-result-object v0
+    return-object v0
+.end method
+
+.class public Lother/Sub;
+.super Lreflect/Derived;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lreflect/Derived;-><init>()V
+    return-void
+.end method
+
+.method public static invokeNoArgs(Ljava/lang/reflect/Method;Ljava/lang/Object;)Ljava/lang/Object;
+.registers 3
+    const/4 v0, 0
+    invoke-virtual {v1, v2, v0}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+    move-result-object v0
+    return-object v0
 .end method

@@ -36,6 +36,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_lang_reflect_AccessibleObject(),
         Declare_java_lang_reflect_Modifier(),
         Declare_java_lang_reflect_Method(),
+        Declare_java_lang_reflect_InvocationTargetException(),
         Declare_java_lang_reflect_Constructor(),
         Declare_java_lang_reflect_Field(),
         Declare_java_lang_ref_WeakReference(),

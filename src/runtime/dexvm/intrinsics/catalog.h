@@ -42,6 +42,8 @@ void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Modifier();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Method();
+[[nodiscard]] IntrinsicClassDecl
+Declare_java_lang_reflect_InvocationTargetException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Constructor();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Field();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ref_WeakReference();

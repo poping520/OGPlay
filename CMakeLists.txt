@@ -412,6 +412,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/class_name_codec.cpp
     src/runtime/dexvm/class_loader_facade.cpp
     src/runtime/dexvm/reflection.cpp
+    src/runtime/dexvm/reflection_codec.cpp
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp
     src/runtime/dexvm/diagnostics.cpp

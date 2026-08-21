@@ -9,6 +9,7 @@
 
 #include "ogplay/runtime/dexvm/class_name_codec.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/reflection_codec.h"
 
 namespace ogplay::runtime::dexvm {
 namespace {
@@ -21,6 +22,16 @@ struct ClassReflectionMetadata final {
 };
 
 constexpr std::uint32_t kAccPublic = 0x0001U;
+constexpr std::uint32_t kAccPrivate = 0x0002U;
+constexpr std::uint32_t kAccProtected = 0x0004U;
+
+[[nodiscard]] std::string_view RuntimePackage(
+    const std::string_view descriptor) {
+    const auto separator = descriptor.rfind('/');
+    return separator == std::string_view::npos
+        ? std::string_view{}
+        : descriptor.substr(0, separator);
+}
 
 template <typename Meta>
 [[nodiscard]] bool SameParameters(
@@ -98,7 +109,8 @@ class ReflectionRuntime::Impl final {
 public:
     Impl(Interpreter& interpreter, DexClassLinker& linker,
          JavaObjectModel& model)
-        : interpreter(&interpreter), linker(&linker), model(&model) {}
+        : interpreter(&interpreter), linker(&linker), model(&model),
+          codec(std::make_unique<ReflectionCodec>(interpreter, linker, model)) {}
 
     ClassReflectionMetadata& Metadata(const DexClassId declaring_class) {
         auto& result = metadata[declaring_class.Value()];
@@ -262,9 +274,57 @@ public:
         }
     }
 
+    [[nodiscard]] bool SameRuntimePackage(const DexClassId left,
+                                          const DexClassId right) const {
+        const auto& left_class = linker->Class(left);
+        const auto& right_class = linker->Class(right);
+        return left_class.defining_loader == right_class.defining_loader &&
+               RuntimePackage(left_class.descriptor) ==
+                   RuntimePackage(right_class.descriptor);
+    }
+
+    [[nodiscard]] bool CanAccessMethod(
+        const ReflectMethodMeta& meta,
+        const std::optional<DexClassId> caller,
+        const VmObjectRef receiver) const {
+        const auto& declaring = linker->Class(meta.declaring_class);
+        if (!caller.has_value()) {
+            return (meta.access_flags & kAccPublic) != 0U &&
+                   (declaring.access_flags & kAccPublic) != 0U;
+        }
+        if ((declaring.access_flags & kAccPublic) == 0U &&
+            !SameRuntimePackage(*caller, meta.declaring_class)) {
+            return false;
+        }
+        if ((meta.access_flags & kAccPublic) != 0U ||
+            *caller == meta.declaring_class) {
+            return true;
+        }
+        if ((meta.access_flags & kAccPrivate) != 0U) return false;
+        if (SameRuntimePackage(*caller, meta.declaring_class)) return true;
+        if ((meta.access_flags & kAccProtected) == 0U ||
+            !linker->IsAssignable(meta.declaring_class, *caller)) {
+            return false;
+        }
+        const auto& method = linker->Method(meta.method);
+        return method.is_static ||
+               (receiver.IsValid() && linker->IsAssignable(
+                    *caller, model->ObjectClass(receiver)));
+    }
+
+    [[nodiscard]] VmObjectRef InvocationTargetException(
+        const VmObjectRef target) const {
+        const auto wrapper = interpreter->MakeThrowable(
+            "Ljava/lang/reflect/InvocationTargetException;", {});
+        WriteRefField(*linker, *model, wrapper, "target",
+                      "Ljava/lang/Throwable;", target);
+        return wrapper;
+    }
+
     Interpreter* interpreter{};
     DexClassLinker* linker{};
     JavaObjectModel* model{};
+    std::unique_ptr<ReflectionCodec> codec;
     std::unordered_map<std::uint32_t, ClassReflectionMetadata> metadata;
 };
 
@@ -563,6 +623,78 @@ void ReflectionRuntime::SetAccessible(const VmObjectRef wrapper,
                                       const bool accessible) {
     WriteIntField(*impl_->linker, *impl_->model, wrapper, "flag",
                   accessible ? 1U : 0U, "Z");
+}
+
+ReflectionCodec& ReflectionRuntime::Codec() noexcept { return *impl_->codec; }
+
+VmObjectRef ReflectionRuntime::InvokeMethod(
+    const VmObjectRef wrapper, const VmObjectRef receiver,
+    const VmObjectRef arguments, const std::optional<DexClassId> caller) {
+    const auto& meta = MethodMetadata(wrapper);
+    const auto& declared = impl_->linker->Method(meta.method);
+
+    VmMethodId target = meta.method;
+    if (!declared.is_static) {
+        if (!receiver.IsValid()) {
+            throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "reflective receiver is null"};
+        }
+        const auto receiver_class = impl_->model->ObjectClass(receiver);
+        if (!impl_->linker->IsAssignable(meta.declaring_class,
+                                         receiver_class)) {
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "receiver has incompatible type"};
+        }
+        if (meta.invoke_kind == DeclaredInvokeKind::virtual_call ||
+            meta.invoke_kind == DeclaredInvokeKind::interface_call) {
+            const auto index = impl_->linker->FindVtableIndex(
+                receiver_class, declared.name, declared.descriptor);
+            if (!index.has_value()) {
+                throw VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                                  declared.name};
+            }
+            target = impl_->linker->Class(receiver_class).vtable[*index];
+        }
+    }
+
+    const auto argument_count = arguments.IsValid()
+        ? static_cast<std::size_t>(impl_->model->ArrayLength(arguments))
+        : 0U;
+    if (argument_count != meta.parameter_types.size()) {
+        throw VmJavaThrow{
+            "Ljava/lang/IllegalArgumentException;",
+            "wrong number of arguments; expected " +
+                std::to_string(meta.parameter_types.size()) + ", got " +
+                std::to_string(argument_count)};
+    }
+    if (!IsAccessible(wrapper) &&
+        !impl_->CanAccessMethod(meta, caller, receiver)) {
+        throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
+                          "access to method denied"};
+    }
+
+    auto call_arguments =
+        impl_->codec->ConvertArguments(arguments, meta.parameter_types);
+    if (!declared.is_static) {
+        call_arguments.insert(call_arguments.begin(), VmValue::Ref(receiver));
+    }
+
+    if (declared.is_static ||
+        impl_->linker->Class(meta.declaring_class).is_interface) {
+        const auto initialized =
+            impl_->interpreter->EnsureClassInitialized(meta.declaring_class);
+        if (initialized.exception.IsValid()) {
+            impl_->interpreter->SetPendingException(initialized.exception);
+            return VmObjectRef{};
+        }
+    }
+    const auto outcome = impl_->interpreter->Call(target, call_arguments);
+    if (outcome.exception.IsValid()) {
+        impl_->interpreter->SetPendingException(
+            impl_->InvocationTargetException(outcome.exception));
+        return VmObjectRef{};
+    }
+    return impl_->codec->BoxReturn(meta.return_type, outcome.value);
 }
 
 }  // namespace ogplay::runtime::dexvm

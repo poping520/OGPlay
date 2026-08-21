@@ -1155,6 +1155,11 @@ status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; DVM-65 Class structural/member-query tests"
 note = "DVM-65 闭合 API-19 Class 结构与类型关系：name/simple name、loader/component/super/direct interfaces/modifiers、分类、assignability/isInstance/cast/asSubclass/toString；ReflectionRuntime 提供 declared/public Method/Constructor/Field 精确查找与 fresh wrapper 数组，public Method/Field 稳定聚合继承与 direct interfaces，Constructor 不继承。nested/enclosing/generic/annotation/signature/throws 由 DVM-69 闭合，invoke/instantiation/Field/Array 操作由 DVM-66..68 闭合"
 
+[dexvm.reflection_invoke]
+status = "complete"
+test = "tests/dexvm/reflection_tests.cpp; DVM-66 codec/invoke/access/throwable tests on switch and threaded"
+note = "DVM-66 交付共用 ReflectionCodec：reference assignability/null、八种 primitive wrapper 的 API-19 widening 矩阵、精确 boxing 与 void->null；Method.invoke 使用真实 interpreted caller、loader+package access identity、protected receiver restriction、per-wrapper accessible bypass，并覆盖 direct/static/virtual/interface 分派、class init、0/1/N 参数、wide 与 switch/threaded。InvocationTargetException 以普通 guest target field 保留原 throwable identity"
+
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"

@@ -13,6 +13,7 @@
 namespace ogplay::runtime::dexvm {
 
 class Interpreter;
+class ReflectionCodec;
 
 struct ReflectMethodMeta final {
     std::uint32_t slot{};
@@ -102,6 +103,11 @@ public:
                                          VmObjectRef right);
     [[nodiscard]] bool IsAccessible(VmObjectRef wrapper) const;
     void SetAccessible(VmObjectRef wrapper, bool accessible);
+    [[nodiscard]] ReflectionCodec& Codec() noexcept;
+    [[nodiscard]] VmObjectRef InvokeMethod(VmObjectRef wrapper,
+                                           VmObjectRef receiver,
+                                           VmObjectRef arguments,
+                                           std::optional<DexClassId> caller);
 
 private:
     class Impl;

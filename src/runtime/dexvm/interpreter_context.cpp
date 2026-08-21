@@ -400,6 +400,12 @@ std::uint32_t Interpreter::CurrentNativeDepth() const {
     return impl_->Execution().native_depth;
 }
 
+std::optional<DexClassId> Interpreter::CurrentCallerClass() const {
+    const auto& frames = impl_->Execution().frames;
+    if (frames.empty()) return std::nullopt;
+    return frames.back().method->owner;
+}
+
 void Interpreter::AttachNativeThread(const std::uint64_t guest_thread_id,
                                      const std::uint64_t execution_token) {
     if (impl_->bridge != nullptr) {

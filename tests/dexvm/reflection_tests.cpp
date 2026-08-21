@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -11,6 +12,7 @@
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/reflection.h"
+#include "ogplay/runtime/dexvm/reflection_codec.h"
 
 namespace {
 
@@ -34,14 +36,16 @@ struct ReflectionVm final {
     ogplay::core::CapabilityLedger ledger;
     Interpreter interpreter;
 
-    explicit ReflectionVm(const std::string& fixture = "interp.dex")
+    explicit ReflectionVm(
+        const std::string& fixture = "interp.dex",
+        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : interpreter([this, &fixture]() -> DexClassLinker& {
               const auto catalog = CoreIntrinsicCatalog();
               linker.RegisterIntrinsics(catalog);
               linker.RegisterDex(ReadFixture(fixture));
               linker.Link();
               return linker;
-          }(), model, nullptr, ledger) {}
+          }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}
 
     [[nodiscard]] VmCallOutcome Virtual(
         const VmObjectRef receiver, const std::string_view name,
@@ -68,6 +72,20 @@ struct ReflectionVm final {
             model.SetObjectElement(
                 array, static_cast<JniSize>(index),
                 model.ClassObject(linker.ResolveDescriptor(descriptors[index])));
+        }
+        return array;
+    }
+
+    [[nodiscard]] VmObjectRef ObjectArray(
+        const std::vector<VmObjectRef>& values) {
+        const auto object_class = linker.ResolveDescriptor("Ljava/lang/Object;");
+        const auto array_class =
+            linker.ResolveDescriptor("[Ljava/lang/Object;");
+        const auto array = model.NewObjectArray(
+            array_class, object_class, static_cast<JniSize>(values.size()));
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            model.SetObjectElement(array, static_cast<JniSize>(index),
+                                   values[index]);
         }
         return array;
     }
@@ -100,6 +118,48 @@ std::vector<std::string> MemberNames(ReflectionVm& vm,
             "()Ljava/lang/String;"))));
     }
     return result;
+}
+
+VmObjectRef MethodWrapper(ReflectionVm& vm, const std::string_view owner,
+                          const std::string_view name,
+                          const std::vector<std::string_view>& parameters = {}) {
+    std::vector<DexClassId> parameter_types;
+    for (const auto parameter : parameters) {
+        parameter_types.push_back(vm.linker.ResolveDescriptor(parameter));
+    }
+    const auto meta = vm.interpreter.Reflection().FindDeclaredMethod(
+        vm.linker.ResolveDescriptor(owner), name, parameter_types);
+    REQUIRE(meta.has_value());
+    return vm.interpreter.Reflection().MaterializeMethod(*meta);
+}
+
+VmObjectRef Box(ReflectionVm& vm, const std::string_view primitive,
+                const VmValue value) {
+    return vm.interpreter.Reflection().Codec().BoxReturn(
+        vm.linker.ResolveDescriptor(primitive), value);
+}
+
+VmCallOutcome Invoke(ReflectionVm& vm, const VmObjectRef method,
+                     const VmObjectRef receiver,
+                     const std::vector<VmObjectRef>& arguments = {}) {
+    const auto array = arguments.empty() ? VmObjectRef{}
+                                         : vm.ObjectArray(arguments);
+    return vm.Virtual(
+        method, "invoke",
+        "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
+        {VmValue::Ref(receiver), VmValue::Ref(array)});
+}
+
+VmCallOutcome InvokeFrom(ReflectionVm& vm, const std::string_view caller,
+                         const VmObjectRef method,
+                         const VmObjectRef receiver) {
+    const auto caller_class = vm.linker.ResolveDescriptor(caller);
+    const auto driver = vm.linker.FindDirectMethod(
+        caller_class, "invokeNoArgs",
+        "(Ljava/lang/reflect/Method;Ljava/lang/Object;)Ljava/lang/Object;");
+    REQUIRE(driver.has_value());
+    const std::array arguments{VmValue::Ref(method), VmValue::Ref(receiver)};
+    return vm.interpreter.Call(*driver, arguments);
 }
 
 }  // namespace
@@ -376,8 +436,9 @@ TEST_CASE("Class member queries separate declared and deterministic public aggre
     const auto declared_methods = MemberNames(
         vm, Ref(query("getDeclaredMethods", "()[Ljava/lang/reflect/Method;")));
     CHECK(declared_methods == std::vector<std::string>{
-        "hiddenDerived", "childContract", "common", "inheritedContract",
-        "protectedDerived"});
+        "hiddenDerived", "acceptDouble", "acceptLong", "childContract",
+        "chooseSecond", "common", "doNothing", "echo", "inheritedContract",
+        "packageDerived", "protectedDerived", "throwTarget"});
 
     const auto public_methods = MemberNames(
         vm, Ref(query("getMethods", "()[Ljava/lang/reflect/Method;")));
@@ -464,4 +525,236 @@ TEST_CASE("Class member queries separate declared and deterministic public aggre
     CHECK(vm.model.ArrayLength(Ref(vm.Virtual(
               array_class, "getDeclaredFields",
               "()[Ljava/lang/reflect/Field;"))) == 0);
+}
+
+TEST_CASE("ReflectionCodec enforces the API19 primitive widening matrix") {
+    ReflectionVm vm("reflection.dex");
+    auto& codec = vm.interpreter.Reflection().Codec();
+    struct Source final {
+        std::string_view descriptor;
+        VmValue value;
+        std::string_view allowed_targets;
+    };
+    const std::vector<Source> sources{
+        {"Z", VmValue::Int(1), "Z"},
+        {"B", VmValue::Int(7), "BSIJFD"},
+        {"S", VmValue::Int(7), "SIJFD"},
+        {"C", VmValue::Int(7), "CIJFD"},
+        {"I", VmValue::Int(7), "IJFD"},
+        {"J", VmValue::Long(7), "JFD"},
+        {"F", VmValue::Float(7.0F), "FD"},
+        {"D", VmValue::Double(7.0), "D"},
+    };
+    constexpr std::string_view targets = "ZBCSIJFD";
+
+    // AOSP API19: .local/aosp/dalvik/vm/reflect/Reflect.cpp ::
+    // dvmConvertArgument/dvmConvertPrimitiveValue/dvmBoxPrimitive.
+    for (const auto& source : sources) {
+        const auto boxed = Box(vm, source.descriptor, source.value);
+        for (const auto target : targets) {
+            const auto target_text = std::string(1, target);
+            if (source.allowed_targets.find(target) == std::string_view::npos) {
+                try {
+                    static_cast<void>(codec.ConvertArgument(
+                        boxed, vm.linker.ResolveDescriptor(target_text)));
+                    FAIL_CHECK("narrowing or boolean/numeric conversion passed");
+                } catch (const VmJavaThrow& thrown) {
+                    CHECK(thrown.descriptor ==
+                          "Ljava/lang/IllegalArgumentException;");
+                }
+                continue;
+            }
+            const auto converted = codec.ConvertArgument(
+                boxed, vm.linker.ResolveDescriptor(target_text));
+            switch (target) {
+                case 'J': CHECK(converted.AsLong() == 7); break;
+                case 'F': CHECK(converted.AsFloat() == doctest::Approx(7.0F)); break;
+                case 'D': CHECK(converted.AsDouble() == doctest::Approx(7.0)); break;
+                default:
+                    CHECK_UNARY(converted.AsInt() == 7 || target == 'Z');
+                    break;
+            }
+        }
+    }
+
+    const auto derived = vm.linker.ResolveDescriptor("Lreflect/Derived;");
+    const auto derived_object = vm.model.NewInstance(
+        derived, vm.linker.Class(derived).instance_slots);
+    CHECK(codec.ConvertArgument(
+              derived_object,
+              vm.linker.ResolveDescriptor("Lreflect/Base;")).ref ==
+          derived_object);
+    CHECK_FALSE(codec.ConvertArgument(
+                    VmObjectRef{},
+                    vm.linker.ResolveDescriptor("Ljava/lang/Object;"))
+                    .ref.IsValid());
+    CHECK(codec.BoxReturn(vm.linker.ResolveDescriptor("V"), VmValue::Void()) ==
+          VmObjectRef{});
+    CHECK(codec.BoxReturn(vm.linker.ResolveDescriptor("Ljava/lang/Object;"),
+                          VmValue::Ref(derived_object)) == derived_object);
+}
+
+TEST_CASE("Method invoke dispatches and boxes identically on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ReflectionVm vm("reflection.dex", backend);
+        const auto derived_class =
+            vm.linker.ResolveDescriptor("Lreflect/Derived;");
+        const auto derived = vm.model.NewInstance(
+            derived_class, vm.linker.Class(derived_class).instance_slots);
+        const auto integer = vm.linker.ResolveDescriptor("I");
+        const auto long_type = vm.linker.ResolveDescriptor("J");
+        const auto double_type = vm.linker.ResolveDescriptor("D");
+
+        // Virtual and interface wrappers must dispatch through the receiver.
+        const auto common = MethodWrapper(
+            vm, "Lreflect/Base;", "common");
+        CHECK(vm.interpreter.Reflection().Codec()
+                  .ConvertArgument(Ref(Invoke(vm, common, derived)), integer)
+                  .AsInt() == 7);
+        const auto interface_method = MethodWrapper(
+            vm, "Lreflect/ChildContract;", "childContract");
+        CHECK(vm.interpreter.Reflection().Codec()
+                  .ConvertArgument(
+                      Ref(Invoke(vm, interface_method, derived)), integer)
+                  .AsInt() == 8);
+
+        const auto accept_long = MethodWrapper(
+            vm, "Lreflect/Derived;", "acceptLong", {"J"});
+        CHECK(vm.interpreter.Reflection().Codec()
+                  .ConvertArgument(
+                      Ref(Invoke(vm, accept_long, derived,
+                                 {Box(vm, "B", VmValue::Int(11))})),
+                      long_type)
+                  .AsLong() == 11);
+        const auto accept_double = MethodWrapper(
+            vm, "Lreflect/Derived;", "acceptDouble", {"D"});
+        CHECK(vm.interpreter.Reflection().Codec()
+                  .ConvertArgument(
+                      Ref(Invoke(vm, accept_double, derived,
+                                 {Box(vm, "F", VmValue::Float(2.5F))})),
+                      double_type)
+                  .AsDouble() == doctest::Approx(2.5));
+        const auto choose_second = MethodWrapper(
+            vm, "Lreflect/Derived;", "chooseSecond", {"I", "J"});
+        CHECK(vm.interpreter.Reflection().Codec()
+                  .ConvertArgument(
+                      Ref(Invoke(vm, choose_second, derived,
+                                 {Box(vm, "B", VmValue::Int(3)),
+                                  Box(vm, "I", VmValue::Int(19))})),
+                      long_type)
+                  .AsLong() == 19);
+
+        const auto marker = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/lang/Object;");
+        const auto echo = MethodWrapper(
+            vm, "Lreflect/Derived;", "echo", {"Ljava/lang/Object;"});
+        CHECK(Ref(Invoke(vm, echo, derived, {marker})) == marker);
+        const auto do_nothing = MethodWrapper(
+            vm, "Lreflect/Derived;", "doNothing");
+        CHECK_FALSE(Ref(Invoke(vm, do_nothing, derived)).IsValid());
+
+        const auto read = MethodWrapper(
+            vm, "Lreflect/InvokeStatics;", "readInitialized");
+        CHECK(vm.interpreter.Reflection().Codec()
+                  .ConvertArgument(Ref(Invoke(vm, read, marker)), integer)
+                  .AsInt() == 42);
+
+        ExpectException(vm, Invoke(vm, common, VmObjectRef{}),
+                        "Ljava/lang/NullPointerException;");
+        ExpectException(vm, Invoke(vm, common, marker),
+                        "Ljava/lang/IllegalArgumentException;");
+        ExpectException(vm, Invoke(vm, accept_long, derived),
+                        "Ljava/lang/IllegalArgumentException;");
+        ExpectException(vm, Invoke(vm, accept_long, derived, {marker}),
+                        "Ljava/lang/IllegalArgumentException;");
+
+        const auto target = vm.interpreter.MakeThrowable(
+            "Ljava/lang/RuntimeException;", "target");
+        const auto throwing = MethodWrapper(
+            vm, "Lreflect/Derived;", "throwTarget",
+            {"Ljava/lang/Throwable;"});
+        const auto thrown = Invoke(vm, throwing, derived, {target});
+        ExpectException(vm, thrown,
+                        "Ljava/lang/reflect/InvocationTargetException;");
+        CHECK(Ref(vm.Virtual(thrown.exception, "getTargetException",
+                             "()Ljava/lang/Throwable;")) == target);
+    }
+}
+
+TEST_CASE("Method invoke honors caller access and preserves target throwable identity") {
+    ReflectionVm vm("reflection.dex");
+    const auto derived_class =
+        vm.linker.ResolveDescriptor("Lreflect/Derived;");
+    const auto derived = vm.model.NewInstance(
+        derived_class, vm.linker.Class(derived_class).instance_slots);
+
+    // AOSP API19: AccessCheck.cpp plus Stack.cpp::dvmInvokeMethod. The caller
+    // is the interpreted frame outside Method.invoke, never Method itself.
+    const auto package_method = MethodWrapper(
+        vm, "Lreflect/Derived;", "packageDerived");
+    ExpectException(vm, Invoke(vm, package_method, derived),
+                    "Ljava/lang/IllegalAccessException;");
+    CHECK(vm.interpreter.Reflection().Codec()
+              .ConvertArgument(
+                  Ref(InvokeFrom(vm, "Lreflect/Peer;", package_method,
+                                 derived)),
+                  vm.linker.ResolveDescriptor("I"))
+              .AsInt() == 16);
+    ExpectException(vm, InvokeFrom(vm, "Lother/Outsider;", package_method,
+                                   derived),
+                    "Ljava/lang/IllegalAccessException;");
+
+    const auto protected_method = MethodWrapper(
+        vm, "Lreflect/Derived;", "protectedDerived");
+    ExpectException(vm, InvokeFrom(vm, "Lother/Sub;", protected_method,
+                                   derived),
+                    "Ljava/lang/IllegalAccessException;");
+    const auto sub_class = vm.linker.ResolveDescriptor("Lother/Sub;");
+    const auto sub = vm.model.NewInstance(
+        sub_class, vm.linker.Class(sub_class).instance_slots);
+    CHECK(vm.interpreter.Reflection().Codec()
+              .ConvertArgument(
+                  Ref(InvokeFrom(vm, "Lother/Sub;", protected_method, sub)),
+                  vm.linker.ResolveDescriptor("I"))
+              .AsInt() == 6);
+
+    const auto package_owner_class =
+        vm.linker.ResolveDescriptor("Lreflect/PackageOwner;");
+    const auto package_owner = vm.model.NewInstance(
+        package_owner_class,
+        vm.linker.Class(package_owner_class).instance_slots);
+    const auto package_owner_method = MethodWrapper(
+        vm, "Lreflect/PackageOwner;", "value");
+    CHECK(vm.interpreter.Reflection().Codec()
+              .ConvertArgument(
+                  Ref(InvokeFrom(vm, "Lreflect/Peer;",
+                                 package_owner_method, package_owner)),
+                  vm.linker.ResolveDescriptor("I"))
+              .AsInt() == 23);
+    ExpectException(vm, InvokeFrom(vm, "Lother/Outsider;",
+                                   package_owner_method, package_owner),
+                    "Ljava/lang/IllegalAccessException;");
+
+    const auto hidden = MethodWrapper(
+        vm, "Lreflect/Derived;", "hiddenDerived");
+    ExpectException(vm, Invoke(vm, hidden, derived),
+                    "Ljava/lang/IllegalAccessException;");
+    vm.interpreter.Reflection().SetAccessible(hidden, true);
+    CHECK(vm.interpreter.Reflection().Codec()
+              .ConvertArgument(Ref(Invoke(vm, hidden, derived)),
+                               vm.linker.ResolveDescriptor("I"))
+              .AsInt() == 5);
+
+    const auto target = vm.interpreter.MakeThrowable(
+        "Ljava/lang/RuntimeException;", "target");
+    const auto throwing = MethodWrapper(
+        vm, "Lreflect/Derived;", "throwTarget", {"Ljava/lang/Throwable;"});
+    const auto outcome = Invoke(vm, throwing, derived, {target});
+    ExpectException(vm, outcome,
+                    "Ljava/lang/reflect/InvocationTargetException;");
+    CHECK(Ref(vm.Virtual(outcome.exception, "getTargetException",
+                         "()Ljava/lang/Throwable;")) == target);
+    CHECK(Ref(vm.Virtual(outcome.exception, "getCause",
+                         "()Ljava/lang/Throwable;")) == target);
 }

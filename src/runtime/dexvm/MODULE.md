@@ -41,6 +41,13 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   ref。每次查询重新物化普通可回收对象，accessible flag 与类型数组都属于该 wrapper。
   DVM-65 在此基础上提供 declared/public 成员查找：public Method/Field 按
   class、superclass、direct interface 递归稳定聚合与去重，Constructor 始终只查本类。
+- `ReflectionCodec` / invoke runtime（DVM-66）：统一 Object/ref 可赋值检查、
+  primitive wrapper unbox/widen 与返回 boxing；禁止 narrowing 及 boolean/numeric
+  互转。`Method.invoke` 从 interpreter 活跃 frame 取真实 caller，以
+  `(defining_loader, package)` 裁决 public/private/package/protected 和 protected receiver，
+  再按 declared invoke kind 选 direct/static 精确 target 或按 receiver vtable 选
+  virtual/interface target。target throwable 只用持有原异常强引用的
+  `InvocationTargetException` 包装，不重新物化原异常。
 - `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
   handler；覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，
   以及 pinned libcore `java.lang` 顶层 8 个 interface
@@ -274,8 +281,9 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
 
 ## 尚未实现（记账可查）
 
-- ClassLoader facade、reflection wrapper 与 `Class` 结构/declared/public 成员查询已完成；
-  完整 invoke、Constructor 实例化、Field/Array 操作与 system metadata 尚未实现。
+- ClassLoader facade、reflection wrapper、`Class` 查询、ReflectionCodec/access 与
+  `Method.invoke` 已完成；Constructor/Class 实例化、Field/Array 操作与
+  system metadata 尚未实现。
 
 ## 测试
 

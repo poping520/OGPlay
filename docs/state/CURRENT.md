@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-21 · DVM-65 java.lang.Class core
+更新：2026-08-21 · DVM-66 Reflection invoke foundation
 
 ## 当前阶段
 
@@ -41,21 +41,16 @@
   DVM-61 已把 guest identity hash 与可复用 handle/记录槽分离；Class identity 按
   descriptor 稳定派生，`System.identityHashCode` 绕过 override，`Object.toString`
   保持 libcore 虚调用及 throwable 传播语义。
-  DVM-62 已建立 reflection linker metadata 底座：正式 `ClassNameCodec` 统一受检
-  descriptor/name 转换；linker 区分 bootstrap/application defining-loader role，
-  分离 direct 与 flattened interfaces，按 DEX/intrinsic 声明顺序保存 own direct/
-  virtual methods 与 fields，并发布完整 access flags 和 direct/static/virtual/interface
-  调用类别。array loader 跟随 component，primitive Class 补齐 `V`。
-  DVM-63 已闭合唯一 application/boot ClassLoader facade、parent/delegation 与
-  defining/initiating role；动态 classpath、多 namespace 和自定义定义权限仍不支持。
-  DVM-64 已交付 immutable ReflectionMetadata 与唯一 wrapper factory：Method/Constructor/
-  Field 使用 declaring Class + opaque ordinal，不暴露 VM/DEX id；fresh wrapper 具有 semantic
-  equals、defensive 类型数组和 per-wrapper accessible flag，metadata cache 不持有 guest ref，
-  wrapper 可由 GC 回收。
-  DVM-65 已闭合 API-19 `Class` 的结构、类型关系、cast/asSubclass 与
-  declared/public Method/Constructor/Field 查询；public Method/Field 按 class、
-  superclass、direct interface 递归确定性聚合，Constructor 不继承。invoke/
-  实例化/Field/Array 操作与 system metadata 仍由 DVM-66..69 交付。
+  DVM-62..64 已交付受检 ClassNameCodec、完整 linker reflection metadata、唯一
+  application/boot ClassLoader facade，以及可回收的 immutable metadata + fresh wrapper
+  factory；opaque slot 不暴露 VM/DEX id，accessible flag 保持 per-wrapper。
+  DVM-65 已闭合 API-19 `Class` 结构/类型关系与 declared/public
+  Method/Constructor/Field 确定性查询，Constructor 不继承。
+  DVM-66 已交付共用 ReflectionCodec、真实 caller 访问裁决与完整
+  `Method.invoke`：direct/static/virtual/interface 分派、API-19 primitive widening/
+  boxing、switch/threaded 一致，`InvocationTargetException` 保留原 target
+  throwable identity。Constructor/Class 实例化、Field/Array 与 system metadata 仍由
+  DVM-67..69 交付。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
@@ -65,7 +60,7 @@
 
 ## 下一步
 
-1. 继续 DVM-66：Reflection invoke foundation。
+1. 继续 DVM-67：Method/Constructor instantiation。
 2. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 3. Linux M9 严格出口复验。

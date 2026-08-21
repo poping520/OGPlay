@@ -47,3 +47,8 @@ reflection R3 shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclar
 linker/`ReflectionRuntime`，禁止读写 raw member id；public 聚合顺序固定为
 class → superclass → direct interface 递归。nested/enclosing、annotation/generic、完整 invoke、
 Constructor 实例化与 Field/Array 行为仍须明确 deferred。
+
+DVM-66 将 `Method.invoke` 降为 `ReflectionRuntime` 的薄入口：handler 不手写
+unbox/boxing 或 target id，统一使用 `ReflectionCodec`、真实 interpreted caller
+和 declared invoke category。`InvocationTargetException.target` 是普通 guest reference field，
+`getTargetException/getCause` 保留原 throwable identity 并由 GC 普通对象图追踪。

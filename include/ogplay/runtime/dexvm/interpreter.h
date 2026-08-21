@@ -292,6 +292,9 @@ public:
     // Live native-frame depth is retained for teardown integrity checks;
     // each Java thread now owns an independent A32 stack/TLS context.
     [[nodiscard]] std::uint32_t CurrentNativeDepth() const;
+    // The interpreted class immediately outside the active intrinsic/native
+    // boundary. Reflection uses this instead of treating Method as caller.
+    [[nodiscard]] std::optional<DexClassId> CurrentCallerClass() const;
     void AttachNativeThread(std::uint64_t guest_thread_id,
                             std::uint64_t execution_token);
     void DetachNativeThread(std::uint64_t guest_thread_id,

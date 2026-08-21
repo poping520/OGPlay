@@ -113,6 +113,14 @@ std::int32_t Int(const VmCallOutcome& outcome) {
     return outcome.value.AsInt();
 }
 
+std::int32_t JavaHash(const std::string_view value) {
+    std::uint32_t hash{};
+    for (const auto byte : value) {
+        hash = hash * 31U + static_cast<std::uint8_t>(byte);
+    }
+    return static_cast<std::int32_t>(hash);
+}
+
 void ExpectException(ReflectionVm& vm, const VmCallOutcome& outcome,
                      const std::string_view descriptor) {
     REQUIRE(outcome.exception.IsValid());
@@ -212,7 +220,7 @@ TEST_CASE("reflection metadata uses declared order and opaque local slots") {
     const auto counter = vm.linker.FindClass("LCounter;");
     REQUIRE(counter.has_value());
 
-    // AOSP API19: .local/asop/dalvik/vm/reflect/Reflect.cpp ::
+    // AOSP API19: .local/aosp/dalvik/vm/reflect/Reflect.cpp ::
     // dvmCreateReflectMethodObject / createFieldObject
     const auto methods = vm.interpreter.Reflection().DeclaredMethods(*counter);
     REQUIRE(methods.size() == 3);
@@ -265,7 +273,7 @@ TEST_CASE("reflection Method wrappers are fresh semantic copies") {
                               "()[Ljava/lang/reflect/Method;"));
     };
 
-    // AOSP API19: .local/asop/libcore/libdvm/src/main/java/
+    // AOSP API19: .local/aosp/libcore/libdvm/src/main/java/
     // java/lang/reflect/Method.java :: equals/getParameterTypes
     const auto first_array = query();
     const auto second_array = query();
@@ -342,6 +350,65 @@ TEST_CASE("reflection factory materializes Constructor and Field wrappers") {
               field_one, "getType", "()Ljava/lang/Class;")))).descriptor ==
           "I");
     CHECK(Int(vm.Virtual(field_one, "getModifiers", "()I")) == 0x0009);
+}
+
+TEST_CASE("reflection wrappers use API19 hashCode and exact declaration strings") {
+    ReflectionVm vm("reflection.dex");
+    const auto text = [&](const VmObjectRef wrapper) {
+        return vm.interpreter.StringUtf8(Ref(vm.Virtual(
+            wrapper, "toString", "()Ljava/lang/String;")));
+    };
+
+    // AOSP API19: libcore reflect Method/Constructor/Field.java ::
+    // hashCode/toString and Modifier.java :: toString.
+    const auto method_one = MethodWrapper(
+        vm, "Lreflect/Derived;", "chooseSecond", {"I", "J"});
+    const auto method_two = MethodWrapper(
+        vm, "Lreflect/Derived;", "chooseSecond", {"I", "J"});
+    CHECK(Int(vm.Virtual(method_one, "equals", "(Ljava/lang/Object;)Z",
+                         {VmValue::Ref(method_two)})) == 1);
+    CHECK(Int(vm.Virtual(method_one, "hashCode", "()I")) ==
+          JavaHash("chooseSecond"));
+    CHECK(Int(vm.Virtual(method_two, "hashCode", "()I")) ==
+          JavaHash("chooseSecond"));
+    CHECK(text(method_one) ==
+          "public long reflect.Derived.chooseSecond(int,long)");
+
+    const auto risky = MethodWrapper(vm, "Lreflect/Outer;", "risky");
+    CHECK(text(risky) ==
+          "public void reflect.Outer.risky() throws java.io.IOException,"
+          "java.lang.RuntimeException");
+
+    const auto constructor_one =
+        ConstructorWrapper(vm, "Lreflect/ConstructTarget;", {"J"});
+    const auto constructor_two =
+        ConstructorWrapper(vm, "Lreflect/ConstructTarget;", {"J"});
+    CHECK(Int(vm.Virtual(constructor_one, "equals", "(Ljava/lang/Object;)Z",
+                         {VmValue::Ref(constructor_two)})) == 1);
+    CHECK(Int(vm.Virtual(constructor_one, "hashCode", "()I")) ==
+          JavaHash("reflect.ConstructTarget"));
+    CHECK(Int(vm.Virtual(constructor_two, "hashCode", "()I")) ==
+          JavaHash("reflect.ConstructTarget"));
+    CHECK(text(constructor_one) ==
+          "public reflect.ConstructTarget(long)");
+
+    const auto field_one =
+        FieldWrapper(vm, "Lreflect/Derived;", "volatileField");
+    const auto field_two =
+        FieldWrapper(vm, "Lreflect/Derived;", "volatileField");
+    CHECK(Int(vm.Virtual(field_one, "equals", "(Ljava/lang/Object;)Z",
+                         {VmValue::Ref(field_two)})) == 1);
+    const auto field_hash = JavaHash("volatileField") ^
+                            JavaHash("reflect.Derived");
+    CHECK(Int(vm.Virtual(field_one, "hashCode", "()I")) == field_hash);
+    CHECK(Int(vm.Virtual(field_two, "hashCode", "()I")) == field_hash);
+    CHECK(text(field_one) ==
+          "public volatile long reflect.Derived.volatileField");
+
+    CHECK(vm.interpreter.StringUtf8(Ref(vm.Static(
+              "Ljava/lang/reflect/Modifier;", "toString",
+              "(I)Ljava/lang/String;", {VmValue::Int(0x052d)}))) ==
+          "public protected abstract static synchronized native");
 }
 
 TEST_CASE("reflection metadata cache does not retain guest wrappers") {

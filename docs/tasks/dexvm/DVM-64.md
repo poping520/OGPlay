@@ -40,4 +40,11 @@ Constructor、Field guest wrapper 具有 API-19 shape、独立 identity/accessib
 - 新能力记为 `dexvm.reflection_wrappers = complete`；Class 全结构查询、完整 invoke、
   Constructor/Field/Array 行为仍由 DVM-65..69 交付。
 
-状态：完成。
+## Chapter 11 收尾复验
+
+- fresh Method/Constructor/Field wrapper 在 semantic equals 成立时使用 API19 对应
+  hash：method name、declaring class name、field name xor declaring class name。
+- 三类 wrapper 已补 API19 exact `toString`，并共享最小 `Modifier.toString` JLS 顺序
+  与 array type printable-name 格式，不扩展 generic/annotation surface。
+
+状态：完成（含 Chapter 11 closure 复验）。

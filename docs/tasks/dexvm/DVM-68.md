@@ -26,4 +26,9 @@
   clinit/access，以及 object/primitive/multidimensional Array 与全部主要反例。
 - 只运行 DVM-68 与相邻 reflection 定向测试；最终全量测试由 DVM-69 后统一执行。
 
-状态：完成。
+## Chapter 11 收尾复验
+
+- Field fresh wrapper 补齐 API19 name/declaring-name xor hash 与 exact declaration
+  string；object/primitive slot 和 Array 行为保持由 ReflectionRuntime/Codec 驱动。
+
+状态：完成（含 Chapter 11 closure 复验）。

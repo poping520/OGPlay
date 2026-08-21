@@ -40,6 +40,9 @@ API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取�
 `dalvik.system.PathClassLoader` 分别保持一类一文件；对象身份、parent 与 lookup/
 initiate 状态委托 `ClassLoaderFacade`。动态 classpath 构造器显式未实现，自定义
 ClassLoader 仅映射到唯一 application namespace，不获得第二套 class directory。
+`Class.forName(String)` 从 interpreter 活跃 frame 取得真实 caller loader 并初始化；
+三参数版本将 null 映射到 API19 system loader，并只接受 boot/application/custom 的
+bounded role。init failure 复用现有 throwable identity，不由 intrinsic 重新物化。
 
 reflection shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclaration`、`Type`、
 `Member`、`AccessibleObject`、`Modifier`、`Method`、`Constructor` 与 `Field`。
@@ -58,3 +61,5 @@ DVM-67/68 的 Constructor/Class 实例化与 Field object/primitive 操作同样
 访问使用真实 typed array store 与同一 ReflectionCodec。DVM-69 的 Class nested/
 enclosing/member-local-anonymous 和 Method/Constructor Throws 只读 linker system
 metadata，禁止 `$` split 或 guest Annotation proxy。
+Method/Constructor/Field 的 API19 hashCode 与 exact toString 读取同一 immutable
+metadata；最小 `Modifier.toString(int)` 只提供 JLS 顺序格式化，不开启 generic surface。

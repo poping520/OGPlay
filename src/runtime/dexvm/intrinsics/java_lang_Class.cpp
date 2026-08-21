@@ -175,6 +175,33 @@ constexpr std::uint32_t kAccEnum = 0x4000U;
     throw VmJavaThrow{"Ljava/lang/NoSuchFieldException;", std::string(name)};
 }
 
+[[nodiscard]] VmValue ForName(IntrinsicContext& context,
+                              const std::string_view name,
+                              const bool initialize,
+                              const VmClassLoaderId loader) {
+    DexClassId java_class;
+    try {
+        java_class = context.vm.ClassLoaders().LoadClass(loader, name);
+    } catch (const ClassNameCodecError&) {
+        throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;",
+                          std::string(name)};
+    } catch (const DexVmError& error) {
+        if (error.Reason() == DexVmErrorReason::unknown_class) {
+            throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;",
+                              std::string(name)};
+        }
+        throw VmJavaThrow{"Ljava/lang/LinkageError;", error.what()};
+    }
+    if (initialize) {
+        const auto outcome = context.vm.EnsureClassInitialized(java_class);
+        if (outcome.exception.IsValid()) {
+            context.vm.SetPendingException(outcome.exception);
+            return VmValue::Ref(VmObjectRef{});
+        }
+    }
+    return VmValue::Ref(context.vm.Model().ClassObject(java_class));
+}
+
 }  // namespace
 
 IntrinsicClassDecl Declare_java_lang_Class() {
@@ -184,6 +211,46 @@ IntrinsicClassDecl Declare_java_lang_Class() {
          "Ljava/lang/reflect/GenericDeclaration;",
          "Ljava/lang/reflect/Type;"},
         0x0011U);
+
+    builder.StaticMethod(
+        "forName", "(Ljava/lang/String;)Ljava/lang/Class;",
+        [](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto name = context.vm.StringUtf8(
+                call.NonNullRef(0, "className"));
+            // API19 Class.forName(String) obtains the raw defining loader of
+            // the real caller. A bootstrap caller yields null, which the Java
+            // three-argument overload normalizes to the system loader.
+            auto role = kApplicationLoader;
+            if (const auto caller = context.vm.CurrentCallerClass();
+                caller.has_value() &&
+                context.vm.Linker().Class(*caller).defining_loader !=
+                    kBootstrapLoader) {
+                role = context.vm.Linker().Class(*caller).defining_loader;
+            }
+            return ForName(context, name, true, role);
+        });
+    builder.StaticMethod(
+        "forName",
+        "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
+        [](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto name = context.vm.StringUtf8(
+                call.NonNullRef(0, "className"));
+            const auto loader_object = context.arguments[2].ref;
+            auto role = kApplicationLoader;
+            if (loader_object.IsValid()) {
+                const auto resolved =
+                    context.vm.ClassLoaders().RoleOf(loader_object);
+                if (!resolved.has_value()) {
+                    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "unknown class loader"};
+                }
+                role = *resolved;
+            }
+            return ForName(context, name, context.arguments[1].AsInt() != 0,
+                           role);
+        });
 
     builder.VirtualMethod("getName", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {

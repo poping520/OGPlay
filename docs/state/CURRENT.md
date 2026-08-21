@@ -52,10 +52,14 @@
   只投影 InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system metadata，
   Class nested/canonical/enclosing 与 declared exception types 不做 `$` 猜测；generic、
   annotation proxy、多 ClassLoader 与动态 definition 仍明确不实现。
+  Chapter 11 closure 已补齐两个 `Class.forName` overload（真实 caller loader、null/boot/
+  application/custom bounded role、可选初始化与原 throwable 传播）、API19 三类 wrapper
+  hashCode/exact toString，以及 encoded-value kind/value_arg fail-closed malformed coverage；
+  bootstrap `Class.getClassLoader()` 文档已按本地 API19 更正为非 primitive 返回 boot facade。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
-- macOS/arm64 最近记录：893/893 CTest。
+- macOS/arm64 最近记录：896/896 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 

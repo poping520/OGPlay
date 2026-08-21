@@ -1,4 +1,5 @@
 #include "catalog.h"
+#include "shared.h"
 
 #include <cstdint>
 
@@ -67,6 +68,31 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
             return VmValue::Int(context.vm.Reflection().SemanticallyEqual(
                                     context.receiver,
                                     context.arguments[0].ref) ? 1 : 0);
+        });
+    builder.VirtualMethod("hashCode", "()I", [](IntrinsicContext& context) {
+        const auto& meta = context.vm.Reflection().ConstructorMetadata(
+            context.receiver);
+        return VmValue::Int(detail::JavaUtf8Hash(
+            context, ClassNameCodec::ClassGetName(
+                context.vm.Linker().Class(meta.declaring_class).descriptor)));
+    });
+    builder.VirtualMethod("toString", "()Ljava/lang/String;",
+        [](IntrinsicContext& context) {
+            const auto& meta = context.vm.Reflection().ConstructorMetadata(
+                context.receiver);
+            auto text = detail::ModifierString(meta.access_flags & 0x0007U);
+            if (!text.empty()) text.push_back(' ');
+            text += ClassNameCodec::ClassGetName(
+                context.vm.Linker().Class(meta.declaring_class).descriptor);
+            text.push_back('(');
+            text += detail::PrintableTypeList(context, meta.parameter_types);
+            text.push_back(')');
+            if (!meta.exception_types.empty()) {
+                text += " throws ";
+                text += detail::PrintableTypeList(context,
+                                                  meta.exception_types);
+            }
+            return VmValue::Ref(context.vm.NewStringUtf8(text));
         });
     builder.VirtualMethod(
         "newInstance", "([Ljava/lang/Object;)Ljava/lang/Object;",

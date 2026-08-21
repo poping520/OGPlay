@@ -9,18 +9,18 @@
 AOSP 语义引用一律指向 OGPlay 仓库根目录下的本地 checkout，供后续 AI 直接读取：
 
 ```text
-.local/asop/dalvik
-.local/asop/framework/base
-.local/asop/libcore
-.local/asop/libcore/libdvm
-.local/asop/libcore/luni
+.local/aosp/dalvik
+.local/aosp/framework/base
+.local/aosp/libcore
+.local/aosp/libcore/libdvm
+.local/aosp/libcore/luni
 ```
 
 正文引用应落到具体文件与函数/Java 方法，例如：
 
 ```text
-.local/asop/dalvik/vm/interp/Stack.cpp :: dvmInvokeMethod
-.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Method.java :: invoke
+.local/aosp/dalvik/vm/interp/Stack.cpp :: dvmInvokeMethod
+.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Method.java :: invoke
 ```
 
 继续遵守 [07](07-aosp-reference.md)：**只取语义，不移植 AOSP 的对象布局、GC、JNI、
@@ -108,31 +108,31 @@ Class / ClassLoader / java.lang.reflect.*
 
 | 能力 | 本地路径 | 重点 |
 | --- | --- | --- |
-| `Class` Java 半边 | `.local/asop/libcore/libdvm/src/main/java/java/lang/Class.java` | 名称、forName、member query、copy/aggregate |
-| `ClassLoader` Java 半边 | `.local/asop/libcore/libdvm/src/main/java/java/lang/ClassLoader.java` | parent/loadClass/findLoadedClass/system loader facade |
-| VM loader glue | `.local/asop/libcore/libdvm/src/main/java/java/lang/VMClassLoader.java` | bootstrap lookup/resource/native glue；只取 API19 行为 |
-| `Class` native 半边 | `.local/asop/dalvik/vm/native/java_lang_Class.cpp` | component/modifier/assignability/newInstance/declared members |
-| wrapper 物化 | `.local/asop/dalvik/vm/reflect/Reflect.cpp` / `Reflect.h` | Method/Field/Constructor metadata → object |
-| reflective invoke | `.local/asop/dalvik/vm/interp/Stack.cpp :: dvmInvokeMethod` | args/access/widen/dispatch/boxing/异常包装 |
-| `Method` | `.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Method.java`；`.local/asop/dalvik/vm/native/java_lang_reflect_Method.cpp` | shape + invoke/native 边界 |
-| `Constructor` | `.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Constructor.java`；`.local/asop/dalvik/vm/native/java_lang_reflect_Constructor.cpp` | allocation/direct invoke/异常 |
-| `Field` | `.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Field.java`；`.local/asop/dalvik/vm/native/java_lang_reflect_Field.cpp` | static init/access/conversion/final/volatile |
-| `AccessibleObject` | `.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/AccessibleObject.java`；`.local/asop/dalvik/vm/native/java_lang_reflect_AccessibleObject.cpp` | per-wrapper flag/access bypass |
-| `Array` | `.local/asop/libcore/luni/src/main/java/java/lang/reflect/Array.java`；`.local/asop/dalvik/vm/native/java_lang_reflect_Array.cpp` | object/primitive get/set/newInstance |
-| `Member` / `Modifier` | `.local/asop/libcore/luni/src/main/java/java/lang/reflect/Member.java`；`.local/asop/libcore/luni/src/main/java/java/lang/reflect/Modifier.java` | Java-visible flags/masks |
-| `InvocationTargetException` | `.local/asop/libcore/luni/src/main/java/java/lang/reflect/InvocationTargetException.java` | target/cause identity |
-| access check | `.local/asop/dalvik/vm/oo/AccessCheck.cpp` | public/private/protected/package |
-| assignability | `.local/asop/dalvik/vm/oo/TypeCheck.cpp` | receiver/arg/field reference type check |
-| class/link/init/loader | `.local/asop/dalvik/vm/oo/Class.cpp`；`.local/asop/dalvik/vm/oo/Resolve.cpp` | defining loader、lookup、clinit、member resolution |
-| system metadata | `.local/asop/libcore/dalvik/src/main/java/dalvik/annotation/InnerClass.java`、`EnclosingClass.java`、`EnclosingMethod.java`、`Throws.java`、按需 `MemberClasses.java` | simple/canonical/enclosing/exception types |
+| `Class` Java 半边 | `.local/aosp/libcore/libdvm/src/main/java/java/lang/Class.java` | 名称、forName、member query、copy/aggregate |
+| `ClassLoader` Java 半边 | `.local/aosp/libcore/libdvm/src/main/java/java/lang/ClassLoader.java` | parent/loadClass/findLoadedClass/system loader facade |
+| VM loader glue | `.local/aosp/libcore/libdvm/src/main/java/java/lang/VMClassLoader.java` | bootstrap lookup/resource/native glue；只取 API19 行为 |
+| `Class` native 半边 | `.local/aosp/dalvik/vm/native/java_lang_Class.cpp` | component/modifier/assignability/newInstance/declared members |
+| wrapper 物化 | `.local/aosp/dalvik/vm/reflect/Reflect.cpp` / `Reflect.h` | Method/Field/Constructor metadata → object |
+| reflective invoke | `.local/aosp/dalvik/vm/interp/Stack.cpp :: dvmInvokeMethod` | args/access/widen/dispatch/boxing/异常包装 |
+| `Method` | `.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Method.java`；`.local/aosp/dalvik/vm/native/java_lang_reflect_Method.cpp` | shape + invoke/native 边界 |
+| `Constructor` | `.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Constructor.java`；`.local/aosp/dalvik/vm/native/java_lang_reflect_Constructor.cpp` | allocation/direct invoke/异常 |
+| `Field` | `.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Field.java`；`.local/aosp/dalvik/vm/native/java_lang_reflect_Field.cpp` | static init/access/conversion/final/volatile |
+| `AccessibleObject` | `.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/AccessibleObject.java`；`.local/aosp/dalvik/vm/native/java_lang_reflect_AccessibleObject.cpp` | per-wrapper flag/access bypass |
+| `Array` | `.local/aosp/libcore/luni/src/main/java/java/lang/reflect/Array.java`；`.local/aosp/dalvik/vm/native/java_lang_reflect_Array.cpp` | object/primitive get/set/newInstance |
+| `Member` / `Modifier` | `.local/aosp/libcore/luni/src/main/java/java/lang/reflect/Member.java`；`.local/aosp/libcore/luni/src/main/java/java/lang/reflect/Modifier.java` | Java-visible flags/masks |
+| `InvocationTargetException` | `.local/aosp/libcore/luni/src/main/java/java/lang/reflect/InvocationTargetException.java` | target/cause identity |
+| access check | `.local/aosp/dalvik/vm/oo/AccessCheck.cpp` | public/private/protected/package |
+| assignability | `.local/aosp/dalvik/vm/oo/TypeCheck.cpp` | receiver/arg/field reference type check |
+| class/link/init/loader | `.local/aosp/dalvik/vm/oo/Class.cpp`；`.local/aosp/dalvik/vm/oo/Resolve.cpp` | defining loader、lookup、clinit、member resolution |
+| system metadata | `.local/aosp/libcore/dalvik/src/main/java/dalvik/annotation/InnerClass.java`、`EnclosingClass.java`、`EnclosingMethod.java`、`Throws.java`、按需 `MemberClasses.java` | simple/canonical/enclosing/exception types |
 
-`.local/asop/framework/base` 也可直接读取；需要确认 framework 对反射 API 的真实调用方式时，
+`.local/aosp/framework/base` 也可直接读取；需要确认 framework 对反射 API 的真实调用方式时，
 引用其中具体源码，不改用 host JDK 或在线最新版。
 
 测试注释统一写：
 
 ```text
-AOSP API19: .local/asop/dalvik/vm/interp/Stack.cpp :: dvmInvokeMethod
+AOSP API19: .local/aosp/dalvik/vm/interp/Stack.cpp :: dvmInvokeMethod
 ```
 
 ---
@@ -189,8 +189,10 @@ constexpr VmClassLoaderId kApplicationLoader{1};
 ```
 
 这是 **defining/initiating loader 的语义角色**，不是开放任意 loader graph。application facade 必须
-有 guest object；若 pinned API19 `ClassLoader` parent 行为需要 `BootClassLoader` 对象，可额外物化
-bootstrap facade，但 `Class.getClassLoader()` 对 bootstrap-defined class 仍按 API19 返回 null。
+有 guest object；pinned API19 `ClassLoader` parent 行为需要稳定的 `BootClassLoader` 对象。
+`Class.getClassLoader()` 的 Java 半边会把 native 返回的 bootstrap null 替换为该
+`BootClassLoader` singleton，因此 bootstrap-defined 非 primitive class 公开返回 boot
+facade；只有 primitive class 返回 null。不得套用桌面 JVM 常见的 bootstrap-null 描述。
 linker metadata 至少需要：
 
 ```cpp
@@ -248,12 +250,12 @@ API19 shape 工具链应升级：
 - source roots 显式包含：
 
 ```text
-.local/asop/libcore/libdvm/src/main/java
-.local/asop/libcore/luni/src/main/java
+.local/aosp/libcore/libdvm/src/main/java
+.local/aosp/libcore/luni/src/main/java
 ```
 
 同 descriptor 在多个 root 出现时 fail closed，不按遍历顺序覆盖。system annotations 单独从
-`.local/asop/libcore/dalvik/src/main/java` 读取。
+`.local/aosp/libcore/dalvik/src/main/java` 读取。
 
 `getModifiers()` 必须按 class/method/field/constructor 各自 mask 输出，不能把 Dalvik 内部 flags
 直接暴露给 guest。
@@ -323,17 +325,17 @@ class-definition authority。
 语义首先读取：
 
 ```text
-.local/asop/libcore/libdvm/src/main/java/java/lang/Class.java
-.local/asop/libcore/libdvm/src/main/java/java/lang/ClassLoader.java
-.local/asop/libcore/libdvm/src/main/java/java/lang/VMClassLoader.java
-.local/asop/dalvik/vm/oo/Class.cpp
+.local/aosp/libcore/libdvm/src/main/java/java/lang/Class.java
+.local/aosp/libcore/libdvm/src/main/java/java/lang/ClassLoader.java
+.local/aosp/libcore/libdvm/src/main/java/java/lang/VMClassLoader.java
+.local/aosp/dalvik/vm/oo/Class.cpp
 ```
 
 ### 7.1 对外能力
 
 | API | 本轮语义 |
 | --- | --- |
-| `Class.getClassLoader()` | 按 API19 defining-loader 语义；bootstrap-defined/primitive 的 null 规则与 array component 规则必须从本地源码验收 |
+| `Class.getClassLoader()` | API19 public Java 半边：primitive 返回 null；bootstrap-defined 非 primitive 返回 `BootClassLoader` singleton；application 返回 system facade；array 跟随 component |
 | `ClassLoader.getSystemClassLoader()` | 返回稳定的唯一 application loader facade |
 | `getParent()` | 仅在实现该 surface 时按 pinned `ClassLoader.java` 的 System/Boot 关系；需要时物化 bootstrap facade，禁止猜 null |
 | `loadClass(String)` / `loadClass(String, boolean)` | 复用 API19 delegation 顺序的**语义结果**，最终仍委托唯一 linker namespace；不读新 dex/jar |
@@ -434,7 +436,7 @@ Reflection Runtime 必须取得真实 caller class；不能把 caller 固定成 
 AccessController 对照：
 
 ```text
-.local/asop/dalvik/vm/oo/AccessCheck.cpp
+.local/aosp/dalvik/vm/oo/AccessCheck.cpp
 ```
 
 覆盖 public/private/package/protected 与 protected receiver restriction。
@@ -466,9 +468,9 @@ float -> double
 AOSP 锚点：
 
 ```text
-.local/asop/dalvik/vm/interp/Stack.cpp
-.local/asop/dalvik/vm/native/java_lang_reflect_Field.cpp
-.local/asop/dalvik/vm/native/java_lang_reflect_Array.cpp
+.local/aosp/dalvik/vm/interp/Stack.cpp
+.local/aosp/dalvik/vm/native/java_lang_reflect_Field.cpp
+.local/aosp/dalvik/vm/native/java_lang_reflect_Array.cpp
 ```
 
 返回：primitive -> 对应 wrapper；reference -> 原 VmObjectRef；void -> null；J/D 保持 wide bits。
@@ -481,8 +483,8 @@ AOSP 锚点：
 语义锚点：
 
 ```text
-.local/asop/dalvik/vm/interp/Stack.cpp :: dvmInvokeMethod
-.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Method.java :: invoke
+.local/aosp/dalvik/vm/interp/Stack.cpp :: dvmInvokeMethod
+.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Method.java :: invoke
 ```
 
 调用路径：
@@ -524,8 +526,8 @@ VmObjectRef**；禁止按 descriptor/message 重新物化。复用 DVM-61 已建
 锚点：
 
 ```text
-.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Constructor.java
-.local/asop/dalvik/vm/native/java_lang_reflect_Constructor.cpp
+.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Constructor.java
+.local/aosp/dalvik/vm/native/java_lang_reflect_Constructor.cpp
 ```
 
 ### 13.2 `Class.newInstance`
@@ -536,8 +538,8 @@ interface/abstract/array/primitive/void。
 锚点：
 
 ```text
-.local/asop/libcore/libdvm/src/main/java/java/lang/Class.java
-.local/asop/dalvik/vm/native/java_lang_Class.cpp
+.local/aosp/libcore/libdvm/src/main/java/java/lang/Class.java
+.local/aosp/dalvik/vm/native/java_lang_Class.cpp
 ```
 
 ---
@@ -563,8 +565,8 @@ setBoolean/setByte/setChar/setShort/setInt/setLong/setFloat/setDouble
 锚点：
 
 ```text
-.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Field.java
-.local/asop/dalvik/vm/native/java_lang_reflect_Field.cpp
+.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Field.java
+.local/aosp/dalvik/vm/native/java_lang_reflect_Field.cpp
 ```
 
 ---
@@ -591,8 +593,8 @@ multi-dimensional array 继续创建真实 typed array class，不用 Object[] �
 锚点：
 
 ```text
-.local/asop/libcore/luni/src/main/java/java/lang/reflect/Array.java
-.local/asop/dalvik/vm/native/java_lang_reflect_Array.cpp
+.local/aosp/libcore/luni/src/main/java/java/lang/reflect/Array.java
+.local/aosp/dalvik/vm/native/java_lang_reflect_Array.cpp
 ```
 
 ---
@@ -612,10 +614,10 @@ Ldalvik/annotation/MemberClasses;   // 按需
 定义直接读：
 
 ```text
-.local/asop/libcore/dalvik/src/main/java/dalvik/annotation/InnerClass.java
-.local/asop/libcore/dalvik/src/main/java/dalvik/annotation/EnclosingClass.java
-.local/asop/libcore/dalvik/src/main/java/dalvik/annotation/EnclosingMethod.java
-.local/asop/libcore/dalvik/src/main/java/dalvik/annotation/Throws.java
+.local/aosp/libcore/dalvik/src/main/java/dalvik/annotation/InnerClass.java
+.local/aosp/libcore/dalvik/src/main/java/dalvik/annotation/EnclosingClass.java
+.local/aosp/libcore/dalvik/src/main/java/dalvik/annotation/EnclosingMethod.java
+.local/aosp/libcore/dalvik/src/main/java/dalvik/annotation/Throws.java
 ```
 
 loader 输出 host metadata，不物化 guest Annotation 对象。
@@ -631,14 +633,24 @@ anonymous；按 API19 Class.java + system metadata 裁决。
 `getDeclaringClass/getName/getModifiers/getReturnType/getParameterTypes/getExceptionTypes`、
 `equals/hashCode/toString/invoke`。
 
+API19 `Method.hashCode()` 只返回 method name 的 `String.hashCode()`，不与 declaring
+class name 异或；`toString()` 使用 `Modifier.toString` 的 JLS 顺序、return type 的
+`Class.getName()`，parameter/throws 使用 `AccessibleObject.appendTypeName` 的数组格式。
+
 ### 17.2 Constructor
 
 `getDeclaringClass/getModifiers/getParameterTypes/getExceptionTypes`、
 `equals/hashCode/toString/newInstance`。
 
+API19 `Constructor.hashCode()` 是 declaring class binary name 的 `String.hashCode()`。
+
 ### 17.3 Field
 
 `getDeclaringClass/getName/getType/getModifiers`、`equals/hashCode/toString`、object/primitive get/set。
+
+API19 `Field.hashCode()` 是 field name 与 declaring class binary name 两个
+`String.hashCode()` 的异或；`toString()` 的 type/declaring class 使用
+`appendTypeName`，包括 human-readable array suffix。
 
 parameter/exception Class[] 返回 defensive copy。generic/annotation API 可 explicit-unimplemented，但 shape
 必须来自 pinned API19，不能用 host JDK 同名类替代。
@@ -750,6 +762,8 @@ public/protected/package/private、static/final/volatile、override/interface、
 - `loadClass` delegation 结果正确；bootstrap-defined class 可被 application loader 记录为 initiating；
 - `findLoadedClass` 区分 registered 与 initiated，且完全无副作用；
 - `forName(false)` 不 clinit，true 恰好一次；primitive keyword -> CNFE；
+- app/platform/object-array/primitive-array、missing/linkage/init failure 在 switch/threaded
+  后端一致；init throwable 保留已有 guest identity；
 - guest-created loader / 动态 loader 路径明确失败，不暗中定义 class；
 - catalog reorder 不改变 defining loader；多 DexUnit 夹具仍共享一个 application loader。
 
@@ -806,7 +820,7 @@ R2 必须保持小：只建立 defining/initiating loader identity、system/boot
 
 每批完成定义：
 
-1. 测试注释记录具体 `.local/asop/...` 文件 + 函数/Java 方法；
+1. 测试注释记录具体 `.local/aosp/...` 文件 + 函数/Java 方法；
 2. 涉及 invoke 时 switch/threaded 一致；
 3. Java exception type/时机有正反例；
 4. capability/module 文档同步；
@@ -851,27 +865,30 @@ R2 必须保持小：只建立 defining/initiating loader identity、system/boot
 9. catalog reorder、GC handle reuse、switch/threaded 不改变 Class/reflection/loader 语义；
 10. generic/annotation、多 ClassLoader、动态加载等非目标明确失败，不用假数据伪装成功。
 
-达到以上条件后，DexVM 才拥有可继续扩展的 **Class + ClassLoader facade + bounded reflection foundation**，而不是
+上述 closure 已由 DVM-62～69 及 Chapter 11 收尾验收闭合：两个 `Class.forName`
+重载、API19 wrapper hash/string 行为和 system-annotation fail-closed 校验均在现有
+`ClassLoaderFacade` / `ReflectionRuntime` / `ReflectionCodec` 边界内完成。DexVM 因此
+拥有可继续扩展的 **Class + ClassLoader facade + bounded reflection foundation**，而不是
 `java_lang_Class.cpp` 的零散补丁集合。
 
 ---
 
 ## 25. 本地 AOSP 读取纪律
 
-实施 AI 直接读取本文 §3 的 `.local/asop/...` 锚点，不用 host JDK 或在线最新版替代。
+实施 AI 直接读取本文 §3 的 `.local/aosp/...` 锚点，不用 host JDK 或在线最新版替代。
 首个 Reflection/ClassLoader WU 前至少确认：
 
 ```text
-.local/asop/libcore/libdvm/src/main/java/java/lang/Class.java
-.local/asop/libcore/libdvm/src/main/java/java/lang/ClassLoader.java
-.local/asop/libcore/libdvm/src/main/java/java/lang/VMClassLoader.java
-.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Method.java
-.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Constructor.java
-.local/asop/libcore/libdvm/src/main/java/java/lang/reflect/Field.java
-.local/asop/dalvik/vm/native/java_lang_Class.cpp
-.local/asop/dalvik/vm/reflect/Reflect.cpp
-.local/asop/dalvik/vm/interp/Stack.cpp
-.local/asop/dalvik/vm/oo/AccessCheck.cpp
+.local/aosp/libcore/libdvm/src/main/java/java/lang/Class.java
+.local/aosp/libcore/libdvm/src/main/java/java/lang/ClassLoader.java
+.local/aosp/libcore/libdvm/src/main/java/java/lang/VMClassLoader.java
+.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Method.java
+.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Constructor.java
+.local/aosp/libcore/libdvm/src/main/java/java/lang/reflect/Field.java
+.local/aosp/dalvik/vm/native/java_lang_Class.cpp
+.local/aosp/dalvik/vm/reflect/Reflect.cpp
+.local/aosp/dalvik/vm/interp/Stack.cpp
+.local/aosp/dalvik/vm/oo/AccessCheck.cpp
 ```
 
 若本地 checkout 缺文件，应先修本地 AOSP 资料；禁止退回 host JDK、在线 master、ART 或凭记忆替代

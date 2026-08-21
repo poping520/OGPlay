@@ -48,6 +48,38 @@
     return v0
 .end method
 
+# Calls Class.forName from an interpreted application frame so the intrinsic
+# must observe the real caller loader rather than its own platform owner.
+.class public LForNameCaller;
+.super Ljava/lang/Object;
+
+.method static public find(Ljava/lang/String;)Ljava/lang/Class;
+.registers 2
+    invoke-static {v1}, Ljava/lang/Class;->forName(Ljava/lang/String;)Ljava/lang/Class;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method static public findWithLoader(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;
+.registers 4
+    invoke-static {v1, v2, v3}, Ljava/lang/Class;->forName(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;
+    move-result-object v0
+    return-object v0
+.end method
+
+.class public LForNameInitFailure;
+.super Ljava/lang/Object;
+
+.field static public target:Ljava/lang/Throwable;
+
+.method static constructor <clinit>()V
+.registers 1
+    new-instance v0, Ljava/lang/ExceptionInInitializerError;
+    invoke-direct {v0}, Ljava/lang/ExceptionInInitializerError;-><init>()V
+    sput-object v0, LForNameInitFailure;->target:Ljava/lang/Throwable;
+    throw v0
+.end method
+
 .class public LDoubler;
 .super LCounter;
 

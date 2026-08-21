@@ -34,13 +34,17 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   facade 只消费 linker 的唯一 class directory，并以 initiating-loader bit 区分“已知”与
   “已由该 loader 发起”。`findLoadedClass` 只查询、不链接/初始化/合成，`loadClass`
   使用 `ClassNameCodec` 受检 binary name、按 boot/application 边界委托并忽略 API-19
-  `resolve` 参数；不支持动态 classpath、多 namespace 或自定义 loader 定义权限。
+  `resolve` 参数。`Class.forName(String)` 使用真实 interpreted caller loader 并初始化；
+  三参数入口将 null 按 API19 归 system/application facade，显式 boot/application/custom
+  role 仍只查同一 linker directory；不支持动态 classpath、多 namespace 或自定义定义权限。
 - `ReflectionRuntime`（DVM-64..65）：按 declaring class 缓存 immutable Method/Constructor/Field
   metadata，并作为唯一 guest wrapper factory。wrapper 只保存 declaring `Class` 与 opaque
   declared-order ordinal；不得暴露 `VmMethodId`/`VmFieldId`/DEX index，也不得缓存 guest
   ref。每次查询重新物化普通可回收对象，accessible flag 与类型数组都属于该 wrapper。
   DVM-65 在此基础上提供 declared/public 成员查找：public Method/Field 按
   class、superclass、direct interface 递归稳定聚合与去重，Constructor 始终只查本类。
+  三类 wrapper 的 API19 hashCode 与 exact declaration toString 共用 modifier/type-name
+  formatter；fresh semantic-equal wrapper 不退回 Object identity hash。
 - `ReflectionCodec` / invoke runtime（DVM-66）：统一 Object/ref 可赋值检查、
   primitive wrapper unbox/widen 与返回 boxing；禁止 narrowing 及 boolean/numeric
   互转。`Method.invoke` 从 interpreter 活跃 frame 取真实 caller，以
@@ -283,9 +287,9 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
 
 ## 尚未实现（记账可查）
 
-- ClassLoader facade、reflection wrapper、`Class` 查询、ReflectionCodec/access 与
-  `Method.invoke` 已完成；Constructor/Class 实例化、Field/Array 操作与
-  system metadata 尚未实现。
+- bounded reflection foundation 已完整闭合。仍未实现且保持明确边界的是 generic
+  reflection、annotation proxy、Proxy、多 ClassLoader namespace、动态 DexClassLoader/
+  defineClass 与资源 classpath 扩展。
 
 ## 测试
 

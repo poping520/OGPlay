@@ -39,7 +39,8 @@
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度；DVM-69 额外只投影
   InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system annotations，
-  其余 annotation 只受检跳过，不生成语义对象；不执行任何字节码。
+  其余 annotation 只受检跳过，不生成语义对象；encoded value kind/value_arg 按 DEX
+  宽度与复合/null/boolean 规则 fail closed；不执行任何字节码。
 - `ReadDexClassData(bytes, image)`：解码 class_data 的 delta member 索引与 access flags，
   对 code_item 只提取寄存器、参数、try 数和指令 code-unit 数，不解释指令。
 - `AnalyzeDexL1(image, class_data, libraries, signatures)`：输出应用类/方法/native 数量、

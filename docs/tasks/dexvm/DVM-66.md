@@ -40,4 +40,9 @@ identity 语义。
 - 只运行 DVM-66 新增用例及 reflection 邻接回归，不跑全量测试。
 - 新能力记为 `dexvm.reflection_invoke = complete`。
 
-状态：完成。
+## Chapter 11 收尾复验
+
+- `forName` 初始化与 wrapper string/hash 不旁路现有 interpreted caller、class-init
+  state machine 或 `ReflectionCodec`；相关 closure 用例在 switch/threaded 共用路径。
+
+状态：完成（含 Chapter 11 closure 复验）。

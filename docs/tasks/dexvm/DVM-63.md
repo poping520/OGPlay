@@ -40,4 +40,12 @@
 - 新能力记为 `dexvm.class_loader_facade = complete`；reflection wrappers、完整 Class core
   与 reflective invoke/Field/Array 仍由 DVM-64..69 交付。
 
-状态：完成。
+## Chapter 11 收尾复验
+
+- 补齐 `Class.forName(String)` 与三参数版本：单参数入口使用真实 interpreted caller
+  loader 并初始化；三参数 null 按 API19 归 system/application facade，显式 boot 与
+  custom facade 分别保持 bootstrap lookup 和 bounded application namespace。
+- platform/app/object-array/primitive-array、primitive keyword、missing/linkage、
+  initialize false/true 与 init throwable identity 在 switch/threaded 后端一致。
+
+状态：完成（含 Chapter 11 closure 复验）。

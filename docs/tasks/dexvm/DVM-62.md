@@ -41,4 +41,9 @@
 - 新能力记为 `dexvm.reflection_linker_metadata = complete`；完整 reflection surface 仍未
   交付，后续由 DVM-63..69 继续闭合。
 
-状态：完成。
+## Chapter 11 收尾复验
+
+- `Class.forName` 两个重载继续只经 `ClassNameCodec` 做 binary name/array descriptor
+  转换；primitive keyword 保持不可查，未引入第二套名称或 class directory。
+
+状态：完成（含 Chapter 11 closure 复验）。

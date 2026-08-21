@@ -28,4 +28,9 @@
   target identity、不可实例化类型、无默认构造器以及两种实例化入口的异常差异。
 - 只运行 DVM-67 与相邻 reflection 定向测试；最终全量测试由 DVM-69 后统一执行。
 
-状态：完成。
+## Chapter 11 收尾复验
+
+- Constructor fresh wrapper 补齐 API19 declaring-class-name hash 与 exact declaration
+  string；既有 allocation/direct invoke/target wrapping 语义不变。
+
+状态：完成（含 Chapter 11 closure 复验）。

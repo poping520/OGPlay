@@ -38,4 +38,10 @@ invoke、实例化、Field/Array 操作或 system metadata。
 - 只运行 DVM-65 新增用例及相邻 reflection 回归，不跑全量测试。
 - 新能力记为 `dexvm.class_reflection_core = complete`。
 
-状态：完成。
+## Chapter 11 收尾复验
+
+- `Class` facade 补齐两个 `forName` overload；public `getClassLoader()` 继续遵循本地
+  API19 `Class.java`：primitive 为 null，bootstrap 非 primitive 为 boot facade，
+  application/array 按 defining/component loader 返回稳定 facade。
+
+状态：完成（含 Chapter 11 closure 复验）。

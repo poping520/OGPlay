@@ -1,4 +1,5 @@
 #include "catalog.h"
+#include "shared.h"
 
 #include <cstdint>
 #include <string_view>
@@ -9,19 +10,7 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
-namespace {
-
 constexpr std::uint32_t kMethodModifierMask = 0x0d3fU;
-
-[[nodiscard]] std::int32_t JavaHash(const std::string_view value) {
-    std::uint32_t hash{};
-    for (const auto byte : value) {
-        hash = hash * 31U + static_cast<std::uint8_t>(byte);
-    }
-    return static_cast<std::int32_t>(hash);
-}
-
-}  // namespace
 
 IntrinsicClassDecl Declare_java_lang_reflect_Method() {
     auto builder = IntrinsicClassBuilder::Class(
@@ -91,10 +80,33 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
         const auto& meta = context.vm.Reflection().MethodMetadata(
             context.receiver);
         const auto& method = context.vm.Linker().Method(meta.method);
-        return VmValue::Int(
-            JavaHash(ClassNameCodec::ClassGetName(
-                context.vm.Linker().Class(meta.declaring_class).descriptor)) ^
-            JavaHash(method.name));
+        return VmValue::Int(detail::JavaUtf8Hash(context, method.name));
+    });
+    builder.VirtualMethod("toString", "()Ljava/lang/String;",
+        [](IntrinsicContext& context) {
+            const auto& meta = context.vm.Reflection().MethodMetadata(
+                context.receiver);
+            const auto& linker = context.vm.Linker();
+            const auto& method = linker.Method(meta.method);
+            auto text = detail::ModifierString(meta.access_flags &
+                                               kMethodModifierMask);
+            if (!text.empty()) text.push_back(' ');
+            text += ClassNameCodec::ClassGetName(
+                linker.Class(meta.return_type).descriptor);
+            text.push_back(' ');
+            text += ClassNameCodec::ClassGetName(
+                linker.Class(meta.declaring_class).descriptor);
+            text.push_back('.');
+            text += method.name;
+            text.push_back('(');
+            text += detail::PrintableTypeList(context, meta.parameter_types);
+            text.push_back(')');
+            if (!meta.exception_types.empty()) {
+                text += " throws ";
+                text += detail::PrintableTypeList(context,
+                                                  meta.exception_types);
+            }
+            return VmValue::Ref(context.vm.NewStringUtf8(text));
     });
     builder.VirtualMethod(
         "invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",

@@ -1,5 +1,9 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -176,6 +180,47 @@ std::vector<std::uint8_t> ClassDex(const char* second_type = "I") {
     return bytes;
 }
 
+std::vector<std::uint8_t> ReadDexFixture(const std::string& name) {
+    const std::string path =
+        std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
+    std::ifstream stream(path, std::ios::binary);
+    REQUIRE_MESSAGE(stream.good(), "missing DEX fixture: ", path);
+    return {std::istreambuf_iterator<char>(stream),
+            std::istreambuf_iterator<char>()};
+}
+
+std::uint32_t Read32(const std::vector<std::uint8_t>& bytes,
+                     const std::size_t offset) {
+    return static_cast<std::uint32_t>(bytes[offset]) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
+}
+
+void SkipUleb128(const std::vector<std::uint8_t>& bytes,
+                 std::size_t& offset) {
+    while ((bytes[offset++] & 0x80U) != 0U) {
+    }
+}
+
+std::size_t FirstSystemAnnotationValue(
+    const std::vector<std::uint8_t>& bytes) {
+    const auto image = ogplay::loader::ParseDex(bytes);
+    const auto annotated = std::find_if(
+        image.classes.begin(), image.classes.end(),
+        [](const auto& item) { return item.annotations_offset != 0U; });
+    REQUIRE(annotated != image.classes.end());
+    const auto annotation_set = Read32(bytes, annotated->annotations_offset);
+    REQUIRE(annotation_set != 0U);
+    REQUIRE(Read32(bytes, annotation_set) != 0U);
+    const auto annotation_item = Read32(bytes, annotation_set + 4U);
+    std::size_t offset = annotation_item + 1U;  // visibility
+    SkipUleb128(bytes, offset);                // annotation type
+    SkipUleb128(bytes, offset);                // element count
+    SkipUleb128(bytes, offset);                // first element name
+    return offset;
+}
+
 }  // namespace
 
 TEST_CASE("DEX parser preserves header and ordered map facts") {
@@ -325,4 +370,20 @@ TEST_CASE("DEX class definitions reject invalid types sources and offsets") {
     Put32(bad_data, 0xb4 + 24, 0x80);
     CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseDex(bad_data)),
                     ogplay::loader::DexError);
+}
+
+TEST_CASE("DEX system annotations reject invalid encoded values and value_arg") {
+    auto invalid_type = ReadDexFixture("reflection.dex");
+    const auto value_offset = FirstSystemAnnotationValue(invalid_type);
+    invalid_type[value_offset] = 0x01U;  // reserved encoded_value type
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::loader::ParseDex(invalid_type)),
+        ogplay::loader::DexError);
+
+    auto invalid_argument = ReadDexFixture("reflection.dex");
+    invalid_argument[FirstSystemAnnotationValue(invalid_argument)] =
+        0x3cU;  // VALUE_ARRAY with forbidden value_arg=1
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::loader::ParseDex(invalid_argument)),
+        ogplay::loader::DexError);
 }

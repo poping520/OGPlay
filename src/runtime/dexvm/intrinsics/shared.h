@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "../interpreter_internal.h"
+#include "ogplay/runtime/dexvm/class_name_codec.h"
 
 namespace ogplay::runtime::dexvm::intrinsics::detail {
 
@@ -114,6 +115,57 @@ BuildReflectArray(Interpreter &vm, const std::string &element_descriptor,
                                      unit);
     }
     return hash;
+}
+
+[[nodiscard]] inline std::int32_t JavaUtf8Hash(IntrinsicContext& context,
+                                               const std::string_view value) {
+    return JavaStringHash(
+        context.vm.Model().StringValue(context.vm.NewStringUtf8(value)));
+}
+
+[[nodiscard]] inline std::string ModifierString(const std::uint32_t modifiers) {
+    struct Entry final {
+        std::uint32_t flag;
+        const char* text;
+    };
+    constexpr Entry entries[]{
+        {0x0001U, "public"},       {0x0004U, "protected"},
+        {0x0002U, "private"},      {0x0400U, "abstract"},
+        {0x0008U, "static"},       {0x0010U, "final"},
+        {0x0080U, "transient"},    {0x0040U, "volatile"},
+        {0x0020U, "synchronized"}, {0x0100U, "native"},
+        {0x0800U, "strictfp"},     {0x0200U, "interface"},
+    };
+    std::string result;
+    for (const auto& entry : entries) {
+        if ((modifiers & entry.flag) == 0U) continue;
+        if (!result.empty()) result.push_back(' ');
+        result += entry.text;
+    }
+    return result;
+}
+
+[[nodiscard]] inline std::string PrintableTypeName(
+    IntrinsicContext& context, const DexClassId java_class) {
+    std::string_view descriptor = context.vm.Linker().Class(java_class).descriptor;
+    std::size_t dimensions{};
+    while (descriptor.starts_with("[")) {
+        descriptor.remove_prefix(1);
+        ++dimensions;
+    }
+    auto result = ClassNameCodec::ClassGetName(descriptor);
+    for (std::size_t index = 0; index < dimensions; ++index) result += "[]";
+    return result;
+}
+
+[[nodiscard]] inline std::string PrintableTypeList(
+    IntrinsicContext& context, const std::span<const DexClassId> types) {
+    std::string result;
+    for (std::size_t index = 0; index < types.size(); ++index) {
+        if (index != 0U) result.push_back(',');
+        result += PrintableTypeName(context, types[index]);
+    }
+    return result;
 }
 
 [[nodiscard]] inline std::string Narrow(const std::u16string& value) {

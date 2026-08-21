@@ -1138,22 +1138,22 @@ note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与常量池解析
 [dexvm.reflection_linker_metadata]
 status = "complete"
 test = "tests/dexvm/class_name_codec_tests.cpp; related intrinsic builder/hierarchy/dispatch tests"
-note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2：bootstrap/application defining-loader role，direct/flattened interfaces 分离，DEX/intrinsic declared member order，完整 raw access flags 与 direct/static/virtual/interface invocation category；array loader 跟随 component，primitive Class 补齐 V。ClassLoader facade 与 reflection wrapper 已由 DVM-63/64 交付，Class core 与 reflective invoke/Field/Array 由 DVM-65..69 继续闭合"
+note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2：bootstrap/application defining-loader role，direct/flattened interfaces 分离，DEX/intrinsic declared member order，完整 raw access flags 与 direct/static/virtual/interface invocation category；array loader 跟随 component，primitive Class 补齐 V。Chapter 11 closure 的 Class.forName 继续只经该 codec/linker directory，未建立旁路"
 
 [dexvm.class_loader_facade]
 status = "complete"
-test = "tests/dexvm/class_loader_tests.cpp; related codec/linker/catalog/initialization tests"
-note = "DVM-63 以 linker 唯一 class directory 交付稳定 PathClassLoader/BootClassLoader facade、固定 parent 链、defining/initiating loader 分离、无副作用 findLoadedClass 与受检 loadClass delegation；resolve 不触发初始化，动态 classpath、多 namespace、resource lookup 与自定义 class definition 明确不支持"
+test = "tests/dexvm/class_loader_tests.cpp; Class.forName switch/threaded/caller-loader/init/error tests"
+note = "DVM-63/Chapter 11 closure 以 linker 唯一 class directory 交付稳定 PathClassLoader/BootClassLoader facade、固定 parent 链、defining/initiating loader 分离、无副作用 findLoadedClass、受检 loadClass delegation 与两个 Class.forName overload；单参数用真实 caller loader 并初始化，三参数处理 null/system、boot、application/custom bounded role，missing/linkage/init throwable 按 API19 传播；动态 classpath、多 namespace 与自定义 definition 明确不支持"
 
 [dexvm.reflection_wrappers]
 status = "complete"
-test = "tests/dexvm/reflection_tests.cpp; related linker/catalog/GC/bounded reflection tests"
-note = "DVM-64 交付不可变 ReflectionMetadata 与唯一 wrapper factory：declaring Class + opaque declared-order ordinal，不暴露 Vm/Dex member id；Method/Constructor/Field 使用 API-19 hierarchy/shape、fresh identity、semantic equals、defensive type arrays 与 per-wrapper AccessibleObject flag，metadata cache 不持有 guest ref，wrapper 可由 GC 回收"
+test = "tests/dexvm/reflection_tests.cpp; wrapper fresh identity/equals/hashCode/exact toString/GC tests"
+note = "DVM-64/Chapter 11 closure 交付不可变 ReflectionMetadata 与唯一 wrapper factory：declaring Class + opaque declared-order ordinal，不暴露 Vm/Dex member id；Method/Constructor/Field 使用 API19 fresh identity、semantic equals 与匹配 hashCode，exact declaration toString 共享最小 Modifier JLS 顺序/array printable type；defensive arrays、per-wrapper accessible 与 GC 行为不变"
 
 [dexvm.class_reflection_core]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; DVM-65 Class structural/member-query tests"
-note = "DVM-65 闭合 API-19 Class 结构与类型关系：name/simple name、loader/component/super/direct interfaces/modifiers、分类、assignability/isInstance/cast/asSubclass/toString；ReflectionRuntime 提供 declared/public Method/Constructor/Field 精确查找与 fresh wrapper 数组，public Method/Field 稳定聚合继承与 direct interfaces，Constructor 不继承。nested/enclosing/generic/annotation/signature/throws 由 DVM-69 闭合，invoke/instantiation/Field/Array 操作由 DVM-66..68 闭合"
+note = "DVM-65/Chapter 11 closure 闭合 API19 Class：name/simple/canonical、public getClassLoader 的 primitive-null/bootstrap-facade 规则、两个 forName overload、component/super/direct interfaces/modifiers、分类、assignability/cast/toString 与 declared/public member 查询；nested/enclosing/throws、invoke/instantiation/Field/Array 分别由 DVM-66..69 闭合，generic/annotation 仍非目标"
 
 [dexvm.reflection_invoke]
 status = "complete"
@@ -1172,8 +1172,8 @@ note = "DVM-68 以真实 instance/static slots 和统一 ReflectionCodec 交付 
 
 [dexvm.reflection_system_metadata]
 status = "complete"
-test = "tests/dexvm/reflection_tests.cpp; loader/dexasm architecture tests"
-note = "DVM-69 受检解析 Dalvik InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system annotations 为 host metadata；Class simple/canonical/declaring/enclosing/member-local-anonymous 与 declared classes 不做 $ 猜测，Method/Constructor exception Class[] defensive copy 来自 Throws；不物化通用 annotation proxy"
+test = "tests/dexvm/reflection_tests.cpp; tests/loader/dex_tests.cpp malformed encoded-value tests; dexasm/architecture tests"
+note = "DVM-69/Chapter 11 closure 受检解析 Dalvik InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws 为 host metadata；nested/enclosing/declared exceptions 不做 $ 猜测。encoded value kind/value_arg 按 DEX 精确 fail closed，reserved/超宽/array/annotation/null/boolean 非法形态有 malformed tests；不物化通用 annotation proxy"
 
 [dexvm.object_model]
 status = "complete"

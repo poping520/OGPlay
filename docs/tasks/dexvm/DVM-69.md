@@ -27,4 +27,10 @@
   method/constructor、canonical null 规则、MemberClasses、InnerClass modifiers 与 Throws。
 - DVM-67..69 全部完成后运行一次全量测试。
 
-状态：完成。
+## Chapter 11 收尾复验
+
+- encoded-value parser 现在按 DEX kind 精确限制合法 type/value_arg，reserved kind、
+  scalar 超宽、array/annotation/null/boolean 非法 argument 全部 fail closed；新增真实
+  system-annotation fixture 的 malformed mutation tests，仍不物化 annotation runtime。
+
+状态：完成（含 Chapter 11 closure 复验）。

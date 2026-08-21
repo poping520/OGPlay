@@ -657,7 +657,38 @@ void SkipEncodedValue(const Reader& reader, std::size_t& offset,
     const auto header = reader.U8(offset++);
     const auto type = static_cast<std::uint8_t>(header & 0x1fU);
     const auto argument = static_cast<std::uint8_t>(header >> 5U);
-    if (type <= 0x1bU) {
+    std::optional<std::uint8_t> maximum_argument;
+    switch (type) {
+    case 0x00U:  // byte
+        maximum_argument = 0U;
+        break;
+    case 0x02U:  // short
+    case 0x03U:  // char
+        maximum_argument = 1U;
+        break;
+    case 0x04U:  // int
+    case 0x10U:  // float
+    case 0x15U:  // method type
+    case 0x16U:  // method handle
+    case 0x17U:  // string
+    case 0x18U:  // type
+    case 0x19U:  // field
+    case 0x1aU:  // method
+    case 0x1bU:  // enum
+        maximum_argument = 3U;
+        break;
+    case 0x06U:  // long
+    case 0x11U:  // double
+        maximum_argument = 7U;
+        break;
+    default:
+        break;
+    }
+    if (maximum_argument.has_value()) {
+        if (argument > *maximum_argument) {
+            Fail(DexErrorReason::invalid_member, offset - 1U,
+                 "DEX encoded value has an invalid value_arg");
+        }
         static_cast<void>(ReadUnsignedPayload(reader, offset, argument));
         return;
     }
@@ -680,7 +711,20 @@ void SkipEncodedValue(const Reader& reader, std::size_t& offset,
         SkipEncodedAnnotation(reader, offset, depth + 1U);
         return;
     }
-    if (type == 0x1eU || type == 0x1fU) return;
+    if (type == 0x1eU) {
+        if (argument != 0U) {
+            Fail(DexErrorReason::invalid_member, offset - 1U,
+                 "DEX encoded null has a value_arg");
+        }
+        return;
+    }
+    if (type == 0x1fU) {
+        if (argument > 1U) {
+            Fail(DexErrorReason::invalid_member, offset - 1U,
+                 "DEX encoded boolean has an invalid value_arg");
+        }
+        return;
+    }
     Fail(DexErrorReason::invalid_member, offset - 1U,
          "DEX encoded annotation value type is invalid");
 }

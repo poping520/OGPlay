@@ -32,14 +32,15 @@ struct LoaderVm final {
     ogplay::core::CapabilityLedger ledger;
     Interpreter interpreter;
 
-    LoaderVm()
+    explicit LoaderVm(
+        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : interpreter([this]() -> DexClassLinker& {
               const auto catalog = CoreIntrinsicCatalog();
               linker.RegisterIntrinsics(catalog);
               linker.RegisterDex(ReadFixture("interp.dex"));
               linker.Link();
               return linker;
-          }(), model, nullptr, ledger) {}
+          }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}
 
     [[nodiscard]] VmObjectRef String(const std::string_view value) {
         return interpreter.NewStringUtf8(value);
@@ -241,4 +242,89 @@ TEST_CASE("ClassLoader refuses dynamic namespaces and bootstrap app lookup") {
     ExpectClassNotFound(vm, vm.Virtual(
         custom, "findClass", "(Ljava/lang/String;)Ljava/lang/Class;",
         {VmValue::Ref(vm.String("dynamic.Type"))}));
+}
+
+TEST_CASE("Class forName follows API19 caller loader initialization and errors") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        LoaderVm vm(backend);
+        const auto find = [&](const std::string_view name) {
+            return vm.Static(
+                "LForNameCaller;", "find",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                {VmValue::Ref(vm.String(name))});
+        };
+        const auto find_with_loader =
+            [&](const std::string_view name, const bool initialize,
+                const VmObjectRef loader) {
+                return vm.Static(
+                    "LForNameCaller;", "findWithLoader",
+                    "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
+                    {VmValue::Ref(vm.String(name)),
+                     VmValue::Int(initialize ? 1 : 0), VmValue::Ref(loader)});
+            };
+
+        // AOSP API19: libcore Class.java :: forName and Dalvik
+        // java_lang_Class.cpp :: Dalvik_java_lang_Class_classForName.
+        CHECK(Ref(find("Counter")) == vm.model.ClassObject(
+                  vm.linker.ResolveDescriptor("LCounter;")));
+        CHECK(Ref(find("java.lang.String")) == vm.model.ClassObject(
+                  vm.linker.ResolveDescriptor("Ljava/lang/String;")));
+        CHECK(Ref(find("[LCounter;")) == vm.model.ClassObject(
+                  vm.linker.ResolveDescriptor("[LCounter;")));
+        ExpectClassNotFound(vm, find("int"));
+        ExpectClassNotFound(vm, find("missing.Type"));
+        ExpectException(vm, find("DormantOptional"),
+                        "Ljava/lang/LinkageError;");
+        CHECK(Ref(find("[I")) == vm.model.ClassObject(
+                  vm.linker.ResolveDescriptor("[I")));
+
+        const auto system = vm.interpreter.ClassLoaders().ApplicationLoader();
+        const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
+        CHECK(Ref(find_with_loader("Counter", false, VmObjectRef{})) ==
+              vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;")));
+        CHECK(Ref(find_with_loader("java.lang.String", false, boot)) ==
+              vm.model.ClassObject(
+                  vm.linker.ResolveDescriptor("Ljava/lang/String;")));
+        ExpectClassNotFound(vm,
+                            find_with_loader("Counter", false, boot));
+
+        const auto custom =
+            vm.interpreter.NewIntrinsicInstance("Ljava/lang/ClassLoader;");
+        REQUIRE_FALSE(vm.Direct(custom, "<init>", "()V").exception.IsValid());
+        CHECK(Ref(find_with_loader("Counter", false, custom)) ==
+              vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;")));
+
+        const auto clinit = vm.linker.ResolveDescriptor("LClinitUser;");
+        CHECK(vm.linker.Class(clinit).clinit_state ==
+              ClinitState::uninitialized);
+        CHECK(Ref(find_with_loader("ClinitUser", false, system)) ==
+              vm.model.ClassObject(clinit));
+        CHECK(vm.linker.Class(clinit).clinit_state ==
+              ClinitState::uninitialized);
+        CHECK(Ref(find_with_loader("ClinitUser", true, system)) ==
+              vm.model.ClassObject(clinit));
+        CHECK(vm.linker.Class(clinit).clinit_state == ClinitState::initialized);
+
+        const auto null_name = vm.Static(
+            "LForNameCaller;", "find",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            {VmValue::Ref(VmObjectRef{})});
+        ExpectException(vm, null_name, "Ljava/lang/NullPointerException;");
+
+        const auto failing =
+            vm.linker.ResolveDescriptor("LForNameInitFailure;");
+        const auto failed = find_with_loader("ForNameInitFailure", true, system);
+        REQUIRE(failed.exception.IsValid());
+        CHECK(vm.linker.Class(failed.exception_class).descriptor ==
+              "Ljava/lang/ExceptionInInitializerError;");
+        const auto target_field = vm.linker.FindFieldRecursive(
+            failing, "target", "Ljava/lang/Throwable;");
+        REQUIRE(target_field.has_value());
+        const auto& field = vm.linker.Field(*target_field);
+        CHECK(failed.exception == VmObjectRef(
+                  vm.linker.Class(failing).static_storage[field.slot]));
+    }
 }

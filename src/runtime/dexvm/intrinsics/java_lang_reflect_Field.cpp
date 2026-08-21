@@ -1,4 +1,5 @@
 #include "catalog.h"
+#include "shared.h"
 
 #include <cstdint>
 #include <optional>
@@ -53,6 +54,30 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
             return VmValue::Int(context.vm.Reflection().SemanticallyEqual(
                                     context.receiver,
                                     context.arguments[0].ref) ? 1 : 0);
+        });
+    builder.VirtualMethod("hashCode", "()I", [](IntrinsicContext& context) {
+        const auto& meta = context.vm.Reflection().FieldMetadata(
+            context.receiver);
+        const auto& linker = context.vm.Linker();
+        return VmValue::Int(
+            detail::JavaUtf8Hash(context, linker.Field(meta.field).name) ^
+            detail::JavaUtf8Hash(
+                context, ClassNameCodec::ClassGetName(
+                    linker.Class(meta.declaring_class).descriptor)));
+    });
+    builder.VirtualMethod("toString", "()Ljava/lang/String;",
+        [](IntrinsicContext& context) {
+            const auto& meta = context.vm.Reflection().FieldMetadata(
+                context.receiver);
+            const auto& linker = context.vm.Linker();
+            auto text = detail::ModifierString(meta.access_flags & 0x00dfU);
+            if (!text.empty()) text.push_back(' ');
+            text += detail::PrintableTypeName(context, meta.type);
+            text.push_back(' ');
+            text += detail::PrintableTypeName(context, meta.declaring_class);
+            text.push_back('.');
+            text += linker.Field(meta.field).name;
+            return VmValue::Ref(context.vm.NewStringUtf8(text));
         });
     builder.VirtualMethod(
         "get", "(Ljava/lang/Object;)Ljava/lang/Object;",

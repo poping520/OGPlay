@@ -853,7 +853,7 @@ note = "M8 WU-0366 批量闭合 GetStaticFieldID 与 9 对 getter/setter 共 19 
 [runtime.jni_guest_framework_objects]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp"
-note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享会话级精确 class registry；GetObjectClass、IsInstanceOf 与 30 个 instance call 槽统一查询且错误对象明确失败"
+note = "M8 WU-0367 让 NewObject 与 framework HLE 预注册 host object 共享会话级精确 class registry；GetObjectClass、IsInstanceOf 与 30 个 instance call 槽统一查询，FindClass 返回的 jclass 可作为 java.lang.Class receiver，错误对象明确失败"
 
 [runtime.android_legacy_platform_identity]
 status = "complete"
@@ -1237,8 +1237,8 @@ note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder
 
 [dexvm.jni_bridge]
 status = "complete"
-test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
-note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回"
+test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
+note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回；DexVM ClassObject 与 JNI jclass 双向规范化为同一身份，JNI_OnLoad 可把 jclass 用作 Class instance receiver"
 
 [dexvm.intrinsics_android_core]
 status = "partial"

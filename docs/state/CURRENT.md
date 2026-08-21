@@ -27,8 +27,8 @@
   DT_SONAME/inventory identity 通用契约，DH 无 guest fault 但固定 step 的呈现序列
   100/97 漂移，A6 长运行因此未执行；`dexvm.gc` 诚实保持 `partial`。
   APK class_def 全量注册并懒链接；未触达 SDK 层级缺口不阻断，触达后明确失败或记账。
-  API-19 `Enum`/clone/java.lang interface shape 已补齐；PVZ NA 越过静态层级与引用容量，
-  `isTaskRoot()` 使用通用 task root 事实，后续 title 缺口尚待确认。
+  API-19 `Enum`/clone/java.lang interface shape 已补齐；PVZ NA 越过静态层级、引用容量与
+  JNI_OnLoad 的 jclass/Class identity；下一阻断为 `__android_log_vprint` boundary import。
   DVM-48..50 已闭合 `java.lang.Thread`、统一 Object[]/class identity、每 guest Java
   线程独立 A32/JNI/Bionic 上下文、统一 monitor/synchronized 与跨 context clinit；
   阻塞原语释放执行锁并只用统一 Clock，`dexvm.threads`/`monitors` 为 `complete`。

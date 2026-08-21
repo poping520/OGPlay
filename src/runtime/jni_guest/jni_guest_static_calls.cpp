@@ -59,13 +59,29 @@ public:
 
     [[nodiscard]] JniObjectIdentity ClassOf(
         const JniObjectIdentity object) const {
-        std::scoped_lock lock(mutex_);
-        const auto found = objects_.find(Key(object));
-        if (object.value == 0U || found == objects_.end()) {
+        if (object.value == 0U) {
             throw JniGuestBindingError(
                 "JNI guest receiver is not a registered instance");
         }
-        return found->second;
+        {
+            std::scoped_lock lock(mutex_);
+            const auto found = objects_.find(Key(object));
+            if (found != objects_.end()) return found->second;
+        }
+
+        // AOSP Dalvik Jni.cpp::FindClass publishes the ClassObject itself as
+        // a jclass. It is therefore also a legal jobject receiver whose
+        // runtime class is java.lang.Class; it is not an allocated entry in
+        // the ordinary object registry.
+        try {
+            if (classes_->IsAssignableFrom(object, object)) {
+                const auto class_class = classes_->FindClass("java/lang/Class");
+                if (class_class.has_value()) return *class_class;
+            }
+        } catch (const JniClassRegistryError&) {
+        }
+        throw JniGuestBindingError(
+            "JNI guest receiver is not a registered instance");
     }
 
     [[nodiscard]] JniObjectArrayStore& ObjectArrays() noexcept {

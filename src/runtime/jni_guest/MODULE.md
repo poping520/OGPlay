@@ -49,7 +49,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - JNI guest class/object/instance family 只解析 class registry 已声明的精确名称与
   instance method descriptor;三种 NewObject 仅接受 void `<init>` 并在失败时回滚
   ref/object 映射。会话级 `JniGuestObjectRegistry` 让 guest 构造对象和 framework HLE
-  预注册的 host object 共享精确 class identity;GetObjectClass/IsInstanceOf 与 30 个
+  预注册的 host object 共享精确 class identity；`FindClass` 返回的 `jclass` 同时是
+  `java.lang.Class` 的合法 instance receiver。GetObjectClass/IsInstanceOf 与 30 个
   普通 instance Call/CallV/CallA 统一查询该 registry,并复用 invocation engine 的
   assignability、argument/return 校验;未声明 class/method、伪 receiver 或返回类型
   不匹配必须明确失败。

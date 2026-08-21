@@ -185,6 +185,63 @@ TEST_CASE("guest JNI class object and instance call family dispatches exact meth
     CHECK(fixture.classes.FindClass("fixture/Counter") == java_class);
 }
 
+TEST_CASE("guest JNI jclass is a java.lang.Class instance receiver") {
+    using namespace ogplay::runtime;
+    InstanceFixture fixture;
+    const auto object_class = fixture.classes.RegisterClass(
+        {"java/lang/Object", {}, {}, {}});
+    const auto class_class = fixture.classes.RegisterClass(
+        {"java/lang/Class", "java/lang/Object",
+         {{"getClassLoader", "()Ljava/lang/ClassLoader;",
+           "class.getClassLoader", false}}, {}});
+    const auto loader_class = fixture.classes.RegisterClass(
+        {"java/lang/ClassLoader", "java/lang/Object", {}, {}});
+    const auto target_class = fixture.classes.RegisterClass(
+        {"fixture/NativeCallback", "java/lang/Object", {}, {}});
+    static_cast<void>(object_class);
+
+    fixture.environment.AttachThread(InstanceFixture::thread_id);
+    const auto loader = fixture.objects.Allocate(loader_class);
+    const auto loader_reference = fixture.environment.PublishLocalObject(
+        InstanceFixture::thread_id, loader);
+    fixture.invocations.RegisterHandler(
+        "class.getClassLoader",
+        [&](const JniInvocation& invocation) {
+            CHECK(fixture.environment.ResolveObjectForHle(
+                      InstanceFixture::thread_id, invocation.receiver) ==
+                  target_class);
+            return JniValue{loader_reference};
+        });
+    fixture.WriteString(0x100U, "fixture/NativeCallback");
+    fixture.WriteString(0x140U, "java/lang/Class");
+    fixture.WriteString(0x180U, "getClassLoader");
+    fixture.WriteString(0x1c0U, "()Ljava/lang/ClassLoader;");
+    fixture.dispatcher.Seal();
+
+    const auto target_reference = JniReference{fixture.Call(
+        "FindClass", fixture.output.Add(0x100U).Value())};
+    const auto class_reference = JniReference{fixture.Call(
+        "FindClass", fixture.output.Add(0x140U).Value())};
+    REQUIRE_FALSE(target_reference.IsNull());
+    REQUIRE_FALSE(class_reference.IsNull());
+    const auto method = fixture.Call(
+        "GetMethodID", class_reference.Value(),
+        fixture.output.Add(0x180U).Value(),
+        fixture.output.Add(0x1c0U).Value());
+    REQUIRE(method != 0U);
+
+    const auto result = JniReference{fixture.Call(
+        "CallObjectMethod", target_reference.Value(), method)};
+    CHECK(fixture.environment.ResolveObjectForHle(
+              InstanceFixture::thread_id, result) == loader);
+    const auto runtime_class = JniReference{fixture.Call(
+        "GetObjectClass", target_reference.Value())};
+    CHECK(fixture.environment.ResolveObjectForHle(
+              InstanceFixture::thread_id, runtime_class) == class_class);
+    CHECK(fixture.Call("IsInstanceOf", target_reference.Value(),
+                       class_reference.Value()) == 1U);
+}
+
 TEST_CASE("guest JNI primitive arrays preserve region and lease semantics") {
     using namespace ogplay::runtime;
     InstanceFixture fixture;

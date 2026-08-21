@@ -244,6 +244,14 @@ public:
             "JNI class identity is not published in DexVM");
     }
 
+    [[nodiscard]] std::optional<dx::DexClassId> ClassForJniIdentity(
+        const JniObjectIdentity identity) const {
+        for (const auto& [raw, registered] : class_identities) {
+            if (registered == identity) return dx::DexClassId(raw);
+        }
+        return std::nullopt;
+    }
+
     [[nodiscard]] dx::DexClassId ObjectClassIdentity(
         const JniObjectIdentity identity) const {
         try {
@@ -278,7 +286,9 @@ public:
         const std::uint64_t thread = kRootThreadId) {
     if (!ref.IsValid())
       return JniReference{};
-    const auto identity = model->ToIdentity(ref);
+    const auto identity = model->Kind(ref) == dx::VmObjectKind::class_object
+        ? JniClassIdentity(model->ClassOfClassObject(ref))
+        : model->ToIdentity(ref);
     const auto java_class = model->ObjectClass(ref);
     if (java_class.IsValid()) {
       const auto class_identity = JniClassIdentity(java_class);
@@ -324,6 +334,10 @@ public:
             session->Environment().ResolveObjectForHle(thread, reference);
         if (!identity.has_value()) {
       throw DexVmBridgeError("dexvm bridge cannot resolve a JNI reference");
+        }
+        if (const auto represented = ClassForJniIdentity(*identity);
+            represented.has_value()) {
+            return model->ClassObject(*represented);
         }
         return model->FromIdentity(*identity);
     }
@@ -516,8 +530,8 @@ public:
                 }
         logger->Write(core::LogLevel::warn, "runtime.dexvm", rendered);
             }
-            const auto throwable = session->Environment().PublishLocalObject(
-          invocation.thread_id, model->ToIdentity(outcome.exception));
+            const auto throwable = PublishLocal(outcome.exception,
+                                                invocation.thread_id);
             session->Environment().Throw(invocation.thread_id, throwable);
             return DefaultReturn(method.return_shorty);
         }
@@ -591,8 +605,7 @@ public:
             case 'L': {
       if (!value.ref.IsValid())
         return JniValue{JniReference{}};
-                return JniValue{session->Environment().PublishLocalObject(
-                    thread, model->ToIdentity(value.ref))};
+                return JniValue{PublishLocal(value.ref, thread)};
             }
             default:
       throw DexVmBridgeError("dexvm bridge cannot convert return shorty");

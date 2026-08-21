@@ -88,8 +88,10 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 - `DexVmGuestBridge`(ADR-0017)在运行中的会话之上装配 dexvm:链接
   core+android intrinsic 目录与单一 classes.dex,对象模型复用会话的
   string/primitive-array/object-array store(native 与解释器同一对象)，并在
-  DexVM/JNI 边界双向适配 class identity；普通对象发布 local reference 前登记精确
-  class，GC 清扫同步移除统一 registry 映射。出向 native 调用按
+  DexVM/JNI 边界双向适配 class identity；任一方向穿越边界的 `jclass` 都规范化为
+  model 中同一 `ClassObject`，因而可直接作为 `java.lang.Class` instance JNI 方法的
+  receiver。普通对象发布 local reference 前登记精确 class，GC 清扫同步移除统一
+  registry 映射。出向 native 调用按
   descriptor 编组 A32 soft-float 帧(r0=JNIEnv、r1=receiver/jclass、64 位偶对齐、
   栈 8 字节对齐),解析顺序 RegisterNatives → `Java_` 导出名 → 记账明确失败;
   入向把全部解释类/方法及 session 尚未拥有的 code-defined intrinsic 平台类注册进

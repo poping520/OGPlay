@@ -17,8 +17,9 @@
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
-#include "ogplay/session/dex_activity_lifecycle.h"
+#include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/session/android_app_process.h"
+#include "ogplay/session/dex_activity_lifecycle.h"
 
 namespace {
 
@@ -684,6 +685,32 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     bridge.reset();
     session->Stop();
     CHECK_FALSE(session->Running());
+}
+
+TEST_CASE("DexVM bridge canonicalizes JNI jclass as the real Class object") {
+    using namespace ogplay;
+    ApplicationProcess fixture;
+    const auto represented = fixture.bridge->Linker().FindClass(
+        "Lfixture/LauncherActivity;");
+    const auto class_class = fixture.bridge->Linker().FindClass(
+        "Ljava/lang/Class;");
+    REQUIRE(represented.has_value());
+    REQUIRE(class_class.has_value());
+    const auto class_object = fixture.bridge->Model().ClassObject(*represented);
+
+    const auto reference = fixture.bridge->PublishLocal(class_object);
+    REQUIRE_FALSE(reference.IsNull());
+    const auto identity = fixture.session->Environment().ResolveObjectForHle(
+        1U, reference);
+    REQUIRE(identity.has_value());
+    CHECK(identity == fixture.bridge->RegisteredClassIdentity(*represented));
+    CHECK(fixture.session->Objects().ClassOf(*identity) ==
+          fixture.bridge->RegisteredClassIdentity(*class_class));
+
+    const auto round_trip = fixture.bridge->FromReference(reference);
+    CHECK(round_trip == class_object);
+    CHECK(fixture.bridge->Model().ClassOfClassObject(round_trip) ==
+          *represented);
 }
 
 TEST_CASE("minimal Application startup preserves order identity and native loads") {

@@ -39,7 +39,7 @@ TEST_CASE("ClassNameCodec parses method descriptors without losing type identity
     CHECK(empty.parameters.empty());
     CHECK(empty.return_type == "V");
 
-    // AOSP API19: .local/asop/dalvik/vm/oo/Class.cpp :: loadClassFromDex0
+    // AOSP API19: .local/aosp/dalvik/vm/oo/Class.cpp :: loadClassFromDex0
     CHECK_THROWS_AS(static_cast<void>(ClassNameCodec::ParseMethod("(V)V")),
                     ClassNameCodecError);
     CHECK_THROWS_AS(static_cast<void>(ClassNameCodec::ParseMethod("(I")),
@@ -71,7 +71,7 @@ TEST_CASE("ClassNameCodec classifies complete field and class descriptors") {
 }
 
 TEST_CASE("ClassNameCodec renders API19 Class getName spellings") {
-    // AOSP API19: .local/asop/libcore/libdvm/src/main/java/java/lang/Class.java :: getName
+    // AOSP API19: .local/aosp/libcore/libdvm/src/main/java/java/lang/Class.java :: getName
     CHECK(ClassNameCodec::ClassGetName("Ljava/lang/String;") ==
           "java.lang.String");
     CHECK(ClassNameCodec::ClassGetName("I") == "int");
@@ -87,7 +87,7 @@ TEST_CASE("ClassNameCodec renders API19 Class getName spellings") {
 }
 
 TEST_CASE("ClassNameCodec converts forName binary names to descriptors") {
-    // AOSP API19: .local/asop/dalvik/vm/native/java_lang_Class.cpp :: Dalvik_java_lang_Class_classForName
+    // AOSP API19: .local/aosp/dalvik/vm/native/java_lang_Class.cpp :: Dalvik_java_lang_Class_classForName
     CHECK(ClassNameCodec::BinaryNameToDescriptor("java.lang.String") ==
           "Ljava/lang/String;");
     CHECK(ClassNameCodec::BinaryNameToDescriptor("foo.Bar$Inner") ==

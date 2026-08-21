@@ -9,7 +9,7 @@ dex pc 映射、预拼装操作数、分支目标与三类 payload 边表。
 
 - DVM-6..12、DVM-52
 - `docs/design/dexvm/10-interpreter-threaded.md` V2-1
-- `.local/asop/dalvik/vm/mterp/README.txt`
+- `.local/aosp/dalvik/vm/mterp/README.txt`
 
 ## 交付
 

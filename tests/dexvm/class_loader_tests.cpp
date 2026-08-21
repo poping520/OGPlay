@@ -276,8 +276,14 @@ TEST_CASE("Class forName follows API19 caller loader initialization and errors")
                   vm.linker.ResolveDescriptor("[LCounter;")));
         ExpectClassNotFound(vm, find("int"));
         ExpectClassNotFound(vm, find("missing.Type"));
-        ExpectException(vm, find("DormantOptional"),
-                        "Ljava/lang/LinkageError;");
+        const auto linkage = find("DormantOptional");
+        ExpectClassNotFound(vm, linkage);
+        const auto linkage_cause = Ref(vm.Virtual(
+            linkage.exception, "getCause", "()Ljava/lang/Throwable;"));
+        CHECK(vm.linker.Class(vm.model.ObjectClass(linkage_cause)).descriptor ==
+              "Ljava/lang/LinkageError;");
+        CHECK(Ref(vm.Virtual(linkage.exception, "getException",
+                             "()Ljava/lang/Throwable;")) == linkage_cause);
         CHECK(Ref(find("[I")) == vm.model.ClassObject(
                   vm.linker.ResolveDescriptor("[I")));
 

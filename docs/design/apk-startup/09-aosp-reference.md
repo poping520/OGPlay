@@ -6,9 +6,9 @@
 ## 1. 固定本地参考根
 
 ```text
-.local/asop/dalvik
-.local/asop/framework
-.local/asop/libcore
+.local/aosp/dalvik
+.local/aosp/framework
+.local/aosp/libcore
 ```
 
 三棵树仅作参考：**不入库、不加入构建、不链接、不复制大段实现代码**。
@@ -17,7 +17,7 @@
 
 ## 2. framework 参考
 
-根：`.local/asop/framework`
+根：`.local/aosp/framework`
 
 实现 Manifest/Application/Activity 启动语义前，至少核对：
 
@@ -42,7 +42,7 @@ PackageManager 等系统结构。
 
 ## 3. libcore 参考
 
-根：`.local/asop/libcore`
+根：`.local/aosp/libcore`
 
 至少核对对应 KitKat 的：
 
@@ -62,7 +62,7 @@ luni/src/main/java/java/lang/Runtime.java
 
 ## 4. Dalvik 参考
 
-根：`.local/asop/dalvik`
+根：`.local/aosp/dalvik`
 
 至少核对：
 
@@ -102,7 +102,7 @@ AOSP 中依赖 system_server/Binder/Zygote/PackageManager/Instrumentation 的结
 APS-1、4、5、6、7 开始编码前必须在任务书“语义出处”段补：
 
 ```text
-.local/asop/<tree>/<file>
+.local/aosp/<tree>/<file>
   - <function/method>: <本 WU 采用的语义结论>
 ```
 

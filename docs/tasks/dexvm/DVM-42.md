@@ -22,8 +22,8 @@
 
 ## AOSP 对照
 
-- `.local/asop/dalvik/vm/alloc/MarkSweep.cpp`：`dvmHeapMarkRootSet` 根清单。
-- `.local/asop/dalvik/vm/alloc/Visit.cpp`：`visitThread`/`dvmVisitRoots` 的 frame、Thread、
+- `.local/aosp/dalvik/vm/alloc/MarkSweep.cpp`：`dvmHeapMarkRootSet` 根清单。
+- `.local/aosp/dalvik/vm/alloc/Visit.cpp`：`visitThread`/`dvmVisitRoots` 的 frame、Thread、
   JNI local/global、intern 与 VM internal roots。
 - 静态字段按 `scanStaticFields` 的 descriptor 首字符（`L`/`[`）判引用。
 

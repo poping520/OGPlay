@@ -24,7 +24,7 @@
 由此，游戏 Java 胶水层的行为不再需要人工逆向成 profile 声明——它被真实执行；
 Title Profile 退化为 identity、数据布局、预算与 quirk。
 
-实现不从零臆造：以 `.local/asop/dalvik` 中固定 tag 的 AOSP Dalvik（KitKat，与
+实现不从零臆造：以 `.local/aosp/dalvik` 中固定 tag 的 AOSP Dalvik（KitKat，与
 API 19 目标同代）为本地参考基线——目录类数据机器比对、指令语义逐 opcode 对照、结构校验
 规则对标，但不移植其对象模型/GC/线程实现体（见 [07](07-aosp-reference.md)）。
 这与项目既有姿态一致：CPU 用 dynarmic、GLES 用 ANGLE、PVRTC 用 PowerVR SDK，
@@ -65,13 +65,13 @@ API 19 目标同代）为本地参考基线——目录类数据机器比对、�
 
 ## 术语
 
-| 术语 | 含义 |
-| --- | --- |
-| dexvm | 本方案的运行时子模块名（`src/runtime/dexvm/`），有界 DEX 解释器 |
-| intrinsic / 内建类 | 由宿主 C++ 实现的 `android.*`/`java.*` 平台类，注册进统一类目录 |
-| VM 对象 | 由解释器按 DEX 类布局分配、字段可直接读写的 Java 对象 |
-| 宿主背衬对象 | intrinsic 类实例，字段语义由宿主状态承载（如 AudioTrack） |
-| JavaObjectModel | session 级统一对象模型，VM 对象与宿主背衬对象共用引用身份 |
-| 生命周期反转 | 由解释执行的真实 `onCreate`/`onDrawFrame` 驱动游戏，取代 profile `native_call` 序列 |
-| L1 / L2 | roadmap 04 §7 的 DEX 分级：L1 只读解析（已完成），L2 解释执行（本方案） |
-| AOSP 基线 | `.local/asop/dalvik` 中对齐 `android-4.4.4_r2` 的 `platform/dalvik` 源码树，仅作参考，不编译进运行时 |
+| 术语 | 含义                                                                               |
+| --- |----------------------------------------------------------------------------------|
+| dexvm | 本方案的运行时子模块名（`src/runtime/dexvm/`），有界 DEX 解释器                                     |
+| intrinsic / 内建类 | 由宿主 C++ 实现的 `android.*`/`java.*` 平台类，注册进统一类目录                                    |
+| VM 对象 | 由解释器按 DEX 类布局分配、字段可直接读写的 Java 对象                                                 |
+| 宿主背衬对象 | intrinsic 类实例，字段语义由宿主状态承载（如 AudioTrack）                                          |
+| JavaObjectModel | session 级统一对象模型，VM 对象与宿主背衬对象共用引用身份                                               |
+| 生命周期反转 | 由解释执行的真实 `onCreate`/`onDrawFrame` 驱动游戏，取代 profile `native_call` 序列               |
+| L1 / L2 | roadmap 04 §7 的 DEX 分级：L1 只读解析（已完成），L2 解释执行（本方案）                                 |
+| AOSP 基线 | `.local/aosp/dalvik` 中对齐 `android-4.4.4_r2` 的 `platform/dalvik` 源码树，仅作参考，不编译进运行时 |

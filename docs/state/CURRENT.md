@@ -53,7 +53,7 @@
   Class nested/canonical/enclosing 与 declared exception types 不做 `$` 猜测；generic、
   annotation proxy、多 ClassLoader 与动态 definition 仍明确不实现。
   Chapter 11 closure 已补齐两个 `Class.forName` overload（真实 caller loader、null/boot/
-  application/custom bounded role、可选初始化与原 throwable 传播）、API19 三类 wrapper
+  application/custom bounded role、missing CNFE、link cause 与 init EIIE identity）、API19 三类 wrapper
   hashCode/exact toString，以及 encoded-value kind/value_arg fail-closed malformed coverage；
   bootstrap `Class.getClassLoader()` 文档已按本地 API19 更正为非 primitive 返回 boot facade。
 ## 验证基线

@@ -9,7 +9,7 @@ tag、异常、tick、trace 与 switch 后端逐位一致。
 
 - DVM-54
 - `docs/design/dexvm/10-interpreter-threaded.md` V2-3
-- `.local/asop/dalvik/vm/mterp/c/OP_*.cpp`
+- `.local/aosp/dalvik/vm/mterp/c/OP_*.cpp`
 
 ## 交付
 

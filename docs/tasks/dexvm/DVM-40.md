@@ -13,7 +13,7 @@ OGPlay 缺失的 Throwable 派生类 class shape；已有 handler 行为保持�
 
 ## Source of truth
 
-- 本地源码：`.local/asop/libcore/luni/src/main/java/java/lang/`
+- 本地源码：`.local/aosp/libcore/luni/src/main/java/java/lang/`
 - Android tag：`android-4.4.4_r2.0.1`
 
 本 WU 的 inventory、direct superclass 与新增 class shape 只取自上述源码，

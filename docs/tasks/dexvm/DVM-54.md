@@ -9,7 +9,7 @@
 
 - DVM-53
 - `docs/design/dexvm/10-interpreter-threaded.md` V2-2
-- `.local/asop/dalvik/vm/mterp/README.txt`
+- `.local/aosp/dalvik/vm/mterp/README.txt`
 
 ## 交付
 

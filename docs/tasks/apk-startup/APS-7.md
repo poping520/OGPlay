@@ -22,8 +22,8 @@ Manifest → process/DexVM prepare → Application → launcher Activity 的 gen
 
 编码前核对：
 
-- `.local/asop/framework/base/core/java/android/app/ActivityThread.java` 的 Activity launch 顺序；
-- `.local/asop/framework/base/core/java/android/app/Activity.java` 中本 WU 需要的 attach 前提。
+- `.local/aosp/framework/base/core/java/android/app/ActivityThread.java` 的 Activity launch 顺序；
+- `.local/aosp/framework/base/core/java/android/app/Activity.java` 中本 WU 需要的 attach 前提。
 
 只取语义，不复制 ActivityThread/Instrumentation 结构。
 

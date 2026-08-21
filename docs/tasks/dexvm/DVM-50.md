@@ -7,9 +7,9 @@
 ## 依赖
 
 - DVM-27..29、DVM-48、DVM-49
-- `.local/asop/dalvik/vm/Thread.cpp`
-- `.local/asop/dalvik/vm/Sync.cpp`
-- `.local/asop/dalvik/vm/oo/Class.cpp`
+- `.local/aosp/dalvik/vm/Thread.cpp`
+- `.local/aosp/dalvik/vm/Sync.cpp`
+- `.local/aosp/dalvik/vm/oo/Class.cpp`
 
 ## 交付
 

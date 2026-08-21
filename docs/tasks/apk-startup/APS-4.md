@@ -21,7 +21,7 @@ frontend/root-module 模型迁入 loader。
 
 编码前必须记录：
 
-- `.local/asop/dalvik/vm/Native.cpp` 中 native load table、ClassLoader、JNI_OnLoad 路径；
+- `.local/aosp/dalvik/vm/Native.cpp` 中 native load table、ClassLoader、JNI_OnLoad 路径；
 - 若调用链分散，补实际文件 + 函数。
 
 重点确认“同 loader 重复 load / 不同 loader / dependency 自带 JNI_OnLoad”的真实行为。
@@ -47,12 +47,12 @@ frontend/root-module 模型迁入 loader。
 
 ## 结果（机器可判定，已达成）
 
-- AOSP 对照：`.local/asop/dalvik/vm/Native.cpp` 的 `SharedLib`、
+- AOSP 对照：`.local/aosp/dalvik/vm/Native.cpp` 的 `SharedLib`、
   `checkOnLoadResult()`、`dvmLoadNativeCode()` 与 `dvmCreateSystemLibraryName()` 证明
   Dalvik 以路径作为全局 identity；同 ClassLoader 重复 load 幂等，同线程递归 loading
   返回成功，另一线程等待唯一结果，同一路径跨 ClassLoader 明确失败。`dlopen()` 完成依赖
   与 constructors 后，Dalvik 只对显式请求 handle 查找/调用 `JNI_OnLoad`；无 OnLoad 成功，
-  JNI_ERR/坏版本永久标记失败。`.local/asop/dalvik/vm/Jni.cpp` 的 `FindClass()` 证明
+  JNI_ERR/坏版本永久标记失败。`.local/aosp/dalvik/vm/Jni.cpp` 的 `FindClass()` 证明
   JNI_OnLoad 期间用 `classLoaderOverride` 解析类。
 - `ExtendElf32ModuleNamespace` 在既有 namespace 上解析、追加、映射并按动态 root scope
   重定位新 guest modules；Bionic extender 可按新依赖追加 HLE boundary。映射/重定位失败

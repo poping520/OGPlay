@@ -9,7 +9,7 @@
 
 - DVM-55
 - `docs/design/dexvm/10-interpreter-threaded.md` V2-4
-- `.local/asop/dalvik/vm/mterp/c/OP_{NEW,AGET,APUT,IGET,IPUT,SGET,SPUT}*.cpp`
+- `.local/aosp/dalvik/vm/mterp/c/OP_{NEW,AGET,APUT,IGET,IPUT,SGET,SPUT}*.cpp`
 
 ## 交付
 

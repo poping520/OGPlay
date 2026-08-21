@@ -13,7 +13,7 @@
 
 ## Source of truth
 
-- 本地源码：`.local/asop/libcore/luni/src/main/java/java/lang/`
+- 本地源码：`.local/aosp/libcore/luni/src/main/java/java/lang/`
 - 固定 tag：`android-4.4.4_r2.0.1`
 - 已逐个读取：`Number.java`、`Byte.java`、`Short.java`、`Integer.java`、
   `Long.java`、`Float.java`、`Double.java`、`Boolean.java`、`Character.java`

@@ -8,14 +8,14 @@ ADR-0012 与 M8 命名约定（`WU-M<编号>-NNN`）。每阶段出口都是机�
 
 ### 阶段 0 · 地基（不触碰运行时，可在 M8 间隙执行）
 
-| WU | 内容 | 出口 |
-| --- | --- | --- |
-| 0-0 | AOSP Dalvik 本地参考树：`.local/asop/dalvik` 对齐 `android-4.4.4_r2`，不入库、不编译、不链接（[07 §1](07-aosp-reference.md)） | 参考资料可按需校验 |
+| WU | 内容                                                                                                                                    | 出口 |
+| --- |---------------------------------------------------------------------------------------------------------------------------------------| --- |
+| 0-0 | AOSP Dalvik 本地参考树：`.local/aosp/dalvik` 对齐 `android-4.4.4_r2`，不入库、不编译、不链接（[07 §1](07-aosp-reference.md)）                               | 参考资料可按需校验 |
 | 0-1 | `tools/dex_dependency_survey.py`：题库静态测量（引擎指纹、Java 厚度、平台类引用直方图），输入含存量 profile `[[java.class]]` impl id 语料（校准方法级接管 intrinsic 最小集，03 §3） | self-test + 本地题库报告产出 |
-| 0-2 | `data/dexvm/dalvik_opcodes.json` + 生成器 | `--check` 与 self-test 过 CTest；外部 AOSP 锚点比对按需执行 |
-| 0-3 | `tools/dexasm.py` 核心（类/方法/常用 format） | golden SHA + L1 回读核对 |
-| 0-4 | dexasm 补齐 try/catch、payload、静态初始值 | 反例夹具可构造 |
-| 0-5 | 评估 `libdex`+`dexdump` host-only 交叉裁判（[07 §4](07-aosp-reference.md)） | 结论（采用或降级）记入 WU 文档 |
+| 0-2 | `data/dexvm/dalvik_opcodes.json` + 生成器                                                                                                | `--check` 与 self-test 过 CTest；外部 AOSP 锚点比对按需执行 |
+| 0-3 | `tools/dexasm.py` 核心（类/方法/常用 format）                                                                                                  | golden SHA + L1 回读核对 |
+| 0-4 | dexasm 补齐 try/catch、payload、静态初始值                                                                                                     | 反例夹具可构造 |
+| 0-5 | 评估 `libdex`+`dexdump` host-only 交叉裁判（[07 §4](07-aosp-reference.md)）                                                                   | 结论（采用或降级）记入 WU 文档 |
 
 阶段 0 产出的测量报告用于校准后续批次顺序与 intrinsic 最小集（ADR-0017：
 数据决定排期，不再决定做与不做）。

@@ -75,9 +75,9 @@ APS-10.md
 固定根：
 
 ```text
-.local/asop/dalvik
-.local/asop/framework/base
-.local/asop/libcore
+.local/aosp/dalvik
+.local/aosp/framework/base
+.local/aosp/libcore
 ```
 
 语义敏感 WU 在编码前把“文件 + 函数 + 采用结论”写进自己的任务书。参考源码不入库。

@@ -21,9 +21,9 @@
 
 编码前核对：
 
-- `.local/asop/libcore/luni/src/main/java/java/lang/System.java`
-- `.local/asop/libcore/luni/src/main/java/java/lang/Runtime.java`
-- `.local/asop/dalvik/vm/Native.cpp`
+- `.local/aosp/libcore/luni/src/main/java/java/lang/System.java`
+- `.local/aosp/libcore/luni/src/main/java/java/lang/Runtime.java`
+- `.local/aosp/dalvik/vm/Native.cpp`
 
 记录实际方法/函数、caller ClassLoader 与错误映射结论。
 

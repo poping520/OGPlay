@@ -175,6 +175,27 @@ constexpr std::uint32_t kAccEnum = 0x4000U;
     throw VmJavaThrow{"Ljava/lang/NoSuchFieldException;", std::string(name)};
 }
 
+[[nodiscard]] VmValue SetClassNotFound(IntrinsicContext& context,
+                                       const std::string_view name,
+                                       const VmObjectRef cause = VmObjectRef{}) {
+    const auto wrapper = context.vm.MakeThrowable(
+        "Ljava/lang/ClassNotFoundException;", name);
+    if (cause.IsValid()) {
+        const auto field = context.vm.Linker().FindFieldRecursive(
+            context.vm.Model().ObjectClass(wrapper), "ex",
+            "Ljava/lang/Throwable;");
+        if (!field.has_value()) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "ClassNotFoundException.ex is missing");
+        }
+        const auto& linked = context.vm.Linker().Field(*field);
+        context.vm.Model().InstanceSlots(wrapper)[linked.slot] = {
+            cause.Value(), SlotTag::ref};
+    }
+    context.vm.SetPendingException(wrapper);
+    return VmValue::Ref(VmObjectRef{});
+}
+
 [[nodiscard]] VmValue ForName(IntrinsicContext& context,
                               const std::string_view name,
                               const bool initialize,
@@ -183,14 +204,17 @@ constexpr std::uint32_t kAccEnum = 0x4000U;
     try {
         java_class = context.vm.ClassLoaders().LoadClass(loader, name);
     } catch (const ClassNameCodecError&) {
-        throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;",
-                          std::string(name)};
+        return SetClassNotFound(context, name);
     } catch (const DexVmError& error) {
         if (error.Reason() == DexVmErrorReason::unknown_class) {
-            throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;",
-                              std::string(name)};
+            return SetClassNotFound(context, name);
         }
-        throw VmJavaThrow{"Ljava/lang/LinkageError;", error.what()};
+        // API19 dvmFindClassByName retains the lookup/link exception as the
+        // cause of ClassNotFoundException. The Java half only unwraps an
+        // ExceptionInInitializerError; link failures remain wrapped.
+        const auto cause = context.vm.MakeThrowable(
+            "Ljava/lang/LinkageError;", error.what());
+        return SetClassNotFound(context, name, cause);
     }
     if (initialize) {
         const auto outcome = context.vm.EnsureClassInitialized(java_class);

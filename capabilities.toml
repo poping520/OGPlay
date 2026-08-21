@@ -1143,7 +1143,7 @@ note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2：bootstrap/ap
 [dexvm.class_loader_facade]
 status = "complete"
 test = "tests/dexvm/class_loader_tests.cpp; Class.forName switch/threaded/caller-loader/init/error tests"
-note = "DVM-63/Chapter 11 closure 以 linker 唯一 class directory 交付稳定 PathClassLoader/BootClassLoader facade、固定 parent 链、defining/initiating loader 分离、无副作用 findLoadedClass、受检 loadClass delegation 与两个 Class.forName overload；单参数用真实 caller loader 并初始化，三参数处理 null/system、boot、application/custom bounded role，missing/linkage/init throwable 按 API19 传播；动态 classpath、多 namespace 与自定义 definition 明确不支持"
+note = "DVM-63/Chapter 11 closure 以 linker 唯一 class directory 交付稳定 PathClassLoader/BootClassLoader facade、固定 parent 链、defining/initiating loader 分离、无副作用 findLoadedClass、受检 loadClass delegation 与两个 Class.forName overload；单参数用真实 caller loader 并初始化，三参数处理 null/system、boot、application/custom bounded role；missing 为 CNFE，lookup/link failure 保留原 throwable 为 CNFE cause，初始化 EIIE identity 直传；动态 classpath、多 namespace 与自定义 definition 明确不支持"
 
 [dexvm.reflection_wrappers]
 status = "complete"

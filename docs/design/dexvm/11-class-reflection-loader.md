@@ -354,7 +354,9 @@ caller/loader -> ClassNameCodec -> loader role -> linker lookup/resolve -> optio
 - primitive keyword（`int` 等）不能经 `forName/loadClass` 得到 primitive Class；
 - array binary name 按 API19 codec 处理，可走现有 array synthesize；
 - `forName(..., false, ...)` 不执行 `<clinit>`；`true` 只触发既有 class-init state machine；
-- CNFE、LinkageError、ExceptionInInitializerError 的 wrapping/unwrapping 顺序照本地 `Class.java`，禁止“一律 CNFE”；
+- name 不存在直接抛 CNFE；lookup/link 的底层异常保留为 CNFE cause；初始化产生的
+  `ExceptionInInitializerError` 按本地 `Class.java` 以原 guest throwable identity
+  直接传播；
 - `findLoadedClass` 不 synthesize、不 link、不 init；
 - application `loadClass` 对 platform class 的 delegation 结果可以记录“app 为 initiating loader、bootstrap 为 defining loader”；
 - guest-created/subclassed `ClassLoader` 不获得独立 namespace 或 `defineClass` 权限；override `findClass` 若试图动态定义类，明确 unsupported。
@@ -842,7 +844,7 @@ R2 必须保持小：只建立 defining/initiating loader identity、system/boot
 × intrinsic modifiers 用 0/public 猜测
 × setAccessible 修改全局 metadata
 × getSimpleName 用 '$' split 猜 inner class
-× forName 任意失败都转 CNFE
+× forName 丢弃 lookup/link cause，或把初始化 EIIE 包装成 CNFE
 × ClassLoader intrinsic 自建 name->Class 缓存或第二套 resolution
 × 把 RegisterDex 已知 class 全部冒充为 findLoadedClass 已 initiated
 × 为 loadClass 顺带实现 DexClassLoader/defineClass/动态 classpath

@@ -13,7 +13,7 @@ Dalvik VM 完全开源（Apache-2.0），且 KitKat（android-4.4，API 19）恰
 
 - 以 `platform/dalvik` 的 KitKat 源码作为语义参考，tag 对齐
   `android-4.4.4_r2`（纯 Dalvik，无 ART 混杂）。
-- 位置 `.local/asop/dalvik/`，属于本地参考资料，不进入版本库，也不作为第三方
+- 位置 `.local/aosp/dalvik/`，属于本地参考资料，不进入版本库，也不作为第三方
   submodule；需要时可由工具显式执行锚点文件比对。
 - **默认不编译、不链接**。它是参考资料，不是运行时依赖。可选的 host 工具评估
   见 §4。
@@ -28,7 +28,7 @@ Dalvik VM 完全开源（Apache-2.0），且 KitKat（android-4.4，API 19）恰
 | 同上 | `libdex/DexOpcodes.h` | 枚举值与名称表二次核对 |
 | 生成的解码表 | `libdex/InstrUtils.cpp` 宽度/标志表 | 指令宽度与 format 归属 |
 
-生成器提供 `--verify-aosp .local/asop/dalvik/...`，与
+生成器提供 `--verify-aosp .local/aosp/dalvik/...`，与
 `gles.gles2_catalog` 的 `--verify-header` 完全同构。目录与 AOSP 表任何
 分歧都是 CTest 失败。
 

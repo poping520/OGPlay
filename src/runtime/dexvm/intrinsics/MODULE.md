@@ -42,7 +42,8 @@ initiate 状态委托 `ClassLoaderFacade`。动态 classpath 构造器显式未�
 ClassLoader 仅映射到唯一 application namespace，不获得第二套 class directory。
 `Class.forName(String)` 从 interpreter 活跃 frame 取得真实 caller loader 并初始化；
 三参数版本将 null 映射到 API19 system loader，并只接受 boot/application/custom 的
-bounded role。init failure 复用现有 throwable identity，不由 intrinsic 重新物化。
+bounded role。lookup/link failure 保留为 CNFE cause；init EIIE 复用现有 guest
+throwable identity，不由 intrinsic 重新物化。
 
 reflection shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclaration`、`Type`、
 `Member`、`AccessibleObject`、`Modifier`、`Method`、`Constructor` 与 `Field`。

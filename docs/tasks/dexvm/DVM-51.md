@@ -9,7 +9,7 @@
 ## 依赖与源码真相
 
 - DVM-32、DVM-34、DVM-49
-- `.local/asop/libcore/luni/src/main/java/java/lang/`
+- `.local/aosp/libcore/luni/src/main/java/java/lang/`
 - 固定 tag：`android-4.4.4_r2.0.1`
 
 `data/dexvm/api19-java-lang-surface.json` 只记录上述 Luni 目录 95 个顶层类型在源码中

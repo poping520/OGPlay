@@ -8,11 +8,11 @@ Android 4.4.4 Dalvik 语义完整暴露为 dexvm core `java.lang.Thread` intrins
 ## 依赖
 
 - DVM-27..29
-- `.local/asop/libcore/libdvm/src/main/java/java/lang/Thread.java`
-- `.local/asop/libcore/libdvm/src/main/java/java/lang/VMThread.java`
-- `.local/asop/dalvik/vm/Thread.cpp`
-- `.local/asop/dalvik/vm/Sync.cpp`
-- `.local/asop/dalvik/vm/native/java_lang_VMThread.cpp`
+- `.local/aosp/libcore/libdvm/src/main/java/java/lang/Thread.java`
+- `.local/aosp/libcore/libdvm/src/main/java/java/lang/VMThread.java`
+- `.local/aosp/dalvik/vm/Thread.cpp`
+- `.local/aosp/dalvik/vm/Sync.cpp`
+- `.local/aosp/dalvik/vm/native/java_lang_VMThread.cpp`
 
 ## 交付
 

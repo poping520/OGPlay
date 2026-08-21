@@ -17,7 +17,7 @@ MAIN/LAUNCHER Activity（含 alias）并完成 Android 类名归一化，不依�
 
 ## 语义出处
 
-- `.local/asop/framework/base/core/java/android/content/pm/PackageParser.java`
+- `.local/aosp/framework/base/core/java/android/content/pm/PackageParser.java`
   - `buildClassName`：`.Name` 拼接 package，无点短名补 `package.`，完整类名必须以
     小写 ASCII 字母开头；空名与其它完整名明确失败。
   - `parseApplication` / `parsePackageItemInfo`：Application、Activity 与 alias 的
@@ -25,7 +25,7 @@ MAIN/LAUNCHER Activity（含 alias）并完成 Android 类名归一化，不依�
   - `parseActivityAlias`：`targetActivity` 必填、按同一规则归一化，且只能指向此前已
     声明的 Activity；alias 作为独立 ActivityInfo 保留自己的 enabled/filter 与 target，
     alias 的 enabled 不继承 target Activity 的 enabled。
-- `.local/asop/framework/base/core/java/android/app/ActivityThread.java`
+- `.local/aosp/framework/base/core/java/android/app/ActivityThread.java`
   - `handleBindApplication`：`LoadedApk.makeApplication` 建立 Application，随后在启动
     Activity 前调用 Application `onCreate`；APS-1 只发布对应类事实，不执行生命周期。
 

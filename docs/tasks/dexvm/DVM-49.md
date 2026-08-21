@@ -7,9 +7,9 @@
 ## 依赖
 
 - DVM-8、DVM-42..46
-- `.local/asop/dalvik/vm/Jni.cpp`
-- `.local/asop/dalvik/vm/oo/Array.cpp`
-- `.local/asop/dalvik/vm/alloc/Visit.cpp`
+- `.local/aosp/dalvik/vm/Jni.cpp`
+- `.local/aosp/dalvik/vm/oo/Array.cpp`
+- `.local/aosp/dalvik/vm/alloc/Visit.cpp`
 
 ## 交付
 

@@ -43,5 +43,7 @@ invoke、实例化、Field/Array 操作或 system metadata。
 - `Class` facade 补齐两个 `forName` overload；public `getClassLoader()` 继续遵循本地
   API19 `Class.java`：primitive 为 null，bootstrap 非 primitive 为 boot facade，
   application/array 按 defining/component loader 返回稳定 facade。
+- `forName` 的 missing 为 CNFE，lookup/link failure 以原底层 throwable 为 CNFE
+  cause，初始化 EIIE 保持 guest identity 直接传播。
 
 状态：完成（含 Chapter 11 closure 复验）。

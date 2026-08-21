@@ -20,9 +20,9 @@ construct → attach base Context → `onCreate()`，并把实例保存为 proce
 
 编码前核对并记录：
 
-- `.local/asop/framework/base/core/java/android/app/LoadedApk.java`
-- `.local/asop/framework/base/core/java/android/app/Application.java`
-- `.local/asop/framework/base/core/java/android/app/ActivityThread.java`
+- `.local/aosp/framework/base/core/java/android/app/LoadedApk.java`
+- `.local/aosp/framework/base/core/java/android/app/Application.java`
+- `.local/aosp/framework/base/core/java/android/app/ActivityThread.java`
 
 重点固定 `makeApplication`/attach/onCreate 的可观察顺序；不引入完整 Instrumentation。
 

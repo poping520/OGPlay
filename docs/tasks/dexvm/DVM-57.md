@@ -9,8 +9,8 @@
 
 - DVM-56
 - `docs/design/dexvm/10-interpreter-threaded.md` V2-5
-- `.local/asop/dalvik/vm/mterp/README.txt`
-- `.local/asop/dalvik/vm/mterp/c/OP_INVOKE_*.cpp`
+- `.local/aosp/dalvik/vm/mterp/README.txt`
+- `.local/aosp/dalvik/vm/mterp/c/OP_INVOKE_*.cpp`
 
 ## 交付
 

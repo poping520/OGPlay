@@ -7,7 +7,7 @@
 
 ```text
 python tools/dexvm_api19_surface.py \
-  --source-root .local/asop/libcore/luni/src/main/java \
+  --source-root .local/aosp/libcore/luni/src/main/java \
   --package java.lang \
   --check data/dexvm/api19-java-lang-surface.json
 ```

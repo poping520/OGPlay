@@ -1150,6 +1150,11 @@ status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; related linker/catalog/GC/bounded reflection tests"
 note = "DVM-64 交付不可变 ReflectionMetadata 与唯一 wrapper factory：declaring Class + opaque declared-order ordinal，不暴露 Vm/Dex member id；Method/Constructor/Field 使用 API-19 hierarchy/shape、fresh identity、semantic equals、defensive type arrays 与 per-wrapper AccessibleObject flag，metadata cache 不持有 guest ref，wrapper 可由 GC 回收"
 
+[dexvm.class_reflection_core]
+status = "complete"
+test = "tests/dexvm/reflection_tests.cpp; DVM-65 Class structural/member-query tests"
+note = "DVM-65 闭合 API-19 Class 结构与类型关系：name/simple name、loader/component/super/direct interfaces/modifiers、分类、assignability/isInstance/cast/asSubclass/toString；ReflectionRuntime 提供 declared/public Method/Constructor/Field 精确查找与 fresh wrapper 数组，public Method/Field 稳定聚合继承与 direct interfaces，Constructor 不继承。nested/enclosing/generic/annotation/signature/throws 由 DVM-69 闭合，invoke/instantiation/Field/Array 操作由 DVM-66..68 闭合"
+
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"

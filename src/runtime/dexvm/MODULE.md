@@ -35,10 +35,12 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   “已由该 loader 发起”。`findLoadedClass` 只查询、不链接/初始化/合成，`loadClass`
   使用 `ClassNameCodec` 受检 binary name、按 boot/application 边界委托并忽略 API-19
   `resolve` 参数；不支持动态 classpath、多 namespace 或自定义 loader 定义权限。
-- `ReflectionRuntime`（DVM-64）：按 declaring class 缓存 immutable Method/Constructor/Field
+- `ReflectionRuntime`（DVM-64..65）：按 declaring class 缓存 immutable Method/Constructor/Field
   metadata，并作为唯一 guest wrapper factory。wrapper 只保存 declaring `Class` 与 opaque
   declared-order ordinal；不得暴露 `VmMethodId`/`VmFieldId`/DEX index，也不得缓存 guest
   ref。每次查询重新物化普通可回收对象，accessible flag 与类型数组都属于该 wrapper。
+  DVM-65 在此基础上提供 declared/public 成员查找：public Method/Field 按
+  class、superclass、direct interface 递归稳定聚合与去重，Constructor 始终只查本类。
 - `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
   handler；覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，
   以及 pinned libcore `java.lang` 顶层 8 个 interface
@@ -272,9 +274,8 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
 
 ## 尚未实现（记账可查）
 
-- reflection linker metadata 已完成；反射行为仍仅覆盖旧有的
-  `getDeclaredMethods` / 零参整数类返回值 `Method.invoke`，ClassLoader facade、
-  wrapper/access、完整 invoke、Constructor/Field/Array 与 system metadata 尚未实现。
+- ClassLoader facade、reflection wrapper 与 `Class` 结构/declared/public 成员查询已完成；
+  完整 invoke、Constructor 实例化、Field/Array 操作与 system metadata 尚未实现。
 
 ## 测试
 

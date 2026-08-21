@@ -1,8 +1,10 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "ogplay/runtime/dexvm/class_name_codec.h"
@@ -17,6 +19,16 @@ struct ClassReflectionMetadata final {
     std::vector<ReflectConstructorMeta> constructors;
     std::vector<ReflectFieldMeta> fields;
 };
+
+constexpr std::uint32_t kAccPublic = 0x0001U;
+
+template <typename Meta>
+[[nodiscard]] bool SameParameters(
+    const Meta& meta, const std::span<const DexClassId> parameters) {
+    return meta.parameter_types.size() == parameters.size() &&
+           std::equal(meta.parameter_types.begin(), meta.parameter_types.end(),
+                      parameters.begin());
+}
 
 [[nodiscard]] std::uint32_t ReadIntField(DexClassLinker& linker,
                                          JavaObjectModel& model,
@@ -220,6 +232,36 @@ public:
                       model->ClassObject(declaring_class));
     }
 
+    template <typename Append>
+    void VisitPublicTypes(const DexClassId java_class, Append&& append) {
+        std::unordered_set<std::uint32_t> visited_interfaces;
+        const auto visit_interface = [&](const auto& self,
+                                         const DexClassId interface_id)
+            -> void {
+            if (!visited_interfaces.insert(interface_id.Value()).second) {
+                return;
+            }
+            append(interface_id);
+            const auto parents = linker->Class(interface_id).direct_interfaces;
+            for (const auto parent : parents) self(self, parent);
+        };
+
+        std::vector<DexClassId> class_chain;
+        auto current = std::optional<DexClassId>(java_class);
+        while (current.has_value()) {
+            const auto linked = linker->Class(*current);
+            class_chain.push_back(*current);
+            current = linked.is_interface ? std::nullopt : linked.super;
+        }
+        for (const auto class_id : class_chain) append(class_id);
+        for (const auto class_id : class_chain) {
+            const auto interfaces = linker->Class(class_id).direct_interfaces;
+            for (const auto interface_id : interfaces) {
+                visit_interface(visit_interface, interface_id);
+            }
+        }
+    }
+
     Interpreter* interpreter{};
     DexClassLinker* linker{};
     JavaObjectModel* model{};
@@ -246,6 +288,89 @@ ReflectionRuntime::DeclaredConstructors(const DexClassId declaring_class) {
 std::span<const ReflectFieldMeta> ReflectionRuntime::DeclaredFields(
     const DexClassId declaring_class) {
     return impl_->Metadata(declaring_class).fields;
+}
+
+std::vector<ReflectMethodMeta> ReflectionRuntime::PublicMethods(
+    const DexClassId java_class) {
+    std::vector<ReflectMethodMeta> result;
+    std::unordered_set<std::string> signatures;
+    impl_->VisitPublicTypes(java_class, [&](const DexClassId current) {
+        for (const auto& meta : DeclaredMethods(current)) {
+            if ((meta.access_flags & kAccPublic) == 0U) continue;
+            const auto& method = impl_->linker->Method(meta.method);
+            const auto signature = method.name + method.descriptor;
+            if (signatures.insert(signature).second) result.push_back(meta);
+        }
+    });
+    return result;
+}
+
+std::vector<ReflectFieldMeta> ReflectionRuntime::PublicFields(
+    const DexClassId java_class) {
+    std::vector<ReflectFieldMeta> result;
+    std::unordered_set<std::uint32_t> fields;
+    impl_->VisitPublicTypes(java_class, [&](const DexClassId current) {
+        for (const auto& meta : DeclaredFields(current)) {
+            if ((meta.access_flags & kAccPublic) != 0U &&
+                fields.insert(meta.field.Value()).second) {
+                result.push_back(meta);
+            }
+        }
+    });
+    return result;
+}
+
+std::optional<ReflectMethodMeta> ReflectionRuntime::FindDeclaredMethod(
+    const DexClassId declaring_class, const std::string_view name,
+    const std::span<const DexClassId> parameter_types) {
+    for (const auto& meta : DeclaredMethods(declaring_class)) {
+        if (impl_->linker->Method(meta.method).name == name &&
+            SameParameters(meta, parameter_types)) {
+            return meta;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<ReflectMethodMeta> ReflectionRuntime::FindPublicMethod(
+    const DexClassId java_class, const std::string_view name,
+    const std::span<const DexClassId> parameter_types) {
+    for (const auto& meta : PublicMethods(java_class)) {
+        if (impl_->linker->Method(meta.method).name == name &&
+            SameParameters(meta, parameter_types)) {
+            return meta;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<ReflectConstructorMeta> ReflectionRuntime::FindConstructor(
+    const DexClassId declaring_class,
+    const std::span<const DexClassId> parameter_types,
+    const bool public_only) {
+    for (const auto& meta : DeclaredConstructors(declaring_class)) {
+        if ((!public_only || (meta.access_flags & kAccPublic) != 0U) &&
+            SameParameters(meta, parameter_types)) {
+            return meta;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<ReflectFieldMeta> ReflectionRuntime::FindDeclaredField(
+    const DexClassId declaring_class, const std::string_view name) {
+    for (const auto& meta : DeclaredFields(declaring_class)) {
+        if (impl_->linker->Field(meta.field).name == name) return meta;
+    }
+    return std::nullopt;
+}
+
+std::optional<ReflectFieldMeta> ReflectionRuntime::FindPublicField(
+    const DexClassId java_class, const std::string_view name) {
+    for (const auto& meta : PublicFields(java_class)) {
+        if (impl_->linker->Field(meta.field).name == name) return meta;
+    }
+    return std::nullopt;
 }
 
 VmObjectRef ReflectionRuntime::MaterializeMethod(
@@ -311,7 +436,11 @@ VmObjectRef ReflectionRuntime::MaterializeField(const ReflectFieldMeta& meta) {
 
 VmObjectRef ReflectionRuntime::MaterializeDeclaredMethods(
     const DexClassId declaring_class) {
-    const auto methods = DeclaredMethods(declaring_class);
+    return MaterializeMethods(DeclaredMethods(declaring_class));
+}
+
+VmObjectRef ReflectionRuntime::MaterializeMethods(
+    const std::span<const ReflectMethodMeta> methods) {
     const auto method_class =
         impl_->linker->ResolveDescriptor("Ljava/lang/reflect/Method;");
     const auto array_class =
@@ -321,6 +450,37 @@ VmObjectRef ReflectionRuntime::MaterializeDeclaredMethods(
     for (std::size_t index = 0; index < methods.size(); ++index) {
         impl_->model->SetObjectElement(
             array, static_cast<JniSize>(index), MaterializeMethod(methods[index]));
+    }
+    return array;
+}
+
+VmObjectRef ReflectionRuntime::MaterializeConstructors(
+    const std::span<const ReflectConstructorMeta> constructors) {
+    const auto member_class =
+        impl_->linker->ResolveDescriptor("Ljava/lang/reflect/Constructor;");
+    const auto array_class = impl_->linker->ResolveDescriptor(
+        "[Ljava/lang/reflect/Constructor;");
+    const auto array = impl_->model->NewObjectArray(
+        array_class, member_class, static_cast<JniSize>(constructors.size()));
+    for (std::size_t index = 0; index < constructors.size(); ++index) {
+        impl_->model->SetObjectElement(
+            array, static_cast<JniSize>(index),
+            MaterializeConstructor(constructors[index]));
+    }
+    return array;
+}
+
+VmObjectRef ReflectionRuntime::MaterializeFields(
+    const std::span<const ReflectFieldMeta> fields) {
+    const auto member_class =
+        impl_->linker->ResolveDescriptor("Ljava/lang/reflect/Field;");
+    const auto array_class =
+        impl_->linker->ResolveDescriptor("[Ljava/lang/reflect/Field;");
+    const auto array = impl_->model->NewObjectArray(
+        array_class, member_class, static_cast<JniSize>(fields.size()));
+    for (std::size_t index = 0; index < fields.size(); ++index) {
+        impl_->model->SetObjectElement(
+            array, static_cast<JniSize>(index), MaterializeField(fields[index]));
     }
     return array;
 }

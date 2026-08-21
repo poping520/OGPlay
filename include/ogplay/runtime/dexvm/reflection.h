@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "ogplay/runtime/dexvm/class_linker.h"
@@ -56,6 +58,24 @@ public:
         DexClassId declaring_class);
     [[nodiscard]] std::span<const ReflectFieldMeta> DeclaredFields(
         DexClassId declaring_class);
+    [[nodiscard]] std::vector<ReflectMethodMeta> PublicMethods(
+        DexClassId java_class);
+    [[nodiscard]] std::vector<ReflectFieldMeta> PublicFields(
+        DexClassId java_class);
+
+    [[nodiscard]] std::optional<ReflectMethodMeta> FindDeclaredMethod(
+        DexClassId declaring_class, std::string_view name,
+        std::span<const DexClassId> parameter_types);
+    [[nodiscard]] std::optional<ReflectMethodMeta> FindPublicMethod(
+        DexClassId java_class, std::string_view name,
+        std::span<const DexClassId> parameter_types);
+    [[nodiscard]] std::optional<ReflectConstructorMeta> FindConstructor(
+        DexClassId declaring_class,
+        std::span<const DexClassId> parameter_types, bool public_only);
+    [[nodiscard]] std::optional<ReflectFieldMeta> FindDeclaredField(
+        DexClassId declaring_class, std::string_view name);
+    [[nodiscard]] std::optional<ReflectFieldMeta> FindPublicField(
+        DexClassId java_class, std::string_view name);
 
     [[nodiscard]] VmObjectRef MaterializeMethod(const ReflectMethodMeta& meta);
     [[nodiscard]] VmObjectRef MaterializeConstructor(
@@ -63,6 +83,12 @@ public:
     [[nodiscard]] VmObjectRef MaterializeField(const ReflectFieldMeta& meta);
     [[nodiscard]] VmObjectRef MaterializeDeclaredMethods(
         DexClassId declaring_class);
+    [[nodiscard]] VmObjectRef MaterializeMethods(
+        std::span<const ReflectMethodMeta> methods);
+    [[nodiscard]] VmObjectRef MaterializeConstructors(
+        std::span<const ReflectConstructorMeta> constructors);
+    [[nodiscard]] VmObjectRef MaterializeFields(
+        std::span<const ReflectFieldMeta> fields);
     [[nodiscard]] VmObjectRef MaterializeTypeArray(
         std::span<const DexClassId> types);
 

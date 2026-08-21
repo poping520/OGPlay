@@ -1,0 +1,111 @@
+# DVM-65 Class structural/member-query fixture. Declaration order and access
+# flags are intentional and form part of the reflection contract.
+
+.class public abstract interface Lreflect/BaseContract;
+.super Ljava/lang/Object;
+
+.field static public final contractField:I = 9
+
+.method public abstract inheritedContract()I
+.end method
+
+.method public abstract common()I
+.end method
+
+.class public abstract interface Lreflect/ChildContract;
+.super Ljava/lang/Object;
+.implements Lreflect/BaseContract;
+
+.method public abstract childContract()I
+.end method
+
+.class public Lreflect/Base;
+.super Ljava/lang/Object;
+
+.field public baseField:I
+.field private hiddenBase:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method private constructor <init>(I)V
+.registers 2
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method private hiddenBase()I
+.registers 2
+    const/4 v0, 1
+    return v0
+.end method
+
+.method protected protectedBase()I
+.registers 2
+    const/4 v0, 2
+    return v0
+.end method
+
+.method public common()I
+.registers 2
+    const/4 v0, 3
+    return v0
+.end method
+
+.method public inheritedBase()I
+.registers 2
+    const/4 v0, 4
+    return v0
+.end method
+
+.class public Lreflect/Derived;
+.super Lreflect/Base;
+.implements Lreflect/ChildContract;
+
+.field public derivedField:I
+.field private hiddenDerived:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lreflect/Base;-><init>()V
+    return-void
+.end method
+
+.method private constructor <init>(I)V
+.registers 2
+    invoke-direct {v0, v1}, Lreflect/Base;-><init>(I)V
+    return-void
+.end method
+
+.method private hiddenDerived()I
+.registers 2
+    const/4 v0, 5
+    return v0
+.end method
+
+.method protected protectedDerived()I
+.registers 2
+    const/4 v0, 6
+    return v0
+.end method
+
+.method public common()I
+.registers 2
+    const/4 v0, 7
+    return v0
+.end method
+
+.method public childContract()I
+.registers 2
+    const/16 v0, 8
+    return v0
+.end method
+
+.method public inheritedContract()I
+.registers 2
+    const/16 v0, 9
+    return v0
+.end method

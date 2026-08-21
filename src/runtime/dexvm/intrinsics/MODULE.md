@@ -43,5 +43,7 @@ ClassLoader 仅映射到唯一 application namespace，不获得第二套 class 
 
 reflection R3 shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclaration`、`Type`、
 `Member`、`AccessibleObject`、`Modifier`、`Method`、`Constructor` 与 `Field`。
-`Class.getDeclaredMethods` 和 wrapper handler 只能调用 `ReflectionRuntime`，禁止读写 raw
-member id；annotation/generic、完整 invoke 与 Field 行为仍须明确 deferred。
+`Class` 的结构、类型关系和 declared/public Method/Constructor/Field 查询只能调用
+linker/`ReflectionRuntime`，禁止读写 raw member id；public 聚合顺序固定为
+class → superclass → direct interface 递归。nested/enclosing、annotation/generic、完整 invoke、
+Constructor 实例化与 Field/Array 行为仍须明确 deferred。

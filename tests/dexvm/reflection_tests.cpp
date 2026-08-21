@@ -60,6 +60,17 @@ struct ReflectionVm final {
         return interpreter.Call(linked.vtable[*index], arguments);
     }
 
+    [[nodiscard]] VmCallOutcome Static(
+        const std::string_view owner, const std::string_view name,
+        const std::string_view descriptor,
+        std::vector<VmValue> arguments = {}) {
+        const auto java_class = linker.ResolveDescriptor(owner);
+        const auto method = linker.FindDirectMethod(
+            java_class, std::string(name), std::string(descriptor));
+        REQUIRE(method.has_value());
+        return interpreter.Call(*method, arguments);
+    }
+
     [[nodiscard]] VmObjectRef ClassArray(
         const std::vector<std::string_view>& descriptors) {
         const auto class_class = linker.ResolveDescriptor("Ljava/lang/Class;");
@@ -129,8 +140,31 @@ VmObjectRef MethodWrapper(ReflectionVm& vm, const std::string_view owner,
     }
     const auto meta = vm.interpreter.Reflection().FindDeclaredMethod(
         vm.linker.ResolveDescriptor(owner), name, parameter_types);
-    REQUIRE(meta.has_value());
+    REQUIRE_MESSAGE(meta.has_value(), "missing reflected method ", owner,
+                    "->", name);
     return vm.interpreter.Reflection().MaterializeMethod(*meta);
+}
+
+VmObjectRef ConstructorWrapper(
+    ReflectionVm& vm, const std::string_view owner,
+    const std::vector<std::string_view>& parameters = {}) {
+    std::vector<DexClassId> parameter_types;
+    for (const auto parameter : parameters) {
+        parameter_types.push_back(vm.linker.ResolveDescriptor(parameter));
+    }
+    const auto meta = vm.interpreter.Reflection().FindConstructor(
+        vm.linker.ResolveDescriptor(owner), parameter_types, false);
+    REQUIRE(meta.has_value());
+    return vm.interpreter.Reflection().MaterializeConstructor(*meta);
+}
+
+VmObjectRef FieldWrapper(ReflectionVm& vm, const std::string_view owner,
+                         const std::string_view name) {
+    const auto meta = vm.interpreter.Reflection().FindDeclaredField(
+        vm.linker.ResolveDescriptor(owner), name);
+    REQUIRE_MESSAGE(meta.has_value(), "missing reflected field ", owner,
+                    "->", name);
+    return vm.interpreter.Reflection().MaterializeField(*meta);
 }
 
 VmObjectRef Box(ReflectionVm& vm, const std::string_view primitive,
@@ -160,6 +194,15 @@ VmCallOutcome InvokeFrom(ReflectionVm& vm, const std::string_view caller,
     REQUIRE(driver.has_value());
     const std::array arguments{VmValue::Ref(method), VmValue::Ref(receiver)};
     return vm.interpreter.Call(*driver, arguments);
+}
+
+VmCallOutcome Construct(ReflectionVm& vm, const VmObjectRef constructor,
+                        const std::vector<VmObjectRef>& arguments = {}) {
+    const auto array = arguments.empty() ? VmObjectRef{}
+                                         : vm.ObjectArray(arguments);
+    return vm.Virtual(
+        constructor, "newInstance",
+        "([Ljava/lang/Object;)Ljava/lang/Object;", {VmValue::Ref(array)});
 }
 
 }  // namespace
@@ -458,11 +501,17 @@ TEST_CASE("Class member queries separate declared and deterministic public aggre
               "()[Ljava/lang/reflect/Constructor;"))) == 1);
     CHECK(MemberNames(vm, Ref(query(
               "getDeclaredFields", "()[Ljava/lang/reflect/Field;"))) ==
-          std::vector<std::string>{"derivedField", "hiddenDerived"});
+          std::vector<std::string>{
+              "booleanField", "byteField", "charField", "derivedField",
+              "doubleField", "finalField", "floatField", "hiddenDerived",
+              "longField", "refField", "shortField", "volatileField"});
     CHECK(MemberNames(vm, Ref(query(
               "getFields", "()[Ljava/lang/reflect/Field;"))) ==
-          std::vector<std::string>{"derivedField", "baseField",
-                                   "contractField"});
+          std::vector<std::string>{
+              "booleanField", "byteField", "charField", "derivedField",
+              "doubleField", "finalField", "floatField", "longField",
+              "refField", "shortField", "volatileField", "baseField",
+              "contractField"});
 
     const auto hidden_method = Ref(query(
         "getDeclaredMethod",
@@ -757,4 +806,343 @@ TEST_CASE("Method invoke honors caller access and preserves target throwable ide
                          "()Ljava/lang/Throwable;")) == target);
     CHECK(Ref(vm.Virtual(outcome.exception, "getCause",
                          "()Ljava/lang/Throwable;")) == target);
+}
+
+TEST_CASE("Constructor newInstance initializes converts and wraps target exceptions") {
+    ReflectionVm vm("reflection.dex");
+
+    // AOSP API19: .local/aosp/dalvik/vm/native/
+    // java_lang_reflect_Constructor.cpp :: constructNative
+    const auto constructor = ConstructorWrapper(
+        vm, "Lreflect/ConstructTarget;", {"J"});
+    const auto instance = Ref(Construct(vm, constructor,
+                                        {Box(vm, "I", VmValue::Int(27))}));
+    const auto value_field = vm.linker.FindFieldRecursive(
+        vm.model.ObjectClass(instance), "value", "I");
+    REQUIRE(value_field.has_value());
+    CHECK(vm.model.InstanceSlots(instance)
+              [vm.linker.Field(*value_field).slot].bits == 27U);
+    const auto initialized = vm.linker.FindFieldRecursive(
+        vm.linker.ResolveDescriptor("Lreflect/ConstructTarget;"),
+        "initialized", "I");
+    REQUIRE(initialized.has_value());
+    CHECK(vm.linker.Class(vm.linker.Field(*initialized).owner)
+              .static_storage[vm.linker.Field(*initialized).slot] == 41U);
+
+    const auto private_constructor = ConstructorWrapper(
+        vm, "Lreflect/ConstructTarget;");
+    ExpectException(vm, Construct(vm, private_constructor),
+                    "Ljava/lang/IllegalAccessException;");
+    vm.interpreter.Reflection().SetAccessible(private_constructor, true);
+    CHECK(Ref(Construct(vm, private_constructor)).IsValid());
+
+    const auto target = vm.interpreter.MakeThrowable(
+        "Ljava/lang/RuntimeException;", "constructor target");
+    const auto throwing = ConstructorWrapper(
+        vm, "Lreflect/ThrowingConstructor;", {"Ljava/lang/Throwable;"});
+    const auto outcome = Construct(vm, throwing, {target});
+    ExpectException(vm, outcome,
+                    "Ljava/lang/reflect/InvocationTargetException;");
+    CHECK(Ref(vm.Virtual(outcome.exception, "getTargetException",
+                         "()Ljava/lang/Throwable;")) == target);
+
+    for (const auto descriptor : {"Lreflect/AbstractTarget;",
+                                  "Lreflect/BaseContract;", "[I", "I", "V"}) {
+        const auto represented = vm.linker.ResolveDescriptor(descriptor);
+        try {
+            static_cast<void>(vm.interpreter.Reflection().NewInstance(
+                represented, std::nullopt));
+            FAIL_CHECK("non-instantiable class was allocated");
+        } catch (const VmJavaThrow& thrown) {
+            CHECK(thrown.descriptor == "Ljava/lang/InstantiationException;");
+        }
+    }
+}
+
+TEST_CASE("Class newInstance uses the nullary constructor without wrapping") {
+    ReflectionVm vm("reflection.dex");
+    const auto call = [&](const std::string_view descriptor) {
+        const auto java_class = vm.linker.ResolveDescriptor(descriptor);
+        return vm.Virtual(vm.model.ClassObject(java_class), "newInstance",
+                          "()Ljava/lang/Object;");
+    };
+
+    // AOSP API19: .local/aosp/dalvik/vm/native/java_lang_Class.cpp ::
+    // Dalvik_java_lang_Class_newInstance
+    const auto instance = Ref(call("Lreflect/DefaultTarget;"));
+    const auto field = vm.linker.FindFieldRecursive(
+        vm.model.ObjectClass(instance), "value", "I");
+    REQUIRE(field.has_value());
+    CHECK(vm.model.InstanceSlots(instance)[vm.linker.Field(*field).slot].bits ==
+          31U);
+    ExpectException(vm, call("Lreflect/NoDefault;"),
+                    "Ljava/lang/InstantiationException;");
+
+    const auto throwing =
+        vm.linker.ResolveDescriptor("Lreflect/ThrowingDefault;");
+    const auto initialized = vm.interpreter.EnsureClassInitialized(throwing);
+    REQUIRE_FALSE(initialized.exception.IsValid());
+    const auto target = vm.interpreter.MakeThrowable(
+        "Ljava/lang/RuntimeException;", "class target");
+    vm.interpreter.SetStaticFieldBits(
+        "Lreflect/ThrowingDefault;", "target", "Ljava/lang/Throwable;",
+        target.Value());
+    const auto outcome = call("Lreflect/ThrowingDefault;");
+    ExpectException(vm, outcome, "Ljava/lang/RuntimeException;");
+    CHECK(outcome.exception == target);
+}
+
+TEST_CASE("Field get and set share access initialization and widening rules") {
+    ReflectionVm vm("reflection.dex");
+    const auto derived_class =
+        vm.linker.ResolveDescriptor("Lreflect/Derived;");
+    const auto derived = vm.model.NewInstance(
+        derived_class, vm.linker.Class(derived_class).instance_slots);
+
+    // AOSP API19: .local/aosp/dalvik/vm/native/
+    // java_lang_reflect_Field.cpp :: validateFieldAccess/getFieldValue
+    const auto byte_field = FieldWrapper(
+        vm, "Lreflect/Derived;", "byteField");
+    REQUIRE_FALSE(vm.Virtual(
+        byte_field, "setByte", "(Ljava/lang/Object;B)V",
+        {VmValue::Ref(derived), VmValue::Int(-7)}).exception.IsValid());
+    CHECK(vm.Virtual(byte_field, "getLong", "(Ljava/lang/Object;)J",
+                     {VmValue::Ref(derived)}).value.AsLong() == -7);
+    CHECK(vm.interpreter.Reflection().Codec().ConvertArgument(
+              Ref(vm.Virtual(byte_field, "get",
+                             "(Ljava/lang/Object;)Ljava/lang/Object;",
+                             {VmValue::Ref(derived)})),
+              vm.linker.ResolveDescriptor("B")).AsInt() == -7);
+
+    const auto long_field = FieldWrapper(
+        vm, "Lreflect/Derived;", "longField");
+    REQUIRE_FALSE(vm.Virtual(
+        long_field, "set", "(Ljava/lang/Object;Ljava/lang/Object;)V",
+        {VmValue::Ref(derived),
+         VmValue::Ref(Box(vm, "I", VmValue::Int(91)))}).exception.IsValid());
+    CHECK(vm.Virtual(long_field, "getDouble", "(Ljava/lang/Object;)D",
+                     {VmValue::Ref(derived)}).value.AsDouble() ==
+          doctest::Approx(91.0));
+
+    const auto ref_field = FieldWrapper(
+        vm, "Lreflect/Derived;", "refField");
+    REQUIRE_FALSE(vm.Virtual(
+        ref_field, "set", "(Ljava/lang/Object;Ljava/lang/Object;)V",
+        {VmValue::Ref(derived), VmValue::Ref(derived)}).exception.IsValid());
+    CHECK(Ref(vm.Virtual(ref_field, "get",
+                         "(Ljava/lang/Object;)Ljava/lang/Object;",
+                         {VmValue::Ref(derived)})) == derived);
+    ExpectException(vm, vm.Virtual(
+        ref_field, "set", "(Ljava/lang/Object;Ljava/lang/Object;)V",
+        {VmValue::Ref(derived), VmValue::Ref(
+            vm.interpreter.NewIntrinsicInstance("Ljava/lang/Object;"))}),
+        "Ljava/lang/IllegalArgumentException;");
+
+    const auto static_field = FieldWrapper(
+        vm, "Lreflect/InvokeStatics;", "staticField");
+    REQUIRE_FALSE(vm.Virtual(
+        static_field, "setInt", "(Ljava/lang/Object;I)V",
+        {VmValue::Ref(VmObjectRef{}), VmValue::Int(17)}).exception.IsValid());
+    CHECK(vm.Virtual(static_field, "getLong", "(Ljava/lang/Object;)J",
+                     {VmValue::Ref(VmObjectRef{})}).value.AsLong() == 17);
+    const auto initialized = vm.linker.FindFieldRecursive(
+        vm.linker.ResolveDescriptor("Lreflect/InvokeStatics;"),
+        "fieldInitialized", "I");
+    REQUIRE(initialized.has_value());
+    CHECK(vm.linker.Class(vm.linker.Field(*initialized).owner)
+              .static_storage[vm.linker.Field(*initialized).slot] == 55U);
+
+    const auto hidden = FieldWrapper(
+        vm, "Lreflect/Derived;", "hiddenDerived");
+    ExpectException(vm, vm.Virtual(
+        hidden, "getInt", "(Ljava/lang/Object;)I",
+        {VmValue::Ref(derived)}), "Ljava/lang/IllegalAccessException;");
+    vm.interpreter.Reflection().SetAccessible(hidden, true);
+    REQUIRE_FALSE(vm.Virtual(
+        hidden, "setInt", "(Ljava/lang/Object;I)V",
+        {VmValue::Ref(derived), VmValue::Int(8)}).exception.IsValid());
+    CHECK(Int(vm.Virtual(hidden, "getInt", "(Ljava/lang/Object;)I",
+                         {VmValue::Ref(derived)})) == 8);
+
+    const auto final_field = FieldWrapper(
+        vm, "Lreflect/Derived;", "finalField");
+    ExpectException(vm, vm.Virtual(
+        final_field, "setInt", "(Ljava/lang/Object;I)V",
+        {VmValue::Ref(derived), VmValue::Int(4)}),
+        "Ljava/lang/IllegalAccessException;");
+    vm.interpreter.Reflection().SetAccessible(final_field, true);
+    REQUIRE_FALSE(vm.Virtual(
+        final_field, "setInt", "(Ljava/lang/Object;I)V",
+        {VmValue::Ref(derived), VmValue::Int(4)}).exception.IsValid());
+    const auto volatile_field = FieldWrapper(
+        vm, "Lreflect/Derived;", "volatileField");
+    CHECK((Int(vm.Virtual(volatile_field, "getModifiers", "()I")) &
+           0x0040) != 0);
+}
+
+TEST_CASE("reflect Array creates and accesses typed primitive and object arrays") {
+    ReflectionVm vm("reflection.dex");
+    const auto class_object = [&](const std::string_view descriptor) {
+        return vm.model.ClassObject(vm.linker.ResolveDescriptor(descriptor));
+    };
+    const auto array_call = [&](const std::string_view name,
+                                const std::string_view descriptor,
+                                std::vector<VmValue> arguments) {
+        return vm.Static("Ljava/lang/reflect/Array;", name, descriptor,
+                         std::move(arguments));
+    };
+
+    // AOSP API19: .local/aosp/libcore/luni/src/main/java/
+    // java/lang/reflect/Array.java :: get/set/newInstance
+    const auto ints = Ref(array_call(
+        "newInstance", "(Ljava/lang/Class;I)Ljava/lang/Object;",
+        {VmValue::Ref(class_object("I")), VmValue::Int(2)}));
+    CHECK(vm.linker.Class(vm.model.ObjectClass(ints)).descriptor == "[I");
+    REQUIRE_FALSE(array_call(
+        "setByte", "(Ljava/lang/Object;IB)V",
+        {VmValue::Ref(ints), VmValue::Int(0), VmValue::Int(-5)})
+                      .exception.IsValid());
+    CHECK(array_call("getLong", "(Ljava/lang/Object;I)J",
+                     {VmValue::Ref(ints), VmValue::Int(0)})
+              .value.AsLong() == -5);
+    CHECK(vm.interpreter.Reflection().Codec().ConvertArgument(
+              Ref(array_call("get", "(Ljava/lang/Object;I)Ljava/lang/Object;",
+                             {VmValue::Ref(ints), VmValue::Int(0)})),
+              vm.linker.ResolveDescriptor("I")).AsInt() == -5);
+    ExpectException(vm, array_call(
+        "setLong", "(Ljava/lang/Object;IJ)V",
+        {VmValue::Ref(ints), VmValue::Int(0), VmValue::Long(2)}),
+        "Ljava/lang/IllegalArgumentException;");
+
+    const auto bases = Ref(array_call(
+        "newInstance", "(Ljava/lang/Class;I)Ljava/lang/Object;",
+        {VmValue::Ref(class_object("Lreflect/Base;")), VmValue::Int(1)}));
+    const auto derived_class =
+        vm.linker.ResolveDescriptor("Lreflect/Derived;");
+    const auto derived = vm.model.NewInstance(
+        derived_class, vm.linker.Class(derived_class).instance_slots);
+    REQUIRE_FALSE(array_call(
+        "set", "(Ljava/lang/Object;ILjava/lang/Object;)V",
+        {VmValue::Ref(bases), VmValue::Int(0), VmValue::Ref(derived)})
+                      .exception.IsValid());
+    CHECK(Ref(array_call("get", "(Ljava/lang/Object;I)Ljava/lang/Object;",
+                         {VmValue::Ref(bases), VmValue::Int(0)})) == derived);
+    ExpectException(vm, array_call(
+        "set", "(Ljava/lang/Object;ILjava/lang/Object;)V",
+        {VmValue::Ref(bases), VmValue::Int(0), VmValue::Ref(
+            vm.interpreter.NewIntrinsicInstance("Ljava/lang/Object;"))}),
+        "Ljava/lang/IllegalArgumentException;");
+
+    const auto dims_class = vm.linker.ResolveDescriptor("[I");
+    const auto dims = vm.model.NewPrimitiveArray(
+        dims_class, JniPrimitiveKind::integer, 2);
+    vm.model.SetPrimitiveElement(dims, 0, 2);
+    vm.model.SetPrimitiveElement(dims, 1, 3);
+    const auto matrix = Ref(array_call(
+        "newInstance", "(Ljava/lang/Class;[I)Ljava/lang/Object;",
+        {VmValue::Ref(class_object("I")), VmValue::Ref(dims)}));
+    CHECK(vm.linker.Class(vm.model.ObjectClass(matrix)).descriptor == "[[I");
+    CHECK(vm.model.ArrayLength(matrix) == 2);
+    CHECK(vm.model.ArrayLength(vm.model.GetObjectElement(matrix, 0)) == 3);
+
+    CHECK(Int(array_call("getLength", "(Ljava/lang/Object;)I",
+                         {VmValue::Ref(matrix)})) == 2);
+    ExpectException(vm, array_call(
+        "get", "(Ljava/lang/Object;I)Ljava/lang/Object;",
+        {VmValue::Ref(ints), VmValue::Int(2)}),
+        "Ljava/lang/ArrayIndexOutOfBoundsException;");
+    ExpectException(vm, array_call(
+        "getLength", "(Ljava/lang/Object;)I",
+        {VmValue::Ref(vm.interpreter.NewIntrinsicInstance(
+            "Ljava/lang/Object;"))}), "Ljava/lang/IllegalArgumentException;");
+    ExpectException(vm, array_call(
+        "newInstance", "(Ljava/lang/Class;I)Ljava/lang/Object;",
+        {VmValue::Ref(class_object("V")), VmValue::Int(1)}),
+        "Ljava/lang/IllegalArgumentException;");
+    ExpectException(vm, array_call(
+        "newInstance", "(Ljava/lang/Class;I)Ljava/lang/Object;",
+        {VmValue::Ref(class_object("I")), VmValue::Int(-1)}),
+        "Ljava/lang/NegativeArraySizeException;");
+}
+
+TEST_CASE("Dalvik system metadata closes nested enclosing and throws reflection") {
+    ReflectionVm vm("reflection.dex");
+    const auto class_object = [&](const std::string_view descriptor) {
+        return vm.model.ClassObject(vm.linker.ResolveDescriptor(descriptor));
+    };
+    const auto class_call = [&](const std::string_view descriptor,
+                                const std::string_view name,
+                                const std::string_view signature) {
+        return vm.Virtual(class_object(descriptor), name, signature);
+    };
+
+    // AOSP API19: dalvik/annotation/{InnerClass,EnclosingClass,
+    // EnclosingMethod,MemberClasses,Throws}.java and Class.java nested APIs.
+    CHECK(vm.interpreter.StringUtf8(Ref(class_call(
+              "Lreflect/Outer$Member;", "getSimpleName",
+              "()Ljava/lang/String;"))) == "Member");
+    CHECK(vm.interpreter.StringUtf8(Ref(class_call(
+              "Lreflect/Outer$Member;", "getCanonicalName",
+              "()Ljava/lang/String;"))) == "reflect.Outer.Member");
+    CHECK(Ref(class_call("Lreflect/Outer$Member;", "getDeclaringClass",
+                         "()Ljava/lang/Class;")) ==
+          class_object("Lreflect/Outer;"));
+    CHECK(Ref(class_call("Lreflect/Outer$Member;", "getEnclosingClass",
+                         "()Ljava/lang/Class;")) ==
+          class_object("Lreflect/Outer;"));
+    CHECK(Int(class_call("Lreflect/Outer$Member;", "isMemberClass",
+                         "()Z")) == 1);
+    CHECK(Int(class_call("Lreflect/Outer$Member;", "getModifiers",
+                         "()I")) == 0x0009);
+    const auto members = Ref(class_call(
+        "Lreflect/Outer;", "getDeclaredClasses", "()[Ljava/lang/Class;"));
+    REQUIRE(vm.model.ArrayLength(members) == 1);
+    CHECK(vm.model.GetObjectElement(members, 0) ==
+          class_object("Lreflect/Outer$Member;"));
+
+    CHECK(vm.interpreter.StringUtf8(Ref(class_call(
+              "Lreflect/Outer$1Local;", "getSimpleName",
+              "()Ljava/lang/String;"))) == "Local");
+    CHECK_FALSE(Ref(class_call("Lreflect/Outer$1Local;", "getCanonicalName",
+                               "()Ljava/lang/String;")).IsValid());
+    CHECK_FALSE(Ref(class_call("Lreflect/Outer$1Local;", "getDeclaringClass",
+                               "()Ljava/lang/Class;")).IsValid());
+    CHECK(Ref(class_call("Lreflect/Outer$1Local;", "getEnclosingClass",
+                         "()Ljava/lang/Class;")) ==
+          class_object("Lreflect/Outer;"));
+    CHECK(Int(class_call("Lreflect/Outer$1Local;", "isLocalClass",
+                         "()Z")) == 1);
+    const auto enclosing_method = Ref(class_call(
+        "Lreflect/Outer$1Local;", "getEnclosingMethod",
+        "()Ljava/lang/reflect/Method;"));
+    CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+              enclosing_method, "getName", "()Ljava/lang/String;"))) ==
+          "make");
+
+    CHECK(vm.interpreter.StringUtf8(Ref(class_call(
+              "Lreflect/Outer$1;", "getSimpleName",
+              "()Ljava/lang/String;"))).empty());
+    CHECK(Int(class_call("Lreflect/Outer$1;", "isAnonymousClass", "()Z")) ==
+          1);
+    CHECK_FALSE(Ref(class_call("Lreflect/Outer$1;", "getCanonicalName",
+                               "()Ljava/lang/String;")).IsValid());
+
+    const auto enclosing_constructor = Ref(class_call(
+        "Lreflect/Outer$CtorLocal;", "getEnclosingConstructor",
+        "()Ljava/lang/reflect/Constructor;"));
+    CHECK(vm.interpreter.StringUtf8(Ref(vm.Virtual(
+              enclosing_constructor, "getName", "()Ljava/lang/String;"))) ==
+          "reflect.Outer");
+
+    const auto risky = MethodWrapper(vm, "Lreflect/Outer;", "risky");
+    const auto exceptions_one = Ref(vm.Virtual(
+        risky, "getExceptionTypes", "()[Ljava/lang/Class;"));
+    const auto exceptions_two = Ref(vm.Virtual(
+        risky, "getExceptionTypes", "()[Ljava/lang/Class;"));
+    CHECK(exceptions_one != exceptions_two);
+    REQUIRE(vm.model.ArrayLength(exceptions_one) == 2);
+    CHECK(vm.model.GetObjectElement(exceptions_one, 0) ==
+          class_object("Ljava/io/IOException;"));
+    CHECK(vm.model.GetObjectElement(exceptions_one, 1) ==
+          class_object("Ljava/lang/RuntimeException;"));
 }

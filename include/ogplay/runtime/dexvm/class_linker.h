@@ -119,6 +119,16 @@ struct LinkedMethod final {
     IntrinsicHandler implementation;
     bool prechecked{};
     std::shared_ptr<FastCode> fast_code;
+    std::optional<std::uint32_t> dex_method_index;
+};
+
+struct ReflectionClassSystemMetadata final {
+    bool has_inner_class{};
+    std::optional<std::string> inner_name;
+    std::uint32_t inner_access_flags{};
+    std::optional<DexClassId> enclosing_class;
+    std::optional<VmMethodId> enclosing_method;
+    std::vector<DexClassId> member_classes;
 };
 
 enum class ClinitState : std::uint8_t {
@@ -237,6 +247,10 @@ public:
     // Own methods declared by the class (not inherited).
     [[nodiscard]] std::vector<VmMethodId> MethodsOf(DexClassId owner) const;
     [[nodiscard]] std::vector<DexClassId> AllClasses() const;
+    [[nodiscard]] ReflectionClassSystemMetadata ReflectionSystemMetadata(
+        DexClassId java_class);
+    [[nodiscard]] std::vector<DexClassId> ReflectionExceptionTypes(
+        VmMethodId method);
 
     // Structural precheck (lazy, cached per method). Throws DexVmError with
     // class/method diagnostics on malformed code.

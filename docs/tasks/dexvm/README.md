@@ -89,6 +89,9 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-64](DVM-64.md) | Reflection wrappers | 完成 |
 | [DVM-65](DVM-65.md) | java.lang.Class core | 完成 |
 | [DVM-66](DVM-66.md) | Reflection invoke foundation | 完成 |
+| [DVM-67](DVM-67.md) | Method/Constructor instantiation | 完成 |
+| [DVM-68](DVM-68.md) | Field/Array | 完成 |
+| [DVM-69](DVM-69.md) | Reflection metadata closure | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

@@ -68,6 +68,13 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
                                     context.receiver,
                                     context.arguments[0].ref) ? 1 : 0);
         });
+    builder.VirtualMethod(
+        "newInstance", "([Ljava/lang/Object;)Ljava/lang/Object;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(context.vm.Reflection().InvokeConstructor(
+                context.receiver, context.arguments[0].ref,
+                context.vm.CurrentCallerClass()));
+        });
     return std::move(builder).Build();
 }
 

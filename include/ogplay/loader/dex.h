@@ -105,6 +105,21 @@ struct DexClassDef final {
     std::uint32_t static_values_offset{};
 };
 
+// Host-only projection of the Dalvik system annotations reflection needs.
+// These are decoded facts, not guest Annotation proxy objects.
+struct DexClassSystemMetadata final {
+    bool has_inner_class{};
+    std::optional<std::string> inner_name;
+    std::uint32_t inner_access_flags{};
+    std::optional<std::uint32_t> enclosing_class_type_index;
+    std::optional<std::uint32_t> enclosing_method_index;
+    std::vector<std::uint32_t> member_class_type_indices;
+};
+
+struct DexMethodSystemMetadata final {
+    std::vector<std::uint32_t> exception_type_indices;
+};
+
 struct DexImage final {
     DexHeader header;
     std::vector<DexMapItem> map_items;
@@ -114,6 +129,9 @@ struct DexImage final {
     std::vector<DexFieldId> fields;
     std::vector<DexMethodId> methods;
     std::vector<DexClassDef> classes;
+    // Aligned with classes/methods above.
+    std::vector<DexClassSystemMetadata> class_system_metadata;
+    std::vector<DexMethodSystemMetadata> method_system_metadata;
 
     [[nodiscard]] std::optional<DexMapItem> FindMapItem(
         DexMapItemType type) const noexcept;

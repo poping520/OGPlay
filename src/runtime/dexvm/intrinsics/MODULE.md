@@ -41,14 +41,20 @@ API 19 guest 可确定的 `/`、`:`、`\n` 三个 separator 属性，不读取�
 initiate 状态委托 `ClassLoaderFacade`。动态 classpath 构造器显式未实现，自定义
 ClassLoader 仅映射到唯一 application namespace，不获得第二套 class directory。
 
-reflection R3 shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclaration`、`Type`、
+reflection shape 按一类一文件声明 `AnnotatedElement`、`GenericDeclaration`、`Type`、
 `Member`、`AccessibleObject`、`Modifier`、`Method`、`Constructor` 与 `Field`。
 `Class` 的结构、类型关系和 declared/public Method/Constructor/Field 查询只能调用
 linker/`ReflectionRuntime`，禁止读写 raw member id；public 聚合顺序固定为
-class → superclass → direct interface 递归。nested/enclosing、annotation/generic、完整 invoke、
-Constructor 实例化与 Field/Array 行为仍须明确 deferred。
+class → superclass → direct interface 递归。nested/enclosing 与 Throws 只消费 loader
+输出的 Dalvik system metadata；generic 与 annotation proxy 明确不实现。
 
 DVM-66 将 `Method.invoke` 降为 `ReflectionRuntime` 的薄入口：handler 不手写
 unbox/boxing 或 target id，统一使用 `ReflectionCodec`、真实 interpreted caller
 和 declared invoke category。`InvocationTargetException.target` 是普通 guest reference field，
 `getTargetException/getCause` 保留原 throwable identity 并由 GC 普通对象图追踪。
+
+DVM-67/68 的 Constructor/Class 实例化与 Field object/primitive 操作同样是
+`ReflectionRuntime` 薄入口；`reflect.Array` 的单维/多维创建和 object/primitive
+访问使用真实 typed array store 与同一 ReflectionCodec。DVM-69 的 Class nested/
+enclosing/member-local-anonymous 和 Method/Constructor Throws 只读 linker system
+metadata，禁止 `$` split 或 guest Annotation proxy。

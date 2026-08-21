@@ -108,6 +108,19 @@ public:
                                            VmObjectRef receiver,
                                            VmObjectRef arguments,
                                            std::optional<DexClassId> caller);
+    [[nodiscard]] VmObjectRef InvokeConstructor(
+        VmObjectRef wrapper, VmObjectRef arguments,
+        std::optional<DexClassId> caller);
+    [[nodiscard]] VmObjectRef NewInstance(
+        DexClassId java_class, std::optional<DexClassId> caller);
+
+    [[nodiscard]] VmValue GetField(
+        VmObjectRef wrapper, VmObjectRef receiver,
+        std::optional<DexClassId> requested_type,
+        std::optional<DexClassId> caller);
+    void SetField(VmObjectRef wrapper, VmObjectRef receiver,
+                  VmValue value, std::optional<DexClassId> source_type,
+                  std::optional<DexClassId> caller);
 
 private:
     class Impl;

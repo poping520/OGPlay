@@ -37,7 +37,9 @@
   永久限制在已选 process ABI。
 - `ParseDex(bytes)`：从不可信字节解析 DEX 035..040 header、固定 ID 表范围和有序
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
-  field/method ID、class_def、接口列表及所有索引与 UTF-16 长度，不执行任何字节码。
+  field/method ID、class_def、接口列表及所有索引与 UTF-16 长度；DVM-69 额外只投影
+  InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system annotations，
+  其余 annotation 只受检跳过，不生成语义对象；不执行任何字节码。
 - `ReadDexClassData(bytes, image)`：解码 class_data 的 delta member 索引与 access flags，
   对 code_item 只提取寄存器、参数、try 数和指令 code-unit 数，不解释指令。
 - `AnalyzeDexL1(image, class_data, libraries, signatures)`：输出应用类/方法/native 数量、
@@ -103,7 +105,8 @@
 - field 的声明类必须是 class descriptor；method 的声明 owner 允许 class 或数组
   descriptor（数组继承 `Object.clone()`，AOSP libdex 与 dex-format 均允许），仍拒绝
   基元与 `V`；class_def 类型唯一，父类、接口、源码与 data offset 全部受检，只保留
-  annotation/class_data/static value 偏移事实。
+  annotation/class_data/static value 偏移事实。system annotation directory/set/item、
+  encoded value、type/method/string index 与 nesting 均受界；只输出反射所需 host facts。
 - class_data 成员必须归属当前类、严格递增且 static/direct 类别与 access flags 一致；
   native/abstract 不得有 code，其他方法必须有对齐且完整的 code_item。
 - Java 厚度只由版本化阈值和可查询计数推导；引擎指纹不得在生产代码硬编码，必须由

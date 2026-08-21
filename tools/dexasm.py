@@ -268,6 +268,7 @@ class Method:
     labels: dict[str, int] = field(default_factory=dict)
     tries: list[TryBlock] = field(default_factory=list)
     has_code: bool = True
+    throws_types: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -288,6 +289,12 @@ class ClassDecl:
     interfaces: list[str] = field(default_factory=list)
     fields: list[FieldDecl] = field(default_factory=list)
     methods: list[Method] = field(default_factory=list)
+    has_inner_class: bool = False
+    inner_name: str | None = None
+    inner_access_flags: int = 0
+    enclosing_class: str | None = None
+    enclosing_method: MethodRef | None = None
+    member_classes: list[str] = field(default_factory=list)
 
 
 class Parser:
@@ -329,6 +336,26 @@ class Parser:
             elif tokens[0] == ".implements":
                 self._require_class(current_class, line_number)
                 current_class.interfaces.append(tokens[1])
+            elif tokens[0] == ".inner-class":
+                self._require_class(current_class, line_number)
+                if len(tokens) != 3:
+                    raise DexAsmError(line_number,
+                                      ".inner-class expects name/null and flags")
+                current_class.has_inner_class = True
+                current_class.inner_name = (None if tokens[1] == "null" else
+                    parse_string_literal(tokens[1], line_number))
+                current_class.inner_access_flags = parse_int_literal(
+                    tokens[2], line_number)
+            elif tokens[0] == ".enclosing-class":
+                self._require_class(current_class, line_number)
+                current_class.enclosing_class = tokens[1]
+            elif tokens[0] == ".enclosing-method":
+                self._require_class(current_class, line_number)
+                current_class.enclosing_method = parse_method_ref(
+                    tokens[1], line_number)
+            elif tokens[0] == ".member-class":
+                self._require_class(current_class, line_number)
+                current_class.member_classes.append(tokens[1])
             elif tokens[0] == ".field":
                 self._require_class(current_class, line_number)
                 current_class.fields.append(
@@ -359,6 +386,12 @@ class Parser:
                 current_method.tries.append(TryBlock(
                     line_number, tokens[1].lstrip(":"),
                     tokens[2].lstrip(":"), tokens[3].lstrip(":"), None))
+            elif tokens[0] == ".throws":
+                self._require_method(current_method, line_number)
+                if len(tokens) != 2 or not is_type_descriptor(tokens[1]):
+                    raise DexAsmError(line_number,
+                                      ".throws expects one type descriptor")
+                current_method.throws_types.append(tokens[1])
             elif tokens[0] == ".packed-switch":
                 self._require_method(current_method, line_number)
                 index = self._parse_packed_switch(
@@ -650,6 +683,27 @@ class Assembler:
                 self.pools.add_type(declaration.superclass)
             for interface in declaration.interfaces:
                 self.pools.add_type(interface)
+            annotation_names: set[str] = set()
+            if declaration.has_inner_class:
+                self.pools.add_type("Ldalvik/annotation/InnerClass;")
+                annotation_names.update(("name", "accessFlags"))
+                if declaration.inner_name is not None:
+                    self.pools.strings.add(declaration.inner_name)
+            if declaration.enclosing_class is not None:
+                self.pools.add_type("Ldalvik/annotation/EnclosingClass;")
+                self.pools.add_type(declaration.enclosing_class)
+                annotation_names.add("value")
+            if declaration.enclosing_method is not None:
+                self.pools.add_type("Ldalvik/annotation/EnclosingMethod;")
+                self.pools.add_method(declaration.enclosing_method,
+                                      declaration.line)
+                annotation_names.add("value")
+            if declaration.member_classes:
+                self.pools.add_type("Ldalvik/annotation/MemberClasses;")
+                for member in declaration.member_classes:
+                    self.pools.add_type(member)
+                annotation_names.add("value")
+            self.pools.strings.update(annotation_names)
             for field_decl in declaration.fields:
                 self.pools.add_field(FieldRef(
                     declaration.descriptor, field_decl.name,
@@ -675,6 +729,11 @@ class Assembler:
                 for try_block in method.tries:
                     if try_block.exception_type is not None:
                         self.pools.add_type(try_block.exception_type)
+                if method.throws_types:
+                    self.pools.add_type("Ldalvik/annotation/Throws;")
+                    self.pools.strings.add("value")
+                    for exception in method.throws_types:
+                        self.pools.add_type(exception)
 
     def _index_pools(self) -> None:
         self.string_list = sorted(self.pools.strings)
@@ -1035,6 +1094,31 @@ class Assembler:
             return bytes([0x17 | ((len(payload) - 1) << 5)]) + payload
         raise DexAsmError(line, f"unsupported encoded value kind {kind}")
 
+    @staticmethod
+    def _encoded_index(value_type: int, index: int) -> bytes:
+        width = max(1, (index.bit_length() + 7) // 8)
+        return bytes([value_type | ((width - 1) << 5)]) + \
+            index.to_bytes(width, "little")
+
+    def _encoded_type_array(self, descriptors: list[str]) -> bytes:
+        out = bytearray([0x1C])
+        out += uleb128(len(descriptors))
+        for descriptor in descriptors:
+            out += self._encoded_index(0x18, self.type_index[descriptor])
+        return bytes(out)
+
+    def _annotation_item(self, annotation_type: str,
+                         elements: list[tuple[str, bytes]]) -> bytes:
+        # annotation_element must be sorted by name_idx.
+        elements.sort(key=lambda item: self.string_index[item[0]])
+        out = bytearray([2])  # VISIBILITY_SYSTEM
+        out += uleb128(self.type_index[annotation_type])
+        out += uleb128(len(elements))
+        for name, encoded_value in elements:
+            out += uleb128(self.string_index[name])
+            out += encoded_value
+        return bytes(out)
+
     # ----- final layout ------------------------------------------------------
 
     def assemble(self) -> bytes:
@@ -1153,6 +1237,134 @@ class Assembler:
         if class_data_count:
             map_items.append((0x2000, class_data_count, first_class_data_off))
 
+        # Dalvik system annotations used by reflection. The assembler exposes
+        # only the bounded directives above; it is not a generic annotation
+        # compiler.
+        class_annotation_items: dict[str, list[tuple[str, int]]] = {}
+        method_annotation_items: dict[tuple[str, str, str], int] = {}
+        annotation_item_count = 0
+        first_annotation_item_off = 0
+
+        def append_annotation(annotation_type: str,
+                              elements: list[tuple[str, bytes]]) -> int:
+            nonlocal annotation_item_count, first_annotation_item_off
+            offset = data_off + len(data)
+            if annotation_item_count == 0:
+                first_annotation_item_off = offset
+            annotation_item_count += 1
+            data.extend(self._annotation_item(annotation_type, elements))
+            return offset
+
+        for declaration in self.ordered_classes:
+            items: list[tuple[str, int]] = []
+            if declaration.has_inner_class:
+                name_value = (self._encode_encoded_value(
+                    "null", None, declaration.line)
+                    if declaration.inner_name is None else
+                    self._encode_encoded_value(
+                        "string", declaration.inner_name, declaration.line))
+                annotation_type = "Ldalvik/annotation/InnerClass;"
+                items.append((annotation_type, append_annotation(
+                    annotation_type,
+                    [("name", name_value),
+                     ("accessFlags", self._encode_encoded_value(
+                         "int", declaration.inner_access_flags,
+                         declaration.line))])))
+            if declaration.enclosing_class is not None:
+                annotation_type = "Ldalvik/annotation/EnclosingClass;"
+                items.append((annotation_type, append_annotation(
+                    annotation_type,
+                    [("value", self._encoded_index(
+                        0x18, self.type_index[
+                            declaration.enclosing_class]))])))
+            if declaration.enclosing_method is not None:
+                annotation_type = "Ldalvik/annotation/EnclosingMethod;"
+                method = declaration.enclosing_method
+                method_key = (method.owner, method.name, method.descriptor)
+                items.append((annotation_type, append_annotation(
+                    annotation_type,
+                    [("value", self._encoded_index(
+                        0x1A, self.method_index[method_key]))])))
+            if declaration.member_classes:
+                annotation_type = "Ldalvik/annotation/MemberClasses;"
+                items.append((annotation_type, append_annotation(
+                    annotation_type,
+                    [("value", self._encoded_type_array(
+                        declaration.member_classes))])))
+            if items:
+                class_annotation_items[declaration.descriptor] = items
+            for method in declaration.methods:
+                if not method.throws_types:
+                    continue
+                method_key = (declaration.descriptor, method.name,
+                              method.descriptor)
+                method_annotation_items[method_key] = append_annotation(
+                    "Ldalvik/annotation/Throws;",
+                    [("value", self._encoded_type_array(
+                        method.throws_types))])
+        if annotation_item_count:
+            map_items.append((0x2004, annotation_item_count,
+                              first_annotation_item_off))
+
+        class_annotation_sets: dict[str, int] = {}
+        method_annotation_sets: dict[tuple[str, str, str], int] = {}
+        annotation_set_count = 0
+        first_annotation_set_off = 0
+
+        def append_annotation_set(items: list[tuple[str, int]]) -> int:
+            nonlocal annotation_set_count, first_annotation_set_off
+            align4()
+            offset = data_off + len(data)
+            if annotation_set_count == 0:
+                first_annotation_set_off = offset
+            annotation_set_count += 1
+            items.sort(key=lambda item: self.type_index[item[0]])
+            data.extend(struct.pack("<I", len(items)))
+            for _, item_offset in items:
+                data.extend(struct.pack("<I", item_offset))
+            return offset
+
+        for descriptor, items in class_annotation_items.items():
+            class_annotation_sets[descriptor] = append_annotation_set(items)
+        for method_key, item_offset in method_annotation_items.items():
+            method_annotation_sets[method_key] = append_annotation_set(
+                [("Ldalvik/annotation/Throws;", item_offset)])
+        if annotation_set_count:
+            map_items.append((0x1003, annotation_set_count,
+                              first_annotation_set_off))
+
+        annotation_directory_offsets: dict[str, int] = {}
+        annotation_directory_count = 0
+        first_annotation_directory_off = 0
+        for declaration in self.ordered_classes:
+            annotated_methods = [
+                ((declaration.descriptor, method.name, method.descriptor),
+                 method_annotation_sets[(declaration.descriptor,
+                                         method.name, method.descriptor)])
+                for method in declaration.methods
+                if (declaration.descriptor, method.name, method.descriptor)
+                in method_annotation_sets]
+            if declaration.descriptor not in class_annotation_sets and \
+                    not annotated_methods:
+                continue
+            annotated_methods.sort(
+                key=lambda item: self.method_index[item[0]])
+            align4()
+            offset = data_off + len(data)
+            if annotation_directory_count == 0:
+                first_annotation_directory_off = offset
+            annotation_directory_count += 1
+            annotation_directory_offsets[declaration.descriptor] = offset
+            data += struct.pack(
+                "<IIII", class_annotation_sets.get(
+                    declaration.descriptor, 0), 0, len(annotated_methods), 0)
+            for method_key, set_offset in annotated_methods:
+                data += struct.pack(
+                    "<II", self.method_index[method_key], set_offset)
+        if annotation_directory_count:
+            map_items.append((0x2006, annotation_directory_count,
+                              first_annotation_directory_off))
+
         # string data
         string_data_offsets: list[int] = []
         for value in self.string_list:
@@ -1221,7 +1433,8 @@ class Assembler:
             ids += struct.pack(
                 "<IIIIIIII", self.type_index[declaration.descriptor],
                 declaration.access_flags, superclass, interfaces_off,
-                NO_INDEX, 0,
+                NO_INDEX,
+                annotation_directory_offsets.get(declaration.descriptor, 0),
                 class_data_offsets[declaration.descriptor],
                 static_value_offsets.get(declaration.descriptor, 0))
 

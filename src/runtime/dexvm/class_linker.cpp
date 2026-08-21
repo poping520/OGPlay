@@ -288,6 +288,7 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
                     image.types[prototype.return_type_index].descriptor;
                 method.descriptor = std::move(method_descriptor);
                 method.access_flags = encoded.access_flags;
+                method.dex_method_index = encoded.method_index;
                 method.is_static = (encoded.access_flags & kAccStatic) != 0;
                 method.declared_invoke_kind = direct
                     ? (method.is_static ? DeclaredInvokeKind::static_call
@@ -693,6 +694,63 @@ std::vector<DexClassId> DexClassLinker::AllClasses() const {
     std::vector<DexClassId> result;
     result.reserve(impl_->classes.size());
     for (const auto& linked : impl_->classes) result.push_back(linked.id);
+    return result;
+}
+
+ReflectionClassSystemMetadata DexClassLinker::ReflectionSystemMetadata(
+    const DexClassId java_class) {
+    ReflectionClassSystemMetadata result;
+    const auto& linked = impl_->ClassAt(java_class);
+    if (!linked.dex_class_def_index.has_value() || !impl_->image.has_value()) {
+        return result;
+    }
+    const auto& image = *impl_->image;
+    const auto class_index = *linked.dex_class_def_index;
+    if (class_index >= image.class_system_metadata.size()) return result;
+    const auto& source = image.class_system_metadata[class_index];
+    result.has_inner_class = source.has_inner_class;
+    result.inner_name = source.inner_name;
+    result.inner_access_flags = source.inner_access_flags;
+    const auto resolve_type = [&](const std::uint32_t type_index) {
+        return ResolveDescriptor(image.types[type_index].descriptor);
+    };
+    if (source.enclosing_class_type_index.has_value()) {
+        result.enclosing_class = resolve_type(
+            *source.enclosing_class_type_index);
+    }
+    if (source.enclosing_method_index.has_value()) {
+        const auto dex_method = *source.enclosing_method_index;
+        const auto& method_id = image.methods[dex_method];
+        result.enclosing_class = resolve_type(method_id.class_type_index);
+        const auto found = std::find_if(
+            impl_->methods.begin(), impl_->methods.end(),
+            [dex_method](const LinkedMethod& method) {
+                return method.dex_method_index == dex_method;
+            });
+        if (found != impl_->methods.end()) result.enclosing_method = found->id;
+    }
+    result.member_classes.reserve(source.member_class_type_indices.size());
+    for (const auto type_index : source.member_class_type_indices) {
+        result.member_classes.push_back(resolve_type(type_index));
+    }
+    return result;
+}
+
+std::vector<DexClassId> DexClassLinker::ReflectionExceptionTypes(
+    const VmMethodId method) {
+    const auto& linked = impl_->MethodAt(method);
+    if (!linked.dex_method_index.has_value() || !impl_->image.has_value()) {
+        return {};
+    }
+    const auto& image = *impl_->image;
+    const auto dex_method = *linked.dex_method_index;
+    if (dex_method >= image.method_system_metadata.size()) return {};
+    std::vector<DexClassId> result;
+    for (const auto type_index :
+         image.method_system_metadata[dex_method].exception_type_indices) {
+        result.push_back(
+            ResolveDescriptor(image.types[type_index].descriptor));
+    }
     return result;
 }
 }  // namespace ogplay::runtime::dexvm

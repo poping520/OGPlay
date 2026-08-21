@@ -1,6 +1,8 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -24,6 +26,8 @@ struct ClassReflectionMetadata final {
 constexpr std::uint32_t kAccPublic = 0x0001U;
 constexpr std::uint32_t kAccPrivate = 0x0002U;
 constexpr std::uint32_t kAccProtected = 0x0004U;
+constexpr std::uint32_t kAccFinal = 0x0010U;
+constexpr std::uint32_t kAccAbstract = 0x0400U;
 
 [[nodiscard]] std::string_view RuntimePackage(
     const std::string_view descriptor) {
@@ -152,6 +156,8 @@ public:
                     item.parameter_types.push_back(
                         linker->ResolveDescriptor(type));
                 }
+                item.exception_types =
+                    linker->ReflectionExceptionTypes(method_id);
                 pending.constructors.push_back(std::move(item));
             } else if (method.name != "<clinit>") {
                 AddMethodChecked(pending, declaring_class, method_id);
@@ -186,6 +192,7 @@ public:
             item.parameter_types.push_back(linker->ResolveDescriptor(type));
         }
         item.return_type = linker->ResolveDescriptor(parsed.return_type);
+        item.exception_types = linker->ReflectionExceptionTypes(method_id);
         target.methods.push_back(std::move(item));
     }
 
@@ -310,6 +317,90 @@ public:
         return method.is_static ||
                (receiver.IsValid() && linker->IsAssignable(
                     *caller, model->ObjectClass(receiver)));
+    }
+
+    [[nodiscard]] bool CanAccessMember(
+        const DexClassId declaring_class, const std::uint32_t access_flags,
+        const std::optional<DexClassId> caller,
+        const VmObjectRef protected_receiver = VmObjectRef{}) const {
+        const auto& declaring = linker->Class(declaring_class);
+        if (!caller.has_value()) {
+            return (access_flags & kAccPublic) != 0U &&
+                   (declaring.access_flags & kAccPublic) != 0U;
+        }
+        if ((declaring.access_flags & kAccPublic) == 0U &&
+            !SameRuntimePackage(*caller, declaring_class)) {
+            return false;
+        }
+        if ((access_flags & kAccPublic) != 0U || *caller == declaring_class) {
+            return true;
+        }
+        if ((access_flags & kAccPrivate) != 0U) return false;
+        if (SameRuntimePackage(*caller, declaring_class)) return true;
+        if ((access_flags & kAccProtected) == 0U ||
+            !linker->IsAssignable(declaring_class, *caller)) {
+            return false;
+        }
+        return !protected_receiver.IsValid() || linker->IsAssignable(
+            *caller, model->ObjectClass(protected_receiver));
+    }
+
+    void RequireInstantiable(const DexClassId java_class) const {
+        const auto& linked = linker->Class(java_class);
+        const bool primitive = linked.descriptor.size() == 1U;
+        if (primitive || linked.is_interface || linked.is_array ||
+            (linked.access_flags & kAccAbstract) != 0U) {
+            throw VmJavaThrow{"Ljava/lang/InstantiationException;",
+                              linked.descriptor};
+        }
+    }
+
+    [[nodiscard]] VmValue ReadFieldValue(const LinkedField& field,
+                                         const VmObjectRef receiver) const {
+        const auto low = field.is_static
+            ? linker->Class(field.owner).static_storage[field.slot]
+            : model->InstanceSlots(receiver)[field.slot].bits;
+        auto bits = static_cast<std::uint64_t>(low);
+        if (field.is_wide) {
+            const auto high = field.is_static
+                ? linker->Class(field.owner).static_storage[field.slot + 1U]
+                : model->InstanceSlots(receiver)[field.slot + 1U].bits;
+            bits |= static_cast<std::uint64_t>(high) << 32U;
+        }
+        if (field.is_ref) return VmValue::Ref(VmObjectRef(low));
+        switch (field.descriptor.front()) {
+            case 'J': return VmValue::Long(static_cast<std::int64_t>(bits));
+            case 'D': return VmValue::Double(std::bit_cast<double>(bits));
+            case 'F': return VmValue::Float(
+                std::bit_cast<float>(static_cast<std::uint32_t>(bits)));
+            default: return VmValue::Int(static_cast<std::int32_t>(bits));
+        }
+    }
+
+    void WriteFieldValue(const LinkedField& field, const VmObjectRef receiver,
+                         const VmValue& value) const {
+        const auto bits = field.is_ref
+            ? static_cast<std::uint64_t>(value.ref.Value())
+            : field.is_wide ? value.wide
+                            : static_cast<std::uint64_t>(value.cat1);
+        if (field.is_static) {
+            auto& storage = linker->MutableClass(field.owner).static_storage;
+            storage[field.slot] = static_cast<std::uint32_t>(bits);
+            if (field.is_wide) {
+                storage[field.slot + 1U] =
+                    static_cast<std::uint32_t>(bits >> 32U);
+            }
+            return;
+        }
+        auto slots = model->InstanceSlots(receiver);
+        slots[field.slot] = {static_cast<std::uint32_t>(bits),
+                             field.is_ref ? SlotTag::ref
+                                          : field.is_wide ? SlotTag::wide_lo
+                                                          : SlotTag::cat1};
+        if (field.is_wide) {
+            slots[field.slot + 1U] = {
+                static_cast<std::uint32_t>(bits >> 32U), SlotTag::wide_hi};
+        }
     }
 
     [[nodiscard]] VmObjectRef InvocationTargetException(
@@ -695,6 +786,156 @@ VmObjectRef ReflectionRuntime::InvokeMethod(
         return VmObjectRef{};
     }
     return impl_->codec->BoxReturn(meta.return_type, outcome.value);
+}
+
+VmObjectRef ReflectionRuntime::InvokeConstructor(
+    const VmObjectRef wrapper, const VmObjectRef arguments,
+    const std::optional<DexClassId> caller) {
+    const auto& meta = ConstructorMetadata(wrapper);
+    impl_->RequireInstantiable(meta.declaring_class);
+    if (!IsAccessible(wrapper) && !impl_->CanAccessMember(
+            meta.declaring_class, meta.access_flags, caller)) {
+        throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
+                          "access to constructor denied"};
+    }
+    auto call_arguments =
+        impl_->codec->ConvertArguments(arguments, meta.parameter_types);
+    const auto initialized =
+        impl_->interpreter->EnsureClassInitialized(meta.declaring_class);
+    if (initialized.exception.IsValid()) {
+        impl_->interpreter->SetPendingException(initialized.exception);
+        return VmObjectRef{};
+    }
+    const auto& linked = impl_->linker->Class(meta.declaring_class);
+    const auto instance =
+        impl_->model->NewInstance(meta.declaring_class, linked.instance_slots);
+    call_arguments.insert(call_arguments.begin(), VmValue::Ref(instance));
+    const auto outcome = impl_->interpreter->Call(meta.method, call_arguments);
+    if (outcome.exception.IsValid()) {
+        impl_->interpreter->SetPendingException(
+            impl_->InvocationTargetException(outcome.exception));
+        return VmObjectRef{};
+    }
+    return instance;
+}
+
+VmObjectRef ReflectionRuntime::NewInstance(
+    const DexClassId java_class, const std::optional<DexClassId> caller) {
+    impl_->RequireInstantiable(java_class);
+    const auto initialized = impl_->interpreter->EnsureClassInitialized(java_class);
+    if (initialized.exception.IsValid()) {
+        impl_->interpreter->SetPendingException(initialized.exception);
+        return VmObjectRef{};
+    }
+    const auto constructor = FindConstructor(java_class, {}, false);
+    if (!constructor.has_value()) {
+        throw VmJavaThrow{"Ljava/lang/InstantiationException;",
+                          "no empty constructor"};
+    }
+    if (!impl_->CanAccessMember(java_class, constructor->access_flags, caller)) {
+        throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
+                          "access to constructor denied"};
+    }
+    const auto& linked = impl_->linker->Class(java_class);
+    const auto instance =
+        impl_->model->NewInstance(java_class, linked.instance_slots);
+    const std::array call_arguments{VmValue::Ref(instance)};
+    const auto outcome = impl_->interpreter->Call(
+        constructor->method, call_arguments);
+    if (outcome.exception.IsValid()) {
+        impl_->interpreter->SetPendingException(outcome.exception);
+        return VmObjectRef{};
+    }
+    return instance;
+}
+
+VmValue ReflectionRuntime::GetField(
+    const VmObjectRef wrapper, const VmObjectRef receiver,
+    const std::optional<DexClassId> requested_type,
+    const std::optional<DexClassId> caller) {
+    const auto& meta = FieldMetadata(wrapper);
+    const auto& field = impl_->linker->Field(meta.field);
+    if (!IsAccessible(wrapper) && !impl_->CanAccessMember(
+            meta.declaring_class, meta.access_flags, caller,
+            field.is_static ? VmObjectRef{} : receiver)) {
+        throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
+                          "access to field denied"};
+    }
+    if (field.is_static) {
+        const auto initialized =
+            impl_->interpreter->EnsureClassInitialized(meta.declaring_class);
+        if (initialized.exception.IsValid()) {
+            impl_->interpreter->SetPendingException(initialized.exception);
+            return VmValue::Void();
+        }
+    } else {
+        if (!receiver.IsValid()) {
+            throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "reflective field receiver is null"};
+        }
+        if (!impl_->linker->IsAssignable(
+                meta.declaring_class, impl_->model->ObjectClass(receiver))) {
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "field receiver has incompatible type"};
+        }
+    }
+    const auto raw = impl_->ReadFieldValue(field, receiver);
+    if (!requested_type.has_value()) {
+        return VmValue::Ref(impl_->codec->BoxReturn(meta.type, raw));
+    }
+    const auto& target = impl_->linker->Class(*requested_type).descriptor;
+    if (target.size() != 1U || target == "V") {
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                          "invalid primitive field conversion"};
+    }
+    const auto boxed = impl_->codec->BoxReturn(meta.type, raw);
+    return impl_->codec->ConvertArgument(boxed, *requested_type);
+}
+
+void ReflectionRuntime::SetField(
+    const VmObjectRef wrapper, const VmObjectRef receiver, const VmValue value,
+    const std::optional<DexClassId> source_type,
+    const std::optional<DexClassId> caller) {
+    const auto& meta = FieldMetadata(wrapper);
+    const auto& field = impl_->linker->Field(meta.field);
+    if (!IsAccessible(wrapper)) {
+        if ((meta.access_flags & kAccFinal) != 0U) {
+            throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
+                              "field is marked final"};
+        }
+        if (!impl_->CanAccessMember(
+                meta.declaring_class, meta.access_flags, caller,
+                field.is_static ? VmObjectRef{} : receiver)) {
+            throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
+                              "access to field denied"};
+        }
+    }
+    if (field.is_static) {
+        const auto initialized =
+            impl_->interpreter->EnsureClassInitialized(meta.declaring_class);
+        if (initialized.exception.IsValid()) {
+            impl_->interpreter->SetPendingException(initialized.exception);
+            return;
+        }
+    } else {
+        if (!receiver.IsValid()) {
+            throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "reflective field receiver is null"};
+        }
+        if (!impl_->linker->IsAssignable(
+                meta.declaring_class, impl_->model->ObjectClass(receiver))) {
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "field receiver has incompatible type"};
+        }
+    }
+    VmValue converted;
+    if (source_type.has_value()) {
+        const auto boxed = impl_->codec->BoxReturn(*source_type, value);
+        converted = impl_->codec->ConvertArgument(boxed, meta.type);
+    } else {
+        converted = impl_->codec->ConvertArgument(value.ref, meta.type);
+    }
+    impl_->WriteFieldValue(field, receiver, converted);
 }
 
 }  // namespace ogplay::runtime::dexvm

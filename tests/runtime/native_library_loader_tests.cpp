@@ -407,6 +407,16 @@ struct OrchestratedApp final {
         request.surface_width = 64;
         request.surface_height = 36;
         request.maximum_ticks_per_call = UINT64_C(200000);
+#if defined(_WIN32)
+        request.backend = {ogplay::gles::AngleRenderer::d3d11,
+                           ogplay::gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        request.backend = {ogplay::gles::AngleRenderer::metal,
+                           ogplay::gles::AngleDevice::hardware};
+#else
+        request.backend = {ogplay::gles::AngleRenderer::vulkan,
+                           ogplay::gles::AngleDevice::hardware};
+#endif
         request.filesystem = &filesystem;
         request.ledger = &ledger;
         app = ogplay::session::AndroidAppProcess::Create(

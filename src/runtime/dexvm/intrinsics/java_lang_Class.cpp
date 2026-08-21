@@ -84,7 +84,12 @@ constexpr std::uint32_t kAccEnum = 0x4000U;
     if (IsPrimitiveDescriptor(linked.descriptor)) {
         return 0x0001U | kAccFinal | kAccAbstract;
     }
-    if (!linked.is_array) return linked.access_flags & kJavaFlagsMask;
+    if (!linked.is_array) {
+        const auto system = linker.ReflectionSystemMetadata(represented);
+        return (system.has_inner_class ? system.inner_access_flags
+                                       : linked.access_flags) &
+               kJavaFlagsMask;
+    }
 
     std::string_view leaf = linked.descriptor;
     while (leaf.starts_with("[")) leaf.remove_prefix(1);
@@ -100,10 +105,66 @@ constexpr std::uint32_t kAccEnum = 0x4000U;
         component.has_value()) {
         return SimpleName(context, *component) + "[]";
     }
+    const auto system =
+        context.vm.Linker().ReflectionSystemMetadata(represented);
+    if (system.has_inner_class) return system.inner_name.value_or("");
     const auto name = ClassNameCodec::ClassGetName(
         context.vm.Linker().Class(represented).descriptor);
     const auto separator = name.rfind('.');
     return separator == std::string::npos ? name : name.substr(separator + 1);
+}
+
+[[nodiscard]] std::optional<std::string> CanonicalName(
+    IntrinsicContext& context, const DexClassId represented) {
+    if (const auto component = ComponentType(context, represented);
+        component.has_value()) {
+        const auto component_name = CanonicalName(context, *component);
+        return component_name.has_value()
+            ? std::optional<std::string>(*component_name + "[]")
+            : std::nullopt;
+    }
+    const auto system =
+        context.vm.Linker().ReflectionSystemMetadata(represented);
+    if (system.enclosing_method.has_value() ||
+        (system.has_inner_class && !system.inner_name.has_value())) {
+        return std::nullopt;
+    }
+    if (system.enclosing_class.has_value()) {
+        const auto enclosing = CanonicalName(context, *system.enclosing_class);
+        if (!enclosing.has_value() || !system.inner_name.has_value()) {
+            return std::nullopt;
+        }
+        return *enclosing + "." + *system.inner_name;
+    }
+    return ClassNameCodec::ClassGetName(
+        context.vm.Linker().Class(represented).descriptor);
+}
+
+[[nodiscard]] VmObjectRef EnclosingExecutable(IntrinsicContext& context,
+                                               const bool constructor) {
+    const auto system = context.vm.Linker().ReflectionSystemMetadata(
+        Represented(context));
+    if (!system.enclosing_method.has_value()) return VmObjectRef{};
+    const auto method = *system.enclosing_method;
+    const auto& linked = context.vm.Linker().Method(method);
+    if ((linked.name == "<init>") != constructor) return VmObjectRef{};
+    if (constructor) {
+        for (const auto& meta : context.vm.Reflection().DeclaredConstructors(
+                 linked.owner)) {
+            if (meta.method == method) {
+                return context.vm.Reflection().MaterializeConstructor(meta);
+            }
+        }
+    } else {
+        for (const auto& meta : context.vm.Reflection().DeclaredMethods(
+                 linked.owner)) {
+            if (meta.method == method) {
+                return context.vm.Reflection().MaterializeMethod(meta);
+            }
+        }
+    }
+    throw DexVmError(DexVmErrorReason::internal_invariant,
+                     "enclosing executable is not reflectable");
 }
 
 [[noreturn]] void ThrowNoSuchMethod(const std::string_view name) {
@@ -135,6 +196,72 @@ IntrinsicClassDecl Declare_java_lang_Class() {
         [](IntrinsicContext& context) {
             return VmValue::Ref(context.vm.NewStringUtf8(
                 SimpleName(context, Represented(context))));
+        });
+    builder.VirtualMethod("getCanonicalName", "()Ljava/lang/String;",
+        [](IntrinsicContext& context) {
+            const auto name = CanonicalName(context, Represented(context));
+            return VmValue::Ref(name.has_value()
+                ? context.vm.NewStringUtf8(*name)
+                : VmObjectRef{});
+        });
+    builder.VirtualMethod("getDeclaringClass", "()Ljava/lang/Class;",
+        [](IntrinsicContext& context) {
+            const auto system = context.vm.Linker().ReflectionSystemMetadata(
+                Represented(context));
+            return VmValue::Ref(
+                system.enclosing_class.has_value() &&
+                    !system.enclosing_method.has_value()
+                ? context.vm.Model().ClassObject(*system.enclosing_class)
+                : VmObjectRef{});
+        });
+    builder.VirtualMethod("getEnclosingClass", "()Ljava/lang/Class;",
+        [](IntrinsicContext& context) {
+            const auto system = context.vm.Linker().ReflectionSystemMetadata(
+                Represented(context));
+            return VmValue::Ref(system.enclosing_class.has_value()
+                ? context.vm.Model().ClassObject(*system.enclosing_class)
+                : VmObjectRef{});
+        });
+    builder.VirtualMethod(
+        "getEnclosingMethod", "()Ljava/lang/reflect/Method;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(EnclosingExecutable(context, false));
+        });
+    builder.VirtualMethod(
+        "getEnclosingConstructor", "()Ljava/lang/reflect/Constructor;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(EnclosingExecutable(context, true));
+        });
+    builder.VirtualMethod("isAnonymousClass", "()Z",
+        [](IntrinsicContext& context) {
+            const auto system = context.vm.Linker().ReflectionSystemMetadata(
+                Represented(context));
+            return VmValue::Int(system.has_inner_class &&
+                                    !system.inner_name.has_value()
+                ? 1 : 0);
+        });
+    builder.VirtualMethod("isLocalClass", "()Z",
+        [](IntrinsicContext& context) {
+            const auto system = context.vm.Linker().ReflectionSystemMetadata(
+                Represented(context));
+            return VmValue::Int(system.enclosing_method.has_value() &&
+                                    system.inner_name.has_value()
+                ? 1 : 0);
+        });
+    builder.VirtualMethod("isMemberClass", "()Z",
+        [](IntrinsicContext& context) {
+            const auto system = context.vm.Linker().ReflectionSystemMetadata(
+                Represented(context));
+            return VmValue::Int(system.enclosing_class.has_value() &&
+                                    !system.enclosing_method.has_value()
+                ? 1 : 0);
+        });
+    builder.VirtualMethod("getDeclaredClasses", "()[Ljava/lang/Class;",
+        [](IntrinsicContext& context) {
+            const auto system = context.vm.Linker().ReflectionSystemMetadata(
+                Represented(context));
+            return VmValue::Ref(context.vm.Reflection().MaterializeTypeArray(
+                system.member_classes));
         });
     builder.VirtualMethod("getClassLoader", "()Ljava/lang/ClassLoader;",
         [](IntrinsicContext& context) {
@@ -258,6 +385,11 @@ IntrinsicClassDecl Declare_java_lang_Class() {
                 : std::string(linked.is_interface ? "interface " : "class ") +
                       ClassNameCodec::ClassGetName(linked.descriptor);
             return VmValue::Ref(context.vm.NewStringUtf8(text));
+        });
+    builder.VirtualMethod("newInstance", "()Ljava/lang/Object;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(context.vm.Reflection().NewInstance(
+                Represented(context), context.vm.CurrentCallerClass()));
         });
 
     builder.VirtualMethod("getDeclaredMethods", "()[Ljava/lang/reflect/Method;",

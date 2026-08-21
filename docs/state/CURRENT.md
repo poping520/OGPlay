@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-21 · DVM-66 Reflection invoke foundation
+更新：2026-08-21 · DVM-69 Reflection metadata closure
 
 ## 当前阶段
 
@@ -46,24 +46,24 @@
   factory；opaque slot 不暴露 VM/DEX id，accessible flag 保持 per-wrapper。
   DVM-65 已闭合 API-19 `Class` 结构/类型关系与 declared/public
   Method/Constructor/Field 确定性查询，Constructor 不继承。
-  DVM-66 已交付共用 ReflectionCodec、真实 caller 访问裁决与完整
-  `Method.invoke`：direct/static/virtual/interface 分派、API-19 primitive widening/
-  boxing、switch/threaded 一致，`InvocationTargetException` 保留原 target
-  throwable identity。Constructor/Class 实例化、Field/Array 与 system metadata 仍由
-  DVM-67..69 交付。
+  DVM-66..69 已闭合 bounded reflection foundation：共用 ReflectionCodec、真实 caller
+  access、完整 Method.invoke、Constructor/Class 实例化、Field object/primitive 操作与
+  typed reflect.Array；InvocationTargetException 保留原 target identity。loader/linker
+  只投影 InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system metadata，
+  Class nested/canonical/enclosing 与 declared exception types 不做 `$` 猜测；generic、
+  annotation proxy、多 ClassLoader 与动态 definition 仍明确不实现。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
-- macOS/arm64 最近记录：766/766 CTest。
+- macOS/arm64 最近记录：893/893 CTest。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 
 ## 下一步
 
-1. 继续 DVM-67：Method/Constructor instantiation。
-2. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
+1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
-3. Linux M9 严格出口复验。
+2. Linux M9 严格出口复验。
 
 ## 阻塞与边界
 

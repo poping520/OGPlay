@@ -1,6 +1,8 @@
 #include "catalog.h"
 
 #include <cstdint>
+#include <optional>
+#include <string>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -52,6 +54,55 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
                                     context.receiver,
                                     context.arguments[0].ref) ? 1 : 0);
         });
+    builder.VirtualMethod(
+        "get", "(Ljava/lang/Object;)Ljava/lang/Object;",
+        [](IntrinsicContext& context) {
+            return context.vm.Reflection().GetField(
+                context.receiver, context.arguments[0].ref, std::nullopt,
+                context.vm.CurrentCallerClass());
+        });
+    builder.VirtualMethod(
+        "set", "(Ljava/lang/Object;Ljava/lang/Object;)V",
+        [](IntrinsicContext& context) {
+            context.vm.Reflection().SetField(
+                context.receiver, context.arguments[0].ref,
+                VmValue::Ref(context.arguments[1].ref), std::nullopt,
+                context.vm.CurrentCallerClass());
+            return VmValue::Void();
+        });
+    struct PrimitiveMethod final {
+        const char* suffix;
+        const char* descriptor;
+    };
+    constexpr PrimitiveMethod primitives[]{
+        {"Boolean", "Z"}, {"Byte", "B"}, {"Char", "C"},
+        {"Short", "S"},   {"Int", "I"},  {"Long", "J"},
+        {"Float", "F"},   {"Double", "D"},
+    };
+    for (const auto& primitive : primitives) {
+        const std::string type(primitive.descriptor);
+        builder.VirtualMethod(
+            std::string("get") + primitive.suffix,
+            std::string("(Ljava/lang/Object;)") + type,
+            [type](IntrinsicContext& context) {
+                return context.vm.Reflection().GetField(
+                    context.receiver, context.arguments[0].ref,
+                    context.vm.Linker().ResolveDescriptor(type),
+                    context.vm.CurrentCallerClass());
+            });
+        builder.VirtualMethod(
+            std::string("set") + primitive.suffix,
+            std::string("(Ljava/lang/Object;") + type + ")V",
+            [type](IntrinsicContext& context) {
+                const auto source =
+                    context.vm.Linker().ResolveDescriptor(type);
+                context.vm.Reflection().SetField(
+                    context.receiver, context.arguments[0].ref,
+                    context.arguments[1], source,
+                    context.vm.CurrentCallerClass());
+                return VmValue::Void();
+            });
+    }
     return std::move(builder).Build();
 }
 

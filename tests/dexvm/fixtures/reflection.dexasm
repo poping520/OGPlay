@@ -67,6 +67,16 @@
 
 .field public derivedField:I
 .field private hiddenDerived:I
+.field public booleanField:Z
+.field public byteField:B
+.field public charField:C
+.field public shortField:S
+.field public longField:J
+.field public floatField:F
+.field public doubleField:D
+.field public refField:Lreflect/Base;
+.field public final finalField:I
+.field public volatile volatileField:J
 
 .method public constructor <init>()V
 .registers 1
@@ -155,14 +165,149 @@
 .registers 1
     const/16 v0, 42
     sput v0, Lreflect/InvokeStatics;->initialized:I
+    const/16 v0, 55
+    sput v0, Lreflect/InvokeStatics;->fieldInitialized:I
     return-void
 .end method
+
+.field static public fieldInitialized:I
+.field static public staticField:J
 
 .method public static readInitialized()I
 .registers 1
     sget v0, Lreflect/InvokeStatics;->initialized:I
     return v0
 .end method
+
+.class public Lreflect/ConstructTarget;
+.super Ljava/lang/Object;
+
+.field static public initialized:I
+.field public value:I
+
+.method static constructor <clinit>()V
+.registers 1
+    const/16 v0, 41
+    sput v0, Lreflect/ConstructTarget;->initialized:I
+    return-void
+.end method
+
+.method public constructor <init>(J)V
+.registers 4
+    invoke-direct {v1}, Ljava/lang/Object;-><init>()V
+    long-to-int v0, v2
+    iput v0, v1, Lreflect/ConstructTarget;->value:I
+    return-void
+.end method
+
+.method private constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Ljava/lang/Object;-><init>()V
+    const/16 v0, 33
+    iput v0, v1, Lreflect/ConstructTarget;->value:I
+    return-void
+.end method
+
+.class public Lreflect/DefaultTarget;
+.super Ljava/lang/Object;
+
+.field public value:I
+
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Ljava/lang/Object;-><init>()V
+    const/16 v0, 31
+    iput v0, v1, Lreflect/DefaultTarget;->value:I
+    return-void
+.end method
+
+.class public Lreflect/ThrowingConstructor;
+.super Ljava/lang/Object;
+
+.method public constructor <init>(Ljava/lang/Throwable;)V
+.registers 2
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    throw v1
+.end method
+
+.class public Lreflect/ThrowingDefault;
+.super Ljava/lang/Object;
+
+.field static public target:Ljava/lang/Throwable;
+
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Ljava/lang/Object;-><init>()V
+    sget-object v0, Lreflect/ThrowingDefault;->target:Ljava/lang/Throwable;
+    throw v0
+.end method
+
+.class public Lreflect/NoDefault;
+.super Ljava/lang/Object;
+
+.method public constructor <init>(I)V
+.registers 2
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.class public abstract Lreflect/AbstractTarget;
+.super Ljava/lang/Object;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.class public Lreflect/Outer;
+.super Ljava/lang/Object;
+.member-class Lreflect/Outer$Member;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public make()Ljava/lang/Object;
+.registers 2
+    const/4 v0, 0
+    return-object v0
+.end method
+
+.method public risky()V
+.throws Ljava/io/IOException;
+.throws Ljava/lang/RuntimeException;
+.registers 1
+    return-void
+.end method
+
+.class public Lreflect/Outer$Member;
+.super Ljava/lang/Object;
+.inner-class "Member" 0x9
+.enclosing-class Lreflect/Outer;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.class Lreflect/Outer$1Local;
+.super Ljava/lang/Object;
+.inner-class "Local" 0x0
+.enclosing-method Lreflect/Outer;->make()Ljava/lang/Object;
+
+.class Lreflect/Outer$1;
+.super Ljava/lang/Object;
+.inner-class null 0x0
+.enclosing-method Lreflect/Outer;->make()Ljava/lang/Object;
+
+.class Lreflect/Outer$CtorLocal;
+.super Ljava/lang/Object;
+.inner-class "CtorLocal" 0x0
+.enclosing-method Lreflect/Outer;-><init>()V
 
 .class Lreflect/PackageOwner;
 .super Ljava/lang/Object;

@@ -198,9 +198,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `SetStaticFieldBits` 仅接受已完成初始化的真实 guest 静态字段，供 ADR-0022
   的结论级 Profile preset 写入精确槽位；类、字段、静态性、类型或槽位不匹配
   均明确失败，禁止绕过 `<clinit>`。
-- Class/Method 反射目前仍只开放旧有 declared-method 枚举和零参数、int-like
-  返回的调用；DVM-62 只交付 linker metadata，不提前伪造 DVM-63..69 的 facade、
-  wrapper 或 invoke 行为，其余继续明确抛 `UnsupportedOperationException`。
+- DVM-62..69 bounded reflection foundation 已闭合：linker/loader 是 Class、loader role、
+  declared member 与 Dalvik system metadata 的唯一事实源；ReflectionRuntime 统一
+  wrapper、access、conversion、invoke、Constructor/Class 实例化与 Field slot 操作，
+  `reflect.Array` 使用真实 typed array store。generic/annotation proxy、多 loader 与
+  动态 definition 仍是明确非目标，不返回 neutral placeholder。
 - `System.getProperty(String)`、`setProperty(String,String)` 与 primitive wrapper
   property API 共享每 VM 属性表；separator 默认值来自固定 API 19 guest 事实，
   未知属性返回 null，禁止泄露宿主属性。

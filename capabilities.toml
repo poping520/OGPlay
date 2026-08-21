@@ -1160,6 +1160,21 @@ status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; DVM-66 codec/invoke/access/throwable tests on switch and threaded"
 note = "DVM-66 交付共用 ReflectionCodec：reference assignability/null、八种 primitive wrapper 的 API-19 widening 矩阵、精确 boxing 与 void->null；Method.invoke 使用真实 interpreted caller、loader+package access identity、protected receiver restriction、per-wrapper accessible bypass，并覆盖 direct/static/virtual/interface 分派、class init、0/1/N 参数、wide 与 switch/threaded。InvocationTargetException 以普通 guest target field 保留原 throwable identity"
 
+[dexvm.reflection_instantiation]
+status = "complete"
+test = "tests/dexvm/reflection_tests.cpp; DVM-67 Constructor/Class newInstance tests"
+note = "DVM-67 闭合 Constructor.newInstance 与 Class.newInstance：不可实例化类型、真实 caller/access、clinit、ReflectionCodec 参数、instance allocation 与精确 direct <init>；Constructor target 以 InvocationTargetException 保持原 identity，Class.newInstance 的默认构造器 target 原样传播且无 ()V 明确 InstantiationException"
+
+[dexvm.reflection_field_array]
+status = "complete"
+test = "tests/dexvm/reflection_tests.cpp; DVM-68 Field/Array tests"
+note = "DVM-68 以真实 instance/static slots 和统一 ReflectionCodec 交付 Field object/八 primitive get/set、clinit、receiver/access/final/volatile/assignability/widening；reflect.Array 交付单维/多维 typed allocation、object/八 primitive get/set、length 与 null/non-array/index/negative/void 明确 Java 异常"
+
+[dexvm.reflection_system_metadata]
+status = "complete"
+test = "tests/dexvm/reflection_tests.cpp; loader/dexasm architecture tests"
+note = "DVM-69 受检解析 Dalvik InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system annotations 为 host metadata；Class simple/canonical/declaring/enclosing/member-local-anonymous 与 declared classes 不做 $ 猜测，Method/Constructor exception Class[] defensive copy 来自 Throws；不物化通用 annotation proxy"
+
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"

@@ -1,8 +1,13 @@
 # 当前状态
 
-更新：2026-08-24 · BND-15 Boundary/OpenSL final audit
+更新：2026-08-24 · BND-16 EGL/GLES API19 completion design
 
 ## 当前阶段
+
+- **EGL/GLES API19 补齐**：BND-16 已冻结 Android 4.4.4 r2.0.1 AOSP、KTU84P ROM
+  dynsym 与 PVZ NA ELF import 基线，并将 EGL 13、GLES1 Bounds 7 + 已发布缺口 62、
+  GLES2 已发布缺口 67 切为 BND-17..24。目标 `libpvz.so` 直接导入完整 142 个 GLES2
+  core 和 `eglGetProcAddress`；设计先行，生产实现尚未开始。
 
 - **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
   import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc
@@ -56,7 +61,6 @@
 - macOS/arm64 BND-5 liblog Virtual SO 后：917/917 CTest（102.26 秒）；新增 liblog
   focused 为 6/6、75 assertions，Bionic 为 12/12、102 assertions，preflight/late import/
   rootless loader/capability/documentation/hot-path gate 均通过。
-- Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 
 ## 下一步

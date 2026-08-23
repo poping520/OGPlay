@@ -10,6 +10,7 @@
 #include "runtime/boundary/modules/gles1/gles1_support.h"
 #include "runtime/boundary/modules/gles1/gles1_draw.h"
 #include "runtime/boundary/modules/gles1/gles1_fixed.h"
+#include "runtime/boundary/modules/gles1/gles1_bounds_exports.h"
 #include "runtime/boundary/services/graphics_boundary_context.h"
 
 namespace ogplay::runtime {
@@ -18,14 +19,22 @@ class Gles1Module final {
 public:
     Gles1Module(BoundaryCallServices& calls,
                 GraphicsBoundaryContext& graphics,
+                detail::AndroidBoundaryGles1State& core_state,
+                detail::AndroidBoundaryGles1LegacyState& legacy_state,
                 detail::AndroidBoundaryGles1DrawState& draw_state,
                 gles::GlesDispatchTable& core_dispatch,
                 gles::GlesDispatchTable& extension_dispatch) noexcept
-        : calls_(calls), graphics_(graphics), draw_state_(draw_state),
+        : calls_(calls), graphics_(graphics), core_state_(core_state),
+          legacy_state_(legacy_state), draw_state_(draw_state),
           core_dispatch_(core_dispatch),
           extension_dispatch_(extension_dispatch) {}
 
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept { return calls_; }
+
+#define OGPLAY_DECLARE_GLES1_BOUNDS(name, id, count, method)                   \
+    std::uint32_t method(const A32CallFrame& call);
+    OGPLAY_GLES1_BOUNDS_EXPORTS(OGPLAY_DECLARE_GLES1_BOUNDS)
+#undef OGPLAY_DECLARE_GLES1_BOUNDS
 
     template <gles::GlesApi Api, gles::GlesThunkId Id>
     std::uint32_t Invoke(const A32CallFrame& call) {
@@ -76,8 +85,17 @@ public:
     }
 
 private:
+    std::uint32_t InvokeBounds(const A32CallFrame& call, std::uint32_t array,
+                               std::uint32_t client_texture,
+                               std::int32_t size, std::uint32_t type,
+                               std::int32_t stride, std::uint32_t pointer,
+                               std::int32_t count,
+                               std::string_view operation);
+
     BoundaryCallServices& calls_;
     GraphicsBoundaryContext& graphics_;
+    detail::AndroidBoundaryGles1State& core_state_;
+    detail::AndroidBoundaryGles1LegacyState& legacy_state_;
     detail::AndroidBoundaryGles1DrawState& draw_state_;
     gles::GlesDispatchTable& core_dispatch_;
     gles::GlesDispatchTable& extension_dispatch_;

@@ -92,7 +92,8 @@ public:
           egl_context_{graphics_context_, symbols_},
           android_module_(call_services_, android_services_),
           egl_module_(call_services_, egl_context_),
-          gles1_module_(call_services_, graphics_context_, gles1_draw_state_,
+          gles1_module_(call_services_, graphics_context_, gles1_state_,
+                        gles1_legacy_state_, gles1_draw_state_,
                         gles1_dispatch_, gles1_extensions_dispatch_),
           gles2_module_(call_services_, graphics_context_),
           log_context_{address_space_, options.logger, this,
@@ -446,6 +447,11 @@ private:
         BindGles1Extensions(
             gles1, std::make_index_sequence<
                        gles::generated::gles1_extensions::kFunctions.size()>{});
+#define OGPLAY_BIND_GLES1_BOUNDS(name, id, count, method)                     \
+        BindExport<Gles1Module, &Gles1Module::method, count, true>(           \
+            gles1, name, gles1_module_);
+        OGPLAY_GLES1_BOUNDS_EXPORTS(OGPLAY_BIND_GLES1_BOUNDS)
+#undef OGPLAY_BIND_GLES1_BOUNDS
         const auto& gles2 = require("libGLESv2.so");
         BindGles2(gles2, std::make_index_sequence<
                               gles::generated::gles2::kFunctions.size()>{});

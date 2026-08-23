@@ -151,6 +151,7 @@ void AndroidBoundaryGles1DrawState::Reset() noexcept {
     arrays_[ArrayKey(kGles1MatrixIndexArray, kTexture0)] =
         {.size = 4, .type = kUnsignedByte};
     arrays_[ArrayKey(kGles1WeightArray, kTexture0)] = {.size = 4, .type = kFloat};
+    arrays_[ArrayKey(kGles1PointSizeArray, kTexture0)] = {.size = 1, .type = kFloat};
     for (auto texture = kTexture0; texture <= 0x84DFU; ++texture) {
         arrays_[ArrayKey(kGles1TextureCoordArray, texture)] =
             {.size = 4, .type = kFloat};
@@ -166,7 +167,8 @@ void AndroidBoundaryGles1DrawState::SetEnabled(
     const bool enabled) {
     if (array != kGles1VertexArray && array != kGles1NormalArray &&
         array != kGles1ColorArray && array != kGles1TextureCoordArray &&
-        array != kGles1MatrixIndexArray && array != kGles1WeightArray) {
+        array != kGles1MatrixIndexArray && array != kGles1WeightArray &&
+        array != kGles1PointSizeArray) {
         throw std::invalid_argument("GLES1 client state array is unsupported");
     }
     arrays_.at(ArrayKey(array, client_texture)).enabled = enabled;
@@ -210,6 +212,11 @@ Gles1ClientArray AndroidBoundaryGles1DrawState::PreparePointer(
     }
     if (array == kGles1WeightArray && type != kFloat && type != kFixed) {
         throw std::invalid_argument("GLES1 weight array requires GL_FLOAT or GL_FIXED");
+    }
+    if (array == kGles1PointSizeArray &&
+        (size != 1 || (type != kFloat && type != kFixed))) {
+        throw std::invalid_argument(
+            "GLES1 point-size array requires size one and GL_FLOAT or GL_FIXED");
     }
     const auto enabled = arrays_.at(ArrayKey(array, client_texture)).enabled;
     return {.size = size, .type = type, .stride = stride,

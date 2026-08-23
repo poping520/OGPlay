@@ -1055,6 +1055,11 @@ status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "M5 WU-0230 在 libGLESv1_CM.so 发布隔离的 145 项 core Thumb trap；未绑定调用记账并明确失败，不误入同名 GLES2 handler；LUI-10 将真实后续路径命中的 glFlush 转入当前 ANGLE frame，且不触发 present"
 
+[runtime.gles1_bounds_boundary]
+status = "complete"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; runtime.bionic_virtual_so_late_import; architecture.boundary_hot_path"
+note = "BND-18 按 KTU84P/AOSP 发布 7 个 Android Bounds symbol，以独立 direct Gles1Module handler 复用 shared client-array state；guest-memory count range 与 VBO offset 语义受检"
+
 [runtime.gles1_viewport_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

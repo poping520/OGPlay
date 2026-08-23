@@ -6,8 +6,10 @@
 
 - **EGL/GLES API19 补齐**：BND-16 冻结 AOSP/KTU84P/PVZ ABI 并切分 BND-17..24；
   BND-17 已在 direct hot binding 上实现 EGL 13 项基础 query/thread/proc-address/pbuffer API，
-  per-thread sticky error、稳定 guest strings、sealed thunk resolver、preflight/late dlopen 与
-  architecture focused 8/8 通过。GLES1 7+62、GLES2 67 尚待后续 WU。
+  per-thread error、guest strings、thunk resolver、preflight/late dlopen 与
+  architecture focused 10/10 通过。BND-18 又以独立 direct binding 发布并实现 KTU84P
+  GLES1 7 个 Bounds wrapper，count/range/VBO offset 与 shared client-array state 受检；
+  GLES1 62、GLES2 67 尚待后续 WU。
 
 - **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
   import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc
@@ -57,7 +59,6 @@
   BND-5 关闭，title 后续行为仍待按既有 playbook 复验。
 ## 验证基线
 
-- Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
 - macOS/arm64 BND-5 liblog Virtual SO 后：917/917 CTest（102.26 秒）；新增 liblog
   focused 为 6/6、75 assertions，Bionic 为 12/12、102 assertions，preflight/late import/
   rootless loader/capability/documentation/hot-path gate 均通过。

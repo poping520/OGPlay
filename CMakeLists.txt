@@ -399,6 +399,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/services/guest_gl_context.cpp
     src/runtime/boundary/modules/android/android_module.cpp
     src/runtime/boundary/modules/egl/egl_module.cpp
+    src/runtime/boundary/modules/gles1/gles1_bounds.cpp
     src/runtime/boundary/modules/gles1/gles1_dispatch.cpp
     src/runtime/boundary/modules/gles1/gles1_draw.cpp
     src/runtime/boundary/modules/gles1/gles1_fixed.cpp

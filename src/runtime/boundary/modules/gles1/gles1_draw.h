@@ -19,6 +19,7 @@ inline constexpr std::uint32_t kGles1ColorArray = 0x8076U;
 inline constexpr std::uint32_t kGles1TextureCoordArray = 0x8078U;
 inline constexpr std::uint32_t kGles1MatrixIndexArray = 0x8844U;
 inline constexpr std::uint32_t kGles1WeightArray = 0x86ADU;
+inline constexpr std::uint32_t kGles1PointSizeArray = 0x898AU;
 inline constexpr std::size_t kGles1MaximumDrawTextureUnits = 2U;
 
 struct Gles1ClientArray final {

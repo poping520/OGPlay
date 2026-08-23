@@ -1112,6 +1112,70 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
         std::runtime_error);
 }
 
+TEST_CASE("Android GLES1 publishes and directly binds KitKat Bounds wrappers") {
+    BoundaryFixture fixture;
+    static constexpr std::array<std::string_view, 7> bounds{
+        "glColorPointerBounds", "glNormalPointerBounds",
+        "glTexCoordPointerBounds", "glVertexPointerBounds",
+        "glPointSizePointerOESBounds", "glMatrixIndexPointerOESBounds",
+        "glWeightPointerOESBounds"};
+    for (const auto symbol : bounds) {
+        CAPTURE(symbol);
+        const auto address = fixture.boundary.Symbols().Lookup(
+            "libGLESv1_CM.so", symbol);
+        REQUIRE(address.has_value());
+        CHECK((address->Value() & 1U) == 1U);
+    }
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1U, 3U, 3U, 4U}) == 1U);
+    const auto address = fixture.boundary.Symbols().Lookup(
+        "libGLESv1_CM.so", "glVertexPointerBounds");
+    REQUIRE(address.has_value());
+    const std::array arguments{3U, 0x1406U, 0U, fixture.output.Value(), 2U};
+    CHECK(BoundaryCallAddress(fixture, address->Value(), arguments) == 0U);
+    const auto result = fixture.output.Add(64U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetPointerv",
+                       {0x808EU, result.Value(), 0U, 0U}) == 0U);
+    CHECK(fixture.bus.Read32(result, 1U) == fixture.output.Value());
+
+    const std::array negative{3U, 0x1406U, 0U, fixture.output.Value(),
+                              UINT32_MAX};
+    CHECK_THROWS_WITH_AS(BoundaryCallAddress(fixture, address->Value(), negative),
+                         "GLES1 Bounds count cannot be negative",
+                         std::invalid_argument);
+    const std::array crossing{
+        3U, 0x1406U, 0U,
+        fixture.output.Add(fixture.memory.PageSize() - 4U).Value(), 2U};
+    std::string slow_fault;
+    try {
+        static_cast<void>(BoundaryCallAddress(fixture, address->Value(), crossing));
+        FAIL("slow Bounds call did not fault");
+    } catch (const ogplay::memory::MemoryFault& error) {
+        slow_fault = error.what();
+    }
+    fixture.bus.Write32(fixture.stack, 2U, 1U);
+    std::array<std::uint32_t, 16> registers{};
+    std::copy_n(crossing.begin(), 4U, registers.begin());
+    registers[13] = fixture.stack.Value();
+    ogplay::cpu::A32HostCallContext fast{
+        registers, 1U,
+        ogplay::memory::GuestAddress{address->Value() & ~UINT32_C(1)}};
+    const auto hook = fixture.boundary.FastHostCallHook();
+    REQUIRE(hook.invoke(hook.userdata, 2U, fast) ==
+            ogplay::cpu::HostCallResult::fault);
+    const ogplay::cpu::RunResult stopped{
+        1U, ogplay::cpu::RunStopReason::host_call_fault,
+        fast.pc, 0xdf02U, 2U, std::nullopt};
+    try {
+        static_cast<void>(fixture.boundary.Handle(fixture.cpu, stopped));
+        FAIL("fast Bounds fault was not restored");
+    } catch (const ogplay::memory::MemoryFault& error) {
+        CHECK(std::string(error.what()) == slow_fault);
+    }
+    CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1U);
+}
+
 TEST_CASE("Android boundary GPU trace ring retains the newest raw calls") {
     BoundaryFixture fixture;
     constexpr std::size_t calls = 2050U;

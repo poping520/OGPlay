@@ -165,6 +165,10 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   限定 0..31,matrix-index/weight pointer 延迟保存调用时 array-buffer binding,类型、
   size 与 stride 受检且随 context reset;完整 skinning shader 尚未实现时 draw 必须明确
   失败,禁止忽略权重或伪装成功。
+- KitKat `libGLESv1_CM.so` 额外发布 7 个 Android Bounds wrapper；它们拥有独立 public
+  metadata 与 direct `Gles1Module` binding，不占用或重排 145 core/3 extension ID。client
+  pointer 在 VBO 模式保存 offset，在 guest-memory 模式按 `count/size/type/stride` 预检完整范围
+  后提交到同一 draw state。
 - GLES1 matrix state 批次保存 modelview/projection 与按 active texture unit 隔离的
   texture 列主序矩阵栈,`load/push/pop/rotate/translate` 按 OpenGL 后乘语义更新;栈
   上溢/下溢、非法旋转轴不部分提交,状态留给 fixed-pipeline draw 转换消费,不得将仅

@@ -11,6 +11,7 @@
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "runtime/boundary/modules/android/android_exports.h"
 #include "runtime/boundary/modules/egl/egl_exports.h"
+#include "runtime/boundary/modules/gles1/gles1_bounds_exports.h"
 #include "runtime/boundary/modules/log/log_exports.h"
 #include "runtime/boundary/modules/opensles/opensles_abi.h"
 #include "runtime/boundary/modules/opensles/opensles_exports.h"
@@ -29,6 +30,8 @@ constexpr std::array kAndroidExports{
     OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kEglExports{
     OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
+constexpr std::array kGles1BoundsExports{
+    OGPLAY_GLES1_BOUNDS_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kLogExports{
     OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 #define OGPLAY_OPENSLES_METADATA(name, id, count, kind, method)                 \
@@ -56,7 +59,8 @@ void AddNamedModule(std::vector<BoundaryModuleDefinition>& modules,
 void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
                    std::vector<std::vector<BoundaryExportDefinition>>& storage,
                    const std::string_view soname,
-                   const std::span<const gles::GlesApi> apis) {
+                   const std::span<const gles::GlesApi> apis,
+                   const std::span<const NamedExport> additional = {}) {
     auto& module_exports = storage.emplace_back();
     for (const auto api : apis) {
         const auto count = gles::GlesFunctionCount(api);
@@ -74,6 +78,12 @@ void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
                 BoundaryExportKind::public_function,
                 memory::GuestAddress{}, 4U});
         }
+    }
+    for (const auto& export_ : additional) {
+        module_exports.push_back({export_.name, export_.local_id,
+                                  export_.parameter_count, {},
+                                  BoundaryExportKind::public_function,
+                                  memory::GuestAddress{}, 4U});
     }
     modules.push_back({soname, {}, module_exports});
 }
@@ -101,7 +111,8 @@ BoundaryCatalog BuildCatalog(const AndroidApi api) {
     AddNamedModule(modules, storage, "libEGL.so", kEglExports);
     constexpr std::array gles1_apis{gles::GlesApi::gles1,
                                    gles::GlesApi::gles1_extensions};
-    AddGlesModule(modules, storage, "libGLESv1_CM.so", gles1_apis);
+    AddGlesModule(modules, storage, "libGLESv1_CM.so", gles1_apis,
+                  kGles1BoundsExports);
     constexpr std::array gles2_apis{gles::GlesApi::gles2};
     AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis);
     AddNamedModule(modules, storage, "liblog.so", kLogExports);

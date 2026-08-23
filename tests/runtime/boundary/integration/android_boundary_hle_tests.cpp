@@ -31,6 +31,7 @@
 #include "runtime/boundary/modules/gles1/gles1_query.h"
 #include "runtime/boundary/modules/gles1/gles1_support.h"
 #include "runtime/boundary/core/boundary_symbols.h"
+#include "runtime/boundary/modules/opensles/opensles_abi.h"
 
 namespace {
 
@@ -502,7 +503,7 @@ TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {
         ogplay::runtime::detail::BuildAndroidBoundarySymbols();
     const auto descriptors =
         ogplay::runtime::detail::BuildAndroidBoundaryDescriptors(symbols);
-    REQUIRE(descriptors.size() == symbols.size());
+    REQUIRE(descriptors.size() < symbols.size());
     const auto address = symbols.front().address.Value();
     CHECK(ogplay::runtime::detail::DecodeAndroidBoundaryThunk(
               address, descriptors) == &descriptors.front());
@@ -643,10 +644,9 @@ TEST_CASE("Android boundary descriptors carry module-local ids") {
         ogplay::runtime::detail::BuildAndroidBoundaryDescriptors(symbols);
     const auto descriptor_for = [&](const std::string_view library,
                                     const std::string_view name) {
-        for (std::size_t index = 0; index < symbols.size(); ++index) {
-            if (symbols[index].library == library &&
-                symbols[index].symbol == name) {
-                return &descriptors[index];
+        for (const auto& descriptor : descriptors) {
+            if (descriptor.library == library && descriptor.name == name) {
+                return &descriptor;
             }
         }
         return static_cast<const ogplay::runtime::detail::HleThunkDescriptor*>(
@@ -673,6 +673,31 @@ TEST_CASE("Android boundary descriptors carry module-local ids") {
     const auto* add_fd = descriptor_for("libandroid.so", "ALooper_addFd");
     REQUIRE(add_fd != nullptr);
     CHECK(add_fd->parameter_count == 6U);
+}
+
+TEST_CASE("OpenSL ES AOSP IID globals map exact read-only guest ABI") {
+    BoundaryFixture fixture;
+    const auto variable =
+        fixture.boundary.Symbols().Lookup("libOpenSLES.so", "SL_IID_OBJECT");
+    REQUIRE(variable.has_value());
+    const auto object = std::find_if(
+        ogplay::runtime::OpenSlesIids().begin(),
+        ogplay::runtime::OpenSlesIids().end(), [](const auto& iid) {
+            return iid.name == "SL_IID_OBJECT";
+        });
+    REQUIRE(object != ogplay::runtime::OpenSlesIids().end());
+    CHECK(*variable == object->variable_address);
+    CHECK(fixture.bus.Read32(*variable, 1U) == object->value_address.Value());
+    std::array<std::byte, 16> bytes{};
+    fixture.memory.Read(object->value_address, bytes, 1U);
+    CHECK(bytes == std::array{
+                       std::byte{0x60}, std::byte{0x63}, std::byte{0x21},
+                       std::byte{0x79}, std::byte{0xd7}, std::byte{0xdd},
+                       std::byte{0xdb}, std::byte{0x11}, std::byte{0x16},
+                       std::byte{0xac}, std::byte{0x00}, std::byte{0x02},
+                       std::byte{0xa5}, std::byte{0xd5}, std::byte{0xc5},
+                       std::byte{0x1b}});
+    CHECK_THROWS(fixture.bus.Write32(*variable, 0U, 1U));
 }
 
 TEST_CASE("A32 call frame bulk decodes register and stack arguments") {

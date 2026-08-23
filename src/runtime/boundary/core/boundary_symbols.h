@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-#include "ogplay/runtime/android_api.h"
+#include "ogplay/runtime/boundary/android_api.h"
 #include "ogplay/runtime/boundary/boundary_symbol.h"
 #include "runtime/boundary/core/boundary_catalog.h"
 

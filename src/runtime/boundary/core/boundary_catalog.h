@@ -7,10 +7,16 @@
 #include <vector>
 
 #include "ogplay/memory/address_space.h"
-#include "ogplay/runtime/android_api.h"
+#include "ogplay/runtime/boundary/android_api.h"
 #include "ogplay/runtime/boundary/boundary_symbol.h"
 
 namespace ogplay::runtime {
+
+enum class BoundaryExportKind : std::uint8_t {
+    public_function,
+    public_data,
+    private_callable,
+};
 
 struct AndroidApiRange final {
     AndroidApi minimum{AndroidApi::api19};
@@ -24,7 +30,9 @@ struct BoundaryExportDescriptor final {
     std::uint16_t local_id{};
     std::uint8_t parameter_count{};
     AndroidApiRange api{};
-    memory::GuestAddress address;
+    memory::GuestAddress address{};
+    BoundaryExportKind kind{BoundaryExportKind::public_function};
+    std::uint32_t size{4U};
 };
 
 struct BoundaryModuleDescriptor final {
@@ -39,6 +47,9 @@ struct BoundaryExportDefinition final {
     std::uint16_t local_id{};
     std::uint8_t parameter_count{};
     AndroidApiRange api{};
+    BoundaryExportKind kind{BoundaryExportKind::public_function};
+    memory::GuestAddress data_address{};
+    std::uint32_t size{4U};
 };
 
 struct BoundaryModuleDefinition final {

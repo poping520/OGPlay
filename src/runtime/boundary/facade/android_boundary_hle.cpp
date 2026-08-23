@@ -52,6 +52,7 @@
 #include "runtime/boundary/modules/log/log_module.h"
 #include "runtime/boundary/modules/module_catalog.h"
 #include "runtime/boundary/modules/opensles/opensles_module.h"
+#include "runtime/boundary/modules/opensles/opensles_abi.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -130,7 +131,8 @@ public:
         SealBindings();
     }
     void MapThunks() {
-        thunk_arena_.Map(symbols_.size());
+        thunk_arena_.Map(descriptors_.size());
+        MapOpenSlesStaticAbi(address_space_);
     }
 
     [[nodiscard]] cpu::HostCallHook FastHostCallHook() noexcept {

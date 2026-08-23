@@ -6,9 +6,9 @@ test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_link_prefl
 note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，中央 Impl::Invoke*、InvokeModule/module enum/FastBinding/std::function hot glue 已删除；BND-6/BND-7 将 binding/thunk/router/fault、shared graphics/frame/memory services 与各 concrete module 物理分离并以 architecture gate 固化 core→service→module→facade 依赖方向；EGL/GLES 仍共享唯一 GuestGlContext 与 ANGLE runtime；export-less libOpenSLES.so scaffold 仅满足 DT_NEEDED"
 
 [runtime.opensles_virtual_so]
-status = "stub"
-test = "tests/runtime/bionic_profile_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-1 注册 export-less libOpenSLES.so Virtual ELF 与 empty final module；当前不分配 thunk、不发布 OpenSL ES symbol，函数导入明确 unresolved"
+status = "partial"
+test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+note = "BND-9 按 Android 4.4.4 AOSP Wilhelm 发布全部 51 个 SL_IID_* STT_OBJECT pointer global 与精确只读 UUID record；public data 不占 dense callable slot。三个 public function 与 Engine/OutputMix/PCM AudioPlayer handler 尚未实现并保持明确 unresolved"
 
 [runtime.liblog_virtual_so]
 status = "complete"

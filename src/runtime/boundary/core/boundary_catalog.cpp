@@ -44,10 +44,21 @@ BoundaryCatalog::BoundaryCatalog(
             export_.local_id = definition_export.local_id;
             export_.parameter_count = definition_export.parameter_count;
             export_.api = definition_export.api;
-            export_.address = memory::GuestAddress{
-                kBionicHleThunkBegin + slot_count_ * kThunkStride + 1U};
+            export_.kind = definition_export.kind;
+            export_.size = definition_export.size;
+            if (definition_export.kind == BoundaryExportKind::public_data) {
+                if (definition_export.data_address.Value() == 0U ||
+                    definition_export.size == 0U) {
+                    throw std::invalid_argument(
+                        "boundary data export requires address and size");
+                }
+                export_.address = definition_export.data_address;
+            } else {
+                export_.address = memory::GuestAddress{
+                    kBionicHleThunkBegin + slot_count_ * kThunkStride + 1U};
+                ++slot_count_;
+            }
             module.exports.push_back(std::move(export_));
-            ++slot_count_;
         }
         // An explicitly export-less Virtual SO is still an active DT_NEEDED
         // provider. A module made empty only by API filtering remains inactive.

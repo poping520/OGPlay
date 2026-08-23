@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -10,7 +11,9 @@
 
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/bionic/guest_symbol_override.h"
+#include "runtime/boundary/core/boundary_symbols.h"
 #include "runtime/boundary/modules/module_catalog.h"
+#include "runtime/boundary/modules/opensles/opensles_abi.h"
 
 namespace {
 
@@ -76,7 +79,12 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
     const auto* open_sles = ogplay::runtime::AndroidBoundaryCatalog(profile.api)
                                 .FindModule("libOpenSLES.so");
     REQUIRE(open_sles != nullptr);
-    CHECK(open_sles->exports.empty());
+    CHECK(open_sles->exports.size() == ogplay::runtime::OpenSlesIids().size());
+    CHECK(std::all_of(open_sles->exports.begin(), open_sles->exports.end(),
+                      [](const auto& export_) {
+                          return export_.kind ==
+                                 ogplay::runtime::BoundaryExportKind::public_data;
+                      }));
     CHECK(ogplay::runtime::AndroidBoundaryCatalog(profile.api)
               .FindModule("libc.so") == nullptr);
     CHECK(ogplay::runtime::GuestSymbolOverrides().size() == 5U);
@@ -126,18 +134,54 @@ TEST_CASE("export-less Virtual SO remains active without publishing handlers") {
     CHECK(catalog.SlotCount() == 0U);
 }
 
-TEST_CASE("libOpenSLES Virtual SO satisfies DT_NEEDED with no exports") {
+TEST_CASE("Boundary catalog data exports preserve addresses without callable slots") {
+    using namespace ogplay::runtime;
+    static constexpr std::array exports{
+        BoundaryExportDefinition{"global", 0U, 0U, {},
+                                 BoundaryExportKind::public_data,
+                                 ogplay::memory::GuestAddress{0x71502000U}, 16U},
+        BoundaryExportDefinition{"call", 9U, 2U}};
+    static constexpr std::array modules{
+        BoundaryModuleDefinition{"libmixed.so", {}, exports}};
+    const BoundaryCatalog catalog(AndroidApi::api19, modules);
+    REQUIRE(catalog.Modules().size() == 1U);
+    REQUIRE(catalog.Modules()[0].exports.size() == 2U);
+    CHECK(catalog.SlotCount() == 1U);
+    CHECK(catalog.Modules()[0].exports[0].address ==
+          ogplay::memory::GuestAddress{0x71502000U});
+    CHECK(catalog.Modules()[0].exports[0].size == 16U);
+    CHECK(catalog.Modules()[0].exports[1].address ==
+          ogplay::memory::GuestAddress{ogplay::runtime::kBionicHleThunkBegin + 1U});
+}
+
+TEST_CASE("libOpenSLES Virtual SO publishes AOSP IID data globals") {
     const auto& profile = ogplay::runtime::SelectBionicProfile(19);
-    const ogplay::runtime::BionicHleSymbolProvider hle(
-        std::span<const ogplay::runtime::BionicHleSymbol>{});
+    const auto symbols = ogplay::runtime::detail::BuildAndroidBoundarySymbols();
+    const ogplay::runtime::BionicHleSymbolProvider hle(symbols);
     const std::vector modules{
         Module("app.so", 0x10000000U, {"libOpenSLES.so"}, {})};
     const auto link_namespace = ogplay::runtime::BuildBionicLinkNamespace(
         profile, "app.so", modules, hle);
     REQUIRE(link_namespace.modules.size() == 2U);
     CHECK(link_namespace.modules[1].dynamic.soname == "libOpenSLES.so");
-    REQUIRE(link_namespace.modules[1].symbols.symbols.size() == 1U);
+    REQUIRE(link_namespace.modules[1].symbols.symbols.size() ==
+            ogplay::runtime::OpenSlesIids().size() + 1U);
     CHECK(link_namespace.modules[1].symbols.symbols[0].name.empty());
+    const auto object = std::find_if(
+        link_namespace.modules[1].symbols.symbols.begin(),
+        link_namespace.modules[1].symbols.symbols.end(), [](const auto& symbol) {
+            return symbol.name == "SL_IID_OBJECT";
+        });
+    REQUIRE(object != link_namespace.modules[1].symbols.symbols.end());
+    const auto object_iid = std::find_if(
+        ogplay::runtime::OpenSlesIids().begin(),
+        ogplay::runtime::OpenSlesIids().end(), [](const auto& iid) {
+            return iid.name == "SL_IID_OBJECT";
+        });
+    REQUIRE(object_iid != ogplay::runtime::OpenSlesIids().end());
+    CHECK(object->value == object_iid->variable_address);
+    CHECK(object->size == 4U);
+    CHECK(object->type == 1U);
 
     const std::vector importing_modules{Module(
         "importer.so", 0x11000000U, {"libOpenSLES.so"},

@@ -27,8 +27,10 @@
   不使整个 catalog 失败。local id 是 module metadata，可以非连续且不得依赖数组序号。
 - synthetic Virtual SO 首次建立时发布该 module 的完整 active export 集，后续动态装载
   不得补写或扩展既有 dynsym。
-- `libOpenSLES.so` 当前是 export-less Virtual SO：仅满足 `DT_NEEDED`，只有 ELF null
-  dynsym；任何 OpenSL ES symbol import 必须保持 unresolved，直至加入真实 handler。
+- `libOpenSLES.so` 的 public data ABI 独立于 callable thunk：按 Android 4.4.4 AOSP Wilhelm
+  发布全部 51 个 `SL_IID_*` 4-byte pointer global 及精确 16-byte UUID record，synthetic
+  ELF 标记为 `STT_OBJECT`，guest static arena 映射后只读且不消耗 dense slot。三个 public
+  function 在其 handler WU 完成前保持 unresolved，不伪造实现。
 - thunk arena 按实际 slot 数向上取整到多页并在写入后封为 RX；fast router 只做
   `PC → dense slot → {fn,self}`，live r0-r15 直接借用自 CPU hook，5 个以上参数只进行
   一次 guest stack bulk read。启用 guest-call slice observer 时上层不得安装 fast hook。

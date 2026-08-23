@@ -82,7 +82,10 @@ void BindInterceptedExports(loader::Elf32LinkModule& module,
     for (const auto& symbol : provider.Exports(library)) {
         constexpr std::uint16_t kSectionAbsolute = 0xfff1;
         module.symbols.symbols.push_back(
-            {symbol.symbol, symbol.address, 4, 1, 2, 0, kSectionAbsolute});
+            {symbol.symbol, symbol.address, symbol.size, 1,
+             static_cast<std::uint8_t>(
+                 symbol.kind == BoundarySymbolKind::function ? 2U : 1U),
+             0, kSectionAbsolute});
     }
     return module;
 }
@@ -98,9 +101,14 @@ BionicHleSymbolProvider::BionicHleSymbolProvider(
             throw BionicProfileError(
                 "Bionic HLE symbol requires a library and symbol");
         }
-        if (!IsHleThunk(symbol.address)) {
+        if (symbol.kind == BoundarySymbolKind::function &&
+            !IsHleThunk(symbol.address)) {
             throw BionicProfileError(
                 "Bionic HLE symbol address is outside the thunk range");
+        }
+        if (symbol.address.Value() == 0U || symbol.size == 0U) {
+            throw BionicProfileError(
+                "Bionic HLE symbol requires address and size");
         }
         if (!names.emplace(symbol.library, symbol.symbol).second) {
             throw BionicProfileError("duplicate Bionic HLE symbol: " +

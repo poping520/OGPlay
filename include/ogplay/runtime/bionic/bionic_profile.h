@@ -12,7 +12,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/loader/link_namespace.h"
 #include "ogplay/memory/address_space.h"
-#include "ogplay/runtime/android_api.h"
+#include "ogplay/runtime/boundary/android_api.h"
 #include "ogplay/runtime/boundary/boundary_symbol.h"
 
 namespace ogplay::runtime {

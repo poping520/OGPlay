@@ -1,35 +1,18 @@
 # 当前状态
 
-更新：2026-08-24 · BND-8 OpenSL ES ABI design
+更新：2026-08-24 · BND-9 OpenSL ES public data ABI
 
 ## 当前阶段
 
-- **Native Boundary 重构**：BND-1..4 已闭环。API-sealed catalog 是 6 个 Virtual SO 的
-  metadata 来源，支持 API filtering、metadata-only preflight 与 late import。SVC #2/#3
-  使用 live-register dense transport；每个 export seal 为 `{fn,module*}`，成功路径继续
-  JIT，不读取 SONAME/local id。fast fault 在 JIT 外恢复原异常；JNI/RegisterNatives/
-  JNI_OnLoad 语义不变。libc 五个 override 独立 direct-bind，并有跨 guest thread 并发
-  回归。各 SO 实现归属 concrete final module，中央 dispatch/`Impl::Invoke*` 已删除；
-  module 仅构造注入 bounded call/Android/graphics services。EGL/GLES1/GLES2 共享唯一
-  `GraphicsBoundaryContext`、`GuestGlContext` 与 ANGLE state。architecture gate 扫描全部
-  boundary module source，并单独约束 `TryFastCall()` direct router；A32 typed layer 与
-  end-to-end ABI benchmark 已覆盖。新增 `libOpenSLES.so` export-less loader scaffold；仅
-  满足 `DT_NEEDED`，不分配 thunk，所有 OpenSL ES 函数仍明确未实现。BND-5 另按 AOSP
-  4.4.4 target liblog 完整发布 23 个 writer/logprint/event-tag-map API；A32 variadic/
-  `va_list`、text/binary wire buffer、filter/format 与 guest-VFS event tags 已接入，guest
-  日志统一进入 `guest.liblog` structured category 并带 `[guest]` 前缀。
-  BND-6 在零行为变化下建立 `core/services/modules/facade` 目录，Android/EGL/log export
-  metadata 跟随 module，built-in registration 与 generic catalog 分离；boundary tests 同步
-  迁入 ownership 目录。15 项 focused integration、168 assertions 与 architecture gate
-  已通过。BND-7 已将 direct binding/thunk/router/fault 迁入 core，Android memory、共享
-  graphics context、frame/stat/trace 迁入 services，Android/EGL/GLES1/GLES2 concrete
-  implementation 迁入各自 module；libc override ownership 回到 bionic。core/service/module
-  依赖方向与 direct `{fn,self}` router 由 architecture gate 递归验证，20/20 focused
-  CTest 通过。BND-8 已按 AOSP 4.4.4 Wilhelm 完成 OpenSL ES 设计：public surface 包含
-  3 个函数及全部 `SL_IID_*` data export，对象方法使用 guest `const vtable **` ABI；
-  OGPlay 实现 engine/output-mix/PCM audio-player、Play/BufferQueue/Volume 与 callback thread，
-  recorder/MIDI/3D/effect/decoder 等范围外能力明确失败。下一阶段实现 function/data/private
-  callable metadata、OpenSL guest arena、PCM mixer 和 callback execution。
+- **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
+  import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc
+  per-export 并发安全 override 与端到端 benchmark 均已有门禁。concrete final module 只注入
+  bounded services；EGL/GLES1/GLES2 共享唯一 graphics context，中央 `Impl::Invoke*` 已删除。
+  BND-5 按 AOSP 4.4.4 完整实现 liblog 23 个 API，guest 日志进入 `guest.liblog` 并带
+  `[guest]`。BND-8 完成 AOSP Wilhelm ABI/PCM/callback 设计；BND-9 已发布全部 51 个
+  `SL_IID_*` `STT_OBJECT` pointer global 与精确只读 UUID record，data 不占 dense slot，
+  focused 8/8 通过。三个 OpenSL public function 仍 unresolved；下一阶段实现
+  Engine/OutputMix/PCM AudioPlayer 对象、mixer 与 callback thread。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

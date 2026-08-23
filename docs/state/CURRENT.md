@@ -58,8 +58,8 @@
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
-- macOS/arm64 BND 闭环后：907/907 CTest（102.17 秒）；其中 focused
-  boundary/JNI/Bionic/architecture 为 81/81。
+- macOS/arm64 BND 验收遗留闭环后：909/909 CTest（98.41 秒）；本次最终 focused
+  boundary/JNI/Bionic/preflight/API/late-dlopen/shared-state/architecture gate 为 12/12。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 

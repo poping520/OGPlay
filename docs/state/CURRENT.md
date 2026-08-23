@@ -30,7 +30,10 @@
   `GuestCString` 与 scalar bit decode。验收遗留已进一步关闭：libc 五个 override 以真实
   参数个数分别 direct-bind，删除共享 active PC，并以不同 guest thread 并发回归覆盖；
   libandroid/EGL/GLES1/GLES2 的 export 实现体已迁入各 concrete module，中央
-  `Impl::Invoke*` 不再存在，Android looper/input mutable state 也由模块自有。
+  `Impl::Invoke*` 不再存在，Android looper/input mutable state 也由模块自有。非阻塞
+  收口进一步移除了 module 对整个 `Impl&` 的依赖：call transport、Android memory
+  service 和唯一 shared graphics context 通过构造注入；architecture gate 现扫描全部
+  boundary module implementation source，并继续单独约束 `TryFastCall()` direct router。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

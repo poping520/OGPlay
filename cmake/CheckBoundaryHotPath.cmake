@@ -1,27 +1,26 @@
-file(READ "${ROOT}/src/runtime/boundary/android_boundary_hle.cpp" boundary)
-file(GLOB boundary_sources
+set(boundary_hle_source
+    "${ROOT}/src/runtime/boundary/android_boundary_hle.cpp")
+file(READ "${boundary_hle_source}" boundary)
+file(GLOB virtual_so_module_sources
     "${ROOT}/src/runtime/boundary/*.h"
     "${ROOT}/src/runtime/boundary/*.cpp")
-foreach(source IN LISTS boundary_sources)
+foreach(source IN LISTS virtual_so_module_sources)
     file(READ "${source}" contents)
-    string(FIND "${contents}" "std::function" found)
-    if(NOT found EQUAL -1)
-        message(FATAL_ERROR
-            "Virtual SO boundary hot implementation uses std::function: ${source}")
-    endif()
-endforeach()
-
-foreach(forbidden IN ITEMS
-        "InvokeModule" "FastBinding" "hot_bindings_"
-        "AndroidFunction" "EglFunction" "InvokeLegacyFast"
-        "active_pc_" "SetActivePc"
-        "InvokeAndroid" "InvokeEgl" "InvokeGles1" "InvokeGles2"
-        "runtime_.Invoke")
-    string(FIND "${boundary}" "${forbidden}" found)
-    if(NOT found EQUAL -1)
-        message(FATAL_ERROR
-            "legacy boundary dispatch token remains: ${forbidden}")
-    endif()
+    foreach(forbidden IN ITEMS
+            "std::function"
+            "InvokeModule" "InvokeAndroid" "InvokeEgl"
+            "InvokeGles1" "InvokeGles2" "InvokeLegacyFast"
+            "FastBinding" "hot_bindings_"
+            "AndroidFunction" "EglFunction"
+            "active_pc_" "SetActivePc"
+            "Impl& runtime_" "Impl* runtime_")
+        string(FIND "${contents}" "${forbidden}" found)
+        if(NOT found EQUAL -1)
+            message(FATAL_ERROR
+                "Virtual SO module source contains forbidden legacy token "
+                "${forbidden}: ${source}")
+        endif()
+    endforeach()
 endforeach()
 
 foreach(required IN ITEMS
@@ -31,6 +30,8 @@ foreach(required IN ITEMS
         "struct Gles2Module final"
         "struct LogModule final"
         "struct LibcOverrideModule final"
+        "struct GraphicsBoundaryContext final"
+        "struct AndroidBoundaryServices final"
         "return hot_[slot].invoke(hot_[slot].self, call)")
     string(FIND "${boundary}" "${required}" found)
     if(found EQUAL -1)

@@ -22,8 +22,10 @@
   直接生成 `{export-specific fn, concrete module*}`，fast/slow transport 共用该 handler；
   调用期不再读取 SONAME/local id，不经过 module-level route、`HleRoute` 或全局 id。
   export 实现体必须位于 concrete module，禁止转发到 `AndroidBoundaryHle::Impl::Invoke*`；
-  Android looper/input 状态由 Android module 自有，EGL/GLES1/GLES2 module 继续通过构造
-  注入共享唯一 `GuestGlContext` 和 graphics runtime，不复制 graphics state。
+  Android looper/input 状态由 Android module 自有。module 不持有整个 session `Impl`，
+  而是分别构造注入 bounded call transport、Android memory service 与 graphics context；
+  EGL/GLES1/GLES2 由同一个 `GraphicsBoundaryContext` 引用唯一 `GuestGlContext`、ANGLE
+  frame/context 和 graphics state，不复制状态。
 
 Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest
@@ -175,4 +177,6 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 ## 测试
 
 对应 `tests/runtime/android_boundary_hle_tests.cpp`(同时覆盖独立 GLES 分派组件)与
-`tests/runtime/android_boundary_gles1_fixed_tests.cpp`。
+`tests/runtime/android_boundary_gles1_fixed_tests.cpp`。architecture gate 扫描
+`src/runtime/boundary/` 下全部 Virtual SO/module implementation source，并对
+`TryFastCall()` 另做严格 hot-router 检查。

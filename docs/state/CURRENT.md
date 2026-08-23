@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-23 · BND-4 Native Boundary closure
+更新：2026-08-23 · BND-5 Android 4.4.4 liblog Virtual SO
 
 ## 当前阶段
 
@@ -14,7 +14,10 @@
   `GraphicsBoundaryContext`、`GuestGlContext` 与 ANGLE state。architecture gate 扫描全部
   boundary module source，并单独约束 `TryFastCall()` direct router；A32 typed layer 与
   end-to-end ABI benchmark 已覆盖。新增 `libOpenSLES.so` export-less loader scaffold；仅
-  满足 `DT_NEEDED`，不分配 thunk，所有 OpenSL ES 函数仍明确未实现。
+  满足 `DT_NEEDED`，不分配 thunk，所有 OpenSL ES 函数仍明确未实现。BND-5 另按 AOSP
+  4.4.4 target liblog 完整发布 23 个 writer/logprint/event-tag-map API；A32 variadic/
+  `va_list`、text/binary wire buffer、filter/format 与 guest-VFS event tags 已接入，guest
+  日志统一进入 `guest.liblog` structured category 并带 `[guest]` 前缀。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3
@@ -38,12 +41,14 @@
   annotation proxy、多 ClassLoader 和动态 definition 仍明确不实现。
   DVM-47 gate 仍受 A6 DT_SONAME identity 与 DH 固定 step 100/97 漂移阻断，A6 长运行未执行；
   `dexvm.gc` 与 `dexvm.interpreter_threaded` 保持 `partial`，threaded 生产默认仍关闭。A5 GC
-  exact/强制回收 golden 已稳定；PVZ NA 当前下一阻断为 `__android_log_vprint` boundary import。
+  exact/强制回收 golden 已稳定；PVZ NA 的 `__android_log_vprint` boundary import 阻断已由
+  BND-5 关闭，title 后续行为仍待按既有 playbook 复验。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
-- macOS/arm64 OpenSL ES empty Virtual SO 后：911/911 CTest（100.30 秒）；focused
-  catalog/preflight/namespace/capability/documentation/hot-path gate 为 12/12。
+- macOS/arm64 BND-5 liblog Virtual SO 后：917/917 CTest（102.26 秒）；新增 liblog
+  focused 为 6/6、75 assertions，Bionic 为 12/12、102 assertions，preflight/late import/
+  rootless loader/capability/documentation/hot-path gate 均通过。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 

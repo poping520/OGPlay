@@ -34,6 +34,7 @@
 #include "android_boundary_gles1_draw.h"
 #include "android_boundary_gles1_fixed.h"
 #include "android_boundary_gles1_query.h"
+#include "android_boundary_log.h"
 #include "android_boundary_symbols.h"
 #include "boundary_module_metadata.h"
 
@@ -88,7 +89,10 @@ public:
           egl_module_(call_services_, graphics_context_),
           gles1_module_(call_services_, graphics_context_),
           gles2_module_(call_services_, graphics_context_),
-          log_module_(call_services_), libc_override_module_(call_services_) {
+          log_context_{address_space_, options.logger, this,
+                       &ServiceRecordFastFault, options.guest_file_owner,
+                       options.read_guest_file},
+          log_module_(log_context_), libc_override_module_(call_services_) {
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& {
@@ -926,20 +930,6 @@ private:
         GraphicsBoundaryContext& graphics_;
     };
 
-    struct LogModule final {
-        explicit LogModule(BoundaryCallServices& calls) noexcept
-            : calls_(calls) {}
-        [[nodiscard]] BoundaryCallServices& CallServices() noexcept {
-            return calls_;
-        }
-#define OGPLAY_DECLARE_LOG(name, id, count, method)                             \
-        std::uint32_t method(const A32CallFrame&) noexcept { return 0U; }
-        OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_DECLARE_LOG)
-#undef OGPLAY_DECLARE_LOG
-    private:
-        BoundaryCallServices& calls_;
-    };
-
     // libOpenSLES.so currently satisfies module loading only. It deliberately
     // publishes no exports until behavior-backed handlers are implemented.
     struct OpenSlesModule final {};
@@ -1479,6 +1469,7 @@ private:
     EglModule egl_module_;
     Gles1Module gles1_module_;
     Gles2Module gles2_module_;
+    LogBoundaryContext log_context_;
     LogModule log_module_;
     OpenSlesModule open_sles_module_;
     LibcOverrideModule libc_override_module_;

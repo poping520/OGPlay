@@ -10,6 +10,10 @@
 #include "ogplay/gles/angle_backend.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 
+namespace ogplay::core {
+class Logger;
+}
+
 namespace ogplay::runtime {
 
 enum class AndroidBoundaryInputType : std::uint8_t {
@@ -35,6 +39,10 @@ struct AndroidBoundaryFrame final {
 
 struct AndroidBoundaryOptions final {
     bool allow_gles1_material_single_face{};
+    core::Logger* logger{};
+    void* guest_file_owner{};
+    bool (*read_guest_file)(void*, std::string_view,
+                            std::vector<std::byte>&){};
 };
 
 class AndroidBoundaryHle final : public core::GpuStateProvider {

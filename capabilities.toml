@@ -10,6 +10,11 @@ status = "stub"
 test = "tests/runtime/bionic_profile_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
 note = "BND-1 注册 export-less libOpenSLES.so Virtual ELF 与 empty final module；当前不分配 thunk、不发布 OpenSL ES symbol，函数导入明确 unresolved"
 
+[runtime.liblog_virtual_so]
+status = "complete"
+test = "tests/runtime/android_boundary_hle_tests.cpp; tests/runtime/bionic_profile_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+note = "BND-5 按 Android 4.4.4 system/core/liblog 的 target 源完整发布并实现 23 个 writer/logprint/event-tag-map API；A32 variadic 与 va_list、text/binary logger_entry、filter/format 和 guest-VFS event tags 均受检，输出进入 guest.liblog structured category 且统一带 [guest] 前缀"
+
 [runtime.fast_host_call]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; tests/runtime/jni_guest_abi_tests.cpp; cmake/CheckBoundaryHotPath.cmake"

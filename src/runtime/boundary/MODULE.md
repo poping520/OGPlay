@@ -29,6 +29,13 @@
   而是分别构造注入 bounded call transport、Android memory service 与 graphics context；
   EGL/GLES1/GLES2 由同一个 `GraphicsBoundaryContext` 引用唯一 `GuestGlContext`、ANGLE
   frame/context 和 graphics state，不复制状态。
+- `liblog.so` 的 export surface 固定为 Android 4.4.4 target `system/core/liblog`
+  (`logd_write.c + logprint.c + event_tag_map.c`) 的 23 个 global API。`LogModule final`
+  只依赖显式 `LogBoundaryContext`：guest address 始终由 `AddressSpace` 搬运，event tag map
+  只经注入的 guest-file reader 访问 VFS，tag 字符串进入 module-owned 只读 guest pages。
+  KitKat `/dev/log/*` 写端在 OGPlay 中由 structured logger 取代，category 为
+  `guest.liblog` 且 message 必有 `[guest]` 前缀；不得直接访问 host filesystem、伪造
+  kernel logger device 或让 C++ exception 跨越 fast callback。
 
 Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest

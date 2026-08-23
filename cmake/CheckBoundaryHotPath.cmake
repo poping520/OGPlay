@@ -4,8 +4,10 @@ file(READ "${boundary_hle_source}" boundary)
 file(GLOB virtual_so_module_sources
     "${ROOT}/src/runtime/boundary/*.h"
     "${ROOT}/src/runtime/boundary/*.cpp")
+set(virtual_so_modules "")
 foreach(source IN LISTS virtual_so_module_sources)
     file(READ "${source}" contents)
+    string(APPEND virtual_so_modules "\n${contents}")
     foreach(forbidden IN ITEMS
             "std::function"
             "InvokeModule" "InvokeAndroid" "InvokeEgl"
@@ -28,7 +30,6 @@ foreach(required IN ITEMS
         "struct EglModule final"
         "struct Gles1Module final"
         "struct Gles2Module final"
-        "struct LogModule final"
         "struct OpenSlesModule final"
         "struct LibcOverrideModule final"
         "struct GraphicsBoundaryContext final"
@@ -40,6 +41,12 @@ foreach(required IN ITEMS
             "boundary direct-binding invariant is missing: ${required}")
     endif()
 endforeach()
+
+string(FIND "${virtual_so_modules}" "class LogModule final" log_module_found)
+if(log_module_found EQUAL -1)
+    message(FATAL_ERROR
+        "boundary direct-binding invariant is missing: class LogModule final")
+endif()
 
 string(REGEX MATCH
     "cpu::HostCallResult TryFastCall\\(cpu::A32HostCallContext& call\\) noexcept \\{[^}]*\\}"

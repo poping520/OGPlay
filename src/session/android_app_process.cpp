@@ -68,6 +68,7 @@ public:
 
         auto system = BuildSystemModules(request.api_level,
                                          request.system_libraries);
+        request.boundary_options.logger = request.logger;
         auto native_process = runtime::AndroidGuestProcess::Start(
             {request.api_level, system.inputs, request.backend,
              request.surface_width, request.surface_height,

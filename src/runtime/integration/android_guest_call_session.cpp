@@ -440,6 +440,36 @@ void BindAndroidGuestJavaLocaleHandlers(
 
 namespace {
 
+bool ReadBoundaryGuestFile(void* const owner, const std::string_view path,
+                           std::vector<std::byte>& output) {
+    if (owner == nullptr) return false;
+    auto& filesystem = *static_cast<VirtualFileSystem*>(owner);
+    try {
+        const auto info = filesystem.Stat(path);
+        if (info.is_directory || info.size > 4U * 1024U * 1024U) return false;
+        const auto descriptor = filesystem.Open(path, {.read = true});
+        try {
+            output.resize(static_cast<std::size_t>(info.size));
+            std::size_t offset{};
+            while (offset < output.size()) {
+                const auto consumed = filesystem.Read(
+                    descriptor, std::span(output).subspan(offset));
+                if (consumed == 0U) break;
+                offset += consumed;
+            }
+            output.resize(offset);
+            filesystem.Close(descriptor);
+            return true;
+        } catch (...) {
+            filesystem.Close(descriptor);
+            throw;
+        }
+    } catch (...) {
+        output.clear();
+        return false;
+    }
+}
+
 struct AndroidGuestProcessStartup final {
     std::uint32_t api{};
     std::string root_module;
@@ -461,6 +491,9 @@ struct AndroidGuestProcessStartup final {
 
 [[nodiscard]] AndroidGuestProcessStartup RootlessStartup(
     const AndroidGuestProcessRequest& request) {
+    auto boundary_options = request.boundary_options;
+    boundary_options.guest_file_owner = request.filesystem;
+    boundary_options.read_guest_file = &ReadBoundaryGuestFile;
     return {request.api,
             "libc.so",
             request.system_modules,
@@ -472,7 +505,7 @@ struct AndroidGuestProcessStartup final {
             request.filesystem,
             request.progress,
             request.direct_assets,
-            request.boundary_options,
+            boundary_options,
             request.sound_resource_loader,
             request.guest_call_slice_observer,
             request.platform,
@@ -481,6 +514,9 @@ struct AndroidGuestProcessStartup final {
 
 [[nodiscard]] AndroidGuestProcessStartup LegacyStartup(
     const AndroidGuestCallSessionRequest& request) {
+    auto boundary_options = request.boundary_options;
+    boundary_options.guest_file_owner = request.filesystem;
+    boundary_options.read_guest_file = &ReadBoundaryGuestFile;
     return {request.api,
             request.root_module,
             request.modules,
@@ -492,7 +528,7 @@ struct AndroidGuestProcessStartup final {
             request.filesystem,
             request.progress,
             request.direct_assets,
-            request.boundary_options,
+            boundary_options,
             request.sound_resource_loader,
             request.guest_call_slice_observer,
             request.platform,

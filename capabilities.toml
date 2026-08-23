@@ -1268,7 +1268,7 @@ note = "DVM-52 交付默认关闭、构造期定容的语义事件环；覆盖 i
 [dexvm.stack]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp"
-note = "DVM-52 交付 VmExecutionLock 安全点上的全 execution-context Java 栈快照，并以 context token 关联 guest thread id/name/status；输出 class/method/descriptor/dex pc、tick 与 pending guest exception。查询不会异步抢占正在执行的 guest call，MCP/CLI 消费层后续接入"
+note = "DVM-52 交付 VmExecutionLock 安全点上的全 execution-context Java 栈快照，并以 context token 关联 guest thread id/name/status；输出 class/method/descriptor/dex pc、tick 与 pending guest exception。查询不会异步抢占正在执行的 guest call。DVM-76 在致命 DexVmError 清帧前自动附入 context、guest thread id/name、fault opcode/method index 与最多 64 帧的最内层优先 class/method descriptor + dex pc 栈；MCP 主动查询消费层仍待接入"
 
 [dexvm.threads]
 status = "complete"

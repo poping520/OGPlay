@@ -1415,3 +1415,23 @@
     move-result v0
     return v0
 .end method
+
+.method static public captureOuter()I
+.registers 1
+    invoke-static {}, LDiagnosticsProbe;->capture()I
+    move-result v0
+    return v0
+.end method
+
+.method static public captureDeep(I)I
+.registers 2
+    if-lez v1, :capture
+    add-int/lit8 v0, v1, -1
+    invoke-static {v0}, LDiagnosticsProbe;->captureDeep(I)I
+    move-result v0
+    return v0
+    :capture
+    invoke-static {}, Ldiagnostics/Host;->capture()I
+    move-result v0
+    return v0
+.end method

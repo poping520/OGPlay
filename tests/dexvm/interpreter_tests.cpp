@@ -30,6 +30,7 @@
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 
 namespace {
 
@@ -2452,6 +2453,64 @@ TEST_CASE("dexvm diagnostics stay disabled unless explicitly configured") {
     CHECK(running->frames[0].class_descriptor == "LDiagnosticsProbe;");
     CHECK(running->frames[0].method_name == "capture");
     CHECK(running->frames[0].method_descriptor == "()I");
+    });
+}
+
+TEST_CASE("dexvm fatal errors retain the interpreted guest call stack") {
+    WithEachBackend([](InterpreterConfig config) {
+        auto builder =
+            IntrinsicClassBuilder::Class("Ldiagnostics/Host;");
+        std::vector<IntrinsicClassDecl> catalog;
+        catalog.push_back(std::move(builder).Build());
+        Vm vm(config, JavaObjectModelConfig{}, std::move(catalog));
+        VmThreadRuntime threads(vm.interpreter);
+        threads.SetRootThreadObject(
+            vm.interpreter.NewIntrinsicInstance("Ljava/lang/Thread;"));
+
+        try {
+            static_cast<void>(vm.CallStatic(
+                "LDiagnosticsProbe;", "captureOuter", "()I"));
+            FAIL("missing intrinsic method must fail");
+        } catch (const DexVmError& error) {
+            CHECK(error.Reason() == DexVmErrorReason::unresolved_reference);
+            const std::string message = error.what();
+            CHECK(message.find(
+                      "method cannot be resolved: "
+                      "Ldiagnostics/Host;->capture()I") != std::string::npos);
+            CHECK(message.find(
+                      "context=1 guest_thread_id=1 thread=\"main\" "
+                      "frames=2 shown=2") != std::string::npos);
+            CHECK(message.find(
+                      "DexVM fault instruction: invoke-static opcode=0x71 "
+                      "method_idx=") != std::string::npos);
+            const auto inner = message.find(
+                "#0 at LDiagnosticsProbe;->capture()I (dex_pc=0)");
+            const auto outer = message.find(
+                "#1 at LDiagnosticsProbe;->captureOuter()I (dex_pc=0)");
+            REQUIRE(inner != std::string::npos);
+            REQUIRE(outer != std::string::npos);
+            CHECK(inner < outer);
+            CHECK(message.find("DexVM guest stack (innermost first):",
+                               inner + 1U) == std::string::npos);
+        }
+
+        try {
+            static_cast<void>(vm.CallStatic(
+                "LDiagnosticsProbe;", "captureDeep", "(I)I",
+                {VmValue::Int(70)}));
+            FAIL("deep missing intrinsic method must fail");
+        } catch (const DexVmError& error) {
+            const std::string message = error.what();
+            CHECK(message.find("frames=71 shown=64") != std::string::npos);
+            CHECK(message.find("#63 at LDiagnosticsProbe;->captureDeep(I)I") !=
+                  std::string::npos);
+            CHECK(message.find("#64 at ") == std::string::npos);
+            CHECK(message.find("... 7 outer frames omitted") !=
+                  std::string::npos);
+        }
+        const auto stacks = vm.interpreter.StackSnapshot();
+        REQUIRE(stacks.size() == 1U);
+        CHECK(stacks.front().frames.empty());
     });
 }
 

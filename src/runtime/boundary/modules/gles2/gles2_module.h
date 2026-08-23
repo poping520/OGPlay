@@ -16,6 +16,12 @@
 
 namespace ogplay::runtime {
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// VS 18.8 reports discarded fallbacks in these exhaustive if-constexpr
+// dispatchers as unreachable when the sealed export set is instantiated.
+#pragma warning(disable : 4702)
+#endif
 class Gles2Module final {
 public:
     Gles2Module(BoundaryCallServices& calls,
@@ -368,5 +374,8 @@ private:
     BoundaryCallServices& calls_;
     GraphicsBoundaryContext& graphics_;
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace ogplay::runtime

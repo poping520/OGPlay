@@ -1,6 +1,7 @@
 #include "ogplay/loader/dex.h"
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <string_view>
@@ -73,6 +74,14 @@ public:
 private:
     std::span<const std::uint8_t> bytes_;
 };
+
+[[nodiscard]] std::string NarrowString(const std::u16string_view value) {
+    std::string result;
+    result.reserve(value.size());
+    std::transform(value.begin(), value.end(), std::back_inserter(result),
+                   [](const char16_t unit) { return static_cast<char>(unit); });
+    return result;
+}
 
 void RequireRange(const std::uint32_t offset, const std::uint32_t count,
                   const std::uint32_t item_size,
@@ -660,11 +669,11 @@ void SkipEncodedValue(const Reader& reader, std::size_t& offset,
     std::optional<std::uint8_t> maximum_argument;
     switch (type) {
     case 0x00U:  // byte
-        maximum_argument = 0U;
+        maximum_argument = std::uint8_t{0};
         break;
     case 0x02U:  // short
     case 0x03U:  // char
-        maximum_argument = 1U;
+        maximum_argument = std::uint8_t{1};
         break;
     case 0x04U:  // int
     case 0x10U:  // float
@@ -675,11 +684,11 @@ void SkipEncodedValue(const Reader& reader, std::size_t& offset,
     case 0x19U:  // field
     case 0x1aU:  // method
     case 0x1bU:  // enum
-        maximum_argument = 3U;
+        maximum_argument = std::uint8_t{3};
         break;
     case 0x06U:  // long
     case 0x11U:  // double
-        maximum_argument = 7U;
+        maximum_argument = std::uint8_t{7};
         break;
     default:
         break;
@@ -782,7 +791,7 @@ void SkipEncodedValue(const Reader& reader, std::size_t& offset,
         reader, offset, 0x17U,
         static_cast<std::uint32_t>(image.strings.size()), "name");
     const auto& value = image.strings[index].value;
-    return std::string(value.begin(), value.end());
+    return NarrowString(value);
 }
 
 [[nodiscard]] std::vector<std::uint32_t> ReadEncodedTypeArray(
@@ -824,7 +833,7 @@ void ReadSystemAnnotationItem(
                  "DEX annotation element name index is invalid");
         }
         const auto& name_utf16 = image.strings[name_index].value;
-        const std::string name(name_utf16.begin(), name_utf16.end());
+        const auto name = NarrowString(name_utf16);
         if (class_metadata != nullptr &&
             descriptor == "Ldalvik/annotation/InnerClass;") {
             class_metadata->has_inner_class = true;

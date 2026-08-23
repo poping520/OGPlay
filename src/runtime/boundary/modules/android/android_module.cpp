@@ -72,6 +72,12 @@ std::uint32_t AndroidModule::PollAll(
     return ident;
 }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// VS 18.8 reports the discarded fallback of exhaustive if-constexpr
+// instantiations as unreachable.
+#pragma warning(disable : 4702)
+#endif
 template <std::uint16_t FunctionId>
 std::uint32_t AndroidModule::ExecuteExport(const A32CallFrame& call) {
     const auto args = call.RegisterArguments();
@@ -154,5 +160,8 @@ std::uint32_t AndroidModule::ExecuteExport(const A32CallFrame& call) {
     }
 OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_DEFINE_ANDROID)
 #undef OGPLAY_DEFINE_ANDROID
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace ogplay::runtime

@@ -17,22 +17,10 @@
   per-export 并发安全 override 与端到端 benchmark 均已有门禁。concrete final module 只注入
   bounded services；EGL/GLES1/GLES2 共享唯一 graphics context，中央 `Impl::Invoke*` 已删除。
   BND-5 按 AOSP 4.4.4 完整实现 liblog 23 个 API，guest 日志进入 `guest.liblog` 并带
-  `[guest]`。BND-8 完成 AOSP Wilhelm ABI/PCM/callback 设计；BND-9 已发布全部 51 个
-  `SL_IID_*` `STT_OBJECT` pointer global 与精确只读 UUID record，data 不占 dense slot，
-  focused 8/8 通过。BND-10 已实现独立线程安全 PCM mixer：PCM8/16、mono/stereo、线性
-  重采样、volume/mute/pan、bounded queue、消费事件及多 player 饱和加性混音，focused
-  5/5 通过。BND-11 已发布 3 个 public function 和 53 个 private callable，immutable AOSP
-  vtable 直接指向 dense thunk；concrete final module 完成 Engine→OutputMix→PCM AudioPlayer、
-  Object/Play/Queue/Volume 状态与离线混音，范围外 constructor 规范失败，focused 16/16
-  通过。BND-12 已把 mixer 加性接入 SoundPool process output，并以专用 A32 guest
-  thread/CPU/TLS/stack 执行 async Object、Play 与每-buffer callback；callback 内可正常
-  SVC #2 Enqueue，失败延迟恢复。OpenSL 地址移入与 JNI lease 不冲突的 `0x718..0x71b`，
-  focused 19/19 通过。BND-13 同步 A32 11-word ABI gate 与重构后的 quirk 测试路径，最终
-  full CTest 923/923（含 architecture gate）通过，`runtime.opensles_virtual_so` 已晋升
-  `complete`。BND-14 又以真实 A32 callback 读取专用 TLS、经 SVC #2 re-enqueue 并播放
-  第二个 buffer，补齐 callback-thread 端到端证据；mute 现在只静音而继续推进队列/回调，
-  focused 20/20 通过。BND-15 逐项复核目录/ownership/依赖门禁并同步 capability 中搬迁后的
-  测试路径；最终 full CTest 924/924（含 architecture gate）通过。
+  `[guest]`。BND-8..15 已闭合 AOSP Wilhelm ABI、51 个 IID global、PCM mixer、完整
+  Engine→OutputMix→AudioPlayer、SoundPool 混音与真实 A32 callback/TLS/re-enqueue；
+  mute 继续推进队列，地址与 JNI lease 隔离，目录/ownership/capability 已复核。
+  `runtime.opensles_virtual_so` 为 `complete`，最终 full CTest 924/924。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3
@@ -59,11 +47,22 @@
   exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合。
   DVM-70..74 闭合 Window/config、JNI identity、目录/asset、GLSurfaceView policy 与
   IntentFilter；DVM-75 交付 String.format `%s/%d/%%` 与 PackageManager，
-  下一 fault 待 exact run 固定。
+  下一 fault 待 exact run 固定。DVM-76 使致命 DexVM 错误在销毁帧前自动附带
+  context/thread、fault opcode/method index 与有界 64 帧调用链；PVZ Release 关闭 survey 已把
+  `PackageManager.getApplicationInfo` 缺口定位到 `BaseCore.loadConfiguration()V`
+  `dex_pc=18`，并回溯至 `PvZActivity.onCreate(Bundle)V dex_pc=107`。
 ## 验证基线
 
 - BND-24 full CTest 933/933（architecture 5/5）；DVM-75 focused 5/5，
   exact APK 持续推进且无残留进程。
+- Windows VS 18.8 / MSVC 14.51 `windows-msvc` Debug 全目标构建通过；受影响的 DEX、
+  Android/EGL/GLES2 focused 27/27（9645 assertions）与 architecture 5/5 通过。
+- DVM-76 focused 6/6（336 assertions）；Windows Release `ogplay` 构建及 PVZ 原命令
+  关闭 survey 复现通过，首 fault 保持明确失败并附带 context=1、
+  `thread=<unregistered>`、`invoke-virtual opcode=0x6e method_idx=643 dex_pc=18` 与
+  6 层 guest Java 调用栈。
+- 当前 full CTest 949/951；DVM-76/architecture 通过，失败为未触及的 String catalog
+  数量断言（43/44）与 liblog tag 断言（`PVZ`/空）。
 
 ## 下一步
 

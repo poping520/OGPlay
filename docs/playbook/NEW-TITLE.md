@@ -114,7 +114,7 @@ ogplay run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 | 信息 | 含义 | 处置 |
 | --- | --- | --- |
 | `class is not available: L…;` | 平台类未声明 | 步 1/2 批量补；确认是平台前缀而非游戏类 |
-| `method cannot be resolved: …` | 类已声明、方法未声明 | 补方法行；返回引用的先想清楚给什么对象 |
+| `method cannot be resolved: …` | 类已声明、方法未声明；其后 stack 标题给出 context/thread，`fault instruction` 与 `#0` 是 APK 直接调用点 | 先按 opcode/method index、完整 method descriptor + `dex_pc` 定位；栈超过 64 帧会报告省略数。再补方法行，引用返回值先想清楚给什么对象 |
 | `intrinsic handler is not implemented (id)` | 方法声明了 handler，未注册 | 在对应分面注册 |
 | `virtual dispatch failed for m on L…;` | 接收者的类没有该虚方法 | 声明在**接收者**类或其父类上 |
 | `invoke on null receiver: C.m() from vN called by D.f pc P` | 上游查询返回了 null | 顺着 `called by` 找那次查询（findViewById/getSystemService 之类），补的是**它** |

@@ -132,6 +132,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `UnwindStoppedExecutionContext` 清理由 native/A32 重入边界留下的不可达外层帧，
   未请求停止或仍有 native frame 均明确拒绝，普通 `DiscardExecutionContext`
   继续禁止丢弃活动栈。
+  不可恢复的 `DexVmError` 在清理 interpreted frames 前自动附加一次 guest Java
+  调用栈：标题含 context 与已注册的 guest thread id/name，首帧含 opcode 和可用的
+  DEX method index，帧含 class/method descriptor 与 DEX PC。最内层优先、最多 64 帧，
+  超限明确报告省略数；该冷路径不依赖 diagnostics trace，也不暴露宿主地址。
 - `InterpreterConfig::diagnostics` / `Interpreter::Trace`（DVM-52）：默认容量 0
   精确关闭；启用后在构造期分配固定事件环，记录 instruction、method、exception、
   class init、monitor、native 与 GC 的稳定整数事实。指令事件可采样，event mask 与
@@ -307,7 +311,8 @@ whole-DEX 启动、首次触达明确失败/survey 才记账；core catalog 唯�
 数组、字段、三种 dispatch、clinit、跨帧异常、栈溢出、tick/heap 预算、两个
 显式执行 context 交错调用的帧/异常/tick/monitor 隔离、跨线程 clinit 等待；
 DVM-52 默认关闭、固定 ring 覆盖/筛选/采样、语义事件族、跨 context stack 与
-schema-1 JSON）；
+schema-1 JSON；DVM-76 缺方法致命错误在 switch/threaded 两后端保留最内层优先的
+class/method descriptor + DEX PC 调用链，且清理后 context 无残留帧）；
 `tests/dexvm/vm_thread_tests.cpp`（真实宿主线程执行 run()、共享对象世界、
 二次 start 与无 run() 目标拒绝、isAlive、join、未捕获异常记账、interrupt、
 teardown 逐线程 join、持有 native 帧时拒绝停泊）；

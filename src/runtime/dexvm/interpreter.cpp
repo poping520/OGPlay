@@ -1,10 +1,14 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 
+#include <algorithm>
+#include <deque>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 #include "interpreter_internal.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -12,6 +16,107 @@ namespace ogplay::runtime::dexvm {
 
 namespace {
 constexpr std::uint32_t kAccSynchronized = 0x0020U;
+constexpr std::size_t kMaximumFatalStackFrames = 64U;
+constexpr std::string_view kGuestStackHeader =
+    "\nDexVM guest stack (innermost first):";
+
+struct FatalThreadInfo final {
+    std::uint64_t guest_thread_id{};
+    std::string name;
+};
+
+[[nodiscard]] std::optional<FatalThreadInfo> FindFatalThread(
+    const VmThreadRuntime* const threads, const std::uint64_t context_token) {
+    if (threads == nullptr) return std::nullopt;
+    for (const auto& thread : threads->Snapshot()) {
+        if (thread.context_token == context_token) {
+            return FatalThreadInfo{thread.id, thread.name};
+        }
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::string EscapeThreadName(const std::string_view name) {
+    constexpr std::size_t kMaximumThreadNameBytes = 128U;
+    std::string escaped;
+    const auto size = std::min(name.size(), kMaximumThreadNameBytes);
+    for (std::size_t index = 0; index < size; ++index) {
+        switch (name[index]) {
+            case '\\': escaped += "\\\\"; break;
+            case '"': escaped += "\\\""; break;
+            case '\r': escaped += "\\r"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\t': escaped += "\\t"; break;
+            default: escaped.push_back(name[index]); break;
+        }
+    }
+    if (name.size() > size) escaped += "...";
+    return escaped;
+}
+
+[[nodiscard]] std::string HexByte(const std::uint8_t value) {
+    constexpr char digits[] = "0123456789abcdef";
+    std::string result{"0x00"};
+    result[2] = digits[value >> 4U];
+    result[3] = digits[value & 0x0fU];
+    return result;
+}
+
+void AppendFaultInstruction(std::string& rendered, const Frame& frame) {
+    if (!frame.method->code.has_value() ||
+        frame.pc >= frame.method->code->instructions.size()) {
+        return;
+    }
+    const auto& units = frame.method->code->instructions;
+    const auto opcode = static_cast<std::uint8_t>(units[frame.pc] & 0xffU);
+    const auto& info = gen::kDexOpcodeTable[opcode];
+    rendered += "\nDexVM fault instruction: " + std::string(info.name) +
+                " opcode=" + HexByte(opcode);
+    if (info.index_type == gen::DexIndexType::method_ref &&
+        frame.pc + 1U < units.size()) {
+        rendered += " method_idx=" + std::to_string(units[frame.pc + 1U]);
+    }
+    rendered += " dex_pc=" + std::to_string(frame.pc);
+}
+
+[[nodiscard]] std::string RenderFatalErrorWithGuestStack(
+    const DexVmError& error, const DexClassLinker& linker,
+    const InterpreterExecutionState& execution,
+    const VmThreadRuntime* const threads) {
+    std::string rendered = error.what();
+    if (rendered.find(kGuestStackHeader) != std::string::npos) {
+        return rendered;
+    }
+    const auto& frames = execution.frames;
+    const auto shown = std::min(frames.size(), kMaximumFatalStackFrames);
+    rendered += kGuestStackHeader;
+    rendered += " context=" + std::to_string(execution.token);
+    if (const auto thread = FindFatalThread(threads, execution.token);
+        thread.has_value()) {
+        rendered += " guest_thread_id=" +
+                    std::to_string(thread->guest_thread_id) + " thread=\"" +
+                    EscapeThreadName(thread->name) + "\"";
+    } else {
+        rendered += " thread=<unregistered>";
+    }
+    rendered += " frames=" + std::to_string(frames.size()) +
+                " shown=" + std::to_string(shown);
+    if (!frames.empty()) AppendFaultInstruction(rendered, frames.back());
+    auto frame = frames.rbegin();
+    for (std::size_t index = 0; index < shown; ++index, ++frame) {
+        const auto& method = *frame->method;
+        rendered += "\n  #" + std::to_string(index) + " at " +
+                    linker.Class(method.owner).descriptor + "->" + method.name +
+                    method.descriptor + " (dex_pc=" +
+                    std::to_string(frame->pc) + ")";
+    }
+    if (frames.size() > shown) {
+        rendered += "\n  ... " + std::to_string(frames.size() - shown) +
+                    " outer frames omitted";
+    }
+    return rendered;
+}
+
 // Neutral answer for a survey stub: zero/null of the declared return kind.
 [[nodiscard]] VmValue NeutralValueFor(const char return_shorty) {
     switch (return_shorty) {
@@ -481,6 +586,8 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                 }
                 ThrowJava("Ljava/lang/NullPointerException;", error.what());
             } else {
+                const auto rendered = RenderFatalErrorWithGuestStack(
+                    error, *linker, execution, threads);
                 // The call is over: drop its frames so the context stays
                 // usable, and discardable once its thread is joined.
                 while (frames.size() > entry_depth) {
@@ -489,7 +596,7 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                     ReleaseFrameMonitor(frames.back());
                     frames.pop_back();
                 }
-                throw;
+                throw DexVmError(error.Reason(), rendered);
             }
         }
     if (!pending_exception.IsValid())

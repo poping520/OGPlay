@@ -248,3 +248,6 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 BND-24 以 API19 exact APK 的 `eglGetProcAddress + 142/142 GLES2 core` 导入面复验
 catalog provider 和 concrete handler，关闭 survey 的 bounded run 已越过 native load、
 JNI_OnLoad 与 OpenGL 边界；厂商 extension 全集与 GLES3 仍是明确非目标。
+
+Android/EGL/GLES2 sealed export 的 `if constexpr` 分派在 MSVC 下只对模板定义与显式
+实例化范围关闭 C4702；全局 `/W4 /WX` 保持启用，fallback 仍必须明确抛错。

@@ -143,6 +143,12 @@ std::uint32_t EglModule::ResolveProcAddress(
     return 0U;
 }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// VS 18.8 reports the discarded fallback of exhaustive if-constexpr
+// instantiations as unreachable.
+#pragma warning(disable : 4702)
+#endif
 template <std::uint16_t FunctionId>
 std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
     const auto args = call.RegisterArguments();
@@ -410,5 +416,8 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
     }
 OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_DEFINE_EGL)
 #undef OGPLAY_DEFINE_EGL
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace ogplay::runtime

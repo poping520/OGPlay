@@ -183,7 +183,7 @@ TEST_CASE("Android boundary descriptors carry execution routing ids") {
     const auto* android = descriptor_for("libandroid.so", "ALooper_prepare");
     REQUIRE(android != nullptr);
     CHECK(android->route == ogplay::runtime::detail::HleRoute::android);
-    CHECK(android->function_id == 10U);
+    CHECK(android->function_id == 5U);
 
     const auto* gles2 = descriptor_for("libGLESv2.so", "glDrawElements");
     REQUIRE(gles2 != nullptr);

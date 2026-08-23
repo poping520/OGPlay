@@ -2,6 +2,12 @@
 
 ## 职责
 
+- `BoundaryCatalog` 是 Virtual SO SONAME、active export、module-local id 与 dense thunk
+  slot 的唯一冷路径事实来源；API seal 后只读。Bionic namespace 只从该目录识别已实现
+  Virtual SO，未实现 SONAME 不得因历史 Profile 声明而伪装可用。
+- synthetic Virtual SO 首次建立时发布该 module 的完整 active export 集，后续动态装载
+  不得补写或扩展既有 dynsym。
+
 Android native 边界:`android_boundary_hle` 主 Thumb trap 分派、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest
 的 EGL/GLES/Looper/input 导入映射为显式 handler 并搬运 guest 数据,不拥有会话生命周期。

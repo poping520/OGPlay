@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/boundary/boundary_catalog.h"
 
 namespace {
 
@@ -49,7 +50,7 @@ TEST_CASE("Bionic profiles select only API 19 22 and 23") {
     CHECK(api23.api == ogplay::runtime::AndroidApi::api23);
     CHECK(api23.data_directory == "bionic/23");
     CHECK(api19.guest_libraries.size() == 5);
-    CHECK(api19.boundary_libraries.size() == 9);
+    CHECK(ogplay::runtime::AndroidBoundaryCatalog(api19.api).Modules().size() == 5);
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::SelectBionicProfile(21)),
                     ogplay::runtime::BionicProfileError);
 }
@@ -207,4 +208,35 @@ TEST_CASE("Bionic namespace rejects invalid thunks and unresolved boundaries") {
                             ogplay::loader::ResolveElf32Symbols(link_namespace, 0)),
                         ogplay::loader::LinkError);
     }
+}
+
+TEST_CASE("Bionic virtual SO publishes complete exports for late imports") {
+    const auto& profile = ogplay::runtime::SelectBionicProfile(19);
+    const std::vector hle_bindings{
+        ogplay::runtime::BionicHleSymbol{
+            "liblog.so", "__android_log_write",
+            ogplay::memory::GuestAddress{0x70000201U}},
+        ogplay::runtime::BionicHleSymbol{
+            "liblog.so", "__android_log_print",
+            ogplay::memory::GuestAddress{0x70000205U}},
+    };
+    const ogplay::runtime::BionicHleSymbolProvider hle(hle_bindings);
+    const std::vector initial{Module(
+        "app.so", 0x10000000U, {"liblog.so"},
+        {Symbol("__android_log_write", 0, 1, 0)})};
+    const auto base = ogplay::runtime::BuildBionicLinkNamespace(
+        profile, "app.so", initial, hle);
+    REQUIRE(base.modules.size() == 2);
+    CHECK(base.modules[1].symbols.symbols.size() == 3);
+
+    const std::vector plugin{Module(
+        "plugin.so", 0x11000000U, {"liblog.so"},
+        {Symbol("__android_log_print", 0, 1, 0)})};
+    const auto extension = ogplay::runtime::ExtendBionicLinkNamespace(
+        profile, base, "plugin.so", plugin, hle);
+    CHECK(extension.link_namespace.modules.size() == 3);
+    const auto resolved = ogplay::loader::ResolveElf32Symbols(
+        extension.link_namespace, extension.scope, 2);
+    REQUIRE(resolved.values[1].has_value());
+    CHECK(*resolved.values[1] == ogplay::memory::GuestAddress{0x70000205U});
 }

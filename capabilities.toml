@@ -1,5 +1,10 @@
 # 状态只能按 unimplemented -> stub -> partial -> complete 前进。
 
+[runtime.virtual_so_boundary]
+status = "partial"
+test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
+note = "BND-1 建立 API-sealed BoundaryCatalog 与完整 active-export synthetic ELF，移除 Bionic Profile 平行 SONAME 表并闭合 late import；fast transport 与 legacy route 收口由 BND-2..4 完成"
+
 [loader.binary_xml_typed_attributes]
 status = "complete"
 test = "tests/loader/binary_xml_tests.cpp"

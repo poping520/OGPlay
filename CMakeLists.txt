@@ -394,6 +394,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/android_boundary_gles1_fixed.cpp
     src/runtime/boundary/android_boundary_gles1_query.cpp
     src/runtime/boundary/android_boundary_hle.cpp
+    src/runtime/boundary/boundary_catalog.cpp
     src/runtime/boundary/android_boundary_symbols.cpp
     src/runtime/integration/android_link_preflight.cpp
     ${OGPLAY_DEXVM_ANDROID_SOURCES}

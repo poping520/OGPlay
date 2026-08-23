@@ -3,7 +3,6 @@
 #include <array>
 #include <cstdint>
 #include <limits>
-#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -33,8 +32,7 @@ constexpr std::uint32_t kThunkStride = 4U;
 }
 
 [[nodiscard]] std::uint16_t FunctionIdFor(const HleRoute route,
-                                          const std::string_view name,
-                                          const std::size_t fallback) {
+                                          const std::string_view name) {
     if (route == HleRoute::gles1 || route == HleRoute::gles1_extension ||
         route == HleRoute::gles2) {
         const auto api = route == HleRoute::gles1
@@ -48,10 +46,23 @@ constexpr std::uint32_t kThunkStride = 4U;
         }
         return *id;
     }
-    if (fallback > (std::numeric_limits<std::uint16_t>::max)()) {
-        throw std::length_error("Android boundary function id overflows");
+    if (route == HleRoute::bionic_memory) {
+        static constexpr std::array names{"memcpy", "memmove", "memset",
+                                          "memcmp", "strlen"};
+        const auto found = std::find(names.begin(), names.end(), name);
+        if (found == names.end()) {
+            throw std::logic_error("unknown Bionic override symbol");
+        }
+        return static_cast<std::uint16_t>(found - names.begin());
     }
-    return static_cast<std::uint16_t>(fallback);
+    const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
+    for (const auto& module : catalog.Modules()) {
+        const auto found = std::find_if(
+            module.exports.begin(), module.exports.end(),
+            [&](const auto& export_) { return export_.name == name; });
+        if (found != module.exports.end()) return found->local_id;
+    }
+    throw std::logic_error("boundary symbol has no module-local id");
 }
 
 [[nodiscard]] std::uint8_t ParameterCountFor(const HleRoute route,
@@ -70,95 +81,33 @@ constexpr std::uint32_t kThunkStride = 4U;
         }
         return static_cast<std::uint8_t>(count);
     }
-    static constexpr std::array<std::uint8_t, 42> counts{
-        3, 3, 3, 3, 1,
-        0, 1, 2, 2, 2, 1, 6, 4, 5, 1, 2, 2, 3, 1, 1, 1, 1, 2, 2, 4,
-        1, 3, 5, 4, 4, 4, 4, 4, 2, 2, 2, 1,
-        4, 4, 1, 3, 3,
-    };
-    if (function_id >= counts.size()) {
-        throw std::logic_error("non-GLES function id is outside its catalog");
+    if (route == HleRoute::bionic_memory) {
+        static constexpr std::array<std::uint8_t, 5> counts{3, 3, 3, 3, 1};
+        return counts.at(function_id);
     }
-    return counts[function_id];
+    throw std::logic_error("non-GLES parameter count requires module metadata");
 }
 
 }  // namespace
 
 std::vector<BionicHleSymbol> BuildAndroidBoundarySymbols() {
-    static constexpr std::array<std::pair<std::string_view, std::string_view>, 42> names{{
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 5> overrides{{
         {"libc.so", "memcpy"}, {"libc.so", "memmove"}, {"libc.so", "memset"},
         {"libc.so", "memcmp"}, {"libc.so", "strlen"},
-        {"libandroid.so", "AConfiguration_new"},
-        {"libandroid.so", "AConfiguration_delete"},
-        {"libandroid.so", "AConfiguration_fromAssetManager"},
-        {"libandroid.so", "AConfiguration_getLanguage"},
-        {"libandroid.so", "AConfiguration_getCountry"},
-        {"libandroid.so", "ALooper_prepare"},
-        {"libandroid.so", "ALooper_addFd"},
-        {"libandroid.so", "ALooper_pollAll"},
-        {"libandroid.so", "AInputQueue_attachLooper"},
-        {"libandroid.so", "AInputQueue_detachLooper"},
-        {"libandroid.so", "AInputQueue_getEvent"},
-        {"libandroid.so", "AInputQueue_preDispatchEvent"},
-        {"libandroid.so", "AInputQueue_finishEvent"},
-        {"libandroid.so", "AInputEvent_getType"},
-        {"libandroid.so", "AKeyEvent_getAction"},
-        {"libandroid.so", "AKeyEvent_getKeyCode"},
-        {"libandroid.so", "AMotionEvent_getAction"},
-        {"libandroid.so", "AMotionEvent_getX"},
-        {"libandroid.so", "AMotionEvent_getY"},
-        {"libandroid.so", "ANativeWindow_setBuffersGeometry"},
-        {"libEGL.so", "eglGetDisplay"}, {"libEGL.so", "eglInitialize"},
-        {"libEGL.so", "eglChooseConfig"}, {"libEGL.so", "eglGetConfigAttrib"},
-        {"libEGL.so", "eglCreateWindowSurface"}, {"libEGL.so", "eglCreateContext"},
-        {"libEGL.so", "eglMakeCurrent"}, {"libEGL.so", "eglQuerySurface"},
-        {"libEGL.so", "eglSwapBuffers"}, {"libEGL.so", "eglDestroyContext"},
-        {"libEGL.so", "eglDestroySurface"}, {"libEGL.so", "eglTerminate"},
-        {"libGLESv2.so", "glViewport"}, {"libGLESv2.so", "glClearColor"},
-        {"libGLESv2.so", "glClear"}, {"liblog.so", "__android_log_print"},
-        {"liblog.so", "__android_log_write"},
     }};
     std::vector<BionicHleSymbol> result;
-    result.reserve(names.size() + gles::GlesDispatchTable::FunctionCount() +
-                   gles::GlesFunctionCount(gles::GlesApi::gles1) +
-                   gles::GlesFunctionCount(gles::GlesApi::gles1_extensions));
-    for (std::size_t index = 0; index < names.size(); ++index) {
-        result.push_back({std::string(names[index].first), std::string(names[index].second),
-                          memory::GuestAddress{kBionicHleThunkBegin +
-                                               static_cast<std::uint32_t>(index) *
-                                                   kThunkStride + 1U}});
+    const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
+    result.reserve(catalog.SlotCount() + overrides.size());
+    for (const auto& module : catalog.Modules()) {
+        for (const auto& export_ : module.exports) {
+            result.push_back({module.soname, export_.name, export_.address});
+        }
     }
-    for (std::size_t index = 0; index < gles::GlesDispatchTable::FunctionCount(); ++index) {
-        const auto function = gles::GlesDispatchTable::Describe(
-            static_cast<gles::GlesThunkId>(index));
-        const auto already_registered = std::ranges::any_of(
-            result, [&function](const BionicHleSymbol& candidate) {
-                return candidate.library == "libGLESv2.so" &&
-                       candidate.symbol == function.name;
-            });
-        if (already_registered) continue;
-        result.push_back({"libGLESv2.so", std::string(function.name),
+    for (const auto& [library, symbol] : overrides) {
+        result.push_back({std::string(library), std::string(symbol),
                           memory::GuestAddress{kBionicHleThunkBegin +
-                                               static_cast<std::uint32_t>(result.size()) *
-                                                   kThunkStride + 1U}});
-    }
-    for (std::size_t index = 0;
-         index < gles::GlesFunctionCount(gles::GlesApi::gles1); ++index) {
-        const auto function = gles::DescribeGlesFunction(
-            gles::GlesApi::gles1, static_cast<gles::GlesThunkId>(index));
-        result.push_back({"libGLESv1_CM.so", std::string(function.name),
-                          memory::GuestAddress{kBionicHleThunkBegin +
-                                               static_cast<std::uint32_t>(result.size()) *
-                                                   kThunkStride + 1U}});
-    }
-    for (std::size_t index = 0;
-         index < gles::GlesFunctionCount(gles::GlesApi::gles1_extensions); ++index) {
-        const auto function = gles::DescribeGlesFunction(
-            gles::GlesApi::gles1_extensions, static_cast<gles::GlesThunkId>(index));
-        result.push_back({"libGLESv1_CM.so", std::string(function.name),
-                          memory::GuestAddress{kBionicHleThunkBegin +
-                                               static_cast<std::uint32_t>(result.size()) *
-                                                   kThunkStride + 1U}});
+                              static_cast<std::uint32_t>(result.size()) *
+                                  kThunkStride + 1U}});
     }
     return result;
 }
@@ -176,9 +125,29 @@ std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
             throw std::logic_error("Android boundary thunk catalog is not dense");
         }
         const auto route = RouteFor(symbol.library, symbol.symbol);
-        const auto function_id = FunctionIdFor(route, symbol.symbol, index);
+        const auto function_id = FunctionIdFor(route, symbol.symbol);
+        auto parameter_count = std::uint8_t{};
+        if (route == HleRoute::bionic_memory || route == HleRoute::gles1 ||
+            route == HleRoute::gles1_extension || route == HleRoute::gles2) {
+            parameter_count = ParameterCountFor(route, function_id);
+        } else {
+            const auto* module = AndroidBoundaryCatalog(AndroidApi::api19)
+                                     .FindModule(symbol.library);
+            if (module == nullptr) {
+                throw std::logic_error("boundary descriptor module is missing");
+            }
+            const auto export_ = std::find_if(
+                module->exports.begin(), module->exports.end(),
+                [&](const auto& candidate) {
+                    return candidate.name == symbol.symbol;
+                });
+            if (export_ == module->exports.end()) {
+                throw std::logic_error("boundary descriptor export is missing");
+            }
+            parameter_count = export_->parameter_count;
+        }
         result.push_back({symbol.library, symbol.symbol, route, function_id,
-                          ParameterCountFor(route, function_id)});
+                          parameter_count});
     }
     return result;
 }

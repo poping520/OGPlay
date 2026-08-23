@@ -28,7 +28,6 @@ struct BionicProfile final {
     std::string_view android_release;
     std::string_view data_directory;
     std::span<const std::string_view> guest_libraries;
-    std::span<const std::string_view> boundary_libraries;
 };
 
 inline constexpr std::uint32_t kBionicHleThunkBegin = 0x70000000U;
@@ -58,6 +57,8 @@ public:
 
     [[nodiscard]] std::optional<memory::GuestAddress> Lookup(
         std::string_view library, std::string_view symbol) const;
+    [[nodiscard]] std::vector<BionicHleSymbol> Exports(
+        std::string_view library) const;
     [[nodiscard]] std::optional<core::SymbolizedAddress> Resolve(
         std::uint64_t address) const override;
 

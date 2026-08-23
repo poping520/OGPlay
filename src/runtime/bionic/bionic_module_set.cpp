@@ -1,5 +1,7 @@
 #include "ogplay/runtime/bionic/bionic_module_set.h"
 
+#include "ogplay/runtime/boundary/boundary_catalog.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -138,7 +140,7 @@ BionicModuleSet BuildBionicModuleSet(
         const auto dynamic = InspectModule(modules[index], index != 0U);
         for (const auto& needed : dynamic.needed) {
             if (selected.contains(needed) ||
-                Contains(profile.boundary_libraries, needed)) {
+                IsAndroidBoundaryLibrary(profile.api, needed)) {
                 continue;
             }
             if (!Contains(profile.guest_libraries, needed)) {

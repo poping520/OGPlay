@@ -1,5 +1,7 @@
 #include "ogplay/runtime/bionic/bionic_profile.h"
 
+#include "ogplay/runtime/boundary/boundary_catalog.h"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -18,24 +20,15 @@ namespace {
 
 constexpr std::array<std::string_view, 5> kGuestLibraries{
     "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so"};
-constexpr std::array<std::string_view, 9> kBoundaryLibraries{
-    "libEGL.so",       "libGLESv1_CM.so", "libGLESv2.so",
-    "libGLESv3.so",   "libOpenSLES.so",  "libandroid.so",
-    "libjnigraphics.so", "liblog.so",     "libmediandk.so"};
 constexpr std::array<std::string_view, 5> kInterceptedLibcSymbols{
     "memcmp", "memcpy", "memmove", "memset", "strlen"};
 
 constexpr BionicProfile kApi19{AndroidApi::api19, "4.4", "bionic/19",
-                               kGuestLibraries, kBoundaryLibraries};
+                               kGuestLibraries};
 constexpr BionicProfile kApi22{AndroidApi::api22, "5.1", "bionic/22",
-                               kGuestLibraries, kBoundaryLibraries};
+                               kGuestLibraries};
 constexpr BionicProfile kApi23{AndroidApi::api23, "6.0", "bionic/23",
-                               kGuestLibraries, kBoundaryLibraries};
-
-[[nodiscard]] bool Contains(const std::span<const std::string_view> values,
-                            const std::string_view value) {
-    return std::find(values.begin(), values.end(), value) != values.end();
-}
+                               kGuestLibraries};
 
 [[nodiscard]] std::string_view CanonicalName(
     const loader::Elf32LinkModule& module) {
@@ -72,19 +65,16 @@ void BindInterceptedExports(loader::Elf32LinkModule& module,
 
 [[nodiscard]] loader::Elf32LinkModule MakeBoundaryModule(
     const std::string_view library,
-    const std::set<std::string, std::less<>>& imported_symbols,
     const BionicHleSymbolProvider& provider) {
     loader::Elf32LinkModule module;
     module.name = std::string(library);
     module.dynamic.soname = module.name;
     module.symbols.symbols.push_back(
         {"", memory::GuestAddress{}, 0, 0, 0, 0, 0});
-    for (const auto& symbol : imported_symbols) {
-        const auto address = provider.Lookup(library, symbol);
-        if (!address.has_value()) continue;
+    for (const auto& symbol : provider.Exports(library)) {
         constexpr std::uint16_t kSectionAbsolute = 0xfff1;
         module.symbols.symbols.push_back(
-            {symbol, *address, 4, 1, 2, 0, kSectionAbsolute});
+            {symbol.symbol, symbol.address, 4, 1, 2, 0, kSectionAbsolute});
     }
     return module;
 }
@@ -125,6 +115,15 @@ std::optional<memory::GuestAddress> BionicHleSymbolProvider::Lookup(
     return found->address;
 }
 
+std::vector<BionicHleSymbol> BionicHleSymbolProvider::Exports(
+    const std::string_view library) const {
+    std::vector<BionicHleSymbol> result;
+    for (const auto& symbol : symbols_) {
+        if (symbol.library == library) result.push_back(symbol);
+    }
+    return result;
+}
+
 std::optional<core::SymbolizedAddress> BionicHleSymbolProvider::Resolve(
     const std::uint64_t address) const {
     const auto found = std::find_if(
@@ -156,7 +155,7 @@ BionicSymbolRoute RouteBionicSymbol(const BionicProfile& profile,
     if (library.empty() || symbol.empty()) {
         throw BionicProfileError("Bionic route requires a library and symbol");
     }
-    if (Contains(profile.boundary_libraries, library)) {
+    if (IsAndroidBoundaryLibrary(profile.api, library)) {
         return BionicSymbolRoute::host_boundary;
     }
     if (library == "libc.so" &&
@@ -282,21 +281,15 @@ loader::Elf32LinkNamespace BuildBionicLinkNamespace(
     std::vector<loader::Elf32LinkModule> modules(guest_modules.begin(),
                                                  guest_modules.end());
     std::set<std::string, std::less<>> present_names;
-    std::set<std::string, std::less<>> imported_symbols;
     for (auto& module : modules) {
         const auto library = CanonicalName(module);
-        if (Contains(profile.boundary_libraries, library)) {
+        if (IsAndroidBoundaryLibrary(profile.api, library)) {
             throw BionicProfileError(
                 "HLE boundary library must not be supplied as a guest ELF: " +
                 std::string(library));
         }
         present_names.insert(module.name);
         present_names.insert(std::string(library));
-        for (const auto& symbol : module.symbols.symbols) {
-            if (symbol.section_index == 0 && !symbol.name.empty()) {
-                imported_symbols.insert(symbol.name);
-            }
-        }
         BindInterceptedExports(module, profile, hle_symbols);
     }
 
@@ -304,14 +297,13 @@ loader::Elf32LinkNamespace BuildBionicLinkNamespace(
     for (const auto& module : modules) {
         for (const auto& needed : module.dynamic.needed) {
             if (!present_names.contains(needed) &&
-                Contains(profile.boundary_libraries, needed)) {
+                IsAndroidBoundaryLibrary(profile.api, needed)) {
                 required_boundaries.insert(needed);
             }
         }
     }
     for (const auto& library : required_boundaries) {
-        modules.push_back(
-            MakeBoundaryModule(library, imported_symbols, hle_symbols));
+        modules.push_back(MakeBoundaryModule(library, hle_symbols));
     }
     return loader::BuildElf32LinkNamespace(root_name, modules);
 }
@@ -325,7 +317,6 @@ loader::Elf32LinkNamespaceExtension ExtendBionicLinkNamespace(
     std::vector<loader::Elf32LinkModule> modules(guest_modules.begin(),
                                                  guest_modules.end());
     std::set<std::string, std::less<>> present_names;
-    std::set<std::string, std::less<>> imported_symbols;
     const auto index_present = [&](const loader::Elf32LinkModule& module) {
         present_names.insert(module.name);
         present_names.insert(std::string(CanonicalName(module)));
@@ -333,17 +324,12 @@ loader::Elf32LinkNamespaceExtension ExtendBionicLinkNamespace(
     for (const auto& module : link_namespace.modules) index_present(module);
     for (auto& module : modules) {
         const auto library = CanonicalName(module);
-        if (Contains(profile.boundary_libraries, library)) {
+        if (IsAndroidBoundaryLibrary(profile.api, library)) {
             throw BionicProfileError(
                 "HLE boundary library must not be supplied as a guest ELF: " +
                 std::string(library));
         }
         index_present(module);
-        for (const auto& symbol : module.symbols.symbols) {
-            if (symbol.section_index == 0 && !symbol.name.empty()) {
-                imported_symbols.insert(symbol.name);
-            }
-        }
         BindInterceptedExports(module, profile, hle_symbols);
     }
 
@@ -351,14 +337,13 @@ loader::Elf32LinkNamespaceExtension ExtendBionicLinkNamespace(
     for (const auto& module : modules) {
         for (const auto& needed : module.dynamic.needed) {
             if (!present_names.contains(needed) &&
-                Contains(profile.boundary_libraries, needed)) {
+                IsAndroidBoundaryLibrary(profile.api, needed)) {
                 required_boundaries.insert(needed);
             }
         }
     }
     for (const auto& library : required_boundaries) {
-        modules.push_back(
-            MakeBoundaryModule(library, imported_symbols, hle_symbols));
+        modules.push_back(MakeBoundaryModule(library, hle_symbols));
     }
     return loader::ExtendElf32LinkNamespace(
         link_namespace, root_name, modules);

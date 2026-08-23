@@ -1,8 +1,13 @@
 # 当前状态
 
-更新：2026-08-21 · DVM-69 Reflection metadata closure
+更新：2026-08-23 · BND-1 Virtual SO catalog
 
 ## 当前阶段
+
+- **Native Boundary 重构**：BND-1 已建立 API-sealed `BoundaryCatalog`，以 5 个实际有
+  handler 的 Virtual SO 作为 SONAME/export 唯一事实来源；Bionic Profile 的 9 项平行
+  boundary 列表已删除。synthetic module 从完整 provider exports 建 dynsym，late import
+  可直接解析既有 Virtual SO；legacy slow transport 暂保留给 BND-2。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

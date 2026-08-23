@@ -1,5 +1,7 @@
 #include "ogplay/runtime/integration/native_library_loader.h"
 
+#include "ogplay/runtime/boundary/boundary_catalog.h"
+
 #include <algorithm>
 #include <condition_variable>
 #include <cstddef>
@@ -176,8 +178,7 @@ public:
          const std::span<const BionicModuleSource> system_libraries,
          core::Logger* logger)
         : process_(&process), libraries_(&libraries),
-          boundary_libraries_(bionic.boundary_libraries.begin(),
-                              bionic.boundary_libraries.end()),
+          boundary_api_(bionic.api),
           logger_(logger) {
         system_libraries_.reserve(system_libraries.size());
         for (const auto& source : system_libraries) {
@@ -304,9 +305,8 @@ private:
     };
 
     [[nodiscard]] bool IsBoundary(const std::string_view name) const {
-        return std::find(boundary_libraries_.begin(),
-                         boundary_libraries_.end(), name) !=
-               boundary_libraries_.end();
+        return boundary_api_.has_value() &&
+               IsAndroidBoundaryLibrary(*boundary_api_, name);
     }
 
     [[nodiscard]] const OwnedSystemLibrary* FindSystemLibrary(
@@ -506,7 +506,7 @@ private:
 
     AndroidGuestProcess* process_{};
     const loader::ApkSelectedNativeLibraries* libraries_{};
-    std::vector<std::string_view> boundary_libraries_;
+    std::optional<AndroidApi> boundary_api_;
     std::vector<OwnedSystemLibrary> system_libraries_;
     core::Logger* logger_{};
     mutable std::mutex mutex_;

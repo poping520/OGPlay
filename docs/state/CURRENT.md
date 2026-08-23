@@ -27,7 +27,10 @@
   named handler、generated GLES catalog 关联 GLES handler；Virtual SO boundary hot
   implementation 不再使用 `std::function`，新增 architecture gate 与 0/4/stack/GLES/JNI/
   forced-slow end-to-end benchmark。A32 最小 typed layer 已提供 `GuestPtr<T>`、
-  `GuestCString` 与 scalar bit decode。
+  `GuestCString` 与 scalar bit decode。验收遗留已进一步关闭：libc 五个 override 以真实
+  参数个数分别 direct-bind，删除共享 active PC，并以不同 guest thread 并发回归覆盖；
+  libandroid/EGL/GLES1/GLES2 的 export 实现体已迁入各 concrete module，中央
+  `Impl::Invoke*` 不再存在，Android looper/input mutable state 也由模块自有。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

@@ -14,7 +14,9 @@ endforeach()
 foreach(forbidden IN ITEMS
         "InvokeModule" "FastBinding" "hot_bindings_"
         "AndroidFunction" "EglFunction" "InvokeLegacyFast"
-        "active_pc_" "SetActivePc")
+        "active_pc_" "SetActivePc"
+        "InvokeAndroid" "InvokeEgl" "InvokeGles1" "InvokeGles2"
+        "runtime_.Invoke")
     string(FIND "${boundary}" "${forbidden}" found)
     if(NOT found EQUAL -1)
         message(FATAL_ERROR
@@ -28,6 +30,7 @@ foreach(required IN ITEMS
         "struct Gles1Module final"
         "struct Gles2Module final"
         "struct LogModule final"
+        "struct LibcOverrideModule final"
         "return hot_[slot].invoke(hot_[slot].self, call)")
     string(FIND "${boundary}" "${required}" found)
     if(found EQUAL -1)

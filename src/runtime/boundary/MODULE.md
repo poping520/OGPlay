@@ -21,7 +21,9 @@
   erase；descriptor 只保留 module-local id 与签名冷数据。每个 active export 在 seal 时
   直接生成 `{export-specific fn, concrete module*}`，fast/slow transport 共用该 handler；
   调用期不再读取 SONAME/local id，不经过 module-level route、`HleRoute` 或全局 id。
-  EGL/GLES1/GLES2 module 继续显式共享唯一 `GuestGlContext`，不复制 graphics state。
+  export 实现体必须位于 concrete module，禁止转发到 `AndroidBoundaryHle::Impl::Invoke*`；
+  Android looper/input 状态由 Android module 自有，EGL/GLES1/GLES2 module 继续通过构造
+  注入共享唯一 `GuestGlContext` 和 graphics runtime，不复制 graphics state。
 
 Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest
@@ -147,9 +149,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   client attribute 猜测索引范围。draw renderer 由统一 Context 的 current program、fixed
   client-array 与 programmable attribute 事实共同决定,symbol 所属 library 不拥有
   renderer 或 context state。
-- boundary thunk catalog 必须保持从 `kBionicHleThunkBegin` 开始的 dense 4-byte slot;
-  正常执行链只以 dense descriptor 的 route/function id 路由,library/name 只服务于 ELF
-  查询、诊断与 trace 渲染,禁止重新参与 handler 选择。
+- boundary thunk catalog 必须保持从 `kBionicHleThunkBegin` 开始的 dense 4-byte slot；seal
+  后正常执行链只以 slot 读取 `{fn,self}` 并调用 export-specific handler。local id、library
+  与 name 只服务冷路径 metadata、ELF 查询、诊断与 trace，禁止重新参与 handler 选择。
 - `A32CallFrame` 按 descriptor 的精确 parameter count 固定存储 r0-r3,并以一次 guest
   bulk read 解码剩余栈参数;handler 不得自行逐字读取 guest 栈。普通指针/string 参数用
   `GuestPtr<T>`/`GuestCString` 保持 guest address identity，禁止转换为 host pointer；

@@ -3,7 +3,7 @@
 [runtime.virtual_so_boundary]
 status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_link_preflight_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，删除 InvokeModule/module enum/FastBinding/std::function hot glue，EGL/GLES module 构造注入并共享唯一 GuestGlContext"
+note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，具体 export 实现归属各 final module，中央 Impl::Invoke*、InvokeModule/module enum/FastBinding/std::function hot glue 已删除，EGL/GLES module 构造注入并共享唯一 GuestGlContext"
 
 [runtime.fast_host_call]
 status = "complete"
@@ -12,8 +12,8 @@ note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-pa
 
 [runtime.guest_symbol_override]
 status = "complete"
-test = "tests/runtime/bionic_profile_tests.cpp"
-note = "BND-3 将真实 guest libc 的 memcpy/memmove/memset/memcmp/strlen host intercept 收敛为独立 GuestSymbolOverrideDescriptor catalog，不再属于 Virtual SO metadata"
+test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+note = "BND-3 将真实 guest libc 的 memcpy/memmove/memset/memcmp/strlen host intercept 收敛为独立 GuestSymbolOverrideDescriptor metadata；五个 export 按真实参数个数分别 direct-bind 并共享 fast/slow binding，不使用共享 PC/function id，且有跨 guest thread 并发回归"
 
 [loader.binary_xml_typed_attributes]
 status = "complete"

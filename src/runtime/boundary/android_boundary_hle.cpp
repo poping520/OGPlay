@@ -256,18 +256,10 @@ public:
         return true;
     }
     void NotifyFileWrite() {
-        {
-            std::scoped_lock lock(mutex_);
-            ++pending_command_writes_;
-        }
-        ready_.notify_all();
+        android_module_.NotifyFileWrite();
     }
     void PushInput(const AndroidBoundaryInput& input) {
-        {
-            std::scoped_lock lock(mutex_);
-            inputs_.push_back(input);
-        }
-        ready_.notify_all();
+        android_module_.PushInput(input);
     }
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame() {
         std::scoped_lock lock(mutex_);
@@ -357,14 +349,151 @@ private:
     struct AndroidModule final {
         explicit AndroidModule(Impl& runtime) noexcept : runtime_(runtime) {}
         [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
+        void NotifyFileWrite() {
+            {
+                std::scoped_lock lock(mutex_);
+                ++pending_command_writes_;
+            }
+            ready_.notify_all();
+        }
+        void PushInput(const AndroidBoundaryInput& input) {
+            {
+                std::scoped_lock lock(mutex_);
+                inputs_.push_back(input);
+            }
+            ready_.notify_all();
+        }
 #define OGPLAY_DECLARE_ANDROID(name, id, count, method)                         \
         std::uint32_t method(const A32CallFrame& call) {                        \
-            return runtime_.InvokeAndroid<id>(call);                            \
+            return ExecuteExport<id>(call);                                    \
         }
         OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_DECLARE_ANDROID)
 #undef OGPLAY_DECLARE_ANDROID
     private:
+        std::uint32_t PollAll(const std::array<std::uint32_t, 4>& args,
+                              const std::uint64_t thread_id) {
+            const auto timeout = std::bit_cast<std::int32_t>(args[0]);
+            std::unique_lock lock(mutex_);
+            const auto has_source = [this] {
+                return pending_command_writes_ != 0 || !inputs_.empty();
+            };
+            if (!has_source()) {
+                if (timeout < 0) {
+                    ready_.wait(lock, has_source);
+                } else if (timeout > 0) {
+                    ready_.wait_for(
+                        lock, std::chrono::milliseconds(timeout), has_source);
+                }
+            }
+            std::uint32_t ident{};
+            std::uint32_t data{};
+            if (pending_command_writes_ != 0) {
+                --pending_command_writes_;
+                ident = command_ident_;
+                data = command_data_;
+            } else if (!inputs_.empty()) {
+                ident = input_ident_;
+                data = input_data_;
+            } else {
+                return SignedResult(-1);
+            }
+            lock.unlock();
+            runtime_.Write32(args[1], 0, thread_id);
+            runtime_.Write32(args[2], 1, thread_id);
+            runtime_.Write32(args[3], data, thread_id);
+            return ident;
+        }
+
+        template <std::uint16_t FunctionId>
+        std::uint32_t ExecuteExport(const A32CallFrame& call) {
+            const auto args = call.RegisterArguments();
+            const auto tid = call.ThreadId();
+            if constexpr (FunctionId == 0U) return kFakeConfiguration;
+            if constexpr (FunctionId == 1U || FunctionId == 2U ||
+                          FunctionId == 9U || FunctionId == 11U ||
+                          FunctionId == 19U) return 0;
+            if constexpr (FunctionId == 3U || FunctionId == 4U) {
+                const auto output = call.Pointer<std::byte>(1);
+                if (!output.IsNull()) {
+                    const std::array bytes{std::byte{'e'}, std::byte{'n'}};
+                    runtime_.address_space_.Write(output.Address(), bytes, tid);
+                }
+                return 0;
+            }
+            if constexpr (FunctionId == 5U) return kFakeLooper;
+            if constexpr (FunctionId == 6U) {
+                std::scoped_lock lock(mutex_);
+                command_ident_ = args[2];
+                command_data_ = call.Argument(5);
+                return 1;
+            }
+            if constexpr (FunctionId == 7U) return PollAll(args, tid);
+            if constexpr (FunctionId == 8U) {
+                std::scoped_lock lock(mutex_);
+                input_ident_ = args[2];
+                input_data_ = call.Argument(4);
+                return 0;
+            }
+            if constexpr (FunctionId == 10U) {
+                std::scoped_lock lock(mutex_);
+                if (inputs_.empty()) return SignedResult(-1);
+                active_input_ = inputs_.front();
+                inputs_.pop_front();
+                runtime_.Write32(args[1], kFakeInputEvent, tid);
+                return 0;
+            }
+            if constexpr (FunctionId == 12U) {
+                std::scoped_lock lock(mutex_);
+                active_input_.reset();
+                return 0;
+            }
+            if constexpr (FunctionId == 13U) {
+                std::scoped_lock lock(mutex_);
+                return active_input_.has_value() &&
+                               active_input_->type ==
+                                   AndroidBoundaryInputType::key
+                           ? 1U : 2U;
+            }
+            if constexpr (FunctionId == 14U) {
+                std::scoped_lock lock(mutex_);
+                return active_input_.has_value() && active_input_->pressed
+                           ? 0U : 1U;
+            }
+            if constexpr (FunctionId == 15U) {
+                std::scoped_lock lock(mutex_);
+                return active_input_.has_value()
+                           ? static_cast<std::uint32_t>(
+                                 active_input_->code)
+                           : 0U;
+            }
+            if constexpr (FunctionId == 16U) {
+                std::scoped_lock lock(mutex_);
+                if (!active_input_.has_value() ||
+                    active_input_->type ==
+                        AndroidBoundaryInputType::pointer_motion) return 2U;
+                return active_input_->pressed ? 0U : 1U;
+            }
+            if constexpr (FunctionId == 17U || FunctionId == 18U) {
+                std::scoped_lock lock(mutex_);
+                const auto value = !active_input_.has_value()
+                                       ? 0.0F
+                                       : FunctionId == 17U
+                                             ? active_input_->x
+                                             : active_input_->y;
+                return std::bit_cast<std::uint32_t>(value);
+            }
+            throw std::logic_error("unbound concrete libandroid export");
+        }
         Impl& runtime_;
+        std::mutex mutex_;
+        std::condition_variable ready_;
+        std::uint64_t pending_command_writes_{};
+        std::uint32_t command_ident_{};
+        std::uint32_t command_data_{};
+        std::uint32_t input_ident_{};
+        std::uint32_t input_data_{};
+        std::deque<AndroidBoundaryInput> inputs_;
+        std::optional<AndroidBoundaryInput> active_input_;
     };
 
     struct EglModule final {
@@ -372,11 +501,87 @@ private:
         [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
 #define OGPLAY_DECLARE_EGL(name, id, count, method)                             \
         std::uint32_t method(const A32CallFrame& call) {                        \
-            return runtime_.InvokeEgl<id>(call);                                \
+            return ExecuteExport<id>(call);                                    \
         }
         OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_DECLARE_EGL)
 #undef OGPLAY_DECLARE_EGL
     private:
+        template <std::uint16_t FunctionId>
+        std::uint32_t ExecuteExport(const A32CallFrame& call) {
+            const auto args = call.RegisterArguments();
+            const auto tid = call.ThreadId();
+            if constexpr (FunctionId == 0U) return kFakeDisplay;
+            if constexpr (FunctionId == 1U) {
+                runtime_.Write32(
+                    call.Pointer<std::uint32_t>(1).Address().Value(), 1, tid);
+                runtime_.Write32(
+                    call.Pointer<std::uint32_t>(2).Address().Value(), 5, tid);
+                return 1;
+            }
+            if constexpr (FunctionId == 2U) {
+                runtime_.Write32(args[2], kFakeConfig, tid);
+                runtime_.Write32(call.Argument(4), 1, tid);
+                return 1;
+            }
+            if constexpr (FunctionId == 3U) {
+                runtime_.Write32(args[3], 0, tid);
+                return 1;
+            }
+            if constexpr (FunctionId == 4U) return kFakeSurface;
+            if constexpr (FunctionId == 5U) return kFakeContext;
+            if constexpr (FunctionId == 6U) {
+                if (runtime_.managed_surface_) {
+                    throw std::runtime_error(
+                        "guest EGL cannot replace a host-managed ANGLE surface");
+                }
+                if (args[3] != 0 && !runtime_.angle_frame_.has_value()) {
+                    runtime_.angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
+                        runtime_.backend_, runtime_.layout_.render_width,
+                        runtime_.layout_.render_height));
+                    runtime_.gl_owner_ = std::this_thread::get_id();
+                    runtime_.InitializeGuestGlDefaults();
+                    std::scoped_lock lock(runtime_.mutex_);
+                    runtime_.gpu_render_target_ready_ = true;
+                } else if (args[3] == 0 && runtime_.gl_owner_.has_value()) {
+                    runtime_.ReleaseManagedSurfaceFromCallingThread();
+                }
+                return 1;
+            }
+            if constexpr (FunctionId == 7U) {
+                runtime_.Write32(
+                    args[3], args[2] == kEglWidth
+                                 ? runtime_.layout_.logical_width
+                                 : args[2] == kEglHeight
+                                       ? runtime_.layout_.logical_height : 0,
+                    tid);
+                return 1;
+            }
+            if constexpr (FunctionId == 8U) {
+                if (!runtime_.angle_frame_.has_value()) {
+                    throw std::runtime_error(
+                        "eglSwapBuffers has no current ANGLE frame");
+                }
+                runtime_.PublishFrame();
+                return 1;
+            }
+            if constexpr (FunctionId == 9U || FunctionId == 10U) return 1;
+            if constexpr (FunctionId == 11U) {
+                if (runtime_.managed_surface_) {
+                    throw std::runtime_error(
+                        "guest EGL cannot terminate a host-managed ANGLE surface");
+                }
+                runtime_.gl_owner_.reset();
+                runtime_.angle_frame_.reset();
+                runtime_.gles_dispatch_.Reset();
+                runtime_.gles1_state_.Reset();
+                runtime_.gles1_legacy_state_.Reset();
+                runtime_.gles1_draw_state_.Reset();
+                std::scoped_lock lock(runtime_.mutex_);
+                runtime_.gpu_render_target_ready_ = false;
+                return 1;
+            }
+            throw std::logic_error("unbound concrete libEGL export");
+        }
         Impl& runtime_;
     };
 
@@ -385,7 +590,53 @@ private:
         [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
         template <gles::GlesApi Api, gles::GlesThunkId Id>
         std::uint32_t Invoke(const A32CallFrame& call) {
-            return runtime_.InvokeGles1<Api, Id>(call);
+            constexpr bool draw_call = Api == gles::GlesApi::gles1 &&
+                                       (Id == 35U || Id == 36U);
+            const auto symbol = gles::DescribeGlesFunction(Api, Id).name;
+            if constexpr (draw_call) {
+                if (runtime_.gl_context_.SelectDrawRenderer(
+                        runtime_.gles1_draw_state_
+                            .Array(detail::kGles1VertexArray, 0x84C0U).enabled,
+                        runtime_.gles_dispatch_.HasEnabledVertexAttribute()) ==
+                    GuestGlRenderer::programmable) {
+                    const auto result = runtime_.gles_dispatch_.Dispatch(
+                        Id == 35U ? 40U : 41U, call,
+                        runtime_.angle_frame_.has_value()
+                            ? &*runtime_.angle_frame_ : nullptr);
+                    if (!result.has_value()) {
+                        throw std::logic_error(
+                            "selected programmable draw has no GLES2 handler");
+                    }
+                    std::scoped_lock lock(runtime_.mutex_);
+                    ++runtime_.gpu_stats_.draws;
+                    ++runtime_.gpu_stats_.draw_targets.front().draws;
+                    return *result;
+                }
+            }
+            auto& dispatch = Api == gles::GlesApi::gles1
+                                 ? runtime_.gles1_dispatch_
+                                 : runtime_.gles1_extensions_dispatch_;
+            if constexpr (!draw_call) {
+                return dispatch.Invoke(Id, call.Arguments(), call.ThreadId());
+            }
+            runtime_.gl_context_.Native().BeginFixedDraw();
+            try {
+                const auto result = dispatch.Invoke(
+                    Id, call.Arguments(), call.ThreadId());
+                runtime_.gles_dispatch_.RestoreNativeState(
+                    runtime_.RequireFrame(symbol));
+                runtime_.gl_context_.Native().EndFixedDraw();
+                return result;
+            } catch (...) {
+                try {
+                    runtime_.gles_dispatch_.RestoreNativeState(
+                        runtime_.RequireFrame(symbol));
+                    runtime_.gl_context_.Native().EndFixedDraw();
+                } catch (...) {
+                    runtime_.gl_context_.Native().Reset();
+                }
+                throw;
+            }
         }
     private:
         Impl& runtime_;
@@ -394,11 +645,151 @@ private:
     struct Gles2Module final {
         explicit Gles2Module(Impl& runtime) noexcept : runtime_(runtime) {}
         [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
-        template <gles::GlesThunkId Id>
+        template <gles::GlesThunkId FunctionId>
         std::uint32_t Invoke(const A32CallFrame& call) {
-            return runtime_.InvokeGles2<Id>(call);
+            const auto args = call.RegisterArguments();
+            const auto symbol = gles::DescribeGlesFunction(
+                                    gles::GlesApi::gles2, FunctionId).name;
+            if (const auto shader_program =
+                    DispatchShaderProgram<FunctionId>(call);
+                shader_program.has_value()) {
+                return *shader_program;
+            }
+            if (const auto resources = runtime_.gles_dispatch_.Dispatch(
+                    FunctionId, call,
+                    runtime_.angle_frame_.has_value()
+                        ? &*runtime_.angle_frame_ : nullptr);
+                resources.has_value()) {
+                if constexpr (FunctionId == 40U || FunctionId == 41U) {
+                    std::scoped_lock lock(runtime_.mutex_);
+                    ++runtime_.gpu_stats_.draws;
+                    ++runtime_.gpu_stats_.draw_targets.front().draws;
+                }
+                return *resources;
+            }
+            if constexpr (FunctionId == 141U || FunctionId == 96U) {
+                const std::array logical{
+                    std::bit_cast<std::int32_t>(args[0]),
+                    std::bit_cast<std::int32_t>(args[1]),
+                    std::bit_cast<std::int32_t>(args[2]),
+                    std::bit_cast<std::int32_t>(args[3])};
+                const auto x = detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[0]),
+                    runtime_.layout_.factor);
+                const auto y = detail::ScaleAndroidBoundaryViewportComponent(
+                    std::bit_cast<std::int32_t>(args[1]),
+                    runtime_.layout_.factor);
+                const auto width =
+                    detail::ScaleAndroidBoundaryViewportComponent(
+                        std::bit_cast<std::int32_t>(args[2]),
+                        runtime_.layout_.factor);
+                const auto height =
+                    detail::ScaleAndroidBoundaryViewportComponent(
+                        std::bit_cast<std::int32_t>(args[3]),
+                        runtime_.layout_.factor);
+                if constexpr (FunctionId == 141U) {
+                    runtime_.RequireFrame(symbol).Viewport(x, y, width, height);
+                    runtime_.gl_context_.Shared().SetViewport(logical);
+                } else {
+                    runtime_.RequireFrame(symbol).Scissor(x, y, width, height);
+                    runtime_.gl_context_.Shared().SetScissor(logical);
+                }
+                return 0;
+            }
+            if constexpr (FunctionId == 16U) {
+                const std::array color{std::bit_cast<float>(args[0]),
+                                       std::bit_cast<float>(args[1]),
+                                       std::bit_cast<float>(args[2]),
+                                       std::bit_cast<float>(args[3])};
+                runtime_.RequireFrame(symbol).ClearColor(
+                    color[0], color[1], color[2], color[3]);
+                runtime_.gl_context_.Shared().SetClearColor(color);
+                return 0;
+            }
+            if constexpr (FunctionId == 15U) {
+                runtime_.RequireFrame(symbol).Clear(args[0]);
+                std::scoped_lock lock(runtime_.mutex_);
+                ++runtime_.gpu_stats_.clears;
+                return 0;
+            }
+            throw std::runtime_error(
+                "Android boundary HLE is not implemented: " +
+                std::string(symbol));
         }
     private:
+        template <gles::GlesThunkId FunctionId>
+        std::optional<std::uint32_t> DispatchShaderProgram(
+            const A32CallFrame& call) {
+            const auto args = call.RegisterArguments();
+            const auto symbol = gles::DescribeGlesFunction(
+                                    gles::GlesApi::gles2, FunctionId).name;
+            const auto tid = call.ThreadId();
+            if constexpr (FunctionId == 26U) {
+                return runtime_.RequireFrame(symbol).CreateShader(args[0]);
+            }
+            if constexpr (FunctionId == 98U) {
+                runtime_.RequireFrame(symbol).ShaderSource(
+                    args[0], runtime_.ReadShaderSources(args, tid));
+                return 0;
+            }
+            if constexpr (FunctionId == 20U) {
+                runtime_.RequireFrame(symbol).CompileShader(args[0]);
+                std::scoped_lock lock(runtime_.mutex_);
+                ++runtime_.gpu_stats_.shader_compiles;
+                return 0;
+            }
+            if constexpr (FunctionId == 70U) {
+                const auto value = runtime_.RequireFrame(symbol)
+                                       .GetShaderParameter(args[0], args[1]);
+                runtime_.WriteRequired32(
+                    args[2], std::bit_cast<std::uint32_t>(value), tid, symbol);
+                return 0;
+            }
+            if constexpr (FunctionId == 32U) {
+                runtime_.RequireFrame(symbol).DeleteShader(args[0]);
+                return 0;
+            }
+            if constexpr (FunctionId == 25U) {
+                return runtime_.RequireFrame(symbol).CreateProgram();
+            }
+            if constexpr (FunctionId == 1U) {
+                runtime_.RequireFrame(symbol).AttachShader(args[0], args[1]);
+                return 0;
+            }
+            if constexpr (FunctionId == 89U) {
+                runtime_.RequireFrame(symbol).LinkProgram(args[0]);
+                std::scoped_lock lock(runtime_.mutex_);
+                ++runtime_.gpu_stats_.program_links;
+                return 0;
+            }
+            if constexpr (FunctionId == 65U) {
+                const auto value = runtime_.RequireFrame(symbol)
+                                       .GetProgramParameter(args[0], args[1]);
+                runtime_.WriteRequired32(
+                    args[2], std::bit_cast<std::uint32_t>(value), tid, symbol);
+                return 0;
+            }
+            if constexpr (FunctionId == 57U) {
+                return SignedResult(runtime_.RequireFrame(symbol)
+                    .GetAttribLocation(args[0], runtime_.ReadCString(
+                        args[1], kMaximumGlesNameBytes, tid, symbol)));
+            }
+            if constexpr (FunctionId == 74U) {
+                return SignedResult(runtime_.RequireFrame(symbol)
+                    .GetUniformLocation(args[0], runtime_.ReadCString(
+                        args[1], kMaximumGlesNameBytes, tid, symbol)));
+            }
+            if constexpr (FunctionId == 130U) {
+                runtime_.RequireFrame(symbol).UseProgram(args[0]);
+                runtime_.gl_context_.Shared().SetCurrentProgram(args[0]);
+                return 0;
+            }
+            if constexpr (FunctionId == 30U) {
+                runtime_.RequireFrame(symbol).DeleteProgram(args[0]);
+                return 0;
+            }
+            return std::nullopt;
+        }
         Impl& runtime_;
     };
 
@@ -796,355 +1187,6 @@ private:
         }
         return result;
     }
-    std::uint32_t PollAll(const std::array<std::uint32_t, 4>& args,
-                          const std::uint64_t thread_id) {
-        const auto timeout = std::bit_cast<std::int32_t>(args[0]);
-        std::unique_lock lock(mutex_);
-        const auto has_source = [this] {
-            return pending_command_writes_ != 0 || !inputs_.empty();
-        };
-        if (!has_source()) {
-            if (timeout < 0) ready_.wait(lock, has_source);
-            else if (timeout > 0) ready_.wait_for(lock, std::chrono::milliseconds(timeout), has_source);
-        }
-        std::uint32_t ident{};
-        std::uint32_t data{};
-        if (pending_command_writes_ != 0) {
-            --pending_command_writes_;
-            ident = command_ident_;
-            data = command_data_;
-        } else if (!inputs_.empty()) {
-            ident = input_ident_;
-            data = input_data_;
-        } else {
-            return SignedResult(-1);
-        }
-        lock.unlock();
-        Write32(args[1], 0, thread_id);
-        Write32(args[2], 1, thread_id);
-        Write32(args[3], data, thread_id);
-        return ident;
-    }
-    template <std::uint16_t FunctionId>
-    std::uint32_t InvokeAndroid(const A32CallFrame& call) {
-        const auto args = call.RegisterArguments();
-        const auto tid = call.ThreadId();
-        if constexpr (FunctionId == 0U) {
-            return kFakeConfiguration;
-        }
-        if constexpr (FunctionId == 1U || FunctionId == 2U ||
-                      FunctionId == 9U || FunctionId == 11U ||
-                      FunctionId == 19U) {
-            return 0;
-        }
-        if constexpr (FunctionId == 3U || FunctionId == 4U) {
-            const auto output = call.Pointer<std::byte>(1);
-            if (!output.IsNull()) {
-                const std::array bytes{std::byte{'e'}, std::byte{'n'}};
-                address_space_.Write(output.Address(), bytes, tid);
-            }
-            return 0;
-        }
-        if constexpr (FunctionId == 5U) return kFakeLooper;
-        if constexpr (FunctionId == 6U) {
-            std::scoped_lock lock(mutex_);
-            command_ident_ = args[2];
-            command_data_ = call.Argument(5);
-            return 1;
-        }
-        if constexpr (FunctionId == 7U) {
-            return PollAll(args, tid);
-        }
-        if constexpr (FunctionId == 8U) {
-            std::scoped_lock lock(mutex_);
-            input_ident_ = args[2];
-            input_data_ = call.Argument(4);
-            return 0;
-        }
-        if constexpr (FunctionId == 10U) {
-            std::scoped_lock lock(mutex_);
-            if (inputs_.empty()) return SignedResult(-1);
-            active_input_ = inputs_.front();
-            inputs_.pop_front();
-            Write32(args[1], kFakeInputEvent, tid);
-            return 0;
-        }
-        if constexpr (FunctionId == 12U) {
-            std::scoped_lock lock(mutex_);
-            active_input_.reset();
-            return 0;
-        }
-        if constexpr (FunctionId == 13U) {
-            std::scoped_lock lock(mutex_);
-            return active_input_.has_value() && active_input_->type == AndroidBoundaryInputType::key
-                       ? 1U : 2U;
-        }
-        if constexpr (FunctionId == 14U) {
-            std::scoped_lock lock(mutex_);
-            return active_input_.has_value() && active_input_->pressed ? 0U : 1U;
-        }
-        if constexpr (FunctionId == 15U) {
-            std::scoped_lock lock(mutex_);
-            return active_input_.has_value() ? static_cast<std::uint32_t>(active_input_->code) : 0U;
-        }
-        if constexpr (FunctionId == 16U) {
-            std::scoped_lock lock(mutex_);
-            if (!active_input_.has_value() ||
-                active_input_->type == AndroidBoundaryInputType::pointer_motion) return 2U;
-            return active_input_->pressed ? 0U : 1U;
-        }
-        if constexpr (FunctionId == 17U || FunctionId == 18U) {
-            std::scoped_lock lock(mutex_);
-            const auto value = !active_input_.has_value() ? 0.0F
-                : FunctionId == 17U
-                      ? active_input_->x : active_input_->y;
-            return std::bit_cast<std::uint32_t>(value);
-        }
-        throw std::logic_error("unbound concrete libandroid export");
-    }
-
-    template <std::uint16_t FunctionId>
-    std::uint32_t InvokeEgl(const A32CallFrame& call) {
-        const auto args = call.RegisterArguments();
-        const auto tid = call.ThreadId();
-        if constexpr (FunctionId == 0U) return kFakeDisplay;
-        if constexpr (FunctionId == 1U) {
-            Write32(call.Pointer<std::uint32_t>(1).Address().Value(), 1, tid);
-            Write32(call.Pointer<std::uint32_t>(2).Address().Value(), 5, tid);
-            return 1;
-        }
-        if constexpr (FunctionId == 2U) {
-            Write32(args[2], kFakeConfig, tid);
-            Write32(call.Argument(4), 1, tid);
-            return 1;
-        }
-        if constexpr (FunctionId == 3U) {
-            Write32(args[3], 0, tid); return 1;
-        }
-        if constexpr (FunctionId == 4U) return kFakeSurface;
-        if constexpr (FunctionId == 5U) return kFakeContext;
-        if constexpr (FunctionId == 6U) {
-            if (managed_surface_) {
-                throw std::runtime_error(
-                    "guest EGL cannot replace a host-managed ANGLE surface");
-            }
-            if (args[3] != 0 && !angle_frame_.has_value()) {
-                angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
-                    backend_, layout_.render_width, layout_.render_height));
-                gl_owner_ = std::this_thread::get_id();
-                InitializeGuestGlDefaults();
-                std::scoped_lock lock(mutex_);
-                gpu_render_target_ready_ = true;
-            } else if (args[3] == 0 && gl_owner_.has_value()) {
-                ReleaseManagedSurfaceFromCallingThread();
-            }
-            return 1;
-        }
-        if constexpr (FunctionId == 7U) {
-            Write32(args[3], args[2] == kEglWidth ? layout_.logical_width :
-                             args[2] == kEglHeight ? layout_.logical_height : 0, tid);
-            return 1;
-        }
-        if constexpr (FunctionId == 8U) {
-            if (!angle_frame_.has_value()) throw std::runtime_error("eglSwapBuffers has no current ANGLE frame");
-            PublishFrame();
-            return 1;
-        }
-        if constexpr (FunctionId == 9U || FunctionId == 10U) return 1;
-        if constexpr (FunctionId == 11U) {
-            if (managed_surface_) {
-                throw std::runtime_error(
-                    "guest EGL cannot terminate a host-managed ANGLE surface");
-            }
-            gl_owner_.reset();
-            angle_frame_.reset();
-            gles_dispatch_.Reset();
-            gles1_state_.Reset();
-            gles1_legacy_state_.Reset();
-            gles1_draw_state_.Reset();
-            std::scoped_lock lock(mutex_);
-            gpu_render_target_ready_ = false;
-            return 1;
-        }
-        throw std::logic_error("unbound concrete libEGL export");
-    }
-
-    template <gles::GlesApi Api, gles::GlesThunkId FunctionId>
-    std::uint32_t InvokeGles1(const A32CallFrame& call) {
-        constexpr bool draw_call = Api == gles::GlesApi::gles1 &&
-                                   (FunctionId == 35U || FunctionId == 36U);
-        const auto symbol = gles::DescribeGlesFunction(Api, FunctionId).name;
-        if constexpr (draw_call) {
-            if (gl_context_.SelectDrawRenderer(
-                    gles1_draw_state_
-                        .Array(detail::kGles1VertexArray, 0x84C0U).enabled,
-                    gles_dispatch_.HasEnabledVertexAttribute()) ==
-                GuestGlRenderer::programmable) {
-                const auto result = gles_dispatch_.Dispatch(
-                    FunctionId == 35U ? 40U : 41U, call,
-                    angle_frame_.has_value() ? &*angle_frame_ : nullptr);
-                if (!result.has_value()) {
-                    throw std::logic_error(
-                        "selected programmable draw has no GLES2 handler");
-                }
-                std::scoped_lock lock(mutex_);
-                ++gpu_stats_.draws;
-                ++gpu_stats_.draw_targets.front().draws;
-                return *result;
-            }
-        }
-        auto& dispatch = Api == gles::GlesApi::gles1
-                             ? gles1_dispatch_ : gles1_extensions_dispatch_;
-        if constexpr (!draw_call) {
-            return dispatch.Invoke(FunctionId, call.Arguments(), call.ThreadId());
-        }
-        gl_context_.Native().BeginFixedDraw();
-        try {
-            const auto result = dispatch.Invoke(
-                FunctionId, call.Arguments(), call.ThreadId());
-            gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
-            gl_context_.Native().EndFixedDraw();
-            return result;
-        } catch (...) {
-            try {
-                gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
-                gl_context_.Native().EndFixedDraw();
-            } catch (...) {
-                gl_context_.Native().Reset();
-            }
-            throw;
-        }
-    }
-
-    template <gles::GlesThunkId FunctionId>
-    std::uint32_t InvokeGles2(const A32CallFrame& call) {
-        const auto args = call.RegisterArguments();
-        const auto symbol = gles::DescribeGlesFunction(
-                                gles::GlesApi::gles2, FunctionId).name;
-        if (const auto shader_program = DispatchShaderProgram<FunctionId>(call);
-            shader_program.has_value()) {
-            return *shader_program;
-        }
-        if (const auto resources = gles_dispatch_.Dispatch(
-                FunctionId, call,
-                angle_frame_.has_value() ? &*angle_frame_ : nullptr);
-            resources.has_value()) {
-            if constexpr (FunctionId == 40U || FunctionId == 41U) {
-                std::scoped_lock lock(mutex_);
-                ++gpu_stats_.draws;
-                ++gpu_stats_.draw_targets.front().draws;
-            }
-            return *resources;
-        }
-        if constexpr (FunctionId == 141U) {
-            const std::array logical{
-                std::bit_cast<std::int32_t>(args[0]),
-                std::bit_cast<std::int32_t>(args[1]),
-                std::bit_cast<std::int32_t>(args[2]),
-                std::bit_cast<std::int32_t>(args[3])};
-            RequireFrame(symbol).Viewport(
-                detail::ScaleAndroidBoundaryViewportComponent(
-                    std::bit_cast<std::int32_t>(args[0]), layout_.factor),
-                detail::ScaleAndroidBoundaryViewportComponent(
-                    std::bit_cast<std::int32_t>(args[1]), layout_.factor),
-                detail::ScaleAndroidBoundaryViewportComponent(
-                    std::bit_cast<std::int32_t>(args[2]), layout_.factor),
-                detail::ScaleAndroidBoundaryViewportComponent(
-                    std::bit_cast<std::int32_t>(args[3]), layout_.factor));
-            gl_context_.Shared().SetViewport(logical);
-            return 0;
-        }
-        if constexpr (FunctionId == 96U) {
-            const std::array logical{
-                std::bit_cast<std::int32_t>(args[0]),
-                std::bit_cast<std::int32_t>(args[1]),
-                std::bit_cast<std::int32_t>(args[2]),
-                std::bit_cast<std::int32_t>(args[3])};
-            RequireFrame(symbol).Scissor(
-                detail::ScaleAndroidBoundaryViewportComponent(
-                    std::bit_cast<std::int32_t>(args[0]), layout_.factor),
-                detail::ScaleAndroidBoundaryViewportComponent(
-                    std::bit_cast<std::int32_t>(args[1]), layout_.factor),
-                detail::ScaleAndroidBoundaryViewportComponent(
-                    std::bit_cast<std::int32_t>(args[2]), layout_.factor),
-                detail::ScaleAndroidBoundaryViewportComponent(
-                    std::bit_cast<std::int32_t>(args[3]), layout_.factor));
-            gl_context_.Shared().SetScissor(logical);
-            return 0;
-        }
-        if constexpr (FunctionId == 16U) {
-            const std::array color{std::bit_cast<float>(args[0]),
-                                   std::bit_cast<float>(args[1]),
-                                   std::bit_cast<float>(args[2]),
-                                   std::bit_cast<float>(args[3])};
-            RequireFrame(symbol).ClearColor(color[0], color[1], color[2], color[3]);
-            gl_context_.Shared().SetClearColor(color);
-            return 0;
-        }
-        if constexpr (FunctionId == 15U) {
-            RequireFrame(symbol).Clear(args[0]);
-            std::scoped_lock lock(mutex_);
-            ++gpu_stats_.clears;
-            return 0;
-        }
-        throw std::runtime_error("Android boundary HLE is not implemented: " + std::string(symbol));
-    }
-    template <gles::GlesThunkId FunctionId>
-    std::optional<std::uint32_t> DispatchShaderProgram(
-        const A32CallFrame& call) {
-        const auto args = call.RegisterArguments();
-        const auto symbol = gles::DescribeGlesFunction(
-                                gles::GlesApi::gles2, FunctionId).name;
-        const auto tid = call.ThreadId();
-        if constexpr (FunctionId == 26U) {
-            return RequireFrame(symbol).CreateShader(args[0]);
-        }
-        if constexpr (FunctionId == 98U) {
-            RequireFrame(symbol).ShaderSource(args[0], ReadShaderSources(args, tid)); return 0;
-        }
-        if constexpr (FunctionId == 20U) {
-            RequireFrame(symbol).CompileShader(args[0]); std::scoped_lock lock(mutex_);
-            ++gpu_stats_.shader_compiles; return 0;
-        }
-        if constexpr (FunctionId == 70U) {
-            const auto value = RequireFrame(symbol).GetShaderParameter(args[0], args[1]);
-            WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol); return 0;
-        }
-        if constexpr (FunctionId == 32U) {
-            RequireFrame(symbol).DeleteShader(args[0]); return 0;
-        }
-        if constexpr (FunctionId == 25U) {
-            return RequireFrame(symbol).CreateProgram();
-        }
-        if constexpr (FunctionId == 1U) {
-            RequireFrame(symbol).AttachShader(args[0], args[1]); return 0;
-        }
-        if constexpr (FunctionId == 89U) {
-            RequireFrame(symbol).LinkProgram(args[0]); std::scoped_lock lock(mutex_);
-            ++gpu_stats_.program_links; return 0;
-        }
-        if constexpr (FunctionId == 65U) {
-            const auto value = RequireFrame(symbol).GetProgramParameter(args[0], args[1]);
-            WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol); return 0;
-        }
-        if constexpr (FunctionId == 57U) {
-            return SignedResult(RequireFrame(symbol).GetAttribLocation(
-                args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
-        }
-        if constexpr (FunctionId == 74U) {
-            return SignedResult(RequireFrame(symbol).GetUniformLocation(
-                args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
-        }
-        if constexpr (FunctionId == 130U) {
-            RequireFrame(symbol).UseProgram(args[0]);
-            gl_context_.Shared().SetCurrentProgram(args[0]);
-            return 0;
-        }
-        if constexpr (FunctionId == 30U) {
-            RequireFrame(symbol).DeleteProgram(args[0]); return 0;
-        }
-        return std::nullopt;
-    }
     gles::AngleFrame& RequireFrame(const std::string_view operation) {
         if (!angle_frame_.has_value()) {
             throw std::runtime_error(std::string(operation) + " has no current ANGLE frame");
@@ -1238,13 +1280,6 @@ private:
     mutable std::mutex mutex_;
     mutable std::mutex trace_mutex_;
     std::condition_variable ready_;
-    std::uint64_t pending_command_writes_{};
-    std::uint32_t command_ident_{};
-    std::uint32_t command_data_{};
-    std::uint32_t input_ident_{};
-    std::uint32_t input_data_{};
-    std::deque<AndroidBoundaryInput> inputs_;
-    std::optional<AndroidBoundaryInput> active_input_;
     std::optional<AndroidBoundaryFrame> latest_frame_;
     std::vector<std::uint8_t> recycled_rgba8_;
     core::GpuStats gpu_stats_{0, 0, 0, 0, 0, {{0, 0, "color0"}}};

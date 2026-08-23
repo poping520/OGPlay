@@ -21,6 +21,12 @@
   export 已使用强类型 guest address，variadic/custom ABI 保留 wrapper。
 - [x] end-to-end benchmark 覆盖 0 参数、4 word、6 word 含 guest stack、representative
   GLES、JNI fixed slot 与 forced slow baseline，只记录数据、不设时间阈值。
+- [x] 各 named export 的实现体归属 concrete module；`AndroidBoundaryHle::Impl` 不再提供
+  `InvokeAndroid/InvokeEgl/InvokeGles1/InvokeGles2`，module 不再向 session facade 转发。
+- [x] Android looper/input mutable state 归属 `AndroidModule`；EGL/GLES1/GLES2 module
+  通过构造注入同一 session graphics services，继续共享唯一 `GuestGlContext` 和 ANGLE
+  runtime。
+- [x] architecture gate 同时拒绝 module-to-Impl forwarding 与 libc shared active PC。
 
 闭环测量（macOS arm64 Debug）：2,000 次 0 参数 16,325 us、4-word 16,155 us、
 6-word stack 16,184 us、500 次 GLES 4,470 us、2,000 次 JNI fixed slot 15,028 us、

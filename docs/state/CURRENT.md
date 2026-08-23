@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-24 · BND-24 EGL/GLES API19 运行闭环
+更新：2026-08-24 · DVM-77 PackageManager P0 当前包查询面
 
 ## 当前阶段
 
@@ -46,11 +46,10 @@
   `dexvm.gc` 与 `dexvm.interpreter_threaded` 保持 `partial`，threaded 生产默认仍关闭。A5 GC
   exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合。
   DVM-70..74 闭合 Window/config、JNI identity、目录/asset、GLSurfaceView policy 与
-  IntentFilter；DVM-75 交付 String.format `%s/%d/%%` 与 PackageManager，
-  下一 fault 待 exact run 固定。DVM-76 使致命 DexVM 错误在销毁帧前自动附带
-  context/thread、fault opcode/method index 与有界 64 帧调用链；PVZ Release 关闭 survey 已把
-  `PackageManager.getApplicationInfo` 缺口定位到 `BaseCore.loadConfiguration()V`
-  `dex_pc=18`，并回溯至 `PvZActivity.onCreate(Bundle)V dex_pc=107`。
+  IntentFilter；DVM-75/76 交付 String.format、稳定 PackageManager identity 与有界致命栈。
+  DVM-77 已发布当前 APK 的 PackageManager P0 查询、ApplicationInfo/PackageInfo、Manifest
+  metadata/permission 与显式 feature；PVZ Release 已越过 `getApplicationInfo(GET_META_DATA)`，
+  新首 fault 为通用 `java.util.LinkedHashMap` class shape。
 ## 验证基线
 
 - BND-24 full CTest 933/933（architecture 5/5）；DVM-75 focused 5/5，
@@ -61,8 +60,10 @@
   关闭 survey 复现通过，首 fault 保持明确失败并附带 context=1、
   `thread=<unregistered>`、`invoke-virtual opcode=0x6e method_idx=643 dex_pc=18` 与
   6 层 guest Java 调用栈。
-- 当前 full CTest 949/951；DVM-76/architecture 通过，失败为未触及的 String catalog
-  数量断言（43/44）与 liblog tag 断言（`PVZ`/空）。
+- DVM-77 PackageManager/Manifest focused 13/13（1227 assertions）；Release PVZ 原命令
+  越过旧 fault 并固定 `LinkedHashMap`，无 `ogplay` 残留。
+- full CTest 首轮 948/953；3 个 frontend smoke 经 clean rebuild 后 3/3 通过，剩余失败
+  仍为未触及的 String catalog（43/44）与 liblog tag（`PVZ`/空）。
 
 ## 下一步
 

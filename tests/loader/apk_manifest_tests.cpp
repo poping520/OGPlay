@@ -166,6 +166,70 @@ std::vector<std::byte> Manifest(const bool utf8 = false,
     return result;
 }
 
+std::vector<std::byte> PackageFactsManifest(const bool invalid_metadata = false) {
+    const std::vector<std::string> strings{
+        "manifest", "package", "versionCode", "application",
+        "uses-permission", "name", "meta-data", "value", "resource",
+        "org.example.game", "android.permission.INTERNET",
+        "com.example.configuration", "live", "com.example.number",
+        "com.example.resource", "com.example.enabled",
+        "http://schemas.android.com/apk/res/android"};
+    const auto index = [&](const std::string_view value) {
+        const auto found = std::find(strings.begin(), strings.end(), value);
+        REQUIRE(found != strings.end());
+        return static_cast<std::uint32_t>(std::distance(strings.begin(), found));
+    };
+    const auto android_namespace = index(
+        "http://schemas.android.com/apk/res/android");
+    std::vector<std::byte> result;
+    Append16(result, 0x0003); Append16(result, 8); Append32(result, 0);
+    Append(result, StringPool(strings, false));
+    Append(result, StartElement(index("manifest"),
+        {{index("package"), index("org.example.game"), 0x03,
+          index("org.example.game")},
+         {index("versionCode"), 0xffffffffU, 0x10, 7,
+          android_namespace}}));
+    Append(result, StartElement(index("uses-permission"),
+        {{index("name"), index("android.permission.INTERNET"), 0x03,
+          index("android.permission.INTERNET"), android_namespace}}));
+    Append(result, EndElement(index("uses-permission")));
+    Append(result, StartElement(index("application"), {}));
+    std::vector<Attribute> string_metadata{
+        {index("name"), index("com.example.configuration"), 0x03,
+         index("com.example.configuration"), android_namespace}};
+    if (!invalid_metadata) {
+        string_metadata.push_back(
+            {index("value"), index("live"), 0x03, index("live"),
+             android_namespace});
+    }
+    Append(result, StartElement(index("meta-data"), string_metadata));
+    Append(result, EndElement(index("meta-data")));
+    if (!invalid_metadata) {
+        Append(result, StartElement(index("meta-data"),
+            {{index("name"), index("com.example.number"), 0x03,
+              index("com.example.number"), android_namespace},
+             {index("value"), 0xffffffffU, 0x10, 42,
+              android_namespace}}));
+        Append(result, EndElement(index("meta-data")));
+        Append(result, StartElement(index("meta-data"),
+            {{index("name"), index("com.example.resource"), 0x03,
+              index("com.example.resource"), android_namespace},
+             {index("resource"), 0xffffffffU, 0x01, 0x7f030001U,
+              android_namespace}}));
+        Append(result, EndElement(index("meta-data")));
+        Append(result, StartElement(index("meta-data"),
+            {{index("name"), index("com.example.enabled"), 0x03,
+              index("com.example.enabled"), android_namespace},
+             {index("value"), 0xffffffffU, 0x12, 1,
+              android_namespace}}));
+        Append(result, EndElement(index("meta-data")));
+    }
+    Append(result, EndElement(index("application")));
+    Append(result, EndElement(index("manifest")));
+    Set32(result, 4, static_cast<std::uint32_t>(result.size()));
+    return result;
+}
+
 struct ComponentFixture final {
     std::string tag{"activity"};
     std::string name;
@@ -405,6 +469,25 @@ TEST_CASE("binary AndroidManifest distinguishes application visual attributes") 
     REQUIRE(literal.application_label.has_value());
     REQUIRE(std::holds_alternative<std::string>(*literal.application_label));
     CHECK(std::get<std::string>(*literal.application_label) == "OGPlay Game");
+}
+
+TEST_CASE("binary AndroidManifest exposes package permission and application meta-data") {
+    const auto facts = ogplay::loader::ParseAndroidBinaryManifest(
+        PackageFactsManifest());
+    REQUIRE(facts.requested_permissions.size() == 1U);
+    CHECK(facts.requested_permissions.front() == "android.permission.INTERNET");
+    REQUIRE(facts.application_meta_data.size() == 4U);
+    CHECK(facts.application_meta_data[0].name == "com.example.configuration");
+    CHECK(std::get<std::string>(facts.application_meta_data[0].value) == "live");
+    CHECK(std::get<std::int32_t>(facts.application_meta_data[1].value) == 42);
+    CHECK(static_cast<std::uint32_t>(
+              std::get<std::int32_t>(facts.application_meta_data[2].value)) ==
+          0x7f030001U);
+    CHECK(std::get<std::int32_t>(facts.application_meta_data[3].value) == 1);
+    CHECK_THROWS_WITH(
+        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
+            PackageFactsManifest(true))),
+        "binary AndroidManifest application meta-data requires name and exactly one value or resource");
 }
 
 TEST_CASE("binary AndroidManifest rejects invalid application visual types") {

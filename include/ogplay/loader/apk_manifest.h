@@ -15,6 +15,13 @@
 namespace ogplay::loader {
 
 using AndroidManifestLabel = std::variant<std::uint32_t, std::string>;
+using AndroidManifestMetaDataValue =
+    std::variant<std::int32_t, std::string>;
+
+struct AndroidManifestMetaData final {
+    std::string name;
+    AndroidManifestMetaDataValue value;
+};
 
 enum class AndroidManifestComponentKind : std::uint8_t {
     activity,
@@ -76,6 +83,8 @@ struct AndroidManifestFacts final {
     std::string application_class{"android.app.Application"};
     // Activity and activity-alias declarations in Manifest document order.
     std::vector<AndroidManifestActivityComponent> activity_components;
+    std::vector<AndroidManifestMetaData> application_meta_data;
+    std::vector<std::string> requested_permissions;
 };
 
 [[nodiscard]] std::string NormalizeAndroidManifestClassName(

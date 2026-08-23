@@ -16,7 +16,9 @@
   组件事实；`NormalizeAndroidManifestClassName` 对齐 API 19 `buildClassName`，
   `ResolveLauncherComponent` 确定性选择首个 enabled MAIN+LAUNCHER 组件并把 alias 映射到
   已声明 target，no-launcher/非法 alias 以 typed error 失败。`application` icon 保留
-  resource id，label 严格区分 resource id 与字面量，不执行资源解析或猜测身份。
+  resource id，label 严格区分 resource id 与字面量；DVM-77 继续按声明序提取去重的
+  `uses-permission` 与 application `meta-data`，metadata 只接受 API19 string、integer、
+  boolean、value/resource reference，不执行资源解析或猜测身份。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。

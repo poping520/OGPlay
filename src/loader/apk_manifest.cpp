@@ -402,6 +402,25 @@ bool ReadBooleanAttribute(const Attribute& attribute, const std::string_view nam
     return attribute.data != 0;
 }
 
+AndroidManifestMetaDataValue ReadMetaDataValue(
+    const Attribute& attribute, const std::vector<std::string>& strings,
+    const std::string_view name) {
+    if (attribute.data_type == kStringType) {
+        return ReadStringAttribute(attribute, strings, name);
+    }
+    if (attribute.data_type == kIntegerDecimalType ||
+        attribute.data_type == kIntegerHexType ||
+        attribute.data_type == kReferenceType) {
+        return static_cast<std::int32_t>(attribute.data);
+    }
+    if (attribute.data_type == kIntegerBooleanType && attribute.data <= 1U) {
+        return static_cast<std::int32_t>(attribute.data);
+    }
+    throw std::runtime_error("binary AndroidManifest meta-data " +
+                             std::string(name) +
+                             " has an unsupported value type");
+}
+
 void SetOnce(std::optional<std::uint32_t>& destination, const std::uint32_t value,
              const std::string_view name) {
     if (destination.has_value()) {
@@ -555,6 +574,41 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         ReadStringAttribute(*application_name, strings,
                                             "application name"));
                 }
+            } else if (name == "meta-data" && elements.size() == 2 &&
+                       elements[1] == "application") {
+                const auto* metadata_name =
+                    FindAttribute(attributes, "name", kAndroidNamespace);
+                const auto* metadata_value =
+                    FindAttribute(attributes, "value", kAndroidNamespace);
+                const auto* metadata_resource =
+                    FindAttribute(attributes, "resource", kAndroidNamespace);
+                if (metadata_name == nullptr ||
+                    (metadata_value == nullptr) == (metadata_resource == nullptr)) {
+                    throw std::runtime_error(
+                        "binary AndroidManifest application meta-data requires "
+                        "name and exactly one value or resource");
+                }
+                const auto decoded_name = ReadStringAttribute(
+                    *metadata_name, strings, "application meta-data name");
+                if (decoded_name.empty() ||
+                    std::any_of(facts.application_meta_data.begin(),
+                                facts.application_meta_data.end(),
+                                [&](const auto& item) {
+                                    return item.name == decoded_name;
+                                })) {
+                    throw std::runtime_error(
+                        "binary AndroidManifest application meta-data name is "
+                        "empty or duplicated");
+                }
+                facts.application_meta_data.push_back(
+                    {decoded_name,
+                     metadata_value != nullptr
+                         ? ReadMetaDataValue(*metadata_value, strings,
+                                             decoded_name)
+                         : AndroidManifestMetaDataValue{
+                               static_cast<std::int32_t>(ReadReferenceAttribute(
+                                   *metadata_resource,
+                                   "application meta-data resource"))}});
             } else if ((name == "activity" || name == "activity-alias") &&
                        elements.size() == 2 && elements[1] == "application") {
                 const auto* component_name =
@@ -657,6 +711,24 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     SetOnce(facts.target_sdk,
                             ReadIntegerAttribute(*target_sdk, "targetSdkVersion"),
                             "targetSdkVersion");
+                }
+            } else if (elements.size() == 1 && name == "uses-permission") {
+                const auto* permission_name =
+                    FindAttribute(attributes, "name", kAndroidNamespace);
+                if (permission_name == nullptr) {
+                    throw std::runtime_error(
+                        "binary AndroidManifest uses-permission has no name");
+                }
+                const auto permission = ReadStringAttribute(
+                    *permission_name, strings, "uses-permission name");
+                if (permission.empty()) {
+                    throw std::runtime_error(
+                        "binary AndroidManifest uses-permission name is empty");
+                }
+                if (std::find(facts.requested_permissions.begin(),
+                              facts.requested_permissions.end(), permission) ==
+                    facts.requested_permissions.end()) {
+                    facts.requested_permissions.push_back(permission);
                 }
             }
             elements.push_back(name);

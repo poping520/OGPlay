@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "ogplay/loader/apk.h"
+#include "ogplay/loader/apk_manifest.h"
 #include "ogplay/loader/arsc.h"
 #include "ogplay/loader/binary_xml.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -49,6 +50,18 @@ struct DexVmAndroidContext final {
     std::vector<std::byte> apk_bytes;
     loader::ApkArchive archive;
     std::string package_name;
+    std::uint32_t package_version_code{};
+    std::string package_version_name;
+    std::uint32_t target_sdk_version{};
+    std::uint32_t application_uid{10000U};
+    std::string application_class_name;
+    std::optional<loader::AndroidManifestLabel> application_label;
+    std::uint32_t application_icon{};
+    std::unordered_map<std::string, loader::AndroidManifestMetaDataValue>
+        application_meta_data;
+    std::vector<std::string> requested_permissions;
+    std::unordered_set<std::string> granted_permissions;
+    std::unordered_set<std::string> system_features;
     std::uint32_t surface_width{};
     std::uint32_t surface_height{};
     // API19 UI fallback until a title exposes reliable DisplayMetrics.

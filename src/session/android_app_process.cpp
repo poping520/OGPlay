@@ -95,6 +95,24 @@ public:
         context->session = session.get();
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;
+        context->package_version_code = manifest.version_code;
+        context->package_version_name = manifest.version_name.value_or("");
+        context->target_sdk_version = manifest.target_sdk.value_or(0U);
+        context->application_class_name = manifest.application_class;
+        context->application_label = manifest.application_label;
+        context->application_icon = manifest.application_icon.value_or(0U);
+        context->application_meta_data.clear();
+        for (const auto& item : manifest.application_meta_data) {
+            context->application_meta_data.emplace(item.name, item.value);
+        }
+        context->requested_permissions = manifest.requested_permissions;
+        context->granted_permissions.insert(manifest.requested_permissions.begin(),
+                                            manifest.requested_permissions.end());
+        context->system_features.insert("android.hardware.touchscreen");
+        context->system_features.insert(
+            request.surface_width >= request.surface_height
+                ? "android.hardware.screen.landscape"
+                : "android.hardware.screen.portrait");
         context->surface_width = request.surface_width;
         context->surface_height = request.surface_height;
         context->api_level = static_cast<std::int32_t>(request.api_level);

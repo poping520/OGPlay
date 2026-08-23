@@ -79,7 +79,7 @@ struct AndroidVm final {
   ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter;
 
-  AndroidVm()
+  explicit AndroidVm(InterpreterConfig config = {})
       : interpreter(
             [this]() -> DexClassLinker & {
               auto catalog = CoreIntrinsicCatalog();
@@ -90,7 +90,7 @@ struct AndroidVm final {
               linker.Link();
               return linker;
             }(),
-            model, nullptr, ledger) {}
+            model, nullptr, ledger, config) {}
 
   [[nodiscard]] VmMethodId Virtual(const std::string_view descriptor,
                                    const std::string_view name,
@@ -107,7 +107,7 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-    CHECK(catalog.size() == 177);
+    CHECK(catalog.size() == 181);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -132,6 +132,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/app/Activity;") == 26);
   CHECK(method_count("Landroid/content/Intent;") == 16);
   CHECK(method_count("Landroid/os/Bundle;") == 12);
+  CHECK(method_count("Landroid/content/pm/PackageManager;") == 5);
   CHECK(method_count("Landroid/widget/TextView;") == 15);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
@@ -157,6 +158,164 @@ TEST_CASE("Context package manager has one process identity") {
   CHECK(from_context.value.ref == from_activity.value.ref);
   CHECK(vm.linker.Class(vm.model.ObjectClass(from_activity.value.ref))
             .descriptor == "Landroid/content/pm/PackageManager;");
+}
+
+TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch,
+                             InterpreterBackend::threaded}) {
+    InterpreterConfig config;
+    config.backend = backend;
+    AndroidVm vm(config);
+    vm.context->package_name = "org.example.game";
+    vm.context->package_version_code = 7U;
+    vm.context->package_version_name = "1.2.3";
+    vm.context->target_sdk_version = 19U;
+    vm.context->application_class_name = "org.example.game.GameApplication";
+    vm.context->application_label = std::string("OGPlay Game");
+    vm.context->application_icon = 0x7f020001U;
+    vm.context->application_meta_data.emplace(
+        "com.example.configuration", std::string("live"));
+    vm.context->application_meta_data.emplace("com.example.number",
+                                               std::int32_t{42});
+    vm.context->requested_permissions = {"android.permission.INTERNET"};
+    vm.context->granted_permissions.insert("android.permission.INTERNET");
+    vm.context->system_features.insert("android.hardware.touchscreen");
+
+    const auto manager = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/content/pm/PackageManager;");
+    const auto package = vm.interpreter.NewStringUtf8("org.example.game");
+    const auto invoke = [&](const std::string_view name,
+                            const std::string_view descriptor,
+                            std::vector<VmValue> arguments) {
+      arguments.insert(arguments.begin(), VmValue::Ref(manager));
+      return vm.interpreter.Call(
+          vm.Virtual("Landroid/content/pm/PackageManager;", name, descriptor),
+          arguments);
+    };
+    const auto field = [&](const VmObjectRef object, const std::string& name,
+                           const std::string& descriptor) {
+      const auto found = vm.linker.FindFieldRecursive(
+          vm.model.ObjectClass(object), name, descriptor);
+      REQUIRE(found.has_value());
+      return vm.model.InstanceSlots(object)[vm.linker.Field(*found).slot];
+    };
+    const auto ref_field = [&](const VmObjectRef object,
+                               const std::string& name,
+                               const std::string& descriptor) {
+      const auto slot = field(object, name, descriptor);
+      if (slot.bits == 0U && slot.tag == SlotTag::uninit) {
+        return VmObjectRef{};
+      }
+      REQUIRE(slot.tag == SlotTag::ref);
+      return VmObjectRef{static_cast<std::uint32_t>(slot.bits)};
+    };
+    const auto int_field = [&](const VmObjectRef object,
+                               const std::string& name) {
+      const auto slot = field(object, name, "I");
+      REQUIRE(slot.tag == SlotTag::cat1);
+      return static_cast<std::int32_t>(slot.bits);
+    };
+
+    const auto application = invoke(
+        "getApplicationInfo",
+        "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+        {VmValue::Ref(package), VmValue::Int(0x80)});
+    REQUIRE_FALSE(application.exception.IsValid());
+    REQUIRE(application.value.ref.IsValid());
+    CHECK(vm.interpreter.StringUtf8(ref_field(
+              application.value.ref, "packageName", "Ljava/lang/String;")) ==
+          "org.example.game");
+    CHECK(vm.interpreter.StringUtf8(ref_field(
+              application.value.ref, "className", "Ljava/lang/String;")) ==
+          "org.example.game.GameApplication");
+    CHECK(int_field(application.value.ref, "uid") == 10000);
+    CHECK(int_field(application.value.ref, "targetSdkVersion") == 19);
+    CHECK(int_field(application.value.ref, "icon") ==
+          static_cast<std::int32_t>(0x7f020001U));
+    const auto metadata = ref_field(application.value.ref, "metaData",
+                                    "Landroid/os/Bundle;");
+    REQUIRE(metadata.IsValid());
+    const auto metadata_key =
+        vm.interpreter.NewStringUtf8("com.example.configuration");
+    const auto metadata_value = vm.interpreter.Call(
+        vm.Virtual("Landroid/os/Bundle;", "getString",
+                   "(Ljava/lang/String;)Ljava/lang/String;"),
+        std::vector{VmValue::Ref(metadata), VmValue::Ref(metadata_key)});
+    REQUIRE_FALSE(metadata_value.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(metadata_value.value.ref) == "live");
+
+    const auto without_metadata = invoke(
+        "getApplicationInfo",
+        "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+        {VmValue::Ref(package), VmValue::Int(0)});
+    REQUIRE_FALSE(without_metadata.exception.IsValid());
+    CHECK_FALSE(ref_field(without_metadata.value.ref, "metaData",
+                          "Landroid/os/Bundle;").IsValid());
+
+    const auto package_info = invoke(
+        "getPackageInfo",
+        "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+        {VmValue::Ref(package), VmValue::Int(0x1080)});
+    REQUIRE_FALSE(package_info.exception.IsValid());
+    REQUIRE(package_info.value.ref.IsValid());
+    CHECK(int_field(package_info.value.ref, "versionCode") == 7);
+    CHECK(vm.interpreter.StringUtf8(ref_field(
+              package_info.value.ref, "versionName", "Ljava/lang/String;")) ==
+          "1.2.3");
+    const auto permissions = ref_field(package_info.value.ref,
+                                       "requestedPermissions",
+                                       "[Ljava/lang/String;");
+    REQUIRE(permissions.IsValid());
+    REQUIRE(vm.model.ArrayLength(permissions) == 1);
+    CHECK(vm.interpreter.StringUtf8(vm.model.GetObjectElement(permissions, 0)) ==
+          "android.permission.INTERNET");
+
+    const auto label = invoke(
+        "getApplicationLabel",
+        "(Landroid/content/pm/ApplicationInfo;)Ljava/lang/CharSequence;",
+        {VmValue::Ref(application.value.ref)});
+    REQUIRE_FALSE(label.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(label.value.ref) == "OGPlay Game");
+
+    const auto internet =
+        vm.interpreter.NewStringUtf8("android.permission.INTERNET");
+    const auto camera =
+        vm.interpreter.NewStringUtf8("android.permission.CAMERA");
+    CHECK(invoke("checkPermission",
+                 "(Ljava/lang/String;Ljava/lang/String;)I",
+                 {VmValue::Ref(internet), VmValue::Ref(package)})
+              .value.AsInt() == 0);
+    CHECK(invoke("checkPermission",
+                 "(Ljava/lang/String;Ljava/lang/String;)I",
+                 {VmValue::Ref(camera), VmValue::Ref(package)})
+              .value.AsInt() == -1);
+    const auto touchscreen =
+        vm.interpreter.NewStringUtf8("android.hardware.touchscreen");
+    const auto gps =
+        vm.interpreter.NewStringUtf8("android.hardware.location.gps");
+    CHECK(invoke("hasSystemFeature", "(Ljava/lang/String;)Z",
+                 {VmValue::Ref(touchscreen)})
+              .value.AsInt() == 1);
+    CHECK(invoke("hasSystemFeature", "(Ljava/lang/String;)Z",
+                 {VmValue::Ref(gps)})
+              .value.AsInt() == 0);
+
+    const auto unknown = vm.interpreter.NewStringUtf8("org.example.missing");
+    const auto missing = invoke(
+        "getApplicationInfo",
+        "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+        {VmValue::Ref(unknown), VmValue::Int(0)});
+    REQUIRE(missing.exception.IsValid());
+    CHECK(vm.linker.Class(vm.model.ObjectClass(missing.exception)).descriptor ==
+          "Landroid/content/pm/PackageManager$NameNotFoundException;");
+    const auto unsupported = invoke(
+        "getApplicationInfo",
+        "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+        {VmValue::Ref(package), VmValue::Int(0x40)});
+    REQUIRE(unsupported.exception.IsValid());
+    CHECK(vm.linker.Class(vm.model.ObjectClass(unsupported.exception)).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
+  }
 }
 
 TEST_CASE("Window policy and Activity orientation preserve API19 state") {

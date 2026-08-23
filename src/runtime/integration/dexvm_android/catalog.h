@@ -20,6 +20,10 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& context);
 [[nodiscard]] Decl Declare_android_content_Intent(const Context& context);
 [[nodiscard]] Decl Declare_android_content_IntentFilter(const Context& context);
+[[nodiscard]] Decl Declare_android_content_pm_PackageItemInfo(const Context& context);
+[[nodiscard]] Decl Declare_android_content_pm_ApplicationInfo(const Context& context);
+[[nodiscard]] Decl Declare_android_content_pm_PackageInfo(const Context& context);
+[[nodiscard]] Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context& context);
 [[nodiscard]] Decl Declare_android_content_pm_PackageManager(const Context& context);
 [[nodiscard]] Decl Declare_android_content_SharedPreferences_Editor(const Context& context);
 [[nodiscard]] Decl Declare_android_content_SharedPreferences(const Context& context);

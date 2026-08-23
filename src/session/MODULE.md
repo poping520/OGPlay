@@ -11,7 +11,9 @@
   native inventory/ABI、rootless guest process、动态 loader、DexVM、Application root 与
   Activity lifecycle；Create 只准备 API 19 system ELF，不预载 APK `.so`。Manifest launcher
   是默认入口，显式 compatibility entry 才覆盖；无 native inventory 保持 Java-capable
-  process mode。
+  process mode。DVM-77 把同一 sealed Manifest 的 package/version/target SDK/application
+  label/icon/meta-data/requested permissions 注入 DexVM Android context；requested permissions
+  是 bounded compatibility process 的显式 granted set，不宣称模拟 protection level。
 - `LoadTitleProfileText` / `LoadTitleProfile`：严格读取 legacy v1/v2 与 optional v3
   纯数据 TOML；v1 仅适配仍有效的 compatibility 字段，不恢复 native-call/Java replay，
   v3 只要求 package/api_level，版本和 `.so` hash 是可选 applicability guard。

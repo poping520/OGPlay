@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-23 · BND-7 Boundary ownership extraction
+更新：2026-08-24 · BND-8 OpenSL ES ABI design
 
 ## 当前阶段
 
@@ -25,7 +25,11 @@
   graphics context、frame/stat/trace 迁入 services，Android/EGL/GLES1/GLES2 concrete
   implementation 迁入各自 module；libc override ownership 回到 bionic。core/service/module
   依赖方向与 direct `{fn,self}` router 由 architecture gate 递归验证，20/20 focused
-  CTest 通过。下一阶段按本会话目标先完成 AOSP Wilhelm 设计，再实现 OpenSL ES module。
+  CTest 通过。BND-8 已按 AOSP 4.4.4 Wilhelm 完成 OpenSL ES 设计：public surface 包含
+  3 个函数及全部 `SL_IID_*` data export，对象方法使用 guest `const vtable **` ABI；
+  OGPlay 实现 engine/output-mix/PCM audio-player、Play/BufferQueue/Volume 与 callback thread，
+  recorder/MIDI/3D/effect/decoder 等范围外能力明确失败。下一阶段实现 function/data/private
+  callable metadata、OpenSL guest arena、PCM mixer 和 callback execution。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

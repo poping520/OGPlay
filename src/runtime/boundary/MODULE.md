@@ -10,8 +10,12 @@
 - thunk arena 按实际 slot 数向上取整到多页并在写入后封为 RX；fast router 只做
   `PC → dense slot → {fn,self}`，live r0-r15 直接借用自 CPU hook，5 个以上参数只进行
   一次 guest stack bulk read。启用 guest-call slice observer 时上层不得安装 fast hook。
+- Android/EGL/GLES1/GLES2/log 以普通 `final` module type 实例化并在 seal 时一次 type
+  erase；descriptor 只保留 module-local id 与签名冷数据。fast/slow transport 共用同一
+  预绑定 module invoke pointer，调用期不再读取 SONAME、不经过 `HleRoute` 或全局 id。
+  EGL/GLES1/GLES2 module 继续显式共享唯一 `GuestGlContext`，不复制 graphics state。
 
-Android native 边界:`android_boundary_hle` 主 Thumb trap 分派、GLES2/GLES1 边界组件、
+Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest
 的 EGL/GLES/Looper/input 导入映射为显式 handler 并搬运 guest 数据,不拥有会话生命周期。
 

@@ -198,7 +198,7 @@ TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {
     CHECK(resolved == iterations);
 }
 
-TEST_CASE("Android boundary descriptors carry execution routing ids") {
+TEST_CASE("Android boundary descriptors carry module-local ids") {
     const auto symbols =
         ogplay::runtime::detail::BuildAndroidBoundarySymbols();
     const auto descriptors =
@@ -217,18 +217,15 @@ TEST_CASE("Android boundary descriptors carry execution routing ids") {
 
     const auto* android = descriptor_for("libandroid.so", "ALooper_prepare");
     REQUIRE(android != nullptr);
-    CHECK(android->route == ogplay::runtime::detail::HleRoute::android);
-    CHECK(android->function_id == 5U);
+    CHECK(android->local_id == 5U);
 
     const auto* gles2 = descriptor_for("libGLESv2.so", "glDrawElements");
     REQUIRE(gles2 != nullptr);
-    CHECK(gles2->route == ogplay::runtime::detail::HleRoute::gles2);
-    CHECK(gles2->function_id == 41U);
+    CHECK(gles2->local_id == 41U);
 
     const auto* gles1 = descriptor_for("libGLESv1_CM.so", "glDrawElements");
     REQUIRE(gles1 != nullptr);
-    CHECK(gles1->route == ogplay::runtime::detail::HleRoute::gles1);
-    CHECK(gles1->function_id == 36U);
+    CHECK(gles1->local_id == 36U);
     CHECK(gles1->parameter_count == 4U);
 
     const auto* tex_image = descriptor_for("libGLESv2.so", "glTexImage2D");

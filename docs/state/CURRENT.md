@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-23 · BND-3 JNI Fast Transport
+更新：2026-08-23 · BND-4 Native Boundary closure
 
 ## 当前阶段
 
@@ -13,7 +13,10 @@
   BND-3 已让 JNI SVC #3 复用同一 live-register transport，fast/slow entry 共用唯一
   receiver/thread/slot/return-width dispatch；RegisterNatives/JNI_OnLoad 与 JNI 语义未改。
   五个真实 guest libc memory intercept 已从 Virtual SO metadata 分离为独立
-  `GuestSymbolOverrideDescriptor`。legacy boundary route 仍待 BND-4 删除。
+  `GuestSymbolOverrideDescriptor`。BND-4 已让现有 export 在 seal 时绑定 concrete final
+  module invoke pointer，descriptor 只保留 module-local id/签名；`HleRoute`、全局
+  fallback id、平行参数表和 import-driven synthetic builder 已删除。EGL/GLES1/GLES2
+  继续共享唯一 `GuestGlContext`，fast/slow transport 共用同一 module binding。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3
@@ -29,44 +32,15 @@
   fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
   链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
   shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
-- **M9 DexVM**：DVM-1..46、48..61 已交付；DVM-47 gate 仍受阻。解释执行仍由
-  `VmExecutionLock` 串行。GC-B 已实现
-  全根枚举、精确非移动 STW 标记清除、句柄/存储槽复用、宿主析构以及只在安全 opcode
-  发生的确定性水位触发；`gc_watermark_percent` 默认 75，0 回到 GC-A。A5 默认配置
-  exact 三轮保持 `468/468000`、`f91150b4...`，16 MiB/1% 强制回收探针也通过同一
-  golden 且日志确认多轮真实回收。DVM-47 仍受阻：A6 在 GC gate 前命中 APS-4
-  DT_SONAME/inventory identity 通用契约，DH 无 guest fault 但固定 step 的呈现序列
-  100/97 漂移，A6 长运行因此未执行；`dexvm.gc` 诚实保持 `partial`。
-  APK class_def 全量注册并懒链接；未触达 SDK 层级缺口不阻断，触达后明确失败或记账。
-  API-19 `Enum`/clone/java.lang interface shape 已补齐；PVZ NA 越过静态层级、引用容量与
-  JNI_OnLoad 的 jclass/Class identity；下一阻断为 `__android_log_vprint` boundary import。
-  DVM-48..50 已闭合 `java.lang.Thread`、统一 Object[]/class identity、每 guest Java
-  线程独立 A32/JNI/Bionic 上下文、统一 monitor/synchronized 与跨 context clinit；
-  阻塞原语释放执行锁并只用统一 Clock，`dexvm.threads`/`monitors` 为 `complete`。
-  DVM-51 已交付类型化 intrinsic、预绑定字段与 API-19 shape 工具；DVM-52 已交付默认
-  关闭的有界 `dexvm.trace` 和停界 `dexvm.stack`，MCP/CLI 消费与异步抢占仍属后续。
-  DVM-53..60 已交付 FastCode、threaded 稳态循环、双后端验证与 Profile/CLI/Scenario
-  受检入口；热指令保留直达，微基准只报告、不设时序断言。title 三 gate 未验收，
-  `dexvm.interpreter_threaded` 保持 `partial`，生产默认仍为 switch。
-  `IntrinsicClassBuilder` 类型/方法/字段 API 已完成全仓迁移，非法声明在装配期拒绝。
-  DVM-61 已把 guest identity hash 与可复用 handle/记录槽分离；Class identity 按
-  descriptor 稳定派生，`System.identityHashCode` 绕过 override，`Object.toString`
-  保持 libcore 虚调用及 throwable 传播语义。
-  DVM-62..64 已交付受检 ClassNameCodec、完整 linker reflection metadata、唯一
-  application/boot ClassLoader facade，以及可回收的 immutable metadata + fresh wrapper
-  factory；opaque slot 不暴露 VM/DEX id，accessible flag 保持 per-wrapper。
-  DVM-65 已闭合 API-19 `Class` 结构/类型关系与 declared/public
-  Method/Constructor/Field 确定性查询，Constructor 不继承。
-  DVM-66..69 已闭合 bounded reflection foundation：共用 ReflectionCodec、真实 caller
-  access、完整 Method.invoke、Constructor/Class 实例化、Field object/primitive 操作与
-  typed reflect.Array；InvocationTargetException 保留原 target identity。loader/linker
-  只投影 InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system metadata，
-  Class nested/canonical/enclosing 与 declared exception types 不做 `$` 猜测；generic、
-  annotation proxy、多 ClassLoader 与动态 definition 仍明确不实现。
-  Chapter 11 closure 已补齐两个 `Class.forName` overload（真实 caller loader、null/boot/
-  application/custom bounded role、missing CNFE、link cause 与 init EIIE identity）、API19 三类 wrapper
-  hashCode/exact toString，以及 encoded-value kind/value_arg fail-closed malformed coverage；
-  bootstrap `Class.getClassLoader()` 文档已按本地 API19 更正为非 primitive 返回 boot facade。
+- **M9 DexVM**：DVM-1..46、48..69 已交付；解释仍由 `VmExecutionLock` 串行。GC-B 已闭合
+  全根、精确非移动 STW mark-sweep、复用与安全点水位触发；线程/monitor、FastCode/threaded
+  双后端、类型化 intrinsic、诊断、稳定 identity、ClassLoader 与 bounded reflection
+  foundation 均已交付。DVM-66..69 完整覆盖 invoke/construct/field/array、nested/enclosing/
+  throws system metadata、`Class.forName` failure identity 与 encoded-value fail-closed；generic、
+  annotation proxy、多 ClassLoader 和动态 definition 仍明确不实现。
+  DVM-47 gate 仍受 A6 DT_SONAME identity 与 DH 固定 step 100/97 漂移阻断，A6 长运行未执行；
+  `dexvm.gc` 与 `dexvm.interpreter_threaded` 保持 `partial`，threaded 生产默认仍关闭。A5 GC
+  exact/强制回收 golden 已稳定；PVZ NA 当前下一阻断为 `__android_log_vprint` boundary import。
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。

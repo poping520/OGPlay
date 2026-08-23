@@ -10,21 +10,10 @@
 
 namespace ogplay::runtime::detail {
 
-enum class HleRoute : std::uint8_t {
-    bionic_memory,
-    android,
-    egl,
-    gles1,
-    gles1_extension,
-    gles2,
-    log,
-};
-
 struct HleThunkDescriptor final {
     std::string_view library;
     std::string_view name;
-    HleRoute route{};
-    std::uint16_t function_id{};
+    std::uint16_t local_id{};
     std::uint8_t parameter_count{};
 };
 

@@ -1,9 +1,9 @@
 # 状态只能按 unimplemented -> stub -> partial -> complete 前进。
 
 [runtime.virtual_so_boundary]
-status = "partial"
+status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
-note = "BND-1 建立 API-sealed BoundaryCatalog 与完整 active-export synthetic ELF，移除 Bionic Profile 平行 SONAME 表并闭合 late import；BND-2 接入 SVC #2 fast transport，legacy module route 收口由 BND-4 完成"
+note = "BND-1 建立 API-sealed BoundaryCatalog 与完整 active-export synthetic ELF并闭合 late import；BND-2 接入 SVC #2 fast transport；BND-4 以 concrete final module seal-time binding 删除 HleRoute、global fallback id 与平行参数表，EGL/GLES module 共享唯一 GuestGlContext"
 
 [runtime.fast_host_call]
 status = "complete"
@@ -663,7 +663,7 @@ note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢�
 [runtime.android_boundary_hle]
 status = "partial"
 test = "tests/runtime/android_boundary_hle_tests.cpp"
-note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb HLE trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；优化 WU-HLE-01..04 以 dense descriptor 算术 decode、route/function-id、sealed GLES1 dispatch 与一次 bulk stack read 的固定 A32CallFrame 替换字符串/逐字热路径，WU-PERF-01 将 trace 格式化推迟到查询，验收闭环再以独立 trace mutex 移除 raw recording 对 boundary 主锁的竞争；完整 NDK 与 GLES2 槽仍不在本能力范围"
+note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；BND-1..4 改为完整 Virtual SO catalog、multi-page arena、CPU fast host call 与 concrete module-local binding，删除旧 route/function-id 热路径；完整 NDK 与 GLES2 槽仍不在本能力范围"
 
 [runtime.native_activity_session]
 status = "partial"

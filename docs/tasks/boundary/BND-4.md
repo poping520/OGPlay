@@ -7,8 +7,11 @@
 
 ## 交付与验收
 
-- [ ] 所有现有 boundary exports 绑定 module hot entry。
-- [ ] EGL/GLES module 共用唯一 graphics context service。
-- [ ] 删除 `HleRoute`、fallback global id、平行参数表和 import-driven builder。
-- [ ] `AndroidBoundaryHle` 仅保留 facade 职责。
-- [ ] focused boundary/JNI/namespace tests 与 benchmark 报告。
+- [x] 所有现有 boundary exports 在 seal 时绑定 concrete module hot entry。
+- [x] EGL/GLES module 共用唯一 `GuestGlContext` graphics service。
+- [x] 删除 `HleRoute`、fallback global id、平行参数表和 import-driven builder。
+- [x] `AndroidBoundaryHle` 对外只保留 session facade API。
+- [x] focused boundary/JNI/namespace tests 与 benchmark 报告。
+
+验证遵循本次会话限制，不跑全量 exact/scenario/title gate。macOS arm64 Debug 的 1M 次
+dense decode 为 9728 us，cold symbol Resolve 基线为 108946 us；只记录测量，不设倍率门禁。

@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -15,87 +14,6 @@ namespace ogplay::runtime::detail {
 namespace {
 
 constexpr std::uint32_t kThunkStride = 4U;
-
-[[nodiscard]] HleRoute RouteFor(const std::string_view library,
-                                const std::string_view name) {
-    if (library == "libc.so") return HleRoute::bionic_memory;
-    if (library == "libandroid.so") return HleRoute::android;
-    if (library == "libEGL.so") return HleRoute::egl;
-    if (library == "liblog.so") return HleRoute::log;
-    if (library == "libGLESv2.so") return HleRoute::gles2;
-    if (library == "libGLESv1_CM.so") {
-        if (gles::FindGlesFunction(gles::GlesApi::gles1, name).has_value()) {
-            return HleRoute::gles1;
-        }
-        return HleRoute::gles1_extension;
-    }
-    throw std::logic_error("Android boundary symbol has no HLE route");
-}
-
-[[nodiscard]] std::uint16_t FunctionIdFor(const HleRoute route,
-                                          const std::string_view name) {
-    if (route == HleRoute::gles1 || route == HleRoute::gles1_extension ||
-        route == HleRoute::gles2) {
-        const auto api = route == HleRoute::gles1
-                             ? gles::GlesApi::gles1
-                         : route == HleRoute::gles1_extension
-                             ? gles::GlesApi::gles1_extensions
-                             : gles::GlesApi::gles2;
-        const auto id = gles::FindGlesFunction(api, name);
-        if (!id.has_value()) {
-            throw std::logic_error("generated GLES symbol has no function id");
-        }
-        return *id;
-    }
-    if (route == HleRoute::bionic_memory) {
-        const auto overrides = GuestSymbolOverrides();
-        const auto found = std::find_if(
-            overrides.begin(), overrides.end(),
-            [&](const auto& candidate) { return candidate.symbol == name; });
-        if (found == overrides.end()) {
-            throw std::logic_error("unknown Bionic override symbol");
-        }
-        return found->local_id;
-    }
-    const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
-    for (const auto& module : catalog.Modules()) {
-        const auto found = std::find_if(
-            module.exports.begin(), module.exports.end(),
-            [&](const auto& export_) { return export_.name == name; });
-        if (found != module.exports.end()) return found->local_id;
-    }
-    throw std::logic_error("boundary symbol has no module-local id");
-}
-
-[[nodiscard]] std::uint8_t ParameterCountFor(const HleRoute route,
-                                             const std::uint16_t function_id) {
-    if (route == HleRoute::gles1 || route == HleRoute::gles1_extension ||
-        route == HleRoute::gles2) {
-        const auto api = route == HleRoute::gles1
-                             ? gles::GlesApi::gles1
-                         : route == HleRoute::gles1_extension
-                             ? gles::GlesApi::gles1_extensions
-                             : gles::GlesApi::gles2;
-        const auto count = gles::DescribeGlesFunction(api, function_id)
-                               .parameter_count;
-        if (count > (std::numeric_limits<std::uint8_t>::max)()) {
-            throw std::length_error("GLES parameter count overflows descriptor");
-        }
-        return static_cast<std::uint8_t>(count);
-    }
-    if (route == HleRoute::bionic_memory) {
-        const auto overrides = GuestSymbolOverrides();
-        const auto found = std::find_if(
-            overrides.begin(), overrides.end(), [&](const auto& candidate) {
-                return candidate.local_id == function_id;
-            });
-        if (found == overrides.end()) {
-            throw std::logic_error("unknown Bionic override local id");
-        }
-        return found->parameter_count;
-    }
-    throw std::logic_error("non-GLES parameter count requires module metadata");
-}
 
 }  // namespace
 
@@ -130,30 +48,33 @@ std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
         if (code_address != expected) {
             throw std::logic_error("Android boundary thunk catalog is not dense");
         }
-        const auto route = RouteFor(symbol.library, symbol.symbol);
-        const auto function_id = FunctionIdFor(route, symbol.symbol);
-        auto parameter_count = std::uint8_t{};
-        if (route == HleRoute::bionic_memory || route == HleRoute::gles1 ||
-            route == HleRoute::gles1_extension || route == HleRoute::gles2) {
-            parameter_count = ParameterCountFor(route, function_id);
-        } else {
-            const auto* module = AndroidBoundaryCatalog(AndroidApi::api19)
-                                     .FindModule(symbol.library);
-            if (module == nullptr) {
-                throw std::logic_error("boundary descriptor module is missing");
-            }
-            const auto export_ = std::find_if(
-                module->exports.begin(), module->exports.end(),
-                [&](const auto& candidate) {
-                    return candidate.name == symbol.symbol;
-                });
-            if (export_ == module->exports.end()) {
-                throw std::logic_error("boundary descriptor export is missing");
-            }
-            parameter_count = export_->parameter_count;
+        const auto overrides = GuestSymbolOverrides();
+        const auto override_ = std::find_if(
+            overrides.begin(), overrides.end(), [&](const auto& candidate) {
+                return candidate.library == symbol.library &&
+                       candidate.symbol == symbol.symbol;
+            });
+        if (override_ != overrides.end()) {
+            result.push_back({symbol.library, symbol.symbol,
+                              override_->local_id,
+                              override_->parameter_count});
+            continue;
         }
-        result.push_back({symbol.library, symbol.symbol, route, function_id,
-                          parameter_count});
+        const auto* module = AndroidBoundaryCatalog(AndroidApi::api19)
+                                 .FindModule(symbol.library);
+        if (module == nullptr) {
+            throw std::logic_error("boundary descriptor module is missing");
+        }
+        const auto export_ = std::find_if(
+            module->exports.begin(), module->exports.end(),
+            [&](const auto& candidate) {
+                return candidate.name == symbol.symbol;
+            });
+        if (export_ == module->exports.end()) {
+            throw std::logic_error("boundary descriptor export is missing");
+        }
+        result.push_back({symbol.library, symbol.symbol, export_->local_id,
+                          export_->parameter_count});
     }
     return result;
 }

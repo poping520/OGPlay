@@ -387,7 +387,7 @@ void AngleFrame::BufferData(
 }
 
 void AngleFrame::BufferSubData(
-    const std::uint32_t target, const std::uint32_t offset,
+    const std::uint32_t target, const std::int32_t offset,
     const std::span<const std::byte> data) {
 #if OGPLAY_HAS_ANGLE
     glBufferSubData(target, static_cast<GLintptr>(offset),

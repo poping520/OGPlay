@@ -606,7 +606,7 @@ void BindAndroidBoundaryGles1Textures(
             address_space, memory::GuestAddress{arguments[3]}, size,
             gles::GuestTransferDirection::input, false, thread_id);
         require_frame("glBufferSubData")
-            .BufferSubData(arguments[0], static_cast<std::uint32_t>(offset),
+            .BufferSubData(arguments[0], static_cast<std::int32_t>(offset),
                            input.Bytes());
         return 0U;
     });

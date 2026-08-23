@@ -81,6 +81,22 @@ bool AngleFrame::IsFramebuffer(const std::uint32_t framebuffer) {
 #endif
 }
 
+std::int32_t AngleFrame::GetFramebufferAttachmentParameter(
+    const std::uint32_t target, const std::uint32_t attachment,
+    const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    GLint value{};
+    glGetFramebufferAttachmentParameteriv(target, attachment, parameter,
+                                           &value);
+    RequireNoError("glGetFramebufferAttachmentParameteriv");
+    return value;
+#else
+    static_cast<void>(target); static_cast<void>(attachment);
+    static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::uint32_t> AngleFrame::GenerateRenderbuffers(
     const std::size_t count) {
     ValidateCount(count, "renderbuffer");
@@ -124,6 +140,19 @@ bool AngleFrame::IsRenderbuffer(const std::uint32_t renderbuffer) {
     return result;
 #else
     static_cast<void>(renderbuffer);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::int32_t AngleFrame::GetRenderbufferParameter(
+    const std::uint32_t target, const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    GLint value{};
+    glGetRenderbufferParameteriv(target, parameter, &value);
+    RequireNoError("glGetRenderbufferParameteriv");
+    return value;
+#else
+    static_cast<void>(target); static_cast<void>(parameter);
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }

@@ -199,6 +199,10 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   stencil 入口；clear depth/stencil 只在真实 ANGLE 成功后提交 shared shadow。buffer、texture、
   shader、program、framebuffer 与 renderbuffer predicate 查询真实 context object namespace，
   创建、绑定和删除后的 identity 必须一致；back-stencil query shape 固定为规范单值。
+- GLES2 transfer/query 批次的 15 个 export 由 `Gles2Module` 命名 handler 直接承载；IDL 与
+  shared transfer state 在 ANGLE 前解析完整 guest range，output 先 preflight 后一次提交。
+  compressed/copy texture、buffer subrange 以及 object/texture/boolean/float query 均进入同一
+  ANGLE context，非法 guest pointer 不得留下 native 或 shared-state mutation。
 - vertex attribute 延迟保存调用时 array-buffer binding;client array 在 draw 时按
   first/count 或 guest 索引最大值完整预检并上传内部 VBO/EBO,随后恢复 guest buffer
   binding。uniform 标量保持位模式,矩阵/vector 批量入口复用 IDL 计数,constant

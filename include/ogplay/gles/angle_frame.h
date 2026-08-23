@@ -81,7 +81,7 @@ public:
     void BufferData(std::uint32_t target, std::uint32_t byte_size,
                     std::optional<std::span<const std::byte>> data,
                     std::uint32_t usage);
-    void BufferSubData(std::uint32_t target, std::uint32_t offset,
+    void BufferSubData(std::uint32_t target, std::int32_t offset,
                        std::span<const std::byte> data);
     [[nodiscard]] std::int32_t GetBufferParameter(std::uint32_t target,
                                                    std::uint32_t parameter);
@@ -92,11 +92,16 @@ public:
     void BindFramebuffer(std::uint32_t target, std::uint32_t framebuffer);
     [[nodiscard]] std::uint32_t CheckFramebufferStatus(std::uint32_t target);
     [[nodiscard]] bool IsFramebuffer(std::uint32_t framebuffer);
+    [[nodiscard]] std::int32_t GetFramebufferAttachmentParameter(
+        std::uint32_t target, std::uint32_t attachment,
+        std::uint32_t parameter);
     [[nodiscard]] std::vector<std::uint32_t> GenerateRenderbuffers(
         std::size_t count);
     void DeleteRenderbuffers(std::span<const std::uint32_t> renderbuffers);
     void BindRenderbuffer(std::uint32_t target, std::uint32_t renderbuffer);
     [[nodiscard]] bool IsRenderbuffer(std::uint32_t renderbuffer);
+    [[nodiscard]] std::int32_t GetRenderbufferParameter(
+        std::uint32_t target, std::uint32_t parameter);
     void RenderbufferStorage(std::uint32_t target,
                              std::uint32_t internal_format,
                              std::int32_t width, std::int32_t height);
@@ -205,6 +210,8 @@ public:
                                   std::uint32_t depth_pass);
     void Flush();
     [[nodiscard]] std::vector<std::int32_t> GetIntegers(
+        std::uint32_t parameter, std::size_t count);
+    [[nodiscard]] std::vector<std::uint8_t> GetBooleans(
         std::uint32_t parameter, std::size_t count);
     [[nodiscard]] std::vector<float> GetFloats(std::uint32_t parameter,
                                                std::size_t count);

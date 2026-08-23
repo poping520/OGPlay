@@ -91,6 +91,11 @@ TEST_CASE("GLES resolver provides query uniform and vertex output shapes") {
         memory, Thunk("glGetIntegerv"), viewport, 0, &state);
     CHECK(query.pointers[0].byte_size == 16);
 
+    const std::array depth_range{UINT32_C(0x0B70), kStart.Value()};
+    const auto float_range = ogplay::gles::PrepareGles2Call(
+        memory, Thunk("glGetFloatv"), depth_range, 0, &state);
+    CHECK(float_range.pointers[0].byte_size == 8);
+
     for (const auto pname : {UINT32_C(0x8800), UINT32_C(0x8801),
                              UINT32_C(0x8802), UINT32_C(0x8803),
                              UINT32_C(0x8CA3), UINT32_C(0x8CA4),

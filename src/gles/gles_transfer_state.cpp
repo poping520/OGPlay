@@ -133,6 +133,7 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
 [[nodiscard]] bool IsKnownScalarQuery(const std::uint32_t pname) noexcept {
     constexpr std::array known{
         UINT32_C(0x0B44), UINT32_C(0x0B45), UINT32_C(0x0B46),
+        UINT32_C(0x0B70),
         UINT32_C(0x0B71), UINT32_C(0x0B72), UINT32_C(0x0B73),
         UINT32_C(0x0B74), UINT32_C(0x0B90), UINT32_C(0x0B91),
         UINT32_C(0x0B92), UINT32_C(0x0B94), UINT32_C(0x0B95),

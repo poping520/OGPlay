@@ -78,6 +78,7 @@ foreach(required_path IN ITEMS
         "modules/gles1/gles1_dispatch.cpp"
         "modules/gles1/gles1_module.h"
         "modules/gles2/gles2_module.h"
+        "modules/gles2/gles2_transfer.cpp"
         "modules/log/log_module.cpp"
         "modules/log/log_exports.h"
         "facade/android_boundary_hle.cpp")

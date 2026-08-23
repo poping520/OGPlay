@@ -288,6 +288,23 @@ std::vector<std::int32_t> AngleFrame::GetIntegers(
 #endif
 }
 
+std::vector<std::uint8_t> AngleFrame::GetBooleans(
+    const std::uint32_t parameter, const std::size_t count) {
+    if (count > static_cast<std::size_t>(
+                    (std::numeric_limits<std::int32_t>::max)())) {
+        throw std::length_error("ANGLE boolean query count overflows GLsizei");
+    }
+#if OGPLAY_HAS_ANGLE
+    std::vector<GLboolean> native(count);
+    glGetBooleanv(parameter, native.data());
+    RequireNoError("glGetBooleanv");
+    return {native.begin(), native.end()};
+#else
+    static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<float> AngleFrame::GetFloats(
     const std::uint32_t parameter, const std::size_t count) {
     if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {

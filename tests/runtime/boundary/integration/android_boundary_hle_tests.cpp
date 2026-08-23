@@ -1199,6 +1199,146 @@ TEST_CASE("GLES2 low-transfer state and object predicates use ANGLE") {
     fixture.boundary.CloseManagedSurface();
 }
 
+TEST_CASE("GLES2 transfer texture and query exports use preflighted ANGLE calls") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    const auto query = fixture.output.Add(0x300U);
+    const auto input = fixture.output.Add(0x380U);
+    const auto address = [&](const std::string_view symbol) {
+        const auto found = fixture.boundary.Symbols().Lookup(
+            "libGLESv2.so", symbol);
+        REQUIRE(found.has_value());
+        return found->Value();
+    };
+    const auto call = [&](const std::string_view symbol,
+                          const std::span<const std::uint32_t> arguments) {
+        return BoundaryCallAddress(fixture, address(symbol), arguments);
+    };
+
+    CHECK(fixture.Call("libGLESv2.so", "glColorMask",
+                       {1U, 0U, 1U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetBooleanv",
+                       {0x0C23U, query.Value()}) == 0U);
+    std::array<std::byte, 4> boolean_mask{};
+    fixture.memory.Read(query, boolean_mask, 1U);
+    CHECK(boolean_mask == std::array<std::byte, 4>{
+                              std::byte{1}, std::byte{0},
+                              std::byte{1}, std::byte{0}});
+    CHECK(fixture.Call("libGLESv2.so", "glDepthRangef",
+                       {std::bit_cast<std::uint32_t>(0.25F),
+                        std::bit_cast<std::uint32_t>(0.75F)}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetFloatv",
+                       {0x0B70U, query.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(query, 1U)) ==
+          doctest::Approx(0.25F));
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(query.Add(4U), 1U)) ==
+          doctest::Approx(0.75F));
+
+    CHECK(fixture.Call("libGLESv2.so", "glGenBuffers",
+                       {1U, query.Value()}) == 0U);
+    const auto buffer = fixture.bus.Read32(query, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindBuffer",
+                       {0x8892U, buffer}) == 0U);
+    std::array<std::byte, 16> buffer_data{};
+    fixture.memory.Write(input, buffer_data, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBufferData",
+                       {0x8892U, 16U, input.Value(), 0x88E4U}) == 0U);
+    std::array<std::byte, 4> replacement{
+        std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+    fixture.memory.Write(input, replacement, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBufferSubData",
+                       {0x8892U, 4U, 4U, input.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetBufferParameteriv",
+                       {0x8892U, 0x8764U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 16U);
+
+    CHECK(fixture.Call("libGLESv2.so", "glGenTextures",
+                       {1U, query.Value()}) == 0U);
+    const auto texture = fixture.bus.Read32(query, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindTexture",
+                       {0x0DE1U, texture}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glTexParameterf",
+                       {0x0DE1U, 0x2801U,
+                        std::bit_cast<std::uint32_t>(9729.0F)}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetTexParameterfv",
+                       {0x0DE1U, 0x2801U, query.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(query, 1U)) ==
+          doctest::Approx(9729.0F));
+    fixture.bus.Write32(input, 0x812FU, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glTexParameteriv",
+                       {0x0DE1U, 0x2802U, input.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetTexParameteriv",
+                       {0x0DE1U, 0x2802U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 0x812FU);
+    fixture.bus.Write32(input, std::bit_cast<std::uint32_t>(9728.0F), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glTexParameterfv",
+                       {0x0DE1U, 0x2800U, input.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetTexParameteriv",
+                       {0x0DE1U, 0x2800U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 0x2600U);
+
+    fixture.bus.Write32(input, 0x2901U, 1U);
+    CHECK_THROWS_AS(
+        fixture.Call("libGLESv2.so", "glTexParameteriv",
+                     {0x0DE1U, 0x2802U, 0x12345000U}),
+        ogplay::memory::MemoryFault);
+    CHECK(fixture.Call("libGLESv2.so", "glGetTexParameteriv",
+                       {0x0DE1U, 0x2802U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 0x812FU);
+
+    CHECK(fixture.Call("libGLESv2.so", "glPixelStorei",
+                       {0x0CF5U, 8U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glPixelStorei",
+                       {0x0D05U, 2U}) == 0U);
+    const std::array<std::byte, 8> etc1{};
+    fixture.memory.Write(input, etc1, 1U);
+    const std::array<std::uint32_t, 8> compressed{
+        0x0DE1U, 0U, 0x8D64U, 4U, 4U, 0U, 8U, input.Value()};
+    CHECK(call("glCompressedTexImage2D", compressed) == 0U);
+    const std::array<std::uint32_t, 9> compressed_sub{
+        0x0DE1U, 0U, 0U, 0U, 4U, 4U, 0x8D64U, 8U, input.Value()};
+    CHECK(call("glCompressedTexSubImage2D", compressed_sub) == 0U);
+
+    const std::array<std::uint32_t, 8> copy_image{
+        0x0DE1U, 0U, 0x1908U, 0U, 0U, 4U, 3U, 0U};
+    CHECK(call("glCopyTexImage2D", copy_image) == 0U);
+    const std::array<std::uint32_t, 8> copy_sub{
+        0x0DE1U, 0U, 0U, 0U, 0U, 0U, 1U, 1U};
+    CHECK(call("glCopyTexSubImage2D", copy_sub) == 0U);
+
+    CHECK(fixture.Call("libGLESv2.so", "glGenFramebuffers",
+                       {1U, query.Value()}) == 0U);
+    const auto framebuffer = fixture.bus.Read32(query, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindFramebuffer",
+                       {0x8D40U, framebuffer}) == 0U);
+    const std::array<std::uint32_t, 5> attach{
+        0x8D40U, 0x8CE0U, 0x0DE1U, texture, 0U};
+    CHECK(call("glFramebufferTexture2D", attach) == 0U);
+    CHECK(fixture.Call("libGLESv2.so",
+                       "glGetFramebufferAttachmentParameteriv",
+                       {0x8D40U, 0x8CE0U, 0x8CD1U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == texture);
+
+    CHECK(fixture.Call("libGLESv2.so", "glGenRenderbuffers",
+                       {1U, query.Value()}) == 0U);
+    const auto renderbuffer = fixture.bus.Read32(query, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindRenderbuffer",
+                       {0x8D41U, renderbuffer}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glRenderbufferStorage",
+                       {0x8D41U, 0x8056U, 2U, 3U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetRenderbufferParameteriv",
+                       {0x8D41U, 0x8D42U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 2U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x0CF5U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 8U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x0D05U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 2U);
+    fixture.boundary.CloseManagedSurface();
+}
+
 TEST_CASE("Android GLES1 publishes and directly binds KitKat Bounds wrappers") {
     BoundaryFixture fixture;
     static constexpr std::array<std::string_view, 7> bounds{

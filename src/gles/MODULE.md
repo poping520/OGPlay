@@ -105,6 +105,9 @@
   附着、完整性查询及 mipmap 生成必须转发当前 ANGLE context 并立即检查原生错误。
 - buffer subrange 的 guest offset/size 必须非负，输入 payload 先完整预检再调用 ANGLE；
   `AngleFrame::BufferSubData` 只接受拥有精确长度的受检 span，并立即检查原生错误。
+- boolean/float、buffer、texture、framebuffer attachment 与 renderbuffer parameter query
+  必须调用对应的真实 ANGLE API；输出 storage 在 native query 前完整预检，只在成功后提交。
+  compressed/copy texture 继续复用统一 ETC1/PVRTC fallback，不能绕过当前 context。
 - vertex pointer 在绑定 array buffer 时把 32 位 guest 值解释为 VBO offset；client array
   延迟到 draw，按实际索引范围经内部 VBO/EBO 暂存后再进入 ANGLE。uniform vector/matrix
   数组按 IDL 形状完整搬运后再转换为宿主标量；shader/program active-variable 与 info-log

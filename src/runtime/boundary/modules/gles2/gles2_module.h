@@ -29,6 +29,10 @@ public:
         const auto args = call.RegisterArguments();
         const auto symbol = gles::DescribeGlesFunction(
                                 gles::GlesApi::gles2, FunctionId).name;
+        if (const auto transfer = DispatchTransfer<FunctionId>(call);
+            transfer.has_value()) {
+            return *transfer;
+        }
         if (const auto state = DispatchLowTransferState<FunctionId>(call);
             state.has_value()) {
             return *state;
@@ -91,6 +95,44 @@ public:
 
 private:
     static constexpr std::size_t kMaximumGlesNameBytes = 4096;
+
+    template <gles::GlesThunkId FunctionId>
+    std::optional<std::uint32_t> DispatchTransfer(const A32CallFrame& call) {
+        if constexpr (FunctionId == 13U) return BufferSubData(call);
+        if constexpr (FunctionId == 21U) return CompressedTexImage2D(call);
+        if constexpr (FunctionId == 22U) return CompressedTexSubImage2D(call);
+        if constexpr (FunctionId == 23U) return CopyTexImage2D(call);
+        if constexpr (FunctionId == 24U) return CopyTexSubImage2D(call);
+        if constexpr (FunctionId == 58U) return GetBooleanv(call);
+        if constexpr (FunctionId == 59U) return GetBufferParameteriv(call);
+        if constexpr (FunctionId == 61U) return GetFloatv(call);
+        if constexpr (FunctionId == 62U)
+            return GetFramebufferAttachmentParameteriv(call);
+        if constexpr (FunctionId == 66U) return GetRenderbufferParameteriv(call);
+        if constexpr (FunctionId == 72U) return GetTexParameterfv(call);
+        if constexpr (FunctionId == 73U) return GetTexParameteriv(call);
+        if constexpr (FunctionId == 106U) return TexParameterf(call);
+        if constexpr (FunctionId == 107U) return TexParameterfv(call);
+        if constexpr (FunctionId == 109U) return TexParameteriv(call);
+        return std::nullopt;
+    }
+
+    std::uint32_t BufferSubData(const A32CallFrame& call);
+    std::uint32_t CompressedTexImage2D(const A32CallFrame& call);
+    std::uint32_t CompressedTexSubImage2D(const A32CallFrame& call);
+    std::uint32_t CopyTexImage2D(const A32CallFrame& call);
+    std::uint32_t CopyTexSubImage2D(const A32CallFrame& call);
+    std::uint32_t GetBooleanv(const A32CallFrame& call);
+    std::uint32_t GetBufferParameteriv(const A32CallFrame& call);
+    std::uint32_t GetFloatv(const A32CallFrame& call);
+    std::uint32_t GetFramebufferAttachmentParameteriv(
+        const A32CallFrame& call);
+    std::uint32_t GetRenderbufferParameteriv(const A32CallFrame& call);
+    std::uint32_t GetTexParameterfv(const A32CallFrame& call);
+    std::uint32_t GetTexParameteriv(const A32CallFrame& call);
+    std::uint32_t TexParameterf(const A32CallFrame& call);
+    std::uint32_t TexParameterfv(const A32CallFrame& call);
+    std::uint32_t TexParameteriv(const A32CallFrame& call);
 
     template <gles::GlesThunkId FunctionId>
     std::optional<std::uint32_t> DispatchLowTransferState(

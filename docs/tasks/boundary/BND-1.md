@@ -13,5 +13,8 @@ synthetic Virtual SO 从 catalog 发布完整 active exports，不再按当前 i
 - [x] synthetic dynsym 来自 provider 的完整 module export 集。
 - [x] late import 可从既有 Virtual SO 解析首次未导入的 export。
 - [x] focused tests：Bionic profile/namespace 与 boundary descriptor。
+- [x] API range 在 seal 时过滤 inactive module/export；local id 无需连续或等于数组序号。
+- [x] link preflight 只装配 `BionicProfile + BoundaryCatalog` 生成的符号元数据与 loader，
+  不构造 graphics runtime，也不接受 backend/surface 参数。
 
-非目标：本 WU 保留 legacy slow transport、`HleRoute` 与中央 dispatch。
+历史说明：首轮 BND-1 保留的 legacy dispatch 已由 BND-4 收口；本次闭环不新增 WU。

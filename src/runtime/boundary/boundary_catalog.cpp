@@ -41,48 +41,61 @@ constexpr std::array<NamedExport, 2> kLogExports{{
     {"__android_log_print", 3}, {"__android_log_write", 3},
 }};
 
-void AddNamedModule(std::vector<BoundaryModuleDescriptor>& modules,
+void AddNamedModule(std::vector<BoundaryModuleDefinition>& modules,
+                    std::vector<std::vector<BoundaryExportDefinition>>& storage,
                     const std::string_view soname,
                     const std::span<const NamedExport> exports) {
-    BoundaryModuleDescriptor module;
-    module.soname = soname;
-    module.exports.reserve(exports.size());
+    auto& module_exports = storage.emplace_back();
+    module_exports.reserve(exports.size());
     for (std::size_t index = 0; index < exports.size(); ++index) {
         if (index > (std::numeric_limits<std::uint16_t>::max)()) {
             throw std::length_error("boundary module local id overflows");
         }
-        module.exports.push_back(BoundaryExportDescriptor{
-            .name = std::string(exports[index].first),
+        module_exports.push_back(BoundaryExportDefinition{
+            .name = exports[index].first,
             .local_id = static_cast<std::uint16_t>(index),
-            .parameter_count = exports[index].second,
-            .address = memory::GuestAddress{}});
+            .parameter_count = exports[index].second});
     }
-    modules.push_back(std::move(module));
+    modules.push_back({soname, {}, module_exports});
 }
 
-void AddGlesModule(std::vector<BoundaryModuleDescriptor>& modules,
+void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
+                   std::vector<std::vector<BoundaryExportDefinition>>& storage,
                    const std::string_view soname,
                    const std::span<const gles::GlesApi> apis) {
-    BoundaryModuleDescriptor module;
-    module.soname = soname;
+    auto& module_exports = storage.emplace_back();
     for (const auto api : apis) {
         const auto count = gles::GlesFunctionCount(api);
         for (std::size_t index = 0; index < count; ++index) {
             const auto function = gles::DescribeGlesFunction(
                 api, static_cast<gles::GlesThunkId>(index));
-            if (module.exports.size() >
+            if (module_exports.size() >
                 (std::numeric_limits<std::uint16_t>::max)()) {
                 throw std::length_error("GLES boundary local id overflows");
             }
-            module.exports.push_back(BoundaryExportDescriptor{
-                .name = std::string(function.name),
-                .local_id = static_cast<std::uint16_t>(module.exports.size()),
+            module_exports.push_back(BoundaryExportDefinition{
+                .name = function.name,
+                .local_id = static_cast<std::uint16_t>(module_exports.size()),
                 .parameter_count =
-                    static_cast<std::uint8_t>(function.parameter_count),
-                .address = memory::GuestAddress{}});
+                    static_cast<std::uint8_t>(function.parameter_count)});
         }
     }
-    modules.push_back(std::move(module));
+    modules.push_back({soname, {}, module_exports});
+}
+
+std::vector<BoundaryModuleDefinition> BuiltinDefinitions(
+    std::vector<std::vector<BoundaryExportDefinition>>& storage) {
+    std::vector<BoundaryModuleDefinition> modules;
+    storage.reserve(5);
+    AddNamedModule(modules, storage, "libandroid.so", kAndroidExports);
+    AddNamedModule(modules, storage, "libEGL.so", kEglExports);
+    constexpr std::array gles1_apis{gles::GlesApi::gles1,
+                                   gles::GlesApi::gles1_extensions};
+    AddGlesModule(modules, storage, "libGLESv1_CM.so", gles1_apis);
+    constexpr std::array gles2_apis{gles::GlesApi::gles2};
+    AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis);
+    AddNamedModule(modules, storage, "liblog.so", kLogExports);
+    return modules;
 }
 
 }  // namespace
@@ -93,35 +106,44 @@ bool AndroidApiRange::Contains(const AndroidApi api) const noexcept {
 }
 
 BoundaryCatalog::BoundaryCatalog(const AndroidApi api) : api_(api) {
-    AddNamedModule(modules_, "libandroid.so", kAndroidExports);
-    AddNamedModule(modules_, "libEGL.so", kEglExports);
-    constexpr std::array gles1_apis{gles::GlesApi::gles1,
-                                   gles::GlesApi::gles1_extensions};
-    AddGlesModule(modules_, "libGLESv1_CM.so", gles1_apis);
-    constexpr std::array gles2_apis{gles::GlesApi::gles2};
-    AddGlesModule(modules_, "libGLESv2.so", gles2_apis);
-    AddNamedModule(modules_, "liblog.so", kLogExports);
+    std::vector<std::vector<BoundaryExportDefinition>> storage;
+    const auto definitions = BuiltinDefinitions(storage);
+    *this = BoundaryCatalog(api, definitions);
+}
 
+BoundaryCatalog::BoundaryCatalog(
+    const AndroidApi api,
+    const std::span<const BoundaryModuleDefinition> definitions)
+    : api_(api) {
     std::set<std::string, std::less<>> sonames;
-    for (auto& module : modules_) {
-        if (!module.api.Contains(api_) || !sonames.insert(module.soname).second) {
+    for (const auto& definition : definitions) {
+        if (!definition.api.Contains(api_)) continue;
+        if (!sonames.insert(std::string(definition.soname)).second) {
             throw std::logic_error("invalid boundary module catalog");
         }
+        BoundaryModuleDescriptor module;
+        module.soname = definition.soname;
+        module.api = definition.api;
         module.first_slot = slot_count_;
         std::set<std::string, std::less<>> names;
         std::set<std::uint16_t> local_ids;
-        std::uint16_t expected_local_id{};
-        for (auto& export_ : module.exports) {
-            if (!export_.api.Contains(api_) ||
-                !names.insert(export_.name).second ||
-                !local_ids.insert(export_.local_id).second ||
-                export_.local_id != expected_local_id++) {
+        for (const auto& definition_export : definition.exports) {
+            if (!definition_export.api.Contains(api_)) continue;
+            if (!names.insert(std::string(definition_export.name)).second ||
+                !local_ids.insert(definition_export.local_id).second) {
                 throw std::logic_error("invalid boundary export catalog");
             }
+            BoundaryExportDescriptor export_;
+            export_.name = definition_export.name;
+            export_.local_id = definition_export.local_id;
+            export_.parameter_count = definition_export.parameter_count;
+            export_.api = definition_export.api;
             export_.address = memory::GuestAddress{
                 kBionicHleThunkBegin + slot_count_ * kThunkStride + 1U};
+            module.exports.push_back(std::move(export_));
             ++slot_count_;
         }
+        if (!module.exports.empty()) modules_.push_back(std::move(module));
     }
 }
 

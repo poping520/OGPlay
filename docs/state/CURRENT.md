@@ -17,6 +17,8 @@
   module invoke pointer，descriptor 只保留 module-local id/签名；`HleRoute`、全局
   fallback id、平行参数表和 import-driven synthetic builder 已删除。EGL/GLES1/GLES2
   继续共享唯一 `GuestGlContext`，fast/slow transport 共用同一 module binding。
+  BND-1 闭环已补齐跨 API active module/export 过滤与 metadata-only link preflight；
+  preflight 不再构造 ANGLE/surface runtime，module-local id 也不再要求与目录序号一致。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

@@ -78,6 +78,35 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
                     ogplay::runtime::BionicProfileError);
 }
 
+TEST_CASE("Boundary catalog filters inactive modules and exports across APIs") {
+    using namespace ogplay::runtime;
+    static constexpr std::array exports{
+        BoundaryExportDefinition{"always", 7U, 0U, {}},
+        BoundaryExportDefinition{"since22", 11U, 1U,
+                                 {AndroidApi::api22, AndroidApi::api23}},
+    };
+    static constexpr std::array modules{
+        BoundaryModuleDefinition{"libactive.so", {}, exports},
+        BoundaryModuleDefinition{"libsince23.so",
+                                 {AndroidApi::api23, AndroidApi::api23},
+                                 exports},
+    };
+    const BoundaryCatalog api19(AndroidApi::api19, modules);
+    REQUIRE(api19.Modules().size() == 1U);
+    CHECK(api19.Modules()[0].exports.size() == 1U);
+    CHECK(api19.Modules()[0].exports[0].local_id == 7U);
+    CHECK(api19.SlotCount() == 1U);
+
+    const BoundaryCatalog api22(AndroidApi::api22, modules);
+    REQUIRE(api22.Modules().size() == 1U);
+    CHECK(api22.Modules()[0].exports.size() == 2U);
+    CHECK(api22.Modules()[0].exports[1].local_id == 11U);
+
+    const BoundaryCatalog api23(AndroidApi::api23, modules);
+    CHECK(api23.Modules().size() == 2U);
+    CHECK(api23.SlotCount() == 4U);
+}
+
 TEST_CASE("Bionic memory intercepts preserve libc behavior") {
     ogplay::memory::AddressSpace memory;
     const ogplay::memory::GuestAddress page{0x10000U};

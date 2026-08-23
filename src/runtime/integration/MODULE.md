@@ -27,8 +27,10 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 - runner 只有在所有资源、引用、线程和生命周期闭环后才能报告成功。
 - Android guest call session 只在通用 A32 slice 边界调用显式 observer;observer 由上层
   注入,不得让 integration 直接依赖窗口后端或消费输入。
-- `PreflightAndroidGuestLink` 复用生产 Bionic namespace 与 Android boundary 完成映射和
-  重定位但不执行 guest;报告 guest/boundary 模块及 relocation 数,任一缺失导入明确失败。
+- `PreflightAndroidGuestLink` 只复用生产 Bionic namespace、API-sealed `BoundaryCatalog`
+  生成的 Virtual SO 符号元数据与 loader 完成映射和重定位，不构造
+  `AndroidBoundaryHle`、ANGLE backend 或 surface runtime；报告 guest/boundary 模块及
+  relocation 数，任一缺失导入明确失败。
 - `InitializeApi19GuestProcess` 事务映射统一 root TLS/thread-info/preinit、4 MiB 栈、
   `SVC #1` 返回 trap 与空 property area,并只向受检 libc 导出槽发布地址;固定布局冲突、
   非法线程/进程名或写入失败必须回滚新增映射和导出槽。

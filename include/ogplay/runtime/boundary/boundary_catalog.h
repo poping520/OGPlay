@@ -33,6 +33,19 @@ struct BoundaryModuleDescriptor final {
     std::vector<BoundaryExportDescriptor> exports;
 };
 
+struct BoundaryExportDefinition final {
+    std::string_view name;
+    std::uint16_t local_id{};
+    std::uint8_t parameter_count{};
+    AndroidApiRange api{};
+};
+
+struct BoundaryModuleDefinition final {
+    std::string_view soname;
+    AndroidApiRange api{};
+    std::span<const BoundaryExportDefinition> exports;
+};
+
 struct BoundaryModuleInstance final {
     const BoundaryModuleDescriptor* descriptor{};
     void* instance{};
@@ -41,6 +54,8 @@ struct BoundaryModuleInstance final {
 class BoundaryCatalog final {
 public:
     explicit BoundaryCatalog(AndroidApi api);
+    BoundaryCatalog(AndroidApi api,
+                    std::span<const BoundaryModuleDefinition> definitions);
 
     [[nodiscard]] AndroidApi Api() const noexcept;
     [[nodiscard]] std::span<const BoundaryModuleDescriptor> Modules() const noexcept;

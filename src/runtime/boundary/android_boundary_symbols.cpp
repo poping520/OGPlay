@@ -17,9 +17,9 @@ constexpr std::uint32_t kThunkStride = 4U;
 
 }  // namespace
 
-std::vector<BionicHleSymbol> BuildAndroidBoundarySymbols() {
+std::vector<BionicHleSymbol> BuildAndroidBoundarySymbols(const AndroidApi api) {
     std::vector<BionicHleSymbol> result;
-    const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
+    const auto& catalog = AndroidBoundaryCatalog(api);
     result.reserve(catalog.SlotCount() + GuestSymbolOverrides().size());
     for (const auto& module : catalog.Modules()) {
         for (const auto& export_ : module.exports) {

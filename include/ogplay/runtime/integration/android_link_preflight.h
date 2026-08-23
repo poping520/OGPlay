@@ -6,7 +6,6 @@
 #include <stdexcept>
 #include <string>
 
-#include "ogplay/gles/angle_backend.h"
 #include "ogplay/loader/module_loader.h"
 
 namespace ogplay::runtime {
@@ -15,10 +14,6 @@ struct AndroidLinkPreflightRequest final {
     std::uint32_t api{};
     std::string root_module;
     std::span<const loader::Elf32ModuleInput> modules;
-    gles::AngleBackend backend;
-    std::uint32_t width{};
-    std::uint32_t height{};
-    std::uint32_t supersample_factor{1};
 };
 
 struct AndroidLinkPreflightReport final {

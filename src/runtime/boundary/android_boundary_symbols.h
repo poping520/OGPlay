@@ -17,7 +17,8 @@ struct HleThunkDescriptor final {
     std::uint8_t parameter_count{};
 };
 
-[[nodiscard]] std::vector<BionicHleSymbol> BuildAndroidBoundarySymbols();
+[[nodiscard]] std::vector<BionicHleSymbol> BuildAndroidBoundarySymbols(
+    AndroidApi api = AndroidApi::api19);
 [[nodiscard]] std::vector<HleThunkDescriptor> BuildAndroidBoundaryDescriptors(
     std::span<const BionicHleSymbol> symbols);
 [[nodiscard]] const HleThunkDescriptor* DecodeAndroidBoundaryThunk(

@@ -65,14 +65,11 @@ TEST_CASE("Android link preflight maps and relocates without executing guest") {
     const ogplay::loader::Elf32ModuleInput module{
         "sample.so", bytes, ogplay::memory::GuestAddress{0x10000000U}};
     const auto report = ogplay::runtime::PreflightAndroidGuestLink(
-        {19, "sample.so", std::span{&module, 1},
-         {ogplay::gles::AngleRenderer::vulkan,
-          ogplay::gles::AngleDevice::hardware},
-         320, 240, 1});
+        {19, "sample.so", std::span{&module, 1}});
     CHECK(report.guest_modules == 1);
     CHECK(report.boundary_modules == 0);
     CHECK(report.relocations == 0);
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::PreflightAndroidGuestLink(
-                        {19, "", {}, {}, 0, 0, 1})),
+                        {19, "", {}})),
                     ogplay::runtime::AndroidLinkPreflightError);
 }

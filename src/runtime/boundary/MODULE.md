@@ -195,6 +195,10 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 - GLES2 blend/raster 批次真实转发 blend color/equation、sample coverage 与 flush；混合
   链接 guest 的 core `glSampleCoverage` 与 `glFlush` 也必须在 GLES1 dispatch 转入相同
   ANGLE context，flush 不得触发 managed/guest surface present。
+- GLES2 low-transfer state 批次直接绑定 separate blend、depth/raster、普通与 front/back
+  stencil 入口；clear depth/stencil 只在真实 ANGLE 成功后提交 shared shadow。buffer、texture、
+  shader、program、framebuffer 与 renderbuffer predicate 查询真实 context object namespace，
+  创建、绑定和删除后的 identity 必须一致；back-stencil query shape 固定为规范单值。
 - vertex attribute 延迟保存调用时 array-buffer binding;client array 在 draw 时按
   first/count 或 guest 索引最大值完整预检并上传内部 VBO/EBO,随后恢复 guest buffer
   binding。uniform 标量保持位模式,矩阵/vector 批量入口复用 IDL 计数,constant

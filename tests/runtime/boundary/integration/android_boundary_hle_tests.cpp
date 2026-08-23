@@ -1112,6 +1112,93 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
         std::runtime_error);
 }
 
+TEST_CASE("GLES2 low-transfer state and object predicates use ANGLE") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    CHECK(fixture.Call("libGLESv2.so", "glBlendEquationSeparate",
+                       {0x8006U, 0x8006U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glBlendFuncSeparate",
+                       {1U, 0U, 1U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glClearDepthf",
+                       {std::bit_cast<std::uint32_t>(0.5F)}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glClearStencil", {3U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glColorMask", {1U, 0U, 1U, 1U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glCullFace", {0x0405U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glDepthFunc", {0x0203U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glDepthMask", {1U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glDepthRangef",
+                       {0U, std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glFrontFace", {0x0901U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glHint", {0x8192U, 0x1100U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glLineWidth",
+                       {std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glPolygonOffset", {0U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glStencilFunc",
+                       {0x0207U, 1U, 0xFFU}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glStencilMask", {0xFFU}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glStencilOp",
+                       {0x1E00U, 0x1E00U, 0x1E00U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glStencilFuncSeparate",
+                       {0x0405U, 0x0205U, 7U, 0xAAU}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glStencilMaskSeparate",
+                       {0x0405U, 0x55U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glStencilOpSeparate",
+                       {0x0405U, 0x1E00U, 0x1E01U, 0x1E02U}) == 0U);
+    const auto query = fixture.output.Add(0x300U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x8800U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 0x0205U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetIntegerv",
+                       {0x8CA5U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 0x55U);
+
+    CHECK(fixture.Call("libGLESv2.so", "glGenBuffers", {1U, query.Value()}) == 0U);
+    const auto buffer = fixture.bus.Read32(query, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindBuffer", {0x8892U, buffer}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsBuffer", {buffer}) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glGenTextures", {1U, query.Value()}) == 0U);
+    const auto texture = fixture.bus.Read32(query, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindTexture", {0x0DE1U, texture}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsTexture", {texture}) == 1U);
+    const auto shader = fixture.Call("libGLESv2.so", "glCreateShader", {0x8B31U});
+    REQUIRE(shader != 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsShader", {shader}) == 1U);
+    const auto program = fixture.Call("libGLESv2.so", "glCreateProgram");
+    CHECK(fixture.Call("libGLESv2.so", "glIsProgram", {program}) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glGenFramebuffers", {1U, query.Value()}) == 0U);
+    const auto framebuffer = fixture.bus.Read32(query, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindFramebuffer",
+                       {0x8D40U, framebuffer}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsFramebuffer", {framebuffer}) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glGenRenderbuffers", {1U, query.Value()}) == 0U);
+    const auto renderbuffer = fixture.bus.Read32(query, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glBindRenderbuffer",
+                       {0x8D41U, renderbuffer}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsRenderbuffer", {renderbuffer}) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glFinish") == 0U);
+
+    fixture.bus.Write32(query, buffer, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteBuffers", {1U, query.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsBuffer", {buffer}) == 0U);
+    fixture.bus.Write32(query, texture, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteTextures", {1U, query.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsTexture", {texture}) == 0U);
+    fixture.bus.Write32(query, framebuffer, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteFramebuffers",
+                       {1U, query.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsFramebuffer", {framebuffer}) == 0U);
+    fixture.bus.Write32(query, renderbuffer, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteRenderbuffers",
+                       {1U, query.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsRenderbuffer", {renderbuffer}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteShader", {shader}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsShader", {shader}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteProgram", {program}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glIsProgram", {program}) == 0U);
+    fixture.boundary.CloseManagedSurface();
+}
+
 TEST_CASE("Android GLES1 publishes and directly binds KitKat Bounds wrappers") {
     BoundaryFixture fixture;
     static constexpr std::array<std::string_view, 7> bounds{

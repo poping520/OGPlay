@@ -69,6 +69,31 @@ void AngleFrame::BlendEquation(const std::uint32_t mode) {
 #endif
 }
 
+void AngleFrame::BlendEquationSeparate(const std::uint32_t rgb,
+                                        const std::uint32_t alpha) {
+#if OGPLAY_HAS_ANGLE
+    glBlendEquationSeparate(rgb, alpha); RequireNoError("glBlendEquationSeparate");
+#else
+    static_cast<void>(rgb); static_cast<void>(alpha);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::BlendFunctionSeparate(
+    const std::uint32_t source_rgb, const std::uint32_t destination_rgb,
+    const std::uint32_t source_alpha,
+    const std::uint32_t destination_alpha) {
+#if OGPLAY_HAS_ANGLE
+    glBlendFuncSeparate(source_rgb, destination_rgb, source_alpha,
+                        destination_alpha);
+    RequireNoError("glBlendFuncSeparate");
+#else
+    static_cast<void>(source_rgb); static_cast<void>(destination_rgb);
+    static_cast<void>(source_alpha); static_cast<void>(destination_alpha);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::ColorMask(const bool red, const bool green, const bool blue,
                            const bool alpha) {
 #if OGPLAY_HAS_ANGLE
@@ -186,11 +211,34 @@ void AngleFrame::StencilFunction(const std::uint32_t function,
 #endif
 }
 
+void AngleFrame::StencilFunctionSeparate(
+    const std::uint32_t face, const std::uint32_t function,
+    const std::int32_t reference, const std::uint32_t mask) {
+#if OGPLAY_HAS_ANGLE
+    glStencilFuncSeparate(face, function, reference, mask);
+    RequireNoError("glStencilFuncSeparate");
+#else
+    static_cast<void>(face); static_cast<void>(function);
+    static_cast<void>(reference); static_cast<void>(mask);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::StencilMask(const std::uint32_t mask) {
 #if OGPLAY_HAS_ANGLE
     glStencilMask(mask); RequireNoError("glStencilMask");
 #else
     static_cast<void>(mask); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::StencilMaskSeparate(const std::uint32_t face,
+                                      const std::uint32_t mask) {
+#if OGPLAY_HAS_ANGLE
+    glStencilMaskSeparate(face, mask); RequireNoError("glStencilMaskSeparate");
+#else
+    static_cast<void>(face); static_cast<void>(mask);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }
 
@@ -202,6 +250,19 @@ void AngleFrame::StencilOperation(const std::uint32_t stencil_fail,
 #else
     static_cast<void>(stencil_fail); static_cast<void>(depth_fail);
     static_cast<void>(depth_pass); throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::StencilOperationSeparate(
+    const std::uint32_t face, const std::uint32_t stencil_fail,
+    const std::uint32_t depth_fail, const std::uint32_t depth_pass) {
+#if OGPLAY_HAS_ANGLE
+    glStencilOpSeparate(face, stencil_fail, depth_fail, depth_pass);
+    RequireNoError("glStencilOpSeparate");
+#else
+    static_cast<void>(face); static_cast<void>(stencil_fail);
+    static_cast<void>(depth_fail); static_cast<void>(depth_pass);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }
 

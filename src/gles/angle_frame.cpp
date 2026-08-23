@@ -218,6 +218,17 @@ void AngleFrame::DeleteShader(const std::uint32_t shader) {
 #endif
 }
 
+bool AngleFrame::IsShader(const std::uint32_t shader) {
+#if OGPLAY_HAS_ANGLE
+    const auto result = glIsShader(shader) == GL_TRUE;
+    RequireNoError("glIsShader");
+    return result;
+#else
+    static_cast<void>(shader);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::uint32_t AngleFrame::CreateProgram() {
 #if OGPLAY_HAS_ANGLE
     const auto program = glCreateProgram();
@@ -305,6 +316,17 @@ void AngleFrame::DeleteProgram(const std::uint32_t program) {
 #if OGPLAY_HAS_ANGLE
     glDeleteProgram(program);
     RequireNoError("glDeleteProgram");
+#else
+    static_cast<void>(program);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+bool AngleFrame::IsProgram(const std::uint32_t program) {
+#if OGPLAY_HAS_ANGLE
+    const auto result = glIsProgram(program) == GL_TRUE;
+    RequireNoError("glIsProgram");
+    return result;
 #else
     static_cast<void>(program);
     throw EglLifecycleError(EglOperation::unavailable, 0);

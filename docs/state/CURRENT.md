@@ -4,14 +4,10 @@
 
 ## 当前阶段
 
-- **EGL/GLES API19 补齐**：BND-16 冻结 AOSP/KTU84P/PVZ ABI 并切分 BND-17..24；
-  BND-17 已在 direct hot binding 上实现 EGL 13 项基础 query/thread/proc-address/pbuffer API，
-  per-thread error、guest strings、thunk resolver、preflight/late dlopen 与
-  architecture focused 10/10 通过。BND-18 又以独立 direct binding 发布并实现 KTU84P
-  GLES1 7 个 Bounds wrapper，count/range/VBO offset 与 shared client-array state 受检；
-  BND-19 已显式绑定 GLES1 35 个 fixed/matrix/scalar 入口，16.16、vector length、矩阵
-  后乘及 draw 消费受检；BND-20 闭合余下 27 项，145 core 全部有 handler，ANGLE
-  object/texture query 与 point-size array 消费受检；GLES2 待补。
+- **EGL/GLES API19 补齐**：BND-16 冻结 AOSP/KTU84P/PVZ ABI；BND-17 已实现 EGL 13 项
+  基础 API，BND-18..20 已闭合 GLES1 Bounds 与全部 62 个缺口，145 core 均有 handler。
+  BND-21 又 direct-bind GLES2 26 项 low-transfer state/object predicate，front/back stencil、
+  六类对象 lifecycle 与真实 ANGLE 受检；GLES2 尚余 BND-22/23 的 41 项。
 
 - **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
   import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc
@@ -61,7 +57,7 @@
   BND-5 关闭，title 后续行为仍待按既有 playbook 复验。
 ## 验证基线
 
-- BND-20 focused GLES1 module/integration、catalog 与 architecture gate 通过；最终 full
+- BND-21 focused GLES2/ANGLE/transfer、catalog 与 architecture gate 通过；最终 full
   CTest 留到 BND-24 后执行。
 
 ## 下一步

@@ -29,6 +29,10 @@ public:
         const auto args = call.RegisterArguments();
         const auto symbol = gles::DescribeGlesFunction(
                                 gles::GlesApi::gles2, FunctionId).name;
+        if (const auto state = DispatchLowTransferState<FunctionId>(call);
+            state.has_value()) {
+            return *state;
+        }
         if (const auto shader_program = DispatchShaderProgram<FunctionId>(call);
             shader_program.has_value()) {
             return *shader_program;
@@ -87,6 +91,89 @@ public:
 
 private:
     static constexpr std::size_t kMaximumGlesNameBytes = 4096;
+
+    template <gles::GlesThunkId FunctionId>
+    std::optional<std::uint32_t> DispatchLowTransferState(
+        const A32CallFrame& call) {
+        const auto args = call.RegisterArguments();
+        const auto symbol = gles::DescribeGlesFunction(
+                                gles::GlesApi::gles2, FunctionId).name;
+        if constexpr (FunctionId == 9U || FunctionId == 11U ||
+                      (FunctionId >= 17U && FunctionId <= 19U) ||
+                      FunctionId == 27U || (FunctionId >= 34U && FunctionId <= 36U) ||
+                      FunctionId == 44U || FunctionId == 48U ||
+                      FunctionId == 80U || FunctionId == 81U ||
+                      (FunctionId >= 83U && FunctionId <= 88U) ||
+                      FunctionId == 91U || (FunctionId >= 99U && FunctionId <= 104U)) {
+        auto& frame = graphics_.RequireFrame(symbol);
+        if constexpr (FunctionId == 9U) {
+            frame.BlendEquationSeparate(args[0], args[1]); return 0U;
+        }
+        if constexpr (FunctionId == 11U) {
+            frame.BlendFunctionSeparate(args[0], args[1], args[2], args[3]); return 0U;
+        }
+        if constexpr (FunctionId == 17U) {
+            const auto value = std::bit_cast<float>(args[0]);
+            frame.ClearDepth(value);
+            graphics_.gl_context.Shared().SetClearDepth(value);
+            return 0U;
+        }
+        if constexpr (FunctionId == 18U) {
+            const auto value = std::bit_cast<std::int32_t>(args[0]);
+            frame.ClearStencil(value);
+            graphics_.gl_context.Shared().SetClearStencil(value);
+            return 0U;
+        }
+        if constexpr (FunctionId == 19U) {
+            frame.ColorMask(args[0] != 0U, args[1] != 0U,
+                            args[2] != 0U, args[3] != 0U); return 0U;
+        }
+        if constexpr (FunctionId == 27U) { frame.CullFace(args[0]); return 0U; }
+        if constexpr (FunctionId == 34U) { frame.DepthFunction(args[0]); return 0U; }
+        if constexpr (FunctionId == 35U) { frame.DepthMask(args[0] != 0U); return 0U; }
+        if constexpr (FunctionId == 36U) {
+            frame.DepthRange(std::bit_cast<float>(args[0]),
+                             std::bit_cast<float>(args[1])); return 0U;
+        }
+        if constexpr (FunctionId == 44U) { frame.Finish(); return 0U; }
+        if constexpr (FunctionId == 48U) { frame.FrontFace(args[0]); return 0U; }
+        if constexpr (FunctionId == 80U) { frame.Hint(args[0], args[1]); return 0U; }
+        if constexpr (FunctionId == 88U) {
+            frame.LineWidth(std::bit_cast<float>(args[0])); return 0U;
+        }
+        if constexpr (FunctionId == 91U) {
+            frame.PolygonOffset(std::bit_cast<float>(args[0]),
+                                std::bit_cast<float>(args[1])); return 0U;
+        }
+        if constexpr (FunctionId == 99U) {
+            frame.StencilFunction(args[0], std::bit_cast<std::int32_t>(args[1]),
+                                  args[2]); return 0U;
+        }
+        if constexpr (FunctionId == 100U) {
+            frame.StencilFunctionSeparate(
+                args[0], args[1], std::bit_cast<std::int32_t>(args[2]), args[3]);
+            return 0U;
+        }
+        if constexpr (FunctionId == 101U) { frame.StencilMask(args[0]); return 0U; }
+        if constexpr (FunctionId == 102U) {
+            frame.StencilMaskSeparate(args[0], args[1]); return 0U;
+        }
+        if constexpr (FunctionId == 103U) {
+            frame.StencilOperation(args[0], args[1], args[2]); return 0U;
+        }
+        if constexpr (FunctionId == 104U) {
+            frame.StencilOperationSeparate(args[0], args[1], args[2], args[3]);
+            return 0U;
+        }
+        if constexpr (FunctionId == 81U) return frame.IsBuffer(args[0]) ? 1U : 0U;
+        if constexpr (FunctionId == 83U) return frame.IsFramebuffer(args[0]) ? 1U : 0U;
+        if constexpr (FunctionId == 84U) return frame.IsProgram(args[0]) ? 1U : 0U;
+        if constexpr (FunctionId == 85U) return frame.IsRenderbuffer(args[0]) ? 1U : 0U;
+        if constexpr (FunctionId == 86U) return frame.IsShader(args[0]) ? 1U : 0U;
+        if constexpr (FunctionId == 87U) return frame.IsTexture(args[0]) ? 1U : 0U;
+        }
+        return std::nullopt;
+    }
 
     template <gles::GlesThunkId FunctionId>
     std::optional<std::uint32_t> DispatchShaderProgram(

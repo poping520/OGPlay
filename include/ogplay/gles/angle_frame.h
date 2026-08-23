@@ -56,6 +56,7 @@ public:
     [[nodiscard]] std::int32_t GetShaderParameter(std::uint32_t shader,
                                                    std::uint32_t parameter);
     void DeleteShader(std::uint32_t shader);
+    [[nodiscard]] bool IsShader(std::uint32_t shader);
     [[nodiscard]] std::uint32_t CreateProgram();
     void AttachShader(std::uint32_t program, std::uint32_t shader);
     void LinkProgram(std::uint32_t program);
@@ -73,6 +74,7 @@ public:
                                                    const std::string& name);
     void UseProgram(std::uint32_t program);
     void DeleteProgram(std::uint32_t program);
+    [[nodiscard]] bool IsProgram(std::uint32_t program);
     [[nodiscard]] std::vector<std::uint32_t> GenerateBuffers(std::size_t count);
     void DeleteBuffers(std::span<const std::uint32_t> buffers);
     void BindBuffer(std::uint32_t target, std::uint32_t buffer);
@@ -89,10 +91,12 @@ public:
     void DeleteFramebuffers(std::span<const std::uint32_t> framebuffers);
     void BindFramebuffer(std::uint32_t target, std::uint32_t framebuffer);
     [[nodiscard]] std::uint32_t CheckFramebufferStatus(std::uint32_t target);
+    [[nodiscard]] bool IsFramebuffer(std::uint32_t framebuffer);
     [[nodiscard]] std::vector<std::uint32_t> GenerateRenderbuffers(
         std::size_t count);
     void DeleteRenderbuffers(std::span<const std::uint32_t> renderbuffers);
     void BindRenderbuffer(std::uint32_t target, std::uint32_t renderbuffer);
+    [[nodiscard]] bool IsRenderbuffer(std::uint32_t renderbuffer);
     void RenderbufferStorage(std::uint32_t target,
                              std::uint32_t internal_format,
                              std::int32_t width, std::int32_t height);
@@ -168,7 +172,12 @@ public:
     void SetCapability(std::uint32_t capability, bool enabled);
     void BlendColor(float red, float green, float blue, float alpha);
     void BlendEquation(std::uint32_t mode);
+    void BlendEquationSeparate(std::uint32_t rgb, std::uint32_t alpha);
     void BlendFunction(std::uint32_t source, std::uint32_t destination);
+    void BlendFunctionSeparate(std::uint32_t source_rgb,
+                               std::uint32_t destination_rgb,
+                               std::uint32_t source_alpha,
+                               std::uint32_t destination_alpha);
     void ColorMask(bool red, bool green, bool blue, bool alpha);
     void ClearStencil(std::int32_t value);
     void CullFace(std::uint32_t mode);
@@ -183,10 +192,17 @@ public:
     void SampleCoverage(float value, bool invert);
     void StencilFunction(std::uint32_t function, std::int32_t reference,
                          std::uint32_t mask);
+    void StencilFunctionSeparate(std::uint32_t face, std::uint32_t function,
+                                 std::int32_t reference, std::uint32_t mask);
     void StencilMask(std::uint32_t mask);
+    void StencilMaskSeparate(std::uint32_t face, std::uint32_t mask);
     void StencilOperation(std::uint32_t stencil_fail,
                           std::uint32_t depth_fail,
                           std::uint32_t depth_pass);
+    void StencilOperationSeparate(std::uint32_t face,
+                                  std::uint32_t stencil_fail,
+                                  std::uint32_t depth_fail,
+                                  std::uint32_t depth_pass);
     void Flush();
     [[nodiscard]] std::vector<std::int32_t> GetIntegers(
         std::uint32_t parameter, std::size_t count);

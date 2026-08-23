@@ -70,6 +70,17 @@ std::uint32_t AngleFrame::CheckFramebufferStatus(const std::uint32_t target) {
 #endif
 }
 
+bool AngleFrame::IsFramebuffer(const std::uint32_t framebuffer) {
+#if OGPLAY_HAS_ANGLE
+    const auto result = glIsFramebuffer(framebuffer) == GL_TRUE;
+    RequireNoError("glIsFramebuffer");
+    return result;
+#else
+    static_cast<void>(framebuffer);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::uint32_t> AngleFrame::GenerateRenderbuffers(
     const std::size_t count) {
     ValidateCount(count, "renderbuffer");
@@ -102,6 +113,17 @@ void AngleFrame::BindRenderbuffer(const std::uint32_t target,
     RequireNoError("glBindRenderbuffer");
 #else
     static_cast<void>(target); static_cast<void>(renderbuffer);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+bool AngleFrame::IsRenderbuffer(const std::uint32_t renderbuffer) {
+#if OGPLAY_HAS_ANGLE
+    const auto result = glIsRenderbuffer(renderbuffer) == GL_TRUE;
+    RequireNoError("glIsRenderbuffer");
+    return result;
+#else
+    static_cast<void>(renderbuffer);
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }

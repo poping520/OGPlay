@@ -91,6 +91,16 @@ TEST_CASE("GLES resolver provides query uniform and vertex output shapes") {
         memory, Thunk("glGetIntegerv"), viewport, 0, &state);
     CHECK(query.pointers[0].byte_size == 16);
 
+    for (const auto pname : {UINT32_C(0x8800), UINT32_C(0x8801),
+                             UINT32_C(0x8802), UINT32_C(0x8803),
+                             UINT32_C(0x8CA3), UINT32_C(0x8CA4),
+                             UINT32_C(0x8CA5)}) {
+        const std::array back_stencil{pname, kStart.Value()};
+        const auto scalar_query = ogplay::gles::PrepareGles2Call(
+            memory, Thunk("glGetIntegerv"), back_stencil, 0, &state);
+        CHECK(scalar_query.pointers[0].byte_size == 4);
+    }
+
     state.SetQueryElementCount(0x86A3, 5);
     const std::array formats{UINT32_C(0x86A3), kStart.Value()};
     auto dynamic_query = ogplay::gles::PrepareGles2Call(

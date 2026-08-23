@@ -451,58 +451,20 @@ public:
     return reference;
   }
 
-    void RegisterDexClasses() {
+  void RegisterDexClasses() {
     // Native JNI sees the same code-defined intrinsic classes as the
     // interpreter. Existing session platform classes retain ownership;
     // missing classes are registered with handlers that route back into
     // the linked VM method. This keeps FindClass/GetMethodID honest and
-    // avoids a second, title-specific platform registry.
+    // avoids a second, title-specific platform registry. The recursive
+    // registration path is also the single owner of superclass publication:
+    // interpreted classes must retain intrinsic parents in JNI type checks.
     for (const auto class_id : linker.AllClasses()) {
       const auto &linked = linker.Class(class_id);
-      if (!linked.is_intrinsic || linked.is_array)
-        continue;
+      if (linked.is_array) continue;
       static_cast<void>(RegisterClassForNative(class_id));
     }
-
-        auto& classes = session->Classes();
-        auto& invocations = session->Invocations();
-        for (const auto class_id : linker.AllClasses()) {
-            const auto& linked = linker.Class(class_id);
-      if (linked.is_intrinsic || linked.is_array)
-        continue;
-            JniClassDeclaration declaration;
-            declaration.name =
-                linked.descriptor.substr(1, linked.descriptor.size() - 2);
-            if (linked.super.has_value()) {
-                const auto& super = linker.Class(*linked.super);
-                if (!super.is_intrinsic) {
-          declaration.superclass =
-              super.descriptor.substr(1, super.descriptor.size() - 2);
-                }
-            }
-            std::vector<std::pair<std::string, dx::VmMethodId>> handlers;
-            for (const auto method_id : linker.MethodsOf(class_id)) {
-                const auto& method = linker.Method(method_id);
-                if (method.kind != dx::MethodKind::interpreted ||
-                    method.name == "<clinit>") {
-                    continue;
-                }
-                const auto implementation =
-                    "dexvm.m" + std::to_string(method_id.Value());
-                declaration.methods.push_back(
-            {method.name, method.descriptor, implementation, method.is_static});
-                handlers.emplace_back(implementation, method_id);
-            }
-            const auto identity = classes.RegisterClass(declaration);
-            class_identities.emplace(class_id.Value(), identity);
-            for (const auto& [implementation, method_id] : handlers) {
-                invocations.RegisterHandler(
-            implementation, [this, method_id](const JniInvocation &invocation) {
-                        return InvokeInterpreted(method_id, invocation);
-                    });
-            }
-        }
-    }
+  }
 
   [[nodiscard]] JniValue InvokeInterpreted(const dx::VmMethodId method_id,
                                            const JniInvocation &invocation) {

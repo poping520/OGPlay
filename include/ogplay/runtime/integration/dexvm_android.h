@@ -173,6 +173,11 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>>
         broadcast_receivers;
 
+    // ActivityManager owns this on Android. The bounded process has no
+    // Binder, so retain the API19 observable request per Activity identity;
+    // -1 is SCREEN_ORIENTATION_UNSPECIFIED.
+    std::unordered_map<std::uint32_t, std::int32_t> requested_orientations;
+
     // SurfaceView owns one stable SurfaceHolder. addCallback appends, as on
     // the platform: these titles register both the view and the activity on
     // the same holder and both have to receive the surface lifecycle.

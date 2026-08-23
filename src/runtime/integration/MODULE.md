@@ -98,6 +98,8 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   栈 8 字节对齐),解析顺序 RegisterNatives → `Java_` 导出名 → 记账明确失败;
   入向把全部解释类/方法及 session 尚未拥有的 code-defined intrinsic 平台类注册进
   会话 `JniClassRegistry`(impl id `dexvm.m<id>`),
+  所有非数组类共用递归注册路径并保留 intrinsic/application 边界上的完整父类链，
+  JNI object array 与 `IsAssignableFrom` 不得看到第二套扁平类型事实；
   FindClass/GetStaticMethodID/CallStatic* 经不变的 233 槽 ABI 命中真实 DEX 事实
   并落入解释执行(第三路由)；class identity 注册不为每个 APK 类预占 JNI global
   reference，只有真实 static native 出向调用需要 jclass 时才按 owner 懒创建并缓存，

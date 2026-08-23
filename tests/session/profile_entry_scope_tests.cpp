@@ -107,7 +107,7 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-    CHECK(catalog.size() == 172);
+    CHECK(catalog.size() == 173);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -129,12 +129,126 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     return found->methods.size();
   };
   CHECK(method_count("Landroid/app/Application;") == 4);
-  CHECK(method_count("Landroid/app/Activity;") == 24);
+  CHECK(method_count("Landroid/app/Activity;") == 26);
   CHECK(method_count("Landroid/content/Intent;") == 16);
   CHECK(method_count("Landroid/os/Bundle;") == 12);
   CHECK(method_count("Landroid/widget/TextView;") == 15);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
+}
+
+TEST_CASE("Window policy and Activity orientation preserve API19 state") {
+  AndroidVm vm;
+  const auto window =
+      vm.interpreter.NewIntrinsicInstance("Landroid/view/Window;");
+  const auto invoke_window = [&](const std::string_view name,
+                                 const std::string_view descriptor,
+                                 std::vector<VmValue> arguments = {}) {
+    arguments.insert(arguments.begin(), VmValue::Ref(window));
+    return vm.interpreter.Call(
+        vm.Virtual("Landroid/view/Window;", name, descriptor), arguments);
+  };
+  const auto first = invoke_window("getAttributes",
+      "()Landroid/view/WindowManager$LayoutParams;");
+  const auto second = invoke_window("getAttributes",
+      "()Landroid/view/WindowManager$LayoutParams;");
+  REQUIRE_FALSE(first.exception.IsValid());
+  REQUIRE(first.value.ref.IsValid());
+  CHECK(first.value.ref == second.value.ref);
+
+  const auto read_attribute = [&](const std::string& name) {
+    const auto owner = vm.model.ObjectClass(first.value.ref);
+    const auto field = vm.linker.FindFieldRecursive(owner, name, "I");
+    REQUIRE(field.has_value());
+    return static_cast<std::int32_t>(
+        vm.model.InstanceSlots(first.value.ref)[vm.linker.Field(*field).slot]
+            .bits);
+  };
+  REQUIRE_FALSE(invoke_window("setFlags", "(II)V",
+      {VmValue::Int(5), VmValue::Int(7)}).exception.IsValid());
+  CHECK(read_attribute("flags") == 5);
+  REQUIRE_FALSE(invoke_window("addFlags", "(I)V", {VmValue::Int(8)})
+                    .exception.IsValid());
+  CHECK(read_attribute("flags") == 13);
+  REQUIRE_FALSE(invoke_window("clearFlags", "(I)V", {VmValue::Int(4)})
+                    .exception.IsValid());
+  CHECK(read_attribute("flags") == 9);
+  REQUIRE_FALSE(invoke_window("setSoftInputMode", "(I)V",
+      {VmValue::Int(0x20)}).exception.IsValid());
+  CHECK(read_attribute("softInputMode") == 0x20);
+  REQUIRE_FALSE(invoke_window("setSoftInputMode", "(I)V",
+      {VmValue::Int(0)}).exception.IsValid());
+  CHECK(read_attribute("softInputMode") == 0x20);
+  REQUIRE_FALSE(invoke_window("setType", "(I)V", {VmValue::Int(3)})
+                    .exception.IsValid());
+  CHECK(read_attribute("type") == 3);
+
+  const auto first_activity =
+      vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+  const auto second_activity =
+      vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+  const auto get_orientation = vm.Virtual(
+      "Landroid/app/Activity;", "getRequestedOrientation", "()I");
+  const auto set_orientation = vm.Virtual(
+      "Landroid/app/Activity;", "setRequestedOrientation", "(I)V");
+  auto outcome = vm.interpreter.Call(
+      get_orientation, std::vector{VmValue::Ref(first_activity)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.AsInt() == -1);
+  REQUIRE_FALSE(vm.interpreter.Call(
+      set_orientation,
+      std::vector{VmValue::Ref(first_activity), VmValue::Int(0)})
+                    .exception.IsValid());
+  CHECK(vm.interpreter.Call(
+            get_orientation, std::vector{VmValue::Ref(first_activity)})
+            .value.AsInt() == 0);
+  CHECK(vm.interpreter.Call(
+            get_orientation, std::vector{VmValue::Ref(second_activity)})
+            .value.AsInt() == -1);
+}
+
+TEST_CASE("Display metrics publish the injected API19 surface facts") {
+  AndroidVm vm;
+  vm.context->surface_width = 800;
+  vm.context->surface_height = 480;
+  vm.context->ui_density = 1.5F;
+  vm.context->ui_scaled_density = 1.75F;
+  const auto display =
+      vm.interpreter.NewIntrinsicInstance("Landroid/view/Display;");
+  const auto metrics =
+      vm.interpreter.NewIntrinsicInstance("Landroid/util/DisplayMetrics;");
+  const auto invoke = [&](const std::string_view name,
+                          const VmObjectRef output) {
+    return vm.interpreter.Call(
+        vm.Virtual("Landroid/view/Display;", name,
+                   "(Landroid/util/DisplayMetrics;)V"),
+        std::vector{VmValue::Ref(display), VmValue::Ref(output)});
+  };
+  REQUIRE_FALSE(invoke("getMetrics", metrics).exception.IsValid());
+
+  const auto read = [&](const std::string& name,
+                        const std::string& descriptor) {
+    const auto field = vm.linker.FindFieldRecursive(
+        vm.model.ObjectClass(metrics), name, descriptor);
+    REQUIRE(field.has_value());
+    return vm.model.InstanceSlots(metrics)[vm.linker.Field(*field).slot].bits;
+  };
+  CHECK(static_cast<std::int32_t>(read("widthPixels", "I")) == 800);
+  CHECK(static_cast<std::int32_t>(read("heightPixels", "I")) == 480);
+  CHECK(std::bit_cast<float>(read("density", "F")) == doctest::Approx(1.5F));
+  CHECK(static_cast<std::int32_t>(read("densityDpi", "I")) == 240);
+  CHECK(std::bit_cast<float>(read("scaledDensity", "F")) ==
+        doctest::Approx(1.75F));
+  CHECK(std::bit_cast<float>(read("xdpi", "F")) == doctest::Approx(240.0F));
+  CHECK(static_cast<std::int32_t>(read("noncompatWidthPixels", "I")) == 800);
+  REQUIRE_FALSE(invoke("getRealMetrics", metrics).exception.IsValid());
+  CHECK(invoke("getMetrics", VmObjectRef{}).exception.IsValid());
+
+  const auto get_id = vm.interpreter.Call(
+      vm.Virtual("Landroid/view/Display;", "getDisplayId", "()I"),
+      std::vector{VmValue::Ref(display)});
+  REQUIRE_FALSE(get_id.exception.IsValid());
+  CHECK(get_id.value.AsInt() == 0);
 }
 
 ogplay::session::TitleProfile PresetProfile() {

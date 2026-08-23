@@ -80,6 +80,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_text_TextWatcher(context),
         Declare_android_util_Log(context),
         Declare_android_util_Pair(context),
+        Declare_android_util_DisplayMetrics(context),
         Declare_android_view_Display(context),
         Declare_android_view_KeyEvent(context),
         Declare_android_view_MotionEvent(context),

@@ -87,6 +87,13 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
 - Activity 替换会关闭旧 SurfaceHolder generation 并清除其 holder/callback；新
   generation 注册完成后接收仍存活 managed surface 的 created/changed，禁止跨
   Activity 累积 callback。
+- API19 Window policy 保留稳定 `WindowManager.LayoutParams` identity；flags 按
+  mask 修改，soft-input mode/type 写入同一 guest-visible record。Activity requested
+  orientation 按 receiver identity 隔离且默认为 -1；宿主无 Binder/IME/旋转系统时
+  不得因为保存该状态而宣称宿主策略已生效。
+- `Display.getMetrics/getRealMetrics` 写入 caller-owned API19 `DisplayMetrics`；尺寸
+  来自唯一 managed surface，density 来自 context 注入，不读宿主私有显示器
+  信息。无 system decor/兼容缩放时 app/real/noncompat 事实相同。
 - EGL 规范内失败走 false/EGL_NO_* + last-error；单 surface、单 currency 模型被
   破坏时必须记账并抛出，未知入口同样记账明确失败。
 - guest swap 发布帧后进入条件帧屏障：driver 可运行时等下一次 lifecycle generation；

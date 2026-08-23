@@ -169,6 +169,21 @@ Decl Declare_android_app_Activity(const Context& context) {
         });
     builder.FinalMethod("setVolumeControlStream", "(I)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.FinalMethod("setRequestedOrientation", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            context->requested_orientations[call.receiver.Value()] =
+                call.arguments[0].AsInt();
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("getRequestedOrientation", "()I",
+        [context](dx::IntrinsicContext& call) {
+            const auto found = context->requested_orientations.find(
+                call.receiver.Value());
+            return dx::VmValue::Int(
+                found == context->requested_orientations.end()
+                    ? -1
+                    : found->second);
+        });
     const auto on_key_false = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.VirtualMethod("onKeyDown", "(ILandroid/view/KeyEvent;)Z",

@@ -1238,7 +1238,7 @@ note = "DVM-69/Chapter 11 closure 受检解析 Dalvik InnerClass/EnclosingClass/
 [dexvm.object_model]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "DVM-8 建立统一 VmObjectRef 句柄空间，字符串与基元数组委托存量 JNI store。DVM-49 完成对象底座闭环：session-owned JniGuestObjectRegistry 同时持有普通对象 class identity 与 JniObjectArrayStore；JavaObjectInterop 让 DexVM/JNI 对 Object[] 共用 identity、元素、class 适配、clone/GC 生命周期，JNI 写入元素在标记前导入同一对象图；无 interop 仅保留 isolated fixture fallback。DVM-61 将 guest identity hash 与可复用 VmObjectRef/记录槽解耦，Class hash 按 descriptor 稳定派生，GC 复用 handle 不复用 hash"
+note = "DVM-8 建立统一 VmObjectRef 句柄空间，字符串与基元数组委托存量 JNI store。DVM-49 完成对象底座闭环：session-owned JniGuestObjectRegistry 同时持有普通对象 class identity 与 JniObjectArrayStore；JavaObjectInterop 让 DexVM/JNI 对 Object[] 共用 identity、元素、class 适配、clone/GC 生命周期，JNI 写入元素在标记前导入同一对象图；无 interop 仅保留 isolated fixture fallback。DVM-61 将 guest identity hash 与可复用 VmObjectRef/记录槽解耦，Class hash 按 descriptor 稳定派生，GC 复用 handle 不复用 hash。DVM-71 统一 DexVM→JNI 的递归类注册，保留跨 intrinsic/application 的完整 superclass chain，严格 object-array assignability 不再误拒绝 Activity 子类"
 
 [dexvm.gc]
 status = "partial"
@@ -1303,7 +1303,7 @@ note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三
 [dexvm.intrinsics_android_core]
 status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
-note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z`：Manifest launcher 在实例化时发布为进程唯一 task 的根（handle 记账于 DexVmAndroidContext::task_root_activity），startActivity 切换到达的 Activity 回答 false，已退出的 shell 对自身句柄仍回答 true（对照 AOSP Activity.getTaskForActivity 语义）。没有具体视频错误事件时不伪造回调；广播派发、SMS/网络仍未实现并明确失败"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z`：Manifest launcher 在实例化时发布为进程唯一 task 的根（handle 记账于 DexVmAndroidContext::task_root_activity），startActivity 切换到达的 Activity 回答 false，已退出的 shell 对自身句柄仍回答 true（对照 AOSP Activity.getTaskForActivity 语义）。DVM-71 增加 guest-visible Window flags/soft-input/type、per-Activity requested orientation 状态与注入 surface/density 的 API19 DisplayMetrics app/real/noncompat 事实，不伪造宿主 Binder/IME/旋转。没有具体视频错误事件时不伪造回调；广播派发、SMS/网络仍未实现并明确失败"
 
 [dexvm.gap_survey]
 status = "complete"

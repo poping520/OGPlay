@@ -79,6 +79,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_text_TextWatcher(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Log(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Pair(const Context& context);
+[[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context& context);
 [[nodiscard]] Decl Declare_android_view_Display(const Context& context);
 [[nodiscard]] Decl Declare_android_view_KeyEvent(const Context& context);
 [[nodiscard]] Decl Declare_android_view_MotionEvent(const Context& context);

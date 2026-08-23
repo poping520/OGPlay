@@ -16,6 +16,7 @@
 #include "ogplay/runtime/integration/native_library_loader.h"
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_object_array.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/session/android_app_process.h"
@@ -711,6 +712,48 @@ TEST_CASE("DexVM bridge canonicalizes JNI jclass as the real Class object") {
     CHECK(round_trip == class_object);
     CHECK(fixture.bridge->Model().ClassOfClassObject(round_trip) ==
           *represented);
+}
+
+TEST_CASE("DexVM JNI classes retain intrinsic superclasses for object arrays") {
+    using namespace ogplay;
+    ApplicationProcess fixture;
+    const auto activity = fixture.bridge->Linker().FindClass(
+        "Landroid/app/Activity;");
+    const auto launcher = fixture.bridge->Linker().FindClass(
+        "Lfixture/LauncherActivity;");
+    const auto object = fixture.bridge->Linker().FindClass(
+        "Ljava/lang/Object;");
+    REQUIRE(activity.has_value());
+    REQUIRE(launcher.has_value());
+    REQUIRE(object.has_value());
+
+    const auto activity_identity =
+        fixture.bridge->RegisteredClassIdentity(*activity);
+    const auto launcher_identity =
+        fixture.bridge->RegisteredClassIdentity(*launcher);
+    const auto object_identity =
+        fixture.bridge->RegisteredClassIdentity(*object);
+    REQUIRE(activity_identity.has_value());
+    REQUIRE(launcher_identity.has_value());
+    REQUIRE(object_identity.has_value());
+    CHECK(fixture.session->Classes().IsAssignableFrom(
+        *activity_identity, *launcher_identity));
+
+    const auto& launcher_class = fixture.bridge->Linker().Class(*launcher);
+    const auto launcher_object = fixture.bridge->Model().NewInstance(
+        *launcher, launcher_class.instance_slots);
+    const runtime::JniObjectValue launcher_value{
+        fixture.bridge->Model().ToIdentity(launcher_object),
+        *launcher_identity};
+    auto& arrays = fixture.session->Objects().ObjectArrays();
+    const auto array = arrays.New(*activity_identity, 1, launcher_value);
+    CHECK(arrays.Get(array, 0) == launcher_value);
+    CHECK_THROWS_AS(
+        arrays.Set(array, 0,
+                   runtime::JniObjectValue{{runtime::JniObjectDomain::dex_vm,
+                                            UINT64_C(0x1234)},
+                                           *object_identity}),
+        runtime::JniObjectArrayError);
 }
 
 TEST_CASE("minimal Application startup preserves order identity and native loads") {

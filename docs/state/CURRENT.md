@@ -56,12 +56,13 @@
   annotation proxy、多 ClassLoader 和动态 definition 仍明确不实现。
   DVM-47 gate 仍受 A6 DT_SONAME identity 与 DH 固定 step 100/97 漂移阻断，A6 长运行未执行；
   `dexvm.gc` 与 `dexvm.interpreter_threaded` 保持 `partial`，threaded 生产默认仍关闭。A5 GC
-  exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合，
-  当前首个启动缺口是 DexVM `Window.setSoftInputMode(I)V`。
+  exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合。
+  DVM-70..71 闭合 Window/DisplayMetrics 与 JNI 完整父类链；PVZ 当前首 fault 为
+  `Environment.getDataDirectory()` 未解析。
 ## 验证基线
 
-- BND-24 focused 59/59；exact APK 无 OpenGL fault 且无残留进程；configure/build
-  成功，full CTest 933/933（architecture 5/5）。
+- BND-24 full CTest 933/933（architecture 5/5）；DVM-71 focused 11/11，
+  exact APK 持续推进且无残留进程。
 
 ## 下一步
 

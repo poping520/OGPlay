@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <functional>
 #include <map>
 #include <span>
 #include <string_view>
@@ -10,6 +9,7 @@
 
 #include "ogplay/gles/gles_dispatch.h"
 #include "android_boundary_gles1.h"
+#include "boundary_callback.h"
 
 namespace ogplay::memory {
 class AddressSpace;
@@ -105,7 +105,7 @@ private:
 };
 
 using AndroidBoundaryGles1StringResolver =
-    std::function<std::string(std::uint32_t parameter)>;
+    BoundaryCallback<std::string(std::uint32_t parameter)>;
 
 void BindAndroidBoundaryGles1Queries(
     gles::GlesDispatchTable& dispatch,

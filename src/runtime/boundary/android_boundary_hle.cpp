@@ -359,10 +359,12 @@ private:
     struct AndroidModule final {
         explicit AndroidModule(Impl& runtime) noexcept : runtime_(runtime) {}
         [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
-        template <std::uint16_t Id>
-        std::uint32_t Invoke(const A32CallFrame& call) {
-            return runtime_.InvokeAndroid<Id>(call);
+#define OGPLAY_DECLARE_ANDROID(name, id, count, method)                         \
+        std::uint32_t method(const A32CallFrame& call) {                        \
+            return runtime_.InvokeAndroid<id>(call);                            \
         }
+        OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_DECLARE_ANDROID)
+#undef OGPLAY_DECLARE_ANDROID
     private:
         Impl& runtime_;
     };
@@ -370,10 +372,12 @@ private:
     struct EglModule final {
         explicit EglModule(Impl& runtime) noexcept : runtime_(runtime) {}
         [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
-        template <std::uint16_t Id>
-        std::uint32_t Invoke(const A32CallFrame& call) {
-            return runtime_.InvokeEgl<Id>(call);
+#define OGPLAY_DECLARE_EGL(name, id, count, method)                             \
+        std::uint32_t method(const A32CallFrame& call) {                        \
+            return runtime_.InvokeEgl<id>(call);                                \
         }
+        OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_DECLARE_EGL)
+#undef OGPLAY_DECLARE_EGL
     private:
         Impl& runtime_;
     };
@@ -403,7 +407,10 @@ private:
     struct LogModule final {
         explicit LogModule(Impl& runtime) noexcept : runtime_(runtime) {}
         [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
-        std::uint32_t Write(const A32CallFrame&) noexcept { return 0U; }
+#define OGPLAY_DECLARE_LOG(name, id, count, method)                             \
+        std::uint32_t method(const A32CallFrame&) noexcept { return 0U; }
+        OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_DECLARE_LOG)
+#undef OGPLAY_DECLARE_LOG
     private:
         Impl& runtime_;
     };
@@ -557,13 +564,13 @@ private:
         };
         const auto& android = require("libandroid.so");
 #define OGPLAY_BIND_ANDROID(name, id, count, method)                            \
-        BindExport<AndroidModule, &AndroidModule::template Invoke<id>, count,   \
+        BindExport<AndroidModule, &AndroidModule::method, count,                \
                    false>(android, name, android_module_);
         OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_BIND_ANDROID)
 #undef OGPLAY_BIND_ANDROID
         const auto& egl = require("libEGL.so");
 #define OGPLAY_BIND_EGL(name, id, count, method)                                \
-        BindExport<EglModule, &EglModule::template Invoke<id>, count, true>(    \
+        BindExport<EglModule, &EglModule::method, count, true>(                 \
             egl, name, egl_module_);
         OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_BIND_EGL)
 #undef OGPLAY_BIND_EGL
@@ -824,9 +831,10 @@ private:
             return 0;
         }
         if constexpr (FunctionId == 3U || FunctionId == 4U) {
-            if (args[1] != 0) {
+            const auto output = call.Pointer<std::byte>(1);
+            if (!output.IsNull()) {
                 const std::array bytes{std::byte{'e'}, std::byte{'n'}};
-                address_space_.Write(memory::GuestAddress{args[1]}, bytes, tid);
+                address_space_.Write(output.Address(), bytes, tid);
             }
             return 0;
         }
@@ -894,7 +902,9 @@ private:
         const auto tid = call.ThreadId();
         if constexpr (FunctionId == 0U) return kFakeDisplay;
         if constexpr (FunctionId == 1U) {
-            Write32(args[1], 1, tid); Write32(args[2], 5, tid); return 1;
+            Write32(call.Pointer<std::uint32_t>(1).Address().Value(), 1, tid);
+            Write32(call.Pointer<std::uint32_t>(2).Address().Value(), 5, tid);
+            return 1;
         }
         if constexpr (FunctionId == 2U) {
             Write32(args[2], kFakeConfig, tid);

@@ -2,13 +2,13 @@
 
 [runtime.virtual_so_boundary]
 status = "complete"
-test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
-note = "BND-1 建立 API-sealed BoundaryCatalog 与完整 active-export synthetic ELF并闭合 late import；BND-2 接入 SVC #2 fast transport；BND-4 以 concrete final module seal-time binding 删除 HleRoute、global fallback id 与平行参数表，EGL/GLES module 共享唯一 GuestGlContext"
+test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_link_preflight_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，删除 InvokeModule/module enum/FastBinding/std::function hot glue，EGL/GLES module 构造注入并共享唯一 GuestGlContext"
 
 [runtime.fast_host_call]
 status = "complete"
-test = "tests/cpu/dynarmic_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; tests/runtime/jni_guest_abi_tests.cpp"
-note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-page sealed thunk arena 与 live-register dense SVC #2 path；BND-3 将 JNI SVC #3 接入同一 transport，fast fault 按 thread/PC pending 并在 JIT 外恢复原 exception identity，observer 保持 slow fallback"
+test = "tests/cpu/dynarmic_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; tests/runtime/jni_guest_abi_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-page sealed thunk arena 与 live-register dense SVC #2 direct-handler path；BND-3 将 JNI SVC #3 接入同一 transport，fast fault 按 thread/PC pending 并在 JIT 外恢复原 exception identity；BND-4 增加 0/4/stack/GLES/JNI/forced-slow end-to-end benchmark，observer 保持 slow fallback"
 
 [runtime.guest_symbol_override]
 status = "complete"

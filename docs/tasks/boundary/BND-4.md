@@ -12,6 +12,17 @@
 - [x] 删除 `HleRoute`、fallback global id、平行参数表和 import-driven builder。
 - [x] `AndroidBoundaryHle` 对外只保留 session facade API。
 - [x] focused boundary/JNI/namespace tests 与 benchmark 报告。
+- [x] `AndroidModule`、`EglModule`、`Gles1Module`、`Gles2Module`、`LogModule`
+  均为 concrete `final` implementation；named export metadata 直接关联 method，GLES
+  直接复用 generated catalog，新增 SO 不修改中央 dispatch（中央 dispatch 已不存在）。
+- [x] 删除 `InvokeModule`、module function enum、`FastBinding` 与 Virtual SO hot path 的
+  `std::function`；architecture gate 持续检查 direct hot router。
+- [x] A32 frame 提供 `GuestPtr<T>`、`GuestCString` 与 typed scalar decode；普通 pointer
+  export 已使用强类型 guest address，variadic/custom ABI 保留 wrapper。
+- [x] end-to-end benchmark 覆盖 0 参数、4 word、6 word 含 guest stack、representative
+  GLES、JNI fixed slot 与 forced slow baseline，只记录数据、不设时间阈值。
 
-验证遵循本次会话限制，不跑全量 exact/scenario/title gate。macOS arm64 Debug 的 1M 次
-dense decode 为 9728 us，cold symbol Resolve 基线为 108946 us；只记录测量，不设倍率门禁。
+闭环测量（macOS arm64 Debug）：2,000 次 0 参数 16,325 us、4-word 16,155 us、
+6-word stack 16,184 us、500 次 GLES 4,470 us、2,000 次 JNI fixed slot 15,028 us、
+2,000 次 forced slow 14,230 us。数字包含 benchmark harness，只用于回归记录，不作
+绝对时间或倍率门禁。

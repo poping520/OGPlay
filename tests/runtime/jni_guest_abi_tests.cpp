@@ -1,4 +1,5 @@
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -321,6 +322,21 @@ TEST_CASE("guest JNI dispatcher handles SVC3 inside Dynarmic run") {
     CHECK(stopped.immediate == 1U);
     CHECK(cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) ==
           static_cast<std::uint32_t>(ogplay::runtime::kJniVersion1_6));
+
+    constexpr std::size_t iterations = 2'000U;
+    const auto begin = std::chrono::steady_clock::now();
+    for (std::size_t iteration = 0; iteration < iterations; ++iteration) {
+        cpu.SetState(state);
+        const auto benchmark_stop = cpu.Run(16U);
+        REQUIRE(benchmark_stop.reason ==
+                ogplay::cpu::RunStopReason::supervisor_call);
+        REQUIRE(benchmark_stop.immediate == 1U);
+    }
+    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - begin).count();
+    INFO("jni_fixed_slot_benchmark_us iterations=" << iterations
+         << " elapsed=" << elapsed);
+    CHECK(elapsed >= 0);
 }
 
 TEST_CASE("guest JNI dispatcher writes double-word returns and preserves void") {

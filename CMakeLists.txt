@@ -890,6 +890,14 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(architecture.documentation_layout PROPERTIES LABELS architecture)
 
     add_test(
+        NAME architecture.boundary_hot_path
+        COMMAND ${CMAKE_COMMAND}
+            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckBoundaryHotPath.cmake
+    )
+    set_tests_properties(architecture.boundary_hot_path PROPERTIES LABELS architecture)
+
+    add_test(
         NAME frontend.run_apk_options
         COMMAND ${CMAKE_COMMAND}
             -DOGPLAY_CLI=$<TARGET_FILE:ogplay>

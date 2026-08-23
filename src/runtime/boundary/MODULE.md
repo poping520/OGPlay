@@ -148,7 +148,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   正常执行链只以 dense descriptor 的 route/function id 路由,library/name 只服务于 ELF
   查询、诊断与 trace 渲染,禁止重新参与 handler 选择。
 - `A32CallFrame` 按 descriptor 的精确 parameter count 固定存储 r0-r3,并以一次 guest
-  bulk read 解码剩余栈参数;handler 不得自行逐字读取 guest 栈。
+  bulk read 解码剩余栈参数;handler 不得自行逐字读取 guest 栈。普通指针/string 参数用
+  `GuestPtr<T>`/`GuestCString` 保持 guest address identity，禁止转换为 host pointer；
+  variadic/callback 等复杂 ABI 可保留显式 custom wrapper。
 - `glGetString` 只为样例使用的真实 ANGLE core 字符串建立有界只读 guest 槽;integer
   query、draw indices 与 readback 输出复用 transfer state,draw 成功后由主 HLE 更新指标。
 - 超采样倍率必须在创建任何 ANGLE 资源前完整验证;viewport 缩放溢出明确失败,guest

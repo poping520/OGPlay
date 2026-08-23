@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -14,6 +13,7 @@
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/runtime/boundary/guest_gl_context.h"
+#include "boundary_callback.h"
 
 namespace ogplay::memory {
 class AddressSpace;
@@ -117,7 +117,7 @@ private:
 };
 
 using AndroidBoundaryFrameResolver =
-    std::function<gles::AngleFrame&(std::string_view operation)>;
+    BoundaryCallback<gles::AngleFrame&(std::string_view operation)>;
 
 [[nodiscard]] std::int32_t ScaleAndroidBoundaryViewportComponent(
     std::int32_t value, std::uint32_t factor);

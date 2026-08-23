@@ -23,6 +23,11 @@
   exception identity；unbound slot、invalid receiver 与 guest memory fault 已有等价测试。
   BND-2 闭环已把 hot table 收紧为 export-specific function pointer 与 concrete module
   instance；成功路径不再持有 descriptor/FastBinding，也不读取 SONAME/local id。
+  BND-4 闭环已删除 `InvokeModule`/module function enum，并以 shared metadata 直接关联
+  named handler、generated GLES catalog 关联 GLES handler；Virtual SO boundary hot
+  implementation 不再使用 `std::function`，新增 architecture gate 与 0/4/stack/GLES/JNI/
+  forced-slow end-to-end benchmark。A32 最小 typed layer 已提供 `GuestPtr<T>`、
+  `GuestCString` 与 scalar bit decode。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3
@@ -50,7 +55,8 @@
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
-- macOS/arm64 最近记录：896/896 CTest。
+- macOS/arm64 BND 闭环后：907/907 CTest（102.17 秒）；其中 focused
+  boundary/JNI/Bionic/architecture 为 81/81。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 

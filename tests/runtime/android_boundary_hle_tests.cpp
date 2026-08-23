@@ -235,6 +235,103 @@ TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {
     CHECK(resolved == iterations);
 }
 
+TEST_CASE("Virtual SO end-to-end host call benchmark records ABI shapes") {
+    BoundaryFixture fixture;
+    const ogplay::memory::GuestAddress return_trap{0x6e102000U};
+    fixture.memory.Map(
+        {return_trap, fixture.memory.PageSize()},
+        ogplay::memory::PageProtection::read |
+            ogplay::memory::PageProtection::write);
+    fixture.bus.Write16(return_trap, 0xdf01U);
+    fixture.memory.Protect(
+        {return_trap, fixture.memory.PageSize()},
+        ogplay::memory::PageProtection::read |
+            ogplay::memory::PageProtection::execute);
+
+    const auto run_fast = [&](const std::string_view library,
+                              const std::string_view symbol,
+                              const std::array<std::uint32_t, 4> registers,
+                              const std::span<const std::uint32_t> stack_words,
+                              const std::size_t iterations) {
+        const auto address = fixture.boundary.Symbols().Lookup(library, symbol);
+        REQUIRE(address.has_value());
+        std::array<std::byte, 20> stack_bytes{};
+        for (std::size_t word = 0; word < stack_words.size(); ++word) {
+            for (std::size_t byte = 0; byte < 4U; ++byte) {
+                stack_bytes[word * 4U + byte] = static_cast<std::byte>(
+                    stack_words[word] >> (byte * 8U));
+            }
+        }
+        if (!stack_words.empty()) {
+            fixture.memory.Write(
+                fixture.stack,
+                std::span(stack_bytes).first(stack_words.size() * 4U), 1U);
+        }
+        ogplay::cpu::DynarmicCpu cpu(fixture.bus);
+        cpu.SetHostCallHook(fixture.boundary.FastHostCallHook());
+        ogplay::cpu::A32State state;
+        state.SetState(ogplay::cpu::ExecutionState::thumb);
+        state.SetThreadId(1U);
+        state.SetRegister(ogplay::cpu::CoreRegister::pc,
+                          address->Value() & ~UINT32_C(1));
+        state.SetRegister(ogplay::cpu::CoreRegister::lr,
+                          return_trap.Value() | UINT32_C(1));
+        state.SetRegister(ogplay::cpu::CoreRegister::sp,
+                          fixture.stack.Value());
+        for (std::size_t index = 0; index < registers.size(); ++index) {
+            state.SetRegister(static_cast<ogplay::cpu::CoreRegister>(index),
+                              registers[index]);
+        }
+        const auto begin = std::chrono::steady_clock::now();
+        for (std::size_t iteration = 0; iteration < iterations; ++iteration) {
+            cpu.SetState(state);
+            const auto stopped = cpu.Run(16U);
+            REQUIRE(stopped.reason ==
+                    ogplay::cpu::RunStopReason::supervisor_call);
+            REQUIRE(stopped.immediate == 1U);
+        }
+        return std::chrono::duration_cast<std::chrono::microseconds>(
+                   std::chrono::steady_clock::now() - begin).count();
+    };
+
+    constexpr std::size_t host_iterations = 2'000U;
+    const auto zero_us = run_fast("libandroid.so", "AConfiguration_new",
+                                  {}, {}, host_iterations);
+    const auto four_us = run_fast(
+        "libandroid.so", "ANativeWindow_setBuffersGeometry",
+        {1U, 2U, 3U, 4U}, {}, host_iterations);
+    const std::array stack_words{5U, 6U};
+    const auto stack_us = run_fast(
+        "libandroid.so", "ALooper_addFd", {1U, 2U, 3U, 4U},
+        stack_words, host_iterations);
+
+    fixture.boundary.OpenManagedSurface();
+    const auto gles_us = run_fast(
+        "libGLESv2.so", "glClearColor",
+        {std::bit_cast<std::uint32_t>(0.1F),
+         std::bit_cast<std::uint32_t>(0.2F),
+         std::bit_cast<std::uint32_t>(0.3F),
+         std::bit_cast<std::uint32_t>(1.0F)}, {}, 500U);
+    fixture.boundary.CloseManagedSurface();
+
+    const auto slow_begin = std::chrono::steady_clock::now();
+    for (std::size_t iteration = 0; iteration < host_iterations; ++iteration) {
+        CHECK(fixture.Call("libandroid.so", "AConfiguration_new") ==
+              0x6e003000U);
+    }
+    const auto slow_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - slow_begin).count();
+    INFO("host_call_benchmark_us iterations=" << host_iterations
+         << " zero=" << zero_us << " four_word=" << four_us
+         << " stack_6word=" << stack_us << " gles_500=" << gles_us
+         << " forced_slow=" << slow_us);
+    CHECK(zero_us >= 0);
+    CHECK(four_us >= 0);
+    CHECK(stack_us >= 0);
+    CHECK(gles_us >= 0);
+    CHECK(slow_us >= 0);
+}
+
 TEST_CASE("Android boundary descriptors carry module-local ids") {
     const auto symbols =
         ogplay::runtime::detail::BuildAndroidBoundarySymbols();
@@ -308,6 +405,12 @@ TEST_CASE("A32 call frame bulk decodes register and stack arguments") {
     }
     CHECK(call.ThreadId() == 71U);
     CHECK(call.LinkRegister() == 0xabcdef01U);
+    CHECK(call.Scalar<std::int32_t>(1) ==
+          std::bit_cast<std::int32_t>(0x11111111U));
+    CHECK(call.Pointer<std::uint32_t>(2).Address() ==
+          ogplay::memory::GuestAddress{0x22222222U});
+    CHECK(call.CString(3).Address() ==
+          ogplay::memory::GuestAddress{0x33333333U});
     CHECK_THROWS_AS(static_cast<void>(call.Argument(9U)), std::out_of_range);
     CHECK_THROWS_AS(
         static_cast<void>(ogplay::runtime::A32CallFrame(memory, state, 10U)),

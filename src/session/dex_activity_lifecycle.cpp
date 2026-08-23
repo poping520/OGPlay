@@ -533,6 +533,8 @@ namespace ogplay::session {
             content_view_captured_ = false;
             runtime::ResetViewUiState(context);
             context.renderer = dx::VmObjectRef{};
+            context.egl_context_factory = dx::VmObjectRef{};
+            context.egl_config_chooser = dx::VmObjectRef{};
             renderer_ready_ = false;
 
             const auto activity_class = linker.FindClass(descriptor);

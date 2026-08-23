@@ -7,6 +7,7 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
@@ -29,7 +30,14 @@ struct EglVm final {
     EglVm()
         : interpreter([this]() -> DexClassLinker& {
               linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-              linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+              auto android = AndroidIntrinsicCatalog(context);
+              android.push_back(std::move(
+                  IntrinsicClassBuilder::Class(
+                      "Lfixture/EglPolicies;", "Ljava/lang/Object;",
+                      {"Landroid/opengl/GLSurfaceView$EGLContextFactory;",
+                       "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"}))
+                                    .Build());
+              linker.RegisterIntrinsics(std::move(android));
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, {}) {
@@ -79,6 +87,41 @@ struct EglVm final {
 };
 
 }  // namespace
+
+TEST_CASE("GLSurfaceView retains linked EGL policy identities") {
+    EglVm vm;
+    const auto policy = vm.interpreter.NewIntrinsicInstance(
+        "Lfixture/EglPolicies;");
+    const auto policy_class = vm.model.ObjectClass(policy);
+    CHECK(vm.linker.IsAssignable(
+        vm.linker.ResolveDescriptor(
+            "Landroid/opengl/GLSurfaceView$EGLContextFactory;"),
+        policy_class));
+    CHECK(vm.linker.IsAssignable(
+        vm.linker.ResolveDescriptor(
+            "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"),
+        policy_class));
+
+    const auto view = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/opengl/GLSurfaceView;");
+    static_cast<void>(vm.CallOn(
+        view, "setEGLContextFactory",
+        "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",
+        {VmValue::Ref(policy)}));
+    static_cast<void>(vm.CallOn(
+        view, "setEGLConfigChooser",
+        "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V",
+        {VmValue::Ref(policy)}));
+    CHECK(vm.context->egl_context_factory == policy);
+    CHECK(vm.context->egl_config_chooser == policy);
+
+    static_cast<void>(vm.CallOn(
+        view, "setEGLContextFactory",
+        "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",
+        {VmValue::Ref(VmObjectRef{})}));
+    CHECK_FALSE(vm.context->egl_context_factory.IsValid());
+    CHECK(vm.context->egl_config_chooser == policy);
+}
 
 TEST_CASE("EGL facade publishes singleton interface hierarchy") {
     EglVm vm;

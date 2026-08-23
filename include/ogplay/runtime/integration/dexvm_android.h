@@ -98,6 +98,8 @@ struct DexVmAndroidContext final {
     dexvm::VmObjectRef application_base_context;
     std::string application_descriptor;
     dexvm::VmObjectRef renderer;
+    dexvm::VmObjectRef egl_context_factory;
+    dexvm::VmObjectRef egl_config_chooser;
     dexvm::VmObjectRef content_view;
 
     // Host-side stream table for InputStream-backed intrinsics.
@@ -172,6 +174,19 @@ struct DexVmAndroidContext final {
     // dispatcher map. Broadcast delivery remains outside this bounded model.
     std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>>
         broadcast_receivers;
+
+    // IntentFilter keeps data schemes in insertion order and de-duplicates
+    // with the framework's case-sensitive String equality.
+    std::unordered_map<std::uint32_t, std::vector<std::string>>
+        intent_filter_schemes;
+    struct IntentFilterAuthority final {
+        std::string original_host;
+        std::string match_host;
+        bool wildcard{};
+        std::int32_t port{-1};
+    };
+    std::unordered_map<std::uint32_t, std::vector<IntentFilterAuthority>>
+        intent_filter_authorities;
 
     // ActivityManager owns this on Android. The bounded process has no
     // Binder, so retain the API19 observable request per Activity identity;

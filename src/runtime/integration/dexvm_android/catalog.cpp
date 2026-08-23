@@ -57,6 +57,8 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_net_wifi_WifiInfo(context),
         Declare_android_net_wifi_WifiManager_WifiLock(context),
         Declare_android_net_wifi_WifiManager(context),
+        Declare_android_opengl_GLSurfaceView_EGLConfigChooser(context),
+        Declare_android_opengl_GLSurfaceView_EGLContextFactory(context),
         Declare_android_opengl_GLSurfaceView_Renderer(context),
         Declare_android_opengl_GLSurfaceView(context),
         Declare_android_os_AsyncTask(context),

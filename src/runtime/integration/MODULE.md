@@ -137,8 +137,14 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   生命周期在 surface 就绪/尺寸变化/销毁时投递给全部注册者——自带 SurfaceView
   的 title 在收到这些之前不会碰 EGL；注册了却没有对应方法的 callback 明确
   报错，不静默跳过。surface type 由 managed EGL 固定拥有，legacy
-  `setType`/`setFormat` 只是无可观察效果的设备提示。`Thread.setPriority`
-  校验 Java 1..10 范围并保存 guest 优先级事实，不伪造宿主调度优先级。
+  `setType`/`setFormat` 只是无可观察效果的设备提示。
+  `GLSurfaceView` 发布 API19 `EGLContextFactory`/`EGLConfigChooser` interface shape；两个
+  setter 保存原始 guest policy identity 并纳入 GC/session teardown，但在真实 reached
+  behavior 要求前不越权调用 callback 或替换 managed EGL/ANGLE context。
+  `IntentFilter` 按 identity 保存 case-sensitive、有序去重 scheme 与 API19
+  host/wildcard/parsed-port authority 元数据；dynamic receiver 仍不伪造 sticky
+  broadcast、Uri match 或未建立的广播派发。
+  `Thread.setPriority` 校验 Java 1..10 范围并保存 guest 优先级事实，不伪造宿主调度优先级。
   `Thread.start()` 交给 DexVM 线程运行时（真实宿主线程，见
   `src/runtime/dexvm/MODULE.md`）；`java.util.Timer` 仍是帧边界协作队列。
   每个 `View` 的 `ViewTreeObserver` 身份稳定并保存/移除 global-layout listener；当前

@@ -57,11 +57,11 @@
   DVM-47 gate 仍受 A6 DT_SONAME identity 与 DH 固定 step 100/97 漂移阻断，A6 长运行未执行；
   `dexvm.gc` 与 `dexvm.interpreter_threaded` 保持 `partial`，threaded 生产默认仍关闭。A5 GC
   exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合。
-  DVM-70..72 闭合 Window/DisplayMetrics、JNI 父类链、私有目录及 APK asset lifecycle；
-  PVZ 当前首 fault 为 `GLSurfaceView$EGLContextFactory` hierarchy 缺失。
+  DVM-70..73 闭合 Window/DisplayMetrics、JNI 父类链、私有目录、APK asset lifecycle、
+  GLSurfaceView policy 与 IntentFilter data；PVZ 首 fault 为 app field non-VM instance。
 ## 验证基线
 
-- BND-24 full CTest 933/933（architecture 5/5）；DVM-72 focused 35/35，
+- BND-24 full CTest 933/933（architecture 5/5）；DVM-73 focused 9/9，
   exact APK 持续推进且无残留进程。
 
 ## 下一步

@@ -56,6 +56,8 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_net_wifi_WifiInfo(const Context& context);
 [[nodiscard]] Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context);
 [[nodiscard]] Decl Declare_android_net_wifi_WifiManager(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_EGLConfigChooser(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLSurfaceView(const Context& context);
 [[nodiscard]] Decl Declare_android_os_AsyncTask(const Context& context);

@@ -95,7 +95,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-70](DVM-70.md) | PVZ API19 启动闭环设计与 reached-fault 冻结 | 完成 |
 | [DVM-71](DVM-71.md) | Window/Display 状态与 JNI 继承身份 | 完成 |
 | [DVM-72](DVM-72.md) | Guest 目录与 APK asset 闭包 | 完成 |
-| [DVM-73](DVM-73.md) | GLSurfaceView/IntentFilter 策略元数据 | 进行中 |
+| [DVM-73](DVM-73.md) | GLSurfaceView/IntentFilter 策略元数据 | 完成 |
+| [DVM-74](DVM-74.md) | JNI 实例导入与 Configuration screenLayout | 进行中 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

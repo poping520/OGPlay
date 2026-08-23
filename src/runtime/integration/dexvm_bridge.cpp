@@ -116,6 +116,8 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.application);
     root(context.application_base_context);
     root(context.renderer);
+    root(context.egl_context_factory);
+    root(context.egl_config_chooser);
     root(context.content_view);
     root(context.current_intent);
     for (const auto& [_, value] : context.singletons) root(value);

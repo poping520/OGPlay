@@ -829,6 +829,87 @@ TEST_CASE("Context unregisterReceiver enforces per-context registration") {
         "Ljava/lang/IllegalArgumentException;");
 }
 
+TEST_CASE("IntentFilter retains distinct case-sensitive data schemes") {
+  AndroidVm vm;
+  const auto first =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+  const auto second =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+  const auto add_scheme = vm.Virtual(
+      "Landroid/content/IntentFilter;", "addDataScheme",
+      "(Ljava/lang/String;)V");
+  const auto add = [&](const VmObjectRef filter, const VmObjectRef scheme) {
+    return vm.interpreter.Call(
+        add_scheme,
+        std::vector<VmValue>{VmValue::Ref(filter), VmValue::Ref(scheme)});
+  };
+
+  const auto http = vm.interpreter.NewStringUtf8("http");
+  const auto upper_http = vm.interpreter.NewStringUtf8("HTTP");
+  REQUIRE_FALSE(add(first, http).exception.IsValid());
+  REQUIRE_FALSE(add(first, http).exception.IsValid());
+  REQUIRE_FALSE(add(first, upper_http).exception.IsValid());
+  REQUIRE_FALSE(add(second, upper_http).exception.IsValid());
+  CHECK(vm.context->intent_filter_schemes.at(first.Value()) ==
+        std::vector<std::string>{"http", "HTTP"});
+  CHECK(vm.context->intent_filter_schemes.at(second.Value()) ==
+        std::vector<std::string>{"HTTP"});
+
+  const auto null_outcome = add(first, VmObjectRef{});
+  REQUIRE(null_outcome.exception.IsValid());
+  CHECK(vm.linker.Class(null_outcome.exception_class).descriptor ==
+        "Ljava/lang/NullPointerException;");
+}
+
+TEST_CASE("IntentFilter retains API19 data authority metadata") {
+  AndroidVm vm;
+  const auto first =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+  const auto second =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/IntentFilter;");
+  const auto add_authority = vm.Virtual(
+      "Landroid/content/IntentFilter;", "addDataAuthority",
+      "(Ljava/lang/String;Ljava/lang/String;)V");
+  const auto add = [&](const VmObjectRef filter, const VmObjectRef host,
+                       const VmObjectRef port) {
+    return vm.interpreter.Call(
+        add_authority,
+        std::vector<VmValue>{VmValue::Ref(filter), VmValue::Ref(host),
+                             VmValue::Ref(port)});
+  };
+  const auto wildcard = vm.interpreter.NewStringUtf8("*.example.com");
+  const auto plain = vm.interpreter.NewStringUtf8("example.org");
+  const auto port = vm.interpreter.NewStringUtf8("+443");
+  REQUIRE_FALSE(add(first, wildcard, port).exception.IsValid());
+  REQUIRE_FALSE(add(first, wildcard, port).exception.IsValid());
+  REQUIRE_FALSE(add(second, plain, VmObjectRef{}).exception.IsValid());
+
+  const auto& first_entries =
+      vm.context->intent_filter_authorities.at(first.Value());
+  REQUIRE(first_entries.size() == 2);
+  CHECK(first_entries[0].original_host == "*.example.com");
+  CHECK(first_entries[0].match_host == ".example.com");
+  CHECK(first_entries[0].wildcard);
+  CHECK(first_entries[0].port == 443);
+  CHECK(first_entries[1].original_host == first_entries[0].original_host);
+  const auto& second_entry =
+      vm.context->intent_filter_authorities.at(second.Value()).front();
+  CHECK_FALSE(second_entry.wildcard);
+  CHECK(second_entry.match_host == "example.org");
+  CHECK(second_entry.port == -1);
+
+  auto outcome = add(first, VmObjectRef{}, VmObjectRef{});
+  REQUIRE(outcome.exception.IsValid());
+  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+        "Ljava/lang/NullPointerException;");
+  for (const char* invalid : {"443x", "2147483648", "-2147483649"}) {
+    outcome = add(first, plain, vm.interpreter.NewStringUtf8(invalid));
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/NumberFormatException;");
+  }
+}
+
 TEST_CASE("Intent removeExtra clears every typed backing entry") {
   AndroidVm vm;
   const auto intent = vm.interpreter.NewIntrinsicInstance("Landroid/content/Intent;");

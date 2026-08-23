@@ -12,6 +12,18 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
             context->renderer = call.arguments[0].ref;
             return dx::VmValue::Void();
         });
+    builder.FinalMethod("setEGLContextFactory",
+        "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",
+        [context](dx::IntrinsicContext& call) {
+            context->egl_context_factory = call.arguments[0].ref;
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("setEGLConfigChooser",
+        "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V",
+        [context](dx::IntrinsicContext& call) {
+            context->egl_config_chooser = call.arguments[0].ref;
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("requestRender", "()V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     // Render pause/resume is owned by the lifecycle driver.

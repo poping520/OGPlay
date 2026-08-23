@@ -389,13 +389,19 @@ add_library(ogplay_runtime
     src/runtime/integration/headless_bionic_runner.cpp
     src/runtime/boundary/core/a32_call_frame.cpp
     src/runtime/boundary/core/boundary_catalog.cpp
+    src/runtime/boundary/core/boundary_fast_router.cpp
+    src/runtime/boundary/core/boundary_fault.cpp
     src/runtime/boundary/core/boundary_symbols.cpp
+    src/runtime/boundary/core/boundary_thunk_arena.cpp
+    src/runtime/boundary/services/frame_service.cpp
+    src/runtime/boundary/services/graphics_dispatch.cpp
     src/runtime/boundary/services/guest_gl_context.cpp
+    src/runtime/boundary/modules/android/android_module.cpp
+    src/runtime/boundary/modules/egl/egl_module.cpp
     src/runtime/boundary/modules/gles1/gles1_dispatch.cpp
     src/runtime/boundary/modules/gles1/gles1_draw.cpp
     src/runtime/boundary/modules/gles1/gles1_fixed.cpp
     src/runtime/boundary/modules/gles1/gles1_query.cpp
-    src/runtime/boundary/modules/gles2/gles2_dispatch.cpp
     src/runtime/boundary/modules/log/log_module.cpp
     src/runtime/boundary/modules/module_catalog.cpp
     src/runtime/boundary/facade/android_boundary_hle.cpp

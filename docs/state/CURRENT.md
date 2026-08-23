@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-23 · BND-6 Boundary directory topology
+更新：2026-08-23 · BND-7 Boundary ownership extraction
 
 ## 当前阶段
 
@@ -21,7 +21,11 @@
   BND-6 在零行为变化下建立 `core/services/modules/facade` 目录，Android/EGL/log export
   metadata 跟随 module，built-in registration 与 generic catalog 分离；boundary tests 同步
   迁入 ownership 目录。15 项 focused integration、168 assertions 与 architecture gate
-  已通过；BND-7 将继续拆出 facade 内剩余 module/service/core 实现。
+  已通过。BND-7 已将 direct binding/thunk/router/fault 迁入 core，Android memory、共享
+  graphics context、frame/stat/trace 迁入 services，Android/EGL/GLES1/GLES2 concrete
+  implementation 迁入各自 module；libc override ownership 回到 bionic。core/service/module
+  依赖方向与 direct `{fn,self}` router 由 architecture gate 递归验证，20/20 focused
+  CTest 通过。下一阶段按本会话目标先完成 AOSP Wilhelm 设计，再实现 OpenSL ES module。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

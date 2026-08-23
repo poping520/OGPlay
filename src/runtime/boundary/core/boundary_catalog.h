@@ -7,7 +7,8 @@
 #include <vector>
 
 #include "ogplay/memory/address_space.h"
-#include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/android_api.h"
+#include "ogplay/runtime/boundary/boundary_symbol.h"
 
 namespace ogplay::runtime {
 

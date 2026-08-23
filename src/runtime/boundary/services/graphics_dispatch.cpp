@@ -1,4 +1,4 @@
-#include "runtime/boundary/modules/gles2/gles2_dispatch.h"
+#include "runtime/boundary/services/graphics_dispatch.h"
 
 #include <algorithm>
 #include <array>

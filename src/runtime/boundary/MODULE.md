@@ -2,10 +2,13 @@
 
 ## 目录与 ownership
 
-- `core/`：Virtual SO 通用 catalog、dense symbol/thunk metadata、A32 call frame 与 callback
-  类型；最终依赖方向只允许指向 cpu/memory/loader 等底层。
-- `services/`：跨 module 共享状态；`GuestGlContext` 只在这里拥有一份，后续由
-  `GraphicsBoundaryContext` 显式聚合 ANGLE frame/context 和 graphics shadow。
+- `core/`：Virtual SO 通用 catalog、dense symbol/thunk metadata、A32 call frame、direct
+  binding、thunk arena、fast router 与 pending fault；依赖方向只允许指向
+  cpu/memory/loader 等底层。
+- `services/`：跨 module 共享状态；`GuestGlContext` 只在这里拥有一份，由
+  `GraphicsBoundaryContext` 显式聚合 ANGLE frame/context 和 graphics shadow；
+  `FrameService` 统一拥有 frame recycling、GPU stats 与 trace，Android guest memory
+  写入由窄化的 `AndroidBoundaryServices` 提供。
 - `modules/<so>/`：各 Virtual SO 的 export metadata、handler 与私有 state。Android、EGL、
   GLES1、GLES2、log 已有独立目录；built-in registration 位于
   `modules/module_catalog.*`，generic core catalog 不包含业务 export 表。
@@ -42,7 +45,8 @@
   Android looper/input 状态由 Android module 自有。module 不持有整个 session `Impl`，
   而是分别构造注入 bounded call transport、Android memory service 与 graphics context；
   EGL/GLES1/GLES2 由同一个 `GraphicsBoundaryContext` 引用唯一 `GuestGlContext`、ANGLE
-  frame/context 和 graphics state，不复制状态。
+  frame/context 和 graphics state，不复制状态。GLES1 私有 fixed/draw state 直接注入
+  `Gles1Module`，shared service 不反向依赖 concrete module。
 - `liblog.so` 的 export surface 固定为 Android 4.4.4 target `system/core/liblog`
   (`logd_write.c + logprint.c + event_tag_map.c`) 的 23 个 global API。`LogModule final`
   只依赖显式 `LogBoundaryContext`：guest address 始终由 `AddressSpace` 搬运，event tag map

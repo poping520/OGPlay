@@ -5,6 +5,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -73,8 +74,9 @@ enum class ObjectKind : std::uint8_t { engine, output_mix, audio_player };
 
 class OpenSlesModule::Impl final {
 public:
-    Impl(BoundaryCallServices& calls, audio::OpenSlesPcmMixer& mixer)
-        : calls_(calls), mixer_(mixer) {}
+    Impl(BoundaryCallServices& calls, audio::OpenSlesPcmMixer& mixer,
+         const OpenSlesCallbackSink callbacks)
+        : calls_(calls), mixer_(mixer), callbacks_(callbacks) {}
 
     void MapGuestObjectArena() {
         calls_.address_space.Map(
@@ -83,7 +85,46 @@ public:
     }
     std::vector<audio::OpenSlesConsumedBuffer> Mix(
         const std::span<std::int16_t> output, const std::uint32_t output_rate) {
-        return mixer_.MixAdditiveStereoPcm16(output, output_rate);
+        auto consumed = mixer_.MixAdditiveStereoPcm16(output, output_rate);
+        std::vector<OpenSlesGuestCallback> pending;
+        {
+            std::scoped_lock lock(mutex_);
+            for (auto& [_, object] : objects_) {
+                if (!object.player.has_value()) continue;
+                const auto player = *object.player;
+                const auto consumed_count = static_cast<std::size_t>(std::count_if(
+                    consumed.begin(), consumed.end(), [&](const auto& event) {
+                        return event.player == player;
+                    }));
+                if (object.queue_callback != 0U) {
+                    for (std::size_t index = 0; index < consumed_count; ++index) {
+                        pending.push_back(MakeCallback(
+                            object.queue_callback,
+                            {object.base.Add(8U).Value(), object.queue_context}));
+                    }
+                }
+                const auto position = mixer_.PositionMillis(player);
+                if ((object.play_mask & 0x2U) != 0U && object.marker.has_value() &&
+                    !object.marker_fired && object.last_position < *object.marker &&
+                    position >= *object.marker) {
+                    object.marker_fired = true;
+                    AddPlayCallback(pending, object, 0x2U);
+                }
+                if ((object.play_mask & 0x4U) != 0U &&
+                    object.update_period != 0U &&
+                    position / object.update_period >
+                        object.last_position / object.update_period) {
+                    AddPlayCallback(pending, object, 0x4U);
+                }
+                if (consumed_count != 0U && (object.play_mask & 0x1U) != 0U &&
+                    mixer_.QueueState(player).count == 0U) {
+                    AddPlayCallback(pending, object, 0x1U);
+                }
+                object.last_position = position;
+            }
+        }
+        for (const auto& callback : pending) callbacks_.Enqueue(callback);
+        return consumed;
     }
 
     std::uint32_t CreateEngine(const A32CallFrame& call) {
@@ -126,8 +167,19 @@ public:
 
     std::uint32_t ObjectRealize(const A32CallFrame& call) {
         if (call.Argument(1) > 1U) return kParameterInvalid;
-        std::scoped_lock lock(mutex_);
-        Require(call.Argument(0)).state = kObjectRealized;
+        std::optional<OpenSlesGuestCallback> callback;
+        {
+            std::scoped_lock lock(mutex_);
+            auto& object = Require(call.Argument(0));
+            object.state = kObjectRealized;
+            if (call.Argument(1) != 0U && object.object_callback != 0U) {
+                callback = MakeCallback(
+                    object.object_callback,
+                    {object.base.Value(), object.object_context, 2U, kSuccess,
+                     kObjectRealized, 0U});
+            }
+        }
+        if (callback.has_value()) callbacks_.Enqueue(*callback);
         return kSuccess;
     }
     std::uint32_t ObjectResume(const A32CallFrame& call) {
@@ -419,7 +471,9 @@ public:
     }
     std::uint32_t PlaySetMarker(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
-        RequirePlayer(call.Argument(0)).marker = call.Argument(1);
+        auto& object = RequirePlayer(call.Argument(0));
+        object.marker = call.Argument(1);
+        object.marker_fired = false;
         return kSuccess;
     }
     std::uint32_t PlayClearMarker(const A32CallFrame& call) {
@@ -585,6 +639,8 @@ private:
         std::int16_t stereo_position{};
         bool mute{};
         bool stereo_enabled{};
+        bool marker_fired{};
+        std::uint32_t last_position{};
     };
 
     Object& Allocate(const ObjectKind kind, std::set<std::string> interfaces,
@@ -739,6 +795,24 @@ private:
         Write32(call.Argument(1), read(object), call.ThreadId());
         return kSuccess;
     }
+
+    static OpenSlesGuestCallback MakeCallback(
+        const std::uint32_t function,
+        const std::initializer_list<std::uint32_t> arguments) {
+        OpenSlesGuestCallback callback;
+        callback.function = function;
+        callback.argument_count = static_cast<std::uint8_t>(arguments.size());
+        std::copy(arguments.begin(), arguments.end(), callback.arguments.begin());
+        return callback;
+    }
+    static void AddPlayCallback(std::vector<OpenSlesGuestCallback>& pending,
+                                const Object& object,
+                                const std::uint32_t event) {
+        if (object.play_callback == 0U) return;
+        pending.push_back(MakeCallback(
+            object.play_callback,
+            {object.base.Add(4U).Value(), object.play_context, event}));
+    }
     template <typename Read>
     std::uint32_t WritePlayer16(const A32CallFrame& call, Read read) {
         return WritePlayer32(call, [&](const Object& object) {
@@ -749,14 +823,16 @@ private:
 
     BoundaryCallServices& calls_;
     audio::OpenSlesPcmMixer& mixer_;
+    OpenSlesCallbackSink callbacks_;
     std::mutex mutex_;
     std::map<std::uint32_t, Object> objects_;
     std::size_t next_offset_{};
 };
 
 OpenSlesModule::OpenSlesModule(BoundaryCallServices& calls,
-                               audio::OpenSlesPcmMixer& mixer)
-    : calls_(calls), impl_(std::make_unique<Impl>(calls, mixer)) {}
+                               audio::OpenSlesPcmMixer& mixer,
+                               const OpenSlesCallbackSink callbacks)
+    : calls_(calls), impl_(std::make_unique<Impl>(calls, mixer, callbacks)) {}
 OpenSlesModule::~OpenSlesModule() = default;
 BoundaryCallServices& OpenSlesModule::CallServices() noexcept { return calls_; }
 void OpenSlesModule::MapGuestObjectArena() { impl_->MapGuestObjectArena(); }

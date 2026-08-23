@@ -182,6 +182,10 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
   object identity 隔离并发布 playing/paused/released/bytes-written 状态。非法 format、
   mode、range、重复构造或 release 后调用明确失败;PCM 输出混音尚未接线时能力保持
   partial。
+- Virtual OpenSL ES PCM mixer 在 `RenderStereoAudio` 中位于 SoundPool zero-fill/mix 之后做
+  additive mix，仍由上层向唯一 HAL output 提交一次。Object/Play/BufferQueue callback 经
+  窄化事件队列交给专用 A32 guest thread/CPU/TLS/stack；该线程不隐式 attach JNI，callback
+  内普通 SVC #2 可重入 Enqueue，失败在后续 process call 恢复而不跨 CPU callback。
 - `display.change_mode` 按 legacy Java 契约把 mode `1` 记录为允许休眠、其他值为保持
   唤醒,宿主防休眠未接入时不得宣称已改变窗口策略;`process.exit` 只发布线程安全可查询
   的退出请求,不得直接终止宿主进程或以 no-op 吞掉,前端观察后仍须执行 Profile

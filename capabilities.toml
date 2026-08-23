@@ -3,12 +3,12 @@
 [runtime.virtual_so_boundary]
 status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_link_preflight_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，中央 Impl::Invoke*、InvokeModule/module enum/FastBinding/std::function hot glue 已删除；BND-6/BND-7 将 binding/thunk/router/fault、shared graphics/frame/memory services 与各 concrete module 物理分离并以 architecture gate 固化 core→service→module→facade 依赖方向；EGL/GLES 仍共享唯一 GuestGlContext 与 ANGLE runtime；export-less libOpenSLES.so scaffold 仅满足 DT_NEEDED"
+note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，中央 Impl::Invoke*、InvokeModule/module enum/FastBinding/std::function hot glue 已删除；BND-6/BND-7 物理分离 core/service/module/facade 并以 architecture gate 固化依赖方向；EGL/GLES 共享唯一 GuestGlContext，libOpenSLES 也以 public data/function + private callable 使用同一 direct hot architecture"
 
 [runtime.opensles_virtual_so]
 status = "partial"
-test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-9 发布 AOSP Wilhelm 全部 51 个 SL_IID_* STT_OBJECT pointer global/UUID；BND-10 实现 PCM8/16 mono/stereo 重采样与加性 mixer；BND-11 发布 3 个 public function、53 个 direct private vtable callable，并实现 Engine/OutputMix/PCM AudioPlayer 的 Object/Play/Queue/Volume concrete handler。process audio pump 与专用 guest callback thread 尚待接线"
+test = "tests/audio/open_sles_pcm_mixer_tests.cpp; tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+note = "BND-9..12 按 AOSP Wilhelm 发布 3 functions、51 IID data、53 direct private vtable callables，实现 Engine/OutputMix/PCM AudioPlayer Object/Play/Queue/Volume、PCM8/16 mixer、SoundPool additive process pump 与专用 A32 guest callback thread；focused gates 已通过，待最终 full CTest 后晋升 complete"
 
 [runtime.liblog_virtual_so]
 status = "complete"

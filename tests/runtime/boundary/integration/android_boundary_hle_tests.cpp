@@ -48,7 +48,9 @@ constexpr ogplay::gles::AngleRenderer kNativeRenderer =
 
 class BoundaryFixture final {
 public:
-    explicit BoundaryFixture(const std::uint32_t supersample_factor = 1)
+    explicit BoundaryFixture(
+        const std::uint32_t supersample_factor = 1,
+        std::vector<ogplay::runtime::OpenSlesGuestCallback>* callbacks = nullptr)
         : bus(memory), cpu(bus), boundary(memory,
               {kNativeRenderer,
                ogplay::gles::AngleDevice::hardware}, 4, 3,
@@ -63,7 +65,17 @@ public:
                    if (found == files.end()) return false;
                    output = found->second;
                    return true;
-               }}) {
+               },
+               .open_sles_callbacks = {
+                   callbacks,
+                   +[](void* owner,
+                       const ogplay::runtime::OpenSlesGuestCallback& callback) {
+                       if (owner != nullptr) {
+                           static_cast<std::vector<
+                               ogplay::runtime::OpenSlesGuestCallback>*>(owner)
+                               ->push_back(callback);
+                       }
+                   }}}) {
         memory.Map({stack, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
@@ -166,7 +178,9 @@ std::uint32_t BoundaryCallAddress(
         1U, ogplay::cpu::RunStopReason::supervisor_call,
         ogplay::memory::GuestAddress{thumb_address & ~UINT32_C(1)}, 0xdf02U,
         2U, std::nullopt};
-    REQUIRE(fixture.boundary.Handle(fixture.cpu, stopped));
+    if (!fixture.boundary.Handle(fixture.cpu, stopped)) {
+        throw std::runtime_error("boundary address call was not handled");
+    }
     return fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r0);
 }
 
@@ -733,7 +747,8 @@ TEST_CASE("OpenSL ES AOSP IID globals map exact read-only guest ABI") {
 }
 
 TEST_CASE("OpenSL ES guest vtables create and play a PCM buffer queue") {
-    BoundaryFixture fixture;
+    std::vector<ogplay::runtime::OpenSlesGuestCallback> callbacks;
+    BoundaryFixture fixture(1U, &callbacks);
     const auto call = [&](const std::uint32_t address,
                           const std::initializer_list<std::uint32_t> arguments) {
         const std::vector words(arguments);
@@ -823,8 +838,17 @@ TEST_CASE("OpenSL ES guest vtables create and play a PCM buffer queue") {
     const auto player_object_vtable = fixture.bus.Read32(
         ogplay::memory::GuestAddress{player_object}, 1U);
     CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable + 4U * 4U}, 1U),
+               {player_object, 0x60000001U, 0x1234U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
                    ogplay::memory::GuestAddress{player_object_vtable}, 1U),
-               {player_object, 0U}) == 0U);
+               {player_object, 1U}) == 0U);
+    REQUIRE(callbacks.size() == 1U);
+    CHECK(callbacks[0].function == 0x60000001U);
+    CHECK(callbacks[0].argument_count == 6U);
+    CHECK(callbacks[0].arguments[0] == player_object);
+    CHECK(callbacks[0].arguments[1] == 0x1234U);
+    CHECK(callbacks[0].arguments[2] == 2U);
     const auto query_itf = [&](const std::string_view name,
                                const ogplay::memory::GuestAddress destination) {
         CHECK(call(fixture.bus.Read32(
@@ -838,6 +862,9 @@ TEST_CASE("OpenSL ES guest vtables create and play a PCM buffer queue") {
     const auto volume = query_itf("SL_IID_VOLUME", fixture.output.Add(24U));
     const auto queue_vtable = fixture.bus.Read32(
         ogplay::memory::GuestAddress{queue}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{queue_vtable + 3U * 4U}, 1U),
+               {queue, 0x60000003U, 0x5678U}) == 0U);
     const auto pcm = fixture.output.Add(0x200U);
     const std::array pcm_bytes{
         std::byte{0xe8}, std::byte{0x03}, std::byte{0xd0}, std::byte{0x07}};
@@ -845,8 +872,17 @@ TEST_CASE("OpenSL ES guest vtables create and play a PCM buffer queue") {
     CHECK(call(fixture.bus.Read32(
                    ogplay::memory::GuestAddress{queue_vtable}, 1U),
                {queue, pcm.Value(), static_cast<std::uint32_t>(pcm_bytes.size())}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{queue_vtable}, 1U),
+               {queue, 0x12345000U, 4U}) == 7U);
     const auto play_vtable = fixture.bus.Read32(
         ogplay::memory::GuestAddress{play}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{play_vtable + 4U * 4U}, 1U),
+               {play, 0x60000005U, 0x9abcU}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{play_vtable + 5U * 4U}, 1U),
+               {play, 1U}) == 0U);
     CHECK(call(fixture.bus.Read32(
                    ogplay::memory::GuestAddress{play_vtable}, 1U),
                {play, 3U}) == 0U);
@@ -862,12 +898,55 @@ TEST_CASE("OpenSL ES guest vtables create and play a PCM buffer queue") {
     const auto consumed = fixture.boundary.MixOpenSlesPcm16(mixed, 48000U);
     REQUIRE(consumed.size() == 1U);
     CHECK(mixed == std::array<std::int16_t, 4>{0, 1000, 0, 2000});
+    REQUIRE(callbacks.size() == 3U);
+    CHECK(callbacks[1].function == 0x60000003U);
+    CHECK(callbacks[1].argument_count == 2U);
+    CHECK(callbacks[1].arguments[0] == queue);
+    CHECK(callbacks[1].arguments[1] == 0x5678U);
+    CHECK(callbacks[2].function == 0x60000005U);
+    CHECK(callbacks[2].argument_count == 3U);
+    CHECK(callbacks[2].arguments[0] == play);
+    CHECK(callbacks[2].arguments[1] == 0x9abcU);
+    CHECK(callbacks[2].arguments[2] == 1U);
     const auto queue_state = fixture.output.Add(0x220U);
     CHECK(call(fixture.bus.Read32(
                    ogplay::memory::GuestAddress{queue_vtable + 2U * 4U}, 1U),
                {queue, queue_state.Value()}) == 0U);
     CHECK(fixture.bus.Read32(queue_state, 1U) == 0U);
     CHECK(fixture.bus.Read32(queue_state.Add(4U), 1U) == 1U);
+
+    const auto enqueue = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{queue_vtable}, 1U);
+    std::string slow_fault;
+    try {
+        static_cast<void>(call(enqueue, {queue, 0x12345000U, 4U}));
+        FAIL("slow OpenSL queue memory call did not fault");
+    } catch (const ogplay::memory::MemoryFault& error) {
+        slow_fault = error.what();
+    }
+    ogplay::cpu::DynarmicCpu fast_cpu(fixture.bus);
+    fast_cpu.SetHostCallHook(fixture.boundary.FastHostCallHook());
+    ogplay::cpu::A32State fast_state;
+    fast_state.SetState(ogplay::cpu::ExecutionState::thumb);
+    fast_state.SetThreadId(1U);
+    fast_state.SetRegister(ogplay::cpu::CoreRegister::pc,
+                           enqueue & ~UINT32_C(1));
+    fast_state.SetRegister(ogplay::cpu::CoreRegister::r0, queue);
+    fast_state.SetRegister(ogplay::cpu::CoreRegister::r1, 0x12345000U);
+    fast_state.SetRegister(ogplay::cpu::CoreRegister::r2, 4U);
+    fast_state.SetRegister(ogplay::cpu::CoreRegister::sp,
+                           fixture.stack.Value());
+    fast_cpu.SetState(fast_state);
+    const auto stopped = fast_cpu.Run(4U);
+    REQUIRE(stopped.reason == ogplay::cpu::RunStopReason::host_call_fault);
+    try {
+        static_cast<void>(fixture.boundary.Handle(fast_cpu, stopped));
+        FAIL("fast OpenSL queue memory fault was not restored");
+    } catch (const ogplay::memory::MemoryFault& error) {
+        CHECK(std::string(error.what()) == slow_fault);
+        CHECK(error.Address() == ogplay::memory::GuestAddress{0x12345000U});
+        CHECK(error.ThreadId() == 1U);
+    }
 }
 
 TEST_CASE("A32 call frame bulk decodes register and stack arguments") {

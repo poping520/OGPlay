@@ -11,6 +11,7 @@
 #include "ogplay/core/gpu_state.h"
 #include "ogplay/gles/angle_backend.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/boundary/opensles_callback.h"
 
 namespace ogplay::core {
 class Logger;
@@ -45,6 +46,7 @@ struct AndroidBoundaryOptions final {
     void* guest_file_owner{};
     bool (*read_guest_file)(void*, std::string_view,
                             std::vector<std::byte>&){};
+    OpenSlesCallbackSink open_sles_callbacks{};
 };
 
 class AndroidBoundaryHle final : public core::GpuStateProvider {

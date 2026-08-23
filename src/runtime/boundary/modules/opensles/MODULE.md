@@ -19,9 +19,10 @@ MIDI、3D、effect 与 URI/FD decoding 必须明确失败，不伪造成功。
 
 - AOSP IID 名称、pointer symbol、16-byte value 及 `const vtable **` 布局保持 API 19 ABI。
 - EGL/GLES hot path、SVC transport、JNI 与 libc override 语义不因本模块改变。
-- PCM playback 只能加性接入会话唯一 audio output；callback 注册状态已由 player/object
-  拥有，实际 guest callback 必须由后续专用 callback thread 执行，C++ exception 不跨越
-  CPU callback。
+- PCM playback 只经 facade 的窄化 additive mix 接入会话唯一 audio output。Object/Play/
+  BufferQueue callback 在释放 module/mixer lock 后发布到注入的 `OpenSlesCallbackSink`；
+  process 使用专用 guest thread/CPU/TLS/stack 执行，callback 内 Enqueue 仍走普通 SVC #2，
+  C++ exception 不跨 CPU callback并在 process 边界恢复。
 
 ## 测试
 

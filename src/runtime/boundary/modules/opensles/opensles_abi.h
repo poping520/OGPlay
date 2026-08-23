@@ -10,15 +10,15 @@
 
 namespace ogplay::runtime {
 
-inline constexpr memory::GuestAddress kOpenSlesAbiBegin{0x71500000U};
-inline constexpr memory::GuestAddress kOpenSlesIidValuesBegin{0x71501000U};
-inline constexpr memory::GuestAddress kOpenSlesObjectVtable{0x71502000U};
-inline constexpr memory::GuestAddress kOpenSlesEngineVtable{0x71502100U};
-inline constexpr memory::GuestAddress kOpenSlesPlayVtable{0x71502200U};
-inline constexpr memory::GuestAddress kOpenSlesBufferQueueVtable{0x71502300U};
-inline constexpr memory::GuestAddress kOpenSlesVolumeVtable{0x71502400U};
-inline constexpr memory::GuestAddress kOpenSlesOutputMixVtable{0x71502500U};
-inline constexpr memory::GuestAddress kOpenSlesObjectArenaBegin{0x71600000U};
+inline constexpr memory::GuestAddress kOpenSlesAbiBegin{0x71800000U};
+inline constexpr memory::GuestAddress kOpenSlesIidValuesBegin{0x71801000U};
+inline constexpr memory::GuestAddress kOpenSlesObjectVtable{0x71802000U};
+inline constexpr memory::GuestAddress kOpenSlesEngineVtable{0x71802100U};
+inline constexpr memory::GuestAddress kOpenSlesPlayVtable{0x71802200U};
+inline constexpr memory::GuestAddress kOpenSlesBufferQueueVtable{0x71802300U};
+inline constexpr memory::GuestAddress kOpenSlesVolumeVtable{0x71802400U};
+inline constexpr memory::GuestAddress kOpenSlesOutputMixVtable{0x71802500U};
+inline constexpr memory::GuestAddress kOpenSlesObjectArenaBegin{0x71900000U};
 inline constexpr std::size_t kOpenSlesStaticAbiBytes = 0x3000U;
 inline constexpr std::size_t kOpenSlesObjectArenaBytes = 0x100000U;
 

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <condition_variable>
 #include <cstddef>
+#include <deque>
 #include <exception>
 #include <iterator>
 #include <limits>
@@ -11,6 +13,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <thread>
 #include <utility>
 #include <unordered_map>
 #include <vector>
@@ -43,9 +46,15 @@ namespace {
 
 constexpr std::uint64_t kRootThreadId = 1;
 constexpr std::uint32_t kDexVmThreadMaximum = 32;
+constexpr std::uint64_t kOpenSlesCallbackThreadId = UINT64_C(0x4f50454e);
+constexpr std::uint32_t kOpenSlesCallbackAllocationSlot =
+    kDexVmThreadMaximum - 1U;
 constexpr std::uint32_t kDexVmTlsBase = 0x6a100000U;
 constexpr std::uint32_t kDexVmStackBase = 0x6c000000U;
 constexpr std::uint32_t kDexVmStackSize = 1024U * 1024U;
+constexpr std::uint32_t kOpenSlesCallbackTls = 0x71a00000U;
+constexpr std::uint32_t kOpenSlesCallbackThreadInfo = 0x71a01000U;
+constexpr std::uint32_t kOpenSlesCallbackStack = 0x71b00000U;
 
 thread_local std::unordered_map<const void*, cpu::Cpu*>
     active_guest_call_cpus;
@@ -551,12 +560,13 @@ public:
         memory::GuestAddress stack_top;
         std::unique_ptr<cpu::DynarmicCpu> cpu;
         std::recursive_mutex call_mutex;
+        bool jni_attached{};
     };
 
     explicit Impl(const AndroidGuestProcessStartup& request)
         : boundary_(address_space_, request.backend, request.width,
                     request.height, request.supersample_factor,
-                    request.boundary_options),
+                    BindOpenSlesCallbacks(request.boundary_options, this)),
           guest_jni_(address_space_),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           jni_dispatcher_(ledger_), invocations_(classes_), fields_(classes_),
@@ -609,6 +619,7 @@ public:
         Progress("mapping-boundaries");
         MapArmKernelHelpers(address_space_);
         boundary_.MapThunks();
+        ReserveOpenSlesCallbackMemory();
         loaded_ = loader::LoadElf32ModuleNamespace(
             request.root_module, request.modules, address_space_,
             [&profile, this](
@@ -670,6 +681,7 @@ public:
             });
         running_ = true;
         Progress("guest-initializers-complete");
+        StartOpenSlesCallbackThread();
 #endif
     }
 
@@ -682,6 +694,9 @@ public:
     }
 
     A32GuestCallResult Invoke(const A32GuestCallFrame& frame) {
+        if (std::this_thread::get_id() != open_sles_callback_thread_.get_id()) {
+            RethrowOpenSlesCallbackFailure();
+        }
         if (!root_cpu_) {
             throw AndroidGuestProcessError(
                 "Android guest call session has no root CPU");
@@ -751,22 +766,37 @@ public:
     }
 
     void PrepareDexVmThread(const std::uint64_t thread_id,
-                            const std::uint32_t allocation_slot) {
+                            const std::uint32_t allocation_slot,
+                            const bool attach_jni = true) {
         if (thread_id == 0U || thread_id == kRootThreadId ||
             allocation_slot >= kDexVmThreadMaximum) {
             throw AndroidGuestProcessError(
                 "DexVM guest thread context request is outside its pool");
         }
+        if (allocation_slot == kOpenSlesCallbackAllocationSlot &&
+            thread_id != kOpenSlesCallbackThreadId) {
+            throw AndroidGuestProcessError(
+                "DexVM guest thread requested the reserved OpenSL callback slot");
+        }
         const std::scoped_lock contexts_lock(dexvm_threads_mutex_);
         if (dexvm_threads_.contains(thread_id)) return;
 
         const auto page_size = address_space_.PageSize();
+        const auto open_sles_callback =
+            thread_id == kOpenSlesCallbackThreadId;
         const memory::GuestAddress tls_address{
-            kDexVmTlsBase + allocation_slot * static_cast<std::uint32_t>(2U * page_size)};
+            open_sles_callback
+                ? kOpenSlesCallbackTls
+                : kDexVmTlsBase + allocation_slot *
+                      static_cast<std::uint32_t>(2U * page_size)};
         const memory::GuestAddress thread_info_address{
-            tls_address.Value() + static_cast<std::uint32_t>(page_size)};
+            open_sles_callback
+                ? kOpenSlesCallbackThreadInfo
+                : tls_address.Value() + static_cast<std::uint32_t>(page_size)};
         const memory::GuestAddress stack_address{
-            kDexVmStackBase + allocation_slot * kDexVmStackSize};
+            open_sles_callback
+                ? kOpenSlesCallbackStack
+                : kDexVmStackBase + allocation_slot * kDexVmStackSize};
         auto context = std::make_shared<DexVmThreadContext>(
             thread_id, memory::GuestRange{thread_info_address, page_size},
             memory::GuestRange{stack_address, kDexVmStackSize});
@@ -798,13 +828,16 @@ public:
                                 tls_address.Value(), thread_id);
             lifecycle_.Register(thread_id, context->tls->thread_pointer);
             lifecycle_registered = true;
-            const auto attached = java_vm_.AttachCurrentThread(
-                thread_id, kJniVersion1_6);
-            if (attached.status != JniStatus::ok) {
-                throw AndroidGuestProcessError(
-                    "DexVM guest thread JNI attachment failed");
+            if (attach_jni) {
+                const auto attached = java_vm_.AttachCurrentThread(
+                    thread_id, kJniVersion1_6);
+                if (attached.status != JniStatus::ok) {
+                    throw AndroidGuestProcessError(
+                        "DexVM guest thread JNI attachment failed");
+                }
+                jni_attached = true;
+                context->jni_attached = true;
             }
-            jni_attached = true;
             context->cpu = std::make_unique<cpu::DynarmicCpu>(
                 memory_bus_, execution_context_);
             ConfigureFastHostCalls(*context->cpu);
@@ -842,7 +875,9 @@ public:
         }
         try {
             const std::scoped_lock call_lock(context->call_mutex);
-            static_cast<void>(java_vm_.DetachCurrentThread(thread_id));
+            if (context->jni_attached) {
+                static_cast<void>(java_vm_.DetachCurrentThread(thread_id));
+            }
             lifecycle_.RequestExit(thread_id, 0);
             static_cast<void>(lifecycle_.CompleteExit(thread_id));
             static_cast<void>(lifecycle_.Reap(thread_id));
@@ -881,8 +916,148 @@ public:
         return boundary.invoke(boundary.userdata, svc, call);
     }
 
+    static AndroidBoundaryOptions BindOpenSlesCallbacks(
+        AndroidBoundaryOptions options, Impl* owner) {
+        options.open_sles_callbacks = {
+            owner, +[](void* userdata, const OpenSlesGuestCallback& callback) {
+                static_cast<Impl*>(userdata)->EnqueueOpenSlesCallback(callback);
+            }};
+        return options;
+    }
+
+    void EnqueueOpenSlesCallback(const OpenSlesGuestCallback& callback) {
+        if (callback.function == 0U || callback.argument_count == 0U ||
+            callback.argument_count > callback.arguments.size()) {
+            throw AndroidGuestProcessError("invalid OpenSL guest callback event");
+        }
+        {
+            const std::scoped_lock lock(open_sles_callback_mutex_);
+            if (open_sles_callback_stopping_ || open_sles_callback_failure_) return;
+            open_sles_callbacks_.push_back(callback);
+        }
+        open_sles_callback_ready_.notify_one();
+    }
+
+    void StartOpenSlesCallbackThread() {
+        if (open_sles_callback_memory_reserved_) {
+            address_space_.Unmap(
+                {memory::GuestAddress{kOpenSlesCallbackTls},
+                 address_space_.PageSize()});
+            address_space_.Unmap(
+                {memory::GuestAddress{kOpenSlesCallbackThreadInfo},
+                 address_space_.PageSize()});
+            address_space_.Unmap(
+                {memory::GuestAddress{kOpenSlesCallbackStack},
+                 kDexVmStackSize});
+            open_sles_callback_memory_reserved_ = false;
+        }
+        PrepareDexVmThread(kOpenSlesCallbackThreadId,
+                           kOpenSlesCallbackAllocationSlot, false);
+        try {
+            open_sles_callback_thread_ = std::jthread([this] {
+                for (;;) {
+                    OpenSlesGuestCallback callback;
+                    {
+                        std::unique_lock lock(open_sles_callback_mutex_);
+                        open_sles_callback_ready_.wait(lock, [this] {
+                            return open_sles_callback_stopping_ ||
+                                   !open_sles_callbacks_.empty();
+                        });
+                        if (open_sles_callback_stopping_) return;
+                        callback = open_sles_callbacks_.front();
+                        open_sles_callbacks_.pop_front();
+                    }
+                    try {
+                        A32GuestCallFrame frame;
+                        frame.target = memory::GuestAddress{callback.function};
+                        frame.thread_id = kOpenSlesCallbackThreadId;
+                        const auto register_count = std::min<std::size_t>(
+                            callback.argument_count, frame.registers.size());
+                        std::copy_n(callback.arguments.begin(), register_count,
+                                    frame.registers.begin());
+                        std::array<std::uint32_t, 2> stack{};
+                        const auto stack_count = callback.argument_count > 4U
+                                                     ? callback.argument_count - 4U
+                                                     : 0U;
+                        if (stack_count != 0U) {
+                            std::copy_n(callback.arguments.begin() + 4U,
+                                        stack_count, stack.begin());
+                            frame.stack_words =
+                                std::span(stack).first(stack_count);
+                        }
+                        static_cast<void>(Invoke(frame));
+                    } catch (...) {
+                        const std::scoped_lock lock(open_sles_callback_mutex_);
+                        if (!open_sles_callback_failure_) {
+                            open_sles_callback_failure_ =
+                                std::current_exception();
+                        }
+                        open_sles_callbacks_.clear();
+                    }
+                }
+            });
+        } catch (...) {
+            ReleaseDexVmThread(kOpenSlesCallbackThreadId);
+            throw;
+        }
+    }
+
+    void StopOpenSlesCallbackThread() noexcept {
+        {
+            const std::scoped_lock lock(open_sles_callback_mutex_);
+            open_sles_callback_stopping_ = true;
+            open_sles_callbacks_.clear();
+        }
+        open_sles_callback_ready_.notify_all();
+        static_cast<void>(futex_table_.InterruptAll());
+        static_cast<void>(environment_.InterruptMonitorWaiters());
+        if (open_sles_callback_thread_.joinable()) {
+            open_sles_callback_thread_.join();
+        }
+        ReleaseDexVmThread(kOpenSlesCallbackThreadId);
+    }
+
+    void ReserveOpenSlesCallbackMemory() {
+        const auto rw = memory::PageProtection::read |
+                        memory::PageProtection::write;
+        address_space_.Map(
+            {memory::GuestAddress{kOpenSlesCallbackTls},
+             address_space_.PageSize()}, rw);
+        try {
+            address_space_.Map(
+                {memory::GuestAddress{kOpenSlesCallbackThreadInfo},
+                 address_space_.PageSize()}, rw);
+            try {
+                address_space_.Map(
+                    {memory::GuestAddress{kOpenSlesCallbackStack},
+                     kDexVmStackSize}, rw);
+            } catch (...) {
+                address_space_.Unmap(
+                    {memory::GuestAddress{kOpenSlesCallbackThreadInfo},
+                     address_space_.PageSize()});
+                throw;
+            }
+        } catch (...) {
+            address_space_.Unmap(
+                {memory::GuestAddress{kOpenSlesCallbackTls},
+                 address_space_.PageSize()});
+            throw;
+        }
+        open_sles_callback_memory_reserved_ = true;
+    }
+
+    void RethrowOpenSlesCallbackFailure() {
+        std::exception_ptr failure;
+        {
+            const std::scoped_lock lock(open_sles_callback_mutex_);
+            failure = open_sles_callback_failure_;
+        }
+        if (failure) std::rethrow_exception(failure);
+    }
+
     void Stop() {
         if (!running_) return;
+        StopOpenSlesCallbackThread();
         std::vector<std::uint64_t> dexvm_thread_ids;
         {
             const std::scoped_lock lock(dexvm_threads_mutex_);
@@ -1044,7 +1219,11 @@ public:
     }
     std::size_t RenderStereoAudio(const std::span<std::int16_t> output,
                                   const std::uint32_t sample_rate) {
-        return sound_pool_mixer_.RenderStereoPcm16(output, sample_rate);
+        RethrowOpenSlesCallbackFailure();
+        const auto frames =
+            sound_pool_mixer_.RenderStereoPcm16(output, sample_rate);
+        static_cast<void>(boundary_.MixOpenSlesPcm16(output, sample_rate));
+        return frames;
     }
     std::size_t InterruptBlockingWaits() {
         return futex_table_.InterruptAll() +
@@ -1292,6 +1471,13 @@ private:
     // an isolated CPU whose stack begins below the suspended caller SP, so a
     // nested JNI_OnLoad cannot overwrite the outer register/stack frame.
     std::recursive_mutex guest_call_mutex_;
+    std::mutex open_sles_callback_mutex_;
+    std::condition_variable open_sles_callback_ready_;
+    std::deque<OpenSlesGuestCallback> open_sles_callbacks_;
+    std::exception_ptr open_sles_callback_failure_;
+    std::jthread open_sles_callback_thread_;
+    bool open_sles_callback_stopping_{};
+    bool open_sles_callback_memory_reserved_{};
     std::mutex dexvm_threads_mutex_;
     std::unordered_map<std::uint64_t, std::shared_ptr<DexVmThreadContext>>
         dexvm_threads_;

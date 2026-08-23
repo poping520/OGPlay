@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ogplay/audio/open_sles_pcm_mixer.h"
+#include "ogplay/runtime/boundary/opensles_callback.h"
 #include "runtime/boundary/modules/opensles/opensles_exports.h"
 
 namespace ogplay::runtime {
@@ -16,7 +17,8 @@ struct BoundaryCallServices;
 class OpenSlesModule final {
 public:
     OpenSlesModule(BoundaryCallServices& calls,
-                   audio::OpenSlesPcmMixer& mixer);
+                   audio::OpenSlesPcmMixer& mixer,
+                   OpenSlesCallbackSink callbacks);
     ~OpenSlesModule();
     OpenSlesModule(const OpenSlesModule&) = delete;
     OpenSlesModule& operator=(const OpenSlesModule&) = delete;

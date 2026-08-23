@@ -98,7 +98,8 @@ public:
                        &ServiceRecordFastFault, options.guest_file_owner,
                        options.read_guest_file},
           log_module_(log_context_),
-          open_sles_module_(call_services_, open_sles_mixer_),
+          open_sles_module_(call_services_, open_sles_mixer_,
+                            options.open_sles_callbacks),
           libc_override_module_(call_services_) {
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,

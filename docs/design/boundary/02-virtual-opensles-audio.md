@@ -44,9 +44,11 @@ pump。实现必须保持既有 Fast Host Call：所有直接导出和 guest vta
 边界地址划分保持现有全局规划：
 
 - `0x70000000..0x70ffffff`：SVC #2 dense callable thunk；
-- `0x71000000..0x714fffff`：既有 JNI ABI/lease；
-- `0x71500000..0x717fffff`：OpenSL guest ABI arena；
-- `0x71800000..0x71ffffff`：保留。
+- `0x71000000..0x717fffff`：既有 JNI ABI/lease（primitive-array lease 延伸到
+  `0x717fffff`）；
+- `0x71800000..0x719fffff`：OpenSL static/object guest ABI arena；
+- `0x71a00000..0x71bfffff`：OpenSL callback TLS/thread-info/stack reservation；
+- `0x71c00000..0x71ffffff`：保留。
 
 OpenSL arena 包含：
 
@@ -145,4 +147,3 @@ AndroidGuestProcess 为这些 native audio callback 准备独立 A32 guest threa
 - buffer callback 从独立 guest callback thread 执行并允许 callback 内 Enqueue；
 - fast/slow memory fault equivalence、late dlopen、metadata-only preflight、architecture gate 通过；
 - 最终全量 CTest 通过后，`runtime.opensles_virtual_so` 才可从 stub 前进。
-

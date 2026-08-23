@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-24 · BND-11 OpenSL ES concrete module
+更新：2026-08-24 · BND-12 OpenSL ES pump and callbacks
 
 ## 当前阶段
 
@@ -16,7 +16,10 @@
   5/5 通过。BND-11 已发布 3 个 public function 和 53 个 private callable，immutable AOSP
   vtable 直接指向 dense thunk；concrete final module 完成 Engine→OutputMix→PCM AudioPlayer、
   Object/Play/Queue/Volume 状态与离线混音，范围外 constructor 规范失败，focused 16/16
-  通过。下一阶段接入 process audio pump 和专用 guest callback thread。
+  通过。BND-12 已把 mixer 加性接入 SoundPool process output，并以专用 A32 guest
+  thread/CPU/TLS/stack 执行 async Object、Play 与每-buffer callback；callback 内可正常
+  SVC #2 Enqueue，失败延迟恢复。OpenSL 地址移入与 JNI lease 不冲突的 `0x718..0x71b`，
+  focused 19/19 通过；能力待最终 full CTest 后晋升 complete。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

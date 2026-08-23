@@ -16,6 +16,14 @@ Throwable hierarchy、primitive wrapper family 与接口 family，分别统一�
 禁止新增 `misc`/`common`/`all` 等无语义聚合文件、字符串 core handler id、
 全局静态自注册，以及 android.* 声明和行为顺手修改。
 
+`java_util_collections.cpp` 是 pinned libcore `java.util` 核心集合 family TU：集中声明
+Collection/List/Set/Map、Iterator/ListIterator、Queue/Deque、常用抽象基类以及
+ArrayList/LinkedList/ArrayDeque、HashMap/LinkedHashMap、HashSet/LinkedHashSet；既有
+Vector/Stack/Hashtable 也迁入同一 family。handler 只做 Java 参数/异常边界与 virtual
+`equals/hashCode` 派发，sequence/map/view/entry/iterator 的宿主状态和生命周期统一委托
+`CollectionRuntime`。Tree/Sorted/Navigable、并发集合和完整 Collections/Arrays 算法不在
+该 family 范围内，缺失能力必须继续明确失败。
+
 `java_lang_interfaces.cpp` 覆盖 pinned libcore `java.lang` 顶层 8 个
 interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持
 不变，其余接口方法（含 `Readable.read(CharBuffer)`）为显式

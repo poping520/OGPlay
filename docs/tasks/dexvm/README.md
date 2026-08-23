@@ -100,6 +100,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-75](DVM-75.md) | String.format 与 PackageManager 启动面 | 进行中 |
 | [DVM-76](DVM-76.md) | 致命错误自动附带 guest Java 调用栈 | 完成 |
 | [DVM-77](DVM-77.md) | PackageManager P0 当前包查询面 | 完成 |
+| [DVM-78](DVM-78.md) | Java Util 集合核心、视图与迭代器 | 完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

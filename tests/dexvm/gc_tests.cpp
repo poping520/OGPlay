@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -80,7 +81,7 @@ TEST_CASE("DexVM GC root surface enumerates permanent static JNI and session roo
     REQUIRE(root_box.has_value());
     CHECK(fixture.linker.Class(*root_box).static_ref_slots ==
           std::vector<std::uint16_t>{0});
-    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 4);
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 3);
 }
 
 TEST_CASE("JNI GC roots include local and global but exclude weak global") {
@@ -146,17 +147,27 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
                 (*state)[clone.Value()] = found->second;
             }
         }});
-    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 5);
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 4);
 
     const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     (*state)[owner.Value()] = child;
+    fixture.vm.ListStorage(owner).push_back(child);
+    auto& source_map = fixture.vm.Collections().EnsureMap(owner);
+    source_map.entries.push_back({1, child, owner, 7});
     const auto source_hash = fixture.model.IdentityHashCode(owner);
     const auto clone = fixture.vm.CloneObject(owner);
     CHECK(fixture.model.IdentityHashCode(clone) != source_hash);
     CHECK(fixture.model.IdentityHashCode(owner) == source_hash);
     REQUIRE(state->contains(clone.Value()));
     CHECK(state->at(clone.Value()) == child);
+    REQUIRE(fixture.vm.ListStorage(clone).size() == 1);
+    CHECK(fixture.vm.ListStorage(clone).front() == child);
+    const auto* cloned_map = fixture.vm.Collections().FindMap(clone);
+    REQUIRE(cloned_map != nullptr);
+    REQUIRE(cloned_map->entries.size() == 1);
+    CHECK(cloned_map->entries.front().key == child);
+    CHECK(cloned_map->entries.front().value == owner);
 
     fixture.vm.SetGcIntegration(
         {{}, {}, [owner](const VmRootVisitor& visit) { visit(owner); }});

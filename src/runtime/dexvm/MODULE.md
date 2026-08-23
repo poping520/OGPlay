@@ -65,6 +65,12 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   匹配，null 参数 NPE、非 enum/未命中 IllegalArgumentException（消息对照 AOSP）。
   enum 子类的 `values()` 走数组 `Object.clone()`：数组可赋给 `Cloneable` /
   `Serializable`，浅拷贝顶层元素。
+- `CollectionRuntime`（DVM-78）：统一拥有 java.util sequence/map、sub-list、三类
+  live map view、稳定 Entry 与 fail-fast iterator 的 per-VM side state；map 节点保存
+  guest virtual `hashCode` 结果和稳定 entry id，结构修改递增 `mod_count`。所有 guest
+  references 由同一具名 side-table trace，死亡 owner 统一 sweep；Object.clone 仅浅拷贝
+  sequence/map 内容，不复制 view/entry/iterator 游标。intrinsic handler 不保存宿主容器
+  指针，也不以 `VmObjectRef` 数值代替 Java equals/hashCode。
 - `java.lang.Thread` 对照 pinned libcore `Thread.java`/`VMThread.java` 与 Dalvik
   `Thread.cpp`/`Sync.cpp`：root context 具有稳定 id=1 `main` Thread 强根；构造时
   分配 per-VM stable ID；`start()` 经实际 Thread class vtable 虚派发

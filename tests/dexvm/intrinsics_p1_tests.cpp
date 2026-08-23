@@ -38,7 +38,7 @@ struct Vm final {
     ogplay::core::Logger logger;
     Interpreter interpreter;
 
-    Vm()
+    explicit Vm(const InterpreterConfig config = {})
       : model(strings, arrays), linker(),
           interpreter(
               [this]() -> DexClassLinker& {
@@ -47,7 +47,7 @@ struct Vm final {
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, {}) {
+              model, nullptr, ledger, config) {
         interpreter.SetLogger(&logger);
     }
 
@@ -213,10 +213,23 @@ TEST_CASE("dexvm P1 boxed values") {
 }
 
 TEST_CASE("dexvm P1 collections use Java string equality for keys") {
-    Vm vm;
+  for (const auto backend : {InterpreterBackend::switch_dispatch,
+                             InterpreterBackend::threaded}) {
+    INFO("backend=", backend == InterpreterBackend::threaded ? "threaded"
+                                                              : "switch");
+    InterpreterConfig config;
+    config.backend = backend;
+    Vm vm(config);
     ExpectInt(vm.CallStatic("mapRoundTrip", "()I"), 99);
     ExpectInt(vm.CallStatic("vectorOps", "()I"), 4);
-  ExpectInt(vm.CallStatic("stackOps", "()I"), 6);
+    ExpectInt(vm.CallStatic("stackOps", "()I"), 6);
+    ExpectInt(vm.CallStatic("collectionListOps", "()I"), 5);
+    ExpectInt(vm.CallStatic("collectionMapViews", "()I"), 10);
+    ExpectInt(vm.CallStatic("collectionFailFast", "()I"), 1);
+    ExpectInt(vm.CallStatic("collectionDequeOps", "()I"), 3);
+    ExpectInt(vm.CallStatic("collectionExceptions", "()I"), 7);
+    ExpectInt(vm.CallStatic("collectionAbstractSubclass", "()I"), 0);
+  }
 }
 
 TEST_CASE("dexvm P1 System.arraycopy and Math") {

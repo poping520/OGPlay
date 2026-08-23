@@ -430,6 +430,7 @@ add_library(ogplay_runtime
     src/runtime/integration/headless_jni_contract.cpp
     src/runtime/dexvm/class_name_codec.cpp
     src/runtime/dexvm/class_loader_facade.cpp
+    src/runtime/dexvm/collection_runtime.cpp
     src/runtime/dexvm/reflection.cpp
     src/runtime/dexvm/reflection_codec.cpp
     src/runtime/dexvm/class_linker.cpp

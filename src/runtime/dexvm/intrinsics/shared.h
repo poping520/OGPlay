@@ -407,17 +407,6 @@ inline void CheckRegion(const JniSize array_length, const std::int32_t offset,
     return ref;
 }
 
-[[nodiscard]] inline std::int64_t MapFind(IntrinsicContext& context,
-                                          const VmObjectRef key) {
-    const auto& entries = context.vm.MapStorage(context.receiver);
-    for (std::size_t index = 0; index < entries.size(); ++index) {
-        if (context.vm.JavaEquals(entries[index].first, key)) {
-            return static_cast<std::int64_t>(index);
-        }
-    }
-    return -1;
-}
-
 inline void CheckListIndex(const std::vector<VmObjectRef>& elements,
                            const std::int32_t index) {
     if (index < 0 || static_cast<std::size_t>(index) >= elements.size()) {

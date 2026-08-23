@@ -724,43 +724,17 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
             }
         }});
     RegisterIntrinsicStateTable({
-        "list",
+        "collections",
         [state = impl_.get()](const VmObjectRef owner,
                               const VmRootVisitor& visit) {
-            const auto found = state->lists.find(owner.Value());
-            if (found == state->lists.end()) return;
-            for (const auto element : found->second) visit(element);
+            state->collections.Trace(owner, visit);
         },
         [state = impl_.get()](const VmObjectRef owner) {
-            state->lists.erase(owner.Value());
+            state->collections.Sweep(owner);
         },
         [state = impl_.get()](const VmObjectRef source,
                               const VmObjectRef clone) {
-            const auto found = state->lists.find(source.Value());
-            if (found != state->lists.end()) {
-                state->lists[clone.Value()] = found->second;
-            }
-        }});
-    RegisterIntrinsicStateTable({
-        "map",
-        [state = impl_.get()](const VmObjectRef owner,
-                              const VmRootVisitor& visit) {
-            const auto found = state->maps.find(owner.Value());
-            if (found == state->maps.end()) return;
-            for (const auto& [key, value] : found->second) {
-                visit(key);
-                visit(value);
-            }
-        },
-        [state = impl_.get()](const VmObjectRef owner) {
-            state->maps.erase(owner.Value());
-        },
-        [state = impl_.get()](const VmObjectRef source,
-                              const VmObjectRef clone) {
-            const auto found = state->maps.find(source.Value());
-            if (found != state->maps.end()) {
-                state->maps[clone.Value()] = found->second;
-            }
+            state->collections.Clone(source, clone);
         }});
 
     const auto string_class = linker.FindClass("Ljava/lang/String;");
@@ -772,6 +746,14 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         std::make_unique<ClassLoaderFacade>(linker, model);
     impl_->reflection =
         std::make_unique<ReflectionRuntime>(*this, linker, model);
+}
+
+CollectionRuntime& Interpreter::Collections() {
+    return impl_->collections;
+}
+
+const CollectionRuntime& Interpreter::Collections() const {
+    return impl_->collections;
 }
 
 Interpreter::~Interpreter() = default;
@@ -1062,14 +1044,10 @@ VmObjectRef Interpreter::CloneObject(const VmObjectRef source) {
 std::u16string& Interpreter::BuilderBuffer(const VmObjectRef instance) {
     return impl_->builders[instance.Value()];
 }
-std::vector<VmObjectRef> &Interpreter::ListStorage(const VmObjectRef instance) {
-    return impl_->lists[instance.Value()];
+std::vector<VmObjectRef>& Interpreter::ListStorage(
+    const VmObjectRef instance) {
+    return impl_->collections.EnsureSequence(instance).elements;
 }
-std::vector<std::pair<VmObjectRef, VmObjectRef>> &
-Interpreter::MapStorage(const VmObjectRef instance) {
-    return impl_->maps[instance.Value()];
-}
-
 std::optional<std::string> Interpreter::GetSystemProperty(
     const std::string_view key) const {
     const auto found = impl_->system_properties.find(std::string(key));

@@ -204,6 +204,174 @@
     return v4
 .end method
 
+.method static public collectionListOps()I
+.registers 10
+    new-instance v0, Ljava/util/ArrayList;
+    invoke-direct {v0}, Ljava/util/ArrayList;-><init>()V
+    const-string v1, "a"
+    invoke-virtual {v0, v1}, Ljava/util/ArrayList;->add(Ljava/lang/Object;)Z
+    const-string v1, "bb"
+    invoke-virtual {v0, v1}, Ljava/util/ArrayList;->add(Ljava/lang/Object;)Z
+    const/4 v2, 2
+    invoke-virtual {v0, v2}, Ljava/util/ArrayList;->listIterator(I)Ljava/util/ListIterator;
+    move-result-object v3
+    invoke-interface {v3}, Ljava/util/ListIterator;->previous()Ljava/lang/Object;
+    move-result-object v4
+    check-cast v4, Ljava/lang/String;
+    invoke-virtual {v4}, Ljava/lang/String;->length()I
+    move-result v5
+    invoke-interface {v3}, Ljava/util/ListIterator;->remove()V
+    invoke-virtual {v0}, Ljava/util/ArrayList;->size()I
+    move-result v6
+    add-int/2addr v5, v6
+    const/4 v7, 0
+    const/4 v8, 1
+    invoke-virtual {v0, v7, v8}, Ljava/util/ArrayList;->subList(II)Ljava/util/List;
+    move-result-object v9
+    invoke-interface {v9}, Ljava/util/List;->size()I
+    move-result v6
+    add-int/2addr v5, v6
+    invoke-virtual {v0, v7}, Ljava/util/ArrayList;->get(I)Ljava/lang/Object;
+    move-result-object v4
+    check-cast v4, Ljava/lang/String;
+    invoke-virtual {v4}, Ljava/lang/String;->length()I
+    move-result v6
+    add-int/2addr v5, v6
+    return v5
+.end method
+
+.method static public collectionMapViews()I
+.registers 11
+    new-instance v0, Ljava/util/LinkedHashMap;
+    invoke-direct {v0}, Ljava/util/LinkedHashMap;-><init>()V
+    const-string v1, "x"
+    const/4 v2, 7
+    invoke-static {v2}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+    move-result-object v3
+    invoke-virtual {v0, v1, v3}, Ljava/util/LinkedHashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+    const-string v1, "y"
+    const/16 v2, 9
+    invoke-static {v2}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+    move-result-object v4
+    invoke-virtual {v0, v1, v4}, Ljava/util/LinkedHashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+    invoke-virtual {v0}, Ljava/util/LinkedHashMap;->entrySet()Ljava/util/Set;
+    move-result-object v5
+    invoke-interface {v5}, Ljava/util/Set;->iterator()Ljava/util/Iterator;
+    move-result-object v6
+    invoke-interface {v6}, Ljava/util/Iterator;->next()Ljava/lang/Object;
+    move-result-object v7
+    check-cast v7, Ljava/util/Map$Entry;
+    invoke-interface {v7}, Ljava/util/Map$Entry;->getValue()Ljava/lang/Object;
+    move-result-object v8
+    check-cast v8, Ljava/lang/Integer;
+    invoke-virtual {v8}, Ljava/lang/Integer;->intValue()I
+    move-result v9
+    invoke-virtual {v0}, Ljava/util/LinkedHashMap;->values()Ljava/util/Collection;
+    move-result-object v5
+    invoke-interface {v5, v4}, Ljava/util/Collection;->contains(Ljava/lang/Object;)Z
+    move-result v10
+    add-int/2addr v9, v10
+    invoke-virtual {v0}, Ljava/util/LinkedHashMap;->keySet()Ljava/util/Set;
+    move-result-object v5
+    invoke-interface {v5}, Ljava/util/Set;->size()I
+    move-result v10
+    add-int/2addr v9, v10
+    return v9
+.end method
+
+.method static public collectionFailFast()I
+.registers 5
+    new-instance v0, Ljava/util/ArrayList;
+    invoke-direct {v0}, Ljava/util/ArrayList;-><init>()V
+    const-string v1, "a"
+    invoke-virtual {v0, v1}, Ljava/util/ArrayList;->add(Ljava/lang/Object;)Z
+    invoke-virtual {v0}, Ljava/util/ArrayList;->iterator()Ljava/util/Iterator;
+    move-result-object v2
+    const-string v1, "b"
+    invoke-virtual {v0, v1}, Ljava/util/ArrayList;->add(Ljava/lang/Object;)Z
+    :try_start
+    invoke-interface {v2}, Ljava/util/Iterator;->hasNext()Z
+    :try_end
+    const/4 v3, 0
+    return v3
+    :handler
+    move-exception v4
+    const/4 v3, 1
+    return v3
+    .catch Ljava/util/ConcurrentModificationException; :try_start :try_end :handler
+.end method
+
+.method static public collectionDequeOps()I
+.registers 7
+    new-instance v0, Ljava/util/ArrayDeque;
+    invoke-direct {v0}, Ljava/util/ArrayDeque;-><init>()V
+    const-string v1, "a"
+    invoke-virtual {v0, v1}, Ljava/util/ArrayDeque;->addFirst(Ljava/lang/Object;)V
+    const-string v2, "bb"
+    invoke-virtual {v0, v2}, Ljava/util/ArrayDeque;->addLast(Ljava/lang/Object;)V
+    invoke-virtual {v0}, Ljava/util/ArrayDeque;->removeLast()Ljava/lang/Object;
+    move-result-object v3
+    check-cast v3, Ljava/lang/String;
+    invoke-virtual {v3}, Ljava/lang/String;->length()I
+    move-result v4
+    invoke-virtual {v0}, Ljava/util/ArrayDeque;->size()I
+    move-result v5
+    add-int/2addr v4, v5
+    return v4
+.end method
+
+.method static public collectionExceptions()I
+.registers 6
+    const/4 v5, 0
+    new-instance v0, Ljava/util/ArrayDeque;
+    invoke-direct {v0}, Ljava/util/ArrayDeque;-><init>()V
+    const/4 v1, 0
+    :null_start
+    invoke-virtual {v0, v1}, Ljava/util/ArrayDeque;->add(Ljava/lang/Object;)Z
+    :null_end
+    goto :index_case
+    :null_handler
+    move-exception v2
+    const/4 v3, 1
+    add-int/2addr v5, v3
+    :index_case
+    new-instance v0, Ljava/util/ArrayList;
+    invoke-direct {v0}, Ljava/util/ArrayList;-><init>()V
+    const/4 v1, 0
+    :index_start
+    invoke-virtual {v0, v1}, Ljava/util/ArrayList;->get(I)Ljava/lang/Object;
+    :index_end
+    goto :iterator_case
+    :index_handler
+    move-exception v2
+    const/4 v3, 2
+    add-int/2addr v5, v3
+    :iterator_case
+    invoke-virtual {v0}, Ljava/util/ArrayList;->iterator()Ljava/util/Iterator;
+    move-result-object v1
+    :iterator_start
+    invoke-interface {v1}, Ljava/util/Iterator;->next()Ljava/lang/Object;
+    :iterator_end
+    return v5
+    :iterator_handler
+    move-exception v2
+    const/4 v3, 4
+    add-int/2addr v5, v3
+    return v5
+    .catch Ljava/lang/NullPointerException; :null_start :null_end :null_handler
+    .catch Ljava/lang/IndexOutOfBoundsException; :index_start :index_end :index_handler
+    .catch Ljava/util/NoSuchElementException; :iterator_start :iterator_end :iterator_handler
+.end method
+
+.method static public collectionAbstractSubclass()I
+.registers 2
+    new-instance v0, LP1ListSubclass;
+    invoke-direct {v0}, LP1ListSubclass;-><init>()V
+    invoke-virtual {v0}, LP1ListSubclass;->size()I
+    move-result v1
+    return v1
+.end method
+
 .method static public copyArrays()I
 .registers 8
     const/4 v0, 4
@@ -264,6 +432,27 @@
 .end method
 
 # java.lang.Enum conformance (AOSP libcore libart Enum.java).
+.class public LP1ListSubclass;
+.super Ljava/util/AbstractList;
+
+.method public <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/util/AbstractList;-><init>()V
+    return-void
+.end method
+
+.method public size()I
+.registers 2
+    const/4 v0, 0
+    return v0
+.end method
+
+.method public get(I)Ljava/lang/Object;
+.registers 3
+    const/4 v0, 0
+    return-object v0
+.end method
+
 .class public LP1Enum;
 .super Ljava/lang/Enum;
 

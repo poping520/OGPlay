@@ -555,9 +555,10 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         CHECK(descriptors.insert(declaration.descriptor).second);
         for (const auto& method : declaration.methods) {
             if (!method.implementation) {
-                CHECK(intentionally_unimplemented.contains(
+                const auto is_abstract = (method.access_flags & 0x0400U) != 0U;
+                CHECK((is_abstract || intentionally_unimplemented.contains(
                     declaration.descriptor + "." + method.name +
-                    method.descriptor));
+                    method.descriptor)));
             }
         }
     }

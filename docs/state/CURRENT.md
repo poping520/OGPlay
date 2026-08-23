@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-24 · DVM-77 PackageManager P0 当前包查询面
+更新：2026-08-24 · DVM-78 Java Util 集合能力栈
 
 ## 当前阶段
 
@@ -46,10 +46,10 @@
   `dexvm.gc` 与 `dexvm.interpreter_threaded` 保持 `partial`，threaded 生产默认仍关闭。A5 GC
   exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合。
   DVM-70..74 闭合 Window/config、JNI identity、目录/asset、GLSurfaceView policy 与
-  IntentFilter；DVM-75/76 交付 String.format、稳定 PackageManager identity 与有界致命栈。
-  DVM-77 已发布当前 APK 的 PackageManager P0 查询、ApplicationInfo/PackageInfo、Manifest
-  metadata/permission 与显式 feature；PVZ Release 已越过 `getApplicationInfo(GET_META_DATA)`，
-  新首 fault 为通用 `java.util.LinkedHashMap` class shape。
+  IntentFilter；DVM-75..77 交付 String.format、有界致命栈与 PackageManager P0。
+  DVM-78 已用统一 CollectionRuntime 发布 List/Map/Set/Deque 常用类层级、live map view、
+  稳定 Entry、sub-list 与 fail-fast iterator，并把 Vector/Stack/Hashtable 迁入单一
+  java.util family TU；Tree/Sorted/Navigable、并发集合与完整 Collections/Arrays 仍 deferred。
 ## 验证基线
 
 - BND-24 full CTest 933/933（architecture 5/5）；DVM-75 focused 5/5，
@@ -62,8 +62,9 @@
   6 层 guest Java 调用栈。
 - DVM-77 PackageManager/Manifest focused 13/13（1227 assertions）；Release PVZ 原命令
   越过旧 fault 并固定 `LinkedHashMap`，无 `ogplay` 残留。
-- full CTest 首轮 948/953；3 个 frontend smoke 经 clean rebuild 后 3/3 通过，剩余失败
-  仍为未触及的 String catalog（43/44）与 liblog tag（`PVZ`/空）。
+- DVM-78 Windows Debug 全目标构建通过；集合双后端 focused、GC 4/4 与 architecture 5/5
+  通过。全量 953 项中本 WU 影响项复验全绿，剩余失败仍为未触及的 String catalog
+  （43/44）与 liblog tag（`PVZ`/空）；按范围未运行 PVZ/title gate。
 
 ## 下一步
 

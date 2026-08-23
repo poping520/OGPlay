@@ -18,6 +18,8 @@
 
 namespace ogplay::runtime::dexvm {
 
+class CollectionRuntime;
+
 // Interpreter kernel (02 §7..§9): tagged frames, table dispatch, three-way
 // invoke routing (interpreted / intrinsic / native bridge), real exception
 // unwinding and the <clinit> state machine. Per-opcode semantics follow the
@@ -355,11 +357,13 @@ public:
     // (list/map/builder) keyed by the source handle.
     [[nodiscard]] VmObjectRef CloneObject(VmObjectRef source);
 
-    // Intrinsic instance side state (StringBuilder buffers, collections).
+    [[nodiscard]] CollectionRuntime& Collections();
+    [[nodiscard]] const CollectionRuntime& Collections() const;
+
+    // Intrinsic instance side state.
     [[nodiscard]] std::u16string& BuilderBuffer(VmObjectRef instance);
+    // Test/legacy bridge; collection handlers use CollectionRuntime directly.
     [[nodiscard]] std::vector<VmObjectRef>& ListStorage(VmObjectRef instance);
-    [[nodiscard]] std::vector<std::pair<VmObjectRef, VmObjectRef>>&
-    MapStorage(VmObjectRef instance);
 
     // Writes a reference into an intrinsic static field (System.out etc.).
     void SetIntrinsicStaticRef(std::string_view class_descriptor,

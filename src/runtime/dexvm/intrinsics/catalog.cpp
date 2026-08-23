@@ -18,16 +18,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_lang_System(),
         Declare_java_io_PrintStream(),
         Declare_java_lang_Math(),
-        Declare_java_util_HashMap(),
-        Declare_java_util_Hashtable(),
-        Declare_java_util_List(),
-        Declare_java_util_Vector(),
-        Declare_java_util_Stack(),
-        Declare_java_util_ArrayList(),
         Declare_java_util_Random(),
         Declare_java_util_Date(),
-        Declare_java_util_Iterator(),
-        Declare_java_util_CollectionIterator(),
         Declare_java_lang_Class(),
         Declare_java_lang_reflect_AnnotatedElement(),
         Declare_java_lang_reflect_GenericDeclaration(),
@@ -45,6 +37,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
 
     AppendJavaLangInterfaces(catalog);
     AppendJavaLangPrimitiveWrappers(catalog);
+    AppendJavaUtilCollections(catalog);
 
     AppendJavaLangThrowables(catalog);
 
@@ -53,8 +46,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_io_FileNotFoundException(),
         Declare_java_io_UnsupportedEncodingException(),
         Declare_java_util_regex_PatternSyntaxException(),
-        Declare_java_util_NoSuchElementException(),
-        Declare_java_util_EmptyStackException(),
         Declare_java_net_SocketException(),
         Declare_java_net_SocketTimeoutException(),
         Declare_java_net_UnknownHostException(),

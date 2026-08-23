@@ -5,8 +5,9 @@
 - 按 Android 4.4.4 AOSP Wilhelm 定义 `libOpenSLES.so` 的 public ELF surface 与 guest ABI。
 - 拥有 OpenSL ES concrete final module、guest object/vtable arena 与对象生命周期；通过构造
   注入 audio/callback service，不反向访问 `AndroidBoundaryHle::Impl`。
-- 当前已发布全部 51 个 `SL_IID_*` pointer global 和只读 UUID record；public data 不进入
-  callable hot table。函数与 private callable 只能在拥有真实 handler 后注册。
+- 已发布 3 个 public function、全部 51 个 `SL_IID_*` pointer global/只读 UUID record 与
+  53 个 AOSP 顺序的 private vtable callable；public data 不进入 callable hot table，private
+  method 不进入 dynsym。Engine/OutputMix/PCM AudioPlayer concrete handler 直接拥有对象语义。
 
 ## 依赖与边界
 
@@ -18,8 +19,9 @@ MIDI、3D、effect 与 URI/FD decoding 必须明确失败，不伪造成功。
 
 - AOSP IID 名称、pointer symbol、16-byte value 及 `const vtable **` 布局保持 API 19 ABI。
 - EGL/GLES hot path、SVC transport、JNI 与 libc override 语义不因本模块改变。
-- PCM playback 只能加性接入会话唯一 audio output；callback 由专用 guest callback thread
-  执行，C++ exception 不跨越 CPU callback。
+- PCM playback 只能加性接入会话唯一 audio output；callback 注册状态已由 player/object
+  拥有，实际 guest callback 必须由后续专用 callback thread 执行，C++ exception 不跨越
+  CPU callback。
 
 ## 测试
 

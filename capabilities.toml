@@ -8,7 +8,7 @@ note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export 
 [runtime.opensles_virtual_so]
 status = "partial"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-9 按 Android 4.4.4 AOSP Wilhelm 发布全部 51 个 SL_IID_* STT_OBJECT pointer global 与精确只读 UUID record；public data 不占 dense callable slot。BND-10 实现线程安全 PCM8/16 mono/stereo 线性重采样、volume/mute/pan、bounded queue 与饱和加性 mixer；三个 public function 与 guest object handler 尚未实现并保持明确 unresolved"
+note = "BND-9 发布 AOSP Wilhelm 全部 51 个 SL_IID_* STT_OBJECT pointer global/UUID；BND-10 实现 PCM8/16 mono/stereo 重采样与加性 mixer；BND-11 发布 3 个 public function、53 个 direct private vtable callable，并实现 Engine/OutputMix/PCM AudioPlayer 的 Object/Play/Queue/Volume concrete handler。process audio pump 与专用 guest callback thread 尚待接线"
 
 [runtime.liblog_virtual_so]
 status = "complete"

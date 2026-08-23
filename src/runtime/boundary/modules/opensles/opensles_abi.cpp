@@ -1,7 +1,10 @@
 #include "runtime/boundary/modules/opensles/opensles_abi.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace ogplay::runtime {
@@ -83,7 +86,7 @@ std::array<BoundaryExportDefinition, kNamedIids.size()> BuildExports() {
     std::array<BoundaryExportDefinition, kNamedIids.size()> result{};
     for (std::size_t index = 0; index < result.size(); ++index) {
         result[index] = {kIids[index].name,
-                         static_cast<std::uint16_t>(index), 0U, {},
+                         static_cast<std::uint16_t>(200U + index), 0U, {},
                          BoundaryExportKind::public_data,
                          kIids[index].variable_address, 4U};
     }
@@ -102,6 +105,26 @@ void Append32(std::vector<std::byte>& bytes, const std::uint32_t value) {
     }
 }
 
+template <typename Name, std::size_t Size>
+void WriteVtable(memory::AddressSpace& address_space,
+                 const BoundaryModuleDescriptor& module,
+                 const memory::GuestAddress address,
+                 const std::array<Name, Size>& names) {
+    std::vector<std::byte> bytes;
+    bytes.reserve(Size * 4U);
+    for (const std::string_view name : names) {
+        const auto found = std::find_if(
+            module.exports.begin(), module.exports.end(),
+            [&](const auto& export_) { return export_.name == name; });
+        if (found == module.exports.end() ||
+            found->kind != BoundaryExportKind::private_callable) {
+            throw std::logic_error("OpenSL vtable callable metadata is missing");
+        }
+        Append32(bytes, found->address.Value());
+    }
+    address_space.Write(address, bytes);
+}
+
 }  // namespace
 
 std::span<const OpenSlesIidDescriptor> OpenSlesIids() noexcept { return kIids; }
@@ -110,7 +133,8 @@ std::span<const BoundaryExportDefinition> OpenSlesDataExports() noexcept {
     return kExports;
 }
 
-void MapOpenSlesStaticAbi(memory::AddressSpace& address_space) {
+void MapOpenSlesStaticAbi(memory::AddressSpace& address_space,
+                          const BoundaryModuleDescriptor& module) {
     address_space.Map({kOpenSlesAbiBegin, kOpenSlesStaticAbiBytes},
                       memory::PageProtection::read |
                           memory::PageProtection::write);
@@ -136,6 +160,48 @@ void MapOpenSlesStaticAbi(memory::AddressSpace& address_space) {
         }
     }
     address_space.Write(kOpenSlesIidValuesBegin, iid_data);
+    static constexpr std::array object_methods{
+        "$Object.Realize", "$Object.Resume", "$Object.GetState",
+        "$Object.GetInterface", "$Object.RegisterCallback",
+        "$Object.AbortAsyncOperation", "$Object.Destroy",
+        "$Object.SetPriority", "$Object.GetPriority",
+        "$Object.SetLossOfControlInterfaces"};
+    WriteVtable(address_space, module, kOpenSlesObjectVtable, object_methods);
+    static constexpr std::array engine_methods{
+        "$Engine.CreateLEDDevice", "$Engine.CreateVibraDevice",
+        "$Engine.CreateAudioPlayer", "$Engine.CreateAudioRecorder",
+        "$Engine.CreateMidiPlayer", "$Engine.CreateListener",
+        "$Engine.Create3DGroup", "$Engine.CreateOutputMix",
+        "$Engine.CreateMetadataExtractor", "$Engine.CreateExtensionObject",
+        "$Engine.QueryNumSupportedInterfaces",
+        "$Engine.QuerySupportedInterfaces",
+        "$Engine.QueryNumSupportedExtensions",
+        "$Engine.QuerySupportedExtension", "$Engine.IsExtensionSupported"};
+    WriteVtable(address_space, module, kOpenSlesEngineVtable, engine_methods);
+    static constexpr std::array output_mix_methods{
+        "$OutputMix.GetDestinationOutputDeviceIDs",
+        "$OutputMix.RegisterDeviceChangeCallback", "$OutputMix.ReRoute"};
+    WriteVtable(address_space, module, kOpenSlesOutputMixVtable,
+                output_mix_methods);
+    static constexpr std::array play_methods{
+        "$Play.SetPlayState", "$Play.GetPlayState", "$Play.GetDuration",
+        "$Play.GetPosition", "$Play.RegisterCallback",
+        "$Play.SetCallbackEventsMask", "$Play.GetCallbackEventsMask",
+        "$Play.SetMarkerPosition", "$Play.ClearMarkerPosition",
+        "$Play.GetMarkerPosition", "$Play.SetPositionUpdatePeriod",
+        "$Play.GetPositionUpdatePeriod"};
+    WriteVtable(address_space, module, kOpenSlesPlayVtable, play_methods);
+    static constexpr std::array queue_methods{
+        "$BufferQueue.Enqueue", "$BufferQueue.Clear",
+        "$BufferQueue.GetState", "$BufferQueue.RegisterCallback"};
+    WriteVtable(address_space, module, kOpenSlesBufferQueueVtable,
+                queue_methods);
+    static constexpr std::array volume_methods{
+        "$Volume.SetVolumeLevel", "$Volume.GetVolumeLevel",
+        "$Volume.GetMaxVolumeLevel", "$Volume.SetMute", "$Volume.GetMute",
+        "$Volume.EnableStereoPosition", "$Volume.IsEnabledStereoPosition",
+        "$Volume.SetStereoPosition", "$Volume.GetStereoPosition"};
+    WriteVtable(address_space, module, kOpenSlesVolumeVtable, volume_methods);
     address_space.Protect({kOpenSlesAbiBegin, kOpenSlesStaticAbiBytes},
                           memory::PageProtection::read);
 }

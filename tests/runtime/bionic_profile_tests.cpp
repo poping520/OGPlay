@@ -79,12 +79,12 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
     const auto* open_sles = ogplay::runtime::AndroidBoundaryCatalog(profile.api)
                                 .FindModule("libOpenSLES.so");
     REQUIRE(open_sles != nullptr);
-    CHECK(open_sles->exports.size() == ogplay::runtime::OpenSlesIids().size());
-    CHECK(std::all_of(open_sles->exports.begin(), open_sles->exports.end(),
-                      [](const auto& export_) {
-                          return export_.kind ==
-                                 ogplay::runtime::BoundaryExportKind::public_data;
-                      }));
+    CHECK(std::count_if(open_sles->exports.begin(), open_sles->exports.end(),
+                        [](const auto& export_) {
+                            return export_.kind ==
+                                   ogplay::runtime::BoundaryExportKind::public_data;
+                        }) == static_cast<std::ptrdiff_t>(
+                                  ogplay::runtime::OpenSlesIids().size()));
     CHECK(ogplay::runtime::AndroidBoundaryCatalog(profile.api)
               .FindModule("libc.so") == nullptr);
     CHECK(ogplay::runtime::GuestSymbolOverrides().size() == 5U);
@@ -154,7 +154,7 @@ TEST_CASE("Boundary catalog data exports preserve addresses without callable slo
           ogplay::memory::GuestAddress{ogplay::runtime::kBionicHleThunkBegin + 1U});
 }
 
-TEST_CASE("libOpenSLES Virtual SO publishes AOSP IID data globals") {
+TEST_CASE("libOpenSLES Virtual SO publishes AOSP public ELF surface") {
     const auto& profile = ogplay::runtime::SelectBionicProfile(19);
     const auto symbols = ogplay::runtime::detail::BuildAndroidBoundarySymbols();
     const ogplay::runtime::BionicHleSymbolProvider hle(symbols);
@@ -165,7 +165,7 @@ TEST_CASE("libOpenSLES Virtual SO publishes AOSP IID data globals") {
     REQUIRE(link_namespace.modules.size() == 2U);
     CHECK(link_namespace.modules[1].dynamic.soname == "libOpenSLES.so");
     REQUIRE(link_namespace.modules[1].symbols.symbols.size() ==
-            ogplay::runtime::OpenSlesIids().size() + 1U);
+            ogplay::runtime::OpenSlesIids().size() + 4U);
     CHECK(link_namespace.modules[1].symbols.symbols[0].name.empty());
     const auto object = std::find_if(
         link_namespace.modules[1].symbols.symbols.begin(),
@@ -189,10 +189,9 @@ TEST_CASE("libOpenSLES Virtual SO publishes AOSP IID data globals") {
     const auto importing_namespace =
         ogplay::runtime::BuildBionicLinkNamespace(
             profile, "importer.so", importing_modules, hle);
-    CHECK_THROWS_AS(
+    CHECK_NOTHROW(
         static_cast<void>(ogplay::loader::ResolveElf32Symbols(
-            importing_namespace, 0)),
-        ogplay::loader::LinkError);
+            importing_namespace, 0)));
 }
 
 TEST_CASE("Bionic memory intercepts preserve libc behavior") {

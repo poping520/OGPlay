@@ -20,7 +20,7 @@ class AddressSpace;
 
 namespace ogplay::runtime {
 
-inline constexpr std::size_t kMaximumA32CallArguments = 9U;
+inline constexpr std::size_t kMaximumA32CallArguments = 11U;
 
 template <typename T>
 class GuestPtr final {

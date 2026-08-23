@@ -53,6 +53,7 @@
 #include "runtime/boundary/modules/module_catalog.h"
 #include "runtime/boundary/modules/opensles/opensles_module.h"
 #include "runtime/boundary/modules/opensles/opensles_abi.h"
+#include "runtime/boundary/modules/opensles/opensles_exports.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -96,7 +97,9 @@ public:
           log_context_{address_space_, options.logger, this,
                        &ServiceRecordFastFault, options.guest_file_owner,
                        options.read_guest_file},
-          log_module_(log_context_), libc_override_module_(call_services_) {
+          log_module_(log_context_),
+          open_sles_module_(call_services_, open_sles_mixer_),
+          libc_override_module_(call_services_) {
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& {
@@ -132,7 +135,13 @@ public:
     }
     void MapThunks() {
         thunk_arena_.Map(descriptors_.size());
-        MapOpenSlesStaticAbi(address_space_);
+        const auto* open_sles = AndroidBoundaryCatalog(AndroidApi::api19)
+                                    .FindModule("libOpenSLES.so");
+        if (open_sles == nullptr) {
+            throw std::logic_error("OpenSL ES module metadata is missing");
+        }
+        MapOpenSlesStaticAbi(address_space_, *open_sles);
+        open_sles_module_.MapGuestObjectArena();
     }
 
     [[nodiscard]] cpu::HostCallHook FastHostCallHook() noexcept {
@@ -253,6 +262,11 @@ public:
     }
     void RecycleFrame(AndroidBoundaryFrame&& frame) {
         frame_service_.RecycleFrame(std::move(frame));
+    }
+    std::vector<audio::OpenSlesConsumedBuffer> MixOpenSlesPcm16(
+        const std::span<std::int16_t> output,
+        const std::uint32_t output_rate) {
+        return open_sles_module_.MixAdditiveStereoPcm16(output, output_rate);
     }
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept {
         return provider_;
@@ -439,6 +453,12 @@ private:
             log, name, log_module_);
         OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_BIND_LOG)
 #undef OGPLAY_BIND_LOG
+        const auto& open_sles = require("libOpenSLES.so");
+#define OGPLAY_BIND_OPENSLES(name, id, count, kind, method)                    \
+        BindExport<OpenSlesModule, &OpenSlesModule::method, count, false>(     \
+            open_sles, name, open_sles_module_);
+        OGPLAY_OPENSLES_BOUNDARY_EXPORTS(OGPLAY_BIND_OPENSLES)
+#undef OGPLAY_BIND_OPENSLES
 
 #define OGPLAY_BIND_OVERRIDE(library, symbol, id, count, method)               \
         BindOverride<LibcOverrideModule, &LibcOverrideModule::method, count,   \
@@ -662,6 +682,7 @@ private:
     Gles2Module gles2_module_;
     LogBoundaryContext log_context_;
     LogModule log_module_;
+    audio::OpenSlesPcmMixer open_sles_mixer_;
     OpenSlesModule open_sles_module_;
     LibcOverrideModule libc_override_module_;
 };
@@ -716,6 +737,11 @@ void AndroidBoundaryHle::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
 }
 void AndroidBoundaryHle::RecycleFrame(AndroidBoundaryFrame&& frame) {
     impl_->RecycleFrame(std::move(frame));
+}
+std::vector<audio::OpenSlesConsumedBuffer>
+AndroidBoundaryHle::MixOpenSlesPcm16(
+    const std::span<std::int16_t> output, const std::uint32_t output_rate) {
+    return impl_->MixOpenSlesPcm16(output, output_rate);
 }
 core::GpuStats AndroidBoundaryHle::Stats() const { return impl_->Stats(); }
 std::vector<core::GpuRenderTarget> AndroidBoundaryHle::RenderTargets() const {

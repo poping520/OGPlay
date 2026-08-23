@@ -13,6 +13,7 @@
 #include "runtime/boundary/modules/egl/egl_exports.h"
 #include "runtime/boundary/modules/log/log_exports.h"
 #include "runtime/boundary/modules/opensles/opensles_abi.h"
+#include "runtime/boundary/modules/opensles/opensles_exports.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -30,6 +31,11 @@ constexpr std::array kEglExports{
     OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kLogExports{
     OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
+#define OGPLAY_OPENSLES_METADATA(name, id, count, kind, method)                 \
+    NamedExport{name, id, count},
+constexpr std::array kOpenSlesCallableExports{
+    OGPLAY_OPENSLES_BOUNDARY_EXPORTS(OGPLAY_OPENSLES_METADATA)};
+#undef OGPLAY_OPENSLES_METADATA
 #undef OGPLAY_NAMED_METADATA
 
 void AddNamedModule(std::vector<BoundaryModuleDefinition>& modules,
@@ -72,6 +78,21 @@ void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
     modules.push_back({soname, {}, module_exports});
 }
 
+void AddOpenSlesModule(
+    std::vector<BoundaryModuleDefinition>& modules,
+    std::vector<std::vector<BoundaryExportDefinition>>& storage) {
+    auto& exports = storage.emplace_back();
+    exports.reserve(kOpenSlesCallableExports.size() + OpenSlesDataExports().size());
+#define OGPLAY_ADD_OPENSLES(name, id, count, kind, method)                     \
+    exports.push_back({name, id, count, {}, BoundaryExportKind::kind,          \
+                       memory::GuestAddress{}, 4U});
+    OGPLAY_OPENSLES_BOUNDARY_EXPORTS(OGPLAY_ADD_OPENSLES)
+#undef OGPLAY_ADD_OPENSLES
+    exports.insert(exports.end(), OpenSlesDataExports().begin(),
+                   OpenSlesDataExports().end());
+    modules.push_back({"libOpenSLES.so", {}, exports});
+}
+
 BoundaryCatalog BuildCatalog(const AndroidApi api) {
     std::vector<std::vector<BoundaryExportDefinition>> storage;
     std::vector<BoundaryModuleDefinition> modules;
@@ -84,7 +105,7 @@ BoundaryCatalog BuildCatalog(const AndroidApi api) {
     constexpr std::array gles2_apis{gles::GlesApi::gles2};
     AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis);
     AddNamedModule(modules, storage, "liblog.so", kLogExports);
-    modules.push_back({"libOpenSLES.so", {}, OpenSlesDataExports()});
+    AddOpenSlesModule(modules, storage);
     return BoundaryCatalog(api, modules);
 }
 

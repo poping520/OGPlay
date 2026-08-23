@@ -138,6 +138,38 @@ std::uint32_t FastBoundaryCall(
     return registers[0];
 }
 
+std::uint32_t BoundaryCallAddress(
+    BoundaryFixture& fixture, const std::uint32_t thumb_address,
+    const std::span<const std::uint32_t> arguments) {
+    REQUIRE(arguments.size() <= ogplay::runtime::kMaximumA32CallArguments);
+    auto state = fixture.cpu.GetState();
+    for (std::size_t index = 0;
+         index < std::min(arguments.size(), std::size_t{4}); ++index) {
+        state.SetRegister(static_cast<ogplay::cpu::CoreRegister>(index),
+                          arguments[index]);
+    }
+    if (arguments.size() > 4U) {
+        std::array<std::byte,
+                   (ogplay::runtime::kMaximumA32CallArguments - 4U) * 4U> bytes{};
+        for (std::size_t word = 4U; word < arguments.size(); ++word) {
+            for (std::size_t byte = 0; byte < 4U; ++byte) {
+                bytes[(word - 4U) * 4U + byte] =
+                    static_cast<std::byte>(arguments[word] >> (byte * 8U));
+            }
+        }
+        fixture.memory.Write(
+            fixture.stack,
+            std::span(bytes).first((arguments.size() - 4U) * 4U), 1U);
+    }
+    fixture.cpu.SetState(state);
+    const ogplay::cpu::RunResult stopped{
+        1U, ogplay::cpu::RunStopReason::supervisor_call,
+        ogplay::memory::GuestAddress{thumb_address & ~UINT32_C(1)}, 0xdf02U,
+        2U, std::nullopt};
+    REQUIRE(fixture.boundary.Handle(fixture.cpu, stopped));
+    return fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r0);
+}
+
 }  // namespace
 
 TEST_CASE("Android 4.4 liblog publishes its complete target export surface") {
@@ -503,7 +535,7 @@ TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {
         ogplay::runtime::detail::BuildAndroidBoundarySymbols();
     const auto descriptors =
         ogplay::runtime::detail::BuildAndroidBoundaryDescriptors(symbols);
-    REQUIRE(descriptors.size() < symbols.size());
+    REQUIRE(descriptors.size() != symbols.size());
     const auto address = symbols.front().address.Value();
     CHECK(ogplay::runtime::detail::DecodeAndroidBoundaryThunk(
               address, descriptors) == &descriptors.front());
@@ -698,6 +730,144 @@ TEST_CASE("OpenSL ES AOSP IID globals map exact read-only guest ABI") {
                        std::byte{0xa5}, std::byte{0xd5}, std::byte{0xc5},
                        std::byte{0x1b}});
     CHECK_THROWS(fixture.bus.Write32(*variable, 0U, 1U));
+}
+
+TEST_CASE("OpenSL ES guest vtables create and play a PCM buffer queue") {
+    BoundaryFixture fixture;
+    const auto call = [&](const std::uint32_t address,
+                          const std::initializer_list<std::uint32_t> arguments) {
+        const std::vector words(arguments);
+        return BoundaryCallAddress(fixture, address, words);
+    };
+    const auto iid = [](const std::string_view name) {
+        const auto found = std::find_if(
+            ogplay::runtime::OpenSlesIids().begin(),
+            ogplay::runtime::OpenSlesIids().end(),
+            [&](const auto& candidate) { return candidate.name == name; });
+        REQUIRE(found != ogplay::runtime::OpenSlesIids().end());
+        return found->value_address.Value();
+    };
+    const auto create = fixture.boundary.Symbols().Lookup(
+        "libOpenSLES.so", "slCreateEngine");
+    REQUIRE(create.has_value());
+    CHECK(call(create->Value(), {fixture.output.Value(), 0U, 0U, 0U, 0U, 0U}) == 0U);
+    const auto engine_object = fixture.bus.Read32(fixture.output, 1U);
+    const auto object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine_object}, 1U);
+    const auto realize = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{object_vtable}, 1U);
+    CHECK(call(realize, {engine_object, 0U}) == 0U);
+    const auto get_interface = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{object_vtable + 12U}, 1U);
+    CHECK(call(get_interface,
+               {engine_object, iid("SL_IID_ENGINE"), fixture.output.Add(4U).Value()}) == 0U);
+    const auto engine = fixture.bus.Read32(fixture.output.Add(4U), 1U);
+    const auto engine_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine}, 1U);
+    const auto create_output_mix = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine_vtable + 7U * 4U}, 1U);
+    CHECK(call(create_output_mix,
+               {engine, fixture.output.Add(8U).Value(), 0U, 0U, 0U}) == 0U);
+    const auto mix_object = fixture.bus.Read32(fixture.output.Add(8U), 1U);
+    const auto mix_object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{mix_object}, 1U);
+    CHECK(call(fixture.bus.Read32(ogplay::memory::GuestAddress{mix_object_vtable}, 1U),
+               {mix_object, 0U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{mix_object_vtable + 12U}, 1U),
+               {mix_object, iid("SL_IID_OUTPUTMIX"),
+                fixture.output.Add(28U).Value()}) == 0U);
+    const auto mix_interface = fixture.bus.Read32(fixture.output.Add(28U), 1U);
+    const auto output_mix_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{mix_interface}, 1U);
+    const auto device_count = fixture.output.Add(32U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{output_mix_vtable}, 1U),
+               {mix_interface, device_count.Value(), 0U}) == 0U);
+    CHECK(fixture.bus.Read32(device_count, 1U) == 1U);
+
+    const auto source = fixture.output.Add(0x100U);
+    const auto source_locator = fixture.output.Add(0x120U);
+    const auto source_format = fixture.output.Add(0x140U);
+    const auto sink = fixture.output.Add(0x180U);
+    const auto sink_locator = fixture.output.Add(0x1a0U);
+    fixture.bus.Write32(source, source_locator.Value(), 1U);
+    fixture.bus.Write32(source.Add(4U), source_format.Value(), 1U);
+    fixture.bus.Write32(source_locator, 0x800007bdU, 1U);
+    fixture.bus.Write32(source_locator.Add(4U), 1U, 1U);
+    fixture.bus.Write32(source_format, 2U, 1U);
+    fixture.bus.Write32(source_format.Add(4U), 1U, 1U);
+    fixture.bus.Write32(source_format.Add(8U), 48000000U, 1U);
+    fixture.bus.Write32(source_format.Add(12U), 16U, 1U);
+    fixture.bus.Write32(source_format.Add(16U), 16U, 1U);
+    fixture.bus.Write32(source_format.Add(20U), 4U, 1U);
+    fixture.bus.Write32(source_format.Add(24U), 2U, 1U);
+    fixture.bus.Write32(sink, sink_locator.Value(), 1U);
+    fixture.bus.Write32(sink.Add(4U), 0U, 1U);
+    fixture.bus.Write32(sink_locator, 4U, 1U);
+    fixture.bus.Write32(sink_locator.Add(4U), mix_object, 1U);
+    const auto interface_ids = fixture.output.Add(0x1c0U);
+    const auto interface_required = fixture.output.Add(0x1d0U);
+    fixture.bus.Write32(interface_ids,
+                        iid("SL_IID_ANDROIDSIMPLEBUFFERQUEUE"), 1U);
+    fixture.bus.Write32(interface_ids.Add(4U), iid("SL_IID_VOLUME"), 1U);
+    fixture.bus.Write32(interface_required, 1U, 1U);
+    fixture.bus.Write32(interface_required.Add(4U), 1U, 1U);
+    const auto create_player = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{engine_vtable + 2U * 4U}, 1U);
+    CHECK(call(create_player,
+               {engine, fixture.output.Add(12U).Value(), source.Value(),
+                sink.Value(), 2U, interface_ids.Value(),
+                interface_required.Value()}) == 0U);
+    const auto player_object = fixture.bus.Read32(fixture.output.Add(12U), 1U);
+    const auto player_object_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{player_object}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{player_object_vtable}, 1U),
+               {player_object, 0U}) == 0U);
+    const auto query_itf = [&](const std::string_view name,
+                               const ogplay::memory::GuestAddress destination) {
+        CHECK(call(fixture.bus.Read32(
+                       ogplay::memory::GuestAddress{player_object_vtable + 12U}, 1U),
+                   {player_object, iid(name), destination.Value()}) == 0U);
+        return fixture.bus.Read32(destination, 1U);
+    };
+    const auto play = query_itf("SL_IID_PLAY", fixture.output.Add(16U));
+    const auto queue = query_itf("SL_IID_ANDROIDSIMPLEBUFFERQUEUE",
+                                 fixture.output.Add(20U));
+    const auto volume = query_itf("SL_IID_VOLUME", fixture.output.Add(24U));
+    const auto queue_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{queue}, 1U);
+    const auto pcm = fixture.output.Add(0x200U);
+    const std::array pcm_bytes{
+        std::byte{0xe8}, std::byte{0x03}, std::byte{0xd0}, std::byte{0x07}};
+    fixture.memory.Write(pcm, pcm_bytes, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{queue_vtable}, 1U),
+               {queue, pcm.Value(), static_cast<std::uint32_t>(pcm_bytes.size())}) == 0U);
+    const auto play_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{play}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{play_vtable}, 1U),
+               {play, 3U}) == 0U);
+    const auto volume_vtable = fixture.bus.Read32(
+        ogplay::memory::GuestAddress{volume}, 1U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{volume_vtable + 5U * 4U}, 1U),
+               {volume, 1U}) == 0U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{volume_vtable + 7U * 4U}, 1U),
+               {volume, 1000U}) == 0U);
+    std::array<std::int16_t, 4> mixed{};
+    const auto consumed = fixture.boundary.MixOpenSlesPcm16(mixed, 48000U);
+    REQUIRE(consumed.size() == 1U);
+    CHECK(mixed == std::array<std::int16_t, 4>{0, 1000, 0, 2000});
+    const auto queue_state = fixture.output.Add(0x220U);
+    CHECK(call(fixture.bus.Read32(
+                   ogplay::memory::GuestAddress{queue_vtable + 2U * 4U}, 1U),
+               {queue, queue_state.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(queue_state, 1U) == 0U);
+    CHECK(fixture.bus.Read32(queue_state.Add(4U), 1U) == 1U);
 }
 
 TEST_CASE("A32 call frame bulk decodes register and stack arguments") {

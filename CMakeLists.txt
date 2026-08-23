@@ -405,6 +405,7 @@ add_library(ogplay_runtime
     src/runtime/boundary/modules/gles1/gles1_query.cpp
     src/runtime/boundary/modules/log/log_module.cpp
     src/runtime/boundary/modules/opensles/opensles_abi.cpp
+    src/runtime/boundary/modules/opensles/opensles_module.cpp
     src/runtime/boundary/modules/module_catalog.cpp
     src/runtime/boundary/facade/android_boundary_hle.cpp
     src/runtime/integration/android_link_preflight.cpp

@@ -97,12 +97,25 @@ void OpenSlesPcmMixer::SetPlayState(const PlayerId player,
     std::scoped_lock lock(mutex_);
     auto& target = Require(player);
     target.state = state;
-    if (state == OpenSlesPlayState::stopped) target.frame_position = 0.0;
+    if (state == OpenSlesPlayState::stopped) {
+        target.frame_position = 0.0;
+        target.played_source_frames = 0.0;
+    }
 }
 
 OpenSlesPlayState OpenSlesPcmMixer::PlayState(const PlayerId player) const {
     std::scoped_lock lock(mutex_);
     return Require(player).state;
+}
+
+std::uint32_t OpenSlesPcmMixer::PositionMillis(const PlayerId player) const {
+    std::scoped_lock lock(mutex_);
+    const auto& target = Require(player);
+    const auto milliseconds = target.played_source_frames * 1000.0 /
+                              static_cast<double>(target.format.sample_rate);
+    return static_cast<std::uint32_t>(std::min(
+        milliseconds,
+        static_cast<double>((std::numeric_limits<std::uint32_t>::max)())));
 }
 
 void OpenSlesPcmMixer::SetVolume(const PlayerId player,
@@ -206,6 +219,7 @@ OpenSlesPcmMixer::MixAdditiveStereoPcm16(
                     static_cast<std::int64_t>(sample * channel_gain);
             }
             player.frame_position += step;
+            player.played_source_frames += step;
         }
         while (!player.queue.empty()) {
             const auto frames = player.queue.front().pcm.size() /

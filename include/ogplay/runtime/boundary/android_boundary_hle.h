@@ -3,8 +3,10 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
+#include "ogplay/audio/open_sles_pcm_mixer.h"
 #include "ogplay/cpu/cpu.h"
 #include "ogplay/core/gpu_state.h"
 #include "ogplay/gles/angle_backend.h"
@@ -74,6 +76,9 @@ public:
     // same frame store and sequence as GL presents.
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
+    [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer>
+    MixOpenSlesPcm16(std::span<std::int16_t> output,
+                     std::uint32_t output_rate);
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;

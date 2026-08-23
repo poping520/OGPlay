@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-24 · BND-10 OpenSL ES PCM mixer
+更新：2026-08-24 · BND-11 OpenSL ES concrete module
 
 ## 当前阶段
 
@@ -13,8 +13,10 @@
   `SL_IID_*` `STT_OBJECT` pointer global 与精确只读 UUID record，data 不占 dense slot，
   focused 8/8 通过。BND-10 已实现独立线程安全 PCM mixer：PCM8/16、mono/stereo、线性
   重采样、volume/mute/pan、bounded queue、消费事件及多 player 饱和加性混音，focused
-  5/5 通过。三个 OpenSL public function 仍 unresolved；下一阶段实现 Engine/OutputMix/
-  PCM AudioPlayer guest object ABI 与 callback thread。
+  5/5 通过。BND-11 已发布 3 个 public function 和 53 个 private callable，immutable AOSP
+  vtable 直接指向 dense thunk；concrete final module 完成 Engine→OutputMix→PCM AudioPlayer、
+  Object/Play/Queue/Volume 状态与离线混音，范围外 constructor 规范失败，focused 16/16
+  通过。下一阶段接入 process audio pump 和专用 guest callback thread。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

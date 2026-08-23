@@ -40,6 +40,7 @@ public:
     [[nodiscard]] OpenSlesQueueState QueueState(PlayerId player) const;
     void SetPlayState(PlayerId player, OpenSlesPlayState state);
     [[nodiscard]] OpenSlesPlayState PlayState(PlayerId player) const;
+    [[nodiscard]] std::uint32_t PositionMillis(PlayerId player) const;
     void SetVolume(PlayerId player, std::int16_t millibel);
     void SetMute(PlayerId player, bool mute);
     void SetStereoPosition(PlayerId player, std::int16_t permille);
@@ -62,6 +63,7 @@ private:
         std::uint32_t play_index{};
         std::uint64_t next_sequence{1U};
         double frame_position{};
+        double played_source_frames{};
         std::vector<Buffer> queue;
     };
 

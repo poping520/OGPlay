@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "ogplay/gles/gles_dispatch.h"
-#include "android_boundary_gles1.h"
-#include "boundary_callback.h"
+#include "gles1_dispatch.h"
+#include "runtime/boundary/core/boundary_callback.h"
 
 namespace ogplay::memory {
 class AddressSpace;

@@ -25,12 +25,12 @@
 #include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
-#include "ogplay/runtime/boundary/a32_call_frame.h"
-#include "../../src/runtime/boundary/android_boundary_gles1.h"
-#include "../../src/runtime/boundary/android_boundary_gles1_draw.h"
-#include "../../src/runtime/boundary/android_boundary_gles1_query.h"
-#include "../../src/runtime/boundary/android_boundary_gles1_support.h"
-#include "../../src/runtime/boundary/android_boundary_symbols.h"
+#include "runtime/boundary/core/a32_call_frame.h"
+#include "runtime/boundary/modules/gles1/gles1_dispatch.h"
+#include "runtime/boundary/modules/gles1/gles1_draw.h"
+#include "runtime/boundary/modules/gles1/gles1_query.h"
+#include "runtime/boundary/modules/gles1/gles1_support.h"
+#include "runtime/boundary/core/boundary_symbols.h"
 
 namespace {
 

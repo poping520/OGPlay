@@ -1,4 +1,4 @@
-#include "android_boundary_gles1_fixed.h"
+#include "gles1_fixed.h"
 
 #include <algorithm>
 #include <array>
@@ -10,8 +10,8 @@
 #include <string_view>
 
 #include "ogplay/memory/address_space.h"
-#include "android_boundary_gles1_draw.h"
-#include "android_boundary_gles1_query.h"
+#include "gles1_draw.h"
+#include "gles1_query.h"
 
 namespace ogplay::runtime::detail {
 namespace {

@@ -8,7 +8,7 @@
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
-#include "../boundary/android_boundary_symbols.h"
+#include "runtime/boundary/core/boundary_symbols.h"
 
 namespace ogplay::runtime {
 

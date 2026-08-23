@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-#include "../../src/runtime/boundary/android_boundary_gles1_fixed.h"
+#include "runtime/boundary/modules/gles1/gles1_fixed.h"
 #include "ogplay/memory/address_space.h"
 
 namespace {

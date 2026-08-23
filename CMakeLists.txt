@@ -387,17 +387,18 @@ add_library(ogplay_runtime
     src/runtime/integration/android_guest_java_platform.cpp
     src/runtime/integration/native_library_loader.cpp
     src/runtime/integration/headless_bionic_runner.cpp
-    src/runtime/boundary/guest_gl_context.cpp
-    src/runtime/boundary/a32_call_frame.cpp
-    src/runtime/boundary/android_boundary_gles.cpp
-    src/runtime/boundary/android_boundary_gles1.cpp
-    src/runtime/boundary/android_boundary_gles1_draw.cpp
-    src/runtime/boundary/android_boundary_gles1_fixed.cpp
-    src/runtime/boundary/android_boundary_gles1_query.cpp
-    src/runtime/boundary/android_boundary_log.cpp
-    src/runtime/boundary/android_boundary_hle.cpp
-    src/runtime/boundary/boundary_catalog.cpp
-    src/runtime/boundary/android_boundary_symbols.cpp
+    src/runtime/boundary/core/a32_call_frame.cpp
+    src/runtime/boundary/core/boundary_catalog.cpp
+    src/runtime/boundary/core/boundary_symbols.cpp
+    src/runtime/boundary/services/guest_gl_context.cpp
+    src/runtime/boundary/modules/gles1/gles1_dispatch.cpp
+    src/runtime/boundary/modules/gles1/gles1_draw.cpp
+    src/runtime/boundary/modules/gles1/gles1_fixed.cpp
+    src/runtime/boundary/modules/gles1/gles1_query.cpp
+    src/runtime/boundary/modules/gles2/gles2_dispatch.cpp
+    src/runtime/boundary/modules/log/log_module.cpp
+    src/runtime/boundary/modules/module_catalog.cpp
+    src/runtime/boundary/facade/android_boundary_hle.cpp
     src/runtime/integration/android_link_preflight.cpp
     ${OGPLAY_DEXVM_ANDROID_SOURCES}
     src/runtime/integration/dexvm_bridge.cpp
@@ -471,6 +472,7 @@ target_include_directories(ogplay_runtime PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE "${OGPLAY_GLES_GENERATED_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 add_dependencies(ogplay_runtime ogplay_dexvm_codegen)
 target_include_directories(ogplay_runtime SYSTEM PRIVATE
@@ -746,8 +748,8 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/android_guest_call_session_tests.cpp
         tests/runtime/android_guest_framework_platform_tests.cpp
         tests/runtime/android_guest_java_media_tests.cpp
-        tests/runtime/android_boundary_hle_tests.cpp
-        tests/runtime/android_boundary_gles1_fixed_tests.cpp
+        tests/runtime/boundary/integration/android_boundary_hle_tests.cpp
+        tests/runtime/boundary/modules/gles1_fixed_tests.cpp
         tests/runtime/android_link_preflight_tests.cpp
         tests/runtime/native_activity_runner_tests.cpp
         tests/runtime/native_library_loader_tests.cpp
@@ -825,6 +827,7 @@ if(OGPLAY_BUILD_TESTS)
     )
     target_include_directories(ogplay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
     target_include_directories(ogplay_tests SYSTEM PRIVATE

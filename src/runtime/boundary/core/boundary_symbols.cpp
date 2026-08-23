@@ -1,4 +1,4 @@
-#include "android_boundary_symbols.h"
+#include "boundary_symbols.h"
 
 #include <array>
 #include <cstdint>
@@ -9,6 +9,7 @@
 
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/runtime/bionic/guest_symbol_override.h"
+#include "runtime/boundary/modules/module_catalog.h"
 
 namespace ogplay::runtime::detail {
 namespace {

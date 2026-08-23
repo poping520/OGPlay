@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "ogplay/runtime/bionic/bionic_profile.h"
-#include "ogplay/runtime/boundary/boundary_catalog.h"
+#include "runtime/boundary/core/boundary_catalog.h"
 
 namespace ogplay::runtime::detail {
 

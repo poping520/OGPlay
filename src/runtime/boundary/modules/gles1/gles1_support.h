@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <string_view>
 
-#include "android_boundary_gles1.h"
+#include "gles1_dispatch.h"
 #include "ogplay/memory/address_space.h"
 
 namespace ogplay::runtime::detail {

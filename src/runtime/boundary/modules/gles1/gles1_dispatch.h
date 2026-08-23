@@ -12,8 +12,8 @@
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
-#include "ogplay/runtime/boundary/guest_gl_context.h"
-#include "boundary_callback.h"
+#include "runtime/boundary/services/guest_gl_context.h"
+#include "runtime/boundary/core/boundary_callback.h"
 
 namespace ogplay::memory {
 class AddressSpace;

@@ -1,4 +1,4 @@
-#include "android_boundary_gles1_draw.h"
+#include "gles1_draw.h"
 
 #include <algorithm>
 #include <bit>
@@ -9,8 +9,8 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include "android_boundary_gles1_fixed.h"
-#include "android_boundary_gles1_support.h"
+#include "gles1_fixed.h"
+#include "gles1_support.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
 namespace ogplay::runtime::detail {

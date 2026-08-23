@@ -1,6 +1,6 @@
 #include "ogplay/runtime/bionic/bionic_profile.h"
 
-#include "ogplay/runtime/boundary/boundary_catalog.h"
+#include "runtime/boundary/modules/module_catalog.h"
 #include "ogplay/runtime/bionic/guest_symbol_override.h"
 
 #include <algorithm>

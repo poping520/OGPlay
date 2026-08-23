@@ -1,9 +1,15 @@
 set(boundary_hle_source
-    "${ROOT}/src/runtime/boundary/android_boundary_hle.cpp")
+    "${ROOT}/src/runtime/boundary/facade/android_boundary_hle.cpp")
 file(READ "${boundary_hle_source}" boundary)
-file(GLOB virtual_so_module_sources
-    "${ROOT}/src/runtime/boundary/*.h"
-    "${ROOT}/src/runtime/boundary/*.cpp")
+file(GLOB_RECURSE virtual_so_module_sources
+    "${ROOT}/src/runtime/boundary/core/*.h"
+    "${ROOT}/src/runtime/boundary/core/*.cpp"
+    "${ROOT}/src/runtime/boundary/services/*.h"
+    "${ROOT}/src/runtime/boundary/services/*.cpp"
+    "${ROOT}/src/runtime/boundary/modules/*.h"
+    "${ROOT}/src/runtime/boundary/modules/*.cpp"
+    "${ROOT}/src/runtime/boundary/facade/*.h"
+    "${ROOT}/src/runtime/boundary/facade/*.cpp")
 set(virtual_so_modules "")
 foreach(source IN LISTS virtual_so_module_sources)
     file(READ "${source}" contents)
@@ -35,7 +41,7 @@ foreach(required IN ITEMS
         "struct GraphicsBoundaryContext final"
         "struct AndroidBoundaryServices final"
         "return hot_[slot].invoke(hot_[slot].self, call)")
-    string(FIND "${boundary}" "${required}" found)
+    string(FIND "${virtual_so_modules}" "${required}" found)
     if(found EQUAL -1)
         message(FATAL_ERROR
             "boundary direct-binding invariant is missing: ${required}")
@@ -47,6 +53,23 @@ if(log_module_found EQUAL -1)
     message(FATAL_ERROR
         "boundary direct-binding invariant is missing: class LogModule final")
 endif()
+
+foreach(required_path IN ITEMS
+        "core/a32_call_frame.h"
+        "core/boundary_catalog.cpp"
+        "core/boundary_symbols.cpp"
+        "services/guest_gl_context.cpp"
+        "modules/android/android_exports.h"
+        "modules/egl/egl_exports.h"
+        "modules/gles1/gles1_dispatch.cpp"
+        "modules/gles2/gles2_dispatch.cpp"
+        "modules/log/log_module.cpp"
+        "modules/log/log_exports.h"
+        "facade/android_boundary_hle.cpp")
+    if(NOT EXISTS "${ROOT}/src/runtime/boundary/${required_path}")
+        message(FATAL_ERROR "boundary ownership path is missing: ${required_path}")
+    endif()
+endforeach()
 
 string(REGEX MATCH
     "cpu::HostCallResult TryFastCall\\(cpu::A32HostCallContext& call\\) noexcept \\{[^}]*\\}"

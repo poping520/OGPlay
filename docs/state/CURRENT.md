@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-23 · BND-5 Android 4.4.4 liblog Virtual SO
+更新：2026-08-23 · BND-6 Boundary directory topology
 
 ## 当前阶段
 
@@ -18,6 +18,10 @@
   4.4.4 target liblog 完整发布 23 个 writer/logprint/event-tag-map API；A32 variadic/
   `va_list`、text/binary wire buffer、filter/format 与 guest-VFS event tags 已接入，guest
   日志统一进入 `guest.liblog` structured category 并带 `[guest]` 前缀。
+  BND-6 在零行为变化下建立 `core/services/modules/facade` 目录，Android/EGL/log export
+  metadata 跟随 module，built-in registration 与 generic catalog 分离；boundary tests 同步
+  迁入 ownership 目录。15 项 focused integration、168 assertions 与 architecture gate
+  已通过；BND-7 将继续拆出 facade 内剩余 module/service/core 实现。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

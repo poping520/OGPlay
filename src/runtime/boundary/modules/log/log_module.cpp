@@ -1,4 +1,4 @@
-#include "android_boundary_log.h"
+#include "log_module.h"
 
 #include <algorithm>
 #include <bit>
@@ -21,7 +21,7 @@
 
 #include "ogplay/core/logger.h"
 #include "ogplay/memory/address_space.h"
-#include "ogplay/runtime/boundary/a32_call_frame.h"
+#include "runtime/boundary/core/a32_call_frame.h"
 
 namespace ogplay::runtime {
 namespace {

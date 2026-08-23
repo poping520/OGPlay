@@ -1,4 +1,4 @@
-#include "ogplay/runtime/boundary/android_boundary_gles.h"
+#include "runtime/boundary/modules/gles2/gles2_dispatch.h"
 
 #include <algorithm>
 #include <array>
@@ -20,8 +20,8 @@
 #include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
-#include "ogplay/runtime/boundary/guest_gl_context.h"
-#include "ogplay/runtime/boundary/a32_call_frame.h"
+#include "runtime/boundary/services/guest_gl_context.h"
+#include "runtime/boundary/core/a32_call_frame.h"
 
 namespace ogplay::runtime {
 namespace {

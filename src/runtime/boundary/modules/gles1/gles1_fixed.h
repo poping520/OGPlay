@@ -8,7 +8,7 @@
 
 #include "ogplay/gles/gles_dispatch.h"
 
-#include "android_boundary_gles1.h"
+#include "gles1_dispatch.h"
 
 namespace ogplay::runtime::detail {
 

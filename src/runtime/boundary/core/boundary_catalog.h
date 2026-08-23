@@ -53,7 +53,6 @@ struct BoundaryModuleInstance final {
 
 class BoundaryCatalog final {
 public:
-    explicit BoundaryCatalog(AndroidApi api);
     BoundaryCatalog(AndroidApi api,
                     std::span<const BoundaryModuleDefinition> definitions);
 
@@ -68,9 +67,5 @@ private:
     std::vector<BoundaryModuleDescriptor> modules_;
     std::uint32_t slot_count_{};
 };
-
-[[nodiscard]] const BoundaryCatalog& AndroidBoundaryCatalog(AndroidApi api);
-[[nodiscard]] bool IsAndroidBoundaryLibrary(AndroidApi api,
-                                            std::string_view soname) noexcept;
 
 }  // namespace ogplay::runtime

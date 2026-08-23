@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#include "android_boundary_gles1_query.h"
+#include "gles1_query.h"
 
 namespace ogplay::runtime::detail {
 

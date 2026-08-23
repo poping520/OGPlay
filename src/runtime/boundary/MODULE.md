@@ -1,5 +1,19 @@
 # 子模块：runtime/boundary
 
+## 目录与 ownership
+
+- `core/`：Virtual SO 通用 catalog、dense symbol/thunk metadata、A32 call frame 与 callback
+  类型；最终依赖方向只允许指向 cpu/memory/loader 等底层。
+- `services/`：跨 module 共享状态；`GuestGlContext` 只在这里拥有一份，后续由
+  `GraphicsBoundaryContext` 显式聚合 ANGLE frame/context 和 graphics shadow。
+- `modules/<so>/`：各 Virtual SO 的 export metadata、handler 与私有 state。Android、EGL、
+  GLES1、GLES2、log 已有独立目录；built-in registration 位于
+  `modules/module_catalog.*`，generic core catalog 不包含业务 export 表。
+- `facade/`：`AndroidBoundaryHle` session composition/lifecycle 实现；public ABI header
+  仍为 `include/ogplay/runtime/boundary/android_boundary_hle.h`。
+- 测试按 `tests/runtime/boundary/{core,modules,integration}` 归属；跨 module/transport 行为
+  放 integration，module 私有 state 放 modules。
+
 ## 职责
 
 - `BoundaryCatalog` 是 Virtual SO SONAME、active export、module-local id 与 dense thunk
@@ -186,7 +200,7 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 
 ## 测试
 
-对应 `tests/runtime/android_boundary_hle_tests.cpp`(同时覆盖独立 GLES 分派组件)与
-`tests/runtime/android_boundary_gles1_fixed_tests.cpp`。architecture gate 扫描
-`src/runtime/boundary/` 下全部 Virtual SO/module implementation source，并对
+对应 `tests/runtime/boundary/integration/android_boundary_hle_tests.cpp`（同时覆盖独立 GLES
+分派组件）与 `tests/runtime/boundary/modules/gles1_fixed_tests.cpp`。architecture gate 递归
+扫描 `src/runtime/boundary/{core,services,modules,facade}` 下全部 implementation，并对
 `TryFastCall()` 另做严格 hot-router 检查。

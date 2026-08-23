@@ -1,6 +1,6 @@
 #include "ogplay/runtime/integration/native_library_loader.h"
 
-#include "ogplay/runtime/boundary/boundary_catalog.h"
+#include "runtime/boundary/modules/module_catalog.h"
 
 #include <algorithm>
 #include <condition_variable>

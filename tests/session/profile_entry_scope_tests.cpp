@@ -107,7 +107,7 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-    CHECK(catalog.size() == 173);
+    CHECK(catalog.size() == 177);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -135,6 +135,28 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/widget/TextView;") == 15);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
+}
+
+TEST_CASE("Context package manager has one process identity") {
+  AndroidVm vm;
+  const auto activity =
+      vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+  const auto context =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+  const auto target = vm.Virtual(
+      "Landroid/app/Activity;", "getPackageManager",
+      "()Landroid/content/pm/PackageManager;");
+
+  const auto from_activity = vm.interpreter.Call(
+      target, std::vector{VmValue::Ref(activity)});
+  REQUIRE_FALSE(from_activity.exception.IsValid());
+  REQUIRE(from_activity.value.ref.IsValid());
+  const auto from_context = vm.interpreter.Call(
+      target, std::vector{VmValue::Ref(context)});
+  REQUIRE_FALSE(from_context.exception.IsValid());
+  CHECK(from_context.value.ref == from_activity.value.ref);
+  CHECK(vm.linker.Class(vm.model.ObjectClass(from_activity.value.ref))
+            .descriptor == "Landroid/content/pm/PackageManager;");
 }
 
 TEST_CASE("Window policy and Activity orientation preserve API19 state") {

@@ -81,6 +81,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   JNI `NewObject` 分配的 application identity 回入解释器时，经 integration 注入的
   lazy-linked layout resolver 按完整 `instance_slots` 建立 `vm_instance` 槽板并保留
   原 identity；intrinsic host object 继续使用 external/专用 store 分类。
+  `String.format(String,Object[])` 当前按统一 Object[]/boxed slots 实现顺序 `%s/%d`
+  与 `%%`；`%s` 支持 String/null，普通 Object virtual-toString 与其他未交付 conversion
+  明确失败，不借用宿主 printf/locale。
 - 生产装配的 `JavaObjectModel` 通过 `JavaObjectInterop` 复用会话级
   `JniObjectArrayStore`：DexVM/JNI 创建、读写、克隆和清扫 `Object[]` 都使用同一
   identity/store，class identity 的双向适配由 integration 注入；不依赖

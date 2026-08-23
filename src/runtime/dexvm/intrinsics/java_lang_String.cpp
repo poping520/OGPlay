@@ -6,6 +6,101 @@
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
+namespace {
+
+std::int64_t IntegralFormatValue(IntrinsicContext& context,
+                                 const VmObjectRef argument) {
+    if (!argument.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                          "%d argument is null"};
+    }
+    const auto descriptor = context.vm.Linker()
+                                .Class(context.vm.Model().ObjectClass(argument))
+                                .descriptor;
+    const auto slots = context.vm.Model().InstanceSlots(argument);
+    if (descriptor == "Ljava/lang/Byte;" && !slots.empty()) {
+        return static_cast<std::int8_t>(slots[0].bits & 0xffU);
+    }
+    if (descriptor == "Ljava/lang/Short;" && !slots.empty()) {
+        return static_cast<std::int16_t>(slots[0].bits & 0xffffU);
+    }
+    if (descriptor == "Ljava/lang/Integer;" && !slots.empty()) {
+        return static_cast<std::int32_t>(slots[0].bits);
+    }
+    if (descriptor == "Ljava/lang/Long;" && slots.size() >= 2U) {
+        return static_cast<std::int64_t>(
+            static_cast<std::uint64_t>(slots[0].bits) |
+            (static_cast<std::uint64_t>(slots[1].bits) << 32U));
+    }
+    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                      "%d requires an integral wrapper"};
+}
+
+VmValue FormatSequential(IntrinsicContext& context) {
+    const auto format = Value(context, context.arguments[0].ref);
+    const auto arguments = context.arguments[1].ref;
+    auto& model = context.vm.Model();
+    if (arguments.IsValid() &&
+        model.Kind(arguments) != VmObjectKind::object_array) {
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                          "String.format arguments are not Object[]"};
+    }
+    const auto argument_count = arguments.IsValid()
+                                    ? model.ArrayLength(arguments)
+                                    : 0;
+    JniSize argument_index{};
+    std::u16string output;
+    output.reserve(format.size() +
+                   static_cast<std::size_t>(argument_count) * 10U);
+    for (std::size_t index = 0; index < format.size(); ++index) {
+        if (format[index] != u'%') {
+            output.push_back(format[index]);
+            continue;
+        }
+        if (++index >= format.size()) {
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "unterminated String.format conversion"};
+        }
+        const auto conversion = format[index];
+        if (conversion == u'%') {
+            output.push_back(u'%');
+            continue;
+        }
+        if (conversion != u'd' && conversion != u's') {
+            throw VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "String.format conversion is not provided: %" +
+                    std::string(1, static_cast<char>(conversion))};
+        }
+        if (argument_index >= argument_count) {
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "String.format is missing an argument"};
+        }
+        const auto argument =
+            model.GetObjectElement(arguments, argument_index++);
+        if (conversion == u'd') {
+            output += Widen(
+                std::to_string(IntegralFormatValue(context, argument)));
+            continue;
+        }
+        if (!argument.IsValid()) {
+            output += u"null";
+        } else if (model.Kind(argument) == VmObjectKind::string) {
+            output += model.StringValue(argument);
+        } else {
+            throw VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "String.format %s requires virtual toString for " +
+                    context.vm.Linker()
+                        .Class(model.ObjectClass(argument))
+                        .descriptor};
+        }
+    }
+    return Make(context, output);
+}
+
+}  // namespace
+
 IntrinsicClassDecl Declare_java_lang_String() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/String;", "Ljava/lang/Object;", {"Ljava/lang/CharSequence;", "Ljava/lang/Comparable;", "Ljava/io/Serializable;"});
     builder.Constructor("()V",
@@ -412,6 +507,9 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 return VmValue::Int(
                     Value(context, context.receiver).empty() ? 1 : 0);
             });
+    builder.StaticMethod(
+        "format", "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+        FormatSequential);
     builder.StaticMethod("valueOf", "(I)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context,

@@ -57,6 +57,13 @@ Decl Declare_android_content_Context(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             return MakeString(call, context->package_name);
         });
+    builder.FinalMethod("getPackageManager",
+        "()Landroid/content/pm/PackageManager;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(Singleton(
+                call, context, "package_manager",
+                "Landroid/content/pm/PackageManager;"));
+        });
     builder.FinalMethod("getApplicationContext", "()Landroid/content/Context;",
         [context](dx::IntrinsicContext& call) {
             // One guest process owns one application Context; Activity

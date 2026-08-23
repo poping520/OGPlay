@@ -57,11 +57,12 @@
   DVM-47 gate 仍受 A6 DT_SONAME identity 与 DH 固定 step 100/97 漂移阻断，A6 长运行未执行；
   `dexvm.gc` 与 `dexvm.interpreter_threaded` 保持 `partial`，threaded 生产默认仍关闭。A5 GC
   exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合。
-  DVM-70..74 闭合 Window/metrics/config、JNI identity、私有目录、asset lifecycle、
-  GLSurfaceView policy 与 IntentFilter data；PVZ 首 fault 为 `String.format`。
+  DVM-70..74 闭合 Window/config、JNI identity、目录/asset、GLSurfaceView policy 与
+  IntentFilter；DVM-75 交付 String.format `%s/%d/%%` 与 PackageManager，
+  下一 fault 待 exact run 固定。
 ## 验证基线
 
-- BND-24 full CTest 933/933（architecture 5/5）；DVM-74 focused 6/6，
+- BND-24 full CTest 933/933（architecture 5/5）；DVM-75 focused 5/5，
   exact APK 持续推进且无残留进程。
 
 ## 下一步

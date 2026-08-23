@@ -4,6 +4,8 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
+#include <cstdint>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -96,6 +98,109 @@ TEST_CASE("dexvm P1 String surface: trim/lower/startsWith/indexOf") {
   CHECK(vm.AsString(vm.CallStatic("substrings", "()Ljava/lang/String;")) ==
         "Rocks");
     ExpectInt(vm.CallStatic("compareIgnore", "()I"), 0);
+}
+
+TEST_CASE("dexvm String.format renders integral wrappers and percent") {
+    Vm vm;
+    const auto object_class = vm.linker.ResolveDescriptor("Ljava/lang/Object;");
+    const auto array_class =
+        vm.linker.ResolveDescriptor("[Ljava/lang/Object;");
+    const auto arguments =
+        vm.model.NewObjectArray(array_class, object_class, 7);
+    const auto box = [&](const char* descriptor, const std::uint64_t bits,
+                         const bool wide = false) {
+        const auto value = vm.interpreter.NewIntrinsicInstance(descriptor);
+        auto slots = vm.model.InstanceSlots(value);
+        slots[0] = {static_cast<std::uint32_t>(bits),
+                    wide ? SlotTag::wide_lo : SlotTag::cat1};
+        if (wide) {
+            slots[1] = {static_cast<std::uint32_t>(bits >> 32U),
+                        SlotTag::wide_hi};
+        }
+        return value;
+    };
+    const std::array values{
+        box("Ljava/lang/Integer;", 16),
+        box("Ljava/lang/Integer;", 2),
+        box("Ljava/lang/Integer;", 3),
+        box("Ljava/lang/Integer;", 40),
+        box("Ljava/lang/Byte;", 0xffU),
+        box("Ljava/lang/Short;", 0xfffeU),
+        box("Ljava/lang/Long;", UINT64_C(0xfffffffffffffff0), true),
+    };
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        vm.model.SetObjectElement(arguments, static_cast<JniSize>(index),
+                                  values[index]);
+    }
+    const auto format = vm.interpreter.NewStringUtf8(
+        "LruCache[maxSize=%d,hits=%d,misses=%d,hitRate=%d%%] %d %d %d");
+    CHECK(vm.AsString(vm.CallStatic(
+              "format",
+              "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+              {VmValue::Ref(format), VmValue::Ref(arguments)},
+              "Ljava/lang/String;")) ==
+          "LruCache[maxSize=16,hits=2,misses=3,hitRate=40%] -1 -2 -16");
+}
+
+TEST_CASE("dexvm String.format rejects invalid decimal surfaces") {
+    Vm vm;
+    const auto call = [&](const VmObjectRef format,
+                          const VmObjectRef arguments) {
+        return vm.CallStatic(
+            "format",
+            "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+            {VmValue::Ref(format), VmValue::Ref(arguments)},
+            "Ljava/lang/String;");
+    };
+    ExpectThrow(vm, call(VmObjectRef{}, VmObjectRef{}),
+                "Ljava/lang/NullPointerException;", "null string argument");
+    const auto unsupported = vm.interpreter.NewStringUtf8("%f");
+    ExpectThrow(vm, call(unsupported, VmObjectRef{}),
+                "Ljava/lang/UnsupportedOperationException;",
+                "String.format conversion is not provided: %f");
+    const auto missing = vm.interpreter.NewStringUtf8("%d");
+    ExpectThrow(vm, call(missing, VmObjectRef{}),
+                "Ljava/lang/IllegalArgumentException;",
+                "String.format is missing an argument");
+}
+
+TEST_CASE("dexvm String.format substitutes guest strings and null") {
+    Vm vm;
+    const auto object_class = vm.linker.ResolveDescriptor("Ljava/lang/Object;");
+    const auto array_class =
+        vm.linker.ResolveDescriptor("[Ljava/lang/Object;");
+    const auto arguments =
+        vm.model.NewObjectArray(array_class, object_class, 4);
+    vm.model.SetObjectElement(arguments, 0,
+                              vm.interpreter.NewStringUtf8("1.23.8.1124"));
+    vm.model.SetObjectElement(arguments, 1,
+                              vm.interpreter.NewStringUtf8("release"));
+    const auto integer =
+        vm.interpreter.NewIntrinsicInstance("Ljava/lang/Integer;");
+    vm.model.InstanceSlots(integer)[0] = {7U, SlotTag::cat1};
+    vm.model.SetObjectElement(arguments, 2, integer);
+    const auto format = vm.interpreter.NewStringUtf8(
+        "NIMBLE VERSION %s (Build %s) %d%% %s");
+    CHECK(vm.AsString(vm.CallStatic(
+              "format",
+              "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+              {VmValue::Ref(format), VmValue::Ref(arguments)},
+              "Ljava/lang/String;")) ==
+          "NIMBLE VERSION 1.23.8.1124 (Build release) 7% null");
+
+    const auto bad_arguments =
+        vm.model.NewObjectArray(array_class, object_class, 1);
+    const auto plain = vm.interpreter.NewIntrinsicInstance("Ljava/lang/Object;");
+    vm.model.SetObjectElement(bad_arguments, 0, plain);
+    const auto bad = vm.CallStatic(
+        "format",
+        "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("%s")),
+         VmValue::Ref(bad_arguments)},
+        "Ljava/lang/String;");
+    REQUIRE(bad.exception.IsValid());
+    CHECK(vm.linker.Class(bad.exception_class).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
 }
 
 TEST_CASE("dexvm P1 boxed values") {

@@ -21,6 +21,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_content_DialogInterface_OnDismissListener(context),
         Declare_android_content_Intent(context),
         Declare_android_content_IntentFilter(context),
+        Declare_android_content_pm_PackageManager(context),
         Declare_android_content_SharedPreferences_Editor(context),
         Declare_android_content_SharedPreferences(context),
         Declare_android_content_SharedPreferencesEditorImpl(context),

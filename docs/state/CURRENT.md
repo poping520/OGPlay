@@ -1,14 +1,16 @@
 # 当前状态
 
-更新：2026-08-24 · BND-23 GLES2 API19 completion
+更新：2026-08-24 · BND-24 EGL/GLES API19 运行闭环
 
 ## 当前阶段
 
 - **EGL/GLES API19 补齐**：BND-16 冻结 AOSP/KTU84P/PVZ ABI；BND-17 已实现 EGL 13 项
   基础 API，BND-18..20 已闭合 GLES1 Bounds 与全部 62 个缺口，145 core 均有 handler。
   BND-21/22 闭合 GLES2 state/object 与 transfer/query 41 项；BND-23 完成最后 26 项
-  shader/uniform/vertex API，link-driven uniform shape、guest vertex identity、constant restore 与
-  ShaderBinary 原生 error 受检。142 个 GLES2 core 现均有 concrete handler。
+  shader/uniform/vertex API；142 个 GLES2 core 现均有 concrete handler。BND-24 复验 PVZ
+  exact ELF 导入 `eglGetProcAddress + 142/142 GLES2 core`；关闭 survey 的 bounded run
+  已越过 native load/JNI_OnLoad/OpenGL，新的首 fault 为 DexVM
+  `Window.setSoftInputMode(I)V` 缺口，不属于 OpenGL 闭集。
 
 - **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
   import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc
@@ -54,12 +56,12 @@
   annotation proxy、多 ClassLoader 和动态 definition 仍明确不实现。
   DVM-47 gate 仍受 A6 DT_SONAME identity 与 DH 固定 step 100/97 漂移阻断，A6 长运行未执行；
   `dexvm.gc` 与 `dexvm.interpreter_threaded` 保持 `partial`，threaded 生产默认仍关闭。A5 GC
-  exact/强制回收 golden 已稳定；PVZ NA 的 `__android_log_vprint` boundary import 阻断已由
-  BND-5 关闭，title 后续行为仍待按既有 playbook 复验。
+  exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合，
+  当前首个启动缺口是 DexVM `Window.setSoftInputMode(I)V`。
 ## 验证基线
 
-- BND-23 focused GLES2/shader/uniform/vertex、catalog 与 architecture gate 通过；最终 full
-  CTest 留到 BND-24 后执行。
+- BND-24 focused 59/59；exact APK 无 OpenGL fault 且无残留进程；configure/build
+  成功，full CTest 933/933（architecture 5/5）。
 
 ## 下一步
 

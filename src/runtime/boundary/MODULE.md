@@ -244,3 +244,7 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 分派组件）与 `tests/runtime/boundary/modules/gles1_fixed_tests.cpp`。architecture gate 递归
 扫描 `src/runtime/boundary/{core,services,modules,facade}` 下全部 implementation，并对
 `TryFastCall()` 另做严格 hot-router 检查。
+
+BND-24 以 API19 exact APK 的 `eglGetProcAddress + 142/142 GLES2 core` 导入面复验
+catalog provider 和 concrete handler，关闭 survey 的 bounded run 已越过 native load、
+JNI_OnLoad 与 OpenGL 边界；厂商 extension 全集与 GLES3 仍是明确非目标。

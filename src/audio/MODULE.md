@@ -18,6 +18,10 @@
 - `JavaSoundPoolMixer`：用注入的编码资源 loader 按 resource 去重解码，以
   kind + resource + instance 管理 voice，并输出确定性 stereo PCM16；loader 不存在时
   保持显式 disabled，缺失/损坏资源保留可查询失败原因。
+- `OpenSlesPcmMixer`：为 Virtual `libOpenSLES.so` 保存线程安全 PCM player/queue，支持
+  mono/stereo、unsigned PCM8/signed little-endian PCM16、线性重采样、millibel volume、
+  mute、pan 与多 player 64-bit 饱和加性混音；完整消费只返回事件，mixer 不直接调用 guest
+  callback 或 HAL。
 - M3/M6 定义对象表、PCM 队列、回调与媒体状态机。
 
 ## 不变量

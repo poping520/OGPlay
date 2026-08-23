@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-24 · BND-9 OpenSL ES public data ABI
+更新：2026-08-24 · BND-10 OpenSL ES PCM mixer
 
 ## 当前阶段
 
@@ -11,8 +11,10 @@
   BND-5 按 AOSP 4.4.4 完整实现 liblog 23 个 API，guest 日志进入 `guest.liblog` 并带
   `[guest]`。BND-8 完成 AOSP Wilhelm ABI/PCM/callback 设计；BND-9 已发布全部 51 个
   `SL_IID_*` `STT_OBJECT` pointer global 与精确只读 UUID record，data 不占 dense slot，
-  focused 8/8 通过。三个 OpenSL public function 仍 unresolved；下一阶段实现
-  Engine/OutputMix/PCM AudioPlayer 对象、mixer 与 callback thread。
+  focused 8/8 通过。BND-10 已实现独立线程安全 PCM mixer：PCM8/16、mono/stereo、线性
+  重采样、volume/mute/pan、bounded queue、消费事件及多 player 饱和加性混音，focused
+  5/5 通过。三个 OpenSL public function 仍 unresolved；下一阶段实现 Engine/OutputMix/
+  PCM AudioPlayer guest object ABI 与 callback thread。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

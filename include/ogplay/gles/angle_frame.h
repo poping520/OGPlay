@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -25,6 +26,16 @@ struct AngleActiveVariable final {
     std::string name;
     std::int32_t size{};
     std::uint32_t type{};
+};
+
+struct AngleShaderPrecision final {
+    std::array<std::int32_t, 2> range{};
+    std::int32_t precision{};
+};
+
+struct AngleUniformValueCount final {
+    std::int32_t location{};
+    std::uint32_t value_count{};
 };
 
 class AngleFrame final {
@@ -59,7 +70,11 @@ public:
     [[nodiscard]] bool IsShader(std::uint32_t shader);
     [[nodiscard]] std::uint32_t CreateProgram();
     void AttachShader(std::uint32_t program, std::uint32_t shader);
+    void DetachShader(std::uint32_t program, std::uint32_t shader);
+    void BindAttribLocation(std::uint32_t program, std::uint32_t index,
+                            const std::string& name);
     void LinkProgram(std::uint32_t program);
+    void ValidateProgram(std::uint32_t program);
     [[nodiscard]] std::int32_t GetProgramParameter(std::uint32_t program,
                                                     std::uint32_t parameter);
     [[nodiscard]] AngleActiveVariable GetActiveAttribute(
@@ -68,6 +83,14 @@ public:
         std::uint32_t program, std::uint32_t index);
     [[nodiscard]] std::string GetProgramInfoLog(std::uint32_t program);
     [[nodiscard]] std::string GetShaderInfoLog(std::uint32_t shader);
+    [[nodiscard]] std::vector<std::uint32_t> GetAttachedShaders(
+        std::uint32_t program, std::size_t maximum_count);
+    [[nodiscard]] AngleShaderPrecision GetShaderPrecisionFormat(
+        std::uint32_t shader_type, std::uint32_t precision_type);
+    [[nodiscard]] std::string GetShaderSource(std::uint32_t shader,
+                                               std::size_t maximum_bytes);
+    [[nodiscard]] std::vector<AngleUniformValueCount>
+    DiscoverUniformValueCounts(std::uint32_t program);
     [[nodiscard]] std::int32_t GetAttribLocation(std::uint32_t program,
                                                   const std::string& name);
     [[nodiscard]] std::int32_t GetUniformLocation(std::uint32_t program,
@@ -75,6 +98,9 @@ public:
     void UseProgram(std::uint32_t program);
     void DeleteProgram(std::uint32_t program);
     [[nodiscard]] bool IsProgram(std::uint32_t program);
+    void ReleaseShaderCompiler();
+    void ShaderBinary(std::span<const std::uint32_t> shaders,
+                      std::uint32_t format, std::span<const std::byte> binary);
     [[nodiscard]] std::vector<std::uint32_t> GenerateBuffers(std::size_t count);
     void DeleteBuffers(std::span<const std::uint32_t> buffers);
     void BindBuffer(std::uint32_t target, std::uint32_t buffer);
@@ -170,8 +196,18 @@ public:
                          std::span<const std::int32_t> values);
     void UniformMatrix3(std::int32_t location, std::int32_t count,
                         bool transpose, std::span<const float> values);
+    void UniformMatrix2(std::int32_t location, std::int32_t count,
+                        bool transpose, std::span<const float> values);
     void UniformMatrix4(std::int32_t location, std::int32_t count,
                         bool transpose, std::span<const float> values);
+    [[nodiscard]] std::vector<float> GetUniformFloats(
+        std::uint32_t program, std::int32_t location, std::size_t count);
+    [[nodiscard]] std::vector<std::int32_t> GetUniformIntegers(
+        std::uint32_t program, std::int32_t location, std::size_t count);
+    [[nodiscard]] std::vector<float> GetVertexAttributeFloats(
+        std::uint32_t index, std::uint32_t parameter, std::size_t count);
+    [[nodiscard]] std::vector<std::int32_t> GetVertexAttributeIntegers(
+        std::uint32_t index, std::uint32_t parameter, std::size_t count);
     void VertexAttribute4f(std::uint32_t index, float x, float y,
                            float z, float w);
     void SetCapability(std::uint32_t capability, bool enabled);

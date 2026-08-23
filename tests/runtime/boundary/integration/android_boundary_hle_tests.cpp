@@ -1108,7 +1108,7 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
 
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv2.so", "glValidateProgram"),
-        "Android boundary HLE is not implemented: glValidateProgram",
+        "glValidateProgram has no current ANGLE frame",
         std::runtime_error);
 }
 
@@ -3212,6 +3212,11 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
                                    {2U, 0x1406U, 0U, client_vertices.Value()}));
     static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
                                    {0x0004U, 0U, 3U}));
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetVertexAttribfv",
+        {0U, 0x8626U, fixture.output.Add(0x9D0).Value()}));
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(
+              fixture.output.Add(0x9DC), 1U)) == doctest::Approx(1.0F));
     static_cast<void>(fixture.Call("libGLESv1_CM.so", "glDisableClientState",
                                    {0x8074U}));
     static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
@@ -3282,6 +3287,217 @@ TEST_CASE("Android GLES boundary compiles and links guest shader sources") {
     CHECK(stats.shader_compiles == 2);
     CHECK(stats.program_links == 1);
     CHECK(stats.draws == 5);
+}
+
+TEST_CASE("GLES2 completion covers shader uniform and vertex query lifecycle") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    const auto pointer_array = fixture.output;
+    const auto query = fixture.output.Add(0x40U);
+    const auto vertex_source_address = fixture.output.Add(0x100U);
+    const auto fragment_source_address = fixture.output.Add(0x300U);
+    const auto name = fixture.output.Add(0x600U);
+    const auto values = fixture.output.Add(0x700U);
+    const auto address = [&](const std::string_view symbol) {
+        const auto found = fixture.boundary.Symbols().Lookup(
+            "libGLESv2.so", symbol);
+        REQUIRE(found.has_value());
+        return found->Value();
+    };
+    const auto call = [&](const std::string_view symbol,
+                          const std::span<const std::uint32_t> arguments) {
+        return BoundaryCallAddress(fixture, address(symbol), arguments);
+    };
+    constexpr std::string_view vertex_source =
+        "attribute vec2 aPosition;"
+        "void main(){gl_Position=vec4(aPosition,0.0,1.0);}";
+    constexpr std::string_view fragment_source =
+        "precision mediump float;"
+        "uniform vec4 uTint;uniform ivec4 uInts;uniform mat2 uMatrix;"
+        "void main(){gl_FragColor=uTint+vec4(uInts)*0.000001+"
+        "vec4(uMatrix[0],uMatrix[1])*0.000001;}";
+    WriteGuestString(fixture, vertex_source_address, vertex_source);
+    WriteGuestString(fixture, fragment_source_address, fragment_source);
+
+    const auto compile = [&](const std::uint32_t type,
+                             const ogplay::memory::GuestAddress source) {
+        const auto shader = fixture.Call(
+            "libGLESv2.so", "glCreateShader", {type});
+        REQUIRE(shader != 0U);
+        fixture.bus.Write32(pointer_array, source.Value(), 1U);
+        CHECK(fixture.Call("libGLESv2.so", "glShaderSource",
+                           {shader, 1U, pointer_array.Value(), 0U}) == 0U);
+        CHECK(fixture.Call("libGLESv2.so", "glCompileShader", {shader}) == 0U);
+        CHECK(fixture.Call("libGLESv2.so", "glGetShaderiv",
+                           {shader, 0x8B81U, query.Value()}) == 0U);
+        REQUIRE(fixture.bus.Read32(query, 1U) == 1U);
+        return shader;
+    };
+    const auto vertex = compile(0x8B31U, vertex_source_address);
+    const auto fragment = compile(0x8B30U, fragment_source_address);
+    const auto program = fixture.Call("libGLESv2.so", "glCreateProgram");
+    REQUIRE(program != 0U);
+
+    WriteGuestString(fixture, name, "aPosition");
+    CHECK(fixture.Call("libGLESv2.so", "glBindAttribLocation",
+                       {program, 0U, name.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glAttachShader",
+                       {program, vertex}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glAttachShader",
+                       {program, fragment}) == 0U);
+    const auto attached = fixture.output.Add(0x900U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetAttachedShaders",
+                       {program, 4U, query.Value(), attached.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 2U);
+    CHECK(fixture.Call("libGLESv2.so", "glDetachShader",
+                       {program, fragment}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetAttachedShaders",
+                       {program, 4U, query.Value(), attached.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glAttachShader",
+                       {program, fragment}) == 0U);
+
+    const auto source_output = fixture.output.Add(0xA00U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetShaderSource",
+                       {vertex, 256U, query.Value(), source_output.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == vertex_source.size());
+    CHECK(fixture.bus.Read8(source_output, 1U) ==
+          static_cast<std::uint8_t>('a'));
+    const auto precision = fixture.output.Add(0xB00U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetShaderPrecisionFormat",
+                       {0x8B30U, 0x8DF2U, precision.Value(),
+                        precision.Add(8U).Value()}) == 0U);
+    CHECK(std::bit_cast<std::int32_t>(
+              fixture.bus.Read32(precision.Add(4U), 1U)) > 0);
+    CHECK(std::bit_cast<std::int32_t>(
+              fixture.bus.Read32(precision.Add(8U), 1U)) > 0);
+
+    CHECK(fixture.Call("libGLESv2.so", "glLinkProgram", {program}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetProgramiv",
+                       {program, 0x8B82U, query.Value()}) == 0U);
+    REQUIRE(fixture.bus.Read32(query, 1U) == 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glUseProgram", {program}) == 0U);
+    const auto location = [&](const std::string_view uniform) {
+        WriteGuestString(fixture, name, uniform);
+        const auto result = fixture.Call(
+            "libGLESv2.so", "glGetUniformLocation",
+            {program, name.Value()});
+        REQUIRE(result != UINT32_MAX);
+        return result;
+    };
+    const auto tint = location("uTint");
+    const auto integers = location("uInts");
+    const auto matrix = location("uMatrix");
+
+    fixture.bus.Write32(fixture.stack,
+                        std::bit_cast<std::uint32_t>(0.4F), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glUniform4f",
+                       {tint, std::bit_cast<std::uint32_t>(0.1F),
+                        std::bit_cast<std::uint32_t>(0.2F),
+                        std::bit_cast<std::uint32_t>(0.3F)}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetUniformfv",
+                       {program, tint, query.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(query.Add(12U), 1U)) ==
+          doctest::Approx(0.4F));
+    fixture.bus.Write32(fixture.stack, 4U, 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glUniform4i",
+                       {integers, 1U, 2U, 3U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetUniformiv",
+                       {program, integers, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query.Add(12U), 1U) == 4U);
+
+    constexpr std::array<float, 4> matrix_value{1.0F, 2.0F, 3.0F, 4.0F};
+    fixture.memory.Write(values, std::as_bytes(std::span(matrix_value)), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glUniformMatrix2fv",
+                       {matrix, 1U, 0U, values.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetUniformfv",
+                       {program, matrix, query.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(query.Add(8U), 1U)) ==
+          doctest::Approx(3.0F));
+    CHECK(fixture.Call("libGLESv2.so", "glUniform2f",
+                       {UINT32_MAX, 0U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glUniform2i",
+                       {UINT32_MAX, 0U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glUniform3f",
+                       {UINT32_MAX, 0U, 0U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glUniform3i",
+                       {UINT32_MAX, 0U, 0U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glValidateProgram", {program}) == 0U);
+
+    const auto f = [](const float value) {
+        return std::bit_cast<std::uint32_t>(value);
+    };
+    CHECK(fixture.Call("libGLESv2.so", "glVertexAttrib1f",
+                       {5U, f(0.1F)}) == 0U);
+    const std::array<float, 1> one{0.2F};
+    fixture.memory.Write(values, std::as_bytes(std::span(one)), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glVertexAttrib1fv",
+                       {5U, values.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glVertexAttrib2f",
+                       {5U, f(0.3F), f(0.4F)}) == 0U);
+    const std::array<float, 2> two{0.5F, 0.6F};
+    fixture.memory.Write(values, std::as_bytes(std::span(two)), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glVertexAttrib2fv",
+                       {5U, values.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glVertexAttrib3f",
+                       {5U, f(0.7F), f(0.8F), f(0.9F)}) == 0U);
+    const std::array<float, 3> three{1.1F, 1.2F, 1.3F};
+    fixture.memory.Write(values, std::as_bytes(std::span(three)), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glVertexAttrib3fv",
+                       {5U, values.Value()}) == 0U);
+    const std::array<float, 4> four{1.0F, 2.0F, 3.0F, 4.0F};
+    fixture.memory.Write(values, std::as_bytes(std::span(four)), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glVertexAttrib4fv",
+                       {5U, values.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetVertexAttribfv",
+                       {5U, 0x8626U, query.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(query.Add(12U), 1U)) ==
+          doctest::Approx(4.0F));
+    CHECK_THROWS_AS(
+        fixture.Call("libGLESv2.so", "glVertexAttrib4fv",
+                     {5U, 0x12345000U}),
+        ogplay::memory::MemoryFault);
+    CHECK(fixture.Call("libGLESv2.so", "glGetVertexAttribfv",
+                       {5U, 0x8626U, query.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(query.Add(12U), 1U)) ==
+          doctest::Approx(4.0F));
+
+    CHECK(fixture.Call("libGLESv2.so", "glBindBuffer",
+                       {0x8892U, 0U}) == 0U);
+    fixture.bus.Write32(fixture.stack, 0U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(4U), values.Value(), 1U);
+    CHECK(fixture.Call("libGLESv2.so", "glVertexAttribPointer",
+                       {6U, 2U, 0x1406U, 0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetVertexAttribPointerv",
+                       {6U, 0x8645U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == values.Value());
+    CHECK(fixture.Call("libGLESv2.so", "glGetVertexAttribiv",
+                       {6U, 0x8623U, query.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(query, 1U) == 2U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetVertexAttribfv",
+                       {6U, 0x8623U, query.Value()}) == 0U);
+    CHECK(std::bit_cast<float>(fixture.bus.Read32(query, 1U)) ==
+          doctest::Approx(2.0F));
+
+    CHECK(fixture.Call("libGLESv2.so", "glReleaseShaderCompiler") == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") == 0U);
+    fixture.bus.Write32(pointer_array, vertex, 1U);
+    fixture.bus.Write32(values, 0x12345678U, 1U);
+    const std::array<std::uint32_t, 5> binary{
+        1U, pointer_array.Value(), UINT32_MAX, values.Value(), 4U};
+    CHECK(call("glShaderBinary", binary) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glGetError") != 0U);
+
+    CHECK(fixture.Call("libGLESv2.so", "glUseProgram", {0U}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteProgram", {program}) == 0U);
+    CHECK_THROWS_WITH_AS(
+        fixture.Call("libGLESv2.so", "glGetUniformfv",
+                     {program, tint, query.Value()}),
+        "GLES uniform shape is not registered", std::runtime_error);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteShader", {vertex}) == 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glDeleteShader", {fragment}) == 0U);
+    fixture.boundary.CloseManagedSurface();
 }
 
 TEST_CASE("Android GLES boundary transfers buffer and texture resources") {

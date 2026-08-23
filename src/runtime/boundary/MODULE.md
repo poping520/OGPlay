@@ -190,6 +190,11 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 - GLES2 shader/program handler 把 guest 二级源码数组、可选长度、查询输出和符号名完整
   预检后调用 ANGLE;active attribute/uniform 与 info-log 多输出按 `bufSize` 截断提交,
   编译/链接失败通过真实查询值表达。
+- GLES2 completion handler 在成功 link 后从 ANGLE active-uniform metadata 为每个 location
+  登记输出 shape，relink/delete 清理旧 shape；uniform/vertex query 在 native 调用前完整
+  preflight。vertex array descriptor 与 pointer/offset identity 读取 programmable service 的
+  guest logical state，constant value 在 fixed draw transaction 后恢复；shader binary unsupported
+  通过真实 `glGetError` 表达，不转成伪成功能力声明。
 - GLES2 framebuffer/renderbuffer 批次真实转发生命周期、绑定、storage、两类 attachment、
   status 与 mipmap;第五个 `glFramebufferTexture2D` 参数必须从 A32 guest 栈读取。
 - GLES2 blend/raster 批次真实转发 blend color/equation、sample coverage 与 flush；混合

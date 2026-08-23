@@ -349,6 +349,7 @@ public:
                     "glVertexAttribPointer expected a deferred pointer");
             }
             const auto buffer = context_.Shared().transfer.Snapshot().array_buffer;
+            const auto current = attributes_[index].current;
             attributes_[index] = {
                 .size = size,
                 .type = type,
@@ -360,6 +361,7 @@ public:
                 .defined = true,
                 .definition_lr = a32_call.LinkRegister(),
                 .enable_lr = attributes_[index].enable_lr,
+                .current = current,
             };
             if (buffer != 0U) {
                 RequireFrame(frame, symbol).VertexAttributePointer(
@@ -437,10 +439,15 @@ public:
             return 0;
         }
         if (function_id == Id(Gles2Function::vertex_attrib_4f)) {
+            RequireAttributeIndex(args[0]);
+            const std::array current{
+                std::bit_cast<float>(args[1]),
+                std::bit_cast<float>(args[2]),
+                std::bit_cast<float>(args[3]),
+                std::bit_cast<float>(a32_call.Argument(4))};
             RequireFrame(frame, symbol).VertexAttribute4f(
-                args[0], std::bit_cast<float>(args[1]),
-                std::bit_cast<float>(args[2]), std::bit_cast<float>(args[3]),
-                std::bit_cast<float>(a32_call.Argument(4)));
+                args[0], current[0], current[1], current[2], current[3]);
+            attributes_[args[0]].current = current;
             return 0;
         }
         if (function_id == Id(Gles2Function::get_active_attrib) ||
@@ -626,6 +633,35 @@ public:
         });
     }
 
+    void SetVertexAttributeValue(const std::uint32_t index,
+                                 const std::array<float, 4> value) {
+        RequireAttributeIndex(index);
+        attributes_[index].current = value;
+    }
+
+    [[nodiscard]] std::int32_t VertexAttributeParameter(
+        const std::uint32_t index, const std::uint32_t parameter) const {
+        RequireAttributeIndex(index);
+        const auto& attribute = attributes_[index];
+        switch (parameter) {
+        case 0x8622U: return attribute.enabled ? 1 : 0;
+        case 0x8623U: return attribute.size;
+        case 0x8624U: return attribute.stride;
+        case 0x8625U: return static_cast<std::int32_t>(attribute.type);
+        case 0x886AU: return attribute.normalized ? 1 : 0;
+        case 0x889FU: return static_cast<std::int32_t>(attribute.buffer);
+        default:
+            throw std::invalid_argument(
+                "GLES2 vertex attribute parameter is unsupported");
+        }
+    }
+
+    [[nodiscard]] std::uint32_t VertexAttributePointerIdentity(
+        const std::uint32_t index) const {
+        RequireAttributeIndex(index);
+        return attributes_[index].pointer;
+    }
+
     [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept {
         return context_.Shared().transfer.Snapshot();
     }
@@ -650,6 +686,10 @@ public:
             }
             frame.SetVertexAttributeEnabled(static_cast<std::uint32_t>(index),
                                             attribute.enabled);
+            frame.VertexAttribute4f(
+                static_cast<std::uint32_t>(index), attribute.current[0],
+                attribute.current[1], attribute.current[2],
+                attribute.current[3]);
         }
         const auto buffers = shared.transfer.Snapshot();
         frame.BindBuffer(kArrayBuffer, buffers.array_buffer);
@@ -666,8 +706,8 @@ public:
 
 private:
     struct Attribute final {
-        std::int32_t size{};
-        std::uint32_t type{};
+        std::int32_t size{4};
+        std::uint32_t type{kFloat};
         bool normalized{};
         std::int32_t stride{};
         std::uint32_t pointer{};
@@ -676,6 +716,7 @@ private:
         bool defined{};
         std::uint32_t definition_lr{};
         std::uint32_t enable_lr{};
+        std::array<float, 4> current{0.0F, 0.0F, 0.0F, 1.0F};
     };
 
     static void RequireAttributeIndex(const std::uint32_t index) {
@@ -946,6 +987,21 @@ std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(
 
 bool AndroidBoundaryGles::HasEnabledVertexAttribute() const noexcept {
     return impl_->HasEnabledVertexAttribute();
+}
+
+void AndroidBoundaryGles::SetVertexAttributeValue(
+    const std::uint32_t index, const std::array<float, 4> value) {
+    impl_->SetVertexAttributeValue(index, value);
+}
+
+std::int32_t AndroidBoundaryGles::VertexAttributeParameter(
+    const std::uint32_t index, const std::uint32_t parameter) const {
+    return impl_->VertexAttributeParameter(index, parameter);
+}
+
+std::uint32_t AndroidBoundaryGles::VertexAttributePointerIdentity(
+    const std::uint32_t index) const {
+    return impl_->VertexAttributePointerIdentity(index);
 }
 
 gles::GlesTransferStateSnapshot

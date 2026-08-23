@@ -1,14 +1,14 @@
 # 当前状态
 
-更新：2026-08-24 · BND-22 GLES2 transfer/query completion
+更新：2026-08-24 · BND-23 GLES2 API19 completion
 
 ## 当前阶段
 
 - **EGL/GLES API19 补齐**：BND-16 冻结 AOSP/KTU84P/PVZ ABI；BND-17 已实现 EGL 13 项
   基础 API，BND-18..20 已闭合 GLES1 Bounds 与全部 62 个缺口，145 core 均有 handler。
-  BND-21 direct-bind GLES2 26 项 low-transfer state/object predicate；BND-22 又闭合 15 项
-  buffer/texture/query，IDL preflight、真实 ANGLE query、ETC1/copy 与 pack/unpack 受检；
-  GLES2 尚余 BND-23 的 26 项 shader/uniform/vertex API。
+  BND-21/22 闭合 GLES2 state/object 与 transfer/query 41 项；BND-23 完成最后 26 项
+  shader/uniform/vertex API，link-driven uniform shape、guest vertex identity、constant restore 与
+  ShaderBinary 原生 error 受检。142 个 GLES2 core 现均有 concrete handler。
 
 - **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
   import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc
@@ -58,7 +58,7 @@
   BND-5 关闭，title 后续行为仍待按既有 playbook 复验。
 ## 验证基线
 
-- BND-22 focused GLES2/ANGLE/transfer、catalog 与 architecture gate 通过；最终 full
+- BND-23 focused GLES2/shader/uniform/vertex、catalog 与 architecture gate 通过；最终 full
   CTest 留到 BND-24 后执行。
 
 ## 下一步

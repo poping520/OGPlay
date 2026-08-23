@@ -112,6 +112,10 @@
   延迟到 draw，按实际索引范围经内部 VBO/EBO 暂存后再进入 ANGLE。uniform vector/matrix
   数组按 IDL 形状完整搬运后再转换为宿主标量；shader/program active-variable 与 info-log
   查询来自真实 ANGLE 对象并保留截断/NUL 语义。
+- program link 成功后必须枚举真实 active uniform，并按每个 array element location 登记
+  scalar/vector/matrix value count；relink/delete 清除旧 shape。attached shader、source、precision、
+  uniform 与 vertex attribute query 使用对应 ANGLE API；`glShaderBinary` 不消费 native GL error，
+  unsupported 必须由后续 `glGetError` 原样观察。
 - integer query 与 readback 输出必须先按 IDL/transfer state 预检；统一 context 已拥有的
   logical viewport/scissor 与 target-aware texture binding query 从 shared guest state 返回，
   其他 native state 再调用 ANGLE。draw indices 在绑定 element buffer 后作为 offset，未绑定

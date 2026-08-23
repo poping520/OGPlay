@@ -1080,6 +1080,11 @@ status = "complete"
 test = "tests/gles/gles_transfer_state_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/gles/angle_frame_tests.cpp; architecture.boundary_hot_path; tools.gles2_catalog_current"
 note = "BND-22 direct-bind 15 个 GLES2 buffer/texture/query；IDL 在 ANGLE 前完整 preflight，boolean/float/object query、ETC1/copy texture 与 pack/unpack 状态受检"
 
+[runtime.gles2_api19_completion_boundary]
+status = "complete"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/gles/gles_transfer_state_tests.cpp; tests/gles/angle_frame_tests.cpp; architecture.boundary_hot_path; tools.gles2_catalog_current"
+note = "BND-23 direct-bind 最后 26 个 shader/uniform/vertex API；142 core 均有 concrete handler，uniform shape 遵循 link/delete lifecycle，vertex guest identity 与 ShaderBinary 原生 error transport 受检"
+
 [runtime.gles1_viewport_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

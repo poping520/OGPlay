@@ -29,6 +29,10 @@ public:
         const auto args = call.RegisterArguments();
         const auto symbol = gles::DescribeGlesFunction(
                                 gles::GlesApi::gles2, FunctionId).name;
+        if (const auto completion = DispatchCompletion<FunctionId>(call);
+            completion.has_value()) {
+            return *completion;
+        }
         if (const auto transfer = DispatchTransfer<FunctionId>(call);
             transfer.has_value()) {
             return *transfer;
@@ -89,12 +93,72 @@ public:
             graphics_.frames.RecordClear();
             return 0;
         }
-        throw std::runtime_error(
-            "Android boundary HLE is not implemented: " + std::string(symbol));
+        throw std::logic_error(
+            "sealed GLES2 export escaped concrete handler coverage: " +
+            std::string(symbol));
     }
 
 private:
     static constexpr std::size_t kMaximumGlesNameBytes = 4096;
+
+    template <gles::GlesThunkId FunctionId>
+    std::optional<std::uint32_t> DispatchCompletion(
+        const A32CallFrame& call) {
+        if constexpr (FunctionId == 2U) return BindAttribLocation(call);
+        if constexpr (FunctionId == 37U) return DetachShader(call);
+        if constexpr (FunctionId == 56U) return GetAttachedShaders(call);
+        if constexpr (FunctionId == 68U) return GetShaderPrecisionFormat(call);
+        if constexpr (FunctionId == 69U) return GetShaderSource(call);
+        if constexpr (FunctionId == 75U) return GetUniformfv(call);
+        if constexpr (FunctionId == 76U) return GetUniformiv(call);
+        if constexpr (FunctionId == 77U) return GetVertexAttribPointerv(call);
+        if constexpr (FunctionId == 78U) return GetVertexAttribfv(call);
+        if constexpr (FunctionId == 79U) return GetVertexAttribiv(call);
+        if constexpr (FunctionId == 93U) return ReleaseShaderCompiler(call);
+        if constexpr (FunctionId == 97U) return ShaderBinary(call);
+        if constexpr (FunctionId == 115U) return Uniform2f(call);
+        if constexpr (FunctionId == 117U) return Uniform2i(call);
+        if constexpr (FunctionId == 119U) return Uniform3f(call);
+        if constexpr (FunctionId == 121U) return Uniform3i(call);
+        if constexpr (FunctionId == 125U) return Uniform4i(call);
+        if constexpr (FunctionId == 127U) return UniformMatrix2fv(call);
+        if constexpr (FunctionId == 131U) return ValidateProgram(call);
+        if constexpr (FunctionId == 132U) return VertexAttrib1f(call);
+        if constexpr (FunctionId == 133U) return VertexAttrib1fv(call);
+        if constexpr (FunctionId == 134U) return VertexAttrib2f(call);
+        if constexpr (FunctionId == 135U) return VertexAttrib2fv(call);
+        if constexpr (FunctionId == 136U) return VertexAttrib3f(call);
+        if constexpr (FunctionId == 137U) return VertexAttrib3fv(call);
+        if constexpr (FunctionId == 139U) return VertexAttrib4fv(call);
+        return std::nullopt;
+    }
+
+    std::uint32_t BindAttribLocation(const A32CallFrame& call);
+    std::uint32_t DetachShader(const A32CallFrame& call);
+    std::uint32_t GetAttachedShaders(const A32CallFrame& call);
+    std::uint32_t GetShaderPrecisionFormat(const A32CallFrame& call);
+    std::uint32_t GetShaderSource(const A32CallFrame& call);
+    std::uint32_t GetUniformfv(const A32CallFrame& call);
+    std::uint32_t GetUniformiv(const A32CallFrame& call);
+    std::uint32_t GetVertexAttribPointerv(const A32CallFrame& call);
+    std::uint32_t GetVertexAttribfv(const A32CallFrame& call);
+    std::uint32_t GetVertexAttribiv(const A32CallFrame& call);
+    std::uint32_t ReleaseShaderCompiler(const A32CallFrame& call);
+    std::uint32_t ShaderBinary(const A32CallFrame& call);
+    std::uint32_t Uniform2f(const A32CallFrame& call);
+    std::uint32_t Uniform2i(const A32CallFrame& call);
+    std::uint32_t Uniform3f(const A32CallFrame& call);
+    std::uint32_t Uniform3i(const A32CallFrame& call);
+    std::uint32_t Uniform4i(const A32CallFrame& call);
+    std::uint32_t UniformMatrix2fv(const A32CallFrame& call);
+    std::uint32_t ValidateProgram(const A32CallFrame& call);
+    std::uint32_t VertexAttrib1f(const A32CallFrame& call);
+    std::uint32_t VertexAttrib1fv(const A32CallFrame& call);
+    std::uint32_t VertexAttrib2f(const A32CallFrame& call);
+    std::uint32_t VertexAttrib2fv(const A32CallFrame& call);
+    std::uint32_t VertexAttrib3f(const A32CallFrame& call);
+    std::uint32_t VertexAttrib3fv(const A32CallFrame& call);
+    std::uint32_t VertexAttrib4fv(const A32CallFrame& call);
 
     template <gles::GlesThunkId FunctionId>
     std::optional<std::uint32_t> DispatchTransfer(const A32CallFrame& call) {
@@ -256,7 +320,17 @@ private:
             return 0;
         }
         if constexpr (FunctionId == 89U) {
-            graphics_.RequireFrame(symbol).LinkProgram(args[0]);
+            auto& frame = graphics_.RequireFrame(symbol);
+            frame.LinkProgram(args[0]);
+            auto& transfer = graphics_.gl_context.Shared().transfer;
+            transfer.ClearUniformElementCounts(args[0]);
+            if (frame.GetProgramParameter(args[0], 0x8B82U) != 0) {
+                for (const auto& uniform :
+                     frame.DiscoverUniformValueCounts(args[0])) {
+                    transfer.SetUniformElementCount(
+                        args[0], uniform.location, uniform.value_count);
+                }
+            }
             graphics_.frames.RecordProgramLink();
             return 0;
         }
@@ -284,6 +358,8 @@ private:
         }
         if constexpr (FunctionId == 30U) {
             graphics_.RequireFrame(symbol).DeleteProgram(args[0]);
+            graphics_.gl_context.Shared().transfer.ClearUniformElementCounts(
+                args[0]);
             return 0;
         }
         return std::nullopt;

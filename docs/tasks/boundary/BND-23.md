@@ -16,6 +16,13 @@
 
 ## 验收
 
-- [ ] string/vector/array output 与 guest pointer identity 测试通过；
-- [ ] shader compiler/program/uniform lifecycle 使用真实 ANGLE error/result；
-- [ ] 142 项 handler coverage gate、architecture gate 与 focused tests 通过。
+- [x] string/vector/array output 与 guest pointer identity 测试通过；
+- [x] shader compiler/program/uniform lifecycle 使用真实 ANGLE error/result；
+- [x] 142 项 handler coverage gate、architecture gate 与 focused tests 通过。
+
+## 结果
+
+26 个剩余 export 全部由 `Gles2Module` compile-time direct binding 进入命名 handler；link
+成功后从真实 ANGLE active-uniform metadata 登记 location value shape，relink/delete 清理旧
+shape。vertex pointer/query 返回 guest logical descriptor 和原始 pointer/offset，constant value
+跨 GLES1 fixed draw 恢复；`glShaderBinary` 保留真实 `glGetError`，不伪造支持。

@@ -251,11 +251,45 @@ void AngleFrame::AttachShader(const std::uint32_t program,
 #endif
 }
 
+void AngleFrame::DetachShader(const std::uint32_t program,
+                              const std::uint32_t shader) {
+#if OGPLAY_HAS_ANGLE
+    glDetachShader(program, shader);
+    RequireNoError("glDetachShader");
+#else
+    static_cast<void>(program); static_cast<void>(shader);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::BindAttribLocation(const std::uint32_t program,
+                                    const std::uint32_t index,
+                                    const std::string& name) {
+#if OGPLAY_HAS_ANGLE
+    glBindAttribLocation(program, index, name.c_str());
+    RequireNoError("glBindAttribLocation");
+#else
+    static_cast<void>(program); static_cast<void>(index);
+    static_cast<void>(name);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 void AngleFrame::LinkProgram(const std::uint32_t program) {
 #if OGPLAY_HAS_ANGLE
     glLinkProgram(program);
     RequireNoError("glLinkProgram");
     ++program_link_count_;
+#else
+    static_cast<void>(program);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::ValidateProgram(const std::uint32_t program) {
+#if OGPLAY_HAS_ANGLE
+    glValidateProgram(program);
+    RequireNoError("glValidateProgram");
 #else
     static_cast<void>(program);
     throw EglLifecycleError(EglOperation::unavailable, 0);

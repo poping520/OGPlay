@@ -406,7 +406,9 @@ add_library(ogplay_runtime
     src/runtime/boundary/modules/gles1/gles1_fixed.cpp
     src/runtime/boundary/modules/gles1/gles1_query.cpp
     src/runtime/boundary/modules/gles1/gles1_remaining.cpp
+    src/runtime/boundary/modules/gles2/gles2_shader_completion.cpp
     src/runtime/boundary/modules/gles2/gles2_transfer.cpp
+    src/runtime/boundary/modules/gles2/gles2_vertex_completion.cpp
     src/runtime/boundary/modules/log/log_module.cpp
     src/runtime/boundary/modules/opensles/opensles_abi.cpp
     src/runtime/boundary/modules/opensles/opensles_module.cpp

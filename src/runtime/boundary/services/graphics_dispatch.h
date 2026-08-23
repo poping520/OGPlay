@@ -38,6 +38,12 @@ public:
         gles::GlesThunkId function_id,
         const A32CallFrame& call, gles::AngleFrame* frame);
     [[nodiscard]] bool HasEnabledVertexAttribute() const noexcept;
+    void SetVertexAttributeValue(std::uint32_t index,
+                                 std::array<float, 4> value);
+    [[nodiscard]] std::int32_t VertexAttributeParameter(
+        std::uint32_t index, std::uint32_t parameter) const;
+    [[nodiscard]] std::uint32_t VertexAttributePointerIdentity(
+        std::uint32_t index) const;
     [[nodiscard]] gles::GlesTransferStateSnapshot TransferState() const noexcept;
     void RestoreNativeState(gles::AngleFrame& frame);
     void Reset() noexcept;

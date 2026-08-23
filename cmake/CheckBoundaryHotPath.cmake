@@ -25,6 +25,7 @@ foreach(source IN LISTS virtual_so_module_sources)
             "InvokeGles1" "InvokeGles2" "InvokeLegacyFast"
             "FastBinding" "hot_bindings_"
             "AndroidFunction" "EglFunction"
+            "Android boundary HLE is not implemented"
             "active_pc_" "SetActivePc"
             "Impl& runtime_" "Impl* runtime_")
         string(FIND "${contents}" "${forbidden}" found)
@@ -78,7 +79,9 @@ foreach(required_path IN ITEMS
         "modules/gles1/gles1_dispatch.cpp"
         "modules/gles1/gles1_module.h"
         "modules/gles2/gles2_module.h"
+        "modules/gles2/gles2_shader_completion.cpp"
         "modules/gles2/gles2_transfer.cpp"
+        "modules/gles2/gles2_vertex_completion.cpp"
         "modules/log/log_module.cpp"
         "modules/log/log_exports.h"
         "facade/android_boundary_hle.cpp")

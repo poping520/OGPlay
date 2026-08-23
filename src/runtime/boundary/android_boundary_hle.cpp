@@ -29,6 +29,7 @@
 #include "ogplay/runtime/boundary/android_boundary_gles.h"
 #include "ogplay/runtime/boundary/a32_call_frame.h"
 #include "ogplay/runtime/boundary/guest_gl_context.h"
+#include "ogplay/runtime/bionic/guest_symbol_override_metadata.h"
 #include "android_boundary_gles1.h"
 #include "android_boundary_gles1_draw.h"
 #include "android_boundary_gles1_fixed.h"
@@ -232,9 +233,6 @@ public:
         const auto arguments = call.RegisterArguments();
         std::uint32_t result{};
         try {
-            if (descriptor->library == "libc.so") {
-                libc_override_module_.SetActivePc(stopped.pc);
-            }
             result = binding.slow(binding.self, call);
         } catch (const gles::GuestTransferError& error) {
             throw gles::GuestTransferError(
@@ -418,18 +416,16 @@ private:
     struct LibcOverrideModule final {
         explicit LibcOverrideModule(Impl& runtime) noexcept : runtime_(runtime) {}
         [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
-        std::uint32_t Invoke(const A32CallFrame& call) {
-            const auto slot = static_cast<std::size_t>(
-                (active_pc_.Value() - kBionicHleThunkBegin) / kThunkStride);
-            const auto& descriptor = runtime_.descriptors_.at(slot);
-            return ExecuteBionicMemoryIntercept(
-                runtime_.address_space_,
-                {descriptor.name, call.RegisterArguments(), call.ThreadId()});
+#define OGPLAY_DECLARE_OVERRIDE(library, symbol, id, count, method)            \
+        std::uint32_t method(const A32CallFrame& call) {                       \
+            return ExecuteBionicMemoryIntercept(                              \
+                runtime_.address_space_,                                      \
+                {symbol, call.RegisterArguments(), call.ThreadId()});          \
         }
-        void SetActivePc(const memory::GuestAddress pc) noexcept { active_pc_ = pc; }
+        OGPLAY_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_DECLARE_OVERRIDE)
+#undef OGPLAY_DECLARE_OVERRIDE
     private:
         Impl& runtime_;
-        memory::GuestAddress active_pc_{};
     };
 
     using SlowInvokeFn = std::uint32_t (*)(void*, const A32CallFrame&);
@@ -516,6 +512,28 @@ private:
                       &InvokeSlow<Module, Method, ParameterCount, Gpu>, Gpu};
     }
 
+    template <typename Module, auto Method, std::size_t ParameterCount,
+              bool Gpu>
+    void BindOverride(const std::string_view library,
+                      const std::string_view name, Module& module) {
+        const auto found = std::find_if(
+            descriptors_.begin(), descriptors_.end(), [&](const auto& export_) {
+                return export_.library == library && export_.name == name;
+            });
+        if (found == descriptors_.end() ||
+            found->parameter_count != ParameterCount) {
+            throw std::logic_error("guest symbol override metadata mismatch");
+        }
+        const auto slot = static_cast<std::size_t>(
+            std::distance(descriptors_.begin(), found));
+        if (hot_[slot].invoke != nullptr) {
+            throw std::logic_error("guest symbol override slot is already bound");
+        }
+        hot_[slot] = {&InvokeFast<Module, Method, ParameterCount, Gpu>,
+                      &module,
+                      &InvokeSlow<Module, Method, ParameterCount, Gpu>, Gpu};
+    }
+
     template <std::size_t... Index>
     void BindGles1Core(const BoundaryModuleDescriptor& descriptor,
                        std::index_sequence<Index...>) {
@@ -590,22 +608,11 @@ private:
         OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_BIND_LOG)
 #undef OGPLAY_BIND_LOG
 
-        for (std::size_t slot = catalog.SlotCount(); slot < descriptors_.size();
-             ++slot) {
-            hot_[slot] = {
-                +[](void* userdata, cpu::A32HostCallContext& context) noexcept {
-                    auto& module = *static_cast<LibcOverrideModule*>(userdata);
-                    module.SetActivePc(context.pc);
-                    return InvokeFast<LibcOverrideModule,
-                                      &LibcOverrideModule::Invoke, 3U, false>(
-                        userdata, context);
-                },
-                &libc_override_module_,
-                +[](void* userdata, const A32CallFrame& call) {
-                    auto& module = *static_cast<LibcOverrideModule*>(userdata);
-                    return module.Invoke(call);
-                }, false};
-        }
+#define OGPLAY_BIND_OVERRIDE(library, symbol, id, count, method)               \
+        BindOverride<LibcOverrideModule, &LibcOverrideModule::method, count,   \
+                     false>(library, symbol, libc_override_module_);
+        OGPLAY_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_BIND_OVERRIDE)
+#undef OGPLAY_BIND_OVERRIDE
         if (std::any_of(hot_.begin(), hot_.end(),
                         [](const auto& entry) {
                             return entry.invoke == nullptr || entry.slow == nullptr;

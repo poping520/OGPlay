@@ -14,6 +14,9 @@
   一次 guest stack bulk read。启用 guest-call slice observer 时上层不得安装 fast hook。
 - fast handler 的 C++ 异常按 thread/PC 保存为 pending structured fault，退出 JIT 后由
   slow consumer 重抛原 exception identity；不得只留下 generic `host_call_fault`。
+- 真实 guest libc override 与 Virtual SO 共用 dense hot transport，但每个 symbol 在 seal
+  后拥有独立 `{export-specific fn, concrete module*}`；fast/slow 不得使用共享 mutable PC
+  或统一参数个数推导当前 symbol。
 - Android/EGL/GLES1/GLES2/log 以普通 `final` module type 实例化并在 seal 时一次 type
   erase；descriptor 只保留 module-local id 与签名冷数据。每个 active export 在 seal 时
   直接生成 `{export-specific fn, concrete module*}`，fast/slow transport 共用该 handler；

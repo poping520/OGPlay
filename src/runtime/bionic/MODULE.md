@@ -4,6 +4,8 @@
 
 - `GuestSymbolOverrideDescriptor` 只描述真实 guest ELF export 的宿主覆盖；当前五个 libc
   memory override 与 Virtual SO catalog 分离，ELF ownership 始终属于真实 `libc.so`。
+- override metadata 同时生成 descriptor 与 concrete handler binding；每个 export 使用
+  自己的 A32 参数个数，调用期不得通过共享 PC 或 function id 选择实现。
 
 选择 API 19/22/23 Bionic profile，规划并装载真实 guest 系统库闭包，自检 libc/libdl，建立
 Bionic TLS，并只为确有生产 handler 的 libc 热点提供宿主边界。

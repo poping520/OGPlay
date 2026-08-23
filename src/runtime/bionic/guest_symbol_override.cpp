@@ -2,16 +2,17 @@
 
 #include <array>
 
+#include "ogplay/runtime/bionic/guest_symbol_override_metadata.h"
+
 namespace ogplay::runtime {
 
 std::span<const GuestSymbolOverrideDescriptor>
 GuestSymbolOverrides() noexcept {
     static constexpr std::array overrides{
-        GuestSymbolOverrideDescriptor{"libc.so", "memcpy", 0, 3},
-        GuestSymbolOverrideDescriptor{"libc.so", "memmove", 1, 3},
-        GuestSymbolOverrideDescriptor{"libc.so", "memset", 2, 3},
-        GuestSymbolOverrideDescriptor{"libc.so", "memcmp", 3, 3},
-        GuestSymbolOverrideDescriptor{"libc.so", "strlen", 4, 1},
+#define OGPLAY_OVERRIDE_DESCRIPTOR(library, symbol, id, count, method)         \
+        GuestSymbolOverrideDescriptor{library, symbol, id, count},
+        OGPLAY_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_OVERRIDE_DESCRIPTOR)
+#undef OGPLAY_OVERRIDE_DESCRIPTOR
     };
     return overrides;
 }

@@ -13,7 +13,8 @@ endforeach()
 
 foreach(forbidden IN ITEMS
         "InvokeModule" "FastBinding" "hot_bindings_"
-        "AndroidFunction" "EglFunction" "InvokeLegacyFast")
+        "AndroidFunction" "EglFunction" "InvokeLegacyFast"
+        "active_pc_" "SetActivePc")
     string(FIND "${boundary}" "${forbidden}" found)
     if(NOT found EQUAL -1)
         message(FATAL_ERROR

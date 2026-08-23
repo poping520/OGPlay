@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cstdint>
@@ -100,6 +102,26 @@ void WriteGuestString(BoundaryFixture& fixture,
     fixture.memory.Write(address, bytes, 1);
 }
 
+std::uint32_t FastBoundaryCall(
+    BoundaryFixture& fixture, const std::string_view library,
+    const std::string_view symbol,
+    const std::array<std::uint32_t, 4>& arguments,
+    const std::uint64_t thread_id = 1U) {
+    const auto address = fixture.boundary.Symbols().Lookup(library, symbol);
+    REQUIRE(address.has_value());
+    std::array<std::uint32_t, 16> registers{};
+    std::copy(arguments.begin(), arguments.end(), registers.begin());
+    registers[13] = fixture.stack.Value();
+    ogplay::cpu::A32HostCallContext call{
+        registers, thread_id,
+        ogplay::memory::GuestAddress{address->Value() & ~UINT32_C(1)}};
+    const auto hook = fixture.boundary.FastHostCallHook();
+    REQUIRE(hook.invoke != nullptr);
+    REQUIRE(hook.invoke(hook.userdata, 2U, call) ==
+            ogplay::cpu::HostCallResult::handled);
+    return registers[0];
+}
+
 }  // namespace
 
 TEST_CASE("Android boundary maps explicit Thumb HLE thunks") {
@@ -191,6 +213,108 @@ TEST_CASE("Android boundary fast and slow failures preserve memory fault identit
         CHECK(error.Address() == ogplay::memory::GuestAddress{0x12345000U});
         CHECK(error.ThreadId() == 1U);
     }
+}
+
+TEST_CASE("libc overrides use equivalent export-specific fast and slow bindings") {
+    BoundaryFixture slow;
+    BoundaryFixture fast;
+    const std::array initial{std::byte{'a'}, std::byte{'b'}, std::byte{'c'},
+                             std::byte{}};
+    slow.memory.Write(slow.output, initial, 1U);
+    fast.memory.Write(fast.output, initial, 1U);
+
+    const auto execute = [](BoundaryFixture& fixture, const bool use_fast) {
+        const auto call = [&](const std::string_view symbol,
+                              const std::array<std::uint32_t, 4>& arguments) {
+            return use_fast
+                       ? FastBoundaryCall(fixture, "libc.so", symbol, arguments)
+                       : fixture.Call("libc.so", symbol, arguments);
+        };
+        std::array<std::uint32_t, 5> results{};
+        results[0] = call("memcpy", {fixture.output.Add(64).Value(),
+                                     fixture.output.Value(), 4U, 0U});
+        results[1] = call("memmove", {fixture.output.Add(1).Value(),
+                                      fixture.output.Value(), 3U, 0U});
+        results[2] = call("memset", {fixture.output.Add(72).Value(), 'x', 2U, 0U});
+        results[3] = call("memcmp", {fixture.output.Value(),
+                                     fixture.output.Add(64).Value(), 4U, 0U});
+        results[4] = call("strlen", {fixture.output.Add(64).Value(), 0U, 0U, 0U});
+        std::array<std::byte, 80> bytes{};
+        fixture.memory.Read(fixture.output, bytes, 1U);
+        return std::pair{results, bytes};
+    };
+
+    const auto slow_result = execute(slow, false);
+    const auto fast_result = execute(fast, true);
+    CHECK(fast_result == slow_result);
+    CHECK(fast_result.first[4] == 3U);
+}
+
+TEST_CASE("libc override direct bindings are safe across guest threads") {
+    BoundaryFixture fixture;
+    const std::array source{std::byte{'t'}, std::byte{'h'}, std::byte{'r'},
+                            std::byte{'e'}, std::byte{'a'}, std::byte{'d'},
+                            std::byte{}};
+    fixture.memory.Write(fixture.output, source, 1U);
+    fixture.memory.Write(fixture.output.Add(768), source, 1U);
+    const auto hook = fixture.boundary.FastHostCallHook();
+    const auto address_for = [&](const std::string_view symbol) {
+        const auto address = fixture.boundary.Symbols().Lookup("libc.so", symbol);
+        REQUIRE(address.has_value());
+        return ogplay::memory::GuestAddress{address->Value() & ~UINT32_C(1)};
+    };
+    const auto memcpy_pc = address_for("memcpy");
+    const auto memset_pc = address_for("memset");
+    const auto strlen_pc = address_for("strlen");
+    std::atomic<bool> start{};
+    std::atomic<bool> correct{true};
+    constexpr std::size_t iterations = 2'000U;
+    const auto run = [&](const std::uint64_t thread_id,
+                         const ogplay::memory::GuestAddress pc,
+                         const std::array<std::uint32_t, 4> arguments,
+                         const std::uint32_t expected) {
+        while (!start.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        for (std::size_t iteration = 0; iteration < iterations; ++iteration) {
+            std::array<std::uint32_t, 16> registers{};
+            std::copy(arguments.begin(), arguments.end(), registers.begin());
+            registers[13] = fixture.stack.Value();
+            ogplay::cpu::A32HostCallContext call{registers, thread_id, pc};
+            if (hook.invoke(hook.userdata, 2U, call) !=
+                    ogplay::cpu::HostCallResult::handled ||
+                registers[0] != expected) {
+                correct.store(false, std::memory_order_relaxed);
+                return;
+            }
+        }
+    };
+    std::thread copy(run, 11U, memcpy_pc,
+                     std::array<std::uint32_t, 4>{fixture.output.Add(256).Value(),
+                                                  fixture.output.Value(), 7U, 0U},
+                     fixture.output.Add(256).Value());
+    std::thread fill(run, 12U, memset_pc,
+                     std::array<std::uint32_t, 4>{fixture.output.Add(512).Value(),
+                                                  'z', 7U, 0U},
+                     fixture.output.Add(512).Value());
+    std::thread length(run, 13U, strlen_pc,
+                       std::array<std::uint32_t, 4>{fixture.output.Add(768).Value(),
+                                                    0U, 0U, 0U},
+                       6U);
+    start.store(true, std::memory_order_release);
+    copy.join();
+    fill.join();
+    length.join();
+    CHECK(correct.load(std::memory_order_relaxed));
+
+    std::array<std::byte, 7> copied{};
+    std::array<std::byte, 7> filled{};
+    fixture.memory.Read(fixture.output.Add(256), copied, 11U);
+    fixture.memory.Read(fixture.output.Add(512), filled, 12U);
+    CHECK(copied == source);
+    CHECK(filled == std::array{std::byte{'z'}, std::byte{'z'}, std::byte{'z'},
+                               std::byte{'z'}, std::byte{'z'}, std::byte{'z'},
+                               std::byte{'z'}});
 }
 
 TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {

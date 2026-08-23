@@ -59,6 +59,11 @@
   KitKat `/dev/log/*` 写端在 OGPlay 中由 structured logger 取代，category 为
   `guest.liblog` 且 message 必有 `[guest]` 前缀；不得直接访问 host filesystem、伪造
   kernel logger device 或让 C++ exception 跨越 fast callback。
+- `libEGL.so` 在原有 surface/context/present 入口外发布 API19 游戏所需的 13 个基础
+  query/thread/proc-address/pbuffer API。`EglModule final` 自有 per-guest-thread sticky error、
+  current/bound API 与稳定 query-string pages；只读 `EglBoundaryContext` 可在
+  `eglGetProcAddress` 冷路径解析 sealed public callable，未知扩展返回 null，绝不修改 hot table
+  或宣告未实现 extension。
 
 Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest

@@ -89,8 +89,9 @@ public:
               &ServiceResetGuestGraphics,
               &ServiceWrite32, &ServiceWriteRequired32,
               &ServiceReadCString, &ServiceReadShaderSources},
+          egl_context_{graphics_context_, symbols_},
           android_module_(call_services_, android_services_),
-          egl_module_(call_services_, graphics_context_),
+          egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_draw_state_,
                         gles1_dispatch_, gles1_extensions_dispatch_),
           gles2_module_(call_services_, graphics_context_),
@@ -677,6 +678,7 @@ private:
     BoundaryCallServices call_services_;
     AndroidBoundaryServices android_services_;
     GraphicsBoundaryContext graphics_context_;
+    EglBoundaryContext egl_context_;
     AndroidModule android_module_;
     EglModule egl_module_;
     Gles1Module gles1_module_;

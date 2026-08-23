@@ -12,7 +12,7 @@
 
 ## 验收
 
-- [ ] 每个 export seal 为 direct `{fn,EglModule*}`；
-- [ ] sticky per-thread error/current、nullable outputs、attribute-list 和 invalid handle 测试通过；
-- [ ] `eglGetProcAddress` 只返回 sealed public callable thunk，未知项返回 0；
-- [ ] metadata-only preflight 与 late dlopen focused tests 通过。
+- [x] 每个 export seal 为 direct `{fn,EglModule*}`；
+- [x] sticky per-thread error/current、nullable outputs、attribute-list 和 invalid handle 测试通过；
+- [x] `eglGetProcAddress` 只返回 sealed public callable thunk，未知项返回 0；
+- [x] metadata-only preflight 与 late dlopen focused tests 通过。

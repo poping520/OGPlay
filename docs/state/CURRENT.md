@@ -4,10 +4,10 @@
 
 ## 当前阶段
 
-- **EGL/GLES API19 补齐**：BND-16 已冻结 Android 4.4.4 r2.0.1 AOSP、KTU84P ROM
-  dynsym 与 PVZ NA ELF import 基线，并将 EGL 13、GLES1 Bounds 7 + 已发布缺口 62、
-  GLES2 已发布缺口 67 切为 BND-17..24。目标 `libpvz.so` 直接导入完整 142 个 GLES2
-  core 和 `eglGetProcAddress`；设计先行，生产实现尚未开始。
+- **EGL/GLES API19 补齐**：BND-16 冻结 AOSP/KTU84P/PVZ ABI 并切分 BND-17..24；
+  BND-17 已在 direct hot binding 上实现 EGL 13 项基础 query/thread/proc-address/pbuffer API，
+  per-thread sticky error、稳定 guest strings、sealed thunk resolver、preflight/late dlopen 与
+  architecture focused 8/8 通过。GLES1 7+62、GLES2 67 尚待后续 WU。
 
 - **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
   import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc

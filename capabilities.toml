@@ -600,6 +600,11 @@ status = "partial"
 test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp"
 note = "M4 完成可注入生命周期、精确 EGL 错误和逆序回滚；M5 WU-0286 为 pbuffer EGL config 请求并验证 RGBA8+D24S8；窗口 surface 仍待后续里程碑"
 
+[runtime.egl_api19_base_boundary]
+status = "complete"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; runtime.android_link_preflight; runtime.bionic_virtual_so_late_import; architecture.boundary_hot_path"
+note = "BND-17 在 direct {fn,EglModule*} 路径增加 13 个 API19 基础 EGL 入口；per-guest-thread sticky error/current/API、稳定 query strings、pbuffer metadata 与 sealed public thunk proc resolver 均有 focused gate"
+
 [gles.idl_codegen]
 status = "partial"
 test = "tools/generate_gles_api.py --self-test"

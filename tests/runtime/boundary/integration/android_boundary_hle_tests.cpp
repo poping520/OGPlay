@@ -414,7 +414,7 @@ TEST_CASE("Android boundary fast and slow failures preserve memory fault identit
     std::string slow_message;
     try {
         static_cast<void>(fixture.Call(
-            "libEGL.so", "eglInitialize", {0U, 0x12345000U, 0U, 0U}));
+            "libEGL.so", "eglInitialize", {1U, 0x12345000U, 0U, 0U}));
         FAIL("slow boundary call did not fault");
     } catch (const ogplay::memory::MemoryFault& error) {
         slow_message = error.what();
@@ -427,6 +427,7 @@ TEST_CASE("Android boundary fast and slow failures preserve memory fault identit
     state.SetThreadId(1U);
     state.SetRegister(ogplay::cpu::CoreRegister::pc,
                       address->Value() & ~UINT32_C(1));
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, 1U);
     state.SetRegister(ogplay::cpu::CoreRegister::r1, 0x12345000U);
     state.SetRegister(ogplay::cpu::CoreRegister::sp, fixture.stack.Value());
     cpu.SetState(state);
@@ -440,6 +441,98 @@ TEST_CASE("Android boundary fast and slow failures preserve memory fault identit
         CHECK(error.Address() == ogplay::memory::GuestAddress{0x12345000U});
         CHECK(error.ThreadId() == 1U);
     }
+}
+
+TEST_CASE("Android EGL publishes and implements API 19 base query surface") {
+    BoundaryFixture fixture;
+    static constexpr std::array<std::string_view, 13> added{
+        "eglGetError", "eglQueryString", "eglGetProcAddress", "eglGetConfigs",
+        "eglGetCurrentContext", "eglGetCurrentSurface", "eglGetCurrentDisplay",
+        "eglQueryContext", "eglBindAPI", "eglQueryAPI", "eglReleaseThread",
+        "eglSwapInterval", "eglCreatePbufferSurface"};
+    for (const auto symbol : added) {
+        CAPTURE(symbol);
+        CHECK(fixture.boundary.Symbols().Lookup("libEGL.so", symbol).has_value());
+    }
+
+    const auto count = fixture.output;
+    const auto configs = fixture.output.Add(4U);
+    CHECK(fixture.Call("libEGL.so", "eglGetConfigs",
+                       {1U, configs.Value(), 1U, count.Value()}) == 1U);
+    CHECK(fixture.bus.Read32(configs, 1U) == 2U);
+    CHECK(fixture.bus.Read32(count, 1U) == 1U);
+
+    const auto query = fixture.output.Add(32U);
+    CHECK(fixture.Call("libEGL.so", "eglQueryContext",
+                       {1U, 4U, 0x3098U, query.Value()}) == 1U);
+    CHECK(fixture.bus.Read32(query, 1U) == 2U);
+    CHECK(fixture.Call("libEGL.so", "eglQueryAPI") == 0x30A0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetCurrentContext") == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetCurrentDisplay") == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglQueryContext",
+                       {99U, 4U, 0x3098U, query.Value()}) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3008U);
+    CHECK(fixture.Call("libEGL.so", "eglGetConfigs",
+                       {1U, 0U, 0U, 0U}) == 1U);
+}
+
+TEST_CASE("Android EGL proc address resolves sealed public thunks") {
+    BoundaryFixture fixture;
+    const auto name = fixture.output;
+    WriteGuestString(fixture, name, "glBindAttribLocation");
+    const auto resolved = fixture.Call("libEGL.so", "eglGetProcAddress",
+                                       {name.Value(), 0U, 0U, 0U});
+    const auto direct = fixture.boundary.Symbols().Lookup(
+        "libGLESv2.so", "glBindAttribLocation");
+    REQUIRE(direct.has_value());
+    CHECK(resolved == direct->Value());
+
+    WriteGuestString(fixture, name, "glDefinitelyUnavailableEXT");
+    CHECK(fixture.Call("libEGL.so", "eglGetProcAddress",
+                       {name.Value(), 0U, 0U, 0U}) == 0U);
+}
+
+TEST_CASE("Android EGL errors and API binding are isolated by guest thread") {
+    BoundaryFixture fixture;
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglBindAPI",
+                           {0xDEADU, 0U, 0U, 0U}, 11U) == 0U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglGetError", {}, 12U) ==
+          0x3000U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglGetError", {}, 11U) ==
+          0x300CU);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglGetError", {}, 11U) ==
+          0x3000U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglBindAPI",
+                           {0x30A0U, 0U, 0U, 0U}, 11U) == 1U);
+    CHECK(FastBoundaryCall(fixture, "libEGL.so", "eglQueryAPI", {}, 11U) ==
+          0x30A0U);
+}
+
+TEST_CASE("Android EGL query strings and pbuffer attributes use guest memory") {
+    BoundaryFixture fixture;
+    const auto vendor = fixture.Call("libEGL.so", "eglQueryString",
+                                     {1U, 0x3053U, 0U, 0U});
+    REQUIRE(vendor != 0U);
+    CHECK(fixture.memory.CStringLength(
+              ogplay::memory::GuestAddress{vendor}, 64U, 1U) == 6U);
+
+    const auto attributes = fixture.output;
+    fixture.bus.Write32(attributes, 0x3057U, 1U);
+    fixture.bus.Write32(attributes.Add(4U), 64U, 1U);
+    fixture.bus.Write32(attributes.Add(8U), 0x3056U, 1U);
+    fixture.bus.Write32(attributes.Add(12U), 32U, 1U);
+    fixture.bus.Write32(attributes.Add(16U), 0x3038U, 1U);
+    CHECK(fixture.Call("libEGL.so", "eglCreatePbufferSurface",
+                       {1U, 2U, attributes.Value(), 0U}) == 3U);
+    const auto size = fixture.output.Add(32U);
+    CHECK(fixture.Call("libEGL.so", "eglQuerySurface",
+                       {1U, 3U, 0x3057U, size.Value()}) == 1U);
+    CHECK(fixture.bus.Read32(size, 1U) == 64U);
+    CHECK(fixture.Call("libEGL.so", "eglQuerySurface",
+                       {1U, 3U, 0x3056U, size.Value()}) == 1U);
+    CHECK(fixture.bus.Read32(size, 1U) == 32U);
+    CHECK(fixture.Call("libEGL.so", "eglSwapInterval",
+                       {1U, 0U, 0U, 0U}) == 1U);
 }
 
 TEST_CASE("libc overrides use equivalent export-specific fast and slow bindings") {

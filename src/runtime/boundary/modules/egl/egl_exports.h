@@ -13,4 +13,17 @@
     X("eglSwapBuffers", 8, 2, SwapBuffers)                                     \
     X("eglDestroyContext", 9, 2, DestroyContext)                               \
     X("eglDestroySurface", 10, 2, DestroySurface)                              \
-    X("eglTerminate", 11, 1, Terminate)
+    X("eglTerminate", 11, 1, Terminate)                                       \
+    X("eglGetError", 12, 0, GetError)                                         \
+    X("eglQueryString", 13, 2, QueryString)                                   \
+    X("eglGetProcAddress", 14, 1, GetProcAddress)                             \
+    X("eglGetConfigs", 15, 4, GetConfigs)                                     \
+    X("eglGetCurrentContext", 16, 0, GetCurrentContext)                       \
+    X("eglGetCurrentSurface", 17, 1, GetCurrentSurface)                       \
+    X("eglGetCurrentDisplay", 18, 0, GetCurrentDisplay)                       \
+    X("eglQueryContext", 19, 4, QueryContext)                                 \
+    X("eglBindAPI", 20, 1, BindApi)                                           \
+    X("eglQueryAPI", 21, 0, QueryApi)                                         \
+    X("eglReleaseThread", 22, 0, ReleaseThread)                               \
+    X("eglSwapInterval", 23, 2, SwapInterval)                                 \
+    X("eglCreatePbufferSurface", 24, 3, CreatePbufferSurface)

@@ -151,6 +151,7 @@ uniform float u_lighting;
 uniform float u_point_size;
 uniform float u_point_size_min;
 uniform float u_point_size_max;
+uniform vec4 u_point_distance_attenuation;
 uniform vec4 u_clip_plane[6];
 varying vec4 v_color;
 varying vec2 v_texcoord0;
@@ -190,7 +191,10 @@ void main() {
                           dot(eye, u_clip_plane[5]));
   gl_Position = transform(u_projection0, u_projection1, u_projection2,
                           u_projection3, eye);
-  gl_PointSize = clamp(u_point_size, u_point_size_min, u_point_size_max);
+  float pointAttenuation = dot(u_point_distance_attenuation.xyz,
+      vec3(1.0, v_fog_distance, v_fog_distance * v_fog_distance));
+  gl_PointSize = clamp(u_point_size * inversesqrt(max(pointAttenuation, 0.000001)),
+                       u_point_size_min, u_point_size_max);
 })";
 
 inline constexpr std::string_view kGles1FixedFragmentShader = R"(

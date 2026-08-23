@@ -16,6 +16,12 @@
 
 ## 验收
 
-- [ ] fixed conversion、vector length、矩阵后乘、invalid enum/range 有机器测试；
-- [ ] state 被 fixed draw 消费，失败不部分提交；
-- [ ] focused GLES1 module/integration tests 通过。
+- [x] fixed conversion、vector length、矩阵后乘、invalid enum/range 有机器测试；
+- [x] state 被 fixed draw 消费，失败不部分提交；
+- [x] focused GLES1 module/integration tests 通过。
+
+## 结果
+
+35 项由独立 completion binder 显式绑定；16.16 fixed 向量在完整 guest-memory
+读取后提交，frustum/ortho/scale 与 fixed matrix 均按列主序后乘。每 texture unit 的
+current coordinate 与 point distance attenuation 已进入 fixed draw shader，而非仅保存状态。

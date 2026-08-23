@@ -78,6 +78,8 @@ public:
     void SetClientActiveTexture(std::uint32_t texture);
     void SetColor(std::span<const float, 4> color);
     void SetNormal(std::span<const float, 3> normal);
+    void SetCurrentTextureCoordinate(std::uint32_t texture,
+                                     std::span<const float, 4> coordinate);
     void SetClipPlane(std::uint32_t plane,
                       std::span<const float, 4> equation);
     void SetTextureEnvironment(std::uint32_t texture, std::uint32_t target,
@@ -89,6 +91,8 @@ public:
     [[nodiscard]] std::uint32_t ClientActiveTexture() const noexcept;
     [[nodiscard]] const std::array<float, 4>& Color() const noexcept;
     [[nodiscard]] const std::array<float, 3>& Normal() const noexcept;
+    [[nodiscard]] const std::array<float, 4>& CurrentTextureCoordinate(
+        std::uint32_t texture) const;
     [[nodiscard]] const std::array<float, 4>& ClipPlane(
         std::uint32_t plane) const;
     [[nodiscard]] const std::vector<float>& TextureEnvironment(
@@ -100,6 +104,7 @@ private:
     std::uint32_t client_active_texture_{};
     std::array<float, 4> color_{};
     std::array<float, 3> normal_{};
+    std::array<std::array<float, 4>, 32> texture_coordinates_{};
     std::array<std::array<float, 4>, 6> clip_planes_{};
     std::map<std::uint64_t, std::vector<float>> texture_environment_;
 };

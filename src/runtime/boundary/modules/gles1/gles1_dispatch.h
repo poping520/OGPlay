@@ -47,6 +47,7 @@ public:
     void Push();
     void Pop();
     void Rotate(float angle_degrees, float x, float y, float z);
+    void Multiply(std::span<const float, 16> matrix);
     void Translate(float x, float y, float z);
     [[nodiscard]] const Gles1Matrix& Current() const noexcept;
     [[nodiscard]] const Gles1Matrix& Current(

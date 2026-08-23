@@ -213,6 +213,17 @@ void AndroidBoundaryGles1MatrixState::Translate(
     current = next;
 }
 
+void AndroidBoundaryGles1MatrixState::Multiply(
+    const std::span<const float, 16> matrix) {
+    RequireFiniteGles1MatrixValues(matrix);
+    Gles1Matrix right{};
+    std::ranges::copy(matrix, right.begin());
+    auto& current = CurrentStack().back();
+    const auto next = Gles1MultiplyMatrices(current, right);
+    RequireFiniteGles1MatrixValues(next);
+    current = next;
+}
+
 const Gles1Matrix& AndroidBoundaryGles1MatrixState::Current() const noexcept {
     return Stack(mode_, ActiveTexture()).back();
 }

@@ -225,6 +225,7 @@ void AndroidBoundaryGles1LegacyState::Reset() {
     client_active_texture_ = kTexture0;
     color_ = {1.0F, 1.0F, 1.0F, 1.0F};
     normal_ = {0.0F, 0.0F, 1.0F};
+    texture_coordinates_.fill({0.0F, 0.0F, 0.0F, 1.0F});
     clip_planes_ = {};
     texture_environment_.clear();
     for (auto texture = kTexture0; texture <= kTexture31; ++texture) {
@@ -262,6 +263,13 @@ std::uint32_t AndroidBoundaryGles1LegacyState::ClientActiveTexture() const noexc
 }
 const std::array<float, 4>& AndroidBoundaryGles1LegacyState::Color() const noexcept {
     return color_;
+}
+
+const std::array<float, 4>&
+AndroidBoundaryGles1LegacyState::CurrentTextureCoordinate(
+    const std::uint32_t texture) const {
+    RequireTextureUnit(texture);
+    return texture_coordinates_.at(texture - kTexture0);
 }
 
 void AndroidBoundaryGles1LegacyState::ValidateClientActiveTexture(
@@ -305,6 +313,19 @@ void AndroidBoundaryGles1LegacyState::SetNormal(
     const std::span<const float, 3> normal) {
     ValidateNormal(normal);
     std::ranges::copy(normal, normal_.begin());
+}
+
+void AndroidBoundaryGles1LegacyState::SetCurrentTextureCoordinate(
+    const std::uint32_t texture, const std::span<const float, 4> coordinate) {
+    RequireTextureUnit(texture);
+    if (!std::ranges::all_of(coordinate, [](const float value) {
+            return std::isfinite(value);
+        })) {
+        throw std::invalid_argument(
+            "GLES1 current texture coordinate must be finite");
+    }
+    std::ranges::copy(coordinate,
+                      texture_coordinates_.at(texture - kTexture0).begin());
 }
 
 void AndroidBoundaryGles1LegacyState::ValidateClipPlane(
@@ -521,6 +542,7 @@ void AndroidBoundaryGles1FixedState::Reset() {
     point_parameters_ = {{0x8126U, 0.0F},
                          {0x8127U, (std::numeric_limits<float>::max)()},
                          {0x8128U, 1.0F}};
+    point_distance_attenuation_ = {1.0F, 0.0F, 0.0F};
 }
 
 void AndroidBoundaryGles1FixedState::SetFog(const std::uint32_t pname,
@@ -634,6 +656,17 @@ void AndroidBoundaryGles1FixedState::SetPointParameter(
     point_parameters_[pname] = value;
 }
 
+void AndroidBoundaryGles1FixedState::SetPointDistanceAttenuation(
+    const std::span<const float, 3> values) {
+    RequireFinite(values, "GLES1 point distance attenuation");
+    if (std::ranges::any_of(values,
+                            [](const float value) { return value < 0.0F; })) {
+        throw std::invalid_argument(
+            "GLES1 point distance attenuation must be non-negative");
+    }
+    std::ranges::copy(values, point_distance_attenuation_.begin());
+}
+
 float AndroidBoundaryGles1FixedState::PointSize() const noexcept {
     return point_size_;
 }
@@ -641,6 +674,11 @@ float AndroidBoundaryGles1FixedState::PointSize() const noexcept {
 float AndroidBoundaryGles1FixedState::PointParameter(
     const std::uint32_t pname) const {
     return point_parameters_.at(pname);
+}
+
+const std::array<float, 3>&
+AndroidBoundaryGles1FixedState::PointDistanceAttenuation() const noexcept {
+    return point_distance_attenuation_;
 }
 
 void BindAndroidBoundaryGles1FixedState(gles::GlesDispatchTable& dispatch,

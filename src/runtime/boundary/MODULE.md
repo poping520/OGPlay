@@ -170,9 +170,13 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   pointer 在 VBO 模式保存 offset，在 guest-memory 模式按 `count/size/type/stride` 预检完整范围
   后提交到同一 draw state。
 - GLES1 matrix state 批次保存 modelview/projection 与按 active texture unit 隔离的
-  texture 列主序矩阵栈,`load/push/pop/rotate/translate` 按 OpenGL 后乘语义更新;栈
+  texture 列主序矩阵栈,`load/multiply/push/pop/rotate/translate/scale/frustum/ortho`
+  按 OpenGL 后乘语义更新;fixed API 以有符号 16.16 转换且向量先完整读取;栈
   上溢/下溢、非法旋转轴不部分提交,状态留给 fixed-pipeline draw 转换消费,不得将仅
   缓存矩阵解释为已完成渲染。
+- GLES1 current texture coordinate 按显式 texture unit 隔离，在对应 coordinate array
+  关闭时写入内部 shader attribute；point distance attenuation 与 min/max 一并由 fixed
+  vertex shader 消费。相关 fixed/scalar alias 必须直接绑定，不得回退为 unimplemented。
 - GLES1 lighting/material/fog 批次绑定 7 个目标导入入口,按 pname、元素数与参数范围
   校验后事务提交;`glMaterial*` 默认严格要求 `GL_FRONT_AND_BACK`。
   `AndroidBoundaryOptions::allow_gles1_material_single_face` 默认关闭,仅已验证 Profile

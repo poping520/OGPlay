@@ -79,6 +79,7 @@ private:
     void EnsureProgram(gles::AngleFrame& frame);
     void PrepareArrays(gles::AngleFrame& frame,
                        const AndroidBoundaryGles1State& core,
+                       const AndroidBoundaryGles1LegacyState& legacy,
                        memory::AddressSpace& address_space,
                        std::span<const std::uint32_t> texture_units,
                        std::uint32_t maximum_index, std::uint64_t thread_id);

@@ -1919,6 +1919,46 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glLoadMatrixf",
                            {fixture.output.Value()}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glPopMatrix") == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glMatrixMode",
+                  {ogplay::runtime::detail::kGles1Modelview}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glLoadIdentity") == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTranslatex",
+                           {65536U, 131072U, 196608U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glScalex",
+                           {131072U, 196608U, 262144U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetFloatv",
+                           {0x0BA6U, query_output.Value()}) == 0U);
+        const auto matrix_value = [&fixture, query_output](const std::size_t index) {
+            return std::bit_cast<float>(fixture.bus.Read32(
+                query_output.Add(index * sizeof(std::uint32_t)), 1U));
+        };
+        CHECK(matrix_value(0U) == 2.0F);
+        CHECK(matrix_value(5U) == 3.0F);
+        CHECK(matrix_value(10U) == 4.0F);
+        CHECK(matrix_value(12U) == 1.0F);
+        CHECK(matrix_value(13U) == 2.0F);
+        CHECK(matrix_value(14U) == 3.0F);
+        const auto vector = fixture.output.Add(0x300U);
+        fixture.bus.Write32(vector, 65536U, 1U);
+        fixture.bus.Write32(vector.Add(4U), 32768U, 1U);
+        fixture.bus.Write32(vector.Add(8U), 16384U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glPointParameterxv",
+                           {0x8129U, vector.Value()}) == 0U);
+        fixture.bus.Write32(fixture.stack, 65536U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glMultiTexCoord4x",
+                           {0x84C0U, 16384U, 32768U, 0U}) == 0U);
+        fixture.bus.Write32(vector.Add(4U), 0U, 1U);
+        fixture.bus.Write32(vector.Add(8U), 0U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glPointParameterxv",
+                           {0x8129U, vector.Value()}) == 0U);
+        fixture.bus.Write32(fixture.stack, 65536U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glMultiTexCoord4x",
+                           {0x84C0U, 0U, 0U, 0U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glLoadIdentity") == 0U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glMatrixMode",
+                  {ogplay::runtime::detail::kGles1Projection}) == 0U);
         try {
             static_cast<void>(fixture.Call(
                 "libGLESv1_CM.so", "glGenTextures", {1U, 0U}));
@@ -2369,6 +2409,10 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                    std::bit_cast<std::uint32_t>(1.0F)}) == 0);
         CHECK(fixture.Call("libGLESv1_CM.so", "glClearDepthf",
                            {std::bit_cast<std::uint32_t>(0.25F)}) == 0);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glClearColorx",
+                           {8192U, 16384U, 32768U, 65536U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glClearDepthx",
+                           {16384U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glClear",
                            {0x00004000U}) == 0);
         fixture.boundary.PresentManagedSurface();
@@ -2390,8 +2434,7 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     }
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glClearDepthx", {0x00010000U}),
-        "unimplemented GLES1 call glClearDepthx (thunk 12, guest thread 1)",
-        ogplay::gles::GlesDispatchError);
+        "glClearDepthx has no current ANGLE frame", std::runtime_error);
 }
 
 TEST_CASE("GLES1 lighting preserves diffuse material alpha for blending") {

@@ -1060,6 +1060,11 @@ status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; runtime.bionic_virtual_so_late_import; architecture.boundary_hot_path"
 note = "BND-18 按 KTU84P/AOSP 发布 7 个 Android Bounds symbol，以独立 direct Gles1Module handler 复用 shared client-array state；guest-memory count range 与 VBO offset 语义受检"
 
+[runtime.gles1_fixed_completion_boundary]
+status = "complete"
+test = "tests/runtime/boundary/modules/gles1_fixed_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; architecture.boundary_hot_path; tools.gles1_catalog_current"
+note = "BND-19 显式绑定 35 个 GLES1 fixed/matrix/scalar 入口；16.16 与 vector length 受检，矩阵后乘、current texcoord 和 point attenuation 由 fixed draw 消费"
+
 [runtime.gles1_viewport_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"

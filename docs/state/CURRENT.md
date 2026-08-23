@@ -9,7 +9,8 @@
   per-thread error、guest strings、thunk resolver、preflight/late dlopen 与
   architecture focused 10/10 通过。BND-18 又以独立 direct binding 发布并实现 KTU84P
   GLES1 7 个 Bounds wrapper，count/range/VBO offset 与 shared client-array state 受检；
-  GLES1 62、GLES2 67 尚待后续 WU。
+  BND-19 已显式绑定 GLES1 35 个 fixed/matrix/scalar 入口，16.16、vector length、矩阵
+  后乘及 draw 消费受检；GLES1 余 27、GLES2 67 尚待后续 WU。
 
 - **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
   import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc
@@ -59,10 +60,8 @@
   BND-5 关闭，title 后续行为仍待按既有 playbook 复验。
 ## 验证基线
 
-- macOS/arm64 BND-5 liblog Virtual SO 后：917/917 CTest（102.26 秒）；新增 liblog
-  focused 为 6/6、75 assertions，Bionic 为 12/12、102 assertions，preflight/late import/
-  rootless loader/capability/documentation/hot-path gate 均通过。
-- 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
+- BND-19 focused GLES1 module/integration、catalog 与 architecture gate 通过；最终 full
+  CTest 留到 BND-24 后执行。
 
 ## 下一步
 

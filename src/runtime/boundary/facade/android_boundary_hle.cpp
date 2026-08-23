@@ -42,6 +42,7 @@
 #include "runtime/boundary/modules/android/android_module.h"
 #include "runtime/boundary/modules/egl/egl_exports.h"
 #include "runtime/boundary/modules/egl/egl_module.h"
+#include "runtime/boundary/modules/gles1/gles1_completion.h"
 #include "runtime/boundary/modules/gles1/gles1_dispatch.h"
 #include "runtime/boundary/modules/gles1/gles1_module.h"
 #include "runtime/boundary/modules/gles1/gles1_draw.h"
@@ -127,6 +128,11 @@ public:
         detail::BindAndroidBoundaryGles1Legacy(
             gles1_dispatch_, gles1_legacy_state_, gles1_state_,
             gles1_draw_state_, address_space_,
+            [this](const std::string_view operation) -> gles::AngleFrame& {
+                return RequireFrame(operation);
+            });
+        detail::BindAndroidBoundaryGles1Completion(
+            gles1_dispatch_, gles1_state_, gles1_legacy_state_, address_space_,
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });

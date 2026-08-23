@@ -290,7 +290,8 @@ void AndroidBoundaryGles1DrawState::EnsureProgram(gles::AngleFrame& frame) {
         "u_global_ambient", "u_light_ambient", "u_light_diffuse",
         "u_light_position", "u_material_ambient", "u_material_diffuse",
         "u_has_color", "u_has_normal", "u_lighting", "u_point_size",
-        "u_point_size_min", "u_point_size_max", "u_fog_enabled",
+        "u_point_size_min", "u_point_size_max", "u_point_distance_attenuation",
+        "u_fog_enabled",
         "u_fog_mode", "u_fog_density", "u_fog_start", "u_fog_end",
         "u_fog_color", "u_alpha_enabled", "u_alpha_function",
         "u_alpha_reference"};
@@ -335,6 +336,7 @@ void AndroidBoundaryGles1DrawState::EnsureProgram(gles::AngleFrame& frame) {
 
 void AndroidBoundaryGles1DrawState::PrepareArrays(
     gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
+    const AndroidBoundaryGles1LegacyState& legacy,
     memory::AddressSpace& address_space,
     const std::span<const std::uint32_t> texture_units,
     const std::uint32_t maximum_index, const std::uint64_t thread_id) {
@@ -390,8 +392,15 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
             }
             continue;
         }
-        prepare(arrays.size() + stage,
-                Array(kGles1TextureCoordArray, texture_units[stage]), false);
+        const auto texture = texture_units[stage];
+        const auto& array = Array(kGles1TextureCoordArray, texture);
+        prepare(arrays.size() + stage, array, false);
+        if (!array.enabled && location >= 0) {
+            const auto& coordinate = legacy.CurrentTextureCoordinate(texture);
+            frame.VertexAttribute4f(static_cast<std::uint32_t>(location),
+                                    coordinate[0], coordinate[1],
+                                    coordinate[2], coordinate[3]);
+        }
     }
     frame.BindBuffer(kArrayBuffer, core.TransferState().Snapshot().array_buffer);
 }
@@ -446,6 +455,9 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
                     fixed.PointParameter(0x8126U));
     frame.Uniform1f(uniform("u_point_size_max"),
                     fixed.PointParameter(0x8127U));
+    const auto& attenuation = fixed.PointDistanceAttenuation();
+    frame.Uniform4f(uniform("u_point_distance_attenuation"), attenuation[0],
+                    attenuation[1], attenuation[2], 0.0F);
     for (std::size_t index = 0; index < 6U; ++index) {
         const auto suffix = "[" + std::to_string(index) + "]";
         const auto& plane = legacy.ClipPlane(0x3000U +
@@ -557,7 +569,7 @@ void AndroidBoundaryGles1DrawState::DrawArrays(
     EnsureProgram(frame);
     frame.UseProgram(program_.name);
     const auto texture_units = DrawTextureUnits(core);
-    PrepareArrays(frame, core, address_space, texture_units,
+    PrepareArrays(frame, core, legacy, address_space, texture_units,
                   static_cast<std::uint32_t>(maximum), thread_id);
     ApplyUniforms(frame, core, legacy, texture_units);
     if (maximum > (std::numeric_limits<std::uint16_t>::max)()) {
@@ -626,7 +638,8 @@ void AndroidBoundaryGles1DrawState::DrawElements(
     }
     frame.UseProgram(program_.name);
     const auto texture_units = DrawTextureUnits(core);
-    PrepareArrays(frame, core, address_space, texture_units, maximum, thread_id);
+    PrepareArrays(frame, core, legacy, address_space, texture_units, maximum,
+                  thread_id);
     ApplyUniforms(frame, core, legacy, texture_units);
     if (guest_element_buffer == 0U) {
         frame.BindBuffer(kElementArrayBuffer, program_.buffers.back());

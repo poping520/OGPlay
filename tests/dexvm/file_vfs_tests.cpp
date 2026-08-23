@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -84,9 +85,10 @@ struct FileVm final {
         return file;
     }
 
-    VmValue CallOn(const VmObjectRef receiver, const std::string& name,
-                   const std::string& descriptor,
-                   std::vector<VmValue> arguments = {}) {
+    VmCallOutcome CallOnOutcome(const VmObjectRef receiver,
+                                const std::string& name,
+                                const std::string& descriptor,
+                                std::vector<VmValue> arguments = {}) {
         const auto receiver_class = model.ObjectClass(receiver);
         const auto index =
             linker.FindVtableIndex(receiver_class, name, descriptor);
@@ -100,7 +102,27 @@ struct FileVm final {
                       return *direct;
                   }();
         arguments.insert(arguments.begin(), VmValue::Ref(receiver));
-        const auto outcome = interpreter.Call(target, arguments);
+        return interpreter.Call(target, arguments);
+    }
+
+    VmValue CallOn(const VmObjectRef receiver, const std::string& name,
+                   const std::string& descriptor,
+                   std::vector<VmValue> arguments = {}) {
+        const auto outcome = CallOnOutcome(
+            receiver, name, descriptor, std::move(arguments));
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(),
+                        outcome.exception_message);
+        return outcome.value;
+    }
+
+    VmValue CallStatic(const std::string& owner, const std::string& name,
+                       const std::string& descriptor) {
+        const auto java_class = linker.FindClass(owner);
+        REQUIRE_MESSAGE(java_class.has_value(), owner);
+        const auto method = linker.FindDirectMethod(
+            *java_class, name, descriptor);
+        REQUIRE_MESSAGE(method.has_value(), name);
+        const auto outcome = interpreter.Call(*method, {});
         REQUIRE_MESSAGE(!outcome.exception.IsValid(),
                         outcome.exception_message);
         return outcome.value;
@@ -149,6 +171,111 @@ struct FileVm final {
 };
 
 }  // namespace
+
+TEST_CASE("Environment data directory is one stable guest File") {
+    FileVm vm;
+    const auto first = vm.CallStatic(
+        "Landroid/os/Environment;", "getDataDirectory",
+        "()Ljava/io/File;").ref;
+    const auto repeated = vm.CallStatic(
+        "Landroid/os/Environment;", "getDataDirectory",
+        "()Ljava/io/File;").ref;
+    REQUIRE(first.IsValid());
+    CHECK(repeated == first);
+    const auto path = vm.CallOn(first, "getPath", "()Ljava/lang/String;").ref;
+    CHECK(vm.interpreter.StringUtf8(path) == "/data");
+}
+
+TEST_CASE("Context files directory is inherited stable and VFS backed") {
+    FileVm vm;
+    const auto activity =
+        vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    const auto first =
+        vm.CallOn(activity, "getFilesDir", "()Ljava/io/File;").ref;
+    const auto repeated =
+        vm.CallOn(activity, "getFilesDir", "()Ljava/io/File;").ref;
+    REQUIRE(first.IsValid());
+    CHECK(repeated == first);
+    const auto path = vm.CallOn(first, "getPath", "()Ljava/lang/String;").ref;
+    CHECK(vm.interpreter.StringUtf8(path) ==
+          "/data/data/com.example.game/files");
+    CHECK(vm.vfs.Stat("/data/data/com.example.game/files").is_directory);
+
+    const auto base =
+        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    CHECK(vm.CallOn(base, "getFilesDir", "()Ljava/io/File;").ref == first);
+}
+
+TEST_CASE("Context files directory returns null when VFS is unavailable") {
+    FileVm vm;
+    vm.context->vfs = nullptr;
+    const auto context =
+        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    CHECK_FALSE(vm.CallOn(context, "getFilesDir", "()Ljava/io/File;")
+                    .ref.IsValid());
+}
+
+TEST_CASE("AssetManager openFd publishes exact logical asset length") {
+    FileVm vm;
+    vm.context->archive.entries.push_back({
+        .name = "assets/main.obb",
+        .uncompressed_size = UINT32_C(0xf0000000),
+    });
+    const auto manager = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/content/res/AssetManager;");
+    const auto descriptor = vm.CallOn(
+        manager, "openFd",
+        "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("main.obb"))}).ref;
+    REQUIRE(descriptor.IsValid());
+    CHECK(vm.CallOn(descriptor, "getLength", "()J").AsLong() ==
+          INT64_C(0xf0000000));
+    static_cast<void>(vm.CallOn(descriptor, "close", "()V"));
+    static_cast<void>(vm.CallOn(descriptor, "close", "()V"));
+    CHECK(vm.CallOn(descriptor, "getLength", "()J").AsLong() ==
+          INT64_C(0xf0000000));
+
+    const auto missing = vm.CallOnOutcome(
+        manager, "openFd",
+        "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("missing.obb"))});
+    REQUIRE(missing.exception.IsValid());
+    CHECK(vm.linker.Class(missing.exception_class).descriptor ==
+          "Ljava/io/FileNotFoundException;");
+}
+
+TEST_CASE("AssetManager list returns sorted unique direct children") {
+    FileVm vm;
+    for (const auto& name : {
+             "assets/root.txt", "assets/sounds/z.ogg",
+             "assets/sounds/a.ogg", "assets/sounds/sub/deep.ogg",
+             "assets/sounds/sub/second.ogg", "res/not-an-asset"}) {
+        vm.context->archive.entries.push_back({.name = name});
+    }
+    const auto manager = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/content/res/AssetManager;");
+    const auto list = [&](const std::string& path) {
+        return vm.CallOn(
+            manager, "list", "(Ljava/lang/String;)[Ljava/lang/String;",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8(path))}).ref;
+    };
+    const auto strings = [&](const VmObjectRef array) {
+        std::vector<std::string> result;
+        for (JniSize index = 0; index < vm.model.ArrayLength(array); ++index) {
+            result.push_back(vm.interpreter.StringUtf8(
+                vm.model.GetObjectElement(array, index)));
+        }
+        return result;
+    };
+
+    CHECK(strings(list("")) ==
+          std::vector<std::string>{"root.txt", "sounds"});
+    CHECK(strings(list("sounds")) ==
+          std::vector<std::string>{"a.ogg", "sub", "z.ogg"});
+    const auto missing = list("missing");
+    REQUIRE(missing.IsValid());
+    CHECK(vm.model.ArrayLength(missing) == 0);
+}
 
 TEST_CASE("File.mkdirs creates real directories and reports the truth") {
     FileVm vm;

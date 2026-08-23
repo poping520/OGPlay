@@ -25,6 +25,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_content_SharedPreferencesImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_AssetManager(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_AssetFileDescriptor(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_Configuration(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_Resources(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Bitmap_Config(const Context& context);

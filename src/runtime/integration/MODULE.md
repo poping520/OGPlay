@@ -111,7 +111,15 @@ overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅
 - `DexVmAndroidContext` + `AndroidIntrinsicCatalog(context)`：
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
-  IO 走 APK 条目与会话内存文件、身份为确定性配置、SMS/网络记账明确失败;
+  IO 走 APK 条目与会话 VFS；API19 `Environment.getDataDirectory()` 返回稳定的
+  guest `File("/data")`；`Context.getFilesDir()` 由 Activity 正常继承，返回稳定
+  `/data/data/<package>/files` File 并经 VFS 真实建立目录；两者都不读取或泄漏
+  sandbox 宿主路径。`AssetManager.openFd()` 对虚拟 APK 只发布目标实际消费的
+  logical `AssetFileDescriptor.getLength()`，长度取受检 central-directory
+  uncompressed size；`AssetManager.list()` 从同一 sealed entry directory 返回
+  case-sensitive、排序去重的 direct child；logical descriptor `close()` 对空资源集
+  幂等且不改写 length，不伪造 POSIX fd/offset；身份为确定性配置、
+  SMS/网络记账明确失败;
   统一时间由生命周期驱动发布；`Object.wait`、`Thread.sleep` 与 timed join
   共用同一 monotonic source，`System.currentTimeMillis` 仍读取 session 时间事实。
   `Activity.isTaskRoot()` 按生命周期发布的 `task_root_activity` 句柄判定：

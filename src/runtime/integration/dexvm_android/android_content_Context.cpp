@@ -4,6 +4,27 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
+[[nodiscard]] bool EnsureDirectory(const Context& context,
+                                   const std::string& path) {
+    if (context->vfs == nullptr) return false;
+    for (std::size_t cursor = 1; cursor <= path.size(); ++cursor) {
+        if (cursor != path.size() && path[cursor] != '/') continue;
+        const auto prefix = path.substr(0, cursor);
+        try {
+            const auto info = context->vfs->Stat(prefix);
+            if (!info.is_directory) return false;
+            continue;
+        } catch (const VfsError&) {
+        }
+        try {
+            context->vfs->CreateDirectory(prefix);
+        } catch (const VfsError&) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Reads a preferences file once per name. Damaged XML is a real failure.
 void LoadPreferencesOnce(const Context& context, const std::string& name) {
     if (context->preferences_loaded[name]) return;
@@ -46,6 +67,25 @@ Decl Declare_android_content_Context(const Context& context) {
             return dx::VmValue::Ref(Singleton(
                 call, context, "application_context",
                 "Landroid/content/Context;"));
+        });
+    builder.FinalMethod("getFilesDir", "()Ljava/io/File;",
+        [context](dx::IntrinsicContext& call) {
+            const auto path = "/data/data/" + context->package_name +
+                              "/files";
+            if (!EnsureDirectory(context, path)) {
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            constexpr auto key = "context_files_directory";
+            const auto found = context->singletons.find(key);
+            if (found != context->singletons.end()) {
+                return dx::VmValue::Ref(found->second);
+            }
+            const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
+            const auto slots = call.vm.Model().InstanceSlots(file);
+            slots[0] = {call.vm.NewStringUtf8(path).Value(),
+                        dx::SlotTag::ref};
+            context->singletons.emplace(key, file);
+            return dx::VmValue::Ref(file);
         });
     builder.FinalMethod("getResources", "()Landroid/content/res/Resources;",
         [context](dx::IntrinsicContext& call) {

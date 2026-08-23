@@ -25,6 +25,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_content_SharedPreferences(context),
         Declare_android_content_SharedPreferencesEditorImpl(context),
         Declare_android_content_SharedPreferencesImpl(context),
+        Declare_android_content_res_AssetFileDescriptor(context),
         Declare_android_content_res_AssetManager(context),
         Declare_android_content_res_Configuration(context),
         Declare_android_content_res_Resources(context),

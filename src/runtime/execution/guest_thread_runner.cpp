@@ -67,6 +67,12 @@ bool ConsumeAndroidArmSupervisorCall(
     cpu::Cpu& cpu, const cpu::RunResult& stopped,
     A32SyscallDispatcher& dispatcher,
     const GuestSupervisorCallHandler& hle_handler) {
+    // A fast host call deliberately exits the backend with a structured stop
+    // after its noexcept callback captured the original C++ exception.  Give
+    // the owning boundary first chance to restore that exception identity.
+    if (stopped.reason == cpu::RunStopReason::host_call_fault) {
+        return hle_handler && hle_handler(cpu, stopped);
+    }
     if (stopped.reason != cpu::RunStopReason::supervisor_call) return false;
     if (DispatchAndroidArmSupervisorCall(cpu, stopped, dispatcher).has_value()) {
         return true;

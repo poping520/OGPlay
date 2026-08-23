@@ -11,5 +11,10 @@ Virtual SO catalog 拆成独立 `GuestSymbolOverride` 元数据。
 - [x] JNI slot/family/decoder、RegisterNatives、JNI_OnLoad 语义不变。
 - [x] libc override 有独立 descriptor，仍绑定真实 guest libc export。
 - [x] focused JNI、CPU 与 Bionic override tests。
+- [x] fast callback 按 guest thread/PC 登记原始 `exception_ptr`，JIT 退出后由 JNI/boundary
+  consumer 恢复；C++ exception 不跨 Dynarmic callback。
+- [x] unbound JNI、invalid interface receiver 与 guest memory fault 的 fast/slow
+  failure identity/diagnostic 等价测试。
 
-handler storage 继续使用既有 `std::function`；设计将其列为有性能证据时才执行的可选项。
+JNI handler storage 继续保持既有语义；它不属于 Virtual SO hot table，未改动
+RegisterNatives、JNI_OnLoad、对象/引用与异常模型。

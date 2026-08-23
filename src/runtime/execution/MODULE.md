@@ -16,6 +16,8 @@ JNI、framework 或 integration。
 - child 从 parent CPU 状态派生，r0、SP、TLS、TID 和退出清理必须精确。
 - 执行循环消费已声明的 Linux SVC；其他 trap 只有显式 HLE handler 返回已处理才继续，
   否则原样上报。clone child 必须继承同一 handler。
+- CPU `host_call_fault` 是 noexcept fast callback 的结构化退出；执行循环必须先交回显式
+  HLE handler 取出 pending exception，不能把它折叠成普通未处理 CPU stop。
 - 外部退出请求可发生在 child 首次执行前或任意 budget slice 之间；runner 必须在下一安全
   边界完成 lifecycle exit 与 clear-child-tid/futex 清理，不能再次以 running 前置条件失败。
 - `InvokeA32GuestCall` 只接受非空目标、运行中线程、8 字节对齐栈和非零 tick 预算；

@@ -2,9 +2,12 @@
 
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <vector>
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/cpu/cpu.h"
@@ -59,6 +62,16 @@ public:
         cpu::A32HostCallContext& call) const noexcept;
 
 private:
+    struct PendingFault final {
+        std::uint64_t thread_id{};
+        memory::GuestAddress pc{};
+        std::exception_ptr exception;
+    };
+
+    void RecordFastFault(const cpu::A32HostCallContext& call,
+                         std::exception_ptr exception) const noexcept;
+    [[nodiscard]] std::exception_ptr TakeFastFault(
+        std::uint64_t thread_id, memory::GuestAddress pc) const noexcept;
     void Dispatch(const JniGuestThunk& thunk, std::uint64_t thread_id,
                   std::span<std::uint32_t, 16> registers) const;
     core::CapabilityLedger* ledger_{};
@@ -69,6 +82,8 @@ private:
                kJniInvokeInterfaceSlotCount>
         java_vm_{};
     bool sealed_{};
+    mutable std::mutex pending_fault_mutex_;
+    mutable std::vector<PendingFault> pending_faults_;
 };
 
 }  // namespace ogplay::runtime

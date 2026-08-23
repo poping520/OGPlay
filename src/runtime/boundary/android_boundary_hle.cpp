@@ -257,6 +257,26 @@ public:
         gpu_render_target_ready_ = false;
     }
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
+        if (stopped.reason == cpu::RunStopReason::host_call_fault &&
+            stopped.immediate == 2U) {
+            const auto state = cpu.GetState();
+            std::exception_ptr pending;
+            {
+                std::scoped_lock lock(fast_fault_mutex_);
+                const auto found = std::find_if(
+                    fast_faults_.begin(), fast_faults_.end(),
+                    [&](const auto& fault) {
+                        return fault.thread_id == state.ThreadId() &&
+                               fault.pc == stopped.pc;
+                    });
+                if (found != fast_faults_.end()) {
+                    pending = std::move(found->exception);
+                    fast_faults_.erase(found);
+                }
+            }
+            if (!pending) return false;
+            std::rethrow_exception(pending);
+        }
         if (!mapped_ || stopped.reason != cpu::RunStopReason::supervisor_call ||
             stopped.immediate != 2) return false;
         const auto* descriptor = detail::DecodeAndroidBoundaryThunk(
@@ -544,7 +564,20 @@ private:
             return cpu::HostCallResult::handled;
         } catch (...) {
             std::scoped_lock lock(binding.owner->fast_fault_mutex_);
-            binding.owner->fast_fault_ = std::current_exception();
+            const auto found = std::find_if(
+                binding.owner->fast_faults_.begin(),
+                binding.owner->fast_faults_.end(),
+                [&](const auto& fault) {
+                    return fault.thread_id == context.thread_id &&
+                           fault.pc == context.pc;
+                });
+            if (found != binding.owner->fast_faults_.end()) {
+                found->exception = std::current_exception();
+            } else {
+                binding.owner->fast_faults_.push_back(
+                    {context.thread_id, context.pc,
+                     std::current_exception()});
+            }
             return cpu::HostCallResult::fault;
         }
     }
@@ -1157,8 +1190,13 @@ private:
     Gles2Module gles2_module_;
     LogModule log_module_;
     std::vector<BoundaryModuleInstance> module_instances_;
+    struct PendingFastFault final {
+        std::uint64_t thread_id{};
+        memory::GuestAddress pc{};
+        std::exception_ptr exception;
+    };
     std::mutex fast_fault_mutex_;
-    std::exception_ptr fast_fault_;
+    std::vector<PendingFastFault> fast_faults_;
     std::optional<gles::AngleFrame> angle_frame_;
     std::optional<std::thread::id> gl_owner_;
     bool managed_surface_{};

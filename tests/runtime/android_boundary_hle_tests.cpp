@@ -156,6 +156,43 @@ TEST_CASE("Android boundary fast host call continues inside Dynarmic run") {
     CHECK(cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) == 1U);
 }
 
+TEST_CASE("Android boundary fast and slow failures preserve memory fault identity") {
+    BoundaryFixture fixture;
+    const auto address =
+        fixture.boundary.Symbols().Lookup("libEGL.so", "eglInitialize");
+    REQUIRE(address.has_value());
+
+    std::string slow_message;
+    try {
+        static_cast<void>(fixture.Call(
+            "libEGL.so", "eglInitialize", {0U, 0x12345000U, 0U, 0U}));
+        FAIL("slow boundary call did not fault");
+    } catch (const ogplay::memory::MemoryFault& error) {
+        slow_message = error.what();
+    }
+
+    ogplay::cpu::DynarmicCpu cpu(fixture.bus);
+    cpu.SetHostCallHook(fixture.boundary.FastHostCallHook());
+    ogplay::cpu::A32State state;
+    state.SetState(ogplay::cpu::ExecutionState::thumb);
+    state.SetThreadId(1U);
+    state.SetRegister(ogplay::cpu::CoreRegister::pc,
+                      address->Value() & ~UINT32_C(1));
+    state.SetRegister(ogplay::cpu::CoreRegister::r1, 0x12345000U);
+    state.SetRegister(ogplay::cpu::CoreRegister::sp, fixture.stack.Value());
+    cpu.SetState(state);
+    const auto stopped = cpu.Run(4U);
+    REQUIRE(stopped.reason == ogplay::cpu::RunStopReason::host_call_fault);
+    try {
+        static_cast<void>(fixture.boundary.Handle(cpu, stopped));
+        FAIL("fast boundary fault was not restored");
+    } catch (const ogplay::memory::MemoryFault& error) {
+        CHECK(std::string(error.what()) == slow_message);
+        CHECK(error.Address() == ogplay::memory::GuestAddress{0x12345000U});
+        CHECK(error.ThreadId() == 1U);
+    }
+}
+
 TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {
     const auto symbols =
         ogplay::runtime::detail::BuildAndroidBoundarySymbols();

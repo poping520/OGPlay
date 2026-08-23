@@ -8,7 +8,7 @@ note = "BND-1 建立 API-sealed BoundaryCatalog 与完整 active-export syntheti
 [runtime.fast_host_call]
 status = "complete"
 test = "tests/cpu/dynarmic_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; tests/runtime/jni_guest_abi_tests.cpp"
-note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-page sealed thunk arena 与 live-register dense SVC #2 path；BND-3 将 JNI SVC #3 接入同一 transport，observer 保持 slow fallback"
+note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-page sealed thunk arena 与 live-register dense SVC #2 path；BND-3 将 JNI SVC #3 接入同一 transport，fast fault 按 thread/PC pending 并在 JIT 外恢复原 exception identity，observer 保持 slow fallback"
 
 [runtime.guest_symbol_override]
 status = "complete"

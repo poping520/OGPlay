@@ -19,6 +19,8 @@
   继续共享唯一 `GuestGlContext`，fast/slow transport 共用同一 module binding。
   BND-1 闭环已补齐跨 API active module/export 过滤与 metadata-only link preflight；
   preflight 不再构造 ANGLE/surface runtime，module-local id 也不再要求与目录序号一致。
+  BND-3 闭环已让 Boundary/JNI fast fault 按 thread/PC 保存并在退出 JIT 后恢复原始
+  exception identity；unbound slot、invalid receiver 与 guest memory fault 已有等价测试。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

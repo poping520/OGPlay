@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include <doctest/doctest.h>
 
@@ -469,4 +470,99 @@ TEST_CASE("guest JNI dispatcher fails closed on receiver and missing slots") {
                 return ogplay::runtime::JniGuestCallResult{};
             }),
         std::logic_error);
+}
+
+TEST_CASE("guest JNI fast and slow failures preserve diagnostic identity") {
+    ogplay::memory::AddressSpace memory;
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    const ogplay::runtime::GuestJniAbi abi(memory);
+    ogplay::core::CapabilityLedger ledger;
+    ogplay::runtime::JniGuestCallDispatcher dispatcher(ledger);
+    const auto get_version = *ogplay::runtime::FindJniSlot("GetVersion");
+    dispatcher.Seal();
+    const auto target = Read32(
+        memory, ogplay::runtime::kJniGuestEnvironmentTable.Add(
+                    get_version.Value() * sizeof(std::uint32_t)));
+
+    const auto run_fast = [&](ogplay::runtime::JniGuestCallDispatcher& target_dispatcher,
+                              const std::uint32_t receiver) {
+        auto cpu = std::make_unique<ogplay::cpu::DynarmicCpu>(bus);
+        cpu->SetHostCallHook({
+            +[](void* userdata, const std::uint32_t svc,
+                ogplay::cpu::A32HostCallContext& call) noexcept {
+                if (svc != 3U) return ogplay::cpu::HostCallResult::unhandled;
+                return static_cast<ogplay::runtime::JniGuestCallDispatcher*>(
+                           userdata)->TryFastCall(call);
+            },
+            &target_dispatcher});
+        ogplay::cpu::A32State state;
+        state.SetState(ogplay::cpu::ExecutionState::thumb);
+        state.SetThreadId(103U);
+        state.SetRegister(ogplay::cpu::CoreRegister::pc, target & ~1U);
+        state.SetRegister(ogplay::cpu::CoreRegister::r0, receiver);
+        state.SetRegister(ogplay::cpu::CoreRegister::lr, 0x55667789U);
+        cpu->SetState(state);
+        const auto stopped = cpu->Run(4U);
+        REQUIRE(stopped.reason ==
+                ogplay::cpu::RunStopReason::host_call_fault);
+        return std::pair{std::move(cpu), stopped};
+    };
+
+    ogplay::cpu::InterpreterCpu slow_cpu(bus);
+    ogplay::cpu::A32State slow_state;
+    slow_state.SetState(ogplay::cpu::ExecutionState::thumb);
+    slow_state.SetThreadId(103U);
+    slow_state.SetRegister(ogplay::cpu::CoreRegister::pc, target & ~1U);
+    slow_state.SetRegister(ogplay::cpu::CoreRegister::r0,
+                          abi.Environment().Value());
+    slow_state.SetRegister(ogplay::cpu::CoreRegister::lr, 0x55667789U);
+    slow_cpu.SetState(slow_state);
+    const auto slow_stop = slow_cpu.Run(1U);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(dispatcher.Handle(slow_cpu, slow_stop)),
+        "unbound JNI guest slot: GetVersion",
+        ogplay::runtime::JniGuestDispatchError);
+
+    auto [unbound_cpu, unbound_stop] =
+        run_fast(dispatcher, abi.Environment().Value());
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(dispatcher.Handle(*unbound_cpu, unbound_stop)),
+        "unbound JNI guest slot: GetVersion",
+        ogplay::runtime::JniGuestDispatchError);
+
+    auto [receiver_cpu, receiver_stop] =
+        run_fast(dispatcher, abi.JavaVm().Value());
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(dispatcher.Handle(*receiver_cpu, receiver_stop)),
+        "JNI guest call has an invalid interface receiver",
+        ogplay::runtime::JniGuestDispatchError);
+
+    ogplay::runtime::JniGuestCallDispatcher memory_dispatcher(ledger);
+    memory_dispatcher.BindEnvironment(
+        get_version, [&memory](const ogplay::runtime::JniGuestCallFrame& frame) {
+            std::array<std::byte, 4> bytes{};
+            memory.Read(ogplay::memory::GuestAddress{0x12345000U}, bytes,
+                        frame.thread_id);
+            return ogplay::runtime::JniGuestCallResult{};
+        });
+    memory_dispatcher.Seal();
+    slow_cpu.SetState(slow_state);
+    const auto memory_slow_stop = slow_cpu.Run(1U);
+    std::string memory_message;
+    try {
+        static_cast<void>(memory_dispatcher.Handle(slow_cpu, memory_slow_stop));
+        FAIL("slow JNI memory call did not fault");
+    } catch (const ogplay::memory::MemoryFault& error) {
+        memory_message = error.what();
+    }
+    auto [memory_cpu, memory_stop] =
+        run_fast(memory_dispatcher, abi.Environment().Value());
+    try {
+        static_cast<void>(memory_dispatcher.Handle(*memory_cpu, memory_stop));
+        FAIL("fast JNI memory fault was not restored");
+    } catch (const ogplay::memory::MemoryFault& error) {
+        CHECK(std::string(error.what()) == memory_message);
+        CHECK(error.Address() == ogplay::memory::GuestAddress{0x12345000U});
+        CHECK(error.ThreadId() == 103U);
+    }
 }

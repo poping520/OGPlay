@@ -1,5 +1,6 @@
 #include "ogplay/runtime/jni_guest/jni_guest_dispatch.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -105,6 +106,14 @@ void JniGuestCallDispatcher::Seal() {
 
 bool JniGuestCallDispatcher::Handle(
     cpu::Cpu& cpu, const cpu::RunResult& stopped) const {
+    if (stopped.reason == cpu::RunStopReason::host_call_fault &&
+        stopped.immediate == 3U) {
+        const auto state = cpu.GetState();
+        const auto pending = TakeFastFault(
+            state.ThreadId(), stopped.pc);
+        if (!pending) return false;
+        std::rethrow_exception(pending);
+    }
     if (stopped.reason != cpu::RunStopReason::supervisor_call ||
         stopped.immediate != 3U ||
         stopped.pc.Value() ==
@@ -135,8 +144,48 @@ cpu::HostCallResult JniGuestCallDispatcher::TryFastCall(
         Dispatch(*thunk, call.thread_id, call.registers);
         return cpu::HostCallResult::handled;
     } catch (...) {
+        RecordFastFault(call, std::current_exception());
         return cpu::HostCallResult::fault;
     }
+}
+
+void JniGuestCallDispatcher::RecordFastFault(
+    const cpu::A32HostCallContext& call,
+    std::exception_ptr exception) const noexcept {
+    try {
+        std::scoped_lock lock(pending_fault_mutex_);
+        const auto existing = std::find_if(
+            pending_faults_.begin(), pending_faults_.end(),
+            [&](const auto& fault) {
+                return fault.thread_id == call.thread_id &&
+                       fault.pc == call.pc;
+            });
+        if (existing != pending_faults_.end()) {
+            existing->exception = std::move(exception);
+        } else {
+            pending_faults_.push_back(
+                {call.thread_id, call.pc, std::move(exception)});
+        }
+    } catch (...) {
+        // The callback contract is noexcept. A missing pending record remains
+        // an explicit host_call_fault rather than leaking an exception through
+        // Dynarmic.
+    }
+}
+
+std::exception_ptr JniGuestCallDispatcher::TakeFastFault(
+    const std::uint64_t thread_id,
+    const memory::GuestAddress pc) const noexcept {
+    std::scoped_lock lock(pending_fault_mutex_);
+    const auto found = std::find_if(
+        pending_faults_.begin(), pending_faults_.end(),
+        [&](const auto& fault) {
+            return fault.thread_id == thread_id && fault.pc == pc;
+        });
+    if (found == pending_faults_.end()) return {};
+    auto result = std::move(found->exception);
+    pending_faults_.erase(found);
+    return result;
 }
 
 void JniGuestCallDispatcher::Dispatch(

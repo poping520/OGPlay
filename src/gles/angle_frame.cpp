@@ -377,6 +377,30 @@ void AngleFrame::BufferSubData(
 #endif
 }
 
+std::int32_t AngleFrame::GetBufferParameter(const std::uint32_t target,
+                                             const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    GLint value{};
+    glGetBufferParameteriv(target, parameter, &value);
+    RequireNoError("glGetBufferParameteriv");
+    return value;
+#else
+    static_cast<void>(target); static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+bool AngleFrame::IsBuffer(const std::uint32_t buffer) {
+#if OGPLAY_HAS_ANGLE
+    const auto result = glIsBuffer(buffer) == GL_TRUE;
+    RequireNoError("glIsBuffer");
+    return result;
+#else
+    static_cast<void>(buffer);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::vector<std::uint32_t> AngleFrame::GenerateTextures(const std::size_t count) {
     if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
         throw std::length_error("ANGLE texture count overflows GLsizei");
@@ -450,6 +474,43 @@ void AngleFrame::TextureParameterFloat(const std::uint32_t target,
     static_cast<void>(target);
     static_cast<void>(parameter);
     static_cast<void>(value);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::int32_t AngleFrame::GetTextureParameterInteger(
+    const std::uint32_t target, const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    GLint value{};
+    glGetTexParameteriv(target, parameter, &value);
+    RequireNoError("glGetTexParameteriv");
+    return value;
+#else
+    static_cast<void>(target); static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+float AngleFrame::GetTextureParameterFloat(
+    const std::uint32_t target, const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    GLfloat value{};
+    glGetTexParameterfv(target, parameter, &value);
+    RequireNoError("glGetTexParameterfv");
+    return value;
+#else
+    static_cast<void>(target); static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+bool AngleFrame::IsTexture(const std::uint32_t texture) {
+#if OGPLAY_HAS_ANGLE
+    const auto result = glIsTexture(texture) == GL_TRUE;
+    RequireNoError("glIsTexture");
+    return result;
+#else
+    static_cast<void>(texture);
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }
@@ -572,6 +633,85 @@ void AngleFrame::TextureSubImage2D(
     static_cast<void>(target); static_cast<void>(level); static_cast<void>(x_offset);
     static_cast<void>(y_offset); static_cast<void>(width); static_cast<void>(height);
     static_cast<void>(format); static_cast<void>(type); static_cast<void>(pixels);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::CompressedTextureSubImage2D(
+    const std::uint32_t target, const std::int32_t level,
+    const std::int32_t x_offset, const std::int32_t y_offset,
+    const std::int32_t width, const std::int32_t height,
+    const std::uint32_t format, const std::span<const std::byte> data) {
+#if OGPLAY_HAS_ANGLE
+    constexpr std::uint32_t kPvrtcRgb4 = 0x8c00U;
+    constexpr std::uint32_t kPvrtcRgb2 = 0x8c01U;
+    constexpr std::uint32_t kPvrtcRgba2 = 0x8c03U;
+    const auto* extensions = reinterpret_cast<const char*>(
+        glGetString(GL_EXTENSIONS));
+    RequireNoError("glGetString(GL_EXTENSIONS) for compressed sub-image");
+    if (format >= kPvrtcRgb4 && format <= kPvrtcRgba2 &&
+        !HasExtension(extensions, "GL_IMG_texture_compression_pvrtc")) {
+        if (width <= 0 || height <= 0) {
+            throw std::invalid_argument(
+                "PVRTC sub-image fallback dimensions must be positive");
+        }
+        const auto bpp = format == kPvrtcRgb2 || format == kPvrtcRgba2
+                             ? 2U
+                             : 4U;
+        const auto opaque = format == kPvrtcRgb4 || format == kPvrtcRgb2;
+        const auto rgba = DecodePvrtc1Rgba8(
+            static_cast<std::uint32_t>(width),
+            static_cast<std::uint32_t>(height),
+            static_cast<std::uint8_t>(bpp), opaque, data);
+        glTexSubImage2D(target, level, x_offset, y_offset, width, height,
+                        GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        RequireNoError("glTexSubImage2D decoded PVRTC");
+        return;
+    }
+    auto host_format = format;
+    if (format == kEtc1Rgb8Oes &&
+        !HasExtension(extensions, "GL_OES_compressed_ETC1_RGB8_texture")) {
+        if (!HasExtension(extensions, "GL_ANGLE_lossy_etc_decode")) {
+            if (width <= 0 || height <= 0) {
+                throw std::invalid_argument(
+                    "ETC1 sub-image fallback dimensions must be positive");
+            }
+            const auto rgba = DecodeEtc1Rgba8(
+                static_cast<std::uint32_t>(width),
+                static_cast<std::uint32_t>(height), data);
+            glTexSubImage2D(target, level, x_offset, y_offset, width, height,
+                            GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+            RequireNoError("glTexSubImage2D decoded ETC1");
+            return;
+        }
+        host_format = kEtc1Rgb8LossyDecodeAngle;
+    }
+    glCompressedTexSubImage2D(target, level, x_offset, y_offset, width, height,
+                              host_format, static_cast<GLsizei>(data.size()),
+                              data.data());
+    RequireNoError("glCompressedTexSubImage2D");
+#else
+    static_cast<void>(target); static_cast<void>(level);
+    static_cast<void>(x_offset); static_cast<void>(y_offset);
+    static_cast<void>(width); static_cast<void>(height);
+    static_cast<void>(format); static_cast<void>(data);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::CopyTextureSubImage2D(
+    const std::uint32_t target, const std::int32_t level,
+    const std::int32_t x_offset, const std::int32_t y_offset,
+    const std::int32_t x, const std::int32_t y, const std::int32_t width,
+    const std::int32_t height) {
+#if OGPLAY_HAS_ANGLE
+    glCopyTexSubImage2D(target, level, x_offset, y_offset, x, y, width, height);
+    RequireNoError("glCopyTexSubImage2D");
+#else
+    static_cast<void>(target); static_cast<void>(level);
+    static_cast<void>(x_offset); static_cast<void>(y_offset);
+    static_cast<void>(x); static_cast<void>(y);
+    static_cast<void>(width); static_cast<void>(height);
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }

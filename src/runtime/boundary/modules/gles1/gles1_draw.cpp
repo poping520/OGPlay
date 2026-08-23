@@ -278,7 +278,8 @@ void AndroidBoundaryGles1DrawState::EnsureProgram(gles::AngleFrame& frame) {
     frame.DeleteShader(vertex_shader);
     frame.DeleteShader(fragment_shader);
     constexpr std::array attribute_names{
-        "a_position", "a_normal", "a_color", "a_texcoord0", "a_texcoord1"};
+        "a_position", "a_normal", "a_color", "a_point_size",
+        "a_texcoord0", "a_texcoord1"};
     for (std::size_t index = 0; index < attribute_names.size(); ++index) {
         program_.attributes[index] =
             frame.GetAttribLocation(program_.name, attribute_names[index]);
@@ -289,7 +290,7 @@ void AndroidBoundaryGles1DrawState::EnsureProgram(gles::AngleFrame& frame) {
         "u_normal_matrix", "u_current_color", "u_current_normal",
         "u_global_ambient", "u_light_ambient", "u_light_diffuse",
         "u_light_position", "u_material_ambient", "u_material_diffuse",
-        "u_has_color", "u_has_normal", "u_lighting", "u_point_size",
+        "u_has_color", "u_has_normal", "u_has_point_size", "u_lighting", "u_point_size",
         "u_point_size_min", "u_point_size_max", "u_point_distance_attenuation",
         "u_fog_enabled",
         "u_fog_mode", "u_fog_density", "u_fog_start", "u_fog_end",
@@ -376,7 +377,7 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
                                      array.stride, offset);
     };
     constexpr std::array arrays{kGles1VertexArray, kGles1NormalArray,
-                                kGles1ColorArray};
+                                kGles1ColorArray, kGles1PointSizeArray};
     for (std::size_t index = 0; index < arrays.size(); ++index) {
         const auto& array = Array(arrays[index], kTexture0);
         prepare(index, array,
@@ -448,6 +449,8 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
                     Array(kGles1ColorArray, kTexture0).enabled ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_has_normal"),
                     Array(kGles1NormalArray, kTexture0).enabled ? 1.0F : 0.0F);
+    frame.Uniform1f(uniform("u_has_point_size"),
+                    Array(kGles1PointSizeArray, kTexture0).enabled ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_lighting"),
                     core.Capability(0x0B50U) ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_point_size"), fixed.PointSize());

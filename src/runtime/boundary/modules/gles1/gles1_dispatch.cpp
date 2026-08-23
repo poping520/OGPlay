@@ -279,6 +279,7 @@ void AndroidBoundaryGles1State::Reset() {
     hints_.fill(kGles1DontCare);
     shared_->Reset();
     capabilities_.clear();
+    logic_operation_ = 0x1503U;
     matrices_.Reset();
     fixed_->Reset();
 }
@@ -431,6 +432,18 @@ std::vector<std::uint32_t> AndroidBoundaryGles1State::EnabledTextureUnits() cons
         if (Capability(texture, 0x0DE1U)) result.push_back(texture);
     }
     return result;
+}
+
+void AndroidBoundaryGles1State::SetLogicOperation(
+    const std::uint32_t operation) {
+    if (operation < 0x1500U || operation > 0x150FU) {
+        throw std::invalid_argument("GLES1 logic operation is invalid");
+    }
+    logic_operation_ = operation;
+}
+
+std::uint32_t AndroidBoundaryGles1State::LogicOperation() const noexcept {
+    return logic_operation_;
 }
 
 AndroidBoundaryGles1MatrixState&

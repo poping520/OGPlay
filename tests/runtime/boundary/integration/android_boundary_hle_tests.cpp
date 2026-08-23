@@ -2006,12 +2006,21 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                            {0x8892U, 8U, buffer_data.Value(), 0x88E4U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBufferSubData",
                            {0x8892U, 4U, 4U, buffer_data.Value()}) == 0U);
+        const auto object_query = fixture.output.Add(0x2c0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetBufferParameteriv",
+                           {0x8892U, 0x8764U, object_query.Value()}) == 0U);
+        CHECK(fixture.bus.Read32(object_query, 1U) == 8U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetBufferParameteriv",
+                           {0x8892U, 0x8765U, object_query.Value()}) == 0U);
+        CHECK(fixture.bus.Read32(object_query, 1U) == 0x88E4U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glIsBuffer", {buffer}) == 1U);
         CHECK_THROWS_WITH_AS(
             fixture.Call("libGLESv1_CM.so", "glBufferData",
                          {0x8892U, 0xFFFFFFFFU, 0U, 0x88E4U}),
             "glBufferData count cannot be negative", std::invalid_argument);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDeleteBuffers",
                            {1U, buffer_names.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glIsBuffer", {buffer}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glActiveTexture",
                            {0x84C0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glEnable",
@@ -2030,6 +2039,14 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                            {0x8892U, 0U}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
                            {0x0DE1U, texture}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glIsTexture", {texture}) == 1U);
+        fixture.bus.Write32(object_query, 0x2601U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteriv",
+                           {0x0DE1U, 0x2801U, object_query.Value()}) == 0U);
+        fixture.bus.Write32(object_query, 0U, 1U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetTexParameteriv",
+                           {0x0DE1U, 0x2801U, object_query.Value()}) == 0U);
+        CHECK(fixture.bus.Read32(object_query, 1U) == 0x2601U);
         const auto readback = fixture.output.Add(0x380U);
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glClearColor",
@@ -2086,6 +2103,19 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                   {ogplay::runtime::detail::kGles1TextureEnvironment,
                    ogplay::runtime::detail::kGles1TextureEnvironmentMode,
                    0x2100U}) == 0U);
+        fixture.bus.Write32(environment, 0x2100U, 1U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexEnvxv",
+                  {ogplay::runtime::detail::kGles1TextureEnvironment,
+                   ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+                   environment.Value()}) == 0U);
+        fixture.bus.Write32(environment, 0U, 1U);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glGetTexEnvxv",
+                  {ogplay::runtime::detail::kGles1TextureEnvironment,
+                   ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+                   environment.Value()}) == 0U);
+        CHECK(fixture.bus.Read32(environment, 1U) == 0x2100U);
         const auto float_query = fixture.output.Add(0x200U);
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glGetFloatv",

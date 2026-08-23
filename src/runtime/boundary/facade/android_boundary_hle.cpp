@@ -48,6 +48,7 @@
 #include "runtime/boundary/modules/gles1/gles1_draw.h"
 #include "runtime/boundary/modules/gles1/gles1_fixed.h"
 #include "runtime/boundary/modules/gles1/gles1_query.h"
+#include "runtime/boundary/modules/gles1/gles1_remaining.h"
 #include "runtime/boundary/modules/gles2/gles2_module.h"
 #include "runtime/boundary/modules/log/log_exports.h"
 #include "runtime/boundary/modules/log/log_module.h"
@@ -133,6 +134,12 @@ public:
             });
         detail::BindAndroidBoundaryGles1Completion(
             gles1_dispatch_, gles1_state_, gles1_legacy_state_, address_space_,
+            [this](const std::string_view operation) -> gles::AngleFrame& {
+                return RequireFrame(operation);
+            });
+        detail::BindAndroidBoundaryGles1Remaining(
+            gles1_dispatch_, gles1_state_, gles1_legacy_state_,
+            gles1_draw_state_, address_space_,
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });

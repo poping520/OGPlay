@@ -227,6 +227,22 @@ std::vector<std::int32_t> AngleFrame::GetIntegers(
 #endif
 }
 
+std::vector<float> AngleFrame::GetFloats(
+    const std::uint32_t parameter, const std::size_t count) {
+    if (count > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
+        throw std::length_error("ANGLE float query count overflows GLsizei");
+    }
+#if OGPLAY_HAS_ANGLE
+    std::vector<float> values(count);
+    glGetFloatv(parameter, values.data());
+    RequireNoError("glGetFloatv");
+    return values;
+#else
+    static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
 std::string AngleFrame::GetString(const std::uint32_t parameter) {
 #if OGPLAY_HAS_ANGLE
     const auto* value = glGetString(parameter); RequireNoError("glGetString");

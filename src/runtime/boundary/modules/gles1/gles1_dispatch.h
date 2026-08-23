@@ -98,6 +98,8 @@ public:
     [[nodiscard]] bool Capability(std::uint32_t texture_unit,
                                   std::uint32_t capability) const;
     [[nodiscard]] std::vector<std::uint32_t> EnabledTextureUnits() const;
+    void SetLogicOperation(std::uint32_t operation);
+    [[nodiscard]] std::uint32_t LogicOperation() const noexcept;
     [[nodiscard]] AndroidBoundaryGles1MatrixState& Matrices() noexcept;
     [[nodiscard]] const AndroidBoundaryGles1MatrixState& Matrices() const noexcept;
     [[nodiscard]] AndroidBoundaryGles1FixedState& Fixed() noexcept;
@@ -113,6 +115,7 @@ private:
                                        kGles1DontCare, kGles1DontCare,
                                        kGles1DontCare};
     std::map<std::uint64_t, bool> capabilities_;
+    std::uint32_t logic_operation_{0x1503U};
     AndroidBoundaryGles1MatrixState matrices_;
     std::unique_ptr<AndroidBoundaryGles1FixedState> fixed_;
 };

@@ -9,6 +9,8 @@
 #include "runtime/boundary/modules/gles1/gles1_fixed.h"
 #include "runtime/boundary/modules/gles1/gles1_completion.h"
 #include "runtime/boundary/modules/gles1/gles1_query.h"
+#include "runtime/boundary/modules/gles1/gles1_remaining.h"
+#include "runtime/boundary/modules/gles1/gles1_support.h"
 #include "ogplay/memory/address_space.h"
 
 namespace {
@@ -127,14 +129,32 @@ TEST_CASE("GLES1 lighting material and fog handlers are explicit") {
 TEST_CASE("GLES1 fixed matrix and scalar completion is directly bound") {
     ogplay::memory::AddressSpace address_space;
     ogplay::gles::GlesDispatchTable dispatch{ogplay::gles::GlesApi::gles1};
+    ogplay::gles::GlesDispatchTable extensions{
+        ogplay::gles::GlesApi::gles1_extensions};
     ogplay::runtime::detail::AndroidBoundaryGles1State core;
     ogplay::runtime::detail::AndroidBoundaryGles1LegacyState legacy;
+    ogplay::runtime::detail::AndroidBoundaryGles1DrawState draw;
+    ogplay::runtime::detail::AndroidBoundaryGles1QueryStrings strings{
+        address_space};
+    const auto no_frame = [](const std::string_view operation)
+        -> ogplay::gles::AngleFrame& {
+        throw std::runtime_error(std::string(operation) +
+                                 " has no current ANGLE frame");
+    };
+    ogplay::runtime::detail::BindAndroidBoundaryGles1Core(
+        dispatch, core, address_space, 1U, no_frame);
+    ogplay::runtime::detail::BindAndroidBoundaryGles1Textures(
+        dispatch, core, address_space, no_frame);
+    ogplay::runtime::detail::BindAndroidBoundaryGles1Draw(
+        dispatch, extensions, draw, core, legacy, address_space, no_frame);
+    ogplay::runtime::detail::BindAndroidBoundaryGles1Queries(
+        dispatch, strings, [](const std::uint32_t) { return std::string{"test"}; });
+    ogplay::runtime::detail::BindAndroidBoundaryGles1Legacy(
+        dispatch, legacy, core, draw, address_space, no_frame);
     ogplay::runtime::detail::BindAndroidBoundaryGles1Completion(
-        dispatch, core, legacy, address_space,
-        [](const std::string_view operation) -> ogplay::gles::AngleFrame& {
-            throw std::runtime_error(std::string(operation) +
-                                     " has no current ANGLE frame");
-        });
+        dispatch, core, legacy, address_space, no_frame);
+    ogplay::runtime::detail::BindAndroidBoundaryGles1Remaining(
+        dispatch, core, legacy, draw, address_space, no_frame);
     constexpr std::array symbols{
         "glAlphaFuncx", "glClearColorx", "glClearDepthx", "glClipPlanex",
         "glColor4x", "glDepthRangex", "glFogx", "glFogxv", "glFrustumf",
@@ -151,6 +171,12 @@ TEST_CASE("GLES1 fixed matrix and scalar completion is directly bound") {
         CAPTURE(symbol);
         REQUIRE(id.has_value());
         CHECK(dispatch.IsBound(*id));
+    }
+    for (std::size_t index = 0;
+         index < ogplay::gles::GlesFunctionCount(ogplay::gles::GlesApi::gles1);
+         ++index) {
+        CAPTURE(index);
+        CHECK(dispatch.IsBound(static_cast<ogplay::gles::GlesThunkId>(index)));
     }
 
     const std::array scale{2.0F, 0.0F, 0.0F, 0.0F,
@@ -175,4 +201,13 @@ TEST_CASE("GLES1 fixed matrix and scalar completion is directly bound") {
     CHECK_THROWS_AS(core.Fixed().SetPointDistanceAttenuation(
                         std::array{-1.0F, 0.0F, 0.0F}),
                     std::invalid_argument);
+    draw.SetPointer(ogplay::runtime::detail::kGles1PointSizeArray, 0x84C0U,
+                    1, 0x1406U, 0, 0x1000U, 0U);
+    draw.SetEnabled(ogplay::runtime::detail::kGles1PointSizeArray, 0x84C0U,
+                    true);
+    CHECK(draw.Array(ogplay::runtime::detail::kGles1PointSizeArray,
+                     0x84C0U).enabled);
+    CHECK(ogplay::runtime::detail::kGles1FixedVertexShader.find(
+              "mix(u_point_size, a_point_size, u_has_point_size)") !=
+          std::string_view::npos);
 }

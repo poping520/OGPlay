@@ -16,6 +16,12 @@
 
 ## 验收
 
-- [ ] query shape/guest output、texture upload与 object predicate 使用真实 ANGLE/state；
-- [ ] point-size array 不被静默忽略；
-- [ ] catalog 148 项中本轮 62 项全部 `IsBound`，focused tests 通过。
+- [x] query shape/guest output、texture upload与 object predicate 使用真实 ANGLE/state；
+- [x] point-size array 不被静默忽略；
+- [x] catalog 148 项中本轮 62 项全部 `IsBound`，focused tests 通过。
+
+## 结果
+
+27 项剩余 core 已显式绑定；buffer/texture predicate、parameter query 与 sub-image
+调用真实 ANGLE，legacy query/setter 使用同一 fixed state。145 个 GLES1 core ID 均有
+handler；另 3 个 Android Bounds symbol 继续使用独立 direct binding。

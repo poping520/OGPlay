@@ -140,6 +140,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   查询转发真实 ANGLE;查询形状显式受检,未知 pname 不得伪造。同时链接 GLES1/GLES2 的
   guest 可经共享 `glGetIntegerv` 查询 GLES2 上限与 current program、framebuffer、
   renderbuffer binding,值仍来自真实 ANGLE。
+- GLES1 fixed/legacy query 直接读取同一 matrix、light/material/fog、clip-plane 与 texture
+  environment state；buffer/texture predicate 和 parameter query 转发真实 ANGLE。所有 guest
+  输出按实际 shape 完整写入，fixed 输出按 16.16 转换而 enum identity 保持整数值。
 - GLES1 legacy fixed-state 批次显式绑定 alpha function、client active texture、current
   color、current normal、六个 eye-space clip plane 与 texture environment,状态按
   context/texture unit 隔离、clamp 并随 reset 恢复;`glMultMatrixf` 右乘当前 matrix,
@@ -161,6 +164,8 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   ambient/diffuse 只计算 RGB,输出 alpha 取 diffuse material alpha;light0 与 modelview
   上三阶 normal matrix 保持现有 partial。level-0 base format 按 texture object 保存并随
   delete/reset 清理,未知格式不得猜测组合语义。
+- `glPointSizePointerOES` 保存调用时 array-buffer binding；启用 point-size array 后内部
+  vertex shader 从该 attribute 选择每顶点 point size，再应用 distance attenuation/min/max。
 - 三个 `GL_OES_matrix_palette` 入口绑定在独立 extension dispatch:current palette index
   限定 0..31,matrix-index/weight pointer 延迟保存调用时 array-buffer binding,类型、
   size 与 stride 受检且随 context reset;完整 skinning shader 尚未实现时 draw 必须明确

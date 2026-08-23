@@ -469,6 +469,7 @@ std::optional<bool> Gles1ClientStateEnabled(
     case kGles1ColorArray:
     case kGles1MatrixIndexArray:
     case kGles1WeightArray:
+    case kGles1PointSizeArray:
         return draw.Array(capability, kTexture0).enabled;
     case kGles1TextureCoordArray:
         return draw.Array(capability, legacy.ClientActiveTexture()).enabled;

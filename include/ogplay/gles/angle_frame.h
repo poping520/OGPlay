@@ -81,6 +81,9 @@ public:
                     std::uint32_t usage);
     void BufferSubData(std::uint32_t target, std::uint32_t offset,
                        std::span<const std::byte> data);
+    [[nodiscard]] std::int32_t GetBufferParameter(std::uint32_t target,
+                                                   std::uint32_t parameter);
+    [[nodiscard]] bool IsBuffer(std::uint32_t buffer);
     [[nodiscard]] std::vector<std::uint32_t> GenerateFramebuffers(
         std::size_t count);
     void DeleteFramebuffers(std::span<const std::uint32_t> framebuffers);
@@ -129,6 +132,19 @@ public:
                            std::int32_t width, std::int32_t height,
                            std::uint32_t format, std::uint32_t type,
                            std::span<const std::byte> pixels);
+    void CompressedTextureSubImage2D(
+        std::uint32_t target, std::int32_t level, std::int32_t x_offset,
+        std::int32_t y_offset, std::int32_t width, std::int32_t height,
+        std::uint32_t format, std::span<const std::byte> data);
+    void CopyTextureSubImage2D(std::uint32_t target, std::int32_t level,
+                               std::int32_t x_offset, std::int32_t y_offset,
+                               std::int32_t x, std::int32_t y,
+                               std::int32_t width, std::int32_t height);
+    [[nodiscard]] std::int32_t GetTextureParameterInteger(
+        std::uint32_t target, std::uint32_t parameter);
+    [[nodiscard]] float GetTextureParameterFloat(std::uint32_t target,
+                                                  std::uint32_t parameter);
+    [[nodiscard]] bool IsTexture(std::uint32_t texture);
     void GenerateMipmap(std::uint32_t target);
     void SetVertexAttributeEnabled(std::uint32_t index, bool enabled);
     void VertexAttributePointer(std::uint32_t index, std::int32_t size,
@@ -174,6 +190,8 @@ public:
     void Flush();
     [[nodiscard]] std::vector<std::int32_t> GetIntegers(
         std::uint32_t parameter, std::size_t count);
+    [[nodiscard]] std::vector<float> GetFloats(std::uint32_t parameter,
+                                               std::size_t count);
     [[nodiscard]] std::string GetString(std::uint32_t parameter);
     [[nodiscard]] std::uint32_t GetError() noexcept;
     void DrawArrays(std::uint32_t mode, std::int32_t first,

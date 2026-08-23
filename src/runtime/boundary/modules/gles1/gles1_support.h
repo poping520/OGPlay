@@ -118,6 +118,7 @@ inline constexpr std::string_view kGles1FixedVertexShader = R"(
 attribute vec4 a_position;
 attribute vec3 a_normal;
 attribute vec4 a_color;
+attribute float a_point_size;
 attribute vec4 a_texcoord0;
 attribute vec4 a_texcoord1;
 uniform vec4 u_modelview0;
@@ -149,6 +150,7 @@ uniform float u_has_color;
 uniform float u_has_normal;
 uniform float u_lighting;
 uniform float u_point_size;
+uniform float u_has_point_size;
 uniform float u_point_size_min;
 uniform float u_point_size_max;
 uniform vec4 u_point_distance_attenuation;
@@ -193,7 +195,8 @@ void main() {
                           u_projection3, eye);
   float pointAttenuation = dot(u_point_distance_attenuation.xyz,
       vec3(1.0, v_fog_distance, v_fog_distance * v_fog_distance));
-  gl_PointSize = clamp(u_point_size * inversesqrt(max(pointAttenuation, 0.000001)),
+  float pointSize = mix(u_point_size, a_point_size, u_has_point_size);
+  gl_PointSize = clamp(pointSize * inversesqrt(max(pointAttenuation, 0.000001)),
                        u_point_size_min, u_point_size_max);
 })";
 

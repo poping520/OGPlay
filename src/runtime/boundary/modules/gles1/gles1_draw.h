@@ -69,9 +69,9 @@ public:
 private:
     struct Program final {
         std::uint32_t name{};
-        std::array<std::int32_t, 3U + kGles1MaximumDrawTextureUnits> attributes{};
+        std::array<std::int32_t, 4U + kGles1MaximumDrawTextureUnits> attributes{};
         std::map<std::string, std::int32_t> uniforms;
-        std::array<std::uint32_t, 4U + kGles1MaximumDrawTextureUnits> buffers{};
+        std::array<std::uint32_t, 5U + kGles1MaximumDrawTextureUnits> buffers{};
     };
 
     [[nodiscard]] static std::uint64_t ArrayKey(
@@ -91,7 +91,7 @@ private:
     std::map<std::uint64_t, Gles1ClientArray> arrays_;
     Program program_;
     std::array<std::vector<std::byte>,
-               3U + kGles1MaximumDrawTextureUnits>
+               4U + kGles1MaximumDrawTextureUnits>
         client_array_staging_;
     std::vector<std::byte> element_staging_;
     std::vector<std::uint16_t> draw_array_indices_;

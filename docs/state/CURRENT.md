@@ -4,36 +4,16 @@
 
 ## 当前阶段
 
-- **Native Boundary 重构**：BND-1 已建立 API-sealed `BoundaryCatalog`，以 5 个实际有
-  handler 的 Virtual SO 作为 SONAME/export 唯一事实来源；Bionic Profile 的 9 项平行
-  boundary 列表已删除。synthetic module 从完整 provider exports 建 dynsym，late import
-  可直接解析既有 Virtual SO。BND-2 已增加 CPU generic HostCallHook、live-register call
-  frame、多页 sealed thunk arena 与 dense hot table；正常 SVC #2 在 Dynarmic callback 内
-  完成并继续 JIT，observer session 保持 slow path，nested/clone/thread CPU 安装同一 hook。
-  BND-3 已让 JNI SVC #3 复用同一 live-register transport，fast/slow entry 共用唯一
-  receiver/thread/slot/return-width dispatch；RegisterNatives/JNI_OnLoad 与 JNI 语义未改。
-  五个真实 guest libc memory intercept 已从 Virtual SO metadata 分离为独立
-  `GuestSymbolOverrideDescriptor`。BND-4 已让现有 export 在 seal 时绑定 concrete final
-  module invoke pointer，descriptor 只保留 module-local id/签名；`HleRoute`、全局
-  fallback id、平行参数表和 import-driven synthetic builder 已删除。EGL/GLES1/GLES2
-  继续共享唯一 `GuestGlContext`，fast/slow transport 共用同一 module binding。
-  BND-1 闭环已补齐跨 API active module/export 过滤与 metadata-only link preflight；
-  preflight 不再构造 ANGLE/surface runtime，module-local id 也不再要求与目录序号一致。
-  BND-3 闭环已让 Boundary/JNI fast fault 按 thread/PC 保存并在退出 JIT 后恢复原始
-  exception identity；unbound slot、invalid receiver 与 guest memory fault 已有等价测试。
-  BND-2 闭环已把 hot table 收紧为 export-specific function pointer 与 concrete module
-  instance；成功路径不再持有 descriptor/FastBinding，也不读取 SONAME/local id。
-  BND-4 闭环已删除 `InvokeModule`/module function enum，并以 shared metadata 直接关联
-  named handler、generated GLES catalog 关联 GLES handler；Virtual SO boundary hot
-  implementation 不再使用 `std::function`，新增 architecture gate 与 0/4/stack/GLES/JNI/
-  forced-slow end-to-end benchmark。A32 最小 typed layer 已提供 `GuestPtr<T>`、
-  `GuestCString` 与 scalar bit decode。验收遗留已进一步关闭：libc 五个 override 以真实
-  参数个数分别 direct-bind，删除共享 active PC，并以不同 guest thread 并发回归覆盖；
-  libandroid/EGL/GLES1/GLES2 的 export 实现体已迁入各 concrete module，中央
-  `Impl::Invoke*` 不再存在，Android looper/input mutable state 也由模块自有。非阻塞
-  收口进一步移除了 module 对整个 `Impl&` 的依赖：call transport、Android memory
-  service 和唯一 shared graphics context 通过构造注入；architecture gate 现扫描全部
-  boundary module implementation source，并继续单独约束 `TryFastCall()` direct router。
+- **Native Boundary 重构**：BND-1..4 已闭环。API-sealed catalog 是 5 个 Virtual SO 的
+  metadata 来源，支持 API filtering、metadata-only preflight 与 late import。SVC #2/#3
+  使用 live-register dense transport；每个 export seal 为 `{fn,module*}`，成功路径继续
+  JIT，不读取 SONAME/local id。fast fault 在 JIT 外恢复原异常；JNI/RegisterNatives/
+  JNI_OnLoad 语义不变。libc 五个 override 独立 direct-bind，并有跨 guest thread 并发
+  回归。各 SO 实现归属 concrete final module，中央 dispatch/`Impl::Invoke*` 已删除；
+  module 仅构造注入 bounded call/Android/graphics services。EGL/GLES1/GLES2 共享唯一
+  `GraphicsBoundaryContext`、`GuestGlContext` 与 ANGLE state。architecture gate 扫描全部
+  boundary module source，并单独约束 `TryFastCall()` direct router；A32 typed layer 与
+  end-to-end ABI benchmark 已覆盖。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3
@@ -61,8 +41,8 @@
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
-- macOS/arm64 BND 验收遗留闭环后：909/909 CTest（98.41 秒）；本次最终 focused
-  boundary/JNI/Bionic/preflight/API/late-dlopen/shared-state/architecture gate 为 12/12。
+- macOS/arm64 BND service 收窄后：909/909 CTest（95.52 秒）；focused module/shared-state/
+  benchmark/architecture gate 为 18/18。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 

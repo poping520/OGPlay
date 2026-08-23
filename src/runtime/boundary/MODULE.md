@@ -15,8 +15,9 @@
 - fast handler 的 C++ 异常按 thread/PC 保存为 pending structured fault，退出 JIT 后由
   slow consumer 重抛原 exception identity；不得只留下 generic `host_call_fault`。
 - Android/EGL/GLES1/GLES2/log 以普通 `final` module type 实例化并在 seal 时一次 type
-  erase；descriptor 只保留 module-local id 与签名冷数据。fast/slow transport 共用同一
-  预绑定 module invoke pointer，调用期不再读取 SONAME、不经过 `HleRoute` 或全局 id。
+  erase；descriptor 只保留 module-local id 与签名冷数据。每个 active export 在 seal 时
+  直接生成 `{export-specific fn, concrete module*}`，fast/slow transport 共用该 handler；
+  调用期不再读取 SONAME/local id，不经过 module-level route、`HleRoute` 或全局 id。
   EGL/GLES1/GLES2 module 继续显式共享唯一 `GuestGlContext`，不复制 graphics state。
 
 Android native 边界:`android_boundary_hle` session facade、GLES2/GLES1 边界组件、

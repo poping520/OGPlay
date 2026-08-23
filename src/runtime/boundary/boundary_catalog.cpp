@@ -8,38 +8,28 @@
 #include <utility>
 
 #include "ogplay/gles/gles_dispatch.h"
+#include "boundary_module_metadata.h"
 
 namespace ogplay::runtime {
 namespace {
 
 constexpr std::uint32_t kThunkStride = 4U;
 
-using NamedExport = std::pair<std::string_view, std::uint8_t>;
+struct NamedExport final {
+    std::string_view name;
+    std::uint16_t local_id;
+    std::uint8_t parameter_count;
+};
 
-constexpr std::array<NamedExport, 20> kAndroidExports{{
-    {"AConfiguration_new", 0}, {"AConfiguration_delete", 1},
-    {"AConfiguration_fromAssetManager", 2}, {"AConfiguration_getLanguage", 2},
-    {"AConfiguration_getCountry", 2}, {"ALooper_prepare", 1},
-    {"ALooper_addFd", 6}, {"ALooper_pollAll", 4},
-    {"AInputQueue_attachLooper", 5}, {"AInputQueue_detachLooper", 1},
-    {"AInputQueue_getEvent", 2}, {"AInputQueue_preDispatchEvent", 2},
-    {"AInputQueue_finishEvent", 3}, {"AInputEvent_getType", 1},
-    {"AKeyEvent_getAction", 1}, {"AKeyEvent_getKeyCode", 1},
-    {"AMotionEvent_getAction", 1}, {"AMotionEvent_getX", 2},
-    {"AMotionEvent_getY", 2}, {"ANativeWindow_setBuffersGeometry", 4},
-}};
-
-constexpr std::array<NamedExport, 12> kEglExports{{
-    {"eglGetDisplay", 1}, {"eglInitialize", 3}, {"eglChooseConfig", 5},
-    {"eglGetConfigAttrib", 4}, {"eglCreateWindowSurface", 4},
-    {"eglCreateContext", 4}, {"eglMakeCurrent", 4}, {"eglQuerySurface", 4},
-    {"eglSwapBuffers", 2}, {"eglDestroyContext", 2},
-    {"eglDestroySurface", 2}, {"eglTerminate", 1},
-}};
-
-constexpr std::array<NamedExport, 2> kLogExports{{
-    {"__android_log_print", 3}, {"__android_log_write", 3},
-}};
+#define OGPLAY_NAMED_METADATA(name, id, count, method) \
+    NamedExport{name, id, count},
+constexpr std::array kAndroidExports{
+    OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
+constexpr std::array kEglExports{
+    OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
+constexpr std::array kLogExports{
+    OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
+#undef OGPLAY_NAMED_METADATA
 
 void AddNamedModule(std::vector<BoundaryModuleDefinition>& modules,
                     std::vector<std::vector<BoundaryExportDefinition>>& storage,
@@ -52,9 +42,9 @@ void AddNamedModule(std::vector<BoundaryModuleDefinition>& modules,
             throw std::length_error("boundary module local id overflows");
         }
         module_exports.push_back(BoundaryExportDefinition{
-            .name = exports[index].first,
-            .local_id = static_cast<std::uint16_t>(index),
-            .parameter_count = exports[index].second});
+            .name = exports[index].name,
+            .local_id = exports[index].local_id,
+            .parameter_count = exports[index].parameter_count});
     }
     modules.push_back({soname, {}, module_exports});
 }

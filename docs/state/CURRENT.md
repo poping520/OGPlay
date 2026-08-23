@@ -21,6 +21,8 @@
   preflight 不再构造 ANGLE/surface runtime，module-local id 也不再要求与目录序号一致。
   BND-3 闭环已让 Boundary/JNI fast fault 按 thread/PC 保存并在退出 JIT 后恢复原始
   exception identity；unbound slot、invalid receiver 与 guest memory fault 已有等价测试。
+  BND-2 闭环已把 hot table 收紧为 export-specific function pointer 与 concrete module
+  instance；成功路径不再持有 descriptor/FastBinding，也不读取 SONAME/local id。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

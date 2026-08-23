@@ -3,21 +3,54 @@
 #include <cstddef>
 #include <cstdint>
 #include <atomic>
-#include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace ogplay::gles {
 
 using GlesThunkId = std::uint16_t;
 using GlesGuestValue = std::uint32_t;
-using GlesHandler = std::function<GlesGuestValue(
-    std::span<const GlesGuestValue> arguments, std::uint64_t thread_id)>;
+class GlesHandler final {
+public:
+    GlesHandler() = default;
+
+    template <typename Handler>
+        requires (!std::is_same_v<std::remove_cvref_t<Handler>, GlesHandler>)
+    GlesHandler(Handler&& handler) {
+        using Stored = std::decay_t<Handler>;
+        auto stored = std::make_shared<Stored>(std::forward<Handler>(handler));
+        state_ = stored;
+        invoke_ = +[](const void* state,
+                      const std::span<const GlesGuestValue> arguments,
+                      const std::uint64_t thread_id) -> GlesGuestValue {
+            return (*static_cast<const Stored*>(state))(arguments, thread_id);
+        };
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return invoke_ != nullptr;
+    }
+
+    [[nodiscard]] GlesGuestValue operator()(
+        const std::span<const GlesGuestValue> arguments,
+        const std::uint64_t thread_id) const {
+        return invoke_(state_.get(), arguments, thread_id);
+    }
+
+private:
+    using InvokeFn = GlesGuestValue (*)(
+        const void*, std::span<const GlesGuestValue>, std::uint64_t);
+    std::shared_ptr<const void> state_;
+    InvokeFn invoke_{};
+};
 
 enum class GlesApi : std::uint8_t { gles1, gles1_extensions, gles2 };
 

@@ -12,5 +12,7 @@ Virtual SO 调用不退出 `Cpu::Run()`。
 - [x] PC → slot → `{fn,self}` 常数时间调用。
 - [x] observer 强制 slow fallback，nested/clone CPU 安装同一 hook。
 - [x] fast/slow 结果等价测试；既有 decode benchmark 不设绝对阈值。
+- [x] hot slot 直接保存 export-specific template handler 与 concrete module instance；
+  成功路径不再经 `FastBinding`、descriptor、SONAME 或 local-id route。
 
-本 WU 保留 legacy handler 作为 hot entry 的业务实现，中央 route 的删除属于 BND-4。
+历史说明：首轮保留的 legacy handler bridge 已在本次 BND-2/BND-4 闭环中删除。

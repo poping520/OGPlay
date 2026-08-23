@@ -17,11 +17,13 @@
 #include <string>
 #include <string_view>
 #include <thread>
-#include <type_traits>
 #include <utility>
 
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
+#include "ogplay/gles/generated/gles1_catalog.h"
+#include "ogplay/gles/generated/gles1_extensions_catalog.h"
+#include "ogplay/gles/generated/gles2_catalog.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/gles/supersample.h"
 #include "ogplay/runtime/boundary/android_boundary_gles.h"
@@ -32,6 +34,7 @@
 #include "android_boundary_gles1_fixed.h"
 #include "android_boundary_gles1_query.h"
 #include "android_boundary_symbols.h"
+#include "boundary_module_metadata.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -48,63 +51,6 @@ constexpr std::uint32_t kEglHeight = 0x3056;
 constexpr std::size_t kMaximumShaderSourceCount = 1024;
 constexpr std::size_t kMaximumShaderSourceBytes = 4U * 1024U * 1024U;
 constexpr std::size_t kMaximumGlesNameBytes = 4096;
-
-enum class AndroidFunction : std::uint16_t {
-    configuration_new = 0,
-    configuration_delete = 1,
-    configuration_from_asset_manager = 2,
-    configuration_get_language = 3,
-    configuration_get_country = 4,
-    looper_prepare = 5,
-    looper_add_fd = 6,
-    looper_poll_all = 7,
-    input_queue_attach_looper = 8,
-    input_queue_detach_looper = 9,
-    input_queue_get_event = 10,
-    input_queue_pre_dispatch_event = 11,
-    input_queue_finish_event = 12,
-    input_event_get_type = 13,
-    key_event_get_action = 14,
-    key_event_get_key_code = 15,
-    motion_event_get_action = 16,
-    motion_event_get_x = 17,
-    motion_event_get_y = 18,
-    native_window_set_buffers_geometry = 19,
-};
-
-enum class EglFunction : std::uint16_t {
-    get_display = 0,
-    initialize = 1,
-    choose_config = 2,
-    get_config_attrib = 3,
-    create_window_surface = 4,
-    create_context = 5,
-    make_current = 6,
-    query_surface = 7,
-    swap_buffers = 8,
-    destroy_context = 9,
-    destroy_surface = 10,
-    terminate = 11,
-};
-
-enum class Gles2Function : gles::GlesThunkId {
-    attach_shader = 1, clear = 15, clear_color = 16, compile_shader = 20,
-    create_program = 25, create_shader = 26, delete_program = 30,
-    delete_shader = 32, draw_arrays = 40, draw_elements = 41,
-    get_attrib_location = 57, get_program_iv = 65, get_shader_iv = 70,
-    get_uniform_location = 74, link_program = 89, scissor = 96,
-    shader_source = 98, use_program = 130, viewport = 141,
-};
-
-[[nodiscard]] constexpr std::uint16_t Id(const AndroidFunction function) {
-    return static_cast<std::uint16_t>(function);
-}
-[[nodiscard]] constexpr std::uint16_t Id(const EglFunction function) {
-    return static_cast<std::uint16_t>(function);
-}
-[[nodiscard]] constexpr gles::GlesThunkId Id(const Gles2Function function) {
-    return static_cast<gles::GlesThunkId>(function);
-}
 
 std::uint32_t SignedResult(const std::int32_t value) noexcept {
     return std::bit_cast<std::uint32_t>(value);
@@ -124,7 +70,10 @@ public:
           descriptors_(detail::BuildAndroidBoundaryDescriptors(symbols_)),
           provider_(symbols_),
           gles_dispatch_(address_space, gl_context_),
-          gles1_state_(gl_context_.Shared()) {
+          gles1_state_(gl_context_.Shared()),
+          android_module_(*this), egl_module_(*this),
+          gles1_module_(*this), gles2_module_(*this), log_module_(*this),
+          libc_override_module_(*this) {
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& {
@@ -156,15 +105,7 @@ public:
         gles1_extensions_dispatch_.Seal();
         gles1_state_.Fixed().SetMaterialSingleFaceQuirk(
             options.allow_gles1_material_single_face);
-        SealModuleInstances();
-        hot_bindings_.reserve(descriptors_.size());
-        hot_.reserve(descriptors_.size());
-        for (const auto& descriptor : descriptors_) {
-            hot_bindings_.push_back(MakeBinding(descriptor));
-        }
-        for (auto& binding : hot_bindings_) {
-            hot_.push_back({&InvokeLegacyFast, &binding});
-        }
+        SealBindings();
     }
     void MapThunks() {
         if (mapped_) throw std::logic_error("Android boundary thunks are already mapped");
@@ -284,14 +225,17 @@ public:
         if (descriptor == nullptr) return false;
         const auto descriptor_index =
             static_cast<std::size_t>(descriptor - descriptors_.data());
-        const auto& binding = hot_bindings_.at(descriptor_index);
+        const auto& binding = hot_.at(descriptor_index);
         auto state = cpu.GetState();
         const A32CallFrame call(address_space_, state,
                                 descriptor->parameter_count);
         const auto arguments = call.RegisterArguments();
         std::uint32_t result{};
         try {
-            result = binding.invoke(*this, *descriptor, call);
+            if (descriptor->library == "libc.so") {
+                libc_override_module_.SetActivePc(stopped.pc);
+            }
+            result = binding.slow(binding.self, call);
         } catch (const gles::GuestTransferError& error) {
             throw gles::GuestTransferError(
                 "Android boundary guest transfer failed in " +
@@ -308,7 +252,7 @@ public:
                     state.Register(cpu::CoreRegister::lr)) +
                 " thread=" + std::to_string(state.ThreadId()));
         }
-        RecordGpuCall(*descriptor, arguments, binding.gpu);
+        RecordGpuCall(descriptor_index, arguments, binding.gpu);
         state.SetRegister(cpu::CoreRegister::r0, result);
         cpu.SetState(state);
         return true;
@@ -412,113 +356,255 @@ public:
         return result;
     }
 private:
-    struct AndroidModule final {};
-    struct EglModule final {};
-    struct Gles1Module final {};
-    struct Gles1ExtensionModule final {};
-    struct Gles2Module final {};
-    struct LogModule final {};
-
-    void SealModuleInstances() {
-        const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
-        module_instances_.reserve(catalog.Modules().size());
-        for (const auto& module : catalog.Modules()) {
-            void* instance{};
-            if (module.soname == "libandroid.so") instance = &android_module_;
-            else if (module.soname == "libEGL.so") instance = &egl_module_;
-            else if (module.soname == "libGLESv1_CM.so") instance = &gles1_module_;
-            else if (module.soname == "libGLESv2.so") instance = &gles2_module_;
-            else if (module.soname == "liblog.so") instance = &log_module_;
-            if (instance == nullptr) {
-                throw std::logic_error("boundary catalog module has no instance");
-            }
-            module_instances_.push_back({&module, instance});
+    struct AndroidModule final {
+        explicit AndroidModule(Impl& runtime) noexcept : runtime_(runtime) {}
+        [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
+        template <std::uint16_t Id>
+        std::uint32_t Invoke(const A32CallFrame& call) {
+            return runtime_.InvokeAndroid<Id>(call);
         }
-    }
-
-    using ModuleInvokeFn = std::uint32_t (*)(
-        Impl&, const detail::HleThunkDescriptor&, const A32CallFrame&);
-
-    struct FastBinding final {
-        Impl* owner{};
-        const detail::HleThunkDescriptor* descriptor{};
-        ModuleInvokeFn invoke{};
-        bool gpu{};
+    private:
+        Impl& runtime_;
     };
+
+    struct EglModule final {
+        explicit EglModule(Impl& runtime) noexcept : runtime_(runtime) {}
+        [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
+        template <std::uint16_t Id>
+        std::uint32_t Invoke(const A32CallFrame& call) {
+            return runtime_.InvokeEgl<Id>(call);
+        }
+    private:
+        Impl& runtime_;
+    };
+
+    struct Gles1Module final {
+        explicit Gles1Module(Impl& runtime) noexcept : runtime_(runtime) {}
+        [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
+        template <gles::GlesApi Api, gles::GlesThunkId Id>
+        std::uint32_t Invoke(const A32CallFrame& call) {
+            return runtime_.InvokeGles1<Api, Id>(call);
+        }
+    private:
+        Impl& runtime_;
+    };
+
+    struct Gles2Module final {
+        explicit Gles2Module(Impl& runtime) noexcept : runtime_(runtime) {}
+        [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
+        template <gles::GlesThunkId Id>
+        std::uint32_t Invoke(const A32CallFrame& call) {
+            return runtime_.InvokeGles2<Id>(call);
+        }
+    private:
+        Impl& runtime_;
+    };
+
+    struct LogModule final {
+        explicit LogModule(Impl& runtime) noexcept : runtime_(runtime) {}
+        [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
+        std::uint32_t Write(const A32CallFrame&) noexcept { return 0U; }
+    private:
+        Impl& runtime_;
+    };
+
+    struct LibcOverrideModule final {
+        explicit LibcOverrideModule(Impl& runtime) noexcept : runtime_(runtime) {}
+        [[nodiscard]] Impl& Runtime() noexcept { return runtime_; }
+        std::uint32_t Invoke(const A32CallFrame& call) {
+            const auto slot = static_cast<std::size_t>(
+                (active_pc_.Value() - kBionicHleThunkBegin) / kThunkStride);
+            const auto& descriptor = runtime_.descriptors_.at(slot);
+            return ExecuteBionicMemoryIntercept(
+                runtime_.address_space_,
+                {descriptor.name, call.RegisterArguments(), call.ThreadId()});
+        }
+        void SetActivePc(const memory::GuestAddress pc) noexcept { active_pc_ = pc; }
+    private:
+        Impl& runtime_;
+        memory::GuestAddress active_pc_{};
+    };
+
+    using SlowInvokeFn = std::uint32_t (*)(void*, const A32CallFrame&);
 
     struct HotEntry final {
         cpu::HostCallResult (*invoke)(void*, cpu::A32HostCallContext&) noexcept{};
         void* self{};
+        SlowInvokeFn slow{};
+        bool gpu{};
     };
 
-    FastBinding MakeBinding(
-        const detail::HleThunkDescriptor& descriptor) {
-        if (descriptor.library == "libc.so") {
-            return {this, &descriptor, &InvokeLibc, false};
-        }
-        if (descriptor.library == "libandroid.so") {
-            return {this, &descriptor, &InvokeAndroid, false};
-        }
-        if (descriptor.library == "libEGL.so") {
-            return {this, &descriptor, &InvokeEgl, true};
-        }
-        if (descriptor.library == "libGLESv1_CM.so") {
-            const auto core_count =
-                gles::GlesFunctionCount(gles::GlesApi::gles1);
-            return {this, &descriptor,
-                    descriptor.local_id < core_count
-                        ? &InvokeGles1
-                        : &InvokeGles1Extension,
-                    true};
-        }
-        if (descriptor.library == "libGLESv2.so") {
-            return {this, &descriptor, &InvokeGles2, true};
-        }
-        if (descriptor.library == "liblog.so") {
-            return {this, &descriptor, &InvokeLog, false};
-        }
-        throw std::logic_error("boundary descriptor has no module binding");
+    template <typename Module, auto Method, std::size_t ParameterCount,
+              bool Gpu>
+    static std::uint32_t InvokeSlow(void* userdata,
+                                    const A32CallFrame& call) {
+        return (static_cast<Module*>(userdata)->*Method)(call);
     }
 
-    static std::uint32_t InvokeLibc(
-        Impl& self, const detail::HleThunkDescriptor& descriptor,
-        const A32CallFrame& call) {
-        return ExecuteBionicMemoryIntercept(
-            self.address_space_, {descriptor.name, call.RegisterArguments(),
-                                  call.ThreadId()});
-    }
-    static std::uint32_t InvokeAndroid(
-        Impl& self, const detail::HleThunkDescriptor& descriptor,
-        const A32CallFrame& call) {
-        return self.InvokeModule<AndroidModule>(descriptor, call);
-    }
-    static std::uint32_t InvokeEgl(
-        Impl& self, const detail::HleThunkDescriptor& descriptor,
-        const A32CallFrame& call) {
-        return self.InvokeModule<EglModule>(descriptor, call);
-    }
-    static std::uint32_t InvokeGles1(
-        Impl& self, const detail::HleThunkDescriptor& descriptor,
-        const A32CallFrame& call) {
-        return self.InvokeModule<Gles1Module>(descriptor, call);
-    }
-    static std::uint32_t InvokeGles1Extension(
-        Impl& self, const detail::HleThunkDescriptor& descriptor,
-        const A32CallFrame& call) {
-        return self.InvokeModule<Gles1ExtensionModule>(descriptor, call);
-    }
-    static std::uint32_t InvokeGles2(
-        Impl& self, const detail::HleThunkDescriptor& descriptor,
-        const A32CallFrame& call) {
-        return self.InvokeModule<Gles2Module>(descriptor, call);
-    }
-    static std::uint32_t InvokeLog(
-        Impl&, const detail::HleThunkDescriptor& descriptor,
-        const A32CallFrame&) {
-        if (descriptor.local_id >= 2U) {
-            throw std::logic_error("liblog local id is outside its module");
+    void RecordFastFault(const cpu::A32HostCallContext& context) noexcept {
+        try {
+            std::scoped_lock lock(fast_fault_mutex_);
+            const auto found = std::find_if(
+                fast_faults_.begin(), fast_faults_.end(),
+                [&](const auto& fault) {
+                    return fault.thread_id == context.thread_id &&
+                           fault.pc == context.pc;
+                });
+            if (found != fast_faults_.end()) {
+                found->exception = std::current_exception();
+            } else {
+                fast_faults_.push_back(
+                    {context.thread_id, context.pc,
+                     std::current_exception()});
+            }
+        } catch (...) {
         }
-        return 0U;
+    }
+
+    template <typename Module, auto Method, std::size_t ParameterCount,
+              bool Gpu>
+    static cpu::HostCallResult InvokeFast(
+        void* userdata, cpu::A32HostCallContext& context) noexcept {
+        if (userdata == nullptr) return cpu::HostCallResult::unhandled;
+        auto& module = *static_cast<Module*>(userdata);
+        auto& runtime = module.Runtime();
+        try {
+            const A32CallFrame call(runtime.address_space_, context,
+                                    ParameterCount);
+            const auto arguments = call.RegisterArguments();
+            const auto result = (module.*Method)(call);
+            if constexpr (Gpu) {
+                const auto slot = static_cast<std::size_t>(
+                    (context.pc.Value() - kBionicHleThunkBegin) /
+                    kThunkStride);
+                runtime.RecordGpuCall(slot, arguments, true);
+            }
+            context.registers[0] = result;
+            return cpu::HostCallResult::handled;
+        } catch (...) {
+            runtime.RecordFastFault(context);
+            return cpu::HostCallResult::fault;
+        }
+    }
+
+    template <typename Module, auto Method, std::size_t ParameterCount,
+              bool Gpu>
+    void BindExport(const BoundaryModuleDescriptor& module_descriptor,
+                    const std::string_view name, Module& module) {
+        const auto found = std::find_if(
+            module_descriptor.exports.begin(), module_descriptor.exports.end(),
+            [&](const auto& export_) { return export_.name == name; });
+        if (found == module_descriptor.exports.end() ||
+            found->parameter_count != ParameterCount) {
+            throw std::logic_error("concrete boundary export metadata mismatch");
+        }
+        const auto slot = static_cast<std::size_t>(
+            ((found->address.Value() & ~UINT32_C(1)) -
+             kBionicHleThunkBegin) / kThunkStride);
+        if (slot >= hot_.size() || hot_[slot].invoke != nullptr) {
+            throw std::logic_error("boundary hot slot is invalid or already bound");
+        }
+        hot_[slot] = {&InvokeFast<Module, Method, ParameterCount, Gpu>,
+                      &module,
+                      &InvokeSlow<Module, Method, ParameterCount, Gpu>, Gpu};
+    }
+
+    template <std::size_t... Index>
+    void BindGles1Core(const BoundaryModuleDescriptor& descriptor,
+                       std::index_sequence<Index...>) {
+        (BindExport<Gles1Module,
+                    &Gles1Module::template Invoke<gles::GlesApi::gles1,
+                                                  static_cast<gles::GlesThunkId>(Index)>,
+                    gles::generated::gles1::kFunctions[Index].parameter_count,
+                    true>(descriptor,
+                          gles::generated::gles1::kFunctions[Index].name,
+                          gles1_module_), ...);
+    }
+
+    template <std::size_t... Index>
+    void BindGles1Extensions(const BoundaryModuleDescriptor& descriptor,
+                             std::index_sequence<Index...>) {
+        (BindExport<Gles1Module,
+                    &Gles1Module::template Invoke<gles::GlesApi::gles1_extensions,
+                                                  static_cast<gles::GlesThunkId>(Index)>,
+                    gles::generated::gles1_extensions::kFunctions[Index].parameter_count,
+                    true>(descriptor,
+                          gles::generated::gles1_extensions::kFunctions[Index].name,
+                          gles1_module_), ...);
+    }
+
+    template <std::size_t... Index>
+    void BindGles2(const BoundaryModuleDescriptor& descriptor,
+                   std::index_sequence<Index...>) {
+        (BindExport<Gles2Module,
+                    &Gles2Module::template Invoke<static_cast<gles::GlesThunkId>(Index)>,
+                    gles::generated::gles2::kFunctions[Index].parameter_count,
+                    true>(descriptor,
+                          gles::generated::gles2::kFunctions[Index].name,
+                          gles2_module_), ...);
+    }
+
+    void SealBindings() {
+        hot_.resize(descriptors_.size());
+        const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
+        const auto require = [&](const std::string_view soname)
+            -> const BoundaryModuleDescriptor& {
+            const auto* descriptor = catalog.FindModule(soname);
+            if (descriptor == nullptr) {
+                throw std::logic_error("required concrete boundary module is missing");
+            }
+            return *descriptor;
+        };
+        const auto& android = require("libandroid.so");
+#define OGPLAY_BIND_ANDROID(name, id, count, method)                            \
+        BindExport<AndroidModule, &AndroidModule::template Invoke<id>, count,   \
+                   false>(android, name, android_module_);
+        OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_BIND_ANDROID)
+#undef OGPLAY_BIND_ANDROID
+        const auto& egl = require("libEGL.so");
+#define OGPLAY_BIND_EGL(name, id, count, method)                                \
+        BindExport<EglModule, &EglModule::template Invoke<id>, count, true>(    \
+            egl, name, egl_module_);
+        OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_BIND_EGL)
+#undef OGPLAY_BIND_EGL
+        const auto& gles1 = require("libGLESv1_CM.so");
+        BindGles1Core(gles1, std::make_index_sequence<
+                                  gles::generated::gles1::kFunctions.size()>{});
+        BindGles1Extensions(
+            gles1, std::make_index_sequence<
+                       gles::generated::gles1_extensions::kFunctions.size()>{});
+        const auto& gles2 = require("libGLESv2.so");
+        BindGles2(gles2, std::make_index_sequence<
+                              gles::generated::gles2::kFunctions.size()>{});
+        const auto& log = require("liblog.so");
+#define OGPLAY_BIND_LOG(name, id, count, method)                                \
+        BindExport<LogModule, &LogModule::method, count, false>(                \
+            log, name, log_module_);
+        OGPLAY_LOG_BOUNDARY_EXPORTS(OGPLAY_BIND_LOG)
+#undef OGPLAY_BIND_LOG
+
+        for (std::size_t slot = catalog.SlotCount(); slot < descriptors_.size();
+             ++slot) {
+            hot_[slot] = {
+                +[](void* userdata, cpu::A32HostCallContext& context) noexcept {
+                    auto& module = *static_cast<LibcOverrideModule*>(userdata);
+                    module.SetActivePc(context.pc);
+                    return InvokeFast<LibcOverrideModule,
+                                      &LibcOverrideModule::Invoke, 3U, false>(
+                        userdata, context);
+                },
+                &libc_override_module_,
+                +[](void* userdata, const A32CallFrame& call) {
+                    auto& module = *static_cast<LibcOverrideModule*>(userdata);
+                    return module.Invoke(call);
+                }, false};
+        }
+        if (std::any_of(hot_.begin(), hot_.end(),
+                        [](const auto& entry) {
+                            return entry.invoke == nullptr || entry.slow == nullptr;
+                        })) {
+            throw std::logic_error("boundary seal left an export unbound");
+        }
     }
 
     static cpu::HostCallResult TryFastHostCall(
@@ -546,40 +632,6 @@ private:
             return cpu::HostCallResult::unhandled;
         }
         return hot_[slot].invoke(hot_[slot].self, call);
-    }
-
-    static cpu::HostCallResult InvokeLegacyFast(
-        void* userdata, cpu::A32HostCallContext& context) noexcept {
-        if (userdata == nullptr) return cpu::HostCallResult::unhandled;
-        auto& binding = *static_cast<FastBinding*>(userdata);
-        try {
-            const A32CallFrame call(binding.owner->address_space_, context,
-                                    binding.descriptor->parameter_count);
-            const auto arguments = call.RegisterArguments();
-            const auto result = binding.invoke(
-                *binding.owner, *binding.descriptor, call);
-            binding.owner->RecordGpuCall(*binding.descriptor, arguments,
-                                         binding.gpu);
-            context.registers[0] = result;
-            return cpu::HostCallResult::handled;
-        } catch (...) {
-            std::scoped_lock lock(binding.owner->fast_fault_mutex_);
-            const auto found = std::find_if(
-                binding.owner->fast_faults_.begin(),
-                binding.owner->fast_faults_.end(),
-                [&](const auto& fault) {
-                    return fault.thread_id == context.thread_id &&
-                           fault.pc == context.pc;
-                });
-            if (found != binding.owner->fast_faults_.end()) {
-                found->exception = std::current_exception();
-            } else {
-                binding.owner->fast_faults_.push_back(
-                    {context.thread_id, context.pc,
-                     std::current_exception()});
-            }
-            return cpu::HostCallResult::fault;
-        }
     }
 
     void InitializeGuestGlDefaults() {
@@ -759,108 +811,42 @@ private:
         Write32(args[3], data, thread_id);
         return ident;
     }
-    template <typename Module>
-    std::uint32_t InvokeModule(
-        const detail::HleThunkDescriptor& descriptor,
-        const A32CallFrame& call) {
+    template <std::uint16_t FunctionId>
+    std::uint32_t InvokeAndroid(const A32CallFrame& call) {
         const auto args = call.RegisterArguments();
-        const auto symbol = descriptor.name;
-        auto function_id = descriptor.local_id;
-        if constexpr (std::is_same_v<Module, Gles1ExtensionModule>) {
-            function_id = static_cast<std::uint16_t>(
-                function_id -
-                gles::GlesFunctionCount(gles::GlesApi::gles1));
-        }
         const auto tid = call.ThreadId();
-        if constexpr (std::is_same_v<Module, Gles1Module> ||
-                      std::is_same_v<Module, Gles1ExtensionModule>) {
-            const auto draw_call =
-                std::is_same_v<Module, Gles1Module> &&
-                (function_id == 35U || function_id == 36U);
-            if (draw_call &&
-                gl_context_.SelectDrawRenderer(
-                    gles1_draw_state_
-                        .Array(detail::kGles1VertexArray, 0x84C0U)
-                        .enabled,
-                    gles_dispatch_.HasEnabledVertexAttribute()) ==
-                    GuestGlRenderer::programmable) {
-                const auto result = gles_dispatch_.Dispatch(
-                    function_id == 35U ? Id(Gles2Function::draw_arrays)
-                                       : Id(Gles2Function::draw_elements),
-                    call,
-                    angle_frame_.has_value() ? &*angle_frame_ : nullptr);
-                if (!result.has_value()) {
-                    throw std::logic_error(
-                        "selected programmable draw has no GLES2 handler");
-                }
-                std::scoped_lock lock(mutex_);
-                ++gpu_stats_.draws;
-                ++gpu_stats_.draw_targets.front().draws;
-                return *result;
-            }
-            const auto all = call.Arguments();
-            auto& dispatch = std::is_same_v<Module, Gles1Module>
-                                 ? gles1_dispatch_
-                                 : gles1_extensions_dispatch_;
-            if (!draw_call) return dispatch.Invoke(function_id, all, tid);
-            gl_context_.Native().BeginFixedDraw();
-            try {
-                const auto result = dispatch.Invoke(function_id, all, tid);
-                gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
-                gl_context_.Native().EndFixedDraw();
-                return result;
-            } catch (...) {
-                try {
-                    gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
-                    gl_context_.Native().EndFixedDraw();
-                } catch (...) {
-                    gl_context_.Native().Reset();
-                }
-                throw;
-            }
-        }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::configuration_new)) {
+        if constexpr (FunctionId == 0U) {
             return kFakeConfiguration;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            (function_id == Id(AndroidFunction::configuration_delete) ||
-             function_id == Id(AndroidFunction::configuration_from_asset_manager))) {
+        if constexpr (FunctionId == 1U || FunctionId == 2U ||
+                      FunctionId == 9U || FunctionId == 11U ||
+                      FunctionId == 19U) {
             return 0;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            (function_id == Id(AndroidFunction::configuration_get_language) ||
-             function_id == Id(AndroidFunction::configuration_get_country))) {
+        if constexpr (FunctionId == 3U || FunctionId == 4U) {
             if (args[1] != 0) {
                 const std::array bytes{std::byte{'e'}, std::byte{'n'}};
                 address_space_.Write(memory::GuestAddress{args[1]}, bytes, tid);
             }
             return 0;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::looper_prepare)) return kFakeLooper;
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::looper_add_fd)) {
+        if constexpr (FunctionId == 5U) return kFakeLooper;
+        if constexpr (FunctionId == 6U) {
             std::scoped_lock lock(mutex_);
             command_ident_ = args[2];
             command_data_ = call.Argument(5);
             return 1;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::looper_poll_all)) {
+        if constexpr (FunctionId == 7U) {
             return PollAll(args, tid);
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::input_queue_attach_looper)) {
+        if constexpr (FunctionId == 8U) {
             std::scoped_lock lock(mutex_);
             input_ident_ = args[2];
             input_data_ = call.Argument(4);
             return 0;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::input_queue_detach_looper)) return 0;
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::input_queue_get_event)) {
+        if constexpr (FunctionId == 10U) {
             std::scoped_lock lock(mutex_);
             if (inputs_.empty()) return SignedResult(-1);
             active_input_ = inputs_.front();
@@ -868,70 +854,59 @@ private:
             Write32(args[1], kFakeInputEvent, tid);
             return 0;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::input_queue_pre_dispatch_event)) return 0;
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::input_queue_finish_event)) {
+        if constexpr (FunctionId == 12U) {
             std::scoped_lock lock(mutex_);
             active_input_.reset();
             return 0;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::input_event_get_type)) {
+        if constexpr (FunctionId == 13U) {
             std::scoped_lock lock(mutex_);
             return active_input_.has_value() && active_input_->type == AndroidBoundaryInputType::key
                        ? 1U : 2U;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::key_event_get_action)) {
+        if constexpr (FunctionId == 14U) {
             std::scoped_lock lock(mutex_);
             return active_input_.has_value() && active_input_->pressed ? 0U : 1U;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::key_event_get_key_code)) {
+        if constexpr (FunctionId == 15U) {
             std::scoped_lock lock(mutex_);
             return active_input_.has_value() ? static_cast<std::uint32_t>(active_input_->code) : 0U;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::motion_event_get_action)) {
+        if constexpr (FunctionId == 16U) {
             std::scoped_lock lock(mutex_);
             if (!active_input_.has_value() ||
                 active_input_->type == AndroidBoundaryInputType::pointer_motion) return 2U;
             return active_input_->pressed ? 0U : 1U;
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            (function_id == Id(AndroidFunction::motion_event_get_x) ||
-             function_id == Id(AndroidFunction::motion_event_get_y))) {
+        if constexpr (FunctionId == 17U || FunctionId == 18U) {
             std::scoped_lock lock(mutex_);
             const auto value = !active_input_.has_value() ? 0.0F
-                : function_id == Id(AndroidFunction::motion_event_get_x)
+                : FunctionId == 17U
                       ? active_input_->x : active_input_->y;
             return std::bit_cast<std::uint32_t>(value);
         }
-        if (std::is_same_v<Module, AndroidModule> &&
-            function_id == Id(AndroidFunction::native_window_set_buffers_geometry)) return 0;
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::get_display)) return kFakeDisplay;
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::initialize)) {
+        throw std::logic_error("unbound concrete libandroid export");
+    }
+
+    template <std::uint16_t FunctionId>
+    std::uint32_t InvokeEgl(const A32CallFrame& call) {
+        const auto args = call.RegisterArguments();
+        const auto tid = call.ThreadId();
+        if constexpr (FunctionId == 0U) return kFakeDisplay;
+        if constexpr (FunctionId == 1U) {
             Write32(args[1], 1, tid); Write32(args[2], 5, tid); return 1;
         }
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::choose_config)) {
+        if constexpr (FunctionId == 2U) {
             Write32(args[2], kFakeConfig, tid);
             Write32(call.Argument(4), 1, tid);
             return 1;
         }
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::get_config_attrib)) {
+        if constexpr (FunctionId == 3U) {
             Write32(args[3], 0, tid); return 1;
         }
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::create_window_surface)) return kFakeSurface;
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::create_context)) return kFakeContext;
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::make_current)) {
+        if constexpr (FunctionId == 4U) return kFakeSurface;
+        if constexpr (FunctionId == 5U) return kFakeContext;
+        if constexpr (FunctionId == 6U) {
             if (managed_surface_) {
                 throw std::runtime_error(
                     "guest EGL cannot replace a host-managed ANGLE surface");
@@ -948,23 +923,18 @@ private:
             }
             return 1;
         }
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::query_surface)) {
+        if constexpr (FunctionId == 7U) {
             Write32(args[3], args[2] == kEglWidth ? layout_.logical_width :
                              args[2] == kEglHeight ? layout_.logical_height : 0, tid);
             return 1;
         }
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::swap_buffers)) {
+        if constexpr (FunctionId == 8U) {
             if (!angle_frame_.has_value()) throw std::runtime_error("eglSwapBuffers has no current ANGLE frame");
             PublishFrame();
             return 1;
         }
-        if (std::is_same_v<Module, EglModule> &&
-            (function_id == Id(EglFunction::destroy_context) ||
-             function_id == Id(EglFunction::destroy_surface))) return 1;
-        if (std::is_same_v<Module, EglModule> &&
-            function_id == Id(EglFunction::terminate)) {
+        if constexpr (FunctionId == 9U || FunctionId == 10U) return 1;
+        if constexpr (FunctionId == 11U) {
             if (managed_surface_) {
                 throw std::runtime_error(
                     "guest EGL cannot terminate a host-managed ANGLE surface");
@@ -979,27 +949,77 @@ private:
             gpu_render_target_ready_ = false;
             return 1;
         }
-        if constexpr (!std::is_same_v<Module, Gles2Module>) {
-            throw std::runtime_error(
-                "Android boundary HLE function id is not implemented");
+        throw std::logic_error("unbound concrete libEGL export");
+    }
+
+    template <gles::GlesApi Api, gles::GlesThunkId FunctionId>
+    std::uint32_t InvokeGles1(const A32CallFrame& call) {
+        constexpr bool draw_call = Api == gles::GlesApi::gles1 &&
+                                   (FunctionId == 35U || FunctionId == 36U);
+        const auto symbol = gles::DescribeGlesFunction(Api, FunctionId).name;
+        if constexpr (draw_call) {
+            if (gl_context_.SelectDrawRenderer(
+                    gles1_draw_state_
+                        .Array(detail::kGles1VertexArray, 0x84C0U).enabled,
+                    gles_dispatch_.HasEnabledVertexAttribute()) ==
+                GuestGlRenderer::programmable) {
+                const auto result = gles_dispatch_.Dispatch(
+                    FunctionId == 35U ? 40U : 41U, call,
+                    angle_frame_.has_value() ? &*angle_frame_ : nullptr);
+                if (!result.has_value()) {
+                    throw std::logic_error(
+                        "selected programmable draw has no GLES2 handler");
+                }
+                std::scoped_lock lock(mutex_);
+                ++gpu_stats_.draws;
+                ++gpu_stats_.draw_targets.front().draws;
+                return *result;
+            }
         }
-        if (const auto shader_program = DispatchShaderProgram(function_id, call);
+        auto& dispatch = Api == gles::GlesApi::gles1
+                             ? gles1_dispatch_ : gles1_extensions_dispatch_;
+        if constexpr (!draw_call) {
+            return dispatch.Invoke(FunctionId, call.Arguments(), call.ThreadId());
+        }
+        gl_context_.Native().BeginFixedDraw();
+        try {
+            const auto result = dispatch.Invoke(
+                FunctionId, call.Arguments(), call.ThreadId());
+            gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
+            gl_context_.Native().EndFixedDraw();
+            return result;
+        } catch (...) {
+            try {
+                gles_dispatch_.RestoreNativeState(RequireFrame(symbol));
+                gl_context_.Native().EndFixedDraw();
+            } catch (...) {
+                gl_context_.Native().Reset();
+            }
+            throw;
+        }
+    }
+
+    template <gles::GlesThunkId FunctionId>
+    std::uint32_t InvokeGles2(const A32CallFrame& call) {
+        const auto args = call.RegisterArguments();
+        const auto symbol = gles::DescribeGlesFunction(
+                                gles::GlesApi::gles2, FunctionId).name;
+        if (const auto shader_program = DispatchShaderProgram<FunctionId>(call);
             shader_program.has_value()) {
             return *shader_program;
         }
         if (const auto resources = gles_dispatch_.Dispatch(
-                function_id, call,
+                FunctionId, call,
                 angle_frame_.has_value() ? &*angle_frame_ : nullptr);
             resources.has_value()) {
-            if (function_id == Id(Gles2Function::draw_elements) ||
-                function_id == Id(Gles2Function::draw_arrays)) {
+            if constexpr (FunctionId == 40U || FunctionId == 41U) {
                 std::scoped_lock lock(mutex_);
                 ++gpu_stats_.draws;
                 ++gpu_stats_.draw_targets.front().draws;
             }
             return *resources;
         }
-        if (function_id == Id(Gles2Function::viewport)) {
+        if constexpr (FunctionId == 141U) {
             const std::array logical{
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<std::int32_t>(args[1]),
@@ -1017,7 +1037,7 @@ private:
             gl_context_.Shared().SetViewport(logical);
             return 0;
         }
-        if (function_id == Id(Gles2Function::scissor)) {
+        if constexpr (FunctionId == 96U) {
             const std::array logical{
                 std::bit_cast<std::int32_t>(args[0]),
                 std::bit_cast<std::int32_t>(args[1]),
@@ -1035,7 +1055,7 @@ private:
             gl_context_.Shared().SetScissor(logical);
             return 0;
         }
-        if (function_id == Id(Gles2Function::clear_color)) {
+        if constexpr (FunctionId == 16U) {
             const std::array color{std::bit_cast<float>(args[0]),
                                    std::bit_cast<float>(args[1]),
                                    std::bit_cast<float>(args[2]),
@@ -1044,7 +1064,7 @@ private:
             gl_context_.Shared().SetClearColor(color);
             return 0;
         }
-        if (function_id == Id(Gles2Function::clear)) {
+        if constexpr (FunctionId == 15U) {
             RequireFrame(symbol).Clear(args[0]);
             std::scoped_lock lock(mutex_);
             ++gpu_stats_.clears;
@@ -1052,58 +1072,58 @@ private:
         }
         throw std::runtime_error("Android boundary HLE is not implemented: " + std::string(symbol));
     }
+    template <gles::GlesThunkId FunctionId>
     std::optional<std::uint32_t> DispatchShaderProgram(
-        const gles::GlesThunkId function_id,
         const A32CallFrame& call) {
         const auto args = call.RegisterArguments();
         const auto symbol = gles::DescribeGlesFunction(
-                                gles::GlesApi::gles2, function_id).name;
+                                gles::GlesApi::gles2, FunctionId).name;
         const auto tid = call.ThreadId();
-        if (function_id == Id(Gles2Function::create_shader)) {
+        if constexpr (FunctionId == 26U) {
             return RequireFrame(symbol).CreateShader(args[0]);
         }
-        if (function_id == Id(Gles2Function::shader_source)) {
+        if constexpr (FunctionId == 98U) {
             RequireFrame(symbol).ShaderSource(args[0], ReadShaderSources(args, tid)); return 0;
         }
-        if (function_id == Id(Gles2Function::compile_shader)) {
+        if constexpr (FunctionId == 20U) {
             RequireFrame(symbol).CompileShader(args[0]); std::scoped_lock lock(mutex_);
             ++gpu_stats_.shader_compiles; return 0;
         }
-        if (function_id == Id(Gles2Function::get_shader_iv)) {
+        if constexpr (FunctionId == 70U) {
             const auto value = RequireFrame(symbol).GetShaderParameter(args[0], args[1]);
             WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol); return 0;
         }
-        if (function_id == Id(Gles2Function::delete_shader)) {
+        if constexpr (FunctionId == 32U) {
             RequireFrame(symbol).DeleteShader(args[0]); return 0;
         }
-        if (function_id == Id(Gles2Function::create_program)) {
+        if constexpr (FunctionId == 25U) {
             return RequireFrame(symbol).CreateProgram();
         }
-        if (function_id == Id(Gles2Function::attach_shader)) {
+        if constexpr (FunctionId == 1U) {
             RequireFrame(symbol).AttachShader(args[0], args[1]); return 0;
         }
-        if (function_id == Id(Gles2Function::link_program)) {
+        if constexpr (FunctionId == 89U) {
             RequireFrame(symbol).LinkProgram(args[0]); std::scoped_lock lock(mutex_);
             ++gpu_stats_.program_links; return 0;
         }
-        if (function_id == Id(Gles2Function::get_program_iv)) {
+        if constexpr (FunctionId == 65U) {
             const auto value = RequireFrame(symbol).GetProgramParameter(args[0], args[1]);
             WriteRequired32(args[2], std::bit_cast<std::uint32_t>(value), tid, symbol); return 0;
         }
-        if (function_id == Id(Gles2Function::get_attrib_location)) {
+        if constexpr (FunctionId == 57U) {
             return SignedResult(RequireFrame(symbol).GetAttribLocation(
                 args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
         }
-        if (function_id == Id(Gles2Function::get_uniform_location)) {
+        if constexpr (FunctionId == 74U) {
             return SignedResult(RequireFrame(symbol).GetUniformLocation(
                 args[0], ReadCString(args[1], kMaximumGlesNameBytes, tid, symbol)));
         }
-        if (function_id == Id(Gles2Function::use_program)) {
+        if constexpr (FunctionId == 130U) {
             RequireFrame(symbol).UseProgram(args[0]);
             gl_context_.Shared().SetCurrentProgram(args[0]);
             return 0;
         }
-        if (function_id == Id(Gles2Function::delete_program)) {
+        if constexpr (FunctionId == 30U) {
             RequireFrame(symbol).DeleteProgram(args[0]); return 0;
         }
         return std::nullopt;
@@ -1145,12 +1165,10 @@ private:
         }
         ready_.notify_all();
     }
-    void RecordGpuCall(const detail::HleThunkDescriptor& descriptor,
+    void RecordGpuCall(const std::size_t descriptor_index,
                        const std::array<std::uint32_t, 4>& args,
                        const bool gpu) {
         if (!gpu) return;
-        const auto descriptor_index = static_cast<std::size_t>(
-            &descriptor - descriptors_.data());
         if (descriptor_index >= descriptors_.size() ||
             descriptor_index > (std::numeric_limits<std::uint16_t>::max)()) {
             throw std::logic_error("GPU trace descriptor is outside its catalog");
@@ -1182,14 +1200,13 @@ private:
         gles::GlesApi::gles1_extensions};
     bool mapped_{};
     std::size_t thunk_bytes_{};
-    std::vector<FastBinding> hot_bindings_;
     std::vector<HotEntry> hot_;
     AndroidModule android_module_;
     EglModule egl_module_;
     Gles1Module gles1_module_;
     Gles2Module gles2_module_;
     LogModule log_module_;
-    std::vector<BoundaryModuleInstance> module_instances_;
+    LibcOverrideModule libc_override_module_;
     struct PendingFastFault final {
         std::uint64_t thread_id{};
         memory::GuestAddress pc{};

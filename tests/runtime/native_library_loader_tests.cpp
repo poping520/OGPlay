@@ -756,6 +756,56 @@ TEST_CASE("DexVM JNI classes retain intrinsic superclasses for object arrays") {
         runtime::JniObjectArrayError);
 }
 
+TEST_CASE("DexVM imports JNI-created application objects with instance slots") {
+    using namespace ogplay;
+    ApplicationProcess fixture;
+    const auto launcher = fixture.bridge->Linker().FindClass(
+        "Lfixture/LauncherActivity;");
+    const auto activity = fixture.bridge->Linker().FindClass(
+        "Landroid/app/Activity;");
+    REQUIRE(launcher.has_value());
+    REQUIRE(activity.has_value());
+    const auto launcher_identity =
+        fixture.bridge->RegisteredClassIdentity(*launcher);
+    const auto activity_identity =
+        fixture.bridge->RegisteredClassIdentity(*activity);
+    REQUIRE(launcher_identity.has_value());
+    REQUIRE(activity_identity.has_value());
+
+    const auto imported_identity =
+        fixture.session->Objects().Allocate(*launcher_identity);
+    const auto imported_reference =
+        fixture.session->Environment().PublishLocalObject(1U,
+                                                          imported_identity);
+    const auto imported = fixture.bridge->FromReference(imported_reference);
+    CHECK(fixture.bridge->Model().Kind(imported) ==
+          runtime::dexvm::VmObjectKind::vm_instance);
+    CHECK(fixture.bridge->Model().ToIdentity(imported) == imported_identity);
+    const auto init = fixture.bridge->Linker().FindDirectMethod(
+        *launcher, "<init>", "()V");
+    REQUIRE(init.has_value());
+    const std::array receiver{runtime::dexvm::VmValue::Ref(imported)};
+    auto outcome = fixture.bridge->Vm().Call(*init, receiver);
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    const auto getter_index = fixture.bridge->Linker().FindVtableIndex(
+        *launcher, "getImported", "()I");
+    REQUIRE(getter_index.has_value());
+    outcome = fixture.bridge->Vm().Call(
+        fixture.bridge->Linker().Class(*launcher).vtable[*getter_index],
+        receiver);
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    CHECK(outcome.value.AsInt() == 7);
+
+    const auto intrinsic_identity =
+        fixture.session->Objects().Allocate(*activity_identity);
+    const auto intrinsic_reference =
+        fixture.session->Environment().PublishLocalObject(1U,
+                                                          intrinsic_identity);
+    const auto intrinsic = fixture.bridge->FromReference(intrinsic_reference);
+    CHECK(fixture.bridge->Model().Kind(intrinsic) ==
+          runtime::dexvm::VmObjectKind::external);
+}
+
 TEST_CASE("minimal Application startup preserves order identity and native loads") {
     using namespace ogplay;
 

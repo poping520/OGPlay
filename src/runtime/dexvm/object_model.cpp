@@ -254,6 +254,29 @@ VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
                     record.java_class =
                         impl_->interop.resolve_object_class(identity);
                 }
+                if (record.java_class.IsValid() &&
+                    impl_->interop.resolve_instance_slots) {
+                    const auto slots = impl_->interop.resolve_instance_slots(
+                        record.java_class);
+                    if (slots.has_value()) {
+                        record.kind = VmObjectKind::vm_instance;
+                        record.reserved_bytes =
+                            32ULL + static_cast<std::uint64_t>(*slots) * 8ULL;
+                        impl_->Reserve(record.reserved_bytes);
+                        if (impl_->free_instance_storage.empty()) {
+                            record.storage = static_cast<std::uint32_t>(
+                                impl_->instance_storage.size());
+                            impl_->instance_storage.emplace_back(*slots,
+                                                                 Slot{});
+                        } else {
+                            record.storage =
+                                impl_->free_instance_storage.back();
+                            impl_->free_instance_storage.pop_back();
+                            impl_->instance_storage[record.storage].assign(
+                                *slots, Slot{});
+                        }
+                    }
+                }
             }
         }
     }

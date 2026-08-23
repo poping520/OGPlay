@@ -795,6 +795,15 @@ DexVmGuestBridge::DexVmGuestBridge(
             },
             [bridge_state](const JniObjectIdentity identity) {
                 return bridge_state->ObjectArrayClassIdentity(identity);
+            },
+            [bridge_state](const dx::DexClassId java_class)
+                -> std::optional<std::uint16_t> {
+                bridge_state->linker.EnsureClassLinked(java_class);
+                const auto& linked = bridge_state->linker.Class(java_class);
+                if (linked.is_intrinsic || linked.is_array) {
+                    return std::nullopt;
+                }
+                return linked.instance_slots;
             }});
 
     impl_->vm = std::make_unique<dx::Interpreter>(

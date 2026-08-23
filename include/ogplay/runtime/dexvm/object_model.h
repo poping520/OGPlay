@@ -64,6 +64,8 @@ struct JavaObjectInterop final {
     std::function<DexClassId(JniObjectIdentity)> resolve_object_class;
     std::function<std::pair<DexClassId, DexClassId>(JniObjectIdentity)>
         resolve_object_array_class;
+    std::function<std::optional<std::uint16_t>(DexClassId)>
+        resolve_instance_slots;
 };
 
 struct GcMarkResult final {

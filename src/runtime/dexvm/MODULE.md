@@ -78,6 +78,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `Interpreter::CloneObject` 浅拷贝 payload 与 list/map/builder 侧表。
   `JavaObjectModel::CloneObject` 对照 AOSP `dvmCloneObject`：新句柄/identity，
   只复制 `vm_instance` 槽板或数组元素；string/class/host_backed 明确失败。
+  JNI `NewObject` 分配的 application identity 回入解释器时，经 integration 注入的
+  lazy-linked layout resolver 按完整 `instance_slots` 建立 `vm_instance` 槽板并保留
+  原 identity；intrinsic host object 继续使用 external/专用 store 分类。
 - 生产装配的 `JavaObjectModel` 通过 `JavaObjectInterop` 复用会话级
   `JniObjectArrayStore`：DexVM/JNI 创建、读写、克隆和清扫 `Object[]` 都使用同一
   identity/store，class identity 的双向适配由 integration 注入；不依赖

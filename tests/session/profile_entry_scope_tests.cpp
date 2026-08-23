@@ -251,6 +251,46 @@ TEST_CASE("Display metrics publish the injected API19 surface facts") {
   CHECK(get_id.value.AsInt() == 0);
 }
 
+TEST_CASE("Configuration derives API19 screen layout from injected metrics") {
+  AndroidVm vm;
+  const auto resources =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/res/Resources;");
+  const auto get_configuration = vm.Virtual(
+      "Landroid/content/res/Resources;", "getConfiguration",
+      "()Landroid/content/res/Configuration;");
+  const auto read_field = [&](const VmObjectRef configuration,
+                              const char* name) {
+    const auto field = vm.linker.FindFieldRecursive(
+        vm.model.ObjectClass(configuration), name, "I");
+    REQUIRE(field.has_value());
+    return static_cast<std::int32_t>(
+        vm.model.InstanceSlots(configuration)[vm.linker.Field(*field).slot]
+            .bits);
+  };
+  const auto get = [&] {
+    const auto outcome = vm.interpreter.Call(
+        get_configuration, std::vector{VmValue::Ref(resources)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    return outcome.value.ref;
+  };
+
+  vm.context->surface_width = 800;
+  vm.context->surface_height = 480;
+  vm.context->ui_density = 1.0F;
+  const auto configuration = get();
+  CHECK(read_field(configuration, "keyboard") == 1);
+  CHECK(read_field(configuration, "screenLayout") == 0x10000023);
+
+  vm.context->surface_width = 320;
+  vm.context->surface_height = 480;
+  CHECK(get() == configuration);
+  CHECK(read_field(configuration, "screenLayout") == 0x12);
+
+  vm.context->ui_density = 0.0F;
+  CHECK_THROWS(static_cast<void>(vm.interpreter.Call(
+      get_configuration, std::vector{VmValue::Ref(resources)})));
+}
+
 ogplay::session::TitleProfile PresetProfile() {
     ogplay::session::TitleProfile profile;
     profile.schema = 2;

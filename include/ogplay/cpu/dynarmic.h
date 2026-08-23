@@ -41,6 +41,7 @@ public:
     [[nodiscard]] A32State GetState() const override;
     void SetState(const A32State& state) override;
     void RequestHalt() noexcept override;
+    void SetHostCallHook(HostCallHook hook) noexcept override;
 
 private:
     class Impl;

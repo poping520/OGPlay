@@ -528,8 +528,10 @@ public:
           sound_pool_mixer_(request.sound_resource_loader),
           java_vm_(environment_),
           threads_([this] {
-              return std::make_unique<cpu::DynarmicCpu>(
+              auto result = std::make_unique<cpu::DynarmicCpu>(
                   memory_bus_, execution_context_);
+              ConfigureFastHostCalls(*result);
+              return result;
           }),
           filesystem_(request.filesystem),
           root_module_(request.root_module),
@@ -611,6 +613,7 @@ public:
             });
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(
             memory_bus_, execution_context_);
+        ConfigureFastHostCalls(*root_cpu_);
         cpu::A32State root_state;
         root_state.SetThreadId(kRootThreadId);
         root_state.SetThreadPointer(process_memory_.thread_pointer);
@@ -664,6 +667,7 @@ public:
             stack_top = memory::GuestAddress{caller_sp};
             nested_cpu = std::make_unique<cpu::DynarmicCpu>(
                 memory_bus_, execution_context_);
+            ConfigureFastHostCalls(*nested_cpu);
             cpu::A32State nested_state;
             nested_state.SetThreadId(caller.ThreadId());
             nested_state.SetThreadPointer(caller.ThreadPointer());
@@ -767,6 +771,7 @@ public:
             jni_attached = true;
             context->cpu = std::make_unique<cpu::DynarmicCpu>(
                 memory_bus_, execution_context_);
+            ConfigureFastHostCalls(*context->cpu);
             cpu::A32State state;
             state.SetThreadId(thread_id);
             state.SetThreadPointer(context->tls->thread_pointer);
@@ -822,6 +827,10 @@ public:
     bool HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
         if (jni_dispatcher_.Handle(cpu, stopped)) return true;
         return boundary_.Handle(cpu, stopped);
+    }
+
+    void ConfigureFastHostCalls(cpu::Cpu& cpu) {
+        if (!slice_observer_) cpu.SetHostCallHook(boundary_.FastHostCallHook());
     }
 
     void Stop() {

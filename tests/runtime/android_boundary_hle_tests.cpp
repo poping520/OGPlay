@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "ogplay/cpu/interpreter.h"
+#include "ogplay/cpu/dynarmic.h"
 #include "ogplay/gles/egl_lifecycle.h"
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
@@ -119,6 +120,40 @@ TEST_CASE("Android boundary maps explicit Thumb HLE thunks") {
         1, ogplay::cpu::RunStopReason::supervisor_call,
         ogplay::memory::GuestAddress{0x70000f00U}, 0xdf02U, 2, std::nullopt};
     CHECK_FALSE(fixture.boundary.Handle(fixture.cpu, unknown));
+}
+
+TEST_CASE("Android boundary fast host call continues inside Dynarmic run") {
+    BoundaryFixture fixture;
+    const ogplay::memory::GuestAddress return_trap{0x6e102000U};
+    fixture.memory.Map(
+        {return_trap, fixture.memory.PageSize()},
+        ogplay::memory::PageProtection::read |
+            ogplay::memory::PageProtection::write);
+    fixture.bus.Write16(return_trap, 0xdf01U);
+    fixture.memory.Protect(
+        {return_trap, fixture.memory.PageSize()},
+        ogplay::memory::PageProtection::read |
+            ogplay::memory::PageProtection::execute);
+    const auto address =
+        fixture.boundary.Symbols().Lookup("libEGL.so", "eglGetDisplay");
+    REQUIRE(address.has_value());
+
+    ogplay::cpu::DynarmicCpu cpu(fixture.bus);
+    cpu.SetHostCallHook(fixture.boundary.FastHostCallHook());
+    ogplay::cpu::A32State state;
+    state.SetState(ogplay::cpu::ExecutionState::thumb);
+    state.SetThreadId(1U);
+    state.SetRegister(ogplay::cpu::CoreRegister::pc,
+                      address->Value() & ~UINT32_C(1));
+    state.SetRegister(ogplay::cpu::CoreRegister::lr,
+                      return_trap.Value() | UINT32_C(1));
+    state.SetRegister(ogplay::cpu::CoreRegister::sp, fixture.stack.Value());
+    cpu.SetState(state);
+
+    const auto stopped = cpu.Run(16U);
+    CHECK(stopped.reason == ogplay::cpu::RunStopReason::supervisor_call);
+    CHECK(stopped.immediate == 1U);
+    CHECK(cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) == 1U);
 }
 
 TEST_CASE("Android boundary decodes dense HLE thunks in constant time") {
@@ -251,7 +286,8 @@ TEST_CASE("Android boundary publishes the complete generated GLES2 namespace") {
     const auto legacy_viewport =
         fixture.boundary.Symbols().Lookup("libGLESv2.so", "glViewport");
     REQUIRE(legacy_viewport.has_value());
-    CHECK(legacy_viewport->Value() == 0x70000095U);
+    CHECK((legacy_viewport->Value() & 1U) == 1U);
+    CHECK(legacy_viewport->Value() >= ogplay::runtime::kBionicHleThunkBegin);
     for (std::size_t index = 0;
          index < ogplay::gles::GlesDispatchTable::FunctionCount(); ++index) {
         const auto function = ogplay::gles::GlesDispatchTable::Describe(

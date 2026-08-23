@@ -130,6 +130,63 @@ TEST_CASE("Dynarmic exposes deterministic budget and halt stops") {
     CHECK(halt.ticks_consumed == 0);
 }
 
+TEST_CASE("Dynarmic host call hook handles falls back and faults") {
+    const ogplay::memory::GuestAddress code{sample::kCodeAddress};
+    ogplay::memory::AddressSpace memory;
+    memory.Map({code, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write16(code, 0xdf02U);         // svc #2
+    bus.Write16(code.Add(2), 0xdf01U);  // svc #1
+    memory.Protect({code, memory.PageSize()},
+                   ogplay::memory::PageProtection::read |
+                       ogplay::memory::PageProtection::execute);
+    ogplay::cpu::DynarmicCpu cpu(bus);
+    ogplay::cpu::A32State state;
+    state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, 40U);
+    state.SetState(ogplay::cpu::ExecutionState::thumb);
+    state.SetThreadId(390U);
+    cpu.SetState(state);
+
+    struct HookState final {
+        ogplay::cpu::HostCallResult result{
+            ogplay::cpu::HostCallResult::handled};
+        std::uint32_t calls{};
+    } hook_state;
+    cpu.SetHostCallHook({
+        +[](void* userdata, const std::uint32_t svc,
+            ogplay::cpu::A32HostCallContext& call) noexcept {
+            auto& hook = *static_cast<HookState*>(userdata);
+            if (svc != 2U) return ogplay::cpu::HostCallResult::unhandled;
+            ++hook.calls;
+            CHECK(call.thread_id == 390U);
+            CHECK(call.pc ==
+                  ogplay::memory::GuestAddress{sample::kCodeAddress});
+            call.registers[0] += 2U;
+            return hook.result;
+        },
+        &hook_state});
+    const auto handled = cpu.Run(8);
+    CHECK(handled.reason == ogplay::cpu::RunStopReason::supervisor_call);
+    CHECK(handled.immediate == 1U);
+    CHECK(cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) == 42U);
+    CHECK(hook_state.calls == 1U);
+
+    state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
+    state.SetState(ogplay::cpu::ExecutionState::thumb);
+    cpu.SetState(state);
+    hook_state.result = ogplay::cpu::HostCallResult::unhandled;
+    CHECK(cpu.Run(4).reason == ogplay::cpu::RunStopReason::supervisor_call);
+
+    state.SetRegister(ogplay::cpu::CoreRegister::pc, code.Value());
+    state.SetState(ogplay::cpu::ExecutionState::thumb);
+    cpu.SetState(state);
+    hook_state.result = ogplay::cpu::HostCallResult::fault;
+    CHECK(cpu.Run(4).reason == ogplay::cpu::RunStopReason::host_call_fault);
+}
+
 TEST_CASE("Dynarmic exposes the guest thread pointer through TPIDRURO") {
     const std::array<std::uint32_t, 2> program{0xee1d2f70, 0xef000001};
     const ogplay::memory::GuestAddress code{sample::kCodeAddress};

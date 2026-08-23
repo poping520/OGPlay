@@ -7,6 +7,9 @@
   Virtual SO，未实现 SONAME 不得因历史 Profile 声明而伪装可用。
 - synthetic Virtual SO 首次建立时发布该 module 的完整 active export 集，后续动态装载
   不得补写或扩展既有 dynsym。
+- thunk arena 按实际 slot 数向上取整到多页并在写入后封为 RX；fast router 只做
+  `PC → dense slot → {fn,self}`，live r0-r15 直接借用自 CPU hook，5 个以上参数只进行
+  一次 guest stack bulk read。启用 guest-call slice observer 时上层不得安装 fast hook。
 
 Android native 边界:`android_boundary_hle` 主 Thumb trap 分派、GLES2/GLES1 边界组件、
 boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`。本模块把 guest

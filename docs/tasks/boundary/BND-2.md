@@ -7,8 +7,10 @@ Virtual SO 调用不退出 `Cpu::Run()`。
 
 ## 交付与验收
 
-- [ ] 多页 sealed thunk arena 与 live-register A32 call view。
-- [ ] Dynarmic handled/unhandled/fault 契约。
-- [ ] PC → slot → `{fn,self}` 常数时间调用。
-- [ ] observer 强制 slow fallback，nested/clone CPU 继承 hook。
-- [ ] fast/slow 等价测试与无绝对阈值 benchmark。
+- [x] 多页 sealed thunk arena 与 live-register A32 call frame。
+- [x] Dynarmic handled/unhandled/fault 契约。
+- [x] PC → slot → `{fn,self}` 常数时间调用。
+- [x] observer 强制 slow fallback，nested/clone CPU 安装同一 hook。
+- [x] fast/slow 结果等价测试；既有 decode benchmark 不设绝对阈值。
+
+本 WU 保留 legacy handler 作为 hot entry 的业务实现，中央 route 的删除属于 BND-4。

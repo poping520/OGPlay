@@ -10,6 +10,9 @@
   可快照的 guest thread pointer；完整核心/扩展寄存器组支持等尺寸批量导入，供 JIT
   状态快照避免逐槽虚调用开销。
 - `Cpu::Run(ticks) -> RunResult`：以统一预算运行，返回停止原因和已消费 tick。
+- `HostCallHook`：可选的 backend-neutral A32 SVC hook，直接借用 16 个 live core
+  registers；`handled` 继续当前 JIT run，`unhandled` 保持 supervisor stop，`fault` 形成
+  显式 host-call fault stop。CPU 不解释 SVC 的上层含义。
 - `CpuSnapshot`：带显式版本的可复制 CPU 状态。
 - `CpuFault`：将 memory fault 的地址、访问类型、原因和线程号保留到 CPU 边界。
 - `InterpreterCpu`：确定性逐指令后端；当前覆盖 A32/T32 标量算术、条件、控制流及
@@ -34,7 +37,7 @@
 - 每个 guest 线程拥有独立执行上下文。
 - 普通全局 futex 唤醒只释放调用时已经等待的线程，不改变 guest 值，也不让后续等待伪成功；
   失败中断一旦发布不得复位，当前及未来匹配等待必须明确返回 interrupted。
-- 内存失败产生 Fault，不得返回零；CPU 不直接调用 HLE。
+- 内存失败产生 Fault，不得返回零；CPU 只调用无上层语义的显式 HostCallHook。
 - CPU 后端只通过 `MemoryBus` 及其显式页表能力访存；observer、执行页、非 RW 页和跨页
   访问不得进入直接快路，寄存器状态不得包含宿主指针。
 - `Run` 的 tick 预算和消费量必须确定且可测试。

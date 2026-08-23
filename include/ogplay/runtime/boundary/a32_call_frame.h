@@ -7,6 +7,7 @@
 
 namespace ogplay::cpu {
 class A32State;
+struct A32HostCallContext;
 }
 
 namespace ogplay::memory {
@@ -21,6 +22,9 @@ class A32CallFrame final {
 public:
     A32CallFrame(memory::AddressSpace& address_space,
                  const cpu::A32State& state, std::size_t parameter_count);
+    A32CallFrame(memory::AddressSpace& address_space,
+                 const cpu::A32HostCallContext& context,
+                 std::size_t parameter_count);
 
     [[nodiscard]] std::uint32_t Argument(std::size_t index) const;
     [[nodiscard]] std::span<const std::uint32_t> Arguments() const noexcept;

@@ -57,6 +57,7 @@ public:
     void PresentManagedSurface();
     void CloseManagedSurface();
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept;
+    [[nodiscard]] cpu::HostCallHook FastHostCallHook() noexcept;
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped);
     void NotifyFileWrite();
     void PushInput(const AndroidBoundaryInput& input);

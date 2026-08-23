@@ -49,6 +49,38 @@ A32CallFrame::A32CallFrame(memory::AddressSpace& address_space,
     }
 }
 
+A32CallFrame::A32CallFrame(memory::AddressSpace& address_space,
+                           const cpu::A32HostCallContext& context,
+                           const std::size_t parameter_count)
+    : parameter_count_(parameter_count), thread_id_(context.thread_id),
+      link_register_(context.registers[14]) {
+    if (parameter_count > arguments_.size()) {
+        throw std::length_error("A32 HLE call exceeds the supported argument count");
+    }
+    const auto register_count = std::min(parameter_count, std::size_t{4});
+    std::copy_n(context.registers.begin(), register_count, arguments_.begin());
+    if (parameter_count <= 4U) return;
+
+    const auto stack_words = parameter_count - 4U;
+    std::array<std::byte, (kMaximumA32CallArguments - 4U) *
+                              sizeof(std::uint32_t)>
+        bytes{};
+    const auto stack_bytes =
+        std::span(bytes).first(stack_words * sizeof(std::uint32_t));
+    address_space.Read(memory::GuestAddress{context.registers[13]}, stack_bytes,
+                       thread_id_);
+    for (std::size_t word = 0; word < stack_words; ++word) {
+        std::uint32_t value{};
+        for (std::size_t byte = 0; byte < sizeof(value); ++byte) {
+            value |= static_cast<std::uint32_t>(
+                         std::to_integer<std::uint8_t>(
+                             bytes[word * sizeof(value) + byte]))
+                     << (byte * 8U);
+        }
+        arguments_[4U + word] = value;
+    }
+}
+
 std::uint32_t A32CallFrame::Argument(const std::size_t index) const {
     if (index >= parameter_count_) {
         throw std::out_of_range("A32 HLE argument index is outside the call frame");

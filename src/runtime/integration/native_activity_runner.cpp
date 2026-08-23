@@ -78,7 +78,10 @@ public:
                     request.supersample_factor),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           threads_([this] {
-              return std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
+              auto result = std::make_unique<cpu::DynarmicCpu>(
+                  memory_bus_, execution_context_);
+              result->SetHostCallHook(boundary_.FastHostCallHook());
+              return result;
           }), maximum_ticks_(request.maximum_ticks_per_call), progress_(request.progress) {
 #if !OGPLAY_HAS_DYNARMIC
         static_cast<void>(request);
@@ -114,6 +117,7 @@ public:
                 return HandleBoundary(cpu, stopped);
             });
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
+        root_cpu_->SetHostCallHook(boundary_.FastHostCallHook());
         cpu::A32State root_state;
         root_state.SetThreadId(kRootThreadId);
         root_state.SetThreadPointer(process_memory_.thread_pointer);

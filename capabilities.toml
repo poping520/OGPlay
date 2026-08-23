@@ -3,7 +3,12 @@
 [runtime.virtual_so_boundary]
 status = "partial"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
-note = "BND-1 建立 API-sealed BoundaryCatalog 与完整 active-export synthetic ELF，移除 Bionic Profile 平行 SONAME 表并闭合 late import；fast transport 与 legacy route 收口由 BND-2..4 完成"
+note = "BND-1 建立 API-sealed BoundaryCatalog 与完整 active-export synthetic ELF，移除 Bionic Profile 平行 SONAME 表并闭合 late import；BND-2 接入 SVC #2 fast transport，legacy module route 收口由 BND-4 完成"
+
+[runtime.fast_host_call]
+status = "partial"
+test = "tests/cpu/dynarmic_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
+note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-page sealed thunk arena 与 live-register dense SVC #2 path；JNI SVC #3 接入由 BND-3 完成"
 
 [loader.binary_xml_typed_attributes]
 status = "complete"

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <exception>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -154,16 +155,28 @@ public:
         gles1_extensions_dispatch_.Seal();
         gles1_state_.Fixed().SetMaterialSingleFaceQuirk(
             options.allow_gles1_material_single_face);
+        hot_bindings_.reserve(descriptors_.size());
+        hot_.reserve(descriptors_.size());
+        for (const auto& descriptor : descriptors_) {
+            hot_bindings_.push_back({this, &descriptor});
+        }
+        for (auto& binding : hot_bindings_) {
+            hot_.push_back({&InvokeLegacyFast, &binding});
+        }
     }
     void MapThunks() {
         if (mapped_) throw std::logic_error("Android boundary thunks are already mapped");
         const auto page_size = address_space_.PageSize();
-        if (symbols_.size() > page_size / kThunkStride) {
-            throw std::length_error("Android boundary thunk catalog exceeds its guest page");
+        const auto code_bytes = symbols_.size() * kThunkStride;
+        const auto arena_bytes =
+            ((code_bytes + page_size - 1U) / page_size) * page_size;
+        if (arena_bytes == 0U ||
+            arena_bytes > kBionicHleThunkEnd - kBionicHleThunkBegin) {
+            throw std::length_error("Android boundary thunk arena exceeds its guest range");
         }
-        address_space_.Map({memory::GuestAddress{kBionicHleThunkBegin}, page_size},
+        address_space_.Map({memory::GuestAddress{kBionicHleThunkBegin}, arena_bytes},
                            memory::PageProtection::read | memory::PageProtection::write);
-        std::vector<std::byte> code(page_size, std::byte{});
+        std::vector<std::byte> code(arena_bytes, std::byte{});
         for (std::size_t index = 0; index < symbols_.size(); ++index) {
             const auto offset = index * kThunkStride;
             code[offset] = std::byte{0x02};
@@ -172,10 +185,15 @@ public:
             code[offset + 3] = std::byte{0x47};  // bx lr
         }
         address_space_.Write(memory::GuestAddress{kBionicHleThunkBegin}, code);
-        address_space_.Protect({memory::GuestAddress{kBionicHleThunkBegin}, page_size},
+        address_space_.Protect({memory::GuestAddress{kBionicHleThunkBegin}, arena_bytes},
                                memory::PageProtection::read |
                                    memory::PageProtection::execute);
+        thunk_bytes_ = arena_bytes;
         mapped_ = true;
+    }
+
+    [[nodiscard]] cpu::HostCallHook FastHostCallHook() noexcept {
+        return {&TryFastHostCall, this};
     }
     void OpenManagedSurface() {
         if (angle_frame_.has_value()) {
@@ -374,6 +392,69 @@ public:
         return result;
     }
 private:
+    struct FastBinding final {
+        Impl* owner{};
+        const detail::HleThunkDescriptor* descriptor{};
+    };
+
+    struct HotEntry final {
+        cpu::HostCallResult (*invoke)(void*, cpu::A32HostCallContext&) noexcept{};
+        void* self{};
+    };
+
+    static cpu::HostCallResult TryFastHostCall(
+        void* userdata, const std::uint32_t svc,
+        cpu::A32HostCallContext& call) noexcept {
+        if (userdata == nullptr || svc != 2U) {
+            return cpu::HostCallResult::unhandled;
+        }
+        return static_cast<Impl*>(userdata)->TryFastCall(call);
+    }
+
+    cpu::HostCallResult TryFastCall(cpu::A32HostCallContext& call) noexcept {
+        if (!mapped_) return cpu::HostCallResult::unhandled;
+        const auto pc = call.pc.Value();
+        if (pc < kBionicHleThunkBegin ||
+            pc >= kBionicHleThunkBegin + thunk_bytes_) {
+            return cpu::HostCallResult::unhandled;
+        }
+        const auto offset = pc - kBionicHleThunkBegin;
+        if ((offset % kThunkStride) != 0U) {
+            return cpu::HostCallResult::unhandled;
+        }
+        const auto slot = static_cast<std::size_t>(offset / kThunkStride);
+        if (slot >= hot_.size() || hot_[slot].invoke == nullptr) {
+            return cpu::HostCallResult::unhandled;
+        }
+        return hot_[slot].invoke(hot_[slot].self, call);
+    }
+
+    static cpu::HostCallResult InvokeLegacyFast(
+        void* userdata, cpu::A32HostCallContext& context) noexcept {
+        if (userdata == nullptr) return cpu::HostCallResult::unhandled;
+        auto& binding = *static_cast<FastBinding*>(userdata);
+        try {
+            const A32CallFrame call(binding.owner->address_space_, context,
+                                    binding.descriptor->parameter_count);
+            const auto arguments = call.RegisterArguments();
+            std::uint32_t result{};
+            if (binding.descriptor->route == detail::HleRoute::bionic_memory) {
+                result = ExecuteBionicMemoryIntercept(
+                    binding.owner->address_space_,
+                    {binding.descriptor->name, arguments, context.thread_id});
+            } else {
+                result = binding.owner->Dispatch(*binding.descriptor, call);
+            }
+            binding.owner->RecordGpuCall(*binding.descriptor, arguments);
+            context.registers[0] = result;
+            return cpu::HostCallResult::handled;
+        } catch (...) {
+            std::scoped_lock lock(binding.owner->fast_fault_mutex_);
+            binding.owner->fast_fault_ = std::current_exception();
+            return cpu::HostCallResult::fault;
+        }
+    }
+
     void InitializeGuestGlDefaults() {
         constexpr auto kDither = UINT32_C(0x0BD0);
         const auto maximum_dimension = static_cast<std::uint32_t>(
@@ -969,6 +1050,11 @@ private:
     gles::GlesDispatchTable gles1_extensions_dispatch_{
         gles::GlesApi::gles1_extensions};
     bool mapped_{};
+    std::size_t thunk_bytes_{};
+    std::vector<FastBinding> hot_bindings_;
+    std::vector<HotEntry> hot_;
+    std::mutex fast_fault_mutex_;
+    std::exception_ptr fast_fault_;
     std::optional<gles::AngleFrame> angle_frame_;
     std::optional<std::thread::id> gl_owner_;
     bool managed_surface_{};
@@ -1025,6 +1111,9 @@ void AndroidBoundaryHle::CloseManagedSurface() {
 }
 const BionicHleSymbolProvider& AndroidBoundaryHle::Symbols() const noexcept {
     return impl_->Symbols();
+}
+cpu::HostCallHook AndroidBoundaryHle::FastHostCallHook() noexcept {
+    return impl_->FastHostCallHook();
 }
 bool AndroidBoundaryHle::Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
     return impl_->Handle(cpu, stopped);

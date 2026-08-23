@@ -132,6 +132,10 @@ public:
 
         void Attach(Dynarmic::A32::Jit& jit) noexcept { jit_ = &jit; }
 
+        void SetHostCallHook(const HostCallHook hook) noexcept {
+            host_call_ = hook;
+        }
+
         void Begin(const std::uint64_t tick_budget,
                    const std::uint64_t thread_id) noexcept {
             ticks_remaining_ = tick_budget;
@@ -233,9 +237,21 @@ public:
             const auto next_pc = jit_->Regs()[15];
             const auto instruction = thumb ? 0xdf00U | (immediate & 0xffU)
                                            : 0xef000000U | (immediate & 0x00ffffffU);
+            const auto pc = memory::GuestAddress{next_pc - instruction_size};
+            if (host_call_.invoke != nullptr) {
+                A32HostCallContext call{std::span<std::uint32_t, 16>{jit_->Regs()},
+                                        thread_id_, pc};
+                const auto result = host_call_.invoke(
+                    host_call_.userdata, immediate, call);
+                if (result == HostCallResult::handled) return;
+                if (result == HostCallResult::fault) {
+                    RecordStop({RunStopReason::host_call_fault, pc, instruction,
+                                immediate, std::nullopt});
+                    return;
+                }
+            }
             RecordStop({RunStopReason::supervisor_call,
-                        memory::GuestAddress{next_pc - instruction_size},
-                        instruction, immediate, std::nullopt});
+                        pc, instruction, immediate, std::nullopt});
         }
 
         void ExceptionRaised(const Dynarmic::A32::VAddr pc,
@@ -330,6 +346,7 @@ public:
         std::uint64_t ticks_remaining_{};
         std::uint64_t ticks_consumed_{};
         std::optional<PendingStop> pending_;
+        HostCallHook host_call_{};
     };
 
     Impl(memory::MemoryBus& memory_bus,
@@ -451,6 +468,10 @@ void DynarmicCpu::SetState(const A32State& state) {
 void DynarmicCpu::RequestHalt() noexcept {
     halt_requested_.store(true);
     impl_->jit.HaltExecution(kExternalHalt);
+}
+
+void DynarmicCpu::SetHostCallHook(const HostCallHook hook) noexcept {
+    impl_->callbacks.SetHostCallHook(hook);
 }
 
 }  // namespace ogplay::cpu

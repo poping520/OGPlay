@@ -3,10 +3,27 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 
 #include "ogplay/memory/address_space.h"
 
 namespace ogplay::cpu {
+
+struct A32HostCallContext final {
+    std::span<std::uint32_t, 16> registers;
+    std::uint64_t thread_id{};
+    memory::GuestAddress pc;
+};
+
+enum class HostCallResult : std::uint8_t { handled, unhandled, fault };
+
+using HostCallFn = HostCallResult (*)(void* userdata, std::uint32_t svc,
+                                      A32HostCallContext& call) noexcept;
+
+struct HostCallHook final {
+    HostCallFn invoke{};
+    void* userdata{};
+};
 
 enum class CoreRegister : std::uint8_t {
     r0,
@@ -81,6 +98,7 @@ enum class RunStopReason : std::uint8_t {
     undefined_instruction,
     memory_fault,
     halt_requested,
+    host_call_fault,
 };
 
 struct CpuFault final {
@@ -106,6 +124,9 @@ public:
     [[nodiscard]] virtual A32State GetState() const = 0;
     virtual void SetState(const A32State& state) = 0;
     virtual void RequestHalt() noexcept = 0;
+    virtual void SetHostCallHook(HostCallHook hook) noexcept {
+        static_cast<void>(hook);
+    }
 };
 
 }  // namespace ogplay::cpu

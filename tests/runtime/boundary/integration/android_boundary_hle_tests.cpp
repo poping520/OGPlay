@@ -991,7 +991,9 @@ TEST_CASE("A32 call frame bulk decodes register and stack arguments") {
           ogplay::memory::GuestAddress{0x33333333U});
     CHECK_THROWS_AS(static_cast<void>(call.Argument(9U)), std::out_of_range);
     CHECK_THROWS_AS(
-        static_cast<void>(ogplay::runtime::A32CallFrame(memory, state, 10U)),
+        static_cast<void>(ogplay::runtime::A32CallFrame(
+            memory, state,
+            ogplay::runtime::kMaximumA32CallArguments + 1U)),
         std::length_error);
 }
 

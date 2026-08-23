@@ -1,10 +1,13 @@
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <string_view>
+#include <thread>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -18,6 +21,7 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_object.h"
+#include "runtime/boundary/modules/module_catalog.h"
 
 namespace {
 
@@ -93,6 +97,113 @@ void Put32(std::vector<std::byte>& bytes, const std::size_t offset,
     return bytes;
 }
 
+constexpr std::uint32_t kOpenSlesFixtureBase = 0x10010000U;
+constexpr std::uint32_t kOpenSlesCallbackOffset = 0x1000U;
+constexpr std::uint32_t kOpenSlesRead32Offset = 0x1080U;
+constexpr std::uint32_t kOpenSlesWrite32Offset = 0x1090U;
+constexpr std::uint32_t kOpenSlesSourceOffset = 0x500U;
+constexpr std::uint32_t kOpenSlesBufferQueueLocatorOffset = 0x510U;
+constexpr std::uint32_t kOpenSlesPcmFormatOffset = 0x520U;
+constexpr std::uint32_t kOpenSlesSinkOffset = 0x540U;
+constexpr std::uint32_t kOpenSlesOutputMixLocatorOffset = 0x550U;
+constexpr std::uint32_t kOpenSlesEngineResultOffset = 0x560U;
+constexpr std::uint32_t kOpenSlesMixResultOffset = 0x564U;
+constexpr std::uint32_t kOpenSlesPlayerResultOffset = 0x568U;
+constexpr std::uint32_t kOpenSlesFirstPcmOffset = 0x580U;
+constexpr std::uint32_t kOpenSlesSecondPcmOffset = 0x590U;
+constexpr std::uint32_t kOpenSlesCallbackMarkerOffset = 0x5a0U;
+constexpr std::uint32_t kOpenSlesCallbackTlsOffset = 0x5a4U;
+
+[[nodiscard]] std::uint32_t OpenSlesFixtureAddress(
+    const std::uint32_t offset) {
+    return kOpenSlesFixtureBase + offset;
+}
+
+[[nodiscard]] std::uint32_t OpenSlesThunk(const std::string_view name) {
+    const auto* module = ogplay::runtime::AndroidBoundaryCatalog(
+                             ogplay::runtime::AndroidApi::api19)
+                             .FindModule("libOpenSLES.so");
+    if (module == nullptr) {
+        throw std::runtime_error("OpenSL fixture cannot find module catalog");
+    }
+    const auto found = std::ranges::find(module->exports, name,
+                                         &ogplay::runtime::BoundaryExportDescriptor::name);
+    if (found == module->exports.end() ||
+        found->kind == ogplay::runtime::BoundaryExportKind::public_data) {
+        throw std::runtime_error("OpenSL fixture cannot find callable " +
+                                 std::string(name));
+    }
+    return found->address.Value();
+}
+
+[[nodiscard]] std::vector<std::byte> OpenSlesCallbackLibcElf() {
+    auto bytes = MinimalLibcElf();
+    bytes.resize(0x2000U, std::byte{});
+    Put16(bytes, 44U, 3U);
+    Put32(bytes, 68U, 0x1000U);
+    Put32(bytes, 72U, 0x1000U);
+    Put32(bytes, 76U, 6U);
+    Put32(bytes, 116U, ogplay::loader::kElfProgramLoad);
+    Put32(bytes, 120U, 0x1000U);
+    Put32(bytes, 124U, 0x11000U);
+    Put32(bytes, 128U, 0U);
+    Put32(bytes, 132U, 0x1000U);
+    Put32(bytes, 136U, 0x1000U);
+    Put32(bytes, 140U, 5U);
+    Put32(bytes, 144U, 0x1000U);
+
+    const auto callback = kOpenSlesCallbackOffset;
+    Put32(bytes, callback + 0U, 0xe92d4000U);   // push {lr}
+    Put32(bytes, callback + 4U, 0xe59f1024U);   // ldr r1, [pc, #36]
+    Put32(bytes, callback + 8U, 0xe3a02004U);   // mov r2, #4
+    Put32(bytes, callback + 12U, 0xe59f3020U);  // ldr r3, [pc, #32]
+    Put32(bytes, callback + 16U, 0xe12fff33U);  // blx r3
+    Put32(bytes, callback + 20U, 0xee1d2f70U);  // mrc p15,0,r2,c13,c0,3
+    Put32(bytes, callback + 24U, 0xe59f1018U);  // ldr r1, [pc, #24]
+    Put32(bytes, callback + 28U, 0xe3a03001U);  // mov r3, #1
+    Put32(bytes, callback + 32U, 0xe5813000U);  // str r3, [r1]
+    Put32(bytes, callback + 36U, 0xe59f1010U);  // ldr r1, [pc, #16]
+    Put32(bytes, callback + 40U, 0xe5812000U);  // str r2, [r1]
+    Put32(bytes, callback + 44U, 0xe8bd8000U);  // pop {pc}
+    Put32(bytes, callback + 48U,
+          OpenSlesFixtureAddress(kOpenSlesSecondPcmOffset));
+    Put32(bytes, callback + 52U, OpenSlesThunk("$BufferQueue.Enqueue"));
+    Put32(bytes, callback + 56U,
+          OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset));
+    Put32(bytes, callback + 60U,
+          OpenSlesFixtureAddress(kOpenSlesCallbackTlsOffset));
+
+    Put32(bytes, kOpenSlesRead32Offset + 0U, 0xe5900000U);  // ldr r0, [r0]
+    Put32(bytes, kOpenSlesRead32Offset + 4U, 0xe12fff1eU);  // bx lr
+    Put32(bytes, kOpenSlesWrite32Offset + 0U, 0xe5801000U); // str r1, [r0]
+    Put32(bytes, kOpenSlesWrite32Offset + 4U, 0xe3a00000U); // mov r0, #0
+    Put32(bytes, kOpenSlesWrite32Offset + 8U, 0xe12fff1eU); // bx lr
+
+    Put32(bytes, kOpenSlesSourceOffset,
+          OpenSlesFixtureAddress(kOpenSlesBufferQueueLocatorOffset));
+    Put32(bytes, kOpenSlesSourceOffset + 4U,
+          OpenSlesFixtureAddress(kOpenSlesPcmFormatOffset));
+    Put32(bytes, kOpenSlesBufferQueueLocatorOffset, 0x800007bdU);
+    Put32(bytes, kOpenSlesBufferQueueLocatorOffset + 4U, 1U);
+    Put32(bytes, kOpenSlesPcmFormatOffset, 2U);
+    Put32(bytes, kOpenSlesPcmFormatOffset + 4U, 1U);
+    Put32(bytes, kOpenSlesPcmFormatOffset + 8U, 48000000U);
+    Put32(bytes, kOpenSlesPcmFormatOffset + 12U, 16U);
+    Put32(bytes, kOpenSlesPcmFormatOffset + 16U, 16U);
+    Put32(bytes, kOpenSlesPcmFormatOffset + 20U, 4U);
+    Put32(bytes, kOpenSlesPcmFormatOffset + 24U, 2U);
+    Put32(bytes, kOpenSlesSinkOffset,
+          OpenSlesFixtureAddress(kOpenSlesOutputMixLocatorOffset));
+    Put32(bytes, kOpenSlesSinkOffset + 4U, 0U);
+    Put32(bytes, kOpenSlesOutputMixLocatorOffset, 4U);
+    Put32(bytes, kOpenSlesOutputMixLocatorOffset + 4U, 0U);
+    Put16(bytes, kOpenSlesFirstPcmOffset + 0U, 1000U);
+    Put16(bytes, kOpenSlesFirstPcmOffset + 2U, 2000U);
+    Put16(bytes, kOpenSlesSecondPcmOffset + 0U, 3000U);
+    Put16(bytes, kOpenSlesSecondPcmOffset + 2U, 4000U);
+    return bytes;
+}
+
 [[nodiscard]] std::vector<std::byte> ReadAudioFixture() {
     const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
                       "tests/fixtures/audio/short-vorbis.ogg";
@@ -135,6 +246,103 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     CHECK_FALSE(process->Running());
     CHECK(process->AttachedJniThreadCount() == 0);
     CHECK(process->LoadedGuestModuleCount() == 1);
+    process->Stop();
+}
+
+TEST_CASE("OpenSL buffer callback runs on its guest thread and re-enqueues") {
+    auto libc = OpenSlesCallbackLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36,
+         100000, 1, &filesystem, {}});
+
+    const auto invoke = [&](const std::uint32_t target,
+                            const std::array<std::uint32_t, 4> registers,
+                            const std::span<const std::uint32_t> stack) {
+        return process
+            ->Invoke({ogplay::memory::GuestAddress{target}, registers, stack})
+            .return_value;
+    };
+    const auto read_guest = [&](const std::uint32_t address) {
+        return invoke(OpenSlesFixtureAddress(kOpenSlesRead32Offset),
+                      {address, 0U, 0U, 0U}, {});
+    };
+    const auto write_guest = [&](const std::uint32_t address,
+                                 const std::uint32_t value) {
+        CHECK(invoke(OpenSlesFixtureAddress(kOpenSlesWrite32Offset),
+                     {address, value, 0U, 0U}, {}) == 0U);
+    };
+
+    const std::array<std::uint32_t, 2> create_engine_stack{};
+    CHECK(invoke(OpenSlesThunk("slCreateEngine"),
+                 {OpenSlesFixtureAddress(kOpenSlesEngineResultOffset),
+                  0U, 0U, 0U},
+                 create_engine_stack) == 0U);
+    const auto engine =
+        read_guest(OpenSlesFixtureAddress(kOpenSlesEngineResultOffset));
+    REQUIRE(engine != 0U);
+    CHECK(invoke(OpenSlesThunk("$Object.Realize"),
+                 {engine, 0U, 0U, 0U}, {}) == 0U);
+
+    const std::array<std::uint32_t, 2> create_mix_stack{};
+    CHECK(invoke(OpenSlesThunk("$Engine.CreateOutputMix"),
+                 {engine + 4U,
+                  OpenSlesFixtureAddress(kOpenSlesMixResultOffset),
+                  0U, 0U},
+                 create_mix_stack) == 0U);
+    const auto mix =
+        read_guest(OpenSlesFixtureAddress(kOpenSlesMixResultOffset));
+    REQUIRE(mix != 0U);
+    CHECK(invoke(OpenSlesThunk("$Object.Realize"),
+                 {mix, 0U, 0U, 0U}, {}) == 0U);
+    write_guest(OpenSlesFixtureAddress(kOpenSlesOutputMixLocatorOffset) + 4U,
+                mix);
+
+    const std::array<std::uint32_t, 4> create_player_stack{};
+    CHECK(invoke(OpenSlesThunk("$Engine.CreateAudioPlayer"),
+                 {engine + 4U,
+                  OpenSlesFixtureAddress(kOpenSlesPlayerResultOffset),
+                  OpenSlesFixtureAddress(kOpenSlesSourceOffset),
+                  OpenSlesFixtureAddress(kOpenSlesSinkOffset)},
+                 create_player_stack) == 0U);
+    const auto player =
+        read_guest(OpenSlesFixtureAddress(kOpenSlesPlayerResultOffset));
+    REQUIRE(player != 0U);
+    CHECK(invoke(OpenSlesThunk("$Object.Realize"),
+                 {player, 0U, 0U, 0U}, {}) == 0U);
+
+    const auto queue = player + 8U;
+    CHECK(invoke(OpenSlesThunk("$BufferQueue.RegisterCallback"),
+                 {queue, OpenSlesFixtureAddress(kOpenSlesCallbackOffset),
+                  0x51e5U, 0U}, {}) == 0U);
+    CHECK(invoke(OpenSlesThunk("$BufferQueue.Enqueue"),
+                 {queue, OpenSlesFixtureAddress(kOpenSlesFirstPcmOffset),
+                  4U, 0U}, {}) == 0U);
+    CHECK(invoke(OpenSlesThunk("$Play.SetPlayState"),
+                 {player + 4U, 3U, 0U, 0U}, {}) == 0U);
+
+    std::array<std::int16_t, 4> first{};
+    CHECK(process->RenderStereoAudio(first, 48000U) == 2U);
+    CHECK(first == std::array<std::int16_t, 4>{1000, 1000, 2000, 2000});
+
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::seconds(2);
+    while (read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset)) ==
+               0U &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+    REQUIRE(read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackMarkerOffset)) ==
+            1U);
+    CHECK(read_guest(OpenSlesFixtureAddress(kOpenSlesCallbackTlsOffset)) ==
+          0x71a00000U);
+    CHECK(process->AttachedJniThreadCount() == 1U);
+
+    std::array<std::int16_t, 4> second{};
+    CHECK(process->RenderStereoAudio(second, 48000U) == 2U);
+    CHECK(second == std::array<std::int16_t, 4>{3000, 3000, 4000, 4000});
     process->Stop();
 }
 

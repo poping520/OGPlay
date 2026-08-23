@@ -28,4 +28,5 @@ MIDI、3D、effect 与 URI/FD decoding 必须明确失败，不伪造成功。
 
 IID ELF/data ABI 覆盖于 `tests/runtime/bionic_profile_tests.cpp` 与
 `tests/runtime/boundary/integration/android_boundary_hle_tests.cpp`；模块函数和音频状态测试
-随实现放入 `tests/runtime/boundary/modules/opensles/`。
+位于 `tests/audio/open_sles_pcm_mixer_tests.cpp`，process callback thread、TPIDRURO 与 callback
+内 SVC #2 re-enqueue 端到端覆盖于 `tests/runtime/android_guest_call_session_tests.cpp`。

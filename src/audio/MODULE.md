@@ -45,6 +45,8 @@
   与 loaded resource；initialize 不得恢复已销毁的状态。stop 只影响 voice，不得隐式卸载。
 - mixer 控制和 render 共用内部锁；mono 复制到双声道，mono/stereo 通过有界线性重采样
   消费 position，多个 voice 以 64-bit scratch 累加并饱和为 PCM16，完成 voice 自动清理。
+- OpenSL mute 只把当前 player 的输出 gain 置零，不暂停 source position、queue 消费或
+  consumed-buffer callback；pause/stopped 才停止 mixer 时间推进。
 
 ## 禁止
 

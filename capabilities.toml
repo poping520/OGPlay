@@ -8,7 +8,7 @@ note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export 
 [runtime.opensles_virtual_so]
 status = "complete"
 test = "tests/audio/open_sles_pcm_mixer_tests.cpp; tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-9..13 按 AOSP Wilhelm 发布 3 functions、51 IID data、53 direct private vtable callables，实现 Engine/OutputMix/PCM AudioPlayer Object/Play/Queue/Volume、PCM8/16 mixer、SoundPool additive process pump 与专用 A32 guest callback thread；focused gates 与 full CTest 923/923 均通过"
+note = "BND-9..14 按 AOSP Wilhelm 发布 3 functions、51 IID data、53 direct private vtable callables，实现 Engine/OutputMix/PCM AudioPlayer Object/Play/Queue/Volume、PCM8/16 mixer、SoundPool additive process pump 与专用 A32 guest callback thread；BND-14 以真实 A32 callback 的 TPIDRURO + SVC #2 re-enqueue 补强端到端证据并修正 mute 时间推进，focused 20/20 通过，待最终 full CTest 更新总证据"
 
 [runtime.liblog_virtual_so]
 status = "complete"

@@ -187,10 +187,10 @@ OpenSlesPcmMixer::MixAdditiveStereoPcm16(
     std::vector<OpenSlesConsumedBuffer> consumed;
     const auto output_frames = output.size() / 2U;
     for (auto& [id, player] : players_) {
-        if (player.state != OpenSlesPlayState::playing || player.mute) continue;
+        if (player.state != OpenSlesPlayState::playing) continue;
         const auto step = static_cast<double>(player.format.sample_rate) /
                           static_cast<double>(output_rate);
-        const auto gain = MillibelGain(player.millibel);
+        const auto gain = player.mute ? 0.0 : MillibelGain(player.millibel);
         const auto pan = static_cast<double>(player.stereo_position) / 1000.0;
         const auto left_gain = gain * (pan > 0.0 ? 1.0 - pan : 1.0);
         const auto right_gain = gain * (pan < 0.0 ? 1.0 + pan : 1.0);

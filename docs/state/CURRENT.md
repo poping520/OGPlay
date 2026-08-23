@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-24 · BND-13 OpenSL ES acceptance closure
+更新：2026-08-24 · BND-14 OpenSL ES callback acceptance hardening
 
 ## 当前阶段
 
@@ -21,7 +21,9 @@
   SVC #2 Enqueue，失败延迟恢复。OpenSL 地址移入与 JNI lease 不冲突的 `0x718..0x71b`，
   focused 19/19 通过。BND-13 同步 A32 11-word ABI gate 与重构后的 quirk 测试路径，最终
   full CTest 923/923（含 architecture gate）通过，`runtime.opensles_virtual_so` 已晋升
-  `complete`。
+  `complete`。BND-14 又以真实 A32 callback 读取专用 TLS、经 SVC #2 re-enqueue 并播放
+  第二个 buffer，补齐 callback-thread 端到端证据；mute 现在只静音而继续推进队列/回调，
+  focused 20/20 通过，待最终 full CTest 收口。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

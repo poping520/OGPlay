@@ -66,8 +66,13 @@ TEST_CASE("OpenSL mixer decodes PCM8 resamples and applies volume mute pan") {
     CHECK(output[5] > output[3]);
     mixer.SetMute(player, true);
     output.fill(7);
-    static_cast<void>(mixer.MixAdditiveStereoPcm16(output, 48000U));
+    const auto muted_consumed =
+        mixer.MixAdditiveStereoPcm16(output, 48000U);
     CHECK(output == std::array<std::int16_t, 8>{7, 7, 7, 7, 7, 7, 7, 7});
+    REQUIRE(muted_consumed.size() == 1U);
+    CHECK(muted_consumed[0].player == player);
+    CHECK(mixer.QueueState(player).count == 0U);
+    CHECK(mixer.QueueState(player).play_index == 1U);
 }
 
 TEST_CASE("OpenSL mixer additively saturates multiple players and serializes controls") {

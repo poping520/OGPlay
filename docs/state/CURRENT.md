@@ -42,8 +42,8 @@
 ## 验证基线
 
 - Windows/x64 `windows-msvc`：872/872 CTest（含 interpreter v2、Profile、Scenario 与文档门禁）。
-- macOS/arm64 BND service 收窄后：909/909 CTest（95.52 秒）；focused module/shared-state/
-  benchmark/architecture gate 为 18/18。
+- macOS/arm64 OpenSL ES empty Virtual SO 后：911/911 CTest（100.30 秒）；focused
+  catalog/preflight/namespace/capability/documentation/hot-path gate 为 12/12。
 - Windows 预设使用原生核数并行工程；OGPlay 自有 MSVC target 启用 `/MP`。
 - 浮点 `FromChars` 在 HAL：macOS `strtof_l`/`strtod_l`，Windows/Linux `std::from_chars`。
 

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "ogplay/gles/gles_dispatch.h"
+#include "ogplay/runtime/bionic/guest_symbol_override.h"
 
 namespace ogplay::runtime::detail {
 namespace {
@@ -47,13 +48,14 @@ constexpr std::uint32_t kThunkStride = 4U;
         return *id;
     }
     if (route == HleRoute::bionic_memory) {
-        static constexpr std::array names{"memcpy", "memmove", "memset",
-                                          "memcmp", "strlen"};
-        const auto found = std::find(names.begin(), names.end(), name);
-        if (found == names.end()) {
+        const auto overrides = GuestSymbolOverrides();
+        const auto found = std::find_if(
+            overrides.begin(), overrides.end(),
+            [&](const auto& candidate) { return candidate.symbol == name; });
+        if (found == overrides.end()) {
             throw std::logic_error("unknown Bionic override symbol");
         }
-        return static_cast<std::uint16_t>(found - names.begin());
+        return found->local_id;
     }
     const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
     for (const auto& module : catalog.Modules()) {
@@ -82,8 +84,15 @@ constexpr std::uint32_t kThunkStride = 4U;
         return static_cast<std::uint8_t>(count);
     }
     if (route == HleRoute::bionic_memory) {
-        static constexpr std::array<std::uint8_t, 5> counts{3, 3, 3, 3, 1};
-        return counts.at(function_id);
+        const auto overrides = GuestSymbolOverrides();
+        const auto found = std::find_if(
+            overrides.begin(), overrides.end(), [&](const auto& candidate) {
+                return candidate.local_id == function_id;
+            });
+        if (found == overrides.end()) {
+            throw std::logic_error("unknown Bionic override local id");
+        }
+        return found->parameter_count;
     }
     throw std::logic_error("non-GLES parameter count requires module metadata");
 }
@@ -91,20 +100,17 @@ constexpr std::uint32_t kThunkStride = 4U;
 }  // namespace
 
 std::vector<BionicHleSymbol> BuildAndroidBoundarySymbols() {
-    static constexpr std::array<std::pair<std::string_view, std::string_view>, 5> overrides{{
-        {"libc.so", "memcpy"}, {"libc.so", "memmove"}, {"libc.so", "memset"},
-        {"libc.so", "memcmp"}, {"libc.so", "strlen"},
-    }};
     std::vector<BionicHleSymbol> result;
     const auto& catalog = AndroidBoundaryCatalog(AndroidApi::api19);
-    result.reserve(catalog.SlotCount() + overrides.size());
+    result.reserve(catalog.SlotCount() + GuestSymbolOverrides().size());
     for (const auto& module : catalog.Modules()) {
         for (const auto& export_ : module.exports) {
             result.push_back({module.soname, export_.name, export_.address});
         }
     }
-    for (const auto& [library, symbol] : overrides) {
-        result.push_back({std::string(library), std::string(symbol),
+    for (const auto& override_ : GuestSymbolOverrides()) {
+        result.push_back({std::string(override_.library),
+                          std::string(override_.symbol),
                           memory::GuestAddress{kBionicHleThunkBegin +
                               static_cast<std::uint32_t>(result.size()) *
                                   kThunkStride + 1U}});

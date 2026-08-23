@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/bionic/guest_symbol_override.h"
 #include "ogplay/runtime/boundary/boundary_catalog.h"
 
 namespace {
@@ -69,6 +70,9 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
     CHECK(ogplay::runtime::RouteBionicSymbol(profile, "liblog.so",
                                              "__android_log_write") ==
           ogplay::runtime::BionicSymbolRoute::host_boundary);
+    CHECK(ogplay::runtime::AndroidBoundaryCatalog(profile.api)
+              .FindModule("libc.so") == nullptr);
+    CHECK(ogplay::runtime::GuestSymbolOverrides().size() == 5U);
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::RouteBionicSymbol(
                         profile, "libc.so", "")),
                     ogplay::runtime::BionicProfileError);

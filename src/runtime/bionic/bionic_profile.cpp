@@ -1,6 +1,7 @@
 #include "ogplay/runtime/bionic/bionic_profile.h"
 
 #include "ogplay/runtime/boundary/boundary_catalog.h"
+#include "ogplay/runtime/bionic/guest_symbol_override.h"
 
 #include <algorithm>
 #include <array>
@@ -20,9 +21,6 @@ namespace {
 
 constexpr std::array<std::string_view, 5> kGuestLibraries{
     "libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so"};
-constexpr std::array<std::string_view, 5> kInterceptedLibcSymbols{
-    "memcmp", "memcpy", "memmove", "memset", "strlen"};
-
 constexpr BionicProfile kApi19{AndroidApi::api19, "4.4", "bionic/19",
                                kGuestLibraries};
 constexpr BionicProfile kApi22{AndroidApi::api22, "5.1", "bionic/22",
@@ -34,6 +32,16 @@ constexpr BionicProfile kApi23{AndroidApi::api23, "6.0", "bionic/23",
     const loader::Elf32LinkModule& module) {
     if (module.dynamic.soname.has_value()) return *module.dynamic.soname;
     return module.name;
+}
+
+[[nodiscard]] const GuestSymbolOverrideDescriptor* FindGuestOverride(
+    const std::string_view library, const std::string_view symbol) noexcept {
+    const auto overrides = GuestSymbolOverrides();
+    const auto found = std::find_if(
+        overrides.begin(), overrides.end(), [&](const auto& candidate) {
+            return candidate.library == library && candidate.symbol == symbol;
+        });
+    return found == overrides.end() ? nullptr : &*found;
 }
 
 [[nodiscard]] bool IsHleThunk(const memory::GuestAddress address) {
@@ -158,10 +166,7 @@ BionicSymbolRoute RouteBionicSymbol(const BionicProfile& profile,
     if (IsAndroidBoundaryLibrary(profile.api, library)) {
         return BionicSymbolRoute::host_boundary;
     }
-    if (library == "libc.so" &&
-        std::find(kInterceptedLibcSymbols.begin(),
-                  kInterceptedLibcSymbols.end(), symbol) !=
-            kInterceptedLibcSymbols.end()) {
+    if (FindGuestOverride(library, symbol) != nullptr) {
         return BionicSymbolRoute::host_intercept;
     }
     return BionicSymbolRoute::guest_execution;
@@ -195,9 +200,7 @@ std::uint32_t ExecuteBionicMemoryIntercept(
         }
     }
 
-    if (std::find(kInterceptedLibcSymbols.begin(),
-                  kInterceptedLibcSymbols.end(), call.symbol) ==
-        kInterceptedLibcSymbols.end()) {
+    if (FindGuestOverride("libc.so", call.symbol) == nullptr) {
         throw BionicProfileError("Bionic memory intercept is not implemented: " +
                                  std::string(call.symbol));
     }

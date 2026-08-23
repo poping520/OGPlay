@@ -830,7 +830,19 @@ public:
     }
 
     void ConfigureFastHostCalls(cpu::Cpu& cpu) {
-        if (!slice_observer_) cpu.SetHostCallHook(boundary_.FastHostCallHook());
+        if (!slice_observer_) {
+            cpu.SetHostCallHook({&DispatchFastHostCall, this});
+        }
+    }
+
+    static cpu::HostCallResult DispatchFastHostCall(
+        void* userdata, const std::uint32_t svc,
+        cpu::A32HostCallContext& call) noexcept {
+        if (userdata == nullptr) return cpu::HostCallResult::unhandled;
+        auto& self = *static_cast<Impl*>(userdata);
+        if (svc == 3U) return self.jni_dispatcher_.TryFastCall(call);
+        const auto boundary = self.boundary_.FastHostCallHook();
+        return boundary.invoke(boundary.userdata, svc, call);
     }
 
     void Stop() {

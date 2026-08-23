@@ -119,54 +119,75 @@ bool JniGuestCallDispatcher::Handle(
     }
 
     auto state = cpu.GetState();
-    if (state.ThreadId() == 0U) {
+    auto registers = state.CoreRegisters();
+    Dispatch(*thunk, state.ThreadId(), registers);
+    state.SetCoreRegisters(registers);
+    cpu.SetState(state);
+    return true;
+}
+
+cpu::HostCallResult JniGuestCallDispatcher::TryFastCall(
+    cpu::A32HostCallContext& call) const noexcept {
+    const auto thunk = DescribeJniGuestThunk(
+        memory::GuestAddress{call.pc.Value() + 1U});
+    if (!thunk.has_value()) return cpu::HostCallResult::unhandled;
+    try {
+        Dispatch(*thunk, call.thread_id, call.registers);
+        return cpu::HostCallResult::handled;
+    } catch (...) {
+        return cpu::HostCallResult::fault;
+    }
+}
+
+void JniGuestCallDispatcher::Dispatch(
+    const JniGuestThunk& thunk, const std::uint64_t thread_id,
+    const std::span<std::uint32_t, 16> registers) const {
+    if (!sealed_) {
+        throw std::logic_error("JNI guest dispatcher is not sealed");
+    }
+    if (thread_id == 0U) {
         throw JniGuestDispatchError(
             "JNI guest call requires a non-zero thread id");
     }
     const auto expected_receiver =
-        thunk->java_vm ? kJniGuestJavaVm.Value()
-                       : kJniGuestEnvironment.Value();
-    if (state.Register(cpu::CoreRegister::r0) != expected_receiver) {
+        thunk.java_vm ? kJniGuestJavaVm.Value()
+                      : kJniGuestEnvironment.Value();
+    if (registers[0] != expected_receiver) {
         throw JniGuestDispatchError(
             "JNI guest call has an invalid interface receiver");
     }
 
     const JniGuestCallHandler* handler{};
-    if (thunk->java_vm) {
+    if (thunk.java_vm) {
         const auto index = JavaVmIndex(JniInvokeSlot{
-            static_cast<std::uint8_t>(thunk->slot)});
+            static_cast<std::uint8_t>(thunk.slot)});
         handler = java_vm_[index] ? &*java_vm_[index] : nullptr;
     } else {
-        const auto index = EnvironmentIndex(JniSlot{thunk->slot});
+        const auto index = EnvironmentIndex(JniSlot{thunk.slot});
         handler =
             environment_[index] ? &*environment_[index] : nullptr;
     }
     if (handler == nullptr) {
-        ledger_->RecordUnimplemented(CapabilityId(*thunk),
-                                     state.Register(cpu::CoreRegister::lr));
+        ledger_->RecordUnimplemented(CapabilityId(thunk), registers[14]);
         throw JniGuestDispatchError(
-            "unbound JNI guest slot: " + SlotName(*thunk));
+            "unbound JNI guest slot: " + SlotName(thunk));
     }
 
     JniGuestCallFrame frame;
-    frame.thunk = *thunk;
-    frame.thread_id = state.ThreadId();
-    frame.link_register = state.Register(cpu::CoreRegister::lr);
-    frame.stack_pointer = memory::GuestAddress{
-        state.Register(cpu::CoreRegister::sp)};
+    frame.thunk = thunk;
+    frame.thread_id = thread_id;
+    frame.link_register = registers[14];
+    frame.stack_pointer = memory::GuestAddress{registers[13]};
     for (std::size_t index = 0; index < frame.registers.size(); ++index) {
-        frame.registers[index] = state.Register(
-            static_cast<cpu::CoreRegister>(index));
+        frame.registers[index] = registers[index];
     }
     const auto result = (*handler)(frame);
     if (result.width != JniGuestReturnWidth::none) {
-        state.SetRegister(cpu::CoreRegister::r0, result.words[0]);
+        registers[0] = result.words[0];
     }
     if (result.width == JniGuestReturnWidth::double_word) {
-        state.SetRegister(cpu::CoreRegister::r1, result.words[1]);
+        registers[1] = result.words[1];
     }
-    cpu.SetState(state);
-    return true;
 }
 
 }  // namespace ogplay::runtime

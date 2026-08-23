@@ -7,6 +7,7 @@
 #include "ogplay/memory/address_space.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/cpu/interpreter.h"
+#include "ogplay/cpu/dynarmic.h"
 #include "ogplay/runtime/jni_guest/jni_guest_dispatch.h"
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
@@ -266,6 +267,59 @@ TEST_CASE("guest JNI dispatcher decodes an exact environment trap") {
     CHECK(cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) ==
           static_cast<std::uint32_t>(
               ogplay::runtime::JniStatus::detached));
+}
+
+TEST_CASE("guest JNI dispatcher handles SVC3 inside Dynarmic run") {
+    ogplay::memory::AddressSpace memory;
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    const ogplay::runtime::GuestJniAbi abi(memory);
+    const ogplay::memory::GuestAddress return_trap{0x71300000U};
+    memory.Map({return_trap, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    bus.Write16(return_trap, 0xdf01U);
+    memory.Protect({return_trap, memory.PageSize()},
+                   ogplay::memory::PageProtection::read |
+                       ogplay::memory::PageProtection::execute);
+    ogplay::core::CapabilityLedger ledger;
+    ogplay::runtime::JniGuestCallDispatcher dispatcher(ledger);
+    const auto get_version = *ogplay::runtime::FindJniSlot("GetVersion");
+    dispatcher.BindEnvironment(
+        get_version, [](const ogplay::runtime::JniGuestCallFrame&) {
+            return ogplay::runtime::JniGuestCallResult{
+                ogplay::runtime::JniGuestReturnWidth::word,
+                {static_cast<std::uint32_t>(ogplay::runtime::kJniVersion1_6),
+                 0U}};
+        });
+    dispatcher.Seal();
+    const auto target = Read32(
+        memory, ogplay::runtime::kJniGuestEnvironmentTable.Add(
+                    get_version.Value() * sizeof(std::uint32_t)));
+
+    ogplay::cpu::DynarmicCpu cpu(bus);
+    cpu.SetHostCallHook({
+        +[](void* userdata, const std::uint32_t svc,
+            ogplay::cpu::A32HostCallContext& call) noexcept {
+            if (svc != 3U) return ogplay::cpu::HostCallResult::unhandled;
+            return static_cast<ogplay::runtime::JniGuestCallDispatcher*>(
+                       userdata)
+                ->TryFastCall(call);
+        },
+        &dispatcher});
+    ogplay::cpu::A32State state;
+    state.SetState(ogplay::cpu::ExecutionState::thumb);
+    state.SetThreadId(111U);
+    state.SetRegister(ogplay::cpu::CoreRegister::pc, target & ~UINT32_C(1));
+    state.SetRegister(ogplay::cpu::CoreRegister::lr,
+                      return_trap.Value() | UINT32_C(1));
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, abi.Environment().Value());
+    cpu.SetState(state);
+
+    const auto stopped = cpu.Run(16U);
+    CHECK(stopped.reason == ogplay::cpu::RunStopReason::supervisor_call);
+    CHECK(stopped.immediate == 1U);
+    CHECK(cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) ==
+          static_cast<std::uint32_t>(ogplay::runtime::kJniVersion1_6));
 }
 
 TEST_CASE("guest JNI dispatcher writes double-word returns and preserves void") {

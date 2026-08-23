@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-23 · BND-2 Boundary Fast Host Call
+更新：2026-08-23 · BND-3 JNI Fast Transport
 
 ## 当前阶段
 
@@ -10,7 +10,10 @@
   可直接解析既有 Virtual SO。BND-2 已增加 CPU generic HostCallHook、live-register call
   frame、多页 sealed thunk arena 与 dense hot table；正常 SVC #2 在 Dynarmic callback 内
   完成并继续 JIT，observer session 保持 slow path，nested/clone/thread CPU 安装同一 hook。
-  legacy module route 仍封装在 hot handler 内，待 BND-4 删除。
+  BND-3 已让 JNI SVC #3 复用同一 live-register transport，fast/slow entry 共用唯一
+  receiver/thread/slot/return-width dispatch；RegisterNatives/JNI_OnLoad 与 JNI 语义未改。
+  五个真实 guest libc memory intercept 已从 Virtual SO metadata 分离为独立
+  `GuestSymbolOverrideDescriptor`。legacy boundary route 仍待 BND-4 删除。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

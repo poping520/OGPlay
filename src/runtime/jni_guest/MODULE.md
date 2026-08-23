@@ -21,6 +21,9 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - `JniGuestCallDispatcher` 只消费精确落入上述目录的 `SVC #3`,校验 JNIEnv/JavaVM
   receiver 与非零线程后发布寄存器/栈调用帧;slot 必须在执行前显式绑定并封口,未绑定
   项按名称记账并失败,未知 trap 地址不得吞掉。
+- sealed dispatcher 的 fast 与 slow entry 共用 receiver/thread/slot/return-width 校验和
+  同一 handler；fast entry 直接借用 CPU live registers，异常在 JIT callback 内转换为
+  host-call fault，不得跨 callback 传播。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family,随后封口 dispatcher;
   aggregate contract 以精确 slot 集合等价(当前 214 个 JNIEnv 与 4 个 JavaVM)机器验证,

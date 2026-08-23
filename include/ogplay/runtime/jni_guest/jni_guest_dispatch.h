@@ -55,8 +55,12 @@ public:
 
     [[nodiscard]] bool Handle(cpu::Cpu& cpu,
                               const cpu::RunResult& stopped) const;
+    [[nodiscard]] cpu::HostCallResult TryFastCall(
+        cpu::A32HostCallContext& call) const noexcept;
 
 private:
+    void Dispatch(const JniGuestThunk& thunk, std::uint64_t thread_id,
+                  std::span<std::uint32_t, 16> registers) const;
     core::CapabilityLedger* ledger_{};
     std::array<std::optional<JniGuestCallHandler>,
                kJniNativeInterfaceSlotCount>

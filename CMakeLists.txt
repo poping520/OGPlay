@@ -371,6 +371,7 @@ add_library(ogplay_runtime
     src/runtime/syscall/arm_kernel_helpers.cpp
     src/runtime/bionic/bionic_module_set.cpp
     src/runtime/bionic/bionic_profile.cpp
+    src/runtime/bionic/guest_symbol_override.cpp
     src/runtime/bionic/bionic_selfcheck.cpp
     src/runtime/bionic/bionic_tls.cpp
     src/runtime/framework/framework_asset.cpp

@@ -51,7 +51,7 @@ TEST_CASE("Bionic profiles select only API 19 22 and 23") {
     CHECK(api23.api == ogplay::runtime::AndroidApi::api23);
     CHECK(api23.data_directory == "bionic/23");
     CHECK(api19.guest_libraries.size() == 5);
-    CHECK(ogplay::runtime::AndroidBoundaryCatalog(api19.api).Modules().size() == 5);
+    CHECK(ogplay::runtime::AndroidBoundaryCatalog(api19.api).Modules().size() == 6);
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::SelectBionicProfile(21)),
                     ogplay::runtime::BionicProfileError);
 }
@@ -70,6 +70,13 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
     CHECK(ogplay::runtime::RouteBionicSymbol(profile, "liblog.so",
                                              "__android_log_write") ==
           ogplay::runtime::BionicSymbolRoute::host_boundary);
+    CHECK(ogplay::runtime::RouteBionicSymbol(profile, "libOpenSLES.so",
+                                             "slCreateEngine") ==
+          ogplay::runtime::BionicSymbolRoute::host_boundary);
+    const auto* open_sles = ogplay::runtime::AndroidBoundaryCatalog(profile.api)
+                                .FindModule("libOpenSLES.so");
+    REQUIRE(open_sles != nullptr);
+    CHECK(open_sles->exports.empty());
     CHECK(ogplay::runtime::AndroidBoundaryCatalog(profile.api)
               .FindModule("libc.so") == nullptr);
     CHECK(ogplay::runtime::GuestSymbolOverrides().size() == 5U);
@@ -105,6 +112,43 @@ TEST_CASE("Boundary catalog filters inactive modules and exports across APIs") {
     const BoundaryCatalog api23(AndroidApi::api23, modules);
     CHECK(api23.Modules().size() == 2U);
     CHECK(api23.SlotCount() == 4U);
+}
+
+TEST_CASE("export-less Virtual SO remains active without publishing handlers") {
+    using namespace ogplay::runtime;
+    static constexpr std::array<BoundaryExportDefinition, 0> no_exports{};
+    static constexpr std::array definitions{
+        BoundaryModuleDefinition{"libempty.so", {}, no_exports}};
+    const BoundaryCatalog catalog(AndroidApi::api19, definitions);
+    REQUIRE(catalog.Modules().size() == 1U);
+    CHECK(catalog.FindModule("libempty.so") != nullptr);
+    CHECK(catalog.Modules()[0].exports.empty());
+    CHECK(catalog.SlotCount() == 0U);
+}
+
+TEST_CASE("libOpenSLES Virtual SO satisfies DT_NEEDED with no exports") {
+    const auto& profile = ogplay::runtime::SelectBionicProfile(19);
+    const ogplay::runtime::BionicHleSymbolProvider hle(
+        std::span<const ogplay::runtime::BionicHleSymbol>{});
+    const std::vector modules{
+        Module("app.so", 0x10000000U, {"libOpenSLES.so"}, {})};
+    const auto link_namespace = ogplay::runtime::BuildBionicLinkNamespace(
+        profile, "app.so", modules, hle);
+    REQUIRE(link_namespace.modules.size() == 2U);
+    CHECK(link_namespace.modules[1].dynamic.soname == "libOpenSLES.so");
+    REQUIRE(link_namespace.modules[1].symbols.symbols.size() == 1U);
+    CHECK(link_namespace.modules[1].symbols.symbols[0].name.empty());
+
+    const std::vector importing_modules{Module(
+        "importer.so", 0x11000000U, {"libOpenSLES.so"},
+        {Symbol("slCreateEngine", 0, 1, 0)})};
+    const auto importing_namespace =
+        ogplay::runtime::BuildBionicLinkNamespace(
+            profile, "importer.so", importing_modules, hle);
+    CHECK_THROWS_AS(
+        static_cast<void>(ogplay::loader::ResolveElf32Symbols(
+            importing_namespace, 0)),
+        ogplay::loader::LinkError);
 }
 
 TEST_CASE("Bionic memory intercepts preserve libc behavior") {

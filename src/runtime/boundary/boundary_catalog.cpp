@@ -76,7 +76,7 @@ void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
 std::vector<BoundaryModuleDefinition> BuiltinDefinitions(
     std::vector<std::vector<BoundaryExportDefinition>>& storage) {
     std::vector<BoundaryModuleDefinition> modules;
-    storage.reserve(5);
+    storage.reserve(6);
     AddNamedModule(modules, storage, "libandroid.so", kAndroidExports);
     AddNamedModule(modules, storage, "libEGL.so", kEglExports);
     constexpr std::array gles1_apis{gles::GlesApi::gles1,
@@ -85,6 +85,8 @@ std::vector<BoundaryModuleDefinition> BuiltinDefinitions(
     constexpr std::array gles2_apis{gles::GlesApi::gles2};
     AddGlesModule(modules, storage, "libGLESv2.so", gles2_apis);
     AddNamedModule(modules, storage, "liblog.so", kLogExports);
+    AddNamedModule(modules, storage, "libOpenSLES.so",
+                   std::span<const NamedExport>{});
     return modules;
 }
 
@@ -133,7 +135,11 @@ BoundaryCatalog::BoundaryCatalog(
             module.exports.push_back(std::move(export_));
             ++slot_count_;
         }
-        if (!module.exports.empty()) modules_.push_back(std::move(module));
+        // An explicitly export-less Virtual SO is still an active DT_NEEDED
+        // provider. A module made empty only by API filtering remains inactive.
+        if (definition.exports.empty() || !module.exports.empty()) {
+            modules_.push_back(std::move(module));
+        }
     }
 }
 

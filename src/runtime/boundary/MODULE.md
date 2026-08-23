@@ -3,12 +3,15 @@
 ## 职责
 
 - `BoundaryCatalog` 是 Virtual SO SONAME、active export、module-local id 与 dense thunk
-  slot 的唯一冷路径事实来源；API seal 后只读。Bionic namespace 只从该目录识别已实现
-  Virtual SO，未实现 SONAME 不得因历史 Profile 声明而伪装可用。
+  slot 的唯一冷路径事实来源；API seal 后只读。Bionic namespace 只从该目录识别明确
+  注册的 Virtual SO。export-less module 可作为显式 loader scaffold 存在，但不得分配
+  thunk 或伪造函数；其他未实现 SONAME 不得因历史 Profile 声明而伪装可用。
 - module/export 的 `AndroidApiRange` 在 seal 时执行过滤；不适用项不进入 active catalog，
   不使整个 catalog 失败。local id 是 module metadata，可以非连续且不得依赖数组序号。
 - synthetic Virtual SO 首次建立时发布该 module 的完整 active export 集，后续动态装载
   不得补写或扩展既有 dynsym。
+- `libOpenSLES.so` 当前是 export-less Virtual SO：仅满足 `DT_NEEDED`，只有 ELF null
+  dynsym；任何 OpenSL ES symbol import 必须保持 unresolved，直至加入真实 handler。
 - thunk arena 按实际 slot 数向上取整到多页并在写入后封为 RX；fast router 只做
   `PC → dense slot → {fn,self}`，live r0-r15 直接借用自 CPU hook，5 个以上参数只进行
   一次 guest stack bulk read。启用 guest-call slice observer 时上层不得安装 fast hook。

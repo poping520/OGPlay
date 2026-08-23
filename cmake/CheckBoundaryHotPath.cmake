@@ -29,6 +29,7 @@ foreach(required IN ITEMS
         "struct Gles1Module final"
         "struct Gles2Module final"
         "struct LogModule final"
+        "struct OpenSlesModule final"
         "struct LibcOverrideModule final"
         "struct GraphicsBoundaryContext final"
         "struct AndroidBoundaryServices final"

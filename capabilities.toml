@@ -3,7 +3,12 @@
 [runtime.virtual_so_boundary]
 status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_link_preflight_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，具体 export 实现归属各 final module，中央 Impl::Invoke*、InvokeModule/module enum/FastBinding/std::function hot glue 已删除；module 只构造注入 bounded call/android/graphics services，EGL/GLES 通过唯一 GraphicsBoundaryContext 共享 GuestGlContext 与 ANGLE runtime"
+note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，具体 export 实现归属各 final module，中央 Impl::Invoke*、InvokeModule/module enum/FastBinding/std::function hot glue 已删除；module 只构造注入 bounded call/android/graphics services，EGL/GLES 通过唯一 GraphicsBoundaryContext 共享 GuestGlContext 与 ANGLE runtime；export-less libOpenSLES.so scaffold 仅满足 DT_NEEDED"
+
+[runtime.opensles_virtual_so]
+status = "stub"
+test = "tests/runtime/bionic_profile_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+note = "BND-1 注册 export-less libOpenSLES.so Virtual ELF 与 empty final module；当前不分配 thunk、不发布 OpenSL ES symbol，函数导入明确 unresolved"
 
 [runtime.fast_host_call]
 status = "complete"

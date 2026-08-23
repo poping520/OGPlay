@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-- **Native Boundary 重构**：BND-1..4 已闭环。API-sealed catalog 是 5 个 Virtual SO 的
+- **Native Boundary 重构**：BND-1..4 已闭环。API-sealed catalog 是 6 个 Virtual SO 的
   metadata 来源，支持 API filtering、metadata-only preflight 与 late import。SVC #2/#3
   使用 live-register dense transport；每个 export seal 为 `{fn,module*}`，成功路径继续
   JIT，不读取 SONAME/local id。fast fault 在 JIT 外恢复原异常；JNI/RegisterNatives/
@@ -13,7 +13,8 @@
   module 仅构造注入 bounded call/Android/graphics services。EGL/GLES1/GLES2 共享唯一
   `GraphicsBoundaryContext`、`GuestGlContext` 与 ANGLE state。architecture gate 扫描全部
   boundary module source，并单独约束 `TryFastCall()` direct router；A32 typed layer 与
-  end-to-end ABI benchmark 已覆盖。
+  end-to-end ABI benchmark 已覆盖。新增 `libOpenSLES.so` export-less loader scaffold；仅
+  满足 `DT_NEEDED`，不分配 thunk，所有 OpenSL ES 函数仍明确未实现。
 
 - **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
   APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3

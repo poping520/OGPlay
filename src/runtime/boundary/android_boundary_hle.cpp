@@ -940,6 +940,10 @@ private:
         BoundaryCallServices& calls_;
     };
 
+    // libOpenSLES.so currently satisfies module loading only. It deliberately
+    // publishes no exports until behavior-backed handlers are implemented.
+    struct OpenSlesModule final {};
+
     struct LibcOverrideModule final {
         explicit LibcOverrideModule(BoundaryCallServices& calls) noexcept
             : calls_(calls) {}
@@ -1476,6 +1480,7 @@ private:
     Gles1Module gles1_module_;
     Gles2Module gles2_module_;
     LogModule log_module_;
+    OpenSlesModule open_sles_module_;
     LibcOverrideModule libc_override_module_;
 };
 AndroidBoundaryHle::AndroidBoundaryHle(memory::AddressSpace& address_space,

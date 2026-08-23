@@ -2,27 +2,27 @@
 
 [runtime.virtual_so_boundary]
 status = "complete"
-test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_link_preflight_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_link_preflight_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
 note = "BND-1 建立 API-filtered sealed BoundaryCatalog、完整 active-export synthetic ELF 与 metadata-only preflight并闭合 late import；BND-2/BND-4 将每个 export seal 为 {export-specific fn, concrete final module*}，中央 Impl::Invoke*、InvokeModule/module enum/FastBinding/std::function hot glue 已删除；BND-6/BND-7 物理分离 core/service/module/facade 并以 architecture gate 固化依赖方向；EGL/GLES 共享唯一 GuestGlContext，libOpenSLES 也以 public data/function + private callable 使用同一 direct hot architecture"
 
 [runtime.opensles_virtual_so]
 status = "complete"
 test = "tests/audio/open_sles_pcm_mixer_tests.cpp; tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-9..14 按 AOSP Wilhelm 发布 3 functions、51 IID data、53 direct private vtable callables，实现 Engine/OutputMix/PCM AudioPlayer Object/Play/Queue/Volume、PCM8/16 mixer、SoundPool additive process pump 与专用 A32 guest callback thread；BND-14 以真实 A32 callback 的 TPIDRURO + SVC #2 re-enqueue 补强端到端证据并修正 mute 时间推进，focused 20/20 通过，待最终 full CTest 更新总证据"
+note = "BND-9..15 按 AOSP Wilhelm 发布 3 functions、51 IID data、53 direct private vtable callables，实现 Engine/OutputMix/PCM AudioPlayer Object/Play/Queue/Volume、PCM8/16 mixer、SoundPool additive process pump 与专用 A32 guest callback thread；真实 A32 callback 已以 TPIDRURO + SVC #2 re-enqueue 端到端证明，mute 只静音而继续推进；focused 20/20 与 final full CTest 924/924 通过"
 
 [runtime.liblog_virtual_so]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; tests/runtime/bionic_profile_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/bionic_profile_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
 note = "BND-5 按 Android 4.4.4 system/core/liblog 的 target 源完整发布并实现 23 个 writer/logprint/event-tag-map API；A32 variadic 与 va_list、text/binary logger_entry、filter/format 和 guest-VFS event tags 均受检，输出进入 guest.liblog structured category 且统一带 [guest] 前缀"
 
 [runtime.fast_host_call]
 status = "complete"
-test = "tests/cpu/dynarmic_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; tests/runtime/jni_guest_abi_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+test = "tests/cpu/dynarmic_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/jni_guest_abi_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
 note = "BND-2 增加 CPU generic handled/unhandled/fault HostCallHook、multi-page sealed thunk arena 与 live-register dense SVC #2 direct-handler path；BND-3 将 JNI SVC #3 接入同一 transport，fast fault 按 thread/PC pending 并在 JIT 外恢复原 exception identity；BND-4 增加 0/4/stack/GLES/JNI/forced-slow end-to-end benchmark，observer 保持 slow fallback"
 
 [runtime.guest_symbol_override]
 status = "complete"
-test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
 note = "BND-3 将真实 guest libc 的 memcpy/memmove/memset/memcmp/strlen host intercept 收敛为独立 GuestSymbolOverrideDescriptor metadata；五个 export 按真实参数个数分别 direct-bind 并共享 fast/slow binding，不使用共享 PC/function id，且有跨 guest thread 并发回归"
 
 [loader.binary_xml_typed_attributes]
@@ -177,7 +177,7 @@ note = "M5 WU-0204/0205 强制 summary/reason/risk/test/owner、真实测试引�
 
 [profiles.gles1_material_front_face_quirk]
 status = "complete"
-test = "tools.quirk_registry_current; tests/runtime/android_boundary_gles1_fixed_tests.cpp"
+test = "tools.quirk_registry_current; tests/runtime/boundary/modules/gles1_fixed_tests.cpp"
 note = "M5 WU-0265..0267 登记并注入精确 Profile quirk；默认严格拒绝单面 material，启用后独立保存 GL_FRONT/GL_BACK，reset 恢复状态但保留策略"
 
 [profiles.dungeon_hunter_p1000]
@@ -642,22 +642,22 @@ note = "M5 WU-0305 提供 GLES1/2 共用的 depth-range、line/polygon 与 stenc
 
 [gles.shader_program]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "M4 真实 ANGLE 闭合 shader/program 生命周期、源码、编译链接与符号定位；M8 WU-0376 批量补齐 active attribute/uniform 及 program/shader info-log，四组多输出均经 IDL 预检并保持截断/NUL 语义"
 
 [gles.buffer_texture]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "M4 真实 ANGLE 闭合 11 项 buffer/texture handler，名称数组显式回写、资源与像素数据有界搬运，null 分配、unpack 对齐及绑定状态受检；优化验收闭环统一 active texture/GLES1 texture matrix，并以 (unit,target) 隔离 2D/cube-map binding、metadata 与跨 API delete"
 
 [gles.framebuffer_resources]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
 note = "M8 WU-0372 一次闭合 GLES2 framebuffer/renderbuffer 10 项生命周期、绑定、storage、attachment、status 及 mipmap；exact Asphalt 6 越过 FBO 建立并进入 glBlendEquation"
 
 [gles.vertex_uniform]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "M4 闭合 VBO offset、uniform scalar/matrix3；M8 WU-0376 批量补齐八项 float/int vector、matrix4 与 constant vertex attribute；WU-0377 闭合 client vertex/index staging、DrawArrays、TexSubImage2D 和混合链接 draw 转入；优化 WU-GLCTX-01..05 已消除两套 buffer state 与 symbol-origin draw redirect，Asphalt 6 exact 越过旧 VBO offset 0 client-null 故障；opaque EBO+client attribute 继续明确失败"
 
 [gles.m4_exit_surface]
@@ -672,7 +672,7 @@ note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢�
 
 [runtime.android_boundary_hle]
 status = "partial"
-test = "tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "M4 最小 NativeActivity 所需 Android/Looper/input/EGL/GLES 导入已绑定到显式 Thumb trap；M5 WU-0292 增加严格布局帧归还与 1x RGBA8 高水位复用；BND-1..4 改为完整 Virtual SO catalog、multi-page arena、CPU fast host call 与 concrete module-local binding，删除旧 route/function-id 热路径；完整 NDK 与 GLES2 槽仍不在本能力范围"
 
 [runtime.native_activity_session]
@@ -897,7 +897,7 @@ note = "M8 WU-0370 固定 constructors→Profile Java registry→root JNI_OnLoad
 
 [runtime.gles_mixed_capability_queries]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
 note = "M8 WU-0371 为混合链接 guest 批量转发 shading-language、8 项 GLES2 capability 与 3 项 binding-state 查询；五个 string pointer 分槽只读，exact 越过 discovery 进入 FBO resource 批次"
 
 [runtime.java_sound_pool_lifecycle]
@@ -927,27 +927,27 @@ note = "M5 WU-0282/0320/0326 闭合普通/big voice、批量 pause/resume 与 bi
 
 [runtime.gles1_texture_name_lifecycle]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0269 以受检 little-endian guest 数组把 GLES1 glGenTextures/glDeleteTextures 接入真实 ANGLE texture name 生命周期"
 
 [runtime.gles1_query_strings]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 GLES1 专属分槽只读 guest 区域，并与 GLES2 查询槽隔离"
 
 [runtime.gles1_generate_mipmap_state]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0271 保存 GL_GENERATE_MIPMAP 状态；WU-0273 在四个 level-0 texture image/copy 路径成功后通过 ANGLE 实际生成 mipmap"
 
 [runtime.gles1_texture_images]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0273 批量接入 compressed/copy/image/sub-image 四个 GLES1 texture 入口，guest 像素传输受检并服从 unpack alignment；WU-0331 在 ANGLE 无 ETC1 扩展时规范解码为 RGBA8"
 
 [gles.etc1_decode_fallback]
 status = "complete"
-test = "tests/gles/etc1_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/gles/etc1_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "WU-0331 按 Khronos ETC1 block 规范闭合 individual/differential、selector、flip、partial block 与非法输入，并仅在 ANGLE 缺少原生/lossy ETC1 时回退"
 
 [gles.pvrtc1_decode_fallback]
@@ -957,12 +957,12 @@ note = "WU-0339 原样 vendor 固定 commit 的 PowerVR Native SDK PVRTDecompres
 
 [runtime.gles1_legacy_fixed_state]
 status = "partial"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 texture environment；WU-0285 支持两个启用单元按 GL_PREVIOUS 逐级组合并隔离每单元 texture matrix，DECAL/BLEND 和第三 stage 仍未实现"
 
 [runtime.gles1_client_array_draw]
 status = "partial"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
 note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；仍限两个 stage、light0 与近似 normal matrix"
 
 [runtime.jni_guest_array_length]
@@ -997,17 +997,17 @@ note = "M8 WU-0374 以通用 state/HLE 闭合 PCM16 mono/stereo AudioTrack 七�
 
 [runtime.host_managed_gl_surface]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "M5 WU-0242 为 Java/GLSurfaceView lifecycle 显式 open/present/close ANGLE pbuffer，复用统一 resolve；guest EGL 不得替换或终止 host-owned surface"
 
 [gles.context_thread_affinity]
 status = "complete"
-test = "tests/gles/egl_lifecycle_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/gles/egl_lifecycle_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "DVM-31 批次 A 把 host-managed ANGLE currency 显式释放并按调用线程受检绑定；同线程释放后可接力，跨线程抢夺明确失败"
 
 [dexvm.egl_facade]
 status = "partial"
-test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
+test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
 note = "DVM-31 已实现 AOSP EGL10/GL10 类形状、单 surface façade 状态机、GL currency 接力、managed present 与条件 swap pacer；driver 可运行时一帧一 swap，driver guest 阻塞时由通用 observer 放行。DVM-39 后 A6 可见启动 gate 三轮同哈希通过；A5 四检查点与改动前 HEAD 逐位相同但历史期望哈希已漂移，A5 exact gate 仍未宣告通过"
 
 [session.profile_guest_lifecycle]
@@ -1047,77 +1047,77 @@ note = "M5 WU-0229 建立与固定 ANGLE GLES/gl.h 完全一致的 GLES1.1 core 
 
 [runtime.gles1_core_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "M5 WU-0230 在 libGLESv1_CM.so 发布隔离的 145 项 core Thumb trap；未绑定调用记账并明确失败，不误入同名 GLES2 handler；LUI-10 将真实后续路径命中的 glFlush 转入当前 ANGLE frame，且不触发 present"
 
 [runtime.gles1_viewport_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0250 让 GLES1 glViewport 通过隔离 dispatch 转发当前 ANGLE frame，并复用受检超采样换算"
 
 [runtime.gles1_scissor_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0251 让 GLES1 glScissor 通过隔离 dispatch 转发当前 ANGLE frame，并复用受检超采样换算"
 
 [runtime.gles1_shade_model_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0258 让 GLES1 glShadeModel 以显式 fixed-pipeline context state 保存受检 GL_FLAT/GL_SMOOTH"
 
 [runtime.gles1_clear_color_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0259 绑定 GLES1 glClearColor 到当前 ANGLE frame；macOS/arm64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
 
 [runtime.gles1_clear_depth_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0260 绑定 GLES1 glClearDepthf 到当前 ANGLE frame；macOS/arm64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
 
 [runtime.gles1_clear_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0261 绑定 GLES1 glClear 到当前 ANGLE frame；macOS/arm64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
 
 [runtime.gles1_scalar_state_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0262 批量绑定目标导入的 17 个 GLES1 无指针标量状态入口；Windows-x64 ANGLE CTest 402/402 与 exact-APK smoke 已验收"
 
 [runtime.gles1_raster_depth_stencil_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_gles1_fixed_tests.cpp; tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/modules/gles1_fixed_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0306 绑定 9 个 raster/depth/stencil/point 入口；point size 由 fixed shader 消费，第二个 exact APK 推进至 glIsEnabled"
 
 [runtime.gles1_integer_query_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0304/0307/0310 以转换器状态或真实 ANGLE 结果实现受检 GLES1 glGetIntegerv，client-array descriptor 按规范默认值支持保存/恢复闭环"
 
 [runtime.gles1_boolean_pointer_query_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0307 实现 glGetBooleanv/glIsEnabled/glGetPointerv 与 glTexEnvf；第二个 exact APK 已越过相关查询并停在独立 client-array type 边界"
 
 [runtime.gles1_buffer_readback_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0308 实现 buffer name 生命周期、整块/局部上传与受检 glReadPixels；第二个 exact APK 无倒退并保持在独立 client-array type 边界"
 
 [runtime.gles1_matrix_normal_clip_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke; target ELF import audit"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke; target ELF import audit"
 note = "M5 WU-0309 实现 glMultMatrixf/glNormal3f/glClipPlanef 并由 fixed shader 执行六平面裁剪；Dungeon Hunter 74/74 GL imports 均有显式 handler"
 
 [runtime.gles1_matrix_state_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0263 批量绑定目标初始化路径的 7 个 GLES1 浮点矩阵入口；Windows-x64 ANGLE CTest 403/403 与 exact-APK smoke 已验收"
 
 [runtime.gles1_lighting_material_fog_state]
 status = "complete"
-test = "tests/runtime/android_boundary_gles1_fixed_tests.cpp; bounded exact-APK run-apk smoke"
+test = "tests/runtime/boundary/modules/gles1_fixed_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0264 按 GLES1 规范绑定 7 个 lighting/material/fog 入口并保存可重置受检状态；macOS-arm64 ANGLE CTest 405 项中行为测试全过，exact-APK 暴露 GL_FRONT material face 兼容边界"
 
 [gles.gles1_extension_catalog]
@@ -1127,12 +1127,12 @@ note = "M5 WU-0231 以固定 ANGLE extension header 受检子集建立目标所�
 
 [runtime.gles1_extension_boundary]
 status = "complete"
-test = "tests/runtime/android_boundary_hle_tests.cpp"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
 note = "M5 WU-0232 在 libGLESv1_CM.so 追加发布三项 matrix-palette extension trap；目标 ELF 62 个 GL import 均有生成目录 provider"
 
 [runtime.gles1_matrix_palette_state]
 status = "partial"
-test = "tests/runtime/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
 note = "M5 WU-0275 为三个 GL_OES_matrix_palette 入口实现受检可重置状态并接入 client-state；完整 palette matrix stack 与 skinning draw 转换尚未实现且启用时明确失败"
 
 [tools.dex_dependency_survey]

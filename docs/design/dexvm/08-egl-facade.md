@@ -261,7 +261,7 @@ render driver，不读取 title 身份。
 - 目标：currency 从"创建线程隐式持有"变为"显式受管、可释放、可在空档绑定"。
 - 触及：`src/gles/egl_lifecycle.cpp` 及其头、`src/runtime/boundary/android_boundary_hle.cpp`
   及其头、`tests/gles/egl_lifecycle_tests.cpp`、
-  `tests/runtime/android_boundary_hle_tests.cpp`、两个 MODULE.md、
+  `tests/runtime/boundary/integration/android_boundary_hle_tests.cpp`、两个 MODULE.md、
   `capabilities.toml`（新条目 `gles.context_thread_affinity`）。
 - 测试：open 后 owner 为空；首个 RequireFrame 绑定调用线程；跨线程访问
   明确失败且记账；释放后另一线程可接力；A5 exact 回归逐位持平。
@@ -295,7 +295,7 @@ render driver，不读取 title 身份。
 - 触及：EGL/GL 家族聚合文件、
   `android_guest_call_session.h/.cpp`（新增窄访问器：GL 字符串、
   currency 迁移/释放转发）、`egl_facade_tests.cpp`、
-  `tests/runtime/android_boundary_hle_tests.cpp`。
+  `tests/runtime/boundary/integration/android_boundary_hle_tests.cpp`。
 - 测试：跨线程 makeCurrent 后 GL trap 在新线程成功；swap 触发 publish
   （帧序列号递增）；解绑后 currency 接力；模型破坏用例全部明确失败。
 

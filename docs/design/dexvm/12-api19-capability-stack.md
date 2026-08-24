@@ -248,7 +248,7 @@ Binder、system_server 或宿主设备控制。
 
 ### F · 真实命中驱动的 P1
 
-状态：DVM-87 已完成前三项的 bounded core；网络与 SQLite 仍按 reached gap 后续推进。
+状态：DVM-88 已完成本阶段计划的 bounded core；其他 framework 长尾仍只按 reached gap 推进。
 
 按关闭 survey 的 reached gap 和可复跑 Scenario 排序：
 
@@ -266,6 +266,14 @@ List/Collection 工作；Calendar/TimeZone 使用注入 Clock 与固定 GMT offs
 发布 String 输入的 compile/find/group/replace 核心面。FutureTask、串行 ExecutorService 与
 atomic family 复用真实 guest Thread；并行池、scheduled executor、完整 regex Unicode、DST
 数据库仍明确 deferred。
+
+DVM-88 落地结果：socket/datagram/TLS 状态进入 per-VM `NetworkRuntime`，core 只消费显式
+`NetworkPolicy` 与 `NetworkTransport`；默认离线且 host/TLS/datagram 分别受检授权，不直接
+打开宿主 socket。ContentValues/Cursor/SQLiteDatabase/SQLiteOpenHelper 的 bounded 数据面
+进入 Android database side-table，确定性存储只经 guest VFS；完整 DNS/TLS、SQLite 文件格式、
+SQL 长尾与 ContentProvider 均明确 deferred。阶段 catalog 夹具同时链接 NIO、GLES20、
+AudioTrack、Socket 与 SQLiteDatabase；Windows 全量回归除既有 liblog guest-tag 用例外通过，
+DVM-88 与 architecture 闭包全绿。
 
 ## 7. 架构门禁
 
@@ -306,3 +314,7 @@ AOSP 只作语义、shape 和测试参考，不编译进 OGPlay。
 - Java/native/Android façade 之间没有重复 GL、PCM、Clock、线程或 Buffer backend；
 - 至少一个通用 Scenario 在关闭 survey 时覆盖 NIO→Java GLES 与 AudioTrack 路径；
 - 所有 deferred/unsupported 面在能力账本中可查询并明确失败。
+
+DVM-88 已以不依赖 title/profile 的 stage catalog fixture 覆盖上述 façade 的共同链接闭包；
+具体 GLES 调用编组、AudioTrack PCM 写入和 NIO direct/heap 行为继续由 DVM-82..84 的独立
+机器测试覆盖。该 fixture 是通用集成场景，不宣称任何游戏的可玩性或在线能力。

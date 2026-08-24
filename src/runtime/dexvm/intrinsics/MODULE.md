@@ -44,6 +44,11 @@ handler 只做 descriptor/array/异常边界，cursor、heap/direct/view backing
 统一委托 `NioRuntime`。typed view 必须共享 backing 且隐藏不匹配类型的原始 array；direct
 buffer 不保存宿主指针，只消费 integration 注入的强类型 guest-memory 窄接口。
 
+`java_net.cpp`（DVM-88）聚合 URL/SSL 既有 shape 与 InetAddress、Socket、Datagram、
+SocketFactory family。socket/stream/packet 状态只委托 per-VM `NetworkRuntime`；默认 policy
+离线，只有显式 allowlist 与注入 transport 才能发起连接。handler 不调用宿主 socket/DNS，
+不读取 Android network service，也不以 no-op 伪造连接、TLS 或 datagram 成功。
+
 `java_lang.cpp` 中的 interface 段覆盖 pinned libcore `java.lang` 顶层 8 个
 interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持
 不变，其余接口方法（含 `Readable.read(CharBuffer)`）为显式

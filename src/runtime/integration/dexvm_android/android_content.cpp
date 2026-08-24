@@ -21,6 +21,716 @@ Decl Declare_android_content_BroadcastReceiver(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
+// ---- DVM-88: ContentValues, Cursor and bounded SQLite-on-VFS ------------
+
+#include <charconv>
+#include <cctype>
+#include <cstring>
+#include <sstream>
+
+namespace ogplay::runtime::android_intrinsics {
+namespace {
+
+using DbValue = DexVmAndroidContext::DatabaseValue;
+using DbRow = DexVmAndroidContext::DatabaseRow;
+
+[[noreturn]] void DbThrow(const std::string& message) {
+    throw dx::VmJavaThrow{"Landroid/database/SQLException;", message};
+}
+
+std::string DbString(dx::IntrinsicContext& call, const dx::VmObjectRef ref) {
+    if (!ref.IsValid())
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "null string"};
+    return call.vm.StringUtf8(ref);
+}
+
+std::string Hex(const std::span<const std::byte> bytes) {
+    constexpr char digits[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(bytes.size() * 2U);
+    for (const auto byte : bytes) {
+        const auto value = static_cast<std::uint8_t>(byte);
+        out.push_back(digits[value >> 4U]);
+        out.push_back(digits[value & 15U]);
+    }
+    return out;
+}
+
+std::vector<std::byte> Unhex(const std::string_view text) {
+    if ((text.size() & 1U) != 0U) DbThrow("damaged database hex value");
+    const auto nibble = [](const char ch) -> std::uint8_t {
+        if (ch >= '0' && ch <= '9') return ch - '0';
+        if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+        if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+        DbThrow("damaged database hex digit");
+    };
+    std::vector<std::byte> result(text.size() / 2U);
+    for (std::size_t index = 0; index < result.size(); ++index) {
+        result[index] = static_cast<std::byte>(
+            (nibble(text[index * 2U]) << 4U) |
+             nibble(text[index * 2U + 1U]));
+    }
+    return result;
+}
+
+std::string HexText(const std::string_view text) {
+    return Hex(std::as_bytes(std::span(text)));
+}
+
+std::string DbPath(const Context& context, const std::string_view name) {
+    if (name.empty() || name.find('/') != std::string_view::npos ||
+        name.find('\\') != std::string_view::npos || name == "." ||
+        name == "..") {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "invalid database name"};
+    }
+    return "/data/data/" + context->package_name + "/databases/" +
+           std::string(name);
+}
+
+void EnsureDbDirectory(const Context& context) {
+    if (context->vfs == nullptr) DbThrow("guest VFS is unavailable");
+    const auto data = "/data/data/" + context->package_name;
+    const std::array paths{data, data + "/databases"};
+    for (const auto& path : paths) {
+        try {
+            if (context->vfs->Stat(path).is_directory) continue;
+            DbThrow("database path is not a directory");
+        } catch (const VfsError&) {
+            try { context->vfs->CreateDirectory(path); }
+            catch (const VfsError& error) {
+                DbThrow("cannot create database directory: " +
+                        std::to_string(error.ErrorNumber()));
+            }
+        }
+    }
+}
+
+std::string EncodeValue(const DbValue& value) {
+    if (std::holds_alternative<std::monostate>(value)) return "N";
+    if (const auto* integer = std::get_if<std::int64_t>(&value))
+        return "I" + std::to_string(*integer);
+    if (const auto* real = std::get_if<double>(&value)) {
+        std::ostringstream out; out.precision(17); out << *real;
+        return "R" + out.str();
+    }
+    if (const auto* text = std::get_if<std::string>(&value))
+        return "T" + HexText(*text);
+    return "B" + Hex(std::get<std::vector<std::byte>>(value));
+}
+
+DbValue DecodeValue(const std::string_view value) {
+    if (value.empty()) DbThrow("damaged database value");
+    if (value[0] == 'N') return std::monostate{};
+    if (value[0] == 'T') {
+        const auto bytes = Unhex(value.substr(1));
+        return std::string(reinterpret_cast<const char*>(bytes.data()),
+                           bytes.size());
+    }
+    if (value[0] == 'B') return Unhex(value.substr(1));
+    if (value[0] == 'I') {
+        std::int64_t number{};
+        const auto text = value.substr(1);
+        const auto [end, error] = std::from_chars(text.data(),
+                                                  text.data() + text.size(),
+                                                  number);
+        if (error != std::errc{} || end != text.data() + text.size())
+            DbThrow("damaged database integer");
+        return number;
+    }
+    if (value[0] == 'R') {
+        try { return std::stod(std::string(value.substr(1))); }
+        catch (...) { DbThrow("damaged database real"); }
+    }
+    DbThrow("unknown database value kind");
+}
+
+void PersistDatabase(const Context& context,
+                     const DexVmAndroidContext::DatabaseState& database) {
+    EnsureDbDirectory(context);
+    std::string image = "OGDB1\n";
+    std::vector<std::string> tables;
+    for (const auto& entry : database.tables) tables.push_back(entry.first);
+    std::sort(tables.begin(), tables.end());
+    for (const auto& name : tables) {
+        const auto& table = database.tables.at(name);
+        image += "T\t" + HexText(name) + "\t" +
+                 std::to_string(table.next_row_id) + "\n";
+        for (const auto& row : table.rows) {
+            image += "R";
+            std::vector<std::string> columns;
+            for (const auto& entry : row) columns.push_back(entry.first);
+            std::sort(columns.begin(), columns.end());
+            for (const auto& column : columns) {
+                image += "\t" + HexText(column) + "=" +
+                         EncodeValue(row.at(column));
+            }
+            image += "\n";
+        }
+    }
+    std::optional<std::int32_t> descriptor;
+    try {
+        descriptor = context->vfs->Open(
+            database.path, {.write = true, .create = true, .truncate = true});
+        const auto bytes = std::as_bytes(std::span(image));
+        std::size_t offset{};
+        while (offset < bytes.size())
+            offset += context->vfs->Write(*descriptor, bytes.subspan(offset));
+        context->vfs->Flush(*descriptor);
+        context->vfs->Close(*descriptor);
+    } catch (const VfsError& error) {
+        if (descriptor.has_value()) {
+            try { context->vfs->Close(*descriptor); } catch (...) {}
+        }
+        DbThrow("database persist failed: " +
+                std::to_string(error.ErrorNumber()));
+    }
+}
+
+void LoadDatabase(const Context& context,
+                  DexVmAndroidContext::DatabaseState& database) {
+    if (context->vfs == nullptr) DbThrow("guest VFS is unavailable");
+    std::optional<std::int32_t> descriptor;
+    try {
+        const auto info = context->vfs->Stat(database.path);
+        descriptor = context->vfs->Open(database.path, {.read = true});
+        std::vector<std::byte> bytes(info.size);
+        std::size_t offset{};
+        while (offset < bytes.size()) {
+            const auto read = context->vfs->Read(
+                *descriptor, std::span(bytes).subspan(offset));
+            if (read == 0U) break;
+            offset += read;
+        }
+        context->vfs->Close(*descriptor);
+        const std::string image(reinterpret_cast<const char*>(bytes.data()),
+                                offset);
+        if (!image.starts_with("OGDB1\n")) DbThrow("invalid database image");
+        DexVmAndroidContext::DatabaseTable* table{};
+        std::istringstream lines(image.substr(6));
+        std::string line;
+        while (std::getline(lines, line)) {
+            if (line.empty()) continue;
+            std::vector<std::string> fields;
+            std::size_t start{};
+            while (true) {
+                const auto split = line.find('\t', start);
+                fields.push_back(line.substr(start, split - start));
+                if (split == std::string::npos) break;
+                start = split + 1U;
+            }
+            if (fields[0] == "T" && fields.size() == 3U) {
+                const auto name_bytes = Unhex(fields[1]);
+                const std::string name(
+                    reinterpret_cast<const char*>(name_bytes.data()),
+                    name_bytes.size());
+                table = &database.tables[name];
+                table->next_row_id = std::stoll(fields[2]);
+            } else if (fields[0] == "R" && table != nullptr) {
+                DbRow row;
+                for (std::size_t index = 1; index < fields.size(); ++index) {
+                    const auto equal = fields[index].find('=');
+                    if (equal == std::string::npos) DbThrow("damaged database row");
+                    const auto name_bytes = Unhex(fields[index].substr(0, equal));
+                    const std::string name(
+                        reinterpret_cast<const char*>(name_bytes.data()),
+                        name_bytes.size());
+                    row[name] = DecodeValue(fields[index].substr(equal + 1U));
+                    if (std::find(table->columns.begin(), table->columns.end(),
+                                  name) == table->columns.end())
+                        table->columns.push_back(name);
+                }
+                table->rows.push_back(std::move(row));
+            } else {
+                DbThrow("damaged database record");
+            }
+        }
+    } catch (const VfsError&) {
+        // Missing database is a valid empty openOrCreate result.
+        if (descriptor.has_value()) {
+            try { context->vfs->Close(*descriptor); } catch (...) {}
+        }
+    }
+}
+
+DexVmAndroidContext::DatabaseState& RequireDb(
+    const Context& context, const dx::VmObjectRef owner) {
+    const auto found = context->databases.find(owner.Value());
+    if (found == context->databases.end() || !found->second.open)
+        DbThrow("database is closed or unavailable");
+    return found->second;
+}
+
+DexVmAndroidContext::CursorState& RequireCursor(
+    const Context& context, const dx::VmObjectRef owner) {
+    const auto found = context->database_cursors.find(owner.Value());
+    if (found == context->database_cursors.end() || found->second.closed)
+        DbThrow("cursor is closed or unavailable");
+    return found->second;
+}
+
+DbValue ObjectValue(dx::IntrinsicContext& call, const dx::VmObjectRef value,
+                    const std::string_view descriptor) {
+    if (!value.IsValid()) return std::monostate{};
+    if (descriptor == "Ljava/lang/String;") return call.vm.StringUtf8(value);
+    if (descriptor == "[B") return call.vm.Model().ReadByteRegion(
+        value, 0, call.vm.Model().ArrayLength(value));
+    const auto slots = call.vm.Model().InstanceSlots(value);
+    if (slots.empty()) DbThrow("boxed ContentValues value has no slot");
+    std::uint64_t bits = slots[0].bits;
+    if (descriptor == "Ljava/lang/Long;" && slots.size() > 1U)
+        bits |= static_cast<std::uint64_t>(slots[1].bits) << 32U;
+    return static_cast<std::int64_t>(bits);
+}
+
+std::string ValueString(const DbValue& value) {
+    if (std::holds_alternative<std::monostate>(value)) return {};
+    if (const auto* text = std::get_if<std::string>(&value)) return *text;
+    if (const auto* integer = std::get_if<std::int64_t>(&value))
+        return std::to_string(*integer);
+    if (const auto* real = std::get_if<double>(&value))
+        return std::to_string(*real);
+    return {};
+}
+
+std::vector<std::string> StringArray(dx::IntrinsicContext& call,
+                                     const dx::VmObjectRef array) {
+    std::vector<std::string> result;
+    if (!array.IsValid()) return result;
+    const auto length = call.vm.Model().ArrayLength(array);
+    result.reserve(length);
+    for (std::int32_t index = 0; index < length; ++index) {
+        const auto value = call.vm.Model().GetObjectElement(array, index);
+        result.push_back(value.IsValid() ? call.vm.StringUtf8(value) : "");
+    }
+    return result;
+}
+
+bool RowMatches(const DbRow& row, std::string selection,
+                const std::vector<std::string>& args) {
+    if (selection.empty()) return true;
+    selection.erase(std::remove_if(selection.begin(), selection.end(),
+        [](const unsigned char ch) { return std::isspace(ch) != 0; }),
+        selection.end());
+    const auto equal = selection.find('=');
+    if (equal == std::string::npos) DbThrow("only column=? selection is supported");
+    const auto column = selection.substr(0, equal);
+    auto expected = selection.substr(equal + 1U);
+    if (expected == "?") {
+        if (args.empty()) DbThrow("selection argument is missing");
+        expected = args.front();
+    } else if (expected.size() >= 2U && expected.front() == '\'' &&
+               expected.back() == '\'') {
+        expected = expected.substr(1, expected.size() - 2U);
+    }
+    const auto found = row.find(column);
+    return found != row.end() && ValueString(found->second) == expected;
+}
+
+dx::VmObjectRef OpenDatabase(dx::IntrinsicContext& call,
+                             const Context& context,
+                             const std::string& path) {
+    if (const auto found = context->database_by_path.find(path);
+        found != context->database_by_path.end()) {
+        auto& database = context->databases.at(found->second);
+        database.open = true;
+        return dx::VmObjectRef(found->second);
+    }
+    const auto object = call.vm.NewIntrinsicInstance(
+        "Landroid/database/sqlite/SQLiteDatabase;");
+    DexVmAndroidContext::DatabaseState state;
+    state.path = path;
+    LoadDatabase(context, state);
+    context->databases.emplace(object.Value(), std::move(state));
+    context->database_by_path.emplace(path, object.Value());
+    return object;
+}
+
+}  // namespace
+
+Decl Declare_android_content_ContentValues(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/content/ContentValues;", "Ljava/lang/Object;",
+        {"Landroid/os/Parcelable;"});
+    builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
+        context->content_values[call.receiver.Value()] = {};
+        return dx::VmValue::Void();
+    });
+    builder.Constructor("(I)V", [context](dx::IntrinsicContext& call) {
+        if (call.arguments[0].AsInt() < 0)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "negative ContentValues size"};
+        context->content_values[call.receiver.Value()] = {};
+        return dx::VmValue::Void();
+    });
+    const auto put = [&](const char* descriptor) {
+        builder.FinalMethod("put", std::string("(Ljava/lang/String;") +
+            descriptor + ")V", [context, descriptor](dx::IntrinsicContext& call) {
+            context->content_values[call.receiver.Value()][
+                DbString(call, call.arguments[0].ref)] =
+                ObjectValue(call, call.arguments[1].ref, descriptor);
+            return dx::VmValue::Void();
+        });
+    };
+    put("Ljava/lang/String;"); put("Ljava/lang/Integer;");
+    put("Ljava/lang/Long;"); put("[B");
+    builder.FinalMethod("putNull", "(Ljava/lang/String;)V",
+        [context](dx::IntrinsicContext& call) {
+            context->content_values[call.receiver.Value()][
+                DbString(call, call.arguments[0].ref)] = std::monostate{};
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("size", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(
+            context->content_values[call.receiver.Value()].size()));
+    });
+    builder.FinalMethod("clear", "()V", [context](dx::IntrinsicContext& call) {
+        context->content_values[call.receiver.Value()].clear();
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("containsKey", "(Ljava/lang/String;)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(context->content_values[call.receiver.Value()]
+                .contains(DbString(call, call.arguments[0].ref)) ? 1 : 0);
+        });
+    builder.FinalMethod("getAsString",
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        [context](dx::IntrinsicContext& call) {
+            const auto& values = context->content_values[call.receiver.Value()];
+            const auto found = values.find(DbString(call, call.arguments[0].ref));
+            if (found == values.end() ||
+                std::holds_alternative<std::monostate>(found->second))
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            return dx::VmValue::Ref(call.vm.NewStringUtf8(
+                ValueString(found->second)));
+        });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_database_Cursor(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/database/Cursor;", {"Ljava/io/Closeable;"});
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_database_CursorImpl(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/database/CursorImpl;", "Ljava/lang/Object;",
+        {"Landroid/database/Cursor;"});
+    builder.FinalMethod("getCount", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(
+            RequireCursor(context, call.receiver).rows.size()));
+    });
+    builder.FinalMethod("getColumnCount", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(
+            RequireCursor(context, call.receiver).columns.size()));
+    });
+    builder.FinalMethod("getColumnIndex", "(Ljava/lang/String;)I",
+        [context](dx::IntrinsicContext& call) {
+            const auto& columns = RequireCursor(context, call.receiver).columns;
+            const auto found = std::find(columns.begin(), columns.end(),
+                DbString(call, call.arguments[0].ref));
+            return dx::VmValue::Int(found == columns.end() ? -1 :
+                static_cast<std::int32_t>(found - columns.begin()));
+        });
+    builder.FinalMethod("moveToPosition", "(I)Z", [context](dx::IntrinsicContext& call) {
+        auto& cursor = RequireCursor(context, call.receiver);
+        const auto position = call.arguments[0].AsInt();
+        cursor.position = position;
+        return dx::VmValue::Int(position >= 0 &&
+            static_cast<std::size_t>(position) < cursor.rows.size() ? 1 : 0);
+    });
+    builder.FinalMethod("moveToFirst", "()Z", [context](dx::IntrinsicContext& call) {
+        auto& cursor = RequireCursor(context, call.receiver);
+        cursor.position = 0;
+        return dx::VmValue::Int(cursor.rows.empty() ? 0 : 1);
+    });
+    builder.FinalMethod("moveToNext", "()Z", [context](dx::IntrinsicContext& call) {
+        auto& cursor = RequireCursor(context, call.receiver);
+        ++cursor.position;
+        return dx::VmValue::Int(cursor.position >= 0 &&
+            static_cast<std::size_t>(cursor.position) < cursor.rows.size() ? 1 : 0);
+    });
+    const auto value = [context](dx::IntrinsicContext& call) -> const DbValue& {
+        auto& cursor = RequireCursor(context, call.receiver);
+        const auto column = call.arguments[0].AsInt();
+        if (cursor.position < 0 ||
+            static_cast<std::size_t>(cursor.position) >= cursor.rows.size() ||
+            column < 0 || static_cast<std::size_t>(column) >= cursor.columns.size())
+            throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                                  "cursor position or column is invalid"};
+        const auto found = cursor.rows[cursor.position].find(cursor.columns[column]);
+        static const DbValue null{};
+        return found == cursor.rows[cursor.position].end() ? null : found->second;
+    };
+    builder.FinalMethod("getString", "(I)Ljava/lang/String;",
+        [value](dx::IntrinsicContext& call) {
+            const auto& item = value(call);
+            if (std::holds_alternative<std::monostate>(item))
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            return dx::VmValue::Ref(call.vm.NewStringUtf8(ValueString(item)));
+        });
+    builder.FinalMethod("getInt", "(I)I", [value](dx::IntrinsicContext& call) {
+        const auto& item = value(call);
+        if (const auto* number = std::get_if<std::int64_t>(&item))
+            return dx::VmValue::Int(static_cast<std::int32_t>(*number));
+        try { return dx::VmValue::Int(std::stoi(ValueString(item))); }
+        catch (...) { return dx::VmValue::Int(0); }
+    });
+    builder.FinalMethod("getLong", "(I)J", [value](dx::IntrinsicContext& call) {
+        const auto& item = value(call);
+        if (const auto* number = std::get_if<std::int64_t>(&item))
+            return dx::VmValue::Long(*number);
+        try { return dx::VmValue::Long(std::stoll(ValueString(item))); }
+        catch (...) { return dx::VmValue::Long(0); }
+    });
+    builder.FinalMethod("isNull", "(I)Z", [value](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(
+            std::holds_alternative<std::monostate>(value(call)) ? 1 : 0);
+    });
+    builder.FinalMethod("close", "()V", [context](dx::IntrinsicContext& call) {
+        RequireCursor(context, call.receiver).closed = true;
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_database_sqlite_SQLiteDatabase_CursorFactory(const Context&) {
+    return std::move(dx::IntrinsicClassBuilder::Interface(
+        "Landroid/database/sqlite/SQLiteDatabase$CursorFactory;")).Build();
+}
+
+Decl Declare_android_database_SQLiteException(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/database/SQLException;", "Ljava/lang/RuntimeException;");
+    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Constructor("(Ljava/lang/String;)V", [](dx::IntrinsicContext& call) {
+        call.vm.SetThrowableMessage(call.receiver, call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_database_sqlite_SQLiteDatabase(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/database/sqlite/SQLiteDatabase;", "Ljava/lang/Object;");
+    builder.StaticMethod("openOrCreateDatabase",
+        "(Ljava/lang/String;Landroid/database/sqlite/SQLiteDatabase$CursorFactory;)Landroid/database/sqlite/SQLiteDatabase;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(OpenDatabase(
+                call, context, DbString(call, call.arguments[0].ref)));
+        });
+    builder.FinalMethod("isOpen", "()Z", [context](dx::IntrinsicContext& call) {
+        const auto found = context->databases.find(call.receiver.Value());
+        return dx::VmValue::Int(found != context->databases.end() &&
+                               found->second.open ? 1 : 0);
+    });
+    builder.FinalMethod("getPath", "()Ljava/lang/String;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(call.vm.NewStringUtf8(
+                RequireDb(context, call.receiver).path));
+        });
+    builder.FinalMethod("close", "()V", [context](dx::IntrinsicContext& call) {
+        auto& database = RequireDb(context, call.receiver);
+        PersistDatabase(context, database);
+        database.open = false;
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("execSQL", "(Ljava/lang/String;)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& database = RequireDb(context, call.receiver);
+            auto sql = DbString(call, call.arguments[0].ref);
+            const auto upper = [&] { auto out = sql; std::transform(out.begin(), out.end(),
+                out.begin(), [](const unsigned char ch) { return std::toupper(ch); }); return out; }();
+            if (upper.starts_with("CREATE TABLE")) {
+                auto start = sql.find_first_not_of(" \t", 12);
+                if (upper.find("IF NOT EXISTS", start) == start)
+                    start = sql.find_first_not_of(" \t", start + 13U);
+                const auto paren = sql.find('(', start);
+                if (start == std::string::npos || paren == std::string::npos)
+                    DbThrow("unsupported CREATE TABLE statement");
+                auto name = sql.substr(start, paren - start);
+                while (!name.empty() && std::isspace(
+                    static_cast<unsigned char>(name.back()))) name.pop_back();
+                auto& table = database.tables[name];
+                const auto end = sql.rfind(')');
+                if (end == std::string::npos) DbThrow("malformed CREATE TABLE");
+                std::istringstream columns(sql.substr(paren + 1U, end - paren - 1U));
+                std::string definition;
+                while (std::getline(columns, definition, ',')) {
+                    std::istringstream tokens(definition);
+                    std::string column; tokens >> column;
+                    if (!column.empty() && std::find(table.columns.begin(),
+                        table.columns.end(), column) == table.columns.end())
+                        table.columns.push_back(column);
+                }
+            } else if (upper.starts_with("DROP TABLE")) {
+                const auto start = sql.find_last_of(" \t");
+                if (start == std::string::npos) DbThrow("malformed DROP TABLE");
+                database.tables.erase(sql.substr(start + 1U));
+            } else {
+                DbThrow("only CREATE TABLE and DROP TABLE execSQL are supported");
+            }
+            PersistDatabase(context, database);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("insert",
+        "(Ljava/lang/String;Ljava/lang/String;Landroid/content/ContentValues;)J",
+        [context](dx::IntrinsicContext& call) {
+            auto& database = RequireDb(context, call.receiver);
+            auto& table = database.tables[DbString(call, call.arguments[0].ref)];
+            auto row = context->content_values[call.arguments[2].ref.Value()];
+            const auto id = table.next_row_id++;
+            if (!row.contains("_id")) row["_id"] = id;
+            for (const auto& entry : row)
+                if (std::find(table.columns.begin(), table.columns.end(),
+                              entry.first) == table.columns.end())
+                    table.columns.push_back(entry.first);
+            table.rows.push_back(std::move(row));
+            PersistDatabase(context, database);
+            return dx::VmValue::Long(id);
+        });
+    builder.FinalMethod("delete",
+        "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)I",
+        [context](dx::IntrinsicContext& call) {
+            auto& database = RequireDb(context, call.receiver);
+            const auto found = database.tables.find(DbString(call, call.arguments[0].ref));
+            if (found == database.tables.end()) return dx::VmValue::Int(0);
+            const auto selection = call.arguments[1].ref.IsValid() ?
+                call.vm.StringUtf8(call.arguments[1].ref) : std::string{};
+            const auto args = StringArray(call, call.arguments[2].ref);
+            auto& rows = found->second.rows;
+            const auto old = rows.size();
+            std::erase_if(rows, [&](const DbRow& row) {
+                return RowMatches(row, selection, args);
+            });
+            PersistDatabase(context, database);
+            return dx::VmValue::Int(static_cast<std::int32_t>(old - rows.size()));
+        });
+    builder.FinalMethod("update",
+        "(Ljava/lang/String;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I",
+        [context](dx::IntrinsicContext& call) {
+            auto& database = RequireDb(context, call.receiver);
+            const auto found = database.tables.find(DbString(call, call.arguments[0].ref));
+            if (found == database.tables.end()) return dx::VmValue::Int(0);
+            const auto values = context->content_values[call.arguments[1].ref.Value()];
+            const auto selection = call.arguments[2].ref.IsValid() ?
+                call.vm.StringUtf8(call.arguments[2].ref) : std::string{};
+            const auto args = StringArray(call, call.arguments[3].ref);
+            std::int32_t changed{};
+            for (auto& row : found->second.rows) {
+                if (!RowMatches(row, selection, args)) continue;
+                for (const auto& entry : values) row[entry.first] = entry.second;
+                ++changed;
+            }
+            PersistDatabase(context, database);
+            return dx::VmValue::Int(changed);
+        });
+    builder.FinalMethod("query",
+        "(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
+        [context](dx::IntrinsicContext& call) {
+            auto& database = RequireDb(context, call.receiver);
+            const auto table_name = DbString(call, call.arguments[0].ref);
+            const auto found = database.tables.find(table_name);
+            if (found == database.tables.end()) DbThrow("table not found: " + table_name);
+            auto columns = StringArray(call, call.arguments[1].ref);
+            if (columns.empty()) columns = found->second.columns;
+            const auto selection = call.arguments[2].ref.IsValid() ?
+                call.vm.StringUtf8(call.arguments[2].ref) : std::string{};
+            const auto args = StringArray(call, call.arguments[3].ref);
+            std::vector<DbRow> rows;
+            for (const auto& row : found->second.rows)
+                if (RowMatches(row, selection, args)) rows.push_back(row);
+            const auto cursor = call.vm.NewIntrinsicInstance(
+                "Landroid/database/CursorImpl;");
+            context->database_cursors[cursor.Value()] =
+                {std::move(columns), std::move(rows), -1, false};
+            return dx::VmValue::Ref(cursor);
+        });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_database_sqlite_SQLiteOpenHelper(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/database/sqlite/SQLiteOpenHelper;", "Ljava/lang/Object;");
+    builder.Constructor(
+        "(Landroid/content/Context;Ljava/lang/String;Landroid/database/sqlite/SQLiteDatabase$CursorFactory;I)V",
+        [context](dx::IntrinsicContext& call) {
+            if (call.arguments[3].AsInt() < 1)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "database version must be positive"};
+            context->sqlite_helpers[call.receiver.Value()] =
+                DexVmAndroidContext::SQLiteHelperState{
+                DbString(call, call.arguments[1].ref),
+                call.arguments[3].AsInt(), dx::VmObjectRef(0)};
+            return dx::VmValue::Void();
+        });
+    const auto open = [context](dx::IntrinsicContext& call) {
+        auto& helper = context->sqlite_helpers[call.receiver.Value()];
+        if (!helper.database.IsValid())
+            helper.database = OpenDatabase(call, context,
+                                            DbPath(context, helper.name));
+        return dx::VmValue::Ref(helper.database);
+    };
+    builder.FinalMethod("getWritableDatabase",
+        "()Landroid/database/sqlite/SQLiteDatabase;", open);
+    builder.FinalMethod("getReadableDatabase",
+        "()Landroid/database/sqlite/SQLiteDatabase;", open);
+    builder.FinalMethod("getDatabaseName", "()Ljava/lang/String;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(call.vm.NewStringUtf8(
+                context->sqlite_helpers[call.receiver.Value()].name));
+        });
+    builder.FinalMethod("close", "()V", [context](dx::IntrinsicContext& call) {
+        auto& helper = context->sqlite_helpers[call.receiver.Value()];
+        if (helper.database.IsValid()) {
+            auto& database = RequireDb(context, helper.database);
+            PersistDatabase(context, database);
+            database.open = false;
+        }
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("onCreate",
+        "(Landroid/database/sqlite/SQLiteDatabase;)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.VirtualMethod("onUpgrade",
+        "(Landroid/database/sqlite/SQLiteDatabase;II)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    return std::move(builder).Build();
+}
+
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime {
+
+void RegisterAndroidDatabaseStateTables(
+    dexvm::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context) {
+    if (context == nullptr) return;
+    vm.RegisterIntrinsicStateTable({
+        "android.database",
+        [context](const dexvm::VmObjectRef owner,
+                  const dexvm::VmRootVisitor& visit) {
+            if (const auto found = context->sqlite_helpers.find(owner.Value());
+                found != context->sqlite_helpers.end() &&
+                found->second.database.IsValid()) {
+                visit(found->second.database);
+            }
+        },
+        [context](const dexvm::VmObjectRef owner) {
+            context->content_values.erase(owner.Value());
+            context->database_cursors.erase(owner.Value());
+            context->sqlite_helpers.erase(owner.Value());
+            if (const auto found = context->databases.find(owner.Value());
+                found != context->databases.end()) {
+                context->database_by_path.erase(found->second.path);
+                context->databases.erase(found);
+            }
+        }, {}});
+}
+
+}  // namespace ogplay::runtime
+
 namespace ogplay::runtime::android_intrinsics::
     dvm80_android_content_pm_PackageManager {
 Decl Declare_android_content_pm_PackageManager_NameNotFoundException(

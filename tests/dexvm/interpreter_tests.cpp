@@ -520,6 +520,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/Appendable;.append"
         "(Ljava/lang/CharSequence;II)Ljava/lang/Appendable;",
         "Ljava/lang/AutoCloseable;.close()V",
+        "Ljava/io/Closeable;.close()V",
         "Ljava/lang/CharSequence;.charAt(I)C",
         "Ljava/lang/CharSequence;.subSequence(II)Ljava/lang/CharSequence;",
         "Ljava/lang/CharSequence;.toString()Ljava/lang/String;",

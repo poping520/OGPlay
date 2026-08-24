@@ -16,6 +16,7 @@
 #include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/network_runtime.h"
 #include "ogplay/runtime/dexvm/zip_runtime.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/generated/opcode_table.h"
@@ -112,6 +113,7 @@ public:
     std::unordered_map<std::uint32_t, std::u16string> builders;
     CollectionRuntime collections;
     IoRuntime io;
+    NetworkRuntime network;
     NioRuntime nio;
     NioRuntime* nio_runtime{&nio};
     ZipRuntime zip;

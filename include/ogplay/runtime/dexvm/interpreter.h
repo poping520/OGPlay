@@ -21,6 +21,7 @@ namespace ogplay::runtime::dexvm {
 class CollectionRuntime;
 class IoRuntime;
 class NioRuntime;
+class NetworkRuntime;
 class ZipRuntime;
 
 // Interpreter kernel (02 §7..§9): tagged frames, table dispatch, three-way
@@ -367,6 +368,8 @@ public:
     void SetNioRuntime(NioRuntime* runtime) noexcept;
     [[nodiscard]] IoRuntime& IO();
     [[nodiscard]] const IoRuntime& IO() const;
+    [[nodiscard]] NetworkRuntime& Network();
+    [[nodiscard]] const NetworkRuntime& Network() const;
     [[nodiscard]] ZipRuntime& ZIP();
     [[nodiscard]] const ZipRuntime& ZIP() const;
 

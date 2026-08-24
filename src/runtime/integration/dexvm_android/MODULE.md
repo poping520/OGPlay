@@ -21,6 +21,11 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 主 Looper 只在 lifecycle 安全点泵送，子 Looper 只在 `VmThreadRuntime` guest 线程执行；
 禁止同步调用伪装 post、读取宿主墙钟或为 Timer 建第二套队列。
 
+DVM-88 的 ContentValues/Cursor/SQLiteDatabase/SQLiteOpenHelper 状态属于本 context 的
+database side-table；guest 引用经具名 GC state table trace，死亡 owner sweep。数据库文件
+使用确定性内部格式且只经注入 VFS 访问 `/data/data/<package>/databases/`，不得暴露宿主路径、
+调用宿主 SQLite 或扩展成 ContentProvider/Binder。未登记 SQL/selection 明确失败。
+
 javax EGL/GL façade 遵循 DVM-31：`android_gl.cpp` 聚合该
 家族的 Java handle 声明、handler、唯一
 display/config/window-surface/context/currency 状态机和 swap pacer，把 guest

@@ -21,6 +21,7 @@
 #include "ogplay/loader/arsc.h"
 #include "ogplay/loader/binary_xml.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/network_runtime.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/framework/preferences_xml.h"
 #include "ogplay/runtime/ui/ui_tree.h"
@@ -126,6 +127,10 @@ struct DexVmAndroidContext final {
     // save sandbox when one is attached). ADR-0020 retired the separate
     // session-memory overlay that used to shadow it.
     VirtualFileSystem* vfs{};
+    // Default-offline network capability. Production code can only enable it
+    // by publishing both an explicit policy and a narrow injected transport.
+    dexvm::NetworkPolicy network_policy;
+    dexvm::NetworkTransport* network_transport{};
 
     // SharedPreferences, keyed by prefs file name. Loaded from and written
     // back to /data/data/<pkg>/shared_prefs/<name>.xml through the VFS, so
@@ -147,6 +152,40 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t,
                      std::unordered_map<std::string, BundleValue>>
       bundles;
+
+    // DVM-88 bounded SQLite value store. The serialized database image is
+    // written through the process VFS; no host path or SQLite connection is
+    // exposed to platform handlers.
+    using DatabaseValue =
+        std::variant<std::monostate, std::int64_t, double, std::string,
+                     std::vector<std::byte>>;
+    using DatabaseRow = std::unordered_map<std::string, DatabaseValue>;
+    struct DatabaseTable final {
+        std::vector<std::string> columns;
+        std::vector<DatabaseRow> rows;
+        std::int64_t next_row_id{1};
+    };
+    struct DatabaseState final {
+        std::string path;
+        bool open{true};
+        std::unordered_map<std::string, DatabaseTable> tables;
+    };
+    struct CursorState final {
+        std::vector<std::string> columns;
+        std::vector<DatabaseRow> rows;
+        std::int32_t position{-1};
+        bool closed{};
+    };
+    std::unordered_map<std::uint32_t, DatabaseRow> content_values;
+    std::unordered_map<std::uint32_t, DatabaseState> databases;
+    std::unordered_map<std::string, std::uint32_t> database_by_path;
+    std::unordered_map<std::uint32_t, CursorState> database_cursors;
+    struct SQLiteHelperState final {
+        std::string name;
+        std::int32_t version{};
+        dexvm::VmObjectRef database{0};
+    };
+    std::unordered_map<std::uint32_t, SQLiteHelperState> sqlite_helpers;
 
     struct SparseRefEntry final {
         std::int32_t key{};
@@ -468,6 +507,9 @@ void RegisterAndroidAudioTrackStateTable(
     const std::shared_ptr<DexVmAndroidContext>& context);
 
 void RegisterAndroidValueStateTables(
+    dexvm::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context);
+void RegisterAndroidDatabaseStateTables(
     dexvm::Interpreter& vm,
     const std::shared_ptr<DexVmAndroidContext>& context);
 

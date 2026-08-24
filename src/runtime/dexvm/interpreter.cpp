@@ -745,6 +745,16 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         },
         [](const VmObjectRef, const VmObjectRef) {}});
     RegisterIntrinsicStateTable({
+        "network",
+        [state = impl_.get()](const VmObjectRef owner,
+                              const VmRootVisitor& visit) {
+            state->network.Trace(owner, visit);
+        },
+        [state = impl_.get()](const VmObjectRef owner) {
+            state->network.Sweep(owner);
+        },
+        {}});
+    RegisterIntrinsicStateTable({
         "zip", {},
         [state = impl_.get()](const VmObjectRef owner) {
             state->zip.Sweep(owner);
@@ -789,6 +799,10 @@ const CollectionRuntime& Interpreter::Collections() const {
 IoRuntime& Interpreter::IO() { return impl_->io; }
 
 const IoRuntime& Interpreter::IO() const { return impl_->io; }
+
+NetworkRuntime& Interpreter::Network() { return impl_->network; }
+
+const NetworkRuntime& Interpreter::Network() const { return impl_->network; }
 
 NioRuntime& Interpreter::NIO() { return *impl_->nio_runtime; }
 

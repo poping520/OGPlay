@@ -821,6 +821,10 @@ IntrinsicClassDecl DeclareObjectInputStream() {
 } // namespace
 
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl> &catalog) {
+  auto closeable = IntrinsicClassBuilder::Interface(
+      "Ljava/io/Closeable;", {"Ljava/lang/AutoCloseable;"});
+  closeable.UnimplementedVirtual("close", "()V");
+  catalog.push_back(std::move(closeable).Build());
   catalog.push_back(DeclareInputStream());
   catalog.push_back(DeclareOutputStream());
   catalog.push_back(DeclareReader());

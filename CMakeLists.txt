@@ -433,6 +433,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/class_loader_facade.cpp
     src/runtime/dexvm/collection_runtime.cpp
     src/runtime/dexvm/io_runtime.cpp
+    src/runtime/dexvm/network_runtime.cpp
     src/runtime/dexvm/nio_runtime.cpp
     src/runtime/dexvm/zip_runtime.cpp
     src/runtime/dexvm/reflection.cpp
@@ -831,6 +832,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/nio_runtime_tests.cpp
         tests/dexvm/dvm87_tests.cpp
+        tests/dexvm/dvm88_tests.cpp
         tests/dexvm/session_exit_tests.cpp
         tests/dexvm/intrinsics_p1_tests.cpp
         tests/dexvm/thread_intrinsic_tests.cpp

@@ -817,9 +817,14 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->vm = std::make_unique<dx::Interpreter>(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->vm->SetNioRuntime(&session.NIO());
+    if (android_context != nullptr) {
+        impl_->vm->Network().Configure(android_context->network_policy,
+                                       android_context->network_transport);
+    }
     RegisterAndroidAudioTrackStateTable(*impl_->vm, android_context);
     RegisterAndroidSchedulerStateTable(*impl_->vm, android_context);
     RegisterAndroidValueStateTables(*impl_->vm, android_context);
+    RegisterAndroidDatabaseStateTables(*impl_->vm, android_context);
     if (android_context != nullptr && android_context->vfs != nullptr) {
         impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(
             *android_context->vfs);

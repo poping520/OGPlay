@@ -113,6 +113,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   DVM-84 的 `AudioTrack` side-table 只保存 guest owner 到 mixer player 的窄映射；DEX、
   legacy Java/JNI 与 OpenSL ES 均通过 session 注入的同一 `OpenSlesPcmMixer`，GC sweep 与
   release 都销毁 player，side-table 不反向成为 GC root。
+  DVM-88 将显式 `NetworkPolicy`/`NetworkTransport` 从 session context 注入 core
+  `NetworkRuntime`，默认离线且不由 integration 偷读宿主网络事实；ContentValues/Cursor/
+  SQLite 的 bounded state 留在 Android integration，并只经同一 guest VFS 持久化。
 - `DexVmAndroidContext` + `AndroidIntrinsicCatalog(context)`：
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、

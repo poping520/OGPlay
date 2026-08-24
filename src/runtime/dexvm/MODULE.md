@@ -77,6 +77,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   无文件系统时明确失败；流 wrapper 为 single-owner transfer，clone 不复制游标或缓冲。
 - `ZipRuntime`（DVM-79）：统一拥有 java.util.zip archive、当前 entry bytes/cursor 与
   close 状态；复用 loader 严格 ZIP parser/inflate，并由 intrinsic side-table hook 清扫。
+- `NetworkRuntime`（DVM-88）：统一拥有 InetAddress endpoint、Socket、stream 与 datagram
+  per-VM side state，GC 只通过具名 state-table trace/sweep 管理 guest 引用。core 只消费
+  显式注入的 `NetworkPolicy`/`NetworkTransport` 窄接口，默认离线；host allowlist、TLS 与
+  datagram 分别受检，未注入 transport 或未授权操作明确失败。core 禁止直接创建宿主 socket、
+  读取系统 DNS/代理/证书库或反向依赖 Android connectivity context。
 - `NioRuntime`（DVM-82）：以 JNI object identity 索引 Buffer side state；heap array、
   direct guest memory 与 view 共用 storage，view 只复制 position/limit/mark/order。
   backing array 作为 GC 强边被 trace，死亡 owner sweep，Object.clone 共享 backing 并复制

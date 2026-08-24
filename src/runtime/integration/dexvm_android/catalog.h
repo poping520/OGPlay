@@ -10,11 +10,13 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_app_AlertDialog(const Context& context);
 [[nodiscard]] Decl Declare_android_app_Dialog(const Context& context);
 [[nodiscard]] Decl Declare_android_app_IntentService(const Context& context);
+[[nodiscard]] Decl Declare_android_app_Service(const Context& context);
 [[nodiscard]] Decl Declare_android_app_PendingIntent(const Context& context);
 [[nodiscard]] Decl Declare_android_app_ProgressDialog(const Context& context);
 [[nodiscard]] Decl Declare_android_content_BroadcastReceiver(const Context& context);
 [[nodiscard]] Decl Declare_android_content_ContentResolver(const Context& context);
 [[nodiscard]] Decl Declare_android_content_Context(const Context& context);
+[[nodiscard]] Decl Declare_android_content_ContextWrapper(const Context& context);
 [[nodiscard]] Decl Declare_android_content_DialogInterface_OnCancelListener(const Context& context);
 [[nodiscard]] Decl Declare_android_content_DialogInterface_OnClickListener(const Context& context);
 [[nodiscard]] Decl Declare_android_content_DialogInterface_OnDismissListener(const Context& context);
@@ -89,6 +91,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_util_Pair(const Context& context);
 [[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context& context);
 [[nodiscard]] Decl Declare_android_view_Display(const Context& context);
+[[nodiscard]] Decl Declare_android_view_ContextThemeWrapper(const Context& context);
 [[nodiscard]] Decl Declare_android_view_KeyEvent(const Context& context);
 [[nodiscard]] Decl Declare_android_view_MotionEvent(const Context& context);
 [[nodiscard]] Decl Declare_android_view_SurfaceHolder_Callback(const Context& context);

@@ -12,26 +12,21 @@
 namespace ogplay::runtime::android_intrinsics::dvm80_android_app_Activity {
 
 Decl Declare_android_app_Application(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Application;", "Landroid/content/Context;");
-    // Bounded equivalence for API 19 Application->ContextWrapper->Context:
-    // the wrapper has no independent service/resource behavior in OGPlay.
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/app/Application;", "Landroid/content/ContextWrapper;");
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.VirtualMethod("attachBaseContext", "(Landroid/content/Context;)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.VirtualMethod("onCreate", "()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("getBaseContext", "()Landroid/content/Context;",
-        [context](dx::IntrinsicContext&) {
-            return dx::VmValue::Ref(context->application_base_context);
-        });
     return std::move(builder).Build();
 }
 
 Decl Declare_android_app_Activity(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Activity;", "Landroid/content/Context;");
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/app/Activity;", "Landroid/view/ContextThemeWrapper;");
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -308,8 +303,16 @@ namespace ogplay::runtime::android_intrinsics::dvm80_android_app_IntentService {
 
 Decl Declare_android_app_IntentService(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/IntentService;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/app/IntentService;", "Landroid/app/Service;", {},
+        0x0401U);
     builder.Constructor("()V", NeutralHandler('V'));
+    builder.VirtualMethod("onHandleIntent", "(Landroid/content/Intent;)V",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "IntentService.onHandleIntent must be overridden"};
+        }, 0x0404U);
     return std::move(builder).Build();
 }
 
@@ -319,6 +322,53 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_app_IntentService(const Context& context) {
     return dvm80_android_app_IntentService::Declare_android_app_IntentService(context);
 }
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+
+Decl Declare_android_app_Service(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/app/Service;", "Landroid/content/ContextWrapper;", {},
+        0x0401U);
+    builder.Constructor("()V", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Void();
+    });
+    builder.ConstantInt("START_CONTINUATION_MASK", "I", 0x0f)
+        .ConstantInt("START_STICKY_COMPATIBILITY", "I", 0)
+        .ConstantInt("START_STICKY", "I", 1)
+        .ConstantInt("START_NOT_STICKY", "I", 2)
+        .ConstantInt("START_REDELIVER_INTENT", "I", 3)
+        .ConstantInt("START_FLAG_REDELIVERY", "I", 1)
+        .ConstantInt("START_FLAG_RETRY", "I", 2);
+    const auto noop = dx::IntrinsicHandler(
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.FinalMethod("getApplication", "()Landroid/app/Application;",
+        [context](dx::IntrinsicContext&) {
+            return dx::VmValue::Ref(context->application);
+        });
+    builder.VirtualMethod("onCreate", "()V", noop)
+        .VirtualMethod("onStart", "(Landroid/content/Intent;I)V", noop)
+        .VirtualMethod("onStartCommand", "(Landroid/content/Intent;II)I",
+            [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); })
+        .VirtualMethod("onDestroy", "()V", noop)
+        .VirtualMethod("onConfigurationChanged",
+            "(Landroid/content/res/Configuration;)V", noop)
+        .VirtualMethod("onLowMemory", "()V", noop)
+        .VirtualMethod("onTrimMemory", "(I)V", noop)
+        .VirtualMethod("onTaskRemoved", "(Landroid/content/Intent;)V", noop)
+        .VirtualMethod("onBind",
+            "(Landroid/content/Intent;)Landroid/os/IBinder;",
+            [](dx::IntrinsicContext&) -> dx::VmValue {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/UnsupportedOperationException;",
+                    "Service.onBind must be overridden"};
+            }, 0x0401U)
+        .VirtualMethod("onUnbind", "(Landroid/content/Intent;)Z",
+            [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); })
+        .VirtualMethod("onRebind", "(Landroid/content/Intent;)V", noop);
+    return std::move(builder).Build();
+}
+
 }  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_app_PendingIntent.cpp ----

@@ -21,15 +21,13 @@
 
 ## 2. 当前基线
 
-以下结论已按 2026-08-25 的 `main` 复核：
+以下结论已按 DVM-81 完成后的 2026-08-25 `main` 复核：
 
-- `src/runtime/dexvm/intrinsics/` 有 45 个 `.cpp`；collections、IO/files、zip 已有
-  family TU，但 lang、reflection、异常等仍有单类文件。
-- `src/runtime/integration/dexvm_android/` 有 152 个 `.cpp`，Android catalog 显式注册
-  159 个 class declaration；其中 22 个文件实际属于 `java.*`、`javax.net.*`、
-  `javax.xml.*` 或 `org.xml.sax.*`。
-- `Application` 和 `Activity` 当前都直接继承 `Context`；这是已有注释承认的 bounded
-  equivalence，不满足 API 19 的 superclass、`invoke-super` 和 reflection 事实。
+- DVM-80 已把 `src/runtime/dexvm/intrinsics/` 与
+  `src/runtime/integration/dexvm_android/` 收敛为 12/18 个 `.cpp` family TU；22 个非
+  Android Java 声明已迁回 core，layout gate 锁定 ownership 与唯一 catalog 注册点。
+- DVM-81 已发布 `ContextWrapper`/`ContextThemeWrapper`，并恢复 Application、Service、
+  Activity、IntentService 的 API 19 superclass；现有 Context 行为经同一 base 委托。
 - core 尚无 `java.nio.Buffer` 家族；`Charset` 仍在 Android integration。
 - JNI ABI 目录包含 `NewDirectByteBuffer`、`GetDirectBufferAddress`、
   `GetDirectBufferCapacity`，但生产绑定测试明确要求三者当前未绑定。
@@ -169,6 +167,8 @@ appender 或 declaration，不得出现 handler。
 architecture focused tests 全绿。
 
 ### B · API 19 Context 类型体系
+
+状态：DVM-81 已完成本批次；能力总项仍因其他 Android API 缺口保持 partial。
 
 必须新增并按 AOSP 修正为：
 

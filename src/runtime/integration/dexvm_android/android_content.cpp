@@ -114,23 +114,23 @@ Decl Declare_android_content_Context(const Context& context) {
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("getAssets", "()Landroid/content/res/AssetManager;",
+    builder.VirtualMethod("getAssets", "()Landroid/content/res/AssetManager;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Singleton(
                 call, context, "assets", "Landroid/content/res/AssetManager;"));
         });
-    builder.FinalMethod("getPackageName", "()Ljava/lang/String;",
+    builder.VirtualMethod("getPackageName", "()Ljava/lang/String;",
         [context](dx::IntrinsicContext& call) {
             return MakeString(call, context->package_name);
         });
-    builder.FinalMethod("getPackageManager",
+    builder.VirtualMethod("getPackageManager",
         "()Landroid/content/pm/PackageManager;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Singleton(
                 call, context, "package_manager",
                 "Landroid/content/pm/PackageManager;"));
         });
-    builder.FinalMethod("getApplicationContext", "()Landroid/content/Context;",
+    builder.VirtualMethod("getApplicationContext", "()Landroid/content/Context;",
         [context](dx::IntrinsicContext& call) {
             // One guest process owns one application Context; Activity
             // wrappers may come and go without changing this identity.
@@ -141,7 +141,7 @@ Decl Declare_android_content_Context(const Context& context) {
                 call, context, "application_context",
                 "Landroid/content/Context;"));
         });
-    builder.FinalMethod("getFilesDir", "()Ljava/io/File;",
+    builder.VirtualMethod("getFilesDir", "()Ljava/io/File;",
         [context](dx::IntrinsicContext& call) {
             const auto path = "/data/data/" + context->package_name +
                               "/files";
@@ -160,12 +160,12 @@ Decl Declare_android_content_Context(const Context& context) {
             context->singletons.emplace(key, file);
             return dx::VmValue::Ref(file);
         });
-    builder.FinalMethod("getResources", "()Landroid/content/res/Resources;",
+    builder.VirtualMethod("getResources", "()Landroid/content/res/Resources;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Singleton(call, context, "resources",
                 "Landroid/content/res/Resources;"));
         });
-    builder.FinalMethod("getSystemService",
+    builder.VirtualMethod("getSystemService",
         "(Ljava/lang/String;)Ljava/lang/Object;",
         [context](dx::IntrinsicContext& call) {
             const auto name = call.vm.StringUtf8(call.arguments[0].ref);
@@ -205,7 +205,7 @@ Decl Declare_android_content_Context(const Context& context) {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "system service is not provided: " + name};
         });
-    builder.FinalMethod("registerReceiver",
+    builder.VirtualMethod("registerReceiver",
         "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;",
         [context](dx::IntrinsicContext& call) {
             const auto receiver = call.arguments[0].ref;
@@ -216,7 +216,7 @@ Decl Declare_android_content_Context(const Context& context) {
             // Sticky broadcast lookup: nothing pending on this platform.
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
-    builder.FinalMethod("unregisterReceiver",
+    builder.VirtualMethod("unregisterReceiver",
         "(Landroid/content/BroadcastReceiver;)V",
         [context](dx::IntrinsicContext& call) {
             const auto receiver = call.arguments[0].ref;
@@ -234,7 +234,7 @@ Decl Declare_android_content_Context(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("startActivity", "(Landroid/content/Intent;)V",
+    builder.VirtualMethod("startActivity", "(Landroid/content/Intent;)V",
         [context](dx::IntrinsicContext& call) -> dx::VmValue {
             // In-process activity switch: only intents with an explicit
             // component that resolves to a dex activity are supported;
@@ -254,7 +254,7 @@ Decl Declare_android_content_Context(const Context& context) {
             context->current_intent = intent;
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+    builder.VirtualMethod("getSharedPreferences", "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
         [context](dx::IntrinsicContext& call) {
             const auto name = call.vm.StringUtf8(call.arguments[0].ref);
             const auto instance = Singleton(
@@ -264,13 +264,13 @@ Decl Declare_android_content_Context(const Context& context) {
             LoadPreferencesOnce(context, name);
             return dx::VmValue::Ref(instance);
         });
-    builder.FinalMethod("getContentResolver", "()Landroid/content/ContentResolver;",
+    builder.VirtualMethod("getContentResolver", "()Landroid/content/ContentResolver;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(
                 Singleton(call, context, "content_resolver",
                           "Landroid/content/ContentResolver;"));
         });
-    builder.FinalMethod("sendBroadcast", "(Landroid/content/Intent;)V",
+    builder.VirtualMethod("sendBroadcast", "(Landroid/content/Intent;)V",
         [](dx::IntrinsicContext& call) {
             // No other process exists; the broadcast truthfully has no
             // audience. Logged so silent drops stay visible.
@@ -278,7 +278,7 @@ Decl Declare_android_content_Context(const Context& context) {
                      "sendBroadcast dropped: no receivers on this platform");
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;",
+    builder.VirtualMethod("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;",
         [context](dx::IntrinsicContext& call) {
             // Platform layout under the external mount; a null type argument
             // answers the package files root.
@@ -293,7 +293,7 @@ Decl Declare_android_content_Context(const Context& context) {
             slots[0] = {call.vm.NewStringUtf8(path).Value(), dx::SlotTag::ref};
             return dx::VmValue::Ref(file);
         });
-    builder.FinalMethod("startService",
+    builder.VirtualMethod("startService",
         "(Landroid/content/Intent;)Landroid/content/ComponentName;",
         [](dx::IntrinsicContext& call) {
             GuestLog(call, core::LogLevel::debug,
@@ -304,11 +304,104 @@ Decl Declare_android_content_Context(const Context& context) {
     return std::move(builder).Build();
 }
 
+namespace {
+
+dx::IntrinsicHandler DelegateContextMethod(
+    const dx::IntrinsicFieldHandle base_field, std::string name,
+    std::string descriptor) {
+    return [base_field, name = std::move(name),
+            descriptor = std::move(descriptor)](dx::IntrinsicContext& context) {
+        dx::IntrinsicCall call(context);
+        const auto base = call.GetRef(base_field);
+        if (!base.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "ContextWrapper base context is null"};
+        }
+        auto& vm = context.vm;
+        auto& linker = vm.Linker();
+        const auto base_class = vm.Model().ObjectClass(base);
+        const auto index = linker.FindVtableIndex(base_class, name, descriptor);
+        if (!index.has_value()) {
+            throw dx::VmJavaThrow{
+                "Ljava/lang/AbstractMethodError;",
+                "base Context has no " + name + descriptor};
+        }
+        std::vector<dx::VmValue> arguments{dx::VmValue::Ref(base)};
+        arguments.insert(arguments.end(), context.arguments.begin(),
+                         context.arguments.end());
+        const auto outcome = vm.Call(
+            linker.Class(base_class).vtable[*index], arguments);
+        if (outcome.exception.IsValid()) {
+            vm.SetPendingException(outcome.exception);
+        }
+        return outcome.value;
+    };
+}
+
+}  // namespace
+
+Decl Declare_android_content_ContextWrapper(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/content/ContextWrapper;", "Landroid/content/Context;");
+    const auto base = builder.BoundInstanceField(
+        "mBase", "Landroid/content/Context;", 0U);
+    builder.Constructor("(Landroid/content/Context;)V",
+        [base](dx::IntrinsicContext& context) {
+            dx::IntrinsicCall(context).SetRef(base, context.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("attachBaseContext",
+        "(Landroid/content/Context;)V",
+        [base](dx::IntrinsicContext& context) {
+            dx::IntrinsicCall call(context);
+            if (call.GetRef(base).IsValid()) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/IllegalStateException;",
+                    "Base context already set"};
+            }
+            call.SetRef(base, context.arguments[0].ref);
+            return dx::VmValue::Void();
+        }, 0x0004U);
+    builder.VirtualMethod("getBaseContext", "()Landroid/content/Context;",
+        [base](dx::IntrinsicContext& context) {
+            return dx::VmValue::Ref(dx::IntrinsicCall(context).GetRef(base));
+        });
+    const auto delegate = [&](const char* name, const char* descriptor) {
+        builder.VirtualMethod(name, descriptor,
+                              DelegateContextMethod(base, name, descriptor));
+    };
+    delegate("getAssets", "()Landroid/content/res/AssetManager;");
+    delegate("getPackageName", "()Ljava/lang/String;");
+    delegate("getPackageManager", "()Landroid/content/pm/PackageManager;");
+    delegate("getApplicationContext", "()Landroid/content/Context;");
+    delegate("getFilesDir", "()Ljava/io/File;");
+    delegate("getResources", "()Landroid/content/res/Resources;");
+    delegate("getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
+    delegate("registerReceiver",
+        "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)"
+        "Landroid/content/Intent;");
+    delegate("unregisterReceiver", "(Landroid/content/BroadcastReceiver;)V");
+    delegate("startActivity", "(Landroid/content/Intent;)V");
+    delegate("getSharedPreferences",
+        "(Ljava/lang/String;I)Landroid/content/SharedPreferences;");
+    delegate("getContentResolver", "()Landroid/content/ContentResolver;");
+    delegate("sendBroadcast", "(Landroid/content/Intent;)V");
+    delegate("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;");
+    delegate("startService",
+        "(Landroid/content/Intent;)Landroid/content/ComponentName;");
+    return std::move(builder).Build();
+}
+
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_content_Context(const Context& context) {
     return dvm80_android_content_Context::Declare_android_content_Context(context);
+}
+Decl Declare_android_content_ContextWrapper(const Context& context) {
+    return dvm80_android_content_Context::Declare_android_content_ContextWrapper(
+        context);
 }
 }  // namespace ogplay::runtime::android_intrinsics
 

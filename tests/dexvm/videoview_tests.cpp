@@ -316,10 +316,16 @@ TEST_CASE("WifiInfo without a connection does not invent a MAC address") {
 
 TEST_CASE("application Context identity survives Activity replacement") {
     VideoVm vm(FakeFactory());
+    const auto base =
+        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
     const auto first =
         vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
     const auto second =
         vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    vm.CallOn(first, "attachBaseContext", "(Landroid/content/Context;)V",
+              {VmValue::Ref(base)});
+    vm.CallOn(second, "attachBaseContext", "(Landroid/content/Context;)V",
+              {VmValue::Ref(base)});
     const auto first_context = vm.CallOn(
         first, "getApplicationContext", "()Landroid/content/Context;").ref;
     const auto second_context = vm.CallOn(

@@ -6,6 +6,70 @@
 #include <bit>
 #include <cmath>
 
+namespace ogplay::runtime::android_intrinsics {
+
+namespace {
+
+bool CallContextWrapperConstructor(dx::IntrinsicContext& context,
+                                   const dx::VmObjectRef base) {
+    auto& linker = context.vm.Linker();
+    const auto owner = linker.FindClass("Landroid/content/ContextWrapper;");
+    if (!owner.has_value()) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              "ContextWrapper is not linked"};
+    }
+    const auto constructor = linker.FindDirectMethod(
+        *owner, "<init>", "(Landroid/content/Context;)V");
+    if (!constructor.has_value()) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              "ContextWrapper constructor is unavailable"};
+    }
+    const auto outcome = context.vm.Call(
+        *constructor,
+        std::vector<dx::VmValue>{dx::VmValue::Ref(context.receiver),
+                                 dx::VmValue::Ref(base)});
+    if (!outcome.exception.IsValid()) return true;
+    context.vm.SetPendingException(outcome.exception);
+    return false;
+}
+
+}  // namespace
+
+Decl Declare_android_view_ContextThemeWrapper(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/view/ContextThemeWrapper;",
+        "Landroid/content/ContextWrapper;");
+    const auto theme_resource =
+        builder.BoundInstanceField("mThemeResource", "I", 0x0002U);
+    builder.Constructor("()V", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Void();
+    });
+    builder.Constructor("(Landroid/content/Context;I)V",
+        [theme_resource](dx::IntrinsicContext& context) {
+            if (CallContextWrapperConstructor(context,
+                                              context.arguments[0].ref)) {
+                dx::IntrinsicCall(context).SetInt(
+                    theme_resource, context.arguments[1].AsInt());
+            }
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("setTheme", "(I)V",
+        [theme_resource](dx::IntrinsicContext& context) {
+            dx::IntrinsicCall(context).SetInt(
+                theme_resource, context.arguments[0].AsInt());
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("getThemeResId", "()I",
+        [theme_resource](dx::IntrinsicContext& context) {
+            return dx::VmValue::Int(
+                dx::IntrinsicCall(context).GetInt(theme_resource));
+        });
+    return std::move(builder).Build();
+}
+
+}  // namespace ogplay::runtime::android_intrinsics
+
 namespace ogplay::runtime::android_intrinsics::dvm80_android_view_Display {
 namespace {
 

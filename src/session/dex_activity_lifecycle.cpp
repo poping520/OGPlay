@@ -30,6 +30,26 @@ namespace ogplay::session {
             }
             Fail(rendered);
         }
+
+        void AttachBaseContext(dx::Interpreter& vm,
+                               dx::DexClassLinker& linker,
+                               const dx::DexClassId java_class,
+                               const dx::VmObjectRef object,
+                               const dx::VmObjectRef base_context,
+                               const std::string& what) {
+            const auto attach = linker.FindVtableIndex(
+                java_class, "attachBaseContext",
+                "(Landroid/content/Context;)V");
+            if (!attach.has_value()) {
+                Fail(what + " has no attachBaseContext method");
+            }
+            RequireOutcome(
+                vm.Call(linker.Class(java_class).vtable[*attach],
+                        std::vector<dx::VmValue>{
+                            dx::VmValue::Ref(object),
+                            dx::VmValue::Ref(base_context)}),
+                what + " attachBaseContext");
+        }
     } // namespace
 
     dx::VmObjectRef StartDexApplication(
@@ -71,19 +91,8 @@ namespace ogplay::session {
                             dx::VmValue::Ref(application)
                         }),
                 "Application <init>");
-            const auto attach = linker.FindVtableIndex(
-                *java_class, "attachBaseContext", "(Landroid/content/Context;)V");
-            if (!attach.has_value()) {
-                Fail("Application has no attachBaseContext method: " +
-                     application_descriptor);
-            }
-            RequireOutcome(
-                vm.Call(linker.Class(*java_class).vtable[*attach],
-                        std::vector<dx::VmValue>{
-                            dx::VmValue::Ref(application),
-                            dx::VmValue::Ref(base_context)
-                        }),
-                "Application attachBaseContext");
+            AttachBaseContext(vm, linker, *java_class, application,
+                              base_context, "Application");
             const auto on_create = linker.FindVtableIndex(
                 *java_class, "onCreate", "()V");
             if (!on_create.has_value()) {
@@ -243,6 +252,8 @@ namespace ogplay::session {
                             dx::VmValue::Ref(activity)
                         }),
                 "activity <init>");
+            AttachBaseContext(vm, linker, *activity_class, activity,
+                              context.application_base_context, "Activity");
 
             // 04 §2 steps 5..7: interpreted lifecycle chain. An activity that
             // requested a switch (startActivity + finish) inside onCreate never
@@ -556,6 +567,8 @@ namespace ogplay::session {
                             dx::VmValue::Ref(activity)
                         }),
                 "activity <init>");
+            AttachBaseContext(vm, linker, *activity_class, activity,
+                              context.application_base_context, "Activity");
             CallActivity("onCreate", "(Landroid/os/Bundle;)V",
                          {dx::VmValue::Ref(dx::VmObjectRef{})});
             if (context.pending_activity_descriptor.empty()) {

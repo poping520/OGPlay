@@ -249,8 +249,13 @@ TEST_CASE("Environment data directory is one stable guest File") {
 
 TEST_CASE("Context files directory is inherited stable and VFS backed") {
     FileVm vm;
+    const auto base =
+        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
     const auto activity =
         vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    static_cast<void>(vm.CallOn(
+        activity, "attachBaseContext", "(Landroid/content/Context;)V",
+        {VmValue::Ref(base)}));
     const auto first =
         vm.CallOn(activity, "getFilesDir", "()Ljava/io/File;").ref;
     const auto repeated =
@@ -262,8 +267,6 @@ TEST_CASE("Context files directory is inherited stable and VFS backed") {
           "/data/data/com.example.game/files");
     CHECK(vm.vfs.Stat("/data/data/com.example.game/files").is_directory);
 
-    const auto base =
-        vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
     CHECK(vm.CallOn(base, "getFilesDir", "()Ljava/io/File;").ref == first);
 }
 

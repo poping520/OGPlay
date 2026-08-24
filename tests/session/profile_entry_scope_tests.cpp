@@ -103,12 +103,33 @@ struct AndroidVm final {
     REQUIRE(index.has_value());
     return linker.Class(*owner).vtable[*index];
   }
+
+  [[nodiscard]] VmMethodId Direct(const std::string_view descriptor,
+                                  const std::string_view signature) {
+    const auto owner = linker.FindClass(descriptor);
+    REQUIRE(owner.has_value());
+    const auto method = linker.FindDirectMethod(
+        *owner, "<init>", std::string(signature));
+    REQUIRE(method.has_value());
+    return *method;
+  }
+
+  void AttachBase(const VmObjectRef object, const VmObjectRef base) {
+    const auto java_class = model.ObjectClass(object);
+    const auto index = linker.FindVtableIndex(
+        java_class, "attachBaseContext", "(Landroid/content/Context;)V");
+    REQUIRE(index.has_value());
+    const auto outcome = interpreter.Call(
+        linker.Class(java_class).vtable[*index],
+        std::vector{VmValue::Ref(object), VmValue::Ref(base)});
+    REQUIRE_FALSE(outcome.exception.IsValid());
+  }
 };
 
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  CHECK(catalog.size() == 137);
+  CHECK(catalog.size() == 140);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -137,8 +158,11 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     REQUIRE(found != catalog.end());
     return found->methods.size();
   };
-  CHECK(method_count("Landroid/app/Application;") == 4);
+  CHECK(method_count("Landroid/app/Application;") == 2);
   CHECK(method_count("Landroid/app/Activity;") == 26);
+  CHECK(method_count("Landroid/app/Service;") == 13);
+  CHECK(method_count("Landroid/content/ContextWrapper;") == 18);
+  CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
   CHECK(method_count("Landroid/content/Intent;") == 16);
   CHECK(method_count("Landroid/os/Bundle;") == 12);
   CHECK(method_count("Landroid/content/pm/PackageManager;") == 5);
@@ -147,22 +171,116 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
 }
 
+TEST_CASE("API 19 Context wrappers publish the real superclass chain") {
+  AndroidVm vm;
+  const auto require_class = [&vm](const std::string_view descriptor) {
+    const auto java_class = vm.linker.FindClass(descriptor);
+    REQUIRE(java_class.has_value());
+    return *java_class;
+  };
+  const auto context = require_class("Landroid/content/Context;");
+  const auto wrapper = require_class("Landroid/content/ContextWrapper;");
+  const auto themed = require_class("Landroid/view/ContextThemeWrapper;");
+  const auto application = require_class("Landroid/app/Application;");
+  const auto activity = require_class("Landroid/app/Activity;");
+  const auto service = require_class("Landroid/app/Service;");
+  const auto intent_service = require_class("Landroid/app/IntentService;");
+
+  CHECK(vm.linker.Class(wrapper).super == context);
+  CHECK(vm.linker.Class(themed).super == wrapper);
+  CHECK(vm.linker.Class(application).super == wrapper);
+  CHECK(vm.linker.Class(activity).super == themed);
+  CHECK(vm.linker.Class(service).super == wrapper);
+  CHECK(vm.linker.Class(intent_service).super == service);
+  CHECK(vm.linker.IsAssignable(context, application));
+  CHECK(vm.linker.IsAssignable(context, activity));
+  CHECK(vm.linker.IsAssignable(wrapper, activity));
+  CHECK(vm.linker.IsAssignable(themed, activity));
+  CHECK(vm.linker.IsAssignable(wrapper, intent_service));
+}
+
+TEST_CASE("ContextWrapper owns one base identity and delegates supported calls") {
+  AndroidVm vm;
+  vm.context->package_name = "org.example.wrapper";
+  const auto base =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+  const auto wrapper = vm.interpreter.NewIntrinsicInstance(
+      "Landroid/content/ContextWrapper;");
+  auto outcome = vm.interpreter.Call(
+      vm.Direct("Landroid/content/ContextWrapper;",
+                "(Landroid/content/Context;)V"),
+      std::vector{VmValue::Ref(wrapper), VmValue::Ref(base)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/ContextWrapper;", "getBaseContext",
+                 "()Landroid/content/Context;"),
+      std::vector{VmValue::Ref(wrapper)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.ref == base);
+
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/ContextWrapper;", "getPackageName",
+                 "()Ljava/lang/String;"),
+      std::vector{VmValue::Ref(wrapper)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
+        "org.example.wrapper");
+
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/ContextWrapper;", "attachBaseContext",
+                 "(Landroid/content/Context;)V"),
+      std::vector{VmValue::Ref(wrapper), VmValue::Ref(base)});
+  REQUIRE(outcome.exception.IsValid());
+  CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+        "Ljava/lang/IllegalStateException;");
+}
+
+TEST_CASE("ContextThemeWrapper keeps bounded theme state on the same base") {
+  AndroidVm vm;
+  const auto base =
+      vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+  const auto themed = vm.interpreter.NewIntrinsicInstance(
+      "Landroid/view/ContextThemeWrapper;");
+  auto outcome = vm.interpreter.Call(
+      vm.Direct("Landroid/view/ContextThemeWrapper;",
+                "(Landroid/content/Context;I)V"),
+      std::vector{VmValue::Ref(themed), VmValue::Ref(base),
+                  VmValue::Int(0x1234)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/view/ContextThemeWrapper;", "getBaseContext",
+                 "()Landroid/content/Context;"),
+      std::vector{VmValue::Ref(themed)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.ref == base);
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/view/ContextThemeWrapper;", "getThemeResId",
+                 "()I"),
+      std::vector{VmValue::Ref(themed)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(outcome.value.AsInt() == 0x1234);
+}
+
 TEST_CASE("Context package manager has one process identity") {
   AndroidVm vm;
   const auto activity =
       vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
   const auto context =
       vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
-  const auto target = vm.Virtual(
+  vm.AttachBase(activity, context);
+  const auto activity_target = vm.Virtual(
       "Landroid/app/Activity;", "getPackageManager",
       "()Landroid/content/pm/PackageManager;");
 
   const auto from_activity = vm.interpreter.Call(
-      target, std::vector{VmValue::Ref(activity)});
+      activity_target, std::vector{VmValue::Ref(activity)});
   REQUIRE_FALSE(from_activity.exception.IsValid());
   REQUIRE(from_activity.value.ref.IsValid());
   const auto from_context = vm.interpreter.Call(
-      target, std::vector{VmValue::Ref(context)});
+      vm.Virtual("Landroid/content/Context;", "getPackageManager",
+                 "()Landroid/content/pm/PackageManager;"),
+      std::vector{VmValue::Ref(context)});
   REQUIRE_FALSE(from_context.exception.IsValid());
   CHECK(from_context.value.ref == from_activity.value.ref);
   CHECK(vm.linker.Class(vm.model.ObjectClass(from_activity.value.ref))

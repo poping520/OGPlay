@@ -45,8 +45,11 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   与跨包查询不得扩展成安装包数据库或 Binder 服务。
 - process `Application`、attached base Context 与 descriptor 由 context 持有；
   `Context.getApplicationContext` 和 `Activity.getApplication` 必须返回同一稳定 Java root。
-  API 19 的 bounded Application→ContextWrapper→Context 等价只覆盖游戏进程直接可见行为，
-  不引入 Instrumentation 或完整 framework。
+  API 19 类型链固定为 Context→ContextWrapper→Application/Service/ContextThemeWrapper→
+  Activity，IntentService 继承 Service；wrapper 只保存一个 guest base 引用，生命周期在
+  `onCreate` 前完成一次性 attach，现有 Context 方法必须虚派委托 base，不复制资源或
+  service 状态。ContextThemeWrapper 只承诺有界 theme id，不引入 Instrumentation、
+  ActivityManager、service process 或完整 framework。
 - `System.load/System.loadLibrary` 只经 context 注入的 process
   `NativeLibraryLoader`，并始终携带稳定 application ClassLoader token；null 参数抛
   `NullPointerException`，resolver/linker/JNI_OnLoad 失败映射为

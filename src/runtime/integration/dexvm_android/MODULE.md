@@ -126,6 +126,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - scheduler side-table 持有的引用必须由 state-table trace 或 session scheduled-root 枚举；
   GC sweep 删除 owner 关联状态，session teardown 先 shutdown scheduler、唤醒 Looper，再
   join guest 线程。所有时钟推进必须调用 `AdvanceAndroidClock` 通知 waiter。
+- DVM-86 的 SparseArray、Path、Parcel 与 WakeLock 状态只存在于具名 intrinsic state table；
+  Parcel 只传输受检 typed atom，Bundle 在写入时快照 typed map。Power/Vibrator/Process 不得
+  调用 Binder、宿主设备或外部进程；未知 transport/type/action 必须明确失败。
 
 ## 依赖
 
@@ -139,3 +142,5 @@ Activity/Intent/Bundle/TextView 方法集合；`tests/dexvm/file_vfs_tests.cpp`�
 `videoview_tests.cpp`、`widget_click_tests.cpp` 锁定主要集成行为。
 `tests/dexvm/scheduler_tests.cpp` 锁定固定 Clock、FIFO/cancel、Timer/CountDownTimer、
 HandlerThread 与 AsyncTask 的线程/回投语义。
+`tests/dexvm/android_value_tests.cpp` 锁定 Base64/Sparse、graphics value/Path、
+Parcel/Bundle snapshot 与有界 power/vibrator 状态。

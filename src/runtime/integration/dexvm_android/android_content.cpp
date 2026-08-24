@@ -111,6 +111,8 @@ void LoadPreferencesOnce(const Context& context, const std::string& name) {
 
 Decl Declare_android_content_Context(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;", "Ljava/lang/Object;");
+    builder.ConstantString("POWER_SERVICE", "power", 0x0019U)
+        .ConstantString("VIBRATOR_SERVICE", "vibrator", 0x0019U);
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -201,6 +203,14 @@ Decl Declare_android_content_Context(const Context& context) {
                 return dx::VmValue::Ref(Singleton(
                     call, context, "window_manager",
                     "Landroid/view/WindowManagerImpl;"));
+            }
+            if (name == "power") {
+                return dx::VmValue::Ref(Singleton(
+                    call, context, "power", "Landroid/os/PowerManager;"));
+            }
+            if (name == "vibrator") {
+                return dx::VmValue::Ref(Singleton(
+                    call, context, "vibrator", "Landroid/os/Vibrator;"));
             }
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "system service is not provided: " + name};

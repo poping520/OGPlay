@@ -819,6 +819,7 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->vm->SetNioRuntime(&session.NIO());
     RegisterAndroidAudioTrackStateTable(*impl_->vm, android_context);
     RegisterAndroidSchedulerStateTable(*impl_->vm, android_context);
+    RegisterAndroidValueStateTables(*impl_->vm, android_context);
     if (android_context != nullptr && android_context->vfs != nullptr) {
         impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(
             *android_context->vfs);

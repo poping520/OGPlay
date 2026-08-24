@@ -229,6 +229,8 @@ delay、cancel 和 shutdown 可确定复现。
 
 ### E · 高频 Android 小能力
 
+状态：DVM-86 已完成本批次；Binder、宿主设备动作和完整 framework 长尾仍明确不实现。
+
 - util/text：Base64、SparseArray/SparseBooleanArray/SparseIntArray、TypedValue、TextUtils；
 - graphics：Color、RectF、Point/PointF、Path、PorterDuff.Mode、BitmapDrawable、ColorDrawable；
 - value transport：Parcelable、最小 Parcel、Bundle Parcelable API；Parcel 只覆盖 primitive、
@@ -237,6 +239,12 @@ delay、cancel 和 shutdown 可确定复现。
   `getSystemService` 返回稳定 singleton。
 
 这些类不得使用 neutral handler 代替数据语义。未知 flag、类型或宿主动作必须明确失败。
+
+DVM-86 落地结果：Base64/Sparse/TypedValue/TextUtils 与 graphics 值类保存真实数据；Path
+保存确定性 command list。Parcel 以受检 typed atom/cursor 传输 primitive、String、byte
+array 和进程内 Parcelable，Bundle 写入时快照 typed map，读出获得新 identity。WakeLock
+只保存引用计数，Vibrator 只保存请求事实，Process 只作用于当前 guest process；均不引入
+Binder、system_server 或宿主设备控制。
 
 ### F · 真实命中驱动的 P1
 

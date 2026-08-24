@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-25 · DVM-85 统一 SystemClock 与 Android 调度 backend
+更新：2026-08-25 · DVM-86 API 19 高频值类与有界服务
 
 ## 当前阶段
 
@@ -48,7 +48,9 @@
   Handler/Looper/HandlerThread、Timer/CountDownTimer/AsyncTask 迁入唯一 uptime scheduler；
   `(deadline, sequence)` 排序、主安全点/子线程执行、GC 与 shutdown 均已闭合，
   `dexvm.android_scheduler` 为 complete。后续顺序与边界见
-  [`12-api19-capability-stack.md`](../design/dexvm/12-api19-capability-stack.md)。
+  [`12-api19-capability-stack.md`](../design/dexvm/12-api19-capability-stack.md)。DVM-86 已发布
+  Base64/Sparse/TextUtils、graphics 值类、Parcel/Bundle transport 与有界系统服务；不引入 Binder，
+  `dexvm.android_value_services` 为 complete。
 ## 验证基线
 
 - DVM-83 Windows Debug 受影响目标构建通过；Java GLES/NIO/EGL/catalog/JNI superclass/
@@ -59,6 +61,8 @@
   （98 assertions）及 architecture 6/6 通过；全量 CTest 按计划未运行。
 - DVM-85 `windows-msvc` Debug `ogplay_tests` 构建通过；scheduler 4/4（83 assertions）及
   Thread/monitor/lifecycle 定向 26/26（132805 assertions）通过；全量按计划未运行。
+- DVM-86 Windows Debug 构建、value/service、catalog/Bundle/Context 与 architecture 定向
+  测试通过；全量按计划未运行。
 
 ## 下一步
 

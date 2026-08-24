@@ -1,4 +1,12 @@
-// DVM-80: API-family translation unit. Physical consolidation only.
+// DVM-80: API-family translation unit. DVM-86 adds the high-frequency API 19
+// geometry and drawable value classes here.
+
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <charconv>
+#include <cctype>
+#include <cmath>
 
 // ---- migrated from android_graphics_Bitmap_Config.cpp ----
 #include "catalog.h"
@@ -443,6 +451,315 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_graphics_Region_Op(const Context& context) {
     return dvm80_android_graphics_Region_Op::Declare_android_graphics_Region_Op(context);
 }
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+namespace {
+
+[[nodiscard]] std::uint32_t ParseColorValue(const std::string& value) {
+    if (!value.empty() && value.front() == '#') {
+        const auto digits = value.substr(1);
+        if (digits.size() != 6U && digits.size() != 8U) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown color"};
+        }
+        std::uint32_t parsed{};
+        const auto result = std::from_chars(digits.data(), digits.data() + digits.size(), parsed, 16);
+        if (result.ec != std::errc{} || result.ptr != digits.data() + digits.size())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown color"};
+        return digits.size() == 6U ? (0xff000000U | parsed) : parsed;
+    }
+    auto normalized = value;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    constexpr std::array names{
+        std::pair{"black", 0xff000000U}, std::pair{"darkgray", 0xff444444U},
+        std::pair{"gray", 0xff888888U}, std::pair{"lightgray", 0xffccccccU},
+        std::pair{"white", 0xffffffffU}, std::pair{"red", 0xffff0000U},
+        std::pair{"green", 0xff00ff00U}, std::pair{"blue", 0xff0000ffU},
+        std::pair{"yellow", 0xffffff00U}, std::pair{"cyan", 0xff00ffffU},
+        std::pair{"magenta", 0xffff00ffU}, std::pair{"transparent", 0x00000000U}};
+    const auto found = std::find_if(names.begin(), names.end(), [&normalized](const auto& item) {
+        return item.first == normalized;
+    });
+    if (found == names.end())
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown color"};
+    return found->second;
+}
+
+[[nodiscard]] dx::VmValue FloatBits(const float value) {
+    return dx::VmValue::Float(value);
+}
+
+}  // namespace
+
+Decl Declare_android_graphics_Color(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Color;", "Ljava/lang/Object;");
+    for (const auto [name, value] : std::array{
+             std::pair{"BLACK", 0xff000000U}, std::pair{"DKGRAY", 0xff444444U},
+             std::pair{"GRAY", 0xff888888U}, std::pair{"LTGRAY", 0xffccccccU},
+             std::pair{"WHITE", 0xffffffffU}, std::pair{"RED", 0xffff0000U},
+             std::pair{"GREEN", 0xff00ff00U}, std::pair{"BLUE", 0xff0000ffU},
+             std::pair{"YELLOW", 0xffffff00U}, std::pair{"CYAN", 0xff00ffffU},
+             std::pair{"MAGENTA", 0xffff00ffU}, std::pair{"TRANSPARENT", 0x00000000U}}) {
+        builder.ConstantInt(name, "I", static_cast<std::int32_t>(value), 0x0019U);
+    }
+    builder.StaticMethod("alpha", "(I)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 24U);
+    }).StaticMethod("red", "(I)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int((static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 16U) & 0xffU);
+    }).StaticMethod("green", "(I)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int((static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 8U) & 0xffU);
+    }).StaticMethod("blue", "(I)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU);
+    }).StaticMethod("rgb", "(III)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(0xff000000U |
+            ((call.arguments[0].AsInt() & 0xffU) << 16U) |
+            ((call.arguments[1].AsInt() & 0xffU) << 8U) |
+            (call.arguments[2].AsInt() & 0xffU)));
+    }).StaticMethod("argb", "(IIII)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(
+            ((call.arguments[0].AsInt() & 0xffU) << 24U) |
+            ((call.arguments[1].AsInt() & 0xffU) << 16U) |
+            ((call.arguments[2].AsInt() & 0xffU) << 8U) |
+            (call.arguments[3].AsInt() & 0xffU)));
+    }).StaticMethod("parseColor", "(Ljava/lang/String;)I", [](dx::IntrinsicContext& call) {
+        if (!call.arguments[0].ref.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "colorString"};
+        return dx::VmValue::Int(static_cast<std::int32_t>(
+            ParseColorValue(call.vm.StringUtf8(call.arguments[0].ref))));
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_RectF(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/RectF;", "Ljava/lang/Object;");
+    builder.InstanceField("left", "F").InstanceField("top", "F")
+        .InstanceField("right", "F").InstanceField("bottom", "F");
+    builder.Constructor("()V", GraphicsNoopHandler());
+    const auto set = [](dx::IntrinsicContext& call) {
+        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+        for (std::size_t index = 0; index < 4U; ++index)
+            slots[index] = {std::bit_cast<std::uint32_t>(call.arguments[index].AsFloat()), dx::SlotTag::cat1};
+        return dx::VmValue::Void();
+    };
+    builder.Constructor("(FFFF)V", set).FinalMethod("set", "(FFFF)V", set);
+    builder.FinalMethod("width", "()F", [](dx::IntrinsicContext& call) {
+        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+        return FloatBits(std::bit_cast<float>(slots[2].bits) - std::bit_cast<float>(slots[0].bits));
+    }).FinalMethod("height", "()F", [](dx::IntrinsicContext& call) {
+        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+        return FloatBits(std::bit_cast<float>(slots[3].bits) - std::bit_cast<float>(slots[1].bits));
+    }).FinalMethod("centerX", "()F", [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        return FloatBits((std::bit_cast<float>(s[0].bits) + std::bit_cast<float>(s[2].bits)) * 0.5F);
+    }).FinalMethod("centerY", "()F", [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        return FloatBits((std::bit_cast<float>(s[1].bits) + std::bit_cast<float>(s[3].bits)) * 0.5F);
+    }).FinalMethod("isEmpty", "()Z", [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        return dx::VmValue::Int(std::bit_cast<float>(s[0].bits) >= std::bit_cast<float>(s[2].bits) ||
+                                std::bit_cast<float>(s[1].bits) >= std::bit_cast<float>(s[3].bits));
+    }).FinalMethod("contains", "(FF)Z", [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        const auto x = call.arguments[0].AsFloat();
+        const auto y = call.arguments[1].AsFloat();
+        return dx::VmValue::Int(x >= std::bit_cast<float>(s[0].bits) &&
+            x < std::bit_cast<float>(s[2].bits) && y >= std::bit_cast<float>(s[1].bits) &&
+            y < std::bit_cast<float>(s[3].bits));
+    }).FinalMethod("offset", "(FF)V", [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        const auto dxv = call.arguments[0].AsFloat();
+        const auto dyv = call.arguments[1].AsFloat();
+        for (const auto index : {0U, 2U}) s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dxv);
+        for (const auto index : {1U, 3U}) s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dyv);
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_Point(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Point;", "Ljava/lang/Object;");
+    builder.InstanceField("x", "I").InstanceField("y", "I");
+    builder.Constructor("()V", GraphicsNoopHandler());
+    const auto set = [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        s[0] = {static_cast<std::uint32_t>(call.arguments[0].AsInt()), dx::SlotTag::cat1};
+        s[1] = {static_cast<std::uint32_t>(call.arguments[1].AsInt()), dx::SlotTag::cat1};
+        return dx::VmValue::Void();
+    };
+    builder.Constructor("(II)V", set).FinalMethod("set", "(II)V", set);
+    builder.FinalMethod("offset", "(II)V", [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        s[0].bits += static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        s[1].bits += static_cast<std::uint32_t>(call.arguments[1].AsInt());
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_PointF(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/PointF;", "Ljava/lang/Object;");
+    builder.InstanceField("x", "F").InstanceField("y", "F");
+    builder.Constructor("()V", GraphicsNoopHandler());
+    const auto set = [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        s[0] = {std::bit_cast<std::uint32_t>(call.arguments[0].AsFloat()), dx::SlotTag::cat1};
+        s[1] = {std::bit_cast<std::uint32_t>(call.arguments[1].AsFloat()), dx::SlotTag::cat1};
+        return dx::VmValue::Void();
+    };
+    builder.Constructor("(FF)V", set).FinalMethod("set", "(FF)V", set);
+    builder.FinalMethod("length", "()F", [](dx::IntrinsicContext& call) {
+        const auto s = call.vm.Model().InstanceSlots(call.receiver);
+        return FloatBits(std::hypot(std::bit_cast<float>(s[0].bits), std::bit_cast<float>(s[1].bits)));
+    }).StaticMethod("length", "(FF)F", [](dx::IntrinsicContext& call) {
+        return FloatBits(std::hypot(call.arguments[0].AsFloat(), call.arguments[1].AsFloat()));
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_Path_Direction(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Path$Direction;", "Ljava/lang/Object;");
+    builder.StaticField("CW", "Landroid/graphics/Path$Direction;")
+        .StaticField("CCW", "Landroid/graphics/Path$Direction;");
+    builder.InstanceField("nativeInt", "I", 0x0011U);
+    builder.Constructor("(I)V", [](dx::IntrinsicContext& call) {
+        call.vm.Model().InstanceSlots(call.receiver)[0] = {
+            static_cast<std::uint32_t>(call.arguments[0].AsInt()), dx::SlotTag::cat1};
+        return dx::VmValue::Void();
+    }, 0x0002U);
+    builder.ClassInitializer([](dx::IntrinsicContext& call) {
+        for (std::int32_t index = 0; index < 2; ++index) {
+            const auto value = call.vm.NewIntrinsicInstance("Landroid/graphics/Path$Direction;");
+            call.vm.Model().InstanceSlots(value)[0] = {static_cast<std::uint32_t>(index), dx::SlotTag::cat1};
+            call.vm.SetIntrinsicStaticRef("Landroid/graphics/Path$Direction;", index == 0 ? "CW" : "CCW",
+                                          "Landroid/graphics/Path$Direction;", value);
+        }
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_Path(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Path;", "Ljava/lang/Object;");
+    builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
+        context->paths.try_emplace(call.receiver.Value());
+        return dx::VmValue::Void();
+    });
+    builder.Constructor("(Landroid/graphics/Path;)V", [context](dx::IntrinsicContext& call) {
+        if (!call.arguments[0].ref.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "src"};
+        context->paths[call.receiver.Value()] = context->paths[call.arguments[0].ref.Value()];
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("reset", "()V", [context](dx::IntrinsicContext& call) {
+        context->paths[call.receiver.Value()].commands.clear(); return dx::VmValue::Void();
+    }).FinalMethod("rewind", "()V", [context](dx::IntrinsicContext& call) {
+        context->paths[call.receiver.Value()].commands.clear(); return dx::VmValue::Void();
+    }).FinalMethod("isEmpty", "()Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(context->paths[call.receiver.Value()].commands.empty());
+    });
+    const auto point = [context](const auto verb) {
+        return dx::IntrinsicHandler([context, verb](dx::IntrinsicContext& call) {
+            context->paths[call.receiver.Value()].commands.push_back(
+                {verb, call.arguments[0].AsFloat(), call.arguments[1].AsFloat()});
+            return dx::VmValue::Void();
+        });
+    };
+    builder.FinalMethod("moveTo", "(FF)V", point(DexVmAndroidContext::PathState::Verb::move))
+        .FinalMethod("lineTo", "(FF)V", point(DexVmAndroidContext::PathState::Verb::line));
+    builder.FinalMethod("close", "()V", [context](dx::IntrinsicContext& call) {
+        context->paths[call.receiver.Value()].commands.push_back(
+            {DexVmAndroidContext::PathState::Verb::close});
+        return dx::VmValue::Void();
+    }).FinalMethod("addRect", "(FFFFLandroid/graphics/Path$Direction;)V",
+        [context](dx::IntrinsicContext& call) {
+            if (!call.arguments[4].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "direction"};
+            const auto direction = static_cast<std::int32_t>(
+                call.vm.Model().InstanceSlots(call.arguments[4].ref)[0].bits);
+            context->paths[call.receiver.Value()].commands.push_back({
+                DexVmAndroidContext::PathState::Verb::rect,
+                call.arguments[0].AsFloat(), call.arguments[1].AsFloat(),
+                call.arguments[2].AsFloat(), call.arguments[3].AsFloat(), direction});
+            return dx::VmValue::Void();
+        });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_PorterDuff_Mode(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/PorterDuff$Mode;", "Ljava/lang/Object;");
+    constexpr std::array modes{
+        std::pair{"CLEAR", 0}, std::pair{"SRC", 1}, std::pair{"DST", 2},
+        std::pair{"SRC_OVER", 3}, std::pair{"DST_OVER", 4},
+        std::pair{"SRC_IN", 5}, std::pair{"DST_IN", 6}, std::pair{"SRC_OUT", 7},
+        std::pair{"DST_OUT", 8}, std::pair{"SRC_ATOP", 9}, std::pair{"DST_ATOP", 10},
+        std::pair{"XOR", 11}, std::pair{"DARKEN", 12}, std::pair{"LIGHTEN", 13},
+        std::pair{"MULTIPLY", 14}, std::pair{"SCREEN", 15}, std::pair{"ADD", 16},
+        std::pair{"OVERLAY", 17}};
+    for (const auto& [name, _] : modes) builder.StaticField(name, "Landroid/graphics/PorterDuff$Mode;");
+    builder.InstanceField("nativeInt", "I", 0x0011U);
+    builder.ClassInitializer([modes](dx::IntrinsicContext& call) {
+        for (const auto& [name, value] : modes) {
+            const auto object = call.vm.NewIntrinsicInstance("Landroid/graphics/PorterDuff$Mode;");
+            call.vm.Model().InstanceSlots(object)[0] = {static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
+            call.vm.SetIntrinsicStaticRef("Landroid/graphics/PorterDuff$Mode;", name,
+                                          "Landroid/graphics/PorterDuff$Mode;", object);
+        }
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_PorterDuff(const Context& context) {
+    static_cast<void>(context);
+    return dx::IntrinsicClassBuilder::Class("Landroid/graphics/PorterDuff;", "Ljava/lang/Object;").Build();
+}
+
+Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/graphics/drawable/BitmapDrawable;", "Landroid/graphics/drawable/Drawable;");
+    builder.InstanceField("bitmap", "Landroid/graphics/Bitmap;", 0x0012U);
+    const auto bitmap_ctor = [](const std::size_t index) {
+        return dx::IntrinsicHandler([index](dx::IntrinsicContext& call) {
+            call.vm.Model().InstanceSlots(call.receiver)[0] = {
+                call.arguments[index].ref.Value(), dx::SlotTag::ref};
+            return dx::VmValue::Void();
+        });
+    };
+    builder.Constructor("(Landroid/graphics/Bitmap;)V", bitmap_ctor(0))
+        .Constructor("(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V", bitmap_ctor(1));
+    builder.FinalMethod("getBitmap", "()Landroid/graphics/Bitmap;", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits));
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/graphics/drawable/ColorDrawable;", "Landroid/graphics/drawable/Drawable;");
+    builder.InstanceField("color", "I", 0x0002U);
+    builder.Constructor("()V", GraphicsNoopHandler());
+    const auto set = [](dx::IntrinsicContext& call) {
+        call.vm.Model().InstanceSlots(call.receiver)[0] = {
+            static_cast<std::uint32_t>(call.arguments[0].AsInt()), dx::SlotTag::cat1};
+        return dx::VmValue::Void();
+    };
+    builder.Constructor("(I)V", set).FinalMethod("setColor", "(I)V", set);
+    builder.FinalMethod("getColor", "()I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(
+            call.vm.Model().InstanceSlots(call.receiver)[0].bits));
+    });
+    return std::move(builder).Build();
+}
+
 }  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_graphics_Typeface.cpp ----

@@ -144,9 +144,66 @@ struct DexVmAndroidContext final {
   // intrinsic bridge.
   using BundleValue =
       std::variant<std::int32_t, std::int64_t, std::string, dexvm::VmObjectRef>;
-  std::unordered_map<std::uint32_t,
+    std::unordered_map<std::uint32_t,
                      std::unordered_map<std::string, BundleValue>>
       bundles;
+
+    struct SparseRefEntry final {
+        std::int32_t key{};
+        dexvm::VmObjectRef value;
+    };
+    std::unordered_map<std::uint32_t, std::vector<SparseRefEntry>> sparse_arrays;
+    std::unordered_map<std::uint32_t,
+                       std::vector<std::pair<std::int32_t, std::int32_t>>>
+        sparse_int_arrays;
+
+    struct PathState final {
+        enum class Verb : std::uint8_t { move, line, close, rect };
+        struct Command final {
+            Verb verb{};
+            float x1{};
+            float y1{};
+            float x2{};
+            float y2{};
+            std::int32_t direction{};
+        };
+        std::vector<Command> commands;
+    };
+    std::unordered_map<std::uint32_t, PathState> paths;
+
+    struct ParcelAtom final {
+        enum class Kind : std::uint8_t {
+            integer,
+            long_integer,
+            float_value,
+            double_value,
+            string,
+            byte_array,
+            object
+        };
+        Kind kind{};
+        std::int64_t integer{};
+        double real{};
+        std::string text;
+        std::vector<std::byte> bytes;
+        dexvm::VmObjectRef object;
+        std::unordered_map<std::string, BundleValue> bundle_values;
+    };
+    struct ParcelState final {
+        std::vector<ParcelAtom> atoms;
+        std::size_t position{};
+        bool recycled{};
+    };
+    std::unordered_map<std::uint32_t, ParcelState> parcels;
+
+    struct WakeLockState final {
+        std::int32_t level_and_flags{};
+        std::string tag;
+        std::int32_t count{};
+        bool reference_counted{true};
+    };
+    std::unordered_map<std::uint32_t, WakeLockState> wake_locks;
+    std::int64_t last_vibration_millis{};
 
     // Editable instance handle -> owning EditText handle; the text itself
     // lives in the interpreter's builder buffer of the owner.
@@ -407,6 +464,10 @@ struct DexVmAndroidContext final {
 };
 
 void RegisterAndroidAudioTrackStateTable(
+    dexvm::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context);
+
+void RegisterAndroidValueStateTables(
     dexvm::Interpreter& vm,
     const std::shared_ptr<DexVmAndroidContext>& context);
 

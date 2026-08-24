@@ -2,9 +2,61 @@
 
 // ---- migrated from android_os_AsyncTask.cpp ----
 #include <array>
+#include <bit>
+#include <cstddef>
 #include <limits>
 
 #include "catalog.h"
+
+namespace ogplay::runtime::android_intrinsics {
+namespace {
+
+[[nodiscard]] DexVmAndroidContext::ParcelState& RequireParcel(
+    dx::IntrinsicContext& call, const Context& context,
+    const dx::VmObjectRef parcel) {
+    static_cast<void>(call);
+    if (!parcel.IsValid())
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "parcel"};
+    const auto found = context->parcels.find(parcel.Value());
+    if (found == context->parcels.end() || found->second.recycled)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Parcel recycled"};
+    return found->second;
+}
+
+[[nodiscard]] std::size_t ParcelAtomBytes(
+    const DexVmAndroidContext::ParcelAtom& atom) {
+    using Kind = DexVmAndroidContext::ParcelAtom::Kind;
+    switch (atom.kind) {
+        case Kind::long_integer:
+        case Kind::double_value: return 8U;
+        case Kind::string: return 4U + atom.text.size();
+        case Kind::byte_array: return 4U + atom.bytes.size();
+        default: return 4U;
+    }
+}
+
+void WriteParcelAtom(DexVmAndroidContext::ParcelState& parcel,
+                     DexVmAndroidContext::ParcelAtom atom) {
+    if (parcel.position < parcel.atoms.size())
+        parcel.atoms[parcel.position] = std::move(atom);
+    else
+        parcel.atoms.push_back(std::move(atom));
+    ++parcel.position;
+}
+
+[[nodiscard]] DexVmAndroidContext::ParcelAtom ReadParcelAtom(
+    DexVmAndroidContext::ParcelState& parcel,
+    const DexVmAndroidContext::ParcelAtom::Kind expected) {
+    if (parcel.position >= parcel.atoms.size())
+        throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "Parcel underflow"};
+    const auto& atom = parcel.atoms[parcel.position++];
+    if (atom.kind != expected)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Parcel type mismatch"};
+    return atom;
+}
+
+}  // namespace
+}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics::dvm80_android_os_AsyncTask {
 
@@ -22,8 +74,11 @@ Decl Declare_android_os_AsyncTask(const Context& context) {
                           NeutralHandler('V'));
     builder.VirtualMethod("onCancelled", "(Ljava/lang/Object;)V",
                           NeutralHandler('V'));
-    builder.UnimplementedVirtual(
-        "doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;");
+    builder.VirtualMethod("doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "AsyncTask.doInBackground is not overridden"};
+        });
     builder.FinalMethod("execute", "([Ljava/lang/Object;)Landroid/os/AsyncTask;",
         [context](dx::IntrinsicContext& call) {
             StartAsyncTask(call, context, call.receiver,
@@ -222,10 +277,30 @@ Decl Declare_android_os_Build(const Context& context) {
 namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Bundle {
 
 Decl Declare_android_os_Bundle(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Bundle;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/Bundle;", "Ljava/lang/Object;", {"Landroid/os/Parcelable;"});
+    builder.StaticField("CREATOR", "Landroid/os/Parcelable$Creator;", 0x0019U);
+    builder.ClassInitializer([](dx::IntrinsicContext& call) {
+        call.vm.SetIntrinsicStaticRef(
+            "Landroid/os/Bundle;", "CREATOR", "Landroid/os/Parcelable$Creator;",
+            call.vm.NewIntrinsicInstance("Landroid/os/Bundle$1;"));
+        return dx::VmValue::Void();
+    });
     builder.Constructor("()V",
         [context](dx::IntrinsicContext& call) {
             context->bundles.try_emplace(call.receiver.Value());
+            return dx::VmValue::Void();
+        });
+    builder.Constructor("(Landroid/os/Parcel;)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& parcel = RequireParcel(call, context, call.arguments[0].ref);
+            const auto atom = ReadParcelAtom(
+                parcel, DexVmAndroidContext::ParcelAtom::Kind::object);
+            if (atom.text != "Bundle") {
+                context->bundles.try_emplace(call.receiver.Value());
+            } else {
+                context->bundles[call.receiver.Value()] = atom.bundle_values;
+            }
             return dx::VmValue::Void();
         });
     builder.FinalMethod("get", "(Ljava/lang/String;)Ljava/lang/Object;",
@@ -322,6 +397,36 @@ Decl Declare_android_os_Bundle(const Context& context) {
                 call.arguments[1].ref;
             return dx::VmValue::Void();
         });
+    builder.FinalMethod("getParcelable",
+        "(Ljava/lang/String;)Landroid/os/Parcelable;",
+        [context](dx::IntrinsicContext& call) {
+            const auto& values = context->bundles[call.receiver.Value()];
+            const auto found = values.find(call.vm.StringUtf8(call.arguments[0].ref));
+            const auto* value = found == values.end()
+                                    ? nullptr
+                                    : std::get_if<dx::VmObjectRef>(&found->second);
+            return dx::VmValue::Ref(value == nullptr ? dx::VmObjectRef{} : *value);
+        });
+    builder.FinalMethod("putParcelable",
+        "(Ljava/lang/String;Landroid/os/Parcelable;)V",
+        [context](dx::IntrinsicContext& call) {
+            context->bundles[call.receiver.Value()]
+                            [call.vm.StringUtf8(call.arguments[0].ref)] =
+                call.arguments[1].ref;
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("describeContents", "()I",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.FinalMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& parcel = RequireParcel(call, context, call.arguments[0].ref);
+            DexVmAndroidContext::ParcelAtom atom;
+            atom.kind = DexVmAndroidContext::ParcelAtom::Kind::object;
+            atom.text = "Bundle";
+            atom.bundle_values = context->bundles[call.receiver.Value()];
+            WriteParcelAtom(parcel, std::move(atom));
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("containsKey", "(Ljava/lang/String;)Z",
         [context](dx::IntrinsicContext& call) {
             const auto& values = context->bundles[call.receiver.Value()];
@@ -375,8 +480,14 @@ Decl Declare_android_os_CountDownTimer(const Context& context) {
         CancelCountDown(context, call.receiver);
         return dx::VmValue::Void();
     });
-    builder.UnimplementedVirtual("onTick", "(J)V");
-    builder.UnimplementedVirtual("onFinish", "()V");
+    builder.VirtualMethod("onTick", "(J)V", [](dx::IntrinsicContext&) -> dx::VmValue {
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "CountDownTimer.onTick is not overridden"};
+    });
+    builder.VirtualMethod("onFinish", "()V", [](dx::IntrinsicContext&) -> dx::VmValue {
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "CountDownTimer.onFinish is not overridden"};
+    });
     return std::move(builder).Build();
 }
 
@@ -1040,3 +1151,344 @@ Decl Declare_android_os_StatFs(const Context& context) {
     return dvm80_android_os_StatFs::Declare_android_os_StatFs(context);
 }
 }  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+
+Decl Declare_android_os_Parcelable(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/os/Parcelable;");
+    builder.ConstantInt("CONTENTS_FILE_DESCRIPTOR", "I", 1, 0x0019U)
+        .ConstantInt("PARCELABLE_WRITE_RETURN_VALUE", "I", 1, 0x0019U);
+    builder.VirtualMethod("describeContents", "()I", [](dx::IntrinsicContext&) -> dx::VmValue {
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "Parcelable.describeContents is not implemented"};
+    }).VirtualMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Parcelable.writeToParcel is not implemented"};
+        });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_Parcelable_Creator(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/os/Parcelable$Creator;");
+    builder.VirtualMethod("createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Parcelable.Creator is not implemented"};
+        }).VirtualMethod("newArray", "(I)[Ljava/lang/Object;",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Parcelable.Creator is not implemented"};
+        });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_Bundle_1(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/Bundle$1;", "Ljava/lang/Object;", {"Landroid/os/Parcelable$Creator;"});
+    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.FinalMethod("createFromParcel", "(Landroid/os/Parcel;)Ljava/lang/Object;",
+        [context](dx::IntrinsicContext& call) {
+            auto& parcel = RequireParcel(call, context, call.arguments[0].ref);
+            const auto atom = ReadParcelAtom(parcel, DexVmAndroidContext::ParcelAtom::Kind::object);
+            if (atom.text != "Bundle") return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto result = call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
+            context->bundles[result.Value()] = atom.bundle_values;
+            return dx::VmValue::Ref(result);
+        });
+    builder.FinalMethod("newArray", "(I)[Ljava/lang/Object;",
+        [](dx::IntrinsicContext& call) {
+            const auto length = call.arguments[0].AsInt();
+            if (length < 0)
+                throw dx::VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", "length"};
+            const auto element = call.vm.Linker().ResolveDescriptor("Ljava/lang/Object;");
+            return dx::VmValue::Ref(call.vm.Model().NewObjectArray(
+                call.vm.Linker().ResolveDescriptor("[Ljava/lang/Object;"), element,
+                static_cast<JniSize>(length)));
+        });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_Parcel(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Parcel;", "Ljava/lang/Object;");
+    builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
+        context->parcels[call.receiver.Value()] = {};
+        return dx::VmValue::Void();
+    }, 0x0002U);
+    builder.StaticMethod("obtain", "()Landroid/os/Parcel;", [context](dx::IntrinsicContext& call) {
+        const auto parcel = call.vm.NewIntrinsicInstance("Landroid/os/Parcel;");
+        context->parcels[parcel.Value()] = {};
+        return dx::VmValue::Ref(parcel);
+    });
+    builder.FinalMethod("recycle", "()V", [context](dx::IntrinsicContext& call) {
+        auto& parcel = context->parcels[call.receiver.Value()];
+        parcel.atoms.clear(); parcel.position = 0; parcel.recycled = true;
+        return dx::VmValue::Void();
+    });
+    const auto write_integer = [context](const DexVmAndroidContext::ParcelAtom::Kind kind) {
+        return dx::IntrinsicHandler([context, kind](dx::IntrinsicContext& call) {
+            auto& parcel = RequireParcel(call, context, call.receiver);
+            DexVmAndroidContext::ParcelAtom atom; atom.kind = kind;
+            atom.integer = kind == DexVmAndroidContext::ParcelAtom::Kind::integer
+                               ? call.arguments[0].AsInt() : call.arguments[0].AsLong();
+            WriteParcelAtom(parcel, std::move(atom)); return dx::VmValue::Void();
+        });
+    };
+    builder.FinalMethod("writeInt", "(I)V", write_integer(DexVmAndroidContext::ParcelAtom::Kind::integer))
+        .FinalMethod("writeLong", "(J)V", write_integer(DexVmAndroidContext::ParcelAtom::Kind::long_integer));
+    builder.FinalMethod("writeFloat", "(F)V", [context](dx::IntrinsicContext& call) {
+        auto& parcel = RequireParcel(call, context, call.receiver);
+        DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::float_value;
+        atom.real = call.arguments[0].AsFloat(); WriteParcelAtom(parcel, std::move(atom));
+        return dx::VmValue::Void();
+    }).FinalMethod("writeDouble", "(D)V", [context](dx::IntrinsicContext& call) {
+        auto& parcel = RequireParcel(call, context, call.receiver);
+        DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::double_value;
+        atom.real = call.arguments[0].AsDouble(); WriteParcelAtom(parcel, std::move(atom));
+        return dx::VmValue::Void();
+    }).FinalMethod("writeString", "(Ljava/lang/String;)V", [context](dx::IntrinsicContext& call) {
+        auto& parcel = RequireParcel(call, context, call.receiver);
+        DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::string;
+        atom.integer = call.arguments[0].ref.IsValid() ? 0 : -1;
+        if (call.arguments[0].ref.IsValid()) atom.text = call.vm.StringUtf8(call.arguments[0].ref);
+        WriteParcelAtom(parcel, std::move(atom)); return dx::VmValue::Void();
+    }).FinalMethod("writeByteArray", "([B)V", [context](dx::IntrinsicContext& call) {
+        auto& parcel = RequireParcel(call, context, call.receiver);
+        DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::byte_array;
+        atom.integer = call.arguments[0].ref.IsValid() ? 0 : -1;
+        if (call.arguments[0].ref.IsValid()) atom.bytes = call.vm.Model().ReadByteRegion(
+            call.arguments[0].ref, 0, call.vm.Model().ArrayLength(call.arguments[0].ref));
+        WriteParcelAtom(parcel, std::move(atom)); return dx::VmValue::Void();
+    }).FinalMethod("writeParcelable", "(Landroid/os/Parcelable;I)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& parcel = RequireParcel(call, context, call.receiver);
+            DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::object;
+            atom.object = call.arguments[0].ref;
+            if (atom.object.IsValid()) {
+                const auto descriptor = call.vm.Linker().Class(
+                    call.vm.Model().ObjectClass(atom.object)).descriptor;
+                if (descriptor == "Landroid/os/Bundle;") {
+                    atom.text = "Bundle";
+                    atom.bundle_values = context->bundles[atom.object.Value()];
+                    atom.object = dx::VmObjectRef{};
+                }
+            }
+            WriteParcelAtom(parcel, std::move(atom));
+            return dx::VmValue::Void();
+        }).FinalMethod("writeBundle", "(Landroid/os/Bundle;)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& parcel = RequireParcel(call, context, call.receiver);
+            DexVmAndroidContext::ParcelAtom atom; atom.kind = DexVmAndroidContext::ParcelAtom::Kind::object;
+            if (call.arguments[0].ref.IsValid()) {
+                atom.text = "Bundle";
+                atom.bundle_values = context->bundles[call.arguments[0].ref.Value()];
+            }
+            WriteParcelAtom(parcel, std::move(atom));
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("readInt", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(ReadParcelAtom(
+            RequireParcel(call, context, call.receiver), DexVmAndroidContext::ParcelAtom::Kind::integer).integer));
+    }).FinalMethod("readLong", "()J", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Long(ReadParcelAtom(RequireParcel(call, context, call.receiver),
+            DexVmAndroidContext::ParcelAtom::Kind::long_integer).integer);
+    }).FinalMethod("readFloat", "()F", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Float(static_cast<float>(ReadParcelAtom(RequireParcel(call, context, call.receiver),
+            DexVmAndroidContext::ParcelAtom::Kind::float_value).real));
+    }).FinalMethod("readDouble", "()D", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Double(ReadParcelAtom(RequireParcel(call, context, call.receiver),
+            DexVmAndroidContext::ParcelAtom::Kind::double_value).real);
+    }).FinalMethod("readString", "()Ljava/lang/String;", [context](dx::IntrinsicContext& call) {
+        const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
+            DexVmAndroidContext::ParcelAtom::Kind::string);
+        return atom.integer < 0 ? dx::VmValue::Ref(dx::VmObjectRef{}) : MakeString(call, atom.text);
+    }).FinalMethod("createByteArray", "()[B", [context](dx::IntrinsicContext& call) {
+        const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
+            DexVmAndroidContext::ParcelAtom::Kind::byte_array);
+        if (atom.integer < 0) return dx::VmValue::Ref(dx::VmObjectRef{});
+        const auto result = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"),
+            JniPrimitiveKind::byte, static_cast<JniSize>(atom.bytes.size()));
+        call.vm.Model().WriteByteRegion(result, 0, atom.bytes);
+        return dx::VmValue::Ref(result);
+    }).FinalMethod("readParcelable", "(Ljava/lang/ClassLoader;)Landroid/os/Parcelable;",
+        [context](dx::IntrinsicContext& call) {
+            const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
+                DexVmAndroidContext::ParcelAtom::Kind::object);
+            if (atom.text == "Bundle") {
+                const auto result = call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
+                context->bundles[result.Value()] = atom.bundle_values;
+                return dx::VmValue::Ref(result);
+            }
+            return dx::VmValue::Ref(atom.object);
+        }).FinalMethod("readBundle", "()Landroid/os/Bundle;", [context](dx::IntrinsicContext& call) {
+            const auto atom = ReadParcelAtom(RequireParcel(call, context, call.receiver),
+                DexVmAndroidContext::ParcelAtom::Kind::object);
+            if (atom.text != "Bundle") return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto result = call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
+            context->bundles[result.Value()] = atom.bundle_values;
+            return dx::VmValue::Ref(result);
+        });
+    builder.FinalMethod("dataSize", "()I", [context](dx::IntrinsicContext& call) {
+        const auto& parcel = RequireParcel(call, context, call.receiver);
+        std::size_t bytes{}; for (const auto& atom : parcel.atoms) bytes += ParcelAtomBytes(atom);
+        return dx::VmValue::Int(static_cast<std::int32_t>(bytes));
+    }).FinalMethod("dataPosition", "()I", [context](dx::IntrinsicContext& call) {
+        const auto& parcel = RequireParcel(call, context, call.receiver);
+        std::size_t bytes{};
+        for (std::size_t i = 0; i < parcel.position; ++i) bytes += ParcelAtomBytes(parcel.atoms[i]);
+        return dx::VmValue::Int(static_cast<std::int32_t>(bytes));
+    }).FinalMethod("setDataPosition", "(I)V", [context](dx::IntrinsicContext& call) {
+        auto& parcel = RequireParcel(call, context, call.receiver);
+        const auto target = call.arguments[0].AsInt();
+        if (target < 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "position"};
+        std::size_t bytes{}; std::size_t index{};
+        while (index < parcel.atoms.size() && bytes < static_cast<std::size_t>(target))
+            bytes += ParcelAtomBytes(parcel.atoms[index++]);
+        if (bytes != static_cast<std::size_t>(target))
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "position is not an item boundary"};
+        parcel.position = index; return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_PowerManager_WakeLock(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/PowerManager$WakeLock;", "Ljava/lang/Object;");
+    builder.FinalMethod("acquire", "()V", [context](dx::IntrinsicContext& call) {
+        auto& state = context->wake_locks[call.receiver.Value()];
+        state.count = state.reference_counted ? state.count + 1 : 1;
+        return dx::VmValue::Void();
+    }).FinalMethod("acquire", "(J)V", [context](dx::IntrinsicContext& call) {
+        if (call.arguments[0].AsLong() <= 0)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "timeout"};
+        auto& state = context->wake_locks[call.receiver.Value()];
+        state.count = state.reference_counted ? state.count + 1 : 1;
+        return dx::VmValue::Void();
+    }).FinalMethod("release", "()V", [context](dx::IntrinsicContext& call) {
+        auto& state = context->wake_locks[call.receiver.Value()];
+        if (state.count == 0)
+            throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "WakeLock under-locked"};
+        state.count = state.reference_counted ? state.count - 1 : 0;
+        return dx::VmValue::Void();
+    }).FinalMethod("isHeld", "()Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(context->wake_locks[call.receiver.Value()].count > 0);
+    }).FinalMethod("setReferenceCounted", "(Z)V", [context](dx::IntrinsicContext& call) {
+        context->wake_locks[call.receiver.Value()].reference_counted = call.arguments[0].AsInt() != 0;
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_PowerManager(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/PowerManager;", "Ljava/lang/Object;");
+    builder.ConstantInt("PARTIAL_WAKE_LOCK", "I", 1, 0x0019U)
+        .ConstantInt("SCREEN_DIM_WAKE_LOCK", "I", 6, 0x0019U)
+        .ConstantInt("SCREEN_BRIGHT_WAKE_LOCK", "I", 10, 0x0019U)
+        .ConstantInt("FULL_WAKE_LOCK", "I", 26, 0x0019U)
+        .ConstantInt("ACQUIRE_CAUSES_WAKEUP", "I", 0x10000000, 0x0019U)
+        .ConstantInt("ON_AFTER_RELEASE", "I", 0x20000000, 0x0019U);
+    builder.FinalMethod("newWakeLock", "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;",
+        [context](dx::IntrinsicContext& call) {
+            if (!call.arguments[1].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "tag"};
+            const auto level = call.arguments[0].AsInt();
+            const auto base = level & 0xffff;
+            if (base != 1 && base != 6 && base != 10 && base != 26)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unsupported wake lock level"};
+            const auto lock = call.vm.NewIntrinsicInstance("Landroid/os/PowerManager$WakeLock;");
+            context->wake_locks[lock.Value()] = {level, call.vm.StringUtf8(call.arguments[1].ref), 0, true};
+            return dx::VmValue::Ref(lock);
+        });
+    builder.FinalMethod("isScreenOn", "()Z", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(1);
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_Vibrator(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Vibrator;", "Ljava/lang/Object;");
+    builder.FinalMethod("hasVibrator", "()Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.FinalMethod("vibrate", "(J)V", [context](dx::IntrinsicContext& call) {
+        if (call.arguments[0].AsLong() < 0)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "milliseconds"};
+        context->last_vibration_millis = call.arguments[0].AsLong();
+        return dx::VmValue::Void();
+    }).FinalMethod("cancel", "()V", [context](dx::IntrinsicContext&) {
+        context->last_vibration_millis = 0; return dx::VmValue::Void();
+    });
+    builder.FinalMethod("vibrate", "([JI)V", [](dx::IntrinsicContext&) -> dx::VmValue {
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "repeating vibration is not provided"};
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_Process(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Process;", "Ljava/lang/Object;");
+    builder.ConstantInt("SYSTEM_UID", "I", 1000, 0x0019U)
+        .ConstantInt("FIRST_APPLICATION_UID", "I", 10000, 0x0019U)
+        .ConstantInt("THREAD_PRIORITY_DEFAULT", "I", 0, 0x0019U)
+        .ConstantInt("THREAD_PRIORITY_BACKGROUND", "I", 10, 0x0019U)
+        .ConstantInt("THREAD_PRIORITY_URGENT_DISPLAY", "I", -8, 0x0019U);
+    builder.StaticMethod("myPid", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); })
+        .StaticMethod("myUid", "()I", [context](dx::IntrinsicContext&) {
+            return dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid));
+        }).StaticMethod("myTid", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); })
+        .StaticMethod("killProcess", "(I)V", [context](dx::IntrinsicContext& call) {
+            if (call.arguments[0].AsInt() != 1)
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "foreign process"};
+            context->exit_requested = true; return dx::VmValue::Void();
+        }).StaticMethod("setThreadPriority", "(I)V", [](dx::IntrinsicContext& call) {
+            const auto priority = call.arguments[0].AsInt();
+            if (priority < -20 || priority > 19)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "priority"};
+            return dx::VmValue::Void();
+        }).StaticMethod("setThreadPriority", "(II)V", [](dx::IntrinsicContext& call) {
+            const auto priority = call.arguments[1].AsInt();
+            if (priority < -20 || priority > 19)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "priority"};
+            return dx::VmValue::Void();
+        });
+    return std::move(builder).Build();
+}
+
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime {
+
+void RegisterAndroidValueStateTables(
+    dexvm::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context) {
+    if (context == nullptr) return;
+    vm.RegisterIntrinsicStateTable({
+        "android.value",
+        [context](const dexvm::VmObjectRef owner, const dexvm::VmRootVisitor& visit) {
+            if (const auto sparse = context->sparse_arrays.find(owner.Value());
+                sparse != context->sparse_arrays.end()) {
+                for (const auto& entry : sparse->second)
+                    if (entry.value.IsValid()) visit(entry.value);
+            }
+            if (const auto parcel = context->parcels.find(owner.Value());
+                parcel != context->parcels.end()) {
+                for (const auto& atom : parcel->second.atoms)
+                    if (atom.object.IsValid()) visit(atom.object);
+                for (const auto& atom : parcel->second.atoms) {
+                    for (const auto& [_, value] : atom.bundle_values) {
+                        if (const auto* ref = std::get_if<dexvm::VmObjectRef>(&value);
+                            ref != nullptr && ref->IsValid()) visit(*ref);
+                    }
+                }
+            }
+        },
+        [context](const dexvm::VmObjectRef owner) {
+            context->sparse_arrays.erase(owner.Value());
+            context->sparse_int_arrays.erase(owner.Value());
+            context->paths.erase(owner.Value());
+            context->parcels.erase(owner.Value());
+            context->wake_locks.erase(owner.Value());
+            context->bundles.erase(owner.Value());
+        }, {}});
+}
+
+}  // namespace ogplay::runtime

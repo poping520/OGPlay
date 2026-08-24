@@ -824,6 +824,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/egl_facade_tests.cpp
         tests/dexvm/audio_track_tests.cpp
         tests/dexvm/scheduler_tests.cpp
+        tests/dexvm/android_value_tests.cpp
         tests/dexvm/gap_survey_tests.cpp
         tests/dexvm/gc_tests.cpp
         tests/dexvm/dex_code_tests.cpp

@@ -83,7 +83,7 @@ TEST_CASE("DexVM GC root surface enumerates permanent static JNI and session roo
     REQUIRE(root_box.has_value());
     CHECK(fixture.linker.Class(*root_box).static_ref_slots ==
           std::vector<std::uint16_t>{0});
-    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 5);
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 6);
 }
 
 TEST_CASE("JNI GC roots include local and global but exclude weak global") {
@@ -149,7 +149,7 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
                 (*state)[clone.Value()] = found->second;
             }
         }});
-    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 6);
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 7);
 
     const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");

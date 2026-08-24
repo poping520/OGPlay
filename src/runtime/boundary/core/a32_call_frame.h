@@ -68,6 +68,9 @@ public:
     A32CallFrame(memory::AddressSpace& address_space,
                  const cpu::A32HostCallContext& context,
                  std::size_t parameter_count);
+    explicit A32CallFrame(std::span<const std::uint32_t> arguments,
+                          std::uint64_t thread_id = 0,
+                          std::uint32_t link_register = 0);
 
     [[nodiscard]] std::uint32_t Argument(std::size_t index) const;
     template <typename T>

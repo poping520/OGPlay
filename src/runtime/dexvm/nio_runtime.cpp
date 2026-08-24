@@ -471,6 +471,68 @@ std::vector<std::byte> NioRuntime::ReadRemainingBytes(
     return bytes;
 }
 
+std::uint32_t NioRuntime::WithTemporaryGuestMemory(
+    const std::span<const std::byte> bytes, const bool copy_back,
+    const GuestMemoryOperation& operation,
+    std::vector<std::byte>* const copied_back) {
+    if (!operation) {
+        throw std::invalid_argument("NIO guest memory operation is absent");
+    }
+    if (bytes.empty()) {
+        if (copied_back != nullptr) copied_back->clear();
+        return operation(memory::GuestAddress{});
+    }
+    if (!impl_->direct.allocate || !impl_->direct.release ||
+        !impl_->direct.write || (copy_back && !impl_->direct.read)) {
+        Throw("Ljava/lang/UnsupportedOperationException;",
+              "temporary guest memory is unavailable");
+    }
+    const auto size = static_cast<std::uint32_t>(bytes.size());
+    const auto address = impl_->direct.allocate(size);
+    struct Release final {
+        NioDirectMemoryAccess* access;
+        memory::GuestAddress address;
+        std::uint32_t size;
+        ~Release() {
+            try {
+                access->release(address, size);
+            } catch (const std::exception&) {
+            }
+        }
+    } release{&impl_->direct, address, size};
+    impl_->direct.write(address, bytes);
+    const auto result = operation(address);
+    if (copy_back) {
+        std::vector<std::byte> output(bytes.size());
+        impl_->direct.read(address, output);
+        if (copied_back != nullptr) *copied_back = std::move(output);
+    }
+    return result;
+}
+
+std::uint32_t NioRuntime::WithBufferGuestMemory(
+    const JniObjectIdentity owner, const bool copy_back,
+    const GuestMemoryOperation& operation) {
+    auto& state = impl_->State(owner);
+    if (copy_back && state.read_only) {
+        Throw("Ljava/nio/ReadOnlyBufferException;", "read-only buffer");
+    }
+    const auto element_size = ElementSize(state.element);
+    const auto byte_offset = state.byte_offset +
+        static_cast<std::uint32_t>(state.position) * element_size;
+    if (state.storage->address.has_value()) {
+        return operation(state.storage->address->Add(byte_offset));
+    }
+    const auto input = ReadRemainingBytes(owner);
+    std::vector<std::byte> output;
+    const auto result = WithTemporaryGuestMemory(input, copy_back, operation,
+                                                 &output);
+    if (copy_back && !output.empty()) {
+        impl_->Write(state, byte_offset, output);
+    }
+    return result;
+}
+
 void NioRuntime::Trace(const JniObjectIdentity owner,
                        const std::function<void(VmObjectRef)>& visit) const {
     const auto found = impl_->buffers.find(owner);

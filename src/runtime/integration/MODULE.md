@@ -107,6 +107,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   DVM-82 进一步让 bridge 与 JNI binder 引用 process-owned 同一 `NioRuntime`；direct
   backing 仅由 `AddressSpace` 中有界 arena 分配并按强类型 guest address 校验、搬运、回收，
   Java/JNI view 不保存宿主裸指针。
+  DVM-83 的 Java GLES façade 复用该 runtime 做调用期 Buffer/array/String 编组，并经
+  `AndroidGuestProcess::InvokeManagedGles` 进入既有 sealed GLES binding；integration 不保存
+  第二套 GL 状态，`GLUtils` 只消费既有 Bitmap backing。
 - `DexVmAndroidContext` + `AndroidIntrinsicCatalog(context)`：
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、

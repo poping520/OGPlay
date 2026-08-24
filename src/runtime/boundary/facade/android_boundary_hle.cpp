@@ -199,6 +199,39 @@ public:
     [[nodiscard]] std::string ManagedGlString(const std::uint32_t parameter) {
         return RequireFrame("managed glGetString").GetString(parameter);
     }
+    [[nodiscard]] std::uint32_t InvokeManagedGles(
+        const gles::GlesApi api, const std::string_view name,
+        const std::span<const std::uint32_t> arguments,
+        const std::uint64_t thread_id) {
+        const auto function = gles::FindGlesFunction(api, name);
+        if (!function.has_value()) {
+            throw std::invalid_argument("managed GLES entry is outside the API 19 catalog: " +
+                                        std::string(name));
+        }
+        const auto& metadata = gles::DescribeGlesFunction(api, *function);
+        if (arguments.size() != metadata.parameter_count) {
+            throw std::invalid_argument("managed GLES argument count does not match catalog: " +
+                                        std::string(name));
+        }
+        const std::string_view library = api == gles::GlesApi::gles2
+                                             ? "libGLESv2.so"
+                                             : "libGLESv1_CM.so";
+        const auto found = std::ranges::find_if(
+            descriptors_, [&](const auto& descriptor) {
+                return descriptor.library == library && descriptor.name == name;
+            });
+        if (found == descriptors_.end()) {
+            throw std::logic_error("managed GLES catalog entry has no boundary binding: " +
+                                   std::string(name));
+        }
+        const auto index = static_cast<std::size_t>(
+            std::distance(descriptors_.begin(), found));
+        const auto& binding = fast_router_.Entry(index);
+        const A32CallFrame call(arguments, thread_id);
+        const auto result = binding.slow(binding.self, call);
+        RecordGpuCall(index, call.RegisterArguments(), binding.gpu);
+        return result;
+    }
     void PresentManagedSurface() {
         if (!managed_surface_ || !angle_frame_.has_value()) {
             throw std::logic_error(
@@ -733,6 +766,12 @@ bool AndroidBoundaryHle::ManagedSurfaceIsOpen() const noexcept {
 std::string AndroidBoundaryHle::ManagedGlString(
     const std::uint32_t parameter) {
     return impl_->ManagedGlString(parameter);
+}
+std::uint32_t AndroidBoundaryHle::InvokeManagedGles(
+    const gles::GlesApi api, const std::string_view name,
+    const std::span<const std::uint32_t> arguments,
+    const std::uint64_t thread_id) {
+    return impl_->InvokeManagedGles(api, name, arguments, thread_id);
 }
 void AndroidBoundaryHle::PresentManagedSurface() {
     impl_->PresentManagedSurface();

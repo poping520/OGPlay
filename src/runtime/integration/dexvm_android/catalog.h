@@ -67,6 +67,13 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context);
 [[nodiscard]] Decl Declare_android_opengl_GLSurfaceView(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES10(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES10Ext(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES11(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES11Ext(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES20(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLUtils(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLU(const Context& context);
 [[nodiscard]] Decl Declare_android_os_AsyncTask(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Build_VERSION(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Build(const Context& context);

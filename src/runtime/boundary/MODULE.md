@@ -52,6 +52,9 @@
   EGL/GLES1/GLES2 由同一个 `GraphicsBoundaryContext` 引用唯一 `GuestGlContext`、ANGLE
   frame/context 和 graphics state，不复制状态。GLES1 私有 fixed/draw state 直接注入
   `Gles1Module`，shared service 不反向依赖 concrete module。
+  DVM-83 增加的 managed GLES 冷入口按 API/name/参数数校验 sealed catalog，并直接调用
+  同一 `{slow,self}` binding；它只服务 Java 参数适配，不定义或转发任何 native export
+  实现，也不创建另一份 graphics state。
 - `liblog.so` 的 export surface 固定为 Android 4.4.4 target `system/core/liblog`
   (`logd_write.c + logprint.c + event_tag_map.c`) 的 23 个 global API。`LogModule final`
   只依赖显式 `LogBoundaryContext`：guest address 始终由 `AddressSpace` 搬运，event tag map

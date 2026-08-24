@@ -49,6 +49,17 @@ A32CallFrame::A32CallFrame(memory::AddressSpace& address_space,
     }
 }
 
+A32CallFrame::A32CallFrame(const std::span<const std::uint32_t> arguments,
+                           const std::uint64_t thread_id,
+                           const std::uint32_t link_register)
+    : parameter_count_(arguments.size()), thread_id_(thread_id),
+      link_register_(link_register) {
+    if (arguments.size() > arguments_.size()) {
+        throw std::length_error("A32 HLE call exceeds the supported argument count");
+    }
+    std::copy(arguments.begin(), arguments.end(), arguments_.begin());
+}
+
 A32CallFrame::A32CallFrame(memory::AddressSpace& address_space,
                            const cpu::A32HostCallContext& context,
                            const std::size_t parameter_count)

@@ -1527,6 +1527,28 @@ TEST_CASE("Android boundary shares GLES object namespace and texture state") {
     CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
 }
 
+TEST_CASE("DVM-83 managed Java GLES calls share native texture state") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
+    const auto names = fixture.output;
+    static_cast<void>(fixture.Call("libGLESv2.so", "glGenTextures",
+                                   {1U, names.Value()}));
+    const auto texture = fixture.bus.Read32(names, 1U);
+    REQUIRE(texture != 0U);
+    const std::array bind{0x0DE1U, texture};
+    CHECK(fixture.boundary.InvokeManagedGles(
+              ogplay::gles::GlesApi::gles2, "glBindTexture", bind, 1U) == 0U);
+    static_cast<void>(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                                   {0x8069U, names.Add(4U).Value()}));
+    CHECK(fixture.bus.Read32(names.Add(4U), 1U) == texture);
+    CHECK_THROWS_AS(([&] {
+        static_cast<void>(fixture.boundary.InvokeManagedGles(
+            ogplay::gles::GlesApi::gles2, "glNoSuchEntry", {}, 1U));
+    }()), std::invalid_argument);
+    CHECK(fixture.Call("libEGL.so", "eglTerminate") == 1U);
+}
+
 TEST_CASE("GLES2 active texture selects the GLES1 texture matrix unit") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;

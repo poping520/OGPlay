@@ -207,6 +207,8 @@ Java GLES buffer 编组测试通过。
 
 ### D · 游戏数据面
 
+状态：Java GLES 子项已由 DVM-83 完成；AudioTrack 与时间/调度仍待后续 WU。
+
 1. Java GLES：实现 `GLES10/GLES10Ext/GLES11/GLES11Ext/GLES20/GLUtils/GLU` 的 API 19
    可链接面；行为按现有 native GLES catalog 分族接入，未知或边界外入口明确失败。
 2. AudioTrack：实现 `AudioFormat` 常用 PCM 常量，以及 ctor、`getMinBufferSize`、state、

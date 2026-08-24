@@ -107,15 +107,22 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstdint>
+#include <functional>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
+#include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
+#include "generated/java_gles_surface.inc"
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
@@ -463,6 +470,289 @@ dx::IntrinsicHandler GlGetStringHandler(const Context& context) {
     };
 }
 
+[[nodiscard]] std::vector<std::string> GlParameterTypes(
+    const std::string_view descriptor) {
+    std::vector<std::string> result;
+    for (std::size_t cursor = 1; cursor < descriptor.find(')');) {
+        const auto start = cursor;
+        while (descriptor[cursor] == '[') ++cursor;
+        if (descriptor[cursor] == 'L') {
+            cursor = descriptor.find(';', cursor) + 1U;
+        } else {
+            ++cursor;
+        }
+        result.emplace_back(descriptor.substr(start, cursor - start));
+    }
+    return result;
+}
+
+[[nodiscard]] bool GlWritesPointer(const std::string_view name) {
+    return name.starts_with("glGet") || name.starts_with("glGen") ||
+           name.starts_with("glRead") || name.starts_with("glQuery");
+}
+
+[[nodiscard]] std::uint32_t ArrayElementSize(const char descriptor) {
+    switch (descriptor) {
+        case 'Z': case 'B': return 1U;
+        case 'C': case 'S': return 2U;
+        case 'I': case 'F': return 4U;
+        case 'J': case 'D': return 8U;
+        default: throw std::invalid_argument("unsupported GLES primitive array");
+    }
+}
+
+[[nodiscard]] dx::VmValue ManagedGlResult(const std::string_view descriptor,
+                                          const std::uint32_t result) {
+    const auto returns = descriptor.substr(descriptor.find(')') + 1U);
+    if (returns == "V") return dx::VmValue::Void();
+    if (returns == "I" || returns == "Z") {
+        return dx::VmValue::Int(static_cast<std::int32_t>(result));
+    }
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                          "Java GLES return adapter is unavailable"};
+}
+
+dx::IntrinsicHandler JavaGlesHandler(const Context& context,
+                                     const gles::GlesApi api,
+                                     std::string name,
+                                     std::string descriptor) {
+    return [context, api, name = std::move(name),
+            descriptor = std::move(descriptor)](dx::IntrinsicContext& call) {
+        if (name == "glGetString") return GlGetStringHandler(context)(call);
+        if (context->session == nullptr) ModelFailure(call, "guest session is absent");
+        if (name == "glShaderSource" && descriptor == "(ILjava/lang/String;)V") {
+            auto text = call.vm.StringUtf8(call.arguments[1].ref);
+            std::vector<std::byte> bytes;
+            for (const auto character : text) bytes.push_back(static_cast<std::byte>(character));
+            bytes.push_back(std::byte{});
+            static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+                bytes, false, [&](const memory::GuestAddress source) {
+                    const std::array pointer_bytes{
+                        static_cast<std::byte>(source.Value()),
+                        static_cast<std::byte>(source.Value() >> 8U),
+                        static_cast<std::byte>(source.Value() >> 16U),
+                        static_cast<std::byte>(source.Value() >> 24U)};
+                    return context->session->NIO().WithTemporaryGuestMemory(
+                        pointer_bytes, false, [&](const memory::GuestAddress pointers) {
+                            const std::array args{call.arguments[0].cat1, 1U,
+                                                  pointers.Value(), 0U};
+                            return context->session->InvokeManagedGles(
+                                api, name, args);
+                        });
+                }));
+            return dx::VmValue::Void();
+        }
+        const auto native = gles::FindGlesFunction(api, name);
+        if (!native.has_value()) {
+            Record(call, "dexvm.java_gles." + name + descriptor);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Java GLES method is outside the native API 19 catalog"};
+        }
+        const auto types = GlParameterTypes(descriptor);
+        std::vector<std::uint32_t> arguments;
+        const bool copy_back = GlWritesPointer(name);
+        std::function<std::uint32_t(std::size_t)> marshal;
+        marshal = [&](const std::size_t index) -> std::uint32_t {
+            if (index == types.size()) {
+                return context->session->InvokeManagedGles(api, name, arguments);
+            }
+            const auto& type = types[index];
+            const auto& value = call.arguments[index];
+            if (type.size() == 1U) {
+                arguments.push_back(value.cat1);
+                const auto result = marshal(index + 1U);
+                arguments.pop_back();
+                return result;
+            }
+            if (!value.ref.IsValid()) {
+                arguments.push_back(0U);
+                const auto result = marshal(index + 1U);
+                arguments.pop_back();
+                return result;
+            }
+            if (type == "Ljava/lang/String;") {
+                auto text = call.vm.StringUtf8(value.ref);
+                std::vector<std::byte> bytes;
+                bytes.reserve(text.size() + 1U);
+                for (const auto character : text) {
+                    bytes.push_back(static_cast<std::byte>(character));
+                }
+                bytes.push_back(std::byte{});
+                return context->session->NIO().WithTemporaryGuestMemory(
+                    bytes, false, [&](const memory::GuestAddress address) {
+                        arguments.push_back(address.Value());
+                        const auto result = marshal(index + 1U);
+                        arguments.pop_back();
+                        return result;
+                    });
+            }
+            const auto identity = call.vm.Model().ToIdentity(value.ref);
+            if (context->session->NIO().Contains(identity)) {
+                return context->session->NIO().WithBufferGuestMemory(
+                    identity, copy_back, [&](const memory::GuestAddress address) {
+                        arguments.push_back(address.Value());
+                        const auto result = marshal(index + 1U);
+                        arguments.pop_back();
+                        return result;
+                    });
+            }
+            if (type.front() == '[' && type.size() == 2U) {
+                const auto size = ArrayElementSize(type[1]);
+                std::int32_t offset{};
+                std::size_t next = index + 1U;
+                if (next < types.size() && types[next] == "I") {
+                    offset = call.arguments[next].AsInt();
+                    ++next;
+                }
+                const auto length = call.vm.Model().ArrayLength(value.ref);
+                if (offset < 0 || offset > length) {
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                          "Java GLES array offset is outside the array"};
+                }
+                std::vector<std::byte> bytes(
+                    static_cast<std::size_t>(length - offset) * size);
+                for (std::int32_t element = offset; element < length; ++element) {
+                    const auto bits = call.vm.Model().GetPrimitiveElement(value.ref, element);
+                    for (std::uint32_t byte = 0; byte < size; ++byte) {
+                        bytes[(element - offset) * size + byte] =
+                            static_cast<std::byte>(bits >> (byte * 8U));
+                    }
+                }
+                std::vector<std::byte> output;
+                const auto result = context->session->NIO().WithTemporaryGuestMemory(
+                    bytes, copy_back, [&](const memory::GuestAddress address) {
+                        arguments.push_back(address.Value());
+                        const auto nested = marshal(next);
+                        arguments.pop_back();
+                        return nested;
+                    }, &output);
+                if (copy_back) {
+                    for (std::int32_t element = offset; element < length; ++element) {
+                        std::uint64_t bits{};
+                        for (std::uint32_t byte = 0; byte < size; ++byte) {
+                            bits |= static_cast<std::uint64_t>(
+                                std::to_integer<std::uint8_t>(
+                                    output[(element - offset) * size + byte])) <<
+                                (byte * 8U);
+                        }
+                        call.vm.Model().SetPrimitiveElement(value.ref, element, bits);
+                    }
+                }
+                return result;
+            }
+            Record(call, "dexvm.java_gles.argument." + type);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Java GLES reference argument is unsupported"};
+        };
+        try {
+            return ManagedGlResult(descriptor, marshal(0U));
+        } catch (const std::invalid_argument&) {
+            Record(call, "dexvm.java_gles.signature." + name + descriptor);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Java GLES signature has no native adapter"};
+        }
+    };
+}
+
+[[nodiscard]] DexVmAndroidContext::BitmapState& GlBitmap(
+    const Context& context, const dx::VmObjectRef bitmap) {
+    if (!bitmap.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "GLUtils bitmap is null"};
+    }
+    const auto found = context->bitmaps.find(bitmap.Value());
+    if (found == context->bitmaps.end() || found->second.recycled) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "GLUtils bitmap is invalid or recycled"};
+    }
+    return found->second;
+}
+
+[[nodiscard]] std::vector<std::byte> RgbaPixels(
+    const DexVmAndroidContext::BitmapState& bitmap) {
+    std::vector<std::byte> bytes(bitmap.argb.size() * 4U);
+    for (std::size_t index = 0; index < bitmap.argb.size(); ++index) {
+        const auto pixel = bitmap.argb[index];
+        bytes[index * 4U] = static_cast<std::byte>(pixel >> 16U);
+        bytes[index * 4U + 1U] = static_cast<std::byte>(pixel >> 8U);
+        bytes[index * 4U + 2U] = static_cast<std::byte>(pixel);
+        bytes[index * 4U + 3U] = static_cast<std::byte>(pixel >> 24U);
+    }
+    return bytes;
+}
+
+dx::IntrinsicHandler GlUtilsTextureHandler(const Context& context,
+                                           const bool sub_image,
+                                           std::string descriptor) {
+    return [context, sub_image, descriptor = std::move(descriptor)](
+               dx::IntrinsicContext& call) {
+        if (context->session == nullptr) ModelFailure(call, "guest session is absent");
+        const std::size_t bitmap_index = sub_image ? 4U :
+            (descriptor == "(IILandroid/graphics/Bitmap;I)V" ? 2U : 3U);
+        const auto& bitmap = GlBitmap(context, call.arguments[bitmap_index].ref);
+        constexpr std::uint32_t kRgba = 0x1908U;
+        constexpr std::uint32_t kUnsignedByte = 0x1401U;
+        auto format = kRgba;
+        auto type = kUnsignedByte;
+        if (!sub_image && bitmap_index == 3U) {
+            format = call.arguments[2].cat1;
+            if (descriptor == "(IIILandroid/graphics/Bitmap;II)V") {
+                type = call.arguments[4].cat1;
+            }
+        } else if (sub_image && descriptor.ends_with("Bitmap;II)V")) {
+            format = call.arguments[5].cat1;
+            type = call.arguments[6].cat1;
+        }
+        if (format != kRgba || type != kUnsignedByte) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "GLUtils supports ARGB_8888 as RGBA/UNSIGNED_BYTE"};
+        }
+        const auto pixels = RgbaPixels(bitmap);
+        static_cast<void>(context->session->NIO().WithTemporaryGuestMemory(
+            pixels, false, [&](const memory::GuestAddress address) {
+                if (sub_image) {
+                    const std::array args{
+                        call.arguments[0].cat1, call.arguments[1].cat1,
+                        call.arguments[2].cat1, call.arguments[3].cat1,
+                        static_cast<std::uint32_t>(bitmap.width),
+                        static_cast<std::uint32_t>(bitmap.height), format, type,
+                        address.Value()};
+                    return context->session->InvokeManagedGles(
+                        gles::GlesApi::gles2, "glTexSubImage2D", args);
+                }
+                const auto border = call.arguments.back().cat1;
+                const std::array args{
+                    call.arguments[0].cat1, call.arguments[1].cat1, format,
+                    static_cast<std::uint32_t>(bitmap.width),
+                    static_cast<std::uint32_t>(bitmap.height), border, format,
+                    type, address.Value()};
+                return context->session->InvokeManagedGles(
+                    gles::GlesApi::gles2, "glTexImage2D", args);
+            }));
+        return dx::VmValue::Void();
+    };
+}
+
+Decl DeclareJavaGlesClass(
+    const Context& context, const char* class_descriptor,
+    const char* superclass, const gles::GlesApi api,
+    const std::span<const generated_java_gles::MethodSpec> methods,
+    const std::span<const generated_java_gles::ConstantSpec> constants) {
+    auto builder = dx::IntrinsicClassBuilder::Class(class_descriptor, superclass);
+    builder.Constructor("()V", [](dx::IntrinsicContext&) {
+        return dx::VmValue::Void();
+    });
+    for (const auto& constant : constants) {
+        builder.ConstantInt(constant.name, "I", constant.value);
+    }
+    for (const auto& method : methods) {
+        builder.StaticMethod(method.name, method.descriptor,
+                             JavaGlesHandler(context, api, method.name,
+                                             method.descriptor));
+    }
+    return std::move(builder).Build();
+}
+
 dx::IntrinsicHandler EglUnsupportedHandler(std::string method) {
     return [method = std::move(method)](dx::IntrinsicContext& call) -> dx::VmValue {
         Record(call, "dexvm.egl_facade." + method);
@@ -560,6 +850,85 @@ void PaceEglSwap(DexVmAndroidContext& context,
 }  // namespace ogplay::runtime
 
 namespace ogplay::runtime::android_intrinsics {
+
+Decl Declare_android_opengl_GLES10(const Context& context) {
+    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES10;", "Ljava/lang/Object;",
+        gles::GlesApi::gles1, generated_java_gles::kGLES10Methods,
+        generated_java_gles::kGLES10Constants);
+}
+Decl Declare_android_opengl_GLES10Ext(const Context& context) {
+    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES10Ext;", "Ljava/lang/Object;",
+        gles::GlesApi::gles1_extensions, generated_java_gles::kGLES10ExtMethods,
+        generated_java_gles::kGLES10ExtConstants);
+}
+Decl Declare_android_opengl_GLES11(const Context& context) {
+    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES11;", "Landroid/opengl/GLES10;",
+        gles::GlesApi::gles1, generated_java_gles::kGLES11Methods,
+        generated_java_gles::kGLES11Constants);
+}
+Decl Declare_android_opengl_GLES11Ext(const Context& context) {
+    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES11Ext;", "Ljava/lang/Object;",
+        gles::GlesApi::gles1_extensions, generated_java_gles::kGLES11ExtMethods,
+        generated_java_gles::kGLES11ExtConstants);
+}
+Decl Declare_android_opengl_GLES20(const Context& context) {
+    return DeclareJavaGlesClass(context, "Landroid/opengl/GLES20;", "Ljava/lang/Object;",
+        gles::GlesApi::gles2, generated_java_gles::kGLES20Methods,
+        generated_java_gles::kGLES20Constants);
+}
+Decl Declare_android_opengl_GLUtils(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/opengl/GLUtils;", "Ljava/lang/Object;");
+    for (const auto& method : generated_java_gles::kGLUtilsMethods) {
+        const std::string_view name = method.name;
+        if (name == "getInternalFormat" || name == "getType") {
+            builder.StaticMethod(method.name, method.descriptor,
+                [context, name](dx::IntrinsicContext& call) {
+                    static_cast<void>(GlBitmap(context, call.arguments[0].ref));
+                    return dx::VmValue::Int(name == "getInternalFormat"
+                                                ? 0x1908 : 0x1401);
+                });
+        } else if (name == "texImage2D") {
+            builder.StaticMethod(method.name, method.descriptor,
+                GlUtilsTextureHandler(context, false, method.descriptor));
+        } else if (name == "texSubImage2D") {
+            builder.StaticMethod(method.name, method.descriptor,
+                GlUtilsTextureHandler(context, true, method.descriptor));
+        } else if (name == "getEGLErrorString") {
+            builder.StaticMethod(method.name, method.descriptor,
+                [](dx::IntrinsicContext& call) {
+                    static const std::unordered_map<std::int32_t, std::string> names{
+                        {0x3000, "EGL_SUCCESS"}, {0x3001, "EGL_NOT_INITIALIZED"},
+                        {0x3002, "EGL_BAD_ACCESS"}, {0x3003, "EGL_BAD_ALLOC"},
+                        {0x3004, "EGL_BAD_ATTRIBUTE"}, {0x3005, "EGL_BAD_CONFIG"},
+                        {0x3006, "EGL_BAD_CONTEXT"}, {0x3007, "EGL_BAD_CURRENT_SURFACE"},
+                        {0x3008, "EGL_BAD_DISPLAY"}, {0x3009, "EGL_BAD_MATCH"},
+                        {0x300A, "EGL_BAD_NATIVE_PIXMAP"}, {0x300B, "EGL_BAD_NATIVE_WINDOW"},
+                        {0x300C, "EGL_BAD_PARAMETER"}, {0x300D, "EGL_BAD_SURFACE"},
+                        {0x300E, "EGL_CONTEXT_LOST"}};
+                    const auto error = call.arguments[0].AsInt();
+                    const auto found = names.find(error);
+                    if (found != names.end()) return MakeString(call, found->second);
+                    const auto hex = "0123456789abcdef";
+                    std::string value{"0x"};
+                    for (int shift = 28; shift >= 0; shift -= 4) {
+                        value.push_back(hex[(static_cast<std::uint32_t>(error) >> shift) & 0xfU]);
+                    }
+                    return MakeString(call, value);
+                });
+        } else {
+            builder.StaticMethod(method.name, method.descriptor,
+                JavaGlesHandler(context, gles::GlesApi::gles2,
+                                method.name, method.descriptor));
+        }
+    }
+    return std::move(builder).Build();
+}
+Decl Declare_android_opengl_GLU(const Context& context) {
+    return DeclareJavaGlesClass(context, "Landroid/opengl/GLU;", "Ljava/lang/Object;",
+        gles::GlesApi::gles1, generated_java_gles::kGLUMethods,
+        generated_java_gles::kGLUConstants);
+}
 
 Decl Declare_javax_microedition_khronos_egl_EGL(const Context& context) {
     static_cast<void>(context);

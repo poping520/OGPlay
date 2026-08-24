@@ -18,10 +18,13 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 状态同样属于 DexVM core 的 `ZipRuntime`；不得恢复 context stream/output/zip map。
 
 javax EGL/GL façade 遵循 DVM-31：`android_gl.cpp` 聚合该
-家族的 10 个 Java handle 声明、handler、唯一
+家族的 Java handle 声明、handler、唯一
 display/config/window-surface/context/currency 状态机和 swap pacer，把 guest
 `eglMakeCurrent`/`eglSwapBuffers`/`glGetString` 窄接到 session 已拥有的 managed
 ANGLE surface；它不创建、替换或终止第二套 EGL surface。
+DVM-83 在同一 family TU 发布 API 19 `GLES10/10Ext/11/11Ext/20/GLUtils/GLU`；surface
+由固定 AOSP 源生成，Java 参数只经共享 `NioRuntime` 编组后调用 sealed native GLES
+binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL object state。
 
 ## 不变量
 
@@ -113,6 +116,9 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   driver 经通用执行锁 observer 进入 guest 阻塞时立即放行；shutdown 同样唤醒。
   observer 按注册的 driver 宿主线程 id 过滤，GLThread 自己释放执行锁不改变状态。
   禁止退化为 publish+yield、墙钟超时或单次免停泊额度。
+- Java GLES direct Buffer 必须传当前 position 对应的原 guest address；heap/view/array
+  只能使用调用期 guest 临时内存，输出 copy-back 不移动 cursor。任何 Java 签名无法确定
+  映射到 native catalog 时必须记账并明确失败，禁止 neutral return。
 
 ## 依赖
 

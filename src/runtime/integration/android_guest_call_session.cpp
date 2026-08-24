@@ -1273,6 +1273,12 @@ public:
     std::string ManagedGlString(const std::uint32_t parameter) {
         return boundary_.ManagedGlString(parameter);
     }
+    std::uint32_t InvokeManagedGles(
+        const gles::GlesApi api, const std::string_view name,
+        const std::span<const std::uint32_t> arguments,
+        const std::uint64_t thread_id) {
+        return boundary_.InvokeManagedGles(api, name, arguments, thread_id);
+    }
     void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
     void PushInput(const AndroidBoundaryInput& input) {
@@ -1701,6 +1707,12 @@ void AndroidGuestProcess::BindManagedSurfaceOnCallingThread() { impl_->BindManag
 void AndroidGuestProcess::ReleaseManagedSurfaceFromCallingThread() { impl_->ReleaseManagedSurfaceFromCallingThread(); }
 bool AndroidGuestProcess::ManagedSurfaceIsOpen() const noexcept { return impl_->ManagedSurfaceIsOpen(); }
 std::string AndroidGuestProcess::ManagedGlString(const std::uint32_t parameter) { return impl_->ManagedGlString(parameter); }
+std::uint32_t AndroidGuestProcess::InvokeManagedGles(
+    const gles::GlesApi api, const std::string_view name,
+    const std::span<const std::uint32_t> arguments,
+    const std::uint64_t thread_id) {
+    return impl_->InvokeManagedGles(api, name, arguments, thread_id);
+}
 void AndroidGuestProcess::PresentManagedSurface() { impl_->PresentManagedSurface(); }
 void AndroidGuestProcess::CloseManagedSurface() { impl_->CloseManagedSurface(); }
 void AndroidGuestProcess::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
@@ -1843,6 +1855,12 @@ void AndroidGuestCallSession::BindManagedSurfaceOnCallingThread() { process_->Bi
 void AndroidGuestCallSession::ReleaseManagedSurfaceFromCallingThread() { process_->ReleaseManagedSurfaceFromCallingThread(); }
 bool AndroidGuestCallSession::ManagedSurfaceIsOpen() const noexcept { return process_->ManagedSurfaceIsOpen(); }
 std::string AndroidGuestCallSession::ManagedGlString(std::uint32_t parameter) { return process_->ManagedGlString(parameter); }
+std::uint32_t AndroidGuestCallSession::InvokeManagedGles(
+    const gles::GlesApi api, const std::string_view name,
+    const std::span<const std::uint32_t> arguments,
+    const std::uint64_t thread_id) {
+    return process_->InvokeManagedGles(api, name, arguments, thread_id);
+}
 void AndroidGuestCallSession::PresentManagedSurface() { process_->PresentManagedSurface(); }
 void AndroidGuestCallSession::CloseManagedSurface() { process_->CloseManagedSurface(); }
 void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) {

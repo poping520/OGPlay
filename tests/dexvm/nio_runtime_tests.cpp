@@ -112,3 +112,44 @@ TEST_CASE("DVM-82 direct buffers expose validated guest memory and GLES marshall
     nio.Sweep(Object(2));
     CHECK(released);
 }
+
+TEST_CASE("DVM-83 NIO marshals heap and direct buffers without moving cursors") {
+    dx::NioRuntime nio;
+    std::array<std::byte, 32> guest{};
+    nio.SetDirectMemoryAccess({
+        [](std::uint32_t) { return memory::GuestAddress(0x1000U); },
+        [](memory::GuestAddress, std::uint32_t) {},
+        [](memory::GuestAddress address, std::uint32_t size) {
+            return address.Value() >= 0x1000U &&
+                   address.Value() + size <= 0x1020U;
+        },
+        [&guest](memory::GuestAddress address, std::span<std::byte> out) {
+            std::copy_n(guest.begin() + (address.Value() - 0x1000U), out.size(), out.begin());
+        },
+        [&guest](memory::GuestAddress address, std::span<const std::byte> in) {
+            std::copy(in.begin(), in.end(), guest.begin() + (address.Value() - 0x1000U));
+        }});
+    nio.CreateHeap(Object(1), dx::VmObjectRef{}, 0, 8, dx::NioElementKind::byte);
+    nio.SetPosition(Object(1), 2);
+    nio.SetLimit(Object(1), 6);
+    nio.Put(Object(1), 2, 0x11U);
+    CHECK(nio.WithBufferGuestMemory(Object(1), true,
+        [&guest](memory::GuestAddress address) {
+            CHECK(address.Value() == 0x1000U);
+            CHECK(guest[0] == std::byte{0x11});
+            guest[1] = std::byte{0x7a};
+            return 9U;
+        }) == 9U);
+    CHECK(nio.Get(Object(1), 3) == 0x7aU);
+    CHECK(nio.Snapshot(Object(1)).position == 2);
+    CHECK(nio.Snapshot(Object(1)).limit == 6);
+
+    nio.WrapDirect(Object(2), memory::GuestAddress(0x1010U), 8);
+    nio.SetPosition(Object(2), 3);
+    CHECK(nio.WithBufferGuestMemory(Object(2), false,
+        [](memory::GuestAddress address) {
+            CHECK(address.Value() == 0x1013U);
+            return 0U;
+        }) == 0U);
+    CHECK(nio.Snapshot(Object(2)).position == 3);
+}

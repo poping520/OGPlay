@@ -48,6 +48,8 @@ struct NioBufferSnapshot final {
 
 class NioRuntime final {
 public:
+    using GuestMemoryOperation =
+        std::function<std::uint32_t(memory::GuestAddress)>;
     NioRuntime();
     ~NioRuntime();
     NioRuntime(const NioRuntime&) = delete;
@@ -91,6 +93,13 @@ public:
     void Compact(JniObjectIdentity owner);
     [[nodiscard]] std::vector<std::byte> ReadRemainingBytes(
         JniObjectIdentity owner) const;
+    [[nodiscard]] std::uint32_t WithBufferGuestMemory(
+        JniObjectIdentity owner, bool copy_back,
+        const GuestMemoryOperation& operation);
+    [[nodiscard]] std::uint32_t WithTemporaryGuestMemory(
+        std::span<const std::byte> bytes, bool copy_back,
+        const GuestMemoryOperation& operation,
+        std::vector<std::byte>* copied_back = nullptr);
 
     void Trace(JniObjectIdentity owner,
                const std::function<void(VmObjectRef)>& visit) const;

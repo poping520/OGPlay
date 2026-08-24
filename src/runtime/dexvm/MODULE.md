@@ -82,6 +82,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   backing array 作为 GC 强边被 trace，死亡 owner sweep，Object.clone 共享 backing 并复制
   cursor。core 只消费注入的强类型 guest-address allocate/validate/read/write/release 窄接口，
   不依赖 Android context；未注入 allocator 时 `allocateDirect` 明确失败。
+  DVM-83 增加 scoped guest-memory operation：direct Buffer 返回 position 对应地址，heap/
+  view 经注入 allocator 暂存并按方向 copy-back；无论成功或异常均回收临时区且不修改 cursor。
 - `java.lang.Thread` 对照 pinned libcore `Thread.java`/`VMThread.java` 与 Dalvik
   `Thread.cpp`/`Sync.cpp`：root context 具有稳定 id=1 `main` Thread 强根；构造时
   分配 per-VM stable ID；`start()` 经实际 Thread class vtable 虚派发

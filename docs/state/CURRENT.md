@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-25 · DVM-82 java.nio 与 JNI direct buffer
+更新：2026-08-25 · DVM-83 Java GLES façade 与 NIO/Bitmap 编组
 
 ## 当前阶段
 
@@ -12,30 +12,14 @@
   已越过 native load/JNI_OnLoad/OpenGL，新的首 fault 为 DexVM
   `Window.setSoftInputMode(I)V` 缺口，不属于 OpenGL 闭集。
 
-- **Native Boundary 重构**：BND-1..7 已闭环。API-filtered metadata-only catalog、late
-  import、SVC #2/#3 dense `{fn,self}` transport、JIT 外原异常恢复、typed A32 ABI、libc
-  per-export 并发安全 override 与端到端 benchmark 均已有门禁。concrete final module 只注入
-  bounded services；EGL/GLES1/GLES2 共享唯一 graphics context，中央 `Impl::Invoke*` 已删除。
-  BND-5 按 AOSP 4.4.4 完整实现 liblog 23 个 API，guest 日志进入 `guest.liblog` 并带
-  `[guest]`。BND-8..15 已闭合 AOSP Wilhelm ABI、51 个 IID global、PCM mixer、完整
-  Engine→OutputMix→AudioPlayer、SoundPool 混音与真实 A32 callback/TLS/re-enqueue；
-  mute 继续推进队列，地址与 JNI lease 隔离，目录/ownership/capability 已复核。
-  `runtime.opensles_virtual_so` 为 `complete`，最终 full CTest 924/924。
+- **Native Boundary 重构**：BND-1..15 已闭环 metadata catalog、dense `{fn,self}` transport、
+  typed A32 ABI、final module、liblog 与 AOSP Wilhelm/OpenSL ES；EGL/GLES1/GLES2 共享唯一
+  graphics context，PCM/SoundPool 共用 mixer，真实 callback/TLS/re-enqueue 已有门禁。
+  `runtime.opensles_virtual_so` 为 `complete`，阶段 full CTest 924/924。
 
-- **APK Startup**：APS-1 已发布 Manifest Application/launcher facts；APS-2 已建立
-  APK native inventory、固定 v7a→armeabi 默认优先级和 selected-ABI 隔离视图；APS-3
-  已抽出无 application ELF 的 `AndroidGuestProcess`；APS-4 已加入 process-lifetime ELF
-  append、selected-ABI `NativeLibraryLoader`、constructors 与显式 JNI_OnLoad 状态机；
-  APS-5 已把 DexVM `System.load/System.loadLibrary` 接到同一 loader，并以真实
-  A JNI_OnLoad → Java callback → load B 夹具闭合同线程重入；APS-6 已在 Activity/surface
-  前建立 default/custom Application process root，固定 class init、构造、attach、onCreate
-  顺序与异常短路；APS-7 新增 `AndroidAppProcess` 并把 `run-apk` 切到 Manifest 驱动的
-  rootless generic path，app ELF 只由 Java `System.load*` 动态追加；APS-8 新增 optional
-  Profile v3 与 v1/v2 legacy applicability adapter，无 Profile、纯 Java或旧 hash 不命中
-  都继续 generic startup，Profile 不再决定 root `.so` 或 process ABI；APS-9 已闭合 A–J
-  fixture、rootless dynamic Bionic dependency、frontend source gate 与旧设计 superseded
-  链接。Asphalt 5 exact Scenario 连续三轮为 468/468000、`f91150b4…`、无 fault 且 clean
-  shutdown，实际 Java explicit load 仅 `libasphalt5.so`。
+- **APK Startup**：APS-1..9 已闭合 Manifest/ABI facts、rootless `AndroidGuestProcess`、
+  process-lifetime loader/JNI_OnLoad、Application root 与 Profile legacy adapter；app ELF 只由
+  Java `System.load*` 追加。A5 exact Scenario 三轮确定、无 fault 且 clean shutdown。
 - **M9 DexVM**：DVM-1..46、48..69 已交付；解释仍由 `VmExecutionLock` 串行。GC-B 已闭合
   全根、精确非移动 STW mark-sweep、复用与安全点水位触发；线程/monitor、FastCode/threaded
   双后端、类型化 intrinsic、诊断、稳定 identity、ClassLoader 与 bounded reflection
@@ -53,7 +37,11 @@
   既有 Context 能力只经 base 委托。DVM-82 新增统一 `NioRuntime`，发布 API 19 Buffer/
   ByteBuffer/ByteOrder 与六类 typed buffer；Java/JNI direct-buffer 共用 identity、guest
   address 和 capacity，backing 只经 session `AddressSpace`。Java/Android core 仍为
-  partial。后续顺序与边界见
+  partial。DVM-83 已从固定 AOSP 源发布 GLES10/10Ext/11/11Ext/20、GLUtils、GLU 的
+  API 19 可链接面；可确定的 scalar/String/array/NIO Buffer 调用复用 sealed native GLES
+  binding 与唯一 `GuestGlContext`，direct buffer 不复制、heap/view 输出 copy-back 不移动
+  cursor，GLUtils 复用既有 Bitmap 像素。无法确定 native 映射的 Java wrapper 继续记账并
+  明确失败，因此 `dexvm.java_gles` 保持 partial。后续顺序与边界见
   [`12-api19-capability-stack.md`](../design/dexvm/12-api19-capability-stack.md)。
 ## 验证基线
 
@@ -63,13 +51,16 @@
   全目标构建通过；NIO/JNI direct 6/6（28 assertions）、core catalog/side-table/JNI
   aggregate/superclass 4/4（462 assertions）、architecture 5/5 定向回归通过。全量 CTest
   按计划留到阶段最后一个 WU。
+- DVM-83 Windows Debug 受影响目标构建通过；Java GLES/NIO/EGL/catalog/JNI superclass/
+  Java-native texture state 定向 10/10（2513 assertions）、生成面 stale check 与
+  architecture 6/6 通过；全量 CTest 按计划留到阶段最后一个 WU。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 2. Linux M9 严格出口复验。
-3. 进入 DVM-83：在唯一 `GuestGlContext` 上实现 Java GLES façade 与 NIO buffer 编组。
+3. 进入 DVM-84：让 API 19 AudioTrack 与现有 OpenSL ES 共用唯一 PCM queue/mixer backend。
 
 ## 阻塞与边界
 

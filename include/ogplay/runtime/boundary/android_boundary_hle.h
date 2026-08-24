@@ -10,6 +10,7 @@
 #include "ogplay/cpu/cpu.h"
 #include "ogplay/core/gpu_state.h"
 #include "ogplay/gles/angle_backend.h"
+#include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/boundary/opensles_callback.h"
 
@@ -66,6 +67,10 @@ public:
     void ReleaseManagedSurfaceFromCallingThread();
     [[nodiscard]] bool ManagedSurfaceIsOpen() const noexcept;
     [[nodiscard]] std::string ManagedGlString(std::uint32_t parameter);
+    [[nodiscard]] std::uint32_t InvokeManagedGles(
+        gles::GlesApi api, std::string_view name,
+        std::span<const std::uint32_t> arguments,
+        std::uint64_t thread_id = 0);
     void PresentManagedSurface();
     void CloseManagedSurface();
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept;

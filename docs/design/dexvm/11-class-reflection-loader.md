@@ -718,23 +718,16 @@ src/runtime/dexvm/reflection_codec.cpp
 src/runtime/dexvm/reflection_access.cpp
 ```
 
-intrinsic：
+intrinsic（DVM-80 后的 family TU）：
 
 ```text
-java_lang_Class.cpp
-java_lang_ClassLoader.cpp
-java_lang_reflect_AccessibleObject.cpp
-java_lang_reflect_Member.cpp
-java_lang_reflect_Modifier.cpp
-java_lang_reflect_Method.cpp
-java_lang_reflect_Constructor.cpp
-java_lang_reflect_Field.cpp
-java_lang_reflect_Array.cpp
-java_lang_reflect_InvocationTargetException.cpp
+java_lang.cpp
+java_classloading.cpp
+java_reflect.cpp
 ```
 
-同时修改 linker/intrinsic builder/API19 surface generator。目标是 `java_lang_Class.cpp` 变薄，而不是
-扩张成新的 linker/reflection runtime。
+同时修改 linker/intrinsic builder/API19 surface generator。目标是保持 family TU 中 Class 段
+只做薄适配，而不是扩张成新的 linker/reflection runtime。
 
 ---
 

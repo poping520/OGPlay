@@ -44,6 +44,8 @@ API 19 目标同代）为本地参考基线——目录类数据机器比对、�
 | [08 · 解释执行的 EGL/GL façade](08-egl-facade.md) | 自带 GLSurfaceView 的通用形态：javax EGL 面驱动宿主 ANGLE surface |
 | [09 · GC-B 精确标记清除](09-gc.md) | 04 §5 B 期的实施方案：现状盘点、执行锁即停世界、根集/标记/清扫、WU 分批 |
 | [10 · 解释器 v2 threaded 内核](10-interpreter-threaded.md) | 预解码 + 线程化分派的第二内核：与旧 switch 内核并存可切换，bridge 渐进迁移，tick 逐位等价 |
+| [11 · Class、Reflection 与 ClassLoader](11-class-reflection-loader.md) | API 19 class metadata、单 ClassLoader façade 与 reflection 闭环 |
+| [12 · API 19 能力栈与 intrinsic 布局收敛](12-api19-capability-stack.md) | family TU 收敛、Context 类型体系、NIO、Java GLES、AudioTrack、Clock 与后续能力顺序 |
 
 ## 启动条件与当前状态
 

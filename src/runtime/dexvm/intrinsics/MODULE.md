@@ -1,22 +1,20 @@
 # 模块：runtime/dexvm/intrinsics
 
-intrinsic 的逻辑单位仍然是 Java class：每个 class 恰好一个 `Declare_*()`，
-handler 与对应 `Declare_*` 同址；`catalog.cpp` 只负责显式聚合，
-`shared.h` 只保存跨类复用的内部 helper。
+intrinsic 的逻辑单位仍然是 Java class：每个 class 恰好一个 TU-private
+`Declare_*()`，handler 与对应声明同址；物理文件只按 API family 聚合。
+目录固定为 `catalog.cpp` 加 `java_lang/classloading/reflect/io/util/regex/zip/nio/net/xml/
+concurrent.cpp` 11 个 family TU。family 文件只向 `catalog.h` 暴露 `Append*()`，
+`catalog.cpp` 不感知 family 内具体 class，也不得包含行为。
 
-文件组织默认仍是一类一个同名源文件。例外是 Android 4.4.4 `java.lang`
-Throwable hierarchy、primitive wrapper family 与接口 family，分别统一位于
-`java_lang_throwables.cpp`、`java_lang_primitive_wrappers.cpp` 和
-`java_lang_interfaces.cpp`。Java class 仍是
-一等逻辑单位，每类保留独立 `Declare_*()`，但这些函数为 family TU-private；
-文件只向 `catalog.h` 暴露对应的 `AppendJavaLangThrowables()`、
-`AppendJavaLangPrimitiveWrappers()` 或 `AppendJavaLangInterfaces()`，
-`catalog.cpp` 不感知 family 内具体 class。
-后续 API-family 沿用相同规则。family TU 为控制翻译单元数量允许超过通常 800 行。
+family TU 为控制翻译单元数量允许超过通常 800 行。
 禁止新增 `misc`/`common`/`all` 等无语义聚合文件、字符串 core handler id、
 全局静态自注册，以及 android.* 声明和行为顺手修改。
 
-`java_util_collections.cpp` 是 pinned libcore `java.util` 核心集合 family TU：集中声明
+`java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
+Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入，
+core 不依赖 `DexVmAndroidContext`。
+
+`java_util.cpp` 中的 collection 段是 pinned libcore `java.util` 核心集合 family：集中声明
 Collection/List/Set/Map、Iterator/ListIterator、Queue/Deque、常用抽象基类以及
 ArrayList/LinkedList/ArrayDeque、HashMap/LinkedHashMap、HashSet/LinkedHashSet；既有
 Vector/Stack/Hashtable 也迁入同一 family。handler 只做 Java 参数/异常边界与 virtual
@@ -24,22 +22,21 @@ Vector/Stack/Hashtable 也迁入同一 family。handler 只做 Java 参数/异�
 `CollectionRuntime`。Tree/Sorted/Navigable、并发集合和完整 Collections/Arrays 算法不在
 该 family 范围内，缺失能力必须继续明确失败。
 
-`java_io_streams.cpp` 与 `java_io_files.cpp` 是 pinned libcore `java.io` 的两个语义
-family TU：前者聚合 stream/reader/filter/buffer/byte-array/data handle，后者聚合
-File 与四个文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；
+`java_io.cpp` 聚合 pinned libcore `java.io`：stream/reader/filter/buffer/byte-array/data
+handle、File 与文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；
 流状态和文件访问只委托 per-VM `IoRuntime`，不得回读 Android session context。
 
-`java_util_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
+`java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
 接管，archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate
 与 CRC 继续复用 loader 的严格实现。该 family 不得在 Android context 恢复 ZIP side map。
 
-`java_lang_interfaces.cpp` 覆盖 pinned libcore `java.lang` 顶层 8 个
+`java_lang.cpp` 中的 interface 段覆盖 pinned libcore `java.lang` 顶层 8 个
 interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持
 不变，其余接口方法（含 `Readable.read(CharBuffer)`）为显式
 `UnimplementedVirtual`，不伪造成功。不纳入 `Thread.UncaughtExceptionHandler`
 与 `java.lang.annotation`。
 
-`java_lang_Thread.cpp` 是 pinned libcore `Thread.java`/`VMThread.java` 的 core
+`java_lang.cpp` 中的 Thread 段是 pinned libcore `Thread.java`/`VMThread.java` 的 core
 façade：声明 Java-visible fields 并负责参数校验/Java exception，生命周期、
 execution context、parking、interrupt、sleep/join 与 identity mapping 全部委托
 `VmThreadRuntime`/`VmMonitorTable`。`start()` 必须 virtual-dispatch `this.run()`；

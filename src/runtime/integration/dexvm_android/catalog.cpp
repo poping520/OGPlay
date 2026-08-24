@@ -2,6 +2,42 @@
 
 namespace ogplay::runtime {
 
+dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
+    const std::shared_ptr<DexVmAndroidContext>& context) {
+    dexvm::CoreIntrinsicServices services;
+    if (context == nullptr) return services;
+    services.iso3_language = context->iso3_language;
+    services.iso3_country = context->iso3_country;
+    services.singleton =
+        [context](dexvm::Interpreter& vm, const std::string_view key,
+                  const std::string_view descriptor) {
+            const auto found = context->singletons.find(std::string(key));
+            if (found != context->singletons.end()) return found->second;
+            const auto instance =
+                vm.NewIntrinsicInstance(std::string(descriptor));
+            context->singletons.emplace(std::string(key), instance);
+            return instance;
+        };
+    services.schedule_timer_task =
+        [context](const dexvm::VmObjectRef task) {
+            auto& state = context->java_threads[task.Value()];
+            state = DexVmAndroidContext::JavaThreadState{};
+            state.runnable = task;
+            state.started = true;
+            state.name = "TimerTask-" + std::to_string(task.Value());
+            context->java_thread_queue.push_back(task);
+        };
+    services.cancel_timer_tasks = [context] {
+        context->java_thread_queue.clear();
+    };
+    services.set_sax_content_handler =
+        [context](const dexvm::VmObjectRef reader,
+                  const dexvm::VmObjectRef handler) {
+            context->sax_content_handlers[reader.Value()] = handler;
+        };
+    return services;
+}
+
 std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
     const std::shared_ptr<DexVmAndroidContext>& context) {
     using namespace android_intrinsics;
@@ -132,30 +168,8 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_widget_TextView(context),
         Declare_android_widget_Toast(context),
         Declare_android_widget_VideoView(context),
-        Declare_java_net_HttpURLConnection(context),
-        Declare_java_net_URL(context),
-        Declare_java_net_URLConnection(context),
-        Declare_java_net_URLEncoder(context),
-        Declare_java_nio_charset_Charset(context),
-        Declare_java_util_Locale(context),
-        Declare_java_util_Timer(context),
-        Declare_java_util_TimerTask(context),
         Declare_javax_microedition_khronos_egl_EGLConfig(context),
         Declare_javax_microedition_khronos_opengles_GL10(context),
-        Declare_javax_net_ssl_HostnameVerifier(context),
-        Declare_javax_net_ssl_HttpsURLConnection(context),
-        Declare_javax_net_ssl_KeyManager(context),
-        Declare_javax_net_ssl_SSLContext(context),
-        Declare_javax_net_ssl_SSLSocketFactory(context),
-        Declare_javax_net_ssl_TrustManager(context),
-        Declare_javax_net_ssl_X509TrustManager(context),
-        Declare_javax_xml_parsers_SAXParser(context),
-        Declare_javax_xml_parsers_SAXParserFactory(context),
-        Declare_org_xml_sax_ContentHandler(context),
-        Declare_org_xml_sax_InputSource(context),
-        Declare_org_xml_sax_XMLReader_Impl(context),
-        Declare_org_xml_sax_XMLReader(context),
-        Declare_org_xml_sax_helpers_DefaultHandler(context),
         // Historical compatibility tail. DVM-61 decouples Java identity hash
         // from linker ids and object handles, so future catalog insertion no
         // longer changes Object.hashCode/default toString identity.

@@ -2,14 +2,14 @@
 
 ## 职责
 
-提供 dex_activity 生命周期使用的 android.*、Android 相关 java.* 与 javax.* 平台
+提供 dex_activity 生命周期使用的 `android.*` 与 `javax.microedition.*` 平台
 intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚合到一个源文件，
 每个类仍导出独立的 `Declare_<类名>(context)`，返回已经直接持有 handler 的
 不可变声明。Java handle 家族聚合文件用于控制翻译单元数量，不受项目通常的
 800 行源文件上限约束。
 
 声明与实现同址是唯一 handler 形态。`shared.h` 只暴露跨类共享 helper 与工厂；
-跨类复用的 handler 以 `shared_handlers.cpp` 中的工厂函数（如 `ViewInitHandler(context)`、
+跨类复用的 handler 以 `shared.cpp` 中的工厂函数（如 `ViewInitHandler(context)`、
 `PrefsEditHandler(context)`）形式提供，捕获会话状态的工厂显式接收 context。
 资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
 `DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
@@ -17,7 +17,7 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 `DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`java.util.zip` handle 与 archive
 状态同样属于 DexVM core 的 `ZipRuntime`；不得恢复 context stream/output/zip map。
 
-javax EGL/GL façade 遵循 DVM-31：`javax_microedition_khronos_egl.cpp` 聚合该
+javax EGL/GL façade 遵循 DVM-31：`android_gl.cpp` 聚合该
 家族的 10 个 Java handle 声明、handler、唯一
 display/config/window-surface/context/currency 状态机和 swap pacer，把 guest
 `eglMakeCurrent`/`eglSwapBuffers`/`glGetString` 窄接到 session 已拥有的 managed
@@ -37,6 +37,8 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   引用返回值不能擅自伪造对象。
 - Android 平台 handler 的会话状态只从 `DexVmAndroidContext` 进入；core Java handler
   不得依赖该 context，迁移行为必须保持一致。
+- `AndroidCoreIntrinsicServices(context)` 是 core 所需 Locale/Timer/SSL/SAX 平台事实的
+  唯一适配入口；Android catalog 不得重新发布这些 Java family。
 - DVM-77 的 PackageManager 只发布当前 APK：`getApplicationInfo/getPackageInfo` 消费
   sealed Manifest 事实，`getApplicationLabel` 解析 literal/resource label，
   `checkPermission/hasSystemFeature` 只读取显式 granted/feature 集合。未知包、未知 flags

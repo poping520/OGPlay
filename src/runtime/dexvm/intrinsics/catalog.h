@@ -14,6 +14,13 @@ void AppendJavaUtilCollections(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
+                            const CoreIntrinsicServices& services);
+void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
+                           const CoreIntrinsicServices& services);
+void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
+                   const CoreIntrinsicServices& services);
 
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Object();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ClassLoader();

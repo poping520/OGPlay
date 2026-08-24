@@ -2,7 +2,8 @@
 
 namespace ogplay::runtime::dexvm {
 
-std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
+std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
+    CoreIntrinsicServices services) {
     using namespace intrinsics;
     std::vector<IntrinsicClassDecl> catalog{
         Declare_java_lang_Object(),
@@ -55,6 +56,11 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
         Declare_java_net_MalformedURLException(),
         Declare_java_io_EOFException(),
     });
+
+    AppendJavaNetPlatform(catalog, services);
+    AppendJavaNio(catalog);
+    AppendJavaUtilPlatform(catalog, services);
+    AppendJavaXml(catalog, services);
 
     return catalog;
 }

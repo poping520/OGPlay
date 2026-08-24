@@ -110,7 +110,7 @@ dp/sp 必须经 `UiMetrics` 转换。complex dimension 的 radix/unit 解析属�
 
 ## 5. Inflation registry
 
-不要继续在 `android_app_Activity.cpp` 内维护 tag map。建立 descriptor registry：
+不要继续在 `android_app.cpp` 内维护 tag map。建立 descriptor registry：
 
 ```cpp
 struct UiWidgetDescriptor {

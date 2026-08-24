@@ -20,8 +20,22 @@ namespace ogplay::runtime::dexvm {
 
 struct IntrinsicContext;
 struct VmValue;
+class Interpreter;
 using IntrinsicHandler = std::function<VmValue(IntrinsicContext&)>;
 using HostStateDestructor = std::function<void(std::uint64_t)>;
+
+// Narrow host facts needed by Java/JRE intrinsic families that used to live
+// in dexvm_android. Callbacks keep core independent from DexVmAndroidContext.
+struct CoreIntrinsicServices final {
+    std::string iso3_language{"eng"};
+    std::string iso3_country{"USA"};
+    std::function<VmObjectRef(Interpreter&, std::string_view,
+                              std::string_view)>
+        singleton;
+    std::function<void(VmObjectRef)> schedule_timer_task;
+    std::function<void()> cancel_timer_tasks;
+    std::function<void(VmObjectRef, VmObjectRef)> set_sax_content_handler;
+};
 
 // Class linking: registration, hierarchy resolution, field layout, vtable
 // construction and lazy method precheck (docs/design/dexvm/02-architecture.md
@@ -285,6 +299,7 @@ private:
 // Built-in java.* core intrinsic declarations that the interpreter itself
 // depends on (Object, String, Throwable and the implicit exception
 // hierarchy). Platform providers merge additional classes at assembly.
-[[nodiscard]] std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog();
+[[nodiscard]] std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
+    CoreIntrinsicServices services = {});
 
 }  // namespace ogplay::runtime::dexvm

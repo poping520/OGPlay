@@ -914,6 +914,14 @@ if(OGPLAY_BUILD_TESTS)
     set_tests_properties(architecture.documentation_layout PROPERTIES LABELS architecture)
 
     add_test(
+        NAME architecture.dexvm_intrinsic_layout
+        COMMAND ${CMAKE_COMMAND}
+            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckDexVmIntrinsicLayout.cmake
+    )
+    set_tests_properties(architecture.dexvm_intrinsic_layout PROPERTIES LABELS architecture)
+
+    add_test(
         NAME architecture.boundary_hot_path
         COMMAND ${CMAKE_COMMAND}
             -DROOT=${CMAKE_CURRENT_SOURCE_DIR}

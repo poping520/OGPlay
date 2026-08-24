@@ -102,6 +102,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-77](DVM-77.md) | PackageManager P0 当前包查询面 | 完成 |
 | [DVM-78](DVM-78.md) | Java Util 集合核心、视图与迭代器 | 完成 |
 | [DVM-79](DVM-79.md) | Java IO 核心化与统一流运行时 | 完成 |
+| [DVM-80](DVM-80.md) | Intrinsic family TU 与 ownership 全量收敛 | 已完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

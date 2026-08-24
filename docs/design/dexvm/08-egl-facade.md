@@ -74,7 +74,7 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
 
 | 事实 | 位置 |
 | --- | --- |
-| `EGLConfig` 原有空壳具体类声明 | 现已并入 `src/runtime/integration/dexvm_android/javax_microedition_khronos_egl.cpp` |
+| `EGLConfig` 原有空壳具体类声明 | DVM-80 后位于 `src/runtime/integration/dexvm_android/android_gl.cpp` |
 | `GL10` 原有空接口（无 super、无方法） | 现已并入同一 EGL/GL 家族聚合文件 |
 | `EGLContext/EGL10/EGL/EGLDisplay/EGLSurface/GL` 全部缺失 | 触发本次阻塞 |
 | intrinsic 声明 API（Static/Virtual/Field/ConstantInt/Clinit/Unimplemented） | `include/ogplay/runtime/dexvm/intrinsic_builder.h` |
@@ -120,7 +120,7 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
 ### 4.2 新增类清单（同一 API 家族聚合，进 `catalog.h/cpp`）
 
 下列 10 个 Java handle 的声明、handler 与共享 façade 实现统一位于
-`javax_microedition_khronos_egl.cpp`。各描述符仍有独立 `Declare_*()` 入口，
+`android_gl.cpp`。各描述符仍有独立 `Declare_*()` 入口，
 但不再为每个类创建翻译单元；该 Java handle 家族聚合文件不受 800 行限制。
 
 | 描述符 | 形态 | 内容 |
@@ -142,7 +142,7 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
 ### 4.3 EGL façade 状态机与方法语义
 
 状态存 `DexVmAndroidContext`（新增 `struct EglFacadeState`，跨 handler 共享；
-helper 与声明同址于 `javax_microedition_khronos_egl.cpp`）：
+helper 与声明同址于 `android_gl.cpp`）：
 
 ```text
 display singleton（惰性建）; initialized 标志; config singleton;

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-24 · DVM-79 Java IO 核心化
+更新：2026-08-25 · DVM-80 intrinsic family/ownership 收敛
 
 ## 当前阶段
 
@@ -47,31 +47,29 @@
   exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合。
   DVM-70..74 闭合 Window/config、JNI identity、目录/asset、GLSurfaceView policy 与
   IntentFilter；DVM-75..77 交付 String.format、有界致命栈与 PackageManager P0。
-  DVM-78 已用 CollectionRuntime 发布常用集合；DVM-79 把 20 个 Android java.io handle
-  收敛为 core streams/files，以 IoRuntime 统一流、GC 与 VFS；续作把 ZipEntry/
-  ZipInputStream 收敛到 core `java_util_zip.cpp`/ZipRuntime。Tree/并发集合、serialization/
-  charset/NIO 仍 deferred。
+  DVM-78 已用 CollectionRuntime 发布常用集合；DVM-79 把 I/O/ZIP 收敛到 core，以
+  IoRuntime/ZipRuntime 统一状态、GC 与 VFS。DVM-80 已把 core/Android intrinsic 物理目录
+  从 45/152 个 `.cpp` 收敛为 12/18 个 family TU，并将 22 个非 Android Java 声明迁回
+  core；平台事实只经窄 services 注入，未改变能力状态。后续顺序与边界见
+  [`12-api19-capability-stack.md`](../design/dexvm/12-api19-capability-stack.md)。
 ## 验证基线
 
-- BND-24 full CTest 933/933（architecture 5/5）；DVM-75 focused 5/5，
-  exact APK 持续推进且无残留进程。
 - Windows VS 18.8 / MSVC 14.51 `windows-msvc` Debug 全目标构建通过；受影响的 DEX、
   Android/EGL/GLES2 focused 27/27（9645 assertions）与 architecture 5/5 通过。
-- DVM-76 focused 6/6（336 assertions）；Windows Release `ogplay` 构建及 PVZ 原命令
-  关闭 survey 复现通过，首 fault 保持明确失败并附带 context=1、
-  `thread=<unregistered>`、`invoke-virtual opcode=0x6e method_idx=643 dex_pc=18` 与
-  6 层 guest Java 调用栈。
-- DVM-77 PackageManager/Manifest focused 13/13（1227 assertions）；Release PVZ 原命令
-  越过旧 fault 并固定 `LinkedHashMap`，无 `ogplay` 残留。
-- DVM-79 Windows Debug 全目标构建通过；core-only I/O/VFS/ZIP、GC、catalog 与 architecture
-  复验全绿；ZIP 续作定向 8/8。全量 955 项为 954/955，唯一失败仍是未触及的
-  liblog tag（期望 `PVZ`、实际为空）；按范围未运行 PVZ/title gate。
+- DVM-76 focused 6/6；Release PVZ 关闭 survey 复现通过，首 fault 明确失败并附带
+  context、guest thread、fault opcode/method/dex pc 与 6 层 Java 栈。
+- DVM-77 PackageManager/Manifest focused 13/13；Release PVZ 越过旧 fault并固定
+  `LinkedHashMap`，无残留进程。
+- DVM-80 Windows Debug 全目标构建与 core/Android catalog、GC、JNI、I/O/VFS/ZIP、
+  EGL/UI、architecture 定向回归通过；新增 layout gate 锁定 12/18 TU 与 ownership。
+  按计划未运行全量 CTest，留到本阶段最后一个 WU。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 2. Linux M9 严格出口复验。
+3. 进入 DVM-81：补齐 API 19 Context hierarchy，再推进 NIO/direct-buffer。
 
 ## 阻塞与边界
 

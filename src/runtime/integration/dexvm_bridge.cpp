@@ -769,7 +769,8 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->config = config;
     impl_->owner = this;
 
-    auto core_catalog = dx::CoreIntrinsicCatalog();
+    auto core_catalog = dx::CoreIntrinsicCatalog(
+        AndroidCoreIntrinsicServices(android_context));
     BindPlatformCoreHandlers(core_catalog, android_context);
     impl_->linker.RegisterIntrinsics(core_catalog);
     if (!platform_catalog.empty()) {

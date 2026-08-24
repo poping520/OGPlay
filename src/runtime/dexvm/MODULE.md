@@ -52,11 +52,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   再按 declared invoke kind 选 direct/static 精确 target 或按 receiver vtable 选
   virtual/interface target。target throwable 只用持有原异常强引用的
   `InvocationTargetException` 包装，不重新物化原异常。
-- `CoreIntrinsicCatalog()`：聚合 `intrinsics/` 下按 Java 类同址定义的声明与
+- `CoreIntrinsicCatalog(services)`：聚合 `intrinsics/` 下按 API family 同址定义的声明与
   handler；覆盖 Object/String/Class/Throwable、隐式异常层级、核心集合接口，
   以及 pinned libcore `java.lang` 顶层 8 个 interface
   （`Appendable`/`AutoCloseable`/`CharSequence`/`Cloneable`/`Comparable`/
-  `Iterable`/`Readable`/`Runnable`，family TU `java_lang_interfaces.cpp`）。
+  `Iterable`/`Readable`/`Runnable`，统一位于 `java_lang.cpp`）。
   `java.lang.Enum` 语义对照 pinned libcore `Enum.java`：name/ordinal 为声明式
   instance slot（解释子类继承布局）、构造器 `(String,I)` 写入、查询方法 final、
   `toString` 保持 overridable、`clone` 恒抛 CloneNotSupportedException、
@@ -253,18 +253,13 @@ FastCode 单函数稳态循环在 `interp_threaded.cpp`（`#include`
 的选择、校验、thread-local 活跃路由与 `VmExecutionLock` 在
 `interpreter_context.cpp`，诊断 ring/query/JSON 在 `diagnostics.cpp`，宿主线程
 生命周期在 `vm_threads.cpp`。
-`intrinsics/catalog.cpp` 显式聚合目录；每个 Java 类仍由唯一
-`Declare_*()` 同址声明形状与 handler，默认一类一个同名 `.cpp`。唯一文件组织
-例外是 Android 4.4.4 `java.lang` Throwable hierarchy、primitive wrapper
-family 与接口 family，分别位于 `intrinsics/java_lang_throwables.cpp`、
-`intrinsics/java_lang_primitive_wrappers.cpp` 与
-`intrinsics/java_lang_interfaces.cpp`；Java class 仍是一等逻辑单位，
-family 内类级 `Declare_*()` 均为 TU-private，catalog 只调用对应 `Append*()`。
-`java_io_streams.cpp`/`java_io_files.cpp`、`java_util_zip.cpp` 与
-`java_util_collections.cpp` 也按语义 family
-聚合。family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自注册。
-`shared.h` 只放跨类内部 helper。原集中式 core catalog 与三个 handler 文件已
-删除。pinned Luni `java.lang` 的确定性 public/protected 顶层 class shape 位于
+`intrinsics/catalog.cpp` 显式聚合目录；每个 Java 类仍由唯一 TU-private
+`Declare_*()` 同址声明形状与 handler，物理目录固定为 catalog 加 lang、classloading、
+reflect、io、util、regex、zip、nio、net、xml、concurrent 共 11 个 API family TU。
+family 只向 catalog 暴露 `Append*()`；family TU 可超过通常 800 行，但禁止
+misc/common/all 巨石与静态自注册。非 Android Java family 全部归 core；需要平台事实的
+少量既有行为只消费 `CoreIntrinsicServices`，不得依赖 integration。
+pinned Luni `java.lang` 的确定性 public/protected 顶层 class shape 位于
 `data/dexvm/api19-java-lang-surface.json`；用 `tools/dexvm_api19_surface.py` 从本地
 API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成当前 builder 骨架。
 

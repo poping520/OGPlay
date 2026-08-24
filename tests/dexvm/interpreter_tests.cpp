@@ -563,6 +563,13 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         }
     }
 
+    CHECK(descriptors.contains("Ljava/net/URL;"));
+    CHECK(descriptors.contains("Ljava/nio/charset/Charset;"));
+    CHECK(descriptors.contains("Ljava/util/Locale;"));
+    CHECK(descriptors.contains("Ljavax/net/ssl/SSLSocketFactory;"));
+    CHECK(descriptors.contains("Ljavax/xml/parsers/SAXParserFactory;"));
+    CHECK(descriptors.contains("Lorg/xml/sax/XMLReader;"));
+
     const auto signatures = [&catalog](const std::string& descriptor) {
         std::set<std::pair<std::string, std::string>> result;
         const auto declaration = std::find_if(
@@ -1239,7 +1246,7 @@ TEST_CASE("dexvm API 19 throwable representative shapes are source-faithful") {
           });
 }
 
-TEST_CASE("dexvm java.lang throwable implementation is one family TU") {
+TEST_CASE("dexvm java.lang throwable implementation is in lang family TU") {
     const std::vector<std::string> classes = {
         "AbstractMethodError", "ArithmeticException",
         "ArrayIndexOutOfBoundsException", "ArrayStoreException",
@@ -1265,8 +1272,7 @@ TEST_CASE("dexvm java.lang throwable implementation is one family TU") {
     };
     const auto directory = std::filesystem::path(OGPLAY_SOURCE_DIR) / "src" /
                            "runtime" / "dexvm" / "intrinsics";
-    CHECK(std::filesystem::is_regular_file(
-        directory / "java_lang_throwables.cpp"));
+    CHECK(std::filesystem::is_regular_file(directory / "java_lang.cpp"));
     for (const auto& name : classes) {
         CAPTURE(name);
         CHECK_FALSE(std::filesystem::exists(
@@ -1274,15 +1280,14 @@ TEST_CASE("dexvm java.lang throwable implementation is one family TU") {
     }
 }
 
-TEST_CASE("dexvm java.lang primitive wrappers are one family TU") {
+TEST_CASE("dexvm java.lang primitive wrappers are in lang family TU") {
     const std::vector<std::string> classes = {
         "Number", "Byte", "Short", "Integer", "Long", "Float", "Double",
         "Boolean", "Character",
     };
     const auto directory = std::filesystem::path(OGPLAY_SOURCE_DIR) / "src" /
                            "runtime" / "dexvm" / "intrinsics";
-    CHECK(std::filesystem::is_regular_file(
-        directory / "java_lang_primitive_wrappers.cpp"));
+    CHECK(std::filesystem::is_regular_file(directory / "java_lang.cpp"));
     for (const auto& name : classes) {
         CAPTURE(name);
         CHECK_FALSE(std::filesystem::exists(
@@ -1324,15 +1329,14 @@ TEST_CASE("dexvm API 19 java.lang interface inventory is complete") {
     }
 }
 
-TEST_CASE("dexvm java.lang interfaces are one family TU") {
+TEST_CASE("dexvm java.lang interfaces are in lang family TU") {
     const std::vector<std::string> classes = {
         "Appendable", "AutoCloseable", "CharSequence", "Cloneable",
         "Comparable", "Iterable", "Readable", "Runnable",
     };
     const auto directory = std::filesystem::path(OGPLAY_SOURCE_DIR) / "src" /
                            "runtime" / "dexvm" / "intrinsics";
-    CHECK(std::filesystem::is_regular_file(
-        directory / "java_lang_interfaces.cpp"));
+    CHECK(std::filesystem::is_regular_file(directory / "java_lang.cpp"));
     for (const auto& name : classes) {
         CAPTURE(name);
         CHECK_FALSE(std::filesystem::exists(

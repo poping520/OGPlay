@@ -476,6 +476,9 @@ PumpJavaThreads(dexvm::Interpreter &vm, DexVmAndroidContext &context);
 // or departing activity and never ends the session.
 [[nodiscard]] bool SessionExitRequested(const DexVmAndroidContext& context);
 
+[[nodiscard]] dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
+    const std::shared_ptr<DexVmAndroidContext>& context);
+
 [[nodiscard]] std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
     const std::shared_ptr<DexVmAndroidContext>& context);
 

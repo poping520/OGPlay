@@ -46,7 +46,7 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
 [[nodiscard]] dx::VmThreadRuntime& ThreadRuntime(const Context& context);
 
 // Video view state shared by the VideoView intrinsics and the guest video
-// pump (support_video.cpp): lookup, playback-position math, and the
+// pump (android_media.cpp): lookup, playback-position math, and the
 // onCompletion listener invocation (fresh MediaPlayer argument, matching
 // device behaviour; returns a rendered message on guest exceptions).
 [[nodiscard]] DexVmAndroidContext::VideoViewState* VideoStateOf(
@@ -85,7 +85,6 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
 [[nodiscard]] dx::IntrinsicHandler EditableReplaceHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler GraphicsNoopHandler();
-[[nodiscard]] dx::IntrinsicHandler NetUnsupportedHandler();
 [[nodiscard]] dx::IntrinsicHandler PrefsEditHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsEditorCommitHandler(
     const Context& context);
@@ -102,9 +101,6 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
 [[nodiscard]] dx::IntrinsicHandler PrefsGetIntHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsGetLongHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsGetStringHandler(
-    const Context& context);
-[[nodiscard]] dx::IntrinsicHandler SaxParseUnsupportedHandler();
-[[nodiscard]] dx::IntrinsicHandler SaxSetContentHandlerHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderAddCallbackHandler(
     const Context& context);

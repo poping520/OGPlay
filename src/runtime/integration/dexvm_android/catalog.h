@@ -131,14 +131,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_widget_TextView(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_Toast(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_VideoView(const Context& context);
-[[nodiscard]] Decl Declare_java_net_HttpURLConnection(const Context& context);
-[[nodiscard]] Decl Declare_java_net_URL(const Context& context);
-[[nodiscard]] Decl Declare_java_net_URLConnection(const Context& context);
-[[nodiscard]] Decl Declare_java_net_URLEncoder(const Context& context);
-[[nodiscard]] Decl Declare_java_nio_charset_Charset(const Context& context);
-[[nodiscard]] Decl Declare_java_util_Locale(const Context& context);
-[[nodiscard]] Decl Declare_java_util_Timer(const Context& context);
-[[nodiscard]] Decl Declare_java_util_TimerTask(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLConfig(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context);
@@ -149,19 +141,5 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_javax_microedition_khronos_opengles_GL(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_opengles_GL10(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_opengles_GL10_Impl(const Context& context);
-[[nodiscard]] Decl Declare_javax_net_ssl_HostnameVerifier(const Context& context);
-[[nodiscard]] Decl Declare_javax_net_ssl_HttpsURLConnection(const Context& context);
-[[nodiscard]] Decl Declare_javax_net_ssl_KeyManager(const Context& context);
-[[nodiscard]] Decl Declare_javax_net_ssl_SSLContext(const Context& context);
-[[nodiscard]] Decl Declare_javax_net_ssl_SSLSocketFactory(const Context& context);
-[[nodiscard]] Decl Declare_javax_net_ssl_TrustManager(const Context& context);
-[[nodiscard]] Decl Declare_javax_net_ssl_X509TrustManager(const Context& context);
-[[nodiscard]] Decl Declare_javax_xml_parsers_SAXParser(const Context& context);
-[[nodiscard]] Decl Declare_javax_xml_parsers_SAXParserFactory(const Context& context);
-[[nodiscard]] Decl Declare_org_xml_sax_ContentHandler(const Context& context);
-[[nodiscard]] Decl Declare_org_xml_sax_InputSource(const Context& context);
-[[nodiscard]] Decl Declare_org_xml_sax_XMLReader_Impl(const Context& context);
-[[nodiscard]] Decl Declare_org_xml_sax_XMLReader(const Context& context);
-[[nodiscard]] Decl Declare_org_xml_sax_helpers_DefaultHandler(const Context& context);
 
 }  // namespace ogplay::runtime::android_intrinsics

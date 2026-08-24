@@ -82,7 +82,8 @@ struct AndroidVm final {
   explicit AndroidVm(InterpreterConfig config = {})
       : interpreter(
             [this]() -> DexClassLinker & {
-              auto catalog = CoreIntrinsicCatalog();
+              auto catalog = CoreIntrinsicCatalog(
+                  AndroidCoreIntrinsicServices(context));
               const auto android = ogplay::runtime::AndroidIntrinsicCatalog(context);
               catalog.insert(catalog.end(), android.begin(), android.end());
               linker.RegisterIntrinsics(catalog);
@@ -107,12 +108,18 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  CHECK(catalog.size() == 159);
+  CHECK(catalog.size() == 137);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
     CHECK_FALSE(declaration.descriptor.starts_with("Ljava/io/"));
     CHECK_FALSE(declaration.descriptor.starts_with("Ljava/util/zip/"));
+    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/net/"));
+    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/nio/"));
+    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/util/"));
+    CHECK_FALSE(declaration.descriptor.starts_with("Ljavax/net/"));
+    CHECK_FALSE(declaration.descriptor.starts_with("Ljavax/xml/"));
+    CHECK_FALSE(declaration.descriptor.starts_with("Lorg/xml/"));
     CHECK(descriptors.insert(declaration.descriptor).second);
     for (const auto& method : declaration.methods) {
       CHECK(static_cast<bool>(method.implementation));

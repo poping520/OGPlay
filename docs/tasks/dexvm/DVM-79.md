@@ -2,8 +2,8 @@
 
 ## 目标（一句话）
 
-把 `java.io` 类声明、流状态与文件语义从 Android integration 下沉到 DexVM core，按
-语义家族合并 handle TU，并仅通过注入的 guest VFS 暴露文件事实。
+把 `java.io`/`java.util.zip` 类声明、流与 ZIP 状态、文件语义从 Android integration
+下沉到 DexVM core，按语义家族合并 handle TU，并仅通过注入的 guest VFS 暴露文件事实。
 
 ## 依赖
 
@@ -20,6 +20,8 @@
   `java_io_files.cpp`。
 - File 系列只调用 core `IoFileSystem` 窄接口；Android session 通过 VFS adapter 注入。
 - `ZipInputStream` 改为通过 `IoRuntime` 接管源流，不读取 Android context 流表。
+- `ZipEntry`/`ZipInputStream` 聚合到 core `java_util_zip.cpp`，ZIP archive/entry/cursor
+  状态由 per-VM `ZipRuntime` 持有并参与 GC sweep。
 - 删除 `DexVmAndroidContext::streams/output_streams`、旧 session root 和分散 handle TU。
 
 ## 不做
@@ -32,7 +34,7 @@
 
 - isolated CoreIntrinsicCatalog 可使用 byte-array/data/buffer 流，不需要 Android catalog。
 - 注入 VFS 后 File I/O 与 native VFS 仍共享同一内容；无 VFS 明确失败。
-- ZipInputStream 经 `IoRuntime` 读取源流；GC sweep 不保活死亡 stream owner。
+- core-only ZipInputStream 经 `IoRuntime` 读取源流；GC sweep 不保活死亡 ZIP owner。
 - Windows Debug 构建、双后端 focused、file/VFS/ZIP 回归与 architecture gate 通过。
 
 ## 结果
@@ -43,5 +45,8 @@
   不再保存 streams/output_streams，ZipInputStream 只通过该 runtime 接管输入。
 - core-only 双后端 data stream、文件/VFS、ZIP adoption、双 close、catalog ownership
   与 GC 清扫均有机器测试。
+- `ZipEntry`/`ZipInputStream` 已从 Android catalog 删除并收敛到 core family TU；
+  `DexVmAndroidContext::zip_streams` 与 integration GC root 已删除，严格 loader ZIP
+  parser/inflate 由 per-VM `ZipRuntime` 封装。
 
 状态：完成。

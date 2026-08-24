@@ -743,6 +743,12 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
             state->io.Sweep(owner);
         },
         [](const VmObjectRef, const VmObjectRef) {}});
+    RegisterIntrinsicStateTable({
+        "zip", {},
+        [state = impl_.get()](const VmObjectRef owner) {
+            state->zip.Sweep(owner);
+        },
+        [](const VmObjectRef, const VmObjectRef) {}});
 
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
@@ -766,6 +772,10 @@ const CollectionRuntime& Interpreter::Collections() const {
 IoRuntime& Interpreter::IO() { return impl_->io; }
 
 const IoRuntime& Interpreter::IO() const { return impl_->io; }
+
+ZipRuntime& Interpreter::ZIP() { return impl_->zip; }
+
+const ZipRuntime& Interpreter::ZIP() const { return impl_->zip; }
 
 Interpreter::~Interpreter() = default;
 

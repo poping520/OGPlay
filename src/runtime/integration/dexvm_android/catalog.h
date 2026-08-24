@@ -139,8 +139,6 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_java_util_Locale(const Context& context);
 [[nodiscard]] Decl Declare_java_util_Timer(const Context& context);
 [[nodiscard]] Decl Declare_java_util_TimerTask(const Context& context);
-[[nodiscard]] Decl Declare_java_util_zip_ZipEntry(const Context& context);
-[[nodiscard]] Decl Declare_java_util_zip_ZipInputStream(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLConfig(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL(const Context& context);
 [[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context);

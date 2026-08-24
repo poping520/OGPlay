@@ -433,6 +433,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/class_loader_facade.cpp
     src/runtime/dexvm/collection_runtime.cpp
     src/runtime/dexvm/io_runtime.cpp
+    src/runtime/dexvm/zip_runtime.cpp
     src/runtime/dexvm/reflection.cpp
     src/runtime/dexvm/reflection_codec.cpp
     src/runtime/dexvm/class_linker.cpp

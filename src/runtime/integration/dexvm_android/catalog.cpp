@@ -140,8 +140,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_java_util_Locale(context),
         Declare_java_util_Timer(context),
         Declare_java_util_TimerTask(context),
-        Declare_java_util_zip_ZipEntry(context),
-        Declare_java_util_zip_ZipInputStream(context),
         Declare_javax_microedition_khronos_egl_EGLConfig(context),
         Declare_javax_microedition_khronos_opengles_GL10(context),
         Declare_javax_net_ssl_HostnameVerifier(context),

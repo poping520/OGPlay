@@ -10,6 +10,7 @@
 #include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/zip_runtime.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
@@ -82,7 +83,7 @@ TEST_CASE("DexVM GC root surface enumerates permanent static JNI and session roo
     REQUIRE(root_box.has_value());
     CHECK(fixture.linker.Class(*root_box).static_ref_slots ==
           std::vector<std::uint16_t>{0});
-    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 4);
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 5);
 }
 
 TEST_CASE("JNI GC roots include local and global but exclude weak global") {
@@ -148,12 +149,21 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
                 (*state)[clone.Value()] = found->second;
             }
         }});
-    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 5);
+    CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == 6);
 
     const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto garbage_io = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    const auto garbage_zip = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     fixture.vm.IO().SetInput(garbage_io, {{std::byte{0x2a}}, 0, false});
+    fixture.vm.ZIP().Open(
+        garbage_zip,
+        {std::byte{0x50}, std::byte{0x4b}, std::byte{0x05}, std::byte{0x06},
+         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
+         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
+         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
+         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
+         std::byte{0}, std::byte{0}});
     (*state)[owner.Value()] = child;
     fixture.vm.ListStorage(owner).push_back(child);
     auto& source_map = fixture.vm.Collections().EnsureMap(owner);
@@ -179,9 +189,11 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
     CHECK(marked.IsMarked(child));
     CHECK_FALSE(marked.IsMarked(clone));
     CHECK_FALSE(marked.IsMarked(garbage_io));
+    CHECK_FALSE(marked.IsMarked(garbage_zip));
     static_cast<void>(fixture.vm.SweepGarbage(marked));
     CHECK_FALSE(state->contains(clone.Value()));
     CHECK(fixture.vm.IO().FindInput(garbage_io) == nullptr);
+    CHECK_FALSE(fixture.vm.ZIP().Contains(garbage_zip));
 }
 
 TEST_CASE("DexVM and JNI share one object array identity and element store") {

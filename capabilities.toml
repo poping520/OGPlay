@@ -498,7 +498,7 @@ note = "ADR-0020 SBX-7 让 run-apk 默认按 package 打开持久沙盒（根为
 [dexvm.file_io_vfs]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; Dungeon Hunter exact 240-frame local run; Asphalt 5 exact title-flow gate"
-note = "ADR-0020 SBX-5 使 java.io File 家族与 native fopen 共用唯一 VFS/sandbox 世界。DVM-79 又把 File/FileInputStream/FileOutputStream/FileReader/FileWriter handle 和全部 input/output side state 从 Android integration 下沉到 core IoRuntime；core 只依赖 IoFileSystem 窄接口，session 以 DexVmIoVfsAdapter 注入具体 VFS，无文件系统明确失败。输出流仍为整文件内存缓冲，在 flush/close 时短期打开 descriptor 整体发布；File.list 空目录、wrapper single-owner adoption、幂等双 close 与跨会话持久均有回归。"
+note = "ADR-0020 SBX-5 使 java.io File 家族与 native fopen 共用唯一 VFS/sandbox 世界。DVM-79 又把 File/FileInputStream/FileOutputStream/FileReader/FileWriter handle 和全部 input/output side state 从 Android integration 下沉到 core IoRuntime；core 只依赖 IoFileSystem 窄接口，session 以 DexVmIoVfsAdapter 注入具体 VFS，无文件系统明确失败。续作把 ZipEntry/ZipInputStream 与 archive side state 一并迁入 core ZipRuntime，输入经 IoRuntime single-owner 接管，严格解析/inflate 复用 loader，死亡 owner 由 GC sweep 清扫。输出流仍为整文件内存缓冲，在 flush/close 时短期打开 descriptor 整体发布；File.list 空目录、wrapper/ZIP adoption、幂等双 close 与跨会话持久均有回归。"
 
 [runtime.preferences_persistence]
 status = "complete"
@@ -1293,7 +1293,7 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File 家族，并将 20 个 Android java.io handle TU 收敛为 core 的 streams/files 两个 family TU；流状态受 GC sweep，文件仅经注入 VFS。Tree/Sorted/Navigable、并发集合、完整 Collections/Arrays、serialization/charset/FileDescriptor/NIO 仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File 家族，将 20 个 Android java.io handle TU 收敛为 core 的 streams/files 两个 family TU；续作又以 ZipRuntime/java_util_zip.cpp 收口 ZipEntry/ZipInputStream、严格 loader ZIP 状态与 GC sweep。文件仅经注入 VFS。Tree/Sorted/Navigable、并发集合、完整 Collections/Arrays、serialization/charset/FileDescriptor/NIO 仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
 
 [dexvm.jni_bridge]
 status = "complete"

@@ -40,6 +40,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
     AppendJavaUtilCollections(catalog);
     AppendJavaIoStreams(catalog);
     AppendJavaIoFiles(catalog);
+    AppendJavaUtilZip(catalog);
 
     AppendJavaLangThrowables(catalog);
 

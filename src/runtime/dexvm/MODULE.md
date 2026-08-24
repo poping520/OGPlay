@@ -75,6 +75,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   adoption side state，并通过具名 intrinsic state table 随死亡 owner 清扫。File 家族只
   使用装配方注入的 core `IoFileSystem` 窄接口；integration adapter 才可访问具体 VFS。
   无文件系统时明确失败；流 wrapper 为 single-owner transfer，clone 不复制游标或缓冲。
+- `ZipRuntime`（DVM-79）：统一拥有 java.util.zip archive、当前 entry bytes/cursor 与
+  close 状态；复用 loader 严格 ZIP parser/inflate，并由 intrinsic side-table hook 清扫。
 - `java.lang.Thread` 对照 pinned libcore `Thread.java`/`VMThread.java` 与 Dalvik
   `Thread.cpp`/`Sync.cpp`：root context 具有稳定 id=1 `main` Thread 强根；构造时
   分配 per-VM stable ID；`start()` 经实际 Thread class vtable 虚派发
@@ -258,7 +260,8 @@ family 与接口 family，分别位于 `intrinsics/java_lang_throwables.cpp`、
 `intrinsics/java_lang_primitive_wrappers.cpp` 与
 `intrinsics/java_lang_interfaces.cpp`；Java class 仍是一等逻辑单位，
 family 内类级 `Declare_*()` 均为 TU-private，catalog 只调用对应 `Append*()`。
-`java_io_streams.cpp`/`java_io_files.cpp` 与 `java_util_collections.cpp` 也按语义 family
+`java_io_streams.cpp`/`java_io_files.cpp`、`java_util_zip.cpp` 与
+`java_util_collections.cpp` 也按语义 family
 聚合。family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自注册。
 `shared.h` 只放跨类内部 helper。原集中式 core catalog 与三个 handler 文件已
 删除。pinned Luni `java.lang` 的确定性 public/protected 顶层 class shape 位于

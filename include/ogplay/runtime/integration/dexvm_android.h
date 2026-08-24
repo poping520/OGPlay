@@ -115,20 +115,6 @@ struct DexVmAndroidContext final {
     dexvm::VmObjectRef egl_config_chooser;
     dexvm::VmObjectRef content_view;
 
-    // ZipInputStream state: the adopted source bytes go through the strict
-    // ZIP reader once; entries inflate one at a time as the title walks
-    // getNextEntry/read.
-    struct ZipStream final {
-        std::vector<std::byte> raw;
-        loader::ApkArchive archive;
-        std::size_t next_entry{};
-        std::vector<std::byte> entry_bytes;
-        std::size_t cursor{};
-        bool entry_open{};
-        bool closed{};
-    };
-    std::unordered_map<std::uint32_t, ZipStream> zip_streams;
-
     // Shared guest filesystem: the single world view for Java File I/O and
     // native fopen alike (external mounts, APK assets, and the per-title
     // save sandbox when one is attached). ADR-0020 retired the separate

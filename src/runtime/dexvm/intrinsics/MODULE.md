@@ -29,6 +29,10 @@ family TU：前者聚合 stream/reader/filter/buffer/byte-array/data handle，�
 File 与四个文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；
 流状态和文件访问只委托 per-VM `IoRuntime`，不得回读 Android session context。
 
+`java_util_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
+接管，archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate
+与 CRC 继续复用 loader 的严格实现。该 family 不得在 Android context 恢复 ZIP side map。
+
 `java_lang_interfaces.cpp` 覆盖 pinned libcore `java.lang` 顶层 8 个
 interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持
 不变，其余接口方法（含 `Readable.read(CharBuffer)`）为显式

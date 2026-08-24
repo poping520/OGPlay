@@ -632,6 +632,8 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
           });
     CHECK(signatures("Ljava/io/File;").contains(
         {"list", "()[Ljava/lang/String;"}));
+    CHECK(signatures("Ljava/util/zip/ZipInputStream;").contains(
+        {"getNextEntry", "()Ljava/util/zip/ZipEntry;"}));
 }
 
 TEST_CASE("dormant classes with missing hierarchy link only when reached") {

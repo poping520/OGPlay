@@ -47,9 +47,10 @@
   exact/强制回收 golden 已稳定；PVZ NA 的 liblog/OpenGL boundary 阻断已闭合。
   DVM-70..74 闭合 Window/config、JNI identity、目录/asset、GLSurfaceView policy 与
   IntentFilter；DVM-75..77 交付 String.format、有界致命栈与 PackageManager P0。
-  DVM-78 已用 CollectionRuntime 发布常用集合层级；DVM-79 又把 20 个 Android java.io
-  handle TU 收敛为 core 的 streams/files 两个 family TU，以 per-VM IoRuntime 统一流状态、
-  GC sweep 与注入 VFS 文件事实。Tree/并发集合、serialization/charset/NIO 仍 deferred。
+  DVM-78 已用 CollectionRuntime 发布常用集合；DVM-79 把 20 个 Android java.io handle
+  收敛为 core streams/files，以 IoRuntime 统一流、GC 与 VFS；续作把 ZipEntry/
+  ZipInputStream 收敛到 core `java_util_zip.cpp`/ZipRuntime。Tree/并发集合、serialization/
+  charset/NIO 仍 deferred。
 ## 验证基线
 
 - BND-24 full CTest 933/933（architecture 5/5）；DVM-75 focused 5/5，
@@ -62,8 +63,8 @@
   6 层 guest Java 调用栈。
 - DVM-77 PackageManager/Manifest focused 13/13（1227 assertions）；Release PVZ 原命令
   越过旧 fault 并固定 `LinkedHashMap`，无 `ogplay` 残留。
-- DVM-79 Windows Debug 全目标构建通过；core-only 双后端 I/O、file/VFS/ZIP、GC、catalog
-  ownership 与 architecture 复验全绿。全量 955 项为 954/955，唯一失败仍是未触及的
+- DVM-79 Windows Debug 全目标构建通过；core-only I/O/VFS/ZIP、GC、catalog 与 architecture
+  复验全绿；ZIP 续作定向 8/8。全量 955 项为 954/955，唯一失败仍是未触及的
   liblog tag（期望 `PVZ`、实际为空）；按范围未运行 PVZ/title gate。
 
 ## 下一步

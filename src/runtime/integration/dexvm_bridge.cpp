@@ -168,7 +168,6 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     // Host side state keyed by a VM owner is logically part of that owner.
     // Keep the owner live until the explicit close/recycle/lifecycle path
     // removes its state; this closes the pre-GC raw-handle compatibility gap.
-    key_root(context.zip_streams);
     key_root(context.preference_names);
     key_root(context.editable_owner);
     key_root(context.telephony_listeners);

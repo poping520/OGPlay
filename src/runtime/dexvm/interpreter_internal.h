@@ -15,6 +15,7 @@
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
+#include "ogplay/runtime/dexvm/zip_runtime.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/generated/opcode_table.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
@@ -110,6 +111,7 @@ public:
     std::unordered_map<std::uint32_t, std::u16string> builders;
     CollectionRuntime collections;
     IoRuntime io;
+    ZipRuntime zip;
     std::unordered_map<std::string, std::string> system_properties{
         {"file.separator", "/"},
         {"line.separator", "\n"},

@@ -14,8 +14,8 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
 `DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
 通用 `java.io` handle 与流状态属于 DexVM core；integration 装配只通过
-`DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`ZipInputStream` 可保留 Android archive 集成状态，但源字节必须从
-`IoRuntime` 接管，不得恢复 context stream/output map。
+`DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`java.util.zip` handle 与 archive
+状态同样属于 DexVM core 的 `ZipRuntime`；不得恢复 context stream/output/zip map。
 
 javax EGL/GL façade 遵循 DVM-31：`javax_microedition_khronos_egl.cpp` 聚合该
 家族的 10 个 Java handle 声明、handler、唯一

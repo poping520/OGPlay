@@ -115,14 +115,18 @@ struct FileVm final {
     DexVmIoVfsAdapter io_file_system;
     Interpreter interpreter;
 
-    explicit FileVm(SandboxStore* sandbox = nullptr)
+    explicit FileVm(SandboxStore* sandbox = nullptr,
+                    const bool include_android_catalog = true)
         : model(strings, arrays),
           context(std::make_shared<DexVmAndroidContext>()),
           io_file_system(vfs),
           interpreter(
-              [this]() -> DexClassLinker& {
+              [this, include_android_catalog]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+                  if (include_android_catalog) {
+                      linker.RegisterIntrinsics(
+                          AndroidIntrinsicCatalog(context));
+                  }
                   linker.Link();
                   return linker;
               }(),
@@ -436,7 +440,7 @@ TEST_CASE("DataOutputStream and wrapped FileOutputStream share one close state")
 }
 
 TEST_CASE("ZipInputStream adopts core input bytes and reads the entry") {
-    FileVm vm;
+    FileVm vm(nullptr, false);
     const std::vector<std::byte> payload{std::byte{'o'}, std::byte{'k'}};
     const auto archive = MakeStoredZip("save.dat", payload);
     const auto array_class = vm.linker.ResolveDescriptor("[B");

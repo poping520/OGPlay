@@ -19,6 +19,7 @@
 namespace ogplay::runtime::dexvm {
 
 class CollectionRuntime;
+class IoRuntime;
 
 // Interpreter kernel (02 §7..§9): tagged frames, table dispatch, three-way
 // invoke routing (interpreted / intrinsic / native bridge), real exception
@@ -359,6 +360,8 @@ public:
 
     [[nodiscard]] CollectionRuntime& Collections();
     [[nodiscard]] const CollectionRuntime& Collections() const;
+    [[nodiscard]] IoRuntime& IO();
+    [[nodiscard]] const IoRuntime& IO() const;
 
     // Intrinsic instance side state.
     [[nodiscard]] std::u16string& BuilderBuffer(VmObjectRef instance);

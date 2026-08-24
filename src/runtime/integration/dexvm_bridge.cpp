@@ -13,6 +13,7 @@
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/integration/dexvm_io_vfs.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -167,8 +168,6 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     // Host side state keyed by a VM owner is logically part of that owner.
     // Keep the owner live until the explicit close/recycle/lifecycle path
     // removes its state; this closes the pre-GC raw-handle compatibility gap.
-    key_root(context.streams);
-    key_root(context.output_streams);
     key_root(context.zip_streams);
     key_root(context.preference_names);
     key_root(context.editable_owner);
@@ -205,6 +204,7 @@ public:
 
     dx::DexClassLinker linker;
     std::unique_ptr<dx::JavaObjectModel> model;
+    std::unique_ptr<DexVmIoVfsAdapter> io_file_system;
     std::unique_ptr<dx::Interpreter> vm;
     // Declared after vm so destruction stops every guest Java thread before
     // the interpreter and object model go away.
@@ -808,6 +808,11 @@ DexVmGuestBridge::DexVmGuestBridge(
 
     impl_->vm = std::make_unique<dx::Interpreter>(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
+    if (android_context != nullptr && android_context->vfs != nullptr) {
+        impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(
+            *android_context->vfs);
+        impl_->vm->IO().SetFileSystem(impl_->io_file_system.get());
+    }
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
     session.Environment().SetMonitorHooks(JniMonitorHooks{

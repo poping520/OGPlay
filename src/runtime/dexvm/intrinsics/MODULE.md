@@ -24,6 +24,11 @@ Vector/Stack/Hashtable 也迁入同一 family。handler 只做 Java 参数/异�
 `CollectionRuntime`。Tree/Sorted/Navigable、并发集合和完整 Collections/Arrays 算法不在
 该 family 范围内，缺失能力必须继续明确失败。
 
+`java_io_streams.cpp` 与 `java_io_files.cpp` 是 pinned libcore `java.io` 的两个语义
+family TU：前者聚合 stream/reader/filter/buffer/byte-array/data handle，后者聚合
+File 与四个文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；
+流状态和文件访问只委托 per-VM `IoRuntime`，不得回读 Android session context。
+
 `java_lang_interfaces.cpp` 覆盖 pinned libcore `java.lang` 顶层 8 个
 interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持
 不变，其余接口方法（含 `Readable.read(CharBuffer)`）为显式

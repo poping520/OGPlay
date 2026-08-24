@@ -622,8 +622,16 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     CHECK(signatures("Ljava/lang/Runnable;") ==
           std::set<std::pair<std::string, std::string>>{{"run", "()V"}});
     CHECK(signatures("Ljava/lang/StringBuilder;").size() == 17U);
-    CHECK(signatures("Ljava/lang/String;").size() == 43U);
+    CHECK(signatures("Ljava/lang/String;").size() == 44U);
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);
+    CHECK(signatures("Ljava/io/InputStreamReader;") ==
+          std::set<std::pair<std::string, std::string>>{
+              {"<init>", "(Ljava/io/InputStream;)V"},
+              {"<init>",
+               "(Ljava/io/InputStream;Ljava/nio/charset/Charset;)V"},
+          });
+    CHECK(signatures("Ljava/io/File;").contains(
+        {"list", "()[Ljava/lang/String;"}));
 }
 
 TEST_CASE("dormant classes with missing hierarchy link only when reached") {

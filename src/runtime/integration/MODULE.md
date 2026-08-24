@@ -13,14 +13,10 @@ preflight、headless/NativeActivity runner 与累计 contract。低层能力分�
 位于 runtime 顶层,可依赖 jni_guest、boundary、framework、jni、bionic、syscall、
 execution、vfs 及其下层模块。任何下层模块均不得反向依赖 integration。
 
-`java.io.File` 族（`dexvm_android/java_io_File*.cpp`）全部经共享 `VirtualFileSystem`
-解析：Java 侧写入与 native `fopen` 看到同一个世界，attach 沙盒后自动跨会话
-持久（ADR-0020）。`File.mkdirs` 逐级真实建目录、真实返回 false——此前无条件
-返回 true 且不建任何目录，是伪成功。`exists`/`isDirectory`/`length`/`delete`/
-`createNewFile` 一律取 VFS 事实；只读层与非空目录的删除真实失败。会话内存
-overlay `memory_files` 已废除。`File.list` 对空目录返回空数组、仅对不可列举路径
-返回 null。输出流当前是整文件内存缓冲，flush/close 时短期打开 VFS descriptor
-发布；包装流接管同一 record，使 DataOutputStream 与底层流双 close 幂等。
+DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
+`VirtualFileSystem` 之间的唯一桥：Java File 族与 native `fopen` 因此仍看到同一个
+沙盒世界，而 dexvm 不反向依赖 integration/VFS。adapter 保留 mkdir/list/delete、
+整文件 read/write 与 flush/close 的既有真实语义，并在异常出口关闭临时 descriptor。
 
 ## 不变量
 

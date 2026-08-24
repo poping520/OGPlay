@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include "ogplay/loader/apk.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 
 #include "catalog.h"
 
@@ -21,19 +22,13 @@ Decl Declare_java_util_zip_ZipInputStream(const Context& context) {
     };
     builder.Constructor("(Ljava/io/InputStream;)V",
         [context](dx::IntrinsicContext& call) {
-            const auto target = call.arguments[0].ref;
-            const auto found = context->streams.find(target.Value());
-            if (found == context->streams.end() || found->second.closed) {
-                throw dx::VmJavaThrow{"Ljava/io/IOException;",
-                                      "wrapped stream is closed or was never "
-                                      "opened"};
-            }
             DexVmAndroidContext::ZipStream zip;
-            auto& source = found->second;
-            zip.raw.assign(source.bytes.begin() +
-                               static_cast<std::ptrdiff_t>(source.cursor),
-                           source.bytes.end());
-            context->streams.erase(target.Value());
+            try {
+                zip.raw = call.vm.IO().TakeRemainingInput(
+                    call.arguments[0].ref);
+            } catch (const dx::IoRuntimeError& error) {
+                throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+            }
             try {
                 zip.archive = loader::ParseApkArchive(zip.raw);
             } catch (const std::exception& error) {

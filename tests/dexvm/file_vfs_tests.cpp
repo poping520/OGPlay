@@ -5,8 +5,11 @@
 
 #include <doctest/doctest.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,8 +18,10 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/integration/dexvm_io_vfs.h"
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
@@ -28,6 +33,55 @@ using namespace ogplay::runtime::dexvm;
 constexpr const char* kPackage = "com.example.game";
 const std::vector<std::string> kWritableRoots{"/data/data/com.example.game",
                                               "/sdcard"};
+
+void Append16(std::vector<std::byte>& bytes, const std::uint16_t value) {
+    bytes.push_back(static_cast<std::byte>(value & 0xffU));
+    bytes.push_back(static_cast<std::byte>((value >> 8U) & 0xffU));
+}
+
+void Append32(std::vector<std::byte>& bytes, const std::uint32_t value) {
+    for (unsigned shift = 0; shift < 32; shift += 8) {
+        bytes.push_back(static_cast<std::byte>((value >> shift) & 0xffU));
+    }
+}
+
+std::vector<std::byte> MakeStoredZip(const std::string_view name,
+                                     const std::span<const std::byte> payload) {
+    std::uint32_t crc = 0xffffffffU;
+    for (const auto byte : payload) {
+        crc ^= std::to_integer<std::uint8_t>(byte);
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            const auto mask = 0U - (crc & 1U);
+            crc = (crc >> 1U) ^ (0xedb88320U & mask);
+        }
+    }
+    crc = ~crc;
+    const auto append_name = [&](std::vector<std::byte>& bytes) {
+        for (const auto value : name) {
+            bytes.push_back(static_cast<std::byte>(value));
+        }
+    };
+    std::vector<std::byte> bytes;
+    Append32(bytes, 0x04034b50U); Append16(bytes, 20); Append16(bytes, 0);
+    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0);
+    Append32(bytes, crc); Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append16(bytes, static_cast<std::uint16_t>(name.size())); Append16(bytes, 0);
+    append_name(bytes); bytes.insert(bytes.end(), payload.begin(), payload.end());
+    const auto central_offset = static_cast<std::uint32_t>(bytes.size());
+    Append32(bytes, 0x02014b50U); Append16(bytes, 20); Append16(bytes, 20);
+    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0);
+    Append32(bytes, crc); Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append32(bytes, static_cast<std::uint32_t>(payload.size()));
+    Append16(bytes, static_cast<std::uint16_t>(name.size()));
+    Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0); Append16(bytes, 0);
+    Append32(bytes, 0); Append32(bytes, 0); append_name(bytes);
+    const auto central_size = static_cast<std::uint32_t>(bytes.size()) - central_offset;
+    Append32(bytes, 0x06054b50U); Append16(bytes, 0); Append16(bytes, 0);
+    Append16(bytes, 1); Append16(bytes, 1); Append32(bytes, central_size);
+    Append32(bytes, central_offset); Append16(bytes, 0);
+    return bytes;
+}
 
 struct TemporaryRoot final {
     std::filesystem::path path;
@@ -58,11 +112,13 @@ struct FileVm final {
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context;
     VirtualFileSystem vfs;
+    DexVmIoVfsAdapter io_file_system;
     Interpreter interpreter;
 
     explicit FileVm(SandboxStore* sandbox = nullptr)
         : model(strings, arrays),
           context(std::make_shared<DexVmAndroidContext>()),
+          io_file_system(vfs),
           interpreter(
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
@@ -72,6 +128,7 @@ struct FileVm final {
               }(),
               model, nullptr, ledger, {}) {
         context->vfs = &vfs;
+        interpreter.IO().SetFileSystem(&io_file_system);
         context->package_name = kPackage;
         interpreter.SetLogger(&logger);
         if (sandbox != nullptr) vfs.AttachSandbox(*sandbox, kWritableRoots);
@@ -376,6 +433,38 @@ TEST_CASE("DataOutputStream and wrapped FileOutputStream share one close state")
     CHECK(static_cast<unsigned char>(saved[0]) == 0);
     CHECK(static_cast<unsigned char>(saved[1]) == 4);
     CHECK(saved.substr(2) == "save");
+}
+
+TEST_CASE("ZipInputStream adopts core input bytes and reads the entry") {
+    FileVm vm;
+    const std::vector<std::byte> payload{std::byte{'o'}, std::byte{'k'}};
+    const auto archive = MakeStoredZip("save.dat", payload);
+    const auto array_class = vm.linker.ResolveDescriptor("[B");
+    const auto source_array = vm.model.NewPrimitiveArray(
+        array_class, JniPrimitiveKind::byte,
+        static_cast<JniSize>(archive.size()));
+    vm.model.WriteByteRegion(source_array, 0, archive);
+    const auto source =
+        vm.interpreter.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
+    static_cast<void>(vm.CallOn(source, "<init>", "([B)V",
+                                {VmValue::Ref(source_array)}));
+    const auto zip =
+        vm.interpreter.NewIntrinsicInstance("Ljava/util/zip/ZipInputStream;");
+    static_cast<void>(vm.CallOn(zip, "<init>", "(Ljava/io/InputStream;)V",
+                                {VmValue::Ref(source)}));
+    CHECK(vm.interpreter.IO().FindInput(source) == nullptr);
+
+    const auto entry = vm.CallOn(
+        zip, "getNextEntry", "()Ljava/util/zip/ZipEntry;").ref;
+    REQUIRE(entry.IsValid());
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+              entry, "getName", "()Ljava/lang/String;").ref) == "save.dat");
+    const auto output = vm.model.NewPrimitiveArray(
+        array_class, JniPrimitiveKind::byte, 2);
+    CHECK(vm.CallOn(zip, "read", "([BII)I",
+                    {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(2)})
+              .AsInt() == 2);
+    CHECK(vm.model.ReadByteRegion(output, 0, 2) == payload);
 }
 
 TEST_CASE("Java file writes survive into the next session") {

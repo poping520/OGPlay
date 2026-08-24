@@ -8,6 +8,7 @@
 #include "ogplay/runtime/vfs/vfs.h"
 
 #include "shared.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 
 namespace ogplay::runtime {
 
@@ -69,38 +70,18 @@ void GuestLog(dx::IntrinsicContext& call, const core::LogLevel level,
     logger->Write(level, "runtime.dexvm.guest", line);
 }
 
-[[nodiscard]] DexVmAndroidContext::Stream& StreamOf(
-    dx::IntrinsicContext& call, const Context& context) {
-    const auto found = context->streams.find(call.receiver.Value());
-    if (found == context->streams.end() || found->second.closed) {
-        throw dx::VmJavaThrow{"Ljava/io/IOException;",
-                              "stream is closed or was never opened"};
-    }
-    return found->second;
-}
-
 std::string FilePathOf(dx::IntrinsicContext& call,
                        const dx::VmObjectRef file) {
     const auto slots = call.vm.Model().InstanceSlots(file);
     return call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits));
 }
 
-DexVmAndroidContext::OutputStream& OutputOf(dx::IntrinsicContext& call,
-                                            const Context& context) {
-    const auto found = context->output_streams.find(call.receiver.Value());
-    if (found == context->output_streams.end()) {
-        throw dx::VmJavaThrow{"Ljava/io/IOException;",
-                              "output stream was never opened"};
-    }
-    return found->second;
-}
-
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
                            std::vector<std::byte> bytes,
                            const char* descriptor) {
     const auto instance = call.vm.NewIntrinsicInstance(descriptor);
-    context->streams[instance.Value()] =
-        DexVmAndroidContext::Stream{std::move(bytes), 0, false};
+    call.vm.IO().SetInput(instance, {std::move(bytes), 0, false});
+    static_cast<void>(context);
     return instance;
 }
 
@@ -116,69 +97,6 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
                               "APK entry is unavailable: " + path + " (" +
                                   error.what() + ")"};
     }
-}
-
-[[nodiscard]] std::optional<std::vector<std::byte>> VfsReadAll(
-    const Context& context, const std::string& path) {
-    if (context->vfs == nullptr) return std::nullopt;
-    try {
-        const auto info = context->vfs->Stat(path);
-        const auto descriptor =
-            context->vfs->Open(path, VfsOpenOptions{.read = true});
-        std::vector<std::byte> bytes(info.size);
-        std::size_t cursor = 0;
-        while (cursor < bytes.size()) {
-            const auto got = context->vfs->Read(
-                descriptor, std::span(bytes).subspan(cursor));
-            if (got == 0) break;
-            cursor += got;
-        }
-        context->vfs->Close(descriptor);
-        bytes.resize(cursor);
-        return bytes;
-    } catch (const VfsError&) {
-        return std::nullopt;
-    }
-}
-
-// The File family goes through the shared VFS so a Java save and a native
-// fopen see one world, and so the sandbox overlay persists both (ADR-0020).
-// A missing VFS is a host assembly defect, not a guest-visible gap.
-[[nodiscard]] VirtualFileSystem& RequireVfs(const Context& context) {
-    if (context->vfs == nullptr) {
-        throw dx::DexVmError(
-            dx::DexVmErrorReason::internal_invariant,
-            "the android platform context has no guest filesystem");
-    }
-    return *context->vfs;
-}
-
-// close() is a sandbox flush point, so this is where a save reaches disk.
-void VfsWriteAll(const Context& context, const std::string& path,
-                 const std::span<const std::byte> bytes) {
-    auto& vfs = RequireVfs(context);
-    try {
-        const auto descriptor = vfs.Open(
-            path, VfsOpenOptions{.write = true, .create = true,
-                                 .truncate = true});
-        std::size_t cursor = 0;
-        while (cursor < bytes.size()) {
-            cursor += vfs.Write(descriptor, bytes.subspan(cursor));
-        }
-        vfs.Close(descriptor);
-    } catch (const VfsError& error) {
-        throw dx::VmJavaThrow{"Ljava/io/IOException;",
-                              "cannot write " + path + ": " + error.what()};
-    }
-}
-
-void FlushOutput(dx::IntrinsicContext& call, const Context& context,
-                 const std::uint32_t handle) {
-    const auto found = context->output_streams.find(handle);
-    if (found == context->output_streams.end()) return;
-    VfsWriteAll(context, found->second.path, found->second.bytes);
-    found->second.closed = true;
-    static_cast<void>(call);
 }
 
 dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&) {

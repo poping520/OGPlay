@@ -2,7 +2,7 @@
 
 ## 职责
 
-提供 dex_activity 生命周期使用的 android.*、相关 java.* 与 javax.* 平台
+提供 dex_activity 生命周期使用的 android.*、Android 相关 java.* 与 javax.* 平台
 intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚合到一个源文件，
 每个类仍导出独立的 `Declare_<类名>(context)`，返回已经直接持有 handler 的
 不可变声明。Java handle 家族聚合文件用于控制翻译单元数量，不受项目通常的
@@ -13,6 +13,9 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 `PrefsEditHandler(context)`）形式提供，捕获会话状态的工厂显式接收 context。
 资源、VFS、音频、视频、widget、线程与设备事实全部来自显式传入的
 `DexVmAndroidContext`，不得读取游戏身份或另建宿主状态。
+通用 `java.io` handle 与流状态属于 DexVM core；integration 装配只通过
+`DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`ZipInputStream` 可保留 Android archive 集成状态，但源字节必须从
+`IoRuntime` 接管，不得恢复 context stream/output map。
 
 javax EGL/GL façade 遵循 DVM-31：`javax_microedition_khronos_egl.cpp` 聚合该
 家族的 10 个 Java handle 声明、handler、唯一
@@ -32,7 +35,8 @@ ANGLE surface；它不创建、替换或终止第二套 EGL surface。
   或按厂商聚合的实现文件。
 - 中性占位只能通过 `NeutralHandler(shorty)` 或 `PlaceholderString()` 显式生成；
   引用返回值不能擅自伪造对象。
-- `DexVmAndroidContext` 是唯一会话状态入口，handler 行为与迁移前保持一致。
+- Android 平台 handler 的会话状态只从 `DexVmAndroidContext` 进入；core Java handler
+  不得依赖该 context，迁移行为必须保持一致。
 - DVM-77 的 PackageManager 只发布当前 APK：`getApplicationInfo/getPackageInfo` 消费
   sealed Manifest 事实，`getApplicationLabel` 解析 literal/resource label，
   `checkPermission/hasSystemFeature` 只读取显式 granted/feature 集合。未知包、未知 flags

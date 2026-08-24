@@ -417,6 +417,7 @@ add_library(ogplay_runtime
     src/runtime/integration/android_link_preflight.cpp
     ${OGPLAY_DEXVM_ANDROID_SOURCES}
     src/runtime/integration/dexvm_bridge.cpp
+    src/runtime/integration/dexvm_io_vfs.cpp
     src/runtime/integration/host_image_decode.cpp
     src/runtime/jni_guest/jni_guest_abi.cpp
     src/runtime/jni_guest/jni_guest_bindings.cpp
@@ -431,6 +432,7 @@ add_library(ogplay_runtime
     src/runtime/dexvm/class_name_codec.cpp
     src/runtime/dexvm/class_loader_facade.cpp
     src/runtime/dexvm/collection_runtime.cpp
+    src/runtime/dexvm/io_runtime.cpp
     src/runtime/dexvm/reflection.cpp
     src/runtime/dexvm/reflection_codec.cpp
     src/runtime/dexvm/class_linker.cpp

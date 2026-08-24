@@ -14,6 +14,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 
 namespace {
@@ -230,6 +231,23 @@ TEST_CASE("dexvm P1 collections use Java string equality for keys") {
     ExpectInt(vm.CallStatic("collectionExceptions", "()I"), 7);
     ExpectInt(vm.CallStatic("collectionAbstractSubclass", "()I"), 0);
   }
+}
+
+TEST_CASE("dexvm core java.io streams work without the Android catalog") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        InterpreterConfig config;
+        config.backend = backend;
+        Vm vm(config);
+        CHECK_THROWS_AS(
+            static_cast<void>(vm.interpreter.IO().CreateFile("/direct.dat")),
+            IoRuntimeError);
+        ExpectInt(vm.CallStatic("coreIoReadInt", "()I"), 42);
+        ExpectThrow(
+            vm,
+            vm.CallStatic("coreIoCreateWithoutFileSystem", "()Z"),
+            "Ljava/io/IOException;", "guest filesystem is unavailable");
+    }
 }
 
 TEST_CASE("dexvm P1 System.arraycopy and Math") {

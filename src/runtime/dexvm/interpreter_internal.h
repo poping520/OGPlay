@@ -14,6 +14,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/collection_runtime.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/generated/opcode_table.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
@@ -108,6 +109,7 @@ public:
     std::unordered_map<std::uint32_t, ThrowableState> throwables;
     std::unordered_map<std::uint32_t, std::u16string> builders;
     CollectionRuntime collections;
+    IoRuntime io;
     std::unordered_map<std::string, std::string> system_properties{
         {"file.separator", "/"},
         {"line.separator", "\n"},

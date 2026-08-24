@@ -12,19 +12,6 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
-// FileReader/FileInputStream constructors share one VFS-backed open path.
-dx::VmValue OpenInput(const Context& context, dx::IntrinsicContext& call,
-                      const std::string& path) {
-    auto bytes = VfsReadAll(context, path);
-    if (!bytes.has_value()) {
-        throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
-                              "file not found: " + path};
-    }
-    context->streams[call.receiver.Value()] =
-        DexVmAndroidContext::Stream{std::move(*bytes), 0, false};
-    return dx::VmValue::Void();
-}
-
 [[nodiscard]] ui::UiNodeId OwnerTextNode(const Context& context,
                                          dx::IntrinsicContext& call) {
     const auto found = context->editable_owner.find(call.receiver.Value());
@@ -93,33 +80,6 @@ template <typename ValueType>
 
 }  // namespace
 
-dx::IntrinsicHandler ByteOutputWriteRangeHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto found =
-            context->output_streams.find(call.receiver.Value());
-        if (found == context->output_streams.end() ||
-            found->second.closed) {
-            throw dx::VmJavaThrow{"Ljava/io/IOException;",
-                                  "output stream is closed"};
-        }
-        auto& model = call.vm.Model();
-        const auto array = call.arguments[0].ref;
-        const auto offset = call.arguments[1].AsInt();
-        const auto length = call.arguments[2].AsInt();
-        if (offset < 0 || length < 0 ||
-            static_cast<std::int64_t>(offset) + length >
-                model.ArrayLength(array)) {
-            throw dx::VmJavaThrow{
-                "Ljava/lang/IndexOutOfBoundsException;",
-                "write range exceeds the source array"};
-        }
-        const auto bytes = model.ReadByteRegion(array, offset, length);
-        found->second.bytes.insert(found->second.bytes.end(), bytes.begin(),
-                                   bytes.end());
-        return dx::VmValue::Void();
-    });
-}
-
 dx::IntrinsicHandler EditableClearHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         const auto node = OwnerTextNode(context, call);
@@ -166,62 +126,6 @@ dx::IntrinsicHandler EditableReplaceHandler(const Context& context) {
     });
 }
 
-dx::IntrinsicHandler FileOutputCloseHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        FlushOutput(call, context, call.receiver.Value());
-        return dx::VmValue::Void();
-    });
-}
-
-dx::IntrinsicHandler FileOutputFlushHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        // Bytes become visible to readers at flush (and again at close).
-        const auto found =
-            context->output_streams.find(call.receiver.Value());
-        if (found != context->output_streams.end() &&
-            !found->second.closed) {
-            VfsWriteAll(context, found->second.path, found->second.bytes);
-        }
-        return dx::VmValue::Void();
-    });
-}
-
-dx::IntrinsicHandler FileOutputWriteBytesHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto found =
-            context->output_streams.find(call.receiver.Value());
-        if (found == context->output_streams.end() ||
-            found->second.closed) {
-            throw dx::VmJavaThrow{"Ljava/io/IOException;",
-                                  "output stream is closed"};
-        }
-        auto& model = call.vm.Model();
-        const auto array = call.arguments[0].ref;
-        const auto bytes =
-            model.ReadByteRegion(array, 0, model.ArrayLength(array));
-        found->second.bytes.insert(found->second.bytes.end(), bytes.begin(),
-                                   bytes.end());
-        return dx::VmValue::Void();
-    });
-}
-
-dx::IntrinsicHandler FileStreamInitFileHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto file = call.arguments[0].ref;
-        const auto slots = call.vm.Model().InstanceSlots(file);
-        return OpenInput(
-            context, call,
-            call.vm.StringUtf8(dx::VmObjectRef(slots[0].bits)));
-    });
-}
-
-dx::IntrinsicHandler FileStreamInitPathHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        return OpenInput(context, call,
-                         call.vm.StringUtf8(call.arguments[0].ref));
-    });
-}
-
 dx::IntrinsicHandler GraphicsNoopHandler() {
     return dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         // Pure drawing state with no consuming canvas surface yet.
@@ -231,24 +135,6 @@ dx::IntrinsicHandler GraphicsNoopHandler() {
 
 dx::IntrinsicHandler NetUnsupportedHandler() {
     return dx::IntrinsicHandler(UnsupportedNetwork);
-}
-
-dx::IntrinsicHandler OutputAdoptHandler(const Context& context) {
-    // Output wrapper constructors move the wrapped record to the wrapper
-    // handle (single-owner, mirroring android.reader.adopt_stream).
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto target = call.arguments[0].ref;
-        const auto found = context->output_streams.find(target.Value());
-        if (found == context->output_streams.end() || found->second.closed) {
-            throw dx::VmJavaThrow{"Ljava/io/IOException;",
-                                  "wrapped output stream is closed or was "
-                                  "never opened"};
-        }
-        context->output_streams[call.receiver.Value()] =
-            std::move(found->second);
-        context->output_streams.erase(target.Value());
-        return dx::VmValue::Void();
-    });
 }
 
 dx::IntrinsicHandler PrefsEditHandler(const Context& context) {
@@ -343,24 +229,6 @@ dx::IntrinsicHandler PrefsGetStringHandler(const Context& context) {
     });
 }
 
-dx::IntrinsicHandler ReaderAdoptStreamHandler(const Context& context) {
-    // Wrapper constructors adopt the wrapped stream's record: the wrapper
-    // handle takes ownership and the wrapped object becomes closed.
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto target = call.arguments[0].ref;
-        const auto found = context->streams.find(target.Value());
-        if (found == context->streams.end() || found->second.closed) {
-            throw dx::VmJavaThrow{"Ljava/io/IOException;",
-                                  "wrapped stream is closed or was never "
-                                  "opened"};
-        }
-        context->streams[call.receiver.Value()] =
-            std::move(found->second);
-        context->streams.erase(target.Value());
-        return dx::VmValue::Void();
-    });
-}
-
 dx::IntrinsicHandler SaxParseUnsupportedHandler() {
     return dx::IntrinsicHandler([](dx::IntrinsicContext&) -> dx::VmValue {
         throw dx::VmJavaThrow{
@@ -377,14 +245,6 @@ dx::IntrinsicHandler SaxSetContentHandlerHandler(const Context& context) {
                                   "SAX content handler is null"};
         }
         context->sax_content_handlers[call.receiver.Value()] = handler;
-        return dx::VmValue::Void();
-    });
-}
-
-dx::IntrinsicHandler StreamCloseHandler(const Context& context) {
-    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto found = context->streams.find(call.receiver.Value());
-        if (found != context->streams.end()) found->second.closed = true;
         return dx::VmValue::Void();
     });
 }

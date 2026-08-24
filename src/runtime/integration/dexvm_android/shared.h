@@ -28,12 +28,6 @@ using Context = std::shared_ptr<DexVmAndroidContext>;
 [[nodiscard]] dx::IntrinsicHandler PlaceholderString(std::string value = {});
 void GuestLog(dx::IntrinsicContext& call, core::LogLevel level,
               const std::string& line);
-[[nodiscard]] DexVmAndroidContext::Stream& StreamOf(dx::IntrinsicContext& call,
-                                                    const Context& context);
-// The receiver's output-stream record; throws the documented IOException
-// when the handle was never opened.
-[[nodiscard]] DexVmAndroidContext::OutputStream& OutputOf(
-    dx::IntrinsicContext& call, const Context& context);
 dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
                            std::vector<std::byte> bytes,
                            const char* descriptor = "Ljava/io/InputStream;");
@@ -62,16 +56,6 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
 [[nodiscard]] std::optional<std::string> InvokeVideoCompletionListener(
     dx::Interpreter& vm, DexVmAndroidContext& context, std::uint64_t handle);
 
-// Reads a whole file from the shared guest VFS; nullopt when the VFS is
-// absent or the path does not resolve.
-[[nodiscard]] std::optional<std::vector<std::byte>> VfsReadAll(
-    const Context& context, const std::string& path);
-// close() is a sandbox flush point, so this is where a save reaches disk.
-void VfsWriteAll(const Context& context, const std::string& path,
-                 std::span<const std::byte> bytes);
-// Publishes an output stream's bytes to its VFS path and retires the handle.
-void FlushOutput(dx::IntrinsicContext& call, const Context& context,
-                 std::uint32_t handle);
 // Non-goal SMS/network actions fail with accounting instead of pretending.
 dx::VmValue UnsupportedNetwork(dx::IntrinsicContext&);
 [[nodiscard]] std::string PreferencesPathOf(const Context& context,
@@ -95,26 +79,13 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
 // Shared handler factories: cross-class handlers built on demand by the
 // per-class declaration units. Factories that bind session state take the
 // platform context; stateless ones take nothing.
-[[nodiscard]] dx::IntrinsicHandler ByteOutputWriteRangeHandler(
-    const Context& context);
 [[nodiscard]] dx::IntrinsicHandler EditableClearHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler EditableLengthHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler EditableReplaceHandler(
     const Context& context);
-[[nodiscard]] dx::IntrinsicHandler FileOutputCloseHandler(
-    const Context& context);
-[[nodiscard]] dx::IntrinsicHandler FileOutputFlushHandler(
-    const Context& context);
-[[nodiscard]] dx::IntrinsicHandler FileOutputWriteBytesHandler(
-    const Context& context);
-[[nodiscard]] dx::IntrinsicHandler FileStreamInitFileHandler(
-    const Context& context);
-[[nodiscard]] dx::IntrinsicHandler FileStreamInitPathHandler(
-    const Context& context);
 [[nodiscard]] dx::IntrinsicHandler GraphicsNoopHandler();
 [[nodiscard]] dx::IntrinsicHandler NetUnsupportedHandler();
-[[nodiscard]] dx::IntrinsicHandler OutputAdoptHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsEditHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsEditorCommitHandler(
     const Context& context);
@@ -132,12 +103,9 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
 [[nodiscard]] dx::IntrinsicHandler PrefsGetLongHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsGetStringHandler(
     const Context& context);
-[[nodiscard]] dx::IntrinsicHandler ReaderAdoptStreamHandler(
-    const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SaxParseUnsupportedHandler();
 [[nodiscard]] dx::IntrinsicHandler SaxSetContentHandlerHandler(
     const Context& context);
-[[nodiscard]] dx::IntrinsicHandler StreamCloseHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderAddCallbackHandler(
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetFormatHandler();

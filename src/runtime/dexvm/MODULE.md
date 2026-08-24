@@ -71,6 +71,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   references 由同一具名 side-table trace，死亡 owner 统一 sweep；Object.clone 仅浅拷贝
   sequence/map 内容，不复制 view/entry/iterator 游标。intrinsic handler 不保存宿主容器
   指针，也不以 `VmObjectRef` 数值代替 Java equals/hashCode。
+- `IoRuntime`（DVM-79）：统一拥有 java.io input/output bytes、cursor、close 与 wrapper
+  adoption side state，并通过具名 intrinsic state table 随死亡 owner 清扫。File 家族只
+  使用装配方注入的 core `IoFileSystem` 窄接口；integration adapter 才可访问具体 VFS。
+  无文件系统时明确失败；流 wrapper 为 single-owner transfer，clone 不复制游标或缓冲。
 - `java.lang.Thread` 对照 pinned libcore `Thread.java`/`VMThread.java` 与 Dalvik
   `Thread.cpp`/`Sync.cpp`：root context 具有稳定 id=1 `main` Thread 强根；构造时
   分配 per-VM stable ID；`start()` 经实际 Thread class vtable 虚派发
@@ -254,7 +258,8 @@ family 与接口 family，分别位于 `intrinsics/java_lang_throwables.cpp`、
 `intrinsics/java_lang_primitive_wrappers.cpp` 与
 `intrinsics/java_lang_interfaces.cpp`；Java class 仍是一等逻辑单位，
 family 内类级 `Declare_*()` 均为 TU-private，catalog 只调用对应 `Append*()`。
-family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自注册。
+`java_io_streams.cpp`/`java_io_files.cpp` 与 `java_util_collections.cpp` 也按语义 family
+聚合。family TU 可超过通常 800 行，但禁止 misc/common/all 巨石与静态自注册。
 `shared.h` 只放跨类内部 helper。原集中式 core catalog 与三个 handler 文件已
 删除。pinned Luni `java.lang` 的确定性 public/protected 顶层 class shape 位于
 `data/dexvm/api19-java-lang-surface.json`；用 `tools/dexvm_api19_surface.py` 从本地
@@ -274,7 +279,7 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
   Android session 显式登记的外部长期引用。intrinsic 宿主状态必须通过
   `RegisterIntrinsicStateTable` 具名注册：持 `VmObjectRef` 的表提供 trace，所有表
   必须提供 sweep，需要随 `Object.clone()` 复制的表再提供 clone；现有
-  throwable/builder/list/map 四表均走该唯一生命周期通道。
+  throwable/builder/collection/io 表均走该唯一生命周期通道。
 - GC 只由分配流决定：`gc_watermark_percent` 范围 0..100、默认 75，0 精确关闭；
   `System.gc()` 保持合法 no-op。结构化 `runtime.dexvm.gc` 日志与 stats 记录回收量、
   对象数、宿主析构次数及确定性 pause ticks，不以 wall clock 参与决策。

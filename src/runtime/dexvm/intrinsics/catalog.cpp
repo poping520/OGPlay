@@ -38,6 +38,8 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog() {
     AppendJavaLangInterfaces(catalog);
     AppendJavaLangPrimitiveWrappers(catalog);
     AppendJavaUtilCollections(catalog);
+    AppendJavaIoStreams(catalog);
+    AppendJavaIoFiles(catalog);
 
     AppendJavaLangThrowables(catalog);
 

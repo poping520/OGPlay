@@ -498,7 +498,7 @@ note = "ADR-0020 SBX-7 让 run-apk 默认按 package 打开持久沙盒（根为
 [dexvm.file_io_vfs]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; Dungeon Hunter exact 240-frame local run; Asphalt 5 exact title-flow gate"
-note = "ADR-0020 SBX-5 废除 DexVmAndroidContext::memory_files：java.io.File/FileInputStream/FileOutputStream/FileWriter 全部经共享 VFS，Java 写入与 native fopen 同一世界，attach 沙盒后跨会话持久。输出流当前为整文件内存缓冲，在 flush/close 时短期打开 VFS descriptor 整体发布，并非长期持有 descriptor。SBX-11 使 File.list 对空目录返回空数组、DataOutputStream 包装接管同一 output record，双 close 不再截断存档。File.mkdirs/exists/isDirectory/length/delete/createNewFile 均取真实 VFS 事实"
+note = "ADR-0020 SBX-5 使 java.io File 家族与 native fopen 共用唯一 VFS/sandbox 世界。DVM-79 又把 File/FileInputStream/FileOutputStream/FileReader/FileWriter handle 和全部 input/output side state 从 Android integration 下沉到 core IoRuntime；core 只依赖 IoFileSystem 窄接口，session 以 DexVmIoVfsAdapter 注入具体 VFS，无文件系统明确失败。输出流仍为整文件内存缓冲，在 flush/close 时短期打开 descriptor 整体发布；File.list 空目录、wrapper single-owner adoption、幂等双 close 与跨会话持久均有回归。"
 
 [runtime.preferences_persistence]
 status = "complete"
@@ -1293,7 +1293,7 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core，交付 root/child identity、四构造器、virtual run/start、ID/name/priority/isAlive、interrupt/join/sleep/yield/holdsLock 和有界 daemon 语义；DVM-61 让 Object.hashCode 与 System.identityHashCode 使用独立 identity 服务，默认 Object.toString 按 libcore 虚调用 receiver.hashCode 后转十六进制；DVM-75 的 String.format 从统一 Object[]/wrapper slots 交付顺序 String/null %s、integral %d 与 %%，其余 conversion 明确失败。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用类层级、live map view、稳定 Entry、sub-list、双向/fail-fast iterator，并把 Vector/Stack/Hashtable 迁入单一 java.util family TU；Tree/Sorted/Navigable、并发集合和完整 Collections/Arrays 仍 deferred。deprecated stop/suspend/resume/destroy 显式未实现。Character 42 项完整 Unicode API、Readable.read(CharBuffer) 等仍 deferred，能力保持 partial；System 与 wrapper property API 共用每 VM guest 属性表，不读宿主环境"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File 家族，并将 20 个 Android java.io handle TU 收敛为 core 的 streams/files 两个 family TU；流状态受 GC sweep，文件仅经注入 VFS。Tree/Sorted/Navigable、并发集合、完整 Collections/Arrays、serialization/charset/FileDescriptor/NIO 仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
 
 [dexvm.jni_bridge]
 status = "complete"

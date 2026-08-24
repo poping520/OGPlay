@@ -107,10 +107,11 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-    CHECK(catalog.size() == 181);
+    CHECK(catalog.size() == 161);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
+    CHECK_FALSE(declaration.descriptor.starts_with("Ljava/io/"));
     CHECK(descriptors.insert(declaration.descriptor).second);
     for (const auto& method : declaration.methods) {
       CHECK(static_cast<bool>(method.implementation));

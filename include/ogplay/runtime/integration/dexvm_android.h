@@ -115,20 +115,6 @@ struct DexVmAndroidContext final {
     dexvm::VmObjectRef egl_config_chooser;
     dexvm::VmObjectRef content_view;
 
-    // Host-side stream table for InputStream-backed intrinsics.
-    struct Stream final {
-        std::vector<std::byte> bytes;
-        std::size_t cursor{};
-        bool closed{};
-    };
-    std::unordered_map<std::uint32_t, Stream> streams;
-    struct OutputStream final {
-        std::string path;
-        std::vector<std::byte> bytes;
-        bool closed{};
-    };
-    std::unordered_map<std::uint32_t, OutputStream> output_streams;
-
     // ZipInputStream state: the adopted source bytes go through the strict
     // ZIP reader once; entries inflate one at a time as the title walks
     // getNextEntry/read.

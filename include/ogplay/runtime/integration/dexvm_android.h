@@ -168,6 +168,7 @@ struct DexVmAndroidContext final {
     struct DatabaseState final {
         std::string path;
         bool open{true};
+        std::int32_t version{};
         std::unordered_map<std::string, DatabaseTable> tables;
     };
     struct CursorState final {

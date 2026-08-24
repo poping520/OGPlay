@@ -54,6 +54,11 @@ public:
 
 class NetworkRuntime final {
 public:
+    NetworkRuntime() = default;
+    ~NetworkRuntime();
+    NetworkRuntime(const NetworkRuntime&) = delete;
+    NetworkRuntime& operator=(const NetworkRuntime&) = delete;
+
     struct Endpoint final {
         std::string host;
         std::string address;
@@ -91,6 +96,7 @@ public:
                                                     std::size_t maximum);
     void WriteStream(VmObjectRef stream, std::span<const std::byte> bytes);
     void CloseSocket(VmObjectRef owner) noexcept;
+    void Shutdown() noexcept;
 
     void SetPacket(VmObjectRef owner, DatagramPacket packet);
     [[nodiscard]] DatagramPacket& Packet(VmObjectRef owner);

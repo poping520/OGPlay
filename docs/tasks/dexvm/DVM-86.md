@@ -33,6 +33,8 @@ Binder/system_server 的 PowerManager、Vibrator 和 Process façade。
 
 - Base64 flag、Sparse 排序/覆盖、geometry/Path 状态与非法输入受检。
 - Parcel cursor/type/buffer、Bundle snapshot、Parcelable reference 和 recycle 状态受检。
+- Bundle side-table 中的 byte array/Parcelable identity 作为 owner 的 GC 强边受检，只有
+  Bundle 被 root 时其引用对象仍保持存活。
 - WakeLock acquire/release/reference count、Vibrator cancel 与 service singleton 受检。
 - Windows `windows-msvc` Debug `ogplay_tests` 构建通过；DVM-86、catalog、Bundle、Context、
   GC 与 architecture 定向测试通过；全量未运行。

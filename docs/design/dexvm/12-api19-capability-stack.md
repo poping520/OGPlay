@@ -272,8 +272,9 @@ DVM-88 落地结果：socket/datagram/TLS 状态进入 per-VM `NetworkRuntime`�
 打开宿主 socket。ContentValues/Cursor/SQLiteDatabase/SQLiteOpenHelper 的 bounded 数据面
 进入 Android database side-table，确定性存储只经 guest VFS；完整 DNS/TLS、SQLite 文件格式、
 SQL 长尾与 ContentProvider 均明确 deferred。阶段 catalog 夹具同时链接 NIO、GLES20、
-AudioTrack、Socket 与 SQLiteDatabase；Windows 全量回归除既有 liblog guest-tag 用例外通过，
-DVM-88 与 architecture 闭包全绿。
+AudioTrack、Socket 与 SQLiteDatabase。验收补强进一步锁定 direct view concrete class、Bundle
+GC 强边、NetworkRuntime teardown、SocketFactory 常用面、SQLiteHelper create/upgrade 版本回调
+及 VFS 非 ENOENT 显式失败；liblog guest-tag 求值顺序缺陷同步修复，Windows 全量 991/991。
 
 ## 7. 架构门禁
 

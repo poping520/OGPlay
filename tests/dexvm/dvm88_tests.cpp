@@ -9,6 +9,7 @@
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
@@ -44,7 +45,10 @@ public:
             reinterpret_cast<const std::byte*>(value.data()),
             reinterpret_cast<const std::byte*>(value.data() + count));
     }
-    void Close(std::uint64_t channel) noexcept override { closed = channel; }
+    void Close(std::uint64_t channel) noexcept override {
+        closed = channel;
+        ++close_count;
+    }
     void SendDatagram(const NetworkDatagram& datagram) override {
         last_datagram = datagram;
     }
@@ -60,6 +64,7 @@ public:
     std::uint64_t closed{};
     std::vector<std::byte> sent;
     NetworkDatagram last_datagram;
+    std::uint32_t close_count{};
 };
 
 struct Dvm88Vm final {
@@ -72,6 +77,10 @@ struct Dvm88Vm final {
     std::shared_ptr<DexVmAndroidContext> context{
         std::make_shared<DexVmAndroidContext>()};
     Interpreter vm;
+    std::int32_t helper_create_calls{};
+    std::int32_t helper_upgrade_calls{};
+    std::int32_t helper_old_version{};
+    std::int32_t helper_new_version{};
 
     Dvm88Vm()
         : vm([this]() -> DexClassLinker& {
@@ -79,6 +88,26 @@ struct Dvm88Vm final {
               context->vfs = &vfs;
               linker.RegisterIntrinsics(CoreIntrinsicCatalog());
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+              auto helper = IntrinsicClassBuilder::Class(
+                  "Ltest/Dvm88OpenHelper;",
+                  "Landroid/database/sqlite/SQLiteOpenHelper;");
+              helper.VirtualMethod("onCreate",
+                  "(Landroid/database/sqlite/SQLiteDatabase;)V",
+                  [this](IntrinsicContext&) {
+                      ++helper_create_calls;
+                      return VmValue::Void();
+                  });
+              helper.VirtualMethod("onUpgrade",
+                  "(Landroid/database/sqlite/SQLiteDatabase;II)V",
+                  [this](IntrinsicContext& call) {
+                      ++helper_upgrade_calls;
+                      helper_old_version = call.arguments[1].AsInt();
+                      helper_new_version = call.arguments[2].AsInt();
+                      return VmValue::Void();
+                  });
+              std::vector<IntrinsicClassDecl> test_catalog;
+              test_catalog.push_back(std::move(helper).Build());
+              linker.RegisterIntrinsics(test_catalog);
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, {}) {
@@ -110,6 +139,15 @@ struct Dvm88Vm final {
         return outcome.value;
     }
 
+    VmCallOutcome StaticOutcome(
+        const char* owner, const char* name, const char* descriptor,
+        std::vector<VmValue> arguments = {}) {
+        const auto method = linker.FindDirectMethod(
+            linker.ResolveDescriptor(owner), name, descriptor);
+        REQUIRE(method.has_value());
+        return vm.Call(*method, arguments);
+    }
+
     VmValue On(VmObjectRef receiver, const char* name, const char* descriptor,
                std::vector<VmValue> arguments = {}) {
         const auto owner = model.ObjectClass(receiver);
@@ -130,6 +168,22 @@ struct Dvm88Vm final {
         for (const auto value : values)
             model.SetObjectElement(array, index++, vm.NewStringUtf8(value));
         return array;
+    }
+
+    VmObjectRef NewHelper(const std::string_view name, const std::int32_t version) {
+        const auto helper = vm.NewIntrinsicInstance("Ltest/Dvm88OpenHelper;");
+        const auto constructor = linker.FindDirectMethod(
+            linker.ResolveDescriptor("Landroid/database/sqlite/SQLiteOpenHelper;"),
+            "<init>",
+            "(Landroid/content/Context;Ljava/lang/String;Landroid/database/sqlite/SQLiteDatabase$CursorFactory;I)V");
+        REQUIRE(constructor.has_value());
+        const std::array arguments{
+            VmValue::Ref(helper), VmValue::Ref(VmObjectRef{}),
+            VmValue::Ref(vm.NewStringUtf8(name)), VmValue::Ref(VmObjectRef{}),
+            VmValue::Int(version)};
+        const auto outcome = vm.Call(*constructor, arguments);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return helper;
     }
 };
 }  // namespace
@@ -159,6 +213,36 @@ TEST_CASE("DVM-88 network runtime is offline unless explicitly injected") {
     CHECK(transport.used_tls);
     runtime.CloseSocket(VmObjectRef(1));
     CHECK(transport.closed == 7);
+}
+
+TEST_CASE("DVM-88 network runtime closes live channels during teardown") {
+    FakeNetwork transport;
+    {
+        NetworkRuntime runtime;
+        runtime.Configure({true, false, false, {"game.test"}}, &transport);
+        runtime.CreateSocket(VmObjectRef(9));
+        runtime.Connect(VmObjectRef(9), {"game.test", "203.0.113.7", 80});
+    }
+    CHECK(transport.closed == 7);
+    CHECK(transport.close_count == 1);
+}
+
+TEST_CASE("DVM-88 SocketFactory exposes policy-gated common creation") {
+    FakeNetwork transport;
+    Dvm88Vm fixture;
+    fixture.vm.Network().Configure(
+        {true, false, false, {"game.test"}}, &transport);
+    const auto factory = fixture.Static(
+        "Ljavax/net/SocketFactory;", "getDefault",
+        "()Ljavax/net/SocketFactory;").ref;
+    const auto socket = fixture.On(
+        factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("game.test")),
+         VmValue::Int(80)}).ref;
+    CHECK(fixture.linker.Class(fixture.model.ObjectClass(socket)).descriptor ==
+          "Ljava/net/Socket;");
+    CHECK(transport.connected == "game.test:80");
+    static_cast<void>(fixture.On(socket, "close", "()V"));
 }
 
 TEST_CASE("DVM-88 ContentValues SQLite query persists through guest VFS") {
@@ -231,6 +315,38 @@ TEST_CASE("DVM-88 ContentValues SQLite query persists through guest VFS") {
     const auto marked = fixture.vm.MarkReachable();
     CHECK(marked.IsMarked(helper));
     CHECK(marked.IsMarked(helper_database));
+}
+
+TEST_CASE("DVM-88 SQLiteOpenHelper dispatches create and upgrade by version") {
+    Dvm88Vm fixture;
+    const auto first = fixture.NewHelper("lifecycle.db", 1);
+    const auto database = fixture.On(
+        first, "getWritableDatabase",
+        "()Landroid/database/sqlite/SQLiteDatabase;").ref;
+    CHECK(fixture.helper_create_calls == 1);
+    CHECK(fixture.context->databases.at(database.Value()).version == 1);
+    static_cast<void>(fixture.On(first, "close", "()V"));
+
+    const auto second = fixture.NewHelper("lifecycle.db", 2);
+    CHECK(fixture.On(second, "getWritableDatabase",
+                     "()Landroid/database/sqlite/SQLiteDatabase;").ref == database);
+    CHECK(fixture.helper_create_calls == 1);
+    CHECK(fixture.helper_upgrade_calls == 1);
+    CHECK(fixture.helper_old_version == 1);
+    CHECK(fixture.helper_new_version == 2);
+    CHECK(fixture.context->databases.at(database.Value()).version == 2);
+}
+
+TEST_CASE("DVM-88 database open reports non-missing VFS failures") {
+    Dvm88Vm fixture;
+    const auto outcome = fixture.StaticOutcome(
+        "Landroid/database/sqlite/SQLiteDatabase;", "openOrCreateDatabase",
+        "(Ljava/lang/String;Landroid/database/sqlite/SQLiteDatabase$CursorFactory;)Landroid/database/sqlite/SQLiteDatabase;",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("/data")),
+         VmValue::Ref(VmObjectRef{})});
+    CHECK(outcome.exception.IsValid());
+    CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+          "Landroid/database/SQLException;");
 }
 
 TEST_CASE("DVM-88 stage catalog keeps NIO GLES AudioTrack and data paths linkable") {

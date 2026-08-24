@@ -192,7 +192,10 @@ IntrinsicHandler View(std::string concrete, NioElementKind kind,
     return [concrete = std::move(concrete), kind, slice, read_only](IntrinsicContext& c) {
         const auto source = Id(c.vm, c.receiver);
         const auto state = c.vm.NIO().Snapshot(source);
-        const auto object = c.vm.NewIntrinsicInstance(concrete);
+        const auto target = concrete.empty()
+            ? c.vm.Linker().Class(c.vm.Model().ObjectClass(c.receiver)).descriptor
+            : concrete;
+        const auto object = c.vm.NewIntrinsicInstance(target);
         if (slice) {
             const auto source_size = NioRuntime::ElementSize(state.element);
             const auto target_size = NioRuntime::ElementSize(kind);
@@ -207,10 +210,10 @@ IntrinsicHandler View(std::string concrete, NioElementKind kind,
     };
 }
 void Views(IntrinsicClassBuilder& b, const std::string& type,
-           const std::string& concrete, NioElementKind kind) {
-    b.VirtualMethod("slice", "()" + type, View(concrete, kind, true, false));
-    b.VirtualMethod("duplicate", "()" + type, View(concrete, kind, false, false));
-    b.VirtualMethod("asReadOnlyBuffer", "()" + type, View(concrete, kind, false, true));
+           NioElementKind kind) {
+    b.VirtualMethod("slice", "()" + type, View({}, kind, true, false));
+    b.VirtualMethod("duplicate", "()" + type, View({}, kind, false, false));
+    b.VirtualMethod("asReadOnlyBuffer", "()" + type, View({}, kind, false, true));
     b.VirtualMethod("compact", "()" + type, [](IntrinsicContext& c) {
         c.vm.NIO().Compact(Id(c.vm, c.receiver)); return Self(c);
     });
@@ -282,7 +285,7 @@ IntrinsicClassDecl DeclareByteBuffer() {
         c.vm.NIO().SetOrder(Id(c.vm, c.receiver), c.arguments[0].ref == OrderObject(c, true)
             ? NioByteOrder::little_endian : NioByteOrder::big_endian); return Self(c);
     });
-    Views(b, "Ljava/nio/ByteBuffer;", "Ljava/nio/HeapByteBuffer;", NioElementKind::byte);
+    Views(b, "Ljava/nio/ByteBuffer;", NioElementKind::byte);
     struct Scalar { const char* name; const char* sig; NioElementKind kind; };
     constexpr std::array scalars{
         Scalar{"Char", "C", NioElementKind::character}, Scalar{"Short", "S", NioElementKind::short_value},
@@ -339,7 +342,7 @@ IntrinsicClassDecl TypedBuffer(const std::string& name, const std::string& array
     b.VirtualMethod("put", "(" + type + ")" + type, [](IntrinsicContext& c) {
         c.vm.NIO().Copy(Id(c.vm, c.receiver), Id(c.vm, c.arguments[0].ref)); return Self(c);
     });
-    Views(b, type, concrete, kind);
+    Views(b, type, kind);
     return std::move(b).Build();
 }
 

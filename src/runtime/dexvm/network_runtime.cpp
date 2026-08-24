@@ -5,6 +5,8 @@
 
 namespace ogplay::runtime::dexvm {
 
+NetworkRuntime::~NetworkRuntime() { Shutdown(); }
+
 void NetworkRuntime::Configure(NetworkPolicy policy,
                                NetworkTransport* transport) noexcept {
     policy_ = std::move(policy);
@@ -127,6 +129,22 @@ void NetworkRuntime::CloseSocket(const VmObjectRef owner) noexcept {
         transport_->Close(found->second.channel);
     found->second.closed = true;
     found->second.connected = false;
+}
+
+void NetworkRuntime::Shutdown() noexcept {
+    for (auto& [_, socket] : sockets_) {
+        if (transport_ != nullptr && socket.connected && !socket.closed)
+            transport_->Close(socket.channel);
+        socket.closed = true;
+        socket.connected = false;
+    }
+    addresses_.clear();
+    endpoints_.clear();
+    sockets_.clear();
+    streams_.clear();
+    packets_.clear();
+    policy_ = {};
+    transport_ = nullptr;
 }
 
 void NetworkRuntime::SetPacket(const VmObjectRef owner,

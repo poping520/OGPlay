@@ -37,10 +37,14 @@ ContentValues/Cursor/SQLite 的有界数据语义只持久化到 guest VFS，完
 ## 验收与结果
 
 - 默认离线与 allowlist/TLS/datagram policy 有机器测试；未注入 transport 或未授权操作明确失败。
+- `SocketFactory.getDefault/createSocket` 常用面真实进入 policy-gated `NetworkRuntime`；未显式
+  close 的 live channel 在 VM teardown 统一关闭。
 - ContentValues→insert→query→Cursor 与关闭后从 guest VFS 重新载入有机器测试。
+- SQLiteOpenHelper 持久化 schema version，首次打开虚派 `onCreate`、版本增长虚派
+  `onUpgrade`；只有 VFS `Stat` 的 ENOENT 被视作新库，其余 I/O 错误明确抛 `SQLException`。
 - 阶段 catalog 夹具覆盖 NIO、GLES20、AudioTrack、Socket 和 SQLiteDatabase 链接。
-- Windows `windows-msvc` 完整 configure 与 Debug build 通过；DVM-88 3/3、受影响固定清单
-  4/4、architecture 6/6 通过。全量 984/985，唯一失败为 DVM-79 历史基线已有、与本 WU
-  无依赖的 liblog guest tag 用例，边界见 `docs/state/CURRENT.md`。
+- Windows `windows-msvc` 完整 configure 与 Debug build 通过；验收补强定向 20/20、
+  architecture 6/6 通过，全量 CTest 991/991。既有 liblog guest tag 求值顺序问题已随本次
+  验收补强修复，未新开 WU。
 
 状态：已完成。

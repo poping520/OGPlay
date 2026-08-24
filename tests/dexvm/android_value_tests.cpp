@@ -223,3 +223,23 @@ TEST_CASE("DVM-86 value side tables sweep with their guest owners") {
     CHECK(fixture.context->parcels.empty());
     CHECK(fixture.context->wake_locks.empty());
 }
+
+TEST_CASE("DVM-86 rooted Bundle traces byte arrays and Parcelable identities") {
+    AndroidValueVm fixture;
+    const auto bundle = fixture.New("Landroid/os/Bundle;");
+    const auto bytes = fixture.Bytes("kept");
+    const auto key = fixture.vm.NewStringUtf8("payload");
+    fixture.On(bundle, "putByteArray", "(Ljava/lang/String;[B)V",
+               {VmValue::Ref(key), VmValue::Ref(bytes)});
+    fixture.vm.SetGcIntegration(
+        {{}, {}, [bundle](const VmRootVisitor& visit) { visit(bundle); }});
+
+    const auto marked = fixture.vm.MarkReachable();
+    CHECK(marked.IsMarked(bundle));
+    CHECK(marked.IsMarked(bytes));
+    static_cast<void>(fixture.vm.CollectGarbage("dvm86-bundle-edge"));
+    CHECK(fixture.On(bundle, "getByteArray", "(Ljava/lang/String;)[B",
+                     {VmValue::Ref(fixture.vm.NewStringUtf8("payload"))}).ref ==
+          bytes);
+    CHECK(fixture.BytesOf(bytes) == "kept");
+}

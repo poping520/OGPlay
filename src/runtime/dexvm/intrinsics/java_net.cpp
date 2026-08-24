@@ -178,9 +178,27 @@ NetworkRuntime::Endpoint HostEndpoint(IntrinsicContext& call,
                                       VmObjectRef host_ref,
                                       std::int32_t port);
 
-IntrinsicClassDecl DeclareSslSocketFactory() {
+IntrinsicClassDecl DeclareSslSocketFactory(
+    const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljavax/net/ssl/SSLSocketFactory;", "Ljavax/net/SocketFactory;");
+    builder.StaticMethod("getDefault", "()Ljavax/net/SocketFactory;",
+        [services](IntrinsicContext& call) {
+            if (services.singleton) {
+                return VmValue::Ref(services.singleton(
+                    call.vm, "ssl_socket_factory",
+                    "Ljavax/net/ssl/SSLSocketFactory;"));
+            }
+            return VmValue::Ref(call.vm.NewIntrinsicInstance(
+                "Ljavax/net/ssl/SSLSocketFactory;"));
+        });
+    builder.FinalMethod("createSocket", "()Ljava/net/Socket;",
+        [](IntrinsicContext& call) {
+            const auto socket = call.vm.NewIntrinsicInstance(
+                "Ljavax/net/ssl/SSLSocket;");
+            call.vm.Network().CreateSocket(socket, true);
+            return VmValue::Ref(socket);
+        });
     builder.FinalMethod("createSocket",
         "(Ljava/lang/String;I)Ljava/net/Socket;",
         [](IntrinsicContext& call) {
@@ -496,9 +514,37 @@ IntrinsicClassDecl DeclareDatagramSocket() {
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl DeclareSocketFactory() {
-    return std::move(IntrinsicClassBuilder::Class(
-        "Ljavax/net/SocketFactory;", "Ljava/lang/Object;")).Build();
+IntrinsicClassDecl DeclareSocketFactory(const CoreIntrinsicServices& services) {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljavax/net/SocketFactory;", "Ljava/lang/Object;");
+    builder.StaticMethod("getDefault", "()Ljavax/net/SocketFactory;",
+        [services](IntrinsicContext& call) {
+            if (services.singleton) {
+                return VmValue::Ref(services.singleton(
+                    call.vm, "socket_factory", "Ljavax/net/SocketFactory;"));
+            }
+            return VmValue::Ref(call.vm.NewIntrinsicInstance(
+                "Ljavax/net/SocketFactory;"));
+        });
+    builder.VirtualMethod("createSocket", "()Ljava/net/Socket;",
+        [](IntrinsicContext& call) {
+            const auto socket = call.vm.NewIntrinsicInstance("Ljava/net/Socket;");
+            call.vm.Network().CreateSocket(socket, false);
+            return VmValue::Ref(socket);
+        });
+    builder.VirtualMethod("createSocket",
+        "(Ljava/lang/String;I)Ljava/net/Socket;",
+        [](IntrinsicContext& call) {
+            const auto socket = call.vm.NewIntrinsicInstance("Ljava/net/Socket;");
+            call.vm.Network().CreateSocket(socket, false);
+            try {
+                call.vm.Network().Connect(socket,
+                    HostEndpoint(call, call.arguments[0].ref,
+                                 call.arguments[1].AsInt()));
+            } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+            return VmValue::Ref(socket);
+        });
+    return std::move(builder).Build();
 }
 
 }  // namespace
@@ -513,7 +559,7 @@ void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(DeclareHttpsURLConnection());
     catalog.push_back(DeclareKeyManager());
     catalog.push_back(DeclareSslContext(services));
-    catalog.push_back(DeclareSslSocketFactory());
+    catalog.push_back(DeclareSslSocketFactory(services));
     catalog.push_back(DeclareTrustManager());
     catalog.push_back(DeclareX509TrustManager());
     catalog.push_back(DeclareInetAddress());
@@ -524,7 +570,7 @@ void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(DeclareSocket(false));
     catalog.push_back(DeclareDatagramPacket());
     catalog.push_back(DeclareDatagramSocket());
-    catalog.push_back(DeclareSocketFactory());
+    catalog.push_back(DeclareSocketFactory(services));
     catalog.push_back(DeclareSocket(true));
 }
 

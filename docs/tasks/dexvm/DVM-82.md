@@ -43,6 +43,8 @@ Java GLES 共用一套 backing、cursor、字节序和 guest 地址语义。
   分配、校验、读写和回收。
 - JNI 三个 direct-buffer 槽已从 expected-unbound 移出生产路径，并与解释执行共享 identity
   和容量事实。
+- 验收补强让 `slice`/`duplicate`/`asReadOnlyBuffer` 沿用 receiver concrete class；heap view
+  保持 `HeapByteBuffer`，direct view 保持 `DirectByteBuffer`，并由 class identity 回归锁定。
 - Windows Debug 全目标构建及定向回归通过；全量 CTest 按计划未运行。
 
 状态：已完成。

@@ -148,7 +148,7 @@ DbValue DecodeValue(const std::string_view value) {
 void PersistDatabase(const Context& context,
                      const DexVmAndroidContext::DatabaseState& database) {
     EnsureDbDirectory(context);
-    std::string image = "OGDB1\n";
+    std::string image = "OGDB1\nV\t" + std::to_string(database.version) + "\n";
     std::vector<std::string> tables;
     for (const auto& entry : database.tables) tables.push_back(entry.first);
     std::sort(tables.begin(), tables.end());
@@ -190,9 +190,16 @@ void PersistDatabase(const Context& context,
 void LoadDatabase(const Context& context,
                   DexVmAndroidContext::DatabaseState& database) {
     if (context->vfs == nullptr) DbThrow("guest VFS is unavailable");
+    VfsFileInfo info;
+    try {
+        info = context->vfs->Stat(database.path);
+    } catch (const VfsError& error) {
+        if (error.ErrorNumber() == 2) return;
+        DbThrow("database stat failed: " +
+                std::to_string(error.ErrorNumber()));
+    }
     std::optional<std::int32_t> descriptor;
     try {
-        const auto info = context->vfs->Stat(database.path);
         descriptor = context->vfs->Open(database.path, {.read = true});
         std::vector<std::byte> bytes(info.size);
         std::size_t offset{};
@@ -219,13 +226,29 @@ void LoadDatabase(const Context& context,
                 if (split == std::string::npos) break;
                 start = split + 1U;
             }
-            if (fields[0] == "T" && fields.size() == 3U) {
+            if (fields[0] == "V" && fields.size() == 2U) {
+                std::int32_t version{};
+                const auto text = std::string_view(fields[1]);
+                const auto [end, error] = std::from_chars(
+                    text.data(), text.data() + text.size(), version);
+                if (error != std::errc{} || end != text.data() + text.size() ||
+                    version < 0) {
+                    DbThrow("damaged database version");
+                }
+                database.version = version;
+            } else if (fields[0] == "T" && fields.size() == 3U) {
                 const auto name_bytes = Unhex(fields[1]);
                 const std::string name(
                     reinterpret_cast<const char*>(name_bytes.data()),
                     name_bytes.size());
                 table = &database.tables[name];
-                table->next_row_id = std::stoll(fields[2]);
+                const auto text = std::string_view(fields[2]);
+                const auto [end, error] = std::from_chars(
+                    text.data(), text.data() + text.size(), table->next_row_id);
+                if (error != std::errc{} || end != text.data() + text.size() ||
+                    table->next_row_id < 1) {
+                    DbThrow("damaged database row id");
+                }
             } else if (fields[0] == "R" && table != nullptr) {
                 DbRow row;
                 for (std::size_t index = 1; index < fields.size(); ++index) {
@@ -245,11 +268,12 @@ void LoadDatabase(const Context& context,
                 DbThrow("damaged database record");
             }
         }
-    } catch (const VfsError&) {
-        // Missing database is a valid empty openOrCreate result.
+    } catch (const VfsError& error) {
         if (descriptor.has_value()) {
             try { context->vfs->Close(*descriptor); } catch (...) {}
         }
+        DbThrow("database load failed: " +
+                std::to_string(error.ErrorNumber()));
     }
 }
 
@@ -670,6 +694,48 @@ Decl Declare_android_database_sqlite_SQLiteOpenHelper(const Context& context) {
         if (!helper.database.IsValid())
             helper.database = OpenDatabase(call, context,
                                             DbPath(context, helper.name));
+        auto& database = RequireDb(context, helper.database);
+        const auto invoke = [&](const char* name, const char* descriptor,
+                                std::vector<dx::VmValue> arguments) {
+            const auto owner = call.vm.Model().ObjectClass(call.receiver);
+            const auto index = call.vm.Linker().FindVtableIndex(
+                owner, name, descriptor);
+            if (!index.has_value()) {
+                throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                                      std::string(name) + descriptor};
+            }
+            arguments.insert(arguments.begin(), dx::VmValue::Ref(call.receiver));
+            return call.vm.Call(call.vm.Linker().Class(owner).vtable[*index],
+                                arguments);
+        };
+        const auto previous = database.version;
+        dx::VmCallOutcome outcome{dx::VmValue::Void(), dx::VmObjectRef{},
+                                  dx::DexClassId{}, {}, {}};
+        if (previous == 0) {
+            outcome = invoke("onCreate",
+                "(Landroid/database/sqlite/SQLiteDatabase;)V",
+                {dx::VmValue::Ref(helper.database)});
+        } else if (previous < helper.version) {
+            outcome = invoke("onUpgrade",
+                "(Landroid/database/sqlite/SQLiteDatabase;II)V",
+                {dx::VmValue::Ref(helper.database), dx::VmValue::Int(previous),
+                 dx::VmValue::Int(helper.version)});
+        } else if (previous > helper.version) {
+            DbThrow("database downgrade is not supported");
+        }
+        if (outcome.exception.IsValid()) {
+            call.vm.SetPendingException(outcome.exception);
+            return dx::VmValue::Ref(dx::VmObjectRef{});
+        }
+        if (previous != helper.version) {
+            database.version = helper.version;
+            try {
+                PersistDatabase(context, database);
+            } catch (...) {
+                database.version = previous;
+                throw;
+            }
+        }
         return dx::VmValue::Ref(helper.database);
     };
     builder.FinalMethod("getWritableDatabase",

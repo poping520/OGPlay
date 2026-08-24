@@ -13,7 +13,7 @@ note = "BND-9..15 按 AOSP Wilhelm 发布 3 functions、51 IID data、53 direct 
 [runtime.liblog_virtual_so]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/bionic_profile_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
-note = "BND-5 按 Android 4.4.4 system/core/liblog 的 target 源完整发布并实现 23 个 writer/logprint/event-tag-map API；A32 variadic 与 va_list、text/binary logger_entry、filter/format 和 guest-VFS event tags 均受检，输出进入 guest.liblog structured category 且统一带 [guest] 前缀"
+note = "BND-5 按 Android 4.4.4 system/core/liblog 的 target 源完整发布并实现 23 个 writer/logprint/event-tag-map API；A32 variadic 与 va_list、text/binary logger_entry、filter/format 和 guest-VFS event tags 均受检，输出进入 guest.liblog structured category 且统一带 [guest] 前缀；DVM-80..88 验收补强消除 tag move 与消息拼接的参数求值顺序歧义"
 
 [runtime.fast_host_call]
 status = "complete"
@@ -1323,7 +1323,7 @@ note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDo
 [dexvm.android_value_services]
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/session/profile_entry_scope_tests.cpp; architecture.dexvm_intrinsic_layout"
-note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Color/RectF/Point/Path/PorterDuff/BitmapDrawable/ColorDrawable、Parcelable/Parcel/Bundle transport 与 PowerManager/WakeLock/Vibrator/Process；数据进入受检 side-table 和 GC trace，Bundle Parcel 写入时快照 typed map。power/vibrator service 为稳定进程内 facade，不实现 Binder、fd/cross-process transport 或宿主设备动作"
+note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Color/RectF/Point/Path/PorterDuff/BitmapDrawable/ColorDrawable、Parcelable/Parcel/Bundle transport 与 PowerManager/WakeLock/Vibrator/Process；数据进入受检 side-table 和 GC trace，Bundle 自身持有的 byte array/Parcelable 为强边，Parcel 写入时快照 typed map。power/vibrator service 为稳定进程内 facade，不实现 Binder、fd/cross-process transport 或宿主设备动作"
 
 [dexvm.java_util_algorithms]
 status = "complete"
@@ -1343,12 +1343,12 @@ note = "DVM-87 发布 Callable/Future/RunnableFuture/ExecutorService shape、Fut
 [dexvm.java_network]
 status = "complete"
 test = "tests/dexvm/dvm88_tests.cpp"
-note = "DVM-88 以 per-VM NetworkRuntime 发布 InetAddress/Socket/stream/datagram/SocketFactory/SSLSocket bounded core；默认离线，host allowlist、TLS 与 datagram 需显式 NetworkPolicy 授权，实际 I/O 只经注入 NetworkTransport，不直接访问宿主 socket/DNS/证书库"
+note = "DVM-88 以 per-VM NetworkRuntime 发布 InetAddress/Socket/stream/datagram/SocketFactory/SSLSocket bounded core；默认离线，host allowlist、TLS 与 datagram 需显式 NetworkPolicy 授权，实际 I/O 只经注入 NetworkTransport，不直接访问宿主 socket/DNS/证书库；SocketFactory 常用创建面受同一 policy 管理，VM teardown 关闭全部 live channel"
 
 [dexvm.sqlite_vfs]
 status = "complete"
 test = "tests/dexvm/dvm88_tests.cpp"
-note = "DVM-88 发布 ContentValues、CursorImpl、SQLiteDatabase/SQLiteOpenHelper 的 create/drop/insert/update/delete/query bounded 数据面；确定性内部格式只经 guest VFS 持久化，完整 SQLite 文件格式、SQL parser、transaction/index/trigger/ContentProvider deferred"
+note = "DVM-88 发布 ContentValues、CursorImpl、SQLiteDatabase/SQLiteOpenHelper 的 create/drop/insert/update/delete/query bounded 数据面；确定性内部格式只经 guest VFS 持久化 schema version，SQLiteHelper 首次创建与升级虚派 guest callback，只有 Stat ENOENT 作为新库；完整 SQLite 文件格式、SQL parser、transaction/index/trigger/ContentProvider deferred"
 
 [dexvm.api19_capability_stack]
 status = "complete"

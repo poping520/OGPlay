@@ -388,10 +388,11 @@ public:
         const auto bytes = std::min<std::size_t>(message.size() + tag.size() + 3U,
                                                  std::numeric_limits<std::int32_t>::max());
         if (context_.logger != nullptr) {
+            const auto rendered = "[guest] " + tag + ": " + message;
             context_.logger->Write(ProjectLevel(priority), "guest.liblog",
-                "[guest] " + tag + ": " + message,
+                rendered,
                 {.guest_thread = thread_id},
-                {{"guest_log_tag", std::move(tag)},
+                {{"guest_log_tag", tag},
                  {"guest_log_priority", static_cast<std::int64_t>(priority)},
                  {"guest_log_buffer", static_cast<std::int64_t>(buffer)}});
         }

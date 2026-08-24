@@ -5,8 +5,11 @@
 
 #include <doctest/doctest.h>
 
+#include "ogplay/core/capability_ledger.h"
+#include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/object_model.h"
 
 namespace dx = ogplay::runtime::dexvm;
 namespace memory = ogplay::memory;
@@ -17,6 +20,67 @@ namespace {
 JniObjectIdentity Object(std::uint64_t value) {
     return {JniObjectDomain::dex_vm, value};
 }
+
+struct NioVm final {
+    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    dx::JavaObjectModel model{strings, arrays};
+    dx::DexClassLinker linker;
+    ogplay::core::CapabilityLedger ledger;
+    std::array<std::byte, 64> direct_memory{};
+    dx::Interpreter vm;
+
+    NioVm()
+        : vm([this]() -> dx::DexClassLinker& {
+              linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog());
+              linker.Link();
+              return linker;
+          }(), model, nullptr, ledger, {}) {
+        vm.NIO().SetDirectMemoryAccess({
+            [](std::uint32_t) { return memory::GuestAddress(0x1000U); },
+            [](memory::GuestAddress, std::uint32_t) {},
+            [](memory::GuestAddress address, std::uint32_t size) {
+                return address.Value() >= 0x1000U &&
+                       address.Value() + size <= 0x1040U;
+            },
+            [this](memory::GuestAddress address, std::span<std::byte> out) {
+                std::copy_n(direct_memory.begin() +
+                                (address.Value() - 0x1000U),
+                            out.size(), out.begin());
+            },
+            [this](memory::GuestAddress address,
+                   std::span<const std::byte> in) {
+                std::copy(in.begin(), in.end(), direct_memory.begin() +
+                    (address.Value() - 0x1000U));
+            }});
+    }
+
+    dx::VmObjectRef Static(const char* name, const char* descriptor,
+                           std::vector<dx::VmValue> arguments) {
+        const auto method = linker.FindDirectMethod(
+            linker.ResolveDescriptor("Ljava/nio/ByteBuffer;"), name,
+            descriptor);
+        REQUIRE(method.has_value());
+        const auto outcome = vm.Call(*method, arguments);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return outcome.value.ref;
+    }
+
+    dx::VmObjectRef On(dx::VmObjectRef receiver, const char* name) {
+        const auto owner = model.ObjectClass(receiver);
+        const auto index = linker.FindVtableIndex(
+            owner, name, "()Ljava/nio/ByteBuffer;");
+        REQUIRE(index.has_value());
+        const std::array arguments{dx::VmValue::Ref(receiver)};
+        const auto outcome = vm.Call(linker.Class(owner).vtable[*index], arguments);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        return outcome.value.ref;
+    }
+
+    std::string_view ClassOf(dx::VmObjectRef object) const {
+        return linker.Class(model.ObjectClass(object)).descriptor;
+    }
+};
 }
 
 TEST_CASE("DVM-82 NIO cursor and marks follow API 19 invariants") {
@@ -53,6 +117,22 @@ TEST_CASE("DVM-82 NIO views share storage and keep independent cursors") {
     nio.CreateView(Object(4), Object(1), dx::NioElementKind::int_value, 0, 2,
                    false);
     CHECK_FALSE(nio.Snapshot(Object(4)).array.IsValid());
+}
+
+TEST_CASE("DVM-82 ByteBuffer views preserve heap and direct concrete classes") {
+    NioVm fixture;
+    const auto heap = fixture.Static("allocate", "(I)Ljava/nio/ByteBuffer;",
+                                     {dx::VmValue::Int(8)});
+    const auto direct = fixture.Static(
+        "allocateDirect", "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+
+    CHECK(fixture.ClassOf(fixture.On(heap, "slice")) ==
+          "Ljava/nio/HeapByteBuffer;");
+    for (const auto method : {"slice", "duplicate", "asReadOnlyBuffer"}) {
+        const auto view = fixture.On(direct, method);
+        CHECK(fixture.ClassOf(view) == "Ljava/nio/DirectByteBuffer;");
+        CHECK(fixture.vm.NIO().Snapshot(fixture.model.ToIdentity(view)).direct);
+    }
 }
 
 TEST_CASE("DVM-82 ByteBuffer scalar access honors selected byte order") {

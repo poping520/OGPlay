@@ -1469,6 +1469,13 @@ void RegisterAndroidValueStateTables(
                 for (const auto& entry : sparse->second)
                     if (entry.value.IsValid()) visit(entry.value);
             }
+            if (const auto bundle = context->bundles.find(owner.Value());
+                bundle != context->bundles.end()) {
+                for (const auto& [_, value] : bundle->second) {
+                    if (const auto* ref = std::get_if<dexvm::VmObjectRef>(&value);
+                        ref != nullptr && ref->IsValid()) visit(*ref);
+                }
+            }
             if (const auto parcel = context->parcels.find(owner.Value());
                 parcel != context->parcels.end()) {
                 for (const auto& atom : parcel->second.atoms)

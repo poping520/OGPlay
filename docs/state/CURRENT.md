@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-25 · DVM-88 NetworkRuntime、VFS SQLite 与 API 19 能力栈收口
+更新：2026-08-25 · DVM-80..88 验收补强与全量绿线
 
 ## 当前阶段
 
@@ -29,22 +29,24 @@
   create/drop/insert/update/delete/query bounded 数据面，确定性内部格式只经 guest VFS
   持久化；完整 SQLite 文件格式、SQL 长尾、ContentProvider/Binder 均 deferred。阶段 catalog
   fixture 同时覆盖 NIO、GLES20、AudioTrack、Socket 与 SQLiteDatabase 链接闭包。
+- **验收补强**：DVM-82 direct/heap view 保留 concrete class；DVM-86 Bundle object side-table
+  强边进入 GC trace；DVM-88 补齐 SocketFactory 常用创建面、NetworkRuntime teardown close、
+  SQLiteHelper schema version 与 `onCreate/onUpgrade` 虚派，并仅将 VFS `Stat` ENOENT 视作新库。
+  liblog message/structured field 共用未移动 tag，消除 C++ 参数求值顺序造成的空 tag。
 
 ## 验证基线
 
 - `cmake --preset windows-msvc`：通过。
 - `cmake --build --preset windows-msvc --config Debug`：全部目标通过。
-- DVM-88 聚焦测试 3/3、受影响 GC/catalog 固定清单 4/4、architecture 6/6：通过。
-- 全量 `ctest --preset windows-msvc --output-on-failure`：984/985 通过；唯一失败为既有
-  `Android liblog text and A32 variadic calls enter structured guest logs`，现象为 guest tag
-  `PVZ` 被读为空。该用例在 DVM-79 历史全量基线中已独立失败，与 DVM-88 网络/数据库路径
-  无依赖；本 WU 未混入无关修复。DVM-88 及全部 DexVM/architecture 测试通过。
+- DVM-82/86/88 与 liblog 验收补强定向测试 20/20：通过。
+- architecture 6/6：通过。
+- 全量 `ctest --preset windows-msvc --output-on-failure`：991/991 通过；原 #575 liblog guest
+  tag 用例恢复为 `[guest] PVZ: ...`，当前 Windows 全量绿线。
 
 ## 下一步
 
-1. 独立排查 Windows liblog guest tag 读取失败，恢复全量绿线。
-2. 通用闭合 A6 DT_SONAME identity 与 DH 当前启动阻断，复验 DVM-47 和 threaded title gate。
-3. 执行 Linux M9 严格出口复验；后续 framework 长尾仅按关闭 survey 的 reached gap 排序。
+1. 通用闭合 A6 DT_SONAME identity 与 DH 当前启动阻断，复验 DVM-47 和 threaded title gate。
+2. 执行 Linux M9 严格出口复验；后续 framework 长尾仅按关闭 survey 的 reached gap 排序。
 
 ## 阻塞与边界
 

@@ -81,9 +81,12 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   per-VM side state，GC 只通过具名 state-table trace/sweep 管理 guest 引用。core 只消费
   显式注入的 `NetworkPolicy`/`NetworkTransport` 窄接口，默认离线；host allowlist、TLS 与
   datagram 分别受检，未注入 transport 或未授权操作明确失败。core 禁止直接创建宿主 socket、
-  读取系统 DNS/代理/证书库或反向依赖 Android connectivity context。
+  读取系统 DNS/代理/证书库或反向依赖 Android connectivity context。VM teardown 必须在
+  transport 生命周期内关闭全部仍连接的 channel，再清空 endpoint/stream/packet side state。
 - `NioRuntime`（DVM-82）：以 JNI object identity 索引 Buffer side state；heap array、
   direct guest memory 与 view 共用 storage，view 只复制 position/limit/mark/order。
+  `slice`/`duplicate`/`asReadOnlyBuffer` 保留 receiver concrete class，禁止把 direct view
+  重新物化为 heap concrete。
   backing array 作为 GC 强边被 trace，死亡 owner sweep，Object.clone 共享 backing 并复制
   cursor。core 只消费注入的强类型 guest-address allocate/validate/read/write/release 窄接口，
   不依赖 Android context；未注入 allocator 时 `allocateDirect` 明确失败。

@@ -25,6 +25,8 @@
 
 namespace ogplay::runtime {
 
+namespace dexvm { class NioRuntime; }
+
 class JniInvocationEngine;
 class JniStringStore;
 class JniFieldStore;
@@ -278,6 +280,7 @@ public:
     [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
     [[nodiscard]] JniStringStore& Strings() noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
+    [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
@@ -361,6 +364,7 @@ public:
     [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
     [[nodiscard]] JniStringStore& Strings() noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
+    [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;

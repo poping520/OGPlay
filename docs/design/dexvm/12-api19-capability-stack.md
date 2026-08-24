@@ -192,6 +192,9 @@ base Context identity 和现有 Activity lifecycle 回归通过。
 
 ### C · `java.nio` 与 JNI direct buffer
 
+状态：DVM-82 已完成本批次；完整 charset/file channel 不在本批次，Java core 总项仍为
+partial。
+
 首轮类型：`Buffer`、`ByteBuffer`、`ByteOrder`、Short/Int/Float/Char/Long/DoubleBuffer，
 以及 BufferOverflow/Underflow、InvalidMark、ReadOnlyBuffer exception。
 

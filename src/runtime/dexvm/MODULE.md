@@ -77,6 +77,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   无文件系统时明确失败；流 wrapper 为 single-owner transfer，clone 不复制游标或缓冲。
 - `ZipRuntime`（DVM-79）：统一拥有 java.util.zip archive、当前 entry bytes/cursor 与
   close 状态；复用 loader 严格 ZIP parser/inflate，并由 intrinsic side-table hook 清扫。
+- `NioRuntime`（DVM-82）：以 JNI object identity 索引 Buffer side state；heap array、
+  direct guest memory 与 view 共用 storage，view 只复制 position/limit/mark/order。
+  backing array 作为 GC 强边被 trace，死亡 owner sweep，Object.clone 共享 backing 并复制
+  cursor。core 只消费注入的强类型 guest-address allocate/validate/read/write/release 窄接口，
+  不依赖 Android context；未注入 allocator 时 `allocateDirect` 明确失败。
 - `java.lang.Thread` 对照 pinned libcore `Thread.java`/`VMThread.java` 与 Dalvik
   `Thread.cpp`/`Sync.cpp`：root context 具有稳定 id=1 `main` Thread 强根；构造时
   分配 per-VM stable ID；`start()` 经实际 Thread class vtable 虚派发

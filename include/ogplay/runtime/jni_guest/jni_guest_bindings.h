@@ -11,6 +11,8 @@ class AddressSpace;
 
 namespace ogplay::runtime {
 
+namespace dexvm { class NioRuntime; }
+
 class JniEnvironment;
 class JniClassRegistry;
 class JniFieldStore;
@@ -32,6 +34,7 @@ struct JniGuestBindingContext final {
     JniGuestObjectRegistry& objects;
     memory::AddressSpace& address_space;
     JniNativeRegistry* natives{};
+    dexvm::NioRuntime* nio{};
 };
 
 class JniGuestBindingError final : public std::runtime_error {

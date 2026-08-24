@@ -104,6 +104,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   JNI attach 与逐调用 local frame；同线程重入继承 suspended SP/TLS，J/D 返回读取
   r0:r1。JNI monitor hooks 映射到 DexVM execution token 与对象身份，jclass 规范化为
   同一 Class object，使 native monitor 与 static synchronized 竞争同一状态机。
+  DVM-82 进一步让 bridge 与 JNI binder 引用 process-owned 同一 `NioRuntime`；direct
+  backing 仅由 `AddressSpace` 中有界 arena 分配并按强类型 guest address 校验、搬运、回收，
+  Java/JNI view 不保存宿主裸指针。
 - `DexVmAndroidContext` + `AndroidIntrinsicCatalog(context)`：
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、

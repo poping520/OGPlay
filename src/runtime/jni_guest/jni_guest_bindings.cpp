@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "ogplay/memory/address_space.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_fields.h"
@@ -60,6 +61,65 @@ namespace {
 
 [[nodiscard]] JniGuestCallResult Reference(const JniReference value) {
     return Word(value.Value());
+}
+
+void BindDirectBufferSlots(JniGuestCallDispatcher& dispatcher,
+                           JniGuestBindingContext& context) {
+    auto& nio = *context.nio;
+    auto& environment = context.environment;
+    auto& classes = context.classes;
+    auto& objects = context.objects;
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("NewDirectByteBuffer"),
+        [&environment, &classes, &objects, &nio](
+            const JniGuestCallFrame& frame) -> JniGuestCallResult {
+            const auto capacity = static_cast<std::int64_t>(
+                static_cast<std::uint64_t>(frame.registers[3]) << 32U |
+                frame.registers[2]);
+            if (capacity < 0 || capacity > std::numeric_limits<std::int32_t>::max())
+                throw JniGuestBindingError("NewDirectByteBuffer capacity is invalid");
+            const auto java_class = classes.FindClass("java/nio/DirectByteBuffer");
+            if (!java_class.has_value())
+                throw JniGuestBindingError("java/nio/DirectByteBuffer is not declared");
+            const auto object = objects.Allocate(*java_class);
+            JniReference reference;
+            try {
+                nio.WrapDirect(object, memory::GuestAddress(frame.registers[1]),
+                               static_cast<std::int32_t>(capacity));
+                reference = environment.PublishLocalObject(frame.thread_id, object);
+                return Reference(reference);
+            } catch (...) {
+                nio.Sweep(object);
+                objects.Forget(object);
+                throw;
+            }
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("GetDirectBufferAddress"),
+        [&environment, &nio](const JniGuestCallFrame& frame) {
+            const auto object = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!object.has_value() || !nio.Contains(*object)) return Word(0U);
+            const auto state = nio.Snapshot(*object);
+            return Word(state.direct_address.has_value()
+                            ? state.direct_address->Value() : 0U);
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("GetDirectBufferCapacity"),
+        [&environment, &nio](const JniGuestCallFrame& frame) -> JniGuestCallResult {
+            const auto object = environment.ResolveObjectForHle(
+                frame.thread_id, JniReference{frame.registers[1]});
+            if (!object.has_value() || !nio.Contains(*object) ||
+                !nio.Snapshot(*object).direct) {
+                return {JniGuestReturnWidth::double_word,
+                        {UINT32_MAX, UINT32_MAX}};
+            }
+            const auto capacity = static_cast<std::uint64_t>(
+                nio.Snapshot(*object).capacity);
+            return {JniGuestReturnWidth::double_word,
+                    {static_cast<std::uint32_t>(capacity),
+                     static_cast<std::uint32_t>(capacity >> 32U)}};
+        });
 }
 
 [[nodiscard]] std::string ReadCString(
@@ -566,6 +626,7 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
             dispatcher, context.environment, context.classes,
             *context.natives, context.address_space);
     }
+    if (context.nio != nullptr) BindDirectBufferSlots(dispatcher, context);
     BindJniGuestJavaVmSlots(dispatcher, context.java_vm,
                             context.address_space);
 }

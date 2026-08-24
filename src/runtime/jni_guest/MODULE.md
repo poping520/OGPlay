@@ -27,11 +27,15 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   JIT 后必须由 dispatcher 恢复原 exception type/message，不得退化为 generic fault。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family,随后封口 dispatcher;
-  aggregate contract 以精确 slot 集合等价(当前 214 个 JNIEnv 与 4 个 JavaVM)机器验证,
-  数量本身只是辅助诊断;Critical string、DirectByteBuffer、Reflection、FatalError 与
+  aggregate contract 以精确 slot 集合等价(基础 214 个 JNIEnv、注入 NIO 后 217 个，及
+  4 个 JavaVM)机器验证，数量本身只是辅助诊断；DVM-82 的 DirectByteBuffer 三槽仅在
+  显式注入共享 `NioRuntime` 时绑定；Critical string、Reflection、FatalError 与
   DestroyJavaVM 属于显式 expected-unbound 清单,不得为提高覆盖率注册假 handler。Core
   binder 不得再隐式注册其他 family。引用、异常和线程状态复用同一环境,guest 输出指针在
   VM 状态变更前预检;非空 attach arguments 在实现其结构前明确失败。
+- `NewDirectByteBuffer`（DVM-82）先验证 capacity 与完整 guest read/write range，再登记
+  `DirectByteBuffer` identity；地址/容量查询只消费同一 NIO side state，non-direct 分别
+  返回 null/-1。非法地址、未知引用或发布失败不得留下 object/state 半提交。
 - `GetStaticMethodID` 只精确查询统一 class registry;`NewStringUTF` 使用受检 guest C
   string、M3 Modified UTF-8 解码与统一 string store 后发布 local reference。
 - 10 种 `CallStatic*Method` 返回类型的普通、`V`、`A` 共 30 个槽按 method descriptor

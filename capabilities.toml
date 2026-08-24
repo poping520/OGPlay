@@ -1292,13 +1292,13 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 
 [dexvm.intrinsics_java_core]
 status = "partial"
-test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File 家族，将 20 个 Android java.io handle TU 收敛为 core 的 streams/files 两个 family TU；续作又以 ZipRuntime/java_util_zip.cpp 收口 ZipEntry/ZipInputStream、严格 loader ZIP 状态与 GC sweep。文件仅经注入 VFS。Tree/Sorted/Navigable、并发集合、完整 Collections/Arrays、serialization/charset/FileDescriptor/NIO 仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
+test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File/ZIP 家族，文件仅经注入 VFS。DVM-82 以统一 NioRuntime 发布 API 19 Buffer/ByteBuffer/ByteOrder、六类 typed buffer、heap/direct/view backing、cursor/mark、relative/absolute/bulk get/put、array/read-only/compact/order，并与 JNI direct-buffer 共用状态。Tree/Sorted/Navigable、并发集合、完整 Collections/Arrays、serialization、完整 charset/FileDescriptor/FileChannel 仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
 
 [dexvm.jni_bridge]
 status = "complete"
-test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
-note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回；DexVM ClassObject 与 JNI jclass 双向规范化为同一身份，JNI_OnLoad 可把 jclass 用作 Class instance receiver"
+test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
+note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回；DexVM ClassObject 与 JNI jclass 双向规范化为同一身份，JNI_OnLoad 可把 jclass 用作 Class instance receiver。DVM-82 绑定 NewDirectByteBuffer/GetDirectBufferAddress/GetDirectBufferCapacity，校验 guest range 并与 Java Buffer 共享 NioRuntime identity/address/capacity。"
 
 [dexvm.intrinsics_android_core]
 status = "partial"

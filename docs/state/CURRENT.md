@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-25 · DVM-81 API 19 Context 类型体系
+更新：2026-08-25 · DVM-82 java.nio 与 JNI direct buffer
 
 ## 当前阶段
 
@@ -50,22 +50,26 @@
   DVM-78/79 已用统一 runtime 发布常用集合及 I/O/ZIP；DVM-80 把 core/Android intrinsic
   收敛为 12/18 个 family TU，并将 22 个非 Android Java 声明迁回 core。DVM-81 恢复 API 19
   ContextWrapper/ContextThemeWrapper 与 app 组件继承链，生命周期一次性绑定 base Context，
-  既有 Context 能力只经 base 委托；Android core 能力仍为 partial。后续顺序与边界见
+  既有 Context 能力只经 base 委托。DVM-82 新增统一 `NioRuntime`，发布 API 19 Buffer/
+  ByteBuffer/ByteOrder 与六类 typed buffer；Java/JNI direct-buffer 共用 identity、guest
+  address 和 capacity，backing 只经 session `AddressSpace`。Java/Android core 仍为
+  partial。后续顺序与边界见
   [`12-api19-capability-stack.md`](../design/dexvm/12-api19-capability-stack.md)。
 ## 验证基线
 
 - Windows VS 18.8 / MSVC 14.51 `windows-msvc` Debug 全目标构建通过；受影响的 DEX、
   Android/EGL/GLES2 focused 27/27（9645 assertions）与 architecture 5/5 通过。
-- DVM-80/81 Windows Debug 全目标构建通过；DVM-81 Context/反射/VFS/VideoView 10/10、
-  Activity lifecycle 6/6、architecture 3/3 定向回归通过。全量 CTest 按计划留到阶段
-  最后一个 WU。
+- DVM-80/81 Windows Debug 全目标构建通过。DVM-82 `windows-msvc` configure 与 Debug
+  全目标构建通过；NIO/JNI direct 6/6（28 assertions）、core catalog/side-table/JNI
+  aggregate/superclass 4/4（462 assertions）、architecture 5/5 定向回归通过。全量 CTest
+  按计划留到阶段最后一个 WU。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 2. Linux M9 严格出口复验。
-3. 进入 DVM-82：实现 NIO runtime、Buffer family 与 JNI direct-buffer 闭环。
+3. 进入 DVM-83：在唯一 `GuestGlContext` 上实现 Java GLES façade 与 NIO buffer 编组。
 
 ## 阻塞与边界
 

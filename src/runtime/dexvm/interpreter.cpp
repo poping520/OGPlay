@@ -698,6 +698,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
             return linker.Class(java_class).descriptor;
         });
 
+    impl_->nio.SetObjectModel(&model);
     RegisterIntrinsicStateTable({
         "throwable",
         [state = impl_.get()](const VmObjectRef owner,
@@ -749,6 +750,22 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
             state->zip.Sweep(owner);
         },
         [](const VmObjectRef, const VmObjectRef) {}});
+    RegisterIntrinsicStateTable({
+        "nio",
+        [state = impl_.get(), &model](const VmObjectRef owner,
+                                      const VmRootVisitor& visit) {
+            state->nio_runtime->Trace(model.ToIdentity(owner), visit);
+        },
+        [state = impl_.get(), &model](const VmObjectRef owner) {
+            state->nio_runtime->Sweep(model.ToIdentity(owner));
+        },
+        [state = impl_.get(), &model](const VmObjectRef source,
+                                      const VmObjectRef clone) {
+            const auto source_id = model.ToIdentity(source);
+            if (state->nio_runtime->Contains(source_id)) {
+                state->nio_runtime->Duplicate(model.ToIdentity(clone), source_id, false);
+            }
+        }});
 
     const auto string_class = linker.FindClass("Ljava/lang/String;");
     const auto class_class = linker.FindClass("Ljava/lang/Class;");
@@ -773,11 +790,25 @@ IoRuntime& Interpreter::IO() { return impl_->io; }
 
 const IoRuntime& Interpreter::IO() const { return impl_->io; }
 
+NioRuntime& Interpreter::NIO() { return *impl_->nio_runtime; }
+
+const NioRuntime& Interpreter::NIO() const { return *impl_->nio_runtime; }
+
+void Interpreter::SetNioRuntime(NioRuntime* const runtime) noexcept {
+    impl_->nio_runtime = runtime == nullptr ? &impl_->nio : runtime;
+    impl_->nio_runtime->SetObjectModel(impl_->model);
+}
+
 ZipRuntime& Interpreter::ZIP() { return impl_->zip; }
 
 const ZipRuntime& Interpreter::ZIP() const { return impl_->zip; }
 
-Interpreter::~Interpreter() = default;
+Interpreter::~Interpreter() {
+    if (impl_->nio_runtime != &impl_->nio) {
+        impl_->nio_runtime->SweepDomain(JniObjectDomain::dex_vm);
+        impl_->nio_runtime->SetObjectModel(nullptr);
+    }
+}
 
 ClassLoaderFacade& Interpreter::ClassLoaders() noexcept {
     return *impl_->class_loaders;

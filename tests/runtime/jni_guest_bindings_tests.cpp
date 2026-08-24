@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -17,6 +18,8 @@
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/jni/jni_array.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
@@ -29,7 +32,7 @@
 namespace {
 
 struct GuestBindingsFixture final {
-    GuestBindingsFixture()
+    explicit GuestBindingsFixture(const bool direct_buffers = false)
         : bus(memory),
           cpu(bus),
           abi(memory),
@@ -39,9 +42,27 @@ struct GuestBindingsFixture final {
         memory.Map({output, memory.PageSize()},
                    ogplay::memory::PageProtection::read |
                        ogplay::memory::PageProtection::write);
+        if (direct_buffers) {
+            static_cast<void>(classes.RegisterClass(
+                {"java/nio/DirectByteBuffer", std::nullopt, {}, {}}));
+            nio.SetDirectMemoryAccess({{}, {},
+                [this](const ogplay::memory::GuestAddress address,
+                       const std::uint32_t size) {
+                    if (size == 0U) return address.IsNull();
+                    try {
+                        memory.Validate({address, size}, ogplay::memory::AccessType::read);
+                        memory.Validate({address, size}, ogplay::memory::AccessType::write);
+                        return true;
+                    } catch (const std::exception&) { return false; }
+                },
+                [this](const ogplay::memory::GuestAddress address,
+                       const std::span<std::byte> out) { memory.Read(address, out); },
+                [this](const ogplay::memory::GuestAddress address,
+                       const std::span<const std::byte> in) { memory.Write(address, in); }});
+        }
         ogplay::runtime::JniGuestBindingContext context{
             environment, classes, invocations, fields, strings, arrays,
-            java_vm, objects, memory, &natives};
+            java_vm, objects, memory, &natives, direct_buffers ? &nio : nullptr};
         ogplay::runtime::BindJniGuestSlots(dispatcher, context);
     }
 
@@ -99,6 +120,7 @@ struct GuestBindingsFixture final {
     ogplay::runtime::JniStringStore strings;
     ogplay::runtime::JniPrimitiveArrayStore arrays;
     ogplay::runtime::JniNativeRegistry natives;
+    ogplay::runtime::dexvm::NioRuntime nio;
     ogplay::runtime::JniJavaVm java_vm;
     const ogplay::memory::GuestAddress output{0x72000000U};
 
@@ -307,6 +329,27 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
         fixture.dispatcher.BindEnvironment(
             *ogplay::runtime::FindJniSlot("GetStringCritical"), handler),
         "JNI guest dispatcher is sealed", std::logic_error);
+}
+
+TEST_CASE("DVM-82 guest JNI direct buffer slots share validated NIO state") {
+    GuestBindingsFixture fixture(true);
+    const auto attached = fixture.java_vm.AttachCurrentThread(
+        82U, ogplay::runtime::kJniVersion1_6);
+    REQUIRE(attached.status == ogplay::runtime::JniStatus::ok);
+    fixture.Seal();
+    const auto address = fixture.output.Add(0x100U);
+    const auto buffer = fixture.CallEnvironment(
+        "NewDirectByteBuffer", 82U, address.Value(), 32U, 0U);
+    REQUIRE(buffer != 0U);
+    CHECK(fixture.CallEnvironment(
+              "GetDirectBufferAddress", 82U, buffer) == address.Value());
+    CHECK(fixture.CallEnvironment(
+              "GetDirectBufferCapacity", 82U, buffer) == 32U);
+    CHECK(fixture.ReturnHighWord() == 0U);
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.CallEnvironment(
+            "NewDirectByteBuffer", 82U, 0x12345000U, 32U, 0U)),
+        ogplay::runtime::dexvm::VmJavaThrow);
 }
 
 TEST_CASE("guest JNI NewStringUTF publishes a decoded local string") {

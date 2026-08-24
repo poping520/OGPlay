@@ -86,6 +86,7 @@ public:
     [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer>
     MixOpenSlesPcm16(std::span<std::int16_t> output,
                      std::uint32_t output_rate);
+    [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;

@@ -118,6 +118,13 @@ std::uint32_t OpenSlesPcmMixer::PositionMillis(const PlayerId player) const {
         static_cast<double>((std::numeric_limits<std::uint32_t>::max)())));
 }
 
+std::uint32_t OpenSlesPcmMixer::PositionFrames(const PlayerId player) const {
+    std::scoped_lock lock(mutex_);
+    const auto frames = Require(player).played_source_frames;
+    return static_cast<std::uint32_t>(std::min(
+        frames, static_cast<double>((std::numeric_limits<std::uint32_t>::max)())));
+}
+
 void OpenSlesPcmMixer::SetVolume(const PlayerId player,
                                  const std::int16_t millibel) {
     if (millibel < -9600 || millibel > 0) {
@@ -125,6 +132,18 @@ void OpenSlesPcmMixer::SetVolume(const PlayerId player,
     }
     std::scoped_lock lock(mutex_);
     Require(player).millibel = millibel;
+}
+
+void OpenSlesPcmMixer::SetStereoVolume(const PlayerId player, const float left,
+                                       const float right) {
+    if (!std::isfinite(left) || !std::isfinite(right) || left < 0.0F ||
+        left > 1.0F || right < 0.0F || right > 1.0F) {
+        throw std::invalid_argument("PCM stereo volume must be within 0..1");
+    }
+    std::scoped_lock lock(mutex_);
+    auto& target = Require(player);
+    target.left_volume = left;
+    target.right_volume = right;
 }
 
 void OpenSlesPcmMixer::SetMute(const PlayerId player, const bool mute) {
@@ -192,8 +211,10 @@ OpenSlesPcmMixer::MixAdditiveStereoPcm16(
                           static_cast<double>(output_rate);
         const auto gain = player.mute ? 0.0 : MillibelGain(player.millibel);
         const auto pan = static_cast<double>(player.stereo_position) / 1000.0;
-        const auto left_gain = gain * (pan > 0.0 ? 1.0 - pan : 1.0);
-        const auto right_gain = gain * (pan < 0.0 ? 1.0 + pan : 1.0);
+        const auto left_gain = gain * player.left_volume *
+                               (pan > 0.0 ? 1.0 - pan : 1.0);
+        const auto right_gain = gain * player.right_volume *
+                                (pan < 0.0 ? 1.0 + pan : 1.0);
         for (std::size_t out_frame = 0; out_frame < output_frames; ++out_frame) {
             while (!player.queue.empty()) {
                 const auto frames = player.queue.front().pcm.size() /

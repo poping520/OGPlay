@@ -106,6 +106,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-81](DVM-81.md) | API 19 Context 类型体系 | 已完成 |
 | [DVM-82](DVM-82.md) | java.nio 与 JNI direct buffer | 已完成 |
 | [DVM-83](DVM-83.md) | Java GLES façade 与 NIO/Bitmap 编组 | 已完成 |
+| [DVM-84](DVM-84.md) | API 19 AudioTrack 与统一 PCM backend | 已完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

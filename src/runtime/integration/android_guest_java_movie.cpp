@@ -1,5 +1,6 @@
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -126,6 +127,16 @@ std::uint64_t AndroidGuestLegacyMediaState::CallbackCount(
     return found == callback_counts_.end() ? 0U : found->second;
 }
 
+void AndroidGuestLegacyMediaState::SetPcmPlayback(
+    audio::OpenSlesPcmMixer* const playback) {
+    std::scoped_lock lock(mutex_);
+    if (!audio_tracks_.empty()) {
+        throw AndroidGuestCallSessionError(
+            "cannot replace PCM playback after AudioTrack creation");
+    }
+    pcm_playback_ = playback;
+}
+
 std::int32_t AndroidGuestLegacyMediaState::MinimumAudioTrackBuffer(
     const std::int32_t sample_rate, const std::int32_t channel_config,
     const std::int32_t encoding) {
@@ -153,70 +164,97 @@ void AndroidGuestLegacyMediaState::ConfigureAudioTrack(
         throw AndroidGuestCallSessionError(
             "Android guest AudioTrack is already configured");
     }
-    audio_tracks_.emplace(track.value, AudioTrackSnapshot{
-        sample_rate, channel_config == 4 ? 1 : 2, buffer_size});
+    if (pcm_playback_ == nullptr) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack PCM backend is unavailable");
+    }
+    const auto channels = channel_config == 4 ? 1 : 2;
+    const auto player = pcm_playback_->CreatePlayer(
+        {static_cast<std::uint32_t>(sample_rate),
+         static_cast<std::uint8_t>(channels), 16U}, 255U);
+    audio_tracks_.emplace(track.value, AudioTrackRecord{
+        AudioTrackSnapshot{sample_rate, channels, buffer_size}, player});
 }
 
 void AndroidGuestLegacyMediaState::PauseAudioTrack(
     const JniObjectIdentity track) {
     std::scoped_lock lock(mutex_);
     const auto found = audio_tracks_.find(track.value);
-    if (found == audio_tracks_.end() || found->second.released) {
+    if (found == audio_tracks_.end() || found->second.snapshot.released) {
         throw AndroidGuestCallSessionError(
             "Android guest AudioTrack is unavailable");
     }
-    found->second.playing = false;
-    found->second.paused = true;
+    found->second.snapshot.playing = false;
+    found->second.snapshot.paused = true;
+    pcm_playback_->SetPlayState(found->second.player,
+                                audio::OpenSlesPlayState::paused);
 }
 
 void AndroidGuestLegacyMediaState::PlayAudioTrack(
     const JniObjectIdentity track) {
     std::scoped_lock lock(mutex_);
     const auto found = audio_tracks_.find(track.value);
-    if (found == audio_tracks_.end() || found->second.released) {
+    if (found == audio_tracks_.end() || found->second.snapshot.released) {
         throw AndroidGuestCallSessionError(
             "Android guest AudioTrack is unavailable");
     }
-    found->second.playing = true;
-    found->second.paused = false;
+    found->second.snapshot.playing = true;
+    found->second.snapshot.paused = false;
+    pcm_playback_->SetPlayState(found->second.player,
+                                audio::OpenSlesPlayState::playing);
 }
 
 void AndroidGuestLegacyMediaState::StopAudioTrack(
     const JniObjectIdentity track) {
     std::scoped_lock lock(mutex_);
     const auto found = audio_tracks_.find(track.value);
-    if (found == audio_tracks_.end() || found->second.released) {
+    if (found == audio_tracks_.end() || found->second.snapshot.released) {
         throw AndroidGuestCallSessionError(
             "Android guest AudioTrack is unavailable");
     }
-    found->second.playing = false;
-    found->second.paused = false;
+    found->second.snapshot.playing = false;
+    found->second.snapshot.paused = false;
+    pcm_playback_->SetPlayState(found->second.player,
+                                audio::OpenSlesPlayState::stopped);
 }
 
 void AndroidGuestLegacyMediaState::ReleaseAudioTrack(
     const JniObjectIdentity track) {
     std::scoped_lock lock(mutex_);
     const auto found = audio_tracks_.find(track.value);
-    if (found == audio_tracks_.end() || found->second.released) {
+    if (found == audio_tracks_.end() || found->second.snapshot.released) {
         throw AndroidGuestCallSessionError(
             "Android guest AudioTrack is unavailable");
     }
-    found->second.playing = false;
-    found->second.released = true;
+    found->second.snapshot.playing = false;
+    found->second.snapshot.released = true;
+    pcm_playback_->DestroyPlayer(found->second.player);
 }
 
 void AndroidGuestLegacyMediaState::WriteAudioTrack(
     const JniObjectIdentity track, const std::span<const JniByte> bytes) {
     std::scoped_lock lock(mutex_);
     const auto found = audio_tracks_.find(track.value);
-    if (found == audio_tracks_.end() || found->second.released ||
-        bytes.size() > static_cast<std::size_t>(found->second.buffer_size) ||
-        found->second.bytes_written >
+    if (found == audio_tracks_.end() || found->second.snapshot.released ||
+        bytes.empty() || bytes.size() %
+            static_cast<std::size_t>(found->second.snapshot.channels * 2) != 0U ||
+        bytes.size() > static_cast<std::size_t>(found->second.snapshot.buffer_size) ||
+        found->second.snapshot.bytes_written >
             std::numeric_limits<std::uint64_t>::max() - bytes.size()) {
         throw AndroidGuestCallSessionError(
             "Android guest AudioTrack write is invalid");
     }
-    found->second.bytes_written += bytes.size();
+    std::vector<std::byte> pcm(bytes.size());
+    std::transform(bytes.begin(), bytes.end(), pcm.begin(),
+                   [](const JniByte value) {
+                       return static_cast<std::byte>(
+                           static_cast<std::uint8_t>(value));
+                   });
+    if (!pcm_playback_->Enqueue(found->second.player, pcm)) {
+        throw AndroidGuestCallSessionError(
+            "Android guest AudioTrack PCM queue is full");
+    }
+    found->second.snapshot.bytes_written += bytes.size();
 }
 
 AndroidGuestLegacyMediaState::AudioTrackSnapshot
@@ -227,7 +265,7 @@ AndroidGuestLegacyMediaState::AudioTrack(const JniObjectIdentity track) const {
         throw AndroidGuestCallSessionError(
             "Android guest AudioTrack is unavailable");
     }
-    return found->second;
+    return found->second.snapshot;
 }
 
 JniObjectIdentity InstallAndroidGuestJavaMediaClasses(

@@ -39,6 +39,8 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
     JniPrimitiveArrayStore arrays;
     AndroidGuestMovieState movie_state;
     AndroidGuestLegacyMediaState media_state;
+    ogplay::audio::OpenSlesPcmMixer pcm_playback;
+    media_state.SetPcmPlayback(&pcm_playback);
     BindAndroidGuestJavaMediaHandlers(
         invocations, environment, strings, arrays, movie_state, media_state,
         [](const std::int32_t resource) {
@@ -143,6 +145,10 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
         9U, track_reference, audio_track, *play_track, {},
         JniArgumentSource::value_array));
     CHECK(media_state.AudioTrack(track_identity).playing);
+    std::array<std::int16_t, 2> mixed{};
+    static_cast<void>(pcm_playback.MixAdditiveStereoPcm16(mixed, 44100U));
+    CHECK(mixed[0] != 0);
+    CHECK(mixed[1] != 0);
     static_cast<void>(invocations.InvokeVirtual(
         9U, track_reference, audio_track, *pause, {},
         JniArgumentSource::value_array));

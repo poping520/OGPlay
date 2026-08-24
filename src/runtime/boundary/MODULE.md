@@ -33,7 +33,8 @@
   immutable vtable 直接保存各 method thunk；RW object handle 是 generation-safe host table 的
   guest identity。concrete `OpenSlesModule final` 实现 Engine→OutputMix→PCM AudioPlayer 链，
   范围外 constructor 明确返回 `FEATURE_UNSUPPORTED`。PCM DSP 由注入的唯一
-  `OpenSlesPcmMixer` service 拥有；module 不依赖 facade 或 HAL。
+  `OpenSlesPcmMixer` service 拥有；DVM-84 通过 façade 的窄接口发布该 service 给上层
+  AudioTrack adapter，module 仍不依赖 integration、facade 或 HAL。
 - thunk arena 按实际 slot 数向上取整到多页并在写入后封为 RX；fast router 只做
   `PC → dense slot → {fn,self}`，live r0-r15 直接借用自 CPU hook，5 个以上参数只进行
   一次 guest stack bulk read。启用 guest-call slice observer 时上层不得安装 fast hook。

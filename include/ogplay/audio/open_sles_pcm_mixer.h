@@ -41,7 +41,9 @@ public:
     void SetPlayState(PlayerId player, OpenSlesPlayState state);
     [[nodiscard]] OpenSlesPlayState PlayState(PlayerId player) const;
     [[nodiscard]] std::uint32_t PositionMillis(PlayerId player) const;
+    [[nodiscard]] std::uint32_t PositionFrames(PlayerId player) const;
     void SetVolume(PlayerId player, std::int16_t millibel);
+    void SetStereoVolume(PlayerId player, float left, float right);
     void SetMute(PlayerId player, bool mute);
     void SetStereoPosition(PlayerId player, std::int16_t permille);
 
@@ -59,6 +61,8 @@ private:
         OpenSlesPlayState state{OpenSlesPlayState::stopped};
         std::int16_t millibel{};
         std::int16_t stereo_position{};
+        float left_volume{1.0F};
+        float right_volume{1.0F};
         bool mute{};
         std::uint32_t play_index{};
         std::uint64_t next_sequence{1U};

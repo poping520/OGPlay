@@ -20,8 +20,9 @@
   保持显式 disabled，缺失/损坏资源保留可查询失败原因。
 - `OpenSlesPcmMixer`：为 Virtual `libOpenSLES.so` 保存线程安全 PCM player/queue，支持
   mono/stereo、unsigned PCM8/signed little-endian PCM16、线性重采样、millibel volume、
-  mute、pan 与多 player 64-bit 饱和加性混音；完整消费只返回事件，mixer 不直接调用 guest
-  callback 或 HAL。
+  mute、pan、独立左右声道 gain、frame playback head 与多 player 64-bit 饱和加性混音；
+  DVM-84 使 OpenSL ES、DEXVM AudioTrack 和旧 Java/JNI AudioTrack 共享该唯一 backend。
+  完整消费只返回事件，mixer 不直接调用 guest callback 或 HAL。
 - M3/M6 定义对象表、PCM 队列、回调与媒体状态机。
 
 ## 不变量
@@ -47,6 +48,8 @@
   消费 position，多个 voice 以 64-bit scratch 累加并饱和为 PCM16，完成 voice 自动清理。
 - OpenSL mute 只把当前 player 的输出 gain 置零，不暂停 source position、queue 消费或
   consumed-buffer callback；pause/stopped 才停止 mixer 时间推进。
+- AudioTrack stereo gain 与 OpenSL millibel/mute/pan 在同一 player 上相乘；播放头按已消费
+  source frame 计数，stop 复位，pause 仅冻结。
 
 ## 禁止
 

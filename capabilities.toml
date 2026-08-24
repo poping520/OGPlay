@@ -996,9 +996,9 @@ test = "tests/runtime/android_guest_call_session_tests.cpp"
 note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接受 A32 frame、发布退出请求，并把显式 slice observer 传给每次 guest call；WU-0337 发布 wait interruption；M8 WU-0375 让 child 在首 slice 前/间响应 exit，session 全量 join 后才析构"
 
 [runtime.legacy_audio_track]
-status = "partial"
-test = "tests/runtime/android_guest_java_media_tests.cpp; tests/session/title_profile_tests.cpp; data/scenarios/asphalt6.bootstrap.scenario.toml"
-note = "M8 WU-0374 以通用 state/HLE 闭合 PCM16 mono/stereo AudioTrack 七项 Java/JNI 调用并记录实际 write 字节；exact 越过音频 bootstrap，PCM 宿主混音尚未接线"
+status = "complete"
+test = "tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
+note = "M8 WU-0374 以通用 state/HLE 闭合 PCM16 mono/stereo AudioTrack 七项 Java/JNI 调用；DVM-84 将 write/play/pause/stop/release 接入进程唯一 OpenSlesPcmMixer，真实混音与非法生命周期受检"
 
 [runtime.host_managed_gl_surface]
 status = "complete"
@@ -1309,6 +1309,11 @@ note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久�
 status = "partial"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tools/generate_java_gles_surface.py --check"
 note = "DVM-83 从固定 Android 4.4.4 源发布 GLES10/10Ext/11/11Ext/20、GLUtils、GLU 的 public static API 与 int 常量；可确定的 scalar/String/primitive-array/NIO Buffer 调用进入 sealed native GLES binding 和唯一 GuestGlContext，direct buffer 不复制，heap/view 输出 copy-back 且 cursor 不变，GLUtils 复用 Bitmap ARGB backing 上传 RGBA。Java wrapper 与 native catalog 无确定适配关系的方法逐项记账并抛 UnsupportedOperationException，因此能力保持 partial。"
+
+[dexvm.audio_track]
+status = "complete"
+test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
+note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、stereo/mono volume 和 frame playback head；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用进程唯一 OpenSlesPcmMixer，GC sweep 与 release 销毁 player"
 
 [dexvm.gap_survey]
 status = "complete"

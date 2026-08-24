@@ -317,6 +317,7 @@ public:
         const std::uint32_t output_rate) {
         return open_sles_module_.MixAdditiveStereoPcm16(output, output_rate);
     }
+    audio::OpenSlesPcmMixer& PcmPlayback() noexcept { return open_sles_mixer_; }
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept {
         return provider_;
     }
@@ -803,6 +804,10 @@ std::vector<audio::OpenSlesConsumedBuffer>
 AndroidBoundaryHle::MixOpenSlesPcm16(
     const std::span<std::int16_t> output, const std::uint32_t output_rate) {
     return impl_->MixOpenSlesPcm16(output, output_rate);
+}
+
+audio::OpenSlesPcmMixer& AndroidBoundaryHle::PcmPlayback() noexcept {
+    return impl_->PcmPlayback();
 }
 core::GpuStats AndroidBoundaryHle::Stats() const { return impl_->Stats(); }
 std::vector<core::GpuRenderTarget> AndroidBoundaryHle::RenderTargets() const {

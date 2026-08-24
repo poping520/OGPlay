@@ -110,6 +110,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   DVM-83 的 Java GLES façade 复用该 runtime 做调用期 Buffer/array/String 编组，并经
   `AndroidGuestProcess::InvokeManagedGles` 进入既有 sealed GLES binding；integration 不保存
   第二套 GL 状态，`GLUtils` 只消费既有 Bitmap backing。
+  DVM-84 的 `AudioTrack` side-table 只保存 guest owner 到 mixer player 的窄映射；DEX、
+  legacy Java/JNI 与 OpenSL ES 均通过 session 注入的同一 `OpenSlesPcmMixer`，GC sweep 与
+  release 都销毁 player，side-table 不反向成为 GC root。
 - `DexVmAndroidContext` + `AndroidIntrinsicCatalog(context)`：
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
   resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
@@ -200,8 +203,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
 - legacy AudioTrack framework 批次实现 PCM16 mono/stereo 的受检 minimum-buffer、stream
   constructor、play/pause/stop/release 与 byte-array region write;每个 track 以 host
   object identity 隔离并发布 playing/paused/released/bytes-written 状态。非法 format、
-  mode、range、重复构造或 release 后调用明确失败;PCM 输出混音尚未接线时能力保持
-  partial。
+  mode、range、重复构造或 release 后调用明确失败；DVM-84 已把 write 与控制接入进程唯一
+  PCM mixer，不再只累计字节。
 - Virtual OpenSL ES PCM mixer 在 `RenderStereoAudio` 中位于 SoundPool zero-fill/mix 之后做
   additive mix，仍由上层向唯一 HAL output 提交一次。Object/Play/BufferQueue callback 经
   窄化事件队列交给专用 A32 guest thread/CPU/TLS/stack；该线程不隐式 attach JNI，callback

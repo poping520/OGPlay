@@ -33,8 +33,8 @@
   `GetDirectBufferCapacity`，但生产绑定测试明确要求三者当前未绑定。
 - Java GL 当前只有 EGL façade 和最小 `GL10.glGetString`；native EGL/GLES1/GLES2 已共享
   唯一 `GuestGlContext`，Java GLES 必须接入该状态，不能另建 GL 实现。
-- DexVM Android catalog 尚无 `AudioTrack`；旧 Java/JNI HLE 有七项 AudioTrack 状态接口，
-  但只累计写入字节，没有接到 `OpenSlesPcmMixer`。
+- DVM-84 已把 DexVM 与旧 Java/JNI `AudioTrack` 接到进程唯一 `OpenSlesPcmMixer`；
+  STREAM/STATIC write、播放状态、音量、播放头及 GC 释放均共享真实 backend。
 - `Handler.sendMessage/post` 当前同步重入 guest，`Looper.prepare/loop` 为 no-op；
   `DexVmAndroidContext::uptime_millis` 已由 lifecycle 发布，可作为统一 Clock 的接入点。
 - `Context.getSystemService()` 当前只提供 phone、audio、wifi、sensor、connectivity、
@@ -207,7 +207,7 @@ Java GLES buffer 编组测试通过。
 
 ### D · 游戏数据面
 
-状态：Java GLES 子项已由 DVM-83 完成；AudioTrack 与时间/调度仍待后续 WU。
+状态：Java GLES、AudioTrack 子项已由 DVM-83/DVM-84 完成；时间/调度仍待后续 WU。
 
 1. Java GLES：实现 `GLES10/GLES10Ext/GLES11/GLES11Ext/GLES20/GLUtils/GLU` 的 API 19
    可链接面；行为按现有 native GLES catalog 分族接入，未知或边界外入口明确失败。

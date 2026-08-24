@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-25 · DVM-83 Java GLES façade 与 NIO/Bitmap 编组
+更新：2026-08-25 · DVM-84 API 19 AudioTrack 与统一 PCM backend
 
 ## 当前阶段
 
@@ -41,7 +41,10 @@
   API 19 可链接面；可确定的 scalar/String/array/NIO Buffer 调用复用 sealed native GLES
   binding 与唯一 `GuestGlContext`，direct buffer 不复制、heap/view 输出 copy-back 不移动
   cursor，GLUtils 复用既有 Bitmap 像素。无法确定 native 映射的 Java wrapper 继续记账并
-  明确失败，因此 `dexvm.java_gles` 保持 partial。后续顺序与边界见
+  明确失败，因此 `dexvm.java_gles` 保持 partial。DVM-84 已发布 API 19 AudioFormat/
+  AudioTrack 的 PCM8/16 mono/stereo STREAM/STATIC、byte/short write、volume 与播放头；
+  DEX、旧 Java/JNI 和 OpenSL ES 共用进程唯一 mixer，GC/release 回收 player，
+  `dexvm.audio_track` 与 `runtime.legacy_audio_track` 为 complete。后续顺序与边界见
   [`12-api19-capability-stack.md`](../design/dexvm/12-api19-capability-stack.md)。
 ## 验证基线
 
@@ -54,13 +57,16 @@
 - DVM-83 Windows Debug 受影响目标构建通过；Java GLES/NIO/EGL/catalog/JNI superclass/
   Java-native texture state 定向 10/10（2513 assertions）、生成面 stale check 与
   architecture 6/6 通过；全量 CTest 按计划留到阶段最后一个 WU。
+- DVM-84 `windows-msvc` configure 与 Release `ogplay_tests` 构建通过；AudioTrack、legacy
+  Java/JNI 与 OpenSL mixer 定向 6/6（118 assertions）、OpenSL boundary/callback 2/2
+  （98 assertions）及 architecture 6/6 通过；全量 CTest 按计划未运行。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 2. Linux M9 严格出口复验。
-3. 进入 DVM-84：让 API 19 AudioTrack 与现有 OpenSL ES 共用唯一 PCM queue/mixer backend。
+3. 进入 DVM-85：统一 SystemClock 与 Handler/Looper/Timer 调度 backend。
 
 ## 阻塞与边界
 

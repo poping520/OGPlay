@@ -93,6 +93,7 @@ public:
                     request.system_libraries, request.logger);
         }
         context->session = session.get();
+        context->pcm_playback = &session->PcmPlayback();
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;
         context->package_version_code = manifest.version_code;

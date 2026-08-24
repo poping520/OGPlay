@@ -104,6 +104,8 @@ public:
         bool released{};
     };
 
+    void SetPcmPlayback(audio::OpenSlesPcmMixer* playback);
+
     void Record(std::string_view method);
     void SetMasterVolume(float volume);
     void SetMusicVolume(std::int32_t resource, float volume);
@@ -127,10 +129,15 @@ public:
         JniObjectIdentity track) const;
 
 private:
+    struct AudioTrackRecord final {
+        AudioTrackSnapshot snapshot;
+        audio::OpenSlesPcmMixer::PlayerId player{};
+    };
     mutable std::mutex mutex_;
     std::map<std::string, std::uint64_t, std::less<>> callback_counts_;
     std::map<std::int32_t, float> music_volumes_;
-    std::map<std::uint64_t, AudioTrackSnapshot> audio_tracks_;
+    std::map<std::uint64_t, AudioTrackRecord> audio_tracks_;
+    audio::OpenSlesPcmMixer* pcm_playback_{};
     float master_volume_{1.0F};
 };
 
@@ -283,6 +290,7 @@ public:
     [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
+    [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
         std::string_view class_name, std::string_view method_name,
@@ -371,6 +379,7 @@ public:
     [[nodiscard]] dexvm::NioRuntime& NIO() noexcept;
     [[nodiscard]] audio::JavaSoundPoolState& SoundPoolState() noexcept;
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
+    [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] AndroidGuestProcess& Process() noexcept;
     // Resolves a Java_ native export (short then long JNI name) across the

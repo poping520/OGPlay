@@ -1,5 +1,10 @@
 // DVM-80: API-family translation unit. Physical consolidation only.
 
+#include <algorithm>
+#include <cmath>
+
+#include "ogplay/audio/open_sles_pcm_mixer.h"
+
 // ---- migrated from android_media_AudioManager.cpp ----
 #include "catalog.h"
 
@@ -27,6 +32,306 @@ Decl Declare_android_media_AudioManager(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
+
+// ---- DVM-84: API 19 AudioFormat / AudioTrack on the shared PCM backend ----
+
+namespace ogplay::runtime::android_intrinsics::dvm84_android_media_AudioTrack {
+namespace {
+
+constexpr std::int32_t kStateUninitialized = 0;
+constexpr std::int32_t kStateInitialized = 1;
+constexpr std::int32_t kStateNoStaticData = 2;
+constexpr std::int32_t kModeStatic = 0;
+constexpr std::int32_t kModeStream = 1;
+constexpr std::int32_t kErrorBadValue = -2;
+constexpr std::int32_t kErrorInvalidOperation = -3;
+
+struct Format final {
+    std::int32_t channels{};
+    std::int32_t bytes_per_sample{};
+};
+
+[[nodiscard]] std::optional<Format> DecodeFormat(
+    const std::int32_t channel_config, const std::int32_t encoding) {
+    const auto channels =
+        channel_config == 1 || channel_config == 2 || channel_config == 4
+            ? 1
+            : (channel_config == 3 || channel_config == 12 ? 2 : 0);
+    const auto bytes = encoding == 1 || encoding == 2
+                           ? 2
+                           : (encoding == 3 ? 1 : 0);
+    if (channels == 0 || bytes == 0) return std::nullopt;
+    return Format{channels, bytes};
+}
+
+[[nodiscard]] std::int32_t MinimumBuffer(const std::int32_t sample_rate,
+                                         const std::int32_t channel_config,
+                                         const std::int32_t encoding) {
+    const auto format = DecodeFormat(channel_config, encoding);
+    if (!format.has_value() || sample_rate < 4000 || sample_rate > 48000) {
+        return kErrorBadValue;
+    }
+    return (sample_rate / 10) * format->channels * format->bytes_per_sample;
+}
+
+[[nodiscard]] DexVmAndroidContext::AudioTrackState* Find(
+    const Context& context, const dx::VmObjectRef receiver) {
+    const auto found = context->audio_tracks.find(receiver.Value());
+    return found == context->audio_tracks.end() ? nullptr : &found->second;
+}
+
+[[nodiscard]] DexVmAndroidContext::AudioTrackState& Require(
+    const Context& context, dx::IntrinsicContext& call) {
+    auto* state = Find(context, call.receiver);
+    if (state == nullptr || state->state == kStateUninitialized ||
+        context->pcm_playback == nullptr ||
+        !context->pcm_playback->HasPlayer(state->player)) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              "AudioTrack is not initialized"};
+    }
+    return *state;
+}
+
+[[nodiscard]] std::int32_t WriteBytes(
+    const Context& context, dx::IntrinsicContext& call,
+    const std::span<const std::byte> bytes) {
+    auto* state = Find(context, call.receiver);
+    if (state == nullptr || context->pcm_playback == nullptr) {
+        return kErrorInvalidOperation;
+    }
+    if (bytes.empty() || bytes.size() %
+            static_cast<std::size_t>(state->channel_count *
+                                     state->bytes_per_sample) != 0U ||
+        bytes.size() > static_cast<std::size_t>(state->buffer_size)) {
+        return kErrorBadValue;
+    }
+    if (state->mode == kModeStatic) context->pcm_playback->Clear(state->player);
+    if (!context->pcm_playback->Enqueue(state->player, bytes)) return 0;
+    if (state->state == kStateNoStaticData) state->state = kStateInitialized;
+    return static_cast<std::int32_t>(bytes.size());
+}
+
+}  // namespace
+
+Decl Declare_android_media_AudioFormat(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/media/AudioFormat;", "Ljava/lang/Object;");
+    builder.ConstantInt("ENCODING_DEFAULT", "I", 1)
+        .ConstantInt("ENCODING_PCM_16BIT", "I", 2)
+        .ConstantInt("ENCODING_PCM_8BIT", "I", 3)
+        .ConstantInt("CHANNEL_CONFIGURATION_DEFAULT", "I", 1)
+        .ConstantInt("CHANNEL_CONFIGURATION_MONO", "I", 2)
+        .ConstantInt("CHANNEL_CONFIGURATION_STEREO", "I", 3)
+        .ConstantInt("CHANNEL_OUT_MONO", "I", 4)
+        .ConstantInt("CHANNEL_OUT_STEREO", "I", 12);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_media_AudioTrack(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/media/AudioTrack;", "Ljava/lang/Object;");
+    builder.ConstantInt("MODE_STATIC", "I", kModeStatic)
+        .ConstantInt("MODE_STREAM", "I", kModeStream)
+        .ConstantInt("STATE_UNINITIALIZED", "I", kStateUninitialized)
+        .ConstantInt("STATE_INITIALIZED", "I", kStateInitialized)
+        .ConstantInt("STATE_NO_STATIC_DATA", "I", kStateNoStaticData)
+        .ConstantInt("PLAYSTATE_STOPPED", "I", 1)
+        .ConstantInt("PLAYSTATE_PAUSED", "I", 2)
+        .ConstantInt("PLAYSTATE_PLAYING", "I", 3)
+        .ConstantInt("SUCCESS", "I", 0)
+        .ConstantInt("ERROR", "I", -1)
+        .ConstantInt("ERROR_BAD_VALUE", "I", kErrorBadValue)
+        .ConstantInt("ERROR_INVALID_OPERATION", "I", kErrorInvalidOperation);
+    builder.StaticMethod("getMinBufferSize", "(III)I",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(MinimumBuffer(
+                call.arguments[0].AsInt(), call.arguments[1].AsInt(),
+                call.arguments[2].AsInt()));
+        });
+    builder.Constructor("(IIIIII)V", [context](dx::IntrinsicContext& call) {
+        const auto sample_rate = call.arguments[1].AsInt();
+        const auto format = DecodeFormat(call.arguments[2].AsInt(),
+                                         call.arguments[3].AsInt());
+        const auto buffer_size = call.arguments[4].AsInt();
+        const auto mode = call.arguments[5].AsInt();
+        const auto frame_size = format.has_value()
+                                    ? format->channels * format->bytes_per_sample
+                                    : 0;
+        if (call.arguments[0].AsInt() != 3 || !format.has_value() ||
+            sample_rate < 4000 || sample_rate > 48000 || buffer_size <= 0 ||
+            frame_size == 0 || buffer_size % frame_size != 0 ||
+            (mode != kModeStatic && mode != kModeStream) ||
+            context->pcm_playback == nullptr ||
+            (mode == kModeStream && buffer_size < MinimumBuffer(
+                 sample_rate, call.arguments[2].AsInt(),
+                 call.arguments[3].AsInt()))) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "unsupported AudioTrack configuration"};
+        }
+        if (context->audio_tracks.contains(call.receiver.Value())) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "AudioTrack is already initialized"};
+        }
+        const auto player = context->pcm_playback->CreatePlayer(
+            {static_cast<std::uint32_t>(sample_rate),
+             static_cast<std::uint8_t>(format->channels),
+             static_cast<std::uint8_t>(format->bytes_per_sample * 8)},
+            mode == kModeStatic ? 1U : 255U);
+        context->audio_tracks[call.receiver.Value()] = {
+            player, sample_rate, format->channels, format->bytes_per_sample,
+            buffer_size, mode,
+            mode == kModeStatic ? kStateNoStaticData : kStateInitialized};
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("getState", "()I", [context](dx::IntrinsicContext& call) {
+        const auto* state = Find(context, call.receiver);
+        return dx::VmValue::Int(state == nullptr ? kStateUninitialized
+                                                 : state->state);
+    });
+    builder.FinalMethod("getPlayState", "()I", [context](dx::IntrinsicContext& call) {
+        const auto* state = Find(context, call.receiver);
+        if (state == nullptr || context->pcm_playback == nullptr) {
+            return dx::VmValue::Int(1);
+        }
+        const auto play = context->pcm_playback->PlayState(state->player);
+        return dx::VmValue::Int(play == audio::OpenSlesPlayState::playing
+                                    ? 3
+                                    : (play == audio::OpenSlesPlayState::paused ? 2 : 1));
+    });
+    builder.FinalMethod("play", "()V", [context](dx::IntrinsicContext& call) {
+        auto& state = Require(context, call);
+        if (state.state != kStateInitialized) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "static AudioTrack has no data"};
+        }
+        context->pcm_playback->SetPlayState(
+            state.player, audio::OpenSlesPlayState::playing);
+        return dx::VmValue::Void();
+    });
+    const auto set_play_state = [context](const audio::OpenSlesPlayState play) {
+        return [context, play](dx::IntrinsicContext& call) {
+            auto& state = Require(context, call);
+            context->pcm_playback->SetPlayState(state.player, play);
+            return dx::VmValue::Void();
+        };
+    };
+    builder.FinalMethod("pause", "()V", set_play_state(audio::OpenSlesPlayState::paused));
+    builder.FinalMethod("stop", "()V", set_play_state(audio::OpenSlesPlayState::stopped));
+    builder.FinalMethod("flush", "()V", [context](dx::IntrinsicContext& call) {
+        auto& state = Require(context, call);
+        if (state.mode == kModeStream) context->pcm_playback->Clear(state.player);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("release", "()V", [context](dx::IntrinsicContext& call) {
+        const auto found = context->audio_tracks.find(call.receiver.Value());
+        if (found != context->audio_tracks.end()) {
+            if (context->pcm_playback != nullptr) {
+                context->pcm_playback->DestroyPlayer(found->second.player);
+            }
+            context->audio_tracks.erase(found);
+        }
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("write", "([BII)I", [context](dx::IntrinsicContext& call) {
+        const auto array = call.arguments[0].ref;
+        const auto offset = call.arguments[1].AsInt();
+        const auto count = call.arguments[2].AsInt();
+        if (!array.IsValid() || offset < 0 || count < 0 ||
+            static_cast<std::int64_t>(offset) + count >
+                call.vm.Model().ArrayLength(array) ||
+            call.vm.Model().PrimitiveArrayKind(array) != JniPrimitiveKind::byte) {
+            return dx::VmValue::Int(kErrorBadValue);
+        }
+        return dx::VmValue::Int(WriteBytes(
+            context, call, call.vm.Model().ReadByteRegion(array, offset, count)));
+    });
+    builder.FinalMethod("write", "([SII)I", [context](dx::IntrinsicContext& call) {
+        auto* state = Find(context, call.receiver);
+        const auto array = call.arguments[0].ref;
+        const auto offset = call.arguments[1].AsInt();
+        const auto count = call.arguments[2].AsInt();
+        if (state == nullptr || state->bytes_per_sample != 2 || !array.IsValid() ||
+            offset < 0 || count < 0 ||
+            static_cast<std::int64_t>(offset) + count >
+                call.vm.Model().ArrayLength(array) ||
+            call.vm.Model().PrimitiveArrayKind(array) !=
+                JniPrimitiveKind::short_integer) {
+            return dx::VmValue::Int(state == nullptr ? kErrorInvalidOperation
+                                                      : kErrorBadValue);
+        }
+        std::vector<std::byte> bytes(static_cast<std::size_t>(count) * 2U);
+        for (std::int32_t index = 0; index < count; ++index) {
+            const auto value = static_cast<std::uint16_t>(
+                call.vm.Model().GetPrimitiveElement(array, offset + index));
+            bytes[static_cast<std::size_t>(index) * 2U] =
+                static_cast<std::byte>(value & 0xffU);
+            bytes[static_cast<std::size_t>(index) * 2U + 1U] =
+                static_cast<std::byte>(value >> 8U);
+        }
+        const auto written = WriteBytes(context, call, bytes);
+        return dx::VmValue::Int(written < 0 ? written : written / 2);
+    });
+    builder.FinalMethod("setStereoVolume", "(FF)I", [context](dx::IntrinsicContext& call) {
+        auto* state = Find(context, call.receiver);
+        if (state == nullptr || context->pcm_playback == nullptr) {
+            return dx::VmValue::Int(kErrorInvalidOperation);
+        }
+        const auto left = std::clamp(call.arguments[0].AsFloat(), 0.0F, 1.0F);
+        const auto right = std::clamp(call.arguments[1].AsFloat(), 0.0F, 1.0F);
+        context->pcm_playback->SetStereoVolume(state->player, left, right);
+        return dx::VmValue::Int(0);
+    });
+    builder.FinalMethod("setVolume", "(F)I", [context](dx::IntrinsicContext& call) {
+        auto* state = Find(context, call.receiver);
+        if (state == nullptr || context->pcm_playback == nullptr) {
+            return dx::VmValue::Int(kErrorInvalidOperation);
+        }
+        const auto volume = std::clamp(call.arguments[0].AsFloat(), 0.0F, 1.0F);
+        context->pcm_playback->SetStereoVolume(state->player, volume, volume);
+        return dx::VmValue::Int(0);
+    });
+    builder.FinalMethod("getPlaybackHeadPosition", "()I",
+        [context](dx::IntrinsicContext& call) {
+            auto* state = Find(context, call.receiver);
+            return dx::VmValue::Int(
+                state == nullptr || context->pcm_playback == nullptr
+                    ? 0
+                    : static_cast<std::int32_t>(
+                          context->pcm_playback->PositionFrames(state->player)));
+        });
+    return std::move(builder).Build();
+}
+
+}  // namespace ogplay::runtime::android_intrinsics::dvm84_android_media_AudioTrack
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_media_AudioFormat(const Context& context) {
+    return dvm84_android_media_AudioTrack::Declare_android_media_AudioFormat(context);
+}
+Decl Declare_android_media_AudioTrack(const Context& context) {
+    return dvm84_android_media_AudioTrack::Declare_android_media_AudioTrack(context);
+}
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime {
+void RegisterAndroidAudioTrackStateTable(
+    dexvm::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context) {
+    if (context == nullptr) return;
+    vm.RegisterIntrinsicStateTable({
+        "android.media.AudioTrack", {},
+        [context](const dexvm::VmObjectRef object) {
+            const auto found = context->audio_tracks.find(object.Value());
+            if (found == context->audio_tracks.end()) return;
+            if (context->pcm_playback != nullptr) {
+                context->pcm_playback->DestroyPlayer(found->second.player);
+            }
+            context->audio_tracks.erase(found);
+        },
+        {}});
+}
+}  // namespace ogplay::runtime
 
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_media_AudioManager(const Context& context) {

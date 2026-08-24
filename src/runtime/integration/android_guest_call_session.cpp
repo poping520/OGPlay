@@ -604,6 +604,7 @@ public:
         BindAndroidGuestJavaAudioHandlers(
             invocations_, sound_pool_,
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
+        media_state_.SetPcmPlayback(&boundary_.PcmPlayback());
         BindAndroidGuestJavaMediaHandlers(
             invocations_, environment_, strings_, arrays_, movie_state_,
             media_state_, request.sound_resource_loader);
@@ -1240,6 +1241,8 @@ public:
         return sound_pool_; }
     audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept {
         return sound_pool_mixer_; }
+    audio::OpenSlesPcmMixer& PcmPlayback() noexcept {
+        return boundary_.PcmPlayback(); }
     VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
     void InitializeJniLibrary() {
         if (!running_) {
@@ -1683,6 +1686,9 @@ audio::JavaSoundPoolState& AndroidGuestProcess::SoundPoolState() noexcept {
 audio::JavaSoundPoolMixer& AndroidGuestProcess::SoundPoolMixer() noexcept {
     return impl_->SoundPoolMixer();
 }
+audio::OpenSlesPcmMixer& AndroidGuestProcess::PcmPlayback() noexcept {
+    return impl_->PcmPlayback();
+}
 VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
     return impl_->Filesystem();
 }
@@ -1838,6 +1844,7 @@ JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept { return proc
 dexvm::NioRuntime& AndroidGuestCallSession::NIO() noexcept { return process_->NIO(); }
 audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept { return process_->SoundPoolState(); }
 audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept { return process_->SoundPoolMixer(); }
+audio::OpenSlesPcmMixer& AndroidGuestCallSession::PcmPlayback() noexcept { return process_->PcmPlayback(); }
 VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept { return process_->Filesystem(); }
 AndroidGuestProcess& AndroidGuestCallSession::Process() noexcept { return *process_; }
 std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const { return process_->FindNativeExport(class_name, method_name, descriptor); }

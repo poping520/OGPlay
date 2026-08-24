@@ -88,6 +88,8 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_hardware_SensorEventListener(context),
         Declare_android_hardware_SensorManager(context),
         Declare_android_media_AudioManager(context),
+        Declare_android_media_AudioFormat(context),
+        Declare_android_media_AudioTrack(context),
         Declare_android_media_MediaPlayer_OnCompletionListener(context),
         Declare_android_media_MediaPlayer_OnErrorListener(context),
         Declare_android_media_MediaPlayer_OnPreparedListener(context),

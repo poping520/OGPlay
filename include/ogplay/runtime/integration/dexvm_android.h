@@ -27,6 +27,10 @@
 #include "ogplay/runtime/ui/ui_renderer.h"
 #include "ogplay/video/video_player.h"
 
+namespace ogplay::audio {
+class OpenSlesPcmMixer;
+}
+
 namespace ogplay::runtime {
 
 class AndroidGuestCallSession;
@@ -40,6 +44,8 @@ class VirtualFileSystem;
 
 struct DexVmAndroidContext final {
     AndroidGuestCallSession* session{};
+    // One process-owned PCM backend shared by OpenSL ES and AudioTrack.
+    audio::OpenSlesPcmMixer* pcm_playback{};
     // Process-wide APK native loader used by java.lang.System.load*.
     // The application ClassLoader has one stable non-zero identity for the
     // lifetime of this context; APS-5 intentionally does not invent a second
@@ -226,6 +232,17 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::int32_t, std::int32_t> sound_streams;
     std::int32_t next_sound_stream{1};
 
+    struct AudioTrackState final {
+        std::uint64_t player{};
+        std::int32_t sample_rate{};
+        std::int32_t channel_count{};
+        std::int32_t bytes_per_sample{};
+        std::int32_t buffer_size{};
+        std::int32_t mode{};
+        std::int32_t state{};
+    };
+    std::unordered_map<std::uint32_t, AudioTrackState> audio_tracks;
+
     // Bitmap pixel stores by instance handle: real host-side ARGB8888
     // buffers so getPixels/createBitmap round-trip actual data.
     struct BitmapState final {
@@ -326,6 +343,10 @@ struct DexVmAndroidContext final {
     };
     std::unordered_map<std::uint64_t, VideoViewState> video_views;
 };
+
+void RegisterAndroidAudioTrackStateTable(
+    dexvm::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context);
 
 struct UiWidgetDescriptor final {
     std::string_view xml_tag;

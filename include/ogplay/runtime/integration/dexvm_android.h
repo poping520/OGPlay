@@ -258,24 +258,86 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, bool> media_playing;
     std::unordered_map<std::uint32_t, bool> media_looping;
 
-    // Cooperative java.util.Timer task state. java.lang.Thread itself is a
-    // dexvm core intrinsic and keeps Java-visible facts in declared fields;
-    // this legacy-shaped record is only used by the frame-boundary Timer pump.
-    struct JavaThreadState final {
-    dexvm::VmObjectRef runnable{};
-        bool started{};
-        bool finished{};
-        // Timer does not schedule by priority; retained only as neutral state
-        // for the bounded cooperative record.
-        std::int32_t priority{5};
-    // Diagnostic name for the queued TimerTask.
-    std::string name;
+    enum class ScheduledWorkKind : std::uint8_t {
+        handler_message,
+        handler_runnable,
+        timer_task,
+        countdown,
+        async_post,
+        async_progress,
     };
-    std::unordered_map<std::uint32_t, JavaThreadState> java_threads;
-    // java.util.Timer tasks stay cooperative: schedule() queues the task and
-    // the delay collapses to the next lifecycle frame boundary, so timers
-    // remain deterministic and never outlive the frame loop.
-    std::vector<dexvm::VmObjectRef> java_thread_queue;
+
+    struct ScheduledWork final {
+        std::int64_t deadline_millis{};
+        std::uint64_t sequence{};
+        ScheduledWorkKind kind{ScheduledWorkKind::handler_message};
+        dexvm::VmObjectRef looper{};
+        dexvm::VmObjectRef owner{};
+        dexvm::VmObjectRef target{};
+        dexvm::VmObjectRef payload{};
+        dexvm::VmObjectRef token{};
+        std::int32_t what{};
+        std::uint64_t generation{};
+    };
+
+    struct LooperState final {
+        std::uint64_t context_token{};
+        dexvm::VmObjectRef thread{};
+        bool main{};
+        bool quitting{};
+    };
+
+    struct TimerTaskState final {
+        dexvm::VmObjectRef timer{};
+        std::int64_t scheduled_time{};
+        std::int64_t period_millis{};
+        std::uint64_t generation{};
+        bool fixed_rate{};
+        bool scheduled{};
+        bool cancelled{};
+    };
+
+    struct CountDownState final {
+        std::int64_t duration_millis{};
+        std::int64_t interval_millis{};
+        std::int64_t stop_time_millis{};
+        std::uint64_t generation{};
+        bool cancelled{};
+    };
+
+    enum class AsyncStatus : std::uint8_t { pending, running, finished };
+    struct AsyncTaskState final {
+        AsyncStatus status{AsyncStatus::pending};
+        dexvm::VmObjectRef params{};
+        dexvm::VmObjectRef result{};
+        dexvm::VmObjectRef worker{};
+        dexvm::VmObjectRef thread{};
+        bool cancelled{};
+    };
+    struct AsyncWorkerState final {
+        dexvm::VmObjectRef task{};
+        dexvm::VmObjectRef params{};
+    };
+
+    // One scheduler owns every Android/JRE delayed callback. Deadline
+    // decisions use uptime_millis; the condition variable only wakes a
+    // HandlerThread when work or Clock state changes.
+    mutable std::mutex scheduler_mutex;
+    std::condition_variable scheduler_changed;
+    std::vector<ScheduledWork> scheduled_work;
+    std::uint64_t next_scheduler_sequence{1};
+    bool scheduler_shutdown{};
+    dexvm::VmObjectRef main_looper;
+    std::unordered_map<std::uint32_t, LooperState> loopers;
+    std::unordered_map<std::uint64_t, dexvm::VmObjectRef> thread_loopers;
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_loopers;
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_callbacks;
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_threads;
+    std::unordered_map<std::uint32_t, TimerTaskState> timer_tasks;
+    std::unordered_map<std::uint32_t, bool> cancelled_timers;
+    std::unordered_map<std::uint32_t, CountDownState> countdown_timers;
+    std::unordered_map<std::uint32_t, AsyncTaskState> async_tasks;
+    std::unordered_map<std::uint32_t, AsyncWorkerState> async_workers;
     // Owned by the DexVm bridge; set once the interpreter exists.
     dexvm::VmThreadRuntime* threads{};
 
@@ -484,12 +546,21 @@ enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
 [[nodiscard]] std::optional<std::string> RetireSurfaceHolderGeneration(
     dexvm::Interpreter& vm, DexVmAndroidContext& context);
 
-// Frame-boundary service for Java threads: runs queued cooperative Timer
-// tasks on the calling (VM host) thread and drains any uncaught failure the
-// real host threads recorded. Returns a rendered message when a thread died,
-// matching the process-fatal default handler on device.
+// Advances the only Android monotonic Clock and wakes scheduler waiters.
+void AdvanceAndroidClock(DexVmAndroidContext& context,
+                         std::int64_t delta_millis);
+
+// Stops all loopers and wakes HandlerThread teardown. Idempotent.
+void ShutdownAndroidScheduler(DexVmAndroidContext& context);
+
+// Frame-boundary service for the main Looper and Java threads. Runs all due
+// main work in (deadline, sequence) order and drains uncaught thread failure.
 [[nodiscard]] std::optional<std::string>
 PumpJavaThreads(dexvm::Interpreter &vm, DexVmAndroidContext &context);
+
+void RegisterAndroidSchedulerStateTable(
+    dexvm::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context);
 
 // True when the guest asked for the session to end: System.exit(), or the
 // activity that currently owns the screen finished itself with no successor

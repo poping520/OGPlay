@@ -16,6 +16,10 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 通用 `java.io` handle 与流状态属于 DexVM core；integration 装配只通过
 `DexVmIoVfsAdapter` 向 `IoRuntime` 注入窄文件接口。`java.util.zip` handle 与 archive
 状态同样属于 DexVM core 的 `ZipRuntime`；不得恢复 context stream/output/zip map。
+`android.os` 的 Handler/Looper/HandlerThread/CountDownTimer/AsyncTask 与 core Timer 只经
+会话唯一 scheduler 排队：deadline 来自 `uptime_millis`，同 deadline 按 sequence FIFO。
+主 Looper 只在 lifecycle 安全点泵送，子 Looper 只在 `VmThreadRuntime` guest 线程执行；
+禁止同步调用伪装 post、读取宿主墙钟或为 Timer 建第二套队列。
 
 javax EGL/GL façade 遵循 DVM-31：`android_gl.cpp` 聚合该
 家族的 Java handle 声明、handler、唯一
@@ -119,6 +123,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - Java GLES direct Buffer 必须传当前 position 对应的原 guest address；heap/view/array
   只能使用调用期 guest 临时内存，输出 copy-back 不移动 cursor。任何 Java 签名无法确定
   映射到 native catalog 时必须记账并明确失败，禁止 neutral return。
+- scheduler side-table 持有的引用必须由 state-table trace 或 session scheduled-root 枚举；
+  GC sweep 删除 owner 关联状态，session teardown 先 shutdown scheduler、唤醒 Looper，再
+  join guest 线程。所有时钟推进必须调用 `AdvanceAndroidClock` 通知 waiter。
 
 ## 依赖
 
@@ -130,3 +137,5 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 `tests/session/profile_entry_scope_tests.cpp` 锁定 catalog 唯一性、直接绑定及
 Activity/Intent/Bundle/TextView 方法集合；`tests/dexvm/file_vfs_tests.cpp`、
 `videoview_tests.cpp`、`widget_click_tests.cpp` 锁定主要集成行为。
+`tests/dexvm/scheduler_tests.cpp` 锁定固定 Clock、FIFO/cancel、Timer/CountDownTimer、
+HandlerThread 与 AsyncTask 的线程/回投语义。

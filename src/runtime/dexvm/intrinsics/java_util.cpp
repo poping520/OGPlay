@@ -2199,6 +2199,26 @@ IntrinsicClassDecl DeclarePlatformTimer(
                                                 "Ljava/lang/Object;");
     builder.Constructor("()V",
                         [](IntrinsicContext&) { return VmValue::Void(); });
+    builder.Constructor("(Z)V",
+                        [](IntrinsicContext&) { return VmValue::Void(); });
+    builder.Constructor("(Ljava/lang/String;)V",
+                        [](IntrinsicContext& call) {
+                            if (!call.arguments[0].ref.IsValid()) {
+                                throw VmJavaThrow{
+                                    "Ljava/lang/NullPointerException;",
+                                    "Timer name is null"};
+                            }
+                            return VmValue::Void();
+                        });
+    builder.Constructor("(Ljava/lang/String;Z)V",
+                        [](IntrinsicContext& call) {
+                            if (!call.arguments[0].ref.IsValid()) {
+                                throw VmJavaThrow{
+                                    "Ljava/lang/NullPointerException;",
+                                    "Timer name is null"};
+                            }
+                            return VmValue::Void();
+                        });
     builder.FinalMethod(
         "schedule", "(Ljava/util/TimerTask;J)V",
         [schedule = services.schedule_timer_task](IntrinsicContext& call) {
@@ -2212,31 +2232,77 @@ IntrinsicClassDecl DeclarePlatformTimer(
                     "Ljava/lang/UnsupportedOperationException;",
                     "Timer scheduling needs platform services"};
             }
-            schedule(task);
+            schedule(call.vm, call.receiver, task,
+                     call.arguments[1].AsLong(), -1, false);
             return VmValue::Void();
         });
     builder.FinalMethod(
         "schedule", "(Ljava/util/TimerTask;JJ)V",
-        [](IntrinsicContext&) -> VmValue {
-            throw VmJavaThrow{
-                "Ljava/lang/UnsupportedOperationException;",
-                "repeating Timer.schedule is not provided"};
+        [schedule = services.schedule_timer_task](IntrinsicContext& call) {
+            const auto task = call.arguments[0].ref;
+            if (!task.IsValid()) {
+                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "scheduled TimerTask is null"};
+            }
+            if (!schedule) {
+                throw VmJavaThrow{
+                    "Ljava/lang/UnsupportedOperationException;",
+                    "Timer scheduling needs platform services"};
+            }
+            schedule(call.vm, call.receiver, task,
+                     call.arguments[1].AsLong(),
+                     call.arguments[2].AsLong(), false);
+            return VmValue::Void();
+        });
+    builder.FinalMethod(
+        "scheduleAtFixedRate", "(Ljava/util/TimerTask;JJ)V",
+        [schedule = services.schedule_timer_task](IntrinsicContext& call) {
+            const auto task = call.arguments[0].ref;
+            if (!task.IsValid()) {
+                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "scheduled TimerTask is null"};
+            }
+            if (!schedule) {
+                throw VmJavaThrow{
+                    "Ljava/lang/UnsupportedOperationException;",
+                    "Timer scheduling needs platform services"};
+            }
+            schedule(call.vm, call.receiver, task,
+                     call.arguments[1].AsLong(),
+                     call.arguments[2].AsLong(), true);
+            return VmValue::Void();
         });
     builder.FinalMethod(
         "cancel", "()V",
-        [cancel = services.cancel_timer_tasks](IntrinsicContext&) {
-            if (cancel) cancel();
+        [cancel = services.cancel_timer](IntrinsicContext& call) {
+            if (cancel) cancel(call.receiver);
             return VmValue::Void();
         });
+    builder.FinalMethod("purge", "()I", [](IntrinsicContext&) {
+        return VmValue::Int(0);
+    });
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl DeclarePlatformTimerTask() {
+IntrinsicClassDecl DeclarePlatformTimerTask(
+    const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/util/TimerTask;", "Ljava/lang/Object;",
         {"Ljava/lang/Runnable;"});
     builder.Constructor("()V",
                         [](IntrinsicContext&) { return VmValue::Void(); });
+    builder.FinalMethod(
+        "cancel", "()Z",
+        [cancel = services.cancel_timer_task](IntrinsicContext& call) {
+            return VmValue::Int(cancel && cancel(call.receiver) ? 1 : 0);
+        });
+    builder.FinalMethod(
+        "scheduledExecutionTime", "()J",
+        [scheduled = services.timer_task_scheduled_execution_time](
+            IntrinsicContext& call) {
+            return VmValue::Long(scheduled ? scheduled(call.receiver) : 0);
+        });
+    builder.UnimplementedVirtual("run", "()V");
     return std::move(builder).Build();
 }
 
@@ -2246,7 +2312,7 @@ void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
                             const CoreIntrinsicServices& services) {
     catalog.push_back(DeclarePlatformLocale(services));
     catalog.push_back(DeclarePlatformTimer(services));
-    catalog.push_back(DeclarePlatformTimerTask());
+    catalog.push_back(DeclarePlatformTimerTask(services));
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

@@ -1,14 +1,105 @@
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 // ---- migrated from android_os_AsyncTask.cpp ----
+#include <array>
+#include <limits>
+
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics::dvm80_android_os_AsyncTask {
 
 Decl Declare_android_os_AsyncTask(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/AsyncTask;", "Ljava/lang/Object;");
-    builder.Constructor("()V", NeutralHandler('V'));
+    builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
+        std::scoped_lock lock(context->scheduler_mutex);
+        context->async_tasks.try_emplace(call.receiver.Value());
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("onPreExecute", "()V", NeutralHandler('V'));
+    builder.VirtualMethod("onPostExecute", "(Ljava/lang/Object;)V",
+                          NeutralHandler('V'));
+    builder.VirtualMethod("onProgressUpdate", "([Ljava/lang/Object;)V",
+                          NeutralHandler('V'));
+    builder.VirtualMethod("onCancelled", "(Ljava/lang/Object;)V",
+                          NeutralHandler('V'));
+    builder.UnimplementedVirtual(
+        "doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;");
+    builder.FinalMethod("execute", "([Ljava/lang/Object;)Landroid/os/AsyncTask;",
+        [context](dx::IntrinsicContext& call) {
+            StartAsyncTask(call, context, call.receiver,
+                           call.arguments[0].ref);
+            return dx::VmValue::Ref(call.receiver);
+        });
+    builder.FinalMethod("publishProgress", "([Ljava/lang/Object;)V",
+        [context](dx::IntrinsicContext& call) {
+            ScheduleAsyncProgress(context, call.receiver,
+                                  call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("cancel", "(Z)Z",
+        [context](dx::IntrinsicContext& call) {
+            dx::VmObjectRef thread{};
+            {
+                std::scoped_lock lock(context->scheduler_mutex);
+                auto& state = context->async_tasks[call.receiver.Value()];
+                if (state.status == DexVmAndroidContext::AsyncStatus::finished) {
+                    return dx::VmValue::Int(0);
+                }
+                state.cancelled = true;
+                thread = state.thread;
+            }
+            if (call.arguments[0].AsInt() != 0 && thread.IsValid()) {
+                ThreadRuntime(context).Interrupt(thread);
+            }
+            return dx::VmValue::Int(1);
+        });
+    builder.FinalMethod("isCancelled", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            std::scoped_lock lock(context->scheduler_mutex);
+            const auto found = context->async_tasks.find(call.receiver.Value());
+            return dx::VmValue::Int(
+                found != context->async_tasks.end() && found->second.cancelled
+                    ? 1 : 0);
+        });
+    builder.FinalMethod("getStatus", "()Landroid/os/AsyncTask$Status;",
+        [context](dx::IntrinsicContext& call) {
+            DexVmAndroidContext::AsyncStatus status{};
+            {
+                std::scoped_lock lock(context->scheduler_mutex);
+                status = context->async_tasks[call.receiver.Value()].status;
+            }
+            const char* key = status == DexVmAndroidContext::AsyncStatus::pending
+                                  ? "async_status_pending"
+                              : status == DexVmAndroidContext::AsyncStatus::running
+                                  ? "async_status_running"
+                                  : "async_status_finished";
+            const auto status_class = call.vm.Linker().FindClass(
+                "Landroid/os/AsyncTask$Status;");
+            if (!status_class.has_value()) {
+                throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                     "AsyncTask.Status is unavailable");
+            }
+            const auto initialized =
+                call.vm.EnsureClassInitialized(*status_class);
+            if (initialized.exception.IsValid()) {
+                call.vm.SetPendingException(initialized.exception);
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
+            return dx::VmValue::Ref(Singleton(
+                call, context, key, "Landroid/os/AsyncTask$Status;"));
+        });
+    builder.FinalMethod("get", "()Ljava/lang/Object;",
+        [context](dx::IntrinsicContext& call) {
+            dx::VmObjectRef thread{};
+            {
+                std::scoped_lock lock(context->scheduler_mutex);
+                thread = context->async_tasks[call.receiver.Value()].thread;
+            }
+            if (thread.IsValid()) ThreadRuntime(context).Join(thread);
+            std::scoped_lock lock(context->scheduler_mutex);
+            return dx::VmValue::Ref(
+                context->async_tasks[call.receiver.Value()].result);
+        });
     return std::move(builder).Build();
 }
 
@@ -17,6 +108,61 @@ Decl Declare_android_os_AsyncTask(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_os_AsyncTask(const Context& context) {
     return dvm80_android_os_AsyncTask::Declare_android_os_AsyncTask(context);
+}
+
+Decl Declare_android_os_AsyncTask_Status(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/AsyncTask$Status;", "Ljava/lang/Enum;");
+    builder.StaticField("PENDING", "Landroid/os/AsyncTask$Status;")
+        .StaticField("RUNNING", "Landroid/os/AsyncTask$Status;")
+        .StaticField("FINISHED", "Landroid/os/AsyncTask$Status;");
+    builder.ClassInitializer([context](dx::IntrinsicContext& call) {
+        const std::array entries{
+            std::pair{"PENDING", "async_status_pending"},
+            std::pair{"RUNNING", "async_status_running"},
+            std::pair{"FINISHED", "async_status_finished"}};
+        const auto enum_class = call.vm.Linker().FindClass("Ljava/lang/Enum;");
+        const auto constructor = enum_class.has_value()
+                                     ? call.vm.Linker().FindDirectMethod(
+                                           *enum_class, "<init>",
+                                           "(Ljava/lang/String;I)V")
+                                     : std::nullopt;
+        if (!constructor.has_value()) {
+            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                 "Enum constructor is unavailable");
+        }
+        for (std::size_t index = 0; index < entries.size(); ++index) {
+            const auto [field, key] = entries[index];
+            const auto value = Singleton(
+                call, context, key, "Landroid/os/AsyncTask$Status;");
+            const auto outcome = call.vm.Call(
+                *constructor,
+                std::vector<dx::VmValue>{
+                    dx::VmValue::Ref(value),
+                    dx::VmValue::Ref(call.vm.NewStringUtf8(field)),
+                    dx::VmValue::Int(static_cast<std::int32_t>(index))});
+            if (outcome.exception.IsValid()) {
+                call.vm.SetPendingException(outcome.exception);
+                return dx::VmValue::Void();
+            }
+            call.vm.SetIntrinsicStaticRef(
+                "Landroid/os/AsyncTask$Status;", field,
+                "Landroid/os/AsyncTask$Status;", value);
+        }
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_AsyncTask_Worker(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/AsyncTask$Worker;", "Ljava/lang/Object;",
+        {"Ljava/lang/Runnable;"});
+    builder.VirtualMethod("run", "()V", [context](dx::IntrinsicContext& call) {
+        RunAsyncWorker(call, context, call.receiver);
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::android_intrinsics
 
@@ -206,9 +352,31 @@ Decl Declare_android_os_Bundle(const Context& context) {
 namespace ogplay::runtime::android_intrinsics::dvm80_android_os_CountDownTimer {
 
 Decl Declare_android_os_CountDownTimer(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/CountDownTimer;", "Ljava/lang/Object;");
-    builder.Constructor("()V", NeutralHandler('V'));
+    builder.Constructor("(JJ)V", [context](dx::IntrinsicContext& call) {
+        const auto duration = call.arguments[0].AsLong();
+        const auto interval = call.arguments[1].AsLong();
+        if (interval <= 0) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "countDownInterval must be positive"};
+        }
+        std::scoped_lock lock(context->scheduler_mutex);
+        context->countdown_timers[call.receiver.Value()] = {
+            duration, interval, 0, 0, false};
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("start", "()Landroid/os/CountDownTimer;",
+        [context](dx::IntrinsicContext& call) {
+            static_cast<void>(EnsureMainLooper(call, context));
+            ScheduleCountDown(context, call.receiver);
+            return dx::VmValue::Ref(call.receiver);
+        });
+    builder.FinalMethod("cancel", "()V", [context](dx::IntrinsicContext& call) {
+        CancelCountDown(context, call.receiver);
+        return dx::VmValue::Void();
+    });
+    builder.UnimplementedVirtual("onTick", "(J)V");
+    builder.UnimplementedVirtual("onFinish", "()V");
     return std::move(builder).Build();
 }
 
@@ -272,17 +440,123 @@ Decl Declare_android_os_Environment(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Handler {
 
+namespace {
+
+std::int64_t DelayedWhen(const std::int64_t now,
+                         const std::int64_t delay) {
+    if (delay <= 0) return now;
+    return delay > std::numeric_limits<std::int64_t>::max() - now
+               ? std::numeric_limits<std::int64_t>::max()
+               : now + delay;
+}
+
+dx::VmObjectRef HandlerLooper(dx::IntrinsicContext& call,
+                              const Context& context,
+                              const dx::VmObjectRef explicit_looper) {
+    if (explicit_looper.IsValid()) return explicit_looper;
+    auto looper = CurrentLooper(context, call.vm.CurrentContextToken());
+    if (!looper.IsValid() && call.vm.CurrentContextToken() == 1U) {
+        looper = EnsureMainLooper(call, context);
+    }
+    if (!looper.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
+                              "Handler created on a thread without a Looper"};
+    }
+    return looper;
+}
+
+void Configure(dx::IntrinsicContext& call, const Context& context,
+               const dx::VmObjectRef looper,
+               const dx::VmObjectRef callback) {
+    std::scoped_lock lock(context->scheduler_mutex);
+    context->handler_loopers[call.receiver.Value()] = looper;
+    if (callback.IsValid()) {
+        context->handler_callbacks[call.receiver.Value()] = callback;
+    }
+}
+
+dx::VmObjectRef LooperOf(const Context& context,
+                         const dx::VmObjectRef handler) {
+    std::scoped_lock lock(context->scheduler_mutex);
+    const auto found = context->handler_loopers.find(handler.Value());
+    return found == context->handler_loopers.end() ? dx::VmObjectRef{}
+                                                   : found->second;
+}
+
+void SetMessageTarget(dx::IntrinsicContext& call,
+                      const dx::VmObjectRef message) {
+    if (!message.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "message == null"};
+    }
+    call.vm.Model().InstanceSlots(message)[4] = {
+        call.receiver.Value(), dx::SlotTag::ref};
+}
+
+bool QueueMessage(dx::IntrinsicContext& call, const Context& context,
+                  const dx::VmObjectRef message,
+                  const std::int64_t when) {
+    SetMessageTarget(call, message);
+    const auto slots = call.vm.Model().InstanceSlots(message);
+    return EnqueueHandlerWork(
+        context, LooperOf(context, call.receiver), call.receiver, message,
+        slots[3].tag == dx::SlotTag::ref ? dx::VmObjectRef(slots[3].bits)
+                                        : dx::VmObjectRef{},
+        static_cast<std::int32_t>(slots[0].bits), false, when);
+}
+
+bool QueueRunnable(dx::IntrinsicContext& call, const Context& context,
+                   const dx::VmObjectRef runnable,
+                   const dx::VmObjectRef token, const std::int64_t when) {
+    if (!runnable.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "runnable == null"};
+    }
+    return EnqueueHandlerWork(context, LooperOf(context, call.receiver),
+                              call.receiver, runnable, token, 0, true, when);
+}
+
+}  // namespace
+
 Decl Declare_android_os_Handler(const Context& context) {
-    static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Handler;", "Ljava/lang/Object;");
-    const auto noop = dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.Constructor("()V", noop);
-    builder.Constructor("(Landroid/os/Looper;)V", noop);
+    builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
+        Configure(call, context,
+                  HandlerLooper(call, context, dx::VmObjectRef{}),
+                  dx::VmObjectRef{});
+        return dx::VmValue::Void();
+    });
+    builder.Constructor("(Landroid/os/Handler$Callback;)V",
+        [context](dx::IntrinsicContext& call) {
+            Configure(call, context,
+                      HandlerLooper(call, context, dx::VmObjectRef{}),
+                      call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.Constructor("(Landroid/os/Looper;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto looper = call.arguments[0].ref;
+            if (!looper.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "looper == null"};
+            }
+            Configure(call, context, looper, dx::VmObjectRef{});
+            return dx::VmValue::Void();
+        });
+    builder.Constructor("(Landroid/os/Looper;Landroid/os/Handler$Callback;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto looper = call.arguments[0].ref;
+            if (!looper.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "looper == null"};
+            }
+            Configure(call, context, looper, call.arguments[1].ref);
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("obtainMessage", "()Landroid/os/Message;",
         [](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                call.vm.NewIntrinsicInstance("Landroid/os/Message;"));
+            return dx::VmValue::Ref(MakeMessage(
+                call, 0, dx::VmObjectRef{}, call.receiver));
         });
     builder.FinalMethod("obtainMessage", "(I)Landroid/os/Message;",
         [](dx::IntrinsicContext& call) {
@@ -296,43 +570,186 @@ Decl Declare_android_os_Handler(const Context& context) {
                 call, call.arguments[0].AsInt(), call.arguments[1].ref,
                 call.receiver));
         });
-    builder.FinalMethod("sendMessage", "(Landroid/os/Message;)Z",
+    builder.FinalMethod("obtainMessage", "(III)Landroid/os/Message;",
         [](dx::IntrinsicContext& call) {
-            DeliverMessage(call, call.receiver, call.arguments[0].ref);
-            return dx::VmValue::Int(1);
+            const auto message = MakeMessage(
+                call, call.arguments[0].AsInt(), dx::VmObjectRef{},
+                call.receiver);
+            const auto slots = call.vm.Model().InstanceSlots(message);
+            slots[1] = {static_cast<std::uint32_t>(
+                            call.arguments[1].AsInt()),
+                        dx::SlotTag::cat1};
+            slots[2] = {static_cast<std::uint32_t>(
+                            call.arguments[2].AsInt()),
+                        dx::SlotTag::cat1};
+            return dx::VmValue::Ref(message);
+        });
+    builder.FinalMethod(
+        "obtainMessage", "(IIILjava/lang/Object;)Landroid/os/Message;",
+        [](dx::IntrinsicContext& call) {
+            const auto message = MakeMessage(
+                call, call.arguments[0].AsInt(), call.arguments[3].ref,
+                call.receiver);
+            const auto slots = call.vm.Model().InstanceSlots(message);
+            slots[1] = {static_cast<std::uint32_t>(
+                            call.arguments[1].AsInt()),
+                        dx::SlotTag::cat1};
+            slots[2] = {static_cast<std::uint32_t>(
+                            call.arguments[2].AsInt()),
+                        dx::SlotTag::cat1};
+            return dx::VmValue::Ref(message);
+        });
+    builder.FinalMethod("sendMessage", "(Landroid/os/Message;)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(QueueMessage(
+                call, context, call.arguments[0].ref,
+                context->uptime_millis.load()) ? 1 : 0);
+        });
+    builder.FinalMethod("sendMessageDelayed", "(Landroid/os/Message;J)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(QueueMessage(
+                call, context, call.arguments[0].ref,
+                DelayedWhen(context->uptime_millis.load(),
+                            call.arguments[1].AsLong())) ? 1 : 0);
+        });
+    builder.FinalMethod("sendMessageAtTime", "(Landroid/os/Message;J)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(QueueMessage(
+                call, context, call.arguments[0].ref,
+                call.arguments[1].AsLong()) ? 1 : 0);
+        });
+    builder.FinalMethod("sendEmptyMessage", "(I)Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto message = MakeMessage(
+                call, call.arguments[0].AsInt(), dx::VmObjectRef{},
+                call.receiver);
+            return dx::VmValue::Int(QueueMessage(
+                call, context, message, context->uptime_millis.load())
+                ? 1 : 0);
+        });
+    builder.FinalMethod("sendEmptyMessageDelayed", "(IJ)Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto message = MakeMessage(
+                call, call.arguments[0].AsInt(), dx::VmObjectRef{},
+                call.receiver);
+            return dx::VmValue::Int(QueueMessage(
+                call, context, message,
+                DelayedWhen(context->uptime_millis.load(),
+                            call.arguments[1].AsLong())) ? 1 : 0);
+        });
+    builder.FinalMethod("sendEmptyMessageAtTime", "(IJ)Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto message = MakeMessage(
+                call, call.arguments[0].AsInt(), dx::VmObjectRef{},
+                call.receiver);
+            return dx::VmValue::Int(QueueMessage(
+                call, context, message, call.arguments[1].AsLong())
+                ? 1 : 0);
         });
     builder.FinalMethod("dispatchMessage", "(Landroid/os/Message;)V",
-        [](dx::IntrinsicContext& call) {
+        [context](dx::IntrinsicContext& call) {
+            dx::VmObjectRef callback{};
+            {
+                std::scoped_lock lock(context->scheduler_mutex);
+                const auto found = context->handler_callbacks.find(
+                    call.receiver.Value());
+                if (found != context->handler_callbacks.end()) {
+                    callback = found->second;
+                }
+            }
+            if (callback.IsValid()) {
+                auto& linker = call.vm.Linker();
+                const auto owner = call.vm.Model().ObjectClass(callback);
+                const auto index = linker.FindVtableIndex(
+                    owner, "handleMessage", "(Landroid/os/Message;)Z");
+                if (!index.has_value()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                                          "Handler.Callback.handleMessage"};
+                }
+                const auto outcome = call.vm.Call(
+                    linker.Class(owner).vtable[*index],
+                    std::vector<dx::VmValue>{dx::VmValue::Ref(callback),
+                                             call.arguments[0]});
+                if (outcome.exception.IsValid()) {
+                    call.vm.SetPendingException(outcome.exception);
+                    return dx::VmValue::Void();
+                }
+                if (outcome.value.AsInt() != 0) return dx::VmValue::Void();
+            }
             DeliverMessage(call, call.receiver, call.arguments[0].ref);
             return dx::VmValue::Void();
         });
     builder.FinalMethod("post", "(Ljava/lang/Runnable;)Z",
-        [](dx::IntrinsicContext& call) {
-            auto& vm = call.vm;
-            auto& linker = vm.Linker();
-            const auto runnable = call.arguments[0].ref;
-            if (!runnable.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "posted Runnable is null"};
-            }
-            const auto runnable_class = vm.Model().ObjectClass(runnable);
-            const auto index =
-                linker.FindVtableIndex(runnable_class, "run", "()V");
-            if (!index.has_value()) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "posted object has no run()"};
-            }
-            const auto outcome = vm.Call(
-                linker.Class(runnable_class).vtable[*index],
-                std::vector<dx::VmValue>{dx::VmValue::Ref(runnable)});
-            if (outcome.exception.IsValid()) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/RuntimeException;",
-                    "posted run() raised: " + outcome.exception_message};
-            }
-            return dx::VmValue::Int(1);
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(QueueRunnable(
+                call, context, call.arguments[0].ref, dx::VmObjectRef{},
+                context->uptime_millis.load()) ? 1 : 0);
         });
-    builder.VirtualMethod("handleMessage", "(Landroid/os/Message;)V", noop);
+    builder.FinalMethod("postDelayed", "(Ljava/lang/Runnable;J)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(QueueRunnable(
+                call, context, call.arguments[0].ref, dx::VmObjectRef{},
+                DelayedWhen(context->uptime_millis.load(),
+                            call.arguments[1].AsLong()))
+                ? 1 : 0);
+        });
+    builder.FinalMethod("postAtTime", "(Ljava/lang/Runnable;J)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(QueueRunnable(
+                call, context, call.arguments[0].ref, dx::VmObjectRef{},
+                call.arguments[1].AsLong()) ? 1 : 0);
+        });
+    builder.FinalMethod("postAtTime", "(Ljava/lang/Runnable;Ljava/lang/Object;J)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(QueueRunnable(
+                call, context, call.arguments[0].ref, call.arguments[1].ref,
+                call.arguments[2].AsLong()) ? 1 : 0);
+        });
+    builder.FinalMethod("removeCallbacks", "(Ljava/lang/Runnable;)V",
+        [context](dx::IntrinsicContext& call) {
+            RemoveHandlerWork(context, call.receiver, std::nullopt,
+                              call.arguments[0].ref, true,
+                              dx::VmObjectRef{}, false);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("removeMessages", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            RemoveHandlerWork(context, call.receiver,
+                              call.arguments[0].AsInt(), dx::VmObjectRef{},
+                              false, dx::VmObjectRef{}, false);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("removeMessages", "(ILjava/lang/Object;)V",
+        [context](dx::IntrinsicContext& call) {
+            RemoveHandlerWork(context, call.receiver,
+                              call.arguments[0].AsInt(), dx::VmObjectRef{}, false,
+                              call.arguments[1].ref, true);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("removeCallbacksAndMessages", "(Ljava/lang/Object;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto token = call.arguments[0].ref;
+            RemoveHandlerWork(context, call.receiver, std::nullopt,
+                              dx::VmObjectRef{}, false,
+                              token, token.IsValid());
+            RemoveHandlerWork(context, call.receiver, std::nullopt,
+                              dx::VmObjectRef{}, true,
+                              token, token.IsValid());
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("hasMessages", "(I)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(HasHandlerWork(
+                context, call.receiver, call.arguments[0].AsInt(),
+                dx::VmObjectRef{}, false)
+                ? 1 : 0);
+        });
+    builder.FinalMethod("getLooper", "()Landroid/os/Looper;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(LooperOf(context, call.receiver));
+        });
+    builder.VirtualMethod("handleMessage", "(Landroid/os/Message;)V",
+                          NeutralHandler('V'));
     return std::move(builder).Build();
 }
 
@@ -341,6 +758,79 @@ Decl Declare_android_os_Handler(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_os_Handler(const Context& context) {
     return dvm80_android_os_Handler::Declare_android_os_Handler(context);
+}
+
+Decl Declare_android_os_Handler_Callback(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/os/Handler$Callback;");
+    builder.VirtualMethod("handleMessage", "(Landroid/os/Message;)Z",
+                          NeutralHandler('Z'));
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_HandlerThread(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/HandlerThread;", "Ljava/lang/Thread;");
+    const auto construct = [](dx::IntrinsicContext& call) {
+        auto& linker = call.vm.Linker();
+        const auto owner = linker.FindClass("Ljava/lang/Thread;");
+        const auto method = owner.has_value()
+                                ? linker.FindDirectMethod(
+                                      *owner, "<init>",
+                                      "(Ljava/lang/String;)V")
+                                : std::nullopt;
+        if (!method.has_value()) {
+            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                 "Thread(String) is unavailable");
+        }
+        const auto outcome = call.vm.Call(
+            *method, std::vector<dx::VmValue>{dx::VmValue::Ref(call.receiver),
+                                              call.arguments[0]});
+        if (outcome.exception.IsValid()) {
+            call.vm.SetPendingException(outcome.exception);
+        }
+        return dx::VmValue::Void();
+    };
+    builder.Constructor("(Ljava/lang/String;)V", construct);
+    builder.Constructor("(Ljava/lang/String;I)V", construct);
+    builder.VirtualMethod("onLooperPrepared", "()V", NeutralHandler('V'));
+    builder.VirtualMethod("run", "()V", [context](dx::IntrinsicContext& call) {
+        const auto looper = PrepareLooper(call, context, false);
+        PublishHandlerThreadLooper(context, call.receiver, looper);
+        auto& linker = call.vm.Linker();
+        const auto owner = call.vm.Model().ObjectClass(call.receiver);
+        const auto index = linker.FindVtableIndex(owner, "onLooperPrepared", "()V");
+        if (index.has_value()) {
+            const auto outcome = call.vm.Call(
+                linker.Class(owner).vtable[*index],
+                std::vector<dx::VmValue>{dx::VmValue::Ref(call.receiver)});
+            if (outcome.exception.IsValid()) {
+                call.vm.SetPendingException(outcome.exception);
+                return dx::VmValue::Void();
+            }
+        }
+        LoopLooper(call, context, looper);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("getLooper", "()Landroid/os/Looper;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(
+                WaitForHandlerThreadLooper(call, context, call.receiver));
+        });
+    builder.FinalMethod("quit", "()Z", [context](dx::IntrinsicContext& call) {
+        const auto looper = WaitForHandlerThreadLooper(
+            call, context, call.receiver);
+        return dx::VmValue::Int(
+            looper.IsValid() && QuitLooper(context, looper) ? 1 : 0);
+    });
+    builder.FinalMethod("quitSafely", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto looper = WaitForHandlerThreadLooper(
+                call, context, call.receiver);
+            return dx::VmValue::Int(
+                looper.IsValid() && QuitLooper(context, looper) ? 1 : 0);
+        });
+    return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::android_intrinsics
 
@@ -370,12 +860,56 @@ namespace ogplay::runtime::android_intrinsics::dvm80_android_os_Looper {
 
 Decl Declare_android_os_Looper(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Looper;", "Ljava/lang/Object;");
-    const auto noop = dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.StaticMethod("prepare", "()V", noop);
-    builder.StaticMethod("loop", "()V", noop);
+    builder.StaticMethod("prepare", "()V", [context](dx::IntrinsicContext& call) {
+        static_cast<void>(PrepareLooper(call, context, false));
+        return dx::VmValue::Void();
+    });
+    builder.StaticMethod("prepareMainLooper", "()V",
+        [context](dx::IntrinsicContext& call) {
+            static_cast<void>(PrepareLooper(call, context, true));
+            return dx::VmValue::Void();
+        });
+    builder.StaticMethod("loop", "()V", [context](dx::IntrinsicContext& call) {
+        LoopLooper(call, context,
+                   CurrentLooper(context, call.vm.CurrentContextToken()));
+        return dx::VmValue::Void();
+    });
     builder.StaticMethod("getMainLooper", "()Landroid/os/Looper;", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(Singleton(call, context, "main_looper", "Landroid/os/Looper;"));
+        return dx::VmValue::Ref(EnsureMainLooper(call, context));
+    });
+    builder.StaticMethod("myLooper", "()Landroid/os/Looper;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(CurrentLooper(
+                context, call.vm.CurrentContextToken()));
+        });
+    builder.StaticMethod("myQueue", "()Landroid/os/MessageQueue;",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "MessageQueue is internal to DexVM"};
+        });
+    builder.FinalMethod("getThread", "()Ljava/lang/Thread;",
+        [context](dx::IntrinsicContext& call) {
+            std::scoped_lock lock(context->scheduler_mutex);
+            const auto found = context->loopers.find(call.receiver.Value());
+            return dx::VmValue::Ref(found == context->loopers.end()
+                                        ? dx::VmObjectRef{}
+                                        : found->second.thread);
+        });
+    builder.FinalMethod("quit", "()V", [context](dx::IntrinsicContext& call) {
+        static_cast<void>(QuitLooper(context, call.receiver));
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("quitSafely", "()V",
+        [context](dx::IntrinsicContext& call) {
+            static_cast<void>(QuitLooper(context, call.receiver));
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("isCurrentThread", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                CurrentLooper(context, call.vm.CurrentContextToken()) ==
+                        call.receiver
+                    ? 1 : 0);
     });
     return std::move(builder).Build();
 }
@@ -409,12 +943,60 @@ Decl Declare_android_os_Message(const Context& context) {
         });
     builder.FinalMethod("sendToTarget", "()V", [](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-        DeliverMessage(call, dx::VmObjectRef(slots[4].bits), call.receiver);
+        const auto handler = dx::VmObjectRef(slots[4].bits);
+        if (!handler.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                  "Message target is null"};
+        }
+        auto& linker = call.vm.Linker();
+        const auto owner = call.vm.Model().ObjectClass(handler);
+        const auto index = linker.FindVtableIndex(
+            owner, "sendMessage", "(Landroid/os/Message;)Z");
+        if (!index.has_value()) {
+            throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                                  "Handler.sendMessage"};
+        }
+        const auto outcome = call.vm.Call(
+            linker.Class(owner).vtable[*index],
+            std::vector<dx::VmValue>{dx::VmValue::Ref(handler),
+                                     dx::VmValue::Ref(call.receiver)});
+        if (outcome.exception.IsValid()) {
+            call.vm.SetPendingException(outcome.exception);
+        }
         return dx::VmValue::Void();
     });
     return std::move(builder).Build();
 }
 
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_os_SystemClock(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/SystemClock;", "Ljava/lang/Object;");
+    const auto millis = [context](dx::IntrinsicContext&) {
+        return dx::VmValue::Long(context->uptime_millis.load());
+    };
+    builder.StaticMethod("uptimeMillis", "()J", millis);
+    builder.StaticMethod("elapsedRealtime", "()J", millis);
+    builder.StaticMethod("elapsedRealtimeNanos", "()J",
+        [context](dx::IntrinsicContext&) {
+            return dx::VmValue::Long(
+                context->uptime_millis.load() * 1'000'000LL);
+        });
+    builder.StaticMethod("currentThreadTimeMillis", "()J", millis);
+    builder.StaticMethod("sleep", "(J)V", [context](dx::IntrinsicContext& call) {
+        const auto delay = call.arguments[0].AsLong();
+        if (delay > 0) AdvanceAndroidClock(*context, delay);
+        ThreadRuntime(context).Yield();
+        return dx::VmValue::Void();
+    });
+    builder.StaticMethod("setCurrentTimeMillis", "(J)Z",
+                         [](dx::IntrinsicContext&) {
+                             return dx::VmValue::Int(0);
+                         });
+    return std::move(builder).Build();
+}
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-25 · DVM-84 API 19 AudioTrack 与统一 PCM backend
+更新：2026-08-25 · DVM-85 统一 SystemClock 与 Android 调度 backend
 
 ## 当前阶段
 
@@ -44,29 +44,28 @@
   明确失败，因此 `dexvm.java_gles` 保持 partial。DVM-84 已发布 API 19 AudioFormat/
   AudioTrack 的 PCM8/16 mono/stereo STREAM/STATIC、byte/short write、volume 与播放头；
   DEX、旧 Java/JNI 和 OpenSL ES 共用进程唯一 mixer，GC/release 回收 player，
-  `dexvm.audio_track` 与 `runtime.legacy_audio_track` 为 complete。后续顺序与边界见
+  `dexvm.audio_track` 与 `runtime.legacy_audio_track` 为 complete。DVM-85 将 SystemClock、
+  Handler/Looper/HandlerThread、Timer/CountDownTimer/AsyncTask 迁入唯一 uptime scheduler；
+  `(deadline, sequence)` 排序、主安全点/子线程执行、GC 与 shutdown 均已闭合，
+  `dexvm.android_scheduler` 为 complete。后续顺序与边界见
   [`12-api19-capability-stack.md`](../design/dexvm/12-api19-capability-stack.md)。
 ## 验证基线
 
-- Windows VS 18.8 / MSVC 14.51 `windows-msvc` Debug 全目标构建通过；受影响的 DEX、
-  Android/EGL/GLES2 focused 27/27（9645 assertions）与 architecture 5/5 通过。
-- DVM-80/81 Windows Debug 全目标构建通过。DVM-82 `windows-msvc` configure 与 Debug
-  全目标构建通过；NIO/JNI direct 6/6（28 assertions）、core catalog/side-table/JNI
-  aggregate/superclass 4/4（462 assertions）、architecture 5/5 定向回归通过。全量 CTest
-  按计划留到阶段最后一个 WU。
 - DVM-83 Windows Debug 受影响目标构建通过；Java GLES/NIO/EGL/catalog/JNI superclass/
   Java-native texture state 定向 10/10（2513 assertions）、生成面 stale check 与
   architecture 6/6 通过；全量 CTest 按计划留到阶段最后一个 WU。
 - DVM-84 `windows-msvc` configure 与 Release `ogplay_tests` 构建通过；AudioTrack、legacy
   Java/JNI 与 OpenSL mixer 定向 6/6（118 assertions）、OpenSL boundary/callback 2/2
   （98 assertions）及 architecture 6/6 通过；全量 CTest 按计划未运行。
+- DVM-85 `windows-msvc` Debug `ogplay_tests` 构建通过；scheduler 4/4（83 assertions）及
+  Thread/monitor/lifecycle 定向 26/26（132805 assertions）通过；全量按计划未运行。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 2. Linux M9 严格出口复验。
-3. 进入 DVM-85：统一 SystemClock 与 Handler/Looper/Timer 调度 backend。
+3. 进入下一能力 WU：Phase E 高频 Android util/graphics/value/service 小能力。
 
 ## 阻塞与边界
 

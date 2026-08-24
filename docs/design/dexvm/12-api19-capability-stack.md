@@ -207,7 +207,7 @@ Java GLES buffer 编组测试通过。
 
 ### D · 游戏数据面
 
-状态：Java GLES、AudioTrack 子项已由 DVM-83/DVM-84 完成；时间/调度仍待后续 WU。
+状态：DVM-83..85 已完成 Java GLES、AudioTrack 与时间/调度三个子项。
 
 1. Java GLES：实现 `GLES10/GLES10Ext/GLES11/GLES11Ext/GLES20/GLUtils/GLU` 的 API 19
    可链接面；行为按现有 native GLES catalog 分族接入，未知或边界外入口明确失败。
@@ -217,6 +217,11 @@ Java GLES buffer 编组测试通过。
 3. 时间与调度：`SystemClock.uptimeMillis/elapsedRealtime/elapsedRealtimeNanos/sleep` 读取统一
    Clock；建立真实 Looper queue 后再发布 `HandlerThread`，并把 Handler/Timer 的同步或
    next-frame 近似迁到同一 scheduler。
+
+DVM-85 落地结果：主 Looper 由 lifecycle 安全点泵送，子 Looper 由 `VmThreadRuntime`
+真实线程驱动；全部任务按 `(deadline, sequence)` 排序并支持 owner/token 取消。Timer、
+CountDownTimer 与 AsyncTask 共用该队列，GC trace/session root 和 shutdown 唤醒纳入同一生命周期。
+OGPlay 不模拟设备 suspend，因此 uptime 与 elapsed 在当前 bounded 模型中读取同一单调值。
 
 验收：Java GL 与 native GL 交错调用观察同一 texture/program/buffer 状态；GLUtils 复用
 Bitmap 像素；AudioTrack write 能在 mixer 输出并推进 playback head；固定 Clock 下消息顺序、

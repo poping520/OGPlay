@@ -13,6 +13,9 @@ family TU 为控制翻译单元数量允许超过通常 800 行。
 `java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
 Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入，
 core 不依赖 `DexVmAndroidContext`。
+Timer/TimerTask 仅保留 Java 参数、重复调度与取消入口；deadline、执行队列、Clock 和
+生命周期由注入的 scheduler 窄接口拥有。core 禁止反向读取 Android context 或恢复
+cooperative next-frame task queue。
 
 `java_util.cpp` 中的 collection 段是 pinned libcore `java.util` 核心集合 family：集中声明
 Collection/List/Set/Map、Iterator/ListIterator、Queue/Deque、常用抽象基类以及

@@ -19,16 +19,22 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
             return instance;
         };
     services.schedule_timer_task =
-        [context](const dexvm::VmObjectRef task) {
-            auto& state = context->java_threads[task.Value()];
-            state = DexVmAndroidContext::JavaThreadState{};
-            state.runnable = task;
-            state.started = true;
-            state.name = "TimerTask-" + std::to_string(task.Value());
-            context->java_thread_queue.push_back(task);
+        [context](dexvm::Interpreter& vm, const dexvm::VmObjectRef timer,
+                  const dexvm::VmObjectRef task, const std::int64_t delay,
+                  const std::int64_t period, const bool fixed_rate) {
+            android_intrinsics::ScheduleTimerTask(
+                vm, context, timer, task, delay, period, fixed_rate);
         };
-    services.cancel_timer_tasks = [context] {
-        context->java_thread_queue.clear();
+    services.cancel_timer = [context](const dexvm::VmObjectRef timer) {
+        android_intrinsics::CancelTimer(context, timer);
+    };
+    services.cancel_timer_task = [context](const dexvm::VmObjectRef task) {
+        return android_intrinsics::CancelTimerTask(context, task);
+    };
+    services.timer_task_scheduled_execution_time =
+        [context](const dexvm::VmObjectRef task) {
+            return android_intrinsics::TimerTaskScheduledExecutionTime(
+                context, task);
     };
     services.set_sax_content_handler =
         [context](const dexvm::VmObjectRef reader,
@@ -114,15 +120,20 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_opengl_GLUtils(context),
         Declare_android_opengl_GLU(context),
         Declare_android_os_AsyncTask(context),
+        Declare_android_os_AsyncTask_Status(context),
+        Declare_android_os_AsyncTask_Worker(context),
         Declare_android_os_Build_VERSION(context),
         Declare_android_os_Build(context),
         Declare_android_os_Bundle(context),
         Declare_android_os_CountDownTimer(context),
         Declare_android_os_Environment(context),
         Declare_android_os_Handler(context),
+        Declare_android_os_Handler_Callback(context),
+        Declare_android_os_HandlerThread(context),
         Declare_android_os_IBinder(context),
         Declare_android_os_Looper(context),
         Declare_android_os_Message(context),
+        Declare_android_os_SystemClock(context),
         Declare_android_os_StatFs(context),
         Declare_android_provider_Settings_System(context),
         Declare_android_telephony_PhoneStateListener(context),

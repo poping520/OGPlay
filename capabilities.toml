@@ -1315,6 +1315,11 @@ status = "complete"
 test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
 note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、stereo/mono volume 和 frame playback head；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用进程唯一 OpenSlesPcmMixer，GC sweep 与 release 销毁 player"
 
+[dexvm.android_scheduler]
+status = "complete"
+test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
+note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDownTimer 与 bounded AsyncTask，并将 core Timer/TimerTask 迁入会话唯一 uptime_millis scheduler；队列按 deadline/sequence 确定排序，主 Looper 在 lifecycle 安全点泵送，子 Looper/AsyncTask 使用 VmThreadRuntime，GC 与 shutdown 生命周期闭合。不模拟设备 suspend、Binder MessageQueue 或 AsyncTask Executor 并行策略"
+
 [dexvm.gap_survey]
 status = "complete"
 test = "tests/dexvm/gap_survey_tests.cpp; tests/dexvm/interpreter_tests.cpp"

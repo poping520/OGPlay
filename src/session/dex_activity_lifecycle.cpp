@@ -440,7 +440,8 @@ namespace ogplay::session {
                 if (bindings_.present_surface) bindings_.present_surface();
             }
             clock_.AdvanceFrames(1);
-            bindings_.context->uptime_millis += kMillisPerFrame;
+            runtime::AdvanceAndroidClock(*bindings_.context,
+                                         kMillisPerFrame);
             ++frame_;
             if (egl_pacer_attached_) {
                 runtime::AdvanceEglSwapPacer(*bindings_.context);
@@ -670,6 +671,7 @@ namespace ogplay::session {
         if (egl_pacer_attached_) {
             runtime::ShutdownEglSwapPacer(*bindings_.context);
         }
+        runtime::ShutdownAndroidScheduler(*bindings_.context);
         bindings_.bridge->Threads().Shutdown();
         if (bindings_.interrupt_guest_waits) bindings_.interrupt_guest_waits();
         if (bindings_.flush_persistent_state) {

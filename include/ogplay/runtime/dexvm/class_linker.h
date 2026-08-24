@@ -32,8 +32,13 @@ struct CoreIntrinsicServices final {
     std::function<VmObjectRef(Interpreter&, std::string_view,
                               std::string_view)>
         singleton;
-    std::function<void(VmObjectRef)> schedule_timer_task;
-    std::function<void()> cancel_timer_tasks;
+    std::function<void(Interpreter&, VmObjectRef, VmObjectRef, std::int64_t,
+                       std::int64_t, bool)>
+        schedule_timer_task;
+    std::function<void(VmObjectRef)> cancel_timer;
+    std::function<bool(VmObjectRef)> cancel_timer_task;
+    std::function<std::int64_t(VmObjectRef)>
+        timer_task_scheduled_execution_time;
     std::function<void(VmObjectRef, VmObjectRef)> set_sax_content_handler;
 };
 

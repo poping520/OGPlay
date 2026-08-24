@@ -153,11 +153,17 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     visit_ref_map(context.view_tree_observers);
     visit_ref_map(context.global_layout_listeners);
     visit_ref_map(context.sax_content_handlers);
-    for (const auto& [owner, state] : context.java_threads) {
-        root(dx::VmObjectRef(owner));
-        root(state.runnable);
+    {
+        std::scoped_lock lock(context.scheduler_mutex);
+        root(context.main_looper);
+        for (const auto& work : context.scheduled_work) {
+            root(work.looper);
+            root(work.owner);
+            root(work.target);
+            root(work.payload);
+            root(work.token);
+        }
     }
-    for (const auto task : context.java_thread_queue) root(task);
     visit_ref_map(context.ui_node_to_object);
     visit_ref_map(context.ui_click_listeners);
     visit_ref_map(context.ui_touch_listeners);
@@ -200,6 +206,7 @@ public:
     core::CapabilityLedger* ledger{};
     core::Logger* logger{};
     DexVmBridgeConfig config;
+    std::shared_ptr<DexVmAndroidContext> android_context;
 
     dx::DexClassLinker linker;
     std::unique_ptr<dx::JavaObjectModel> model;
@@ -767,6 +774,7 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->ledger = &ledger;
     impl_->logger = logger;
     impl_->config = config;
+    impl_->android_context = android_context;
     impl_->owner = this;
 
     auto core_catalog = dx::CoreIntrinsicCatalog(
@@ -810,6 +818,7 @@ DexVmGuestBridge::DexVmGuestBridge(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->vm->SetNioRuntime(&session.NIO());
     RegisterAndroidAudioTrackStateTable(*impl_->vm, android_context);
+    RegisterAndroidSchedulerStateTable(*impl_->vm, android_context);
     if (android_context != nullptr && android_context->vfs != nullptr) {
         impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(
             *android_context->vfs);
@@ -817,6 +826,12 @@ DexVmGuestBridge::DexVmGuestBridge(
     }
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
+    if (android_context != nullptr) {
+        android_context->threads = impl_->threads.get();
+        impl_->vm->Monitors().SetTimeSource([android_context] {
+            return android_context->uptime_millis.load();
+        });
+    }
     session.Environment().SetMonitorHooks(JniMonitorHooks{
         [bridge_state](const JniObjectIdentity identity,
                        const std::uint64_t thread) {
@@ -888,7 +903,11 @@ DexVmGuestBridge::DexVmGuestBridge(
 }
 
 DexVmGuestBridge::~DexVmGuestBridge() {
+    if (impl_->android_context) {
+        ShutdownAndroidScheduler(*impl_->android_context);
+    }
     if (impl_->threads) impl_->threads->Shutdown();
+    if (impl_->android_context) impl_->android_context->threads = nullptr;
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});
     }

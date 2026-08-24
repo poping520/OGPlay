@@ -34,16 +34,59 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context,
 // Missing or damaged entries throw the Java IOException the glue catches.
 [[nodiscard]] std::vector<std::byte> ReadApkFile(const Context& context,
                                                  const std::string& path);
-// Interprets the target's run() to completion on the calling host thread.
-// Used for cooperative java.util.Timer tasks, whose delay collapses to the
-// next lifecycle frame boundary; java.lang.Thread goes to ThreadRuntime.
-// Returns a rendered message when the body raised an uncaught exception.
-[[nodiscard]] std::optional<std::string> RunJavaThreadNow(
-    dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef thread);
-
 // The session thread runtime; absent only if the platform context was never
 // wired to a bridge, which is a host assembly defect rather than a gap.
 [[nodiscard]] dx::VmThreadRuntime& ThreadRuntime(const Context& context);
+
+[[nodiscard]] dx::VmObjectRef EnsureMainLooper(dx::IntrinsicContext& call,
+                                               const Context& context);
+[[nodiscard]] dx::VmObjectRef EnsureMainLooper(dx::Interpreter& vm,
+                                               const Context& context);
+[[nodiscard]] dx::VmObjectRef CurrentLooper(const Context& context,
+                                            std::uint64_t context_token);
+[[nodiscard]] dx::VmObjectRef PrepareLooper(dx::IntrinsicContext& call,
+                                            const Context& context,
+                                            bool main);
+[[nodiscard]] bool EnqueueHandlerWork(
+    const Context& context, dx::VmObjectRef looper, dx::VmObjectRef handler,
+    dx::VmObjectRef payload, dx::VmObjectRef token, std::int32_t what,
+    bool runnable, std::int64_t deadline_millis);
+void RemoveHandlerWork(const Context& context, dx::VmObjectRef handler,
+                       std::optional<std::int32_t> what,
+                       dx::VmObjectRef payload, bool runnable,
+                       dx::VmObjectRef token, bool match_token);
+[[nodiscard]] bool HasHandlerWork(const Context& context,
+                                  dx::VmObjectRef handler,
+                                  std::int32_t what,
+                                  dx::VmObjectRef token,
+                                  bool match_token);
+[[nodiscard]] bool QuitLooper(const Context& context,
+                              dx::VmObjectRef looper);
+void LoopLooper(dx::IntrinsicContext& call, const Context& context,
+                dx::VmObjectRef looper);
+[[nodiscard]] dx::VmObjectRef WaitForHandlerThreadLooper(
+    dx::IntrinsicContext& call, const Context& context,
+    dx::VmObjectRef thread);
+void PublishHandlerThreadLooper(const Context& context,
+                                dx::VmObjectRef thread,
+                                dx::VmObjectRef looper);
+void ScheduleCountDown(const Context& context, dx::VmObjectRef timer);
+void CancelCountDown(const Context& context, dx::VmObjectRef timer);
+void StartAsyncTask(dx::IntrinsicContext& call, const Context& context,
+                    dx::VmObjectRef task, dx::VmObjectRef params);
+void ScheduleAsyncProgress(const Context& context, dx::VmObjectRef task,
+                           dx::VmObjectRef values);
+void RunAsyncWorker(dx::IntrinsicContext& call, const Context& context,
+                    dx::VmObjectRef worker);
+void ScheduleTimerTask(dx::Interpreter& vm, const Context& context,
+                       dx::VmObjectRef timer, dx::VmObjectRef task,
+                       std::int64_t delay_millis,
+                       std::int64_t period_millis, bool fixed_rate);
+void CancelTimer(const Context& context, dx::VmObjectRef timer);
+[[nodiscard]] bool CancelTimerTask(const Context& context,
+                                   dx::VmObjectRef task);
+[[nodiscard]] std::int64_t TimerTaskScheduledExecutionTime(
+    const Context& context, dx::VmObjectRef task);
 
 // Video view state shared by the VideoView intrinsics and the guest video
 // pump (android_media.cpp): lookup, playback-position math, and the

@@ -1293,7 +1293,7 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File/ZIP 家族，文件仅经注入 VFS。DVM-82 以统一 NioRuntime 发布 API 19 Buffer/ByteBuffer/ByteOrder、六类 typed buffer、heap/direct/view backing、cursor/mark、relative/absolute/bulk get/put、array/read-only/compact/order，并与 JNI direct-buffer 共用状态。Tree/Sorted/Navigable、并发集合、完整 Collections/Arrays、serialization、完整 charset/FileDescriptor/FileChannel 仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File/ZIP 家族，文件仅经注入 VFS。DVM-82 以统一 NioRuntime 发布 API 19 Buffer family 并与 JNI direct-buffer 共用状态。DVM-87 交付常用 Arrays/Collections algorithm、固定时区 Calendar、Pattern/Matcher、Future/Executor/atomic bounded core。Tree/Sorted/Navigable、并发集合、serialization、完整 charset/FileDescriptor/FileChannel 仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
 
 [dexvm.jni_bridge]
 status = "complete"
@@ -1324,6 +1324,21 @@ note = "DVM-85 发布 API19 SystemClock、Looper/Handler/HandlerThread、CountDo
 status = "complete"
 test = "tests/dexvm/android_value_tests.cpp; tests/session/profile_entry_scope_tests.cpp; architecture.dexvm_intrinsic_layout"
 note = "DVM-86 发布 API19 Base64/SparseArray family/TypedValue/TextUtils、Color/RectF/Point/Path/PorterDuff/BitmapDrawable/ColorDrawable、Parcelable/Parcel/Bundle transport 与 PowerManager/WakeLock/Vibrator/Process；数据进入受检 side-table 和 GC trace，Bundle Parcel 写入时快照 typed map。power/vibrator service 为稳定进程内 facade，不实现 Binder、fd/cross-process transport 或宿主设备动作"
+
+[dexvm.java_util_algorithms]
+status = "complete"
+test = "tests/dexvm/dvm87_tests.cpp"
+note = "DVM-87 发布常用 primitive/Object Arrays 算法、Collections sort/reverse/swap/fill/frequency/binarySearch，以及注入 Clock 的 Calendar/GregorianCalendar 和 GMT/UTC 固定 offset TimeZone；完整算法长尾、DST/locale 时区数据库 deferred"
+
+[dexvm.java_regex]
+status = "complete"
+test = "tests/dexvm/dvm87_tests.cpp"
+note = "DVM-87 发布 String 输入上的 Pattern compile/matches/quote 与 Matcher matches/find/reset/start/end/group/replace 核心语义；非法 pattern/flag 明确失败，完整 libcore Unicode/region/命名组不在 bounded surface"
+
+[dexvm.java_concurrent_core]
+status = "complete"
+test = "tests/dexvm/dvm87_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp"
+note = "DVM-87 发布 Callable/Future/RunnableFuture/ExecutorService shape、FutureTask、串行 single-thread executor 与 AtomicInteger/Long/Boolean/Reference；worker 复用 VmThreadRuntime，不提供并行池、scheduled executor、timed get 或并发集合"
 
 [dexvm.gap_survey]
 status = "complete"

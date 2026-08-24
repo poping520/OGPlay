@@ -41,6 +41,10 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
                   const dexvm::VmObjectRef handler) {
             context->sax_content_handlers[reader.Value()] = handler;
         };
+    services.current_time_millis = [context] {
+        return 1'400'000'000'000LL +
+               context->uptime_millis.load(std::memory_order_relaxed);
+    };
     return services;
 }
 

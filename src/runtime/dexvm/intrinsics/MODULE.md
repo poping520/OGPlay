@@ -20,10 +20,16 @@ cooperative next-frame task queue。
 `java_util.cpp` 中的 collection 段是 pinned libcore `java.util` 核心集合 family：集中声明
 Collection/List/Set/Map、Iterator/ListIterator、Queue/Deque、常用抽象基类以及
 ArrayList/LinkedList/ArrayDeque、HashMap/LinkedHashMap、HashSet/LinkedHashSet；既有
-Vector/Stack/Hashtable 也迁入同一 family。handler 只做 Java 参数/异常边界与 virtual
+Vector/Stack/Hashtable 也迁入同一 family。DVM-87 在同一 family 增加常用 Arrays/
+Collections 算法和固定 offset Calendar/TimeZone；handler 只做 Java 参数/异常边界与 virtual
 `equals/hashCode` 派发，sequence/map/view/entry/iterator 的宿主状态和生命周期统一委托
-`CollectionRuntime`。Tree/Sorted/Navigable、并发集合和完整 Collections/Arrays 算法不在
-该 family 范围内，缺失能力必须继续明确失败。
+`CollectionRuntime`。Tree/Sorted/Navigable、并发集合、完整算法长尾与 DST/locale 时区数据库
+不在该 family 范围内，缺失能力必须继续明确失败。
+
+`java_regex.cpp` 的 Pattern/Matcher 只承诺 String 输入与已登记 API 的 bounded regex 语义；
+非法语法/flag 必须抛 Java 异常，不伪造匹配。`java_concurrent.cpp` 的 FutureTask、串行 executor
+和 atomic family 复用 `VmThreadRuntime` 的真实 Thread identity；不创建第二套 scheduler，
+不扩展到并行池、scheduled executor 或 concurrent collection。
 
 `java_io.cpp` 聚合 pinned libcore `java.io`：stream/reader/filter/buffer/byte-array/data
 handle、File 与文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；

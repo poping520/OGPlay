@@ -39,6 +39,7 @@ struct CoreIntrinsicServices final {
     std::function<bool(VmObjectRef)> cancel_timer_task;
     std::function<std::int64_t(VmObjectRef)>
         timer_task_scheduled_execution_time;
+    std::function<std::int64_t()> current_time_millis;
     std::function<void(VmObjectRef, VmObjectRef)> set_sax_content_handler;
 };
 

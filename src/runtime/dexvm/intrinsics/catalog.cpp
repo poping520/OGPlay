@@ -60,6 +60,9 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
     AppendJavaNetPlatform(catalog, services);
     AppendJavaNio(catalog);
     AppendJavaUtilPlatform(catalog, services);
+    AppendJavaUtilAlgorithms(catalog, services);
+    AppendJavaRegex(catalog);
+    AppendJavaConcurrent(catalog);
     AppendJavaXml(catalog, services);
 
     return catalog;

@@ -248,6 +248,8 @@ Binder、system_server 或宿主设备控制。
 
 ### F · 真实命中驱动的 P1
 
+状态：DVM-87 已完成前三项的 bounded core；网络与 SQLite 仍按 reached gap 后续推进。
+
 按关闭 survey 的 reached gap 和可复跑 Scenario 排序：
 
 1. Arrays/Collections algorithm、Comparator、Calendar/TimeZone；
@@ -258,6 +260,12 @@ Binder、system_server 或宿主设备控制。
 6. 其他 framework 长尾。
 
 静态 DEX gap 报告只用于候选排序，不能直接推动整包实现。
+
+DVM-87 落地结果：Arrays/Collections 常用算法通过 guest virtual Comparable/Comparator 与
+List/Collection 工作；Calendar/TimeZone 使用注入 Clock 与固定 GMT offset。Pattern/Matcher
+发布 String 输入的 compile/find/group/replace 核心面。FutureTask、串行 ExecutorService 与
+atomic family 复用真实 guest Thread；并行池、scheduled executor、完整 regex Unicode、DST
+数据库仍明确 deferred。
 
 ## 7. 架构门禁
 

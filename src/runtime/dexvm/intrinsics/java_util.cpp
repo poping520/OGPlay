@@ -5,6 +5,10 @@
 #include "shared.h"
 
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -2302,7 +2306,7 @@ IntrinsicClassDecl DeclarePlatformTimerTask(
             IntrinsicContext& call) {
             return VmValue::Long(scheduled ? scheduled(call.receiver) : 0);
         });
-    builder.UnimplementedVirtual("run", "()V");
+    builder.UnimplementedVirtual("run", "()V", 0x0001U | 0x0400U);
     return std::move(builder).Build();
 }
 
@@ -2423,4 +2427,862 @@ namespace ogplay::runtime::dexvm::intrinsics {
 IntrinsicClassDecl Declare_java_util_Random() {
     return dvm80_java_util_Random::Declare_java_util_Random();
 }
+}  // namespace ogplay::runtime::dexvm::intrinsics
+
+// ---- DVM-87 API 19 Arrays/Collections algorithms ----
+
+namespace ogplay::runtime::dexvm::intrinsics {
+namespace {
+
+[[noreturn]] void Dvm87Null(const std::string_view what) {
+    throw VmJavaThrow{"Ljava/lang/NullPointerException;", std::string(what)};
+}
+
+[[noreturn]] void Dvm87BadIndex(const std::int32_t index,
+                                const std::size_t size) {
+    throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                      "index " + std::to_string(index) + ", size " +
+                          std::to_string(size)};
+}
+
+[[nodiscard]] std::optional<VmValue> Dvm87InvokeVirtual(
+    IntrinsicContext& context, const VmObjectRef receiver,
+    const std::string_view name, const std::string_view descriptor,
+    std::vector<VmValue> arguments = {}) {
+    if (!receiver.IsValid()) Dvm87Null("virtual receiver == null");
+    auto& linker = context.vm.Linker();
+    const auto java_class = context.vm.Model().ObjectClass(receiver);
+    const auto index = linker.FindVtableIndex(
+        java_class, std::string(name), std::string(descriptor));
+    if (!index.has_value()) {
+        throw VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                          std::string(name) + std::string(descriptor)};
+    }
+    arguments.insert(arguments.begin(), VmValue::Ref(receiver));
+    const auto outcome = context.vm.Call(
+        linker.Class(java_class).vtable[*index], arguments);
+    if (outcome.exception.IsValid()) {
+        context.vm.SetPendingException(outcome.exception);
+        return std::nullopt;
+    }
+    return outcome.value;
+}
+
+[[nodiscard]] std::optional<bool> Dvm87GuestEquals(
+    IntrinsicContext& context, const VmObjectRef left,
+    const VmObjectRef right) {
+    if (left == right) return true;
+    if (!left.IsValid()) return false;
+    const auto outcome = Dvm87InvokeVirtual(
+        context, left, "equals", "(Ljava/lang/Object;)Z",
+        {VmValue::Ref(right)});
+    return outcome.has_value()
+               ? std::optional<bool>(outcome->AsInt() != 0)
+               : std::nullopt;
+}
+
+[[nodiscard]] std::optional<std::vector<VmObjectRef>>
+Dvm87SnapshotCollection(IntrinsicContext& context,
+                        const VmObjectRef collection) {
+    const auto iterator = Dvm87InvokeVirtual(
+        context, collection, "iterator", "()Ljava/util/Iterator;");
+    if (!iterator.has_value()) return std::nullopt;
+    std::vector<VmObjectRef> values;
+    while (true) {
+        const auto has_next = Dvm87InvokeVirtual(
+            context, iterator->ref, "hasNext", "()Z");
+        if (!has_next.has_value()) return std::nullopt;
+        if (has_next->AsInt() == 0) break;
+        const auto next = Dvm87InvokeVirtual(
+            context, iterator->ref, "next", "()Ljava/lang/Object;");
+        if (!next.has_value()) return std::nullopt;
+        values.push_back(next->ref);
+    }
+    return values;
+}
+
+[[noreturn]] void Dvm87ArrayNull() {
+    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "array == null"};
+}
+
+void Dvm87CheckRange(const JavaObjectModel& model, const VmObjectRef array,
+                     const std::int32_t from, const std::int32_t to) {
+    if (!array.IsValid()) Dvm87ArrayNull();
+    const auto length = static_cast<std::int32_t>(model.ArrayLength(array));
+    if (from > to) {
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                          "fromIndex > toIndex"};
+    }
+    if (from < 0 || to > length) {
+        throw VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;",
+                          "array range is out of bounds"};
+    }
+}
+
+[[nodiscard]] std::optional<std::int32_t> Dvm87Compare(
+    IntrinsicContext& context, const VmObjectRef left, const VmObjectRef right,
+    const VmObjectRef comparator) {
+    if (comparator.IsValid()) {
+        const auto result = Dvm87InvokeVirtual(
+            context, comparator, "compare",
+            "(Ljava/lang/Object;Ljava/lang/Object;)I",
+            {VmValue::Ref(left), VmValue::Ref(right)});
+        return result.has_value() ? std::optional(result->AsInt()) : std::nullopt;
+    }
+    if (!left.IsValid()) Dvm87Null("comparable == null");
+    const auto result = Dvm87InvokeVirtual(
+        context, left, "compareTo", "(Ljava/lang/Object;)I",
+        {VmValue::Ref(right)});
+    return result.has_value() ? std::optional(result->AsInt()) : std::nullopt;
+}
+
+[[nodiscard]] bool Dvm87StableSort(IntrinsicContext& context,
+                                   std::vector<VmObjectRef>& values,
+                                   const VmObjectRef comparator) {
+    for (std::size_t index = 1; index < values.size(); ++index) {
+        const auto value = values[index];
+        auto cursor = index;
+        while (cursor > 0) {
+            const auto order = Dvm87Compare(
+                context, value, values[cursor - 1], comparator);
+            if (!order.has_value()) return false;
+            if (*order >= 0) break;
+            values[cursor] = values[cursor - 1];
+            --cursor;
+        }
+        values[cursor] = value;
+    }
+    return true;
+}
+
+template <typename T>
+[[nodiscard]] T Dvm87Primitive(const JavaObjectModel& model,
+                               const VmObjectRef array,
+                               const std::int32_t index) {
+    const auto bits = model.GetPrimitiveElement(array, index);
+    if constexpr (std::is_same_v<T, float>) {
+        return std::bit_cast<float>(static_cast<std::uint32_t>(bits));
+    } else if constexpr (std::is_same_v<T, double>) {
+        return std::bit_cast<double>(bits);
+    } else {
+        return static_cast<T>(bits);
+    }
+}
+
+template <typename T>
+[[nodiscard]] std::uint64_t Dvm87Bits(const T value) {
+    if constexpr (std::is_same_v<T, float>) {
+        return std::bit_cast<std::uint32_t>(value);
+    } else if constexpr (std::is_same_v<T, double>) {
+        return std::bit_cast<std::uint64_t>(value);
+    } else {
+        return static_cast<std::uint64_t>(value);
+    }
+}
+
+template <typename T>
+[[nodiscard]] int Dvm87PrimitiveCompare(const T left, const T right) {
+    if constexpr (std::is_floating_point_v<T>) {
+        if (std::isnan(left)) return std::isnan(right) ? 0 : 1;
+        if (std::isnan(right)) return -1;
+        if (left == right && left == T{}) {
+            return std::signbit(left) == std::signbit(right)
+                       ? 0 : std::signbit(left) ? -1 : 1;
+        }
+    }
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+
+template <typename T>
+void Dvm87AddPrimitiveArrayMethods(IntrinsicClassBuilder& builder,
+                                   const std::string& descriptor) {
+    builder.StaticMethod("sort", "([" + descriptor + ")V",
+        [](IntrinsicContext& context) {
+            const auto array = context.arguments[0].ref;
+            if (!array.IsValid()) Dvm87ArrayNull();
+            auto& model = context.vm.Model();
+            const auto length = static_cast<std::int32_t>(model.ArrayLength(array));
+            std::vector<T> values;
+            values.reserve(length);
+            for (std::int32_t i = 0; i < length; ++i)
+                values.push_back(Dvm87Primitive<T>(model, array, i));
+            std::sort(values.begin(), values.end(), [](const T a, const T b) {
+                return Dvm87PrimitiveCompare(a, b) < 0;
+            });
+            for (std::int32_t i = 0; i < length; ++i)
+                model.SetPrimitiveElement(array, i, Dvm87Bits(values[i]));
+            return VmValue::Void();
+        });
+    builder.StaticMethod("sort", "([" + descriptor + "II)V",
+        [](IntrinsicContext& context) {
+            const auto array = context.arguments[0].ref;
+            const auto from = context.arguments[1].AsInt();
+            const auto to = context.arguments[2].AsInt();
+            auto& model = context.vm.Model();
+            Dvm87CheckRange(model, array, from, to);
+            std::vector<T> values;
+            for (auto i = from; i < to; ++i)
+                values.push_back(Dvm87Primitive<T>(model, array, i));
+            std::sort(values.begin(), values.end(), [](const T a, const T b) {
+                return Dvm87PrimitiveCompare(a, b) < 0;
+            });
+            for (std::size_t i = 0; i < values.size(); ++i)
+                model.SetPrimitiveElement(array,
+                    from + static_cast<std::int32_t>(i), Dvm87Bits(values[i]));
+            return VmValue::Void();
+        });
+    builder.StaticMethod("binarySearch", "([" + descriptor + descriptor + ")I",
+        [](IntrinsicContext& context) {
+            const auto array = context.arguments[0].ref;
+            if (!array.IsValid()) Dvm87ArrayNull();
+            auto& model = context.vm.Model();
+            const auto key = [&]() -> T {
+                if constexpr (std::is_same_v<T, float>) return context.arguments[1].AsFloat();
+                else if constexpr (std::is_same_v<T, double>) return context.arguments[1].AsDouble();
+                else if constexpr (sizeof(T) == 8) return static_cast<T>(context.arguments[1].AsLong());
+                else return static_cast<T>(context.arguments[1].AsInt());
+            }();
+            std::int32_t low = 0;
+            std::int32_t high = model.ArrayLength(array) - 1;
+            while (low <= high) {
+                const auto mid = low + ((high - low) >> 1);
+                const auto order = Dvm87PrimitiveCompare(
+                    Dvm87Primitive<T>(model, array, mid), key);
+                if (order < 0) low = mid + 1;
+                else if (order > 0) high = mid - 1;
+                else return VmValue::Int(mid);
+            }
+            return VmValue::Int(-low - 1);
+        });
+    builder.StaticMethod("fill", "([" + descriptor + descriptor + ")V",
+        [](IntrinsicContext& context) {
+            const auto array = context.arguments[0].ref;
+            if (!array.IsValid()) Dvm87ArrayNull();
+            const auto value = [&]() -> T {
+                if constexpr (std::is_same_v<T, float>) return context.arguments[1].AsFloat();
+                else if constexpr (std::is_same_v<T, double>) return context.arguments[1].AsDouble();
+                else if constexpr (sizeof(T) == 8) return static_cast<T>(context.arguments[1].AsLong());
+                else return static_cast<T>(context.arguments[1].AsInt());
+            }();
+            auto& model = context.vm.Model();
+            for (JniSize i = 0; i < model.ArrayLength(array); ++i)
+                model.SetPrimitiveElement(array, i, Dvm87Bits(value));
+            return VmValue::Void();
+        });
+    builder.StaticMethod("equals", "([" + descriptor + "[" + descriptor + ")Z",
+        [](IntrinsicContext& context) {
+            const auto left = context.arguments[0].ref;
+            const auto right = context.arguments[1].ref;
+            if (left == right) return VmValue::Int(1);
+            if (!left.IsValid() || !right.IsValid()) return VmValue::Int(0);
+            auto& model = context.vm.Model();
+            const auto length = model.ArrayLength(left);
+            if (length != model.ArrayLength(right)) return VmValue::Int(0);
+            for (JniSize i = 0; i < length; ++i) {
+                if (Dvm87PrimitiveCompare(Dvm87Primitive<T>(model, left, i),
+                                          Dvm87Primitive<T>(model, right, i)) != 0)
+                    return VmValue::Int(0);
+            }
+            return VmValue::Int(1);
+        });
+}
+
+IntrinsicClassDecl Dvm87DeclareArraysArrayList() {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/util/Arrays$ArrayList;", "Ljava/util/AbstractList;",
+        {"Ljava/util/RandomAccess;", "Ljava/io/Serializable;"});
+    const auto array = builder.BoundInstanceField("array", "[Ljava/lang/Object;");
+    builder.Constructor("([Ljava/lang/Object;)V", [array](IntrinsicContext& context) {
+        IntrinsicCall call(context);
+        call.SetRef(array, call.NonNullRef(0, "array"));
+        return VmValue::Void();
+    });
+    builder.FinalMethod("size", "()I", [array](IntrinsicContext& context) {
+        IntrinsicCall call(context);
+        return VmValue::Int(call.Vm().Model().ArrayLength(call.GetRef(array)));
+    });
+    builder.FinalMethod("get", "(I)Ljava/lang/Object;", [array](IntrinsicContext& context) {
+        IntrinsicCall call(context);
+        return VmValue::Ref(call.Vm().Model().GetObjectElement(
+            call.GetRef(array), call.Int(0)));
+    });
+    builder.FinalMethod("set", "(ILjava/lang/Object;)Ljava/lang/Object;",
+        [array](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto backing = call.GetRef(array);
+            const auto index = call.Int(0);
+            const auto old = call.Vm().Model().GetObjectElement(backing, index);
+            call.Vm().Model().SetObjectElement(backing, index, call.Ref(1));
+            return VmValue::Ref(old);
+        });
+    return std::move(builder).Build();
+}
+
+IntrinsicClassDecl Dvm87DeclareArrays() {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Arrays;");
+    builder.StaticMethod("asList", "([Ljava/lang/Object;)Ljava/util/List;",
+        [](IntrinsicContext& context) {
+            const auto array = context.arguments[0].ref;
+            if (!array.IsValid()) Dvm87ArrayNull();
+            const auto list = context.vm.NewIntrinsicInstance("Ljava/util/Arrays$ArrayList;");
+            const auto owner = context.vm.Linker().ResolveDescriptor("Ljava/util/Arrays$ArrayList;");
+            const auto constructor = context.vm.Linker().FindDirectMethod(
+                owner, "<init>", "([Ljava/lang/Object;)V");
+            const std::array args{VmValue::Ref(list), VmValue::Ref(array)};
+            const auto outcome = context.vm.Call(*constructor, args);
+            if (outcome.exception.IsValid()) context.vm.SetPendingException(outcome.exception);
+            return VmValue::Ref(list);
+        });
+    const auto object_sort = [](IntrinsicContext& context, const VmObjectRef comparator) {
+        const auto array = context.arguments[0].ref;
+        if (!array.IsValid()) Dvm87ArrayNull();
+        auto& model = context.vm.Model();
+        std::vector<VmObjectRef> values;
+        for (JniSize i = 0; i < model.ArrayLength(array); ++i)
+            values.push_back(model.GetObjectElement(array, i));
+        if (!Dvm87StableSort(context, values, comparator)) return VmValue::Void();
+        for (JniSize i = 0; i < static_cast<JniSize>(values.size()); ++i)
+            model.SetObjectElement(array, i, values[i]);
+        return VmValue::Void();
+    };
+    builder.StaticMethod("sort", "([Ljava/lang/Object;)V",
+        [object_sort](IntrinsicContext& context) {
+            return object_sort(context, VmObjectRef{0});
+        });
+    builder.StaticMethod("sort", "([Ljava/lang/Object;Ljava/util/Comparator;)V",
+        [object_sort](IntrinsicContext& context) {
+            return object_sort(context, context.arguments[1].ref);
+        });
+    builder.StaticMethod("binarySearch",
+        "([Ljava/lang/Object;Ljava/lang/Object;Ljava/util/Comparator;)I",
+        [](IntrinsicContext& context) {
+            const auto array = context.arguments[0].ref;
+            if (!array.IsValid()) Dvm87ArrayNull();
+            std::int32_t low = 0, high = context.vm.Model().ArrayLength(array) - 1;
+            while (low <= high) {
+                const auto mid = low + ((high - low) >> 1);
+                const auto order = Dvm87Compare(
+                    context, context.vm.Model().GetObjectElement(array, mid),
+                    context.arguments[1].ref, context.arguments[2].ref);
+                if (!order.has_value()) return VmValue::Int(0);
+                if (*order < 0) low = mid + 1;
+                else if (*order > 0) high = mid - 1;
+                else return VmValue::Int(mid);
+            }
+            return VmValue::Int(-low - 1);
+        });
+    builder.StaticMethod("fill", "([Ljava/lang/Object;Ljava/lang/Object;)V",
+        [](IntrinsicContext& context) {
+            const auto array = context.arguments[0].ref;
+            if (!array.IsValid()) Dvm87ArrayNull();
+            auto& model = context.vm.Model();
+            for (JniSize i = 0; i < model.ArrayLength(array); ++i)
+                model.SetObjectElement(array, i, context.arguments[1].ref);
+            return VmValue::Void();
+        });
+    builder.StaticMethod("equals", "([Ljava/lang/Object;[Ljava/lang/Object;)Z",
+        [](IntrinsicContext& context) {
+            const auto left = context.arguments[0].ref;
+            const auto right = context.arguments[1].ref;
+            if (left == right) return VmValue::Int(1);
+            if (!left.IsValid() || !right.IsValid()) return VmValue::Int(0);
+            auto& model = context.vm.Model();
+            const auto length = model.ArrayLength(left);
+            if (length != model.ArrayLength(right)) return VmValue::Int(0);
+            for (JniSize i = 0; i < length; ++i) {
+                const auto equal = Dvm87GuestEquals(context,
+                    model.GetObjectElement(left, i), model.GetObjectElement(right, i));
+                if (!equal.has_value() || !*equal) return VmValue::Int(0);
+            }
+            return VmValue::Int(1);
+        });
+    Dvm87AddPrimitiveArrayMethods<std::int8_t>(builder, "B");
+    Dvm87AddPrimitiveArrayMethods<char16_t>(builder, "C");
+    Dvm87AddPrimitiveArrayMethods<std::int16_t>(builder, "S");
+    Dvm87AddPrimitiveArrayMethods<std::int32_t>(builder, "I");
+    Dvm87AddPrimitiveArrayMethods<std::int64_t>(builder, "J");
+    Dvm87AddPrimitiveArrayMethods<float>(builder, "F");
+    Dvm87AddPrimitiveArrayMethods<double>(builder, "D");
+    return std::move(builder).Build();
+}
+
+[[nodiscard]] std::optional<std::vector<VmObjectRef>> Dvm87ListValues(
+    IntrinsicContext& context, const VmObjectRef list) {
+    const auto size = Dvm87InvokeVirtual(context, list, "size", "()I");
+    if (!size.has_value()) return std::nullopt;
+    std::vector<VmObjectRef> result;
+    for (std::int32_t index = 0; index < size->AsInt(); ++index) {
+        const auto value = Dvm87InvokeVirtual(context, list, "get",
+            "(I)Ljava/lang/Object;", {VmValue::Int(index)});
+        if (!value.has_value()) return std::nullopt;
+        result.push_back(value->ref);
+    }
+    return result;
+}
+
+bool Dvm87SetList(IntrinsicContext& context, const VmObjectRef list,
+                  const std::span<const VmObjectRef> values) {
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        const auto result = Dvm87InvokeVirtual(context, list, "set",
+            "(ILjava/lang/Object;)Ljava/lang/Object;",
+            {VmValue::Int(static_cast<std::int32_t>(index)),
+             VmValue::Ref(values[index])});
+        if (!result.has_value()) return false;
+    }
+    return true;
+}
+
+IntrinsicClassDecl Dvm87DeclareCollections() {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Collections;");
+    const auto sort = [](IntrinsicContext& context, const VmObjectRef comparator) {
+        const auto list = context.arguments[0].ref;
+        auto values = Dvm87ListValues(context, list);
+        if (!values.has_value() || !Dvm87StableSort(context, *values, comparator))
+            return VmValue::Void();
+        Dvm87SetList(context, list, *values);
+        return VmValue::Void();
+    };
+    builder.StaticMethod("sort", "(Ljava/util/List;)V",
+        [sort](IntrinsicContext& context) {
+            return sort(context, VmObjectRef{0});
+        });
+    builder.StaticMethod("sort", "(Ljava/util/List;Ljava/util/Comparator;)V",
+        [sort](IntrinsicContext& context) { return sort(context, context.arguments[1].ref); });
+    builder.StaticMethod("reverse", "(Ljava/util/List;)V",
+        [](IntrinsicContext& context) {
+            auto values = Dvm87ListValues(context, context.arguments[0].ref);
+            if (!values.has_value()) return VmValue::Void();
+            std::reverse(values->begin(), values->end());
+            Dvm87SetList(context, context.arguments[0].ref, *values);
+            return VmValue::Void();
+        });
+    builder.StaticMethod("swap", "(Ljava/util/List;II)V",
+        [](IntrinsicContext& context) {
+            auto values = Dvm87ListValues(context, context.arguments[0].ref);
+            if (!values.has_value()) return VmValue::Void();
+            const auto left = context.arguments[1].AsInt();
+            const auto right = context.arguments[2].AsInt();
+            if (left < 0 || right < 0 ||
+                static_cast<std::size_t>(left) >= values->size() ||
+                static_cast<std::size_t>(right) >= values->size())
+                Dvm87BadIndex(std::max(left, right), values->size());
+            std::swap((*values)[left], (*values)[right]);
+            Dvm87SetList(context, context.arguments[0].ref, *values);
+            return VmValue::Void();
+        });
+    builder.StaticMethod("fill", "(Ljava/util/List;Ljava/lang/Object;)V",
+        [](IntrinsicContext& context) {
+            auto values = Dvm87ListValues(context, context.arguments[0].ref);
+            if (!values.has_value()) return VmValue::Void();
+            std::fill(values->begin(), values->end(), context.arguments[1].ref);
+            Dvm87SetList(context, context.arguments[0].ref, *values);
+            return VmValue::Void();
+        });
+    builder.StaticMethod("frequency", "(Ljava/util/Collection;Ljava/lang/Object;)I",
+        [](IntrinsicContext& context) {
+            const auto collection = context.arguments[0].ref;
+            if (!collection.IsValid()) Dvm87Null("collection == null");
+            const auto list_class = context.vm.Linker().ResolveDescriptor(
+                "Ljava/util/List;");
+            const auto actual = context.vm.Model().ObjectClass(collection);
+            const auto values = context.vm.Linker().IsAssignable(
+                                    list_class, actual)
+                ? Dvm87ListValues(context, collection)
+                : Dvm87SnapshotCollection(context, collection);
+            if (!values.has_value()) return VmValue::Int(0);
+            std::int32_t count{};
+            for (const auto value : *values) {
+                const auto equal = Dvm87GuestEquals(
+                    context, context.arguments[1].ref, value);
+                if (!equal.has_value()) return VmValue::Int(0);
+                if (*equal) ++count;
+            }
+            return VmValue::Int(count);
+        });
+    builder.StaticMethod("binarySearch",
+        "(Ljava/util/List;Ljava/lang/Object;Ljava/util/Comparator;)I",
+        [](IntrinsicContext& context) {
+            const auto values = Dvm87ListValues(context, context.arguments[0].ref);
+            if (!values.has_value()) return VmValue::Int(0);
+            std::int32_t low = 0, high = static_cast<std::int32_t>(values->size()) - 1;
+            while (low <= high) {
+                const auto mid = low + ((high - low) >> 1);
+                const auto order = Dvm87Compare(context, (*values)[mid],
+                    context.arguments[1].ref, context.arguments[2].ref);
+                if (!order.has_value()) return VmValue::Int(0);
+                if (*order < 0) low = mid + 1;
+                else if (*order > 0) high = mid - 1;
+                else return VmValue::Int(mid);
+            }
+            return VmValue::Int(-low - 1);
+        });
+    return std::move(builder).Build();
+}
+
+[[nodiscard]] constexpr std::int64_t Dvm87DaysFromCivil(
+    std::int32_t year, std::uint32_t month, std::uint32_t day) noexcept {
+    year -= month <= 2U;
+    const auto era = (year >= 0 ? year : year - 399) / 400;
+    const auto yoe = static_cast<std::uint32_t>(year - era * 400);
+    const auto adjusted = month > 2U ? month - 3U : month + 9U;
+    const auto doy = (153U * adjusted + 2U) / 5U + day - 1U;
+    const auto doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
+    return era * 146097LL + static_cast<std::int64_t>(doe) - 719468LL;
+}
+
+struct Dvm87CivilDate final {
+    std::int32_t year{};
+    std::uint32_t month{};
+    std::uint32_t day{};
+};
+
+[[nodiscard]] constexpr Dvm87CivilDate Dvm87CivilFromDays(
+    std::int64_t days) noexcept {
+    days += 719468LL;
+    const auto era = (days >= 0 ? days : days - 146096LL) / 146097LL;
+    const auto doe = static_cast<std::uint32_t>(days - era * 146097LL);
+    const auto yoe =
+        (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
+    auto year = static_cast<std::int32_t>(yoe) +
+                static_cast<std::int32_t>(era * 400LL);
+    const auto doy = doe - (365U * yoe + yoe / 4U - yoe / 100U);
+    const auto mp = (5U * doy + 2U) / 153U;
+    const auto day = doy - (153U * mp + 2U) / 5U + 1U;
+    const auto month = mp < 10U ? mp + 3U : mp - 9U;
+    year += month <= 2U;
+    return {year, month, day};
+}
+
+struct Dvm87TimeZoneFields final {
+    IntrinsicFieldHandle id;
+    IntrinsicFieldHandle raw_offset;
+};
+
+struct Dvm87TimeZoneDeclaration final {
+    IntrinsicClassDecl declaration;
+    Dvm87TimeZoneFields fields;
+};
+
+Dvm87TimeZoneDeclaration Dvm87DeclareTimeZone() {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/util/TimeZone;", "Ljava/lang/Object;",
+        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"});
+    const Dvm87TimeZoneFields fields{
+        builder.BoundInstanceField("id", "Ljava/lang/String;"),
+        builder.BoundInstanceField("rawOffset", "I")};
+    const auto make_zone = [fields](IntrinsicContext& context,
+                                    const std::string& requested) {
+        std::int32_t offset{};
+        bool valid = requested == "GMT" || requested == "UTC";
+        if (requested.size() == 9U && requested.starts_with("GMT") &&
+            (requested[3] == '+' || requested[3] == '-') &&
+            requested[6] == ':') {
+            int hours{}, minutes{};
+            const auto hour_result = std::from_chars(
+                requested.data() + 4, requested.data() + 6, hours);
+            const auto minute_result = std::from_chars(
+                requested.data() + 7, requested.data() + 9, minutes);
+            valid = hour_result.ec == std::errc{} &&
+                    minute_result.ec == std::errc{} &&
+                    hours <= 23 && minutes <= 59;
+            if (valid) {
+                offset = (hours * 60 + minutes) * 60 * 1000;
+                if (requested[3] == '-') offset = -offset;
+            }
+        }
+        IntrinsicCall call(context);
+        const auto zone = call.Vm().NewIntrinsicInstance(
+            "Ljava/util/SimpleTimeZone;");
+        call.SetRef(fields.id, zone,
+                    call.Vm().NewStringUtf8(valid ? requested : "GMT"));
+        call.SetInt(fields.raw_offset, zone, valid ? offset : 0);
+        return zone;
+    };
+    builder.Constructor("()V", [fields](IntrinsicContext& context) {
+        IntrinsicCall call(context);
+        call.SetRef(fields.id, call.Vm().NewStringUtf8("GMT"));
+        call.SetInt(fields.raw_offset, 0);
+        return VmValue::Void();
+    }, 0x0004U);
+    builder.StaticMethod("getDefault", "()Ljava/util/TimeZone;",
+        [make_zone](IntrinsicContext& context) {
+            return VmValue::Ref(make_zone(context, "GMT"));
+        });
+    builder.StaticMethod("getTimeZone",
+        "(Ljava/lang/String;)Ljava/util/TimeZone;",
+        [make_zone](IntrinsicContext& context) {
+            const auto id = IntrinsicCall(context).NonNullRef(0, "id");
+            return VmValue::Ref(make_zone(context, context.vm.StringUtf8(id)));
+        });
+    builder.FinalMethod("getID", "()Ljava/lang/String;",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.id));
+        });
+    builder.FinalMethod("setID", "(Ljava/lang/String;)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            call.SetRef(fields.id, call.NonNullRef(0, "id"));
+            return VmValue::Void();
+        });
+    builder.VirtualMethod("getRawOffset", "()I",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Int(
+                IntrinsicCall(context).GetInt(fields.raw_offset));
+        });
+    builder.VirtualMethod("setRawOffset", "(I)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            call.SetInt(fields.raw_offset, call.Int(0));
+            return VmValue::Void();
+        });
+    builder.FinalMethod("getOffset", "(J)I",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Int(
+                IntrinsicCall(context).GetInt(fields.raw_offset));
+        });
+    builder.VirtualMethod("useDaylightTime", "()Z",
+        [](IntrinsicContext&) { return VmValue::Int(0); });
+    builder.FinalMethod("inDaylightTime", "(Ljava/util/Date;)Z",
+        [](IntrinsicContext& context) {
+            if (!context.arguments[0].ref.IsValid()) Dvm87Null("date == null");
+            return VmValue::Int(0);
+        });
+    return {std::move(builder).Build(), fields};
+}
+
+IntrinsicClassDecl Dvm87DeclareSimpleTimeZone(
+    const Dvm87TimeZoneFields fields) {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/util/SimpleTimeZone;", "Ljava/util/TimeZone;");
+    // TimeZone factories initialize inherited state through bound fields.
+    builder.Constructor("(ILjava/lang/String;)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            call.SetInt(fields.raw_offset, call.Int(0));
+            call.SetRef(fields.id, call.NonNullRef(1, "id"));
+            return VmValue::Void();
+        });
+    return std::move(builder).Build();
+}
+
+struct Dvm87CalendarFields final {
+    IntrinsicFieldHandle millis;
+    IntrinsicFieldHandle zone;
+    IntrinsicFieldHandle lenient;
+};
+
+[[nodiscard]] std::int32_t Dvm87ZoneOffset(
+    IntrinsicContext& context, const Dvm87CalendarFields& fields) {
+    IntrinsicCall call(context);
+    const auto zone = call.GetRef(fields.zone);
+    if (!zone.IsValid()) return 0;
+    const auto result = Dvm87InvokeVirtual(
+        context, zone, "getRawOffset", "()I");
+    return result.has_value() ? result->AsInt() : 0;
+}
+
+struct Dvm87CalendarDeclaration final {
+    IntrinsicClassDecl declaration;
+    Dvm87CalendarFields fields;
+};
+
+Dvm87CalendarDeclaration Dvm87DeclareCalendar(
+    const CoreIntrinsicServices& services) {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/util/Calendar;", "Ljava/lang/Object;",
+        {"Ljava/io/Serializable;", "Ljava/lang/Cloneable;"}, 0x0401U);
+    const Dvm87CalendarFields fields{
+        builder.BoundInstanceField("time", "J"),
+        builder.BoundInstanceField("zone", "Ljava/util/TimeZone;"),
+        builder.BoundInstanceField("lenient", "Z")};
+    constexpr std::array constants{
+        std::pair{"ERA", 0}, std::pair{"YEAR", 1},
+        std::pair{"MONTH", 2}, std::pair{"DATE", 5},
+        std::pair{"DAY_OF_MONTH", 5}, std::pair{"DAY_OF_WEEK", 7},
+        std::pair{"AM_PM", 9}, std::pair{"HOUR", 10},
+        std::pair{"HOUR_OF_DAY", 11}, std::pair{"MINUTE", 12},
+        std::pair{"SECOND", 13}, std::pair{"MILLISECOND", 14},
+        std::pair{"ZONE_OFFSET", 15}, std::pair{"DST_OFFSET", 16},
+        std::pair{"JANUARY", 0}, std::pair{"FEBRUARY", 1},
+        std::pair{"MARCH", 2}, std::pair{"APRIL", 3},
+        std::pair{"MAY", 4}, std::pair{"JUNE", 5},
+        std::pair{"JULY", 6}, std::pair{"AUGUST", 7},
+        std::pair{"SEPTEMBER", 8}, std::pair{"OCTOBER", 9},
+        std::pair{"NOVEMBER", 10}, std::pair{"DECEMBER", 11}};
+    for (const auto& [name, value] : constants)
+        builder.ConstantInt(name, "I", value);
+    builder.Constructor("(Ljava/util/TimeZone;)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            call.SetLong(fields.millis, 0);
+            call.SetRef(fields.zone, call.NonNullRef(0, "zone"));
+            call.SetInt(fields.lenient, 1);
+            return VmValue::Void();
+        }, 0x0004U);
+    builder.StaticMethod("getInstance", "()Ljava/util/Calendar;",
+        [fields, now = services.current_time_millis](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto zone_class =
+                call.Vm().Linker().ResolveDescriptor("Ljava/util/TimeZone;");
+            const auto get_default = call.Vm().Linker().FindDirectMethod(
+                zone_class, "getDefault", "()Ljava/util/TimeZone;");
+            const auto zone = call.Vm().Call(*get_default, {});
+            const auto calendar = call.Vm().NewIntrinsicInstance(
+                "Ljava/util/GregorianCalendar;");
+            call.SetRef(fields.zone, calendar, zone.value.ref);
+            call.SetLong(fields.millis, calendar, now ? now() : 0);
+            call.SetInt(fields.lenient, calendar, 1);
+            return VmValue::Ref(calendar);
+        });
+    builder.FinalMethod("getTimeInMillis", "()J",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Long(IntrinsicCall(context).GetLong(fields.millis));
+        });
+    builder.FinalMethod("setTimeInMillis", "(J)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            call.SetLong(fields.millis, call.Long(0));
+            return VmValue::Void();
+        });
+    builder.FinalMethod("getTimeZone", "()Ljava/util/TimeZone;",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(fields.zone));
+        });
+    builder.FinalMethod("setTimeZone", "(Ljava/util/TimeZone;)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            call.SetRef(fields.zone, call.NonNullRef(0, "zone"));
+            return VmValue::Void();
+        });
+    builder.FinalMethod("setLenient", "(Z)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            call.SetInt(fields.lenient, call.Int(0));
+            return VmValue::Void();
+        });
+    builder.FinalMethod("isLenient", "()Z",
+        [fields](IntrinsicContext& context) {
+            return VmValue::Int(IntrinsicCall(context).GetInt(fields.lenient));
+        });
+    builder.VirtualMethod("get", "(I)I",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto field = call.Int(0);
+            const auto local = call.GetLong(fields.millis) +
+                               Dvm87ZoneOffset(context, fields);
+            auto days = local / 86400000LL;
+            auto day_millis = local % 86400000LL;
+            if (day_millis < 0) { day_millis += 86400000LL; --days; }
+            const auto civil = Dvm87CivilFromDays(days);
+            switch (field) {
+                case 0: return VmValue::Int(civil.year <= 0 ? 0 : 1);
+                case 1: return VmValue::Int(civil.year <= 0 ? 1 - civil.year : civil.year);
+                case 2: return VmValue::Int(static_cast<std::int32_t>(civil.month) - 1);
+                case 5: return VmValue::Int(civil.day);
+                case 7: return VmValue::Int(
+                    static_cast<std::int32_t>((days + 4LL) % 7LL + 7LL) % 7 + 1);
+                case 9: return VmValue::Int(day_millis >= 43200000LL ? 1 : 0);
+                case 10: return VmValue::Int((day_millis / 3600000LL) % 12);
+                case 11: return VmValue::Int(static_cast<std::int32_t>(day_millis / 3600000LL));
+                case 12: return VmValue::Int(static_cast<std::int32_t>((day_millis / 60000LL) % 60));
+                case 13: return VmValue::Int(static_cast<std::int32_t>((day_millis / 1000LL) % 60));
+                case 14: return VmValue::Int(static_cast<std::int32_t>(day_millis % 1000LL));
+                case 15: return VmValue::Int(Dvm87ZoneOffset(context, fields));
+                case 16: return VmValue::Int(0);
+                default:
+                    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "unsupported Calendar field"};
+            }
+        });
+    builder.VirtualMethod("set", "(IIIIII)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto millis = Dvm87DaysFromCivil(
+                call.Int(0), static_cast<std::uint32_t>(call.Int(1) + 1),
+                static_cast<std::uint32_t>(call.Int(2))) * 86400000LL +
+                call.Int(3) * 3600000LL + call.Int(4) * 60000LL +
+                call.Int(5) * 1000LL - Dvm87ZoneOffset(context, fields);
+            call.SetLong(fields.millis, millis);
+            return VmValue::Void();
+        });
+    builder.VirtualMethod("clear", "()V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall(context).SetLong(fields.millis, 0);
+            return VmValue::Void();
+        });
+    builder.VirtualMethod("add", "(II)V",
+        [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            std::int64_t unit{};
+            switch (call.Int(0)) {
+                case 5: unit = 86400000LL; break;
+                case 10: case 11: unit = 3600000LL; break;
+                case 12: unit = 60000LL; break;
+                case 13: unit = 1000LL; break;
+                case 14: unit = 1; break;
+                default:
+                    throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "Calendar.add field is not provided"};
+            }
+            call.SetLong(fields.millis,
+                         call.GetLong(fields.millis) + unit * call.Int(1));
+            return VmValue::Void();
+        });
+    return {std::move(builder).Build(), fields};
+}
+
+IntrinsicClassDecl Dvm87DeclareGregorianCalendar(
+    const Dvm87CalendarFields fields,
+    const CoreIntrinsicServices& services) {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/util/GregorianCalendar;", "Ljava/util/Calendar;");
+    const auto initialize = [fields, now = services.current_time_millis](
+                                IntrinsicContext& context,
+                                const VmObjectRef requested_zone) {
+        IntrinsicCall call(context);
+        auto zone = requested_zone;
+        if (!zone.IsValid()) {
+            const auto zone_class = call.Vm().Linker().ResolveDescriptor(
+                "Ljava/util/TimeZone;");
+            const auto get_default = call.Vm().Linker().FindDirectMethod(
+                zone_class, "getDefault", "()Ljava/util/TimeZone;");
+            const auto outcome = call.Vm().Call(*get_default, {});
+            if (outcome.exception.IsValid()) {
+                call.Vm().SetPendingException(outcome.exception);
+                return VmValue::Void();
+            }
+            zone = outcome.value.ref;
+        }
+        call.SetRef(fields.zone, zone);
+        call.SetLong(fields.millis, now ? now() : 0);
+        call.SetInt(fields.lenient, 1);
+        return VmValue::Void();
+    };
+    builder.Constructor("()V", [initialize](IntrinsicContext& context) {
+        return initialize(context, VmObjectRef{0});
+    });
+    builder.Constructor("(Ljava/util/TimeZone;)V",
+        [initialize](IntrinsicContext& context) {
+            return initialize(context,
+                              IntrinsicCall(context).NonNullRef(0, "zone"));
+        });
+    return std::move(builder).Build();
+}
+
+}  // namespace
+
+void AppendJavaUtilAlgorithms(std::vector<IntrinsicClassDecl>& catalog,
+                              const CoreIntrinsicServices& services) {
+    catalog.push_back(Dvm87DeclareArraysArrayList());
+    catalog.push_back(Dvm87DeclareArrays());
+    catalog.push_back(Dvm87DeclareCollections());
+    auto timezone = Dvm87DeclareTimeZone();
+    catalog.push_back(std::move(timezone.declaration));
+    catalog.push_back(Dvm87DeclareSimpleTimeZone(timezone.fields));
+    auto calendar = Dvm87DeclareCalendar(services);
+    catalog.push_back(std::move(calendar.declaration));
+    catalog.push_back(Dvm87DeclareGregorianCalendar(
+        calendar.fields, services));
+}
+
 }  // namespace ogplay::runtime::dexvm::intrinsics

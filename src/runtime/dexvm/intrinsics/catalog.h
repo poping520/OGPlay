@@ -16,6 +16,10 @@ void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilZip(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
                             const CoreIntrinsicServices& services);
+void AppendJavaUtilAlgorithms(std::vector<IntrinsicClassDecl>& catalog,
+                              const CoreIntrinsicServices& services);
+void AppendJavaRegex(std::vector<IntrinsicClassDecl>& catalog);
+void AppendJavaConcurrent(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaNio(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
                            const CoreIntrinsicServices& services);

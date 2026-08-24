@@ -830,6 +830,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/dex_code_tests.cpp
         tests/dexvm/interpreter_tests.cpp
         tests/dexvm/nio_runtime_tests.cpp
+        tests/dexvm/dvm87_tests.cpp
         tests/dexvm/session_exit_tests.cpp
         tests/dexvm/intrinsics_p1_tests.cpp
         tests/dexvm/thread_intrinsic_tests.cpp

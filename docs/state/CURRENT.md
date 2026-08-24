@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-25 · DVM-86 API 19 高频值类与有界服务
+更新：2026-08-25 · DVM-87 Java util/regex/concurrent P1 核心
 
 ## 当前阶段
 
@@ -50,26 +50,24 @@
   `dexvm.android_scheduler` 为 complete。后续顺序与边界见
   [`12-api19-capability-stack.md`](../design/dexvm/12-api19-capability-stack.md)。DVM-86 已发布
   Base64/Sparse/TextUtils、graphics 值类、Parcel/Bundle transport 与有界系统服务；不引入 Binder，
-  `dexvm.android_value_services` 为 complete。
+  `dexvm.android_value_services` 为 complete。DVM-87 已发布常用 Arrays/Collections algorithm、
+  固定 offset Calendar/TimeZone、Pattern/Matcher、FutureTask/串行 Executor 与 atomic family；
+  worker 复用真实 guest Thread，三项 bounded capability 均为 complete。
 ## 验证基线
 
-- DVM-83 Windows Debug 受影响目标构建通过；Java GLES/NIO/EGL/catalog/JNI superclass/
-  Java-native texture state 定向 10/10（2513 assertions）、生成面 stale check 与
-  architecture 6/6 通过；全量 CTest 按计划留到阶段最后一个 WU。
-- DVM-84 `windows-msvc` configure 与 Release `ogplay_tests` 构建通过；AudioTrack、legacy
-  Java/JNI 与 OpenSL mixer 定向 6/6（118 assertions）、OpenSL boundary/callback 2/2
-  （98 assertions）及 architecture 6/6 通过；全量 CTest 按计划未运行。
 - DVM-85 `windows-msvc` Debug `ogplay_tests` 构建通过；scheduler 4/4（83 assertions）及
   Thread/monitor/lifecycle 定向 26/26（132805 assertions）通过；全量按计划未运行。
 - DVM-86 Windows Debug 构建、value/service、catalog/Bundle/Context 与 architecture 定向
   测试通过；全量按计划未运行。
+- DVM-87 Windows Debug `ogplay_tests` 构建通过；本 WU 4/4（55 assertions）、Thread 相关
+  18/18、core catalog 1/1 与 architecture 6/6 通过；全量留到阶段最后一个 WU。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 当前 Activity switch/SMS-network 启动阻断后，
    复验 DVM-47 与 interpreter threaded title gate。
 2. Linux M9 严格出口复验。
-3. 进入下一能力 WU：Phase E 高频 Android util/graphics/value/service 小能力。
+3. 进入下一能力 WU：Phase F NetworkRuntime 与显式 network policy。
 
 ## 阻塞与边界
 

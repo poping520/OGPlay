@@ -109,6 +109,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-84](DVM-84.md) | API 19 AudioTrack 与统一 PCM backend | 已完成 |
 | [DVM-85](DVM-85.md) | 统一 SystemClock 与 Android 调度 backend | 已完成 |
 | [DVM-86](DVM-86.md) | API 19 高频值类与有界系统服务 | 已完成 |
+| [DVM-87](DVM-87.md) | Java util/regex/concurrent P1 核心 | 已完成 |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

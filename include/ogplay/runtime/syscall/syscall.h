@@ -156,6 +156,7 @@ void BindAndroidProcessSyscalls(A32SyscallDispatcher& dispatcher,
                                 GuestVmaAnnotationSink vma_annotation_sink);
 void BindAndroidArmPrivateSyscalls(
     A32SyscallDispatcher& dispatcher,
+    memory::AddressSpace& address_space,
     GuestThreadPointerSetter thread_pointer_setter);
 void BindAndroidThreadLifecycleSyscalls(
     A32SyscallDispatcher& dispatcher,

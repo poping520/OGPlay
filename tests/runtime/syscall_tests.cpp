@@ -175,7 +175,11 @@ TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {
     CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker),
                     ogplay::memory::MemoryFault);
     frame.arguments[2] = 6;
-    CHECK(dispatcher.Dispatch(frame) == -1);
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker));
+    std::array<std::byte, 1> fetched{};
+    CHECK_NOTHROW(memory.Fetch(ogplay::memory::GuestAddress{0x60000000},
+                               fetched));
 
     frame.number = 91;
     frame.arguments[0] = 0x60000000;
@@ -260,6 +264,13 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     mismatch.arguments[2] = 8;
     CHECK(dispatcher.Dispatch(mismatch) == -11);
 
+    bus.Write32(ogplay::memory::GuestAddress{0x10020}, 0U);
+    bus.Write32(ogplay::memory::GuestAddress{0x10024}, 0U);
+    auto timed = mismatch;
+    timed.arguments[2] = 7;
+    timed.arguments[3] = 0x10020;
+    CHECK(dispatcher.Dispatch(timed) == -110);
+
     std::atomic<std::int32_t> wait_result{-999};
     std::thread waiter{[&] {
         auto wait = mismatch;
@@ -306,8 +317,8 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     mismatch.arguments[0] = 0x20000;
     CHECK(dispatcher.Dispatch(mismatch) == -14);
     mismatch.arguments[0] = 0x10000;
-    mismatch.arguments[3] = 0x10020;
-    CHECK(dispatcher.Dispatch(mismatch) == -95);
+    mismatch.arguments[3] = 0x20000;
+    CHECK(dispatcher.Dispatch(mismatch) == -14);
 }
 
 TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
@@ -424,8 +435,13 @@ TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
         ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::cpu::A32State state;
     state.SetThreadId(42);
+    ogplay::memory::AddressSpace memory;
+    memory.Map({ogplay::memory::GuestAddress{0x12000U}, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write |
+                   ogplay::memory::PageProtection::execute);
     ogplay::runtime::BindAndroidArmPrivateSyscalls(
-        dispatcher, [&state](const std::uint64_t thread_id,
+        dispatcher, memory, [&state](const std::uint64_t thread_id,
                              const ogplay::memory::GuestAddress value) {
             if (thread_id != state.ThreadId()) return false;
             if (value.Value() == UINT32_MAX) {
@@ -442,6 +458,16 @@ TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
     CHECK(dispatcher.Dispatch(frame) == 0);
     CHECK(state.ThreadPointer() ==
           ogplay::memory::GuestAddress{0x72000000U});
+    frame.number = 0x0f0002U;
+    frame.arguments = {0x12010U, 0x12020U, 0U};
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    frame.arguments[0] = 0x22000U;
+    frame.arguments[1] = 0x22010U;
+    CHECK(dispatcher.Dispatch(frame) == -14);
+    frame.arguments[0] = 0x12020U;
+    frame.arguments[1] = 0x12010U;
+    CHECK(dispatcher.Dispatch(frame) == -22);
+    frame.number = 0x0f0005U;
     frame.thread_id = 43;
     CHECK(dispatcher.Dispatch(frame) == -3);
     frame.thread_id = 0;
@@ -450,7 +476,7 @@ TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
     frame.arguments[0] = UINT32_MAX;
     CHECK(dispatcher.Dispatch(frame) == -22);
     CHECK_THROWS_AS(
-        ogplay::runtime::BindAndroidArmPrivateSyscalls(dispatcher, {}),
+        ogplay::runtime::BindAndroidArmPrivateSyscalls(dispatcher, memory, {}),
         ogplay::runtime::SyscallError);
 }
 

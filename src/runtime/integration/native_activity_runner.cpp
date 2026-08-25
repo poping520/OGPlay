@@ -282,7 +282,7 @@ private:
             });
         BindAndroidFileSyscalls(dispatcher_, vfs_, address_space_);
         BindAndroidThreadLifecycleSyscalls(dispatcher_, lifecycle_);
-        BindAndroidArmPrivateSyscalls(dispatcher_,
+        BindAndroidArmPrivateSyscalls(dispatcher_, address_space_,
             [this](const std::uint64_t thread_id, const memory::GuestAddress pointer) {
                 lifecycle_.SetThreadPointer(thread_id, pointer); return true;
             });

@@ -901,6 +901,10 @@ Decl Declare_android_content_Context(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             return MakeString(call, context->package_name);
         });
+    builder.VirtualMethod("getPackageResourcePath", "()Ljava/lang/String;",
+        [context](dx::IntrinsicContext& call) {
+            return MakeString(call, context->package_resource_path);
+        });
     builder.VirtualMethod("getPackageManager",
         "()Landroid/content/pm/PackageManager;",
         [context](dx::IntrinsicContext& call) {
@@ -1159,6 +1163,7 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
     };
     delegate("getAssets", "()Landroid/content/res/AssetManager;");
     delegate("getPackageName", "()Ljava/lang/String;");
+    delegate("getPackageResourcePath", "()Ljava/lang/String;");
     delegate("getPackageManager", "()Landroid/content/pm/PackageManager;");
     delegate("getApplicationContext", "()Landroid/content/Context;");
     delegate("getFilesDir", "()Ljava/io/File;");

@@ -13,19 +13,172 @@
 
 namespace ogplay::runtime::android_intrinsics::dvm80_android_graphics_Bitmap_Config {
 
+namespace {
+
+constexpr std::string_view kConfigDescriptor =
+    "Landroid/graphics/Bitmap$Config;";
+constexpr std::array kConfigs{
+    std::pair{"ALPHA_8", 1}, std::pair{"RGB_565", 3},
+    std::pair{"ARGB_4444", 4}, std::pair{"ARGB_8888", 5}};
+
+[[nodiscard]] const dx::LinkedField& RequireField(
+    dx::Interpreter& vm, const std::string_view name,
+    const std::string_view descriptor) {
+    const auto owner = vm.Linker().FindClass(kConfigDescriptor);
+    const auto field = owner.has_value()
+                           ? vm.Linker().FindFieldRecursive(
+                                 *owner, std::string(name),
+                                 std::string(descriptor))
+                           : std::nullopt;
+    if (!field.has_value()) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "Bitmap.Config field is unavailable: " +
+                                 std::string(name) +
+                                 std::string(descriptor));
+    }
+    return vm.Linker().Field(*field);
+}
+
+[[nodiscard]] dx::VmObjectRef StaticReference(
+    dx::Interpreter& vm, const std::string_view name,
+    const std::string_view descriptor) {
+    const auto& field = RequireField(vm, name, descriptor);
+    const auto& storage = vm.Linker().Class(field.owner).static_storage;
+    if (!field.is_static || !field.is_ref || field.slot >= storage.size()) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "Bitmap.Config static reference is invalid");
+    }
+    return dx::VmObjectRef(storage[field.slot]);
+}
+
+void InitializeConstant(dx::IntrinsicContext& call,
+                        const dx::VmObjectRef constant,
+                        const std::string_view name,
+                        const std::int32_t ordinal,
+                        const std::int32_t native_int) {
+    auto slots = call.vm.Model().InstanceSlots(constant);
+    const auto& name_field = RequireField(
+        call.vm, "name", "Ljava/lang/String;");
+    const auto& ordinal_field = RequireField(call.vm, "ordinal", "I");
+    const auto& native_field = RequireField(call.vm, "nativeInt", "I");
+    if (name_field.slot >= slots.size() ||
+        ordinal_field.slot >= slots.size() ||
+        native_field.slot >= slots.size()) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "Bitmap.Config instance slots are invalid");
+    }
+    slots[name_field.slot] = {
+        call.vm.NewStringUtf8(name).Value(), dx::SlotTag::ref};
+    slots[ordinal_field.slot] = {
+        static_cast<std::uint32_t>(ordinal), dx::SlotTag::cat1};
+    slots[native_field.slot] = {
+        static_cast<std::uint32_t>(native_int), dx::SlotTag::cat1};
+}
+
+[[nodiscard]] dx::VmObjectRef NewConfigArray(
+    dx::Interpreter& vm, const std::span<const dx::VmObjectRef> values) {
+    const auto array_class = vm.Linker().ResolveDescriptor(
+        "[Landroid/graphics/Bitmap$Config;");
+    const auto element_class = vm.Linker().ResolveDescriptor(
+        kConfigDescriptor);
+    const auto array = vm.Model().NewObjectArray(
+        array_class, element_class,
+        static_cast<JniSize>(values.size()));
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        vm.Model().SetObjectElement(
+            array, static_cast<JniSize>(index), values[index]);
+    }
+    return array;
+}
+
+}  // namespace
+
 Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Bitmap$Config;", "Ljava/lang/Object;");
-    builder.StaticField("ARGB_4444", "Landroid/graphics/Bitmap$Config;");
-    builder.StaticField("ARGB_8888", "Landroid/graphics/Bitmap$Config;");
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        std::string(kConfigDescriptor), "Ljava/lang/Enum;", {}, 0x4031U);
+    for (const auto& [name, _] : kConfigs) {
+        builder.StaticField(name, std::string(kConfigDescriptor), 0x4019U);
+    }
+    builder.StaticField(
+               "$VALUES", "[Landroid/graphics/Bitmap$Config;", 0x101aU)
+        .StaticField(
+            "sConfigs", "[Landroid/graphics/Bitmap$Config;", 0x000aU)
+        .InstanceField("nativeInt", "I", 0x0010U);
+    builder.Constructor("(Ljava/lang/String;II)V",
+        [](dx::IntrinsicContext& call) {
+            InitializeConstant(call, call.receiver,
+                               call.vm.StringUtf8(call.arguments[0].ref),
+                               call.arguments[1].AsInt(),
+                               call.arguments[2].AsInt());
+            return dx::VmValue::Void();
+        }, 0x0002U);
+    builder.StaticMethod("values", "()[Landroid/graphics/Bitmap$Config;",
+        [](dx::IntrinsicContext& call) {
+            const auto values = StaticReference(
+                call.vm, "$VALUES",
+                "[Landroid/graphics/Bitmap$Config;");
+            return dx::VmValue::Ref(call.vm.CloneObject(values));
+        }, 0x0009U);
+    builder.StaticMethod(
+        "valueOf",
+        "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
+        [](dx::IntrinsicContext& call) {
+            const auto requested = call.arguments[0].ref;
+            if (!requested.IsValid()) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/NullPointerException;", "name == null"};
+            }
+            const auto wanted = call.vm.StringUtf8(requested);
+            for (const auto& [name, _] : kConfigs) {
+                if (wanted == name) {
+                    return dx::VmValue::Ref(StaticReference(
+                        call.vm, name, kConfigDescriptor));
+                }
+            }
+            throw dx::VmJavaThrow{
+                "Ljava/lang/IllegalArgumentException;",
+                wanted + " is not a constant in android.graphics.Bitmap.Config"};
+        }, 0x0009U);
+    builder.StaticMethod(
+        "nativeToConfig", "(I)Landroid/graphics/Bitmap$Config;",
+        [](dx::IntrinsicContext& call) {
+            const auto index = call.arguments[0].AsInt();
+            if (index < 0 || index >= 6) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
+                    "Bitmap.Config native index " + std::to_string(index)};
+            }
+            const auto configs = StaticReference(
+                call.vm, "sConfigs",
+                "[Landroid/graphics/Bitmap$Config;");
+            return dx::VmValue::Ref(
+                call.vm.Model().GetObjectElement(configs, index));
+        }, 0x0008U);
     builder.ClassInitializer([](dx::IntrinsicContext& call) {
         auto& vm = call.vm;
-        for (const char* name : {"ARGB_4444", "ARGB_8888"}) {
+        std::array<dx::VmObjectRef, kConfigs.size()> values{
+            dx::VmObjectRef{}, dx::VmObjectRef{}, dx::VmObjectRef{},
+            dx::VmObjectRef{}};
+        for (std::size_t index = 0; index < kConfigs.size(); ++index) {
+            const auto& [name, native_int] = kConfigs[index];
+            values[index] = vm.NewIntrinsicInstance(kConfigDescriptor);
+            InitializeConstant(call, values[index], name,
+                               static_cast<std::int32_t>(index), native_int);
             vm.SetIntrinsicStaticRef(
-                "Landroid/graphics/Bitmap$Config;", name,
-                "Landroid/graphics/Bitmap$Config;",
-                vm.NewIntrinsicInstance("Landroid/graphics/Bitmap$Config;"));
+                kConfigDescriptor, name, kConfigDescriptor, values[index]);
         }
+        vm.SetIntrinsicStaticRef(
+            kConfigDescriptor, "$VALUES",
+            "[Landroid/graphics/Bitmap$Config;",
+            NewConfigArray(vm, values));
+        std::array<dx::VmObjectRef, 6> native_configs{
+            dx::VmObjectRef{}, values[0], dx::VmObjectRef{}, values[1],
+            values[2], values[3]};
+        vm.SetIntrinsicStaticRef(
+            kConfigDescriptor, "sConfigs",
+            "[Landroid/graphics/Bitmap$Config;",
+            NewConfigArray(vm, native_configs));
         return dx::VmValue::Void();
     });
     return std::move(builder).Build();
@@ -104,10 +257,50 @@ namespace {
     return dx::VmValue::Ref(instance);
 }
 
+[[nodiscard]] dx::VmValue MakeEmptyBitmap(
+    dx::IntrinsicContext& call, const Context& context,
+    const std::int32_t width, const std::int32_t height,
+    const dx::VmObjectRef config) {
+    if (!config.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                              "createBitmap config is null"};
+    }
+    const auto config_class = call.vm.Linker().ResolveDescriptor(
+        "Landroid/graphics/Bitmap$Config;");
+    if (!call.vm.Linker().IsAssignable(
+            config_class, call.vm.Model().ObjectClass(config))) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "createBitmap config has the wrong type"};
+    }
+    if (width <= 0 || height <= 0) {
+        throw dx::VmJavaThrow{
+            "Ljava/lang/IllegalArgumentException;",
+            "createBitmap dimensions are invalid: " +
+                std::to_string(width) + "x" + std::to_string(height)};
+    }
+    const auto pixel_count = static_cast<std::size_t>(width) *
+                             static_cast<std::size_t>(height);
+    DexVmAndroidContext::BitmapState state;
+    state.width = width;
+    state.height = height;
+    state.argb.resize(pixel_count);
+    const auto instance =
+        call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+    context->bitmaps[instance.Value()] = std::move(state);
+    return dx::VmValue::Ref(instance);
+}
+
 }  // namespace
 
 Decl Declare_android_graphics_Bitmap(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Bitmap;", "Ljava/lang/Object;");
+    builder.StaticMethod("createBitmap",
+        "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+        [context](dx::IntrinsicContext& call) {
+            return MakeEmptyBitmap(call, context, call.arguments[0].AsInt(),
+                                   call.arguments[1].AsInt(),
+                                   call.arguments[2].ref);
+        });
     builder.StaticMethod("createBitmap",
         "([IIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
         [context](dx::IntrinsicContext& call) {
@@ -179,6 +372,51 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
                     model.SetPrimitiveElement(array,
                                               offset + row * stride + column,
                                               pixel);
+                }
+            }
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("setPixels", "([IIIIIII)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& model = call.vm.Model();
+            auto& state = BitmapOf(call, context);
+            const auto array = call.arguments[0].ref;
+            const auto offset = call.arguments[1].AsInt();
+            const auto stride = call.arguments[2].AsInt();
+            const auto x = call.arguments[3].AsInt();
+            const auto y = call.arguments[4].AsInt();
+            const auto width = call.arguments[5].AsInt();
+            const auto height = call.arguments[6].AsInt();
+            if (!array.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "setPixels source array is null"};
+            }
+            if (x < 0 || y < 0 || width < 0 || height < 0 ||
+                x + width > state.width || y + height > state.height) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/IllegalArgumentException;",
+                    "setPixels region exceeds the bitmap"};
+            }
+            if (width == 0 || height == 0) return dx::VmValue::Void();
+            const auto final_row = static_cast<std::int64_t>(offset) +
+                static_cast<std::int64_t>(stride) * (height - 1);
+            const auto first = std::min<std::int64_t>(offset, final_row);
+            const auto last = std::max<std::int64_t>(offset, final_row) + width;
+            const auto absolute_stride =
+                std::abs(static_cast<std::int64_t>(stride));
+            if (first < 0 || last > model.ArrayLength(array) ||
+                absolute_stride < width) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
+                    "setPixels window exceeds the source array"};
+            }
+            for (std::int32_t row = 0; row < height; ++row) {
+                for (std::int32_t column = 0; column < width; ++column) {
+                    state.argb[static_cast<std::size_t>(y + row) *
+                                   static_cast<std::size_t>(state.width) +
+                               static_cast<std::size_t>(x + column)] =
+                        static_cast<std::uint32_t>(model.GetPrimitiveElement(
+                            array, offset + row * stride + column));
                 }
             }
             return dx::VmValue::Void();
@@ -287,8 +525,61 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
             slots[3] = {context->surface_height, dx::SlotTag::cat1};
             return dx::VmValue::Ref(rect);
         });
-    builder.FinalMethod("drawColor", "(I)V", GraphicsNoopHandler());
-    builder.FinalMethod("drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V", GraphicsNoopHandler());
+    builder.FinalMethod("drawColor", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto found = context->canvases.find(call.receiver.Value());
+            if (found == context->canvases.end() || !found->second.locked) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "Canvas is not locked"};
+            }
+            std::fill(found->second.argb.begin(), found->second.argb.end(),
+                      static_cast<std::uint32_t>(call.arguments[0].AsInt()));
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod(
+        "drawBitmap",
+        "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto canvas = context->canvases.find(call.receiver.Value());
+            const auto bitmap = context->bitmaps.find(call.arguments[0].ref.Value());
+            if (canvas == context->canvases.end() || !canvas->second.locked) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "Canvas is not locked"};
+            }
+            if (!call.arguments[0].ref.IsValid() ||
+                bitmap == context->bitmaps.end() || bitmap->second.recycled) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "drawBitmap source is invalid"};
+            }
+            const auto left_value = call.arguments[1].AsFloat();
+            const auto top_value = call.arguments[2].AsFloat();
+            if (!std::isfinite(left_value) || !std::isfinite(top_value)) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "drawBitmap coordinates are not finite"};
+            }
+            const auto left = static_cast<std::int32_t>(std::floor(left_value));
+            const auto top = static_cast<std::int32_t>(std::floor(top_value));
+            auto& target = canvas->second;
+            const auto& source = bitmap->second;
+            for (std::int32_t y = 0; y < source.height; ++y) {
+                const auto destination_y = top + y;
+                if (destination_y < 0 ||
+                    destination_y >= static_cast<std::int32_t>(target.height)) {
+                    continue;
+                }
+                for (std::int32_t x = 0; x < source.width; ++x) {
+                    const auto destination_x = left + x;
+                    if (destination_x < 0 || destination_x >=
+                        static_cast<std::int32_t>(target.width)) {
+                        continue;
+                    }
+                    target.argb[static_cast<std::size_t>(destination_y) *
+                                    target.width + destination_x] =
+                        source.argb[static_cast<std::size_t>(y) * source.width + x];
+                }
+            }
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", GraphicsNoopHandler());
     return std::move(builder).Build();
 }

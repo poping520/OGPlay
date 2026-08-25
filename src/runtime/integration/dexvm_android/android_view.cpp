@@ -2,6 +2,7 @@
 
 // ---- migrated from android_view_Display.cpp ----
 #include "catalog.h"
+#include "ogplay/runtime/integration/android_guest_call_session.h"
 
 #include <bit>
 #include <cmath>
@@ -325,11 +326,78 @@ Decl Declare_android_view_SurfaceHolder_Callback(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics::dvm80_android_view_SurfaceHolder_Impl {
 
+namespace {
+
+dx::IntrinsicHandler LockCanvasHandler(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        auto& canvas = context->holder_canvases[call.receiver.Value()];
+        if (!canvas.IsValid()) {
+            canvas = call.vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
+        }
+        auto& state = context->canvases[canvas.Value()];
+        if (state.locked) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "SurfaceHolder canvas is already locked"};
+        }
+        state.holder = call.receiver.Value();
+        state.width = context->surface_width;
+        state.height = context->surface_height;
+        state.argb.assign(
+            static_cast<std::size_t>(state.width) * state.height, 0xff000000U);
+        state.locked = true;
+        return dx::VmValue::Ref(canvas);
+    };
+}
+
+dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        const auto canvas = call.arguments[0].ref;
+        const auto found = context->canvases.find(canvas.Value());
+        if (!canvas.IsValid() || found == context->canvases.end() ||
+            !found->second.locked ||
+            found->second.holder != call.receiver.Value()) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "Canvas is not locked by this SurfaceHolder"};
+        }
+        if (context->session == nullptr) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "SurfaceHolder has no guest session"};
+        }
+        auto& state = found->second;
+        std::vector<std::uint8_t> rgba8;
+        rgba8.reserve(state.argb.size() * 4U);
+        for (const auto pixel : state.argb) {
+            rgba8.push_back(static_cast<std::uint8_t>(pixel >> 16U));
+            rgba8.push_back(static_cast<std::uint8_t>(pixel >> 8U));
+            rgba8.push_back(static_cast<std::uint8_t>(pixel));
+            rgba8.push_back(static_cast<std::uint8_t>(pixel >> 24U));
+        }
+        state.locked = false;
+        context->session->PublishSoftwareFrame(std::move(rgba8));
+        return dx::VmValue::Void();
+    };
+}
+
+void AddCanvasMethods(dx::IntrinsicClassBuilder& builder,
+                      const Context& context) {
+    builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;",
+                        LockCanvasHandler(context));
+    builder.FinalMethod("lockCanvas",
+                        "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
+                        LockCanvasHandler(context));
+    builder.FinalMethod("unlockCanvasAndPost",
+                        "(Landroid/graphics/Canvas;)V",
+                        UnlockCanvasAndPostHandler(context));
+}
+
+}  // namespace
+
 Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceHolder$Impl;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder;"});
     builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderAddCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
     builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
+    AddCanvasMethods(builder, context);
     return std::move(builder).Build();
 }
 
@@ -351,6 +419,14 @@ Decl Declare_android_view_SurfaceHolder(const Context& context) {
     builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderAddCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
     builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
+    builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;",
+                        dvm80_android_view_SurfaceHolder_Impl::LockCanvasHandler(context));
+    builder.FinalMethod(
+        "lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
+        dvm80_android_view_SurfaceHolder_Impl::LockCanvasHandler(context));
+    builder.FinalMethod(
+        "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V",
+        dvm80_android_view_SurfaceHolder_Impl::UnlockCanvasAndPostHandler(context));
     return std::move(builder).Build();
 }
 
@@ -464,7 +540,39 @@ Decl Declare_android_view_View(const Context& context) {
     builder.VirtualMethod("onSizeChanged", "(IIII)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.VirtualMethod("onWindowFocusChanged", "(Z)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+        [context](dx::IntrinsicContext& call) {
+            const auto node = FindViewUiNode(*context, call.receiver.Value());
+            if (!node.has_value()) return dx::VmValue::Void();
+            const auto* state = context->ui_tree.Get(*node);
+            if (state == nullptr || state->children.empty()) {
+                return dx::VmValue::Void();
+            }
+            std::vector<dx::VmObjectRef> children;
+            children.reserve(state->children.size());
+            for (const auto child_node : state->children) {
+                const auto child = ViewObjectForUiNode(*context, child_node);
+                if (child.IsValid()) children.push_back(child);
+            }
+            auto& linker = call.vm.Linker();
+            for (const auto child : children) {
+                const auto child_class = call.vm.Model().ObjectClass(child);
+                const auto method = linker.FindVtableIndex(
+                    child_class, "onWindowFocusChanged", "(Z)V");
+                if (!method.has_value()) {
+                    throw dx::VmJavaThrow{
+                        "Ljava/lang/IllegalStateException;",
+                        "child View has no onWindowFocusChanged(boolean)"};
+                }
+                const auto outcome = call.vm.Call(
+                    linker.Class(child_class).vtable[*method],
+                    std::vector{dx::VmValue::Ref(child), call.arguments[0]});
+                if (outcome.exception.IsValid()) {
+                    call.vm.SetPendingException(outcome.exception);
+                    return dx::VmValue::Void();
+                }
+            }
+            return dx::VmValue::Void();
+        });
     builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     const auto noop_flag = dx::IntrinsicHandler(
@@ -784,6 +892,8 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewGroup;", "Landroid/view/View;");
     builder.FinalMethod("addView", "(Landroid/view/View;)V",
                     AddHandler(context, false, false));
+    builder.FinalMethod("addView", "(Landroid/view/View;I)V",
+                    AddHandler(context, true, false));
     builder.FinalMethod(
         "addView",
         "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",

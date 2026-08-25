@@ -17,6 +17,11 @@
   `dvmInitClass`；object getter 创建当前 JNI 线程 local reference，setter 解码引用后写入。
 - `.local/aosp/dalvik/vm/oo/ObjectInlines.h`：JNI 与解释执行通过同一对象 field offset/static
   field storage 访问值；OGPlay 对应为同一 `VmFieldId` 的 model/linker slot。
+- `.local/aosp/framework/base/core/java/android/app/ContextImpl.java` 与 `LoadedApk.java`：
+  `getPackageResourcePath()` 返回 `LoadedApk.getResDir()`；同 UID 应用的 resDir 来自
+  `ApplicationInfo.sourceDir`，即已安装 APK 文件。
+- `.local/aosp/framework/base/core/java/android/content/ContextWrapper.java`：该方法直接委托
+  `mBase`，不在 wrapper 复制 package 状态。
 - `framework/base` 与 `libcore` 仅用于核对 API 19 声明形状，不把 Android framework 状态
   搬入 DexVM，也不引入 Binder/system_server。
 
@@ -34,6 +39,17 @@
 - JNI 的 Z/B/C/S/I/J/F/D 与 object/array getter/setter 直接读写 linker/model 槽，引用
   getter 发布调用线程 local reference，setter 解析回同一 `VmObjectRef`；
 - DexVM 自分配 identity 必须避开同域已导入 JNI identity，重复身份不得静默注册；
+- 按 API 19 `Bitmap.java` 完整发布 `Bitmap.Config` enum：四个常量、Enum name/ordinal、
+  `nativeInt`、`sConfigs`、生成的 `$VALUES/values/valueOf` 与 native index 映射；
+- 按 API 19 `ContextImpl`/`LoadedApk` 语义发布 `getPackageResourcePath()`：返回同进程
+  APK 的 guest 路径，`ContextWrapper` 虚派委托 base，原始 APK 在该路径只读可访问；
+- 出向 native 释放 DexVM 单写者锁，JNI 回调重新获取；process native TID 使用 API 19
+  Bionic mutex 可表示的 16-bit 范围，并按 native context slot 稳定分配；
+- 支持相对超时 futex、只读 `/proc/meminfo`、长驻 native 在已处理 syscall/JNI 边界刷新
+  watchdog，以及 guest 逻辑 RWX 与 `ARM_cacheflush`；宿主 backing 仍保持不可执行；
+- 软件 `SurfaceHolder.lockCanvas/unlockCanvasAndPost` 与 `Canvas.drawBitmap/drawColor` 使用
+  Bitmap ARGB backing 发布 boundary RGBA frame；补齐 AudioTrack native output rate、音量范围
+  和 position-listener/notification-period 状态；
 - 不补 title 专属 native，不改变 survey neutral stub，也不把 native fault 转成伪成功。
 
 ## 验收
@@ -45,6 +61,12 @@
 - [x] DEX 字段可由 `GetFieldID/GetStaticFieldID` 查得，继承查找返回同一声明 ID；
 - [x] JNI→解释器与解释器→JNI 共用 instance/static 槽，primitive/wide/reference 往返；
 - [x] object 字段往返保持对象身份和 JNI local-reference 作用域；
+- [x] `Bitmap.Config.RGB_565` 可经 DEX/JNI static field 读取，四个枚举对象及 native
+  映射与 API 19 AOSP 声明一致；
+- [x] `Context.getPackageResourcePath()` 与 wrapper 委托返回稳定 guest APK 路径，且该
+  路径可读取原始 APK、不可写，不泄露宿主路径；
+- [x] Marmalade 动态回调桩的 `mprotect(RWX)`、写入和 `ARM_cacheflush` 可完成；
+- [x] 软件 SurfaceHolder 可把 Bitmap 像素提交为 presented frame；
 - [x] native loader、JNI registry、field store/ABI 与 architecture 定向回归通过。
 
 ## 验证证据
@@ -55,8 +77,17 @@
   通过。
 - Release 构建复跑原 PVZ survey 命令后，`initNative()V` 及
   `m_LoaderKeyboard:Lcom/ideaworks3d/marmalade/LoaderKeyboard;` 均已越过，并继续交付
-  managed surface callback；下一真实阻断为平台静态字段
-  `Landroid/graphics/Bitmap$Config;->RGB_565:Landroid/graphics/Bitmap$Config;` 未解析。
+  managed surface callback。补齐 `Bitmap.Config` 后再次复跑，`RGB_565` 已越过；补齐
+  `getPackageResourcePath()` 后 PVZ 继续完成 `surfaceChanged`。本次黑屏追踪又依次越过
+  native 锁死、Bionic recursive mutex owner 不匹配、`/proc/meminfo`、长驻 native tick
+  上限、timed futex、空 Canvas 以及动态回调桩 RWX 拒绝，最终由 `doDraw()` 发布软件帧；
+  frame counter 在后续循环中保持 `presented=1`，不再是零提交黑屏。
+- Windows Debug 目标构建通过；graphics/AudioTrack/process native context/watchdog/futex/
+  ARM private syscall/memory protection/managed surface 9 个定向用例、192 assertions 通过。
+  按要求未执行完整测试。
+- 继续执行约 1.2 万 frontend frame 后，S3E title module 在 `0x60462edc` 对低地址
+  `0x1f84` 发生独立的 unmapped write；OGPlay 保留 PC/LR/register 与 code window，未把它
+  伪装成平台 mapping 缺失。本 WU 不以该后续 title 内部 fault 声称完整兼容。
 - survey 运行仅用于证明错误推进，不构成 title 兼容性验收。
 
 状态：完成。

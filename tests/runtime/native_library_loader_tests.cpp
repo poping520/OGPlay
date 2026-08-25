@@ -398,6 +398,8 @@ struct OrchestratedApp final {
     explicit OrchestratedApp(const std::string& activity,
                              const bool has_launcher = true,
                              const bool with_native = true) {
+        context->apk_bytes = {
+            std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
         const ogplay::runtime::BionicModuleSource system{
             "libc.so", libc};
         std::vector<ogplay::loader::ApkNativeLibrary> libraries;
@@ -1042,6 +1044,19 @@ TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app E
     CHECK(fixture.app->State() ==
           session::AndroidAppProcessState::dex_vm_ready);
     CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+    CHECK(fixture.app->Context()->package_resource_path ==
+          "/data/app/fixture-1.apk");
+    const auto apk = fixture.filesystem.Open(
+        fixture.app->Context()->package_resource_path, {.read = true});
+    std::array<std::byte, 4> apk_magic{};
+    CHECK(fixture.filesystem.Read(apk, apk_magic) == apk_magic.size());
+    CHECK(apk_magic == std::array{
+                           std::byte{0x50}, std::byte{0x4b},
+                           std::byte{0x03}, std::byte{0x04}});
+    CHECK_THROWS_AS(
+        static_cast<void>(fixture.filesystem.Open(
+            fixture.app->Context()->package_resource_path, {.write = true})),
+        runtime::VfsError);
     CHECK_THROWS_AS(
         static_cast<void>(fixture.app->StartLauncherActivity()),
         session::AndroidAppProcessError);

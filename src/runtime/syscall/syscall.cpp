@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bit>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -336,7 +337,6 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
 
 void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                                memory::AddressSpace& address_space) {
-    constexpr std::int32_t kEperm = 1;
     constexpr std::int32_t kEnomem = 12;
     constexpr std::int32_t kEinval = 22;
     constexpr std::uint32_t kMapPrivate = 0x02;
@@ -372,9 +372,6 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
         if ((linux_protection & 4U) != 0) {
             result = result | memory::PageProtection::execute;
         }
-        if ((linux_protection & 2U) != 0 && (linux_protection & 4U) != 0) {
-            throw std::domain_error("writable executable mapping");
-        }
         return result;
     };
 
@@ -401,8 +398,6 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                 address_space.Map({memory::GuestAddress{address}, size},
                                   protection(frame.arguments[2]));
                 return std::bit_cast<std::int32_t>(address);
-            } catch (const std::domain_error&) {
-                return -kEperm;
             } catch (const std::invalid_argument&) {
                 return -kEinval;
             } catch (const std::overflow_error&) {
@@ -434,8 +429,6 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                      aligned_size(frame.arguments[1])},
                     protection(frame.arguments[2]));
                 return 0;
-            } catch (const std::domain_error&) {
-                return -kEperm;
             } catch (const std::exception&) {
                 return -kEinval;
             }
@@ -519,6 +512,7 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
     constexpr std::int32_t kEnotsup = 95;
+    constexpr std::int32_t kEtimedout = 110;
     constexpr std::uint32_t kFutexWait = 0;
     constexpr std::uint32_t kFutexWake = 1;
     constexpr std::uint32_t kFutexPrivateFlag = 128;
@@ -532,10 +526,29 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
             const auto command = operation & ~kFutexPrivateFlag;
             try {
                 if (command == kFutexWait) {
-                    if (frame.arguments[3] != 0) return -kEnotsup;
+                    std::optional<std::chrono::nanoseconds> timeout;
+                    if (frame.arguments[3] != 0) {
+                        const memory::GuestAddress timeout_address{
+                            frame.arguments[3]};
+                        const auto seconds = std::bit_cast<std::int32_t>(
+                            memory_bus.Read32(timeout_address, frame.thread_id));
+                        const auto nanoseconds = std::bit_cast<std::int32_t>(
+                            memory_bus.Read32(timeout_address.Add(4),
+                                              frame.thread_id));
+                        if (seconds < 0 || nanoseconds < 0 ||
+                            nanoseconds >= 1'000'000'000) {
+                            return -kEinval;
+                        }
+                        timeout = std::chrono::seconds(seconds) +
+                                  std::chrono::nanoseconds(nanoseconds);
+                    }
                     const auto result = futex_table.Wait(
-                        memory_bus, address, frame.arguments[2], frame.thread_id);
+                        memory_bus, address, frame.arguments[2], frame.thread_id,
+                        timeout);
                     if (result == cpu::FutexWaitResult::awoken) return 0;
+                    if (result == cpu::FutexWaitResult::timed_out) {
+                        return -kEtimedout;
+                    }
                     return result == cpu::FutexWaitResult::interrupted
                                ? -kEintr
                                : -kEagain;

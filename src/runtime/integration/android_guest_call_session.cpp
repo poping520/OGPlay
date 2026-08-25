@@ -47,7 +47,7 @@ namespace {
 
 constexpr std::uint64_t kRootThreadId = 1;
 constexpr std::uint32_t kDexVmThreadMaximum = 32;
-constexpr std::uint64_t kOpenSlesCallbackThreadId = UINT64_C(0x4f50454e);
+constexpr std::uint64_t kOpenSlesCallbackThreadId = UINT64_C(0x4f50);
 constexpr std::uint32_t kOpenSlesCallbackAllocationSlot =
     kDexVmThreadMaximum - 1U;
 constexpr std::uint32_t kDexVmTlsBase = 0x6a100000U;
@@ -58,6 +58,29 @@ constexpr std::uint32_t kOpenSlesCallbackThreadInfo = 0x71a01000U;
 constexpr std::uint32_t kOpenSlesCallbackStack = 0x71b00000U;
 constexpr std::uint32_t kNioDirectArenaBegin = 0x74000000U;
 constexpr std::uint32_t kNioDirectArenaEnd = 0x78000000U;
+
+void InstallApi19ProcFiles(VirtualFileSystem& filesystem) {
+    constexpr std::string_view kMemInfo =
+        "MemTotal:         524288 kB\n"
+        "MemFree:          262144 kB\n"
+        "Buffers:               0 kB\n"
+        "Cached:           131072 kB\n"
+        "SwapCached:            0 kB\n"
+        "SwapTotal:             0 kB\n"
+        "SwapFree:              0 kB\n";
+    try {
+        const auto existing = filesystem.Stat("/proc/meminfo");
+        if (existing.writable) {
+            throw AndroidGuestProcessError(
+                "API 19 /proc/meminfo must be read only");
+        }
+        return;
+    } catch (const VfsError&) {
+    }
+    filesystem.PutFile(
+        "/proc/meminfo",
+        std::as_bytes(std::span{kMemInfo.data(), kMemInfo.size()}), false);
+}
 
 thread_local std::unordered_map<const void*, cpu::Cpu*>
     active_guest_call_cpus;
@@ -601,6 +624,7 @@ public:
             throw AndroidGuestProcessError(
                 "Android guest call session request is incomplete");
         }
+        InstallApi19ProcFiles(*filesystem_);
         BindAndroidGuestJavaAudioHandlers(
             invocations_, sound_pool_,
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
@@ -841,7 +865,9 @@ public:
     void PrepareDexVmThread(const std::uint64_t thread_id,
                             const std::uint32_t allocation_slot,
                             const bool attach_jni = true) {
+        constexpr std::uint64_t kBionicPthreadMutexMaximumTid = 0xffffU;
         if (thread_id == 0U || thread_id == kRootThreadId ||
+            thread_id > kBionicPthreadMutexMaximumTid ||
             allocation_slot >= kDexVmThreadMaximum) {
             throw AndroidGuestProcessError(
                 "DexVM guest thread context request is outside its pool");
@@ -1212,7 +1238,7 @@ public:
             dispatcher_, *filesystem_, address_space_);
         BindAndroidThreadLifecycleSyscalls(dispatcher_, lifecycle_);
         BindAndroidArmPrivateSyscalls(
-            dispatcher_,
+            dispatcher_, address_space_,
             [this](const std::uint64_t thread_id,
                    const memory::GuestAddress pointer) {
                 lifecycle_.SetThreadPointer(thread_id, pointer);
@@ -1318,6 +1344,7 @@ public:
         return futex_table_.InterruptAll() +
                environment_.InterruptMonitorWaiters();
     }
+
     bool Running() const noexcept { return running_; }
     bool ExitRequested() const noexcept { return process_state_.ExitRequested(); }
     std::size_t ApplicationModuleCount() const noexcept {

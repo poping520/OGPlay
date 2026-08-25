@@ -202,6 +202,8 @@ TEST_CASE("API 19 Context wrappers publish the real superclass chain") {
 TEST_CASE("ContextWrapper owns one base identity and delegates supported calls") {
   AndroidVm vm;
   vm.context->package_name = "org.example.wrapper";
+  vm.context->package_resource_path =
+      "/data/app/org.example.wrapper-1.apk";
   const auto base =
       vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
   const auto wrapper = vm.interpreter.NewIntrinsicInstance(
@@ -226,6 +228,14 @@ TEST_CASE("ContextWrapper owns one base identity and delegates supported calls")
   REQUIRE_FALSE(outcome.exception.IsValid());
   CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
         "org.example.wrapper");
+
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/ContextWrapper;", "getPackageResourcePath",
+                 "()Ljava/lang/String;"),
+      std::vector{VmValue::Ref(wrapper)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
+        "/data/app/org.example.wrapper-1.apk");
 
   outcome = vm.interpreter.Call(
       vm.Virtual("Landroid/content/ContextWrapper;", "attachBaseContext",

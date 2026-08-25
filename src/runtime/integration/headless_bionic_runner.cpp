@@ -335,7 +335,7 @@ HeadlessBionicRunReport RunHeadlessBionicEntry(
     BindAndroidFileSyscalls(dispatcher, vfs, address_space);
     BindAndroidThreadLifecycleSyscalls(dispatcher, lifecycle);
     BindAndroidArmPrivateSyscalls(
-        dispatcher, [&lifecycle](const std::uint64_t thread_id,
+        dispatcher, address_space, [&lifecycle](const std::uint64_t thread_id,
                                  const memory::GuestAddress pointer) {
             lifecycle.SetThreadPointer(thread_id, pointer);
             return true;

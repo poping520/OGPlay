@@ -133,6 +133,7 @@ public:
                 const std::lock_guard locked(mutex);
                 record->status = VmThreadStatus::running;
             }
+            changed.notify_all();
             const std::vector<VmValue> arguments{VmValue::Ref(record->object)};
             const auto outcome =
                 vm->Call(record->context, record->run_method, arguments);
@@ -447,11 +448,31 @@ void VmThreadRuntime::Rename(const VmObjectRef thread_object,
 void VmThreadRuntime::Yield() {
     auto& lock = impl_->vm->ExecutionLock();
     if (!lock.HeldByCurrentThread()) return;
+    bool starts_created_thread = false;
     {
         const std::lock_guard guard(impl_->mutex);
         if (impl_->records.empty()) return;
+        starts_created_thread = std::any_of(
+            impl_->records.begin(), impl_->records.end(),
+            [](const auto& entry) {
+                return entry.second->status == VmThreadStatus::created;
+            });
     }
     const auto depth = lock.ReleaseForBlocking();
+    if (starts_created_thread) {
+        std::unique_lock guard(impl_->mutex);
+        impl_->changed.wait(guard, [this] {
+            return impl_->shutting_down ||
+                   std::none_of(
+                       impl_->records.begin(), impl_->records.end(),
+                       [](const auto& entry) {
+                           return entry.second->status ==
+                                  VmThreadStatus::created;
+                       });
+        });
+    } else {
+        std::this_thread::yield();
+    }
     lock.ReacquireAfterBlocking(depth);
 }
 

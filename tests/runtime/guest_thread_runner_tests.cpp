@@ -72,6 +72,38 @@ private:
     ogplay::cpu::A32State state_;
 };
 
+class BoundaryRefreshingCallCpu final : public ogplay::cpu::Cpu {
+public:
+    explicit BoundaryRefreshingCallCpu(
+        const ogplay::memory::GuestAddress return_trap)
+        : return_trap_(return_trap) {}
+
+    ogplay::cpu::RunResult Run(const std::uint64_t tick_budget) override {
+        budgets.push_back(tick_budget);
+        if (budgets.size() <= 2U) {
+            return {tick_budget,
+                    ogplay::cpu::RunStopReason::supervisor_call,
+                    ogplay::memory::GuestAddress{0x12000U}, 0U, 2U,
+                    std::nullopt};
+        }
+        state_.SetRegister(ogplay::cpu::CoreRegister::r0, 91U);
+        return {tick_budget,
+                ogplay::cpu::RunStopReason::supervisor_call,
+                return_trap_, 0U, 1U, std::nullopt};
+    }
+    ogplay::cpu::A32State GetState() const override { return state_; }
+    void SetState(const ogplay::cpu::A32State& state) override {
+        state_ = state;
+    }
+    void RequestHalt() noexcept override {}
+
+    std::vector<std::uint64_t> budgets;
+
+private:
+    ogplay::memory::GuestAddress return_trap_;
+    ogplay::cpu::A32State state_;
+};
+
 }  // namespace
 
 TEST_CASE("guest thread runner consumes SVC exit through lifecycle") {
@@ -127,7 +159,7 @@ TEST_CASE("guest thread runner commits set_tls to the active CPU") {
     state.SetRegister(ogplay::cpu::CoreRegister::r0, 0x72000000U);
     fixture.cpu.SetState(state);
     ogplay::runtime::BindAndroidArmPrivateSyscalls(
-        fixture.dispatcher,
+        fixture.dispatcher, fixture.memory,
         [&fixture](const std::uint64_t thread_id,
                    const ogplay::memory::GuestAddress pointer) {
             fixture.lifecycle.SetThreadPointer(thread_id, pointer);
@@ -265,6 +297,28 @@ TEST_CASE("A32 guest call consumes only explicit HLE traps") {
 
     CHECK(calls == 1U);
     CHECK(result.return_value == 42U);
+}
+
+TEST_CASE("long lived A32 guest call refreshes its watchdog at handled boundaries") {
+    RunnerFixture fixture;
+    const auto return_trap = fixture.code.Add(64);
+    BoundaryRefreshingCallCpu cpu(return_trap);
+    fixture.Start(91);
+    auto state = fixture.cpu.GetState();
+    cpu.SetState(state);
+
+    const ogplay::runtime::A32GuestCallFrame frame{
+        fixture.code, {}, {}, 91U, true};
+    const auto result = ogplay::runtime::InvokeA32GuestCall(
+        cpu, fixture.dispatcher, fixture.lifecycle, fixture.memory, frame,
+        fixture.stack.Add(fixture.memory.PageSize()), return_trap, 1U,
+        [](ogplay::cpu::Cpu&, const ogplay::cpu::RunResult& stopped) {
+            return stopped.immediate == 2U;
+        });
+
+    CHECK(result.return_value == 91U);
+    CHECK(result.ticks_consumed == 3U);
+    CHECK(cpu.budgets == std::vector<std::uint64_t>{1U, 1U, 1U});
 }
 
 TEST_CASE("A32 guest call selects Thumb state from the target address") {

@@ -40,6 +40,13 @@
   object/array 访问直接读写解释器对象槽/linker static storage，引用保持 `VmObjectRef`
   identity 并按调用线程发布 local reference。平台 HLE 字段仍由原 field store 拥有。
   DexVM identity 分配同时跳过已导入的同域 JNI identity，重复身份不再静默注册。
+  后续在同一 WU 内按 API 19 AOSP 补齐 `Bitmap.Config` 的四个 enum 常量、
+  name/ordinal/nativeInt、`sConfigs`、`$VALUES/values/valueOf` 与 native index 映射；
+  `Context.getPackageResourcePath()` 返回只读 guest APK 路径，ContextWrapper 委托 base，
+  不泄露 frontend 宿主路径。
+  同 WU 的黑屏推进补齐 native 调用锁交接、API19 Bionic 16-bit process TID、timed futex、
+  `/proc/meminfo`、长驻 native boundary watchdog、guest 逻辑 RWX/`ARM_cacheflush`、软件
+  SurfaceHolder/Canvas 发布以及 AudioTrack output-rate/listener 基础状态。
 
 ## 验证基线
 
@@ -47,13 +54,16 @@
 - `cmake --build --preset windows-msvc --config Debug`：全部目标通过。
 - DVM-89 JNI registry/field store/guest field ABI、DexVM class/object/field bridge 定向测试
   10/10：通过；primitive/wide/reference、继承字段 ID、instance/static 双向可见均覆盖。
-- architecture 6/6：通过；本轮按要求未执行完整测试。此前 994/994 仅为字段互通改动前的
-  历史基线，不作为本轮结果。
+- 最新 Windows Debug 目标构建通过；graphics/AudioTrack/process native context/watchdog/
+  futex/ARM private syscall/memory protection/managed surface 定向 9/9、192 assertions 通过。
+  本轮按要求未执行完整测试。此前 994/994 仅为字段互通改动前历史基线。
 - Release `ogplay` 定向构建通过。PVZ 原 survey 已越过
   `m_LoaderKeyboard:Lcom/ideaworks3d/marmalade/LoaderKeyboard;`，native 初始化继续并交付
-  managed surface callback；当前下一真实阻断为未解析平台静态字段
-  `Landroid/graphics/Bitmap$Config;->RGB_565:Landroid/graphics/Bitmap$Config;`。该 diagnostic
-  run 不作为兼容性结论。
+  managed surface callback；补齐 `Bitmap.Config` 与 `getPackageResourcePath()` 后再次复跑，
+  `RGB_565` 与 `surfaceChanged` 均已越过；软件 `doDraw()` 已发布首帧，后续 frontend
+  循环保持 `presented=1`，原零提交黑屏路径已闭合。约 1.2 万 frontend frame 后出现新的
+  S3E title module 低地址写 fault（PC `0x60462edc`、地址 `0x1f84`）；这是当前下一阻断，
+  不是 platform mapping/export 二次错误。该 diagnostic run 不作为兼容性结论。
 
 ## 下一步
 

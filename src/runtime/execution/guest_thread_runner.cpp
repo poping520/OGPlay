@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,7 +29,8 @@ namespace {
 }
 
 [[nodiscard]] std::string DescribeGuestCallStop(
-    const cpu::RunResult& stopped, const cpu::A32State& state) {
+    const cpu::RunResult& stopped, const cpu::A32State& state,
+    const memory::AddressSpace& address_space) {
     auto result =
         "A32 guest call stopped outside a handled boundary: pc=" +
         std::to_string(stopped.pc.Value()) +
@@ -58,6 +61,19 @@ namespace {
               std::to_string(state.Register(cpu::CoreRegister::sp)) +
               " lr=" +
               std::to_string(state.Register(cpu::CoreRegister::lr));
+    try {
+        const auto code_start = stopped.pc.Subtract(8U);
+        std::array<std::byte, 24> code{};
+        address_space.Read(code_start, code, state.ThreadId());
+        std::ostringstream encoded;
+        encoded << std::hex << std::setfill('0');
+        for (const auto byte : code) {
+            encoded << std::setw(2)
+                    << std::to_integer<std::uint32_t>(byte);
+        }
+        result += " code_at_pc_minus_8=" + encoded.str();
+    } catch (const memory::MemoryFault&) {
+    }
     return result;
 }
 
@@ -150,8 +166,9 @@ A32GuestCallResult InvokeA32GuestCall(
     cpu.SetState(state);
 
     std::uint64_t consumed{};
-    while (consumed < tick_budget) {
-        const auto remaining = tick_budget - consumed;
+    std::uint64_t watchdog_consumed{};
+    while (watchdog_consumed < tick_budget) {
+        const auto remaining = tick_budget - watchdog_consumed;
         const auto slice_ticks = std::min(remaining, kA32GuestCallSliceTicks);
         const auto stopped = cpu.Run(slice_ticks);
         if (stopped.ticks_consumed > slice_ticks) {
@@ -159,6 +176,7 @@ A32GuestCallResult InvokeA32GuestCall(
                 "A32 guest call CPU exceeded its tick budget");
         }
         consumed += stopped.ticks_consumed;
+        watchdog_consumed += stopped.ticks_consumed;
         if (stopped.reason == cpu::RunStopReason::supervisor_call &&
             stopped.immediate == 1U && stopped.pc == return_trap) {
             const auto returned = cpu.GetState();
@@ -167,7 +185,7 @@ A32GuestCallResult InvokeA32GuestCall(
                     returned.Register(cpu::CoreRegister::r1)};
         }
         if (stopped.reason == cpu::RunStopReason::budget_exhausted) {
-            if (consumed >= tick_budget) break;
+            if (watchdog_consumed >= tick_budget) break;
             if (stopped.ticks_consumed == 0U) {
                 throw A32GuestCallError(
                     "A32 guest call CPU made no progress");
@@ -178,7 +196,7 @@ A32GuestCallResult InvokeA32GuestCall(
         if (!ConsumeAndroidArmSupervisorCall(
                 cpu, stopped, dispatcher, hle_handler)) {
             throw A32GuestCallError(
-                DescribeGuestCallStop(stopped, cpu.GetState()));
+                DescribeGuestCallStop(stopped, cpu.GetState(), address_space));
         }
         const auto current = lifecycle.State(state.ThreadId());
         if (current.status != GuestThreadStatus::running) {
@@ -189,6 +207,9 @@ A32GuestCallResult InvokeA32GuestCall(
         updated.SetThreadPointer(current.thread_pointer);
         cpu.SetState(updated);
         if (slice_observer) slice_observer(consumed);
+        if (frame.refresh_tick_budget_at_handled_boundary) {
+            watchdog_consumed = 0U;
+        }
     }
     const auto exhausted = cpu.GetState();
     throw A32GuestCallError(

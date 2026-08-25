@@ -45,6 +45,7 @@ constexpr std::int32_t kModeStatic = 0;
 constexpr std::int32_t kModeStream = 1;
 constexpr std::int32_t kErrorBadValue = -2;
 constexpr std::int32_t kErrorInvalidOperation = -3;
+constexpr std::int32_t kNativeOutputSampleRate = 48000;
 
 struct Format final {
     std::int32_t channels{};
@@ -143,11 +144,21 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
         .ConstantInt("ERROR", "I", -1)
         .ConstantInt("ERROR_BAD_VALUE", "I", kErrorBadValue)
         .ConstantInt("ERROR_INVALID_OPERATION", "I", kErrorInvalidOperation);
+    builder.StaticMethod("getMinVolume", "()F",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Float(0.0F); });
+    builder.StaticMethod("getMaxVolume", "()F",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Float(1.0F); });
     builder.StaticMethod("getMinBufferSize", "(III)I",
         [](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(MinimumBuffer(
                 call.arguments[0].AsInt(), call.arguments[1].AsInt(),
                 call.arguments[2].AsInt()));
+        });
+    builder.StaticMethod("getNativeOutputSampleRate", "(I)I",
+        [](dx::IntrinsicContext&) {
+            // OGPlay's shared desktop output is configured at 48 kHz. Android's
+            // API reports the native mixer rate for every legacy stream type.
+            return dx::VmValue::Int(kNativeOutputSampleRate);
         });
     builder.Constructor("(IIIIII)V", [context](dx::IntrinsicContext& call) {
         const auto sample_rate = call.arguments[1].AsInt();
@@ -181,7 +192,8 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
         context->audio_tracks[call.receiver.Value()] = {
             player, sample_rate, format->channels, format->bytes_per_sample,
             buffer_size, mode,
-            mode == kModeStatic ? kStateNoStaticData : kStateInitialized};
+            mode == kModeStatic ? kStateNoStaticData : kStateInitialized,
+            0, dx::VmObjectRef{0}};
         return dx::VmValue::Void();
     });
     builder.FinalMethod("getState", "()I", [context](dx::IntrinsicContext& call) {
@@ -291,6 +303,27 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
         context->pcm_playback->SetStereoVolume(state->player, volume, volume);
         return dx::VmValue::Int(0);
     });
+    builder.FinalMethod("setPositionNotificationPeriod", "(I)I",
+        [context](dx::IntrinsicContext& call) {
+            auto* state = Find(context, call.receiver);
+            const auto period = call.arguments[0].AsInt();
+            if (state == nullptr) return dx::VmValue::Int(kErrorInvalidOperation);
+            if (period < 0) return dx::VmValue::Int(kErrorBadValue);
+            state->notification_period = period;
+            return dx::VmValue::Int(0);
+        });
+    builder.FinalMethod(
+        "setPlaybackPositionUpdateListener",
+        "(Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;)V",
+        [context](dx::IntrinsicContext& call) {
+            auto* state = Find(context, call.receiver);
+            if (state == nullptr) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "AudioTrack is not initialized"};
+            }
+            state->position_listener = call.arguments[0].ref;
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("getPlaybackHeadPosition", "()I",
         [context](dx::IntrinsicContext& call) {
             auto* state = Find(context, call.receiver);
@@ -312,6 +345,16 @@ Decl Declare_android_media_AudioFormat(const Context& context) {
 Decl Declare_android_media_AudioTrack(const Context& context) {
     return dvm84_android_media_AudioTrack::Declare_android_media_AudioTrack(context);
 }
+Decl Declare_android_media_AudioTrack_OnPlaybackPositionUpdateListener(
+    const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/media/AudioTrack$OnPlaybackPositionUpdateListener;");
+    builder.UnimplementedVirtual(
+        "onMarkerReached", "(Landroid/media/AudioTrack;)V", 0x0401U);
+    builder.UnimplementedVirtual(
+        "onPeriodicNotification", "(Landroid/media/AudioTrack;)V", 0x0401U);
+    return std::move(builder).Build();
+}
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
@@ -320,7 +363,15 @@ void RegisterAndroidAudioTrackStateTable(
     const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
     vm.RegisterIntrinsicStateTable({
-        "android.media.AudioTrack", {},
+        "android.media.AudioTrack",
+        [context](const dexvm::VmObjectRef owner,
+                  const dexvm::VmRootVisitor& visit) {
+            if (const auto found = context->audio_tracks.find(owner.Value());
+                found != context->audio_tracks.end() &&
+                found->second.position_listener.IsValid()) {
+                visit(found->second.position_listener);
+            }
+        },
         [context](const dexvm::VmObjectRef object) {
             const auto found = context->audio_tracks.find(object.Value());
             if (found == context->audio_tracks.end()) return;

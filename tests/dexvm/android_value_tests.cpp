@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -144,6 +145,124 @@ TEST_CASE("DVM-86 graphics value classes keep geometry and path state") {
     fixture.On(path, "lineTo", "(FF)V", {VmValue::Float(3), VmValue::Float(4)});
     CHECK(fixture.context->paths.at(path.Value()).commands.size() == 2U);
     CHECK(fixture.On(path, "isEmpty", "()Z").AsInt() == 0);
+}
+
+TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {
+    AndroidValueVm fixture;
+    constexpr auto descriptor = "Landroid/graphics/Bitmap$Config;";
+    const auto config_class = fixture.linker.ResolveDescriptor(descriptor);
+    const auto enum_class = fixture.linker.ResolveDescriptor("Ljava/lang/Enum;");
+    REQUIRE(fixture.linker.Class(config_class).super.has_value());
+    CHECK(*fixture.linker.Class(config_class).super == enum_class);
+
+    const auto initialized = fixture.vm.EnsureClassInitialized(config_class);
+    REQUIRE_MESSAGE(!initialized.exception.IsValid(),
+                    initialized.exception_message);
+    const auto constant = [&](const char* name) {
+        const auto field = fixture.linker.FindFieldRecursive(
+            config_class, name, descriptor);
+        REQUIRE(field.has_value());
+        const auto& linked = fixture.linker.Field(*field);
+        CHECK((linked.access_flags & 0x4019U) == 0x4019U);
+        return VmObjectRef(
+            fixture.linker.Class(linked.owner).static_storage[linked.slot]);
+    };
+    const std::array constants{constant("ALPHA_8"), constant("RGB_565"),
+                               constant("ARGB_4444"),
+                               constant("ARGB_8888")};
+    for (const auto value : constants) CHECK(value.IsValid());
+
+    const auto native_int = fixture.linker.FindFieldRecursive(
+        config_class, "nativeInt", "I");
+    const auto name_field = fixture.linker.FindFieldRecursive(
+        config_class, "name", "Ljava/lang/String;");
+    const auto ordinal = fixture.linker.FindFieldRecursive(
+        config_class, "ordinal", "I");
+    REQUIRE(native_int.has_value());
+    REQUIRE(name_field.has_value());
+    REQUIRE(ordinal.has_value());
+    const std::array native_values{1U, 3U, 4U, 5U};
+    const std::array names{"ALPHA_8", "RGB_565", "ARGB_4444", "ARGB_8888"};
+    for (std::size_t index = 0; index < constants.size(); ++index) {
+        const auto slots = fixture.model.InstanceSlots(constants[index]);
+        CHECK(slots[fixture.linker.Field(*native_int).slot].bits ==
+              native_values[index]);
+        CHECK(slots[fixture.linker.Field(*ordinal).slot].bits == index);
+        CHECK(fixture.vm.StringUtf8(VmObjectRef(
+                  slots[fixture.linker.Field(*name_field).slot].bits)) ==
+              names[index]);
+    }
+
+    const std::array<VmObjectRef, 6> native_mapping{
+        VmObjectRef{}, constants[0], VmObjectRef{}, constants[1],
+        constants[2], constants[3]};
+    for (std::int32_t index = 0; index < 6; ++index) {
+        CHECK(fixture.Static(descriptor, "nativeToConfig",
+                             "(I)Landroid/graphics/Bitmap$Config;",
+                             {VmValue::Int(index)})
+                  .ref == native_mapping[static_cast<std::size_t>(index)]);
+    }
+    const auto by_name = fixture.Static(
+        descriptor, "valueOf",
+        "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
+        {VmValue::Ref(fixture.vm.NewStringUtf8("ARGB_8888"))});
+    CHECK(by_name.ref == constants[3]);
+
+    const auto first_values = fixture.Static(
+        descriptor, "values", "()[Landroid/graphics/Bitmap$Config;").ref;
+    const auto second_values = fixture.Static(
+        descriptor, "values", "()[Landroid/graphics/Bitmap$Config;").ref;
+    CHECK(first_values != second_values);
+    CHECK(fixture.model.ArrayLength(first_values) == 4);
+    for (JniSize index = 0; index < 4; ++index) {
+        CHECK(fixture.model.GetObjectElement(first_values, index) ==
+              constants[static_cast<std::size_t>(index)]);
+    }
+    CHECK(fixture.linker.FindFieldRecursive(
+              config_class, "$VALUES",
+              "[Landroid/graphics/Bitmap$Config;").has_value());
+    CHECK(fixture.linker.FindFieldRecursive(
+              config_class, "sConfigs",
+              "[Landroid/graphics/Bitmap$Config;").has_value());
+    CHECK(fixture.linker.FindDirectMethod(
+              config_class, "<init>", "(Ljava/lang/String;II)V").has_value());
+
+    const auto bitmap = fixture.Static(
+        "Landroid/graphics/Bitmap;", "createBitmap",
+        "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+        {VmValue::Int(2), VmValue::Int(2), VmValue::Ref(constants[1])}).ref;
+    REQUIRE(bitmap.IsValid());
+    REQUIRE(fixture.context->bitmaps.contains(bitmap.Value()));
+    CHECK(fixture.context->bitmaps.at(bitmap.Value()).argb ==
+          std::vector<std::uint32_t>(4, 0U));
+    const auto pixels = fixture.model.NewPrimitiveArray(
+        fixture.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 4);
+    const std::array<std::uint32_t, 4> colors{
+        0xff112233U, 0xff445566U, 0xff778899U, 0xffaabbccU};
+    for (JniSize index = 0; index < 4; ++index) {
+        fixture.model.SetPrimitiveElement(pixels, index, colors[index]);
+    }
+    fixture.On(bitmap, "setPixels", "([IIIIIII)V",
+               {VmValue::Ref(pixels), VmValue::Int(0), VmValue::Int(2),
+                VmValue::Int(0), VmValue::Int(0), VmValue::Int(2),
+                VmValue::Int(2)});
+    CHECK(fixture.context->bitmaps.at(bitmap.Value()).argb ==
+          std::vector<std::uint32_t>(colors.begin(), colors.end()));
+
+    const auto canvas = fixture.vm.NewIntrinsicInstance(
+        "Landroid/graphics/Canvas;");
+    fixture.context->canvases.emplace(
+        canvas.Value(),
+        DexVmAndroidContext::CanvasState{
+            1U, 3U, 2U, std::vector<std::uint32_t>(6, 0xff000000U), true});
+    fixture.On(canvas, "drawBitmap",
+               "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V",
+               {VmValue::Ref(bitmap), VmValue::Float(1.0F),
+                VmValue::Float(0.0F), VmValue::Ref(VmObjectRef{0})});
+    CHECK(fixture.context->canvases.at(canvas.Value()).argb ==
+          std::vector<std::uint32_t>{
+              0xff000000U, colors[0], colors[1],
+              0xff000000U, colors[2], colors[3]});
 }
 
 TEST_CASE("DVM-86 Parcel Bundle and bounded services share session state") {

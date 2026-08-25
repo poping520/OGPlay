@@ -14,6 +14,11 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 
 - 未实现和未知 syscall 统一返回 `-ENOSYS` 并可观测。
 - guest 地址必须经受检内存访问；时间源只使用统一 Clock。
+- API 19 futex wait 的 timeout 是 guest 32-bit 相对 timespec；超时返回 `-ETIMEDOUT`，
+  非法 timespec 与坏指针分别明确返回 `-EINVAL`/`-EFAULT`。
+- guest `mmap/mprotect` 可表达解释执行所需的逻辑 RWX；AddressSpace 的宿主 backing 不授予
+  execute。`ARM_cacheflush(start,end,0)` 验证范围已映射；解释器无 host I-cache/JIT cache，
+  因此验证后完成即等价于同步。
 - `pipe` 必须先验证完整两元素输出数组，再原子创建 VFS descriptor pair；发布失败回收
   两端，不泄漏半完成状态。
 - 线程状态只能按 running → exit-requested → exited → reap 前进。

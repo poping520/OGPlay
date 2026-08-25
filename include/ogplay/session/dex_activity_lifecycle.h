@@ -137,6 +137,10 @@ private:
     // onDestroy (no onPause/onStop).
     bool activity_started_{};
     bool egl_pacer_attached_{};
+    // Initial focus is a post-traversal message, not part of Start(). Keeping
+    // it until the first frame also lets guest worker threads observe their
+    // completed Surface setup before native resume callbacks run.
+    bool initial_focus_pending_{};
 };
 
 }  // namespace ogplay::session

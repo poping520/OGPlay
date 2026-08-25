@@ -20,7 +20,10 @@ namespace ogplay::runtime {
 namespace {
 
 constexpr std::uint64_t kRootThreadId = 1;
-constexpr std::uint64_t kDexVmProcessThreadBase = UINT64_C(0x40000000);
+// API 19 Bionic stores pthread mutex owners in the high 16 bits of the mutex
+// word and compares that value with pthread_internal_t::tid. Keep the native
+// execution contexts in a compact, reserved guest-TID range.
+constexpr std::uint64_t kDexVmProcessThreadBase = UINT64_C(0x4000);
 constexpr std::uint32_t kDexVmNativeContextSlots = 32;
 
 namespace dx = ogplay::runtime::dexvm;
@@ -643,6 +646,10 @@ public:
   [[nodiscard]] JniValue InvokeInterpreted(const dx::VmMethodId method_id,
                                            const JniInvocation &invocation) {
         const auto& method = linker.Method(method_id);
+        // A native method executes outside the interpreter lock. Every JNI
+        // re-entry reacquires it so object-model and linker state still have
+        // one writer, while unrelated Java threads may run between calls.
+        const dx::VmExecutionLockScope execution_guard(vm->ExecutionLock());
         std::vector<dx::VmValue> arguments;
         arguments.reserve(invocation.arguments.size() + 1);
         if (!method.is_static) {
@@ -860,35 +867,49 @@ public:
         }
         frame.stack_words = stack;
         frame.thread_id = process_thread;
+        frame.refresh_tick_budget_at_handled_boundary = true;
 
-        // Resolution: RegisterNatives mapping first, then Java_ exports.
+        // Resolution: RegisterNatives mapping first, then Java_ exports. A
+        // native body may be a process-lifetime loop, so it must not retain
+        // the interpreter's single-writer lock. JNI callbacks reacquire the
+        // lock at their bridge entry points.
         A32GuestCallResult result{};
-        const auto identity = class_identities.find(method.owner.Value());
-        bool invoked = false;
-        if (identity != class_identities.end()) {
-            const auto registered = session->TryInvokeRegisteredNative(
-                identity->second, method.name, method.descriptor, frame);
-            if (registered.has_value()) {
-                result = *registered;
-                invoked = true;
-            }
-        }
-        if (!invoked) {
-      const auto target =
-          session->FindNativeExport(class_name, method.name, method.descriptor);
-            if (!target.has_value()) {
-                if (ledger != nullptr) {
-                    ledger->RecordUnimplemented(
-                        "dexvm.native." + class_name + "." + method.name, 0);
+        auto& execution_lock = vm->ExecutionLock();
+        const auto execution_depth = execution_lock.ReleaseForBlocking();
+        try {
+            const auto identity = class_identities.find(method.owner.Value());
+            bool invoked = false;
+            if (identity != class_identities.end()) {
+                const auto registered = session->TryInvokeRegisteredNative(
+                    identity->second, method.name, method.descriptor, frame);
+                if (registered.has_value()) {
+                    result = *registered;
+                    invoked = true;
                 }
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/UnsatisfiedLinkError;",
-            "native method has no registered mapping or export: " + class_name +
-                "." + method.name + method.descriptor};
             }
-            frame.target = *target;
-            result = session->Invoke(frame);
+            if (!invoked) {
+                const auto target = session->FindNativeExport(
+                    class_name, method.name, method.descriptor);
+                if (!target.has_value()) {
+                    if (ledger != nullptr) {
+                        ledger->RecordUnimplemented(
+                            "dexvm.native." + class_name + "." + method.name,
+                            0);
+                    }
+                    throw dx::VmJavaThrow{
+                        "Ljava/lang/UnsatisfiedLinkError;",
+                        "native method has no registered mapping or export: " +
+                            class_name + "." + method.name +
+                            method.descriptor};
+                }
+                frame.target = *target;
+                result = session->Invoke(frame);
+            }
+        } catch (...) {
+            execution_lock.ReacquireAfterBlocking(execution_depth);
+            throw;
         }
+        execution_lock.ReacquireAfterBlocking(execution_depth);
 
         // Pending exception propagates into the interpreter.
         if (session->Environment().ExceptionCheck(process_thread)) {
@@ -1000,29 +1021,39 @@ DexVmGuestBridge::DexVmGuestBridge(
     session.Fields().SetAccessHooks(JniFieldAccessHooks{
         [bridge_state](const JniObjectIdentity java_class,
                        const std::uint64_t thread) {
+          const dx::VmExecutionLockScope guard(
+              bridge_state->vm->ExecutionLock());
           return bridge_state->EnsureJniClassInitialized(java_class, thread);
         },
         [bridge_state](const JniObjectIdentity object,
                        const JniObjectIdentity,
                        const JniResolvedField& field,
                        const std::uint64_t thread) {
+          const dx::VmExecutionLockScope guard(
+              bridge_state->vm->ExecutionLock());
           return bridge_state->GetJniInstanceField(object, field, thread);
         },
         [bridge_state](const JniObjectIdentity object,
                        const JniObjectIdentity,
                        const JniResolvedField& field, const JniValue& value,
                        const std::uint64_t thread) {
+          const dx::VmExecutionLockScope guard(
+              bridge_state->vm->ExecutionLock());
           return bridge_state->SetJniInstanceField(object, field, value,
                                                    thread);
         },
         [bridge_state](const JniObjectIdentity,
                        const JniResolvedField& field,
                        const std::uint64_t thread) {
+          const dx::VmExecutionLockScope guard(
+              bridge_state->vm->ExecutionLock());
           return bridge_state->GetJniStaticField(field, thread);
         },
         [bridge_state](const JniObjectIdentity,
                        const JniResolvedField& field, const JniValue& value,
                        const std::uint64_t thread) {
+          const dx::VmExecutionLockScope guard(
+              bridge_state->vm->ExecutionLock());
           return bridge_state->SetJniStaticField(field, value, thread);
         }});
     if (android_context != nullptr) {
@@ -1034,6 +1065,8 @@ DexVmGuestBridge::DexVmGuestBridge(
     session.Environment().SetMonitorHooks(JniMonitorHooks{
         [bridge_state](const JniObjectIdentity identity,
                        const std::uint64_t thread) {
+            const dx::VmExecutionLockScope guard(
+                bridge_state->vm->ExecutionLock());
             if (identity.value == 0U) {
                 throw JniMonitorError(JniMonitorErrorReason::invalid_object,
                                       "JNI monitor object is null");
@@ -1044,6 +1077,8 @@ DexVmGuestBridge::DexVmGuestBridge(
         },
         [bridge_state](const JniObjectIdentity identity,
                        const std::uint64_t thread) {
+            const dx::VmExecutionLockScope guard(
+                bridge_state->vm->ExecutionLock());
             if (identity.value == 0U) {
                 throw JniMonitorError(JniMonitorErrorReason::invalid_object,
                                       "JNI monitor object is null");
@@ -1058,6 +1093,8 @@ DexVmGuestBridge::DexVmGuestBridge(
             }
         },
         [bridge_state](const std::uint64_t thread) {
+            const dx::VmExecutionLockScope guard(
+                bridge_state->vm->ExecutionLock());
             const auto token = bridge_state->TokenForProcessThread(thread);
             const auto held = bridge_state->vm->Monitors().HeldCount(token);
             bridge_state->vm->Monitors().ReleaseAll(token);
@@ -1065,10 +1102,14 @@ DexVmGuestBridge::DexVmGuestBridge(
         },
         [] { return std::size_t{}; },
         [bridge_state] {
+            const dx::VmExecutionLockScope guard(
+                bridge_state->vm->ExecutionLock());
             bridge_state->vm->Monitors().Shutdown();
             return std::size_t{};
         },
         [bridge_state](const JniObjectIdentity identity) {
+            const dx::VmExecutionLockScope guard(
+                bridge_state->vm->ExecutionLock());
             if (identity.value == 0U) return JniMonitorSnapshot{};
             const auto snapshot = bridge_state->vm->Monitors().Snapshot(
                 bridge_state->MonitorObject(identity));
@@ -1156,8 +1197,8 @@ void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id,
     if (guest_thread_id < 2U) {
         throw DexVmBridgeError("DexVM child thread id is invalid");
     }
-    const auto process_thread = kDexVmProcessThreadBase + guest_thread_id;
     std::uint32_t slot = kDexVmNativeContextSlots;
+    std::uint64_t process_thread{};
     {
         const std::scoped_lock lock(impl_->thread_contexts_mutex);
         for (std::uint32_t candidate = 0;
@@ -1177,6 +1218,7 @@ void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id,
             throw DexVmBridgeError(
                 "DexVM native thread context pool is exhausted");
         }
+        process_thread = kDexVmProcessThreadBase + slot;
         impl_->process_thread_slots.emplace(process_thread, slot);
     }
     try {
@@ -1195,7 +1237,14 @@ void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id,
 
 void DexVmGuestBridge::DetachThread(const std::uint64_t guest_thread_id,
                                     const std::uint64_t execution_token) noexcept {
-    const auto process_thread = kDexVmProcessThreadBase + guest_thread_id;
+    static_cast<void>(guest_thread_id);
+    std::uint64_t process_thread{};
+    {
+        const std::scoped_lock lock(impl_->thread_contexts_mutex);
+        const auto found = impl_->token_to_process_thread.find(execution_token);
+        if (found == impl_->token_to_process_thread.end()) return;
+        process_thread = found->second;
+    }
     impl_->session->ReleaseDexVmThread(process_thread);
     const std::scoped_lock lock(impl_->thread_contexts_mutex);
     impl_->token_to_process_thread.erase(execution_token);

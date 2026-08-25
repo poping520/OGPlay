@@ -117,6 +117,17 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   DVM-83 的 Java GLES façade 复用该 runtime 做调用期 Buffer/array/String 编组，并经
   `AndroidGuestProcess::InvokeManagedGles` 进入既有 sealed GLES binding；integration 不保存
   第二套 GL 状态，`GLUtils` 只消费既有 Bitmap backing。
+  API 19 `Bitmap.Config` 作为真正的 `Enum` 发布 ALPHA_8/RGB_565/ARGB_4444/ARGB_8888，
+  每个常量保留 name/ordinal/nativeInt，`sConfigs` 与 values/valueOf 使用同一组对象身份；
+  不从宿主图形格式枚举猜测 Android native index。
+  API 19 Context 的 package resource path 是 process 注入的 guest APK 文件路径；
+  AndroidAppProcess 只读挂载原始 APK bytes，ContextWrapper 保持 AOSP base 委托，绝不暴露
+  frontend 宿主路径。
+  DexVM 出向 native 在 guest 执行期间释放解释器单写者锁，JNI 回调入口重新获取；native
+  process TID 使用 Bionic mutex owner 可表示的 16-bit slot 范围。长驻 native 仅在已处理
+  syscall/HLE/JNI 边界刷新 watchdog，连续无边界循环仍受总预算约束。
+  软件 SurfaceHolder 的 Canvas 持有 surface-sized ARGB backing，drawBitmap/drawColor 修改
+  同一 buffer，unlockCanvasAndPost 转成 RGBA 后进入唯一 boundary frame 队列。
   DVM-84 的 `AudioTrack` side-table 只保存 guest owner 到 mixer player 的窄映射；DEX、
   legacy Java/JNI 与 OpenSL ES 均通过 session 注入的同一 `OpenSlesPcmMixer`，GC sweep 与
   release 都销毁 player，side-table 不反向成为 GC root。

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -32,7 +33,8 @@ public:
     FutexWaitResult Wait(memory::MemoryBus& memory_bus,
                          const memory::GuestAddress address,
                          const std::uint32_t expected,
-                         const std::uint64_t thread_id) {
+                         const std::uint64_t thread_id,
+                         const std::optional<std::chrono::nanoseconds> timeout) {
         ValidateAddress(address);
         const auto queue = GetOrCreate(address);
         std::unique_lock lock(queue->mutex);
@@ -41,9 +43,15 @@ public:
         }
         if (interrupted_.load()) return FutexWaitResult::interrupted;
         ++queue->waiters;
-        queue->wake.wait(lock, [this, &queue] {
+        const auto ready = [this, &queue] {
             return interrupted_.load() || queue->wake_tokens != 0;
-        });
+        };
+        if (timeout.has_value() &&
+            !queue->wake.wait_for(lock, *timeout, ready)) {
+            --queue->waiters;
+            return FutexWaitResult::timed_out;
+        }
+        if (!timeout.has_value()) queue->wake.wait(lock, ready);
         if (interrupted_.load()) {
             --queue->waiters;
             return FutexWaitResult::interrupted;
@@ -139,8 +147,10 @@ FutexTable::~FutexTable() = default;
 FutexWaitResult FutexTable::Wait(memory::MemoryBus& memory_bus,
                                  const memory::GuestAddress address,
                                  const std::uint32_t expected,
-                                 const std::uint64_t thread_id) {
-    return impl_->Wait(memory_bus, address, expected, thread_id);
+                                 const std::uint64_t thread_id,
+                                 const std::optional<std::chrono::nanoseconds>
+                                     timeout) {
+    return impl_->Wait(memory_bus, address, expected, thread_id, timeout);
 }
 
 std::size_t FutexTable::Wake(const memory::GuestAddress address,

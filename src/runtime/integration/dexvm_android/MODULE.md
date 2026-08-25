@@ -65,6 +65,15 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   `onCreate` 前完成一次性 attach，现有 Context 方法必须虚派委托 base，不复制资源或
   service 状态。ContextThemeWrapper 只承诺有界 theme id，不引入 Instrumentation、
   ActivityManager、service process 或完整 framework。
+- `Context.getPackageResourcePath()` 遵循 API 19 同进程 `LoadedApk.getResDir()` 语义，返回
+  `/data/app/<package>-1.apk` guest 路径；process 装配必须把 context 已持有的原始 APK bytes
+  只读发布到该路径。ContextWrapper 只委托 base，禁止返回 frontend 宿主路径或把 `/apk`
+  资源目录冒充 APK 文件。
+- `AudioTrack.getNativeOutputSampleRate()` 返回 session 桌面输出的 48 kHz 事实；min/max
+  volume、position notification period 与 listener 引用属于 track side-table，listener
+  作为 GC root trace，不伪造当前尚无来源的 marker/periodic callback。
+- `SurfaceHolder$Impl.lockCanvas` 返回 holder 稳定 Canvas；仅 locked Canvas 可绘制，
+  unlockCanvasAndPost 发布软件帧并结束锁定。Bitmap/Canvas 均使用同一 ARGB word 语义。
 - `System.load/System.loadLibrary` 只经 context 注入的 process
   `NativeLibraryLoader`，并始终携带稳定 application ClassLoader token；null 参数抛
   `NullPointerException`，resolver/linker/JNI_OnLoad 失败映射为

@@ -96,6 +96,12 @@ public:
         context->pcm_playback = &session->PcmPlayback();
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;
+        context->package_resource_path =
+            "/data/app/" + manifest.package + "-1.apk";
+        if (!context->apk_bytes.empty()) {
+            request.filesystem->PutFile(context->package_resource_path,
+                                        context->apk_bytes, false);
+        }
         context->package_version_code = manifest.version_code;
         context->package_version_name = manifest.version_name.value_or("");
         context->target_sdk_version = manifest.target_sdk.value_or(0U);

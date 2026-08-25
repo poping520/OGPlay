@@ -70,6 +70,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_media_AudioManager(const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioFormat(const Context& context);
 [[nodiscard]] Decl Declare_android_media_AudioTrack(const Context& context);
+[[nodiscard]] Decl Declare_android_media_AudioTrack_OnPlaybackPositionUpdateListener(const Context& context);
 [[nodiscard]] Decl Declare_android_media_MediaPlayer_OnCompletionListener(const Context& context);
 [[nodiscard]] Decl Declare_android_media_MediaPlayer_OnErrorListener(const Context& context);
 [[nodiscard]] Decl Declare_android_media_MediaPlayer_OnPreparedListener(const Context& context);

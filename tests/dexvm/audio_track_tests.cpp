@@ -106,6 +106,11 @@ struct AudioTrackVm final {
 
 TEST_CASE("DVM-84 AudioTrack streams PCM through the OpenSL mixer") {
     AudioTrackVm fixture;
+    CHECK(fixture.CallStatic(
+              "getNativeOutputSampleRate", "(I)I",
+              {VmValue::Int(3)}).AsInt() == 48000);
+    CHECK(fixture.CallStatic("getMinVolume", "()F", {}).AsFloat() == 0.0F);
+    CHECK(fixture.CallStatic("getMaxVolume", "()F", {}).AsFloat() == 1.0F);
     const auto minimum = fixture.CallStatic(
         "getMinBufferSize", "(III)I",
         {VmValue::Int(4000), VmValue::Int(4), VmValue::Int(2)}).AsInt();

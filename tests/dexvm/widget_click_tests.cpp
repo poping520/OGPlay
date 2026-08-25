@@ -721,6 +721,16 @@ TEST_CASE("dynamic ViewGroup hierarchy shares layout params and geometry") {
     vm.CallOn(column, "addView",
               "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
               {VmValue::Ref(fixed), VmValue::Ref(fixed_params)});
+    const auto inserted = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/View;");
+    vm.CallOn(column, "addView", "(Landroid/view/View;I)V",
+              {VmValue::Ref(inserted), VmValue::Int(0)});
+    const auto inserted_node = FindViewUiNode(*vm.context, inserted.Value());
+    REQUIRE(inserted_node.has_value());
+    CHECK(vm.context->ui_tree.Get(*inserted_node)->parent ==
+          FindViewUiNode(*vm.context, column.Value()));
+    vm.CallOn(column, "removeView", "(Landroid/view/View;)V",
+              {VmValue::Ref(inserted)});
     vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
               {VmValue::Ref(column)});
 
@@ -762,6 +772,38 @@ TEST_CASE("dynamic ViewGroup hierarchy shares layout params and geometry") {
     vm.CallOn(column, "removeViews", "(II)V",
               {VmValue::Int(0), VmValue::Int(1)});
     CHECK_FALSE(vm.context->ui_tree.Get(*fixed_node)->parent.has_value());
+}
+
+TEST_CASE("window focus dispatch reaches attached descendant overrides") {
+    ClickVm vm;
+    const auto root = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/FrameLayout;");
+    const auto focus_class = vm.linker.FindClass("LFocusView;");
+    REQUIRE(focus_class.has_value());
+    const auto initialized = vm.interpreter.EnsureClassInitialized(*focus_class);
+    REQUIRE_FALSE(initialized.exception.IsValid());
+    const auto child = vm.model.NewInstance(
+        *focus_class, vm.linker.Class(*focus_class).instance_slots);
+    vm.CallDirect(child, "LFocusView;", "<init>",
+                  "(Landroid/content/Context;)V",
+                  {VmValue::Ref(vm.activity)});
+    const auto focus_value = [&](const char* method_name) {
+        const auto method = vm.linker.FindDirectMethod(
+            *focus_class, method_name, "()I");
+        REQUIRE(method.has_value());
+        const auto outcome = vm.interpreter.Call(*method, {});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        return outcome.value.AsInt();
+    };
+    vm.CallOn(root, "addView", "(Landroid/view/View;I)V",
+              {VmValue::Ref(child), VmValue::Int(0)});
+
+    vm.CallOn(root, "onWindowFocusChanged", "(Z)V", {VmValue::Int(1)});
+    CHECK(focus_value("getFocusEvents") == 1);
+    CHECK(focus_value("getLastFocus") == 1);
+    vm.CallOn(root, "onWindowFocusChanged", "(Z)V", {VmValue::Int(0)});
+    CHECK(focus_value("getFocusEvents") == 2);
+    CHECK(focus_value("getLastFocus") == 0);
 }
 
 TEST_CASE("TextView Java state controls deterministic measure and draw state") {

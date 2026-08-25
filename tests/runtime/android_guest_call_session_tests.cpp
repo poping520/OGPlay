@@ -236,6 +236,17 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     CHECK(process->GuestEnvironment().Value() != 0);
     CHECK(process->GuestJavaVm().Value() != 0);
     CHECK(process->AttachedJniThreadCount() == 1);
+    const auto meminfo = filesystem.Open("/proc/meminfo", {.read = true});
+    std::array<std::byte, 256> meminfo_bytes{};
+    const auto meminfo_size = filesystem.Read(meminfo, meminfo_bytes);
+    filesystem.Close(meminfo);
+    const std::string meminfo_text(
+        reinterpret_cast<const char*>(meminfo_bytes.data()), meminfo_size);
+    CHECK(meminfo_text.find("MemTotal:") != std::string::npos);
+    CHECK(meminfo_text.find("MemFree:") != std::string::npos);
+    CHECK_THROWS_AS(
+        static_cast<void>(filesystem.Open("/proc/meminfo", {.write = true})),
+        ogplay::runtime::VfsError);
     std::array<std::int16_t, 16> silent{};
     CHECK(process->RenderStereoAudio(silent, 48000U) == 8U);
     CHECK(std::ranges::all_of(silent, [](const auto sample) {
@@ -355,10 +366,11 @@ TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {
         {19, std::span{&module, 1}, {}, 64, 36,
          1000, 1, &filesystem, {}});
 
-    CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x40000004), 31U));
+    CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x40000004), 0U));
+    CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x4004), 31U));
 
-    constexpr std::uint64_t first = UINT64_C(0x40000002);
-    constexpr std::uint64_t second = UINT64_C(0x40000003);
+    constexpr std::uint64_t first = UINT64_C(0x4000);
+    constexpr std::uint64_t second = UINT64_C(0x4001);
     process->PrepareDexVmThread(first, 0);
     CHECK(process->AttachedJniThreadCount() == 2U);
     process->ReleaseDexVmThread(first);

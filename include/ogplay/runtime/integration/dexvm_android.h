@@ -57,6 +57,9 @@ struct DexVmAndroidContext final {
     std::vector<std::byte> apk_bytes;
     loader::ApkArchive archive;
     std::string package_name;
+    // Guest-visible path of the installed APK. Context exposes this instead
+    // of leaking the frontend's host path.
+    std::string package_resource_path;
     std::uint32_t package_version_code{};
     std::string package_version_name;
     std::uint32_t target_sdk_version{};
@@ -337,6 +340,8 @@ struct DexVmAndroidContext final {
         std::int32_t buffer_size{};
         std::int32_t mode{};
         std::int32_t state{};
+        std::int32_t notification_period{};
+        dexvm::VmObjectRef position_listener;
     };
     std::unordered_map<std::uint32_t, AudioTrackState> audio_tracks;
 
@@ -349,6 +354,19 @@ struct DexVmAndroidContext final {
         bool recycled{};
     };
     std::unordered_map<std::uint32_t, BitmapState> bitmaps;
+
+    // SurfaceHolder software rendering owns a Canvas only while locked. The
+    // Canvas buffer uses Android ARGB words and is converted to boundary RGBA
+    // exactly once by unlockCanvasAndPost.
+    struct CanvasState final {
+        std::uint32_t holder{};
+        std::uint32_t width{};
+        std::uint32_t height{};
+        std::vector<std::uint32_t> argb;
+        bool locked{};
+    };
+    std::unordered_map<std::uint32_t, CanvasState> canvases;
+    std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_canvases;
 
     // MediaPlayer playing flags by instance handle.
     std::unordered_map<std::uint32_t, std::int32_t> media_resources;

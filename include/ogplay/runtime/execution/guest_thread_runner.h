@@ -39,6 +39,10 @@ struct A32GuestCallFrame final {
     std::span<const std::uint32_t> stack_words;
     // Selects the prepared guest thread context. The process root is 1.
     std::uint64_t thread_id{1};
+    // Long-lived JNI entry points may own a process loop. A handled syscall or
+    // HLE/JNI boundary proves forward progress and refreshes their watchdog;
+    // uninterrupted guest execution remains bounded by tick_budget.
+    bool refresh_tick_budget_at_handled_boundary{};
 };
 
 struct A32GuestCallResult final {

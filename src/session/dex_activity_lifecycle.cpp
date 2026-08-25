@@ -264,6 +264,11 @@ namespace ogplay::session {
                 CallActivity("onStart", "()V", {});
                 CallActivity("onResume", "()V", {});
                 activity_started_ = true;
+                // Thread.start() is concurrent with Activity callbacks on
+                // Android. Give a worker created by onStart/onResume one
+                // scheduling boundary before the first Surface traversal so
+                // it can enter its normal wait-for-surface handshake.
+                bindings_.bridge->Threads().Yield();
             }
 
             // Installer-style launchers may request the game activity right in
@@ -295,13 +300,18 @@ namespace ogplay::session {
                                context.surface_height)),
                            dx::VmValue::Int(0), dx::VmValue::Int(0)
                        });
-            CallOnView(context.content_view, "onWindowFocusChanged", "(Z)V",
-                       {dx::VmValue::Int(1)});
 
             // A title that brings its own GLSurfaceView is waiting on these
             // before it will touch EGL; the intrinsic one ignores them.
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::created);
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
+
+            // ViewRootImpl establishes and sizes the Surface during its first
+            // traversal; window focus arrives later through a separate
+            // message. Keep that boundary instead of folding focus into
+            // Start(): guest worker threads must first observe the completed
+            // Surface setup before focus can act as a native resume signal.
+            initial_focus_pending_ = true;
 
             // A renderer may not exist yet (installer phase draws nothing);
             // frames then only pump cooperative threads until the interpreted
@@ -322,6 +332,7 @@ namespace ogplay::session {
             Fail("dex_activity lifecycle cannot suspend in this state");
         }
         try {
+            initial_focus_pending_ = false;
             CallOnView(bindings_.context->content_view, "onWindowFocusChanged",
                        "(Z)V", {dx::VmValue::Int(0)});
             CallActivity("onPause", "()V", {});
@@ -430,6 +441,12 @@ namespace ogplay::session {
         try {
             DispatchInput();
             PumpJavaThreads();
+            if (initial_focus_pending_) {
+                CallOnView(bindings_.context->content_view,
+                           "onWindowFocusChanged", "(Z)V",
+                           {dx::VmValue::Int(1)});
+                initial_focus_pending_ = false;
+            }
             PumpVideo();
             ServiceActivitySwitch();
             EnsureRendererCallbacks();

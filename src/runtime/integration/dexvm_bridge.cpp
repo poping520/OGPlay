@@ -12,6 +12,7 @@
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
 
@@ -217,6 +218,7 @@ public:
     std::unique_ptr<dx::VmThreadRuntime> threads;
 
     std::unordered_map<std::uint32_t, JniObjectIdentity> class_identities;
+    std::unordered_map<std::uint32_t, dx::VmFieldId> field_identities;
     std::unordered_map<std::uint32_t, JniReference> class_global_refs;
     std::unordered_set<std::uint32_t> registering_classes;
     mutable std::mutex thread_contexts_mutex;
@@ -352,6 +354,159 @@ public:
 
     // ---- inbound (native -> interpreter) --------------------------------
 
+  [[nodiscard]] std::optional<dx::VmFieldId> DexField(
+      const JniResolvedField& field) const {
+    const auto found = field_identities.find(field.id.Value());
+    return found == field_identities.end()
+               ? std::nullopt
+               : std::optional<dx::VmFieldId>{found->second};
+  }
+
+  [[nodiscard]] std::optional<bool> EnsureJniClassInitialized(
+      const JniObjectIdentity identity, const std::uint64_t thread) {
+    const auto java_class = ClassForJniIdentity(identity);
+    if (!java_class.has_value()) return std::nullopt;
+    const auto outcome = vm->EnsureClassInitialized(*java_class);
+    if (!outcome.exception.IsValid()) return true;
+    session->Environment().Throw(thread,
+                                 PublishLocal(outcome.exception, thread));
+    return false;
+  }
+
+  [[nodiscard]] JniValue ReadFieldSlots(
+      const dx::LinkedField& field, const std::span<const dx::Slot> slots,
+      const std::uint64_t thread) {
+    if (field.slot + (field.is_wide ? 2U : 1U) > slots.size()) {
+      throw DexVmBridgeError("DexVM JNI field slot is out of range: " +
+                             linker.Class(field.owner).descriptor + "." +
+                             field.name + field.descriptor + " slot=" +
+                             std::to_string(field.slot) + " slots=" +
+                             std::to_string(slots.size()));
+    }
+    if (field.is_ref) {
+      return JniValue{PublishLocal(dx::VmObjectRef(slots[field.slot].bits),
+                                  thread)};
+    }
+    if (field.is_wide) {
+      dx::VmValue value;
+      value.kind = dx::VmValue::Kind::wide;
+      value.wide = static_cast<std::uint64_t>(slots[field.slot].bits) |
+                   (static_cast<std::uint64_t>(slots[field.slot + 1U].bits)
+                    << 32U);
+      return FromVmValue(value, field.descriptor.front(), thread);
+    }
+    return FromVmValue(dx::VmValue::Int(slots[field.slot].bits),
+                       field.descriptor.front(), thread);
+  }
+
+  void WriteFieldSlots(const dx::LinkedField& field,
+                       const std::span<dx::Slot> slots,
+                       const JniValue& value, const std::uint64_t thread) {
+    if (field.slot + (field.is_wide ? 2U : 1U) > slots.size()) {
+      throw DexVmBridgeError("DexVM JNI field slot is out of range: " +
+                             linker.Class(field.owner).descriptor + "." +
+                             field.name + field.descriptor + " slot=" +
+                             std::to_string(field.slot) + " slots=" +
+                             std::to_string(slots.size()));
+    }
+    const auto decoded = ToVmValue(value, thread);
+    if (field.is_ref) {
+      slots[field.slot] = {decoded.ref.Value(), dx::SlotTag::ref};
+    } else if (field.is_wide) {
+      slots[field.slot] = {static_cast<std::uint32_t>(decoded.wide),
+                           dx::SlotTag::wide_lo};
+      slots[field.slot + 1U] = {
+          static_cast<std::uint32_t>(decoded.wide >> 32U),
+          dx::SlotTag::wide_hi};
+    } else {
+      slots[field.slot] = {decoded.cat1, dx::SlotTag::cat1};
+    }
+  }
+
+  [[nodiscard]] std::optional<JniValue> GetJniInstanceField(
+      const JniObjectIdentity object, const JniResolvedField& resolved,
+      const std::uint64_t thread) {
+    const auto field_id = DexField(resolved);
+    if (!field_id.has_value()) return std::nullopt;
+    const auto& field = linker.Field(*field_id);
+    const auto instance = model->FromIdentity(object);
+    return ReadFieldSlots(field, model->InstanceSlots(instance), thread);
+  }
+
+  [[nodiscard]] bool SetJniInstanceField(
+      const JniObjectIdentity object, const JniResolvedField& resolved,
+      const JniValue& value, const std::uint64_t thread) {
+    const auto field_id = DexField(resolved);
+    if (!field_id.has_value()) return false;
+    const auto& field = linker.Field(*field_id);
+    const auto instance = model->FromIdentity(object);
+    WriteFieldSlots(field, model->InstanceSlots(instance), value, thread);
+    return true;
+  }
+
+  [[nodiscard]] std::optional<JniValue> GetJniStaticField(
+      const JniResolvedField& resolved, const std::uint64_t thread) {
+    const auto field_id = DexField(resolved);
+    if (!field_id.has_value()) return std::nullopt;
+    const auto& field = linker.Field(*field_id);
+    auto& storage = linker.MutableClass(field.owner).static_storage;
+    std::vector<dx::Slot> slots;
+    slots.reserve(storage.size());
+    for (const auto bits : storage) slots.push_back({bits, dx::SlotTag::cat1});
+    return ReadFieldSlots(field, slots, thread);
+  }
+
+  [[nodiscard]] bool SetJniStaticField(
+      const JniResolvedField& resolved, const JniValue& value,
+      const std::uint64_t thread) {
+    const auto field_id = DexField(resolved);
+    if (!field_id.has_value()) return false;
+    const auto& field = linker.Field(*field_id);
+    auto& storage = linker.MutableClass(field.owner).static_storage;
+    std::vector<dx::Slot> slots;
+    slots.reserve(storage.size());
+    for (const auto bits : storage) slots.push_back({bits, dx::SlotTag::cat1});
+    WriteFieldSlots(field, slots, value, thread);
+    for (std::size_t index = 0; index < slots.size(); ++index) {
+      storage[index] = slots[index].bits;
+    }
+    return true;
+  }
+
+  void BindField(const JniObjectIdentity identity,
+                 const dx::VmFieldId field_id) {
+    const auto& field = linker.Field(field_id);
+    const auto jni_id = session->Classes().GetFieldId(
+        identity, field.name, field.descriptor, field.is_static);
+    if (!jni_id.has_value() ||
+        session->Classes().ResolveField(*jni_id).declaring_class != identity) {
+      throw DexVmBridgeError("cannot bind DexVM field to JNI registry");
+    }
+    field_identities.insert_or_assign(jni_id->Value(), field_id);
+  }
+
+  void PublishMissingFields(const dx::DexClassId class_id,
+                            const JniObjectIdentity identity) {
+    auto& classes = session->Classes();
+    const auto publish = [&](const dx::VmFieldId field_id) {
+      const auto& field = linker.Field(field_id);
+      const auto existing = classes.GetFieldId(
+          identity, field.name, field.descriptor, field.is_static);
+      if (!existing.has_value() ||
+          classes.ResolveField(*existing).declaring_class != identity) {
+        static_cast<void>(classes.RegisterField(
+            identity, {field.name, field.descriptor,
+                       "dexvm.f" + std::to_string(field_id.Value()),
+                       field.is_static}));
+      }
+      BindField(identity, field_id);
+    };
+    for (const auto field : linker.Class(class_id).own_instance_fields)
+      publish(field);
+    for (const auto field : linker.Class(class_id).own_static_fields)
+      publish(field);
+  }
+
   void PublishMissingMethods(const dx::DexClassId class_id,
                              const JniObjectIdentity identity) {
     auto &classes = session->Classes();
@@ -396,6 +551,7 @@ public:
     if (const auto existing = classes.FindClass(name); existing.has_value()) {
       class_identities.emplace(class_id.Value(), *existing);
       PublishMissingMethods(class_id, *existing);
+      PublishMissingFields(class_id, *existing);
       return *existing;
     }
     if (!registering_classes.emplace(class_id.Value()).second) {
@@ -412,6 +568,14 @@ public:
       }
     }
     std::vector<std::pair<std::string, dx::VmMethodId>> handlers;
+    const auto append_field = [&](const dx::VmFieldId field_id) {
+      const auto& field = linker.Field(field_id);
+      declaration.fields.push_back(
+          {field.name, field.descriptor,
+           "dexvm.f" + std::to_string(field_id.Value()), field.is_static});
+    };
+    for (const auto field : linked.own_instance_fields) append_field(field);
+    for (const auto field : linked.own_static_fields) append_field(field);
     for (const auto method_id : linker.MethodsOf(class_id)) {
       const auto &method = linker.Method(method_id);
       if (method.name == "<clinit>")
@@ -430,6 +594,8 @@ public:
     }
     registering_classes.erase(class_id.Value());
     class_identities.emplace(class_id.Value(), identity);
+    for (const auto field : linked.own_instance_fields) BindField(identity, field);
+    for (const auto field : linked.own_static_fields) BindField(identity, field);
     for (const auto &[implementation, method_id] : handlers) {
       invocations.RegisterHandler(
           implementation, [this, method_id](const JniInvocation &invocation) {
@@ -700,12 +866,11 @@ public:
         const auto identity = class_identities.find(method.owner.Value());
         bool invoked = false;
         if (identity != class_identities.end()) {
-            try {
-        result = session->InvokeRegisteredNative(identity->second, method.name,
-                                                 method.descriptor, frame);
+            const auto registered = session->TryInvokeRegisteredNative(
+                identity->second, method.name, method.descriptor, frame);
+            if (registered.has_value()) {
+                result = *registered;
                 invoked = true;
-            } catch (const std::exception&) {
-                invoked = false;
             }
         }
         if (!invoked) {
@@ -832,6 +997,34 @@ DexVmGuestBridge::DexVmGuestBridge(
     }
     impl_->vm->SetLogger(logger);
     impl_->threads = std::make_unique<dx::VmThreadRuntime>(*impl_->vm);
+    session.Fields().SetAccessHooks(JniFieldAccessHooks{
+        [bridge_state](const JniObjectIdentity java_class,
+                       const std::uint64_t thread) {
+          return bridge_state->EnsureJniClassInitialized(java_class, thread);
+        },
+        [bridge_state](const JniObjectIdentity object,
+                       const JniObjectIdentity,
+                       const JniResolvedField& field,
+                       const std::uint64_t thread) {
+          return bridge_state->GetJniInstanceField(object, field, thread);
+        },
+        [bridge_state](const JniObjectIdentity object,
+                       const JniObjectIdentity,
+                       const JniResolvedField& field, const JniValue& value,
+                       const std::uint64_t thread) {
+          return bridge_state->SetJniInstanceField(object, field, value,
+                                                   thread);
+        },
+        [bridge_state](const JniObjectIdentity,
+                       const JniResolvedField& field,
+                       const std::uint64_t thread) {
+          return bridge_state->GetJniStaticField(field, thread);
+        },
+        [bridge_state](const JniObjectIdentity,
+                       const JniResolvedField& field, const JniValue& value,
+                       const std::uint64_t thread) {
+          return bridge_state->SetJniStaticField(field, value, thread);
+        }});
     if (android_context != nullptr) {
         android_context->threads = impl_->threads.get();
         impl_->vm->Monitors().SetTimeSource([android_context] {
@@ -916,6 +1109,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->android_context) impl_->android_context->threads = nullptr;
     if (impl_->session) {
         impl_->session->Environment().SetMonitorHooks({});
+        impl_->session->Fields().SetAccessHooks({});
     }
 }
 

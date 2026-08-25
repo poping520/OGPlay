@@ -29,3 +29,6 @@
     invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
     return-void
 .end method
+
+.method static public native fail()V
+.end method

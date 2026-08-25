@@ -84,10 +84,34 @@ class JniFieldStore::Impl final {
 public:
     explicit Impl(const JniClassRegistry& classes) : classes_(&classes) {}
 
+    void SetAccessHooks(JniFieldAccessHooks hooks) {
+        std::scoped_lock lock(hooks_mutex_);
+        hooks_ = std::move(hooks);
+    }
+
+    [[nodiscard]] bool EnsureClassInitialized(
+        const JniObjectIdentity java_class,
+        const std::uint64_t thread_id) const {
+        const auto hooks = Hooks();
+        if (!hooks.ensure_class_initialized) return true;
+        const auto result = hooks.ensure_class_initialized(java_class,
+                                                            thread_id);
+        return !result.has_value() || *result;
+    }
+
     [[nodiscard]] JniValue GetInstance(
         const JniObjectIdentity object, const JniObjectIdentity object_class,
-        const JniFieldId field) const {
+        const JniFieldId field, const std::uint64_t thread_id) const {
         const auto resolved = ValidateInstance(object, object_class, field);
+        const auto hooks = Hooks();
+        if (hooks.get_instance) {
+            if (auto value = hooks.get_instance(object, object_class, resolved,
+                                                thread_id);
+                value.has_value()) {
+                ValidateValue(resolved.type, *value);
+                return *value;
+            }
+        }
         std::scoped_lock lock(mutex_);
         const auto found = instance_values_.find(InstanceKey(object, field));
         return found == instance_values_.end() ? DefaultValue(resolved.type)
@@ -96,9 +120,15 @@ public:
 
     void SetInstance(const JniObjectIdentity object,
                      const JniObjectIdentity object_class,
-                     const JniFieldId field, JniValue value) {
+                     const JniFieldId field, JniValue value,
+                     const std::uint64_t thread_id) {
         const auto resolved = ValidateInstance(object, object_class, field);
         ValidateValue(resolved.type, value);
+        const auto hooks = Hooks();
+        if (hooks.set_instance && hooks.set_instance(
+                object, object_class, resolved, value, thread_id)) {
+            return;
+        }
         std::scoped_lock lock(mutex_);
         instance_values_.insert_or_assign(InstanceKey(object, field),
                                           std::move(value));
@@ -123,8 +153,17 @@ public:
 
     [[nodiscard]] JniValue GetStatic(
         const JniObjectIdentity dispatch_class,
-        const JniFieldId field) const {
+        const JniFieldId field, const std::uint64_t thread_id) const {
         const auto resolved = ValidateStatic(dispatch_class, field);
+        const auto hooks = Hooks();
+        if (hooks.get_static) {
+            if (auto value = hooks.get_static(dispatch_class, resolved,
+                                              thread_id);
+                value.has_value()) {
+                ValidateValue(resolved.type, *value);
+                return *value;
+            }
+        }
         std::scoped_lock lock(mutex_);
         const auto found = static_values_.find(field.Value());
         return found == static_values_.end() ? DefaultValue(resolved.type)
@@ -132,9 +171,15 @@ public:
     }
 
     void SetStatic(const JniObjectIdentity dispatch_class,
-                   const JniFieldId field, JniValue value) {
+                   const JniFieldId field, JniValue value,
+                   const std::uint64_t thread_id) {
         const auto resolved = ValidateStatic(dispatch_class, field);
         ValidateValue(resolved.type, value);
+        const auto hooks = Hooks();
+        if (hooks.set_static && hooks.set_static(
+                dispatch_class, resolved, value, thread_id)) {
+            return;
+        }
         std::scoped_lock lock(mutex_);
         static_values_.insert_or_assign(field.Value(), std::move(value));
     }
@@ -205,8 +250,15 @@ private:
         }
     }
 
+    [[nodiscard]] JniFieldAccessHooks Hooks() const {
+        std::scoped_lock lock(hooks_mutex_);
+        return hooks_;
+    }
+
     const JniClassRegistry* classes_{};
     mutable std::mutex mutex_;
+    mutable std::mutex hooks_mutex_;
+    JniFieldAccessHooks hooks_;
     std::map<Key, JniValue> instance_values_;
     std::map<std::uint32_t, JniValue> static_values_;
 };
@@ -217,26 +269,38 @@ JniFieldStore::~JniFieldStore() = default;
 JniFieldStore::JniFieldStore(JniFieldStore&&) noexcept = default;
 JniFieldStore& JniFieldStore::operator=(JniFieldStore&&) noexcept = default;
 
+void JniFieldStore::SetAccessHooks(JniFieldAccessHooks hooks) {
+    impl_->SetAccessHooks(std::move(hooks));
+}
+bool JniFieldStore::EnsureClassInitialized(
+    const JniObjectIdentity java_class, const std::uint64_t thread_id) const {
+    return impl_->EnsureClassInitialized(java_class, thread_id);
+}
+
 JniValue JniFieldStore::GetInstance(const JniObjectIdentity object,
                                     const JniObjectIdentity object_class,
-                                    const JniFieldId field) const {
-    return impl_->GetInstance(object, object_class, field);
+                                    const JniFieldId field,
+                                    const std::uint64_t thread_id) const {
+    return impl_->GetInstance(object, object_class, field, thread_id);
 }
 void JniFieldStore::SetInstance(const JniObjectIdentity object,
                                 const JniObjectIdentity object_class,
-                                const JniFieldId field, JniValue value) {
-    impl_->SetInstance(object, object_class, field, std::move(value));
+                                const JniFieldId field, JniValue value,
+                                const std::uint64_t thread_id) {
+    impl_->SetInstance(object, object_class, field, std::move(value), thread_id);
 }
 void JniFieldStore::DeleteInstanceFields(const JniObjectIdentity object) {
     impl_->DeleteInstanceFields(object);
 }
 JniValue JniFieldStore::GetStatic(const JniObjectIdentity dispatch_class,
-                                  const JniFieldId field) const {
-    return impl_->GetStatic(dispatch_class, field);
+                                  const JniFieldId field,
+                                  const std::uint64_t thread_id) const {
+    return impl_->GetStatic(dispatch_class, field, thread_id);
 }
 void JniFieldStore::SetStatic(const JniObjectIdentity dispatch_class,
-                              const JniFieldId field, JniValue value) {
-    impl_->SetStatic(dispatch_class, field, std::move(value));
+                              const JniFieldId field, JniValue value,
+                              const std::uint64_t thread_id) {
+    impl_->SetStatic(dispatch_class, field, std::move(value), thread_id);
 }
 
 }  // namespace ogplay::runtime

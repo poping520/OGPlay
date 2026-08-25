@@ -29,6 +29,8 @@ IntrinsicClassDecl Declare_java_net_MalformedURLException() {
 
 #include <array>
 #include <cctype>
+#include <optional>
+#include <string_view>
 
 namespace ogplay::runtime::dexvm::intrinsics {
 
@@ -44,6 +46,249 @@ IntrinsicHandler NetworkUnsupported() {
 
 IntrinsicHandler NoopVoid() {
     return [](IntrinsicContext&) { return VmValue::Void(); };
+}
+
+struct ParsedUri final {
+    std::string spec;
+    std::optional<std::string> scheme;
+    std::string scheme_specific_part;
+    std::optional<std::string> authority;
+    std::optional<std::string> path;
+    std::optional<std::string> query;
+    std::optional<std::string> fragment;
+    bool absolute{};
+    bool opaque{};
+};
+
+[[noreturn]] void UriSyntax(const std::string_view spec,
+                            const std::string_view reason) {
+    throw VmJavaThrow{"Ljava/net/URISyntaxException;",
+                      std::string(reason) + ": " + std::string(spec)};
+}
+
+void ValidateUriComponent(const std::string_view spec,
+                          const std::string_view component) {
+    const auto hex = [](const unsigned char value) {
+        return std::isxdigit(value) != 0;
+    };
+    for (std::size_t index = 0; index < component.size(); ++index) {
+        const auto value = static_cast<unsigned char>(component[index]);
+        if (value <= 0x20U || value == 0x7fU)
+            UriSyntax(spec, "Illegal character in URI");
+        if (value == '%') {
+            if (index + 2U >= component.size() ||
+                !hex(static_cast<unsigned char>(component[index + 1U])) ||
+                !hex(static_cast<unsigned char>(component[index + 2U]))) {
+                UriSyntax(spec, "Invalid percent escape");
+            }
+            index += 2U;
+        }
+    }
+}
+
+ParsedUri ParseUri(std::string spec) {
+    ParsedUri result;
+    result.spec = std::move(spec);
+    const auto view = std::string_view(result.spec);
+    const auto fragment_start = view.find('#');
+    const auto main_end = fragment_start == std::string_view::npos
+        ? view.size() : fragment_start;
+    if (fragment_start != std::string_view::npos) {
+        result.fragment = std::string(view.substr(fragment_start + 1U));
+        ValidateUriComponent(view, *result.fragment);
+    }
+
+    std::size_t start{};
+    const auto colon = view.substr(0, main_end).find(':');
+    const auto first_delimiter = view.substr(0, main_end).find_first_of("/?");
+    if (colon != std::string_view::npos &&
+        (first_delimiter == std::string_view::npos || colon < first_delimiter)) {
+        if (colon == 0U ||
+            std::isalpha(static_cast<unsigned char>(view[0])) == 0) {
+            UriSyntax(view, "Invalid URI scheme");
+        }
+        for (std::size_t index = 1; index < colon; ++index) {
+            const auto value = static_cast<unsigned char>(view[index]);
+            if (std::isalnum(value) == 0 && value != '+' && value != '-' &&
+                value != '.') {
+                UriSyntax(view, "Invalid URI scheme");
+            }
+        }
+        result.absolute = true;
+        result.scheme = std::string(view.substr(0, colon));
+        start = colon + 1U;
+        if (start == main_end)
+            UriSyntax(view, "Scheme-specific part expected");
+    }
+
+    result.scheme_specific_part =
+        std::string(view.substr(start, main_end - start));
+    ValidateUriComponent(view, result.scheme_specific_part);
+    result.opaque = result.absolute &&
+        (result.scheme_specific_part.empty() ||
+         result.scheme_specific_part.front() != '/');
+    if (result.opaque) return result;
+
+    std::size_t path_start = start;
+    if (start + 1U < main_end && view.substr(start, 2U) == "//") {
+        const auto authority_start = start + 2U;
+        auto authority_end = view.find_first_of("/?", authority_start);
+        if (authority_end == std::string_view::npos || authority_end > main_end)
+            authority_end = main_end;
+        if (authority_start == main_end)
+            UriSyntax(view, "Authority expected");
+        if (authority_start < authority_end) {
+            result.authority = std::string(
+                view.substr(authority_start, authority_end - authority_start));
+            ValidateUriComponent(view, *result.authority);
+        }
+        path_start = authority_end;
+    }
+    auto query_start = view.find('?', path_start);
+    if (query_start == std::string_view::npos || query_start > main_end)
+        query_start = main_end;
+    result.path = std::string(view.substr(path_start, query_start - path_start));
+    ValidateUriComponent(view, *result.path);
+    if (query_start < main_end) {
+        result.query = std::string(
+            view.substr(query_start + 1U, main_end - query_start - 1U));
+        ValidateUriComponent(view, *result.query);
+    }
+    return result;
+}
+
+std::string DecodeUriComponent(const std::string_view raw) {
+    const auto nibble = [](const unsigned char value) -> unsigned char {
+        if (value >= '0' && value <= '9') return value - '0';
+        if (value >= 'a' && value <= 'f') return value - 'a' + 10U;
+        return value - 'A' + 10U;
+    };
+    std::string decoded;
+    decoded.reserve(raw.size());
+    for (std::size_t index = 0; index < raw.size(); ++index) {
+        if (raw[index] != '%') {
+            decoded.push_back(raw[index]);
+            continue;
+        }
+        decoded.push_back(static_cast<char>(
+            (nibble(static_cast<unsigned char>(raw[index + 1U])) << 4U) |
+            nibble(static_cast<unsigned char>(raw[index + 2U]))));
+        index += 2U;
+    }
+    return decoded;
+}
+
+IntrinsicClassDecl DeclareUriSyntaxException() {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/net/URISyntaxException;", "Ljava/lang/Exception;");
+    const auto input = builder.BoundInstanceField("input", "Ljava/lang/String;",
+                                                   0x0002U);
+    const auto index = builder.BoundInstanceField("index", "I", 0x0002U);
+    const auto construct = [input, index](IntrinsicContext& context) {
+        IntrinsicCall call(context);
+        const auto input_value = call.NonNullRef(0, "input");
+        const auto reason = call.NonNullRef(1, "reason");
+        const auto error_index = context.arguments.size() == 3U
+            ? call.Int(2) : -1;
+        if (error_index < -1) {
+            throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "URI syntax index < -1"};
+        }
+        call.SetRef(input, input_value);
+        call.SetInt(index, error_index);
+        call.Vm().SetThrowableMessage(call.Receiver(), reason);
+        return VmValue::Void();
+    };
+    builder.Constructor("(Ljava/lang/String;Ljava/lang/String;)V", construct);
+    builder.Constructor("(Ljava/lang/String;Ljava/lang/String;I)V", construct);
+    builder.FinalMethod("getIndex", "()I", [index](IntrinsicContext& context) {
+        return VmValue::Int(IntrinsicCall(context).GetInt(index));
+    });
+    builder.FinalMethod("getReason", "()Ljava/lang/String;",
+        [](IntrinsicContext& context) {
+            return VmValue::Ref(
+                context.vm.ThrowableMessage(context.receiver));
+        });
+    builder.FinalMethod("getInput", "()Ljava/lang/String;",
+        [input](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(input));
+        });
+    return std::move(builder).Build();
+}
+
+IntrinsicClassDecl DeclareUri() {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/net/URI;", "Ljava/lang/Object;",
+        {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"}, 0x0011U);
+    const auto spec = builder.BoundInstanceField("string", "Ljava/lang/String;",
+                                                 0x0002U);
+    const auto scheme = builder.BoundInstanceField("scheme", "Ljava/lang/String;",
+                                                   0x0002U);
+    const auto ssp = builder.BoundInstanceField(
+        "schemeSpecificPart", "Ljava/lang/String;", 0x0002U);
+    const auto authority = builder.BoundInstanceField(
+        "authority", "Ljava/lang/String;", 0x0002U);
+    const auto path = builder.BoundInstanceField("path", "Ljava/lang/String;",
+                                                 0x0002U);
+    const auto query = builder.BoundInstanceField("query", "Ljava/lang/String;",
+                                                  0x0002U);
+    const auto fragment = builder.BoundInstanceField(
+        "fragment", "Ljava/lang/String;", 0x0002U);
+    const auto absolute = builder.BoundInstanceField("absolute", "Z", 0x0002U);
+    const auto opaque = builder.BoundInstanceField("opaque", "Z", 0x0002U);
+    builder.Constructor("(Ljava/lang/String;)V",
+        [=](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto input = call.NonNullRef(0, "uri");
+            const auto parsed = ParseUri(call.Vm().StringUtf8(input));
+            const auto string_ref = [&](const std::optional<std::string>& value) {
+                return value.has_value() ? call.Vm().NewStringUtf8(*value)
+                                         : VmObjectRef{};
+            };
+            call.SetRef(spec, input);
+            call.SetRef(scheme, string_ref(parsed.scheme));
+            call.SetRef(ssp, call.Vm().NewStringUtf8(
+                parsed.scheme_specific_part));
+            call.SetRef(authority, string_ref(parsed.authority));
+            call.SetRef(path, string_ref(parsed.path));
+            call.SetRef(query, string_ref(parsed.query));
+            call.SetRef(fragment, string_ref(parsed.fragment));
+            call.SetInt(absolute, parsed.absolute ? 1 : 0);
+            call.SetInt(opaque, parsed.opaque ? 1 : 0);
+            return VmValue::Void();
+        });
+    const auto raw = [](const IntrinsicFieldHandle field) {
+        return [field](IntrinsicContext& context) {
+            return VmValue::Ref(IntrinsicCall(context).GetRef(field));
+        };
+    };
+    builder.FinalMethod("getScheme", "()Ljava/lang/String;", raw(scheme));
+    builder.FinalMethod("getRawSchemeSpecificPart", "()Ljava/lang/String;",
+                        raw(ssp));
+    builder.FinalMethod("getRawAuthority", "()Ljava/lang/String;",
+                        raw(authority));
+    builder.FinalMethod("getRawPath", "()Ljava/lang/String;", raw(path));
+    builder.FinalMethod("getRawQuery", "()Ljava/lang/String;", raw(query));
+    builder.FinalMethod("getRawFragment", "()Ljava/lang/String;",
+                        raw(fragment));
+    builder.FinalMethod("getPath", "()Ljava/lang/String;",
+        [path](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto raw_path = call.GetRef(path);
+            if (!raw_path.IsValid()) return VmValue::Ref(VmObjectRef{});
+            return VmValue::Ref(call.Vm().NewStringUtf8(
+                DecodeUriComponent(call.Vm().StringUtf8(raw_path))));
+        });
+    builder.FinalMethod("isAbsolute", "()Z",
+        [absolute](IntrinsicContext& context) {
+            return VmValue::Int(IntrinsicCall(context).GetInt(absolute));
+        });
+    builder.FinalMethod("isOpaque", "()Z",
+        [opaque](IntrinsicContext& context) {
+            return VmValue::Int(IntrinsicCall(context).GetInt(opaque));
+        });
+    builder.FinalMethod("toString", "()Ljava/lang/String;", raw(spec));
+    return std::move(builder).Build();
 }
 
 IntrinsicClassDecl DeclarePlatformHttpURLConnection() {
@@ -551,6 +796,8 @@ IntrinsicClassDecl DeclareSocketFactory(const CoreIntrinsicServices& services) {
 
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog,
                            const CoreIntrinsicServices& services) {
+    catalog.push_back(DeclareUriSyntaxException());
+    catalog.push_back(DeclareUri());
     catalog.push_back(DeclarePlatformHttpURLConnection());
     catalog.push_back(DeclarePlatformUrl());
     catalog.push_back(DeclarePlatformUrlConnection());

@@ -110,6 +110,10 @@ public:
     }
 
     [[nodiscard]] VmObjectRef Register(Record record) {
+        if (by_identity.contains(record.identity)) {
+            Fail(DexVmErrorReason::object_model_failure,
+                 "object identity is already registered");
+        }
         if (record.identity_hash == 0U) {
             record.identity_hash = NextIdentityHash();
         }
@@ -176,7 +180,13 @@ public:
     }
 
     [[nodiscard]] JniObjectIdentity NextVmIdentity() {
-        return JniObjectIdentity{JniObjectDomain::dex_vm, next_vm_identity++};
+        while (next_vm_identity != 0U) {
+            const JniObjectIdentity candidate{
+                JniObjectDomain::dex_vm, next_vm_identity++};
+            if (!by_identity.contains(candidate)) return candidate;
+        }
+        Fail(DexVmErrorReason::object_model_failure,
+             "DexVM object identity space is exhausted");
     }
 };
 

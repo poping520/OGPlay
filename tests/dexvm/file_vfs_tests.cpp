@@ -146,6 +146,45 @@ struct FileVm final {
         return file;
     }
 
+    [[nodiscard]] VmObjectRef NewUri(const std::string& spec) {
+        const auto uri = interpreter.NewIntrinsicInstance("Ljava/net/URI;");
+        static_cast<void>(CallOn(
+            uri, "<init>", "(Ljava/lang/String;)V",
+            {VmValue::Ref(interpreter.NewStringUtf8(spec))}));
+        return uri;
+    }
+
+    [[nodiscard]] VmObjectRef NewFile(const VmObjectRef parent,
+                                      const std::string& name) {
+        const auto file = interpreter.NewIntrinsicInstance("Ljava/io/File;");
+        static_cast<void>(CallOn(
+            file, "<init>", "(Ljava/io/File;Ljava/lang/String;)V",
+            {VmValue::Ref(parent),
+             VmValue::Ref(interpreter.NewStringUtf8(name))}));
+        return file;
+    }
+
+    [[nodiscard]] VmObjectRef NewFileFromUri(const VmObjectRef uri) {
+        const auto file = interpreter.NewIntrinsicInstance("Ljava/io/File;");
+        static_cast<void>(CallOn(file, "<init>", "(Ljava/net/URI;)V",
+                                 {VmValue::Ref(uri)}));
+        return file;
+    }
+
+    [[nodiscard]] std::uint64_t StaticField(
+        const std::string_view owner, const std::string_view name,
+        const std::string_view descriptor) {
+        const auto java_class = linker.ResolveDescriptor(owner);
+        const auto initialized = interpreter.EnsureClassInitialized(java_class);
+        REQUIRE_MESSAGE(!initialized.exception.IsValid(),
+                        initialized.exception_message);
+        const auto field = linker.FindFieldRecursive(
+            java_class, std::string(name), std::string(descriptor));
+        REQUIRE(field.has_value());
+        const auto& linked = linker.Field(*field);
+        return linker.Class(linked.owner).static_storage[linked.slot];
+    }
+
     VmCallOutcome CallOnOutcome(const VmObjectRef receiver,
                                 const std::string& name,
                                 const std::string& descriptor,
@@ -355,6 +394,62 @@ TEST_CASE("File.mkdirs creates real directories and reports the truth") {
 
     // Java says false when the directory was already there.
     CHECK_FALSE(vm.BoolOn(directory, "mkdirs"));
+}
+
+TEST_CASE("File constructors and separators follow API 19 URI semantics") {
+    FileVm vm;
+
+    CHECK(vm.StaticField("Ljava/io/File;", "separatorChar", "C") == '/');
+    CHECK(vm.StaticField("Ljava/io/File;", "pathSeparatorChar", "C") == ':');
+    CHECK(vm.interpreter.StringUtf8(VmObjectRef(static_cast<std::uint32_t>(
+              vm.StaticField("Ljava/io/File;", "separator",
+                             "Ljava/lang/String;")))) == "/");
+    CHECK(vm.interpreter.StringUtf8(VmObjectRef(static_cast<std::uint32_t>(
+              vm.StaticField("Ljava/io/File;", "pathSeparator",
+                             "Ljava/lang/String;")))) ==
+          ":");
+
+    const auto parent = vm.NewFile("/sdcard//game/");
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+              parent, "getPath", "()Ljava/lang/String;").ref) ==
+          "/sdcard/game");
+    const auto child = vm.NewFile(parent, "/saves//slot.dat/");
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+              child, "getPath", "()Ljava/lang/String;").ref) ==
+          "/sdcard/game/saves/slot.dat");
+
+    const auto uri = vm.NewUri("file:///sdcard/game%20save//slot.dat/");
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+              uri, "getRawPath", "()Ljava/lang/String;").ref) ==
+          "/sdcard/game%20save//slot.dat/");
+    const auto from_uri = vm.NewFileFromUri(uri);
+    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+              from_uri, "getPath", "()Ljava/lang/String;").ref) ==
+          "/sdcard/game save/slot.dat");
+}
+
+TEST_CASE("File URI constructor rejects non-file URI components") {
+    FileVm vm;
+    for (const auto spec : {"relative/path", "http:///sdcard/file.dat",
+                            "file:opaque", "file://host/sdcard/file.dat",
+                            "file:///sdcard/file.dat?query",
+                            "file:///sdcard/file.dat#fragment"}) {
+        const auto file = vm.interpreter.NewIntrinsicInstance("Ljava/io/File;");
+        const auto outcome = vm.CallOnOutcome(
+            file, "<init>", "(Ljava/net/URI;)V",
+            {VmValue::Ref(vm.NewUri(spec))});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/IllegalArgumentException;");
+    }
+
+    const auto malformed = vm.interpreter.NewIntrinsicInstance("Ljava/net/URI;");
+    const auto outcome = vm.CallOnOutcome(
+        malformed, "<init>", "(Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("file:///bad%2"))});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/net/URISyntaxException;");
 }
 
 TEST_CASE("File writes and native reads share one filesystem") {

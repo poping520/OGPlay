@@ -16,6 +16,8 @@
 #include "ogplay/runtime/integration/native_library_loader.h"
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
+#include "ogplay/runtime/jni/jni_field_store.h"
+#include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object_array.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
@@ -688,6 +690,66 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     CHECK_FALSE(session->Running());
 }
 
+TEST_CASE("DexVM preserves failure from a resolved RegisterNatives target") {
+    using namespace ogplay;
+    auto libc = LibcElf();
+    auto root = AppElf(
+        {"libroot.so", "libc.so", runtime::kJniVersion1_6});
+    std::array module_inputs{
+        loader::Elf32ModuleInput{"libroot.so", root,
+                                 memory::GuestAddress{0x20000000U}},
+        loader::Elf32ModuleInput{"libc.so", libc,
+                                 memory::GuestAddress{0x10000000U}},
+    };
+    runtime::VirtualFileSystem filesystem;
+    auto session = runtime::AndroidGuestCallSession::Start(
+        {19, "libroot.so", module_inputs, {}, 64, 36,
+         UINT64_C(200000), 1, &filesystem, {}});
+    loader::ApkNativeLibraryInventory inventory{{
+        Library("libroot.so", root),
+    }};
+    const auto selected = loader::SelectApkNativeLibraries(
+        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(session->Process(), selected);
+    auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    context->session = session.get();
+    context->native_libraries = &libraries;
+    core::CapabilityLedger ledger;
+    auto catalog = runtime::AndroidIntrinsicCatalog(context);
+    auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
+        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
+        nullptr);
+    context->threads = &bridge->Threads();
+
+    const auto owner = bridge->Linker().FindClass("Lfixture/Aps5;");
+    REQUIRE(owner.has_value());
+    const auto method = bridge->Linker().FindDirectMethod(
+        *owner, "fail", "()V");
+    REQUIRE(method.has_value());
+    const auto identity = bridge->RegisteredClassIdentity(*owner);
+    REQUIRE(identity.has_value());
+    const std::array methods{runtime::JniNativeMethod{
+        "fail", "()V", memory::GuestAddress{0xdeadbee0U}}};
+    session->Natives().RegisterNatives(*identity, methods);
+    REQUIRE(session->Natives().Resolve(*identity, "fail", "()V")
+                .has_value());
+
+    try {
+        static_cast<void>(bridge->Vm().Call(*method, {}));
+        FAIL("faulting registered native unexpectedly returned");
+    } catch (const runtime::AndroidGuestCallSessionError& error) {
+        const std::string message = error.what();
+        CHECK(message.find("registered JNI native invocation failed") !=
+              std::string::npos);
+        CHECK(message.find(
+                  "native method has no registered mapping or export") ==
+              std::string::npos);
+    }
+
+    bridge.reset();
+    session->Stop();
+}
+
 TEST_CASE("DexVM bridge canonicalizes JNI jclass as the real Class object") {
     using namespace ogplay;
     ApplicationProcess fixture;
@@ -804,6 +866,96 @@ TEST_CASE("DexVM imports JNI-created application objects with instance slots") {
     const auto intrinsic = fixture.bridge->FromReference(intrinsic_reference);
     CHECK(fixture.bridge->Model().Kind(intrinsic) ==
           runtime::dexvm::VmObjectKind::external);
+}
+
+TEST_CASE("DexVM JNI fields share interpreter storage and reference identity") {
+    using namespace ogplay;
+    ApplicationProcess fixture;
+    const auto owner = fixture.bridge->Linker().FindClass(
+        "Lfixture/LauncherActivity;");
+    const auto child = fixture.bridge->Linker().FindClass(
+        "Lfixture/LauncherChildActivity;");
+    REQUIRE(owner.has_value());
+    REQUIRE(child.has_value());
+    const auto owner_identity =
+        fixture.bridge->RegisteredClassIdentity(*owner);
+    const auto child_identity =
+        fixture.bridge->RegisteredClassIdentity(*child);
+    REQUIRE(owner_identity.has_value());
+    REQUIRE(child_identity.has_value());
+
+    auto& classes = fixture.session->Classes();
+    auto& fields = fixture.session->Fields();
+    const auto imported_id = classes.GetFieldId(
+        *owner_identity, "imported", "I", false);
+    const auto inherited_id = classes.GetFieldId(
+        *child_identity, "imported", "I", false);
+    const auto peer_id = classes.GetFieldId(
+        *owner_identity, "peer", "Ljava/lang/Object;", false);
+    const auto wide_id = classes.GetFieldId(
+        *owner_identity, "wide", "J", true);
+    const auto stage_id = classes.GetFieldId(
+        *owner_identity, "stage", "I", true);
+    REQUIRE(imported_id.has_value());
+    REQUIRE(inherited_id == imported_id);
+    REQUIRE(peer_id.has_value());
+    REQUIRE(wide_id.has_value());
+    REQUIRE(stage_id.has_value());
+    REQUIRE(fields.EnsureClassInitialized(*owner_identity, 1U));
+
+    const auto instance = fixture.bridge->Model().NewInstance(
+        *owner, fixture.bridge->Linker().Class(*owner).instance_slots);
+    const auto instance_ref = fixture.bridge->PublishLocal(instance);
+    const auto instance_identity =
+        fixture.session->Environment().ResolveObjectForHle(1U, instance_ref);
+    REQUIRE(instance_identity.has_value());
+    fields.SetInstance(*instance_identity, *owner_identity, *imported_id,
+                       runtime::JniInt{42}, 1U);
+
+    const auto getter_index = fixture.bridge->Linker().FindVtableIndex(
+        *owner, "getImported", "()I");
+    REQUIRE(getter_index.has_value());
+    const std::array receiver{runtime::dexvm::VmValue::Ref(instance)};
+    auto outcome = fixture.bridge->Vm().Call(
+        fixture.bridge->Linker().Class(*owner).vtable[*getter_index], receiver);
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    CHECK(outcome.value.AsInt() == 42);
+
+    const auto round_trip_primitive = [&](const char* name,
+                                          const char* descriptor,
+                                          const runtime::JniValue& value) {
+        const auto id = classes.GetFieldId(
+            *owner_identity, name, descriptor, false);
+        REQUIRE(id.has_value());
+        fields.SetInstance(*instance_identity, *owner_identity, *id, value,
+                           1U);
+        CHECK(fields.GetInstance(*instance_identity, *owner_identity, *id,
+                                 1U) == value);
+    };
+    round_trip_primitive("flag", "Z", runtime::JniBoolean{1});
+    round_trip_primitive("small", "B", runtime::JniByte{-7});
+    round_trip_primitive("letter", "C", runtime::JniChar{0x4e2d});
+    round_trip_primitive("shortValue", "S", runtime::JniShort{-1234});
+    round_trip_primitive("ratio", "F", runtime::JniFloat{1.25F});
+    round_trip_primitive("precise", "D", runtime::JniDouble{-3.5});
+
+    const auto peer = fixture.bridge->Model().NewInstance(
+        *owner, fixture.bridge->Linker().Class(*owner).instance_slots);
+    const auto peer_ref = fixture.bridge->PublishLocal(peer);
+    fields.SetInstance(*instance_identity, *owner_identity, *peer_id,
+                       peer_ref, 1U);
+    const auto round_trip = std::get<runtime::JniReference>(
+        fields.GetInstance(*instance_identity, *owner_identity, *peer_id, 1U));
+    CHECK(fixture.bridge->FromReference(round_trip) == peer);
+
+    fields.SetStatic(*owner_identity, *wide_id,
+                     runtime::JniLong{INT64_C(0x1122334455667788)}, 1U);
+    CHECK(std::get<runtime::JniLong>(
+              fields.GetStatic(*owner_identity, *wide_id, 1U)) ==
+          INT64_C(0x1122334455667788));
+    fields.SetStatic(*owner_identity, *stage_id, runtime::JniInt{9}, 1U);
+    CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;", "getStage") ==
+          9);
 }
 
 TEST_CASE("minimal Application startup preserves order identity and native loads") {

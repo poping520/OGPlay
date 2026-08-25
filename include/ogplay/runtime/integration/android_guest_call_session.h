@@ -28,6 +28,7 @@ namespace ogplay::runtime {
 namespace dexvm { class NioRuntime; }
 
 class JniInvocationEngine;
+class JniNativeRegistry;
 class JniStringStore;
 class JniFieldStore;
 class JniGuestObjectRegistry;
@@ -273,7 +274,8 @@ public:
     AndroidGuestProcess& operator=(const AndroidGuestProcess&) = delete;
 
     [[nodiscard]] A32GuestCallResult Invoke(const A32GuestCallFrame& frame);
-    [[nodiscard]] A32GuestCallResult InvokeRegisteredNative(
+    [[nodiscard]] std::optional<A32GuestCallResult>
+    TryInvokeRegisteredNative(
         JniObjectIdentity java_class, std::string_view name,
         std::string_view descriptor, const A32GuestCallFrame& frame);
     void PrepareDexVmThread(std::uint64_t thread_id,
@@ -284,6 +286,8 @@ public:
     [[nodiscard]] JniEnvironment& Environment() noexcept;
     [[nodiscard]] JniClassRegistry& Classes() noexcept;
     [[nodiscard]] JniInvocationEngine& Invocations() noexcept;
+    [[nodiscard]] JniFieldStore& Fields() noexcept;
+    [[nodiscard]] JniNativeRegistry& Natives() noexcept;
     [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
     [[nodiscard]] JniStringStore& Strings() noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;
@@ -362,7 +366,10 @@ public:
     AndroidGuestCallSession& operator=(const AndroidGuestCallSession&) = delete;
 
     [[nodiscard]] A32GuestCallResult Invoke(const A32GuestCallFrame& frame);
-    [[nodiscard]] A32GuestCallResult InvokeRegisteredNative(
+    // Empty means no RegisterNatives mapping. Once a target is resolved, any
+    // execution failure is propagated and must not be treated as a miss.
+    [[nodiscard]] std::optional<A32GuestCallResult>
+    TryInvokeRegisteredNative(
         JniObjectIdentity java_class, std::string_view name,
         std::string_view descriptor, const A32GuestCallFrame& frame);
     void PrepareDexVmThread(std::uint64_t thread_id,
@@ -373,6 +380,8 @@ public:
     [[nodiscard]] JniEnvironment& Environment() noexcept;
     [[nodiscard]] JniClassRegistry& Classes() noexcept;
     [[nodiscard]] JniInvocationEngine& Invocations() noexcept;
+    [[nodiscard]] JniFieldStore& Fields() noexcept;
+    [[nodiscard]] JniNativeRegistry& Natives() noexcept;
     [[nodiscard]] JniGuestObjectRegistry& Objects() noexcept;
     [[nodiscard]] JniStringStore& Strings() noexcept;
     [[nodiscard]] JniPrimitiveArrayStore& Arrays() noexcept;

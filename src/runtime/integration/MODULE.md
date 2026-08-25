@@ -91,7 +91,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   receiver。普通对象发布 local reference 前登记精确 class，GC 清扫同步移除统一
   registry 映射。出向 native 调用按
   descriptor 编组 A32 soft-float 帧(r0=JNIEnv、r1=receiver/jclass、64 位偶对齐、
-  栈 8 字节对齐),解析顺序 RegisterNatives → `Java_` 导出名 → 记账明确失败;
+  栈 8 字节对齐),解析顺序 RegisterNatives → `Java_` 导出名 → 记账明确失败；
+  RegisterNatives 查找与目标执行必须分离，只有映射不存在时才允许继续查找导出，
+  已解析目标的 JNI/CPU/fault 异常必须保留原始原因向上报告，禁止伪装成未注册；
   入向把全部解释类/方法及 session 尚未拥有的 code-defined intrinsic 平台类注册进
   会话 `JniClassRegistry`(impl id `dexvm.m<id>`),
   所有非数组类共用递归注册路径并保留 intrinsic/application 边界上的完整父类链，
@@ -100,6 +102,11 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   并落入解释执行(第三路由)；class identity 注册不为每个 APK 类预占 JNI global
   reference，只有真实 static native 出向调用需要 jclass 时才按 owner 懒创建并缓存，
   避免大 DEX 在执行入口前耗尽全局引用表；解释器未捕获异常按 JNI 语义置 pending。
+  DVM-89 同一路径把 DEX 自有字段发布为 `dexvm.f<id>`，稳定映射 `JniFieldId` 到
+  `VmFieldId`；`GetFieldID/GetStaticFieldID` 先执行 DexVM 类初始化，instance/static
+  getter/setter 直接访问 `JavaObjectModel` 槽与 linker static storage，object/array 值
+  按调用线程在 `VmObjectRef` 与 JNI local reference 间转换。平台 HLE 字段未被 hook
+  接管时继续落入 `JniFieldStore`，禁止为 DEX 字段维护影子副本。
   每个 DexVM child 拥有独立 A32 CPU/stack、Bionic TLS/thread-info、process thread id、
   JNI attach 与逐调用 local frame；同线程重入继承 suspended SP/TLS，J/D 返回读取
   r0:r1。JNI monitor hooks 映射到 DexVM execution token 与对象身份，jclass 规范化为

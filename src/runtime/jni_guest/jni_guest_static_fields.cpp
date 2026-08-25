@@ -192,7 +192,8 @@ void BindGetter(JniGuestCallDispatcher& dispatcher,
          name](const JniGuestCallFrame& frame) {
             const auto java_class = ResolveClass(environment, frame, name);
             const auto field = ResolveTypedField(classes, frame, type, name);
-            return Encode(fields.GetStatic(java_class, field.id),
+            return Encode(fields.GetStatic(java_class, field.id,
+                                           frame.thread_id),
                           field.type.kind);
         });
 }
@@ -210,7 +211,8 @@ void BindSetter(JniGuestCallDispatcher& dispatcher,
             const auto java_class = ResolveClass(environment, frame, name);
             const auto field = ResolveTypedField(classes, frame, type, name);
             fields.SetStatic(java_class, field.id,
-                             Decode(frame, address_space, field.type.kind));
+                             Decode(frame, address_space, field.type.kind),
+                             frame.thread_id);
             return JniGuestCallResult{};
         });
 }
@@ -242,7 +244,8 @@ void BindInstanceGetter(
                 environment, objects, frame, name);
             const auto field = ResolveTypedField(classes, frame, type, name);
             return Encode(fields.GetInstance(
-                              object, receiver_class, field.id),
+                              object, receiver_class, field.id,
+                              frame.thread_id),
                           field.type.kind);
         });
 }
@@ -263,7 +266,8 @@ void BindInstanceSetter(
             const auto field = ResolveTypedField(classes, frame, type, name);
             fields.SetInstance(
                 object, receiver_class, field.id,
-                Decode(frame, address_space, field.type.kind));
+                Decode(frame, address_space, field.type.kind),
+                frame.thread_id);
             return JniGuestCallResult{};
         });
 }
@@ -277,10 +281,13 @@ void BindJniGuestStaticFieldSlots(JniGuestCallDispatcher& dispatcher,
                                   memory::AddressSpace& address_space) {
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetStaticFieldID"),
-        [&environment, &classes,
+        [&environment, &classes, &fields,
          &address_space](const JniGuestCallFrame& frame) {
             const auto java_class = ResolveClass(
                 environment, frame, "GetStaticFieldID");
+            if (!fields.EnsureClassInitialized(java_class, frame.thread_id)) {
+                return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
+            }
             const auto name = ReadCString(
                 address_space, memory::GuestAddress{frame.registers[2]},
                 frame.thread_id, "field name");
@@ -310,10 +317,13 @@ void BindJniGuestInstanceFieldSlots(
     JniGuestObjectRegistry& objects, memory::AddressSpace& address_space) {
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetFieldID"),
-        [&environment, &classes,
+        [&environment, &classes, &fields,
          &address_space](const JniGuestCallFrame& frame) {
             const auto java_class = ResolveClass(
                 environment, frame, "GetFieldID");
+            if (!fields.EnsureClassInitialized(java_class, frame.thread_id)) {
+                return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
+            }
             const auto name = ReadCString(
                 address_space, memory::GuestAddress{frame.registers[2]},
                 frame.thread_id, "field name");
@@ -325,7 +335,7 @@ void BindJniGuestInstanceFieldSlots(
             if (!field.has_value()) {
                 throw JniGuestBindingError(
                     "JNI guest instance field is not declared: " + name +
-                    descriptor);
+                    ":" + descriptor);
             }
             return JniGuestCallResult{
                 JniGuestReturnWidth::word, {field->Value(), 0U}};

@@ -66,7 +66,9 @@ IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
 #include "catalog.h"
 #include "shared.h"
 
+#include <array>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -84,6 +86,69 @@ namespace {
 
 [[noreturn]] void IoFailure(const IoRuntimeError &error) {
   throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
+}
+
+[[nodiscard]] std::string FixFileSlashes(const std::string_view path) {
+  std::string fixed;
+  fixed.reserve(path.size());
+  bool last_was_slash{};
+  for (const auto character : path) {
+    if (character == '/') {
+      if (!last_was_slash)
+        fixed.push_back('/');
+      last_was_slash = true;
+    } else {
+      fixed.push_back(character);
+      last_was_slash = false;
+    }
+  }
+  if (last_was_slash && fixed.size() > 1U)
+    fixed.pop_back();
+  return fixed;
+}
+
+[[nodiscard]] std::string ChildFilePath(
+    const std::optional<std::string_view> directory,
+    const std::string_view name) {
+  if (!directory.has_value() || directory->empty())
+    return FixFileSlashes(name);
+  if (name.empty())
+    return FixFileSlashes(*directory);
+  std::string joined(*directory);
+  if (joined.back() != '/' && name.front() != '/')
+    joined.push_back('/');
+  joined += name;
+  return FixFileSlashes(joined);
+}
+
+void SetFilePath(IntrinsicContext& call, const std::string_view path) {
+  call.vm.Model().InstanceSlots(call.receiver)[0] = {
+      call.vm.NewStringUtf8(FixFileSlashes(path)).Value(), SlotTag::ref};
+}
+
+[[nodiscard]] std::optional<VmValue> InvokeVirtual(
+    IntrinsicContext& context, const VmObjectRef receiver,
+    const std::string_view name, const std::string_view descriptor) {
+  if (!receiver.IsValid()) {
+    throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                      "virtual receiver == null"};
+  }
+  auto& linker = context.vm.Linker();
+  const auto java_class = context.vm.Model().ObjectClass(receiver);
+  const auto index = linker.FindVtableIndex(
+      java_class, std::string(name), std::string(descriptor));
+  if (!index.has_value()) {
+    throw VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                      std::string(name) + std::string(descriptor)};
+  }
+  const std::array arguments{VmValue::Ref(receiver)};
+  const auto outcome = context.vm.Call(
+      linker.Class(java_class).vtable[*index], arguments);
+  if (outcome.exception.IsValid()) {
+    context.vm.SetPendingException(outcome.exception);
+    return std::nullopt;
+  }
+  return outcome.value;
 }
 
 IntrinsicHandler OpenInputFromPath(const bool file_argument) {
@@ -139,22 +204,107 @@ IntrinsicHandler Flush(const bool close) {
 IntrinsicClassDecl DeclareFile() {
   auto builder =
       IntrinsicClassBuilder::Class("Ljava/io/File;", "Ljava/lang/Object;");
+  builder.ConstantInt("separatorChar", "C", '/', 0x0019U);
+  builder.ConstantString("separator", "/", 0x0019U);
+  builder.ConstantInt("pathSeparatorChar", "C", ':', 0x0019U);
+  builder.ConstantString("pathSeparator", ":", 0x0019U);
   builder.InstanceField("path", "Ljava/lang/String;");
   builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext &call) {
-    call.vm.Model().InstanceSlots(call.receiver)[0] = {
-        call.arguments[0].ref.Value(), SlotTag::ref};
+    if (!call.arguments[0].ref.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "path == null"};
+    }
+    SetFilePath(call, call.vm.StringUtf8(call.arguments[0].ref));
     return VmValue::Void();
   });
   builder.Constructor("(Ljava/lang/String;Ljava/lang/String;)V",
                       [](IntrinsicContext &call) {
-                        auto path = call.vm.StringUtf8(call.arguments[0].ref);
-                        if (!path.empty() && path.back() != '/')
-                          path += '/';
-                        path += call.vm.StringUtf8(call.arguments[1].ref);
-                        call.vm.Model().InstanceSlots(call.receiver)[0] = {
-                            call.vm.NewStringUtf8(path).Value(), SlotTag::ref};
+                        if (!call.arguments[1].ref.IsValid()) {
+                          throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                            "name == null"};
+                        }
+                        const auto name =
+                            call.vm.StringUtf8(call.arguments[1].ref);
+                        const auto directory = call.arguments[0].ref.IsValid()
+                            ? std::optional<std::string>(
+                                  call.vm.StringUtf8(call.arguments[0].ref))
+                            : std::nullopt;
+                        SetFilePath(call, ChildFilePath(
+                            directory.has_value()
+                                ? std::optional<std::string_view>(*directory)
+                                : std::nullopt,
+                            name));
                         return VmValue::Void();
                       });
+  builder.Constructor("(Ljava/io/File;Ljava/lang/String;)V",
+                      [](IntrinsicContext& call) {
+                        if (!call.arguments[1].ref.IsValid()) {
+                          throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                            "name == null"};
+                        }
+                        const auto name =
+                            call.vm.StringUtf8(call.arguments[1].ref);
+                        const auto directory = call.arguments[0].ref.IsValid()
+                            ? std::optional<std::string>(
+                                  FilePath(call, call.arguments[0].ref))
+                            : std::nullopt;
+                        SetFilePath(call, ChildFilePath(
+                            directory.has_value()
+                                ? std::optional<std::string_view>(*directory)
+                                : std::nullopt,
+                            name));
+                        return VmValue::Void();
+                      });
+  builder.Constructor("(Ljava/net/URI;)V", [](IntrinsicContext& call) {
+    const auto uri = call.arguments[0].ref;
+    if (!uri.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "uri == null"};
+    }
+    const auto absolute = InvokeVirtual(call, uri, "isAbsolute", "()Z");
+    if (!absolute.has_value()) return VmValue::Void();
+    if (absolute->AsInt() == 0) {
+      throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                        "URI is not absolute"};
+    }
+    const auto raw_ssp = InvokeVirtual(
+        call, uri, "getRawSchemeSpecificPart", "()Ljava/lang/String;");
+    if (!raw_ssp.has_value()) return VmValue::Void();
+    if (!raw_ssp->ref.IsValid() ||
+        !call.vm.StringUtf8(raw_ssp->ref).starts_with('/')) {
+      throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                        "URI is not hierarchical"};
+    }
+    const auto scheme = InvokeVirtual(
+        call, uri, "getScheme", "()Ljava/lang/String;");
+    if (!scheme.has_value()) return VmValue::Void();
+    if (!scheme->ref.IsValid() || call.vm.StringUtf8(scheme->ref) != "file") {
+      throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                        "Expected file scheme in URI"};
+    }
+    const auto raw_path = InvokeVirtual(
+        call, uri, "getRawPath", "()Ljava/lang/String;");
+    if (!raw_path.has_value()) return VmValue::Void();
+    if (!raw_path->ref.IsValid() ||
+        call.vm.StringUtf8(raw_path->ref).empty()) {
+      throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                        "Expected non-empty path in URI"};
+    }
+    for (const auto [name, descriptor] : {
+             std::pair{"getRawAuthority", "()Ljava/lang/String;"},
+             std::pair{"getRawQuery", "()Ljava/lang/String;"},
+             std::pair{"getRawFragment", "()Ljava/lang/String;"}}) {
+      const auto component = InvokeVirtual(call, uri, name, descriptor);
+      if (!component.has_value()) return VmValue::Void();
+      if (component->ref.IsValid()) {
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                          std::string("Unexpected URI component: ") + name};
+      }
+    }
+    const auto path = InvokeVirtual(
+        call, uri, "getPath", "()Ljava/lang/String;");
+    if (!path.has_value()) return VmValue::Void();
+    SetFilePath(call, call.vm.StringUtf8(path->ref));
+    return VmValue::Void();
+  });
   builder.FinalMethod("exists", "()Z", [](IntrinsicContext &call) {
     return VmValue::Int(
         call.vm.IO().Stat(FilePath(call, call.receiver)).has_value());

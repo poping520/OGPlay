@@ -961,11 +961,16 @@ public:
         }
     }
 
-    A32GuestCallResult InvokeRegisteredNative(
+    [[nodiscard]] std::optional<A32GuestCallResult>
+    TryInvokeRegisteredNative(
         const JniObjectIdentity java_class, const std::string_view name,
         const std::string_view descriptor, const A32GuestCallFrame& frame) {
-        return Invoke(ResolveJniRegisteredNativeCall(
-            natives_, java_class, name, descriptor, frame));
+        const auto target = natives_.Resolve(
+            java_class, std::string(name), std::string(descriptor));
+        if (!target.has_value()) return std::nullopt;
+        auto resolved = frame;
+        resolved.target = *target;
+        return Invoke(resolved);
     }
 
     bool HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
@@ -1233,6 +1238,8 @@ public:
     JniEnvironment& Environment() noexcept { return environment_; }
     JniClassRegistry& Classes() noexcept { return classes_; }
     JniInvocationEngine& Invocations() noexcept { return invocations_; }
+    JniFieldStore& Fields() noexcept { return fields_; }
+    JniNativeRegistry& Natives() noexcept { return natives_; }
     JniGuestObjectRegistry& Objects() noexcept { return objects_; }
     JniStringStore& Strings() noexcept { return strings_; }
     JniPrimitiveArrayStore& Arrays() noexcept { return arrays_; }
@@ -1641,12 +1648,13 @@ A32GuestCallResult AndroidGuestProcess::Invoke(
             std::string(error.what()));
     }
 }
-A32GuestCallResult AndroidGuestProcess::InvokeRegisteredNative(
+std::optional<A32GuestCallResult>
+AndroidGuestProcess::TryInvokeRegisteredNative(
     const JniObjectIdentity java_class, const std::string_view name,
     const std::string_view descriptor, const A32GuestCallFrame& frame) {
     try {
-        return impl_->InvokeRegisteredNative(java_class, name, descriptor,
-                                             frame);
+        return impl_->TryInvokeRegisteredNative(java_class, name, descriptor,
+                                                frame);
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
@@ -1669,6 +1677,10 @@ JniEnvironment& AndroidGuestProcess::Environment() noexcept { return impl_->Envi
 JniClassRegistry& AndroidGuestProcess::Classes() noexcept { return impl_->Classes(); }
 JniInvocationEngine& AndroidGuestProcess::Invocations() noexcept {
     return impl_->Invocations();
+}
+JniFieldStore& AndroidGuestProcess::Fields() noexcept { return impl_->Fields(); }
+JniNativeRegistry& AndroidGuestProcess::Natives() noexcept {
+    return impl_->Natives();
 }
 JniGuestObjectRegistry& AndroidGuestProcess::Objects() noexcept {
     return impl_->Objects();
@@ -1813,11 +1825,12 @@ A32GuestCallResult AndroidGuestCallSession::Invoke(
         throw AndroidGuestCallSessionError(error.what());
     }
 }
-A32GuestCallResult AndroidGuestCallSession::InvokeRegisteredNative(
+std::optional<A32GuestCallResult>
+AndroidGuestCallSession::TryInvokeRegisteredNative(
     const JniObjectIdentity java_class, const std::string_view name,
     const std::string_view descriptor, const A32GuestCallFrame& frame) {
     try {
-        return process_->InvokeRegisteredNative(
+        return process_->TryInvokeRegisteredNative(
             java_class, name, descriptor, frame);
     } catch (const AndroidGuestCallSessionError&) {
         throw;
@@ -1838,6 +1851,8 @@ memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept { ret
 JniEnvironment& AndroidGuestCallSession::Environment() noexcept { return process_->Environment(); }
 JniClassRegistry& AndroidGuestCallSession::Classes() noexcept { return process_->Classes(); }
 JniInvocationEngine& AndroidGuestCallSession::Invocations() noexcept { return process_->Invocations(); }
+JniFieldStore& AndroidGuestCallSession::Fields() noexcept { return process_->Fields(); }
+JniNativeRegistry& AndroidGuestCallSession::Natives() noexcept { return process_->Natives(); }
 JniGuestObjectRegistry& AndroidGuestCallSession::Objects() noexcept { return process_->Objects(); }
 JniStringStore& AndroidGuestCallSession::Strings() noexcept { return process_->Strings(); }
 JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept { return process_->Arrays(); }

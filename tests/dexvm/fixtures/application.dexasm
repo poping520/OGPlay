@@ -94,7 +94,15 @@
 
 .field static public instances:I
 .field static public stage:I
+.field static public wide:J
 .field public imported:I
+.field public flag:Z
+.field public small:B
+.field public letter:C
+.field public shortValue:S
+.field public ratio:F
+.field public precise:D
+.field public peer:Ljava/lang/Object;
 
 .method public constructor <init>()V
 .registers 2
@@ -150,6 +158,15 @@
 .registers 1
     sget v0, Lfixture/LauncherActivity;->stage:I
     return v0
+.end method
+
+.class public Lfixture/LauncherChildActivity;
+.super Lfixture/LauncherActivity;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/LauncherActivity;-><init>()V
+    return-void
 .end method
 
 .class public Lfixture/ClinitLoadingActivity;

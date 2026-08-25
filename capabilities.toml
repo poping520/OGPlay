@@ -818,7 +818,7 @@ note = "M8 WU-M8-002 将 ARM32 RegisterNatives/UnregisterNatives 以整批预检
 [runtime.jni_guest_instance_fields]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "M8 WU-M8-003 绑定 GetFieldID 与 Object/Boolean/Byte/Char/Short/Int/Long/Float/Double 的 9 对 instance getter/setter 共 19 槽；receiver 先经当前 JNIEnv resolve 再由 JniGuestObjectRegistry 取 class，field ID/descriptor/kind 与 static 严格分离，long/double 遵循 A32 soft-float word-pair 与对齐栈 ABI。不含 reflection field 与 ID 缓存失效语义"
+note = "M8 WU-M8-003 绑定 GetFieldID 与 Object/Boolean/Byte/Char/Short/Int/Long/Float/Double 的 9 对 instance getter/setter 共 19 槽；receiver 先经当前 JNIEnv resolve 再由 JniGuestObjectRegistry 取 class，field ID/descriptor/kind 与 static 严格分离，long/double 遵循 A32 soft-float word-pair 与对齐栈 ABI。DVM-89 将 DEX 自有字段发布到同一 registry，并让 JNI instance/static 访问与解释器共享对象槽/linker static storage；引用值保持 VmObjectRef 身份并按调用线程发布 local reference。不含 reflection field 与 ID 缓存失效语义"
 
 [runtime.jni_guest_utf16_strings]
 status = "complete"
@@ -878,7 +878,7 @@ note = "M5 WU-0276 批量闭合 10 种返回类型的 CallStatic*Method/V/A 共 
 [runtime.jni_guest_static_field_family]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp"
-note = "M8 WU-0366 批量闭合 GetStaticFieldID 与 9 对 getter/setter 共 19 个槽；统一 registry/field store 严格校验 descriptor、static kind 与 class，64 位 setter 第 4 参数遵循 A32 soft-float 栈 ABI"
+note = "M8 WU-0366 批量闭合 GetStaticFieldID 与 9 对 getter/setter 共 19 个槽；统一 registry/field store 严格校验 descriptor、static kind 与 class，64 位 setter 第 4 参数遵循 A32 soft-float 栈 ABI。DVM-89 让 DEX static 字段直接使用 linker static storage，并在 GetStaticFieldID 前执行类初始化；平台 HLE static 字段继续使用原 field store。"
 
 [runtime.jni_guest_framework_objects]
 status = "complete"
@@ -1298,7 +1298,7 @@ note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder
 [dexvm.jni_bridge]
 status = "complete"
 test = "tests/dexvm/interpreter_tests.cpp; tests/runtime/jni_class_registry_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Asphalt 6 DVM-26 exact bootstrap"
-note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回；DexVM ClassObject 与 JNI jclass 双向规范化为同一身份，JNI_OnLoad 可把 jclass 用作 Class instance receiver。DVM-82 绑定 NewDirectByteBuffer/GetDirectBufferAddress/GetDirectBufferCapacity，校验 guest range 并与 Java Buffer 共享 NioRuntime identity/address/capacity。"
+note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三路由；DVM-50 按 execution context 选择独立 native thread，逐调用建立 JNI local frame，并从 r0:r1 解码 J/D 返回；DexVM ClassObject 与 JNI jclass 双向规范化为同一身份，JNI_OnLoad 可把 jclass 用作 Class instance receiver。DVM-82 绑定 NewDirectByteBuffer/GetDirectBufferAddress/GetDirectBufferCapacity，校验 guest range 并与 Java Buffer 共享 NioRuntime identity/address/capacity。DVM-89 发布 DEX 字段并以稳定 JniFieldId→VmFieldId 路由共享 instance/static 槽，GetFieldID 家族遵循类初始化，primitive/wide/reference 双向读写不建立影子状态。"
 
 [dexvm.intrinsics_android_core]
 status = "partial"

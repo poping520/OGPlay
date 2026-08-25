@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-25 · DVM-80..88 验收补强与全量绿线
+更新：2026-08-25 · DVM-89 native 失败保真与 JNI 字段互通
 
 ## 当前阶段
 
@@ -33,15 +33,27 @@
   强边进入 GC trace；DVM-88 补齐 SocketFactory 常用创建面、NetworkRuntime teardown close、
   SQLiteHelper schema version 与 `onCreate/onUpgrade` 虚派，并仅将 VFS `Stat` ENOENT 视作新库。
   liblog message/structured field 共用未移动 tag，消除 C++ 参数求值顺序造成的空 tag。
+- **DVM-89**：DexVM 出向 native 先独立查询 RegisterNatives 映射，只有未命中才回退
+  `Java_` export；已注册目标的 guest CPU/JNI 执行异常保留原始原因，不再被二次误报为
+  `native method has no registered mapping or export`。DEX 自有 instance/static 字段发布到
+  同一 JNI registry，`GetFieldID` 家族按 AOSP Dalvik 语义先初始化类；JNI primitive、wide、
+  object/array 访问直接读写解释器对象槽/linker static storage，引用保持 `VmObjectRef`
+  identity 并按调用线程发布 local reference。平台 HLE 字段仍由原 field store 拥有。
+  DexVM identity 分配同时跳过已导入的同域 JNI identity，重复身份不再静默注册。
 
 ## 验证基线
 
 - `cmake --preset windows-msvc`：通过。
 - `cmake --build --preset windows-msvc --config Debug`：全部目标通过。
-- DVM-82/86/88 与 liblog 验收补强定向测试 20/20：通过。
-- architecture 6/6：通过。
-- 全量 `ctest --preset windows-msvc --output-on-failure`：991/991 通过；原 #575 liblog guest
-  tag 用例恢复为 `[guest] PVZ: ...`，当前 Windows 全量绿线。
+- DVM-89 JNI registry/field store/guest field ABI、DexVM class/object/field bridge 定向测试
+  10/10：通过；primitive/wide/reference、继承字段 ID、instance/static 双向可见均覆盖。
+- architecture 6/6：通过；本轮按要求未执行完整测试。此前 994/994 仅为字段互通改动前的
+  历史基线，不作为本轮结果。
+- Release `ogplay` 定向构建通过。PVZ 原 survey 已越过
+  `m_LoaderKeyboard:Lcom/ideaworks3d/marmalade/LoaderKeyboard;`，native 初始化继续并交付
+  managed surface callback；当前下一真实阻断为未解析平台静态字段
+  `Landroid/graphics/Bitmap$Config;->RGB_565:Landroid/graphics/Bitmap$Config;`。该 diagnostic
+  run 不作为兼容性结论。
 
 ## 下一步
 

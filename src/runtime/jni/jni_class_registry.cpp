@@ -173,6 +173,32 @@ public:
     return id;
   }
 
+  [[nodiscard]] JniFieldId
+  RegisterField(const JniObjectIdentity java_class,
+                const JniFieldDeclaration& declaration) {
+    ValidateMemberName(declaration.name);
+    if (declaration.implementation.empty()) InvalidMember();
+    JniTypeDescriptor type;
+    try {
+      type = ParseJniFieldDescriptor(declaration.descriptor);
+    } catch (const JniSignatureError& error) {
+      InvalidMember(error.what());
+    }
+    std::scoped_lock lock(mutex_);
+    if (java_class.domain != JniObjectDomain::host) UnknownClass();
+    const auto found = classes_.find(java_class.value);
+    if (found == classes_.end()) UnknownClass();
+    auto& entry = found->second;
+    const MemberKey key{declaration.name, declaration.descriptor};
+    if (entry.fields.contains(key)) DuplicateMember();
+    EnsureIds(0U, 1U);
+    const JniFieldId id{next_field_id_++};
+    entry.fields.emplace(key, id);
+    fields_.emplace(id.Value(), JniResolvedField{
+        java_class, id, declaration, std::move(type)});
+    return id;
+  }
+
   [[nodiscard]] std::optional<JniObjectIdentity>
   Find(const std::string &name) const {
         std::scoped_lock lock(mutex_);
@@ -329,6 +355,11 @@ JniMethodId
 JniClassRegistry::RegisterMethod(const JniObjectIdentity java_class,
                                  const JniMethodDeclaration &declaration) {
   return impl_->RegisterMethod(java_class, declaration);
+}
+JniFieldId
+JniClassRegistry::RegisterField(const JniObjectIdentity java_class,
+                                const JniFieldDeclaration& declaration) {
+  return impl_->RegisterField(java_class, declaration);
 }
 std::optional<JniObjectIdentity>
 JniClassRegistry::FindClass(const std::string &name) const {

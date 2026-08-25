@@ -83,6 +83,11 @@ public:
   [[nodiscard]] JniMethodId
   RegisterMethod(JniObjectIdentity java_class,
                  const JniMethodDeclaration &declaration);
+  // Adds one declared field to an existing class. DexVM uses this when a
+  // code-defined class shares an already-published platform class identity.
+  [[nodiscard]] JniFieldId
+  RegisterField(JniObjectIdentity java_class,
+                const JniFieldDeclaration& declaration);
   [[nodiscard]] std::optional<JniObjectIdentity>
   FindClass(const std::string &name) const;
   [[nodiscard]] std::optional<JniObjectIdentity>

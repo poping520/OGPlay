@@ -6,6 +6,7 @@
 #include <limits>
 #include <numbers>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -17,6 +18,13 @@
 namespace ogplay::runtime::detail {
 namespace {
 constexpr std::size_t kMaximumMatrixStackDepth = 32;
+[[nodiscard]] std::string TextureTargetMessage(
+    const std::uint32_t target) {
+    std::ostringstream stream;
+    stream << "GLES1 texture target must be GL_TEXTURE_2D, got 0x" << std::hex
+           << target;
+    return stream.str();
+}
 [[nodiscard]] std::size_t HintIndex(const std::uint32_t target) {
     switch (target) {
     case 0x0C50U: return 0;  // GL_PERSPECTIVE_CORRECTION_HINT
@@ -340,7 +348,7 @@ std::uint32_t AndroidBoundaryGles1State::ActiveTexture() const noexcept {
 void AndroidBoundaryGles1State::ValidateTextureTarget(
     const std::uint32_t target) const {
     if (target != 0x0DE1U) {
-        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+        throw std::invalid_argument(TextureTargetMessage(target));
     }
 }
 
@@ -353,7 +361,7 @@ void AndroidBoundaryGles1State::BindTexture(
 std::uint32_t AndroidBoundaryGles1State::BoundTexture(
     const std::uint32_t target) const {
     if (target != 0x0DE1U) {
-        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+        throw std::invalid_argument(TextureTargetMessage(target));
     }
     return shared_->BoundTexture(target);
 }
@@ -366,7 +374,7 @@ void AndroidBoundaryGles1State::DeleteTextures(
 void AndroidBoundaryGles1State::SetTextureBaseFormat(
     const std::uint32_t target, const std::uint32_t format) {
     if (target != 0x0DE1U) {
-        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+        throw std::invalid_argument(TextureTargetMessage(target));
     }
     shared_->SetTextureBaseFormat(target, format);
 }
@@ -379,7 +387,7 @@ std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
 std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
     const std::uint32_t texture_unit, const std::uint32_t target) const {
     if (target != 0x0DE1U) {
-        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+        throw std::invalid_argument(TextureTargetMessage(target));
     }
     if (texture_unit < 0x84C0U || texture_unit > 0x84DFU) {
         throw std::invalid_argument(
@@ -391,7 +399,7 @@ std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
 void AndroidBoundaryGles1State::SetGenerateMipmap(
     const std::uint32_t target, const bool enabled) {
     if (target != 0x0DE1U) {
-        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+        throw std::invalid_argument(TextureTargetMessage(target));
     }
     shared_->SetGenerateMipmap(target, enabled);
 }
@@ -399,7 +407,7 @@ void AndroidBoundaryGles1State::SetGenerateMipmap(
 bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
     const std::uint32_t target) const {
     if (target != 0x0DE1U) {
-        throw std::invalid_argument("GLES1 texture target must be GL_TEXTURE_2D");
+        throw std::invalid_argument(TextureTargetMessage(target));
     }
     return shared_->GenerateMipmapEnabled(target);
 }

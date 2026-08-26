@@ -1536,7 +1536,8 @@ TEST_CASE("GLES1 shade model state validates and resets") {
     CHECK_FALSE(state.TextureBaseFormat(0x0DE1U).has_value());
     CHECK_THROWS_WITH_AS(
         state.SetGenerateMipmap(0U, true),
-        "GLES1 texture target must be GL_TEXTURE_2D", std::invalid_argument);
+        "GLES1 texture target must be GL_TEXTURE_2D, got 0x0",
+        std::invalid_argument);
     CHECK_THROWS_WITH_AS(
         state.SetCapability(0U, true), "GLES1 capability is invalid",
         std::invalid_argument);

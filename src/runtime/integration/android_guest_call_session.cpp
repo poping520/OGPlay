@@ -1148,12 +1148,17 @@ public:
         }
         if (state->boundary) {
             const auto address = boundary_.Symbols().Lookup(state->library, name);
-            if (!address.has_value()) {
-                throw loader::LinkError("dlsym could not find " +
-                                        std::string(name) + " in " +
-                                        state->library);
-            }
-            return address->Value();
+            if (address.has_value()) return address->Value();
+            // KitKat keeps dlsym(handle) single-library, but engines of that
+            // era query GLES2 entry points through the GLES1/host wrapper
+            // handles whose real-device counterparts re-export the whole GL
+            // surface, so a sealed module miss resolves process-wide before
+            // the explicit failure.
+            const auto anywhere = boundary_.Symbols().LookupAny(name);
+            if (anywhere.has_value()) return anywhere->Value();
+            throw loader::LinkError("dlsym could not find " +
+                                    std::string(name) + " in " +
+                                    state->library + " or the sealed boundary");
         }
         return loader::LookupElf32Symbol(
                    loaded_.link_namespace, *state->scope, name)

@@ -144,6 +144,8 @@ constexpr std::uint32_t kLibdlEglGetProcAddressOffset = 0x740U;
 constexpr std::uint32_t kLibdlMemcpyOffset = 0x770U;
 constexpr std::uint32_t kLibdlPropertyAreaOffset = 0x790U;
 constexpr std::uint32_t kLibdlMissingOffset = 0x7c0U;
+constexpr std::uint32_t kLibdlGles1Offset = 0x7e0U;
+constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
 
 [[nodiscard]] std::uint32_t LibdlFixtureAddress(
     const std::uint32_t offset) {
@@ -178,6 +180,8 @@ constexpr std::uint32_t kLibdlMissingOffset = 0x7c0U;
     put_string(kLibdlMemcpyOffset, "memcpy");
     put_string(kLibdlPropertyAreaOffset, "__system_property_area__");
     put_string(kLibdlMissingOffset, "missing_symbol");
+    put_string(kLibdlGles1Offset, "libGLESv1_CM.so");
+    put_string(kLibdlGlVertexPointerOffset, "glVertexPointer");
     return bytes;
 }
 
@@ -468,6 +472,57 @@ TEST_CASE("libdl process service exposes RTLD_DEFAULT and the host GL alias") {
     // counted reference.
     CHECK(invoke("dlclose", {0xffffffffU, 0U, 0U, 0U}) == 0U);
     CHECK(invoke("dlclose", {hgl, 0U, 0U, 0U}) == 0U);
+    process->Stop();
+}
+
+TEST_CASE("libdl boundary handle lookups fall back to the sealed surface") {
+    auto libc = LibdlDefaultLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
+
+    const auto hle_symbols =
+        ogplay::runtime::detail::BuildAndroidBoundarySymbols(
+            ogplay::runtime::AndroidApi::api19);
+    const auto hle_address = [&](const std::string_view library,
+                                 const std::string_view symbol) {
+        const auto found = std::ranges::find_if(
+            hle_symbols, [&](const ogplay::runtime::BionicHleSymbol& entry) {
+                return entry.library == library && entry.symbol == symbol;
+            });
+        REQUIRE(found != hle_symbols.end());
+        return found->address.Value();
+    };
+    const auto invoke = [&](const std::string_view entry,
+                            const std::array<std::uint32_t, 4> registers) {
+        return process
+            ->Invoke({ogplay::memory::GuestAddress{
+                          hle_address("libdl.so", entry)},
+                      registers, {}})
+            .return_value;
+    };
+
+    // Engines of the KitKat era query GLES2 entry points through the GLES1
+    // handle; its own exports keep precedence and misses cross the sealed
+    // surface instead of failing.
+    const auto gles1 = invoke("dlopen",
+                              {LibdlFixtureAddress(kLibdlGles1Offset), 2U, 0U,
+                               0U});
+    REQUIRE(gles1 != 0U);
+    REQUIRE(gles1 != 0xffffffffU);
+    CHECK(invoke("dlsym",
+                 {gles1,
+                  LibdlFixtureAddress(kLibdlGlVertexPointerOffset), 0U, 0U}) ==
+          hle_address("libGLESv1_CM.so", "glVertexPointer"));
+    CHECK(invoke("dlsym",
+                 {gles1, LibdlFixtureAddress(kLibdlGlCreateShaderOffset), 0U,
+                  0U}) == hle_address("libGLESv2.so", "glCreateShader"));
+    CHECK(invoke("dlsym", {gles1,
+                          LibdlFixtureAddress(kLibdlMissingOffset), 0U,
+                          0U}) == 0U);
+    CHECK(invoke("dlclose", {gles1, 0U, 0U, 0U}) == 0U);
     process->Stop();
 }
 

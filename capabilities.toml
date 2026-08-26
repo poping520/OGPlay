@@ -993,7 +993,12 @@ note = "M5 WU-0272 闭合 legacy 状态；WU-0284 增加格式敏感 texture env
 [runtime.gles1_client_array_draw]
 status = "partial"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK one-frame run-apk smoke"
-note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；仍限两个 stage、light0 与近似 normal matrix"
+note = "M5 WU-0274 闭合目标 client-array/draw 并获得首帧；WU-0285 支持两个启用单元逐级 draw，并让 lighting alpha 遵循 diffuse material alpha；WU-0291 复用 client/index 暂存并以验证候选原子提交 pointer 状态；BND-27 对单 stage 唯一错位坐标数组作受检回退并拒绝多 stage 共享；仍限两个 stage、light0 与近似 normal matrix"
+
+[runtime.gles1_texture_coordinate_resolution]
+status = "complete"
+test = "GLES1 single-stage texture coordinate fallback is unique and optional; GLES1 high sampled unit uses the unique unit-zero coordinate array; Android boundary publishes GLES1 core without silent handlers"
+note = "BND-27 将 sampled stage 与 coordinate array 来源分离：own-first，单 stage 仅在全局唯一有效 array 时回退，多 stage 缺失自有 array 明确失败；兼容策略可关闭且关闭即失败，跨 GLES2 GL_TEXTURE31 游标的真实 ANGLE readback 已覆盖"
 
 [runtime.jni_guest_array_length]
 status = "complete"

@@ -33,7 +33,8 @@ struct Gles1ClientArray final {
 
 class AndroidBoundaryGles1DrawState final {
 public:
-    AndroidBoundaryGles1DrawState();
+    explicit AndroidBoundaryGles1DrawState(
+        bool allow_single_stage_texcoord_fallback = true);
     void Reset() noexcept;
     void SetEnabled(std::uint32_t array, std::uint32_t client_texture,
                     bool enabled);
@@ -52,6 +53,10 @@ public:
     void SetCurrentPaletteMatrix(std::uint32_t index);
     static void ValidateCurrentPaletteMatrix(std::uint32_t index);
     [[nodiscard]] std::uint32_t CurrentPaletteMatrix() const noexcept;
+    [[nodiscard]] std::array<std::uint32_t,
+                             kGles1MaximumDrawTextureUnits>
+    ResolveTextureCoordinateUnits(
+        std::span<const std::uint32_t> texture_units) const;
 
     void DrawArrays(gles::AngleFrame& frame,
                     const AndroidBoundaryGles1State& core,
@@ -104,6 +109,7 @@ private:
     std::vector<std::byte> element_staging_;
     std::vector<std::uint16_t> draw_array_indices_;
     std::uint32_t current_palette_matrix_{};
+    bool allow_single_stage_texcoord_fallback_{true};
 };
 
 [[nodiscard]] std::optional<bool> Gles1ClientStateEnabled(

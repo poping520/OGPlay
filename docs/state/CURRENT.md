@@ -1,9 +1,12 @@
 # 当前状态
 
-更新：DVM-91 ParcelFileDescriptor / 媒体数据源区间能力栈完成（未提交）
+更新：BND-27 GLES1 单 stage 纹理坐标解析与 DVM-91 媒体数据源栈完成（未提交）
 
 ## 当前阶段
 
+- **BND-27**：fixed draw 将采样 stage 与 coordinate array 来源分开解析；优先 stage 自有
+  array，单 stage 且全局只有一个有效 array 时受检回退，多 stage 禁止共享。GLES1/GLES2
+  `active_texture` 仍按同一 EGL context 的 `SharedGlState` 有意共享，不复制第二份状态。
 - **DVM-91**：core `IoRuntime` 新增不含宿主/native fd 的逻辑 FileDescriptor
   `{vfs_path|apk_entry, source, base_offset, closed}`；发布 `FileDescriptor.valid()` 与
   `FileInputStream.getFD()`。PFD.open 只接受真实存在的只读 VFS 文件；AFD ctor/getter/close
@@ -27,6 +30,11 @@
 
 ## 本轮验证
 
+- BND-27 Windows Debug/Release 全目标构建通过；解析策略、既有双 stage、真实 ANGLE
+  `GL_TEXTURE31`→unit0 coordinate array 定向 3/3 通过。
+- PVZ Release 无 survey 实跑取得 sequence=5976 的 800×480 presented PNG：标题、角色与
+  UI 纹理正常显示，黑屏消失；继续运行无 guest fault。Ctrl-C 后仍停在 `App Suspend`，
+  本轮按精确 PID 终止，沿用已记录的独立 teardown 观察。
 - Windows Debug/Release 全目标构建通过，包含 `ogplay`、`ogplay-gui` 与 `ogplay_tests`。
 - FD/AFD/openFd、FileInputStream.getFD、MediaPlayer 第二段 Ogg 区间、MP3、SoundPool、
   AudioTrack、legacy Java audio 与 OpenSL 定向 16/16 通过。
@@ -44,7 +52,7 @@
 
 ## 下一步
 
-1. 用户确认后提交 DVM-91；当前按要求保持未提交。
+1. 用户确认后提交 DVM-91/BND-27；当前按要求保持未提交。
 2. 通用闭合 A6 DT_SONAME identity 与 DH 当前启动阻断，复验 DVM-47/threaded title gate。
 3. 执行 Linux M9 严格出口复验；后续 framework 长尾只按无 survey reached gap 排序。
 

@@ -51,12 +51,15 @@ public:
     explicit BoundaryFixture(
         const std::uint32_t supersample_factor = 1,
         std::vector<ogplay::runtime::OpenSlesGuestCallback>* callbacks = nullptr,
-        const ogplay::runtime::BionicDynamicLinkHooks dynamic_link = {})
+        const ogplay::runtime::BionicDynamicLinkHooks dynamic_link = {},
+        const bool allow_single_stage_texcoord_fallback = true)
         : bus(memory), cpu(bus), boundary(memory,
               {kNativeRenderer,
                ogplay::gles::AngleDevice::hardware}, 4, 3,
               supersample_factor,
-              {.logger = &logger,
+              {.allow_gles1_single_stage_texcoord_fallback =
+                   allow_single_stage_texcoord_fallback,
+               .logger = &logger,
                .guest_file_owner = &guest_files,
                .read_guest_file = +[](void* owner, const std::string_view path,
                                       std::vector<std::byte>& output) {
@@ -2032,6 +2035,35 @@ TEST_CASE("GLES1 client array state validates texture units and resets") {
     check_defaults();
 }
 
+TEST_CASE("GLES1 single-stage texture coordinate fallback is unique and optional") {
+    using namespace ogplay::runtime::detail;
+    AndroidBoundaryGles1DrawState compatible;
+    compatible.SetEnabled(kGles1TextureCoordArray, 0x84C0U, true);
+    CHECK(compatible.ResolveTextureCoordinateUnits(
+              std::array<std::uint32_t, 1>{0x84DFU}) ==
+          std::array<std::uint32_t, 2>{0x84C0U, 0U});
+
+    compatible.SetEnabled(kGles1TextureCoordArray, 0x84DFU, true);
+    CHECK(compatible.ResolveTextureCoordinateUnits(
+              std::array<std::uint32_t, 1>{0x84DFU}) ==
+          std::array<std::uint32_t, 2>{0x84DFU, 0U});
+    compatible.SetEnabled(kGles1TextureCoordArray, 0x84DFU, false);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(compatible.ResolveTextureCoordinateUnits(
+            std::array<std::uint32_t, 2>{0x84C1U, 0x84DFU})),
+        "GLES1 multi-stage draw has no texture coordinate array for one "
+        "sampled unit; coordinate arrays cannot be shared",
+        std::runtime_error);
+
+    AndroidBoundaryGles1DrawState strict(false);
+    strict.SetEnabled(kGles1TextureCoordArray, 0x84C0U, true);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(strict.ResolveTextureCoordinateUnits(
+            std::array<std::uint32_t, 1>{0x84DFU})),
+        "GLES1 single-stage texture coordinate array fallback is disabled",
+        std::runtime_error);
+}
+
 TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     BoundaryFixture fixture;
     CHECK(ogplay::gles::GlesFunctionCount(ogplay::gles::GlesApi::gles1) == 145);
@@ -2796,6 +2828,91 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glClearDepthx", {0x00010000U}),
         "glClearDepthx has no current ANGLE frame", std::runtime_error);
+}
+
+TEST_CASE("GLES1 high sampled unit uses the unique unit-zero coordinate array") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    CHECK(fixture.Call("libGLESv1_CM.so", "glViewport",
+                       {0U, 0U, 4U, 3U}) == 0U);
+
+    const auto texture_name = fixture.output.Add(0x300U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGenTextures",
+                       {1U, texture_name.Value()}) == 0U);
+    const auto texture = fixture.bus.Read32(texture_name, 1U);
+    REQUIRE(texture != 0U);
+    CHECK(fixture.Call("libGLESv2.so", "glActiveTexture", {0x84DFU}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
+                       {0x0DE1U, texture}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteri",
+                       {0x0DE1U, 0x2800U, 0x2600U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteri",
+                       {0x0DE1U, 0x2801U, 0x2600U}) == 0U);
+    const auto pixels = fixture.output.Add(0x320U);
+    const std::array<std::byte, 8> texture_pixels{
+        std::byte{}, std::byte{}, std::byte{}, std::byte{0xff},
+        std::byte{0xff}, std::byte{}, std::byte{}, std::byte{0xff}};
+    fixture.memory.Write(pixels, texture_pixels, 1U);
+    fixture.bus.Write32(fixture.stack, 1U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(4U), 0U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(8U), 0x1908U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(12U), 0x1401U, 1U);
+    fixture.bus.Write32(fixture.stack.Add(16U), pixels.Value(), 1U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glTexImage2D",
+                       {0x0DE1U, 0U, 0x1908U, 2U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x0DE1U}) == 0U);
+    CHECK(fixture.Call(
+              "libGLESv1_CM.so", "glTexEnvi",
+              {ogplay::runtime::detail::kGles1TextureEnvironment,
+               ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+               0x1E01U}) == 0U);
+
+    const auto vertices = fixture.output.Add(0x380U);
+    constexpr std::array vertex_values{
+        -1.0F, -1.0F, 0.0F, 1.0F, -1.0F, 0.0F, 0.0F, 1.0F, 0.0F};
+    for (std::size_t index = 0; index < vertex_values.size(); ++index) {
+        fixture.bus.Write32(
+            vertices.Add(index * sizeof(std::uint32_t)),
+            std::bit_cast<std::uint32_t>(vertex_values[index]), 1U);
+    }
+    const auto texcoords = fixture.output.Add(0x3C0U);
+    for (std::size_t vertex = 0; vertex < 3U; ++vertex) {
+        fixture.bus.Write32(
+            texcoords.Add(vertex * 2U * sizeof(std::uint32_t)),
+            std::bit_cast<std::uint32_t>(0.75F), 1U);
+        fixture.bus.Write32(
+            texcoords.Add((vertex * 2U + 1U) * sizeof(std::uint32_t)),
+            0U, 1U);
+    }
+    CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
+                       {3U, 0x1406U, 0U, vertices.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                       {ogplay::runtime::detail::kGles1VertexArray}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClientActiveTexture",
+                       {0x84C0U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glTexCoordPointer",
+                       {2U, 0x1406U, 0U, texcoords.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                       {ogplay::runtime::detail::kGles1TextureCoordArray}) ==
+          0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClearColor",
+                       {0U, 0U, 0U,
+                        std::bit_cast<std::uint32_t>(1.0F)}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClear", {0x00004000U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                       {0x0004U, 0U, 3U}) == 0U);
+    fixture.boundary.PresentManagedSurface();
+    const auto frame = fixture.boundary.TakeLatestFrame();
+    REQUIRE(frame.has_value());
+    bool found_red_pixel{};
+    for (std::size_t pixel = 0; pixel < frame->rgba8.size(); pixel += 4U) {
+        found_red_pixel |= frame->rgba8[pixel] > 200U &&
+                           frame->rgba8[pixel + 1U] < 20U &&
+                           frame->rgba8[pixel + 2U] < 20U;
+    }
+    CHECK(found_red_pixel);
+    fixture.boundary.CloseManagedSurface();
 }
 
 TEST_CASE("GLES1 cube map textures bind upload and sample the fixed pipeline") {

@@ -231,7 +231,12 @@ void AndroidBoundaryGles1DrawState::Reset() noexcept {
     programs_ = {};
     current_palette_matrix_ = 0U;
 }
-AndroidBoundaryGles1DrawState::AndroidBoundaryGles1DrawState() { Reset(); }
+AndroidBoundaryGles1DrawState::AndroidBoundaryGles1DrawState(
+    const bool allow_single_stage_texcoord_fallback)
+    : allow_single_stage_texcoord_fallback_(
+          allow_single_stage_texcoord_fallback) {
+    Reset();
+}
 
 void AndroidBoundaryGles1DrawState::SetEnabled(
     const std::uint32_t array, const std::uint32_t client_texture,
@@ -321,6 +326,50 @@ void AndroidBoundaryGles1DrawState::ValidateCurrentPaletteMatrix(
 
 std::uint32_t AndroidBoundaryGles1DrawState::CurrentPaletteMatrix() const noexcept {
     return current_palette_matrix_;
+}
+
+std::array<std::uint32_t, kGles1MaximumDrawTextureUnits>
+AndroidBoundaryGles1DrawState::ResolveTextureCoordinateUnits(
+    const std::span<const std::uint32_t> texture_units) const {
+    std::array<std::uint32_t, kGles1MaximumDrawTextureUnits> resolved{};
+    for (std::size_t stage = 0; stage < texture_units.size(); ++stage) {
+        const auto texture = texture_units[stage];
+        if (Array(kGles1TextureCoordArray, texture).enabled) {
+            resolved[stage] = texture;
+            continue;
+        }
+        std::optional<std::uint32_t> unique_enabled;
+        bool ambiguous{};
+        for (auto candidate = kTexture0; candidate <= 0x84DFU; ++candidate) {
+            if (!Array(kGles1TextureCoordArray, candidate).enabled) continue;
+            if (unique_enabled.has_value()) {
+                ambiguous = true;
+                break;
+            }
+            unique_enabled = candidate;
+        }
+        if (!unique_enabled.has_value()) {
+            resolved[stage] = texture;
+            continue;
+        }
+        if (texture_units.size() != 1U) {
+            throw std::runtime_error(
+                "GLES1 multi-stage draw has no texture coordinate array for "
+                "one sampled unit; coordinate arrays cannot be shared");
+        }
+        if (ambiguous) {
+            throw std::runtime_error(
+                "GLES1 single-stage texture coordinate array fallback is "
+                "ambiguous");
+        }
+        if (!allow_single_stage_texcoord_fallback_) {
+            throw std::runtime_error(
+                "GLES1 single-stage texture coordinate array fallback is "
+                "disabled");
+        }
+        resolved[stage] = *unique_enabled;
+    }
+    return resolved;
 }
 
 AndroidBoundaryGles1DrawState::Program&
@@ -461,6 +510,7 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
                 arrays[index] == kGles1ColorArray &&
                     array.type == kUnsignedByte);
     }
+    const auto coordinate_units = ResolveTextureCoordinateUnits(texture_units);
     for (std::size_t stage = 0; stage < kGles1MaximumDrawTextureUnits; ++stage) {
         const auto location = program.attributes[arrays.size() + stage];
         if (stage >= texture_units.size()) {
@@ -471,7 +521,8 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
             continue;
         }
         const auto texture = texture_units[stage];
-        const auto& array = Array(kGles1TextureCoordArray, texture);
+        const auto& array = Array(kGles1TextureCoordArray,
+                                  coordinate_units[stage]);
         prepare(arrays.size() + stage, array, false);
         if (!array.enabled && location >= 0) {
             const auto& coordinate = legacy.CurrentTextureCoordinate(texture);
@@ -719,8 +770,13 @@ void AndroidBoundaryGles1DrawState::DrawElements(
                     "GLES1 cannot bound guest client arrays from an opaque element buffer");
             }
         }
-        for (const auto texture : DrawTextureUnits(core)) {
-            const auto& array = Array(kGles1TextureCoordArray, texture);
+        const auto texture_units = DrawTextureUnits(core);
+        const auto coordinate_units =
+            ResolveTextureCoordinateUnits(texture_units);
+        for (const auto coordinate_unit :
+             std::span(coordinate_units).first(texture_units.size())) {
+            const auto& array = Array(kGles1TextureCoordArray,
+                                      coordinate_unit);
             if (array.enabled && array.buffer == 0U) {
                 throw std::runtime_error(
                     "GLES1 cannot bound guest client arrays from an opaque element buffer");

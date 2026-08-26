@@ -80,6 +80,8 @@ public:
           frame_service_(layout_, descriptors_),
           gles_dispatch_(address_space, gl_context_),
           gles1_state_(gl_context_.Shared()),
+          gles1_draw_state_(
+              options.allow_gles1_single_stage_texcoord_fallback),
           call_services_{address_space_, fault_store_, this,
                          &ServiceRecordGpuCall},
           android_services_{address_space_},

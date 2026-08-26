@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-26 · DVM-89 View.OnFocusChangeListener intrinsic
+更新：2026-08-26 · DVM-89 bounded KeyEvent dispatch
 
 ## 当前阶段
 
@@ -8,9 +8,8 @@
   GLES2 142 core handler 与 exact ELF 导入；bounded run 已越过 OpenGL。
 - **Native Boundary**：BND-1..15 已闭合 metadata catalog、dense transport、typed A32 ABI、
   liblog、AOSP OpenSL ES 与共享 EGL/GLES/PCM 状态；callback/TLS/re-enqueue 有机器门禁。
-- **BND-25**：真实 `libdl.so` 的 `dlopen/dlsym/dlclose/dlerror` 已接到 process-owned ELF
-  namespace 与 sealed Virtual SO provider；保持 root scope、handle 引用计数、
-  `RTLD_DEFAULT` 和逐 guest thread 错误消费，不访问宿主动态库或引入 title 分支。
+- **BND-25**：`libdl.so` 四入口已接 process ELF namespace/Virtual SO；保持 root scope、
+  handle 引用计数、`RTLD_DEFAULT` 和逐线程错误，不访问宿主动态库或引入 title 分支。
 - **APK Startup**：APS-1..9 已闭合 Manifest/ABI facts、rootless process、process-lifetime
   loader/JNI_OnLoad 与 legacy adapter；app ELF 只由 Java `System.load*` 追加。
 - **M9 DexVM**：DVM-1..46、48..69 已交付；解释仍由 `VmExecutionLock` 串行。GC-B、线程/
@@ -33,11 +32,11 @@
   object/array 访问直接读写解释器对象槽/linker static storage，引用保持 `VmObjectRef`
   identity 并按调用线程发布 local reference。平台 HLE 字段仍由原 field store 拥有。
   DexVM identity 分配同时跳过已导入的同域 JNI identity，重复身份不再静默注册。
-  后续在同一 WU 内按 API 19 AOSP 补齐 `Bitmap.Config` 的四个 enum 常量、
-  name/ordinal/nativeInt、`sConfigs`、`$VALUES/values/valueOf` 与 native index 映射；
+  同 WU 还按 API 19 补齐 `Bitmap.Config` enum 与 native index 映射；
   `Context.getPackageResourcePath()` 返回只读 guest APK 路径，ContextWrapper 委托 base，
-  不泄露 frontend 宿主路径。`View$OnFocusChangeListener` 现按 API 19 发布 public abstract
-  interface 与唯一方法引用，DEX `implements/invoke-interface` 可正常链接分派。
+  不泄露宿主路径。`OnFocusChangeListener` 可正常链接分派；`ResultReceiver` 有限闭合本地
+  同步/异步 send，Binder Parcel 明确拒绝。session 键输入传递有状态的非空 `KeyEvent`，
+  `View.dispatchKeyEvent` 虚派 DOWN/UP/MULTIPLE；字符、监听与 tracking 仍 deferred。
   同 WU 的黑屏推进补齐 native 调用锁交接、API19 Bionic 16-bit process TID、timed futex、
   `/proc/meminfo`、长驻 native boundary watchdog、guest 逻辑 RWX/`ARM_cacheflush`、软件
   SurfaceHolder/Canvas 发布以及 AudioTrack output-rate/listener 基础状态。
@@ -50,6 +49,7 @@
 - Windows Debug 定向构建通过；graphics/AudioTrack/process native context/watchdog/
   futex/ARM private syscall/memory protection/managed surface 定向 9/9、192 assertions 通过。
   本轮按要求未执行完整测试。此前 994/994 仅为字段互通改动前历史基线。
+- `KeyEvent`/`View.dispatchKeyEvent` 定向源 20/20、567 assertions 通过；未执行完整测试。
 - libdl process service 的 bridge/error、Bionic route/relocation 与 libc override 定向
   5/5、60 assertions 通过；Windows Release `ogplay` 与 Debug `ogplay_tests` 增量构建通过。
 - Release `ogplay` 定向构建通过。PVZ 原 survey 已越过

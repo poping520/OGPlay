@@ -70,6 +70,10 @@ struct ClickVm final {
     VirtualFileSystem vfs;
     std::int32_t content_view_events{};
     bool content_view_handled{};
+    std::int32_t key_down_events{};
+    std::int32_t key_up_events{};
+    std::int32_t key_multiple_events{};
+    std::int32_t last_key_code{};
     Interpreter interpreter;
     VmObjectRef activity;
     VmObjectRef video_view;
@@ -92,6 +96,30 @@ struct ClickVm final {
                           });
                   std::vector<IntrinsicClassDecl> test_catalog;
                   test_catalog.push_back(std::move(content_view).Build());
+                  auto key_view = IntrinsicClassBuilder::Class(
+                      "LTestKeyView;", "Landroid/view/View;");
+                  key_view.VirtualMethod(
+                      "onKeyDown", "(ILandroid/view/KeyEvent;)Z",
+                      [this](IntrinsicContext& call) {
+                          ++key_down_events;
+                          last_key_code = call.arguments[0].AsInt();
+                          return VmValue::Int(1);
+                      });
+                  key_view.VirtualMethod(
+                      "onKeyUp", "(ILandroid/view/KeyEvent;)Z",
+                      [this](IntrinsicContext& call) {
+                          ++key_up_events;
+                          last_key_code = call.arguments[0].AsInt();
+                          return VmValue::Int(1);
+                      });
+                  key_view.VirtualMethod(
+                      "onKeyMultiple", "(IILandroid/view/KeyEvent;)Z",
+                      [this](IntrinsicContext& call) {
+                          ++key_multiple_events;
+                          last_key_code = call.arguments[0].AsInt();
+                          return VmValue::Int(call.arguments[1].AsInt() == 0);
+                      });
+                  test_catalog.push_back(std::move(key_view).Build());
                   linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   linker.Link();
@@ -849,6 +877,45 @@ TEST_CASE("View OnFocusChangeListener links and dispatches through its API 19 in
     dispatch_focus(0);
     CHECK(read_value("getFocusChanges") == 2);
     CHECK(read_value("getLastFocusChange") == 0);
+}
+
+TEST_CASE("View dispatchKeyEvent routes bounded KeyEvent actions to overrides") {
+    ClickVm vm;
+    const auto view = vm.interpreter.NewIntrinsicInstance("LTestKeyView;");
+    vm.CallDirect(view, "Landroid/view/View;", "<init>",
+                  "(Landroid/content/Context;)V",
+                  {VmValue::Ref(vm.activity)});
+    const auto event = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/KeyEvent;");
+    vm.CallDirect(event, "Landroid/view/KeyEvent;", "<init>", "(II)V",
+                  {VmValue::Int(0), VmValue::Int(42)});
+
+    CHECK(vm.CallOn(view, "dispatchKeyEvent",
+                    "(Landroid/view/KeyEvent;)Z",
+                    {VmValue::Ref(event)}).AsInt() == 1);
+    CHECK(vm.key_down_events == 1);
+    CHECK(vm.key_up_events == 0);
+    CHECK(vm.last_key_code == 42);
+
+    const auto up = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/KeyEvent;");
+    vm.CallDirect(up, "Landroid/view/KeyEvent;", "<init>", "(II)V",
+                  {VmValue::Int(1), VmValue::Int(42)});
+    CHECK(vm.CallOn(view, "dispatchKeyEvent",
+                    "(Landroid/view/KeyEvent;)Z",
+                    {VmValue::Ref(up)}).AsInt() == 1);
+    CHECK(vm.key_down_events == 1);
+    CHECK(vm.key_up_events == 1);
+
+    const auto multiple = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/KeyEvent;");
+    vm.CallDirect(multiple, "Landroid/view/KeyEvent;", "<init>", "(II)V",
+                  {VmValue::Int(2), VmValue::Int(7)});
+    CHECK(vm.CallOn(view, "dispatchKeyEvent",
+                    "(Landroid/view/KeyEvent;)Z",
+                    {VmValue::Ref(multiple)}).AsInt() == 1);
+    CHECK(vm.key_multiple_events == 1);
+    CHECK(vm.last_key_code == 7);
 }
 
 TEST_CASE("TextView Java state controls deterministic measure and draw state") {

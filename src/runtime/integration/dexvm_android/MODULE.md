@@ -20,6 +20,9 @@ intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚�
 会话唯一 scheduler 排队：deadline 来自 `uptime_millis`，同 deadline 按 sequence FIFO。
 主 Looper 只在 lifecycle 安全点泵送，子 Looper 只在 `VmThreadRuntime` guest 线程执行；
 禁止同步调用伪装 post、读取宿主墙钟或为 Timer 建第二套队列。
+API 19 `ResultReceiver` 仅闭合本地分支：Handler 非空时以内部 Runnable 投递同一 scheduler，
+为空时同步虚派 `onReceiveResult`；receiver/Handler/Bundle 均由普通对象字段保持 GC 可见。
+依赖 `IResultReceiver` 的 Binder/跨进程 Parcel transport 明确拒绝，不得返回伪成功。
 
 DVM-88 的 ContentValues/Cursor/SQLiteDatabase/SQLiteOpenHelper 状态属于本 context 的
 database side-table；guest 引用经具名 GC state table trace，死亡 owner sweep。数据库文件
@@ -83,6 +86,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - API 19 `View$OnFocusChangeListener` 作为 public abstract interface 发布唯一
   `onFocusChange(View, boolean)` 方法签名，使 DEX `implements` 与 `invoke-interface` 走正常
   linker/virtual dispatch；没有具体焦点事件来源时不得伪造回调。
+- `KeyEvent(action, keyCode)` 保存 guest 可见 action/keyCode/repeatCount；生命周期键输入必须
+  传递该非空对象。`View.dispatchKeyEvent` 对 DOWN/UP/MULTIPLE 调用接收者实际 override；
+  OnKeyListener、DispatcherState tracking/long-press 和字符映射未实现时必须保持显式缺口。
 - drawable decode 的 intrinsic size 写入 UiNode；click adapter 只消费 `screen_frame`。
   旧 fullscreen/edge-row bounds 推导及 `LayoutViewFact/layout_views` 类型与存储均不存在。
 - Java 动态 `ViewGroup.addView/removeView/removeViews/updateViewLayout` 与

@@ -23,6 +23,7 @@ using namespace ogplay::runtime::dexvm;
 
 std::vector<IntrinsicClassDecl> TestCatalog(
     std::vector<std::int32_t>* messages, std::vector<std::int64_t>* ticks,
+    std::vector<std::pair<std::int32_t, VmObjectRef>>* receiver_results,
     std::atomic<std::int32_t>* runnable_calls,
     std::atomic<std::int32_t>* timer_calls,
     std::atomic<std::int32_t>* finishes,
@@ -71,6 +72,16 @@ std::vector<IntrinsicClassDecl> TestCatalog(
         });
     result.push_back(std::move(countdown).Build());
 
+    auto receiver = IntrinsicClassBuilder::Class(
+        "Ltest/RecordingResultReceiver;", "Landroid/os/ResultReceiver;");
+    receiver.VirtualMethod("onReceiveResult", "(ILandroid/os/Bundle;)V",
+        [receiver_results](IntrinsicContext& call) {
+            receiver_results->emplace_back(
+                call.arguments[0].AsInt(), call.arguments[1].ref);
+            return VmValue::Void();
+        }, 0x0004U);
+    result.push_back(std::move(receiver).Build());
+
     auto async = IntrinsicClassBuilder::Class(
         "Ltest/RecordingAsyncTask;", "Landroid/os/AsyncTask;");
     async.VirtualMethod(
@@ -98,6 +109,7 @@ struct SchedulerVm final {
         std::make_shared<DexVmAndroidContext>()};
     std::vector<std::int32_t> messages;
     std::vector<std::int64_t> ticks;
+    std::vector<std::pair<std::int32_t, VmObjectRef>> receiver_results;
     std::atomic<std::int32_t> runnable_calls{};
     std::atomic<std::int32_t> timer_calls{};
     std::atomic<std::int32_t> finishes{};
@@ -112,8 +124,9 @@ struct SchedulerVm final {
                      CoreIntrinsicCatalog(AndroidCoreIntrinsicServices(context)));
                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                  linker.RegisterIntrinsics(TestCatalog(
-                     &messages, &ticks, &runnable_calls, &timer_calls,
-                     &finishes, &async_background, &async_post));
+                     &messages, &ticks, &receiver_results, &runnable_calls,
+                     &timer_calls, &finishes, &async_background,
+                     &async_post));
                  linker.Link();
                  return linker;
              }(), model, nullptr, ledger, {}),
@@ -181,6 +194,46 @@ bool WaitFor(Predicate predicate) {
 }
 
 }  // namespace
+
+TEST_CASE("DVM-89 ResultReceiver dispatches locally and through its Handler") {
+    SchedulerVm fixture;
+    const auto bundle = fixture.New("Landroid/os/Bundle;");
+    fixture.ConstructAs(bundle, "Landroid/os/Bundle;", "()V");
+
+    const auto direct = fixture.New("Ltest/RecordingResultReceiver;");
+    fixture.ConstructAs(
+        direct, "Landroid/os/ResultReceiver;",
+        "(Landroid/os/Handler;)V", {VmValue::Ref(VmObjectRef{})});
+    SchedulerVm::RequireOk(fixture.Virtual(
+        direct, "send", "(ILandroid/os/Bundle;)V",
+        {VmValue::Int(7), VmValue::Ref(bundle)}));
+    REQUIRE(fixture.receiver_results.size() == 1);
+    CHECK(fixture.receiver_results[0] == std::pair{7, bundle});
+
+    const auto handler = fixture.New("Landroid/os/Handler;");
+    fixture.ConstructAs(handler, "Landroid/os/Handler;", "()V");
+    const auto asynchronous =
+        fixture.New("Ltest/RecordingResultReceiver;");
+    fixture.ConstructAs(
+        asynchronous, "Landroid/os/ResultReceiver;",
+        "(Landroid/os/Handler;)V", {VmValue::Ref(handler)});
+    SchedulerVm::RequireOk(fixture.Virtual(
+        asynchronous, "send", "(ILandroid/os/Bundle;)V",
+        {VmValue::Int(9), VmValue::Ref(bundle)}));
+    CHECK(fixture.receiver_results.size() == 1);
+    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
+    REQUIRE(fixture.receiver_results.size() == 2);
+    CHECK(fixture.receiver_results[1] == std::pair{9, bundle});
+
+    const auto parcel = fixture.New("Landroid/os/Parcel;");
+    fixture.ConstructAs(parcel, "Landroid/os/Parcel;", "()V");
+    const auto unsupported = fixture.Virtual(
+        direct, "writeToParcel", "(Landroid/os/Parcel;I)V",
+        {VmValue::Ref(parcel), VmValue::Int(0)});
+    REQUIRE(unsupported.exception.IsValid());
+    CHECK(fixture.linker.Class(unsupported.exception_class).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
+}
 
 TEST_CASE("DVM-85 Handler queue is delayed ordered and removable") {
     SchedulerVm fixture;

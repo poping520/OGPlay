@@ -11,6 +11,8 @@ namespace ogplay::session {
         constexpr std::int32_t kMotionActionDown = 0;
         constexpr std::int32_t kMotionActionUp = 1;
         constexpr std::int32_t kMotionActionMove = 2;
+        constexpr std::int32_t kKeyActionDown = 0;
+        constexpr std::int32_t kKeyActionUp = 1;
         constexpr std::int64_t kMillisPerFrame = 16;
 
         [[noreturn]] void Fail(const std::string& message) {
@@ -374,11 +376,29 @@ namespace ogplay::session {
         for (const auto& input: pending_input_) {
             using Type = runtime::AndroidBoundaryInputType;
             if (input.type == Type::key) {
+                const auto key_event =
+                    vm.NewIntrinsicInstance("Landroid/view/KeyEvent;");
+                const auto key_event_class =
+                    vm.Model().ObjectClass(key_event);
+                const auto constructor = bindings_.bridge->Linker()
+                    .FindDirectMethod(key_event_class, "<init>", "(II)V");
+                if (!constructor.has_value()) {
+                    Fail("KeyEvent has no (action, keyCode) constructor");
+                }
+                RequireOutcome(
+                    vm.Call(*constructor,
+                            std::vector<dx::VmValue>{
+                                dx::VmValue::Ref(key_event),
+                                dx::VmValue::Int(
+                                    input.pressed ? kKeyActionDown
+                                                  : kKeyActionUp),
+                                dx::VmValue::Int(input.code)}),
+                    "KeyEvent <init>");
                 CallActivity(input.pressed ? "onKeyDown" : "onKeyUp",
                              "(ILandroid/view/KeyEvent;)Z",
                              {
                                  dx::VmValue::Int(input.code),
-                                 dx::VmValue::Ref(dx::VmObjectRef{})
+                                 dx::VmValue::Ref(key_event)
                              });
                 continue;
             }

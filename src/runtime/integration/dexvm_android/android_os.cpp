@@ -871,6 +871,156 @@ Decl Declare_android_os_Handler(const Context& context) {
     return dvm80_android_os_Handler::Declare_android_os_Handler(context);
 }
 
+namespace dvm89_android_os_ResultReceiver {
+namespace {
+
+dx::VmValue Deliver(dx::IntrinsicContext& call,
+                    const dx::VmObjectRef receiver,
+                    const std::int32_t result_code,
+                    const dx::VmObjectRef result_data) {
+    auto& linker = call.vm.Linker();
+    const auto owner = call.vm.Model().ObjectClass(receiver);
+    const auto index = linker.FindVtableIndex(
+        owner, "onReceiveResult", "(ILandroid/os/Bundle;)V");
+    if (!index.has_value()) {
+        throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                              "ResultReceiver.onReceiveResult"};
+    }
+    const auto outcome = call.vm.Call(
+        linker.Class(owner).vtable[*index],
+        std::vector<dx::VmValue>{dx::VmValue::Ref(receiver),
+                                 dx::VmValue::Int(result_code),
+                                 dx::VmValue::Ref(result_data)});
+    if (outcome.exception.IsValid()) {
+        call.vm.SetPendingException(outcome.exception);
+    }
+    return dx::VmValue::Void();
+}
+
+}  // namespace
+
+Decl Declare_android_os_ResultReceiver_MyRunnable(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/ResultReceiver$MyRunnable;", "Ljava/lang/Object;",
+        {"Ljava/lang/Runnable;"}, 0x0020U);
+    const auto receiver = builder.BoundInstanceField(
+        "this$0", "Landroid/os/ResultReceiver;", 0x1010U);
+    const auto result_code =
+        builder.BoundInstanceField("mResultCode", "I", 0x0010U);
+    const auto result_data = builder.BoundInstanceField(
+        "mResultData", "Landroid/os/Bundle;", 0x0010U);
+    builder.Constructor(
+        "(Landroid/os/ResultReceiver;ILandroid/os/Bundle;)V",
+        [receiver, result_code, result_data](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            fields.SetRef(receiver, call.arguments[0].ref);
+            fields.SetInt(result_code, call.arguments[1].AsInt());
+            fields.SetRef(result_data, call.arguments[2].ref);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("run", "()V",
+        [receiver, result_code, result_data](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            return Deliver(call, fields.GetRef(receiver),
+                           fields.GetInt(result_code),
+                           fields.GetRef(result_data));
+        });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_ResultReceiver(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/ResultReceiver;", "Ljava/lang/Object;",
+        {"Landroid/os/Parcelable;"});
+    const auto local =
+        builder.BoundInstanceField("mLocal", "Z", 0x0010U);
+    const auto handler = builder.BoundInstanceField(
+        "mHandler", "Landroid/os/Handler;", 0x0010U);
+    builder.Constructor("(Landroid/os/Handler;)V",
+        [local, handler](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            fields.SetInt(local, 1);
+            fields.SetRef(handler, call.arguments[0].ref);
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("send", "(ILandroid/os/Bundle;)V",
+        [handler](dx::IntrinsicContext& call) {
+            const auto target_handler =
+                dx::IntrinsicCall(call).GetRef(handler);
+            if (!target_handler.IsValid()) {
+                return Deliver(call, call.receiver,
+                               call.arguments[0].AsInt(),
+                               call.arguments[1].ref);
+            }
+
+            const auto runnable = call.vm.NewIntrinsicInstance(
+                "Landroid/os/ResultReceiver$MyRunnable;");
+            auto& linker = call.vm.Linker();
+            const auto runnable_class = call.vm.Model().ObjectClass(runnable);
+            const auto constructor = linker.FindDirectMethod(
+                runnable_class, "<init>",
+                "(Landroid/os/ResultReceiver;ILandroid/os/Bundle;)V");
+            if (!constructor.has_value()) {
+                throw dx::DexVmError(
+                    dx::DexVmErrorReason::internal_invariant,
+                    "ResultReceiver MyRunnable constructor is unavailable");
+            }
+            auto outcome = call.vm.Call(
+                *constructor,
+                std::vector<dx::VmValue>{
+                    dx::VmValue::Ref(runnable),
+                    dx::VmValue::Ref(call.receiver), call.arguments[0],
+                    call.arguments[1]});
+            if (outcome.exception.IsValid()) {
+                call.vm.SetPendingException(outcome.exception);
+                return dx::VmValue::Void();
+            }
+
+            const auto handler_class =
+                call.vm.Model().ObjectClass(target_handler);
+            const auto post = linker.FindVtableIndex(
+                handler_class, "post", "(Ljava/lang/Runnable;)Z");
+            if (!post.has_value()) {
+                throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                                      "Handler.post"};
+            }
+            outcome = call.vm.Call(
+                linker.Class(handler_class).vtable[*post],
+                std::vector<dx::VmValue>{dx::VmValue::Ref(target_handler),
+                                         dx::VmValue::Ref(runnable)});
+            if (outcome.exception.IsValid()) {
+                call.vm.SetPendingException(outcome.exception);
+            }
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod(
+        "onReceiveResult", "(ILandroid/os/Bundle;)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, 0x0004U);
+    builder.VirtualMethod("describeContents", "()I",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.VirtualMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
+        [](dx::IntrinsicContext&) -> dx::VmValue {
+            throw dx::VmJavaThrow{
+                "Ljava/lang/UnsupportedOperationException;",
+                "ResultReceiver Binder parcel transport is not supported"};
+        });
+    return std::move(builder).Build();
+}
+
+}  // namespace dvm89_android_os_ResultReceiver
+
+Decl Declare_android_os_ResultReceiver(const Context& context) {
+    return dvm89_android_os_ResultReceiver::
+        Declare_android_os_ResultReceiver(context);
+}
+
+Decl Declare_android_os_ResultReceiver_MyRunnable(const Context& context) {
+    return dvm89_android_os_ResultReceiver::
+        Declare_android_os_ResultReceiver_MyRunnable(context);
+}
+
 Decl Declare_android_os_Handler_Callback(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Interface(
         "Landroid/os/Handler$Callback;");

@@ -231,6 +231,34 @@ namespace ogplay::runtime::android_intrinsics::dvm80_android_view_KeyEvent {
 Decl Declare_android_view_KeyEvent(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyEvent;", "Ljava/lang/Object;");
+    const auto action = builder.BoundInstanceField("mAction", "I", 0x0002U);
+    const auto key_code =
+        builder.BoundInstanceField("mKeyCode", "I", 0x0002U);
+    const auto repeat_count =
+        builder.BoundInstanceField("mRepeatCount", "I", 0x0002U);
+    builder.Constructor("(II)V",
+        [action, key_code, repeat_count](dx::IntrinsicContext& call) {
+            const auto value = call.arguments[0].AsInt();
+            dx::IntrinsicCall fields(call);
+            fields.SetInt(action, value);
+            fields.SetInt(key_code, call.arguments[1].AsInt());
+            fields.SetInt(repeat_count, 0);
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("getAction", "()I",
+        [action](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(action));
+        });
+    builder.FinalMethod("getKeyCode", "()I",
+        [key_code](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                dx::IntrinsicCall(call).GetInt(key_code));
+        });
+    builder.FinalMethod("getRepeatCount", "()I",
+        [repeat_count](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                dx::IntrinsicCall(call).GetInt(repeat_count));
+        });
     return std::move(builder).Build();
 }
 
@@ -603,6 +631,85 @@ Decl Declare_android_view_View(const Context& context) {
         });
     builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    const auto unhandled_key = dx::IntrinsicHandler(
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.VirtualMethod("onKeyDown", "(ILandroid/view/KeyEvent;)Z",
+                          unhandled_key);
+    builder.VirtualMethod("onKeyUp", "(ILandroid/view/KeyEvent;)Z",
+                          unhandled_key);
+    builder.VirtualMethod("onKeyLongPress", "(ILandroid/view/KeyEvent;)Z",
+                          unhandled_key);
+    builder.VirtualMethod(
+        "onKeyMultiple", "(IILandroid/view/KeyEvent;)Z", unhandled_key);
+    builder.VirtualMethod(
+        "dispatchKeyEvent", "(Landroid/view/KeyEvent;)Z",
+        [](dx::IntrinsicContext& call) {
+            const auto event = call.arguments[0].ref;
+            if (!event.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
+                                      "event == null"};
+            }
+            auto& linker = call.vm.Linker();
+            const auto event_class = call.vm.Model().ObjectClass(event);
+            const auto event_int = [&](const char* name) {
+                const auto index = linker.FindVtableIndex(
+                    event_class, name, "()I");
+                if (!index.has_value()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                                          std::string{"KeyEvent."} + name};
+                }
+                const auto outcome = call.vm.Call(
+                    linker.Class(event_class).vtable[*index],
+                    std::vector<dx::VmValue>{dx::VmValue::Ref(event)});
+                if (outcome.exception.IsValid()) {
+                    call.vm.SetPendingException(outcome.exception);
+                    return std::optional<std::int32_t>{};
+                }
+                return std::optional{outcome.value.AsInt()};
+            };
+            const auto action = event_int("getAction");
+            const auto key_code = event_int("getKeyCode");
+            if (!action.has_value() || !key_code.has_value()) {
+                return dx::VmValue::Int(0);
+            }
+
+            const char* method_name{};
+            const char* descriptor{};
+            std::vector<dx::VmValue> arguments{
+                dx::VmValue::Ref(call.receiver),
+                dx::VmValue::Int(*key_code)};
+            if (*action == 0) {
+                method_name = "onKeyDown";
+                descriptor = "(ILandroid/view/KeyEvent;)Z";
+            } else if (*action == 1) {
+                method_name = "onKeyUp";
+                descriptor = "(ILandroid/view/KeyEvent;)Z";
+            } else if (*action == 2) {
+                const auto repeat = event_int("getRepeatCount");
+                if (!repeat.has_value()) return dx::VmValue::Int(0);
+                method_name = "onKeyMultiple";
+                descriptor = "(IILandroid/view/KeyEvent;)Z";
+                arguments.push_back(dx::VmValue::Int(*repeat));
+            } else {
+                return dx::VmValue::Int(0);
+            }
+            arguments.push_back(dx::VmValue::Ref(event));
+            const auto receiver_class =
+                call.vm.Model().ObjectClass(call.receiver);
+            const auto index = linker.FindVtableIndex(
+                receiver_class, method_name, descriptor);
+            if (!index.has_value()) {
+                throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
+                                      std::string{"View."} + method_name};
+            }
+            const auto outcome = call.vm.Call(
+                linker.Class(receiver_class).vtable[*index], arguments);
+            if (outcome.exception.IsValid()) {
+                call.vm.SetPendingException(outcome.exception);
+                return dx::VmValue::Int(0);
+            }
+            return outcome.value;
+        });
     const auto noop_flag = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     builder.FinalMethod("setFocusable", "(Z)V", noop_flag);

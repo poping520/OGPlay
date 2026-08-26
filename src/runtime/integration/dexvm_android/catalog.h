@@ -116,6 +116,8 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_os_Parcel(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager_WakeLock(const Context& context);
+[[nodiscard]] Decl Declare_android_os_ResultReceiver(const Context& context);
+[[nodiscard]] Decl Declare_android_os_ResultReceiver_MyRunnable(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Vibrator(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Process(const Context& context);
 [[nodiscard]] Decl Declare_android_provider_Settings_System(const Context& context);

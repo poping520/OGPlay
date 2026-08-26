@@ -31,6 +31,8 @@ public:
 
     [[nodiscard]] std::optional<memory::GuestAddress> Lookup(
         std::string_view library, std::string_view symbol) const;
+    [[nodiscard]] std::optional<memory::GuestAddress> LookupAny(
+        std::string_view symbol) const;
     [[nodiscard]] std::vector<BionicHleSymbol> Exports(
         std::string_view library) const;
     [[nodiscard]] std::optional<core::SymbolizedAddress> Resolve(

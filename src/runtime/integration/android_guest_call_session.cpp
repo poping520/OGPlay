@@ -1068,6 +1068,16 @@ public:
         return std::string(name);
     }
 
+    // Legacy engine runtimes address the host GL through their own wrapper
+    // library name (libhgl.so) and dlsym every GL entry point through that
+    // handle. The wrapper ships no ELF here, so it opens the sealed HLE
+    // GLES2 boundary instead and keeps such engines on the GL surface.
+    [[nodiscard]] static std::string CanonicalDynamicLibrary(
+        std::string name) {
+        if (name == "libhgl.so") return "libGLESv2.so";
+        return name;
+    }
+
     std::uint32_t DynamicOpen(const std::string_view path,
                               const std::uint32_t flags,
                               const std::uint64_t thread_id) {
@@ -1076,8 +1086,11 @@ public:
         if ((flags & ~kSupportedFlags) != 0U) {
             throw loader::LinkError("dlopen flags are not supported");
         }
-        const auto library = path.empty() ? root_module_
-                                          : DynamicLibraryName(path);
+        // dlopen(nullptr) is the process-wide handle in bionic, not an open
+        // of the root module.
+        if (path.empty()) return kRtldDefault;
+        const auto library =
+            CanonicalDynamicLibrary(DynamicLibraryName(path));
         std::scoped_lock lock(dynamic_link_mutex_);
         const auto open = std::ranges::find_if(
             dynamic_link_handles_, [&](const DynamicLinkHandle& state) {
@@ -1118,6 +1131,11 @@ public:
         if (name.empty()) throw loader::LinkError("dlsym requires a symbol name");
         std::scoped_lock lock(dynamic_link_mutex_);
         if (handle == kRtldDefault) {
+            // Bionic resolves the default pseudo-handle by walking every
+            // loaded library, so sealed HLE modules are searched before the
+            // ELF namespace fallback runs.
+            const auto hle = boundary_.Symbols().LookupAny(name);
+            if (hle.has_value()) return hle->Value();
             return loader::LookupElf32Symbol(loaded_.link_namespace, name)
                 .address.Value();
         }
@@ -1145,6 +1163,8 @@ public:
     std::int32_t DynamicClose(const std::uint32_t handle,
                               const std::uint64_t thread_id) {
         static_cast<void>(thread_id);
+        // The process-wide handle is not a reference-counted library.
+        if (handle == kRtldDefault) return 0;
         std::scoped_lock lock(dynamic_link_mutex_);
         const auto state = std::ranges::find_if(
             dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {

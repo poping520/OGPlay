@@ -10,6 +10,8 @@
 - API 19 `libdl.so` 的公开入口本质上依赖进程 linker；`LibdlOverrideModule` 负责 guest
   字符串搬运和逐 guest thread 的 `dlerror` 消费式缓冲，只通过窄 hooks 请求上层 namespace
   打开、查符号和关闭 handle，不反向依赖 integration。
+- `BionicHleSymbolProvider` 的 `Lookup` 保持 (library, symbol) 精确 scope；`LookupAny`
+  只服务 `RTLD_DEFAULT` 全进程语义，按 catalog 顺序返回首个命中，不做版本或弱符号裁决。
 
 选择 API 19/22/23 Bionic profile，规划并装载真实 guest 系统库闭包，自检 libc/libdl，建立
 Bionic TLS，并只为确有生产 handler 的 libc 热点提供宿主边界。

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-26 · DVM-90 fault diagnosability
+更新：2026-08-27 · libdl KitKat 全进程语义修复（pvz 崩溃点 1）
 
 ## 当前阶段
 
@@ -10,6 +10,12 @@
   liblog、AOSP OpenSL ES 与共享 EGL/GLES/PCM 状态；callback/TLS/re-enqueue 有机器门禁。
 - **BND-25**：`libdl.so` 四入口已接 process ELF namespace/Virtual SO；保持 root scope、
   handle 引用计数、`RTLD_DEFAULT` 和逐线程错误，不访问宿主动态库或引入 title 分支。
+  2026-08-27 对齐 KitKat 全进程语义：`dlopen(nullptr)` 返回 `RTLD_DEFAULT` 伪句柄而非
+  root module 新句柄；`dlsym(RTLD_DEFAULT)` 先 `LookupAny` 搜任意 sealed HLE 模块再回退
+  ELF namespace（KitKat 为 solist 全表遍历）；`dlclose` 对伪句柄 no-op；主机 GL 包装名
+  `libhgl.so` 归一化为 `libGLESv2.so` 边界 handle。未落地 pvz-tmp 的问题 2/3/4
+  （boundary 句柄 LookupAny 回退、eglGetProcAddress 全表回退、EGLContextImpl/GLImpl
+  契约），其中问题 3 经分析在当前符号表下无可观测影响。
 - **APK Startup**：APS-1..9 已闭合 Manifest/ABI facts、rootless process、process-lifetime
   loader/JNI_OnLoad 与 legacy adapter；app ELF 只由 Java `System.load*` 追加。
 - **M9 DexVM**：DVM-1..46、48..69 已交付；解释仍由 `VmExecutionLock` 串行。GC-B、线程/
@@ -61,11 +67,20 @@
   Java→JNI→A32 stop/fault/thread/registers/code 分层对齐，并使用通用失败标签。该运行只
   验收诊断链，不宣告 title 已进入。
 - libdl 定向 5/5、60 assertions 通过；本轮未执行全量测试。
+- 2026-08-27 libdl 修复轮：Windows Debug/Release 全目标构建通过；新增 `Bionic HLE
+  default lookup`（8 assertions）与 `libdl process service exposes RTLD_DEFAULT and the
+  host GL alias`（25 assertions）定向通过，`Bionic*` 14/14、`libdl*` 存量无回归，按要求
+  未执行全量测试。PVZ Release 实跑越过原 `f≈2382 pc=0x6045be18 NULL AddRef` 崩溃点，
+  GL 调用链已进入边界，新停止点为 `f=2478` `GLES1 texture target must be
+  GL_TEXTURE_2D`（`gles1_dispatch.cpp:340` 把非法 target 当致命异常，真机仅产生
+  `GL_INVALID_ENUM`），属独立问题未处理。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 当前启动阻断，复验 DVM-47 和 threaded title gate。
 2. 执行 Linux M9 严格出口复验；后续 framework 长尾仅按关闭 survey 的 reached gap 排序。
+3. PVZ 下一阻断：GLES1 非法 texture target 的 guest 可见 `GL_INVALID_ENUM` 语义（现为
+   致命异常）；pvz-tmp 问题 2 是否仍需 boundary 句柄回退，以该阻断复测结果为准。
 
 ## 阻塞与边界
 

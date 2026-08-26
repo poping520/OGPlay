@@ -40,10 +40,13 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   `AdoptProcess` 仅为 DexVM/JNI 复用既有窄接口包装 rootless owner，不追加或初始化
   application ELF。
 - `AndroidGuestProcess` 同时拥有 guest `libdl` handle 表；`dlopen` 对已加载 guest ELF 建立
-  root scope，对 sealed Virtual SO 直接建立边界 handle，路径只取 basename 且不会访问宿主
-  文件系统。`dlsym` 只查询该 handle 的 scope，`RTLD_DEFAULT` 查询当前全局 namespace；
-  `dlclose` 释放引用但不卸载 process-lifetime module。未知库、符号、handle 与 flags 必须
-  进入逐 guest thread 的 `dlerror`，不得返回伪造地址。
+  root scope，对 sealed Virtual SO 直接建立边界 handle，`dlopen(nullptr)` 返回进程级
+  `RTLD_DEFAULT` 伪句柄，主机 GL 包装名 `libhgl.so` 归一化为 `libGLESv2.so` 边界 handle；
+  路径只取 basename 且不会访问宿主文件系统。`dlsym` 只查询该 handle 的 scope，
+  `RTLD_DEFAULT` 先搜任意 sealed HLE 模块（`LookupAny`，catalog 顺序首个命中）再回退当前
+  全局 namespace；`dlclose` 对伪句柄 no-op、其余释放引用但不卸载 process-lifetime
+  module。未知库、符号、handle 与 flags 必须进入逐 guest thread 的 `dlerror`，不得返回伪造
+  地址。
 - `NativeLibraryLoader` 是 process service：logical name 与 synthetic guest path 共享按
   canonical path 唯一的 Loading/Loaded/Failed registry，保留 ClassLoader token；同 loader
   重复 load 幂等，同线程递归 loading 成功返回现有 handle，跨 loader 明确失败，Failed

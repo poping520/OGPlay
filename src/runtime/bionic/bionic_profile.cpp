@@ -131,6 +131,19 @@ std::optional<memory::GuestAddress> BionicHleSymbolProvider::Lookup(
     return found->address;
 }
 
+// Whole-process fallback for RTLD_DEFAULT lookups: bionic resolves the
+// default pseudo-handle by walking every loaded library, so the first HLE
+// module publishing the symbol wins in catalog order.
+std::optional<memory::GuestAddress> BionicHleSymbolProvider::LookupAny(
+    const std::string_view symbol) const {
+    const auto found = std::find_if(
+        symbols_.begin(), symbols_.end(), [&](const BionicHleSymbol& candidate) {
+            return candidate.symbol == symbol;
+        });
+    if (found == symbols_.end()) return std::nullopt;
+    return found->address;
+}
+
 std::vector<BionicHleSymbol> BionicHleSymbolProvider::Exports(
     const std::string_view library) const {
     std::vector<BionicHleSymbol> result;

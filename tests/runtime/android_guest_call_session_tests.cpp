@@ -22,6 +22,7 @@
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "runtime/boundary/modules/module_catalog.h"
+#include "runtime/boundary/core/boundary_symbols.h"
 
 namespace {
 
@@ -134,6 +135,50 @@ constexpr std::uint32_t kOpenSlesCallbackTlsOffset = 0x5a4U;
                                  std::string(name));
     }
     return found->address.Value();
+}
+
+constexpr std::uint32_t kLibdlFixtureBase = 0x10011000U;
+constexpr std::uint32_t kLibdlLibhglOffset = 0x700U;
+constexpr std::uint32_t kLibdlGlCreateShaderOffset = 0x720U;
+constexpr std::uint32_t kLibdlEglGetProcAddressOffset = 0x740U;
+constexpr std::uint32_t kLibdlMemcpyOffset = 0x770U;
+constexpr std::uint32_t kLibdlPropertyAreaOffset = 0x790U;
+constexpr std::uint32_t kLibdlMissingOffset = 0x7c0U;
+
+[[nodiscard]] std::uint32_t LibdlFixtureAddress(
+    const std::uint32_t offset) {
+    return kLibdlFixtureBase + offset;
+}
+
+[[nodiscard]] std::vector<std::byte> LibdlDefaultLibcElf() {
+    auto bytes = MinimalLibcElf();
+    bytes.resize(0x2000U, std::byte{});
+    Put16(bytes, 44U, 3U);
+    Put32(bytes, 68U, 0x1000U);
+    Put32(bytes, 72U, 0x1000U);
+    Put32(bytes, 76U, 6U);
+    Put32(bytes, 116U, ogplay::loader::kElfProgramLoad);
+    Put32(bytes, 120U, 0x1000U);
+    Put32(bytes, 124U, 0x11000U);
+    Put32(bytes, 128U, 0U);
+    Put32(bytes, 132U, 0x1000U);
+    Put32(bytes, 136U, 0x1000U);
+    Put32(bytes, 140U, 5U);
+    Put32(bytes, 144U, 0x1000U);
+    const auto put_string = [&](const std::uint32_t offset,
+                                const std::string_view text) {
+        for (std::size_t index = 0; index < text.size(); ++index) {
+            bytes[0x1000U + offset + index] =
+                static_cast<std::byte>(static_cast<unsigned char>(text[index]));
+        }
+    };
+    put_string(kLibdlLibhglOffset, "libhgl.so");
+    put_string(kLibdlGlCreateShaderOffset, "glCreateShader");
+    put_string(kLibdlEglGetProcAddressOffset, "eglGetProcAddress");
+    put_string(kLibdlMemcpyOffset, "memcpy");
+    put_string(kLibdlPropertyAreaOffset, "__system_property_area__");
+    put_string(kLibdlMissingOffset, "missing_symbol");
+    return bytes;
 }
 
 [[nodiscard]] std::vector<std::byte> OpenSlesCallbackLibcElf() {
@@ -354,6 +399,75 @@ TEST_CASE("OpenSL buffer callback runs on its guest thread and re-enqueues") {
     std::array<std::int16_t, 4> second{};
     CHECK(process->RenderStereoAudio(second, 48000U) == 2U);
     CHECK(second == std::array<std::int16_t, 4>{3000, 3000, 4000, 4000});
+    process->Stop();
+}
+
+TEST_CASE("libdl process service exposes RTLD_DEFAULT and the host GL alias") {
+    auto libc = LibdlDefaultLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
+
+    const auto hle_symbols =
+        ogplay::runtime::detail::BuildAndroidBoundarySymbols(
+            ogplay::runtime::AndroidApi::api19);
+    const auto hle_address = [&](const std::string_view library,
+                                 const std::string_view symbol) {
+        const auto found = std::ranges::find_if(
+            hle_symbols, [&](const ogplay::runtime::BionicHleSymbol& entry) {
+                return entry.library == library && entry.symbol == symbol;
+            });
+        REQUIRE(found != hle_symbols.end());
+        return found->address.Value();
+    };
+    const auto invoke = [&](const std::string_view entry,
+                            const std::array<std::uint32_t, 4> registers) {
+        return process
+            ->Invoke({ogplay::memory::GuestAddress{
+                          hle_address("libdl.so", entry)},
+                      registers, {}})
+            .return_value;
+    };
+
+    // dlopen(nullptr) is the process-wide pseudo-handle, not a fresh open of
+    // the root module.
+    CHECK(invoke("dlopen", {0U, 2U, 0U, 0U}) == 0xffffffffU);
+    // RTLD_DEFAULT resolves sealed HLE exports across module boundaries.
+    CHECK(invoke("dlsym", {0xffffffffU,
+                          LibdlFixtureAddress(kLibdlGlCreateShaderOffset),
+                          0U, 0U}) ==
+          hle_address("libGLESv2.so", "glCreateShader"));
+    CHECK(invoke("dlsym", {0xffffffffU,
+                          LibdlFixtureAddress(kLibdlEglGetProcAddressOffset),
+                          0U, 0U}) ==
+          hle_address("libEGL.so", "eglGetProcAddress"));
+    CHECK(invoke("dlsym", {0xffffffffU,
+                          LibdlFixtureAddress(kLibdlMemcpyOffset), 0U, 0U}) ==
+          hle_address("libc.so", "memcpy"));
+    // Names outside the HLE surface fall back to the guest ELF namespace.
+    CHECK(invoke("dlsym", {0xffffffffU,
+                          LibdlFixtureAddress(kLibdlPropertyAreaOffset),
+                          0U, 0U}) == 0x10010200U);
+    // Unknown names keep failing explicitly.
+    CHECK(invoke("dlsym", {0xffffffffU,
+                          LibdlFixtureAddress(kLibdlMissingOffset), 0U,
+                          0U}) == 0U);
+    // The host GL wrapper library opens the sealed GLES2 boundary.
+    const auto hgl = invoke("dlopen",
+                            {LibdlFixtureAddress(kLibdlLibhglOffset), 2U, 0U,
+                             0U});
+    REQUIRE(hgl != 0U);
+    REQUIRE(hgl != 0xffffffffU);
+    CHECK(invoke("dlsym", {hgl,
+                          LibdlFixtureAddress(kLibdlGlCreateShaderOffset),
+                          0U, 0U}) ==
+          hle_address("libGLESv2.so", "glCreateShader"));
+    // dlclose treats the pseudo-handle as a no-op and the alias as a normal
+    // counted reference.
+    CHECK(invoke("dlclose", {0xffffffffU, 0U, 0U, 0U}) == 0U);
+    CHECK(invoke("dlclose", {hgl, 0U, 0U, 0U}) == 0U);
     process->Stop();
 }
 

@@ -297,6 +297,34 @@ TEST_CASE("Bionic link namespace combines guest libraries and observable HLE thu
     CHECK(symbolized->source_hint == "hle");
 }
 
+TEST_CASE("Bionic HLE default lookup crosses sealed module boundaries") {
+    const std::vector hle_bindings{
+        ogplay::runtime::BionicHleSymbol{
+            "libGLESv1_CM.so", "glVertexPointer",
+            ogplay::memory::GuestAddress{0x70000401U}},
+        ogplay::runtime::BionicHleSymbol{
+            "libGLESv2.so", "glCreateShader",
+            ogplay::memory::GuestAddress{0x70000405U}},
+        ogplay::runtime::BionicHleSymbol{
+            "libEGL.so", "eglGetProcAddress",
+            ogplay::memory::GuestAddress{0x70000409U}},
+    };
+    const ogplay::runtime::BionicHleSymbolProvider hle(hle_bindings);
+
+    const auto shader = hle.LookupAny("glCreateShader");
+    REQUIRE(shader.has_value());
+    CHECK(*shader == ogplay::memory::GuestAddress{0x70000405U});
+    const auto entry_point = hle.LookupAny("eglGetProcAddress");
+    REQUIRE(entry_point.has_value());
+    CHECK(*entry_point == ogplay::memory::GuestAddress{0x70000409U});
+    CHECK_FALSE(hle.LookupAny("glCompileShader").has_value());
+
+    CHECK_FALSE(hle.Lookup("libGLESv1_CM.so", "glCreateShader").has_value());
+    const auto scoped = hle.Lookup("libGLESv1_CM.so", "glVertexPointer");
+    REQUIRE(scoped.has_value());
+    CHECK(*scoped == ogplay::memory::GuestAddress{0x70000401U});
+}
+
 TEST_CASE("Bionic libdl service exports replace guest linker stubs") {
     const auto& profile = ogplay::runtime::SelectBionicProfile(19);
     const std::vector hle_bindings{

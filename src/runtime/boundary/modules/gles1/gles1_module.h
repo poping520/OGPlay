@@ -41,46 +41,54 @@ public:
         constexpr bool draw_call = Api == gles::GlesApi::gles1 &&
                                    (Id == 35U || Id == 36U);
         const auto symbol = gles::DescribeGlesFunction(Api, Id).name;
-        if constexpr (draw_call) {
-            if (graphics_.gl_context.SelectDrawRenderer(
-                    draw_state_
-                        .Array(detail::kGles1VertexArray, 0x84C0U).enabled,
-                    graphics_.gles_dispatch.HasEnabledVertexAttribute()) ==
-                GuestGlRenderer::programmable) {
-                const auto result = graphics_.gles_dispatch.Dispatch(
-                    Id == 35U ? 40U : 41U, call,
-                    graphics_.angle_frame.has_value()
-                        ? &*graphics_.angle_frame : nullptr);
-                if (!result.has_value()) {
-                    throw std::logic_error(
-                        "selected programmable draw has no GLES2 handler");
-                }
-                graphics_.frames.RecordDraw();
-                return *result;
-            }
-        }
-        auto& dispatch = Api == gles::GlesApi::gles1
-                             ? core_dispatch_ : extension_dispatch_;
-        if constexpr (!draw_call) {
-            return dispatch.Invoke(Id, call.Arguments(), call.ThreadId());
-        }
-        graphics_.gl_context.Native().BeginFixedDraw();
         try {
-            const auto result = dispatch.Invoke(
-                Id, call.Arguments(), call.ThreadId());
-            graphics_.gles_dispatch.RestoreNativeState(
-                graphics_.RequireFrame(symbol));
-            graphics_.gl_context.Native().EndFixedDraw();
-            return result;
-        } catch (...) {
+            if constexpr (draw_call) {
+                if (graphics_.gl_context.SelectDrawRenderer(
+                        draw_state_
+                            .Array(detail::kGles1VertexArray, 0x84C0U).enabled,
+                        graphics_.gles_dispatch.HasEnabledVertexAttribute()) ==
+                    GuestGlRenderer::programmable) {
+                    const auto result = graphics_.gles_dispatch.Dispatch(
+                        Id == 35U ? 40U : 41U, call,
+                        graphics_.angle_frame.has_value()
+                            ? &*graphics_.angle_frame : nullptr);
+                    if (!result.has_value()) {
+                        throw std::logic_error(
+                            "selected programmable draw has no GLES2 handler");
+                    }
+                    graphics_.frames.RecordDraw();
+                    return *result;
+                }
+            }
+            auto& dispatch = Api == gles::GlesApi::gles1
+                                 ? core_dispatch_ : extension_dispatch_;
+            if constexpr (!draw_call) {
+                return dispatch.Invoke(Id, call.Arguments(), call.ThreadId());
+            }
+            graphics_.gl_context.Native().BeginFixedDraw();
             try {
+                const auto result = dispatch.Invoke(
+                    Id, call.Arguments(), call.ThreadId());
                 graphics_.gles_dispatch.RestoreNativeState(
                     graphics_.RequireFrame(symbol));
                 graphics_.gl_context.Native().EndFixedDraw();
+                return result;
             } catch (...) {
-                graphics_.gl_context.Native().Reset();
+                try {
+                    graphics_.gles_dispatch.RestoreNativeState(
+                        graphics_.RequireFrame(symbol));
+                    graphics_.gl_context.Native().EndFixedDraw();
+                } catch (...) {
+                    graphics_.gl_context.Native().Reset();
+                }
+                throw;
             }
-            throw;
+        } catch (const std::invalid_argument&) {
+            // A driver reports invalid enums through the per-context error
+            // latch and keeps running; only host-side contract breaches stay
+            // fatal here.
+            graphics_.gl_context.Shared().SetGuestError(0x0500U);
+            return 0U;
         }
     }
 

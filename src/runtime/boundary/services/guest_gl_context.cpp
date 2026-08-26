@@ -102,7 +102,8 @@ void SharedGlState::DeleteTextures(
 void SharedGlState::SetTextureBaseFormat(const std::uint32_t target,
                                          const std::uint32_t format) {
     const auto binding_target = TextureBindingTargetForMetadata(target);
-    texture_base_formats_[{BoundTexture(binding_target), target}] = format;
+    texture_base_formats_[{BoundTexture(binding_target), binding_target}] =
+        format;
 }
 
 std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
@@ -114,7 +115,7 @@ std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
     const std::uint32_t texture_unit, const std::uint32_t target) const {
     const auto binding_target = TextureBindingTargetForMetadata(target);
     const auto found = texture_base_formats_.find(
-        {BoundTexture(texture_unit, binding_target), target});
+        {BoundTexture(texture_unit, binding_target), binding_target});
     if (found == texture_base_formats_.end()) return std::nullopt;
     return found->second;
 }
@@ -122,13 +123,13 @@ std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
 void SharedGlState::SetGenerateMipmap(const std::uint32_t target,
                                       const bool enabled) {
     const auto binding_target = TextureBindingTargetForMetadata(target);
-    generate_mipmap_[{BoundTexture(binding_target), target}] = enabled;
+    generate_mipmap_[{BoundTexture(binding_target), binding_target}] = enabled;
 }
 
 bool SharedGlState::GenerateMipmapEnabled(const std::uint32_t target) const {
     const auto binding_target = TextureBindingTargetForMetadata(target);
     const auto found = generate_mipmap_.find(
-        {BoundTexture(binding_target), target});
+        {BoundTexture(binding_target), binding_target});
     return found != generate_mipmap_.end() && found->second;
 }
 
@@ -238,6 +239,16 @@ SharedGlState::TextureBindings() const noexcept {
     return bound_textures_;
 }
 
+void SharedGlState::SetGuestError(const std::uint32_t error) noexcept {
+    if (guest_error_ == 0U) guest_error_ = error;
+}
+
+std::uint32_t SharedGlState::TakeGuestError() noexcept {
+    const auto error = guest_error_;
+    guest_error_ = 0U;
+    return error;
+}
+
 void SharedGlState::Reset() noexcept {
     transfer = {};
     active_texture = 0x84C0U;
@@ -253,6 +264,7 @@ void SharedGlState::Reset() noexcept {
     clear_stencil_ = 0;
     capabilities_.clear();
     current_program_ = 0U;
+    guest_error_ = 0U;
 }
 
 void NativeGlState::BeginFixedDraw() {

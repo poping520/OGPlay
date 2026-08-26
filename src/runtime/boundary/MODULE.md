@@ -100,15 +100,21 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   GLES1 texture matrix 也直接以该 active texture 选择 unit,library origin 只决定 API 语义。
 - texture binding、delete semantics、level-zero base format 与 generate-mipmap metadata
   同样由 `SharedGlState` 唯一拥有;binding 以 `(texture unit,target)` 区分 2D/cube-map,
-  metadata 显式携带 object/target,删除 object 清除所有 unit/target 引用。shared state
-  表达 GLES1/GLES2 能力并集,GLES1 handler 另行拒绝其 API 不支持的 target;object name
-  只由同一个 ANGLE context 生成和删除。
+  metadata 显式携带 object/target 且键入前归一(cube face → cube map),删除 object 清除
+  所有 unit/target 引用。shared state 表达 GLES1/GLES2 能力并集,GLES1 支持绑定
+  `GL_TEXTURE_CUBE_MAP_OES` 并对上传 face target 归一,其余非法 target 记入
+  per-context guest 错误锁存(`glGetError` 先排空锁存再查后端,首错保留);object
+  name 只由同一个 ANGLE context 生成和删除。GLES1 的
+  `glGetString(GL_VERSION/GL_EXTENSIONS)` 合成固定管线路径语义(版本
+  `OpenGL ES-CM 1.1`,扩展恰为已实现能力),不透传 ES3 后端字符串。
 - framebuffer/renderbuffer binding、viewport/scissor、clear state 与共有 capability 也只有
   一份 shared shadow;viewport/scissor 的 guest query 返回该 logical shadow,不泄露超采样
   后的 native 坐标。高频 setter 先验证、执行 ANGLE、再原位窄范围提交,禁止为事务语义
   复制含动态容器的整个 `SharedGlState` 或 texture-environment/draw state 容器。
 - GLES1 fixed draw 通过显式 native transaction 临时使用内部 program/buffer/attribute;
   成功和异常返回前均恢复 guest programmable state,internal object 不写入 shared state。
+  fixed program 按 stage 采样目标(2D/cube)选择 `sampler2D`/`samplerCube` 变体惰性编译,
+  未启用 stage 的 sampler 挂到无绑定 unit,禁止同 unit 混用采样器类型。
 - `AndroidBoundaryGles` 独占 buffer/texture/vertex/uniform/query/state/draw/readback 的
   调用准备与 transfer state;主 HLE 只传入当前 `AngleFrame`,组件不得拥有 EGL 生命周期、
   GPU 指标或窗口状态。

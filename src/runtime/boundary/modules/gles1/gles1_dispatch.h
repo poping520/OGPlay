@@ -106,6 +106,7 @@ public:
     [[nodiscard]] const AndroidBoundaryGles1FixedState& Fixed() const noexcept;
     [[nodiscard]] SharedGlState& Shared() noexcept;
     [[nodiscard]] const SharedGlState& Shared() const noexcept;
+    [[nodiscard]] std::uint32_t TakeGuestError() const noexcept;
 
 private:
     SharedGlState owned_shared_;

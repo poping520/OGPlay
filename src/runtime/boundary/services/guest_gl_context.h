@@ -71,6 +71,10 @@ struct SharedGlState final {
     [[nodiscard]] std::uint32_t CurrentProgram() const noexcept;
     [[nodiscard]] const std::map<TextureBindingKey, std::uint32_t>&
     TextureBindings() const noexcept;
+    // GLES-visible errors latch per context and surface through glGetError
+    // instead of terminating the guest call.
+    void SetGuestError(std::uint32_t error) noexcept;
+    [[nodiscard]] std::uint32_t TakeGuestError() noexcept;
 
     void Reset() noexcept;
 
@@ -87,6 +91,7 @@ private:
     std::int32_t clear_stencil_{};
     std::map<std::uint32_t, bool> capabilities_;
     std::uint32_t current_program_{};
+    std::uint32_t guest_error_{};
 };
 
 class NativeGlState final {

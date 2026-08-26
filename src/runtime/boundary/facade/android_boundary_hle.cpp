@@ -126,7 +126,21 @@ public:
         detail::BindAndroidBoundaryGles1Queries(
             gles1_dispatch_, gles1_query_strings_,
             [this](const std::uint32_t parameter) {
-                return RequireFrame("glGetString").GetString(parameter);
+                // GLES1 reports the fixed-function profile; leaking the ANGLE
+                // ES3 backend strings would mislead version-parsing engines.
+                // The extension list advertises exactly what this boundary
+                // implements.
+                switch (parameter) {
+                case 0x1F01U:
+                    return std::string{"OpenGL ES-CM 1.1"};
+                case 0x1F03U:
+                    return std::string{
+                        "GL_OES_texture_cube_map "
+                        "GL_OES_compressed_ETC1_RGB8_texture "
+                        "GL_IMG_texture_compression_pvrtc"};
+                default:
+                    return RequireFrame("glGetString").GetString(parameter);
+                }
             });
         detail::BindAndroidBoundaryGles1Legacy(
             gles1_dispatch_, gles1_legacy_state_, gles1_state_,

@@ -948,7 +948,12 @@ note = "M5 WU-0269 以受检 little-endian guest 数组把 GLES1 glGenTextures/g
 [runtime.gles1_query_strings]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 GLES1 专属分槽只读 guest 区域，并与 GLES2 查询槽隔离"
+note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 GLES1 专属分槽只读 guest 区域，并与 GLES2 查询槽隔离；BND-26 追加：VERSION 合成 OpenGL ES-CM 1.1、EXTENSIONS 合成恰为已实现能力列表（cube/ETC1/PVRTC），不再透传 ES3 后端字符串，VENDOR/RENDERER 保持透传"
+
+[runtime.gles1_guest_error_latch]
+status = "complete"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
+note = "BND-26 追加：SharedGlState 提供 per-context guest 错误锁存（首错保留、Reset 清零），Gles1Module::Invoke 捕获 guest 非法枚举类 std::invalid_argument 转 GL_INVALID_ENUM 锁存并正常返回，glGetError 先排空锁存再查 ANGLE；宿主契约破坏（logic_error/runtime_error/GuestTransferError/MemoryFault）仍显式失败。INVALID_ENUM 为统一近似（个别规范为 INVALID_VALUE）；GLES2 维持直达后端的严格语义"
 
 [runtime.gles1_generate_mipmap_state]
 status = "complete"
@@ -959,6 +964,11 @@ note = "M5 WU-0271 保存 GL_GENERATE_MIPMAP 状态；WU-0273 在四个 level-0 
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
 note = "M5 WU-0273 批量接入 compressed/copy/image/sub-image 四个 GLES1 texture 入口，guest 像素传输受检并服从 unpack alignment；WU-0331 在 ANGLE 无 ETC1 扩展时规范解码为 RGBA8"
+
+[runtime.gles1_texture_cube_map]
+status = "complete"
+test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
+note = "BND-26 落地 GL_OES_texture_cube_map：GLES1 接受 0x8513 绑定/参数/mipmap 目标并按 unit 记 capability，上传 face target 归一到 cube 对象（SharedGlState metadata 键统一归一），fixed program 按 stage 采样目标选择 samplerCube/vec3 texcoord 变体，未启用 stage sampler 挂无绑定 unit；glGetString(GL_EXTENSIONS) 追加宣告；libagl 无 cube，真机语义来自硬件 GLES1 驱动"
 
 [gles.etc1_decode_fallback]
 status = "complete"

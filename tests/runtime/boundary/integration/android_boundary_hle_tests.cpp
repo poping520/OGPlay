@@ -1541,6 +1541,23 @@ TEST_CASE("GLES1 shade model state validates and resets") {
     CHECK_THROWS_WITH_AS(
         state.SetCapability(0U, true), "GLES1 capability is invalid",
         std::invalid_argument);
+    // OES_texture_cube_map: bindings address the cube target while face
+    // targets only appear on uploads and normalize onto the same object.
+    state.BindTexture(0x8513U, 9U);
+    CHECK(state.BoundTexture(0x8513U) == 9U);
+    CHECK_THROWS_WITH_AS(
+        state.BindTexture(0x8515U, 9U),
+        "GLES1 texture target must be GL_TEXTURE_2D, got 0x8515",
+        std::invalid_argument);
+    state.SetTextureBaseFormat(0x8515U, 0x1908U);
+    REQUIRE(state.TextureBaseFormat(0x84C0U, 0x8513U).has_value());
+    CHECK(*state.TextureBaseFormat(0x84C0U, 0x8513U) == 0x1908U);
+    state.SetGenerateMipmap(0x8513U, true);
+    CHECK(state.GenerateMipmapEnabled(0x8513U));
+    CHECK(state.GenerateMipmapEnabled(0x8515U));
+    state.SetCapability(0x8513U, true);
+    CHECK(state.Capability(0x84C0U, 0x8513U));
+    CHECK_FALSE(state.Capability(0x84C1U, 0x8513U));
     state.Reset();
     CHECK(state.ShadeModel() ==
           ogplay::runtime::detail::kGles1SmoothShadeModel);
@@ -2290,11 +2307,12 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             CHECK(message.find("lr=") != std::string::npos);
             CHECK(message.find("thread=1") != std::string::npos);
         }
-        CHECK_THROWS_WITH_AS(
-            fixture.Call("libGLESv1_CM.so", "glGenTextures",
-                         {std::bit_cast<std::uint32_t>(-1),
-                          fixture.output.Value()}),
-            "glGenTextures count cannot be negative", std::invalid_argument);
+        // Invalid GL values latch the per-context error instead of throwing.
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGenTextures",
+                           {std::bit_cast<std::uint32_t>(-1),
+                            fixture.output.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK_THROWS_AS(
             fixture.Call(
                 "libGLESv1_CM.so", "glGenTextures",
@@ -2330,10 +2348,10 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                            {0x8892U, 0x8765U, object_query.Value()}) == 0U);
         CHECK(fixture.bus.Read32(object_query, 1U) == 0x88E4U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glIsBuffer", {buffer}) == 1U);
-        CHECK_THROWS_WITH_AS(
-            fixture.Call("libGLESv1_CM.so", "glBufferData",
-                         {0x8892U, 0xFFFFFFFFU, 0U, 0x88E4U}),
-            "glBufferData count cannot be negative", std::invalid_argument);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glBufferData",
+                           {0x8892U, 0xFFFFFFFFU, 0U, 0x88E4U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDeleteBuffers",
                            {1U, buffer_names.Value()}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glIsBuffer", {buffer}) == 0U);
@@ -2467,11 +2485,10 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
                          {0x84E2U, 0U}),
             ogplay::gles::GuestTransferError);
-        CHECK_THROWS_WITH_AS(
-            fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
-                         {0xDEADBEEFU, integer_query.Value()}),
-            "GLES1 integer query is unsupported: 3735928559",
-            std::invalid_argument);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetIntegerv",
+                           {0xDEADBEEFU, integer_query.Value()}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glBlendFunc",
                            {1U, 0U}) == 0U);
         for (const auto [pname, expected] :
@@ -2526,13 +2543,12 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
                   "libGLESv1_CM.so", "glTexParameterf",
                   {0x0DE1U, ogplay::runtime::detail::kGles1GenerateMipmap,
                    std::bit_cast<std::uint32_t>(0.0F)}) == 0U);
-        CHECK_THROWS_WITH_AS(
-            fixture.Call(
-                "libGLESv1_CM.so", "glTexParameterf",
-                {0x0DE1U, ogplay::runtime::detail::kGles1GenerateMipmap,
-                 std::bit_cast<std::uint32_t>(2.0F)}),
-            "GLES1 GL_GENERATE_MIPMAP must be GL_FALSE or GL_TRUE",
-            std::invalid_argument);
+        CHECK(fixture.Call(
+                  "libGLESv1_CM.so", "glTexParameterf",
+                  {0x0DE1U, ogplay::runtime::detail::kGles1GenerateMipmap,
+                   std::bit_cast<std::uint32_t>(2.0F)}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteri",
                            {0x0DE1U, 0x2800U, 0x2601U}) == 0U);
         const auto texture_pixels = fixture.output.Add(0x300U);
@@ -2585,10 +2601,10 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call("libGLESv1_CM.so", "glCompressedTexImage2D",
                            {0x0DE1U, 0U, 0x8D64U, 4U}) == 0U);
         fixture.bus.Write32(fixture.stack.Add(8U), 0xFFFFFFFFU, 1U);
-        CHECK_THROWS_AS(
-            fixture.Call("libGLESv1_CM.so", "glCompressedTexImage2D",
-                         {0x0DE1U, 0U, 0x8D64U, 4U}),
-            std::invalid_argument);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glCompressedTexImage2D",
+                           {0x0DE1U, 0U, 0x8D64U, 4U}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         const auto vertices = fixture.output.Add(0x400U);
         const std::array vertex_values{
             -0.75F, -0.75F, 0.0F, 0.75F, -0.75F, 0.0F,
@@ -2727,10 +2743,10 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
             fixture.Call("libGLESv1_CM.so", "glDrawElements",
                          {0x0004U, 3U, 0x1401U, 0U}),
             ogplay::gles::GuestTransferError);
-        CHECK_THROWS_AS(
-            fixture.Call("libGLESv1_CM.so", "glDrawArrays",
-                         {0x0004U, 0U, 0xFFFFFFFFU}),
-            std::invalid_argument);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                           {0x0004U, 0U, 0xFFFFFFFFU}) == 0U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glDisableClientState",
                            {ogplay::runtime::detail::kGles1NormalArray}) == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
@@ -2743,10 +2759,9 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glShadeModel",
                   {ogplay::runtime::detail::kGles1FlatShadeModel}) == 0);
-        CHECK_THROWS_WITH_AS(
-            fixture.Call("libGLESv1_CM.so", "glShadeModel", {0U}),
-            "glShadeModel mode must be GL_FLAT or GL_SMOOTH",
-            std::invalid_argument);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glShadeModel", {0U}) == 0);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call(
                   "libGLESv1_CM.so", "glClearColor",
                   {std::bit_cast<std::uint32_t>(0.125F),
@@ -2781,6 +2796,140 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
     CHECK_THROWS_WITH_AS(
         fixture.Call("libGLESv1_CM.so", "glClearDepthx", {0x00010000U}),
         "glClearDepthx has no current ANGLE frame", std::runtime_error);
+}
+
+TEST_CASE("GLES1 cube map textures bind upload and sample the fixed pipeline") {
+    BoundaryFixture fixture;
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    fixture.boundary.OpenManagedSurface();
+    const auto version = fixture.Call(
+        "libGLESv1_CM.so", "glGetString", {0x1F01U});
+    REQUIRE(version != 0U);
+    const auto version_length = fixture.memory.CStringLength(
+        ogplay::memory::GuestAddress{version}, 64U, 1U);
+    std::string version_text(version_length, '\0');
+    fixture.memory.Read(ogplay::memory::GuestAddress{version},
+                        std::as_writable_bytes(std::span(version_text)), 1U);
+    CHECK(version_text == "OpenGL ES-CM 1.1");
+    const auto extensions = fixture.Call(
+        "libGLESv1_CM.so", "glGetString", {0x1F03U});
+    REQUIRE(extensions != 0U);
+    const auto extension_length = fixture.memory.CStringLength(
+        ogplay::memory::GuestAddress{extensions}, 4096U, 1U);
+    std::string extension_text(extension_length, '\0');
+    fixture.memory.Read(ogplay::memory::GuestAddress{extensions},
+                        std::as_writable_bytes(std::span(extension_text)), 1U);
+    for (const auto* extension : {"GL_OES_texture_cube_map",
+                                  "GL_OES_compressed_ETC1_RGB8_texture",
+                                  "GL_IMG_texture_compression_pvrtc"}) {
+        CAPTURE(extension);
+        CHECK(extension_text.find(extension) != std::string::npos);
+    }
+
+    const auto names = fixture.output.Add(0x300U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGenTextures",
+                       {1U, names.Value()}) == 0U);
+    const auto texture = fixture.bus.Read32(names, 1U);
+    REQUIRE(texture != 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
+                       {0x8513U, texture}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glBindTexture",
+                       {0x8515U, texture}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteri",
+                       {0x8513U, 0x2800U, 0x2600U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glTexParameteri",
+                       {0x8513U, 0x2801U, 0x2600U}) == 0U);
+
+    // +X uploads red, -X uploads blue and the remaining faces upload green;
+    // the sampled direction (1, 0, 0) must select the red face.
+    const auto faces = fixture.output.Add(0x320U);
+    const std::array<std::array<std::byte, 4>, 3> face_pixels{
+        std::array{std::byte{0xff}, std::byte{}, std::byte{}, std::byte{0xff}},
+        std::array{std::byte{}, std::byte{}, std::byte{0xff}, std::byte{0xff}},
+        std::array{std::byte{}, std::byte{0xff}, std::byte{}, std::byte{0xff}}};
+    for (auto face = 0x8515U; face <= 0x851AU; ++face) {
+        const auto& pixel = face == 0x8515U   ? face_pixels[0]
+                            : face == 0x8516U ? face_pixels[1]
+                                              : face_pixels[2];
+        fixture.memory.Write(faces, pixel, 1U);
+        fixture.bus.Write32(fixture.stack, 1U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(4U), 0U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(8U), 0x1908U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(12U), 0x1401U, 1U);
+        fixture.bus.Write32(fixture.stack.Add(16U), faces.Value(), 1U);
+        CAPTURE(face);
+        CHECK(fixture.Call("libGLESv1_CM.so", "glTexImage2D",
+                           {face, 0U, 0x1908U, 1U}) == 0U);
+    }
+
+    const auto vertices = fixture.output.Add(0x340U);
+    const std::array vertex_values{
+        -0.75F, -0.75F, 0.0F, 0.75F, -0.75F, 0.0F,
+        0.0F, 0.75F, 0.0F};
+    for (std::size_t index = 0; index < vertex_values.size(); ++index) {
+        fixture.bus.Write32(
+            vertices.Add(index * sizeof(std::uint32_t)),
+            std::bit_cast<std::uint32_t>(vertex_values[index]), 1U);
+    }
+    const auto colors = fixture.output.Add(0x370U);
+    const std::array<std::byte, 12> color_values{
+        std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff},
+        std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff},
+        std::byte{0xff}, std::byte{0xff}, std::byte{0xff}, std::byte{0xff}};
+    fixture.memory.Write(colors, color_values, 1U);
+    const auto texcoords = fixture.output.Add(0x3A0U);
+    for (std::size_t vertex = 0; vertex < 3U; ++vertex) {
+        const std::array direction{1.0F, 0.0F, 0.0F};
+        for (std::size_t component = 0; component < 3U; ++component) {
+            fixture.bus.Write32(
+                texcoords.Add((vertex * 3U + component) * 4U),
+                std::bit_cast<std::uint32_t>(direction[component]), 1U);
+        }
+    }
+    CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
+                       {3U, 0x1406U, 0U, vertices.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glColorPointer",
+                       {4U, 0x1401U, 0U, colors.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClientActiveTexture",
+                       {0x84C0U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glTexCoordPointer",
+                       {3U, 0x1406U, 0U, texcoords.Value()}) == 0U);
+    for (const auto array : {
+             ogplay::runtime::detail::kGles1VertexArray,
+             ogplay::runtime::detail::kGles1ColorArray,
+             ogplay::runtime::detail::kGles1TextureCoordArray}) {
+        CHECK(fixture.Call("libGLESv1_CM.so", "glEnableClientState",
+                           {array}) == 0U);
+    }
+    CHECK(fixture.Call(
+              "libGLESv1_CM.so", "glTexEnvi",
+              {ogplay::runtime::detail::kGles1TextureEnvironment,
+               ogplay::runtime::detail::kGles1TextureEnvironmentMode,
+               0x1E01U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glEnable", {0x8513U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClearColor",
+                       {0U, 0U, 0U, std::bit_cast<std::uint32_t>(1.0F)}) ==
+          0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glClear", {0x00004000U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays",
+                       {0x0004U, 0U, 3U}) == 0U);
+    fixture.boundary.PresentManagedSurface();
+    const auto cube_frame = fixture.boundary.TakeLatestFrame();
+    REQUIRE(cube_frame.has_value());
+    bool found_red_pixel = false;
+    bool found_blue_pixel = false;
+    for (std::size_t pixel = 0; pixel < cube_frame->rgba8.size();
+         pixel += 4U) {
+        const auto red = cube_frame->rgba8[pixel] > 200U;
+        const auto green = cube_frame->rgba8[pixel + 1U] > 200U;
+        const auto blue = cube_frame->rgba8[pixel + 2U] > 200U;
+        found_red_pixel |= red && !green && !blue;
+        found_blue_pixel |= blue && !red && !green;
+    }
+    CHECK(found_red_pixel);
+    CHECK_FALSE(found_blue_pixel);
 }
 
 TEST_CASE("GLES1 lighting preserves diffuse material alpha for blending") {
@@ -2939,14 +3088,13 @@ TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
                        {4U, 0x1401U, 0U, fixture.output.Value()}) == 0U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glWeightPointerOES",
                        {4U, 0x1406U, 0U, fixture.output.Add(32U).Value()}) == 0U);
-    CHECK_THROWS_AS(
-        fixture.Call("libGLESv1_CM.so", "glCurrentPaletteMatrixOES",
-                     {32U}),
-        std::invalid_argument);
-    CHECK_THROWS_AS(
-        fixture.Call("libGLESv1_CM.so", "glMatrixIndexPointerOES",
-                     {4U, 0x1406U, 0U, fixture.output.Value()}),
-        std::invalid_argument);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glCurrentPaletteMatrixOES",
+                       {32U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glMatrixIndexPointerOES",
+                       {4U, 0x1406U, 0U, fixture.output.Value()}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0U);
         CHECK(fixture.Call("libGLESv1_CM.so", "glVertexPointer",
                            {3U, 0x1406U, 0U, fixture.output.Value()}) == 0U);
         const auto pointer_query = fixture.output.Add(0x240U);

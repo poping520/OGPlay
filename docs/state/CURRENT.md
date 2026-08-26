@@ -1,9 +1,17 @@
 # 当前状态
 
-更新：2026-08-26 · libdl 全进程语义与 boundary 句柄回退（BND-25 追加）
+更新：GLES1 cube map、ES1 字符串合成与 guest 错误锁存（BND-26）
 
 ## 当前阶段
 
+- **BND-26**：GLES1 固定管线落地 `GL_OES_texture_cube_map`。绑定/参数/mipmap 接受
+  0x8513 并按 unit 记 capability；上传 face target 经共享层归一到 cube 对象（顺带修复
+  `SharedGlState` metadata 键未归一的隐藏缺陷）；fixed program 按 stage 采样目标选择
+  `samplerCube`/vec3 texcoord 变体惰性编译，未启用 stage sampler 挂无绑定 unit（修复同
+  unit 混用采样器类型的 `INVALID_OPERATION`）。追加轮：GLES1 `glGetString` 的
+  VERSION/EXTENSIONS 合成 ES1 固定管线语义（不再透传 ES3 后端串）；guest 非法枚举经
+  `SharedGlState` per-context 锁存转 `GL_INVALID_ENUM` 由 `glGetError` 消费，宿主契约
+  破坏仍显式失败。KitKat libagl 无 cube，真机语义来自硬件 GLES1 驱动。
 - **EGL/GLES API19**：BND-16..24 已冻结 KTU84P ABI，完成 EGL 13 项、GLES1 145 core、
   GLES2 142 core handler 与 exact ELF 导入；bounded run 已越过 OpenGL。
 - **Native Boundary**：BND-1..15 已闭合 metadata catalog、dense transport、typed A32 ABI、
@@ -69,13 +77,20 @@
   与 boundary 回退定向 3 用例 46 assertions 通过，`Bionic*` 14/14、GLES1 state 13/13、
   存量 libdl 无回归，按要求未执行全量测试。pvz 越过 `0x6045be18` NULL AddRef 崩溃点，
   剩余阻断为 GLES1 收到 `GL_TEXTURE_CUBE_MAP`（0x8513）触发仅支持 2D 的致命校验。
+- 2026-08-27 BND-26：Windows Debug/Release 构建通过；新增 cube 采样边界级用例
+  （62 assertions，含 VERSION/扩展串与错误锁存断言）与状态层 cube 断言，
+  `*GLES1*/*GLES2*/*texture*/*boundary*` 46 用例 10542 assertions 无回归，10 处既有
+  THROW 断言按锁存契约改写，按要求未执行全量测试。pvz 越过 0x8513 阻断，guest 日志
+  到达 `LoadTask::MAIN_MENU`，新停止点为 `f≈4447` 的 `A32 guest call exhausted its
+  tick budget`（consumed≈4.48e9，独立问题）。
 
 ## 下一步
 
 1. 通用闭合 A6 DT_SONAME identity 与 DH 当前启动阻断，复验 DVM-47 和 threaded title gate。
 2. 执行 Linux M9 严格出口复验；后续 framework 长尾仅按关闭 survey 的 reached gap 排序。
-3. PVZ 下一阻断：GLES1 缺 `GL_OES_texture_cube_map`（0x8513 立即致命，真机普遍支持）；
-   pvz-tmp 问题 3 已判定无可观测影响，问题 4 为独立契约债。
+3. PVZ 下一阻断：`LoaderThread.runNative` 在主菜单加载期耗尽 A32 tick 预算
+   （consumed≈4.48e9，pc 在 s3e 代码区），需判定长加载循环还是自旋等待；pvz-tmp
+   问题 3 已判定无可观测影响，问题 4 为独立契约债。
 
 ## 阻塞与边界
 

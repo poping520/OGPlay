@@ -18,12 +18,21 @@
 namespace ogplay::runtime::detail {
 namespace {
 constexpr std::size_t kMaximumMatrixStackDepth = 32;
+constexpr std::uint32_t kGles1Texture2d = 0x0DE1U;
+constexpr std::uint32_t kGles1TextureCubeMap = 0x8513U;
 [[nodiscard]] std::string TextureTargetMessage(
     const std::uint32_t target) {
     std::ostringstream stream;
     stream << "GLES1 texture target must be GL_TEXTURE_2D, got 0x" << std::hex
            << target;
     return stream.str();
+}
+// OES_texture_cube_map addresses bindings, parameters and derived state
+// through the cube map target; only image uploads name individual faces.
+void RequireTextureBindingTarget(const std::uint32_t target) {
+    if (target != kGles1Texture2d && target != kGles1TextureCubeMap) {
+        throw std::invalid_argument(TextureTargetMessage(target));
+    }
 }
 [[nodiscard]] std::size_t HintIndex(const std::uint32_t target) {
     switch (target) {
@@ -60,6 +69,7 @@ constexpr std::size_t kMaximumMatrixStackDepth = 32;
     case 0x0BA1U:  // GL_NORMALIZE
     case 0x803AU:  // GL_RESCALE_NORMAL
     case 0x0DE1U:  // GL_TEXTURE_2D
+    case 0x8513U:  // GL_TEXTURE_CUBE_MAP_OES
     case 0x0B10U:  // GL_POINT_SMOOTH
     case 0x0B20U:  // GL_LINE_SMOOTH
     case 0x809DU:  // GL_MULTISAMPLE
@@ -75,7 +85,7 @@ constexpr std::size_t kMaximumMatrixStackDepth = 32;
     if (!SharedCapability(capability) && !FixedCapability(capability)) {
         throw std::invalid_argument("GLES1 capability is invalid");
     }
-    if (capability == 0x0DE1U) {
+    if (capability == 0x0DE1U || capability == 0x8513U) {
         return (static_cast<std::uint64_t>(active_texture) << 32U) |
                capability;
     }
@@ -347,22 +357,18 @@ std::uint32_t AndroidBoundaryGles1State::ActiveTexture() const noexcept {
 
 void AndroidBoundaryGles1State::ValidateTextureTarget(
     const std::uint32_t target) const {
-    if (target != 0x0DE1U) {
-        throw std::invalid_argument(TextureTargetMessage(target));
-    }
+    RequireTextureBindingTarget(target);
 }
 
 void AndroidBoundaryGles1State::BindTexture(
     const std::uint32_t target, const std::uint32_t texture) {
-    ValidateTextureTarget(target);
+    RequireTextureBindingTarget(target);
     shared_->BindTexture(target, texture);
 }
 
 std::uint32_t AndroidBoundaryGles1State::BoundTexture(
     const std::uint32_t target) const {
-    if (target != 0x0DE1U) {
-        throw std::invalid_argument(TextureTargetMessage(target));
-    }
+    RequireTextureBindingTarget(target);
     return shared_->BoundTexture(target);
 }
 
@@ -373,9 +379,6 @@ void AndroidBoundaryGles1State::DeleteTextures(
 
 void AndroidBoundaryGles1State::SetTextureBaseFormat(
     const std::uint32_t target, const std::uint32_t format) {
-    if (target != 0x0DE1U) {
-        throw std::invalid_argument(TextureTargetMessage(target));
-    }
     shared_->SetTextureBaseFormat(target, format);
 }
 
@@ -386,9 +389,6 @@ std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
 
 std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
     const std::uint32_t texture_unit, const std::uint32_t target) const {
-    if (target != 0x0DE1U) {
-        throw std::invalid_argument(TextureTargetMessage(target));
-    }
     if (texture_unit < 0x84C0U || texture_unit > 0x84DFU) {
         throw std::invalid_argument(
             "GLES1 texture unit is outside GL_TEXTURE0..31");
@@ -398,17 +398,12 @@ std::optional<std::uint32_t> AndroidBoundaryGles1State::TextureBaseFormat(
 
 void AndroidBoundaryGles1State::SetGenerateMipmap(
     const std::uint32_t target, const bool enabled) {
-    if (target != 0x0DE1U) {
-        throw std::invalid_argument(TextureTargetMessage(target));
-    }
+    RequireTextureBindingTarget(target);
     shared_->SetGenerateMipmap(target, enabled);
 }
 
 bool AndroidBoundaryGles1State::GenerateMipmapEnabled(
     const std::uint32_t target) const {
-    if (target != 0x0DE1U) {
-        throw std::invalid_argument(TextureTargetMessage(target));
-    }
     return shared_->GenerateMipmapEnabled(target);
 }
 
@@ -437,7 +432,10 @@ bool AndroidBoundaryGles1State::Capability(
 std::vector<std::uint32_t> AndroidBoundaryGles1State::EnabledTextureUnits() const {
     std::vector<std::uint32_t> result;
     for (auto texture = 0x84C0U; texture <= 0x84DFU; ++texture) {
-        if (Capability(texture, 0x0DE1U)) result.push_back(texture);
+        if (Capability(texture, 0x0DE1U) ||
+            Capability(texture, 0x8513U)) {
+            result.push_back(texture);
+        }
     }
     return result;
 }
@@ -466,6 +464,10 @@ AndroidBoundaryGles1State::Matrices() const noexcept {
 
 AndroidBoundaryGles1FixedState& AndroidBoundaryGles1State::Fixed() noexcept {
     return *fixed_;
+}
+
+std::uint32_t AndroidBoundaryGles1State::TakeGuestError() const noexcept {
+    return shared_->TakeGuestError();
 }
 
 const AndroidBoundaryGles1FixedState&
@@ -694,8 +696,13 @@ void BindAndroidBoundaryGles1Core(
         });
     dispatch.Bind(
         "glGetError",
-        [require_frame](const std::span<const std::uint32_t>,
+        [&state, require_frame](const std::span<const std::uint32_t>,
                         const std::uint64_t) {
+            // Guest-invalid enums latch into the shared per-context error
+            // slot; drain it before the backend flag just like a driver
+            // reports its own accumulated errors.
+            const auto latched = state.TakeGuestError();
+            if (latched != 0U) return latched;
             return require_frame("glGetError").GetError();
         });
     dispatch.Bind(

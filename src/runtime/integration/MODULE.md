@@ -99,6 +99,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   栈 8 字节对齐),解析顺序 RegisterNatives → `Java_` 导出名 → 记账明确失败；
   RegisterNatives 查找与目标执行必须分离，只有映射不存在时才允许继续查找导出，
   已解析目标的 JNI/CPU/fault 异常必须保留原始原因向上报告，禁止伪装成未注册；
+  `RegisterNatives` 目标执行失败还必须把 class、method、descriptor、guest process thread
+  与嵌套 cause 分行输出，使无符号 guest fault 可反查到 Java 调用边界；
   入向把全部解释类/方法及 session 尚未拥有的 code-defined intrinsic 平台类注册进
   会话 `JniClassRegistry`(impl id `dexvm.m<id>`),
   所有非数组类共用递归注册路径并保留 intrinsic/application 边界上的完整父类链，

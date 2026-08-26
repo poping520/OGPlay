@@ -11,6 +11,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -20,6 +21,16 @@
 
 namespace ogplay::runtime::dexvm {
 namespace {
+
+[[nodiscard]] std::string IndentDiagnostic(const std::string_view text,
+                                           const std::string_view indent) {
+    std::string result{indent};
+    for (const char character : text) {
+        result += character;
+        if (character == '\n') result += indent;
+    }
+    return result;
+}
 
 struct VmThreadRecord final {
     std::uint64_t id{};
@@ -57,6 +68,14 @@ public:
     [[nodiscard]] std::string NameOf(const VmThreadRecord* record) const {
         const std::lock_guard guard(mutex);
         return record->name;
+    }
+
+    // Failure reports pair the Java-visible name with the DexVM thread
+    // record id so repeat names ("Thread-2") stay distinguishable.
+    [[nodiscard]] std::string DescribeForReport(
+        const VmThreadRecord* record) const {
+        const std::lock_guard guard(mutex);
+        return record->name + " (id " + std::to_string(record->id) + ")";
     }
 
     // Parks the calling thread until ready() holds. The execution lock is
@@ -140,7 +159,7 @@ public:
             if (outcome.exception.IsValid()) {
                 final_status = VmThreadStatus::failed;
                 failure_text = "uncaught exception on Java thread " +
-                               NameOf(record) + ": " +
+                               DescribeForReport(record) + ": " +
                                vm->Linker()
                                    .Class(outcome.exception_class)
                                    .descriptor +
@@ -156,13 +175,15 @@ public:
                 final_status = VmThreadStatus::stopped;
             } else {
                 final_status = VmThreadStatus::failed;
-                failure_text = "Java thread " + NameOf(record) +
-                               " failed: " + error.what();
+                failure_text = "Java thread " + DescribeForReport(record) +
+                               " failed:\n" +
+                               IndentDiagnostic(error.what(), "  ");
             }
         } catch (const std::exception& error) {
             final_status = VmThreadStatus::failed;
-            failure_text =
-                "Java thread " + NameOf(record) + " failed: " + error.what();
+            failure_text = "Java thread " + DescribeForReport(record) +
+                           " failed:\n" +
+                           IndentDiagnostic(error.what(), "  ");
         }
         // A dead thread must not keep anybody out of the monitors it still
         // held, and its wait-set membership goes with it.

@@ -31,50 +31,8 @@ namespace {
 [[nodiscard]] std::string DescribeGuestCallStop(
     const cpu::RunResult& stopped, const cpu::A32State& state,
     const memory::AddressSpace& address_space) {
-    auto result =
-        "A32 guest call stopped outside a handled boundary: pc=" +
-        std::to_string(stopped.pc.Value()) +
-        " reason=" +
-        std::to_string(static_cast<std::uint8_t>(stopped.reason)) +
-        " immediate=" + std::to_string(stopped.immediate);
-    if (stopped.fault.has_value()) {
-        result += " fault=" +
-                  std::to_string(stopped.fault->address.Value()) +
-                  " access=" +
-                  std::to_string(static_cast<std::uint8_t>(
-                      stopped.fault->access)) +
-                  " fault_reason=" +
-                  std::to_string(static_cast<std::uint8_t>(
-                      stopped.fault->reason));
-    }
-    result += " r0=" +
-              std::to_string(state.Register(cpu::CoreRegister::r0)) +
-              " r1=" +
-              std::to_string(state.Register(cpu::CoreRegister::r1)) +
-              " r2=" +
-              std::to_string(state.Register(cpu::CoreRegister::r2)) +
-              " r3=" +
-              std::to_string(state.Register(cpu::CoreRegister::r3)) +
-              " r12=" +
-              std::to_string(state.Register(cpu::CoreRegister::r12)) +
-              " sp=" +
-              std::to_string(state.Register(cpu::CoreRegister::sp)) +
-              " lr=" +
-              std::to_string(state.Register(cpu::CoreRegister::lr));
-    try {
-        const auto code_start = stopped.pc.Subtract(8U);
-        std::array<std::byte, 24> code{};
-        address_space.Read(code_start, code, state.ThreadId());
-        std::ostringstream encoded;
-        encoded << std::hex << std::setfill('0');
-        for (const auto byte : code) {
-            encoded << std::setw(2)
-                    << std::to_integer<std::uint32_t>(byte);
-        }
-        result += " code_at_pc_minus_8=" + encoded.str();
-    } catch (const memory::MemoryFault&) {
-    }
-    return result;
+    return "A32 guest call stopped outside a handled boundary:\n" +
+           DescribeA32GuestStop(stopped, state, address_space);
 }
 
 }  // namespace
@@ -271,6 +229,61 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
     }
     return {consumed, GuestThreadRunStop::budget_exhausted, last,
             std::nullopt};
+}
+
+std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
+                                 const cpu::A32State& state,
+                                 const memory::AddressSpace& address_space) {
+    const auto hex32 = [](const std::uint32_t value) {
+        std::ostringstream encoded;
+        encoded << std::hex << std::nouppercase << std::setw(8)
+                << std::setfill('0') << value;
+        return "0x" + encoded.str();
+    };
+    const auto numeric =
+        [](const std::string_view name, const std::uint8_t value) {
+            return std::string{name} + "(" +
+                   std::to_string(static_cast<unsigned>(value)) + ")";
+        };
+    auto result = "  stop:      pc=" + hex32(stopped.pc.Value()) + " state=" +
+                  std::string{cpu::ToString(state.State())} + " reason=" +
+                  numeric(cpu::ToString(stopped.reason),
+                          static_cast<std::uint8_t>(stopped.reason)) +
+                  " immediate=" + std::to_string(stopped.immediate);
+    if (stopped.fault.has_value()) {
+        result += "\n  fault:     address=" +
+                  hex32(stopped.fault->address.Value()) +
+                  " access=" +
+                  numeric(memory::ToString(stopped.fault->access),
+                          static_cast<std::uint8_t>(stopped.fault->access)) +
+                  " reason=" +
+                  numeric(memory::ToString(stopped.fault->reason),
+                          static_cast<std::uint8_t>(stopped.fault->reason));
+    }
+    result += "\n  thread:    guest=" + std::to_string(state.ThreadId()) +
+              "\n  registers: r0=" +
+              hex32(state.Register(cpu::CoreRegister::r0)) + " r1=" +
+              hex32(state.Register(cpu::CoreRegister::r1)) + " r2=" +
+              hex32(state.Register(cpu::CoreRegister::r2)) + " r3=" +
+              hex32(state.Register(cpu::CoreRegister::r3)) +
+              "\n             r12=" +
+              hex32(state.Register(cpu::CoreRegister::r12)) + " sp=" +
+              hex32(state.Register(cpu::CoreRegister::sp)) + " lr=" +
+              hex32(state.Register(cpu::CoreRegister::lr));
+    try {
+        const auto code_start = stopped.pc.Subtract(8U);
+        std::array<std::byte, 24> code{};
+        address_space.Read(code_start, code, state.ThreadId());
+        std::ostringstream encoded;
+        encoded << std::hex << std::setfill('0');
+        for (const auto byte : code) {
+            encoded << std::setw(2)
+                    << std::to_integer<std::uint32_t>(byte);
+        }
+        result += "\n  code:      pc_minus_8=" + encoded.str();
+    } catch (const memory::MemoryFault&) {
+    }
+    return result;
 }
 
 }  // namespace ogplay::runtime

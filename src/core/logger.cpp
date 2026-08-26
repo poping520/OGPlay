@@ -263,7 +263,17 @@ std::string Logger::RenderText(const LogRecord& record) const {
     output << ToString(record.level) << " [f=" << record.frame << "] "
            << record.category << " " << record.message;
     for (const auto& field : record.fields) {
-        output << " " << field.key << "=" << RenderFieldText(field.value, symbols.get());
+        const auto rendered = RenderFieldText(field.value, symbols.get());
+        output << " " << field.key << "=";
+        if (rendered.find('\n') == std::string::npos) {
+            output << rendered;
+            continue;
+        }
+        output << '\n' << "  ";
+        for (const char character : rendered) {
+            output << character;
+            if (character == '\n') output << "  ";
+        }
     }
     return output.str();
 }

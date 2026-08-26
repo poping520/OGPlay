@@ -19,6 +19,9 @@
 
 ## 不变量
 
+- text 日志中的单行 field 保持 `key=value`；多行 string field 渲染为 `key=` 后的缩进块，
+  并保留值自身的相对缩进。JSONL 仍保存原始字符串，不把展示空格写回结构化值。
+
 - 日志 message 为固定文本，可变信息只能放在 fields。
 - 环形缓冲常开；Trace/Debug/Info 默认首次记录并累计重复次数。
 - 未实现能力的调用计数不会被清零或伪装为 complete。

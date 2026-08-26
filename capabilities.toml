@@ -433,7 +433,12 @@ note = "M1 内存快照支持版本、连续映射合并、权限和内容的事
 [cpu.contract]
 status = "complete"
 test = "tests/cpu/state_tests.cpp"
-note = "M1 固定 A32/T32 核心与扩展寄存器、线程号、运行结果和 fault；M2 将强类型 guest thread pointer 纳入版本化快照；M5 WU-0288 增加等尺寸寄存器组批量导入以消除 JIT 快照逐槽调用"
+note = "M1 固定 A32/T32 核心与扩展寄存器、线程号、运行结果和 fault；M2 将强类型 guest thread pointer 纳入版本化快照；M5 WU-0288 增加等尺寸寄存器组批量导入以消除 JIT 快照逐槽调用；DVM-90 可诊断性补强为 execution state/stop reason/fault access/fault reason 发布稳定名字且保留数值"
+
+[runtime.guest_fault_diagnostics]
+status = "complete"
+test = "tests/core/logger_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/dexvm/vm_thread_tests.cpp"
+note = "DVM-90 可诊断性补强统一 A32 abnormal-stop 报告：固定宽度十六进制 PC/fault/核心寄存器、具名+数值 stop/fault 枚举、guest thread 与有界指令窗口；text sink 按 Java/JNI/stop/fault/register/code 层级缩进且 JSONL 保留原值；RegisterNatives 目标失败附规范 class/method/descriptor，DexVM Java child 失败附 name+record id，run-apk 外层不再误称 GLSurfaceView profile 失败"
 
 [cpu.interpreter]
 status = "partial"

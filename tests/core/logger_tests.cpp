@@ -115,6 +115,20 @@ TEST_CASE("guest addresses are symbolized in text and JSON") {
     CHECK(logger.RenderJson(record).find("\"module\":\"libguest.so\"") != std::string::npos);
 }
 
+TEST_CASE("multiline text fields are rendered as indented blocks") {
+    ogplay::core::Logger logger;
+    logger.Write(ogplay::core::LogLevel::error, "cpu.fault", "guest fault",
+                 {}, {{"reason", std::string{"outer\n  inner"}}});
+
+    const auto record = logger.Snapshot().front();
+    CHECK(logger.RenderText(record) ==
+          "error [f=0] cpu.fault guest fault reason=\n"
+          "  outer\n"
+          "    inner");
+    CHECK(logger.RenderJson(record).find("outer\\n  inner") !=
+          std::string::npos);
+}
+
 TEST_CASE("diagnostic bundle contains ring, session and unimplemented state") {
     const auto directory = std::filesystem::temp_directory_path() / "ogplay-diagnostic-test";
     std::filesystem::remove_all(directory);

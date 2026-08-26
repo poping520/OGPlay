@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 
 #include "ogplay/memory/address_space.h"
 
@@ -45,6 +46,19 @@ enum class CoreRegister : std::uint8_t {
 };
 
 enum class ExecutionState : std::uint8_t { a32, thumb };
+
+// Diagnostic names for guest-stop reports; callers append the numeric value
+// so historical numeric workflows keep matching.
+[[nodiscard]] constexpr std::string_view ToString(
+    const ExecutionState state) noexcept {
+    switch (state) {
+        case ExecutionState::a32:
+            return "a32";
+        case ExecutionState::thumb:
+            return "thumb";
+    }
+    return "unknown";
+}
 
 class A32State final {
 public:
@@ -100,6 +114,27 @@ enum class RunStopReason : std::uint8_t {
     halt_requested,
     host_call_fault,
 };
+
+[[nodiscard]] constexpr std::string_view ToString(
+    const RunStopReason reason) noexcept {
+    switch (reason) {
+        case RunStopReason::budget_exhausted:
+            return "budget_exhausted";
+        case RunStopReason::supervisor_call:
+            return "supervisor_call";
+        case RunStopReason::breakpoint:
+            return "breakpoint";
+        case RunStopReason::undefined_instruction:
+            return "undefined_instruction";
+        case RunStopReason::memory_fault:
+            return "memory_fault";
+        case RunStopReason::halt_requested:
+            return "halt_requested";
+        case RunStopReason::host_call_fault:
+            return "host_call_fault";
+    }
+    return "unknown";
+}
 
 struct CpuFault final {
     memory::GuestAddress address;

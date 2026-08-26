@@ -751,8 +751,8 @@ int RunApkCommand(const int argc, const char* const argv[],
         };
         publish_session();
         Write(mcp_manual_step
-                  ? "OGPlay: Profile GLSurfaceView started in MCP manual-step mode.\n"
-                  : "OGPlay: Profile GLSurfaceView started; close the window to stop.\n");
+                  ? "OGPlay: APK guest execution started in MCP manual-step mode.\n"
+                  : "OGPlay: APK guest execution started; close the window to stop.\n");
         while (!quit && !guest->ExitRequested() &&
                !(dex_context &&
                  runtime::SessionExitRequested(*dex_context))) {
@@ -853,7 +853,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 publish_session();
                 logger.Write(
                     core::LogLevel::error, "frontend.run_apk",
-                    "Profile GLSurfaceView failed",
+                    "APK guest execution failed",
                     {.frame = driver.state().frame},
                     {{"reason", std::string(error.what())}});
                 if (!mcp_manual_step) quit = true;

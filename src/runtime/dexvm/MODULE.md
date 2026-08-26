@@ -231,7 +231,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   wait/join/sleep。`Shutdown` 先 RequestStop、join 全部宿主线程，再显式展开 stopped
   context（幂等，记录保留供事后查询）。未捕获异常与 VM 错误记入
   `TakeFailure()`，由生命周期驱动在帧
-  边界上报，对齐设备上的进程级默认 handler，而不是丢给 `join()` 的调用方。
+  边界上报，对齐设备上的进程级默认 handler，而不是丢给 `join()` 的调用方；失败文本同时
+  保留 Java-visible name 与稳定 thread record id，重复线程名不得导致诊断身份歧义。
   每个 child 启动/退出时经 `NativeMethodBridge` 挂接/释放独立 A32 CPU、guest stack、
   Bionic TLS/thread-info、process thread id 与 JNI local-frame 环境，因此 guest native
   帧存活时仍可安全停泊。`EnsureClassInitialized` 对同线程重入放行，其他 context

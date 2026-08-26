@@ -63,6 +63,9 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
 - SoundPool loader 只消费解析后的 source/path；每轮音频补充有界，退出时停止设备。
 - guest process exit、fault 和 shutdown 都必须进入正常 lifecycle/session teardown；native
   finalizer 在 managed ANGLE surface 关闭前执行。
+- `run-apk` 的启动提示与最外层 guest 执行失败标签必须与具体组件无关；JNI/CPU 层已提供
+  的 class、method、线程、fault 与寄存器上下文原样保留，不能用历史 profile 阶段名覆盖
+  归因。
 - observer 只在打开并驱动 SDL 窗口的宿主线程泵窗口消息，DexVM Java
   工作线程上的同一 guest-call observer 必须跳过窗口与共享进度状态；泵事件
   按宿主时间节流，不推进 guest Clock、消费 guest 输入或提交半帧。

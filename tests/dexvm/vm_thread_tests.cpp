@@ -265,6 +265,7 @@ TEST_CASE("dexvm uncaught thread exceptions are recorded, not thrown at join") {
     REQUIRE(failure.has_value());
     CHECK(failure->find("LMyError;") != std::string::npos);
     CHECK(failure->find("thrower") != std::string::npos);
+    CHECK(failure->find("thrower (id 2)") != std::string::npos);
     // Draining is one-shot.
     CHECK(!vm.threads.TakeFailure().has_value());
 }

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "ogplay/cpu/interpreter.h"
@@ -363,15 +364,28 @@ TEST_CASE("A32 guest call rejects invalid frames and unhandled stops") {
         fixture.Start(88);
         const ogplay::runtime::A32GuestCallFrame frame{
             fixture.code, {}, {}};
-        CHECK_THROWS_WITH_AS(
+        try {
             static_cast<void>(ogplay::runtime::InvokeA32GuestCall(
                 fixture.cpu, fixture.dispatcher, fixture.lifecycle,
                 fixture.memory, frame,
                 fixture.stack.Add(fixture.memory.PageSize()),
-                fixture.code.Add(64), 8)),
-            doctest::Contains(
-                " r0=0 r1=0 r2=0 r3=0 r12=0 sp="),
-            ogplay::runtime::A32GuestCallError);
+                fixture.code.Add(64), 8));
+            FAIL("unhandled A32 trap unexpectedly returned");
+        } catch (const ogplay::runtime::A32GuestCallError& error) {
+            const std::string message = error.what();
+            CHECK(message.find(
+                      "\n  stop:      pc=0x00010000 state=a32 "
+                      "reason=supervisor_call(1)") !=
+                  std::string::npos);
+            CHECK(message.find(
+                      "\n  thread:    guest=88\n  registers: r0=0x00000000 "
+                      "r1=0x00000000") !=
+                  std::string::npos);
+            CHECK(message.find(
+                      "\n             r12=0x00000000 sp=0x00021000 "
+                      "lr=0x00010040") !=
+                  std::string::npos);
+        }
     }
     SUBCASE("budget") {
         RunnerFixture fixture;
@@ -389,4 +403,42 @@ TEST_CASE("A32 guest call rejects invalid frames and unhandled stops") {
             "lr=65600",
             ogplay::runtime::A32GuestCallError);
     }
+}
+
+TEST_CASE("A32 guest stop diagnostic names and hex-encodes a memory fault") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress code{0x10000U};
+    memory.Map({code, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    const std::array<std::byte, 8> instruction_window{
+        std::byte{0x03}, std::byte{0x68}, std::byte{0x01}, std::byte{0x33},
+        std::byte{0x03}, std::byte{0x60}, std::byte{0x70}, std::byte{0x47}};
+    memory.Write(code.Add(8), instruction_window, 321U);
+    ogplay::cpu::A32State state;
+    state.SetState(ogplay::cpu::ExecutionState::thumb);
+    state.SetThreadId(321U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r0, 0U);
+    state.SetRegister(ogplay::cpu::CoreRegister::r1, 0x6045c4a9U);
+    state.SetRegister(ogplay::cpu::CoreRegister::sp, 0x6345ff00U);
+    state.SetRegister(ogplay::cpu::CoreRegister::lr, 0x6045c4adU);
+    const ogplay::cpu::RunResult stopped{
+        1U, ogplay::cpu::RunStopReason::memory_fault, code.Add(16), 0U, 0U,
+        ogplay::cpu::CpuFault{ogplay::memory::GuestAddress{0U},
+                              ogplay::memory::AccessType::read,
+                              ogplay::memory::FaultReason::unmapped, 321U}};
+
+    const auto rendered =
+        ogplay::runtime::DescribeA32GuestStop(stopped, state, memory);
+    CHECK(rendered.find("  stop:      pc=0x00010010 state=thumb") !=
+          std::string::npos);
+    CHECK(rendered.find("reason=memory_fault(4)") != std::string::npos);
+    CHECK(rendered.find("  fault:     address=0x00000000 access=read(0)") !=
+          std::string::npos);
+    CHECK(rendered.find(
+              "reason=unmapped(0)\n  thread:    guest=321\n  registers:") !=
+          std::string::npos);
+    CHECK(rendered.find("r1=0x6045c4a9") != std::string::npos);
+    CHECK(rendered.find("  code:      pc_minus_8=0368013303607047") !=
+          std::string::npos);
 }

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-26 · DVM-90 dynamic SurfaceView lifecycle
+更新：2026-08-26 · DVM-90 fault diagnosability
 
 ## 当前阶段
 
@@ -34,30 +34,25 @@
   created→changed，remove/setContentView replacement 在 detach 前收到一次 destroyed；初始
   lifecycle 不再广播给 detached holder。callback 使用稳定快照并发布幂等 removeCallback；
   visibility/format/size 重建、独立合成层与完整 WindowManager 仍 deferred。
+- **DVM-90 可诊断性**：已解析 RegisterNatives 目标失败携带 class.method descriptor 与
+  guest process thread；DexVM child 失败携带 Java name+record id。A32 abnormal stop 统一输出
+  具名+数值原因、固定宽度十六进制 PC/fault/寄存器与有界指令窗口；`run-apk` 外层标签不再
+  把任意 guest fault 误称为 GLSurfaceView profile 失败。
 
 ## 验证基线
 
-- `cmake --preset windows-msvc` 与历史 Debug 全目标构建：通过。
-- DVM-89 JNI registry/field store/guest field ABI、DexVM class/object/field bridge 定向测试
-  10/10：通过；primitive/wide/reference、继承字段 ID、instance/static 双向可见均覆盖。
-- Windows Debug 定向构建通过；graphics/AudioTrack/process native context/watchdog/
-  futex/ARM private syscall/memory protection/managed surface 定向 9/9、192 assertions 通过。
-  本轮按要求未执行完整测试。此前 994/994 仅为字段互通改动前历史基线。
-- `KeyEvent`/`View.dispatchKeyEvent` 定向源 20/20、567 assertions 通过；未执行完整测试。
+- 历史 Windows Debug 全目标构建通过；994/994 是字段互通前基线，不作为本轮结果。
+- DVM-89 JNI field bridge 定向 10/10；Android/native support 定向 9/9、192 assertions；
+  KeyEvent 定向源 20/20、567 assertions，均通过。
 - DVM-90 Windows Debug `ogplay`/`ogplay_tests` 增量构建通过；SurfaceHolder/ViewGroup
   定向 4/4、183 assertions 与 architecture 6/6 通过，本轮按要求不执行完整测试。
-- libdl process service 的 bridge/error、Bionic route/relocation 与 libc override 定向
-  5/5、60 assertions 通过；Windows Release `ogplay` 与 Debug `ogplay_tests` 增量构建通过。
-- Release `ogplay` 定向构建通过。PVZ 原 survey 已越过
-  `m_LoaderKeyboard:Lcom/ideaworks3d/marmalade/LoaderKeyboard;`，native 初始化继续并交付
-  managed surface callback；补齐 `Bitmap.Config` 与 `getPackageResourcePath()` 后再次复跑，
-  `RGB_565` 与 `surfaceChanged` 均已越过；软件 `doDraw()` 已发布首帧，后续 frontend
-  循环保持 `presented=1`。IDA 与 JNI callback 追踪把后续低地址写定位为 GLES 动态探测
-  失败的次生结果：旧路径未调用 `LoaderThread.glInit(I)V`；补齐 libdl service 后约 f=2400
-  已收到该回调，并持续到约 2 万 frame 未再出现 PC `0x60462edc`/地址 `0x1f84` fault。
-  该 diagnostic run 仅证明本阻断推进，不作为完整兼容性结论。
-- DVM-90 后按给定无 survey Release 命令复跑，约 f=1200 发布软件帧，但未到达动态第二
-  holder，f=2351 先遇到 Thread-2 A32 fault（PC `0x6045be18`）；本次不宣告 title 已进入。
+- 可诊断性/排版定向 7/7、52 assertions、architecture 6/6，Debug tests 与 Release CLI 增量
+  构建通过。PVZ 两次实跑均输出 `Thread-2 (id 2)`、`LoaderThread.runNative(...)V`、
+  guest thread 16384、
+  `pc=0x6045be18 thumb memory_fault(4) NULL read/unmapped`、寄存器及指令窗口；text 输出按
+  Java→JNI→A32 stop/fault/thread/registers/code 分层对齐，并使用通用失败标签。该运行只
+  验收诊断链，不宣告 title 已进入。
+- libdl 定向 5/5、60 assertions 通过；本轮未执行全量测试。
 
 ## 下一步
 

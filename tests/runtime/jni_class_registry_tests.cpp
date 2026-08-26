@@ -10,6 +10,8 @@ TEST_CASE("JNI class registry resolves hierarchy and assignability") {
   const auto derived =
       classes.RegisterClass({"test/Derived", "android/app/Activity", {}, {}});
     CHECK(classes.FindClass("java/lang/Object") == object);
+    CHECK(classes.ClassName(object) == "java/lang/Object");
+    CHECK(classes.ClassName(derived) == "test/Derived");
     CHECK(classes.GetSuperclass(object) == std::nullopt);
     CHECK(classes.GetSuperclass(activity) == object);
     CHECK(classes.IsAssignableFrom(object, derived));

@@ -90,6 +90,9 @@ public:
                 const JniFieldDeclaration& declaration);
   [[nodiscard]] std::optional<JniObjectIdentity>
   FindClass(const std::string &name) const;
+  // Reverse lookup used by boundary diagnostics. Returns the JNI binary
+  // class name (for example java/lang/String) for a stable class identity.
+  [[nodiscard]] std::string ClassName(JniObjectIdentity java_class) const;
   [[nodiscard]] std::optional<JniObjectIdentity>
   GetSuperclass(JniObjectIdentity java_class) const;
     [[nodiscard]] bool IsAssignableFrom(JniObjectIdentity target,

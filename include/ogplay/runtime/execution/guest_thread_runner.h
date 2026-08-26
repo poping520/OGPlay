@@ -6,6 +6,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/syscall/guest_thread_lifecycle.h"
@@ -55,6 +56,15 @@ class A32GuestCallError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
+
+// Renders an unhandled A32 stop for "stopped outside a handled boundary"
+// reports: hex pc/registers, stop-reason and fault names alongside their
+// numeric values, execution state, guest thread id and the code bytes around
+// pc. Shared by the runners so every such report stays decodable without the
+// enum tables or a decimal-to-hex conversion at hand.
+[[nodiscard]] std::string DescribeA32GuestStop(
+    const cpu::RunResult& stopped, const cpu::A32State& state,
+    const memory::AddressSpace& address_space);
 
 [[nodiscard]] bool ConsumeAndroidArmSupervisorCall(
     cpu::Cpu& cpu, const cpu::RunResult& stopped,

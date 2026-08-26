@@ -349,9 +349,9 @@ private:
                         return HandleBoundary(cpu, trap);
                     })) {
                 throw NativeActivityRunError(
-                    "NativeActivity guest stopped outside a handled boundary: pc=" +
-                    std::to_string(stopped.pc.Value()) + " reason=" +
-                    std::to_string(static_cast<std::uint8_t>(stopped.reason)));
+                    "NativeActivity guest stopped outside a handled boundary:\n" +
+                    DescribeA32GuestStop(stopped, root_cpu_->GetState(),
+                                         address_space_));
             }
             ThrowIfChildFailed();
             auto updated = root_cpu_->GetState();

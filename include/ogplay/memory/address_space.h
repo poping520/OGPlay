@@ -6,6 +6,7 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 #include "ogplay/memory/address.h"
@@ -27,6 +28,32 @@ enum class PageProtection : std::uint8_t {
 
 enum class AccessType : std::uint8_t { read, write, execute };
 enum class FaultReason : std::uint8_t { unmapped, permission_denied };
+
+// Diagnostic names for guest-fault reports; callers append the numeric value
+// so historical numeric workflows keep matching.
+[[nodiscard]] constexpr std::string_view ToString(
+    const AccessType access) noexcept {
+    switch (access) {
+        case AccessType::read:
+            return "read";
+        case AccessType::write:
+            return "write";
+        case AccessType::execute:
+            return "execute";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view ToString(
+    const FaultReason reason) noexcept {
+    switch (reason) {
+        case FaultReason::unmapped:
+            return "unmapped";
+        case FaultReason::permission_denied:
+            return "permission_denied";
+    }
+    return "unknown";
+}
 
 inline constexpr std::uint32_t kMemorySnapshotVersion = 1;
 inline constexpr std::size_t kGuestPageBits = 12;

@@ -59,6 +59,16 @@ constexpr std::uint32_t kOpenSlesCallbackStack = 0x71b00000U;
 constexpr std::uint32_t kNioDirectArenaBegin = 0x74000000U;
 constexpr std::uint32_t kNioDirectArenaEnd = 0x78000000U;
 
+[[nodiscard]] std::string IndentDiagnostic(const std::string_view text,
+                                           const std::string_view indent) {
+    std::string result{indent};
+    for (const char character : text) {
+        result += character;
+        if (character == '\n') result += indent;
+    }
+    return result;
+}
+
 void InstallApi19ProcFiles(VirtualFileSystem& filesystem) {
     constexpr std::string_view kMemInfo =
         "MemTotal:         524288 kB\n"
@@ -1808,15 +1818,18 @@ std::optional<A32GuestCallResult>
 AndroidGuestProcess::TryInvokeRegisteredNative(
     const JniObjectIdentity java_class, const std::string_view name,
     const std::string_view descriptor, const A32GuestCallFrame& frame) {
+    const auto class_name = impl_->Classes().ClassName(java_class);
     try {
         return impl_->TryInvokeRegisteredNative(java_class, name, descriptor,
                                                 frame);
-    } catch (const AndroidGuestProcessError&) {
-        throw;
     } catch (const std::exception& error) {
         throw AndroidGuestProcessError(
-            "registered JNI native invocation failed: " +
-            std::string(error.what()));
+            "registered JNI native invocation failed:\n"
+            "  class=" +
+            class_name + "\n  method=" + std::string(name) +
+            "\n  descriptor=" + std::string(descriptor) +
+            "\n  guest_thread=" + std::to_string(frame.thread_id) +
+            "\n  cause:\n" + IndentDiagnostic(error.what(), "    "));
     }
 }
 void AndroidGuestProcess::PrepareDexVmThread(

@@ -743,6 +743,12 @@ TEST_CASE("DexVM preserves failure from a resolved RegisterNatives target") {
         const std::string message = error.what();
         CHECK(message.find("registered JNI native invocation failed") !=
               std::string::npos);
+        CHECK(message.find("class=fixture/Aps5") != std::string::npos);
+        CHECK(message.find("method=fail") != std::string::npos);
+        CHECK(message.find("descriptor=()V") != std::string::npos);
+        CHECK(message.find("guest_thread=1") != std::string::npos);
+        CHECK(message.find("pc=0xdeadbee0") != std::string::npos);
+        CHECK(message.find("reason=memory_fault(4)") != std::string::npos);
         CHECK(message.find(
                   "native method has no registered mapping or export") ==
               std::string::npos);

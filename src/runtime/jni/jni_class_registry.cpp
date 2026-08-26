@@ -208,6 +208,12 @@ public:
                    : std::optional<JniObjectIdentity>{found->second};
     }
 
+  [[nodiscard]] std::string ClassName(
+      const JniObjectIdentity java_class) const {
+        std::scoped_lock lock(mutex_);
+        return RequireClass(java_class).name;
+    }
+
   [[nodiscard]] std::optional<JniObjectIdentity>
   Superclass(const JniObjectIdentity java_class) const {
         std::scoped_lock lock(mutex_);
@@ -364,6 +370,10 @@ JniClassRegistry::RegisterField(const JniObjectIdentity java_class,
 std::optional<JniObjectIdentity>
 JniClassRegistry::FindClass(const std::string &name) const {
     return impl_->Find(name);
+}
+std::string JniClassRegistry::ClassName(
+    const JniObjectIdentity java_class) const {
+  return impl_->ClassName(java_class);
 }
 std::optional<JniObjectIdentity>
 JniClassRegistry::GetSuperclass(const JniObjectIdentity java_class) const {

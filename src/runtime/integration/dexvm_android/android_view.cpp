@@ -492,6 +492,11 @@ namespace ogplay::runtime::android_intrinsics::dvm89_android_view_View_OnFocusCh
 
 Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
     static_cast<void>(context);
+    // 当前只发布 API 19 接口形状与抽象方法引用，使 DEX implements 和
+    // invoke-interface 能正常链接、分派。尚未实现 View 的完整焦点监听语义：
+    // set/getOnFocusChangeListener、逐 View listener 保存与 GC tracing、
+    // focused/focusable 状态、requestFocus/clearFocus 状态转换，以及焦点变化时
+    // 自动调用 onFocusChange(View, boolean)。在这些能力闭合前不得伪造回调。
     auto builder = dx::IntrinsicClassBuilder::Interface(
         "Landroid/view/View$OnFocusChangeListener;");
     builder.UnimplementedVirtual(

@@ -50,7 +50,8 @@ class BoundaryFixture final {
 public:
     explicit BoundaryFixture(
         const std::uint32_t supersample_factor = 1,
-        std::vector<ogplay::runtime::OpenSlesGuestCallback>* callbacks = nullptr)
+        std::vector<ogplay::runtime::OpenSlesGuestCallback>* callbacks = nullptr,
+        const ogplay::runtime::BionicDynamicLinkHooks dynamic_link = {})
         : bus(memory), cpu(bus), boundary(memory,
               {kNativeRenderer,
                ogplay::gles::AngleDevice::hardware}, 4, 3,
@@ -66,6 +67,7 @@ public:
                    output = found->second;
                    return true;
                },
+               .dynamic_link = dynamic_link,
                .open_sles_callbacks = {
                    callbacks,
                    +[](void* owner,
@@ -568,6 +570,70 @@ TEST_CASE("libc overrides use equivalent export-specific fast and slow bindings"
     const auto fast_result = execute(fast, true);
     CHECK(fast_result == slow_result);
     CHECK(fast_result.first[4] == 3U);
+}
+
+TEST_CASE("libdl overrides bridge process lookup and consume per-thread errors") {
+    struct Probe final {
+        std::string library;
+        std::string symbol;
+        std::uint32_t flags{};
+        std::uint64_t thread{};
+        bool fail_open{};
+    } probe;
+    const ogplay::runtime::BionicDynamicLinkHooks hooks{
+        &probe,
+        +[](void* owner, const std::string_view library,
+            const std::uint32_t flags, const std::uint64_t thread) {
+            auto& state = *static_cast<Probe*>(owner);
+            if (state.fail_open) throw std::runtime_error("library unavailable");
+            state.library = library;
+            state.flags = flags;
+            state.thread = thread;
+            return 0x80000001U;
+        },
+        +[](void* owner, const std::uint32_t handle,
+            const std::string_view symbol, const std::uint64_t thread) {
+            auto& state = *static_cast<Probe*>(owner);
+            if (handle != 0x80000001U) {
+                throw std::runtime_error("invalid test handle");
+            }
+            state.symbol = symbol;
+            state.thread = thread;
+            return 0x70000101U;
+        },
+        +[](void*, const std::uint32_t handle, const std::uint64_t) {
+            if (handle != 0x80000001U) {
+                throw std::runtime_error("invalid test handle");
+            }
+            return 0;
+        }};
+    BoundaryFixture fixture(1U, nullptr, hooks);
+    WriteGuestString(fixture, fixture.output, "/system/lib/libGLESv1_CM.so");
+    WriteGuestString(fixture, fixture.output.Add(64U), "glVertexPointer");
+
+    const auto handle = fixture.Call(
+        "libdl.so", "dlopen", {fixture.output.Value(), 2U, 0U, 0U});
+    CHECK(handle == 0x80000001U);
+    CHECK(probe.library == "/system/lib/libGLESv1_CM.so");
+    CHECK(probe.flags == 2U);
+    CHECK(fixture.Call("libdl.so", "dlsym",
+                       {handle, fixture.output.Add(64U).Value(), 0U, 0U}) ==
+          0x70000101U);
+    CHECK(probe.symbol == "glVertexPointer");
+    CHECK(fixture.Call("libdl.so", "dlclose", {handle, 0U, 0U, 0U}) == 0U);
+
+    probe.fail_open = true;
+    CHECK(fixture.Call("libdl.so", "dlopen",
+                       {fixture.output.Value(), 2U, 0U, 0U}) == 0U);
+    const auto error = fixture.Call("libdl.so", "dlerror");
+    REQUIRE(error != 0U);
+    const auto length = fixture.memory.CStringLength(
+        ogplay::memory::GuestAddress{error}, 64U, 1U);
+    std::string text(length, '\0');
+    fixture.memory.Read(ogplay::memory::GuestAddress{error},
+                        std::as_writable_bytes(std::span(text)), 1U);
+    CHECK(text == "library unavailable");
+    CHECK(fixture.Call("libdl.so", "dlerror") == 0U);
 }
 
 TEST_CASE("libc override direct bindings are safe across guest threads") {

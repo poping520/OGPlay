@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "ogplay/audio/open_sles_pcm_mixer.h"
@@ -41,12 +42,22 @@ struct AndroidBoundaryFrame final {
     std::vector<std::uint8_t> rgba8;
 };
 
+struct BionicDynamicLinkHooks final {
+    void* owner{};
+    std::uint32_t (*open)(void*, std::string_view, std::uint32_t,
+                          std::uint64_t){};
+    std::uint32_t (*symbol)(void*, std::uint32_t, std::string_view,
+                            std::uint64_t){};
+    std::int32_t (*close)(void*, std::uint32_t, std::uint64_t){};
+};
+
 struct AndroidBoundaryOptions final {
     bool allow_gles1_material_single_face{};
     core::Logger* logger{};
     void* guest_file_owner{};
     bool (*read_guest_file)(void*, std::string_view,
                             std::vector<std::byte>&){};
+    BionicDynamicLinkHooks dynamic_link{};
     OpenSlesCallbackSink open_sles_callbacks{};
 };
 

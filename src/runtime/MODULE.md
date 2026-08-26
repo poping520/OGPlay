@@ -59,6 +59,9 @@
   避免在高频 libc 边界反复分配宿主堆内存。
 - `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的
   边界符号，将 libc 选择性拦截、虚拟边界库和真实 guest ELF 装入统一链接命名空间。
+- `BionicDynamicLinkHooks`：把真实 guest `libdl.so` 的 linker-service 入口连接到
+  process-owned ELF namespace 与 sealed Virtual SO provider；handle/refcount、按 root scope
+  的 `dlsym` 及逐 guest thread `dlerror` 均不依赖宿主动态库。
 - `SelfCheckBionicProfile`：对 API 19/22/23 的真实 libc/libdl 执行完整多模块映射、版本化
   解析与重定位，并核验 malloc、pthread、文件 IO 出口及 exidx 等运行事实。
 - `CreateBionicTlsBlock` / `DestroyBionicTlsBlock`：按 API 19/22/23 的 64 个 ARM Bionic
@@ -146,6 +149,8 @@
 
 - 未实现调用记入能力账本并明确失败；syscall 返回 ENOSYS。
 - 普通 libc/libm/libdl 符号默认执行真实 guest Bionic；只有声明表命中才进入宿主拦截。
+  其中 `dlopen/dlsym/dlclose/dlerror` 是设备 linker service ABI，必须由 process namespace
+  覆盖真实 guest `libdl` stub。
 - HLE 符号必须由 provider 显式注册且位于固定 thunk 区；边界库不得作为真实 guest ELF 装载。
 - Bionic TLS slot 0 必须自指，slot 1 必须指向非空 guest `pthread_internal_t`；其余 slot
   除可选启动 preinit 外均零初始化。

@@ -85,9 +85,9 @@
 - Windows Debug 目标构建通过；graphics/AudioTrack/process native context/watchdog/futex/
   ARM private syscall/memory protection/managed surface 9 个定向用例、192 assertions 通过。
   按要求未执行完整测试。
-- 继续执行约 1.2 万 frontend frame 后，S3E title module 在 `0x60462edc` 对低地址
-  `0x1f84` 发生独立的 unmapped write；OGPlay 保留 PC/LR/register 与 code window，未把它
-  伪装成平台 mapping 缺失。本 WU 不以该后续 title 内部 fault 声称完整兼容。
+- 继续执行约 1.2 万 frontend frame 后出现 `0x60462edc`/`0x1f84` 写 fault；后续定位与
+  通用修复归入 boundary 工作单 [BND-25](../boundary/BND-25.md)，不扩张本 WU 的 DexVM
+  字段/native 失败保真范围。
 - survey 运行仅用于证明错误推进，不构成 title 兼容性验收。
 
 状态：完成。

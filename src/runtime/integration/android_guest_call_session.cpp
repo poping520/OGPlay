@@ -592,7 +592,7 @@ public:
     explicit Impl(const AndroidGuestProcessStartup& request)
         : boundary_(address_space_, request.backend, request.width,
                     request.height, request.supersample_factor,
-                    BindOpenSlesCallbacks(request.boundary_options, this)),
+                    BindProcessCallbacks(request.boundary_options, this)),
           guest_jni_(address_space_),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           jni_dispatcher_(ledger_), invocations_(classes_), fields_(classes_),
@@ -1020,13 +1020,131 @@ public:
         return boundary.invoke(boundary.userdata, svc, call);
     }
 
-    static AndroidBoundaryOptions BindOpenSlesCallbacks(
+    static AndroidBoundaryOptions BindProcessCallbacks(
         AndroidBoundaryOptions options, Impl* owner) {
+        options.dynamic_link = {
+            owner,
+            +[](void* userdata, const std::string_view name,
+                const std::uint32_t flags, const std::uint64_t thread_id) {
+                return static_cast<Impl*>(userdata)->DynamicOpen(
+                    name, flags, thread_id);
+            },
+            +[](void* userdata, const std::uint32_t handle,
+                const std::string_view name, const std::uint64_t thread_id) {
+                return static_cast<Impl*>(userdata)->DynamicSymbol(
+                    handle, name, thread_id);
+            },
+            +[](void* userdata, const std::uint32_t handle,
+                const std::uint64_t thread_id) {
+                return static_cast<Impl*>(userdata)->DynamicClose(
+                    handle, thread_id);
+            }};
         options.open_sles_callbacks = {
             owner, +[](void* userdata, const OpenSlesGuestCallback& callback) {
                 static_cast<Impl*>(userdata)->EnqueueOpenSlesCallback(callback);
             }};
         return options;
+    }
+
+    [[nodiscard]] static std::string DynamicLibraryName(
+        const std::string_view path) {
+        const auto separator = path.find_last_of("/\\");
+        const auto name = separator == std::string_view::npos
+                              ? path
+                              : path.substr(separator + 1U);
+        if (name.empty() || name == "." || name == "..") {
+            throw loader::LinkError("dlopen requires a library name");
+        }
+        return std::string(name);
+    }
+
+    std::uint32_t DynamicOpen(const std::string_view path,
+                              const std::uint32_t flags,
+                              const std::uint64_t thread_id) {
+        static_cast<void>(thread_id);
+        constexpr std::uint32_t kSupportedFlags = 0x3U;
+        if ((flags & ~kSupportedFlags) != 0U) {
+            throw loader::LinkError("dlopen flags are not supported");
+        }
+        const auto library = path.empty() ? root_module_
+                                          : DynamicLibraryName(path);
+        std::scoped_lock lock(dynamic_link_mutex_);
+        const auto open = std::ranges::find_if(
+            dynamic_link_handles_, [&](const DynamicLinkHandle& state) {
+                return state.open && state.library == library;
+            });
+        if (open != dynamic_link_handles_.end()) {
+            if (open->references ==
+                (std::numeric_limits<std::uint32_t>::max)()) {
+                throw loader::LinkError("dlopen reference count overflow");
+            }
+            ++open->references;
+            return open->handle;
+        }
+
+        DynamicLinkHandle state;
+        state.handle = next_dynamic_link_handle_++;
+        if (state.handle == 0U || state.handle == kRtldDefault ||
+            next_dynamic_link_handle_ == 0U) {
+            throw loader::LinkError("dlopen handle space is exhausted");
+        }
+        state.library = library;
+        state.references = 1U;
+        state.open = true;
+        state.boundary = !boundary_.Symbols().Exports(library).empty();
+        if (!state.boundary) {
+            state.scope = loader::ExtendElf32LinkNamespace(
+                              loaded_.link_namespace, library, {})
+                              .scope;
+        }
+        dynamic_link_handles_.push_back(std::move(state));
+        return dynamic_link_handles_.back().handle;
+    }
+
+    std::uint32_t DynamicSymbol(const std::uint32_t handle,
+                                const std::string_view name,
+                                const std::uint64_t thread_id) {
+        static_cast<void>(thread_id);
+        if (name.empty()) throw loader::LinkError("dlsym requires a symbol name");
+        std::scoped_lock lock(dynamic_link_mutex_);
+        if (handle == kRtldDefault) {
+            return loader::LookupElf32Symbol(loaded_.link_namespace, name)
+                .address.Value();
+        }
+        const auto state = std::ranges::find_if(
+            dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {
+                return item.open && item.handle == handle;
+            });
+        if (state == dynamic_link_handles_.end()) {
+            throw loader::LinkError("dlsym handle is invalid or closed");
+        }
+        if (state->boundary) {
+            const auto address = boundary_.Symbols().Lookup(state->library, name);
+            if (!address.has_value()) {
+                throw loader::LinkError("dlsym could not find " +
+                                        std::string(name) + " in " +
+                                        state->library);
+            }
+            return address->Value();
+        }
+        return loader::LookupElf32Symbol(
+                   loaded_.link_namespace, *state->scope, name)
+            .address.Value();
+    }
+
+    std::int32_t DynamicClose(const std::uint32_t handle,
+                              const std::uint64_t thread_id) {
+        static_cast<void>(thread_id);
+        std::scoped_lock lock(dynamic_link_mutex_);
+        const auto state = std::ranges::find_if(
+            dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {
+                return item.open && item.handle == handle;
+            });
+        if (state == dynamic_link_handles_.end()) {
+            throw loader::LinkError("dlclose handle is invalid or closed");
+        }
+        if (--state->references == 0U) state->open = false;
+        return 0;
     }
 
     void EnqueueOpenSlesCallback(const OpenSlesGuestCallback& callback) {
@@ -1602,6 +1720,17 @@ private:
     std::unordered_map<std::uint64_t, std::shared_ptr<DexVmThreadContext>>
         dexvm_threads_;
     loader::Elf32LoadedNamespace loaded_;
+    struct DynamicLinkHandle final {
+        std::uint32_t handle{};
+        std::string library;
+        std::optional<loader::Elf32LinkScope> scope;
+        std::uint32_t references{};
+        bool boundary{};
+        bool open{};
+    };
+    static constexpr std::uint32_t kRtldDefault = 0xffffffffU;
+    std::vector<DynamicLinkHandle> dynamic_link_handles_;
+    std::uint32_t next_dynamic_link_handle_{1U};
     std::vector<loader::Elf32LoadedModule> dynamic_modules_;
     std::string root_module_;
     Api19GuestProcessMemory process_memory_;

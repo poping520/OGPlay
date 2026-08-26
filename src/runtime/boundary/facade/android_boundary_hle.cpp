@@ -34,6 +34,7 @@
 #include "runtime/boundary/services/guest_gl_context.h"
 #include "ogplay/runtime/bionic/guest_symbol_override_metadata.h"
 #include "runtime/bionic/libc_override_module.h"
+#include "runtime/bionic/libdl_override_module.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "runtime/boundary/core/boundary_fault.h"
 #include "runtime/boundary/core/boundary_fast_router.h"
@@ -104,7 +105,8 @@ public:
           log_module_(log_context_),
           open_sles_module_(call_services_, open_sles_mixer_,
                             options.open_sles_callbacks),
-          libc_override_module_(call_services_) {
+          libc_override_module_(call_services_),
+          libdl_override_module_(call_services_, options.dynamic_link) {
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& {
@@ -158,6 +160,7 @@ public:
         }
         MapOpenSlesStaticAbi(address_space_, *open_sles);
         open_sles_module_.MapGuestObjectArena();
+        libdl_override_module_.MapErrorArena();
     }
 
     [[nodiscard]] cpu::HostCallHook FastHostCallHook() noexcept {
@@ -515,11 +518,16 @@ private:
         OGPLAY_OPENSLES_BOUNDARY_EXPORTS(OGPLAY_BIND_OPENSLES)
 #undef OGPLAY_BIND_OPENSLES
 
-#define OGPLAY_BIND_OVERRIDE(library, symbol, id, count, method)               \
+#define OGPLAY_BIND_LIBC_OVERRIDE(library, symbol, id, count, method)          \
         BindOverride<LibcOverrideModule, &LibcOverrideModule::method, count,   \
                      false>(library, symbol, libc_override_module_);
-        OGPLAY_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_BIND_OVERRIDE)
-#undef OGPLAY_BIND_OVERRIDE
+        OGPLAY_LIBC_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_BIND_LIBC_OVERRIDE)
+#undef OGPLAY_BIND_LIBC_OVERRIDE
+#define OGPLAY_BIND_LIBDL_OVERRIDE(library, symbol, id, count, method)         \
+        BindOverride<LibdlOverrideModule, &LibdlOverrideModule::method, count, \
+                     false>(library, symbol, libdl_override_module_);
+        OGPLAY_LIBDL_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_BIND_LIBDL_OVERRIDE)
+#undef OGPLAY_BIND_LIBDL_OVERRIDE
         const auto hot = fast_router_.Entries();
         if (std::any_of(hot.begin(), hot.end(),
                         [](const auto& entry) {
@@ -741,6 +749,7 @@ private:
     audio::OpenSlesPcmMixer open_sles_mixer_;
     OpenSlesModule open_sles_module_;
     LibcOverrideModule libc_override_module_;
+    LibdlOverrideModule libdl_override_module_;
 };
 AndroidBoundaryHle::AndroidBoundaryHle(memory::AddressSpace& address_space,
                                        const gles::AngleBackend backend,

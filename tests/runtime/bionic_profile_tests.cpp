@@ -65,6 +65,8 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
           ogplay::runtime::BionicSymbolRoute::guest_execution);
     CHECK(ogplay::runtime::RouteBionicSymbol(profile, "libc.so", "memcpy") ==
           ogplay::runtime::BionicSymbolRoute::host_intercept);
+    CHECK(ogplay::runtime::RouteBionicSymbol(profile, "libdl.so", "dlopen") ==
+          ogplay::runtime::BionicSymbolRoute::host_intercept);
     CHECK(ogplay::runtime::RouteBionicSymbol(profile, "libc.so",
                                              "pthread_create") ==
           ogplay::runtime::BionicSymbolRoute::guest_execution);
@@ -87,7 +89,7 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
                                   ogplay::runtime::OpenSlesIids().size()));
     CHECK(ogplay::runtime::AndroidBoundaryCatalog(profile.api)
               .FindModule("libc.so") == nullptr);
-    CHECK(ogplay::runtime::GuestSymbolOverrides().size() == 5U);
+    CHECK(ogplay::runtime::GuestSymbolOverrides().size() == 9U);
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::RouteBionicSymbol(
                         profile, "libc.so", "")),
                     ogplay::runtime::BionicProfileError);
@@ -293,6 +295,38 @@ TEST_CASE("Bionic link namespace combines guest libraries and observable HLE thu
     CHECK(symbolized->module == "liblog.so");
     CHECK(symbolized->symbol == "__android_log_write");
     CHECK(symbolized->source_hint == "hle");
+}
+
+TEST_CASE("Bionic libdl service exports replace guest linker stubs") {
+    const auto& profile = ogplay::runtime::SelectBionicProfile(19);
+    const std::vector hle_bindings{
+        ogplay::runtime::BionicHleSymbol{
+            "libdl.so", "dlopen",
+            ogplay::memory::GuestAddress{0x70000301U}},
+        ogplay::runtime::BionicHleSymbol{
+            "libdl.so", "dlsym",
+            ogplay::memory::GuestAddress{0x70000305U}},
+    };
+    const ogplay::runtime::BionicHleSymbolProvider hle(hle_bindings);
+    const std::vector modules{
+        Module("app.so", 0x10000000U, {"libdl.so"},
+               {Symbol("dlopen", 0U, 1U, 0U),
+                Symbol("dlsym", 0U, 1U, 0U)}),
+        Module("libdl.so", 0x18000000U, {},
+               {Symbol("dlopen", 0x100U, 1U, 1U),
+                Symbol("dlsym", 0x104U, 1U, 1U)}),
+    };
+
+    const auto link_namespace = ogplay::runtime::BuildBionicLinkNamespace(
+        profile, "app.so", modules, hle);
+    const auto resolved =
+        ogplay::loader::ResolveElf32Symbols(link_namespace, 0U);
+    REQUIRE(resolved.values[1].has_value());
+    REQUIRE(resolved.values[2].has_value());
+    CHECK(*resolved.values[1] ==
+          ogplay::memory::GuestAddress{0x70000301U});
+    CHECK(*resolved.values[2] ==
+          ogplay::memory::GuestAddress{0x70000305U});
 }
 
 TEST_CASE("Bionic namespace rejects invalid thunks and unresolved boundaries") {

@@ -43,6 +43,10 @@
 - 真实 guest libc override 与 Virtual SO 共用 dense hot transport，但每个 symbol 在 seal
   后拥有独立 `{export-specific fn, concrete module*}`；fast/slow 不得使用共享 mutable PC
   或统一参数个数推导当前 symbol。
+- 真实 guest libdl 的 `dlopen/dlsym/dlclose/dlerror` 同样复用 dense transport，但 module
+  只拥有 guest 参数搬运、错误状态与 `0x71d00000` 有界只读返回区；ELF namespace、handle
+  和 sealed Virtual SO 查询由 integration 通过 `BionicDynamicLinkHooks` 注入。失败返回
+  null/-1 并由同一 guest thread 的下一次 `dlerror()` 消费，禁止把 lookup 失败变成 trap。
 - Android/EGL/GLES1/GLES2/log 以普通 `final` module type 实例化并在 seal 时一次 type
   erase；descriptor 只保留 module-local id 与签名冷数据。每个 active export 在 seal 时
   直接生成 `{export-specific fn, concrete module*}`，fast/slow transport 共用该 handler；

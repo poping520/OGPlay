@@ -22,7 +22,7 @@ public:
             calls_.address_space, \
             {symbol, call.RegisterArguments(), call.ThreadId()}); \
     }
-    OGPLAY_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_DECLARE_OVERRIDE)
+    OGPLAY_LIBC_GUEST_SYMBOL_OVERRIDE_EXPORTS(OGPLAY_DECLARE_OVERRIDE)
 #undef OGPLAY_DECLARE_OVERRIDE
 
 private:

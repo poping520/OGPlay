@@ -25,6 +25,11 @@ status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
 note = "BND-3 将真实 guest libc 的 memcpy/memmove/memset/memcmp/strlen host intercept 收敛为独立 GuestSymbolOverrideDescriptor metadata；五个 export 按真实参数个数分别 direct-bind 并共享 fast/slow binding，不使用共享 PC/function id，且有跨 guest thread 并发回归"
 
+[runtime.libdl_process_service]
+status = "complete"
+test = "tests/runtime/bionic_profile_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; cmake/CheckBoundaryHotPath.cmake"
+note = "BND-25 将 Android libdl 的 dlopen/dlsym/dlclose/dlerror linker-service stub 接到 process-owned ELF namespace 与 sealed boundary symbols，支持路径 basename、handle/refcount、RTLD_DEFAULT 及逐 guest thread 消费式错误；不访问宿主动态库，不引入 title 分支"
+
 [loader.binary_xml_typed_attributes]
 status = "complete"
 test = "tests/loader/binary_xml_tests.cpp"

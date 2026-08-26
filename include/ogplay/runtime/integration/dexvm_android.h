@@ -290,11 +290,10 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> surface_holders;
     std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>
         surface_callbacks;
-    // The host owns one managed surface generation. A holder becomes active
-    // only while its SurfaceView is attached to the live UiTree; this mirrors
-    // SurfaceView.mSurfaceCreated rather than treating holder registration as
-    // surface creation.
-    bool managed_surface_available{};
+    // Lifecycle-owned fact: the one host window surface is open. Subtree
+    // attach/detach must never mutate it. Each holder independently enters or
+    // leaves active_surface_holders, mirroring SurfaceView.mSurfaceCreated.
+    bool managed_host_surface_open{};
     std::unordered_set<std::uint32_t> active_surface_holders;
 
     struct EglFacadeState final {

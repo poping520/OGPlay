@@ -33,7 +33,9 @@
   为每个 holder 记录 active generation。动态 add 的 SurfaceView 子树仅在 parent live 时收到
   created→changed，remove/setContentView replacement 在 detach 前收到一次 destroyed；初始
   lifecycle 不再广播给 detached holder。callback 使用稳定快照并发布幂等 removeCallback；
-  visibility/format/size 重建、独立合成层与完整 WindowManager 仍 deferred。
+  host window surface open/close 只归 Activity lifecycle，子树 detach 不改变该事实；
+  `getHolder()` 只建稳定 identity，activation 在 live attach 时统一判断。visibility/format/size
+  重建、独立合成层与完整 WindowManager 仍 deferred。
 - **DVM-90 可诊断性**：已解析 RegisterNatives 目标失败携带 class.method descriptor 与
   guest process thread；DexVM child 失败携带 Java name+record id。A32 abnormal stop 统一输出
   具名+数值原因、固定宽度十六进制 PC/fault/寄存器与有界指令窗口；`run-apk` 外层标签不再
@@ -46,6 +48,12 @@
   KeyEvent 定向源 20/20、567 assertions，均通过。
 - DVM-90 Windows Debug `ogplay`/`ogplay_tests` 增量构建通过；SurfaceHolder/ViewGroup
   定向 4/4、183 assertions 与 architecture 6/6 通过，本轮按要求不执行完整测试。
+- 报告所述 distinct remove→new/getHolder/add 已补精确回归：1/1、90 assertions 通过，旧
+  holder destroyed、新 holder created→changed、host surface 始终 open；三代相同 lifecycle
+  日志禁用自动限流后均可见。临时运行追踪确认第二 holder 与 EGL/getGL 实际成功，此前缺少
+  第二组日志是限流假象。`getGL()` 返回后的 Thread-2 NULL AddRef 属独立问题，仅记录未处理。
+- 本次 Windows Release `ogplay`/`ogplay_tests` 增量构建、SurfaceHolder 定向 3/3 与
+  architecture 6/6 通过；按要求未执行全量测试。
 - 可诊断性/排版定向 7/7、52 assertions、architecture 6/6，Debug tests 与 Release CLI 增量
   构建通过。PVZ 两次实跑均输出 `Thread-2 (id 2)`、`LoaderThread.runNative(...)V`、
   guest thread 16384、

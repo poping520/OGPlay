@@ -98,6 +98,10 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   以 live UiTree 等价于 AOSP `AttachInfo`：动态接入的 SurfaceView 子树仅在 parent 已 live 时
   建立 holder generation 并按 created→changed 分派，detach 前对 active holder 分派一次
   destroyed；detached 子树不提前收到事件，`removeCallback` 对后续 callback 快照生效。
+  host window surface 的 open/close 事实只归 Activity lifecycle 所有，子树 detach 只能结束
+  对应 holder generation，不能关闭 host surface；`getHolder()` 只建立稳定 identity，实际
+  activation 统一在子树 attach 时判定。生命周期事件日志不得限流，否则相同数量的新一代
+  callback 会被误判为没有发生。
 - `TextView.setText/getText` 与 Editable mutation 共用 UiNode text；textColor/textSize/gravity
   mutation 分别推进 draw/layout dirty。当前 fixed-font backend 只接受单行受支持字形，
   多行、未知字形或非法 size 明确抛 Java 异常且不发布部分 mutation。

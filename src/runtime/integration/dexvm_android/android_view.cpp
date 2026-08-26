@@ -484,7 +484,7 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
                     "Landroid/view/SurfaceHolder$Impl;");
                 const auto node = FindViewUiNode(
                     *context, call.receiver.Value());
-                if (context->managed_surface_available && node.has_value() &&
+                if (context->managed_host_surface_open && node.has_value() &&
                     context->ui_tree.IsAttached(*node)) {
                     // The platform holder exists before callbacks are added.
                     // A late observer does not receive past created/changed,

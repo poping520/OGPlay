@@ -29,10 +29,14 @@ OGPlay 不复制 ViewRootImpl、WindowSession 或 SurfaceControl；其等价边�
 ## 范围
 
 - context 明确记录 managed surface 是否存在，以及当前 active holder 闭集。
+- managed host surface 的 open/close 只由 Activity lifecycle 改变；动态子树 remove 仅结束
+  该 holder generation，不能把进程/窗口级 surface 事实一并关闭。
 - lifecycle 初次 created 只激活已连接到 live UiTree 的 holder；changed/destroyed 只分派给
   active holder，重复创建或销毁不重复回调。
 - `ViewGroup.addView()` 在 attach 后遍历新增子树；父树 live 时为其中已有 holder 的
   SurfaceView 同步分派 created→changed，父树 detached 时不伪造事件。
+- `getHolder()` 无论调用时机都先保留 view→holder identity；holder 是否 active 只在其
+  SurfaceView 已接入 live UiTree 且 host surface open 时决定，避免构造时机决定后续命运。
 - `removeView/removeViews` 在 UiTree detach 前遍历子树，对 active holder 分派 destroyed。
 - 运行期 `Activity.setContentView` 替换同样走旧子树 detach、新子树 attach。
 - callback 分派使用稳定快照；发布 API 19 `removeCallback`，null/未注册移除为无操作。
@@ -63,6 +67,8 @@ stop reason、fault access/reason 和全部地址以无标签十进制输出；�
 - text 输出把 Java thread、JNI class/method/descriptor/thread/cause 和 A32
   stop/fault/thread/registers/code 分层缩进；Logger 对多行 field 只在 text sink 增加展示
   缩进，JSONL 保留原始字段值。
+- SurfaceHolder created/changed/destroyed 属于 generation 事件，不使用自动日志限流；连续
+  remove→add 时即使 callback 数量相同，也必须逐代留下可见记录。
 - `run-apk` 的启动提示与最外层失败标签改为与组件无关的 `APK guest execution`；具体
   JNI/CPU 原因继续原样向上保留，不再把任意 guest 会话或故障误称为 GLSurfaceView
   profile。
@@ -74,6 +80,8 @@ stop reason、fault access/reason 和全部地址以无标签十进制输出；�
 - 初始 lifecycle 不向 detached SurfaceView 投递回调。
 - live parent 动态 add 触发一次 created/changed，尺寸等于 managed surface；remove 触发一次
   destroyed，重复 generation 不串扰。
+- distinct replacement 的旧 holder 只收到一次 destroyed，新 view 在 `getHolder()` 后接入
+  同一 live parent，必须收到 created→changed；全过程 host surface 保持 open。
 - 先在 detached parent 中构造子树不会提前回调；整个 parent 接入 live tree 后递归激活。
 - `removeCallback` 幂等，且移除后不接收后续 destroyed。
 - Windows Debug 增量构建及 SurfaceHolder/ViewGroup/架构定向测试通过；按要求不跑全量测试。
@@ -86,10 +94,17 @@ stop reason、fault access/reason 和全部地址以无标签十进制输出；�
 - SurfaceHolder identity、初始 generation、动态子树 attach/detach、late callback 与既有
   ViewGroup mutation 定向 4/4、183 assertions 通过。
 - architecture 定向 6/6 通过。
-- Windows Release `ogplay` 增量构建通过；按给定 PVZ 命令复跑时，本次执行未到达动态
-  `createView(true)` 的第二 holder，约 f=2351 先遇到 A32 native Thread-2 fault
-  （PC `0x6045be18`）。因此该次运行不构成 title 进入游戏的验收，也不反证已由机器测试
-  闭合的 attach/detach 能力。
+- 后续对报告所述 remove→add 路径加入逐 JNI/EGL 临时追踪后，确认第二 holder 实际已经收到
+  created/changed，`LoaderGL.startGL()` 也完成 create-window-surface、make-current 与
+  `getGL()`；此前正常日志缺少第二组事件，是相同文本被自动限流隐藏，并非 callback 缺失。
+  因而“remove 把 host surface 永久置 false”和“新 holder 永不激活”不符合当前实现。
+- context 字段改名为 `managed_host_surface_open`，明确其 lifecycle ownership；distinct
+  remove→new view/getHolder/add 回归 1/1、90 assertions 通过，并机器判定新 holder active、
+  host surface 全程 open、三代相同 created/changed/destroyed 日志均可见。
+- Windows Release `ogplay`/`ogplay_tests` 增量构建通过；SurfaceHolder 定向 3/3 与
+  architecture 6/6 通过。
+- Java `getGL()` 返回后 Thread-2 仍在 `0x6045be18` 发生相同 NULL AddRef fault；这是独立的
+  native/JNI 后续问题，本 WU 仅记录，未扩展范围处理。该运行不构成 title 进入游戏验收。
 - 按要求未执行全量测试。
 
 - 可诊断性/排版定向 7/7、52 assertions 通过；architecture 6/6 通过；Windows Debug
@@ -100,4 +115,4 @@ stop reason、fault access/reason 和全部地址以无标签十进制输出；�
   指令窗口；外层标签为 `APK guest execution failed`。最终 text 输出按 Java→JNI→A32
   stop/fault/thread/registers/code 分层对齐。该结果验证诊断链，不表示 title 已进入游戏。
 
-状态：已完成（title 复跑受独立 native fault 阻断）。
+状态：已完成（报告内 lifecycle 粒度与可诊断性已补强；独立 native fault 仅记录）。

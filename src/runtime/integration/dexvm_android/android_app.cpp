@@ -563,7 +563,8 @@ std::optional<std::string> DispatchHolderCallbacks(
         logger->Write(core::LogLevel::info, "session.dex_lifecycle",
                       std::string("managed surface ") + name +
                           " delivered to " + std::to_string(delivered) +
-                          " holder callback(s)");
+                          " holder callback(s)", {}, {},
+                      {.mode = core::RateLimitMode::none});
     }
     return std::nullopt;
 }
@@ -575,10 +576,10 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
     const SurfaceHolderPhase phase) {
     std::vector<std::uint32_t> holders;
     if (phase == SurfaceHolderPhase::created) {
-        context.managed_surface_available = true;
+        context.managed_host_surface_open = true;
         holders = AttachedHolderHandles(context);
     } else if (phase == SurfaceHolderPhase::destroyed) {
-        context.managed_surface_available = false;
+        context.managed_host_surface_open = false;
         holders.assign(context.active_surface_holders.begin(),
                        context.active_surface_holders.end());
         std::ranges::sort(holders);
@@ -593,7 +594,7 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
 std::optional<std::string> AttachSurfaceViewSubtree(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const ui::UiNodeId subtree) {
-    if (!context.managed_surface_available ||
+    if (!context.managed_host_surface_open ||
         !context.ui_tree.IsAttached(subtree)) {
         return std::nullopt;
     }
@@ -624,7 +625,7 @@ std::optional<std::string> RetireSurfaceHolderGeneration(
     context.surface_callbacks.clear();
     context.surface_holders.clear();
     context.active_surface_holders.clear();
-    context.managed_surface_available = false;
+    context.managed_host_surface_open = false;
     return std::nullopt;
 }
 

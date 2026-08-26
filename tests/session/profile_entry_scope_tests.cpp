@@ -985,7 +985,9 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
     context->surface_width = 800;
     context->surface_height = 480;
     ogplay::core::CapabilityLedger ledger;
+    ogplay::core::Logger logger;
     Interpreter interpreter(linker, model, nullptr, ledger);
+    interpreter.SetLogger(&logger);
 
     const auto probe_class = linker.FindClass("LSurfaceProbe;");
     REQUIRE(probe_class.has_value());
@@ -1092,6 +1094,50 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
     call_on(live_parent, "removeView", "(Landroid/view/View;)V",
             {VmValue::Ref(late_surface)});
     CHECK(read("destroyed") == 2);
+
+    // Exact replacement sequence used by frameworks that switch from a
+    // software SurfaceView to a GL SurfaceView: the old instance is removed,
+    // then a distinct view/holder/callback is constructed and attached while
+    // the same host window surface remains open.
+    CHECK(context->managed_host_surface_open);
+    const auto replacement_surface =
+        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto replacement_holder =
+        call_on(replacement_surface, "getHolder",
+                "()Landroid/view/SurfaceHolder;")
+            .ref;
+    const auto replacement_callback = interpreter.Call(*make, {}).value.ref;
+    call_on(replacement_holder, "addCallback",
+            "(Landroid/view/SurfaceHolder$Callback;)V",
+            {VmValue::Ref(replacement_callback)});
+    call_on(live_parent, "addView", "(Landroid/view/View;)V",
+            {VmValue::Ref(replacement_surface)});
+    CHECK(read("created") == 3);
+    CHECK(read("width") == 800);
+    CHECK(read("height") == 480);
+    CHECK(context->active_surface_holders.contains(
+        replacement_holder.Value()));
+    CHECK(context->managed_host_surface_open);
+
+    call_on(live_parent, "removeView", "(Landroid/view/View;)V",
+            {VmValue::Ref(replacement_surface)});
+    CHECK(read("destroyed") == 3);
+    CHECK_FALSE(context->active_surface_holders.contains(
+        replacement_holder.Value()));
+    CHECK(context->managed_host_surface_open);
+
+    const auto lifecycle_logs = logger.Snapshot(
+        ogplay::core::LogLevel::info, "session.dex_lifecycle");
+    const auto event_count = [&](const std::string_view phase) {
+        const auto expected = "managed surface " + std::string(phase) +
+                              " delivered to 1 holder callback(s)";
+        return std::ranges::count_if(lifecycle_logs, [&](const auto& record) {
+            return record.message == expected;
+        });
+    };
+    CHECK(event_count("surfaceCreated") == 3);
+    CHECK(event_count("surfaceChanged") == 3);
+    CHECK(event_count("surfaceDestroyed") == 3);
 }
 
 TEST_CASE("Thread priority validates and records the guest fact") {

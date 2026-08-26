@@ -56,7 +56,7 @@ struct ProfileEntry final {
 
 struct ProfileRuntime final {
     static constexpr std::uint64_t kDefaultMaximumTicksPerCall =
-        UINT64_C(200000000);
+        UINT64_C(10000000000);
     static constexpr std::uint64_t kMaximumTicksPerCall =
         UINT64_C(10000000000);
 

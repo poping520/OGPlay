@@ -306,6 +306,22 @@ TEST_CASE("videoview error listener registration can be replaced and cleared") {
     CHECK_FALSE(vm.context->video_errors.contains(view.Value()));
 }
 
+TEST_CASE("MediaPlayer accepts error and prepared listeners and resets") {
+    VideoVm vm(FakeFactory());
+    const auto player =
+        vm.interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+    // Resolution itself is the contract: pvz's audioPlay registers an error
+    // listener before any playback, and AOSP accepts null to clear.
+    vm.CallOn(player, "setOnErrorListener",
+              "(Landroid/media/MediaPlayer$OnErrorListener;)V",
+              {VmValue::Ref(VmObjectRef{})});
+    vm.CallOn(player, "setOnPreparedListener",
+              "(Landroid/media/MediaPlayer$OnPreparedListener;)V",
+              {VmValue::Ref(VmObjectRef{})});
+    vm.CallOn(player, "reset", "()V");
+    CHECK(vm.CallOn(player, "isPlaying", "()Z").AsInt() == 0);
+}
+
 TEST_CASE("WifiInfo without a connection does not invent a MAC address") {
     VideoVm vm(FakeFactory());
     const auto info =

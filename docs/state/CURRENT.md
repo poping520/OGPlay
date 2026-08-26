@@ -1,9 +1,20 @@
 # 当前状态
 
-更新：GLES1 cube map、ES1 字符串合成与 guest 错误锁存（BND-26）
+更新：MediaPlayer listener/lifecycle 窄方法与 tick 预算默认值调整
 
 ## 当前阶段
 
+- **DVM-84 追加**：补齐 `MediaPlayer.setOnErrorListener/setOnPreparedListener/reset`
+  窄方法（对照 AOSP API19 签名；listener 接受即返回、回调为记录 gap，`reset` 停止
+  mixer 播放并保留 `create()` 的 resid 绑定）。移除 pvz 主菜单音效路径的
+  "method cannot be resolved" 阻断；pvz 实测推进至 `f≈7101`，下一缺口确认为
+  `Landroid/os/ParcelFileDescriptor;` 类缺失——FD 系数据源管道
+  （`ParcelFileDescriptor/FileInputStream.getFD/AssetFileDescriptor/
+  setDataSource(FileDescriptor,J,J)`）为下一独立工作单元。
+- **tick 预算**：`maximum_ticks_per_call` 默认值 2×10⁸ → 1×10¹⁰（`title_profile.h`
+  的 run-apk 生效路径与 session 级默认共三处）。依据：pvz 主菜单 alpha 预乘与
+  reanim 编译段为合法重计算（原阈值被击穿），Gameloft profile 已用 1×10¹⁰；误杀
+  成本高于迟检成本。看门狗语义不变（无边界调用连续计算计）。
 - **BND-26**：GLES1 固定管线落地 `GL_OES_texture_cube_map`。绑定/参数/mipmap 接受
   0x8513 并按 unit 记 capability；上传 face target 经共享层归一到 cube 对象（顺带修复
   `SharedGlState` metadata 键未归一的隐藏缺陷）；fixed program 按 stage 采样目标选择

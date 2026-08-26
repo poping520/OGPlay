@@ -218,7 +218,7 @@ struct AndroidGuestCallSessionRequest final {
     gles::AngleBackend backend;
     std::uint32_t width{};
     std::uint32_t height{};
-    std::uint64_t maximum_ticks_per_call{UINT64_C(200000000)};
+    std::uint64_t maximum_ticks_per_call{UINT64_C(10000000000)};
     std::uint32_t supersample_factor{1};
     VirtualFileSystem* filesystem{};
     std::function<void(std::string_view)> progress;
@@ -239,7 +239,7 @@ struct AndroidGuestProcessRequest final {
     gles::AngleBackend backend;
     std::uint32_t width{};
     std::uint32_t height{};
-    std::uint64_t maximum_ticks_per_call{UINT64_C(200000000)};
+    std::uint64_t maximum_ticks_per_call{UINT64_C(10000000000)};
     std::uint32_t supersample_factor{1};
     VirtualFileSystem* filesystem{};
     std::function<void(std::string_view)> progress;

@@ -3,7 +3,9 @@
 ## 目标（一句话）
 
 在 Android intrinsic catalog 发布 API 19 `AudioFormat`/`AudioTrack`，并让 DEX、旧
-Java/JNI 与 OpenSL ES 音频入口共用进程唯一 `OpenSlesPcmMixer`。
+Java/JNI 与 OpenSL ES 音频入口共用进程唯一 `OpenSlesPcmMixer`。追加：补齐
+`MediaPlayer` 的 `setOnErrorListener`/`setOnPreparedListener`/`reset()` 窄方法面，
+移除 pvz 主菜单音效路径的方法解析阻断。
 
 ## 依赖
 
@@ -26,6 +28,27 @@ Java/JNI 与 OpenSL ES 音频入口共用进程唯一 `OpenSlesPcmMixer`。
 - 只接受 API 19 游戏所需的 STREAM_MUSIC、4–48 kHz、mono/stereo PCM8/16；其余配置
   明确返回错误或抛 Java 异常。
 - 不进入 SystemClock/Looper/Handler 调度；不运行全量 CTest，全量回归留到阶段最后一个 WU。
+
+## 追加：MediaPlayer listener/lifecycle 窄方法
+
+- 症状：pvz 到达 `LoadTask::FINISHED` 后，`LoaderThread.audioPlay` 首行
+  `MediaPlayer.setOnErrorListener(this)` 以 "method cannot be resolved" 终止；同一
+  路径每次播放先调 `reset()`。接口类 `OnErrorListener`/`OnPreparedListener` 已在
+  catalog，缺的是 `MediaPlayer` 实例方法。
+- 修复（对照 AOSP API 19 `MediaPlayer.java:1369/2359/2608`，均为 `public void`）：
+  `setOnErrorListener`/`setOnPreparedListener` 按 `setOnCompletionListener` 同款
+  接受即返回、回调保持记录 gap（offline mixer 无错误面、prepare 同步完成）；
+  `reset()` 停止 mixer 播放并清 playing 标志，保留 `create()` 的 resid 绑定供后续
+  `start()` 重放。
+- 明确不做：FD 系数据源管道（`ParcelFileDescriptor.open`/`FileInputStream.getFD`/
+  `AssetFileDescriptor`/`setDataSource(FileDescriptor,J,J)`）与 listener 回调触发，
+  均为后续独立缺口。
+- 回归：`tests/dexvm/videoview_tests.cpp` 新增
+  `MediaPlayer accepts error and prepared listeners and resets`（方法解析即契约，
+  旧代码下 `FindVtableIndex` 失败即测试失败）；音频/media 定向 29 用例 378
+  assertions 无回归。pvz Release 实跑越过 `setOnErrorListener` 解析点，推进至
+  `f≈7101`，下一阻断确认为 `Landroid/os/ParcelFileDescriptor;` 类缺失（上述
+  FD 管道缺口的首块）。
 
 ## 验收与结果
 

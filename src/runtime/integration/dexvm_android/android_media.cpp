@@ -449,7 +449,7 @@ Decl Declare_android_media_MediaPlayer_OnPreparedListener(const Context& context
 
 // ---- migrated from android_media_MediaPlayer.cpp ----
 // MediaPlayer handlers bound to the session's offline mixer ("big" bank,
-// resid-keyed). Playback state is real; path-backed sources and completion
+// resid-keyed). Playback state is real; path-backed sources and listener
 // callbacks stay recorded gaps.
 
 #include "ogplay/audio/java_sound_pool_mixer.h"
@@ -580,6 +580,33 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         "(Landroid/media/MediaPlayer$OnCompletionListener;)V",
         [](dx::IntrinsicContext&) {
             // Completion callbacks require the media clock; recorded gap.
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("setOnErrorListener",
+        "(Landroid/media/MediaPlayer$OnErrorListener;)V",
+        [](dx::IntrinsicContext&) {
+            // The offline mixer has no failure surface to report; the
+            // listener is accepted like the completion listener and the
+            // callback stays a recorded gap.
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("setOnPreparedListener",
+        "(Landroid/media/MediaPlayer$OnPreparedListener;)V",
+        [](dx::IntrinsicContext&) {
+            // Sources prepare synchronously in this backend; the callback
+            // stays a recorded gap.
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("reset", "()V",
+        [context, media_resource](dx::IntrinsicContext& call) {
+            // AOSP reset() returns the player to idle; the resid binding
+            // from create() outlives it so a later start() can replay.
+            const auto resource = media_resource(call);
+            if (resource.has_value()) {
+                context->session->SoundPoolMixer().Stop(
+                    audio::JavaSoundPoolKind::big, *resource, 0);
+                context->media_playing[call.receiver.Value()] = false;
+            }
             return dx::VmValue::Void();
         });
     return std::move(builder).Build();

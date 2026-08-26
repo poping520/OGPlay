@@ -1216,8 +1216,8 @@ TEST_CASE("Android guest SoundPool handlers commit decoded mixer voices") {
 
     const auto encoded = ReadAudioFixture();
     ogplay::audio::JavaSoundPoolMixer mixer{
-        [&encoded](const std::int32_t resource) {
-            return resource == 7 ? encoded : std::vector<std::byte>{};
+        [&encoded](const ogplay::audio::EncodedAudioSource& source) {
+            return source.resource == 7 ? encoded : std::vector<std::byte>{};
         }};
     ogplay::audio::JavaSoundPoolState state;
     ogplay::runtime::JniInvocationEngine invocations{classes};

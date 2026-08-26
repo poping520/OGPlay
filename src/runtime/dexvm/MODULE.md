@@ -71,9 +71,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   references 由同一具名 side-table trace，死亡 owner 统一 sweep；Object.clone 仅浅拷贝
   sequence/map 内容，不复制 view/entry/iterator 游标。intrinsic handler 不保存宿主容器
   指针，也不以 `VmObjectRef` 数值代替 Java equals/hashCode。
-- `IoRuntime`（DVM-79）：统一拥有 java.io input/output bytes、cursor、close 与 wrapper
+- `IoRuntime`（DVM-79/DVM-91）：统一拥有 java.io input/output bytes、cursor、close 与 wrapper
   adoption side state，并通过具名 intrinsic state table 随死亡 owner 清扫。File 家族只
   使用装配方注入的 core `IoFileSystem` 窄接口；integration adapter 才可访问具体 VFS。
+  DVM-91 增加不含宿主/native fd 的逻辑 FileDescriptor source/base-offset/closed 记录；
+  `FileInputStream.getFD()` 与读 cursor 独立，这是 reached media identity 路径的明确偏差。
   无文件系统时明确失败；流 wrapper 为 single-owner transfer，clone 不复制游标或缓冲。
 - `ZipRuntime`（DVM-79）：统一拥有 java.util.zip archive、当前 entry bytes/cursor 与
   close 状态；复用 loader 严格 ZIP parser/inflate，并由 intrinsic side-table hook 清扫。

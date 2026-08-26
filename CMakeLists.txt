@@ -127,6 +127,7 @@ ogplay_set_project_warnings(ogplay_hal)
 
 add_library(ogplay_audio
     src/audio/java_sound_pool_mixer.cpp
+    src/audio/mp3.cpp
     src/audio/open_sles_pcm_mixer.cpp
     src/audio/ogg_vorbis.cpp
     third_party/stb/stb_vorbis.c
@@ -802,6 +803,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/cpu/thread_group_tests.cpp
         tests/gles/pvrtc_tests.cpp
         tests/audio/ogg_vorbis_tests.cpp
+        tests/audio/mp3_tests.cpp
         tests/audio/java_sound_pool_mixer_tests.cpp
         tests/audio/open_sles_pcm_mixer_tests.cpp
         tests/video/video_player_tests.cpp

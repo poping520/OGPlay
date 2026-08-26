@@ -230,10 +230,15 @@ status = "complete"
 test = "tests/audio/ogg_vorbis_tests.cpp"
 note = "M5 WU-0294 用仓库固定 stb_vorbis 1.22 将最大 64 MiB Ogg Vorbis 内存输入事务解码为最大 128 MiB 的拥有型 mono/stereo PCM16；空、损坏、超限和不支持格式明确失败"
 
+[audio.mp3_decoder]
+status = "complete"
+test = "tests/audio/mp3_tests.cpp"
+note = "DVM-91 固定 CC0 minimp3 ea99364f，将最大 64 MiB MP3 内存输入含 ID3 前缀逐帧解码为最大 128 MiB 的拥有型 mono/stereo PCM16；采样率/声道中途变化、空、损坏与超限明确失败"
+
 [audio.sound_pool_mixer]
 status = "complete"
 test = "tests/audio/java_sound_pool_mixer_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
-note = "M5 WU-0295 用注入的编码资源 loader 在真实 Ogg 解码成功后提交 loaded，SoundPool voice 控制同步驱动线程安全的 stereo PCM16 离线 mixer；线性重采样、64-bit 累加、饱和与完成清理均有机器测试"
+note = "M5 WU-0295 用注入 loader 在真实解码成功后提交 loaded，SoundPool voice 控制同步驱动线程安全 stereo PCM16 mixer；DVM-91 将 key 从 resid 泛化为 resid/APK entry/VFS path + 纯字节区间并增加 MP3，原 resid 行为保留；线性重采样、64-bit 累加、饱和与完成清理均有机器测试"
 
 [session.profile_plan]
 status = "complete"
@@ -1313,7 +1318,7 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File/ZIP 家族，文件仅经注入 VFS。DVM-82 以统一 NioRuntime 发布 API 19 Buffer family 并与 JNI direct-buffer 共用状态。DVM-87 交付常用 Arrays/Collections algorithm、固定时区 Calendar、Pattern/Matcher、Future/Executor/atomic bounded core；DVM-88 交付默认离线、显式注入的 NetworkRuntime bounded core。Tree/Sorted/Navigable、并发集合、serialization、完整 charset/FileDescriptor/FileChannel 与网络长尾仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
+note = "DVM-12/13 P1：Object/String/Class/Throwable、System/Math/StringBuilder/集合；DVM-40/41 补齐 API 19 Throwable 与 primitive wrapper families；后续批次交付 java.lang.Enum 全表面、Object.clone 与 pinned libcore 顶层 8 个 interface。DVM-48 将 java.lang.Thread 从 Android 侧表迁入 core；DVM-61 交付独立 identity 服务；DVM-75 交付 bounded String.format。DVM-78 以统一 CollectionRuntime 发布 List/Map/Set/Deque 常用层级、live view、稳定 Entry、sub-list、双向/fail-fast iterator。DVM-79 以统一 IoRuntime 发布常用 stream/reader/data/byte-array/filter/buffer 与 File/ZIP 家族，文件仅经注入 VFS。DVM-82 以统一 NioRuntime 发布 API 19 Buffer family 并与 JNI direct-buffer 共用状态。DVM-87 交付常用 Arrays/Collections algorithm、固定时区 Calendar、Pattern/Matcher、Future/Executor/atomic bounded core；DVM-88 交付默认离线、显式注入的 NetworkRuntime bounded core。DVM-91 发布不泄漏宿主句柄的逻辑 FileDescriptor.valid 与 FileInputStream.getFD。Tree/Sorted/Navigable、并发集合、serialization、完整 charset/FileChannel 与网络长尾仍 deferred；deprecated Thread API 与其他缺口明确未实现，能力保持 partial。"
 
 [dexvm.jni_bridge]
 status = "complete"
@@ -1323,7 +1328,12 @@ note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三
 [dexvm.intrinsics_android_core]
 status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
-note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z`：Manifest launcher 在实例化时发布为进程唯一 task 的根（handle 记账于 DexVmAndroidContext::task_root_activity），startActivity 切换到达的 Activity 回答 false，已退出的 shell 对自身句柄仍回答 true（对照 AOSP Activity.getTaskForActivity 语义）。DVM-71 增加 guest-visible Window flags/soft-input/type、per-Activity requested orientation 状态并以注入 surface/density 闭合 API19 DisplayMetrics app/real/noncompat 事实，DVM-74 继续闭合 Configuration screenLayout size/long/compat 事实，不伪造宿主 Binder/IME/旋转；DVM-72 发布稳定 guest `/data` 与 `/data/data/<package>/files` File identity，files directory 经统一 VFS/sandbox 真实建立；DVM-73 发布 GLSurfaceView policy 与 IntentFilter metadata；DVM-77 发布当前 APK PackageManager P0 面；DVM-81 恢复 API 19 Context 继承链；DVM-88 发布 ContentValues/Cursor/SQLiteDatabase/SQLiteOpenHelper bounded 数据面并只经 guest VFS 持久化。DVM-89 按 API 19 AOSP 发布 Bitmap.Config、guest APK resource path、软件 SurfaceHolder/Canvas、AudioTrack、OnFocusChangeListener、ResultReceiver 与 bounded KeyEvent。DVM-84 追加补齐 MediaPlayer.setOnErrorListener/setOnPreparedListener/reset 窄方法（接受即返回、回调为记录 gap、reset 保留 resid 绑定），FD 系数据源与回调触发仍 deferred。DVM-90 以 live UiTree 建立 per-holder Surface generation：动态 attach 分派 created/changed，detach 分派 destroyed，removeCallback 修改后续事件快照。visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z` 与 API19 DisplayMetrics/Configuration bounded 事实；DVM-72 发布稳定 guest data/files VFS identity，DVM-77 发布当前 APK PackageManager P0，DVM-81 恢复 Context 继承链，DVM-88 发布 VFS SQLite bounded 数据面，DVM-89 发布 Bitmap.Config、APK path、软件 Surface/Canvas、AudioTrack、ResultReceiver/KeyEvent，DVM-90 建立 live UiTree 的 per-holder Surface generation。DVM-91 用真实逻辑 FileDescriptor 替换 PFD 空壳，闭合 PFD.open、AFD ctor/getter、stored AssetManager.openFd 与 MediaPlayer FD/区间数据源；DEFLATED asset 明确抛 FNE。listener 回调、visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
+
+[dexvm.media_data_sources]
+status = "complete"
+test = "tests/dexvm/file_vfs_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp"
+note = "DVM-91 以逻辑 source identity + byte range 闭合 FileDescriptor/PFD/AFD/FileInputStream.getFD/AssetManager.openFd/MediaPlayer 两个 FD overload；APK payload 绝对 offset 在消费边界规范化，VFS/APK/resid 共用唯一 mixer，stored/deflated、缺失、关闭与越界均明确裁决；不提供 native fd 数值互操作、pipe/socketpair、网络 Uri 或宿主 ffmpeg"
 
 [dexvm.surface_view_lifecycle]
 status = "partial"

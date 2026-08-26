@@ -1,5 +1,7 @@
 // DVM-80: API-family translation unit. Physical consolidation only.
 
+#include "ogplay/runtime/dexvm/io_runtime.h"
+
 // ---- migrated from android_os_AsyncTask.cpp ----
 #include <array>
 #include <bit>
@@ -1525,6 +1527,51 @@ Decl Declare_android_os_PowerManager_WakeLock(const Context& context) {
         return dx::VmValue::Int(context->wake_locks[call.receiver.Value()].count > 0);
     }).FinalMethod("setReferenceCounted", "(Z)V", [context](dx::IntrinsicContext& call) {
         context->wake_locks[call.receiver.Value()].reference_counted = call.arguments[0].AsInt() != 0;
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_os_ParcelFileDescriptor(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/ParcelFileDescriptor;", "Ljava/lang/Object;");
+    builder.ConstantInt("MODE_READ_ONLY", "I", 0x10000000, 0x0019U);
+    builder.InstanceField("mFd", "Ljava/io/FileDescriptor;", 0x0012U);
+    builder.StaticMethod(
+        "open", "(Ljava/io/File;I)Landroid/os/ParcelFileDescriptor;",
+        [](dx::IntrinsicContext& call) {
+            constexpr std::int32_t kModeReadOnly = 0x10000000;
+            if (call.arguments[1].AsInt() != kModeReadOnly) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/IllegalArgumentException;",
+                    "only MODE_READ_ONLY is supported"};
+            }
+            const auto path = FilePathOf(call, call.arguments[0].ref);
+            const auto info = call.vm.IO().Stat(path);
+            if (!info.has_value() || info->is_directory) {
+                throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                                      "file not found: " + path};
+            }
+            const auto fd = call.vm.NewIntrinsicInstance(
+                "Ljava/io/FileDescriptor;");
+            call.vm.IO().SetDescriptor(
+                fd, {dx::IoRuntime::DescriptorKind::vfs_path, path, 0,
+                     false});
+            const auto pfd = call.vm.NewIntrinsicInstance(
+                "Landroid/os/ParcelFileDescriptor;");
+            call.vm.Model().InstanceSlots(pfd)[0] = {
+                fd.Value(), dx::SlotTag::ref};
+            return dx::VmValue::Ref(pfd);
+        });
+    builder.FinalMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(dx::VmObjectRef(
+                call.vm.Model().InstanceSlots(call.receiver)[0].bits));
+        });
+    builder.FinalMethod("close", "()V", [](dx::IntrinsicContext& call) {
+        const auto fd = dx::VmObjectRef(
+            call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+        if (fd.IsValid()) call.vm.IO().CloseDescriptor(fd);
         return dx::VmValue::Void();
     });
     return std::move(builder).Build();

@@ -114,6 +114,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_os_Parcelable(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Parcelable_Creator(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Parcel(const Context& context);
+[[nodiscard]] Decl Declare_android_os_ParcelFileDescriptor(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager_WakeLock(const Context& context);
 [[nodiscard]] Decl Declare_android_os_ResultReceiver(const Context& context);

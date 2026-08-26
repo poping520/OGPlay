@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "ogplay/audio/mp3.h"
+
 namespace ogplay::audio {
 
 JavaSoundPoolMixer::JavaSoundPoolMixer(EncodedResourceLoader loader)
@@ -16,40 +18,53 @@ bool JavaSoundPoolMixer::Enabled() const noexcept {
 }
 
 bool JavaSoundPoolMixer::Load(const std::int32_t resource) {
+    return Load(EncodedAudioSource::Resource(resource));
+}
+
+bool JavaSoundPoolMixer::Load(const EncodedAudioSource& source) {
     std::scoped_lock lock(mutex_);
-    if (!loader_ || resource < 0) return false;
-    if (resources_.contains(resource)) return true;
+    if (!loader_ ||
+        (source.kind == EncodedAudioSource::Kind::resource &&
+         source.resource < 0)) return false;
+    if (resources_.contains(source)) return true;
     try {
-        const auto encoded = loader_(resource);
+        const auto encoded = loader_(source);
         if (encoded.empty()) {
-            failures_[resource] = "SoundPool encoded resource is unavailable";
+            failures_[source] = "encoded audio source is unavailable";
             return false;
         }
-        auto decoded = DecodeOggVorbis(encoded);
-        resources_.emplace(resource, std::move(decoded));
-        failures_.erase(resource);
+        const bool is_ogg = encoded.size() >= 4U &&
+            encoded[0] == std::byte{'O'} && encoded[1] == std::byte{'g'} &&
+            encoded[2] == std::byte{'g'} && encoded[3] == std::byte{'S'};
+        auto decoded = is_ogg ? DecodeOggVorbis(encoded) : DecodeMp3(encoded);
+        resources_.emplace(source, std::move(decoded));
+        failures_.erase(source);
         return true;
     } catch (const std::exception& error) {
-        failures_[resource] = error.what();
+        failures_[source] = error.what();
         return false;
     }
 }
 
 void JavaSoundPoolMixer::Unload(const std::int32_t resource) {
+    Unload(EncodedAudioSource::Resource(resource));
+}
+
+void JavaSoundPoolMixer::Unload(const EncodedAudioSource& source) {
     std::scoped_lock lock(mutex_);
-    resources_.erase(resource);
-    failures_.erase(resource);
-    std::erase_if(voices_, [resource](const Voice& voice) {
-        return voice.resource == resource;
+    resources_.erase(source);
+    failures_.erase(source);
+    std::erase_if(voices_, [&source](const Voice& voice) {
+        return voice.source == source;
     });
 }
 
 std::vector<JavaSoundPoolMixer::Voice>::iterator JavaSoundPoolMixer::FindVoice(
-    const JavaSoundPoolKind kind, const std::int32_t resource,
+    const JavaSoundPoolKind kind, const EncodedAudioSource& source,
     const std::int32_t instance) {
     return std::ranges::find_if(
-        voices_, [kind, resource, instance](const Voice& voice) {
-            return voice.kind == kind && voice.resource == resource &&
+        voices_, [kind, &source, instance](const Voice& voice) {
+            return voice.kind == kind && voice.source == source &&
                    voice.instance == instance;
         });
 }
@@ -58,14 +73,22 @@ bool JavaSoundPoolMixer::Play(const JavaSoundPoolKind kind,
                               const std::int32_t resource,
                               const std::int32_t instance,
                               const float volume, const bool looping) {
+    return Play(kind, EncodedAudioSource::Resource(resource), instance,
+                volume, looping);
+}
+
+bool JavaSoundPoolMixer::Play(const JavaSoundPoolKind kind,
+                              const EncodedAudioSource& source,
+                              const std::int32_t instance,
+                              const float volume, const bool looping) {
     std::scoped_lock lock(mutex_);
-    if (!resources_.contains(resource) || !std::isfinite(volume) ||
+    if (!resources_.contains(source) || !std::isfinite(volume) ||
         volume < 0.0F || volume > 1.0F) {
         return false;
     }
-    const auto found = FindVoice(kind, resource, instance);
+    const auto found = FindVoice(kind, source, instance);
     if (found == voices_.end()) {
-        voices_.push_back({kind, resource, instance, 0.0, volume, 1.0F,
+        voices_.push_back({kind, source, instance, 0.0, volume, 1.0F,
                            false, looping});
     } else {
         found->position = 0.0;
@@ -80,8 +103,14 @@ bool JavaSoundPoolMixer::Play(const JavaSoundPoolKind kind,
 void JavaSoundPoolMixer::Pause(const JavaSoundPoolKind kind,
                                const std::int32_t resource,
                                const std::int32_t instance) {
+    Pause(kind, EncodedAudioSource::Resource(resource), instance);
+}
+
+void JavaSoundPoolMixer::Pause(const JavaSoundPoolKind kind,
+                               const EncodedAudioSource& source,
+                               const std::int32_t instance) {
     std::scoped_lock lock(mutex_);
-    if (const auto found = FindVoice(kind, resource, instance);
+    if (const auto found = FindVoice(kind, source, instance);
         found != voices_.end()) {
         found->paused = true;
     }
@@ -90,8 +119,14 @@ void JavaSoundPoolMixer::Pause(const JavaSoundPoolKind kind,
 void JavaSoundPoolMixer::Resume(const JavaSoundPoolKind kind,
                                 const std::int32_t resource,
                                 const std::int32_t instance) {
+    Resume(kind, EncodedAudioSource::Resource(resource), instance);
+}
+
+void JavaSoundPoolMixer::Resume(const JavaSoundPoolKind kind,
+                                const EncodedAudioSource& source,
+                                const std::int32_t instance) {
     std::scoped_lock lock(mutex_);
-    if (const auto found = FindVoice(kind, resource, instance);
+    if (const auto found = FindVoice(kind, source, instance);
         found != voices_.end()) {
         found->paused = false;
     }
@@ -100,8 +135,14 @@ void JavaSoundPoolMixer::Resume(const JavaSoundPoolKind kind,
 void JavaSoundPoolMixer::Stop(const JavaSoundPoolKind kind,
                               const std::int32_t resource,
                               const std::int32_t instance) {
+    Stop(kind, EncodedAudioSource::Resource(resource), instance);
+}
+
+void JavaSoundPoolMixer::Stop(const JavaSoundPoolKind kind,
+                              const EncodedAudioSource& source,
+                              const std::int32_t instance) {
     std::scoped_lock lock(mutex_);
-    if (const auto found = FindVoice(kind, resource, instance);
+    if (const auto found = FindVoice(kind, source, instance);
         found != voices_.end()) {
         voices_.erase(found);
     }
@@ -111,9 +152,16 @@ void JavaSoundPoolMixer::SetVolume(const JavaSoundPoolKind kind,
                                    const std::int32_t resource,
                                    const std::int32_t instance,
                                    const float volume) {
+    SetVolume(kind, EncodedAudioSource::Resource(resource), instance, volume);
+}
+
+void JavaSoundPoolMixer::SetVolume(const JavaSoundPoolKind kind,
+                                   const EncodedAudioSource& source,
+                                   const std::int32_t instance,
+                                   const float volume) {
     std::scoped_lock lock(mutex_);
     if (!std::isfinite(volume) || volume < 0.0F || volume > 1.0F) return;
-    if (const auto found = FindVoice(kind, resource, instance);
+    if (const auto found = FindVoice(kind, source, instance);
         found != voices_.end()) {
         found->volume = volume;
     }
@@ -125,7 +173,8 @@ void JavaSoundPoolMixer::SetPitch(const JavaSoundPoolKind kind,
                                   const float pitch) {
     std::scoped_lock lock(mutex_);
     if (!std::isfinite(pitch) || pitch < 0.5F || pitch > 2.0F) return;
-    if (const auto found = FindVoice(kind, resource, instance);
+    if (const auto found = FindVoice(
+            kind, EncodedAudioSource::Resource(resource), instance);
         found != voices_.end()) {
         found->pitch = pitch;
     }
@@ -134,8 +183,14 @@ void JavaSoundPoolMixer::SetPitch(const JavaSoundPoolKind kind,
 void JavaSoundPoolMixer::Reset(const JavaSoundPoolKind kind,
                                const std::int32_t resource,
                                const std::int32_t instance) {
+    Reset(kind, EncodedAudioSource::Resource(resource), instance);
+}
+
+void JavaSoundPoolMixer::Reset(const JavaSoundPoolKind kind,
+                               const EncodedAudioSource& source,
+                               const std::int32_t instance) {
     std::scoped_lock lock(mutex_);
-    if (const auto found = FindVoice(kind, resource, instance);
+    if (const auto found = FindVoice(kind, source, instance);
         found != voices_.end()) {
         found->position = 0.0;
     }
@@ -148,7 +203,8 @@ void JavaSoundPoolMixer::StopAll(
     std::erase_if(voices_, [kind, except_resource](const Voice& voice) {
         return voice.kind == kind &&
                (!except_resource.has_value() ||
-                voice.resource != *except_resource);
+                voice.source !=
+                    EncodedAudioSource::Resource(*except_resource));
     });
 }
 
@@ -189,7 +245,7 @@ std::size_t JavaSoundPoolMixer::RenderStereoPcm16(
     const auto output_frames = output.size() / 2U;
     mix_scratch_.assign(output.size(), 0);
     for (auto voice = voices_.begin(); voice != voices_.end();) {
-        const auto sound = resources_.find(voice->resource);
+        const auto sound = resources_.find(voice->source);
         if (sound == resources_.end()) {
             voice = voices_.erase(voice);
             continue;
@@ -249,8 +305,13 @@ std::size_t JavaSoundPoolMixer::RenderStereoPcm16(
 
 std::optional<std::string> JavaSoundPoolMixer::LoadFailure(
     const std::int32_t resource) const {
+    return LoadFailure(EncodedAudioSource::Resource(resource));
+}
+
+std::optional<std::string> JavaSoundPoolMixer::LoadFailure(
+    const EncodedAudioSource& source) const {
     std::scoped_lock lock(mutex_);
-    const auto found = failures_.find(resource);
+    const auto found = failures_.find(source);
     return found == failures_.end() ? std::nullopt
                                     : std::optional{found->second};
 }

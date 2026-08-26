@@ -43,6 +43,16 @@ public:
 // Android assembly only injects the process guest VFS.
 class IoRuntime final {
 public:
+  enum class DescriptorKind : std::uint8_t {
+    vfs_path,
+    apk_entry,
+  };
+  struct DescriptorState final {
+    DescriptorKind kind{DescriptorKind::vfs_path};
+    std::string source;
+    std::uint64_t base_offset{};
+    bool closed{};
+  };
   struct InputState final {
     std::vector<std::byte> bytes;
     std::size_t cursor{};
@@ -68,6 +78,12 @@ public:
   void AdoptOutput(VmObjectRef source, VmObjectRef target);
   void FlushOutput(VmObjectRef owner, bool close);
 
+  void SetDescriptor(VmObjectRef owner, DescriptorState state);
+  [[nodiscard]] DescriptorState &Descriptor(VmObjectRef owner);
+  [[nodiscard]] const DescriptorState *FindDescriptor(
+      VmObjectRef owner) const noexcept;
+  void CloseDescriptor(VmObjectRef owner) noexcept;
+
   [[nodiscard]] std::optional<IoFileInfo> Stat(std::string_view path) const;
   [[nodiscard]] std::optional<std::vector<std::string>>
   List(std::string_view path) const;
@@ -84,6 +100,7 @@ private:
   IoFileSystem *file_system_{};
   std::unordered_map<std::uint32_t, InputState> inputs_;
   std::unordered_map<std::uint32_t, OutputState> outputs_;
+  std::unordered_map<std::uint32_t, DescriptorState> descriptors_;
 };
 
 } // namespace ogplay::runtime::dexvm

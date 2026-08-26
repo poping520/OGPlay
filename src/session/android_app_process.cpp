@@ -94,6 +94,7 @@ public:
         }
         context->session = session.get();
         context->pcm_playback = &session->PcmPlayback();
+        context->encoded_audio_playback = &session->SoundPoolMixer();
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;
         context->package_resource_path =

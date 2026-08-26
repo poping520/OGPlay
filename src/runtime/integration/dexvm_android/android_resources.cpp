@@ -5,24 +5,87 @@
 #include <utility>
 
 #include "catalog.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 
 namespace ogplay::runtime::android_intrinsics::dvm80_android_content_res_AssetFileDescriptor {
+
+namespace {
+
+void SetWide(dx::IntrinsicContext& call, const dx::VmObjectRef object,
+             const std::size_t slot, const std::int64_t value) {
+    const auto bits = static_cast<std::uint64_t>(value);
+    auto slots = call.vm.Model().InstanceSlots(object);
+    slots[slot] = {static_cast<std::uint32_t>(bits), dx::SlotTag::wide_lo};
+    slots[slot + 1] = {static_cast<std::uint32_t>(bits >> 32U),
+                       dx::SlotTag::wide_hi};
+}
+
+std::int64_t GetWide(dx::IntrinsicContext& call,
+                     const dx::VmObjectRef object, const std::size_t slot) {
+    const auto slots = call.vm.Model().InstanceSlots(object);
+    const auto bits = static_cast<std::uint64_t>(slots[slot].bits) |
+                      (static_cast<std::uint64_t>(slots[slot + 1].bits)
+                       << 32U);
+    return static_cast<std::int64_t>(bits);
+}
+
+void Initialize(dx::IntrinsicContext& call, const dx::VmObjectRef descriptor,
+                const dx::VmObjectRef pfd, const std::int64_t start_offset,
+                const std::int64_t length) {
+    if (!pfd.IsValid()) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "fd must not be null"};
+    }
+    if (length < 0 && start_offset != 0) {
+        throw dx::VmJavaThrow{
+            "Ljava/lang/IllegalArgumentException;",
+            "startOffset must be 0 when using UNKNOWN_LENGTH"};
+    }
+    auto slots = call.vm.Model().InstanceSlots(descriptor);
+    slots[0] = {pfd.Value(), dx::SlotTag::ref};
+    SetWide(call, descriptor, 1, start_offset);
+    SetWide(call, descriptor, 3, length);
+}
+
+}  // namespace
 
 Decl Declare_android_content_res_AssetFileDescriptor(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/content/res/AssetFileDescriptor;", "Ljava/lang/Object;");
+    builder.InstanceField("mFd", "Landroid/os/ParcelFileDescriptor;", 0x0012U);
+    builder.InstanceField("mStartOffset", "J", 0x0012U);
     builder.InstanceField("mLength", "J", 0x0012U);
+    builder.Constructor("(Landroid/os/ParcelFileDescriptor;JJ)V",
+        [](dx::IntrinsicContext& call) {
+            Initialize(call, call.receiver, call.arguments[0].ref,
+                       call.arguments[1].AsLong(),
+                       call.arguments[2].AsLong());
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;",
+        [](dx::IntrinsicContext& call) {
+            const auto pfd = dx::VmObjectRef(
+                call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+            if (!pfd.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
+            return dx::VmValue::Ref(dx::VmObjectRef(
+                call.vm.Model().InstanceSlots(pfd)[0].bits));
+        });
+    builder.FinalMethod("getStartOffset", "()J",
+        [](dx::IntrinsicContext& call) {
+            return dx::VmValue::Long(GetWide(call, call.receiver, 1));
+        });
     builder.FinalMethod("getLength", "()J",
         [](dx::IntrinsicContext& call) {
-            const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-            const auto bits = static_cast<std::uint64_t>(slots[0].bits) |
-                              (static_cast<std::uint64_t>(slots[1].bits)
-                               << 32U);
-            return dx::VmValue::Long(static_cast<std::int64_t>(bits));
+            return dx::VmValue::Long(GetWide(call, call.receiver, 3));
         });
-    builder.FinalMethod("close", "()V", [](dx::IntrinsicContext&) {
-        // This logical descriptor owns no host or guest fd/lease. Closing an
-        // empty resource set is intentionally idempotent.
+    builder.FinalMethod("close", "()V", [](dx::IntrinsicContext& call) {
+        const auto pfd = dx::VmObjectRef(
+            call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+        if (pfd.IsValid()) {
+            const auto fd = dx::VmObjectRef(
+                call.vm.Model().InstanceSlots(pfd)[0].bits);
+            if (fd.IsValid()) call.vm.IO().CloseDescriptor(fd);
+        }
         return dx::VmValue::Void();
     });
     return std::move(builder).Build();
@@ -63,15 +126,38 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
                     "Ljava/io/FileNotFoundException;",
                     "APK asset is unavailable: " + path};
             }
+            if (entry->compression_method != 0 ||
+                entry->compressed_size != entry->uncompressed_size) {
+                throw dx::VmJavaThrow{
+                    "Ljava/io/FileNotFoundException;",
+                    "APK asset is compressed: " + path};
+            }
+            std::uint64_t data_offset{};
+            try {
+                data_offset = loader::StoredApkEntryDataOffset(
+                    context->apk_bytes, context->archive, path);
+            } catch (const std::exception& error) {
+                throw dx::VmJavaThrow{
+                    "Ljava/io/FileNotFoundException;",
+                    "APK asset cannot provide a descriptor: " + path +
+                        " (" + error.what() + ")"};
+            }
+            const auto fd = call.vm.NewIntrinsicInstance(
+                "Ljava/io/FileDescriptor;");
+            call.vm.IO().SetDescriptor(
+                fd, {dx::IoRuntime::DescriptorKind::apk_entry, path,
+                     data_offset, false});
+            const auto pfd = call.vm.NewIntrinsicInstance(
+                "Landroid/os/ParcelFileDescriptor;");
+            call.vm.Model().InstanceSlots(pfd)[0] = {
+                fd.Value(), dx::SlotTag::ref};
             const auto descriptor = call.vm.NewIntrinsicInstance(
                 "Landroid/content/res/AssetFileDescriptor;");
             const auto length =
                 static_cast<std::uint64_t>(entry->uncompressed_size);
-            const auto slots = call.vm.Model().InstanceSlots(descriptor);
-            slots[0] = {static_cast<std::uint32_t>(length),
-                        dx::SlotTag::wide_lo};
-            slots[1] = {static_cast<std::uint32_t>(length >> 32U),
-                        dx::SlotTag::wide_hi};
+            dvm80_android_content_res_AssetFileDescriptor::Initialize(
+                call, descriptor, pfd, static_cast<std::int64_t>(data_offset),
+                static_cast<std::int64_t>(length));
             return dx::VmValue::Ref(descriptor);
         });
     builder.FinalMethod("list",

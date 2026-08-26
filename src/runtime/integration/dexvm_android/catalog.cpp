@@ -161,6 +161,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_os_Parcelable(context),
         Declare_android_os_Parcelable_Creator(context),
         Declare_android_os_Parcel(context),
+        Declare_android_os_ParcelFileDescriptor(context),
         Declare_android_os_PowerManager(context),
         Declare_android_os_PowerManager_WakeLock(context),
         Declare_android_os_ResultReceiver(context),

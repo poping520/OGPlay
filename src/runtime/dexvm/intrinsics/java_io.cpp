@@ -161,6 +161,21 @@ IntrinsicHandler OpenInputFromPath(const bool file_argument) {
                         "file not found: " + path};
     }
     call.vm.IO().SetInput(call.receiver, {*bytes, 0, false});
+    const auto descriptor =
+        call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+    call.vm.IO().SetDescriptor(
+        descriptor,
+        {IoRuntime::DescriptorKind::vfs_path, path, 0, false});
+    const auto field = call.vm.Linker().FindFieldRecursive(
+        call.vm.Model().ObjectClass(call.receiver), "fd",
+        "Ljava/io/FileDescriptor;");
+    if (!field.has_value()) {
+      throw DexVmError(DexVmErrorReason::internal_invariant,
+                       "FileInputStream.fd field is unavailable");
+    }
+    call.vm.Model().InstanceSlots(call.receiver)
+        [call.vm.Linker().Field(*field).slot] = {descriptor.Value(),
+                                                 SlotTag::ref};
     return VmValue::Void();
   };
 }
@@ -362,8 +377,57 @@ IntrinsicClassDecl DeclareFile() {
 IntrinsicClassDecl DeclareFileInputStream() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/io/FileInputStream;",
                                               "Ljava/io/InputStream;");
+  builder.InstanceField("fd", "Ljava/io/FileDescriptor;", 0x0012U);
   builder.Constructor("(Ljava/io/File;)V", OpenInputFromPath(true));
   builder.Constructor("(Ljava/lang/String;)V", OpenInputFromPath(false));
+  builder.FinalMethod("getFD", "()Ljava/io/FileDescriptor;",
+                      [](IntrinsicContext &call) {
+                        const auto field =
+                            call.vm.Linker().FindFieldRecursive(
+                                call.vm.Model().ObjectClass(call.receiver),
+                                "fd", "Ljava/io/FileDescriptor;");
+                        if (!field.has_value()) {
+                          throw DexVmError(
+                              DexVmErrorReason::internal_invariant,
+                              "FileInputStream.fd field is unavailable");
+                        }
+                        const auto slot = call.vm.Linker().Field(*field).slot;
+                        const auto descriptor = VmObjectRef(
+                            call.vm.Model().InstanceSlots(call.receiver)[slot]
+                                .bits);
+                        if (!descriptor.IsValid()) {
+                          throw VmJavaThrow{"Ljava/io/IOException;",
+                                            "stream has no file descriptor"};
+                        }
+                        return VmValue::Ref(descriptor);
+                      });
+  builder.FinalMethod("close", "()V", [](IntrinsicContext &call) {
+    call.vm.IO().CloseInput(call.receiver);
+    const auto field = call.vm.Linker().FindFieldRecursive(
+        call.vm.Model().ObjectClass(call.receiver), "fd",
+        "Ljava/io/FileDescriptor;");
+    if (field.has_value()) {
+      const auto descriptor = VmObjectRef(
+          call.vm.Model().InstanceSlots(call.receiver)
+              [call.vm.Linker().Field(*field).slot]
+                  .bits);
+      if (descriptor.IsValid()) call.vm.IO().CloseDescriptor(descriptor);
+    }
+    return VmValue::Void();
+  });
+  return std::move(builder).Build();
+}
+
+IntrinsicClassDecl DeclareFileDescriptor() {
+  auto builder = IntrinsicClassBuilder::Class("Ljava/io/FileDescriptor;",
+                                              "Ljava/lang/Object;");
+  builder.Constructor("()V", [](IntrinsicContext &) {
+    return VmValue::Void();
+  });
+  builder.FinalMethod("valid", "()Z", [](IntrinsicContext &call) {
+    const auto *descriptor = call.vm.IO().FindDescriptor(call.receiver);
+    return VmValue::Int(descriptor != nullptr && !descriptor->closed);
+  });
   return std::move(builder).Build();
 }
 
@@ -445,6 +509,7 @@ IntrinsicClassDecl DeclareFileWriter() {
 
 void AppendJavaIoFiles(std::vector<IntrinsicClassDecl> &catalog) {
   catalog.push_back(DeclareFile());
+  catalog.push_back(DeclareFileDescriptor());
   catalog.push_back(DeclareFileInputStream());
   catalog.push_back(DeclareFileOutputStream());
   catalog.push_back(DeclareFileReader());

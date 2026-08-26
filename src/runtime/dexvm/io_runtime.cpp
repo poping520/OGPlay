@@ -79,6 +79,30 @@ void IoRuntime::FlushOutput(const VmObjectRef owner, const bool close) {
   state->closed = close;
 }
 
+void IoRuntime::SetDescriptor(const VmObjectRef owner,
+                              DescriptorState state) {
+  descriptors_[owner.Value()] = std::move(state);
+}
+
+IoRuntime::DescriptorState &IoRuntime::Descriptor(const VmObjectRef owner) {
+  const auto found = descriptors_.find(owner.Value());
+  if (found == descriptors_.end() || found->second.closed) {
+    throw IoRuntimeError("file descriptor is closed or was never opened");
+  }
+  return found->second;
+}
+
+const IoRuntime::DescriptorState *
+IoRuntime::FindDescriptor(const VmObjectRef owner) const noexcept {
+  const auto found = descriptors_.find(owner.Value());
+  return found == descriptors_.end() ? nullptr : &found->second;
+}
+
+void IoRuntime::CloseDescriptor(const VmObjectRef owner) noexcept {
+  const auto found = descriptors_.find(owner.Value());
+  if (found != descriptors_.end()) found->second.closed = true;
+}
+
 std::optional<IoFileInfo> IoRuntime::Stat(const std::string_view path) const {
   return file_system_ != nullptr ? file_system_->Stat(path) : std::nullopt;
 }
@@ -119,6 +143,7 @@ void IoRuntime::WriteFile(const std::string_view path,
 void IoRuntime::Sweep(const VmObjectRef owner) {
   inputs_.erase(owner.Value());
   outputs_.erase(owner.Value());
+  descriptors_.erase(owner.Value());
 }
 
 } // namespace ogplay::runtime::dexvm

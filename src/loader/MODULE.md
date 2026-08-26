@@ -9,7 +9,8 @@
 - `ParseApkArchive` / `ReadApkEntry`：严格解析单盘 ZIP32 central directory，并按名称、
   local/central 元数据和 CRC32 提取 stored 或 Deflate 条目；`ReadStoredApkEntry` 保留为要求
   调用方显式保证未压缩的窄接口；使用 bit 3 的 ZIP32 data descriptor 同样与 central
-  metadata 精确交叉验证。
+  metadata 精确交叉验证。`StoredApkEntryDataOffset` 复用同一 local/central 校验，仅为
+  AFD 发布 stored payload 在 APK 中的物理偏移，不放宽压缩或 CRC 读取契约。
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package/version/SDK、默认或自定义
   Application 类，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity

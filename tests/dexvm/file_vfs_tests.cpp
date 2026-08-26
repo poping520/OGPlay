@@ -5,9 +5,11 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <span>
 #include <string>
@@ -16,6 +18,7 @@
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/core/logger.h"
+#include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
@@ -320,10 +323,12 @@ TEST_CASE("Context files directory returns null when VFS is unavailable") {
 
 TEST_CASE("AssetManager openFd publishes exact logical asset length") {
     FileVm vm;
-    vm.context->archive.entries.push_back({
-        .name = "assets/main.obb",
-        .uncompressed_size = UINT32_C(0xf0000000),
-    });
+    const std::vector<std::byte> payload{
+        std::byte{'m'}, std::byte{'u'}, std::byte{'s'}, std::byte{'i'},
+        std::byte{'c'}};
+    vm.context->apk_bytes = MakeStoredZip("assets/main.obb", payload);
+    vm.context->archive =
+        ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
     const auto manager = vm.interpreter.NewIntrinsicInstance(
         "Landroid/content/res/AssetManager;");
     const auto descriptor = vm.CallOn(
@@ -332,11 +337,24 @@ TEST_CASE("AssetManager openFd publishes exact logical asset length") {
         {VmValue::Ref(vm.interpreter.NewStringUtf8("main.obb"))}).ref;
     REQUIRE(descriptor.IsValid());
     CHECK(vm.CallOn(descriptor, "getLength", "()J").AsLong() ==
-          INT64_C(0xf0000000));
+          static_cast<std::int64_t>(payload.size()));
+    const auto start =
+        vm.CallOn(descriptor, "getStartOffset", "()J").AsLong();
+    CHECK(start == 30 + std::string_view("assets/main.obb").size());
+    const auto fd = vm.CallOn(descriptor, "getFileDescriptor",
+                              "()Ljava/io/FileDescriptor;").ref;
+    REQUIRE(fd.IsValid());
+    CHECK(vm.BoolOn(fd, "valid"));
+    const auto* state = vm.interpreter.IO().FindDescriptor(fd);
+    REQUIRE(state != nullptr);
+    CHECK(state->kind == IoRuntime::DescriptorKind::apk_entry);
+    CHECK(state->source == "assets/main.obb");
+    CHECK(state->base_offset == static_cast<std::uint64_t>(start));
     static_cast<void>(vm.CallOn(descriptor, "close", "()V"));
     static_cast<void>(vm.CallOn(descriptor, "close", "()V"));
+    CHECK_FALSE(vm.BoolOn(fd, "valid"));
     CHECK(vm.CallOn(descriptor, "getLength", "()J").AsLong() ==
-          INT64_C(0xf0000000));
+          static_cast<std::int64_t>(payload.size()));
 
     const auto missing = vm.CallOnOutcome(
         manager, "openFd",
@@ -345,6 +363,195 @@ TEST_CASE("AssetManager openFd publishes exact logical asset length") {
     REQUIRE(missing.exception.IsValid());
     CHECK(vm.linker.Class(missing.exception_class).descriptor ==
           "Ljava/io/FileNotFoundException;");
+}
+
+TEST_CASE("AssetManager openFd rejects a compressed APK entry") {
+    FileVm vm;
+    const std::string name = "assets/compressed.bin";
+    vm.context->apk_bytes = MakeStoredZip(
+        name, std::vector<std::byte>{std::byte{'x'}});
+    vm.context->apk_bytes[8] = std::byte{8};
+    const auto central = 30U + name.size() + 1U;
+    vm.context->apk_bytes[central + 10U] = std::byte{8};
+    vm.context->archive =
+        ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+    const auto manager = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/content/res/AssetManager;");
+    const auto outcome = vm.CallOnOutcome(
+        manager, "openFd",
+        "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("compressed.bin"))});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/io/FileNotFoundException;");
+}
+
+TEST_CASE("Parcel and asset file descriptors preserve VFS identity and range") {
+    FileVm vm;
+    vm.vfs.MountHostDirectory(
+        "/sdcard", std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                       "tests/fixtures/audio");
+    const auto file = vm.NewFile("/sdcard/short-vorbis.ogg");
+    const auto pfd_class =
+        vm.linker.ResolveDescriptor("Landroid/os/ParcelFileDescriptor;");
+    const auto open = vm.linker.FindDirectMethod(
+        pfd_class, "open",
+        "(Ljava/io/File;I)Landroid/os/ParcelFileDescriptor;");
+    REQUIRE(open.has_value());
+    const auto opened = vm.interpreter.Call(
+        *open, std::vector<VmValue>{VmValue::Ref(file),
+                                    VmValue::Int(0x10000000)});
+    REQUIRE_MESSAGE(!opened.exception.IsValid(), opened.exception_message);
+    const auto pfd = opened.value.ref;
+    REQUIRE(pfd.IsValid());
+    const auto fd = vm.CallOn(pfd, "getFileDescriptor",
+                              "()Ljava/io/FileDescriptor;").ref;
+    REQUIRE(fd.IsValid());
+    CHECK(vm.BoolOn(fd, "valid"));
+    const auto* state = vm.interpreter.IO().FindDescriptor(fd);
+    REQUIRE(state != nullptr);
+    CHECK(state->kind == IoRuntime::DescriptorKind::vfs_path);
+    CHECK(state->source == "/sdcard/short-vorbis.ogg");
+
+    const auto afd = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/content/res/AssetFileDescriptor;");
+    vm.CallOn(afd, "<init>", "(Landroid/os/ParcelFileDescriptor;JJ)V",
+              {VmValue::Ref(pfd), VmValue::Long(17), VmValue::Long(31)});
+    CHECK(vm.CallOn(afd, "getFileDescriptor",
+                    "()Ljava/io/FileDescriptor;").ref == fd);
+    CHECK(vm.CallOn(afd, "getStartOffset", "()J").AsLong() == 17);
+    CHECK(vm.CallOn(afd, "getLength", "()J").AsLong() == 31);
+    vm.CallOn(afd, "close", "()V");
+    vm.CallOn(afd, "close", "()V");
+    CHECK_FALSE(vm.BoolOn(fd, "valid"));
+}
+
+TEST_CASE("ParcelFileDescriptor open rejects missing paths and invalid modes") {
+    FileVm vm;
+    const auto file = vm.NewFile("/sdcard/missing.bin");
+    const auto klass =
+        vm.linker.ResolveDescriptor("Landroid/os/ParcelFileDescriptor;");
+    const auto open = vm.linker.FindDirectMethod(
+        klass, "open", "(Ljava/io/File;I)Landroid/os/ParcelFileDescriptor;");
+    REQUIRE(open.has_value());
+    const auto missing = vm.interpreter.Call(
+        *open, std::vector<VmValue>{VmValue::Ref(file),
+                                    VmValue::Int(0x10000000)});
+    REQUIRE(missing.exception.IsValid());
+    CHECK(vm.linker.Class(missing.exception_class).descriptor ==
+          "Ljava/io/FileNotFoundException;");
+    const auto invalid = vm.interpreter.Call(
+        *open, std::vector<VmValue>{VmValue::Ref(file), VmValue::Int(0)});
+    REQUIRE(invalid.exception.IsValid());
+    CHECK(vm.linker.Class(invalid.exception_class).descriptor ==
+          "Ljava/lang/IllegalArgumentException;");
+}
+
+TEST_CASE("FileInputStream getFD keeps path identity independent of cursor") {
+    FileVm vm;
+    vm.vfs.MountHostDirectory(
+        "/sdcard", std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                       "tests/fixtures/audio");
+    const auto stream = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileInputStream;");
+    vm.CallOn(stream, "<init>", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8(
+                  "/sdcard/short-vorbis.ogg"))});
+    const auto fd = vm.CallOn(stream, "getFD",
+                              "()Ljava/io/FileDescriptor;").ref;
+    REQUIRE(fd.IsValid());
+    const auto* before = vm.interpreter.IO().FindDescriptor(fd);
+    REQUIRE(before != nullptr);
+    CHECK(before->source == "/sdcard/short-vorbis.ogg");
+    CHECK(vm.CallOn(stream, "read", "()I").AsInt() >= 0);
+    const auto* after = vm.interpreter.IO().FindDescriptor(fd);
+    REQUIRE(after != nullptr);
+    CHECK(after->source == before->source);
+    CHECK(vm.BoolOn(fd, "valid"));
+    vm.CallOn(stream, "close", "()V");
+    CHECK_FALSE(vm.BoolOn(fd, "valid"));
+}
+
+TEST_CASE("MediaPlayer decodes the selected second Ogg descriptor range") {
+    const TemporaryRoot root("media-range");
+    const auto fixture_path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
+                              "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream fixture(fixture_path, std::ios::binary);
+    REQUIRE(fixture.good());
+    const std::vector<char> chars{std::istreambuf_iterator<char>(fixture), {}};
+    std::vector<std::byte> ogg(chars.size());
+    for (std::size_t index = 0; index < chars.size(); ++index) {
+        ogg[index] = static_cast<std::byte>(chars[index]);
+    }
+    std::vector<std::byte> joined = ogg;
+    joined.insert(joined.end(), ogg.begin(), ogg.end());
+    {
+        std::ofstream output(root.path / "joined.ogg", std::ios::binary);
+        output.write(reinterpret_cast<const char*>(joined.data()),
+                     static_cast<std::streamsize>(joined.size()));
+        REQUIRE(output.good());
+    }
+
+    std::optional<ogplay::audio::EncodedAudioSource> requested;
+    ogplay::audio::JavaSoundPoolMixer mixer{
+        [&joined, &requested](
+            const ogplay::audio::EncodedAudioSource& source) {
+            requested = source;
+            if (source.offset > joined.size()) return std::vector<std::byte>{};
+            const auto available = joined.size() -
+                static_cast<std::size_t>(source.offset);
+            const auto length = source.length == UINT64_MAX
+                ? available
+                : static_cast<std::size_t>(source.length);
+            if (length > available) return std::vector<std::byte>{};
+            const auto begin = joined.begin() +
+                static_cast<std::ptrdiff_t>(source.offset);
+            return std::vector<std::byte>(
+                begin, begin + static_cast<std::ptrdiff_t>(length));
+        }};
+    FileVm vm;
+    vm.context->encoded_audio_playback = &mixer;
+    vm.vfs.MountHostDirectory("/sdcard", root.path);
+    const auto file = vm.NewFile("/sdcard/joined.ogg");
+    const auto pfd_class =
+        vm.linker.ResolveDescriptor("Landroid/os/ParcelFileDescriptor;");
+    const auto open = vm.linker.FindDirectMethod(
+        pfd_class, "open",
+        "(Ljava/io/File;I)Landroid/os/ParcelFileDescriptor;");
+    REQUIRE(open.has_value());
+    const auto opened = vm.interpreter.Call(
+        *open, std::vector<VmValue>{VmValue::Ref(file),
+                                    VmValue::Int(0x10000000)});
+    REQUIRE_MESSAGE(!opened.exception.IsValid(), opened.exception_message);
+    const auto fd = vm.CallOn(opened.value.ref, "getFileDescriptor",
+                              "()Ljava/io/FileDescriptor;").ref;
+    const auto player = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/media/MediaPlayer;");
+    vm.CallOn(player, "setDataSource", "(Ljava/io/FileDescriptor;JJ)V",
+              {VmValue::Ref(fd), VmValue::Long(
+                   static_cast<std::int64_t>(ogg.size())),
+               VmValue::Long(static_cast<std::int64_t>(ogg.size()))});
+    vm.CallOn(player, "prepare", "()V");
+    vm.CallOn(player, "start", "()V");
+    REQUIRE(requested.has_value());
+    CHECK(requested->kind ==
+          ogplay::audio::EncodedAudioSource::Kind::vfs_path);
+    CHECK(requested->name == "/sdcard/joined.ogg");
+    CHECK(requested->offset == ogg.size());
+    CHECK(requested->length == ogg.size());
+    std::vector<std::int16_t> pcm(2048U * 2U);
+    CHECK(mixer.RenderStereoPcm16(pcm, 48000U) == 2048U);
+    CHECK(std::ranges::any_of(pcm,
+        [](const std::int16_t sample) { return sample != 0; }));
+
+    vm.CallOn(player, "stop", "()V");
+    vm.CallOn(player, "reset", "()V");
+    vm.CallOn(player, "setDataSource", "(Ljava/io/FileDescriptor;)V",
+              {VmValue::Ref(fd)});
+    const auto& full_source = vm.context->media_resources.at(player.Value());
+    CHECK(full_source.offset == 0U);
+    CHECK(full_source.length == UINT64_MAX);
+    vm.CallOn(player, "prepare", "()V");
 }
 
 TEST_CASE("AssetManager list returns sorted unique direct children") {

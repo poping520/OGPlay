@@ -43,8 +43,8 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
     media_state.SetPcmPlayback(&pcm_playback);
     BindAndroidGuestJavaMediaHandlers(
         invocations, environment, strings, arrays, movie_state, media_state,
-        [](const std::int32_t resource) {
-            if (resource != 7) return std::vector<std::byte>{};
+        [](const ogplay::audio::EncodedAudioSource& source) {
+            if (source.resource != 7) return std::vector<std::byte>{};
             return std::vector<std::byte>{std::byte{0x4f}, std::byte{0x67},
                                           std::byte{0x67}};
         });

@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "ogplay/audio/open_sles_pcm_mixer.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 
 // ---- migrated from android_media_AudioManager.cpp ----
 #include "catalog.h"
@@ -473,6 +475,67 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
                          call.vm.StringUtf8(call.arguments[0].ref));
             return dx::VmValue::Void();
         });
+    const auto descriptor_source =
+        [context](dx::IntrinsicContext& call, const dx::VmObjectRef fd,
+                  const std::int64_t offset,
+                  const std::int64_t length) -> audio::EncodedAudioSource {
+        if (!fd.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "fd must not be null"};
+        }
+        if (offset < 0 || length < 0) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "offset and length must be non-negative"};
+        }
+        dx::IoRuntime::DescriptorState* descriptor{};
+        try {
+            descriptor = &call.vm.IO().Descriptor(fd);
+        } catch (const dx::IoRuntimeError& error) {
+            throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+        }
+        audio::EncodedAudioSource source;
+        source.kind = descriptor->kind ==
+                              dx::IoRuntime::DescriptorKind::apk_entry
+                          ? audio::EncodedAudioSource::Kind::apk_entry
+                          : audio::EncodedAudioSource::Kind::vfs_path;
+        source.name = descriptor->source;
+        if (descriptor->kind == dx::IoRuntime::DescriptorKind::apk_entry &&
+            offset != 0) {
+            if (static_cast<std::uint64_t>(offset) <
+                descriptor->base_offset) {
+                throw dx::VmJavaThrow{
+                    "Ljava/lang/IllegalArgumentException;",
+                    "APK descriptor offset precedes the asset payload"};
+            }
+            source.offset = static_cast<std::uint64_t>(offset) -
+                            descriptor->base_offset;
+        } else {
+            source.offset = static_cast<std::uint64_t>(offset);
+        }
+        source.length = static_cast<std::uint64_t>(length);
+        static_cast<void>(context);
+        return source;
+    };
+    builder.FinalMethod("setDataSource", "(Ljava/io/FileDescriptor;)V",
+        [context, descriptor_source](dx::IntrinsicContext& call) {
+            auto source = descriptor_source(
+                call, call.arguments[0].ref, 0,
+                std::numeric_limits<std::int64_t>::max());
+            source.length = UINT64_MAX;
+            context->media_resources[call.receiver.Value()] =
+                std::move(source);
+            context->media_playing[call.receiver.Value()] = false;
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("setDataSource", "(Ljava/io/FileDescriptor;JJ)V",
+        [context, descriptor_source](dx::IntrinsicContext& call) {
+            context->media_resources[call.receiver.Value()] =
+                descriptor_source(call, call.arguments[0].ref,
+                                  call.arguments[1].AsLong(),
+                                  call.arguments[2].AsLong());
+            context->media_playing[call.receiver.Value()] = false;
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("isLooping", "()Z",
         [context](dx::IntrinsicContext& call) {
             const auto found =
@@ -487,7 +550,8 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             const auto resource = call.arguments[1].AsInt();
             const auto instance = call.vm.NewIntrinsicInstance(
                 "Landroid/media/MediaPlayer;");
-            if (!context->session->SoundPoolMixer().Load(resource)) {
+            if (context->encoded_audio_playback == nullptr ||
+                !context->encoded_audio_playback->Load(resource)) {
                 GuestLog(call, core::LogLevel::warn,
                          "MediaPlayer.create failed for resource " +
                              std::to_string(resource));
@@ -498,7 +562,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             return dx::VmValue::Ref(instance);
         });
     const auto media_resource = [context](dx::IntrinsicContext& call)
-        -> std::optional<std::int32_t> {
+        -> std::optional<audio::EncodedAudioSource> {
         const auto found =
             context->media_resources.find(call.receiver.Value());
         if (found == context->media_resources.end()) return std::nullopt;
@@ -516,8 +580,12 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
-                static_cast<void>(context->session->SoundPoolMixer().Play(
-                    audio::JavaSoundPoolKind::big, *resource, 0, 1.0F, true));
+                const auto looping = context->media_looping.contains(
+                    call.receiver.Value()) &&
+                    context->media_looping.at(call.receiver.Value());
+                static_cast<void>(context->encoded_audio_playback->Play(
+                    audio::JavaSoundPoolKind::big, *resource, 0, 1.0F,
+                    looping));
                 context->media_playing[call.receiver.Value()] = true;
             }
             return dx::VmValue::Void();
@@ -526,7 +594,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
-                context->session->SoundPoolMixer().Pause(
+                context->encoded_audio_playback->Pause(
                     audio::JavaSoundPoolKind::big, *resource, 0);
                 context->media_playing[call.receiver.Value()] = false;
             }
@@ -536,7 +604,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
-                context->session->SoundPoolMixer().Stop(
+                context->encoded_audio_playback->Stop(
                     audio::JavaSoundPoolKind::big, *resource, 0);
                 context->media_playing[call.receiver.Value()] = false;
             }
@@ -546,17 +614,32 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
-                context->session->SoundPoolMixer().Stop(
+                context->encoded_audio_playback->Stop(
                     audio::JavaSoundPoolKind::big, *resource, 0);
-                context->session->SoundPoolMixer().Unload(*resource);
+                context->encoded_audio_playback->Unload(*resource);
             }
             context->media_resources.erase(call.receiver.Value());
             context->media_playing.erase(call.receiver.Value());
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("prepare", "()V", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Void();
-    });
+    builder.FinalMethod("prepare", "()V",
+        [context, media_resource](dx::IntrinsicContext& call) {
+            const auto source = media_resource(call);
+            if (!source.has_value()) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "MediaPlayer has no data source"};
+            }
+            if (context->encoded_audio_playback == nullptr ||
+                !context->encoded_audio_playback->Load(*source)) {
+                const auto reason = context->encoded_audio_playback == nullptr
+                    ? std::optional<std::string>{}
+                    : context->encoded_audio_playback->LoadFailure(*source);
+                throw dx::VmJavaThrow{
+                    "Ljava/io/IOException;",
+                    reason.value_or("encoded audio backend is unavailable")};
+            }
+            return dx::VmValue::Void();
+        });
     builder.FinalMethod("seekTo", "(I)V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -570,7 +653,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
         [context, media_resource](dx::IntrinsicContext& call) {
             const auto resource = media_resource(call);
             if (resource.has_value()) {
-                context->session->SoundPoolMixer().SetVolume(
+                context->encoded_audio_playback->SetVolume(
                     audio::JavaSoundPoolKind::big, *resource, 0,
                     call.arguments[0].AsFloat());
             }
@@ -603,7 +686,7 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             // from create() outlives it so a later start() can replay.
             const auto resource = media_resource(call);
             if (resource.has_value()) {
-                context->session->SoundPoolMixer().Stop(
+                context->encoded_audio_playback->Stop(
                     audio::JavaSoundPoolKind::big, *resource, 0);
                 context->media_playing[call.receiver.Value()] = false;
             }

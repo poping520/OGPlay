@@ -38,6 +38,7 @@
 #include "ogplay/runtime/dexvm/gap_survey.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/integration/dexvm_io_vfs.h"
 #include "ogplay/session/profile_entry_scope.h"
 #include "ogplay/session/profile_vfs.h"
 #include "ogplay/video/ffmpeg_video_player.h"
@@ -552,16 +553,47 @@ int RunApkCommand(const int argc, const char* const argv[],
         }
         auto sound_loader =
             audio::JavaSoundPoolMixer::EncodedResourceLoader(
-                [dex_context](const std::int32_t resource)
+                [dex_context](const audio::EncodedAudioSource& source)
                     -> std::vector<std::byte> {
-                    const auto* entry = dex_context->arsc.FindById(
-                        static_cast<std::uint32_t>(resource));
-                    if (entry == nullptr || !entry->string_value.has_value()) {
-                        return {};
+                    std::vector<std::byte> bytes;
+                    if (source.kind ==
+                        audio::EncodedAudioSource::Kind::resource) {
+                        const auto* entry = dex_context->arsc.FindById(
+                            static_cast<std::uint32_t>(source.resource));
+                        if (entry == nullptr ||
+                            !entry->string_value.has_value()) return {};
+                        bytes = loader::ReadApkEntry(
+                            dex_context->apk_bytes, dex_context->archive,
+                            *entry->string_value);
+                    } else if (source.kind ==
+                               audio::EncodedAudioSource::Kind::apk_entry) {
+                        bytes = loader::ReadApkEntry(
+                            dex_context->apk_bytes, dex_context->archive,
+                            source.name);
+                    } else {
+                        if (dex_context->vfs == nullptr) return {};
+                        runtime::DexVmIoVfsAdapter adapter(
+                            *dex_context->vfs);
+                        const auto file = adapter.ReadFile(source.name);
+                        if (!file.has_value()) return {};
+                        bytes = *file;
                     }
-                    return loader::ReadApkEntry(
-                        dex_context->apk_bytes, dex_context->archive,
-                        *entry->string_value);
+                    if (source.kind ==
+                        audio::EncodedAudioSource::Kind::resource) {
+                        return bytes;
+                    }
+                    if (source.offset > bytes.size()) return {};
+                    const auto available = bytes.size() -
+                        static_cast<std::size_t>(source.offset);
+                    const auto length = source.length == UINT64_MAX
+                        ? available
+                        : source.length > available
+                            ? std::size_t{}
+                            : static_cast<std::size_t>(source.length);
+                    if (length == 0U && source.length != 0U) return {};
+                    const auto begin = bytes.begin() +
+                        static_cast<std::ptrdiff_t>(source.offset);
+                    return {begin, begin + static_cast<std::ptrdiff_t>(length)};
                 });
         std::unique_ptr<hal::AudioOutput> audio_output;
         std::vector<std::int16_t> audio_samples(1024U * 2U);

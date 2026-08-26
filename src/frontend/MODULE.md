@@ -60,7 +60,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
   运行不得依赖编译机源码路径，用户 Profile 覆盖也不得绕过 bundled quirk 注册表。
 - pointer 事件按最新 guest frame 与等比内容区映射；黑边不开始手势，已开始的 release
   必须闭合。窗口 FPS 使用独立 `RealtimeClock`，不改变 guest Clock。
-- SoundPool loader 只消费解析后的 source/path；每轮音频补充有界，退出时停止设备。
+- 编码音频 loader 只消费解析后的 resid/APK-entry/VFS-path source，并在读取后执行受检纯
+  字节区间切窗；格式识别与解码属于 audio 模块。每轮音频补充有界，退出时停止设备。
 - guest process exit、fault 和 shutdown 都必须进入正常 lifecycle/session teardown；native
   finalizer 在 managed ANGLE surface 关闭前执行。
 - `run-apk` 的启动提示与最外层 guest 执行失败标签必须与具体组件无关；JNI/CPU 层已提供

@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 
+#include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/apk_manifest.h"
 #include "ogplay/loader/arsc.h"
@@ -47,6 +48,8 @@ struct DexVmAndroidContext final {
     AndroidGuestCallSession* session{};
     // One process-owned PCM backend shared by OpenSL ES and AudioTrack.
     audio::OpenSlesPcmMixer* pcm_playback{};
+    // Process-owned encoded-audio mixer used by SoundPool and MediaPlayer.
+    audio::JavaSoundPoolMixer* encoded_audio_playback{};
     // Process-wide APK native loader used by java.lang.System.load*.
     // The application ClassLoader has one stable non-zero identity for the
     // lifetime of this context; APS-5 intentionally does not invent a second
@@ -374,7 +377,8 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_canvases;
 
     // MediaPlayer playing flags by instance handle.
-    std::unordered_map<std::uint32_t, std::int32_t> media_resources;
+    std::unordered_map<std::uint32_t, audio::EncodedAudioSource>
+        media_resources;
     std::unordered_map<std::uint32_t, bool> media_playing;
     std::unordered_map<std::uint32_t, bool> media_looping;
 

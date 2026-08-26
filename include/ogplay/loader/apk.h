@@ -28,5 +28,8 @@ struct ApkArchive {
     std::span<const std::byte> bytes, const ApkArchive& archive, std::string_view name);
 [[nodiscard]] std::vector<std::byte> ReadStoredApkEntry(
     std::span<const std::byte> bytes, const ApkArchive& archive, std::string_view name);
+[[nodiscard]] std::uint64_t StoredApkEntryDataOffset(
+    std::span<const std::byte> bytes, const ApkArchive& archive,
+    std::string_view name);
 
 }  // namespace ogplay::loader

@@ -31,8 +31,8 @@ namespace {
 TEST_CASE("SoundPool mixer loads decodes controls and renders a real voice") {
     const auto sound = ReadSound();
     ogplay::audio::JavaSoundPoolMixer mixer{
-        [&sound](const std::int32_t resource) {
-            return resource == 7 ? sound : std::vector<std::byte>{};
+        [&sound](const ogplay::audio::EncodedAudioSource& source) {
+            return source.resource == 7 ? sound : std::vector<std::byte>{};
         }};
     CHECK(mixer.Enabled());
     CHECK(mixer.Load(7));
@@ -61,7 +61,9 @@ TEST_CASE("SoundPool mixer loads decodes controls and renders a real voice") {
 
 TEST_CASE("SoundPool mixer keeps unavailable resources explicit") {
     ogplay::audio::JavaSoundPoolMixer mixer{
-        [](const std::int32_t) { return std::vector<std::byte>{}; }};
+        [](const ogplay::audio::EncodedAudioSource&) {
+            return std::vector<std::byte>{};
+        }};
     CHECK_FALSE(mixer.Load(99));
     REQUIRE(mixer.LoadFailure(99).has_value());
     CHECK_FALSE(mixer.Play(
@@ -73,7 +75,7 @@ TEST_CASE("SoundPool mixer keeps unavailable resources explicit") {
 TEST_CASE("SoundPool mixer serializes guest controls with host rendering") {
     const auto sound = ReadSound();
     ogplay::audio::JavaSoundPoolMixer mixer{
-        [&sound](const std::int32_t) { return sound; }};
+        [&sound](const ogplay::audio::EncodedAudioSource&) { return sound; }};
     REQUIRE(mixer.Load(1));
     REQUIRE(mixer.Play(
         ogplay::audio::JavaSoundPoolKind::pool, 1, 1, 1.0F));

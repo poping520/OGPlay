@@ -80,6 +80,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   `UnsatisfiedLinkError`，不得恢复 preloaded/no-op 成功。
 - 每个 live guest View object 与一个 live UiNode 一一绑定；hierarchy/id/visibility/
   geometry 只写 `runtime/ui`，guest click/touch listener 只在本层以 UiNodeId 为 key 保存。
+- API 19 `View$OnFocusChangeListener` 作为 public abstract interface 发布唯一
+  `onFocusChange(View, boolean)` 方法签名，使 DEX `implements` 与 `invoke-interface` 走正常
+  linker/virtual dispatch；没有具体焦点事件来源时不得伪造回调。
 - drawable decode 的 intrinsic size 写入 UiNode；click adapter 只消费 `screen_frame`。
   旧 fullscreen/edge-row bounds 推导及 `LayoutViewFact/layout_views` 类型与存储均不存在。
 - Java 动态 `ViewGroup.addView/removeView/removeViews/updateViewLayout` 与

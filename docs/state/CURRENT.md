@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-26 · BND-25 libdl process service
+更新：2026-08-26 · DVM-89 View.OnFocusChangeListener intrinsic
 
 ## 当前阶段
 
@@ -36,7 +36,8 @@
   后续在同一 WU 内按 API 19 AOSP 补齐 `Bitmap.Config` 的四个 enum 常量、
   name/ordinal/nativeInt、`sConfigs`、`$VALUES/values/valueOf` 与 native index 映射；
   `Context.getPackageResourcePath()` 返回只读 guest APK 路径，ContextWrapper 委托 base，
-  不泄露 frontend 宿主路径。
+  不泄露 frontend 宿主路径。`View$OnFocusChangeListener` 现按 API 19 发布 public abstract
+  interface 与唯一方法引用，DEX `implements/invoke-interface` 可正常链接分派。
   同 WU 的黑屏推进补齐 native 调用锁交接、API19 Bionic 16-bit process TID、timed futex、
   `/proc/meminfo`、长驻 native boundary watchdog、guest 逻辑 RWX/`ARM_cacheflush`、软件
   SurfaceHolder/Canvas 发布以及 AudioTrack output-rate/listener 基础状态。

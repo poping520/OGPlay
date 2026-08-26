@@ -806,6 +806,51 @@ TEST_CASE("window focus dispatch reaches attached descendant overrides") {
     CHECK(focus_value("getLastFocus") == 0);
 }
 
+TEST_CASE("View OnFocusChangeListener links and dispatches through its API 19 interface") {
+    ClickVm vm;
+    const auto listener_interface = vm.linker.FindClass(
+        "Landroid/view/View$OnFocusChangeListener;");
+    const auto listener_class = vm.linker.FindClass("LFocusListener;");
+    REQUIRE(listener_interface.has_value());
+    REQUIRE(listener_class.has_value());
+
+    const auto initialized =
+        vm.interpreter.EnsureClassInitialized(*listener_class);
+    REQUIRE_FALSE(initialized.exception.IsValid());
+    CHECK(vm.linker.IsAssignable(*listener_interface, *listener_class));
+    const auto listener = vm.model.NewInstance(
+        *listener_class, vm.linker.Class(*listener_class).instance_slots);
+    vm.CallDirect(listener, "LFocusListener;", "<init>", "()V");
+
+    const auto dispatch = vm.linker.FindDirectMethod(
+        *listener_class, "dispatch",
+        "(Landroid/view/View$OnFocusChangeListener;Landroid/view/View;Z)V");
+    REQUIRE(dispatch.has_value());
+    const auto dispatch_focus = [&](const std::int32_t focused) {
+        const auto outcome = vm.interpreter.Call(
+            *dispatch,
+            std::vector<VmValue>{VmValue::Ref(listener),
+                                 VmValue::Ref(vm.skip_button),
+                                 VmValue::Int(focused)});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+    };
+    const auto read_value = [&](const char* name) {
+        const auto method = vm.linker.FindDirectMethod(
+            *listener_class, name, "()I");
+        REQUIRE(method.has_value());
+        const auto outcome = vm.interpreter.Call(*method, {});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        return outcome.value.AsInt();
+    };
+
+    dispatch_focus(1);
+    CHECK(read_value("getFocusChanges") == 1);
+    CHECK(read_value("getLastFocusChange") == 1);
+    dispatch_focus(0);
+    CHECK(read_value("getFocusChanges") == 2);
+    CHECK(read_value("getLastFocusChange") == 0);
+}
+
 TEST_CASE("TextView Java state controls deterministic measure and draw state") {
     ClickVm vm;
     const auto text = vm.interpreter.NewIntrinsicInstance(

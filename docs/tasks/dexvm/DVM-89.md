@@ -22,6 +22,9 @@
   `ApplicationInfo.sourceDir`，即已安装 APK 文件。
 - `.local/aosp/framework/base/core/java/android/content/ContextWrapper.java`：该方法直接委托
   `mBase`，不在 wrapper 复制 package 状态。
+- `.local/aosp/framework/base/core/java/android/view/View.java`：API 19
+  `OnFocusChangeListener` 是 public interface，唯一方法为
+  `onFocusChange(View, boolean)`；View 在真实焦点变化路径调用该 listener。
 - `framework/base` 与 `libcore` 仅用于核对 API 19 声明形状，不把 Android framework 状态
   搬入 DexVM，也不引入 Binder/system_server。
 
@@ -43,6 +46,9 @@
   `nativeInt`、`sConfigs`、生成的 `$VALUES/values/valueOf` 与 native index 映射；
 - 按 API 19 `ContextImpl`/`LoadedApk` 语义发布 `getPackageResourcePath()`：返回同进程
   APK 的 guest 路径，`ContextWrapper` 虚派委托 base，原始 APK 在该路径只读可访问；
+- 发布 API 19 `View$OnFocusChangeListener` interface handle 及抽象
+  `onFocusChange(View, boolean)` 方法引用，使 DEX 实现类可完成接口链接与分派；本项不
+  伪造尚无来源的焦点事件；
 - 出向 native 释放 DexVM 单写者锁，JNI 回调重新获取；process native TID 使用 API 19
   Bionic mutex 可表示的 16-bit 范围，并按 native context slot 稳定分配；
 - 支持相对超时 futex、只读 `/proc/meminfo`、长驻 native 在已处理 syscall/JNI 边界刷新
@@ -65,6 +71,8 @@
   映射与 API 19 AOSP 声明一致；
 - [x] `Context.getPackageResourcePath()` 与 wrapper 委托返回稳定 guest APK 路径，且该
   路径可读取原始 APK、不可写，不泄露宿主路径；
+- [x] DEX 类可 `implements View$OnFocusChangeListener`，并经 API 19 方法引用执行
+  `invoke-interface onFocusChange(View, boolean)` 到具体实现；
 - [x] Marmalade 动态回调桩的 `mprotect(RWX)`、写入和 `ARM_cacheflush` 可完成；
 - [x] 软件 SurfaceHolder 可把 Bitmap 像素提交为 presented frame；
 - [x] native loader、JNI registry、field store/ABI 与 architecture 定向回归通过。
@@ -85,6 +93,8 @@
 - Windows Debug 目标构建通过；graphics/AudioTrack/process native context/watchdog/futex/
   ARM private syscall/memory protection/managed surface 9 个定向用例、192 assertions 通过。
   按要求未执行完整测试。
+- `View$OnFocusChangeListener` interface catalog 与 DEX `invoke-interface` 定向 2/2 通过；
+  本次仍按要求不执行完整测试。
 - 继续执行约 1.2 万 frontend frame 后出现 `0x60462edc`/`0x1f84` 写 fault；后续定位与
   通用修复归入 boundary 工作单 [BND-25](../boundary/BND-25.md)，不扩张本 WU 的 DexVM
   字段/native 失败保真范围。

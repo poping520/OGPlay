@@ -145,6 +145,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_view_SurfaceHolder(const Context& context);
 [[nodiscard]] Decl Declare_android_view_SurfaceView(const Context& context);
 [[nodiscard]] Decl Declare_android_view_View_OnClickListener(const Context& context);
+[[nodiscard]] Decl Declare_android_view_View_OnFocusChangeListener(const Context& context);
 [[nodiscard]] Decl Declare_android_view_View_OnTouchListener(const Context& context);
 [[nodiscard]] Decl Declare_android_view_View(const Context& context);
 [[nodiscard]] Decl Declare_android_view_ViewGroup_LayoutParams(const Context& context);

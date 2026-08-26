@@ -129,7 +129,7 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-    CHECK(catalog.size() == 185);
+    CHECK(catalog.size() == 187);
 
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
@@ -143,7 +143,9 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     CHECK_FALSE(declaration.descriptor.starts_with("Lorg/xml/"));
     CHECK(descriptors.insert(declaration.descriptor).second);
     for (const auto& method : declaration.methods) {
-      CHECK(static_cast<bool>(method.implementation));
+      if ((method.access_flags & 0x0400U) == 0U) {
+        CHECK(static_cast<bool>(method.implementation));
+      }
     }
     if (declaration.clinit_implementation) {
       CHECK(static_cast<bool>(declaration.clinit_implementation));
@@ -161,10 +163,11 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/app/Application;") == 2);
   CHECK(method_count("Landroid/app/Activity;") == 26);
   CHECK(method_count("Landroid/app/Service;") == 13);
-  CHECK(method_count("Landroid/content/ContextWrapper;") == 18);
+  CHECK(method_count("Landroid/content/ContextWrapper;") == 19);
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
   CHECK(method_count("Landroid/content/Intent;") == 16);
   CHECK(method_count("Landroid/os/Bundle;") == 17);
+  CHECK(method_count("Landroid/view/View$OnFocusChangeListener;") == 1);
   CHECK(method_count("Landroid/content/pm/PackageManager;") == 5);
   CHECK(method_count("Landroid/widget/TextView;") == 15);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);

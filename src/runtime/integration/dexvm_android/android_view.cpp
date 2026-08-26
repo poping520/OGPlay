@@ -485,6 +485,29 @@ Decl Declare_android_view_View_OnClickListener(const Context& context) {
 }
 }  // namespace ogplay::runtime::android_intrinsics
 
+// ---- android.view.View.OnFocusChangeListener (API 19) ----
+#include "catalog.h"
+
+namespace ogplay::runtime::android_intrinsics::dvm89_android_view_View_OnFocusChangeListener {
+
+Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/view/View$OnFocusChangeListener;");
+    builder.UnimplementedVirtual(
+        "onFocusChange", "(Landroid/view/View;Z)V", 0x0401U);
+    return std::move(builder).Build();
+}
+
+}  // namespace ogplay::runtime::android_intrinsics::dvm89_android_view_View_OnFocusChangeListener
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
+    return dvm89_android_view_View_OnFocusChangeListener::
+        Declare_android_view_View_OnFocusChangeListener(context);
+}
+}  // namespace ogplay::runtime::android_intrinsics
+
 // ---- migrated from android_view_View_OnTouchListener.cpp ----
 #include "catalog.h"
 

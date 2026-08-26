@@ -15,41 +15,6 @@
     return-void
 .end method
 
-.class public LFocusView;
-.super Landroid/view/View;
-
-.field static public focusEvents:I
-.field static public lastFocus:I
-
-.method public constructor <init>(Landroid/content/Context;)V
-.registers 2
-    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
-    return-void
-.end method
-
-.method public onWindowFocusChanged(Z)V
-.registers 4
-    sget v0, LFocusView;->focusEvents:I
-    const/4 v1, 1
-    add-int/2addr v0, v1
-    sput v0, LFocusView;->focusEvents:I
-    sput v3, LFocusView;->lastFocus:I
-    invoke-super {v2, v3}, Landroid/view/View;->onWindowFocusChanged(Z)V
-    return-void
-.end method
-
-.method static public getFocusEvents()I
-.registers 1
-    sget v0, LFocusView;->focusEvents:I
-    return v0
-.end method
-
-.method static public getLastFocus()I
-.registers 1
-    sget v0, LFocusView;->lastFocus:I
-    return v0
-.end method
-
 .method public onTouch(Landroid/view/View;Landroid/view/MotionEvent;)Z
 .registers 4
     sget v0, LSkipListener;->touches:I
@@ -95,4 +60,80 @@
 .registers 1
     sput v0, LSkipListener;->touchResult:I
     return-void
+.end method
+
+.class public LFocusView;
+.super Landroid/view/View;
+
+.field static public focusEvents:I
+.field static public lastFocus:I
+
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+
+.method public onWindowFocusChanged(Z)V
+.registers 4
+    sget v0, LFocusView;->focusEvents:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    sput v0, LFocusView;->focusEvents:I
+    sput v3, LFocusView;->lastFocus:I
+    invoke-super {v2, v3}, Landroid/view/View;->onWindowFocusChanged(Z)V
+    return-void
+.end method
+
+.method static public getFocusEvents()I
+.registers 1
+    sget v0, LFocusView;->focusEvents:I
+    return v0
+.end method
+
+.method static public getLastFocus()I
+.registers 1
+    sget v0, LFocusView;->lastFocus:I
+    return v0
+.end method
+
+.class public LFocusListener;
+.super Ljava/lang/Object;
+.implements Landroid/view/View$OnFocusChangeListener;
+
+.field static public focusChanges:I
+.field static public lastFocusChange:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+
+.method public onFocusChange(Landroid/view/View;Z)V
+.registers 5
+    sget v0, LFocusListener;->focusChanges:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    sput v0, LFocusListener;->focusChanges:I
+    sput v4, LFocusListener;->lastFocusChange:I
+    return-void
+.end method
+
+.method static public dispatch(Landroid/view/View$OnFocusChangeListener;Landroid/view/View;Z)V
+.registers 3
+    invoke-interface {v0, v1, v2}, Landroid/view/View$OnFocusChangeListener;->onFocusChange(Landroid/view/View;Z)V
+    return-void
+.end method
+
+.method static public getFocusChanges()I
+.registers 1
+    sget v0, LFocusListener;->focusChanges:I
+    return v0
+.end method
+
+.method static public getLastFocusChange()I
+.registers 1
+    sget v0, LFocusListener;->lastFocusChange:I
+    return v0
 .end method

@@ -94,7 +94,10 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - Java 动态 `ViewGroup.addView/removeView/removeViews/updateViewLayout` 与
   `Activity.setContentView(View)` 直接维护同一 UiTree；LayoutParams object 保存
   width/height/margin/weight 并在 attach/update 时复制到 node，View geometry getter 在 dirty
-  traversal 后读取同一 resolved frame。已带非 content parent 的 view 明确拒绝。
+  traversal 后读取同一 resolved frame。已带非 content parent 的 view 明确拒绝。DVM-90
+  以 live UiTree 等价于 AOSP `AttachInfo`：动态接入的 SurfaceView 子树仅在 parent 已 live 时
+  建立 holder generation 并按 created→changed 分派，detach 前对 active holder 分派一次
+  destroyed；detached 子树不提前收到事件，`removeCallback` 对后续 callback 快照生效。
 - `TextView.setText/getText` 与 Editable mutation 共用 UiNode text；textColor/textSize/gravity
   mutation 分别推进 draw/layout dirty。当前 fixed-font backend 只接受单行受支持字形，
   多行、未知字形或非法 size 明确抛 Java 异常且不发布部分 mutation。

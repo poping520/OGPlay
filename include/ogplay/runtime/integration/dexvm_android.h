@@ -290,6 +290,12 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> surface_holders;
     std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>
         surface_callbacks;
+    // The host owns one managed surface generation. A holder becomes active
+    // only while its SurfaceView is attached to the live UiTree; this mirrors
+    // SurfaceView.mSurfaceCreated rather than treating holder registration as
+    // surface creation.
+    bool managed_surface_available{};
+    std::unordered_set<std::uint32_t> active_surface_holders;
 
     struct EglFacadeState final {
         dexvm::VmObjectRef display;
@@ -662,6 +668,17 @@ enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
 [[nodiscard]] std::optional<std::string> DispatchSurfaceHolderCallbacks(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     SurfaceHolderPhase phase);
+
+// Mirrors ViewGroup's conditional dispatchAttachedToWindow/
+// dispatchDetachedFromWindow for a subtree that has just become attached to,
+// or is about to leave, the live UiTree. Only SurfaceViews that already own a
+// holder participate; callbacks are delivered once per holder generation.
+[[nodiscard]] std::optional<std::string> AttachSurfaceViewSubtree(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    ui::UiNodeId subtree);
+[[nodiscard]] std::optional<std::string> DetachSurfaceViewSubtree(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    ui::UiNodeId subtree);
 
 // Delivers surfaceDestroyed to the active holder generation, then forgets
 // its holders/callbacks so a replacement Activity starts a fresh generation.

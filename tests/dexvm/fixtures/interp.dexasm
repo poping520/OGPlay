@@ -852,7 +852,8 @@
 
 .method public surfaceDestroyed(Landroid/view/SurfaceHolder;)V
 .registers 3
-    const/4 v0, 1
+    sget v0, LSurfaceProbe;->destroyed:I
+    add-int/lit8 v0, v0, 1
     sput v0, LSurfaceProbe;->destroyed:I
     return-void
 .end method

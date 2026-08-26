@@ -147,6 +147,8 @@ void DeliverMessage(dx::IntrinsicContext& call, dx::VmObjectRef handler,
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderAddCallbackHandler(
     const Context& context);
+[[nodiscard]] dx::IntrinsicHandler SurfaceHolderRemoveCallbackHandler(
+    const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetFormatHandler();
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetTypeHandler();
 [[nodiscard]] dx::IntrinsicHandler TelephonyEmptyStringHandler();

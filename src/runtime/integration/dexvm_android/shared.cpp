@@ -248,6 +248,20 @@ dx::IntrinsicHandler SurfaceHolderAddCallbackHandler(const Context& context) {
     });
 }
 
+dx::IntrinsicHandler SurfaceHolderRemoveCallbackHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        const auto callback = call.arguments[0].ref;
+        if (!callback.IsValid()) return dx::VmValue::Void();
+        const auto found = context->surface_callbacks.find(call.receiver.Value());
+        if (found == context->surface_callbacks.end()) return dx::VmValue::Void();
+        auto& callbacks = found->second;
+        callbacks.erase(std::remove(callbacks.begin(), callbacks.end(), callback),
+                        callbacks.end());
+        if (callbacks.empty()) context->surface_callbacks.erase(found);
+        return dx::VmValue::Void();
+    });
+}
+
 dx::IntrinsicHandler SurfaceHolderSetFormatHandler() {
     return dx::IntrinsicHandler([](dx::IntrinsicContext&) {
         // Pixel format is fixed by the managed RGBA8 EGL surface.

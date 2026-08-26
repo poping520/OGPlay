@@ -112,6 +112,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-87](DVM-87.md) | Java util/regex/concurrent P1 核心 | 已完成 |
 | [DVM-88](DVM-88.md) | NetworkRuntime、VFS SQLite 与 API 19 能力栈收口 | 已完成 |
 | [DVM-89](DVM-89.md) | native 失败保真与 JNI 字段互通 | 已完成 |
+| [DVM-90](DVM-90.md) | 动态 SurfaceView attach/detach 生命周期 | 已完成（title 复跑受独立 fault 阻断） |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

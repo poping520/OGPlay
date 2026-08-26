@@ -169,6 +169,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   的 title 在收到这些之前不会碰 EGL；注册了却没有对应方法的 callback 明确
   报错，不静默跳过。surface type 由 managed EGL 固定拥有，legacy
   `setType`/`setFormat` 只是无可观察效果的设备提示。
+  DVM-90 将同一 managed surface 拆成 per-holder active generation：初次 lifecycle 只激活
+  live UiTree 中的 holder；动态 View 子树 attach 触发 created/changed，detach 触发 destroyed，
+  callback 以事件开始时的稳定快照分派。该状态不创建第二套 Surface/像素所有权。
   `GLSurfaceView` 发布 API19 `EGLContextFactory`/`EGLConfigChooser` interface shape；两个
   setter 保存原始 guest policy identity 并纳入 GC/session teardown，但在真实 reached
   behavior 要求前不越权调用 callback 或替换 managed EGL/ANGLE context。

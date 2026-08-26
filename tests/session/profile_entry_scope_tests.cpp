@@ -905,6 +905,10 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
 
     const auto view =
         interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto view_node = context->ui_tree.CreateNode(
+        ogplay::runtime::ui::UiClass::View);
+    ogplay::runtime::BindViewToUiNode(*context, view, view_node);
+    context->ui_tree.Attach(context->ui_tree.Root(), view_node);
     const auto view_class = linker.FindClass("Landroid/view/SurfaceView;");
     REQUIRE(view_class.has_value());
     const auto get_holder = linker.FindVtableIndex(
@@ -953,16 +957,141 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
 
     CHECK_FALSE(ogplay::runtime::RetireSurfaceHolderGeneration(
                     interpreter, *context).has_value());
-    CHECK(read("destroyed") == 1);
+    CHECK(read("destroyed") == 2);
     CHECK(context->surface_callbacks.empty());
     CHECK(context->surface_holders.empty());
 
     // A registration that cannot receive the event is reported, not skipped.
+    context->surface_holders[view.Value()] = holder.value.ref;
     context->surface_callbacks[holder.value.ref.Value()] = {view};
     CHECK(ogplay::runtime::DispatchSurfaceHolderCallbacks(
               interpreter, *context,
               ogplay::runtime::SurfaceHolderPhase::created)
               .has_value());
+}
+
+TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
+    JniStringStore strings;
+    JniPrimitiveArrayStore arrays;
+    JavaObjectModel model(strings, arrays);
+    DexClassLinker linker;
+    auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+    auto catalog = CoreIntrinsicCatalog();
+    const auto android_catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
+    catalog.insert(catalog.end(), android_catalog.begin(), android_catalog.end());
+    linker.RegisterIntrinsics(catalog);
+    linker.RegisterDex(ReadInterpreterFixture());
+    linker.Link();
+    context->surface_width = 800;
+    context->surface_height = 480;
+    ogplay::core::CapabilityLedger ledger;
+    Interpreter interpreter(linker, model, nullptr, ledger);
+
+    const auto probe_class = linker.FindClass("LSurfaceProbe;");
+    REQUIRE(probe_class.has_value());
+    const auto make =
+        linker.FindDirectMethod(*probe_class, "make", "()Ljava/lang/Object;");
+    REQUIRE(make.has_value());
+    const auto read = [&](const std::string& name) {
+        const auto method = linker.FindDirectMethod(*probe_class, name, "()I");
+        REQUIRE(method.has_value());
+        const auto outcome = interpreter.Call(*method, {});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        return outcome.value.AsInt();
+    };
+    const auto call_on = [&](const VmObjectRef receiver, const std::string& name,
+                             const std::string& descriptor,
+                             std::vector<VmValue> arguments = {}) {
+        const auto java_class = model.ObjectClass(receiver);
+        const auto index = linker.FindVtableIndex(java_class, name, descriptor);
+        REQUIRE(index.has_value());
+        arguments.insert(arguments.begin(), VmValue::Ref(receiver));
+        const auto outcome = interpreter.Call(
+            linker.Class(java_class).vtable[*index], arguments);
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        return outcome.value;
+    };
+
+    const auto live_parent =
+        interpreter.NewIntrinsicInstance("Landroid/view/ViewGroup;");
+    const auto parent_node = context->ui_tree.CreateNode(
+        ogplay::runtime::ui::UiClass::View);
+    ogplay::runtime::BindViewToUiNode(*context, live_parent, parent_node);
+    context->ui_tree.Attach(context->ui_tree.Root(), parent_node);
+    REQUIRE_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
+                      interpreter, *context,
+                      ogplay::runtime::SurfaceHolderPhase::created)
+                      .has_value());
+    REQUIRE_FALSE(ogplay::runtime::DispatchSurfaceHolderCallbacks(
+                      interpreter, *context,
+                      ogplay::runtime::SurfaceHolderPhase::changed)
+                      .has_value());
+
+    const auto surface =
+        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    const auto holder = call_on(surface, "getHolder",
+                                "()Landroid/view/SurfaceHolder;")
+                            .ref;
+    const auto callback = interpreter.Call(*make, {}).value.ref;
+    call_on(holder, "addCallback",
+            "(Landroid/view/SurfaceHolder$Callback;)V",
+            {VmValue::Ref(callback)});
+
+    // A live parent conditionally attaches the new subtree. The holder sees
+    // created then changed exactly once.
+    call_on(live_parent, "addView", "(Landroid/view/View;)V",
+            {VmValue::Ref(surface)});
+    CHECK(read("created") == 1);
+    CHECK(read("width") == 800);
+    CHECK(read("height") == 480);
+    CHECK(context->active_surface_holders.contains(holder.Value()));
+
+    call_on(live_parent, "removeView", "(Landroid/view/View;)V",
+            {VmValue::Ref(surface)});
+    CHECK(read("destroyed") == 1);
+    CHECK_FALSE(context->active_surface_holders.contains(holder.Value()));
+
+    // A detached parent does not synthesize attach events. Attaching that
+    // parent later traverses the whole subtree and starts a fresh generation.
+    const auto detached_parent =
+        interpreter.NewIntrinsicInstance("Landroid/view/ViewGroup;");
+    call_on(detached_parent, "addView", "(Landroid/view/View;)V",
+            {VmValue::Ref(surface)});
+    CHECK(read("created") == 1);
+    call_on(live_parent, "addView", "(Landroid/view/View;)V",
+            {VmValue::Ref(detached_parent)});
+    CHECK(read("created") == 2);
+    CHECK(context->active_surface_holders.contains(holder.Value()));
+
+    // removeCallback is idempotent and affects later lifecycle snapshots.
+    call_on(holder, "removeCallback",
+            "(Landroid/view/SurfaceHolder$Callback;)V",
+            {VmValue::Ref(callback)});
+    call_on(holder, "removeCallback",
+            "(Landroid/view/SurfaceHolder$Callback;)V",
+            {VmValue::Ref(callback)});
+    call_on(live_parent, "removeView", "(Landroid/view/View;)V",
+            {VmValue::Ref(detached_parent)});
+    CHECK(read("destroyed") == 1);
+    CHECK_FALSE(context->active_surface_holders.contains(holder.Value()));
+
+    // A callback registered after an already-attached SurfaceView does not
+    // receive past created/changed, but it does observe the later destroy.
+    const auto late_surface =
+        interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+    call_on(live_parent, "addView", "(Landroid/view/View;)V",
+            {VmValue::Ref(late_surface)});
+    const auto late_holder = call_on(late_surface, "getHolder",
+                                     "()Landroid/view/SurfaceHolder;")
+                                 .ref;
+    const auto late_callback = interpreter.Call(*make, {}).value.ref;
+    call_on(late_holder, "addCallback",
+            "(Landroid/view/SurfaceHolder$Callback;)V",
+            {VmValue::Ref(late_callback)});
+    CHECK(read("created") == 2);
+    call_on(live_parent, "removeView", "(Landroid/view/View;)V",
+            {VmValue::Ref(late_surface)});
+    CHECK(read("destroyed") == 2);
 }
 
 TEST_CASE("Thread priority validates and records the guest fact") {

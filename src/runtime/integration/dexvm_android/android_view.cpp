@@ -423,6 +423,7 @@ void AddCanvasMethods(dx::IntrinsicClassBuilder& builder,
 Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceHolder$Impl;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder;"});
     builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderAddCallbackHandler(context));
+    builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderRemoveCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
     builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
     AddCanvasMethods(builder, context);
@@ -445,6 +446,7 @@ namespace ogplay::runtime::android_intrinsics::dvm80_android_view_SurfaceHolder 
 Decl Declare_android_view_SurfaceHolder(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/SurfaceHolder;");
     builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderAddCallbackHandler(context));
+    builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderRemoveCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
     builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
     builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;",
@@ -480,6 +482,15 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
             if (!holder.IsValid()) {
                 holder = call.vm.NewIntrinsicInstance(
                     "Landroid/view/SurfaceHolder$Impl;");
+                const auto node = FindViewUiNode(
+                    *context, call.receiver.Value());
+                if (context->managed_surface_available && node.has_value() &&
+                    context->ui_tree.IsAttached(*node)) {
+                    // The platform holder exists before callbacks are added.
+                    // A late observer does not receive past created/changed,
+                    // but it must observe the eventual destroyed event.
+                    context->active_surface_holders.insert(holder.Value());
+                }
             }
             return dx::VmValue::Ref(holder);
         });
@@ -1017,6 +1028,11 @@ dx::IntrinsicHandler AddHandler(const Context& context, const bool has_index,
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                   error.what()};
         }
+        if (const auto error = AttachSurfaceViewSubtree(
+                call.vm, *context, child_node);
+            error.has_value()) {
+            throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+        }
         return dx::VmValue::Void();
     };
 }
@@ -1044,6 +1060,11 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
             const auto node = FindViewUiNode(*context, child.Value());
             if (parent.has_value() && node.has_value() &&
                 context->ui_tree.Get(*node)->parent == parent) {
+                if (const auto error = DetachSurfaceViewSubtree(
+                        call.vm, *context, *node);
+                    error.has_value()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+                }
                 context->ui_tree.Detach(*node);
             }
             return dx::VmValue::Void();
@@ -1062,8 +1083,14 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
                                       "removeViews range is outside children"};
             }
             for (std::int32_t offset = count; offset > 0; --offset) {
-                context->ui_tree.Detach(children[static_cast<std::size_t>(
-                    start + offset - 1)]);
+                const auto child = children[static_cast<std::size_t>(
+                    start + offset - 1)];
+                if (const auto error = DetachSurfaceViewSubtree(
+                        call.vm, *context, child);
+                    error.has_value()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+                }
+                context->ui_tree.Detach(child);
             }
             return dx::VmValue::Void();
         });

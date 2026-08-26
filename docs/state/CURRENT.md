@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-08-26 · DVM-89 bounded KeyEvent dispatch
+更新：2026-08-26 · DVM-90 dynamic SurfaceView lifecycle
 
 ## 当前阶段
 
@@ -25,21 +25,15 @@
   fixture 同时覆盖 NIO、GLES20、AudioTrack、Socket 与 SQLiteDatabase 链接闭包。
 - **验收补强**：NIO view concrete class、Bundle GC strong edge、Network teardown、
   SQLiteHelper schema lifecycle 与 liblog tag 求值顺序问题均已闭合。
-- **DVM-89**：DexVM 出向 native 先独立查询 RegisterNatives 映射，只有未命中才回退
-  `Java_` export；已注册目标的 guest CPU/JNI 执行异常保留原始原因，不再被二次误报为
-  `native method has no registered mapping or export`。DEX 自有 instance/static 字段发布到
-  同一 JNI registry，`GetFieldID` 家族按 AOSP Dalvik 语义先初始化类；JNI primitive、wide、
-  object/array 访问直接读写解释器对象槽/linker static storage，引用保持 `VmObjectRef`
-  identity 并按调用线程发布 local reference。平台 HLE 字段仍由原 field store 拥有。
-  DexVM identity 分配同时跳过已导入的同域 JNI identity，重复身份不再静默注册。
-  同 WU 还按 API 19 补齐 `Bitmap.Config` enum 与 native index 映射；
-  `Context.getPackageResourcePath()` 返回只读 guest APK 路径，ContextWrapper 委托 base，
-  不泄露宿主路径。`OnFocusChangeListener` 可正常链接分派；`ResultReceiver` 有限闭合本地
-  同步/异步 send，Binder Parcel 明确拒绝。session 键输入传递有状态的非空 `KeyEvent`，
-  `View.dispatchKeyEvent` 虚派 DOWN/UP/MULTIPLE；字符、监听与 tracking 仍 deferred。
-  同 WU 的黑屏推进补齐 native 调用锁交接、API19 Bionic 16-bit process TID、timed futex、
-  `/proc/meminfo`、长驻 native boundary watchdog、guest 逻辑 RWX/`ARM_cacheflush`、软件
-  SurfaceHolder/Canvas 发布以及 AudioTrack output-rate/listener 基础状态。
+- **DVM-89**：RegisterNatives 解析/执行失败保真、JNI↔DEX instance/static 字段统一存储与
+  identity/class-init/local-ref 已闭合；同 WU 补齐 Bitmap.Config、guest APK resource path、
+  bounded KeyEvent/ResultReceiver、软件 Surface/Canvas、native 锁/TID/futex/watchdog/RWX 及
+  AudioTrack 启动面，平台 HLE 字段仍由原 store 拥有。
+- **DVM-90**：对照 API 19 ViewGroup/SurfaceView，把 live UiTree attach 等价为 AttachInfo，
+  为每个 holder 记录 active generation。动态 add 的 SurfaceView 子树仅在 parent live 时收到
+  created→changed，remove/setContentView replacement 在 detach 前收到一次 destroyed；初始
+  lifecycle 不再广播给 detached holder。callback 使用稳定快照并发布幂等 removeCallback；
+  visibility/format/size 重建、独立合成层与完整 WindowManager 仍 deferred。
 
 ## 验证基线
 
@@ -50,6 +44,8 @@
   futex/ARM private syscall/memory protection/managed surface 定向 9/9、192 assertions 通过。
   本轮按要求未执行完整测试。此前 994/994 仅为字段互通改动前历史基线。
 - `KeyEvent`/`View.dispatchKeyEvent` 定向源 20/20、567 assertions 通过；未执行完整测试。
+- DVM-90 Windows Debug `ogplay`/`ogplay_tests` 增量构建通过；SurfaceHolder/ViewGroup
+  定向 4/4、183 assertions 与 architecture 6/6 通过，本轮按要求不执行完整测试。
 - libdl process service 的 bridge/error、Bionic route/relocation 与 libc override 定向
   5/5、60 assertions 通过；Windows Release `ogplay` 与 Debug `ogplay_tests` 增量构建通过。
 - Release `ogplay` 定向构建通过。PVZ 原 survey 已越过
@@ -60,6 +56,8 @@
   失败的次生结果：旧路径未调用 `LoaderThread.glInit(I)V`；补齐 libdl service 后约 f=2400
   已收到该回调，并持续到约 2 万 frame 未再出现 PC `0x60462edc`/地址 `0x1f84` fault。
   该 diagnostic run 仅证明本阻断推进，不作为完整兼容性结论。
+- DVM-90 后按给定无 survey Release 命令复跑，约 f=1200 发布软件帧，但未到达动态第二
+  holder，f=2351 先遇到 Thread-2 A32 fault（PC `0x6045be18`）；本次不宣告 title 已进入。
 
 ## 下一步
 

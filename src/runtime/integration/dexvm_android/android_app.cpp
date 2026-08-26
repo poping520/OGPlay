@@ -73,6 +73,11 @@ Decl Declare_android_app_Activity(const Context& context) {
                 context->ui_tree.Get(context->ui_tree.Root())->children;
             for (const auto old_root : old_content) {
                 if (old_root == node) continue;
+                if (const auto error = DetachSurfaceViewSubtree(
+                        call.vm, *context, old_root);
+                    error.has_value()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+                }
                 std::vector<ui::UiNodeId> pending{old_root};
                 while (!pending.empty()) {
                     const auto current = pending.back();
@@ -93,6 +98,11 @@ Decl Declare_android_app_Activity(const Context& context) {
             }
             if (!parent.has_value()) {
                 context->ui_tree.Attach(context->ui_tree.Root(), node);
+                if (const auto error = AttachSurfaceViewSubtree(
+                        call.vm, *context, node);
+                    error.has_value()) {
+                    throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+                }
             }
             ui::LayoutUiTree(context->ui_tree,
                              {static_cast<std::int32_t>(context->surface_width),
@@ -105,8 +115,28 @@ Decl Declare_android_app_Activity(const Context& context) {
             const auto layout_id =
                 static_cast<std::uint32_t>(call.arguments[0].AsInt());
             try {
+                const auto old_content =
+                    context->ui_tree.Get(context->ui_tree.Root())->children;
+                for (const auto old_root : old_content) {
+                    if (const auto error = DetachSurfaceViewSubtree(
+                            call.vm, *context, old_root);
+                        error.has_value()) {
+                        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
+                                              *error};
+                    }
+                }
                 context->content_view =
                     InflateUiLayoutResource(call.vm, *context, layout_id);
+                const auto node = FindViewUiNode(
+                    *context, context->content_view.Value());
+                if (node.has_value()) {
+                    if (const auto error = AttachSurfaceViewSubtree(
+                            call.vm, *context, *node);
+                        error.has_value()) {
+                        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;",
+                                              *error};
+                    }
+                }
                 ui::LayoutUiTree(context->ui_tree,
                                  {static_cast<std::int32_t>(context->surface_width),
                                   static_cast<std::int32_t>(context->surface_height)});
@@ -426,10 +456,44 @@ Decl Declare_android_app_ProgressDialog(const Context& context) {
 
 #include "shared.h"
 
-namespace ogplay::runtime {
+#include <algorithm>
 
-std::optional<std::string> DispatchSurfaceHolderCallbacks(
+namespace ogplay::runtime {
+namespace {
+
+std::vector<std::uint32_t> SubtreeHolderHandles(
+    const DexVmAndroidContext& context, const ui::UiNodeId subtree) {
+    std::vector<std::uint32_t> holders;
+    std::unordered_set<std::uint32_t> seen;
+    std::vector<ui::UiNodeId> pending{subtree};
+    while (!pending.empty()) {
+        const auto node = pending.back();
+        pending.pop_back();
+        const auto* state = context.ui_tree.Get(node);
+        if (state == nullptr) continue;
+        const auto view = ViewObjectForUiNode(context, node);
+        if (view.IsValid()) {
+            const auto found = context.surface_holders.find(view.Value());
+            if (found != context.surface_holders.end() &&
+                found->second.IsValid() &&
+                seen.insert(found->second.Value()).second) {
+                holders.push_back(found->second.Value());
+            }
+        }
+        pending.insert(pending.end(), state->children.rbegin(),
+                       state->children.rend());
+    }
+    return holders;
+}
+
+std::vector<std::uint32_t> AttachedHolderHandles(
+    const DexVmAndroidContext& context) {
+    return SubtreeHolderHandles(context, context.ui_tree.Root());
+}
+
+std::optional<std::string> DispatchHolderCallbacks(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    const std::span<const std::uint32_t> holders,
     const SurfaceHolderPhase phase) {
     namespace dx = dexvm;
     const auto* name = "surfaceCreated";
@@ -450,15 +514,28 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
 
     auto& linker = vm.Linker();
     std::size_t delivered = 0;
-    for (const auto& [holder_handle, callbacks] : context.surface_callbacks) {
+    for (const auto holder_handle : holders) {
+        if (phase == SurfaceHolderPhase::created) {
+            if (context.active_surface_holders.contains(holder_handle)) continue;
+            // AOSP sets mSurfaceCreated before invoking callbacks.
+            context.active_surface_holders.insert(holder_handle);
+        } else if (phase == SurfaceHolderPhase::destroyed) {
+            if (context.active_surface_holders.erase(holder_handle) == 0U) continue;
+            // AOSP clears mSurfaceCreated before invoking callbacks.
+        } else if (!context.active_surface_holders.contains(holder_handle)) {
+            continue;
+        }
+
+        const auto found = context.surface_callbacks.find(holder_handle);
+        if (found == context.surface_callbacks.end()) continue;
+        // SurfaceView.getSurfaceCallbacks() returns a snapshot. Guest code may
+        // add/remove registrations while one callback is running.
+        const auto callbacks = found->second;
         for (const auto callback : callbacks) {
             const auto callback_class = vm.Model().ObjectClass(callback);
             const auto index =
                 linker.FindVtableIndex(callback_class, name, descriptor);
             if (!index.has_value()) {
-                // A registered callback that cannot receive the event is a
-                // real defect in the guest's own class, not something to
-                // quietly skip.
                 return std::string("SurfaceHolder.Callback has no ") + name +
                        ": " + linker.Class(callback_class).descriptor;
             }
@@ -491,6 +568,54 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
     return std::nullopt;
 }
 
+}  // namespace
+
+std::optional<std::string> DispatchSurfaceHolderCallbacks(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    const SurfaceHolderPhase phase) {
+    std::vector<std::uint32_t> holders;
+    if (phase == SurfaceHolderPhase::created) {
+        context.managed_surface_available = true;
+        holders = AttachedHolderHandles(context);
+    } else if (phase == SurfaceHolderPhase::destroyed) {
+        context.managed_surface_available = false;
+        holders.assign(context.active_surface_holders.begin(),
+                       context.active_surface_holders.end());
+        std::ranges::sort(holders);
+    } else {
+        holders.assign(context.active_surface_holders.begin(),
+                       context.active_surface_holders.end());
+        std::ranges::sort(holders);
+    }
+    return DispatchHolderCallbacks(vm, context, holders, phase);
+}
+
+std::optional<std::string> AttachSurfaceViewSubtree(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    const ui::UiNodeId subtree) {
+    if (!context.managed_surface_available ||
+        !context.ui_tree.IsAttached(subtree)) {
+        return std::nullopt;
+    }
+    const auto holders = SubtreeHolderHandles(context, subtree);
+    if (const auto error = DispatchHolderCallbacks(
+            vm, context, holders, SurfaceHolderPhase::created);
+        error.has_value()) {
+        return error;
+    }
+    return DispatchHolderCallbacks(vm, context, holders,
+                                   SurfaceHolderPhase::changed);
+}
+
+std::optional<std::string> DetachSurfaceViewSubtree(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    const ui::UiNodeId subtree) {
+    if (!context.ui_tree.IsAttached(subtree)) return std::nullopt;
+    const auto holders = SubtreeHolderHandles(context, subtree);
+    return DispatchHolderCallbacks(vm, context, holders,
+                                   SurfaceHolderPhase::destroyed);
+}
+
 std::optional<std::string> RetireSurfaceHolderGeneration(
     dexvm::Interpreter& vm, DexVmAndroidContext& context) {
     const auto error = DispatchSurfaceHolderCallbacks(
@@ -498,6 +623,8 @@ std::optional<std::string> RetireSurfaceHolderGeneration(
     if (error.has_value()) return error;
     context.surface_callbacks.clear();
     context.surface_holders.clear();
+    context.active_surface_holders.clear();
+    context.managed_surface_available = false;
     return std::nullopt;
 }
 

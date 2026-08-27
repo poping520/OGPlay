@@ -77,7 +77,7 @@ public:
              request.boundary_options,
              std::move(request.sound_resource_loader),
              std::move(request.guest_call_slice_observer),
-             std::move(request.platform)});
+             std::move(request.platform), request.proc_facts});
         session = runtime::AndroidGuestCallSession::AdoptProcess(
             std::move(native_process));
         state = AndroidAppProcessState::native_process_ready;

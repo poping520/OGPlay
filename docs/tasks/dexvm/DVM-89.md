@@ -45,6 +45,9 @@ DVM-14、DVM-15、APS-8。
   OnKeyListener、DispatcherState tracking/long-press 仍 deferred。
 - 同一 WU 还闭合 native 调用锁交接、API19 Bionic TID、相对 timed futex、`/proc/meminfo`、
   watchdog、guest 逻辑 RWX/`ARM_cacheflush`、软件 Surface/Canvas 和 AudioTrack 基础状态。
+- `/proc/meminfo` 的 total/free 来自进程请求显式注入的 `GuestProcFacts`，其余保留字段按
+  `Buffers=0`、`Cached=total/4`、三个 Swap 字段为 0 的固定规则派生；默认 facts 与历史
+  文件逐字节一致。该事实不观察宿主、不动态刷新，非法 total/free 在启动时明确失败。
 - 不补 title 专属 native、不改变 survey neutral stub、不把 native fault 转成伪成功。
 
 ## 验收
@@ -70,6 +73,8 @@ DVM-14、DVM-15、APS-8。
 - KeyEvent/View dispatch、SDL 规范化和 session Android 输入映射定向通过；覆盖当前布局
   Unicode、显式 meta 重载、repeat、方向键与未知键 fail-closed。catalog、capability 与
   architecture 门禁通过。以上均为 Windows Debug 增量/定向验证，未执行全量 CTest。
+- proc facts 默认字节、自定义来源与派生值、只读/幂等和非法配置定向 5/5、28 assertions
+  通过；按要求未执行全量 CTest。
 - PVZ Release 无 survey reached run 进入标题画面；真实键盘输入越过
   `LoaderKeyboard.onKeyEvent()` 的 `getUnicodeChar()` 调用并可完成自定义用户名输入，原
   method resolve fault 未再出现。

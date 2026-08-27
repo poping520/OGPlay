@@ -268,6 +268,31 @@ constexpr std::uint32_t kLibdlGlVertexPointerOffset = 0x810U;
     return result;
 }
 
+[[nodiscard]] std::string ReadVfsText(
+    ogplay::runtime::VirtualFileSystem& filesystem,
+    const std::string_view path) {
+    const auto size = filesystem.Stat(path).size;
+    std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+    const auto descriptor = filesystem.Open(path, {.read = true});
+    const auto read = filesystem.Read(descriptor, bytes);
+    filesystem.Close(descriptor);
+    return {reinterpret_cast<const char*>(bytes.data()), read};
+}
+
+[[nodiscard]] std::uint32_t ProcMemoryValue(
+    const std::string_view meminfo, const std::string_view prefix) {
+    auto position = meminfo.find(prefix);
+    if (position == std::string_view::npos ||
+        (position != 0U && meminfo[position - 1U] != '\n')) {
+        throw std::runtime_error("proc memory line is missing");
+    }
+    position += prefix.size();
+    while (position < meminfo.size() && meminfo[position] == ' ') ++position;
+    const auto end = meminfo.find(' ', position);
+    return static_cast<std::uint32_t>(std::stoul(
+        std::string{meminfo.substr(position, end - position)}));
+}
+
 }  // namespace
 
 TEST_CASE("Android guest process starts and stops without an application ELF") {
@@ -285,14 +310,15 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     CHECK(process->GuestEnvironment().Value() != 0);
     CHECK(process->GuestJavaVm().Value() != 0);
     CHECK(process->AttachedJniThreadCount() == 1);
-    const auto meminfo = filesystem.Open("/proc/meminfo", {.read = true});
-    std::array<std::byte, 256> meminfo_bytes{};
-    const auto meminfo_size = filesystem.Read(meminfo, meminfo_bytes);
-    filesystem.Close(meminfo);
-    const std::string meminfo_text(
-        reinterpret_cast<const char*>(meminfo_bytes.data()), meminfo_size);
-    CHECK(meminfo_text.find("MemTotal:") != std::string::npos);
-    CHECK(meminfo_text.find("MemFree:") != std::string::npos);
+    constexpr std::string_view expected_meminfo =
+        "MemTotal:         524288 kB\n"
+        "MemFree:          262144 kB\n"
+        "Buffers:               0 kB\n"
+        "Cached:           131072 kB\n"
+        "SwapCached:            0 kB\n"
+        "SwapTotal:             0 kB\n"
+        "SwapFree:              0 kB\n";
+    CHECK(ReadVfsText(filesystem, "/proc/meminfo") == expected_meminfo);
     CHECK_THROWS_AS(
         static_cast<void>(filesystem.Open("/proc/meminfo", {.write = true})),
         ogplay::runtime::VfsError);
@@ -307,6 +333,73 @@ TEST_CASE("Android guest process starts and stops without an application ELF") {
     CHECK(process->AttachedJniThreadCount() == 0);
     CHECK(process->LoadedGuestModuleCount() == 1);
     process->Stop();
+}
+
+TEST_CASE("Android guest proc memory values come from injected facts") {
+    auto libc = MinimalLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    ogplay::runtime::AndroidGuestProcessRequest request{
+        19, std::span{&module, 1}, {}, 64, 36,
+        1000, 1, &filesystem, {}};
+    request.proc_facts = {1998156U, 966564U};
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(request);
+
+    const auto meminfo = ReadVfsText(filesystem, "/proc/meminfo");
+    CHECK(ProcMemoryValue(meminfo, "MemTotal:") ==
+          request.proc_facts.memory_total_kb);
+    CHECK(ProcMemoryValue(meminfo, "MemFree:") ==
+          request.proc_facts.memory_free_kb);
+    CHECK(ProcMemoryValue(meminfo, "Buffers:") == 0U);
+    CHECK(ProcMemoryValue(meminfo, "Cached:") ==
+          request.proc_facts.memory_total_kb / 4U);
+    CHECK(ProcMemoryValue(meminfo, "SwapCached:") == 0U);
+    CHECK(ProcMemoryValue(meminfo, "SwapTotal:") == 0U);
+    CHECK(ProcMemoryValue(meminfo, "SwapFree:") == 0U);
+    process->Stop();
+}
+
+TEST_CASE("Android guest proc installation preserves an existing snapshot") {
+    auto libc = MinimalLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    constexpr std::string_view existing = "explicit existing snapshot\n";
+    filesystem.PutFile(
+        "/proc/meminfo",
+        std::as_bytes(std::span{existing.data(), existing.size()}), false);
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36,
+         1000, 1, &filesystem, {}});
+    CHECK(ReadVfsText(filesystem, "/proc/meminfo") == existing);
+    process->Stop();
+}
+
+TEST_CASE("Android guest process rejects invalid proc facts") {
+    auto libc = MinimalLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem zero_total_filesystem;
+    ogplay::runtime::AndroidGuestProcessRequest zero_total{
+        19, std::span{&module, 1}, {}, 64, 36,
+        1000, 1, &zero_total_filesystem, {}};
+    zero_total.proc_facts = {0U, 0U};
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(
+            ogplay::runtime::AndroidGuestProcess::Start(zero_total)),
+        "Android guest proc facts are invalid",
+        ogplay::runtime::AndroidGuestProcessError);
+
+    ogplay::runtime::VirtualFileSystem excess_free_filesystem;
+    auto excess_free = zero_total;
+    excess_free.filesystem = &excess_free_filesystem;
+    excess_free.proc_facts = {1024U, 1025U};
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(
+            ogplay::runtime::AndroidGuestProcess::Start(excess_free)),
+        "Android guest proc facts are invalid",
+        ogplay::runtime::AndroidGuestProcessError);
 }
 
 TEST_CASE("OpenSL buffer callback runs on its guest thread and re-enqueues") {
@@ -556,11 +649,16 @@ TEST_CASE("legacy Android guest call session delegates process ownership") {
     const ogplay::loader::Elf32ModuleInput module{
         "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    auto session = ogplay::runtime::AndroidGuestCallSession::Start(
-        {19, "libc.so", std::span{&module, 1}, {}, 64, 36,
-         1000, 1, &filesystem, {}});
+    ogplay::runtime::AndroidGuestCallSessionRequest request{
+        19, "libc.so", std::span{&module, 1}, {}, 64, 36,
+        1000, 1, &filesystem, {}};
+    request.proc_facts = {8192U, 4096U};
+    auto session = ogplay::runtime::AndroidGuestCallSession::Start(request);
     CHECK(session->Running());
     CHECK(session->GuestJavaVm().Value() != 0);
+    const auto meminfo = ReadVfsText(filesystem, "/proc/meminfo");
+    CHECK(ProcMemoryValue(meminfo, "MemTotal:") == 8192U);
+    CHECK(ProcMemoryValue(meminfo, "MemFree:") == 4096U);
     session->Stop();
     CHECK_FALSE(session->Running());
 }

@@ -211,6 +211,13 @@ InstallAndroidGuestFrameworkPlatform(
     JniFieldStore& fields, JniGuestObjectRegistry& objects,
     std::uint64_t thread_id, const AndroidGuestPlatformConfig& config);
 
+// Virtual-device facts published to API 19 guest /proc files. Values are
+// explicit session configuration and never observations of the host machine.
+struct GuestProcFacts final {
+    std::uint32_t memory_total_kb{524288};
+    std::uint32_t memory_free_kb{262144};
+};
+
 struct AndroidGuestCallSessionRequest final {
     std::uint32_t api{19};
     std::string root_module;
@@ -227,6 +234,7 @@ struct AndroidGuestCallSessionRequest final {
     audio::JavaSoundPoolMixer::EncodedResourceLoader sound_resource_loader{};
     A32GuestCallSliceObserver guest_call_slice_observer{};
     AndroidGuestPlatformConfig platform{};
+    GuestProcFacts proc_facts{};
 };
 
 // Creates the Android-native process substrate before any APK application
@@ -248,6 +256,7 @@ struct AndroidGuestProcessRequest final {
     audio::JavaSoundPoolMixer::EncodedResourceLoader sound_resource_loader{};
     A32GuestCallSliceObserver guest_call_slice_observer{};
     AndroidGuestPlatformConfig platform{};
+    GuestProcFacts proc_facts{};
 };
 
 class AndroidGuestProcessError final : public std::runtime_error {

@@ -1,9 +1,12 @@
 # 当前状态
 
-更新：通用 Android 深层 View 触摸分发闭合（未提交）
+更新：DVM-89 `/proc/meminfo` 虚拟设备 facts 显式注入完成
 
 ## 当前阶段
 
+- **DVM-89 proc facts**：`GuestProcFacts` 由 app/session 请求显式传入 native process；
+  `/proc/meminfo` 在启动时按 total/free 与固定派生规则生成只读快照，默认字节不变，非法
+  facts 明确失败。没有宿主内存观测、动态刷新、MemAvailable、cpuinfo 或 Profile 覆盖。
 - **Android 触摸 fallback**：无 listener target 时按 live UiTree 的 reverse-Z、deepest-first
   顺序调用命中点下的实际 guest `View.onTouchEvent` override；消费 DOWN 的 receiver 捕获
   MOVE/UP，detach 或 Activity switch 清除捕获。普通叶子 View 按 bounded MeasureSpec 取得
@@ -29,13 +32,14 @@
 - **DVM-89**：JNI↔DEX instance/static 字段统一存储与 native 失败保真已完成；专用 field
   acceptance 已补跑。KeyEvent 的 scancode→Android keyCode/Unicode deferred 项已闭合；
   OnKeyListener、DispatcherState tracking/long-press 仍 deferred。
-- **BND-26**：GLES1 cube-map 固定管线、API19 VERSION/EXTENSIONS 与 guest GL error 锁存已
-  完成。PVZ 已越过此前 cube-map 和 tick-budget 阻断。
 - DVM-47 的 A6/DH exact/长运行 gate 与 threaded 默认裁决仍未闭合；解释执行继续由
   `VmExecutionLock` 串行，threaded 生产默认关闭。
 
 ## 本轮验证
 
+- Windows `windows-msvc` 配置与全目标构建通过；proc facts 默认逐字节、自定义来源/派生、
+  只读、既有快照幂等与两类非法配置定向 5/5、28 assertions 通过，capability/architecture
+  门禁 5/5 通过。按要求未运行全量 CTest。
 - 修复前以当前 Release 实跑 PVZ，标题画面点击入口后画面与会话均无变化，确认问题仍可复现。
 - Windows Debug `ogplay_tests` 定向构建通过；深层 View 捕获、reverse-Z fallback、平台默认
   跳过、无参数嵌套 View 测量，以及既有 listener/click 路径定向 6/6、296 assertions 通过。
@@ -55,8 +59,6 @@
 - Windows Debug/Release 全目标构建通过，包含 `ogplay`、`ogplay-gui` 与 `ogplay_tests`。
 - FD/AFD/openFd、FileInputStream.getFD、MediaPlayer 第二段 Ogg 区间、MP3、SoundPool、
   AudioTrack、legacy Java audio 与 OpenSL 定向 16/16 通过。
-- core/Android catalog 2/2、architecture 6/6 通过；初跑唯一失败为旧 CURRENT 9659-byte 超过
-  6144-byte rolling limit，本文件重写后已复验通过。
 
 ## 下一步
 

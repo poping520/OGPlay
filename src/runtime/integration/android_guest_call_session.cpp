@@ -69,15 +69,18 @@ constexpr std::uint32_t kNioDirectArenaEnd = 0x78000000U;
     return result;
 }
 
-void InstallApi19ProcFiles(VirtualFileSystem& filesystem) {
-    constexpr std::string_view kMemInfo =
-        "MemTotal:         524288 kB\n"
-        "MemFree:          262144 kB\n"
-        "Buffers:               0 kB\n"
-        "Cached:           131072 kB\n"
-        "SwapCached:            0 kB\n"
-        "SwapTotal:             0 kB\n"
-        "SwapFree:              0 kB\n";
+void AppendProcMemoryLine(std::string& output, const std::string_view name,
+                          const std::uint32_t value_kb) {
+    const auto value = std::to_string(value_kb);
+    constexpr std::size_t kUnitColumn = 24;
+    output += name;
+    output.append(kUnitColumn - name.size() - value.size(), ' ');
+    output += value;
+    output += " kB\n";
+}
+
+void InstallApi19ProcFiles(VirtualFileSystem& filesystem,
+                           const GuestProcFacts& facts) {
     try {
         const auto existing = filesystem.Stat("/proc/meminfo");
         if (existing.writable) {
@@ -87,9 +90,19 @@ void InstallApi19ProcFiles(VirtualFileSystem& filesystem) {
         return;
     } catch (const VfsError&) {
     }
+    std::string meminfo;
+    AppendProcMemoryLine(meminfo, "MemTotal:", facts.memory_total_kb);
+    AppendProcMemoryLine(meminfo, "MemFree:", facts.memory_free_kb);
+    // This startup snapshot uses deterministic virtual-device derivations;
+    // none of these values are sampled from the host.
+    AppendProcMemoryLine(meminfo, "Buffers:", 0U);
+    AppendProcMemoryLine(meminfo, "Cached:", facts.memory_total_kb / 4U);
+    AppendProcMemoryLine(meminfo, "SwapCached:", 0U);
+    AppendProcMemoryLine(meminfo, "SwapTotal:", 0U);
+    AppendProcMemoryLine(meminfo, "SwapFree:", 0U);
     filesystem.PutFile(
         "/proc/meminfo",
-        std::as_bytes(std::span{kMemInfo.data(), kMemInfo.size()}), false);
+        std::as_bytes(std::span{meminfo.data(), meminfo.size()}), false);
 }
 
 thread_local std::unordered_map<const void*, cpu::Cpu*>
@@ -532,6 +545,7 @@ struct AndroidGuestProcessStartup final {
     A32GuestCallSliceObserver guest_call_slice_observer;
     AndroidGuestPlatformConfig platform;
     std::size_t application_module_count{};
+    GuestProcFacts proc_facts;
 };
 
 [[nodiscard]] AndroidGuestProcessStartup RootlessStartup(
@@ -554,7 +568,8 @@ struct AndroidGuestProcessStartup final {
             request.sound_resource_loader,
             request.guest_call_slice_observer,
             request.platform,
-            0};
+            0,
+            request.proc_facts};
 }
 
 [[nodiscard]] AndroidGuestProcessStartup LegacyStartup(
@@ -577,7 +592,8 @@ struct AndroidGuestProcessStartup final {
             request.sound_resource_loader,
             request.guest_call_slice_observer,
             request.platform,
-            1};
+            1,
+            request.proc_facts};
 }
 
 }  // namespace
@@ -634,7 +650,13 @@ public:
             throw AndroidGuestProcessError(
                 "Android guest call session request is incomplete");
         }
-        InstallApi19ProcFiles(*filesystem_);
+        if (request.proc_facts.memory_total_kb == 0U ||
+            request.proc_facts.memory_free_kb >
+                request.proc_facts.memory_total_kb) {
+            throw AndroidGuestProcessError(
+                "Android guest proc facts are invalid");
+        }
+        InstallApi19ProcFiles(*filesystem_, request.proc_facts);
         BindAndroidGuestJavaAudioHandlers(
             invocations_, sound_pool_,
             sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);

@@ -39,6 +39,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   `AndroidGuestCallSession` 的旧 `Start` 是 root-module legacy adapter；
   `AdoptProcess` 仅为 DexVM/JNI 复用既有窄接口包装 rootless owner，不追加或初始化
   application ELF。
+- API 19 `/proc/meminfo` 是进程启动时写入 VFS 的只读静态快照；`GuestProcFacts` 显式
+  注入虚拟设备 total/free，Buffers 与三个 Swap 字段固定为 0，Cached 固定由 total/4
+  派生。默认 facts 保持既有字节，非法 total/free 明确失败；禁止观察宿主内存或动态刷新。
 - `AndroidGuestProcess` 同时拥有 guest `libdl` handle 表；`dlopen` 对已加载 guest ELF 建立
   root scope，对 sealed Virtual SO 直接建立边界 handle，`dlopen(nullptr)` 返回进程级
   `RTLD_DEFAULT` 伪句柄，主机 GL 包装名 `libhgl.so` 归一化为 `libGLESv2.so` 边界 handle；

@@ -238,7 +238,11 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   Clock；timed join 与 `Sleep` 同样遵守根上下文快进：根线程的停泊经
   `SetClockAdvance` 钩子按停泊时长推进 Clock，worker context 不快进、始终停泊
   等帧泵推进。`Interrupt` 只写 monitor execution-token interrupt state 并唤醒
-  wait/join/sleep。`Shutdown` 先 RequestStop、join 全部宿主线程，再显式展开 stopped
+  wait/join/sleep。DVM-89/ADR-0024 在 `VmThreadSnapshot` 发布按 context token 标识的
+  `none/sleeping/joining/monitor` wait state；sleep、join、Object.wait 与 monitor 争用只在
+  真实 park 区间维护它，供 session 做有界时序握手，不把它冒充完整 Android scheduler。
+  host 侧 `Yield()` 以 progress generation 确认一次 worker handoff，guest `Thread.yield()`
+  仍不承诺长期公平。`Shutdown` 先 RequestStop、join 全部宿主线程，再显式展开 stopped
   context（幂等，记录保留供事后查询）。未捕获异常与 VM 错误记入
   `TakeFailure()`，由生命周期驱动在帧
   边界上报，对齐设备上的进程级默认 handler，而不是丢给 `join()` 的调用方；失败文本同时

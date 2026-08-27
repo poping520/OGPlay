@@ -6,6 +6,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <fstream>
@@ -136,6 +137,11 @@ TEST_CASE("dexvm notifyAll releases a waiter parked on another host thread") {
     // otherwise the test would pass without a wait set at all.
     REQUIRE(WaitFor(
         [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    CHECK(std::ranges::any_of(
+        vm.threads.Snapshot(), [thread_object](const auto& thread) {
+            return thread.object == thread_object.Value() &&
+                   thread.wait_state == VmThreadWaitState::monitor;
+        }));
     CHECK(vm.Observed() == 0);
 
     // signal() takes the same monitor, so it only completes because wait()

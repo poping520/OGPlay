@@ -5,6 +5,7 @@
 
 #include "ogplay/runtime/dexvm/vm_threads.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -40,6 +41,7 @@ struct VmThreadRecord final {
     InterpreterExecutionContext context;
     std::unique_ptr<hal::HostThread> host;
     VmThreadStatus status{VmThreadStatus::created};
+    VmThreadWaitState wait_state{VmThreadWaitState::none};
 };
 
 // Per host thread routing, keyed by runtime so independent VMs in one test
@@ -57,6 +59,8 @@ public:
     VmObjectRef root_object;
     std::string root_name{"main"};
     std::uint64_t next_id{2};  // 1 is the root lifecycle thread
+    VmThreadWaitState root_wait_state{VmThreadWaitState::none};
+    std::uint64_t progress_generation{};
     bool shutting_down{};
     std::string failure;
 
@@ -82,7 +86,8 @@ public:
     // fully released while parked and restored to the same depth after.
     // Interruptible, like Thread.join on device.
     void ParkUntil(const std::function<bool()>& ready, const char* what,
-                   const std::optional<std::int64_t> timeout_millis) {
+                   const std::optional<std::int64_t> timeout_millis,
+                   const VmThreadWaitState wait_state) {
         const auto self = vm->CurrentContextToken();
         auto& monitors = vm->Monitors();
         VmMonotonicMillis clock;
@@ -125,6 +130,7 @@ public:
             timeout_millis.has_value() && self == kRootLifecycleToken
                 ? monitors.ClockAdvance()
                 : VmClockAdvance{};
+        vm->Threads().SetWaitState(self, wait_state);
         auto& lock = vm->ExecutionLock();
         const auto depth = lock.ReleaseForBlocking();
         bool interrupted = false;
@@ -149,6 +155,7 @@ public:
             }
         }
         lock.ReacquireAfterBlocking(depth);
+        vm->Threads().SetWaitState(self, VmThreadWaitState::none);
         if (interrupted) {
             static_cast<void>(monitors.ClearInterrupt(self));
             throw VmJavaThrow{"Ljava/lang/InterruptedException;",
@@ -166,6 +173,7 @@ public:
             {
                 const std::lock_guard locked(mutex);
                 record->status = VmThreadStatus::running;
+                ++progress_generation;
             }
             changed.notify_all();
             const std::vector<VmValue> arguments{VmValue::Ref(record->object)};
@@ -208,6 +216,8 @@ public:
         {
             const std::lock_guard locked(mutex);
             record->status = final_status;
+            record->wait_state = VmThreadWaitState::none;
+            ++progress_generation;
             if (!failure_text.empty() && failure.empty()) {
                 failure = std::move(failure_text);
             }
@@ -337,7 +347,7 @@ void VmThreadRuntime::Join(const VmObjectRef thread_object) {
             return !root && record->status != VmThreadStatus::created &&
                    record->status != VmThreadStatus::running;
         },
-        "Thread.join()", std::nullopt);
+        "Thread.join()", std::nullopt, VmThreadWaitState::joining);
 }
 
 void VmThreadRuntime::Join(const VmObjectRef thread_object,
@@ -360,7 +370,7 @@ void VmThreadRuntime::Join(const VmObjectRef thread_object,
             return !root && record->status != VmThreadStatus::created &&
                    record->status != VmThreadStatus::running;
         },
-        "Thread.join()", timeout_millis);
+        "Thread.join()", timeout_millis, VmThreadWaitState::joining);
 }
 
 void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
@@ -395,6 +405,9 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
                        : now + timeout_millis;
     }
 
+    if (timeout_millis > 0) {
+        SetWaitState(self, VmThreadWaitState::sleeping);
+    }
     auto& lock = impl_->vm->ExecutionLock();
     const auto depth = lock.ReleaseForBlocking();
     bool interrupted = false;
@@ -426,6 +439,9 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
         }
     }
     lock.ReacquireAfterBlocking(depth);
+    if (timeout_millis > 0) {
+        SetWaitState(self, VmThreadWaitState::none);
+    }
     if (interrupted) {
         static_cast<void>(monitors.ClearInterrupt(self));
         throw VmJavaThrow{"Ljava/lang/InterruptedException;",
@@ -497,33 +513,76 @@ void VmThreadRuntime::Rename(const VmObjectRef thread_object,
 
 void VmThreadRuntime::Yield() {
     auto& lock = impl_->vm->ExecutionLock();
-    if (!lock.HeldByCurrentThread()) return;
-    bool starts_created_thread = false;
-    {
-        const std::lock_guard guard(impl_->mutex);
-        if (impl_->records.empty()) return;
-        starts_created_thread = std::any_of(
-            impl_->records.begin(), impl_->records.end(),
-            [](const auto& entry) {
-                return entry.second->status == VmThreadStatus::created;
-            });
-    }
-    const auto depth = lock.ReleaseForBlocking();
-    if (starts_created_thread) {
+    const bool acquired_for_host_yield = !lock.HeldByCurrentThread();
+    if (acquired_for_host_yield) {
+        lock.Acquire();
+        std::uint64_t generation{};
+        {
+            const std::lock_guard guard(impl_->mutex);
+            const bool has_runnable = std::ranges::any_of(
+                impl_->records, [](const auto& entry) {
+                    return entry.second->status == VmThreadStatus::created ||
+                           (entry.second->status == VmThreadStatus::running &&
+                            entry.second->wait_state ==
+                                VmThreadWaitState::none);
+                });
+            if (!has_runnable) {
+                lock.Release();
+                return;
+            }
+            generation = impl_->progress_generation;
+        }
+        const auto depth = lock.ReleaseForBlocking();
         std::unique_lock guard(impl_->mutex);
-        impl_->changed.wait(guard, [this] {
+        impl_->changed.wait(guard, [this, generation] {
             return impl_->shutting_down ||
-                   std::none_of(
-                       impl_->records.begin(), impl_->records.end(),
-                       [](const auto& entry) {
+                   impl_->progress_generation != generation ||
+                   std::ranges::none_of(
+                       impl_->records, [](const auto& entry) {
                            return entry.second->status ==
-                                  VmThreadStatus::created;
+                                      VmThreadStatus::created ||
+                                  (entry.second->status ==
+                                       VmThreadStatus::running &&
+                                   entry.second->wait_state ==
+                                       VmThreadWaitState::none);
                        });
         });
-    } else {
-        std::this_thread::yield();
+        guard.unlock();
+        lock.ReacquireAfterBlocking(depth);
+        lock.Release();
+        return;
     }
+
+    {
+        const std::lock_guard guard(impl_->mutex);
+        ++impl_->progress_generation;
+    }
+    impl_->changed.notify_all();
+    const auto depth = lock.ReleaseForBlocking();
+    std::this_thread::yield();
     lock.ReacquireAfterBlocking(depth);
+}
+
+void VmThreadRuntime::SetWaitState(
+    const std::uint64_t context_token,
+    const VmThreadWaitState wait_state) {
+    {
+        const std::lock_guard guard(impl_->mutex);
+        if (context_token == kRootLifecycleToken) {
+            if (impl_->root_wait_state == wait_state) return;
+            impl_->root_wait_state = wait_state;
+        } else {
+            const auto found = std::ranges::find_if(
+                impl_->records, [context_token](const auto& entry) {
+                    return entry.second->context.Token() == context_token;
+                });
+            if (found == impl_->records.end()) return;
+            if (found->second->wait_state == wait_state) return;
+            found->second->wait_state = wait_state;
+        }
+        ++impl_->progress_generation;
+    }
+    impl_->changed.notify_all();
 }
 
 std::optional<std::string> VmThreadRuntime::TakeFailure() {
@@ -560,12 +619,14 @@ std::vector<VmThreadSnapshot> VmThreadRuntime::Snapshot() const {
         snapshot.push_back({1U, 1U, impl_->root_object.Value(),
                             impl_->shutting_down ? VmThreadStatus::stopped
                                                 : VmThreadStatus::running,
+                            impl_->root_wait_state,
                             impl_->vm->Monitors().Interrupted(1U),
                             impl_->root_name});
     }
     for (const auto& [_, record] : impl_->records) {
         snapshot.push_back(
             {record->id, record->context.Token(), record->object.Value(), record->status,
+             record->wait_state,
              impl_->vm->Monitors().Interrupted(record->context.Token()),
              record->name});
     }

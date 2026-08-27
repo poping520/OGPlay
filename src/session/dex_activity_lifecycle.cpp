@@ -1,7 +1,10 @@
 #include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/session/ui_compositor.h"
 
+#include "ogplay/runtime/dexvm/vm_monitors.h"
+
 #include <exception>
+#include <unordered_set>
 #include <utility>
 
 namespace ogplay::session {
@@ -14,6 +17,7 @@ namespace ogplay::session {
         constexpr std::int32_t kKeyActionDown = 0;
         constexpr std::int32_t kKeyActionUp = 1;
         constexpr std::int64_t kMillisPerFrame = 16;
+        constexpr std::size_t kInitialThreadQuiescenceYieldLimit = 64U;
 
         [[noreturn]] void Fail(const std::string& message) {
             throw DexActivityLifecycleError(message);
@@ -279,11 +283,12 @@ namespace ogplay::session {
                 CallActivity("onStart", "()V", {});
                 CallActivity("onResume", "()V", {});
                 activity_started_ = true;
-                // Thread.start() is concurrent with Activity callbacks on
-                // Android. Give a worker created by onStart/onResume one
-                // scheduling boundary before the first Surface traversal so
-                // it can enter its normal wait-for-surface handshake.
-                bindings_.bridge->Threads().Yield();
+                // Threads created by onStart/onResume run concurrently on
+                // Android. Before the first traversal, observe each worker
+                // that exists now reach a real park point (or terminate).
+                // The handshake is bounded and deliberately ignores workers
+                // created after this requirement set is captured.
+                AwaitInitialThreadQuiescence();
             }
 
             // Installer-style launchers may request the game activity right in
@@ -571,6 +576,52 @@ namespace ogplay::session {
         const auto error = runtime::PumpAndroidAudioTracks(
             bindings_.bridge->Vm(), *bindings_.context);
         if (error.has_value()) Fail(*error);
+    }
+
+    void DexActivityLifecycle::AwaitInitialThreadQuiescence() {
+        auto& threads = bindings_.bridge->Threads();
+        std::unordered_set<std::uint64_t> pending;
+        const auto terminal = [](const dx::VmThreadStatus status) {
+            return status == dx::VmThreadStatus::finished ||
+                   status == dx::VmThreadStatus::stopped ||
+                   status == dx::VmThreadStatus::failed;
+        };
+        for (const auto& thread : threads.Snapshot()) {
+            if (thread.context_token == dx::kRootLifecycleToken ||
+                thread.wait_state != dx::VmThreadWaitState::none ||
+                terminal(thread.status)) {
+                continue;
+            }
+            pending.insert(thread.context_token);
+        }
+        if (pending.empty()) return;
+
+        const auto observe = [&] {
+            for (const auto& thread : threads.Snapshot()) {
+                if (!pending.contains(thread.context_token)) continue;
+                if (thread.wait_state != dx::VmThreadWaitState::none ||
+                    terminal(thread.status)) {
+                    pending.erase(thread.context_token);
+                }
+            }
+        };
+        for (std::size_t round = 0;
+             round < kInitialThreadQuiescenceYieldLimit; ++round) {
+            threads.Yield();
+            observe();
+            if (pending.empty()) return;
+        }
+
+        if (auto* logger = bindings_.bridge->Vm().Log(); logger != nullptr) {
+            logger->Write(
+                core::LogLevel::warn, "session.dex_lifecycle",
+                "initial Java thread quiescence handshake reached yield limit",
+                {},
+                {{"yield_limit", static_cast<std::uint64_t>(
+                                      kInitialThreadQuiescenceYieldLimit)},
+                 {"pending_threads",
+                  static_cast<std::uint64_t>(pending.size())}});
+        }
     }
 
     void DexActivityLifecycle::ServiceActivitySwitch() {

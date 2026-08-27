@@ -28,11 +28,19 @@ enum class VmThreadStatus : std::uint8_t {
     failed,    // run() ended with an uncaught Java exception or a VM error
 };
 
+enum class VmThreadWaitState : std::uint8_t {
+    none,
+    sleeping,
+    joining,
+    monitor,
+};
+
 struct VmThreadSnapshot final {
     std::uint64_t id{};
     std::uint64_t context_token{};
     std::uint32_t object{};
     VmThreadStatus status{VmThreadStatus::created};
+    VmThreadWaitState wait_state{VmThreadWaitState::none};
     bool interrupted{};
     std::string name;
 };
@@ -78,8 +86,15 @@ public:
     // Thread object's declared field.
     void Rename(VmObjectRef thread_object, std::string name);
 
-    // Releases the execution lock briefly so other VM threads can run.
+    // A guest caller briefly releases the execution lock. A host caller waits
+    // for one observable progress handoff from the runnable worker set.
     void Yield();
+
+    // Runtime-internal observable park state, keyed by execution context.
+    // Monitor waits use this bridge so Snapshot() has one coherent surface
+    // for sleep, join and monitor blocking.
+    void SetWaitState(std::uint64_t context_token,
+                      VmThreadWaitState wait_state);
 
     // Uncaught exceptions and VM errors are recorded here instead of being
     // thrown at whoever happens to call join(): the lifecycle driver drains

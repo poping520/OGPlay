@@ -15,6 +15,8 @@
 #include <unordered_set>
 #include <utility>
 
+#include "ogplay/runtime/dexvm/vm_threads.h"
+
 namespace ogplay::runtime::dexvm {
 namespace {
 
@@ -60,6 +62,13 @@ public:
                                what};
     }
 
+    void SetMonitorWaitState(const std::uint64_t owner,
+                             const VmThreadWaitState state) const {
+        if (auto* threads = vm->AttachedThreadRuntime(); threads != nullptr) {
+            threads->SetWaitState(owner, state);
+        }
+    }
+
     // Takes ownership of the monitor, parking while somebody else holds it.
     // The execution lock is released for the whole park.
     void AcquireLocked(std::unique_lock<std::mutex>& guard,
@@ -69,6 +78,7 @@ public:
         while (monitor->recursion != 0 && monitor->owner != owner) {
             if (shutting_down) break;
             guard.unlock();
+            SetMonitorWaitState(owner, VmThreadWaitState::monitor);
             auto& lock = vm->ExecutionLock();
             const auto depth = lock.ReleaseForBlocking();
             {
@@ -80,6 +90,7 @@ public:
                 });
             }
             lock.ReacquireAfterBlocking(depth);
+            SetMonitorWaitState(owner, VmThreadWaitState::none);
             guard.lock();
             monitor = &MonitorFor(object);
         }
@@ -232,6 +243,7 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
 
     const std::int64_t deadline = timed ? clock() + timeout_millis : 0;
     auto outcome = VmWaitOutcome::notified;
+    impl_->SetMonitorWaitState(owner, VmThreadWaitState::monitor);
     auto& lock = impl_->vm->ExecutionLock();
     const auto depth = lock.ReleaseForBlocking();
     bool advanced = false;
@@ -292,6 +304,7 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
             impl_->interrupted.erase(owner);
         }
     }
+    impl_->SetMonitorWaitState(owner, VmThreadWaitState::none);
     return outcome;
 }
 

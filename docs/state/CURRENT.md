@@ -1,9 +1,13 @@
 # 当前状态
 
-更新：DVM-89 AudioTrack native output sample rate 改为会话注入
+更新：DVM-89 生命周期首帧改为可观测线程静默握手
 
 ## 当前阶段
 
+- **DVM-89 首帧线程握手**：`VmThreadSnapshot` 新增 sleeping/joining/monitor
+  wait state；launcher onStart/onResume 后冻结当时 worker 集合，首次 Surface traversal
+  前有限轮推进直到逐线程观测 park/终态。期间新线程不追入，64 轮超限结构化 warn 后
+  fail-open；初始 focus 仍在下一 frame 投递。契约见 ADR-0024。
 - **根上下文 timed park 快进（DH 黑屏修复）**：`VmMonitorTable` 新增
   `SetClockAdvance` 快进钩子；根（lifecycle）上下文的 `Thread.sleep`、
   timed `join`、timed `Object.wait` 不再停泊在只有它自己会推进的确定性
@@ -40,6 +44,10 @@
 
 ## 本轮验证
 
+- DVM-89 生命周期首帧握手的晚 park/永不 park/无 worker 与 focus 延迟定向用例连续
+  3 轮通过（每轮 3/3、14 assertions）；线程回归 24/24、132787 assertions，
+  monitor/wait 回归 14/14、174 assertions；macOS `dev` 的 `ogplay`/`ogplay_tests`
+  受影响目标构建通过。
 - AudioTrack native output rate 注入、既有 AudioTrack 行为及阶段 catalog 定向 8/8、
   194 assertions 通过；macOS `dev` 的 `ogplay`/`ogplay_tests` 受影响目标构建通过。
 - 根上下文 timed park 定向 4 用例（root sleep/timed join/timed wait 快进、

@@ -111,6 +111,9 @@ private:
     // AudioTrack position callbacks observe the mixer head and run on this
     // same lifecycle/VM writer thread, never on the host audio callback.
     void PumpAudioTracks();
+    // Before the first traversal, every Java worker that already exists must
+    // be observed parked once or terminal. The bounded fallback is fail-open.
+    void AwaitInitialThreadQuiescence();
     void ServiceActivitySwitch();
     void EnsureRendererCallbacks();
 

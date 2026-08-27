@@ -333,6 +333,7 @@ public:
     // Checked bridge used by java.lang.Thread intrinsics. The runtime is
     // session-owned; callers never reach into Interpreter::Impl.
     [[nodiscard]] VmThreadRuntime& Threads();
+    [[nodiscard]] VmThreadRuntime* AttachedThreadRuntime() const noexcept;
     void VisitRoots(const VmRootVisitor& visitor);
     void RegisterIntrinsicStateTable(IntrinsicStateTableHooks hooks);
     [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;

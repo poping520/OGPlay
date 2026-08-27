@@ -249,6 +249,10 @@ VmThreadRuntime& Interpreter::Threads() {
     return *impl_->threads;
 }
 
+VmThreadRuntime* Interpreter::AttachedThreadRuntime() const noexcept {
+    return impl_->threads;
+}
+
 void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
     if (!visitor) return;
     const std::lock_guard contexts_lock(impl_->executions_mutex);

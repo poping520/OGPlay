@@ -3,6 +3,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -421,8 +422,14 @@ TEST_CASE("dexvm root Thread.sleep fast-forwards a pump-driven clock") {
 TEST_CASE("dexvm root timed join fast-forwards without an external pump") {
     ThreadVm vm;
     std::vector<std::int64_t> advances;
+    bool observed_joining{};
     vm.interpreter.Monitors().SetClockAdvance(
         [&](const std::int64_t delta_millis) {
+            observed_joining = std::ranges::any_of(
+                vm.threads.Snapshot(), [](const auto& thread) {
+                    return thread.context_token == kRootLifecycleToken &&
+                           thread.wait_state == VmThreadWaitState::joining;
+                });
             vm.clock_millis += delta_millis;
             advances.push_back(delta_millis);
         });
@@ -434,6 +441,7 @@ TEST_CASE("dexvm root timed join fast-forwards without an external pump") {
                          {VmValue::Long(30), VmValue::Int(0)}));
     CHECK(advances.size() == 1U);
     CHECK(advances.front() == 30);
+    CHECK(observed_joining);
     // ThreadSleeper parks in sleep(100) on its own context; only the root
     // park fast-forwarded, so the target outlives its 30 ms join.
     CHECK(vm.threads.IsAlive(sleeper));
@@ -451,6 +459,13 @@ TEST_CASE("dexvm worker Thread.sleep parks on the clock, not the advance") {
     const auto sleeper = vm.New("LThreadSleeper;");
     RequireOk(vm.Construct(sleeper, "LThreadSleeper;", "()V"));
     RequireOk(vm.Virtual(sleeper, "start", "()V"));
+    REQUIRE(WaitFor([&] {
+        return std::ranges::any_of(
+            vm.threads.Snapshot(), [sleeper](const auto& thread) {
+                return thread.object == sleeper.Value() &&
+                       thread.wait_state == VmThreadWaitState::sleeping;
+            });
+    }));
     while (vm.threads.IsAlive(sleeper)) {
         vm.clock_millis += 10;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));

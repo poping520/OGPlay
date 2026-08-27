@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +11,7 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/loader/elf.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_bridge.h"
@@ -393,6 +395,7 @@ struct OrchestratedApp final {
     std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context{
         std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
     ogplay::core::CapabilityLedger ledger;
+    ogplay::core::Logger logger;
     std::unique_ptr<ogplay::session::AndroidAppProcess> app;
 
     explicit OrchestratedApp(const std::string& activity,
@@ -425,6 +428,7 @@ struct OrchestratedApp final {
 #endif
         request.filesystem = &filesystem;
         request.ledger = &ledger;
+        request.logger = &logger;
         app = ogplay::session::AndroidAppProcess::Create(
             std::move(request));
     }
@@ -1082,6 +1086,61 @@ TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app E
     CHECK_FALSE(fixture.app->NativeProcess().Running());
     CHECK(fixture.app->State() ==
           session::AndroidAppProcessState::stopped);
+}
+
+TEST_CASE("DVM-89 initial traversal waits until an existing worker parks") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.LateParkActivity", true, false);
+    fixture.app->StartApplication();
+    const auto started = fixture.app->StartLauncherActivity();
+    CHECK(started.state == session::LifecycleRunState::running);
+    CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;",
+                                "getTraversalCount") == 1);
+    CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;",
+                                "getWorkerPhaseAtTraversal") == 1);
+    const auto threads = fixture.app->DexVm().Threads().Snapshot();
+    CHECK(std::ranges::any_of(threads, [](const auto& thread) {
+        return thread.wait_state ==
+               runtime::dexvm::VmThreadWaitState::sleeping;
+    }));
+    CHECK(fixture.logger.Snapshot(
+              core::LogLevel::warn, "session.dex_lifecycle").empty());
+    static_cast<void>(fixture.app->Stop());
+}
+
+TEST_CASE("DVM-89 initial traversal fails open when a worker never parks") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.NeverParkActivity", true, false);
+    fixture.app->StartApplication();
+    const auto started = fixture.app->StartLauncherActivity();
+    CHECK(started.state == session::LifecycleRunState::running);
+    CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;",
+                                "getTraversalCount") == 1);
+    const auto warnings = fixture.logger.Snapshot(
+        core::LogLevel::warn, "session.dex_lifecycle");
+    REQUIRE(warnings.size() == 1U);
+    CHECK(warnings.front().message ==
+          "initial Java thread quiescence handshake reached yield limit");
+    static_cast<void>(fixture.app->Stop());
+}
+
+TEST_CASE("DVM-89 initial traversal without workers keeps focus deferred") {
+    using namespace ogplay;
+    OrchestratedApp fixture("fixture.HandshakeActivity", true, false);
+    fixture.app->StartApplication();
+    const auto started = fixture.app->StartLauncherActivity();
+    CHECK(started.state == session::LifecycleRunState::running);
+    CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;",
+                                "getTraversalCount") == 1);
+    CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;",
+                                "getFocusEvents") == 0);
+    CHECK(fixture.logger.Snapshot(
+              core::LogLevel::warn, "session.dex_lifecycle").empty());
+
+    static_cast<void>(fixture.app->ActivityLifecycle().StepFrame());
+    CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;",
+                                "getFocusEvents") == 1);
+    static_cast<void>(fixture.app->Stop());
 }
 
 TEST_CASE("Activity.isTaskRoot is true for the launcher and false after a handoff") {

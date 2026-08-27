@@ -212,6 +212,155 @@
     return-void
 .end method
 
+# DVM-89 initial traversal thread-quiescence fixtures. The late worker yields
+# three observable turns before parking; the non-parking worker yields forever
+# so the lifecycle's bounded fallback can advance without host timing sleeps.
+.class public Lfixture/HandshakeView;
+.super Landroid/view/View;
+
+.field static public traversalCount:I
+.field static public workerPhaseAtTraversal:I
+.field static public focusEvents:I
+
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+
+.method protected onSizeChanged(IIII)V
+.registers 6
+    sget v0, Lfixture/HandshakeView;->traversalCount:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/HandshakeView;->traversalCount:I
+    sget v0, Lfixture/LateParkWorker;->phase:I
+    sput v0, Lfixture/HandshakeView;->workerPhaseAtTraversal:I
+    return-void
+.end method
+
+.method public onWindowFocusChanged(Z)V
+.registers 3
+    sget v0, Lfixture/HandshakeView;->focusEvents:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/HandshakeView;->focusEvents:I
+    return-void
+.end method
+
+.method static public getTraversalCount()I
+.registers 1
+    sget v0, Lfixture/HandshakeView;->traversalCount:I
+    return v0
+.end method
+
+.method static public getWorkerPhaseAtTraversal()I
+.registers 1
+    sget v0, Lfixture/HandshakeView;->workerPhaseAtTraversal:I
+    return v0
+.end method
+
+.method static public getFocusEvents()I
+.registers 1
+    sget v0, Lfixture/HandshakeView;->focusEvents:I
+    return v0
+.end method
+
+.class public Lfixture/LateParkWorker;
+.super Ljava/lang/Thread;
+
+.field static public phase:I
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Thread;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 3
+    const/4 v0, 0
+    :yield_loop
+    invoke-static {}, Ljava/lang/Thread;->yield()V
+    add-int/lit8 v0, v0, 1
+    const/4 v1, 3
+    if-lt v0, v1, :yield_loop
+    const/4 v0, 1
+    sput v0, Lfixture/LateParkWorker;->phase:I
+    const/16 v0, 1000
+    int-to-long v0, v0
+    invoke-static {v0, v1}, Ljava/lang/Thread;->sleep(J)V
+    return-void
+.end method
+
+.class public Lfixture/NeverParkWorker;
+.super Ljava/lang/Thread;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Thread;-><init>()V
+    return-void
+.end method
+
+.method public run()V
+.registers 1
+    :yield_forever
+    invoke-static {}, Ljava/lang/Thread;->yield()V
+    goto :yield_forever
+.end method
+
+.class public Lfixture/HandshakeActivity;
+.super Landroid/app/Activity;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method
+
+.method public onCreate(Landroid/os/Bundle;)V
+.registers 4
+    invoke-super {v2, v3}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+    new-instance v0, Lfixture/HandshakeView;
+    invoke-direct {v0, v2}, Lfixture/HandshakeView;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+
+.class public Lfixture/LateParkActivity;
+.super Lfixture/HandshakeActivity;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/HandshakeActivity;-><init>()V
+    return-void
+.end method
+
+.method public onResume()V
+.registers 2
+    invoke-super {v1}, Lfixture/HandshakeActivity;->onResume()V
+    new-instance v0, Lfixture/LateParkWorker;
+    invoke-direct {v0}, Lfixture/LateParkWorker;-><init>()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->start()V
+    return-void
+.end method
+
+.class public Lfixture/NeverParkActivity;
+.super Lfixture/HandshakeActivity;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Lfixture/HandshakeActivity;-><init>()V
+    return-void
+.end method
+
+.method public onResume()V
+.registers 2
+    invoke-super {v1}, Lfixture/HandshakeActivity;->onResume()V
+    new-instance v0, Lfixture/NeverParkWorker;
+    invoke-direct {v0}, Lfixture/NeverParkWorker;-><init>()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->start()V
+    return-void
+.end method
+
 .class public Lfixture/TaskRootLauncherActivity;
 .super Landroid/app/Activity;
 

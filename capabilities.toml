@@ -1303,7 +1303,7 @@ note = "DVM-52 交付 VmExecutionLock 安全点上的全 execution-context Java 
 [dexvm.threads]
 status = "complete"
 test = "tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
-note = "DVM-28/48 交付 1:1 host thread、独立 execution context 与 API 19 Thread core；DVM-50 为每个子线程补齐可复用的独立 A32 CPU/stack、Bionic TLS/thread-info、guest thread id、JNI attach/local frame 与 teardown，native frame 可安全停泊。根（lifecycle）上下文的 Thread.sleep/timed join 不再停泊在只有它自己推进的确定性 Clock 上：会话经 SetClockAdvance 发布快进钩子，在一个有界 peer 窗口后按停泊时长推进统一 Clock（Dungeon Hunter onCreate 授权轮询整会话黑屏的根因）；未发布钩子的会话保持原停泊语义。解释执行仍由 VmExecutionLock 串行，这是设计边界而非线程上下文缺口"
+note = "DVM-28/48 交付 1:1 host thread、独立 execution context 与 API 19 Thread core；DVM-50 为每个子线程补齐可复用的独立 A32 CPU/stack、Bionic TLS/thread-info、guest thread id、JNI attach/local frame 与 teardown，native frame 可安全停泊。根（lifecycle）上下文的 Thread.sleep/timed join 不再停泊在只有它自己推进的确定性 Clock 上：会话经 SetClockAdvance 发布快进钩子，在一个有界 peer 窗口后按停泊时长推进统一 Clock（Dungeon Hunter onCreate 授权轮询整会话黑屏的根因）；未发布钩子的会话保持原停泊语义。DVM-89/ADR-0024 发布按 context token 的 sleeping/joining/monitor wait state 与 host yield progress handoff，供首帧有界静默握手。解释执行仍由 VmExecutionLock 串行，这是设计边界而非线程上下文缺口"
 
 [dexvm.monitors]
 status = "complete"
@@ -1407,7 +1407,7 @@ note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)�
 
 [session.dex_activity_lifecycle]
 status = "complete"
-test = "Asphalt 5 exact dexvm title-flow gate 3/3; tests/session/lifecycle_tests.cpp"
+test = "Asphalt 5 exact dexvm title-flow gate 3/3; tests/session/lifecycle_tests.cpp; tests/runtime/native_library_loader_tests.cpp"
 note = "DVM-18 生命周期反转模板：实例化 launcher→<clinit>→onCreate/onStart/onResume→onSizeChanged→focus→onSurfaceCreated/Changed→逐帧 onDrawFrame→输入经 MotionEvent/onTouchEvent→suspend/resume→surfaceDestroyed/onStop/onDestroy 接存量 teardown 顺序"
 
 [session.title_profile_v2]

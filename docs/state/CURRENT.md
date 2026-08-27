@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：DVM-89 AudioTrack position notification 真投递完成
+更新：DVM-89 AudioTrack native output sample rate 改为会话注入
 
 ## 当前阶段
 
@@ -17,6 +17,9 @@
   mixer 的真实 playback head 投递 periodic/marker；跨多期补发，重设 marker 可再次触发，
   pause/stop/flush/release/null listener 静默。回调可重入 write，异常上浮，宿主音频线程不
   调 guest。
+- **DVM-89 AudioTrack output rate**：`getNativeOutputSampleRate()` 不再持有私有 48 kHz
+  常量；CLI 的 SDL 输出、混音泵与 DexVM context 共用一个输出 spec，并在会话构建时一次性
+  注入 mixer rate。AudioTrack 自身 4–48 kHz 配置校验保持独立。
 - **DVM-89 proc facts**：`GuestProcFacts` 由 app/session 请求显式传入 native process；
   `/proc/meminfo` 在启动时按 total/free 与固定派生规则生成只读快照，默认字节不变，非法
   facts 明确失败。没有宿主内存观测、动态刷新、MemAvailable、cpuinfo 或 Profile 覆盖。
@@ -37,6 +40,8 @@
 
 ## 本轮验证
 
+- AudioTrack native output rate 注入、既有 AudioTrack 行为及阶段 catalog 定向 8/8、
+  194 assertions 通过；macOS `dev` 的 `ogplay`/`ogplay_tests` 受影响目标构建通过。
 - 根上下文 timed park 定向 4 用例（root sleep/timed join/timed wait 快进、
   worker 不快进对照）42 assertions 通过；`dev` 全量 ctest 1038/1038 通过。
 - DH Release 实跑（用户原命令 + `--exit-after-frames 240`）：license 轮询越过，

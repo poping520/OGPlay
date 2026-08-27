@@ -48,6 +48,9 @@ struct DexVmAndroidContext final {
     AndroidGuestCallSession* session{};
     // One process-owned PCM backend shared by OpenSL ES and AudioTrack.
     audio::OpenSlesPcmMixer* pcm_playback{};
+    // Documented shared desktop output fact. Frontends inject their session's
+    // actual mixer rate when it differs from the default desktop configuration.
+    std::uint32_t native_output_sample_rate{48000U};
     // Process-owned encoded-audio mixer used by SoundPool and MediaPlayer.
     audio::JavaSoundPoolMixer* encoded_audio_playback{};
     // Process-wide APK native loader used by java.lang.System.load*.

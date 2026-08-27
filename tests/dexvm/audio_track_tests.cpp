@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -96,8 +97,14 @@ struct AudioTrackVm final {
     PositionListenerRecorder recorder;
     Interpreter vm;
 
-    AudioTrackVm()
-        : vm([this]() -> DexClassLinker& {
+    explicit AudioTrackVm(
+        const std::optional<std::uint32_t> native_output_sample_rate =
+            std::nullopt)
+        : vm([this, native_output_sample_rate]() -> DexClassLinker& {
+                 if (native_output_sample_rate.has_value()) {
+                     context->native_output_sample_rate =
+                         *native_output_sample_rate;
+                 }
                  context->pcm_playback = &mixer;
                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
@@ -192,11 +199,20 @@ struct AudioTrackVm final {
 
 }  // namespace
 
-TEST_CASE("DVM-84 AudioTrack streams PCM through the OpenSL mixer") {
-    AudioTrackVm fixture;
-    CHECK(fixture.CallStatic(
+TEST_CASE("AudioTrack native output sample rate comes from the session") {
+    AudioTrackVm injected{44100U};
+    CHECK(injected.CallStatic(
+              "getNativeOutputSampleRate", "(I)I",
+              {VmValue::Int(3)}).AsInt() == 44100);
+
+    AudioTrackVm defaults;
+    CHECK(defaults.CallStatic(
               "getNativeOutputSampleRate", "(I)I",
               {VmValue::Int(3)}).AsInt() == 48000);
+}
+
+TEST_CASE("DVM-84 AudioTrack streams PCM through the OpenSL mixer") {
+    AudioTrackVm fixture;
     CHECK(fixture.CallStatic("getMinVolume", "()F", {}).AsFloat() == 0.0F);
     CHECK(fixture.CallStatic("getMaxVolume", "()F", {}).AsFloat() == 1.0F);
     const auto minimum = fixture.CallStatic(

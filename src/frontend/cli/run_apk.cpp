@@ -52,6 +52,9 @@ namespace {
 
 constexpr std::uint16_t kDefaultMcpPort = 15971U;
 
+constexpr hal::AudioStreamConfig kDesktopAudioOutputSpec{
+    48000U, 2U, hal::AudioSampleFormat::signed_16_le};
+
 constexpr core::RateLimitPolicy kUnrestrictedLog{
     .mode = core::RateLimitMode::none};
 
@@ -173,22 +176,22 @@ void PumpAudio(runtime::AndroidGuestProcess& guest,
                hal::AudioOutput& output,
                std::vector<std::int16_t>& samples,
                runtime::DexVmAndroidContext* dex_context) {
-    constexpr std::uint32_t kSampleRate = 48000U;
     constexpr std::uint64_t kTargetQueuedFrames = 4096U;
     constexpr std::size_t kMaximumChunksPerPump = 4U;
     for (std::size_t chunk = 0;
          chunk < kMaximumChunksPerPump &&
          output.QueuedFrames() < kTargetQueuedFrames;
          ++chunk) {
-        auto frames = guest.RenderStereoAudio(samples, kSampleRate);
+        auto frames = guest.RenderStereoAudio(
+            samples, kDesktopAudioOutputSpec.sample_rate);
         if (dex_context != nullptr && !dex_context->video_views.empty()) {
             // The mixer zero-fills the whole buffer, so decoded VideoView
             // audio mixes over the full chunk even when no sound is queued.
-            frames = samples.size() / 2U;
+            frames = samples.size() / kDesktopAudioOutputSpec.channels;
             static_cast<void>(runtime::MixVideoPcmIntoStereo(
-                *dex_context, samples, kSampleRate));
+                *dex_context, samples, kDesktopAudioOutputSpec.sample_rate));
         }
-        const auto sample_count = frames * 2U;
+        const auto sample_count = frames * kDesktopAudioOutputSpec.channels;
         output.Submit(std::as_bytes(
             std::span{samples}.first(sample_count)));
     }
@@ -498,6 +501,8 @@ int RunApkCommand(const int argc, const char* const argv[],
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
         {
             dex_context = std::make_shared<runtime::DexVmAndroidContext>();
+            dex_context->native_output_sample_rate =
+                kDesktopAudioOutputSpec.sample_rate;
             dex_context->apk_bytes = apk_bytes;
             dex_context->archive = archive;
             const auto arsc_bytes =
@@ -580,10 +585,11 @@ int RunApkCommand(const int argc, const char* const argv[],
                     return {begin, begin + static_cast<std::ptrdiff_t>(length)};
                 });
         std::unique_ptr<hal::AudioOutput> audio_output;
-        std::vector<std::int16_t> audio_samples(1024U * 2U);
+        std::vector<std::int16_t> audio_samples(
+            1024U * kDesktopAudioOutputSpec.channels);
         if (sound_loader) {
-            audio_output = hal::CreateSdlAudioOutput(
-                {48000U, 2U, hal::AudioSampleFormat::signed_16_le});
+            audio_output =
+                hal::CreateSdlAudioOutput(kDesktopAudioOutputSpec);
             audio_output->Start();
         }
         std::uint64_t active_frame{};

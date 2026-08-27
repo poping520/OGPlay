@@ -47,7 +47,6 @@ constexpr std::int32_t kModeStatic = 0;
 constexpr std::int32_t kModeStream = 1;
 constexpr std::int32_t kErrorBadValue = -2;
 constexpr std::int32_t kErrorInvalidOperation = -3;
-constexpr std::int32_t kNativeOutputSampleRate = 48000;
 
 struct Format final {
     std::int32_t channels{};
@@ -157,10 +156,11 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
                 call.arguments[2].AsInt()));
         });
     builder.StaticMethod("getNativeOutputSampleRate", "(I)I",
-        [](dx::IntrinsicContext&) {
-            // OGPlay's shared desktop output is configured at 48 kHz. Android's
-            // API reports the native mixer rate for every legacy stream type.
-            return dx::VmValue::Int(kNativeOutputSampleRate);
+        [context](dx::IntrinsicContext&) {
+            // API 19 reports the same native mixer rate for every legacy
+            // stream type; the session supplies that backend fact once.
+            return dx::VmValue::Int(static_cast<std::int32_t>(
+                context->native_output_sample_rate));
         });
     builder.Constructor("(IIIIII)V", [context](dx::IntrinsicContext& call) {
         const auto sample_rate = call.arguments[1].AsInt();

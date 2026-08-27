@@ -195,7 +195,7 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
             player, sample_rate, format->channels, format->bytes_per_sample,
             buffer_size, mode,
             mode == kModeStatic ? kStateNoStaticData : kStateInitialized,
-            0, dx::VmObjectRef{0}};
+            0, 0, false, 0U, dx::VmObjectRef{0}};
         return dx::VmValue::Void();
     });
     builder.FinalMethod("getState", "()I", [context](dx::IntrinsicContext& call) {
@@ -223,18 +223,27 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
             state.player, audio::OpenSlesPlayState::playing);
         return dx::VmValue::Void();
     });
-    const auto set_play_state = [context](const audio::OpenSlesPlayState play) {
-        return [context, play](dx::IntrinsicContext& call) {
-            auto& state = Require(context, call);
-            context->pcm_playback->SetPlayState(state.player, play);
-            return dx::VmValue::Void();
-        };
-    };
-    builder.FinalMethod("pause", "()V", set_play_state(audio::OpenSlesPlayState::paused));
-    builder.FinalMethod("stop", "()V", set_play_state(audio::OpenSlesPlayState::stopped));
+    builder.FinalMethod("pause", "()V", [context](dx::IntrinsicContext& call) {
+        auto& state = Require(context, call);
+        context->pcm_playback->SetPlayState(
+            state.player, audio::OpenSlesPlayState::paused);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("stop", "()V", [context](dx::IntrinsicContext& call) {
+        auto& state = Require(context, call);
+        context->pcm_playback->SetPlayState(
+            state.player, audio::OpenSlesPlayState::stopped);
+        state.last_notified_head =
+            context->pcm_playback->PositionFrames(state.player);
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("flush", "()V", [context](dx::IntrinsicContext& call) {
         auto& state = Require(context, call);
-        if (state.mode == kModeStream) context->pcm_playback->Clear(state.player);
+        if (state.mode == kModeStream) {
+            context->pcm_playback->Clear(state.player);
+            state.last_notified_head =
+                context->pcm_playback->PositionFrames(state.player);
+        }
         return dx::VmValue::Void();
     });
     builder.FinalMethod("release", "()V", [context](dx::IntrinsicContext& call) {
@@ -312,6 +321,20 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
             if (state == nullptr) return dx::VmValue::Int(kErrorInvalidOperation);
             if (period < 0) return dx::VmValue::Int(kErrorBadValue);
             state->notification_period = period;
+            state->last_notified_head =
+                context->pcm_playback->PositionFrames(state->player);
+            return dx::VmValue::Int(0);
+        });
+    builder.FinalMethod("setNotificationMarkerPosition", "(I)I",
+        [context](dx::IntrinsicContext& call) {
+            auto* state = Find(context, call.receiver);
+            const auto marker = call.arguments[0].AsInt();
+            if (state == nullptr) {
+                return dx::VmValue::Int(kErrorInvalidOperation);
+            }
+            if (marker < 0) return dx::VmValue::Int(kErrorBadValue);
+            state->marker_position = marker;
+            state->marker_fired = false;
             return dx::VmValue::Int(0);
         });
     builder.FinalMethod(
@@ -324,6 +347,8 @@ Decl Declare_android_media_AudioTrack(const Context& context) {
                                       "AudioTrack is not initialized"};
             }
             state->position_listener = call.arguments[0].ref;
+            state->last_notified_head =
+                context->pcm_playback->PositionFrames(state->player);
             return dx::VmValue::Void();
         });
     builder.FinalMethod("getPlaybackHeadPosition", "()I",
@@ -1139,6 +1164,97 @@ std::size_t MixVideoPcmIntoStereo(
         }
     }
     return contributed;
+}
+
+std::optional<std::string> PumpAndroidAudioTracks(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    if (context.pcm_playback == nullptr) return std::nullopt;
+
+    // Snapshot owners before callbacks: listener code may write, release, or
+    // otherwise mutate the same state table.
+    std::vector<std::uint32_t> handles;
+    handles.reserve(context.audio_tracks.size());
+    for (const auto& [handle, _] : context.audio_tracks) {
+        handles.push_back(handle);
+    }
+
+    const auto invoke = [&](const dexvm::VmObjectRef listener,
+                            const std::uint32_t track,
+                            const std::string_view method)
+        -> std::optional<std::string> {
+        auto& linker = vm.Linker();
+        const auto listener_class = vm.Model().ObjectClass(listener);
+        const std::string method_name{method};
+        const auto index = linker.FindVtableIndex(
+            listener_class, method_name, "(Landroid/media/AudioTrack;)V");
+        if (!index.has_value()) {
+            return "AudioTrack position listener has no " +
+                   std::string(method) + " method";
+        }
+        const auto outcome = vm.Call(
+            linker.Class(listener_class).vtable[*index],
+            std::vector<dexvm::VmValue>{
+                dexvm::VmValue::Ref(listener),
+                dexvm::VmValue::Ref(dexvm::VmObjectRef{track})});
+        if (outcome.exception.IsValid()) {
+            return std::string(method) + " raised: " +
+                   outcome.exception_message;
+        }
+        return std::nullopt;
+    };
+
+    for (const auto handle : handles) {
+        auto found = context.audio_tracks.find(handle);
+        if (found == context.audio_tracks.end() ||
+            !context.pcm_playback->HasPlayer(found->second.player)) {
+            continue;
+        }
+        auto& state = found->second;
+        const auto head =
+            context.pcm_playback->PositionFrames(state.player);
+        if (head < state.last_notified_head) {
+            state.last_notified_head = head;
+            continue;
+        }
+        if (context.pcm_playback->PlayState(state.player) !=
+                audio::OpenSlesPlayState::playing ||
+            !state.position_listener.IsValid()) {
+            state.last_notified_head = head;
+            continue;
+        }
+
+        const auto listener = state.position_listener;
+        const auto period = state.notification_period;
+        const auto prior_head = state.last_notified_head;
+        const bool marker_due = state.marker_position > 0 &&
+            !state.marker_fired &&
+            prior_head < static_cast<std::uint32_t>(state.marker_position) &&
+            head >= static_cast<std::uint32_t>(state.marker_position);
+        const auto periodic_count = period > 0
+            ? head / static_cast<std::uint32_t>(period) -
+                  prior_head / static_cast<std::uint32_t>(period)
+            : 0U;
+        state.last_notified_head = head;
+        if (marker_due) state.marker_fired = true;
+
+        if (marker_due) {
+            const auto error = invoke(listener, handle, "onMarkerReached");
+            if (error.has_value()) return error;
+        }
+        for (std::uint32_t index = 0; index < periodic_count; ++index) {
+            found = context.audio_tracks.find(handle);
+            if (found == context.audio_tracks.end() ||
+                found->second.position_listener != listener ||
+                found->second.notification_period != period ||
+                found->second.last_notified_head != head) {
+                break;
+            }
+            const auto error =
+                invoke(listener, handle, "onPeriodicNotification");
+            if (error.has_value()) return error;
+        }
+    }
+    return std::nullopt;
 }
 
 std::optional<std::string> PumpVideoViews(

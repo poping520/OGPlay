@@ -76,8 +76,10 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   只读发布到该路径。ContextWrapper 只委托 base，禁止返回 frontend 宿主路径或把 `/apk`
   资源目录冒充 APK 文件。
 - `AudioTrack.getNativeOutputSampleRate()` 返回 session 桌面输出的 48 kHz 事实；min/max
-  volume、position notification period 与 listener 引用属于 track side-table，listener
-  作为 GC root trace，不伪造当前尚无来源的 marker/periodic callback。
+  volume、position notification period/marker、投递基线与 listener 引用属于 track
+  side-table，listener 作为 GC root trace。生命周期帧泵只按共享 PCM mixer 的真实播放头
+  投递 marker/periodic callback；跨多期补发，pause/stop/flush/release 与 null listener
+  保持静默，禁止宿主音频线程直接进入 guest VM。
 - `SurfaceHolder$Impl.lockCanvas` 返回 holder 稳定 Canvas；仅 locked Canvas 可绘制，
   unlockCanvasAndPost 发布软件帧并结束锁定。Bitmap/Canvas 均使用同一 ARGB word 语义。
 - `System.load/System.loadLibrary` 只经 context 注入的 process

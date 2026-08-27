@@ -349,6 +349,9 @@ struct DexVmAndroidContext final {
         std::int32_t mode{};
         std::int32_t state{};
         std::int32_t notification_period{};
+        std::int32_t marker_position{};
+        bool marker_fired{};
+        std::uint32_t last_notified_head{};
         dexvm::VmObjectRef position_listener;
     };
     std::unordered_map<std::uint32_t, AudioTrackState> audio_tracks;
@@ -589,6 +592,12 @@ void PaceEglSwap(DexVmAndroidContext& context,
 [[nodiscard]] std::optional<std::string> PumpVideoViews(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const std::function<void(std::vector<std::uint8_t> rgba8)>& publish);
+
+// Delivers AudioTrack marker/period callbacks from the lifecycle frame thread
+// according to the shared PCM mixer's real playback head. Guest callbacks
+// never run on the host audio thread.
+[[nodiscard]] std::optional<std::string> PumpAndroidAudioTracks(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context);
 
 // True while at least one VideoView is actively playing decoded video. The
 // frontend uses this to pace the free-running frame loop to real time so

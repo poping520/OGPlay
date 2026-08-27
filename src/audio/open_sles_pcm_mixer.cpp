@@ -84,6 +84,7 @@ void OpenSlesPcmMixer::Clear(const PlayerId player) {
     auto& target = Require(player);
     target.queue.clear();
     target.frame_position = 0.0;
+    target.played_source_frames = 0.0;
 }
 
 OpenSlesQueueState OpenSlesPcmMixer::QueueState(const PlayerId player) const {

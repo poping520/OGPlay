@@ -41,8 +41,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
   Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
   renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop/onDestroy；
-  未捕获 Java 异常携带解释器栈失败。每帧同时泵 VideoView，并按 managed view 命中规则
-  分发触摸与 click。pause 在 guest `onPause` 后调用持久状态 flush 回调；clean stop
+  未捕获 Java 异常携带解释器栈失败。每帧同时泵 VideoView 与 AudioTrack position
+  notification；音频回调只在生命周期解释器单写者线程执行，guest 异常使 lifecycle
+  失败。输入按 managed view 命中规则分发触摸与 click。pause 在 guest `onPause` 后调用持久状态 flush 回调；clean stop
   在线程停止后、guest finalizer 前再次调用，失败向上层传播。
   guest EGL swap 在 intrinsic 内 publish，不由 lifecycle 再次 present。lifecycle
   仅在 guest-owned GLSurfaceView 路径注册 driver 线程，并在每帧尾推进条件 swap

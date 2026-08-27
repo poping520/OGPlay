@@ -1,9 +1,13 @@
 # 当前状态
 
-更新：DVM-89 `/proc/meminfo` 虚拟设备 facts 显式注入完成
+更新：DVM-89 AudioTrack position notification 真投递完成
 
 ## 当前阶段
 
+- **DVM-89 AudioTrack notification**：新增 marker API 与 lifecycle 帧泵，按唯一 PCM
+  mixer 的真实 playback head 投递 periodic/marker；跨多期补发，重设 marker 可再次触发，
+  pause/stop/flush/release/null listener 静默。回调可重入 write，异常上浮，宿主音频线程不
+  调 guest。
 - **DVM-89 proc facts**：`GuestProcFacts` 由 app/session 请求显式传入 native process；
   `/proc/meminfo` 在启动时按 total/free 与固定派生规则生成只读快照，默认字节不变，非法
   facts 明确失败。没有宿主内存观测、动态刷新、MemAvailable、cpuinfo 或 Profile 覆盖。
@@ -37,17 +41,11 @@
 
 ## 本轮验证
 
-- Windows `windows-msvc` 配置与全目标构建通过；proc facts 默认逐字节、自定义来源/派生、
-  只读、既有快照幂等与两类非法配置定向 5/5、28 assertions 通过，capability/architecture
-  门禁 5/5 通过。按要求未运行全量 CTest。
-- 修复前以当前 Release 实跑 PVZ，标题画面点击入口后画面与会话均无变化，确认问题仍可复现。
+- Windows `windows-msvc` 配置与全目标构建通过；AudioTrack notification、既有 DVM-84、
+  legacy media 与 mixer 定向 11/11、270 assertions 通过；完整 CTest 1034/1034 通过。
 - Windows Debug `ogplay_tests` 定向构建通过；深层 View 捕获、reverse-Z fallback、平台默认
   跳过、无参数嵌套 View 测量，以及既有 listener/click 路径定向 6/6、296 assertions 通过。
   按要求未执行完整 CTest；用户使用最终 Release 实测 PVZ 标题入口可以正常点击。
-- Windows Debug `ogplay`、`ogplay_tests` 构建通过；SDL 事件规范化、session Android 输入
-  映射、KeyEvent API 19 Unicode/meta/repeat 与既有 View dispatch 定向 6/6 通过。
-- Android intrinsic catalog 与 architecture capability/platform/documentation/intrinsic-layout
-  门禁 5/5 通过；未执行完整 CTest。
 - PVZ Release 无 survey 进入标题画面并持续发布画面；用户实际键盘测试已越过
   `LoaderKeyboard.onKeyEvent()` 的 `getUnicodeChar()` 调用，可输入并提交自定义用户名，未再
   出现 method resolve fault。

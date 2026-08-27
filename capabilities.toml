@@ -1353,7 +1353,7 @@ note = "DVM-83 从固定 Android 4.4.4 源发布 GLES10/10Ext/11/11Ext/20、GLUt
 [dexvm.audio_track]
 status = "complete"
 test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
-note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、stereo/mono volume 和 frame playback head；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用进程唯一 OpenSlesPcmMixer，GC sweep 与 release 销毁 player"
+note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、volume 和真实 frame playback head；DVM-89 按该 head 在 lifecycle 帧泵投递 marker/periodic notification，支持跨多期补发、重入 write 与异常上浮；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用唯一 mixer"
 
 [dexvm.android_scheduler]
 status = "complete"

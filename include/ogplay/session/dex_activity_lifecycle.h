@@ -108,6 +108,9 @@ private:
     // Decoded VideoView playback advances with the same frame clock; frames
     // publish through the binding and onCompletion fires on this thread.
     void PumpVideo();
+    // AudioTrack position callbacks observe the mixer head and run on this
+    // same lifecycle/VM writer thread, never on the host audio callback.
+    void PumpAudioTracks();
     void ServiceActivitySwitch();
     void EnsureRendererCallbacks();
 

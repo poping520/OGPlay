@@ -490,6 +490,7 @@ namespace ogplay::session {
                 initial_focus_pending_ = false;
             }
             PumpVideo();
+            PumpAudioTracks();
             ServiceActivitySwitch();
             EnsureRendererCallbacks();
             if (renderer_ready_) {
@@ -562,6 +563,13 @@ namespace ogplay::session {
         const auto error = runtime::PumpVideoViews(
             bindings_.bridge->Vm(), *bindings_.context,
             bindings_.publish_video_frame);
+        if (error.has_value()) Fail(*error);
+    }
+
+    void DexActivityLifecycle::PumpAudioTracks() {
+        if (bindings_.context->audio_tracks.empty()) return;
+        const auto error = runtime::PumpAndroidAudioTracks(
+            bindings_.bridge->Vm(), *bindings_.context);
         if (error.has_value()) Fail(*error);
     }
 

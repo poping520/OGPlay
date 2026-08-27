@@ -42,6 +42,10 @@ OGPlay 不复制 ViewRootImpl、WindowSession 或 SurfaceControl；其等价边�
 - callback 分派使用稳定快照；发布 API 19 `removeCallback`，null/未注册移除为无操作。
 - 保留 view→holder 和 callback guest identity；generation 状态只记 holder handle，不建立
   第二套 Surface 或像素存储。
+- 同一 live UiTree 同时作为无 listener 触摸 fallback 的命中事实：dirty 时先 layout，随后按
+  reverse-Z、deepest-first 枚举 visible/enabled/attached View；实际 guest override 消费
+  DOWN 后才捕获后续 MOVE/UP。普通叶子 View 采用 bounded MeasureSpec 默认尺寸，避免动态
+  自定义 View 因 0x0 geometry 永远无法命中。
 
 ## 不做
 
@@ -85,6 +89,8 @@ stop reason、fault access/reason 和全部地址以无标签十进制输出；�
 - 先在 detached parent 中构造子树不会提前回调；整个 parent 接入 live tree 后递归激活。
 - `removeCallback` 幂等，且移除后不接收后续 destroyed。
 - Windows Debug 增量构建及 SurfaceHolder/ViewGroup/架构定向测试通过；按要求不跑全量测试。
+- listener-free 深层 View、reverse-Z fallback、平台默认实现跳过、DOWN capture 与无参数
+  嵌套层级测量均有机器可判定回归。
 - 注册 JNI 目标故障测试必须机器判定 class.method descriptor、guest thread、具名+数值
   memory fault 和十六进制 PC；A32 runner 独立测试覆盖寄存器与指令窗口格式。
 
@@ -106,6 +112,11 @@ stop reason、fault access/reason 和全部地址以无标签十进制输出；�
 - Java `getGL()` 返回后 Thread-2 仍在 `0x6045be18` 发生相同 NULL AddRef fault；这是独立的
   native/JNI 后续问题，本 WU 仅记录，未扩展范围处理。该运行不构成 title 进入游戏验收。
 - 按要求未执行全量测试。
+
+- 触摸修复前，Release 标题画面点击入口后画面与会话均无变化，复现了输入静默丢失。
+- 修复后 Windows Debug `ogplay_tests` 定向构建通过；深层触摸与既有 listener/click 回归
+  6/6、296 assertions 通过；用户使用最终 Release 实测标题入口可以正常点击。未将单点测试
+  扩大为全量测试。
 
 - 可诊断性/排版定向 7/7、52 assertions 通过；architecture 6/6 通过；Windows Debug
   `ogplay_tests` 与 Release `ogplay` 增量构建通过。

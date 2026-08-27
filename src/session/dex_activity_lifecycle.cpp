@@ -117,41 +117,54 @@ namespace ogplay::session {
         }
     }
 
-    ContentViewGestureDispatchResult DispatchContentViewGestureEvent(
-        dx::Interpreter& vm, const dx::VmObjectRef content_view,
+    DeepTouchDispatchResult DispatchDeepTouchEvent(
+        dx::Interpreter& vm, runtime::DexVmAndroidContext& context,
         const std::int32_t action, const float x, const float y,
-        const bool captured) {
-        if (!content_view.IsValid()) {
-            return {.error = "content view is missing"};
-        }
-        if (action != kMotionActionDown && !captured) return {};
-
+        const std::uint64_t captured_view) {
         auto& linker = vm.Linker();
-        const auto receiver_class = vm.Model().ObjectClass(content_view);
-        const auto index = linker.FindVtableIndex(
-            receiver_class, "onTouchEvent", "(Landroid/view/MotionEvent;)Z");
-        if (!index.has_value()) {
-            return {.error = "content view has no onTouchEvent method"};
-        }
-        const auto event = runtime::MakeMotionEvent(vm, action, x, y, 0);
-        const auto outcome = vm.Call(
-            linker.Class(receiver_class).vtable[*index],
-            std::vector<dx::VmValue>{
-                dx::VmValue::Ref(content_view),
-                dx::VmValue::Ref(event)
-            });
-        if (outcome.exception.IsValid()) {
-            return {
-                .error = "content view onTouchEvent raised: " +
-                         outcome.exception_message
-            };
-        }
-        const bool handled = outcome.value.AsInt() != 0;
-        return {
-            .handled = handled,
-            .keep_capture = action != kMotionActionUp &&
-                            (action == kMotionActionDown ? handled : captured)
+        const auto invoke = [&](const std::uint64_t handle)
+            -> DeepTouchDispatchResult {
+            const dx::VmObjectRef receiver{static_cast<std::uint32_t>(handle)};
+            const auto receiver_class = vm.Model().ObjectClass(receiver);
+            const auto index = linker.FindVtableIndex(
+                receiver_class, "onTouchEvent",
+                "(Landroid/view/MotionEvent;)Z");
+            if (!index.has_value()) {
+                return {.error = "View has no onTouchEvent method"};
+            }
+            const auto method = linker.Class(receiver_class).vtable[*index];
+            const auto& owner = linker.Class(linker.Method(method).owner);
+            if (action == kMotionActionDown &&
+                (owner.descriptor == "Landroid/view/View;" ||
+                 owner.descriptor == "Landroid/app/Activity;")) {
+                return {};
+            }
+            const auto event = runtime::MakeMotionEvent(vm, action, x, y, 0);
+            const auto outcome = vm.Call(
+                method, std::vector<dx::VmValue>{dx::VmValue::Ref(receiver),
+                                                 dx::VmValue::Ref(event)});
+            if (outcome.exception.IsValid()) {
+                return {.error = "View onTouchEvent raised: " +
+                                 outcome.exception_message};
+            }
+            const bool handled = outcome.value.AsInt() != 0;
+            return {.handled = handled,
+                    .captured_view = action == kMotionActionUp ? 0U : handle};
         };
+
+        if (action != kMotionActionDown) {
+            if (captured_view == 0U) return {};
+            const auto node = runtime::FindViewUiNode(context, captured_view);
+            if (!node.has_value() || !context.ui_tree.IsAttached(*node)) {
+                return {};
+            }
+            return invoke(captured_view);
+        }
+        for (const auto handle : runtime::FindTouchReceiversAt(context, x, y)) {
+            auto result = invoke(handle);
+            if (result.error.has_value() || result.handled) return result;
+        }
+        return {};
     }
 
     DexActivityLifecycle::DexActivityLifecycle(
@@ -432,7 +445,7 @@ namespace ogplay::session {
                 gesture_candidate_ = hit.value_or(0U);
                 gesture_click_eligible_ = false;
                 gesture_touch_consumed_ = false;
-                content_view_captured_ = false;
+                deep_touch_handle_ = 0U;
             }
             const bool had_listener_candidate = gesture_candidate_ != 0U;
             if (had_listener_candidate) {
@@ -447,11 +460,11 @@ namespace ogplay::session {
                 if (result.handled) continue;
             }
             if (!had_listener_candidate) {
-                const auto result = DispatchContentViewGestureEvent(
-                    vm, bindings_.context->content_view, action, pointer_x_,
-                    pointer_y_, content_view_captured_);
+                const auto result = DispatchDeepTouchEvent(
+                    vm, *bindings_.context, action, pointer_x_, pointer_y_,
+                    deep_touch_handle_);
                 if (result.error.has_value()) Fail(*result.error);
-                content_view_captured_ = result.keep_capture;
+                deep_touch_handle_ = result.captured_view;
                 if (result.handled) continue;
             }
             const auto event = runtime::MakeMotionEvent(
@@ -588,7 +601,7 @@ namespace ogplay::session {
             gesture_candidate_ = 0U;
             gesture_click_eligible_ = false;
             gesture_touch_consumed_ = false;
-            content_view_captured_ = false;
+            deep_touch_handle_ = 0U;
             runtime::ResetViewUiState(context);
             context.renderer = dx::VmObjectRef{};
             context.egl_context_factory = dx::VmObjectRef{};

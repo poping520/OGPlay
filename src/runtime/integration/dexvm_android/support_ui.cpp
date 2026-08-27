@@ -840,6 +840,24 @@ void EnsureLayout(DexVmAndroidContext& context) {
                : std::nullopt;
 }
 
+void CollectTouchReceivers(const DexVmAndroidContext& context,
+                           const ui::UiNodeId id, const float x,
+                           const float y,
+                           std::vector<std::uint64_t>& receivers) {
+    const auto* node = context.ui_tree.Get(id);
+    if (node == nullptr || !context.ui_tree.IsAttached(id) ||
+        node->visibility != ui::Visibility::Visible || !node->enabled ||
+        !Contains(node->screen_frame, x, y)) {
+        return;
+    }
+    for (auto child = node->children.rbegin(); child != node->children.rend();
+         ++child) {
+        CollectTouchReceivers(context, *child, x, y, receivers);
+    }
+    const auto view = ViewObjectForUiNode(context, id);
+    if (view.IsValid()) receivers.push_back(view.Value());
+}
+
 }  // namespace
 
 }  // namespace android_intrinsics
@@ -853,6 +871,15 @@ std::optional<std::uint64_t> FindClickableViewAt(
     const auto view = ViewObjectForUiNode(context, *hit);
     return view.IsValid() ? std::optional<std::uint64_t>{view.Value()}
                           : std::nullopt;
+}
+
+std::vector<std::uint64_t> FindTouchReceiversAt(
+    DexVmAndroidContext& context, const float x, const float y) {
+    android_intrinsics::EnsureLayout(context);
+    std::vector<std::uint64_t> receivers;
+    android_intrinsics::CollectTouchReceivers(
+        context, context.ui_tree.Root(), x, y, receivers);
+    return receivers;
 }
 
 bool ViewContainsPoint(DexVmAndroidContext& context,

@@ -22,18 +22,17 @@ namespace ogplay::session {
     const std::shared_ptr<runtime::DexVmAndroidContext>& context,
     const std::string& application_descriptor);
 
-struct ContentViewGestureDispatchResult final {
+struct DeepTouchDispatchResult final {
     bool handled{};
-    bool keep_capture{};
+    std::uint64_t captured_view{};
     std::optional<std::string> error;
 };
-// Dispatches to the content View's virtual onTouchEvent. Only a handled DOWN
-// establishes capture; a captured target keeps receiving MOVE/UP even if an
-// individual later event returns false. Non-captured MOVE/UP are not invoked.
-[[nodiscard]] ContentViewGestureDispatchResult DispatchContentViewGestureEvent(
+// Dispatches listener-free touch input to the deepest View override under
+// DOWN. A handled receiver owns subsequent MOVE/UP while it remains attached.
+[[nodiscard]] DeepTouchDispatchResult DispatchDeepTouchEvent(
     runtime::dexvm::Interpreter& vm,
-    runtime::dexvm::VmObjectRef content_view, std::int32_t action, float x,
-    float y, bool captured);
+    runtime::DexVmAndroidContext& context, std::int32_t action, float x,
+    float y, std::uint64_t captured_view);
 
 // dex_activity lifecycle template (docs/design/dexvm/04-integration.md §2):
 // the real interpreted onCreate/onStart/onResume drive the title; the host
@@ -127,7 +126,7 @@ private:
     std::uint64_t gesture_candidate_{};
     bool gesture_click_eligible_{};
     bool gesture_touch_consumed_{};
-    bool content_view_captured_{};
+    std::uint64_t deep_touch_handle_{};
     bool guest_finalized_{};
     // Renderer callbacks fire once when the interpreted glue registers a
     // renderer; installer phases run frames without one.

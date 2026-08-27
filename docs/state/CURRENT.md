@@ -1,9 +1,13 @@
 # 当前状态
 
-更新：通用 Android 键盘输入链闭合（未提交）
+更新：通用 Android 深层 View 触摸分发闭合（未提交）
 
 ## 当前阶段
 
+- **Android 触摸 fallback**：无 listener target 时按 live UiTree 的 reverse-Z、deepest-first
+  顺序调用命中点下的实际 guest `View.onTouchEvent` override；消费 DOWN 的 receiver 捕获
+  MOVE/UP，detach 或 Activity switch 清除捕获。普通叶子 View 按 bounded MeasureSpec 取得
+  默认尺寸，不再因 0x0 geometry 丢失输入。
 - **Android 键盘输入**：HAL 发布物理 scancode、当前布局 key symbol、左右 modifier 与
   repeat；session 映射 API 19 keyCode/metaState/Unicode/repeatCount/eventTime，未知键成为
   `KEYCODE_UNKNOWN`。DexVM `KeyEvent` 发布无参/有参 `getUnicodeChar`、meta/repeat 查询，
@@ -20,9 +24,6 @@
   MediaPlayer 两个 FileDescriptor overload 在边界规范化 offset，prepare 真实加载/解码，
   start/pause/stop/release/volume/reset 驱动进程唯一 mixer。原 resid/SoundPool/AudioTrack
   路径保持不变。
-- **MP3**：固定 CC0 minimp3 commit `ea99364f61c14656440e8d77e9c233ccf3124633`，薄适配器
-  支持 ID3/帧对齐、mono/stereo PCM16、稳定采样率/声道与 64 MiB 输入/128 MiB PCM 上限；
-  来源、license、hash 与 fixture 记于 `third_party/minimp3/README.md`。
 - **DVM-90**：live UiTree attach/detach 驱动 per-holder Surface generation 已完成；
   visibility/format/size 重建、独立合成层与完整 WindowManager 仍 deferred。
 - **DVM-89**：JNI↔DEX instance/static 字段统一存储与 native 失败保真已完成；专用 field
@@ -35,6 +36,10 @@
 
 ## 本轮验证
 
+- 修复前以当前 Release 实跑 PVZ，标题画面点击入口后画面与会话均无变化，确认问题仍可复现。
+- Windows Debug `ogplay_tests` 定向构建通过；深层 View 捕获、reverse-Z fallback、平台默认
+  跳过、无参数嵌套 View 测量，以及既有 listener/click 路径定向 6/6、296 assertions 通过。
+  按要求未执行完整 CTest；用户使用最终 Release 实测 PVZ 标题入口可以正常点击。
 - Windows Debug `ogplay`、`ogplay_tests` 构建通过；SDL 事件规范化、session Android 输入
   映射、KeyEvent API 19 Unicode/meta/repeat 与既有 View dispatch 定向 6/6 通过。
 - Android intrinsic catalog 与 architecture capability/platform/documentation/intrinsic-layout
@@ -52,15 +57,6 @@
   AudioTrack、legacy Java audio 与 OpenSL 定向 16/16 通过。
 - core/Android catalog 2/2、architecture 6/6 通过；初跑唯一失败为旧 CURRENT 9659-byte 超过
   6144-byte rolling limit，本文件重写后已复验通过。
-- PVZ 无 survey 分层实跑：
-  - L1+L2 越过 `AssetFileDescriptor.<init>(PFD,JJ)`，新阻断为
-    `MediaPlayer.setDataSource(FileDescriptor,J,J)`（f≈6692）。
-  - L4 独立接入后停止点不变，符合尚无消费端的预期。
-  - L3 后越过 `LoadTask::FINISHED` 与所有 FD/prepare/start 路径，持续到
-    f=14081、presented=3745，无 guest fault；prepare 仅在实际区间读取与 MP3 解码成功后
-    返回，start 已建立循环 voice，SDL audio output 已启动，媒体链验收成立。
-- 最终实跑由人工 Ctrl-C 停止；lifecycle 输出 `App Suspend` 后 10 秒内未自行退出，随后按
-  精确 PID 终止。这是独立 teardown 观察，仅记录，未扩展 DVM-91。
 
 ## 下一步
 

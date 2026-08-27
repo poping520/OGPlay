@@ -21,7 +21,8 @@ SDL、ANGLE 或视频解码。
   `UiNodeId` 永不重新变为有效。
 - `LayoutUiTree`：以 surface `UiMetrics` 的 EXACTLY root constraint 执行有界
   MeasureSpec + FrameLayout traversal；fixed/match/wrap、padding/margin、child
-  gravity 与 screen-frame propagation 共用一条路径。
+  gravity 与 screen-frame propagation 共用一条路径。无 intrinsic 的普通叶子 `View`
+  按 Android `getDefaultSize` 语义采用 bounded MeasureSpec 尺寸，不得折叠为 0x0。
 - `LinearLayout`：horizontal/vertical 均按 document order 累加非 GONE child 主轴尺寸，
   parent gravity 定位整组，child layout_gravity 覆盖交叉轴；INVISIBLE 保留 geometry。
   指定主轴约束下，finite non-negative weight 按剩余像素确定性分配，padding/margin 同时
@@ -54,7 +55,8 @@ SDL、ANGLE 或视频解码。
 
 `tests/runtime/ui_tree_tests.cpp` 锁定 hierarchy 顺序、id 更新、visibility dirty、detach、
 destroy、generation reset、非法 mutation，以及 FrameLayout fullscreen/bottom/center、
-padding/margin、wrap intrinsic、document-order overlap geometry，以及 horizontal/vertical
+padding/margin、wrap intrinsic、普通叶子 View bounded default size、document-order overlap
+geometry，以及 horizontal/vertical
 LinearLayout 的 GONE/INVISIBLE、weight、padding/margin geometry。
 RelativeLayout tests 锁定 parent/sibling/center、反向 document order 与 missing/cycle failure。
 `tests/runtime/ui_renderer_tests.cpp` 锁定透明、bitmap、alpha overlap、Z-order、clip、

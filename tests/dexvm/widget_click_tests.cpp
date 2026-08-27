@@ -253,6 +253,38 @@ struct ClickVm final {
                         outcome.exception_message);
     }
 
+    [[nodiscard]] VmObjectRef NewTouchView() {
+        const auto java_class = linker.FindClass("LTouchView;");
+        REQUIRE(java_class.has_value());
+        const auto initialized = interpreter.EnsureClassInitialized(*java_class);
+        REQUIRE_FALSE(initialized.exception.IsValid());
+        const auto view = model.NewInstance(
+            *java_class, linker.Class(*java_class).instance_slots);
+        CallDirect(view, "LTouchView;", "<init>",
+                   "(Landroid/content/Context;)V",
+                   {VmValue::Ref(activity)});
+        return view;
+    }
+    void ResetTouchView(const bool handled) {
+        const auto java_class = linker.FindClass("LTouchView;");
+        REQUIRE(java_class.has_value());
+        const auto method = linker.FindDirectMethod(
+            *java_class, "reset", "(I)V");
+        REQUIRE(method.has_value());
+        const auto outcome = interpreter.Call(
+            *method, std::vector<VmValue>{VmValue::Int(handled ? 1 : 0)});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+    }
+    [[nodiscard]] std::int32_t TouchViewValue(const char* name) {
+        const auto java_class = linker.FindClass("LTouchView;");
+        REQUIRE(java_class.has_value());
+        const auto method = linker.FindDirectMethod(*java_class, name, "()I");
+        REQUIRE(method.has_value());
+        const auto outcome = interpreter.Call(*method, {});
+        REQUIRE_FALSE(outcome.exception.IsValid());
+        return outcome.value.AsInt();
+    }
+
     [[nodiscard]] std::optional<std::string> Click(const float x,
                                                    const float y) {
         const auto hit = FindClickableViewAt(*context, x, y);
@@ -632,45 +664,121 @@ TEST_CASE("touch consumption and click eligibility stay independent") {
     }
 }
 
-TEST_CASE("content view captures a gesture only after handling DOWN") {
+TEST_CASE("deep View override captures a listener-free touch gesture") {
     ClickVm vm;
-    const auto view =
-        vm.interpreter.NewIntrinsicInstance("LTestContentView;");
+    const auto view = vm.NewTouchView();
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(view)});
 
-    vm.content_view_handled = true;
-    auto result = ogplay::session::DispatchContentViewGestureEvent(
-        vm.interpreter, view, 0, 12.0F, 34.0F, false);
+    vm.ResetTouchView(true);
+    auto result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 0, 12.0F, 34.0F, 0U);
     CHECK_FALSE(result.error.has_value());
     CHECK(result.handled);
-    CHECK(result.keep_capture);
+    CHECK(result.captured_view == view.Value());
+    CHECK(vm.TouchViewValue("getEvents") == 1);
+    CHECK(vm.TouchViewValue("getLastAction") == 0);
+
+    vm.ResetTouchView(false);
+    result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 2, 130.0F, 135.0F,
+        result.captured_view);
+    CHECK_FALSE(result.error.has_value());
+    CHECK_FALSE(result.handled);
+    CHECK(result.captured_view == view.Value());
+    CHECK(vm.TouchViewValue("getEvents") == 1);
+    CHECK(vm.TouchViewValue("getLastAction") == 2);
+    result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 1, 130.0F, 135.0F,
+        result.captured_view);
+    CHECK_FALSE(result.error.has_value());
+    CHECK_FALSE(result.handled);
+    CHECK(result.captured_view == 0U);
+    CHECK(vm.TouchViewValue("getEvents") == 2);
+    CHECK(vm.TouchViewValue("getLastAction") == 1);
+
+    result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 2, 14.0F, 36.0F, 0U);
+    CHECK_FALSE(result.error.has_value());
+    CHECK_FALSE(result.handled);
+    CHECK(result.captured_view == 0U);
+    CHECK(vm.TouchViewValue("getEvents") == 2);
+    result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 0, 14.0F, 36.0F, 0U);
+    CHECK_FALSE(result.error.has_value());
+    CHECK_FALSE(result.handled);
+    CHECK(result.captured_view == 0U);
+    CHECK(vm.TouchViewValue("getEvents") == 3);
+}
+
+TEST_CASE("deep touch traversal skips defaults and follows reverse Z order") {
+    ClickVm vm;
+    const auto root = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/FrameLayout;");
+    const auto lower = vm.interpreter.NewIntrinsicInstance(
+        "LTestContentView;");
+    vm.CallDirect(lower, "Landroid/view/View;", "<init>",
+                  "(Landroid/content/Context;)V",
+                  {VmValue::Ref(vm.activity)});
+    const auto upper = vm.NewTouchView();
+    vm.CallOn(root, "addView", "(Landroid/view/View;)V",
+              {VmValue::Ref(lower)});
+    vm.CallOn(root, "addView", "(Landroid/view/View;)V",
+              {VmValue::Ref(upper)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(root)});
+
+    vm.ResetTouchView(false);
+    vm.content_view_handled = true;
+    const auto result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 0, 50.0F, 50.0F, 0U);
+    CHECK_FALSE(result.error.has_value());
+    CHECK(result.handled);
+    CHECK(result.captured_view == lower.Value());
+    CHECK(vm.TouchViewValue("getEvents") == 1);
     CHECK(vm.content_view_events == 1);
 
-    vm.content_view_handled = false;
-    result = ogplay::session::DispatchContentViewGestureEvent(
-        vm.interpreter, view, 2, 13.0F, 35.0F, result.keep_capture);
-    CHECK_FALSE(result.error.has_value());
-    CHECK_FALSE(result.handled);
-    CHECK(result.keep_capture);
-    CHECK(vm.content_view_events == 2);
-    result = ogplay::session::DispatchContentViewGestureEvent(
-        vm.interpreter, view, 1, 13.0F, 35.0F, result.keep_capture);
-    CHECK_FALSE(result.error.has_value());
-    CHECK_FALSE(result.handled);
-    CHECK_FALSE(result.keep_capture);
-    CHECK(vm.content_view_events == 3);
+    const auto empty = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/FrameLayout;");
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(empty)});
+    const auto rejected = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 0, 50.0F, 50.0F, 0U);
+    CHECK_FALSE(rejected.error.has_value());
+    CHECK_FALSE(rejected.handled);
+    CHECK(rejected.captured_view == 0U);
+}
 
-    result = ogplay::session::DispatchContentViewGestureEvent(
-        vm.interpreter, view, 2, 14.0F, 36.0F, false);
+TEST_CASE("parameterless nested View hierarchy measures and receives touch") {
+    ClickVm vm;
+    const auto top = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/RelativeLayout;");
+    const auto frame = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/widget/FrameLayout;");
+    const auto touch = vm.NewTouchView();
+    vm.CallOn(frame, "addView", "(Landroid/view/View;)V",
+              {VmValue::Ref(touch)});
+    vm.CallOn(top, "addView", "(Landroid/view/View;)V",
+              {VmValue::Ref(frame)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
+              {VmValue::Ref(top)});
+
+    CHECK(vm.CallOn(top, "getWidth", "()I").AsInt() == 100);
+    CHECK(vm.CallOn(top, "getHeight", "()I").AsInt() == 100);
+    CHECK(vm.CallOn(frame, "getWidth", "()I").AsInt() == 100);
+    CHECK(vm.CallOn(frame, "getHeight", "()I").AsInt() == 100);
+    CHECK(vm.CallOn(touch, "getWidth", "()I").AsInt() == 100);
+    CHECK(vm.CallOn(touch, "getHeight", "()I").AsInt() == 100);
+    const auto receivers = FindTouchReceiversAt(*vm.context, 50.0F, 50.0F);
+    REQUIRE_FALSE(receivers.empty());
+    CHECK(receivers.front() == touch.Value());
+
+    vm.ResetTouchView(true);
+    const auto result = ogplay::session::DispatchDeepTouchEvent(
+        vm.interpreter, *vm.context, 0, 50.0F, 50.0F, 0U);
     CHECK_FALSE(result.error.has_value());
-    CHECK_FALSE(result.handled);
-    CHECK_FALSE(result.keep_capture);
-    CHECK(vm.content_view_events == 3);
-    result = ogplay::session::DispatchContentViewGestureEvent(
-        vm.interpreter, view, 0, 14.0F, 36.0F, false);
-    CHECK_FALSE(result.error.has_value());
-    CHECK_FALSE(result.handled);
-    CHECK_FALSE(result.keep_capture);
-    CHECK(vm.content_view_events == 4);
+    CHECK(result.handled);
+    CHECK(result.captured_view == touch.Value());
 }
 
 TEST_CASE("setVisibility rejects values outside VISIBLE/INVISIBLE/GONE") {

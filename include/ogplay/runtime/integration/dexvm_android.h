@@ -612,6 +612,11 @@ MixVideoPcmIntoStereo(DexVmAndroidContext &context,
 [[nodiscard]] std::optional<std::uint64_t>
 FindClickableViewAt(DexVmAndroidContext &context, float x, float y);
 
+// Visible, enabled, attached View receivers under a point in Android touch
+// traversal order: reverse child Z, deepest first, then the parent.
+[[nodiscard]] std::vector<std::uint64_t> FindTouchReceiversAt(
+    DexVmAndroidContext& context, float x, float y);
+
 // DexVM/View binding helpers. BindViewToUiNode enforces the one-to-one live
 // identity invariant; EnsureViewUiNode creates a detached generic node for a
 // Java-created View until ViewGroup/content attachment is implemented.

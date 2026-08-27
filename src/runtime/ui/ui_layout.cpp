@@ -66,6 +66,19 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
             desired_height,
             text.height + node.padding.top + node.padding.bottom);
     }
+    // Android View.getDefaultSize uses the bounded MeasureSpec size for a
+    // plain leaf View. This lets a custom drawing/input View without explicit
+    // LayoutParams fill the available content instead of collapsing to 0x0.
+    if (node.kind == UiClass::View && node.children.empty()) {
+        if (width_spec.mode != MeasureMode::Unspecified) {
+            desired_width = std::max(
+                desired_width, std::max(0, width_spec.size));
+        }
+        if (height_spec.mode != MeasureMode::Unspecified) {
+            desired_height = std::max(
+                desired_height, std::max(0, height_spec.size));
+        }
+    }
     if (node.kind == UiClass::LinearLayout) {
         const bool vertical = node.orientation == Orientation::Vertical;
         const auto main_spec = vertical ? height_spec : width_spec;

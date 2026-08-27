@@ -118,7 +118,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - pointer dispatch 在 dirty 时先 traversal，按 clipped reverse draw order 选择 topmost
   enabled/visible listener node；OnTouchListener 与 click listener 均以 UiNodeId 调 guest。
   gesture dispatch 分别返回 cumulative touch consumption、click eligibility 与 Activity
-  fallback；touch-only false 不得尝试不存在的 click listener。
+  fallback；touch-only false 不得尝试不存在的 click listener。无 listener target 时，
+  可枚举命中点下 visible/enabled/attached 的 guest View，顺序固定为 reverse-Z、deepest-first；
+  session 只调用真实 guest `onTouchEvent` override，平台默认实现不冒充消费。
   `findViewById/getId/setId` 必须经双向 binding 返回/修改同一 object/node identity；
   subclass 不得重复声明 final 的 `View.setId/setPadding`，直接继承同一 handler；
   content generation reset 同时清空两向 binding 与 listener，旧 node 不得继续可见。

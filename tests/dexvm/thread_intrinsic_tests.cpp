@@ -397,3 +397,65 @@ TEST_CASE("dexvm timed self join follows the Clock instead of throwing") {
     clock_driver.join();
     CHECK(vm.Virtual(root, "isAlive", "()Z").value.AsInt() == 1);
 }
+
+// Root lifecycle timed parks cannot wait a deterministic clock out: the
+// host thread parking here is the frame pump that would advance it. The
+// session publishes a clock advance for exactly that case (the Android
+// bridge wires AdvanceAndroidClock); pre-fix this sleep parked forever,
+// which is how a title licence poll inside onCreate black-screened runs.
+TEST_CASE("dexvm root Thread.sleep fast-forwards a pump-driven clock") {
+    ThreadVm vm;
+    std::vector<std::int64_t> advances;
+    vm.interpreter.Monitors().SetClockAdvance(
+        [&](const std::int64_t delta_millis) {
+            vm.clock_millis += delta_millis;
+            advances.push_back(delta_millis);
+        });
+    RequireOk(vm.Static("Ljava/lang/Thread;", "sleep", "(JI)V",
+                        {VmValue::Long(50), VmValue::Int(0)}));
+    CHECK(advances.size() == 1U);
+    CHECK(advances.front() == 50);
+    CHECK(vm.clock_millis.load() == 50);
+}
+
+TEST_CASE("dexvm root timed join fast-forwards without an external pump") {
+    ThreadVm vm;
+    std::vector<std::int64_t> advances;
+    vm.interpreter.Monitors().SetClockAdvance(
+        [&](const std::int64_t delta_millis) {
+            vm.clock_millis += delta_millis;
+            advances.push_back(delta_millis);
+        });
+    const auto sleeper = vm.New("LThreadSleeper;");
+    RequireOk(vm.Construct(sleeper, "LThreadSleeper;", "()V"));
+    RequireOk(vm.Virtual(sleeper, "start", "()V"));
+    REQUIRE(WaitFor([&] { return vm.threads.IsAlive(sleeper); }));
+    RequireOk(vm.Virtual(sleeper, "join", "(JI)V",
+                         {VmValue::Long(30), VmValue::Int(0)}));
+    CHECK(advances.size() == 1U);
+    CHECK(advances.front() == 30);
+    // ThreadSleeper parks in sleep(100) on its own context; only the root
+    // park fast-forwarded, so the target outlives its 30 ms join.
+    CHECK(vm.threads.IsAlive(sleeper));
+}
+
+// Worker contexts never fast-forward: the frame pump advances the clock for
+// them, and this test supplies that pump from the host thread exactly like
+// the lifecycle loop would.
+TEST_CASE("dexvm worker Thread.sleep parks on the clock, not the advance") {
+    ThreadVm vm;
+    std::atomic<int> advances{0};
+    vm.interpreter.Monitors().SetClockAdvance([&](const std::int64_t) {
+        ++advances;
+    });
+    const auto sleeper = vm.New("LThreadSleeper;");
+    RequireOk(vm.Construct(sleeper, "LThreadSleeper;", "()V"));
+    RequireOk(vm.Virtual(sleeper, "start", "()V"));
+    while (vm.threads.IsAlive(sleeper)) {
+        vm.clock_millis += 10;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    RequireOk(vm.Virtual(sleeper, "join", "()V"));
+    CHECK(vm.Observed("LThreadSleeper;") == 1);
+    CHECK(advances.load() == 0);
+}

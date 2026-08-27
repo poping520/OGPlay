@@ -28,6 +28,22 @@ enum class VmWaitOutcome : std::uint8_t {
 // without one rather than reading a host wall clock.
 using VmMonotonicMillis = std::function<std::int64_t()>;
 
+// Execution-context token of the root lifecycle thread: the context plain
+// Call() uses on the host thread that owns the session. VmThreadRuntime
+// allocates guest thread ids from 2 up for the same reason.
+inline constexpr std::uint64_t kRootLifecycleToken = 1U;
+
+// Fast-forwards the unified Clock by a positive delta. Timed parks executed
+// by the root lifecycle context run on the very host thread that pumps a
+// deterministic Clock between frames, so parking on that Clock would wait
+// forever; Thread.sleep/Object.wait(timeout)/join(timeout) call this with
+// the park duration instead, after one bounded peer window in which an
+// already ready peer can still notify or interrupt first. The session
+// publishing a deterministic time source publishes this alongside it;
+// sessions whose Clock advances by itself (tests wiring a wall clock)
+// publish nothing and keep parking on the Clock.
+using VmClockAdvance = std::function<void(std::int64_t delta_millis)>;
+
 struct VmMonitorSnapshot final {
     std::uint64_t owner{};
     std::size_t recursion{};
@@ -46,6 +62,10 @@ public:
     // Thread.sleep/join copy this same session clock. Host waits may schedule
     // rechecks, but only this source decides whether a guest deadline passed.
     [[nodiscard]] VmMonotonicMillis TimeSource() const;
+
+    // Publishes the root-context park fast-forward (see VmClockAdvance).
+    void SetClockAdvance(VmClockAdvance advance);
+    [[nodiscard]] VmClockAdvance ClockAdvance() const;
 
     // monitor-enter / monitor-exit. Enter parks (releasing the execution
     // lock) while another context owns the monitor.

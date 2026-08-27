@@ -405,3 +405,30 @@ TEST_CASE("dexvm monitor-exit without ownership is a guest exception") {
     const auto lock = vm.Lock();
     CHECK_THROWS_AS(vm.interpreter.Monitors().Exit(lock, 1U), VmJavaThrow);
 }
+
+// The root lifecycle context parks on the very host thread that pumps a
+// deterministic unified Clock (the frame loop), so a timed park on that
+// Clock would wait forever. A pump-driven test clock plus the published
+// advance models that session; without the fast-forward this wait parks
+// forever, which is how a title licence poll in onCreate froze sessions.
+TEST_CASE("dexvm root timed wait fast-forwards the published clock advance") {
+    MonitorVm vm;
+    vm.UseTestClock();
+    const auto lock = vm.Lock();
+    std::vector<std::int64_t> advances;
+    vm.interpreter.Monitors().SetClockAdvance(
+        [&](const std::int64_t delta_millis) {
+            vm.clock_millis += delta_millis;
+            advances.push_back(delta_millis);
+        });
+    vm.interpreter.Monitors().Enter(lock, kRootLifecycleToken);
+    CHECK(vm.interpreter.Monitors().Wait(lock, kRootLifecycleToken, 50) ==
+          VmWaitOutcome::timed_out);
+    CHECK(advances.size() == 1U);
+    CHECK(advances.front() == 50);
+    CHECK(vm.clock_millis.load() == 50);
+    // The park restored the released monitor at the same depth.
+    CHECK(vm.interpreter.Monitors().IsOwner(lock, kRootLifecycleToken));
+    vm.interpreter.Monitors().Exit(lock, kRootLifecycleToken);
+    CHECK(vm.interpreter.Monitors().HeldCount(kRootLifecycleToken) == 0U);
+}

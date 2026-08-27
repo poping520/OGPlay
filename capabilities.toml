@@ -1303,12 +1303,12 @@ note = "DVM-52 交付 VmExecutionLock 安全点上的全 execution-context Java 
 [dexvm.threads]
 status = "complete"
 test = "tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; Asphalt 5 exact title-flow regression 468/468000"
-note = "DVM-28/48 交付 1:1 host thread、独立 execution context 与 API 19 Thread core；DVM-50 为每个子线程补齐可复用的独立 A32 CPU/stack、Bionic TLS/thread-info、guest thread id、JNI attach/local frame 与 teardown，native frame 可安全停泊。解释执行仍由 VmExecutionLock 串行，这是设计边界而非线程上下文缺口"
+note = "DVM-28/48 交付 1:1 host thread、独立 execution context 与 API 19 Thread core；DVM-50 为每个子线程补齐可复用的独立 A32 CPU/stack、Bionic TLS/thread-info、guest thread id、JNI attach/local frame 与 teardown，native frame 可安全停泊。根（lifecycle）上下文的 Thread.sleep/timed join 不再停泊在只有它自己推进的确定性 Clock 上：会话经 SetClockAdvance 发布快进钩子，在一个有界 peer 窗口后按停泊时长推进统一 Clock（Dungeon Hunter onCreate 授权轮询整会话黑屏的根因）；未发布钩子的会话保持原停泊语义。解释执行仍由 VmExecutionLock 串行，这是设计边界而非线程上下文缺口"
 
 [dexvm.monitors]
 status = "complete"
 test = "tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/runtime/jni_environment_tests.cpp; Asphalt 6 exact bootstrap 无 guest fault"
-note = "DVM-29 的 session owner/recursion/wait-set 与 DVM-48 wait/join/sleep Clock 语义保留；DVM-50 将 JNI MonitorEnter/Exit/detach 委托到同一 VmMonitorTable，jclass 与 Class object 同一身份，并覆盖 interpreted/intrinsic/native 的实例和静态 ACC_SYNCHRONIZED 语义及所有展开出口"
+note = "DVM-29 的 session owner/recursion/wait-set 与 DVM-48 wait/join/sleep Clock 语义保留；根上下文的 timed Object.wait 与 Thread.sleep/timed join 一样经 SetClockAdvance 快进而非自锁停泊；DVM-50 将 JNI MonitorEnter/Exit/detach 委托到同一 VmMonitorTable，jclass 与 Class object 同一身份，并覆盖 interpreted/intrinsic/native 的实例和静态 ACC_SYNCHRONIZED 语义及所有展开出口"
 
 [dexvm.exceptions]
 status = "complete"

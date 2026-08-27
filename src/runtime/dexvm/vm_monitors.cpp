@@ -37,6 +37,7 @@ class VmMonitorTable::Impl final {
 public:
     Interpreter* vm{};
     VmMonotonicMillis now;
+    VmClockAdvance advance;
     mutable std::mutex mutex;
     std::condition_variable changed;
     std::unordered_map<std::uint32_t, std::unique_ptr<Monitor>> monitors;
@@ -102,6 +103,16 @@ void VmMonitorTable::SetTimeSource(VmMonotonicMillis source) {
 VmMonotonicMillis VmMonitorTable::TimeSource() const {
     const std::lock_guard guard(impl_->mutex);
     return impl_->now;
+}
+
+void VmMonitorTable::SetClockAdvance(VmClockAdvance advance) {
+    const std::lock_guard guard(impl_->mutex);
+    impl_->advance = std::move(advance);
+}
+
+VmClockAdvance VmMonitorTable::ClockAdvance() const {
+    const std::lock_guard guard(impl_->mutex);
+    return impl_->advance;
 }
 
 void VmMonitorTable::Enter(const VmObjectRef object,
@@ -179,6 +190,7 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     }
     const bool timed = timeout_millis > 0;
     VmMonotonicMillis clock;
+    VmClockAdvance advance;
     std::int32_t saved_recursion{};
     {
         const std::lock_guard guard(impl_->mutex);
@@ -187,6 +199,7 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
             throw Impl::NotOwner("wait()");
         }
         clock = impl_->now;
+        advance = impl_->advance;
         // The interrupt flag is honoured before we ever park, exactly as
         // AOSP checks self->interrupted under waitMutex.
         if (impl_->interrupted.erase(owner) != 0) {
@@ -221,6 +234,7 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     auto outcome = VmWaitOutcome::notified;
     auto& lock = impl_->vm->ExecutionLock();
     const auto depth = lock.ReleaseForBlocking();
+    bool advanced = false;
     {
         std::unique_lock parked(impl_->mutex);
         while (true) {
@@ -244,6 +258,16 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
                 // Deadline decisions stay with the unified Clock; this only
                 // schedules the next re-check.
                 impl_->changed.wait_for(parked, kDeadlinePoll);
+                // The root lifecycle context parks on the very thread that
+                // pumps a deterministic unified Clock between frames; the
+                // session's clock advance resolves the park after the peer
+                // window above had the chance to deliver notify/interrupt.
+                if (!advanced && owner == kRootLifecycleToken && advance) {
+                    advanced = true;
+                    parked.unlock();
+                    advance(timeout_millis);
+                    parked.lock();
+                }
             } else {
                 impl_->changed.wait(parked);
             }

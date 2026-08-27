@@ -222,6 +222,12 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `notifyAll`、Clock 超时、`Interrupt`、`Shutdown`。超时只用注入的统一 Clock
   （`SetTimeSource`），没有时间源的 timed wait 记账并明确失败，绝不读宿主
   wall clock；条件变量的轮询间隔只是调度唤醒，不参与截止判定。
+  **根上下文（token 1，`kRootLifecycleToken`）的 timed wait 不得停泊在确定性
+  Clock 上**：驱动它的宿主线程正是帧间推进该 Clock 的线程，停泊即自锁（title
+  在 onCreate 里轮询授权 `Thread.sleep(50)` 曾整会话黑屏）。`SetClockAdvance`
+  发布的快进钩子在一个有界 peer 窗口后按停泊时长推进 Clock，peer 的
+  notify/interrupt 仍可先赢；未发布钩子的会话（测试接自走 wall clock）保持
+  原停泊语义。
   线程结束时 `ReleaseAll` 释放其仍持有的 monitor 与 wait-set 成员资格。
 - `VmThreadRuntime`（`vm_threads.h`）：一个 guest Java 线程 = 一个
   `hal::StartHostThread` 宿主线程 + 一个独立 execution context，linker/对象
@@ -229,7 +235,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   从 Thread 对象实际 runtime class 解析 virtual `this.run()`；ID 在构造时由
   per-VM allocator 分配，root/child identity 与 execution context 显式映射。
   `Join`/timed join 与 `Sleep` 释放执行锁后停泊，共用 monitor 表注入的 monotonic
-  Clock；`Interrupt` 只写 monitor execution-token interrupt state 并唤醒
+  Clock；timed join 与 `Sleep` 同样遵守根上下文快进：根线程的停泊经
+  `SetClockAdvance` 钩子按停泊时长推进 Clock，worker context 不快进、始终停泊
+  等帧泵推进。`Interrupt` 只写 monitor execution-token interrupt state 并唤醒
   wait/join/sleep。`Shutdown` 先 RequestStop、join 全部宿主线程，再显式展开 stopped
   context（幂等，记录保留供事后查询）。未捕获异常与 VM 错误记入
   `TakeFailure()`，由生命周期驱动在帧

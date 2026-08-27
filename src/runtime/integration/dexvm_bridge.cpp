@@ -1061,6 +1061,15 @@ DexVmGuestBridge::DexVmGuestBridge(
         impl_->vm->Monitors().SetTimeSource([android_context] {
             return android_context->uptime_millis.load();
         });
+        // Root-context Thread.sleep/Object.wait(timeout)/join(timeout) run
+        // inside a lifecycle call on the host thread that pumps
+        // uptime_millis between frames; parking on it would self-deadlock
+        // (a title licence poll in onCreate freezes the whole session), so
+        // timed root parks fast-forward the deterministic clock instead.
+        impl_->vm->Monitors().SetClockAdvance(
+            [android_context](const std::int64_t delta_millis) {
+                AdvanceAndroidClock(*android_context, delta_millis);
+            });
     }
     session.Environment().SetMonitorHooks(JniMonitorHooks{
         [bridge_state](const JniObjectIdentity identity,

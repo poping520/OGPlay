@@ -38,9 +38,11 @@ DVM-14、DVM-15、APS-8。
 - 发布 `View$OnFocusChangeListener` handle 与抽象方法；不伪造没有来源的焦点事件。
 - `ResultReceiver` 仅闭合本地构造/send：Handler 决定同步或唯一 scheduler 异步派发，字段引用由
   GC tracing 保持；Binder/跨进程 Parcel 明确失败。
-- `KeyEvent(action,keyCode)` 保存 action/keyCode/repeatCount；session 键输入传递非空事件；
-  `View.dispatchKeyEvent` 虚派 DOWN/UP/MULTIPLE。OnKeyListener、DispatcherState tracking/
-  long-press、SDL scancode→Android keyCode/Unicode 仍 deferred。
+- `KeyEvent(action,keyCode)` 与 API 19 timed/meta 构造器保存 action、Android keyCode、
+  repeatCount 与 metaState；发布 `getUnicodeChar()`、`getUnicodeChar(metaState)`、
+  `getMetaState()` 与 `getScanCode()`。HAL 保留物理 scancode、当前布局 key symbol、左右
+  modifier 和 repeat，session 统一映射 Android keyCode/meta/Unicode 后分派非空事件。
+  OnKeyListener、DispatcherState tracking/long-press 仍 deferred。
 - 同一 WU 还闭合 native 调用锁交接、API19 Bionic TID、相对 timed futex、`/proc/meminfo`、
   watchdog、guest 逻辑 RWX/`ARM_cacheflush`、软件 Surface/Canvas 和 AudioTrack 基础状态。
 - 不补 title 专属 native、不改变 survey neutral stub、不把 native fault 转成伪成功。
@@ -52,7 +54,8 @@ DVM-14、DVM-15、APS-8。
   object identity 与 local-reference 作用域保持稳定。
 - [x] `Bitmap.Config`、`getPackageResourcePath()`、OnFocusChangeListener、ResultReceiver
   的 API 19 声明/分派/边界语义闭合。
-- [x] View 子类可解析 `dispatchKeyEvent(KeyEvent)`，DOWN/UP/MULTIPLE 携带非空事件并分派到 override。
+- [x] View 子类可解析 `dispatchKeyEvent(KeyEvent)`，DOWN/UP/MULTIPLE 携带非空事件并分派到 override；
+  SDL 物理 A 映射 `KEYCODE_A`，Unicode/meta/repeat 可由 guest 查询，不可打印键返回 0。
 - [x] native loader、JNI registry、field store/ABI、graphics、surface、watchdog/futex 与
   architecture 定向回归通过。
 
@@ -64,8 +67,12 @@ DVM-14、DVM-15、APS-8。
   surface 定向 9/9，192 assertions。
 - OnFocusChangeListener 定向 2/2；ResultReceiver 本地同步/异步、Bundle identity、Binder
   Parcel 拒绝与 catalog 定向 2/2。
-- KeyEvent/View dispatch 定向源 20/20、567 assertions；catalog、capability 与 architecture
-  门禁 7/7。以上均为 Windows Debug 增量/定向验证，未执行全量 CTest。
+- KeyEvent/View dispatch、SDL 规范化和 session Android 输入映射定向通过；覆盖当前布局
+  Unicode、显式 meta 重载、repeat、方向键与未知键 fail-closed。catalog、capability 与
+  architecture 门禁通过。以上均为 Windows Debug 增量/定向验证，未执行全量 CTest。
+- PVZ Release 无 survey reached run 进入标题画面；真实键盘输入越过
+  `LoaderKeyboard.onKeyEvent()` 的 `getUnicodeChar()` 调用并可完成自定义用户名输入，原
+  method resolve fault 未再出现。
 - Release PVZ survey 已越过 `initNative()`、`m_LoaderKeyboard`、`Bitmap.Config`、
   `getPackageResourcePath()`、managed surface callback，并发布软件帧；后续运行中
   `presented=1`。旧 survey 还曾在约 f=2483/3106 由 `Thread-2` 报 A32 低地址写 fault

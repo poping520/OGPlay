@@ -381,19 +381,28 @@ namespace ogplay::session {
                 const auto key_event_class =
                     vm.Model().ObjectClass(key_event);
                 const auto constructor = bindings_.bridge->Linker()
-                    .FindDirectMethod(key_event_class, "<init>", "(II)V");
+                    .FindDirectMethod(key_event_class, "<init>",
+                                      "(JJIIIIII)V");
                 if (!constructor.has_value()) {
-                    Fail("KeyEvent has no (action, keyCode) constructor");
+                    Fail("KeyEvent has no timed input constructor");
                 }
                 RequireOutcome(
                     vm.Call(*constructor,
                             std::vector<dx::VmValue>{
                                 dx::VmValue::Ref(key_event),
+                                dx::VmValue::Long(input.event_time_ms),
+                                dx::VmValue::Long(input.event_time_ms),
                                 dx::VmValue::Int(
                                     input.pressed ? kKeyActionDown
                                                   : kKeyActionUp),
-                                dx::VmValue::Int(input.code)}),
+                                dx::VmValue::Int(input.code),
+                                dx::VmValue::Int(input.repeat_count),
+                                dx::VmValue::Int(input.meta_state),
+                                dx::VmValue::Int(input.device_id),
+                                dx::VmValue::Int(input.scan_code)}),
                     "KeyEvent <init>");
+                runtime::SetAndroidKeyEventUnicode(
+                    vm, key_event, input.unicode_char);
                 CallActivity(input.pressed ? "onKeyDown" : "onKeyUp",
                              "(ILandroid/view/KeyEvent;)Z",
                              {

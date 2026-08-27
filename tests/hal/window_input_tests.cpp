@@ -145,6 +145,8 @@ TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {
     key.key.windowID = window_id;
     key.key.which = 7;
     key.key.scancode = SDL_SCANCODE_A;
+    key.key.key = SDLK_A;
+    key.key.mod = SDL_KMOD_LSHIFT | SDL_KMOD_CAPS;
     key.key.down = true;
     key.key.repeat = true;
     REQUIRE(SDL_PushEvent(&key));
@@ -178,6 +180,13 @@ TEST_CASE("SDL events map to backend-independent keyboard and pointer events") {
     CHECK(events[0].code == SDL_SCANCODE_A);
     CHECK(events[0].pressed);
     CHECK(events[0].repeat);
+    CHECK(events[0].key_symbol == static_cast<std::int32_t>(
+        SDL_GetKeyFromScancode(SDL_SCANCODE_A,
+                               SDL_KMOD_LSHIFT | SDL_KMOD_CAPS, true)));
+    CHECK((events[0].key_modifiers & static_cast<std::uint32_t>(
+               ogplay::hal::KeyModifier::left_shift)) != 0U);
+    CHECK((events[0].key_modifiers & static_cast<std::uint32_t>(
+               ogplay::hal::KeyModifier::caps_lock)) != 0U);
     CHECK(events[1].type == ogplay::hal::InputEventType::pointer_motion);
     CHECK(events[1].x == doctest::Approx(12.5F));
     CHECK(events[1].delta_y == doctest::Approx(-2.0F));

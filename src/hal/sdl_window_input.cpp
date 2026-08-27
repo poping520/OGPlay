@@ -98,6 +98,26 @@ std::optional<double> FrameRateSampler::Observe(
 #if OGPLAY_HAS_SDL3
 namespace {
 
+[[nodiscard]] std::uint32_t NormalizeKeyModifiers(const SDL_Keymod modifiers) {
+    std::uint32_t result{};
+    const auto add = [&](const SDL_Keymod source, const KeyModifier target) {
+        if ((modifiers & source) != 0) {
+            result |= static_cast<std::uint32_t>(target);
+        }
+    };
+    add(SDL_KMOD_LSHIFT, KeyModifier::left_shift);
+    add(SDL_KMOD_RSHIFT, KeyModifier::right_shift);
+    add(SDL_KMOD_LCTRL, KeyModifier::left_control);
+    add(SDL_KMOD_RCTRL, KeyModifier::right_control);
+    add(SDL_KMOD_LALT, KeyModifier::left_alt);
+    add(SDL_KMOD_RALT, KeyModifier::right_alt);
+    add(SDL_KMOD_LGUI, KeyModifier::left_meta);
+    add(SDL_KMOD_RGUI, KeyModifier::right_meta);
+    add(SDL_KMOD_CAPS, KeyModifier::caps_lock);
+    add(SDL_KMOD_NUM, KeyModifier::num_lock);
+    return result;
+}
+
 constexpr SDL_InitFlags kSdlSubsystems = SDL_INIT_VIDEO | SDL_INIT_GAMEPAD;
 
 std::string RequestedBackendName(const VideoBackend backend) {
@@ -338,6 +358,10 @@ private:
                     .code = static_cast<std::int32_t>(event.key.scancode),
                     .pressed = event.key.down,
                     .repeat = event.key.repeat,
+                    .key_symbol = static_cast<std::int32_t>(
+                        SDL_GetKeyFromScancode(event.key.scancode,
+                                               event.key.mod, true)),
+                    .key_modifiers = NormalizeKeyModifiers(event.key.mod),
                 });
             }
             break;

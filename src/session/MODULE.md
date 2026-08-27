@@ -44,6 +44,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   在线程停止后、guest finalizer 前再次调用，失败向上层传播。
   guest EGL swap 在 intrinsic 内 publish，不由 lifecycle 再次 present。lifecycle
   仅在 guest-owned GLSurfaceView 路径注册 driver 线程，并在每帧尾推进条件 swap
+- `MapAndroidInput`：在 HAL 与 Android guest 边界把通用 USB HID/SDL 物理 scancode
+  转为 API 19 keyCode，把左右 modifier/caps/num 转为 metaState，并保留当前布局 Unicode、
+  repeatCount、scanCode 与 eventTime；未知物理键明确成为 `KEYCODE_UNKNOWN`。
   pacer；intrinsic-renderer 不安装 observer。driver 可运行时维持一帧一 swap，
   driver 停泊于 guest 阻塞原语时由执行锁 observer 放行 GLThread。停止在 shutdown/
   join guest Java 线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：

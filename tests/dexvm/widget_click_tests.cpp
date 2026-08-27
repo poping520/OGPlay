@@ -918,6 +918,35 @@ TEST_CASE("View dispatchKeyEvent routes bounded KeyEvent actions to overrides") 
     CHECK(vm.last_key_code == 7);
 }
 
+TEST_CASE("KeyEvent exposes API19 unicode meta and repeat semantics") {
+    ClickVm vm;
+    const auto event = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/KeyEvent;");
+    vm.CallDirect(event, "Landroid/view/KeyEvent;", "<init>", "(JJIIIIII)V",
+                  {VmValue::Long(10), VmValue::Long(11), VmValue::Int(0),
+                   VmValue::Int(29), VmValue::Int(1), VmValue::Int(0x41),
+                   VmValue::Int(7), VmValue::Int(4)});
+
+    CHECK(vm.CallOn(event, "getKeyCode", "()I").AsInt() == 29);
+    CHECK(vm.CallOn(event, "getRepeatCount", "()I").AsInt() == 1);
+    CHECK(vm.CallOn(event, "getMetaState", "()I").AsInt() == 0x41);
+    CHECK(vm.CallOn(event, "getDeviceId", "()I").AsInt() == 7);
+    CHECK(vm.CallOn(event, "getScanCode", "()I").AsInt() == 4);
+    CHECK(vm.CallOn(event, "getUnicodeChar", "()I").AsInt() == 'A');
+    CHECK(vm.CallOn(event, "getUnicodeChar", "(I)I",
+                    {VmValue::Int(0)}).AsInt() == 'a');
+    SetAndroidKeyEventUnicode(vm.interpreter, event, 0x00e9);
+    CHECK(vm.CallOn(event, "getUnicodeChar", "()I").AsInt() == 0x00e9);
+    CHECK(vm.CallOn(event, "getUnicodeChar", "(I)I",
+                    {VmValue::Int(0)}).AsInt() == 'a');
+
+    const auto arrow = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/view/KeyEvent;");
+    vm.CallDirect(arrow, "Landroid/view/KeyEvent;", "<init>", "(II)V",
+                  {VmValue::Int(0), VmValue::Int(19)});
+    CHECK(vm.CallOn(arrow, "getUnicodeChar", "()I").AsInt() == 0);
+}
+
 TEST_CASE("TextView Java state controls deterministic measure and draw state") {
     ClickVm vm;
     const auto text = vm.interpreter.NewIntrinsicInstance(

@@ -33,6 +33,12 @@ struct AndroidBoundaryInput final {
     float x{};
     float y{};
     bool pressed{};
+    std::int32_t device_id{};
+    std::int32_t scan_code{};
+    std::int32_t unicode_char{};
+    std::int32_t meta_state{};
+    std::int32_t repeat_count{};
+    std::int64_t event_time_ms{};
 };
 
 struct AndroidBoundaryFrame final {

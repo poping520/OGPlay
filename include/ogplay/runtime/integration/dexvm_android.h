@@ -716,6 +716,10 @@ void RegisterAndroidSchedulerStateTable(
 [[nodiscard]] std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
     const std::shared_ptr<DexVmAndroidContext>& context);
 
+void SetAndroidKeyEventUnicode(dexvm::Interpreter& vm,
+                               dexvm::VmObjectRef event,
+                               std::int32_t unicode_char);
+
 // Builds a MotionEvent intrinsic instance for input dispatch.
 [[nodiscard]] dexvm::VmObjectRef MakeMotionEvent(dexvm::Interpreter& vm,
                                                  std::int32_t action, float x,

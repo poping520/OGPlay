@@ -509,6 +509,7 @@ endif()
 ogplay_set_project_warnings(ogplay_runtime)
 
 add_library(ogplay_session
+    src/session/android_input_mapping.cpp
     src/session/android_app_process.cpp
     src/session/dex_activity_lifecycle.cpp
     src/session/ui_compositor.cpp
@@ -809,6 +810,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/video/video_player_tests.cpp
         tests/video/ffmpeg_video_player_tests.cpp
         tests/session/quirk_registry_tests.cpp
+        tests/session/android_input_mapping_tests.cpp
         tests/session/lifecycle_tests.cpp
         tests/session/ui_compositor_tests.cpp
         tests/session/profile_asset_bundle_tests.cpp

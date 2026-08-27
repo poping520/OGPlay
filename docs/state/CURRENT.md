@@ -1,9 +1,13 @@
 # 当前状态
 
-更新：BND-27 GLES1 单 stage 纹理坐标解析与 DVM-91 媒体数据源栈完成（未提交）
+更新：通用 Android 键盘输入链闭合（未提交）
 
 ## 当前阶段
 
+- **Android 键盘输入**：HAL 发布物理 scancode、当前布局 key symbol、左右 modifier 与
+  repeat；session 映射 API 19 keyCode/metaState/Unicode/repeatCount/eventTime，未知键成为
+  `KEYCODE_UNKNOWN`。DexVM `KeyEvent` 发布无参/有参 `getUnicodeChar`、meta/repeat 查询，
+  生命周期不再把 SDL scancode 直接作为 Activity keyCode。
 - **BND-27**：fixed draw 将采样 stage 与 coordinate array 来源分开解析；优先 stage 自有
   array，单 stage 且全局只有一个有效 array 时受检回退，多 stage 禁止共享。GLES1/GLES2
   `active_texture` 仍按同一 EGL context 的 `SharedGlState` 有意共享，不复制第二份状态。
@@ -22,7 +26,8 @@
 - **DVM-90**：live UiTree attach/detach 驱动 per-holder Surface generation 已完成；
   visibility/format/size 重建、独立合成层与完整 WindowManager 仍 deferred。
 - **DVM-89**：JNI↔DEX instance/static 字段统一存储与 native 失败保真已完成；专用 field
-  acceptance 已补跑。Bitmap/Canvas、AudioTrack 等 API19 bounded surface 保持有效。
+  acceptance 已补跑。KeyEvent 的 scancode→Android keyCode/Unicode deferred 项已闭合；
+  OnKeyListener、DispatcherState tracking/long-press 仍 deferred。
 - **BND-26**：GLES1 cube-map 固定管线、API19 VERSION/EXTENSIONS 与 guest GL error 锁存已
   完成。PVZ 已越过此前 cube-map 和 tick-budget 阻断。
 - DVM-47 的 A6/DH exact/长运行 gate 与 threaded 默认裁决仍未闭合；解释执行继续由
@@ -30,6 +35,13 @@
 
 ## 本轮验证
 
+- Windows Debug `ogplay`、`ogplay_tests` 构建通过；SDL 事件规范化、session Android 输入
+  映射、KeyEvent API 19 Unicode/meta/repeat 与既有 View dispatch 定向 6/6 通过。
+- Android intrinsic catalog 与 architecture capability/platform/documentation/intrinsic-layout
+  门禁 5/5 通过；未执行完整 CTest。
+- PVZ Release 无 survey 进入标题画面并持续发布画面；用户实际键盘测试已越过
+  `LoaderKeyboard.onKeyEvent()` 的 `getUnicodeChar()` 调用，可输入并提交自定义用户名，未再
+  出现 method resolve fault。
 - BND-27 Windows Debug/Release 全目标构建通过；解析策略、既有双 stage、真实 ANGLE
   `GL_TEXTURE31`→unit0 coordinate array 定向 3/3 通过。
 - PVZ Release 无 survey 实跑取得 sequence=5976 的 800×480 presented PNG：标题、角色与
@@ -52,12 +64,13 @@
 
 ## 下一步
 
-1. 用户确认后提交 DVM-91/BND-27；当前按要求保持未提交。
-2. 通用闭合 A6 DT_SONAME identity 与 DH 当前启动阻断，复验 DVM-47/threaded title gate。
-3. 执行 Linux M9 严格出口复验；后续 framework 长尾只按无 survey reached gap 排序。
+1. 通用闭合 A6 DT_SONAME identity 与 DH 当前启动阻断，复验 DVM-47/threaded title gate。
+2. 执行 Linux M9 严格出口复验；后续 framework 长尾只按无 survey reached gap 排序。
 
 ## 阻塞与边界
 
+- 当前字符事实取自 SDL 当前宿主键盘布局；有参 `getUnicodeChar(metaState)` 的确定性映射覆盖
+  常用字母、数字和标点，不宣称完整 Android KeyCharacterMap/dead-key/IME 能力。
 - DVM-91 不包含 pipe/socketpair、dup/fcntl 数值互操作、AFD Parcelable、网络 Uri、listener
   回调或宿主 ffmpeg；这些入口不得伪造成功。
 - `dexvm.api19_capability_stack=complete` 只表示设计定义的 bounded 阶段闭包，不表示完整

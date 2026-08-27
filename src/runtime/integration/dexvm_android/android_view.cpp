@@ -228,6 +228,47 @@ Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context)
 
 namespace ogplay::runtime::android_intrinsics::dvm80_android_view_KeyEvent {
 
+namespace {
+
+[[nodiscard]] std::int32_t UnicodeForKeyCode(const std::int32_t key_code,
+                                             const std::int32_t meta_state) {
+    constexpr std::int32_t kShiftMask = 0x1 | 0x40 | 0x80;
+    constexpr std::int32_t kAltControlMetaMask =
+        0x2 | 0x10 | 0x20 | 0x1000 | 0x2000 | 0x4000 |
+        0x10000 | 0x20000 | 0x40000;
+    if ((meta_state & kAltControlMetaMask) != 0) return 0;
+    const bool shifted = (meta_state & kShiftMask) != 0;
+    const bool caps_locked = (meta_state & 0x100000) != 0;
+
+    if (key_code >= 29 && key_code <= 54) {
+        const auto lower = 'a' + key_code - 29;
+        return shifted != caps_locked ? lower - ('a' - 'A') : lower;
+    }
+    if (key_code >= 7 && key_code <= 16) {
+        constexpr char plain[] = "0123456789";
+        constexpr char shifted_chars[] = ")!@#$%^&*(";
+        const auto index = static_cast<std::size_t>(key_code - 7);
+        return shifted ? shifted_chars[index] : plain[index];
+    }
+    switch (key_code) {
+    case 55: return shifted ? '<' : ',';
+    case 56: return shifted ? '>' : '.';
+    case 62: return ' ';
+    case 68: return shifted ? '~' : '`';
+    case 69: return shifted ? '_' : '-';
+    case 70: return shifted ? '+' : '=';
+    case 71: return shifted ? '{' : '[';
+    case 72: return shifted ? '}' : ']';
+    case 73: return shifted ? '|' : '\\';
+    case 74: return shifted ? ':' : ';';
+    case 75: return shifted ? '"' : '\'';
+    case 76: return shifted ? '?' : '/';
+    default: return 0;
+    }
+}
+
+}  // namespace
+
 Decl Declare_android_view_KeyEvent(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyEvent;", "Ljava/lang/Object;");
@@ -236,13 +277,41 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
         builder.BoundInstanceField("mKeyCode", "I", 0x0002U);
     const auto repeat_count =
         builder.BoundInstanceField("mRepeatCount", "I", 0x0002U);
+    const auto meta_state =
+        builder.BoundInstanceField("mMetaState", "I", 0x0002U);
+    const auto scan_code =
+        builder.BoundInstanceField("mScanCode", "I", 0x0002U);
+    const auto device_id =
+        builder.BoundInstanceField("mDeviceId", "I", 0x0002U);
+    const auto unicode_char =
+        builder.BoundInstanceField("mOgplayUnicodeChar", "I", 0x0002U);
     builder.Constructor("(II)V",
-        [action, key_code, repeat_count](dx::IntrinsicContext& call) {
+        [action, key_code, repeat_count, meta_state, scan_code, device_id,
+         unicode_char](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].AsInt();
             dx::IntrinsicCall fields(call);
             fields.SetInt(action, value);
             fields.SetInt(key_code, call.arguments[1].AsInt());
             fields.SetInt(repeat_count, 0);
+            fields.SetInt(meta_state, 0);
+            fields.SetInt(scan_code, 0);
+            fields.SetInt(device_id, -1);
+            fields.SetInt(unicode_char, UnicodeForKeyCode(
+                call.arguments[1].AsInt(), 0));
+            return dx::VmValue::Void();
+        });
+    builder.Constructor("(JJIIIIII)V",
+        [action, key_code, repeat_count, meta_state, scan_code, device_id,
+         unicode_char](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            fields.SetInt(action, call.arguments[2].AsInt());
+            fields.SetInt(key_code, call.arguments[3].AsInt());
+            fields.SetInt(repeat_count, call.arguments[4].AsInt());
+            fields.SetInt(meta_state, call.arguments[5].AsInt());
+            fields.SetInt(device_id, call.arguments[6].AsInt());
+            fields.SetInt(scan_code, call.arguments[7].AsInt());
+            fields.SetInt(unicode_char, UnicodeForKeyCode(
+                call.arguments[3].AsInt(), call.arguments[5].AsInt()));
             return dx::VmValue::Void();
         });
     builder.FinalMethod("getAction", "()I",
@@ -259,6 +328,32 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
             return dx::VmValue::Int(
                 dx::IntrinsicCall(call).GetInt(repeat_count));
         });
+    builder.FinalMethod("getMetaState", "()I",
+        [meta_state](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                dx::IntrinsicCall(call).GetInt(meta_state));
+        });
+    builder.FinalMethod("getScanCode", "()I",
+        [scan_code](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                dx::IntrinsicCall(call).GetInt(scan_code));
+        });
+    builder.FinalMethod("getDeviceId", "()I",
+        [device_id](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(
+                dx::IntrinsicCall(call).GetInt(device_id));
+        });
+    builder.FinalMethod("getUnicodeChar", "()I",
+        [unicode_char](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            return dx::VmValue::Int(fields.GetInt(unicode_char));
+        });
+    builder.FinalMethod("getUnicodeChar", "(I)I",
+        [key_code](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            return dx::VmValue::Int(UnicodeForKeyCode(
+                fields.GetInt(key_code), call.arguments[0].AsInt()));
+        });
     return std::move(builder).Build();
 }
 
@@ -269,6 +364,26 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
     return dvm80_android_view_KeyEvent::Declare_android_view_KeyEvent(context);
 }
 }  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime {
+
+void SetAndroidKeyEventUnicode(dexvm::Interpreter& vm,
+                               const dexvm::VmObjectRef event,
+                               const std::int32_t unicode_char) {
+    auto& linker = vm.Linker();
+    auto& model = vm.Model();
+    const auto field = linker.FindFieldRecursive(
+        model.ObjectClass(event), "mOgplayUnicodeChar", "I");
+    if (!field.has_value()) {
+        throw dexvm::DexVmError(
+            dexvm::DexVmErrorReason::internal_invariant,
+            "KeyEvent unicode field is missing");
+    }
+    model.InstanceSlots(event)[linker.Field(*field).slot] = {
+        static_cast<std::uint32_t>(unicode_char), dexvm::SlotTag::cat1};
+}
+
+}  // namespace ogplay::runtime
 
 // ---- migrated from android_view_MotionEvent.cpp ----
 // Motion events read their slots directly.

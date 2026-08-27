@@ -89,9 +89,11 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - API 19 `View$OnFocusChangeListener` 作为 public abstract interface 发布唯一
   `onFocusChange(View, boolean)` 方法签名，使 DEX `implements` 与 `invoke-interface` 走正常
   linker/virtual dispatch；没有具体焦点事件来源时不得伪造回调。
-- `KeyEvent(action, keyCode)` 保存 guest 可见 action/keyCode/repeatCount；生命周期键输入必须
-  传递该非空对象。`View.dispatchKeyEvent` 对 DOWN/UP/MULTIPLE 调用接收者实际 override；
-  OnKeyListener、DispatcherState tracking/long-press 和字符映射未实现时必须保持显式缺口。
+- `KeyEvent(action, keyCode)` 与 API 19 timed/meta 构造器保存 guest 可见 action/keyCode/
+  repeatCount/metaState；生命周期键输入以非空对象注入当前布局 Unicode。
+  `getUnicodeChar()` 返回事件布局字符，`getUnicodeChar(metaState)` 对 Android 常用字母、数字、
+  标点与不可打印键执行确定性映射。`View.dispatchKeyEvent` 对 DOWN/UP/MULTIPLE 调用接收者
+  实际 override；OnKeyListener、DispatcherState tracking/long-press 仍保持显式缺口。
 - drawable decode 的 intrinsic size 写入 UiNode；click adapter 只消费 `screen_frame`。
   旧 fullscreen/edge-row bounds 推导及 `LayoutViewFact/layout_views` 类型与存储均不存在。
 - Java 动态 `ViewGroup.addView/removeView/removeViews/updateViewLayout` 与

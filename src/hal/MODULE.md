@@ -14,6 +14,8 @@
 - `hal::WindowInput`：不暴露 SDL 类型的窗口生命周期与输入事件接口。
 - `hal::PointerButton`：把宿主鼠标按钮规范为 primary/middle/secondary/auxiliary 语义；
   未知按钮显式标记为 unknown，不向上层泄漏 SDL 数值。
+- `hal::InputEvent` 的键盘事实同时携带物理 scancode、当前键盘布局与 modifier 解析出的
+  Unicode key symbol、左右 modifier/caps/num 状态及 repeat；这里不生成 Android keyCode。
 - `hal::WindowInput::SetTitle`：只在窗口打开期间更新宿主标题，拒绝内嵌 NUL，SDL
   失败必须明确传播。
 - `hal::WindowInput::PumpEvents`：处理宿主窗口消息但不移除规范化输入事件，供长任务

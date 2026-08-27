@@ -45,6 +45,7 @@
 #include "ogplay/session/quirk_registry.h"
 #include "ogplay/session/title_profile.h"
 #include "ogplay/session/android_app_process.h"
+#include "ogplay/session/android_input_mapping.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -159,23 +160,6 @@ gles::AngleBackend NativeBackend() {
         return {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
     }
     throw std::logic_error("unknown configured ANGLE renderer");
-}
-
-[[nodiscard]] std::optional<runtime::AndroidBoundaryInput> MapInput(
-    const hal::InputEvent& event) {
-    std::optional<runtime::AndroidBoundaryInputType> type;
-    if (event.type == hal::InputEventType::key) type = runtime::AndroidBoundaryInputType::key;
-    if (event.type == hal::InputEventType::pointer_motion) {
-        type = runtime::AndroidBoundaryInputType::pointer_motion;
-    }
-    if (event.type == hal::InputEventType::pointer_button) {
-        type = runtime::AndroidBoundaryInputType::pointer_button;
-    }
-    if (type.has_value()) {
-        return runtime::AndroidBoundaryInput{
-            *type, event.code, event.x, event.y, event.pressed};
-    }
-    return std::nullopt;
 }
 
 [[nodiscard]] bool ProfileEnablesQuirk(
@@ -800,7 +784,8 @@ int RunApkCommand(const int argc, const char* const argv[],
                 } else if (const auto mapped = mouse_touch.Map(
                                event, window_state, guest_width, guest_height);
                            mapped.has_value()) {
-                    if (const auto input = MapInput(*mapped); input.has_value()) {
+                    if (const auto input = session::MapAndroidInput(*mapped);
+                        input.has_value()) {
                         driver.queue_input(*input);
                     }
                 }

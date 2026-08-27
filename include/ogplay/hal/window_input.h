@@ -32,6 +32,20 @@ enum class PointerButton : std::int32_t {
     auxiliary_2 = 4,
 };
 
+enum class KeyModifier : std::uint32_t {
+    none = 0,
+    left_shift = 1U << 0U,
+    right_shift = 1U << 1U,
+    left_control = 1U << 2U,
+    right_control = 1U << 3U,
+    left_alt = 1U << 4U,
+    right_alt = 1U << 5U,
+    left_meta = 1U << 6U,
+    right_meta = 1U << 7U,
+    caps_lock = 1U << 8U,
+    num_lock = 1U << 9U,
+};
+
 struct WindowOptions {
     std::string title{"OGPlay"};
     std::uint32_t width{1280};
@@ -100,6 +114,8 @@ struct InputEvent {
     float delta_y{};
     bool pressed{};
     bool repeat{};
+    std::int32_t key_symbol{};
+    std::uint32_t key_modifiers{};
 };
 
 class WindowInput {

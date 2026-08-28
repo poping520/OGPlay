@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <type_traits>
 
 #include "interpreter_internal.h"
 
@@ -44,6 +45,79 @@ template <typename Integral, typename Float>
     if (value >= static_cast<Float>(maximum)) return maximum;
     if (value <= static_cast<Float>(minimum)) return minimum;
     return static_cast<Integral>(value);
+}
+
+template <typename Value>
+struct BinopResult final {
+    bool handled{};
+    bool has_value{};
+    Value value{};
+};
+
+template <typename Signed>
+[[nodiscard]] BinopResult<Signed> IntegralBinop(
+    const Signed lhs, const Signed rhs, const std::uint8_t operation) {
+    using Unsigned = std::make_unsigned_t<Signed>;
+    Signed result{};
+    switch (operation) {
+    case 0:
+        result = static_cast<Signed>(static_cast<Unsigned>(lhs) +
+                                     static_cast<Unsigned>(rhs));
+        break;
+    case 1:
+        result = static_cast<Signed>(static_cast<Unsigned>(lhs) -
+                                     static_cast<Unsigned>(rhs));
+        break;
+    case 2:
+        result = static_cast<Signed>(static_cast<Unsigned>(lhs) *
+                                     static_cast<Unsigned>(rhs));
+        break;
+    case 3:
+        if (rhs == 0) return {true, false, {}};
+        result = lhs == std::numeric_limits<Signed>::min() && rhs == -1
+                     ? lhs
+                     : static_cast<Signed>(lhs / rhs);
+        break;
+    case 4:
+        if (rhs == 0) return {true, false, {}};
+        result = lhs == std::numeric_limits<Signed>::min() && rhs == -1
+                     ? 0
+                     : static_cast<Signed>(lhs % rhs);
+        break;
+    case 5: result = static_cast<Signed>(lhs & rhs); break;
+    case 6: result = static_cast<Signed>(lhs | rhs); break;
+    case 7: result = static_cast<Signed>(lhs ^ rhs); break;
+    case 8:
+        result = static_cast<Signed>(
+            static_cast<Unsigned>(lhs) <<
+            (static_cast<Unsigned>(rhs) & (sizeof(Signed) * 8U - 1U)));
+        break;
+    case 9:
+        result = static_cast<Signed>(
+            lhs >> (static_cast<Unsigned>(rhs) &
+                    (sizeof(Signed) * 8U - 1U)));
+        break;
+    case 10:
+        result = static_cast<Signed>(
+            static_cast<Unsigned>(lhs) >>
+            (static_cast<Unsigned>(rhs) & (sizeof(Signed) * 8U - 1U)));
+        break;
+    default: return {};
+    }
+    return {true, true, result};
+}
+
+template <typename Float>
+[[nodiscard]] BinopResult<Float> FloatingBinop(
+    const Float lhs, const Float rhs, const std::uint8_t operation) {
+    switch (operation) {
+    case 0: return {true, true, static_cast<Float>(lhs + rhs)};
+    case 1: return {true, true, static_cast<Float>(lhs - rhs)};
+    case 2: return {true, true, static_cast<Float>(lhs * rhs)};
+    case 3: return {true, true, static_cast<Float>(lhs / rhs)};
+    case 4: return {true, true, std::fmod(lhs, rhs)};
+    default: return {};
+    }
 }
 
 }  // namespace
@@ -236,57 +310,14 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
     const auto int_binop = [&](const std::uint32_t dest,
                                const std::int32_t lhs, const std::int32_t rhs,
                                const std::uint8_t operation) -> bool {
-        std::int32_t result{};
-        switch (operation) {
-            case 0: result = static_cast<std::int32_t>(
-                static_cast<std::uint32_t>(lhs) +
-                static_cast<std::uint32_t>(rhs)); break;
-            case 1: result = static_cast<std::int32_t>(
-                static_cast<std::uint32_t>(lhs) -
-                static_cast<std::uint32_t>(rhs)); break;
-            case 2: result = static_cast<std::int32_t>(
-                static_cast<std::uint32_t>(lhs) *
-                static_cast<std::uint32_t>(rhs)); break;
-            case 3:
-                if (rhs == 0) {
-                    ThrowJava("Ljava/lang/ArithmeticException;",
-                              "divide by zero");
-                    return true;
-                }
-                if (lhs == std::numeric_limits<std::int32_t>::min() &&
-                    rhs == -1) {
-                    result = lhs;  // OP_DIV_INT.cpp overflow rule
-                } else {
-                    result = lhs / rhs;
-                }
-                break;
-            case 4:
-                if (rhs == 0) {
-                    ThrowJava("Ljava/lang/ArithmeticException;",
-                              "modulo by zero");
-                    return true;
-                }
-                if (lhs == std::numeric_limits<std::int32_t>::min() &&
-                    rhs == -1) {
-                    result = 0;
-                } else {
-                    result = lhs % rhs;
-                }
-                break;
-            case 5: result = lhs & rhs; break;
-            case 6: result = lhs | rhs; break;
-            case 7: result = lhs ^ rhs; break;
-            case 8: result = static_cast<std::int32_t>(
-                static_cast<std::uint32_t>(lhs)
-                << (static_cast<std::uint32_t>(rhs) & 0x1fU)); break;
-            case 9: result = lhs >> (static_cast<std::uint32_t>(rhs) & 0x1fU);
-                break;
-            case 10: result = static_cast<std::int32_t>(
-                static_cast<std::uint32_t>(lhs) >>
-                (static_cast<std::uint32_t>(rhs) & 0x1fU)); break;
-            default: return false;
+        const auto result = IntegralBinop(lhs, rhs, operation);
+        if (!result.handled) return false;
+        if (!result.has_value) {
+            ThrowJava("Ljava/lang/ArithmeticException;",
+                      operation == 3 ? "divide by zero" : "modulo by zero");
+            return true;
         }
-        set_cat1(dest, static_cast<std::uint32_t>(result));
+        set_cat1(dest, static_cast<std::uint32_t>(result.value));
         return true;
     };
 
@@ -294,89 +325,32 @@ bool Interpreter::Impl::ExecuteArithmetic(Frame& frame,
                                 const std::int64_t lhs,
                                 const std::int64_t rhs,
                                 const std::uint8_t operation) -> bool {
-        std::int64_t result{};
-        switch (operation) {
-            case 0: result = static_cast<std::int64_t>(
-                static_cast<std::uint64_t>(lhs) +
-                static_cast<std::uint64_t>(rhs)); break;
-            case 1: result = static_cast<std::int64_t>(
-                static_cast<std::uint64_t>(lhs) -
-                static_cast<std::uint64_t>(rhs)); break;
-            case 2: result = static_cast<std::int64_t>(
-                static_cast<std::uint64_t>(lhs) *
-                static_cast<std::uint64_t>(rhs)); break;
-            case 3:
-                if (rhs == 0) {
-                    ThrowJava("Ljava/lang/ArithmeticException;",
-                              "divide by zero");
-                    return true;
-                }
-                if (lhs == std::numeric_limits<std::int64_t>::min() &&
-                    rhs == -1) {
-                    result = lhs;
-                } else {
-                    result = lhs / rhs;
-                }
-                break;
-            case 4:
-                if (rhs == 0) {
-                    ThrowJava("Ljava/lang/ArithmeticException;",
-                              "modulo by zero");
-                    return true;
-                }
-                if (lhs == std::numeric_limits<std::int64_t>::min() &&
-                    rhs == -1) {
-                    result = 0;
-                } else {
-                    result = lhs % rhs;
-                }
-                break;
-            case 5: result = lhs & rhs; break;
-            case 6: result = lhs | rhs; break;
-            case 7: result = lhs ^ rhs; break;
-            case 8: result = static_cast<std::int64_t>(
-                static_cast<std::uint64_t>(lhs)
-                << (static_cast<std::uint64_t>(rhs) & 0x3fU)); break;
-            case 9: result = lhs >> (static_cast<std::uint64_t>(rhs) & 0x3fU);
-                break;
-            case 10: result = static_cast<std::int64_t>(
-                static_cast<std::uint64_t>(lhs) >>
-                (static_cast<std::uint64_t>(rhs) & 0x3fU)); break;
-            default: return false;
+        const auto result = IntegralBinop(lhs, rhs, operation);
+        if (!result.handled) return false;
+        if (!result.has_value) {
+            ThrowJava("Ljava/lang/ArithmeticException;",
+                      operation == 3 ? "divide by zero" : "modulo by zero");
+            return true;
         }
-        set_wide(dest, static_cast<std::uint64_t>(result));
+        set_wide(dest, static_cast<std::uint64_t>(result.value));
         return true;
     };
 
     const auto float_binop = [&](const std::uint32_t dest, const float lhs,
                                  const float rhs,
                                  const std::uint8_t operation) -> bool {
-        float result{};
-        switch (operation) {
-            case 0: result = lhs + rhs; break;
-            case 1: result = lhs - rhs; break;
-            case 2: result = lhs * rhs; break;
-            case 3: result = lhs / rhs; break;
-            case 4: result = std::fmod(lhs, rhs); break;
-            default: return false;
-        }
-        set_cat1(dest, FloatBits(result));
+        const auto result = FloatingBinop(lhs, rhs, operation);
+        if (!result.handled) return false;
+        set_cat1(dest, FloatBits(result.value));
         return true;
     };
 
     const auto double_binop = [&](const std::uint32_t dest, const double lhs,
                                   const double rhs,
                                   const std::uint8_t operation) -> bool {
-        double result{};
-        switch (operation) {
-            case 0: result = lhs + rhs; break;
-            case 1: result = lhs - rhs; break;
-            case 2: result = lhs * rhs; break;
-            case 3: result = lhs / rhs; break;
-            case 4: result = std::fmod(lhs, rhs); break;
-            default: return false;
-        }
-        set_wide(dest, DoubleBits(result));
+        const auto result = FloatingBinop(lhs, rhs, operation);
+        if (!result.handled) return false;
+        set_wide(dest, DoubleBits(result.value));
         return true;
     };
 

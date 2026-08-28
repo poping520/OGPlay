@@ -1,19 +1,16 @@
 # 当前状态
 
-更新：UTIL-2 同逻辑重复片段收敛完成；UTIL-1、DVM-92 与 Diagnostics 已闭合
+更新：UTIL-3 参数化同构克隆收敛完成；UTIL-2、DVM-92 与 Diagnostics 已闭合
 
 ## 当前阶段
 
-- **UTIL-2 已完成**：GLES1/GLES2 与 graphics dispatch 约 20 份 guest 小端字转换副本
-  收敛到 `services/gles_transfer_io.h`（`core` 补 `WriteLittleEndian`）；三份 DEX
-  ULEB128 解码器、两份 syscall guest 路径读取、`ValidPackage`/`ValidId` 三处跨层
-  校验（`core::IsValidPackageName`/`IsValidLowercaseIdentifier`）与两个解释器 kernel
-  的 `ArrayKindFor` 均改接唯一实现；校验语义、错误文案与异常类别逐字保留。
-  见 [UTIL-2](../tasks/maintenance/UTIL-2.md)。
-- **UTIL-1 已完成代码整合**：canonical UTF-8、策略化 UTF-16→UTF-8、Base64/hex、
-  little-endian/range/alignment 与 JNI guest-memory 读取已有唯一共享实现；loader、Android
-  flags 与 TOML 域错误边界保留。`windows-msvc` 的 `ogplay`/`ogplay_tests` 编译通过，
-  按用户要求未运行测试，见 [UTIL-1](../tasks/maintenance/UTIL-1.md)。
+- **UTIL-3 已完成**：收敛 diagnostics snapshot 投影、ELF 地址映射、JNI guest 返回编码/
+  string lease/FieldID lookup、StringBuffer/Builder、简单 throwable、reflection member、
+  数值 binop、NIO bulk 校验、Profile exact keys 与 internal class-name predicate；锁策略、
+  错误文本、异常类别和 ABI 不变。见 [UTIL-3](../tasks/maintenance/UTIL-3.md)。
+- **UTIL-2/1 已完成**：guest 小端搬运、DEX LEB128、syscall 路径、package/id、ArrayKind、
+  UTF/Base64/hex/range/alignment 等重复实现已接唯一公共入口；见
+  [UTIL-2](../tasks/maintenance/UTIL-2.md)、[UTIL-1](../tasks/maintenance/UTIL-1.md)。
 - **DVM-92 已完成并通过 title 验收**：退出首个 guest 回调前单向退役 Java EGL、
   native/managed GLES 与 EGL swap；process `BeginTeardown` 发布独立取消并中断
   blocking wait，join 前再次中断覆盖回调中新建 futex。renewable JNI native frame
@@ -42,18 +39,15 @@
 
 ## 最近验证
 
+- 2026-08-28 UTIL-3 macOS `dev` 受影响目标编译通过；算术/异常/builder/diagnostics/
+  reflection/NIO/ELF/JNI guest/Profile 定向 31/31 及 architecture 6/6 通过。
 - 2026-08-28 UTIL-2 macOS `dev` 受影响目标编译通过；定向测试 loader/session/input
   17/17、boundary GLES 41/41（10512 assertions）、syscall/dexvm/core 10/10
   （14637 assertions）、architecture 6/6。按约束未跑全量测试。
 - 2026-08-28 macOS `dev` 全量 CTest 1066/1066 通过（约 136 s，unit 1032 + tools 25 等）。
 - UTIL-1 Windows Debug `ogplay` 与 `ogplay_tests` 受影响目标编译通过；未运行测试。
-- Diagnostics Windows Release `ogplay`/`ogplay_tests` 受影响目标构建通过；ring/drop、busy
-  partial、DVM try-safe-point、monitor cycle、OS event/teardown timeout、ACL、目录配额和
-  in-flight stop→join 核心新增用例 9/9、97 assertions；连同 futex/syscall/MCP、A32
-  watchdog、5 项架构检查和 host_tid 工具共 25/25 定向通过。按约束未跑全量测试。
-- DVM-92 Windows Release `ogplay`/`ogplay_tests` 构建通过；Java EGL/native boundary
-  退役 2/2、25 assertions，renewable watchdog 与 teardown 回归 6/6、41 assertions。
-  用户实跑 PVZ 2.3.12 标题画面点击关闭，确认快速正常退出；按要求未跑全量。
+- Diagnostics 与 DVM-92 Windows Release 受影响目标及定向回归通过；PVZ 2.3.12 标题画面
+  点击关闭实跑确认快速正常退出。
 - DVM-89 watchdog 定向覆盖 guest-call/syscall/futex/boundary/call-session/JNI lifecycle；
   首帧握手定向连续 3 轮通过，线程 24/24、monitor/wait 14/14。
 - 根上下文 timed park 定向 4 用例、42 assertions 通过；当轮 `dev` 全量

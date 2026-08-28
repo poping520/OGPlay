@@ -11,6 +11,8 @@
 
 #include "ogplay/core/byte_order.h"
 
+#include "elf_internal.h"
+
 namespace ogplay::loader {
 namespace {
 
@@ -33,42 +35,20 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
 
 [[nodiscard]] std::optional<std::uint32_t> UniqueDynamicValue(
     const Elf32Image& image, const std::int32_t tag) {
-    std::optional<std::uint32_t> result;
-    for (const auto& entry : image.dynamic_entries) {
-        if (entry.tag != tag) continue;
-        Require(!result.has_value(), "lifecycle dynamic tag appears more than once");
-        result = entry.value;
-    }
-    return result;
+    return elf_detail::UniqueDynamicValue(
+        image, tag, "lifecycle dynamic tag appears more than once");
 }
 
 [[nodiscard]] std::size_t VirtualFileOffset(
     const Elf32Image& image, const memory::GuestAddress address,
     const std::uint32_t size, const std::size_t file_size) {
-    const auto start = static_cast<std::uint64_t>(address.Value());
-    const auto end = start + size;
-    Require(end <= (UINT64_C(1) << 32U),
-            "lifecycle virtual range wraps the address space");
-    std::optional<std::size_t> result;
-    for (const auto& segment : image.program_headers) {
-        if (segment.type != kElfProgramLoad) continue;
-        const auto segment_start =
-            static_cast<std::uint64_t>(segment.virtual_address.Value());
-        const auto segment_end = segment_start + segment.file_size;
-        if (start < segment_start || end > segment_end) continue;
-        Require(!result.has_value(),
-                "lifecycle range has ambiguous PT_LOAD mappings");
-        const auto offset = static_cast<std::uint64_t>(segment.file_offset) +
-                            start - segment_start;
-        Require(offset <= std::numeric_limits<std::size_t>::max(),
-                "lifecycle file offset is not representable");
-        RequireRange(static_cast<std::size_t>(offset), size, file_size,
-                     "lifecycle range is outside the image");
-        result = static_cast<std::size_t>(offset);
-    }
-    Require(result.has_value(),
-            "lifecycle range is not file-backed by PT_LOAD");
-    return *result;
+    return elf_detail::VirtualFileOffset(
+        image, address, size, file_size,
+        {"lifecycle virtual range wraps the address space",
+         "lifecycle range has ambiguous PT_LOAD mappings",
+         "lifecycle file offset is not representable",
+         "lifecycle range is outside the image",
+         "lifecycle range is not file-backed by PT_LOAD"});
 }
 
 [[nodiscard]] std::vector<memory::GuestAddress> ReadFunctionArray(

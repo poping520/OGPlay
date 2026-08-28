@@ -16,6 +16,26 @@
 #include "ogplay/session/title_profile.h"
 
 namespace ogplay::session::detail {
+
+void ValidateExactTableKeys(
+    const TomlValue::Table& table, const std::string_view field,
+    const std::initializer_list<std::string_view> allowed,
+    const std::initializer_list<std::string_view> required) {
+    for (const auto key : required) {
+        if (!table.contains(key)) {
+            throw TitleProfileError(std::string(field) + " is missing " +
+                                    std::string(key));
+        }
+    }
+    for (const auto& [key, value] : table) {
+        static_cast<void>(value);
+        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
+            throw TitleProfileError(std::string(field) + " has unknown field " +
+                                    key);
+        }
+    }
+}
+
 namespace {
 
 [[nodiscard]] bool IsKey(const std::string_view value) {
@@ -491,17 +511,7 @@ std::int64_t NativeInteger(const TomlValue& value, const std::string_view field,
 void NativeKeys(const NativeTable& table, const std::string_view field,
                 const std::initializer_list<std::string_view> allowed,
                 const std::initializer_list<std::string_view> required) {
-    for (const auto key : required) {
-        if (!table.contains(key)) {
-            throw TitleProfileError(std::string(field) + " is missing " + std::string(key));
-        }
-    }
-    for (const auto& [key, value] : table) {
-        static_cast<void>(value);
-        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
-            throw TitleProfileError(std::string(field) + " has unknown field " + key);
-        }
-    }
+    ValidateExactTableKeys(table, field, allowed, required);
 }
 
 bool NativeJavaName(const std::string_view value, const bool slash_required) {

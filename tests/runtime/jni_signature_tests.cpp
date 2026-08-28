@@ -94,3 +94,17 @@ TEST_CASE("JNI descriptor parser rejects malformed and oversized inputs") {
         parse_method(too_many_parameters),
         ogplay::runtime::JniSignatureError);
 }
+
+TEST_CASE("JNI object class names use one strict internal-name predicate") {
+    using ogplay::runtime::IsValidJniObjectClassName;
+
+    CHECK(IsValidJniObjectClassName("java/lang/String"));
+    CHECK(IsValidJniObjectClassName("game/Outer$Inner"));
+    CHECK_FALSE(IsValidJniObjectClassName(""));
+    CHECK_FALSE(IsValidJniObjectClassName("/java/lang/String"));
+    CHECK_FALSE(IsValidJniObjectClassName("java//lang/String"));
+    CHECK_FALSE(IsValidJniObjectClassName("java/lang/String/"));
+    CHECK_FALSE(IsValidJniObjectClassName("java.lang.String"));
+    CHECK_FALSE(IsValidJniObjectClassName("java/lang/String;"));
+    CHECK_FALSE(IsValidJniObjectClassName("java/[lang/String"));
+}

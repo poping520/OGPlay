@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <initializer_list>
 #include <map>
 #include <string>
 #include <string_view>
@@ -18,5 +19,9 @@ struct TomlValue final {
 };
 
 [[nodiscard]] TomlValue::Table ParseDataToml(std::string_view text);
+void ValidateExactTableKeys(
+    const TomlValue::Table& table, std::string_view field,
+    std::initializer_list<std::string_view> allowed,
+    std::initializer_list<std::string_view> required = {});
 
 }  // namespace ogplay::session::detail

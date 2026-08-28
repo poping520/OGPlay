@@ -17,6 +17,7 @@
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "jni_guest_memory.h"
+#include "jni_guest_value_codec.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -78,37 +79,9 @@ constexpr std::array kFieldTypes{
 
 [[nodiscard]] JniGuestCallResult Encode(const JniValue& value,
                                          const JniTypeKind kind) {
-    const auto word = [](const std::uint32_t result) {
-        return JniGuestCallResult{JniGuestReturnWidth::word, {result, 0U}};
-    };
-    const auto pair = [](const std::uint64_t result) {
-        return JniGuestCallResult{
-            JniGuestReturnWidth::double_word,
-            {static_cast<std::uint32_t>(result),
-             static_cast<std::uint32_t>(result >> 32U)}};
-    };
-    switch (kind) {
-    case JniTypeKind::object:
-    case JniTypeKind::array: return word(std::get<JniReference>(value).Value());
-    case JniTypeKind::boolean: return word(std::get<JniBoolean>(value));
-    case JniTypeKind::byte:
-        return word(std::bit_cast<std::uint32_t>(
-            static_cast<JniInt>(std::get<JniByte>(value))));
-    case JniTypeKind::character: return word(std::get<JniChar>(value));
-    case JniTypeKind::short_integer:
-        return word(std::bit_cast<std::uint32_t>(
-            static_cast<JniInt>(std::get<JniShort>(value))));
-    case JniTypeKind::integer:
-        return word(std::bit_cast<std::uint32_t>(std::get<JniInt>(value)));
-    case JniTypeKind::long_integer:
-        return pair(std::bit_cast<std::uint64_t>(std::get<JniLong>(value)));
-    case JniTypeKind::float_value:
-        return word(std::bit_cast<std::uint32_t>(std::get<JniFloat>(value)));
-    case JniTypeKind::double_value:
-        return pair(std::bit_cast<std::uint64_t>(std::get<JniDouble>(value)));
-    case JniTypeKind::void_value: break;
-    }
-    throw JniGuestBindingError("JNI guest field type is invalid");
+    return jni_guest_detail::EncodeValueResult(
+        value, kind, jni_guest_detail::VoidResultPolicy::reject,
+        "JNI guest field type is invalid");
 }
 
 [[nodiscard]] JniValue Decode(const JniGuestCallFrame& frame,
@@ -230,19 +203,21 @@ void BindInstanceSetter(
         });
 }
 
-}  // namespace
-
-void BindJniGuestStaticFieldSlots(JniGuestCallDispatcher& dispatcher,
-                                  JniEnvironment& environment,
-                                  JniClassRegistry& classes,
-                                  JniFieldStore& fields,
-                                  memory::AddressSpace& address_space) {
+void BindFieldIdLookup(JniGuestCallDispatcher& dispatcher,
+                       JniEnvironment& environment,
+                       JniClassRegistry& classes, JniFieldStore& fields,
+                       memory::AddressSpace& address_space,
+                       const std::string_view slot, const bool is_static,
+                       const std::string_view missing_prefix,
+                       const std::string_view name_descriptor_separator) {
     dispatcher.BindEnvironment(
-        EnvironmentSlot("GetStaticFieldID"),
-        [&environment, &classes, &fields,
-         &address_space](const JniGuestCallFrame& frame) {
-            const auto java_class = ResolveClass(
-                environment, frame, "GetStaticFieldID");
+        EnvironmentSlot(slot),
+        [&environment, &classes, &fields, &address_space,
+         slot = std::string(slot), is_static,
+         missing_prefix = std::string(missing_prefix),
+         separator = std::string(name_descriptor_separator)](
+            const JniGuestCallFrame& frame) {
+            const auto java_class = ResolveClass(environment, frame, slot);
             if (!fields.EnsureClassInitialized(java_class, frame.thread_id)) {
                 return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
             }
@@ -253,15 +228,26 @@ void BindJniGuestStaticFieldSlots(JniGuestCallDispatcher& dispatcher,
                 address_space, memory::GuestAddress{frame.registers[3]},
                 frame.thread_id, "field descriptor");
             const auto field = classes.GetFieldId(
-                java_class, name, descriptor, true);
+                java_class, name, descriptor, is_static);
             if (!field.has_value()) {
                 throw JniGuestBindingError(
-                    "JNI guest static field is not declared: " + name +
-                    descriptor);
+                    missing_prefix + name + separator + descriptor);
             }
             return JniGuestCallResult{
                 JniGuestReturnWidth::word, {field->Value(), 0U}};
         });
+}
+
+}  // namespace
+
+void BindJniGuestStaticFieldSlots(JniGuestCallDispatcher& dispatcher,
+                                  JniEnvironment& environment,
+                                  JniClassRegistry& classes,
+                                  JniFieldStore& fields,
+                                  memory::AddressSpace& address_space) {
+    BindFieldIdLookup(dispatcher, environment, classes, fields, address_space,
+                      "GetStaticFieldID", true,
+                      "JNI guest static field is not declared: ", "");
     for (const auto type : kFieldTypes) {
         BindGetter(dispatcher, environment, classes, fields, type);
         BindSetter(dispatcher, environment, classes, fields, address_space,
@@ -273,31 +259,9 @@ void BindJniGuestInstanceFieldSlots(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
     JniClassRegistry& classes, JniFieldStore& fields,
     JniGuestObjectRegistry& objects, memory::AddressSpace& address_space) {
-    dispatcher.BindEnvironment(
-        EnvironmentSlot("GetFieldID"),
-        [&environment, &classes, &fields,
-         &address_space](const JniGuestCallFrame& frame) {
-            const auto java_class = ResolveClass(
-                environment, frame, "GetFieldID");
-            if (!fields.EnsureClassInitialized(java_class, frame.thread_id)) {
-                return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
-            }
-            const auto name = ReadGuestCString(
-                address_space, memory::GuestAddress{frame.registers[2]},
-                frame.thread_id, "field name");
-            const auto descriptor = ReadGuestCString(
-                address_space, memory::GuestAddress{frame.registers[3]},
-                frame.thread_id, "field descriptor");
-            const auto field = classes.GetFieldId(
-                java_class, name, descriptor, false);
-            if (!field.has_value()) {
-                throw JniGuestBindingError(
-                    "JNI guest instance field is not declared: " + name +
-                    ":" + descriptor);
-            }
-            return JniGuestCallResult{
-                JniGuestReturnWidth::word, {field->Value(), 0U}};
-        });
+    BindFieldIdLookup(dispatcher, environment, classes, fields, address_space,
+                      "GetFieldID", false,
+                      "JNI guest instance field is not declared: ", ":");
     for (const auto type : kFieldTypes) {
         BindInstanceGetter(
             dispatcher, environment, classes, fields, objects, type);

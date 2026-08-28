@@ -121,6 +121,8 @@
 - `PT_LOAD` 必须满足 file size ≤ memory size、guest 地址不回绕、文件范围有效且对齐同余。
 - `PT_DYNAMIC` 最多一个、文件范围完整、条目尺寸正确并由 `DT_NULL` 终止。
 - 动态虚拟地址必须能完整翻译到单个 file-backed `PT_LOAD`，不得读取 BSS 或猜测文件偏移。
+- dynamic-info 与 lifecycle 读取共用唯一的虚拟地址→文件偏移和唯一 dynamic tag 私有实现，
+  各 API 仍提供自己的 typed error 文案。
 - load bias 必须按宿主页对齐；ET_EXEC 不允许 bias；非零入口必须落在 executable `PT_LOAD`。
 - 任一宿主页需要同时 W+X 时拒绝装载，不以兼容为由放宽权限。
 - dynsym 必须由有效 SysV 或 GNU hash 限定数量；GNU chain 必须在 file-backed 范围内终止。

@@ -6,6 +6,8 @@
 #include <string_view>
 #include <utility>
 
+#include "ogplay/runtime/jni/jni_signature.h"
+
 namespace ogplay::runtime::dexvm {
 namespace {
 
@@ -36,17 +38,6 @@ struct ParsedType final {
     case 'V': return true;
     default: return false;
     }
-}
-
-[[nodiscard]] bool IsValidInternalClassName(const std::string_view name) {
-    if (name.empty() || name.front() == '/' || name.back() == '/' ||
-        name.find("//") != std::string_view::npos) {
-        return false;
-    }
-    return std::none_of(name.begin(), name.end(), [](const char value) {
-        return value == '.' || value == '[' || value == ';' || value == '(' ||
-               value == ')';
-    });
 }
 
 [[nodiscard]] bool IsValidBinaryClassName(const std::string_view name) {
@@ -84,7 +75,7 @@ struct ParsedType final {
         if (terminator == std::string_view::npos) {
             Fail(name_begin, "object descriptor has no terminator");
         }
-        if (!IsValidInternalClassName(
+        if (!IsValidJniObjectClassName(
                 input.substr(name_begin, terminator - name_begin))) {
             Fail(name_begin, "object descriptor has an invalid class name");
         }

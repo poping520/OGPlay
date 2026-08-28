@@ -17,8 +17,22 @@
 #include "../interpreter_internal.h"
 #include "ogplay/core/text.h"
 #include "ogplay/runtime/dexvm/class_name_codec.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
 namespace ogplay::runtime::dexvm::intrinsics::detail {
+
+[[nodiscard]] inline IntrinsicClassDecl DeclareSimpleThrowable(
+    const std::string_view descriptor, const std::string_view super_descriptor) {
+    auto builder = IntrinsicClassBuilder::Class(
+        std::string(descriptor), std::string(super_descriptor));
+    builder.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& context) {
+        context.vm.SetThrowableMessage(context.receiver,
+                                       context.arguments[0].ref);
+        return VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
 
 [[nodiscard]] inline std::string DottedName(const std::string& descriptor) {
     if (descriptor.starts_with("L") && descriptor.ends_with(";")) {

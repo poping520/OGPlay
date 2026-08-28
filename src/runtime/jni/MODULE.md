@@ -30,6 +30,8 @@ Bionic、syscall、execution 或 integration。
   永久销毁时调用，唤醒全部 waiter 并让当前与后续 `Enter` 一律以 `shut_down` 失败。
 - `BuildJniNativeExportNames` 严格验证 class/method/descriptor，并按 JNI 规范同时产出
   short 与含参数 descriptor 的 long 名；Unicode 必须先转为 UTF-16 code unit 再转义。
+- object descriptor、DexVM internal class name 与 JNI native signature 共用
+  `IsValidJniObjectClassName`，禁止各入口漂移出不同的斜杠/分段规则。
 
 ## 测试
 

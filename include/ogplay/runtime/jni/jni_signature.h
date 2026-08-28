@@ -54,6 +54,8 @@ private:
     std::size_t offset_{};
 };
 
+[[nodiscard]] bool IsValidJniObjectClassName(
+    std::string_view name) noexcept;
 [[nodiscard]] JniTypeDescriptor ParseJniFieldDescriptor(
     std::string_view descriptor);
 [[nodiscard]] JniMethodDescriptor ParseJniMethodDescriptor(

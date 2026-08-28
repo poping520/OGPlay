@@ -8,6 +8,8 @@
 #include <memory>
 #include <mutex>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "ogplay/memory/address_space.h"
@@ -54,12 +56,80 @@ constexpr std::size_t kMaximumUtf16CodeUnits = 1024U * 1024U;
     return *identity;
 }
 
+struct GuestStringLease final {
+    memory::GuestAddress pointer;
+    std::size_t size{};
+    JniObjectIdentity string;
+    std::uint64_t token{};
+};
+
+class GuestStringLeaseArena final {
+public:
+    using Iterator = std::vector<GuestStringLease>::iterator;
+
+    GuestStringLeaseArena(const memory::GuestAddress begin,
+                          const std::uint64_t size,
+                          const std::string_view exceeds_error,
+                          const std::string_view full_error)
+        : begin_(begin), size_(size), exceeds_error_(exceeds_error),
+          full_error_(full_error) {}
+
+    [[nodiscard]] memory::GuestAddress Allocate(
+        const std::size_t requested) const {
+        if (requested == 0 || requested > size_) {
+            throw JniGuestBindingError(std::string(exceeds_error_));
+        }
+        auto ordered = leases_;
+        std::ranges::sort(ordered, {}, &GuestStringLease::pointer);
+        std::uint64_t offset{};
+        for (const auto& lease : ordered) {
+            const auto lease_offset = lease.pointer.Value() - begin_.Value();
+            if (requested <= lease_offset - offset) break;
+            offset = lease_offset + lease.size;
+        }
+        if (offset > size_ || requested > size_ - offset) {
+            throw JniGuestBindingError(std::string(full_error_));
+        }
+        return begin_.Add(offset);
+    }
+
+    void Publish(const memory::GuestAddress pointer, const std::size_t size,
+                 const JniObjectIdentity string, const std::uint64_t token) {
+        leases_.push_back({pointer, size, string, token});
+    }
+
+    [[nodiscard]] Iterator Require(
+        const memory::GuestAddress pointer, const JniObjectIdentity string,
+        const std::string_view mismatch_error) {
+        const auto found = std::ranges::find_if(
+            leases_, [pointer](const GuestStringLease& lease) {
+                return lease.pointer == pointer;
+            });
+        if (found == leases_.end() || found->string != string) {
+            throw JniGuestBindingError(std::string(mismatch_error));
+        }
+        return found;
+    }
+
+    void Erase(const Iterator lease) { leases_.erase(lease); }
+
+private:
+    memory::GuestAddress begin_;
+    std::uint64_t size_{};
+    std::string_view exceeds_error_;
+    std::string_view full_error_;
+    std::vector<GuestStringLease> leases_;
+};
+
 class ModifiedUtf8Leases final {
 public:
     ModifiedUtf8Leases(JniEnvironment& environment, JniStringStore& strings,
                        memory::AddressSpace& address_space)
         : environment_(&environment), strings_(&strings),
-          address_space_(&address_space) {
+          address_space_(&address_space),
+          arena_(kStringLeaseBegin, kStringLeaseSize,
+                 "JNI guest modified UTF-8 lease exceeds its arena",
+                 "JNI guest modified UTF-8 lease arena is full") {
         address_space_->Map(
             {kStringLeaseBegin, kStringLeaseSize},
             memory::PageProtection::read | memory::PageProtection::write);
@@ -80,7 +150,7 @@ public:
         access.modified_utf8.push_back(0U);
         std::scoped_lock lock(mutex_);
         try {
-            const auto pointer = Allocate(access.modified_utf8.size());
+            const auto pointer = arena_.Allocate(access.modified_utf8.size());
             address_space_->Write(
                 pointer,
                 std::as_bytes(std::span{access.modified_utf8}),
@@ -91,8 +161,8 @@ public:
                     memory::GuestAddress{frame.registers[2]},
                     std::span{&copied, 1}, frame.thread_id);
             }
-            leases_.push_back(
-                {pointer, access.modified_utf8.size(), string, access.token});
+            arena_.Publish(pointer, access.modified_utf8.size(), string,
+                           access.token);
             return pointer.Value();
         } catch (...) {
             strings_->Release(string, access.token,
@@ -105,53 +175,20 @@ public:
         const auto string = ResolveString(*environment_, frame);
         const auto pointer = memory::GuestAddress{frame.registers[2]};
         std::scoped_lock lock(mutex_);
-        const auto found = std::ranges::find_if(
-            leases_, [pointer](const Lease& lease) {
-                return lease.pointer == pointer;
-            });
-        if (found == leases_.end() || found->string != string) {
-            throw JniGuestBindingError(
-                "ReleaseStringUTFChars pointer does not match an active lease");
-        }
+        const auto found = arena_.Require(
+            pointer, string,
+            "ReleaseStringUTFChars pointer does not match an active lease");
         strings_->Release(found->string, found->token,
                           JniStringAccessKind::modified_utf8);
-        leases_.erase(found);
+        arena_.Erase(found);
     }
 
 private:
-    struct Lease final {
-        memory::GuestAddress pointer;
-        std::size_t size{};
-        JniObjectIdentity string;
-        std::uint64_t token{};
-    };
-
-    [[nodiscard]] memory::GuestAddress Allocate(const std::size_t size) const {
-        if (size == 0 || size > kStringLeaseSize) {
-            throw JniGuestBindingError(
-                "JNI guest modified UTF-8 lease exceeds its arena");
-        }
-        auto ordered = leases_;
-        std::ranges::sort(ordered, {}, &Lease::pointer);
-        std::uint64_t offset{};
-        for (const auto& lease : ordered) {
-            const auto lease_offset =
-                lease.pointer.Value() - kStringLeaseBegin.Value();
-            if (size <= lease_offset - offset) break;
-            offset = lease_offset + lease.size;
-        }
-        if (offset > kStringLeaseSize || size > kStringLeaseSize - offset) {
-            throw JniGuestBindingError(
-                "JNI guest modified UTF-8 lease arena is full");
-        }
-        return kStringLeaseBegin.Add(offset);
-    }
-
     JniEnvironment* environment_{};
     JniStringStore* strings_{};
     memory::AddressSpace* address_space_{};
     mutable std::mutex mutex_;
-    std::vector<Lease> leases_;
+    GuestStringLeaseArena arena_;
 };
 
 [[nodiscard]] std::vector<std::byte> EncodeUtf16(
@@ -171,7 +208,10 @@ public:
     Utf16Leases(JniEnvironment& environment, JniStringStore& strings,
                 memory::AddressSpace& address_space)
         : environment_(&environment), strings_(&strings),
-          address_space_(&address_space) {
+          address_space_(&address_space),
+          arena_(kUtf16LeaseBegin, kUtf16LeaseSize,
+                 "JNI guest UTF-16 lease exceeds its arena",
+                 "JNI guest UTF-16 lease arena is full") {
         address_space_->Map(
             {kUtf16LeaseBegin, kUtf16LeaseSize},
             memory::PageProtection::read | memory::PageProtection::write);
@@ -196,13 +236,12 @@ public:
         const auto bytes = EncodeUtf16(access.chars, true);
         std::scoped_lock lock(mutex_);
         try {
-            const auto pointer = Allocate(bytes.size());
+            const auto pointer = arena_.Allocate(bytes.size());
             address_space_->Write(pointer, bytes, frame.thread_id);
             if (!is_copy.IsNull()) {
                 address_space_->Write8(is_copy, 1U, frame.thread_id);
             }
-            leases_.push_back(
-                {pointer, bytes.size(), string, access.token});
+            arena_.Publish(pointer, bytes.size(), string, access.token);
             return pointer.Value();
         } catch (...) {
             strings_->Release(string, access.token,
@@ -215,54 +254,20 @@ public:
         const auto string = ResolveString(*environment_, frame);
         const auto pointer = memory::GuestAddress{frame.registers[2]};
         std::scoped_lock lock(mutex_);
-        const auto found = std::ranges::find_if(
-            leases_, [pointer](const Lease& lease) {
-                return lease.pointer == pointer;
-            });
-        if (found == leases_.end() || found->string != string) {
-            throw JniGuestBindingError(
-                "ReleaseStringChars pointer does not match an active lease");
-        }
+        const auto found = arena_.Require(
+            pointer, string,
+            "ReleaseStringChars pointer does not match an active lease");
         strings_->Release(found->string, found->token,
                           JniStringAccessKind::chars);
-        leases_.erase(found);
+        arena_.Erase(found);
     }
 
 private:
-    struct Lease final {
-        memory::GuestAddress pointer;
-        std::size_t size{};
-        JniObjectIdentity string;
-        std::uint64_t token{};
-    };
-
-    [[nodiscard]] memory::GuestAddress Allocate(const std::size_t size) const {
-        if (size == 0 || size > kUtf16LeaseSize) {
-            throw JniGuestBindingError(
-                "JNI guest UTF-16 lease exceeds its arena");
-        }
-        auto ordered = leases_;
-        std::ranges::sort(ordered, {}, &Lease::pointer);
-        std::uint64_t offset{};
-        for (const auto& lease : ordered) {
-            const auto lease_offset =
-                lease.pointer.Value() - kUtf16LeaseBegin.Value();
-            if (size <= lease_offset - offset) break;
-            offset = lease_offset + lease.size;
-        }
-        if (offset > kUtf16LeaseSize ||
-            size > kUtf16LeaseSize - offset) {
-            throw JniGuestBindingError(
-                "JNI guest UTF-16 lease arena is full");
-        }
-        return kUtf16LeaseBegin.Add(offset);
-    }
-
     JniEnvironment* environment_{};
     JniStringStore* strings_{};
     memory::AddressSpace* address_space_{};
     mutable std::mutex mutex_;
-    std::vector<Lease> leases_;
+    GuestStringLeaseArena arena_;
 };
 
 }  // namespace

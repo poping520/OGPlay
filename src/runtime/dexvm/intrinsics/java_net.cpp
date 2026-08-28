@@ -10,17 +10,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_net_MalformedURLExcepti
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_net_MalformedURLException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/net/MalformedURLException;", "Ljava/io/IOException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/net/MalformedURLException;", "Ljava/io/IOException;");
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
@@ -839,17 +829,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_net_SocketException {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_net_SocketException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/net/SocketException;", "Ljava/io/IOException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/net/SocketException;", "Ljava/io/IOException;");
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
@@ -870,17 +850,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_net_SocketTimeoutExcept
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_net_SocketTimeoutException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/net/SocketTimeoutException;", "Ljava/io/IOException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/net/SocketTimeoutException;", "Ljava/io/IOException;");
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
@@ -901,17 +871,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_net_UnknownHostExceptio
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_net_UnknownHostException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/net/UnknownHostException;", "Ljava/io/IOException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/net/UnknownHostException;", "Ljava/io/IOException;");
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

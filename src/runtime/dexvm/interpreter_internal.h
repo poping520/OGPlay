@@ -27,6 +27,8 @@ namespace ogplay::runtime::dexvm {
 
 namespace gen = ogplay::runtime::dexvm::generated;
 
+struct VmThreadSnapshot;
+
 struct Frame final {
     const LinkedMethod* method{};
     std::vector<Slot> regs;
@@ -308,6 +310,9 @@ public:
                      std::uint32_t dex_pc = 0,
                      std::uint8_t opcode = 0,
                      std::uint64_t value = 0);
+    [[nodiscard]] std::vector<DexVmThreadStack> BuildStackSnapshotLocked(
+        const std::unordered_map<std::uint64_t, VmThreadSnapshot>&
+            thread_by_context) const;
 
     // ---- execution --------------------------------------------------------
 

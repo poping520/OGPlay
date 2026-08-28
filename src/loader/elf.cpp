@@ -13,6 +13,8 @@
 
 #include "ogplay/core/byte_order.h"
 
+#include "elf_internal.h"
+
 namespace ogplay::loader {
 namespace {
 
@@ -108,42 +110,20 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
 
 [[nodiscard]] std::optional<std::uint32_t> UniqueDynamicValue(
     const Elf32Image& image, const std::int32_t tag) {
-    std::optional<std::uint32_t> result;
-    for (const auto& entry : image.dynamic_entries) {
-        if (entry.tag != tag) continue;
-        Require(!result.has_value(), "dynamic tag appears more than once");
-        result = entry.value;
-    }
-    return result;
+    return elf_detail::UniqueDynamicValue(
+        image, tag, "dynamic tag appears more than once");
 }
 
 [[nodiscard]] std::size_t VirtualFileOffset(
     const Elf32Image& image, const memory::GuestAddress address,
     const std::uint32_t size, const std::size_t file_size) {
-    const auto start = static_cast<std::uint64_t>(address.Value());
-    const auto end = start + size;
-    Require(end <= (UINT64_C(1) << 32U),
-            "dynamic virtual range wraps the address space");
-    std::optional<std::size_t> result;
-    for (const auto& segment : image.program_headers) {
-        if (segment.type != kElfProgramLoad) continue;
-        const auto segment_start =
-            static_cast<std::uint64_t>(segment.virtual_address.Value());
-        const auto segment_file_end = segment_start + segment.file_size;
-        if (start < segment_start || end > segment_file_end) continue;
-        Require(!result.has_value(),
-                "dynamic virtual range has ambiguous PT_LOAD mappings");
-        const auto delta = start - segment_start;
-        const auto offset = static_cast<std::uint64_t>(segment.file_offset) + delta;
-        Require(offset <= std::numeric_limits<std::size_t>::max(),
-                "dynamic file offset is not representable");
-        RequireRange(static_cast<std::size_t>(offset), size, file_size,
-                     "dynamic virtual range is outside the image");
-        result = static_cast<std::size_t>(offset);
-    }
-    Require(result.has_value(),
-            "dynamic virtual range is not file-backed by PT_LOAD");
-    return *result;
+    return elf_detail::VirtualFileOffset(
+        image, address, size, file_size,
+        {"dynamic virtual range wraps the address space",
+         "dynamic virtual range has ambiguous PT_LOAD mappings",
+         "dynamic file offset is not representable",
+         "dynamic virtual range is outside the image",
+         "dynamic virtual range is not file-backed by PT_LOAD"});
 }
 
 void RequireLoadMemoryRange(const Elf32Image& image,

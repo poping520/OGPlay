@@ -17,17 +17,6 @@ inline constexpr std::size_t kMaximumMethodParameterSlots = 255;
     throw JniSignatureError(offset, std::move(message));
 }
 
-[[nodiscard]] bool IsValidObjectClass(const std::string_view name) {
-    if (name.empty() || name.front() == '/' || name.back() == '/' ||
-        name.find("//") != std::string_view::npos) {
-        return false;
-    }
-    return std::none_of(name.begin(), name.end(), [](const char value) {
-        return value == '.' || value == '[' || value == ';' || value == '(' ||
-               value == ')';
-    });
-}
-
 [[nodiscard]] JniTypeKind PrimitiveKind(const char marker,
                                         const std::size_t offset) {
     switch (marker) {
@@ -69,7 +58,7 @@ inline constexpr std::size_t kMaximumMethodParameterSlots = 255;
             Fail(name_begin, "JNI object descriptor has no terminator");
         }
         const auto name = descriptor.substr(name_begin, terminator - name_begin);
-        if (!IsValidObjectClass(name)) {
+        if (!IsValidJniObjectClassName(name)) {
             Fail(name_begin, "JNI object descriptor has an invalid class name");
         }
         object_class = std::string(name);
@@ -93,6 +82,17 @@ inline constexpr std::size_t kMaximumMethodParameterSlots = 255;
 }
 
 }  // namespace
+
+bool IsValidJniObjectClassName(const std::string_view name) noexcept {
+    if (name.empty() || name.front() == '/' || name.back() == '/' ||
+        name.find("//") != std::string_view::npos) {
+        return false;
+    }
+    return std::none_of(name.begin(), name.end(), [](const char value) {
+        return value == '.' || value == '[' || value == ';' || value == '(' ||
+               value == ')';
+    });
+}
 
 bool JniTypeDescriptor::IsReference() const noexcept {
     return kind == JniTypeKind::object || kind == JniTypeKind::array;

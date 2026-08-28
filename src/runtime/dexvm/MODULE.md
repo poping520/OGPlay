@@ -45,6 +45,7 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   class、superclass、direct interface 递归稳定聚合与去重，Constructor 始终只查本类。
   三类 wrapper 的 API19 hashCode 与 exact declaration toString 共用 modifier/type-name
   formatter；fresh semantic-equal wrapper 不退回 Object identity hash。
+  三类成员数组物化与 ordinal metadata 查询分别共用一份受检骨架，类型差异只由工厂参数表达。
 - `ReflectionCodec` / invoke runtime（DVM-66）：统一 Object/ref 可赋值检查、
   primitive wrapper unbox/widen 与返回 boxing；禁止 narrowing 及 boolean/numeric
   互转。`Method.invoke` 从 interpreter 活跃 frame 取真实 caller，以
@@ -65,6 +66,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   匹配，null 参数 NPE、非 enum/未命中 IllegalArgumentException（消息对照 AOSP）。
   enum 子类的 `values()` 走数组 `Object.clone()`：数组可赋给 `Cloneable` /
   `Serializable`，浅拷贝顶层元素。
+  StringBuffer/StringBuilder 的同构 API 由 descriptor 参数化的一份声明生成；只含
+  `()`/`(String)` 构造器的简单 throwable 共用声明助手，特殊异常继续独立定义。
 - `CollectionRuntime`（DVM-78）：统一拥有 java.util sequence/map、sub-list、三类
   live map view、稳定 Entry 与 fail-fast iterator 的 per-VM side state；map 节点保存
   guest virtual `hashCode` 结果和稳定 entry id，结构修改递增 `mod_count`。所有 guest
@@ -94,6 +97,7 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   不依赖 Android context；未注入 allocator 时 `allocateDirect` 明确失败。
   DVM-83 增加 scoped guest-memory operation：direct Buffer 返回 position 对应地址，heap/
   view 经注入 allocator 暂存并按方向 copy-back；无论成功或异常均回收临时区且不修改 cursor。
+  bulk get/put 共用 range 与 remaining 预检，但方向、异常类型和元素搬运仍显式保留。
 - `java.lang.Thread` 对照 pinned libcore `Thread.java`/`VMThread.java` 与 Dalvik
   `Thread.cpp`/`Sync.cpp`：root context 具有稳定 id=1 `main` Thread 强根；构造时
   分配 per-VM stable ID；`start()` 经实际 Thread class vtable 虚派发
@@ -174,6 +178,7 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   context 的 Java 帧、dex pc、tick 与 pending exception，并用 context token 关联
   `VmThreadRuntime` 的 guest id/name/status；这是等待当前 guest call 释放全 VM 锁的
   停界查询，不宣称异步抢占。`RenderDexVmStacksJson` 输出 schema 1。
+  阻塞与 try-lock 两个入口只共享锁内 snapshot 投影，不合并各自的锁获取协议。
 - stall snapshot 使用 `TryTrace`/`TryStackSnapshot` 与 `VmThreadRuntime::TrySnapshot`；任一
   execution/thread/monitor 锁不能立即取得时返回 busy，不等待 guest 释放锁。
 - `VmMonitorTable::TrySnapshotAll` 分开发布等待取得 owner 的 entry waiter 与
@@ -199,6 +204,7 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   才退回 vector）。invoke-virtual 用缓存 `vtable_index` 直取 vtable。
   解释 invoke 经 `Frame::fast_ip` 恢复，避免同帧 `IndexForDexPc`。
   `invoke_checked` 在 shorty 之后证明 J/D pair（k35c 还要求列出的 word 连续）。
+  int/long 与 float/double 算术各在本家族内共用类型参数化实现，整数除零语义不与浮点合并。
   `<clinit>` / intrinsic 调用不跨 `AddClass` 悬挂 `LinkedClass&`。
   对象/invoke 慢路径仍调用共享 `InvokeIntrinsic`/`PushInterpretedFrame`/
   `EnsureInitialized`，字段与数组体在 `.inc` 中另有一份，语义对照旧内核夹具。

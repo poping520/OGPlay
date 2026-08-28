@@ -2276,142 +2276,136 @@ IntrinsicClassDecl Declare_java_lang_String() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuffer {
-using namespace detail;
+namespace ogplay::runtime::dexvm::intrinsics::detail {
 
-IntrinsicClassDecl Declare_java_lang_StringBuffer() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/StringBuffer;", "Ljava/lang/Object;", {"Ljava/lang/CharSequence;"});
-    builder.Constructor("()V",
+[[nodiscard]] IntrinsicClassDecl DeclareStringBuilderLike(
+    const std::string_view descriptor) {
+    const std::string self(descriptor);
+    auto builder = IntrinsicClassBuilder::Class(
+        self, "Ljava/lang/Object;", {"Ljava/lang/CharSequence;"});
+    builder.Constructor("()V", [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver).clear();
+        return VmValue::Void();
+    });
+    builder.Constructor("(I)V", [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver).clear();
+        return VmValue::Void();
+    });
+    builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver) =
+            Value(context, context.arguments[0].ref);
+        return VmValue::Void();
+    });
+    builder.FinalMethod("append", "(Ljava/lang/String;)" + self,
         [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver).clear();
-                return VmValue::Void();
-            });
-    builder.Constructor("(I)V",
+            const auto argument = context.arguments[0].ref;
+            context.vm.BuilderBuffer(context.receiver) +=
+                argument.IsValid() ? Value(context, argument)
+                                   : std::u16string(u"null");
+            return BuilderSelf(context);
+        });
+    builder.FinalMethod("append", "(Ljava/lang/Object;)" + self,
         [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver).clear();
-                return VmValue::Void();
-            });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) =
-                    Value(context, context.arguments[0].ref);
-                return VmValue::Void();
-            });
-    builder.FinalMethod("append", "(Ljava/lang/String;)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                const auto argument = context.arguments[0].ref;
-                context.vm.BuilderBuffer(context.receiver) +=
-                    argument.IsValid() ? Value(context, argument)
-                                       : std::u16string(u"null");
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(Ljava/lang/Object;)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                const auto argument = context.arguments[0].ref;
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                if (!argument.IsValid()) {
-                    buffer += u"null";
+            const auto argument = context.arguments[0].ref;
+            auto& buffer = context.vm.BuilderBuffer(context.receiver);
+            if (!argument.IsValid()) {
+                buffer += u"null";
+            } else {
+                auto& model = context.vm.Model();
+                const auto kind = model.Kind(argument);
+                if (kind == VmObjectKind::string ||
+                    kind == VmObjectKind::external) {
+                    buffer += Value(context, argument);
                 } else {
-                    auto& model = context.vm.Model();
-                    const auto kind = model.Kind(argument);
-                    if (kind == VmObjectKind::string ||
-                        kind == VmObjectKind::external) {
-                        buffer += Value(context, argument);
-                    } else {
-                        buffer += Widen("@" + std::to_string(argument.Value()));
-                    }
+                    buffer += Widen("@" + std::to_string(argument.Value()));
                 }
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(I)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    Widen(std::to_string(context.arguments[0].AsInt()));
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(J)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    Widen(std::to_string(context.arguments[0].AsLong()));
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(Z)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    context.arguments[0].AsInt() != 0 ? u"true"
-                                                      : std::u16string(u"false");
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(C)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) += static_cast<char16_t>(
-                    context.arguments[0].cat1 & 0xffffU);
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(F)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    Widen(std::to_string(context.arguments[0].AsFloat()));
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(D)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    Widen(std::to_string(context.arguments[0].AsDouble()));
-                return BuilderSelf(context);
-            });
+            }
+            return BuilderSelf(context);
+        });
+    builder.FinalMethod("append", "(I)" + self, [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver) +=
+            Widen(std::to_string(context.arguments[0].AsInt()));
+        return BuilderSelf(context);
+    });
+    builder.FinalMethod("append", "(J)" + self, [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver) +=
+            Widen(std::to_string(context.arguments[0].AsLong()));
+        return BuilderSelf(context);
+    });
+    builder.FinalMethod("append", "(Z)" + self, [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver) +=
+            context.arguments[0].AsInt() != 0 ? u"true"
+                                              : std::u16string(u"false");
+        return BuilderSelf(context);
+    });
+    builder.FinalMethod("append", "(C)" + self, [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver) +=
+            static_cast<char16_t>(context.arguments[0].cat1 & 0xffffU);
+        return BuilderSelf(context);
+    });
+    builder.FinalMethod("append", "(F)" + self, [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver) +=
+            Widen(std::to_string(context.arguments[0].AsFloat()));
+        return BuilderSelf(context);
+    });
+    builder.FinalMethod("append", "(D)" + self, [](IntrinsicContext& context) {
+        context.vm.BuilderBuffer(context.receiver) +=
+            Widen(std::to_string(context.arguments[0].AsDouble()));
+        return BuilderSelf(context);
+    });
     builder.FinalMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
-                return Make(context, context.vm.BuilderBuffer(context.receiver));
-            });
-    builder.FinalMethod("length", "()I",
+            return Make(context, context.vm.BuilderBuffer(context.receiver));
+        });
+    builder.FinalMethod("length", "()I", [](IntrinsicContext& context) {
+        return VmValue::Int(static_cast<std::int32_t>(
+            context.vm.BuilderBuffer(context.receiver).size()));
+    });
+    builder.FinalMethod("charAt", "(I)C", [](IntrinsicContext& context) {
+        auto& buffer = context.vm.BuilderBuffer(context.receiver);
+        const auto index = context.arguments[0].AsInt();
+        CheckBuilderIndex(buffer, index);
+        return VmValue::Int(buffer[static_cast<std::size_t>(index)]);
+    });
+    builder.FinalMethod("setCharAt", "(IC)V", [](IntrinsicContext& context) {
+        auto& buffer = context.vm.BuilderBuffer(context.receiver);
+        const auto index = context.arguments[0].AsInt();
+        CheckBuilderIndex(buffer, index);
+        buffer[static_cast<std::size_t>(index)] =
+            static_cast<char16_t>(context.arguments[1].cat1 & 0xffffU);
+        return VmValue::Void();
+    });
+    builder.FinalMethod("deleteCharAt", "(I)" + self,
         [](IntrinsicContext& context) {
-                return VmValue::Int(static_cast<std::int32_t>(
-                    context.vm.BuilderBuffer(context.receiver).size()));
-            });
-    builder.FinalMethod("charAt", "(I)C",
-        [](IntrinsicContext& context) {
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                const auto index = context.arguments[0].AsInt();
-                CheckBuilderIndex(buffer, index);
-                return VmValue::Int(buffer[static_cast<std::size_t>(index)]);
-            });
-    builder.FinalMethod("setCharAt", "(IC)V",
-        [](IntrinsicContext& context) {
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                const auto index = context.arguments[0].AsInt();
-                CheckBuilderIndex(buffer, index);
-                buffer[static_cast<std::size_t>(index)] = static_cast<char16_t>(
-                    context.arguments[1].cat1 & 0xffffU);
-                return VmValue::Void();
-            });
-    builder.FinalMethod("deleteCharAt", "(I)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                const auto index = context.arguments[0].AsInt();
-                CheckBuilderIndex(buffer, index);
-                buffer.erase(buffer.begin() + index);
-                return VmValue::Ref(context.receiver);
-            });
-    builder.FinalMethod("insert", "(IC)Ljava/lang/StringBuffer;",
-        [](IntrinsicContext& context) {
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                const auto index = context.arguments[0].AsInt();
-                if (index < 0 || static_cast<std::size_t>(index) > buffer.size()) {
-                    throw VmJavaThrow{
-                        "Ljava/lang/StringIndexOutOfBoundsException;",
-                        "insert offset " + std::to_string(index)};
-                }
-                buffer.insert(buffer.begin() + index,
-                              static_cast<char16_t>(context.arguments[1].cat1 &
-                                                    0xffffU));
-                return VmValue::Ref(context.receiver);
-            });
-    auto result = std::move(builder).Build();
-    return result;
+            auto& buffer = context.vm.BuilderBuffer(context.receiver);
+            const auto index = context.arguments[0].AsInt();
+            CheckBuilderIndex(buffer, index);
+            buffer.erase(buffer.begin() + index);
+            return VmValue::Ref(context.receiver);
+        });
+    builder.FinalMethod("insert", "(IC)" + self, [](IntrinsicContext& context) {
+        auto& buffer = context.vm.BuilderBuffer(context.receiver);
+        const auto index = context.arguments[0].AsInt();
+        if (index < 0 || static_cast<std::size_t>(index) > buffer.size()) {
+            throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;",
+                              "insert offset " + std::to_string(index)};
+        }
+        buffer.insert(buffer.begin() + index,
+                      static_cast<char16_t>(context.arguments[1].cat1 & 0xffffU));
+        return VmValue::Ref(context.receiver);
+    });
+    return std::move(builder).Build();
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics
+}  // namespace ogplay::runtime::dexvm::intrinsics::detail
+
+namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuffer {
+
+IntrinsicClassDecl Declare_java_lang_StringBuffer() {
+    return detail::DeclareStringBuilderLike("Ljava/lang/StringBuffer;");
+}
+
+}  // namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuffer
 
 namespace ogplay::runtime::dexvm::intrinsics {
 IntrinsicClassDecl Declare_java_lang_StringBuffer() {
@@ -2426,141 +2420,12 @@ IntrinsicClassDecl Declare_java_lang_StringBuffer() {
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
 namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuilder {
-using namespace detail;
 
 IntrinsicClassDecl Declare_java_lang_StringBuilder() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/StringBuilder;", "Ljava/lang/Object;", {"Ljava/lang/CharSequence;"});
-    builder.Constructor("()V",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver).clear();
-                return VmValue::Void();
-            });
-    builder.Constructor("(I)V",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver).clear();
-                return VmValue::Void();
-            });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) =
-                    Value(context, context.arguments[0].ref);
-                return VmValue::Void();
-            });
-    builder.FinalMethod("append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                const auto argument = context.arguments[0].ref;
-                context.vm.BuilderBuffer(context.receiver) +=
-                    argument.IsValid() ? Value(context, argument)
-                                       : std::u16string(u"null");
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(Ljava/lang/Object;)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                const auto argument = context.arguments[0].ref;
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                if (!argument.IsValid()) {
-                    buffer += u"null";
-                } else {
-                    auto& model = context.vm.Model();
-                    const auto kind = model.Kind(argument);
-                    if (kind == VmObjectKind::string ||
-                        kind == VmObjectKind::external) {
-                        buffer += Value(context, argument);
-                    } else {
-                        buffer += Widen("@" + std::to_string(argument.Value()));
-                    }
-                }
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(I)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    Widen(std::to_string(context.arguments[0].AsInt()));
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(J)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    Widen(std::to_string(context.arguments[0].AsLong()));
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(Z)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    context.arguments[0].AsInt() != 0 ? u"true"
-                                                      : std::u16string(u"false");
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(C)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) += static_cast<char16_t>(
-                    context.arguments[0].cat1 & 0xffffU);
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(F)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    Widen(std::to_string(context.arguments[0].AsFloat()));
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("append", "(D)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                context.vm.BuilderBuffer(context.receiver) +=
-                    Widen(std::to_string(context.arguments[0].AsDouble()));
-                return BuilderSelf(context);
-            });
-    builder.FinalMethod("toString", "()Ljava/lang/String;",
-        [](IntrinsicContext& context) {
-                return Make(context, context.vm.BuilderBuffer(context.receiver));
-            });
-    builder.FinalMethod("length", "()I",
-        [](IntrinsicContext& context) {
-                return VmValue::Int(static_cast<std::int32_t>(
-                    context.vm.BuilderBuffer(context.receiver).size()));
-            });
-    builder.FinalMethod("charAt", "(I)C",
-        [](IntrinsicContext& context) {
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                const auto index = context.arguments[0].AsInt();
-                CheckBuilderIndex(buffer, index);
-                return VmValue::Int(buffer[static_cast<std::size_t>(index)]);
-            });
-    builder.FinalMethod("setCharAt", "(IC)V",
-        [](IntrinsicContext& context) {
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                const auto index = context.arguments[0].AsInt();
-                CheckBuilderIndex(buffer, index);
-                buffer[static_cast<std::size_t>(index)] = static_cast<char16_t>(
-                    context.arguments[1].cat1 & 0xffffU);
-                return VmValue::Void();
-            });
-    builder.FinalMethod("deleteCharAt", "(I)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                const auto index = context.arguments[0].AsInt();
-                CheckBuilderIndex(buffer, index);
-                buffer.erase(buffer.begin() + index);
-                return VmValue::Ref(context.receiver);
-            });
-    builder.FinalMethod("insert", "(IC)Ljava/lang/StringBuilder;",
-        [](IntrinsicContext& context) {
-                auto& buffer = context.vm.BuilderBuffer(context.receiver);
-                const auto index = context.arguments[0].AsInt();
-                if (index < 0 || static_cast<std::size_t>(index) > buffer.size()) {
-                    throw VmJavaThrow{
-                        "Ljava/lang/StringIndexOutOfBoundsException;",
-                        "insert offset " + std::to_string(index)};
-                }
-                buffer.insert(buffer.begin() + index,
-                              static_cast<char16_t>(context.arguments[1].cat1 &
-                                                    0xffffU));
-                return VmValue::Ref(context.receiver);
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return detail::DeclareStringBuilderLike("Ljava/lang/StringBuilder;");
 }
 
-}  // namespace ogplay::runtime::dexvm::intrinsics
+}  // namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_StringBuilder
 
 namespace ogplay::runtime::dexvm::intrinsics {
 IntrinsicClassDecl Declare_java_lang_StringBuilder() {
@@ -3075,59 +2940,19 @@ void SetThrowableRefField(IntrinsicContext& context,
 }
 
 IntrinsicClassDecl Declare_java_lang_ArithmeticException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ArithmeticException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/ArithmeticException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_ArrayIndexOutOfBoundsException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ArrayIndexOutOfBoundsException;", "Ljava/lang/IndexOutOfBoundsException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/ArrayIndexOutOfBoundsException;", "Ljava/lang/IndexOutOfBoundsException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_ArrayStoreException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ArrayStoreException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/ArrayStoreException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_ClassCastException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ClassCastException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/ClassCastException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_ClassNotFoundException() {
@@ -3164,241 +2989,71 @@ IntrinsicClassDecl Declare_java_lang_ClassNotFoundException() {
 }
 
 IntrinsicClassDecl Declare_java_lang_Error() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Error;", "Ljava/lang/Throwable;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/Error;", "Ljava/lang/Throwable;");
 }
 
 IntrinsicClassDecl Declare_java_lang_Exception() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Exception;", "Ljava/lang/Throwable;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/Exception;", "Ljava/lang/Throwable;");
 }
 
 IntrinsicClassDecl Declare_java_lang_IllegalArgumentException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/IllegalArgumentException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/IllegalArgumentException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_IllegalMonitorStateException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/IllegalMonitorStateException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/IllegalMonitorStateException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_IllegalStateException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/IllegalStateException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/IllegalStateException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_IllegalThreadStateException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/IllegalThreadStateException;", "Ljava/lang/IllegalArgumentException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/IllegalThreadStateException;", "Ljava/lang/IllegalArgumentException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_IndexOutOfBoundsException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/IndexOutOfBoundsException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/IndexOutOfBoundsException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_InterruptedException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/InterruptedException;", "Ljava/lang/Exception;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/InterruptedException;", "Ljava/lang/Exception;");
 }
 
 IntrinsicClassDecl Declare_java_lang_LinkageError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/LinkageError;", "Ljava/lang/Error;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/LinkageError;", "Ljava/lang/Error;");
 }
 
 IntrinsicClassDecl Declare_java_lang_NegativeArraySizeException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/NegativeArraySizeException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/NegativeArraySizeException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_NoClassDefFoundError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/NoClassDefFoundError;", "Ljava/lang/LinkageError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/NoClassDefFoundError;", "Ljava/lang/LinkageError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_NullPointerException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/NullPointerException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/NullPointerException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_NumberFormatException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/NumberFormatException;", "Ljava/lang/IllegalArgumentException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/NumberFormatException;", "Ljava/lang/IllegalArgumentException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_OutOfMemoryError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/OutOfMemoryError;", "Ljava/lang/VirtualMachineError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/OutOfMemoryError;", "Ljava/lang/VirtualMachineError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_RuntimeException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/RuntimeException;", "Ljava/lang/Exception;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/RuntimeException;", "Ljava/lang/Exception;");
 }
 
 IntrinsicClassDecl Declare_java_lang_StackOverflowError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/StackOverflowError;", "Ljava/lang/VirtualMachineError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/StackOverflowError;", "Ljava/lang/VirtualMachineError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_StringIndexOutOfBoundsException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/StringIndexOutOfBoundsException;", "Ljava/lang/IndexOutOfBoundsException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/StringIndexOutOfBoundsException;", "Ljava/lang/IndexOutOfBoundsException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_Throwable() {
@@ -3445,255 +3100,75 @@ IntrinsicClassDecl Declare_java_lang_Throwable() {
 }
 
 IntrinsicClassDecl Declare_java_lang_UnsatisfiedLinkError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/UnsatisfiedLinkError;", "Ljava/lang/LinkageError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/UnsatisfiedLinkError;", "Ljava/lang/LinkageError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_UnsupportedOperationException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/UnsupportedOperationException;", "Ljava/lang/RuntimeException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/UnsupportedOperationException;", "Ljava/lang/RuntimeException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_VirtualMachineError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/VirtualMachineError;", "Ljava/lang/Error;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/VirtualMachineError;", "Ljava/lang/Error;");
 }
 
 IntrinsicClassDecl Declare_java_lang_AbstractMethodError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/AbstractMethodError;", "Ljava/lang/IncompatibleClassChangeError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/AbstractMethodError;", "Ljava/lang/IncompatibleClassChangeError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_ClassCircularityError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ClassCircularityError;", "Ljava/lang/LinkageError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/ClassCircularityError;", "Ljava/lang/LinkageError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_ClassFormatError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ClassFormatError;", "Ljava/lang/LinkageError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/ClassFormatError;", "Ljava/lang/LinkageError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_CloneNotSupportedException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/CloneNotSupportedException;", "Ljava/lang/Exception;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/CloneNotSupportedException;", "Ljava/lang/Exception;");
 }
 
 IntrinsicClassDecl Declare_java_lang_IllegalAccessError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/IllegalAccessError;", "Ljava/lang/IncompatibleClassChangeError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/IllegalAccessError;", "Ljava/lang/IncompatibleClassChangeError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_IllegalAccessException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/IllegalAccessException;", "Ljava/lang/ReflectiveOperationException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/IllegalAccessException;", "Ljava/lang/ReflectiveOperationException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_IncompatibleClassChangeError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/IncompatibleClassChangeError;", "Ljava/lang/LinkageError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/IncompatibleClassChangeError;", "Ljava/lang/LinkageError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_InternalError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/InternalError;", "Ljava/lang/VirtualMachineError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/InternalError;", "Ljava/lang/VirtualMachineError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_NoSuchFieldError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/NoSuchFieldError;", "Ljava/lang/IncompatibleClassChangeError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/NoSuchFieldError;", "Ljava/lang/IncompatibleClassChangeError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_NoSuchFieldException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/NoSuchFieldException;", "Ljava/lang/ReflectiveOperationException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/NoSuchFieldException;", "Ljava/lang/ReflectiveOperationException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_NoSuchMethodError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/NoSuchMethodError;", "Ljava/lang/IncompatibleClassChangeError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/NoSuchMethodError;", "Ljava/lang/IncompatibleClassChangeError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_NoSuchMethodException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/NoSuchMethodException;", "Ljava/lang/ReflectiveOperationException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/NoSuchMethodException;", "Ljava/lang/ReflectiveOperationException;");
 }
 
 IntrinsicClassDecl Declare_java_lang_UnknownError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/UnknownError;", "Ljava/lang/VirtualMachineError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/UnknownError;", "Ljava/lang/VirtualMachineError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_UnsupportedClassVersionError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/UnsupportedClassVersionError;", "Ljava/lang/ClassFormatError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/UnsupportedClassVersionError;", "Ljava/lang/ClassFormatError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_VerifyError() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/VerifyError;", "Ljava/lang/LinkageError;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/lang/VerifyError;", "Ljava/lang/LinkageError;");
 }
 
 IntrinsicClassDecl Declare_java_lang_AssertionError() {

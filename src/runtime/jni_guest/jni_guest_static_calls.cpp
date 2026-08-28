@@ -19,6 +19,7 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "jni_guest_memory.h"
+#include "jni_guest_value_codec.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/jni/jni_object_array.h"
 
@@ -351,39 +352,9 @@ constexpr std::array kStaticCallTypes{
 
 [[nodiscard]] JniGuestCallResult EncodeResult(const JniValue& result,
                                                const JniTypeKind kind) {
-    const auto word = [](const std::uint32_t value) {
-        return JniGuestCallResult{JniGuestReturnWidth::word, {value, 0U}};
-    };
-    const auto pair = [](const std::uint64_t value) {
-        return JniGuestCallResult{
-            JniGuestReturnWidth::double_word,
-            {static_cast<std::uint32_t>(value),
-             static_cast<std::uint32_t>(value >> 32U)}};
-    };
-    switch (kind) {
-    case JniTypeKind::object:
-    case JniTypeKind::array: return word(std::get<JniReference>(result).Value());
-    case JniTypeKind::boolean: return word(std::get<JniBoolean>(result));
-    case JniTypeKind::byte:
-        return word(std::bit_cast<std::uint32_t>(
-            static_cast<JniInt>(std::get<JniByte>(result))));
-    case JniTypeKind::character: return word(std::get<JniChar>(result));
-    case JniTypeKind::short_integer:
-        return word(std::bit_cast<std::uint32_t>(
-            static_cast<JniInt>(std::get<JniShort>(result))));
-    case JniTypeKind::integer:
-        return word(std::bit_cast<std::uint32_t>(std::get<JniInt>(result)));
-    case JniTypeKind::long_integer:
-        return pair(std::bit_cast<std::uint64_t>(std::get<JniLong>(result)));
-    case JniTypeKind::float_value:
-        return word(std::bit_cast<std::uint32_t>(std::get<JniFloat>(result)));
-    case JniTypeKind::double_value:
-        return pair(std::bit_cast<std::uint64_t>(std::get<JniDouble>(result)));
-    case JniTypeKind::void_value:
-        static_cast<void>(std::get<std::monostate>(result));
-        return {};
-    }
-    throw JniGuestBindingError("JNI guest static return type is invalid");
+    return jni_guest_detail::EncodeValueResult(
+        result, kind, jni_guest_detail::VoidResultPolicy::allow,
+        "JNI guest static return type is invalid");
 }
 
 [[nodiscard]] bool ResultMatches(const JniTypeKind actual,

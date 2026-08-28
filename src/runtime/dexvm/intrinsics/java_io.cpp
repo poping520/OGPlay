@@ -10,17 +10,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_EOFException {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_EOFException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/io/EOFException;", "Ljava/io/IOException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/io/EOFException;", "Ljava/io/IOException;");
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
@@ -41,17 +31,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_FileNotFoundExceptio
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/io/FileNotFoundException;", "Ljava/io/IOException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/io/FileNotFoundException;", "Ljava/io/IOException;");
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
@@ -534,17 +514,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_IOException {
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_IOException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/io/IOException;", "Ljava/lang/Exception;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/io/IOException;", "Ljava/lang/Exception;");
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics
@@ -1075,17 +1045,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_UnsupportedEncodingE
 using namespace detail;
 
 IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/io/UnsupportedEncodingException;", "Ljava/io/IOException;");
-    builder.Constructor("()V",
-        [](IntrinsicContext &) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-        [](IntrinsicContext& context) {
-                const auto message = context.arguments[0].ref;
-                context.vm.SetThrowableMessage(context.receiver, message);
-                return VmValue::Void();
-            });
-    auto result = std::move(builder).Build();
-    return result;
+    return DeclareSimpleThrowable("Ljava/io/UnsupportedEncodingException;", "Ljava/io/IOException;");
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

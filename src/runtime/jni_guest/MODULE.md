@@ -45,6 +45,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   engine;小整数符号/零扩展、float/double/long 双字返回及 void 均遵循 A32 guest ABI,
   调用名与 descriptor 返回类型不符、错误 return kind、class、method、handler、array
   reference/type/region 或输出缓冲明确失败,成功查询只发布统一 Guest JNI ABI 地址。
+  static call 与 static field 的 primitive/reference 返回编码共用同一 value codec；void
+  是否允许由调用方策略显式决定，原 family 错误文案保持稳定。
 - guest `RegisterNatives` 将完整 ARM32 12-byte method 数组、字符串、descriptor、class 与
   target 先整批校验/resolve,再一次提交到唯一 `JniNativeRegistry`;Thumb bit 保持不变,
   `ResolveJniRegisteredNativeCall` 把 mapping 交给通用 A32 executor。`UnregisterNatives`
@@ -56,6 +58,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   class。word、符号扩展、float bits 与 long/double 双字遵循 A32 soft-float word-pair
   ABI,64 位 setter 第 4 参数从对齐 guest 栈读取;错误 class/reference/field/kind/type/
   栈地址均明确失败。
+  static/instance FieldID binding 只共享校验→查类→查字段骨架，storage kind 与错误上下文仍分开。
 - JNI guest class/object/instance family 只解析 class registry 已声明的精确名称与
   instance method descriptor;三种 NewObject 仅接受 void `<init>` 并在失败时回滚
   ref/object 映射。会话级 `JniGuestObjectRegistry` 让 guest 构造对象和 framework HLE
@@ -70,6 +73,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   string store。UTF-16 长度与 region 以 code unit 计,NewString 完整预检 guest input 并
   在 reference 发布失败时删除 semantic object;坏引用/range/输出、wrong-string/double
   release 与 arena exhaustion 明确失败,Critical 两槽继续 unbound。
+  两个 arena 共用 lease 分配、发布、配对与回收实现，编码/解码和 semantic store 操作不合并。
 - primitive array 42 槽由统一 binder 批量接入 `JniPrimitiveArrayStore`;8 类 New/Region/
   Elements 都按 little-endian ARM32 ABI 搬运,第五个 region buffer 从 guest 栈读取并在
   semantic mutation 前完整预检。Elements 使用独立 4 MiB 有界 guest arena,严格实现

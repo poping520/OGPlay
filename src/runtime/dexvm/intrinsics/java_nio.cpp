@@ -4,6 +4,7 @@
 #include <bit>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -153,37 +154,49 @@ IntrinsicHandler Put(NioElementKind kind, bool absolute) {
         return Self(c);
     };
 }
+struct BulkTransfer final {
+    VmObjectRef array;
+    std::int32_t offset{};
+    std::int32_t count{};
+};
+BulkTransfer PrepareBulkTransfer(IntrinsicContext& c, const bool range,
+                                 const std::string_view remaining_exception) {
+    const auto array = c.arguments[0].ref;
+    const auto array_length = c.vm.Model().ArrayLength(array);
+    const auto offset = range ? c.arguments[1].AsInt() : 0;
+    const auto count = range ? c.arguments[2].AsInt() : array_length;
+    const auto state = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
+    if (offset < 0 || count < 0 || offset > array_length - count) {
+        throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                          "invalid bulk range"};
+    }
+    if (count > state.limit - state.position) {
+        throw VmJavaThrow{std::string(remaining_exception),
+                          "insufficient remaining"};
+    }
+    return {array, offset, count};
+}
 IntrinsicHandler BulkGet(NioElementKind kind, bool range) {
     return [kind, range](IntrinsicContext& c) {
-        const auto array = c.arguments[0].ref;
-        const auto array_length = c.vm.Model().ArrayLength(array);
-        const auto offset = range ? c.arguments[1].AsInt() : 0;
-        const auto count = range ? c.arguments[2].AsInt() : array_length;
-        const auto state = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        if (offset < 0 || count < 0 || offset > array_length - count)
-            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid bulk range"};
-        if (count > state.limit - state.position)
-            throw VmJavaThrow{"Ljava/nio/BufferUnderflowException;", "insufficient remaining"};
-        for (int index = 0; index < count; ++index)
-            c.vm.Model().SetPrimitiveElement(array, offset + index,
+        static_cast<void>(kind);
+        const auto transfer = PrepareBulkTransfer(
+            c, range, "Ljava/nio/BufferUnderflowException;");
+        for (int index = 0; index < transfer.count; ++index)
+            c.vm.Model().SetPrimitiveElement(
+                transfer.array, transfer.offset + index,
                 c.vm.NIO().Get(Id(c.vm, c.receiver), {}));
         return Self(c);
     };
 }
 IntrinsicHandler BulkPut(NioElementKind kind, bool range) {
     return [kind, range](IntrinsicContext& c) {
-        const auto array = c.arguments[0].ref;
-        const auto array_length = c.vm.Model().ArrayLength(array);
-        const auto offset = range ? c.arguments[1].AsInt() : 0;
-        const auto count = range ? c.arguments[2].AsInt() : array_length;
-        const auto state = c.vm.NIO().Snapshot(Id(c.vm, c.receiver));
-        if (offset < 0 || count < 0 || offset > array_length - count)
-            throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "invalid bulk range"};
-        if (count > state.limit - state.position)
-            throw VmJavaThrow{"Ljava/nio/BufferOverflowException;", "insufficient remaining"};
-        for (int index = 0; index < count; ++index)
+        static_cast<void>(kind);
+        const auto transfer = PrepareBulkTransfer(
+            c, range, "Ljava/nio/BufferOverflowException;");
+        for (int index = 0; index < transfer.count; ++index)
             c.vm.NIO().Put(Id(c.vm, c.receiver), {},
-                c.vm.Model().GetPrimitiveElement(array, offset + index));
+                c.vm.Model().GetPrimitiveElement(
+                    transfer.array, transfer.offset + index));
         return Self(c);
     };
 }

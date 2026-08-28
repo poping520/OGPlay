@@ -90,18 +90,7 @@ template <typename Value>
 void ExactKeys(const Table& table, const std::string_view field,
                const std::initializer_list<std::string_view> allowed,
                const std::initializer_list<std::string_view> required = {}) {
-    for (const auto key : required) {
-        if (!table.contains(key)) {
-            throw TitleProfileError(std::string(field) + " is missing " +
-                                    std::string(key));
-        }
-    }
-    for (const auto& [key, value] : table) {
-        static_cast<void>(value);
-        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
-            throw TitleProfileError(std::string(field) + " has unknown field " + key);
-        }
-    }
+    detail::ValidateExactTableKeys(table, field, allowed, required);
 }
 
 [[nodiscard]] bool ValidHash(const std::string_view digest) {

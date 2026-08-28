@@ -95,6 +95,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 
 - Title Profile 接受 legacy schema 1/2 与 optional schema 3，统一归一到
   `dex_activity` 架构；未知 root/runtime 字段在加载期失败。
+- exact-key table 校验共用 TOML 私有入口；各 schema/table 只声明允许键集合和上下文名称。
 - v1/v2 `runtime.dexvm.interpreter` 只接受 `switch`/`threaded`；省略时固定归一为
   `switch`，Profile 只表达通用 backend 选择，不承载 title 专属解释器行为。
 - 游戏身份信息只有 Title Profile 一个来源；`src/` 不出现标题、厂商或包名分支。

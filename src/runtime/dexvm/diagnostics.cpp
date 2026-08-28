@@ -139,10 +139,16 @@ std::vector<DexVmThreadStack> Interpreter::StackSnapshot() const {
             thread_by_context.emplace(thread.context_token, std::move(thread));
         }
     }
-    std::vector<DexVmThreadStack> result;
     const std::lock_guard contexts_lock(impl_->executions_mutex);
-    result.reserve(impl_->executions.size());
-    for (const auto& [token, execution] : impl_->executions) {
+    return impl_->BuildStackSnapshotLocked(thread_by_context);
+}
+
+std::vector<DexVmThreadStack> Interpreter::Impl::BuildStackSnapshotLocked(
+    const std::unordered_map<std::uint64_t, VmThreadSnapshot>&
+        thread_by_context) const {
+    std::vector<DexVmThreadStack> result;
+    result.reserve(executions.size());
+    for (const auto& [token, execution] : executions) {
         DexVmThreadStack stack;
         stack.context_token = token;
         stack.ticks = execution->ticks;
@@ -156,24 +162,21 @@ std::vector<DexVmThreadStack> Interpreter::StackSnapshot() const {
         }
         if (execution->pending_exception.IsValid()) {
             const auto java_class =
-                impl_->model->ObjectClass(execution->pending_exception);
+                model->ObjectClass(execution->pending_exception);
             if (java_class.IsValid()) {
                 stack.pending_exception =
-                    impl_->linker->Class(java_class).descriptor;
+                    linker->Class(java_class).descriptor;
             }
         }
         stack.frames.reserve(execution->frames.size());
         for (const auto& frame : execution->frames) {
             stack.frames.push_back(
-                {impl_->linker->Class(frame.method->owner).descriptor,
+                {linker->Class(frame.method->owner).descriptor,
                  frame.method->name, frame.method->descriptor, frame.pc});
         }
         result.push_back(std::move(stack));
     }
-    std::sort(result.begin(), result.end(), [](const auto& left,
-                                               const auto& right) {
-        return left.context_token < right.context_token;
-    });
+    std::ranges::sort(result, {}, &DexVmThreadStack::context_token);
     return result;
 }
 
@@ -204,38 +207,7 @@ Interpreter::TryStackSnapshot() const {
     }
     std::unique_lock contexts_lock(impl_->executions_mutex, std::try_to_lock);
     if (!contexts_lock.owns_lock()) return std::nullopt;
-    std::vector<DexVmThreadStack> result;
-    result.reserve(impl_->executions.size());
-    for (const auto& [token, execution] : impl_->executions) {
-        DexVmThreadStack stack;
-        stack.context_token = token;
-        stack.ticks = execution->ticks;
-        if (const auto found = thread_by_context.find(token);
-            found != thread_by_context.end()) {
-            stack.guest_thread_id = found->second.id;
-            stack.thread_name = found->second.name;
-            stack.thread_status = std::string(ThreadStatusName(found->second.status));
-        } else {
-            stack.thread_status = execution->frames.empty() ? "idle" : "running";
-        }
-        if (execution->pending_exception.IsValid()) {
-            const auto java_class =
-                impl_->model->ObjectClass(execution->pending_exception);
-            if (java_class.IsValid()) {
-                stack.pending_exception =
-                    impl_->linker->Class(java_class).descriptor;
-            }
-        }
-        stack.frames.reserve(execution->frames.size());
-        for (const auto& frame : execution->frames) {
-            stack.frames.push_back(
-                {impl_->linker->Class(frame.method->owner).descriptor,
-                 frame.method->name, frame.method->descriptor, frame.pc});
-        }
-        result.push_back(std::move(stack));
-    }
-    std::ranges::sort(result, {}, &DexVmThreadStack::context_token);
-    return result;
+    return impl_->BuildStackSnapshotLocked(thread_by_context);
 }
 
 std::string RenderDexVmTraceJson(

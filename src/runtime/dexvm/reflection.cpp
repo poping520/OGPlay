@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -105,6 +106,38 @@ void WriteRefField(DexClassLinker& linker, JavaObjectModel& model,
     }
     model.InstanceSlots(object)[linker.Field(*field).slot] = {
         value.Value(), SlotTag::ref};
+}
+
+template <typename Meta, typename Materialize>
+[[nodiscard]] VmObjectRef MaterializeMemberArray(
+    DexClassLinker& linker, JavaObjectModel& model,
+    const std::span<const Meta> members,
+    const std::string_view member_descriptor,
+    const std::string_view array_descriptor, Materialize&& materialize) {
+    const auto member_class = linker.ResolveDescriptor(member_descriptor);
+    const auto array_class = linker.ResolveDescriptor(array_descriptor);
+    const auto array = model.NewObjectArray(
+        array_class, member_class, static_cast<JniSize>(members.size()));
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        model.SetObjectElement(
+            array, static_cast<JniSize>(index),
+            std::invoke(materialize, members[index]));
+    }
+    return array;
+}
+
+template <typename Meta>
+[[nodiscard]] const Meta& MetadataBySlot(
+    DexClassLinker& linker, JavaObjectModel& model,
+    const VmObjectRef wrapper, const std::span<const Meta> members,
+    const std::string_view kind) {
+    const auto slot = ReadIntField(linker, model, wrapper, "slot");
+    if (slot >= members.size()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "reflection " + std::string(kind) +
+                             " slot is invalid");
+    }
+    return members[slot];
 }
 
 }  // namespace
@@ -592,48 +625,33 @@ VmObjectRef ReflectionRuntime::MaterializeDeclaredMethods(
 
 VmObjectRef ReflectionRuntime::MaterializeMethods(
     const std::span<const ReflectMethodMeta> methods) {
-    const auto method_class =
-        impl_->linker->ResolveDescriptor("Ljava/lang/reflect/Method;");
-    const auto array_class =
-        impl_->linker->ResolveDescriptor("[Ljava/lang/reflect/Method;");
-    const auto array = impl_->model->NewObjectArray(
-        array_class, method_class, static_cast<JniSize>(methods.size()));
-    for (std::size_t index = 0; index < methods.size(); ++index) {
-        impl_->model->SetObjectElement(
-            array, static_cast<JniSize>(index), MaterializeMethod(methods[index]));
-    }
-    return array;
+    return MaterializeMemberArray(
+        *impl_->linker, *impl_->model, methods,
+        "Ljava/lang/reflect/Method;", "[Ljava/lang/reflect/Method;",
+        [this](const ReflectMethodMeta& meta) {
+            return MaterializeMethod(meta);
+        });
 }
 
 VmObjectRef ReflectionRuntime::MaterializeConstructors(
     const std::span<const ReflectConstructorMeta> constructors) {
-    const auto member_class =
-        impl_->linker->ResolveDescriptor("Ljava/lang/reflect/Constructor;");
-    const auto array_class = impl_->linker->ResolveDescriptor(
-        "[Ljava/lang/reflect/Constructor;");
-    const auto array = impl_->model->NewObjectArray(
-        array_class, member_class, static_cast<JniSize>(constructors.size()));
-    for (std::size_t index = 0; index < constructors.size(); ++index) {
-        impl_->model->SetObjectElement(
-            array, static_cast<JniSize>(index),
-            MaterializeConstructor(constructors[index]));
-    }
-    return array;
+    return MaterializeMemberArray(
+        *impl_->linker, *impl_->model, constructors,
+        "Ljava/lang/reflect/Constructor;",
+        "[Ljava/lang/reflect/Constructor;",
+        [this](const ReflectConstructorMeta& meta) {
+            return MaterializeConstructor(meta);
+        });
 }
 
 VmObjectRef ReflectionRuntime::MaterializeFields(
     const std::span<const ReflectFieldMeta> fields) {
-    const auto member_class =
-        impl_->linker->ResolveDescriptor("Ljava/lang/reflect/Field;");
-    const auto array_class =
-        impl_->linker->ResolveDescriptor("[Ljava/lang/reflect/Field;");
-    const auto array = impl_->model->NewObjectArray(
-        array_class, member_class, static_cast<JniSize>(fields.size()));
-    for (std::size_t index = 0; index < fields.size(); ++index) {
-        impl_->model->SetObjectElement(
-            array, static_cast<JniSize>(index), MaterializeField(fields[index]));
-    }
-    return array;
+    return MaterializeMemberArray(
+        *impl_->linker, *impl_->model, fields,
+        "Ljava/lang/reflect/Field;", "[Ljava/lang/reflect/Field;",
+        [this](const ReflectFieldMeta& meta) {
+            return MaterializeField(meta);
+        });
 }
 
 VmObjectRef ReflectionRuntime::MaterializeTypeArray(
@@ -646,14 +664,9 @@ const ReflectMethodMeta& ReflectionRuntime::MethodMetadata(
     const auto declaring = impl_->model->ClassOfClassObject(ReadRefField(
         *impl_->linker, *impl_->model, wrapper, "declaringClass",
         "Ljava/lang/Class;"));
-    const auto slot = ReadIntField(*impl_->linker, *impl_->model, wrapper,
-                                   "slot");
     const auto methods = DeclaredMethods(declaring);
-    if (slot >= methods.size()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "reflection Method slot is invalid");
-    }
-    return methods[slot];
+    return MetadataBySlot(*impl_->linker, *impl_->model, wrapper, methods,
+                          "Method");
 }
 
 const ReflectConstructorMeta& ReflectionRuntime::ConstructorMetadata(
@@ -661,14 +674,9 @@ const ReflectConstructorMeta& ReflectionRuntime::ConstructorMetadata(
     const auto declaring = impl_->model->ClassOfClassObject(ReadRefField(
         *impl_->linker, *impl_->model, wrapper, "declaringClass",
         "Ljava/lang/Class;"));
-    const auto slot = ReadIntField(*impl_->linker, *impl_->model, wrapper,
-                                   "slot");
     const auto constructors = DeclaredConstructors(declaring);
-    if (slot >= constructors.size()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "reflection Constructor slot is invalid");
-    }
-    return constructors[slot];
+    return MetadataBySlot(*impl_->linker, *impl_->model, wrapper, constructors,
+                          "Constructor");
 }
 
 const ReflectFieldMeta& ReflectionRuntime::FieldMetadata(
@@ -676,14 +684,9 @@ const ReflectFieldMeta& ReflectionRuntime::FieldMetadata(
     const auto declaring = impl_->model->ClassOfClassObject(ReadRefField(
         *impl_->linker, *impl_->model, wrapper, "declaringClass",
         "Ljava/lang/Class;"));
-    const auto slot = ReadIntField(*impl_->linker, *impl_->model, wrapper,
-                                   "slot");
     const auto fields = DeclaredFields(declaring);
-    if (slot >= fields.size()) {
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "reflection Field slot is invalid");
-    }
-    return fields[slot];
+    return MetadataBySlot(*impl_->linker, *impl_->model, wrapper, fields,
+                          "Field");
 }
 
 bool ReflectionRuntime::SemanticallyEqual(const VmObjectRef left,

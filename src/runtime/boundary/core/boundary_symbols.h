@@ -7,6 +7,7 @@
 
 #include "ogplay/runtime/boundary/android_api.h"
 #include "ogplay/runtime/boundary/boundary_symbol.h"
+#include "ogplay/runtime/supervisor_call_progress.h"
 #include "runtime/boundary/core/boundary_catalog.h"
 
 namespace ogplay::runtime::detail {
@@ -25,5 +26,8 @@ struct HleThunkDescriptor final {
 [[nodiscard]] const HleThunkDescriptor* DecodeAndroidBoundaryThunk(
     std::uint64_t pc,
     std::span<const HleThunkDescriptor> descriptors) noexcept;
+[[nodiscard]] SupervisorCallProgress ClassifyAndroidBoundaryProgress(
+    std::string_view library, std::string_view name,
+    std::uint32_t result) noexcept;
 
 }  // namespace ogplay::runtime::detail

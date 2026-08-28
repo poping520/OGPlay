@@ -94,8 +94,9 @@ public:
         cpu.SetState(state);
     }
 
-    std::uint32_t Call(const std::string_view library, const std::string_view symbol,
-                       const std::array<std::uint32_t, 4> arguments = {}) {
+    ogplay::runtime::SupervisorCallProgress CallProgress(
+        const std::string_view library, const std::string_view symbol,
+        const std::array<std::uint32_t, 4> arguments = {}) {
         const auto address = boundary.Symbols().Lookup(library, symbol);
         REQUIRE(address.has_value());
         auto state = cpu.GetState();
@@ -106,9 +107,17 @@ public:
         const ogplay::cpu::RunResult stopped{
             1, ogplay::cpu::RunStopReason::supervisor_call,
             ogplay::memory::GuestAddress{address->Value() & ~1U}, 0xdf02U, 2, std::nullopt};
-        if (!boundary.Handle(cpu, stopped)) {
+        const auto progress = boundary.HandleWithProgress(cpu, stopped);
+        if (progress == ogplay::runtime::SupervisorCallProgress::not_handled) {
             throw std::runtime_error("Android boundary fixture call was not handled");
         }
+        return progress;
+    }
+
+    std::uint32_t Call(const std::string_view library,
+                       const std::string_view symbol,
+                       const std::array<std::uint32_t, 4> arguments = {}) {
+        static_cast<void>(CallProgress(library, symbol, arguments));
         return cpu.GetState().Register(ogplay::cpu::CoreRegister::r0);
     }
 
@@ -190,6 +199,25 @@ std::uint32_t BoundaryCallAddress(
 }
 
 }  // namespace
+
+TEST_CASE("Android boundary progress table is conservative by family") {
+    using ogplay::runtime::SupervisorCallProgress;
+    CHECK(ogplay::runtime::detail::ClassifyAndroidBoundaryProgress(
+              "libEGL.so", "eglSwapBuffers", 1U) ==
+          SupervisorCallProgress::handled_advanced);
+    CHECK(ogplay::runtime::detail::ClassifyAndroidBoundaryProgress(
+              "libEGL.so", "eglSwapBuffers", 0U) ==
+          SupervisorCallProgress::handled_idle);
+    CHECK(ogplay::runtime::detail::ClassifyAndroidBoundaryProgress(
+              "libOpenSLES.so", "$BufferQueue.Enqueue", 0U) ==
+          SupervisorCallProgress::handled_advanced);
+    CHECK(ogplay::runtime::detail::ClassifyAndroidBoundaryProgress(
+              "libOpenSLES.so", "$BufferQueue.GetState", 0U) ==
+          SupervisorCallProgress::handled_idle);
+    CHECK(ogplay::runtime::detail::ClassifyAndroidBoundaryProgress(
+              "libGLESv2.so", "glDrawArrays", 0U) ==
+          SupervisorCallProgress::handled_idle);
+}
 
 TEST_CASE("Android 4.4 liblog publishes its complete target export surface") {
     BoundaryFixture fixture;
@@ -369,7 +397,9 @@ TEST_CASE("Android boundary maps explicit Thumb HLE thunks") {
     INFO("executed HLE pc=" << executed.pc.Value());
     REQUIRE(executed.reason == ogplay::cpu::RunStopReason::supervisor_call);
     REQUIRE(fixture.boundary.Handle(fixture.cpu, executed));
-    CHECK(fixture.Call("libEGL.so", "eglGetDisplay") == 1);
+    CHECK(fixture.CallProgress("libEGL.so", "eglGetDisplay") ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) == 1);
     const ogplay::cpu::RunResult unknown{
         1, ogplay::cpu::RunStopReason::supervisor_call,
         ogplay::memory::GuestAddress{0x70000f00U}, 0xdf02U, 2, std::nullopt};
@@ -3286,7 +3316,9 @@ TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
     static_cast<void>(fixture.Call("libGLESv2.so", "glClear", {0x00004000U}));
     static_cast<void>(fixture.Call("libGLESv2.so", "glFlush"));
     CHECK_FALSE(fixture.boundary.TakeLatestFrame().has_value());
-    CHECK(fixture.Call("libEGL.so", "eglSwapBuffers", {1, 3}) == 1);
+    CHECK(fixture.CallProgress("libEGL.so", "eglSwapBuffers", {1, 3}) ==
+          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) == 1);
     const auto frame = fixture.boundary.TakeLatestFrame();
     REQUIRE(frame.has_value());
     CHECK(frame->sequence == 1);

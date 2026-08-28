@@ -14,6 +14,7 @@ enum class FutexWaitResult : std::uint8_t {
     awoken,
     value_mismatch,
     interrupted,
+    interrupted_after_wait,
     timed_out,
 };
 

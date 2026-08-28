@@ -11,6 +11,7 @@ namespace ogplay::runtime {
 struct A32SyscallDispatchResult final {
     std::uint32_t number{};
     std::int32_t return_value{};
+    SupervisorCallProgress progress{SupervisorCallProgress::handled_idle};
     cpu::A32State cpu_state;
 };
 

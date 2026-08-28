@@ -54,7 +54,7 @@ public:
         if (!timeout.has_value()) queue->wake.wait(lock, ready);
         if (interrupted_.load()) {
             --queue->waiters;
-            return FutexWaitResult::interrupted;
+            return FutexWaitResult::interrupted_after_wait;
         }
         --queue->wake_tokens;
         --queue->waiters;

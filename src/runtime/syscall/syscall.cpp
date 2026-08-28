@@ -187,26 +187,52 @@ void A32SyscallDispatcher::SetObserver(Observer observer) {
     observer_ = std::move(observer);
 }
 
-std::int32_t A32SyscallDispatcher::Dispatch(const A32SyscallFrame& frame) {
+A32SyscallOutcome A32SyscallDispatcher::DispatchOutcome(
+    const A32SyscallFrame& frame) {
+    // Auditable progress table. Everything absent from this list is idle.
+    // read/pread advance only when new bytes were delivered; write/pwrite
+    // advance only when bytes were accepted. Futex wait residency is marked
+    // by its handler because the Linux return value alone is ambiguous.
+    const auto classify = [](const std::uint32_t number,
+                             const std::int32_t value) {
+        switch (number) {
+        case 3:    // read
+        case 180:  // pread64
+        case 4:    // write
+        case 181:  // pwrite64
+            return value > 0 ? SupervisorCallProgress::handled_advanced
+                             : SupervisorCallProgress::handled_idle;
+        default:
+            return SupervisorCallProgress::handled_idle;
+        }
+    };
+
     const auto found = entries_.find(frame.number);
-    std::int32_t result{};
+    A32SyscallOutcome outcome;
     if (found == entries_.end()) {
         ledger_.RecordUnimplemented("syscall.arm." +
                                         std::to_string(frame.number),
                                     frame.link_register);
-        result = -kLinuxEnosys;
+        outcome.return_value = -kLinuxEnosys;
     } else if (!found->second.handler) {
         ledger_.RecordUnimplemented("syscall." + found->second.name,
                                     frame.link_register);
-        result = -kLinuxEnosys;
+        outcome.return_value = -kLinuxEnosys;
     } else {
-        result = found->second.handler(frame);
+        outcome = found->second.handler(frame);
+    }
+    if (outcome.progress != SupervisorCallProgress::handled_advanced) {
+        outcome.progress = classify(frame.number, outcome.return_value);
     }
     if (observer_) {
         std::scoped_lock lock(*observer_mutex_);
-        observer_(frame, result);
+        observer_(frame, outcome.return_value);
     }
-    return result;
+    return outcome;
+}
+
+std::int32_t A32SyscallDispatcher::Dispatch(const A32SyscallFrame& frame) {
+    return DispatchOutcome(frame).return_value;
 }
 
 SyscallCoverage A32SyscallDispatcher::Coverage() const {
@@ -277,6 +303,18 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
         }
         address_space.Write(address, bytes);
     };
+    const auto read32 = [&address_space](const memory::GuestAddress address,
+                                         const std::uint64_t thread_id) {
+        std::array<std::byte, 4> bytes{};
+        address_space.Read(address, bytes, thread_id);
+        std::uint32_t value{};
+        for (std::size_t index = 0; index < bytes.size(); ++index) {
+            value |= static_cast<std::uint32_t>(
+                         std::to_integer<std::uint8_t>(bytes[index]))
+                     << static_cast<unsigned>(index * 8U);
+        }
+        return value;
+    };
     const auto current = [&clock, frequency]() {
         const auto ticks = clock.Ticks();
         const auto seconds = ticks / frequency;
@@ -329,6 +367,32 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
                     write32(timezone.Add(4), 0);
                 }
                 return 0;
+            } catch (const memory::MemoryFault&) {
+                return -kEfault;
+            }
+        });
+    dispatcher.Implement(
+        162, [&address_space, read32](const A32SyscallFrame& frame)
+                 -> A32SyscallOutcome {
+            try {
+                const memory::GuestAddress request{frame.arguments[0]};
+                address_space.Validate({request, 8U}, memory::AccessType::read,
+                                       frame.thread_id);
+                const auto seconds =
+                    std::bit_cast<std::int32_t>(read32(request, frame.thread_id));
+                const auto nanoseconds = std::bit_cast<std::int32_t>(
+                    read32(request.Add(4U), frame.thread_id));
+                if (seconds < 0 || nanoseconds < 0 ||
+                    nanoseconds >= 1'000'000'000) {
+                    return -kEinval;
+                }
+                // No signal delivery interrupts this bounded syscall, so the
+                // optional remainder pointer is not written on success.
+                const auto duration = std::chrono::seconds(seconds) +
+                                      std::chrono::nanoseconds(nanoseconds);
+                if (duration.count() == 0) return 0;
+                std::this_thread::sleep_for(duration);
+                return {0, SupervisorCallProgress::handled_advanced};
             } catch (const memory::MemoryFault&) {
                 return -kEfault;
             }
@@ -518,7 +582,8 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
     constexpr std::uint32_t kFutexPrivateFlag = 128;
     constexpr std::uint32_t kFutexClockRealtime = 256;
     dispatcher.Implement(
-        240, [&futex_table, &memory_bus](const A32SyscallFrame& frame) {
+        240, [&futex_table, &memory_bus](const A32SyscallFrame& frame)
+                 -> A32SyscallOutcome {
             const memory::GuestAddress address{frame.arguments[0]};
             if (!address.IsAligned(4)) return -kEinval;
             const auto operation = frame.arguments[1];
@@ -545,13 +610,25 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                     const auto result = futex_table.Wait(
                         memory_bus, address, frame.arguments[2], frame.thread_id,
                         timeout);
-                    if (result == cpu::FutexWaitResult::awoken) return 0;
-                    if (result == cpu::FutexWaitResult::timed_out) {
-                        return -kEtimedout;
+                    const auto parked =
+                        result == cpu::FutexWaitResult::awoken ||
+                        result == cpu::FutexWaitResult::interrupted_after_wait ||
+                        (result == cpu::FutexWaitResult::timed_out &&
+                         timeout.has_value() && timeout->count() > 0);
+                    std::int32_t value{-kEagain};
+                    if (result == cpu::FutexWaitResult::awoken) {
+                        value = 0;
+                    } else if (result == cpu::FutexWaitResult::timed_out) {
+                        value = -kEtimedout;
+                    } else if (
+                        result == cpu::FutexWaitResult::interrupted ||
+                        result ==
+                            cpu::FutexWaitResult::interrupted_after_wait) {
+                        value = -kEintr;
                     }
-                    return result == cpu::FutexWaitResult::interrupted
-                               ? -kEintr
-                               : -kEagain;
+                    return {value, parked
+                                       ? SupervisorCallProgress::handled_advanced
+                                       : SupervisorCallProgress::handled_idle};
                 }
                 if (command == kFutexWake) {
                     const auto count = futex_table.Wake(address, frame.arguments[2]);

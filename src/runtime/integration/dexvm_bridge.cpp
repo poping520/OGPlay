@@ -867,7 +867,9 @@ public:
         }
         frame.stack_words = stack;
         frame.thread_id = process_thread;
-        frame.refresh_tick_budget_at_handled_boundary = true;
+        // JNI native frames participate in watchdog renewal, but only
+        // boundaries reporting observable advancement earn a new budget.
+        frame.renewable_native_frame = true;
 
         // Resolution: RegisterNatives mapping first, then Java_ exports. A
         // native body may be a process-lifetime loop, so it must not retain

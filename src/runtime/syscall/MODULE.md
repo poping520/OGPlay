@@ -13,7 +13,12 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 ## 不变量
 
 - 未实现和未知 syscall 统一返回 `-ENOSYS` 并可观测。
+- syscall 除 Linux 返回值外必须发布 watchdog 进展类别；正字节 read/pread/write/pwrite 与
+  真实驻留的 futex wait 为 advanced，查询、EOF/零字节、wake/yield、内存管理及默认均为
+  idle。类别清单集中在 dispatcher，未知 family 禁止自动续期。
 - guest 地址必须经受检内存访问；时间源只使用统一 Clock。
+- API 19 `nanosleep` 受检读取 32-bit timespec；只有非零请求实际 host sleep 后报告 advanced，
+  零时长与错误为 idle。
 - API 19 futex wait 的 timeout 是 guest 32-bit 相对 timespec；超时返回 `-ETIMEDOUT`，
   非法 timespec 与坏指针分别明确返回 `-EINVAL`/`-EFAULT`。
 - guest `mmap/mprotect` 可表达解释执行所需的逻辑 RWX；AddressSpace 的宿主 backing 不授予

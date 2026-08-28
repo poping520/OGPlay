@@ -1,9 +1,14 @@
 # 当前状态
 
-更新：DVM-89 生命周期首帧改为可观测线程静默握手
+更新：DVM-89 JNI native watchdog 改为按可观测进展续期
 
 ## 当前阶段
 
+- **DVM-89 native watchdog 审计修复**：supervisor 分发改为
+  `not_handled/handled_idle/handled_advanced`；只有 renewable JNI native 帧遇到真实
+  park、正字节数据 I/O、present/audio enqueue 或 JNI 重入才续期。查询、EOF、futex wake、
+  yield、内存管理与未分类调用保守 idle，纯 syscall 空转不再无限续期；exit request 抢占
+  与 consumed/PC/LR 耗尽诊断不变。契约及 JNI 琐碎重入限制见 ADR-0023。
 - **DVM-89 首帧线程握手**：`VmThreadSnapshot` 新增 sleeping/joining/monitor
   wait state；launcher onStart/onResume 后冻结当时 worker 集合，首次 Surface traversal
   前有限轮推进直到逐线程观测 park/终态。期间新线程不追入，64 轮超限结构化 warn 后
@@ -44,6 +49,12 @@
 
 ## 本轮验证
 
+- DVM-89 watchdog 受影响目标 Windows Debug 构建通过；guest-call 16/16、49 assertions，
+  syscall 23/23、211 assertions，futex 4/4、28 assertions，Android boundary 54/54、
+  27572 assertions，call-session 17/17、276 assertions，JNI guest bindings/lifecycle
+  15/15、198 assertions 全部通过。覆盖 idle 空转耗尽、nanosleep/futex 驻留、VFS read
+  推进后 EOF 耗尽、present/audio 分类及续期循环的 exit request 抢占；JNI guest ABI/lifecycle
+  定向回归无倒退。
 - DVM-89 生命周期首帧握手的晚 park/永不 park/无 worker 与 focus 延迟定向用例连续
   3 轮通过（每轮 3/3、14 assertions）；线程回归 24/24、132787 assertions，
   monitor/wait 回归 14/14、174 assertions；macOS `dev` 的 `ogplay`/`ogplay_tests`

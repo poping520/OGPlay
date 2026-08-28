@@ -123,6 +123,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   matrix-palette extension trap;core/extension 独立记账,只有显式 handler 可以执行,
   未实现或未绑定调用必须携带函数名失败,不得误用同名 GLES2 handler。Looper/input 数据与
   ANGLE readback 跨线程传递必须受锁保护,未知地址或 SVC 不得吞掉。
+- HLE 分发除 handled 事实外发布 watchdog 进展类别；成功 `eglSwapBuffers` 与 OpenSL ES
+  BufferQueue Enqueue 为 advanced，其余 HLE 保守为 idle。新增 externally observable family
+  必须进入 façade 集中清单并由测试锁定，禁止任意 handled HLE 自动续期。
 - guest transfer 失败必须保留原异常类别,并附带 `module!symbol`、r0-r3、SP、LR 与
   thread;client attribute staging 还须报告完整 descriptor 和 definition/enable LR。
 - GLES1 `glViewport`/`glScissor` 直接转发当前 `AngleFrame`,与 GLES2 共用受检超采样坐标

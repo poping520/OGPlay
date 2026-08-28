@@ -154,7 +154,8 @@ TEST_CASE("futex interrupt releases current waiters and rejects future waits") {
 
     CHECK(futex.InterruptAll() == 1);
     waiter->Join();
-    CHECK(result.load() == ogplay::cpu::FutexWaitResult::interrupted);
+    CHECK(result.load() ==
+          ogplay::cpu::FutexWaitResult::interrupted_after_wait);
     CHECK(futex.WaiterCount(address) == 0);
     CHECK(futex.Wake(address, 1) == 0);
     CHECK(futex.WakeAll() == 0);

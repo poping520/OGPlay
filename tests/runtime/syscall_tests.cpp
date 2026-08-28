@@ -32,6 +32,33 @@ TEST_CASE("Android ARM syscall baseline exposes identity and coverage") {
               ogplay::runtime::SyscallGroup::file) > 20);
 }
 
+TEST_CASE("syscall progress table locks I/O and conservative defaults") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    dispatcher.Implement(3U, [](const ogplay::runtime::A32SyscallFrame&) {
+        return 1;
+    });
+    dispatcher.Implement(4U, [](const ogplay::runtime::A32SyscallFrame&) {
+        return 1;
+    });
+    dispatcher.Implement(180U, [](const ogplay::runtime::A32SyscallFrame&) {
+        return 1;
+    });
+    dispatcher.Implement(181U, [](const ogplay::runtime::A32SyscallFrame&) {
+        return 1;
+    });
+    ogplay::runtime::A32SyscallFrame frame;
+    for (const auto number : {3U, 4U, 180U, 181U}) {
+        frame.number = number;
+        CHECK(dispatcher.DispatchOutcome(frame).progress ==
+              ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    }
+    frame.number = 20U;  // getpid
+    CHECK(dispatcher.DispatchOutcome(frame).progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
+}
+
 TEST_CASE("extended Android ARM syscall directory remains explicitly observable") {
     ogplay::core::CapabilityLedger ledger;
     auto dispatcher =
@@ -142,6 +169,25 @@ TEST_CASE("Android time syscalls use the unified clock and checked guest memory"
     CHECK(read32(0x10010) == 1);
     CHECK(read32(0x10014) == 200000);
     CHECK(read32(0x10020) == 0);
+
+    const auto write32 = [&memory](const std::uint32_t address,
+                                   const std::uint32_t value) {
+        std::array<std::byte, 4> bytes{};
+        for (std::size_t index = 0; index < bytes.size(); ++index) {
+            bytes[index] = static_cast<std::byte>(value >> (index * 8U));
+        }
+        memory.Write(ogplay::memory::GuestAddress{address}, bytes);
+    };
+    frame.number = 162;
+    frame.arguments[0] = 0x10030;
+    frame.arguments[1] = 0;
+    write32(0x10030, 0U);
+    write32(0x10034, 0U);
+    CHECK(dispatcher.DispatchOutcome(frame).progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    write32(0x10034, 1U);
+    CHECK(dispatcher.DispatchOutcome(frame).progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_advanced);
 
     frame.number = 263;
     frame.arguments[0] = 99;
@@ -262,14 +308,21 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     mismatch.arguments[0] = 0x10000;
     mismatch.arguments[1] = 0;
     mismatch.arguments[2] = 8;
-    CHECK(dispatcher.Dispatch(mismatch) == -11);
+    const auto mismatch_outcome = dispatcher.DispatchOutcome(mismatch);
+    CHECK(mismatch_outcome.return_value == -11);
+    CHECK(mismatch_outcome.progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
 
     bus.Write32(ogplay::memory::GuestAddress{0x10020}, 0U);
     bus.Write32(ogplay::memory::GuestAddress{0x10024}, 0U);
     auto timed = mismatch;
     timed.arguments[2] = 7;
     timed.arguments[3] = 0x10020;
-    CHECK(dispatcher.Dispatch(timed) == -110);
+    CHECK(dispatcher.DispatchOutcome(timed).progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    bus.Write32(ogplay::memory::GuestAddress{0x10024}, 1U);
+    CHECK(dispatcher.DispatchOutcome(timed).progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_advanced);
 
     std::atomic<std::int32_t> wait_result{-999};
     std::thread waiter{[&] {
@@ -288,15 +341,22 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     auto wake = mismatch;
     wake.arguments[1] = 1 | 128;
     wake.arguments[2] = 1;
-    CHECK(dispatcher.Dispatch(wake) == 1);
+    const auto wake_outcome = dispatcher.DispatchOutcome(wake);
+    CHECK(wake_outcome.return_value == 1);
+    CHECK(wake_outcome.progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
     waiter.join();
     CHECK(wait_result == 0);
 
+    std::atomic<ogplay::runtime::SupervisorCallProgress> interrupted_progress{
+        ogplay::runtime::SupervisorCallProgress::handled_idle};
     std::thread interrupted_waiter{[&] {
         auto wait = mismatch;
         wait.arguments[2] = 7;
         wait.thread_id = 43;
-        wait_result = dispatcher.Dispatch(wait);
+        const auto outcome = dispatcher.DispatchOutcome(wait);
+        wait_result = outcome.return_value;
+        interrupted_progress = outcome.progress;
     }};
     for (std::size_t attempt = 0;
          attempt < 100000 &&
@@ -308,9 +368,14 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     CHECK(futex.InterruptAll() == 1);
     interrupted_waiter.join();
     CHECK(wait_result == -4);
+    CHECK(interrupted_progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_advanced);
     CHECK(dispatcher.Dispatch(mismatch) == -11);
     mismatch.arguments[2] = 7;
-    CHECK(dispatcher.Dispatch(mismatch) == -4);
+    const auto preinterrupted = dispatcher.DispatchOutcome(mismatch);
+    CHECK(preinterrupted.return_value == -4);
+    CHECK(preinterrupted.progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
 
     mismatch.arguments[0] = 0x10001;
     CHECK(dispatcher.Dispatch(mismatch) == -22);
@@ -354,7 +419,12 @@ TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
     frame.arguments[0] = static_cast<std::uint32_t>(descriptor);
     frame.arguments[1] = 0x10100;
     frame.arguments[2] = 3;
-    CHECK(dispatcher.Dispatch(frame) == 3);
+    const auto read_outcome = dispatcher.DispatchOutcome(frame);
+    CHECK(read_outcome.return_value == 3);
+    CHECK(read_outcome.progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(dispatcher.DispatchOutcome(frame).progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);  // EOF
     std::array<std::byte, 3> output{};
     memory.Read(ogplay::memory::GuestAddress{0x10100}, output);
     CHECK(output == initial);
@@ -368,7 +438,13 @@ TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
     frame.number = 4;
     frame.arguments[1] = 0x10110;
     frame.arguments[2] = 2;
-    CHECK(dispatcher.Dispatch(frame) == 2);
+    const auto write_outcome = dispatcher.DispatchOutcome(frame);
+    CHECK(write_outcome.return_value == 2);
+    CHECK(write_outcome.progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    frame.arguments[2] = 0;
+    CHECK(dispatcher.DispatchOutcome(frame).progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
     frame.number = 6;
     CHECK(dispatcher.Dispatch(frame) == 0);
 

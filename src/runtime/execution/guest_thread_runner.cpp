@@ -37,7 +37,7 @@ namespace {
 
 }  // namespace
 
-bool ConsumeAndroidArmSupervisorCall(
+SupervisorCallProgress ConsumeAndroidArmSupervisorCall(
     cpu::Cpu& cpu, const cpu::RunResult& stopped,
     A32SyscallDispatcher& dispatcher,
     const GuestSupervisorCallHandler& hle_handler) {
@@ -45,13 +45,20 @@ bool ConsumeAndroidArmSupervisorCall(
     // after its noexcept callback captured the original C++ exception.  Give
     // the owning boundary first chance to restore that exception identity.
     if (stopped.reason == cpu::RunStopReason::host_call_fault) {
-        return hle_handler && hle_handler(cpu, stopped);
+        return hle_handler
+                   ? hle_handler(cpu, stopped)
+                   : SupervisorCallProgress::not_handled;
     }
-    if (stopped.reason != cpu::RunStopReason::supervisor_call) return false;
-    if (DispatchAndroidArmSupervisorCall(cpu, stopped, dispatcher).has_value()) {
-        return true;
+    if (stopped.reason != cpu::RunStopReason::supervisor_call) {
+        return SupervisorCallProgress::not_handled;
     }
-    return hle_handler && hle_handler(cpu, stopped);
+    if (const auto syscall =
+            DispatchAndroidArmSupervisorCall(cpu, stopped, dispatcher)) {
+        return syscall->progress;
+    }
+    return hle_handler
+               ? hle_handler(cpu, stopped)
+               : SupervisorCallProgress::not_handled;
 }
 
 A32GuestCallResult InvokeA32GuestCall(
@@ -151,8 +158,9 @@ A32GuestCallResult InvokeA32GuestCall(
             if (slice_observer) slice_observer(consumed);
             continue;
         }
-        if (!ConsumeAndroidArmSupervisorCall(
-                cpu, stopped, dispatcher, hle_handler)) {
+        const auto boundary_progress = ConsumeAndroidArmSupervisorCall(
+            cpu, stopped, dispatcher, hle_handler);
+        if (boundary_progress == SupervisorCallProgress::not_handled) {
             throw A32GuestCallError(
                 DescribeGuestCallStop(stopped, cpu.GetState(), address_space));
         }
@@ -165,7 +173,8 @@ A32GuestCallResult InvokeA32GuestCall(
         updated.SetThreadPointer(current.thread_pointer);
         cpu.SetState(updated);
         if (slice_observer) slice_observer(consumed);
-        if (frame.refresh_tick_budget_at_handled_boundary) {
+        if (frame.renewable_native_frame &&
+            boundary_progress == SupervisorCallProgress::handled_advanced) {
             watchdog_consumed = 0U;
         }
     }
@@ -211,8 +220,9 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
             return {consumed, GuestThreadRunStop::cpu_stop, last,
                     std::nullopt};
         }
-        if (!ConsumeAndroidArmSupervisorCall(
-                cpu, last, dispatcher, hle_handler)) {
+        if (ConsumeAndroidArmSupervisorCall(
+                cpu, last, dispatcher, hle_handler) ==
+            SupervisorCallProgress::not_handled) {
             return {consumed, GuestThreadRunStop::unhandled_supervisor_call,
                     last, std::nullopt};
         }

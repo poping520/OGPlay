@@ -9,6 +9,20 @@ constexpr std::uint32_t kThunkStride = 4U;
 
 }  // namespace
 
+SupervisorCallProgress ClassifyAndroidBoundaryProgress(
+    const std::string_view library, const std::string_view name,
+    const std::uint32_t result) noexcept {
+    // Auditable HLE progress table. Everything absent is conservatively idle.
+    if (library == "libEGL.so" && name == "eglSwapBuffers" && result != 0U) {
+        return SupervisorCallProgress::handled_advanced;
+    }
+    if (library == "libOpenSLES.so" && name == "$BufferQueue.Enqueue" &&
+        result == 0U) {
+        return SupervisorCallProgress::handled_advanced;
+    }
+    return SupervisorCallProgress::handled_idle;
+}
+
 const HleThunkDescriptor* DecodeAndroidBoundaryThunk(
     const std::uint64_t pc,
     const std::span<const HleThunkDescriptor> descriptors) noexcept {

@@ -876,6 +876,10 @@ public:
         auto* const previous = active == active_guest_call_cpus.end()
                                    ? nullptr
                                    : active->second;
+        // Renewable frames must observe each HLE result in the slow consumer;
+        // a fast host call continues inside Cpu::Run and cannot report its
+        // progress category to the watchdog loop.
+        if (frame.renewable_native_frame) target->SetHostCallHook({});
         active_guest_call_cpus[this] = target;
         try {
             auto result = InvokeA32GuestCall(
@@ -884,10 +888,12 @@ public:
                 [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                     return HandleBoundary(cpu, stopped);
                 }, slice_observer_);
+            if (frame.renewable_native_frame) ConfigureFastHostCalls(*target);
             if (previous != nullptr) active_guest_call_cpus[this] = previous;
             else active_guest_call_cpus.erase(this);
             return result;
         } catch (...) {
+            if (frame.renewable_native_frame) ConfigureFastHostCalls(*target);
             if (previous != nullptr) active_guest_call_cpus[this] = previous;
             else active_guest_call_cpus.erase(this);
             throw;
@@ -1031,9 +1037,14 @@ public:
         return Invoke(resolved);
     }
 
-    bool HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
-        if (jni_dispatcher_.Handle(cpu, stopped)) return true;
-        return boundary_.Handle(cpu, stopped);
+    SupervisorCallProgress HandleBoundary(
+        cpu::Cpu& cpu, const cpu::RunResult& stopped) {
+        // Entering any guest JNI target is the strongest progress signal the
+        // JNI boundary can expose; ADR-0023 records the bounded limitation.
+        if (jni_dispatcher_.Handle(cpu, stopped)) {
+            return ClassifyJniReentry(true);
+        }
+        return boundary_.HandleWithProgress(cpu, stopped);
     }
 
     void ConfigureFastHostCalls(cpu::Cpu& cpu) {

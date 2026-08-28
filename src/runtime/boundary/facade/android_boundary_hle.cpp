@@ -269,20 +269,25 @@ public:
         ResetGuestGraphics();
         frame_service_.SetRenderTargetReady(false);
     }
-    [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
+    [[nodiscard]] SupervisorCallProgress HandleWithProgress(
+        cpu::Cpu& cpu, const cpu::RunResult& stopped) {
         if (stopped.reason == cpu::RunStopReason::host_call_fault &&
             stopped.immediate == 2U) {
             const auto state = cpu.GetState();
             auto pending = fault_store_.Take(state.ThreadId(), stopped.pc);
-            if (!pending) return false;
+            if (!pending) return SupervisorCallProgress::not_handled;
             std::rethrow_exception(pending);
         }
         if (!thunk_arena_.IsMapped() ||
             stopped.reason != cpu::RunStopReason::supervisor_call ||
-            stopped.immediate != 2) return false;
+            stopped.immediate != 2) {
+            return SupervisorCallProgress::not_handled;
+        }
         const auto* descriptor = detail::DecodeAndroidBoundaryThunk(
             stopped.pc.Value(), descriptors_);
-        if (descriptor == nullptr) return false;
+        if (descriptor == nullptr) {
+            return SupervisorCallProgress::not_handled;
+        }
         const auto descriptor_index =
             static_cast<std::size_t>(descriptor - descriptors_.data());
         const auto& binding = fast_router_.Entry(descriptor_index);
@@ -312,7 +317,9 @@ public:
         RecordGpuCall(descriptor_index, arguments, binding.gpu);
         state.SetRegister(cpu::CoreRegister::r0, result);
         cpu.SetState(state);
-        return true;
+
+        return detail::ClassifyAndroidBoundaryProgress(
+            descriptor->library, descriptor->name, result);
     }
     void NotifyFileWrite() {
         android_module_.NotifyFileWrite();
@@ -811,8 +818,13 @@ const BionicHleSymbolProvider& AndroidBoundaryHle::Symbols() const noexcept {
 cpu::HostCallHook AndroidBoundaryHle::FastHostCallHook() noexcept {
     return impl_->FastHostCallHook();
 }
+SupervisorCallProgress AndroidBoundaryHle::HandleWithProgress(
+    cpu::Cpu& cpu, const cpu::RunResult& stopped) {
+    return impl_->HandleWithProgress(cpu, stopped);
+}
 bool AndroidBoundaryHle::Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
-    return impl_->Handle(cpu, stopped);
+    return HandleWithProgress(cpu, stopped) !=
+           SupervisorCallProgress::not_handled;
 }
 void AndroidBoundaryHle::NotifyFileWrite() { impl_->NotifyFileWrite(); }
 void AndroidBoundaryHle::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }

@@ -26,6 +26,10 @@ JNI、framework 或 integration。
   observer 接收当前调用实际累计 tick，SVC 安全边界同样报告该累计值；回调次数不得被解释
   为 tick。切片不得改变总 tick 预算。未处理 trap、提前线程退出和预算耗尽均明确失败；
   预算耗尽诊断必须包含 consumed tick、PC 与 LR，供 exact-title 定位有限但昂贵的 guest 路径。
+  JNI native 帧可显式参与 watchdog 续期，但只有分发结果为 `handled_advanced`（真实 park、
+  正字节数据 I/O、present/audio enqueue 或 JNI 重入）才续期；查询、EOF、wake/yield、内存
+  管理及未分类的已处理边界均为 `handled_idle`，不得因经过边界清零。exit request 检查仍
+  独立优先于下一轮执行。
 - A32 非正常停止由统一 formatter 报告：execution state 与 stop/fault 枚举同时保留名字和
   数值，地址/核心寄存器使用固定宽度十六进制；stop、fault、thread、registers 与 code
   使用对齐的独立行，r0-r3 与 r12/SP/LR 分组。报告尽力读取 PC-8 起的有界指令窗口，读取

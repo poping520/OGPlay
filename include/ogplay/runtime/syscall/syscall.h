@@ -18,6 +18,7 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/syscall/guest_thread_lifecycle.h"
+#include "ogplay/runtime/supervisor_call_progress.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
 namespace ogplay::runtime {
@@ -110,9 +111,19 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+struct A32SyscallOutcome final {
+    std::int32_t return_value{};
+    SupervisorCallProgress progress{SupervisorCallProgress::handled_idle};
+
+    A32SyscallOutcome() = default;
+    A32SyscallOutcome(std::int32_t value) : return_value(value) {}
+    A32SyscallOutcome(std::int32_t value, SupervisorCallProgress made_progress)
+        : return_value(value), progress(made_progress) {}
+};
+
 class A32SyscallDispatcher final {
 public:
-    using Handler = std::function<std::int32_t(const A32SyscallFrame&)>;
+    using Handler = std::function<A32SyscallOutcome(const A32SyscallFrame&)>;
     using Observer =
         std::function<void(const A32SyscallFrame&, std::int32_t)>;
 
@@ -122,6 +133,9 @@ public:
                   Handler handler);
     void Implement(std::uint32_t number, Handler handler);
     void SetObserver(Observer observer);
+    [[nodiscard]] A32SyscallOutcome DispatchOutcome(
+        const A32SyscallFrame& frame);
+    // Compatibility query for callers which only consume the Linux result.
     [[nodiscard]] std::int32_t Dispatch(const A32SyscallFrame& frame);
     [[nodiscard]] SyscallCoverage Coverage() const;
 

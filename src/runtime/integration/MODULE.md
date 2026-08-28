@@ -138,8 +138,11 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   AndroidAppProcess 只读挂载原始 APK bytes，ContextWrapper 保持 AOSP base 委托，绝不暴露
   frontend 宿主路径。
   DexVM 出向 native 在 guest 执行期间释放解释器单写者锁，JNI 回调入口重新获取；native
-  process TID 使用 Bionic mutex owner 可表示的 16-bit slot 范围。长驻 native 仅在已处理
-  syscall/HLE/JNI 边界刷新 watchdog，连续无边界循环仍受总预算约束。
+  process TID 使用 Bionic mutex owner 可表示的 16-bit slot 范围。长驻 JNI native 帧只在
+  supervisor 分发报告可观测进展时续期 watchdog：真实 futex park、正字节数据 I/O、present、
+  audio enqueue 与 JNI 重入为 advanced；查询、EOF、wake/yield、内存管理及保守默认为 idle。
+  连续执行和纯 syscall 空转均受 tick 预算约束；JNI 重入无法区分琐碎与实质工作，接受的
+  bounded 限制见 ADR-0023。
   软件 SurfaceHolder 的 Canvas 持有 surface-sized ARGB backing，drawBitmap/drawColor 修改
   同一 buffer，unlockCanvasAndPost 转成 RGBA 后进入唯一 boundary frame 队列。
   DVM-84 的 `AudioTrack` side-table 只保存 guest owner 到 mixer player 的窄映射；DEX、

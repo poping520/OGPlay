@@ -238,9 +238,10 @@ private:
         }
     }
 
-    bool HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
+    SupervisorCallProgress HandleBoundary(
+        cpu::Cpu& cpu, const cpu::RunResult& stopped) {
         try {
-            return boundary_.Handle(cpu, stopped);
+            return boundary_.HandleWithProgress(cpu, stopped);
         } catch (...) {
             if (cpu.GetState().ThreadId() != kRootThreadId) {
                 {
@@ -343,11 +344,11 @@ private:
                 return;
             }
             ThrowIfChildFailed();
-            if (!ConsumeAndroidArmSupervisorCall(
+            if (ConsumeAndroidArmSupervisorCall(
                     *root_cpu_, stopped, dispatcher_,
                     [this](cpu::Cpu& cpu, const cpu::RunResult& trap) {
                         return HandleBoundary(cpu, trap);
-                    })) {
+                    }) == SupervisorCallProgress::not_handled) {
                 throw NativeActivityRunError(
                     "NativeActivity guest stopped outside a handled boundary:\n" +
                     DescribeA32GuestStop(stopped, root_cpu_->GetState(),

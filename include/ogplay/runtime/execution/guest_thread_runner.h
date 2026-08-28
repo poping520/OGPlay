@@ -29,7 +29,7 @@ struct GuestThreadRunOutcome final {
 };
 
 using GuestSupervisorCallHandler =
-    std::function<bool(cpu::Cpu&, const cpu::RunResult&)>;
+    std::function<SupervisorCallProgress(cpu::Cpu&, const cpu::RunResult&)>;
 using A32GuestCallSliceObserver = std::function<void(std::uint64_t)>;
 
 inline constexpr std::uint64_t kA32GuestCallSliceTicks = UINT64_C(20000000);
@@ -40,10 +40,10 @@ struct A32GuestCallFrame final {
     std::span<const std::uint32_t> stack_words;
     // Selects the prepared guest thread context. The process root is 1.
     std::uint64_t thread_id{1};
-    // Long-lived JNI entry points may own a process loop. A handled syscall or
-    // HLE/JNI boundary proves forward progress and refreshes their watchdog;
-    // uninterrupted guest execution remains bounded by tick_budget.
-    bool refresh_tick_budget_at_handled_boundary{};
+    // Long-lived JNI entry points may own a process loop. Such native frames
+    // participate in watchdog renewal, but only a boundary classified as
+    // handled_advanced earns renewal; idle handled work remains budgeted.
+    bool renewable_native_frame{};
 };
 
 struct A32GuestCallResult final {
@@ -66,7 +66,7 @@ public:
     const cpu::RunResult& stopped, const cpu::A32State& state,
     const memory::AddressSpace& address_space);
 
-[[nodiscard]] bool ConsumeAndroidArmSupervisorCall(
+[[nodiscard]] SupervisorCallProgress ConsumeAndroidArmSupervisorCall(
     cpu::Cpu& cpu, const cpu::RunResult& stopped,
     A32SyscallDispatcher& dispatcher,
     const GuestSupervisorCallHandler& hle_handler = {});

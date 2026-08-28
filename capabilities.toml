@@ -498,7 +498,7 @@ note = "M2 三平台完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、
 [runtime.syscall]
 status = "complete"
 test = "tests/runtime/syscall_tests.cpp"
-note = "M2 三平台完成 120 项 Android ARM 分组目录和样本所需调用；未实现项全部 ENOSYS+记账，绝不静默成功"
+note = "M2 三平台完成 120 项 Android ARM 分组目录和样本所需调用；未实现项全部 ENOSYS+记账，绝不静默成功。DVM-89/ADR-0023 增加受检 nanosleep，并让 syscall 分发发布 observable progress：非零真实 sleep/futex park/正字节 I/O 为 advanced，查询/EOF/wake/yield/内存管理及默认为 idle。"
 
 [runtime.bionic]
 status = "complete"
@@ -813,7 +813,7 @@ note = "历史 Profile invocation assembler 已由 ADR-0022/DVM-25 从生产代�
 [runtime.a32_guest_call_executor]
 status = "complete"
 test = "tests/runtime/guest_thread_runner_tests.cpp"
-note = "M5 WU-0236/0322/0325 以通用 AAPCS 执行器装入调用帧；长计算按 2000 万 tick 切片发布 observer，总预算与返回 trap 语义不变；WU-0338 在预算耗尽诊断中保留 consumed tick、PC 与 LR"
+note = "M5 WU-0236/0322/0325 以通用 AAPCS 执行器装入调用帧；长计算按 2000 万 tick 切片发布 observer，总预算与返回 trap 语义不变；WU-0338 在预算耗尽诊断中保留 consumed tick、PC 与 LR；DVM-89/ADR-0023 将 JNI native watchdog 从任意 handled 边界续期收紧为仅 observable advanced progress 续期，纯查询/EOF 空转保持预算约束，exit request 抢占不变"
 
 [runtime.jni_guest_trap_dispatch]
 status = "complete"

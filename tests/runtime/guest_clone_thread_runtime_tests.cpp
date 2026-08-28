@@ -46,9 +46,11 @@ TEST_CASE("ARM clone starts a real host thread at the child return path") {
         threads, dispatcher, lifecycle, memory, bus, futex, 100, 16,
         [&hle_calls](ogplay::cpu::Cpu&,
                      const ogplay::cpu::RunResult& stopped) {
-            if (stopped.immediate != 2) return false;
+            if (stopped.immediate != 2) {
+                return ogplay::runtime::SupervisorCallProgress::not_handled;
+            }
             ++hle_calls;
-            return true;
+            return ogplay::runtime::SupervisorCallProgress::handled_idle;
         }};
 
     ogplay::cpu::InterpreterCpu parent(bus);

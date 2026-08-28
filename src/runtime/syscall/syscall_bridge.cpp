@@ -26,11 +26,12 @@ std::optional<A32SyscallDispatchResult> DispatchAndroidArmSupervisorCall(
     frame.link_register = state.Register(cpu::CoreRegister::lr);
     frame.thread_id = state.ThreadId();
     frame.cpu_state = state;
-    const auto value = dispatcher.Dispatch(frame);
+    const auto outcome = dispatcher.DispatchOutcome(frame);
     state.SetRegister(cpu::CoreRegister::r0,
-                      std::bit_cast<std::uint32_t>(value));
+                      std::bit_cast<std::uint32_t>(outcome.return_value));
     cpu.SetState(state);
-    return A32SyscallDispatchResult{frame.number, value, std::move(state)};
+    return A32SyscallDispatchResult{
+        frame.number, outcome.return_value, outcome.progress, std::move(state)};
 }
 
 }  // namespace ogplay::runtime

@@ -14,6 +14,7 @@
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/boundary/opensles_callback.h"
+#include "ogplay/runtime/supervisor_call_progress.h"
 
 namespace ogplay::core {
 class Logger;
@@ -93,6 +94,9 @@ public:
     void CloseManagedSurface();
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept;
     [[nodiscard]] cpu::HostCallHook FastHostCallHook() noexcept;
+    [[nodiscard]] SupervisorCallProgress HandleWithProgress(
+        cpu::Cpu& cpu, const cpu::RunResult& stopped);
+    // Compatibility wrapper for boundary-only consumers.
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped);
     void NotifyFileWrite();
     void PushInput(const AndroidBoundaryInput& input);

@@ -104,36 +104,6 @@ void ExactKeys(const Table& table, const std::string_view field,
     }
 }
 
-[[nodiscard]] bool ValidPackage(const std::string_view package) {
-    bool component_start = true;
-    std::size_t components = 1;
-    for (const char character : package) {
-        const auto byte = static_cast<unsigned char>(character);
-        if (character == '.') {
-            if (component_start) return false;
-            component_start = true;
-            ++components;
-        } else if (component_start) {
-            if (std::isalpha(byte) == 0) return false;
-            component_start = false;
-        } else if (std::isalnum(byte) == 0 && character != '_') {
-            return false;
-        }
-    }
-    return !component_start && components >= 2;
-}
-
-[[nodiscard]] bool ValidId(const std::string_view value) {
-    if (value.empty() ||
-        std::islower(static_cast<unsigned char>(value.front())) == 0) {
-        return false;
-    }
-    return std::all_of(value.begin() + 1, value.end(), [](const char character) {
-        const auto byte = static_cast<unsigned char>(character);
-        return std::islower(byte) != 0 || std::isdigit(byte) != 0 || character == '_';
-    });
-}
-
 [[nodiscard]] bool ValidHash(const std::string_view digest) {
     return digest.size() == 64 &&
            std::all_of(digest.begin(), digest.end(), [](const char character) {
@@ -247,7 +217,7 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     ProfileIdentity result;
     result.package = AsString(Require(table, "package", "identity.package"),
                               "identity.package");
-    if (!ValidPackage(result.package)) {
+    if (!core::IsValidPackageName(result.package)) {
         throw TitleProfileError("identity.package is invalid");
     }
     if (result.package != expected_package) {
@@ -401,7 +371,7 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
             } else if constexpr (std::is_same_v<Value, Table>) {
                 ProfileValue::Table result;
                 for (const auto& [key, item] : value) {
-                    if (!ValidId(key)) {
+                    if (!core::IsValidLowercaseIdentifier(key)) {
                         throw TitleProfileError(std::string(field) +
                                                 " has invalid parameter " + key);
                     }
@@ -422,7 +392,7 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
         AsArray(Require(table, "enabled", "quirks.enabled"), "quirks.enabled");
     for (const auto& item : enabled) {
         auto id = AsString(item, "quirks.enabled[]");
-        if (!ValidId(id)) throw TitleProfileError("quirks.enabled contains an invalid id");
+        if (!core::IsValidLowercaseIdentifier(id)) throw TitleProfileError("quirks.enabled contains an invalid id");
         result.enabled.push_back(std::move(id));
     }
     RequireUnique(result.enabled, "quirks.enabled");
@@ -450,7 +420,7 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     ExactKeys(table, "input", {"profile"}, {"profile"});
     ProfileInput result{
         AsString(Require(table, "profile", "input.profile"), "input.profile")};
-    if (!ValidId(result.profile)) {
+    if (!core::IsValidLowercaseIdentifier(result.profile)) {
         throw TitleProfileError("input.profile is not a valid template id");
     }
     return result;
@@ -495,7 +465,7 @@ TitleProfile LoadTitleProfileText(const std::string_view text,
         throw TitleProfileError("Title Profile is not valid UTF-8");
     }
     if (LineCount(text) > 200) throw TitleProfileError("Title Profile exceeds 200 lines");
-    if (!ValidPackage(expected_package)) {
+    if (!core::IsValidPackageName(expected_package)) {
         throw TitleProfileError("expected package is invalid");
     }
     const auto root = detail::ParseDataToml(text);
@@ -579,7 +549,7 @@ void TitleProfileCatalog::Validate(const QuirkRegistry* registry) const {
         const auto& identity = profile.identity;
         const bool legacy = profile.schema == 1U || profile.schema == 2U;
         if ((profile.schema < 1U || profile.schema > 3U) ||
-            !ValidPackage(identity.package) ||
+            !core::IsValidPackageName(identity.package) ||
             (legacy && (identity.version_codes.empty() ||
                         identity.so_sha256.empty() ||
                         !identity.has_abi_guard || !ValidAbi(identity.abi))) ||
@@ -629,7 +599,7 @@ TitleProfileCatalog TitleProfileCatalog::LoadDirectory(
 }
 
 const TitleProfile* TitleProfileCatalog::Match(const TitleIdentity& identity) const {
-    if (!ValidPackage(identity.package) || identity.version_code == 0 ||
+    if (!core::IsValidPackageName(identity.package) || identity.version_code == 0 ||
         !ValidHash(identity.so_sha256)) {
         throw TitleProfileError(
             "Title Profile match requires package, positive versionCode and SHA-256");

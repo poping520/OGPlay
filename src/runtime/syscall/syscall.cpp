@@ -1,5 +1,6 @@
 #include "ogplay/runtime/syscall/syscall.h"
 
+#include "guest_path_reader.h"
 #include <array>
 #include <bit>
 #include <chrono>
@@ -662,23 +663,11 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                              memory::AddressSpace& address_space) {
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
-    constexpr std::int32_t kEnametoolong = 36;
     constexpr std::int32_t kEoverflow = 75;
     constexpr std::int32_t kEnotsup = 95;
     constexpr std::uint32_t kMaxIoSize = 16U * 1024U * 1024U;
     const auto read_path = [&address_space](const std::uint32_t raw_address) {
-        std::string path;
-        path.reserve(128);
-        auto address = memory::GuestAddress{raw_address};
-        for (std::size_t index = 0; index < 4096; ++index) {
-            std::array<std::byte, 1> byte{};
-            address_space.Read(address, byte);
-            const auto value = std::to_integer<std::uint8_t>(byte[0]);
-            if (value == 0) return path;
-            path.push_back(static_cast<char>(value));
-            address = address.Add(1);
-        }
-        throw VfsError(kEnametoolong, "guest path is not null-terminated");
+        return syscall_detail::ReadGuestPath(address_space, raw_address);
     };
     const auto options = [](const std::uint32_t flags) {
         constexpr std::uint32_t kCreate = 0x40;

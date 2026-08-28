@@ -16,10 +16,12 @@
   边界；调用方不接触第三方类型。
 - `CapabilityLedger::RecordNullCall/NullCalls`：所有吞错 quirk 共用的空调用观测表。
 - `SoftwareSurface` + `CompareFrames`：M0 无 GPU 黄金帧生产、像素差与感知哈希基础设施。
-- `byte_order.h` / `arithmetic.h`：overflow-safe range、little-endian 整数读取与
+- `byte_order.h` / `arithmetic.h`：overflow-safe range、little-endian 整数读取/写入与
   power-of-two 对齐原语；格式模块负责在调用前检查并保留自己的 typed error。
 - `text.h`：canonical UTF-8 校验与 UTF-16 code-unit 计数、受检 code point 编码、
-  ASCII whitespace trim，以及 reject/replace 策略化 UTF-16→UTF-8。
+  ASCII whitespace trim，以及 reject/replace 策略化 UTF-16→UTF-8；
+  `IsValidPackageName` / `IsValidLowercaseIdentifier` 提供点分包名与小写标识符的
+  共享词法校验，供 session、input 与前端复用。
 - `encoding.h`：标准/URL-safe Base64（padding/wrap/newline 可配置）与大小写可选 hex；
   Android flags 仍由 runtime adapter 解释。
 

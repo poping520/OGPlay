@@ -1,5 +1,7 @@
 #include "ogplay/core/text.h"
 
+#include <algorithm>
+#include <cctype>
 #include <type_traits>
 
 namespace ogplay::core {
@@ -140,6 +142,37 @@ std::optional<std::string> Utf16ToUtf8(
     const std::span<const std::uint16_t> text, const InvalidUtf16Policy policy,
     const std::uint32_t replacement) {
     return ConvertUtf16(text, policy, replacement);
+}
+
+bool IsValidPackageName(const std::string_view package) {
+    bool component_start = true;
+    std::size_t components = 1;
+    for (const char character : package) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (character == '.') {
+            if (component_start) return false;
+            component_start = true;
+            ++components;
+        } else if (component_start) {
+            if (std::isalpha(byte) == 0) return false;
+            component_start = false;
+        } else if (std::isalnum(byte) == 0 && character != '_') {
+            return false;
+        }
+    }
+    return !component_start && components >= 2;
+}
+
+bool IsValidLowercaseIdentifier(const std::string_view value) {
+    if (value.empty() ||
+        std::islower(static_cast<unsigned char>(value.front())) == 0) {
+        return false;
+    }
+    return std::all_of(value.begin() + 1, value.end(), [](const char character) {
+        const auto byte = static_cast<unsigned char>(character);
+        return std::islower(byte) != 0 || std::isdigit(byte) != 0 ||
+               character == '_';
+    });
 }
 
 }  // namespace ogplay::core

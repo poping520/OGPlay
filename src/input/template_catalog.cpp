@@ -1,35 +1,20 @@
 #include "ogplay/input/template_catalog.h"
 
-#include <algorithm>
-#include <cctype>
 #include <string>
 #include <utility>
 
+#include "ogplay/core/text.h"
+
 namespace ogplay::input {
-namespace {
-
-[[nodiscard]] bool ValidId(const std::string_view value) {
-    if (value.empty() ||
-        std::islower(static_cast<unsigned char>(value.front())) == 0) {
-        return false;
-    }
-    return std::all_of(value.begin() + 1, value.end(), [](const char character) {
-        const auto byte = static_cast<unsigned char>(character);
-        return std::islower(byte) != 0 || std::isdigit(byte) != 0 ||
-               character == '_';
-    });
-}
-
-}  // namespace
 
 InputTemplateCatalog::InputTemplateCatalog(
     std::string default_template, std::vector<InputTemplate> templates)
     : default_template_(std::move(default_template)) {
-    if (!ValidId(default_template_)) {
+    if (!core::IsValidLowercaseIdentifier(default_template_)) {
         throw InputTemplateError("input default template id is invalid");
     }
     for (auto& input_template : templates) {
-        if (!ValidId(input_template.id) || !input_template.mapper) {
+        if (!core::IsValidLowercaseIdentifier(input_template.id) || !input_template.mapper) {
             throw InputTemplateError(
                 "input template requires a valid id and mapper");
         }

@@ -1,5 +1,6 @@
 #include "ogplay/loader/dex.h"
 
+#include "dex_uleb128.h"
 #include <algorithm>
 #include <iterator>
 #include <limits>
@@ -50,25 +51,11 @@ public:
     }
 
     [[nodiscard]] std::uint32_t Uleb128(std::size_t& offset) const {
-        std::uint32_t value{};
-        for (std::uint32_t index = 0; index < 5; ++index) {
-            const auto byte = U8(offset++);
-            if (index == 4 && (byte & 0xf0U) != 0) {
-                Fail(DexErrorReason::invalid_uleb128, offset - 1,
-                     "DEX ULEB128 exceeds 32 bits");
-            }
-            value |= static_cast<std::uint32_t>(byte & 0x7fU)
-                     << (index * 7U);
-            if ((byte & 0x80U) == 0) {
-                if (index != 0 && byte == 0) {
-                    Fail(DexErrorReason::invalid_uleb128, offset - 1,
-                         "DEX ULEB128 is not minimally encoded");
-                }
-                return value;
-            }
-        }
-        Fail(DexErrorReason::invalid_uleb128, offset,
-             "DEX ULEB128 is unterminated");
+        return detail::ReadUleb128(bytes_, offset,
+                                   {"DEX input is truncated",
+                                    "DEX ULEB128 exceeds 32 bits",
+                                    "DEX ULEB128 is not minimally encoded",
+                                    "DEX ULEB128 is unterminated"});
     }
 
 private:

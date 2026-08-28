@@ -20,6 +20,7 @@
 #include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
+#include "runtime/boundary/services/gles_transfer_io.h"
 #include "runtime/boundary/services/guest_gl_context.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 
@@ -122,25 +123,8 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
 }
 [[nodiscard]] std::uint32_t MaximumGuestIndex(const std::span<const std::byte> bytes,
                                               const std::uint32_t type) {
-    std::uint32_t maximum{};
-    if (type == kUnsignedByte) {
-        for (const auto value : bytes) {
-            maximum = std::max(maximum, static_cast<std::uint32_t>(
-                                            std::to_integer<std::uint8_t>(value)));
-        }
-        return maximum;
-    }
-    if (type != kUnsignedShort || bytes.size() % 2U != 0U) {
-        throw std::invalid_argument("GLES2 draw index type is unsupported");
-    }
-    for (std::size_t offset = 0; offset < bytes.size(); offset += 2U) {
-        maximum = std::max(
-            maximum,
-            static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
-                (static_cast<std::uint32_t>(
-                     std::to_integer<std::uint8_t>(bytes[offset + 1U])) << 8U));
-    }
-    return maximum;
+    return gles_io::MaximumGuestIndex(bytes, type,
+                                      "GLES2 draw index type is unsupported");
 }
 
 }  // namespace
@@ -459,7 +443,7 @@ public:
             const auto result = function_id == Id(Gles2Function::get_active_attrib)
                 ? RequireFrame(frame, symbol).GetActiveAttribute(all[0], all[1])
                 : RequireFrame(frame, symbol).GetActiveUniform(all[0], all[1]);
-            const auto length = WriteText(Pointer(call, 6), result.name);
+            const auto length = gles_io::WriteText(Pointer(call, 6), result.name);
             WriteWord(Pointer(call, 3), length);
             WriteWord(Pointer(call, 4),
                       std::bit_cast<std::uint32_t>(result.size));
@@ -472,7 +456,7 @@ public:
             const auto log = function_id == Id(Gles2Function::get_program_info_log)
                 ? RequireFrame(frame, symbol).GetProgramInfoLog(args[0])
                 : RequireFrame(frame, symbol).GetShaderInfoLog(args[0]);
-            const auto length = WriteText(Pointer(call, 3), log);
+            const auto length = gles_io::WriteText(Pointer(call, 3), log);
             WriteWord(Pointer(call, 2), length);
             return 0;
         }
@@ -824,40 +808,16 @@ private:
 
     static std::vector<std::uint32_t> ReadWords(
         const gles::GuestBuffer& transfer) {
-        const auto bytes = transfer.Bytes();
-        if (bytes.size() % 4U != 0) {
-            throw std::logic_error("GLES name array is misaligned");
-        }
-        std::vector<std::uint32_t> words(bytes.size() / 4U);
-        for (std::size_t word = 0; word < words.size(); ++word) {
-            for (std::size_t byte = 0; byte < 4; ++byte) {
-                words[word] |= static_cast<std::uint32_t>(
-                    std::to_integer<std::uint8_t>(bytes[word * 4U + byte]))
-                    << (byte * 8U);
-            }
-        }
-        return words;
+        return gles_io::ReadWordsAligned(transfer, "GLES name array is misaligned");
     }
 
     static std::vector<float> ReadFloats(const gles::GuestBuffer& transfer) {
-        const auto words = ReadWords(transfer);
-        std::vector<float> values;
-        values.reserve(words.size());
-        for (const auto word : words) {
-            values.push_back(std::bit_cast<float>(word));
-        }
-        return values;
+        return gles_io::ValuesFromWords<float>(ReadWords(transfer));
     }
 
     static std::vector<std::int32_t> ReadIntegers(
         const gles::GuestBuffer& transfer) {
-        const auto words = ReadWords(transfer);
-        std::vector<std::int32_t> values;
-        values.reserve(words.size());
-        for (const auto word : words) {
-            values.push_back(std::bit_cast<std::int32_t>(word));
-        }
-        return values;
+        return gles_io::ValuesFromWords<std::int32_t>(ReadWords(transfer));
     }
 
     static void WriteWord(gles::GuestBuffer& transfer,
@@ -866,34 +826,10 @@ private:
         WriteWords(transfer, std::span(&word, 1));
     }
 
-    static std::uint32_t WriteText(gles::GuestBuffer& transfer,
-                                   const std::string_view text) {
-        auto bytes = transfer.WritableBytes();
-        const auto length = bytes.empty()
-            ? 0U
-            : std::min(text.size(), bytes.size() - 1U);
-        std::ranges::fill(bytes, std::byte{});
-        for (std::size_t index = 0; index < length; ++index) {
-            bytes[index] = static_cast<std::byte>(
-                static_cast<unsigned char>(text[index]));
-        }
-        transfer.Commit();
-        return static_cast<std::uint32_t>(length);
-    }
-
     static void WriteWords(gles::GuestBuffer& transfer,
                            const std::span<const std::uint32_t> words) {
-        auto bytes = transfer.WritableBytes();
-        if (bytes.size() != words.size() * 4U) {
-            throw std::logic_error("GLES name output size differs");
-        }
-        for (std::size_t word = 0; word < words.size(); ++word) {
-            for (std::size_t byte = 0; byte < 4; ++byte) {
-                bytes[word * 4U + byte] =
-                    static_cast<std::byte>(words[word] >> (byte * 8U));
-            }
-        }
-        transfer.Commit();
+        gles_io::WriteWordsExact(transfer, words,
+                                 "GLES name output size differs");
     }
 
     static std::optional<std::span<const std::byte>> OptionalBytes(

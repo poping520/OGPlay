@@ -12,6 +12,7 @@
 
 #include "ogplay/gles/gles_call_preparation.h"
 #include "ogplay/gles/guest_transfer.h"
+#include "runtime/boundary/services/gles_transfer_io.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -34,61 +35,25 @@ constexpr std::uint32_t kVertexAttributeArrayPointer = 0x8645U;
 }
 
 [[nodiscard]] std::vector<std::uint32_t> ReadWords(const gles::GuestBuffer& input) {
-    const auto bytes = input.Bytes();
-    if (bytes.size() % sizeof(std::uint32_t) != 0U) {
-        throw std::logic_error("GLES2 vertex input is not word aligned");
-    }
-    std::vector<std::uint32_t> words(bytes.size() / sizeof(std::uint32_t));
-    for (std::size_t index = 0; index < words.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            words[index] |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
-                                bytes[index * sizeof(std::uint32_t) + byte]))
-                            << (byte * 8U);
-        }
-    }
-    return words;
+    return gles_io::ReadWordsAligned(input,
+                                     "GLES2 vertex input is not word aligned");
 }
 
 [[nodiscard]] std::vector<float> ReadFloats(const gles::GuestBuffer& input) {
-    const auto words = ReadWords(input);
-    std::vector<float> values;
-    values.reserve(words.size());
-    for (const auto word : words) {
-        values.push_back(std::bit_cast<float>(word));
-    }
-    return values;
+    return gles_io::ValuesFromWords<float>(ReadWords(input));
 }
 
 void WriteWords(gles::GuestBuffer& output, const std::span<const std::uint32_t> words) {
-    auto bytes = output.WritableBytes();
-    if (bytes.size() != words.size() * sizeof(std::uint32_t)) {
-        throw std::logic_error("GLES2 vertex output has the wrong size");
-    }
-    for (std::size_t index = 0; index < words.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            bytes[index * sizeof(std::uint32_t) + byte] =
-                static_cast<std::byte>(words[index] >> (byte * 8U));
-        }
-    }
-    output.Commit();
+    gles_io::WriteWordsExact(output, words,
+                             "GLES2 vertex output has the wrong size");
 }
 
 void WriteFloats(gles::GuestBuffer& output, const std::span<const float> values) {
-    std::vector<std::uint32_t> words;
-    words.reserve(values.size());
-    for (const auto value : values) {
-        words.push_back(std::bit_cast<std::uint32_t>(value));
-    }
-    WriteWords(output, words);
+    WriteWords(output, gles_io::WordsFromValues(values));
 }
 
 void WriteIntegers(gles::GuestBuffer& output, const std::span<const std::int32_t> values) {
-    std::vector<std::uint32_t> words;
-    words.reserve(values.size());
-    for (const auto value : values) {
-        words.push_back(std::bit_cast<std::uint32_t>(value));
-    }
-    WriteWords(output, words);
+    WriteWords(output, gles_io::WordsFromValues(values));
 }
 
 void SetAttribute(GraphicsBoundaryContext& graphics, const std::uint32_t index,

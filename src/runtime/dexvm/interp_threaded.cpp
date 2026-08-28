@@ -17,19 +17,6 @@ namespace {
 
 constexpr std::uint32_t kObjectElementFlag = 0x80000000U;
 
-[[nodiscard]] JniPrimitiveKind ArrayKindFor(const std::string& element) {
-    if (element == "Z") return JniPrimitiveKind::boolean;
-    if (element == "B") return JniPrimitiveKind::byte;
-    if (element == "C") return JniPrimitiveKind::character;
-    if (element == "S") return JniPrimitiveKind::short_integer;
-    if (element == "I") return JniPrimitiveKind::integer;
-    if (element == "J") return JniPrimitiveKind::long_integer;
-    if (element == "F") return JniPrimitiveKind::float_value;
-    if (element == "D") return JniPrimitiveKind::double_value;
-    throw DexVmError(DexVmErrorReason::invalid_operand,
-                     "not a primitive array element: " + element);
-}
-
 }  // namespace
 
 void Interpreter::Impl::StepThreaded(

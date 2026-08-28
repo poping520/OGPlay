@@ -13,6 +13,7 @@
 #include "gles1_support.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
+#include "runtime/boundary/services/gles_transfer_io.h"
 namespace ogplay::runtime::detail {
 namespace {
 
@@ -101,27 +102,8 @@ enum class TextureFormatClass : std::int32_t {
 }
 [[nodiscard]] std::uint32_t MaximumIndex(
     const std::span<const std::byte> bytes, const std::uint32_t type) {
-    std::uint32_t maximum{};
-    if (type == kUnsignedByte) {
-        for (const auto value : bytes) {
-            maximum = std::max(maximum,
-                               static_cast<std::uint32_t>(
-                                   std::to_integer<std::uint8_t>(value)));
-        }
-        return maximum;
-    }
-    if (type != kUnsignedShort || bytes.size() % 2U != 0U) {
-        throw std::invalid_argument("GLES1 draw index type is unsupported");
-    }
-    for (std::size_t offset = 0; offset < bytes.size(); offset += 2U) {
-        maximum = std::max(
-            maximum,
-            static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
-                (static_cast<std::uint32_t>(
-                     std::to_integer<std::uint8_t>(bytes[offset + 1U]))
-                 << 8U));
-    }
-    return maximum;
+    return gles_io::MaximumGuestIndex(bytes, type,
+                                      "GLES1 draw index type is unsupported");
 }
 [[nodiscard]] std::int32_t Signed(const std::uint32_t value) noexcept {
     return std::bit_cast<std::int32_t>(value);

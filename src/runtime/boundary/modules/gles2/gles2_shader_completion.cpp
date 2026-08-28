@@ -1,5 +1,7 @@
 #include "gles2_module.h"
 
+#include "runtime/boundary/services/gles_transfer_io.h"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -40,29 +42,12 @@ Prepare(BoundaryCallServices& calls, GraphicsBoundaryContext& graphics, const gl
 }
 
 [[nodiscard]] std::vector<std::uint32_t> ReadWords(const gles::GuestBuffer& input) {
-    const auto bytes = input.Bytes();
-    if (bytes.size() % sizeof(std::uint32_t) != 0U) {
-        throw std::logic_error("GLES2 shader input is not word aligned");
-    }
-    std::vector<std::uint32_t> words(bytes.size() / sizeof(std::uint32_t));
-    for (std::size_t index = 0; index < words.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            words[index] |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
-                                bytes[index * sizeof(std::uint32_t) + byte]))
-                            << (byte * 8U);
-        }
-    }
-    return words;
+    return gles_io::ReadWordsAligned(input,
+                                     "GLES2 shader input is not word aligned");
 }
 
 [[nodiscard]] std::vector<float> ReadFloats(const gles::GuestBuffer& input) {
-    const auto words = ReadWords(input);
-    std::vector<float> values;
-    values.reserve(words.size());
-    for (const auto word : words) {
-        values.push_back(std::bit_cast<float>(word));
-    }
-    return values;
+    return gles_io::ValuesFromWords<float>(ReadWords(input));
 }
 
 [[nodiscard]] std::string ReadCString(const gles::GuestBuffer& input) {
@@ -86,12 +71,7 @@ void WriteWords(gles::GuestBuffer& output, const std::span<const std::uint32_t> 
         throw std::logic_error("GLES2 shader output has the wrong size");
     }
     std::ranges::fill(bytes, std::byte{});
-    for (std::size_t index = 0; index < words.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            bytes[index * sizeof(std::uint32_t) + byte] =
-                static_cast<std::byte>(words[index] >> (byte * 8U));
-        }
-    }
+    gles_io::StoreWordsLE(bytes, words);
     output.Commit();
 }
 
@@ -103,32 +83,11 @@ void WriteInteger(gles::GuestBuffer& output, const std::int32_t value) {
 }
 
 void WriteIntegers(gles::GuestBuffer& output, const std::span<const std::int32_t> values) {
-    std::vector<std::uint32_t> words;
-    words.reserve(values.size());
-    for (const auto value : values) {
-        words.push_back(std::bit_cast<std::uint32_t>(value));
-    }
-    WriteWords(output, words);
+    WriteWords(output, gles_io::WordsFromValues(values));
 }
 
 void WriteFloats(gles::GuestBuffer& output, const std::span<const float> values) {
-    std::vector<std::uint32_t> words;
-    words.reserve(values.size());
-    for (const auto value : values) {
-        words.push_back(std::bit_cast<std::uint32_t>(value));
-    }
-    WriteWords(output, words);
-}
-
-std::uint32_t WriteText(gles::GuestBuffer& output, const std::string_view text) {
-    auto bytes = output.WritableBytes();
-    const auto length = bytes.empty() ? 0U : std::min(text.size(), bytes.size() - 1U);
-    std::ranges::fill(bytes, std::byte{});
-    for (std::size_t index = 0; index < length; ++index) {
-        bytes[index] = static_cast<std::byte>(static_cast<unsigned char>(text[index]));
-    }
-    output.Commit();
-    return static_cast<std::uint32_t>(length);
+    WriteWords(output, gles_io::WordsFromValues(values));
 }
 
 } // namespace
@@ -173,7 +132,7 @@ std::uint32_t Gles2Module::GetShaderSource(const A32CallFrame& call) {
     auto& source = Pointer(prepared, 3U);
     const auto text =
         graphics_.RequireFrame("glGetShaderSource").GetShaderSource(arguments[0], source.Size());
-    const auto length = WriteText(source, text);
+    const auto length = gles_io::WriteText(source, text);
     WriteInteger(Pointer(prepared, 2U), static_cast<std::int32_t>(length));
     return 0U;
 }

@@ -172,7 +172,7 @@ add_library(ogplay_input
     src/input/template_catalog.cpp
 )
 add_library(OGPlay::Input ALIAS ogplay_input)
-target_link_libraries(ogplay_input PUBLIC OGPlay::Hal)
+target_link_libraries(ogplay_input PUBLIC OGPlay::Hal OGPlay::Core)
 target_include_directories(ogplay_input PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>

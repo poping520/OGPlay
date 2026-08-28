@@ -12,6 +12,7 @@
 #include <utility>
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
+#include "runtime/boundary/services/gles_transfer_io.h"
 #include "gles1_fixed.h"
 #include "gles1_support.h"
 
@@ -108,32 +109,13 @@ void RequireTextureBindingTarget(const std::uint32_t target) {
 
 [[nodiscard]] std::vector<std::uint32_t> ReadTextureNames(
     const gles::GuestBuffer& transfer) {
-    const auto bytes = transfer.Bytes();
-    std::vector<std::uint32_t> names(bytes.size() / sizeof(std::uint32_t));
-    for (std::size_t index = 0; index < names.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            names[index] |= static_cast<std::uint32_t>(
-                                std::to_integer<std::uint8_t>(
-                                    bytes[index * sizeof(std::uint32_t) + byte]))
-                            << (byte * 8U);
-        }
-    }
-    return names;
+    return gles_io::LoadWordsLE(transfer.Bytes());
 }
 
 void WriteTextureNames(gles::GuestBuffer& transfer,
                        const std::span<const std::uint32_t> names) {
-    auto bytes = transfer.WritableBytes();
-    if (bytes.size() != names.size() * sizeof(std::uint32_t)) {
-        throw std::logic_error("GLES1 texture name output size differs");
-    }
-    for (std::size_t index = 0; index < names.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            bytes[index * sizeof(std::uint32_t) + byte] =
-                static_cast<std::byte>(names[index] >> (byte * 8U));
-        }
-    }
-    transfer.Commit();
+    gles_io::WriteWordsExact(transfer, names,
+                             "GLES1 texture name output size differs");
 }
 
 }  // namespace

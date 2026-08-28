@@ -18,25 +18,6 @@ namespace {
 
 constexpr std::uint32_t kSchema = 1;
 
-[[nodiscard]] bool ValidPackage(const std::string_view package) {
-    bool component_start = true;
-    std::size_t components = 1;
-    for (const char character : package) {
-        const auto byte = static_cast<unsigned char>(character);
-        if (character == '.') {
-            if (component_start) return false;
-            component_start = true;
-            ++components;
-        } else if (component_start) {
-            if (std::isalpha(byte) == 0) return false;
-            component_start = false;
-        } else if (std::isalnum(byte) == 0 && character != '_') {
-            return false;
-        }
-    }
-    return !component_start && components >= 2;
-}
-
 [[nodiscard]] bool SafeEntryKey(const std::string_view key) {
     if (key.empty() || key == "." || key == ".." ||
         key.find('/') != std::string_view::npos ||
@@ -203,7 +184,7 @@ void ExactKeys(const FlatToml& values,
 }
 
 void ValidateMetadata(const LibraryMetadata& metadata) {
-    if (!ValidPackage(metadata.package)) {
+    if (!core::IsValidPackageName(metadata.package)) {
         throw GuiModelError(GuiModelErrorCode::invalid_argument,
                             "library package name is invalid");
     }

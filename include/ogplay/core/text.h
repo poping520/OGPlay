@@ -42,4 +42,13 @@ enum class InvalidUtf16Policy {
     std::span<const std::uint16_t> text, InvalidUtf16Policy policy,
     std::uint32_t replacement = 0xfffdU);
 
+// Dotted package-name shape: every '.'-separated component starts with an
+// ASCII letter, continues with ASCII letters/digits/'_', and at least two
+// components are required ("com.example.app").
+[[nodiscard]] bool IsValidPackageName(std::string_view package);
+
+// Lowercase identifier shape: ASCII lowercase letter first, then ASCII
+// lowercase letters/digits/'_'.
+[[nodiscard]] bool IsValidLowercaseIdentifier(std::string_view value);
+
 }  // namespace ogplay::core

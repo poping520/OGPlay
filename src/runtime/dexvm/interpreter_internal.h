@@ -21,6 +21,7 @@
 #include "ogplay/runtime/dexvm/reflection.h"
 #include "ogplay/runtime/dexvm/generated/opcode_table.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/jni/jni_array.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -417,5 +418,20 @@ public:
     void PrepareSafeAllocation(std::uint64_t request_bytes,
                                std::string_view trigger);
 };
+
+// Primitive element kind for array opcode descriptors ("Z", "B", ..."D"),
+// shared by the straight-line and threaded interpreter kernels.
+[[nodiscard]] inline JniPrimitiveKind ArrayKindFor(const std::string& element) {
+    if (element == "Z") return JniPrimitiveKind::boolean;
+    if (element == "B") return JniPrimitiveKind::byte;
+    if (element == "C") return JniPrimitiveKind::character;
+    if (element == "S") return JniPrimitiveKind::short_integer;
+    if (element == "I") return JniPrimitiveKind::integer;
+    if (element == "J") return JniPrimitiveKind::long_integer;
+    if (element == "F") return JniPrimitiveKind::float_value;
+    if (element == "D") return JniPrimitiveKind::double_value;
+    throw DexVmError(DexVmErrorReason::invalid_operand,
+                     "not a primitive array element: " + element);
+}
 
 }  // namespace ogplay::runtime::dexvm

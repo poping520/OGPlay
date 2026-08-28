@@ -7,6 +7,9 @@
   cpu/memory/loader 等底层。
 - `services/`：跨 module 共享状态；`GuestGlContext` 只在这里拥有一份，由
   `GraphicsBoundaryContext` 显式聚合 ANGLE frame/context 和 graphics shadow；
+  `gles_transfer_io.h` 是 GLES1/GLES2 module 与 graphics dispatch 共用的 guest
+  小端 32 位传输原语唯一实现，尺寸校验、错误文案与 `Commit()` 时机等 handler
+  语义差异保留在各调用侧；
   `FrameService` 统一拥有 frame recycling、GPU stats 与 trace，Android guest memory
   写入由窄化的 `AndroidBoundaryServices` 提供；停滞诊断只通过 `TryTrace` 短锁复制最近
   有界 raw 记录，busy 时不得等待 graphics 线程。

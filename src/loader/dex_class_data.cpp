@@ -6,6 +6,8 @@
 
 #include "ogplay/core/byte_order.h"
 
+#include "dex_uleb128.h"
+
 namespace ogplay::loader {
 namespace {
 
@@ -37,25 +39,11 @@ public:
         return core::ReadLittleEndian<std::uint32_t>(bytes_, offset);
     }
     [[nodiscard]] std::uint32_t Uleb128(std::size_t& offset) const {
-        std::uint32_t value{};
-        for (std::uint32_t index = 0; index < 5; ++index) {
-            const auto byte = U8(offset++);
-            if (index == 4 && (byte & 0xf0U) != 0) {
-                Fail(DexErrorReason::invalid_uleb128, offset - 1,
-                     "DEX class_data ULEB128 exceeds 32 bits");
-            }
-            value |= static_cast<std::uint32_t>(byte & 0x7fU)
-                     << (index * 7U);
-            if ((byte & 0x80U) == 0) {
-                if (index != 0 && byte == 0) {
-                    Fail(DexErrorReason::invalid_uleb128, offset - 1,
-                         "DEX class_data ULEB128 is not minimal");
-                }
-                return value;
-            }
-        }
-        Fail(DexErrorReason::invalid_uleb128, offset,
-             "DEX class_data ULEB128 is unterminated");
+        return detail::ReadUleb128(bytes_, offset,
+                                   {"DEX class_data or code_item is truncated",
+                                    "DEX class_data ULEB128 exceeds 32 bits",
+                                    "DEX class_data ULEB128 is not minimal",
+                                    "DEX class_data ULEB128 is unterminated"});
     }
     void Require(const std::size_t offset, const std::size_t size) const {
         if (!core::RangeFits(bytes_, offset, size)) {

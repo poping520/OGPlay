@@ -16,6 +16,7 @@
 #include "gles1_fixed.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
+#include "runtime/boundary/services/gles_transfer_io.h"
 
 namespace ogplay::runtime::detail {
 namespace {
@@ -46,17 +47,7 @@ constexpr std::uint32_t kGenerateMipmap = 0x8191U;
                                                    const std::uint32_t address,
                                                    const std::size_t count,
                                                    const std::uint64_t thread_id) {
-    std::vector<std::byte> bytes(count * sizeof(std::uint32_t));
-    address_space.Read(memory::GuestAddress{address}, bytes, thread_id);
-    std::vector<std::uint32_t> words(count);
-    for (std::size_t index = 0; index < count; ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            words[index] |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
-                                bytes[index * sizeof(std::uint32_t) + byte]))
-                            << (byte * 8U);
-        }
-    }
-    return words;
+    return gles_io::LoadGuestWordsLE(address_space, address, count, thread_id);
 }
 
 template <typename T, std::size_t Extent>
@@ -66,17 +57,17 @@ void WriteWords(memory::AddressSpace& address_space, const std::uint32_t address
         address_space, memory::GuestAddress{address}, values.size() * sizeof(std::uint32_t),
         gles::GuestTransferDirection::output, false, thread_id);
     auto bytes = output.WritableBytes();
+    std::vector<std::uint32_t> words;
+    words.reserve(values.size());
     for (std::size_t index = 0; index < values.size(); ++index) {
-        std::uint32_t word{};
         if constexpr (std::is_same_v<T, float>) {
-            word = std::bit_cast<std::uint32_t>(values[index]);
+            words.push_back(std::bit_cast<std::uint32_t>(values[index]));
         } else {
-            word = std::bit_cast<std::uint32_t>(static_cast<std::int32_t>(values[index]));
-        }
-        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
-            bytes[index * sizeof(word) + byte] = static_cast<std::byte>(word >> (byte * 8U));
+            words.push_back(std::bit_cast<std::uint32_t>(
+                static_cast<std::int32_t>(values[index])));
         }
     }
+    gles_io::StoreWordsLE(bytes, words);
     output.Commit();
 }
 

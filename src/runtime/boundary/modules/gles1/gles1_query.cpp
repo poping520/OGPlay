@@ -13,6 +13,7 @@
 
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
+#include "runtime/boundary/services/gles_transfer_io.h"
 #include "gles1_draw.h"
 #include "gles1_support.h"
 
@@ -35,51 +36,20 @@ constexpr std::uint32_t kTexture0 = 0x84C0U;
 [[nodiscard]] std::vector<float> ReadGuestFloats(
     const memory::AddressSpace& address_space, const std::uint32_t address,
     const std::size_t count, const std::uint64_t thread_id) {
-    std::vector<std::byte> bytes(count * sizeof(std::uint32_t));
-    address_space.Read(memory::GuestAddress{address}, bytes, thread_id);
-    std::vector<float> values(count);
-    for (std::size_t index = 0; index < count; ++index) {
-        std::uint32_t word{};
-        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
-            word |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(
-                        bytes[index * sizeof(word) + byte]))
-                    << (byte * 8U);
-        }
-        values[index] = std::bit_cast<float>(word);
-    }
-    return values;
+    return gles_io::ValuesFromWords<float>(gles_io::LoadGuestWordsLE(
+        address_space, address, count, thread_id));
 }
 
 void WriteGuestFloats(
     gles::GuestBuffer& output, const std::span<const float> values) {
-    auto bytes = output.WritableBytes();
-    if (bytes.size() != values.size() * sizeof(std::uint32_t)) {
-        throw std::logic_error("GLES1 float query output size differs");
-    }
-    for (std::size_t index = 0; index < values.size(); ++index) {
-        const auto word = std::bit_cast<std::uint32_t>(values[index]);
-        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
-            bytes[index * sizeof(word) + byte] =
-                static_cast<std::byte>(word >> (byte * 8U));
-        }
-    }
-    output.Commit();
+    gles_io::WriteValuesExact(output, values,
+                              "GLES1 float query output size differs");
 }
 
 void WriteGuestIntegers(
     gles::GuestBuffer& output, const std::span<const std::int32_t> values) {
-    auto bytes = output.WritableBytes();
-    if (bytes.size() != values.size() * sizeof(std::uint32_t)) {
-        throw std::logic_error("GLES1 integer query output size differs");
-    }
-    for (std::size_t index = 0; index < values.size(); ++index) {
-        const auto word = std::bit_cast<std::uint32_t>(values[index]);
-        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
-            bytes[index * sizeof(word) + byte] =
-                static_cast<std::byte>(word >> (byte * 8U));
-        }
-    }
-    output.Commit();
+    gles_io::WriteValuesExact(output, values,
+                              "GLES1 integer query output size differs");
 }
 
 void WriteGuestBooleans(
@@ -106,28 +76,13 @@ void WriteGuestBooleans(
 
 [[nodiscard]] std::vector<std::uint32_t> ReadGuestNames(
     const gles::GuestBuffer& input) {
-    const auto bytes = input.Bytes();
-    std::vector<std::uint32_t> names(bytes.size() / sizeof(std::uint32_t));
-    for (std::size_t index = 0; index < names.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            names[index] |= static_cast<std::uint32_t>(
-                                std::to_integer<std::uint8_t>(
-                                    bytes[index * sizeof(std::uint32_t) + byte]))
-                            << (byte * 8U);
-        }
-    }
-    return names;
+    return gles_io::LoadWordsLE(input.Bytes());
 }
 
 void WriteGuestNames(gles::GuestBuffer& output,
                      const std::span<const std::uint32_t> names) {
     auto bytes = output.WritableBytes();
-    for (std::size_t index = 0; index < names.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            bytes[index * sizeof(std::uint32_t) + byte] =
-                static_cast<std::byte>(names[index] >> (byte * 8U));
-        }
-    }
+    gles_io::StoreWordsLE(bytes, names);
     output.Commit();
 }
 

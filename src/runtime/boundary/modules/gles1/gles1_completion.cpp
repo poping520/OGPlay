@@ -10,9 +10,10 @@
 #include <string_view>
 #include <vector>
 
+#include "ogplay/memory/address_space.h"
+#include "runtime/boundary/services/gles_transfer_io.h"
 #include "gles1_fixed.h"
 #include "gles1_support.h"
-#include "ogplay/memory/address_space.h"
 
 namespace ogplay::runtime::detail {
 namespace {
@@ -31,17 +32,11 @@ constexpr std::uint32_t kPointDistanceAttenuation = 0x8129U;
 [[nodiscard]] std::vector<float> ReadFixed(const memory::AddressSpace& address_space,
                                            const std::uint32_t address, const std::size_t count,
                                            const std::uint64_t thread_id) {
-    std::vector<std::byte> bytes(count * sizeof(std::uint32_t));
-    address_space.Read(memory::GuestAddress{address}, bytes, thread_id);
+    const auto words = gles_io::LoadGuestWordsLE(address_space, address, count,
+                                                 thread_id);
     std::vector<float> values(count);
     for (std::size_t index = 0; index < count; ++index) {
-        std::uint32_t word{};
-        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
-            word |= static_cast<std::uint32_t>(
-                        std::to_integer<std::uint8_t>(bytes[index * sizeof(word) + byte]))
-                    << (byte * 8U);
-        }
-        values[index] = Fixed(word);
+        values[index] = Fixed(words[index]);
     }
     return values;
 }
@@ -49,19 +44,8 @@ constexpr std::uint32_t kPointDistanceAttenuation = 0x8129U;
 [[nodiscard]] std::vector<float> ReadFloats(const memory::AddressSpace& address_space,
                                             const std::uint32_t address, const std::size_t count,
                                             const std::uint64_t thread_id) {
-    std::vector<std::byte> bytes(count * sizeof(std::uint32_t));
-    address_space.Read(memory::GuestAddress{address}, bytes, thread_id);
-    std::vector<float> values(count);
-    for (std::size_t index = 0; index < count; ++index) {
-        std::uint32_t word{};
-        for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
-            word |= static_cast<std::uint32_t>(
-                        std::to_integer<std::uint8_t>(bytes[index * sizeof(word) + byte]))
-                    << (byte * 8U);
-        }
-        values[index] = std::bit_cast<float>(word);
-    }
-    return values;
+    return gles_io::ValuesFromWords<float>(gles_io::LoadGuestWordsLE(
+        address_space, address, count, thread_id));
 }
 
 [[nodiscard]] Gles1Matrix ReadFixedMatrix(const memory::AddressSpace& address_space,

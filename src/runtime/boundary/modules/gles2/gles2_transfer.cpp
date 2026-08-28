@@ -7,8 +7,10 @@
 #include <stdexcept>
 #include <vector>
 
+#include "ogplay/core/byte_order.h"
 #include "ogplay/gles/gles_call_preparation.h"
 #include "ogplay/gles/guest_transfer.h"
+#include "runtime/boundary/services/gles_transfer_io.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -36,26 +38,12 @@ namespace {
     if (bytes.size() != sizeof(std::uint32_t)) {
         throw std::logic_error("GLES2 scalar input has the wrong size");
     }
-    std::uint32_t word{};
-    for (std::size_t byte = 0; byte < sizeof(word); ++byte) {
-        word |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[byte]))
-                << (byte * 8U);
-    }
-    return word;
+    return core::ReadLittleEndian<std::uint32_t>(bytes, 0U);
 }
 
 void WriteWords(gles::GuestBuffer& output, const std::span<const std::uint32_t> words) {
-    auto bytes = output.WritableBytes();
-    if (bytes.size() != words.size() * sizeof(std::uint32_t)) {
-        throw std::logic_error("GLES2 query output has the wrong size");
-    }
-    for (std::size_t index = 0; index < words.size(); ++index) {
-        for (std::size_t byte = 0; byte < sizeof(std::uint32_t); ++byte) {
-            bytes[index * sizeof(std::uint32_t) + byte] =
-                static_cast<std::byte>(words[index] >> (byte * 8U));
-        }
-    }
-    output.Commit();
+    gles_io::WriteWordsExact(output, words,
+                             "GLES2 query output has the wrong size");
 }
 
 void WriteInteger(gles::GuestBuffer& output, const std::int32_t value) {
@@ -64,12 +52,7 @@ void WriteInteger(gles::GuestBuffer& output, const std::int32_t value) {
 }
 
 void WriteFloats(gles::GuestBuffer& output, const std::span<const float> values) {
-    std::vector<std::uint32_t> words;
-    words.reserve(values.size());
-    for (const auto value : values) {
-        words.push_back(std::bit_cast<std::uint32_t>(value));
-    }
-    WriteWords(output, words);
+    WriteWords(output, gles_io::WordsFromValues(values));
 }
 
 void WriteBooleans(gles::GuestBuffer& output, const std::span<const std::uint8_t> values) {

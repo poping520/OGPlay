@@ -1,9 +1,15 @@
 # 当前状态
 
-更新：UTIL-1 基础编码与字节工具收敛完成；DVM-92 与 Diagnostics 已闭合
+更新：UTIL-2 同逻辑重复片段收敛完成；UTIL-1、DVM-92 与 Diagnostics 已闭合
 
 ## 当前阶段
 
+- **UTIL-2 已完成**：GLES1/GLES2 与 graphics dispatch 约 20 份 guest 小端字转换副本
+  收敛到 `services/gles_transfer_io.h`（`core` 补 `WriteLittleEndian`）；三份 DEX
+  ULEB128 解码器、两份 syscall guest 路径读取、`ValidPackage`/`ValidId` 三处跨层
+  校验（`core::IsValidPackageName`/`IsValidLowercaseIdentifier`）与两个解释器 kernel
+  的 `ArrayKindFor` 均改接唯一实现；校验语义、错误文案与异常类别逐字保留。
+  见 [UTIL-2](../tasks/maintenance/UTIL-2.md)。
 - **UTIL-1 已完成代码整合**：canonical UTF-8、策略化 UTF-16→UTF-8、Base64/hex、
   little-endian/range/alignment 与 JNI guest-memory 读取已有唯一共享实现；loader、Android
   flags 与 TOML 域错误边界保留。`windows-msvc` 的 `ogplay`/`ogplay_tests` 编译通过，
@@ -36,6 +42,10 @@
 
 ## 最近验证
 
+- 2026-08-28 UTIL-2 macOS `dev` 受影响目标编译通过；定向测试 loader/session/input
+  17/17、boundary GLES 41/41（10512 assertions）、syscall/dexvm/core 10/10
+  （14637 assertions）、architecture 6/6。按约束未跑全量测试。
+- 2026-08-28 macOS `dev` 全量 CTest 1066/1066 通过（约 136 s，unit 1032 + tools 25 等）。
 - UTIL-1 Windows Debug `ogplay` 与 `ogplay_tests` 受影响目标编译通过；未运行测试。
 - Diagnostics Windows Release `ogplay`/`ogplay_tests` 受影响目标构建通过；ring/drop、busy
   partial、DVM try-safe-point、monitor cycle、OS event/teardown timeout、ACL、目录配额和

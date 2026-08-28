@@ -40,4 +40,17 @@ template <typename Integer, typename Byte, std::size_t Extent>
     return value;
 }
 
+template <typename Integer, typename Byte, std::size_t Extent>
+constexpr void WriteLittleEndian(const std::span<Byte, Extent> bytes,
+                                 const std::size_t offset,
+                                 const Integer value) noexcept {
+    static_assert(std::is_unsigned_v<Integer>);
+    static_assert(sizeof(Byte) == 1U);
+    for (std::size_t index = 0; index < sizeof(Integer); ++index) {
+        bytes[offset + index] = static_cast<Byte>(
+            (value >> static_cast<unsigned>(index * 8U)) &
+            static_cast<Integer>(0xFFU));
+    }
+}
+
 }  // namespace ogplay::core

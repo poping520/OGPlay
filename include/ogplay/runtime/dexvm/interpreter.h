@@ -149,6 +149,7 @@ public:
     VmExecutionLock& operator=(const VmExecutionLock&) = delete;
 
     void Acquire();
+    [[nodiscard]] bool TryAcquire();
     void Release();
     // Drops every level held by the calling thread and reports the depth so
     // a blocking primitive can restore it; 0 when the caller held nothing.
@@ -325,6 +326,10 @@ public:
     [[nodiscard]] std::vector<DexVmTraceEntry> Trace(
         std::string_view filter = {}, std::size_t limit = 100) const;
     [[nodiscard]] std::vector<DexVmThreadStack> StackSnapshot() const;
+    [[nodiscard]] std::optional<std::vector<DexVmTraceEntry>> TryTrace(
+        std::size_t limit = 100) const;
+    [[nodiscard]] std::optional<std::vector<DexVmThreadStack>>
+    TryStackSnapshot() const;
 
     // GC root surface. The execution lock is the stop-the-world boundary;
     // callers may inspect this deterministically while it is held.

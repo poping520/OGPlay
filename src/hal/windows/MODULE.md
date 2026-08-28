@@ -12,6 +12,8 @@
 - `HostExecutableDirectory` 与宿主环境覆盖使用 Win32 模块路径及进程环境 API，
   不把 Windows SDK 类型泄漏到公共 HAL。
 - 共享库加载使用 `LoadLibraryW`/`GetProcAddress`，命名规则为 `<name>-<major>.dll`。
+- 诊断触发使用当前会话 `Local\\` named event；event 与输出文件使用仅当前用户的保护
+  DACL，Windows handle 不泄漏到公共 HAL。
 
 ## 测试
 

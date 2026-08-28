@@ -89,20 +89,23 @@ add_library(ogplay_hal
     src/hal/thread.cpp
 )
 if(WIN32)
-    target_sources(ogplay_hal PRIVATE
-        src/hal/from_chars.cpp
+      target_sources(ogplay_hal PRIVATE
+          src/hal/windows/diagnostic_trigger.cpp
+          src/hal/from_chars.cpp
         src/hal/windows/host_environment.cpp
         src/hal/windows/shared_library.cpp
         src/hal/windows/virtual_memory.cpp)
 elseif(APPLE)
-    target_sources(ogplay_hal PRIVATE
-        src/hal/macos/from_chars.cpp
+      target_sources(ogplay_hal PRIVATE
+          src/hal/macos/diagnostic_trigger.cpp
+          src/hal/macos/from_chars.cpp
         src/hal/macos/host_environment.cpp
         src/hal/macos/shared_library.cpp
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
-    target_sources(ogplay_hal PRIVATE
-        src/hal/from_chars.cpp
+      target_sources(ogplay_hal PRIVATE
+          src/hal/linux/diagnostic_trigger.cpp
+          src/hal/from_chars.cpp
         src/hal/linux/host_environment.cpp
         src/hal/linux/shared_library.cpp
         src/hal/linux/virtual_memory.cpp)
@@ -367,6 +370,7 @@ else()
 endif()
 
 add_library(ogplay_runtime
+    src/runtime/debug/stall_diagnostics.cpp
     src/runtime/ui/ui_layout.cpp
     src/runtime/ui/ui_renderer.cpp
     src/runtime/ui/ui_tree.cpp
@@ -731,6 +735,7 @@ if(OGPLAY_BUILD_TESTS)
         tests/memory/bus_tests.cpp
         tests/memory/snapshot_tests.cpp
         tests/runtime/syscall_tests.cpp
+        tests/runtime/stall_diagnostics_tests.cpp
         tests/runtime/syscall_bridge_tests.cpp
         tests/runtime/syscall_process_tests.cpp
         tests/runtime/syscall_signal_tests.cpp
@@ -1022,6 +1027,13 @@ if(OGPLAY_BUILD_TESTS)
             --self-test
     )
     set_tests_properties(tools.dexvm_gap_report_self_test PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.diagnostics_align_host_threads
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_align_host_threads.py
+    )
+    set_tests_properties(tools.diagnostics_align_host_threads PROPERTIES LABELS tools)
 
     add_test(
         NAME tools.gles2_catalog_current

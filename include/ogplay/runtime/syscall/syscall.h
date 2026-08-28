@@ -18,7 +18,7 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/runtime/syscall/guest_thread_lifecycle.h"
-#include "ogplay/runtime/supervisor_call_progress.h"
+#include "ogplay/runtime/common/supervisor_call_progress.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
 namespace ogplay::runtime {
@@ -126,6 +126,8 @@ public:
     using Handler = std::function<A32SyscallOutcome(const A32SyscallFrame&)>;
     using Observer =
         std::function<void(const A32SyscallFrame&, std::int32_t)>;
+    using DiagnosticObserver =
+        std::function<void(const A32SyscallFrame&, const A32SyscallOutcome&)>;
 
     explicit A32SyscallDispatcher(core::CapabilityLedger& ledger);
     void Declare(std::uint32_t number, std::string name, SyscallGroup group);
@@ -133,6 +135,7 @@ public:
                   Handler handler);
     void Implement(std::uint32_t number, Handler handler);
     void SetObserver(Observer observer);
+    void SetDiagnosticObserver(DiagnosticObserver observer);
     [[nodiscard]] A32SyscallOutcome DispatchOutcome(
         const A32SyscallFrame& frame);
     // Compatibility query for callers which only consume the Linux result.
@@ -149,6 +152,7 @@ private:
     core::CapabilityLedger& ledger_;
     std::map<std::uint32_t, Entry> entries_;
     Observer observer_;
+    DiagnosticObserver diagnostic_observer_;
     std::shared_ptr<std::mutex> observer_mutex_{
         std::make_shared<std::mutex>()};
 };

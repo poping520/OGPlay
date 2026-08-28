@@ -15,6 +15,8 @@
   `lib<name>.<major>.dylib`。
 - 浮点 `FromChars` 使用 `strtof_l`/`strtod_l` 与 C locale，对齐 `std::from_chars`
   的 general/hex 契约。
+- 诊断触发使用 `SIGUSR1` 写 nonblocking self-pipe；signal handler 只执行 async-signal-safe
+  `write`，输出文件权限替换为 owner read/write。
 
 ## 测试
 

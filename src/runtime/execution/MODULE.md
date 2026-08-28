@@ -12,6 +12,9 @@ JNI、framework 或 integration。
 
 ## 不变量
 
+- `GuestCloneThreadRuntime` 可接收窄诊断状态，在 child 宿主线程执行 guest runner 的整个
+  驻留期登记 host_tid/guest_tid/PC，每个 budget slice 更新 PC/last progress，并以 RAII
+  保留退出 tombstone；关闭时不登记。
 - init array 正序、fini array 逆序，调用前完整验证。
 - child 从 parent CPU 状态派生，r0、SP、TLS、TID 和退出清理必须精确。
 - 执行循环消费已声明的 Linux SVC；其他 trap 只有显式 HLE handler 返回已处理才继续，

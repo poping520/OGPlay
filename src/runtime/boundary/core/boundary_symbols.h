@@ -7,7 +7,7 @@
 
 #include "ogplay/runtime/boundary/android_api.h"
 #include "ogplay/runtime/boundary/boundary_symbol.h"
-#include "ogplay/runtime/supervisor_call_progress.h"
+#include "ogplay/runtime/common/supervisor_call_progress.h"
 #include "runtime/boundary/core/boundary_catalog.h"
 
 namespace ogplay::runtime::detail {

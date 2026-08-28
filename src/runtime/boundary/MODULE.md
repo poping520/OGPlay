@@ -8,7 +8,8 @@
 - `services/`：跨 module 共享状态；`GuestGlContext` 只在这里拥有一份，由
   `GraphicsBoundaryContext` 显式聚合 ANGLE frame/context 和 graphics shadow；
   `FrameService` 统一拥有 frame recycling、GPU stats 与 trace，Android guest memory
-  写入由窄化的 `AndroidBoundaryServices` 提供。
+  写入由窄化的 `AndroidBoundaryServices` 提供；停滞诊断只通过 `TryTrace` 短锁复制最近
+  有界 raw 记录，busy 时不得等待 graphics 线程。
 - `modules/<so>/`：各 Virtual SO 的 export metadata、handler 与私有 state。Android、EGL、
   GLES1、GLES2、log 已有独立目录；built-in registration 位于
   `modules/module_catalog.*`，generic core catalog 不包含业务 export 表。

@@ -39,6 +39,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   `AndroidGuestCallSession` 的旧 `Start` 是 root-module legacy adapter；
   `AdoptProcess` 仅为 DexVM/JNI 复用既有窄接口包装 rootless owner，不追加或初始化
   application ELF。
+- 可选 `DiagnosticState` 只接收稳定 method id、syscall 整数事实与 guest-call/clone
+  execution 生命周期；A32 slice 更新 ARM PC/last progress，方法文本由 DexVM linker 在
+  查询时解析。GLES trace 只走 boundary `TryTrace`，不得让 debug 层反向依赖 integration。
 - API 19 `/proc/meminfo` 是进程启动时写入 VFS 的只读静态快照；`GuestProcFacts` 显式
   注入虚拟设备 total/free，Buffers 与三个 Swap 字段固定为 0，Cached 固定由 total/4
   派生。默认 facts 保持既有字节，非法 total/free 明确失败；禁止观察宿主内存或动态刷新。

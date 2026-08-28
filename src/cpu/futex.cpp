@@ -24,7 +24,15 @@ struct WaitQueue final {
     std::condition_variable wake;
     std::size_t waiters{};
     std::size_t wake_tokens{};
+    std::uint64_t wake_count{};
+    std::vector<FutexWaiterSnapshot> waiter_details;
 };
+
+[[nodiscard]] std::uint64_t SteadyNowNs() noexcept {
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 
 }  // namespace
 
@@ -43,21 +51,32 @@ public:
         }
         if (interrupted_.load()) return FutexWaitResult::interrupted;
         ++queue->waiters;
+        queue->waiter_details.push_back(
+            {thread_id, expected, timeout.has_value(), SteadyNowNs()});
+        const auto remove_waiter = [&] {
+            const auto found = std::ranges::find(
+                queue->waiter_details, thread_id,
+                &FutexWaiterSnapshot::thread_id);
+            if (found != queue->waiter_details.end()) {
+                queue->waiter_details.erase(found);
+            }
+            --queue->waiters;
+        };
         const auto ready = [this, &queue] {
             return interrupted_.load() || queue->wake_tokens != 0;
         };
         if (timeout.has_value() &&
             !queue->wake.wait_for(lock, *timeout, ready)) {
-            --queue->waiters;
+            remove_waiter();
             return FutexWaitResult::timed_out;
         }
         if (!timeout.has_value()) queue->wake.wait(lock, ready);
         if (interrupted_.load()) {
-            --queue->waiters;
+            remove_waiter();
             return FutexWaitResult::interrupted_after_wait;
         }
         --queue->wake_tokens;
-        --queue->waiters;
+        remove_waiter();
         return FutexWaitResult::awoken;
     }
 
@@ -71,6 +90,7 @@ public:
         const auto available = queue->waiters - queue->wake_tokens;
         const auto count = std::min(maximum_count, available);
         queue->wake_tokens += count;
+        queue->wake_count += count;
         for (std::size_t index = 0; index < count; ++index) {
             queue->wake.notify_one();
         }
@@ -91,6 +111,7 @@ public:
             if (interrupted_.load()) continue;
             const auto count = queue->waiters - queue->wake_tokens;
             queue->wake_tokens += count;
+            queue->wake_count += count;
             total += count;
             queue->wake.notify_all();
         }
@@ -120,6 +141,36 @@ public:
         if (!queue) return 0;
         std::scoped_lock lock(queue->mutex);
         return queue->waiters;
+    }
+
+    FutexTableSnapshot TrySnapshot() const {
+        FutexTableSnapshot result;
+        std::vector<std::pair<std::uint32_t, std::shared_ptr<WaitQueue>>> queues;
+        {
+            std::unique_lock lock(queues_mutex_, std::try_to_lock);
+            if (!lock.owns_lock()) {
+                result.complete = false;
+                return result;
+            }
+            queues.reserve(queues_.size());
+            for (const auto& entry : queues_) queues.push_back(entry);
+        }
+        std::ranges::sort(queues, [](const auto& left, const auto& right) {
+            return left.first < right.first;
+        });
+        for (const auto& [address, queue] : queues) {
+            std::unique_lock lock(queue->mutex, std::try_to_lock);
+            if (!lock.owns_lock()) {
+                result.complete = false;
+                continue;
+            }
+            if (queue->waiter_details.empty() && queue->wake_count == 0U &&
+                queue->wake_tokens == 0U) continue;
+            result.addresses.push_back(
+                {memory::GuestAddress{address}, queue->wake_tokens,
+                 queue->wake_count, queue->waiter_details});
+        }
+        return result;
     }
 
 private:
@@ -164,6 +215,10 @@ std::size_t FutexTable::InterruptAll() { return impl_->InterruptAll(); }
 
 std::size_t FutexTable::WaiterCount(const memory::GuestAddress address) const {
     return impl_->WaiterCount(address);
+}
+
+FutexTableSnapshot FutexTable::TrySnapshot() const {
+    return impl_->TrySnapshot();
 }
 
 }  // namespace ogplay::cpu

@@ -22,6 +22,8 @@ Streamable HTTP transport，并把截图、输入和会话控制交给 agent/ses
   CLI 优先于 Profile，省略时消费 Profile 的选择（Profile 也省略则为 `switch`）。
 - `--mcp` / `--mcp-port`：启动仅限本机的 MCP 服务；`--mcp-manual-step` 让 DexVM 会话
   等待 step/suspend/resume/shutdown 命令并发布原子状态。
+- `--diag`/`--diag-dir`/`--diag-on-teardown-timeout`：装配一次运行的有界停滞状态与协调器；
+  `ogplay diag snapshot --pid` 通过独立 OS 触发请求快照，不依赖 SDL 主循环。
 - `McpPointerDispatcher`：在 guest 主线程把 MCP pointer phase 映射为通用 boundary input，
   与桌面鼠标手势互斥。
 - 结构化日志报告 exact Profile、guest bootstrap、静态预置、JNI/lifecycle、首帧、进度和

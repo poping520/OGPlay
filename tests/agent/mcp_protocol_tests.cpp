@@ -635,7 +635,7 @@ TEST_CASE("MCP session tools expose state and queue deterministic commands") {
         R"({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}})");
     REQUIRE(tools.has_value());
     for (const std::string_view name :
-         {"session_state", "step", "lifecycle", "shutdown"}) {
+         {"session_state", "step", "lifecycle", "shutdown", "diag.snapshot"}) {
         CHECK(tools->find("\"name\":\"" + std::string{name} + "\"") !=
               std::string::npos);
     }
@@ -673,6 +673,14 @@ TEST_CASE("MCP session tools expose state and queue deterministic commands") {
     CHECK(shutdown->find("\"action\":\"shutdown\"") != std::string::npos);
     CHECK(control.Snapshot().shutdown_requested);
     CHECK(control.TakeNextCommand()->type == Command::Type::shutdown);
+
+    control.SetDiagnosticSnapshotHandler([] {
+        return std::optional<std::string>{"diagnostics/diag-1.json"};
+    });
+    const auto diagnostic = mcp.Handle(
+        R"({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"diag.snapshot","arguments":{}}})");
+    REQUIRE(diagnostic.has_value());
+    CHECK(diagnostic->find("diagnostics/diag-1.json") != std::string::npos);
 }
 
 TEST_CASE("MCP session tools fail closed when unavailable malformed or full") {

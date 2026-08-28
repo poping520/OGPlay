@@ -26,6 +26,8 @@
   step/suspend/resume/shutdown 命令；`step` 只接受 1..1,000,000 帧。
 - MCP `session_state` 只读同一份原子状态；`step`、`lifecycle`、`shutdown` 只确认命令排队，
   返回请求序号和起始 frame，不把排队伪作 guest 已执行。
+- MCP `diag.snapshot` 调用注入的有界快照 handler 并返回 JSON 路径；未启用或超时明确失败，
+  它不是主循环停滞时唯一触发路径。
 - 协议编解码只通过 core `JsonDocument`/`JsonWriter`；MCP initialize 与工具 schema 按
   JSON-RPC 对象作用域验证，不扫描嵌套文本。
 - `gpu.stats/render_targets/capabilities/trace`：从可选 `GpuStateProvider` 序列化强类型

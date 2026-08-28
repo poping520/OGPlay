@@ -2530,6 +2530,31 @@ TEST_CASE("dexvm fatal errors retain the interpreted guest call stack") {
     });
 }
 
+TEST_CASE("dexvm diagnostic safe point reports busy instead of waiting") {
+    WithEachBackend([](InterpreterConfig config) {
+        config.diagnostics.trace_capacity = 8U;
+        Vm vm(config);
+        std::atomic<bool> locked{};
+        std::atomic<bool> release{};
+        std::thread owner([&] {
+            VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+            locked.store(true, std::memory_order_release);
+            while (!release.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        });
+        while (!locked.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        CHECK_FALSE(vm.interpreter.TryTrace(8U).has_value());
+        CHECK_FALSE(vm.interpreter.TryStackSnapshot().has_value());
+        release.store(true, std::memory_order_release);
+        owner.join();
+        CHECK(vm.interpreter.TryTrace(8U).has_value());
+        CHECK(vm.interpreter.TryStackSnapshot().has_value());
+    });
+}
+
 TEST_CASE("dexvm diagnostics use a bounded filtered event ring") {
     WithEachBackend([](InterpreterConfig config) {
     config.diagnostics.trace_capacity = 3;

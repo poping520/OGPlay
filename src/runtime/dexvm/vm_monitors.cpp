@@ -31,6 +31,9 @@ struct Monitor final {
     // Wait set in arrival order; notify() wakes the head (AOSP appends to
     // the tail and signals from the head).
     std::deque<std::uint64_t> wait_set;
+    // Contexts blocked in monitor-enter (or re-acquiring after wait). Unlike
+    // wait_set, these have an actual wait-for edge to owner.
+    std::deque<std::uint64_t> entry_waiters;
 };
 
 }  // namespace
@@ -75,8 +78,13 @@ public:
                        const VmObjectRef object, const std::uint64_t owner,
                        const std::int32_t recursion) {
         auto* monitor = &MonitorFor(object);
+        bool registered{};
         while (monitor->recursion != 0 && monitor->owner != owner) {
             if (shutting_down) break;
+            if (!registered) {
+                monitor->entry_waiters.push_back(owner);
+                registered = true;
+            }
             guard.unlock();
             SetMonitorWaitState(owner, VmThreadWaitState::monitor);
             auto& lock = vm->ExecutionLock();
@@ -93,6 +101,13 @@ public:
             SetMonitorWaitState(owner, VmThreadWaitState::none);
             guard.lock();
             monitor = &MonitorFor(object);
+        }
+        if (registered) {
+            const auto waiter = std::find(monitor->entry_waiters.begin(),
+                                          monitor->entry_waiters.end(), owner);
+            if (waiter != monitor->entry_waiters.end()) {
+                monitor->entry_waiters.erase(waiter);
+            }
         }
         monitor->owner = owner;
         monitor->recursion = recursion;
@@ -372,6 +387,12 @@ void VmMonitorTable::ReleaseAll(const std::uint64_t owner) {
             if (position != monitor->wait_set.end()) {
                 monitor->wait_set.erase(position);
             }
+            const auto entrant = std::find(
+                monitor->entry_waiters.begin(), monitor->entry_waiters.end(),
+                owner);
+            if (entrant != monitor->entry_waiters.end()) {
+                monitor->entry_waiters.erase(entrant);
+            }
         }
         impl_->woken.erase(owner);
         impl_->interrupted.erase(owner);
@@ -402,6 +423,34 @@ VmMonitorSnapshot VmMonitorTable::Snapshot(const VmObjectRef object) const {
     return {found->second->owner,
             static_cast<std::size_t>(found->second->recursion),
             found->second->wait_set.size(), impl_->shutting_down};
+}
+
+std::optional<bool> VmMonitorTable::TryInterrupted(
+    const std::uint64_t owner) const {
+    std::unique_lock guard(impl_->mutex, std::try_to_lock);
+    if (!guard.owns_lock()) return std::nullopt;
+    return impl_->interrupted.contains(owner);
+}
+
+std::optional<std::vector<VmMonitorDiagnosticSnapshot>>
+VmMonitorTable::TrySnapshotAll() const {
+    std::unique_lock guard(impl_->mutex, std::try_to_lock);
+    if (!guard.owns_lock()) return std::nullopt;
+    std::vector<VmMonitorDiagnosticSnapshot> result;
+    result.reserve(impl_->monitors.size());
+    for (const auto& [object, monitor] : impl_->monitors) {
+        if (monitor->owner == 0U && monitor->recursion == 0 &&
+            monitor->entry_waiters.empty() && monitor->wait_set.empty()) {
+            continue;
+        }
+        result.push_back(
+            {object, monitor->owner,
+             static_cast<std::uint32_t>(monitor->recursion),
+             {monitor->entry_waiters.begin(), monitor->entry_waiters.end()},
+             {monitor->wait_set.begin(), monitor->wait_set.end()}});
+    }
+    std::ranges::sort(result, {}, &VmMonitorDiagnosticSnapshot::object);
+    return result;
 }
 
 }  // namespace ogplay::runtime::dexvm

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：DVM-92 关闭卡死修复完成；通用停滞诊断进入实施准备
+更新：DVM-92 关闭卡死修复完成；Diagnostics 两个 WU 已闭合
 
 ## 当前阶段
 
@@ -10,10 +10,14 @@
   在既有 slice/boundary 安全点失败展开，运行期 ADR-0023 预算与 non-renewable
   finalizer 不变。契约见 [DVM-92](../tasks/dexvm/DVM-92.md) 与
   [ADR-0025](../adr/0025-teardown-cancellation-and-graphics-retirement.md)。
-- **通用停滞诊断待实施**：复用 DVM-52/DVM-90/GLES trace，统一跨层停滞快照；
-  wait-set 不伪称死锁，数据源 busy 时部分降级，诊断线程 stop→join、禁止 detach，
-  完整宿主栈由外部 dump 获取。设计压缩为两个 WU：进程内诊断闭环、宿主栈工作流。
-  见 [Diagnostics](../design/diagnostics/README.md)。
+- **Diagnostics WU1 已完成**：schema-1 统一 lifecycle、execution/PC、DVM/Java 栈、GLES、
+  futex/monitor/pacer 与 syscall/native 定容环；busy 独立降级，monitor 分开 entry/notify
+  waiter 且只有 entry→owner 环才确认 cycle。Windows event/POSIX self-pipe、CLI/MCP、
+  teardown timeout、脱敏、当前用户 ACL、单文件/目录配额和 stop→join 已闭合。真实停滞
+  子进程的外部触发 fixture 按用户决定延期，不阻塞 WU1。
+- **Diagnostics WU2 已完成**：排查手册固化 procdump/WinDbg/lldb、host_tid 十进制/十六进制
+  对齐、符号构建与无符号 `module+offset` 边界；对齐工具只合并事实，不猜函数名。
+  见 [Diagnostics](../design/diagnostics/README.md) 与 [ADR-0026](../adr/0026-bounded-stall-snapshots.md)。
 - **项目约束已调整**：WU 不再限制触及文件数量，代码文件不再设 800 行上限；代码改动
   默认只构建受影响目标并运行直接相关的单点/定向测试，全量测试仅在用户明确要求时运行。
 - **DVM-89 能力栈已闭合**：native watchdog 仅按真实阻塞/I/O/GPU/音频/JNI 重入进展
@@ -28,6 +32,10 @@
 
 ## 最近验证
 
+- Diagnostics Windows Release `ogplay`/`ogplay_tests` 受影响目标构建通过；ring/drop、busy
+  partial、DVM try-safe-point、monitor cycle、OS event/teardown timeout、ACL、目录配额和
+  in-flight stop→join 核心新增用例 9/9、97 assertions；连同 futex/syscall/MCP、A32
+  watchdog、5 项架构检查和 host_tid 工具共 25/25 定向通过。按约束未跑全量测试。
 - DVM-92 Windows Release `ogplay`/`ogplay_tests` 构建通过；Java EGL/native boundary
   退役 2/2、25 assertions，renewable watchdog 与 teardown 回归 6/6、41 assertions。
   用户实跑 PVZ 2.3.12 标题画面点击关闭，确认快速正常退出；按要求未跑全量。
@@ -41,9 +49,9 @@
 
 ## 下一步
 
-1. 实施 Diagnostics WU1：进程内停滞诊断闭环。
-2. 通用闭合 A6 `DT_SONAME` identity；完成 DH 主菜单 Scenario gate 与 profile 长跑复验。
-3. 复验 DVM-47/threaded title gate；执行 Linux M9 严格出口复验。
+1. 通用闭合 A6 `DT_SONAME` identity；完成 DH 主菜单 Scenario gate 与 profile 长跑复验。
+2. 复验 DVM-47/threaded title gate；执行 Linux M9 严格出口复验。
+3. 首次出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 
 ## 边界
 
@@ -56,4 +64,5 @@
 
 任务索引：[APK Startup](../tasks/apk-startup/README.md) ·
 [DexVM](../tasks/dexvm/README.md) · [Layout UI](../tasks/layoutui/README.md) ·
-[Playbook](../playbook/README.md)
+[Diagnostics WU1](../tasks/diagnostics/WU-DIAG-01.md) ·
+[Diagnostics WU2](../tasks/diagnostics/WU-DIAG-02.md) · [Playbook](../playbook/README.md)

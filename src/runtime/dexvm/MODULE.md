@@ -174,6 +174,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   context 的 Java 帧、dex pc、tick 与 pending exception，并用 context token 关联
   `VmThreadRuntime` 的 guest id/name/status；这是等待当前 guest call 释放全 VM 锁的
   停界查询，不宣称异步抢占。`RenderDexVmStacksJson` 输出 schema 1。
+- stall snapshot 使用 `TryTrace`/`TryStackSnapshot` 与 `VmThreadRuntime::TrySnapshot`；任一
+  execution/thread/monitor 锁不能立即取得时返回 busy，不等待 guest 释放锁。
+- `VmMonitorTable::TrySnapshotAll` 分开发布等待取得 owner 的 entry waiter 与
+  `Object.wait()` notify set；后者没有指向当前 owner 的 wait-for edge，不得参与 cycle。
 - `FastCode`（DVM-53）：由已通过 `PrecheckMethod` 的原始 u2 指令流确定性派生，
   预解码 opcode/宽度/操作数、dex pc 到内部索引、受检分支目标以及 packed/sparse
   switch 与 fill-array-data 边表；缓存按 `LinkedMethod` 懒构建并只读共享，不保存

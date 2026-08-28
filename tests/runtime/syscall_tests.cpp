@@ -129,6 +129,27 @@ TEST_CASE("syscall observer sees implemented and unimplemented results") {
               {20, 1000}, {999, -ogplay::runtime::kLinuxEnosys}});
 }
 
+TEST_CASE("syscall diagnostic observer receives classified progress") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher =
+        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    dispatcher.Implement(3U, [](const ogplay::runtime::A32SyscallFrame&) {
+        return 4;
+    });
+    std::optional<ogplay::runtime::A32SyscallOutcome> observed;
+    dispatcher.SetDiagnosticObserver(
+        [&](const ogplay::runtime::A32SyscallFrame&,
+            const ogplay::runtime::A32SyscallOutcome& outcome) {
+            observed = outcome;
+        });
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 3U;
+    CHECK(dispatcher.Dispatch(frame) == 4);
+    REQUIRE(observed.has_value());
+    CHECK(observed->progress ==
+          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+}
+
 TEST_CASE("Android time syscalls use the unified clock and checked guest memory") {
     ogplay::core::CapabilityLedger ledger;
     auto dispatcher =

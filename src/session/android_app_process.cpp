@@ -1,9 +1,12 @@
 #include "ogplay/session/android_app_process.h"
 
 #include <algorithm>
+#include <unordered_map>
 #include <utility>
 
 #include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/debug/stall_diagnostics.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 
 namespace ogplay::session {
 namespace {
@@ -22,6 +25,29 @@ struct SystemModulePlan final {
     runtime::BionicModuleSet modules;
     std::vector<loader::Elf32ModuleInput> inputs;
 };
+
+std::string_view ThreadStatusName(const runtime::dexvm::VmThreadStatus status) {
+    using S = runtime::dexvm::VmThreadStatus;
+    switch (status) {
+        case S::created: return "created";
+        case S::running: return "running";
+        case S::finished: return "finished";
+        case S::stopped: return "stopped";
+        case S::failed: return "failed";
+    }
+    return "unknown";
+}
+
+std::string_view WaitStateName(const runtime::dexvm::VmThreadWaitState state) {
+    using S = runtime::dexvm::VmThreadWaitState;
+    switch (state) {
+        case S::none: return "none";
+        case S::sleeping: return "sleeping";
+        case S::joining: return "joining";
+        case S::monitor: return "monitor";
+    }
+    return "unknown";
+}
 
 [[nodiscard]] SystemModulePlan BuildSystemModules(
     const std::uint32_t api_level,
@@ -53,7 +79,8 @@ public:
         : manifest(std::move(request.manifest)),
           inventory(std::move(request.native_libraries)),
           context(std::move(request.context)),
-          host(std::move(request.host)) {
+          host(std::move(request.host)),
+          diagnostics(request.diagnostics) {
         if (request.api_level != 19 || request.dex_bytes.empty() ||
             !context || request.filesystem == nullptr ||
             request.surface_width == 0 || request.surface_height == 0 ||
@@ -77,7 +104,8 @@ public:
              request.boundary_options,
              std::move(request.sound_resource_loader),
              std::move(request.guest_call_slice_observer),
-             std::move(request.platform), request.proc_facts});
+             std::move(request.platform), request.proc_facts,
+             request.diagnostics});
         session = runtime::AndroidGuestCallSession::AdoptProcess(
             std::move(native_process));
         state = AndroidAppProcessState::native_process_ready;
@@ -160,9 +188,119 @@ public:
         bindings.release_surface_currency = [this] {
             session->ReleaseManagedSurfaceFromCallingThread();
         };
+        bindings.diagnostics = request.diagnostics;
         lifecycle =
             std::make_unique<DexActivityLifecycle>(std::move(bindings));
+        BindDiagnostics();
         state = AndroidAppProcessState::dex_vm_ready;
+    }
+
+    ~Impl() {
+        if (!diagnostics) return;
+        diagnostics->SetNativeMethodResolver({});
+        diagnostics->SetDexVmProvider({});
+        diagnostics->SetMonitorProvider({});
+        diagnostics->SetPacerProvider({});
+        diagnostics->SetGlesProvider({});
+    }
+
+    void BindDiagnostics() {
+        if (!diagnostics) return;
+        diagnostics->SetNativeMethodResolver([this](const std::uint64_t id) {
+            try {
+                const auto& method = bridge->Linker().Method(
+                    runtime::dexvm::VmMethodId(static_cast<std::uint32_t>(id)));
+                const auto& owner = bridge->Linker().Class(method.owner);
+                return owner.descriptor + "." + method.name + method.descriptor;
+            } catch (...) {
+                return std::string{};
+            }
+        });
+        diagnostics->SetDexVmProvider([this]()
+            -> std::optional<runtime::debug::DiagnosticDexVmSnapshot> {
+            const auto trace = bridge->Vm().TryTrace(128U);
+            const auto stacks = bridge->Vm().TryStackSnapshot();
+            const auto threads = bridge->Threads().TrySnapshot();
+            if (!trace || !stacks || !threads) return std::nullopt;
+            runtime::debug::DiagnosticDexVmSnapshot result;
+            result.events.reserve(trace->size());
+            for (const auto& event : *trace) {
+                result.events.push_back(
+                    {event.sequence, event.context_token, event.tick,
+                     event.dex_pc,
+                     std::string(runtime::dexvm::DexVmTraceKindName(event.kind)),
+                     event.class_descriptor + "." + event.method_name +
+                         event.method_descriptor});
+            }
+            std::unordered_map<std::uint64_t,
+                               const runtime::dexvm::DexVmThreadStack*>
+                stack_by_context;
+            for (const auto& stack : *stacks) {
+                stack_by_context.emplace(stack.context_token, &stack);
+            }
+            result.threads.reserve(threads->size());
+            for (const auto& thread : *threads) {
+                runtime::debug::DiagnosticJavaThread diagnostic{
+                    thread.id, thread.context_token, thread.name,
+                    std::string(ThreadStatusName(thread.status)),
+                    std::string(WaitStateName(thread.wait_state))};
+                if (const auto found = stack_by_context.find(
+                        thread.context_token);
+                    found != stack_by_context.end()) {
+                    diagnostic.ticks = found->second->ticks;
+                    diagnostic.pending_exception =
+                        found->second->pending_exception;
+                    diagnostic.frames.reserve(found->second->frames.size());
+                    for (const auto& frame : found->second->frames) {
+                        diagnostic.frames.push_back(
+                            {frame.class_descriptor + "." +
+                                 frame.method_name + frame.method_descriptor,
+                             frame.dex_pc});
+                    }
+                }
+                result.threads.push_back(std::move(diagnostic));
+            }
+            return result;
+        });
+        diagnostics->SetMonitorProvider([this]()
+            -> std::optional<std::vector<runtime::debug::DiagnosticMonitor>> {
+            const auto monitors = bridge->Vm().Monitors().TrySnapshotAll();
+            if (!monitors) return std::nullopt;
+            std::vector<runtime::debug::DiagnosticMonitor> result;
+            result.reserve(monitors->size());
+            for (const auto& monitor : *monitors) {
+                result.push_back({monitor.object, monitor.owner,
+                                  monitor.recursion, monitor.entry_waiters,
+                                  monitor.notify_wait_set});
+            }
+            return result;
+        });
+        diagnostics->SetPacerProvider([this]()
+            -> std::optional<runtime::debug::DiagnosticPacer> {
+            const auto pacer = runtime::TryEglSwapPacerSnapshot(*context);
+            if (!pacer) return std::nullopt;
+            return runtime::debug::DiagnosticPacer{
+                pacer->attached, pacer->driver_blocked, pacer->shutdown,
+                pacer->surface_retired, pacer->generation};
+        });
+        diagnostics->SetGlesProvider([this]()
+            -> std::optional<std::vector<runtime::debug::DiagnosticGlesEvent>> {
+            const auto trace = session->Process().TryGlesTrace(128U);
+            if (!trace) return std::nullopt;
+            std::vector<runtime::debug::DiagnosticGlesEvent> result;
+            result.reserve(trace->size());
+            for (const auto& event : *trace) {
+                const auto argument = [&event](const char* name) {
+                    const auto found = event.arguments.find(name);
+                    return found == event.arguments.end()
+                        ? 0U
+                        : static_cast<std::uint32_t>(std::stoul(found->second));
+                };
+                result.push_back({event.call, argument("r0"), argument("r1"),
+                                  argument("r2"), argument("r3"), event.error});
+            }
+            return result;
+        });
     }
 
     loader::AndroidManifestFacts manifest;
@@ -175,6 +313,7 @@ public:
     std::unique_ptr<runtime::DexVmGuestBridge> bridge;
     std::unique_ptr<DexActivityLifecycle> lifecycle;
     AndroidAppProcessHost host;
+    std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
     std::string application_descriptor;
     std::string launcher_descriptor;
     AndroidAppProcessState state{AndroidAppProcessState::created};

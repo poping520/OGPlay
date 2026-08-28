@@ -1429,3 +1429,13 @@ note = "DVM-19 pilot 迁移完成：v1 的 16 条 native_call 与 33 条 java �
 status = "complete"
 test = "tests/runtime/android_link_preflight_tests.cpp"
 note = "M5 WU-0233 用生产 Bionic namespace/Android boundary 在不执行 guest 时映射并重定位；真实目标为 5 guest + 2 boundary、6503 relocations、17 native calls"
+
+[debug.stall_snapshot]
+status = "complete"
+test = "tests/runtime/stall_diagnostics_tests.cpp; tests/cpu/futex_tests.cpp; tests/runtime/syscall_tests.cpp; tests/agent/mcp_protocol_tests.cpp"
+note = "ADR-0026 进程内闭环：schema-1 txt/JSON 汇总 lifecycle、execution/PC、DVM/Java 栈、GLES、futex/monitor/pacer 与 syscall/native 定容环；busy 独立降级，monitor 分开 entry waiter 与 notify wait set 且仅凭 entry→owner 环确认 cycle；支持 teardown timeout、Windows event/POSIX self-pipe、CLI/MCP、原子落盘、脱敏、当前用户 ACL、单文件/总目录配额和 stop→join。真实停滞子进程的进程外触发场景按用户决定延期补验，不代表实现缺失"
+
+[debug.host_stack_workflow]
+status = "complete"
+test = "tests/tools/test_align_host_threads.py; docs/playbook/TROUBLESHOOTING.md"
+note = "WU2 固化 procdump/WinDbg/lldb 外部 dump、十进制/十六进制 host_tid 对齐、PDB/DWARF 构建边界与无符号 module+offset 判读；对齐工具只合并事实，不猜函数名"

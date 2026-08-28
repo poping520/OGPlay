@@ -54,6 +54,11 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   renewable JNI frame 取消并唤醒 blocking wait；回调期间可能新建等待，因此 join
   前再次 interrupt。该顺序是 OGPlay 进程退出策略，不伪称 AOSP 在
   `surfaceDestroyed` 回调前使 Surface 失效。
+  注入诊断状态时，Stop 额外发布 begin、guest callbacks、scheduler、thread join、
+  persistence、guest finalize、surface close 与 complete 阶段；阶段只供取证，不改变退出
+  顺序、异常传播或 ADR-0025 取消语义。Suspend 同样发布 begin/complete；Android app
+  process 向统一快照注入 DVM trace/Java 栈、monitor owner/waiter、EGL pacer 与 GLES trace
+  的不等待 provider，并在 provider owner 析构前清除回调。
   intrinsic-renderer 不安装 observer。driver 可运行时维持一帧一 swap，driver 停泊于
   guest 阻塞原语时由执行锁 observer 放行 GLThread。停止在 shutdown/join guest Java
   线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：intrinsic

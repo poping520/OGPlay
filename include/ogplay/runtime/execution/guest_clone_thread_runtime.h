@@ -3,12 +3,15 @@
 #include <atomic>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <mutex>
 
 #include "ogplay/cpu/thread_group.h"
 #include "ogplay/runtime/execution/guest_thread_runner.h"
 
 namespace ogplay::runtime {
+
+namespace debug { class DiagnosticState; }
 
 struct GuestCloneThreadJoin final {
     cpu::GuestThreadExit thread;
@@ -25,7 +28,8 @@ public:
                             cpu::FutexTable& futex_table,
                             std::uint64_t first_child_thread_id = 2,
                             std::uint64_t tick_slice = 100000,
-                            GuestSupervisorCallHandler hle_handler = {});
+                            GuestSupervisorCallHandler hle_handler = {},
+                            std::shared_ptr<debug::DiagnosticState> diagnostics = {});
 
     [[nodiscard]] GuestCloneThreadJoin Join(std::uint64_t thread_id);
 
@@ -42,6 +46,7 @@ private:
     std::atomic_uint64_t next_thread_id_;
     std::uint64_t tick_slice_{};
     GuestSupervisorCallHandler hle_handler_;
+    std::shared_ptr<debug::DiagnosticState> diagnostics_;
     std::mutex outcomes_mutex_;
     std::map<std::uint64_t, GuestThreadRunOutcome> outcomes_;
 };

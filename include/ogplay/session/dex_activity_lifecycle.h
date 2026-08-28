@@ -62,6 +62,7 @@ struct DexActivityLifecycleBindings final {
     // Manifest-selected process Application. Kept at the aggregate tail so
     // existing lifecycle hosts retain source compatibility.
     std::string application_descriptor{"Landroid/app/Application;"};
+    std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {

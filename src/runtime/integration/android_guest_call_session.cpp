@@ -23,6 +23,7 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/bionic/bionic_tls.h"
+#include "ogplay/runtime/debug/stall_diagnostics.h"
 #include "ogplay/runtime/execution/guest_clone_thread_runtime.h"
 #include "ogplay/runtime/execution/guest_lifecycle.h"
 #include "ogplay/runtime/integration/api19_guest_process.h"
@@ -546,6 +547,7 @@ struct AndroidGuestProcessStartup final {
     AndroidGuestPlatformConfig platform;
     std::size_t application_module_count{};
     GuestProcFacts proc_facts;
+    std::shared_ptr<debug::DiagnosticState> diagnostics;
 };
 
 [[nodiscard]] AndroidGuestProcessStartup RootlessStartup(
@@ -569,7 +571,8 @@ struct AndroidGuestProcessStartup final {
             request.guest_call_slice_observer,
             request.platform,
             0,
-            request.proc_facts};
+            request.proc_facts,
+            request.diagnostics};
 }
 
 [[nodiscard]] AndroidGuestProcessStartup LegacyStartup(
@@ -593,7 +596,8 @@ struct AndroidGuestProcessStartup final {
             request.guest_call_slice_observer,
             request.platform,
             1,
-            request.proc_facts};
+            request.proc_facts,
+            request.diagnostics};
 }
 
 }  // namespace
@@ -636,6 +640,7 @@ public:
           maximum_ticks_(request.maximum_ticks_per_call),
           progress_(request.progress),
           slice_observer_(request.guest_call_slice_observer),
+          diagnostics_(request.diagnostics),
           api_(request.api),
           application_module_count_(request.application_module_count) {
 #if !OGPLAY_HAS_DYNARMIC
@@ -764,6 +769,11 @@ public:
                 address_space_.Write(address, in);
             }});
         BindSyscalls();
+        if (diagnostics_) {
+            diagnostics_->SetFutexProvider([this] {
+                return futex_table_.TrySnapshot();
+            });
+        }
         JniGuestBindingContext jni_bindings{
             environment_, classes_, invocations_, fields_, strings_, arrays_,
             java_vm_, objects_, address_space_, &natives_, &nio_};
@@ -786,7 +796,7 @@ public:
             futex_table_, 2, 100000,
             [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                 return HandleBoundary(cpu, stopped);
-            });
+            }, diagnostics_);
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(
             memory_bus_, execution_context_);
         ConfigureFastHostCalls(*root_cpu_);
@@ -815,6 +825,7 @@ public:
     }
 
     ~Impl() {
+        if (diagnostics_) diagnostics_->SetFutexProvider({});
         if (!running_) return;
         try {
             Stop();
@@ -881,10 +892,36 @@ public:
         // progress category to the watchdog loop.
         if (frame.renewable_native_frame) target->SetHostCallHook({});
         active_guest_call_cpus[this] = target;
+        const auto execution = diagnostics_
+            ? diagnostics_->EnterExecution(
+                  target->GetState().ThreadId(), frame.context_token,
+                  "guest_call", "InvokeA32GuestCall", frame.target.Value())
+            : 0U;
+        struct DiagnosticScope final {
+            std::shared_ptr<debug::DiagnosticState> state;
+            std::uint64_t id{};
+            ~DiagnosticScope() {
+                if (state && id != 0U) state->LeaveExecution(id);
+            }
+        } diagnostic_scope{diagnostics_, execution};
         try {
-            A32GuestCallSliceObserver observer = slice_observer_;
+            A32GuestCallSliceObserver observer =
+                [this, target, execution](const std::uint64_t consumed) {
+                    if (diagnostics_ && execution != 0U) {
+                        diagnostics_->UpdateExecution(
+                            execution, target->GetState().Register(
+                                cpu::CoreRegister::pc));
+                    }
+                    if (slice_observer_) slice_observer_(consumed);
+                };
             if (frame.renewable_native_frame) {
-                observer = [this](const std::uint64_t consumed) {
+                observer = [this, target, execution](
+                               const std::uint64_t consumed) {
+                    if (diagnostics_ && execution != 0U) {
+                        diagnostics_->UpdateExecution(
+                            execution, target->GetState().Register(
+                                cpu::CoreRegister::pc));
+                    }
                     if (teardown_requested_.load(std::memory_order_acquire)) {
                         throw A32GuestCallError(
                             "A32 renewable native frame cancelled for teardown");
@@ -1447,6 +1484,15 @@ public:
                     boundary_.NotifyFileWrite();
                 }
             });
+        if (diagnostics_) {
+            dispatcher_.SetDiagnosticObserver(
+                [this](const A32SyscallFrame& frame,
+                       const A32SyscallOutcome& outcome) {
+                    diagnostics_->RecordSyscall(
+                        frame.thread_id, frame.number, outcome.return_value,
+                        outcome.progress);
+                });
+        }
     }
 
     void Progress(const std::string_view stage) const {
@@ -1659,6 +1705,9 @@ public:
     std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const {
         return movie_state_.Latest();
     }
+    std::shared_ptr<debug::DiagnosticState> Diagnostics() const {
+        return diagnostics_;
+    }
     core::GpuStats Stats() const { return boundary_.Stats(); }
     std::vector<core::GpuRenderTarget> RenderTargets() const {
         return boundary_.RenderTargets(); }
@@ -1666,6 +1715,10 @@ public:
     std::vector<core::GpuTraceEntry> Trace(
         const std::string_view filter, const std::size_t limit) const {
         return boundary_.Trace(filter, limit);
+    }
+    std::optional<std::vector<core::GpuTraceEntry>> TryGlesTrace(
+        const std::size_t limit) const {
+        return boundary_.TryTrace(limit);
     }
 
 private:
@@ -1823,6 +1876,7 @@ private:
     std::atomic<bool> teardown_requested_{false};
     std::function<void(std::string_view)> progress_;
     A32GuestCallSliceObserver slice_observer_;
+    std::shared_ptr<debug::DiagnosticState> diagnostics_;
     std::uint32_t api_{19};
     std::size_t application_module_count_{};
     bool jni_library_initialized_{};
@@ -2020,11 +2074,16 @@ AndroidGuestProcess::InitializeExplicitJniLibrary(
     }
 }
 std::optional<AndroidGuestMovieRequest> AndroidGuestProcess::LatestMovieRequest() const { return impl_->LatestMovieRequest(); }
+std::shared_ptr<debug::DiagnosticState> AndroidGuestProcess::Diagnostics() const { return impl_->Diagnostics(); }
 core::GpuStats AndroidGuestProcess::Stats() const { return impl_->Stats(); }
 std::vector<core::GpuRenderTarget> AndroidGuestProcess::RenderTargets() const { return impl_->RenderTargets(); }
 core::GpuCapabilities AndroidGuestProcess::Capabilities() const { return impl_->Capabilities(); }
 std::vector<core::GpuTraceEntry> AndroidGuestProcess::Trace(
     const std::string_view filter, const std::size_t limit) const { return impl_->Trace(filter, limit); }
+std::optional<std::vector<core::GpuTraceEntry>>
+AndroidGuestProcess::TryGlesTrace(const std::size_t limit) const {
+    return impl_->TryGlesTrace(limit);
+}
 
 std::unique_ptr<AndroidGuestCallSession> AndroidGuestCallSession::Start(
     const AndroidGuestCallSessionRequest& request) {
@@ -2156,6 +2215,7 @@ void AndroidGuestCallSession::Stop() {
 bool AndroidGuestCallSession::Running() const noexcept { return process_->Running(); }
 bool AndroidGuestCallSession::ExitRequested() const noexcept { return process_->ExitRequested(); }
 std::optional<AndroidGuestMovieRequest> AndroidGuestCallSession::LatestMovieRequest() const { return process_->LatestMovieRequest(); }
+std::shared_ptr<debug::DiagnosticState> AndroidGuestCallSession::Diagnostics() const { return process_->Diagnostics(); }
 core::GpuStats AndroidGuestCallSession::Stats() const { return process_->Stats(); }
 std::vector<core::GpuRenderTarget> AndroidGuestCallSession::RenderTargets() const { return process_->RenderTargets(); }
 core::GpuCapabilities AndroidGuestCallSession::Capabilities() const { return process_->Capabilities(); }

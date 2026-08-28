@@ -187,6 +187,11 @@ void A32SyscallDispatcher::SetObserver(Observer observer) {
     observer_ = std::move(observer);
 }
 
+void A32SyscallDispatcher::SetDiagnosticObserver(
+    DiagnosticObserver observer) {
+    diagnostic_observer_ = std::move(observer);
+}
+
 A32SyscallOutcome A32SyscallDispatcher::DispatchOutcome(
     const A32SyscallFrame& frame) {
     // Auditable progress table. Everything absent from this list is idle.
@@ -228,6 +233,7 @@ A32SyscallOutcome A32SyscallDispatcher::DispatchOutcome(
         std::scoped_lock lock(*observer_mutex_);
         observer_(frame, outcome.return_value);
     }
+    if (diagnostic_observer_) diagnostic_observer_(frame, outcome);
     return outcome;
 }
 

@@ -36,6 +36,7 @@
 #include "ogplay/loader/arsc.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/runtime/dexvm/gap_survey.h"
+#include "ogplay/runtime/debug/stall_diagnostics.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
@@ -274,6 +275,9 @@ int RunApkCommand(const int argc, const char* const argv[],
     std::optional<std::uint64_t> exit_after_frames;
     std::optional<std::uint16_t> mcp_port;
     std::optional<runtime::dexvm::InterpreterBackend> dexvm_interpreter;
+    std::filesystem::path diagnostic_directory{".local/diagnostics"};
+    std::optional<std::chrono::milliseconds> diagnostic_teardown_timeout;
+    bool diagnostics_enabled{};
     std::uint32_t supersample_factor{1};
     bool default_mcp{};
     bool mcp_manual_step{};
@@ -322,6 +326,36 @@ int RunApkCommand(const int argc, const char* const argv[],
                     "run-apk accepts --mcp-manual-step only once");
             }
             mcp_manual_step = true;
+        } else if (option == "--diag") {
+            diagnostics_enabled = true;
+        } else if (option == "--diag-dir" && index + 1 < argc) {
+            diagnostic_directory = std::filesystem::path{argv[++index]};
+            if (diagnostic_directory.empty()) {
+                throw std::invalid_argument(
+                    "--diag-dir requires a non-empty directory");
+            }
+            diagnostics_enabled = true;
+        } else if (option == "--diag-on-teardown-timeout" &&
+                   index + 1 < argc) {
+            const auto seconds = ParsePositive(argv[++index], option);
+            if (seconds > 86'400U) {
+                throw std::invalid_argument(
+                    "--diag-on-teardown-timeout must not exceed 86400 seconds");
+            }
+            diagnostic_teardown_timeout = std::chrono::duration_cast<
+                std::chrono::milliseconds>(std::chrono::seconds(seconds));
+            diagnostics_enabled = true;
+        } else if (option.starts_with("--diag-on-teardown-timeout=")) {
+            const auto seconds = ParsePositive(
+                option.substr(std::string_view{"--diag-on-teardown-timeout="}.size()),
+                "--diag-on-teardown-timeout");
+            if (seconds > 86'400U) {
+                throw std::invalid_argument(
+                    "--diag-on-teardown-timeout must not exceed 86400 seconds");
+            }
+            diagnostic_teardown_timeout = std::chrono::duration_cast<
+                std::chrono::milliseconds>(std::chrono::seconds(seconds));
+            diagnostics_enabled = true;
         } else if (option == "--dexvm-interpreter" && index + 1 < argc) {
             if (dexvm_interpreter.has_value()) {
                 throw std::invalid_argument(
@@ -455,10 +489,13 @@ int RunApkCommand(const int argc, const char* const argv[],
     std::unique_ptr<agent::McpInputQueue> mcp_inputs;
     std::unique_ptr<agent::McpSessionControl> mcp_session;
     std::unique_ptr<McpHttpServer> mcp_server;
+    auto diagnostic_state = diagnostics_enabled
+        ? std::make_shared<runtime::debug::DiagnosticState>()
+        : std::shared_ptr<runtime::debug::DiagnosticState>{};
     if (mcp_port.has_value()) {
         mcp_frames = std::make_unique<agent::FrameSnapshotStore>();
         mcp_inputs = std::make_unique<agent::McpInputQueue>();
-        if (mcp_manual_step) {
+        if (mcp_manual_step || diagnostics_enabled) {
             mcp_session = std::make_unique<agent::McpSessionControl>();
             mcp_server = McpHttpServer::Start(
                 *mcp_port, *mcp_frames, *mcp_inputs, *mcp_session);
@@ -658,6 +695,10 @@ int RunApkCommand(const int argc, const char* const argv[],
         if (dexvm_interpreter.has_value()) {
             bridge_config.interpreter.backend = *dexvm_interpreter;
         }
+        if (diagnostics_enabled &&
+            bridge_config.interpreter.diagnostics.trace_capacity == 0U) {
+            bridge_config.interpreter.diagnostics.trace_capacity = 256U;
+        }
         const std::string backend_source = dexvm_interpreter.has_value()
                                                ? "command_line"
                                            : profile.runtime.dexvm.has_value()
@@ -703,6 +744,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         app_request.dexvm = bridge_config;
         app_request.ledger = &dexvm_ledger;
         app_request.logger = &logger;
+        app_request.diagnostics = diagnostic_state;
         app_request.configure_dex_vm =
             [&, dex_context](runtime::dexvm::Interpreter& vm) {
                 vm.Monitors().SetTimeSource([dex_context] {
@@ -727,6 +769,29 @@ int RunApkCommand(const int argc, const char* const argv[],
         };
         auto app_process = session::AndroidAppProcess::Create(
             std::move(app_request));
+        std::shared_ptr<runtime::debug::DiagCoordinator> diagnostic_coordinator;
+        if (diagnostic_state) {
+            diagnostic_coordinator = runtime::debug::DiagCoordinator::Start(
+                diagnostic_state,
+                {.output_directory = diagnostic_directory,
+                 .teardown_timeout = diagnostic_teardown_timeout,
+                 .logger = &logger});
+            Write("OGPlay: diagnostics ready; control=" +
+                  diagnostic_coordinator->ControlFile().string() + "\n");
+            if (mcp_session) {
+                std::weak_ptr<runtime::debug::DiagCoordinator> weak =
+                    diagnostic_coordinator;
+                mcp_session->SetDiagnosticSnapshotHandler([weak] {
+                    const auto coordinator = weak.lock();
+                    if (!coordinator) return std::optional<std::string>{};
+                    const auto files = coordinator->RequestSnapshotAndWait(
+                        "mcp", std::chrono::seconds(5));
+                    return files
+                        ? std::optional<std::string>{files->json.string()}
+                        : std::optional<std::string>{};
+                });
+            }
+        }
         auto* guest = &app_process->NativeProcess();
         auto* dex_lifecycle = &app_process->ActivityLifecycle();
         {

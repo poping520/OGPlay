@@ -156,6 +156,8 @@ core::JsonWriter::Value OutputSchema(core::JsonWriter& writer,
             writer.Add(properties, field, property);
             writer.Append(required, writer.String(field));
         }
+    } else if (name == "diag.snapshot") {
+        string("path");
     } else {
         integer("requestSequence");
         integer("startingFrame");
@@ -240,6 +242,21 @@ std::size_t McpSessionControl::PendingCommands() const {
     return commands_.size();
 }
 
+void McpSessionControl::SetDiagnosticSnapshotHandler(
+    std::function<std::optional<std::string>()> handler) {
+    std::scoped_lock lock(mutex_);
+    diagnostic_snapshot_ = std::move(handler);
+}
+
+std::optional<std::string> McpSessionControl::RequestDiagnosticSnapshot() const {
+    std::function<std::optional<std::string>()> handler;
+    {
+        std::scoped_lock lock(mutex_);
+        handler = diagnostic_snapshot_;
+    }
+    return handler ? handler() : std::nullopt;
+}
+
 std::string_view McpLifecycleStateName(const McpLifecycleState state) {
     switch (state) {
         case McpLifecycleState::ready: return "ready";
@@ -262,11 +279,14 @@ void AppendMcpSessionTools(core::JsonWriter& writer,
                "Queues exactly one suspend or resume transition.", false);
     AppendTool(writer, tools, "shutdown", "Shut down OGPlay session",
                "Queues a normal guest session shutdown.", false);
+    AppendTool(writer, tools, "diag.snapshot", "Capture OGPlay stall diagnostics",
+               "Captures a bounded in-process diagnostic snapshot and returns its JSON path.",
+               false);
 }
 
 bool IsMcpSessionTool(const std::string_view name) {
     return name == "session_state" || name == "step" || name == "lifecycle" ||
-           name == "shutdown";
+           name == "shutdown" || name == "diag.snapshot";
 }
 
 core::JsonWriter::Value CallMcpSessionTool(
@@ -282,6 +302,18 @@ core::JsonWriter::Value CallMcpSessionTool(
         const auto snapshot = control->Snapshot();
         return ToolResult(writer, [&](auto& output, const auto object) {
             AddSnapshot(output, object, snapshot);
+        });
+    }
+    if (name == "diag.snapshot") {
+        if (!EmptyArguments(arguments)) {
+            return ToolError(writer, "diag.snapshot accepts no arguments");
+        }
+        const auto path = control->RequestDiagnosticSnapshot();
+        if (!path) {
+            return ToolError(writer, "Stall diagnostics are unavailable or timed out.");
+        }
+        return ToolResult(writer, [&](auto& output, const auto object) {
+            output.AddString(object, "path", *path);
         });
     }
 

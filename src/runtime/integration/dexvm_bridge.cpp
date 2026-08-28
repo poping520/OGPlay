@@ -1,4 +1,5 @@
 #include "ogplay/runtime/integration/dexvm_bridge.h"
+#include "ogplay/runtime/debug/stall_diagnostics.h"
 
 #include <algorithm>
 #include <cstring>
@@ -867,9 +868,25 @@ public:
         }
         frame.stack_words = stack;
         frame.thread_id = process_thread;
+        frame.context_token = vm->CurrentContextToken();
         // JNI native frames participate in watchdog renewal, but only
         // boundaries reporting observable advancement earn a new budget.
         frame.renewable_native_frame = true;
+
+        auto diagnostics = session->Diagnostics();
+        const auto diagnostic_call = diagnostics
+            ? diagnostics->BeginNativeCall(
+                  vm->CurrentContextToken(), process_thread,
+                  method.id.Value())
+            : 0U;
+        struct NativeDiagnosticScope final {
+            std::shared_ptr<debug::DiagnosticState> state;
+            std::uint64_t call{};
+            bool threw{true};
+            ~NativeDiagnosticScope() {
+                if (state && call != 0U) state->EndNativeCall(call, threw);
+            }
+        } native_diagnostic{std::move(diagnostics), diagnostic_call};
 
         // Resolution: RegisterNatives mapping first, then Java_ exports. A
         // native body may be a process-lifetime loop, so it must not retain
@@ -920,6 +937,7 @@ public:
                 "native method raised a pending JNI exception: " +
                     class_name + "." + method.name};
         }
+        native_diagnostic.threw = false;
 
         const char shorty = ReturnShorty(method.descriptor);
         switch (shorty) {

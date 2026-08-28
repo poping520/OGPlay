@@ -177,6 +177,67 @@ std::vector<DexVmThreadStack> Interpreter::StackSnapshot() const {
     return result;
 }
 
+std::optional<std::vector<DexVmTraceEntry>> Interpreter::TryTrace(
+    const std::size_t limit) const {
+    if (!impl_->execution_lock.TryAcquire()) return std::nullopt;
+    struct Release final {
+        VmExecutionLock* lock;
+        ~Release() { lock->Release(); }
+    } release{&impl_->execution_lock};
+    return Trace({}, limit);
+}
+
+std::optional<std::vector<DexVmThreadStack>>
+Interpreter::TryStackSnapshot() const {
+    if (!impl_->execution_lock.TryAcquire()) return std::nullopt;
+    struct Release final {
+        VmExecutionLock* lock;
+        ~Release() { lock->Release(); }
+    } release{&impl_->execution_lock};
+    std::unordered_map<std::uint64_t, VmThreadSnapshot> thread_by_context;
+    if (impl_->threads != nullptr) {
+        auto threads = impl_->threads->TrySnapshot();
+        if (!threads) return std::nullopt;
+        for (auto& thread : *threads) {
+            thread_by_context.emplace(thread.context_token, std::move(thread));
+        }
+    }
+    std::unique_lock contexts_lock(impl_->executions_mutex, std::try_to_lock);
+    if (!contexts_lock.owns_lock()) return std::nullopt;
+    std::vector<DexVmThreadStack> result;
+    result.reserve(impl_->executions.size());
+    for (const auto& [token, execution] : impl_->executions) {
+        DexVmThreadStack stack;
+        stack.context_token = token;
+        stack.ticks = execution->ticks;
+        if (const auto found = thread_by_context.find(token);
+            found != thread_by_context.end()) {
+            stack.guest_thread_id = found->second.id;
+            stack.thread_name = found->second.name;
+            stack.thread_status = std::string(ThreadStatusName(found->second.status));
+        } else {
+            stack.thread_status = execution->frames.empty() ? "idle" : "running";
+        }
+        if (execution->pending_exception.IsValid()) {
+            const auto java_class =
+                impl_->model->ObjectClass(execution->pending_exception);
+            if (java_class.IsValid()) {
+                stack.pending_exception =
+                    impl_->linker->Class(java_class).descriptor;
+            }
+        }
+        stack.frames.reserve(execution->frames.size());
+        for (const auto& frame : execution->frames) {
+            stack.frames.push_back(
+                {impl_->linker->Class(frame.method->owner).descriptor,
+                 frame.method->name, frame.method->descriptor, frame.pc});
+        }
+        result.push_back(std::move(stack));
+    }
+    std::ranges::sort(result, {}, &DexVmThreadStack::context_token);
+    return result;
+}
+
 std::string RenderDexVmTraceJson(
     const std::vector<DexVmTraceEntry>& entries) {
     core::JsonWriter writer;

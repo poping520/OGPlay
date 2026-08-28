@@ -2,6 +2,7 @@
 #include "ogplay/session/ui_compositor.h"
 
 #include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/debug/stall_diagnostics.h"
 
 #include <exception>
 #include <unordered_set>
@@ -351,6 +352,9 @@ namespace ogplay::session {
         if (state_ != LifecycleRunState::running || suspended_) {
             Fail("dex_activity lifecycle cannot suspend in this state");
         }
+        if (bindings_.diagnostics) {
+            bindings_.diagnostics->SetLifecyclePhase("suspend.begin", false);
+        }
         try {
             initial_focus_pending_ = false;
             CallOnView(bindings_.context->content_view, "onWindowFocusChanged",
@@ -360,6 +364,10 @@ namespace ogplay::session {
                 bindings_.flush_persistent_state();
             }
             suspended_ = true;
+            if (bindings_.diagnostics) {
+                bindings_.diagnostics->SetLifecyclePhase(
+                    "suspend.complete", false);
+            }
         } catch (...) {
             MarkFailed();
             throw;
@@ -744,12 +752,20 @@ namespace ogplay::session {
 
     LifecycleFrameState DexActivityLifecycle::Stop() {
         if (state_ == LifecycleRunState::stopped) return State();
+        const auto phase = [this](const std::string_view name,
+                                  const bool active = true) {
+            if (bindings_.diagnostics) {
+                bindings_.diagnostics->SetLifecyclePhase(name, active);
+            }
+        };
+        phase("teardown.begin");
         const bool was_running = state_ == LifecycleRunState::running;
         // Device services and the graphics boundary outlive guest callbacks on
         // Android. OGPlay owns both in-process, so retire graphics and publish
         // cancellation before onPause can wait for a render-thread handshake.
         runtime::RetireGuestEglSurface(*bindings_.context);
         bindings_.bridge->Session().BeginTeardown();
+        phase("teardown.guest_callbacks");
         try {
             if (was_running && !suspended_) {
                 CallOnView(bindings_.context->content_view,
@@ -794,12 +810,15 @@ namespace ogplay::session {
         if (egl_pacer_attached_) {
             runtime::ShutdownEglSwapPacer(*bindings_.context);
         }
+        phase("teardown.scheduler_shutdown");
         runtime::ShutdownAndroidScheduler(*bindings_.context);
         // A callback may have entered a new futex after BeginTeardown's first
         // wake. Re-interrupt immediately before join so every waiter observes
         // cancellation instead of making shutdown depend on a guest wake.
         if (bindings_.interrupt_guest_waits) bindings_.interrupt_guest_waits();
+        phase("teardown.thread_join");
         bindings_.bridge->Threads().Shutdown();
+        phase("teardown.persistence");
         if (bindings_.flush_persistent_state) {
             try {
                 bindings_.flush_persistent_state();
@@ -808,14 +827,17 @@ namespace ogplay::session {
                 persistence_failure = std::current_exception();
             }
         }
+        phase("teardown.guest_finalize");
         if (!guest_finalized_ && bindings_.finalize_guest) {
             bindings_.finalize_guest();
             guest_finalized_ = true;
         }
+        phase("teardown.surface_close");
         if (surface_open_ && bindings_.close_surface) {
             bindings_.close_surface();
             surface_open_ = false;
         }
+        phase("teardown.complete", false);
         if (persistence_failure) std::rethrow_exception(persistence_failure);
         if (state_ != LifecycleRunState::failed) {
             state_ = LifecycleRunState::stopped;

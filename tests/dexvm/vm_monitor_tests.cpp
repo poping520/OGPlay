@@ -137,6 +137,15 @@ TEST_CASE("dexvm notifyAll releases a waiter parked on another host thread") {
     // otherwise the test would pass without a wait set at all.
     REQUIRE(WaitFor(
         [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    const auto monitor_snapshot =
+        vm.interpreter.Monitors().TrySnapshotAll();
+    REQUIRE(monitor_snapshot.has_value());
+    const auto monitor = std::ranges::find(
+        *monitor_snapshot, lock.Value(),
+        &VmMonitorDiagnosticSnapshot::object);
+    REQUIRE(monitor != monitor_snapshot->end());
+    CHECK(monitor->entry_waiters.empty());
+    CHECK(monitor->notify_wait_set.size() == 1U);
     CHECK(std::ranges::any_of(
         vm.threads.Snapshot(), [thread_object](const auto& thread) {
             return thread.object == thread_object.Value() &&
@@ -410,6 +419,41 @@ TEST_CASE("dexvm monitor-exit without ownership is a guest exception") {
     MonitorVm vm;
     const auto lock = vm.Lock();
     CHECK_THROWS_AS(vm.interpreter.Monitors().Exit(lock, 1U), VmJavaThrow);
+}
+
+TEST_CASE("dexvm monitor diagnostics distinguish entry and notify waiters") {
+    MonitorVm vm;
+    const auto lock = vm.Lock();
+    {
+        VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+        vm.interpreter.Monitors().Enter(lock, 1U);
+    }
+    std::atomic<bool> acquired{};
+    std::thread entrant([&] {
+        VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+        vm.interpreter.Monitors().Enter(lock, 2U);
+        acquired.store(true, std::memory_order_release);
+        vm.interpreter.Monitors().Exit(lock, 2U);
+    });
+    std::optional<std::vector<VmMonitorDiagnosticSnapshot>> snapshot;
+    REQUIRE(WaitFor([&] {
+        snapshot = vm.interpreter.Monitors().TrySnapshotAll();
+        return snapshot && std::ranges::any_of(*snapshot, [&](const auto& item) {
+            return item.object == lock.Value() && item.owner == 1U &&
+                   item.entry_waiters == std::vector<std::uint64_t>{2U};
+        });
+    }));
+    const auto item = std::ranges::find(*snapshot, lock.Value(),
+                                       &VmMonitorDiagnosticSnapshot::object);
+    REQUIRE(item != snapshot->end());
+    CHECK(item->notify_wait_set.empty());
+    CHECK_FALSE(acquired.load(std::memory_order_acquire));
+    {
+        VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+        vm.interpreter.Monitors().Exit(lock, 1U);
+    }
+    entrant.join();
+    CHECK(acquired.load(std::memory_order_acquire));
 }
 
 // The root lifecycle context parks on the very host thread that pumps a

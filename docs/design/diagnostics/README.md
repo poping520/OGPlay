@@ -49,7 +49,8 @@ session ─owns→ debug::DiagCoordinator ──→ versioned txt/json snapshot
                     └─ bounded try-snapshot: futex、monitor、thread registry
 ```
 
-`DiagCoordinator` 位于 `src/runtime/debug/`（新增 `MODULE.md`），由 session 唯一拥有。
+`DiagCoordinator` 位于 `src/runtime/debug/`，由 frontend/session 进程编排层按一次运行唯一
+拥有；`DiagnosticState` 显式注入 session/runtime。
 runtime 下层只暴露窄查询接口或稳定 POD 记录，不反向依赖 coordinator，不从下层回调
 session。所有 section 使用同一 schema、宿主 `steady_clock` 时间基准和容量策略。
 
@@ -58,11 +59,12 @@ session。所有 section 使用同一 schema、宿主 `steady_clock` 时间基�
 1. 线程只等待 stop/trigger 事件，不轮询，不参与 guest 调度；主循环挂死时仍可响应。
 2. session 析构前先发 stop，使 OS wait 立即返回，再做**有界且可证明完成的 join**；禁止
    `detach`，禁止线程在 session 或数据源销毁后继续访问它们。
-3. 每个数据源查询都有独立预算；不得获取 `VmExecutionLock`，不得无限等待互斥锁。
+3. 每个数据源查询都有独立预算；`VmExecutionLock` 只允许 `try_lock` 安全点，不得阻塞
+   获取任何运行时互斥锁。
 4. 数据源繁忙时输出 `unavailable` 与原因，继续生成其他 section。部分快照优于诊断线程
    自身挂死。
-5. 正常退出不等待正在进行的符号解析或大文件写入；快照使用预分配有界缓冲，超限明确
-   `truncated`。
+5. 正常退出丢弃尚未开始的排队请求；已经开始的快照只执行有界采集、解析和单文件写入，
+   完成后 join。输出超限明确 `truncated`，写盘失败明确记录。
 
 ### 数据源并发契约
 
@@ -70,7 +72,7 @@ session。所有 section 使用同一 schema、宿主 `steady_clock` 时间基�
 | --- | --- | --- |
 | lifecycle 阶段/teardown 进展 | 原子发布阶段 id、generation、开始时间 | 从未进入则 `not_started` |
 | syscall/native/GLES/DVM ring | 预分配 POD ring；atomic sequence 或短 `try_lock` 拷贝 | 竞争时 `unavailable: busy` |
-| Futex/monitor/pacer | `try_lock` 后复制有界记录，立即释放再格式化 | 不等待锁，标记对应 section busy |
+| Futex/monitor/pacer | `try_lock` 后复制有界记录；monitor 分开 entry waiter 与 Object.wait notify set；立即释放再格式化 | 不等待锁，标记对应 section busy |
 | Java 栈 | 仅复用现有 `VmExecutionLock` 安全点查询 | 锁不可立即获得则省略，绝不阻塞 |
 | 线程注册表 | 短 `try_lock` 或 copy-on-write；保留有界退出 tombstone | 区分 `active`/`recently_exited`/`busy` |
 
@@ -91,7 +93,7 @@ session。所有 section 使用同一 schema、宿主 `steady_clock` 时间基�
    wait primitive, wait argument, last progress}`。
 4. 最近边界动作：关联 DVM/GLES 既有记录及 D3/D4 新记录。
 5. 同步原语等待集合：等待者、预期值、超时和累计 wake 事实；有 owner 的 monitor/mutex
-   可额外形成 wait-for edge。
+   只有 entry waiter 可形成 wait-for edge，`Object.wait()` notify set 不参与 cycle。
 6. section 状态、截断计数、schema 版本和安全提示。
 
 `path` 至少区分 Java interpreter、`RunAndroidArmGuestThread`、`InvokeA32GuestCall`、
@@ -123,8 +125,9 @@ futex address → [{guest_tid, expected_value, timeout_kind, wait_since}], wake_
 {sequence, steady_ns, guest_tid, syscall_nr, result, progress_class}
 ```
 
-每 guest thread 固定容量，溢出丢最旧并累计 dropped count。热路径不保存字符串、宿主
-指针或动态容器；复用 DVM-52 的“构造期定容、查询时格式化”契约。
+每进程使用构造期定容的固定环，记录中保留 guest tid；这样总内存上限不随 guest 线程数
+增长。溢出丢最旧并累计 dropped count。热路径不保存字符串、宿主指针或动态容器；复用
+DVM-52 的“构造期定容、查询时格式化”契约。
 
 ### D4 native bridge 固定事件环
 
@@ -200,8 +203,8 @@ Release 不要求常态携带大体积 PDB。ANGLE/驱动无符号时只报告�
 
 | WU | 范围 | 独立收益 | 机器验收 |
 | --- | --- | --- | --- |
-| WU1 · 进程内停滞诊断闭环 | 公共 snapshot DTO/schema/steady time；D2–D6 事实源；复用 DVM/GLES trace；D1 coordinator；D8 OS/MCP/CLI 触发、部分快照、隐私与容量限制；同步 ADR-0026、MODULE 和 capabilities | 主循环停滞后无需重编译或临时消费代码，可从进程外限时取得 guest 语义现场 | ring 关闭态/溢出/并发快照；wait-set 不误判 cycle；双执行路径与 tombstone；子进程停滞后 OS 触发限时落盘；busy section 部分成功；stop→join 无 detach/UAF；schema、隐私和配额可判定 |
-| WU2 · 宿主栈与排障工作流 | D7/D9 外部 dump、host_tid 对齐、符号构建和无符号模块判读；跨文档与能力账本最终一致性收口 | 从 WU1 的 guest 语义现场继续定位到宿主原生模块/偏移，形成可复用的完整排障流程 | fixture dump/文本验证 host_tid 对齐；procdump/WinDbg/lldb 手册可执行；无符号模块不猜函数；诊断构建说明、文档链接和能力账本一致 |
+| [WU1 · 进程内停滞诊断闭环](../../tasks/diagnostics/WU-DIAG-01.md) | 公共 snapshot DTO/schema/steady time；D2–D6 事实源；复用 DVM/GLES trace；D1 coordinator；D8 OS/MCP/CLI 触发、部分快照、隐私与容量限制；同步 ADR-0026、MODULE 和 capabilities | 主循环停滞后无需重编译或临时消费代码，可从进程外限时取得 guest 语义现场 | ring 关闭态/溢出/并发快照；wait-set 不误判 cycle；双执行路径与 tombstone；子进程停滞后 OS 触发限时落盘；busy section 部分成功；stop→join 无 detach/UAF；schema、隐私和配额可判定 |
+| [WU2 · 宿主栈与排障工作流](../../tasks/diagnostics/WU-DIAG-02.md) | D7/D9 外部 dump、host_tid 对齐、符号构建和无符号模块判读；跨文档与能力账本最终一致性收口 | 从 WU1 的 guest 语义现场继续定位到宿主原生模块/偏移，形成可复用的完整排障流程 | fixture dump/文本验证 host_tid 对齐；procdump/WinDbg/lldb 手册可执行；无符号模块不猜函数；诊断构建说明、文档链接和能力账本一致 |
 
 ADR-0025 已用于 teardown cancellation，本设计使用 **ADR-0026**。WU1 必须随代码同步
 对应 MODULE.md、capabilities 和 schema 契约；WU2 只做宿主工具链及跨文档一致性收口，
@@ -209,9 +212,9 @@ ADR-0025 已用于 teardown cancellation，本设计使用 **ADR-0026**。WU1 �
 
 ## 验证策略
 
-所有停滞用例必须放在**可杀死的测试子进程**中，父测试设置短 wall-time 预算并负责回收；
-禁止让 CTest 进程本身进入不可恢复死锁。优先使用 barrier、fake source 和可取消 park，
-不使用 30 秒真实等待。
+会真实制造不可恢复停滞的用例必须放在**可杀死的测试子进程**中，父测试设置短 wall-time
+预算并负责回收；可取消 barrier、fake source 和 try-lock busy 用例可直接定向测试，不使用
+30 秒真实等待。
 
 最低验收矩阵：
 
@@ -223,6 +226,8 @@ ADR-0025 已用于 teardown cancellation，本设计使用 **ADR-0026**。WU1 �
 4. partial snapshot：人为占用一个数据源锁，该节限时变成 `unavailable: busy`，其他节和
    JSON 仍完整落盘。
 5. trigger：主循环人为停滞后，OS 外部触发仍能在预算内生成快照；MCP 失败不影响该路径。
+   当前缺少合适的跨平台停滞 fixture，经用户批准延期到首次出现可复用场景时补验；不阻塞
+   已实现 OS event/self-pipe 路径的 WU1 收口。
 6. lifecycle：正常退出 stop→join；快照中途退出也无 detach、UAF、泄漏或无限等待。
 7. privacy/quota：宿主用户路径、原始 URL 不进入输出；截断、权限和目录配额可判定。
 
@@ -255,3 +260,16 @@ ADR-0025 已用于 teardown cancellation，本设计使用 **ADR-0026**。WU1 �
 
 D1–D6 的目标不是自动给出根因，而是把一次“数小时插桩搜索”压缩为“先读取一份可信、
 有边界标注的现场，再决定是否抓外部 dump”。
+
+## 实施状态（2026-08-28）
+
+- WU1 已闭合：schema-1 txt/JSON 汇总 lifecycle、guest execution/PC、Java 线程与安全点栈、
+  DVM/GLES、futex/monitor/pacer、syscall/native 固定环及 dropped 计数；monitor 分离 entry
+  waiter 与 notify wait set，只有 entry→owner 边形成显式环时才输出 `confirmed_cycle`。
+  Windows event/POSIX self-pipe、CLI/MCP、teardown timeout 均进入同一协调器；输出具备
+  原子 rename、单文件/总目录配额、有界保留、路径/URL 脱敏和 Windows 当前用户保护
+  DACL，析构 stop→join 且丢弃未开始请求。
+- “停滞子进程中从进程外触发”验收按用户决定延期，当前已有命名 event/self-pipe 的直接
+  触发落盘测试；延期项不表示实现缺失，也不阻塞 WU1 Complete。
+- WU2 的外部 dump、`host_tid` 对齐、无符号模块判读和诊断构建流程已进入手册；
+  `tools/diagnostics/align_host_threads.py` 对 WinDbg/lldb 文本做纯事实对齐，不猜符号。

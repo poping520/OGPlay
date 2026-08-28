@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -56,12 +57,16 @@ public:
         McpSessionCommand::Type type, std::uint32_t frames = 0U);
     [[nodiscard]] std::optional<McpSessionCommand> TakeNextCommand();
     [[nodiscard]] std::size_t PendingCommands() const;
+    void SetDiagnosticSnapshotHandler(
+        std::function<std::optional<std::string>()> handler);
+    [[nodiscard]] std::optional<std::string> RequestDiagnosticSnapshot() const;
 
 private:
     mutable std::mutex mutex_;
     McpSessionSnapshot snapshot_;
     std::deque<McpSessionCommand> commands_;
     std::uint64_t next_request_sequence_{1U};
+    std::function<std::optional<std::string>()> diagnostic_snapshot_;
 };
 
 [[nodiscard]] std::string_view McpLifecycleStateName(McpLifecycleState state);

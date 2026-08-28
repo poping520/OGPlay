@@ -12,6 +12,8 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 
 ## 不变量
 
+- `A32SyscallDispatcher::SetDiagnosticObserver` 在 `DispatchOutcome` 分类完成后发布 frame、
+  result 与 progress；它与既有业务 observer 分离，未注入时不改变 syscall 行为。
 - 未实现和未知 syscall 统一返回 `-ENOSYS` 并可观测。
 - syscall 除 Linux 返回值外必须发布 watchdog 进展类别；正字节 read/pread/write/pwrite 与
   真实驻留的 futex wait 为 advanced，查询、EOF/零字节、wake/yield、内存管理及默认均为

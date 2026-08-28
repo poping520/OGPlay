@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -13,6 +15,7 @@
 #include "ogplay/frontend/gui.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/session/session.h"
+#include "ogplay/runtime/debug/stall_diagnostics.h"
 
 #include "run_apk.h"
 
@@ -25,11 +28,14 @@ void Write(FILE* stream, const std::string_view text) {
 int Usage() {
     Write(stderr, "usage: ogplay --version | capabilities [path] | agent <method> | agent-stdio\n"
                   "       ogplay gui [--library-root <dir>] [--smoke-frames <count>]\n"
+                  "       ogplay diag snapshot --pid <pid> [--diag-dir <dir>]\n"
                   "       ogplay run-apk <apk> --system-dir <api19-lib-dir> "
                   "[--profiles-dir <dir>] [--external-dir <host-dir>] "
                   "[--preflight] [--supersample <1..4>] "
                   "[--exit-after-frames <count>] [--mcp | --mcp-port <1..65535>] "
                   "[--mcp-manual-step] "
+                  "[--diag] [--diag-dir <dir>] "
+                  "[--diag-on-teardown-timeout <seconds>] "
                   "[--dexvm-interpreter <switch|threaded>] "
                   "[--sandbox-dir <host-dir> | --ephemeral-sandbox]\n");
     return 2;
@@ -50,6 +56,34 @@ int main(const int argc, const char* const argv[]) {
     try {
         if (std::string_view(argv[1]) == "run-apk") {
             return ogplay::frontend::RunApkCommand(argc, argv, logger);
+        }
+        if (argc >= 5 && std::string_view(argv[1]) == "diag" &&
+            std::string_view(argv[2]) == "snapshot") {
+            std::optional<std::uint64_t> pid;
+            std::filesystem::path directory{".local/diagnostics"};
+            for (int index = 3; index < argc; ++index) {
+                const std::string_view option{argv[index]};
+                if (option == "--pid" && index + 1 < argc) {
+                    const std::string value{argv[++index]};
+                    std::size_t consumed{};
+                    const auto parsed = std::stoull(value, &consumed);
+                    if (consumed != value.size() || parsed == 0U) {
+                        throw std::invalid_argument("--pid requires a positive integer");
+                    }
+                    pid = parsed;
+                } else if (option == "--diag-dir" && index + 1 < argc) {
+                    directory = argv[++index];
+                } else {
+                    throw std::invalid_argument(
+                        "unknown or incomplete diag snapshot option: " +
+                        std::string(option));
+                }
+            }
+            if (!pid) throw std::invalid_argument("diag snapshot requires --pid");
+            const auto trigger =
+                ogplay::runtime::debug::TriggerExternalDiagnostic(*pid, directory);
+            Write(stdout, "OGPlay: requested diagnostic snapshot via " + trigger + "\n");
+            return 0;
         }
 #if OGPLAY_HAS_GUI
         if (std::string_view(argv[1]) == "gui") {

@@ -586,6 +586,15 @@ void DetachEglSwapPacer(DexVmAndroidContext& context,
                         dexvm::VmExecutionLock& execution_lock);
 void AdvanceEglSwapPacer(DexVmAndroidContext& context);
 void ShutdownEglSwapPacer(DexVmAndroidContext& context);
+struct EglSwapPacerSnapshot final {
+    bool attached{};
+    bool driver_blocked{};
+    bool shutdown{};
+    bool surface_retired{};
+    std::uint64_t generation{};
+};
+[[nodiscard]] std::optional<EglSwapPacerSnapshot> TryEglSwapPacerSnapshot(
+    DexVmAndroidContext& context);
 // Permanently invalidates the Java EGL facade and releases any guest swap
 // pacer wait. Used only when process teardown begins.
 void RetireGuestEglSurface(DexVmAndroidContext& context);

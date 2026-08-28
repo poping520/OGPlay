@@ -826,6 +826,18 @@ void ShutdownEglSwapPacer(DexVmAndroidContext& context) {
     context.egl.pace_changed.notify_all();
 }
 
+std::optional<EglSwapPacerSnapshot> TryEglSwapPacerSnapshot(
+    DexVmAndroidContext& context) {
+    std::unique_lock lock(context.egl.pace_mutex, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    return EglSwapPacerSnapshot{
+        context.egl.pace_driver.has_value(),
+        context.egl.pace_driver_blocked,
+        context.egl.pace_shutdown,
+        context.egl.surface_retired.load(std::memory_order_acquire),
+        context.egl.pace_generation};
+}
+
 void RetireGuestEglSurface(DexVmAndroidContext& context) {
     context.egl.surface_retired.store(true, std::memory_order_release);
     ShutdownEglSwapPacer(context);

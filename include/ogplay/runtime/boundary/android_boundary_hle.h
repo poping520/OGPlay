@@ -14,7 +14,7 @@
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
 #include "ogplay/runtime/boundary/opensles_callback.h"
-#include "ogplay/runtime/supervisor_call_progress.h"
+#include "ogplay/runtime/common/supervisor_call_progress.h"
 
 namespace ogplay::core {
 class Logger;
@@ -118,6 +118,8 @@ public:
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;
     [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
         std::string_view filter, std::size_t limit) const override;
+    [[nodiscard]] std::optional<std::vector<core::GpuTraceEntry>> TryTrace(
+        std::size_t limit) const;
 
 private:
     class Impl;

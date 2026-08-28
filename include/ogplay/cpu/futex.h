@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "ogplay/memory/bus.h"
 
@@ -16,6 +17,25 @@ enum class FutexWaitResult : std::uint8_t {
     interrupted,
     interrupted_after_wait,
     timed_out,
+};
+
+struct FutexWaiterSnapshot final {
+    std::uint64_t thread_id{};
+    std::uint32_t expected{};
+    bool timed{};
+    std::uint64_t wait_since_steady_ns{};
+};
+
+struct FutexAddressSnapshot final {
+    memory::GuestAddress address;
+    std::size_t wake_tokens{};
+    std::uint64_t wake_count{};
+    std::vector<FutexWaiterSnapshot> waiters;
+};
+
+struct FutexTableSnapshot final {
+    bool complete{true};
+    std::vector<FutexAddressSnapshot> addresses;
 };
 
 class FutexTable final {
@@ -37,6 +57,9 @@ public:
     [[nodiscard]] std::size_t WakeAll();
     [[nodiscard]] std::size_t InterruptAll();
     [[nodiscard]] std::size_t WaiterCount(memory::GuestAddress address) const;
+    // Never waits for a lock held by a stalled guest. Busy queues are omitted
+    // and complete=false records the partial result.
+    [[nodiscard]] FutexTableSnapshot TrySnapshot() const;
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;

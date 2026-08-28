@@ -30,6 +30,8 @@
 - `hal::VirtualMemoryReservation`：页对齐的宿主预留、提交、权限和释放接口。
 - `hal::ReserveVirtualMemory`：按目标平台选择 VirtualAlloc 或 mmap 后端。
 - `hal::HostThread` / `StartHostThread`：真实宿主线程启动、标识与显式 join 边界。
+- `hal::DiagnosticTrigger`：封装当前用户命名 event 或 POSIX signal/self-pipe 的阻塞
+  wait/stop/signal，并统一诊断文件权限、宿主 PID 与 native thread id；不含 guest 语义。
 - `hal::ScopedHostEnvironment`：串行覆盖一组宿主进程环境变量并在嵌套、异常和析构路径恢复
   原值；`HostEnvironmentValue` 提供同锁只读查询。
 - `hal::HostExecutableDirectory`：通过平台实现返回当前宿主可执行文件所在的绝对目录，

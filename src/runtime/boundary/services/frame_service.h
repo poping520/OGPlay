@@ -40,6 +40,8 @@ public:
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const;
     [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
         std::string_view filter, std::size_t limit) const;
+    [[nodiscard]] std::optional<std::vector<core::GpuTraceEntry>> TryTrace(
+        std::size_t limit) const;
 
 private:
     struct RawGpuTraceEntry final {

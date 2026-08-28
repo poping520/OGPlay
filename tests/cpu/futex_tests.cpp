@@ -164,3 +164,35 @@ TEST_CASE("futex interrupt releases current waiters and rejects future waits") {
     CHECK(futex.Wait(bus, address, 12, 2) ==
           ogplay::cpu::FutexWaitResult::value_mismatch);
 }
+
+TEST_CASE("futex diagnostic snapshot exposes a wait set and wake history") {
+    const ogplay::memory::GuestAddress address{0x24000};
+    ogplay::memory::AddressSpace memory;
+    memory.Map({address, memory.PageSize()},
+               ogplay::memory::PageProtection::read |
+                   ogplay::memory::PageProtection::write);
+    ogplay::memory::CheckedMemoryBus bus(memory);
+    bus.Write32(address, 21);
+    ogplay::cpu::FutexTable futex;
+    auto waiter = ogplay::hal::StartHostThread([&] {
+        static_cast<void>(futex.Wait(bus, address, 21, 77));
+    });
+    for (std::size_t attempt = 0;
+         attempt < 100'000 && futex.WaiterCount(address) != 1; ++attempt) {
+        std::this_thread::yield();
+    }
+    REQUIRE(futex.WaiterCount(address) == 1);
+    const auto waiting = futex.TrySnapshot();
+    REQUIRE(waiting.complete);
+    REQUIRE(waiting.addresses.size() == 1U);
+    REQUIRE(waiting.addresses.front().waiters.size() == 1U);
+    CHECK(waiting.addresses.front().waiters.front().thread_id == 77U);
+    CHECK(waiting.addresses.front().waiters.front().expected == 21U);
+    CHECK_FALSE(waiting.addresses.front().waiters.front().timed);
+    CHECK(futex.Wake(address, 1U) == 1U);
+    waiter->Join();
+    const auto woken = futex.TrySnapshot();
+    REQUIRE(woken.addresses.size() == 1U);
+    CHECK(woken.addresses.front().wake_count == 1U);
+    CHECK(woken.addresses.front().waiters.empty());
+}

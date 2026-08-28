@@ -47,6 +47,20 @@ void VmExecutionLock::Acquire() {
     impl_->depth = 1;
 }
 
+bool VmExecutionLock::TryAcquire() {
+    std::unique_lock lock(impl_->mutex, std::try_to_lock);
+    if (!lock.owns_lock()) return false;
+    const auto self = std::this_thread::get_id();
+    if (impl_->depth > 0U) {
+        if (impl_->owner != self) return false;
+        ++impl_->depth;
+        return true;
+    }
+    impl_->owner = self;
+    impl_->depth = 1U;
+    return true;
+}
+
 void VmExecutionLock::Release() {
     std::unique_lock lock(impl_->mutex);
     if (impl_->depth == 0 || impl_->owner != std::this_thread::get_id()) {

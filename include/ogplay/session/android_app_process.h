@@ -61,6 +61,7 @@ struct AndroidAppProcessRequest final {
     std::function<void(runtime::dexvm::Interpreter&)> configure_dex_vm;
     AndroidAppProcessHost host;
     runtime::GuestProcFacts proc_facts{};
+    std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
 };
 
 class AndroidAppProcessError final : public std::runtime_error {

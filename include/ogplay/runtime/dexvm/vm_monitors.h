@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <vector>
 
 #include "ogplay/runtime/dexvm/interpreter.h"
 
@@ -49,6 +51,14 @@ struct VmMonitorSnapshot final {
     std::size_t recursion{};
     std::size_t waiting{};
     bool shutting_down{};
+};
+
+struct VmMonitorDiagnosticSnapshot final {
+    std::uint32_t object{};
+    std::uint64_t owner{};
+    std::uint32_t recursion{};
+    std::vector<std::uint64_t> entry_waiters;
+    std::vector<std::uint64_t> notify_wait_set;
 };
 
 class VmMonitorTable final {
@@ -99,6 +109,9 @@ public:
     // Diagnostics: how many contexts sit in the wait set of this object.
     [[nodiscard]] std::size_t WaitingCount(VmObjectRef object) const;
     [[nodiscard]] VmMonitorSnapshot Snapshot(VmObjectRef object) const;
+    [[nodiscard]] std::optional<bool> TryInterrupted(std::uint64_t owner) const;
+    [[nodiscard]] std::optional<std::vector<VmMonitorDiagnosticSnapshot>>
+    TrySnapshotAll() const;
     void ReleaseObjectForGc(VmObjectRef object);
 
 private:

@@ -30,6 +30,8 @@
   失败清理所需的 sticky `InterruptAll`；中断会唤醒当前 waiter，并让之后的匹配等待立即
   返回 interrupted。M2 syscall 层负责把 interrupted 映射为 `-EINTR`，并把统一 Clock
   超时语义装配到该无超时核心。
+- `FutexTable::TrySnapshot`：以短 `try_lock` 复制 waiter、expected、等待开始时间、wake
+  token/count；锁忙时返回 `complete=false`，不阻塞诊断线程，也不推断 owner 或死锁环。
 - 解释器保留为确定性参考/单步后端，后续按诊断需求扩展指令覆盖。
 
 ## 不变量

@@ -374,6 +374,10 @@ public:
         const std::string_view filter, const std::size_t limit) const {
         return frame_service_.Trace(filter, limit);
     }
+    [[nodiscard]] std::optional<std::vector<core::GpuTraceEntry>> TryTrace(
+        const std::size_t limit) const {
+        return frame_service_.TryTrace(limit);
+    }
 private:
     static void ServiceRecordFastFault(
         void* owner, const cpu::A32HostCallContext& context) noexcept {
@@ -874,6 +878,10 @@ core::GpuCapabilities AndroidBoundaryHle::Capabilities() const {
 std::vector<core::GpuTraceEntry> AndroidBoundaryHle::Trace(
     const std::string_view filter, const std::size_t limit) const {
     return impl_->Trace(filter, limit);
+}
+std::optional<std::vector<core::GpuTraceEntry>> AndroidBoundaryHle::TryTrace(
+    const std::size_t limit) const {
+    return impl_->TryTrace(limit);
 }
 
 }  // namespace ogplay::runtime

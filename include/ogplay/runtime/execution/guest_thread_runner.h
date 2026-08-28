@@ -44,6 +44,9 @@ struct A32GuestCallFrame final {
     // participate in watchdog renewal, but only a boundary classified as
     // handled_advanced earns renewal; idle handled work remains budgeted.
     bool renewable_native_frame{};
+    // DexVM execution identity when the call originates at a Java native
+    // boundary. Zero means no managed execution context is attached.
+    std::uint64_t context_token{};
 };
 
 struct A32GuestCallResult final {

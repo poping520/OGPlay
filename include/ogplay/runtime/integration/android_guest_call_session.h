@@ -25,6 +25,8 @@
 
 namespace ogplay::runtime {
 
+namespace debug { class DiagnosticState; }
+
 namespace dexvm { class NioRuntime; }
 
 class JniInvocationEngine;
@@ -235,6 +237,7 @@ struct AndroidGuestCallSessionRequest final {
     A32GuestCallSliceObserver guest_call_slice_observer{};
     AndroidGuestPlatformConfig platform{};
     GuestProcFacts proc_facts{};
+    std::shared_ptr<debug::DiagnosticState> diagnostics;
 };
 
 // Creates the Android-native process substrate before any APK application
@@ -257,6 +260,7 @@ struct AndroidGuestProcessRequest final {
     A32GuestCallSliceObserver guest_call_slice_observer{};
     AndroidGuestPlatformConfig platform{};
     GuestProcFacts proc_facts{};
+    std::shared_ptr<debug::DiagnosticState> diagnostics;
 };
 
 class AndroidGuestProcessError final : public std::runtime_error {
@@ -343,12 +347,15 @@ public:
         std::string_view root_module);
     [[nodiscard]] std::optional<AndroidGuestMovieRequest>
     LatestMovieRequest() const;
+    [[nodiscard]] std::shared_ptr<debug::DiagnosticState> Diagnostics() const;
 
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;
     [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
         std::string_view filter, std::size_t limit) const override;
+    [[nodiscard]] std::optional<std::vector<core::GpuTraceEntry>>
+    TryGlesTrace(std::size_t limit) const;
 
 private:
     class Impl;
@@ -433,6 +440,7 @@ public:
     [[nodiscard]] bool ExitRequested() const noexcept;
     [[nodiscard]] std::optional<AndroidGuestMovieRequest>
     LatestMovieRequest() const;
+    [[nodiscard]] std::shared_ptr<debug::DiagnosticState> Diagnostics() const;
 
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;

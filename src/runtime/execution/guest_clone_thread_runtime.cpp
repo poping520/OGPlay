@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "ogplay/runtime/debug/stall_diagnostics.h"
+
 namespace ogplay::runtime {
 
 GuestCloneThreadRuntime::GuestCloneThreadRuntime(
@@ -13,7 +15,8 @@ GuestCloneThreadRuntime::GuestCloneThreadRuntime(
     memory::MemoryBus& memory_bus, cpu::FutexTable& futex_table,
     const std::uint64_t first_child_thread_id,
     const std::uint64_t tick_slice,
-    GuestSupervisorCallHandler hle_handler)
+    GuestSupervisorCallHandler hle_handler,
+    std::shared_ptr<debug::DiagnosticState> diagnostics)
     : threads_(threads),
       dispatcher_(dispatcher),
       lifecycle_(lifecycle),
@@ -22,7 +25,8 @@ GuestCloneThreadRuntime::GuestCloneThreadRuntime(
       committer_(lifecycle, address_space),
       next_thread_id_(first_child_thread_id),
       tick_slice_(tick_slice),
-      hle_handler_(std::move(hle_handler)) {
+      hle_handler_(std::move(hle_handler)),
+      diagnostics_(std::move(diagnostics)) {
     if (first_child_thread_id == 0 || tick_slice == 0) {
         throw std::invalid_argument(
             "clone runtime requires non-zero thread id and tick slice");
@@ -73,6 +77,16 @@ std::int32_t GuestCloneThreadRuntime::Spawn(
 
 void GuestCloneThreadRuntime::RunChild(const std::uint64_t thread_id,
                                        cpu::Cpu& cpu) {
+    const auto execution = diagnostics_
+        ? diagnostics_->EnterExecution(
+              thread_id, thread_id, "clone_thread", "RunAndroidArmGuestThread",
+              cpu.GetState().Register(cpu::CoreRegister::pc))
+        : 0U;
+    struct DiagnosticScope final {
+        std::shared_ptr<debug::DiagnosticState> state;
+        std::uint64_t id{};
+        ~DiagnosticScope() { if (state && id != 0U) state->LeaveExecution(id); }
+    } diagnostic_scope{diagnostics_, execution};
     GuestThreadRunOutcome outcome;
     if (lifecycle_.State(thread_id).status ==
         GuestThreadStatus::exit_requested) {
@@ -87,6 +101,10 @@ void GuestCloneThreadRuntime::RunChild(const std::uint64_t thread_id,
         outcome = RunAndroidArmGuestThread(
             cpu, dispatcher_, lifecycle_, memory_bus_, futex_table_,
             tick_slice_, hle_handler_);
+        if (diagnostics_ && execution != 0U) {
+            diagnostics_->UpdateExecution(
+                execution, cpu.GetState().Register(cpu::CoreRegister::pc));
+        }
         if (outcome.reason != GuestThreadRunStop::budget_exhausted) break;
         const auto state = lifecycle_.State(thread_id);
         if (state.status == GuestThreadStatus::exit_requested) {

@@ -633,6 +633,40 @@ std::vector<VmThreadSnapshot> VmThreadRuntime::Snapshot() const {
     return snapshot;
 }
 
+std::optional<std::vector<VmThreadSnapshot>> VmThreadRuntime::TrySnapshot() const {
+    std::unique_lock guard(impl_->mutex, std::try_to_lock);
+    if (!guard.owns_lock()) return std::nullopt;
+    std::vector<VmThreadSnapshot> snapshot;
+    snapshot.reserve(impl_->records.size() + 1U);
+    const auto append = [&](const std::uint64_t id,
+                            const std::uint64_t context_token,
+                            const std::uint32_t object,
+                            const VmThreadStatus status,
+                            const VmThreadWaitState wait_state,
+                            const std::string& name) -> bool {
+        const auto interrupted = impl_->vm->Monitors().TryInterrupted(
+            context_token);
+        if (!interrupted) return false;
+        snapshot.push_back({id, context_token, object, status, wait_state,
+                            *interrupted, name});
+        return true;
+    };
+    if (impl_->root_object.IsValid() &&
+        !append(1U, 1U, impl_->root_object.Value(),
+                impl_->shutting_down ? VmThreadStatus::stopped
+                                     : VmThreadStatus::running,
+                impl_->root_wait_state, impl_->root_name)) {
+        return std::nullopt;
+    }
+    for (const auto& [_, record] : impl_->records) {
+        if (!append(record->id, record->context.Token(), record->object.Value(),
+                    record->status, record->wait_state, record->name)) {
+            return std::nullopt;
+        }
+    }
+    return snapshot;
+}
+
 void VmThreadRuntime::VisitThreadRoots(
     const std::function<void(VmObjectRef)>& visitor) const {
     if (!visitor) return;

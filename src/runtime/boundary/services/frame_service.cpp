@@ -146,4 +146,30 @@ std::vector<core::GpuTraceEntry> FrameService::Trace(
     return result;
 }
 
+std::optional<std::vector<core::GpuTraceEntry>> FrameService::TryTrace(
+    const std::size_t limit) const {
+    std::unique_lock lock(trace_mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return std::nullopt;
+    std::vector<core::GpuTraceEntry> result;
+    const auto available = std::min(gpu_trace_count_, gpu_trace_.size());
+    result.reserve(std::min(limit, available));
+    for (std::size_t offset = 0; offset < available && result.size() < limit;
+         ++offset) {
+        const auto index =
+            (gpu_trace_write_ + gpu_trace_.size() - 1U - offset) %
+            gpu_trace_.size();
+        const auto& raw = gpu_trace_[index];
+        core::GpuTraceEntry entry;
+        entry.call = descriptors_[raw.descriptor_index].name;
+        for (std::size_t argument = 0; argument < raw.registers.size();
+             ++argument) {
+            entry.arguments.emplace("r" + std::to_string(argument),
+                                    std::to_string(raw.registers[argument]));
+        }
+        result.push_back(std::move(entry));
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
 }  // namespace ogplay::runtime

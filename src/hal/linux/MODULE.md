@@ -13,6 +13,8 @@
   `setenv`/`unsetenv` 并遵守公共 HAL 的作用域恢复契约。
 - 共享库加载使用 `dlopen`/`dlsym`(RTLD_NOW|RTLD_LOCAL),命名规则为
   `lib<name>.so.<major>`。
+- 诊断触发使用 `SIGUSR1` 写 nonblocking self-pipe；signal handler 只执行 async-signal-safe
+  `write`，输出文件权限替换为 owner read/write。
 
 ## 测试
 

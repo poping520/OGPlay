@@ -121,7 +121,7 @@ surface，而不是第二套 EGL。动手前先读 `docs/state/CURRENT.md`、
 
 下列 10 个 Java handle 的声明、handler 与共享 façade 实现统一位于
 `android_gl.cpp`。各描述符仍有独立 `Declare_*()` 入口，
-但不再为每个类创建翻译单元；该 Java handle 家族聚合文件不受 800 行限制。
+但不再为每个类创建翻译单元；聚合边界由 API family 和共享状态决定。
 
 | 描述符 | 形态 | 内容 |
 | --- | --- | --- |
@@ -301,7 +301,7 @@ render driver，不读取 title 身份。
 
 ### 批次 E · 帧节拍 + gate 收口
 
-- 目标：条件 swap 停泊/唤醒接入 lifecycle；A6 首帧 gate；全量回归与记账收口。
+- 目标：条件 swap 停泊/唤醒接入 lifecycle；A6 首帧 gate；定向回归与记账收口。
 - 触及：`dexvm_android.h`、`src/session/dex_activity_lifecycle.cpp`、
   EGL/GL 家族聚合文件、`data/scenarios/asphalt6.bootstrap.scenario.toml`、
   `capabilities.toml`（`dexvm.egl_facade` 定档、
@@ -315,8 +315,8 @@ render driver，不读取 title 身份。
   3. 未实现 EGL/GL 入口记账可查、明确失败，无中性值伪装；
   4. teardown：Stop() 顺序下停泊中的 swap 被唤醒、GLThread 正常 join。
 
-每批提交前：`cmake --preset dev && cmake --build --preset dev && ctest --preset dev`
-（Windows 用 `windows-msvc` 预设）；批内触及模块同步更新 MODULE.md。
+每批提交前使用对应平台预设构建受影响目标，并只运行直接相关的单点/定向测试；仅在
+用户明确要求时运行全量 CTest。批内触及模块同步更新 MODULE.md。
 
 ## 8. 风险与决策点（实现前先看）
 

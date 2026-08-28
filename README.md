@@ -16,7 +16,7 @@ OGPlay 是面向 2010–2016 年安卓原生老游戏的跨平台兼容层。它
 ```sh
 cmake --preset dev
 cmake --build --preset dev
-ctest --preset dev
+ctest --preset dev -R "<affected-test>"
 ```
 
 Windows + Visual Studio 2026 可使用：
@@ -24,8 +24,11 @@ Windows + Visual Studio 2026 可使用：
 ```powershell
 cmake --preset windows-msvc
 cmake --build --preset windows-msvc
-ctest --preset windows-msvc
+ctest --preset windows-msvc -R "<affected-test>"
 ```
+
+代码改动默认只构建受影响目标并运行直接相关的单点/定向测试；只有用户明确要求时才运行
+全量 CTest。
 
 ## 主面板（游戏启动器）
 

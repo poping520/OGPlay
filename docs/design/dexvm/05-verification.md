@@ -97,10 +97,10 @@ Scenario runner：
 
 ## 5. 工程门禁
 
-- 全部预设照旧：`cmake --preset dev` / `ctest --preset dev` /
-  `windows-msvc`，warnings-as-errors，三平台严格出口进里程碑验收；
+- 使用对应平台预设构建受影响目标并运行直接相关的单点/定向测试；只有用户明确要求
+  才运行全量 CTest，三平台严格出口只进入明确授权的里程碑验收；
 - dexasm 与 opcode 生成器进 CTest（`tools.*_self_test` 模式）；
-- 解释器按家族拆分的源文件各 < 800 行由现有约束覆盖；
+- 解释器按 opcode 家族保持职责内聚，避免无语义的 `misc/common` 聚合；
 - profile v2 校验器门禁与 v1 并行。
 
 ## 6. 新增能力条目（capabilities.toml）

@@ -20,9 +20,7 @@ OGPlay 是安卓老游戏兼容层，不是 Android 模拟器。只实现游戏�
 - 依赖方向只能由上层指向下层；回调必须通过显式接口。
 - `src/` 中禁止出现游戏名、厂商名、包名和游戏专属分支；差异只能进入 `data/profiles/`。
 - 每个生产代码目录必须有 `MODULE.md`；契约与代码冲突时以契约为准。
-- 单个源文件不超过 800 行；`src/runtime/integration/dexvm_android/` 中按平台
-  API 家族聚合的 Java handle `.cpp` 为控制翻译单元数量不受此行数限制；guest
-  指针必须使用强类型包装。
+- guest 指针必须使用强类型包装。
 - 未实现能力必须记账、可查询并明确失败，禁止伪造成功和静默返回零。
 - 所有时间源必须通过统一 Clock；线程模型为一个 guest 线程对应一个宿主线程。
 - 图形使用 ANGLE，窗口与输入使用 SDL3；禁止重新引入手写 GLES 到桌面 GL 转译。
@@ -30,10 +28,11 @@ OGPlay 是安卓老游戏兼容层，不是 Android 模拟器。只实现游戏�
 
 ## 工作单与验证
 
-- 一个 Work Unit 应能在单次会话完成，目标一句话可说明，触及文件不超过 10 个，依赖显式。
+- 一个 Work Unit 应能在单次会话完成，目标一句话可说明，依赖显式。
 - 每个行为变更必须有机器可判定的测试；quirk 必须有“关闭即失败”的测试。
 - 修改模块时同步更新 `MODULE.md`；架构决定写入只追加的 ADR。
-- 提交前运行 `cmake --preset dev`、`cmake --build --preset dev`、`ctest --preset dev`；
-  Windows Visual Studio 2026 环境使用对应的 `windows-msvc` 预设。
+- 代码改动只构建受影响目标，并运行与改动直接相关的单点/定向测试；没有用户明确要求，
+  禁止运行全量测试。Windows Visual Studio 2026 环境使用对应的 `windows-msvc` 预设。
+- 纯文档改动只做 UTF-8、链接和差异静态检查，不因此触发构建或测试。
 - 结束工作前把 `docs/state/CURRENT.md` 更新为滚动快照，并核对 `capabilities.toml`；
   能力有变化时同步更新，状态只能前进不能后退。

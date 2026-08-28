@@ -41,7 +41,7 @@
 | GUI-6 | 启动接线（LaunchPlan、SDL_CreateProcess、运行中/退出码呈现、last-run.log） | GUI-4 |
 | GUI-7 | 设置页 + 删除确认 + 错误呈现收口 + 契约修订清单（[04 §5](04-integration.md)）全量核对 | GUI-5, GUI-6 |
 
-GUI-1/GUI-2 可并行起步；每个 WU 单会话可完成、触及文件 ≤10、带机器可
+GUI-1/GUI-2 可并行起步；每个 WU 单会话可完成、带机器可
 判定测试，遵守 AGENTS.md 工作单规则。
 
 ## 4. 风险与预案

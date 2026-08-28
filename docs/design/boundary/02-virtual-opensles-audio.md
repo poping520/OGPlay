@@ -146,4 +146,5 @@ AndroidGuestProcess 为这些 native audio callback 准备独立 A32 guest threa
 - mono/stereo、8/16-bit、resample 和多 player 饱和混音有离线测试；
 - buffer callback 从独立 guest callback thread 执行并允许 callback 内 Enqueue；
 - fast/slow memory fault equivalence、late dlopen、metadata-only preflight、architecture gate 通过；
-- 最终全量 CTest 通过后，`runtime.opensles_virtual_so` 才可从 stub 前进。
+- OpenSL ES 直接相关的单点/定向测试通过后，`runtime.opensles_virtual_so` 才可从 stub
+  前进；全量 CTest 仅在用户明确要求时运行。

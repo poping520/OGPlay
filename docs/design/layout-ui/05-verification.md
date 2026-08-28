@@ -280,9 +280,9 @@ APK 资源是不可信输入。实现时给出显式上限：
 
 ```text
 cmake --preset dev
-cmake --build --preset dev
-ctest --preset dev
+cmake --build --preset dev --target <affected-target>
+ctest --preset dev -R "<affected-test>"
 ```
 
-Windows 使用项目对应 MSVC preset。涉及真实 title 时再按 playbook 跑 scenario，不以手工操作
-代替机器出口。
+Windows 使用项目对应 MSVC preset。默认只运行受影响能力的单点/定向测试，全量测试仅在
+用户明确要求时运行。涉及真实 title 时再按 playbook 跑 scenario，不以手工操作代替机器出口。

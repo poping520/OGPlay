@@ -191,19 +191,21 @@ URL 等按字段白名单输出或脱敏。截断、脱敏和写盘失败都必�
 `host_tid` 对齐、`~*k`/模块偏移判读及清理策略。`ci`/RelWithDebInfo 作为诊断构建；
 Release 不要求常态携带大体积 PDB。ANGLE/驱动无符号时只报告模块归属和偏移。
 
-## 三个 WU 的最小实施切分
+## 两个 WU 的实施切分
 
-原方案 5 个 WU 压缩为 3 个。每个 WU 开始前冻结不超过 10 个文件的触及清单；若某个
-平台适配超过文件预算，先缩减该 WU 的平台范围，不把纯机械拆分包装成新的能力 WU。
+事实源、聚合器与外部触发共同构成“停滞后无需重新插桩即可取现场”的最小闭环。只交付
+等待集合或事件环虽然便于单元测试，却仍要求排障者临时编写消费代码，因此不单独算作
+可验收 WU。进程内闭环与宿主外部调试工具链的风险和依赖不同，保留为两个 WU；不再按
+触及文件数做机械拆分。
 
 | WU | 范围 | 独立收益 | 机器验收 |
 | --- | --- | --- | --- |
-| WU1 · 等待与退出事实 | 公共 snapshot DTO/schema/steady time；D2 等待集合；D5 teardown 阶段与预算 | 不需要聚合器即可查询“退出停在哪、哪些线程在等” | 阶段单调前进；futex 只输出 wait-set；monitor 仅凭真实 owner 边判环；锁忙时限时降级 |
-| WU2 · 边界与执行事实 | D3/D4 固定事件环；D6 双路径注册表；接入既有 DVM/GLES trace | 查询 guest↔host 对齐、最后 syscall/native/GPU 动作 | ring 关闭态/溢出/并发快照；enter/return/throw；双 guest 执行路径与退出 tombstone |
-| WU3 · 快照与工作流 | D1 coordinator、D8 触发/输出安全、D7/D9 外部 dump 与符号手册；ADR-0026 和账本收口 | 主循环停滞时无需重编译即可获得 guest 现场，并能继续对齐宿主原生栈 | 子进程停滞后外部触发限时落盘；busy section 部分成功；stop→join 无 detach/UAF；无符号模块不猜函数；schema golden/文档/账本一致 |
+| WU1 · 进程内停滞诊断闭环 | 公共 snapshot DTO/schema/steady time；D2–D6 事实源；复用 DVM/GLES trace；D1 coordinator；D8 OS/MCP/CLI 触发、部分快照、隐私与容量限制；同步 ADR-0026、MODULE 和 capabilities | 主循环停滞后无需重编译或临时消费代码，可从进程外限时取得 guest 语义现场 | ring 关闭态/溢出/并发快照；wait-set 不误判 cycle；双执行路径与 tombstone；子进程停滞后 OS 触发限时落盘；busy section 部分成功；stop→join 无 detach/UAF；schema、隐私和配额可判定 |
+| WU2 · 宿主栈与排障工作流 | D7/D9 外部 dump、host_tid 对齐、符号构建和无符号模块判读；跨文档与能力账本最终一致性收口 | 从 WU1 的 guest 语义现场继续定位到宿主原生模块/偏移，形成可复用的完整排障流程 | fixture dump/文本验证 host_tid 对齐；procdump/WinDbg/lldb 手册可执行；无符号模块不猜函数；诊断构建说明、文档链接和能力账本一致 |
 
-ADR-0025 已用于 teardown cancellation，本设计使用 **ADR-0026**。能力与 MODULE.md 不在
-最后一次性补账：WU1/WU2 各自同步对应条目，WU3 只做跨文档一致性收口。
+ADR-0025 已用于 teardown cancellation，本设计使用 **ADR-0026**。WU1 必须随代码同步
+对应 MODULE.md、capabilities 和 schema 契约；WU2 只做宿主工具链及跨文档一致性收口，
+不能用文档工作未完成阻塞已经通过机器验收的进程内诊断闭环。
 
 ## 验证策略
 

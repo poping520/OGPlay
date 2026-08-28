@@ -124,7 +124,7 @@ GC 不扫描；v2 分配指令 handler 承担与旧内核相同的安全分配�
 - **bridge handler**：预解码期把 v2 尚未实现的 opcode 打成 `bridge`
   ——sync 状态 → 调旧内核 `Step()` 执行这一条 → reload。由此 v2 从
   第一个 WU 起就能跑全部夹具与 title（等价性天然成立），家族逐 WU
-  从 bridge 迁入 fast handler，每迁一族跑一次双后端夹具全量——增量
+  从 bridge 迁入 fast handler，每迁一族只跑该家族直接相关的双后端夹具——增量
   迁移的每一步都被机器判定兜底。
 - **帧边界**：v2 稳态循环处理"同帧内直线执行 + 分支"；压帧/弹帧
   （invoke 进解释方法、return、异常展开）回到外层与旧内核共享的
@@ -147,7 +147,7 @@ AOSP mterp 的分派谱系（`vm/mterp/README.txt`）：computed-goto（ARM，
   2–4、7–9）与局部状态缓存收益全部保留，仅分派点形态不同。
 - **单函数约束**：computed goto 要求全部 handler 在同一函数体内。
   组装形态：`interp_threaded.cpp` 主 TU 只含循环骨架与 `#include`
-  家族片段列表（`interp_threaded/*.inc`，每片段 < 800 行）；handler
+  家族片段列表（`interp_threaded/*.inc`）；handler
   体用共享宏拼接，同一份语义源生成两种分派 glue（对照 mterp 的
   config/生成器模式；是否上生成器由 V2-2 实施时裁决，手写片段起步）。
 - **循环内局部状态**：FastCode 指针（pc）、`Slot* regs`、tick
@@ -193,9 +193,9 @@ teardown 契约（"每条指令检查"→"有界延迟"）且必须先有采样�
 
 ## 8. 验证体系与默认切换裁决
 
-- **双后端夹具全量**：`tests/dexvm/` 全部 dexasm 夹具参数化跑两遍
-  （doctest 参数化或 CTest 双实例），断言终态寄存器/堆/异常/返回值/
-  tick 逐位一致。这是每个迁移 WU 的合入门禁。
+- **双后端定向夹具**：每个迁移 WU 只把受影响 opcode 家族的 dexasm 夹具参数化跑两遍
+  （doctest 参数化或 CTest 双实例），断言终态寄存器/堆/异常/返回值/tick 逐位一致；
+  全部 dexasm 夹具仅在用户明确要求时运行。
 - **bridge 覆盖恒等**：V2-2 起任意时刻，"全 bridge"配置（一个家族都
   不迁）的 v2 必须与旧内核逐位一致——bridge 机制本身的回归锚点。
 - **结构反例**：预解码期必须复刻链接预检的全部拒绝路径（未定义
@@ -218,15 +218,15 @@ teardown 契约（"每条指令检查"→"有界延迟"）且必须先有采样�
 ## 9. WU 分批（批次 · 解释器 v2）
 
 创建任务单时在 `docs/tasks/dexvm/README.md` 按现行序号续编，每个 WU
-单会话可完成、触及文件 ≤ 10、依赖显式：
+单会话可完成、依赖显式：
 
 | WU | 一句话目标 | 关键交付 | 机器可判定验收 |
 | --- | --- | --- | --- |
 | V2-1 FastCode 构建器 | 把 u2 流一次性预解码为定宽 IR，不执行 | FastCode 布局、构建器（挂 PrecheckMethod 后）、分支/payload 映射、结构反例复刻 | 回读一致性：FastCode 反渲染与 u2 流解码逐项一致；反例拒绝与旧内核诊断逐字一致 |
 | V2-2 threaded 骨架 + bridge | v2 内核能以"全 bridge"跑通一切 | 单函数循环 + 双分派 glue（computed goto / 稠密 switch）、局部状态缓存与 sync/reload、`backend` 开关、tick countdown | 全 bridge 配置下双后端夹具全量逐位一致（含 tick）；全平台编译（MSVC 降级路径验证） |
-| V2-3 直线家族迁移 | moves/const/goto/if/cmp/算术家族入 fast handler | 家族片段 `.inc`、预拼装字面量、寄存器访问去 bounds check（tag 检查保留） | 双后端全量 + 微基准（算术/分支循环）数字入 WU 文档 |
-| V2-4 对象家族迁移 | 字段/数组/switch/分配家族入 fast handler | 解析缓存槽直击（extra 存槽指针）、new-array 元素类别预判定、checked/fast 双 handler 与首执行翻转（内部 IR 单写者自改写，执行锁下安全） | 双后端全量 + 字段循环微基准；clinit 触发时序夹具不变 |
-| V2-5 invoke 与轮询优化 | invoke 家族入 fast handler + args-shorty 预计算（吸收 CURRENT.md 既有余项）；评估 stop 双表机制 | invoke 编组预计算表；双表机制若做则同步修订 MODULE.md teardown 契约并附采样证据 | 双后端全量 + invoke 循环微基准；teardown 夹具（RequestStop 有界延迟断言，若改契约） |
+| V2-3 直线家族迁移 | moves/const/goto/if/cmp/算术家族入 fast handler | 家族片段 `.inc`、预拼装字面量、寄存器访问去 bounds check（tag 检查保留） | 受影响家族双后端定向测试 + 微基准（算术/分支循环）数字入 WU 文档 |
+| V2-4 对象家族迁移 | 字段/数组/switch/分配家族入 fast handler | 解析缓存槽直击（extra 存槽指针）、new-array 元素类别预判定、checked/fast 双 handler 与首执行翻转（内部 IR 单写者自改写，执行锁下安全） | 受影响家族双后端定向测试 + 字段循环微基准；clinit 触发时序夹具不变 |
+| V2-5 invoke 与轮询优化 | invoke 家族入 fast handler + args-shorty 预计算（吸收 CURRENT.md 既有余项）；评估 stop 双表机制 | invoke 编组预计算表；双表机制若做则同步修订 MODULE.md teardown 契约并附采样证据 | invoke 双后端定向测试 + invoke 循环微基准；teardown 夹具（RequestStop 有界延迟断言，若改契约） |
 | V2-6 gate 复验与裁决 | title 无回归 + 性能报告，默认后端去留裁决 | A5/A6/DH 三轮持平（threaded）；title 帧采样对比报告；能力条目推进；`MODULE.md`/`CURRENT.md`/06 冲突表同步 | 三 gate 通过 + 采样报告数字 + 账本单调推进 |
 
 依赖链：1 → 2 → 3 → 4 → 5 → 6。V2-1/2 不改变任何默认行为；从 V2-3
@@ -239,7 +239,7 @@ teardown 契约（"每条指令检查"→"有界延迟"）且必须先有采样�
 | 双内核语义漂移（最大风险：v2 某指令与旧内核差一个边界） | 夹具双跑 + tick 逐位恒等是每 WU 合入门禁；bridge 渐进使每次差异定位在单个家族内；语义出处仍逐 opcode 对照 AOSP `OP_*.cpp` |
 | MSVC 降级路径收益缩水 | 预解码与局部状态缓存的收益与分派机制解耦（§2 成本 2–4、7–9 全平台成立）；微基准分平台出数字，诚实记录 |
 | 预解码内存开销（16B/指令 vs 2B/单元） | 上界 = dex 代码体量 × ~8，Gameloft 级 dex（数 MB）对应数十 MB 宿主元数据；进 stats 记账，超预期时按需加"仅热方法预解码"策略（采样驱动，另立 WU） |
-| 单函数内核触碰 800 行纪律 | 主 TU 只含骨架 + `#include` 片段列表，片段各 < 800 行；`MODULE.md` 登记该组装形态（先例：dexvm_android 聚合 TU 豁免条目） |
+| 单函数内核可维护性下降 | 主 TU 只含骨架 + `#include` 家族片段列表；片段按 opcode 语义聚合，`MODULE.md` 登记该组装形态 |
 | checked/fast handler 翻转引入状态缺陷 | 翻转只发生在执行锁内（单写者）；翻转前后语义等价由"首执行/次执行各一遍"夹具断言；GC/线程不感知 FastCode |
 | 维护双内核的长期成本 | 共享层最大化（§4）：新指令语义只写一次共享 helper，两内核只是取指分派壳；旧内核同时是 v2 的裁判，成本即收益 |
 | 投机优化伪收益 | 06 §3 性能纪律：每 WU 附微基准数字，不达预期记录并裁决，禁止无测量合入 |

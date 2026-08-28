@@ -101,6 +101,6 @@ launcher activity；`<application>` 的 `android:icon`、`android:label`
 
 - `src/` 零游戏名：库数据全部在用户目录，代码只有 package name 变量。
 - 结构化日志：gui 生产代码不裸 `printf`；用户可见输出经 UI 呈现。
-- 800 行上限：视图层按页拆分文件。
+- 视图层按页面职责拆分，避免无关页面共享可变状态。
 - 依赖方向：`frontend/gui` → session/loader/core 公共 API，无反向引用；
   ImGui 只出现在 `frontend/gui/view` 与 shell，模型层禁止 include。

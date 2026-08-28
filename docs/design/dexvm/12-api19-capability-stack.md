@@ -149,8 +149,7 @@ appender 或 declaration，不得出现 handler。
 `android_app.cpp`，`support_video.cpp` 归入 `android_media.cpp`，三个 UI support 文件归入
 `support_ui.cpp`。非 Android Java family 必须迁回 core。
 
-这两个数字是最终目录目标。DVM-80 经用户明确授权作为一次全量机械归并执行，不受通常的
-单 WU 10 文件与 family TU 800 行限制；行为变更仍然禁止混入。
+这两个数字是最终目录目标。DVM-80 作为一次机械归并执行，行为变更仍然禁止混入。
 
 ## 6. 实施批次
 

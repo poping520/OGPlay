@@ -95,7 +95,8 @@ M6 按以下依赖顺序交付：
 - [ ] 主界面或等价稳定检查点由 readback/golden 自动判定，无人工视觉步骤。
 - [ ] 人为制造缺 fixture、超时、未实现查询和黄金帧差异时均得到精确失败。
 - [ ] AI 可只读取结构化结果定位首个阻塞，不需要解析自由文本日志。
-- [ ] runner 的 focused tests、全量 CTest、warnings-as-errors 与目标平台 exact smoke 通过。
+- [ ] runner 的 focused tests、warnings-as-errors 与目标平台 exact smoke 通过；全量 CTest
+  仅在用户明确要求时运行。
 
 M6 不以“能启动脚本”作为出口，也不要求把所有历史标题一次性录入题库。批量兼容性覆盖、
 按影响标题数补能力以及公开兼容性数据库属于 M8。

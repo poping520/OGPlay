@@ -204,7 +204,7 @@ session 级唯一所有者，吸收既有 backlog（`JniObjectArrayStore` 从 ar
 | aget/aput | 数组元素类别来自数组对象的运行期类型；opcode 与元素类别不符（如 `aget-object` 作用于 `int[]`）→ 失败 |
 
 **分派**：生成的解码表 + switch 分派。实现按指令家族拆文件（moves / const /
-cmp / branch / array / instance / invoke / arith 等），满足 800 行上限，且
+cmp / branch / array / instance / invoke / arith 等），保持职责内聚，且
 每个家族是天然的 WU 边界。每 opcode 语义实现必须对照 AOSP
 `vm/mterp/c/OP_*.cpp`（每 opcode 一个独立 C 文件，[07 §2 模式 B](07-aosp-reference.md)），
 测试注释记录出处。

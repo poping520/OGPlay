@@ -293,7 +293,7 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
 `AndroidIntrinsicCatalog(context)`，core catalog 的平台事实则只通过
 `AndroidCoreIntrinsicServices(context)` 注入。平台类按 API 家族聚合到
 `dexvm_android/<家族>.cpp`，每个类仍以 `Declare_<类名>(context)` 同址声明并直接
-绑定；Java handle 家族聚合文件不受 800 行限制。`catalog.cpp` 只注册聚合，
+绑定；Java handle 文件按 API family 与共享状态聚合。`catalog.cpp` 只注册聚合，
 `shared.h` 只保存确需跨家族复用的 helper/工厂，support 文件只实现
 surface/video/widget 派发子系统。禁止恢复集中式 handler 容器、Populate 或
 字符串分发通道。

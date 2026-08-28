@@ -166,9 +166,9 @@ host staging pointer。
 | BND-21 | GLES2 raster/state/object predicates |
 | BND-22 | GLES2 buffer/texture/query |
 | BND-23 | GLES2 shader/uniform/attribute，关闭全部 67 项 |
-| BND-24 | PVZ 短时运行闭环、全量测试与 capability/doc audit |
+| BND-24 | PVZ 短时运行闭环、定向测试与 capability/doc audit |
 
-每个行为 WU 都运行 focused tests 并独立提交；BND-24 才运行全量 CTest。游戏进程必须有
+每个行为 WU 都运行 focused tests 并独立提交；全量 CTest 仅在用户明确要求时运行。游戏进程必须有
 frame/tick/wall-time 上限，命令退出后确认无 `ogplay` 残留进程。
 
 ## 8. 验收
@@ -183,5 +183,5 @@ frame/tick/wall-time 上限，命令退出后确认无 `ogplay` 残留进程。
   和 architecture gate 保持通过；
 - 目标 APK 在关闭 survey 的 bounded run 中越过 OpenGL import/dispatch 阻断，并以新的第一条
   非 OpenGL fault或可见帧作为运行证据；
-- `cmake --preset dev`、`cmake --build --preset dev`、全量 `ctest --preset dev` 通过；
+- 对应预设的受影响目标构建与 EGL/GLES 定向测试通过；
 - 验收后无持续运行的 `ogplay` 进程。

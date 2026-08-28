@@ -104,8 +104,9 @@ survey 模式下，未声明的平台类/方法会被合成为**中性桩**（0/
 ogplay run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 ```
 
-只有这次运行的结果能作为进展结论。收尾：`ctest --preset windows-msvc`
-（或 `dev`）、更新 `MODULE.md` / `capabilities.toml` / `docs/state/CURRENT.md`。
+只有这次运行的结果能作为进展结论。收尾：用 `windows-msvc`（或 `dev`）预设运行受影响
+能力的单点/定向测试，并更新 `MODULE.md` / `capabilities.toml` /
+`docs/state/CURRENT.md`；全量测试只在用户明确要求时运行。
 
 ---
 
@@ -141,7 +142,9 @@ ogplay run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 **构建与回归**（Windows Visual Studio 用 `windows-msvc`，其他平台用 `dev`）：
 
 ```bash
-cmake --preset dev && cmake --build --preset dev && ctest --preset dev
+cmake --preset dev
+cmake --build --preset dev --target <affected-target>
+ctest --preset dev -R "<affected-test>"
 ```
 
 **跑 title**：必须在构建输出目录下执行（ANGLE 动态库按相对路径加载），
@@ -186,6 +189,7 @@ cd build/dev
 3. **v1 冻结**：`[[java.class]]` 胶水目录不再增长（裁决 14）。不要为让新 title
    跑起来去补 v1 profile，直接走 dexvm 路线。
 4. **每批收尾**：同步 `MODULE.md`、推进 `capabilities.toml`（状态只前进）、滚动
-   更新 `docs/state/CURRENT.md`（≤6144 字节），提交前跑构建 + 全量 `ctest`。
+   更新 `docs/state/CURRENT.md`（≤6144 字节），提交前构建受影响目标并运行直接相关的
+   单点/定向测试；仅在用户明确要求时运行全量 `ctest`。
 
 其他跨 title 的易误判症状见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。

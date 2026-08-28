@@ -5,8 +5,7 @@
 提供 dex_activity 生命周期使用的 `android.*` 与 `javax.microedition.*` 平台
 intrinsic。`catalog.cpp` 是唯一注册聚合点；平台类按 API 家族聚合到一个源文件，
 每个类仍导出独立的 `Declare_<类名>(context)`，返回已经直接持有 handler 的
-不可变声明。Java handle 家族聚合文件用于控制翻译单元数量，不受项目通常的
-800 行源文件上限约束。
+不可变声明。Java handle 文件按 API family 与共享状态聚合，以控制翻译单元数量。
 
 声明与实现同址是唯一 handler 形态。`shared.h` 只暴露跨类共享 helper 与工厂；
 跨类复用的 handler 以 `shared.cpp` 中的工厂函数（如 `ViewInitHandler(context)`、

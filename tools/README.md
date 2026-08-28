@@ -27,7 +27,9 @@ python tools/dexvm_stub_gen.py \
 
 `m4_exit.py` 在当前 Windows、Linux 或 macOS 机器内直接执行严格出口验证，不建立 SSH
 连接。脚本预检 API 19 Bionic、两个 APK 的未压缩 ARMv7 native 库、宿主 ANGLE SDK
-清单及软件后端声明，然后使用持久 CMake preset 增量配置、构建并运行全量 CTest。
+清单及软件后端声明，然后使用持久 CMake preset 增量配置、构建并运行全量 CTest。该脚本
+属于显式的 M4 完整出口，只有用户明确要求全量出口时才运行；普通代码改动使用受影响目标
+和单点/定向测试。
 
 ```text
 python tools/m4_exit.py \

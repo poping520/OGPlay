@@ -286,7 +286,7 @@ FastCode 单函数稳态循环在 `interp_threaded.cpp`（`#include`
 `intrinsics/catalog.cpp` 显式聚合目录；每个 Java 类仍由唯一 TU-private
 `Declare_*()` 同址声明形状与 handler，物理目录固定为 catalog 加 lang、classloading、
 reflect、io、util、regex、zip、nio、net、xml、concurrent 共 11 个 API family TU。
-family 只向 catalog 暴露 `Append*()`；family TU 可超过通常 800 行，但禁止
+family 只向 catalog 暴露 `Append*()`；禁止
 misc/common/all 巨石与静态自注册。非 Android Java family 全部归 core；需要平台事实的
 少量既有行为只消费 `CoreIntrinsicServices`，不得依赖 integration。
 pinned Luni `java.lang` 的确定性 public/protected 顶层 class shape 位于

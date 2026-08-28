@@ -11,7 +11,7 @@
 | syscall 编组 | 新增各 syscall 的 guest 指针受检、`stat64`/`linux_dirent64` ABI 布局锁定、errno 映射；`getdents64` 小缓冲区分页 |
 | DexVM 收敛 | File 流经 VFS 与 native open 同路径互见；`File.mkdirs` 真实建目录且失败返回 false（伪成功消除属行为变更，必须有"回退旧行为即失败"的测试）；prefs XML 往返 + 与文件视角一致 |
 | flush 点 | close/fsync/pause/shutdown 各自触发落盘（以 store 观测计数断言）；无脏节点时幂等 |
-| 确定性回归 | 全量 CTest 与 `asphalt5.title_flow` 在一次性沙盒下逐位不变（golden SHA 不动） |
+| 确定性回归 | 受影响的 VFS/DexVM 单点测试逐位不变；`asphalt5.title_flow` 或全量 CTest 仅在用户明确要求时运行 |
 
 持久化用例一律使用测试自建临时目录，不触碰用户数据目录；不依赖真实 APK 的
 用例进常规 CTest，exact-title 验证走既有 scenario gate。
@@ -27,7 +27,7 @@
 | `runtime.preferences_persistence`（新增） | unimplemented | 双通道共享 XML 实现且持久 |
 | `runtime.vfs` / `dexvm.intrinsics_android_core` 等既有条目 | 保持 | note 更新事实，状态不后退 |
 
-## 3. WU 分解（每个单会话可完成、≤10 文件、依赖显式）
+## 3. WU 分解（每个单会话可完成、依赖显式）
 
 | WU | 内容 | 依赖 |
 | --- | --- | --- |

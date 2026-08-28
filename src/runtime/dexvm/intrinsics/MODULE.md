@@ -6,7 +6,7 @@ intrinsic 的逻辑单位仍然是 Java class：每个 class 恰好一个 TU-pri
 concurrent.cpp` 11 个 family TU。family 文件只向 `catalog.h` 暴露 `Append*()`，
 `catalog.cpp` 不感知 family 内具体 class，也不得包含行为。
 
-family TU 为控制翻译单元数量允许超过通常 800 行。
+family TU 按 API 语义与共享状态聚合，以控制翻译单元数量。
 禁止新增 `misc`/`common`/`all` 等无语义聚合文件、字符串 core handler id、
 全局静态自注册，以及 android.* 声明和行为顺手修改。
 

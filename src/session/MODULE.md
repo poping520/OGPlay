@@ -50,14 +50,18 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   在线程停止后、guest finalizer 前再次调用，失败向上层传播。
   guest EGL swap 在 intrinsic 内 publish，不由 lifecycle 再次 present。lifecycle
   仅在 guest-owned GLSurfaceView 路径注册 driver 线程，并在每帧尾推进条件 swap
+  pacer。进程 teardown 在任何 guest 回调前永久退役 Java/native 图形入口、发布
+  renewable JNI frame 取消并唤醒 blocking wait；回调期间可能新建等待，因此 join
+  前再次 interrupt。该顺序是 OGPlay 进程退出策略，不伪称 AOSP 在
+  `surfaceDestroyed` 回调前使 Surface 失效。
+  intrinsic-renderer 不安装 observer。driver 可运行时维持一帧一 swap，driver 停泊于
+  guest 阻塞原语时由执行锁 observer 放行 GLThread。停止在 shutdown/join guest Java
+  线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：intrinsic
+  renderer 保留打开线程 GL currency；guest-owned GLSurfaceView 显式释放后交给其
+  GLThread。
 - `MapAndroidInput`：在 HAL 与 Android guest 边界把通用 USB HID/SDL 物理 scancode
   转为 API 19 keyCode，把左右 modifier/caps/num 转为 metaState，并保留当前布局 Unicode、
   repeatCount、scanCode 与 eventTime；未知物理键明确成为 `KEYCODE_UNKNOWN`。
-  pacer；intrinsic-renderer 不安装 observer。driver 可运行时维持一帧一 swap，
-  driver 停泊于 guest 阻塞原语时由执行锁 observer 放行 GLThread。停止在 shutdown/
-  join guest Java 线程前唤醒 pacer。surface callback 前按通用 render-driver 事实分流：
-  intrinsic renderer 保留打开线程 GL currency；guest-owned GLSurfaceView 显式释放后
-  交给其 GLThread。
   Activity switch 在旧 `onDestroy` 后推进 UI content generation，清空旧 UiTree binding/
   listener，再构造新 Activity；旧 Activity UI 不得参与新一帧 draw/input。入口 Activity
   实例化时把自身句柄发布为 `task_root_activity`（进程唯一 task 的根，

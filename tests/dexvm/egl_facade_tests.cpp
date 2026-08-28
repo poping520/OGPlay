@@ -190,6 +190,26 @@ TEST_CASE("DVM-83 publishes the API 19 Java GLES link surface") {
     CHECK(vm.interpreter.StringUtf8(error) == "EGL_BAD_ATTRIBUTE");
 }
 
+TEST_CASE("EGL facade teardown retirement fails swap without entering graphics") {
+    EglVm vm;
+    const auto egl = vm.CallStatic(
+        "Ljavax/microedition/khronos/egl/EGLContext;", "getEGL",
+        "()Ljavax/microedition/khronos/egl/EGL;").ref;
+
+    RetireGuestEglSurface(*vm.context);
+    CHECK(vm.context->egl.surface_retired.load());
+    CHECK(vm.context->egl.pace_shutdown);
+    CHECK(vm.CallOn(
+              egl, "eglSwapBuffers",
+              "(Ljavax/microedition/khronos/egl/EGLDisplay;"
+              "Ljavax/microedition/khronos/egl/EGLSurface;)Z",
+              {VmValue::Ref(VmObjectRef{}),
+               VmValue::Ref(VmObjectRef{})})
+              .AsInt() == 0);
+    CHECK(vm.CallOn(egl, "eglGetError", "()I").AsInt() == 0x300B);
+    CHECK(vm.CallOn(egl, "eglGetError", "()I").AsInt() == 0x3000);
+}
+
 TEST_CASE("EGL facade performs two-pass config selection and context state") {
     EglVm vm;
     const auto egl = vm.CallStatic(

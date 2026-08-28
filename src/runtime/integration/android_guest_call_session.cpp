@@ -882,12 +882,22 @@ public:
         if (frame.renewable_native_frame) target->SetHostCallHook({});
         active_guest_call_cpus[this] = target;
         try {
+            A32GuestCallSliceObserver observer = slice_observer_;
+            if (frame.renewable_native_frame) {
+                observer = [this](const std::uint64_t consumed) {
+                    if (teardown_requested_.load(std::memory_order_acquire)) {
+                        throw A32GuestCallError(
+                            "A32 renewable native frame cancelled for teardown");
+                    }
+                    if (slice_observer_) slice_observer_(consumed);
+                };
+            }
             auto result = InvokeA32GuestCall(
                 *target, dispatcher_, lifecycle_, address_space_, frame,
                 stack_top, process_memory_.return_trap, maximum_ticks_,
                 [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
                     return HandleBoundary(cpu, stopped);
-                }, slice_observer_);
+                }, observer);
             if (frame.renewable_native_frame) ConfigureFastHostCalls(*target);
             if (previous != nullptr) active_guest_call_cpus[this] = previous;
             else active_guest_call_cpus.erase(this);
@@ -1530,6 +1540,11 @@ public:
         return futex_table_.InterruptAll() +
                environment_.InterruptMonitorWaiters();
     }
+    void BeginTeardown() noexcept {
+        if (teardown_requested_.exchange(true, std::memory_order_acq_rel)) return;
+        boundary_.RetireGuestGraphics();
+        static_cast<void>(InterruptBlockingWaits());
+    }
 
     bool Running() const noexcept { return running_; }
     bool ExitRequested() const noexcept { return process_state_.ExitRequested(); }
@@ -1805,6 +1820,7 @@ private:
     std::vector<GuestLifecycleModule> lifecycle_modules_;
     std::vector<std::size_t> guest_load_order_;
     std::uint64_t maximum_ticks_{};
+    std::atomic<bool> teardown_requested_{false};
     std::function<void(std::string_view)> progress_;
     A32GuestCallSliceObserver slice_observer_;
     std::uint32_t api_{19};
@@ -1967,6 +1983,7 @@ void AndroidGuestProcess::RecycleFrame(AndroidBoundaryFrame&& frame) { impl_->Re
 std::size_t AndroidGuestProcess::RenderStereoAudio(const std::span<std::int16_t> output,
                                                    const std::uint32_t sample_rate) { return impl_->RenderStereoAudio(output, sample_rate); }
 std::size_t AndroidGuestProcess::InterruptBlockingWaits() { return impl_->InterruptBlockingWaits(); }
+void AndroidGuestProcess::BeginTeardown() noexcept { impl_->BeginTeardown(); }
 void AndroidGuestProcess::Stop() { impl_->Stop(); }
 bool AndroidGuestProcess::Running() const noexcept { return impl_->Running(); }
 bool AndroidGuestProcess::ExitRequested() const noexcept { return impl_->ExitRequested(); }
@@ -2126,6 +2143,7 @@ void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgb
 void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) { process_->RecycleFrame(std::move(frame)); }
 std::size_t AndroidGuestCallSession::RenderStereoAudio(std::span<std::int16_t> output, std::uint32_t sample_rate) { return process_->RenderStereoAudio(output, sample_rate); }
 std::size_t AndroidGuestCallSession::InterruptBlockingWaits() { return process_->InterruptBlockingWaits(); }
+void AndroidGuestCallSession::BeginTeardown() noexcept { process_->BeginTeardown(); }
 void AndroidGuestCallSession::Stop() {
     try {
         process_->Stop();

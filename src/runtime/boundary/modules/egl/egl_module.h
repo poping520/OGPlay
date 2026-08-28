@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <mutex>
@@ -23,6 +24,7 @@ public:
     EglModule(BoundaryCallServices& calls,
               EglBoundaryContext& context) noexcept;
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
+    void RetireGuestGraphics() noexcept;
 
 #define OGPLAY_DECLARE_EGL(name, id, count, method) \
     std::uint32_t method(const A32CallFrame& call);
@@ -58,6 +60,7 @@ private:
     std::int32_t swap_interval_{1};
     std::uint32_t pbuffer_width_{};
     std::uint32_t pbuffer_height_{};
+    std::atomic<bool> guest_graphics_retired_{false};
 };
 
 }  // namespace ogplay::runtime

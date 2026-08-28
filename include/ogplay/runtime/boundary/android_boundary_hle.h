@@ -90,6 +90,10 @@ public:
         gles::GlesApi api, std::string_view name,
         std::span<const std::uint32_t> arguments,
         std::uint64_t thread_id = 0);
+    // Permanently closes guest-facing graphics entry points for process
+    // teardown. Calls already past the boundary may finish, but no later
+    // GLES work is allowed to enter ANGLE.
+    void RetireGuestGraphics() noexcept;
     void PresentManagedSurface();
     void CloseManagedSurface();
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept;

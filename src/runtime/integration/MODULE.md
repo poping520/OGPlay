@@ -92,6 +92,11 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   shutdown。`InterruptBlockingWaits` 无论由 Stop 还是外部调用,都不得永久停用 monitor;
   guest finalizer 阶段的 `MonitorEnter` 必须仍能成功,permanent shutdown 只允许发生在
   其后。
+- `BeginTeardown()` 是 process-lifetime、幂等且不可逆的退出门：先封闭 guest
+  EGL/GLES、设置 renewable JNI frame 取消事实并中断当前/后续 blocking wait；执行器只在
+  既有 2000 万 tick slice 或 boundary 安全点观察取消，普通运行期 watchdog 与非 renewable
+  finalizer 调用不变。lifecycle 在 Java thread join 前再次中断，以覆盖 teardown 回调中新建
+  的 futex wait。
 - legacy `AndroidGuestCallSession::InitializeJniLibrary` 只可在运行中的会话调用一次;调用方必须
   在 ELF constructors 完成并注册所需 Java class 后显式调用,成功或 root 无 OnLoad 时才
   发布 library-ready。失败、重复或停止后调用不得伪造完成。

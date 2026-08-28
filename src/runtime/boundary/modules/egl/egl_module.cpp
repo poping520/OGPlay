@@ -26,6 +26,7 @@ constexpr std::uint32_t kEglBadAttribute = 0x3004U;
 constexpr std::uint32_t kEglBadConfig = 0x3005U;
 constexpr std::uint32_t kEglBadContext = 0x3006U;
 constexpr std::uint32_t kEglBadDisplay = 0x3008U;
+constexpr std::uint32_t kEglBadNativeWindow = 0x300BU;
 constexpr std::uint32_t kEglBadParameter = 0x300CU;
 constexpr std::uint32_t kEglWidth = 0x3057U;
 constexpr std::uint32_t kEglHeight = 0x3056U;
@@ -72,6 +73,10 @@ EglModule::EglModule(BoundaryCallServices& calls,
     : calls_(calls), context_(context) {}
 
 BoundaryCallServices& EglModule::CallServices() noexcept { return calls_; }
+
+void EglModule::RetireGuestGraphics() noexcept {
+    guest_graphics_retired_.store(true, std::memory_order_release);
+}
 
 void EglModule::SetError(const std::uint64_t thread_id,
                          const std::uint32_t error) {
@@ -236,6 +241,10 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         return 1U;
     }
     if constexpr (FunctionId == 8U) {
+        if (guest_graphics_retired_.load(std::memory_order_acquire)) {
+            SetError(tid, kEglBadNativeWindow);
+            return 0U;
+        }
         if (!graphics.angle_frame.has_value()) {
             throw std::runtime_error("eglSwapBuffers has no current ANGLE frame");
         }

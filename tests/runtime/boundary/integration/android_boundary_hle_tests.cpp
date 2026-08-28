@@ -3329,6 +3329,25 @@ TEST_CASE("Android EGL and GLES boundary produces a guest frame") {
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1}) == 1);
 }
 
+TEST_CASE("Android boundary teardown retirement seals GLES and EGL swap") {
+    BoundaryFixture fixture;
+    fixture.boundary.RetireGuestGraphics();
+    fixture.boundary.RetireGuestGraphics();
+
+    const std::array<std::uint32_t, 4> viewport{0U, 0U, 4U, 3U};
+    CHECK(fixture.boundary.InvokeManagedGles(
+              ogplay::gles::GlesApi::gles2, "glViewport", viewport) == 0U);
+    CHECK(fixture.CallProgress("libGLESv2.so", "glViewport",
+                               {0U, 0U, 4U, 3U}) ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) == 0U);
+    CHECK(fixture.CallProgress("libEGL.so", "eglSwapBuffers", {1U, 3U}) ==
+          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(fixture.cpu.GetState().Register(ogplay::cpu::CoreRegister::r0) == 0U);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x300BU);
+    CHECK(fixture.Call("libEGL.so", "eglGetError") == 0x3000U);
+}
+
 TEST_CASE("Android boundary owns a managed GLSurface frame lifecycle") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;

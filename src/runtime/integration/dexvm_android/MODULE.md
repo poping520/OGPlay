@@ -159,6 +159,8 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   信息。无 system decor/兼容缩放时 app/real/noncompat 事实相同。
 - EGL 规范内失败走 false/EGL_NO_* + last-error；单 surface、单 currency 模型被
   破坏时必须记账并抛出，未知入口同样记账明确失败。
+- teardown 退役是单向状态：Java `eglSwapBuffers` 立即返回 false 并锁存
+  `EGL_BAD_NATIVE_WINDOW`，同时唤醒 swap pacer；普通运行状态仍遵循上述 EGL 失败契约。
 - guest swap 发布帧后进入条件帧屏障：driver 可运行时等下一次 lifecycle generation；
   driver 经通用执行锁 observer 进入 guest 阻塞时立即放行；shutdown 同样唤醒。
   observer 按注册的 driver 宿主线程 id 过滤，GLThread 自己释放执行锁不改变状态。

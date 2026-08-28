@@ -326,6 +326,7 @@ struct DexVmAndroidContext final {
         std::uint64_t pace_generation{};
         bool pace_driver_blocked{};
         bool pace_shutdown{};
+        std::atomic<bool> surface_retired{false};
     };
     EglFacadeState egl;
 
@@ -585,6 +586,9 @@ void DetachEglSwapPacer(DexVmAndroidContext& context,
                         dexvm::VmExecutionLock& execution_lock);
 void AdvanceEglSwapPacer(DexVmAndroidContext& context);
 void ShutdownEglSwapPacer(DexVmAndroidContext& context);
+// Permanently invalidates the Java EGL facade and releases any guest swap
+// pacer wait. Used only when process teardown begins.
+void RetireGuestEglSurface(DexVmAndroidContext& context);
 void PaceEglSwap(DexVmAndroidContext& context,
                  dexvm::VmExecutionLock& execution_lock);
 

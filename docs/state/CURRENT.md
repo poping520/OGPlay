@@ -1,9 +1,18 @@
 # 当前状态
 
-更新：DVM-89 JNI native watchdog 改为按可观测进展续期
+更新：DVM-92 teardown 图形退役与 renewable JNI native 快速取消已通过 title 验收
 
 ## 当前阶段
 
+- **DVM-92 关闭卡死修复已验收**：lifecycle Stop 在 guest 回调前单向退役 Java EGL、
+  native/managed GLES 与 EGL swap，并通过 process `BeginTeardown` 发布独立取消和首次
+  blocking-wait 中断；renewable JNI native frame 在既有 slice/boundary 安全点立即失败
+  展开，join 前再次中断覆盖回调中新建 futex。运行期 ADR-0023 进展续期、普通预算和
+  non-renewable guest finalizer 不变。Release、定向测试及 PVZ 标题画面点击关闭均已
+  通过，用户确认可快速正常退出。
+- **通用停滞诊断设计**：基于既有 DVM-52/DVM-90/GLES trace 统一规划跨层停滞快照，
+  明确 wait-set 不等于死锁、数据源忙时部分降级、诊断线程 stop→join 且禁止 detach，
+  宿主完整原生栈采用外部 dump 优先；原 5 个 WU 压缩为 3 个，待实施。
 - **DVM-89 native watchdog 审计修复**：supervisor 分发改为
   `not_handled/handled_idle/handled_advanced`；只有 renewable JNI native 帧遇到真实
   park、正字节数据 I/O、present/audio enqueue 或 JNI 重入才续期。查询、EOF、futex wake、
@@ -49,6 +58,10 @@
 
 ## 本轮验证
 
+- DVM-92 Windows Release `ogplay`/`ogplay_tests` 构建通过；Java EGL 与 native boundary
+  退役 2/2、25 assertions，renewable watchdog 与 DexVM teardown 回归 6/6、41
+  assertions 通过。按用户要求未跑全量；用户实跑 PVZ 2.3.12 标题画面点击关闭，确认
+  快速正常退出。
 - DVM-89 watchdog 受影响目标 Windows Debug 构建通过；guest-call 16/16、49 assertions，
   syscall 23/23、211 assertions，futex 4/4、28 assertions，Android boundary 54/54、
   27572 assertions，call-session 17/17、276 assertions，JNI guest bindings/lifecycle
@@ -76,10 +89,11 @@
 
 ## 下一步
 
-1. 通用闭合 A6 DT_SONAME identity；DH 主菜单 Scenario gate 与 profile 长跑复验
+1. 按诊断设计从 WU1 等待与退出事实开始实施。
+2. 通用闭合 A6 DT_SONAME identity；DH 主菜单 Scenario gate 与 profile 长跑复验
    （授权轮询首次运行需 ~120 s guest 时超时后 `saveUnlockGame` 放行，二次起走
    preferences 秒过）。
-2. 复验 DVM-47/threaded title gate；执行 Linux M9 严格出口复验。
+3. 复验 DVM-47/threaded title gate；执行 Linux M9 严格出口复验。
 
 ## 阻塞与边界
 

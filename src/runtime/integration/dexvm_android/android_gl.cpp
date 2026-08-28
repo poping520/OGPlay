@@ -421,6 +421,10 @@ dx::IntrinsicHandler EglMakeCurrentHandler(const Context& context) {
 
 dx::IntrinsicHandler EglSwapBuffersHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
+        if (context->egl.surface_retired.load(std::memory_order_acquire)) {
+            SetError(context, kBadNativeWindow);
+            return Bool(false);
+        }
         if (!ValidateDisplay(context, call.arguments[0].ref)) return Bool(false);
         if (call.arguments[1].ref != context->egl.current_surface ||
             !context->egl.current_thread.has_value() ||
@@ -820,6 +824,11 @@ void ShutdownEglSwapPacer(DexVmAndroidContext& context) {
         context.egl.pace_shutdown = true;
     }
     context.egl.pace_changed.notify_all();
+}
+
+void RetireGuestEglSurface(DexVmAndroidContext& context) {
+    context.egl.surface_retired.store(true, std::memory_order_release);
+    ShutdownEglSwapPacer(context);
 }
 
 void PaceEglSwap(DexVmAndroidContext& context,

@@ -326,6 +326,9 @@ public:
     [[nodiscard]] std::size_t RenderStereoAudio(
         std::span<std::int16_t> output, std::uint32_t sample_rate);
     [[nodiscard]] std::size_t InterruptBlockingWaits();
+    // Idempotently enters process teardown: native waits are interrupted,
+    // guest graphics are retired, and renewable JNI frames become cancellable.
+    void BeginTeardown() noexcept;
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;
@@ -424,6 +427,7 @@ public:
     [[nodiscard]] std::size_t RenderStereoAudio(
         std::span<std::int16_t> output, std::uint32_t sample_rate);
     [[nodiscard]] std::size_t InterruptBlockingWaits();
+    void BeginTeardown() noexcept;
     void Stop();
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;

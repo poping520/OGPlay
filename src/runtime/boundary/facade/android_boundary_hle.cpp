@@ -1,6 +1,7 @@
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <bit>
 #include <chrono>
@@ -232,6 +233,7 @@ public:
             throw std::invalid_argument("managed GLES argument count does not match catalog: " +
                                         std::string(name));
         }
+        if (guest_graphics_retired_.load(std::memory_order_acquire)) return 0U;
         const std::string_view library = api == gles::GlesApi::gles2
                                              ? "libGLESv2.so"
                                              : "libGLESv1_CM.so";
@@ -250,6 +252,10 @@ public:
         const auto result = binding.slow(binding.self, call);
         RecordGpuCall(index, call.RegisterArguments(), binding.gpu);
         return result;
+    }
+    void RetireGuestGraphics() noexcept {
+        guest_graphics_retired_.store(true, std::memory_order_release);
+        egl_module_.RetireGuestGraphics();
     }
     void PresentManagedSurface() {
         if (!managed_surface_ || !angle_frame_.has_value()) {
@@ -290,6 +296,14 @@ public:
         }
         const auto descriptor_index =
             static_cast<std::size_t>(descriptor - descriptors_.data());
+        if (guest_graphics_retired_.load(std::memory_order_acquire) &&
+            (descriptor->library == "libGLESv1_CM.so" ||
+             descriptor->library == "libGLESv2.so")) {
+            auto state = cpu.GetState();
+            state.SetRegister(cpu::CoreRegister::r0, 0U);
+            cpu.SetState(state);
+            return SupervisorCallProgress::handled_idle;
+        }
         const auto& binding = fast_router_.Entry(descriptor_index);
         auto state = cpu.GetState();
         const A32CallFrame call(address_space_, state,
@@ -759,6 +773,7 @@ private:
     std::optional<gles::AngleFrame> angle_frame_;
     std::optional<std::thread::id> gl_owner_;
     bool managed_surface_{};
+    std::atomic<bool> guest_graphics_retired_{false};
     BoundaryCallServices call_services_;
     AndroidBoundaryServices android_services_;
     GraphicsBoundaryContext graphics_context_;
@@ -805,6 +820,9 @@ std::uint32_t AndroidBoundaryHle::InvokeManagedGles(
     const std::span<const std::uint32_t> arguments,
     const std::uint64_t thread_id) {
     return impl_->InvokeManagedGles(api, name, arguments, thread_id);
+}
+void AndroidBoundaryHle::RetireGuestGraphics() noexcept {
+    impl_->RetireGuestGraphics();
 }
 void AndroidBoundaryHle::PresentManagedSurface() {
     impl_->PresentManagedSurface();

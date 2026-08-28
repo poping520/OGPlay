@@ -88,6 +88,10 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
 
 - 无当前 `AngleFrame`、非法枚举、非有限浮点或 ANGLE 原生错误必须明确失败;禁止静默
   no-op、部分回写或伪造结果。
+- process teardown 可通过显式 `RetireGuestGraphics` 永久封闭边界：后续 native/managed
+  GLES 调用中性返回 0 且归类 idle，不进入 ANGLE；`eglSwapBuffers` 返回 false 并由同一
+  guest thread 的 `eglGetError` 消费 `EGL_BAD_NATIVE_WINDOW`。该门只在 teardown 置位，
+  不改变运行期错误或进展分类。
 - guest 输入(名称数组、像素、矩阵、字符串、二级指针)在任何 ANGLE 调用或状态变化前
   按强类型 guest 地址完整预检并搬运;guest 输出先整体预检,仅在 ANGLE 成功后一次提交。
 - 宿主 shadow 状态仅在对应 ANGLE mutation 成功后提交;context reset/终止时恢复各自的

@@ -745,6 +745,11 @@ namespace ogplay::session {
     LifecycleFrameState DexActivityLifecycle::Stop() {
         if (state_ == LifecycleRunState::stopped) return State();
         const bool was_running = state_ == LifecycleRunState::running;
+        // Device services and the graphics boundary outlive guest callbacks on
+        // Android. OGPlay owns both in-process, so retire graphics and publish
+        // cancellation before onPause can wait for a render-thread handshake.
+        runtime::RetireGuestEglSurface(*bindings_.context);
+        bindings_.bridge->Session().BeginTeardown();
         try {
             if (was_running && !suspended_) {
                 CallOnView(bindings_.context->content_view,
@@ -790,8 +795,11 @@ namespace ogplay::session {
             runtime::ShutdownEglSwapPacer(*bindings_.context);
         }
         runtime::ShutdownAndroidScheduler(*bindings_.context);
-        bindings_.bridge->Threads().Shutdown();
+        // A callback may have entered a new futex after BeginTeardown's first
+        // wake. Re-interrupt immediately before join so every waiter observes
+        // cancellation instead of making shutdown depend on a guest wake.
         if (bindings_.interrupt_guest_waits) bindings_.interrupt_guest_waits();
+        bindings_.bridge->Threads().Shutdown();
         if (bindings_.flush_persistent_state) {
             try {
                 bindings_.flush_persistent_state();

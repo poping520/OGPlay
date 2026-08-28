@@ -21,6 +21,7 @@
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/core/logger.h"
+#include "ogplay/core/text.h"
 #include "ogplay/frontend/mcp_http_server.h"
 #include "ogplay/frontend/mcp_input_dispatch.h"
 #include "ogplay/frontend/data_directory.h"
@@ -199,38 +200,8 @@ void PumpAudio(runtime::AndroidGuestProcess& guest,
 }
 
 std::string Utf16ToUtf8(const std::span<const runtime::JniChar> text) {
-    std::string result;
-    for (std::size_t index = 0; index < text.size(); ++index) {
-        std::uint32_t code_point = text[index];
-        if (code_point >= 0xd800U && code_point <= 0xdbffU) {
-            if (index + 1U < text.size() && text[index + 1U] >= 0xdc00U &&
-                text[index + 1U] <= 0xdfffU) {
-                ++index;
-                code_point = 0x10000U + ((code_point - 0xd800U) << 10U) +
-                             (text[index] - 0xdc00U);
-            } else {
-                code_point = 0xfffdU;
-            }
-        } else if (code_point >= 0xdc00U && code_point <= 0xdfffU) {
-            code_point = 0xfffdU;
-        }
-        if (code_point <= 0x7fU) {
-            result.push_back(static_cast<char>(code_point));
-        } else if (code_point <= 0x7ffU) {
-            result.push_back(static_cast<char>(0xc0U | code_point >> 6U));
-            result.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
-        } else if (code_point <= 0xffffU) {
-            result.push_back(static_cast<char>(0xe0U | code_point >> 12U));
-            result.push_back(static_cast<char>(0x80U | (code_point >> 6U & 0x3fU)));
-            result.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
-        } else {
-            result.push_back(static_cast<char>(0xf0U | code_point >> 18U));
-            result.push_back(static_cast<char>(0x80U | (code_point >> 12U & 0x3fU)));
-            result.push_back(static_cast<char>(0x80U | (code_point >> 6U & 0x3fU)));
-            result.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
-        }
-    }
-    return result;
+    return *core::Utf16ToUtf8(
+        text, core::InvalidUtf16Policy::replace, 0xfffdU);
 }
 
 template <typename Guest>

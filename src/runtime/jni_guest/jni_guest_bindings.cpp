@@ -23,6 +23,7 @@
 #include "ogplay/runtime/jni/jni_invocation.h"
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_native_registry.h"
+#include "jni_guest_memory.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/jni/jni_utf.h"
 
@@ -122,29 +123,6 @@ void BindDirectBufferSlots(JniGuestCallDispatcher& dispatcher,
         });
 }
 
-[[nodiscard]] std::string ReadCString(
-    memory::AddressSpace& address_space,
-    const memory::GuestAddress address,
-    const std::uint64_t thread_id,
-    const std::string_view field) {
-    constexpr std::size_t kMaximumBytes = 1024;
-    if (address.IsNull()) {
-        throw JniGuestBindingError(
-            "JNI guest " + std::string(field) + " pointer is null");
-    }
-    std::size_t length{};
-    try {
-        length = address_space.CStringLength(address, kMaximumBytes, thread_id);
-    } catch (const std::length_error&) {
-        throw JniGuestBindingError(
-            "JNI guest " + std::string(field) + " is not null-terminated");
-    }
-    std::string result(length, '\0');
-    address_space.Read(address, std::as_writable_bytes(std::span(result)),
-                       thread_id);
-    return result;
-}
-
 [[nodiscard]] std::size_t Capacity(const std::uint32_t value,
                                    const char* slot) {
     const auto signed_value = std::bit_cast<JniInt>(value);
@@ -229,7 +207,7 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             }
             static_cast<void>(
                 classes.IsAssignableFrom(*java_class, *java_class));
-            const auto message = ReadCString(
+            const auto message = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[2]},
                 frame.thread_id, "exception message");
             const std::vector<std::uint8_t> encoded(
@@ -373,10 +351,10 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                 throw JniGuestBindingError(
                     "GetStaticMethodID requires a valid class reference");
             }
-            const auto name = ReadCString(
+            const auto name = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[2]},
                 frame.thread_id, "method name");
-            const auto descriptor = ReadCString(
+            const auto descriptor = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[3]},
                 frame.thread_id, "method descriptor");
             const auto method =
@@ -392,7 +370,7 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
         EnvironmentSlot("NewStringUTF"),
         [&environment, &strings,
          &address_space](const JniGuestCallFrame& frame) {
-            const auto text = ReadCString(
+            const auto text = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[1]},
                 frame.thread_id, "modified UTF-8");
             const std::vector<std::uint8_t> encoded(text.begin(), text.end());
@@ -524,10 +502,10 @@ void BindJniGuestNativeRegistrationSlots(
             for (std::size_t index = 0; index < count; ++index) {
                 const auto offset = index *
                                     static_cast<std::size_t>(kNativeMethodSize);
-                const auto name = ReadCString(
+                const auto name = ReadGuestCString(
                     address_space, memory::GuestAddress{word(offset)},
                     frame.thread_id, "native method name");
-                const auto descriptor = ReadCString(
+                const auto descriptor = ReadGuestCString(
                     address_space, memory::GuestAddress{word(offset + 4U)},
                     frame.thread_id, "native method descriptor");
                 const auto target = memory::GuestAddress{word(offset + 8U)};

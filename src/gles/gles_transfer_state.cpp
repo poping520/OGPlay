@@ -4,6 +4,8 @@
 #include <limits>
 #include <string_view>
 
+#include "ogplay/core/arithmetic.h"
+
 namespace ogplay::gles {
 namespace {
 
@@ -26,15 +28,6 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
         throw GlesTransferStateError("GLES transfer size addition overflow");
     }
     return left + right;
-}
-
-[[nodiscard]] std::uint64_t AlignUp(const std::uint64_t value,
-                                    const std::uint32_t alignment) {
-    const auto mask = static_cast<std::uint64_t>(alignment - 1U);
-    if (value > (std::numeric_limits<std::uint64_t>::max)() - mask) {
-        throw GlesTransferStateError("GLES pixel row alignment overflow");
-    }
-    return (value + mask) & ~mask;
 }
 
 [[nodiscard]] std::uint64_t Components(const std::uint32_t format) {
@@ -94,7 +87,11 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
     }
     const auto row = CheckedMultiply(static_cast<std::uint32_t>(width),
                                      PixelSize(format, type));
-    const auto stride = AlignUp(row, alignment);
+    const auto aligned = core::AlignUp(row, alignment);
+    if (!aligned.has_value()) {
+        throw GlesTransferStateError("GLES pixel row alignment overflow");
+    }
+    const auto stride = *aligned;
     return CheckedAdd(
         CheckedMultiply(static_cast<std::uint32_t>(height - 1), stride), row);
 }

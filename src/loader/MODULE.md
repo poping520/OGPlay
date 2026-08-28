@@ -93,6 +93,8 @@
 
 ## 不变量
 
+- APK/AXML/ARSC/DEX/ELF 的 little-endian 标量解码复用 `core::ReadLittleEndian`，
+  但每种格式仍在读取前执行自己的范围检查并保留 typed error 与错误上下文。
 - 输入不可信；所有偏移、长度和整数运算必须校验。
 - APK entry 禁止绝对路径、`.`/`..` segment、重复名称、加密和多磁盘；Deflate 的 stored、
   fixed 与 dynamic Huffman block 均受输出长度、回溯距离、尾部和 CRC 约束，不支持的压缩

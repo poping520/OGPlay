@@ -4,6 +4,8 @@
 #include <cstring>
 #include <set>
 
+#include "ogplay/core/byte_order.h"
+
 namespace ogplay::loader {
 namespace {
 
@@ -23,16 +25,11 @@ public:
     }
     [[nodiscard]] std::uint16_t U16(const std::size_t offset) const {
         Require(offset, 2);
-        return static_cast<std::uint16_t>(
-            static_cast<std::uint32_t>(bytes_[offset]) |
-            static_cast<std::uint32_t>(bytes_[offset + 1]) << 8U);
+        return core::ReadLittleEndian<std::uint16_t>(bytes_, offset);
     }
     [[nodiscard]] std::uint32_t U32(const std::size_t offset) const {
         Require(offset, 4);
-        return static_cast<std::uint32_t>(bytes_[offset]) |
-               static_cast<std::uint32_t>(bytes_[offset + 1]) << 8U |
-               static_cast<std::uint32_t>(bytes_[offset + 2]) << 16U |
-               static_cast<std::uint32_t>(bytes_[offset + 3]) << 24U;
+        return core::ReadLittleEndian<std::uint32_t>(bytes_, offset);
     }
     [[nodiscard]] std::uint32_t Uleb128(std::size_t& offset) const {
         std::uint32_t value{};
@@ -73,7 +70,7 @@ public:
              "DEX code SLEB128 is unterminated");
     }
     void Require(const std::size_t offset, const std::size_t size) const {
-        if (offset > bytes_.size() || size > bytes_.size() - offset) {
+        if (!core::RangeFits(bytes_, offset, size)) {
             Fail(DexErrorReason::truncated, offset,
                  "DEX code section is truncated");
         }

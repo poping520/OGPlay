@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "interpreter_internal.h"
+#include "ogplay/core/encoding.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 
@@ -55,10 +56,9 @@ struct FatalThreadInfo final {
 }
 
 [[nodiscard]] std::string HexByte(const std::uint8_t value) {
-    constexpr char digits[] = "0123456789abcdef";
     std::string result{"0x00"};
-    result[2] = digits[value >> 4U];
-    result[3] = digits[value & 0x0fU];
+    result[2] = core::HexDigit(value >> 4U, core::HexCase::lower);
+    result[3] = core::HexDigit(value, core::HexCase::lower);
     return result;
 }
 

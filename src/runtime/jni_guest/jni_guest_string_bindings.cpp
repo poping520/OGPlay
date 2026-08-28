@@ -15,6 +15,7 @@
 #include "ogplay/runtime/jni_guest/jni_guest_dispatch.h"
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_environment.h"
+#include "jni_guest_memory.h"
 #include "ogplay/runtime/jni/jni_object.h"
 
 namespace ogplay::runtime {
@@ -40,19 +41,6 @@ constexpr std::size_t kMaximumUtf16CodeUnits = 1024U * 1024U;
 
 [[nodiscard]] JniGuestCallResult Int(const JniInt value) {
     return Word(std::bit_cast<std::uint32_t>(value));
-}
-
-[[nodiscard]] std::uint32_t Read32(
-    memory::AddressSpace& address_space, const memory::GuestAddress address,
-    const std::uint64_t thread_id) {
-    std::array<std::byte, 4> bytes{};
-    address_space.Read(address, bytes, thread_id);
-    std::uint32_t value{};
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        value |= std::to_integer<std::uint32_t>(bytes[index])
-                 << static_cast<unsigned>(index * 8U);
-    }
-    return value;
 }
 
 [[nodiscard]] JniObjectIdentity ResolveString(
@@ -311,7 +299,7 @@ void BindJniGuestModifiedUtf8Slots(
             const auto bytes = strings.ModifiedUtf8Region(
                 string, start, length);
             const auto destination = memory::GuestAddress{
-                Read32(address_space, frame.stack_pointer, frame.thread_id)};
+                ReadGuest32(address_space, frame.stack_pointer, frame.thread_id)};
             if (destination.IsNull() && !bytes.empty()) {
                 throw JniGuestBindingError(
                     "GetStringUTFRegion requires a non-null output buffer");
@@ -399,7 +387,7 @@ void BindJniGuestUtf16Slots(
             const auto byte_size =
                 static_cast<std::size_t>(length) * sizeof(JniChar);
             const auto destination = memory::GuestAddress{
-                Read32(address_space, frame.stack_pointer, frame.thread_id)};
+                ReadGuest32(address_space, frame.stack_pointer, frame.thread_id)};
             if (byte_size != 0U) {
                 if (destination.IsNull()) {
                     throw JniGuestBindingError(

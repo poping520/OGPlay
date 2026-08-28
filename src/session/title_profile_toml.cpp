@@ -12,24 +12,11 @@
 #include <stdexcept>
 #include <utility>
 
+#include "ogplay/core/text.h"
 #include "ogplay/session/title_profile.h"
 
 namespace ogplay::session::detail {
 namespace {
-
-[[nodiscard]] std::string_view Trim(const std::string_view value) {
-    std::size_t first = 0;
-    while (first < value.size() &&
-           std::isspace(static_cast<unsigned char>(value[first])) != 0) {
-        ++first;
-    }
-    std::size_t last = value.size();
-    while (last > first &&
-           std::isspace(static_cast<unsigned char>(value[last - 1])) != 0) {
-        --last;
-    }
-    return value.substr(first, last - first);
-}
 
 [[nodiscard]] bool IsKey(const std::string_view value) {
     if (value.empty()) return false;
@@ -136,24 +123,9 @@ namespace {
     return count % 2 != 0;
 }
 
-void AppendUtf8(std::string& output, const std::uint32_t codepoint) {
-    if (codepoint > 0x10FFFFU || (codepoint >= 0xD800U && codepoint <= 0xDFFFU)) {
+void AppendTomlUtf8(std::string& output, const std::uint32_t codepoint) {
+    if (!core::AppendUtf8(output, codepoint)) {
         throw TitleProfileError("invalid Unicode escape in TOML string");
-    }
-    if (codepoint <= 0x7FU) {
-        output.push_back(static_cast<char>(codepoint));
-    } else if (codepoint <= 0x7FFU) {
-        output.push_back(static_cast<char>(0xC0U | (codepoint >> 6U)));
-        output.push_back(static_cast<char>(0x80U | (codepoint & 0x3FU)));
-    } else if (codepoint <= 0xFFFFU) {
-        output.push_back(static_cast<char>(0xE0U | (codepoint >> 12U)));
-        output.push_back(static_cast<char>(0x80U | ((codepoint >> 6U) & 0x3FU)));
-        output.push_back(static_cast<char>(0x80U | (codepoint & 0x3FU)));
-    } else {
-        output.push_back(static_cast<char>(0xF0U | (codepoint >> 18U)));
-        output.push_back(static_cast<char>(0x80U | ((codepoint >> 12U) & 0x3FU)));
-        output.push_back(static_cast<char>(0x80U | ((codepoint >> 6U) & 0x3FU)));
-        output.push_back(static_cast<char>(0x80U | (codepoint & 0x3FU)));
     }
 }
 
@@ -244,8 +216,8 @@ private:
             case 'n': result.push_back('\n'); break;
             case 'r': result.push_back('\r'); break;
             case 't': result.push_back('\t'); break;
-            case 'u': AppendUtf8(result, ParseHexDigits(4)); break;
-            case 'U': AppendUtf8(result, ParseHexDigits(8)); break;
+            case 'u': AppendTomlUtf8(result, ParseHexDigits(4)); break;
+            case 'U': AppendTomlUtf8(result, ParseHexDigits(8)); break;
             default: throw TitleProfileError("unsupported TOML string escape");
             }
         }
@@ -403,14 +375,14 @@ TomlValue::Table ParseDataToml(const std::string_view text) {
         if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
         auto code_storage =
             InsideMultilineString(pending) ? std::string(line) : RemoveComment(line);
-        auto code = Trim(code_storage);
+        auto code = core::TrimAsciiWhitespace(code_storage);
         if (!pending.empty()) {
             pending.push_back('\n');
             pending.append(code);
             if (ValueComplete(pending)) {
                 code_storage = std::move(pending);
                 pending.clear();
-                code = Trim(code_storage);
+                code = core::TrimAsciiWhitespace(code_storage);
             } else {
                 if (end == std::string_view::npos) break;
                 position = end + 1;
@@ -422,7 +394,7 @@ TomlValue::Table ParseDataToml(const std::string_view text) {
             const bool table = !array_table && code.starts_with('[') &&
                                code.ends_with(']');
             if (array_table || table) {
-                const auto inner = Trim(code.substr(array_table ? 2 : 1,
+                const auto inner = core::TrimAsciiWhitespace(code.substr(array_table ? 2 : 1,
                                                     code.size() - (array_table ? 4 : 2)));
                 const auto path = SplitPath(inner);
                 auto* parent = Traverse(root, path, path.size() - 1);
@@ -457,7 +429,7 @@ TomlValue::Table ParseDataToml(const std::string_view text) {
                     pending.assign(code);
                 } else {
                     const auto equals = code.find('=');
-                    const auto key = Trim(code.substr(0, equals));
+                    const auto key = core::TrimAsciiWhitespace(code.substr(0, equals));
                     if (!IsKey(key)) throw TitleProfileError("invalid TOML assignment key");
                     auto value = ValueParser(code.substr(equals + 1)).Parse();
                     if (!current->emplace(std::string(key), std::move(value)).second) {

@@ -6,6 +6,8 @@
 
 #include "catalog.h"
 
+#include "ogplay/core/encoding.h"
+
 namespace ogplay::runtime::android_intrinsics::dvm80_android_content_BroadcastReceiver {
 
 Decl Declare_android_content_BroadcastReceiver(const Context& context) {
@@ -45,32 +47,13 @@ std::string DbString(dx::IntrinsicContext& call, const dx::VmObjectRef ref) {
 }
 
 std::string Hex(const std::span<const std::byte> bytes) {
-    constexpr char digits[] = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(bytes.size() * 2U);
-    for (const auto byte : bytes) {
-        const auto value = static_cast<std::uint8_t>(byte);
-        out.push_back(digits[value >> 4U]);
-        out.push_back(digits[value & 15U]);
-    }
-    return out;
+    return core::EncodeHex(bytes, core::HexCase::upper);
 }
 
 std::vector<std::byte> Unhex(const std::string_view text) {
-    if ((text.size() & 1U) != 0U) DbThrow("damaged database hex value");
-    const auto nibble = [](const char ch) -> std::uint8_t {
-        if (ch >= '0' && ch <= '9') return ch - '0';
-        if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
-        if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
-        DbThrow("damaged database hex digit");
-    };
-    std::vector<std::byte> result(text.size() / 2U);
-    for (std::size_t index = 0; index < result.size(); ++index) {
-        result[index] = static_cast<std::byte>(
-            (nibble(text[index * 2U]) << 4U) |
-             nibble(text[index * 2U + 1U]));
-    }
-    return result;
+    auto result = core::DecodeHex(text);
+    if (!result.has_value()) DbThrow("damaged database hex value");
+    return std::move(*result);
 }
 
 std::string HexText(const std::string_view text) {

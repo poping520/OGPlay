@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "../interpreter_internal.h"
+#include "ogplay/core/text.h"
 #include "ogplay/runtime/dexvm/class_name_codec.h"
 
 namespace ogplay::runtime::dexvm::intrinsics::detail {
@@ -323,43 +324,11 @@ inline void GuestLine(IntrinsicContext& context, const std::string& line) {
 }
 
 [[nodiscard]] inline std::vector<std::byte> Utf8Encode(const std::u16string& value) {
-    std::vector<std::byte> out;
-    out.reserve(value.size());
-    const auto push = [&](const std::uint32_t byte) {
-        out.push_back(static_cast<std::byte>(byte & 0xffU));
-    };
-    std::size_t index = 0;
-    while (index < value.size()) {
-        std::uint32_t code_point = value[index];
-        if (code_point >= 0xd800U && code_point <= 0xdbffU &&
-            index + 1 < value.size() && value[index + 1] >= 0xdc00U &&
-            value[index + 1] <= 0xdfffU) {
-            code_point = 0x10000U + ((code_point - 0xd800U) << 10U) +
-                         (value[index + 1] - 0xdc00U);
-            index += 2;
-        } else {
-            if (code_point >= 0xd800U && code_point <= 0xdfffU) {
-                // Unpaired surrogate: REPLACE semantics emit '?'.
-                code_point = '?';
-            }
-            index += 1;
-        }
-        if (code_point < 0x80U) {
-            push(code_point);
-        } else if (code_point < 0x800U) {
-            push(0xc0U | (code_point >> 6U));
-            push(0x80U | (code_point & 0x3fU));
-        } else if (code_point < 0x10000U) {
-            push(0xe0U | (code_point >> 12U));
-            push(0x80U | ((code_point >> 6U) & 0x3fU));
-            push(0x80U | (code_point & 0x3fU));
-        } else {
-            push(0xf0U | (code_point >> 18U));
-            push(0x80U | ((code_point >> 12U) & 0x3fU));
-            push(0x80U | ((code_point >> 6U) & 0x3fU));
-            push(0x80U | (code_point & 0x3fU));
-        }
-    }
+    const auto encoded = *core::Utf16ToUtf8(
+        std::span{value}, core::InvalidUtf16Policy::replace, '?');
+    std::vector<std::byte> out(encoded.size());
+    std::transform(encoded.begin(), encoded.end(), out.begin(),
+                   [](const char byte) { return static_cast<std::byte>(byte); });
     return out;
 }
 

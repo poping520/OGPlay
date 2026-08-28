@@ -10,6 +10,8 @@
 #include <string_view>
 #include <utility>
 
+#include "ogplay/core/byte_order.h"
+
 namespace ogplay::loader {
 namespace {
 
@@ -27,24 +29,14 @@ void Require(const bool condition, const std::string_view message) {
                                    const std::size_t offset) {
     Require(offset <= bytes.size() && bytes.size() - offset >= 2,
             "truncated ELF version half");
-    return static_cast<std::uint16_t>(
-        std::to_integer<std::uint8_t>(bytes[offset]) |
-        (static_cast<std::uint16_t>(
-             std::to_integer<std::uint8_t>(bytes[offset + 1]))
-         << 8U));
+    return core::ReadLittleEndian<std::uint16_t>(bytes, offset);
 }
 
 [[nodiscard]] std::uint32_t Read32(const std::span<const std::byte> bytes,
                                    const std::size_t offset) {
     Require(offset <= bytes.size() && bytes.size() - offset >= 4,
             "truncated ELF version word");
-    std::uint32_t result{};
-    for (std::size_t index = 0; index < 4; ++index) {
-        result |= static_cast<std::uint32_t>(
-                      std::to_integer<std::uint8_t>(bytes[offset + index]))
-                  << static_cast<unsigned>(index * 8U);
-    }
-    return result;
+    return core::ReadLittleEndian<std::uint32_t>(bytes, offset);
 }
 
 [[nodiscard]] std::optional<std::uint32_t> UniqueValue(

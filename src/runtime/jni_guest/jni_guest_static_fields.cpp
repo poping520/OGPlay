@@ -16,6 +16,7 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "jni_guest_memory.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -43,49 +44,6 @@ constexpr std::array kFieldTypes{
         throw std::logic_error("required JNI guest slot is absent");
     }
     return *slot;
-}
-
-[[nodiscard]] std::uint32_t Read32(
-    memory::AddressSpace& address_space, const memory::GuestAddress address,
-    const std::uint64_t thread_id) {
-    std::array<std::byte, 4> bytes{};
-    address_space.Read(address, bytes, thread_id);
-    std::uint32_t value{};
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        value |= std::to_integer<std::uint32_t>(bytes[index])
-                 << static_cast<unsigned>(index * 8U);
-    }
-    return value;
-}
-
-[[nodiscard]] std::uint64_t Read64(
-    memory::AddressSpace& address_space, const memory::GuestAddress address,
-    const std::uint64_t thread_id) {
-    return static_cast<std::uint64_t>(Read32(address_space, address, thread_id)) |
-           (static_cast<std::uint64_t>(
-                Read32(address_space, address.Add(4U), thread_id))
-            << 32U);
-}
-
-[[nodiscard]] std::string ReadCString(
-    memory::AddressSpace& address_space, const memory::GuestAddress address,
-    const std::uint64_t thread_id, const std::string_view field) {
-    constexpr std::size_t kMaximumBytes = 1024;
-    if (address.IsNull()) {
-        throw JniGuestBindingError(
-            "JNI guest " + std::string(field) + " pointer is null");
-    }
-    std::size_t length{};
-    try {
-        length = address_space.CStringLength(address, kMaximumBytes, thread_id);
-    } catch (const std::length_error&) {
-        throw JniGuestBindingError(
-            "JNI guest " + std::string(field) + " is not null-terminated");
-    }
-    std::string result(length, '\0');
-    address_space.Read(address, std::as_writable_bytes(std::span(result)),
-                       thread_id);
-    return result;
 }
 
 [[nodiscard]] bool TypeMatches(const JniTypeKind actual,
@@ -169,12 +127,12 @@ constexpr std::array kFieldTypes{
     case JniTypeKind::integer:
         return std::bit_cast<JniInt>(frame.registers[3]);
     case JniTypeKind::long_integer:
-        return std::bit_cast<JniLong>(Read64(
+        return std::bit_cast<JniLong>(ReadGuest64(
             address_space, frame.stack_pointer, frame.thread_id));
     case JniTypeKind::float_value:
         return std::bit_cast<JniFloat>(frame.registers[3]);
     case JniTypeKind::double_value:
-        return std::bit_cast<JniDouble>(Read64(
+        return std::bit_cast<JniDouble>(ReadGuest64(
             address_space, frame.stack_pointer, frame.thread_id));
     case JniTypeKind::void_value: break;
     }
@@ -288,10 +246,10 @@ void BindJniGuestStaticFieldSlots(JniGuestCallDispatcher& dispatcher,
             if (!fields.EnsureClassInitialized(java_class, frame.thread_id)) {
                 return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
             }
-            const auto name = ReadCString(
+            const auto name = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[2]},
                 frame.thread_id, "field name");
-            const auto descriptor = ReadCString(
+            const auto descriptor = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[3]},
                 frame.thread_id, "field descriptor");
             const auto field = classes.GetFieldId(
@@ -324,10 +282,10 @@ void BindJniGuestInstanceFieldSlots(
             if (!fields.EnsureClassInitialized(java_class, frame.thread_id)) {
                 return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
             }
-            const auto name = ReadCString(
+            const auto name = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[2]},
                 frame.thread_id, "field name");
-            const auto descriptor = ReadCString(
+            const auto descriptor = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[3]},
                 frame.thread_id, "field descriptor");
             const auto field = classes.GetFieldId(

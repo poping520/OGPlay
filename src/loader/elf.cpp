@@ -11,6 +11,8 @@
 #include <string_view>
 #include <vector>
 
+#include "ogplay/core/byte_order.h"
+
 namespace ogplay::loader {
 namespace {
 
@@ -31,30 +33,21 @@ void Require(const bool condition, const std::string_view message) {
 
 void RequireRange(const std::size_t offset, const std::uint64_t size,
                   const std::size_t total, const std::string_view message) {
-    Require(size <= total && offset <= total - static_cast<std::size_t>(size),
+    Require(size <= total &&
+                core::RangeFits(total, offset, static_cast<std::size_t>(size)),
             message);
 }
 
 [[nodiscard]] std::uint16_t Read16(const std::span<const std::byte> bytes,
                                    const std::size_t offset) {
     RequireRange(offset, 2, bytes.size(), "truncated ELF field");
-    const auto low = static_cast<std::uint32_t>(
-        std::to_integer<std::uint8_t>(bytes[offset]));
-    const auto high = static_cast<std::uint32_t>(
-        std::to_integer<std::uint8_t>(bytes[offset + 1]));
-    return static_cast<std::uint16_t>(low | (high << 8U));
+    return core::ReadLittleEndian<std::uint16_t>(bytes, offset);
 }
 
 [[nodiscard]] std::uint32_t Read32(const std::span<const std::byte> bytes,
                                    const std::size_t offset) {
     RequireRange(offset, 4, bytes.size(), "truncated ELF field");
-    std::uint32_t result{};
-    for (std::size_t index = 0; index < 4; ++index) {
-        result |= static_cast<std::uint32_t>(
-                      std::to_integer<std::uint8_t>(bytes[offset + index]))
-                  << static_cast<unsigned>(index * 8U);
-    }
-    return result;
+    return core::ReadLittleEndian<std::uint32_t>(bytes, offset);
 }
 
 [[nodiscard]] Elf32ProgramHeader ParseProgramHeader(

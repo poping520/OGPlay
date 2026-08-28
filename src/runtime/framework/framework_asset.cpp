@@ -10,33 +10,14 @@
 #include <utility>
 #include <vector>
 
+#include "ogplay/core/text.h"
+
 namespace ogplay::runtime {
 namespace {
 
 [[noreturn]] void Fail(const FrameworkAssetErrorReason reason,
                        std::string message) {
     throw FrameworkAssetError(reason, std::move(message));
-}
-
-void AppendUtf8(std::string& output, const std::uint32_t code_point) {
-    if (code_point <= 0x7FU) {
-        output.push_back(static_cast<char>(code_point));
-    } else if (code_point <= 0x7FFU) {
-        output.push_back(static_cast<char>(0xC0U | (code_point >> 6U)));
-        output.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
-    } else if (code_point <= 0xFFFFU) {
-        output.push_back(static_cast<char>(0xE0U | (code_point >> 12U)));
-        output.push_back(
-            static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU)));
-        output.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
-    } else {
-        output.push_back(static_cast<char>(0xF0U | (code_point >> 18U)));
-        output.push_back(
-            static_cast<char>(0x80U | ((code_point >> 12U) & 0x3FU)));
-        output.push_back(
-            static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU)));
-        output.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
-    }
 }
 
 [[nodiscard]] std::string AssetPath(const std::vector<JniChar>& value) {
@@ -58,27 +39,23 @@ void AppendUtf8(std::string& output, const std::uint32_t code_point) {
         Fail(FrameworkAssetErrorReason::invalid_asset_path,
              "asset path cannot be empty");
     }
-    std::string relative;
+    std::vector<std::uint16_t> units;
+    units.reserve(end - begin);
     for (std::size_t index = begin; index < end; ++index) {
-        std::uint32_t code_point = value[index];
-        if (code_point == 0 || code_point == '\\') {
+        const auto unit = value[index];
+        if (unit == 0 || unit == '\\') {
             Fail(FrameworkAssetErrorReason::invalid_asset_path,
                  "asset path contains an invalid character");
         }
-        if (code_point >= 0xD800U && code_point <= 0xDBFFU) {
-            if (++index >= value.size() || value[index] < 0xDC00U ||
-                value[index] > 0xDFFFU) {
-                Fail(FrameworkAssetErrorReason::invalid_asset_path,
-                     "asset path contains an invalid UTF-16 surrogate");
-            }
-            code_point = 0x10000U + ((code_point - 0xD800U) << 10U) +
-                         (value[index] - 0xDC00U);
-        } else if (code_point >= 0xDC00U && code_point <= 0xDFFFU) {
-            Fail(FrameworkAssetErrorReason::invalid_asset_path,
-                 "asset path contains an invalid UTF-16 surrogate");
-        }
-        AppendUtf8(relative, code_point);
+        units.push_back(unit);
     }
+    auto converted = core::Utf16ToUtf8(
+        std::span{units}, core::InvalidUtf16Policy::reject);
+    if (!converted.has_value()) {
+        Fail(FrameworkAssetErrorReason::invalid_asset_path,
+             "asset path contains an invalid UTF-16 surrogate");
+    }
+    auto relative = std::move(*converted);
     if (relative.front() == '/' || relative.front() == '\\') {
         Fail(FrameworkAssetErrorReason::invalid_asset_path,
              "asset path must be relative");

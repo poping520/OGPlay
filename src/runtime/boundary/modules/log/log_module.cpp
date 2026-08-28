@@ -20,6 +20,8 @@
 #include <vector>
 
 #include "ogplay/core/logger.h"
+#include "ogplay/core/byte_order.h"
+#include "ogplay/core/encoding.h"
 #include "ogplay/memory/address_space.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 
@@ -106,28 +108,25 @@ std::vector<std::byte> ReadBytes(memory::AddressSpace& memory,
 }
 
 std::string HexPayload(const std::span<const std::byte> bytes) {
-    std::ostringstream stream;
-    stream << std::hex << std::setfill('0');
     const auto count = std::min<std::size_t>(bytes.size(), 64U);
+    std::string result;
+    result.reserve(count * 3U + (bytes.size() > count ? 4U : 0U));
     for (std::size_t index = 0; index < count; ++index) {
-        if (index != 0U) stream << ' ';
-        stream << std::setw(2) << std::to_integer<unsigned int>(bytes[index]);
+        if (index != 0U) result.push_back(' ');
+        const auto value = std::to_integer<std::uint8_t>(bytes[index]);
+        result.push_back(core::HexDigit(value >> 4U, core::HexCase::lower));
+        result.push_back(core::HexDigit(value, core::HexCase::lower));
     }
-    if (bytes.size() > count) stream << " ...";
-    return stream.str();
+    if (bytes.size() > count) result += " ...";
+    return result;
 }
 
 std::uint32_t ReadLittle32(const std::span<const std::byte> bytes,
                            const std::size_t offset) {
-    if (offset + 4U > bytes.size()) {
+    if (!core::RangeFits(bytes, offset, 4U)) {
         throw std::invalid_argument("truncated guest binary log item");
     }
-    std::uint32_t result{};
-    for (std::size_t index = 0; index < 4U; ++index) {
-        result |= static_cast<std::uint32_t>(
-            std::to_integer<std::uint8_t>(bytes[offset + index])) << (index * 8U);
-    }
-    return result;
+    return core::ReadLittleEndian<std::uint32_t>(bytes, offset);
 }
 
 std::string ParseBinaryEvent(const std::span<const std::byte> bytes,

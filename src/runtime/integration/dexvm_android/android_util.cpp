@@ -12,6 +12,8 @@
 // ---- migrated from android_util_Log.cpp ----
 #include "catalog.h"
 
+#include "ogplay/core/encoding.h"
+
 namespace ogplay::runtime::android_intrinsics::dvm80_android_util_Log {
 
 Decl Declare_android_util_Log(const Context& context) {
@@ -107,82 +109,27 @@ constexpr std::int32_t kBase64UrlSafe = 8;
 
 [[nodiscard]] std::string EncodeBase64(const std::vector<std::byte>& input,
                                        const std::int32_t flags) {
-    constexpr std::string_view standard =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    constexpr std::string_view url =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    const auto alphabet = (flags & kBase64UrlSafe) != 0 ? url : standard;
-    std::string raw;
-    raw.reserve(((input.size() + 2U) / 3U) * 4U);
-    for (std::size_t offset = 0; offset < input.size(); offset += 3U) {
-        const auto remaining = input.size() - offset;
-        const auto a = std::to_integer<std::uint32_t>(input[offset]);
-        const auto b = remaining > 1U
-                           ? std::to_integer<std::uint32_t>(input[offset + 1U])
-                           : 0U;
-        const auto c = remaining > 2U
-                           ? std::to_integer<std::uint32_t>(input[offset + 2U])
-                           : 0U;
-        const auto word = (a << 16U) | (b << 8U) | c;
-        raw.push_back(alphabet[(word >> 18U) & 63U]);
-        raw.push_back(alphabet[(word >> 12U) & 63U]);
-        if (remaining > 1U) raw.push_back(alphabet[(word >> 6U) & 63U]);
-        else if ((flags & kBase64NoPadding) == 0) raw.push_back('=');
-        if (remaining > 2U) raw.push_back(alphabet[word & 63U]);
-        else if ((flags & kBase64NoPadding) == 0) raw.push_back('=');
-    }
-    if ((flags & kBase64NoWrap) != 0 || raw.empty()) return raw;
-    const auto newline = (flags & kBase64CrLf) != 0 ? "\r\n" : "\n";
-    std::string wrapped;
-    for (std::size_t offset = 0; offset < raw.size(); offset += 76U) {
-        const auto count = std::min<std::size_t>(76U, raw.size() - offset);
-        wrapped.append(raw, offset, count);
-        wrapped.append(newline);
-    }
-    return wrapped;
+    return core::EncodeBase64(
+        input,
+        {.alphabet = (flags & kBase64UrlSafe) != 0
+                         ? core::Base64Alphabet::url_safe
+                         : core::Base64Alphabet::standard,
+         .padding = (flags & kBase64NoPadding) == 0,
+         .line_length = (flags & kBase64NoWrap) != 0 ? 0U : 76U,
+         .newline = (flags & kBase64CrLf) != 0 ? "\r\n" : "\n"});
 }
 
 [[nodiscard]] std::vector<std::byte> DecodeBase64(const std::string_view input,
                                                    const std::int32_t flags) {
-    std::array<std::int16_t, 256> decode{};
-    decode.fill(-1);
-    const std::string_view alphabet = (flags & kBase64UrlSafe) != 0
-                                          ? "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-                                          : "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    for (std::size_t index = 0; index < alphabet.size(); ++index) {
-        decode[static_cast<unsigned char>(alphabet[index])] =
-            static_cast<std::int16_t>(index);
-    }
-    std::vector<std::byte> output;
-    std::uint32_t accumulator{};
-    std::int32_t bits{};
-    bool padded{};
-    for (const char character : input) {
-        const auto byte = static_cast<unsigned char>(character);
-        if (character == '=') {
-            padded = true;
-            continue;
-        }
-        if (character == ' ' || character == '\t' || character == '\r' ||
-            character == '\n') continue;
-        if (padded || decode[byte] < 0) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "bad base-64"};
-        }
-        accumulator = (accumulator << 6U) |
-                      static_cast<std::uint32_t>(decode[byte]);
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            output.push_back(static_cast<std::byte>(
-                (accumulator >> static_cast<std::uint32_t>(bits)) & 0xffU));
-        }
-    }
-    if (bits == 6 || (bits != 0 && (accumulator & ((1U << bits) - 1U)) != 0U)) {
+    auto output = core::DecodeBase64(
+        input, {.alphabet = (flags & kBase64UrlSafe) != 0
+                                ? core::Base64Alphabet::url_safe
+                                : core::Base64Alphabet::standard});
+    if (!output.has_value()) {
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                              "bad base-64 length"};
+                              "bad base-64"};
     }
-    return output;
+    return std::move(*output);
 }
 
 template <typename Entry>

@@ -11,60 +11,12 @@
 #include <system_error>
 #include <utility>
 
+#include "ogplay/core/text.h"
+
 namespace ogplay::frontend {
 namespace {
 
 constexpr std::uint32_t kSchema = 1;
-
-[[nodiscard]] std::string Trim(const std::string_view text) {
-    std::size_t begin = 0;
-    while (begin < text.size() &&
-           std::isspace(static_cast<unsigned char>(text[begin])) != 0) {
-        ++begin;
-    }
-    std::size_t end = text.size();
-    while (end > begin &&
-           std::isspace(static_cast<unsigned char>(text[end - 1])) != 0) {
-        --end;
-    }
-    return std::string(text.substr(begin, end - begin));
-}
-
-[[nodiscard]] bool ValidUtf8(const std::string_view text) {
-    std::size_t index = 0;
-    while (index < text.size()) {
-        const auto first = static_cast<unsigned char>(text[index++]);
-        if (first <= 0x7FU) continue;
-        std::uint32_t codepoint = 0;
-        std::size_t remaining = 0;
-        if ((first & 0xE0U) == 0xC0U) {
-            codepoint = first & 0x1FU;
-            remaining = 1;
-        } else if ((first & 0xF0U) == 0xE0U) {
-            codepoint = first & 0x0FU;
-            remaining = 2;
-        } else if ((first & 0xF8U) == 0xF0U) {
-            codepoint = first & 0x07U;
-            remaining = 3;
-        } else {
-            return false;
-        }
-        if (index + remaining > text.size()) return false;
-        for (std::size_t offset = 0; offset < remaining; ++offset) {
-            const auto continuation = static_cast<unsigned char>(text[index++]);
-            if ((continuation & 0xC0U) != 0x80U) return false;
-            codepoint = (codepoint << 6U) | (continuation & 0x3FU);
-        }
-        const auto minimum = remaining == 1 ? 0x80U
-                             : remaining == 2 ? 0x800U
-                                              : 0x10000U;
-        if (codepoint < minimum || codepoint > 0x10FFFFU ||
-            (codepoint >= 0xD800U && codepoint <= 0xDFFFU)) {
-            return false;
-        }
-    }
-    return true;
-}
 
 [[nodiscard]] bool ValidPackage(const std::string_view package) {
     bool component_start = true;
@@ -148,27 +100,33 @@ constexpr std::uint32_t kSchema = 1;
         default: throw std::runtime_error("unsupported TOML escape");
         }
     }
-    if (!ValidUtf8(result)) throw std::runtime_error("TOML string is not valid UTF-8");
+    if (!core::IsValidUtf8(result)) {
+        throw std::runtime_error("TOML string is not valid UTF-8");
+    }
     return result;
 }
 
 using FlatToml = std::map<std::string, std::string, std::less<>>;
 
 [[nodiscard]] FlatToml ParseFlatToml(const std::string_view text) {
-    if (!ValidUtf8(text)) throw std::runtime_error("TOML document is not valid UTF-8");
+    if (!core::IsValidUtf8(text)) {
+        throw std::runtime_error("TOML document is not valid UTF-8");
+    }
     FlatToml values;
     std::size_t begin = 0;
     while (begin <= text.size()) {
         const auto end = text.find('\n', begin);
-        auto line = Trim(text.substr(
-            begin, end == std::string_view::npos ? text.size() - begin : end - begin));
+        auto line = std::string(core::TrimAsciiWhitespace(text.substr(
+            begin, end == std::string_view::npos ? text.size() - begin : end - begin)));
         if (!line.empty()) {
             const auto equals = line.find('=');
             if (equals == std::string::npos) {
                 throw std::runtime_error("TOML line must contain one assignment");
             }
-            auto key = Trim(std::string_view(line).substr(0, equals));
-            auto value = Trim(std::string_view(line).substr(equals + 1));
+            auto key = std::string(core::TrimAsciiWhitespace(
+                std::string_view(line).substr(0, equals)));
+            auto value = std::string(core::TrimAsciiWhitespace(
+                std::string_view(line).substr(equals + 1)));
             if (key.empty() || value.empty() || !values.emplace(key, value).second) {
                 throw std::runtime_error("TOML contains an empty or duplicate key");
             }
@@ -249,14 +207,14 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
         throw GuiModelError(GuiModelErrorCode::invalid_argument,
                             "library package name is invalid");
     }
-    if (metadata.display_name.empty() || !ValidUtf8(metadata.display_name) ||
-        !ValidUtf8(metadata.version_name) || metadata.imported_at.empty() ||
-        !ValidUtf8(metadata.imported_at)) {
+    if (metadata.display_name.empty() || !core::IsValidUtf8(metadata.display_name) ||
+        !core::IsValidUtf8(metadata.version_name) || metadata.imported_at.empty() ||
+        !core::IsValidUtf8(metadata.imported_at)) {
         throw GuiModelError(GuiModelErrorCode::invalid_argument,
                             "library metadata is incomplete or invalid");
     }
     if (metadata.profile_id.has_value() &&
-        (metadata.profile_id->empty() || !ValidUtf8(*metadata.profile_id))) {
+        (metadata.profile_id->empty() || !core::IsValidUtf8(*metadata.profile_id))) {
         throw GuiModelError(GuiModelErrorCode::invalid_argument,
                             "library profile id is invalid");
     }

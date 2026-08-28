@@ -10,6 +10,9 @@
 #include <string_view>
 #include <vector>
 
+#include "ogplay/core/byte_order.h"
+#include "ogplay/core/text.h"
+
 namespace ogplay::loader {
 namespace {
 
@@ -36,28 +39,19 @@ constexpr std::string_view kLauncherCategory =
 
 void RequireRange(const std::span<const std::byte> bytes, const std::size_t offset,
                   const std::size_t size, const std::string_view what) {
-    if (offset > bytes.size() || size > bytes.size() - offset) {
+    if (!core::RangeFits(bytes, offset, size)) {
         throw std::runtime_error(std::string(what) + " is outside binary AndroidManifest");
     }
 }
 
 std::uint16_t Read16(const std::span<const std::byte> bytes, const std::size_t offset) {
     RequireRange(bytes, offset, 2, "binary XML field");
-    return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
-           static_cast<std::uint16_t>(
-               static_cast<std::uint16_t>(
-                   std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8U);
+    return core::ReadLittleEndian<std::uint16_t>(bytes, offset);
 }
 
 std::uint32_t Read32(const std::span<const std::byte> bytes, const std::size_t offset) {
     RequireRange(bytes, offset, 4, "binary XML field");
-    std::uint32_t value{};
-    for (std::size_t index = 0; index < 4; ++index) {
-        value |= static_cast<std::uint32_t>(
-                     std::to_integer<std::uint8_t>(bytes[offset + index]))
-                 << static_cast<unsigned>(index * 8U);
-    }
-    return value;
+    return core::ReadLittleEndian<std::uint32_t>(bytes, offset);
 }
 
 struct Chunk final {
@@ -104,65 +98,18 @@ std::size_t ReadLength16(const std::span<const std::byte> bytes, std::size_t& cu
     return (static_cast<std::size_t>(first & 0x7fffU) << 16U) | second;
 }
 
-void AppendUtf8(std::string& output, const std::uint32_t code_point) {
-    if (code_point <= 0x7fU) {
-        output.push_back(static_cast<char>(code_point));
-    } else if (code_point <= 0x7ffU) {
-        output.push_back(static_cast<char>(0xc0U | (code_point >> 6U)));
-        output.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
-    } else if (code_point <= 0xffffU) {
-        output.push_back(static_cast<char>(0xe0U | (code_point >> 12U)));
-        output.push_back(static_cast<char>(0x80U | ((code_point >> 6U) & 0x3fU)));
-        output.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
-    } else {
-        output.push_back(static_cast<char>(0xf0U | (code_point >> 18U)));
-        output.push_back(static_cast<char>(0x80U | ((code_point >> 12U) & 0x3fU)));
-        output.push_back(static_cast<char>(0x80U | ((code_point >> 6U) & 0x3fU)));
-        output.push_back(static_cast<char>(0x80U | (code_point & 0x3fU)));
-    }
-}
-
 std::size_t ValidateUtf8(const std::string_view text) {
-    std::size_t utf16_length{};
-    for (std::size_t index = 0; index < text.size();) {
-        const auto first = static_cast<std::uint8_t>(text[index]);
-        std::uint32_t code_point{};
-        std::size_t count{};
-        if (first <= 0x7fU) {
-            code_point = first;
-            count = 1;
-        } else if (first >= 0xc2U && first <= 0xdfU) {
-            code_point = first & 0x1fU;
-            count = 2;
-        } else if (first >= 0xe0U && first <= 0xefU) {
-            code_point = first & 0x0fU;
-            count = 3;
-        } else if (first >= 0xf0U && first <= 0xf4U) {
-            code_point = first & 0x07U;
-            count = 4;
-        } else {
-            throw std::runtime_error("binary XML string pool contains invalid UTF-8");
-        }
-        if (count > text.size() - index) {
-            throw std::runtime_error("binary XML string pool contains truncated UTF-8");
-        }
-        for (std::size_t continuation = 1; continuation < count; ++continuation) {
-            const auto byte = static_cast<std::uint8_t>(text[index + continuation]);
-            if ((byte & 0xc0U) != 0x80U) {
-                throw std::runtime_error("binary XML string pool contains invalid UTF-8");
-            }
-            code_point = (code_point << 6U) | (byte & 0x3fU);
-        }
-        if ((count == 3 && code_point < 0x800U) ||
-            (count == 4 && code_point < 0x10000U) || code_point > 0x10ffffU ||
-            (code_point >= 0xd800U && code_point <= 0xdfffU)) {
-            throw std::runtime_error("binary XML string pool contains non-canonical UTF-8");
-        }
-        ++utf16_length;
-        if (code_point > 0xffffU) ++utf16_length;
-        index += count;
+    const auto validation = core::ValidateUtf8(text);
+    if (validation.error == core::Utf8Error::truncated) {
+        throw std::runtime_error("binary XML string pool contains truncated UTF-8");
     }
-    return utf16_length;
+    if (validation.error == core::Utf8Error::non_canonical) {
+        throw std::runtime_error("binary XML string pool contains non-canonical UTF-8");
+    }
+    if (!validation.IsValid()) {
+        throw std::runtime_error("binary XML string pool contains invalid UTF-8");
+    }
+    return validation.utf16_code_units;
 }
 
 std::string ReadUtf8String(const std::span<const std::byte> bytes, std::size_t cursor,
@@ -194,29 +141,22 @@ std::string ReadUtf16String(const std::span<const std::byte> bytes, std::size_t 
     if (length > (end - cursor) / 2U || length == (end - cursor) / 2U) {
         throw std::runtime_error("binary XML UTF-16 string is truncated");
     }
-    std::string result;
+    std::vector<std::uint16_t> units;
+    units.reserve(length);
     for (std::size_t index = 0; index < length; ++index) {
         const auto unit = Read16(bytes, cursor + index * 2U);
-        std::uint32_t code_point = unit;
-        if (unit >= 0xd800U && unit <= 0xdbffU) {
-            if (++index >= length) {
-                throw std::runtime_error("binary XML UTF-16 string has a lone surrogate");
-            }
-            const auto low = Read16(bytes, cursor + index * 2U);
-            if (low < 0xdc00U || low > 0xdfffU) {
-                throw std::runtime_error("binary XML UTF-16 string has a lone surrogate");
-            }
-            code_point = 0x10000U + ((unit - 0xd800U) << 10U) + (low - 0xdc00U);
-        } else if (unit >= 0xdc00U && unit <= 0xdfffU) {
-            throw std::runtime_error("binary XML UTF-16 string has a lone surrogate");
-        }
-        if (code_point == 0) throw std::runtime_error("binary XML UTF-16 string contains NUL");
-        AppendUtf8(result, code_point);
+        if (unit == 0) throw std::runtime_error("binary XML UTF-16 string contains NUL");
+        units.push_back(unit);
     }
     if (Read16(bytes, cursor + length * 2U) != 0) {
         throw std::runtime_error("binary XML UTF-16 string is not terminated");
     }
-    return result;
+    auto result = core::Utf16ToUtf8(
+        std::span{units}, core::InvalidUtf16Policy::reject);
+    if (!result.has_value()) {
+        throw std::runtime_error("binary XML UTF-16 string has a lone surrogate");
+    }
+    return std::move(*result);
 }
 
 std::vector<std::string> ReadStringPool(const std::span<const std::byte> bytes,

@@ -1,9 +1,13 @@
 # 当前状态
 
-更新：DVM-92 关闭卡死修复完成；Diagnostics 两个 WU 已闭合
+更新：UTIL-1 基础编码与字节工具收敛完成；DVM-92 与 Diagnostics 已闭合
 
 ## 当前阶段
 
+- **UTIL-1 已完成代码整合**：canonical UTF-8、策略化 UTF-16→UTF-8、Base64/hex、
+  little-endian/range/alignment 与 JNI guest-memory 读取已有唯一共享实现；loader、Android
+  flags 与 TOML 域错误边界保留。`windows-msvc` 的 `ogplay`/`ogplay_tests` 编译通过，
+  按用户要求未运行测试，见 [UTIL-1](../tasks/maintenance/UTIL-1.md)。
 - **DVM-92 已完成并通过 title 验收**：退出首个 guest 回调前单向退役 Java EGL、
   native/managed GLES 与 EGL swap；process `BeginTeardown` 发布独立取消并中断
   blocking wait，join 前再次中断覆盖回调中新建 futex。renewable JNI native frame
@@ -32,6 +36,7 @@
 
 ## 最近验证
 
+- UTIL-1 Windows Debug `ogplay` 与 `ogplay_tests` 受影响目标编译通过；未运行测试。
 - Diagnostics Windows Release `ogplay`/`ogplay_tests` 受影响目标构建通过；ring/drop、busy
   partial、DVM try-safe-point、monitor cycle、OS event/teardown timeout、ACL、目录配额和
   in-flight stop→join 核心新增用例 9/9、97 assertions；连同 futex/syscall/MCP、A32

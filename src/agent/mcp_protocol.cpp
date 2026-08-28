@@ -3,6 +3,7 @@
 #include "ogplay/agent/coordinate_overlay.h"
 #include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/core/json.h"
+#include "ogplay/core/encoding.h"
 
 #include <limits>
 #include <optional>
@@ -106,26 +107,6 @@ EncodedFrame EncodeFrame(const FrameSnapshot& frame, const CaptureFormat format)
         return {std::move(output.bytes), "png", "image/png"};
     }
     return {std::move(output.bytes), "jpeg", "image/jpeg"};
-}
-
-std::string Base64(const std::span<const std::uint8_t> input) {
-    constexpr std::string_view alphabet =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string output;
-    output.reserve((input.size() + 2U) / 3U * 4U);
-    for (std::size_t offset = 0; offset < input.size(); offset += 3U) {
-        const auto remaining = input.size() - offset;
-        const std::uint32_t value = static_cast<std::uint32_t>(input[offset]) << 16U |
-                                    (remaining > 1U
-                                         ? static_cast<std::uint32_t>(input[offset + 1U]) << 8U
-                                         : 0U) |
-                                    (remaining > 2U ? input[offset + 2U] : 0U);
-        output += alphabet[(value >> 18U) & 0x3fU];
-        output += alphabet[(value >> 12U) & 0x3fU];
-        output += remaining > 1U ? alphabet[(value >> 6U) & 0x3fU] : '=';
-        output += remaining > 2U ? alphabet[value & 0x3fU] : '=';
-    }
-    return output;
 }
 
 core::JsonWriter::Value ToolsList(core::JsonWriter& writer) {
@@ -357,7 +338,8 @@ core::JsonWriter::Value CaptureResult(core::JsonWriter& writer, FrameSnapshotSto
     const auto content = writer.Array();
     const auto image = writer.Object();
     writer.AddString(image, "type", "image");
-    writer.AddString(image, "data", Base64(encoded.bytes));
+    writer.AddString(image, "data", core::EncodeBase64(
+        std::as_bytes(std::span{encoded.bytes})));
     writer.AddString(image, "mimeType", encoded.mime_type);
     writer.Append(content, image);
     const auto text = writer.Object();

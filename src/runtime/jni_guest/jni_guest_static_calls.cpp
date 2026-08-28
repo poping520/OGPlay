@@ -18,6 +18,7 @@
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "jni_guest_memory.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/jni/jni_object_array.h"
 
@@ -182,72 +183,6 @@ constexpr std::array kStaticCallTypes{
     return *slot;
 }
 
-[[nodiscard]] std::uint8_t Read8(memory::AddressSpace& address_space,
-                                 memory::GuestAddress address,
-                                 std::uint64_t thread_id);
-
-[[nodiscard]] std::string ReadCString(
-    memory::AddressSpace& address_space,
-    const memory::GuestAddress address, const std::uint64_t thread_id,
-    const std::string_view field) {
-    constexpr std::size_t kMaximumBytes = 1024;
-    if (address.IsNull()) {
-        throw JniGuestBindingError(
-            "JNI guest " + std::string(field) + " pointer is null");
-    }
-    std::size_t length{};
-    try {
-        length = address_space.CStringLength(address, kMaximumBytes, thread_id);
-    } catch (const std::length_error&) {
-        throw JniGuestBindingError(
-            "JNI guest " + std::string(field) + " is not null-terminated");
-    }
-    std::string result(length, '\0');
-    address_space.Read(address, std::as_writable_bytes(std::span(result)),
-                       thread_id);
-    return result;
-}
-
-[[nodiscard]] std::uint8_t Read8(memory::AddressSpace& address_space,
-                                 const memory::GuestAddress address,
-                                 const std::uint64_t thread_id) {
-    std::byte byte{};
-    address_space.Read(address, std::span{&byte, 1}, thread_id);
-    return std::to_integer<std::uint8_t>(byte);
-}
-
-[[nodiscard]] std::uint16_t Read16(memory::AddressSpace& address_space,
-                                   const memory::GuestAddress address,
-                                   const std::uint64_t thread_id) {
-    std::array<std::byte, 2> bytes{};
-    address_space.Read(address, bytes, thread_id);
-    return std::to_integer<std::uint16_t>(bytes[0]) |
-           static_cast<std::uint16_t>(
-               std::to_integer<std::uint16_t>(bytes[1]) << 8U);
-}
-
-[[nodiscard]] std::uint32_t Read32(memory::AddressSpace& address_space,
-                                   const memory::GuestAddress address,
-                                   const std::uint64_t thread_id) {
-    std::array<std::byte, 4> bytes{};
-    address_space.Read(address, bytes, thread_id);
-    std::uint32_t value{};
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        value |= std::to_integer<std::uint32_t>(bytes[index])
-                 << static_cast<unsigned>(index * 8U);
-    }
-    return value;
-}
-
-[[nodiscard]] std::uint64_t Read64(memory::AddressSpace& address_space,
-                                   const memory::GuestAddress address,
-                                   const std::uint64_t thread_id) {
-    return static_cast<std::uint64_t>(Read32(address_space, address, thread_id)) |
-           (static_cast<std::uint64_t>(
-                Read32(address_space, address.Add(4U), thread_id))
-            << 32U);
-}
-
 [[nodiscard]] memory::GuestAddress Align8(memory::GuestAddress address) {
     return address.AlignUp(8U);
 }
@@ -278,7 +213,7 @@ constexpr std::array kStaticCallTypes{
         if (register_index < frame.registers.size()) {
             return frame.registers[register_index++];
         }
-        const auto result = Read32(address_space,
+        const auto result = ReadGuest32(address_space,
                                    frame.stack_pointer.Add(stack_offset),
                                    frame.thread_id);
         stack_offset += sizeof(std::uint32_t);
@@ -335,20 +270,20 @@ constexpr std::array kStaticCallTypes{
         case JniTypeKind::long_integer:
             cursor = Align8(cursor);
             arguments.emplace_back(std::bit_cast<JniLong>(
-                Read64(address_space, cursor, frame.thread_id)));
+                ReadGuest64(address_space, cursor, frame.thread_id)));
             cursor = cursor.Add(8U);
             break;
         case JniTypeKind::float_value:
             cursor = Align8(cursor);
             arguments.emplace_back(static_cast<JniFloat>(
                 std::bit_cast<JniDouble>(
-                    Read64(address_space, cursor, frame.thread_id))));
+                    ReadGuest64(address_space, cursor, frame.thread_id))));
             cursor = cursor.Add(8U);
             break;
         case JniTypeKind::double_value:
             cursor = Align8(cursor);
             arguments.emplace_back(std::bit_cast<JniDouble>(
-                Read64(address_space, cursor, frame.thread_id)));
+                ReadGuest64(address_space, cursor, frame.thread_id)));
             cursor = cursor.Add(8U);
             break;
         case JniTypeKind::void_value:
@@ -356,7 +291,7 @@ constexpr std::array kStaticCallTypes{
                 "JNI va_list parameter cannot have void type");
         default:
             arguments.emplace_back(WordValue(
-                parameter, Read32(address_space, cursor, frame.thread_id)));
+                parameter, ReadGuest32(address_space, cursor, frame.thread_id)));
             cursor = cursor.Add(4U);
             break;
         }
@@ -369,24 +304,24 @@ constexpr std::array kStaticCallTypes{
     const std::uint64_t thread_id, const JniTypeDescriptor& parameter) {
     switch (parameter.kind) {
     case JniTypeKind::boolean:
-        return static_cast<JniBoolean>(Read8(address_space, address, thread_id));
+        return static_cast<JniBoolean>(ReadGuest8(address_space, address, thread_id));
     case JniTypeKind::byte:
-        return std::bit_cast<JniByte>(Read8(address_space, address, thread_id));
+        return std::bit_cast<JniByte>(ReadGuest8(address_space, address, thread_id));
     case JniTypeKind::character:
-        return static_cast<JniChar>(Read16(address_space, address, thread_id));
+        return static_cast<JniChar>(ReadGuest16(address_space, address, thread_id));
     case JniTypeKind::short_integer:
-        return std::bit_cast<JniShort>(Read16(address_space, address, thread_id));
+        return std::bit_cast<JniShort>(ReadGuest16(address_space, address, thread_id));
     case JniTypeKind::integer:
-        return std::bit_cast<JniInt>(Read32(address_space, address, thread_id));
+        return std::bit_cast<JniInt>(ReadGuest32(address_space, address, thread_id));
     case JniTypeKind::long_integer:
-        return std::bit_cast<JniLong>(Read64(address_space, address, thread_id));
+        return std::bit_cast<JniLong>(ReadGuest64(address_space, address, thread_id));
     case JniTypeKind::float_value:
-        return std::bit_cast<JniFloat>(Read32(address_space, address, thread_id));
+        return std::bit_cast<JniFloat>(ReadGuest32(address_space, address, thread_id));
     case JniTypeKind::double_value:
-        return std::bit_cast<JniDouble>(Read64(address_space, address, thread_id));
+        return std::bit_cast<JniDouble>(ReadGuest64(address_space, address, thread_id));
     case JniTypeKind::object:
     case JniTypeKind::array:
-        return JniReference{Read32(address_space, address, thread_id)};
+        return JniReference{ReadGuest32(address_space, address, thread_id)};
     case JniTypeKind::void_value:
         throw JniGuestBindingError(
             "JNI value-array parameter cannot have void type");
@@ -507,7 +442,7 @@ void BindOne(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
     const bool nonvirtual = false) {
     const auto stacked_pointer = [&]() {
         return memory::GuestAddress{
-            Read32(address_space, frame.stack_pointer, frame.thread_id)};
+            ReadGuest32(address_space, frame.stack_pointer, frame.thread_id)};
     };
     switch (source) {
     case JniArgumentSource::variadic:
@@ -686,7 +621,7 @@ void BindJniGuestClassAndInstanceSlots(
         EnvironmentSlot("FindClass"),
         [&environment, &classes,
          &address_space](const JniGuestCallFrame& frame) {
-            const auto name = ReadCString(
+            const auto name = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[1]},
                 frame.thread_id, "class name");
             const auto java_class = classes.FindClass(name);
@@ -709,10 +644,10 @@ void BindJniGuestClassAndInstanceSlots(
                 throw JniGuestBindingError(
                     "GetMethodID requires a valid class reference");
             }
-            const auto name = ReadCString(
+            const auto name = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[2]},
                 frame.thread_id, "method name");
-            const auto descriptor = ReadCString(
+            const auto descriptor = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[3]},
                 frame.thread_id, "method descriptor");
             const auto method = classes.GetMethodId(

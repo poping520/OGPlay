@@ -58,10 +58,12 @@ endfunction()
 add_library(ogplay_core
     third_party/yyjson/src/yyjson.c
     src/core/capability_ledger.cpp
+    src/core/encoding.cpp
     src/core/frame_compare.cpp
     src/core/json.cpp
     src/core/logger.cpp
     src/core/software_surface.cpp
+    src/core/text.cpp
 )
 add_library(OGPlay::Core ALIAS ogplay_core)
 target_include_directories(ogplay_core
@@ -230,7 +232,7 @@ add_library(ogplay_loader
     src/loader/tls.cpp
 )
 add_library(OGPlay::Loader ALIAS ogplay_loader)
-target_link_libraries(ogplay_loader PUBLIC OGPlay::Memory)
+target_link_libraries(ogplay_loader PUBLIC OGPlay::Memory PRIVATE OGPlay::Core)
 target_include_directories(ogplay_loader PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -697,6 +699,7 @@ if(OGPLAY_BUILD_TESTS)
     set(OGPLAY_TEST_SOURCES
         tests/test_main.cpp
         tests/core/capability_ledger_tests.cpp
+        tests/core/encoding_tests.cpp
         tests/core/json_tests.cpp
         tests/core/logger_tests.cpp
         tests/agent/control_service_tests.cpp

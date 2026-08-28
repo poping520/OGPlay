@@ -15,6 +15,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 
 ## 不变量
 
+- guest-memory 标量和受限 C 字符串读取统一经过私有 `jni_guest_memory.h`；整数按 A32
+  little-endian 解码，C 字符串继续保持 1024 字节上限与原有 binding error。
 - `GuestJniAbi` 把完整 233 槽 JNIEnv 与 8 槽 JavaVM 物化为 32 位 guest 函数表、对象和
   Thumb SVC trap;reserved 槽保持 null,其余槽均有可识别地址。表与对象只读、trap 页
   RX,映射冲突完整回滚,析构后不得残留 guest 映射。

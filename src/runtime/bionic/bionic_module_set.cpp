@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "ogplay/loader/elf.h"
+#include "ogplay/core/arithmetic.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -30,14 +31,6 @@ void RequireLibraryName(const std::string_view name) {
         throw BionicProfileError("Bionic module name is not a library basename: " +
                                  std::string(name));
     }
-}
-
-[[nodiscard]] std::uint64_t AlignUp(const std::uint64_t value,
-                                    const std::uint64_t alignment) {
-    if (value > std::numeric_limits<std::uint64_t>::max() - (alignment - 1U)) {
-        throw BionicProfileError("Bionic module address allocation overflowed");
-    }
-    return (value + alignment - 1U) & ~(alignment - 1U);
 }
 
 [[nodiscard]] loader::Elf32DynamicInfo InspectModule(
@@ -68,7 +61,11 @@ void AssignLoadBiases(std::vector<BionicOwnedModule>& modules) {
         for (const auto& region : plan.regions) {
             end = std::max(end, region.range.EndExclusive());
         }
-        cursor = AlignUp(end + kLoadAlignment, kLoadAlignment);
+        const auto aligned = core::AlignUp(end + kLoadAlignment, kLoadAlignment);
+        if (!aligned.has_value()) {
+            throw BionicProfileError("Bionic module address allocation overflowed");
+        }
+        cursor = *aligned;
         if (cursor > kBionicHleThunkBegin) {
             throw BionicProfileError("Bionic module set overlaps the HLE thunk range");
         }

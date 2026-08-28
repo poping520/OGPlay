@@ -8,6 +8,7 @@
 #include <set>
 #include <utility>
 
+#include "ogplay/core/text.h"
 #include "ogplay/session/title_profile.h"
 #include "title_profile_toml.h"
 
@@ -15,42 +16,6 @@ namespace ogplay::session {
 namespace {
 
 using Table = detail::TomlValue::Table;
-
-[[nodiscard]] bool ValidUtf8(const std::string_view text) {
-    std::size_t index = 0;
-    while (index < text.size()) {
-        const auto first = static_cast<unsigned char>(text[index++]);
-        if (first <= 0x7FU) continue;
-        std::uint32_t codepoint = 0;
-        std::size_t remaining = 0;
-        if ((first & 0xE0U) == 0xC0U) {
-            codepoint = first & 0x1FU;
-            remaining = 1;
-        } else if ((first & 0xF0U) == 0xE0U) {
-            codepoint = first & 0x0FU;
-            remaining = 2;
-        } else if ((first & 0xF8U) == 0xF0U) {
-            codepoint = first & 0x07U;
-            remaining = 3;
-        } else {
-            return false;
-        }
-        if (index + remaining > text.size()) return false;
-        for (std::size_t offset = 0; offset < remaining; ++offset) {
-            const auto continuation = static_cast<unsigned char>(text[index++]);
-            if ((continuation & 0xC0U) != 0x80U) return false;
-            codepoint = (codepoint << 6U) | (continuation & 0x3FU);
-        }
-        const auto minimum = remaining == 1 ? 0x80U
-                             : remaining == 2 ? 0x800U
-                                              : 0x10000U;
-        if (codepoint < minimum || codepoint > 0x10FFFFU ||
-            (codepoint >= 0xD800U && codepoint <= 0xDFFFU)) {
-            return false;
-        }
-    }
-    return true;
-}
 
 [[nodiscard]] const detail::TomlValue& Require(const Table& table,
                                                 const std::string_view key,
@@ -191,7 +156,7 @@ LoadDefinitions(const std::filesystem::path& path,
     }
     const std::string text((std::istreambuf_iterator<char>(input)),
                            std::istreambuf_iterator<char>());
-    if (!ValidUtf8(text)) {
+    if (!core::IsValidUtf8(text)) {
         throw QuirkRegistryError("quirk registry is not valid UTF-8");
     }
     detail::TomlValue::Table root;

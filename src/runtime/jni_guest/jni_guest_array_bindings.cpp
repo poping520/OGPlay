@@ -20,6 +20,7 @@
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_object_array.h"
+#include "jni_guest_memory.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -58,19 +59,6 @@ constexpr std::array<PrimitiveBinding, 8> kPrimitiveBindings{{
 
 [[nodiscard]] JniGuestCallResult Int(const JniInt value) {
     return Word(std::bit_cast<std::uint32_t>(value));
-}
-
-[[nodiscard]] std::uint32_t Read32(
-    memory::AddressSpace& address_space, const memory::GuestAddress address,
-    const std::uint64_t thread_id) {
-    std::array<std::byte, 4> bytes{};
-    address_space.Read(address, bytes, thread_id);
-    std::uint32_t value{};
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        value |= std::to_integer<std::uint32_t>(bytes[index])
-                 << static_cast<unsigned>(index * 8U);
-    }
-    return value;
 }
 
 [[nodiscard]] JniObjectIdentity Resolve(
@@ -427,7 +415,7 @@ void BindJniGuestArraySlots(
                     arrays.Length(array), start, length, get_region.c_str());
                 const auto byte_size = CheckedByteSize(
                     length, binding.element_size, get_region.c_str());
-                const auto destination = memory::GuestAddress{Read32(
+                const auto destination = memory::GuestAddress{ReadGuest32(
                     address_space, frame.stack_pointer, frame.thread_id)};
                 if (byte_size != 0U) {
                     if (destination.IsNull()) {
@@ -462,7 +450,7 @@ void BindJniGuestArraySlots(
                     arrays.Length(array), start, length, set_region.c_str());
                 const auto byte_size = CheckedByteSize(
                     length, binding.element_size, set_region.c_str());
-                const auto source = memory::GuestAddress{Read32(
+                const auto source = memory::GuestAddress{ReadGuest32(
                     address_space, frame.stack_pointer, frame.thread_id)};
                 std::vector<std::byte> bytes(byte_size);
                 if (!bytes.empty()) {

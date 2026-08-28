@@ -4,24 +4,17 @@
 #include <stdexcept>
 #include <utility>
 
+#include "ogplay/core/text.h"
+
 namespace ogplay::core {
 namespace {
-
-std::string Trim(std::string value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        return {};
-    }
-    const auto last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
-}
 
 std::string ParseQuotedValue(const std::string& line) {
     const auto equals = line.find('=');
     if (equals == std::string::npos) {
         throw std::runtime_error("invalid capability assignment");
     }
-    const auto value = Trim(line.substr(equals + 1));
+    const auto value = std::string(TrimAsciiWhitespace(line.substr(equals + 1)));
     if (value.size() < 2 || value.front() != '"' || value.back() != '"') {
         throw std::runtime_error("capability values must use quoted strings");
     }
@@ -41,7 +34,7 @@ CapabilityLedger CapabilityLedger::Load(const std::filesystem::path& path) {
     bool in_section = false;
     std::string line;
     while (std::getline(input, line)) {
-        line = Trim(line);
+        line = std::string(TrimAsciiWhitespace(line));
         if (line.empty() || line.starts_with('#')) {
             continue;
         }
@@ -50,7 +43,8 @@ CapabilityLedger CapabilityLedger::Load(const std::filesystem::path& path) {
                 ledger.Register(std::move(current));
             }
             current = Capability{};
-            current.id = Trim(line.substr(1, line.size() - 2));
+            current.id = std::string(
+                TrimAsciiWhitespace(line.substr(1, line.size() - 2)));
             if (current.id.empty()) {
                 throw std::runtime_error("empty capability section");
             }

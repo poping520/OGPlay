@@ -34,7 +34,8 @@
   sampler 挂无绑定 unit（避免同 unit 混用采样器类型的 `INVALID_OPERATION`）；ANGLE 侧
   原生执行。
 - `glGetString(GL_VERSION)` 合成 `OpenGL ES-CM 1.1`，`GL_EXTENSIONS` 合成恰为已实现
-  能力的列表（cube/ETC1/PVRTC，ATC 无解码支持不宣告）；VENDOR/RENDERER/
+  能力的列表（cube/ETC1/PVRTC/mapbuffer/RGB8-RGBA8，ATC 无解码支持不宣告）；
+  VENDOR/RENDERER/
   SHADER_BINARY_FORMATS 保持后端透传。
 - guest 非法枚举类 `std::invalid_argument` 在 `Gles1Module::Invoke` 收口转为
   per-context 错误锁存（`SharedGlState` 持有，首错保留、`Reset` 清零），`glGetError`
@@ -52,7 +53,7 @@
 - [x] `glEnable(GL_TEXTURE_CUBE_MAP)` per-unit 生效并参与 draw 的 unit 枚举；
 - [x] cube 采样的固定管线 draw 输出正确像素（方向选面不串面），程序变体按目标选择；
 - [x] `glGetString(GL_VERSION)` 为 `OpenGL ES-CM 1.1`，`GL_EXTENSIONS` 恰为已实现
-  能力列表；
+  能力列表；末项保留分隔符，使只在空格处提交 token 的旧解析器也能读到最后一项；
 - [x] guest 非法枚举返回 0 并锁存 `GL_INVALID_ENUM`，`glGetError()` 消费后清空，后续
   调用不受影响；
 - [x] 定向回归（状态层 + 边界级像素断言，含“关闭即失败”形态）通过；按要求不执行
@@ -73,5 +74,18 @@
 - pvz Release 实跑越过 cube 绑定阻断，guest 日志依次出现完整
   `LoadTask::STARTING..MAIN_MENU` 序列，持续到 `f≈4447`；新停止点为
   `A32 guest call exhausted its tick budget (consumed≈4.48e9)`，属独立问题另行记账。
+
+## 2026-08-29 · RGBA8 RenderTarget 后续闭合
+
+- A6 混合链接由 GLES1 `glGetString(GL_EXTENSIONS)` 初始化共享 driver 能力表；缺少
+  `GL_OES_rgb8_rgba8` 时，内部 RGBA8 格式 14 被降级为 RGBA4 格式 7，
+  `createRenderTarget` 返回空对象，随后在 `libasphalt6.so+0x7f2c14` 被无检查虚调用。
+- GLES1 合成扩展串补入 `GL_OES_rgb8_rgba8` 并以空格结束；生产代码没有 title/package
+  分支。机器测试同时验证完整扩展 token、真实 ANGLE `GL_RGBA8` renderbuffer identity
+  与 framebuffer completeness，禁止只宣告字符串。
+- macOS dev 定向 2/2、119 assertions 与相关 architecture 4/4 通过；Release exact
+  手动步进点击“触摸继续”进入主菜单，到 frame 10932、draw 64991 仍为
+  `guestFault=null`。shutdown 在 `teardown.guest_callbacks` 未完成，作为独立生命周期
+  问题保留，不回退本项图形结论。
 
 状态：完成。

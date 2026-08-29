@@ -1,9 +1,15 @@
 # 当前状态
 
-更新：A6/Tales 两项 GLES 扩展缺口已闭合；title gate 继续
+更新：A6 RGBA8 RenderTarget 首错已闭合并进入主菜单；title gate 继续
 
 ## 当前阶段
 
+- **A6 RGBA8 RenderTarget 首错已修复**：混合链接 guest 的 GLES1 扩展投影补入共享
+  ANGLE context 真实支持的 `GL_OES_rgb8_rgba8`，并以尾随分隔符兼容旧 token 解析器；
+  机器测试验证真实 RGBA8 renderbuffer/FBO。Release exact 手动步进点击“触摸继续”后进入
+  主菜单，到 frame 10932、draw 64991 仍无 guest fault，越过原
+  `libasphalt6.so+0x7f2c14`。shutdown 在 `teardown.guest_callbacks` 未完成，作为独立
+  生命周期问题保留。见 [BND-26](../tasks/boundary/BND-26.md)。
 - **A6/Tales GLES 缺口已修复**：uniform reflection 接受 API19
   `GL_SAMPLER_3D_OES` 单值 shape；GLES1 extension 目录和 boundary 真实实现
   `GL_OES_mapbuffer` 三入口，既有 thunk ID 不漂移。A6 已持续渲染 2.5 万余 draw；Tales
@@ -42,24 +48,16 @@
 
 ## 最近验证
 
+- 2026-08-29 macOS dev 受影响目标通过；GLES1 扩展 token 与真实 RGBA8 FBO 定向
+  2/2 通过（119 assertions），相关 architecture 4/4 通过。A6 Release 手动步进进入
+  主菜单并稳定到 frame 10932，无 guest fault。
 - 2026-08-29 macOS dev/release 受影响目标通过；GLES 定向测试通过。A6 带 FFmpeg exact
   完成 GLGame/GameRenderer nativeInit 并持续渲染；Tales 越过 mapbuffer 强符号拒载。
-- 2026-08-28 UTIL-3 macOS `dev` 受影响目标编译通过；算术/异常/builder/diagnostics/
-  reflection/NIO/ELF/JNI guest/Profile 定向 31/31 及 architecture 6/6 通过。
-- 2026-08-28 UTIL-2 macOS `dev` 受影响目标编译通过；定向测试 loader/session/input
-  17/17、boundary GLES 41/41（10512 assertions）、syscall/dexvm/core 10/10
-  （14637 assertions）、architecture 6/6。按约束未跑全量测试。
 - 2026-08-28 macOS `dev` 全量 CTest 1066/1066 通过（约 136 s，unit 1032 + tools 25 等）。
-- UTIL-1 Windows Debug `ogplay` 与 `ogplay_tests` 受影响目标编译通过；未运行测试。
 - Diagnostics 与 DVM-92 Windows Release 受影响目标及定向回归通过；PVZ 2.3.12 标题画面
   点击关闭实跑确认快速正常退出。
-- DVM-89 watchdog 定向覆盖 guest-call/syscall/futex/boundary/call-session/JNI lifecycle；
-  首帧握手定向连续 3 轮通过，线程 24/24、monitor/wait 14/14。
-- 根上下文 timed park 定向 4 用例、42 assertions 通过；当轮 `dev` 全量
-  CTest 1038/1038。Windows `windows-msvc` 全目标与当轮完整 CTest 1034/1034 通过。
 - DH Release 越过 license 轮询并稳定到主菜单，240 帧持续 presented，Ctrl-C 干净停止；
   PVZ Release 已进入标题画面、可输入并提交用户名。
-- BND-27 Windows Debug/Release 全目标及 3 个 fixed-draw/ANGLE 定向用例通过。
 
 ## 下一步
 

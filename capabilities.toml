@@ -953,7 +953,7 @@ note = "M5 WU-0269 以受检 little-endian guest 数组把 GLES1 glGenTextures/g
 [runtime.gles1_query_strings]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; bounded exact-APK run-apk smoke"
-note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 GLES1 专属分槽只读 guest 区域，并与 GLES2 查询槽隔离；BND-26 追加：VERSION 合成 OpenGL ES-CM 1.1、EXTENSIONS 合成恰为已实现能力列表（cube/ETC1/PVRTC），不再透传 ES3 后端字符串，VENDOR/RENDERER 保持透传"
+note = "M5 WU-0270 将真实 ANGLE vendor/renderer/version/extensions 发布到 GLES1 专属分槽只读 guest 区域，并与 GLES2 查询槽隔离；BND-26 追加：VERSION 合成 OpenGL ES-CM 1.1、EXTENSIONS 合成恰为已实现能力列表，不再透传 ES3 后端字符串，VENDOR/RENDERER 保持透传；BND-26 后续发布共享 context 真实支持的 GL_OES_rgb8_rgba8 并保留末项分隔符，真实 RGBA8 renderbuffer/FBO 测试与 A6 点击进入主菜单共同验收"
 
 [runtime.gles1_guest_error_latch]
 status = "complete"

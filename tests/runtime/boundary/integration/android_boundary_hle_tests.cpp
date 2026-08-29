@@ -2984,10 +2984,14 @@ TEST_CASE("GLES1 cube map textures bind upload and sample the fixed pipeline") {
                         std::as_writable_bytes(std::span(extension_text)), 1U);
     for (const auto* extension : {"GL_OES_texture_cube_map",
                                   "GL_OES_compressed_ETC1_RGB8_texture",
-                                  "GL_IMG_texture_compression_pvrtc"}) {
+                                  "GL_IMG_texture_compression_pvrtc",
+                                  "GL_OES_mapbuffer",
+                                  "GL_OES_rgb8_rgba8"}) {
         CAPTURE(extension);
-        CHECK(extension_text.find(extension) != std::string::npos);
+        CHECK(extension_text.find(std::string{extension} + ' ') !=
+              std::string::npos);
     }
+    CHECK(extension_text.ends_with(' '));
 
     const auto names = fixture.output.Add(0x300U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glGenTextures",
@@ -4024,6 +4028,14 @@ TEST_CASE("Android GLES boundary transfers buffer and texture resources") {
     static_cast<void>(fixture.Call(
         "libGLESv2.so", "glFramebufferRenderbuffer",
         {0x8D40U, 0x8CE0U, 0x8D41U, renderbuffer}));
+    CHECK(fixture.Call("libGLESv2.so", "glCheckFramebufferStatus",
+                       {0x8D40U}) == 0x8CD5U);
+    static_cast<void>(fixture.Call("libGLESv2.so", "glRenderbufferStorage",
+                                   {0x8D41U, 0x8058U, 2U, 2U}));
+    static_cast<void>(fixture.Call(
+        "libGLESv2.so", "glGetRenderbufferParameteriv",
+        {0x8D41U, 0x8D44U, names.Add(8).Value()}));
+    CHECK(fixture.bus.Read32(names.Add(8), 1) == 0x8058U);
     CHECK(fixture.Call("libGLESv2.so", "glCheckFramebufferStatus",
                        {0x8D40U}) == 0x8CD5U);
     static_cast<void>(fixture.Call("libGLESv2.so", "glBindFramebuffer",

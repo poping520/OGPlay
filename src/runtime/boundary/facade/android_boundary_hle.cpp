@@ -147,7 +147,8 @@ public:
                         "GL_OES_texture_cube_map "
                         "GL_OES_compressed_ETC1_RGB8_texture "
                         "GL_IMG_texture_compression_pvrtc "
-                        "GL_OES_mapbuffer"};
+                        "GL_OES_mapbuffer "
+                        "GL_OES_rgb8_rgba8 "};
                 default:
                     return RequireFrame("glGetString").GetString(parameter);
                 }

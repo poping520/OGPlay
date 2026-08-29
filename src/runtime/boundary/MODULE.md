@@ -159,7 +159,9 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   base format 仍保持 RGB 事实。
 - GLES1 `glGetString` 接受 vendor/renderer/version/extensions;混合链接 guest 经共享符号
   查询 shading-language 时也转发真实 ANGLE context。五类结果写入 GLES1 专属、分槽且只读
-  的 guest region,任何稳定指针不得因另一 pname 查询被覆盖。
+  的 guest region,任何稳定指针不得因另一 pname 查询被覆盖。固定扩展串发布共享 context
+  已由真实 ANGLE 路径验证的 `GL_OES_rgb8_rgba8`,并保留尾随 token 分隔符以兼容只在空格处
+  提交最后一项的旧解析器；测试必须同时建立 RGBA8 renderbuffer 和完整 FBO，禁止只宣告名称。
 - GLES1 `glGetIntegerv`/`glGetBooleanv`/`glGetFloatv` 对矩阵栈、shade model、
   active/client texture、binding、client-array descriptor、alignment 与固定管线上限返回
   转换器拥有的 context 状态;位数、legacy blend alias、设备尺寸与最大 anisotropy 等兼容

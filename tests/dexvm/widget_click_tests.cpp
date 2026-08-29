@@ -74,6 +74,7 @@ struct ClickVm final {
     std::int32_t key_up_events{};
     std::int32_t key_multiple_events{};
     std::int32_t last_key_code{};
+    std::int32_t system_ui_visibility_events{};
     Interpreter interpreter;
     VmObjectRef activity;
     VmObjectRef video_view;
@@ -120,6 +121,17 @@ struct ClickVm final {
                           return VmValue::Int(call.arguments[1].AsInt() == 0);
                       });
                   test_catalog.push_back(std::move(key_view).Build());
+                  auto system_ui_listener = IntrinsicClassBuilder::Class(
+                      "LSystemUiVisibilityListener;", "Ljava/lang/Object;",
+                      {"Landroid/view/View$OnSystemUiVisibilityChangeListener;"});
+                  system_ui_listener.VirtualMethod(
+                      "onSystemUiVisibilityChange", "(I)V",
+                      [this](IntrinsicContext&) {
+                          ++system_ui_visibility_events;
+                          return VmValue::Void();
+                      });
+                  test_catalog.push_back(
+                      std::move(system_ui_listener).Build());
                   linker.RegisterIntrinsics(test_catalog);
                   linker.RegisterDex(ReadFixture("widgetclick.dex"));
                   linker.Link();
@@ -985,6 +997,85 @@ TEST_CASE("View OnFocusChangeListener links and dispatches through its API 19 in
     dispatch_focus(0);
     CHECK(read_value("getFocusChanges") == 2);
     CHECK(read_value("getLastFocusChange") == 0);
+}
+
+TEST_CASE("View system UI visibility exposes API 19 state and listener shape") {
+    ClickVm vm;
+    const auto listener_interface = vm.linker.FindClass(
+        "Landroid/view/View$OnSystemUiVisibilityChangeListener;");
+    const auto listener_class = vm.linker.FindClass(
+        "LSystemUiVisibilityListener;");
+    REQUIRE(listener_interface.has_value());
+    REQUIRE(listener_class.has_value());
+    CHECK(vm.linker.IsAssignable(*listener_interface, *listener_class));
+    REQUIRE(vm.linker.Class(*listener_interface).own_virtual_methods.size() == 1U);
+    const auto& callback = vm.linker.Method(
+        vm.linker.Class(*listener_interface).own_virtual_methods.front());
+    CHECK(callback.name == "onSystemUiVisibilityChange");
+    CHECK(callback.descriptor == "(I)V");
+    CHECK(callback.access_flags == 0x0401U);
+
+    const auto window = vm.CallOn(
+        vm.activity, "getWindow", "()Landroid/view/Window;").ref;
+    REQUIRE(window.IsValid());
+    const auto decor = vm.CallOn(
+        window, "getDecorView", "()Landroid/view/View;").ref;
+    REQUIRE(decor.IsValid());
+    CHECK(vm.CallOn(window, "getDecorView",
+                    "()Landroid/view/View;").ref == decor);
+    CHECK(vm.CallOn(decor, "getSystemUiVisibility", "()I").AsInt() == 0);
+    vm.CallOn(decor, "setSystemUiVisibility", "(I)V",
+              {VmValue::Int(0x1f06)});
+    CHECK(vm.CallOn(decor, "getSystemUiVisibility", "()I").AsInt() ==
+          0x1f06);
+    CHECK(vm.CallOn(vm.skip_button, "getSystemUiVisibility", "()I").AsInt() ==
+          0);
+
+    const auto listener = vm.interpreter.NewIntrinsicInstance(
+        "LSystemUiVisibilityListener;");
+    vm.CallOn(
+        decor, "setOnSystemUiVisibilityChangeListener",
+        "(Landroid/view/View$OnSystemUiVisibilityChangeListener;)V",
+        {VmValue::Ref(listener)});
+    CHECK(vm.system_ui_visibility_events == 0);
+    const auto listener_field = vm.linker.FindFieldRecursive(
+        vm.model.ObjectClass(decor), "mOgplaySystemUiVisibilityListener",
+        "Landroid/view/View$OnSystemUiVisibilityChangeListener;");
+    REQUIRE(listener_field.has_value());
+    const auto& linked_listener_field = vm.linker.Field(*listener_field);
+    CHECK(vm.model.InstanceSlots(decor)[linked_listener_field.slot].bits ==
+          listener.Value());
+    CHECK(vm.model.InstanceSlots(decor)[linked_listener_field.slot].tag ==
+          SlotTag::ref);
+    vm.CallOn(
+        decor, "setOnSystemUiVisibilityChangeListener",
+        "(Landroid/view/View$OnSystemUiVisibilityChangeListener;)V",
+        {VmValue::Ref(VmObjectRef{})});
+    CHECK(vm.model.InstanceSlots(decor)[linked_listener_field.slot].bits == 0U);
+}
+
+TEST_CASE("View system UI constants are public and reflect their API 19 values") {
+    ClickVm vm;
+    const auto view_class = vm.linker.ResolveDescriptor("Landroid/view/View;");
+    const auto class_object = vm.model.ClassObject(view_class);
+    const auto read_public_int = [&](const char* name) {
+        const auto field = vm.CallOn(
+            class_object, "getField",
+            "(Ljava/lang/String;)Ljava/lang/reflect/Field;",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8(name))}).ref;
+        REQUIRE(field.IsValid());
+        return vm.CallOn(field, "getInt", "(Ljava/lang/Object;)I",
+                         {VmValue::Ref(VmObjectRef{})}).AsInt();
+    };
+    CHECK(read_public_int("SYSTEM_UI_FLAG_VISIBLE") == 0x0000);
+    CHECK(read_public_int("SYSTEM_UI_FLAG_LOW_PROFILE") == 0x0001);
+    CHECK(read_public_int("SYSTEM_UI_FLAG_HIDE_NAVIGATION") == 0x0002);
+    CHECK(read_public_int("SYSTEM_UI_FLAG_FULLSCREEN") == 0x0004);
+    CHECK(read_public_int("SYSTEM_UI_FLAG_LAYOUT_STABLE") == 0x0100);
+    CHECK(read_public_int("SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION") == 0x0200);
+    CHECK(read_public_int("SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN") == 0x0400);
+    CHECK(read_public_int("SYSTEM_UI_FLAG_IMMERSIVE") == 0x0800);
+    CHECK(read_public_int("SYSTEM_UI_FLAG_IMMERSIVE_STICKY") == 0x1000);
 }
 
 TEST_CASE("View dispatchKeyEvent routes bounded KeyEvent actions to overrides") {

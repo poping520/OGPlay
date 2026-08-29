@@ -9,7 +9,8 @@
 
 - DVM-70 设计
 - 已有 `DexVmAndroidContext`、Activity/Window intrinsic 与稳定 singleton identity
-- AOSP `android-4.4.4_r2.0.1` `Window.java` / `DisplayMetrics.java` / `Display.java`
+- AOSP `android-4.4.4_r2.0.1` `Window.java` / `View.java` / `DisplayMetrics.java` /
+  `Display.java`
 - `DexVmGuestBridge::RegisterClassForNative()` 的递归发布路径与 JNI class registry
   既有严格 object-array assignability contract
 
@@ -32,6 +33,14 @@
   `RegisterClassForNative()` 由父到子注册完整层级，不维护第二套类声明/handler 安装
   逻辑；不放宽 `JniObjectArrayStore` 严格 assignability，不改变 object identity、
   JNI reference domain 或 reflection 类型语义。
+- `View.OnSystemUiVisibilityChangeListener` 是 public abstract interface，唯一方法为
+  `onSystemUiVisibilityChange(I)V`；应用实现沿正常 interface assignability/dispatch
+  链接；API19 九个 system-UI 常量保持 public static final 并可由反射读取；
+- `Window.getDecorView()` 返回会话内稳定 `View`；system-UI visibility 是逐 View 的
+  caller request 状态，listener 作为普通实例 reference field 保存，替换与 null 清除
+  遵循对象模型并形成 GC 强边，注册不立即回调；桌面 managed surface 没有 Android
+  system bars/WMS effective-global 事件源，因此不伪造变化回调，也不引入 Binder、
+  SystemUI 或宿主窗口装饰模拟。
 
 ## 验收
 
@@ -42,6 +51,8 @@
       null output 明确失败；
 - [x] interpreted Activity subclass 在 JNI registry 中保留完整 superclass chain，
       object array 按真实 Java assignability 接受子类对象且无关类型仍被拒绝；
+- [x] system-UI listener 接口形状、assignability、九个反射常量、稳定 decor View、逐
+      View request/listener 状态与 null 清除符合 API19 有界语义；
 - [x] focused intrinsic/object model 测试通过；
 - [x] 关闭 survey 的 bounded exact run 越过已知 fault，并固定新第一失败或帧；
 - [x] 运行后无 `ogplay` 残留，同步 MODULE/CURRENT/capability。
@@ -51,5 +62,11 @@
 object-array assignability fault；新首 fault 为
 `android.os.Environment.getDataDirectory()Ljava/io/File;` 未解析。结束后无
 `ogplay` 进程。
+
+后续扩展验收：system-UI 定向 2/2、92 assertions，Android intrinsic catalog 1/1、
+3099 assertions；dev `ogplay_tests` 与 release `ogplay` 受影响目标构建通过。Tales 关闭
+survey 的 bounded exact run 越过 listener 类层级阻断与 Java 链接并完成首个 native
+load，新首错为独立的 native `DT_SONAME` inventory identity 不一致，结束后无
+`ogplay` 残留。
 
 状态：完成。

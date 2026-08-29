@@ -1345,6 +1345,11 @@ status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp"
 note = "DVM-90 对照 AOSP 4.4.4 ViewGroup conditional attach/detach 与 SurfaceView.mSurfaceCreated：初始 lifecycle 只激活 live UiTree holder，动态子树 add/remove 形成独立 created/changed/destroyed generation，callback 使用稳定快照且 removeCallback 幂等。OGPlay 仍只拥有一个 managed host surface；visibility、format/size 重建、独立合成层和 SurfaceFlinger 不在有界能力内。"
 
+[dexvm.system_ui_visibility]
+status = "partial"
+test = "tests/dexvm/widget_click_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
+note = "DVM-71 扩展发布 API19 View.OnSystemUiVisibilityChangeListener 精确接口形状、九个反射可见常量、稳定 Window decor View 与逐 View request/listener 实例状态；listener 由普通对象字段形成 GC 强边，注册不立即回调。桌面 managed surface 无 Android system bars/WMS effective-global 事件源，因此不伪造回调且能力保持 partial。"
+
 [dexvm.java_gles]
 status = "partial"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tools/generate_java_gles_surface.py --check"

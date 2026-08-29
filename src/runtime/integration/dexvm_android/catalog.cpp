@@ -196,6 +196,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(
         Declare_android_view_SurfaceView(context),
         Declare_android_view_View_OnClickListener(context),
         Declare_android_view_View_OnFocusChangeListener(context),
+        Declare_android_view_View_OnSystemUiVisibilityChangeListener(context),
         Declare_android_view_View_OnTouchListener(context),
         Declare_android_view_View(context),
         Declare_android_view_ViewGroup_LayoutParams(context),

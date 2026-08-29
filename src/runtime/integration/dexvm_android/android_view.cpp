@@ -667,6 +667,31 @@ Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
 }
 }  // namespace ogplay::runtime::android_intrinsics
 
+// ---- android.view.View.OnSystemUiVisibilityChangeListener (API 19) ----
+#include "catalog.h"
+
+namespace ogplay::runtime::android_intrinsics::dvm_system_ui_listener {
+
+Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(
+    const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/view/View$OnSystemUiVisibilityChangeListener;");
+    builder.UnimplementedVirtual(
+        "onSystemUiVisibilityChange", "(I)V", 0x0401U);
+    return std::move(builder).Build();
+}
+
+}  // namespace ogplay::runtime::android_intrinsics::dvm_system_ui_listener
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(
+    const Context& context) {
+    return dvm_system_ui_listener::
+        Declare_android_view_View_OnSystemUiVisibilityChangeListener(context);
+}
+}  // namespace ogplay::runtime::android_intrinsics
+
 // ---- migrated from android_view_View_OnTouchListener.cpp ----
 #include "catalog.h"
 
@@ -717,6 +742,28 @@ std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
 
 Decl Declare_android_view_View(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/View;", "Ljava/lang/Object;");
+    builder.ConstantInt("SYSTEM_UI_FLAG_VISIBLE", "I", 0, 0x0001U)
+        .ConstantInt("SYSTEM_UI_FLAG_LOW_PROFILE", "I", 0x00000001,
+                     0x0001U)
+        .ConstantInt("SYSTEM_UI_FLAG_HIDE_NAVIGATION", "I", 0x00000002,
+                     0x0001U)
+        .ConstantInt("SYSTEM_UI_FLAG_FULLSCREEN", "I", 0x00000004,
+                     0x0001U)
+        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_STABLE", "I", 0x00000100,
+                     0x0001U)
+        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION", "I",
+                     0x00000200, 0x0001U)
+        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN", "I", 0x00000400,
+                     0x0001U)
+        .ConstantInt("SYSTEM_UI_FLAG_IMMERSIVE", "I", 0x00000800,
+                     0x0001U)
+        .ConstantInt("SYSTEM_UI_FLAG_IMMERSIVE_STICKY", "I", 0x00001000,
+                     0x0001U);
+    const auto system_ui_visibility = builder.BoundInstanceField(
+        "mSystemUiVisibility", "I", 0U);
+    const auto system_ui_listener = builder.BoundInstanceField(
+        "mOgplaySystemUiVisibilityListener",
+        "Landroid/view/View$OnSystemUiVisibilityChangeListener;", 0x1002U);
     builder.Constructor("(Landroid/content/Context;)V",
                     ViewInitHandler(context));
     builder.VirtualMethod("onSizeChanged", "(IIII)V",
@@ -1010,6 +1057,25 @@ Decl Declare_android_view_View(const Context& context) {
             } else {
                 context->ui_touch_listeners.erase(node);
             }
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("setSystemUiVisibility", "(I)V",
+        [system_ui_visibility](dx::IntrinsicContext& context) {
+            dx::IntrinsicCall(context).SetInt(
+                system_ui_visibility, context.arguments[0].AsInt());
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("getSystemUiVisibility", "()I",
+        [system_ui_visibility](dx::IntrinsicContext& context) {
+            return dx::VmValue::Int(
+                dx::IntrinsicCall(context).GetInt(system_ui_visibility));
+        });
+    builder.VirtualMethod(
+        "setOnSystemUiVisibilityChangeListener",
+        "(Landroid/view/View$OnSystemUiVisibilityChangeListener;)V",
+        [system_ui_listener](dx::IntrinsicContext& context) {
+            dx::IntrinsicCall(context).SetRef(
+                system_ui_listener, context.arguments[0].ref);
             return dx::VmValue::Void();
         });
     builder.FinalMethod("clearFocus", "()V", WidgetNoopHandler());
@@ -1386,6 +1452,11 @@ Decl Declare_android_view_Window(const Context& context) {
         "()Landroid/view/WindowManager$LayoutParams;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Attributes(call, context));
+        });
+    builder.VirtualMethod("getDecorView", "()Landroid/view/View;",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Ref(Singleton(
+                call, context, "window_decor_view", "Landroid/view/View;"));
         });
     return std::move(builder).Build();
 }

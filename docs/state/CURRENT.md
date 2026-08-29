@@ -1,9 +1,12 @@
 # 当前状态
 
-更新：UTIL-3 参数化同构克隆收敛完成；UTIL-2、DVM-92 与 Diagnostics 已闭合
+更新：DVM-71 system UI visibility 扩展已闭合；UTIL-3、UTIL-2、DVM-92 与 Diagnostics 已完成
 
 ## 当前阶段
 
+- **DVM-71 扩展已完成**：发布 API19 system-UI listener 接口、反射常量、稳定 decor View 与逐
+  View request/listener 状态；无 WMS 事件时不伪造回调。真实复跑越过原层级阻断，新首错为
+  独立的 native `DT_SONAME` inventory identity 不一致。见 [DVM-71](../tasks/dexvm/DVM-71.md)。
 - **UTIL-3 已完成**：收敛 diagnostics snapshot 投影、ELF 地址映射、JNI guest 返回编码/
   string lease/FieldID lookup、StringBuffer/Builder、简单 throwable、reflection member、
   数值 binop、NIO bulk 校验、Profile exact keys 与 internal class-name predicate；锁策略、

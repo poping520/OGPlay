@@ -91,6 +91,10 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - API 19 `View$OnFocusChangeListener` 作为 public abstract interface 发布唯一
   `onFocusChange(View, boolean)` 方法签名，使 DEX `implements` 与 `invoke-interface` 走正常
   linker/virtual dispatch；没有具体焦点事件来源时不得伪造回调。
+- API 19 `View$OnSystemUiVisibilityChangeListener` 发布唯一 public abstract
+  `onSystemUiVisibilityChange(int)`；Window decor View 身份稳定，system-UI request 与 listener
+  作为 View 实例字段保存并由普通 GC 强边追踪。managed surface 没有 Android system bars/WMS
+  effective-global 变化来源，注册不得立即回调，也不得伪造后续回调或引入 SystemUI/Binder。
 - `KeyEvent(action, keyCode)` 与 API 19 timed/meta 构造器保存 guest 可见 action/keyCode/
   repeatCount/metaState；生命周期键输入以非空对象注入当前布局 Unicode。
   `getUnicodeChar()` 返回事件布局字符，`getUnicodeChar(metaState)` 对 Android 常用字母、数字、
@@ -183,7 +187,8 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 
 `tests/session/profile_entry_scope_tests.cpp` 锁定 catalog 唯一性、直接绑定及
 Activity/Intent/Bundle/TextView 方法集合；`tests/dexvm/file_vfs_tests.cpp`、
-`videoview_tests.cpp`、`widget_click_tests.cpp` 锁定主要集成行为。
+`videoview_tests.cpp`、`widget_click_tests.cpp` 锁定主要集成行为；后者同时锁定 system-UI
+接口形状、反射常量、逐 View request/listener identity 与无事件时不回调。
 `tests/dexvm/scheduler_tests.cpp` 锁定固定 Clock、FIFO/cancel、Timer/CountDownTimer、
 HandlerThread 与 AsyncTask 的线程/回投语义。
 `tests/dexvm/android_value_tests.cpp` 锁定 Base64/Sparse、graphics value/Path、

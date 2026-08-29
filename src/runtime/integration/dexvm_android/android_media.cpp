@@ -107,8 +107,30 @@ struct Format final {
         bytes.size() > static_cast<std::size_t>(state->buffer_size)) {
         return kErrorBadValue;
     }
-    if (state->mode == kModeStatic) context->pcm_playback->Clear(state->player);
-    if (!context->pcm_playback->Enqueue(state->player, bytes)) return 0;
+    const auto player = state->player;
+    const auto mode = state->mode;
+    const auto buffer_size = static_cast<std::size_t>(state->buffer_size);
+    if (mode == kModeStatic) {
+        context->pcm_playback->Clear(player);
+        if (!context->pcm_playback->Enqueue(player, bytes)) return 0;
+    } else {
+        auto& execution_lock = call.vm.ExecutionLock();
+        const auto depth = execution_lock.ReleaseForBlocking();
+        audio::OpenSlesEnqueueResult enqueue{};
+        try {
+            enqueue = context->pcm_playback->EnqueueBlocking(
+                player, bytes, buffer_size);
+        } catch (...) {
+            execution_lock.ReacquireAfterBlocking(depth);
+            throw;
+        }
+        execution_lock.ReacquireAfterBlocking(depth);
+        state = Find(context, call.receiver);
+        if (enqueue != audio::OpenSlesEnqueueResult::enqueued ||
+            state == nullptr || state->player != player) {
+            return kErrorInvalidOperation;
+        }
+    }
     if (state->state == kStateNoStaticData) state->state = kStateInitialized;
     return static_cast<std::int32_t>(bytes.size());
 }

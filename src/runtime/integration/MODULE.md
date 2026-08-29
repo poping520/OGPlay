@@ -261,7 +261,9 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   constructor、play/pause/stop/release 与 byte-array region write;每个 track 以 host
   object identity 隔离并发布 playing/paused/released/bytes-written 状态。非法 format、
   mode、range、重复构造或 release 后调用明确失败；DVM-84 已把 write 与控制接入进程唯一
-  PCM mixer，不再只累计字节。
+  PCM mixer，不再只累计字节。ADR-0027 使 stream write 按构造 buffer 的未消费字节阻塞，
+  park 期间不持 media mutex；播放恢复、release/Stop/BeginTeardown 可中断，饱和不再抛越过
+  Java 边界的 C++ 异常。snapshot 同步发布成功 write/非零 write/peak/queued-byte 事实。
 - Virtual OpenSL ES PCM mixer 在 `RenderStereoAudio` 中位于 SoundPool zero-fill/mix 之后做
   additive mix，仍由上层向唯一 HAL output 提交一次。Object/Play/BufferQueue callback 经
   窄化事件队列交给专用 A32 guest thread/CPU/TLS/stack；该线程不隐式 attach JNI，callback

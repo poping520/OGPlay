@@ -1394,6 +1394,8 @@ public:
 
     void Stop() {
         if (!running_) return;
+        static_cast<void>(
+            boundary_.PcmPlayback().InterruptBlockingWaits());
         StopOpenSlesCallbackThread();
         std::vector<std::uint64_t> dexvm_thread_ids;
         {
@@ -1589,6 +1591,8 @@ public:
     void BeginTeardown() noexcept {
         if (teardown_requested_.exchange(true, std::memory_order_acq_rel)) return;
         boundary_.RetireGuestGraphics();
+        static_cast<void>(
+            boundary_.PcmPlayback().InterruptBlockingWaits());
         static_cast<void>(InterruptBlockingWaits());
     }
 

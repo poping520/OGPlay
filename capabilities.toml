@@ -1028,7 +1028,7 @@ note = "M5 WU-0241/0313/0324 组合 Bionic guest process 与 Android HLE，接�
 [runtime.legacy_audio_track]
 status = "complete"
 test = "tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
-note = "M8 WU-0374 以通用 state/HLE 闭合 PCM16 mono/stereo AudioTrack 七项 Java/JNI 调用；DVM-84 将 write/play/pause/stop/release 接入进程唯一 OpenSlesPcmMixer，真实混音与非法生命周期受检"
+note = "M8 WU-0374 以通用 state/HLE 闭合 PCM16 mono/stereo AudioTrack 七项 Java/JNI 调用；DVM-84 将 write/play/pause/stop/release 接入进程唯一 OpenSlesPcmMixer；DVM-93/ADR-0027 使 MODE_STREAM 按构造 buffer 的未消费字节可中断阻塞，播放恢复且 teardown 唤醒，队列饱和不再以 C++ 异常终结 guest worker；A6 用户实听通过"
 
 [runtime.host_managed_gl_surface]
 status = "complete"
@@ -1358,7 +1358,7 @@ note = "DVM-83 从固定 Android 4.4.4 源发布 GLES10/10Ext/11/11Ext/20、GLUt
 [dexvm.audio_track]
 status = "complete"
 test = "tests/dexvm/audio_track_tests.cpp; tests/runtime/android_guest_java_media_tests.cpp; tests/audio/open_sles_pcm_mixer_tests.cpp"
-note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、volume 和真实 frame playback head；DVM-89 按该 head 在 lifecycle 帧泵投递 marker/periodic notification，支持跨多期补发、重入 write 与异常上浮，native output sample rate 由会话按后端 mixer 配置注入；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用唯一 mixer"
+note = "DVM-84 发布 API 19 AudioFormat 常用 PCM 常量与 AudioTrack ctor/min-buffer/state/play/pause/stop/flush/release、byte/short write、volume 和真实 frame playback head；DVM-89 按该 head 在 lifecycle 帧泵投递 marker/periodic notification，支持跨多期补发、重入 write 与异常上浮，native output sample rate 由会话按后端 mixer 配置注入；DVM-93/ADR-0027 统一 DexVM/legacy STREAM 的构造 buffer 字节回压，DexVM park 释放执行锁并由播放/release/teardown 唤醒，A6 用户实听通过；PCM8/16 mono/stereo STREAM/STATIC 与 OpenSL ES、legacy Java/JNI 共用唯一 mixer"
 
 [dexvm.android_scheduler]
 status = "complete"

@@ -1,9 +1,15 @@
 # 当前状态
 
-更新：A6 RGBA8 RenderTarget 首错已闭合并进入主菜单；title gate 继续
+更新：A6 AudioTrack 字节回压根治；声音长延迟/worker 终止回归已闭合
 
 ## 当前阶段
 
+- **A6 AudioTrack 声音根因已修复**：legacy 与 DexVM MODE_STREAM 统一按构造
+  `buffer_size` 的未消费 PCM 字节阻塞，播放消费唤醒；legacy park 不持 media mutex，
+  DexVM park 释放执行锁，release/Stop/BeginTeardown 可中断。255 项队列仅保留为内存护栏，
+  饱和不再抛越过 Java 边界的 C++ 异常或返回 0。定向饱和/恢复、锁释放、teardown 与既有
+  callback 回归通过，A6 用户实听确认 BGM 与音效正常。见 [DVM-93](../tasks/dexvm/DVM-93.md) 与
+  [ADR-0027](../adr/0027-audiotrack-stream-byte-backpressure.md)。
 - **A6 RGBA8 RenderTarget 首错已修复**：混合链接 guest 的 GLES1 扩展投影补入共享
   ANGLE context 真实支持的 `GL_OES_rgb8_rgba8`，并以尾随分隔符兼容旧 token 解析器；
   机器测试验证真实 RGBA8 renderbuffer/FBO。Release exact 手动步进点击“触摸继续”后进入
@@ -15,13 +21,6 @@
   `GL_OES_mapbuffer` 三入口，既有 thunk ID 不漂移。A6 已持续渲染 2.5 万余 draw；Tales
   已完成 native load，新首错为 JNI `getPackageCodePath()`。见
   [DVM-47](../tasks/dexvm/DVM-47.md)、[WU-0231](../tasks/m5/WU-0231.md)。
-- **UTIL-3 已完成**：收敛 diagnostics snapshot 投影、ELF 地址映射、JNI guest 返回编码/
-  string lease/FieldID lookup、StringBuffer/Builder、简单 throwable、reflection member、
-  数值 binop、NIO bulk 校验、Profile exact keys 与 internal class-name predicate；锁策略、
-  错误文本、异常类别和 ABI 不变。见 [UTIL-3](../tasks/maintenance/UTIL-3.md)。
-- **UTIL-2/1 已完成**：guest 小端搬运、DEX LEB128、syscall 路径、package/id、ArrayKind、
-  UTF/Base64/hex/range/alignment 等重复实现已接唯一公共入口；见
-  [UTIL-2](../tasks/maintenance/UTIL-2.md)、[UTIL-1](../tasks/maintenance/UTIL-1.md)。
 - **DVM-92 已完成并通过 title 验收**：退出首个 guest 回调前单向退役 Java EGL、
   native/managed GLES 与 EGL swap；process `BeginTeardown` 发布独立取消并中断
   blocking wait，join 前再次中断覆盖回调中新建 futex。renewable JNI native frame
@@ -48,11 +47,13 @@
 
 ## 最近验证
 
+- 2026-08-29 macOS dev 受影响目标重建通过；AudioTrack/OpenSL/teardown 定向 32/32
+  test cases、503 assertions 通过，覆盖字节预算饱和/恢复、legacy worker 连续写、DexVM
+  执行锁释放和粘性退出中断。重建后的 A6 exact 持续到 frame 7492，无 guest fault；Ctrl-C
+  仍卡在已知独立 teardown 问题，测试进程按精确 PID 强制结束。
 - 2026-08-29 macOS dev 受影响目标通过；GLES1 扩展 token 与真实 RGBA8 FBO 定向
   2/2 通过（119 assertions），相关 architecture 4/4 通过。A6 Release 手动步进进入
   主菜单并稳定到 frame 10932，无 guest fault。
-- 2026-08-29 macOS dev/release 受影响目标通过；GLES 定向测试通过。A6 带 FFmpeg exact
-  完成 GLGame/GameRenderer nativeInit 并持续渲染；Tales 越过 mapbuffer 强符号拒载。
 - 2026-08-28 macOS `dev` 全量 CTest 1066/1066 通过（约 136 s，unit 1032 + tools 25 等）。
 - Diagnostics 与 DVM-92 Windows Release 受影响目标及定向回归通过；PVZ 2.3.12 标题画面
   点击关闭实跑确认快速正常退出。
@@ -61,8 +62,8 @@
 
 ## 下一步
 
-1. 补 Tales `getPackageCodePath()` JNI 能力；完成 DH 主菜单 Scenario gate 与 profile 长跑复验。
-2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate；执行 Linux M9 严格出口复验。
+1. 补 Tales `getPackageCodePath()` JNI 能力；完成 DH 主菜单 Scenario gate。
+2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 首次出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 
 ## 边界

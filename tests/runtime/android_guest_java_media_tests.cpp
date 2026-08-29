@@ -1,5 +1,7 @@
 #include <array>
+#include <atomic>
 #include <cstddef>
+#include <thread>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -168,4 +170,43 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
             JniArgumentSource::value_array)),
         AndroidGuestCallSessionError);
     environment.DetachThread(9U);
+}
+
+TEST_CASE("Legacy AudioTrack write blocks at its byte budget and resumes") {
+    using namespace ogplay::runtime;
+    AndroidGuestLegacyMediaState media;
+    ogplay::audio::OpenSlesPcmMixer mixer;
+    media.SetPcmPlayback(&mixer);
+    const auto track = AllocateJniHostObjectIdentity();
+    constexpr std::int32_t buffer_size = 4096;
+    media.ConfigureAudioTrack(track, 4000, 4, 2, buffer_size, 1);
+    const std::vector<JniByte> pcm(buffer_size, 1);
+    REQUIRE(media.WriteAudioTrack(track, pcm) == buffer_size);
+    CHECK(media.AudioTrack(track).queued_bytes == buffer_size);
+
+    std::atomic<std::int32_t> second_write{-99};
+    std::jthread writer([&] {
+        second_write = media.WriteAudioTrack(track, pcm);
+    });
+    bool parked{};
+    for (std::size_t attempt = 0; attempt < 100000U; ++attempt) {
+        if (mixer.BlockingWriterCount() == 1U) {
+            parked = true;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    if (!parked) static_cast<void>(mixer.InterruptBlockingWaits());
+    REQUIRE(parked);
+
+    media.PlayAudioTrack(track);
+    std::vector<std::int16_t> output(buffer_size);
+    static_cast<void>(mixer.MixAdditiveStereoPcm16(output, 4000U));
+    writer.join();
+    CHECK(second_write.load() == buffer_size);
+    const auto snapshot = media.AudioTrack(track);
+    CHECK(snapshot.write_calls == 2U);
+    CHECK(snapshot.nonzero_writes == 2U);
+    CHECK(snapshot.peak_sample > 0);
+    CHECK(snapshot.queued_bytes <= static_cast<std::size_t>(buffer_size));
 }

@@ -55,6 +55,9 @@
   consumed-buffer callback；pause/stopped 才停止 mixer 时间推进。
 - AudioTrack stereo gain 与 OpenSL millibel/mute/pan 在同一 player 上相乘；播放头按已消费
   source frame 计数，stop 复位，pause 仅冻结。
+- AudioTrack MODE_STREAM 使用 mixer 的可中断 blocking enqueue：未消费字节（首 buffer 已播放
+  frame 除外）与本次 write 之和不得超过构造 buffer budget；播放、clear、destroy 唤醒
+  writer，process teardown 粘性中断。queue item capacity 只作内存护栏，不定义正常延迟。
 
 ## 禁止
 

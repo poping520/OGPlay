@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -661,6 +662,40 @@ TEST_CASE("legacy Android guest call session delegates process ownership") {
     CHECK(ProcMemoryValue(meminfo, "MemFree:") == 4096U);
     session->Stop();
     CHECK_FALSE(session->Running());
+}
+
+TEST_CASE("Android guest process teardown interrupts blocked AudioTrack write") {
+    auto libc = MinimalLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{
+        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::runtime::VirtualFileSystem filesystem;
+    auto process = ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&module, 1}, {}, 64, 36,
+         1000, 1, &filesystem, {}});
+    auto& mixer = process->PcmPlayback();
+    const auto player = mixer.CreatePlayer({48000U, 1U, 16U}, 255U);
+    const std::array pcm{
+        std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}};
+    REQUIRE(mixer.EnqueueBlocking(player, pcm, pcm.size()) ==
+            ogplay::audio::OpenSlesEnqueueResult::enqueued);
+
+    std::atomic result{ogplay::audio::OpenSlesEnqueueResult::enqueued};
+    std::jthread writer([&] {
+        result = mixer.EnqueueBlocking(player, pcm, pcm.size());
+    });
+    bool parked{};
+    for (std::size_t attempt = 0; attempt < 100000U; ++attempt) {
+        if (mixer.BlockingWriterCount() == 1U) {
+            parked = true;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    process->BeginTeardown();
+    writer.join();
+    REQUIRE(parked);
+    CHECK(result.load() == ogplay::audio::OpenSlesEnqueueResult::interrupted);
+    process->Stop();
 }
 
 TEST_CASE("Android guest call session validates its complete launch request") {

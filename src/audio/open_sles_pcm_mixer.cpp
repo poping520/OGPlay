@@ -48,8 +48,11 @@ OpenSlesPcmMixer::PlayerId OpenSlesPcmMixer::CreatePlayer(
 }
 
 void OpenSlesPcmMixer::DestroyPlayer(const PlayerId player) noexcept {
-    std::scoped_lock lock(mutex_);
-    players_.erase(player);
+    {
+        std::scoped_lock lock(mutex_);
+        players_.erase(player);
+    }
+    queue_changed_.notify_all();
 }
 
 bool OpenSlesPcmMixer::HasPlayer(const PlayerId player) const {
@@ -79,12 +82,90 @@ bool OpenSlesPcmMixer::Enqueue(const PlayerId player,
     return true;
 }
 
-void OpenSlesPcmMixer::Clear(const PlayerId player) {
+OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(
+    const PlayerId player, const std::span<const std::byte> pcm,
+    const std::size_t maximum_queued_bytes) {
+    std::unique_lock lock(mutex_);
+    auto found = players_.find(player);
+    if (found == players_.end()) {
+        return OpenSlesEnqueueResult::player_destroyed;
+    }
+    const auto bytes_per_frame = BytesPerFrame(found->second.format);
+    if (pcm.empty() || pcm.size() % bytes_per_frame != 0U) {
+        throw std::invalid_argument(
+            "OpenSL PCM buffer is empty or frame-misaligned");
+    }
+    const auto byte_budget = std::min(maximum_queued_bytes, kMaximumQueuedBytes);
+    if (pcm.size() > kMaximumBufferBytes || pcm.size() > byte_budget) {
+        throw std::length_error("OpenSL PCM buffer exceeds byte budget");
+    }
+    const auto ready = [this, player, size = pcm.size(), byte_budget] {
+        const auto current = players_.find(player);
+        return interrupted_ || current == players_.end() ||
+               (current->second.queue.size() < current->second.capacity &&
+                QueuedBytes(current->second) <= byte_budget - size);
+    };
+    if (!ready()) {
+        ++blocking_writers_;
+        queue_changed_.wait(lock, ready);
+        --blocking_writers_;
+    }
+    if (interrupted_) return OpenSlesEnqueueResult::interrupted;
+    found = players_.find(player);
+    if (found == players_.end()) {
+        return OpenSlesEnqueueResult::player_destroyed;
+    }
+    found->second.queue.push_back(
+        Buffer{found->second.next_sequence++, {pcm.begin(), pcm.end()}});
+    return OpenSlesEnqueueResult::enqueued;
+}
+
+std::size_t OpenSlesPcmMixer::QueuedBytes(const Player& player) {
+    std::size_t queued_bytes{};
+    for (const auto& queued : player.queue) queued_bytes += queued.pcm.size();
+    if (!player.queue.empty()) {
+        const auto bytes_per_frame = BytesPerFrame(player.format);
+        const auto front_frames =
+            player.queue.front().pcm.size() / bytes_per_frame;
+        const auto consumed_frames = std::min(
+            static_cast<std::size_t>(player.frame_position), front_frames);
+        const auto consumed_bytes = std::min(
+            player.queue.front().pcm.size(), consumed_frames * bytes_per_frame);
+        queued_bytes -= consumed_bytes;
+    }
+    return queued_bytes;
+}
+
+std::size_t OpenSlesPcmMixer::QueuedBytes(const PlayerId player) const {
     std::scoped_lock lock(mutex_);
-    auto& target = Require(player);
-    target.queue.clear();
-    target.frame_position = 0.0;
-    target.played_source_frames = 0.0;
+    return QueuedBytes(Require(player));
+}
+
+std::size_t OpenSlesPcmMixer::BlockingWriterCount() const noexcept {
+    std::scoped_lock lock(mutex_);
+    return blocking_writers_;
+}
+
+std::size_t OpenSlesPcmMixer::InterruptBlockingWaits() noexcept {
+    std::size_t waiters{};
+    {
+        std::scoped_lock lock(mutex_);
+        interrupted_ = true;
+        waiters = blocking_writers_;
+    }
+    queue_changed_.notify_all();
+    return waiters;
+}
+
+void OpenSlesPcmMixer::Clear(const PlayerId player) {
+    {
+        std::scoped_lock lock(mutex_);
+        auto& target = Require(player);
+        target.queue.clear();
+        target.frame_position = 0.0;
+        target.played_source_frames = 0.0;
+    }
+    queue_changed_.notify_all();
 }
 
 OpenSlesQueueState OpenSlesPcmMixer::QueueState(const PlayerId player) const {
@@ -199,12 +280,13 @@ OpenSlesPcmMixer::MixAdditiveStereoPcm16(
     if (output_rate == 0U || output.size() % 2U != 0U) {
         throw std::invalid_argument("OpenSL output must be stereo with a positive rate");
     }
-    std::scoped_lock lock(mutex_);
+    std::unique_lock lock(mutex_);
     scratch_.resize(output.size());
     for (std::size_t index = 0; index < output.size(); ++index) {
         scratch_[index] = output[index];
     }
     std::vector<OpenSlesConsumedBuffer> consumed;
+    bool queue_progressed{};
     const auto output_frames = output.size() / 2U;
     for (auto& [id, player] : players_) {
         if (player.state != OpenSlesPlayState::playing) continue;
@@ -242,6 +324,7 @@ OpenSlesPcmMixer::MixAdditiveStereoPcm16(
             }
             player.frame_position += step;
             player.played_source_frames += step;
+            queue_progressed = true;
         }
         while (!player.queue.empty()) {
             const auto frames = player.queue.front().pcm.size() /
@@ -259,6 +342,8 @@ OpenSlesPcmMixer::MixAdditiveStereoPcm16(
             static_cast<std::int64_t>((std::numeric_limits<std::int16_t>::min)()),
             static_cast<std::int64_t>((std::numeric_limits<std::int16_t>::max)())));
     }
+    lock.unlock();
+    if (queue_progressed) queue_changed_.notify_all();
     return consumed;
 }
 

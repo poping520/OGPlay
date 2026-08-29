@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <thread>
@@ -46,6 +47,84 @@ TEST_CASE("OpenSL mixer queues plays pauses clears and reports consumption") {
     mixer.DestroyPlayer(player);
     CHECK_FALSE(mixer.HasPlayer(player));
     CHECK_THROWS(static_cast<void>(mixer.QueueState(player)));
+}
+
+TEST_CASE("AudioTrack byte budget blocks until playback frees space") {
+    ogplay::audio::OpenSlesPcmMixer mixer;
+    const auto player = mixer.CreatePlayer({48000U, 1U, 16U}, 255U);
+    const auto pcm = Pcm16({1000, 2000, 3000, 4000});
+    REQUIRE(mixer.EnqueueBlocking(player, pcm, pcm.size()) ==
+            ogplay::audio::OpenSlesEnqueueResult::enqueued);
+    CHECK(mixer.QueuedBytes(player) == pcm.size());
+
+    std::atomic result{ogplay::audio::OpenSlesEnqueueResult::interrupted};
+    std::jthread writer([&] {
+        result = mixer.EnqueueBlocking(player, pcm, pcm.size());
+    });
+    bool parked{};
+    for (std::size_t attempt = 0; attempt < 100000U; ++attempt) {
+        if (mixer.BlockingWriterCount() == 1U) {
+            parked = true;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    if (!parked) static_cast<void>(mixer.InterruptBlockingWaits());
+    REQUIRE(parked);
+    CHECK(mixer.QueuedBytes(player) == pcm.size());
+
+    mixer.SetPlayState(player, ogplay::audio::OpenSlesPlayState::playing);
+    std::array<std::int16_t, 8> output{};
+    static_cast<void>(mixer.MixAdditiveStereoPcm16(output, 48000U));
+    writer.join();
+    CHECK(result.load() == ogplay::audio::OpenSlesEnqueueResult::enqueued);
+    CHECK(mixer.QueuedBytes(player) == pcm.size());
+}
+
+TEST_CASE("AudioTrack blocking enqueue is interrupted by teardown") {
+    ogplay::audio::OpenSlesPcmMixer mixer;
+    const auto player = mixer.CreatePlayer({48000U, 1U, 16U}, 255U);
+    const auto pcm = Pcm16({1000, 2000, 3000, 4000});
+    REQUIRE(mixer.EnqueueBlocking(player, pcm, pcm.size()) ==
+            ogplay::audio::OpenSlesEnqueueResult::enqueued);
+
+    std::atomic result{ogplay::audio::OpenSlesEnqueueResult::enqueued};
+    std::jthread writer([&] {
+        result = mixer.EnqueueBlocking(player, pcm, pcm.size());
+    });
+    bool parked{};
+    for (std::size_t attempt = 0; attempt < 100000U; ++attempt) {
+        if (mixer.BlockingWriterCount() == 1U) {
+            parked = true;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    const auto interrupted = mixer.InterruptBlockingWaits();
+    writer.join();
+    REQUIRE(parked);
+    CHECK(interrupted == 1U);
+    CHECK(result.load() == ogplay::audio::OpenSlesEnqueueResult::interrupted);
+    CHECK(mixer.EnqueueBlocking(player, pcm, pcm.size()) ==
+          ogplay::audio::OpenSlesEnqueueResult::interrupted);
+}
+
+TEST_CASE("AudioTrack blocking enqueue wakes when its player is destroyed") {
+    ogplay::audio::OpenSlesPcmMixer mixer;
+    const auto player = mixer.CreatePlayer({48000U, 1U, 16U}, 255U);
+    const auto pcm = Pcm16({1000, 2000, 3000, 4000});
+    REQUIRE(mixer.EnqueueBlocking(player, pcm, pcm.size()) ==
+            ogplay::audio::OpenSlesEnqueueResult::enqueued);
+
+    std::atomic result{ogplay::audio::OpenSlesEnqueueResult::enqueued};
+    std::jthread writer([&] {
+        result = mixer.EnqueueBlocking(player, pcm, pcm.size());
+    });
+    while (mixer.BlockingWriterCount() == 0U) std::this_thread::yield();
+    mixer.DestroyPlayer(player);
+    writer.join();
+    CHECK(result.load() ==
+          ogplay::audio::OpenSlesEnqueueResult::player_destroyed);
 }
 
 TEST_CASE("OpenSL mixer decodes PCM8 resamples and applies volume mute pan") {

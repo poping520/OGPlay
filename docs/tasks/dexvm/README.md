@@ -115,6 +115,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | [DVM-90](DVM-90.md) | 动态 SurfaceView attach/detach 生命周期 | 已完成（title 复跑受独立 fault 阻断） |
 | [DVM-91](DVM-91.md) | ParcelFileDescriptor 与媒体数据源区间能力栈 | 已完成 |
 | [DVM-92](DVM-92.md) | teardown 图形退役与 renewable native 快速取消 | 已完成 |
+| [DVM-93](DVM-93.md) | AudioTrack stream 字节回压 | 已完成（A6 实听通过） |
 
 ## 批次 4 · 更多 title 上 dexvm 路线（进行中）
 

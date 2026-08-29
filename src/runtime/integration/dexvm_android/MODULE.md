@@ -80,6 +80,9 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   side-table，listener 作为 GC root trace。生命周期帧泵只按共享 PCM mixer 的真实播放头
   投递 marker/periodic callback；跨多期补发，pause/stop/flush/release 与 null listener
   保持静默，禁止宿主音频线程直接进入 guest VM。
+- `AudioTrack` MODE_STREAM write 与 legacy 路径共享 ADR-0027 字节回压；等待 mixer 消费前
+  必须完整释放 `VmExecutionLock`，恢复后重新验证 owner/player。饱和不返回 0，release 或
+  teardown 中断返回 `ERROR_INVALID_OPERATION`；MODE_STATIC 仍为一次受检复制。
 - `SurfaceHolder$Impl.lockCanvas` 返回 holder 稳定 Canvas；仅 locked Canvas 可绘制，
   unlockCanvasAndPost 发布软件帧并结束锁定。Bitmap/Canvas 均使用同一 ARGB word 语义。
 - `System.load/System.loadLibrary` 只经 context 注入的 process

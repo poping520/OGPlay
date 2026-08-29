@@ -231,18 +231,28 @@ void AndroidGuestLegacyMediaState::ReleaseAudioTrack(
     pcm_playback_->DestroyPlayer(found->second.player);
 }
 
-void AndroidGuestLegacyMediaState::WriteAudioTrack(
+std::int32_t AndroidGuestLegacyMediaState::WriteAudioTrack(
     const JniObjectIdentity track, const std::span<const JniByte> bytes) {
-    std::scoped_lock lock(mutex_);
-    const auto found = audio_tracks_.find(track.value);
-    if (found == audio_tracks_.end() || found->second.snapshot.released ||
-        bytes.empty() || bytes.size() %
-            static_cast<std::size_t>(found->second.snapshot.channels * 2) != 0U ||
-        bytes.size() > static_cast<std::size_t>(found->second.snapshot.buffer_size) ||
-        found->second.snapshot.bytes_written >
-            std::numeric_limits<std::uint64_t>::max() - bytes.size()) {
-        throw AndroidGuestCallSessionError(
-            "Android guest AudioTrack write is invalid");
+    audio::OpenSlesPcmMixer* playback{};
+    audio::OpenSlesPcmMixer::PlayerId player{};
+    std::size_t buffer_size{};
+    {
+        std::scoped_lock lock(mutex_);
+        const auto found = audio_tracks_.find(track.value);
+        if (found == audio_tracks_.end() || found->second.snapshot.released ||
+            bytes.empty() || bytes.size() % static_cast<std::size_t>(
+                found->second.snapshot.channels * 2) != 0U ||
+            bytes.size() > static_cast<std::size_t>(
+                found->second.snapshot.buffer_size) ||
+            found->second.snapshot.bytes_written >
+                std::numeric_limits<std::uint64_t>::max() - bytes.size()) {
+            throw AndroidGuestCallSessionError(
+                "Android guest AudioTrack write is invalid");
+        }
+        playback = pcm_playback_;
+        player = found->second.player;
+        buffer_size = static_cast<std::size_t>(
+            found->second.snapshot.buffer_size);
     }
     std::vector<std::byte> pcm(bytes.size());
     std::transform(bytes.begin(), bytes.end(), pcm.begin(),
@@ -250,11 +260,30 @@ void AndroidGuestLegacyMediaState::WriteAudioTrack(
                        return static_cast<std::byte>(
                            static_cast<std::uint8_t>(value));
                    });
-    if (!pcm_playback_->Enqueue(found->second.player, pcm)) {
-        throw AndroidGuestCallSessionError(
-            "Android guest AudioTrack PCM queue is full");
+    const auto enqueue = playback->EnqueueBlocking(player, pcm, buffer_size);
+    if (enqueue != audio::OpenSlesEnqueueResult::enqueued) return -3;
+
+    std::int32_t peak{};
+    for (std::size_t offset = 0; offset < pcm.size(); offset += 2U) {
+        const auto sample = static_cast<std::int16_t>(
+            static_cast<std::uint16_t>(
+                std::to_integer<std::uint8_t>(pcm[offset])) |
+            static_cast<std::uint16_t>(
+                std::to_integer<std::uint8_t>(pcm[offset + 1U]) << 8U));
+        peak = std::max(peak, std::abs(static_cast<std::int32_t>(sample)));
+    }
+    std::scoped_lock lock(mutex_);
+    const auto found = audio_tracks_.find(track.value);
+    if (found == audio_tracks_.end() || found->second.snapshot.released ||
+        found->second.player != player) {
+        return -3;
     }
     found->second.snapshot.bytes_written += bytes.size();
+    ++found->second.snapshot.write_calls;
+    if (peak != 0) ++found->second.snapshot.nonzero_writes;
+    found->second.snapshot.peak_sample = std::max(
+        found->second.snapshot.peak_sample, peak);
+    return static_cast<std::int32_t>(bytes.size());
 }
 
 AndroidGuestLegacyMediaState::AudioTrackSnapshot
@@ -265,7 +294,11 @@ AndroidGuestLegacyMediaState::AudioTrack(const JniObjectIdentity track) const {
         throw AndroidGuestCallSessionError(
             "Android guest AudioTrack is unavailable");
     }
-    return found->second.snapshot;
+    auto snapshot = found->second.snapshot;
+    if (!snapshot.released && pcm_playback_ != nullptr) {
+        snapshot.queued_bytes = pcm_playback_->QueuedBytes(found->second.player);
+    }
+    return snapshot;
 }
 
 JniObjectIdentity InstallAndroidGuestJavaMediaClasses(
@@ -391,8 +424,8 @@ void BindAndroidGuestJavaMediaHandlers(
             const auto count = std::get<JniInt>(invocation.arguments[2]);
             const auto region = std::get<std::vector<JniByte>>(
                 arrays.Region(*array, offset, count));
-            media_state.WriteAudioTrack(track_identity(invocation), region);
-            return JniValue{JniInt{count}};
+            return JniValue{JniInt{media_state.WriteAudioTrack(
+                track_identity(invocation), region)}};
         });
     invocations.RegisterHandler(
         "audio.load_movie",

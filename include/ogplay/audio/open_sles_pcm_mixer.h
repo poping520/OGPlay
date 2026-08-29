@@ -1,5 +1,6 @@
 #pragma once
 
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -27,6 +28,12 @@ struct OpenSlesConsumedBuffer final {
     std::uint64_t sequence{};
 };
 
+enum class OpenSlesEnqueueResult : std::uint8_t {
+    enqueued,
+    interrupted,
+    player_destroyed,
+};
+
 class OpenSlesPcmMixer final {
 public:
     using PlayerId = std::uint64_t;
@@ -36,6 +43,15 @@ public:
     void DestroyPlayer(PlayerId player) noexcept;
     [[nodiscard]] bool HasPlayer(PlayerId player) const;
     [[nodiscard]] bool Enqueue(PlayerId player, std::span<const std::byte> pcm);
+    // AudioTrack MODE_STREAM writes block against its Android buffer-size
+    // byte budget. The item capacity remains only a bounded memory guard.
+    [[nodiscard]] OpenSlesEnqueueResult EnqueueBlocking(
+        PlayerId player, std::span<const std::byte> pcm,
+        std::size_t maximum_queued_bytes);
+    [[nodiscard]] std::size_t QueuedBytes(PlayerId player) const;
+    [[nodiscard]] std::size_t BlockingWriterCount() const noexcept;
+    // Process teardown is sticky: wake current writers and reject later ones.
+    [[nodiscard]] std::size_t InterruptBlockingWaits() noexcept;
     void Clear(PlayerId player);
     [[nodiscard]] OpenSlesQueueState QueueState(PlayerId player) const;
     void SetPlayState(PlayerId player, OpenSlesPlayState state);
@@ -78,11 +94,15 @@ private:
                                              std::size_t channel);
     [[nodiscard]] Player& Require(PlayerId player);
     [[nodiscard]] const Player& Require(PlayerId player) const;
+    [[nodiscard]] static std::size_t QueuedBytes(const Player& player);
 
     mutable std::mutex mutex_;
+    std::condition_variable queue_changed_;
     std::map<PlayerId, Player> players_;
     PlayerId next_player_{1U};
     std::vector<std::int64_t> scratch_;
+    std::size_t blocking_writers_{};
+    bool interrupted_{};
 };
 
 }  // namespace ogplay::audio

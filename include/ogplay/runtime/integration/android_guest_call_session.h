@@ -102,6 +102,10 @@ public:
         std::int32_t channels{};
         std::int32_t buffer_size{};
         std::uint64_t bytes_written{};
+        std::uint64_t write_calls{};
+        std::uint64_t nonzero_writes{};
+        std::int32_t peak_sample{};
+        std::size_t queued_bytes{};
         bool playing{};
         bool paused{};
         bool released{};
@@ -126,8 +130,8 @@ public:
     void PlayAudioTrack(JniObjectIdentity track);
     void StopAudioTrack(JniObjectIdentity track);
     void ReleaseAudioTrack(JniObjectIdentity track);
-    void WriteAudioTrack(JniObjectIdentity track,
-                         std::span<const JniByte> bytes);
+    [[nodiscard]] std::int32_t WriteAudioTrack(
+        JniObjectIdentity track, std::span<const JniByte> bytes);
     [[nodiscard]] AudioTrackSnapshot AudioTrack(
         JniObjectIdentity track) const;
 

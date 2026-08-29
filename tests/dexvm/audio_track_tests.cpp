@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ogplay/audio/open_sles_pcm_mixer.h"
@@ -250,6 +252,54 @@ TEST_CASE("DVM-84 AudioTrack streams PCM through the OpenSL mixer") {
     CHECK(fixture.CallOn(track, "getState", "()I").AsInt() == 0);
 }
 
+TEST_CASE("DexVM streaming write releases VM lock while byte-budget blocked") {
+    AudioTrackVm fixture;
+    constexpr std::int32_t buffer_size = 800;
+    const auto track = fixture.NewTrack(4000, 4, 2, buffer_size, 1);
+    const auto array = fixture.ByteArray(
+        std::vector<std::byte>(buffer_size, std::byte{1}));
+    const std::vector write_arguments{
+        VmValue::Ref(array), VmValue::Int(0), VmValue::Int(buffer_size)};
+    REQUIRE(fixture.CallOn(track, "write", "([BII)I", write_arguments)
+                .AsInt() == buffer_size);
+
+    const auto klass = fixture.model.ObjectClass(track);
+    const auto index = fixture.linker.FindVtableIndex(
+        klass, "write", "([BII)I");
+    REQUIRE(index.has_value());
+    const auto method = fixture.linker.Class(klass).vtable[*index];
+    auto arguments = write_arguments;
+    arguments.insert(arguments.begin(), VmValue::Ref(track));
+    std::atomic<std::int32_t> result{-99};
+    std::atomic<bool> exception{};
+    std::jthread writer([&] {
+        const auto outcome = fixture.vm.Call(method, arguments);
+        exception = outcome.exception.IsValid();
+        if (!exception.load()) result = outcome.value.AsInt();
+    });
+    bool parked{};
+    for (std::size_t attempt = 0; attempt < 100000U; ++attempt) {
+        if (fixture.mixer.BlockingWriterCount() == 1U) {
+            parked = true;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    if (!parked) {
+        static_cast<void>(fixture.mixer.InterruptBlockingWaits());
+    }
+    REQUIRE(parked);
+
+    static_cast<void>(fixture.CallOn(track, "play", "()V"));
+    fixture.MixFrames(400U);
+    writer.join();
+    CHECK_FALSE(exception.load());
+    CHECK(result.load() == buffer_size);
+    CHECK(fixture.mixer.QueuedBytes(
+              fixture.context->audio_tracks.at(track.Value()).player) <=
+          static_cast<std::size_t>(buffer_size));
+}
+
 TEST_CASE("DVM-84 static short writes initialize and GC releases PCM players") {
     AudioTrackVm fixture;
     const auto track = fixture.NewTrack(8000, 12, 2, 8, 0);
@@ -421,18 +471,18 @@ TEST_CASE("AudioTrack listener can refill stream during periodic callback") {
         {VmValue::Ref(listener)}));
     CHECK(fixture.CallOn(
               track, "setPositionNotificationPeriod", "(I)I",
-              {VmValue::Int(2)}).AsInt() == 0);
+              {VmValue::Int(400)}).AsInt() == 0);
     CHECK(fixture.CallOn(
               track, "write", "([BII)I",
               {VmValue::Ref(pcm), VmValue::Int(0),
                VmValue::Int(buffer_size)}).AsInt() == buffer_size);
     static_cast<void>(fixture.CallOn(track, "play", "()V"));
-    fixture.MixFrames(2U);
+    fixture.MixFrames(400U);
     CHECK_FALSE(PumpAndroidAudioTracks(fixture.vm, *fixture.context).has_value());
     CHECK(fixture.recorder.periodic.size() == 1U);
     CHECK(fixture.recorder.write_result == buffer_size);
     const auto player = fixture.context->audio_tracks.at(track.Value()).player;
-    CHECK(fixture.mixer.QueueState(player).count == 2U);
+    CHECK(fixture.mixer.QueueState(player).count == 1U);
 }
 
 TEST_CASE("AudioTrack notification setters report errors and callback faults") {

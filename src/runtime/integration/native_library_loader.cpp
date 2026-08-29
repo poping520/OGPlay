@@ -170,7 +170,9 @@ class NativeLibraryLoader::Impl final {
 public:
     Impl(AndroidGuestProcess& process,
          const loader::ApkSelectedNativeLibraries& libraries)
-        : process_(&process), libraries_(&libraries) {}
+        : process_(&process), libraries_(&libraries) {
+        IndexApkSonameAliases();
+    }
 
     Impl(AndroidGuestProcess& process,
          const loader::ApkSelectedNativeLibraries& libraries,
@@ -180,6 +182,7 @@ public:
         : process_(&process), libraries_(&libraries),
           boundary_api_(bionic.api),
           logger_(logger) {
+        IndexApkSonameAliases();
         system_libraries_.reserve(system_libraries.size());
         for (const auto& source : system_libraries) {
             if (!IsLibraryBasename(source.name) || source.image.empty() ||
@@ -218,7 +221,7 @@ public:
         }
         return LoadResolved(
             {SyntheticGuestPath(library->soname), library->soname,
-             library->image, library->entry_name, true},
+             library->image, library->entry_name, false},
             class_loader);
     }
 
@@ -238,7 +241,7 @@ public:
             }
             return LoadResolved(
                 {SyntheticGuestPath(library->soname), library->soname,
-                 library->image, library->entry_name, true},
+                 library->image, library->entry_name, false},
                 class_loader);
         }
 
@@ -246,7 +249,7 @@ public:
             library != nullptr) {
             return LoadResolved(
                 {SyntheticGuestPath(library->soname), library->soname,
-                 library->image, library->entry_name, true},
+                 library->image, library->entry_name, false},
                 class_loader);
         }
 
@@ -317,6 +320,50 @@ private:
         return found == system_libraries_.end() ? nullptr : &*found;
     }
 
+    void IndexApkSonameAliases() {
+        for (const auto& library : libraries_->Libraries()) {
+            try {
+                const auto image = loader::ParseElf32Arm(library.image);
+                if (image.type != loader::Elf32ImageType::shared_object) {
+                    continue;
+                }
+                const auto dynamic =
+                    loader::ReadElf32DynamicInfo(library.image, image);
+                if (!dynamic.soname.has_value() ||
+                    *dynamic.soname == library.soname ||
+                    libraries_->FindSoname(*dynamic.soname) != nullptr) {
+                    continue;
+                }
+                const auto [found, inserted] = apk_soname_aliases_.emplace(
+                    *dynamic.soname, &library);
+                if (!inserted && found->second != &library) {
+                    apk_soname_aliases_.erase(found);
+                    ambiguous_apk_soname_aliases_.insert(*dynamic.soname);
+                }
+            } catch (const loader::ElfError&) {
+                // Preserve load-time malformed-ELF failure semantics. An
+                // unrelated bad APK entry must not make loader construction
+                // fail merely because aliases are indexed eagerly.
+            }
+        }
+    }
+
+    [[nodiscard]] const loader::ApkNativeLibrary* FindApkLibraryIdentity(
+        const std::string_view name) const {
+        if (const auto* exact = libraries_->FindSoname(name);
+            exact != nullptr) {
+            return exact;
+        }
+        if (ambiguous_apk_soname_aliases_.contains(name)) {
+            throw NativeLibraryLoadError(
+                NativeLibraryLoadErrorReason::link_failure,
+                "APK ELF DT_SONAME alias is ambiguous: " +
+                    std::string(name));
+        }
+        const auto alias = apk_soname_aliases_.find(name);
+        return alias == apk_soname_aliases_.end() ? nullptr : alias->second;
+    }
+
     [[nodiscard]] std::vector<ClosureModule> Closure(
         const ExplicitLibrary& root) const {
         std::vector<ClosureModule> result{{
@@ -340,7 +387,7 @@ private:
                     *dynamic.soname != library.name) {
                     throw NativeLibraryLoadError(
                         NativeLibraryLoadErrorReason::soname_mismatch,
-                        "native DT_SONAME disagrees with inventory identity: " +
+                        "native dependency DT_SONAME disagrees with required identity: " +
                             library.diagnostic_name);
                 }
                 for (const auto& needed : dynamic.needed) {
@@ -349,12 +396,13 @@ private:
                         IsBoundary(needed)) {
                         continue;
                     }
-                    const auto* dependency = libraries_->FindSoname(needed);
+                    const auto* dependency = FindApkLibraryIdentity(needed);
                     if (dependency != nullptr) {
-                        selected.insert(needed);
-                        result.push_back({dependency->soname,
-                                          dependency->image,
-                                          dependency->entry_name, true});
+                        if (selected.insert(dependency->soname).second) {
+                            result.push_back({dependency->soname,
+                                              dependency->image,
+                                              dependency->entry_name, false});
+                        }
                         continue;
                     }
                     const auto* system = FindSystemLibrary(needed);
@@ -508,6 +556,9 @@ private:
     const loader::ApkSelectedNativeLibraries* libraries_{};
     std::optional<AndroidApi> boundary_api_;
     std::vector<OwnedSystemLibrary> system_libraries_;
+    std::map<std::string, const loader::ApkNativeLibrary*, std::less<>>
+        apk_soname_aliases_;
+    std::set<std::string, std::less<>> ambiguous_apk_soname_aliases_;
     core::Logger* logger_{};
     mutable std::mutex mutex_;
     std::condition_variable condition_;

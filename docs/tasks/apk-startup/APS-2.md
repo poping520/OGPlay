@@ -36,7 +36,8 @@
 
 - `ApkNativeLibraryInventory` 以 ABI、APK entry、entry basename soname 与可选
   `lib<logical>.so` logical name 组织 owned image；同 ABI lookup identity 重复会 typed
-  failure。ELF 内部 `DT_SONAME` 尚不在 inventory 阶段解析，APS-4 装载时必须交叉验证。
+  failure。ELF 内部 `DT_SONAME` 尚不在 inventory 阶段解析，其与 entry basename 的
+  alias/冲突语义由 APS-4 在动态装载边界裁决。
 - `ResolveApkProcessAbi(runtime_supported, inventory)` 严格采用 runtime 支持列表顺序；
   项目默认列表固定为 `armeabi-v7a`、`armeabi`。resolver 只查询 ABI presence，不读取
   `so_sha256`、Profile 或 root library。

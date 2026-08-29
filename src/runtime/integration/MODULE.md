@@ -57,8 +57,10 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
 - `NativeLibraryLoader` 是 process service：logical name 与 synthetic guest path 共享按
   canonical path 唯一的 Loading/Loaded/Failed registry，保留 ClassLoader token；同 loader
   重复 load 幂等，同线程递归 loading 成功返回现有 handle，跨 loader 明确失败，Failed
-  重试稳定失败。selected APK ABI inventory 是唯一 app resolver；ET_DYN/DT_SONAME、依赖、
-  relocation、constructor 与 JNI version 均受检。rootless create 未映射的 Bionic guest
+  重试稳定失败。selected APK ABI inventory 是唯一 app resolver；entry basename 是规范
+  module identity，ELF `DT_SONAME` 不同时记录为指向同一 inventory entry 的别名，
+  `DT_NEEDED` 可按任一身份解析，显式加载不因二者不同而失败；别名歧义、ET_DYN、依赖、
+  relocation、constructor 与 JNI version 仍受检。rootless create 未映射的 Bionic guest
   source 由 loader 自有副本保留，只在应用 `DT_NEEDED` 可达时动态加入同一 namespace；
   boundary library 仍走 HLE，缺失依赖明确失败。namespace/map 事务完成后才逐 module
   调用 guest constructor，registry mutex 绝不跨 guest call；仅显式请求 root 执行

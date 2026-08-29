@@ -531,6 +531,50 @@ TEST_CASE("native library loader resolves Bionic dependencies after rootless sta
     CHECK(loaded.jni_version == runtime::kJniVersion1_6);
 }
 
+TEST_CASE("native library loader resolves APK modules by inventory or ELF SONAME") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    loader::ApkNativeLibraryInventory inventory{{
+        Library("libconsumer-alias.so",
+                AppElf({"libconsumer-alias.so", "Tales.final.so",
+                        std::nullopt})),
+        Library("libconsumer-inventory.so",
+                AppElf({"libconsumer-inventory.so", "libTales.final.so",
+                        std::nullopt})),
+        Library("libTales.final.so",
+                AppElf({"Tales.final.so", "", std::nullopt})),
+    }};
+    const auto selected = loader::SelectApkNativeLibraries(
+        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected);
+
+    SUBCASE("explicit load keeps the inventory identity") {
+        const auto loaded = libraries.LoadLibrary("Tales.final", 3U);
+        CHECK(loaded.initialized_modules ==
+              std::vector<std::string>{"libTales.final.so"});
+        REQUIRE(libraries.Records().size() == 1U);
+        CHECK(libraries.Records()[0].soname == "libTales.final.so");
+        CHECK(fixture.process->HasLoadedModule("libTales.final.so"));
+        CHECK(fixture.process->HasLoadedModule("Tales.final.so"));
+    }
+
+    SUBCASE("DT_NEEDED resolves the ELF SONAME alias") {
+        const auto loaded = libraries.LoadLibrary("consumer-alias", 3U);
+        CHECK(loaded.initialized_modules ==
+              std::vector<std::string>{"libTales.final.so",
+                                       "libconsumer-alias.so"});
+        CHECK(fixture.process->ApplicationModuleCount() == 2U);
+    }
+
+    SUBCASE("DT_NEEDED resolves the inventory basename") {
+        const auto loaded = libraries.LoadLibrary("consumer-inventory", 3U);
+        CHECK(loaded.initialized_modules ==
+              std::vector<std::string>{"libTales.final.so",
+                                       "libconsumer-inventory.so"});
+        CHECK(fixture.process->ApplicationModuleCount() == 2U);
+    }
+}
+
 TEST_CASE("native library loader keeps malformed unresolved and bad JNI failures stable") {
     using namespace ogplay;
     FixtureProcess fixture;
@@ -577,13 +621,11 @@ TEST_CASE("native library loader keeps malformed unresolved and bad JNI failures
         CHECK(error.Reason() ==
               runtime::NativeLibraryLoadErrorReason::invalid_jni_version);
     }
-    try {
-        static_cast<void>(libraries.LoadLibrary("alias", 3U));
-        FAIL("mismatched SONAME unexpectedly succeeded");
-    } catch (const runtime::NativeLibraryLoadError& error) {
-        CHECK(error.Reason() ==
-              runtime::NativeLibraryLoadErrorReason::soname_mismatch);
-    }
+    const auto alias = libraries.LoadLibrary("alias", 3U);
+    CHECK(alias.initialized_modules ==
+          std::vector<std::string>{"libalias.so"});
+    CHECK(fixture.process->HasLoadedModule("libalias.so"));
+    CHECK(fixture.process->HasLoadedModule("libother.so"));
     CHECK_THROWS_AS(
         static_cast<void>(libraries.LoadPath("C:/host/libbad.so", 3U)),
         runtime::NativeLibraryLoadError);

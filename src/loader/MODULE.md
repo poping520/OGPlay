@@ -31,8 +31,9 @@
 - `ReadApkArmNativeLibraries` / `ReadApkNativeLibraryInventory`：稳定枚举
   `lib/armeabi[-v7a]/*.so`，拥有解压字节与小写 SHA-256，并按 ABI、entry basename
   soname、`lib<logical>.so` logical name 建立不可变 inventory；此阶段不解析 ELF
-  `DT_SONAME`，动态装载时交叉验证；selected view 还可按精确 APK entry 查询，但不允许
-  跨 ABI。
+  `DT_SONAME`；selected view 还可枚举当前 ABI 或按精确 APK entry 查询，但不允许跨
+  ABI。动态装载保留 entry basename 为规范 inventory identity，若 ELF `DT_SONAME`
+  不同则将其作为同一库的链接别名，不以不一致本身拒载。
 - `ResolveApkProcessAbi`：只取 runtime-supported ABI 有序列表与 inventory ABI 的首个
   交集；默认优先 `armeabi-v7a` 再 `armeabi`，不读取 Profile/hash。空 inventory 对
   native ABI resolver 仍是 typed `native_abi_required`，rootless Java-capable process

@@ -61,11 +61,19 @@ frontend/root-module 模型迁入 loader。
   依赖优先 constructors，成功初始化的 module 纳入 process stop 反序 finalization；
   constructor/JNI 失败后已发布映射保留为 process-lifetime 失败事实，不伪造卸载。
 - `NativeLibraryLoader` 同时支持 logical name 与稳定 `/data/app-lib/<soname>` synthetic
-  guest path，且只从 selected ABI inventory 解析；装载时交叉验证 ET_DYN/DT_SONAME，
+  guest path，且只从 selected ABI inventory 解析；装载时验证 ET_DYN，但不把 APK entry
+  basename 与 ELF `DT_SONAME` 不同视为错误：前者保持规范 inventory identity，后者记录为
+  同一模块别名，`DT_NEEDED` 可用任一身份解析；
   registry 保存 Loading/Loaded/Failed、ClassLoader token、handle、JNI version/call count。
   registry mutex 不跨 constructors/JNI_OnLoad guest call，同线程递归不自锁。
 - 直接 C++ fixture 覆盖 A→B dependency constructor 顺序、仅 A 的显式 JNI_OnLoad、B
   后续显式 load、无 OnLoad 成功、重复幂等、跨 ClassLoader、malformed/unresolved、
-  SONAME mismatch、invalid JNI version 与稳定 Failed 重试；未接 DexVM `System.load*`。
+  SONAME/inventory 双身份、invalid JNI version 与稳定 Failed 重试；未接 DexVM
+  `System.load*`。
+- 后续 API19 纠偏：Dalvik `dvmLoadNativeCode()` 将显式路径交给 `dlopen()`，平台 linker
+  不执行“文件 basename 必须等于 `DT_SONAME`”门禁。定向 fixture 锁定 mismatch 显式加载、
+  `DT_NEEDED` 分别使用 ELF SONAME 与 inventory basename；Tales release exact run 越过原
+  拒载并完成 `libAmazonGamesJni.so` 显式加载，新首错为独立的
+  `glUnmapBufferOES` 未解析。
 - Windows MSVC：`cmake --preset windows-msvc`、完整 Release build 通过；APS-4 定向
   2/2、完整 `ctest --preset windows-msvc` 792/792。

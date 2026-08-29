@@ -1,12 +1,13 @@
 # 当前状态
 
-更新：DVM-71 system UI visibility 扩展已闭合；UTIL-3、UTIL-2、DVM-92 与 Diagnostics 已完成
+更新：APS-4 SONAME/inventory 别名语义已按 API19 纠偏；DVM-47 title gate 继续
 
 ## 当前阶段
 
-- **DVM-71 扩展已完成**：发布 API19 system-UI listener 接口、反射常量、稳定 decor View 与逐
-  View request/listener 状态；无 WMS 事件时不伪造回调。真实复跑越过原层级阻断，新首错为
-  独立的 native `DT_SONAME` inventory identity 不一致。见 [DVM-71](../tasks/dexvm/DVM-71.md)。
+- **APS-4 loader 纠偏已完成**：APK entry basename 保持规范 identity，不同的 ELF
+  `DT_SONAME` 记录为同一库别名；显式加载不再拒绝 mismatch，`DT_NEEDED` 可按任一身份
+  解析。Tales release exact run 完成 `libAmazonGamesJni.so` 显式加载，新首错为独立的
+  `glUnmapBufferOES` 缺口。见 [APS-4](../tasks/apk-startup/APS-4.md)。
 - **UTIL-3 已完成**：收敛 diagnostics snapshot 投影、ELF 地址映射、JNI guest 返回编码/
   string lease/FieldID lookup、StringBuffer/Builder、简单 throwable、reflection member、
   数值 binop、NIO bulk 校验、Profile exact keys 与 internal class-name predicate；锁策略、
@@ -28,8 +29,6 @@
 - **Diagnostics WU2 已完成**：排查手册固化 procdump/WinDbg/lldb、host_tid 十进制/十六进制
   对齐、符号构建与无符号 `module+offset` 边界；对齐工具只合并事实，不猜函数名。
   见 [Diagnostics](../design/diagnostics/README.md) 与 [ADR-0026](../adr/0026-bounded-stall-snapshots.md)。
-- **项目约束已调整**：WU 不再限制触及文件数量，代码文件不再设 800 行上限；代码改动
-  默认只构建受影响目标并运行直接相关的单点/定向测试，全量测试仅在用户明确要求时运行。
 - **DVM-89 能力栈已闭合**：native watchdog 仅按真实阻塞/I/O/GPU/音频/JNI 重入进展
   续期；首帧握手可观测 worker park/终态；AudioTrack marker/periodic 与输出采样率接入
   真实 mixer；GuestProcFacts、根上下文 timed park 快进均已交付。watchdog 与首帧契约
@@ -42,6 +41,9 @@
 
 ## 最近验证
 
+- 2026-08-29 APS-4 macOS dev/release 受影响目标构建通过；APK inventory/native loader
+  定向 10/10。Tales exact 越过 SONAME 门禁；A6 exact 完成 `libasphalt6.so` 装载并进入
+  `onSurfaceChanged`，首帧前未继续推进，不计 gate。
 - 2026-08-28 UTIL-3 macOS `dev` 受影响目标编译通过；算术/异常/builder/diagnostics/
   reflection/NIO/ELF/JNI guest/Profile 定向 31/31 及 architecture 6/6 通过。
 - 2026-08-28 UTIL-2 macOS `dev` 受影响目标编译通过；定向测试 loader/session/input
@@ -61,8 +63,8 @@
 
 ## 下一步
 
-1. 通用闭合 A6 `DT_SONAME` identity；完成 DH 主菜单 Scenario gate 与 profile 长跑复验。
-2. 复验 DVM-47/threaded title gate；执行 Linux M9 严格出口复验。
+1. 修复 Tales `glUnmapBufferOES` GLES 缺口；完成 DH 主菜单 Scenario gate 与 profile 长跑复验。
+2. 复验 A6/DVM-47/threaded title gate；执行 Linux M9 严格出口复验。
 3. 首次出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 
 ## 边界

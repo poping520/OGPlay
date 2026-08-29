@@ -26,8 +26,9 @@ struct ApkNativeLibrary final {
     AndroidArmAbi abi{AndroidArmAbi::armeabi_v7a};
     std::string sha256;
     std::vector<std::byte> image;
-    // Linker lookup identity derived from the APK entry basename. APS-4 will
-    // validate any ELF DT_SONAME against this inventory identity.
+    // Stable inventory identity derived from the APK entry basename. The
+    // dynamic loader may additionally index a differing ELF DT_SONAME as an
+    // alias for this same library.
     std::string soname;
     // System.loadLibrary token when the soname has the lib<name>.so shape.
     std::optional<std::string> logical_name;
@@ -77,6 +78,7 @@ public:
                                AndroidArmAbi abi);
 
     [[nodiscard]] AndroidArmAbi Abi() const noexcept;
+    [[nodiscard]] std::span<const ApkNativeLibrary> Libraries() const noexcept;
     [[nodiscard]] const ApkNativeLibrary* FindSoname(
         std::string_view soname) const noexcept;
     [[nodiscard]] const ApkNativeLibrary* FindLogicalName(

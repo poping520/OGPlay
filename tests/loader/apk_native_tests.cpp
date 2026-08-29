@@ -219,6 +219,9 @@ TEST_CASE("selected native library view cannot cross the process ABI") {
     const auto abi = ogplay::loader::ResolveApkProcessAbi(inventory);
     const auto selected = ogplay::loader::SelectApkNativeLibraries(inventory, abi);
     CHECK(selected.Abi() == ogplay::loader::AndroidArmAbi::armeabi_v7a);
+    REQUIRE(selected.Libraries().size() == 1U);
+    CHECK(selected.Libraries()[0].entry_name ==
+          "lib/armeabi-v7a/libgame.so");
     const auto* game = selected.FindLogicalName("game");
     REQUIRE(game != nullptr);
     CHECK(game->entry_name == "lib/armeabi-v7a/libgame.so");

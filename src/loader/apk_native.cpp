@@ -306,6 +306,21 @@ ApkSelectedNativeLibraries::ApkSelectedNativeLibraries(
 
 AndroidArmAbi ApkSelectedNativeLibraries::Abi() const noexcept { return abi_; }
 
+std::span<const ApkNativeLibrary>
+ApkSelectedNativeLibraries::Libraries() const noexcept {
+    const auto libraries = inventory_->Libraries();
+    const auto first = std::ranges::find_if(
+        libraries, [this](const ApkNativeLibrary& library) {
+            return library.abi == abi_;
+        });
+    if (first == libraries.end()) return {};
+    const auto last = std::ranges::find_if(
+        first, libraries.end(), [this](const ApkNativeLibrary& library) {
+            return library.abi != abi_;
+        });
+    return {first, last};
+}
+
 const ApkNativeLibrary* ApkSelectedNativeLibraries::FindSoname(
     const std::string_view soname) const noexcept {
     return inventory_->FindSoname(abi_, soname);

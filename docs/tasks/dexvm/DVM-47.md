@@ -24,9 +24,10 @@
 - A5 强制回收探针：临时 Profile 使用 16 MiB 堆与 1% 水位，Scenario 通过且保持
   同一 `f91150b4...`；`runtime.dexvm.gc` 日志中 `freed_bytes`、
   `freed_objects` 多轮非零，证明真实 title 已执行 GC-B。
-- A6 `asphalt6.bootstrap`：在进入 GC gate 前由 APS-4 的通用 strict loader 拒绝，
-  原因是 APK `lib/armeabi-v7a/libasphalt6.so` 的 DT_SONAME 与 inventory identity
-  不一致；长运行 Scenario 因同一前置阻断未执行。
+- A6 `asphalt6.bootstrap`：APS-4 已移除过严的 SONAME/inventory equality 门禁；关闭
+  survey 的 release 有界复跑完成 `libasphalt6.so` 显式加载并进入
+  `surfaceCreated/onSurfaceChanged`。该次探索在首帧前未继续推进并由宿主终止，不作为
+  Scenario gate 结论；bootstrap 三轮与长运行 Scenario 仍待执行。
 - DH：两轮到达可见帧且 clean；第三轮同一宿主 step 预算下呈现序列由 100 漂移到 97，
   触发 frame budget/golden 不一致。无 guest fault，但尚不满足三轮逐位持平。
 - Scenario schema/current 校验通过；DVM-42..46 的 GC 单元/DEX 夹具通过。
@@ -39,7 +40,7 @@ A5/A6/DH 三轮持平和长运行水位回落尚未全部成立。因此 `dexvm.
 
 ## 解除条件
 
-1. 通用修复或重新确认 A6 native identity/DT_SONAME 契约后，A6 bootstrap 三轮通过；
+1. 已通用修复 A6 native identity/DT_SONAME 契约；A6 bootstrap 仍需三轮通过；
 2. 将 DH 的呈现时点纳入确定性控制后，DH 三轮同 golden 通过；
 3. `asphalt6.gc_long`（或经设计认可的等价 exact title 长运行 gate）证明 GC 至少发生
    一次且回收后水位下降；

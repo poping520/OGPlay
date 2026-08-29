@@ -43,7 +43,9 @@ public:
     Interpreter* vm{};
     VmMonotonicMillis now;
     VmClockAdvance advance;
+    VmClockDriverBlockedProbe clock_driver_blocked;
     mutable std::mutex mutex;
+    mutable std::mutex clock_advance_mutex;
     std::condition_variable changed;
     std::unordered_map<std::uint32_t, std::unique_ptr<Monitor>> monitors;
     std::unordered_set<std::uint64_t> interrupted;
@@ -136,9 +138,37 @@ void VmMonitorTable::SetClockAdvance(VmClockAdvance advance) {
     impl_->advance = std::move(advance);
 }
 
-VmClockAdvance VmMonitorTable::ClockAdvance() const {
+void VmMonitorTable::SetClockDriverBlockedProbe(
+    VmClockDriverBlockedProbe probe) {
     const std::lock_guard guard(impl_->mutex);
-    return impl_->advance;
+    impl_->clock_driver_blocked = std::move(probe);
+}
+
+bool VmMonitorTable::TryAdvanceClockForTimedPark(
+    const std::uint64_t context, const std::int64_t deadline_millis) const {
+    VmClockAdvance advance;
+    VmClockDriverBlockedProbe driver_blocked;
+    VmMonotonicMillis now;
+    {
+        const std::lock_guard guard(impl_->mutex);
+        advance = impl_->advance;
+        driver_blocked = impl_->clock_driver_blocked;
+        now = impl_->now;
+    }
+    if (!advance || !now ||
+        (context != kRootLifecycleToken &&
+         (!driver_blocked || !driver_blocked()))) {
+        return false;
+    }
+    // Multiple workers can become eligible while one lifecycle callback is
+    // blocked. Serialize the deadline check with the advance so they converge
+    // on the furthest requested deadline instead of each adding a full delay.
+    const std::lock_guard advance_guard(impl_->clock_advance_mutex);
+    const auto current = now();
+    if (current < deadline_millis) {
+        advance(deadline_millis - current);
+    }
+    return true;
 }
 
 void VmMonitorTable::Enter(const VmObjectRef object,
@@ -216,7 +246,6 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
     }
     const bool timed = timeout_millis > 0;
     VmMonotonicMillis clock;
-    VmClockAdvance advance;
     std::int32_t saved_recursion{};
     {
         const std::lock_guard guard(impl_->mutex);
@@ -225,7 +254,6 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
             throw Impl::NotOwner("wait()");
         }
         clock = impl_->now;
-        advance = impl_->advance;
         // The interrupt flag is honoured before we ever park, exactly as
         // AOSP checks self->interrupted under waitMutex.
         if (impl_->interrupted.erase(owner) != 0) {
@@ -285,14 +313,12 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object,
                 // Deadline decisions stay with the unified Clock; this only
                 // schedules the next re-check.
                 impl_->changed.wait_for(parked, kDeadlinePoll);
-                // The root lifecycle context parks on the very thread that
-                // pumps a deterministic unified Clock between frames; the
-                // session's clock advance resolves the park after the peer
-                // window above had the chance to deliver notify/interrupt.
-                if (!advanced && owner == kRootLifecycleToken && advance) {
-                    advanced = true;
+                // Root parks always fast-forward. Worker parks do so only
+                // while the lifecycle clock driver is itself blocked.
+                if (!advanced) {
                     parked.unlock();
-                    advance(timeout_millis);
+                    advanced = TryAdvanceClockForTimedPark(
+                        owner, deadline);
                     parked.lock();
                 }
             } else {

@@ -176,9 +176,11 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   统一时间由生命周期驱动发布；`Object.wait`、`Thread.sleep` 与 timed join
   共用同一 monotonic source，`System.currentTimeMillis` 仍读取 session 时间事实。
   DexVmBridge 发布该 source 的同时在 `VmMonitorTable` 发布
-  `AdvanceAndroidClock` 快进钩子：根（lifecycle）上下文在生命周期调用内的
-  timed park 由钩子按停泊时长推进确定性 uptime，而不是停泊在只有它自己会
-  推进的 Clock 上（DH onCreate 授权轮询黑屏的根因）。
+  `AdvanceAndroidClock` 快进钩子与 EGL pacer 的 driver-blocked probe：根
+  （lifecycle）上下文在生命周期调用内可推进确定性 uptime；worker 默认仍由帧泵
+  唤醒，但 lifecycle 同步等待 worker、pacer 明确报告 driver blocked 时，worker
+  可推进到自身 deadline。由此解除 A6 `surfaceChanged` 等待 GLThread 首次 resize、
+  GLThread 又执行 33 ms 帧限速 sleep 的启动环，不把普通后台 sleep 改成快进。
   `Activity.isTaskRoot()` 按生命周期发布的 `task_root_activity` 句柄判定：
   Manifest launcher 打开了进程唯一 task，经 `startActivity` 切换到达的 Activity
   不是根；已退出的 handoff shell 对自身句柄仍回答 true，与平台按 token 回答一致。

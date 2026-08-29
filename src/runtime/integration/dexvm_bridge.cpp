@@ -1090,6 +1090,12 @@ DexVmGuestBridge::DexVmGuestBridge(
             [android_context](const std::int64_t delta_millis) {
                 AdvanceAndroidClock(*android_context, delta_millis);
             });
+        impl_->vm->Monitors().SetClockDriverBlockedProbe([android_context] {
+            const auto pacer = TryEglSwapPacerSnapshot(*android_context);
+            return pacer.has_value() && pacer->attached &&
+                   pacer->driver_blocked && !pacer->shutdown &&
+                   !pacer->surface_retired;
+        });
     }
     session.Environment().SetMonitorHooks(JniMonitorHooks{
         [bridge_state](const JniObjectIdentity identity,

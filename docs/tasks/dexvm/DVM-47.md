@@ -24,10 +24,12 @@
 - A5 强制回收探针：临时 Profile 使用 16 MiB 堆与 1% 水位，Scenario 通过且保持
   同一 `f91150b4...`；`runtime.dexvm.gc` 日志中 `freed_bytes`、
   `freed_objects` 多轮非零，证明真实 title 已执行 GC-B。
-- A6 `asphalt6.bootstrap`：APS-4 已移除过严的 SONAME/inventory equality 门禁；关闭
-  survey 的 release 有界复跑完成 `libasphalt6.so` 显式加载并进入
-  `surfaceCreated/onSurfaceChanged`。该次探索在首帧前未继续推进并由宿主终止，不作为
-  Scenario gate 结论；bootstrap 三轮与长运行 Scenario 仍待执行。
+- A6 `asphalt6.bootstrap`：APS-4 已移除过严的 SONAME/inventory equality 门禁。随后
+  snapshot 证明主线程同步停在 `GLSurfaceView$GLThread.a(II)`，GLThread 已完成
+  `nativeRender` 却在 33 ms 帧限速 `Thread.sleep` 等待只有 lifecycle 才推进的 Clock。
+  通用修复让 worker 只在 EGL pacer 明确报告 clock driver blocked 时补到自身 deadline；
+  release 有界复跑现已返回 `surfaceChanged`、启动 lifecycle、切换 `MyVideoView`、解码
+  `intro.mp4` 并以 3/3 presented clean stop。该次仍不代替 Scenario 三轮与长运行 gate。
 - DH：两轮到达可见帧且 clean；第三轮同一宿主 step 预算下呈现序列由 100 漂移到 97，
   触发 frame budget/golden 不一致。无 guest fault，但尚不满足三轮逐位持平。
 - Scenario schema/current 校验通过；DVM-42..46 的 GC 单元/DEX 夹具通过。
@@ -36,11 +38,11 @@
 
 **受阻，不能验收为完成。** GC-B 机制与真实 A5 强制回收已经兑现，但设计规定的
 A5/A6/DH 三轮持平和长运行水位回落尚未全部成立。因此 `dexvm.gc` 保持 `partial`，
-不修改 APS-4 strict loader 契约，也不增加 A6/DH 专属分支来绕过门禁。
+不增加 A6/DH 专属分支来绕过门禁。
 
 ## 解除条件
 
-1. 已通用修复 A6 native identity/DT_SONAME 契约；A6 bootstrap 仍需三轮通过；
+1. 已通用修复 A6 native identity/DT_SONAME 与启动时钟自锁；bootstrap 仍需三轮通过；
 2. 将 DH 的呈现时点纳入确定性控制后，DH 三轮同 golden 通过；
 3. `asphalt6.gc_long`（或经设计认可的等价 exact title 长运行 gate）证明 GC 至少发生
    一次且回收后水位下降；

@@ -35,16 +35,14 @@ using VmMonotonicMillis = std::function<std::int64_t()>;
 // allocates guest thread ids from 2 up for the same reason.
 inline constexpr std::uint64_t kRootLifecycleToken = 1U;
 
-// Fast-forwards the unified Clock by a positive delta. Timed parks executed
-// by the root lifecycle context run on the very host thread that pumps a
-// deterministic Clock between frames, so parking on that Clock would wait
-// forever; Thread.sleep/Object.wait(timeout)/join(timeout) call this with
-// the park duration instead, after one bounded peer window in which an
-// already ready peer can still notify or interrupt first. The session
-// publishing a deterministic time source publishes this alongside it;
-// sessions whose Clock advances by itself (tests wiring a wall clock)
-// publish nothing and keep parking on the Clock.
+// Fast-forwards the unified Clock by a positive delta. The root lifecycle
+// context always needs this when it parks because it normally pumps the
+// deterministic Clock itself. A worker timed park may use the same hook only
+// while the session reports that the lifecycle clock driver is blocked; this
+// breaks startup callback cycles without making normal worker sleeps advance
+// time. A bounded peer window still lets notify/interrupt win first.
 using VmClockAdvance = std::function<void(std::int64_t delta_millis)>;
+using VmClockDriverBlockedProbe = std::function<bool()>;
 
 struct VmMonitorSnapshot final {
     std::uint64_t owner{};
@@ -73,9 +71,11 @@ public:
     // rechecks, but only this source decides whether a guest deadline passed.
     [[nodiscard]] VmMonotonicMillis TimeSource() const;
 
-    // Publishes the root-context park fast-forward (see VmClockAdvance).
+    // Publishes deterministic-clock park coordination (see VmClockAdvance).
     void SetClockAdvance(VmClockAdvance advance);
-    [[nodiscard]] VmClockAdvance ClockAdvance() const;
+    void SetClockDriverBlockedProbe(VmClockDriverBlockedProbe probe);
+    [[nodiscard]] bool TryAdvanceClockForTimedPark(
+        std::uint64_t context, std::int64_t deadline_millis) const;
 
     // monitor-enter / monitor-exit. Enter parks (releasing the execution
     // lock) while another context owns the monitor.

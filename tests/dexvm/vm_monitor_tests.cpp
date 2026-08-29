@@ -482,3 +482,43 @@ TEST_CASE("dexvm root timed wait fast-forwards the published clock advance") {
     vm.interpreter.Monitors().Exit(lock, kRootLifecycleToken);
     CHECK(vm.interpreter.Monitors().HeldCount(kRootLifecycleToken) == 0U);
 }
+
+TEST_CASE("dexvm worker timed wait advances only with a blocked clock driver") {
+    MonitorVm vm;
+    vm.UseTestClock();
+    const auto lock = vm.Lock();
+    std::atomic<bool> driver_blocked{};
+    std::atomic<int> advances{};
+    vm.interpreter.Monitors().SetClockAdvance(
+        [&](const std::int64_t delta_millis) {
+            vm.clock_millis += delta_millis;
+            ++advances;
+        });
+    vm.interpreter.Monitors().SetClockDriverBlockedProbe(
+        [&] { return driver_blocked.load(); });
+
+    auto outcome = VmWaitOutcome::notified;
+    std::thread waiter([&] {
+        VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+        vm.interpreter.Monitors().Enter(lock, 2U);
+        outcome = vm.interpreter.Monitors().Wait(lock, 2U, 50);
+        vm.interpreter.Monitors().Exit(lock, 2U);
+    });
+    const bool waiting = WaitFor([&] {
+        return vm.interpreter.Monitors().WaitingCount(lock) == 1U;
+    });
+    CHECK(waiting);
+    if (!waiting) {
+        driver_blocked.store(true);
+        waiter.join();
+        return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    CHECK(advances.load() == 0);
+    driver_blocked.store(true);
+    waiter.join();
+
+    CHECK(outcome == VmWaitOutcome::timed_out);
+    CHECK(advances.load() == 1);
+    CHECK(vm.clock_millis.load() == 50);
+}

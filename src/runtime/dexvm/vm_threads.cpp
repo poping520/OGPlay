@@ -122,14 +122,6 @@ public:
                            ? std::numeric_limits<std::int64_t>::max()
                            : now + *timeout_millis;
         }
-        // Root lifecycle timed parks cannot wait a deterministic Clock out:
-        // the host thread parking here is the one that pumps it. The
-        // session's clock advance (if published) resolves the deadline after
-        // one bounded peer window.
-        const VmClockAdvance advance =
-            timeout_millis.has_value() && self == kRootLifecycleToken
-                ? monitors.ClockAdvance()
-                : VmClockAdvance{};
         vm->Threads().SetWaitState(self, wait_state);
         auto& lock = vm->ExecutionLock();
         const auto depth = lock.ReleaseForBlocking();
@@ -143,10 +135,10 @@ public:
                 if (timeout_millis.has_value() && clock() >= deadline) break;
                 if (timeout_millis.has_value()) {
                     changed.wait_for(guard, std::chrono::milliseconds(2));
-                    if (!advanced && advance) {
-                        advanced = true;
+                    if (!advanced) {
                         guard.unlock();
-                        advance(*timeout_millis);
+                        advanced = monitors.TryAdvanceClockForTimedPark(
+                            self, deadline);
                         guard.lock();
                     }
                 } else {
@@ -417,23 +409,16 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
         // Object.wait(0,0). It still yields once, but never waits forever.
         std::this_thread::yield();
     } else {
-        // The root lifecycle thread parks on the very host thread that pumps
-        // a deterministic unified Clock between frames; the session's clock
-        // advance (if published) resolves the sleep after one bounded peer
-        // window, so an interrupt raised by a ready peer still wins.
-        const VmClockAdvance advance = self == kRootLifecycleToken
-                                           ? monitors.ClockAdvance()
-                                           : VmClockAdvance{};
         bool advanced = false;
         std::unique_lock guard(impl_->mutex);
         while (!(stopped = impl_->shutting_down) &&
                !(interrupted = monitors.Interrupted(self)) &&
                clock() < deadline) {
             impl_->changed.wait_for(guard, std::chrono::milliseconds(2));
-            if (!advanced && advance) {
-                advanced = true;
+            if (!advanced) {
                 guard.unlock();
-                advance(timeout_millis);
+                advanced = monitors.TryAdvanceClockForTimedPark(
+                    self, deadline);
                 guard.lock();
             }
         }

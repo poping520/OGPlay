@@ -1,13 +1,13 @@
 # 当前状态
 
-更新：APS-4 SONAME/inventory 别名语义已按 API19 纠偏；DVM-47 title gate 继续
+更新：DVM-47 修复 A6 启动时钟自锁；title gate 继续
 
 ## 当前阶段
 
-- **APS-4 loader 纠偏已完成**：APK entry basename 保持规范 identity，不同的 ELF
-  `DT_SONAME` 记录为同一库别名；显式加载不再拒绝 mismatch，`DT_NEEDED` 可按任一身份
-  解析。Tales release exact run 完成 `libAmazonGamesJni.so` 显式加载，新首错为独立的
-  `glUnmapBufferOES` 缺口。见 [APS-4](../tasks/apk-startup/APS-4.md)。
+- **DVM-47 A6 启动自锁已修复**：root timed park 可推进确定性 Clock；worker 默认仍等
+  帧泵，仅在 EGL pacer 证明 clock driver blocked 时补到自身 deadline。A6 release 已返回
+  `surfaceChanged`、启动 lifecycle、切换视频 Activity 并以 3/3 presented clean stop；
+  Scenario 三轮与 gc_long 仍待执行。见 [DVM-47](../tasks/dexvm/DVM-47.md)。
 - **UTIL-3 已完成**：收敛 diagnostics snapshot 投影、ELF 地址映射、JNI guest 返回编码/
   string lease/FieldID lookup、StringBuffer/Builder、简单 throwable、reflection member、
   数值 binop、NIO bulk 校验、Profile exact keys 与 internal class-name predicate；锁策略、
@@ -41,9 +41,8 @@
 
 ## 最近验证
 
-- 2026-08-29 APS-4 macOS dev/release 受影响目标构建通过；APK inventory/native loader
-  定向 10/10。Tales exact 越过 SONAME 门禁；A6 exact 完成 `libasphalt6.so` 装载并进入
-  `onSurfaceChanged`，首帧前未继续推进，不计 gate。
+- 2026-08-29 DVM-47 macOS dev/release 受影响目标构建通过；thread/monitor Clock 定向
+  8/8。A6 exact 返回 `surfaceChanged`、进入 `MyVideoView` 并呈现 3/3 帧后干净停止。
 - 2026-08-28 UTIL-3 macOS `dev` 受影响目标编译通过；算术/异常/builder/diagnostics/
   reflection/NIO/ELF/JNI guest/Profile 定向 31/31 及 architecture 6/6 通过。
 - 2026-08-28 UTIL-2 macOS `dev` 受影响目标编译通过；定向测试 loader/session/input
@@ -64,13 +63,13 @@
 ## 下一步
 
 1. 修复 Tales `glUnmapBufferOES` GLES 缺口；完成 DH 主菜单 Scenario gate 与 profile 长跑复验。
-2. 复验 A6/DVM-47/threaded title gate；执行 Linux M9 严格出口复验。
+2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate；执行 Linux M9 严格出口复验。
 3. 首次出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 
 ## 边界
 
-- 根上下文 timed park 会推进确定性 uptime；生命周期内 guest 时间不再严格等于
-  16 ms×帧序，不宣称 wall-clock 对齐。
+- 根上下文 timed park 可推进确定性 uptime；worker 仅在 clock driver 已阻塞时补到
+  deadline。生命周期内 guest 时间不再严格等于 16 ms×帧序，不宣称 wall-clock 对齐。
 - 键盘字符来自 SDL 当前宿主布局；不宣称完整 Android KeyCharacterMap、dead-key 或 IME。
 - `dexvm.api19_capability_stack=complete` 只表示 bounded 设计阶段闭包，不表示完整
   Android framework、联网、完整 SQLite 或任意 title 全流程可玩。

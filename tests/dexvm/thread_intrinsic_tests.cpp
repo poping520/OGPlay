@@ -447,9 +447,8 @@ TEST_CASE("dexvm root timed join fast-forwards without an external pump") {
     CHECK(vm.threads.IsAlive(sleeper));
 }
 
-// Worker contexts never fast-forward: the frame pump advances the clock for
-// them, and this test supplies that pump from the host thread exactly like
-// the lifecycle loop would.
+// Worker contexts normally stay frame-driven. Without a blocked-driver
+// signal they must not consume the root fast-forward hook.
 TEST_CASE("dexvm worker Thread.sleep parks on the clock, not the advance") {
     ThreadVm vm;
     std::atomic<int> advances{0};
@@ -473,4 +472,42 @@ TEST_CASE("dexvm worker Thread.sleep parks on the clock, not the advance") {
     RequireOk(vm.Virtual(sleeper, "join", "()V"));
     CHECK(vm.Observed("LThreadSleeper;") == 1);
     CHECK(advances.load() == 0);
+}
+
+// A synchronous SurfaceView resize can park the lifecycle clock driver while
+// its GL worker applies a frame limiter with Thread.sleep. In that state the
+// worker is the only execution capable of completing the callback, so its
+// timed park may advance the same deterministic Clock. Closing the gate below
+// leaves it parked; opening it must release exactly one deadline.
+TEST_CASE("dexvm worker Thread.sleep advances only while clock driver is blocked") {
+    ThreadVm vm;
+    std::atomic<bool> driver_blocked{};
+    std::atomic<int> advances{};
+    vm.interpreter.Monitors().SetClockAdvance(
+        [&](const std::int64_t delta_millis) {
+            vm.clock_millis += delta_millis;
+            ++advances;
+        });
+    vm.interpreter.Monitors().SetClockDriverBlockedProbe(
+        [&] { return driver_blocked.load(); });
+    const auto sleeper = vm.New("LThreadSleeper;");
+    RequireOk(vm.Construct(sleeper, "LThreadSleeper;", "()V"));
+    RequireOk(vm.Virtual(sleeper, "start", "()V"));
+    REQUIRE(WaitFor([&] {
+        return std::ranges::any_of(
+            vm.threads.Snapshot(), [sleeper](const auto& thread) {
+                return thread.object == sleeper.Value() &&
+                       thread.wait_state == VmThreadWaitState::sleeping;
+            });
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    CHECK(vm.threads.IsAlive(sleeper));
+    CHECK(advances.load() == 0);
+
+    driver_blocked.store(true);
+    REQUIRE(WaitFor([&] { return !vm.threads.IsAlive(sleeper); }));
+    RequireOk(vm.Virtual(sleeper, "join", "()V"));
+    CHECK(vm.Observed("LThreadSleeper;") == 1);
+    CHECK(advances.load() == 1);
+    CHECK(vm.clock_millis.load() == 100);
 }

@@ -663,7 +663,7 @@ note = "M5 WU-0305 提供 GLES1/2 共用的 depth-range、line/polygon 与 stenc
 [gles.shader_program]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
-note = "M4 真实 ANGLE 闭合 shader/program 生命周期、源码、编译链接与符号定位；M8 WU-0376 批量补齐 active attribute/uniform 及 program/shader info-log，四组多输出均经 IDL 预检并保持截断/NUL 语义"
+note = "M4 真实 ANGLE 闭合 shader/program 生命周期、源码、编译链接与符号定位；M8 WU-0376 补齐 active attribute/uniform 与 info-log；API19 GL_SAMPLER_3D_OES 按单值 uniform shape 登记"
 
 [gles.buffer_texture]
 status = "complete"
@@ -1113,7 +1113,7 @@ note = "BND-22 direct-bind 15 个 GLES2 buffer/texture/query；IDL 在 ANGLE 前
 [runtime.gles2_api19_completion_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/gles/gles_transfer_state_tests.cpp; tests/gles/angle_frame_tests.cpp; architecture.boundary_hot_path; tools.gles2_catalog_current"
-note = "BND-23 direct-bind 最后 26 个 shader/uniform/vertex API；142 core 均有 concrete handler，uniform shape 遵循 link/delete lifecycle，vertex guest identity 与 ShaderBinary 原生 error transport 受检；BND-24 exact ELF 142/142 import 审计、关闭 survey 的 bounded run 与 full CTest 933/933 完成最终验收"
+note = "BND-23 direct-bind 最后 26 个 shader/uniform/vertex API；142 core 均有 concrete handler，uniform shape 遵循 link/delete lifecycle并覆盖 API19 OES sampler3D，vertex guest identity 与 ShaderBinary 原生 error transport 受检；BND-24 exact ELF 142/142 import 审计完成"
 
 [runtime.gles1_viewport_boundary]
 status = "complete"
@@ -1188,12 +1188,12 @@ note = "M5 WU-0264 按 GLES1 规范绑定 7 个 lighting/material/fog 入口并�
 [gles.gles1_extension_catalog]
 status = "complete"
 test = "tools.gles1_extensions_catalog_current"
-note = "M5 WU-0231 以固定 ANGLE extension header 受检子集建立目标所需 GL_OES_matrix_palette 三项入口目录，且不改变 core ID"
+note = "M5 WU-0231 以固定 ANGLE extension header 建立 GL_OES_matrix_palette/mapbuffer 各三项入口；显式 thunk_id 保持既有 extension/core ID"
 
 [runtime.gles1_extension_boundary]
 status = "complete"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp"
-note = "M5 WU-0232 在 libGLESv1_CM.so 追加发布三项 matrix-palette extension trap；目标 ELF 62 个 GL import 均有生成目录 provider"
+note = "M5 WU-0232 发布 matrix-palette 三项 trap；后续以 ANGLE map ↔ 0x72000000 guest arena 双向复制真实实现 GL_OES_mapbuffer 三项，Tales 已越过强符号拒载"
 
 [runtime.gles1_matrix_palette_state]
 status = "partial"

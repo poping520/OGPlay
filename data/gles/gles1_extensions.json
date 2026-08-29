@@ -6,6 +6,7 @@
   "functions": [
     {
       "name": "glCurrentPaletteMatrixOES",
+      "thunk_id": 0,
       "return": "void",
       "parameters": [
         {
@@ -15,7 +16,47 @@
       ]
     },
     {
+      "name": "glGetBufferPointervOES",
+      "thunk_id": 3,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "void",
+          "pointer": true,
+          "indirection": 2,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glMapBufferOES",
+      "thunk_id": 4,
+      "return": "void*",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "access",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
       "name": "glMatrixIndexPointerOES",
+      "thunk_id": 1,
       "return": "void",
       "parameters": [
         {
@@ -41,7 +82,19 @@
       ]
     },
     {
+      "name": "glUnmapBufferOES",
+      "thunk_id": 5,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
       "name": "glWeightPointerOES",
+      "thunk_id": 2,
       "return": "void",
       "parameters": [
         {

@@ -3,6 +3,7 @@
 #include <array>
 #include <algorithm>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -62,6 +63,10 @@ void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
                    const std::span<const gles::GlesApi> apis,
                    const std::span<const NamedExport> additional = {}) {
     auto& module_exports = storage.emplace_back();
+    std::set<std::uint16_t> local_ids;
+    for (const auto& export_ : additional) {
+        local_ids.insert(export_.local_id);
+    }
     for (const auto api : apis) {
         const auto count = gles::GlesFunctionCount(api);
         for (std::size_t index = 0; index < count; ++index) {
@@ -71,9 +76,17 @@ void AddGlesModule(std::vector<BoundaryModuleDefinition>& modules,
                 (std::numeric_limits<std::uint16_t>::max)()) {
                 throw std::length_error("GLES boundary local id overflows");
             }
+            auto local_id = static_cast<std::uint16_t>(module_exports.size());
+            while (local_ids.contains(local_id)) {
+                if (local_id == (std::numeric_limits<std::uint16_t>::max)()) {
+                    throw std::length_error("GLES boundary local id overflows");
+                }
+                ++local_id;
+            }
+            local_ids.insert(local_id);
             module_exports.push_back({
                 function.name,
-                static_cast<std::uint16_t>(module_exports.size()),
+                local_id,
                 static_cast<std::uint8_t>(function.parameter_count), {},
                 BoundaryExportKind::public_function,
                 memory::GuestAddress{}, 4U});

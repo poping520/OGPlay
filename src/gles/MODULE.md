@@ -39,7 +39,8 @@
   C++ 目录；构建与测试均检查生成物没有漂移，并与固定 ANGLE `GLES/gl.h` / `gl2.h`
   分别核对 GLES1.1 core 145 项与 GLES2 core 142 项入口集合。
 - header subset 模式只允许目录声明固定 header 中真实存在的入口，用于隔离的标准扩展
-  catalog；首个 GLES1 扩展目录覆盖 `GL_OES_matrix_palette` 的 3 个目标所需入口。
+  catalog；GLES1 扩展目录覆盖 `GL_OES_matrix_palette` 3 项与 `GL_OES_mapbuffer` 3 项。
+  可选 `thunk_id` 在名称排序事实源中固定追加入口的分派顺序，必须全量、唯一且从零连续。
 - `GuestBuffer::Prepare`：input 由单次 Read 完成验证与复制；output/inout 在 ANGLE 前取得
   带映射世代的 write preflight 并建立有大小上限的宿主暂存；输出只能显式 `Commit`，
   映射未变化时不得重复验证，变化时必须重新验证并 fail closed，对象不可复制。
@@ -112,8 +113,10 @@
   延迟到 draw，按实际索引范围经内部 VBO/EBO 暂存后再进入 ANGLE。uniform vector/matrix
   数组按 IDL 形状完整搬运后再转换为宿主标量；shader/program active-variable 与 info-log
   查询来自真实 ANGLE 对象并保留截断/NUL 语义。
-- program link 成功后必须枚举真实 active uniform，并按每个 array element location 登记
-  scalar/vector/matrix value count；relink/delete 清除旧 shape。attached shader、source、precision、
+- program link 成功后必须枚举真实 active uniform，并按每个 array element location登记
+  scalar/vector/matrix/sampler value count；API19 `GL_OES_texture_3D` 的
+  `GL_SAMPLER_3D_OES` 是单值 sampler，不得按未知 uniform type 拒绝成功链接；relink/delete
+  清除旧 shape。attached shader、source、precision、
   uniform 与 vertex attribute query 使用对应 ANGLE API；`glShaderBinary` 不消费 native GL error，
   unsupported 必须由后续 `glGetError` 原样观察。
 - integer query 与 readback 输出必须先按 IDL/transfer state 预检；统一 context 已拥有的

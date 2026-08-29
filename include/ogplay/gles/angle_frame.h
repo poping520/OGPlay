@@ -111,6 +111,11 @@ public:
                        std::span<const std::byte> data);
     [[nodiscard]] std::int32_t GetBufferParameter(std::uint32_t target,
                                                    std::uint32_t parameter);
+    [[nodiscard]] std::byte* MapBufferOes(std::uint32_t target,
+                                          std::uint32_t access);
+    [[nodiscard]] bool UnmapBufferOes(std::uint32_t target);
+    [[nodiscard]] bool HasMappedBufferPointerOes(std::uint32_t target,
+                                                 std::uint32_t parameter);
     [[nodiscard]] bool IsBuffer(std::uint32_t buffer);
     [[nodiscard]] std::vector<std::uint32_t> GenerateFramebuffers(
         std::size_t count);

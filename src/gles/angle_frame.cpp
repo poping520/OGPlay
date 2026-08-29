@@ -12,7 +12,9 @@
 
 #if OGPLAY_HAS_ANGLE
 #include <GLES2/gl2.h>
+#define GL_GLEXT_PROTOTYPES
 #include <GLES2/gl2ext.h>
+#undef GL_GLEXT_PROTOTYPES
 #endif
 
 namespace ogplay::gles {
@@ -440,6 +442,42 @@ std::int32_t AngleFrame::GetBufferParameter(const std::uint32_t target,
     glGetBufferParameteriv(target, parameter, &value);
     RequireNoError("glGetBufferParameteriv");
     return value;
+#else
+    static_cast<void>(target); static_cast<void>(parameter);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+std::byte* AngleFrame::MapBufferOes(const std::uint32_t target,
+                                    const std::uint32_t access) {
+#if OGPLAY_HAS_ANGLE
+    auto* const mapped = glMapBufferOES(target, access);
+    RequireNoError("glMapBufferOES");
+    return static_cast<std::byte*>(mapped);
+#else
+    static_cast<void>(target); static_cast<void>(access);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+bool AngleFrame::UnmapBufferOes(const std::uint32_t target) {
+#if OGPLAY_HAS_ANGLE
+    const auto result = glUnmapBufferOES(target) == GL_TRUE;
+    RequireNoError("glUnmapBufferOES");
+    return result;
+#else
+    static_cast<void>(target);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+bool AngleFrame::HasMappedBufferPointerOes(
+    const std::uint32_t target, const std::uint32_t parameter) {
+#if OGPLAY_HAS_ANGLE
+    void* mapped{};
+    glGetBufferPointervOES(target, parameter, &mapped);
+    RequireNoError("glGetBufferPointervOES");
+    return mapped != nullptr;
 #else
     static_cast<void>(target); static_cast<void>(parameter);
     throw EglLifecycleError(EglOperation::unavailable, 0);

@@ -17,7 +17,7 @@ SCALAR_TYPES = {
     "GLchar", "GLint", "GLintptr", "GLshort", "GLsizei", "GLsizeiptr", "GLubyte",
     "GLclampx", "GLfixed", "GLuint", "GLushort", "void",
 }
-RETURN_TYPES = SCALAR_TYPES | {"const GLubyte*"}
+RETURN_TYPES = SCALAR_TYPES | {"const GLubyte*", "void*"}
 DIRECTIONS = {"in", "out", "inout"}
 
 
@@ -45,6 +45,7 @@ def validate_idl(document: Any) -> dict[str, Any]:
     if not isinstance(functions, list) or not functions:
         raise IdlError("functions must be a non-empty array")
     names: list[str] = []
+    thunk_ids: list[int | None] = []
     for function_index, function in enumerate(functions):
         prefix = f"functions[{function_index}]"
         if not isinstance(function, dict):
@@ -53,6 +54,12 @@ def validate_idl(document: Any) -> dict[str, Any]:
         if not name.startswith("gl"):
             raise IdlError(f"{prefix}.name must start with gl")
         names.append(name)
+        thunk_id = function.get("thunk_id")
+        if thunk_id is not None and (not isinstance(thunk_id, int) or
+                                     isinstance(thunk_id, bool) or
+                                     thunk_id < 0):
+            raise IdlError(f"{prefix}.thunk_id must be a non-negative integer")
+        thunk_ids.append(thunk_id)
         return_type = _require_string(function.get("return"), f"{prefix}.return")
         if return_type not in RETURN_TYPES:
             raise IdlError(f"{prefix}.return has unknown type {return_type}")
@@ -90,6 +97,11 @@ def validate_idl(document: Any) -> dict[str, Any]:
                 raise IdlError(f"{item} scalar must not declare indirection")
     if names != sorted(names) or len(names) != len(set(names)):
         raise IdlError("function names must be unique and sorted")
+    if any(thunk_id is not None for thunk_id in thunk_ids):
+        if any(thunk_id is None for thunk_id in thunk_ids):
+            raise IdlError("thunk_id must be present on every function or none")
+        if sorted(thunk_ids) != list(range(len(functions))):
+            raise IdlError("thunk_id values must be unique and contiguous from zero")
     return document
 
 
@@ -109,7 +121,11 @@ def generate_header(document: dict[str, Any]) -> str:
     api = document["api"]
     parameters: list[dict[str, Any]] = []
     function_rows: list[str] = []
-    for function in document["functions"]:
+    functions = (sorted(document["functions"],
+                        key=lambda function: function["thunk_id"])
+                 if "thunk_id" in document["functions"][0]
+                 else document["functions"])
+    for function in functions:
         offset = len(parameters)
         parameters.extend(function["parameters"])
         function_rows.append(
@@ -188,7 +204,8 @@ def write_or_check(idl_path: Path, output: Path, check: bool,
             raise IdlError(f"generated output is stale: {output}")
         return 0
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(expected, encoding="utf-8", newline="\n")
+    with output.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(expected)
     return 0
 
 
@@ -204,6 +221,23 @@ def self_test() -> int:
     try:
         validate_idl(invalid)
         raise AssertionError("pointer without transfer metadata was accepted")
+    except IdlError:
+        pass
+    stable = json.loads(json.dumps(valid))
+    stable["functions"] = [
+        {"name": "glAlpha", "return": "void", "parameters": [],
+         "thunk_id": 1},
+        {"name": "glClear", "return": "void", "parameters": [],
+         "thunk_id": 0},
+    ]
+    validate_idl(stable)
+    stable_header = generate_header(stable)
+    assert stable_header.index('"glClear"') < stable_header.index('"glAlpha"')
+    incomplete_stable = json.loads(json.dumps(stable))
+    del incomplete_stable["functions"][0]["thunk_id"]
+    try:
+        validate_idl(incomplete_stable)
+        raise AssertionError("partial thunk_id catalog was accepted")
     except IdlError:
         pass
     with tempfile.TemporaryDirectory() as directory:

@@ -126,6 +126,12 @@ public:
             [this](const std::string_view operation) -> gles::AngleFrame& {
                 return RequireFrame(operation);
             });
+        detail::BindAndroidBoundaryGles1MapBuffer(
+            gles1_extensions_dispatch_, gles1_map_buffer_state_, gles1_state_,
+            address_space_,
+            [this](const std::string_view operation) -> gles::AngleFrame& {
+                return RequireFrame(operation);
+            });
         detail::BindAndroidBoundaryGles1Queries(
             gles1_dispatch_, gles1_query_strings_,
             [this](const std::uint32_t parameter) {
@@ -140,7 +146,8 @@ public:
                     return std::string{
                         "GL_OES_texture_cube_map "
                         "GL_OES_compressed_ETC1_RGB8_texture "
-                        "GL_IMG_texture_compression_pvrtc"};
+                        "GL_IMG_texture_compression_pvrtc "
+                        "GL_OES_mapbuffer"};
                 default:
                     return RequireFrame("glGetString").GetString(parameter);
                 }
@@ -177,6 +184,7 @@ public:
         }
         MapOpenSlesStaticAbi(address_space_, *open_sles);
         open_sles_module_.MapGuestObjectArena();
+        gles1_map_buffer_state_.MapGuestArena(address_space_);
         libdl_override_module_.MapErrorArena();
     }
 
@@ -749,6 +757,7 @@ private:
         gles1_state_.Reset();
         gles1_legacy_state_.Reset();
         gles1_draw_state_.Reset();
+        gles1_map_buffer_state_.Reset();
     }
     void RecordGpuCall(const std::size_t descriptor_index,
                        const std::array<std::uint32_t, 4>& args,
@@ -768,6 +777,7 @@ private:
     AndroidBoundaryGles gles_dispatch_;
     detail::AndroidBoundaryGles1State gles1_state_;
     detail::AndroidBoundaryGles1DrawState gles1_draw_state_;
+    detail::AndroidBoundaryGles1MapBufferState gles1_map_buffer_state_;
     detail::AndroidBoundaryGles1QueryStrings gles1_query_strings_{address_space_};
     detail::AndroidBoundaryGles1LegacyState gles1_legacy_state_;
     gles::GlesDispatchTable gles1_dispatch_{gles::GlesApi::gles1};

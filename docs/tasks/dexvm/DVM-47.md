@@ -30,6 +30,10 @@
   通用修复让 worker 只在 EGL pacer 明确报告 clock driver blocked 时补到自身 deadline；
   release 有界复跑现已返回 `surfaceChanged`、启动 lifecycle、切换 `MyVideoView`、解码
   `intro.mp4` 并以 3/3 presented clean stop。该次仍不代替 Scenario 三轮与长运行 gate。
+- A6 视频结束后的 GLES2 首错已定位为 active uniform type `0x8B5F`：API19
+  `GL_SAMPLER_3D_OES`，并非未知类型。uniform shape 发现按 sampler 单值登记后，带 FFmpeg
+  的 release exact run 完成 GLGame/GameRenderer `nativeInit`，持续到 2.5 万余 draw；停止时
+  才暴露独立 AudioTrack PCM queue 满。此实跑证明旧崩溃消失，仍不替代三轮 Scenario gate。
 - DH：两轮到达可见帧且 clean；第三轮同一宿主 step 预算下呈现序列由 100 漂移到 97，
   触发 frame budget/golden 不一致。无 guest fault，但尚不满足三轮逐位持平。
 - Scenario schema/current 校验通过；DVM-42..46 的 GC 单元/DEX 夹具通过。

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include "ogplay/gles/angle_frame.h"
 
@@ -76,4 +77,39 @@ TEST_CASE("ANGLE frame clears and reads back an exact GLES2 pbuffer") {
         REQUIRE(reverse_pack.size() == 1U);
         CHECK(reverse_pack.front() == 0);
     }
+}
+
+TEST_CASE("ANGLE uniform discovery accepts OES texture 3D samplers") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    auto frame = ogplay::gles::AngleFrame::CreatePbuffer(
+        {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 3);
+    if (frame.GetString(0x1F03U).find("GL_OES_texture_3D") ==
+        std::string::npos) {
+        return;
+    }
+    const auto vertex = frame.CreateShader(0x8B31U);
+    const auto fragment = frame.CreateShader(0x8B30U);
+    const std::string vertex_source =
+        "attribute vec4 position; void main(){gl_Position=position;}";
+    const std::string fragment_source =
+        "#extension GL_OES_texture_3D : require\n"
+        "precision mediump float; uniform lowp sampler3D texture; "
+        "void main(){gl_FragColor=texture3D(texture,vec3(0.0));}";
+    frame.ShaderSource(vertex, {&vertex_source, 1U});
+    frame.ShaderSource(fragment, {&fragment_source, 1U});
+    frame.CompileShader(vertex);
+    frame.CompileShader(fragment);
+    REQUIRE(frame.GetShaderParameter(vertex, 0x8B81U) != 0);
+    INFO(frame.GetShaderInfoLog(fragment));
+    REQUIRE(frame.GetShaderParameter(fragment, 0x8B81U) != 0);
+    const auto program = frame.CreateProgram();
+    frame.AttachShader(program, vertex);
+    frame.AttachShader(program, fragment);
+    frame.LinkProgram(program);
+    REQUIRE(frame.GetProgramParameter(program, 0x8B82U) != 0);
+    const auto uniforms = frame.DiscoverUniformValueCounts(program);
+    REQUIRE(uniforms.size() == 1U);
+    CHECK(uniforms.front().value_count == 1U);
+    CHECK(uniforms.front().location ==
+          frame.GetUniformLocation(program, "texture"));
 }

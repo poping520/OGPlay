@@ -1,13 +1,14 @@
 # 当前状态
 
-更新：DVM-47 修复 A6 启动时钟自锁；title gate 继续
+更新：A6/Tales 两项 GLES 扩展缺口已闭合；title gate 继续
 
 ## 当前阶段
 
-- **DVM-47 A6 启动自锁已修复**：root timed park 可推进确定性 Clock；worker 默认仍等
-  帧泵，仅在 EGL pacer 证明 clock driver blocked 时补到自身 deadline。A6 release 已返回
-  `surfaceChanged`、启动 lifecycle、切换视频 Activity 并以 3/3 presented clean stop；
-  Scenario 三轮与 gc_long 仍待执行。见 [DVM-47](../tasks/dexvm/DVM-47.md)。
+- **A6/Tales GLES 缺口已修复**：uniform reflection 接受 API19
+  `GL_SAMPLER_3D_OES` 单值 shape；GLES1 extension 目录和 boundary 真实实现
+  `GL_OES_mapbuffer` 三入口，既有 thunk ID 不漂移。A6 已持续渲染 2.5 万余 draw；Tales
+  已完成 native load，新首错为 JNI `getPackageCodePath()`。见
+  [DVM-47](../tasks/dexvm/DVM-47.md)、[WU-0231](../tasks/m5/WU-0231.md)。
 - **UTIL-3 已完成**：收敛 diagnostics snapshot 投影、ELF 地址映射、JNI guest 返回编码/
   string lease/FieldID lookup、StringBuffer/Builder、简单 throwable、reflection member、
   数值 binop、NIO bulk 校验、Profile exact keys 与 internal class-name predicate；锁策略、
@@ -41,8 +42,8 @@
 
 ## 最近验证
 
-- 2026-08-29 DVM-47 macOS dev/release 受影响目标构建通过；thread/monitor Clock 定向
-  8/8。A6 exact 返回 `surfaceChanged`、进入 `MyVideoView` 并呈现 3/3 帧后干净停止。
+- 2026-08-29 macOS dev/release 受影响目标通过；GLES 定向测试通过。A6 带 FFmpeg exact
+  完成 GLGame/GameRenderer nativeInit 并持续渲染；Tales 越过 mapbuffer 强符号拒载。
 - 2026-08-28 UTIL-3 macOS `dev` 受影响目标编译通过；算术/异常/builder/diagnostics/
   reflection/NIO/ELF/JNI guest/Profile 定向 31/31 及 architecture 6/6 通过。
 - 2026-08-28 UTIL-2 macOS `dev` 受影响目标编译通过；定向测试 loader/session/input
@@ -62,7 +63,7 @@
 
 ## 下一步
 
-1. 修复 Tales `glUnmapBufferOES` GLES 缺口；完成 DH 主菜单 Scenario gate 与 profile 长跑复验。
+1. 补 Tales `getPackageCodePath()` JNI 能力；完成 DH 主菜单 Scenario gate 与 profile 长跑复验。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate；执行 Linux M9 严格出口复验。
 3. 首次出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

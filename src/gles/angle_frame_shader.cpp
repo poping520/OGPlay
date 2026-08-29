@@ -8,6 +8,7 @@
 
 #if OGPLAY_HAS_ANGLE
 #include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 #endif
 
 namespace ogplay::gles {
@@ -93,7 +94,8 @@ std::uint32_t UniformValueCount(const std::uint32_t type) {
     case GL_INT:
     case GL_BOOL:
     case GL_SAMPLER_2D:
-    case GL_SAMPLER_CUBE: return 1U;
+    case GL_SAMPLER_CUBE:
+    case GL_SAMPLER_3D_OES: return 1U;
     case GL_FLOAT_VEC2:
     case GL_INT_VEC2:
     case GL_BOOL_VEC2: return 2U;

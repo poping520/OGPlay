@@ -17,11 +17,9 @@ namespace catalog = generated::gles2;
 template <typename Functions>
 std::optional<GlesThunkId> FindInCatalog(
     const Functions& functions, const std::string_view name) noexcept {
-    const auto found = std::lower_bound(
-        functions.begin(), functions.end(), name,
-        [](const auto& candidate, const std::string_view requested) {
-            return candidate.name < requested;
-        });
+    const auto found = std::find_if(
+        functions.begin(), functions.end(),
+        [name](const auto& candidate) { return candidate.name == name; });
     if (found == functions.end() || found->name != name) return std::nullopt;
     return static_cast<GlesThunkId>(std::distance(functions.begin(), found));
 }

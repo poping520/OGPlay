@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <span>
@@ -18,6 +19,44 @@ class AddressSpace;
 namespace ogplay::runtime::detail {
 
 class AndroidBoundaryGles1DrawState;
+
+inline constexpr std::uint32_t kGles1MapBufferArenaBegin = 0x72000000U;
+inline constexpr std::uint32_t kGles1MapBufferArenaBytes = 0x02000000U;
+
+class AndroidBoundaryGles1MapBufferState final {
+public:
+    void MapGuestArena(memory::AddressSpace& address_space);
+    void Reset() noexcept;
+    [[nodiscard]] std::uint32_t Map(
+        gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
+        memory::AddressSpace& address_space, std::uint32_t target,
+        std::uint32_t access, std::uint64_t thread_id);
+    [[nodiscard]] bool Unmap(
+        gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
+        memory::AddressSpace& address_space, std::uint32_t target,
+        std::uint64_t thread_id);
+    [[nodiscard]] std::uint32_t Pointer(
+        gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
+        std::uint32_t target, std::uint32_t parameter) const;
+
+private:
+    struct Mapping final {
+        std::uint32_t guest_address{};
+        std::uint32_t size{};
+        std::byte* host_address{};
+    };
+    struct FreeRange final {
+        std::uint32_t offset{};
+        std::uint32_t size{};
+    };
+
+    [[nodiscard]] std::uint32_t Allocate(std::uint32_t size);
+    void Release(std::uint32_t guest_address, std::uint32_t size) noexcept;
+
+    bool arena_mapped_{};
+    std::map<std::uint32_t, Mapping> mappings_;
+    std::vector<FreeRange> free_ranges_;
+};
 
 class AndroidBoundaryGles1QueryStrings final {
 public:
@@ -116,6 +155,13 @@ void BindAndroidBoundaryGles1Queries(
     gles::GlesDispatchTable& dispatch,
     AndroidBoundaryGles1QueryStrings& strings,
     AndroidBoundaryGles1StringResolver resolve_string);
+
+void BindAndroidBoundaryGles1MapBuffer(
+    gles::GlesDispatchTable& extension_dispatch,
+    AndroidBoundaryGles1MapBufferState& map_buffer,
+    AndroidBoundaryGles1State& core,
+    memory::AddressSpace& address_space,
+    AndroidBoundaryFrameResolver require_frame);
 
 void BindAndroidBoundaryGles1Legacy(
     gles::GlesDispatchTable& dispatch,

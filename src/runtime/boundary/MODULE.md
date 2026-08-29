@@ -127,8 +127,8 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   调用准备与 transfer state;主 HLE 只传入当前 `AngleFrame`,组件不得拥有 EGL 生命周期、
   GPU 指标或窗口状态。
 - `AndroidBoundaryHle` 从生成目录暴露完整 142 项 GLES2 Thumb trap 命名空间,并从隔离目录
-  发布完整 145 项 `libGLESv1_CM.so` core Thumb trap 及固定 header 受检的 3 项
-  matrix-palette extension trap;core/extension 独立记账,只有显式 handler 可以执行,
+  发布完整 145 项 `libGLESv1_CM.so` core Thumb trap 及固定 header 受检的 6 项
+  matrix-palette/mapbuffer extension trap;core/extension 独立记账,只有显式 handler 可以执行,
   未实现或未绑定调用必须携带函数名失败,不得误用同名 GLES2 handler。Looper/input 数据与
   ANGLE readback 跨线程传递必须受锁保护,未知地址或 SVC 不得吞掉。
 - HLE 分发除 handled 事实外发布 watchdog 进展类别；成功 `eglSwapBuffers` 与 OpenSL ES
@@ -198,8 +198,12 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   限定 0..31,matrix-index/weight pointer 延迟保存调用时 array-buffer binding,类型、
   size 与 stride 受检且随 context reset;完整 skinning shader 尚未实现时 draw 必须明确
   失败,禁止忽略权重或伪装成功。
+- `GL_OES_mapbuffer` 三个入口绑定同一 extension dispatch：只接受规范的 buffer target、
+  `GL_WRITE_ONLY_OES` 与当前未映射对象；ANGLE host map 内容复制到 `0x72000000` 起的
+  32 MiB 受检 guest arena，unmap 前反向复制，pointer query 仅返回对应 guest identity。
+  arena 分配耗尽、guest 搬运失败或 native GL error 必须明确失败，reset 清除全部映射事实。
 - KitKat `libGLESv1_CM.so` 额外发布 7 个 Android Bounds wrapper；它们拥有独立 public
-  metadata 与 direct `Gles1Module` binding，不占用或重排 145 core/3 extension ID。client
+  metadata 与 direct `Gles1Module` binding，不占用或重排 145 core/6 extension ID。client
   pointer 在 VBO 模式保存 offset，在 guest-memory 模式按 `count/size/type/stride` 预检完整范围
   后提交到同一 draw state。
 - GLES1 matrix state 批次保存 modelview/projection 与按 active texture unit 隔离的
@@ -219,7 +223,8 @@ boundary symbol 目录、跨 API 共享的 `GuestGlContext` 与 `A32CallFrame`�
   预检后调用 ANGLE;active attribute/uniform 与 info-log 多输出按 `bufSize` 截断提交,
   编译/链接失败通过真实查询值表达。
 - GLES2 completion handler 在成功 link 后从 ANGLE active-uniform metadata 为每个 location
-  登记输出 shape，relink/delete 清理旧 shape；uniform/vertex query 在 native 调用前完整
+  登记输出 shape，包括 API19 `GL_SAMPLER_3D_OES` 的单值 shape；relink/delete 清理旧
+  shape；uniform/vertex query 在 native 调用前完整
   preflight。vertex array descriptor 与 pointer/offset identity 读取 programmable service 的
   guest logical state，constant value 在 fixed draw transaction 后恢复；shader binary unsupported
   通过真实 `glGetError` 表达，不转成伪成功能力声明。

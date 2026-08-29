@@ -73,7 +73,8 @@ frontend/root-module 模型迁入 loader。
 - 后续 API19 纠偏：Dalvik `dvmLoadNativeCode()` 将显式路径交给 `dlopen()`，平台 linker
   不执行“文件 basename 必须等于 `DT_SONAME`”门禁。定向 fixture 锁定 mismatch 显式加载、
   `DT_NEEDED` 分别使用 ELF SONAME 与 inventory basename；Tales release exact run 越过原
-  拒载并完成 `libAmazonGamesJni.so` 显式加载，新首错为独立的
-  `glUnmapBufferOES` 未解析。
+  拒载。后续 WU-0231 在标准扩展目录补齐并真实绑定 `GL_OES_mapbuffer` 三项入口后，
+  `libAmazonGamesJni.so` 已完成显式加载，新首错为独立 JNI
+  `getPackageCodePath()Ljava/lang/String;` 声明缺口。
 - Windows MSVC：`cmake --preset windows-msvc`、完整 Release build 通过；APS-4 定向
   2/2、完整 `ctest --preset windows-msvc` 792/792。

@@ -904,6 +904,22 @@ TEST_CASE("Android boundary descriptors carry module-local ids") {
     CHECK(gles1->local_id == 36U);
     CHECK(gles1->parameter_count == 4U);
 
+    const auto* bounds = descriptor_for(
+        "libGLESv1_CM.so", "glColorPointerBounds");
+    REQUIRE(bounds != nullptr);
+    CHECK(bounds->local_id == 148U);
+    const auto* get_mapped = descriptor_for(
+        "libGLESv1_CM.so", "glGetBufferPointervOES");
+    REQUIRE(get_mapped != nullptr);
+    CHECK(get_mapped->local_id == 155U);
+    const auto* map = descriptor_for("libGLESv1_CM.so", "glMapBufferOES");
+    REQUIRE(map != nullptr);
+    CHECK(map->local_id == 156U);
+    const auto* unmap = descriptor_for(
+        "libGLESv1_CM.so", "glUnmapBufferOES");
+    REQUIRE(unmap != nullptr);
+    CHECK(unmap->local_id == 157U);
+
     const auto* tex_image = descriptor_for("libGLESv2.so", "glTexImage2D");
     REQUIRE(tex_image != nullptr);
     CHECK(tex_image->parameter_count == 9U);
@@ -3215,9 +3231,21 @@ TEST_CASE("GLES1 clip plane discards fixed pipeline fragments") {
 TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
     BoundaryFixture fixture;
     CHECK(ogplay::gles::GlesFunctionCount(
-              ogplay::gles::GlesApi::gles1_extensions) == 3);
+              ogplay::gles::GlesApi::gles1_extensions) == 6);
+    CHECK(ogplay::gles::FindGlesFunction(
+              ogplay::gles::GlesApi::gles1_extensions,
+              "glCurrentPaletteMatrixOES") == 0U);
+    CHECK(ogplay::gles::FindGlesFunction(
+              ogplay::gles::GlesApi::gles1_extensions,
+              "glMatrixIndexPointerOES") == 1U);
+    CHECK(ogplay::gles::FindGlesFunction(
+              ogplay::gles::GlesApi::gles1_extensions,
+              "glWeightPointerOES") == 2U);
     for (const auto name : {"glCurrentPaletteMatrixOES",
+                            "glGetBufferPointervOES",
+                            "glMapBufferOES",
                             "glMatrixIndexPointerOES",
+                            "glUnmapBufferOES",
                             "glWeightPointerOES"}) {
         CAPTURE(name);
         CHECK(fixture.boundary.Symbols()
@@ -3265,6 +3293,61 @@ TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
                      {0x0000U, 0U, 1U}),
         "GLES1 matrix-palette skinning draw conversion is not implemented",
         std::runtime_error);
+    fixture.boundary.CloseManagedSurface();
+}
+
+TEST_CASE("GLES1 OES mapbuffer uses a guest arena and never leaks host pointers") {
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    const auto name_output = fixture.output.Add(0x500U);
+    const auto data = fixture.output.Add(0x520U);
+    const auto pointer_output = fixture.output.Add(0x540U);
+    constexpr std::uint32_t kArrayBuffer = 0x8892U;
+    constexpr std::uint32_t kStaticDraw = 0x88E4U;
+    constexpr std::uint32_t kWriteOnlyOes = 0x88B9U;
+    constexpr std::uint32_t kBufferMapPointerOes = 0x88BDU;
+    constexpr std::array<std::uint32_t, 4> initial{
+        0x11111111U, 0x22222222U, 0x33333333U, 0x44444444U};
+    for (std::size_t index = 0; index < initial.size(); ++index) {
+        fixture.bus.Write32(data.Add(index * sizeof(std::uint32_t)),
+                            initial[index], 1U);
+    }
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGenBuffers",
+                       {1U, name_output.Value()}) == 0U);
+    const auto buffer = fixture.bus.Read32(name_output, 1U);
+    REQUIRE(buffer != 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glBindBuffer",
+                       {kArrayBuffer, buffer}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glBufferData",
+                       {kArrayBuffer, sizeof(initial), data.Value(),
+                        kStaticDraw}) == 0U);
+
+    fixture.bus.Write32(pointer_output, 0xffffffffU, 1U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetBufferPointervOES",
+                       {kArrayBuffer, kBufferMapPointerOes,
+                        pointer_output.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(pointer_output, 1U) == 0U);
+
+    const auto mapped = fixture.Call("libGLESv1_CM.so", "glMapBufferOES",
+                                     {kArrayBuffer, kWriteOnlyOes});
+    REQUIRE(mapped >= ogplay::runtime::detail::kGles1MapBufferArenaBegin);
+    CHECK(mapped < ogplay::runtime::detail::kGles1MapBufferArenaBegin +
+                       ogplay::runtime::detail::kGles1MapBufferArenaBytes);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetBufferPointervOES",
+                       {kArrayBuffer, kBufferMapPointerOes,
+                        pointer_output.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(pointer_output, 1U) == mapped);
+    fixture.bus.Write32(ogplay::memory::GuestAddress{mapped}, 0xa5a5a5a5U, 1U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glUnmapBufferOES",
+                       {kArrayBuffer}) == 1U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetBufferPointervOES",
+                       {kArrayBuffer, kBufferMapPointerOes,
+                        pointer_output.Value()}) == 0U);
+    CHECK(fixture.bus.Read32(pointer_output, 1U) == 0U);
+
+    CHECK(fixture.Call("libGLESv1_CM.so", "glMapBufferOES",
+                       {kArrayBuffer, 0x88B8U}) == 0U);
+    CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0500U);
     fixture.boundary.CloseManagedSurface();
 }
 

@@ -1,0 +1,35 @@
+if(NOT DEFINED GUI_BUNDLE)
+    message(FATAL_ERROR "GUI_BUNDLE is required")
+endif()
+
+set(_contents "${GUI_BUNDLE}/Contents")
+set(_main "${_contents}/MacOS/OGPlay")
+set(_cli "${_contents}/MacOS/ogplay-cli")
+set(_plist "${_contents}/Info.plist")
+
+foreach(required IN ITEMS "${_main}" "${_cli}" "${_plist}")
+    if(NOT EXISTS "${required}")
+        message(FATAL_ERROR "missing GUI bundle file: ${required}")
+    endif()
+endforeach()
+
+file(SIZE "${_main}" _main_size)
+file(SIZE "${_cli}" _cli_size)
+if(_main_size LESS 1 OR _cli_size LESS 1)
+    message(FATAL_ERROR "GUI bundle executables must not be empty")
+endif()
+if(_main_size EQUAL _cli_size)
+    message(FATAL_ERROR "GUI and CLI bundle executables unexpectedly have the same size")
+endif()
+
+file(READ "${_plist}" _plist_contents)
+if(NOT _plist_contents MATCHES
+        "<key>CFBundleExecutable</key>[ \t\r\n]*<string>OGPlay</string>")
+    message(FATAL_ERROR "GUI bundle Info.plist does not name OGPlay as its executable")
+endif()
+
+file(GLOB _macos_entries RELATIVE "${_contents}/MacOS" "${_contents}/MacOS/*")
+list(FIND _macos_entries "ogplay-cli" _cli_entry)
+if(_cli_entry EQUAL -1)
+    message(FATAL_ERROR "GUI bundle does not contain the distinct macOS CLI name")
+endif()

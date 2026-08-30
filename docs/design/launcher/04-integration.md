@@ -16,7 +16,7 @@ ogplay gui [--library-root <dir>] [--smoke-frames <n>]   # 开发与 CI
 | 平台 | 形态 |
 | --- | --- |
 | Windows | `ogplay-gui.exe` 以 `WIN32` 子系统链接（`wWinMain` 薄包装转调同一入口），双击不弹控制台窗口 |
-| macOS | `MACOSX_BUNDLE` 打出 `OGPlay.app`（Info.plist 最小集）；`ogplay` CLI 二进制一并放入 `Contents/MacOS/` 与 GUI 并排，供子进程 spawn |
+| macOS | `MACOSX_BUNDLE` 打出 `OGPlay.app`（Info.plist 最小集）；`ogplay-cli` CLI 二进制一并放入 `Contents/MacOS/` 与 GUI 并排，供子进程 spawn（避免大小写不敏感文件系统上的 `OGPlay`/`ogplay` 冲突） |
 | Linux | 普通可执行，文件管理器双击即可；`.desktop` 条目与图标属发行打包项，不在本方案 |
 
 约束与细节：

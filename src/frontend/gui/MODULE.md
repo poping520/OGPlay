@@ -64,7 +64,9 @@
   损坏、重复 package 和所选 external 目录不存在必须阻止发布并给出下一步。
 - 库枚举必须删除所有 `.importing` 崩溃残留；配置替换必须保留可恢复旧版本，启动发现
   仅有 `.bak` 时自动恢复。关闭 GUI 不得 join 正在进行的只读 APK 分析。
-- 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；stdin 关闭、stdout
+- 子进程 CLI 只能从 GUI 可执行文件同目录解析，不查询 PATH；macOS bundle 内使用
+  `ogplay-cli` 文件名以避免与 `OGPlay` GUI 可执行名冲突，其他平台使用 `ogplay`
+  （Windows 为 `ogplay.exe`）；stdin 关闭、stdout
   继承、stderr 覆盖重定向到条目日志，并显式传 `--sandbox-dir <library-root>/sandbox`。
   退出 0 静默，非零结果呈现退出码与有界日志末尾。
 - 日志尾部按字节截断时必须前移到下一个完整 UTF-8 codepoint，不得把 continuation byte
@@ -101,3 +103,5 @@
 `tests/frontend/gui_model_tests.cpp` 同时锁定设置目录校验和删除保留 external/存档；
 `frontend.gui_smoke`/`frontend.gui_library_smoke` 在有界三帧内验证真实
 SDL3/ANGLE/ImGui 空库与 CJK 非空库窗口，并由 `GuiButton` 审计可见按钮 ID 唯一性。
+macOS 的 `frontend.gui_bundle_layout` 额外验证 `OGPlay.app` 的 GUI/CLI 文件名和
+Info.plist 入口不会在大小写不敏感文件系统上冲突。

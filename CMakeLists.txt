@@ -666,7 +666,7 @@ if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
         add_custom_command(TARGET ogplay-gui POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:ogplay>
-                $<TARGET_BUNDLE_CONTENT_DIR:ogplay-gui>/MacOS/ogplay
+                $<TARGET_BUNDLE_CONTENT_DIR:ogplay-gui>/MacOS/ogplay-cli
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 $<TARGET_FILE_DIR:ogplay>/data
                 $<TARGET_BUNDLE_CONTENT_DIR:ogplay-gui>/Resources/data
@@ -987,6 +987,18 @@ if(OGPLAY_BUILD_TESTS)
         set_tests_properties(frontend.gui_library_smoke PROPERTIES
             LABELS "integration;frontend"
             TIMEOUT 30)
+
+        if(APPLE)
+            add_test(
+                NAME frontend.gui_bundle_layout
+                COMMAND ${CMAKE_COMMAND}
+                    -DGUI_BUNDLE=$<TARGET_BUNDLE_DIR:ogplay-gui>
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckGuiBundleLayout.cmake
+            )
+            set_tests_properties(frontend.gui_bundle_layout PROPERTIES
+                LABELS "integration;frontend"
+                TIMEOUT 30)
+        endif()
     endif()
 
     add_test(

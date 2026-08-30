@@ -128,10 +128,20 @@ std::filesystem::path FindSiblingCliExecutable() {
     const auto* base = SDL_GetBasePath();
     if (base == nullptr) ThrowSdl("SDL_GetBasePath");
     const auto root = std::filesystem::path(base);
+#if defined(__APPLE__)
+    // APFS/HFS+ is commonly case-insensitive, so the GUI executable "OGPlay"
+    // cannot coexist with a sibling named "ogplay". The bundle stages the CLI
+    // under a distinct name while retaining the same-directory lookup rule.
+    const std::filesystem::path candidates[]{
+        root / "ogplay-cli",
+        root / ".." / "MacOS" / "ogplay-cli",
+    };
+#else
     const std::filesystem::path candidates[]{
         root / "ogplay.exe", root / "ogplay",
         root / ".." / "MacOS" / "ogplay",
     };
+#endif
     std::error_code error;
     for (const auto& candidate : candidates) {
         if (std::filesystem::is_regular_file(candidate, error) && !error) {

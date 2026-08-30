@@ -272,7 +272,7 @@ note = "M5 WU-0302 让 run-apk 将一个显式宿主数据目录精确挂到匹�
 
 [frontend.gui_shell]
 status = "complete"
-test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; tests/frontend/data_directory_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_model_tests.cpp"
+test = "frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_bundle_layout; tests/frontend/data_directory_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_model_tests.cpp"
 note = "Launcher GUI-1/4/7/8/11/12/13/14 提供双入口与随程序交付 ANGLE 上的 ImGui GLES2 窗口；默认 Profile/quirk payload 随可执行文件交付且不依赖源码树，catalog 加载失败时所有非损坏磁贴 fail closed；自适应库网格使用 scalable 18px CJK 主字体与严格互斥状态，空闲事件等待 100ms；设置页只编辑 system/Profile 目录并验证存在，右键删除保留 external/存档；运行诊断仅在其他 popup 关闭后按 FIFO 呈现；可见按钮 ID 逐帧审计，重复会让真实 GUI 冒烟明确失败"
 
 [frontend.gui_library]

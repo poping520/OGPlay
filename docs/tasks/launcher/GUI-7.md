@@ -21,7 +21,8 @@
 - 缺 Profile、缺数据包、损坏和运行中磁贴均给出可执行下一步；配置、导入、启动、
   删除的模型错误把错误码、路径和原因同时写结构化日志。非零游戏退出提示日志证据可随
   issue 提交。
-- macOS bundle 构建把 `ogplay` CLI 放入 `Contents/MacOS`；README 登记双击入口、
+- macOS bundle 构建把 `ogplay-cli` CLI 放入 `Contents/MacOS`（避免与 `OGPlay` GUI
+  可执行名在大小写不敏感文件系统上冲突）；README 登记双击入口、
   开发子命令和平台构建产物。frontend/gui、frontend、loader、模块索引、第三方清单、
   usage 与四项能力账本已按 04 §5 全量核对。
 

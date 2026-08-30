@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：增加 SimpleDateFormat API 19 空壳层级
+更新：修复 macOS GUI bundle 大小写冲突并补 GUI 冒烟验证
 
 ## 当前阶段
 
@@ -49,14 +49,13 @@
 
 - 2026-08-30 macOS release `ogplay_tests` 增量构建通过；DVM-87 6/6（85 assertions）与
   core catalog 1/1（475 assertions）通过，覆盖 SimpleDateFormat 父链和 pattern 构造。
-- 2026-08-30 macOS release `ogplay_tests` 增量构建通过；File 家族 18/18（783 assertions）、
-  InputStream 相关 5/5（153 assertions）通过，覆盖自定义子类继承语义、FileInputStream
-  双后端/API shape/FD 共享游标/借用关闭/null/缺失文件；core catalog 与 core-only java.io
-  契约另 2/2 通过（496 assertions）。
+- 2026-08-30 macOS release `ogplay_tests` 增量构建通过；File/InputStream 23/23（936 assertions）及
+  core/java.io 契约 2/2（496 assertions）通过，覆盖 API shape、FD 游标与借用关闭。
 - 2026-08-30 macOS release 增量构建通过；binary XML 6/6（74 assertions，含本地 exact），
   `Resources.getXml` 1/1（35 assertions），core/android catalog 契约通过。关闭 survey 的
   clean-sandbox PvZ 短跑先被既有 `java.util.Observer` 层级缺口阻断，未到 XML 路径。
 - 2026-08-28 macOS `dev` 全量 CTest 1066/1066 通过。
+- 2026-08-30 macOS release `ogplay-gui` 构建并启动成功；bundle layout、GUI options 与两项 smoke 共 4/4 通过。
 - DH Release 越过 license 轮询并稳定到主菜单，240 帧持续 presented，Ctrl-C 干净停止；
   PVZ Release 已进入标题画面、可输入并提交用户名。
 

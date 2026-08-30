@@ -33,8 +33,8 @@ ctest --preset windows-msvc -R "<affected-test>"
 ## 主面板（游戏启动器）
 
 Windows 构建后可直接双击 `build/windows-msvc/Debug/ogplay-gui.exe`；Linux 开发构建
-产物为 `build/dev/ogplay-gui`，macOS 为 `OGPlay.app`，bundle 内同时携带同路径启动所需
-的 `ogplay` CLI。构建/安装产物同时携带 `data/profiles` 与 `data/quirks.toml`；默认
+产物为 `build/dev/ogplay-gui`，macOS 为 `OGPlay.app`，bundle 内同时携带同目录启动所需
+的 `ogplay-cli` CLI（macOS 大小写不敏感文件系统下避免与 GUI 可执行名冲突）。构建/安装产物同时携带 `data/profiles` 与 `data/quirks.toml`；默认
 Profile 不依赖源码树。开发与 CI 也可从终端启动有界入口：
 
 ```sh

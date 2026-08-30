@@ -12,6 +12,7 @@
 | loader 增量 | manifest application icon/label 三态（缺失/resid/字面量）、损坏失败 | CTest，扩展既有 manifest 测试 fixture |
 | 提取链集成 | icon resid→arsc→PNG→缓存全链 + 每级回退占位 | CTest，合成含 arsc/PNG 的 APK fixture |
 | 有界冒烟 | `ogplay gui --library-root <tmp> --smoke-frames 3` 退出码 0：真实 SDL 窗口 + ANGLE context + ImGui 渲染 + 空库视图 | CTest 集成命令，复用现有 CI 已具备的 ANGLE 窗口能力 |
+| macOS bundle 布局 | `OGPlay` GUI 与 `ogplay-cli` CLI 在 bundle 内并存且 Info.plist 入口正确 | CTest，构建产物静态检查 |
 
 启动接线的端到端（点击 → 子进程跑真实 APK）依赖 exact APK，不进仓库
 测试；按 playbook 既有方式在本地以 exact fixture 验证，证据留

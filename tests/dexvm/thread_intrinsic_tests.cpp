@@ -9,10 +9,13 @@
 #include <cstdint>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -43,7 +46,8 @@ struct ThreadVm final {
     VmThreadRuntime threads;
     std::atomic<std::int64_t> clock_millis{};
 
-    ThreadVm()
+    explicit ThreadVm(
+        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : model(strings, arrays),
           linker(),
           interpreter(
@@ -53,7 +57,7 @@ struct ThreadVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, {}),
+              model, nullptr, ledger, InterpreterConfig{.backend = backend}),
           threads(interpreter) {
         interpreter.Monitors().SetTimeSource(
             [this] { return clock_millis.load(); });
@@ -139,6 +143,35 @@ bool WaitFor(Predicate predicate) {
 
 }  // namespace
 
+TEST_CASE("dexvm Thread context ClassLoader declarations match API19 shape") {
+    const auto catalog = CoreIntrinsicCatalog();
+    const auto thread = std::ranges::find_if(catalog, [](const auto& candidate) {
+        return candidate.descriptor == "Ljava/lang/Thread;";
+    });
+    REQUIRE(thread != catalog.end());
+
+    const auto field = std::ranges::find_if(
+        thread->fields, [](const auto& candidate) {
+            return candidate.name == "contextClassLoader" &&
+                   candidate.descriptor == "Ljava/lang/ClassLoader;";
+        });
+    REQUIRE(field != thread->fields.end());
+    CHECK(field->access_flags == 0x0002U);
+
+    for (const auto& [name, descriptor] :
+         std::vector<std::pair<std::string_view, std::string_view>>{
+             {"getContextClassLoader", "()Ljava/lang/ClassLoader;"},
+             {"setContextClassLoader", "(Ljava/lang/ClassLoader;)V"}}) {
+        const auto method = std::ranges::find_if(
+            thread->methods, [&](const auto& candidate) {
+                return candidate.name == name &&
+                       candidate.descriptor == descriptor;
+            });
+        REQUIRE(method != thread->methods.end());
+        CHECK(method->access_flags == 0x0001U);
+    }
+}
+
 TEST_CASE("dexvm Thread constructors allocate stable per-VM identity") {
     ThreadVm vm;
     const auto root_first =
@@ -200,6 +233,40 @@ TEST_CASE("dexvm Thread constructors allocate stable per-VM identity") {
                               "(Ljava/lang/String;)V",
                               {VmValue::Ref(VmObjectRef{})}),
                  "Ljava/lang/NullPointerException;");
+}
+
+TEST_CASE("dexvm Thread context ClassLoader defaults inherits and accepts null") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        ThreadVm vm(backend);
+        const auto root = vm.Static(
+            "Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;");
+        RequireOk(root);
+        const auto application = vm.interpreter.ClassLoaders().ApplicationLoader();
+        const auto bootstrap = vm.interpreter.ClassLoaders().BootstrapLoader();
+        CHECK(vm.Virtual(root.value.ref, "getContextClassLoader",
+                         "()Ljava/lang/ClassLoader;").value.ref == application);
+
+        RequireOk(vm.Virtual(
+            root.value.ref, "setContextClassLoader",
+            "(Ljava/lang/ClassLoader;)V", {VmValue::Ref(bootstrap)}));
+        CHECK(vm.Virtual(root.value.ref, "getContextClassLoader",
+                         "()Ljava/lang/ClassLoader;").value.ref == bootstrap);
+
+        const auto child = vm.New("Ljava/lang/Thread;");
+        RequireOk(vm.Construct(child, "Ljava/lang/Thread;", "()V"));
+        CHECK(vm.Virtual(child, "getContextClassLoader",
+                         "()Ljava/lang/ClassLoader;").value.ref == bootstrap);
+        RequireOk(vm.Virtual(
+            child, "setContextClassLoader",
+            "(Ljava/lang/ClassLoader;)V", {VmValue::Ref(VmObjectRef{})}));
+        CHECK_FALSE(vm.Virtual(child, "getContextClassLoader",
+                               "()Ljava/lang/ClassLoader;").value.ref.IsValid());
+        CHECK(vm.Virtual(root.value.ref, "getContextClassLoader",
+                         "()Ljava/lang/ClassLoader;").value.ref == bootstrap);
+    }
 }
 
 TEST_CASE("dexvm Thread.start virtual-dispatches this.run and currentThread") {

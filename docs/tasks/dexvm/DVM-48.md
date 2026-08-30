@@ -49,3 +49,14 @@ Android 4.4.4 Dalvik 语义完整暴露为 dexvm core `java.lang.Thread` intrins
 
 状态：完成。Windows/x64 `windows-msvc` focused suites 全通过，完整 CTest
 830/830；证据同步于 `docs/state/CURRENT.md`。
+
+## 后续补充（2026-08-30）
+
+- 对照 API 19 `Thread.java` 与 `.local/aosp/core.jar`，补齐私有
+  `contextClassLoader` 字段及 `getContextClassLoader/setContextClassLoader` 两个公共 API。
+- root `main` Thread 默认绑定进程稳定 application ClassLoader；新 Thread 在构造时继承
+  创建者的当前值，setter 接受 API 19 允许的 null，不创建第二套 class namespace。
+- API shape 与 switch/threaded 双后端默认值、继承、隔离、null 语义由
+  `thread_intrinsic_tests` 锁定；既有 Thread、ClassLoader 和 core catalog 定向回归通过。
+- Tales Release 关闭 survey 实跑中 `libAmazonGamesJni.so` 与 `libTales.final.so` 均完成
+  JNI 初始化，下一首错推进到独立的 `android.location.LocationListener` 类层级缺口。

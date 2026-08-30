@@ -70,7 +70,9 @@ execution context、parking、interrupt、sleep/join 与 identity mapping 全部
 基类 `run()` 才 virtual-dispatch target Runnable。纳秒在统一毫秒 Clock 上向上取整；
 priority 与 daemon 仅是明确有界的 guest fact。七个字段通过 builder 的预绑定 handle
 访问，handler 参数与字段值统一走 `IntrinsicCall`，不得恢复逐调用 descriptor 查找和
-裸 instance slot 编解码。
+裸 instance slot 编解码。`contextClassLoader` 同样是受 GC 追踪的声明式字段：root 默认
+指向唯一 application loader，新 Thread 继承创建者，显式 setter 可保存 null；不得因此
+创建新的 class directory 或定义权限。
 
 `java.lang.System` 的 `getProperty`/`setProperty` 与 primitive wrapper property
 API 共用每 VM 属性表；默认只发布

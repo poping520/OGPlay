@@ -1,14 +1,13 @@
 # 当前状态
 
-更新：JNI guest 方法缺失诊断补全声明类
+更新：补齐 Thread context ClassLoader
 
 ## 当前阶段
 
-- **DVM-79 File 第二批已完成**：在首批路径/对象/API19 shape 基础上补齐
-  `canRead/canWrite/isFile`、四个过滤列表重载、`renameTo` 与两个 `setWritable` 重载。
-  filter 执行 guest virtual 回调并传播异常；VFS 透传 writable 和文件 rename，权限修改
-  尚不可表达时 `setWritable` 采用不伪造成功的 bounded 语义。未新建 WU，记录回原
-  [DVM-79](../tasks/dexvm/DVM-79.md)。
+- **DVM-48 Thread context ClassLoader 已完成**：root 默认绑定进程稳定 application
+  loader，新 Thread 继承创建者，get/set 保持对象身份且 setter 接受 null；字段由普通
+  guest object graph 追踪，不创建动态 namespace。API19 shape 与双后端语义有机器测试，
+  未新建 WU，记录回原 [DVM-48](../tasks/dexvm/DVM-48.md)。
 
 - **DVM-94～96 已完成**：linker metadata 改为追加地址稳定存储；调用解析按
   `InvokeKind` 隔离并消费链接期 `MethodShape`。Intrinsic declaration 只含 own members，
@@ -35,8 +34,8 @@
   `GL_SAMPLER_3D_OES` 单值 shape；GLES1 extension 目录和 boundary 真实实现
   `GL_OES_mapbuffer` 三入口。Context 新增 `getPackageCodePath/getCacheDir/getApplicationInfo`；
   code/resource/sourceDir 共用只读 guest APK，cache 经 VFS 建目录，ApplicationInfo 为进程
-  稳定身份且 wrapper 仅委托 base。Tales 关闭 survey 越过原首错并完成 Amazon JNI 加载，
-  新首错为 `getContextClassLoader()`；JNI 方法缺失诊断现会同时打印 class 与签名。见
+  稳定身份且 wrapper 仅委托 base。Thread context loader 补齐后 Tales 两个 native 库均
+  完成 JNI 初始化，新首错为 `android.location.LocationListener` 类层级缺口。见
   [DVM-47](../tasks/dexvm/DVM-47.md)、[WU-0231](../tasks/m5/WU-0231.md)。
 - **DVM-92 已完成并通过 title 验收**：退出首个 guest 回调前单向退役 Java EGL、
   native/managed GLES 与 EGL swap；process `BeginTeardown` 发布独立取消并中断
@@ -52,8 +51,8 @@
 
 ## 最近验证
 
-- 2026-08-30 macOS dev `ogplay_tests` 重建通过；File 双后端访问/类型/过滤/rename/
-  bounded writable 与既有回归 13/13 通过，VFS rename 和 core catalog 定向通过。
+- 2026-08-30 macOS dev/release 受影响目标重建通过；Thread 20/20、ClassLoader 4/4 与
+  core catalog 定向通过；Tales 关闭 survey 越过 context loader 并完成两个 JNI_OnLoad。
 - 2026-08-30 macOS dev `ogplay_tests` 重建通过；Context/PackageManager/VFS 与 architecture
   定向 12/12 通过。Tales 关闭 survey 实跑越过 package code path，下一缺口为
   `java/lang/Thread.getContextClassLoader()`。
@@ -66,7 +65,7 @@
 
 ## 下一步
 
-1. 补 Tales `getContextClassLoader()` 能力；完成 DH 主菜单 Scenario gate。
+1. 补 Tales `android.location.LocationListener` 类层级；完成 DH 主菜单 Scenario gate。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 首次出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

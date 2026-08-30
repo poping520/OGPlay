@@ -106,7 +106,9 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   `this.run()`，基类 `run()` 才转发 target Runnable。core façade 覆盖四个构造器、
   currentThread、id/name/priority/isAlive、interrupt/interrupted、join/timed join、
   sleep、yield、holdsLock 与有界 daemon flag；priority 不伪造 host scheduler，
-  daemon 不宣称驱动 session 退出。
+  daemon 不宣称驱动 session 退出。context ClassLoader 复用 `ClassLoaderFacade` 的稳定
+  application/bootstrap 身份：root 默认 application，新 Thread 继承创建者，setter
+  只更新 guest 字段且允许 null，不增加动态 namespace。
 - `java.lang.Object.clone` 是 overridable virtual intrinsic（不是
   `internalClone`）：`instanceof Cloneable` 失败抛
   `CloneNotSupportedException`（消息对照 libcore Object.java），成功则

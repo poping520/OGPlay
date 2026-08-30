@@ -2593,6 +2593,7 @@ IntrinsicClassDecl Declare_java_lang_System() {
 #include <string_view>
 #include <vector>
 
+#include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
@@ -2607,13 +2608,15 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             IntrinsicFieldHandle stack_size;
             IntrinsicFieldHandle id;
             IntrinsicFieldHandle has_been_started;
+            IntrinsicFieldHandle context_class_loader;
         };
 
         void InitializeFields(const IntrinsicCall& call,
                               const ThreadFields& fields,
                               const VmObjectRef object,
                               const VmObjectRef target, const VmObjectRef name,
-                              const std::int64_t id, const std::int32_t priority) {
+                              const std::int64_t id, const std::int32_t priority,
+                              const VmObjectRef context_class_loader) {
             call.SetRef(fields.target, object, target);
             call.SetRef(fields.name, object, name);
             call.SetInt(fields.priority, object, priority);
@@ -2621,6 +2624,8 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             call.SetLong(fields.stack_size, object, 0);
             call.SetLong(fields.id, object, id);
             call.SetInt(fields.has_been_started, object, 0);
+            call.SetRef(fields.context_class_loader, object,
+                        context_class_loader);
         }
 
         [[nodiscard]] VmObjectRef EnsureCurrentThread(
@@ -2638,7 +2643,8 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             // a GC safe allocation point, so the fresh root must already be strong.
             runtime.SetRootThreadObject(root);
             InitializeFields(call, fields, root, VmObjectRef{},
-                             vm.NewStringUtf8("main"), 1, 5);
+                             vm.NewStringUtf8("main"), 1, 5,
+                             vm.ClassLoaders().ApplicationLoader());
             return root;
         }
 
@@ -2656,12 +2662,15 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             auto& runtime = context.vm.Threads();
             const auto current = EnsureCurrentThread(call, fields);
             const auto priority = call.GetInt(fields.priority, current);
+            const auto context_class_loader =
+                call.GetRef(fields.context_class_loader, current);
             const auto id = runtime.AllocateThreadId();
             const auto name = has_explicit_name
                                   ? explicit_name
                                   : context.vm.NewStringUtf8("Thread-" + std::to_string(id));
             InitializeFields(call, fields, context.receiver, target, name,
-                             static_cast<std::int64_t>(id), priority);
+                             static_cast<std::int64_t>(id), priority,
+                             context_class_loader);
             return VmValue::Void();
         }
 
@@ -2703,6 +2712,8 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             builder.BoundInstanceField("stackSize", "J"),
             builder.BoundInstanceField("id", "J"),
             builder.BoundInstanceField("hasBeenStarted", "Z"),
+            builder.BoundInstanceField("contextClassLoader",
+                                       "Ljava/lang/ClassLoader;", 0x0002U),
         };
         builder.ConstantInt("MIN_PRIORITY", "I", 1)
                 .ConstantInt("NORM_PRIORITY", "I", 5)
@@ -2775,6 +2786,21 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             context.vm.Threads().Rename(context.receiver, context.vm.StringUtf8(name));
             return VmValue::Void();
         });
+        // 返回该线程继承或显式设置的上下文类加载器。
+        builder.VirtualMethod(
+            "getContextClassLoader", "()Ljava/lang/ClassLoader;",
+            [fields](IntrinsicContext& context) {
+                return VmValue::Ref(
+                    IntrinsicCall(context).GetRef(fields.context_class_loader));
+            });
+        // 设置线程上下文类加载器；API 19 允许传入 null。
+        builder.VirtualMethod(
+            "setContextClassLoader", "(Ljava/lang/ClassLoader;)V",
+            [fields](IntrinsicContext& context) {
+                IntrinsicCall call(context);
+                call.SetRef(fields.context_class_loader, call.Ref(0));
+                return VmValue::Void();
+            });
         builder.FinalMethod("isAlive", "()Z", [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.Threads().IsAlive(context.receiver) ? 1 : 0);
         });

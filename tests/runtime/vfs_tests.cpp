@@ -440,6 +440,12 @@ TEST_CASE("VFS rename moves a file and leaves nothing behind") {
     CHECK(vfs.Stat("/sdcard/new.sav").size == 4);
     CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/old.sav")); }) == 2);
     CHECK(ErrnoOf([&] { vfs.Rename("/sdcard/gone", "/sdcard/x"); }) == 2);
+    CHECK(ErrnoOf([&] { vfs.Rename("/sdcard/gone", "/sdcard/gone"); }) == 2);
+    CHECK(ErrnoOf([&] {
+        vfs.Rename("/sdcard/new.sav", "/missing/new.sav");
+    }) == 2);
+    CHECK(vfs.Stat("/sdcard/new.sav").size == 4);
+    vfs.Rename("/sdcard/new.sav", "/sdcard/new.sav");
     // Subtree moves have no caller yet and are refused rather than guessed.
     CHECK(ErrnoOf([&] { vfs.Rename("/sdcard/dir", "/sdcard/dir2"); }) == 22);
     CHECK(ErrnoOf([&] { vfs.Rename("/sdcard/new.sav", "/sdcard/dir"); }) == 21);

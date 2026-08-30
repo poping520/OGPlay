@@ -60,5 +60,13 @@
   VFS 工作目录，`mkdir()` 要求父目录已存在，`mkdirs()` 继续递归创建。
 - `file_vfs_tests` 覆盖双后端路径/对象/URI 语义、声明 shape 及 `mkdir`/`mkdirs` 差异；
   其余权限、metadata、过滤列表和 rename 等 File 长尾仍按后续批次明确缺失。
+- 第二批补齐 `canRead/canWrite/isFile`、四个 filter/listFiles 重载、`renameTo` 与两个
+  `setWritable` 重载；filter 通过 guest virtual `accept` 回调，异常原样传播。
+- `IoFileSystem` 的 `Stat` 透传 writable 事实并增加文件 rename 窄接口；rename 要求源和
+  目标父目录存在、允许覆盖文件，目录子树继续明确失败。`setWritable` 在 VFS 尚无权限
+  修改能力时只确认“已可写且请求设为可写”，不会伪造权限变更成功。
+- 双解释器后端测试覆盖可访问性、文件类型、三类过滤、回调异常、文件覆盖 rename、
+  缺失父目录/null 参数与 bounded writable 语义；metadata、临时文件、权限变更和
+  canonical path 等剩余长尾继续 deferred。
 
 状态：完成。

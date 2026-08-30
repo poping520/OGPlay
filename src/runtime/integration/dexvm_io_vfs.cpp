@@ -27,7 +27,7 @@ std::optional<dexvm::IoFileInfo>
 DexVmIoVfsAdapter::Stat(const std::string_view path) const {
   try {
     const auto info = file_system_.Stat(path);
-    return dexvm::IoFileInfo{info.size, info.is_directory};
+    return dexvm::IoFileInfo{info.size, info.is_directory, info.writable};
   } catch (const VfsError &) {
     return std::nullopt;
   }
@@ -102,6 +102,16 @@ bool DexVmIoVfsAdapter::Delete(const std::string_view path) {
     } else {
       file_system_.RemoveFile(path);
     }
+    return true;
+  } catch (const VfsError &) {
+    return false;
+  }
+}
+
+bool DexVmIoVfsAdapter::Rename(const std::string_view from,
+                               const std::string_view to) {
+  try {
+    file_system_.Rename(from, to);
     return true;
   } catch (const VfsError &) {
     return false;

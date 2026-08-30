@@ -20,6 +20,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -36,6 +37,45 @@ using namespace ogplay::runtime::dexvm;
 constexpr const char* kPackage = "com.example.game";
 const std::vector<std::string> kWritableRoots{"/data/data/com.example.game",
                                               "/sdcard"};
+
+std::vector<IntrinsicClassDecl> FileFilterTestIntrinsics() {
+    std::vector<IntrinsicClassDecl> result;
+    auto filename = IntrinsicClassBuilder::Class(
+        "Ltest/DatFilenameFilter;", "Ljava/lang/Object;",
+        {"Ljava/io/FilenameFilter;"});
+    filename.VirtualMethod(
+        "accept", "(Ljava/io/File;Ljava/lang/String;)Z",
+        [](IntrinsicContext& call) {
+            return VmValue::Int(
+                call.vm.StringUtf8(call.arguments[1].ref).ends_with(".dat"));
+        });
+    result.push_back(std::move(filename).Build());
+
+    auto file = IntrinsicClassBuilder::Class(
+        "Ltest/SavFileFilter;", "Ljava/lang/Object;",
+        {"Ljava/io/FileFilter;"});
+    file.VirtualMethod("accept", "(Ljava/io/File;)Z",
+        [](IntrinsicContext& call) {
+            const auto slots =
+                call.vm.Model().InstanceSlots(call.arguments[0].ref);
+            return VmValue::Int(
+                call.vm.StringUtf8(VmObjectRef(slots[0].bits))
+                    .ends_with(".sav"));
+        });
+    result.push_back(std::move(file).Build());
+
+    auto throwing = IntrinsicClassBuilder::Class(
+        "Ltest/ThrowingFilenameFilter;", "Ljava/lang/Object;",
+        {"Ljava/io/FilenameFilter;"});
+    throwing.VirtualMethod(
+        "accept", "(Ljava/io/File;Ljava/lang/String;)Z",
+        [](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              "filter rejected the traversal"};
+        });
+    result.push_back(std::move(throwing).Build());
+    return result;
+}
 
 void Append16(std::vector<std::byte>& bytes, const std::uint16_t value) {
     bytes.push_back(static_cast<std::byte>(value & 0xffU));
@@ -120,17 +160,21 @@ struct FileVm final {
 
     explicit FileVm(SandboxStore* sandbox = nullptr,
                     const bool include_android_catalog = true,
-                    const InterpreterConfig config = {})
+                    const InterpreterConfig config = {},
+                    const std::span<const IntrinsicClassDecl>
+                        extra_intrinsics = {})
         : model(strings, arrays),
           context(std::make_shared<DexVmAndroidContext>()),
           io_file_system(vfs),
           interpreter(
-              [this, include_android_catalog]() -> DexClassLinker& {
+              [this, include_android_catalog,
+               extra_intrinsics]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   if (include_android_catalog) {
                       linker.RegisterIntrinsics(
                           AndroidIntrinsicCatalog(context));
                   }
+                  linker.RegisterIntrinsics(extra_intrinsics);
                   linker.Link();
                   return linker;
               }(),
@@ -276,7 +320,7 @@ struct FileVm final {
 
 }  // namespace
 
-TEST_CASE("File first-batch declarations match Android class shape") {
+TEST_CASE("File declarations match Android class shape through second batch") {
     const auto catalog = CoreIntrinsicCatalog();
     const auto declaration = [&](const std::string_view descriptor)
         -> const IntrinsicClassDecl& {
@@ -302,6 +346,26 @@ TEST_CASE("File first-batch declarations match Android class shape") {
     });
     REQUIRE(bridge != file.methods.end());
     CHECK(bridge->access_flags == 0x1041U);
+    for (const auto& [name, descriptor] :
+         std::vector<std::pair<std::string_view, std::string_view>>{
+             {"canRead", "()Z"},
+             {"canWrite", "()Z"},
+             {"isFile", "()Z"},
+             {"list", "(Ljava/io/FilenameFilter;)[Ljava/lang/String;"},
+             {"listFiles", "()[Ljava/io/File;"},
+             {"listFiles", "(Ljava/io/FilenameFilter;)[Ljava/io/File;"},
+             {"listFiles", "(Ljava/io/FileFilter;)[Ljava/io/File;"},
+             {"renameTo", "(Ljava/io/File;)Z"},
+             {"setWritable", "(Z)Z"},
+             {"setWritable", "(ZZ)Z"}}) {
+        const auto method = std::ranges::find_if(
+            file.methods, [&](const auto& candidate) {
+                return candidate.name == name &&
+                       candidate.descriptor == descriptor;
+            });
+        REQUIRE(method != file.methods.end());
+        CHECK(method->access_flags == 0x0001U);
+    }
 
     for (const auto descriptor : {"Ljava/io/FilenameFilter;",
                                   "Ljava/io/FileFilter;"}) {
@@ -408,6 +472,135 @@ TEST_CASE("File mkdir creates one level while mkdirs creates parents") {
     const auto recursive = vm.NewFile("/data/a/b");
     CHECK(vm.BoolOn(recursive, "mkdirs"));
     CHECK(vm.vfs.Stat("/data/a/b").is_directory);
+}
+
+TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
+    const auto filters = FileFilterTestIntrinsics();
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config, filters);
+        const auto bytes = [](const std::string_view text) {
+            std::vector<std::byte> result;
+            for (const auto value : text)
+                result.push_back(static_cast<std::byte>(value));
+            return result;
+        };
+        vm.vfs.PutFile("/data/game/a.dat", bytes("dat"), true);
+        vm.vfs.PutFile("/data/game/b.sav", bytes("save"), true);
+        vm.vfs.PutFile("/data/game/c.txt", bytes("text"), false);
+        vm.vfs.CreateDirectory("/data/game/sub");
+
+        const auto directory = vm.NewFile("/data/game");
+        const auto writable = vm.NewFile("/data/game/a.dat");
+        const auto read_only = vm.NewFile("/data/game/c.txt");
+        const auto missing = vm.NewFile("/data/game/missing");
+        CHECK(vm.BoolOn(writable, "canRead"));
+        CHECK(vm.BoolOn(writable, "canWrite"));
+        CHECK(vm.BoolOn(writable, "isFile"));
+        CHECK_FALSE(vm.BoolOn(directory, "isFile"));
+        CHECK(vm.BoolOn(read_only, "canRead"));
+        CHECK_FALSE(vm.BoolOn(read_only, "canWrite"));
+        CHECK_FALSE(vm.BoolOn(missing, "canRead"));
+        CHECK_FALSE(vm.BoolOn(missing, "canWrite"));
+        CHECK_FALSE(vm.BoolOn(missing, "isFile"));
+
+        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z",
+                        {VmValue::Int(1)}).AsInt() == 1);
+        CHECK(vm.CallOn(writable, "setWritable", "(ZZ)Z",
+                        {VmValue::Int(1), VmValue::Int(0)}).AsInt() == 1);
+        CHECK(vm.CallOn(writable, "setWritable", "(Z)Z",
+                        {VmValue::Int(0)}).AsInt() == 0);
+        CHECK(vm.CallOn(read_only, "setWritable", "(Z)Z",
+                        {VmValue::Int(1)}).AsInt() == 0);
+
+        const auto array_strings = [&](const VmObjectRef array) {
+            std::vector<std::string> result;
+            for (JniSize index = 0; index < vm.model.ArrayLength(array);
+                 ++index) {
+                result.push_back(vm.interpreter.StringUtf8(
+                    vm.model.GetObjectElement(array, index)));
+            }
+            return result;
+        };
+        const auto file_paths = [&](const VmObjectRef array) {
+            std::vector<std::string> result;
+            for (JniSize index = 0; index < vm.model.ArrayLength(array);
+                 ++index) {
+                const auto file = vm.model.GetObjectElement(array, index);
+                result.push_back(vm.interpreter.StringUtf8(vm.CallOn(
+                    file, "getPath", "()Ljava/lang/String;").ref));
+            }
+            return result;
+        };
+
+        const auto dat_filter = vm.interpreter.NewIntrinsicInstance(
+            "Ltest/DatFilenameFilter;");
+        const auto names = vm.CallOn(
+            directory, "list",
+            "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
+            {VmValue::Ref(dat_filter)}).ref;
+        CHECK(array_strings(names) == std::vector<std::string>{"a.dat"});
+        const auto null_names = vm.CallOn(
+            directory, "list",
+            "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
+            {VmValue::Ref(VmObjectRef{})}).ref;
+        CHECK(array_strings(null_names) ==
+              std::vector<std::string>{"a.dat", "b.sav", "c.txt", "sub"});
+
+        const auto all_files = vm.CallOn(
+            directory, "listFiles", "()[Ljava/io/File;").ref;
+        CHECK(file_paths(all_files) == std::vector<std::string>{
+            "/data/game/a.dat", "/data/game/b.sav", "/data/game/c.txt",
+            "/data/game/sub"});
+        const auto dat_files = vm.CallOn(
+            directory, "listFiles",
+            "(Ljava/io/FilenameFilter;)[Ljava/io/File;",
+            {VmValue::Ref(dat_filter)}).ref;
+        CHECK(file_paths(dat_files) ==
+              std::vector<std::string>{"/data/game/a.dat"});
+        const auto sav_filter = vm.interpreter.NewIntrinsicInstance(
+            "Ltest/SavFileFilter;");
+        const auto sav_files = vm.CallOn(
+            directory, "listFiles", "(Ljava/io/FileFilter;)[Ljava/io/File;",
+            {VmValue::Ref(sav_filter)}).ref;
+        CHECK(file_paths(sav_files) ==
+              std::vector<std::string>{"/data/game/b.sav"});
+        CHECK_FALSE(vm.CallOn(
+            writable, "listFiles", "()[Ljava/io/File;").ref.IsValid());
+
+        const auto throwing = vm.interpreter.NewIntrinsicInstance(
+            "Ltest/ThrowingFilenameFilter;");
+        const auto filter_error = vm.CallOnOutcome(
+            directory, "list",
+            "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
+            {VmValue::Ref(throwing)});
+        REQUIRE(filter_error.exception.IsValid());
+        CHECK(vm.linker.Class(filter_error.exception_class).descriptor ==
+              "Ljava/lang/IllegalStateException;");
+
+        const auto source = vm.NewFile("/data/game/a.dat");
+        const auto target = vm.NewFile("/data/game/b.sav");
+        CHECK(vm.CallOn(source, "renameTo", "(Ljava/io/File;)Z",
+                        {VmValue::Ref(target)}).AsInt() == 1);
+        CHECK_FALSE(vm.BoolOn(source, "exists"));
+        CHECK(vm.NativeRead("/data/game/b.sav") == "dat");
+        const auto bad_target = vm.NewFile("/missing/a.dat");
+        CHECK(vm.CallOn(target, "renameTo", "(Ljava/io/File;)Z",
+                        {VmValue::Ref(bad_target)}).AsInt() == 0);
+        CHECK(vm.BoolOn(target, "exists"));
+        CHECK(vm.CallOn(directory, "renameTo", "(Ljava/io/File;)Z",
+                        {VmValue::Ref(vm.NewFile("/data/moved"))}).AsInt() == 0);
+        const auto null_target = vm.CallOnOutcome(
+            target, "renameTo", "(Ljava/io/File;)Z",
+            {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(null_target.exception.IsValid());
+        CHECK(vm.linker.Class(null_target.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+    }
 }
 
 TEST_CASE("File relative absolute path fails without a guest working directory") {

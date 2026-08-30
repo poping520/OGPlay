@@ -15,8 +15,9 @@ open/read/write/seek/close 核心；并提供每游戏持久沙盒的宿主存�
 `RemoveDirectory`/`Rename` 与 `Truncate`/`Flush`/`FlushAll` 均为内存语义，
 errno 契约与平台一致（父目录缺失 `-ENOENT`、已存在 `-EEXIST`、对目录 unlink
 `-EISDIR`、对文件 rmdir `-ENOTDIR`、非空 `-ENOTEMPTY`、只读来源 `-EACCES`）。
-目录 `Stat` 返回目录事实而非 `-ENOENT`。目录整棵子树的 rename 尚无调用方，
-明确 `-EINVAL` 而不是猜测。未 attach 沙盒时 `Flush`/`FlushAll` 只校验
+目录 `Stat` 返回目录事实而非 `-ENOENT`。文件 rename 要求源和目标父目录存在，可覆盖
+目标文件且同路径只在源真实存在时成功；目录整棵子树的 rename 尚无调用方，明确
+`-EINVAL` 而不是猜测。未 attach 沙盒时 `Flush`/`FlushAll` 只校验
 descriptor，不伪装落盘。
 `OpenDirectory` 产生 guest 可用的目录 descriptor；目录快照 cursor 支持分页与
 受检 seek，`DescriptorInfo` 不移动 offset，目录 `Flush` 是元数据已立即落盘后的

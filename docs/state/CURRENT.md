@@ -1,14 +1,14 @@
 # 当前状态
 
-更新：补齐首批 java.io.File 路径/对象语义并修正 mkdir
+更新：系统性完成第二批 java.io.File intrinsics
 
 ## 当前阶段
 
-- **DVM-79 File 首批续作已完成**：对照 API 19 libcore/core.jar，补齐
-  `getName/getParent/getParentFile/isAbsolute/getAbsoluteFile/isHidden`、对象比较/哈希/排序、
-  `listRoots/toURI` 与两个 filter interface shape；恢复 File 的接口、bridge、非 final 方法
-  shape。相对绝对路径只用 guest VFS 工作目录，`mkdir` 改为单级创建，`mkdirs` 保持递归。
-  未新建 WU，记录回原 [DVM-79](../tasks/dexvm/DVM-79.md)。
+- **DVM-79 File 第二批已完成**：在首批路径/对象/API19 shape 基础上补齐
+  `canRead/canWrite/isFile`、四个过滤列表重载、`renameTo` 与两个 `setWritable` 重载。
+  filter 执行 guest virtual 回调并传播异常；VFS 透传 writable 和文件 rename，权限修改
+  尚不可表达时 `setWritable` 采用不伪造成功的 bounded 语义。未新建 WU，记录回原
+  [DVM-79](../tasks/dexvm/DVM-79.md)。
 
 - **DVM-94～96 已完成**：linker metadata 改为追加地址稳定存储；调用解析按
   `InvokeKind` 隔离并消费链接期 `MethodShape`。Intrinsic declaration 只含 own members，
@@ -52,15 +52,15 @@
 
 ## 最近验证
 
-- 2026-08-30 macOS dev `ogplay_tests` 重建通过；File 首批声明、双后端路径/对象/URI、
-  单级/递归建目录及既有 File 回归 12/12 通过。
+- 2026-08-30 macOS dev `ogplay_tests` 重建通过；File 双后端访问/类型/过滤/rename/
+  bounded writable 与既有回归 13/13 通过，VFS rename 和 core catalog 定向通过。
 - 2026-08-30 macOS dev `ogplay_tests` 重建通过；Context/PackageManager/VFS 与 architecture
   定向 12/12 通过。Tales 关闭 survey 实跑越过 package code path，下一缺口为
   `getContextClassLoader()`。
 - 2026-08-29 macOS dev 受影响目标通过；GLES1 扩展 token 与真实 RGBA8 FBO 定向
   2/2 通过（119 assertions），相关 architecture 4/4 通过。A6 Release 手动步进进入
   主菜单并稳定到 frame 10932，无 guest fault。
-- 2026-08-28 macOS `dev` 全量 CTest 1066/1066 通过（约 136 s，unit 1032 + tools 25 等）。
+- 2026-08-28 macOS `dev` 全量 CTest 1066/1066 通过。
 - DH Release 越过 license 轮询并稳定到主菜单，240 帧持续 presented，Ctrl-C 干净停止；
   PVZ Release 已进入标题画面、可输入并提交用户名。
 

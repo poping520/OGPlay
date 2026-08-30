@@ -303,9 +303,9 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
     std::scoped_lock lock(mutex_);
     const auto source = ResolvePath(from, working_directory_, aliases_);
     const auto target = ResolvePath(to, working_directory_, aliases_);
-    if (source == target) return;
     const auto found = files_.find(source);
     if (found == files_.end() || tombstones_.contains(source)) {
+        if (source == target && IsDirectoryLocked(source)) return;
         if (IsDirectoryLocked(source)) {
             // Moving a subtree has no caller yet; guessing at it would be
             // worse than saying so.
@@ -313,11 +313,19 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
         }
         throw VfsError(kEnoent, "VFS rename source not found");
     }
+    if (source == target) return;
     if (!found->second->writable) {
         throw VfsError(kEacces, "VFS rename source is read-only");
     }
     if (IsDirectoryLocked(target)) {
         throw VfsError(kEisdir, "VFS rename target is a directory");
+    }
+    const auto target_slash = target.rfind('/');
+    const auto target_parent = target_slash == 0U
+                                   ? std::string("/")
+                                   : target.substr(0, target_slash);
+    if (!IsDirectoryLocked(target_parent)) {
+        throw VfsError(kEnoent, "VFS rename target parent does not exist");
     }
     if (sandbox_ != nullptr && !IsWritableNamespaceLocked(target)) {
         throw VfsError(kEacces, "VFS path is outside the writable namespace");

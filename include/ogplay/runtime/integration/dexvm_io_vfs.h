@@ -19,6 +19,8 @@ public:
   [[nodiscard]] bool MakeDirectories(std::string_view path) override;
   [[nodiscard]] bool CreateFile(std::string_view path) override;
   [[nodiscard]] bool Delete(std::string_view path) override;
+  [[nodiscard]] bool Rename(std::string_view from,
+                            std::string_view to) override;
   [[nodiscard]] std::optional<std::vector<std::byte>>
   ReadFile(std::string_view path) const override;
   void WriteFile(std::string_view path,

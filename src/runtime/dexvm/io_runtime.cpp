@@ -136,6 +136,11 @@ bool IoRuntime::Delete(const std::string_view path) {
   return file_system_ != nullptr && file_system_->Delete(path);
 }
 
+bool IoRuntime::Rename(const std::string_view from,
+                       const std::string_view to) {
+  return file_system_ != nullptr && file_system_->Rename(from, to);
+}
+
 std::optional<std::vector<std::byte>>
 IoRuntime::ReadFile(const std::string_view path) const {
   return file_system_ != nullptr ? file_system_->ReadFile(path) : std::nullopt;

@@ -66,7 +66,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   `java.lang.Class` 的合法 instance receiver。GetObjectClass/IsInstanceOf 与 30 个
   普通 instance Call/CallV/CallA 统一查询该 registry,并复用 invocation engine 的
   assignability、argument/return 校验;未声明 class/method、伪 receiver 或返回类型
-  不匹配必须明确失败。
+  不匹配必须明确失败。`GetMethodID`/`GetStaticMethodID` 的未声明诊断必须同时包含
+  registry 中的 class name、method name 与 descriptor，不得只打印无法定位 owner 的签名。
 - modified UTF-8 访问族与 UTF-16 string 5 槽都解析统一 `JniStringStore`,并各用独立
   64 KiB copy-based guest arena;`isCopy` 明确写 true,lease 以 string identity +
   pointer + token 配对并 first-fit 回收,arena owner 不得在析构时反向访问可能已销毁的

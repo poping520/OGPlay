@@ -361,8 +361,9 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                 classes.GetMethodId(*identity, name, descriptor, true);
             if (!method.has_value()) {
                 throw JniGuestBindingError(
-                    "JNI guest static method is not declared: " +
-                    name + descriptor);
+                    "JNI guest static method is not declared: class=" +
+                    classes.ClassName(*identity) + " method=" + name +
+                    descriptor);
             }
             return Word(method->Value());
         });

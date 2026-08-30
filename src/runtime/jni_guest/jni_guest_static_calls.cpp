@@ -625,8 +625,9 @@ void BindJniGuestClassAndInstanceSlots(
                 *java_class, name, descriptor, false);
             if (!method.has_value()) {
                 throw JniGuestBindingError(
-                    "JNI guest instance method is not declared: " +
-                    name + descriptor);
+                    "JNI guest instance method is not declared: class=" +
+                    classes.ClassName(*java_class) + " method=" + name +
+                    descriptor);
             }
             return EncodeResult(JniValue{JniInt{
                                     static_cast<JniInt>(method->Value())}},

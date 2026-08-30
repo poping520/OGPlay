@@ -161,6 +161,8 @@ TEST_CASE("guest JNI class object and instance call family dispatches exact meth
     fixture.WriteString(0x160U, "(I)V");
     fixture.WriteString(0x180U, "value");
     fixture.WriteString(0x1a0U, "()I");
+    fixture.WriteString(0x1c0U, "missing");
+    fixture.WriteString(0x1e0U, "()V");
     fixture.dispatcher.Seal();
 
     const auto class_reference = JniReference{fixture.Call(
@@ -183,6 +185,14 @@ TEST_CASE("guest JNI class object and instance call family dispatches exact meth
     CHECK(fixture.Call(
               "IsInstanceOf", object.Value(), class_reference.Value()) == 1U);
     CHECK(fixture.classes.FindClass("fixture/Counter") == java_class);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(fixture.Call(
+            "GetMethodID", class_reference.Value(),
+            fixture.output.Add(0x1c0U).Value(),
+            fixture.output.Add(0x1e0U).Value())),
+        "JNI guest instance method is not declared: class=fixture/Counter "
+        "method=missing()V",
+        JniGuestBindingError);
 }
 
 TEST_CASE("guest JNI jclass is a java.lang.Class instance receiver") {

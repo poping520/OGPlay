@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：系统性完成第二批 java.io.File intrinsics
+更新：JNI guest 方法缺失诊断补全声明类
 
 ## 当前阶段
 
@@ -36,7 +36,7 @@
   `GL_OES_mapbuffer` 三入口。Context 新增 `getPackageCodePath/getCacheDir/getApplicationInfo`；
   code/resource/sourceDir 共用只读 guest APK，cache 经 VFS 建目录，ApplicationInfo 为进程
   稳定身份且 wrapper 仅委托 base。Tales 关闭 survey 越过原首错并完成 Amazon JNI 加载，
-  新首错为 `getContextClassLoader()`。见
+  新首错为 `getContextClassLoader()`；JNI 方法缺失诊断现会同时打印 class 与签名。见
   [DVM-47](../tasks/dexvm/DVM-47.md)、[WU-0231](../tasks/m5/WU-0231.md)。
 - **DVM-92 已完成并通过 title 验收**：退出首个 guest 回调前单向退役 Java EGL、
   native/managed GLES 与 EGL swap；process `BeginTeardown` 发布独立取消并中断
@@ -56,7 +56,7 @@
   bounded writable 与既有回归 13/13 通过，VFS rename 和 core catalog 定向通过。
 - 2026-08-30 macOS dev `ogplay_tests` 重建通过；Context/PackageManager/VFS 与 architecture
   定向 12/12 通过。Tales 关闭 survey 实跑越过 package code path，下一缺口为
-  `getContextClassLoader()`。
+  `java/lang/Thread.getContextClassLoader()`。
 - 2026-08-29 macOS dev 受影响目标通过；GLES1 扩展 token 与真实 RGBA8 FBO 定向
   2/2 通过（119 assertions），相关 architecture 4/4 通过。A6 Release 手动步进进入
   主菜单并稳定到 frame 10932，无 guest fault。

@@ -547,8 +547,8 @@ note = "M3 范围完成：233 槽 ABI 全冻结，208 个常用 JNIEnv 与 4 个
 
 [runtime.jni_missing_handler_diagnostics]
 status = "complete"
-test = "tests/runtime/jni_invocation_tests.cpp; tests/runtime/framework_lifecycle_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
-note = "M5 WU-0279 让统一 invocation engine 的 missing-handler 错误携带已解析的规范 implementation ID"
+test = "tests/runtime/jni_invocation_tests.cpp; tests/runtime/framework_lifecycle_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
+note = "M5 WU-0279 让统一 invocation engine 的 missing-handler 错误携带已解析的规范 implementation ID；2026-08-30 补强 JNI guest GetMethodID/GetStaticMethodID 未声明诊断，稳定携带 registry class name、method name 与 descriptor"
 
 [runtime.jni_guest_abi]
 status = "complete"

@@ -822,7 +822,8 @@ TEST_CASE("guest JNI static method lookup uses declared class identity") {
             "GetStaticMethodID", 401U, java_class.Value(),
             fixture.output.Add(0x140U).Value(),
             fixture.output.Add(0x160U).Value())),
-        "JNI guest static method is not declared: reset()V",
+        "JNI guest static method is not declared: class=fixture/Resource "
+        "method=reset()V",
         ogplay::runtime::JniGuestBindingError);
 }
 

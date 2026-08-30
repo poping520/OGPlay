@@ -63,8 +63,9 @@ struct DexVmAndroidContext final {
     std::vector<std::byte> apk_bytes;
     loader::ApkArchive archive;
     std::string package_name;
-    // Guest-visible path of the installed APK. Context exposes this instead
-    // of leaking the frontend's host path.
+    // Guest-visible path of the installed APK. Context code/resource paths and
+    // ApplicationInfo source paths expose this instead of leaking the
+    // frontend's host path.
     std::string package_resource_path;
     std::uint32_t package_version_code{};
     std::string package_version_name;

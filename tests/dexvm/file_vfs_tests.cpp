@@ -289,7 +289,7 @@ TEST_CASE("Environment data directory is one stable guest File") {
     CHECK(vm.interpreter.StringUtf8(path) == "/data");
 }
 
-TEST_CASE("Context files directory is inherited stable and VFS backed") {
+TEST_CASE("Context files and cache directories are inherited stable and VFS backed") {
     FileVm vm;
     const auto base =
         vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
@@ -310,14 +310,29 @@ TEST_CASE("Context files directory is inherited stable and VFS backed") {
     CHECK(vm.vfs.Stat("/data/data/com.example.game/files").is_directory);
 
     CHECK(vm.CallOn(base, "getFilesDir", "()Ljava/io/File;").ref == first);
+
+    const auto cache =
+        vm.CallOn(activity, "getCacheDir", "()Ljava/io/File;").ref;
+    const auto repeated_cache =
+        vm.CallOn(activity, "getCacheDir", "()Ljava/io/File;").ref;
+    REQUIRE(cache.IsValid());
+    CHECK(repeated_cache == cache);
+    const auto cache_path =
+        vm.CallOn(cache, "getPath", "()Ljava/lang/String;").ref;
+    CHECK(vm.interpreter.StringUtf8(cache_path) ==
+          "/data/data/com.example.game/cache");
+    CHECK(vm.vfs.Stat("/data/data/com.example.game/cache").is_directory);
+    CHECK(vm.CallOn(base, "getCacheDir", "()Ljava/io/File;").ref == cache);
 }
 
-TEST_CASE("Context files directory returns null when VFS is unavailable") {
+TEST_CASE("Context internal directories return null when VFS is unavailable") {
     FileVm vm;
     vm.context->vfs = nullptr;
     const auto context =
         vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
     CHECK_FALSE(vm.CallOn(context, "getFilesDir", "()Ljava/io/File;")
+                    .ref.IsValid());
+    CHECK_FALSE(vm.CallOn(context, "getCacheDir", "()Ljava/io/File;")
                     .ref.IsValid());
 }
 

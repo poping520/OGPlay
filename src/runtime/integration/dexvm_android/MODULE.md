@@ -81,10 +81,12 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   Context/Intent/receiver、value/database、surface/listener/UI、bitmap/canvas、media/video、
   scheduler/AudioTrack 的死亡 owner 在句柄复用前清理，只有真实 child reference 形成强边；
   process singleton、UiNodeId、resource/path/thread token 保持独立 identity（ADR-0029）。
-- `Context.getPackageResourcePath()` 遵循 API 19 同进程 `LoadedApk.getResDir()` 语义，返回
-  `/data/app/<package>-1.apk` guest 路径；process 装配必须把 context 已持有的原始 APK bytes
-  只读发布到该路径。ContextWrapper 只委托 base，禁止返回 frontend 宿主路径或把 `/apk`
-  资源目录冒充 APK 文件。
+- `Context.getPackageResourcePath/getPackageCodePath` 分别遵循 API 19 同进程
+  `LoadedApk.getResDir/getAppDir` 语义；当前无 split APK，两者返回同一
+  `/data/app/<package>-1.apk` guest 路径。process 装配必须把原始 APK bytes 只读发布到该路径。
+  `getApplicationInfo` 返回进程稳定对象并与 PackageManager 共用 sealed Manifest/path
+  物化逻辑；`getCacheDir` 按需建立稳定 `/data/data/<package>/cache` File。ContextWrapper
+  只委托 base，禁止返回 frontend 宿主路径或把 `/apk` 资源目录冒充 APK 文件。
 - `AudioTrack.getNativeOutputSampleRate()` 返回会话构建时由音频后端配置注入的桌面 mixer
   rate（默认共享桌面输出为 48 kHz）；该事实不从宿主音频线程回读。min/max
   volume、position notification period/marker、投递基线与 listener 引用属于 track

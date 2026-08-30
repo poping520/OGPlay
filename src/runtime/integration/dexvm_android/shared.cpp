@@ -51,6 +51,47 @@ namespace {
     return context->preferences[found->second];
 }
 
+[[nodiscard]] const dx::LinkedField& ApplicationInfoField(
+    dx::IntrinsicContext& call, const dx::VmObjectRef object,
+    const std::string_view name, const std::string_view descriptor) {
+    const auto field = call.vm.Linker().FindFieldRecursive(
+        call.vm.Model().ObjectClass(object), std::string(name),
+        std::string(descriptor));
+    if (!field.has_value()) {
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "ApplicationInfo field is not linked: " +
+                                 std::string(name));
+    }
+    return call.vm.Linker().Field(*field);
+}
+
+void SetApplicationInfoInt(dx::IntrinsicContext& call,
+                           const dx::VmObjectRef object,
+                           const std::string_view name,
+                           const std::int32_t value) {
+    const auto& field = ApplicationInfoField(call, object, name, "I");
+    call.vm.Model().InstanceSlots(object)[field.slot] = {
+        static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
+}
+
+void SetApplicationInfoBoolean(dx::IntrinsicContext& call,
+                               const dx::VmObjectRef object,
+                               const std::string_view name, const bool value) {
+    const auto& field = ApplicationInfoField(call, object, name, "Z");
+    call.vm.Model().InstanceSlots(object)[field.slot] = {
+        value ? 1U : 0U, dx::SlotTag::cat1};
+}
+
+void SetApplicationInfoRef(dx::IntrinsicContext& call,
+                           const dx::VmObjectRef object,
+                           const std::string_view name,
+                           const std::string_view descriptor,
+                           const dx::VmObjectRef value) {
+    const auto& field = ApplicationInfoField(call, object, name, descriptor);
+    call.vm.Model().InstanceSlots(object)[field.slot] = {
+        value.Value(), dx::SlotTag::ref};
+}
+
 // commit()/apply() is the flush point: the VFS close persists it.
 void SavePreferences(dx::IntrinsicContext& call, const Context& context) {
     const auto found = context->preference_names.find(call.receiver.Value());
@@ -85,6 +126,73 @@ template <typename ValueType>
 }
 
 }  // namespace
+
+dx::VmObjectRef MakeApplicationInfo(dx::IntrinsicContext& call,
+                                    const Context& context,
+                                    const bool include_meta_data) {
+    const auto info = call.vm.NewIntrinsicInstance(
+        "Landroid/content/pm/ApplicationInfo;");
+    const auto string = [&call](const std::string& value) {
+        return call.vm.NewStringUtf8(value);
+    };
+    const auto package = string(context->package_name);
+    const auto application_name = string(context->application_class_name);
+    const auto data_dir = string("/data/data/" + context->package_name);
+    const auto package_path = string(context->package_resource_path);
+    SetApplicationInfoRef(call, info, "name", "Ljava/lang/String;",
+                          application_name);
+    SetApplicationInfoRef(call, info, "packageName", "Ljava/lang/String;",
+                          package);
+    SetApplicationInfoRef(call, info, "className", "Ljava/lang/String;",
+                          application_name);
+    SetApplicationInfoRef(call, info, "processName", "Ljava/lang/String;",
+                          package);
+    SetApplicationInfoInt(call, info, "icon",
+                          static_cast<std::int32_t>(context->application_icon));
+    // Every DexVM process is assembled from a non-empty classes.dex. This is
+    // the API19 PackageParser default unless android:hasCode explicitly says
+    // otherwise; that attribute is not yet part of the sealed manifest facts.
+    constexpr std::int32_t kApplicationFlagHasCode = 1 << 2;
+    SetApplicationInfoInt(call, info, "flags", kApplicationFlagHasCode);
+    SetApplicationInfoInt(call, info, "uid",
+                          static_cast<std::int32_t>(context->application_uid));
+    SetApplicationInfoInt(
+        call, info, "targetSdkVersion",
+        static_cast<std::int32_t>(context->target_sdk_version));
+    SetApplicationInfoBoolean(call, info, "enabled", true);
+    SetApplicationInfoRef(call, info, "sourceDir", "Ljava/lang/String;",
+                          package_path);
+    SetApplicationInfoRef(call, info, "publicSourceDir", "Ljava/lang/String;",
+                          package_path);
+    SetApplicationInfoRef(call, info, "dataDir", "Ljava/lang/String;",
+                          data_dir);
+    if (context->application_label.has_value()) {
+        if (const auto* resource = std::get_if<std::uint32_t>(
+                &*context->application_label)) {
+            SetApplicationInfoInt(call, info, "labelRes",
+                                  static_cast<std::int32_t>(*resource));
+        } else {
+            SetApplicationInfoRef(
+                call, info, "nonLocalizedLabel", "Ljava/lang/CharSequence;",
+                string(std::get<std::string>(*context->application_label)));
+        }
+    }
+    if (include_meta_data) {
+        const auto bundle =
+            call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
+        auto& values = context->bundles[bundle.Value()];
+        for (const auto& [name, value] : context->application_meta_data) {
+            if (const auto* integer = std::get_if<std::int32_t>(&value)) {
+                values.emplace(name, *integer);
+            } else {
+                values.emplace(name, std::get<std::string>(value));
+            }
+        }
+        SetApplicationInfoRef(call, info, "metaData", "Landroid/os/Bundle;",
+                              bundle);
+    }
+    return info;
+}
 
 dx::IntrinsicHandler EditableClearHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {

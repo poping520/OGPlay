@@ -850,6 +850,19 @@ namespace {
     return true;
 }
 
+[[nodiscard]] dx::VmObjectRef ContextDirectory(
+    dx::IntrinsicContext& call, const Context& context,
+    const std::string& path, const std::string& singleton_key) {
+    if (!EnsureDirectory(context, path)) return dx::VmObjectRef{};
+    const auto found = context->singletons.find(singleton_key);
+    if (found != context->singletons.end()) return found->second;
+    const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
+    const auto slots = call.vm.Model().InstanceSlots(file);
+    slots[0] = {call.vm.NewStringUtf8(path).Value(), dx::SlotTag::ref};
+    context->singletons.emplace(singleton_key, file);
+    return file;
+}
+
 // Reads a preferences file once per name. Damaged XML is a real failure.
 void LoadPreferencesOnce(const Context& context, const std::string& name) {
     if (context->preferences_loaded[name]) return;
@@ -888,6 +901,24 @@ Decl Declare_android_content_Context(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             return MakeString(call, context->package_resource_path);
         });
+    // 返回当前应用 APK 的代码与资源文件路径。
+    builder.VirtualMethod("getPackageCodePath", "()Ljava/lang/String;",
+        [context](dx::IntrinsicContext& call) {
+            return MakeString(call, context->package_resource_path);
+        });
+    // 返回描述当前应用包、进程和安装路径等信息的 ApplicationInfo。
+    builder.VirtualMethod(
+        "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;",
+        [context](dx::IntrinsicContext& call) {
+            constexpr auto key = "context_application_info";
+            const auto found = context->singletons.find(key);
+            if (found != context->singletons.end()) {
+                return dx::VmValue::Ref(found->second);
+            }
+            const auto info = MakeApplicationInfo(call, context, false);
+            context->singletons.emplace(key, info);
+            return dx::VmValue::Ref(info);
+        });
     builder.VirtualMethod("getPackageManager",
         "()Landroid/content/pm/PackageManager;",
         [context](dx::IntrinsicContext& call) {
@@ -910,20 +941,16 @@ Decl Declare_android_content_Context(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto path = "/data/data/" + context->package_name +
                               "/files";
-            if (!EnsureDirectory(context, path)) {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            constexpr auto key = "context_files_directory";
-            const auto found = context->singletons.find(key);
-            if (found != context->singletons.end()) {
-                return dx::VmValue::Ref(found->second);
-            }
-            const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
-            const auto slots = call.vm.Model().InstanceSlots(file);
-            slots[0] = {call.vm.NewStringUtf8(path).Value(),
-                        dx::SlotTag::ref};
-            context->singletons.emplace(key, file);
-            return dx::VmValue::Ref(file);
+            return dx::VmValue::Ref(ContextDirectory(
+                call, context, path, "context_files_directory"));
+        });
+    // 返回当前应用存放可清理缓存文件的内部目录。
+    builder.VirtualMethod("getCacheDir", "()Ljava/io/File;",
+        [context](dx::IntrinsicContext& call) {
+            const auto path = "/data/data/" + context->package_name +
+                              "/cache";
+            return dx::VmValue::Ref(ContextDirectory(
+                call, context, path, "context_cache_directory"));
         });
     builder.VirtualMethod("getResources", "()Landroid/content/res/Resources;",
         [context](dx::IntrinsicContext& call) {
@@ -1147,9 +1174,13 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
     delegate("getAssets", "()Landroid/content/res/AssetManager;");
     delegate("getPackageName", "()Ljava/lang/String;");
     delegate("getPackageResourcePath", "()Ljava/lang/String;");
+    delegate("getPackageCodePath", "()Ljava/lang/String;");
+    delegate("getApplicationInfo",
+             "()Landroid/content/pm/ApplicationInfo;");
     delegate("getPackageManager", "()Landroid/content/pm/PackageManager;");
     delegate("getApplicationContext", "()Landroid/content/Context;");
     delegate("getFilesDir", "()Ljava/io/File;");
+    delegate("getCacheDir", "()Ljava/io/File;");
     delegate("getResources", "()Landroid/content/res/Resources;");
     delegate("getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
     delegate("registerReceiver",
@@ -1501,13 +1532,6 @@ void SetInt(dx::IntrinsicContext& call, const dx::VmObjectRef object,
         static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
 }
 
-void SetBoolean(dx::IntrinsicContext& call, const dx::VmObjectRef object,
-                const std::string_view name, const bool value) {
-    const auto& field = Field(call, object, name, "Z");
-    call.vm.Model().InstanceSlots(object)[field.slot] = {
-        value ? 1U : 0U, dx::SlotTag::cat1};
-}
-
 void SetRef(dx::IntrinsicContext& call, const dx::VmObjectRef object,
             const std::string_view name, const std::string_view descriptor,
             const dx::VmObjectRef value) {
@@ -1545,55 +1569,6 @@ void RequireFlags(const std::int32_t flags, const std::int32_t supported,
             std::string(method) + " flags are outside the bounded API19 " +
                 "PackageManager surface: " + std::to_string(flags)};
     }
-}
-
-[[nodiscard]] dx::VmObjectRef MakeMetaData(dx::IntrinsicContext& call,
-                                           const Context& context) {
-    const auto bundle =
-        call.vm.NewIntrinsicInstance("Landroid/os/Bundle;");
-    auto& values = context->bundles[bundle.Value()];
-    for (const auto& [name, value] : context->application_meta_data) {
-        if (const auto* integer = std::get_if<std::int32_t>(&value)) {
-            values.emplace(name, *integer);
-        } else {
-            values.emplace(name, std::get<std::string>(value));
-        }
-    }
-    return bundle;
-}
-
-[[nodiscard]] dx::VmObjectRef MakeApplicationInfo(
-    dx::IntrinsicContext& call, const Context& context,
-    const std::int32_t flags) {
-    const auto info = call.vm.NewIntrinsicInstance(
-        "Landroid/content/pm/ApplicationInfo;");
-    const auto package = String(call, context->package_name);
-    const auto application_name = String(call, context->application_class_name);
-    SetRef(call, info, "name", "Ljava/lang/String;", application_name);
-    SetRef(call, info, "packageName", "Ljava/lang/String;", package);
-    SetRef(call, info, "className", "Ljava/lang/String;", application_name);
-    SetRef(call, info, "processName", "Ljava/lang/String;", package);
-    SetInt(call, info, "icon", static_cast<std::int32_t>(context->application_icon));
-    SetInt(call, info, "uid", static_cast<std::int32_t>(context->application_uid));
-    SetInt(call, info, "targetSdkVersion",
-           static_cast<std::int32_t>(context->target_sdk_version));
-    SetBoolean(call, info, "enabled", true);
-    SetRef(call, info, "dataDir", "Ljava/lang/String;",
-           String(call, "/data/data/" + context->package_name));
-    if (context->application_label.has_value()) {
-        if (const auto* resource = std::get_if<std::uint32_t>(
-                &*context->application_label)) {
-            SetInt(call, info, "labelRes", static_cast<std::int32_t>(*resource));
-        } else {
-            SetRef(call, info, "nonLocalizedLabel", "Ljava/lang/CharSequence;",
-                   String(call, std::get<std::string>(*context->application_label)));
-        }
-    }
-    if ((flags & kGetMetaData) != 0) {
-        SetRef(call, info, "metaData", "Landroid/os/Bundle;",
-               MakeMetaData(call, context));
-    }
-    return info;
 }
 
 [[nodiscard]] dx::VmObjectRef MakeStringArray(
@@ -1712,7 +1687,8 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
             const auto flags = call.arguments[1].AsInt();
             RequireCurrentPackage(context, package);
             RequireFlags(flags, kGetMetaData, "getApplicationInfo");
-            return dx::VmValue::Ref(MakeApplicationInfo(call, context, flags));
+            return dx::VmValue::Ref(MakeApplicationInfo(
+                call, context, (flags & kGetMetaData) != 0));
         });
     builder.VirtualMethod(
         "getPackageInfo",
@@ -1733,7 +1709,8 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
                    String(call, context->package_version_name));
             SetRef(call, info, "applicationInfo",
                    "Landroid/content/pm/ApplicationInfo;",
-                   MakeApplicationInfo(call, context, flags & kGetMetaData));
+                   MakeApplicationInfo(
+                       call, context, (flags & kGetMetaData) != 0));
             if ((flags & kGetPermissions) != 0) {
                 SetRef(call, info, "requestedPermissions", "[Ljava/lang/String;",
                        MakeStringArray(call, context->requested_permissions));

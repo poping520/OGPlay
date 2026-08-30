@@ -144,7 +144,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   API 19 `Bitmap.Config` 作为真正的 `Enum` 发布 ALPHA_8/RGB_565/ARGB_4444/ARGB_8888，
   每个常量保留 name/ordinal/nativeInt，`sConfigs` 与 values/valueOf 使用同一组对象身份；
   不从宿主图形格式枚举猜测 Android native index。
-  API 19 Context 的 package resource path 是 process 注入的 guest APK 文件路径；
+  API 19 Context 的 package resource/code path 是 process 注入的同一 guest APK 文件路径；
+  `ApplicationInfo.sourceDir/publicSourceDir` 也引用该路径，cache/data 目录只使用 guest VFS。
   AndroidAppProcess 只读挂载原始 APK bytes，ContextWrapper 保持 AOSP base 委托，绝不暴露
   frontend 宿主路径。
   DexVM 出向 native 在 guest 执行期间释放解释器单写者锁，JNI 回调入口重新获取；native

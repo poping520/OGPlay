@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：DVM-94～96 架构收敛；intrinsic 继承、owner state 与双后端 invoke 统一
+更新：补齐 Context code/cache/application info；Tales 越过原首错
 
 ## 当前阶段
 
@@ -25,10 +25,12 @@
   主菜单，到 frame 10932、draw 64991 仍无 guest fault，越过原
   `libasphalt6.so+0x7f2c14`。shutdown 在 `teardown.guest_callbacks` 未完成，作为独立
   生命周期问题保留。见 [BND-26](../tasks/boundary/BND-26.md)。
-- **A6/Tales GLES 缺口已修复**：uniform reflection 接受 API19
+- **Tales Context 首错已修复**：uniform reflection 接受 API19
   `GL_SAMPLER_3D_OES` 单值 shape；GLES1 extension 目录和 boundary 真实实现
-  `GL_OES_mapbuffer` 三入口，既有 thunk ID 不漂移。A6 已持续渲染 2.5 万余 draw；Tales
-  已完成 native load，新首错为 JNI `getPackageCodePath()`。见
+  `GL_OES_mapbuffer` 三入口。Context 新增 `getPackageCodePath/getCacheDir/getApplicationInfo`；
+  code/resource/sourceDir 共用只读 guest APK，cache 经 VFS 建目录，ApplicationInfo 为进程
+  稳定身份且 wrapper 仅委托 base。Tales 关闭 survey 越过原首错并完成 Amazon JNI 加载，
+  新首错为 `getContextClassLoader()`。见
   [DVM-47](../tasks/dexvm/DVM-47.md)、[WU-0231](../tasks/m5/WU-0231.md)。
 - **DVM-92 已完成并通过 title 验收**：退出首个 guest 回调前单向退役 Java EGL、
   native/managed GLES 与 EGL swap；process `BeginTeardown` 发布独立取消并中断
@@ -48,9 +50,9 @@
 
 ## 最近验证
 
-- 2026-08-30 macOS dev 受影响目标 `ogplay_tests` 重建通过；DVM-94 protected visibility、
-  Android catalog、真实 DEX lifecycle、DVM-85 scheduler、VideoView/session lifecycle 定向
-  回归通过；`architecture.dexvm_intrinsic_layout` 通过。PVZ 实跑由用户后续执行。
+- 2026-08-30 macOS dev `ogplay_tests` 重建通过；Context/PackageManager/VFS 与 architecture
+  定向 12/12 通过。Tales 关闭 survey 实跑越过 package code path，下一缺口为
+  `getContextClassLoader()`。
 - 2026-08-29 macOS dev 受影响目标通过；GLES1 扩展 token 与真实 RGBA8 FBO 定向
   2/2 通过（119 assertions），相关 architecture 4/4 通过。A6 Release 手动步进进入
   主菜单并稳定到 frame 10932，无 guest fault。
@@ -62,7 +64,7 @@
 
 ## 下一步
 
-1. 补 Tales `getPackageCodePath()` JNI 能力；完成 DH 主菜单 Scenario gate。
+1. 补 Tales `getContextClassLoader()` 能力；完成 DH 主菜单 Scenario gate。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 首次出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

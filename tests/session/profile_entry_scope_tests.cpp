@@ -163,7 +163,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/app/Application;") == 2);
   CHECK(method_count("Landroid/app/Activity;") == 26);
   CHECK(method_count("Landroid/app/Service;") == 13);
-  CHECK(method_count("Landroid/content/ContextWrapper;") == 19);
+  CHECK(method_count("Landroid/content/ContextWrapper;") == 22);
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
   CHECK(method_count("Landroid/content/Intent;") == 16);
   CHECK(method_count("Landroid/os/Bundle;") == 17);
@@ -209,6 +209,8 @@ TEST_CASE("ContextWrapper owns one base identity and delegates supported calls")
   vm.context->package_name = "org.example.wrapper";
   vm.context->package_resource_path =
       "/data/app/org.example.wrapper-1.apk";
+  vm.context->application_class_name = "org.example.wrapper.Application";
+  vm.context->target_sdk_version = 19;
   const auto base =
       vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
   const auto wrapper = vm.interpreter.NewIntrinsicInstance(
@@ -241,6 +243,41 @@ TEST_CASE("ContextWrapper owns one base identity and delegates supported calls")
   REQUIRE_FALSE(outcome.exception.IsValid());
   CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
         "/data/app/org.example.wrapper-1.apk");
+
+  outcome = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/ContextWrapper;", "getPackageCodePath",
+                 "()Ljava/lang/String;"),
+      std::vector{VmValue::Ref(wrapper)});
+  REQUIRE_FALSE(outcome.exception.IsValid());
+  CHECK(vm.interpreter.StringUtf8(outcome.value.ref) ==
+        "/data/app/org.example.wrapper-1.apk");
+
+  const auto base_info = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/Context;", "getApplicationInfo",
+                 "()Landroid/content/pm/ApplicationInfo;"),
+      std::vector{VmValue::Ref(base)});
+  REQUIRE_FALSE(base_info.exception.IsValid());
+  const auto wrapper_info = vm.interpreter.Call(
+      vm.Virtual("Landroid/content/ContextWrapper;", "getApplicationInfo",
+                 "()Landroid/content/pm/ApplicationInfo;"),
+      std::vector{VmValue::Ref(wrapper)});
+  REQUIRE_FALSE(wrapper_info.exception.IsValid());
+  CHECK(wrapper_info.value.ref == base_info.value.ref);
+  const auto info_field = [&](const std::string& name,
+                              const std::string& descriptor) {
+    const auto field = vm.linker.FindFieldRecursive(
+        vm.model.ObjectClass(base_info.value.ref), name, descriptor);
+    REQUIRE(field.has_value());
+    return vm.model.InstanceSlots(base_info.value.ref)
+        [vm.linker.Field(*field).slot];
+  };
+  CHECK(vm.interpreter.StringUtf8(VmObjectRef{
+            static_cast<std::uint32_t>(
+                info_field("sourceDir", "Ljava/lang/String;").bits)}) ==
+        "/data/app/org.example.wrapper-1.apk");
+  CHECK(static_cast<std::int32_t>(
+            info_field("targetSdkVersion", "I").bits) == 19);
+  CHECK(static_cast<std::int32_t>(info_field("flags", "I").bits) == 4);
 
   outcome = vm.interpreter.Call(
       vm.Virtual("Landroid/content/ContextWrapper;", "attachBaseContext",
@@ -309,6 +346,8 @@ TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
     config.backend = backend;
     AndroidVm vm(config);
     vm.context->package_name = "org.example.game";
+    vm.context->package_resource_path =
+        "/data/app/org.example.game-1.apk";
     vm.context->package_version_code = 7U;
     vm.context->package_version_name = "1.2.3";
     vm.context->target_sdk_version = 19U;
@@ -374,6 +413,14 @@ TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
     CHECK(int_field(application.value.ref, "targetSdkVersion") == 19);
     CHECK(int_field(application.value.ref, "icon") ==
           static_cast<std::int32_t>(0x7f020001U));
+    CHECK(int_field(application.value.ref, "flags") == 4);
+    CHECK(vm.interpreter.StringUtf8(ref_field(
+              application.value.ref, "sourceDir", "Ljava/lang/String;")) ==
+          "/data/app/org.example.game-1.apk");
+    CHECK(vm.interpreter.StringUtf8(ref_field(
+              application.value.ref, "publicSourceDir",
+              "Ljava/lang/String;")) ==
+          "/data/app/org.example.game-1.apk");
     const auto metadata = ref_field(application.value.ref, "metaData",
                                     "Landroid/os/Bundle;");
     REQUIRE(metadata.IsValid());

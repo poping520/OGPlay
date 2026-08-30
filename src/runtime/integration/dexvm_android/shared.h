@@ -31,6 +31,12 @@ inline constexpr std::uint32_t kAbstractAccess = 0x0400U;
                                         const char* descriptor);
 [[nodiscard]] dx::VmValue MakeString(dx::IntrinsicContext& call,
                                      const std::string& value);
+// Materialize the current package's ApplicationInfo from sealed process
+// facts. Context keeps one object for the LoadedApk lifetime; bounded
+// PackageManager queries may request fresh copies with optional metadata.
+[[nodiscard]] dx::VmObjectRef MakeApplicationInfo(
+    dx::IntrinsicContext& call, const Context& context,
+    bool include_meta_data);
 [[nodiscard]] dx::IntrinsicHandler NeutralHandler(char shorty);
 [[nodiscard]] dx::IntrinsicHandler PlaceholderString(std::string value = {});
 void GuestLog(dx::IntrinsicContext& call, core::LogLevel level,

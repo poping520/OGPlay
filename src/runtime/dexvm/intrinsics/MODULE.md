@@ -35,7 +35,9 @@ Collections 算法和固定 offset Calendar/TimeZone；handler 只做 Java 参�
 handle、File 与文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；
 流状态、`FileDescriptor` 逻辑来源和文件访问只委托 per-VM `IoRuntime`，不得回读 Android
 session context。逻辑描述符不保存宿主句柄；`FileInputStream.getFD()` 只发布路径 identity，
-读游标继续属于 stream。
+读游标继续属于 stream。`File` 首批路径/对象语义以 pinned API 19 libcore 为准；相对绝对化
+只消费 `IoRuntime` 注入的 guest 工作目录，`mkdir` 与 `mkdirs` 必须分别保持单级和递归语义。
+`FilenameFilter`/`FileFilter` 当前只发布可链接的回调 shape，过滤列表重载仍属后续能力。
 
 `java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
 接管，archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate

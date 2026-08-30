@@ -77,6 +77,8 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 - `IoRuntime`（DVM-79/DVM-91）：统一拥有 java.io input/output bytes、cursor、close 与 wrapper
   adoption side state，并通过具名 intrinsic state table 随死亡 owner 清扫。File 家族只
   使用装配方注入的 core `IoFileSystem` 窄接口；integration adapter 才可访问具体 VFS。
+  工作目录和单级/递归建目录同样是注入事实：相对 `File` 不得读取宿主 cwd，`mkdir()`
+  不得退化为递归创建。
   DVM-91 增加不含宿主/native fd 的逻辑 FileDescriptor source/base-offset/closed 记录；
   `FileInputStream.getFD()` 与读 cursor 独立，这是 reached media identity 路径的明确偏差。
   无文件系统时明确失败；流 wrapper 为 single-owner transfer，clone 不复制游标或缓冲。

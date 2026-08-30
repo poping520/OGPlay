@@ -1,8 +1,14 @@
 # 当前状态
 
-更新：补齐 Context code/cache/application info；Tales 越过原首错
+更新：补齐首批 java.io.File 路径/对象语义并修正 mkdir
 
 ## 当前阶段
+
+- **DVM-79 File 首批续作已完成**：对照 API 19 libcore/core.jar，补齐
+  `getName/getParent/getParentFile/isAbsolute/getAbsoluteFile/isHidden`、对象比较/哈希/排序、
+  `listRoots/toURI` 与两个 filter interface shape；恢复 File 的接口、bridge、非 final 方法
+  shape。相对绝对路径只用 guest VFS 工作目录，`mkdir` 改为单级创建，`mkdirs` 保持递归。
+  未新建 WU，记录回原 [DVM-79](../tasks/dexvm/DVM-79.md)。
 
 - **DVM-94～96 已完成**：linker metadata 改为追加地址稳定存储；调用解析按
   `InvokeKind` 隔离并消费链接期 `MethodShape`。Intrinsic declaration 只含 own members，
@@ -38,10 +44,6 @@
   在既有 slice/boundary 安全点失败展开，运行期 ADR-0023 预算与 non-renewable
   finalizer 不变。契约见 [DVM-92](../tasks/dexvm/DVM-92.md) 与
   [ADR-0025](../adr/0025-teardown-cancellation-and-graphics-retirement.md)。
-- **DVM-89 能力栈已闭合**：native watchdog 仅按真实阻塞/I/O/GPU/音频/JNI 重入进展
-  续期；首帧握手可观测 worker park/终态；AudioTrack marker/periodic 与输出采样率接入
-  真实 mixer；GuestProcFacts、根上下文 timed park 快进均已交付。watchdog 与首帧契约
-  见 ADR-0023/0024。
 - **近期兼容性闭合**：Android View fallback 已支持 reverse-Z、deepest-first 触摸路由；
   BND-27 修复 GLES1 coordinate array 来源；DVM-91 完成 FileDescriptor/PFD/AFD 媒体
   区间能力；DVM-90 完成动态 SurfaceView holder generation。
@@ -50,6 +52,8 @@
 
 ## 最近验证
 
+- 2026-08-30 macOS dev `ogplay_tests` 重建通过；File 首批声明、双后端路径/对象/URI、
+  单级/递归建目录及既有 File 回归 12/12 通过。
 - 2026-08-30 macOS dev `ogplay_tests` 重建通过；Context/PackageManager/VFS 与 architecture
   定向 12/12 通过。Tales 关闭 survey 实跑越过 package code path，下一缺口为
   `getContextClassLoader()`。
@@ -57,8 +61,6 @@
   2/2 通过（119 assertions），相关 architecture 4/4 通过。A6 Release 手动步进进入
   主菜单并稳定到 frame 10932，无 guest fault。
 - 2026-08-28 macOS `dev` 全量 CTest 1066/1066 通过（约 136 s，unit 1032 + tools 25 等）。
-- Diagnostics 与 DVM-92 Windows Release 受影响目标及定向回归通过；PVZ 2.3.12 标题画面
-  点击关闭实跑确认快速正常退出。
 - DH Release 越过 license 轮询并稳定到主菜单，240 帧持续 presented，Ctrl-C 干净停止；
   PVZ Release 已进入标题画面、可输入并提交用户名。
 

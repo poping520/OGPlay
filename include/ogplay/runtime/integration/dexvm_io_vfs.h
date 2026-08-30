@@ -14,6 +14,8 @@ public:
   Stat(std::string_view path) const override;
   [[nodiscard]] std::optional<std::vector<std::string>>
   List(std::string_view path) const override;
+  [[nodiscard]] std::optional<std::string> WorkingDirectory() const override;
+  [[nodiscard]] bool MakeDirectory(std::string_view path) override;
   [[nodiscard]] bool MakeDirectories(std::string_view path) override;
   [[nodiscard]] bool CreateFile(std::string_view path) override;
   [[nodiscard]] bool Delete(std::string_view path) override;

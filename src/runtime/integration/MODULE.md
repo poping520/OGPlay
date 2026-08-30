@@ -16,7 +16,8 @@ execution、vfs 及其下层模块。任何下层模块均不得反向依赖 int
 DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
 `VirtualFileSystem` 之间的唯一桥：Java File 族与 native `fopen` 因此仍看到同一个
 沙盒世界，而 dexvm 不反向依赖 integration/VFS。adapter 保留 mkdir/list/delete、
-整文件 read/write 与 flush/close 的既有真实语义，并在异常出口关闭临时 descriptor。
+整文件 read/write 与 flush/close 的既有真实语义，并在异常出口关闭临时 descriptor；
+同时只读透传 guest 工作目录，并分别暴露单级 `CreateDirectory` 与递归建目录语义。
 
 ## 不变量
 

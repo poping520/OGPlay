@@ -49,4 +49,16 @@
   `DexVmAndroidContext::zip_streams` 与 integration GC root 已删除，严格 loader ZIP
   parser/inflate 由 per-VM `ZipRuntime` 封装。
 
+## 后续补充（2026-08-30）
+
+- 对照 pinned AOSP libcore 与 `.local/aosp/core.jar`，补齐首批 `File` 路径/对象语义：
+  `getName/getParent/getParentFile/isAbsolute/getAbsoluteFile/isHidden`、
+  `equals/hashCode/compareTo/toString/listRoots/toURI`。
+- `File` 恢复 `Serializable`/`Comparable` 接口、非 final 公共方法、私有 `path` 字段和
+  compiler bridge 标志；增加 `FilenameFilter`/`FileFilter` 的 API 形状。
+- `IoFileSystem` 窄接口透传 guest 工作目录与单级建目录：相对 `getAbsolutePath()` 只消费
+  VFS 工作目录，`mkdir()` 要求父目录已存在，`mkdirs()` 继续递归创建。
+- `file_vfs_tests` 覆盖双后端路径/对象/URI 语义、声明 shape 及 `mkdir`/`mkdirs` 差异；
+  其余权限、metadata、过滤列表和 rename 等 File 长尾仍按后续批次明确缺失。
+
 状态：完成。

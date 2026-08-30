@@ -119,7 +119,8 @@ struct FileVm final {
     Interpreter interpreter;
 
     explicit FileVm(SandboxStore* sandbox = nullptr,
-                    const bool include_android_catalog = true)
+                    const bool include_android_catalog = true,
+                    const InterpreterConfig config = {})
         : model(strings, arrays),
           context(std::make_shared<DexVmAndroidContext>()),
           io_file_system(vfs),
@@ -133,7 +134,7 @@ struct FileVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, {}) {
+              model, nullptr, ledger, config) {
         context->vfs = &vfs;
         interpreter.IO().SetFileSystem(&io_file_system);
         context->package_name = kPackage;
@@ -274,6 +275,150 @@ struct FileVm final {
 };
 
 }  // namespace
+
+TEST_CASE("File first-batch declarations match Android class shape") {
+    const auto catalog = CoreIntrinsicCatalog();
+    const auto declaration = [&](const std::string_view descriptor)
+        -> const IntrinsicClassDecl& {
+        const auto found = std::ranges::find(
+            catalog, descriptor, &IntrinsicClassDecl::descriptor);
+        REQUIRE(found != catalog.end());
+        return *found;
+    };
+    const auto& file = declaration("Ljava/io/File;");
+    CHECK(file.interfaces == std::vector<std::string>{
+        "Ljava/io/Serializable;", "Ljava/lang/Comparable;"});
+    const auto path = std::ranges::find(
+        file.fields, std::string_view{"path"}, &IntrinsicFieldDecl::name);
+    REQUIRE(path != file.fields.end());
+    CHECK(path->access_flags == 0x0002U);
+    for (const auto& method : file.methods) {
+        if (method.name != "<init>")
+            CHECK((method.access_flags & 0x0010U) == 0U);
+    }
+    const auto bridge = std::ranges::find_if(file.methods, [](const auto& method) {
+        return method.name == "compareTo" &&
+               method.descriptor == "(Ljava/lang/Object;)I";
+    });
+    REQUIRE(bridge != file.methods.end());
+    CHECK(bridge->access_flags == 0x1041U);
+
+    for (const auto descriptor : {"Ljava/io/FilenameFilter;",
+                                  "Ljava/io/FileFilter;"}) {
+        const auto& filter = declaration(descriptor);
+        CHECK(filter.is_interface);
+        REQUIRE(filter.methods.size() == 1U);
+        CHECK(filter.methods[0].name == "accept");
+        CHECK(filter.methods[0].access_flags == 0x0401U);
+    }
+}
+
+TEST_CASE("File first-batch path and object semantics match on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config);
+        vm.vfs.CreateDirectory("/data");
+        vm.vfs.CreateDirectory("/data/game");
+        vm.vfs.SetWorkingDirectory("/data/game");
+
+        const auto relative = vm.NewFile("saves/.slot");
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.CallOn(relative, "getName", "()Ljava/lang/String;").ref) ==
+              ".slot");
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.CallOn(relative, "getParent", "()Ljava/lang/String;").ref) ==
+              "saves");
+        const auto parent = vm.CallOn(
+            relative, "getParentFile", "()Ljava/io/File;").ref;
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.CallOn(parent, "getPath", "()Ljava/lang/String;").ref) ==
+              "saves");
+        CHECK_FALSE(vm.BoolOn(relative, "isAbsolute"));
+        CHECK(vm.BoolOn(relative, "isHidden"));
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+                  relative, "getAbsolutePath", "()Ljava/lang/String;").ref) ==
+              "/data/game/saves/.slot");
+        const auto absolute = vm.CallOn(
+            relative, "getAbsoluteFile", "()Ljava/io/File;").ref;
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.CallOn(absolute, "getPath", "()Ljava/lang/String;").ref) ==
+              "/data/game/saves/.slot");
+
+        const auto same = vm.NewFile("saves/.slot");
+        const auto later = vm.NewFile("saves/z");
+        CHECK(vm.CallOn(relative, "equals", "(Ljava/lang/Object;)Z",
+                        {VmValue::Ref(same)}).AsInt() == 1);
+        CHECK(vm.CallOn(relative, "hashCode", "()I").AsInt() ==
+              vm.CallOn(same, "hashCode", "()I").AsInt());
+        CHECK(vm.CallOn(relative, "compareTo", "(Ljava/io/File;)I",
+                        {VmValue::Ref(later)}).AsInt() < 0);
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+                  relative, "toString", "()Ljava/lang/String;").ref) ==
+              "saves/.slot");
+
+        const auto not_file = vm.interpreter.NewStringUtf8("not a file");
+        const auto cast = vm.CallOnOutcome(
+            relative, "compareTo", "(Ljava/lang/Object;)I",
+            {VmValue::Ref(not_file)});
+        REQUIRE(cast.exception.IsValid());
+        CHECK(vm.linker.Class(cast.exception_class).descriptor ==
+              "Ljava/lang/ClassCastException;");
+
+        const auto roots = vm.CallStatic(
+            "Ljava/io/File;", "listRoots", "()[Ljava/io/File;").ref;
+        REQUIRE(vm.model.ArrayLength(roots) == 1);
+        const auto root = vm.model.GetObjectElement(roots, 0);
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.CallOn(root, "getPath", "()Ljava/lang/String;").ref) ==
+              "/");
+
+        vm.vfs.CreateDirectory("/data/game/save dir");
+        const auto directory = vm.NewFile("save dir");
+        const auto uri = vm.CallOn(
+            directory, "toURI", "()Ljava/net/URI;").ref;
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+                  uri, "toString", "()Ljava/lang/String;").ref) ==
+              "file:/data/game/save%20dir/");
+
+        const auto legal = vm.NewFile("save!$&'()+,;=@.dat");
+        const auto legal_uri = vm.CallOn(
+            legal, "toURI", "()Ljava/net/URI;").ref;
+        CHECK(vm.interpreter.StringUtf8(vm.CallOn(
+                  legal_uri, "toString", "()Ljava/lang/String;").ref) ==
+              "file:/data/game/save!$&'()+,;=@.dat");
+    }
+}
+
+TEST_CASE("File mkdir creates one level while mkdirs creates parents") {
+    FileVm vm;
+    vm.vfs.CreateDirectory("/data");
+    const auto missing_parent = vm.NewFile("/missing/leaf");
+    CHECK_FALSE(vm.BoolOn(missing_parent, "mkdir"));
+    CHECK_FALSE(vm.io_file_system.Stat("/missing/leaf").has_value());
+
+    const auto one_level = vm.NewFile("/data/leaf");
+    CHECK(vm.BoolOn(one_level, "mkdir"));
+    CHECK_FALSE(vm.BoolOn(one_level, "mkdir"));
+    CHECK(vm.vfs.Stat("/data/leaf").is_directory);
+
+    const auto recursive = vm.NewFile("/data/a/b");
+    CHECK(vm.BoolOn(recursive, "mkdirs"));
+    CHECK(vm.vfs.Stat("/data/a/b").is_directory);
+}
+
+TEST_CASE("File relative absolute path fails without a guest working directory") {
+    FileVm vm;
+    const auto file = vm.NewFile("relative.dat");
+    const auto outcome = vm.CallOnOutcome(
+        file, "getAbsolutePath", "()Ljava/lang/String;");
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
+}
 
 TEST_CASE("Environment data directory is one stable guest File") {
     FileVm vm;

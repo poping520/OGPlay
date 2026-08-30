@@ -49,6 +49,21 @@ DexVmIoVfsAdapter::List(const std::string_view path) const {
   }
 }
 
+std::optional<std::string> DexVmIoVfsAdapter::WorkingDirectory() const {
+  return file_system_.WorkingDirectory();
+}
+
+bool DexVmIoVfsAdapter::MakeDirectory(const std::string_view path) {
+  if (Stat(path).has_value())
+    return false;
+  try {
+    file_system_.CreateDirectory(path);
+    return true;
+  } catch (const VfsError &) {
+    return false;
+  }
+}
+
 bool DexVmIoVfsAdapter::MakeDirectories(const std::string_view path_view) {
   if (Stat(path_view).has_value())
     return false;

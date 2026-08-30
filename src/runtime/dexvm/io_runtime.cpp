@@ -112,6 +112,15 @@ IoRuntime::List(const std::string_view path) const {
   return file_system_ != nullptr ? file_system_->List(path) : std::nullopt;
 }
 
+std::optional<std::string> IoRuntime::WorkingDirectory() const {
+  return file_system_ != nullptr ? file_system_->WorkingDirectory()
+                                 : std::nullopt;
+}
+
+bool IoRuntime::MakeDirectory(const std::string_view path) {
+  return file_system_ != nullptr && file_system_->MakeDirectory(path);
+}
+
 bool IoRuntime::MakeDirectories(const std::string_view path) {
   return file_system_ != nullptr && file_system_->MakeDirectories(path);
 }

@@ -49,8 +49,10 @@ IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
@@ -58,10 +60,32 @@ IntrinsicClassDecl Declare_java_io_FileNotFoundException() {
 namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_io_files {
 namespace {
 
+[[nodiscard]] VmObjectRef FilePathRef(IntrinsicContext &call,
+                                     const VmObjectRef file) {
+  const auto slots = call.vm.Model().InstanceSlots(file);
+  return VmObjectRef(slots[0].bits);
+}
+
 [[nodiscard]] std::string FilePath(IntrinsicContext &call,
                                    const VmObjectRef file) {
-  const auto slots = call.vm.Model().InstanceSlots(file);
-  return call.vm.StringUtf8(VmObjectRef(slots[0].bits));
+  return call.vm.StringUtf8(FilePathRef(call, file));
+}
+
+[[nodiscard]] bool IsAbsoluteFilePath(const std::string_view path) {
+  return path.starts_with('/');
+}
+
+[[nodiscard]] std::string ChildFilePath(
+    std::optional<std::string_view> directory, std::string_view name);
+
+[[nodiscard]] std::optional<std::string> ParentFilePath(
+    const std::string_view path) {
+  const auto slash = path.rfind('/');
+  if (slash == std::string_view::npos)
+    return std::nullopt;
+  if (slash == 0U)
+    return path.size() == 1U ? std::nullopt : std::optional<std::string>{"/"};
+  return std::string(path.substr(0, slash));
 }
 
 [[noreturn]] void IoFailure(const IoRuntimeError &error) {
@@ -108,7 +132,8 @@ void SetFilePath(IntrinsicContext& call, const std::string_view path) {
 
 [[nodiscard]] std::optional<VmValue> InvokeVirtual(
     IntrinsicContext& context, const VmObjectRef receiver,
-    const std::string_view name, const std::string_view descriptor) {
+    const std::string_view name, const std::string_view descriptor,
+    const std::span<const VmValue> arguments = {}) {
   if (!receiver.IsValid()) {
     throw VmJavaThrow{"Ljava/lang/NullPointerException;",
                       "virtual receiver == null"};
@@ -121,14 +146,79 @@ void SetFilePath(IntrinsicContext& call, const std::string_view path) {
     throw VmJavaThrow{"Ljava/lang/AbstractMethodError;",
                       std::string(name) + std::string(descriptor)};
   }
-  const std::array arguments{VmValue::Ref(receiver)};
+  std::vector<VmValue> invoke_arguments;
+  invoke_arguments.reserve(arguments.size() + 1U);
+  invoke_arguments.push_back(VmValue::Ref(receiver));
+  invoke_arguments.insert(invoke_arguments.end(), arguments.begin(),
+                          arguments.end());
   const auto outcome = context.vm.Call(
-      linker.Class(java_class).vtable[*index], arguments);
+      linker.Class(java_class).vtable[*index], invoke_arguments);
   if (outcome.exception.IsValid()) {
     context.vm.SetPendingException(outcome.exception);
     return std::nullopt;
   }
   return outcome.value;
+}
+
+[[nodiscard]] std::optional<VmObjectRef> NewFile(
+    IntrinsicContext &call, const std::string_view path) {
+  const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
+  const auto java_class = call.vm.Model().ObjectClass(file);
+  const auto constructor = call.vm.Linker().FindDirectMethod(
+      java_class, "<init>", "(Ljava/lang/String;)V");
+  if (!constructor.has_value()) {
+    throw DexVmError(DexVmErrorReason::internal_invariant,
+                     "File(String) constructor is unavailable");
+  }
+  const std::array arguments{VmValue::Ref(file),
+                             VmValue::Ref(call.vm.NewStringUtf8(path))};
+  const auto outcome = call.vm.Call(*constructor, arguments);
+  if (outcome.exception.IsValid()) {
+    call.vm.SetPendingException(outcome.exception);
+    return std::nullopt;
+  }
+  return file;
+}
+
+[[nodiscard]] std::string EncodeFileUriPath(const std::string_view path) {
+  constexpr char kHex[] = "0123456789ABCDEF";
+  std::string encoded;
+  for (const auto character : path) {
+    const auto byte = static_cast<unsigned char>(character);
+    const bool safe = (byte >= 'a' && byte <= 'z') ||
+                      (byte >= 'A' && byte <= 'Z') ||
+                      (byte >= '0' && byte <= '9') || byte >= 0x80U ||
+                      std::string_view{"_-!.~'()*,;:$&+=/@"}.find(
+                          static_cast<char>(byte)) != std::string_view::npos;
+    if (safe) {
+      encoded.push_back(static_cast<char>(byte));
+    } else {
+      encoded.push_back('%');
+      encoded.push_back(kHex[byte >> 4U]);
+      encoded.push_back(kHex[byte & 0x0FU]);
+    }
+  }
+  return encoded;
+}
+
+[[nodiscard]] std::optional<VmObjectRef> NewUri(
+    IntrinsicContext &call, const std::string_view spec) {
+  const auto uri = call.vm.NewIntrinsicInstance("Ljava/net/URI;");
+  const auto java_class = call.vm.Model().ObjectClass(uri);
+  const auto constructor = call.vm.Linker().FindDirectMethod(
+      java_class, "<init>", "(Ljava/lang/String;)V");
+  if (!constructor.has_value()) {
+    throw DexVmError(DexVmErrorReason::internal_invariant,
+                     "URI(String) constructor is unavailable");
+  }
+  const std::array arguments{VmValue::Ref(uri),
+                             VmValue::Ref(call.vm.NewStringUtf8(spec))};
+  const auto outcome = call.vm.Call(*constructor, arguments);
+  if (outcome.exception.IsValid()) {
+    call.vm.SetPendingException(outcome.exception);
+    return std::nullopt;
+  }
+  return uri;
 }
 
 IntrinsicHandler OpenInputFromPath(const bool file_argument) {
@@ -197,13 +287,15 @@ IntrinsicHandler Flush(const bool close) {
 }
 
 IntrinsicClassDecl DeclareFile() {
-  auto builder =
-      IntrinsicClassBuilder::Class("Ljava/io/File;", "Ljava/lang/Object;");
+  auto builder = IntrinsicClassBuilder::Class(
+      "Ljava/io/File;", "Ljava/lang/Object;",
+      {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"});
   builder.ConstantInt("separatorChar", "C", '/', 0x0019U);
   builder.ConstantString("separator", "/", 0x0019U);
   builder.ConstantInt("pathSeparatorChar", "C", ':', 0x0019U);
   builder.ConstantString("pathSeparator", ":", 0x0019U);
-  builder.InstanceField("path", "Ljava/lang/String;");
+  builder.InstanceField("path", "Ljava/lang/String;", 0x0002U);
+  // 使用字符串路径创建 File 对象。
   builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext &call) {
     if (!call.arguments[0].ref.IsValid()) {
       throw VmJavaThrow{"Ljava/lang/NullPointerException;", "path == null"};
@@ -211,6 +303,7 @@ IntrinsicClassDecl DeclareFile() {
     SetFilePath(call, call.vm.StringUtf8(call.arguments[0].ref));
     return VmValue::Void();
   });
+  // 使用父路径字符串和子名称创建 File 对象。
   builder.Constructor("(Ljava/lang/String;Ljava/lang/String;)V",
                       [](IntrinsicContext &call) {
                         if (!call.arguments[1].ref.IsValid()) {
@@ -230,6 +323,7 @@ IntrinsicClassDecl DeclareFile() {
                             name));
                         return VmValue::Void();
                       });
+  // 使用父 File 对象和子名称创建 File 对象。
   builder.Constructor("(Ljava/io/File;Ljava/lang/String;)V",
                       [](IntrinsicContext& call) {
                         if (!call.arguments[1].ref.IsValid()) {
@@ -249,6 +343,7 @@ IntrinsicClassDecl DeclareFile() {
                             name));
                         return VmValue::Void();
                       });
+  // 将合法的 file URI 转换为 File 对象。
   builder.Constructor("(Ljava/net/URI;)V", [](IntrinsicContext& call) {
     const auto uri = call.arguments[0].ref;
     if (!uri.IsValid()) {
@@ -300,27 +395,53 @@ IntrinsicClassDecl DeclareFile() {
     SetFilePath(call, call.vm.StringUtf8(path->ref));
     return VmValue::Void();
   });
-  builder.FinalMethod("exists", "()Z", [](IntrinsicContext &call) {
+  // 判断路径在 guest 文件系统中是否存在。
+  builder.VirtualMethod("exists", "()Z", [](IntrinsicContext &call) {
     return VmValue::Int(
         call.vm.IO().Stat(FilePath(call, call.receiver)).has_value());
   });
-  builder.FinalMethod("length", "()J", [](IntrinsicContext &call) {
+  // 返回文件长度，不存在或读取失败时返回零。
+  builder.VirtualMethod("length", "()J", [](IntrinsicContext &call) {
     const auto info = call.vm.IO().Stat(FilePath(call, call.receiver));
     return VmValue::Long(
         info.has_value() ? static_cast<std::int64_t>(info->size) : 0);
   });
   const auto get_path = [](IntrinsicContext &call) {
-    return VmValue::Ref(call.vm.NewStringUtf8(FilePath(call, call.receiver)));
+    return VmValue::Ref(FilePathRef(call, call.receiver));
   };
-  builder.FinalMethod("getPath", "()Ljava/lang/String;", get_path);
-  builder.FinalMethod("getAbsolutePath", "()Ljava/lang/String;", get_path);
+  // 返回创建 File 时保存的路径字符串。
+  builder.VirtualMethod("getPath", "()Ljava/lang/String;", get_path);
+  // 返回基于 guest 工作目录解析的绝对路径。
+  builder.VirtualMethod("getAbsolutePath", "()Ljava/lang/String;",
+                        [](IntrinsicContext &call) {
+    const auto path = FilePath(call, call.receiver);
+    const auto absolute = InvokeVirtual(
+        call, call.receiver, "isAbsolute", "()Z");
+    if (!absolute.has_value())
+      return VmValue::Ref(VmObjectRef{});
+    if (absolute->AsInt() != 0)
+      return VmValue::Ref(call.vm.NewStringUtf8(path));
+    const auto working_directory = call.vm.IO().WorkingDirectory();
+    if (!working_directory.has_value()) {
+      throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                        "guest working directory is unavailable"};
+    }
+    return VmValue::Ref(call.vm.NewStringUtf8(
+        ChildFilePath(*working_directory, path)));
+  });
   const auto make_directories = [](IntrinsicContext &call) {
     return VmValue::Int(
         call.vm.IO().MakeDirectories(FilePath(call, call.receiver)));
   };
-  builder.FinalMethod("mkdir", "()Z", make_directories);
-  builder.FinalMethod("mkdirs", "()Z", make_directories);
-  builder.FinalMethod("createNewFile", "()Z", [](IntrinsicContext &call) {
+  // 创建单级目录，要求父目录已经存在。
+  builder.VirtualMethod("mkdir", "()Z", [](IntrinsicContext &call) {
+    return VmValue::Int(
+        call.vm.IO().MakeDirectory(FilePath(call, call.receiver)));
+  });
+  // 创建目录及其缺失的父目录。
+  builder.VirtualMethod("mkdirs", "()Z", make_directories);
+  // 原子创建空文件，并报告是否实际创建。
+  builder.VirtualMethod("createNewFile", "()Z", [](IntrinsicContext &call) {
     try {
       return VmValue::Int(
           call.vm.IO().CreateFile(FilePath(call, call.receiver)));
@@ -328,14 +449,17 @@ IntrinsicClassDecl DeclareFile() {
       IoFailure(error);
     }
   });
-  builder.FinalMethod("delete", "()Z", [](IntrinsicContext &call) {
+  // 删除文件或空目录，并报告是否成功。
+  builder.VirtualMethod("delete", "()Z", [](IntrinsicContext &call) {
     return VmValue::Int(call.vm.IO().Delete(FilePath(call, call.receiver)));
   });
-  builder.FinalMethod("isDirectory", "()Z", [](IntrinsicContext &call) {
+  // 判断路径是否表示 guest 文件系统中的目录。
+  builder.VirtualMethod("isDirectory", "()Z", [](IntrinsicContext &call) {
     const auto info = call.vm.IO().Stat(FilePath(call, call.receiver));
     return VmValue::Int(info.has_value() && info->is_directory);
   });
-  builder.FinalMethod(
+  // 返回目录中的直接子项名称，非目录时返回 null。
+  builder.VirtualMethod(
       "list", "()[Ljava/lang/String;", [](IntrinsicContext &call) {
         const auto names = call.vm.IO().List(FilePath(call, call.receiver));
         if (!names.has_value())
@@ -351,6 +475,176 @@ IntrinsicClassDecl DeclareFile() {
         }
         return VmValue::Ref(array);
       });
+  // 返回路径中的文件名部分。
+  builder.VirtualMethod("getName", "()Ljava/lang/String;",
+                        [](IntrinsicContext &call) {
+    const auto path = FilePath(call, call.receiver);
+    const auto slash = path.rfind('/');
+    const auto name = slash == std::string::npos
+                          ? std::string_view(path)
+                          : std::string_view(path).substr(slash + 1U);
+    return VmValue::Ref(call.vm.NewStringUtf8(name));
+  });
+  // 返回路径中的父路径字符串，无父路径时返回 null。
+  builder.VirtualMethod("getParent", "()Ljava/lang/String;",
+                        [](IntrinsicContext &call) {
+    const auto parent = ParentFilePath(FilePath(call, call.receiver));
+    return VmValue::Ref(parent.has_value()
+                            ? call.vm.NewStringUtf8(*parent)
+                            : VmObjectRef{});
+  });
+  // 返回表示父路径的 File 对象，无父路径时返回 null。
+  builder.VirtualMethod("getParentFile", "()Ljava/io/File;",
+                        [](IntrinsicContext &call) {
+    const auto parent = InvokeVirtual(
+        call, call.receiver, "getParent", "()Ljava/lang/String;");
+    if (!parent.has_value() || !parent->ref.IsValid())
+      return VmValue::Ref(VmObjectRef{});
+    const auto file = NewFile(call, call.vm.StringUtf8(parent->ref));
+    return VmValue::Ref(file.value_or(VmObjectRef{}));
+  });
+  // 判断路径是否以 Android 根目录分隔符开头。
+  builder.VirtualMethod("isAbsolute", "()Z", [](IntrinsicContext &call) {
+    return VmValue::Int(IsAbsoluteFilePath(FilePath(call, call.receiver)));
+  });
+  // 返回使用绝对路径创建的新 File 对象。
+  builder.VirtualMethod("getAbsoluteFile", "()Ljava/io/File;",
+                        [](IntrinsicContext &call) {
+    const auto path = InvokeVirtual(
+        call, call.receiver, "getAbsolutePath", "()Ljava/lang/String;");
+    if (!path.has_value())
+      return VmValue::Ref(VmObjectRef{});
+    const auto file = NewFile(call, call.vm.StringUtf8(path->ref));
+    return VmValue::Ref(file.value_or(VmObjectRef{}));
+  });
+  // 判断文件名是否按 Android/Unix 规则以点开头。
+  builder.VirtualMethod("isHidden", "()Z", [](IntrinsicContext &call) {
+    if (FilePath(call, call.receiver).empty())
+      return VmValue::Int(0);
+    const auto name = InvokeVirtual(
+        call, call.receiver, "getName", "()Ljava/lang/String;");
+    if (!name.has_value())
+      return VmValue::Int(0);
+    const auto value = call.vm.StringUtf8(name->ref);
+    return VmValue::Int(!value.empty() && value.front() == '.');
+  });
+  // 判断另一个 File 是否具有相同路径。
+  builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
+                         [](IntrinsicContext &call) {
+    const auto other = call.arguments[0].ref;
+    if (!other.IsValid())
+      return VmValue::Int(0);
+    const auto file_class = call.vm.Linker().ResolveDescriptor("Ljava/io/File;");
+    if (!call.vm.Linker().IsAssignable(
+            file_class, call.vm.Model().ObjectClass(other))) {
+      return VmValue::Int(0);
+    }
+    const auto right = InvokeVirtual(
+        call, other, "getPath", "()Ljava/lang/String;");
+    if (!right.has_value())
+      return VmValue::Int(0);
+    return VmValue::Int(FilePath(call, call.receiver) ==
+                        call.vm.StringUtf8(right->ref));
+  });
+  // 返回与路径相等语义一致的哈希值。
+  builder.OverrideMethod("hashCode", "()I", [](IntrinsicContext &call) {
+    const auto path = InvokeVirtual(
+        call, call.receiver, "getPath", "()Ljava/lang/String;");
+    if (!path.has_value())
+      return VmValue::Int(0);
+    const auto hash = InvokeVirtual(call, path->ref, "hashCode", "()I");
+    if (!hash.has_value())
+      return VmValue::Int(0);
+    return VmValue::Int(hash->AsInt() ^ 1234321);
+  });
+  const auto compare_to_file = [](IntrinsicContext &call) {
+    const auto left = InvokeVirtual(
+        call, call.receiver, "getPath", "()Ljava/lang/String;");
+    if (!left.has_value())
+      return VmValue::Int(0);
+    const auto other_path = InvokeVirtual(
+        call, call.arguments[0].ref, "getPath", "()Ljava/lang/String;");
+    if (!other_path.has_value())
+      return VmValue::Int(0);
+    const std::array arguments{VmValue::Ref(other_path->ref)};
+    const auto comparison = InvokeVirtual(
+        call, left->ref, "compareTo", "(Ljava/lang/String;)I", arguments);
+    return comparison.value_or(VmValue::Int(0));
+  };
+  // 按路径字符串的字典序比较两个 File。
+  builder.VirtualMethod("compareTo", "(Ljava/io/File;)I", compare_to_file);
+  // 为 Comparable 接口提供 Object 参数的编译器桥接方法。
+  builder.VirtualMethod(
+      "compareTo", "(Ljava/lang/Object;)I",
+      [](IntrinsicContext &call) {
+        const auto other = call.arguments[0].ref;
+        if (other.IsValid()) {
+          const auto file_class =
+              call.vm.Linker().ResolveDescriptor("Ljava/io/File;");
+          if (!call.vm.Linker().IsAssignable(
+                  file_class, call.vm.Model().ObjectClass(other))) {
+            throw VmJavaThrow{"Ljava/lang/ClassCastException;",
+                              "object is not a java.io.File"};
+          }
+        }
+        const std::array arguments{VmValue::Ref(other)};
+        const auto comparison = InvokeVirtual(
+            call, call.receiver, "compareTo", "(Ljava/io/File;)I", arguments);
+        return comparison.value_or(VmValue::Int(0));
+      },
+      0x1041U);
+  // 返回 File 保存的原始路径字符串。
+  builder.OverrideMethod("toString", "()Ljava/lang/String;",
+                         [](IntrinsicContext &call) {
+    return VmValue::Ref(FilePathRef(call, call.receiver));
+  });
+  // 返回 Android 唯一的文件系统根目录“/”。
+  builder.StaticMethod("listRoots", "()[Ljava/io/File;",
+                       [](IntrinsicContext &call) {
+    const auto array = call.vm.Model().NewObjectArray(
+        call.vm.Linker().ResolveDescriptor("[Ljava/io/File;"),
+        call.vm.Linker().ResolveDescriptor("Ljava/io/File;"), 1);
+    const auto root = NewFile(call, "/");
+    if (root.has_value())
+      call.vm.Model().SetObjectElement(array, 0, *root);
+    return VmValue::Ref(array);
+  });
+  // 将绝对 guest 路径转换为正确转义的 file URI。
+  builder.VirtualMethod("toURI", "()Ljava/net/URI;",
+                        [](IntrinsicContext &call) {
+    const auto absolute_file = InvokeVirtual(
+        call, call.receiver, "getAbsoluteFile", "()Ljava/io/File;");
+    if (!absolute_file.has_value())
+      return VmValue::Ref(VmObjectRef{});
+    const auto absolute_path = InvokeVirtual(
+        call, absolute_file->ref, "getPath", "()Ljava/lang/String;");
+    if (!absolute_path.has_value())
+      return VmValue::Ref(VmObjectRef{});
+    auto path = call.vm.StringUtf8(absolute_path->ref);
+    const auto directory = InvokeVirtual(
+        call, absolute_file->ref, "isDirectory", "()Z");
+    if (!directory.has_value())
+      return VmValue::Ref(VmObjectRef{});
+    if (directory->AsInt() != 0 && !path.ends_with('/'))
+      path.push_back('/');
+    const auto uri = NewUri(call, "file:" + EncodeFileUriPath(path));
+    return VmValue::Ref(uri.value_or(VmObjectRef{}));
+  });
+  return std::move(builder).Build();
+}
+
+IntrinsicClassDecl DeclareFilenameFilter() {
+  auto builder = IntrinsicClassBuilder::Interface("Ljava/io/FilenameFilter;");
+  // 判断指定目录中的文件名是否应被接收。
+  builder.UnimplementedVirtual(
+      "accept", "(Ljava/io/File;Ljava/lang/String;)Z", 0x0401U);
+  return std::move(builder).Build();
+}
+
+IntrinsicClassDecl DeclareFileFilter() {
+  auto builder = IntrinsicClassBuilder::Interface("Ljava/io/FileFilter;");
+  // 判断指定 File 对象是否应被接收。
+  builder.UnimplementedVirtual("accept", "(Ljava/io/File;)Z", 0x0401U);
   return std::move(builder).Build();
 }
 
@@ -488,6 +782,8 @@ IntrinsicClassDecl DeclareFileWriter() {
 } // namespace
 
 void AppendJavaIoFiles(std::vector<IntrinsicClassDecl> &catalog) {
+  catalog.push_back(DeclareFilenameFilter());
+  catalog.push_back(DeclareFileFilter());
   catalog.push_back(DeclareFile());
   catalog.push_back(DeclareFileDescriptor());
   catalog.push_back(DeclareFileInputStream());

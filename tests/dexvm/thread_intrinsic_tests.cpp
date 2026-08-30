@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -313,6 +314,52 @@ TEST_CASE("dexvm Thread second priority declarations match API19 shape") {
     CHECK(find_class("Ljava/lang/ThreadGroup;") != catalog.end());
 }
 
+TEST_CASE("dexvm Thread third priority declarations match API19 shape") {
+    const auto catalog = CoreIntrinsicCatalog();
+    const auto find_class = [&](const std::string_view descriptor) {
+        return std::ranges::find_if(catalog, [&](const auto& candidate) {
+            return candidate.descriptor == descriptor;
+        });
+    };
+    const auto thread = find_class("Ljava/lang/Thread;");
+    REQUIRE(thread != catalog.end());
+    for (const auto& [name, descriptor] :
+         std::vector<std::pair<std::string_view, std::string_view>>{
+             {"<init>", "(Ljava/lang/ThreadGroup;Ljava/lang/Runnable;)V"},
+             {"<init>", "(Ljava/lang/ThreadGroup;Ljava/lang/Runnable;Ljava/lang/String;)V"},
+             {"<init>", "(Ljava/lang/ThreadGroup;Ljava/lang/Runnable;Ljava/lang/String;J)V"},
+             {"<init>", "(Ljava/lang/ThreadGroup;Ljava/lang/String;)V"},
+             {"activeCount", "()I"},
+             {"enumerate", "([Ljava/lang/Thread;)I"},
+             {"dumpStack", "()V"},
+             {"countStackFrames", "()I"},
+             {"getState", "()Ljava/lang/Thread$State;"},
+             {"checkAccess", "()V"},
+             {"parkFor", "(J)V"},
+             {"parkUntil", "(J)V"},
+             {"unpark", "()V"},
+             {"pushInterruptAction$", "(Ljava/lang/Runnable;)V"},
+             {"popInterruptAction$", "(Ljava/lang/Runnable;)V"},
+             {"stop", "(Ljava/lang/Throwable;)V"}}) {
+        CHECK(std::ranges::find_if(thread->methods, [&](const auto& method) {
+                  return method.name == name && method.descriptor == descriptor;
+              }) != thread->methods.end());
+    }
+
+    const auto state = find_class("Ljava/lang/Thread$State;");
+    REQUIRE(state != catalog.end());
+    REQUIRE(state->superclass.has_value());
+    CHECK(*state->superclass == "Ljava/lang/Enum;");
+    for (const auto name : {"NEW", "RUNNABLE", "BLOCKED", "WAITING",
+                            "TIMED_WAITING", "TERMINATED"}) {
+        CHECK(std::ranges::find_if(state->fields, [&](const auto& field) {
+                  return field.name == name &&
+                         field.descriptor == "Ljava/lang/Thread$State;" &&
+                         field.is_static;
+              }) != state->fields.end());
+    }
+}
+
 TEST_CASE("dexvm Thread uncaught handlers are scoped and accept null") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {
@@ -487,6 +534,117 @@ TEST_CASE("dexvm Thread diagnostics and group APIs follow bounded API19 semantic
         CHECK_FALSE(vm.Virtual(child, "getThreadGroup",
                                "()Ljava/lang/ThreadGroup;")
                         .value.ref.IsValid());
+    }
+}
+
+TEST_CASE("dexvm Thread third priority APIs expose bounded API19 behavior") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ThreadVm vm(backend);
+        const auto root =
+            vm.Static("Ljava/lang/Thread;", "currentThread",
+                      "()Ljava/lang/Thread;")
+                .value.ref;
+        const auto group =
+            vm.Virtual(root, "getThreadGroup", "()Ljava/lang/ThreadGroup;")
+                .value.ref;
+
+        CHECK(vm.Static("Ljava/lang/Thread;", "activeCount", "()I")
+                  .value.AsInt() == 1);
+        const auto threads = vm.model.NewObjectArray(
+            vm.linker.ResolveDescriptor("[Ljava/lang/Thread;"),
+            vm.Class("Ljava/lang/Thread;"), 4);
+        CHECK(vm.Static("Ljava/lang/Thread;", "enumerate",
+                        "([Ljava/lang/Thread;)I",
+                        {VmValue::Ref(threads)})
+                  .value.AsInt() == 1);
+        CHECK(vm.model.GetObjectElement(threads, 0) == root);
+        RequireOk(vm.Virtual(root, "checkAccess", "()V"));
+        CHECK(vm.Virtual(root, "countStackFrames", "()I").value.AsInt() >=
+              0);
+        RequireOk(vm.Static("Ljava/lang/Thread;", "dumpStack", "()V"));
+
+        const auto root_state =
+            vm.Virtual(root, "getState", "()Ljava/lang/Thread$State;")
+                .value.ref;
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.Virtual(root_state, "name", "()Ljava/lang/String;")
+                      .value.ref) == "RUNNABLE");
+
+        const auto child = vm.New("Ljava/lang/Thread;");
+        const auto child_name = vm.interpreter.NewStringUtf8("group-child");
+        RequireOk(vm.Construct(
+            child, "Ljava/lang/Thread;",
+            "(Ljava/lang/ThreadGroup;Ljava/lang/Runnable;Ljava/lang/String;J)V",
+            {VmValue::Ref(group), VmValue::Ref(VmObjectRef{}),
+             VmValue::Ref(child_name), VmValue::Long(4096)}));
+        CHECK(vm.Virtual(child, "getThreadGroup",
+                         "()Ljava/lang/ThreadGroup;")
+                  .value.ref == group);
+        const auto new_state =
+            vm.Virtual(child, "getState", "()Ljava/lang/Thread$State;")
+                .value.ref;
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.Virtual(new_state, "name", "()Ljava/lang/String;")
+                      .value.ref) == "NEW");
+        RequireOk(vm.Virtual(child, "start", "()V"));
+        RequireOk(vm.Virtual(child, "join", "()V"));
+        const auto terminated_state =
+            vm.Virtual(child, "getState", "()Ljava/lang/Thread$State;")
+                .value.ref;
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.Virtual(terminated_state, "name",
+                             "()Ljava/lang/String;")
+                      .value.ref) == "TERMINATED");
+    }
+}
+
+TEST_CASE("dexvm Thread park permit and interrupt actions follow API19 rules") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ThreadVm vm(backend);
+        const auto root =
+            vm.Static("Ljava/lang/Thread;", "currentThread",
+                      "()Ljava/lang/Thread;")
+                .value.ref;
+
+        RequireOk(vm.Virtual(root, "unpark", "()V"));
+        RequireOk(vm.Virtual(root, "parkFor", "(J)V",
+                             {VmValue::Long(
+                                 std::numeric_limits<std::int64_t>::max())}));
+        RequireThrow(vm,
+                     vm.Virtual(root, "parkFor", "(J)V",
+                                {VmValue::Long(-1)}),
+                     "Ljava/lang/IllegalArgumentException;");
+        RequireOk(vm.Virtual(root, "parkUntil", "(J)V",
+                             {VmValue::Long(0)}));
+
+        std::vector<std::int64_t> advances;
+        vm.interpreter.Monitors().SetClockAdvance(
+            [&](const std::int64_t delta_millis) {
+                vm.clock_millis += delta_millis;
+                advances.push_back(delta_millis);
+            });
+        RequireOk(vm.Virtual(root, "parkFor", "(J)V",
+                             {VmValue::Long(1'500'001)}));
+        REQUIRE(advances.size() == 1U);
+        CHECK(advances.front() == 2);
+
+        const auto action = vm.Runnable("LThreadProbe;");
+        RequireOk(vm.Virtual(root, "pushInterruptAction$",
+                             "(Ljava/lang/Runnable;)V",
+                             {VmValue::Ref(action)}));
+        RequireOk(vm.Virtual(root, "interrupt", "()V"));
+        CHECK(vm.Static("LThreadProbe;", "counter", "()I")
+                  .value.AsInt() == 4950);
+        RequireOk(vm.Virtual(root, "popInterruptAction$",
+                             "(Ljava/lang/Runnable;)V",
+                             {VmValue::Ref(action)}));
+        CHECK(vm.Static("Ljava/lang/Thread;", "interrupted", "()Z")
+                  .value.AsInt() == 1);
+        RequireOk(vm.Virtual(root, "interrupt", "()V"));
+        CHECK(vm.Static("LThreadProbe;", "counter", "()I")
+                  .value.AsInt() == 4950);
     }
 }
 

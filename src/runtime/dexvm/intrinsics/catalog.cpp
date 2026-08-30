@@ -14,6 +14,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_Thread_UncaughtExceptionHandler(),
         Declare_java_lang_ThreadGroup(),
         Declare_java_lang_StackTraceElement(),
+        Declare_java_lang_Thread_State(),
         Declare_java_lang_Enum(),
         Declare_java_io_Serializable(),
         Declare_java_lang_String(),

@@ -2612,6 +2612,8 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             IntrinsicFieldHandle has_been_started;
             IntrinsicFieldHandle context_class_loader;
             IntrinsicFieldHandle group;
+            IntrinsicFieldHandle park_state;
+            IntrinsicFieldHandle interrupt_actions;
             IntrinsicFieldHandle uncaught_handler;
             IntrinsicFieldHandle default_uncaught_handler;
         };
@@ -2633,6 +2635,9 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
                 vm.Linker().ResolveDescriptor(
                     "Ljava/lang/StackTraceElement;"),
                 static_cast<JniSize>(count));
+            const std::array array_references{array};
+            [[maybe_unused]] const auto array_roots =
+                vm.ProtectReferences(array_references);
             if (found == snapshots.end()) return array;
             const auto constructor = vm.Linker().FindDirectMethod(
                 *vm.Linker().FindClass("Ljava/lang/StackTraceElement;"),
@@ -2656,23 +2661,39 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             return array;
         }
 
+        [[nodiscard]] VmObjectRef ThreadState(Interpreter& vm,
+                                              const std::string_view name) {
+            const auto java_class =
+                *vm.Linker().FindClass("Ljava/lang/Thread$State;");
+            PropagateOutcome(vm, vm.EnsureClassInitialized(java_class));
+            const auto field = vm.Linker().FindFieldRecursive(
+                java_class, std::string(name), "Ljava/lang/Thread$State;");
+            const auto& linked = vm.Linker().Field(*field);
+            return VmObjectRef{
+                vm.Linker().Class(linked.owner).static_storage[linked.slot]};
+        }
+
         void InitializeFields(const IntrinsicCall& call,
                               const ThreadFields& fields,
                               const VmObjectRef object,
                               const VmObjectRef target, const VmObjectRef name,
                               const std::int64_t id, const std::int32_t priority,
                               const VmObjectRef context_class_loader,
-                              const VmObjectRef group) {
+                              const VmObjectRef group,
+                              const std::int64_t stack_size = 0) {
             call.SetRef(fields.target, object, target);
             call.SetRef(fields.name, object, name);
             call.SetInt(fields.priority, object, priority);
             call.SetInt(fields.daemon, object, 0);
-            call.SetLong(fields.stack_size, object, 0);
+            call.SetLong(fields.stack_size, object, stack_size);
             call.SetLong(fields.id, object, id);
             call.SetInt(fields.has_been_started, object, 0);
             call.SetRef(fields.context_class_loader, object,
                         context_class_loader);
             call.SetRef(fields.group, object, group);
+            call.SetInt(fields.park_state, object, 1);
+            call.SetRef(fields.interrupt_actions, object,
+                        call.Vm().NewIntrinsicInstance("Ljava/util/ArrayList;"));
             call.SetRef(fields.uncaught_handler, object, VmObjectRef{});
         }
 
@@ -2703,6 +2724,7 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             InitializeFields(call, fields, root, VmObjectRef{},
                              vm.NewStringUtf8("main"), 1, 5,
                              vm.ClassLoaders().ApplicationLoader(), group);
+            call.SetInt(fields.has_been_started, root, 1);
             return root;
         }
 
@@ -2710,7 +2732,9 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
                                         const ThreadFields& fields,
                                         const VmObjectRef target,
                                         const VmObjectRef explicit_name,
-                                        const bool has_explicit_name) {
+                                        const bool has_explicit_name,
+                                        const VmObjectRef explicit_group = VmObjectRef{},
+                                        const std::int64_t stack_size = 0) {
             if (has_explicit_name && !explicit_name.IsValid()) {
                 throw VmJavaThrow{
                     "Ljava/lang/NullPointerException;", "threadName == null"
@@ -2722,14 +2746,16 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             const auto priority = call.GetInt(fields.priority, current);
             const auto context_class_loader =
                 call.GetRef(fields.context_class_loader, current);
-            const auto group = call.GetRef(fields.group, current);
+            const auto group = explicit_group.IsValid()
+                                   ? explicit_group
+                                   : call.GetRef(fields.group, current);
             const auto id = runtime.AllocateThreadId();
             const auto name = has_explicit_name
                                   ? explicit_name
                                   : context.vm.NewStringUtf8("Thread-" + std::to_string(id));
             InitializeFields(call, fields, context.receiver, target, name,
                              static_cast<std::int64_t>(id), priority,
-                             context_class_loader, group);
+                             context_class_loader, group, stack_size);
             return VmValue::Void();
         }
 
@@ -2774,6 +2800,9 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             builder.BoundInstanceField("contextClassLoader",
                                        "Ljava/lang/ClassLoader;", 0x0002U),
             builder.BoundInstanceField("group", "Ljava/lang/ThreadGroup;"),
+            builder.BoundInstanceField("parkState", "I", 0x0002U),
+            builder.BoundInstanceField("interruptActions", "Ljava/util/List;",
+                                       0x0012U),
             builder.BoundInstanceField(
                 "uncaughtHandler",
                 "Ljava/lang/Thread$UncaughtExceptionHandler;", 0x0002U),
@@ -2799,6 +2828,26 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
         builder.Constructor("(Ljava/lang/Runnable;Ljava/lang/String;)V", [fields](IntrinsicContext& context) {
             IntrinsicCall call(context);
             return Construct(context, fields, call.Ref(0), call.Ref(1), true);
+        });
+        builder.Constructor("(Ljava/lang/ThreadGroup;Ljava/lang/Runnable;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return Construct(context, fields, call.Ref(1), VmObjectRef{}, false,
+                             call.Ref(0));
+        });
+        builder.Constructor("(Ljava/lang/ThreadGroup;Ljava/lang/Runnable;Ljava/lang/String;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return Construct(context, fields, call.Ref(1), call.Ref(2), true,
+                             call.Ref(0));
+        });
+        builder.Constructor("(Ljava/lang/ThreadGroup;Ljava/lang/String;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return Construct(context, fields, VmObjectRef{}, call.Ref(1), true,
+                             call.Ref(0));
+        });
+        builder.Constructor("(Ljava/lang/ThreadGroup;Ljava/lang/Runnable;Ljava/lang/String;J)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            return Construct(context, fields, call.Ref(1), call.Ref(2), true,
+                             call.Ref(0), call.Long(3));
         });
 
         // AOSP Thread.run: target dispatch belongs here. VmThreadRuntime always
@@ -2902,6 +2951,25 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
                     context.vm, static_cast<std::uint64_t>(
                                     IntrinsicCall(context).GetLong(fields.id))));
             });
+        // 返回线程当前的 API 19 状态枚举。
+        builder.VirtualMethod("getState", "()Ljava/lang/Thread$State;", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            if (call.GetInt(fields.has_been_started) == 0) {
+                return VmValue::Ref(ThreadState(context.vm, "NEW"));
+            }
+            if (!context.vm.Threads().IsAlive(context.receiver)) {
+                return VmValue::Ref(ThreadState(context.vm, "TERMINATED"));
+            }
+            auto state = std::string_view{"RUNNABLE"};
+            for (const auto& thread : context.vm.Threads().Snapshot()) {
+                if (thread.object != context.receiver.Value()) continue;
+                if (thread.wait_state == VmThreadWaitState::sleeping) state = "TIMED_WAITING";
+                else if (thread.wait_state == VmThreadWaitState::joining ||
+                         thread.wait_state == VmThreadWaitState::monitor) state = "WAITING";
+                break;
+            }
+            return VmValue::Ref(ThreadState(context.vm, state));
+        });
         // 返回当前 VM 内所有存活线程及其 Java 调用栈。
         builder.StaticMethod(
             "getAllStackTraces",
@@ -2909,6 +2977,9 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             [](IntrinsicContext& context) {
                 auto& vm = context.vm;
                 const auto map = vm.NewIntrinsicInstance("Ljava/util/HashMap;");
+                const std::array map_references{map};
+                [[maybe_unused]] const auto map_roots =
+                    vm.ProtectReferences(map_references);
                 const auto map_class = vm.Model().ObjectClass(map);
                 const auto constructor = vm.Linker().FindDirectMethod(
                     map_class, "<init>", "()V");
@@ -3001,8 +3072,55 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             return VmValue::Void();
         });
 
-        builder.VirtualMethod("interrupt", "()V", [](IntrinsicContext& context) {
+        builder.VirtualMethod("interrupt", "()V", [fields](IntrinsicContext& context) {
             context.vm.Threads().Interrupt(context.receiver);
+            IntrinsicCall call(context);
+            const auto actions = call.GetRef(fields.interrupt_actions);
+            auto& monitors = context.vm.Monitors();
+            const auto token = context.vm.CurrentContextToken();
+            monitors.Enter(actions, token);
+            try {
+                const auto actions_class =
+                    context.vm.Model().ObjectClass(actions);
+                const auto size_index = context.vm.Linker().FindVtableIndex(
+                    actions_class, "size", "()I");
+                const std::vector<VmValue> size_args{VmValue::Ref(actions)};
+                const auto size_outcome = context.vm.Call(
+                    context.vm.Linker().Class(actions_class)
+                        .vtable[*size_index],
+                    size_args);
+                PropagateOutcome(context.vm, size_outcome);
+                const auto size = size_outcome.value.AsInt();
+                const auto get_index = context.vm.Linker().FindVtableIndex(
+                    actions_class, "get", "(I)Ljava/lang/Object;");
+                for (auto index = size - 1; index >= 0; --index) {
+                    const std::vector<VmValue> get_args{
+                        VmValue::Ref(actions), VmValue::Int(index)};
+                    const auto get_outcome = context.vm.Call(
+                        context.vm.Linker().Class(actions_class)
+                            .vtable[*get_index],
+                        get_args);
+                    PropagateOutcome(context.vm, get_outcome);
+                    const auto action = get_outcome.value.ref;
+                    if (!action.IsValid()) continue;
+                    const auto action_class =
+                        context.vm.Model().ObjectClass(action);
+                    const auto run_index = context.vm.Linker().FindVtableIndex(
+                        action_class, "run", "()V");
+                    const std::vector<VmValue> run_args{VmValue::Ref(action)};
+                    PropagateOutcome(
+                        context.vm,
+                        context.vm.Call(
+                            context.vm.Linker()
+                                .Class(action_class)
+                                .vtable[*run_index],
+                            run_args));
+                }
+            } catch (...) {
+                monitors.Exit(actions, token);
+                throw;
+            }
+            monitors.Exit(actions, token);
             return VmValue::Void();
         });
         builder.VirtualMethod("isInterrupted", "()Z", [](IntrinsicContext& context) {
@@ -3065,6 +3183,214 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             return VmValue::Int(context.vm.Monitors().IsOwner(object, context.vm.CurrentContextToken()) ? 1 : 0);
         });
 
+        // 返回当前线程组内存活线程的估计数量。
+        builder.StaticMethod("activeCount", "()I", [fields](IntrinsicContext& context) {
+            const IntrinsicCall call(context);
+            (void) EnsureCurrentThread(call, fields);
+            return VmValue::Int(
+                static_cast<std::int32_t>(context.vm.Threads().LiveCount() + 1U));
+        });
+        // 将当前线程的 Java 栈打印到标准错误流。
+        builder.StaticMethod("dumpStack", "()V", [](IntrinsicContext& context) {
+            const auto throwable = context.vm.NewIntrinsicInstance("Ljava/lang/Throwable;");
+            const std::array throwable_references{throwable};
+            [[maybe_unused]] const auto throwable_roots =
+                context.vm.ProtectReferences(throwable_references);
+            const auto throwable_class = context.vm.Model().ObjectClass(throwable);
+            const auto constructor = context.vm.Linker().FindDirectMethod(
+                throwable_class, "<init>", "(Ljava/lang/String;)V");
+            const std::vector<VmValue> ctor_args{
+                VmValue::Ref(throwable),
+                VmValue::Ref(context.vm.NewStringUtf8("stack dump"))};
+            PropagateOutcome(context.vm, context.vm.Call(*constructor, ctor_args));
+            const auto print = context.vm.Linker().FindVtableIndex(
+                throwable_class, "printStackTrace", "()V");
+            const std::vector<VmValue> print_args{VmValue::Ref(throwable)};
+            PropagateOutcome(context.vm, context.vm.Call(
+                context.vm.Linker().Class(throwable_class).vtable[*print],
+                print_args));
+            return VmValue::Void();
+        });
+        // 将当前 VM 的存活线程复制到调用方数组。
+        builder.StaticMethod("enumerate", "([Ljava/lang/Thread;)I", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            (void) EnsureCurrentThread(call, fields);
+            const auto array = call.NonNullRef(0, "threads");
+            const auto capacity = context.vm.Model().ArrayLength(array);
+            JniSize written = 0;
+            for (const auto& thread : context.vm.Threads().Snapshot()) {
+                if (written >= capacity) break;
+                if (thread.status != VmThreadStatus::created &&
+                    thread.status != VmThreadStatus::running) continue;
+                context.vm.Model().SetObjectElement(
+                    array, written++, VmObjectRef{thread.object});
+            }
+            return VmValue::Int(written);
+        });
+        // API 19 中访问检查为空操作。
+        builder.FinalMethod("checkAccess", "()V", [](IntrinsicContext&) {
+            return VmValue::Void();
+        });
+        // 返回当前可观测 Java 栈帧数。
+        builder.VirtualMethod("countStackFrames", "()I", [fields](IntrinsicContext& context) {
+            const auto array = StackTraceArray(
+                context.vm, static_cast<std::uint64_t>(
+                                IntrinsicCall(context).GetLong(fields.id)));
+            return VmValue::Int(context.vm.Model().ArrayLength(array));
+        });
+
+        // 为当前线程添加一个中断时执行的 Runnable。
+        builder.FinalMethod("pushInterruptAction$", "(Ljava/lang/Runnable;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto action = call.Ref(0);
+            const auto list = call.GetRef(fields.interrupt_actions);
+            auto& monitors = context.vm.Monitors();
+            const auto token = context.vm.CurrentContextToken();
+            monitors.Enter(list, token);
+            const auto list_class = context.vm.Model().ObjectClass(list);
+            const auto add = context.vm.Linker().FindVtableIndex(
+                list_class, "add", "(Ljava/lang/Object;)Z");
+            const std::vector<VmValue> args{VmValue::Ref(list), VmValue::Ref(action)};
+            try {
+                PropagateOutcome(context.vm, context.vm.Call(
+                    context.vm.Linker().Class(list_class).vtable[*add], args));
+            } catch (...) {
+                monitors.Exit(list, token);
+                throw;
+            }
+            monitors.Exit(list, token);
+            if (action.IsValid() && context.vm.Threads().IsInterrupted(context.receiver)) {
+                const auto action_class = context.vm.Model().ObjectClass(action);
+                const auto run = context.vm.Linker().FindVtableIndex(action_class, "run", "()V");
+                const std::vector<VmValue> run_args{VmValue::Ref(action)};
+                PropagateOutcome(context.vm, context.vm.Call(
+                    context.vm.Linker().Class(action_class).vtable[*run], run_args));
+            }
+            return VmValue::Void();
+        });
+        // 按栈顺序移除最近注册的中断 Runnable。
+        builder.FinalMethod("popInterruptAction$", "(Ljava/lang/Runnable;)V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            const auto expected = call.Ref(0);
+            const auto list = call.GetRef(fields.interrupt_actions);
+            auto& monitors = context.vm.Monitors();
+            const auto token = context.vm.CurrentContextToken();
+            monitors.Enter(list, token);
+            try {
+                const auto list_class = context.vm.Model().ObjectClass(list);
+                const auto size_method =
+                    context.vm.Linker().FindVtableIndex(list_class, "size",
+                                                        "()I");
+                const std::vector<VmValue> size_args{VmValue::Ref(list)};
+                const auto size_outcome = context.vm.Call(
+                    context.vm.Linker().Class(list_class)
+                        .vtable[*size_method],
+                    size_args);
+                PropagateOutcome(context.vm, size_outcome);
+                const auto size = size_outcome.value.AsInt();
+                if (size <= 0) {
+                    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "interrupt action stack is empty"};
+                }
+                const auto remove = context.vm.Linker().FindVtableIndex(
+                    list_class, "remove", "(I)Ljava/lang/Object;");
+                const std::vector<VmValue> args{
+                    VmValue::Ref(list), VmValue::Int(size - 1)};
+                const auto remove_outcome = context.vm.Call(
+                    context.vm.Linker().Class(list_class).vtable[*remove],
+                    args);
+                PropagateOutcome(context.vm, remove_outcome);
+                const auto removed = remove_outcome.value.ref;
+                if (removed != expected) {
+                    throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "interrupt action order mismatch"};
+                }
+            } catch (...) {
+                monitors.Exit(list, token);
+                throw;
+            }
+            monitors.Exit(list, token);
+            return VmValue::Void();
+        });
+        // 向线程发放一个 park 许可，或唤醒正在 park 的线程。
+        builder.VirtualMethod("unpark", "()V", [fields](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            auto& monitors = context.vm.Monitors();
+            const auto token = context.vm.CurrentContextToken();
+            monitors.Enter(context.receiver, token);
+            const auto state = call.GetInt(fields.park_state);
+            if (state == 3) {
+                call.SetInt(fields.park_state, 1);
+                monitors.NotifyAll(context.receiver, token);
+            } else if (state == 1) {
+                call.SetInt(fields.park_state, 2);
+            }
+            monitors.Exit(context.receiver, token);
+            return VmValue::Void();
+        });
+        const auto park = [fields](IntrinsicContext& context,
+                                   const std::int64_t millis) {
+            IntrinsicCall call(context);
+            if (context.vm.Threads().CurrentThreadObject() != context.receiver) {
+                throw VmJavaThrow{"Ljava/lang/AssertionError;", "park receiver is not current thread"};
+            }
+            auto& monitors = context.vm.Monitors();
+            const auto token = context.vm.CurrentContextToken();
+            monitors.Enter(context.receiver, token);
+            if (call.GetInt(fields.park_state) == 2) {
+                call.SetInt(fields.park_state, 1);
+                monitors.Exit(context.receiver, token);
+                return VmValue::Void();
+            }
+            if (call.GetInt(fields.park_state) == 3) {
+                monitors.Exit(context.receiver, token);
+                throw VmJavaThrow{"Ljava/lang/AssertionError;",
+                                  "attempt to repark"};
+            }
+            call.SetInt(fields.park_state, 3);
+            try {
+                context.vm.WaitOnMonitor(context.receiver, millis);
+            } catch (const VmJavaThrow& thrown) {
+                if (thrown.descriptor != "Ljava/lang/InterruptedException;") {
+                    monitors.Exit(context.receiver, token);
+                    throw;
+                }
+                context.vm.Threads().Interrupt(context.receiver);
+            }
+            if (call.GetInt(fields.park_state) == 3) {
+                call.SetInt(fields.park_state, 1);
+            }
+            monitors.Exit(context.receiver, token);
+            return VmValue::Void();
+        };
+        // 按纳秒时长 park 当前线程，0 表示无限等待。
+        builder.VirtualMethod("parkFor", "(J)V", [park](IntrinsicContext& context) {
+            const auto nanos = IntrinsicCall(context).Long(0);
+            if (nanos < 0) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "nanos < 0"};
+            const auto millis =
+                nanos == 0
+                    ? 0
+                    : nanos / 1'000'000 +
+                          (nanos % 1'000'000 == 0 ? 0 : 1);
+            return park(context, millis);
+        });
+        // park 当前线程直到统一 Clock 到达指定毫秒时刻。
+        builder.VirtualMethod("parkUntil", "(J)V", [fields, park](IntrinsicContext& context) {
+            const auto deadline = IntrinsicCall(context).Long(0);
+            const auto clock = context.vm.Monitors().TimeSource();
+            if (!clock) throw DexVmError(DexVmErrorReason::internal_invariant, "parkUntil needs unified Clock");
+            const auto now = clock();
+            if (deadline <= now) {
+                auto& monitors = context.vm.Monitors();
+                const auto token = context.vm.CurrentContextToken();
+                monitors.Enter(context.receiver, token);
+                IntrinsicCall(context).SetInt(fields.park_state, 1);
+                monitors.Exit(context.receiver, token);
+                return VmValue::Void();
+            }
+            return park(context, deadline - now);
+        });
+
         builder.FinalMethod("isDaemon", "()Z", [fields](IntrinsicContext& context) {
             return VmValue::Int(IntrinsicCall(context).GetInt(fields.daemon));
         });
@@ -3106,6 +3432,8 @@ namespace ogplay::runtime::dexvm::intrinsics::dvm80_java_lang_Thread {
             });
 
         builder.UnimplementedFinal("stop", "()V");
+        builder.UnimplementedFinal("stop", "(Ljava/lang/Throwable;)V",
+                                   0x0021U);
         builder.UnimplementedFinal("suspend", "()V");
         builder.UnimplementedFinal("resume", "()V");
         builder.UnimplementedVirtual("destroy", "()V");
@@ -3313,6 +3641,63 @@ IntrinsicClassDecl Declare_java_lang_StackTraceElement() {
             }
             return VmValue::Ref(context.vm.NewStringUtf8(text));
         });
+    return std::move(builder).Build();
+}
+
+IntrinsicClassDecl Declare_java_lang_Thread_State() {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ljava/lang/Thread$State;", "Ljava/lang/Enum;", {}, 0x4031U);
+    const std::array<std::string_view, 6> names{
+        "NEW", "RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING",
+        "TERMINATED"};
+    const std::array<IntrinsicFieldHandle, 6> fields{
+        builder.BoundStaticField("NEW", "Ljava/lang/Thread$State;", 0x4019U),
+        builder.BoundStaticField("RUNNABLE", "Ljava/lang/Thread$State;", 0x4019U),
+        builder.BoundStaticField("BLOCKED", "Ljava/lang/Thread$State;", 0x4019U),
+        builder.BoundStaticField("WAITING", "Ljava/lang/Thread$State;", 0x4019U),
+        builder.BoundStaticField("TIMED_WAITING", "Ljava/lang/Thread$State;", 0x4019U),
+        builder.BoundStaticField("TERMINATED", "Ljava/lang/Thread$State;", 0x4019U)};
+    builder.ClassInitializer([fields, names](IntrinsicContext& context) {
+        IntrinsicCall call(context);
+        const auto enum_class = *context.vm.Linker().FindClass("Ljava/lang/Enum;");
+        const auto constructor = context.vm.Linker().FindDirectMethod(
+            enum_class, "<init>", "(Ljava/lang/String;I)V");
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            const auto value =
+                context.vm.NewIntrinsicInstance("Ljava/lang/Thread$State;");
+            call.SetRef(fields[index], value);
+            const std::vector<VmValue> arguments{
+                VmValue::Ref(value),
+                VmValue::Ref(context.vm.NewStringUtf8(names[index])),
+                VmValue::Int(static_cast<std::int32_t>(index))};
+            const auto outcome = context.vm.Call(*constructor, arguments);
+            if (outcome.exception.IsValid()) {
+                throw VmJavaThrow{
+                    context.vm.Linker().Class(outcome.exception_class).descriptor,
+                    outcome.exception_message};
+            }
+        }
+        return VmValue::Void();
+    });
+    builder.StaticMethod("values", "()[Ljava/lang/Thread$State;", [fields](IntrinsicContext& context) {
+        IntrinsicCall call(context);
+        const auto array = context.vm.Model().NewObjectArray(
+            context.vm.Linker().ResolveDescriptor("[Ljava/lang/Thread$State;"),
+            context.vm.Linker().ResolveDescriptor("Ljava/lang/Thread$State;"), 6);
+        for (JniSize index = 0; index < 6; ++index) {
+            context.vm.Model().SetObjectElement(
+                array, index, call.GetRef(fields[static_cast<std::size_t>(index)]));
+        }
+        return VmValue::Ref(array);
+    });
+    builder.StaticMethod("valueOf", "(Ljava/lang/String;)Ljava/lang/Thread$State;", [fields, names](IntrinsicContext& context) -> VmValue {
+        IntrinsicCall call(context);
+        const auto requested = context.vm.StringUtf8(call.NonNullRef(0, "name"));
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            if (requested == names[index]) return VmValue::Ref(call.GetRef(fields[index]));
+        }
+        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown Thread.State"};
+    });
     return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics

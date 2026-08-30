@@ -74,6 +74,65 @@ std::vector<IntrinsicClassDecl> FileFilterTestIntrinsics() {
                               "filter rejected the traversal"};
         });
     result.push_back(std::move(throwing).Build());
+
+    auto gc_filename = IntrinsicClassBuilder::Class(
+        "Ltest/GcFilenameFilter;", "Ljava/lang/Object;",
+        {"Ljava/io/FilenameFilter;"});
+    gc_filename.VirtualMethod(
+        "accept", "(Ljava/io/File;Ljava/lang/String;)Z",
+        [](IntrinsicContext& call) {
+            static_cast<void>(
+                call.vm.CollectGarbage("file-filename-filter-callback"));
+            return VmValue::Int(
+                call.vm.StringUtf8(call.arguments[1].ref).ends_with(".dat"));
+        });
+    result.push_back(std::move(gc_filename).Build());
+
+    auto gc_file = IntrinsicClassBuilder::Class(
+        "Ltest/GcFileFilter;", "Ljava/lang/Object;",
+        {"Ljava/io/FileFilter;"});
+    gc_file.VirtualMethod("accept", "(Ljava/io/File;)Z",
+        [](IntrinsicContext& call) {
+            static_cast<void>(
+                call.vm.CollectGarbage("file-file-filter-callback"));
+            const auto slots =
+                call.vm.Model().InstanceSlots(call.arguments[0].ref);
+            return VmValue::Int(
+                call.vm.StringUtf8(VmObjectRef(slots[0].bits))
+                    .ends_with(".sav"));
+        });
+    result.push_back(std::move(gc_file).Build());
+
+    const auto add_file_constructor = [](IntrinsicClassBuilder& builder) {
+        builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& call) {
+            call.vm.Model().InstanceSlots(call.receiver)[0] = {
+                call.arguments[0].ref.Value(), SlotTag::ref};
+            return VmValue::Void();
+        });
+    };
+    auto fresh_path_file = IntrinsicClassBuilder::Class(
+        "Ltest/FreshPathFile;", "Ljava/io/File;");
+    add_file_constructor(fresh_path_file);
+    fresh_path_file.OverrideMethod(
+        "getPath", "()Ljava/lang/String;", [](IntrinsicContext& call) {
+            const auto path = VmObjectRef(
+                call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+            return VmValue::Ref(
+                call.vm.NewStringUtf8(call.vm.StringUtf8(path)));
+        });
+    result.push_back(std::move(fresh_path_file).Build());
+
+    auto gc_path_file = IntrinsicClassBuilder::Class(
+        "Ltest/GcPathFile;", "Ljava/io/File;");
+    add_file_constructor(gc_path_file);
+    gc_path_file.OverrideMethod(
+        "getPath", "()Ljava/lang/String;", [](IntrinsicContext& call) {
+            static_cast<void>(
+                call.vm.CollectGarbage("file-compare-to-callback"));
+            return VmValue::Ref(VmObjectRef(
+                call.vm.Model().InstanceSlots(call.receiver)[0].bits));
+        });
+    result.push_back(std::move(gc_path_file).Build());
     return result;
 }
 
@@ -569,8 +628,25 @@ TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
             {VmValue::Ref(sav_filter)}).ref;
         CHECK(file_paths(sav_files) ==
               std::vector<std::string>{"/data/game/b.sav"});
+
+        const auto gc_filename_filter = vm.interpreter.NewIntrinsicInstance(
+            "Ltest/GcFilenameFilter;");
+        const auto gc_names = vm.CallOn(
+            directory, "list",
+            "(Ljava/io/FilenameFilter;)[Ljava/lang/String;",
+            {VmValue::Ref(gc_filename_filter)}).ref;
+        CHECK(array_strings(gc_names) ==
+              std::vector<std::string>{"a.dat"});
+        const auto gc_file_filter = vm.interpreter.NewIntrinsicInstance(
+            "Ltest/GcFileFilter;");
+        const auto gc_files = vm.CallOn(
+            directory, "listFiles", "(Ljava/io/FileFilter;)[Ljava/io/File;",
+            {VmValue::Ref(gc_file_filter)}).ref;
+        CHECK(file_paths(gc_files) ==
+              std::vector<std::string>{"/data/game/b.sav"});
+        const auto non_directory = vm.NewFile("/data/game/a.dat");
         CHECK_FALSE(vm.CallOn(
-            writable, "listFiles", "()[Ljava/io/File;").ref.IsValid());
+            non_directory, "listFiles", "()[Ljava/io/File;").ref.IsValid());
 
         const auto throwing = vm.interpreter.NewIntrinsicInstance(
             "Ltest/ThrowingFilenameFilter;");
@@ -600,7 +676,50 @@ TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
         REQUIRE(null_target.exception.IsValid());
         CHECK(vm.linker.Class(null_target.exception_class).descriptor ==
               "Ljava/lang/NullPointerException;");
+
+        const auto new_path_file = [&](const std::string_view descriptor,
+                                       const std::string_view path) {
+            const auto file = vm.interpreter.NewIntrinsicInstance(descriptor);
+            static_cast<void>(vm.CallOn(
+                file, "<init>", "(Ljava/lang/String;)V",
+                {VmValue::Ref(vm.interpreter.NewStringUtf8(path))}));
+            return file;
+        };
+        const auto fresh_left =
+            new_path_file("Ltest/FreshPathFile;", "left");
+        const auto collecting_right =
+            new_path_file("Ltest/GcPathFile;", "right");
+        CHECK(vm.CallOn(fresh_left, "compareTo", "(Ljava/io/File;)I",
+                        {VmValue::Ref(collecting_right)}).AsInt() < 0);
     }
+}
+
+TEST_CASE("File APIs fail explicitly when the guest filesystem is unavailable") {
+    FileVm vm;
+    vm.interpreter.IO().SetFileSystem(nullptr);
+    const auto file = vm.NewFile("/data/game/save.dat");
+    const auto target = vm.NewFile("/data/game/moved.dat");
+    const auto expect_unsupported = [&](const std::string& name,
+                                        const std::string& descriptor,
+                                        std::vector<VmValue> arguments = {}) {
+        const auto outcome = vm.CallOnOutcome(
+            file, name, descriptor, std::move(arguments));
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+    };
+    expect_unsupported("canRead", "()Z");
+    expect_unsupported("isFile", "()Z");
+    expect_unsupported("list", "()[Ljava/lang/String;");
+    expect_unsupported("mkdir", "()Z");
+    expect_unsupported("renameTo", "(Ljava/io/File;)Z",
+                       {VmValue::Ref(target)});
+    expect_unsupported("setWritable", "(Z)Z", {VmValue::Int(1)});
+
+    const auto created = vm.CallOnOutcome(file, "createNewFile", "()Z");
+    REQUIRE(created.exception.IsValid());
+    CHECK(vm.linker.Class(created.exception_class).descriptor ==
+          "Ljava/io/IOException;");
 }
 
 TEST_CASE("File relative absolute path fails without a guest working directory") {

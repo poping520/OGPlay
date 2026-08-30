@@ -103,9 +103,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
 - `java.lang.Thread` 对照 pinned libcore `Thread.java`/`VMThread.java` 与 Dalvik
   `Thread.cpp`/`Sync.cpp`：root context 具有稳定 id=1 `main` Thread 强根；构造时
   分配 per-VM stable ID；`start()` 经实际 Thread class vtable 虚派发
-  `this.run()`，基类 `run()` 才转发 target Runnable。core façade 覆盖四个构造器、
+  `this.run()`，基类 `run()` 才转发 target Runnable。core façade 覆盖八个构造器、
   currentThread、id/name/priority/isAlive、interrupt/interrupted、join/timed join、
-  sleep、yield、holdsLock 与有界 daemon flag；priority 不伪造 host scheduler，
+  sleep、yield、holdsLock、ThreadGroup 枚举、Thread.State、park 单许可、interrupt action
+  与有界 daemon flag；priority 不伪造 host scheduler，
   daemon 不宣称驱动 session 退出。context ClassLoader 复用 `ClassLoaderFacade` 的稳定
   application/bootstrap 身份：root 默认 application，新 Thread 继承创建者，setter
   只更新 guest 字段且允许 null，不增加动态 namespace。
@@ -264,7 +265,10 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   保留 Java-visible name 与稳定 thread record id，重复线程名不得导致诊断身份歧义。
   Java `getStackTrace/getAllStackTraces` 复用 `StackSnapshot` safe point 并只投影当前 VM
   的真实线程；bounded system/main ThreadGroup 只提供稳定归属、名称和存活枚举，不扩张为
-  完整层级调度模型。
+  完整层级调度模型。`Thread.parkFor/parkUntil/unpark` 复用对象 monitor 与统一 Clock，
+  不另建 scheduler；Thread.State 只投影 runtime 已有 wait state，monitor 竞争与
+  `Object.wait` 无法可靠拆分时不伪造 BLOCKED。deprecated stop/suspend/resume/destroy
+  保持显式未实现。
   每个 child 启动/退出时经 `NativeMethodBridge` 挂接/释放独立 A32 CPU、guest stack、
   Bionic TLS/thread-info、process thread id 与 JNI local-frame 环境，因此 guest native
   帧存活时仍可安全停泊。`EnsureClassInitialized` 对同线程重入放行，其他 context
@@ -326,6 +330,9 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
   `RegisterIntrinsicStateTable` 具名注册：持 `VmObjectRef` 的表提供 trace，所有表
   必须提供 sweep，需要随 `Object.clone()` 复制的表再提供 clone；现有
   throwable/builder/collection/io 表均走该唯一生命周期通道。
+- 活跃 intrinsic 的 receiver 与引用参数由调用边界自动进入 execution-local 临时根；
+  handler 新建并跨 nested guest call 保存的引用必须再用 `Interpreter::RootScope` 显式
+  保活，scope 严格按当前 execution 栈式退出，不得把临时引用提升为 session 永久根。
 - GC 只由分配流决定：`gc_watermark_percent` 范围 0..100、默认 75，0 精确关闭；
   `System.gc()` 保持合法 no-op。结构化 `runtime.dexvm.gc` 日志与 stats 记录回收量、
   对象数、宿主析构次数及确定性 pause ticks，不以 wall clock 参与决策。

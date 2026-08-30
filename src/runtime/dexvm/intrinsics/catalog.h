@@ -35,6 +35,7 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
 Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ThreadGroup();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_StackTraceElement();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread_State();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Enum();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_Serializable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();

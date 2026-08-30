@@ -40,6 +40,9 @@ pinned API 19 libcore 为准；相对绝对化只消费 `IoRuntime` 注入的 gu
 与 `mkdirs` 必须分别保持单级和递归语义。`FilenameFilter`/`FileFilter` 通过 guest virtual
 `accept` 过滤直接子项并传播回调异常。VFS 尚无权限位修改能力，`setWritable(true)` 只在
 目标已存在且本来可写时成功，其他请求明确失败，不得伪造权限变更。
+未注入 `IoFileSystem` 与普通 ENOENT 不得合并：前者必须抛明确 Java 异常。filter、排序、
+比较等 handler 若把新 guest 引用带过 nested guest call，必须使用 interpreter 的
+execution-local `RootScope` 保活，宿主 `VmObjectRef` 容器本身不是 GC 根。
 
 `java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
 接管，archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate

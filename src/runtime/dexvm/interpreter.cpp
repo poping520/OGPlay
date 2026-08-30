@@ -580,6 +580,8 @@ VmValue Interpreter::Impl::InvokeIntrinsic(
     }
     ++stats.intrinsic_calls;
     IntrinsicContext context{*owner, receiver, arguments};
+    [[maybe_unused]] const auto roots =
+        owner->ProtectIntrinsicCall(receiver, arguments);
     auto result = handler(context);
     if (result.kind != vm_kind(method.shape.return_kind)) {
         throw DexVmError(DexVmErrorReason::internal_invariant,

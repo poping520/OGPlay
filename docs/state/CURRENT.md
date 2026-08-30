@@ -1,14 +1,16 @@
 # 当前状态
 
-更新：补齐 Thread 未捕获异常处理器
+更新：完成 Thread/File 最终检查修复
 
 ## 当前阶段
 
-- **DVM-48 Thread 第二优先级已完成**：补齐 API19 `UncaughtExceptionHandler` interface、
-  线程/默认四个 get/set 与 instance/static 强根；显式 handler 优先，随后每 VM 默认
-  handler，回调异常忽略，均为空时保留进程致命诊断；另以 safe-point snapshot 补齐两个
-  stack trace API，并发布 bounded main ThreadGroup、终止语义和 API19 `toString`。完整
-  ThreadGroup/State/park 继续 deferred。未新建 WU。
+- **DVM-48 Thread 第三优先级已完成**：补齐四个带 ThreadGroup 参数的 Thread 构造器、存活枚举、
+  dump/count/check、Thread.State、park/unpark 单许可与 interrupt action；统一 Clock、
+  switch/threaded 行为及 API19 shape 均有定向测试。完整 ThreadGroup family 继续 deferred，
+  deprecated stop(Throwable) 只补 shape 并明确失败。未新建 WU。
+- **DVM-48/DVM-79 最终检查已修复**：intrinsic 调用参数及跨 nested guest call 的新对象
+  使用 execution-local 临时强根；File filter 显式 GC 回调不再访问已清扫引用，`compareTo`
+  的左路径同样保活。未装配 VFS 与 ENOENT 已分离，File 查询/变更明确抛 Java 异常。
 
 - **DVM-94～96 已完成**：linker metadata 改为追加地址稳定存储；调用解析按
   `InvokeKind` 隔离并消费链接期 `MethodShape`。Intrinsic declaration 只含 own members，
@@ -52,8 +54,9 @@
 
 ## 最近验证
 
-- 2026-08-30 macOS dev `ogplay_tests` 重建通过；Thread 25/25（133017 assertions）、
-  uncaught 旧失败路径与 core catalog 定向通过。
+- 2026-08-30 macOS release `ogplay_tests` 重建通过；Thread 28/28（133189 assertions），
+  File 14/14（531 assertions），GC filter、无 VFS、timed/root/worker Clock 与 core/android
+  intrinsic catalog 契约定向通过。
 - 2026-08-30 macOS dev `ogplay_tests` 重建通过；Context/PackageManager/VFS 与 architecture
   定向 12/12 通过。Tales 关闭 survey 实跑越过 package code path，下一缺口为
   `java/lang/Thread.getContextClassLoader()`。

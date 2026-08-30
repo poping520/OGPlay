@@ -92,6 +92,19 @@ namespace {
   throw VmJavaThrow{"Ljava/io/IOException;", error.what()};
 }
 
+void RequireFileSystem(IntrinsicContext &call) {
+  if (!call.vm.IO().HasFileSystem()) {
+    throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                      "guest filesystem is unavailable"};
+  }
+}
+
+[[nodiscard]] std::optional<IoFileInfo> FileStat(
+    IntrinsicContext &call, const VmObjectRef file) {
+  RequireFileSystem(call);
+  return call.vm.IO().Stat(FilePath(call, file));
+}
+
 [[nodiscard]] std::string FixFileSlashes(const std::string_view path) {
   std::string fixed;
   fixed.reserve(path.size());
@@ -163,6 +176,9 @@ void SetFilePath(IntrinsicContext& call, const std::string_view path) {
 [[nodiscard]] std::optional<VmObjectRef> NewFile(
     IntrinsicContext &call, const std::string_view path) {
   const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
+  const std::array file_references{file};
+  [[maybe_unused]] const auto file_roots =
+      call.vm.ProtectReferences(file_references);
   const auto java_class = call.vm.Model().ObjectClass(file);
   const auto constructor = call.vm.Linker().FindDirectMethod(
       java_class, "<init>", "(Ljava/lang/String;)V");
@@ -184,6 +200,9 @@ void SetFilePath(IntrinsicContext& call, const std::string_view path) {
     IntrinsicContext &call, const VmObjectRef parent,
     const VmObjectRef name) {
   const auto file = call.vm.NewIntrinsicInstance("Ljava/io/File;");
+  const std::array file_references{file};
+  [[maybe_unused]] const auto file_roots =
+      call.vm.ProtectReferences(file_references);
   const auto java_class = call.vm.Model().ObjectClass(file);
   const auto constructor = call.vm.Linker().FindDirectMethod(
       java_class, "<init>", "(Ljava/io/File;Ljava/lang/String;)V");
@@ -231,6 +250,9 @@ void SetFilePath(IntrinsicContext& call, const std::string_view path) {
     IntrinsicContext &call, const VmObjectRef names) {
   if (!names.IsValid())
     return VmObjectRef{};
+  const std::array name_references{names};
+  [[maybe_unused]] const auto name_roots =
+      call.vm.ProtectReferences(name_references);
   std::vector<VmObjectRef> files;
   for (const auto name : ReferenceArrayValues(call, names)) {
     const auto file = NewChildFile(call, call.receiver, name);
@@ -265,6 +287,9 @@ void SetFilePath(IntrinsicContext& call, const std::string_view path) {
 [[nodiscard]] std::optional<VmObjectRef> NewUri(
     IntrinsicContext &call, const std::string_view spec) {
   const auto uri = call.vm.NewIntrinsicInstance("Ljava/net/URI;");
+  const std::array uri_references{uri};
+  [[maybe_unused]] const auto uri_roots =
+      call.vm.ProtectReferences(uri_references);
   const auto java_class = call.vm.Model().ObjectClass(uri);
   const auto constructor = call.vm.Linker().FindDirectMethod(
       java_class, "<init>", "(Ljava/lang/String;)V");
@@ -458,22 +483,20 @@ IntrinsicClassDecl DeclareFile() {
   });
   // 判断路径是否存在并可由 guest 读取。
   builder.VirtualMethod("canRead", "()Z", [](IntrinsicContext &call) {
-    return VmValue::Int(
-        call.vm.IO().Stat(FilePath(call, call.receiver)).has_value());
+    return VmValue::Int(FileStat(call, call.receiver).has_value());
   });
   // 判断路径是否位于 guest 可写命名空间。
   builder.VirtualMethod("canWrite", "()Z", [](IntrinsicContext &call) {
-    const auto info = call.vm.IO().Stat(FilePath(call, call.receiver));
+    const auto info = FileStat(call, call.receiver);
     return VmValue::Int(info.has_value() && info->writable);
   });
   // 判断路径在 guest 文件系统中是否存在。
   builder.VirtualMethod("exists", "()Z", [](IntrinsicContext &call) {
-    return VmValue::Int(
-        call.vm.IO().Stat(FilePath(call, call.receiver)).has_value());
+    return VmValue::Int(FileStat(call, call.receiver).has_value());
   });
   // 返回文件长度，不存在或读取失败时返回零。
   builder.VirtualMethod("length", "()J", [](IntrinsicContext &call) {
-    const auto info = call.vm.IO().Stat(FilePath(call, call.receiver));
+    const auto info = FileStat(call, call.receiver);
     return VmValue::Long(
         info.has_value() ? static_cast<std::int64_t>(info->size) : 0);
   });
@@ -501,11 +524,13 @@ IntrinsicClassDecl DeclareFile() {
         ChildFilePath(*working_directory, path)));
   });
   const auto make_directories = [](IntrinsicContext &call) {
+    RequireFileSystem(call);
     return VmValue::Int(
         call.vm.IO().MakeDirectories(FilePath(call, call.receiver)));
   };
   // 创建单级目录，要求父目录已经存在。
   builder.VirtualMethod("mkdir", "()Z", [](IntrinsicContext &call) {
+    RequireFileSystem(call);
     return VmValue::Int(
         call.vm.IO().MakeDirectory(FilePath(call, call.receiver)));
   });
@@ -522,21 +547,23 @@ IntrinsicClassDecl DeclareFile() {
   });
   // 删除文件或空目录，并报告是否成功。
   builder.VirtualMethod("delete", "()Z", [](IntrinsicContext &call) {
+    RequireFileSystem(call);
     return VmValue::Int(call.vm.IO().Delete(FilePath(call, call.receiver)));
   });
   // 判断路径是否表示 guest 文件系统中的目录。
   builder.VirtualMethod("isDirectory", "()Z", [](IntrinsicContext &call) {
-    const auto info = call.vm.IO().Stat(FilePath(call, call.receiver));
+    const auto info = FileStat(call, call.receiver);
     return VmValue::Int(info.has_value() && info->is_directory);
   });
   // 判断路径是否表示 guest 文件系统中的普通文件。
   builder.VirtualMethod("isFile", "()Z", [](IntrinsicContext &call) {
-    const auto info = call.vm.IO().Stat(FilePath(call, call.receiver));
+    const auto info = FileStat(call, call.receiver);
     return VmValue::Int(info.has_value() && !info->is_directory);
   });
   // 返回目录中的直接子项名称，非目录时返回 null。
   builder.VirtualMethod(
       "list", "()[Ljava/lang/String;", [](IntrinsicContext &call) {
+        RequireFileSystem(call);
         const auto names = call.vm.IO().List(FilePath(call, call.receiver));
         if (!names.has_value())
           return VmValue::Ref(VmObjectRef{});
@@ -544,6 +571,9 @@ IntrinsicClassDecl DeclareFile() {
             call.vm.Linker().ResolveDescriptor("[Ljava/lang/String;"),
             call.vm.Linker().ResolveDescriptor("Ljava/lang/String;"),
             static_cast<JniSize>(names->size()));
+        const std::array array_references{array};
+        [[maybe_unused]] const auto array_roots =
+            call.vm.ProtectReferences(array_references);
         for (std::size_t index = 0; index < names->size(); ++index) {
           call.vm.Model().SetObjectElement(
               array, static_cast<JniSize>(index),
@@ -562,6 +592,9 @@ IntrinsicClassDecl DeclareFile() {
         const auto filter = call.arguments[0].ref;
         if (!filter.IsValid() || !listed->ref.IsValid())
           return *listed;
+        const std::array listed_references{listed->ref};
+        [[maybe_unused]] const auto listed_roots =
+            call.vm.ProtectReferences(listed_references);
         std::vector<VmObjectRef> accepted;
         for (const auto name : ReferenceArrayValues(call, listed->ref)) {
           const std::array arguments{VmValue::Ref(call.receiver),
@@ -611,6 +644,9 @@ IntrinsicClassDecl DeclareFile() {
         const auto filter = call.arguments[0].ref;
         if (!filter.IsValid() || !listed->ref.IsValid())
           return *listed;
+        const std::array listed_references{listed->ref};
+        [[maybe_unused]] const auto listed_roots =
+            call.vm.ProtectReferences(listed_references);
         std::vector<VmObjectRef> accepted;
         for (const auto file : ReferenceArrayValues(call, listed->ref)) {
           const std::array arguments{VmValue::Ref(file)};
@@ -711,6 +747,9 @@ IntrinsicClassDecl DeclareFile() {
         call, call.receiver, "getPath", "()Ljava/lang/String;");
     if (!left.has_value())
       return VmValue::Int(0);
+    const std::array left_references{left->ref};
+    [[maybe_unused]] const auto left_roots =
+        call.vm.ProtectReferences(left_references);
     const auto other_path = InvokeVirtual(
         call, call.arguments[0].ref, "getPath", "()Ljava/lang/String;");
     if (!other_path.has_value())
@@ -750,6 +789,7 @@ IntrinsicClassDecl DeclareFile() {
       throw VmJavaThrow{"Ljava/lang/NullPointerException;",
                         "destination == null"};
     }
+    RequireFileSystem(call);
     return VmValue::Int(call.vm.IO().Rename(
         FilePath(call, call.receiver), FilePath(call, target)));
   });
@@ -757,7 +797,7 @@ IntrinsicClassDecl DeclareFile() {
   builder.VirtualMethod("setWritable", "(ZZ)Z",
                         [](IntrinsicContext &call) {
     const bool writable = call.arguments[0].AsInt() != 0;
-    const auto info = call.vm.IO().Stat(FilePath(call, call.receiver));
+    const auto info = FileStat(call, call.receiver);
     return VmValue::Int(writable && info.has_value() && info->writable);
   });
   // 使用 ownerOnly=true 请求设置路径可写性。

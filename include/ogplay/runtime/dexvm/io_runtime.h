@@ -69,6 +69,7 @@ public:
     bool closed{};
   };
   void SetFileSystem(IoFileSystem *file_system) noexcept;
+  [[nodiscard]] bool HasFileSystem() const noexcept;
 
   void SetInput(VmObjectRef owner, InputState state);
   [[nodiscard]] InputState &Input(VmObjectRef owner);

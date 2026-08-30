@@ -57,6 +57,9 @@ struct InterpreterExecutionState final {
     VmObjectRef pending_exception;
     DexClassId pending_exception_class;
     VmValue exit_result;
+    // Intrinsic handlers have host-stack locals rather than Dalvik registers.
+    // Scopes publish newly produced refs here while nested guest calls may GC.
+    std::vector<VmObjectRef> intrinsic_roots;
     std::uint64_t ticks{};
     std::uint64_t token{};
     // Depth of guest native frames this context currently has live on the

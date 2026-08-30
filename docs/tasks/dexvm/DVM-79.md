@@ -68,5 +68,10 @@
 - 双解释器后端测试覆盖可访问性、文件类型、三类过滤、回调异常、文件覆盖 rename、
   缺失父目录/null 参数与 bounded writable 语义；metadata、临时文件、权限变更和
   canonical path 等剩余长尾继续 deferred。
+- 最终检查区分“VFS 未装配”和“路径不存在”：前者由无 checked exception 的 `File`
+  查询/变更 API 明确抛 `UnsupportedOperationException`，`createNewFile` 保持 `IOException`；
+  后者继续遵循 Android 的 false/null 返回语义。
+- `FilenameFilter`/`FileFilter` 回调期间以 execution-local 临时强根保活原始结果数组，
+  `compareTo` 同样保活跨虚调用的左路径；显式 GC 回调回归锁定不会访问已清扫引用。
 
 状态：完成。

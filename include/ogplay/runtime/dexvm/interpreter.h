@@ -256,6 +256,27 @@ struct InterpreterGcIntegration final {
 
 class Interpreter final {
 public:
+    // Keeps intrinsic-owned guest references alive across nested guest calls.
+    // Host locals are not part of the normal frame/JNI root set, so handlers
+    // must use this scope for newly produced references that survive a call.
+    class RootScope final {
+    public:
+        ~RootScope() noexcept;
+        RootScope(const RootScope&) = delete;
+        RootScope& operator=(const RootScope&) = delete;
+        RootScope(RootScope&& other) noexcept;
+        RootScope& operator=(RootScope&&) = delete;
+
+    private:
+        RootScope(Interpreter& interpreter, std::uint64_t context_token,
+                  std::size_t base) noexcept;
+
+        Interpreter* interpreter_{};
+        std::uint64_t context_token_{};
+        std::size_t base_{};
+        friend class Interpreter;
+    };
+
     Interpreter(DexClassLinker& linker, JavaObjectModel& model,
                 NativeMethodBridge* bridge,
                 core::CapabilityLedger& ledger, InterpreterConfig config = {});
@@ -346,6 +367,8 @@ public:
     [[nodiscard]] GcSweepResult SweepGarbage(const GcMarkResult& mark);
     [[nodiscard]] GcSweepResult CollectGarbage(
         std::string_view trigger = "explicit_test");
+    [[nodiscard]] RootScope ProtectReferences(
+        std::span<const VmObjectRef> references);
 
     // Helpers shared with intrinsic handlers.
     [[nodiscard]] VmObjectRef NewStringUtf8(std::string_view utf8);
@@ -419,6 +442,8 @@ public:
   void WaitOnMonitor(VmObjectRef receiver, std::int64_t timeout_millis) const;
 
 private:
+    [[nodiscard]] RootScope ProtectIntrinsicCall(
+        VmObjectRef receiver, std::span<const VmValue> arguments);
     class Impl;
     std::unique_ptr<Impl> impl_;
     friend class InterpreterAccess;

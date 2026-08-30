@@ -76,3 +76,21 @@ Android 4.4.4 Dalvik 语义完整暴露为 dexvm core `java.lang.Thread` intrins
   handler；Thread.State、park 与完整 ThreadGroup family 继续 deferred。
 - API shape、switch/threaded 双后端的 VM 隔离/null/显式优先/默认 fallback，以及无
   handler 的旧失败路径均由 Thread 定向测试锁定。
+
+## 第三优先级补充（2026-08-30）
+
+- 补齐四个带显式 `ThreadGroup` 参数的 `Thread` 构造器、`activeCount/enumerate/checkAccess/dumpStack/
+  countStackFrames`，沿用 bounded system/main ThreadGroup 与当前 VM 的真实线程集合。
+- 发布 API 19 `Thread.State` 六个枚举值及 `values/valueOf`；`getState` 投影 runtime 的
+  NEW/RUNNABLE/WAITING/TIMED_WAITING/TERMINATED，可观测 wait state 无法区分 monitor
+  竞争与 `Object.wait`，因此不伪造 BLOCKED。
+- `parkFor/parkUntil/unpark` 复用 Thread 对象 monitor、单许可 `parkState` 与统一 Clock；
+  预发许可只消费一次，纳秒向毫秒上取整，interrupt 唤醒后恢复中断标记。
+- `pushInterruptAction$/popInterruptAction$` 保持 API 19 的 LIFO 配对和已中断立即回调；
+  `interrupt()` 逆序执行当前 action。deprecated `stop(Throwable)` 仅补齐 API shape，继续
+  明确未实现，不注入异步异常。
+- API shape、显式组继承、状态迁移、枚举、park 边界/许可和 interrupt action 由
+  switch/threaded 双后端定向测试锁定；未新建 WU。
+- 最终检查补齐 intrinsic execution-local 临时强根：调用中的 receiver/ref 参数自动保活，
+  stack trace 数组、全量 trace map 与 dump throwable 在跨 nested guest call 时显式扎根，
+  防止低 GC watermark 下回收仍由宿主 handler 使用的 guest 引用。

@@ -529,6 +529,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/Readable;.read(Ljava/nio/CharBuffer;)I",
         "Ljava/lang/Runnable;.run()V",
         "Ljava/lang/Thread;.stop()V",
+        "Ljava/lang/Thread;.stop(Ljava/lang/Throwable;)V",
         "Ljava/lang/Thread;.suspend()V",
         "Ljava/lang/Thread;.resume()V",
         "Ljava/lang/Thread;.destroy()V",

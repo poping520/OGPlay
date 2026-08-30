@@ -6,6 +6,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 #include "interpreter_internal.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
@@ -19,6 +20,30 @@ thread_local std::unordered_map<const void*, InterpreterExecutionState*>
     active_executions;
 
 }  // namespace
+
+Interpreter::RootScope::RootScope(Interpreter& interpreter,
+                                  const std::uint64_t context_token,
+                                  const std::size_t base) noexcept
+    : interpreter_(&interpreter), context_token_(context_token), base_(base) {}
+
+Interpreter::RootScope::RootScope(RootScope&& other) noexcept
+    : interpreter_(std::exchange(other.interpreter_, nullptr)),
+      context_token_(other.context_token_), base_(other.base_) {}
+
+Interpreter::RootScope::~RootScope() noexcept {
+    if (interpreter_ == nullptr) return;
+    try {
+        VmExecutionLockScope lock_scope(interpreter_->impl_->execution_lock);
+        auto& execution = interpreter_->impl_->Execution();
+        if (execution.token != context_token_ ||
+            execution.intrinsic_roots.size() < base_) {
+            std::terminate();
+        }
+        execution.intrinsic_roots.resize(base_);
+    } catch (...) {
+        std::terminate();
+    }
+}
 
 // ---- VmExecutionLock -------------------------------------------------------
 
@@ -280,6 +305,7 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
             }
             visitor(frame.caught);
         }
+        for (const auto root : execution->intrinsic_roots) visitor(root);
         visitor(execution->pending_exception);
         if (execution->exit_result.kind == VmValue::Kind::ref) {
             visitor(execution->exit_result.ref);
@@ -303,6 +329,31 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
     if (impl_->gc_integration.visit_session_roots) {
         impl_->gc_integration.visit_session_roots(visitor);
     }
+}
+
+Interpreter::RootScope Interpreter::ProtectReferences(
+    const std::span<const VmObjectRef> references) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto& execution = impl_->Execution();
+    const auto base = execution.intrinsic_roots.size();
+    for (const auto reference : references) {
+        if (reference.IsValid()) execution.intrinsic_roots.push_back(reference);
+    }
+    return RootScope(*this, execution.token, base);
+}
+
+Interpreter::RootScope Interpreter::ProtectIntrinsicCall(
+    const VmObjectRef receiver, const std::span<const VmValue> arguments) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    auto& execution = impl_->Execution();
+    const auto base = execution.intrinsic_roots.size();
+    if (receiver.IsValid()) execution.intrinsic_roots.push_back(receiver);
+    for (const auto& argument : arguments) {
+        if (argument.kind == VmValue::Kind::ref && argument.ref.IsValid()) {
+            execution.intrinsic_roots.push_back(argument.ref);
+        }
+    }
+    return RootScope(*this, execution.token, base);
 }
 
 std::size_t Interpreter::RegisteredIntrinsicSideTableCount() const noexcept {

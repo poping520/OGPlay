@@ -8,6 +8,10 @@ void IoRuntime::SetFileSystem(IoFileSystem *file_system) noexcept {
   file_system_ = file_system;
 }
 
+bool IoRuntime::HasFileSystem() const noexcept {
+  return file_system_ != nullptr;
+}
+
 void IoRuntime::SetInput(const VmObjectRef owner, InputState state) {
   inputs_[owner.Value()] = std::move(state);
 }

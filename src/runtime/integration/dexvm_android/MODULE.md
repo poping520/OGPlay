@@ -156,6 +156,10 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
 - UI resource resolver 复用唯一 ArscTable/APK reader，最多 16 层解析 reference，并支持默认
   配置的 ASCII string、color、px/dp/sp dimension、bitmap/color drawable；session density 未知
   时显式使用 1.0 fallback。complex style bag、无命中 selector、非默认 qualifier 明确不承诺。
+- `Resources.getXml(int)` 只经唯一 ArscTable 将 resid 解析为 sealed APK entry，再把严格
+  AXML pull events 物化为 guest 字段/数组持有的 `XmlResourceParser`；当前 API 19 有界面为
+  `getEventType/next/getName/getText/close`。缺失或畸形资源抛 `Resources.NotFoundException`，
+  parser 重复 close 幂等、关闭后读取失败；不得另建 native XmlBlock 或宿主 XML 状态。
 - ImageView XML/Java resource 与 scaleType setter 共用 UiNode/image cache；CENTER、CENTER_INSIDE、
   FIT_CENTER、FIT_XY、CENTER_CROP 已闭合，matrix/fitStart/fitEnd 明确失败。
 - 动态 BroadcastReceiver 注册按发起调用的 Context 实例拥有；null receiver 只查询

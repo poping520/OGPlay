@@ -1,12 +1,16 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "ogplay/loader/binary_xml.h"
+#include "ogplay/loader/apk.h"
 
 namespace {
 
@@ -116,6 +120,21 @@ std::vector<std::byte> EndElement(const std::uint32_t name) {
     Append32(chunk, 0xffffffffU);
     Append32(chunk, 0xffffffffU);
     Append32(chunk, name);
+    return chunk;
+}
+
+std::vector<std::byte> Cdata(const std::uint32_t text) {
+    std::vector<std::byte> chunk;
+    Append16(chunk, 0x0104);
+    Append16(chunk, 16);
+    Append32(chunk, 28);
+    Append32(chunk, 1);
+    Append32(chunk, 0xffffffffU);
+    Append32(chunk, text);
+    Append16(chunk, 8);
+    chunk.push_back(std::byte{0});
+    chunk.push_back(std::byte{0x03});
+    Append32(chunk, text);
     return chunk;
 }
 
@@ -244,6 +263,38 @@ TEST_CASE("binary XML preserves generic typed and namespaced attributes") {
     CHECK(elements[0].attributes[3].data == 0x7f010002U);
 }
 
+TEST_CASE("binary XML pull events preserve compiled text and tag order") {
+    const std::vector<std::string> strings{"settings", "Level", "error"};
+    std::vector<std::byte> document;
+    Append16(document, 0x0003);
+    Append16(document, 8);
+    Append32(document, 0);
+    Append(document, StringPool(strings, true));
+    Append(document, StartElement(0, {}));
+    Append(document, StartElement(1, {}));
+    Append(document, Cdata(2));
+    Append(document, EndElement(1));
+    Append(document, EndElement(0));
+    Set32(document, 4, static_cast<std::uint32_t>(document.size()));
+
+    const auto events = ogplay::loader::ParseBinaryXmlPullEvents(document);
+    using Type = ogplay::loader::BinaryXmlPullEventType;
+    REQUIRE(events.size() == 7);
+    CHECK(events[0].type == Type::start_document);
+    CHECK(events[1].type == Type::start_tag);
+    CHECK(events[1].name == "settings");
+    CHECK(events[1].depth == 1);
+    CHECK(events[2].name == "Level");
+    CHECK(events[2].depth == 2);
+    CHECK(events[3].type == Type::text);
+    CHECK(events[3].text == "error");
+    CHECK(events[3].depth == 2);
+    CHECK(events[4].type == Type::end_tag);
+    CHECK(events[4].name == "Level");
+    CHECK(events[4].depth == 2);
+    CHECK(events[6].type == Type::end_document);
+}
+
 TEST_CASE("binary XML layout walk rejects malformed documents") {
     std::vector<std::byte> not_xml;
     Append16(not_xml, 0x0001);
@@ -279,4 +330,30 @@ TEST_CASE("binary XML layout walk rejects malformed documents") {
     CHECK_THROWS_WITH(static_cast<void>(
                           ogplay::loader::ParseBinaryXmlElements(mismatched)),
                       "binary XML element nesting is malformed");
+}
+
+TEST_CASE("binary XML pull reader accepts local exact resource documents when present") {
+    const auto apk_path = std::filesystem::path(OGPLAY_SOURCE_DIR) / ".local" /
+                          "games" / "pvz_na_zhcn_fixed.apk";
+    if (!std::filesystem::exists(apk_path)) return;
+    std::ifstream stream(apk_path, std::ios::binary);
+    std::vector<std::byte> apk(
+        static_cast<std::size_t>(std::filesystem::file_size(apk_path)));
+    stream.read(reinterpret_cast<char*>(apk.data()),
+                static_cast<std::streamsize>(apk.size()));
+    const auto archive = ogplay::loader::ParseApkArchive(apk);
+    for (const auto path : {"res/xml/nimble_log.xml",
+                            "res/xml/components.xml"}) {
+        const auto bytes = ogplay::loader::ReadApkEntry(apk, archive, path);
+        const auto events = ogplay::loader::ParseBinaryXmlPullEvents(bytes);
+        REQUIRE(events.size() >= 4);
+        CHECK(events.front().type ==
+              ogplay::loader::BinaryXmlPullEventType::start_document);
+        CHECK(events.back().type ==
+              ogplay::loader::BinaryXmlPullEventType::end_document);
+        CHECK(std::ranges::any_of(events, [](const auto& event) {
+            return event.type ==
+                   ogplay::loader::BinaryXmlPullEventType::text;
+        }));
+    }
 }

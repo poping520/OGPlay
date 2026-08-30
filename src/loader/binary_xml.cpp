@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "ogplay/core/byte_order.h"
+#include "ogplay/core/text.h"
 
 namespace ogplay::loader {
 namespace {
@@ -16,6 +17,7 @@ constexpr std::uint16_t kXmlType = 0x0003;
 constexpr std::uint16_t kStringPoolType = 0x0001;
 constexpr std::uint16_t kStartElementType = 0x0102;
 constexpr std::uint16_t kEndElementType = 0x0103;
+constexpr std::uint16_t kCdataType = 0x0104;
 constexpr std::uint32_t kNoIndex = 0xffffffffU;
 // Res_value data types (AOSP ResourceTypes.h).
 constexpr std::uint8_t kTypeDimension = 0x05;
@@ -102,6 +104,9 @@ StringPool ParseStringPool(const std::span<const std::byte> bytes,
             value.assign(
                 reinterpret_cast<const char*>(bytes.data()) + cursor,
                 length);
+            if (!core::IsValidUtf8(value)) {
+                throw std::runtime_error("binary XML string is not valid UTF-8");
+            }
         } else {
             std::size_t length = Read16(bytes, cursor);
             cursor += 2;
@@ -111,14 +116,17 @@ StringPool ParseStringPool(const std::span<const std::byte> bytes,
             }
             RequireRange(bytes, cursor, length * 2);
             RequireChunkRange(offset, chunk_size, cursor, length * 2);
-            // ASCII-compatible narrow conversion; non-BMP layout names do
-            // not occur in practice and non-ASCII units degrade to '?'.
-            value.reserve(length);
+            std::vector<std::uint16_t> units;
+            units.reserve(length);
             for (std::size_t unit = 0; unit < length; ++unit) {
-                const auto code = Read16(bytes, cursor + unit * 2);
-                value.push_back(code < 0x80U ? static_cast<char>(code)
-                                             : '?');
+                units.push_back(Read16(bytes, cursor + unit * 2));
             }
+            const auto utf8 = core::Utf16ToUtf8(
+                units, core::InvalidUtf16Policy::reject);
+            if (!utf8.has_value()) {
+                throw std::runtime_error("binary XML string is not valid UTF-16");
+            }
+            value = *utf8;
         }
         pool.values.push_back(std::move(value));
     }
@@ -138,10 +146,12 @@ std::int32_t LayoutSize(const std::uint8_t type, const std::uint32_t data) {
     return static_cast<std::int32_t>(data);
 }
 
-}  // namespace
+struct ParsedBinaryXml final {
+    std::vector<BinaryXmlElement> elements;
+    std::vector<BinaryXmlPullEvent> events;
+};
 
-std::vector<BinaryXmlElement> ParseBinaryXmlElements(
-    const std::span<const std::byte> bytes) {
+ParsedBinaryXml ParseBinaryXml(const std::span<const std::byte> bytes) {
     if (Read16(bytes, 0) != kXmlType) {
         throw std::runtime_error("not a binary XML document");
     }
@@ -150,7 +160,9 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
 
     StringPool pool;
     bool saw_pool = false;
-    std::vector<BinaryXmlElement> elements;
+    ParsedBinaryXml result;
+    result.events.push_back(
+        {BinaryXmlPullEventType::start_document, {}, {}, 0});
     std::vector<std::int32_t> open;  // element indices on the tag stack
     std::size_t offset = 8;
     while (offset + 8 <= document_size) {
@@ -162,7 +174,7 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
         }
         RequireRange(bytes, offset, size);
         if (type == kStringPoolType) {
-            if (saw_pool || !elements.empty()) {
+            if (saw_pool || !result.elements.empty()) {
                 throw std::runtime_error(
                     "binary XML string pool is duplicated or out of order");
             }
@@ -180,6 +192,7 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
                 throw std::runtime_error("binary XML element name is invalid");
             }
             element.parent = open.empty() ? -1 : open.back();
+            const auto event_name = element.name;
             const auto attribute_start = Read16(bytes, ext + 8);
             const auto attribute_size = Read16(bytes, ext + 10);
             const auto attribute_count = Read16(bytes, ext + 12);
@@ -243,8 +256,11 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
                     element.src = data;
                 }
             }
-            open.push_back(static_cast<std::int32_t>(elements.size()));
-            elements.push_back(std::move(element));
+            open.push_back(static_cast<std::int32_t>(result.elements.size()));
+            result.elements.push_back(std::move(element));
+            result.events.push_back(
+                {BinaryXmlPullEventType::start_tag, event_name, {},
+                 static_cast<std::int32_t>(open.size())});
         } else if (type == kEndElementType) {
             if (open.empty()) {
                 throw std::runtime_error("binary XML end element is unmatched");
@@ -252,10 +268,29 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
             const auto ext = offset + header_size;
             const auto closing_name = pool.At(Read32(bytes, ext + 4));
             if (closing_name !=
-                elements[static_cast<std::size_t>(open.back())].name) {
+                result.elements[static_cast<std::size_t>(open.back())].name) {
                 throw std::runtime_error("binary XML element nesting is malformed");
             }
+            result.events.push_back(
+                {BinaryXmlPullEventType::end_tag, closing_name, {},
+                 static_cast<std::int32_t>(open.size())});
             open.pop_back();
+        } else if (type == kCdataType) {
+            if (!saw_pool || open.empty()) {
+                throw std::runtime_error("binary XML text is outside an element");
+            }
+            if (size - header_size < 12U) {
+                throw std::runtime_error("binary XML text chunk is malformed");
+            }
+            const auto ext = offset + header_size;
+            RequireRange(bytes, ext, 12);
+            const auto text_index = Read32(bytes, ext);
+            if (text_index >= pool.values.size()) {
+                throw std::runtime_error("binary XML text string is invalid");
+            }
+            result.events.push_back(
+                {BinaryXmlPullEventType::text, {}, pool.values[text_index],
+                 static_cast<std::int32_t>(open.size())});
         }
         offset += size;
     }
@@ -265,7 +300,21 @@ std::vector<BinaryXmlElement> ParseBinaryXmlElements(
     if (!open.empty()) {
         throw std::runtime_error("binary XML element is not closed");
     }
-    return elements;
+    result.events.push_back(
+        {BinaryXmlPullEventType::end_document, {}, {}, 0});
+    return result;
+}
+
+}  // namespace
+
+std::vector<BinaryXmlElement> ParseBinaryXmlElements(
+    const std::span<const std::byte> bytes) {
+    return ParseBinaryXml(bytes).elements;
+}
+
+std::vector<BinaryXmlPullEvent> ParseBinaryXmlPullEvents(
+    const std::span<const std::byte> bytes) {
+    return ParseBinaryXml(bytes).events;
 }
 
 }  // namespace ogplay::loader

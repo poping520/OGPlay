@@ -11,7 +11,8 @@ family TU 按 API 语义与共享状态聚合，以控制翻译单元数量。
 全局静态自注册，以及 android.* 声明和行为顺手修改。
 
 `java.*`、`javax.net.*`、`javax.xml.*` 与 `org.xml.sax.*` 均由 core 发布；需要平台事实的
-Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入，
+Locale、Timer、SSL singleton 与 SAX handler 通过 `CoreIntrinsicServices` 窄接口注入；
+`org.xmlpull.v1.XmlPullParser` 只发布 API 19 接口 shape，资源事件实现归 Android integration，
 core 不依赖 `DexVmAndroidContext`。
 Timer/TimerTask 仅保留 Java 参数、重复调度与取消入口；deadline、执行队列、Clock 和
 生命周期由注入的 scheduler 窄接口拥有。core 禁止反向读取 Android context 或恢复

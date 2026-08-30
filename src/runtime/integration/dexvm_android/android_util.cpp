@@ -75,6 +75,14 @@ Decl Declare_android_util_Pair(const Context& context) {
 }  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
+
+Decl Declare_android_util_AttributeSet(const Context& context) {
+    static_cast<void>(context);
+    return std::move(dx::IntrinsicClassBuilder::Interface(
+                         "Landroid/util/AttributeSet;"))
+        .Build();
+}
+
 namespace {
 
 constexpr std::int32_t kBase64NoPadding = 1;

@@ -41,6 +41,9 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_content_res_AssetManager(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_AssetFileDescriptor(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_Configuration(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_Resources_NotFoundException(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_XmlResourceParser(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_XmlResourceParser_Impl(const Context& context);
 [[nodiscard]] Decl Declare_android_content_res_Resources(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Bitmap_Config(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Bitmap(const Context& context);
@@ -133,6 +136,7 @@ namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] Decl Declare_android_text_TextUtils(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Log(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Pair(const Context& context);
+[[nodiscard]] Decl Declare_android_util_AttributeSet(const Context& context);
 [[nodiscard]] Decl Declare_android_util_Base64(const Context& context);
 [[nodiscard]] Decl Declare_android_util_SparseArray(const Context& context);
 [[nodiscard]] Decl Declare_android_util_SparseBooleanArray(const Context& context);

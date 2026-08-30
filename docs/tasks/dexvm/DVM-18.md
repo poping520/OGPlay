@@ -29,3 +29,15 @@
 
 - pilot 全生命周期解释执行直至主界面（见 DVM-19 三轮 gate）；
   full CTest 558/558 无回归。
+
+## Resources XML 补充（2026-08-30）
+
+- `Resources.getXml(int)` 复用 DVM-15 的 ARSC 映射和 sealed APK reader，读取资源条目指向的
+  compiled AXML；未知 ID、无文件值、缺失或畸形条目统一抛 API 19
+  `Resources.NotFoundException`，不泄漏宿主异常。
+- core 发布 `org.xmlpull.v1.XmlPullParser` 有界调用面，Android catalog 发布
+  `AttributeSet`/`XmlResourceParser` 接口层级和字段持有的 parser 实现；当前闭合实际命中的
+  `getEventType/next/getName/getText/close`，重复 close 幂等，关闭后读取明确失败。
+- loader 在既有严格 chunk/nesting/string-pool 校验上增加 START/TEXT/END pull event；
+  UTF-8/UTF-16 字符串受检转换。合成 APK 端到端测试与本地 exact 两份 `res/xml` 交叉验证通过。
+- 本补充沿用 DVM-18，不新建 WU；AttributeSet 属性读取及完整 XmlPullParser 长尾继续 deferred。

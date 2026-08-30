@@ -23,7 +23,8 @@
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。
-  chunk、string pool、attribute 和元素 nesting 全部受检，畸形输入明确失败。
+  `ParseBinaryXmlPullEvents` 从同一受检文档发布编译后仍保留的 START/TEXT/END 高层事件；
+  UTF-8/UTF-16 string pool、chunk、attribute 和元素 nesting 全部受检，畸形输入明确失败。
 - `ParseArsc`：严格读取 resources.arsc（ResTable/string pool/package/type/entry），
   产出 resid ↔ (type, name, typed simple value/文件路径) 双向事实；Res_value type/data
   原样保留给上层有界 string/color/dimension/reference resolver；默认配置优先，复杂值与多 locale

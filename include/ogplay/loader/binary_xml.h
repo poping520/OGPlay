@@ -39,9 +39,28 @@ struct BinaryXmlElement final {
     std::uint32_t src{};             // android:src resource ref, 0 when absent
 };
 
+enum class BinaryXmlPullEventType : std::int32_t {
+    start_document = 0,
+    end_document = 1,
+    start_tag = 2,
+    end_tag = 3,
+    text = 4,
+};
+
+// High-level pull events preserved by Android's compiled XML format. Comments,
+// entities and other source-only tokens have already been removed by aapt.
+struct BinaryXmlPullEvent final {
+    BinaryXmlPullEventType type{};
+    std::string name;
+    std::string text;
+    std::int32_t depth{};
+};
+
 // Flat document order (parents before children). Throws std::runtime_error
 // on malformed input.
 [[nodiscard]] std::vector<BinaryXmlElement> ParseBinaryXmlElements(
+    std::span<const std::byte> bytes);
+[[nodiscard]] std::vector<BinaryXmlPullEvent> ParseBinaryXmlPullEvents(
     std::span<const std::byte> bytes);
 
 }  // namespace ogplay::loader

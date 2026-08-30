@@ -166,7 +166,8 @@ DVM-79 的 `DexVmIoVfsAdapter` 是 DexVM core `IoFileSystem` 与具体
   SQLite 的 bounded state 留在 Android integration，并只经同一 guest VFS 持久化。
 - `DexVmAndroidContext` + `AndroidIntrinsicCatalog(context)`：
   android.* intrinsic 按 pilot 测量面挂接真实会话状态——Resources 由严格
-  resources.arsc 事实驱动、SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
+  resources.arsc 事实驱动；`getXml` 经同一 resid→APK entry 链发布有界 compiled-AXML
+  pull parser；SoundPool/MediaPlayer 直连存量 mixer(resid 即键)、
   IO 走 APK 条目与会话 VFS；API19 `Environment.getDataDirectory()` 返回稳定的
   guest `File("/data")`；`Context.getFilesDir()` 由 Activity 正常继承，返回稳定
   `/data/data/<package>/files` File 并经 VFS 真实建立目录；两者都不读取或泄漏

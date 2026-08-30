@@ -1,9 +1,13 @@
 # 当前状态
 
-更新：完成 Thread/File 最终检查修复
+更新：补齐 Resources.getXml 与有界 XmlResourceParser
 
 ## 当前阶段
 
+- **DVM-18 Resources XML 补充已完成**：`Resources.getXml(int)` 经唯一 ARSC→sealed APK→
+  strict AXML 链发布 `XmlResourceParser`，闭合 `getEventType/next/getName/getText/close`；
+  缺失/畸形资源抛 `Resources.NotFoundException`。合成 APK 与本地 exact 两份 `res/xml`
+  交叉验证通过，沿用 DVM-18、未新建 WU；完整 AttributeSet/XmlPullParser 长尾 deferred。
 - **DVM-48 Thread 第三优先级已完成**：补齐四个带 ThreadGroup 参数的 Thread 构造器、存活枚举、
   dump/count/check、Thread.State、park/unpark 单许可与 interrupt action；统一 Clock、
   switch/threaded 行为及 API19 shape 均有定向测试。完整 ThreadGroup family 继续 deferred，
@@ -21,18 +25,10 @@
   profile 不变。见 [DVM-94](../tasks/dexvm/DVM-94.md)、[DVM-95](../tasks/dexvm/DVM-95.md)、
   [DVM-96](../tasks/dexvm/DVM-96.md)、ADR-0028/0029。
 
-- **A6 AudioTrack 声音根因已修复**：legacy 与 DexVM MODE_STREAM 统一按构造
-  `buffer_size` 的未消费 PCM 字节阻塞，播放消费唤醒；legacy park 不持 media mutex，
-  DexVM park 释放执行锁，release/Stop/BeginTeardown 可中断。255 项队列仅保留为内存护栏，
-  饱和不再抛越过 Java 边界的 C++ 异常或返回 0。定向饱和/恢复、锁释放、teardown 与既有
-  callback 回归通过，A6 用户实听确认 BGM 与音效正常。见 [DVM-93](../tasks/dexvm/DVM-93.md) 与
-  [ADR-0027](../adr/0027-audiotrack-stream-byte-backpressure.md)。
-- **A6 RGBA8 RenderTarget 首错已修复**：混合链接 guest 的 GLES1 扩展投影补入共享
-  ANGLE context 真实支持的 `GL_OES_rgb8_rgba8`，并以尾随分隔符兼容旧 token 解析器；
-  机器测试验证真实 RGBA8 renderbuffer/FBO。Release exact 手动步进点击“触摸继续”后进入
-  主菜单，到 frame 10932、draw 64991 仍无 guest fault，越过原
-  `libasphalt6.so+0x7f2c14`。shutdown 在 `teardown.guest_callbacks` 未完成，作为独立
-  生命周期问题保留。见 [BND-26](../tasks/boundary/BND-26.md)。
+- **A6 AudioTrack 与 RGBA8 首错已修复**：MODE_STREAM 按真实 PCM 字节回压并可被
+  release/teardown 中断；共享 ANGLE context 发布真实 `GL_OES_rgb8_rgba8`。用户实听音频
+  正常，Release 手动步进进入主菜单并稳定到 frame 10932；shutdown 卡点仍独立保留。见
+  [DVM-93](../tasks/dexvm/DVM-93.md)、[BND-26](../tasks/boundary/BND-26.md)。
 - **Tales Context 首错已修复**：uniform reflection 接受 API19
   `GL_SAMPLER_3D_OES` 单值 shape；GLES1 extension 目录和 boundary 真实实现
   `GL_OES_mapbuffer` 三入口。Context 新增 `getPackageCodePath/getCacheDir/getApplicationInfo`；
@@ -40,12 +36,8 @@
   稳定身份且 wrapper 仅委托 base。Thread context loader 补齐后 Tales 两个 native 库均
   完成 JNI 初始化，新首错为 `android.location.LocationListener` 类层级缺口。见
   [DVM-47](../tasks/dexvm/DVM-47.md)、[WU-0231](../tasks/m5/WU-0231.md)。
-- **DVM-92 已完成并通过 title 验收**：退出首个 guest 回调前单向退役 Java EGL、
-  native/managed GLES 与 EGL swap；process `BeginTeardown` 发布独立取消并中断
-  blocking wait，join 前再次中断覆盖回调中新建 futex。renewable JNI native frame
-  在既有 slice/boundary 安全点失败展开，运行期 ADR-0023 预算与 non-renewable
-  finalizer 不变。契约见 [DVM-92](../tasks/dexvm/DVM-92.md) 与
-  [ADR-0025](../adr/0025-teardown-cancellation-and-graphics-retirement.md)。
+- **DVM-92 已完成并通过 title 验收**：teardown 单向退役 Java/native 图形入口，独立取消
+  中断 blocking wait 与新建 futex；契约见 [DVM-92](../tasks/dexvm/DVM-92.md) 和 ADR-0025。
 - **近期兼容性闭合**：Android View fallback 已支持 reverse-Z、deepest-first 触摸路由；
   BND-27 修复 GLES1 coordinate array 来源；DVM-91 完成 FileDescriptor/PFD/AFD 媒体
   区间能力；DVM-90 完成动态 SurfaceView holder generation。
@@ -54,12 +46,12 @@
 
 ## 最近验证
 
+- 2026-08-30 macOS release 增量构建通过；binary XML 6/6（74 assertions，含本地 exact），
+  `Resources.getXml` 1/1（35 assertions），core/android catalog 契约通过。关闭 survey 的
+  clean-sandbox PvZ 短跑先被既有 `java.util.Observer` 层级缺口阻断，未到 XML 路径。
 - 2026-08-30 macOS release `ogplay_tests` 重建通过；Thread 28/28（133189 assertions），
   File 14/14（531 assertions），GC filter、无 VFS、timed/root/worker Clock 与 core/android
   intrinsic catalog 契约定向通过。
-- 2026-08-30 macOS dev `ogplay_tests` 重建通过；Context/PackageManager/VFS 与 architecture
-  定向 12/12 通过。Tales 关闭 survey 实跑越过 package code path，下一缺口为
-  `java/lang/Thread.getContextClassLoader()`。
 - 2026-08-29 macOS dev 受影响目标通过；GLES1 扩展 token 与真实 RGBA8 FBO 定向
   2/2 通过（119 assertions），相关 architecture 4/4 通过。A6 Release 手动步进进入
   主菜单并稳定到 frame 10932，无 guest fault。
@@ -69,7 +61,8 @@
 
 ## 下一步
 
-1. 补 Tales `android.location.LocationListener` 类层级；完成 DH 主菜单 Scenario gate。
+1. 补 clean-sandbox PvZ `java.util.Observer/Observable` 与 Tales `LocationListener` 层级；
+   完成 DH 主菜单 Scenario gate。
 2. 执行 A6 bootstrap 三轮、gc_long 与 threaded title gate。
 3. 首次出现可复用停滞 fixture 时，补 Diagnostics 外部触发子进程验收。
 

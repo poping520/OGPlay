@@ -1332,8 +1332,8 @@ note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三
 
 [dexvm.intrinsics_android_core]
 status = "partial"
-test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
-note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z` 与 API19 DisplayMetrics/Configuration bounded 事实；DVM-72 发布稳定 guest data/files VFS identity，DVM-77 发布当前 APK PackageManager P0，DVM-81 恢复 Context 继承链，DVM-88 发布 VFS SQLite bounded 数据面，DVM-89 发布 Bitmap.Config、APK path、软件 Surface/Canvas、AudioTrack、ResultReceiver/KeyEvent，并闭合 SDL scancode→Android keyCode、Unicode/meta/repeat 输入链与 getUnicodeChar 两个重载；DVM-90 建立 live UiTree 的 per-holder Surface generation。DVM-91 用真实逻辑 FileDescriptor 替换 PFD 空壳，闭合 PFD.open、AFD ctor/getter、stored AssetManager.openFd 与 MediaPlayer FD/区间数据源；DVM-94 缺陷修复按 Android 4.4.4 DEX 校准现有 protected callback access flags。后续补齐 Context `getPackageCodePath/getCacheDir/getApplicationInfo`：code/resource/sourceDir 共用只读 guest APK，cache 经 VFS 建目录，ApplicationInfo 为进程稳定身份且 wrapper 仅委托 base；Tales 关闭 survey 越过原首错。listener 回调、visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
+test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/loader/binary_xml_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；2026-08-30 补充 Resources.getXml、API19 XmlResourceParser 层级及 getEventType/next/getName/getText/close 有界 pull 面，resid 经唯一 ARSC/APK/AXML 链解析，缺失或畸形资源抛 Resources.NotFoundException。DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z` 与 API19 DisplayMetrics/Configuration bounded 事实；DVM-72 发布稳定 guest data/files VFS identity，DVM-77 发布当前 APK PackageManager P0，DVM-81 恢复 Context 继承链，DVM-88 发布 VFS SQLite bounded 数据面，DVM-89 发布 Bitmap.Config、APK path、软件 Surface/Canvas、AudioTrack、ResultReceiver/KeyEvent，并闭合 SDL scancode→Android keyCode、Unicode/meta/repeat 输入链与 getUnicodeChar 两个重载；DVM-90 建立 live UiTree 的 per-holder Surface generation。DVM-91 用真实逻辑 FileDescriptor 替换 PFD 空壳，闭合 PFD.open、AFD ctor/getter、stored AssetManager.openFd 与 MediaPlayer FD/区间数据源；DVM-94 缺陷修复按 Android 4.4.4 DEX 校准现有 protected callback access flags。后续补齐 Context `getPackageCodePath/getCacheDir/getApplicationInfo`：code/resource/sourceDir 共用只读 guest APK，cache 经 VFS 建目录，ApplicationInfo 为进程稳定身份且 wrapper 仅委托 base；Tales 关闭 survey 越过原首错。AttributeSet/XmlPullParser 长尾、listener 回调、visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
 
 [dexvm.media_data_sources]
 status = "complete"
@@ -1404,6 +1404,11 @@ note = "DVM-80..88 计划的 family ownership、Context、NIO/direct buffer、Ja
 status = "complete"
 test = "tests/dexvm/gap_survey_tests.cpp; tests/dexvm/interpreter_tests.cpp"
 note = "M9 适配流水线：run-apk --survey-gaps 打开诊断 survey 模式，未声明的平台类/方法合成中性桩、逐次记账，一次运行收割整条缺口队列并按命中次数输出机读工作单；APK class_def 全量注册、按首次真实使用链接，未触达的缺失层级不阻断启动，触达后默认明确失败或在 survey 中合成并记账。survey 运行显式标注为非兼容性结论。配套 tools/dexvm_gap_report.py（静态潜在清单，schema 2 带 role）与 tools/dexvm_stub_gen.py（生成占位/中性方法行，引用返回值一律进人工决策清单）"
+
+[loader.binary_xml_pull]
+status = "complete"
+test = "tests/loader/binary_xml_tests.cpp; tests/dexvm/file_vfs_tests.cpp"
+note = "DVM-18 复用严格 binary XML reader 发布 aapt 保留的 START/TEXT/END pull events；UTF-8/UTF-16 string pool、chunk、索引和 nesting 受检，合成 APK 与本地 exact res/xml 交叉验证通过"
 
 [loader.arsc]
 status = "complete"

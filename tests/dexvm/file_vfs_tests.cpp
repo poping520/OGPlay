@@ -147,6 +147,89 @@ void Append32(std::vector<std::byte>& bytes, const std::uint32_t value) {
     }
 }
 
+void Set32(std::vector<std::byte>& bytes, const std::size_t offset,
+           const std::uint32_t value) {
+    for (unsigned shift = 0; shift < 32; shift += 8) {
+        bytes[offset + shift / 8U] =
+            static_cast<std::byte>((value >> shift) & 0xffU);
+    }
+}
+
+std::vector<std::byte> MakeBinaryXmlTextResource() {
+    const std::vector<std::string> strings{"settings", "Level", "error"};
+    std::vector<std::byte> string_data;
+    std::vector<std::uint32_t> offsets;
+    for (const auto& string : strings) {
+        offsets.push_back(static_cast<std::uint32_t>(string_data.size()));
+        string_data.push_back(static_cast<std::byte>(string.size()));
+        string_data.push_back(static_cast<std::byte>(string.size()));
+        for (const auto value : string) {
+            string_data.push_back(static_cast<std::byte>(value));
+        }
+        string_data.push_back(std::byte{0});
+    }
+    while (string_data.size() % 4U != 0) string_data.push_back(std::byte{0});
+
+    std::vector<std::byte> result;
+    Append16(result, 0x0003);
+    Append16(result, 8);
+    Append32(result, 0);
+    const auto string_pool = result.size();
+    Append16(result, 0x0001);
+    Append16(result, 28);
+    Append32(result, 0);
+    Append32(result, static_cast<std::uint32_t>(strings.size()));
+    Append32(result, 0);
+    Append32(result, 0x100U);
+    Append32(result, static_cast<std::uint32_t>(28U + offsets.size() * 4U));
+    Append32(result, 0);
+    for (const auto offset : offsets) Append32(result, offset);
+    result.insert(result.end(), string_data.begin(), string_data.end());
+    Set32(result, string_pool + 4,
+          static_cast<std::uint32_t>(result.size() - string_pool));
+
+    const auto append_start = [&](const std::uint32_t name) {
+        Append16(result, 0x0102);
+        Append16(result, 16);
+        Append32(result, 36);
+        Append32(result, 1);
+        Append32(result, 0xffffffffU);
+        Append32(result, 0xffffffffU);
+        Append32(result, name);
+        Append16(result, 20);
+        Append16(result, 20);
+        Append16(result, 0);
+        Append16(result, 0);
+        Append16(result, 0);
+        Append16(result, 0);
+    };
+    const auto append_end = [&](const std::uint32_t name) {
+        Append16(result, 0x0103);
+        Append16(result, 16);
+        Append32(result, 24);
+        Append32(result, 1);
+        Append32(result, 0xffffffffU);
+        Append32(result, 0xffffffffU);
+        Append32(result, name);
+    };
+    append_start(0);
+    append_start(1);
+    Append16(result, 0x0104);
+    Append16(result, 16);
+    Append32(result, 28);
+    Append32(result, 1);
+    Append32(result, 0xffffffffU);
+    Append32(result, 2);
+    Append16(result, 8);
+    result.push_back(std::byte{0});
+    result.push_back(std::byte{0x03});
+    Append32(result, 2);
+    append_end(1);
+    append_end(0);
+    Set32(result, 4, static_cast<std::uint32_t>(result.size()));
+    return result;
+}
+
 std::vector<std::byte> MakeStoredZip(const std::string_view name,
                                      const std::span<const std::byte> payload) {
     std::uint32_t crc = 0xffffffffU;
@@ -835,6 +918,81 @@ TEST_CASE("AssetManager openFd publishes exact logical asset length") {
     REQUIRE(missing.exception.IsValid());
     CHECK(vm.linker.Class(missing.exception_class).descriptor ==
           "Ljava/io/FileNotFoundException;");
+}
+
+TEST_CASE("Resources getXml exposes compiled APK XML as pull events") {
+    FileVm vm;
+    constexpr std::uint32_t kResourceId = 0x7f010000U;
+    const auto xml = MakeBinaryXmlTextResource();
+    vm.context->apk_bytes = MakeStoredZip("res/xml/settings.xml", xml);
+    vm.context->archive =
+        ogplay::loader::ParseApkArchive(vm.context->apk_bytes);
+    vm.context->arsc.entries.push_back({
+        .resource_id = kResourceId,
+        .type_name = "xml",
+        .entry_name = "settings",
+        .string_value = "res/xml/settings.xml",
+        .value_type = 3,
+    });
+
+    const auto resources = vm.interpreter.NewIntrinsicInstance(
+        "Landroid/content/res/Resources;");
+    const auto parser = vm.CallOn(
+        resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
+        {VmValue::Int(static_cast<std::int32_t>(kResourceId))}).ref;
+    const auto event_type = [&] {
+        return vm.CallOn(parser, "getEventType", "()I").AsInt();
+    };
+    const auto next = [&] {
+        return vm.CallOn(parser, "next", "()I").AsInt();
+    };
+    const auto string_value = [&](const char* name) {
+        const auto value =
+            vm.CallOn(parser, name, "()Ljava/lang/String;").ref;
+        return value.IsValid() ? vm.interpreter.StringUtf8(value) : std::string{};
+    };
+
+    CHECK(event_type() == 0);
+    CHECK(next() == 2);
+    CHECK(string_value("getName") == "settings");
+    CHECK(next() == 2);
+    CHECK(string_value("getName") == "Level");
+    CHECK(next() == 4);
+    CHECK(string_value("getText") == "error");
+    CHECK(next() == 3);
+    CHECK(string_value("getName") == "Level");
+    CHECK(next() == 3);
+    CHECK(string_value("getName") == "settings");
+    CHECK(next() == 1);
+    CHECK(next() == 1);
+    static_cast<void>(vm.CallOn(parser, "close", "()V"));
+    static_cast<void>(vm.CallOn(parser, "close", "()V"));
+    const auto after_close =
+        vm.CallOnOutcome(parser, "getEventType", "()I");
+    REQUIRE(after_close.exception.IsValid());
+    CHECK(vm.linker.Class(after_close.exception_class).descriptor ==
+          "Ljava/lang/IllegalStateException;");
+
+    const auto missing = vm.CallOnOutcome(
+        resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
+        {VmValue::Int(0x7f010001)});
+    REQUIRE(missing.exception.IsValid());
+    CHECK(vm.linker.Class(missing.exception_class).descriptor ==
+          "Landroid/content/res/Resources$NotFoundException;");
+
+    vm.context->arsc.entries.push_back({
+        .resource_id = 0x7f010002U,
+        .type_name = "xml",
+        .entry_name = "missing",
+        .string_value = "res/xml/missing.xml",
+        .value_type = 3,
+    });
+    const auto absent_entry = vm.CallOnOutcome(
+        resources, "getXml", "(I)Landroid/content/res/XmlResourceParser;",
+        {VmValue::Int(0x7f010002)});
+    REQUIRE(absent_entry.exception.IsValid());
+    CHECK(vm.linker.Class(absent_entry.exception_class).descriptor ==
+          "Landroid/content/res/Resources$NotFoundException;");
 }
 
 TEST_CASE("AssetManager openFd rejects a compressed APK entry") {

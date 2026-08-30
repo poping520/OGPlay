@@ -240,6 +240,7 @@ Decl Declare_android_content_res_Configuration(const Context& context) {
 #include "catalog.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
 
@@ -301,8 +302,7 @@ void SetIntField(ogplay::runtime::dexvm::IntrinsicContext& call,
     const auto field = call.vm.Linker().FindFieldRecursive(
         call.vm.Model().ObjectClass(object), name, "I");
     if (!field.has_value()) {
-        throw std::logic_error(std::string("Configuration field missing: ") +
-                               name);
+        throw std::logic_error(std::string("integer field missing: ") + name);
     }
     const auto slot = call.vm.Linker().Field(*field).slot;
     call.vm.Model().InstanceSlots(object)[slot] = {
@@ -310,7 +310,190 @@ void SetIntField(ogplay::runtime::dexvm::IntrinsicContext& call,
         ogplay::runtime::dexvm::SlotTag::cat1};
 }
 
+std::size_t FieldSlot(ogplay::runtime::dexvm::IntrinsicContext& call,
+                      const ogplay::runtime::dexvm::VmObjectRef object,
+                      const char* name, const char* descriptor) {
+    const auto field = call.vm.Linker().FindFieldRecursive(
+        call.vm.Model().ObjectClass(object), name, descriptor);
+    if (!field.has_value()) {
+        throw std::logic_error(std::string("XML parser field missing: ") + name);
+    }
+    return call.vm.Linker().Field(*field).slot;
+}
+
+void SetRefField(ogplay::runtime::dexvm::IntrinsicContext& call,
+                 const ogplay::runtime::dexvm::VmObjectRef object,
+                 const char* name, const char* descriptor,
+                 const ogplay::runtime::dexvm::VmObjectRef value) {
+    call.vm.Model().InstanceSlots(object)[
+        FieldSlot(call, object, name, descriptor)] = {
+        value.Value(), ogplay::runtime::dexvm::SlotTag::ref};
+}
+
+ogplay::runtime::dexvm::VmObjectRef GetRefField(
+    ogplay::runtime::dexvm::IntrinsicContext& call,
+    const ogplay::runtime::dexvm::VmObjectRef object, const char* name,
+    const char* descriptor) {
+    return ogplay::runtime::dexvm::VmObjectRef(
+        call.vm.Model().InstanceSlots(object)[
+            FieldSlot(call, object, name, descriptor)]
+            .bits);
+}
+
+std::int32_t GetIntField(ogplay::runtime::dexvm::IntrinsicContext& call,
+                         const ogplay::runtime::dexvm::VmObjectRef object,
+                         const char* name) {
+    return static_cast<std::int32_t>(
+        call.vm.Model().InstanceSlots(object)[FieldSlot(call, object, name, "I")]
+            .bits);
+}
+
+void RequireOpenXmlParser(
+    ogplay::runtime::dexvm::IntrinsicContext& call) {
+    if (GetIntField(call, call.receiver, "mClosed") != 0) {
+        throw ogplay::runtime::dexvm::VmJavaThrow{
+            "Ljava/lang/IllegalStateException;", "XML parser is closed"};
+    }
+}
+
+ogplay::runtime::dexvm::VmObjectRef MakeXmlParser(
+    ogplay::runtime::dexvm::IntrinsicContext& call,
+    const std::vector<ogplay::loader::BinaryXmlPullEvent>& events) {
+    namespace dx = ogplay::runtime::dexvm;
+    const auto parser = call.vm.NewIntrinsicInstance(
+        "Landroid/content/res/XmlResourceParser$Impl;");
+    const std::array parser_references{parser};
+    [[maybe_unused]] const auto parser_roots =
+        call.vm.ProtectReferences(parser_references);
+    auto& model = call.vm.Model();
+    const auto count =
+        static_cast<ogplay::runtime::JniSize>(events.size());
+    const auto types = model.NewPrimitiveArray(
+        call.vm.Linker().ResolveDescriptor("[I"),
+        ogplay::runtime::JniPrimitiveKind::integer, count);
+    SetRefField(call, parser, "mEventTypes", "[I", types);
+    const auto names = model.NewObjectArray(
+        call.vm.Linker().ResolveDescriptor("[Ljava/lang/String;"),
+        call.vm.Linker().ResolveDescriptor("Ljava/lang/String;"), count);
+    SetRefField(call, parser, "mNames", "[Ljava/lang/String;", names);
+    const auto texts = model.NewObjectArray(
+        call.vm.Linker().ResolveDescriptor("[Ljava/lang/String;"),
+        call.vm.Linker().ResolveDescriptor("Ljava/lang/String;"), count);
+    SetRefField(call, parser, "mTexts", "[Ljava/lang/String;", texts);
+    for (std::size_t index = 0; index < events.size(); ++index) {
+        const auto array_index =
+            static_cast<ogplay::runtime::JniSize>(index);
+        model.SetPrimitiveElement(
+            types, array_index,
+            static_cast<std::uint32_t>(events[index].type));
+        if (!events[index].name.empty()) {
+            model.SetObjectElement(
+                names, array_index,
+                call.vm.NewStringUtf8(events[index].name));
+        }
+        if (events[index].type ==
+            ogplay::loader::BinaryXmlPullEventType::text) {
+            model.SetObjectElement(
+                texts, array_index,
+                call.vm.NewStringUtf8(events[index].text));
+        }
+    }
+    SetIntField(call, parser, "mIndex", 0);
+    SetIntField(call, parser, "mClosed", 0);
+    return parser;
+}
+
 }  // namespace
+
+namespace ogplay::runtime::android_intrinsics {
+
+Decl Declare_android_content_res_Resources_NotFoundException(
+    const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/content/res/Resources$NotFoundException;",
+        "Ljava/lang/RuntimeException;");
+    builder.Constructor("()V",
+                        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.Constructor("(Ljava/lang/String;)V",
+                        [](dx::IntrinsicContext& call) {
+                            call.vm.SetThrowableMessage(call.receiver,
+                                                       call.arguments[0].ref);
+                            return dx::VmValue::Void();
+                        });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_content_res_XmlResourceParser(const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/content/res/XmlResourceParser;",
+        {"Lorg/xmlpull/v1/XmlPullParser;", "Landroid/util/AttributeSet;",
+         "Ljava/lang/AutoCloseable;"});
+    builder.UnimplementedVirtual("close", "()V", 0x0401U);
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_content_res_XmlResourceParser_Impl(
+    const Context& context) {
+    static_cast<void>(context);
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/content/res/XmlResourceParser$Impl;", "Ljava/lang/Object;",
+        {"Landroid/content/res/XmlResourceParser;"});
+    builder.InstanceField("mEventTypes", "[I", 0x0012U)
+        .InstanceField("mNames", "[Ljava/lang/String;", 0x0012U)
+        .InstanceField("mTexts", "[Ljava/lang/String;", 0x0012U)
+        .InstanceField("mIndex", "I", 0x0002U)
+        .InstanceField("mClosed", "I", 0x0002U);
+    // 返回解析器当前所在的 XML 事件类型。
+    builder.FinalMethod("getEventType", "()I", [](dx::IntrinsicContext& call) {
+        RequireOpenXmlParser(call);
+        const auto types = GetRefField(call, call.receiver, "mEventTypes", "[I");
+        return dx::VmValue::Int(static_cast<std::int32_t>(
+            call.vm.Model().GetPrimitiveElement(
+                types, GetIntField(call, call.receiver, "mIndex"))));
+    });
+    // 推进到下一个 XML 事件并返回其类型。
+    builder.FinalMethod("next", "()I", [](dx::IntrinsicContext& call) {
+        RequireOpenXmlParser(call);
+        const auto types = GetRefField(call, call.receiver, "mEventTypes", "[I");
+        auto index = GetIntField(call, call.receiver, "mIndex");
+        const auto last = call.vm.Model().ArrayLength(types) - 1;
+        if (index < last) ++index;
+        SetIntField(call, call.receiver, "mIndex", index);
+        return dx::VmValue::Int(static_cast<std::int32_t>(
+            call.vm.Model().GetPrimitiveElement(types, index)));
+    });
+    const auto current_string = [](const char* field) {
+        return [field](dx::IntrinsicContext& call) {
+            RequireOpenXmlParser(call);
+            const auto values = GetRefField(
+                call, call.receiver, field, "[Ljava/lang/String;");
+            return dx::VmValue::Ref(call.vm.Model().GetObjectElement(
+                values, GetIntField(call, call.receiver, "mIndex")));
+        };
+    };
+    // 返回当前开始或结束标签的名称。
+    builder.FinalMethod("getName", "()Ljava/lang/String;",
+                        current_string("mNames"));
+    // 返回当前文本事件的内容。
+    builder.FinalMethod("getText", "()Ljava/lang/String;",
+                        current_string("mTexts"));
+    // 关闭解析器并释放其事件数组，重复关闭保持幂等。
+    builder.FinalMethod("close", "()V", [](dx::IntrinsicContext& call) {
+        SetRefField(call, call.receiver, "mEventTypes", "[I",
+                    dx::VmObjectRef{});
+        SetRefField(call, call.receiver, "mNames", "[Ljava/lang/String;",
+                    dx::VmObjectRef{});
+        SetRefField(call, call.receiver, "mTexts", "[Ljava/lang/String;",
+                    dx::VmObjectRef{});
+        SetIntField(call, call.receiver, "mClosed", 1);
+        return dx::VmValue::Void();
+    });
+    return std::move(builder).Build();
+}
+
+}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics::dvm80_android_content_res_Resources {
 
@@ -350,6 +533,37 @@ Decl Declare_android_content_res_Resources(const Context& context) {
             }
             return dx::VmValue::Ref(OpenStream(
                 call, context, ReadApkFile(context, *entry->string_value)));
+        });
+    // 按资源 ID 打开编译后的 XML pull parser。
+    builder.VirtualMethod(
+        "getXml", "(I)Landroid/content/res/XmlResourceParser;",
+        [context](dx::IntrinsicContext& call) {
+            const auto resource_id =
+                static_cast<std::uint32_t>(call.arguments[0].AsInt());
+            const auto* entry = context->arsc.FindById(resource_id);
+            if (entry == nullptr || !entry->string_value.has_value()) {
+                throw dx::VmJavaThrow{
+                    "Landroid/content/res/Resources$NotFoundException;",
+                    "resource id has no XML file entry: " +
+                        std::to_string(resource_id)};
+            }
+            std::vector<std::byte> bytes;
+            try {
+                bytes = ReadApkFile(context, *entry->string_value);
+            } catch (const dx::VmJavaThrow& error) {
+                throw dx::VmJavaThrow{
+                    "Landroid/content/res/Resources$NotFoundException;",
+                    error.message};
+            }
+            std::vector<loader::BinaryXmlPullEvent> events;
+            try {
+                events = loader::ParseBinaryXmlPullEvents(bytes);
+            } catch (const std::exception& error) {
+                throw dx::VmJavaThrow{
+                    "Landroid/content/res/Resources$NotFoundException;",
+                    "resource XML is invalid: " + std::string(error.what())};
+            }
+            return dx::VmValue::Ref(MakeXmlParser(call, events));
         });
     builder.FinalMethod("getString", "(I)Ljava/lang/String;",
         [](dx::IntrinsicContext&) -> dx::VmValue {

@@ -109,6 +109,19 @@ IntrinsicClassDecl DeclareDefaultHandler() {
     return std::move(builder).Build();
 }
 
+IntrinsicClassDecl DeclareXmlPullParser() {
+    auto builder = IntrinsicClassBuilder::Interface(
+        "Lorg/xmlpull/v1/XmlPullParser;");
+    constexpr std::uint32_t kPublicAbstract = 0x0401U;
+    builder.UnimplementedVirtual("getEventType", "()I", kPublicAbstract);
+    builder.UnimplementedVirtual("next", "()I", kPublicAbstract);
+    builder.UnimplementedVirtual("getName", "()Ljava/lang/String;",
+                                 kPublicAbstract);
+    builder.UnimplementedVirtual("getText", "()Ljava/lang/String;",
+                                 kPublicAbstract);
+    return std::move(builder).Build();
+}
+
 }  // namespace
 
 void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
@@ -120,6 +133,7 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(DeclareXmlReaderImpl(services));
     catalog.push_back(DeclareXmlReader(services));
     catalog.push_back(DeclareDefaultHandler());
+    catalog.push_back(DeclareXmlPullParser());
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

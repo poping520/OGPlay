@@ -60,3 +60,19 @@ Android 4.4.4 Dalvik 语义完整暴露为 dexvm core `java.lang.Thread` intrins
   `thread_intrinsic_tests` 锁定；既有 Thread、ClassLoader 和 core catalog 定向回归通过。
 - Tales Release 关闭 survey 实跑中 `libAmazonGamesJni.so` 与 `libTales.final.so` 均完成
   JNI 初始化，下一首错推进到独立的 `android.location.LocationListener` 类层级缺口。
+
+## 第二优先级补充（2026-08-30）
+
+- 补齐 API 19 `Thread.UncaughtExceptionHandler` interface、线程级与默认级 handler
+  字段，以及四个 `get/setUncaughtExceptionHandler` API；引用均由 guest object graph/
+  static storage 强根追踪，默认 handler 按 VM 隔离，setter 接受 null。
+- child `run()` 未捕获 Java 异常时先选择线程显式 handler，再选择默认 handler；回调自身
+  的异常按 AOSP 规则忽略。两者均不存在时保留既有进程致命 `TakeFailure()` 诊断。
+- 补齐 `getStackTrace/getAllStackTraces`，把既有 DexVM safe-point snapshot 转成 guest
+  `StackTraceElement[]`；全量查询只枚举当前 VM 的真实存活 Thread，并返回真实 HashMap。
+- 发布稳定 system/main `ThreadGroup`、`getName/activeCount/enumerate`，Thread 新建时继承
+  main group、终止后 `getThreadGroup` 返回 null；`Thread.toString` 使用 API 19 格式。
+- ThreadGroup handler fallback 尚未纳入异常分发，因此本批直接从显式 handler 落到默认
+  handler；Thread.State、park 与完整 ThreadGroup family 继续 deferred。
+- API shape、switch/threaded 双后端的 VM 隔离/null/显式优先/默认 fallback，以及无
+  handler 的旧失败路径均由 Thread 定向测试锁定。

@@ -31,6 +31,10 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_BootClassLoader();
 [[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_PathClassLoader();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Thread();
+[[nodiscard]] IntrinsicClassDecl
+Declare_java_lang_Thread_UncaughtExceptionHandler();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ThreadGroup();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_StackTraceElement();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Enum();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_Serializable();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_String();

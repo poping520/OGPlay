@@ -257,10 +257,14 @@ java.* 核心 intrinsic。只解释游戏自带 DEX 的应用类；平台类永�
   真实 park 区间维护它，供 session 做有界时序握手，不把它冒充完整 Android scheduler。
   host 侧 `Yield()` 以 progress generation 确认一次 worker handoff，guest `Thread.yield()`
   仍不承诺长期公平。`Shutdown` 先 RequestStop、join 全部宿主线程，再显式展开 stopped
-  context（幂等，记录保留供事后查询）。未捕获异常与 VM 错误记入
-  `TakeFailure()`，由生命周期驱动在帧
-  边界上报，对齐设备上的进程级默认 handler，而不是丢给 `join()` 的调用方；失败文本同时
+  context（幂等，记录保留供事后查询）。`Start` 可接收有界 uncaught dispatcher：
+  Thread intrinsic 先调用线程显式 handler，再调用每 VM 默认 handler，并忽略 handler
+  自身异常；未选择 handler 的未捕获异常与 VM 错误才记入 `TakeFailure()`，由生命周期驱动
+  在帧边界上报，而不是丢给 `join()` 的调用方；失败文本同时
   保留 Java-visible name 与稳定 thread record id，重复线程名不得导致诊断身份歧义。
+  Java `getStackTrace/getAllStackTraces` 复用 `StackSnapshot` safe point 并只投影当前 VM
+  的真实线程；bounded system/main ThreadGroup 只提供稳定归属、名称和存活枚举，不扩张为
+  完整层级调度模型。
   每个 child 启动/退出时经 `NativeMethodBridge` 挂接/释放独立 A32 CPU、guest stack、
   Bionic TLS/thread-info、process thread id 与 JNI local-frame 环境，因此 guest native
   帧存活时仍可安全停泊。`EnsureClassInitialized` 对同线程重入放行，其他 context

@@ -47,6 +47,9 @@ struct VmThreadSnapshot final {
 
 class VmThreadRuntime final {
 public:
+    using UncaughtExceptionDispatcher =
+        std::function<bool(Interpreter&, VmObjectRef, VmObjectRef)>;
+
     explicit VmThreadRuntime(Interpreter& vm);
     ~VmThreadRuntime();
     VmThreadRuntime(const VmThreadRuntime&) = delete;
@@ -61,7 +64,8 @@ public:
     // VMThread.create -> dvmCreateInterpThread). The supplied id was allocated
     // when the Java object was constructed and remains stable after death.
     void Start(VmObjectRef thread_object, std::string name,
-               std::uint64_t thread_id);
+               std::uint64_t thread_id,
+               UncaughtExceptionDispatcher uncaught_dispatcher = {});
 
     [[nodiscard]] bool IsAlive(VmObjectRef thread_object) const;
     [[nodiscard]] std::uint64_t ThreadId(VmObjectRef thread_object) const;

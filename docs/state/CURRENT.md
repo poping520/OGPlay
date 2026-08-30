@@ -1,13 +1,14 @@
 # 当前状态
 
-更新：补齐 Thread context ClassLoader
+更新：补齐 Thread 未捕获异常处理器
 
 ## 当前阶段
 
-- **DVM-48 Thread context ClassLoader 已完成**：root 默认绑定进程稳定 application
-  loader，新 Thread 继承创建者，get/set 保持对象身份且 setter 接受 null；字段由普通
-  guest object graph 追踪，不创建动态 namespace。API19 shape 与双后端语义有机器测试，
-  未新建 WU，记录回原 [DVM-48](../tasks/dexvm/DVM-48.md)。
+- **DVM-48 Thread 第二优先级已完成**：补齐 API19 `UncaughtExceptionHandler` interface、
+  线程/默认四个 get/set 与 instance/static 强根；显式 handler 优先，随后每 VM 默认
+  handler，回调异常忽略，均为空时保留进程致命诊断；另以 safe-point snapshot 补齐两个
+  stack trace API，并发布 bounded main ThreadGroup、终止语义和 API19 `toString`。完整
+  ThreadGroup/State/park 继续 deferred。未新建 WU。
 
 - **DVM-94～96 已完成**：linker metadata 改为追加地址稳定存储；调用解析按
   `InvokeKind` 隔离并消费链接期 `MethodShape`。Intrinsic declaration 只含 own members，
@@ -51,8 +52,8 @@
 
 ## 最近验证
 
-- 2026-08-30 macOS dev/release 受影响目标重建通过；Thread 20/20、ClassLoader 4/4 与
-  core catalog 定向通过；Tales 关闭 survey 越过 context loader 并完成两个 JNI_OnLoad。
+- 2026-08-30 macOS dev `ogplay_tests` 重建通过；Thread 25/25（133017 assertions）、
+  uncaught 旧失败路径与 core catalog 定向通过。
 - 2026-08-30 macOS dev `ogplay_tests` 重建通过；Context/PackageManager/VFS 与 architecture
   定向 12/12 通过。Tales 关闭 survey 实跑越过 package code path，下一缺口为
   `java/lang/Thread.getContextClassLoader()`。

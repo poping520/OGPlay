@@ -37,6 +37,7 @@ struct VmThreadRecord final {
     std::uint64_t id{};
     VmObjectRef object;
     VmMethodId run_method;
+    VmThreadRuntime::UncaughtExceptionDispatcher uncaught_dispatcher;
     std::string name;
     InterpreterExecutionContext context;
     std::unique_ptr<hal::HostThread> host;
@@ -172,17 +173,24 @@ public:
             const auto outcome =
                 vm->Call(record->context, record->run_method, arguments);
             if (outcome.exception.IsValid()) {
-                final_status = VmThreadStatus::failed;
-                failure_text = "uncaught exception on Java thread " +
-                               DescribeForReport(record) + ": " +
-                               vm->Linker()
-                                   .Class(outcome.exception_class)
-                                   .descriptor +
-                               ": " + outcome.exception_message;
-                for (const auto& entry : outcome.exception_stack) {
-                    failure_text += "\n  at " + entry.class_descriptor + "." +
-                                    entry.method_name + " (pc " +
-                                    std::to_string(entry.pc) + ")";
+                const auto handled = record->uncaught_dispatcher &&
+                                     record->uncaught_dispatcher(
+                                         *vm, record->object,
+                                         outcome.exception);
+                if (!handled) {
+                    final_status = VmThreadStatus::failed;
+                    failure_text = "uncaught exception on Java thread " +
+                                   DescribeForReport(record) + ": " +
+                                   vm->Linker()
+                                       .Class(outcome.exception_class)
+                                       .descriptor +
+                                   ": " + outcome.exception_message;
+                    for (const auto& entry : outcome.exception_stack) {
+                        failure_text +=
+                            "\n  at " + entry.class_descriptor + "." +
+                            entry.method_name + " (pc " +
+                            std::to_string(entry.pc) + ")";
+                    }
                 }
             }
         } catch (const DexVmError& error) {
@@ -260,7 +268,8 @@ void VmThreadRuntime::SetRootThreadObject(const VmObjectRef thread_object) {
 }
 
 void VmThreadRuntime::Start(const VmObjectRef thread_object, std::string name,
-                            const std::uint64_t thread_id) {
+                            const std::uint64_t thread_id,
+                            UncaughtExceptionDispatcher uncaught_dispatcher) {
     if (!thread_object.IsValid()) {
         throw VmJavaThrow{"Ljava/lang/NullPointerException;",
                           "Thread.start() receiver is null"};
@@ -293,6 +302,7 @@ void VmThreadRuntime::Start(const VmObjectRef thread_object, std::string name,
     created->id = thread_id;
     created->object = thread_object;
     created->run_method = run_method;
+    created->uncaught_dispatcher = std::move(uncaught_dispatcher);
     created->name = name.empty() ? "Thread-" + std::to_string(created->id)
                                  : std::move(name);
     created->context = impl_->vm->CreateExecutionContext();

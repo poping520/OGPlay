@@ -11,12 +11,14 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
@@ -45,6 +47,9 @@ struct ThreadVm final {
     Interpreter interpreter;
     VmThreadRuntime threads;
     std::atomic<std::int64_t> clock_millis{};
+    std::atomic<std::int32_t> uncaught_calls{};
+    std::atomic<std::int32_t> default_uncaught_calls{};
+    std::atomic<std::int32_t> throwing_uncaught_calls{};
 
     explicit ThreadVm(
         const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
@@ -52,7 +57,42 @@ struct ThreadVm final {
           linker(),
           interpreter(
               [this]() -> DexClassLinker& {
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  auto catalog = CoreIntrinsicCatalog();
+                  auto handler = IntrinsicClassBuilder::Class(
+                      "LThreadUncaughtHandler;", "Ljava/lang/Object;",
+                      {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
+                  handler.VirtualMethod(
+                      "uncaughtException",
+                      "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+                      [this](IntrinsicContext&) {
+                          ++uncaught_calls;
+                          return VmValue::Void();
+                      });
+                  catalog.push_back(std::move(handler).Build());
+                  auto default_handler = IntrinsicClassBuilder::Class(
+                      "LThreadDefaultUncaughtHandler;", "Ljava/lang/Object;",
+                      {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
+                  default_handler.VirtualMethod(
+                      "uncaughtException",
+                      "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+                      [this](IntrinsicContext&) {
+                          ++default_uncaught_calls;
+                          return VmValue::Void();
+                      });
+                  catalog.push_back(std::move(default_handler).Build());
+                  auto throwing_handler = IntrinsicClassBuilder::Class(
+                      "LThreadThrowingUncaughtHandler;", "Ljava/lang/Object;",
+                      {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
+                  throwing_handler.VirtualMethod(
+                      "uncaughtException",
+                      "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+                      [this](IntrinsicContext&) -> VmValue {
+                          ++throwing_uncaught_calls;
+                          throw VmJavaThrow{"Ljava/lang/RuntimeException;",
+                                            "handler failure"};
+                      });
+                  catalog.push_back(std::move(throwing_handler).Build());
+                  linker.RegisterIntrinsics(std::move(catalog));
                   linker.RegisterDex(ReadFixture("interp.dex"));
                   linker.Link();
                   return linker;
@@ -169,6 +209,284 @@ TEST_CASE("dexvm Thread context ClassLoader declarations match API19 shape") {
             });
         REQUIRE(method != thread->methods.end());
         CHECK(method->access_flags == 0x0001U);
+    }
+}
+
+TEST_CASE("dexvm Thread uncaught handler declarations match API19 shape") {
+    const auto catalog = CoreIntrinsicCatalog();
+    const auto thread = std::ranges::find_if(catalog, [](const auto& candidate) {
+        return candidate.descriptor == "Ljava/lang/Thread;";
+    });
+    REQUIRE(thread != catalog.end());
+
+    for (const auto& [name, access] :
+         std::vector<std::pair<std::string_view, std::uint32_t>>{
+             {"uncaughtHandler", 0x0002U},
+             {"defaultUncaughtHandler", 0x000aU}}) {
+        const auto field = std::ranges::find_if(
+            thread->fields, [&](const auto& candidate) {
+                return candidate.name == name &&
+                       candidate.descriptor ==
+                           "Ljava/lang/Thread$UncaughtExceptionHandler;";
+            });
+        REQUIRE(field != thread->fields.end());
+        CHECK(field->access_flags == access);
+    }
+
+    for (const auto& [name, descriptor, access] :
+         std::vector<std::tuple<std::string_view, std::string_view,
+                                std::uint32_t>>{
+             {"getUncaughtExceptionHandler",
+              "()Ljava/lang/Thread$UncaughtExceptionHandler;", 0x0001U},
+             {"setUncaughtExceptionHandler",
+              "(Ljava/lang/Thread$UncaughtExceptionHandler;)V", 0x0001U},
+             {"getDefaultUncaughtExceptionHandler",
+              "()Ljava/lang/Thread$UncaughtExceptionHandler;", 0x0009U},
+             {"setDefaultUncaughtExceptionHandler",
+              "(Ljava/lang/Thread$UncaughtExceptionHandler;)V", 0x0009U}}) {
+        const auto method = std::ranges::find_if(
+            thread->methods, [&](const auto& candidate) {
+                return candidate.name == name &&
+                       candidate.descriptor == descriptor;
+            });
+        REQUIRE(method != thread->methods.end());
+        CHECK(method->access_flags == access);
+    }
+
+    const auto interface =
+        std::ranges::find_if(catalog, [](const auto& candidate) {
+            return candidate.descriptor ==
+                   "Ljava/lang/Thread$UncaughtExceptionHandler;";
+        });
+    REQUIRE(interface != catalog.end());
+    CHECK(interface->is_interface);
+    const auto callback =
+        std::ranges::find_if(interface->methods, [](const auto& candidate) {
+            return candidate.name == "uncaughtException" &&
+                   candidate.descriptor ==
+                       "(Ljava/lang/Thread;Ljava/lang/Throwable;)V";
+        });
+    REQUIRE(callback != interface->methods.end());
+    CHECK(callback->access_flags == 0x0401U);
+}
+
+TEST_CASE("dexvm Thread second priority declarations match API19 shape") {
+    const auto catalog = CoreIntrinsicCatalog();
+    const auto find_class = [&](const std::string_view descriptor) {
+        return std::ranges::find_if(catalog, [&](const auto& candidate) {
+            return candidate.descriptor == descriptor;
+        });
+    };
+    const auto thread = find_class("Ljava/lang/Thread;");
+    REQUIRE(thread != catalog.end());
+    for (const auto& [name, descriptor] :
+         std::vector<std::pair<std::string_view, std::string_view>>{
+             {"getStackTrace", "()[Ljava/lang/StackTraceElement;"},
+             {"getAllStackTraces", "()Ljava/util/Map;"},
+             {"getThreadGroup", "()Ljava/lang/ThreadGroup;"},
+             {"toString", "()Ljava/lang/String;"}}) {
+        CHECK(std::ranges::find_if(thread->methods, [&](const auto& method) {
+                  return method.name == name && method.descriptor == descriptor;
+              }) != thread->methods.end());
+    }
+    const auto start = std::ranges::find_if(thread->methods, [](const auto& method) {
+        return method.name == "start" && method.descriptor == "()V";
+    });
+    REQUIRE(start != thread->methods.end());
+    CHECK(start->access_flags == 0x0021U);
+    const auto destroy =
+        std::ranges::find_if(thread->methods, [](const auto& method) {
+            return method.name == "destroy" && method.descriptor == "()V";
+        });
+    REQUIRE(destroy != thread->methods.end());
+    CHECK((destroy->access_flags & 0x0010U) == 0U);
+
+    const auto stack = find_class("Ljava/lang/StackTraceElement;");
+    REQUIRE(stack != catalog.end());
+    for (const auto name : {"getClassName", "getMethodName", "getFileName",
+                            "getLineNumber", "isNativeMethod", "equals",
+                            "hashCode", "toString"}) {
+        CHECK(std::ranges::find_if(stack->methods, [&](const auto& method) {
+                  return method.name == name;
+              }) != stack->methods.end());
+    }
+    CHECK(find_class("Ljava/lang/ThreadGroup;") != catalog.end());
+}
+
+TEST_CASE("dexvm Thread uncaught handlers are scoped and accept null") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ThreadVm first_vm(backend);
+        const auto first = first_vm.New("Ljava/lang/Thread;");
+        const auto second = first_vm.New("Ljava/lang/Thread;");
+        RequireOk(first_vm.Construct(first, "Ljava/lang/Thread;", "()V"));
+        RequireOk(first_vm.Construct(second, "Ljava/lang/Thread;", "()V"));
+        const auto first_handler =
+            first_vm.New("LThreadUncaughtHandler;");
+        const auto default_handler =
+            first_vm.New("LThreadUncaughtHandler;");
+
+        CHECK_FALSE(first_vm
+                        .Virtual(first, "getUncaughtExceptionHandler",
+                                 "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                        .value.ref.IsValid());
+        RequireOk(first_vm.Virtual(
+            first, "setUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V",
+            {VmValue::Ref(first_handler)}));
+        CHECK(first_vm
+                  .Virtual(first, "getUncaughtExceptionHandler",
+                           "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                  .value.ref == first_handler);
+        CHECK_FALSE(first_vm
+                        .Virtual(second, "getUncaughtExceptionHandler",
+                                 "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                        .value.ref.IsValid());
+
+        RequireOk(first_vm.Static(
+            "Ljava/lang/Thread;", "setDefaultUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V",
+            {VmValue::Ref(default_handler)}));
+        CHECK(first_vm
+                  .Static("Ljava/lang/Thread;",
+                          "getDefaultUncaughtExceptionHandler",
+                          "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                  .value.ref == default_handler);
+
+        RequireOk(first_vm.Virtual(
+            first, "setUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V",
+            {VmValue::Ref(VmObjectRef{})}));
+        RequireOk(first_vm.Static(
+            "Ljava/lang/Thread;", "setDefaultUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V",
+            {VmValue::Ref(VmObjectRef{})}));
+        CHECK_FALSE(first_vm
+                        .Virtual(first, "getUncaughtExceptionHandler",
+                                 "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                        .value.ref.IsValid());
+        CHECK_FALSE(first_vm
+                        .Static("Ljava/lang/Thread;",
+                                "getDefaultUncaughtExceptionHandler",
+                                "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                        .value.ref.IsValid());
+
+        ThreadVm second_vm(backend);
+        CHECK_FALSE(second_vm
+                        .Static("Ljava/lang/Thread;",
+                                "getDefaultUncaughtExceptionHandler",
+                                "()Ljava/lang/Thread$UncaughtExceptionHandler;")
+                        .value.ref.IsValid());
+    }
+}
+
+TEST_CASE("dexvm Thread dispatches explicit and default uncaught handlers") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ThreadVm vm(backend);
+        const auto handler = vm.New("LThreadUncaughtHandler;");
+        const auto default_handler =
+            vm.New("LThreadDefaultUncaughtHandler;");
+        const auto thrower = vm.Runnable("LThreadThrower;");
+
+        RequireOk(vm.Static(
+            "Ljava/lang/Thread;", "setDefaultUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V",
+            {VmValue::Ref(default_handler)}));
+
+        const auto explicit_thread = vm.New("Ljava/lang/Thread;");
+        RequireOk(vm.Construct(explicit_thread, "Ljava/lang/Thread;",
+                               "(Ljava/lang/Runnable;)V",
+                               {VmValue::Ref(thrower)}));
+        RequireOk(vm.Virtual(
+            explicit_thread, "setUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V",
+            {VmValue::Ref(handler)}));
+        RequireOk(vm.Virtual(explicit_thread, "start", "()V"));
+        RequireOk(vm.Virtual(explicit_thread, "join", "()V"));
+        CHECK(vm.uncaught_calls.load() == 1);
+        CHECK(vm.default_uncaught_calls.load() == 0);
+        CHECK_FALSE(vm.threads.TakeFailure().has_value());
+
+        const auto default_thread = vm.New("Ljava/lang/Thread;");
+        RequireOk(vm.Construct(default_thread, "Ljava/lang/Thread;",
+                               "(Ljava/lang/Runnable;)V",
+                               {VmValue::Ref(thrower)}));
+        RequireOk(vm.Virtual(default_thread, "start", "()V"));
+        RequireOk(vm.Virtual(default_thread, "join", "()V"));
+        CHECK(vm.uncaught_calls.load() == 1);
+        CHECK(vm.default_uncaught_calls.load() == 1);
+        CHECK_FALSE(vm.threads.TakeFailure().has_value());
+
+        const auto throwing_handler =
+            vm.New("LThreadThrowingUncaughtHandler;");
+        const auto handler_failure_thread = vm.New("Ljava/lang/Thread;");
+        RequireOk(vm.Construct(handler_failure_thread, "Ljava/lang/Thread;",
+                               "(Ljava/lang/Runnable;)V",
+                               {VmValue::Ref(thrower)}));
+        RequireOk(vm.Virtual(
+            handler_failure_thread, "setUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V",
+            {VmValue::Ref(throwing_handler)}));
+        RequireOk(vm.Virtual(handler_failure_thread, "start", "()V"));
+        RequireOk(vm.Virtual(handler_failure_thread, "join", "()V"));
+        CHECK(vm.throwing_uncaught_calls.load() == 1);
+        CHECK_FALSE(vm.threads.TakeFailure().has_value());
+    }
+}
+
+TEST_CASE("dexvm Thread diagnostics and group APIs follow bounded API19 semantics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        ThreadVm vm(backend);
+        const auto root =
+            vm.Static("Ljava/lang/Thread;", "currentThread",
+                      "()Ljava/lang/Thread;")
+                .value.ref;
+        const auto group =
+            vm.Virtual(root, "getThreadGroup", "()Ljava/lang/ThreadGroup;")
+                .value.ref;
+        REQUIRE(group.IsValid());
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.Virtual(group, "getName", "()Ljava/lang/String;")
+                      .value.ref) == "main");
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.Virtual(root, "toString", "()Ljava/lang/String;")
+                      .value.ref) == "Thread[main,5,main]");
+        CHECK(vm.Virtual(group, "activeCount", "()I").value.AsInt() == 1);
+
+        const auto stack =
+            vm.Virtual(root, "getStackTrace",
+                       "()[Ljava/lang/StackTraceElement;")
+                .value.ref;
+        CHECK(vm.model.ObjectClass(stack) ==
+              vm.Class("[Ljava/lang/StackTraceElement;"));
+        const auto element = vm.New("Ljava/lang/StackTraceElement;");
+        RequireOk(vm.Construct(
+            element, "Ljava/lang/StackTraceElement;",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("sample.Type")),
+             VmValue::Ref(vm.interpreter.NewStringUtf8("run")),
+             VmValue::Ref(VmObjectRef{}), VmValue::Int(-1)}));
+        CHECK(vm.interpreter.StringUtf8(
+                  vm.Virtual(element, "toString", "()Ljava/lang/String;")
+                      .value.ref) == "sample.Type.run(Unknown Source)");
+        const auto all =
+            vm.Static("Ljava/lang/Thread;", "getAllStackTraces",
+                      "()Ljava/util/Map;")
+                .value.ref;
+        CHECK(vm.Virtual(all, "size", "()I").value.AsInt() == 1);
+
+        const auto child = vm.New("Ljava/lang/Thread;");
+        RequireOk(vm.Construct(child, "Ljava/lang/Thread;", "()V"));
+        CHECK(vm.Virtual(child, "getThreadGroup",
+                         "()Ljava/lang/ThreadGroup;")
+                  .value.ref == group);
+        RequireOk(vm.Virtual(child, "start", "()V"));
+        RequireOk(vm.Virtual(child, "join", "()V"));
+        CHECK_FALSE(vm.Virtual(child, "getThreadGroup",
+                               "()Ljava/lang/ThreadGroup;")
+                        .value.ref.IsValid());
     }
 }
 

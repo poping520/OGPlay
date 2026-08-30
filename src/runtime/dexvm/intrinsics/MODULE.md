@@ -60,19 +60,25 @@ SocketFactory family。socket/stream/packet 状态只委托 per-VM `NetworkRunti
 `java_lang.cpp` 中的 interface 段覆盖 pinned libcore `java.lang` 顶层 8 个
 interface；方法表按 Luni 源码建模。已有 `CharSequence.length` handler 保持
 不变，其余接口方法（含 `Readable.read(CharBuffer)`）为显式
-`UnimplementedVirtual`，不伪造成功。不纳入 `Thread.UncaughtExceptionHandler`
-与 `java.lang.annotation`。
+`UnimplementedVirtual`，不伪造成功。嵌套的 `Thread.UncaughtExceptionHandler`
+由 Thread family 独占，`java.lang.annotation` 不纳入。
 
 `java_lang.cpp` 中的 Thread 段是 pinned libcore `Thread.java`/`VMThread.java` 的 core
 façade：声明 Java-visible fields 并负责参数校验/Java exception，生命周期、
 execution context、parking、interrupt、sleep/join 与 identity mapping 全部委托
 `VmThreadRuntime`/`VmMonitorTable`。`start()` 必须 virtual-dispatch `this.run()`；
 基类 `run()` 才 virtual-dispatch target Runnable。纳秒在统一毫秒 Clock 上向上取整；
-priority 与 daemon 仅是明确有界的 guest fact。七个字段通过 builder 的预绑定 handle
+priority 与 daemon 仅是明确有界的 guest fact。字段通过 builder 的预绑定 handle
 访问，handler 参数与字段值统一走 `IntrinsicCall`，不得恢复逐调用 descriptor 查找和
 裸 instance slot 编解码。`contextClassLoader` 同样是受 GC 追踪的声明式字段：root 默认
 指向唯一 application loader，新 Thread 继承创建者，显式 setter 可保存 null；不得因此
-创建新的 class directory 或定义权限。
+创建新的 class directory 或定义权限。uncaught handler 的 instance/static 引用均由对象图
+追踪并按 VM 隔离；异常退出时显式 handler 优先于默认 handler，回调异常按 API 19 忽略，
+均为空才保留进程致命诊断。ThreadGroup fallback 在其 family 发布前不伪造。
+线程诊断把既有 safe-point stack snapshot 投影为 guest `StackTraceElement[]`，全量查询只
+枚举本 VM 存活 Thread 并写入真实 HashMap。bounded ThreadGroup 提供稳定 system/main
+身份、名称与存活线程枚举；Thread 继承 main group，终止后 getter 返回 null，`toString`
+严格输出 `Thread[name,priority,groupName]`。不借此宣称完整 ThreadGroup/Thread.State。
 
 `java.lang.System` 的 `getProperty`/`setProperty` 与 primitive wrapper property
 API 共用每 VM 属性表；默认只发布

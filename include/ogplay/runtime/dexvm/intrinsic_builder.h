@@ -114,6 +114,19 @@ namespace ogplay::runtime::dexvm {
                                              IntrinsicHandler handler,
                                              std::uint32_t access_flags = 0x0001U);
 
+        // Declares an intentional replacement of an inherited virtual.  The
+        // linker rejects this declaration unless an exact overridable parent
+        // signature exists.
+        IntrinsicClassBuilder& OverrideMethod(
+            std::string name, std::string descriptor,
+            IntrinsicHandler handler,
+            std::uint32_t access_flags = 0x0001U);
+
+        IntrinsicClassBuilder& FinalOverrideMethod(
+            std::string name, std::string descriptor,
+            IntrinsicHandler handler,
+            std::uint32_t access_flags = 0x0001U);
+
         IntrinsicClassBuilder& FinalMethod(std::string name,
                                            std::string descriptor,
                                            IntrinsicHandler handler,
@@ -133,6 +146,10 @@ namespace ogplay::runtime::dexvm {
         IntrinsicClassBuilder& UnimplementedVirtual(std::string name,
                                                     std::string descriptor,
                                                     std::uint32_t access_flags = 0x0001U);
+
+        IntrinsicClassBuilder& UnimplementedOverride(
+            std::string name, std::string descriptor,
+            std::uint32_t access_flags = 0x0001U);
 
         IntrinsicClassBuilder& UnimplementedFinal(std::string name,
                                                   std::string descriptor,
@@ -175,6 +192,8 @@ namespace ogplay::runtime::dexvm {
             direct_method,
             static_method,
             virtual_method,
+            override_method,
+            final_override_method,
             final_method,
         };
 

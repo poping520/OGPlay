@@ -91,13 +91,13 @@ struct Dvm88Vm final {
               auto helper = IntrinsicClassBuilder::Class(
                   "Ltest/Dvm88OpenHelper;",
                   "Landroid/database/sqlite/SQLiteOpenHelper;");
-              helper.VirtualMethod("onCreate",
+              helper.OverrideMethod("onCreate",
                   "(Landroid/database/sqlite/SQLiteDatabase;)V",
                   [this](IntrinsicContext&) {
                       ++helper_create_calls;
                       return VmValue::Void();
                   });
-              helper.VirtualMethod("onUpgrade",
+              helper.OverrideMethod("onUpgrade",
                   "(Landroid/database/sqlite/SQLiteDatabase;II)V",
                   [this](IntrinsicContext& call) {
                       ++helper_upgrade_calls;

@@ -229,9 +229,14 @@ void Interpreter::Impl::StepObjectOrInvoke(
             is_range ? opcode - 0x74 + 0x6e : opcode);
         // base: 0x6e virtual, 0x6f super, 0x70 direct, 0x71 static,
         //       0x72 interface
-        const bool direct_or_static = base == 0x70 || base == 0x71;
+        const auto invoke_kind =
+            base == 0x6e ? InvokeKind::virtual_call
+            : base == 0x6f ? InvokeKind::super_call
+            : base == 0x70 ? InvokeKind::private_direct
+            : base == 0x71 ? InvokeKind::static_call
+                           : InvokeKind::interface_call;
         const auto resolved = linker->ResolveMethodIndex(
-            units[frame.pc + 1], direct_or_static);
+            units[frame.pc + 1], invoke_kind);
         const auto& named = linker->Method(resolved.method);
 
         std::vector<std::uint32_t> registers;
@@ -320,42 +325,11 @@ void Interpreter::Impl::StepObjectOrInvoke(
             }
         }
 
-        // Dispatch selection (02 §7 invoke semantics).
-        VmMethodId target = resolved.method;
-        if (base == 0x6e || base == 0x72) {  // virtual / interface
-            const auto receiver_class = model->ObjectClass(receiver);
-            if (!receiver_class.IsValid()) {
-                FailCode("receiver class is unknown for " + named.name);
-            }
-            const auto index = linker->FindVtableIndex(
-                receiver_class, named.name, named.descriptor);
-            if (index.has_value()) {
-                target = linker->Class(receiver_class).vtable[*index];
-            } else if (linker->GapSurveyEnabled() &&
-                       linker->Class(receiver_class).is_intrinsic) {
-                // Survey mode: the receiver's platform class does not declare
-                // the member; stub it on that class and keep going. Copies
-                // first because synthesizing invalidates `named`.
-                const auto name = named.name;
-                const auto descriptor = named.descriptor;
-                target = linker->SynthesizeSurveyMethod(receiver_class, name,
-                                                        descriptor, false);
-            } else {
-                FailCode("virtual dispatch failed for " + named.name + " on " +
-                         linker->Class(receiver_class).descriptor);
-            }
-        } else if (base == 0x6f) {  // super
-            const auto& current = linker->Class(frame.method->owner);
-            if (!current.super.has_value()) {
-                FailCode("invoke-super without superclass");
-            }
-            const auto index = linker->FindVtableIndex(
-                *current.super, named.name, named.descriptor);
-            if (!index.has_value()) {
-                FailCode("invoke-super dispatch failed for " + named.name);
-            }
-            target = linker->Class(*current.super).vtable[*index];
-        }
+        // Both dispatch backends use the same symbolic-to-runtime target
+        // selection.  Operand decoding remains backend-specific.
+        const auto target = SelectInvokeTarget(
+            resolved.method, resolved.kind, resolved.vtable_slot, receiver,
+            frame.method->owner);
         const auto& method = linker->Method(target);
 
         if (method.is_static) {

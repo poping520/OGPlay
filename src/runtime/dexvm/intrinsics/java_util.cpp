@@ -691,8 +691,27 @@ void AddSequenceMethods(IntrinsicClassBuilder &builder,
       flags);
 }
 
-void AddMapMethods(IntrinsicClassBuilder &builder, const bool reject_null,
-                   const bool linked, const std::uint32_t flags = kPublic) {
+struct MapMethodDeclarer final {
+  IntrinsicClassBuilder &target;
+  bool overrides{};
+
+  void VirtualMethod(std::string name, std::string descriptor,
+                     IntrinsicHandler handler,
+                     const std::uint32_t flags = kPublic) const {
+    if (overrides) {
+      target.OverrideMethod(std::move(name), std::move(descriptor),
+                            std::move(handler), flags);
+    } else {
+      target.VirtualMethod(std::move(name), std::move(descriptor),
+                           std::move(handler), flags);
+    }
+  }
+};
+
+void AddMapMethods(IntrinsicClassBuilder &raw_builder, const bool reject_null,
+                   const bool linked, const std::uint32_t flags = kPublic,
+                   const bool overrides = false) {
+  const MapMethodDeclarer builder{raw_builder, overrides};
   builder.VirtualMethod(
       "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
       [reject_null, linked](IntrinsicContext &context) {
@@ -1512,11 +1531,14 @@ IntrinsicClassDecl DeclareSequenceClass(
           return VmValue::Void();
         });
   }
-  AddSequenceMethods(builder, synchronized ? kPublic | kSynchronized : kPublic,
-                     reject_null);
+  if (!stack_methods) {
+    AddSequenceMethods(builder,
+                       synchronized ? kPublic | kSynchronized : kPublic,
+                       reject_null);
+  }
   if (deque)
     AddDequeMethods(builder, reject_null);
-  if (vector_methods) {
+  if (vector_methods && !stack_methods) {
     AddVectorMethods(builder, synchronized ? kPublic | kSynchronized : kPublic);
   }
   if (stack_methods)
@@ -1598,13 +1620,14 @@ IntrinsicClassDecl DeclareMapClass(std::string descriptor,
         [](IntrinsicContext &) { return VmValue::Int(0); }, kProtected);
   }
   AddMapMethods(builder, reject_null, linked,
-                synchronized ? kPublic | kSynchronized : kPublic);
+                synchronized ? kPublic | kSynchronized : kPublic, linked);
   return std::move(builder).Build();
 }
 
 IntrinsicClassDecl DeclareSetClass(std::string descriptor,
                                    std::string superclass,
                                    std::vector<std::string> interfaces) {
+  const bool inherits_set_methods = superclass == "Ljava/util/HashSet;";
   auto builder = IntrinsicClassBuilder::Class(
       std::move(descriptor), std::move(superclass), std::move(interfaces));
   builder.Constructor("()V", [](IntrinsicContext &context) {
@@ -1639,7 +1662,7 @@ IntrinsicClassDecl DeclareSetClass(std::string descriptor,
         }
         return VmValue::Void();
       });
-  AddSetMethods(builder);
+  if (!inherits_set_methods) AddSetMethods(builder);
   return std::move(builder).Build();
 }
 
@@ -2005,7 +2028,7 @@ IntrinsicClassDecl DeclareMapEntry() {
                           node->value = context.arguments[0].ref;
                           return VmValue::Ref(previous);
                         });
-  builder.VirtualMethod(
+  builder.OverrideMethod(
       "equals", "(Ljava/lang/Object;)Z", [](IntrinsicContext &context) {
         const auto other = context.arguments[0].ref;
         if (!other.IsValid())
@@ -2026,7 +2049,7 @@ IntrinsicClassDecl DeclareMapEntry() {
         const auto values_equal = GuestEquals(context, node->value, value->ref);
         return VmValue::Int(values_equal.has_value() && *values_equal);
       });
-  builder.VirtualMethod("hashCode", "()I", [](IntrinsicContext &context) {
+  builder.OverrideMethod("hashCode", "()I", [](IntrinsicContext &context) {
     auto *node = EntryNode(context, context.receiver);
     const auto key_hash = GuestHash(context, node->key);
     if (!key_hash.has_value())

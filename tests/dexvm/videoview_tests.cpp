@@ -332,14 +332,19 @@ TEST_CASE("WifiInfo without a connection does not invent a MAC address") {
 
 TEST_CASE("application Context identity survives Activity replacement") {
     VideoVm vm(FakeFactory());
+    vm.context->package_name = "org.ogplay.inheritance";
     const auto base =
         vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
+    const auto application =
+        vm.interpreter.NewIntrinsicInstance("Landroid/app/Application;");
     const auto first =
         vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
     const auto second =
         vm.interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
     vm.CallOn(first, "attachBaseContext", "(Landroid/content/Context;)V",
               {VmValue::Ref(base)});
+    vm.CallOn(application, "attachBaseContext",
+              "(Landroid/content/Context;)V", {VmValue::Ref(base)});
     vm.CallOn(second, "attachBaseContext", "(Landroid/content/Context;)V",
               {VmValue::Ref(base)});
     const auto first_context = vm.CallOn(
@@ -349,6 +354,78 @@ TEST_CASE("application Context identity survives Activity replacement") {
     CHECK(first_context.IsValid());
     CHECK(first_context == second_context);
     CHECK(first_context != first);
+    const auto package = vm.CallOn(
+        application, "getPackageName", "()Ljava/lang/String;").ref;
+    CHECK(vm.interpreter.StringUtf8(package) == "org.ogplay.inheritance");
+
+    const auto application_class =
+        vm.linker.ResolveDescriptor("Landroid/app/Application;");
+    const auto declared = vm.linker.MethodsOf(application_class);
+    REQUIRE(declared.size() == 2);
+    CHECK(vm.linker.Method(declared[0]).name == "<init>");
+    CHECK(vm.linker.Method(declared[1]).name == "onCreate");
+}
+
+TEST_CASE("Android 4.4 override callbacks preserve framework visibility") {
+    VideoVm vm(FakeFactory());
+    struct ExpectedMethod final {
+        const char* owner;
+        const char* name;
+        const char* descriptor;
+    };
+    constexpr ExpectedMethod protected_methods[] = {
+        {"Landroid/app/Activity;", "onCreate", "(Landroid/os/Bundle;)V"},
+        {"Landroid/app/Activity;", "onStart", "()V"},
+        {"Landroid/app/Activity;", "onRestart", "()V"},
+        {"Landroid/app/Activity;", "onResume", "()V"},
+        {"Landroid/app/Activity;", "onPause", "()V"},
+        {"Landroid/app/Activity;", "onStop", "()V"},
+        {"Landroid/app/Activity;", "onDestroy", "()V"},
+        {"Landroid/content/ContextWrapper;", "attachBaseContext",
+         "(Landroid/content/Context;)V"},
+        {"Landroid/app/IntentService;", "onHandleIntent",
+         "(Landroid/content/Intent;)V"},
+        {"Landroid/view/View;", "onSizeChanged", "(IIII)V"},
+        {"Landroid/os/AsyncTask;", "onPreExecute", "()V"},
+        {"Landroid/os/AsyncTask;", "onPostExecute",
+         "(Ljava/lang/Object;)V"},
+        {"Landroid/os/AsyncTask;", "onProgressUpdate",
+         "([Ljava/lang/Object;)V"},
+        {"Landroid/os/AsyncTask;", "onCancelled",
+         "(Ljava/lang/Object;)V"},
+        {"Landroid/os/AsyncTask;", "doInBackground",
+         "([Ljava/lang/Object;)Ljava/lang/Object;"},
+        {"Landroid/os/ResultReceiver;", "onReceiveResult",
+         "(ILandroid/os/Bundle;)V"},
+        {"Landroid/os/HandlerThread;", "onLooperPrepared", "()V"},
+    };
+    for (const auto& expected : protected_methods) {
+        CAPTURE(expected.owner);
+        CAPTURE(expected.name);
+        CAPTURE(expected.descriptor);
+        const auto owner = vm.linker.ResolveDescriptor(expected.owner);
+        const auto slot = vm.linker.FindVtableIndex(
+            owner, expected.name, expected.descriptor);
+        REQUIRE(slot.has_value());
+        const auto& method =
+            vm.linker.Method(vm.linker.Class(owner).vtable[*slot]);
+        CHECK(method.owner == owner);
+        CHECK((method.access_flags & 0x0007U) == 0x0004U);
+    }
+
+    const auto activity =
+        vm.linker.ResolveDescriptor("Landroid/app/Activity;");
+    const auto public_slot = vm.linker.FindVtableIndex(
+        activity, "onConfigurationChanged",
+        "(Landroid/content/res/Configuration;)V");
+    REQUIRE(public_slot.has_value());
+    CHECK((vm.linker.Method(vm.linker.Class(activity).vtable[*public_slot])
+               .access_flags &
+           0x0007U) == 0x0001U);
+
+    const auto async_task =
+        vm.linker.ResolveDescriptor("Landroid/os/AsyncTask;");
+    CHECK((vm.linker.Class(async_task).access_flags & 0x0400U) != 0U);
 }
 
 TEST_CASE("AnyVideoPlaying reports only actively playing views") {

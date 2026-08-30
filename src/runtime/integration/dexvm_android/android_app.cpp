@@ -32,13 +32,20 @@ Decl Declare_android_app_Activity(const Context& context) {
     });
     const auto lifecycle_noop = dx::IntrinsicHandler(
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
-    builder.VirtualMethod("onCreate", "(Landroid/os/Bundle;)V", lifecycle_noop);
-    builder.VirtualMethod("onStart", "()V", lifecycle_noop);
-    builder.VirtualMethod("onRestart", "()V", lifecycle_noop);
-    builder.VirtualMethod("onResume", "()V", lifecycle_noop);
-    builder.VirtualMethod("onPause", "()V", lifecycle_noop);
-    builder.VirtualMethod("onStop", "()V", lifecycle_noop);
-    builder.VirtualMethod("onDestroy", "()V", lifecycle_noop);
+    builder.VirtualMethod("onCreate", "(Landroid/os/Bundle;)V", lifecycle_noop,
+                          kProtectedAccess);
+    builder.VirtualMethod("onStart", "()V", lifecycle_noop,
+                          kProtectedAccess);
+    builder.VirtualMethod("onRestart", "()V", lifecycle_noop,
+                          kProtectedAccess);
+    builder.VirtualMethod("onResume", "()V", lifecycle_noop,
+                          kProtectedAccess);
+    builder.VirtualMethod("onPause", "()V", lifecycle_noop,
+                          kProtectedAccess);
+    builder.VirtualMethod("onStop", "()V", lifecycle_noop,
+                          kProtectedAccess);
+    builder.VirtualMethod("onDestroy", "()V", lifecycle_noop,
+                          kProtectedAccess);
     builder.VirtualMethod("onConfigurationChanged",
         "(Landroid/content/res/Configuration;)V", lifecycle_noop);
     builder.FinalMethod("getWindow", "()Landroid/view/Window;",
@@ -342,7 +349,7 @@ Decl Declare_android_app_IntentService(const Context& context) {
             throw dx::VmJavaThrow{
                 "Ljava/lang/UnsupportedOperationException;",
                 "IntentService.onHandleIntent must be overridden"};
-        }, 0x0404U);
+        }, kProtectedAccess | kAbstractAccess);
     return std::move(builder).Build();
 }
 

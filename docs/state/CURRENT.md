@@ -1,8 +1,17 @@
 # 当前状态
 
-更新：A6 AudioTrack 字节回压根治；声音长延迟/worker 终止回归已闭合
+更新：DVM-94～96 架构收敛；intrinsic 继承、owner state 与双后端 invoke 统一
 
 ## 当前阶段
+
+- **DVM-94～96 已完成**：linker metadata 改为追加地址稳定存储；调用解析按
+  `InvokeKind` 隔离并消费链接期 `MethodShape`。Intrinsic declaration 只含 own members，
+  `ContextWrapper` 用显式 override 委托 `mBase`，Application/Activity/Service 直接继承。
+  Android 4.4.4 protected callbacks 已校准，真实 DEX protected override 受门禁保护。
+  新增 `OwnedStateTable` 与 Android owner-state trace/sweep，删除 map-key 兼容根。
+  双后端共用 invoke target 和参数/返回验证，默认后端与
+  profile 不变。见 [DVM-94](../tasks/dexvm/DVM-94.md)、[DVM-95](../tasks/dexvm/DVM-95.md)、
+  [DVM-96](../tasks/dexvm/DVM-96.md)、ADR-0028/0029。
 
 - **A6 AudioTrack 声音根因已修复**：legacy 与 DexVM MODE_STREAM 统一按构造
   `buffer_size` 的未消费 PCM 字节阻塞，播放消费唤醒；legacy park 不持 media mutex，
@@ -27,14 +36,6 @@
   在既有 slice/boundary 安全点失败展开，运行期 ADR-0023 预算与 non-renewable
   finalizer 不变。契约见 [DVM-92](../tasks/dexvm/DVM-92.md) 与
   [ADR-0025](../adr/0025-teardown-cancellation-and-graphics-retirement.md)。
-- **Diagnostics WU1 已完成**：schema-1 统一 lifecycle、execution/PC、DVM/Java 栈、GLES、
-  futex/monitor/pacer 与 syscall/native 定容环；busy 独立降级，monitor 分开 entry/notify
-  waiter 且只有 entry→owner 环才确认 cycle。Windows event/POSIX self-pipe、CLI/MCP、
-  teardown timeout、脱敏、当前用户 ACL、单文件/目录配额和 stop→join 已闭合。真实停滞
-  子进程的外部触发 fixture 按用户决定延期，不阻塞 WU1。
-- **Diagnostics WU2 已完成**：排查手册固化 procdump/WinDbg/lldb、host_tid 十进制/十六进制
-  对齐、符号构建与无符号 `module+offset` 边界；对齐工具只合并事实，不猜函数名。
-  见 [Diagnostics](../design/diagnostics/README.md) 与 [ADR-0026](../adr/0026-bounded-stall-snapshots.md)。
 - **DVM-89 能力栈已闭合**：native watchdog 仅按真实阻塞/I/O/GPU/音频/JNI 重入进展
   续期；首帧握手可观测 worker park/终态；AudioTrack marker/periodic 与输出采样率接入
   真实 mixer；GuestProcFacts、根上下文 timed park 快进均已交付。watchdog 与首帧契约
@@ -47,10 +48,9 @@
 
 ## 最近验证
 
-- 2026-08-29 macOS dev 受影响目标重建通过；AudioTrack/OpenSL/teardown 定向 32/32
-  test cases、503 assertions 通过，覆盖字节预算饱和/恢复、legacy worker 连续写、DexVM
-  执行锁释放和粘性退出中断。重建后的 A6 exact 持续到 frame 7492，无 guest fault；Ctrl-C
-  仍卡在已知独立 teardown 问题，测试进程按精确 PID 强制结束。
+- 2026-08-30 macOS dev 受影响目标 `ogplay_tests` 重建通过；DVM-94 protected visibility、
+  Android catalog、真实 DEX lifecycle、DVM-85 scheduler、VideoView/session lifecycle 定向
+  回归通过；`architecture.dexvm_intrinsic_layout` 通过。PVZ 实跑由用户后续执行。
 - 2026-08-29 macOS dev 受影响目标通过；GLES1 扩展 token 与真实 RGBA8 FBO 定向
   2/2 通过（119 assertions），相关 architecture 4/4 通过。A6 Release 手动步进进入
   主菜单并稳定到 frame 10932，无 guest fault。

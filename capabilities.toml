@@ -1222,13 +1222,13 @@ note = "DVM-6 在 L1 之上受检读取方法指令流、try/catch（区间有�
 
 [dexvm.class_linker]
 status = "complete"
-test = "tests/dexvm/interpreter_tests.cpp"
-note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与常量池解析缓存；平台前缀类只认 intrinsic 目录，循环继承/final 覆盖/不可覆盖 intrinsic 装配失败；懒结构预检对照 CodeVerify 子集（未定义 opcode、寄存器越界、分支/payload 目标、move-result 位置）"
+test = "tests/dexvm/class_name_codec_tests.cpp; tests/dexvm/interpreter_tests.cpp; architecture.dexvm_intrinsic_layout"
+note = "DVM-7 注册/层级/布局/vtable/iftable 四步链接与懒结构预检；DVM-94/ADR-0028 将 class/method/field 改为追加地址稳定存储，以 InvokeKind+ResolvedCallSite 隔离 virtual/interface/super/static/private/constructor 缓存，MethodShape 在链接期一次生成。intrinsic declaration 只含 own members，隐式/虚假/final/收窄覆盖链接失败；protected/public/package/private 可见性矩阵受测，Application 等子类直接继承 ContextWrapper"
 
 [dexvm.reflection_linker_metadata]
 status = "complete"
 test = "tests/dexvm/class_name_codec_tests.cpp; related intrinsic builder/hierarchy/dispatch tests"
-note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2：bootstrap/application defining-loader role，direct/flattened interfaces 分离，DEX/intrinsic declared member order，完整 raw access flags 与 direct/static/virtual/interface invocation category；array loader 跟随 component，primitive Class 补齐 V。Chapter 11 closure 的 Class.forName 继续只经该 codec/linker directory，未建立旁路"
+note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2；DVM-94 保持 declared member 仅为 own members，继承 public 查询仍返回正确 declaring class，override 复用同一 vtable slot。bootstrap/application loader、direct/flattened interfaces、raw access flags、array/primitive Class 规则不变"
 
 [dexvm.class_loader_facade]
 status = "complete"
@@ -1272,18 +1272,18 @@ note = "DVM-8 建立统一 VmObjectRef 句柄空间，字符串与基元数组�
 
 [dexvm.gc]
 status = "partial"
-test = "tests/dexvm/gc_tests.cpp; tools.title_profiles_current; tools.scenarios_current; Asphalt 5 title_flow exact 3/3 + forced-GC probe"
-note = "DVM-42..46 已交付精确非移动 STW 标记清除：全 context/JNI/静态/Thread/intern/class/session 根、三类空闲链与预算回减、weak/monitor/store 清理、host-backed 析构、安全 opcode 水位触发、OOM 前回收、确定性 stats/log。DVM-49 以具名 IntrinsicStateTableHooks 统一注册 trace/sweep/clone，现有 throwable/builder/list/map 四表不再由 GC/clone 硬编码。gc_watermark_percent 0..100 默认 75，0 回到 GC-A。A5 默认水位 exact 3/3，16 MiB/1% 强制 GC 仍同 golden 且真实回收；DVM-47 因 A6 APS-4 DT_SONAME 前置阻断、DH 呈现时点不稳定及 A6 长运行未执行，能力保持 partial"
+test = "tests/dexvm/gc_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/audio_track_tests.cpp; tools.title_profiles_current; tools.scenarios_current"
+note = "DVM-42..49 已交付精确非移动 STW 标记清除与具名 IntrinsicStateTableHooks。DVM-95/ADR-0029 新增强类型 OwnedStateTable，强制唯一名称、trace policy、sweep 与可选 clone；Android owner-attached family 删除兼容 key roots，只以 owner 标记触发 child trace，并在 handle 复用前 sweep。process/session 根与非对象 identity 分离；title 长运行 gate 未重跑，能力诚实保持 partial"
 
 [dexvm.interpreter_core]
 status = "complete"
-test = "tests/dexvm/interpreter_tests.cpp"
-note = "DVM-9..12 tagged 帧（零值放宽/wide 对完整性）、表分派全部 dex 035 家族、invoke 三路由（解释/intrinsic/native bridge）、tick 预算与帧深度上限；语义逐 opcode 对照 AOSP mterp，夹具覆盖 NaN 偏置/MIN 除法/移位掩码/饱和转换/switch/payload"
+test = "tests/dexvm/interpreter_tests.cpp; tests/dexvm/reflection_tests.cpp"
+note = "DVM-9..12 tagged 帧、全部 dex 035 家族、invoke 三路由、tick 与帧深度；DVM-96 让 switch/threaded 共用 ResolvedCallSite 目标选择和 MethodShape intrinsic 边界，receiver/参数/返回 kind 在调用点立即验证。对象/字段/数组双后端夹具保持结果、异常和 tick 等价"
 
 [dexvm.interpreter_threaded]
 status = "partial"
 test = "tests/dexvm/fast_code_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/session/title_profile_tests.cpp; Asphalt 5 title_flow threaded exact 3/3; Dungeon Hunter bootstrap threaded gate"
-note = "DVM-53..60 已交付只读 FastCode、单函数 threaded 稳态循环（GCC/Clang handler 尾部 computed goto，MSVC 稠密 switch）、局部 ticks/executed、k35c/k3rc/invoke-wide pair 证明、force_all_bridge 与 dexasm 双后端。invoke 走 ≤8 槽栈缓冲与 vtable_index；解释压帧用 fast_ip。微基准只报告。DVM-58 已接入受检 Profile/CLI/Scenario。title 三 gate 未作本轮验收，默认仍为 switch，能力诚实保持 partial"
+note = "DVM-53..60 已交付只读 FastCode、computed-goto/MSVC 稠密 switch、局部 ticks/executed、k35c/k3rc wide-pair、force_all_bridge 与双后端夹具；DVM-96 将 symbolic-to-runtime invoke target 与 intrinsic shape 校验下沉为共享 helper，≤8 槽栈缓冲和 sync/reload glue 保留。未改 profile/default，title 三 gate 未重跑，能力保持 partial"
 
 [dexvm.execution_contexts]
 status = "complete"
@@ -1332,8 +1332,8 @@ note = "DVM-14/15 descriptor 驱动 A32 soft-float 出向与 233 槽入向第三
 
 [dexvm.intrinsics_android_core]
 status = "partial"
-test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
-note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z` 与 API19 DisplayMetrics/Configuration bounded 事实；DVM-72 发布稳定 guest data/files VFS identity，DVM-77 发布当前 APK PackageManager P0，DVM-81 恢复 Context 继承链，DVM-88 发布 VFS SQLite bounded 数据面，DVM-89 发布 Bitmap.Config、APK path、软件 Surface/Canvas、AudioTrack、ResultReceiver/KeyEvent，并闭合 SDL scancode→Android keyCode、Unicode/meta/repeat 输入链与 getUnicodeChar 两个重载；DVM-90 建立 live UiTree 的 per-holder Surface generation。DVM-91 用真实逻辑 FileDescriptor 替换 PFD 空壳，闭合 PFD.open、AFD ctor/getter、stored AssetManager.openFd 与 MediaPlayer FD/区间数据源；DEFLATED asset 明确抛 FNE。listener 回调、visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
+test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/runtime/native_library_loader_tests.cpp; Asphalt 5 exact dexvm title-flow gate 3/3; Dungeon Hunter exact 到标题画面渲染; Asphalt 6 bootstrap"
+note = "SharedPreferences 已于 ADR-0020 SBX-6 改为 shared_prefs XML 持久化（见 runtime.preferences_persistence）。DVM-18 按 pilot 测量面交付 Android 核心 surface/resource/IO/device/media/widget 能力；DVM-39 增加按 Context 身份的 receiver 生命周期、Intent.removeExtra、VideoView listener/control 与 deferred completion、Activity surface generation、稳定 application Context 及无连接 Wifi 事实。后续批次增加 `Activity.isTaskRoot()Z` 与 API19 DisplayMetrics/Configuration bounded 事实；DVM-72 发布稳定 guest data/files VFS identity，DVM-77 发布当前 APK PackageManager P0，DVM-81 恢复 Context 继承链，DVM-88 发布 VFS SQLite bounded 数据面，DVM-89 发布 Bitmap.Config、APK path、软件 Surface/Canvas、AudioTrack、ResultReceiver/KeyEvent，并闭合 SDL scancode→Android keyCode、Unicode/meta/repeat 输入链与 getUnicodeChar 两个重载；DVM-90 建立 live UiTree 的 per-holder Surface generation。DVM-91 用真实逻辑 FileDescriptor 替换 PFD 空壳，闭合 PFD.open、AFD ctor/getter、stored AssetManager.openFd 与 MediaPlayer FD/区间数据源；DVM-94 缺陷修复按 Android 4.4.4 DEX 校准现有 protected callback access flags，不新增 API。listener 回调、visibility/format/size 重建与完整 framework 仍 deferred；不引入 Binder、ActivityManager、service process、ContentProvider 或 title 分支，能力保持 partial。"
 
 [dexvm.media_data_sources]
 status = "complete"

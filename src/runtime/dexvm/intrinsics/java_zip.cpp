@@ -76,7 +76,7 @@ DeclareZipInputStream(const IntrinsicFieldHandle entry_name) {
             entry_name, entry, context.vm.NewStringUtf8(*name));
         return VmValue::Ref(entry);
       });
-  builder.FinalMethod("read", "([BII)I", [](IntrinsicContext &context) {
+  builder.FinalOverrideMethod("read", "([BII)I", [](IntrinsicContext &context) {
     IntrinsicCall call(context);
     const auto array = call.Ref(0);
     const auto offset = call.Int(1);
@@ -107,7 +107,7 @@ DeclareZipInputStream(const IntrinsicFieldHandle entry_name) {
     }
     return VmValue::Void();
   });
-  builder.FinalMethod("close", "()V", [](IntrinsicContext &context) {
+  builder.FinalOverrideMethod("close", "()V", [](IntrinsicContext &context) {
     context.vm.ZIP().Close(context.receiver);
     return VmValue::Void();
   });

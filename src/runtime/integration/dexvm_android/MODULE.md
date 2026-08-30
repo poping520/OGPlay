@@ -70,6 +70,17 @@ binding。`GLUtils` 读取 context 中既有 Bitmap backing；本层不拥有 GL
   `onCreate` 前完成一次性 attach，现有 Context 方法必须虚派委托 base，不复制资源或
   service 状态。ContextThemeWrapper 只承诺有界 theme id，不引入 Instrumentation、
   ActivityManager、service process 或完整 framework。
+- `Application/Activity/Service` declaration 只声明自身构造器、生命周期和真实 override，
+  禁止复制 Context/ContextWrapper 方法；`ContextWrapper` 的 `mBase` 转发必须逐项使用
+  `OverrideMethod`，继承与 declaring class 只由 linker 决定（ADR-0028）。
+- override callback 的 access flags 必须对齐 pinned Android 4.4.4 DEX 元数据。Protected
+  方法显式使用 `kProtectedAccess`，不得依赖 builder 的 public 默认值；当前门禁覆盖
+  Activity 生命周期、ContextWrapper/IntentService、View、AsyncTask、ResultReceiver 和
+  HandlerThread。此约束只校准已实现 API，不扩大 framework 范围。
+- owner-attached Android 状态统一经具名 state-table trace/sweep；session roots 不枚举 map key。
+  Context/Intent/receiver、value/database、surface/listener/UI、bitmap/canvas、media/video、
+  scheduler/AudioTrack 的死亡 owner 在句柄复用前清理，只有真实 child reference 形成强边；
+  process singleton、UiNodeId、resource/path/thread token 保持独立 identity（ADR-0029）。
 - `Context.getPackageResourcePath()` 遵循 API 19 同进程 `LoadedApk.getResDir()` 语义，返回
   `/data/app/<package>-1.apk` guest 路径；process 装配必须把 context 已持有的原始 APK bytes
   只读发布到该路径。ContextWrapper 只委托 base，禁止返回 frontend 宿主路径或把 `/apk`

@@ -20,16 +20,13 @@ DexClassId DexClassLinker::ResolveTypeIndex(const std::uint32_t type_index) {
     return *cached;
 }
 
-ResolvedMethodRef DexClassLinker::ResolveMethodIndex(
-    const std::uint32_t method_index, const bool direct_or_static) {
+ResolvedCallSite DexClassLinker::ResolveMethodIndex(
+    const std::uint32_t method_index, const InvokeKind requested_kind) {
     if (!impl_->image.has_value() ||
         method_index >= impl_->image->methods.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "method index is out of range");
     }
-    auto& cached = impl_->method_cache[method_index];
-    if (cached.has_value()) return *cached;
-
     const auto& image = *impl_->image;
     const auto& entry = image.methods[method_index];
     const auto owner_descriptor =
@@ -44,21 +41,54 @@ ResolvedMethodRef DexClassLinker::ResolveMethodIndex(
     descriptor += ")";
     descriptor += image.types[prototype.return_type_index].descriptor;
 
+    const auto kind = requested_kind == InvokeKind::private_direct &&
+                              name == "<init>"
+                          ? InvokeKind::constructor
+                          : requested_kind;
+    auto& cached = impl_->method_cache[method_index]
+                                      [static_cast<std::size_t>(kind)];
+    if (cached.has_value()) return *cached;
+
     std::optional<VmMethodId> resolved;
-    if (direct_or_static) {
-        resolved = FindDirectMethod(owner, name, descriptor);
-    }
-    if (!resolved.has_value()) {
-        // Virtual resolution walks the vtable lookup of the named class.
-        if (const auto index = FindVtableIndex(owner, name, descriptor);
-            index.has_value()) {
-            resolved = impl_->ClassAt(owner).vtable[*index];
+    std::optional<std::uint16_t> vtable_slot;
+    const auto declared_direct = [&](const DexClassId declaring) {
+        const auto& extra = impl_->ExtrasAt(declaring);
+        const auto found = extra.direct_lookup.find(MemberKey(name, descriptor));
+        return found == extra.direct_lookup.end()
+                   ? std::optional<VmMethodId>{}
+                   : std::optional<VmMethodId>{found->second};
+    };
+    if (kind == InvokeKind::static_call) {
+        auto current = std::optional<DexClassId>(owner);
+        while (current.has_value() && !resolved.has_value()) {
+            const auto candidate = declared_direct(*current);
+            if (candidate.has_value() && impl_->MethodAt(*candidate).is_static) {
+                resolved = candidate;
+            }
+            current = impl_->ClassAt(*current).super;
+        }
+    } else if (kind == InvokeKind::private_direct ||
+               kind == InvokeKind::constructor) {
+        resolved = declared_direct(owner);
+        if (resolved.has_value()) {
+            const auto& method = impl_->MethodAt(*resolved);
+            const bool valid_constructor =
+                kind == InvokeKind::constructor && name == "<init>" &&
+                !method.is_static;
+            const bool valid_private =
+                kind == InvokeKind::private_direct && name != "<init>" &&
+                !method.is_static;
+            if (!valid_constructor && !valid_private) resolved.reset();
+        }
+    } else {
+        vtable_slot = FindVtableIndex(owner, name, descriptor);
+        if (vtable_slot.has_value()) {
+            resolved = impl_->ClassAt(owner).vtable[*vtable_slot];
         }
     }
-    if (!resolved.has_value()) {
-        resolved = FindDirectMethod(owner, name, descriptor);
-    }
-    if (!resolved.has_value() && impl_->ClassAt(owner).is_interface) {
+    if (!resolved.has_value() &&
+        kind == InvokeKind::interface_call &&
+        impl_->ClassAt(owner).is_interface) {
         // Interface methods dispatch by name+descriptor on the receiver at
         // runtime (02 §7); synthesize the abstract declaration so the
         // constant pool resolves even when the interface (typically an
@@ -68,24 +98,29 @@ ResolvedMethodRef DexClassLinker::ResolveMethodIndex(
         synthetic.name = name;
         synthetic.descriptor = descriptor;
         synthetic.kind = MethodKind::abstract;
+        synthetic.declared_invoke_kind = DeclaredInvokeKind::interface_call;
         const auto parts = SplitDescriptor(descriptor);
+        synthetic.shape = ShapeOf(parts, false);
         synthetic.return_shorty = ShortyOf(parts.return_type);
-        synthetic.ins_words = ArgumentWords(parts, false);
+        synthetic.ins_words = synthetic.shape.incoming_words;
         resolved = impl_->AddMethod(std::move(synthetic));
     }
     if (!resolved.has_value() && GapSurveyEnabled() &&
         IsPlatformDescriptor(owner_descriptor)) {
-        // invoke-direct covers constructors too: <init> is never static,
-        // so its synthesized stub must count the receiver word.
-        resolved = SynthesizeSurveyMethod(
-            owner, name, descriptor, direct_or_static && name != "<init>");
+        resolved = SynthesizeSurveyMethod(owner, name, descriptor, kind);
     }
     if (!resolved.has_value()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "method cannot be resolved: " + owner_descriptor + "->" + name +
                  descriptor);
     }
-    cached = ResolvedMethodRef{*resolved, owner};
+    const auto& method = impl_->MethodAt(*resolved);
+    if ((kind == InvokeKind::static_call) != method.is_static) {
+        Fail(DexVmErrorReason::unresolved_reference,
+             "method static kind mismatch: " + owner_descriptor + "->" +
+                 name + descriptor);
+    }
+    cached = ResolvedCallSite{*resolved, owner, kind, vtable_slot};
     return *cached;
 }
 

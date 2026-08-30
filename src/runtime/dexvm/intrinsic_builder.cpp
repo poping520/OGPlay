@@ -556,7 +556,10 @@ namespace ogplay::runtime::dexvm {
         method.name = std::move(name);
         method.descriptor = std::move(descriptor);
         method.is_static = type == MethodType::static_method;
-        method.overridable = type == MethodType::virtual_method;
+        method.overridable = type == MethodType::virtual_method ||
+                             type == MethodType::override_method;
+        method.must_override = type == MethodType::override_method ||
+                               type == MethodType::final_override_method;
         method.access_flags = access_flags;
         switch (type) {
         case MethodType::constructor:
@@ -571,6 +574,13 @@ namespace ogplay::runtime::dexvm {
             method.invoke_kind = DeclaredInvokeKind::static_call;
             break;
         case MethodType::virtual_method:
+        case MethodType::override_method:
+            method.invoke_kind = declaration_.is_interface
+                                     ? DeclaredInvokeKind::interface_call
+                                     : DeclaredInvokeKind::virtual_call;
+            break;
+        case MethodType::final_override_method:
+            method.access_flags |= 0x0010U;
             method.invoke_kind = declaration_.is_interface
                                      ? DeclaredInvokeKind::interface_call
                                      : DeclaredInvokeKind::virtual_call;
@@ -626,6 +636,26 @@ namespace ogplay::runtime::dexvm {
                       access_flags);
     }
 
+    IntrinsicClassBuilder& IntrinsicClassBuilder::OverrideMethod(
+        std::string name, std::string descriptor, IntrinsicHandler handler,
+        const std::uint32_t access_flags) {
+        ValidateOrdinaryMethodName(name);
+        ValidateImplementedHandler(handler, name);
+        return Method(std::move(name), std::move(descriptor),
+                      MethodType::override_method, std::move(handler),
+                      access_flags);
+    }
+
+    IntrinsicClassBuilder& IntrinsicClassBuilder::FinalOverrideMethod(
+        std::string name, std::string descriptor, IntrinsicHandler handler,
+        const std::uint32_t access_flags) {
+        ValidateOrdinaryMethodName(name);
+        ValidateImplementedHandler(handler, name);
+        return Method(std::move(name), std::move(descriptor),
+                      MethodType::final_override_method,
+                      std::move(handler), access_flags);
+    }
+
     IntrinsicClassBuilder& IntrinsicClassBuilder::FinalMethod(
         std::string name, std::string descriptor, IntrinsicHandler handler,
         const std::uint32_t access_flags) {
@@ -672,6 +702,14 @@ namespace ogplay::runtime::dexvm {
         ValidateOrdinaryMethodName(name);
         return UnimplementedMethod(std::move(name), std::move(descriptor),
                                    MethodType::virtual_method, access_flags);
+    }
+
+    IntrinsicClassBuilder& IntrinsicClassBuilder::UnimplementedOverride(
+        std::string name, std::string descriptor,
+        const std::uint32_t access_flags) {
+        ValidateOrdinaryMethodName(name);
+        return UnimplementedMethod(std::move(name), std::move(descriptor),
+                                   MethodType::override_method, access_flags);
     }
 
     IntrinsicClassBuilder& IntrinsicClassBuilder::UnimplementedFinal(

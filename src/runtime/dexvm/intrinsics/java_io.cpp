@@ -381,7 +381,7 @@ IntrinsicClassDecl DeclareFileInputStream() {
                         }
                         return VmValue::Ref(descriptor);
                       });
-  builder.FinalMethod("close", "()V", [](IntrinsicContext &call) {
+  builder.FinalOverrideMethod("close", "()V", [](IntrinsicContext &call) {
     call.vm.IO().CloseInput(call.receiver);
     const auto field = call.vm.Linker().FindFieldRecursive(
         call.vm.Model().ObjectClass(call.receiver), "fd",
@@ -424,9 +424,9 @@ IntrinsicClassDecl DeclareFileOutputStream() {
                                               "Ljava/io/OutputStream;");
   builder.Constructor("(Ljava/io/File;)V", OpenOutputFromPath(true));
   builder.Constructor("(Ljava/lang/String;)V", OpenOutputFromPath(false));
-  builder.FinalMethod("write", "([B)V", WriteBytes());
-  builder.FinalMethod("flush", "()V", Flush(false));
-  builder.FinalMethod("close", "()V", Flush(true));
+  builder.FinalOverrideMethod("write", "([B)V", WriteBytes());
+  builder.FinalOverrideMethod("flush", "()V", Flush(false));
+  builder.FinalOverrideMethod("close", "()V", Flush(true));
   return std::move(builder).Build();
 }
 
@@ -797,8 +797,8 @@ IntrinsicClassDecl DeclareByteArrayOutputStream() {
     call.vm.IO().SetOutput(call.receiver, {{}, {}, false});
     return VmValue::Void();
   });
-  builder.FinalMethod("write", "([BII)V", WriteRange());
-  builder.FinalMethod("write", "([B)V", WriteBytes());
+  builder.FinalOverrideMethod("write", "([BII)V", WriteRange());
+  builder.FinalOverrideMethod("write", "([B)V", WriteBytes());
   builder.FinalMethod("toByteArray", "()[B", [](IntrinsicContext &call) {
     const auto &bytes = Output(call).bytes;
     const auto array_class = call.vm.Linker().ResolveDescriptor("[B");
@@ -812,13 +812,13 @@ IntrinsicClassDecl DeclareByteArrayOutputStream() {
   builder.FinalMethod("size", "()I", [](IntrinsicContext &call) {
     return VmValue::Int(static_cast<std::int32_t>(Output(call).bytes.size()));
   });
-  builder.FinalMethod(
+  builder.FinalOverrideMethod(
       "toString", "()Ljava/lang/String;", [](IntrinsicContext &call) {
         const auto &bytes = Output(call).bytes;
         return VmValue::Ref(call.vm.NewStringUtf8(std::string(
             reinterpret_cast<const char *>(bytes.data()), bytes.size())));
       });
-  builder.FinalMethod("close", "()V",
+  builder.FinalOverrideMethod("close", "()V",
                       [](IntrinsicContext &) { return VmValue::Void(); });
   return std::move(builder).Build();
 }
@@ -969,7 +969,7 @@ IntrinsicClassDecl DeclareDataInputStream() {
         return VmValue::Ref(call.vm.NewStringUtf8(std::string(
             reinterpret_cast<const char *>(bytes.data()), bytes.size())));
       });
-  builder.FinalMethod("close", "()V", [](IntrinsicContext &call) {
+  builder.FinalOverrideMethod("close", "()V", [](IntrinsicContext &call) {
     call.vm.IO().CloseInput(call.receiver);
     return VmValue::Void();
   });
@@ -991,7 +991,7 @@ IntrinsicClassDecl DeclareDataOutputStream() {
         }
         return VmValue::Void();
       });
-  builder.FinalMethod("close", "()V", FlushOutput(true));
+  builder.FinalOverrideMethod("close", "()V", FlushOutput(true));
   return std::move(builder).Build();
 }
 

@@ -277,7 +277,7 @@ IntrinsicClassDecl DeclareUri() {
         [opaque](IntrinsicContext& context) {
             return VmValue::Int(IntrinsicCall(context).GetInt(opaque));
         });
-    builder.FinalMethod("toString", "()Ljava/lang/String;", raw(spec));
+    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", raw(spec));
     return std::move(builder).Build();
 }
 
@@ -427,14 +427,14 @@ IntrinsicClassDecl DeclareSslSocketFactory(
             return VmValue::Ref(call.vm.NewIntrinsicInstance(
                 "Ljavax/net/ssl/SSLSocketFactory;"));
         });
-    builder.FinalMethod("createSocket", "()Ljava/net/Socket;",
+    builder.FinalOverrideMethod("createSocket", "()Ljava/net/Socket;",
         [](IntrinsicContext& call) {
             const auto socket = call.vm.NewIntrinsicInstance(
                 "Ljavax/net/ssl/SSLSocket;");
             call.vm.Network().CreateSocket(socket, true);
             return VmValue::Ref(socket);
         });
-    builder.FinalMethod("createSocket",
+    builder.FinalOverrideMethod("createSocket",
         "(Ljava/lang/String;I)Ljava/net/Socket;",
         [](IntrinsicContext& call) {
             const auto socket = call.vm.NewIntrinsicInstance(
@@ -571,7 +571,7 @@ IntrinsicClassDecl DeclareInetSocketAddress() {
 IntrinsicClassDecl DeclareSocketInputStream() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/net/SocketInputStream;", "Ljava/io/InputStream;");
-    builder.FinalMethod("read", "([BII)I", [](IntrinsicContext& call) {
+    builder.FinalOverrideMethod("read", "([BII)I", [](IntrinsicContext& call) {
         const auto array = call.arguments[0].ref;
         const auto offset = call.arguments[1].AsInt();
         const auto length = call.arguments[2].AsInt();
@@ -584,7 +584,7 @@ IntrinsicClassDecl DeclareSocketInputStream() {
             return VmValue::Int(static_cast<std::int32_t>(bytes.size()));
         } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
     });
-    builder.FinalMethod("read", "()I", [](IntrinsicContext& call) {
+    builder.FinalOverrideMethod("read", "()I", [](IntrinsicContext& call) {
         try {
             const auto bytes = call.vm.Network().ReadStream(call.receiver, 1);
             return VmValue::Int(bytes.empty() ? -1 :
@@ -597,7 +597,7 @@ IntrinsicClassDecl DeclareSocketInputStream() {
 IntrinsicClassDecl DeclareSocketOutputStream() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljava/net/SocketOutputStream;", "Ljava/io/OutputStream;");
-    builder.FinalMethod("write", "([BII)V", [](IntrinsicContext& call) {
+    builder.FinalOverrideMethod("write", "([BII)V", [](IntrinsicContext& call) {
         const auto array = call.arguments[0].ref;
         const auto offset = call.arguments[1].AsInt();
         const auto length = call.arguments[2].AsInt();
@@ -608,7 +608,7 @@ IntrinsicClassDecl DeclareSocketOutputStream() {
             return VmValue::Void();
         } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
     });
-    builder.FinalMethod("write", "(I)V", [](IntrinsicContext& call) {
+    builder.FinalOverrideMethod("write", "(I)V", [](IntrinsicContext& call) {
         const auto byte = static_cast<std::byte>(call.arguments[0].AsInt());
         try {
             call.vm.Network().WriteStream(call.receiver,
@@ -616,7 +616,7 @@ IntrinsicClassDecl DeclareSocketOutputStream() {
             return VmValue::Void();
         } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
     });
-    builder.FinalMethod("flush", "()V", NoopVoid());
+    builder.FinalOverrideMethod("flush", "()V", NoopVoid());
     return std::move(builder).Build();
 }
 

@@ -82,6 +82,38 @@ namespace {
     return static_cast<std::uint16_t>(words);
 }
 
+[[nodiscard]] MethodShape ShapeOf(const DescriptorParts& parts,
+                                  const bool is_static) {
+    const auto kind_of = [](const std::string_view descriptor) {
+        if (descriptor == "V") return ValueKind::void_value;
+        if (IsWideDescriptor(descriptor)) return ValueKind::wide;
+        if (IsRefDescriptor(descriptor)) return ValueKind::ref;
+        return ValueKind::cat1;
+    };
+    MethodShape shape;
+    shape.return_kind = kind_of(parts.return_type);
+    std::uint32_t words = is_static ? 0U : 1U;
+    shape.parameter_kinds.reserve(parts.parameters.size());
+    shape.parameter_word_offsets.reserve(parts.parameters.size());
+    for (const auto& parameter : parts.parameters) {
+        if (words > 0xffffU) {
+            Fail(DexVmErrorReason::invalid_member,
+                 "method argument word offset overflow");
+        }
+        shape.parameter_word_offsets.push_back(
+            static_cast<std::uint16_t>(words));
+        const auto kind = kind_of(parameter);
+        shape.parameter_kinds.push_back(kind);
+        words += kind == ValueKind::wide ? 2U : 1U;
+    }
+    if (words > 0xffffU) {
+        Fail(DexVmErrorReason::invalid_member,
+             "method argument words overflow");
+    }
+    shape.incoming_words = static_cast<std::uint16_t>(words);
+    return shape;
+}
+
 [[nodiscard]] std::string MemberKey(const std::string& name,
                                     const std::string& descriptor) {
     return name + ":" + descriptor;
@@ -147,10 +179,12 @@ void DexClassLinker::RegisterIntrinsics(
                         method.invoke_kind == DeclaredInvokeKind::virtual_call
                     ? DeclaredInvokeKind::interface_call
                     : method.invoke_kind;
+            linked_method.must_override = method.must_override;
             linked_method.implementation = method.implementation;
             const auto parts = SplitDescriptor(method.descriptor);
+            linked_method.shape = ShapeOf(parts, method.is_static);
             linked_method.return_shorty = ShortyOf(parts.return_type);
-            linked_method.ins_words = ArgumentWords(parts, method.is_static);
+            linked_method.ins_words = linked_method.shape.incoming_words;
             const bool is_direct =
                 linked_method.declared_invoke_kind ==
                     DeclaredInvokeKind::direct ||
@@ -222,7 +256,7 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
     const auto& image = *impl_->image;
 
     impl_->type_cache.assign(image.types.size(), std::nullopt);
-    impl_->method_cache.assign(image.methods.size(), std::nullopt);
+    impl_->method_cache.assign(image.methods.size(), {});
     impl_->field_cache.assign(image.fields.size(), std::nullopt);
 
     for (std::uint32_t class_index = 0; class_index < image.classes.size();
@@ -310,8 +344,9 @@ void DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
                         impl_->dex_bytes, image, *encoded.code);
                 }
                 const auto parts = SplitDescriptor(method.descriptor);
+                method.shape = ShapeOf(parts, method.is_static);
                 method.return_shorty = ShortyOf(parts.return_type);
-                method.ins_words = ArgumentWords(parts, method.is_static);
+                method.ins_words = method.shape.incoming_words;
                 if (method.code.has_value() &&
                     method.code->info.incoming_words != method.ins_words) {
                     Fail(DexVmErrorReason::invalid_code,
@@ -389,6 +424,14 @@ void DexClassLinker::Link() {
         // use, at which point EnsureClassLinked runs every hierarchy/layout/
         // override check for that reachable chain.
         if (linked.is_intrinsic) impl_->LinkClass(linked.id, visiting);
+    }
+    if (!impl_->implicit_intrinsic_overrides.empty()) {
+        std::string message =
+            "intrinsic virtual declarations must use OverrideMethod:\n";
+        for (const auto& violation : impl_->implicit_intrinsic_overrides) {
+            message += "  " + violation + "\n";
+        }
+        Fail(DexVmErrorReason::invalid_override, std::move(message));
     }
     impl_->link_complete = true;
 }
@@ -578,7 +621,7 @@ void DexClassLinker::RecordGapSurveyHit(const std::string& owner_descriptor,
 
 VmMethodId DexClassLinker::SynthesizeSurveyMethod(
     const DexClassId owner, const std::string& name,
-    const std::string& descriptor, const bool is_static) {
+    const std::string& descriptor, const InvokeKind kind) {
     if (!impl_->gap_survey) {
         Fail(DexVmErrorReason::internal_invariant,
              "survey stubs require survey mode");
@@ -587,11 +630,13 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
     method.owner = owner;
     method.name = name;
     method.descriptor = descriptor;
+    const bool is_static = kind == InvokeKind::static_call;
     method.is_static = is_static;
     method.access_flags = is_static ? kAccStatic : 0U;
     method.declared_invoke_kind =
         is_static ? DeclaredInvokeKind::static_call
-        : (name == "<init>" || name == "<clinit>")
+        : (kind == InvokeKind::constructor ||
+           kind == InvokeKind::private_direct)
             ? DeclaredInvokeKind::direct
         : impl_->ClassAt(owner).is_interface
             ? DeclaredInvokeKind::interface_call
@@ -601,10 +646,12 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
     // records the hit, so the stub can never be mistaken for an
     // implementation.
     const auto parts = SplitDescriptor(descriptor);
+    method.shape = ShapeOf(parts, is_static);
     method.return_shorty = ShortyOf(parts.return_type);
-    method.ins_words = ArgumentWords(parts, is_static);
+    method.ins_words = method.shape.incoming_words;
     const bool is_direct =
-        is_static || name == "<init>" || name == "<clinit>";
+        is_static || kind == InvokeKind::constructor ||
+        kind == InvokeKind::private_direct;
     auto& linked = impl_->ClassAt(owner);
     auto& extra = impl_->ExtrasAt(owner);
     const auto slot = static_cast<std::uint16_t>(linked.vtable.size());

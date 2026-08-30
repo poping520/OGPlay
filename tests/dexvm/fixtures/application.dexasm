@@ -127,7 +127,7 @@
     return v0
 .end method
 
-.method public onCreate(Landroid/os/Bundle;)V
+.method protected onCreate(Landroid/os/Bundle;)V
 .registers 4
     invoke-super {v2, v3}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
     new-instance v0, Landroid/view/View;
@@ -138,7 +138,7 @@
     return-void
 .end method
 
-.method public onStart()V
+.method protected onStart()V
 .registers 2
     invoke-super {v1}, Landroid/app/Activity;->onStart()V
     const/4 v0, 2
@@ -146,7 +146,7 @@
     return-void
 .end method
 
-.method public onResume()V
+.method protected onResume()V
 .registers 2
     invoke-super {v1}, Landroid/app/Activity;->onResume()V
     const/4 v0, 3

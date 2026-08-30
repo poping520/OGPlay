@@ -117,6 +117,18 @@ session bootstrap（identity 精确匹配，复用现有 profile bootstrap）
 
 ## 5. 类链接
 
+### 5.1 own-member declaration 与调用类别（DVM-94）
+
+Intrinsic declaration 不展开继承成员：父字段和父方法只由 linker 的 layout/vtable 继承。
+builder 用 `OverrideMethod` 明示真实覆盖；隐式同签名、虚假覆盖、final/static/private 覆盖与
+可见性收窄均在链接期失败。`Application` 因而不声明 `getPackageName` 等 Context API，调用
+沿 Application→ContextWrapper vtable 到显式 `mBase` 委托。
+
+常量池方法解析返回 `ResolvedCallSite`，缓存键包含 `InvokeKind`。方法注册时 descriptor 解析
+为 `MethodShape`，解释器、FastCode、反射和 intrinsic 边界共享参数 word offset 与返回类别。
+class/method/field/extras 使用追加地址稳定存储，lazy array/Survey metadata 不使活动 Frame 的
+局部引用失效。完整决定见 ADR-0028。
+
 强类型 `DexClassId` / `VmMethodId` / `VmFieldId`（固定宽度句柄，不暴露宿主指针，
 与 jni 模块不变量一致）。链接分四步，均可单独测试：
 
@@ -186,6 +198,13 @@ session 级唯一所有者，吸收既有 backlog（`JniObjectArrayStore` 从 ar
   的 GetStringChars / Get*ArrayElements 语义原样保留。
 
 ## 7. 解释器内核
+
+### 7.1 双后端共享调用边界（DVM-96）
+
+switch 读取原始 u2，threaded 读取只读 FastCode；二者随后进入同一 `SelectInvokeTarget` 完成
+virtual/interface/super/direct/static/constructor 目标选择。Intrinsic handler 调用前按
+`MethodShape` 检查 receiver 和参数，返回时立即检查 cat1/wide/ref/void。后端只保留 dispatch、
+局部寄存器/tick cache 与 sync/reload glue；switch 仍是默认，threaded 仍是可选能力。
 
 **帧**：`registers_size` 个 tagged 槽 + 方法引用 + pc + 调用者链。tag 同时
 服务运行期类型检查与 GC 精确根扫描。帧深度有界（默认 512，profile 可调），

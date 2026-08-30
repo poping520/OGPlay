@@ -411,6 +411,10 @@ public:
     [[nodiscard]] VmValue InvokeIntrinsic(const LinkedMethod& method,
                                           VmObjectRef receiver,
                                           std::span<const VmValue> arguments);
+    [[nodiscard]] VmMethodId SelectInvokeTarget(
+        VmMethodId symbolic_method, InvokeKind kind,
+        std::optional<std::uint16_t> vtable_slot, VmObjectRef receiver,
+        DexClassId current_class);
     void EnsureInitialized(InterpreterExecutionState& execution,
                            DexClassId java_class);
 

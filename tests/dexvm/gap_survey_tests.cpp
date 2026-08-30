@@ -63,7 +63,7 @@ TEST_CASE("survey stubs answer neutrally and record every call") {
     vm.linker.EnableGapSurvey();
     const auto java_class = vm.linker.ResolveDescriptor(kAbsent);
     const auto method = vm.linker.SynthesizeSurveyMethod(
-        java_class, "measure", "(I)I", false);
+        java_class, "measure", "(I)I", InvokeKind::virtual_call);
     // Dispatch must find the stub through the normal virtual lookup.
     CHECK(vm.linker.FindVtableIndex(java_class, "measure", "(I)I")
               .has_value());
@@ -97,7 +97,7 @@ TEST_CASE("survey stubs are rejected outside survey mode") {
     const auto object = vm.linker.FindClass("Ljava/lang/Object;");
     REQUIRE(object.has_value());
     CHECK_THROWS_AS(static_cast<void>(vm.linker.SynthesizeSurveyMethod(
-                        *object, "measure", "()V", true)),
+                        *object, "measure", "()V", InvokeKind::static_call)),
                     DexVmError);
 }
 

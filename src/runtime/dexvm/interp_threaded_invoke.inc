@@ -1,9 +1,13 @@
     const auto& invoke = code.invokes[instruction.invoke];
     if (instruction.handler == FastHandler::invoke_checked) {
-        const bool direct_or_static = invoke.base_opcode == 0x70U ||
-                                      invoke.base_opcode == 0x71U;
+        const auto invoke_kind =
+            invoke.base_opcode == 0x6eU ? InvokeKind::virtual_call
+            : invoke.base_opcode == 0x6fU ? InvokeKind::super_call
+            : invoke.base_opcode == 0x70U ? InvokeKind::private_direct
+            : invoke.base_opcode == 0x71U ? InvokeKind::static_call
+                                          : InvokeKind::interface_call;
         const auto resolved = linker->ResolveMethodIndex(
-            static_cast<std::uint32_t>(instruction.extra), direct_or_static);
+            static_cast<std::uint32_t>(instruction.extra), invoke_kind);
         const auto& named = linker->Method(resolved.method);
         if (invoke.registers.size() != named.ins_words) {
             FailCode("invoke argument words do not match descriptor of " +
@@ -118,67 +122,18 @@
                                              argument_count);
 
     const auto named_id = VmMethodId(invoke.resolved_method);
-    VmMethodId target = named_id;
-    if (invoke.base_opcode == 0x6eU) {
-        const auto receiver_class = model->ObjectClass(receiver);
-        if (!receiver_class.IsValid()) {
-            FailCode("receiver class is unknown for invoke-virtual");
-        }
-        const auto& vtable = linker->Class(receiver_class).vtable;
-        if (invoke.vtable_index >= 0 &&
-            static_cast<std::size_t>(invoke.vtable_index) < vtable.size()) {
-            target = vtable[static_cast<std::size_t>(invoke.vtable_index)];
-        } else {
-            const auto& named = linker->Method(named_id);
-            const auto index = linker->FindVtableIndex(
-                receiver_class, named.name, named.descriptor);
-            if (index.has_value()) {
-                target = linker->Class(receiver_class).vtable[*index];
-            } else if (linker->GapSurveyEnabled() &&
-                       linker->Class(receiver_class).is_intrinsic) {
-                const auto name = named.name;
-                const auto descriptor = named.descriptor;
-                target = linker->SynthesizeSurveyMethod(receiver_class, name,
-                                                        descriptor, false);
-            } else {
-                FailCode("virtual dispatch failed for " + named.name + " on " +
-                         linker->Class(receiver_class).descriptor);
-            }
-        }
-    } else if (invoke.base_opcode == 0x72U) {
-        const auto receiver_class = model->ObjectClass(receiver);
-        if (!receiver_class.IsValid()) {
-            FailCode("receiver class is unknown for invoke-interface");
-        }
-        const auto& named = linker->Method(named_id);
-        const auto index = linker->FindVtableIndex(
-            receiver_class, named.name, named.descriptor);
-        if (index.has_value()) {
-            target = linker->Class(receiver_class).vtable[*index];
-        } else if (linker->GapSurveyEnabled() &&
-                   linker->Class(receiver_class).is_intrinsic) {
-            const auto name = named.name;
-            const auto descriptor = named.descriptor;
-            target = linker->SynthesizeSurveyMethod(receiver_class, name,
-                                                    descriptor, false);
-        } else {
-            FailCode("virtual dispatch failed for " + named.name + " on " +
-                     linker->Class(receiver_class).descriptor);
-        }
-    } else if (invoke.base_opcode == 0x6fU) {
-        const auto& current = linker->Class(frame.method->owner);
-        if (!current.super.has_value()) {
-            FailCode("invoke-super without superclass");
-        }
-        const auto& named = linker->Method(named_id);
-        const auto index = linker->FindVtableIndex(
-            *current.super, named.name, named.descriptor);
-        if (!index.has_value()) {
-            FailCode("invoke-super dispatch failed for " + named.name);
-        }
-        target = linker->Class(*current.super).vtable[*index];
-    }
-    const auto target_id = target;
+    const auto kind =
+        invoke.base_opcode == 0x6eU ? InvokeKind::virtual_call
+        : invoke.base_opcode == 0x6fU ? InvokeKind::super_call
+        : invoke.base_opcode == 0x70U ? InvokeKind::private_direct
+        : invoke.base_opcode == 0x71U ? InvokeKind::static_call
+                                      : InvokeKind::interface_call;
+    const auto slot = invoke.vtable_index >= 0
+                          ? std::optional<std::uint16_t>(
+                                static_cast<std::uint16_t>(invoke.vtable_index))
+                          : std::nullopt;
+    const auto target_id = SelectInvokeTarget(
+        named_id, kind, slot, receiver, frame.method->owner);
     const auto callee_static = linker->Method(target_id).is_static;
     const auto callee_kind = linker->Method(target_id).kind;
     const auto callee_owner = linker->Method(target_id).owner;

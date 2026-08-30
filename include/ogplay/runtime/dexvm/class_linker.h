@@ -72,6 +72,32 @@ enum class DeclaredInvokeKind : std::uint8_t {
     interface_call,
 };
 
+// The bytecode call category is part of method resolution.  In particular,
+// invoke-direct, invoke-static and invoke-super must never share a cached
+// answer merely because they name the same constant-pool entry.
+enum class InvokeKind : std::uint8_t {
+    virtual_call,
+    interface_call,
+    super_call,
+    static_call,
+    private_direct,
+    constructor,
+};
+
+enum class ValueKind : std::uint8_t {
+    cat1,
+    wide,
+    ref,
+    void_value,
+};
+
+struct MethodShape final {
+    ValueKind return_kind{ValueKind::void_value};
+    std::vector<ValueKind> parameter_kinds;
+    std::vector<std::uint16_t> parameter_word_offsets;
+    std::uint16_t incoming_words{};
+};
+
 struct IntrinsicMethodDecl final {
     std::string name;
     std::string descriptor;
@@ -79,6 +105,7 @@ struct IntrinsicMethodDecl final {
     bool overridable{};
     std::uint32_t access_flags{};
     DeclaredInvokeKind invoke_kind{DeclaredInvokeKind::direct};
+    bool must_override{};
     IntrinsicHandler implementation;
 };
 
@@ -132,6 +159,8 @@ struct LinkedMethod final {
     bool is_static{};
     bool overridable{};
     DeclaredInvokeKind declared_invoke_kind{DeclaredInvokeKind::direct};
+    MethodShape shape;
+    bool must_override{};
     char return_shorty{'V'};
     std::uint16_t ins_words{};
     std::int32_t vtable_index{-1};
@@ -190,9 +219,11 @@ struct LinkedClass final {
     std::vector<IntrinsicFieldDecl> intrinsic_constants;
 };
 
-struct ResolvedMethodRef final {
+struct ResolvedCallSite final {
     VmMethodId method;
     DexClassId declared_owner;  // class named in the constant pool
+    InvokeKind kind{InvokeKind::virtual_call};
+    std::optional<std::uint16_t> vtable_slot;
 };
 
 struct ResolvedFieldRef final {
@@ -239,8 +270,8 @@ public:
 
     // Constant-pool resolution against the registered dex (cached).
     [[nodiscard]] DexClassId ResolveTypeIndex(std::uint32_t type_index);
-    [[nodiscard]] ResolvedMethodRef ResolveMethodIndex(
-        std::uint32_t method_index, bool direct_or_static);
+    [[nodiscard]] ResolvedCallSite ResolveMethodIndex(
+        std::uint32_t method_index, InvokeKind kind);
     [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(
         std::uint32_t field_index, bool is_static);
 
@@ -294,7 +325,7 @@ public:
     // Synthesizes a neutral platform method on owner and records the hit.
     [[nodiscard]] VmMethodId SynthesizeSurveyMethod(
         DexClassId owner, const std::string& name,
-        const std::string& descriptor, bool is_static);
+        const std::string& descriptor, InvokeKind kind);
     [[nodiscard]] std::vector<GapSurveyHit> GapSurveyHits() const;
 
 private:

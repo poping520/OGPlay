@@ -226,12 +226,12 @@ TEST_CASE("DexVM Java identity is independent from handles and catalog order") {
           static_cast<std::uint32_t>(identity_hash));
 
     auto override = IntrinsicClassBuilder::Class("Lidentity/Override;");
-    override.VirtualMethod("hashCode", "()I", [](IntrinsicContext&) {
+    override.OverrideMethod("hashCode", "()I", [](IntrinsicContext&) {
         return VmValue::Int(777);
     });
     const auto existing_throwable = std::make_shared<VmObjectRef>();
     auto throwing = IntrinsicClassBuilder::Class("Lidentity/Throwing;");
-    throwing.VirtualMethod(
+    throwing.OverrideMethod(
         "hashCode", "()I",
         [existing_throwable](IntrinsicContext& context) {
             context.vm.SetPendingException(*existing_throwable);
@@ -1427,6 +1427,68 @@ TEST_CASE("dexvm intrinsic builder binds implementations without a registry") {
                                            .static_storage[
                                                vm.linker.Field(*name).slot]);
     CHECK(vm.interpreter.StringUtf8(name_ref) == "direct");
+}
+
+TEST_CASE("DVM-96 intrinsic boundary validates arguments receivers and returns") {
+    auto builder = IntrinsicClassBuilder::Class("Lbuilder/BadShape;");
+    builder.StaticMethod("badReturn", "()I", [](IntrinsicContext&) {
+        return VmValue::Ref(VmObjectRef{});
+    });
+    builder.StaticMethod("takesInt", "(I)V", [](IntrinsicContext&) {
+        return VmValue::Void();
+    });
+    builder.VirtualMethod("instance", "()V", [](IntrinsicContext&) {
+        return VmValue::Void();
+    });
+    std::vector<IntrinsicClassDecl> catalog;
+    catalog.push_back(std::move(builder).Build());
+    IntrinsicVm vm(std::move(catalog));
+
+    CHECK_THROWS_AS(
+        vm.interpreter.Call(vm.Static("Lbuilder/BadShape;", "badReturn",
+                                      "()I"), {}),
+        DexVmError);
+    CHECK_THROWS_AS(
+        vm.interpreter.Call(vm.Static("Lbuilder/BadShape;", "takesInt",
+                                      "(I)V"),
+                            std::vector<VmValue>{
+                                VmValue::Ref(VmObjectRef{})}),
+        DexVmError);
+
+    const auto object = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/lang/Object;");
+    CHECK_THROWS_AS(
+        vm.interpreter.Call(vm.Virtual("Lbuilder/BadShape;", "instance",
+                                       "()V"),
+                            std::vector<VmValue>{VmValue::Ref(object)}),
+        DexVmError);
+}
+
+TEST_CASE("DVM-94 method resolution cache is isolated by invoke kind") {
+    Vm vm;
+    const auto& image = vm.linker.Image();
+    const auto find_method_index = [&](const std::string_view wanted) {
+        for (std::uint32_t index = 0; index < image.methods.size(); ++index) {
+            const auto& text =
+                image.strings[image.methods[index].name_string_index].value;
+            const std::string name(text.begin(), text.end());
+            if (name == wanted) return index;
+        }
+        FAIL("method is missing from fixture: ", wanted);
+        return std::uint32_t{};
+    };
+
+    const auto constructor = find_method_index("<init>");
+    const auto direct = vm.linker.ResolveMethodIndex(
+        constructor, InvokeKind::private_direct);
+    CHECK(direct.kind == InvokeKind::constructor);
+    CHECK(vm.linker.Method(direct.method).name == "<init>");
+    CHECK_THROWS_AS(vm.linker.ResolveMethodIndex(
+                        constructor, InvokeKind::static_call),
+                    DexVmError);
+    CHECK_THROWS_AS(vm.linker.ResolveMethodIndex(
+                        constructor, InvokeKind::virtual_call),
+                    DexVmError);
 }
 
 TEST_CASE("dexvm intrinsic call provides typed arguments and prebound fields") {

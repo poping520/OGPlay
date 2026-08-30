@@ -513,15 +513,50 @@ void Interpreter::Impl::PushInterpretedFrame(
     RecordTrace(DexVmTraceKind::method_enter, execution, &method, 0);
 }
 
-VmValue
-Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
-                                   const VmObjectRef receiver,
+VmValue Interpreter::Impl::InvokeIntrinsic(
+    const LinkedMethod& method, const VmObjectRef receiver,
     const std::span<const VmValue> arguments) {
     const auto handler = method.implementation;
     const auto owner_id = method.owner;
     const auto name = method.name;
     const auto descriptor = method.descriptor;
     const auto return_shorty = method.return_shorty;
+    const auto vm_kind = [](const ValueKind kind) {
+        switch (kind) {
+        case ValueKind::cat1: return VmValue::Kind::cat1;
+        case ValueKind::wide: return VmValue::Kind::wide;
+        case ValueKind::ref: return VmValue::Kind::ref;
+        case ValueKind::void_value: return VmValue::Kind::void_value;
+        }
+        return VmValue::Kind::void_value;
+    };
+    if (!method.is_static) {
+        if (!receiver.IsValid()) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "intrinsic receiver is null: " + name +
+                                 descriptor);
+        }
+        const auto actual = model->ObjectClass(receiver);
+        if (!actual.IsValid() || !linker->IsAssignable(method.owner, actual)) {
+            throw DexVmError(DexVmErrorReason::internal_invariant,
+                             "intrinsic receiver type mismatch: " + name +
+                                 descriptor);
+        }
+    }
+    if (arguments.size() != method.shape.parameter_kinds.size()) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "intrinsic argument count mismatch: " + name +
+                             descriptor);
+    }
+    for (std::size_t index = 0; index < arguments.size(); ++index) {
+        if (arguments[index].kind !=
+            vm_kind(method.shape.parameter_kinds[index])) {
+            throw DexVmError(
+                DexVmErrorReason::internal_invariant,
+                "intrinsic argument kind mismatch at " +
+                    std::to_string(index) + ": " + name + descriptor);
+        }
+    }
     if (!handler) {
         const auto& declaring = linker->Class(owner_id).descriptor;
         const auto diagnostic = declaring + "." + name + descriptor;
@@ -545,7 +580,59 @@ Interpreter::Impl::InvokeIntrinsic(const LinkedMethod &method,
     }
     ++stats.intrinsic_calls;
     IntrinsicContext context{*owner, receiver, arguments};
-    return handler(context);
+    auto result = handler(context);
+    if (result.kind != vm_kind(method.shape.return_kind)) {
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         "intrinsic return kind mismatch: " + name +
+                             descriptor);
+    }
+    return result;
+}
+
+VmMethodId Interpreter::Impl::SelectInvokeTarget(
+    const VmMethodId symbolic_method, const InvokeKind kind,
+    const std::optional<std::uint16_t> vtable_slot,
+    const VmObjectRef receiver, const DexClassId current_class) {
+    if (kind != InvokeKind::virtual_call &&
+        kind != InvokeKind::interface_call &&
+        kind != InvokeKind::super_call) {
+        return symbolic_method;
+    }
+    const auto& named = linker->Method(symbolic_method);
+    if (kind == InvokeKind::super_call) {
+        const auto& current = linker->Class(current_class);
+        if (!current.super.has_value()) {
+            FailCode("invoke-super without superclass");
+        }
+        const auto slot = linker->FindVtableIndex(
+            *current.super, named.name, named.descriptor);
+        if (!slot.has_value()) {
+            FailCode("invoke-super dispatch failed for " + named.name);
+        }
+        return linker->Class(*current.super).vtable[*slot];
+    }
+
+    const auto receiver_class = model->ObjectClass(receiver);
+    if (!receiver_class.IsValid()) {
+        FailCode("receiver class is unknown for " + named.name);
+    }
+    const auto& vtable = linker->Class(receiver_class).vtable;
+    if (kind == InvokeKind::virtual_call && vtable_slot.has_value() &&
+        *vtable_slot < vtable.size()) {
+        return vtable[*vtable_slot];
+    }
+    const auto slot = linker->FindVtableIndex(receiver_class, named.name,
+                                               named.descriptor);
+    if (slot.has_value()) return vtable[*slot];
+    if (linker->GapSurveyEnabled() &&
+        linker->Class(receiver_class).is_intrinsic) {
+        const auto name = named.name;
+        const auto descriptor = named.descriptor;
+        return linker->SynthesizeSurveyMethod(receiver_class, name, descriptor,
+                                              kind);
+    }
+    FailCode("virtual dispatch failed for " + named.name + " on " +
+             linker->Class(receiver_class).descriptor);
 }
 
 VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,

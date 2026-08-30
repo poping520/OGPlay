@@ -1,6 +1,8 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
+#include <deque>
 #include <map>
 #include <set>
 #include <string>
@@ -19,6 +21,9 @@ namespace ogplay::runtime::dexvm {
 
 constexpr std::uint32_t kAccStatic = 0x0008;
 constexpr std::uint32_t kAccFinal = 0x0010;
+constexpr std::uint32_t kAccPublic = 0x0001;
+constexpr std::uint32_t kAccPrivate = 0x0002;
+constexpr std::uint32_t kAccProtected = 0x0004;
 constexpr std::uint32_t kAccInterface = 0x0200;
 constexpr std::uint32_t kAccNative = 0x0100;
 constexpr std::uint32_t kAccAbstract = 0x0400;
@@ -38,6 +43,8 @@ using DescriptorParts = MethodTypeDescriptor;
     const std::string& descriptor);
 [[nodiscard]] std::uint16_t ArgumentWords(const DescriptorParts& parts,
                                           bool is_static);
+[[nodiscard]] MethodShape ShapeOf(const DescriptorParts& parts,
+                                  bool is_static);
 [[nodiscard]] std::string MemberKey(const std::string& name,
                                     const std::string& descriptor);
 
@@ -52,10 +59,13 @@ public:
         bool linked{};
     };
 
-    std::vector<LinkedClass> classes;
-    std::vector<ClassExtras> extras;
-    std::vector<LinkedMethod> methods;
-    std::vector<LinkedField> fields;
+    // Lazy arrays, primitive classes and survey members may be appended while
+    // frames are active.  deque keeps all previously published references
+    // stable across those additions.
+    std::deque<LinkedClass> classes;
+    std::deque<ClassExtras> extras;
+    std::deque<LinkedMethod> methods;
+    std::deque<LinkedField> fields;
     std::unordered_map<std::string, std::uint32_t> class_by_descriptor;
     std::unordered_map<std::uint64_t, VmFieldId> intrinsic_field_bindings;
 
@@ -64,10 +74,13 @@ public:
     std::vector<loader::DexClassData> class_data;
 
     std::vector<std::optional<DexClassId>> type_cache;
-    std::vector<std::optional<ResolvedMethodRef>> method_cache;
+    static constexpr std::size_t kInvokeKindCount = 6U;
+    std::vector<std::array<std::optional<ResolvedCallSite>,
+                           kInvokeKindCount>> method_cache;
     std::vector<std::optional<ResolvedFieldRef>> field_cache;
 
     bool link_complete{};
+    std::vector<std::string> implicit_intrinsic_overrides;
 
     // Gap survey state; the map key is "owner" or "owner->member" so the
     // report order is deterministic.
@@ -228,6 +241,12 @@ public:
                              linked.descriptor + "." + method.name);
                 }
                 const auto& overridden = MethodAt(linked.vtable[index]);
+                if (linked.is_intrinsic && !method.must_override) {
+                    implicit_intrinsic_overrides.push_back(
+                        linked.descriptor + "->" + method.name +
+                        method.descriptor + " overrides " +
+                        ClassAt(overridden.owner).descriptor);
+                }
                 if (overridden.kind == MethodKind::intrinsic &&
                     !overridden.overridable && !linked.is_intrinsic) {
                     Fail(DexVmErrorReason::invalid_override,
@@ -241,9 +260,27 @@ public:
                              ClassAt(overridden.owner).descriptor + "." +
                              overridden.name + " by " + linked.descriptor);
                 }
+                const auto visibility_rank = [](const std::uint32_t flags) {
+                    if ((flags & kAccPublic) != 0U) return 3;
+                    if ((flags & kAccProtected) != 0U) return 2;
+                    if ((flags & kAccPrivate) != 0U) return 0;
+                    return 1;  // package visibility
+                };
+                if (visibility_rank(method.access_flags) <
+                    visibility_rank(overridden.access_flags)) {
+                    Fail(DexVmErrorReason::invalid_override,
+                         "override narrows visibility: " + linked.descriptor +
+                             "." + method.name + method.descriptor);
+                }
                 method.vtable_index = static_cast<std::int32_t>(index);
                 linked.vtable[index] = method_id;
             } else {
+                if (linked.is_intrinsic && method.must_override) {
+                    Fail(DexVmErrorReason::invalid_override,
+                         "intrinsic override has no inherited virtual method: " +
+                             linked.descriptor + "." + method.name +
+                             method.descriptor);
+                }
                 method.vtable_index =
                     static_cast<std::int32_t>(linked.vtable.size());
                 extra.virtual_lookup.emplace(

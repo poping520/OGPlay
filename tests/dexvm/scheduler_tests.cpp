@@ -32,7 +32,7 @@ std::vector<IntrinsicClassDecl> TestCatalog(
     std::vector<IntrinsicClassDecl> result;
     auto handler = IntrinsicClassBuilder::Class(
         "Ltest/RecordingHandler;", "Landroid/os/Handler;");
-    handler.VirtualMethod("handleMessage", "(Landroid/os/Message;)V",
+    handler.OverrideMethod("handleMessage", "(Landroid/os/Message;)V",
         [messages](IntrinsicContext& call) {
             messages->push_back(static_cast<std::int32_t>(
                 call.vm.Model().InstanceSlots(call.arguments[0].ref)[0].bits));
@@ -52,7 +52,7 @@ std::vector<IntrinsicClassDecl> TestCatalog(
 
     auto timer = IntrinsicClassBuilder::Class(
         "Ltest/RecordingTimerTask;", "Ljava/util/TimerTask;");
-    timer.VirtualMethod("run", "()V", [timer_calls](IntrinsicContext&) {
+    timer.OverrideMethod("run", "()V", [timer_calls](IntrinsicContext&) {
         ++*timer_calls;
         return VmValue::Void();
     });
@@ -60,12 +60,12 @@ std::vector<IntrinsicClassDecl> TestCatalog(
 
     auto countdown = IntrinsicClassBuilder::Class(
         "Ltest/RecordingCountDown;", "Landroid/os/CountDownTimer;");
-    countdown.VirtualMethod("onTick", "(J)V",
+    countdown.OverrideMethod("onTick", "(J)V",
         [ticks](IntrinsicContext& call) {
             ticks->push_back(call.arguments[0].AsLong());
             return VmValue::Void();
         });
-    countdown.VirtualMethod("onFinish", "()V",
+    countdown.OverrideMethod("onFinish", "()V",
         [finishes](IntrinsicContext&) {
             ++*finishes;
             return VmValue::Void();
@@ -74,7 +74,7 @@ std::vector<IntrinsicClassDecl> TestCatalog(
 
     auto receiver = IntrinsicClassBuilder::Class(
         "Ltest/RecordingResultReceiver;", "Landroid/os/ResultReceiver;");
-    receiver.VirtualMethod("onReceiveResult", "(ILandroid/os/Bundle;)V",
+    receiver.OverrideMethod("onReceiveResult", "(ILandroid/os/Bundle;)V",
         [receiver_results](IntrinsicContext& call) {
             receiver_results->emplace_back(
                 call.arguments[0].AsInt(), call.arguments[1].ref);
@@ -84,13 +84,13 @@ std::vector<IntrinsicClassDecl> TestCatalog(
 
     auto async = IntrinsicClassBuilder::Class(
         "Ltest/RecordingAsyncTask;", "Landroid/os/AsyncTask;");
-    async.VirtualMethod(
+    async.OverrideMethod(
         "doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;",
         [async_background](IntrinsicContext&) {
             ++*async_background;
             return VmValue::Ref(VmObjectRef{});
         });
-    async.VirtualMethod("onPostExecute", "(Ljava/lang/Object;)V",
+    async.OverrideMethod("onPostExecute", "(Ljava/lang/Object;)V",
         [async_post](IntrinsicContext&) {
             ++*async_post;
             return VmValue::Void();

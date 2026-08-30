@@ -63,24 +63,27 @@ void WriteParcelAtom(DexVmAndroidContext::ParcelState& parcel,
 namespace ogplay::runtime::android_intrinsics::dvm80_android_os_AsyncTask {
 
 Decl Declare_android_os_AsyncTask(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/AsyncTask;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class(
+        "Landroid/os/AsyncTask;", "Ljava/lang/Object;", {},
+        kPublicAccess | kAbstractAccess);
     builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
         std::scoped_lock lock(context->scheduler_mutex);
         context->async_tasks.try_emplace(call.receiver.Value());
         return dx::VmValue::Void();
     });
-    builder.VirtualMethod("onPreExecute", "()V", NeutralHandler('V'));
+    builder.VirtualMethod("onPreExecute", "()V", NeutralHandler('V'),
+                          kProtectedAccess);
     builder.VirtualMethod("onPostExecute", "(Ljava/lang/Object;)V",
-                          NeutralHandler('V'));
+                          NeutralHandler('V'), kProtectedAccess);
     builder.VirtualMethod("onProgressUpdate", "([Ljava/lang/Object;)V",
-                          NeutralHandler('V'));
+                          NeutralHandler('V'), kProtectedAccess);
     builder.VirtualMethod("onCancelled", "(Ljava/lang/Object;)V",
-                          NeutralHandler('V'));
+                          NeutralHandler('V'), kProtectedAccess);
     builder.VirtualMethod("doInBackground", "([Ljava/lang/Object;)Ljava/lang/Object;",
         [](dx::IntrinsicContext&) -> dx::VmValue {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "AsyncTask.doInBackground is not overridden"};
-        });
+        }, kProtectedAccess | kAbstractAccess);
     builder.FinalMethod("execute", "([Ljava/lang/Object;)Landroid/os/AsyncTask;",
         [context](dx::IntrinsicContext& call) {
             StartAsyncTask(call, context, call.receiver,
@@ -999,7 +1002,8 @@ Decl Declare_android_os_ResultReceiver(const Context& context) {
         });
     builder.VirtualMethod(
         "onReceiveResult", "(ILandroid/os/Bundle;)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, 0x0004U);
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
+        kProtectedAccess);
     builder.VirtualMethod("describeContents", "()I",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.VirtualMethod("writeToParcel", "(Landroid/os/Parcel;I)V",
@@ -1056,8 +1060,9 @@ Decl Declare_android_os_HandlerThread(const Context& context) {
     };
     builder.Constructor("(Ljava/lang/String;)V", construct);
     builder.Constructor("(Ljava/lang/String;I)V", construct);
-    builder.VirtualMethod("onLooperPrepared", "()V", NeutralHandler('V'));
-    builder.VirtualMethod("run", "()V", [context](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("onLooperPrepared", "()V", NeutralHandler('V'),
+                          kProtectedAccess);
+    builder.OverrideMethod("run", "()V", [context](dx::IntrinsicContext& call) {
         const auto looper = PrepareLooper(call, context, false);
         PublishHandlerThreadLooper(context, call.receiver, looper);
         auto& linker = call.vm.Linker();

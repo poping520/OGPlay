@@ -470,7 +470,7 @@ IntrinsicClassDecl Declare_java_lang_Class() {
                     " cannot be cast to " + ClassNameCodec::ClassGetName(
                     context.vm.Linker().Class(desired).descriptor)};
         });
-    builder.VirtualMethod("toString", "()Ljava/lang/String;",
+    builder.OverrideMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
             const auto represented = Represented(context);
             const auto& linked = context.vm.Linker().Class(represented);
@@ -1045,20 +1045,20 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
             (context.vm.Reflection().ConstructorMetadata(context.receiver)
                  .access_flags & 0x1000U) != 0U ? 1 : 0);
     });
-    builder.VirtualMethod("equals", "(Ljava/lang/Object;)Z",
+    builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.Reflection().SemanticallyEqual(
                                     context.receiver,
                                     context.arguments[0].ref) ? 1 : 0);
         });
-    builder.VirtualMethod("hashCode", "()I", [](IntrinsicContext& context) {
+    builder.OverrideMethod("hashCode", "()I", [](IntrinsicContext& context) {
         const auto& meta = context.vm.Reflection().ConstructorMetadata(
             context.receiver);
         return VmValue::Int(detail::JavaUtf8Hash(
             context, ClassNameCodec::ClassGetName(
                 context.vm.Linker().Class(meta.declaring_class).descriptor)));
     });
-    builder.VirtualMethod("toString", "()Ljava/lang/String;",
+    builder.OverrideMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
             const auto& meta = context.vm.Reflection().ConstructorMetadata(
                 context.receiver);
@@ -1146,13 +1146,13 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
             (context.vm.Reflection().FieldMetadata(context.receiver)
                  .access_flags & 0x1000U) != 0U ? 1 : 0);
     });
-    builder.VirtualMethod("equals", "(Ljava/lang/Object;)Z",
+    builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.Reflection().SemanticallyEqual(
                                     context.receiver,
                                     context.arguments[0].ref) ? 1 : 0);
         });
-    builder.VirtualMethod("hashCode", "()I", [](IntrinsicContext& context) {
+    builder.OverrideMethod("hashCode", "()I", [](IntrinsicContext& context) {
         const auto& meta = context.vm.Reflection().FieldMetadata(
             context.receiver);
         const auto& linker = context.vm.Linker();
@@ -1162,7 +1162,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
                 context, ClassNameCodec::ClassGetName(
                     linker.Class(meta.declaring_class).descriptor)));
     });
-    builder.VirtualMethod("toString", "()Ljava/lang/String;",
+    builder.OverrideMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
             const auto& meta = context.vm.Reflection().FieldMetadata(
                 context.receiver);
@@ -1443,19 +1443,19 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
             (context.vm.Reflection().MethodMetadata(context.receiver)
                  .access_flags & 0x1000U) != 0U ? 1 : 0);
     });
-    builder.VirtualMethod("equals", "(Ljava/lang/Object;)Z",
+    builder.OverrideMethod("equals", "(Ljava/lang/Object;)Z",
         [](IntrinsicContext& context) {
             return VmValue::Int(context.vm.Reflection().SemanticallyEqual(
                                     context.receiver,
                                     context.arguments[0].ref) ? 1 : 0);
         });
-    builder.VirtualMethod("hashCode", "()I", [](IntrinsicContext& context) {
+    builder.OverrideMethod("hashCode", "()I", [](IntrinsicContext& context) {
         const auto& meta = context.vm.Reflection().MethodMetadata(
             context.receiver);
         const auto& method = context.vm.Linker().Method(meta.method);
         return VmValue::Int(detail::JavaUtf8Hash(context, method.name));
     });
-    builder.VirtualMethod("toString", "()Ljava/lang/String;",
+    builder.OverrideMethod("toString", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {
             const auto& meta = context.vm.Reflection().MethodMetadata(
                 context.receiver);

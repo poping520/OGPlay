@@ -105,3 +105,69 @@ foreach(descriptor IN LISTS required_core_descriptors)
         message(FATAL_ERROR "Missing core-owned descriptor: ${descriptor}")
     endif()
 endforeach()
+
+# DVM-94/95 architecture contracts. Link-time validation is the semantic
+# gate; these checks prevent the explicit APIs and the canonical Application
+# inheritance example from being mechanically removed.
+file(READ "${ROOT}/include/ogplay/runtime/dexvm/class_linker.h" linker_header)
+file(READ "${ROOT}/include/ogplay/runtime/dexvm/intrinsic_builder.h" builder_header)
+file(READ "${ROOT}/include/ogplay/runtime/dexvm/owned_state_table.h" state_header)
+foreach(token IN ITEMS "enum class InvokeKind" "struct MethodShape" "ResolvedCallSite")
+    string(FIND "${linker_header}" "${token}" found)
+    if(found EQUAL -1)
+        message(FATAL_ERROR "Missing DVM-94 linker contract: ${token}")
+    endif()
+endforeach()
+foreach(token IN ITEMS "OverrideMethod" "UnimplementedOverride")
+    string(FIND "${builder_header}" "${token}" found)
+    if(found EQUAL -1)
+        message(FATAL_ERROR "Missing DVM-94 builder contract: ${token}")
+    endif()
+endforeach()
+string(FIND "${state_header}" "class OwnedStateTable" found)
+if(found EQUAL -1)
+    message(FATAL_ERROR "Missing DVM-95 OwnedStateTable contract")
+endif()
+
+file(READ "${android_dir}/android_app.cpp" android_app)
+foreach(copied_method IN ITEMS "getPackageName" "getAssets" "getFilesDir")
+    string(FIND "${android_app}" "${copied_method}" found)
+    if(NOT found EQUAL -1)
+        message(FATAL_ERROR
+            "Application declaration copied inherited Context method: ${copied_method}")
+    endif()
+endforeach()
+
+# DVM-94 regression: Android 4.4 protected subclass callbacks must never fall
+# back to IntrinsicClassBuilder's public default. Counts are lower bounds so
+# adding another audited protected API does not break the gate.
+file(READ "${android_dir}/shared.h" android_shared)
+string(FIND "${android_shared}" "kProtectedAccess" protected_access_found)
+if(protected_access_found EQUAL -1)
+    message(FATAL_ERROR "Missing explicit Android protected access contract")
+endif()
+foreach(source_and_minimum IN ITEMS
+        "android_app.cpp:8"
+        "android_content.cpp:1"
+        "android_os.cpp:7"
+        "android_view.cpp:1")
+    string(REPLACE ":" ";" pair "${source_and_minimum}")
+    list(GET pair 0 source)
+    list(GET pair 1 minimum)
+    file(READ "${android_dir}/${source}" protected_source)
+    string(REGEX MATCHALL "kProtectedAccess" protected_uses
+           "${protected_source}")
+    list(LENGTH protected_uses protected_count)
+    if(protected_count LESS minimum)
+        message(FATAL_ERROR
+            "Android protected callback metadata regressed in ${source}: expected at least ${minimum}, found ${protected_count}")
+    endif()
+endforeach()
+
+file(READ "${ROOT}/tests/dexvm/videoview_tests.cpp" android_contract_tests)
+string(FIND "${android_contract_tests}"
+       "Android 4.4 override callbacks preserve framework visibility"
+       visibility_test_found)
+if(visibility_test_found EQUAL -1)
+    message(FATAL_ERROR "Missing Android override visibility regression test")
+endif()

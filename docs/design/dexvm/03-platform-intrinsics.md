@@ -16,6 +16,16 @@ intrinsic 是**代码定义的不可变目录**（对齐 `input.template_catalog
 
 ## 2. intrinsic 类的构成
 
+Declaration 只列 own members。父类 API 不复制到子类；行为不同的覆盖必须使用显式
+`OverrideMethod`，构造器、static factory 与类自身生命周期方法继续由本类声明。Android
+Context 链中只有 ContextWrapper 的 `mBase` 转发是覆盖，Application/Activity/Service 直接继承。
+平台 callback 的 access flags 对齐 pinned API 19 DEX；protected 方法必须显式声明，不能
+使用 builder 的 public 默认值，也不能通过放宽 Java override 可见性规则兼容错误 metadata。
+
+以 guest object 为 owner 的 side state 通过具名 state-table 参与 GC：owner 被标记时 trace
+child，死亡时 sweep，clone 默认不复制。session/process root 和 UiNodeId/resource/path/thread
+token 等非对象 identity 不得用 owner map key 伪装。见 ADR-0028、ADR-0029。
+
 每个 intrinsic 类在目录中声明：
 
 | 要素 | 说明 |

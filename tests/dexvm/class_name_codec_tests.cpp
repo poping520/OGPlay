@@ -8,6 +8,7 @@
 #include "ogplay/runtime/dexvm/class_name_codec.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
+#include "ogplay/runtime/dexvm/interpreter.h"
 
 namespace {
 
@@ -178,6 +179,138 @@ TEST_CASE("reflection linker metadata preserves intrinsic declarations") {
         linker.Method(linker.Class(*child_id).own_virtual_methods[0]);
     CHECK(child_method.declared_invoke_kind ==
           DeclaredInvokeKind::interface_call);
+}
+
+TEST_CASE("DVM-94 intrinsic declarations inherit and replace stable vtable slots") {
+    auto parent = IntrinsicClassBuilder::Class("Ltest/Dvm94Parent;");
+    parent.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    parent.VirtualMethod("value", "(JLjava/lang/Object;)I",
+                         [](IntrinsicContext&) { return VmValue::Int(1); });
+    parent.FinalMethod("sealed", "()I",
+                       [](IntrinsicContext&) { return VmValue::Int(2); });
+    parent.StaticMethod("factory", "()I",
+                        [](IntrinsicContext&) { return VmValue::Int(3); });
+    parent.InstanceField("payload", "Ljava/lang/Object;");
+
+    auto child = IntrinsicClassBuilder::Class("Ltest/Dvm94Child;",
+                                               "Ltest/Dvm94Parent;");
+    child.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+
+    auto grandchild = IntrinsicClassBuilder::Class(
+        "Ltest/Dvm94Grandchild;", "Ltest/Dvm94Child;");
+    grandchild.OverrideMethod(
+        "value", "(JLjava/lang/Object;)I",
+        [](IntrinsicContext&) { return VmValue::Int(4); });
+
+    auto catalog = CoreIntrinsicCatalog();
+    catalog.push_back(std::move(parent).Build());
+    catalog.push_back(std::move(child).Build());
+    catalog.push_back(std::move(grandchild).Build());
+    DexClassLinker linker;
+    linker.RegisterIntrinsics(catalog);
+    linker.Link();
+
+    const auto parent_id = linker.ResolveDescriptor("Ltest/Dvm94Parent;");
+    const auto child_id = linker.ResolveDescriptor("Ltest/Dvm94Child;");
+    const auto grandchild_id =
+        linker.ResolveDescriptor("Ltest/Dvm94Grandchild;");
+    const auto slot = linker.FindVtableIndex(parent_id, "value",
+                                              "(JLjava/lang/Object;)I");
+    REQUIRE(slot.has_value());
+    const auto inherited = linker.Class(parent_id).vtable[*slot];
+    CHECK(linker.Class(child_id).vtable[*slot] == inherited);
+    CHECK(linker.Method(linker.Class(child_id).vtable[*slot]).owner == parent_id);
+    CHECK(linker.Class(grandchild_id).vtable[*slot] != inherited);
+    CHECK(linker.Method(linker.Class(grandchild_id).vtable[*slot]).owner ==
+          grandchild_id);
+    CHECK(linker.Class(child_id).own_virtual_methods.empty());
+
+    const auto& shape = linker.Method(inherited).shape;
+    CHECK(shape.return_kind == ValueKind::cat1);
+    REQUIRE(shape.parameter_kinds.size() == 2);
+    CHECK(shape.parameter_kinds[0] == ValueKind::wide);
+    CHECK(shape.parameter_kinds[1] == ValueKind::ref);
+    CHECK(shape.parameter_word_offsets == std::vector<std::uint16_t>{1, 3});
+    CHECK(shape.incoming_words == 4);
+
+    const auto before = &linker.Method(inherited);
+    static_cast<void>(linker.ResolveDescriptor("[Ltest/Dvm94Child;"));
+    CHECK(&linker.Method(inherited) == before);
+}
+
+TEST_CASE("DVM-94 intrinsic override intent is checked during linking") {
+    const auto link_with_child = [](const bool explicit_override,
+                                    const std::string& method) {
+        auto parent = IntrinsicClassBuilder::Class("Ltest/Dvm94GateParent;");
+        parent.VirtualMethod("open", "()V",
+                             [](IntrinsicContext&) { return VmValue::Void(); });
+        parent.FinalMethod("sealed", "()V",
+                           [](IntrinsicContext&) { return VmValue::Void(); });
+        auto child = IntrinsicClassBuilder::Class(
+            "Ltest/Dvm94GateChild;", "Ltest/Dvm94GateParent;");
+        const auto handler = [](IntrinsicContext&) { return VmValue::Void(); };
+        if (explicit_override) {
+            child.OverrideMethod(method, "()V", handler);
+        } else {
+            child.VirtualMethod(method, "()V", handler);
+        }
+        auto catalog = CoreIntrinsicCatalog();
+        catalog.push_back(std::move(parent).Build());
+        catalog.push_back(std::move(child).Build());
+        DexClassLinker linker;
+        linker.RegisterIntrinsics(catalog);
+        linker.Link();
+    };
+
+    CHECK_THROWS_AS(link_with_child(false, "open"), DexVmError);
+    CHECK_THROWS_AS(link_with_child(true, "missing"), DexVmError);
+    CHECK_THROWS_AS(link_with_child(true, "sealed"), DexVmError);
+
+    CHECK_THROWS_AS(
+        [] {
+            auto parent = IntrinsicClassBuilder::Class(
+                "Ltest/Dvm94VisibilityParent;");
+            parent.VirtualMethod(
+                "open", "()V",
+                [](IntrinsicContext&) { return VmValue::Void(); }, 0x0004U);
+            auto child = IntrinsicClassBuilder::Class(
+                "Ltest/Dvm94VisibilityChild;",
+                "Ltest/Dvm94VisibilityParent;");
+            child.OverrideMethod(
+                "open", "()V",
+                [](IntrinsicContext&) { return VmValue::Void(); }, 0U);
+            auto catalog = CoreIntrinsicCatalog();
+            catalog.push_back(std::move(parent).Build());
+            catalog.push_back(std::move(child).Build());
+            DexClassLinker linker;
+            linker.RegisterIntrinsics(catalog);
+            linker.Link();
+        }(),
+        DexVmError);
+
+    const auto link_protected_parent = [](const std::uint32_t child_access) {
+        auto parent = IntrinsicClassBuilder::Class(
+            "Ltest/Dvm94ProtectedParent;");
+        parent.VirtualMethod(
+            "callback", "()V",
+            [](IntrinsicContext&) { return VmValue::Void(); }, 0x0004U);
+        auto child = IntrinsicClassBuilder::Class(
+            "Ltest/Dvm94ProtectedChild;",
+            "Ltest/Dvm94ProtectedParent;");
+        child.OverrideMethod(
+            "callback", "()V",
+            [](IntrinsicContext&) { return VmValue::Void(); }, child_access);
+        auto catalog = CoreIntrinsicCatalog();
+        catalog.push_back(std::move(parent).Build());
+        catalog.push_back(std::move(child).Build());
+        DexClassLinker linker;
+        linker.RegisterIntrinsics(catalog);
+        linker.Link();
+    };
+    CHECK_NOTHROW(link_protected_parent(0x0004U));
+    CHECK_NOTHROW(link_protected_parent(0x0001U));
+    CHECK_THROWS_AS(link_protected_parent(0U), DexVmError);
+    CHECK_THROWS_AS(link_protected_parent(0x0002U), DexVmError);
 }
 
 TEST_CASE("reflection linker metadata preserves DEX order and loader roles") {

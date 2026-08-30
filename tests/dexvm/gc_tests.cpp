@@ -10,6 +10,7 @@
 #include "ogplay/runtime/dexvm/collection_runtime.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/owned_state_table.h"
 #include "ogplay/runtime/dexvm/zip_runtime.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -194,6 +195,42 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
     CHECK_FALSE(state->contains(clone.Value()));
     CHECK(fixture.vm.IO().FindInput(garbage_io) == nullptr);
     CHECK_FALSE(fixture.vm.ZIP().Contains(garbage_zip));
+}
+
+TEST_CASE("OwnedStateTable traces children sweeps owners and refuses stale reuse") {
+    GcVm fixture;
+    OwnedStateTable<VmObjectRef> states(
+        "gc-owned-state", OwnedStateTracePolicy::trace_guest_references,
+        OwnedStateClonePolicy::do_not_clone,
+        [](const VmObjectRef& child, const VmRootVisitor& visit) {
+            if (child.IsValid()) visit(child);
+        });
+    fixture.vm.RegisterIntrinsicStateTable(states.Hooks());
+
+    const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    states.InsertOrAssign(owner, child);
+    fixture.vm.SetGcIntegration(
+        {{}, {}, [owner](const VmRootVisitor& visit) { visit(owner); }});
+    const auto alive = fixture.vm.MarkReachable();
+    CHECK(alive.IsMarked(owner));
+    CHECK(alive.IsMarked(child));
+
+    fixture.vm.SetGcIntegration({});
+    const auto swept = fixture.vm.CollectGarbage();
+    CHECK(swept.freed_objects == 2);
+    CHECK(states.Size() == 0);
+
+    const auto reused = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
+    const bool reused_old_handle = reused.Value() == owner.Value() ||
+                                   reused.Value() == child.Value();
+    CHECK(reused_old_handle);
+    CHECK_FALSE(states.Contains(reused));
+
+    CHECK_THROWS_AS(
+        (OwnedStateTable<VmObjectRef>(
+            "missing-trace", OwnedStateTracePolicy::trace_guest_references)),
+        DexVmError);
 }
 
 TEST_CASE("DexVM and JNI share one object array identity and element store") {

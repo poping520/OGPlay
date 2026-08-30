@@ -89,7 +89,7 @@ struct ClickVm final {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
                   auto content_view = IntrinsicClassBuilder::Class("LTestContentView;", "Landroid/view/View;");
-                  content_view.VirtualMethod("onTouchEvent",
+                  content_view.OverrideMethod("onTouchEvent",
                                    "(Landroid/view/MotionEvent;)Z",
                           [this](IntrinsicContext&) {
                               ++content_view_events;
@@ -99,21 +99,21 @@ struct ClickVm final {
                   test_catalog.push_back(std::move(content_view).Build());
                   auto key_view = IntrinsicClassBuilder::Class(
                       "LTestKeyView;", "Landroid/view/View;");
-                  key_view.VirtualMethod(
+                  key_view.OverrideMethod(
                       "onKeyDown", "(ILandroid/view/KeyEvent;)Z",
                       [this](IntrinsicContext& call) {
                           ++key_down_events;
                           last_key_code = call.arguments[0].AsInt();
                           return VmValue::Int(1);
                       });
-                  key_view.VirtualMethod(
+                  key_view.OverrideMethod(
                       "onKeyUp", "(ILandroid/view/KeyEvent;)Z",
                       [this](IntrinsicContext& call) {
                           ++key_up_events;
                           last_key_code = call.arguments[0].AsInt();
                           return VmValue::Int(1);
                       });
-                  key_view.VirtualMethod(
+                  key_view.OverrideMethod(
                       "onKeyMultiple", "(IILandroid/view/KeyEvent;)Z",
                       [this](IntrinsicContext& call) {
                           ++key_multiple_events;

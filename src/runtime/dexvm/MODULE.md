@@ -341,6 +341,16 @@ API-19 源码生成/校验，再由 `tools/dexvm_stub_gen.py --surface` 生成�
   该引用因此在整个 `Run` 期间恒定。
 - FastCode 的 checked→fast 翻转只能在 `VmExecutionLock` 内发生；缓存只保存稳定
   linker ID、数组元素类别及宿主数值边表，不保存 guest 引用/host 裸指针，GC 不感知。
+- intrinsic declaration 只保存 own members；父成员只由 linker/vtable 继承。真实覆盖必须
+  使用 `OverrideMethod`/`FinalOverrideMethod`，普通 `VirtualMethod` 命中父签名在链接期
+  失败。调用缓存按 `(method index, InvokeKind)` 隔离，descriptor 只在链接时生成一次
+  `MethodShape`（ADR-0028）。
+- lazy array、primitive class 与 Survey method 追加期间，class/method/field/extras 的地址
+  保持稳定；活动 Frame 仅可在该稳定性保证下缓存局部 metadata 引用。
+- owner-attached 宿主状态优先使用 `OwnedStateTable<State>`，构造时显式选择 trace 与 clone
+  policy；session root、owner state 与非对象 identity 不得互相冒充（ADR-0029）。
+- switch 与 threaded 的操作数来源和 dispatch glue 可不同，但运行期 invoke target 必须进入
+  `SelectInvokeTarget`，intrinsic receiver/参数/返回类别统一由 `MethodShape` 边界验证。
 - stop 继续由 `Tick()` 在每条指令做 relaxed load；DVM-57 未发现需要牺牲该精确
   语义的采样证据，因此不引入 mterp alt-table 对应物，RequestStop 契约不变。
 

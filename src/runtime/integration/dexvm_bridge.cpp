@@ -127,21 +127,6 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.content_view);
     root(context.current_intent);
     for (const auto& [_, value] : context.singletons) root(value);
-    for (const auto& [_, values] : context.bundles) {
-        for (const auto& [__, value] : values) {
-            if (const auto* ref = std::get_if<dx::VmObjectRef>(&value)) {
-                root(*ref);
-            }
-        }
-    }
-    for (const auto& [owner, holder] : context.surface_holders) {
-        root(dx::VmObjectRef(owner));
-        root(holder);
-    }
-    for (const auto& [owner, callbacks] : context.surface_callbacks) {
-        root(dx::VmObjectRef(owner));
-        for (const auto callback : callbacks) root(callback);
-    }
     root(context.egl.display);
     root(context.egl.config);
     root(context.egl.no_display);
@@ -152,12 +137,6 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.egl.current_surface);
     root(context.egl.current_context);
     key_root(context.egl.contexts);
-    const auto visit_ref_map = [&](const auto& table) {
-        for (const auto& [_, ref] : table) root(ref);
-    };
-    visit_ref_map(context.view_tree_observers);
-    visit_ref_map(context.global_layout_listeners);
-    visit_ref_map(context.sax_content_handlers);
     {
         std::scoped_lock lock(context.scheduler_mutex);
         root(context.main_looper);
@@ -169,38 +148,92 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
             root(work.token);
         }
     }
-    visit_ref_map(context.ui_node_to_object);
-    visit_ref_map(context.ui_click_listeners);
-    visit_ref_map(context.ui_touch_listeners);
-    visit_ref_map(context.ui_view_layout_params);
-    visit_ref_map(context.video_completion);
-    visit_ref_map(context.video_errors);
+    for (const auto& [_, ref] : context.ui_node_to_object) root(ref);
+}
 
-    // Host side state keyed by a VM owner is logically part of that owner.
-    // Keep the owner live until the explicit close/recycle/lifecycle path
-    // removes its state; this closes the pre-GC raw-handle compatibility gap.
-    key_root(context.preference_names);
-    key_root(context.editable_owner);
-    key_root(context.telephony_listeners);
-    key_root(context.broadcast_receivers);
-    key_root(context.bitmaps);
-    key_root(context.media_resources);
-    key_root(context.media_playing);
-    key_root(context.media_looping);
-    key_root(context.intent_components);
-    key_root(context.intent_string_extras);
-    key_root(context.intent_int_extras);
-    for (const auto& [handle, _] : context.object_to_ui_node) {
-        root(dx::VmObjectRef(static_cast<std::uint32_t>(handle)));
-    }
-    key_root(context.ui_layout_params);
-    key_root(context.ui_image_scale_types);
-    for (const auto handle : context.pending_video_completion) {
-        root(dx::VmObjectRef(static_cast<std::uint32_t>(handle)));
-    }
-    for (const auto& [handle, _] : context.video_views) {
-        root(dx::VmObjectRef(static_cast<std::uint32_t>(handle)));
-    }
+void RegisterAndroidOwnerAttachedStateTable(
+    dx::Interpreter& vm,
+    const std::shared_ptr<DexVmAndroidContext>& context) {
+    if (context == nullptr) return;
+    vm.RegisterIntrinsicStateTable({
+        "android.owner-attached",
+        [context](const dx::VmObjectRef owner,
+                  const dx::VmRootVisitor& visit) {
+            const auto visit_ref = [&visit](const dx::VmObjectRef ref) {
+                if (ref.IsValid()) visit(ref);
+            };
+            const auto key = owner.Value();
+            if (const auto found = context->editable_owner.find(key);
+                found != context->editable_owner.end()) {
+                visit_ref(dx::VmObjectRef(found->second));
+            }
+            if (const auto found = context->broadcast_receivers.find(key);
+                found != context->broadcast_receivers.end()) {
+                for (const auto receiver : found->second) {
+                    visit_ref(dx::VmObjectRef(receiver));
+                }
+            }
+            if (const auto found = context->surface_holders.find(key);
+                found != context->surface_holders.end()) visit_ref(found->second);
+            if (const auto found = context->surface_callbacks.find(key);
+                found != context->surface_callbacks.end()) {
+                for (const auto callback : found->second) visit_ref(callback);
+            }
+            if (const auto found = context->view_tree_observers.find(key);
+                found != context->view_tree_observers.end()) visit_ref(found->second);
+            if (const auto found = context->global_layout_listeners.find(key);
+                found != context->global_layout_listeners.end()) visit_ref(found->second);
+            if (const auto found = context->sax_content_handlers.find(key);
+                found != context->sax_content_handlers.end()) visit_ref(found->second);
+            if (const auto found = context->holder_canvases.find(key);
+                found != context->holder_canvases.end()) visit_ref(found->second);
+            if (const auto found = context->ui_view_layout_params.find(key);
+                found != context->ui_view_layout_params.end()) visit_ref(found->second);
+            if (const auto node = context->object_to_ui_node.find(key);
+                node != context->object_to_ui_node.end()) {
+                if (const auto found = context->ui_click_listeners.find(node->second);
+                    found != context->ui_click_listeners.end()) visit_ref(found->second);
+                if (const auto found = context->ui_touch_listeners.find(node->second);
+                    found != context->ui_touch_listeners.end()) visit_ref(found->second);
+            }
+            if (const auto found = context->video_completion.find(key);
+                found != context->video_completion.end()) visit_ref(found->second);
+            if (const auto found = context->video_errors.find(key);
+                found != context->video_errors.end()) visit_ref(found->second);
+        },
+        [context](const dx::VmObjectRef owner) {
+            const auto key = owner.Value();
+            context->preference_names.erase(key);
+            context->editable_owner.erase(key);
+            context->telephony_listeners.erase(key);
+            context->broadcast_receivers.erase(key);
+            context->intent_filter_schemes.erase(key);
+            context->intent_filter_authorities.erase(key);
+            context->requested_orientations.erase(key);
+            context->surface_holders.erase(key);
+            context->surface_callbacks.erase(key);
+            context->active_surface_holders.erase(key);
+            context->view_tree_observers.erase(key);
+            context->global_layout_listeners.erase(key);
+            context->sax_content_handlers.erase(key);
+            context->bitmaps.erase(key);
+            context->canvases.erase(key);
+            context->holder_canvases.erase(key);
+            context->media_resources.erase(key);
+            context->media_playing.erase(key);
+            context->media_looping.erase(key);
+            context->intent_components.erase(key);
+            context->intent_string_extras.erase(key);
+            context->intent_int_extras.erase(key);
+            context->ui_layout_params.erase(key);
+            context->ui_view_layout_params.erase(key);
+            context->ui_image_scale_types.erase(key);
+            context->video_completion.erase(key);
+            context->pending_video_completion.erase(key);
+            context->video_errors.erase(key);
+            context->video_views.erase(key);
+        },
+        {}});
 }
 
 }  // namespace
@@ -1031,6 +1064,7 @@ DexVmGuestBridge::DexVmGuestBridge(
     RegisterAndroidSchedulerStateTable(*impl_->vm, android_context);
     RegisterAndroidValueStateTables(*impl_->vm, android_context);
     RegisterAndroidDatabaseStateTables(*impl_->vm, android_context);
+    RegisterAndroidOwnerAttachedStateTable(*impl_->vm, android_context);
     if (android_context != nullptr && android_context->vfs != nullptr) {
         impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(
             *android_context->vfs);

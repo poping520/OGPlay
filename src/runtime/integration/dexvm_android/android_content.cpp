@@ -1135,14 +1135,14 @@ Decl Declare_android_content_ContextWrapper(const Context& context) {
             }
             call.SetRef(base, context.arguments[0].ref);
             return dx::VmValue::Void();
-        }, 0x0004U);
+        }, kProtectedAccess);
     builder.VirtualMethod("getBaseContext", "()Landroid/content/Context;",
         [base](dx::IntrinsicContext& context) {
             return dx::VmValue::Ref(dx::IntrinsicCall(context).GetRef(base));
         });
     const auto delegate = [&](const char* name, const char* descriptor) {
-        builder.VirtualMethod(name, descriptor,
-                              DelegateContextMethod(base, name, descriptor));
+        builder.OverrideMethod(name, descriptor,
+                               DelegateContextMethod(base, name, descriptor));
     };
     delegate("getAssets", "()Landroid/content/res/AssetManager;");
     delegate("getPackageName", "()Ljava/lang/String;");

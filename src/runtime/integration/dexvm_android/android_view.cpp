@@ -767,7 +767,8 @@ Decl Declare_android_view_View(const Context& context) {
     builder.Constructor("(Landroid/content/Context;)V",
                     ViewInitHandler(context));
     builder.VirtualMethod("onSizeChanged", "(IIII)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
+        kProtectedAccess);
     builder.VirtualMethod("onWindowFocusChanged", "(Z)V",
         [context](dx::IntrinsicContext& call) {
             const auto node = FindViewUiNode(*context, call.receiver.Value());

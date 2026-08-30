@@ -19,6 +19,7 @@ set(core_allowlist
     java_nio.cpp
     java_reflect.cpp
     java_regex.cpp
+    java_text.cpp
     java_util.cpp
     java_xml.cpp
     java_zip.cpp)
@@ -89,6 +90,7 @@ endforeach()
 set(required_core_descriptors
     "Ljava/net/URL;"
     "Ljava/nio/charset/Charset;"
+    "Ljava/text/SimpleDateFormat;"
     "Ljava/util/Locale;"
     "Ljava/util/Timer;"
     "Ljavax/net/ssl/SSLContext;"
@@ -96,9 +98,10 @@ set(required_core_descriptors
     "Lorg/xml/sax/XMLReader;")
 file(READ "${core_dir}/java_net.cpp" java_net)
 file(READ "${core_dir}/java_nio.cpp" java_nio)
+file(READ "${core_dir}/java_text.cpp" java_text)
 file(READ "${core_dir}/java_util.cpp" java_util)
 file(READ "${core_dir}/java_xml.cpp" java_xml)
-set(core_platform_text "${java_net}${java_nio}${java_util}${java_xml}")
+set(core_platform_text "${java_net}${java_nio}${java_text}${java_util}${java_xml}")
 foreach(descriptor IN LISTS required_core_descriptors)
     string(FIND "${core_platform_text}" "${descriptor}" found)
     if(found EQUAL -1)

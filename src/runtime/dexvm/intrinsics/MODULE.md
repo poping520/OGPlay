@@ -2,8 +2,8 @@
 
 intrinsic 的逻辑单位仍然是 Java class：每个 class 恰好一个 TU-private
 `Declare_*()`，handler 与对应声明同址；物理文件只按 API family 聚合。
-目录固定为 `catalog.cpp` 加 `java_lang/classloading/reflect/io/util/regex/zip/nio/net/xml/
-concurrent.cpp` 11 个 family TU。family 文件只向 `catalog.h` 暴露 `Append*()`，
+目录固定为 `catalog.cpp` 加 `java_lang/classloading/reflect/io/util/text/regex/zip/nio/net/xml/
+concurrent.cpp` 12 个 family TU。family 文件只向 `catalog.h` 暴露 `Append*()`，
 `catalog.cpp` 不感知 family 内具体 class，也不得包含行为。
 
 family TU 按 API 语义与共享状态聚合，以控制翻译单元数量。
@@ -26,6 +26,9 @@ Collections 算法和固定 offset Calendar/TimeZone；handler 只做 Java 参�
 `equals/hashCode` 派发，sequence/map/view/entry/iterator 的宿主状态和生命周期统一委托
 `CollectionRuntime`。Tree/Sorted/Navigable、并发集合、完整算法长尾与 DST/locale 时区数据库
 不在该 family 范围内，缺失能力必须继续明确失败。
+`java_text.cpp` 发布 `SimpleDateFormat → DateFormat → Format` 最小层级；指定 pattern/Locale
+构造器只校验 API 19 pattern 并保存 pattern 字段。NumberFormat、Calendar、DateFormatSymbols
+初始化及 format/parse 尚未闭合，不得据此伪造格式化或解析能力。
 
 `java_regex.cpp` 的 Pattern/Matcher 只承诺 String 输入与已登记 API 的 bounded regex 语义；
 非法语法/flag 必须抛 Java 异常，不伪造匹配。`java_concurrent.cpp` 的 FutureTask、串行 executor

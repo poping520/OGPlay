@@ -173,6 +173,87 @@ TEST_CASE("DVM-87 Calendar uses injected clock and fixed-offset zones") {
           8 * 60 * 60 * 1000);
 }
 
+TEST_CASE("DVM-87 SimpleDateFormat shell preserves the API 19 hierarchy") {
+    Dvm87Vm fixture;
+    const auto format = fixture.linker.ResolveDescriptor("Ljava/text/Format;");
+    const auto date_format =
+        fixture.linker.ResolveDescriptor("Ljava/text/DateFormat;");
+    const auto simple =
+        fixture.linker.ResolveDescriptor("Ljava/text/SimpleDateFormat;");
+
+    const auto& format_class = fixture.linker.Class(format);
+    CHECK(format_class.access_flags == 0x0401U);
+    CHECK(format_class.super.has_value());
+    CHECK(*format_class.super ==
+          fixture.linker.ResolveDescriptor("Ljava/lang/Object;"));
+    CHECK(format_class.direct_interfaces == std::vector<DexClassId>{
+        fixture.linker.ResolveDescriptor("Ljava/io/Serializable;"),
+        fixture.linker.ResolveDescriptor("Ljava/lang/Cloneable;")});
+
+    const auto& date_format_class = fixture.linker.Class(date_format);
+    CHECK(date_format_class.access_flags == 0x0401U);
+    CHECK(date_format_class.super.has_value());
+    CHECK(*date_format_class.super == format);
+
+    const auto& simple_class = fixture.linker.Class(simple);
+    CHECK(simple_class.access_flags == 0x0001U);
+    CHECK(simple_class.super.has_value());
+    CHECK(*simple_class.super == date_format);
+    CHECK(simple_class.own_direct_methods.size() == 1U);
+    CHECK(simple_class.own_virtual_methods.empty());
+}
+
+TEST_CASE("DVM-87 SimpleDateFormat validates and stores an API 19 pattern") {
+    Dvm87Vm fixture;
+    const auto locale = fixture.Static(
+        "Ljava/util/Locale;", "getDefault", "()Ljava/util/Locale;").value.ref;
+    const auto descriptor =
+        "(Ljava/lang/String;Ljava/util/Locale;)V";
+    const auto construct = [&](const VmObjectRef object,
+                               const VmObjectRef pattern,
+                               const VmObjectRef requested_locale) {
+        return fixture.Static(
+            "Ljava/text/SimpleDateFormat;", "<init>", descriptor,
+            {VmValue::Ref(object), VmValue::Ref(pattern),
+             VmValue::Ref(requested_locale)});
+    };
+    const auto exception_is = [&](const VmCallOutcome& outcome,
+                                  const std::string_view expected) {
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(fixture.linker.Class(outcome.exception_class).descriptor ==
+              expected);
+    };
+
+    const auto format = fixture.vm.NewIntrinsicInstance(
+        "Ljava/text/SimpleDateFormat;");
+    const auto pattern = fixture.vm.NewStringUtf8("yyyy-MM-dd 'at' HH:mm");
+    Dvm87Vm::RequireOk(construct(format, pattern, locale));
+    const auto pattern_field = fixture.linker.FindFieldRecursive(
+        fixture.model.ObjectClass(format), "pattern", "Ljava/lang/String;");
+    REQUIRE(pattern_field.has_value());
+    const auto& linked_pattern = fixture.linker.Field(*pattern_field);
+    CHECK(linked_pattern.access_flags == 0x0002U);
+    const auto stored = VmObjectRef(
+        fixture.model.InstanceSlots(format)[linked_pattern.slot].bits);
+    CHECK(fixture.vm.StringUtf8(stored) == "yyyy-MM-dd 'at' HH:mm");
+
+    const auto null_locale = fixture.vm.NewIntrinsicInstance(
+        "Ljava/text/SimpleDateFormat;");
+    exception_is(construct(null_locale, pattern, VmObjectRef{}),
+                 "Ljava/lang/NullPointerException;");
+    const auto null_pattern = fixture.vm.NewIntrinsicInstance(
+        "Ljava/text/SimpleDateFormat;");
+    exception_is(construct(null_pattern, VmObjectRef{}, locale),
+                 "Ljava/lang/NullPointerException;");
+    for (const auto invalid : {"yyyy-QQ", "yyyy-MM-dd 'open"}) {
+        const auto object = fixture.vm.NewIntrinsicInstance(
+            "Ljava/text/SimpleDateFormat;");
+        exception_is(construct(object, fixture.vm.NewStringUtf8(invalid),
+                               locale),
+                     "Ljava/lang/IllegalArgumentException;");
+    }
+}
+
 TEST_CASE("DVM-87 FutureTask and atomic state expose core semantics") {
     Dvm87Vm fixture;
     const auto callable = fixture.vm.NewIntrinsicInstance(

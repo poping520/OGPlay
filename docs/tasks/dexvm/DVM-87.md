@@ -22,11 +22,15 @@
   quote；语法由受检 ECMAScript regex backend 承载，非法 pattern/flag 明确失败。
 - FutureTask、single-thread ExecutorService、Callable/RunnableFuture/Future interface 与
   AtomicInteger/Long/Boolean/Reference；worker 复用真实 guest Thread，连续提交串行化。
+- 在独立 `java_text.cpp` family 按 API 19 层级发布 `java.text.Format`、`DateFormat`、
+  `SimpleDateFormat` 最小表面；`SimpleDateFormat(String, Locale)` 按 API 19 校验 null、模式
+  字母与引号并保存私有 pattern，不发布格式化/解析行为。
 - 按用户授权，本 WU 不受通常 10 文件与 800 行限制。
 
 ## 不做
 
 - 不提供 locale/DST 时区数据库、Calendar week/roll/完整 field 状态机。
+- 不实现 `java.text` 日期格式化、解析、pattern、locale、symbols 或时区行为。
 - 不承诺 Android libcore regex 的 Unicode/region/命名组完整等价。
 - 不提供并行线程池、scheduled executor、timed Future.get、invokeAll/invokeAny 或并发集合。
 - 不运行全量 CTest；全量回归留到本阶段最后一个 WU。
@@ -37,5 +41,9 @@
 - FutureTask result、single-thread submit 和 atomic compare/update 受检。
 - Windows `windows-msvc` Debug `ogplay_tests` 构建通过；DVM-87 4/4、Thread 相关 18/18、
   core catalog 1/1 与 architecture 6/6 定向测试通过；全量未运行。
+- 后续补充 `SimpleDateFormat → DateFormat → Format` API 19 最小层级，并以声明 shape 测试
+  锁定抽象标志、父类和 `Format` 的 Serializable/Cloneable 接口；指定 pattern/Locale
+  构造器校验并保存 AOSP pattern，NumberFormat/Calendar/DateFormatSymbols 与 format/parse
+  仍明确不在本次范围。
 
 状态：已完成。

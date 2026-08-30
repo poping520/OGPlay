@@ -1561,7 +1561,7 @@ Decl Declare_android_os_ParcelFileDescriptor(const Context&) {
                 "Ljava/io/FileDescriptor;");
             call.vm.IO().SetDescriptor(
                 fd, {dx::IoRuntime::DescriptorKind::vfs_path, path, 0,
-                     false});
+                     false, {}, {}});
             const auto pfd = call.vm.NewIntrinsicInstance(
                 "Landroid/os/ParcelFileDescriptor;");
             call.vm.Model().InstanceSlots(pfd)[0] = {

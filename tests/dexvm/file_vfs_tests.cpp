@@ -6,6 +6,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -13,6 +14,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -133,6 +135,40 @@ std::vector<IntrinsicClassDecl> FileFilterTestIntrinsics() {
                 call.vm.Model().InstanceSlots(call.receiver)[0].bits));
         });
     result.push_back(std::move(gc_path_file).Build());
+    return result;
+}
+
+std::vector<IntrinsicClassDecl> OutputInheritanceTestIntrinsics(
+    const std::shared_ptr<std::vector<std::byte>>& written) {
+    auto output = IntrinsicClassBuilder::Class(
+        "Ltest/CollectingOutputStream;", "Ljava/io/OutputStream;");
+    output.Constructor("()V",
+                       [](IntrinsicContext&) { return VmValue::Void(); });
+    output.OverrideMethod(
+        "write", "(I)V", [written](IntrinsicContext& call) {
+            written->push_back(static_cast<std::byte>(
+                call.arguments[0].AsInt() & 0xff));
+            return VmValue::Void();
+        });
+    std::vector<IntrinsicClassDecl> result;
+    result.push_back(std::move(output).Build());
+    return result;
+}
+
+std::vector<IntrinsicClassDecl> InputInheritanceTestIntrinsics(
+    const std::shared_ptr<std::size_t>& cursor) {
+    auto input = IntrinsicClassBuilder::Class(
+        "Ltest/SequenceInputStream;", "Ljava/io/InputStream;");
+    input.Constructor("()V",
+                      [](IntrinsicContext&) { return VmValue::Void(); });
+    input.OverrideMethod(
+        "read", "()I", [cursor](IntrinsicContext&) {
+            constexpr std::array values{'a', 'b', 'c', 'd', 'e', 'f'};
+            if (*cursor >= values.size()) return VmValue::Int(-1);
+            return VmValue::Int(values[(*cursor)++]);
+        });
+    std::vector<IntrinsicClassDecl> result;
+    result.push_back(std::move(input).Build());
     return result;
 }
 
@@ -517,6 +553,403 @@ TEST_CASE("File declarations match Android class shape through second batch") {
         CHECK(filter.methods[0].name == "accept");
         CHECK(filter.methods[0].access_flags == 0x0401U);
     }
+
+    const auto& output = declaration("Ljava/io/FileOutputStream;");
+    const auto fd = std::ranges::find(
+        output.fields, std::string_view{"fd"}, &IntrinsicFieldDecl::name);
+    REQUIRE(fd != output.fields.end());
+    CHECK(fd->descriptor == "Ljava/io/FileDescriptor;");
+    CHECK(fd->access_flags == 0x0002U);
+    const auto should_close = std::ranges::find(
+        output.fields, std::string_view{"shouldClose"},
+        &IntrinsicFieldDecl::name);
+    REQUIRE(should_close != output.fields.end());
+    CHECK(should_close->access_flags == 0x0012U);
+    for (const auto& [name, descriptor, flags] :
+         std::vector<std::tuple<std::string_view, std::string_view,
+                                std::uint32_t>>{
+             {"<init>", "(Ljava/io/File;)V", 0x10001U},
+             {"<init>", "(Ljava/io/File;Z)V", 0x10001U},
+             {"<init>", "(Ljava/io/FileDescriptor;)V", 0x10001U},
+             {"<init>", "(Ljava/lang/String;)V", 0x10001U},
+             {"<init>", "(Ljava/lang/String;Z)V", 0x10001U},
+             {"write", "(I)V", 0x0001U},
+             {"write", "([BII)V", 0x0001U},
+             {"close", "()V", 0x0001U},
+             {"getFD", "()Ljava/io/FileDescriptor;", 0x0011U}}) {
+        const auto method = std::ranges::find_if(
+            output.methods, [&](const auto& candidate) {
+                return candidate.name == name &&
+                       candidate.descriptor == descriptor;
+            });
+        REQUIRE(method != output.methods.end());
+        CHECK(method->access_flags == flags);
+    }
+    CHECK(std::ranges::none_of(output.methods, [](const auto& method) {
+        return (method.name == "write" && method.descriptor == "([B)V") ||
+               method.name == "flush" || method.name == "getChannel";
+    }));
+
+    const auto& output_base = declaration("Ljava/io/OutputStream;");
+    CHECK(output_base.access_flags == 0x0401U);
+    CHECK(output_base.interfaces == std::vector<std::string>{
+        "Ljava/io/Closeable;", "Ljava/io/Flushable;"});
+    const auto base_constructor = std::ranges::find_if(
+        output_base.methods, [](const auto& method) {
+            return method.name == "<init>" && method.descriptor == "()V";
+        });
+    REQUIRE(base_constructor != output_base.methods.end());
+    const auto abstract_write = std::ranges::find_if(
+        output_base.methods, [](const auto& method) {
+            return method.name == "write" && method.descriptor == "(I)V";
+        });
+    REQUIRE(abstract_write != output_base.methods.end());
+    CHECK(abstract_write->access_flags == 0x0401U);
+    CHECK_FALSE(abstract_write->implementation);
+
+    const auto& byte_output = declaration("Ljava/io/ByteArrayOutputStream;");
+    CHECK(std::ranges::any_of(byte_output.methods, [](const auto& method) {
+        return method.name == "write" && method.descriptor == "(I)V" &&
+               method.must_override;
+    }));
+    const auto& data_output = declaration("Ljava/io/DataOutputStream;");
+    REQUIRE(data_output.superclass.has_value());
+    CHECK(*data_output.superclass == "Ljava/io/FilterOutputStream;");
+
+    const auto& input = declaration("Ljava/io/FileInputStream;");
+    const auto input_fd = std::ranges::find(
+        input.fields, std::string_view{"fd"}, &IntrinsicFieldDecl::name);
+    REQUIRE(input_fd != input.fields.end());
+    CHECK(input_fd->descriptor == "Ljava/io/FileDescriptor;");
+    CHECK(input_fd->access_flags == 0x0002U);
+    const auto input_should_close = std::ranges::find(
+        input.fields, std::string_view{"shouldClose"},
+        &IntrinsicFieldDecl::name);
+    REQUIRE(input_should_close != input.fields.end());
+    CHECK(input_should_close->access_flags == 0x0012U);
+    for (const auto& [name, descriptor, flags] :
+         std::vector<std::tuple<std::string_view, std::string_view,
+                                std::uint32_t>>{
+             {"<init>", "(Ljava/io/File;)V", 0x10001U},
+             {"<init>", "(Ljava/io/FileDescriptor;)V", 0x10001U},
+             {"<init>", "(Ljava/lang/String;)V", 0x10001U},
+             {"available", "()I", 0x0001U},
+             {"close", "()V", 0x0001U},
+             {"getFD", "()Ljava/io/FileDescriptor;", 0x0011U},
+             {"read", "()I", 0x0001U},
+             {"read", "([BII)I", 0x0001U},
+             {"skip", "(J)J", 0x0001U}}) {
+        const auto method = std::ranges::find_if(
+            input.methods, [&](const auto& candidate) {
+                return candidate.name == name &&
+                       candidate.descriptor == descriptor;
+            });
+        REQUIRE(method != input.methods.end());
+        CHECK(method->access_flags == flags);
+    }
+    CHECK(std::ranges::none_of(input.methods, [](const auto& method) {
+        return (method.name == "read" && method.descriptor == "([B)I") ||
+               method.name == "getChannel";
+    }));
+
+    const auto& input_base = declaration("Ljava/io/InputStream;");
+    CHECK(input_base.access_flags == 0x0401U);
+    CHECK(input_base.interfaces ==
+          std::vector<std::string>{"Ljava/io/Closeable;"});
+    const auto abstract_read = std::ranges::find_if(
+        input_base.methods, [](const auto& method) {
+            return method.name == "read" && method.descriptor == "()I";
+        });
+    REQUIRE(abstract_read != input_base.methods.end());
+    CHECK(abstract_read->access_flags == 0x0401U);
+    CHECK_FALSE(abstract_read->implementation);
+    const auto reset = std::ranges::find_if(
+        input_base.methods, [](const auto& method) {
+            return method.name == "reset" && method.descriptor == "()V";
+        });
+    REQUIRE(reset != input_base.methods.end());
+    CHECK(reset->access_flags == 0x0021U);
+    const auto& data_input = declaration("Ljava/io/DataInputStream;");
+    REQUIRE(data_input.superclass.has_value());
+    CHECK(*data_input.superclass == "Ljava/io/FilterInputStream;");
+}
+
+TEST_CASE("OutputStream inherited bulk writes virtual-dispatch to subclasses") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        const auto written = std::make_shared<std::vector<std::byte>>();
+        const auto intrinsics = OutputInheritanceTestIntrinsics(written);
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config, intrinsics);
+        const auto output = vm.interpreter.NewIntrinsicInstance(
+            "Ltest/CollectingOutputStream;");
+        static_cast<void>(vm.CallOn(output, "<init>", "()V"));
+        const auto bytes = vm.model.NewPrimitiveArray(
+            vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4);
+        vm.model.WriteByteRegion(
+            bytes, 0,
+            std::array{std::byte{'a'}, std::byte{'b'}, std::byte{'c'},
+                       std::byte{'d'}});
+
+        static_cast<void>(vm.CallOn(output, "write", "([B)V",
+                                    {VmValue::Ref(bytes)}));
+        static_cast<void>(vm.CallOn(
+            output, "write", "([BII)V",
+            {VmValue::Ref(bytes), VmValue::Int(1), VmValue::Int(2)}));
+        static_cast<void>(vm.CallOn(output, "flush", "()V"));
+        static_cast<void>(vm.CallOn(output, "close", "()V"));
+        CHECK(*written == std::vector<std::byte>{
+            std::byte{'a'}, std::byte{'b'}, std::byte{'c'}, std::byte{'d'},
+            std::byte{'b'}, std::byte{'c'}});
+    }
+}
+
+TEST_CASE("InputStream inherited reads and skip virtual-dispatch to subclasses") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        const auto cursor = std::make_shared<std::size_t>();
+        const auto intrinsics = InputInheritanceTestIntrinsics(cursor);
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config, intrinsics);
+        const auto input = vm.interpreter.NewIntrinsicInstance(
+            "Ltest/SequenceInputStream;");
+        static_cast<void>(vm.CallOn(input, "<init>", "()V"));
+        const auto bytes = vm.model.NewPrimitiveArray(
+            vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4);
+
+        CHECK(vm.CallOn(input, "read", "([BII)I",
+                        {VmValue::Ref(bytes), VmValue::Int(1),
+                         VmValue::Int(2)}).AsInt() == 2);
+        CHECK(vm.model.ReadByteRegion(bytes, 0, 4) ==
+              std::vector<std::byte>{std::byte{0}, std::byte{'a'},
+                                     std::byte{'b'}, std::byte{0}});
+        CHECK(vm.CallOn(input, "skip", "(J)J",
+                        {VmValue::Long(2)}).AsLong() == 2);
+        CHECK(vm.CallOn(input, "read", "([B)I",
+                        {VmValue::Ref(bytes)}).AsInt() == 2);
+        CHECK(vm.model.ReadByteRegion(bytes, 0, 2) ==
+              std::vector<std::byte>{std::byte{'e'}, std::byte{'f'}});
+        CHECK(vm.CallOn(input, "available", "()I").AsInt() == 0);
+        CHECK_FALSE(vm.BoolOn(input, "markSupported"));
+        static_cast<void>(vm.CallOn(input, "mark", "(I)V",
+                                    {VmValue::Int(8)}));
+        static_cast<void>(vm.CallOn(input, "close", "()V"));
+        const auto reset = vm.CallOnOutcome(input, "reset", "()V");
+        REQUIRE(reset.exception.IsValid());
+        CHECK(vm.linker.Class(reset.exception_class).descriptor ==
+              "Ljava/io/IOException;");
+    }
+}
+
+TEST_CASE("FileOutputStream public constructors and writes match on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config);
+        vm.vfs.CreateDirectory("/sdcard");
+        vm.JavaWrite("/sdcard/save.dat", "base");
+
+        const auto bytes = vm.model.NewPrimitiveArray(
+            vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4);
+        vm.model.WriteByteRegion(
+            bytes, 0,
+            std::array{std::byte{'x'}, std::byte{'A'}, std::byte{'B'},
+                       std::byte{'y'}});
+
+        const auto append = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileOutputStream;");
+        static_cast<void>(vm.CallOn(
+            append, "<init>", "(Ljava/lang/String;Z)V",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/save.dat")),
+             VmValue::Int(1)}));
+        static_cast<void>(vm.CallOn(append, "write", "(I)V",
+                                    {VmValue::Int('!')}));
+        static_cast<void>(vm.CallOn(
+            append, "write", "([BII)V",
+            {VmValue::Ref(bytes), VmValue::Int(1), VmValue::Int(2)}));
+        static_cast<void>(vm.CallOn(append, "close", "()V"));
+        CHECK(vm.NativeRead("/sdcard/save.dat") == "base!AB");
+
+        const auto truncate = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileOutputStream;");
+        static_cast<void>(vm.CallOn(
+            truncate, "<init>", "(Ljava/io/File;Z)V",
+            {VmValue::Ref(vm.NewFile("/sdcard/save.dat")), VmValue::Int(0)}));
+        CHECK(vm.NativeRead("/sdcard/save.dat").empty());
+        static_cast<void>(vm.CallOn(truncate, "write", "(I)V",
+                                    {VmValue::Int('N')}));
+        const auto fd = vm.CallOn(
+            truncate, "getFD", "()Ljava/io/FileDescriptor;").ref;
+        REQUIRE(fd.IsValid());
+        CHECK(vm.BoolOn(fd, "valid"));
+
+        const auto borrowed = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileOutputStream;");
+        static_cast<void>(vm.CallOn(
+            borrowed, "<init>", "(Ljava/io/FileDescriptor;)V",
+            {VmValue::Ref(fd)}));
+        static_cast<void>(vm.CallOn(borrowed, "write", "(I)V",
+                                    {VmValue::Int('D')}));
+        static_cast<void>(vm.CallOn(borrowed, "close", "()V"));
+        CHECK(vm.BoolOn(fd, "valid"));
+        CHECK(vm.NativeRead("/sdcard/save.dat") == "ND");
+        static_cast<void>(vm.CallOn(truncate, "close", "()V"));
+        CHECK_FALSE(vm.BoolOn(fd, "valid"));
+    }
+}
+
+TEST_CASE("FileOutputStream rejects null paths and read-only descriptors") {
+    FileVm vm;
+    vm.vfs.CreateDirectory("/sdcard");
+    vm.JavaWrite("/sdcard/input.dat", "data");
+    for (const auto& descriptor : {std::string{"(Ljava/io/File;)V"},
+                                   std::string{"(Ljava/lang/String;)V"}}) {
+        const auto output = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileOutputStream;");
+        const auto outcome = vm.CallOnOutcome(
+            output, "<init>", descriptor,
+            {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+    }
+
+    const auto input = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileInputStream;");
+    static_cast<void>(vm.CallOn(
+        input, "<init>", "(Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/input.dat"))}));
+    const auto fd = vm.CallOn(
+        input, "getFD", "()Ljava/io/FileDescriptor;").ref;
+    const auto output = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileOutputStream;");
+    static_cast<void>(vm.CallOn(
+        output, "<init>", "(Ljava/io/FileDescriptor;)V",
+        {VmValue::Ref(fd)}));
+    const auto write = vm.CallOnOutcome(
+        output, "write", "(I)V", {VmValue::Int('x')});
+    REQUIRE(write.exception.IsValid());
+    CHECK(vm.linker.Class(write.exception_class).descriptor ==
+          "Ljava/io/IOException;");
+    static_cast<void>(vm.CallOn(output, "close", "()V"));
+    CHECK(vm.BoolOn(fd, "valid"));
+
+    const auto path_output = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileOutputStream;");
+    static_cast<void>(vm.CallOn(
+        path_output, "<init>", "(Ljava/lang/String;)V",
+        {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/null.dat"))}));
+    for (const auto& descriptor : {std::string{"([B)V"},
+                                   std::string{"([BII)V"}}) {
+        std::vector<VmValue> arguments{VmValue::Ref(VmObjectRef{})};
+        if (descriptor == "([BII)V") {
+            arguments.push_back(VmValue::Int(0));
+            arguments.push_back(VmValue::Int(0));
+        }
+        const auto outcome = vm.CallOnOutcome(
+            path_output, "write", descriptor, std::move(arguments));
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+    }
+}
+
+TEST_CASE("FileInputStream public API shares descriptor position on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch,
+                               InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" :
+                                                         "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        FileVm vm(nullptr, true, config);
+        vm.vfs.CreateDirectory("/sdcard");
+        vm.JavaWrite("/sdcard/input.dat", "abcdef");
+
+        const auto input = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileInputStream;");
+        static_cast<void>(vm.CallOn(
+            input, "<init>", "(Ljava/lang/String;)V",
+            {VmValue::Ref(
+                vm.interpreter.NewStringUtf8("/sdcard/input.dat"))}));
+        CHECK(vm.CallOn(input, "read", "()I").AsInt() == 'a');
+        CHECK(vm.CallOn(input, "available", "()I").AsInt() == 5);
+        const auto fd = vm.CallOn(
+            input, "getFD", "()Ljava/io/FileDescriptor;").ref;
+        REQUIRE(fd.IsValid());
+
+        const auto borrowed = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileInputStream;");
+        static_cast<void>(vm.CallOn(
+            borrowed, "<init>", "(Ljava/io/FileDescriptor;)V",
+            {VmValue::Ref(fd)}));
+        const auto bytes = vm.model.NewPrimitiveArray(
+            vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 2);
+        CHECK(vm.CallOn(borrowed, "read", "([B)I",
+                        {VmValue::Ref(bytes)}).AsInt() == 2);
+        CHECK(vm.model.ReadByteRegion(bytes, 0, 2) ==
+              std::vector<std::byte>{std::byte{'b'}, std::byte{'c'}});
+        CHECK(vm.CallOn(borrowed, "skip", "(J)J",
+                        {VmValue::Long(1)}).AsLong() == 1);
+        CHECK(vm.CallOn(input, "read", "()I").AsInt() == 'e');
+        static_cast<void>(vm.CallOn(borrowed, "close", "()V"));
+        CHECK(vm.BoolOn(fd, "valid"));
+        CHECK(vm.CallOn(input, "read", "()I").AsInt() == 'f');
+        static_cast<void>(vm.CallOn(input, "close", "()V"));
+        CHECK_FALSE(vm.BoolOn(fd, "valid"));
+        const auto closed = vm.CallOnOutcome(input, "read", "()I");
+        REQUIRE(closed.exception.IsValid());
+        CHECK(vm.linker.Class(closed.exception_class).descriptor ==
+              "Ljava/io/IOException;");
+
+        const auto from_file = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileInputStream;");
+        static_cast<void>(vm.CallOn(
+            from_file, "<init>", "(Ljava/io/File;)V",
+            {VmValue::Ref(vm.NewFile("/sdcard/input.dat"))}));
+        CHECK(vm.CallOn(from_file, "read", "()I").AsInt() == 'a');
+        const auto negative = vm.CallOnOutcome(
+            from_file, "skip", "(J)J", {VmValue::Long(-1)});
+        REQUIRE(negative.exception.IsValid());
+        CHECK(vm.linker.Class(negative.exception_class).descriptor ==
+              "Ljava/io/IOException;");
+
+    }
+}
+
+TEST_CASE("FileInputStream rejects null and missing sources") {
+    FileVm vm;
+    vm.vfs.CreateDirectory("/sdcard");
+    for (const auto& descriptor : {
+             std::string{"(Ljava/io/File;)V"},
+             std::string{"(Ljava/io/FileDescriptor;)V"},
+             std::string{"(Ljava/lang/String;)V"}}) {
+        const auto input = vm.interpreter.NewIntrinsicInstance(
+            "Ljava/io/FileInputStream;");
+        const auto outcome = vm.CallOnOutcome(
+            input, "<init>", descriptor,
+            {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+              "Ljava/lang/NullPointerException;");
+    }
+    const auto missing = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileInputStream;");
+    const auto outcome = vm.CallOnOutcome(
+        missing, "<init>", "(Ljava/lang/String;)V",
+        {VmValue::Ref(
+            vm.interpreter.NewStringUtf8("/sdcard/missing.dat"))});
+    REQUIRE(outcome.exception.IsValid());
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
+          "Ljava/io/FileNotFoundException;");
 }
 
 TEST_CASE("File first-batch path and object semantics match on both backends") {
@@ -803,6 +1236,14 @@ TEST_CASE("File APIs fail explicitly when the guest filesystem is unavailable") 
     REQUIRE(created.exception.IsValid());
     CHECK(vm.linker.Class(created.exception_class).descriptor ==
           "Ljava/io/IOException;");
+
+    const auto input = vm.interpreter.NewIntrinsicInstance(
+        "Ljava/io/FileInputStream;");
+    const auto opened = vm.CallOnOutcome(
+        input, "<init>", "(Ljava/io/File;)V", {VmValue::Ref(file)});
+    REQUIRE(opened.exception.IsValid());
+    CHECK(vm.linker.Class(opened.exception_class).descriptor ==
+          "Ljava/lang/UnsupportedOperationException;");
 }
 
 TEST_CASE("File relative absolute path fails without a guest working directory") {

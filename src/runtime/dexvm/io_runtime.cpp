@@ -12,26 +12,44 @@ bool IoRuntime::HasFileSystem() const noexcept {
   return file_system_ != nullptr;
 }
 
-void IoRuntime::SetInput(const VmObjectRef owner, InputState state) {
-  inputs_[owner.Value()] = std::move(state);
+std::shared_ptr<IoRuntime::InputState>
+IoRuntime::SetInput(const VmObjectRef owner, InputState state,
+                    const bool close_underlying) {
+  auto shared = std::make_shared<InputState>(std::move(state));
+  inputs_[owner.Value()] = {shared, false, close_underlying};
+  return shared;
+}
+
+void IoRuntime::ShareInput(const VmObjectRef owner,
+                           std::shared_ptr<InputState> state,
+                           const bool close_underlying) {
+  if (state == nullptr) {
+    throw IoRuntimeError("input descriptor has no state");
+  }
+  inputs_[owner.Value()] = {std::move(state), false, close_underlying};
 }
 
 IoRuntime::InputState &IoRuntime::Input(const VmObjectRef owner) {
   const auto found = inputs_.find(owner.Value());
-  if (found == inputs_.end() || found->second.closed) {
+  if (found == inputs_.end() || found->second.closed ||
+      found->second.state->closed) {
     throw IoRuntimeError("input stream is closed or was never opened");
   }
-  return found->second;
+  return *found->second.state;
 }
 
 IoRuntime::InputState *IoRuntime::FindInput(const VmObjectRef owner) noexcept {
   const auto found = inputs_.find(owner.Value());
-  return found == inputs_.end() ? nullptr : &found->second;
+  return found == inputs_.end() ? nullptr : found->second.state.get();
 }
 
 void IoRuntime::AdoptInput(const VmObjectRef source, const VmObjectRef target) {
-  auto &state = Input(source);
-  inputs_[target.Value()] = std::move(state);
+  const auto found = inputs_.find(source.Value());
+  if (found == inputs_.end() || found->second.closed ||
+      found->second.state->closed) {
+    throw IoRuntimeError("input stream is closed or was never opened");
+  }
+  inputs_[target.Value()] = std::move(found->second);
   inputs_.erase(source.Value());
 }
 
@@ -40,47 +58,83 @@ std::vector<std::byte> IoRuntime::TakeRemainingInput(const VmObjectRef owner) {
   std::vector<std::byte> result(state.bytes.begin() +
                                     static_cast<std::ptrdiff_t>(state.cursor),
                                 state.bytes.end());
+  state.cursor = state.bytes.size();
   inputs_.erase(owner.Value());
   return result;
 }
 
 void IoRuntime::CloseInput(const VmObjectRef owner) {
-  if (auto *state = FindInput(owner); state != nullptr)
-    state->closed = true;
+  const auto found = inputs_.find(owner.Value());
+  if (found == inputs_.end() || found->second.closed)
+    return;
+  found->second.closed = true;
+  if (found->second.close_underlying)
+    found->second.state->closed = true;
 }
 
-void IoRuntime::SetOutput(const VmObjectRef owner, OutputState state) {
-  outputs_[owner.Value()] = std::move(state);
+std::shared_ptr<IoRuntime::OutputState>
+IoRuntime::SetOutput(const VmObjectRef owner, OutputState state,
+                     const bool close_underlying) {
+  auto shared = std::make_shared<OutputState>(std::move(state));
+  outputs_[owner.Value()] = {shared, false, close_underlying};
+  return shared;
+}
+
+void IoRuntime::ShareOutput(const VmObjectRef owner,
+                            std::shared_ptr<OutputState> state,
+                            const bool close_underlying) {
+  if (state == nullptr) {
+    throw IoRuntimeError("output descriptor has no state");
+  }
+  outputs_[owner.Value()] = {std::move(state), false, close_underlying};
 }
 
 IoRuntime::OutputState &IoRuntime::Output(const VmObjectRef owner) {
   const auto found = outputs_.find(owner.Value());
-  if (found == outputs_.end() || found->second.closed) {
+  if (found == outputs_.end() || found->second.closed ||
+      found->second.state->closed) {
     throw IoRuntimeError("output stream is closed or was never opened");
   }
-  return found->second;
+  if (!found->second.state->writable) {
+    throw IoRuntimeError("file descriptor is not writable");
+  }
+  return *found->second.state;
 }
 
 IoRuntime::OutputState *
 IoRuntime::FindOutput(const VmObjectRef owner) noexcept {
   const auto found = outputs_.find(owner.Value());
-  return found == outputs_.end() ? nullptr : &found->second;
+  return found == outputs_.end() ? nullptr : found->second.state.get();
 }
 
 void IoRuntime::AdoptOutput(const VmObjectRef source,
                             const VmObjectRef target) {
-  auto &state = Output(source);
-  outputs_[target.Value()] = std::move(state);
+  const auto found = outputs_.find(source.Value());
+  if (found == outputs_.end() || found->second.closed ||
+      found->second.state->closed) {
+    throw IoRuntimeError("output stream is closed or was never opened");
+  }
+  outputs_[target.Value()] = std::move(found->second);
   outputs_.erase(source.Value());
 }
 
 void IoRuntime::FlushOutput(const VmObjectRef owner, const bool close) {
-  auto *state = FindOutput(owner);
-  if (state == nullptr || state->closed)
+  const auto found = outputs_.find(owner.Value());
+  if (found == outputs_.end() || found->second.closed ||
+      found->second.state->closed)
     return;
-  if (!state->path.empty())
-    WriteFile(state->path, state->bytes);
-  state->closed = close;
+  auto &handle = found->second;
+  auto &state = *handle.state;
+  if (!state.writable) {
+    if (close) handle.closed = true;
+    return;
+  }
+  if (!state.path.empty())
+    WriteFile(state.path, state.bytes);
+  if (close) {
+    handle.closed = true;
+    if (handle.close_underlying) state.closed = true;
+  }
 }
 
 void IoRuntime::SetDescriptor(const VmObjectRef owner,
@@ -102,9 +156,19 @@ IoRuntime::FindDescriptor(const VmObjectRef owner) const noexcept {
   return found == descriptors_.end() ? nullptr : &found->second;
 }
 
+IoRuntime::DescriptorState *
+IoRuntime::FindDescriptor(const VmObjectRef owner) noexcept {
+  const auto found = descriptors_.find(owner.Value());
+  return found == descriptors_.end() ? nullptr : &found->second;
+}
+
 void IoRuntime::CloseDescriptor(const VmObjectRef owner) noexcept {
   const auto found = descriptors_.find(owner.Value());
-  if (found != descriptors_.end()) found->second.closed = true;
+  if (found != descriptors_.end()) {
+    found->second.closed = true;
+    if (found->second.input != nullptr) found->second.input->closed = true;
+    if (found->second.output != nullptr) found->second.output->closed = true;
+  }
 }
 
 std::optional<IoFileInfo> IoRuntime::Stat(const std::string_view path) const {

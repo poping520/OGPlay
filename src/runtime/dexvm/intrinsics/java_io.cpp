@@ -309,54 +309,27 @@ void SetFilePath(IntrinsicContext& call, const std::string_view path) {
 
 IntrinsicHandler OpenInputFromPath(const bool file_argument) {
   return [file_argument](IntrinsicContext &call) {
-    const auto path = file_argument ? FilePath(call, call.arguments[0].ref)
-                                    : call.vm.StringUtf8(call.arguments[0].ref);
+    if (!call.arguments[0].ref.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;",
+                        file_argument ? "file == null" : "path == null"};
+    }
+    RequireFileSystem(call);
+    auto path = file_argument ? FilePath(call, call.arguments[0].ref)
+                              : call.vm.StringUtf8(call.arguments[0].ref);
+    if (!IsAbsoluteFilePath(path)) {
+      const auto working_directory = call.vm.IO().WorkingDirectory();
+      if (!working_directory.has_value()) {
+        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                          "guest working directory is unavailable"};
+      }
+      path = ChildFilePath(*working_directory, path);
+    }
     const auto bytes = call.vm.IO().ReadFile(path);
     if (!bytes.has_value()) {
       throw VmJavaThrow{"Ljava/io/FileNotFoundException;",
                         "file not found: " + path};
     }
     call.vm.IO().SetInput(call.receiver, {*bytes, 0, false});
-    const auto descriptor =
-        call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
-    call.vm.IO().SetDescriptor(
-        descriptor,
-        {IoRuntime::DescriptorKind::vfs_path, path, 0, false});
-    const auto field = call.vm.Linker().FindFieldRecursive(
-        call.vm.Model().ObjectClass(call.receiver), "fd",
-        "Ljava/io/FileDescriptor;");
-    if (!field.has_value()) {
-      throw DexVmError(DexVmErrorReason::internal_invariant,
-                       "FileInputStream.fd field is unavailable");
-    }
-    call.vm.Model().InstanceSlots(call.receiver)
-        [call.vm.Linker().Field(*field).slot] = {descriptor.Value(),
-                                                 SlotTag::ref};
-    return VmValue::Void();
-  };
-}
-
-IntrinsicHandler OpenOutputFromPath(const bool file_argument) {
-  return [file_argument](IntrinsicContext &call) {
-    const auto path = file_argument ? FilePath(call, call.arguments[0].ref)
-                                    : call.vm.StringUtf8(call.arguments[0].ref);
-    call.vm.IO().SetOutput(call.receiver, {path, {}, false});
-    return VmValue::Void();
-  };
-}
-
-IntrinsicHandler WriteBytes() {
-  return [](IntrinsicContext &call) {
-    IoRuntime::OutputState *output{};
-    try {
-      output = &call.vm.IO().Output(call.receiver);
-    } catch (const IoRuntimeError &error) {
-      IoFailure(error);
-    }
-    const auto array = call.arguments[0].ref;
-    const auto bytes = call.vm.Model().ReadByteRegion(
-        array, 0, call.vm.Model().ArrayLength(array));
-    output->bytes.insert(output->bytes.end(), bytes.begin(), bytes.end());
     return VmValue::Void();
   };
 }
@@ -866,41 +839,162 @@ IntrinsicClassDecl DeclareFileFilter() {
 IntrinsicClassDecl DeclareFileInputStream() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/io/FileInputStream;",
                                               "Ljava/io/InputStream;");
-  builder.InstanceField("fd", "Ljava/io/FileDescriptor;", 0x0012U);
-  builder.Constructor("(Ljava/io/File;)V", OpenInputFromPath(true));
-  builder.Constructor("(Ljava/lang/String;)V", OpenInputFromPath(false));
+  const auto fd = builder.BoundInstanceField(
+      "fd", "Ljava/io/FileDescriptor;", 0x0002U);
+  const auto should_close =
+      builder.BoundInstanceField("shouldClose", "Z", 0x0012U);
+  const auto open_path = [fd, should_close](const bool file_argument) {
+    return [fd, should_close, file_argument](IntrinsicContext &call) {
+      IntrinsicCall typed(call);
+      const auto source = typed.NonNullRef(0, file_argument ? "file" : "path");
+      RequireFileSystem(call);
+      auto path = file_argument ? FilePath(call, source)
+                                : call.vm.StringUtf8(source);
+      if (!IsAbsoluteFilePath(path)) {
+        const auto working_directory = call.vm.IO().WorkingDirectory();
+        if (!working_directory.has_value()) {
+          throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                            "guest working directory is unavailable"};
+        }
+        path = ChildFilePath(*working_directory, path);
+      }
+      const auto bytes = call.vm.IO().ReadFile(path);
+      if (!bytes.has_value()) {
+        throw VmJavaThrow{"Ljava/io/FileNotFoundException;",
+                          "file not found: " + path};
+      }
+      auto input = call.vm.IO().SetInput(
+          call.receiver, {*bytes, 0, false});
+      const auto descriptor =
+          call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+      call.vm.IO().SetDescriptor(
+          descriptor, {IoRuntime::DescriptorKind::vfs_path, path, 0, false,
+                       std::move(input), {}});
+      typed.SetRef(fd, descriptor);
+      typed.SetInt(should_close, 1);
+      return VmValue::Void();
+    };
+  };
+  // 使用 File 创建拥有底层描述符的文件输入流。
+  builder.Constructor("(Ljava/io/File;)V", open_path(true));
+  // 使用路径创建拥有底层描述符的文件输入流。
+  builder.Constructor("(Ljava/lang/String;)V", open_path(false));
+  // 基于已有逻辑文件描述符创建不拥有该描述符的输入流。
+  builder.Constructor("(Ljava/io/FileDescriptor;)V",
+                      [fd, should_close](IntrinsicContext &call) {
+    IntrinsicCall typed(call);
+    const auto descriptor_ref = typed.NonNullRef(0, "fd");
+    auto *descriptor = call.vm.IO().FindDescriptor(descriptor_ref);
+    if (descriptor == nullptr || descriptor->closed ||
+        (descriptor->input == nullptr && descriptor->output != nullptr)) {
+      call.vm.IO().SetInput(call.receiver, {{}, 0, true}, false);
+    } else if (descriptor->input != nullptr) {
+      call.vm.IO().ShareInput(call.receiver, descriptor->input, false);
+    } else if (descriptor->kind == IoRuntime::DescriptorKind::vfs_path) {
+      const auto bytes = call.vm.IO().ReadFile(descriptor->source);
+      auto input = call.vm.IO().SetInput(
+          call.receiver,
+          {bytes.has_value() ? *bytes : std::vector<std::byte>{}, 0,
+           !bytes.has_value()},
+          false);
+      descriptor->input = std::move(input);
+    } else {
+      call.vm.IO().SetInput(call.receiver, {{}, 0, true}, false);
+    }
+    typed.SetRef(fd, descriptor_ref);
+    typed.SetInt(should_close, 0);
+    return VmValue::Void();
+  });
+  // 返回无需阻塞即可读取的估计字节数。
+  builder.OverrideMethod("available", "()I", [](IntrinsicContext &call) {
+    try {
+      const auto &input = call.vm.IO().Input(call.receiver);
+      return VmValue::Int(static_cast<std::int32_t>(
+          input.bytes.size() - input.cursor));
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+  });
+  // 返回此输入流使用的逻辑文件描述符。
   builder.FinalMethod("getFD", "()Ljava/io/FileDescriptor;",
-                      [](IntrinsicContext &call) {
-                        const auto field =
-                            call.vm.Linker().FindFieldRecursive(
-                                call.vm.Model().ObjectClass(call.receiver),
-                                "fd", "Ljava/io/FileDescriptor;");
-                        if (!field.has_value()) {
-                          throw DexVmError(
-                              DexVmErrorReason::internal_invariant,
-                              "FileInputStream.fd field is unavailable");
-                        }
-                        const auto slot = call.vm.Linker().Field(*field).slot;
-                        const auto descriptor = VmObjectRef(
-                            call.vm.Model().InstanceSlots(call.receiver)[slot]
-                                .bits);
+                      [fd](IntrinsicContext &call) {
+                        const auto descriptor =
+                            IntrinsicCall(call).GetRef(fd);
                         if (!descriptor.IsValid()) {
                           throw VmJavaThrow{"Ljava/io/IOException;",
                                             "stream has no file descriptor"};
                         }
                         return VmValue::Ref(descriptor);
                       });
-  builder.FinalOverrideMethod("close", "()V", [](IntrinsicContext &call) {
+  // 读取一个字节，流结束时返回 -1。
+  builder.OverrideMethod("read", "()I", [](IntrinsicContext &call) {
+    try {
+      auto &input = call.vm.IO().Input(call.receiver);
+      if (input.cursor >= input.bytes.size()) return VmValue::Int(-1);
+      return VmValue::Int(
+          static_cast<std::uint8_t>(input.bytes[input.cursor++]));
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+  });
+  // 将文件字节读取到数组的指定区间。
+  builder.OverrideMethod("read", "([BII)I", [](IntrinsicContext &call) {
+    const auto array = call.arguments[0].ref;
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
+    const auto offset = call.arguments[1].AsInt();
+    const auto length = call.arguments[2].AsInt();
+    if (offset < 0 || length < 0 ||
+        static_cast<std::int64_t>(offset) + length >
+            call.vm.Model().ArrayLength(array)) {
+      throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                        "read range exceeds the destination array"};
+    }
+    try {
+      auto &input = call.vm.IO().Input(call.receiver);
+      if (length == 0) return VmValue::Int(0);
+      const auto remaining = input.bytes.size() - input.cursor;
+      if (remaining == 0) return VmValue::Int(-1);
+      const auto amount = std::min<std::size_t>(
+          static_cast<std::size_t>(length), remaining);
+      call.vm.Model().WriteByteRegion(
+          array, offset,
+          std::span(input.bytes).subspan(input.cursor, amount));
+      input.cursor += amount;
+      return VmValue::Int(static_cast<std::int32_t>(amount));
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+  });
+  // 前移文件读位置并返回实际跳过的字节数。
+  builder.OverrideMethod("skip", "(J)J", [](IntrinsicContext &call) {
+    const auto requested = call.arguments[0].AsLong();
+    if (requested < 0) {
+      throw VmJavaThrow{"Ljava/io/IOException;", "byteCount < 0"};
+    }
+    try {
+      auto &input = call.vm.IO().Input(call.receiver);
+      const auto amount = std::min<std::uint64_t>(
+          static_cast<std::uint64_t>(requested),
+          input.bytes.size() - input.cursor);
+      input.cursor += static_cast<std::size_t>(amount);
+      return VmValue::Long(static_cast<std::int64_t>(amount));
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+  });
+  // 关闭输入流，并仅在拥有时关闭底层逻辑描述符。
+  builder.OverrideMethod("close", "()V",
+                         [fd, should_close](IntrinsicContext &call) {
+    IntrinsicCall typed(call);
     call.vm.IO().CloseInput(call.receiver);
-    const auto field = call.vm.Linker().FindFieldRecursive(
-        call.vm.Model().ObjectClass(call.receiver), "fd",
-        "Ljava/io/FileDescriptor;");
-    if (field.has_value()) {
-      const auto descriptor = VmObjectRef(
-          call.vm.Model().InstanceSlots(call.receiver)
-              [call.vm.Linker().Field(*field).slot]
-                  .bits);
+    const auto descriptor = typed.GetRef(fd);
+    if (typed.GetInt(should_close) != 0) {
       if (descriptor.IsValid()) call.vm.IO().CloseDescriptor(descriptor);
+    } else {
+      typed.SetRef(fd, call.vm.NewIntrinsicInstance(
+                           "Ljava/io/FileDescriptor;"));
     }
     return VmValue::Void();
   });
@@ -931,11 +1025,150 @@ IntrinsicClassDecl DeclareFileReader() {
 IntrinsicClassDecl DeclareFileOutputStream() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/io/FileOutputStream;",
                                               "Ljava/io/OutputStream;");
-  builder.Constructor("(Ljava/io/File;)V", OpenOutputFromPath(true));
-  builder.Constructor("(Ljava/lang/String;)V", OpenOutputFromPath(false));
-  builder.FinalOverrideMethod("write", "([B)V", WriteBytes());
-  builder.FinalOverrideMethod("flush", "()V", Flush(false));
-  builder.FinalOverrideMethod("close", "()V", Flush(true));
+  const auto fd = builder.BoundInstanceField(
+      "fd", "Ljava/io/FileDescriptor;", 0x0002U);
+  const auto should_close =
+      builder.BoundInstanceField("shouldClose", "Z", 0x0012U);
+
+  const auto open_path = [fd, should_close](const bool file_argument,
+                                            const bool has_append) {
+    return [fd, should_close, file_argument,
+            has_append](IntrinsicContext &call) {
+      IntrinsicCall typed(call);
+      const auto source = typed.NonNullRef(0, file_argument ? "file" : "path");
+      auto path = file_argument ? FilePath(call, source)
+                                : call.vm.StringUtf8(source);
+      if (!IsAbsoluteFilePath(path)) {
+        const auto working_directory = call.vm.IO().WorkingDirectory();
+        if (!working_directory.has_value()) {
+          throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                            "guest working directory is unavailable"};
+        }
+        path = ChildFilePath(*working_directory, path);
+      }
+      const auto append = has_append && typed.Int(1) != 0;
+      std::vector<std::byte> bytes;
+      if (append) {
+        if (const auto existing = call.vm.IO().ReadFile(path))
+          bytes = *existing;
+      }
+      try {
+        // API 19 在构造时即创建文件，并按 append 选择保留或截断原内容。
+        call.vm.IO().WriteFile(path, bytes);
+      } catch (const IoRuntimeError &error) {
+        throw VmJavaThrow{"Ljava/io/FileNotFoundException;", error.what()};
+      }
+      auto output = call.vm.IO().SetOutput(
+          call.receiver, {path, std::move(bytes), true, false});
+      const auto descriptor =
+          call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+      call.vm.IO().SetDescriptor(
+          descriptor, {IoRuntime::DescriptorKind::vfs_path, path, 0, false,
+                       {}, std::move(output)});
+      typed.SetRef(fd, descriptor);
+      typed.SetInt(should_close, 1);
+      return VmValue::Void();
+    };
+  };
+
+  // 使用 File 创建覆盖写入的文件输出流。
+  builder.Constructor("(Ljava/io/File;)V", open_path(true, false));
+  // 使用 File 创建可选择追加写入的文件输出流。
+  builder.Constructor("(Ljava/io/File;Z)V", open_path(true, true));
+  // 使用路径创建覆盖写入的文件输出流。
+  builder.Constructor("(Ljava/lang/String;)V", open_path(false, false));
+  // 使用路径创建可选择追加写入的文件输出流。
+  builder.Constructor("(Ljava/lang/String;Z)V", open_path(false, true));
+  // 基于已有逻辑文件描述符创建不拥有该描述符的输出流。
+  builder.Constructor("(Ljava/io/FileDescriptor;)V",
+                      [fd, should_close](IntrinsicContext &call) {
+    IntrinsicCall typed(call);
+    const auto descriptor_ref = typed.NonNullRef(0, "fd");
+    auto *descriptor = call.vm.IO().FindDescriptor(descriptor_ref);
+    if (descriptor == nullptr || descriptor->closed) {
+      call.vm.IO().SetOutput(call.receiver, {{}, {}, false, false}, false);
+    } else if (descriptor->output != nullptr) {
+      call.vm.IO().ShareOutput(call.receiver, descriptor->output, false);
+    } else {
+      std::vector<std::byte> bytes;
+      if (descriptor->kind == IoRuntime::DescriptorKind::vfs_path) {
+        if (const auto existing = call.vm.IO().ReadFile(descriptor->source))
+          bytes = *existing;
+      }
+      auto output = call.vm.IO().SetOutput(
+          call.receiver,
+          {descriptor->kind == IoRuntime::DescriptorKind::vfs_path
+               ? descriptor->source
+               : std::string{},
+           std::move(bytes), false, false},
+          false);
+      descriptor->output = std::move(output);
+    }
+    typed.SetRef(fd, descriptor_ref);
+    typed.SetInt(should_close, 0);
+    return VmValue::Void();
+  });
+  // 写入一个字节的低八位。
+  builder.OverrideMethod("write", "(I)V", [](IntrinsicContext &call) {
+    try {
+      call.vm.IO().Output(call.receiver).bytes.push_back(
+          static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+    return VmValue::Void();
+  });
+  // 将字节数组的指定区间写入文件。
+  builder.OverrideMethod("write", "([BII)V", [](IntrinsicContext &call) {
+    const auto array = call.arguments[0].ref;
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
+    const auto offset = call.arguments[1].AsInt();
+    const auto length = call.arguments[2].AsInt();
+    if (offset < 0 || length < 0 ||
+        static_cast<std::int64_t>(offset) + length >
+            call.vm.Model().ArrayLength(array)) {
+      throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                        "write range exceeds the source array"};
+    }
+    try {
+      auto &output = call.vm.IO().Output(call.receiver);
+      const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length);
+      output.bytes.insert(output.bytes.end(), bytes.begin(), bytes.end());
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+    return VmValue::Void();
+  });
+  // 返回此输出流使用的逻辑文件描述符。
+  builder.FinalMethod("getFD", "()Ljava/io/FileDescriptor;",
+                      [fd](IntrinsicContext &call) {
+    const auto descriptor = IntrinsicCall(call).GetRef(fd);
+    if (!descriptor.IsValid()) {
+      throw VmJavaThrow{"Ljava/io/IOException;",
+                        "stream has no file descriptor"};
+    }
+    return VmValue::Ref(descriptor);
+  });
+  // 刷新数据并按所有权关闭底层逻辑文件描述符。
+  builder.OverrideMethod("close", "()V",
+                         [fd, should_close](IntrinsicContext &call) {
+    IntrinsicCall typed(call);
+    try {
+      call.vm.IO().FlushOutput(call.receiver, true);
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+    const auto descriptor = typed.GetRef(fd);
+    if (typed.GetInt(should_close) != 0) {
+      if (descriptor.IsValid()) call.vm.IO().CloseDescriptor(descriptor);
+    } else {
+      typed.SetRef(fd, call.vm.NewIntrinsicInstance(
+                           "Ljava/io/FileDescriptor;"));
+    }
+    return VmValue::Void();
+  });
   return std::move(builder).Build();
 }
 
@@ -944,7 +1177,7 @@ IntrinsicClassDecl DeclareFileWriter() {
       IntrinsicClassBuilder::Class("Ljava/io/FileWriter;", "Ljava/io/Writer;");
   builder.Constructor("(Ljava/io/File;Z)V", [](IntrinsicContext &call) {
     const auto path = FilePath(call, call.arguments[0].ref);
-    IoRuntime::OutputState output{path, {}, false};
+    IoRuntime::OutputState output{path, {}, true, false};
     if (call.arguments[1].AsInt() != 0) {
       if (const auto existing = call.vm.IO().ReadFile(path)) {
         output.bytes = *existing;
@@ -1167,8 +1400,10 @@ IntrinsicHandler AdoptOutput() {
 
 IntrinsicHandler WriteRange() {
   return [](IntrinsicContext &call) {
-    auto &output = Output(call);
     const auto array = call.arguments[0].ref;
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
     const auto offset = call.arguments[1].AsInt();
     const auto length = call.arguments[2].AsInt();
     if (offset < 0 || length < 0 ||
@@ -1177,18 +1412,8 @@ IntrinsicHandler WriteRange() {
       throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
                         "write range exceeds the source array"};
     }
-    const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length);
-    output.bytes.insert(output.bytes.end(), bytes.begin(), bytes.end());
-    return VmValue::Void();
-  };
-}
-
-IntrinsicHandler WriteBytes() {
-  return [](IntrinsicContext &call) {
     auto &output = Output(call);
-    const auto array = call.arguments[0].ref;
-    const auto bytes = call.vm.Model().ReadByteRegion(
-        array, 0, call.vm.Model().ArrayLength(array));
+    const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length);
     output.bytes.insert(output.bytes.end(), bytes.begin(), bytes.end());
     return VmValue::Void();
   };
@@ -1205,85 +1430,284 @@ IntrinsicHandler FlushOutput(const bool close) {
   };
 }
 
-IntrinsicClassDecl DeclareInputStream() {
-  auto builder = IntrinsicClassBuilder::Class("Ljava/io/InputStream;",
-                                              "Ljava/lang/Object;");
-  builder.VirtualMethod("read", "([BII)I", [](IntrinsicContext &call) {
-    auto &input = Input(call);
+[[nodiscard]] bool InvokeOutputVirtual(
+    IntrinsicContext &call, const std::string_view name,
+    const std::string_view descriptor, std::vector<VmValue> arguments) {
+  const auto receiver_class = call.vm.Model().ObjectClass(call.receiver);
+  const auto index = call.vm.Linker().FindVtableIndex(
+      receiver_class, std::string(name), std::string(descriptor));
+  if (!index.has_value()) {
+    throw DexVmError(DexVmErrorReason::internal_invariant,
+                     "OutputStream virtual method is unavailable: " +
+                         std::string(name) + std::string(descriptor));
+  }
+  arguments.insert(arguments.begin(), VmValue::Ref(call.receiver));
+  const auto outcome = call.vm.Call(
+      call.vm.Linker().Class(receiver_class).vtable[*index], arguments);
+  if (outcome.exception.IsValid()) {
+    call.vm.SetPendingException(outcome.exception);
+    return false;
+  }
+  return true;
+}
+
+[[nodiscard]] VmCallOutcome InvokeInputVirtual(
+    IntrinsicContext &call, const std::string_view name,
+    const std::string_view descriptor, std::vector<VmValue> arguments) {
+  const auto receiver_class = call.vm.Model().ObjectClass(call.receiver);
+  const auto index = call.vm.Linker().FindVtableIndex(
+      receiver_class, std::string(name), std::string(descriptor));
+  if (!index.has_value()) {
+    throw DexVmError(DexVmErrorReason::internal_invariant,
+                     "InputStream virtual method is unavailable: " +
+                         std::string(name) + std::string(descriptor));
+  }
+  arguments.insert(arguments.begin(), VmValue::Ref(call.receiver));
+  return call.vm.Call(
+      call.vm.Linker().Class(receiver_class).vtable[*index], arguments);
+}
+
+IntrinsicHandler ReadInputRange() {
+  return [](IntrinsicContext &call) {
+    const auto array = call.arguments[0].ref;
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
     const auto offset = call.arguments[1].AsInt();
     const auto length = call.arguments[2].AsInt();
+    if (offset < 0 || length < 0 ||
+        static_cast<std::int64_t>(offset) + length >
+            call.vm.Model().ArrayLength(array)) {
+      throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                        "read range exceeds the destination array"};
+    }
+    try {
+      auto &input = call.vm.IO().Input(call.receiver);
+      if (length == 0) return VmValue::Int(0);
+      const auto remaining = input.bytes.size() - input.cursor;
+      if (remaining == 0) return VmValue::Int(-1);
+      const auto amount = std::min<std::size_t>(
+          static_cast<std::size_t>(length), remaining);
+      call.vm.Model().WriteByteRegion(
+          array, offset,
+          std::span(input.bytes).subspan(input.cursor, amount));
+      input.cursor += amount;
+      return VmValue::Int(static_cast<std::int32_t>(amount));
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+  };
+}
+
+IntrinsicHandler ReadInputByte() {
+  return [](IntrinsicContext &call) {
+    try {
+      auto &input = call.vm.IO().Input(call.receiver);
+      if (input.cursor >= input.bytes.size()) return VmValue::Int(-1);
+      return VmValue::Int(
+          static_cast<std::uint8_t>(input.bytes[input.cursor++]));
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+  };
+}
+
+IntrinsicHandler AvailableInput() {
+  return [](IntrinsicContext &call) {
+    try {
+      const auto &input = call.vm.IO().Input(call.receiver);
+      return VmValue::Int(static_cast<std::int32_t>(
+          input.bytes.size() - input.cursor));
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+  };
+}
+
+IntrinsicHandler SkipInput() {
+  return [](IntrinsicContext &call) {
+    try {
+      auto &input = call.vm.IO().Input(call.receiver);
+      const auto requested = call.arguments[0].AsLong();
+      const auto remaining =
+          static_cast<std::int64_t>(input.bytes.size() - input.cursor);
+      const auto amount =
+          std::max<std::int64_t>(0, std::min(requested, remaining));
+      input.cursor += static_cast<std::size_t>(amount);
+      return VmValue::Long(amount);
+    } catch (const IoRuntimeError &error) {
+      IoFailure(error);
+    }
+  };
+}
+
+IntrinsicClassDecl DeclareInputStream() {
+  auto builder = IntrinsicClassBuilder::Class(
+      "Ljava/io/InputStream;", "Ljava/lang/Object;",
+      {"Ljava/io/Closeable;"}, 0x0401U);
+  // 创建输入流基类。
+  builder.Constructor("()V", [](IntrinsicContext &) {
+    return VmValue::Void();
+  });
+  // 默认逐字节虚调用子类的 read()，并在部分成功后抑制后续异常。
+  builder.VirtualMethod("read", "([BII)I", [](IntrinsicContext &call) {
     const auto array = call.arguments[0].ref;
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
+    const auto offset = call.arguments[1].AsInt();
+    const auto length = call.arguments[2].AsInt();
     if (offset < 0 || length < 0 ||
         static_cast<std::int64_t>(offset) + length >
             call.vm.Model().ArrayLength(array)) {
       throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
                         "invalid stream read range"};
     }
-    if (length == 0)
-      return VmValue::Int(0);
-    const auto remaining = input.bytes.size() - input.cursor;
-    if (remaining == 0)
-      return VmValue::Int(-1);
-    const auto amount = std::min<std::size_t>(length, remaining);
-    call.vm.Model().WriteByteRegion(
-        array, offset, std::span(input.bytes).subspan(input.cursor, amount));
-    input.cursor += amount;
-    return VmValue::Int(static_cast<std::int32_t>(amount));
+    if (length == 0) return VmValue::Int(0);
+    for (std::int32_t index = 0; index < length; ++index) {
+      const auto outcome = InvokeInputVirtual(call, "read", "()I", {});
+      if (outcome.exception.IsValid()) {
+        if (index == 0) call.vm.SetPendingException(outcome.exception);
+        return VmValue::Int(index);
+      }
+      const auto value = outcome.value.AsInt();
+      if (value < 0) return VmValue::Int(index == 0 ? -1 : index);
+      const std::array byte{
+          static_cast<std::byte>(value & 0xff)};
+      call.vm.Model().WriteByteRegion(array, offset + index, byte);
+    }
+    return VmValue::Int(length);
   });
+  // 将整个字节数组转发给可覆写的区间读取方法。
   builder.VirtualMethod("read", "([B)I", [](IntrinsicContext &call) {
-    auto &input = Input(call);
     const auto array = call.arguments[0].ref;
-    const auto capacity = call.vm.Model().ArrayLength(array);
-    if (capacity == 0)
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
+    const auto outcome = InvokeInputVirtual(
+        call, "read", "([BII)I",
+        {VmValue::Ref(array), VmValue::Int(0),
+         VmValue::Int(call.vm.Model().ArrayLength(array))});
+    if (outcome.exception.IsValid()) {
+      call.vm.SetPendingException(outcome.exception);
       return VmValue::Int(0);
-    const auto remaining = input.bytes.size() - input.cursor;
-    if (remaining == 0)
-      return VmValue::Int(-1);
-    const auto amount = std::min<std::size_t>(capacity, remaining);
-    call.vm.Model().WriteByteRegion(
-        array, 0, std::span(input.bytes).subspan(input.cursor, amount));
-    input.cursor += amount;
-    return VmValue::Int(static_cast<std::int32_t>(amount));
+    }
+    return outcome.value;
   });
-  builder.VirtualMethod("read", "()I", [](IntrinsicContext &call) {
-    auto &input = Input(call);
-    if (input.cursor >= input.bytes.size())
-      return VmValue::Int(-1);
-    return VmValue::Int(static_cast<std::uint8_t>(input.bytes[input.cursor++]));
+  // 子类必须实现单字节读取。
+  builder.UnimplementedVirtual("read", "()I", 0x0401U);
+  // 基类默认没有可立即读取的字节。
+  builder.VirtualMethod("available", "()I", [](IntrinsicContext &) {
+    return VmValue::Int(0);
   });
-  builder.VirtualMethod("available", "()I", [](IntrinsicContext &call) {
-    const auto &input = Input(call);
-    return VmValue::Int(
-        static_cast<std::int32_t>(input.bytes.size() - input.cursor));
-  });
-  builder.VirtualMethod("skip", "(J)J", [](IntrinsicContext &call) {
-    auto &input = Input(call);
-    const auto remaining =
-        static_cast<std::int64_t>(input.bytes.size() - input.cursor);
-    const auto amount = std::max<std::int64_t>(
-        0, std::min(call.arguments[0].AsLong(), remaining));
-    input.cursor += static_cast<std::size_t>(amount);
-    return VmValue::Long(amount);
-  });
-  builder.VirtualMethod("close", "()V", [](IntrinsicContext &call) {
-    call.vm.IO().CloseInput(call.receiver);
+  // 基类关闭不执行额外操作。
+  builder.VirtualMethod("close", "()V", [](IntrinsicContext &) {
     return VmValue::Void();
+  });
+  // 标记当前读取位置；基类默认不支持标记。
+  builder.VirtualMethod("mark", "(I)V", [](IntrinsicContext &) {
+    return VmValue::Void();
+  });
+  // 报告基类不支持 mark/reset。
+  builder.VirtualMethod("markSupported", "()Z", [](IntrinsicContext &) {
+    return VmValue::Int(0);
+  });
+  // 基类无法恢复到标记位置。
+  builder.VirtualMethod(
+      "reset", "()V",
+      [](IntrinsicContext &) -> VmValue {
+        throw VmJavaThrow{"Ljava/io/IOException;", "mark/reset not supported"};
+      },
+      0x0021U);
+  // 通过可覆写的读取方法消费并跳过字节。
+  builder.VirtualMethod("skip", "(J)J", [](IntrinsicContext &call) {
+    const auto requested = call.arguments[0].AsLong();
+    if (requested <= 0) return VmValue::Long(0);
+    const auto buffer_size = static_cast<JniSize>(
+        std::min<std::int64_t>(requested, 4096));
+    const auto buffer = call.vm.Model().NewPrimitiveArray(
+        call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+        buffer_size);
+    const std::array references{buffer};
+    [[maybe_unused]] const auto roots =
+        call.vm.ProtectReferences(references);
+    std::int64_t skipped{};
+    while (skipped < requested) {
+      const auto chunk = static_cast<std::int32_t>(std::min<std::int64_t>(
+          buffer_size, requested - skipped));
+      const auto outcome = InvokeInputVirtual(
+          call, "read", "([BII)I",
+          {VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(chunk)});
+      if (outcome.exception.IsValid()) {
+        call.vm.SetPendingException(outcome.exception);
+        return VmValue::Long(skipped);
+      }
+      const auto count = outcome.value.AsInt();
+      if (count <= 0) break;
+      skipped += count;
+    }
+    return VmValue::Long(skipped);
   });
   return std::move(builder).Build();
 }
 
 IntrinsicClassDecl DeclareOutputStream() {
-  auto builder = IntrinsicClassBuilder::Class("Ljava/io/OutputStream;",
-                                              "Ljava/lang/Object;");
-  builder.VirtualMethod("write", "([BII)V", WriteRange());
-  builder.VirtualMethod("write", "([B)V", WriteBytes());
-  builder.VirtualMethod("write", "(I)V", [](IntrinsicContext &call) {
-    Output(call).bytes.push_back(
-        static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
+  auto builder = IntrinsicClassBuilder::Class(
+      "Ljava/io/OutputStream;", "Ljava/lang/Object;",
+      {"Ljava/io/Closeable;", "Ljava/io/Flushable;"}, 0x0401U);
+  // 创建输出流基类。
+  builder.Constructor("()V", [](IntrinsicContext &) {
     return VmValue::Void();
   });
-  builder.VirtualMethod("flush", "()V", FlushOutput(false));
-  builder.VirtualMethod("close", "()V", FlushOutput(true));
+  // 将整个字节数组转发给可覆写的区间写入方法。
+  builder.VirtualMethod("write", "([B)V", [](IntrinsicContext &call) {
+    const auto array = call.arguments[0].ref;
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
+    static_cast<void>(InvokeOutputVirtual(
+        call, "write", "([BII)V",
+        {VmValue::Ref(array), VmValue::Int(0),
+         VmValue::Int(call.vm.Model().ArrayLength(array))}));
+    return VmValue::Void();
+  });
+  // 默认逐字节虚调用子类的 write(int)。
+  builder.VirtualMethod("write", "([BII)V", [](IntrinsicContext &call) {
+    const auto array = call.arguments[0].ref;
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
+    const auto offset = call.arguments[1].AsInt();
+    const auto length = call.arguments[2].AsInt();
+    if (offset < 0 || length < 0 ||
+        static_cast<std::int64_t>(offset) + length >
+            call.vm.Model().ArrayLength(array)) {
+      throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
+                        "write range exceeds the source array"};
+    }
+    const auto bytes = call.vm.Model().ReadByteRegion(array, offset, length);
+    for (const auto byte : bytes) {
+      if (!InvokeOutputVirtual(
+              call, "write", "(I)V",
+              {VmValue::Int(static_cast<std::uint8_t>(byte))}))
+        break;
+    }
+    return VmValue::Void();
+  });
+  // 子类必须实现单字节写入。
+  builder.UnimplementedVirtual("write", "(I)V", 0x0401U);
+  // 基类刷新不执行额外操作。
+  builder.VirtualMethod("flush", "()V", [](IntrinsicContext &) {
+    return VmValue::Void();
+  });
+  // 基类关闭不执行额外操作。
+  builder.VirtualMethod("close", "()V", [](IntrinsicContext &) {
+    return VmValue::Void();
+  });
+  // 报告此输出流是否记录了被抑制的写入错误。
+  builder.VirtualMethod("checkError", "()Z", [](IntrinsicContext &) {
+    return VmValue::Int(0);
+  }, 0U);
   return std::move(builder).Build();
 }
 
@@ -1292,10 +1716,25 @@ IntrinsicClassDecl DeclareByteArrayInputStream() {
                                               "Ljava/io/InputStream;");
   builder.Constructor("([B)V", [](IntrinsicContext &call) {
     const auto array = call.arguments[0].ref;
+    if (!array.IsValid()) {
+      throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
+    }
     call.vm.IO().SetInput(call.receiver,
                           {call.vm.Model().ReadByteRegion(
                                array, 0, call.vm.Model().ArrayLength(array)),
                            0, false});
+    return VmValue::Void();
+  });
+  // 读取一个内存字节，流结束时返回 -1。
+  builder.OverrideMethod("read", "()I", ReadInputByte());
+  // 将内存字节读取到数组的指定区间。
+  builder.OverrideMethod("read", "([BII)I", ReadInputRange());
+  // 返回尚未读取的内存字节数。
+  builder.OverrideMethod("available", "()I", AvailableInput());
+  // 前移内存流的读取位置。
+  builder.OverrideMethod("skip", "(J)J", SkipInput());
+  // 关闭内存输入流；Android 实现允许关闭后继续读取。
+  builder.OverrideMethod("close", "()V", [](IntrinsicContext &) {
     return VmValue::Void();
   });
   return std::move(builder).Build();
@@ -1305,11 +1744,15 @@ IntrinsicClassDecl DeclareByteArrayOutputStream() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/io/ByteArrayOutputStream;",
                                               "Ljava/io/OutputStream;");
   builder.Constructor("()V", [](IntrinsicContext &call) {
-    call.vm.IO().SetOutput(call.receiver, {{}, {}, false});
+    call.vm.IO().SetOutput(call.receiver, {{}, {}, true, false});
     return VmValue::Void();
   });
-  builder.FinalOverrideMethod("write", "([BII)V", WriteRange());
-  builder.FinalOverrideMethod("write", "([B)V", WriteBytes());
+  builder.OverrideMethod("write", "([BII)V", WriteRange());
+  builder.OverrideMethod("write", "(I)V", [](IntrinsicContext &call) {
+    Output(call).bytes.push_back(
+        static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
+    return VmValue::Void();
+  });
   builder.FinalMethod("toByteArray", "()[B", [](IntrinsicContext &call) {
     const auto &bytes = Output(call).bytes;
     const auto array_class = call.vm.Linker().ResolveDescriptor("[B");
@@ -1329,8 +1772,8 @@ IntrinsicClassDecl DeclareByteArrayOutputStream() {
         return VmValue::Ref(call.vm.NewStringUtf8(std::string(
             reinterpret_cast<const char *>(bytes.data()), bytes.size())));
       });
-  builder.FinalOverrideMethod("close", "()V",
-                      [](IntrinsicContext &) { return VmValue::Void(); });
+  builder.OverrideMethod("close", "()V",
+                         [](IntrinsicContext &) { return VmValue::Void(); });
   return std::move(builder).Build();
 }
 
@@ -1343,6 +1786,25 @@ IntrinsicClassDecl BuildWrapper(std::string descriptor, std::string superclass,
   builder.Constructor("(" + argument + ")V", handler);
   if (capacity)
     builder.Constructor("(" + argument + "I)V", handler);
+  if (output) {
+    builder.OverrideMethod("write", "([BII)V", WriteRange());
+    builder.OverrideMethod("write", "(I)V", [](IntrinsicContext &call) {
+      Output(call).bytes.push_back(
+          static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
+      return VmValue::Void();
+    });
+    builder.OverrideMethod("flush", "()V", FlushOutput(false));
+    builder.OverrideMethod("close", "()V", FlushOutput(true));
+  } else {
+    builder.OverrideMethod("read", "()I", ReadInputByte());
+    builder.OverrideMethod("read", "([BII)I", ReadInputRange());
+    builder.OverrideMethod("available", "()I", AvailableInput());
+    builder.OverrideMethod("skip", "(J)J", SkipInput());
+    builder.OverrideMethod("close", "()V", [](IntrinsicContext &call) {
+      call.vm.IO().CloseInput(call.receiver);
+      return VmValue::Void();
+    });
+  }
   return std::move(builder).Build();
 }
 
@@ -1429,8 +1891,10 @@ IntrinsicClassDecl DeclareBufferedReader() {
 
 IntrinsicClassDecl DeclareDataInputStream() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/io/DataInputStream;",
-                                              "Ljava/io/InputStream;");
+                                              "Ljava/io/FilterInputStream;");
   builder.Constructor("(Ljava/io/InputStream;)V", AdoptInput());
+  // 将数据输入流字节读取到数组的指定区间。
+  builder.FinalOverrideMethod("read", "([BII)I", ReadInputRange());
   const auto take = [](IntrinsicContext &call, const std::size_t count) {
     auto &input = Input(call);
     if (input.bytes.size() - input.cursor < count) {
@@ -1489,8 +1953,15 @@ IntrinsicClassDecl DeclareDataInputStream() {
 
 IntrinsicClassDecl DeclareDataOutputStream() {
   auto builder = IntrinsicClassBuilder::Class("Ljava/io/DataOutputStream;",
-                                              "Ljava/io/OutputStream;");
+                                              "Ljava/io/FilterOutputStream;");
   builder.Constructor("(Ljava/io/OutputStream;)V", AdoptOutput());
+  builder.OverrideMethod("write", "([BII)V", WriteRange());
+  builder.OverrideMethod("write", "(I)V", [](IntrinsicContext &call) {
+    Output(call).bytes.push_back(
+        static_cast<std::byte>(call.arguments[0].AsInt() & 0xff));
+    return VmValue::Void();
+  });
+  builder.OverrideMethod("flush", "()V", FlushOutput(false));
   builder.FinalMethod(
       "writeUTF", "(Ljava/lang/String;)V", [](IntrinsicContext &call) {
         auto &bytes = Output(call).bytes;
@@ -1502,7 +1973,6 @@ IntrinsicClassDecl DeclareDataOutputStream() {
         }
         return VmValue::Void();
       });
-  builder.FinalOverrideMethod("close", "()V", FlushOutput(true));
   return std::move(builder).Build();
 }
 
@@ -1519,8 +1989,11 @@ IntrinsicClassDecl DeclareObjectInputStream() {
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl> &catalog) {
   auto closeable = IntrinsicClassBuilder::Interface(
       "Ljava/io/Closeable;", {"Ljava/lang/AutoCloseable;"});
-  closeable.UnimplementedVirtual("close", "()V");
+  closeable.UnimplementedVirtual("close", "()V", 0x0401U);
   catalog.push_back(std::move(closeable).Build());
+  auto flushable = IntrinsicClassBuilder::Interface("Ljava/io/Flushable;");
+  flushable.UnimplementedVirtual("flush", "()V", 0x0401U);
+  catalog.push_back(std::move(flushable).Build());
   catalog.push_back(DeclareInputStream());
   catalog.push_back(DeclareOutputStream());
   catalog.push_back(DeclareReader());

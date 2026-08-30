@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -52,12 +53,6 @@ public:
     vfs_path,
     apk_entry,
   };
-  struct DescriptorState final {
-    DescriptorKind kind{DescriptorKind::vfs_path};
-    std::string source;
-    std::uint64_t base_offset{};
-    bool closed{};
-  };
   struct InputState final {
     std::vector<std::byte> bytes;
     std::size_t cursor{};
@@ -66,19 +61,34 @@ public:
   struct OutputState final {
     std::string path;
     std::vector<std::byte> bytes;
+    bool writable{true};
     bool closed{};
+  };
+  struct DescriptorState final {
+    DescriptorKind kind{DescriptorKind::vfs_path};
+    std::string source;
+    std::uint64_t base_offset{};
+    bool closed{};
+    std::shared_ptr<InputState> input;
+    std::shared_ptr<OutputState> output;
   };
   void SetFileSystem(IoFileSystem *file_system) noexcept;
   [[nodiscard]] bool HasFileSystem() const noexcept;
 
-  void SetInput(VmObjectRef owner, InputState state);
+  std::shared_ptr<InputState> SetInput(VmObjectRef owner, InputState state,
+                                       bool close_underlying = true);
+  void ShareInput(VmObjectRef owner, std::shared_ptr<InputState> state,
+                  bool close_underlying);
   [[nodiscard]] InputState &Input(VmObjectRef owner);
   [[nodiscard]] InputState *FindInput(VmObjectRef owner) noexcept;
   void AdoptInput(VmObjectRef source, VmObjectRef target);
   [[nodiscard]] std::vector<std::byte> TakeRemainingInput(VmObjectRef owner);
   void CloseInput(VmObjectRef owner);
 
-  void SetOutput(VmObjectRef owner, OutputState state);
+  std::shared_ptr<OutputState> SetOutput(VmObjectRef owner, OutputState state,
+                                         bool close_underlying = true);
+  void ShareOutput(VmObjectRef owner, std::shared_ptr<OutputState> state,
+                   bool close_underlying);
   [[nodiscard]] OutputState &Output(VmObjectRef owner);
   [[nodiscard]] OutputState *FindOutput(VmObjectRef owner) noexcept;
   void AdoptOutput(VmObjectRef source, VmObjectRef target);
@@ -86,6 +96,8 @@ public:
 
   void SetDescriptor(VmObjectRef owner, DescriptorState state);
   [[nodiscard]] DescriptorState &Descriptor(VmObjectRef owner);
+  [[nodiscard]] DescriptorState *FindDescriptor(
+      VmObjectRef owner) noexcept;
   [[nodiscard]] const DescriptorState *FindDescriptor(
       VmObjectRef owner) const noexcept;
   void CloseDescriptor(VmObjectRef owner) noexcept;
@@ -106,9 +118,21 @@ public:
   void Sweep(VmObjectRef owner);
 
 private:
+  struct InputHandle final {
+    std::shared_ptr<InputState> state;
+    bool closed{};
+    bool close_underlying{true};
+  };
+
+  struct OutputHandle final {
+    std::shared_ptr<OutputState> state;
+    bool closed{};
+    bool close_underlying{true};
+  };
+
   IoFileSystem *file_system_{};
-  std::unordered_map<std::uint32_t, InputState> inputs_;
-  std::unordered_map<std::uint32_t, OutputState> outputs_;
+  std::unordered_map<std::uint32_t, InputHandle> inputs_;
+  std::unordered_map<std::uint32_t, OutputHandle> outputs_;
   std::unordered_map<std::uint32_t, DescriptorState> descriptors_;
 };
 

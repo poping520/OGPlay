@@ -35,8 +35,9 @@ Collections 算法和固定 offset Calendar/TimeZone；handler 只做 Java 参�
 `java_io.cpp` 聚合 pinned libcore `java.io`：stream/reader/filter/buffer/byte-array/data
 handle、File 与文件 reader/writer handle。每个 Java class 仍保留 TU-private `Declare_*()`；
 流状态、`FileDescriptor` 逻辑来源和文件访问只委托 per-VM `IoRuntime`，不得回读 Android
-session context。逻辑描述符不保存宿主句柄；`FileInputStream.getFD()` 只发布路径 identity，
-读游标继续属于 stream。`File` 路径/对象、访问、类型、过滤列表与文件 rename 语义以
+session context。逻辑描述符不保存宿主句柄；`FileInputStream.getFD()` 与借用描述符构造
+共享输入状态和读游标，`FileOutputStream.getFD()` 同样共享输出状态，两者关闭时都必须
+区分拥有与借用关系。`File` 路径/对象、访问、类型、过滤列表与文件 rename 语义以
 pinned API 19 libcore 为准；相对绝对化只消费 `IoRuntime` 注入的 guest 工作目录，`mkdir`
 与 `mkdirs` 必须分别保持单级和递归语义。`FilenameFilter`/`FileFilter` 通过 guest virtual
 `accept` 过滤直接子项并传播回调异常。VFS 尚无权限位修改能力，`setWritable(true)` 只在
@@ -44,6 +45,11 @@ pinned API 19 libcore 为准；相对绝对化只消费 `IoRuntime` 注入的 gu
 未注入 `IoFileSystem` 与普通 ENOENT 不得合并：前者必须抛明确 Java 异常。filter、排序、
 比较等 handler 若把新 guest 引用带过 nested guest call，必须使用 interpreter 的
 execution-local `RootScope` 保活，宿主 `VmObjectRef` 容器本身不是 GC 根。
+`OutputStream` 的默认 bulk write 必须经 receiver vtable 派发到子类 override；基类
+`flush/close` 是 no-op，禁止直接假设任意 guest 子类都在 `IoRuntime` 中拥有输出状态。
+`InputStream` 的默认 bulk read/skip 同样必须经 receiver vtable 派发；基类
+`available/close/mark` 使用 API 19 默认语义，`reset` 明确抛 `IOException`，不得要求自定义
+子类注册 `IoRuntime` 输入状态。
 
 `java_zip.cpp` 聚合 `ZipEntry`/`ZipInputStream`。输入源只经 `IoRuntime` single-owner
 接管，archive/entry/cursor/close 状态只委托 per-VM `ZipRuntime`；ZIP32 结构校验、inflate

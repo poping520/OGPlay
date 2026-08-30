@@ -146,7 +146,7 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
                 "Ljava/io/FileDescriptor;");
             call.vm.IO().SetDescriptor(
                 fd, {dx::IoRuntime::DescriptorKind::apk_entry, path,
-                     data_offset, false});
+                     data_offset, false, {}, {}});
             const auto pfd = call.vm.NewIntrinsicInstance(
                 "Landroid/os/ParcelFileDescriptor;");
             call.vm.Model().InstanceSlots(pfd)[0] = {

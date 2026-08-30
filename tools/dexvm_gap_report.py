@@ -60,6 +60,7 @@ BUILDER_CLASS_PATTERN = re.compile(
 # quoted argument is the descriptor of the named method forms.
 BUILDER_METHOD_PATTERN = re.compile(
     r'([A-Za-z_]\w*)\.(?:Constructor|StaticMethod|VirtualMethod|FinalMethod|'
+    r'OverrideMethod|FinalOverrideMethod|'
     r'UnimplementedStatic|UnimplementedVirtual|UnimplementedFinal|'
     r'UnimplementedConstructor)\s*\(\s*"([^"]+)"(?:\s*,\s*"(\([^"]*\)[^"]*)")?')
 BUILDER_FIELD_PATTERN = re.compile(

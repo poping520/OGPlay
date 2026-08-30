@@ -1,9 +1,21 @@
 # 当前状态
 
-更新：补齐 Resources.getXml 与有界 XmlResourceParser
+更新：补齐 FileInputStream 公共 API 与 InputStream 继承语义
 
 ## 当前阶段
 
+- **DVM-79 FileOutputStream 公共 API 已补齐（NIO 除外）**：增加 File/String append
+  构造、`FileDescriptor` 构造、`getFD` 与两个自有 write override；路径构造即时创建/
+  截断，逻辑描述符与流共享输出状态并保持借用关闭不误关原描述符。`getChannel` 依赖完整
+  FileChannel，按用户指定暂不处理且未伪造返回值。同步恢复抽象 `OutputStream` 的公共构造、
+  Closeable/Flushable、bulk-write 虚分派与 no-op flush/close，并校准 ByteArray/Filter/
+  Buffered/Data 输出子类 own override 和 DataOutputStream 父类；沿用 DVM-79、未新建 WU。
+- **DVM-79 FileInputStream 公共 API 已补齐（NIO 除外）**：增加 File/String/
+  FileDescriptor 构造、`available/close/getFD/read/read(byte[],int,int)/skip`；路径流拥有
+  描述符，借用流关闭不误关原 FD，共享 FD 的流共用读取位置。同步恢复抽象 `InputStream`
+  的公共构造、Closeable、bulk-read/skip 虚分派、默认 mark/close/available 与 reset 异常，
+  并校准 ByteArray/Filter/Buffered/Data 输入子类。`getChannel` 继续 deferred；沿用 DVM-79、
+  未新建 WU。
 - **DVM-18 Resources XML 补充已完成**：`Resources.getXml(int)` 经唯一 ARSC→sealed APK→
   strict AXML 链发布 `XmlResourceParser`，闭合 `getEventType/next/getName/getText/close`；
   缺失/畸形资源抛 `Resources.NotFoundException`。合成 APK 与本地 exact 两份 `res/xml`
@@ -46,6 +58,14 @@
 
 ## 最近验证
 
+- 2026-08-30 macOS release `ogplay_tests` 增量构建通过；File 家族 18/18（783 assertions）、
+  InputStream 相关 5/5（153 assertions）通过，覆盖自定义子类继承语义、FileInputStream
+  双后端/API shape/FD 共享游标/借用关闭/null/缺失文件；core catalog 与 core-only java.io
+  契约另 2/2 通过（496 assertions）。
+- 2026-08-30 macOS dev `ogplay_tests` 增量构建通过；OutputStream 自定义子类双后端虚分派、
+  FileOutputStream 双后端/API shape/null/read-only descriptor、wrapper 双 close、core-only
+  java.io 与 Java/native VFS 定向 7/7 通过（259 assertions）；core/android catalog 契约
+  2/2 通过（3619 assertions）。
 - 2026-08-30 macOS release 增量构建通过；binary XML 6/6（74 assertions，含本地 exact），
   `Resources.getXml` 1/1（35 assertions），core/android catalog 契约通过。关闭 survey 的
   clean-sandbox PvZ 短跑先被既有 `java.util.Observer` 层级缺口阻断，未到 XML 路径。

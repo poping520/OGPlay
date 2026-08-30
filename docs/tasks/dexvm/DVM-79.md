@@ -73,5 +73,19 @@
   后者继续遵循 Android 的 false/null 返回语义。
 - `FilenameFilter`/`FileFilter` 回调期间以 execution-local 临时强根保活原始结果数组，
   `compareTo` 同样保活跨虚调用的左路径；显式 GC 回调回归锁定不会访问已清扫引用。
+- `FileOutputStream` 补齐 API 19 的两个 append 构造器、`FileDescriptor` 构造器、
+  `getFD` 与自有 `write(int)`/`write(byte[],int,int)` override；路径构造在构造时创建或
+  截断文件，输出流与逻辑描述符共享底层输出状态，并区分拥有与借用描述符的关闭语义。
+  `getChannel` 依赖完整 `java.nio.channels.FileChannel`，按既有边界继续 deferred。
+- `OutputStream` 恢复 API 19 抽象基类、公共构造与 Closeable/Flushable 契约；默认
+  `write(byte[])` 虚派发区间写入，默认区间写入逐字节虚派发子类 `write(int)`，基类
+  `flush/close` 保持 no-op。ByteArray/Filter/Buffered/Data/File/Socket 输出子类因此可按
+  own override 或父类默认实现工作，不再要求任意子类持有 `IoRuntime` 输出侧状态。
+- `FileInputStream` 补齐 API 19 的 File/String/FileDescriptor 三个构造器，以及
+  `available/close/getFD/read/read(byte[],int,int)/skip`；路径流拥有描述符，FD 流借用描述符，
+  多个流通过同一逻辑 FD 共享读取位置。`getChannel` 按非 NIO 范围继续 deferred。
+- `InputStream` 恢复抽象基类、公共构造与 Closeable 契约；默认 bulk read 与 skip 经 vtable
+  调用子类 override，并保持部分读取后的异常抑制语义；默认 available/close/mark/
+  markSupported/reset 与 API 19 对齐，自定义子类无需持有 `IoRuntime` 状态。
 
 状态：完成。

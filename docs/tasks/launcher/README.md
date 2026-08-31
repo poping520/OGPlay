@@ -21,6 +21,8 @@
 | [GUI-14](GUI-14.md) | 启动器视觉与空闲呈现质量 | GUI-4、GUI-6 | 完成 |
 | [GUI-15](GUI-15.md) | 启动器持久化与后台分析健壮性 | GUI-2、GUI-5 | 完成 |
 | [GUI-16](GUI-16.md) | APK 边缘元数据回退 | GUI-2、GUI-3 | 完成 |
+| [GUI-17](GUI-17.md) | 主视图选择、详情与运行条件模型 | GUI-13、GUI-15 | 完成 |
+| [GUI-18](GUI-18.md) | 双栏主面板与现有动作接线 | GUI-17、GUI-8/11/14 | 完成 |
 
-GUI-1..16 已完成，主面板基础版闭环并完成首次验收报告收口；Windows/MSVC 全量 CTest 以
-`docs/state/CURRENT.md` 的滚动基线为准，后续完整 M7 体验不回填本专项。
+GUI-1..18 已完成，主面板基础版闭环并完成双栏主视图重构；Windows/MSVC 验证基线以
+`docs/state/CURRENT.md` 的滚动快照为准，后续完整 M7 体验不回填本专项。

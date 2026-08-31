@@ -20,8 +20,11 @@
   resources.arsc 与统一条目读取；名称回退 package，图标归一化为 128×128 PNG，
   非致命失败以 `ApplicationVisualFallback` 枚举返回。
 - `ResizeArgbBilinear`：以像素中心双线性插值归一化图标 ARGB，拒绝尺寸/像素数不一致。
-- `BuildLibraryTiles`：将库条目与运行/required-external 事实合成为名称排序的磁贴，
-  状态优先级固定为损坏、Profile catalog 不可用、缺 Profile、缺数据包、运行中、ready。
+- `BuildLibraryTiles`：将库条目与运行/required-external/system-dir 事实合成为名称排序的
+  条目，状态优先级固定为损坏、Profile catalog 不可用、缺 Profile、缺数据包、运行中、
+  需要设置、ready。
+- `LibrarySelection` / `BuildLibraryDetail`：维护不落盘的稳定选择，并把条目、Profile、
+  external 和系统目录事实组合为双栏详情；详情不推断 API、ABI 或兼容性等级。
 - `GuiMessageQueue`：按 FIFO 保存运行/启动诊断，仅在没有其他 popup 时激活下一条。
 - `SelectCjkFont`：按注入候选顺序选择宿主字体，全部缺失时返回空路径供 ASCII 回退。
 - `GuiEventWaitMilliseconds`：普通运行最多等待 100ms 事件，smoke 为 0ms。
@@ -53,11 +56,15 @@
   调用方必须记录返回的 fallback 枚举，空 `icon_png` 明确表示使用内置占位磁贴。
 - Android `versionCode` 接受完整 uint32 范围（含 0）；application label 含 C0/DEL 控制
   字符时必须记账并回退 package name，不得把不可显示文本送入持久 TOML。
-- 视图每帧只消费 `LibraryTile` 事实，不读取 meta/Profile 或管理进程；长名称单行省略，
-  悬停显示全文，状态角标互斥。
+- 视图每帧只消费 `LibraryTile` / `LibraryDetail` 事实，不读取 meta/Profile 或管理进程；
+  长名称单行省略，悬停显示全文，状态角标互斥。
+- 主界面固定为左侧条目列表和右侧选中详情；单击只选中，ready 条目双击或详情启动按钮
+  进入同一 LaunchPlan。搜索、筛选、替换导入和常驻日志入口在模型存在前不得显示。
 - optional Profile 和 required external 事实必须来自
   `SelectApkCompatibilityProfile` 与 `SummarizeCompatibilityProfile`，不得在 GUI
   重复解析 applicability 或遍历 Profile mounts；no match 是 generic APK，不是错误。
+- 缺 Profile 是可启动的提示状态，不是硬阻断；系统目录有效且条目未运行时，GUI 必须
+  允许同一 `run-apk` 通用路径启动。缺 Profile 时 external 只能显示无法判断，不伪造就绪。
 - Profile catalog 不可用时所有非损坏磁贴必须显示显式不可用状态，不得把空的
   required-external 集合解释为 ready。
 - 未匹配 Profile 或跳过 required external 仍允许入库并显示对应角标；APK/manifest

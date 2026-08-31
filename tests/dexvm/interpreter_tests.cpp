@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/text.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -1446,22 +1447,23 @@ TEST_CASE("DVM-96 intrinsic boundary validates arguments receivers and returns")
     IntrinsicVm vm(std::move(catalog));
 
     CHECK_THROWS_AS(
-        vm.interpreter.Call(vm.Static("Lbuilder/BadShape;", "badReturn",
-                                      "()I"), {}),
+        (void)vm.interpreter.Call(vm.Static("Lbuilder/BadShape;", "badReturn",
+                                            "()I"),
+                                  {}),
         DexVmError);
     CHECK_THROWS_AS(
-        vm.interpreter.Call(vm.Static("Lbuilder/BadShape;", "takesInt",
-                                      "(I)V"),
-                            std::vector<VmValue>{
-                                VmValue::Ref(VmObjectRef{})}),
+        (void)vm.interpreter.Call(vm.Static("Lbuilder/BadShape;", "takesInt",
+                                            "(I)V"),
+                                  std::vector<VmValue>{
+                                      VmValue::Ref(VmObjectRef{})}),
         DexVmError);
 
     const auto object = vm.interpreter.NewIntrinsicInstance(
         "Ljava/lang/Object;");
     CHECK_THROWS_AS(
-        vm.interpreter.Call(vm.Virtual("Lbuilder/BadShape;", "instance",
-                                       "()V"),
-                            std::vector<VmValue>{VmValue::Ref(object)}),
+        (void)vm.interpreter.Call(vm.Virtual("Lbuilder/BadShape;", "instance",
+                                             "()V"),
+                                  std::vector<VmValue>{VmValue::Ref(object)}),
         DexVmError);
 }
 
@@ -1472,8 +1474,13 @@ TEST_CASE("DVM-94 method resolution cache is isolated by invoke kind") {
         for (std::uint32_t index = 0; index < image.methods.size(); ++index) {
             const auto& text =
                 image.strings[image.methods[index].name_string_index].value;
-            const std::string name(text.begin(), text.end());
-            if (name == wanted) return index;
+            const auto name = ogplay::core::Utf16ToUtf8(
+                text, ogplay::core::InvalidUtf16Policy::reject);
+            if (!name.has_value()) {
+                FAIL("method name is not valid UTF-16");
+                return std::uint32_t{};
+            }
+            if (*name == wanted) return index;
         }
         FAIL("method is missing from fixture: ", wanted);
         return std::uint32_t{};
@@ -1484,10 +1491,10 @@ TEST_CASE("DVM-94 method resolution cache is isolated by invoke kind") {
         constructor, InvokeKind::private_direct);
     CHECK(direct.kind == InvokeKind::constructor);
     CHECK(vm.linker.Method(direct.method).name == "<init>");
-    CHECK_THROWS_AS(vm.linker.ResolveMethodIndex(
+    CHECK_THROWS_AS((void)vm.linker.ResolveMethodIndex(
                         constructor, InvokeKind::static_call),
                     DexVmError);
-    CHECK_THROWS_AS(vm.linker.ResolveMethodIndex(
+    CHECK_THROWS_AS((void)vm.linker.ResolveMethodIndex(
                         constructor, InvokeKind::virtual_call),
                     DexVmError);
 }

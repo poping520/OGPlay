@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -133,10 +134,13 @@ public:
             SetGlAttribute(SDL_GL_ALPHA_SIZE, 8);
             SetGlAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-            window_ = SDL_CreateWindow("OGPlay", 960, 640,
+            window_ = SDL_CreateWindow("OGPlay", 1280, 720,
                                        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
                                            SDL_WINDOW_HIGH_PIXEL_DENSITY);
             if (window_ == nullptr) ThrowSdl("SDL_CreateWindow");
+            if (!SDL_SetWindowMinimumSize(window_, 960, 640)) {
+                ThrowSdl("SDL_SetWindowMinimumSize");
+            }
             context_ = SDL_GL_CreateContext(window_);
             if (context_ == nullptr) ThrowSdl("SDL_GL_CreateContext");
             if (!SDL_GL_MakeCurrent(window_, context_)) ThrowSdl("SDL_GL_MakeCurrent");
@@ -181,6 +185,7 @@ public:
             ImGui::CreateContext();
             context_created_ = true;
             ImGui::StyleColorsDark();
+            ConfigureStyle();
             ConfigureFonts(logger);
             if (!ImGui_ImplSDL3_InitForOpenGL(video.Window(), video.Context())) {
                 throw std::runtime_error("ImGui SDL3 backend initialization failed");
@@ -202,6 +207,41 @@ public:
     ImGuiSession& operator=(const ImGuiSession&) = delete;
 
 private:
+    static void ConfigureStyle() {
+        auto& style = ImGui::GetStyle();
+        style.WindowPadding = {20.0F, 18.0F};
+        style.FramePadding = {14.0F, 9.0F};
+        style.ItemSpacing = {12.0F, 10.0F};
+        style.ItemInnerSpacing = {8.0F, 6.0F};
+        style.WindowRounding = 10.0F;
+        style.ChildRounding = 10.0F;
+        style.FrameRounding = 8.0F;
+        style.PopupRounding = 10.0F;
+        style.ScrollbarRounding = 8.0F;
+        style.GrabRounding = 8.0F;
+        style.WindowBorderSize = 1.0F;
+        style.ChildBorderSize = 1.0F;
+        style.FrameBorderSize = 1.0F;
+        auto& colors = style.Colors;
+        colors[ImGuiCol_WindowBg] = {0.031F, 0.055F, 0.082F, 1.0F};
+        colors[ImGuiCol_ChildBg] = {0.045F, 0.074F, 0.105F, 1.0F};
+        colors[ImGuiCol_PopupBg] = {0.055F, 0.082F, 0.113F, 1.0F};
+        colors[ImGuiCol_Border] = {0.15F, 0.20F, 0.26F, 1.0F};
+        colors[ImGuiCol_FrameBg] = {0.065F, 0.098F, 0.133F, 1.0F};
+        colors[ImGuiCol_FrameBgHovered] = {0.09F, 0.14F, 0.18F, 1.0F};
+        colors[ImGuiCol_FrameBgActive] = {0.11F, 0.17F, 0.21F, 1.0F};
+        colors[ImGuiCol_Button] = {0.075F, 0.11F, 0.15F, 1.0F};
+        colors[ImGuiCol_ButtonHovered] = {0.10F, 0.16F, 0.20F, 1.0F};
+        colors[ImGuiCol_ButtonActive] = {0.12F, 0.20F, 0.24F, 1.0F};
+        colors[ImGuiCol_Header] = {0.08F, 0.20F, 0.15F, 1.0F};
+        colors[ImGuiCol_HeaderHovered] = {0.10F, 0.26F, 0.19F, 1.0F};
+        colors[ImGuiCol_HeaderActive] = {0.12F, 0.31F, 0.22F, 1.0F};
+        colors[ImGuiCol_CheckMark] = {0.26F, 0.82F, 0.48F, 1.0F};
+        colors[ImGuiCol_Separator] = {0.13F, 0.18F, 0.23F, 1.0F};
+        colors[ImGuiCol_Text] = {0.92F, 0.94F, 0.96F, 1.0F};
+        colors[ImGuiCol_TextDisabled] = {0.52F, 0.57F, 0.63F, 1.0F};
+    }
+
     static void ConfigureFonts(core::Logger& logger) {
         auto& io = ImGui::GetIO();
         const std::array<std::filesystem::path, 7> candidates{
@@ -343,80 +383,95 @@ struct Badge final {
 [[nodiscard]] Badge TileBadge(const LibraryTileStatus status) {
     switch (status) {
     case LibraryTileStatus::damaged:
-        return {"条目损坏", IM_COL32(184, 52, 52, 235)};
+        return {"条目损坏", IM_COL32(239, 91, 91, 255)};
     case LibraryTileStatus::profile_catalog_unavailable:
-        return {"Profile 不可用", IM_COL32(184, 52, 52, 235)};
+        return {"Profile 不可用", IM_COL32(239, 91, 91, 255)};
     case LibraryTileStatus::missing_profile:
-        return {"缺 Profile", IM_COL32(193, 118, 30, 235)};
+        return {"缺 Profile", IM_COL32(243, 166, 42, 255)};
     case LibraryTileStatus::missing_external:
-        return {"缺数据包", IM_COL32(193, 118, 30, 235)};
+        return {"缺数据包", IM_COL32(243, 166, 42, 255)};
     case LibraryTileStatus::running:
-        return {"运行中", IM_COL32(38, 142, 82, 235)};
+        return {"运行中", IM_COL32(67, 209, 122, 255)};
+    case LibraryTileStatus::setup_required:
+        return {"需要设置", IM_COL32(243, 166, 42, 255)};
     case LibraryTileStatus::ready:
-        return {};
+        return {"可启动", IM_COL32(67, 209, 122, 255)};
     }
     return {};
 }
 
-struct TileAction final {
+struct RowAction final {
+    bool selected{};
     bool launch_requested{};
     bool delete_requested{};
 };
 
-[[nodiscard]] TileAction DrawTile(const LibraryTile& tile,
-                                  const LibraryTextures& textures) {
-    constexpr float icon_size = 128.0F;
-    constexpr float tile_width = 152.0F;
+[[nodiscard]] RowAction DrawLibraryRow(const LibraryTile& tile,
+                                      const bool selected,
+                                      const LibraryTextures& textures) {
+    constexpr float icon_size = 64.0F;
+    constexpr float row_height = 84.0F;
     ImGui::PushID(tile.key.c_str());
-    ImGui::BeginGroup();
-    const auto left = ImGui::GetCursorPosX();
-    ImGui::SetCursorPosX(left + (tile_width - icon_size) * 0.5F);
-    const auto image_position = ImGui::GetCursorScreenPos();
+    const auto position = ImGui::GetCursorScreenPos();
+    const auto width = ImGui::GetContentRegionAvail().x;
+    const auto clicked = ImGui::InvisibleButton("library_row", {width, row_height});
+    const auto hovered = ImGui::IsItemHovered();
+    auto* draw = ImGui::GetWindowDrawList();
+    const auto background = selected
+                                ? IM_COL32(17, 63, 48, 255)
+                                : hovered ? IM_COL32(18, 35, 47, 255)
+                                          : IM_COL32(12, 27, 38, 255);
+    const auto border = selected ? IM_COL32(67, 209, 122, 255)
+                                 : IM_COL32(39, 55, 70, 255);
+    draw->AddRectFilled(position, {position.x + width, position.y + row_height},
+                        background, 10.0F);
+    draw->AddRect(position, {position.x + width, position.y + row_height}, border,
+                  10.0F, 0, selected ? 2.0F : 1.0F);
+
+    const ImVec2 image_position{position.x + 10.0F, position.y + 10.0F};
     const auto texture = textures.Find(tile.key);
     if (texture != 0) {
-        ImGui::Image(static_cast<ImTextureID>(texture), {icon_size, icon_size});
+        draw->AddImageRounded(static_cast<ImTextureID>(texture), image_position,
+                              {image_position.x + icon_size,
+                               image_position.y + icon_size},
+                              {0.0F, 0.0F}, {1.0F, 1.0F}, IM_COL32_WHITE, 9.0F);
     } else {
-        ImGui::Dummy({icon_size, icon_size});
-        auto* draw = ImGui::GetWindowDrawList();
         draw->AddRectFilled(image_position,
                             {image_position.x + icon_size,
                              image_position.y + icon_size},
-                            IM_COL32(48, 58, 76, 255), 12.0F);
+                            IM_COL32(48, 58, 76, 255), 9.0F);
         const auto marker = ImGui::CalcTextSize("?");
         draw->AddText({image_position.x + (icon_size - marker.x) * 0.5F,
                        image_position.y + (icon_size - marker.y) * 0.5F},
                       IM_COL32(190, 198, 212, 255), "?");
     }
     const auto badge = TileBadge(tile.status);
-    if (badge.label != nullptr) {
-        auto* draw = ImGui::GetWindowDrawList();
-        const auto text = ImGui::CalcTextSize(badge.label);
-        const ImVec2 minimum{image_position.x + icon_size - text.x - 14.0F,
-                             image_position.y + icon_size - text.y - 10.0F};
-        draw->AddRectFilled(minimum,
-                            {image_position.x + icon_size,
-                             image_position.y + icon_size},
-                            badge.color, 6.0F, ImDrawFlags_RoundCornersTopLeft);
-        draw->AddText({minimum.x + 7.0F, minimum.y + 4.0F},
-                      IM_COL32_WHITE, badge.label);
+    const auto text_left = image_position.x + icon_size + 14.0F;
+    const auto text_width = std::max(24.0F, width - icon_size - 38.0F);
+    const auto fitted = FitLabel(tile.display_name, text_width);
+    draw->AddText({text_left, position.y + 17.0F}, IM_COL32(238, 242, 247, 255),
+                  fitted.c_str());
+    draw->AddCircleFilled({text_left + 5.0F, position.y + 57.0F}, 5.0F,
+                          badge.color);
+    draw->AddText({text_left + 17.0F, position.y + 47.0F}, badge.color,
+                  badge.label);
+
+    RowAction action{
+        .selected = clicked,
+        .launch_requested = tile.can_launch && hovered &&
+                            ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left),
+    };
+    if (ImGui::BeginPopupContextItem("条目操作")) {
+        const auto deletable = !tile.running;
+        action.delete_requested =
+            ImGui::MenuItem("删除游戏", nullptr, false, deletable);
+        ImGui::EndPopup();
     }
-    if (ImGui::IsItemHovered()) {
+    if (hovered && ImGui::CalcTextSize(tile.display_name.c_str()).x > text_width) {
         ImGui::BeginTooltip();
         ImGui::TextUnformatted(tile.display_name.c_str());
-        if (badge.label != nullptr) ImGui::TextUnformatted(badge.label);
         if (!tile.detail.empty()) ImGui::TextWrapped("%s", tile.detail.c_str());
         ImGui::EndTooltip();
-    }
-    const auto fitted = FitLabel(tile.display_name, tile_width);
-    const auto label_width = ImGui::CalcTextSize(fitted.c_str()).x;
-    ImGui::SetCursorPosX(left + std::max(0.0F, (tile_width - label_width) * 0.5F));
-    ImGui::TextUnformatted(fitted.c_str());
-    ImGui::EndGroup();
-    TileAction action{.launch_requested =
-                          ImGui::IsItemClicked(ImGuiMouseButton_Left)};
-    if (ImGui::BeginPopupContextItem("磁贴操作")) {
-        action.delete_requested = ImGui::MenuItem("删除游戏");
-        ImGui::EndPopup();
     }
     ImGui::PopID();
     return action;
@@ -426,11 +481,173 @@ struct LibraryAction final {
     bool import_requested{};
     bool settings_requested{};
     std::optional<std::string> selected_package;
+    std::optional<std::string> launch_package;
     std::optional<std::string> delete_package;
 };
 
+void DrawBrand() {
+    const auto position = ImGui::GetCursorScreenPos();
+    constexpr float size = 34.0F;
+    std::array<ImVec2, 6> points{};
+    for (std::size_t index = 0; index < points.size(); ++index) {
+        constexpr float pi = 3.14159265358979323846F;
+        const auto angle = pi / 3.0F * static_cast<float>(index) - pi / 6.0F;
+        points[index] = {position.x + size * 0.5F + std::cos(angle) * size * 0.5F,
+                         position.y + size * 0.5F + std::sin(angle) * size * 0.5F};
+    }
+    auto* draw = ImGui::GetWindowDrawList();
+    draw->AddConvexPolyFilled(points.data(), static_cast<int>(points.size()),
+                              IM_COL32(67, 209, 122, 255));
+    const std::array<ImVec2, 3> play{{
+        {position.x + 13.0F, position.y + 10.0F},
+        {position.x + 13.0F, position.y + 24.0F},
+        {position.x + 24.0F, position.y + 17.0F},
+    }};
+    draw->AddConvexPolyFilled(play.data(), static_cast<int>(play.size()),
+                              IM_COL32(7, 27, 30, 255));
+    ImGui::Dummy({size, size});
+    ImGui::SameLine();
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0F);
+    ImGui::TextUnformatted("OGPlay");
+}
+
+[[nodiscard]] ImVec4 ConditionColor(const LibraryConditionStatus status) {
+    switch (status) {
+    case LibraryConditionStatus::ready:
+    case LibraryConditionStatus::not_required:
+        return {0.26F, 0.82F, 0.48F, 1.0F};
+    case LibraryConditionStatus::missing:
+        return {0.95F, 0.65F, 0.16F, 1.0F};
+    case LibraryConditionStatus::unavailable:
+        return {0.94F, 0.36F, 0.36F, 1.0F};
+    }
+    return {0.52F, 0.57F, 0.63F, 1.0F};
+}
+
+[[nodiscard]] const char* ConditionStatusLabel(
+    const char* label, const LibraryConditionStatus status) {
+    switch (status) {
+    case LibraryConditionStatus::ready:
+        if (std::string_view(label) == "精确 Profile") return "已匹配";
+        if (std::string_view(label) == "Android 系统库") return "已配置";
+        return "已就绪";
+    case LibraryConditionStatus::missing:
+        if (std::string_view(label) == "精确 Profile") return "未匹配";
+        if (std::string_view(label) == "Android 系统库") return "未配置";
+        return "缺失";
+    case LibraryConditionStatus::not_required:
+        return "不需要";
+    case LibraryConditionStatus::unavailable:
+        return "无法判断";
+    }
+    return "未知";
+}
+
+void DrawConditionRow(const char* label, const LibraryCondition& condition) {
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, 42.0F);
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::TableSetColumnIndex(1);
+    ImGui::AlignTextToFramePadding();
+    const auto fitted = FitLabel(condition.value,
+                                 ImGui::GetContentRegionAvail().x - 6.0F);
+    ImGui::TextUnformatted(fitted.c_str());
+    if (ImGui::IsItemHovered() &&
+        (fitted != condition.value || !condition.detail.empty())) {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted(condition.value.c_str());
+        if (!condition.detail.empty()) {
+            ImGui::Separator();
+            ImGui::TextWrapped("%s", condition.detail.c_str());
+        }
+        ImGui::EndTooltip();
+    }
+    ImGui::TableSetColumnIndex(2);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextColored(ConditionColor(condition.status), "●  %s",
+                       ConditionStatusLabel(label, condition.status));
+}
+
+void DrawDetail(const LibraryDetail& detail, const LibraryTextures& textures,
+                LibraryAction& action) {
+    const auto texture = textures.Find(detail.key);
+    if (texture != 0) {
+        ImGui::Image(static_cast<ImTextureID>(texture), {128.0F, 128.0F});
+    } else {
+        const auto position = ImGui::GetCursorScreenPos();
+        ImGui::Dummy({128.0F, 128.0F});
+        auto* draw = ImGui::GetWindowDrawList();
+        draw->AddRectFilled(position, {position.x + 128.0F, position.y + 128.0F},
+                            IM_COL32(48, 58, 76, 255), 12.0F);
+        const auto marker = ImGui::CalcTextSize("?");
+        draw->AddText({position.x + (128.0F - marker.x) * 0.5F,
+                       position.y + (128.0F - marker.y) * 0.5F},
+                      IM_COL32(190, 198, 212, 255), "?");
+    }
+    ImGui::SameLine(0.0F, 24.0F);
+    ImGui::BeginGroup();
+    ImGui::TextUnformatted(detail.display_name.c_str());
+    ImGui::TextDisabled("%s", detail.package.c_str());
+    ImGui::TextDisabled("%s", detail.version.c_str());
+    const auto badge = TileBadge(detail.status);
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(badge.color), "●  %s",
+                       badge.label);
+    ImGui::EndGroup();
+
+    ImGui::Spacing();
+    const auto launch_width = std::min(420.0F, ImGui::GetContentRegionAvail().x);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15F, 0.61F, 0.31F, 1.0F));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(0.19F, 0.72F, 0.38F, 1.0F));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                          ImVec4(0.12F, 0.52F, 0.26F, 1.0F));
+    ImGui::BeginDisabled(!detail.can_launch);
+    if (GuiButton("启动游戏##detail", {launch_width, 48.0F})) {
+        action.launch_package = detail.key;
+    }
+    ImGui::EndDisabled();
+    ImGui::PopStyleColor(3);
+    if (!detail.detail.empty()) {
+        ImGui::TextWrapped("%s", detail.detail.c_str());
+    }
+    if (detail.status == LibraryTileStatus::setup_required &&
+        GuiButton("打开设置##detail")) {
+        action.settings_requested = true;
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("运行条件");
+    if (ImGui::BeginTable("运行条件", 3,
+                          ImGuiTableFlags_BordersInnerH |
+                              ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("项目", ImGuiTableColumnFlags_WidthStretch, 0.32F);
+        ImGui::TableSetupColumn("值", ImGuiTableColumnFlags_WidthStretch, 0.43F);
+        ImGui::TableSetupColumn("状态", ImGuiTableColumnFlags_WidthStretch, 0.25F);
+        DrawConditionRow("精确 Profile", detail.profile);
+        DrawConditionRow("外部数据", detail.external);
+        DrawConditionRow("Android 系统库", detail.system);
+        ImGui::EndTable();
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("管理");
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24F, 0.075F, 0.085F, 1.0F));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(0.36F, 0.09F, 0.10F, 1.0F));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                          ImVec4(0.44F, 0.11F, 0.12F, 1.0F));
+    ImGui::BeginDisabled(!detail.can_delete);
+    if (GuiButton("删除游戏##detail", {220.0F, 44.0F})) {
+        action.delete_package = detail.key;
+    }
+    ImGui::EndDisabled();
+    ImGui::PopStyleColor(3);
+}
+
 [[nodiscard]] LibraryAction DrawLibrary(
-    const std::vector<LibraryTile>& tiles,
+    const std::vector<LibraryTile>& tiles, const LibraryDetail* detail,
+    const std::optional<std::string>& selected_key,
     const LibraryTextures& textures) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -439,9 +656,9 @@ struct LibraryAction final {
                                        ImGuiWindowFlags_NoMove |
                                        ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("OGPlay launcher", nullptr, flags);
-    ImGui::TextUnformatted("OGPlay");
+    DrawBrand();
     const auto buttons_width = ImGui::CalcTextSize("导入游戏").x +
-                               ImGui::CalcTextSize("设置").x + 54.0F;
+                               ImGui::CalcTextSize("设置").x + 92.0F;
     ImGui::SameLine(std::max(ImGui::GetCursorPosX(),
                              ImGui::GetWindowWidth() - buttons_width));
     const auto import_requested = GuiButton("导入游戏##toolbar");
@@ -449,42 +666,45 @@ struct LibraryAction final {
     const auto settings_requested = GuiButton("设置##toolbar");
     ImGui::Separator();
     ImGui::Spacing();
+    LibraryAction action{.import_requested = import_requested,
+                         .settings_requested = settings_requested};
+    const auto available = ImGui::GetContentRegionAvail();
+    const auto left_width = std::clamp(available.x * 0.31F, 280.0F, 390.0F);
+    ImGui::BeginChild("游戏库", {left_width, available.y},
+                      ImGuiChildFlags_Borders);
+    ImGui::Text("游戏库  %zu", tiles.size());
+    ImGui::Separator();
     if (tiles.empty()) {
         ImGui::Spacing();
         ImGui::TextWrapped("游戏库为空。导入游戏后会显示在这里。");
         if (GuiButton("导入游戏##empty_library")) {
-            ImGui::End();
-            return {.import_requested = true,
-                    .settings_requested = settings_requested};
+            action.import_requested = true;
         }
     } else {
-        constexpr float tile_width = 152.0F;
-        constexpr float spacing = 18.0F;
-        const auto available = ImGui::GetContentRegionAvail().x;
-        const auto columns = std::max(
-            1, static_cast<int>((available + spacing) / (tile_width + spacing)));
-        for (std::size_t index = 0; index < tiles.size(); ++index) {
-            if (index % static_cast<std::size_t>(columns) != 0) ImGui::SameLine();
-            const auto tile_action = DrawTile(tiles[index], textures);
-            if (tile_action.launch_requested || tile_action.delete_requested) {
-                ImGui::End();
-                return {
-                    .settings_requested = settings_requested,
-                    .selected_package = tile_action.launch_requested
-                                            ? std::optional<std::string>{
-                                                  tiles[index].key}
-                                            : std::optional<std::string>{},
-                    .delete_package = tile_action.delete_requested
-                                          ? std::optional<std::string>{
-                                                tiles[index].key}
-                                          : std::optional<std::string>{},
-                };
-            }
+        for (const auto& tile : tiles) {
+            const auto row = DrawLibraryRow(
+                tile, selected_key.has_value() && *selected_key == tile.key,
+                textures);
+            if (row.selected) action.selected_package = tile.key;
+            if (row.launch_requested) action.launch_package = tile.key;
+            if (row.delete_requested) action.delete_package = tile.key;
+            ImGui::Spacing();
         }
     }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("游戏详情", {0.0F, available.y},
+                      ImGuiChildFlags_Borders);
+    if (detail == nullptr) {
+        const auto remaining = ImGui::GetContentRegionAvail();
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + remaining.y * 0.35F);
+        ImGui::TextDisabled("选择或导入一个游戏以查看详情。");
+    } else {
+        DrawDetail(*detail, textures, action);
+    }
+    ImGui::EndChild();
     ImGui::End();
-    return {.import_requested = import_requested,
-            .settings_requested = settings_requested};
+    return action;
 }
 
 [[nodiscard]] const LibraryTile* FindTile(
@@ -503,6 +723,16 @@ struct LibraryAction final {
                                         return entry.key == package;
                                     });
     return found == entries.end() ? nullptr : &*found;
+}
+
+[[nodiscard]] std::optional<std::string> LoadSystemDirectoryError(
+    const std::filesystem::path& library_root) {
+    try {
+        return GuiSystemDirectoryError(LoadGuiConfig(library_root));
+    } catch (const std::exception& error) {
+        return "现有设置不可读：" + std::string(error.what()) +
+               "。请打开设置并保存有效目录。";
+    }
 }
 
 int RunShell(const GuiOptions& options, core::Logger& logger) {
@@ -531,22 +761,27 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
     GuiSettingsUi settings_ui(video.Window(), options.library_root, logger);
     GuiManagementUi management_ui(store, logger);
     GuiProcessManager processes(logger);
-    auto entries = store.LoadEntries();
-    auto required_external = import_ui.ExternalRequiredPackages(entries);
-    auto tiles = BuildLibraryTiles(
-        entries, {.running_packages = processes.RunningPackages(),
-                  .external_required_packages = required_external,
-                  .profile_catalog_error = import_ui.ProfileCatalogError()});
-    auto textures = std::make_unique<LibraryTextures>(tiles, logger);
+    std::vector<LibraryEntry> entries;
+    std::vector<std::string> required_external;
+    LibraryViewContext view_context;
+    std::vector<LibraryTile> tiles;
+    LibrarySelection selection;
+    std::unique_ptr<LibraryTextures> textures;
     const auto reload_library = [&] {
         entries = store.LoadEntries();
         required_external = import_ui.ExternalRequiredPackages(entries);
-        tiles = BuildLibraryTiles(
-            entries, {.running_packages = processes.RunningPackages(),
-                      .external_required_packages = required_external,
-                      .profile_catalog_error = import_ui.ProfileCatalogError()});
+        view_context = {
+            .running_packages = processes.RunningPackages(),
+            .external_required_packages = required_external,
+            .profile_catalog_error = import_ui.ProfileCatalogError(),
+            .system_directory_error =
+                LoadSystemDirectoryError(options.library_root),
+        };
+        tiles = BuildLibraryTiles(entries, view_context);
+        selection.Reconcile(tiles);
         textures = std::make_unique<LibraryTextures>(tiles, logger);
     };
+    reload_library();
     GuiMessageQueue messages;
     bool exit_confirmation_requested{};
     bool running = true;
@@ -591,7 +826,21 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                 messages.Push("游戏运行失败", std::move(message));
             }
         }
-        const auto action = DrawLibrary(tiles, *textures);
+        std::optional<LibraryDetail> detail;
+        if (selection.Key().has_value()) {
+            const auto* selected_tile = FindTile(tiles, *selection.Key());
+            const auto* selected_entry = FindEntry(entries, *selection.Key());
+            if (selected_tile != nullptr && selected_entry != nullptr) {
+                detail = BuildLibraryDetail(*selected_entry, *selected_tile,
+                                            view_context);
+            }
+        }
+        const auto action = DrawLibrary(
+            tiles, detail.has_value() ? &*detail : nullptr, selection.Key(),
+            *textures);
+        if (action.selected_package.has_value()) {
+            selection.Select(*action.selected_package, tiles);
+        }
         if (action.import_requested) import_ui.OpenApkDialog();
         if (action.settings_requested) settings_ui.Open();
         if (action.delete_package.has_value()) {
@@ -601,15 +850,15 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                     *entry, processes.IsRunning(*action.delete_package));
             }
         }
-        if (action.selected_package.has_value()) {
-            const auto* tile = FindTile(tiles, *action.selected_package);
-            const auto* entry = FindEntry(entries, *action.selected_package);
+        if (action.launch_package.has_value()) {
+            const auto* tile = FindTile(tiles, *action.launch_package);
+            const auto* entry = FindEntry(entries, *action.launch_package);
             try {
                 if (tile == nullptr || entry == nullptr) {
                     throw GuiModelError(GuiModelErrorCode::not_found,
                                         "library tile disappeared before launch");
                 }
-                if (tile->status != LibraryTileStatus::ready) {
+                if (!tile->can_launch) {
                     messages.Push("暂时无法启动",
                                   tile->detail.empty()
                                       ? "该游戏当前不可启动。"
@@ -634,7 +883,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                     logger.Write(
                         core::LogLevel::error, "frontend.gui.launch",
                         "launch request failed", {},
-                        {{"package", *action.selected_package},
+                        {{"package", *action.launch_package},
                          {"reason", std::string(error.what())},
                          {"code", static_cast<std::uint64_t>(
                                       model_error->Code())},
@@ -643,7 +892,7 @@ int RunShell(const GuiOptions& options, core::Logger& logger) {
                     logger.Write(core::LogLevel::error,
                                  "frontend.gui.launch",
                                  "launch request failed", {},
-                                 {{"package", *action.selected_package},
+                                 {{"package", *action.launch_package},
                                   {"reason", std::string(error.what())}});
                 }
                 messages.Push("启动失败", std::move(message));

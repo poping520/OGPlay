@@ -121,12 +121,12 @@ StringPool ParseStringPool(const std::span<const std::byte> bytes,
             for (std::size_t unit = 0; unit < length; ++unit) {
                 units.push_back(Read16(bytes, cursor + unit * 2));
             }
-            const auto utf8 = core::Utf16ToUtf8(
+            const auto converted = core::Utf16ToUtf8(
                 units, core::InvalidUtf16Policy::reject);
-            if (!utf8.has_value()) {
+            if (!converted.has_value()) {
                 throw std::runtime_error("binary XML string is not valid UTF-16");
             }
-            value = *utf8;
+            value = *converted;
         }
         pool.values.push_back(std::move(value));
     }

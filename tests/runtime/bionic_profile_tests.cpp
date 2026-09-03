@@ -48,11 +48,11 @@ TEST_CASE("Bionic profiles select only API 19 22 and 23") {
     const auto& api23 = ogplay::runtime::SelectBionicProfile(23);
     CHECK(api19.api == ogplay::runtime::AndroidApi::api19);
     CHECK(api19.android_release == "4.4");
-    CHECK(api19.data_directory == "bionic/19");
+    CHECK(api19.data_directory == "android/19");
     CHECK(api22.api == ogplay::runtime::AndroidApi::api22);
-    CHECK(api22.data_directory == "bionic/22");
+    CHECK(api22.data_directory == "android/22");
     CHECK(api23.api == ogplay::runtime::AndroidApi::api23);
-    CHECK(api23.data_directory == "bionic/23");
+    CHECK(api23.data_directory == "android/23");
     CHECK(api19.guest_libraries.size() == 5);
     CHECK(ogplay::runtime::AndroidBoundaryCatalog(api19.api).Modules().size() == 6);
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::SelectBionicProfile(21)),

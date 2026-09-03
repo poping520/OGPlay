@@ -338,7 +338,7 @@ src/
   frontend/
     cli/ gui/
 data/
-  bionic/{19,22,25}/     预置系统库
+  android/{19,22,23}/    预置 guest 系统库
   profiles/              题库（每游戏一个 toml）
   goldens/               黄金帧基线
 tests/

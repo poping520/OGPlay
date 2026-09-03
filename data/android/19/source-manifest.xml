@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal pinned manifest exported from the synced projects used by the
+  Bionic-only build. The original manifest default was
+  refs/tags/android-4.4.4_r2.0.1; each project revision below is the actual
+  checked-out HEAD observed in the partial source tree.
+-->
+<manifest>
+  <remote name="aosp" fetch=".." />
+  <default revision="refs/tags/android-4.4.4_r2.0.1" remote="aosp" sync-j="4" />
+
+  <project path="bionic" name="platform/bionic" revision="081db840befec895fb86e709ae95832ade2d065c" />
+  <project path="build" name="platform/build" revision="b34d556982095a8fe84273ffceadd80f41325acf">
+    <copyfile src="core/root.mk" dest="Makefile" />
+  </project>
+  <project path="external/compiler-rt" name="platform/external/compiler-rt" revision="7cba5f1d950495b02bc8da53d27bdbb1b0d4f117" />
+  <project path="external/zlib" name="platform/external/zlib" revision="a5c7131da47c991585a6c6ac0c063b6d7d56e3fc" />
+  <project path="prebuilts/clang/linux-x86/arm/3.3" name="platform/prebuilts/clang/linux-x86/arm/3.3" revision="2f6d2db9e2af3507d132cf5d286a42fe1d47f7bc" />
+  <project path="prebuilts/clang/linux-x86/host/3.3" name="platform/prebuilts/clang/linux-x86/host/3.3" revision="bba7eb9ee3ec2af12b926023256dbe4799995645" />
+  <project path="prebuilts/gcc/linux-x86/arm/arm-eabi-4.6" name="platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6" revision="d73a051b1fd1d98f5c2463354fb67898f0090bdb" />
+  <project path="prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.6" name="platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.6" revision="71c99ec3db1503a2124d5e287097d58b964deef7" />
+  <project path="prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.7" name="platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.7" revision="a1e239a0bb5cd1d69680bf1075883aa9a7bf2429" />
+  <project path="prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.7-4.6" name="platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.7-4.6" revision="ebdad82e61c16772f6cd47e9f11936bf6ebe9aa0" />
+  <project path="prebuilts/ndk" name="platform/prebuilts/ndk" revision="c792f0bd9fff7aea2887c60bbb3a9bbdb534ffa3" />
+  <project path="system/core" name="platform/system/core" revision="efbf36f2dad8f083de6f48dbb682461d7cfa9781" />
+</manifest>

@@ -1,9 +1,13 @@
 # 当前状态
 
-更新：完成 GUI-17/18 双栏主界面；同时保留 windows-msvc Release 警告即错误修复
+更新：内置可再分发的 Android 4.4.4/API 19 guest 系统库；保留 GUI-17/18 双栏主界面
 
 ## 当前阶段
 
+- **API 19 Android guest 系统库发行集已内置**：`data/android/19/lib` 收录从 AOSP
+  `android-4.4.4_r2.0.1` clean tag、`aosp_arm-user` 构建的 libc/libm/libdl/libstdc++/libz；
+  精确源码 revision、构建记录、文件哈希、ELF 身份和逐库 NOTICE 随包保存。构建目录、
+  安装目录与 macOS bundle 均通过统一 data staging 携带该发行集；API 22/23 尚未纳入。
 - **GUI-17/18 双栏主界面已完成**：主面板改为左侧列表、右侧详情，单击选择，ready
   条目双击或详情按钮启动；Profile、external、system 三项条件明确呈现。系统库未配置
   不再显示 ready；选择刷新稳定、删除相邻回退且不落盘。没有加入搜索、筛选、替换导入、
@@ -36,6 +40,9 @@
 
 ## 最近验证
 
+- 2026-09-03 Windows `windows-msvc` Release 的 `ogplay_tests`/`ogplay-gui` 受影响目标构建
+  通过；API 19 Android guest 系统库、profile 路径与构建暂存测试 3/3 通过，临时
+  `cmake --install` 产物再次通过五库、哈希、ELF、来源与 NOTICE 完整性校验。
 - 2026-08-31 Windows `windows-msvc` Release 的 `ogplay-gui`/`ogplay_tests` 受影响目标构建
   通过；GUI 模型 7/7（61 assertions）、设置 1/1、LaunchPlan 2/2、删除 1/1、popup FIFO
   1/1 及 GUI options/空库/非空库 ANGLE 3/3 通过。1280×720 真实窗口完成两轮视觉检查。

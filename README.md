@@ -34,14 +34,16 @@ ctest --preset windows-msvc -R "<affected-test>"
 
 Windows 构建后可直接双击 `build/windows-msvc/Debug/ogplay-gui.exe`；Linux 开发构建
 产物为 `build/dev/ogplay-gui`，macOS 为 `OGPlay.app`，bundle 内同时携带同目录启动所需
-的 `ogplay-cli` CLI（macOS 大小写不敏感文件系统下避免与 GUI 可执行名冲突）。构建/安装产物同时携带 `data/profiles` 与 `data/quirks.toml`；默认
-Profile 不依赖源码树。开发与 CI 也可从终端启动有界入口：
+的 `ogplay-cli` CLI（macOS 大小写不敏感文件系统下避免与 GUI 可执行名冲突）。构建/安装
+产物同时携带 `data/profiles`、`data/quirks.toml` 与可再分发的 API 19 Android guest
+系统库；默认 Profile 不依赖源码树。开发与 CI 也可从终端启动有界入口：
 
 ```sh
 build/dev/ogplay gui [--library-root <dir>] [--smoke-frames <count>]
 ```
 
-首次使用先在“设置”中选择 Android 系统库目录；Profile 目录留空使用内置默认。随后
+首次使用先在“设置”中选择随程序提供的 `data/android/19/lib`；Profile 目录留空使用
+内置默认。随后
 通过“导入游戏”选择 APK 与可选数据包目录，点击无角标磁贴即通过同一 `run-apk` 路径
 启动。右键磁贴可删除库内副本；原地数据包和持久存档不会被删除。
 

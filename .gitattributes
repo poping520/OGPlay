@@ -8,4 +8,4 @@
 *.so binary
 *.dll binary
 *.dylib binary
-
+data/android/*/notices/*.txt binary

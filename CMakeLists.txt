@@ -650,8 +650,15 @@ add_custom_target(ogplay_stage_data ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/data/profiles"
         "$<TARGET_FILE_DIR:ogplay>/data/profiles"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_FILE_DIR:ogplay>/data/bionic"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_FILE_DIR:ogplay>/data/android"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/android"
+        "$<TARGET_FILE_DIR:ogplay>/data/android"
     DEPENDS ogplay
-    COMMENT "Staging OGPlay Profile and quirk data"
+    COMMENT "Staging OGPlay runtime data"
     VERBATIM)
 
 if(OGPLAY_ENABLE_SDL3 AND OGPLAY_ENABLE_ANGLE)
@@ -690,6 +697,8 @@ install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES data/quirks.toml
     DESTINATION ${CMAKE_INSTALL_BINDIR}/data)
 install(DIRECTORY data/profiles
+    DESTINATION ${CMAKE_INSTALL_BINDIR}/data)
+install(DIRECTORY data/android
     DESTINATION ${CMAKE_INSTALL_BINDIR}/data)
 
 if(OGPLAY_BUILD_TESTS)
@@ -1085,6 +1094,15 @@ if(OGPLAY_BUILD_TESTS)
                 ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/glext.h
     )
     set_tests_properties(tools.gles1_extensions_catalog_current PROPERTIES LABELS tools)
+
+    add_test(
+        NAME tools.android_payload_current
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_android_payload.py
+            --root ${CMAKE_CURRENT_SOURCE_DIR}/data/android/19
+    )
+    set_tests_properties(tools.android_payload_current
+        PROPERTIES LABELS "tools;bionic;distribution")
 
     add_test(
         NAME tools.title_profile_validator_self_test

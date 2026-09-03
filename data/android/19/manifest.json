@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "api_level": 19,
+  "android_release": "4.4.4",
+  "abi": {
+    "name": "armeabi-v7a",
+    "elf_class": "ELF32",
+    "endianness": "little",
+    "machine": "ARM",
+    "type": "DYN"
+  },
+  "source": {
+    "kind": "aosp-source-build",
+    "tag": "android-4.4.4_r2.0.1",
+    "manifest_repository_revision": "1167ed641bc6c3fc41d167160e305008d363956a",
+    "pinned_manifest": "source-manifest.xml",
+    "manifest_kind": "minimal-pinned",
+    "worktrees_clean": true
+  },
+  "build": {
+    "lunch_target": "aosp_arm-user",
+    "build_type": "release",
+    "target_product": "aosp_arm",
+    "target_arch_variant": "armv7-a",
+    "target_cpu_variant": "generic",
+    "build_id": "KTU84Q",
+    "build_number": null,
+    "build_fingerprint": null,
+    "commands": [
+      "make -B -j8 libc libm libdl libstdc++ libz",
+      "make -B -j8 libz"
+    ],
+    "toolchain": {
+      "target_gcc": "arm-linux-androideabi-gcc (GCC) 4.7",
+      "clang": "Ubuntu clang 3.3 based on LLVM 3.3",
+      "java": "OpenJDK 1.6.0_41"
+    }
+  },
+  "libraries": [
+    {
+      "path": "lib/libc.so",
+      "source_project": "platform/bionic",
+      "size": 306336,
+      "sha256": "f1d65ec53efdd181f4f07011cb0599005d28d71f552e8c8eb8b36555b6929a77",
+      "soname": "libc.so",
+      "needed": ["libdl.so"],
+      "notice": "notices/libc.so.txt",
+      "notice_sha256": "ca5b0ccbc98bcc4a4f97ec73dd6ffeeda27de5ca7e49ad81dfc04729ec5dc53a"
+    },
+    {
+      "path": "lib/libdl.so",
+      "source_project": "platform/bionic",
+      "size": 9220,
+      "sha256": "55aad370a5aa69688db9d6ce8e5ad50be4c6445b3d1063ac0469d7e45e230a5b",
+      "soname": "libdl.so",
+      "needed": [],
+      "notice": "notices/libdl.so.txt",
+      "notice_sha256": "a3679db44f9415fedb394a494e89b71910f859cbd74aa2830fb6cf8cb9d7a37a"
+    },
+    {
+      "path": "lib/libm.so",
+      "source_project": "platform/bionic",
+      "size": 103624,
+      "sha256": "1bd47c0f84db64307d9819ef2bccde3a379f58814d4cc7d8a053bf9921b3e672",
+      "soname": "libm.so",
+      "needed": ["libc.so"],
+      "notice": "notices/libm.so.txt",
+      "notice_sha256": "04d431d8c33eb0fa98bbb0bf04bce47e6ba14f165db44aa05243dd1c05000dbf"
+    },
+    {
+      "path": "lib/libstdc++.so",
+      "source_project": "platform/bionic",
+      "size": 5224,
+      "sha256": "372b2d55730266bea582b8a64804ed130850cfeafc369cd4fb6f1633bd1b386b",
+      "soname": "libstdc++.so",
+      "needed": ["libc.so"],
+      "notice": "notices/libstdc++.so.txt",
+      "notice_sha256": "f97199b1d75ba28d11eb3a1815ea20b036d12853c44380d2679aeb849a7ab7c8"
+    },
+    {
+      "path": "lib/libz.so",
+      "source_project": "platform/external/zlib",
+      "size": 95496,
+      "sha256": "c2f0143900e491639a0ceac70d1d24a008ab719ec8283465acb4449f2a83c48e",
+      "soname": "libz.so",
+      "needed": ["libc.so", "libstdc++.so", "libm.so"],
+      "notice": "notices/libz.so.txt",
+      "notice_sha256": "60c2c920b6af058e3b9659a19e2e667985c9ac193d426309925077a511f32a45"
+    }
+  ]
+}
